@@ -1,0 +1,336 @@
+diff --git a/css/styles.css b/css/styles.css
+index 2814244..136a066 100644
+--- a/css/styles.css
++++ b/css/styles.css
+@@ -19861,7 +19861,7 @@ body {
+   }
+ }
+ 
+-/* GRIDLY V272 — About Gridly supportive product guidance. */
++/* GRIDLY V272.4 — About Gridly nested accordion guidance. */
+ .settings-about-gridly-section {
+   border: 1px solid rgba(171, 204, 238, 0.16);
+   border-radius: 15px;
+@@ -19869,25 +19869,32 @@ body {
+   overflow: hidden;
+ }
+ 
+-.settings-about-gridly-summary {
++.settings-about-gridly-summary,
++.settings-about-gridly-topic-summary {
+   display: grid;
+   grid-template-columns: minmax(0, 1fr) auto;
+   align-items: center;
+   gap: 10px;
+-  min-height: 46px;
+-  padding: 10px 12px;
+   color: var(--text);
+   font-weight: 850;
+   letter-spacing: 0.01em;
+   list-style: none;
+   cursor: pointer;
++  touch-action: manipulation;
++}
++
++.settings-about-gridly-summary {
++  min-height: 46px;
++  padding: 10px 12px;
+ }
+ 
+-.settings-about-gridly-summary::-webkit-details-marker {
++.settings-about-gridly-summary::-webkit-details-marker,
++.settings-about-gridly-topic-summary::-webkit-details-marker {
+   display: none;
+ }
+ 
+-.settings-about-gridly-summary::after {
++.settings-about-gridly-summary::after,
++.settings-about-gridly-topic-summary::after {
+   content: "";
+   width: 20px;
+   height: 20px;
+@@ -19900,56 +19907,63 @@ body {
+   background-position: center, center;
+   background-repeat: no-repeat;
+   background-size: 8px 2px, 2px 8px;
+-  transition: background-size 0.18s ease;
++  transition: background-size 0.18s ease, opacity 0.18s ease;
+ }
+ 
+-.settings-about-gridly-section[open] .settings-about-gridly-summary::after {
++.settings-about-gridly-section[open] > .settings-about-gridly-summary::after,
++.settings-about-gridly-topic[open] > .settings-about-gridly-topic-summary::after {
+   background-size: 8px 2px, 2px 0;
+ }
+ 
+ .settings-about-gridly-content {
+   display: grid;
+-  gap: 10px;
++  gap: 8px;
+   padding: 0 12px 12px;
+ }
+ 
+-.settings-about-gridly-block {
+-  display: grid;
+-  gap: 6px;
+-  padding: 11px 12px;
++.settings-about-gridly-topic {
+   border: 1px solid rgba(171, 204, 238, 0.12);
+   border-radius: 14px;
+   background: rgba(10, 22, 34, 0.46);
++  overflow: hidden;
++}
++
++.settings-about-gridly-topic[open] {
++  border-color: rgba(132, 199, 255, 0.22);
++  background: linear-gradient(180deg, rgba(93, 201, 255, 0.075), rgba(10, 22, 34, 0.48));
++}
++
++.settings-about-gridly-topic-summary {
++  min-height: 44px;
++  padding: 10px 11px;
++  font-size: 0.92rem;
++}
++
++.settings-about-gridly-topic-content {
++  display: grid;
++  gap: 6px;
++  padding: 0 12px 12px;
+ }
+ 
+-.settings-about-gridly-block h3,
+-.settings-about-gridly-block p {
++.settings-about-gridly-topic-content h3,
++.settings-about-gridly-topic-content p {
+   margin: 0;
+ }
+ 
+-.settings-about-gridly-block h3 {
++.settings-about-gridly-topic-content h3 {
+   color: var(--text);
+   font-size: 1rem;
+   line-height: 1.22;
+   letter-spacing: 0.01em;
+ }
+ 
+-.settings-about-gridly-block p {
++.settings-about-gridly-topic-content p {
+   color: var(--muted);
+   font-size: 0.9rem;
+   line-height: 1.48;
+ }
+ 
+-.settings-about-gridly-block .settings-about-gridly-kicker {
+-  color: rgba(125, 211, 252, 0.88);
+-  font-size: 0.73rem;
+-  font-weight: 850;
+-  letter-spacing: 0.08em;
+-  line-height: 1.2;
+-  text-transform: uppercase;
+-}
+-
+-.settings-about-gridly-block .settings-about-gridly-tagline {
++.settings-about-gridly-topic-content .settings-about-gridly-tagline {
+   color: var(--text);
+   font-weight: 820;
+ }
+@@ -19962,14 +19976,20 @@ body {
+   }
+ 
+   body[data-layout-mode="portrait"] .settings-about-gridly-content {
+-    gap: 9px;
++    gap: 8px;
+   }
+ 
+-  body[data-layout-mode="portrait"] .settings-about-gridly-block {
++  body[data-layout-mode="portrait"] .settings-about-gridly-topic-summary {
++    min-height: 46px;
+     padding: 11px;
++    font-size: 0.93rem;
++  }
++
++  body[data-layout-mode="portrait"] .settings-about-gridly-topic-content {
++    padding: 0 11px 11px;
+   }
+ 
+-  body[data-layout-mode="portrait"] .settings-about-gridly-block p {
++  body[data-layout-mode="portrait"] .settings-about-gridly-topic-content p {
+     font-size: 0.92rem;
+     line-height: 1.5;
+   }
+diff --git a/index.html b/index.html
+index 1760141..35b67bf 100644
+--- a/index.html
++++ b/index.html
+@@ -947,41 +947,48 @@ <h2 id="settingsModalTitle">Settings</h2>
+             <details class="settings-about-gridly-section" id="settingsAboutGridlySection">
+               <summary class="settings-about-gridly-summary">About Gridly</summary>
+               <div class="settings-about-gridly-content">
+-                <article class="settings-about-gridly-block">
+-                  <p class="settings-about-gridly-kicker">Mission</p>
+-                  <h3>GRIDLY</h3>
+-                  <p class="settings-about-gridly-tagline">Know Before You Go</p>
+-                  <p>Gridly helps communities share awareness about blocked crossings, road hazards, flooding, closures, and changing travel conditions before they affect the day.</p>
+-                </article>
+-                <article class="settings-about-gridly-block">
+-                  <p class="settings-about-gridly-kicker">Community Commitment</p>
+-                  <h3>Our Commitment</h3>
+-                  <p>Gridly was built for residents, commuters, schools, businesses, and first responders.</p>
+-                  <p>A portion of future proceeds will be reinvested into the communities we serve.</p>
+-                  <p>Public safety partnerships remain a priority.</p>
+-                  <p>Dispatch and first responder use will always remain free.</p>
+-                </article>
+-                <article class="settings-about-gridly-block">
+-                  <p class="settings-about-gridly-kicker">Beta Notice</p>
+-                  <h3>Beta Notice</h3>
+-                  <p>Gridly is currently in beta.</p>
+-                  <p>Features, reports, and community activity may evolve as the platform continues to improve.</p>
+-                </article>
+-                <article class="settings-about-gridly-block">
+-                  <p class="settings-about-gridly-kicker">Important Safety Notice</p>
+-                  <h3>Important</h3>
+-                  <p>Gridly is a community awareness platform.</p>
+-                  <p>Gridly should not be used to report emergencies.</p>
+-                  <p>For emergencies, always call 911 or contact local emergency services.</p>
+-                  <p>Always use your own judgment and obey traffic laws.</p>
+-                </article>
+-                <article class="settings-about-gridly-block">
+-                  <p class="settings-about-gridly-kicker">How Gridly Works</p>
+-                  <h3>How Gridly Works</h3>
+-                  <p>Gridly uses community reports, confirmations, and recent observations to help people know before they go.</p>
+-                  <p>Community reports are awareness signals, not guarantees.</p>
+-                  <p>Conditions can change quickly.</p>
+-                </article>
++                <details class="settings-about-gridly-topic">
++                  <summary class="settings-about-gridly-topic-summary">Mission</summary>
++                  <div class="settings-about-gridly-topic-content">
++                    <h3>GRIDLY</h3>
++                    <p class="settings-about-gridly-tagline">Know Before You Go</p>
++                    <p>Gridly helps communities share awareness about blocked crossings, road hazards, flooding, closures, and changing travel conditions before they affect the day.</p>
++                    <p>Community reports help people understand what is happening, where it is happening, and how conditions may be changing.</p>
++                  </div>
++                </details>
++                <details class="settings-about-gridly-topic">
++                  <summary class="settings-about-gridly-topic-summary">Community Commitment</summary>
++                  <div class="settings-about-gridly-topic-content">
++                    <p>Gridly was built for residents, commuters, schools, businesses, and first responders.</p>
++                    <p>A portion of future proceeds will be reinvested into the communities we serve.</p>
++                    <p>Public safety partnerships remain a priority.</p>
++                    <p>Dispatch and first responder use will always remain free.</p>
++                  </div>
++                </details>
++                <details class="settings-about-gridly-topic">
++                  <summary class="settings-about-gridly-topic-summary">Beta Notice</summary>
++                  <div class="settings-about-gridly-topic-content">
++                    <p>Gridly is currently in beta.</p>
++                    <p>Features, reports, and community activity may evolve as the platform continues to improve.</p>
++                  </div>
++                </details>
++                <details class="settings-about-gridly-topic">
++                  <summary class="settings-about-gridly-topic-summary">Important Safety Notice</summary>
++                  <div class="settings-about-gridly-topic-content">
++                    <p>Gridly is a community awareness platform.</p>
++                    <p>Gridly should not be used to report emergencies.</p>
++                    <p>For emergencies, always call 911 or contact local emergency services.</p>
++                    <p>Always use your own judgment and obey traffic laws.</p>
++                  </div>
++                </details>
++                <details class="settings-about-gridly-topic">
++                  <summary class="settings-about-gridly-topic-summary">How Trust Works</summary>
++                  <div class="settings-about-gridly-topic-content">
++                    <p>Gridly uses community reports, confirmations, and recent observations to help people know before they go.</p>
++                    <p>Community reports are awareness signals, not guarantees.</p>
++                    <p>Conditions can change quickly.</p>
++                  </div>
++                </details>
+               </div>
+             </details>
+             <button type="button" class="secondary-btn compact-btn" id="settingsReplaySetupBtn">Replay Setup</button>
+diff --git a/js/app.js b/js/app.js
+index bdcd07b..8cfeefb 100644
+--- a/js/app.js
++++ b/js/app.js
+@@ -57989,41 +57989,48 @@ function buildGridlyAboutGuidanceHtml() {
+     <details class="settings-about-gridly-section">
+       <summary class="settings-about-gridly-summary">About Gridly</summary>
+       <div class="settings-about-gridly-content">
+-        <article class="settings-about-gridly-block">
+-          <p class="settings-about-gridly-kicker">Mission</p>
+-          <h3>GRIDLY</h3>
+-          <p class="settings-about-gridly-tagline">Know Before You Go</p>
+-          <p>Gridly helps communities share awareness about blocked crossings, road hazards, flooding, closures, and changing travel conditions before they affect the day.</p>
+-        </article>
+-        <article class="settings-about-gridly-block">
+-          <p class="settings-about-gridly-kicker">Community Commitment</p>
+-          <h3>Our Commitment</h3>
+-          <p>Gridly was built for residents, commuters, schools, businesses, and first responders.</p>
+-          <p>A portion of future proceeds will be reinvested into the communities we serve.</p>
+-          <p>Public safety partnerships remain a priority.</p>
+-          <p>Dispatch and first responder use will always remain free.</p>
+-        </article>
+-        <article class="settings-about-gridly-block">
+-          <p class="settings-about-gridly-kicker">Beta Notice</p>
+-          <h3>Beta Notice</h3>
+-          <p>Gridly is currently in beta.</p>
+-          <p>Features, reports, and community activity may evolve as the platform continues to improve.</p>
+-        </article>
+-        <article class="settings-about-gridly-block">
+-          <p class="settings-about-gridly-kicker">Important Safety Notice</p>
+-          <h3>Important</h3>
+-          <p>Gridly is a community awareness platform.</p>
+-          <p>Gridly should not be used to report emergencies.</p>
+-          <p>For emergencies, always call 911 or contact local emergency services.</p>
+-          <p>Always use your own judgment and obey traffic laws.</p>
+-        </article>
+-        <article class="settings-about-gridly-block">
+-          <p class="settings-about-gridly-kicker">How Gridly Works</p>
+-          <h3>How Gridly Works</h3>
+-          <p>Gridly uses community reports, confirmations, and recent observations to help people know before they go.</p>
+-          <p>Community reports are awareness signals, not guarantees.</p>
+-          <p>Conditions can change quickly.</p>
+-        </article>
++        <details class="settings-about-gridly-topic">
++          <summary class="settings-about-gridly-topic-summary">Mission</summary>
++          <div class="settings-about-gridly-topic-content">
++            <h3>GRIDLY</h3>
++            <p class="settings-about-gridly-tagline">Know Before You Go</p>
++            <p>Gridly helps communities share awareness about blocked crossings, road hazards, flooding, closures, and changing travel conditions before they affect the day.</p>
++            <p>Community reports help people understand what is happening, where it is happening, and how conditions may be changing.</p>
++          </div>
++        </details>
++        <details class="settings-about-gridly-topic">
++          <summary class="settings-about-gridly-topic-summary">Community Commitment</summary>
++          <div class="settings-about-gridly-topic-content">
++            <p>Gridly was built for residents, commuters, schools, businesses, and first responders.</p>
++            <p>A portion of future proceeds will be reinvested into the communities we serve.</p>
++            <p>Public safety partnerships remain a priority.</p>
++            <p>Dispatch and first responder use will always remain free.</p>
++          </div>
++        </details>
++        <details class="settings-about-gridly-topic">
++          <summary class="settings-about-gridly-topic-summary">Beta Notice</summary>
++          <div class="settings-about-gridly-topic-content">
++            <p>Gridly is currently in beta.</p>
++            <p>Features, reports, and community activity may evolve as the platform continues to improve.</p>
++          </div>
++        </details>
++        <details class="settings-about-gridly-topic">
++          <summary class="settings-about-gridly-topic-summary">Important Safety Notice</summary>
++          <div class="settings-about-gridly-topic-content">
++            <p>Gridly is a community awareness platform.</p>
++            <p>Gridly should not be used to report emergencies.</p>
++            <p>For emergencies, always call 911 or contact local emergency services.</p>
++            <p>Always use your own judgment and obey traffic laws.</p>
++          </div>
++        </details>
++        <details class="settings-about-gridly-topic">
++          <summary class="settings-about-gridly-topic-summary">How Trust Works</summary>
++          <div class="settings-about-gridly-topic-content">
++            <p>Gridly uses community reports, confirmations, and recent observations to help people know before they go.</p>
++            <p>Community reports are awareness signals, not guarantees.</p>
++            <p>Conditions can change quickly.</p>
++          </div>
++        </details>
+       </div>
+     </details>`;
+ }

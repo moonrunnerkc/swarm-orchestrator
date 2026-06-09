@@ -1,0 +1,2595 @@
+diff --git a/docs/ar/configuration/keyboard-shortcuts.mdx b/docs/ar/configuration/keyboard-shortcuts.mdx
+index ab4bbb6..9cc4ad7 100644
+--- a/docs/ar/configuration/keyboard-shortcuts.mdx
++++ b/docs/ar/configuration/keyboard-shortcuts.mdx
+@@ -8,8 +8,8 @@ i18n:
+   translator: machine
+ ---
+ 
+-## ارتباطات المفاتيح الافتراضية
++## ربط المفاتيح الافتراضي
+ 
+-يمكن تخصيص اختصارات لوحة المفاتيح من خلال محرر اختصارات لوحة المفاتيح في VS Code (`Ctrl+K Ctrl+S` / `Cmd+K Cmd+S`). ابحث عن "f5xc" للعثور على جميع أوامر الإضافة.
++يمكن تخصيص اختصارات لوحة المفاتيح عبر محرر اختصارات لوحة المفاتيح في VS Code (`Ctrl+K Ctrl+S` / `Cmd+K Cmd+S`). ابحث عن "f5xc" للعثور على جميع أوامر الإضافة.
+ 
+-يمكن الوصول إلى جميع الأوامر التي يزيد عددها عن 40 أمرًا عبر لوحة الأوامر (`Ctrl+Shift+P` / `Cmd+Shift+P`) بالبحث عن "F5 XC".
++جميع الأوامر التي يزيد عددها عن 40 أمرًا يمكن الوصول إليها عبر لوحة الأوامر (`Ctrl+Shift+P` / `Cmd+Shift+P`) بالبحث عن "F5 XC".
+diff --git a/docs/ar/configuration/settings.mdx b/docs/ar/configuration/settings.mdx
+index c7ed9fc..a0a2b80 100644
+--- a/docs/ar/configuration/settings.mdx
++++ b/docs/ar/configuration/settings.mdx
+@@ -1,6 +1,6 @@
+ ---
+ title: الإعدادات
+-description: خيارات تكوين الإضافة لأدوات F5 Distributed Cloud.
++description: خيارات تهيئة الإضافة لأدوات F5 Distributed Cloud.
+ sidebar:
+   order: 1
+ i18n:
+@@ -15,7 +15,7 @@ i18n:
+ | `f5xc.logLevel` | string | `info` | مستوى تفصيل السجلات: `debug`، `info`، `warn`، `error` |
+ | `f5xc.defaultNamespace` | string | `default` | مساحة الأسماء الافتراضية لعمليات الموارد |
+ | `f5xc.confirmDelete` | boolean | `true` | عرض مربع حوار التأكيد قبل حذف الموارد |
+-| `f5xc.deleteConfirmationLevel` | string | `always` | وقت التأكيد: `always`، `high-only`، `never` |
++| `f5xc.deleteConfirmationLevel` | string | `always` | متى يتم التأكيد: `always`، `high-only`، `never` |
+ | `f5xc.autoRefreshInterval` | number | `0` | فترة التحديث التلقائي بالثواني (0 = معطّل) |
+ | `f5xc.viewMode` | string | `console` | وضع العرض: `console` أو `full` |
+-| `f5xc.showPreviewApis` | boolean | `true` | عرض أنواع موارد واجهات API التجريبية/المعاينة |
++| `f5xc.showPreviewApis` | boolean | `true` | عرض أنواع موارد واجهات برمجة التطبيقات التجريبية/المعاينة |
+diff --git a/docs/ar/features/cloud-status.mdx b/docs/ar/features/cloud-status.mdx
+index 1bbfc0f..5b765fb 100644
+--- a/docs/ar/features/cloud-status.mdx
++++ b/docs/ar/features/cloud-status.mdx
+@@ -10,10 +10,10 @@ i18n:
+ 
+ ## مراقبة الحالة
+ 
+-تعرض طريقة العرض الشجرية **حالة السحابة** الحالة الصحية الحالية لخدمات F5 Distributed Cloud. يتم جلب الحالة من صفحة حالة F5 الرسمية وتعرض:
++تعرض طريقة العرض الشجرية **حالة السحابة** الصحة الحالية لخدمات F5 Distributed Cloud. يتم جلب الحالة من صفحة حالة F5 الرسمية وتعرض:
+ 
+ - الحالة العامة للمنصة
+-- صحة كل مكوّن على حدة (API، وحدة التحكم، مستوى البيانات، إلخ.)
++- صحة كل مكون (API، وحدة التحكم، مستوى البيانات، إلخ.)
+ - الحوادث النشطة ونوافذ الصيانة
+ 
+ يتم تحديث العرض تلقائيًا بناءً على فترة التحديث المُعدَّة (`f5xc.autoRefreshInterval`).
+diff --git a/docs/ar/features/json-intellisense.mdx b/docs/ar/features/json-intellisense.mdx
+index ad0f86c..a82c9f9 100644
+--- a/docs/ar/features/json-intellisense.mdx
++++ b/docs/ar/features/json-intellisense.mdx
+@@ -10,7 +10,7 @@ i18n:
+ 
+ ## التحقق من صحة المخطط
+ 
+-يوفر الامتداد مخططات JSON لأنواع الموارد الشائعة. عند تحرير ملفات JSON الخاصة بالموارد، يقوم VS Code بالتحقق من صحة التكوين الخاص بك في الوقت الفعلي ويبرز الأخطاء.
++يوفر الامتداد مخططات JSON لأنواع الموارد الشائعة. عند تحرير ملفات JSON الخاصة بالموارد، يتحقق VS Code من صحة التكوين الخاص بك في الوقت الفعلي ويبرز الأخطاء.
+ 
+ ## المخططات المدعومة
+ 
+@@ -24,4 +24,4 @@ i18n:
+ 
+ ## الإكمال التلقائي
+ 
+-يوفر IntelliSense إكمالاً تلقائياً لأسماء الحقول وقيم التعداد وهياكل الكائنات المتداخلة استناداً إلى مواصفات F5 XC OpenAPI.
++يوفر IntelliSense إكمالاً تلقائياً لأسماء الحقول وقيم التعداد وهياكل الكائنات المتداخلة بناءً على مواصفات F5 XC OpenAPI.
+diff --git a/docs/ar/features/observability.mdx b/docs/ar/features/observability.mdx
+index 79e7d4e..b84a5d3 100644
+--- a/docs/ar/features/observability.mdx
++++ b/docs/ar/features/observability.mdx
+@@ -1,5 +1,5 @@
+ ---
+-title: المراقبة
++title: المراقبة والرصد
+ description: عرض السجلات والمقاييس ومخططات البنية لموارد F5 XC.
+ sidebar:
+   order: 2
+diff --git a/docs/ar/features/resource-management.mdx b/docs/ar/features/resource-management.mdx
+index 675b23e..09d3d0e 100644
+--- a/docs/ar/features/resource-management.mdx
++++ b/docs/ar/features/resource-management.mdx
+@@ -1,6 +1,6 @@
+ ---
+ title: إدارة الموارد
+-description: تصفح وأنشئ وحرر واحذف موارد F5 XC من VS Code.
++description: تصفّح وأنشئ وعدّل واحذف موارد F5 XC من VS Code.
+ sidebar:
+   order: 1
+ i18n:
+@@ -8,18 +8,18 @@ i18n:
+   translator: machine
+ ---
+ 
+-## تصفح الموارد
++## تصفّح الموارد
+ 
+-تعرض طريقة العرض الشجرية **Resources** الموارد منظمة حسب النطاق والفئة. قم بتوسيع فئة لرؤية أنواع الموارد، ثم وسّع نوعًا لعرض قائمة الموارد الفردية في مساحة الأسماء الخاصة بك.
++تعرض طريقة عرض شجرة **الموارد** الموارد مُنظّمة حسب النطاق والفئة. قم بتوسيع فئة لرؤية أنواع الموارد، ثم قم بتوسيع نوع لعرض قائمة الموارد الفردية في مساحة الأسماء الخاصة بك.
+ 
+ ## إنشاء الموارد
+ 
+-1. انقر بزر الماوس الأيمن على نوع مورد في الشجرة وحدد **Create**.
+-2. يُفتح محرر JSON مع قالب مُتحقق من صحته وفقًا للمخطط.
+-3. املأ الحقول المطلوبة (يوفر IntelliSense الإكمال التلقائي).
++1. انقر بزر الماوس الأيمن على نوع مورد في الشجرة واختر **إنشاء**.
++2. يُفتح محرر JSON مع قالب مُتحقّق من المخطط.
++3. قم بملء الحقول المطلوبة (يوفر IntelliSense الإكمال التلقائي).
+ 4. احفظ الملف لإرسال المورد إلى واجهة برمجة تطبيقات F5 XC.
+ 
+-## تحرير الموارد
++## تعديل الموارد
+ 
+ 1. انقر على مورد في الشجرة لفتحه في المحرر.
+ 2. عدّل الحقول مع دعم IntelliSense الكامل.
+@@ -27,5 +27,5 @@ i18n:
+ 
+ ## حذف الموارد
+ 
+-1. انقر بزر الماوس الأيمن على مورد وحدد **Delete**.
++1. انقر بزر الماوس الأيمن على مورد واختر **حذف**.
+ 2. أكّد الحذف (قابل للتكوين عبر `f5xc.confirmDelete` و `f5xc.deleteConfirmationLevel`).
+diff --git a/docs/ar/getting-started/installation.mdx b/docs/ar/getting-started/installation.mdx
+index 72213d3..fcc8bb0 100644
+--- a/docs/ar/getting-started/installation.mdx
++++ b/docs/ar/getting-started/installation.mdx
+@@ -10,16 +10,16 @@ i18n:
+ 
+ ## سوق VS Code
+ 
+-ابحث عن "F5 Distributed Cloud Tools" في لوحة الإضافات في VS Code (`Ctrl+Shift+X` / `Cmd+Shift+X`) وانقر على **تثبيت**.
++ابحث عن "F5 Distributed Cloud Tools" في لوحة إضافات VS Code (`Ctrl+Shift+X` / `Cmd+Shift+X`) وانقر على **تثبيت**.
+ 
+ ## التثبيت اليدوي عبر ملف VSIX
+ 
+ 1. قم بتنزيل ملف `.vsix` من صفحة [إصدارات GitHub](https://github.com/f5xc-salesdemos/vscode-f5xc-tools/releases).
+ 2. في VS Code، افتح لوحة الأوامر (`Ctrl+Shift+P` / `Cmd+Shift+P`).
+-3. قم بتشغيل **Extensions: Install from VSIX** وحدد الملف الذي تم تنزيله.
++3. نفّذ الأمر **Extensions: Install from VSIX** وحدد الملف الذي تم تنزيله.
+ 
+ ## المتطلبات
+ 
+ - VS Code الإصدار 1.107.0 أو أحدث
+-- مستأجر F5 Distributed Cloud
++- مستأجر (tenant) في F5 Distributed Cloud
+ - بيانات اعتماد API (شهادة أو رمز API)
+diff --git a/docs/ar/getting-started/profile-setup.mdx b/docs/ar/getting-started/profile-setup.mdx
+index 48516b8..24ca378 100644
+--- a/docs/ar/getting-started/profile-setup.mdx
++++ b/docs/ar/getting-started/profile-setup.mdx
+@@ -1,28 +1,27 @@
+ ---
+-title: إعداد الملف التعريفي
++title: إعداد الملف الشخصي
+ description: تكوين بيانات اعتماد API للاتصال بـ F5 Distributed Cloud.
+ sidebar:
+   order: 2
+-  label: إعداد الملف التعريفي
+ i18n:
+   sourceHash: '671290967694'
+   translator: machine
+ ---
+ 
+-## إضافة ملف تعريفي
++## إضافة ملف شخصي
+ 
+-1. افتح عرض **الملفات التعريفية** في الشريط الجانبي لـ F5 XC.
+-2. انقر على أيقونة **+** لإضافة ملف تعريفي جديد.
++1. افتح عرض **الملفات الشخصية** في الشريط الجانبي لـ F5 XC.
++2. انقر على أيقونة **+** لإضافة ملف شخصي جديد.
+ 3. أدخل عنوان URL الخاص بالمستأجر (مثال: `https://your-tenant.console.ves.volterra.io`).
+ 4. اختر طريقة المصادقة:
+    - **رمز API**: الصق رمز API الخاص بك من وحدة تحكم F5 XC.
+    - **شهادة P12**: حدد ملف الشهادة `.p12` الخاص بك وأدخل كلمة المرور.
+ 5. قم بتعيين مساحة اسم افتراضية.
+ 
+-## إدارة الملفات التعريفية
++## إدارة الملفات الشخصية
+ 
+-- **التبديل بين الملفات التعريفية**: انقر على ملف تعريفي في عرض الملفات التعريفية لجعله نشطاً.
+-- **التعديل**: انقر بزر الماوس الأيمن على ملف تعريفي واختر **تعديل الملف التعريفي**.
+-- **الحذف**: انقر بزر الماوس الأيمن على ملف تعريفي واختر **حذف الملف التعريفي**.
++- **التبديل بين الملفات الشخصية**: انقر على ملف شخصي في عرض الملفات الشخصية لجعله نشطاً.
++- **التعديل**: انقر بزر الماوس الأيمن على ملف شخصي واختر **تعديل الملف الشخصي**.
++- **الحذف**: انقر بزر الماوس الأيمن على ملف شخصي واختر **حذف الملف الشخصي**.
+ 
+-يتم تخزين الملفات التعريفية بشكل آمن باستخدام التخزين السري المدمج في VS Code (متوافق مع XDG على نظام Linux).
++يتم تخزين الملفات الشخصية بشكل آمن باستخدام التخزين السري المدمج في VS Code (متوافق مع XDG على Linux).
+diff --git a/docs/ar/index.mdx b/docs/ar/index.mdx
+index f13a38a..8b568a1 100644
+--- a/docs/ar/index.mdx
++++ b/docs/ar/index.mdx
+@@ -2,7 +2,7 @@
+ title: أدوات F5 Distributed Cloud
+ description: إضافة VS Code لإدارة موارد F5 Distributed Cloud.
+ hero:
+-  tagline: Manage F5 XC resources directly from VS Code.
++  tagline: إدارة موارد F5 XC مباشرة من VS Code.
+ sidebar:
+   hidden: true
+   order: 0
+@@ -11,4 +11,4 @@ i18n:
+   translator: machine
+ ---
+ 
+-أدوات F5 Distributed Cloud هي إضافة لـ VS Code تتيح لك تصفح وإنشاء وتعديل وحذف موارد F5 XC مباشرة من المحرر الخاص بك. توفر عمليات CRUD كاملة، وإكمال ذكي لـ JSON مع التحقق من صحة المخطط، وأدوات المراقبة، ومتابعة حالة السحابة لأكثر من 236 نوع موارد عبر 25 نطاق API.
++أدوات F5 Distributed Cloud هي إضافة لـ VS Code تتيح لك تصفح وإنشاء وتحرير وحذف موارد F5 XC مباشرة من المحرر الخاص بك. توفر عمليات CRUD كاملة، وIntelliSense لـ JSON مع التحقق من صحة المخططات، وأدوات المراقبة، ومتابعة حالة السحابة لأكثر من 236 نوعًا من الموارد عبر 25 نطاقًا من واجهات API.
+diff --git a/docs/ar/reference/supported-resources.mdx b/docs/ar/reference/supported-resources.mdx
+index f6a9d26..5a68843 100644
+--- a/docs/ar/reference/supported-resources.mdx
++++ b/docs/ar/reference/supported-resources.mdx
+@@ -8,15 +8,15 @@ i18n:
+   translator: machine
+ ---
+ 
+-تدعم الإضافة أكثر من 236 نوعًا من الموارد عبر 25 نطاقًا من نطاقات واجهة برمجة تطبيقات F5 XC. يتم تنظيم الموارد حسب فئة النطاق في عرض الشجرة.
++تدعم الإضافة أكثر من 236 نوعًا من الموارد عبر 25 نطاقًا من نطاقات F5 XC API. يتم تنظيم الموارد حسب فئة النطاق في عرض الشجرة.
+ 
+ ## فئات النطاقات
+ 
+-- **تسليم التطبيقات**: HTTP Load Balancers، TCP Load Balancers، Origin Pools، Health Checks
+-- **الأمان**: Web App Firewalls، API Security، Bot Defense، DDoS Protection
+-- **الشبكات**: Virtual Networks، Sites، Fleet Management، Network Policies
+-- **نظام أسماء النطاقات**: DNS Zones، DNS Load Balancers، DNS Records
+-- **المراقبة**: Dashboards، Alerts، Log Receivers
+-- **البنية التحتية**: Cloud Sites، Cloud Credentials، Service Policies
++- **تسليم التطبيقات**: موازنات تحميل HTTP، موازنات تحميل TCP، مجموعات الأصل، فحوصات الصحة
++- **الأمان**: جدران حماية تطبيقات الويب، أمان API، الدفاع ضد الروبوتات، الحماية من هجمات DDoS
++- **الشبكات**: الشبكات الافتراضية، المواقع، إدارة الأساطيل، سياسات الشبكة
++- **DNS**: مناطق DNS، موازنات تحميل DNS، سجلات DNS
++- **المراقبة**: لوحات المعلومات، التنبيهات، مستقبلات السجلات
++- **البنية التحتية**: المواقع السحابية، بيانات الاعتماد السحابية، سياسات الخدمة
+ 
+-يتم إنشاء القائمة الكاملة لأنواع الموارد المدعومة تلقائيًا من مواصفات OpenAPI الخاصة بـ F5 XC، ويتم تحديثها تلقائيًا عند إصدار نسخ جديدة من واجهة برمجة التطبيقات.
++يتم إنشاء القائمة الكاملة لأنواع الموارد المدعومة تلقائيًا من مواصفات F5 XC OpenAPI ويتم تحديثها تلقائيًا عند إصدار إصدارات جديدة من API.
+diff --git a/docs/de/configuration/keyboard-shortcuts.mdx b/docs/de/configuration/keyboard-shortcuts.mdx
+index 763f02f..0fe4cc2 100644
+--- a/docs/de/configuration/keyboard-shortcuts.mdx
++++ b/docs/de/configuration/keyboard-shortcuts.mdx
+@@ -1,6 +1,6 @@
+ ---
+-title: Tastaturkürzel
+-description: Standard-Tastaturkürzel für F5 Distributed Cloud Tools.
++title: Tastenkombinationen
++description: Standard-Tastenkombinationen für F5 Distributed Cloud Tools.
+ sidebar:
+   order: 2
+ i18n:
+@@ -10,6 +10,6 @@ i18n:
+ 
+ ## Standard-Tastenbelegungen
+ 
+-Tastaturkürzel können über den Tastaturkürzel-Editor von VS Code angepasst werden (`Ctrl+K Ctrl+S` / `Cmd+K Cmd+S`). Suchen Sie nach "f5xc", um alle Erweiterungsbefehle zu finden.
++Tastenkombinationen können über den Tastenkombinationen-Editor von VS Code angepasst werden (`Ctrl+K Ctrl+S` / `Cmd+K Cmd+S`). Suchen Sie nach "f5xc", um alle Erweiterungsbefehle zu finden.
+ 
+-Alle 40+ Befehle sind über die Befehlspalette (`Ctrl+Shift+P` / `Cmd+Shift+P`) zugänglich, indem Sie nach "F5 XC" suchen.
++Alle über 40 Befehle sind über die Befehlspalette (`Ctrl+Shift+P` / `Cmd+Shift+P`) zugänglich, indem Sie nach "F5 XC" suchen.
+diff --git a/docs/de/configuration/settings.mdx b/docs/de/configuration/settings.mdx
+index 98fd7e4..a61fb5d 100644
+--- a/docs/de/configuration/settings.mdx
++++ b/docs/de/configuration/settings.mdx
+@@ -1,6 +1,6 @@
+ ---
+ title: Einstellungen
+-description: Konfigurationsoptionen der Erweiterung für F5 Distributed Cloud Tools.
++description: Erweiterungskonfigurationsoptionen für F5 Distributed Cloud Tools.
+ sidebar:
+   order: 1
+ i18n:
+@@ -11,11 +11,11 @@ i18n:
+ ## Verfügbare Einstellungen
+ 
+ | Einstellung | Typ | Standard | Beschreibung |
+-|---------|------|---------|-------------|
++|-------------|-----|----------|--------------|
+ | `f5xc.logLevel` | string | `info` | Log-Ausführlichkeit: `debug`, `info`, `warn`, `error` |
+ | `f5xc.defaultNamespace` | string | `default` | Standard-Namespace für Ressourcenoperationen |
+ | `f5xc.confirmDelete` | boolean | `true` | Bestätigungsdialog vor dem Löschen von Ressourcen anzeigen |
+ | `f5xc.deleteConfirmationLevel` | string | `always` | Wann bestätigt werden soll: `always`, `high-only`, `never` |
+ | `f5xc.autoRefreshInterval` | number | `0` | Automatisches Aktualisierungsintervall in Sekunden (0 = deaktiviert) |
+-| `f5xc.viewMode` | string | `console` | Ansichtsmodus: `console` oder `full` |
++| `f5xc.viewMode` | string | `console` | Anzeigemodus: `console` oder `full` |
+ | `f5xc.showPreviewApis` | boolean | `true` | Beta-/Vorschau-API-Ressourcentypen anzeigen |
+diff --git a/docs/de/features/cloud-status.mdx b/docs/de/features/cloud-status.mdx
+index 0163d9c..289baa9 100644
+--- a/docs/de/features/cloud-status.mdx
++++ b/docs/de/features/cloud-status.mdx
+@@ -1,8 +1,8 @@
+ ---
+ title: Cloud-Status
+ description: >-
+-  Überwachen Sie den Zustand der F5 Distributed Cloud-Dienste direkt aus VS
+-  Code.
++  Überwachen Sie den Zustand der F5 Distributed Cloud-Dienste aus VS Code
++  heraus.
+ sidebar:
+   order: 3
+ i18n:
+diff --git a/docs/de/features/json-intellisense.mdx b/docs/de/features/json-intellisense.mdx
+index 67563f3..9a11e16 100644
+--- a/docs/de/features/json-intellisense.mdx
++++ b/docs/de/features/json-intellisense.mdx
+@@ -1,7 +1,7 @@
+ ---
+ title: JSON IntelliSense
+ description: >-
+-  Schema-Validierung und automatische Vervollständigung für F5
++  Schema-Validierung und Autovervollständigung für F5
+   XC-Ressourcenkonfigurationen.
+ sidebar:
+   order: 4
+@@ -24,6 +24,6 @@ Die Erweiterung stellt JSON-Schemas für gängige Ressourcentypen bereit. Beim B
+ - DNS Load Balancer (`.dns_load_balancer.json`)
+ - Virtual Site (`.virtual_site.json`)
+ 
+-## Automatische Vervollständigung
++## Autovervollständigung
+ 
+-IntelliSense bietet automatische Vervollständigung für Feldnamen, Enum-Werte und verschachtelte Objektstrukturen basierend auf der F5 XC OpenAPI-Spezifikation.
++IntelliSense bietet Autovervollständigung für Feldnamen, Enum-Werte und verschachtelte Objektstrukturen basierend auf der F5 XC OpenAPI-Spezifikation.
+diff --git a/docs/de/features/observability.mdx b/docs/de/features/observability.mdx
+index dc2fa9c..0a2e139 100644
+--- a/docs/de/features/observability.mdx
++++ b/docs/de/features/observability.mdx
+@@ -1,6 +1,8 @@
+ ---
+ title: Observability
+-description: 'Anzeige von Logs, Metriken und Architekturdiagrammen für F5 XC-Ressourcen.'
++description: >-
++  Zeigen Sie Protokolle, Metriken und Architekturdiagramme für F5 XC-Ressourcen
++  an.
+ sidebar:
+   order: 2
+ i18n:
+@@ -8,14 +10,14 @@ i18n:
+   translator: machine
+ ---
+ 
+-## Logs anzeigen
++## Protokolle anzeigen
+ 
+-Klicken Sie mit der rechten Maustaste auf eine Ressource und wählen Sie **View Logs**, um Echtzeit-Logdaten von der F5 XC-Plattform zu streamen.
++Klicken Sie mit der rechten Maustaste auf eine Ressource und wählen Sie **Protokolle anzeigen**, um Echtzeit-Protokolldaten von der F5 XC-Plattform zu streamen.
+ 
+ ## Metriken anzeigen
+ 
+-Klicken Sie mit der rechten Maustaste auf eine Ressource und wählen Sie **View Metrics**, um Leistungs- und Datenverkehrsmetriken einzusehen.
++Klicken Sie mit der rechten Maustaste auf eine Ressource und wählen Sie **Metriken anzeigen**, um Leistungs- und Datenverkehrsmetriken einzusehen.
+ 
+ ## Architekturdiagramme
+ 
+-Wählen Sie **Diagram** bei einer Ressource, um ein visuelles Architekturdiagramm zu erstellen, das die Beziehungen und Abhängigkeiten der Ressource darstellt.
++Wählen Sie **Diagramm** bei einer Ressource, um ein visuelles Architekturdiagramm zu erstellen, das die Beziehungen und Abhängigkeiten der Ressource darstellt.
+diff --git a/docs/de/features/resource-management.mdx b/docs/de/features/resource-management.mdx
+index 519f20f..fdffc69 100644
+--- a/docs/de/features/resource-management.mdx
++++ b/docs/de/features/resource-management.mdx
+@@ -1,8 +1,8 @@
+ ---
+ title: Ressourcenverwaltung
+ description: >-
+-  Durchsuchen, erstellen, bearbeiten und löschen Sie F5 XC-Ressourcen direkt aus
+-  VS Code.
++  Durchsuchen, erstellen, bearbeiten und löschen Sie F5 XC-Ressourcen aus VS
++  Code.
+ sidebar:
+   order: 1
+ i18n:
+@@ -12,22 +12,22 @@ i18n:
+ 
+ ## Ressourcen durchsuchen
+ 
+-Die Baumansicht **Resources** zeigt Ressourcen an, die nach Domäne und Kategorie organisiert sind. Erweitern Sie eine Kategorie, um Ressourcentypen anzuzeigen, und erweitern Sie dann einen Typ, um die einzelnen Ressourcen in Ihrem Namespace aufzulisten.
++Die Baumansicht **Ressourcen** zeigt Ressourcen organisiert nach Domäne und Kategorie an. Erweitern Sie eine Kategorie, um Ressourcentypen anzuzeigen, und erweitern Sie dann einen Typ, um einzelne Ressourcen in Ihrem Namespace aufzulisten.
+ 
+ ## Ressourcen erstellen
+ 
+-1. Klicken Sie mit der rechten Maustaste auf einen Ressourcentyp im Baum und wählen Sie **Create**.
+-2. Ein JSON-Editor wird mit einer schemavalidierten Vorlage geöffnet.
++1. Klicken Sie mit der rechten Maustaste auf einen Ressourcentyp in der Baumansicht und wählen Sie **Erstellen**.
++2. Ein JSON-Editor öffnet sich mit einer schema-validierten Vorlage.
+ 3. Füllen Sie die erforderlichen Felder aus (IntelliSense bietet automatische Vervollständigung).
+ 4. Speichern Sie die Datei, um die Ressource an die F5 XC API zu übermitteln.
+ 
+ ## Ressourcen bearbeiten
+ 
+-1. Klicken Sie auf eine Ressource im Baum, um sie im Editor zu öffnen.
++1. Klicken Sie auf eine Ressource in der Baumansicht, um sie im Editor zu öffnen.
+ 2. Ändern Sie Felder mit vollständiger IntelliSense-Unterstützung.
+ 3. Speichern Sie, um die Änderungen an die API zu übertragen.
+ 
+ ## Ressourcen löschen
+ 
+-1. Klicken Sie mit der rechten Maustaste auf eine Ressource und wählen Sie **Delete**.
++1. Klicken Sie mit der rechten Maustaste auf eine Ressource und wählen Sie **Löschen**.
+ 2. Bestätigen Sie die Löschung (konfigurierbar über `f5xc.confirmDelete` und `f5xc.deleteConfirmationLevel`).
+diff --git a/docs/de/getting-started/installation.mdx b/docs/de/getting-started/installation.mdx
+index 526ff9a..451ad70 100644
+--- a/docs/de/getting-started/installation.mdx
++++ b/docs/de/getting-started/installation.mdx
+@@ -10,7 +10,7 @@ i18n:
+ 
+ ## VS Code Marketplace
+ 
+-Suchen Sie im VS Code Extensions-Panel (`Ctrl+Shift+X` / `Cmd+Shift+X`) nach "F5 Distributed Cloud Tools" und klicken Sie auf **Installieren**.
++Suchen Sie im VS Code-Erweiterungspanel (`Ctrl+Shift+X` / `Cmd+Shift+X`) nach "F5 Distributed Cloud Tools" und klicken Sie auf **Installieren**.
+ 
+ ## Manuelle VSIX-Installation
+ 
+@@ -18,7 +18,7 @@ Suchen Sie im VS Code Extensions-Panel (`Ctrl+Shift+X` / `Cmd+Shift+X`) nach "F5
+ 2. Öffnen Sie in VS Code die Befehlspalette (`Ctrl+Shift+P` / `Cmd+Shift+P`).
+ 3. Führen Sie **Extensions: Install from VSIX** aus und wählen Sie die heruntergeladene Datei aus.
+ 
+-## Anforderungen
++## Voraussetzungen
+ 
+ - VS Code 1.107.0 oder höher
+ - Ein F5 Distributed Cloud-Mandant
+diff --git a/docs/de/getting-started/profile-setup.mdx b/docs/de/getting-started/profile-setup.mdx
+index 7dc881b..bd5f209 100644
+--- a/docs/de/getting-started/profile-setup.mdx
++++ b/docs/de/getting-started/profile-setup.mdx
+@@ -1,8 +1,8 @@
+ ---
+ title: Profil-Einrichtung
+ description: >-
+-  API-Anmeldeinformationen für die Verbindung mit F5 Distributed Cloud
+-  konfigurieren.
++  Konfigurieren Sie API-Anmeldedaten für die Verbindung mit F5 Distributed
++  Cloud.
+ sidebar:
+   order: 2
+ i18n:
+@@ -12,9 +12,9 @@ i18n:
+ 
+ ## Ein Profil hinzufügen
+ 
+-1. Öffnen Sie die Ansicht **Profiles** in der F5 XC-Seitenleiste.
++1. Öffnen Sie die **Profiles**-Ansicht in der F5 XC-Seitenleiste.
+ 2. Klicken Sie auf das **+**-Symbol, um ein neues Profil hinzuzufügen.
+-3. Geben Sie Ihre Tenant-URL ein (z. B. `https://your-tenant.console.ves.volterra.io`).
++3. Geben Sie Ihre Mandanten-URL ein (z. B. `https://your-tenant.console.ves.volterra.io`).
+ 4. Wählen Sie eine Authentifizierungsmethode:
+    - **API Token**: Fügen Sie Ihr API-Token aus der F5 XC-Konsole ein.
+    - **P12 Certificate**: Wählen Sie Ihre `.p12`-Zertifikatsdatei aus und geben Sie das Passwort ein.
+@@ -26,4 +26,4 @@ i18n:
+ - **Bearbeiten**: Klicken Sie mit der rechten Maustaste auf ein Profil und wählen Sie **Edit Profile**.
+ - **Löschen**: Klicken Sie mit der rechten Maustaste auf ein Profil und wählen Sie **Delete Profile**.
+ 
+-Profile werden sicher über den integrierten Secret Storage von VS Code gespeichert (XDG-konform unter Linux).
++Profile werden sicher über den integrierten Geheimspeicher von VS Code gespeichert (XDG-konform unter Linux).
+diff --git a/docs/de/index.mdx b/docs/de/index.mdx
+index 215d030..bda5690 100644
+--- a/docs/de/index.mdx
++++ b/docs/de/index.mdx
+@@ -2,7 +2,7 @@
+ title: F5 Distributed Cloud Tools
+ description: VS Code-Erweiterung zur Verwaltung von F5 Distributed Cloud-Ressourcen.
+ hero:
+-  tagline: Manage F5 XC resources directly from VS Code.
++  tagline: Verwalten Sie F5 XC-Ressourcen direkt aus VS Code.
+ sidebar:
+   hidden: true
+   order: 0
+@@ -11,4 +11,4 @@ i18n:
+   translator: machine
+ ---
+ 
+-F5 Distributed Cloud Tools ist eine VS Code-Erweiterung, die es Ihnen ermöglicht, F5 XC-Ressourcen direkt aus Ihrem Editor heraus zu durchsuchen, zu erstellen, zu bearbeiten und zu löschen. Sie bietet vollständige CRUD-Operationen, JSON IntelliSense mit Schema-Validierung, Observability-Tools und Cloud-Statusüberwachung für über 236 Ressourcentypen in 25 API-Domänen.
++F5 Distributed Cloud Tools ist eine VS Code-Erweiterung, mit der Sie F5 XC-Ressourcen direkt in Ihrem Editor durchsuchen, erstellen, bearbeiten und löschen können. Sie bietet vollständige CRUD-Operationen, JSON IntelliSense mit Schema-Validierung, Observability-Tools und Cloud-Statusüberwachung für über 236 Ressourcentypen in 25 API-Domänen.
+diff --git a/docs/de/reference/supported-resources.mdx b/docs/de/reference/supported-resources.mdx
+index 23cc22c..fefbb7f 100644
+--- a/docs/de/reference/supported-resources.mdx
++++ b/docs/de/reference/supported-resources.mdx
+@@ -10,7 +10,7 @@ i18n:
+   translator: machine
+ ---
+ 
+-Die Erweiterung unterstützt über 236 Ressourcentypen aus 25 F5 XC API-Domänen. Ressourcen sind in der Baumansicht nach Domänenkategorie organisiert.
++Die Erweiterung unterstützt über 236 Ressourcentypen in 25 F5 XC API-Domänen. Ressourcen werden in der Baumansicht nach Domänenkategorie organisiert.
+ 
+ ## Domänenkategorien
+ 
+diff --git a/docs/es/configuration/settings.mdx b/docs/es/configuration/settings.mdx
+index 537af9f..73ace80 100644
+--- a/docs/es/configuration/settings.mdx
++++ b/docs/es/configuration/settings.mdx
+@@ -13,7 +13,7 @@ i18n:
+ | Configuración | Tipo | Predeterminado | Descripción |
+ |---------|------|---------|-------------|
+ | `f5xc.logLevel` | string | `info` | Nivel de detalle del registro: `debug`, `info`, `warn`, `error` |
+-| `f5xc.defaultNamespace` | string | `default` | Espacio de nombres predeterminado para operaciones de recursos |
++| `f5xc.defaultNamespace` | string | `default` | Namespace predeterminado para operaciones de recursos |
+ | `f5xc.confirmDelete` | boolean | `true` | Mostrar diálogo de confirmación antes de eliminar recursos |
+ | `f5xc.deleteConfirmationLevel` | string | `always` | Cuándo confirmar: `always`, `high-only`, `never` |
+ | `f5xc.autoRefreshInterval` | number | `0` | Intervalo de actualización automática en segundos (0 = deshabilitado) |
+diff --git a/docs/es/features/cloud-status.mdx b/docs/es/features/cloud-status.mdx
+index bd18c94..d2a164e 100644
+--- a/docs/es/features/cloud-status.mdx
++++ b/docs/es/features/cloud-status.mdx
+@@ -1,6 +1,6 @@
+ ---
+-title: Cloud Status
+-description: Supervise la salud de los servicios de F5 Distributed Cloud desde VS Code.
++title: Estado de la Nube
++description: Monitorice el estado de los servicios de F5 Distributed Cloud desde VS Code.
+ sidebar:
+   order: 3
+ i18n:
+@@ -8,12 +8,12 @@ i18n:
+   translator: machine
+ ---
+ 
+-## Monitoreo de Estado
++## Monitorización del Estado
+ 
+-La vista de árbol **Cloud Status** muestra el estado de salud actual de los servicios de F5 Distributed Cloud. El estado se obtiene de la página oficial de estado de F5 y muestra:
++La vista de árbol **Estado de la Nube** muestra el estado de salud actual de los servicios de F5 Distributed Cloud. El estado se obtiene de la página oficial de estado de F5 y muestra:
+ 
+ - Estado general de la plataforma
+-- Salud por componente (API, Console, Data Plane, etc.)
++- Estado de salud por componente (API, Consola, Plano de Datos, etc.)
+ - Incidentes activos y ventanas de mantenimiento
+ 
+ La vista se actualiza automáticamente según el intervalo de actualización configurado (`f5xc.autoRefreshInterval`).
+diff --git a/docs/es/features/json-intellisense.mdx b/docs/es/features/json-intellisense.mdx
+index 33e3b6f..786d69c 100644
+--- a/docs/es/features/json-intellisense.mdx
++++ b/docs/es/features/json-intellisense.mdx
+@@ -26,4 +26,4 @@ La extensión proporciona esquemas JSON para los tipos de recursos más comunes.
+ 
+ ## Autocompletado
+ 
+-IntelliSense proporciona autocompletado para nombres de campos, valores de enumeraciones y estructuras de objetos anidados basándose en la especificación OpenAPI de F5 XC.
++IntelliSense proporciona autocompletado para nombres de campos, valores de enumeración y estructuras de objetos anidados basándose en la especificación OpenAPI de F5 XC.
+diff --git a/docs/es/features/observability.mdx b/docs/es/features/observability.mdx
+index e78db7c..62bfeb8 100644
+--- a/docs/es/features/observability.mdx
++++ b/docs/es/features/observability.mdx
+@@ -12,12 +12,12 @@ i18n:
+ 
+ ## Visualización de registros
+ 
+-Haga clic derecho en un recurso y seleccione **View Logs** para transmitir datos de registros en tiempo real desde la plataforma F5 XC.
++Haga clic derecho en un recurso y seleccione **Ver registros** para transmitir datos de registro en tiempo real desde la plataforma F5 XC.
+ 
+ ## Visualización de métricas
+ 
+-Haga clic derecho en un recurso y seleccione **View Metrics** para ver métricas de rendimiento y tráfico.
++Haga clic derecho en un recurso y seleccione **Ver métricas** para consultar las métricas de rendimiento y tráfico.
+ 
+ ## Diagramas de arquitectura
+ 
+-Seleccione **Diagram** en un recurso para generar un diagrama visual de arquitectura que muestre las relaciones y dependencias del recurso.
++Seleccione **Diagrama** en un recurso para generar un diagrama de arquitectura visual que muestre las relaciones y dependencias del recurso.
+diff --git a/docs/es/features/resource-management.mdx b/docs/es/features/resource-management.mdx
+index 70f71ef..ab13bbc 100644
+--- a/docs/es/features/resource-management.mdx
++++ b/docs/es/features/resource-management.mdx
+@@ -1,5 +1,5 @@
+ ---
+-title: Gestión de Recursos
++title: Gestión de recursos
+ description: 'Explore, cree, edite y elimine recursos de F5 XC desde VS Code.'
+ sidebar:
+   order: 1
+@@ -8,24 +8,24 @@ i18n:
+   translator: machine
+ ---
+ 
+-## Exploración de Recursos
++## Exploración de recursos
+ 
+-La vista de árbol **Resources** muestra los recursos organizados por dominio y categoría. Expanda una categoría para ver los tipos de recursos, luego expanda un tipo para listar los recursos individuales en su namespace.
++La vista de árbol **Resources** muestra los recursos organizados por dominio y categoría. Expanda una categoría para ver los tipos de recursos y luego expanda un tipo para listar los recursos individuales en su espacio de nombres.
+ 
+-## Creación de Recursos
++## Creación de recursos
+ 
+ 1. Haga clic derecho en un tipo de recurso en el árbol y seleccione **Create**.
+ 2. Se abrirá un editor JSON con una plantilla validada por esquema.
+-3. Complete los campos requeridos (IntelliSense proporciona autocompletado).
++3. Complete los campos obligatorios (IntelliSense proporciona autocompletado).
+ 4. Guarde el archivo para enviar el recurso a la API de F5 XC.
+ 
+-## Edición de Recursos
++## Edición de recursos
+ 
+ 1. Haga clic en un recurso en el árbol para abrirlo en el editor.
+ 2. Modifique los campos con soporte completo de IntelliSense.
+ 3. Guarde para enviar los cambios a la API.
+ 
+-## Eliminación de Recursos
++## Eliminación de recursos
+ 
+ 1. Haga clic derecho en un recurso y seleccione **Delete**.
+ 2. Confirme la eliminación (configurable mediante `f5xc.confirmDelete` y `f5xc.deleteConfirmationLevel`).
+diff --git a/docs/es/getting-started/profile-setup.mdx b/docs/es/getting-started/profile-setup.mdx
+index 1dcdd81..23ad70b 100644
+--- a/docs/es/getting-started/profile-setup.mdx
++++ b/docs/es/getting-started/profile-setup.mdx
+@@ -1,5 +1,5 @@
+ ---
+-title: Configuración de Perfiles
++title: Configuración de perfiles
+ description: Configure las credenciales de API para conectarse a F5 Distributed Cloud.
+ sidebar:
+   order: 2
+@@ -8,20 +8,20 @@ i18n:
+   translator: machine
+ ---
+ 
+-## Agregar un Perfil
++## Agregar un perfil
+ 
+-1. Abra la vista **Profiles** en la barra lateral de F5 XC.
++1. Abra la vista de **Perfiles** en la barra lateral de F5 XC.
+ 2. Haga clic en el icono **+** para agregar un nuevo perfil.
+-3. Introduzca la URL de su tenant (por ejemplo, `https://your-tenant.console.ves.volterra.io`).
++3. Ingrese la URL de su tenant (por ejemplo, `https://your-tenant.console.ves.volterra.io`).
+ 4. Elija un método de autenticación:
+-   - **API Token**: Pegue su token de API desde la consola de F5 XC.
+-   - **P12 Certificate**: Seleccione su archivo de certificado `.p12` e introduzca la contraseña.
++   - **Token de API**: Pegue su token de API desde la consola de F5 XC.
++   - **Certificado P12**: Seleccione su archivo de certificado `.p12` e ingrese la contraseña.
+ 5. Establezca un namespace predeterminado.
+ 
+-## Gestión de Perfiles
++## Gestión de perfiles
+ 
+-- **Cambiar perfiles**: Haga clic en un perfil en la vista de Profiles para activarlo.
+-- **Editar**: Haga clic derecho en un perfil y seleccione **Edit Profile**.
+-- **Eliminar**: Haga clic derecho en un perfil y seleccione **Delete Profile**.
++- **Cambiar perfiles**: Haga clic en un perfil en la vista de Perfiles para activarlo.
++- **Editar**: Haga clic derecho en un perfil y seleccione **Editar perfil**.
++- **Eliminar**: Haga clic derecho en un perfil y seleccione **Eliminar perfil**.
+ 
+-Los perfiles se almacenan de forma segura utilizando el almacenamiento secreto integrado de VS Code (compatible con XDG en Linux).
++Los perfiles se almacenan de forma segura utilizando el almacenamiento de secretos integrado de VS Code (compatible con XDG en Linux).
+diff --git a/docs/es/index.mdx b/docs/es/index.mdx
+index 17113cd..683f412 100644
+--- a/docs/es/index.mdx
++++ b/docs/es/index.mdx
+@@ -1,8 +1,8 @@
+ ---
+-title: F5 Distributed Cloud Tools
++title: Herramientas de F5 Distributed Cloud
+ description: Extensión de VS Code para gestionar recursos de F5 Distributed Cloud.
+ hero:
+-  tagline: Manage F5 XC resources directly from VS Code.
++  tagline: Gestione recursos de F5 XC directamente desde VS Code.
+ sidebar:
+   hidden: true
+   order: 0
+@@ -11,4 +11,4 @@ i18n:
+   translator: machine
+ ---
+ 
+-F5 Distributed Cloud Tools es una extensión de VS Code que le permite explorar, crear, editar y eliminar recursos de F5 XC directamente desde su editor. Proporciona operaciones CRUD completas, IntelliSense JSON con validación de esquemas, herramientas de observabilidad y monitorización del estado de la nube para más de 236 tipos de recursos en 25 dominios de API.
++F5 Distributed Cloud Tools es una extensión de VS Code que le permite explorar, crear, editar y eliminar recursos de F5 XC directamente desde su editor. Proporciona operaciones CRUD completas, IntelliSense JSON con validación de esquemas, herramientas de observabilidad y monitoreo del estado de la nube para más de 236 tipos de recursos en 25 dominios de API.
+diff --git a/docs/es/reference/supported-resources.mdx b/docs/es/reference/supported-resources.mdx
+index 773143f..3d978ff 100644
+--- a/docs/es/reference/supported-resources.mdx
++++ b/docs/es/reference/supported-resources.mdx
+@@ -1,6 +1,6 @@
+ ---
+ title: Recursos Soportados
+-description: Lista completa de tipos de recursos de F5 XC soportados por la extensión.
++description: Lista completa de tipos de recursos de F5 XC compatibles con la extensión.
+ sidebar:
+   order: 1
+ i18n:
+@@ -19,4 +19,4 @@ La extensión soporta más de 236 tipos de recursos en 25 dominios de API de F5
+ - **Observabilidad**: Dashboards, Alerts, Log Receivers
+ - **Infraestructura**: Cloud Sites, Cloud Credentials, Service Policies
+ 
+-La lista completa de tipos de recursos soportados se genera automáticamente a partir de la especificación OpenAPI de F5 XC y se actualiza de forma automática cuando se publican nuevas versiones de la API.
++La lista completa de tipos de recursos soportados se genera automáticamente a partir de la especificación OpenAPI de F5 XC y se actualiza automáticamente cuando se publican nuevas versiones de la API.
+diff --git a/docs/fr/configuration/keyboard-shortcuts.mdx b/docs/fr/configuration/keyboard-shortcuts.mdx
+index 81c4d8b..03a4b6f 100644
+--- a/docs/fr/configuration/keyboard-shortcuts.mdx
++++ b/docs/fr/configuration/keyboard-shortcuts.mdx
+@@ -8,8 +8,8 @@ i18n:
+   translator: machine
+ ---
+ 
+-## Raccourcis par défaut
++## Raccourcis clavier par défaut
+ 
+ Les raccourcis clavier peuvent être personnalisés via l'éditeur de raccourcis clavier de VS Code (`Ctrl+K Ctrl+S` / `Cmd+K Cmd+S`). Recherchez « f5xc » pour trouver toutes les commandes de l'extension.
+ 
+-Les 40+ commandes sont accessibles via la palette de commandes (`Ctrl+Shift+P` / `Cmd+Shift+P`) en recherchant « F5 XC ».
++Les plus de 40 commandes sont accessibles via la Palette de commandes (`Ctrl+Shift+P` / `Cmd+Shift+P`) en recherchant « F5 XC ».
+diff --git a/docs/fr/configuration/settings.mdx b/docs/fr/configuration/settings.mdx
+index 4059569..f9e257f 100644
+--- a/docs/fr/configuration/settings.mdx
++++ b/docs/fr/configuration/settings.mdx
+@@ -12,10 +12,10 @@ i18n:
+ 
+ | Paramètre | Type | Valeur par défaut | Description |
+ |---------|------|---------|-------------|
+-| `f5xc.logLevel` | string | `info` | Niveau de verbosité des logs : `debug`, `info`, `warn`, `error` |
++| `f5xc.logLevel` | string | `info` | Niveau de verbosité des journaux : `debug`, `info`, `warn`, `error` |
+ | `f5xc.defaultNamespace` | string | `default` | Espace de noms par défaut pour les opérations sur les ressources |
+-| `f5xc.confirmDelete` | boolean | `true` | Afficher une boîte de dialogue de confirmation avant de supprimer des ressources |
++| `f5xc.confirmDelete` | boolean | `true` | Afficher une boîte de dialogue de confirmation avant la suppression de ressources |
+ | `f5xc.deleteConfirmationLevel` | string | `always` | Quand confirmer : `always`, `high-only`, `never` |
+-| `f5xc.autoRefreshInterval` | number | `0` | Intervalle de rafraîchissement automatique en secondes (0 = désactivé) |
++| `f5xc.autoRefreshInterval` | number | `0` | Intervalle d'actualisation automatique en secondes (0 = désactivé) |
+ | `f5xc.viewMode` | string | `console` | Mode d'affichage : `console` ou `full` |
+-| `f5xc.showPreviewApis` | boolean | `true` | Afficher les types de ressources d'API bêta/préversion |
++| `f5xc.showPreviewApis` | boolean | `true` | Afficher les types de ressources d'API bêta/aperçu |
+diff --git a/docs/fr/features/cloud-status.mdx b/docs/fr/features/cloud-status.mdx
+index 923a219..3586fbd 100644
+--- a/docs/fr/features/cloud-status.mdx
++++ b/docs/fr/features/cloud-status.mdx
+@@ -1,6 +1,6 @@
+ ---
+-title: Cloud Status
+-description: Surveillez l'état des services F5 Distributed Cloud depuis VS Code.
++title: État du Cloud
++description: Surveillez l'état de santé des services F5 Distributed Cloud depuis VS Code.
+ sidebar:
+   order: 3
+ i18n:
+@@ -10,9 +10,9 @@ i18n:
+ 
+ ## Surveillance de l'état
+ 
+-La vue arborescente **Cloud Status** affiche l'état de santé actuel des services F5 Distributed Cloud. L'état est récupéré depuis la page de statut officielle de F5 et affiche :
++L'arborescence **État du Cloud** affiche l'état de santé actuel des services F5 Distributed Cloud. L'état est récupéré depuis la page de statut officielle de F5 et affiche :
+ 
+-- L'état global de la plateforme
++- L'état général de la plateforme
+ - L'état de santé par composant (API, Console, Data Plane, etc.)
+ - Les incidents actifs et les fenêtres de maintenance
+ 
+diff --git a/docs/fr/features/observability.mdx b/docs/fr/features/observability.mdx
+index 5a03fe2..f7a2cb2 100644
+--- a/docs/fr/features/observability.mdx
++++ b/docs/fr/features/observability.mdx
+@@ -12,12 +12,12 @@ i18n:
+ 
+ ## Consultation des journaux
+ 
+-Faites un clic droit sur une ressource et sélectionnez **View Logs** pour diffuser en temps réel les données de journalisation depuis la plateforme F5 XC.
++Faites un clic droit sur une ressource et sélectionnez **Voir les journaux** pour diffuser en temps réel les données de journalisation depuis la plateforme F5 XC.
+ 
+ ## Consultation des métriques
+ 
+-Faites un clic droit sur une ressource et sélectionnez **View Metrics** pour visualiser les métriques de performance et de trafic.
++Faites un clic droit sur une ressource et sélectionnez **Voir les métriques** pour consulter les métriques de performance et de trafic.
+ 
+ ## Diagrammes d'architecture
+ 
+-Sélectionnez **Diagram** sur une ressource pour générer un diagramme d'architecture visuel montrant les relations et les dépendances de la ressource.
++Sélectionnez **Diagramme** sur une ressource pour générer un diagramme d'architecture visuel montrant les relations et les dépendances de la ressource.
+diff --git a/docs/fr/features/resource-management.mdx b/docs/fr/features/resource-management.mdx
+index b5823f6..426dc7f 100644
+--- a/docs/fr/features/resource-management.mdx
++++ b/docs/fr/features/resource-management.mdx
+@@ -1,6 +1,6 @@
+ ---
+ title: Gestion des ressources
+-description: 'Parcourir, créer, modifier et supprimer des ressources F5 XC depuis VS Code.'
++description: 'Parcourez, créez, modifiez et supprimez des ressources F5 XC depuis VS Code.'
+ sidebar:
+   order: 1
+ i18n:
+@@ -10,7 +10,7 @@ i18n:
+ 
+ ## Parcourir les ressources
+ 
+-La vue arborescente **Resources** affiche les ressources organisées par domaine et catégorie. Développez une catégorie pour voir les types de ressources, puis développez un type pour lister les ressources individuelles dans votre namespace.
++L'arborescence **Resources** affiche les ressources organisées par domaine et catégorie. Développez une catégorie pour voir les types de ressources, puis développez un type pour lister les ressources individuelles dans votre espace de noms.
+ 
+ ## Créer des ressources
+ 
+@@ -23,7 +23,7 @@ La vue arborescente **Resources** affiche les ressources organisées par domaine
+ 
+ 1. Cliquez sur une ressource dans l'arborescence pour l'ouvrir dans l'éditeur.
+ 2. Modifiez les champs avec le support complet d'IntelliSense.
+-3. Enregistrez pour transmettre les modifications à l'API.
++3. Enregistrez pour envoyer les modifications à l'API.
+ 
+ ## Supprimer des ressources
+ 
+diff --git a/docs/fr/getting-started/installation.mdx b/docs/fr/getting-started/installation.mdx
+index 0db1442..0197ba2 100644
+--- a/docs/fr/getting-started/installation.mdx
++++ b/docs/fr/getting-started/installation.mdx
+@@ -1,6 +1,6 @@
+ ---
+ title: Installation
+-description: Installez l'extension VS Code F5 Distributed Cloud Tools.
++description: Installer l'extension VS Code F5 Distributed Cloud Tools.
+ sidebar:
+   order: 1
+ i18n:
+@@ -10,7 +10,7 @@ i18n:
+ 
+ ## VS Code Marketplace
+ 
+-Recherchez "F5 Distributed Cloud Tools" dans le panneau Extensions de VS Code (`Ctrl+Shift+X` / `Cmd+Shift+X`) et cliquez sur **Installer**.
++Recherchez « F5 Distributed Cloud Tools » dans le panneau Extensions de VS Code (`Ctrl+Shift+X` / `Cmd+Shift+X`) et cliquez sur **Installer**.
+ 
+ ## Installation manuelle via VSIX
+ 
+diff --git a/docs/fr/getting-started/profile-setup.mdx b/docs/fr/getting-started/profile-setup.mdx
+index 7ac9716..f785c89 100644
+--- a/docs/fr/getting-started/profile-setup.mdx
++++ b/docs/fr/getting-started/profile-setup.mdx
+@@ -18,7 +18,7 @@ i18n:
+    - **P12 Certificate** : Sélectionnez votre fichier de certificat `.p12` et saisissez le mot de passe.
+ 5. Définissez un namespace par défaut.
+ 
+-## Gérer les profils
++## Gestion des profils
+ 
+ - **Changer de profil** : Cliquez sur un profil dans la vue Profiles pour le rendre actif.
+ - **Modifier** : Faites un clic droit sur un profil et sélectionnez **Edit Profile**.
+diff --git a/docs/fr/index.mdx b/docs/fr/index.mdx
+index 0679ae8..3f772e6 100644
+--- a/docs/fr/index.mdx
++++ b/docs/fr/index.mdx
+@@ -1,8 +1,8 @@
+ ---
+-title: F5 Distributed Cloud Tools
++title: Outils F5 Distributed Cloud
+ description: Extension VS Code pour la gestion des ressources F5 Distributed Cloud.
+ hero:
+-  tagline: Manage F5 XC resources directly from VS Code.
++  tagline: Gérez les ressources F5 XC directement depuis VS Code.
+ sidebar:
+   hidden: true
+   order: 0
+diff --git a/docs/hi/configuration/keyboard-shortcuts.mdx b/docs/hi/configuration/keyboard-shortcuts.mdx
+index e6f3875..2fc24bb 100644
+--- a/docs/hi/configuration/keyboard-shortcuts.mdx
++++ b/docs/hi/configuration/keyboard-shortcuts.mdx
+@@ -1,6 +1,6 @@
+ ---
+-title: कीबोर्ड शॉर्टकट्स
+-description: F5 Distributed Cloud Tools के लिए डिफ़ॉल्ट कीबोर्ड शॉर्टकट्स।
++title: कीबोर्ड शॉर्टकट
++description: F5 Distributed Cloud Tools के लिए डिफ़ॉल्ट कीबोर्ड शॉर्टकट।
+ sidebar:
+   order: 2
+ i18n:
+@@ -8,8 +8,8 @@ i18n:
+   translator: machine
+ ---
+ 
+-## डिफ़ॉल्ट कीबाइंडिंग्स
++## डिफ़ॉल्ट कीबाइंडिंग
+ 
+-कीबोर्ड शॉर्टकट्स को VS Code के Keyboard Shortcuts एडिटर (`Ctrl+K Ctrl+S` / `Cmd+K Cmd+S`) के माध्यम से कस्टमाइज़ किया जा सकता है। सभी एक्सटेंशन कमांड्स खोजने के लिए "f5xc" खोजें।
++कीबोर्ड शॉर्टकट को VS Code के Keyboard Shortcuts एडिटर (`Ctrl+K Ctrl+S` / `Cmd+K Cmd+S`) के माध्यम से अनुकूलित किया जा सकता है। सभी एक्सटेंशन कमांड खोजने के लिए "f5xc" खोजें।
+ 
+-सभी 40+ कमांड्स Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) के माध्यम से "F5 XC" खोजकर एक्सेस किए जा सकते हैं।
++सभी 40+ कमांड Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) के माध्यम से "F5 XC" खोजकर उपलब्ध हैं।
+diff --git a/docs/hi/configuration/settings.mdx b/docs/hi/configuration/settings.mdx
+index 07d0e0e..5565f68 100644
+--- a/docs/hi/configuration/settings.mdx
++++ b/docs/hi/configuration/settings.mdx
+@@ -13,9 +13,9 @@ i18n:
+ | सेटिंग | प्रकार | डिफ़ॉल्ट | विवरण |
+ |---------|------|---------|-------------|
+ | `f5xc.logLevel` | string | `info` | लॉग वर्बोसिटी: `debug`, `info`, `warn`, `error` |
+-| `f5xc.defaultNamespace` | string | `default` | संसाधन संचालन के लिए डिफ़ॉल्ट नेमस्पेस |
+-| `f5xc.confirmDelete` | boolean | `true` | संसाधन हटाने से पहले पुष्टिकरण डायलॉग दिखाएं |
++| `f5xc.defaultNamespace` | string | `default` | रिसोर्स ऑपरेशन के लिए डिफ़ॉल्ट नेमस्पेस |
++| `f5xc.confirmDelete` | boolean | `true` | रिसोर्स हटाने से पहले पुष्टिकरण डायलॉग दिखाएं |
+ | `f5xc.deleteConfirmationLevel` | string | `always` | कब पुष्टि करें: `always`, `high-only`, `never` |
+-| `f5xc.autoRefreshInterval` | number | `0` | सेकंड में ऑटो-रिफ़्रेश अंतराल (0 = अक्षम) |
++| `f5xc.autoRefreshInterval` | number | `0` | ऑटो-रिफ़्रेश अंतराल सेकंड में (0 = अक्षम) |
+ | `f5xc.viewMode` | string | `console` | व्यू मोड: `console` या `full` |
+-| `f5xc.showPreviewApis` | boolean | `true` | बीटा/प्रीव्यू API संसाधन प्रकार दिखाएं |
++| `f5xc.showPreviewApis` | boolean | `true` | बीटा/प्रीव्यू API रिसोर्स प्रकार दिखाएं |
+diff --git a/docs/hi/features/cloud-status.mdx b/docs/hi/features/cloud-status.mdx
+index 62d43a6..0320c65 100644
+--- a/docs/hi/features/cloud-status.mdx
++++ b/docs/hi/features/cloud-status.mdx
+@@ -1,5 +1,5 @@
+ ---
+-title: Cloud Status
++title: क्लाउड स्थिति
+ description: VS Code से F5 Distributed Cloud सेवा स्वास्थ्य की निगरानी करें।
+ sidebar:
+   order: 3
+@@ -10,7 +10,7 @@ i18n:
+ 
+ ## स्थिति निगरानी
+ 
+-**Cloud Status** ट्री व्यू F5 Distributed Cloud सेवाओं की वर्तमान स्वास्थ्य स्थिति प्रदर्शित करता है। स्थिति आधिकारिक F5 स्टेटस पेज से प्राप्त की जाती है और यह दिखाती है:
++**क्लाउड स्थिति** ट्री व्यू F5 Distributed Cloud सेवाओं की वर्तमान स्वास्थ्य स्थिति प्रदर्शित करता है। स्थिति आधिकारिक F5 स्टेटस पेज से प्राप्त की जाती है और निम्नलिखित दिखाती है:
+ 
+ - समग्र प्लेटफ़ॉर्म स्थिति
+ - प्रति-घटक स्वास्थ्य (API, Console, Data Plane, आदि)
+diff --git a/docs/hi/features/json-intellisense.mdx b/docs/hi/features/json-intellisense.mdx
+index e37d6e8..b669f21 100644
+--- a/docs/hi/features/json-intellisense.mdx
++++ b/docs/hi/features/json-intellisense.mdx
+@@ -1,6 +1,6 @@
+ ---
+ title: JSON IntelliSense
+-description: F5 XC संसाधन कॉन्फ़िगरेशन के लिए स्कीमा सत्यापन और ऑटो-कम्पलीशन।
++description: F5 XC संसाधन कॉन्फ़िगरेशन के लिए स्कीमा सत्यापन और ऑटो-कम्प्लीशन।
+ sidebar:
+   order: 4
+ i18n:
+@@ -14,14 +14,14 @@ i18n:
+ 
+ ## समर्थित स्कीमा
+ 
+-- HTTP लोड बैलेंसर (`.http_loadbalancer.json`)
+-- ऑरिजिन पूल (`.origin_pool.json`)
+-- ऐप फ़ायरवॉल / WAF (`.app_firewall.json`)
+-- हेल्थ चेक (`.healthcheck.json`)
+-- TCP लोड बैलेंसर (`.tcp_loadbalancer.json`)
+-- DNS लोड बैलेंसर (`.dns_load_balancer.json`)
+-- वर्चुअल साइट (`.virtual_site.json`)
++- HTTP Load Balancer (`.http_loadbalancer.json`)
++- Origin Pool (`.origin_pool.json`)
++- App Firewall / WAF (`.app_firewall.json`)
++- Health Check (`.healthcheck.json`)
++- TCP Load Balancer (`.tcp_loadbalancer.json`)
++- DNS Load Balancer (`.dns_load_balancer.json`)
++- Virtual Site (`.virtual_site.json`)
+ 
+-## ऑटो-कम्पलीशन
++## ऑटो-कम्प्लीशन
+ 
+-IntelliSense, F5 XC OpenAPI स्पेक के आधार पर फ़ील्ड नाम, एनम वैल्यू और नेस्टेड ऑब्जेक्ट संरचनाओं के लिए ऑटो-कम्पलीशन प्रदान करता है।
++IntelliSense, F5 XC OpenAPI स्पेक के आधार पर फ़ील्ड नामों, enum मानों और नेस्टेड ऑब्जेक्ट संरचनाओं के लिए ऑटो-कम्प्लीशन प्रदान करता है।
+diff --git a/docs/hi/features/observability.mdx b/docs/hi/features/observability.mdx
+index 975fa26..b131d38 100644
+--- a/docs/hi/features/observability.mdx
++++ b/docs/hi/features/observability.mdx
+@@ -1,5 +1,5 @@
+ ---
+-title: ऑब्ज़र्वेबिलिटी
++title: अवलोकनीयता
+ description: 'F5 XC संसाधनों के लिए लॉग, मेट्रिक्स और आर्किटेक्चर डायग्राम देखें।'
+ sidebar:
+   order: 2
+@@ -18,4 +18,4 @@ i18n:
+ 
+ ## आर्किटेक्चर डायग्राम
+ 
+-संसाधन के संबंधों और निर्भरताओं को दर्शाने वाला विज़ुअल आर्किटेक्चर डायग्राम जनरेट करने के लिए किसी संसाधन पर **Diagram** चुनें।
++संसाधन के संबंधों और निर्भरताओं को दर्शाने वाला एक विज़ुअल आर्किटेक्चर डायग्राम उत्पन्न करने के लिए किसी संसाधन पर **Diagram** चुनें।
+diff --git a/docs/hi/features/resource-management.mdx b/docs/hi/features/resource-management.mdx
+index 0ceaeb9..14226a5 100644
+--- a/docs/hi/features/resource-management.mdx
++++ b/docs/hi/features/resource-management.mdx
+@@ -1,6 +1,6 @@
+ ---
+ title: संसाधन प्रबंधन
+-description: 'VS Code से F5 XC संसाधनों को ब्राउज़, बनाएँ, संपादित और हटाएँ।'
++description: 'VS Code से F5 XC संसाधनों को ब्राउज़, बनाएँ, संपादित करें और हटाएँ।'
+ sidebar:
+   order: 1
+ i18n:
+@@ -8,7 +8,7 @@ i18n:
+   translator: machine
+ ---
+ 
+-## संसाधनों को ब्राउज़ करना
++## संसाधन ब्राउज़ करना
+ 
+ **Resources** ट्री व्यू संसाधनों को डोमेन और श्रेणी के अनुसार व्यवस्थित करके प्रदर्शित करता है। संसाधन प्रकार देखने के लिए किसी श्रेणी को विस्तारित करें, फिर अपने नेमस्पेस में व्यक्तिगत संसाधनों की सूची देखने के लिए किसी प्रकार को विस्तारित करें।
+ 
+@@ -17,15 +17,15 @@ i18n:
+ 1. ट्री में किसी संसाधन प्रकार पर राइट-क्लिक करें और **Create** चुनें।
+ 2. एक स्कीमा-मान्य टेम्पलेट के साथ JSON संपादक खुलता है।
+ 3. आवश्यक फ़ील्ड भरें (IntelliSense स्वतः-पूर्णता प्रदान करता है)।
+-4. F5 XC API को संसाधन सबमिट करने के लिए फ़ाइल सेव करें।
++4. F5 XC API को संसाधन सबमिट करने के लिए फ़ाइल सहेजें।
+ 
+-## संसाधनों को संपादित करना
++## संसाधन संपादित करना
+ 
+ 1. संपादक में खोलने के लिए ट्री में किसी संसाधन पर क्लिक करें।
+ 2. पूर्ण IntelliSense समर्थन के साथ फ़ील्ड संशोधित करें।
+-3. API में परिवर्तन भेजने के लिए सेव करें।
++3. API में परिवर्तन भेजने के लिए सहेजें।
+ 
+-## संसाधनों को हटाना
++## संसाधन हटाना
+ 
+ 1. किसी संसाधन पर राइट-क्लिक करें और **Delete** चुनें।
+ 2. हटाने की पुष्टि करें (`f5xc.confirmDelete` और `f5xc.deleteConfirmationLevel` के माध्यम से कॉन्फ़िगर करने योग्य)।
+diff --git a/docs/hi/getting-started/installation.mdx b/docs/hi/getting-started/installation.mdx
+index ff485c2..0258e87 100644
+--- a/docs/hi/getting-started/installation.mdx
++++ b/docs/hi/getting-started/installation.mdx
+@@ -10,12 +10,12 @@ i18n:
+ 
+ ## VS Code मार्केटप्लेस
+ 
+-VS Code एक्सटेंशन पैनल (`Ctrl+Shift+X` / `Cmd+Shift+X`) में "F5 Distributed Cloud Tools" खोजें और **Install** पर क्लिक करें।
++VS Code एक्सटेंशन पैनल (`Ctrl+Shift+X` / `Cmd+Shift+X`) में "F5 Distributed Cloud Tools" खोजें और **इंस्टॉल** पर क्लिक करें।
+ 
+ ## मैनुअल VSIX इंस्टॉल
+ 
+ 1. [GitHub Releases](https://github.com/f5xc-salesdemos/vscode-f5xc-tools/releases) पेज से `.vsix` फ़ाइल डाउनलोड करें।
+-2. VS Code में, Command Palette खोलें (`Ctrl+Shift+P` / `Cmd+Shift+P`)।
++2. VS Code में, कमांड पैलेट खोलें (`Ctrl+Shift+P` / `Cmd+Shift+P`)।
+ 3. **Extensions: Install from VSIX** चलाएँ और डाउनलोड की गई फ़ाइल चुनें।
+ 
+ ## आवश्यकताएँ
+diff --git a/docs/hi/getting-started/profile-setup.mdx b/docs/hi/getting-started/profile-setup.mdx
+index 6e3c481..417b42e 100644
+--- a/docs/hi/getting-started/profile-setup.mdx
++++ b/docs/hi/getting-started/profile-setup.mdx
+@@ -1,6 +1,6 @@
+ ---
+ title: प्रोफ़ाइल सेटअप
+-description: F5 Distributed Cloud से कनेक्ट करने के लिए API क्रेडेंशियल कॉन्फ़िगर करें।
++description: F5 Distributed Cloud से कनेक्ट करने के लिए API क्रेडेंशियल्स कॉन्फ़िगर करें।
+ sidebar:
+   order: 2
+ i18n:
+@@ -11,9 +11,9 @@ i18n:
+ ## प्रोफ़ाइल जोड़ना
+ 
+ 1. F5 XC साइडबार में **Profiles** व्यू खोलें।
+-2. नई प्रोफ़ाइल जोड़ने के लिए **+** आइकन पर क्लिक करें।
++2. एक नई प्रोफ़ाइल जोड़ने के लिए **+** आइकन पर क्लिक करें।
+ 3. अपना टेनेंट URL दर्ज करें (उदा., `https://your-tenant.console.ves.volterra.io`)।
+-4. प्रमाणीकरण विधि चुनें:
++4. एक प्रमाणीकरण विधि चुनें:
+    - **API Token**: F5 XC कंसोल से अपना API टोकन पेस्ट करें।
+    - **P12 Certificate**: अपनी `.p12` सर्टिफ़िकेट फ़ाइल चुनें और पासवर्ड दर्ज करें।
+ 5. एक डिफ़ॉल्ट नेमस्पेस सेट करें।
+diff --git a/docs/hi/index.mdx b/docs/hi/index.mdx
+index 3fec95d..dc9a5fd 100644
+--- a/docs/hi/index.mdx
++++ b/docs/hi/index.mdx
+@@ -2,7 +2,7 @@
+ title: F5 Distributed Cloud Tools
+ description: F5 Distributed Cloud संसाधनों के प्रबंधन के लिए VS Code एक्सटेंशन।
+ hero:
+-  tagline: Manage F5 XC resources directly from VS Code.
++  tagline: VS Code से सीधे F5 XC संसाधनों का प्रबंधन करें।
+ sidebar:
+   hidden: true
+   order: 0
+@@ -11,4 +11,4 @@ i18n:
+   translator: machine
+ ---
+ 
+-F5 Distributed Cloud Tools एक VS Code एक्सटेंशन है जो आपको अपने एडिटर से सीधे F5 XC संसाधनों को ब्राउज़, बनाने, संपादित और हटाने में सक्षम बनाता है। यह 25 API डोमेन में 236+ संसाधन प्रकारों के लिए पूर्ण CRUD ऑपरेशन, स्कीमा सत्यापन के साथ JSON IntelliSense, अवलोकनीयता उपकरण और क्लाउड स्थिति निगरानी प्रदान करता है।
++F5 Distributed Cloud Tools एक VS Code एक्सटेंशन है जो आपको अपने एडिटर से सीधे F5 XC संसाधनों को ब्राउज़, बनाने, संपादित और हटाने की सुविधा प्रदान करता है। यह 25 API डोमेन में 236+ संसाधन प्रकारों के लिए पूर्ण CRUD ऑपरेशन, स्कीमा वैलिडेशन के साथ JSON IntelliSense, अवलोकनीयता उपकरण और क्लाउड स्थिति निगरानी प्रदान करता है।
+diff --git a/docs/hi/reference/supported-resources.mdx b/docs/hi/reference/supported-resources.mdx
+index e126be9..353c6c8 100644
+--- a/docs/hi/reference/supported-resources.mdx
++++ b/docs/hi/reference/supported-resources.mdx
+@@ -8,7 +8,7 @@ i18n:
+   translator: machine
+ ---
+ 
+-यह एक्सटेंशन 25 F5 XC API डोमेन में 236+ संसाधन प्रकारों का समर्थन करता है। संसाधनों को ट्री व्यू में डोमेन श्रेणी के अनुसार व्यवस्थित किया गया है।
++यह एक्सटेंशन 25 F5 XC API डोमेन में 236+ संसाधन प्रकारों का समर्थन करता है। ट्री व्यू में संसाधनों को डोमेन श्रेणी के अनुसार व्यवस्थित किया गया है।
+ 
+ ## डोमेन श्रेणियाँ
+ 
+@@ -19,4 +19,4 @@ i18n:
+ - **अवलोकनीयता**: Dashboards, Alerts, Log Receivers
+ - **अवसंरचना**: Cloud Sites, Cloud Credentials, Service Policies
+ 
+-समर्थित संसाधन प्रकारों की पूर्ण सूची F5 XC OpenAPI विनिर्देशन से स्वचालित रूप से उत्पन्न होती है और नए API संस्करण जारी होने पर स्वचालित रूप से अपडेट हो जाती है।
++समर्थित संसाधन प्रकारों की पूर्ण सूची F5 XC OpenAPI विनिर्देश से स्वचालित रूप से उत्पन्न होती है और नए API संस्करण जारी होने पर स्वचालित रूप से अपडेट हो जाती है।
+diff --git a/docs/it/configuration/keyboard-shortcuts.mdx b/docs/it/configuration/keyboard-shortcuts.mdx
+index 7efb4b7..38f56f3 100644
+--- a/docs/it/configuration/keyboard-shortcuts.mdx
++++ b/docs/it/configuration/keyboard-shortcuts.mdx
+@@ -8,8 +8,8 @@ i18n:
+   translator: machine
+ ---
+ 
+-## Combinazioni di Tasti Predefinite
++## Associazioni Tasti Predefinite
+ 
+-Le scorciatoie da tastiera possono essere personalizzate tramite l'editor delle Scorciatoie da Tastiera di VS Code (`Ctrl+K Ctrl+S` / `Cmd+K Cmd+S`). Cercare "f5xc" per trovare tutti i comandi dell'estensione.
++Le scorciatoie da tastiera possono essere personalizzate tramite l'editor Scorciatoie da Tastiera di VS Code (`Ctrl+K Ctrl+S` / `Cmd+K Cmd+S`). Cerca "f5xc" per trovare tutti i comandi dell'estensione.
+ 
+-Tutti gli oltre 40 comandi sono accessibili tramite il Riquadro dei Comandi (`Ctrl+Shift+P` / `Cmd+Shift+P`) cercando "F5 XC".
++Tutti gli oltre 40 comandi sono accessibili tramite il Riquadro Comandi (`Ctrl+Shift+P` / `Cmd+Shift+P`) cercando "F5 XC".
+diff --git a/docs/it/configuration/settings.mdx b/docs/it/configuration/settings.mdx
+index f8da4b3..2bdc9f0 100644
+--- a/docs/it/configuration/settings.mdx
++++ b/docs/it/configuration/settings.mdx
+@@ -18,4 +18,4 @@ i18n:
+ | `f5xc.deleteConfirmationLevel` | string | `always` | Quando richiedere conferma: `always`, `high-only`, `never` |
+ | `f5xc.autoRefreshInterval` | number | `0` | Intervallo di aggiornamento automatico in secondi (0 = disabilitato) |
+ | `f5xc.viewMode` | string | `console` | Modalità di visualizzazione: `console` o `full` |
+-| `f5xc.showPreviewApis` | boolean | `true` | Mostra i tipi di risorse API beta/anteprima |
++| `f5xc.showPreviewApis` | boolean | `true` | Mostra i tipi di risorse API in beta/anteprima |
+diff --git a/docs/it/features/cloud-status.mdx b/docs/it/features/cloud-status.mdx
+index c1b573b..fb68ced 100644
+--- a/docs/it/features/cloud-status.mdx
++++ b/docs/it/features/cloud-status.mdx
+@@ -1,5 +1,5 @@
+ ---
+-title: Cloud Status
++title: Stato del Cloud
+ description: Monitora lo stato di salute dei servizi F5 Distributed Cloud da VS Code.
+ sidebar:
+   order: 3
+@@ -8,12 +8,12 @@ i18n:
+   translator: machine
+ ---
+ 
+-## Monitoraggio dello stato
++## Monitoraggio dello Stato
+ 
+ La vista ad albero **Cloud Status** mostra lo stato di salute attuale dei servizi F5 Distributed Cloud. Lo stato viene recuperato dalla pagina ufficiale di stato di F5 e mostra:
+ 
+ - Stato generale della piattaforma
+-- Stato di salute per componente (API, Console, Data Plane, ecc.)
++- Salute per singolo componente (API, Console, Data Plane, ecc.)
+ - Incidenti attivi e finestre di manutenzione
+ 
+ La vista si aggiorna automaticamente in base all'intervallo di aggiornamento configurato (`f5xc.autoRefreshInterval`).
+diff --git a/docs/it/features/json-intellisense.mdx b/docs/it/features/json-intellisense.mdx
+index def529c..89b5ba3 100644
+--- a/docs/it/features/json-intellisense.mdx
++++ b/docs/it/features/json-intellisense.mdx
+@@ -10,11 +10,11 @@ i18n:
+   translator: machine
+ ---
+ 
+-## Validazione dello Schema
++## Validazione dello schema
+ 
+ L'estensione fornisce schemi JSON per i tipi di risorse più comuni. Durante la modifica dei file JSON delle risorse, VS Code valida la configurazione in tempo reale ed evidenzia gli errori.
+ 
+-## Schemi Supportati
++## Schemi supportati
+ 
+ - HTTP Load Balancer (`.http_loadbalancer.json`)
+ - Origin Pool (`.origin_pool.json`)
+@@ -24,6 +24,6 @@ L'estensione fornisce schemi JSON per i tipi di risorse più comuni. Durante la
+ - DNS Load Balancer (`.dns_load_balancer.json`)
+ - Virtual Site (`.virtual_site.json`)
+ 
+-## Completamento Automatico
++## Completamento automatico
+ 
+-IntelliSense fornisce il completamento automatico per i nomi dei campi, i valori enum e le strutture degli oggetti annidati basandosi sulla specifica OpenAPI di F5 XC.
++IntelliSense fornisce il completamento automatico per i nomi dei campi, i valori enum e le strutture degli oggetti annidati basandosi sulle specifiche OpenAPI di F5 XC.
+diff --git a/docs/it/features/observability.mdx b/docs/it/features/observability.mdx
+index 040518d..a464568 100644
+--- a/docs/it/features/observability.mdx
++++ b/docs/it/features/observability.mdx
+@@ -10,12 +10,12 @@ i18n:
+ 
+ ## Visualizzazione dei log
+ 
+-Fare clic con il tasto destro su una risorsa e selezionare **View Logs** per trasmettere in tempo reale i dati di log dalla piattaforma F5 XC.
++Fai clic con il pulsante destro su una risorsa e seleziona **View Logs** per trasmettere in tempo reale i dati di log dalla piattaforma F5 XC.
+ 
+ ## Visualizzazione delle metriche
+ 
+-Fare clic con il tasto destro su una risorsa e selezionare **View Metrics** per visualizzare le metriche relative a prestazioni e traffico.
++Fai clic con il pulsante destro su una risorsa e seleziona **View Metrics** per visualizzare le metriche di prestazioni e traffico.
+ 
+ ## Diagrammi architetturali
+ 
+-Selezionare **Diagram** su una risorsa per generare un diagramma architetturale visivo che mostra le relazioni e le dipendenze della risorsa.
++Seleziona **Diagram** su una risorsa per generare un diagramma architetturale visivo che mostra le relazioni e le dipendenze della risorsa.
+diff --git a/docs/it/features/resource-management.mdx b/docs/it/features/resource-management.mdx
+index 3be4b4e..3137557 100644
+--- a/docs/it/features/resource-management.mdx
++++ b/docs/it/features/resource-management.mdx
+@@ -10,14 +10,14 @@ i18n:
+ 
+ ## Esplorazione delle risorse
+ 
+-La vista ad albero **Resources** mostra le risorse organizzate per dominio e categoria. Espandi una categoria per visualizzare i tipi di risorse, quindi espandi un tipo per elencare le singole risorse nel tuo namespace.
++La vista ad albero **Resources** mostra le risorse organizzate per dominio e categoria. Espandi una categoria per visualizzare i tipi di risorsa, quindi espandi un tipo per elencare le singole risorse nel tuo namespace.
+ 
+ ## Creazione delle risorse
+ 
+-1. Fai clic con il pulsante destro su un tipo di risorsa nell'albero e seleziona **Create**.
+-2. Si apre un editor JSON con un template validato tramite schema.
++1. Fai clic con il tasto destro su un tipo di risorsa nell'albero e seleziona **Create**.
++2. Si apre un editor JSON con un template validato dallo schema.
+ 3. Compila i campi obbligatori (IntelliSense fornisce il completamento automatico).
+-4. Salva il file per inviare la risorsa all'API F5 XC.
++4. Salva il file per inviare la risorsa all'API di F5 XC.
+ 
+ ## Modifica delle risorse
+ 
+@@ -27,5 +27,5 @@ La vista ad albero **Resources** mostra le risorse organizzate per dominio e cat
+ 
+ ## Eliminazione delle risorse
+ 
+-1. Fai clic con il pulsante destro su una risorsa e seleziona **Delete**.
++1. Fai clic con il tasto destro su una risorsa e seleziona **Delete**.
+ 2. Conferma l'eliminazione (configurabile tramite `f5xc.confirmDelete` e `f5xc.deleteConfirmationLevel`).
+diff --git a/docs/it/getting-started/installation.mdx b/docs/it/getting-started/installation.mdx
+index 2e29d55..59d172d 100644
+--- a/docs/it/getting-started/installation.mdx
++++ b/docs/it/getting-started/installation.mdx
+@@ -20,6 +20,6 @@ Cercare "F5 Distributed Cloud Tools" nel pannello Estensioni di VS Code (`Ctrl+S
+ 
+ ## Requisiti
+ 
+-- VS Code 1.107.0 o versione successiva
++- VS Code 1.107.0 o versioni successive
+ - Un tenant F5 Distributed Cloud
+ - Credenziali API (certificato o token API)
+diff --git a/docs/it/getting-started/profile-setup.mdx b/docs/it/getting-started/profile-setup.mdx
+index 3cebad1..46a51c4 100644
+--- a/docs/it/getting-started/profile-setup.mdx
++++ b/docs/it/getting-started/profile-setup.mdx
+@@ -1,5 +1,5 @@
+ ---
+-title: Configurazione del Profilo
++title: Configurazione del profilo
+ description: Configurare le credenziali API per la connessione a F5 Distributed Cloud.
+ sidebar:
+   order: 2
+@@ -8,20 +8,20 @@ i18n:
+   translator: machine
+ ---
+ 
+-## Aggiunta di un Profilo
++## Aggiunta di un profilo
+ 
+-1. Aprire la vista **Profiles** nella barra laterale di F5 XC.
++1. Aprire la vista **Profili** nella barra laterale di F5 XC.
+ 2. Fare clic sull'icona **+** per aggiungere un nuovo profilo.
+ 3. Inserire l'URL del tenant (ad es., `https://your-tenant.console.ves.volterra.io`).
+ 4. Scegliere un metodo di autenticazione:
+-   - **API Token**: Incollare il proprio token API dalla console F5 XC.
+-   - **P12 Certificate**: Selezionare il file del certificato `.p12` e inserire la password.
++   - **Token API**: Incollare il token API dalla console F5 XC.
++   - **Certificato P12**: Selezionare il file del certificato `.p12` e inserire la password.
+ 5. Impostare un namespace predefinito.
+ 
+-## Gestione dei Profili
++## Gestione dei profili
+ 
+-- **Cambiare profilo**: Fare clic su un profilo nella vista Profiles per renderlo attivo.
+-- **Modificare**: Fare clic con il tasto destro su un profilo e selezionare **Edit Profile**.
+-- **Eliminare**: Fare clic con il tasto destro su un profilo e selezionare **Delete Profile**.
++- **Cambiare profilo**: Fare clic su un profilo nella vista Profili per renderlo attivo.
++- **Modificare**: Fare clic con il tasto destro su un profilo e selezionare **Modifica profilo**.
++- **Eliminare**: Fare clic con il tasto destro su un profilo e selezionare **Elimina profilo**.
+ 
+-I profili vengono archiviati in modo sicuro utilizzando il sistema di archiviazione segreti integrato di VS Code (conforme a XDG su Linux).
++I profili vengono archiviati in modo sicuro utilizzando il sistema di archiviazione segreto integrato di VS Code (conforme a XDG su Linux).
+diff --git a/docs/it/index.mdx b/docs/it/index.mdx
+index f1aecef..b3f3a8a 100644
+--- a/docs/it/index.mdx
++++ b/docs/it/index.mdx
+@@ -2,7 +2,7 @@
+ title: F5 Distributed Cloud Tools
+ description: Estensione VS Code per la gestione delle risorse F5 Distributed Cloud.
+ hero:
+-  tagline: Manage F5 XC resources directly from VS Code.
++  tagline: Gestisci le risorse F5 XC direttamente da VS Code.
+ sidebar:
+   hidden: true
+   order: 0
+@@ -11,4 +11,4 @@ i18n:
+   translator: machine
+ ---
+ 
+-F5 Distributed Cloud Tools è un'estensione VS Code che consente di esplorare, creare, modificare ed eliminare le risorse F5 XC direttamente dal proprio editor. Fornisce operazioni CRUD complete, JSON IntelliSense con validazione dello schema, strumenti di osservabilità e monitoraggio dello stato del cloud per oltre 236 tipi di risorse distribuiti su 25 domini API.
++F5 Distributed Cloud Tools è un'estensione VS Code che consente di esplorare, creare, modificare ed eliminare le risorse F5 XC direttamente dal proprio editor. Fornisce operazioni CRUD complete, JSON IntelliSense con validazione degli schemi, strumenti di osservabilità e monitoraggio dello stato del cloud per oltre 236 tipi di risorse distribuiti su 25 domini API.
+diff --git a/docs/it/reference/supported-resources.mdx b/docs/it/reference/supported-resources.mdx
+index 5972f2c..bfc1ea2 100644
+--- a/docs/it/reference/supported-resources.mdx
++++ b/docs/it/reference/supported-resources.mdx
+@@ -12,11 +12,11 @@ L'estensione supporta oltre 236 tipi di risorse distribuiti su 25 domini API di
+ 
+ ## Categorie di Dominio
+ 
+-- **Application Delivery**: HTTP Load Balancers, TCP Load Balancers, Origin Pools, Health Checks
+-- **Sicurezza**: Web App Firewalls, API Security, Bot Defense, DDoS Protection
+-- **Networking**: Virtual Networks, Sites, Fleet Management, Network Policies
+-- **DNS**: DNS Zones, DNS Load Balancers, DNS Records
+-- **Osservabilità**: Dashboards, Alerts, Log Receivers
+-- **Infrastruttura**: Cloud Sites, Cloud Credentials, Service Policies
++- **Application Delivery**: HTTP Load Balancer, TCP Load Balancer, Origin Pool, Health Check
++- **Sicurezza**: Web App Firewall, API Security, Bot Defense, Protezione DDoS
++- **Networking**: Reti Virtuali, Siti, Gestione delle Fleet, Policy di Rete
++- **DNS**: Zone DNS, DNS Load Balancer, Record DNS
++- **Osservabilità**: Dashboard, Avvisi, Ricevitori di Log
++- **Infrastruttura**: Siti Cloud, Credenziali Cloud, Policy di Servizio
+ 
+ L'elenco completo dei tipi di risorse supportati viene generato automaticamente dalla specifica OpenAPI di F5 XC e si aggiorna automaticamente quando vengono rilasciate nuove versioni delle API.
+diff --git a/docs/ja/configuration/keyboard-shortcuts.mdx b/docs/ja/configuration/keyboard-shortcuts.mdx
+index 518521b..8243279 100644
+--- a/docs/ja/configuration/keyboard-shortcuts.mdx
++++ b/docs/ja/configuration/keyboard-shortcuts.mdx
+@@ -10,6 +10,6 @@ i18n:
+ 
+ ## デフォルトのキーバインド
+ 
+-キーボードショートカットは、VS Code のキーボードショートカットエディター（`Ctrl+K Ctrl+S` / `Cmd+K Cmd+S`）でカスタマイズできます。"f5xc" で検索すると、すべての拡張機能コマンドを見つけることができます。
++キーボードショートカットは、VS Code のキーボードショートカットエディター（`Ctrl+K Ctrl+S` / `Cmd+K Cmd+S`）でカスタマイズできます。「f5xc」で検索すると、すべての拡張機能コマンドが表示されます。
+ 
+-40以上のすべてのコマンドは、コマンドパレット（`Ctrl+Shift+P` / `Cmd+Shift+P`）から "F5 XC" で検索してアクセスできます。
++40以上のすべてのコマンドは、コマンドパレット（`Ctrl+Shift+P` / `Cmd+Shift+P`）から「F5 XC」と検索してアクセスできます。
+diff --git a/docs/ja/configuration/settings.mdx b/docs/ja/configuration/settings.mdx
+index 36fd652..73d1433 100644
+--- a/docs/ja/configuration/settings.mdx
++++ b/docs/ja/configuration/settings.mdx
+@@ -10,12 +10,12 @@ i18n:
+ 
+ ## 利用可能な設定
+ 
+-| 設定 | タイプ | デフォルト | 説明 |
++| 設定 | 型 | デフォルト | 説明 |
+ |---------|------|---------|-------------|
+ | `f5xc.logLevel` | string | `info` | ログの詳細度: `debug`, `info`, `warn`, `error` |
+-| `f5xc.defaultNamespace` | string | `default` | リソース操作のデフォルトネームスペース |
++| `f5xc.defaultNamespace` | string | `default` | リソース操作のデフォルト名前空間 |
+ | `f5xc.confirmDelete` | boolean | `true` | リソース削除前に確認ダイアログを表示する |
+-| `f5xc.deleteConfirmationLevel` | string | `always` | 確認するタイミング: `always`, `high-only`, `never` |
++| `f5xc.deleteConfirmationLevel` | string | `always` | 確認のタイミング: `always`, `high-only`, `never` |
+ | `f5xc.autoRefreshInterval` | number | `0` | 自動更新間隔（秒単位、0 = 無効） |
+ | `f5xc.viewMode` | string | `console` | 表示モード: `console` または `full` |
+ | `f5xc.showPreviewApis` | boolean | `true` | ベータ/プレビュー API リソースタイプを表示する |
+diff --git a/docs/ja/features/cloud-status.mdx b/docs/ja/features/cloud-status.mdx
+index 1f636c6..c904f4c 100644
+--- a/docs/ja/features/cloud-status.mdx
++++ b/docs/ja/features/cloud-status.mdx
+@@ -1,6 +1,6 @@
+ ---
+-title: Cloud Status
+-description: VS Code から F5 Distributed Cloud サービスのヘルスを監視します。
++title: クラウドステータス
++description: VS Code から F5 Distributed Cloud サービスの正常性を監視します。
+ sidebar:
+   order: 3
+ i18n:
+@@ -10,10 +10,10 @@ i18n:
+ 
+ ## ステータス監視
+ 
+-**Cloud Status** ツリービューは、F5 Distributed Cloud サービスの現在のヘルス状態を表示します。ステータスは公式の F5 ステータスページから取得され、以下の情報が表示されます：
++**クラウドステータス**ツリービューは、F5 Distributed Cloud サービスの現在の正常性を表示します。ステータスは F5 の公式ステータスページから取得され、以下の情報が表示されます：
+ 
+ - プラットフォーム全体のステータス
+-- コンポーネントごとのヘルス状態（API、Console、Data Plane など）
++- コンポーネントごとの正常性（API、コンソール、データプレーンなど）
+ - アクティブなインシデントおよびメンテナンスウィンドウ
+ 
+-このビューは、設定された更新間隔（`f5xc.autoRefreshInterval`）に基づいて自動的に更新されます。
++ビューは設定された更新間隔（`f5xc.autoRefreshInterval`）に基づいて自動的に更新されます。
+diff --git a/docs/ja/features/json-intellisense.mdx b/docs/ja/features/json-intellisense.mdx
+index 1cbb2c0..19eb9b5 100644
+--- a/docs/ja/features/json-intellisense.mdx
++++ b/docs/ja/features/json-intellisense.mdx
+@@ -1,6 +1,6 @@
+ ---
+ title: JSON IntelliSense
+-description: F5 XCリソース構成のスキーマバリデーションと自動補完。
++description: F5 XC リソース構成のスキーマ検証と自動補完。
+ sidebar:
+   order: 4
+ i18n:
+@@ -8,20 +8,20 @@ i18n:
+   translator: machine
+ ---
+ 
+-## スキーマバリデーション
++## スキーマ検証
+ 
+-この拡張機能は、一般的なリソースタイプのJSONスキーマを提供します。リソースJSONファイルの編集時に、VS Codeがリアルタイムで構成を検証し、エラーをハイライト表示します。
++この拡張機能は、一般的なリソースタイプの JSON スキーマを提供します。リソース JSON ファイルを編集する際、VS Code が構成をリアルタイムで検証し、エラーをハイライト表示します。
+ 
+ ## サポートされるスキーマ
+ 
+-- HTTP Load Balancer (`.http_loadbalancer.json`)
+-- Origin Pool (`.origin_pool.json`)
+-- App Firewall / WAF (`.app_firewall.json`)
+-- Health Check (`.healthcheck.json`)
+-- TCP Load Balancer (`.tcp_loadbalancer.json`)
+-- DNS Load Balancer (`.dns_load_balancer.json`)
+-- Virtual Site (`.virtual_site.json`)
++- HTTP ロードバランサー (`.http_loadbalancer.json`)
++- オリジンプール (`.origin_pool.json`)
++- アプリファイアウォール / WAF (`.app_firewall.json`)
++- ヘルスチェック (`.healthcheck.json`)
++- TCP ロードバランサー (`.tcp_loadbalancer.json`)
++- DNS ロードバランサー (`.dns_load_balancer.json`)
++- 仮想サイト (`.virtual_site.json`)
+ 
+ ## 自動補完
+ 
+-IntelliSenseは、F5 XC OpenAPI仕様に基づいて、フィールド名、列挙値、およびネストされたオブジェクト構造の自動補完を提供します。
++IntelliSense は、F5 XC OpenAPI 仕様に基づいて、フィールド名、列挙値、およびネストされたオブジェクト構造の自動補完を提供します。
+diff --git a/docs/ja/features/observability.mdx b/docs/ja/features/observability.mdx
+index cd20e2b..902fbe3 100644
+--- a/docs/ja/features/observability.mdx
++++ b/docs/ja/features/observability.mdx
+@@ -10,12 +10,12 @@ i18n:
+ 
+ ## ログの表示
+ 
+-リソースを右クリックして **View Logs** を選択すると、F5 XC プラットフォームからリアルタイムのログデータをストリーミングできます。
++リソースを右クリックし、**View Logs** を選択すると、F5 XC プラットフォームからリアルタイムのログデータをストリーミングできます。
+ 
+ ## メトリクスの表示
+ 
+-リソースを右クリックして **View Metrics** を選択すると、パフォーマンスおよびトラフィックのメトリクスを確認できます。
++リソースを右クリックし、**View Metrics** を選択すると、パフォーマンスおよびトラフィックのメトリクスを確認できます。
+ 
+ ## アーキテクチャ図
+ 
+-リソースで **Diagram** を選択すると、リソースの関係性と依存関係を示すビジュアルアーキテクチャ図が生成されます。
++リソースの **Diagram** を選択すると、リソースの関係性と依存関係を示すビジュアルアーキテクチャ図が生成されます。
+diff --git a/docs/ja/features/resource-management.mdx b/docs/ja/features/resource-management.mdx
+index 09f7019..a9c46dd 100644
+--- a/docs/ja/features/resource-management.mdx
++++ b/docs/ja/features/resource-management.mdx
+@@ -1,6 +1,6 @@
+ ---
+ title: リソース管理
+-description: VS Code から F5 XC リソースを閲覧、作成、編集、削除します。
++description: VS Code から F5 XC リソースの閲覧、作成、編集、削除を行います。
+ sidebar:
+   order: 1
+ i18n:
+@@ -16,14 +16,14 @@ i18n:
+ 
+ 1. ツリー内のリソースタイプを右クリックし、**Create** を選択します。
+ 2. スキーマ検証済みのテンプレートを含む JSON エディタが開きます。
+-3. 必須フィールドを入力します（IntelliSense による自動補完が利用可能です）。
++3. 必須フィールドを入力します（IntelliSense による自動補完が利用できます）。
+ 4. ファイルを保存すると、リソースが F5 XC API に送信されます。
+ 
+ ## リソースの編集
+ 
+ 1. ツリー内のリソースをクリックしてエディタで開きます。
+ 2. 完全な IntelliSense サポートを利用してフィールドを変更します。
+-3. 保存すると変更が API に反映されます。
++3. 保存すると変更が API にプッシュされます。
+ 
+ ## リソースの削除
+ 
+diff --git a/docs/ja/getting-started/installation.mdx b/docs/ja/getting-started/installation.mdx
+index 644d2b7..12b149c 100644
+--- a/docs/ja/getting-started/installation.mdx
++++ b/docs/ja/getting-started/installation.mdx
+@@ -15,7 +15,7 @@ VS Code の拡張機能パネル（`Ctrl+Shift+X` / `Cmd+Shift+X`）で「F5 Dis
+ ## 手動 VSIX インストール
+ 
+ 1. [GitHub Releases](https://github.com/f5xc-salesdemos/vscode-f5xc-tools/releases) ページから `.vsix` ファイルをダウンロードします。
+-2. VS Code でコマンドパレットを開きます（`Ctrl+Shift+P` / `Cmd+Shift+P`）。
++2. VS Code でコマンドパレット（`Ctrl+Shift+P` / `Cmd+Shift+P`）を開きます。
+ 3. **Extensions: Install from VSIX** を実行し、ダウンロードしたファイルを選択します。
+ 
+ ## 要件
+diff --git a/docs/ja/getting-started/profile-setup.mdx b/docs/ja/getting-started/profile-setup.mdx
+index ba71e75..c23c337 100644
+--- a/docs/ja/getting-started/profile-setup.mdx
++++ b/docs/ja/getting-started/profile-setup.mdx
+@@ -1,6 +1,6 @@
+ ---
+ title: プロファイルの設定
+-description: F5 Distributed Cloud に接続するための API 資格情報を構成します。
++description: F5 Distributed Cloud に接続するための API 資格情報を設定します。
+ sidebar:
+   order: 2
+ i18n:
+@@ -12,16 +12,16 @@ i18n:
+ 
+ 1. F5 XC サイドバーで **Profiles** ビューを開きます。
+ 2. **+** アイコンをクリックして新しいプロファイルを追加します。
+-3. テナント URL を入力します（例：`https://your-tenant.console.ves.volterra.io`）。
+-4. 認証方法を選択します：
+-   - **API Token**：F5 XC コンソールから取得した API トークンを貼り付けます。
+-   - **P12 Certificate**：`.p12` 証明書ファイルを選択し、パスワードを入力します。
++3. テナント URL を入力します（例: `https://your-tenant.console.ves.volterra.io`）。
++4. 認証方法を選択します:
++   - **API トークン**: F5 XC コンソールから取得した API トークンを貼り付けます。
++   - **P12 証明書**: `.p12` 証明書ファイルを選択し、パスワードを入力します。
+ 5. デフォルトのネームスペースを設定します。
+ 
+ ## プロファイルの管理
+ 
+-- **プロファイルの切り替え**：Profiles ビューでプロファイルをクリックしてアクティブにします。
+-- **編集**：プロファイルを右クリックし、**Edit Profile** を選択します。
+-- **削除**：プロファイルを右クリックし、**Delete Profile** を選択します。
++- **プロファイルの切り替え**: Profiles ビューでプロファイルをクリックしてアクティブにします。
++- **編集**: プロファイルを右クリックして **Edit Profile** を選択します。
++- **削除**: プロファイルを右クリックして **Delete Profile** を選択します。
+ 
+ プロファイルは VS Code の組み込みシークレットストレージ（Linux では XDG 準拠）を使用して安全に保存されます。
+diff --git a/docs/ja/index.mdx b/docs/ja/index.mdx
+index 8c2b92e..109a47a 100644
+--- a/docs/ja/index.mdx
++++ b/docs/ja/index.mdx
+@@ -1,8 +1,8 @@
+ ---
+ title: F5 Distributed Cloud Tools
+-description: F5 Distributed Cloudリソースを管理するためのVS Code拡張機能。
++description: F5 Distributed Cloud リソースを管理するための VS Code 拡張機能。
+ hero:
+-  tagline: Manage F5 XC resources directly from VS Code.
++  tagline: VS Code から直接 F5 XC リソースを管理できます。
+ sidebar:
+   hidden: true
+   order: 0
+@@ -11,4 +11,4 @@ i18n:
+   translator: machine
+ ---
+ 
+-F5 Distributed Cloud Toolsは、エディターから直接F5 XCリソースの参照、作成、編集、削除を可能にするVS Code拡張機能です。25のAPIドメインにわたる236以上のリソースタイプに対して、完全なCRUD操作、スキーマバリデーション付きのJSON IntelliSense、オブザーバビリティツール、およびクラウドステータスモニタリングを提供します。
++F5 Distributed Cloud Tools は、エディターから直接 F5 XC リソースの参照、作成、編集、削除を可能にする VS Code 拡張機能です。25 の API ドメインにわたる 236 以上のリソースタイプに対して、完全な CRUD 操作、スキーマバリデーション付き JSON IntelliSense、オブザーバビリティツール、およびクラウドステータスモニタリングを提供します。
+diff --git a/docs/ja/reference/supported-resources.mdx b/docs/ja/reference/supported-resources.mdx
+index 63b0ec5..46a78cc 100644
+--- a/docs/ja/reference/supported-resources.mdx
++++ b/docs/ja/reference/supported-resources.mdx
+@@ -1,6 +1,6 @@
+ ---
+ title: サポートされるリソース
+-description: 拡張機能でサポートされるF5 XCリソースタイプの完全なリスト。
++description: 拡張機能がサポートするF5 XCリソースタイプの完全なリスト。
+ sidebar:
+   order: 1
+ i18n:
+@@ -8,15 +8,15 @@ i18n:
+   translator: machine
+ ---
+ 
+-この拡張機能は、25のF5 XC APIドメインにわたる236以上のリソースタイプをサポートしています。リソースはツリービューでドメインカテゴリごとに整理されています。
++この拡張機能は、25のF5 XC APIドメインにわたる236以上のリソースタイプをサポートしています。リソースはツリービューでドメインカテゴリ別に整理されています。
+ 
+ ## ドメインカテゴリ
+ 
+-- **アプリケーションデリバリー**: HTTP ロードバランサー、TCP ロードバランサー、オリジンプール、ヘルスチェック
+-- **セキュリティ**: Web アプリケーションファイアウォール、APIセキュリティ、ボット防御、DDoS保護
+-- **ネットワーキング**: 仮想ネットワーク、サイト、フリート管理、ネットワークポリシー
+-- **DNS**: DNSゾーン、DNSロードバランサー、DNSレコード
+-- **オブザーバビリティ**: ダッシュボード、アラート、ログレシーバー
+-- **インフラストラクチャ**: クラウドサイト、クラウドクレデンシャル、サービスポリシー
++- **アプリケーションデリバリー**: HTTP Load Balancers、TCP Load Balancers、Origin Pools、Health Checks
++- **セキュリティ**: Web App Firewalls、API Security、Bot Defense、DDoS Protection
++- **ネットワーキング**: Virtual Networks、Sites、Fleet Management、Network Policies
++- **DNS**: DNS Zones、DNS Load Balancers、DNS Records
++- **オブザーバビリティ**: Dashboards、Alerts、Log Receivers
++- **インフラストラクチャ**: Cloud Sites、Cloud Credentials、Service Policies
+ 
+ サポートされるリソースタイプの完全なリストは、F5 XC OpenAPI仕様から自動生成され、新しいAPIバージョンがリリースされると自動的に更新されます。
+diff --git a/docs/ko/configuration/keyboard-shortcuts.mdx b/docs/ko/configuration/keyboard-shortcuts.mdx
+index 33c2a49..4dd2d44 100644
+--- a/docs/ko/configuration/keyboard-shortcuts.mdx
++++ b/docs/ko/configuration/keyboard-shortcuts.mdx
+@@ -10,6 +10,6 @@ i18n:
+ 
+ ## 기본 키 바인딩
+ 
+-키보드 단축키는 VS Code의 키보드 단축키 편집기(`Ctrl+K Ctrl+S` / `Cmd+K Cmd+S`)를 통해 사용자 지정할 수 있습니다. "f5xc"를 검색하면 모든 확장 명령을 찾을 수 있습니다.
++키보드 단축키는 VS Code의 키보드 단축키 편집기(`Ctrl+K Ctrl+S` / `Cmd+K Cmd+S`)를 통해 사용자 정의할 수 있습니다. "f5xc"를 검색하면 모든 확장 명령을 찾을 수 있습니다.
+ 
+ 40개 이상의 모든 명령은 명령 팔레트(`Ctrl+Shift+P` / `Cmd+Shift+P`)에서 "F5 XC"를 검색하여 접근할 수 있습니다.
+diff --git a/docs/ko/configuration/settings.mdx b/docs/ko/configuration/settings.mdx
+index 6db484e..bfec925 100644
+--- a/docs/ko/configuration/settings.mdx
++++ b/docs/ko/configuration/settings.mdx
+@@ -13,9 +13,9 @@ i18n:
+ | 설정 | 타입 | 기본값 | 설명 |
+ |---------|------|---------|-------------|
+ | `f5xc.logLevel` | string | `info` | 로그 상세 수준: `debug`, `info`, `warn`, `error` |
+-| `f5xc.defaultNamespace` | string | `default` | 리소스 작업을 위한 기본 네임스페이스 |
++| `f5xc.defaultNamespace` | string | `default` | 리소스 작업의 기본 네임스페이스 |
+ | `f5xc.confirmDelete` | boolean | `true` | 리소스 삭제 전 확인 대화 상자 표시 |
+ | `f5xc.deleteConfirmationLevel` | string | `always` | 확인 시점: `always`, `high-only`, `never` |
+ | `f5xc.autoRefreshInterval` | number | `0` | 자동 새로고침 간격(초 단위, 0 = 비활성화) |
+ | `f5xc.viewMode` | string | `console` | 보기 모드: `console` 또는 `full` |
+-| `f5xc.showPreviewApis` | boolean | `true` | 베타/프리뷰 API 리소스 타입 표시 |
++| `f5xc.showPreviewApis` | boolean | `true` | 베타/미리보기 API 리소스 유형 표시 |
+diff --git a/docs/ko/features/cloud-status.mdx b/docs/ko/features/cloud-status.mdx
+index 4142b03..92c9c66 100644
+--- a/docs/ko/features/cloud-status.mdx
++++ b/docs/ko/features/cloud-status.mdx
+@@ -1,5 +1,5 @@
+ ---
+-title: Cloud Status
++title: 클라우드 상태
+ description: VS Code에서 F5 Distributed Cloud 서비스 상태를 모니터링합니다.
+ sidebar:
+   order: 3
+@@ -10,10 +10,10 @@ i18n:
+ 
+ ## 상태 모니터링
+ 
+-**Cloud Status** 트리 뷰는 F5 Distributed Cloud 서비스의 현재 상태를 표시합니다. 상태는 공식 F5 상태 페이지에서 가져오며 다음을 보여줍니다:
++**클라우드 상태** 트리 뷰는 F5 Distributed Cloud 서비스의 현재 상태를 표시합니다. 상태는 공식 F5 상태 페이지에서 가져오며 다음을 보여줍니다:
+ 
+ - 전체 플랫폼 상태
+-- 구성 요소별 상태 (API, 콘솔, 데이터 플레인 등)
+-- 활성 인시던트 및 유지보수 기간
++- 컴포넌트별 상태 (API, Console, Data Plane 등)
++- 활성 인시던트 및 유지보수 일정
+ 
+-뷰는 설정된 새로고침 간격(`f5xc.autoRefreshInterval`)에 따라 자동으로 업데이트됩니다.
++이 뷰는 설정된 새로고침 간격(`f5xc.autoRefreshInterval`)에 따라 자동으로 업데이트됩니다.
+diff --git a/docs/ko/features/json-intellisense.mdx b/docs/ko/features/json-intellisense.mdx
+index 42344ed..c74e490 100644
+--- a/docs/ko/features/json-intellisense.mdx
++++ b/docs/ko/features/json-intellisense.mdx
+@@ -1,6 +1,6 @@
+ ---
+-title: JSON IntelliSense
+-description: F5 XC 리소스 구성에 대한 스키마 검증 및 자동 완성.
++title: JSON 인텔리센스
++description: F5 XC 리소스 구성에 대한 스키마 유효성 검사 및 자동 완성.
+ sidebar:
+   order: 4
+ i18n:
+@@ -8,9 +8,9 @@ i18n:
+   translator: machine
+ ---
+ 
+-## 스키마 검증
++## 스키마 유효성 검사
+ 
+-이 확장은 일반적인 리소스 유형에 대한 JSON 스키마를 제공합니다. 리소스 JSON 파일을 편집할 때, VS Code는 실시간으로 구성을 검증하고 오류를 강조 표시합니다.
++이 확장은 일반적인 리소스 유형에 대한 JSON 스키마를 제공합니다. 리소스 JSON 파일을 편집할 때 VS Code가 실시간으로 구성의 유효성을 검사하고 오류를 강조 표시합니다.
+ 
+ ## 지원되는 스키마
+ 
+@@ -24,4 +24,4 @@ i18n:
+ 
+ ## 자동 완성
+ 
+-IntelliSense는 F5 XC OpenAPI 사양을 기반으로 필드 이름, 열거형 값 및 중첩된 객체 구조에 대한 자동 완성을 제공합니다.
++인텔리센스는 F5 XC OpenAPI 사양을 기반으로 필드 이름, 열거형 값 및 중첩 객체 구조에 대한 자동 완성을 제공합니다.
+diff --git a/docs/ko/features/observability.mdx b/docs/ko/features/observability.mdx
+index 6933a81..ccc786f 100644
+--- a/docs/ko/features/observability.mdx
++++ b/docs/ko/features/observability.mdx
+@@ -8,14 +8,14 @@ i18n:
+   translator: machine
+ ---
+ 
+-## 로그 확인
++## 로그 보기
+ 
+-리소스를 마우스 오른쪽 버튼으로 클릭하고 **View Logs**를 선택하여 F5 XC 플랫폼에서 실시간 로그 데이터를 스트리밍합니다.
++리소스를 마우스 오른쪽 버튼으로 클릭하고 **View Logs**를 선택하면 F5 XC 플랫폼에서 실시간 로그 데이터를 스트리밍할 수 있습니다.
+ 
+-## 메트릭 확인
++## 메트릭 보기
+ 
+-리소스를 마우스 오른쪽 버튼으로 클릭하고 **View Metrics**를 선택하여 성능 및 트래픽 메트릭을 확인합니다.
++리소스를 마우스 오른쪽 버튼으로 클릭하고 **View Metrics**를 선택하면 성능 및 트래픽 메트릭을 확인할 수 있습니다.
+ 
+ ## 아키텍처 다이어그램
+ 
+-리소스에서 **Diagram**을 선택하여 리소스의 관계 및 종속성을 보여주는 시각적 아키텍처 다이어그램을 생성합니다.
++리소스에서 **Diagram**을 선택하면 리소스의 관계 및 종속성을 보여주는 시각적 아키텍처 다이어그램이 생성됩니다.
+diff --git a/docs/ko/features/resource-management.mdx b/docs/ko/features/resource-management.mdx
+index f8b7e1d..8827f7f 100644
+--- a/docs/ko/features/resource-management.mdx
++++ b/docs/ko/features/resource-management.mdx
+@@ -10,20 +10,20 @@ i18n:
+ 
+ ## 리소스 탐색
+ 
+-**Resources** 트리 뷰는 도메인과 카테고리별로 정리된 리소스를 표시합니다. 카테고리를 확장하여 리소스 유형을 확인하고, 유형을 확장하여 네임스페이스 내의 개별 리소스 목록을 볼 수 있습니다.
++**Resources** 트리 뷰는 도메인과 카테고리별로 구성된 리소스를 표시합니다. 카테고리를 확장하면 리소스 유형이 표시되며, 유형을 확장하면 네임스페이스 내의 개별 리소스 목록을 확인할 수 있습니다.
+ 
+ ## 리소스 생성
+ 
+ 1. 트리에서 리소스 유형을 마우스 오른쪽 버튼으로 클릭하고 **Create**를 선택합니다.
+-2. 스키마 검증이 적용된 템플릿이 포함된 JSON 편집기가 열립니다.
+-3. 필수 필드를 작성합니다 (IntelliSense가 자동 완성을 제공합니다).
+-4. 파일을 저장하여 F5 XC API에 리소스를 제출합니다.
++2. 스키마가 검증된 템플릿이 포함된 JSON 편집기가 열립니다.
++3. 필수 필드를 입력합니다 (IntelliSense가 자동 완성을 제공합니다).
++4. 파일을 저장하면 리소스가 F5 XC API로 제출됩니다.
+ 
+ ## 리소스 편집
+ 
+ 1. 트리에서 리소스를 클릭하여 편집기에서 엽니다.
+-2. 전체 IntelliSense 지원을 활용하여 필드를 수정합니다.
+-3. 저장하여 변경 사항을 API에 반영합니다.
++2. 완전한 IntelliSense 지원을 통해 필드를 수정합니다.
++3. 저장하면 변경 사항이 API로 푸시됩니다.
+ 
+ ## 리소스 삭제
+ 
+diff --git a/docs/ko/getting-started/installation.mdx b/docs/ko/getting-started/installation.mdx
+index 63ce4a0..17a348e 100644
+--- a/docs/ko/getting-started/installation.mdx
++++ b/docs/ko/getting-started/installation.mdx
+@@ -10,7 +10,7 @@ i18n:
+ 
+ ## VS Code 마켓플레이스
+ 
+-VS Code 확장 프로그램 패널(`Ctrl+Shift+X` / `Cmd+Shift+X`)에서 "F5 Distributed Cloud Tools"를 검색하고 **Install**을 클릭합니다.
++VS Code 확장 프로그램 패널(`Ctrl+Shift+X` / `Cmd+Shift+X`)에서 "F5 Distributed Cloud Tools"를 검색하고 **설치**를 클릭합니다.
+ 
+ ## 수동 VSIX 설치
+ 
+diff --git a/docs/ko/getting-started/profile-setup.mdx b/docs/ko/getting-started/profile-setup.mdx
+index b8381bb..32b9c70 100644
+--- a/docs/ko/getting-started/profile-setup.mdx
++++ b/docs/ko/getting-started/profile-setup.mdx
+@@ -1,6 +1,6 @@
+ ---
+ title: 프로필 설정
+-description: F5 Distributed Cloud 연결을 위한 API 자격 증명을 구성합니다.
++description: F5 Distributed Cloud에 연결하기 위한 API 자격 증명을 구성합니다.
+ sidebar:
+   order: 2
+ i18n:
+@@ -24,4 +24,4 @@ i18n:
+ - **편집**: 프로필을 마우스 오른쪽 버튼으로 클릭하고 **Edit Profile**을 선택합니다.
+ - **삭제**: 프로필을 마우스 오른쪽 버튼으로 클릭하고 **Delete Profile**을 선택합니다.
+ 
+-프로필은 VS Code의 내장 시크릿 스토리지(Linux에서는 XDG 호환)를 사용하여 안전하게 저장됩니다.
++프로필은 VS Code의 내장 비밀 저장소(Linux에서는 XDG 호환)를 사용하여 안전하게 저장됩니다.
+diff --git a/docs/ko/index.mdx b/docs/ko/index.mdx
+index 4cb5d6b..cfcba31 100644
+--- a/docs/ko/index.mdx
++++ b/docs/ko/index.mdx
+@@ -1,8 +1,8 @@
+ ---
+-title: F5 Distributed Cloud Tools
+-description: F5 Distributed Cloud 리소스를 관리하기 위한 VS Code 확장 프로그램.
++title: F5 Distributed Cloud 도구
++description: F5 Distributed Cloud 리소스를 관리하기 위한 VS Code 확장 프로그램입니다.
+ hero:
+-  tagline: Manage F5 XC resources directly from VS Code.
++  tagline: VS Code에서 직접 F5 XC 리소스를 관리하세요.
+ sidebar:
+   hidden: true
+   order: 0
+@@ -11,4 +11,4 @@ i18n:
+   translator: machine
+ ---
+ 
+-F5 Distributed Cloud Tools는 편집기에서 직접 F5 XC 리소스를 탐색, 생성, 편집 및 삭제할 수 있는 VS Code 확장 프로그램입니다. 25개 API 도메인에 걸쳐 236개 이상의 리소스 유형에 대해 완전한 CRUD 작업, 스키마 유효성 검사를 포함한 JSON IntelliSense, 관측 가능성 도구 및 클라우드 상태 모니터링을 제공합니다.
++F5 Distributed Cloud 도구는 편집기에서 직접 F5 XC 리소스를 탐색, 생성, 편집 및 삭제할 수 있는 VS Code 확장 프로그램입니다. 25개 API 도메인에 걸친 236개 이상의 리소스 유형에 대해 완전한 CRUD 작업, 스키마 유효성 검사를 포함한 JSON IntelliSense, 관측성 도구 및 클라우드 상태 모니터링을 제공합니다.
+diff --git a/docs/ko/reference/supported-resources.mdx b/docs/ko/reference/supported-resources.mdx
+index 07654b2..d972c59 100644
+--- a/docs/ko/reference/supported-resources.mdx
++++ b/docs/ko/reference/supported-resources.mdx
+@@ -1,5 +1,5 @@
+ ---
+-title: 지원되는 리소스
++title: 지원 리소스
+ description: 확장 프로그램이 지원하는 F5 XC 리소스 유형의 전체 목록입니다.
+ sidebar:
+   order: 1
+@@ -12,11 +12,11 @@ i18n:
+ 
+ ## 도메인 카테고리
+ 
+-- **애플리케이션 딜리버리**: HTTP 로드 밸런서, TCP 로드 밸런서, 오리진 풀, 헬스 체크
++- **애플리케이션 전송**: HTTP 로드 밸런서, TCP 로드 밸런서, 오리진 풀, 헬스 체크
+ - **보안**: 웹 앱 방화벽, API 보안, 봇 방어, DDoS 보호
+ - **네트워킹**: 가상 네트워크, 사이트, 플릿 관리, 네트워크 정책
+ - **DNS**: DNS 존, DNS 로드 밸런서, DNS 레코드
+-- **옵저버빌리티**: 대시보드, 알림, 로그 수신기
+-- **인프라스트럭처**: 클라우드 사이트, 클라우드 자격 증명, 서비스 정책
++- **관측성**: 대시보드, 알림, 로그 수신기
++- **인프라**: 클라우드 사이트, 클라우드 자격 증명, 서비스 정책
+ 
+-지원되는 리소스 유형의 전체 목록은 F5 XC OpenAPI 사양에서 자동으로 생성되며, 새 API 버전이 릴리스되면 자동으로 업데이트됩니다.
++지원되는 리소스 유형의 전체 목록은 F5 XC OpenAPI 사양에서 자동으로 생성되며, 새로운 API 버전이 출시될 때 자동으로 업데이트됩니다.
+diff --git a/docs/pt-br/configuration/keyboard-shortcuts.mdx b/docs/pt-br/configuration/keyboard-shortcuts.mdx
+index 9beac5b..e611cd4 100644
+--- a/docs/pt-br/configuration/keyboard-shortcuts.mdx
++++ b/docs/pt-br/configuration/keyboard-shortcuts.mdx
+@@ -1,6 +1,6 @@
+ ---
+ title: Atalhos de Teclado
+-description: Atalhos de teclado padrão para F5 Distributed Cloud Tools.
++description: Atalhos de teclado padrão para as Ferramentas F5 Distributed Cloud.
+ sidebar:
+   order: 2
+ i18n:
+@@ -8,8 +8,8 @@ i18n:
+   translator: machine
+ ---
+ 
+-## Atalhos de Teclado Padrão
++## Atalhos Padrão
+ 
+-Os atalhos de teclado podem ser personalizados através do editor de Atalhos de Teclado do VS Code (`Ctrl+K Ctrl+S` / `Cmd+K Cmd+S`). Pesquise por "f5xc" para encontrar todos os comandos da extensão.
++Os atalhos de teclado podem ser personalizados por meio do editor de Atalhos de Teclado do VS Code (`Ctrl+K Ctrl+S` / `Cmd+K Cmd+S`). Pesquise por "f5xc" para encontrar todos os comandos da extensão.
+ 
+-Todos os mais de 40 comandos estão acessíveis através da Paleta de Comandos (`Ctrl+Shift+P` / `Cmd+Shift+P`) pesquisando por "F5 XC".
++Todos os mais de 40 comandos estão acessíveis pela Paleta de Comandos (`Ctrl+Shift+P` / `Cmd+Shift+P`) pesquisando por "F5 XC".
+diff --git a/docs/pt-br/configuration/settings.mdx b/docs/pt-br/configuration/settings.mdx
+index 0280303..a5f3384 100644
+--- a/docs/pt-br/configuration/settings.mdx
++++ b/docs/pt-br/configuration/settings.mdx
+@@ -12,8 +12,8 @@ i18n:
+ 
+ | Configuração | Tipo | Padrão | Descrição |
+ |---------|------|---------|-------------|
+-| `f5xc.logLevel` | string | `info` | Nível de detalhamento dos logs: `debug`, `info`, `warn`, `error` |
+-| `f5xc.defaultNamespace` | string | `default` | Namespace padrão para operações com recursos |
++| `f5xc.logLevel` | string | `info` | Verbosidade do log: `debug`, `info`, `warn`, `error` |
++| `f5xc.defaultNamespace` | string | `default` | Namespace padrão para operações de recursos |
+ | `f5xc.confirmDelete` | boolean | `true` | Exibir diálogo de confirmação antes de excluir recursos |
+ | `f5xc.deleteConfirmationLevel` | string | `always` | Quando confirmar: `always`, `high-only`, `never` |
+ | `f5xc.autoRefreshInterval` | number | `0` | Intervalo de atualização automática em segundos (0 = desativado) |
+diff --git a/docs/pt-br/features/cloud-status.mdx b/docs/pt-br/features/cloud-status.mdx
+index e911ff9..937da3b 100644
+--- a/docs/pt-br/features/cloud-status.mdx
++++ b/docs/pt-br/features/cloud-status.mdx
+@@ -10,7 +10,7 @@ i18n:
+ 
+ ## Monitoramento de Status
+ 
+-A visualização em árvore **Cloud Status** exibe a saúde atual dos serviços F5 Distributed Cloud. O status é obtido da página oficial de status da F5 e mostra:
++A visualização em árvore **Cloud Status** exibe a saúde atual dos serviços F5 Distributed Cloud. O status é obtido a partir da página oficial de status da F5 e mostra:
+ 
+ - Status geral da plataforma
+ - Saúde por componente (API, Console, Data Plane, etc.)
+diff --git a/docs/pt-br/features/json-intellisense.mdx b/docs/pt-br/features/json-intellisense.mdx
+index 44caff6..cdd674b 100644
+--- a/docs/pt-br/features/json-intellisense.mdx
++++ b/docs/pt-br/features/json-intellisense.mdx
+@@ -1,6 +1,8 @@
+ ---
+ title: JSON IntelliSense
+-description: Validação de esquema e autocompletar para configurações de recursos do F5 XC.
++description: >-
++  Validação de esquema e autocompletação para configurações de recursos do F5
++  XC.
+ sidebar:
+   order: 4
+ i18n:
+@@ -22,6 +24,6 @@ A extensão fornece esquemas JSON para tipos de recursos comuns. Ao editar arqui
+ - DNS Load Balancer (`.dns_load_balancer.json`)
+ - Virtual Site (`.virtual_site.json`)
+ 
+-## Autocompletar
++## Autocompletação
+ 
+-O IntelliSense fornece autocompletar para nomes de campos, valores de enumeração e estruturas de objetos aninhados com base na especificação OpenAPI do F5 XC.
++O IntelliSense fornece autocompletação para nomes de campos, valores de enumeração e estruturas de objetos aninhados com base na especificação OpenAPI do F5 XC.
+diff --git a/docs/pt-br/features/observability.mdx b/docs/pt-br/features/observability.mdx
+index b967fcb..20b58e2 100644
+--- a/docs/pt-br/features/observability.mdx
++++ b/docs/pt-br/features/observability.mdx
+@@ -8,14 +8,14 @@ i18n:
+   translator: machine
+ ---
+ 
+-## Visualizando Logs
++## Visualização de Logs
+ 
+-Clique com o botão direito em um recurso e selecione **View Logs** para transmitir dados de log em tempo real da plataforma F5 XC.
++Clique com o botão direito em um recurso e selecione **Visualizar Logs** para transmitir dados de log em tempo real da plataforma F5 XC.
+ 
+-## Visualizando Métricas
++## Visualização de Métricas
+ 
+-Clique com o botão direito em um recurso e selecione **View Metrics** para ver métricas de desempenho e tráfego.
++Clique com o botão direito em um recurso e selecione **Visualizar Métricas** para ver métricas de desempenho e tráfego.
+ 
+ ## Diagramas de Arquitetura
+ 
+-Selecione **Diagram** em um recurso para gerar um diagrama visual de arquitetura mostrando os relacionamentos e dependências do recurso.
++Selecione **Diagrama** em um recurso para gerar um diagrama visual de arquitetura mostrando os relacionamentos e dependências do recurso.
+diff --git a/docs/pt-br/features/resource-management.mdx b/docs/pt-br/features/resource-management.mdx
+index 32fecf0..26afbc4 100644
+--- a/docs/pt-br/features/resource-management.mdx
++++ b/docs/pt-br/features/resource-management.mdx
+@@ -1,6 +1,6 @@
+ ---
+ title: Gerenciamento de Recursos
+-description: 'Navegue, crie, edite e exclua recursos do F5 XC a partir do VS Code.'
++description: 'Navegue, crie, edite e exclua recursos do F5 XC diretamente do VS Code.'
+ sidebar:
+   order: 1
+ i18n:
+@@ -8,9 +8,9 @@ i18n:
+   translator: machine
+ ---
+ 
+-## Navegando pelos Recursos
++## Navegando por Recursos
+ 
+-A visualização em árvore **Resources** exibe os recursos organizados por domínio e categoria. Expanda uma categoria para ver os tipos de recursos e, em seguida, expanda um tipo para listar os recursos individuais no seu namespace.
++A visualização em árvore **Resources** exibe recursos organizados por domínio e categoria. Expanda uma categoria para ver os tipos de recursos e, em seguida, expanda um tipo para listar os recursos individuais no seu namespace.
+ 
+ ## Criando Recursos
+ 
+@@ -22,7 +22,7 @@ A visualização em árvore **Resources** exibe os recursos organizados por dom
+ ## Editando Recursos
+ 
+ 1. Clique em um recurso na árvore para abri-lo no editor.
+-2. Modifique os campos com suporte completo do IntelliSense.
++2. Modifique os campos com suporte completo ao IntelliSense.
+ 3. Salve para enviar as alterações para a API.
+ 
+ ## Excluindo Recursos
+diff --git a/docs/pt-br/getting-started/profile-setup.mdx b/docs/pt-br/getting-started/profile-setup.mdx
+index 760eeac..17e9433 100644
+--- a/docs/pt-br/getting-started/profile-setup.mdx
++++ b/docs/pt-br/getting-started/profile-setup.mdx
+@@ -14,7 +14,7 @@ i18n:
+ 2. Clique no ícone **+** para adicionar um novo perfil.
+ 3. Insira a URL do seu tenant (ex.: `https://your-tenant.console.ves.volterra.io`).
+ 4. Escolha um método de autenticação:
+-   - **API Token**: Cole seu token de API obtido no console do F5 XC.
++   - **API Token**: Cole seu token de API do console do F5 XC.
+    - **P12 Certificate**: Selecione seu arquivo de certificado `.p12` e insira a senha.
+ 5. Defina um namespace padrão.
+ 
+@@ -24,4 +24,4 @@ i18n:
+ - **Editar**: Clique com o botão direito em um perfil e selecione **Edit Profile**.
+ - **Excluir**: Clique com o botão direito em um perfil e selecione **Delete Profile**.
+ 
+-Os perfis são armazenados de forma segura utilizando o armazenamento secreto integrado do VS Code (compatível com XDG no Linux).
++Os perfis são armazenados de forma segura usando o armazenamento secreto integrado do VS Code (compatível com XDG no Linux).
+diff --git a/docs/pt-br/index.mdx b/docs/pt-br/index.mdx
+index c943893..44cb678 100644
+--- a/docs/pt-br/index.mdx
++++ b/docs/pt-br/index.mdx
+@@ -2,7 +2,7 @@
+ title: F5 Distributed Cloud Tools
+ description: Extensão do VS Code para gerenciar recursos do F5 Distributed Cloud.
+ hero:
+-  tagline: Manage F5 XC resources directly from VS Code.
++  tagline: Gerencie recursos do F5 XC diretamente do VS Code.
+ sidebar:
+   hidden: true
+   order: 0
+@@ -11,4 +11,4 @@ i18n:
+   translator: machine
+ ---
+ 
+-O F5 Distributed Cloud Tools é uma extensão do VS Code que permite navegar, criar, editar e excluir recursos do F5 XC diretamente do seu editor. Ele fornece operações CRUD completas, JSON IntelliSense com validação de schema, ferramentas de observabilidade e monitoramento de status da nuvem para mais de 236 tipos de recursos em 25 domínios de API.
++O F5 Distributed Cloud Tools é uma extensão do VS Code que permite navegar, criar, editar e excluir recursos do F5 XC diretamente do seu editor. Ele oferece operações CRUD completas, JSON IntelliSense com validação de schema, ferramentas de observabilidade e monitoramento de status da nuvem para mais de 236 tipos de recursos em 25 domínios de API.
+diff --git a/docs/th/configuration/keyboard-shortcuts.mdx b/docs/th/configuration/keyboard-shortcuts.mdx
+index fd904fa..d7669e7 100644
+--- a/docs/th/configuration/keyboard-shortcuts.mdx
++++ b/docs/th/configuration/keyboard-shortcuts.mdx
+@@ -1,6 +1,6 @@
+ ---
+-title: แป้นพิมพ์ลัด
+-description: แป้นพิมพ์ลัดเริ่มต้นสำหรับ F5 Distributed Cloud Tools
++title: ปุ่มลัดคีย์บอร์ด
++description: ปุ่มลัดคีย์บอร์ดเริ่มต้นสำหรับ F5 Distributed Cloud Tools
+ sidebar:
+   order: 2
+ i18n:
+@@ -8,8 +8,8 @@ i18n:
+   translator: machine
+ ---
+ 
+-## คีย์ไบนดิ้งเริ่มต้น
++## การกำหนดปุ่มลัดเริ่มต้น
+ 
+-แป้นพิมพ์ลัดสามารถปรับแต่งได้ผ่านตัวแก้ไขแป้นพิมพ์ลัดของ VS Code (`Ctrl+K Ctrl+S` / `Cmd+K Cmd+S`) ค้นหา "f5xc" เพื่อดูคำสั่งทั้งหมดของส่วนขยาย
++ปุ่มลัดคีย์บอร์ดสามารถปรับแต่งได้ผ่านตัวแก้ไขปุ่มลัดคีย์บอร์ดของ VS Code (`Ctrl+K Ctrl+S` / `Cmd+K Cmd+S`) ค้นหา "f5xc" เพื่อค้นหาคำสั่งของส่วนขยายทั้งหมด
+ 
+-คำสั่งทั้งหมดมากกว่า 40 คำสั่งสามารถเข้าถึงได้ผ่าน Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) โดยค้นหา "F5 XC"
++คำสั่งทั้งหมดกว่า 40 รายการสามารถเข้าถึงได้ผ่าน Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) โดยค้นหา "F5 XC"
+diff --git a/docs/th/configuration/settings.mdx b/docs/th/configuration/settings.mdx
+index f41b9c9..9d9b9db 100644
+--- a/docs/th/configuration/settings.mdx
++++ b/docs/th/configuration/settings.mdx
+@@ -8,9 +8,9 @@ i18n:
+   translator: machine
+ ---
+ 
+-## การตั้งค่าที่ใช้งานได้
++## การตั้งค่าที่มีให้ใช้งาน
+ 
+-| การตั้งค่า | ชนิด | ค่าเริ่มต้น | คำอธิบาย |
++| การตั้งค่า | ประเภท | ค่าเริ่มต้น | คำอธิบาย |
+ |---------|------|---------|-------------|
+ | `f5xc.logLevel` | string | `info` | ระดับความละเอียดของบันทึก: `debug`, `info`, `warn`, `error` |
+ | `f5xc.defaultNamespace` | string | `default` | เนมสเปซเริ่มต้นสำหรับการดำเนินการกับทรัพยากร |
+diff --git a/docs/th/features/cloud-status.mdx b/docs/th/features/cloud-status.mdx
+index 46675b7..6e08a7b 100644
+--- a/docs/th/features/cloud-status.mdx
++++ b/docs/th/features/cloud-status.mdx
+@@ -1,6 +1,6 @@
+ ---
+-title: Cloud Status
+-description: ตรวจสอบสถานะบริการ F5 Distributed Cloud จาก VS Code
++title: สถานะคลาวด์
++description: ตรวจสอบสุขภาพของบริการ F5 Distributed Cloud จาก VS Code
+ sidebar:
+   order: 3
+ i18n:
+@@ -10,10 +10,10 @@ i18n:
+ 
+ ## การตรวจสอบสถานะ
+ 
+-มุมมองแบบต้นไม้ **Cloud Status** แสดงสถานะสุขภาพปัจจุบันของบริการ F5 Distributed Cloud สถานะจะถูกดึงข้อมูลจากหน้าสถานะอย่างเป็นทางการของ F5 และแสดง:
++มุมมองแบบต้นไม้ **Cloud Status** แสดงสุขภาพปัจจุบันของบริการ F5 Distributed Cloud ข้อมูลสถานะถูกดึงมาจากหน้าสถานะอย่างเป็นทางการของ F5 และแสดง:
+ 
+-- สถานะรวมของแพลตฟอร์ม
++- สถานะแพลตฟอร์มโดยรวม
+ - สุขภาพของแต่ละส่วนประกอบ (API, Console, Data Plane เป็นต้น)
+-- เหตุการณ์ที่กำลังดำเนินอยู่และช่วงเวลาบำรุงรักษา
++- เหตุการณ์ที่กำลังดำเนินอยู่และช่วงเวลาการบำรุงรักษา
+ 
+-มุมมองจะอัปเดตโดยอัตโนมัติตามช่วงเวลารีเฟรชที่กำหนดค่าไว้ (`f5xc.autoRefreshInterval`)
++มุมมองนี้จะอัปเดตโดยอัตโนมัติตามช่วงเวลาการรีเฟรชที่กำหนดค่าไว้ (`f5xc.autoRefreshInterval`)
+diff --git a/docs/th/features/json-intellisense.mdx b/docs/th/features/json-intellisense.mdx
+index 252e3e9..1361413 100644
+--- a/docs/th/features/json-intellisense.mdx
++++ b/docs/th/features/json-intellisense.mdx
+@@ -24,4 +24,4 @@ i18n:
+ 
+ ## การเติมข้อความอัตโนมัติ
+ 
+-IntelliSense ให้การเติมข้อความอัตโนมัติสำหรับชื่อฟิลด์ ค่า enum และโครงสร้างอ็อบเจกต์ที่ซ้อนกัน โดยอิงจาก F5 XC OpenAPI spec
++IntelliSense มีการเติมข้อความอัตโนมัติสำหรับชื่อฟิลด์ ค่า enum และโครงสร้างออบเจกต์แบบซ้อนตาม F5 XC OpenAPI spec
+diff --git a/docs/th/features/observability.mdx b/docs/th/features/observability.mdx
+index 0e06f47..55607a9 100644
+--- a/docs/th/features/observability.mdx
++++ b/docs/th/features/observability.mdx
+@@ -14,7 +14,7 @@ i18n:
+ 
+ ## การดูเมตริก
+ 
+-คลิกขวาที่ทรัพยากรและเลือก **View Metrics** เพื่อดูเมตริกด้านประสิทธิภาพและปริมาณการรับส่งข้อมูล
++คลิกขวาที่ทรัพยากรและเลือก **View Metrics** เพื่อดูเมตริกด้านประสิทธิภาพและทราฟฟิก
+ 
+ ## ไดอะแกรมสถาปัตยกรรม
+ 
+diff --git a/docs/th/features/resource-management.mdx b/docs/th/features/resource-management.mdx
+index ff920e1..0c50879 100644
+--- a/docs/th/features/resource-management.mdx
++++ b/docs/th/features/resource-management.mdx
+@@ -14,15 +14,15 @@ i18n:
+ 
+ ## การสร้างทรัพยากร
+ 
+-1. คลิกขวาที่ประเภทของทรัพยากรในมุมมองแบบต้นไม้ แล้วเลือก **Create**
+-2. ตัวแก้ไข JSON จะเปิดขึ้นพร้อมเทมเพลตที่ตรวจสอบความถูกต้องตาม schema
+-3. กรอกฟิลด์ที่จำเป็น (IntelliSense ให้การเติมข้อความอัตโนมัติ)
++1. คลิกขวาที่ประเภทของทรัพยากรในต้นไม้แล้วเลือก **Create**
++2. ตัวแก้ไข JSON จะเปิดขึ้นพร้อมเทมเพลตที่มีการตรวจสอบ schema
++3. กรอกฟิลด์ที่จำเป็น (IntelliSense จะช่วยเติมข้อมูลอัตโนมัติ)
+ 4. บันทึกไฟล์เพื่อส่งทรัพยากรไปยัง F5 XC API
+ 
+ ## การแก้ไขทรัพยากร
+ 
+-1. คลิกที่ทรัพยากรในมุมมองแบบต้นไม้เพื่อเปิดในตัวแก้ไข
+-2. แก้ไขฟิลด์ต่าง ๆ พร้อมการรองรับ IntelliSense อย่างเต็มรูปแบบ
++1. คลิกทรัพยากรในต้นไม้เพื่อเปิดในตัวแก้ไข
++2. แก้ไขฟิลด์พร้อมการรองรับ IntelliSense อย่างเต็มรูปแบบ
+ 3. บันทึกเพื่อส่งการเปลี่ยนแปลงไปยัง API
+ 
+ ## การลบทรัพยากร
+diff --git a/docs/th/getting-started/installation.mdx b/docs/th/getting-started/installation.mdx
+index a6f7668..70045dd 100644
+--- a/docs/th/getting-started/installation.mdx
++++ b/docs/th/getting-started/installation.mdx
+@@ -10,16 +10,16 @@ i18n:
+ 
+ ## VS Code Marketplace
+ 
+-ค้นหา "F5 Distributed Cloud Tools" ในแผง Extensions ของ VS Code (`Ctrl+Shift+X` / `Cmd+Shift+X`) แล้วคลิก **Install**
++ค้นหา "F5 Distributed Cloud Tools" ในแผง Extensions ของ VS Code (`Ctrl+Shift+X` / `Cmd+Shift+X`) แล้วคลิก **ติดตั้ง**
+ 
+-## การติดตั้ง VSIX แบบแมนนวล
++## การติดตั้ง VSIX ด้วยตนเอง
+ 
+ 1. ดาวน์โหลดไฟล์ `.vsix` จากหน้า [GitHub Releases](https://github.com/f5xc-salesdemos/vscode-f5xc-tools/releases)
+ 2. ใน VS Code ให้เปิด Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`)
+ 3. เรียกใช้ **Extensions: Install from VSIX** แล้วเลือกไฟล์ที่ดาวน์โหลดมา
+ 
+-## ข้อกำหนดเบื้องต้น
++## ข้อกำหนด
+ 
+ - VS Code 1.107.0 หรือใหม่กว่า
+-- F5 Distributed Cloud tenant
+-- ข้อมูลรับรอง API (ใบรับรองหรือ API token)
++- เทแนนต์ F5 Distributed Cloud
++- ข้อมูลรับรอง API (ใบรับรองหรือโทเค็น API)
+diff --git a/docs/th/getting-started/profile-setup.mdx b/docs/th/getting-started/profile-setup.mdx
+index 89289ae..c7689e3 100644
+--- a/docs/th/getting-started/profile-setup.mdx
++++ b/docs/th/getting-started/profile-setup.mdx
+@@ -14,7 +14,7 @@ i18n:
+ 2. คลิกไอคอน **+** เพื่อเพิ่มโปรไฟล์ใหม่
+ 3. ป้อน URL ของ tenant ของคุณ (เช่น `https://your-tenant.console.ves.volterra.io`)
+ 4. เลือกวิธีการยืนยันตัวตน:
+-   - **API Token**: วางโทเค็น API ของคุณจากคอนโซล F5 XC
++   - **API Token**: วาง API token ของคุณจากคอนโซล F5 XC
+    - **P12 Certificate**: เลือกไฟล์ใบรับรอง `.p12` ของคุณและป้อนรหัสผ่าน
+ 5. ตั้งค่า namespace เริ่มต้น
+ 
+@@ -24,4 +24,4 @@ i18n:
+ - **แก้ไข**: คลิกขวาที่โปรไฟล์และเลือก **Edit Profile**
+ - **ลบ**: คลิกขวาที่โปรไฟล์และเลือก **Delete Profile**
+ 
+-โปรไฟล์จะถูกจัดเก็บอย่างปลอดภัยโดยใช้ที่เก็บข้อมูลลับในตัวของ VS Code (สอดคล้องกับ XDG บน Linux)
++โปรไฟล์จะถูกจัดเก็บอย่างปลอดภัยโดยใช้ที่เก็บข้อมูลลับในตัวของ VS Code (รองรับ XDG บน Linux)
+diff --git a/docs/th/index.mdx b/docs/th/index.mdx
+index 291fbae..c9d2bc2 100644
+--- a/docs/th/index.mdx
++++ b/docs/th/index.mdx
+@@ -2,7 +2,7 @@
+ title: F5 Distributed Cloud Tools
+ description: ส่วนขยาย VS Code สำหรับจัดการทรัพยากร F5 Distributed Cloud
+ hero:
+-  tagline: Manage F5 XC resources directly from VS Code.
++  tagline: จัดการทรัพยากร F5 XC โดยตรงจาก VS Code
+ sidebar:
+   hidden: true
+   order: 0
+@@ -11,4 +11,4 @@ i18n:
+   translator: machine
+ ---
+ 
+-F5 Distributed Cloud Tools เป็นส่วนขยาย VS Code ที่ช่วยให้คุณสามารถเรียกดู สร้าง แก้ไข และลบทรัพยากร F5 XC ได้โดยตรงจากเอดิเตอร์ของคุณ โดยรองรับการดำเนินการ CRUD อย่างครบถ้วน, JSON IntelliSense พร้อมการตรวจสอบ schema, เครื่องมือ observability และการตรวจสอบสถานะคลาวด์สำหรับทรัพยากรมากกว่า 236 ประเภทใน 25 โดเมน API
++F5 Distributed Cloud Tools เป็นส่วนขยาย VS Code ที่ช่วยให้คุณสามารถเรียกดู สร้าง แก้ไข และลบทรัพยากร F5 XC ได้โดยตรงจากเอดิเตอร์ของคุณ โดยรองรับการดำเนินการ CRUD อย่างครบถ้วน JSON IntelliSense พร้อมการตรวจสอบสคีมา เครื่องมือสังเกตการณ์ระบบ และการตรวจสอบสถานะคลาวด์สำหรับทรัพยากรมากกว่า 236 ประเภท ครอบคลุม 25 โดเมน API
+diff --git a/docs/th/reference/supported-resources.mdx b/docs/th/reference/supported-resources.mdx
+index d67e273..12ae737 100644
+--- a/docs/th/reference/supported-resources.mdx
++++ b/docs/th/reference/supported-resources.mdx
+@@ -1,6 +1,6 @@
+ ---
+ title: ทรัพยากรที่รองรับ
+-description: รายการประเภททรัพยากร F5 XC ทั้งหมดที่ส่วนขยายรองรับ
++description: รายการทรัพยากรประเภทต่างๆ ของ F5 XC ทั้งหมดที่ส่วนขยายรองรับ
+ sidebar:
+   order: 1
+ i18n:
+@@ -8,7 +8,7 @@ i18n:
+   translator: machine
+ ---
+ 
+-ส่วนขยายนี้รองรับประเภททรัพยากรมากกว่า 236 ประเภท ครอบคลุม 25 โดเมน API ของ F5 XC ทรัพยากรจะถูกจัดกลุ่มตามหมวดหมู่โดเมนในมุมมองแบบต้นไม้
++ส่วนขยายนี้รองรับทรัพยากรมากกว่า 236 ประเภท ครอบคลุม 25 โดเมน API ของ F5 XC ทรัพยากรถูกจัดระเบียบตามหมวดหมู่โดเมนในมุมมองแบบต้นไม้
+ 
+ ## หมวดหมู่โดเมน
+ 
+@@ -16,7 +16,7 @@ i18n:
+ - **ความปลอดภัย**: Web App Firewalls, API Security, Bot Defense, DDoS Protection
+ - **เครือข่าย**: Virtual Networks, Sites, Fleet Management, Network Policies
+ - **DNS**: DNS Zones, DNS Load Balancers, DNS Records
+-- **การตรวจสอบและสังเกตการณ์**: Dashboards, Alerts, Log Receivers
++- **การสังเกตการณ์**: Dashboards, Alerts, Log Receivers
+ - **โครงสร้างพื้นฐาน**: Cloud Sites, Cloud Credentials, Service Policies
+ 
+-รายการประเภททรัพยากรที่รองรับทั้งหมดถูกสร้างขึ้นโดยอัตโนมัติจากข้อกำหนด OpenAPI ของ F5 XC และจะอัปเดตโดยอัตโนมัติเมื่อมีการเผยแพร่เวอร์ชัน API ใหม่
++รายการทรัพยากรประเภทที่รองรับทั้งหมดถูกสร้างขึ้นโดยอัตโนมัติจากข้อกำหนด OpenAPI ของ F5 XC และจะอัปเดตโดยอัตโนมัติเมื่อมีการเผยแพร่เวอร์ชัน API ใหม่
+diff --git a/docs/zh-cn/configuration/keyboard-shortcuts.mdx b/docs/zh-cn/configuration/keyboard-shortcuts.mdx
+index adc66ef..47d1f0b 100644
+--- a/docs/zh-cn/configuration/keyboard-shortcuts.mdx
++++ b/docs/zh-cn/configuration/keyboard-shortcuts.mdx
+@@ -8,7 +8,7 @@ i18n:
+   translator: machine
+ ---
+ 
+-## 默认键绑定
++## 默认快捷键绑定
+ 
+ 键盘快捷键可以通过 VS Code 的键盘快捷方式编辑器（`Ctrl+K Ctrl+S` / `Cmd+K Cmd+S`）进行自定义。搜索 "f5xc" 可查找所有扩展命令。
+ 
+diff --git a/docs/zh-cn/configuration/settings.mdx b/docs/zh-cn/configuration/settings.mdx
+index 5139b7c..a5d7455 100644
+--- a/docs/zh-cn/configuration/settings.mdx
++++ b/docs/zh-cn/configuration/settings.mdx
+@@ -12,7 +12,7 @@ i18n:
+ 
+ | 设置 | 类型 | 默认值 | 描述 |
+ |---------|------|---------|-------------|
+-| `f5xc.logLevel` | string | `info` | 日志详细程度：`debug`、`info`、`warn`、`error` |
++| `f5xc.logLevel` | string | `info` | 日志详细级别：`debug`、`info`、`warn`、`error` |
+ | `f5xc.defaultNamespace` | string | `default` | 资源操作的默认命名空间 |
+ | `f5xc.confirmDelete` | boolean | `true` | 删除资源前显示确认对话框 |
+ | `f5xc.deleteConfirmationLevel` | string | `always` | 确认时机：`always`、`high-only`、`never` |
+diff --git a/docs/zh-cn/features/cloud-status.mdx b/docs/zh-cn/features/cloud-status.mdx
+index 582bc8e..b49e7f5 100644
+--- a/docs/zh-cn/features/cloud-status.mdx
++++ b/docs/zh-cn/features/cloud-status.mdx
+@@ -1,6 +1,6 @@
+ ---
+ title: 云状态
+-description: 在 VS Code 中监控 F5 Distributed Cloud 服务健康状况。
++description: 在 VS Code 中监控 F5 分布式云服务健康状况。
+ sidebar:
+   order: 3
+ i18n:
+@@ -10,9 +10,9 @@ i18n:
+ 
+ ## 状态监控
+ 
+-**Cloud Status** 树视图显示 F5 Distributed Cloud 服务的当前健康状况。状态信息从 F5 官方状态页面获取，并显示以下内容：
++**云状态**树视图显示 F5 分布式云服务的当前健康状况。状态信息从 F5 官方状态页面获取，显示内容包括：
+ 
+-- 整体平台状态
++- 平台整体状态
+ - 各组件健康状况（API、控制台、数据平面等）
+ - 活跃的事件和维护窗口
+ 
+diff --git a/docs/zh-cn/features/json-intellisense.mdx b/docs/zh-cn/features/json-intellisense.mdx
+index 6956a2c..603c81a 100644
+--- a/docs/zh-cn/features/json-intellisense.mdx
++++ b/docs/zh-cn/features/json-intellisense.mdx
+@@ -10,7 +10,7 @@ i18n:
+ 
+ ## 架构验证
+ 
+-该扩展为常见资源类型提供 JSON 架构。编辑资源 JSON 文件时，VS Code 会实时验证您的配置并高亮显示错误。
++该扩展为常见资源类型提供 JSON 架构。在编辑资源 JSON 文件时，VS Code 会实时验证您的配置并高亮显示错误。
+ 
+ ## 支持的架构
+ 
+diff --git a/docs/zh-cn/features/observability.mdx b/docs/zh-cn/features/observability.mdx
+index 7979360..2c32894 100644
+--- a/docs/zh-cn/features/observability.mdx
++++ b/docs/zh-cn/features/observability.mdx
+@@ -10,12 +10,12 @@ i18n:
+ 
+ ## 查看日志
+ 
+-右键单击资源并选择 **View Logs**，即可从 F5 XC 平台流式传输实时日志数据。
++右键单击资源并选择 **View Logs** 以从 F5 XC 平台流式传输实时日志数据。
+ 
+ ## 查看指标
+ 
+-右键单击资源并选择 **View Metrics**，即可查看性能和流量指标。
++右键单击资源并选择 **View Metrics** 以查看性能和流量指标。
+ 
+ ## 架构图
+ 
+-在资源上选择 **Diagram**，即可生成可视化架构图，展示资源的关系和依赖项。
++在资源上选择 **Diagram** 以生成可视化架构图，展示资源的关系和依赖项。
+diff --git a/docs/zh-cn/features/resource-management.mdx b/docs/zh-cn/features/resource-management.mdx
+index 4dac519..b4cd8c4 100644
+--- a/docs/zh-cn/features/resource-management.mdx
++++ b/docs/zh-cn/features/resource-management.mdx
+@@ -14,18 +14,18 @@ i18n:
+ 
+ ## 创建资源
+ 
+-1. 在树中右键点击某个资源类型，然后选择 **Create**。
+-2. 将打开一个带有模式验证模板的 JSON 编辑器。
++1. 在树视图中右键点击资源类型，选择 **Create**。
++2. 将打开一个带有架构验证模板的 JSON 编辑器。
+ 3. 填写必填字段（IntelliSense 提供自动补全功能）。
+-4. 保存文件以将资源提交到 F5 XC API。
++4. 保存文件即可将资源提交到 F5 XC API。
+ 
+ ## 编辑资源
+ 
+-1. 在树中点击某个资源，在编辑器中打开它。
+-2. 借助完整的 IntelliSense 支持修改字段。
+-3. 保存以将更改推送到 API。
++1. 在树视图中点击某个资源，在编辑器中打开它。
++2. 在完整的 IntelliSense 支持下修改字段。
++3. 保存即可将更改推送到 API。
+ 
+ ## 删除资源
+ 
+-1. 右键点击某个资源，然后选择 **Delete**。
++1. 右键点击某个资源，选择 **Delete**。
+ 2. 确认删除操作（可通过 `f5xc.confirmDelete` 和 `f5xc.deleteConfirmationLevel` 进行配置）。
+diff --git a/docs/zh-cn/getting-started/installation.mdx b/docs/zh-cn/getting-started/installation.mdx
+index 81241d1..d9c6894 100644
+--- a/docs/zh-cn/getting-started/installation.mdx
++++ b/docs/zh-cn/getting-started/installation.mdx
+@@ -8,11 +8,11 @@ i18n:
+   translator: machine
+ ---
+ 
+-## VS Code 扩展市场
++## VS Code 扩展商店
+ 
+-在 VS Code 扩展面板（`Ctrl+Shift+X` / `Cmd+Shift+X`）中搜索 "F5 Distributed Cloud Tools"，然后点击 **安装**。
++在 VS Code 扩展面板（`Ctrl+Shift+X` / `Cmd+Shift+X`）中搜索 "F5 Distributed Cloud Tools"，然后点击**安装**。
+ 
+-## 手动安装 VSIX
++## 手动 VSIX 安装
+ 
+ 1. 从 [GitHub Releases](https://github.com/f5xc-salesdemos/vscode-f5xc-tools/releases) 页面下载 `.vsix` 文件。
+ 2. 在 VS Code 中，打开命令面板（`Ctrl+Shift+P` / `Cmd+Shift+P`）。
+diff --git a/docs/zh-cn/getting-started/profile-setup.mdx b/docs/zh-cn/getting-started/profile-setup.mdx
+index 3ee7f0c..1f0be05 100644
+--- a/docs/zh-cn/getting-started/profile-setup.mdx
++++ b/docs/zh-cn/getting-started/profile-setup.mdx
+@@ -1,6 +1,6 @@
+ ---
+ title: 配置文件设置
+-description: 配置用于连接 F5 Distributed Cloud 的 API 凭据。
++description: 配置用于连接 F5 Distributed Cloud 的 API 凭证。
+ sidebar:
+   order: 2
+ i18n:
+@@ -14,14 +14,14 @@ i18n:
+ 2. 点击 **+** 图标以添加新的配置文件。
+ 3. 输入您的租户 URL（例如 `https://your-tenant.console.ves.volterra.io`）。
+ 4. 选择身份验证方式：
+-   - **API Token**：粘贴从 F5 XC 控制台获取的 API 令牌。
++   - **API Token**：从 F5 XC 控制台粘贴您的 API 令牌。
+    - **P12 Certificate**：选择您的 `.p12` 证书文件并输入密码。
+ 5. 设置默认命名空间。
+ 
+ ## 管理配置文件
+ 
+-- **切换配置文件**：在 Profiles 视图中点击某个配置文件将其设为活动状态。
++- **切换配置文件**：在 Profiles 视图中点击某个配置文件以将其设为活动状态。
+ - **编辑**：右键点击配置文件并选择 **Edit Profile**。
+ - **删除**：右键点击配置文件并选择 **Delete Profile**。
+ 
+-配置文件使用 VS Code 内置的密钥存储（在 Linux 上符合 XDG 规范）进行安全存储。
++配置文件通过 VS Code 内置的密钥存储（在 Linux 上符合 XDG 规范）进行安全存储。
+diff --git a/docs/zh-cn/index.mdx b/docs/zh-cn/index.mdx
+index a87a098..95011f6 100644
+--- a/docs/zh-cn/index.mdx
++++ b/docs/zh-cn/index.mdx
+@@ -1,8 +1,8 @@
+ ---
+-title: F5 Distributed Cloud Tools
++title: F5 Distributed Cloud 工具
+ description: 用于管理 F5 Distributed Cloud 资源的 VS Code 扩展。
+ hero:
+-  tagline: Manage F5 XC resources directly from VS Code.
++  tagline: 直接从 VS Code 管理 F5 XC 资源。
+ sidebar:
+   hidden: true
+   order: 0
+@@ -11,4 +11,4 @@ i18n:
+   translator: machine
+ ---
+ 
+-F5 Distributed Cloud Tools 是一款 VS Code 扩展，可让您直接在编辑器中浏览、创建、编辑和删除 F5 XC 资源。它提供完整的 CRUD 操作、带有 Schema 验证的 JSON IntelliSense、可观测性工具以及云状态监控，涵盖 25 个 API 域中超过 236 种资源类型。
++F5 Distributed Cloud 工具是一款 VS Code 扩展，使您能够直接从编辑器中浏览、创建、编辑和删除 F5 XC 资源。它提供完整的 CRUD 操作、带有架构验证的 JSON IntelliSense、可观测性工具以及云状态监控，支持跨 25 个 API 域的 236 多种资源类型。
+diff --git a/docs/zh-cn/reference/supported-resources.mdx b/docs/zh-cn/reference/supported-resources.mdx
+index 5ad0772..bc8a883 100644
+--- a/docs/zh-cn/reference/supported-resources.mdx
++++ b/docs/zh-cn/reference/supported-resources.mdx
+@@ -13,10 +13,10 @@ i18n:
+ ## 域类别
+ 
+ - **应用交付**：HTTP 负载均衡器、TCP 负载均衡器、源站池、健康检查
+-- **安全**：Web 应用防火墙、API 安全、Bot 防御、DDoS 防护
++- **安全**：Web 应用防火墙、API 安全、Bot 防护、DDoS 防护
+ - **网络**：虚拟网络、站点、集群管理、网络策略
+ - **DNS**：DNS 区域、DNS 负载均衡器、DNS 记录
+ - **可观测性**：仪表板、告警、日志接收器
+ - **基础设施**：云站点、云凭证、服务策略
+ 
+-支持的资源类型完整列表从 F5 XC OpenAPI 规范自动生成，并在新 API 版本发布时自动更新。
++支持的资源类型完整列表由 F5 XC OpenAPI 规范自动生成，并在新 API 版本发布时自动更新。
+diff --git a/docs/zh-tw/configuration/keyboard-shortcuts.mdx b/docs/zh-tw/configuration/keyboard-shortcuts.mdx
+index b56e632..595b925 100644
+--- a/docs/zh-tw/configuration/keyboard-shortcuts.mdx
++++ b/docs/zh-tw/configuration/keyboard-shortcuts.mdx
+@@ -1,6 +1,6 @@
+ ---
+-title: 鍵盤快捷鍵
+-description: F5 Distributed Cloud Tools 的預設鍵盤快捷鍵。
++title: 鍵盤快速鍵
++description: F5 Distributed Cloud Tools 的預設鍵盤快速鍵。
+ sidebar:
+   order: 2
+ i18n:
+@@ -10,6 +10,6 @@ i18n:
+ 
+ ## 預設按鍵綁定
+ 
+-鍵盤快捷鍵可以透過 VS Code 的鍵盤快捷鍵編輯器（`Ctrl+K Ctrl+S` / `Cmd+K Cmd+S`）進行自訂。搜尋 "f5xc" 即可找到所有擴充功能命令。
++鍵盤快速鍵可透過 VS Code 的鍵盤快速鍵編輯器（`Ctrl+K Ctrl+S` / `Cmd+K Cmd+S`）進行自訂。搜尋 "f5xc" 即可找到所有擴充功能命令。
+ 
+-所有 40 多個命令均可透過命令面板（`Ctrl+Shift+P` / `Cmd+Shift+P`）搜尋 "F5 XC" 來存取。
++所有 40 多個命令皆可透過命令面板（`Ctrl+Shift+P` / `Cmd+Shift+P`）搜尋 "F5 XC" 來存取。
+diff --git a/docs/zh-tw/configuration/settings.mdx b/docs/zh-tw/configuration/settings.mdx
+index 38506ab..8893032 100644
+--- a/docs/zh-tw/configuration/settings.mdx
++++ b/docs/zh-tw/configuration/settings.mdx
+@@ -1,6 +1,6 @@
+ ---
+ title: 設定
+-description: F5 Distributed Cloud Tools 的擴充功能組態選項。
++description: F5 Distributed Cloud Tools 的擴充功能配置選項。
+ sidebar:
+   order: 1
+ i18n:
+@@ -18,4 +18,4 @@ i18n:
+ | `f5xc.deleteConfirmationLevel` | string | `always` | 確認時機：`always`、`high-only`、`never` |
+ | `f5xc.autoRefreshInterval` | number | `0` | 自動重新整理間隔（秒）（0 = 停用） |
+ | `f5xc.viewMode` | string | `console` | 檢視模式：`console` 或 `full` |
+-| `f5xc.showPreviewApis` | boolean | `true` | 顯示測試版/預覽版 API 資源類型 |
++| `f5xc.showPreviewApis` | boolean | `true` | 顯示 Beta/預覽版 API 資源類型 |
+diff --git a/docs/zh-tw/features/cloud-status.mdx b/docs/zh-tw/features/cloud-status.mdx
+index acc2c13..8dbaa3d 100644
+--- a/docs/zh-tw/features/cloud-status.mdx
++++ b/docs/zh-tw/features/cloud-status.mdx
+@@ -1,5 +1,5 @@
+ ---
+-title: Cloud Status
++title: 雲端狀態
+ description: 從 VS Code 監控 F5 Distributed Cloud 服務健康狀態。
+ sidebar:
+   order: 3
+@@ -10,7 +10,7 @@ i18n:
+ 
+ ## 狀態監控
+ 
+-**Cloud Status** 樹狀檢視會顯示 F5 Distributed Cloud 服務的目前健康狀態。狀態資訊從官方 F5 狀態頁面擷取，並顯示：
++**雲端狀態**樹狀檢視會顯示 F5 Distributed Cloud 服務的目前健康狀態。狀態資訊從官方 F5 狀態頁面擷取，並顯示：
+ 
+ - 整體平台狀態
+ - 各元件健康狀態（API、Console、Data Plane 等）
+diff --git a/docs/zh-tw/features/json-intellisense.mdx b/docs/zh-tw/features/json-intellisense.mdx
+index 0f8009a..6f44a3b 100644
+--- a/docs/zh-tw/features/json-intellisense.mdx
++++ b/docs/zh-tw/features/json-intellisense.mdx
+@@ -1,6 +1,6 @@
+ ---
+-title: JSON IntelliSense
+-description: F5 XC 資源配置的結構描述驗證與自動完成。
++title: JSON 智慧感知
++description: F5 XC 資源配置的結構描述驗證與自動完成功能。
+ sidebar:
+   order: 4
+ i18n:
+@@ -15,7 +15,7 @@ i18n:
+ ## 支援的結構描述
+ 
+ - HTTP 負載平衡器 (`.http_loadbalancer.json`)
+-- 來源池 (`.origin_pool.json`)
++- 來源集區 (`.origin_pool.json`)
+ - 應用程式防火牆 / WAF (`.app_firewall.json`)
+ - 健康檢查 (`.healthcheck.json`)
+ - TCP 負載平衡器 (`.tcp_loadbalancer.json`)
+@@ -24,4 +24,4 @@ i18n:
+ 
+ ## 自動完成
+ 
+-IntelliSense 根據 F5 XC OpenAPI 規格，為欄位名稱、列舉值及巢狀物件結構提供自動完成功能。
++智慧感知根據 F5 XC OpenAPI 規格，為欄位名稱、列舉值和巢狀物件結構提供自動完成功能。
+diff --git a/docs/zh-tw/features/observability.mdx b/docs/zh-tw/features/observability.mdx
+index 4e70580..34f46ae 100644
+--- a/docs/zh-tw/features/observability.mdx
++++ b/docs/zh-tw/features/observability.mdx
+@@ -14,8 +14,8 @@ i18n:
+ 
+ ## 檢視指標
+ 
+-右鍵點擊資源並選擇 **View Metrics**，即可查看效能與流量指標。
++右鍵點擊資源並選擇 **View Metrics**，即可查看效能和流量指標。
+ 
+ ## 架構圖
+ 
+-在資源上選擇 **Diagram**，即可產生視覺化架構圖，顯示該資源的關聯性與相依關係。
++在資源上選擇 **Diagram**，即可產生視覺化架構圖，顯示該資源的關聯與相依性。
+diff --git a/docs/zh-tw/features/resource-management.mdx b/docs/zh-tw/features/resource-management.mdx
+index ec27b79..a46341f 100644
+--- a/docs/zh-tw/features/resource-management.mdx
++++ b/docs/zh-tw/features/resource-management.mdx
+@@ -10,22 +10,22 @@ i18n:
+ 
+ ## 瀏覽資源
+ 
+-**Resources** 樹狀檢視會依網域和類別組織顯示資源。展開類別可查看資源類型，然後展開類型即可列出您命名空間中的個別資源。
++**Resources** 樹狀檢視會依網域和類別組織顯示資源。展開類別可查看資源類型，然後展開類型可列出您命名空間中的個別資源。
+ 
+ ## 建立資源
+ 
+-1. 在樹狀結構中的資源類型上按右鍵，選擇 **Create**。
+-2. 會開啟一個具有結構描述驗證範本的 JSON 編輯器。
+-3. 填寫必填欄位（IntelliSense 提供自動完成功能）。
++1. 在樹狀檢視中右鍵點擊資源類型，選擇 **Create**。
++2. 會開啟一個具有結構驗證範本的 JSON 編輯器。
++3. 填入必填欄位（IntelliSense 提供自動完成功能）。
+ 4. 儲存檔案以將資源提交至 F5 XC API。
+ 
+ ## 編輯資源
+ 
+-1. 在樹狀結構中點擊資源以在編輯器中開啟。
++1. 在樹狀檢視中點擊資源以在編輯器中開啟。
+ 2. 使用完整的 IntelliSense 支援修改欄位。
+ 3. 儲存以將變更推送至 API。
+ 
+ ## 刪除資源
+ 
+-1. 在資源上按右鍵，選擇 **Delete**。
++1. 右鍵點擊資源並選擇 **Delete**。
+ 2. 確認刪除（可透過 `f5xc.confirmDelete` 和 `f5xc.deleteConfirmationLevel` 進行設定）。
+diff --git a/docs/zh-tw/getting-started/installation.mdx b/docs/zh-tw/getting-started/installation.mdx
+index 60e086d..46d3ad7 100644
+--- a/docs/zh-tw/getting-started/installation.mdx
++++ b/docs/zh-tw/getting-started/installation.mdx
+@@ -10,16 +10,16 @@ i18n:
+ 
+ ## VS Code Marketplace
+ 
+-在 VS Code 擴充功能面板（`Ctrl+Shift+X` / `Cmd+Shift+X`）中搜尋「F5 Distributed Cloud Tools」，然後點擊 **Install**。
++在 VS Code 擴充功能面板（`Ctrl+Shift+X` / `Cmd+Shift+X`）中搜尋「F5 Distributed Cloud Tools」，然後點擊**安裝**。
+ 
+ ## 手動 VSIX 安裝
+ 
+ 1. 從 [GitHub Releases](https://github.com/f5xc-salesdemos/vscode-f5xc-tools/releases) 頁面下載 `.vsix` 檔案。
+-2. 在 VS Code 中，開啟命令選擇區（`Ctrl+Shift+P` / `Cmd+Shift+P`）。
++2. 在 VS Code 中，開啟命令面板（`Ctrl+Shift+P` / `Cmd+Shift+P`）。
+ 3. 執行 **Extensions: Install from VSIX** 並選擇已下載的檔案。
+ 
+ ## 需求
+ 
+ - VS Code 1.107.0 或更新版本
+-- F5 Distributed Cloud 租戶
++- 一個 F5 Distributed Cloud 租戶
+ - API 憑證（憑證或 API 權杖）
+diff --git a/docs/zh-tw/getting-started/profile-setup.mdx b/docs/zh-tw/getting-started/profile-setup.mdx
+index 737727f..3c78343 100644
+--- a/docs/zh-tw/getting-started/profile-setup.mdx
++++ b/docs/zh-tw/getting-started/profile-setup.mdx
+@@ -1,6 +1,6 @@
+ ---
+ title: 設定檔配置
+-description: 設定用於連線至 F5 Distributed Cloud 的 API 憑證。
++description: 配置用於連接 F5 Distributed Cloud 的 API 憑證。
+ sidebar:
+   order: 2
+ i18n:
+@@ -16,7 +16,7 @@ i18n:
+ 4. 選擇驗證方式：
+    - **API Token**：從 F5 XC 主控台貼上您的 API 權杖。
+    - **P12 Certificate**：選擇您的 `.p12` 憑證檔案並輸入密碼。
+-5. 設定預設的命名空間。
++5. 設定預設命名空間。
+ 
+ ## 管理設定檔
+ 
+@@ -24,4 +24,4 @@ i18n:
+ - **編輯**：右鍵點擊設定檔並選擇 **Edit Profile**。
+ - **刪除**：右鍵點擊設定檔並選擇 **Delete Profile**。
+ 
+-設定檔使用 VS Code 內建的秘密儲存機制安全地儲存（在 Linux 上符合 XDG 規範）。
++設定檔使用 VS Code 內建的密鑰儲存機制（在 Linux 上符合 XDG 規範）安全地儲存。
+diff --git a/docs/zh-tw/index.mdx b/docs/zh-tw/index.mdx
+index 61553d7..5b6d9f2 100644
+--- a/docs/zh-tw/index.mdx
++++ b/docs/zh-tw/index.mdx
+@@ -2,7 +2,7 @@
+ title: F5 Distributed Cloud Tools
+ description: 用於管理 F5 Distributed Cloud 資源的 VS Code 擴充功能。
+ hero:
+-  tagline: Manage F5 XC resources directly from VS Code.
++  tagline: 直接從 VS Code 管理 F5 XC 資源。
+ sidebar:
+   hidden: true
+   order: 0
+@@ -11,4 +11,4 @@ i18n:
+   translator: machine
+ ---
+ 
+-F5 Distributed Cloud Tools 是一款 VS Code 擴充功能，讓您能夠直接從編輯器中瀏覽、建立、編輯和刪除 F5 XC 資源。它提供完整的 CRUD 操作、具備結構描述驗證的 JSON IntelliSense、可觀測性工具，以及涵蓋 25 個 API 網域中 236 種以上資源類型的雲端狀態監控功能。
++F5 Distributed Cloud Tools 是一個 VS Code 擴充功能，讓您能夠直接從編輯器中瀏覽、建立、編輯和刪除 F5 XC 資源。它提供完整的 CRUD 操作、具有結構驗證的 JSON IntelliSense、可觀測性工具，以及涵蓋 25 個 API 網域中 236 種以上資源類型的雲端狀態監控功能。
+diff --git a/docs/zh-tw/reference/supported-resources.mdx b/docs/zh-tw/reference/supported-resources.mdx
+index 4f0f931..ccfbfe4 100644
+--- a/docs/zh-tw/reference/supported-resources.mdx
++++ b/docs/zh-tw/reference/supported-resources.mdx
+@@ -8,15 +8,15 @@ i18n:
+   translator: machine
+ ---
+ 
+-此擴充功能支援橫跨 25 個 F5 XC API 網域的 236 種以上資源類型。資源在樹狀檢視中依網域類別進行組織。
++此擴充功能支援跨 25 個 F5 XC API 網域的 236 種以上資源類型。資源在樹狀檢視中按網域類別進行組織。
+ 
+ ## 網域類別
+ 
+-- **應用程式交付**：HTTP 負載平衡器、TCP 負載平衡器、來源集區、健康檢查
++- **應用程式交付**：HTTP 負載平衡器、TCP 負載平衡器、來源池、健康檢查
+ - **安全性**：Web 應用程式防火牆、API 安全性、Bot 防禦、DDoS 防護
+-- **網路**：虛擬網路、站點、機群管理、網路政策
++- **網路**：虛擬網路、站點、車隊管理、網路原則
+ - **DNS**：DNS 區域、DNS 負載平衡器、DNS 記錄
+-- **可觀測性**：儀表板、警示、日誌接收器
+-- **基礎設施**：雲端站點、雲端憑證、服務政策
++- **可觀測性**：儀表板、警報、日誌接收器
++- **基礎架構**：雲端站點、雲端憑證、服務原則
+ 
+-支援的資源類型完整清單是從 F5 XC OpenAPI 規範自動產生的，並會在新的 API 版本發佈時自動更新。
++支援的資源類型完整清單是從 F5 XC OpenAPI 規格自動產生的，並會在新的 API 版本發布時自動更新。

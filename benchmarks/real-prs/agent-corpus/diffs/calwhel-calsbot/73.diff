@@ -1,0 +1,249 @@
+diff --git a/app/templates/strategy_portal.html b/app/templates/strategy_portal.html
+index 6ea6e7f0..a4ced0e9 100644
+--- a/app/templates/strategy_portal.html
++++ b/app/templates/strategy_portal.html
+@@ -4620,6 +4620,23 @@ <h3>📊 Portfolio Review</h3>
+   );
+ }
+ 
++async function _bulkDeleteChunk(strategyIds){
++  const r=await fetch(`/api/strategies/bulk-delete?uid=${encodeURIComponent(UID)}`,{
++    method:'POST',
++    credentials:'same-origin',
++    headers:{'Content-Type':'application/json'},
++    body:JSON.stringify({uid:UID,strategy_ids:strategyIds}),
++  });
++  let d={};
++  const raw=await r.text();
++  try{d=raw?JSON.parse(raw):{};}catch(_){d={detail:raw||`HTTP ${r.status}`};}
++  if(!r.ok){
++    const msg=typeof d.detail==='string'?d.detail:(Array.isArray(d.detail)?d.detail.map(x=>x.msg||x).join(', '):'Bulk delete failed');
++    throw new Error(msg||`HTTP ${r.status}`);
++  }
++  return d;
++}
++
+ async function bulkDeleteStrats(){
+   const ids=[..._stratSelected];
+   if(!ids.length)return;
+@@ -4633,28 +4650,27 @@ <h3>📊 Portfolio Review</h3>
+     'background:var(--red);color:#fff;border-color:var(--red)',
+     async ()=>{
+       const btn=$('strat-bulk-delete-btn');
+-      if(btn){btn.disabled=true;btn.textContent='Deleting…';}
++      const CHUNK=20;
++      let deletedTotal=0;
+       try{
+-        const r=await fetch('/api/strategies/bulk-delete',{
+-          method:'POST',
+-          headers:{'Content-Type':'application/json'},
+-          body:JSON.stringify({uid:UID,strategy_ids:ids}),
+-        });
+-        const d=await r.json();
+-        if(!r.ok){
+-          toast(d.detail||'Bulk delete failed','error');
+-          updateStratSelectBar();
+-          return;
++        if(btn){btn.disabled=true;}
++        for(let i=0;i<ids.length;i+=CHUNK){
++          const chunk=ids.slice(i,i+CHUNK);
++          if(btn){btn.textContent=`Deleting ${Math.min(i+chunk.length,ids.length)}/${ids.length}…`;}
++          const d=await _bulkDeleteChunk(chunk);
++          deletedTotal+=d.deleted_count||chunk.length;
+         }
+-        toast(`Deleted ${d.deleted_count||ids.length} strateg${(d.deleted_count||ids.length)===1?'y':'ies'}`,'success');
++        toast(`Deleted ${deletedTotal} strateg${deletedTotal===1?'y':'ies'}`,'success');
+         _stratSelectMode=false;
+         _stratSelected.clear();
+         updateStratSelectBar();
+         _clearStratCache();
+         loadMyStrategies();
+       }catch(e){
+-        toast('Network error — try again','error');
++        toast(e.message||'Delete failed — try fewer at a time','error');
+         updateStratSelectBar();
++      }finally{
++        if(btn){btn.disabled=_stratSelected.size===0;updateStratSelectBar();}
+       }
+     }
+   );
+diff --git a/strategy_portal_server.py b/strategy_portal_server.py
+index ff67bf1a..4af96123 100644
+--- a/strategy_portal_server.py
++++ b/strategy_portal_server.py
+@@ -6959,11 +6959,10 @@ async def api_update_strategy_sizing(strategy_id: int, request: Request):
+         db.close()
+ 
+ 
+-def _delete_owned_strategy(db, strategy) -> None:
+-    """Remove FK children then delete a UserStrategy row (caller commits)."""
++def _delete_strategy_marketplace_fks(db, strategy_id: int) -> None:
++    """Marketplace / purchase FK cleanup before removing a user_strategies row."""
+     from sqlalchemy import text
+ 
+-    strategy_id = strategy.id
+     try:
+         db.execute(text("""
+             DELETE FROM earnings_transactions
+@@ -6993,9 +6992,75 @@ def _delete_owned_strategy(db, strategy) -> None:
+         ), {"sid": strategy_id})
+     except Exception as _clean_err:
+         logger.warning(f"[DeleteStrategy] Cleanup warning (non-fatal): {_clean_err}")
++
++
++def _delete_owned_strategy(db, strategy) -> None:
++    """Remove FK children then delete a UserStrategy row (caller commits)."""
++    _delete_strategy_marketplace_fks(db, strategy.id)
+     db.delete(strategy)
+ 
+ 
++def _bulk_delete_owned_strategies(db, user_id: int, strategy_ids: list) -> tuple:
++    """
++    Fast bulk delete — one SQL sweep for executions/performance, then marketplace
++    cleanup per row. Avoids ORM cascade N×M round-trips that time out on Railway.
++    Returns (deleted_ids, not_found_ids).
++    """
++    from sqlalchemy import text
++    from app.strategy_models import UserStrategy
++
++    if not strategy_ids:
++        return [], []
++
++    rows = (
++        db.query(UserStrategy)
++        .filter(
++            UserStrategy.user_id == user_id,
++            UserStrategy.id.in_(strategy_ids),
++        )
++        .all()
++    )
++    found_ids = sorted({int(s.id) for s in rows})
++    not_found = [i for i in strategy_ids if i not in found_ids]
++    if not found_ids:
++        return [], not_found
++
++    try:
++        db.execute(
++            text("DELETE FROM strategy_executions WHERE strategy_id = ANY(:ids)"),
++            {"ids": found_ids},
++        )
++        db.execute(
++            text("DELETE FROM strategy_performance WHERE strategy_id = ANY(:ids)"),
++            {"ids": found_ids},
++        )
++        db.execute(
++            text("DELETE FROM competition_entries WHERE strategy_id = ANY(:ids)"),
++            {"ids": found_ids},
++        )
++        db.execute(
++            text(
++                "UPDATE feed_activities SET strategy_id = NULL "
++                "WHERE strategy_id = ANY(:ids)"
++            ),
++            {"ids": found_ids},
++        )
++    except Exception as _child_err:
++        logger.warning(f"[BulkDelete] child-row cleanup: {_child_err}")
++
++    for sid in found_ids:
++        _delete_strategy_marketplace_fks(db, sid)
++
++    db.execute(
++        text(
++            "DELETE FROM user_strategies "
++            "WHERE user_id = :uid AND id = ANY(:ids)"
++        ),
++        {"uid": user_id, "ids": found_ids},
++    )
++    return found_ids, not_found
++
++
+ @app.delete("/api/strategies/{strategy_id}")
+ async def api_delete_strategy(strategy_id: int, uid: str = Query(...)):
+     from app.database import SessionLocal
+@@ -7026,10 +7091,13 @@ async def api_delete_strategy(strategy_id: int, uid: str = Query(...)):
+ 
+ 
+ @app.post("/api/strategies/bulk-delete")
+-async def api_bulk_delete_strategies(request: Request):
++async def api_bulk_delete_strategies(
++    request: Request,
++    uid: str = Query(""),
++):
+     """Delete multiple owned strategies in one request (portal bulk-select UI)."""
+     body = await request.json()
+-    uid = (body.get("uid") or "").strip()
++    uid = (uid or body.get("uid") or "").strip()
+     raw_ids = body.get("strategy_ids") or body.get("ids") or []
+     if not uid:
+         raise HTTPException(status_code=400, detail="uid required")
+@@ -7043,42 +7111,38 @@ async def api_bulk_delete_strategies(request: Request):
+         raise HTTPException(status_code=400, detail="Maximum 200 strategies per request")
+ 
+     from app.database import SessionLocal
+-    from app.strategy_models import UserStrategy
+ 
+-    db = SessionLocal()
+-    deleted: list = []
+-    not_found: list = []
+-    try:
+-        user = _get_user_by_uid(uid, db)
+-        if not user:
+-            raise HTTPException(status_code=403)
++    def _run_bulk():
++        db = SessionLocal()
++        try:
++            user = _get_user_by_uid(uid, db)
++            if not user:
++                raise HTTPException(status_code=403)
++            deleted, not_found = _bulk_delete_owned_strategies(db, user.id, strategy_ids)
++            db.commit()
++            return deleted, not_found
++        except HTTPException:
++            raise
++        except Exception:
++            db.rollback()
++            raise
++        finally:
++            db.close()
+ 
+-        rows = (
+-            db.query(UserStrategy)
+-            .filter(
+-                UserStrategy.user_id == user.id,
+-                UserStrategy.id.in_(strategy_ids),
+-            )
+-            .all()
+-        )
+-        found_ids = {s.id for s in rows}
+-        not_found = [i for i in strategy_ids if i not in found_ids]
+-        for strategy in rows:
+-            _delete_owned_strategy(db, strategy)
+-            deleted.append(strategy.id)
+-        db.commit()
+-        return {
+-            "deleted": deleted,
+-            "deleted_count": len(deleted),
+-            "not_found": not_found,
+-        }
++    try:
++        deleted, not_found = await asyncio.to_thread(_run_bulk)
+     except HTTPException:
+         raise
+     except Exception as e:
+-        db.rollback()
+-        raise HTTPException(status_code=500, detail=str(e))
+-    finally:
+-        db.close()
++        logger.exception("[BulkDelete] failed for uid=%s count=%s", uid, len(strategy_ids))
++        raise HTTPException(status_code=500, detail=str(e)[:300])
++
++    _CACHE.pop(f"api_strats_{uid}", None)
++    return {
++        "deleted": deleted,
++        "deleted_count": len(deleted),
++        "not_found": not_found,
++    }
+ 
+ 
+ @app.get("/api/marketplace")

@@ -1,0 +1,2314 @@
+diff --git a/PoTool.Client/Pages/Home/PortfolioPlanBoardPage.razor b/PoTool.Client/Pages/Home/PortfolioPlanBoardPage.razor
+index 3e86e492..4c370383 100644
+--- a/PoTool.Client/Pages/Home/PortfolioPlanBoardPage.razor
++++ b/PoTool.Client/Pages/Home/PortfolioPlanBoardPage.razor
+@@ -1497,7 +1497,9 @@
+ 
+         var isSelectedLayout = CreateSelectedEpicDetail(_selectionState) is not null;
+         var willBeSelectedLayout = CreateSelectedEpicDetail(nextSelectionState) is not null;
+-        if (isSelectedLayout == willBeSelectedLayout)
++        // Skip only normal→normal transitions; all selection-involved transitions
++        // (normal→selected, selected→selected, selected→normal) require restore.
++        if (!isSelectedLayout && !willBeSelectedLayout)
+         {
+             return;
+         }
+diff --git a/PoTool.Client/wwwroot/js/portfolioPlanBoardScrollSync.js b/PoTool.Client/wwwroot/js/portfolioPlanBoardScrollSync.js
+index 42cc2a38..7a303ac0 100644
+--- a/PoTool.Client/wwwroot/js/portfolioPlanBoardScrollSync.js
++++ b/PoTool.Client/wwwroot/js/portfolioPlanBoardScrollSync.js
+@@ -82,7 +82,12 @@ window.PoTool.PortfolioPlanBoardScrollSync = (function () {
+                 applySnapshot();
+                 window.requestAnimationFrame(function () {
+                     applySnapshot();
+-                    resolve();
++                    // Macrotask boundary: runs after browser layout/paint, outlasting
++                    // any native focus-scroll adjustment that may follow the rAF passes.
++                    window.setTimeout(function () {
++                        applySnapshot();
++                        resolve();
++                    }, 0);
+                 });
+             });
+         });
+diff --git a/docs/reports/2026-06-09-portfolio-scroll-drift-fix.md b/docs/reports/2026-06-09-portfolio-scroll-drift-fix.md
+new file mode 100644
+index 00000000..7d84f81a
+--- /dev/null
++++ b/docs/reports/2026-06-09-portfolio-scroll-drift-fix.md
+@@ -0,0 +1,129 @@
++# IMPLEMENTED
++
++Smallest safe fix for Portfolio Plan Board timeline scroll drift during epic selection.
++
++- Fix applied to:
++  - `PoTool.Client/wwwroot/js/portfolioPlanBoardScrollSync.js`
++  - `PoTool.Client/Pages/Home/PortfolioPlanBoardPage.razor`
++- Build: clean (`0 Warnings, 0 Errors`)
++- Runtime validated: mock profile 1, two products, all three transition types verified
++
++# ROOT CAUSE CONFIRMED
++
++Two independent failure paths caused scroll drift:
++
++**Path 1 — `normal → selected` (Incident drift `959 → 405`):**
++
++The existing capture/restore logic ran the restore via two `requestAnimationFrame` callbacks inside `restoreSelectionLayoutScrollState`. Both rAF passes completed and correctly reasserted the captured scroll value. The browser-native focus adjustment (triggered by Blazor rendering the newly selected epic button and calling `HTMLElement.focus`) fired as a deferred layout/paint event *after* both rAF callbacks had already settled. The browser scroll then overwrote the restored position with no further corrective pass.
++
++**Path 2 — `selected → selected` (Crew drift `959 → 783`):**
++
++`PreserveSelectionLayoutScrollStateIfNeededAsync` returned early when `isSelectedLayout == willBeSelectedLayout` (both `true`). No capture or restore was issued. When the user switched to a different epic while the detail panel was already open, Blazor rendered the new selection, fired `HTMLElement.focus` on the newly active epic button, and the browser scroll adjustment went uncorrected.
++
++Evidence base: `docs/reports/2026-06-09-portfolio-scroll-writer-trace.md`
++
++# VALIDATION
++
++Runtime test — mock profile 1, `http://localhost:5292/planning/plan-board/portfolio`:
++
++| Slice | Transition | Axis | Incident | Crew | Result |
++|---|---|---:|---:|---:|---|
++| 01 | Baseline (scrolled) | 650 | 639 | 639 | — |
++| 02 | normal → selected (small epic) | 650 | 639 | 639 | ✅ no drift |
++| 03 | selected → selected (large epic) | 650 | 639 | 639 | ✅ no drift |
++| 04 | selected → normal (deselect) | 650 | 639 | 639 | ✅ no drift |
++
++Investigation trace (pre-fix, for comparison):
++
++| Transition | Axis | Incident | Crew |
++|---|---:|---:|---:|
++| Baseline | 970 | 959 | 959 |
++| After small epic select | 970 | **405** | 959 |
++| After large epic select | 970 | **405** | **783** |
++| After deselect | 970 | **405** | **783** |
++
++# FILES MODIFIED
++
++## `PoTool.Client/wwwroot/js/portfolioPlanBoardScrollSync.js`
++
++**Change:** added a `setTimeout(0)` pass after the existing double `requestAnimationFrame` in `restoreSelectionLayoutScrollState`.
++
++**Before:**
++```js
++return new Promise(function (resolve) {
++    window.requestAnimationFrame(function () {
++        applySnapshot();
++        window.requestAnimationFrame(function () {
++            applySnapshot();
++            resolve();
++        });
++    });
++});
++```
++
++**After:**
++```js
++return new Promise(function (resolve) {
++    window.requestAnimationFrame(function () {
++        applySnapshot();
++        window.requestAnimationFrame(function () {
++            applySnapshot();
++            window.setTimeout(function () {
++                applySnapshot();
++                resolve();
++            }, 0);
++        });
++    });
++});
++```
++
++**Rationale:** The `setTimeout(fn, 0)` schedules a new macrotask, which runs after the browser has completed all layout and paint work for the current frame — including any deferred focus-scroll adjustments. The third `applySnapshot()` call overwrites any browser-driven drift that occurred between the second rAF and the new macrotask boundary. The `resolve()` is deferred to the same moment, so the C# `await` completes only after the final corrective pass.
++
++## `PoTool.Client/Pages/Home/PortfolioPlanBoardPage.razor`
++
++**Change:** changed the early-return guard in `PreserveSelectionLayoutScrollStateIfNeededAsync` from `if (isSelectedLayout == willBeSelectedLayout)` to `if (!isSelectedLayout && !willBeSelectedLayout)`.
++
++**Before:**
++```csharp
++if (isSelectedLayout == willBeSelectedLayout)
++{
++    return;
++}
++```
++
++**After:**
++```csharp
++if (!isSelectedLayout && !willBeSelectedLayout)
++{
++    return;
++}
++```
++
++**Rationale:** The original guard skipped capture/restore whenever the layout mode did not change. This was correct for `normal → normal` transitions (no panel involved) but incorrectly excluded `selected → selected` transitions (panel stays open, different epic selected). The new guard preserves the skip only when neither the current nor the next state involves a selected layout, covering all three selection-involved transitions:
++
++| Transition | `isSelectedLayout` | `willBeSelectedLayout` | Old guard | New guard |
++|---|---|---|---|---|
++| normal → selected | `false` | `true` | capture/restore ✅ | capture/restore ✅ |
++| selected → selected | `true` | `true` | **skip ❌** | capture/restore ✅ |
++| selected → normal | `true` | `false` | capture/restore ✅ | capture/restore ✅ |
++| normal → normal | `false` | `false` | skip ✅ | skip ✅ |
++
++# RISKS
++
++- **`setTimeout(0)` adds a single microtask delay per selection transition.** This is perceptible only if the browser renders a visible frame between the second rAF and the macrotask. In practice the timeline retains its position visually; any intermediate paint shows the restored value from rAF2 rather than a drifted value, so the visible effect is neutral.
++- **No polling, no recurring timers, no global state.** The `setTimeout` is scoped entirely within the Promise and fires exactly once per restore call.
++- **`selected → selected` capture overhead.** An additional `captureSelectionLayoutScrollState` + `restoreSelectionLayoutScrollState` round-trip is now issued on every epic switch while the detail panel is open. This is a single synchronous DOM read followed by a double-rAF+setTimeout write, which is negligible.
++- **Regression scope.** Normal timeline scrolling (axis scroll → timeline sync via `onScroll`) is not touched. The `init` and `dispose` paths are not touched.
++
++# NEXT PROMPT CONTEXT
++
++- Root cause is confirmed and fixed.
++- Both failure paths (`normal → selected` and `selected → selected`) are resolved by the two-file change.
++- `selected → normal` path already worked before the fix and continues to work.
++- Normal scrolling is unaffected.
++- Screenshots reference: `docs/reports/assets/2026-06-09-portfolio-scroll-drift-fix/`
++  - `01-after-fix-baseline.png` — scrolled baseline, no epic selected
++  - `02-after-fix-small-epic-selected.png` — after selecting first (small) epic
++  - `03-after-fix-large-epic-selected.png` — after switching to different epic
++  - `04-after-fix-deselected.png` — after closing detail panel
++- Pre-fix evidence: `docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/`
+diff --git a/docs/reports/2026-06-09-portfolio-scroll-writer-trace.md b/docs/reports/2026-06-09-portfolio-scroll-writer-trace.md
+new file mode 100644
+index 00000000..6c563aa0
+--- /dev/null
++++ b/docs/reports/2026-06-09-portfolio-scroll-writer-trace.md
+@@ -0,0 +1,151 @@
++# IMPLEMENTED
++
++Runtime/browser investigation completed for Portfolio Plan Board scroll drift.
++
++- Environment:
++  - API: `http://localhost:5291` (`TfsIntegration__UseMockClient=true`)
++  - Client: `http://localhost:5292`
++  - Profile: `1` (Commander Elena Marquez)
++  - Route: `/planning/plan-board/portfolio`
++- Scenario executed:
++  1. baseline
++  2. select `Emergency Alert Distribution - User Interface` (small epic)
++  3. select `Crew Location Tracking - Data Processing Pipeline` (large epic)
++  4. deselect
++- Temporary runtime instrumentation injected via Playwright `page.evaluate` only; no production files were modified for instrumentation.
++
++# RUNTIME TRACE
++
++Observed positions:
++
++- Baseline: axis `970`, Incident `959`, Crew `959`
++- After small epic select: axis `970`, Incident `405`, Crew `959`
++- After large epic select: axis `970`, Incident `405`, Crew `783`
++- After deselect: axis `970`, Incident `405`, Crew `783`
++
++Key event sequence (small epic):
++
++1. `scrollSync.captureSelectionLayoutScrollState.start/end`
++2. Blazor render triggers `HTMLElement.focus` on selected epic button (`fe.updateComponent` in stack)
++3. Timeline `scroll` event on Incident viewport with `newScrollLeft=405`
++4. `scrollSync.restoreSelectionLayoutScrollState.end`
++
++No intercepted calls to `Element.scrollTo`, `Element.scrollBy`, `Element.scrollIntoView`, or `scrollLeft` property setter were observed for the `959 -> 405` mutation.
++
++Key event sequence (large epic while details panel already open):
++
++1. `HTMLElement.focus` on selected epic button
++2. Timeline `scroll` event on Crew viewport with `newScrollLeft=783`
++3. No capture/restore calls (selected layout remained selected layout)
++
++# SCROLL MUTATION LOG
++
++| time (perf ms) | element | old scrollLeft | new scrollLeft | stack trace summary | source classification |
++|---|---|---:|---:|---|---|
++| 69230.6 | axis viewport | 970 | 970 | `scrollSync.captureSelectionLayoutScrollState.start` from Blazor JS interop | sync-module |
++| 69382.6 | selected epic button | 0 | 0 | `HTMLElement.focus` -> `fe.updateComponent` | focus |
++| 69412.0 | Incident timeline viewport | n/a | 405 | probe `scroll` listener callback | user-or-browser-scroll-event |
++| 69392.8 -> 69425.1 | axis viewport | 970 | 970 | `scrollSync.restoreSelectionLayoutScrollState.start/end` | sync-module |
++| 126248.7 | selected epic button | 0 | 0 | `HTMLElement.focus` on large epic select | focus |
++| 126253.6 | Crew timeline viewport | n/a | 783 | probe `scroll` listener callback | user-or-browser-scroll-event |
++| 145864.5 -> 145864.7 | axis viewport | 970 | 970 | deselect capture start/end | sync-module |
++| 145979.5 -> 145983.7 | axis viewport | 970 | 970 | deselect restore start/end | sync-module |
++
++Evidence files:
++
++- `docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/trace-after-small-detailed.txt`
++- `docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/trace-after-small-summary.txt`
++- `docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/trace-after-large-summary.txt`
++- `docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/trace-after-deselect-summary.txt`
++
++# STACK TRACE FINDINGS
++
++- Focus path is Blazor render-driven (`fe.updateComponent`) and occurs during epic selection transitions.
++- Scroll mutation events for Incident (`405`) and Crew (`783`) appear as timeline `scroll` events without a corresponding intercepted JS scroll writer call.
++- `restoreSelectionLayoutScrollState` executes on open/close layout-mode transitions only; it does not execute on selected-epic-to-selected-epic transitions.
++
++# CODE FINDINGS
++
++Files reviewed:
++
++- `PoTool.Client/wwwroot/js/portfolioPlanBoardScrollSync.js`
++- `PoTool.Client/Pages/Home/PortfolioPlanBoardPage.razor`
++
++Findings:
++
++- `PortfolioPlanBoardPage.OnEpicSelected` and `ClearEpicSelection` call `PreserveSelectionLayoutScrollStateIfNeededAsync`.
++- `PreserveSelectionLayoutScrollStateIfNeededAsync` returns early when layout mode is unchanged (`selected -> selected`), so no capture/restore on epic switch while panel is open.
++- Scroll sync module writes timeline scroll from axis on axis scroll and supports capture/restore APIs, but does not issue selection-specific scroll writes itself.
++- Axis remains at `970` because no axis scroll event or axis writer changes it in these transitions.
++
++# ROOT CAUSE ASSESSMENT
++
++Confirmed cause path:
++
++- **Small epic (`959 -> 405`)**: selection causes render/focus path; browser performs timeline scroll adjustment on Incident viewport (observed as timeline `scroll` event to `405`) without intercepted application JS writer call.
++- **Large epic (`959 -> 783`)**: switching selected epic while details panel is already open follows a different path (`selected -> selected`), no restore path runs, and browser scroll adjustment affects Crew timeline.
++
++Why axis stays at `970`:
++
++- Axis is not the target of the browser adjustment in this sequence, and sync module uses axis as source only; no axis mutation occurs.
++
++Why only one timeline changes at a time:
++
++- Browser adjustment targets the timeline associated with the currently focused/selected epic context, not all timelines.
++
++Why previous preservation fix failed:
++
++- The drifting event occurs in/after the selection render-focus cycle and can overwrite intended restoration for small selection.
++- For selected-to-selected switches, restoration is skipped by design (layout mode unchanged), so later timeline drift (Crew `783`) is not corrected.
++
++Answers to required questions:
++
++1. Is `scrollLeft = 405` written by application JS? **No direct JS writer observed.**
++2. Is `scrollLeft = 405` caused by browser-native adjustment without setter interception? **Yes (evidence supports this).**
++3. Does any timeline fire a `scroll` event before its `scrollLeft` changes? **No such pre-change event observed; first observable is event at changed value.**
++4. Does sync module copy scroll from wrong source? **No evidence; source remains axis.**
++5. Does restore path run too early or too late? **Effectively too early/not final; browser adjustment occurs during the same render cycle.**
++6. Does restoration get overwritten by a later event? **Yes, by later browser-driven timeline scroll event.**
++7. Are scroll listeners attached multiple times? **No evidence of duplicate attachment in this run; module disposes before init.**
++8. Are timeline elements duplicated in sync registry? **No evidence; two timelines, no duplication observed.**
++9. Does sync code use event target as source instead of axis owner? **No; sync uses axis viewport as source.**
++10. Does changing selection while panel is open follow a different path? **Yes; no capture/restore path runs for selected->selected.**
++
++# REJECTED HYPOTHESES
++
++- Timeline `scrollLeft` drift is caused by explicit calls to `scrollTo`/`scrollBy`/`scrollIntoView` in this flow. **Rejected.**
++- Axis sync module directly writes `scrollLeft=405`/`783` in this flow. **Rejected.**
++- Axis drift drives timeline drift in this sequence. **Rejected (axis stable at 970).**
++
++# RECOMMENDED FIX
++
++Smallest safe implementation (not implemented here):
++
++1. Treat browser-driven post-focus timeline adjustment as authoritative late event and add a targeted post-focus re-assert step.
++2. Run restore for both layout transitions and selected->selected epic switches (panel-open path).
++3. Re-apply per-timeline captured values after the final selection render/focus settle point, with strict scoping to selection transitions only.
++4. Keep axis as source-of-truth and avoid changing unrelated planning/mutation logic.
++
++# NEXT PROMPT CONTEXT
++
++- Root cause is browser-native timeline scroll adjustment during selection render/focus, not explicit app JS writer.
++- Incident drift (`959 -> 405`) reproduces on first select.
++- Crew drift (`959 -> 783`) reproduces on selected->selected switch because restore path is skipped.
++- Axis stays fixed (`970`) throughout this sequence.
++- No production code changes were made for this investigation.
++
++Screenshots captured in this investigation:
++
++- `docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/01-baseline.png`
++- `docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/02-small-epic-selected.png`
++- `docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/03-before-large-selection.png`
++- `docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/04-large-epic-selected.png`
++- `docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/05-after-deselect.png`
++
++User-provided supplemental screenshot URLs (not re-inspected due image-view limit):
++
++- https://github.com/user-attachments/assets/54b1e109-a616-4e31-9306-f9135f8e5dd3
++- https://github.com/user-attachments/assets/c5b8883e-fede-41a0-bfea-26276bf16e70
++- https://github.com/user-attachments/assets/9d134f06-38e7-4e19-82c5-2f1d159e9e97
++- https://github.com/user-attachments/assets/bf16c9ce-8220-4cf5-9efa-6736be6034fa
++- https://github.com/user-attachments/assets/9d80c353-403a-4683-8dd4-905d6f8d5150
+diff --git a/docs/reports/2026-06-09-selection-layout-scroll-runtime-validation.md b/docs/reports/2026-06-09-selection-layout-scroll-runtime-validation.md
+new file mode 100644
+index 00000000..4a70ffa5
+--- /dev/null
++++ b/docs/reports/2026-06-09-selection-layout-scroll-runtime-validation.md
+@@ -0,0 +1,72 @@
++# 2026-06-09 Selection Layout Scroll Runtime Validation
++
++## VALIDATED
++- Runtime/browser validation completed with seeded mock data.
++- Runtime used:
++  - API: `http://localhost:5291` with `TfsIntegration__UseMockClient=true`
++  - Client: `http://localhost:5292`
++  - Profile: `1` (`Commander Elena Marquez`)
++- Route validated: `/planning/plan-board/portfolio`
++
++Scenario outcomes:
++1. Baseline: **PASS** (aligned baseline at axis 970, Incident 959, Crew 959)
++2. Select small epic (`Emergency Alert Distribution - User Interface`): **FAIL** (Incident jumped to 405)
++3. Select large epic (`Crew Location Tracking - Data Processing Pipeline`): **FAIL** (Crew drifted to 783 while Incident stayed at 405)
++4. Deselect: **FAIL** (scroll positions stayed drifted)
++5. Selection switch (A -> B): **FAIL** (drift persisted; no recovery)
++6. Regression sweep (move earlier/later, duration +/-, undo, focus, pin, current sprint marker): **FAIL** (alignment drift persisted; Incident changed to 0 during focused state)
++
++## SCROLL POSITION TABLE
++| Scenario | axis scrollLeft | Incident scrollLeft | Crew scrollLeft | Comparison vs previous defect (970 / 405 / 959) |
++| --- | ---: | ---: | ---: | --- |
++| 1. Baseline | 970 | 959 | 959 | Not in defect state |
++| 2. Small epic select | 970 | 405 | 959 | **Matches previous defect exactly** |
++| 3. Large epic select | 970 | 405 | 783 | Incident defect persists + crew drift |
++| 4. Deselect | 970 | 405 | 783 | Defect persists |
++| 5. Selection switch | 970 | 405 | 783 | Defect persists |
++| 6. Regression sweep | 970 | 0 | 783 | Worse drift in focused regression state |
++
++Defect status:
++- **The 959 -> 405 defect still occurs.**
++- It reproduced in Scenario 2 and remained present through subsequent scenarios.
++
++## SCREENSHOTS
++All screenshots below were captured during this runtime session and are stored in-repo under `docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/`.
++- `docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-01-baseline.png`
++- `docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-02-small-epic.png`
++- `docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-03-large-epic.png`
++- `docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-04-deselect.png`
++- `docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-05-selection-switch.png`
++- `docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-06-regression-sweep.png`
++
++## FAILURES
++- Blocking regression reproduced: selecting `Emergency Alert Distribution - User Interface` still causes Incident timeline jump `959 -> 405` while axis remains at `970`.
++- Additional drift observed after switching to the large epic: Crew timeline changed to `783`.
++- Deselect and selection-switch flows did not restore alignment.
++- Regression sweep preserved functional actions, but scroll alignment remained incorrect and Incident changed to `0` in focused-state verification.
++
++## REGRESSION CHECKS
++Verified interaction flows executed in runtime:
++- Move earlier: executed
++- Move later: executed
++- Duration increase: executed
++- Duration decrease: executed
++- Undo: executed
++- Focus: executed (`Focus` -> `Exit focus`)
++- Pin: executed (`Pin` -> `Unpin`)
++- Current sprint marker: present in axis during scenarios
++
++Result: interaction controls remain callable, but alignment regression remains unresolved.
++
++## RISK
++- **High:** the core selection-layout scroll-preservation defect remains reproducible.
++- **High:** row-specific drift persists across scenario transitions, creating cross-row misalignment risk.
++- **Medium:** regression actions are available but do not mitigate the drift state.
++
++## NEXT PROMPT CONTEXT
++- Validation was runtime-only and used the local mock setup with profile 1.
++- Baseline starts aligned at `(axis=970, Incident=959, Crew=959)`.
++- Selecting the small epic immediately reproduces the old defect state `(970, 405, 959)`.
++- Selecting the large epic adds crew drift `(970, 405, 783)`.
++- Deselect and selection switching do not recover alignment.
++- A blocking regression is documented; no implementation changes were made in this validation task.
+diff --git a/docs/reports/assets/2026-06-09-portfolio-scroll-drift-fix/01-after-fix-baseline.png b/docs/reports/assets/2026-06-09-portfolio-scroll-drift-fix/01-after-fix-baseline.png
+new file mode 100644
+index 00000000..e7faaf77
+Binary files /dev/null and b/docs/reports/assets/2026-06-09-portfolio-scroll-drift-fix/01-after-fix-baseline.png differ
+diff --git a/docs/reports/assets/2026-06-09-portfolio-scroll-drift-fix/02-after-fix-small-epic-selected.png b/docs/reports/assets/2026-06-09-portfolio-scroll-drift-fix/02-after-fix-small-epic-selected.png
+new file mode 100644
+index 00000000..b803d5ca
+Binary files /dev/null and b/docs/reports/assets/2026-06-09-portfolio-scroll-drift-fix/02-after-fix-small-epic-selected.png differ
+diff --git a/docs/reports/assets/2026-06-09-portfolio-scroll-drift-fix/03-after-fix-large-epic-selected.png b/docs/reports/assets/2026-06-09-portfolio-scroll-drift-fix/03-after-fix-large-epic-selected.png
+new file mode 100644
+index 00000000..f43a34ea
+Binary files /dev/null and b/docs/reports/assets/2026-06-09-portfolio-scroll-drift-fix/03-after-fix-large-epic-selected.png differ
+diff --git a/docs/reports/assets/2026-06-09-portfolio-scroll-drift-fix/04-after-fix-deselected.png b/docs/reports/assets/2026-06-09-portfolio-scroll-drift-fix/04-after-fix-deselected.png
+new file mode 100644
+index 00000000..4e7a88a3
+Binary files /dev/null and b/docs/reports/assets/2026-06-09-portfolio-scroll-drift-fix/04-after-fix-deselected.png differ
+diff --git a/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/01-baseline.png b/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/01-baseline.png
+new file mode 100644
+index 00000000..a2a0c15a
+Binary files /dev/null and b/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/01-baseline.png differ
+diff --git a/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/02-small-epic-selected.png b/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/02-small-epic-selected.png
+new file mode 100644
+index 00000000..ddee045c
+Binary files /dev/null and b/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/02-small-epic-selected.png differ
+diff --git a/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/03-before-large-selection.png b/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/03-before-large-selection.png
+new file mode 100644
+index 00000000..ddee045c
+Binary files /dev/null and b/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/03-before-large-selection.png differ
+diff --git a/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/04-large-epic-selected.png b/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/04-large-epic-selected.png
+new file mode 100644
+index 00000000..868397b0
+Binary files /dev/null and b/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/04-large-epic-selected.png differ
+diff --git a/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/05-after-deselect.png b/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/05-after-deselect.png
+new file mode 100644
+index 00000000..b2ca8212
+Binary files /dev/null and b/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/05-after-deselect.png differ
+diff --git a/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/trace-after-deselect-summary.txt b/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/trace-after-deselect-summary.txt
+new file mode 100644
+index 00000000..1fc2a127
+--- /dev/null
++++ b/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/trace-after-deselect-summary.txt
+@@ -0,0 +1,399 @@
++### Result
++{
++  "phase": "after-deselect",
++  "positions": {
++    "axis": 970,
++    "timelinePositions": [
++      {
++        "index": 0,
++        "scrollLeft": 405,
++        "selector": "div.portfolio-plan-board-section__timeline",
++        "role": "timeline",
++        "label": "Incident Response Control"
++      },
++      {
++        "index": 1,
++        "scrollLeft": 783,
++        "selector": "div.portfolio-plan-board-section__timeline",
++        "role": "timeline",
++        "label": "Crew Safety Operations"
++      }
++    ],
++    "layout": "portfolio-plan-board-workspace",
++    "selectedEpic": null
++  },
++  "count": 7,
++  "rows": [
++    {
++      "t": 126248.7,
++      "kind": "HTMLElement.focus",
++      "role": "other",
++      "old": 0,
++      "next": 0,
++      "cls": "focus",
++      "sel": "button.planning-board-epic-select.planning-board-epic-select--compact.planning-board-epic-select--planned",
++      "layout": "selected",
++      "stack": "    at HTMLButtonElement.wrapped [as focus] (eval at evaluate (:290:30), <anonymous>:72:7)"
++    },
++    {
++      "t": 126253.6,
++      "kind": "scroll-event",
++      "role": "timeline",
++      "old": null,
++      "next": 783,
++      "cls": "user-or-browser-scroll-event",
++      "sel": "div.portfolio-plan-board-section__timeline",
++      "layout": "selected",
++      "stack": "    at el.addEventListener.passive (eval at evaluate (:290:30), <anonymous>:127:9)"
++    },
++    {
++      "t": 145864.5,
++      "kind": "scrollSync.captureSelectionLayoutScrollState.start",
++      "role": "axis",
++      "old": 970,
++      "next": 970,
++      "cls": "sync-module",
++      "sel": "div.portfolio-plan-board-axis-viewport",
++      "layout": "selected",
++      "stack": "    at mod.<computed> [as captureSelectionLayoutScrollState] (eval at evaluate (:290:30), <anonymous>:144:9)"
++    },
++    {
++      "t": 145864.7,
++      "kind": "scrollSync.captureSelectionLayoutScrollState.end",
++      "role": "axis",
++      "old": 970,
++      "next": 970,
++      "cls": "sync-module",
++      "sel": "div.portfolio-plan-board-axis-viewport",
++      "layout": "selected",
++      "stack": "    at mod.<computed> [as captureSelectionLayoutScrollState] (eval at evaluate (:290:30), <anonymous>:149:9)"
++    },
++    {
++      "t": 145978,
++      "kind": "HTMLElement.focus",
++      "role": "other",
++      "old": 0,
++      "next": 0,
++      "cls": "focus",
++      "sel": "button.mud-button-root.mud-icon-button.mud-ripple",
++      "layout": "normal",
++      "stack": "    at HTMLButtonElement.wrapped [as focus] (eval at evaluate (:290:30), <anonymous>:72:7)"
++    },
++    {
++      "t": 145979.5,
++      "kind": "scrollSync.restoreSelectionLayoutScrollState.start",
++      "role": "axis",
++      "old": 970,
++      "next": 970,
++      "cls": "sync-module",
++      "sel": "div.portfolio-plan-board-axis-viewport",
++      "layout": "normal",
++      "stack": "    at mod.<computed> [as restoreSelectionLayoutScrollState] (eval at evaluate (:290:30), <anonymous>:144:9)"
++    },
++    {
++      "t": 145983.7,
++      "kind": "scrollSync.restoreSelectionLayoutScrollState.end",
++      "role": "axis",
++      "old": 970,
++      "next": 970,
++      "cls": "sync-module",
++      "sel": "div.portfolio-plan-board-axis-viewport",
++      "layout": "normal",
++      "stack": "    at eval (eval at evaluate (:290:30), <anonymous>:147:32)"
++    }
++  ]
++}
++
++### Ran Playwright code
++```js
++await page.evaluate('() => { const t=window.__portfolioScrollTrace; if(!t) return null; const d=t.get(); const p=t.positions(); const rows=d.log.filter(e=>e.kind!==\'instrumentation\').map(e=>({t:Math.round(e.t*10)/10,kind:e.kind,role:e.role,old:e.oldScrollLeft,next:e.newScrollLeft,cls:e.classification,sel:e.selector,layout:e.layoutMode?.includes(\'selected-layout\')?\'selected\':\'normal\',stack:(e.stack||\'\').split(\'\\n\')[0]})); return {phase:\'after-deselect\',positions:p,count:rows.length,rows}; }');
++```
++
++### Page state
++- Page URL: http://localhost:5292/planning/plan-board/portfolio
++- Page Title: Portfolio Plan Board - PO Companion
++- Page Snapshot:
++```yaml
++- main [ref=e8]:
++  - generic [ref=e9]:
++    - generic [ref=e10]:
++      - button "Return to home page" [ref=e12] [cursor=pointer]:
++        - img [ref=e14]
++      - button [ref=e19] [cursor=pointer]:
++        - img [ref=e21]
++    - navigation "Workspace navigation" [ref=e27]:
++      - link "Health" [ref=e28] [cursor=pointer]:
++        - /url: /home/health
++        - img [ref=e29]
++        - generic [ref=e32]: Health
++      - link "Delivery" [ref=e33] [cursor=pointer]:
++        - /url: /home/delivery
++        - img [ref=e34]
++        - generic [ref=e37]: Delivery
++      - link "Trends" [ref=e38] [cursor=pointer]:
++        - /url: /home/trends
++        - img [ref=e39]
++        - generic [ref=e46]: Trends
++      - link "Planning" [ref=e47] [cursor=pointer]:
++        - /url: /home/planning
++        - img [ref=e48]
++        - generic [ref=e53]: Planning
++    - generic [ref=e54]:
++      - button "Open getting started wizard" [ref=e55] [cursor=pointer]:
++        - img [ref=e57]
++      - button "Open keyboard shortcuts" [ref=e61] [cursor=pointer]:
++        - img [ref=e63]
++      - button "Open settings" [ref=e66] [cursor=pointer]:
++        - img [ref=e68]
++  - article [ref=e72]:
++    - generic [ref=e73]:
++      - group [ref=e75]:
++        - generic [ref=e76]: Filters · PortfolioPlanBoard
++        - generic [ref=e79]: Defaults active
++        - button "Edit filters" [ref=e80] [cursor=pointer]:
++          - generic [ref=e81]: Edit filters
++      - group [ref=e83]:
++        - paragraph [ref=e84]: Shared context
++        - generic [ref=e85]:
++          - generic [ref=e89]:
++            - generic [ref=e90] [cursor=pointer]:
++              - textbox "Product" [ref=e91]
++              - img [ref=e93]
++              - group "Product"
++            - generic: Product
++          - generic [ref=e99]:
++            - generic [ref=e100] [cursor=pointer]:
++              - generic [ref=e101]: All projects
++              - img [ref=e103]
++              - group "Project"
++            - generic: Project
++          - generic [ref=e108]:
++            - generic [ref=e109]:
++              - generic [ref=e110]:
++                - textbox "Team" [disabled] [ref=e111]
++                - generic:
++                  - img
++                - group "Team"
++              - generic: Team
++            - generic [ref=e114]: Team doesn't affect this page.
++          - generic [ref=e118]:
++            - generic [ref=e119]:
++              - generic [ref=e120]: Snapshot
++              - generic:
++                - img
++              - group "Time mode"
++            - generic: Time mode
++        - group [ref=e121]:
++          - button "Reset product" [disabled]:
++            - generic: Reset product
++          - button "Reset project" [disabled]:
++            - generic: Reset project
++          - button "Reset team" [disabled]:
++            - generic: Reset team
++          - button "Reset time" [disabled]:
++            - generic: Reset time
++          - button "Reset all" [ref=e123] [cursor=pointer]:
++            - generic [ref=e124]: Reset all
++    - group [ref=e126]:
++      - group [ref=e128]:
++        - group [ref=e129]:
++          - group [ref=e130]:
++            - group [ref=e131]:
++              - img [ref=e132]
++              - heading "Portfolio Plan Board" [level=5] [ref=e135]
++            - navigation [ref=e136]:
++              - list [ref=e137]:
++                - listitem [ref=e138]:
++                  - link "Home" [ref=e139] [cursor=pointer]:
++                    - /url: /home
++                    - img [ref=e140]
++                    - text: Home
++                - listitem [ref=e143]:
++                  - generic [ref=e144]: /
++                - listitem [ref=e145]:
++                  - link "Planning" [ref=e146] [cursor=pointer]:
++                    - /url: /home/planning
++                    - img [ref=e147]
++                    - text: Planning
++                - listitem [ref=e152]:
++                  - generic [ref=e153]: /
++                - listitem [ref=e154]:
++                  - link "Portfolio Plan Board":
++                    - /url: "#"
++                    - img
++                    - text: Portfolio Plan Board
++            - generic [ref=e155]: Compare the current planning scope on a shared sprint axis while keeping all edits product-local.
++          - group [ref=e156]:
++            - button "Planning" [ref=e157] [cursor=pointer]:
++              - generic [ref=e158]:
++                - img [ref=e160]
++                - text: Planning
++            - button "Home" [ref=e165] [cursor=pointer]:
++              - generic [ref=e166]:
++                - img [ref=e168]
++                - text: Home
++        - group [ref=e171]:
++          - generic [ref=e173]:
++            - img [ref=e174]
++            - generic [ref=e177]: Portfolio view
++          - generic [ref=e179]:
++            - img [ref=e180]
++            - generic [ref=e191]: Product-local edits
++          - generic [ref=e193]:
++            - img [ref=e194]
++            - generic [ref=e197]: All visible products · 2 products
++        - generic [ref=e198]: Shared sprint-axis comparison stays portfolio-oriented, while duration changes, relative moves, and relocation requests persist only inside the touched product section. Undo is available inside product sections after a successful local edit; reorder, lane operations, and shared persistence workflows remain disabled on this surface.
++      - generic [ref=e200]:
++        - generic [ref=e201]:
++          - generic [ref=e202]: Sections
++          - link "Incident Response Control" [ref=e203] [cursor=pointer]:
++            - /url: "#portfolio-section-1"
++            - generic [ref=e204]: Incident Response Control
++          - link "Crew Safety Operations" [ref=e205] [cursor=pointer]:
++            - /url: "#portfolio-section-2"
++            - generic [ref=e206]: Crew Safety Operations
++        - generic [ref=e210] [cursor=pointer]:
++          - checkbox "Diagnostics" [ref=e214]
++          - paragraph [ref=e217]: Diagnostics
++      - generic [ref=e220]:
++        - generic [ref=e221]:
++          - paragraph [ref=e222]: Shared sprint axis · product timelines align to these columns
++          - generic "Shared sprint axis timeline" [ref=e224]:
++            - generic [ref=e226]:
++              - generic "Sprint 3, Dec 29–Jan 11" [ref=e227]:
++                - paragraph [ref=e229]: Sprint 3
++              - generic "Sprint 4, Jan 12–Jan 25" [ref=e230]:
++                - paragraph [ref=e232]: Sprint 4
++              - generic "Sprint 5, Jan 26–Feb 8" [ref=e233]:
++                - paragraph [ref=e235]: Sprint 5
++              - generic "Sprint 6, Feb 9–Feb 22" [ref=e236]:
++                - paragraph [ref=e238]: Sprint 6
++              - generic "Sprint 7, Feb 23–Mar 8" [ref=e239]:
++                - paragraph [ref=e241]: Sprint 7
++              - generic "Sprint 8, Mar 9–Mar 22" [ref=e242]:
++                - paragraph [ref=e244]: Sprint 8
++              - generic "Sprint 9, Mar 23–Apr 5" [ref=e245]:
++                - paragraph [ref=e247]: Sprint 9
++              - generic "Sprint 10, Apr 6–Apr 19" [ref=e248]:
++                - paragraph [ref=e250]: Sprint 10
++              - generic "Sprint 11, Apr 20–May 3" [ref=e251]:
++                - paragraph [ref=e253]: Sprint 11
++              - generic "Sprint 12, May 4–May 17" [ref=e254]:
++                - paragraph [ref=e256]: Sprint 12
++              - generic "Sprint 13, May 18–May 31" [ref=e257]:
++                - paragraph [ref=e259]: Sprint 13
++              - generic "Sprint 14, Jun 1–Jun 14, Current sprint" [ref=e260]:
++                - paragraph [ref=e262]: Sprint 14
++        - generic [ref=e264]:
++          - generic [ref=e265]:
++            - heading "Incident Response Control" [level=6] [ref=e266]
++            - generic [ref=e267]:
++              - button "Collapse" [ref=e269] [cursor=pointer]:
++                - img [ref=e271]
++              - button "Pin" [ref=e275] [cursor=pointer]:
++                - img [ref=e277]
++              - button "Focus" [ref=e283] [cursor=pointer]:
++                - img [ref=e285]
++          - generic [ref=e288]:
++            - region [ref=e289]:
++              - generic [ref=e290]:
++                - button "Unplanned / Backlog (6)" [ref=e291] [cursor=pointer]:
++                  - generic [ref=e292]:
++                    - img [ref=e294]
++                    - text: Unplanned / Backlog (6)
++                - generic [ref=e299]: 6 backlog items
++              - text: Backlog items are not positioned on the sprint axis; historical planned dates remain stored while projected here.
++              - generic [ref=e300]:
++                - button "Select backlog epic Execution anomaly validation track - Sprint signal alignment" [ref=e303] [cursor=pointer]:
++                  - generic [ref=e305]: "#1 · Execution anomaly validation track - Sprint signal alignment"
++                - button "Select backlog epic Emergency Alert Distribution - Sensor Network" [ref=e308] [cursor=pointer]:
++                  - generic [ref=e310]: "#2 · Emergency Alert Distribution - Sensor Network"
++                - button "Select backlog epic Real-Time Leakage Monitoring - API Integration" [ref=e313] [cursor=pointer]:
++                  - generic [ref=e315]: "#3 · Real-Time Leakage Monitoring - API Integration"
++                - button "Select backlog epic Incident Command Coordination - User Interface" [ref=e318] [cursor=pointer]:
++                  - generic [ref=e320]: "#4 · Incident Command Coordination - User Interface"
++                - button "Select backlog epic Emergency Alert Distribution - Alert System" [ref=e323] [cursor=pointer]:
++                  - generic [ref=e325]: "#10 · Emergency Alert Distribution - Alert System"
++                - button "Select backlog epic Incident Command Coordination - API Integration" [ref=e328] [cursor=pointer]:
++                  - generic [ref=e330]: "#13 · Incident Command Coordination - API Integration"
++            - generic "Active planned epics timeline" [ref=e331]:
++              - generic [ref=e332]:
++                - generic [ref=e334]:
++                  - button "Select epic Emergency Alert Distribution - User Interface" [ref=e597] [cursor=pointer]:
++                    - generic [ref=e599]: Emergency Alert Distribution - User Interface
++                  - button "Select epic Incident Command Coordination - Sensor Network" [ref=e342] [cursor=pointer]:
++                    - generic [ref=e344]: Incident Command Coordination - Sensor Network
++                  - button "Select epic Emergency Protocol Execution - Data Processing Pipeline" [ref=e347] [cursor=pointer]:
++                    - generic [ref=e349]: Emergency Protocol Execution - Data Processing Pipeline
++                  - button "Select epic Automated Fire Suppression - Sensor Network" [ref=e352] [cursor=pointer]:
++                    - generic [ref=e354]: Automated Fire Suppression - Sensor Network
++                  - button "Select epic Rapid Fire Detection and Suppression - API Integration" [ref=e357] [cursor=pointer]:
++                    - generic [ref=e359]: Rapid Fire Detection and Suppression - API Integration
++                  - button "Select epic Emergency Alert Distribution - API Integration" [ref=e362] [cursor=pointer]:
++                    - generic [ref=e364]: Emergency Alert Distribution - API Integration
++                - generic [ref=e366]:
++                  - button "Select epic Emergency Protocol Execution - Sensor Network" [ref=e369] [cursor=pointer]:
++                    - generic [ref=e371]: Emergency Protocol Execution - Sensor Network
++                  - button "Select epic Rapid Fire Detection and Suppression - Data Processing Pipeline" [ref=e374] [cursor=pointer]:
++                    - generic [ref=e376]: Rapid Fire Detection and Suppression - Data Processing Pipeline
++                  - button "Select epic Automated Collision Response - Sensor Network" [ref=e379] [cursor=pointer]:
++                    - generic [ref=e381]: Automated Collision Response - Sensor Network
++                - button "Select epic Automated Fire Suppression - User Interface" [ref=e386] [cursor=pointer]:
++                  - generic [ref=e388]: Automated Fire Suppression - User Interface
++                - button "Select epic Automated Fire Suppression - API Integration" [ref=e393] [cursor=pointer]:
++                  - generic [ref=e395]: Automated Fire Suppression - API Integration
++                - button "Select epic Emergency Alert Distribution - Data Processing Pipeline" [ref=e400] [cursor=pointer]:
++                  - generic [ref=e402]: Emergency Alert Distribution - Data Processing Pipeline
++                - button "Select epic Automated Fire Suppression - Data Processing Pipeline" [ref=e407] [cursor=pointer]:
++                  - generic [ref=e409]: Automated Fire Suppression - Data Processing Pipeline
++                - button "Select epic Rapid Fire Detection and Suppression - Sensor Network" [ref=e414] [cursor=pointer]:
++                  - generic [ref=e416]: Rapid Fire Detection and Suppression - Sensor Network
++                - button "Select epic Real-Time Leakage Monitoring - User Interface" [ref=e421] [cursor=pointer]:
++                  - generic [ref=e423]: Real-Time Leakage Monitoring - User Interface
++                - button "Select epic Real-Time Leakage Monitoring - Data Processing Pipeline" [ref=e428] [cursor=pointer]:
++                  - generic [ref=e430]: Real-Time Leakage Monitoring - Data Processing Pipeline
++                - button "Select epic Incident Command Coordination - Data Processing Pipeline" [ref=e435] [cursor=pointer]:
++                  - generic [ref=e437]: Incident Command Coordination - Data Processing Pipeline
++        - generic [ref=e439]:
++          - generic [ref=e440]:
++            - heading "Crew Safety Operations" [level=6] [ref=e441]
++            - generic [ref=e442]:
++              - button "Collapse" [ref=e444] [cursor=pointer]:
++                - img [ref=e446]
++              - button "Pin" [ref=e450] [cursor=pointer]:
++                - img [ref=e452]
++              - button "Focus" [ref=e458] [cursor=pointer]:
++                - img [ref=e460]
++          - generic [ref=e463]:
++            - region [ref=e464]:
++              - generic [ref=e465]:
++                - button "Unplanned / Backlog (4)" [ref=e466] [cursor=pointer]:
++                  - generic [ref=e467]:
++                    - img [ref=e469]
++                    - text: Unplanned / Backlog (4)
++                - generic [ref=e474]: 4 backlog items
++              - text: Backlog items are not positioned on the sprint axis; historical planned dates remain stored while projected here.
++              - generic [ref=e475]:
++                - button "Select backlog epic Evacuation Route Optimization - API Integration" [ref=e478] [cursor=pointer]:
++                  - generic [ref=e480]: "#1 · Evacuation Route Optimization - API Integration"
++                - button "Select backlog epic Evacuation Route Optimization - User Interface" [ref=e483] [cursor=pointer]:
++                  - generic [ref=e485]: "#2 · Evacuation Route Optimization - User Interface"
++                - button "Select backlog epic Evacuation Route Optimization - Data Processing Pipeline" [ref=e488] [cursor=pointer]:
++                  - generic [ref=e490]: "#3 · Evacuation Route Optimization - Data Processing Pipeline"
++                - button "Select backlog epic Medical Emergency Response - Data Processing Pipeline" [ref=e493] [cursor=pointer]:
++                  - generic [ref=e495]: "#4 · Medical Emergency Response - Data Processing Pipeline"
++            - generic "Active planned epics timeline" [ref=e496]:
++              - generic [ref=e497]:
++                - generic [ref=e499]:
++                  - button "Select epic Crew Location Tracking - Data Processing Pipeline" [ref=e624] [cursor=pointer]:
++                    - generic [ref=e626]: Crew Location Tracking - Data Processing Pipeline
++                  - button "Select epic Evacuation Route Optimization - Sensor Network" [ref=e507] [cursor=pointer]:
++                    - generic [ref=e509]: Evacuation Route Optimization - Sensor Network
++                - generic [ref=e511]:
++                  - button "Select epic Medical Emergency Response - Sensor Network" [ref=e514] [cursor=pointer]:
++                    - generic [ref=e516]: Medical Emergency Response - Sensor Network
++                  - button "Select epic Crew Location Tracking - User Interface" [ref=e519] [cursor=pointer]:
++                    - generic [ref=e521]: Crew Location Tracking - User Interface
++                - button "Select epic Medical Emergency Response - User Interface" [ref=e526] [cursor=pointer]:
++                  - generic [ref=e528]: Medical Emergency Response - User Interface
++```
+diff --git a/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/trace-after-large-summary.txt b/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/trace-after-large-summary.txt
+new file mode 100644
+index 00000000..80608bb4
+--- /dev/null
++++ b/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/trace-after-large-summary.txt
+@@ -0,0 +1,399 @@
++### Result
++{
++  "phase": "after-large",
++  "positions": {
++    "axis": 970,
++    "timelinePositions": [
++      {
++        "index": 0,
++        "scrollLeft": 405,
++        "selector": "div.portfolio-plan-board-section__timeline",
++        "role": "timeline",
++        "label": "Incident Response Control"
++      },
++      {
++        "index": 1,
++        "scrollLeft": 783,
++        "selector": "div.portfolio-plan-board-section__timeline",
++        "role": "timeline",
++        "label": "Crew Safety Operations"
++      }
++    ],
++    "layout": "portfolio-plan-board-workspace portfolio-plan-board-workspace--selected-layout",
++    "selectedEpic": null
++  },
++  "count": 2,
++  "rows": [
++    {
++      "t": 126248.7,
++      "kind": "HTMLElement.focus",
++      "role": "other",
++      "old": 0,
++      "next": 0,
++      "cls": "focus",
++      "sel": "button.planning-board-epic-select.planning-board-epic-select--compact.planning-board-epic-select--planned",
++      "layout": "selected",
++      "stack": "    at HTMLButtonElement.wrapped [as focus] (eval at evaluate (:290:30), <anonymous>:72:7)"
++    },
++    {
++      "t": 126253.6,
++      "kind": "scroll-event",
++      "role": "timeline",
++      "old": null,
++      "next": 783,
++      "cls": "user-or-browser-scroll-event",
++      "sel": "div.portfolio-plan-board-section__timeline",
++      "layout": "selected",
++      "stack": "    at el.addEventListener.passive (eval at evaluate (:290:30), <anonymous>:127:9)"
++    }
++  ]
++}
++
++### Ran Playwright code
++```js
++await page.evaluate('() => { const t=window.__portfolioScrollTrace; if(!t) return null; const d=t.get(); const p=t.positions(); const rows=d.log.filter(e=>e.kind!==\'instrumentation\').map(e=>({t:Math.round(e.t*10)/10,kind:e.kind,role:e.role,old:e.oldScrollLeft,next:e.newScrollLeft,cls:e.classification,sel:e.selector,layout:e.layoutMode?.includes(\'selected-layout\')?\'selected\':\'normal\',stack:(e.stack||\'\').split(\'\\n\')[0]})); return {phase:\'after-large\',positions:p,count:rows.length,rows}; }');
++```
++
++### Page state
++- Page URL: http://localhost:5292/planning/plan-board/portfolio
++- Page Title: Portfolio Plan Board - PO Companion
++- Page Snapshot:
++```yaml
++- main [ref=e8]:
++  - generic [ref=e9]:
++    - generic [ref=e10]:
++      - button "Return to home page" [ref=e12] [cursor=pointer]:
++        - img [ref=e14]
++      - button [ref=e19] [cursor=pointer]:
++        - img [ref=e21]
++    - navigation "Workspace navigation" [ref=e27]:
++      - link "Health" [ref=e28] [cursor=pointer]:
++        - /url: /home/health
++        - img [ref=e29]
++        - generic [ref=e32]: Health
++      - link "Delivery" [ref=e33] [cursor=pointer]:
++        - /url: /home/delivery
++        - img [ref=e34]
++        - generic [ref=e37]: Delivery
++      - link "Trends" [ref=e38] [cursor=pointer]:
++        - /url: /home/trends
++        - img [ref=e39]
++        - generic [ref=e46]: Trends
++      - link "Planning" [ref=e47] [cursor=pointer]:
++        - /url: /home/planning
++        - img [ref=e48]
++        - generic [ref=e53]: Planning
++    - generic [ref=e54]:
++      - button "Open getting started wizard" [ref=e55] [cursor=pointer]:
++        - img [ref=e57]
++      - button "Open keyboard shortcuts" [ref=e61] [cursor=pointer]:
++        - img [ref=e63]
++      - button "Open settings" [ref=e66] [cursor=pointer]:
++        - img [ref=e68]
++  - article [ref=e72]:
++    - generic [ref=e73]:
++      - group [ref=e75]:
++        - generic [ref=e76]: Filters · PortfolioPlanBoard
++        - generic [ref=e79]: Defaults active
++        - button "Edit filters" [ref=e80] [cursor=pointer]:
++          - generic [ref=e81]: Edit filters
++      - group [ref=e83]:
++        - paragraph [ref=e84]: Shared context
++        - generic [ref=e85]:
++          - generic [ref=e89]:
++            - generic [ref=e90] [cursor=pointer]:
++              - textbox "Product" [ref=e91]
++              - img [ref=e93]
++              - group "Product"
++            - generic: Product
++          - generic [ref=e99]:
++            - generic [ref=e100] [cursor=pointer]:
++              - generic [ref=e101]: All projects
++              - img [ref=e103]
++              - group "Project"
++            - generic: Project
++          - generic [ref=e108]:
++            - generic [ref=e109]:
++              - generic [ref=e110]:
++                - textbox "Team" [disabled] [ref=e111]
++                - generic:
++                  - img
++                - group "Team"
++              - generic: Team
++            - generic [ref=e114]: Team doesn't affect this page.
++          - generic [ref=e118]:
++            - generic [ref=e119]:
++              - generic [ref=e120]: Snapshot
++              - generic:
++                - img
++              - group "Time mode"
++            - generic: Time mode
++        - group [ref=e121]:
++          - button "Reset product" [disabled]:
++            - generic: Reset product
++          - button "Reset project" [disabled]:
++            - generic: Reset project
++          - button "Reset team" [disabled]:
++            - generic: Reset team
++          - button "Reset time" [disabled]:
++            - generic: Reset time
++          - button "Reset all" [ref=e123] [cursor=pointer]:
++            - generic [ref=e124]: Reset all
++    - group [ref=e126]:
++      - group [ref=e128]:
++        - group [ref=e129]:
++          - group [ref=e130]:
++            - group [ref=e131]:
++              - img [ref=e132]
++              - heading "Portfolio Plan Board" [level=5] [ref=e135]
++            - navigation [ref=e136]:
++              - list [ref=e137]:
++                - listitem [ref=e138]:
++                  - link "Home" [ref=e139] [cursor=pointer]:
++                    - /url: /home
++                    - img [ref=e140]
++                    - text: Home
++                - listitem [ref=e143]:
++                  - generic [ref=e144]: /
++                - listitem [ref=e145]:
++                  - link "Planning" [ref=e146] [cursor=pointer]:
++                    - /url: /home/planning
++                    - img [ref=e147]
++                    - text: Planning
++                - listitem [ref=e152]:
++                  - generic [ref=e153]: /
++                - listitem [ref=e154]:
++                  - link "Portfolio Plan Board":
++                    - /url: "#"
++                    - img
++                    - text: Portfolio Plan Board
++            - generic [ref=e155]: Compare the current planning scope on a shared sprint axis while keeping all edits product-local.
++          - group [ref=e156]:
++            - button "Planning" [ref=e157] [cursor=pointer]:
++              - generic [ref=e158]:
++                - img [ref=e160]
++                - text: Planning
++            - button "Home" [ref=e165] [cursor=pointer]:
++              - generic [ref=e166]:
++                - img [ref=e168]
++                - text: Home
++        - group [ref=e171]:
++          - generic [ref=e173]:
++            - img [ref=e174]
++            - generic [ref=e177]: Portfolio view
++          - generic [ref=e179]:
++            - img [ref=e180]
++            - generic [ref=e191]: Product-local edits
++          - generic [ref=e193]:
++            - img [ref=e194]
++            - generic [ref=e197]: All visible products · 2 products
++        - generic [ref=e198]: Shared sprint-axis comparison stays portfolio-oriented, while duration changes, relative moves, and relocation requests persist only inside the touched product section. Undo is available inside product sections after a successful local edit; reorder, lane operations, and shared persistence workflows remain disabled on this surface.
++      - generic [ref=e200]:
++        - generic [ref=e201]:
++          - generic [ref=e202]: Sections
++          - link "Incident Response Control" [ref=e203] [cursor=pointer]:
++            - /url: "#portfolio-section-1"
++            - generic [ref=e204]: Incident Response Control
++          - link "Crew Safety Operations" [ref=e205] [cursor=pointer]:
++            - /url: "#portfolio-section-2"
++            - generic [ref=e206]: Crew Safety Operations
++        - generic [ref=e210] [cursor=pointer]:
++          - checkbox "Diagnostics" [ref=e214]
++          - paragraph [ref=e217]: Diagnostics
++      - generic [ref=e218]:
++        - generic [ref=e220]:
++          - generic [ref=e221]:
++            - paragraph [ref=e222]: Shared sprint axis · product timelines align to these columns
++            - generic "Shared sprint axis timeline" [ref=e224]:
++              - generic [ref=e226]:
++                - generic "Sprint 3, Dec 29–Jan 11" [ref=e227]:
++                  - paragraph [ref=e229]: Sprint 3
++                - generic "Sprint 4, Jan 12–Jan 25" [ref=e230]:
++                  - paragraph [ref=e232]: Sprint 4
++                - generic "Sprint 5, Jan 26–Feb 8" [ref=e233]:
++                  - paragraph [ref=e235]: Sprint 5
++                - generic "Sprint 6, Feb 9–Feb 22" [ref=e236]:
++                  - paragraph [ref=e238]: Sprint 6
++                - generic "Sprint 7, Feb 23–Mar 8" [ref=e239]:
++                  - paragraph [ref=e241]: Sprint 7
++                - generic "Sprint 8, Mar 9–Mar 22" [ref=e242]:
++                  - paragraph [ref=e244]: Sprint 8
++                - generic "Sprint 9, Mar 23–Apr 5" [ref=e245]:
++                  - paragraph [ref=e247]: Sprint 9
++                - generic "Sprint 10, Apr 6–Apr 19" [ref=e248]:
++                  - paragraph [ref=e250]: Sprint 10
++                - generic "Sprint 11, Apr 20–May 3" [ref=e251]:
++                  - paragraph [ref=e253]: Sprint 11
++                - generic "Sprint 12, May 4–May 17" [ref=e254]:
++                  - paragraph [ref=e256]: Sprint 12
++                - generic "Sprint 13, May 18–May 31" [ref=e257]:
++                  - paragraph [ref=e259]: Sprint 13
++                - generic "Sprint 14, Jun 1–Jun 14, Current sprint" [ref=e260]:
++                  - paragraph [ref=e262]: Sprint 14
++          - generic [ref=e264]:
++            - generic [ref=e265]:
++              - heading "Incident Response Control" [level=6] [ref=e266]
++              - generic [ref=e267]:
++                - button "Collapse" [ref=e269] [cursor=pointer]:
++                  - img [ref=e271]
++                - button "Pin" [ref=e275] [cursor=pointer]:
++                  - img [ref=e277]
++                - button "Focus" [ref=e283] [cursor=pointer]:
++                  - img [ref=e285]
++            - generic [ref=e288]:
++              - region [ref=e289]:
++                - generic [ref=e290]:
++                  - button "Unplanned / Backlog (6)" [ref=e291] [cursor=pointer]:
++                    - generic [ref=e292]:
++                      - img [ref=e294]
++                      - text: Unplanned / Backlog (6)
++                  - generic [ref=e299]: 6 backlog items
++                - text: Backlog items are not positioned on the sprint axis; historical planned dates remain stored while projected here.
++                - generic [ref=e300]:
++                  - button "Select backlog epic Execution anomaly validation track - Sprint signal alignment" [ref=e303] [cursor=pointer]:
++                    - generic [ref=e305]: "#1 · Execution anomaly validation track - Sprint signal alignment"
++                  - button "Select backlog epic Emergency Alert Distribution - Sensor Network" [ref=e308] [cursor=pointer]:
++                    - generic [ref=e310]: "#2 · Emergency Alert Distribution - Sensor Network"
++                  - button "Select backlog epic Real-Time Leakage Monitoring - API Integration" [ref=e313] [cursor=pointer]:
++                    - generic [ref=e315]: "#3 · Real-Time Leakage Monitoring - API Integration"
++                  - button "Select backlog epic Incident Command Coordination - User Interface" [ref=e318] [cursor=pointer]:
++                    - generic [ref=e320]: "#4 · Incident Command Coordination - User Interface"
++                  - button "Select backlog epic Emergency Alert Distribution - Alert System" [ref=e323] [cursor=pointer]:
++                    - generic [ref=e325]: "#10 · Emergency Alert Distribution - Alert System"
++                  - button "Select backlog epic Incident Command Coordination - API Integration" [ref=e328] [cursor=pointer]:
++                    - generic [ref=e330]: "#13 · Incident Command Coordination - API Integration"
++              - generic "Active planned epics timeline" [ref=e331]:
++                - generic [ref=e332]:
++                  - generic [ref=e334]:
++                    - button "Select epic Emergency Alert Distribution - User Interface" [ref=e597] [cursor=pointer]:
++                      - generic [ref=e599]: Emergency Alert Distribution - User Interface
++                    - button "Select epic Incident Command Coordination - Sensor Network" [ref=e342] [cursor=pointer]:
++                      - generic [ref=e344]: Incident Command Coordination - Sensor Network
++                    - button "Select epic Emergency Protocol Execution - Data Processing Pipeline" [ref=e347] [cursor=pointer]:
++                      - generic [ref=e349]: Emergency Protocol Execution - Data Processing Pipeline
++                    - button "Select epic Automated Fire Suppression - Sensor Network" [ref=e352] [cursor=pointer]:
++                      - generic [ref=e354]: Automated Fire Suppression - Sensor Network
++                    - button "Select epic Rapid Fire Detection and Suppression - API Integration" [ref=e357] [cursor=pointer]:
++                      - generic [ref=e359]: Rapid Fire Detection and Suppression - API Integration
++                    - button "Select epic Emergency Alert Distribution - API Integration" [ref=e362] [cursor=pointer]:
++                      - generic [ref=e364]: Emergency Alert Distribution - API Integration
++                  - generic [ref=e366]:
++                    - button "Select epic Emergency Protocol Execution - Sensor Network" [ref=e369] [cursor=pointer]:
++                      - generic [ref=e371]: Emergency Protocol Execution - Sensor Network
++                    - button "Select epic Rapid Fire Detection and Suppression - Data Processing Pipeline" [ref=e374] [cursor=pointer]:
++                      - generic [ref=e376]: Rapid Fire Detection and Suppression - Data Processing Pipeline
++                    - button "Select epic Automated Collision Response - Sensor Network" [ref=e379] [cursor=pointer]:
++                      - generic [ref=e381]: Automated Collision Response - Sensor Network
++                  - button "Select epic Automated Fire Suppression - User Interface" [ref=e386] [cursor=pointer]:
++                    - generic [ref=e388]: Automated Fire Suppression - User Interface
++                  - button "Select epic Automated Fire Suppression - API Integration" [ref=e393] [cursor=pointer]:
++                    - generic [ref=e395]: Automated Fire Suppression - API Integration
++                  - button "Select epic Emergency Alert Distribution - Data Processing Pipeline" [ref=e400] [cursor=pointer]:
++                    - generic [ref=e402]: Emergency Alert Distribution - Data Processing Pipeline
++                  - button "Select epic Automated Fire Suppression - Data Processing Pipeline" [ref=e407] [cursor=pointer]:
++                    - generic [ref=e409]: Automated Fire Suppression - Data Processing Pipeline
++                  - button "Select epic Rapid Fire Detection and Suppression - Sensor Network" [ref=e414] [cursor=pointer]:
++                    - generic [ref=e416]: Rapid Fire Detection and Suppression - Sensor Network
++                  - button "Select epic Real-Time Leakage Monitoring - User Interface" [ref=e421] [cursor=pointer]:
++                    - generic [ref=e423]: Real-Time Leakage Monitoring - User Interface
++                  - button "Select epic Real-Time Leakage Monitoring - Data Processing Pipeline" [ref=e428] [cursor=pointer]:
++                    - generic [ref=e430]: Real-Time Leakage Monitoring - Data Processing Pipeline
++                  - button "Select epic Incident Command Coordination - Data Processing Pipeline" [ref=e435] [cursor=pointer]:
++                    - generic [ref=e437]: Incident Command Coordination - Data Processing Pipeline
++          - generic [ref=e439]:
++            - generic [ref=e440]:
++              - heading "Crew Safety Operations" [level=6] [ref=e441]
++              - generic [ref=e442]:
++                - button "Collapse" [ref=e444] [cursor=pointer]:
++                  - img [ref=e446]
++                - button "Pin" [ref=e450] [cursor=pointer]:
++                  - img [ref=e452]
++                - button "Focus" [ref=e458] [cursor=pointer]:
++                  - img [ref=e460]
++            - generic [ref=e463]:
++              - region [ref=e464]:
++                - generic [ref=e465]:
++                  - button "Unplanned / Backlog (4)" [ref=e466] [cursor=pointer]:
++                    - generic [ref=e467]:
++                      - img [ref=e469]
++                      - text: Unplanned / Backlog (4)
++                  - generic [ref=e474]: 4 backlog items
++                - text: Backlog items are not positioned on the sprint axis; historical planned dates remain stored while projected here.
++                - generic [ref=e475]:
++                  - button "Select backlog epic Evacuation Route Optimization - API Integration" [ref=e478] [cursor=pointer]:
++                    - generic [ref=e480]: "#1 · Evacuation Route Optimization - API Integration"
++                  - button "Select backlog epic Evacuation Route Optimization - User Interface" [ref=e483] [cursor=pointer]:
++                    - generic [ref=e485]: "#2 · Evacuation Route Optimization - User Interface"
++                  - button "Select backlog epic Evacuation Route Optimization - Data Processing Pipeline" [ref=e488] [cursor=pointer]:
++                    - generic [ref=e490]: "#3 · Evacuation Route Optimization - Data Processing Pipeline"
++                  - button "Select backlog epic Medical Emergency Response - Data Processing Pipeline" [ref=e493] [cursor=pointer]:
++                    - generic [ref=e495]: "#4 · Medical Emergency Response - Data Processing Pipeline"
++              - generic "Active planned epics timeline" [ref=e496]:
++                - generic [ref=e497]:
++                  - generic [ref=e499]:
++                    - generic [ref=e600]:
++                      - button "Crew Location Tracking - Data Processing Pipeline selected" [ref=e601] [cursor=pointer]:
++                        - generic [ref=e603]:
++                          - text: Active epic
++                          - generic [ref=e604]: Crew Location Tracking - Data Processing Pipeline
++                      - generic "Selected epic quick actions" [ref=e605]:
++                        - button "Move epic Crew Location Tracking - Data Processing Pipeline one sprint earlier" [ref=e606] [cursor=pointer]:
++                          - img [ref=e607]
++                        - generic "Duration controls" [ref=e610]:
++                          - generic: Duration
++                          - button "Reduce duration for Crew Location Tracking - Data Processing Pipeline by one sprint" [ref=e611] [cursor=pointer]:
++                            - img [ref=e612]
++                          - 'generic "Current duration: 4 sprints"':
++                            - generic: "4"
++                            - generic: sprints
++                          - button "Increase duration for Crew Location Tracking - Data Processing Pipeline by one sprint" [ref=e615] [cursor=pointer]:
++                            - img [ref=e616]
++                        - button "Move epic Crew Location Tracking - Data Processing Pipeline one sprint later" [ref=e619] [cursor=pointer]:
++                          - img [ref=e620]
++                    - button "Select epic Evacuation Route Optimization - Sensor Network" [ref=e507] [cursor=pointer]:
++                      - generic [ref=e509]: Evacuation Route Optimization - Sensor Network
++                  - generic [ref=e511]:
++                    - button "Select epic Medical Emergency Response - Sensor Network" [ref=e514] [cursor=pointer]:
++                      - generic [ref=e516]: Medical Emergency Response - Sensor Network
++                    - button "Select epic Crew Location Tracking - User Interface" [ref=e519] [cursor=pointer]:
++                      - generic [ref=e521]: Crew Location Tracking - User Interface
++                  - button "Select epic Medical Emergency Response - User Interface" [ref=e526] [cursor=pointer]:
++                    - generic [ref=e528]: Medical Emergency Response - User Interface
++        - complementary [ref=e552]:
++          - group [ref=e555]:
++            - group [ref=e556]:
++              - group [ref=e557]:
++                - heading "Epic details" [level=6] [ref=e558]
++                - paragraph [ref=e559]: Crew Location Tracking - Data Processing Pipeline
++              - button "Close epic details" [ref=e560] [cursor=pointer]:
++                - img [ref=e562]
++            - generic [ref=e565]:
++              - generic [ref=e567]:
++                - text: Epic ID
++                - paragraph [ref=e568]:
++                  - link "7275" [ref=e623] [cursor=pointer]:
++                    - /url: https://dev.azure.com/mock/Battleship%20Systems/_workitems/edit/7275
++              - generic [ref=e571]:
++                - text: Product name
++                - paragraph [ref=e572]: Crew Safety Operations
++              - generic [ref=e574]:
++                - text: Start sprint
++                - paragraph [ref=e575]: Sprint 8
++              - generic [ref=e577]:
++                - text: End sprint
++                - paragraph [ref=e578]: Sprint 11
++              - generic [ref=e580]:
++                - text: Duration
++                - paragraph [ref=e581]: 4 sprints
++            - separator [ref=e582]
++            - generic [ref=e583]: "Portfolio context: Main planning track"
++            - generic [ref=e584]:
++              - button "Relocate start sprint" [ref=e585] [cursor=pointer]:
++                - generic [ref=e586]:
++                  - img [ref=e588]
++                  - text: Relocate start sprint
++              - button "Unplan" [ref=e591] [cursor=pointer]:
++                - generic [ref=e592]:
++                  - img [ref=e594]
++                  - text: Unplan
++```
+diff --git a/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/trace-after-small-detailed.txt b/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/trace-after-small-detailed.txt
+new file mode 100644
+index 00000000..45dfa7ff
+--- /dev/null
++++ b/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/trace-after-small-detailed.txt
+@@ -0,0 +1,566 @@
++### Result
++{
++  "phase": "after-small",
++  "positions": {
++    "axis": 970,
++    "timelinePositions": [
++      {
++        "index": 0,
++        "scrollLeft": 405,
++        "selector": "div.portfolio-plan-board-section__timeline",
++        "role": "timeline",
++        "label": "Incident Response Control"
++      },
++      {
++        "index": 1,
++        "scrollLeft": 959,
++        "selector": "div.portfolio-plan-board-section__timeline",
++        "role": "timeline",
++        "label": "Crew Safety Operations"
++      }
++    ],
++    "layout": "portfolio-plan-board-workspace portfolio-plan-board-workspace--selected-layout",
++    "selectedEpic": null
++  },
++  "total": 11,
++  "recent": [
++    {
++      "t": 39392.600000000035,
++      "timeIso": "2026-06-09T18:16:37.308Z",
++      "kind": "instrumentation",
++      "element": null,
++      "selector": null,
++      "role": "unknown",
++      "oldScrollLeft": null,
++      "newScrollLeft": null,
++      "selectedEpic": null,
++      "layoutMode": "portfolio-plan-board-workspace",
++      "classification": "unknown",
++      "extra": {
++        "scrollLeftPatched": true
++      },
++      "stack": "    at patchScrollLeftSetter (eval at evaluate (:290:30), <anonymous>:99:5)\n    at eval (eval at evaluate (:290:30), <anonymous>:163:3)\n    at UtilityScript.evaluate (<anonymous>:292:16)\n    at UtilityScript.<anonymous> (<anonymous>:1:44)"
++    },
++    {
++      "t": 39393.100000000035,
++      "timeIso": "2026-06-09T18:16:37.309Z",
++      "kind": "instrumentation",
++      "element": null,
++      "selector": null,
++      "role": "unknown",
++      "oldScrollLeft": null,
++      "newScrollLeft": null,
++      "selectedEpic": null,
++      "layoutMode": "portfolio-plan-board-workspace",
++      "classification": "unknown",
++      "extra": {
++        "modulePatched": true
++      },
++      "stack": "    at patchScrollSyncModule (eval at evaluate (:290:30), <anonymous>:155:5)\n    at eval (eval at evaluate (:290:30), <anonymous>:164:3)\n    at UtilityScript.evaluate (<anonymous>:292:16)\n    at UtilityScript.<anonymous> (<anonymous>:1:44)"
++    },
++    {
++      "t": 39393.30000000005,
++      "timeIso": "2026-06-09T18:16:37.309Z",
++      "kind": "addEventListener(scroll)",
++      "element": "div",
++      "selector": "div.portfolio-plan-board-axis-viewport",
++      "role": "axis",
++      "oldScrollLeft": 970,
++      "newScrollLeft": 970,
++      "selectedEpic": null,
++      "layoutMode": "portfolio-plan-board-workspace",
++      "classification": "unknown",
++      "extra": {
++        "options": {
++          "passive": true
++        }
++      },
++      "stack": "    at proto.addEventListener (eval at evaluate (:290:30), <anonymous>:112:13)\n    at mark (eval at evaluate (:290:30), <anonymous>:126:10)\n    at attachScrollEventProbes (eval at evaluate (:290:30), <anonymous>:130:5)\n    at eval (eval at evaluate (:290:30), <anonymous>:165:3)\n    at UtilityScript.evaluate (<anonymous>:292:16)\n    at UtilityScript.<anonymous> (<anonymous>:1:44)"
++    },
++    {
++      "t": 39393.5,
++      "timeIso": "2026-06-09T18:16:37.309Z",
++      "kind": "addEventListener(scroll)",
++      "element": "div",
++      "selector": "div.portfolio-plan-board-section__timeline",
++      "role": "timeline",
++      "oldScrollLeft": 959,
++      "newScrollLeft": 959,
++      "selectedEpic": null,
++      "layoutMode": "portfolio-plan-board-workspace",
++      "classification": "unknown",
++      "extra": {
++        "options": {
++          "passive": true
++        }
++      },
++      "stack": "    at proto.addEventListener (eval at evaluate (:290:30), <anonymous>:112:13)\n    at mark (eval at evaluate (:290:30), <anonymous>:126:10)\n    at eval (eval at evaluate (:290:30), <anonymous>:131:34)\n    at Array.forEach (<anonymous>)\n    at attachScrollEventProbes (eval at evaluate (:290:30), <anonymous>:131:15)\n    at eval (eval at evaluate (:290:30), <anonymous>:165:3)\n    at UtilityScript.evaluate (<anonymous>:292:16)\n    at UtilityScript.<anonymous> (<anonymous>:1:44)"
++    },
++    {
++      "t": 39393.70000000001,
++      "timeIso": "2026-06-09T18:16:37.309Z",
++      "kind": "addEventListener(scroll)",
++      "element": "div",
++      "selector": "div.portfolio-plan-board-section__timeline",
++      "role": "timeline",
++      "oldScrollLeft": 959,
++      "newScrollLeft": 959,
++      "selectedEpic": null,
++      "layoutMode": "portfolio-plan-board-workspace",
++      "classification": "unknown",
++      "extra": {
++        "options": {
++          "passive": true
++        }
++      },
++      "stack": "    at proto.addEventListener (eval at evaluate (:290:30), <anonymous>:112:13)\n    at mark (eval at evaluate (:290:30), <anonymous>:126:10)\n    at eval (eval at evaluate (:290:30), <anonymous>:131:34)\n    at Array.forEach (<anonymous>)\n    at attachScrollEventProbes (eval at evaluate (:290:30), <anonymous>:131:15)\n    at eval (eval at evaluate (:290:30), <anonymous>:165:3)\n    at UtilityScript.evaluate (<anonymous>:292:16)\n    at UtilityScript.<anonymous> (<anonymous>:1:44)"
++    },
++    {
++      "t": 69230.60000000003,
++      "timeIso": "2026-06-09T18:17:07.146Z",
++      "kind": "scrollSync.captureSelectionLayoutScrollState.start",
++      "element": "div",
++      "selector": "div.portfolio-plan-board-axis-viewport",
++      "role": "axis",
++      "oldScrollLeft": 970,
++      "newScrollLeft": 970,
++      "selectedEpic": null,
++      "layoutMode": "portfolio-plan-board-workspace",
++      "classification": "sync-module",
++      "extra": {
++        "argCount": 2
++      },
++      "stack": "    at mod.<computed> [as captureSelectionLayoutScrollState] (eval at evaluate (:290:30), <anonymous>:144:9)\n    at w.processJSCall (http://localhost:5292/_framework/blazor.webassembly.js:1:4452)\n    at w.beginInvokeJSFromDotNet (http://localhost:5292/_framework/blazor.webassembly.js:1:4129)\n    at Object.Qt [as invokeJSJson] (http://localhost:5292/_framework/blazor.webassembly.js:1:58855)\n    at http://localhost:5292/_framework/dotnet.runtime.r2kbxkuujc.js:3:34586\n    at Mc (http://localhost:5292/_framework/dotnet.runtime.r2kbxkuujc.js:3:175836)\n    at http://localhost:5292/_framework/dotnet.native.f749u69f30.wasm:wasm-function[298]:0x1f797\n    at http://localhost:5292/_framework/dotnet.native.f749u69f30.wasm:wasm-function[222]:0x1ca98"
++    },
++    {
++      "t": 69231,
++      "timeIso": "2026-06-09T18:17:07.147Z",
++      "kind": "scrollSync.captureSelectionLayoutScrollState.end",
++      "element": "div",
++      "selector": "div.portfolio-plan-board-axis-viewport",
++      "role": "axis",
++      "oldScrollLeft": 970,
++      "newScrollLeft": 970,
++      "selectedEpic": null,
++      "layoutMode": "portfolio-plan-board-workspace",
++      "classification": "sync-module",
++      "extra": {},
++      "stack": "    at mod.<computed> [as captureSelectionLayoutScrollState] (eval at evaluate (:290:30), <anonymous>:149:9)\n    at w.processJSCall (http://localhost:5292/_framework/blazor.webassembly.js:1:4452)\n    at w.beginInvokeJSFromDotNet (http://localhost:5292/_framework/blazor.webassembly.js:1:4129)\n    at Object.Qt [as invokeJSJson] (http://localhost:5292/_framework/blazor.webassembly.js:1:58855)\n    at http://localhost:5292/_framework/dotnet.runtime.r2kbxkuujc.js:3:34586\n    at Mc (http://localhost:5292/_framework/dotnet.runtime.r2kbxkuujc.js:3:175836)\n    at http://localhost:5292/_framework/dotnet.native.f749u69f30.wasm:wasm-function[298]:0x1f797\n    at http://localhost:5292/_framework/dotnet.native.f749u69f30.wasm:wasm-function[222]:0x1ca98"
++    },
++    {
++      "t": 69382.60000000003,
++      "timeIso": "2026-06-09T18:17:07.298Z",
++      "kind": "HTMLElement.focus",
++      "element": "button",
++      "selector": "button.planning-board-epic-select.planning-board-epic-select--compact.planning-board-epic-select--planned",
++      "role": "other",
++      "oldScrollLeft": 0,
++      "newScrollLeft": 0,
++      "selectedEpic": null,
++      "layoutMode": "portfolio-plan-board-workspace portfolio-plan-board-workspace--selected-layout",
++      "classification": "focus",
++      "extra": {
++        "args": []
++      },
++      "stack": "    at HTMLButtonElement.wrapped [as focus] (eval at evaluate (:290:30), <anonymous>:72:7)\n    at fe.updateComponent (http://localhost:5292/_framework/blazor.webassembly.js:1:25819)\n    at http://localhost:5292/_framework/blazor.webassembly.js:1:56531\n    at et._internal.renderBatch (http://localhost:5292/_framework/blazor.webassembly.js:1:56903)\n    at http://localhost:5292/_framework/dotnet.runtime.r2kbxkuujc.js:3:34586\n    at Mc (http://localhost:5292/_framework/dotnet.runtime.r2kbxkuujc.js:3:175836)\n    at http://localhost:5292/_framework/dotnet.native.f749u69f30.wasm:wasm-function[298]:0x1f797\n    at http://localhost:5292/_framework/dotnet.native.f749u69f30.wasm:wasm-function[222]:0x1ca98"
++    },
++    {
++      "t": 69392.80000000005,
++      "timeIso": "2026-06-09T18:17:07.308Z",
++      "kind": "scrollSync.restoreSelectionLayoutScrollState.start",
++      "element": "div",
++      "selector": "div.portfolio-plan-board-axis-viewport",
++      "role": "axis",
++      "oldScrollLeft": 970,
++      "newScrollLeft": 970,
++      "selectedEpic": null,
++      "layoutMode": "portfolio-plan-board-workspace portfolio-plan-board-workspace--selected-layout",
++      "classification": "sync-module",
++      "extra": {
++        "argCount": 3
++      },
++      "stack": "    at mod.<computed> [as restoreSelectionLayoutScrollState] (eval at evaluate (:290:30), <anonymous>:144:9)\n    at w.processJSCall (http://localhost:5292/_framework/blazor.webassembly.js:1:4452)\n    at w.beginInvokeJSFromDotNet (http://localhost:5292/_framework/blazor.webassembly.js:1:4129)\n    at Object.Qt [as invokeJSJson] (http://localhost:5292/_framework/blazor.webassembly.js:1:58855)\n    at http://localhost:5292/_framework/dotnet.runtime.r2kbxkuujc.js:3:34586\n    at Mc (http://localhost:5292/_framework/dotnet.runtime.r2kbxkuujc.js:3:175836)\n    at http://localhost:5292/_framework/dotnet.native.f749u69f30.wasm:wasm-function[298]:0x1f797\n    at http://localhost:5292/_framework/dotnet.native.f749u69f30.wasm:wasm-function[222]:0x1ca98"
++    },
++    {
++      "t": 69412,
++      "timeIso": "2026-06-09T18:17:07.328Z",
++      "kind": "scroll-event",
++      "element": "div",
++      "selector": "div.portfolio-plan-board-section__timeline",
++      "role": "timeline",
++      "oldScrollLeft": null,
++      "newScrollLeft": 405,
++      "selectedEpic": null,
++      "layoutMode": "portfolio-plan-board-workspace portfolio-plan-board-workspace--selected-layout",
++      "classification": "user-or-browser-scroll-event",
++      "extra": {
++        "source": "probe-timeline-0"
++      },
++      "stack": "    at el.addEventListener.passive (eval at evaluate (:290:30), <anonymous>:127:9)"
++    },
++    {
++      "t": 69425.10000000003,
++      "timeIso": "2026-06-09T18:17:07.341Z",
++      "kind": "scrollSync.restoreSelectionLayoutScrollState.end",
++      "element": "div",
++      "selector": "div.portfolio-plan-board-axis-viewport",
++      "role": "axis",
++      "oldScrollLeft": 970,
++      "newScrollLeft": 970,
++      "selectedEpic": null,
++      "layoutMode": "portfolio-plan-board-workspace portfolio-plan-board-workspace--selected-layout",
++      "classification": "sync-module",
++      "extra": {},
++      "stack": "    at eval (eval at evaluate (:290:30), <anonymous>:147:32)\n    at async w.beginInvokeJSFromDotNet (http://localhost:5292/_framework/blazor.webassembly.js:1:4181)"
++    }
++  ]
++}
++
++### Ran Playwright code
++```js
++await page.evaluate('() => {\n  const t = window.__portfolioScrollTrace;\n  if (!t) return { error:\'trace-missing\' };\n  const data = t.get();\n  const pos = t.positions();\n  const recent = data.log.slice(-120);\n  return { phase:\'after-small\', positions: pos, total: data.log.length, recent };\n}');
++```
++
++### Page state
++- Page URL: http://localhost:5292/planning/plan-board/portfolio
++- Page Title: Portfolio Plan Board - PO Companion
++- Page Snapshot:
++```yaml
++- main [ref=e8]:
++  - generic [ref=e9]:
++    - generic [ref=e10]:
++      - button "Return to home page" [ref=e12] [cursor=pointer]:
++        - img [ref=e14]
++      - button [ref=e19] [cursor=pointer]:
++        - img [ref=e21]
++    - navigation "Workspace navigation" [ref=e27]:
++      - link "Health" [ref=e28] [cursor=pointer]:
++        - /url: /home/health
++        - img [ref=e29]
++        - generic [ref=e32]: Health
++      - link "Delivery" [ref=e33] [cursor=pointer]:
++        - /url: /home/delivery
++        - img [ref=e34]
++        - generic [ref=e37]: Delivery
++      - link "Trends" [ref=e38] [cursor=pointer]:
++        - /url: /home/trends
++        - img [ref=e39]
++        - generic [ref=e46]: Trends
++      - link "Planning" [ref=e47] [cursor=pointer]:
++        - /url: /home/planning
++        - img [ref=e48]
++        - generic [ref=e53]: Planning
++    - generic [ref=e54]:
++      - button "Open getting started wizard" [ref=e55] [cursor=pointer]:
++        - img [ref=e57]
++      - button "Open keyboard shortcuts" [ref=e61] [cursor=pointer]:
++        - img [ref=e63]
++      - button "Open settings" [ref=e66] [cursor=pointer]:
++        - img [ref=e68]
++  - article [ref=e72]:
++    - generic [ref=e73]:
++      - group [ref=e75]:
++        - generic [ref=e76]: Filters · PortfolioPlanBoard
++        - generic [ref=e79]: Defaults active
++        - button "Edit filters" [ref=e80] [cursor=pointer]:
++          - generic [ref=e81]: Edit filters
++      - group [ref=e83]:
++        - paragraph [ref=e84]: Shared context
++        - generic [ref=e85]:
++          - generic [ref=e89]:
++            - generic [ref=e90] [cursor=pointer]:
++              - textbox "Product" [ref=e91]
++              - img [ref=e93]
++              - group "Product"
++            - generic: Product
++          - generic [ref=e99]:
++            - generic [ref=e100] [cursor=pointer]:
++              - generic [ref=e101]: All projects
++              - img [ref=e103]
++              - group "Project"
++            - generic: Project
++          - generic [ref=e108]:
++            - generic [ref=e109]:
++              - generic [ref=e110]:
++                - textbox "Team" [disabled] [ref=e111]
++                - generic:
++                  - img
++                - group "Team"
++              - generic: Team
++            - generic [ref=e114]: Team doesn't affect this page.
++          - generic [ref=e118]:
++            - generic [ref=e119]:
++              - generic [ref=e120]: Snapshot
++              - generic:
++                - img
++              - group "Time mode"
++            - generic: Time mode
++        - group [ref=e121]:
++          - button "Reset product" [disabled]:
++            - generic: Reset product
++          - button "Reset project" [disabled]:
++            - generic: Reset project
++          - button "Reset team" [disabled]:
++            - generic: Reset team
++          - button "Reset time" [disabled]:
++            - generic: Reset time
++          - button "Reset all" [ref=e123] [cursor=pointer]:
++            - generic [ref=e124]: Reset all
++    - group [ref=e126]:
++      - group [ref=e128]:
++        - group [ref=e129]:
++          - group [ref=e130]:
++            - group [ref=e131]:
++              - img [ref=e132]
++              - heading "Portfolio Plan Board" [level=5] [ref=e135]
++            - navigation [ref=e136]:
++              - list [ref=e137]:
++                - listitem [ref=e138]:
++                  - link "Home" [ref=e139] [cursor=pointer]:
++                    - /url: /home
++                    - img [ref=e140]
++                    - text: Home
++                - listitem [ref=e143]:
++                  - generic [ref=e144]: /
++                - listitem [ref=e145]:
++                  - link "Planning" [ref=e146] [cursor=pointer]:
++                    - /url: /home/planning
++                    - img [ref=e147]
++                    - text: Planning
++                - listitem [ref=e152]:
++                  - generic [ref=e153]: /
++                - listitem [ref=e154]:
++                  - link "Portfolio Plan Board":
++                    - /url: "#"
++                    - img
++                    - text: Portfolio Plan Board
++            - generic [ref=e155]: Compare the current planning scope on a shared sprint axis while keeping all edits product-local.
++          - group [ref=e156]:
++            - button "Planning" [ref=e157] [cursor=pointer]:
++              - generic [ref=e158]:
++                - img [ref=e160]
++                - text: Planning
++            - button "Home" [ref=e165] [cursor=pointer]:
++              - generic [ref=e166]:
++                - img [ref=e168]
++                - text: Home
++        - group [ref=e171]:
++          - generic [ref=e173]:
++            - img [ref=e174]
++            - generic [ref=e177]: Portfolio view
++          - generic [ref=e179]:
++            - img [ref=e180]
++            - generic [ref=e191]: Product-local edits
++          - generic [ref=e193]:
++            - img [ref=e194]
++            - generic [ref=e197]: All visible products · 2 products
++        - generic [ref=e198]: Shared sprint-axis comparison stays portfolio-oriented, while duration changes, relative moves, and relocation requests persist only inside the touched product section. Undo is available inside product sections after a successful local edit; reorder, lane operations, and shared persistence workflows remain disabled on this surface.
++      - generic [ref=e200]:
++        - generic [ref=e201]:
++          - generic [ref=e202]: Sections
++          - link "Incident Response Control" [ref=e203] [cursor=pointer]:
++            - /url: "#portfolio-section-1"
++            - generic [ref=e204]: Incident Response Control
++          - link "Crew Safety Operations" [ref=e205] [cursor=pointer]:
++            - /url: "#portfolio-section-2"
++            - generic [ref=e206]: Crew Safety Operations
++        - generic [ref=e210] [cursor=pointer]:
++          - checkbox "Diagnostics" [ref=e214]
++          - paragraph [ref=e217]: Diagnostics
++      - generic [ref=e218]:
++        - generic [ref=e220]:
++          - generic [ref=e221]:
++            - paragraph [ref=e222]: Shared sprint axis · product timelines align to these columns
++            - generic "Shared sprint axis timeline" [ref=e224]:
++              - generic [ref=e226]:
++                - generic "Sprint 3, Dec 29–Jan 11" [ref=e227]:
++                  - paragraph [ref=e229]: Sprint 3
++                - generic "Sprint 4, Jan 12–Jan 25" [ref=e230]:
++                  - paragraph [ref=e232]: Sprint 4
++                - generic "Sprint 5, Jan 26–Feb 8" [ref=e233]:
++                  - paragraph [ref=e235]: Sprint 5
++                - generic "Sprint 6, Feb 9–Feb 22" [ref=e236]:
++                  - paragraph [ref=e238]: Sprint 6
++                - generic "Sprint 7, Feb 23–Mar 8" [ref=e239]:
++                  - paragraph [ref=e241]: Sprint 7
++                - generic "Sprint 8, Mar 9–Mar 22" [ref=e242]:
++                  - paragraph [ref=e244]: Sprint 8
++                - generic "Sprint 9, Mar 23–Apr 5" [ref=e245]:
++                  - paragraph [ref=e247]: Sprint 9
++                - generic "Sprint 10, Apr 6–Apr 19" [ref=e248]:
++                  - paragraph [ref=e250]: Sprint 10
++                - generic "Sprint 11, Apr 20–May 3" [ref=e251]:
++                  - paragraph [ref=e253]: Sprint 11
++                - generic "Sprint 12, May 4–May 17" [ref=e254]:
++                  - paragraph [ref=e256]: Sprint 12
++                - generic "Sprint 13, May 18–May 31" [ref=e257]:
++                  - paragraph [ref=e259]: Sprint 13
++                - generic "Sprint 14, Jun 1–Jun 14, Current sprint" [ref=e260]:
++                  - paragraph [ref=e262]: Sprint 14
++          - generic [ref=e264]:
++            - generic [ref=e265]:
++              - heading "Incident Response Control" [level=6] [ref=e266]
++              - generic [ref=e267]:
++                - button "Collapse" [ref=e269] [cursor=pointer]:
++                  - img [ref=e271]
++                - button "Pin" [ref=e275] [cursor=pointer]:
++                  - img [ref=e277]
++                - button "Focus" [ref=e283] [cursor=pointer]:
++                  - img [ref=e285]
++            - generic [ref=e288]:
++              - region [ref=e289]:
++                - generic [ref=e290]:
++                  - button "Unplanned / Backlog (6)" [ref=e291] [cursor=pointer]:
++                    - generic [ref=e292]:
++                      - img [ref=e294]
++                      - text: Unplanned / Backlog (6)
++                  - generic [ref=e299]: 6 backlog items
++                - text: Backlog items are not positioned on the sprint axis; historical planned dates remain stored while projected here.
++                - generic [ref=e300]:
++                  - button "Select backlog epic Execution anomaly validation track - Sprint signal alignment" [ref=e303] [cursor=pointer]:
++                    - generic [ref=e305]: "#1 · Execution anomaly validation track - Sprint signal alignment"
++                  - button "Select backlog epic Emergency Alert Distribution - Sensor Network" [ref=e308] [cursor=pointer]:
++                    - generic [ref=e310]: "#2 · Emergency Alert Distribution - Sensor Network"
++                  - button "Select backlog epic Real-Time Leakage Monitoring - API Integration" [ref=e313] [cursor=pointer]:
++                    - generic [ref=e315]: "#3 · Real-Time Leakage Monitoring - API Integration"
++                  - button "Select backlog epic Incident Command Coordination - User Interface" [ref=e318] [cursor=pointer]:
++                    - generic [ref=e320]: "#4 · Incident Command Coordination - User Interface"
++                  - button "Select backlog epic Emergency Alert Distribution - Alert System" [ref=e323] [cursor=pointer]:
++                    - generic [ref=e325]: "#10 · Emergency Alert Distribution - Alert System"
++                  - button "Select backlog epic Incident Command Coordination - API Integration" [ref=e328] [cursor=pointer]:
++                    - generic [ref=e330]: "#13 · Incident Command Coordination - API Integration"
++              - generic "Active planned epics timeline" [ref=e331]:
++                - generic [ref=e332]:
++                  - generic [ref=e334]:
++                    - generic [ref=e529]:
++                      - button "Emergency Alert Distribution - User Interface selected" [ref=e530] [cursor=pointer]:
++                        - generic [ref=e532]:
++                          - text: Active epic
++                          - generic [ref=e533]: Emergency Alert Distribution - User Interface
++                      - generic "Selected epic quick actions" [ref=e534]:
++                        - button "Move epic Emergency Alert Distribution - User Interface one sprint earlier" [ref=e535] [cursor=pointer]:
++                          - img [ref=e536]
++                        - generic "Duration controls" [ref=e539]:
++                          - generic: Duration
++                          - button "Reduce duration for Emergency Alert Distribution - User Interface by one sprint" [ref=e540] [cursor=pointer]:
++                            - img [ref=e541]
++                          - 'generic "Current duration: 1 sprint"':
++                            - generic: "1"
++                            - generic: sprint
++                          - button "Increase duration for Emergency Alert Distribution - User Interface by one sprint" [ref=e544] [cursor=pointer]:
++                            - img [ref=e545]
++                        - button "Move epic Emergency Alert Distribution - User Interface one sprint later" [ref=e548] [cursor=pointer]:
++                          - img [ref=e549]
++                    - button "Select epic Incident Command Coordination - Sensor Network" [ref=e342] [cursor=pointer]:
++                      - generic [ref=e344]: Incident Command Coordination - Sensor Network
++                    - button "Select epic Emergency Protocol Execution - Data Processing Pipeline" [ref=e347] [cursor=pointer]:
++                      - generic [ref=e349]: Emergency Protocol Execution - Data Processing Pipeline
++                    - button "Select epic Automated Fire Suppression - Sensor Network" [ref=e352] [cursor=pointer]:
++                      - generic [ref=e354]: Automated Fire Suppression - Sensor Network
++                    - button "Select epic Rapid Fire Detection and Suppression - API Integration" [ref=e357] [cursor=pointer]:
++                      - generic [ref=e359]: Rapid Fire Detection and Suppression - API Integration
++                    - button "Select epic Emergency Alert Distribution - API Integration" [ref=e362] [cursor=pointer]:
++                      - generic [ref=e364]: Emergency Alert Distribution - API Integration
++                  - generic [ref=e366]:
++                    - button "Select epic Emergency Protocol Execution - Sensor Network" [ref=e369] [cursor=pointer]:
++                      - generic [ref=e371]: Emergency Protocol Execution - Sensor Network
++                    - button "Select epic Rapid Fire Detection and Suppression - Data Processing Pipeline" [ref=e374] [cursor=pointer]:
++                      - generic [ref=e376]: Rapid Fire Detection and Suppression - Data Processing Pipeline
++                    - button "Select epic Automated Collision Response - Sensor Network" [ref=e379] [cursor=pointer]:
++                      - generic [ref=e381]: Automated Collision Response - Sensor Network
++                  - button "Select epic Automated Fire Suppression - User Interface" [ref=e386] [cursor=pointer]:
++                    - generic [ref=e388]: Automated Fire Suppression - User Interface
++                  - button "Select epic Automated Fire Suppression - API Integration" [ref=e393] [cursor=pointer]:
++                    - generic [ref=e395]: Automated Fire Suppression - API Integration
++                  - button "Select epic Emergency Alert Distribution - Data Processing Pipeline" [ref=e400] [cursor=pointer]:
++                    - generic [ref=e402]: Emergency Alert Distribution - Data Processing Pipeline
++                  - button "Select epic Automated Fire Suppression - Data Processing Pipeline" [ref=e407] [cursor=pointer]:
++                    - generic [ref=e409]: Automated Fire Suppression - Data Processing Pipeline
++                  - button "Select epic Rapid Fire Detection and Suppression - Sensor Network" [ref=e414] [cursor=pointer]:
++                    - generic [ref=e416]: Rapid Fire Detection and Suppression - Sensor Network
++                  - button "Select epic Real-Time Leakage Monitoring - User Interface" [ref=e421] [cursor=pointer]:
++                    - generic [ref=e423]: Real-Time Leakage Monitoring - User Interface
++                  - button "Select epic Real-Time Leakage Monitoring - Data Processing Pipeline" [ref=e428] [cursor=pointer]:
++                    - generic [ref=e430]: Real-Time Leakage Monitoring - Data Processing Pipeline
++                  - button "Select epic Incident Command Coordination - Data Processing Pipeline" [ref=e435] [cursor=pointer]:
++                    - generic [ref=e437]: Incident Command Coordination - Data Processing Pipeline
++          - generic [ref=e439]:
++            - generic [ref=e440]:
++              - heading "Crew Safety Operations" [level=6] [ref=e441]
++              - generic [ref=e442]:
++                - button "Collapse" [ref=e444] [cursor=pointer]:
++                  - img [ref=e446]
++                - button "Pin" [ref=e450] [cursor=pointer]:
++                  - img [ref=e452]
++                - button "Focus" [ref=e458] [cursor=pointer]:
++                  - img [ref=e460]
++            - generic [ref=e463]:
++              - region [ref=e464]:
++                - generic [ref=e465]:
++                  - button "Unplanned / Backlog (4)" [ref=e466] [cursor=pointer]:
++                    - generic [ref=e467]:
++                      - img [ref=e469]
++                      - text: Unplanned / Backlog (4)
++                  - generic [ref=e474]: 4 backlog items
++                - text: Backlog items are not positioned on the sprint axis; historical planned dates remain stored while projected here.
++                - generic [ref=e475]:
++                  - button "Select backlog epic Evacuation Route Optimization - API Integration" [ref=e478] [cursor=pointer]:
++                    - generic [ref=e480]: "#1 · Evacuation Route Optimization - API Integration"
++                  - button "Select backlog epic Evacuation Route Optimization - User Interface" [ref=e483] [cursor=pointer]:
++                    - generic [ref=e485]: "#2 · Evacuation Route Optimization - User Interface"
++                  - button "Select backlog epic Evacuation Route Optimization - Data Processing Pipeline" [ref=e488] [cursor=pointer]:
++                    - generic [ref=e490]: "#3 · Evacuation Route Optimization - Data Processing Pipeline"
++                  - button "Select backlog epic Medical Emergency Response - Data Processing Pipeline" [ref=e493] [cursor=pointer]:
++                    - generic [ref=e495]: "#4 · Medical Emergency Response - Data Processing Pipeline"
++              - generic "Active planned epics timeline" [ref=e496]:
++                - generic [ref=e497]:
++                  - generic [ref=e499]:
++                    - button "Select epic Crew Location Tracking - Data Processing Pipeline" [ref=e502] [cursor=pointer]:
++                      - generic [ref=e504]: Crew Location Tracking - Data Processing Pipeline
++                    - button "Select epic Evacuation Route Optimization - Sensor Network" [ref=e507] [cursor=pointer]:
++                      - generic [ref=e509]: Evacuation Route Optimization - Sensor Network
++                  - generic [ref=e511]:
++                    - button "Select epic Medical Emergency Response - Sensor Network" [ref=e514] [cursor=pointer]:
++                      - generic [ref=e516]: Medical Emergency Response - Sensor Network
++                    - button "Select epic Crew Location Tracking - User Interface" [ref=e519] [cursor=pointer]:
++                      - generic [ref=e521]: Crew Location Tracking - User Interface
++                  - button "Select epic Medical Emergency Response - User Interface" [ref=e526] [cursor=pointer]:
++                    - generic [ref=e528]: Medical Emergency Response - User Interface
++        - complementary [ref=e552]:
++          - group [ref=e555]:
++            - group [ref=e556]:
++              - group [ref=e557]:
++                - heading "Epic details" [level=6] [ref=e558]
++                - paragraph [ref=e559]: Emergency Alert Distribution - User Interface
++              - button "Close epic details" [ref=e560] [cursor=pointer]:
++                - img [ref=e562]
++            - generic [ref=e565]:
++              - generic [ref=e567]:
++                - text: Epic ID
++                - paragraph [ref=e568]:
++                  - link "3233" [ref=e569] [cursor=pointer]:
++                    - /url: https://dev.azure.com/mock/Battleship%20Systems/_workitems/edit/3233
++              - generic [ref=e571]:
++                - text: Product name
++                - paragraph [ref=e572]: Incident Response Control
++              - generic [ref=e574]:
++                - text: Start sprint
++                - paragraph [ref=e575]: Sprint 8
++              - generic [ref=e577]:
++                - text: End sprint
++                - paragraph [ref=e578]: Sprint 8
++              - generic [ref=e580]:
++                - text: Duration
++                - paragraph [ref=e581]: 1 sprint
++            - separator [ref=e582]
++            - generic [ref=e583]: "Portfolio context: Main planning track"
++            - generic [ref=e584]:
++              - button "Relocate start sprint" [ref=e585] [cursor=pointer]:
++                - generic [ref=e586]:
++                  - img [ref=e588]
++                  - text: Relocate start sprint
++              - button "Unplan" [ref=e591] [cursor=pointer]:
++                - generic [ref=e592]:
++                  - img [ref=e594]
++                  - text: Unplan
++```
+diff --git a/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/trace-after-small-summary.txt b/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/trace-after-small-summary.txt
+new file mode 100644
+index 00000000..83658261
+--- /dev/null
++++ b/docs/reports/assets/2026-06-09-portfolio-scroll-writer-trace/trace-after-small-summary.txt
+@@ -0,0 +1,463 @@
++### Result
++{
++  "count": 9,
++  "rows": [
++    {
++      "t": 39393.3,
++      "kind": "addEventListener(scroll)",
++      "role": "axis",
++      "old": 970,
++      "next": 970,
++      "cls": "unknown",
++      "sel": "div.portfolio-plan-board-axis-viewport",
++      "selected": null,
++      "layout": "normal",
++      "stack": "    at proto.addEventListener (eval at evaluate (:290:30), <anonymous>:112:13)"
++    },
++    {
++      "t": 39393.5,
++      "kind": "addEventListener(scroll)",
++      "role": "timeline",
++      "old": 959,
++      "next": 959,
++      "cls": "unknown",
++      "sel": "div.portfolio-plan-board-section__timeline",
++      "selected": null,
++      "layout": "normal",
++      "stack": "    at proto.addEventListener (eval at evaluate (:290:30), <anonymous>:112:13)"
++    },
++    {
++      "t": 39393.7,
++      "kind": "addEventListener(scroll)",
++      "role": "timeline",
++      "old": 959,
++      "next": 959,
++      "cls": "unknown",
++      "sel": "div.portfolio-plan-board-section__timeline",
++      "selected": null,
++      "layout": "normal",
++      "stack": "    at proto.addEventListener (eval at evaluate (:290:30), <anonymous>:112:13)"
++    },
++    {
++      "t": 69230.6,
++      "kind": "scrollSync.captureSelectionLayoutScrollState.start",
++      "role": "axis",
++      "old": 970,
++      "next": 970,
++      "cls": "sync-module",
++      "sel": "div.portfolio-plan-board-axis-viewport",
++      "selected": null,
++      "layout": "normal",
++      "stack": "    at mod.<computed> [as captureSelectionLayoutScrollState] (eval at evaluate (:290:30), <anonymous>:144:9)"
++    },
++    {
++      "t": 69231,
++      "kind": "scrollSync.captureSelectionLayoutScrollState.end",
++      "role": "axis",
++      "old": 970,
++      "next": 970,
++      "cls": "sync-module",
++      "sel": "div.portfolio-plan-board-axis-viewport",
++      "selected": null,
++      "layout": "normal",
++      "stack": "    at mod.<computed> [as captureSelectionLayoutScrollState] (eval at evaluate (:290:30), <anonymous>:149:9)"
++    },
++    {
++      "t": 69382.6,
++      "kind": "HTMLElement.focus",
++      "role": "other",
++      "old": 0,
++      "next": 0,
++      "cls": "focus",
++      "sel": "button.planning-board-epic-select.planning-board-epic-select--compact.planning-board-epic-select--planned",
++      "selected": null,
++      "layout": "selected",
++      "stack": "    at HTMLButtonElement.wrapped [as focus] (eval at evaluate (:290:30), <anonymous>:72:7)"
++    },
++    {
++      "t": 69392.8,
++      "kind": "scrollSync.restoreSelectionLayoutScrollState.start",
++      "role": "axis",
++      "old": 970,
++      "next": 970,
++      "cls": "sync-module",
++      "sel": "div.portfolio-plan-board-axis-viewport",
++      "selected": null,
++      "layout": "selected",
++      "stack": "    at mod.<computed> [as restoreSelectionLayoutScrollState] (eval at evaluate (:290:30), <anonymous>:144:9)"
++    },
++    {
++      "t": 69412,
++      "kind": "scroll-event",
++      "role": "timeline",
++      "old": null,
++      "next": 405,
++      "cls": "user-or-browser-scroll-event",
++      "sel": "div.portfolio-plan-board-section__timeline",
++      "selected": null,
++      "layout": "selected",
++      "stack": "    at el.addEventListener.passive (eval at evaluate (:290:30), <anonymous>:127:9)"
++    },
++    {
++      "t": 69425.1,
++      "kind": "scrollSync.restoreSelectionLayoutScrollState.end",
++      "role": "axis",
++      "old": 970,
++      "next": 970,
++      "cls": "sync-module",
++      "sel": "div.portfolio-plan-board-axis-viewport",
++      "selected": null,
++      "layout": "selected",
++      "stack": "    at eval (eval at evaluate (:290:30), <anonymous>:147:32)"
++    }
++  ]
++}
++
++### Ran Playwright code
++```js
++await page.evaluate('() => {\n  const t = window.__portfolioScrollTrace;\n  if (!t) return { error:\'trace-missing\' };\n  const { log } = t.get();\n  const rows = log\n    .filter(e => e.kind !== \'instrumentation\')\n    .map(e => ({\n      t: Math.round(e.t*10)/10,\n      kind: e.kind,\n      role: e.role,\n      old: e.oldScrollLeft,\n      next: e.newScrollLeft,\n      cls: e.classification,\n      sel: e.selector,\n      selected: e.selectedEpic,\n      layout: e.layoutMode?.includes(\'selected-layout\') ? \'selected\' : \'normal\',\n      stack: (e.stack||\'\').split(\'\\n\')[0]\n    }));\n  return {count: rows.length, rows};\n}');
++```
++
++### Page state
++- Page URL: http://localhost:5292/planning/plan-board/portfolio
++- Page Title: Portfolio Plan Board - PO Companion
++- Page Snapshot:
++```yaml
++- main [ref=e8]:
++  - generic [ref=e9]:
++    - generic [ref=e10]:
++      - button "Return to home page" [ref=e12] [cursor=pointer]:
++        - img [ref=e14]
++      - button [ref=e19] [cursor=pointer]:
++        - img [ref=e21]
++    - navigation "Workspace navigation" [ref=e27]:
++      - link "Health" [ref=e28] [cursor=pointer]:
++        - /url: /home/health
++        - img [ref=e29]
++        - generic [ref=e32]: Health
++      - link "Delivery" [ref=e33] [cursor=pointer]:
++        - /url: /home/delivery
++        - img [ref=e34]
++        - generic [ref=e37]: Delivery
++      - link "Trends" [ref=e38] [cursor=pointer]:
++        - /url: /home/trends
++        - img [ref=e39]
++        - generic [ref=e46]: Trends
++      - link "Planning" [ref=e47] [cursor=pointer]:
++        - /url: /home/planning
++        - img [ref=e48]
++        - generic [ref=e53]: Planning
++    - generic [ref=e54]:
++      - button "Open getting started wizard" [ref=e55] [cursor=pointer]:
++        - img [ref=e57]
++      - button "Open keyboard shortcuts" [ref=e61] [cursor=pointer]:
++        - img [ref=e63]
++      - button "Open settings" [ref=e66] [cursor=pointer]:
++        - img [ref=e68]
++  - article [ref=e72]:
++    - generic [ref=e73]:
++      - group [ref=e75]:
++        - generic [ref=e76]: Filters · PortfolioPlanBoard
++        - generic [ref=e79]: Defaults active
++        - button "Edit filters" [ref=e80] [cursor=pointer]:
++          - generic [ref=e81]: Edit filters
++      - group [ref=e83]:
++        - paragraph [ref=e84]: Shared context
++        - generic [ref=e85]:
++          - generic [ref=e89]:
++            - generic [ref=e90] [cursor=pointer]:
++              - textbox "Product" [ref=e91]
++              - img [ref=e93]
++              - group "Product"
++            - generic: Product
++          - generic [ref=e99]:
++            - generic [ref=e100] [cursor=pointer]:
++              - generic [ref=e101]: All projects
++              - img [ref=e103]
++              - group "Project"
++            - generic: Project
++          - generic [ref=e108]:
++            - generic [ref=e109]:
++              - generic [ref=e110]:
++                - textbox "Team" [disabled] [ref=e111]
++                - generic:
++                  - img
++                - group "Team"
++              - generic: Team
++            - generic [ref=e114]: Team doesn't affect this page.
++          - generic [ref=e118]:
++            - generic [ref=e119]:
++              - generic [ref=e120]: Snapshot
++              - generic:
++                - img
++              - group "Time mode"
++            - generic: Time mode
++        - group [ref=e121]:
++          - button "Reset product" [disabled]:
++            - generic: Reset product
++          - button "Reset project" [disabled]:
++            - generic: Reset project
++          - button "Reset team" [disabled]:
++            - generic: Reset team
++          - button "Reset time" [disabled]:
++            - generic: Reset time
++          - button "Reset all" [ref=e123] [cursor=pointer]:
++            - generic [ref=e124]: Reset all
++    - group [ref=e126]:
++      - group [ref=e128]:
++        - group [ref=e129]:
++          - group [ref=e130]:
++            - group [ref=e131]:
++              - img [ref=e132]
++              - heading "Portfolio Plan Board" [level=5] [ref=e135]
++            - navigation [ref=e136]:
++              - list [ref=e137]:
++                - listitem [ref=e138]:
++                  - link "Home" [ref=e139] [cursor=pointer]:
++                    - /url: /home
++                    - img [ref=e140]
++                    - text: Home
++                - listitem [ref=e143]:
++                  - generic [ref=e144]: /
++                - listitem [ref=e145]:
++                  - link "Planning" [ref=e146] [cursor=pointer]:
++                    - /url: /home/planning
++                    - img [ref=e147]
++                    - text: Planning
++                - listitem [ref=e152]:
++                  - generic [ref=e153]: /
++                - listitem [ref=e154]:
++                  - link "Portfolio Plan Board":
++                    - /url: "#"
++                    - img
++                    - text: Portfolio Plan Board
++            - generic [ref=e155]: Compare the current planning scope on a shared sprint axis while keeping all edits product-local.
++          - group [ref=e156]:
++            - button "Planning" [ref=e157] [cursor=pointer]:
++              - generic [ref=e158]:
++                - img [ref=e160]
++                - text: Planning
++            - button "Home" [ref=e165] [cursor=pointer]:
++              - generic [ref=e166]:
++                - img [ref=e168]
++                - text: Home
++        - group [ref=e171]:
++          - generic [ref=e173]:
++            - img [ref=e174]
++            - generic [ref=e177]: Portfolio view
++          - generic [ref=e179]:
++            - img [ref=e180]
++            - generic [ref=e191]: Product-local edits
++          - generic [ref=e193]:
++            - img [ref=e194]
++            - generic [ref=e197]: All visible products · 2 products
++        - generic [ref=e198]: Shared sprint-axis comparison stays portfolio-oriented, while duration changes, relative moves, and relocation requests persist only inside the touched product section. Undo is available inside product sections after a successful local edit; reorder, lane operations, and shared persistence workflows remain disabled on this surface.
++      - generic [ref=e200]:
++        - generic [ref=e201]:
++          - generic [ref=e202]: Sections
++          - link "Incident Response Control" [ref=e203] [cursor=pointer]:
++            - /url: "#portfolio-section-1"
++            - generic [ref=e204]: Incident Response Control
++          - link "Crew Safety Operations" [ref=e205] [cursor=pointer]:
++            - /url: "#portfolio-section-2"
++            - generic [ref=e206]: Crew Safety Operations
++        - generic [ref=e210] [cursor=pointer]:
++          - checkbox "Diagnostics" [ref=e214]
++          - paragraph [ref=e217]: Diagnostics
++      - generic [ref=e218]:
++        - generic [ref=e220]:
++          - generic [ref=e221]:
++            - paragraph [ref=e222]: Shared sprint axis · product timelines align to these columns
++            - generic "Shared sprint axis timeline" [ref=e224]:
++              - generic [ref=e226]:
++                - generic "Sprint 3, Dec 29–Jan 11" [ref=e227]:
++                  - paragraph [ref=e229]: Sprint 3
++                - generic "Sprint 4, Jan 12–Jan 25" [ref=e230]:
++                  - paragraph [ref=e232]: Sprint 4
++                - generic "Sprint 5, Jan 26–Feb 8" [ref=e233]:
++                  - paragraph [ref=e235]: Sprint 5
++                - generic "Sprint 6, Feb 9–Feb 22" [ref=e236]:
++                  - paragraph [ref=e238]: Sprint 6
++                - generic "Sprint 7, Feb 23–Mar 8" [ref=e239]:
++                  - paragraph [ref=e241]: Sprint 7
++                - generic "Sprint 8, Mar 9–Mar 22" [ref=e242]:
++                  - paragraph [ref=e244]: Sprint 8
++                - generic "Sprint 9, Mar 23–Apr 5" [ref=e245]:
++                  - paragraph [ref=e247]: Sprint 9
++                - generic "Sprint 10, Apr 6–Apr 19" [ref=e248]:
++                  - paragraph [ref=e250]: Sprint 10
++                - generic "Sprint 11, Apr 20–May 3" [ref=e251]:
++                  - paragraph [ref=e253]: Sprint 11
++                - generic "Sprint 12, May 4–May 17" [ref=e254]:
++                  - paragraph [ref=e256]: Sprint 12
++                - generic "Sprint 13, May 18–May 31" [ref=e257]:
++                  - paragraph [ref=e259]: Sprint 13
++                - generic "Sprint 14, Jun 1–Jun 14, Current sprint" [ref=e260]:
++                  - paragraph [ref=e262]: Sprint 14
++          - generic [ref=e264]:
++            - generic [ref=e265]:
++              - heading "Incident Response Control" [level=6] [ref=e266]
++              - generic [ref=e267]:
++                - button "Collapse" [ref=e269] [cursor=pointer]:
++                  - img [ref=e271]
++                - button "Pin" [ref=e275] [cursor=pointer]:
++                  - img [ref=e277]
++                - button "Focus" [ref=e283] [cursor=pointer]:
++                  - img [ref=e285]
++            - generic [ref=e288]:
++              - region [ref=e289]:
++                - generic [ref=e290]:
++                  - button "Unplanned / Backlog (6)" [ref=e291] [cursor=pointer]:
++                    - generic [ref=e292]:
++                      - img [ref=e294]
++                      - text: Unplanned / Backlog (6)
++                  - generic [ref=e299]: 6 backlog items
++                - text: Backlog items are not positioned on the sprint axis; historical planned dates remain stored while projected here.
++                - generic [ref=e300]:
++                  - button "Select backlog epic Execution anomaly validation track - Sprint signal alignment" [ref=e303] [cursor=pointer]:
++                    - generic [ref=e305]: "#1 · Execution anomaly validation track - Sprint signal alignment"
++                  - button "Select backlog epic Emergency Alert Distribution - Sensor Network" [ref=e308] [cursor=pointer]:
++                    - generic [ref=e310]: "#2 · Emergency Alert Distribution - Sensor Network"
++                  - button "Select backlog epic Real-Time Leakage Monitoring - API Integration" [ref=e313] [cursor=pointer]:
++                    - generic [ref=e315]: "#3 · Real-Time Leakage Monitoring - API Integration"
++                  - button "Select backlog epic Incident Command Coordination - User Interface" [ref=e318] [cursor=pointer]:
++                    - generic [ref=e320]: "#4 · Incident Command Coordination - User Interface"
++                  - button "Select backlog epic Emergency Alert Distribution - Alert System" [ref=e323] [cursor=pointer]:
++                    - generic [ref=e325]: "#10 · Emergency Alert Distribution - Alert System"
++                  - button "Select backlog epic Incident Command Coordination - API Integration" [ref=e328] [cursor=pointer]:
++                    - generic [ref=e330]: "#13 · Incident Command Coordination - API Integration"
++              - generic "Active planned epics timeline" [ref=e331]:
++                - generic [ref=e332]:
++                  - generic [ref=e334]:
++                    - generic [ref=e529]:
++                      - button "Emergency Alert Distribution - User Interface selected" [ref=e530] [cursor=pointer]:
++                        - generic [ref=e532]:
++                          - text: Active epic
++                          - generic [ref=e533]: Emergency Alert Distribution - User Interface
++                      - generic "Selected epic quick actions" [ref=e534]:
++                        - button "Move epic Emergency Alert Distribution - User Interface one sprint earlier" [ref=e535] [cursor=pointer]:
++                          - img [ref=e536]
++                        - generic "Duration controls" [ref=e539]:
++                          - generic: Duration
++                          - button "Reduce duration for Emergency Alert Distribution - User Interface by one sprint" [ref=e540] [cursor=pointer]:
++                            - img [ref=e541]
++                          - 'generic "Current duration: 1 sprint"':
++                            - generic: "1"
++                            - generic: sprint
++                          - button "Increase duration for Emergency Alert Distribution - User Interface by one sprint" [ref=e544] [cursor=pointer]:
++                            - img [ref=e545]
++                        - button "Move epic Emergency Alert Distribution - User Interface one sprint later" [ref=e548] [cursor=pointer]:
++                          - img [ref=e549]
++                    - button "Select epic Incident Command Coordination - Sensor Network" [ref=e342] [cursor=pointer]:
++                      - generic [ref=e344]: Incident Command Coordination - Sensor Network
++                    - button "Select epic Emergency Protocol Execution - Data Processing Pipeline" [ref=e347] [cursor=pointer]:
++                      - generic [ref=e349]: Emergency Protocol Execution - Data Processing Pipeline
++                    - button "Select epic Automated Fire Suppression - Sensor Network" [ref=e352] [cursor=pointer]:
++                      - generic [ref=e354]: Automated Fire Suppression - Sensor Network
++                    - button "Select epic Rapid Fire Detection and Suppression - API Integration" [ref=e357] [cursor=pointer]:
++                      - generic [ref=e359]: Rapid Fire Detection and Suppression - API Integration
++                    - button "Select epic Emergency Alert Distribution - API Integration" [ref=e362] [cursor=pointer]:
++                      - generic [ref=e364]: Emergency Alert Distribution - API Integration
++                  - generic [ref=e366]:
++                    - button "Select epic Emergency Protocol Execution - Sensor Network" [ref=e369] [cursor=pointer]:
++                      - generic [ref=e371]: Emergency Protocol Execution - Sensor Network
++                    - button "Select epic Rapid Fire Detection and Suppression - Data Processing Pipeline" [ref=e374] [cursor=pointer]:
++                      - generic [ref=e376]: Rapid Fire Detection and Suppression - Data Processing Pipeline
++                    - button "Select epic Automated Collision Response - Sensor Network" [ref=e379] [cursor=pointer]:
++                      - generic [ref=e381]: Automated Collision Response - Sensor Network
++                  - button "Select epic Automated Fire Suppression - User Interface" [ref=e386] [cursor=pointer]:
++                    - generic [ref=e388]: Automated Fire Suppression - User Interface
++                  - button "Select epic Automated Fire Suppression - API Integration" [ref=e393] [cursor=pointer]:
++                    - generic [ref=e395]: Automated Fire Suppression - API Integration
++                  - button "Select epic Emergency Alert Distribution - Data Processing Pipeline" [ref=e400] [cursor=pointer]:
++                    - generic [ref=e402]: Emergency Alert Distribution - Data Processing Pipeline
++                  - button "Select epic Automated Fire Suppression - Data Processing Pipeline" [ref=e407] [cursor=pointer]:
++                    - generic [ref=e409]: Automated Fire Suppression - Data Processing Pipeline
++                  - button "Select epic Rapid Fire Detection and Suppression - Sensor Network" [ref=e414] [cursor=pointer]:
++                    - generic [ref=e416]: Rapid Fire Detection and Suppression - Sensor Network
++                  - button "Select epic Real-Time Leakage Monitoring - User Interface" [ref=e421] [cursor=pointer]:
++                    - generic [ref=e423]: Real-Time Leakage Monitoring - User Interface
++                  - button "Select epic Real-Time Leakage Monitoring - Data Processing Pipeline" [ref=e428] [cursor=pointer]:
++                    - generic [ref=e430]: Real-Time Leakage Monitoring - Data Processing Pipeline
++                  - button "Select epic Incident Command Coordination - Data Processing Pipeline" [ref=e435] [cursor=pointer]:
++                    - generic [ref=e437]: Incident Command Coordination - Data Processing Pipeline
++          - generic [ref=e439]:
++            - generic [ref=e440]:
++              - heading "Crew Safety Operations" [level=6] [ref=e441]
++              - generic [ref=e442]:
++                - button "Collapse" [ref=e444] [cursor=pointer]:
++                  - img [ref=e446]
++                - button "Pin" [ref=e450] [cursor=pointer]:
++                  - img [ref=e452]
++                - button "Focus" [ref=e458] [cursor=pointer]:
++                  - img [ref=e460]
++            - generic [ref=e463]:
++              - region [ref=e464]:
++                - generic [ref=e465]:
++                  - button "Unplanned / Backlog (4)" [ref=e466] [cursor=pointer]:
++                    - generic [ref=e467]:
++                      - img [ref=e469]
++                      - text: Unplanned / Backlog (4)
++                  - generic [ref=e474]: 4 backlog items
++                - text: Backlog items are not positioned on the sprint axis; historical planned dates remain stored while projected here.
++                - generic [ref=e475]:
++                  - button "Select backlog epic Evacuation Route Optimization - API Integration" [ref=e478] [cursor=pointer]:
++                    - generic [ref=e480]: "#1 · Evacuation Route Optimization - API Integration"
++                  - button "Select backlog epic Evacuation Route Optimization - User Interface" [ref=e483] [cursor=pointer]:
++                    - generic [ref=e485]: "#2 · Evacuation Route Optimization - User Interface"
++                  - button "Select backlog epic Evacuation Route Optimization - Data Processing Pipeline" [ref=e488] [cursor=pointer]:
++                    - generic [ref=e490]: "#3 · Evacuation Route Optimization - Data Processing Pipeline"
++                  - button "Select backlog epic Medical Emergency Response - Data Processing Pipeline" [ref=e493] [cursor=pointer]:
++                    - generic [ref=e495]: "#4 · Medical Emergency Response - Data Processing Pipeline"
++              - generic "Active planned epics timeline" [ref=e496]:
++                - generic [ref=e497]:
++                  - generic [ref=e499]:
++                    - button "Select epic Crew Location Tracking - Data Processing Pipeline" [ref=e502] [cursor=pointer]:
++                      - generic [ref=e504]: Crew Location Tracking - Data Processing Pipeline
++                    - button "Select epic Evacuation Route Optimization - Sensor Network" [ref=e507] [cursor=pointer]:
++                      - generic [ref=e509]: Evacuation Route Optimization - Sensor Network
++                  - generic [ref=e511]:
++                    - button "Select epic Medical Emergency Response - Sensor Network" [ref=e514] [cursor=pointer]:
++                      - generic [ref=e516]: Medical Emergency Response - Sensor Network
++                    - button "Select epic Crew Location Tracking - User Interface" [ref=e519] [cursor=pointer]:
++                      - generic [ref=e521]: Crew Location Tracking - User Interface
++                  - button "Select epic Medical Emergency Response - User Interface" [ref=e526] [cursor=pointer]:
++                    - generic [ref=e528]: Medical Emergency Response - User Interface
++        - complementary [ref=e552]:
++          - group [ref=e555]:
++            - group [ref=e556]:
++              - group [ref=e557]:
++                - heading "Epic details" [level=6] [ref=e558]
++                - paragraph [ref=e559]: Emergency Alert Distribution - User Interface
++              - button "Close epic details" [ref=e560] [cursor=pointer]:
++                - img [ref=e562]
++            - generic [ref=e565]:
++              - generic [ref=e567]:
++                - text: Epic ID
++                - paragraph [ref=e568]:
++                  - link "3233" [ref=e569] [cursor=pointer]:
++                    - /url: https://dev.azure.com/mock/Battleship%20Systems/_workitems/edit/3233
++              - generic [ref=e571]:
++                - text: Product name
++                - paragraph [ref=e572]: Incident Response Control
++              - generic [ref=e574]:
++                - text: Start sprint
++                - paragraph [ref=e575]: Sprint 8
++              - generic [ref=e577]:
++                - text: End sprint
++                - paragraph [ref=e578]: Sprint 8
++              - generic [ref=e580]:
++                - text: Duration
++                - paragraph [ref=e581]: 1 sprint
++            - separator [ref=e582]
++            - generic [ref=e583]: "Portfolio context: Main planning track"
++            - generic [ref=e584]:
++              - button "Relocate start sprint" [ref=e585] [cursor=pointer]:
++                - generic [ref=e586]:
++                  - img [ref=e588]
++                  - text: Relocate start sprint
++              - button "Unplan" [ref=e591] [cursor=pointer]:
++                - generic [ref=e592]:
++                  - img [ref=e594]
++                  - text: Unplan
++```
+diff --git a/docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-01-baseline.png b/docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-01-baseline.png
+new file mode 100644
+index 00000000..a2a0c15a
+Binary files /dev/null and b/docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-01-baseline.png differ
+diff --git a/docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-02-small-epic.png b/docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-02-small-epic.png
+new file mode 100644
+index 00000000..ddee045c
+Binary files /dev/null and b/docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-02-small-epic.png differ
+diff --git a/docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-03-large-epic.png b/docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-03-large-epic.png
+new file mode 100644
+index 00000000..868397b0
+Binary files /dev/null and b/docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-03-large-epic.png differ
+diff --git a/docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-04-deselect.png b/docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-04-deselect.png
+new file mode 100644
+index 00000000..9a4d8a6a
+Binary files /dev/null and b/docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-04-deselect.png differ
+diff --git a/docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-05-selection-switch.png b/docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-05-selection-switch.png
+new file mode 100644
+index 00000000..4519c8ce
+Binary files /dev/null and b/docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-05-selection-switch.png differ
+diff --git a/docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-06-regression-sweep.png b/docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-06-regression-sweep.png
+new file mode 100644
+index 00000000..53e38d85
+Binary files /dev/null and b/docs/reports/assets/2026-06-09-selection-layout-scroll-runtime-validation/validation-selection-scroll-06-regression-sweep.png differ

@@ -1,0 +1,937 @@
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+index 5cc0cf1..929b957 100644
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -15,8 +15,8 @@ android {
+         applicationId = "com.twox2.wallet"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 24
+-        versionName = "1.6.2"
++        versionCode = 25
++        versionName = "1.6.3"
+     }
+ 
+     buildTypes {
+diff --git a/app/src/main/kotlin/com/twox2/wallet/MainActivity.kt b/app/src/main/kotlin/com/twox2/wallet/MainActivity.kt
+index 4da518c..c193d72 100644
+--- a/app/src/main/kotlin/com/twox2/wallet/MainActivity.kt
++++ b/app/src/main/kotlin/com/twox2/wallet/MainActivity.kt
+@@ -117,6 +117,10 @@ fun WalletApp(viewModel: WalletViewModel) {
+                     onBack = {
+                         showSend = false
+                         viewModel.resetSendState()
++                    },
++                    onSendSuccess = {
++                        showSend = false
++                        selectedTab = 0
+                     }
+                 )
+                 selectedTab == 0 -> OverviewScreen(
+diff --git a/app/src/main/kotlin/com/twox2/wallet/data/db/Daos.kt b/app/src/main/kotlin/com/twox2/wallet/data/db/Daos.kt
+index 00afeac..3369479 100644
+--- a/app/src/main/kotlin/com/twox2/wallet/data/db/Daos.kt
++++ b/app/src/main/kotlin/com/twox2/wallet/data/db/Daos.kt
+@@ -45,6 +45,9 @@ interface UtxoDao {
+     @Insert(onConflict = OnConflictStrategy.REPLACE)
+     suspend fun insert(utxo: UtxoEntity)
+ 
++    @Update
++    suspend fun update(utxo: UtxoEntity)
++
+     @Query("SELECT * FROM utxos WHERE spent = 0 ORDER BY value DESC")
+     suspend fun getUnspent(): List<UtxoEntity>
+ 
+@@ -54,11 +57,20 @@ interface UtxoDao {
+     @Query("UPDATE utxos SET spent = 1 WHERE txHash = :txHash AND outputIndex = :index")
+     suspend fun markSpent(txHash: String, index: Int)
+ 
++    @Query("UPDATE utxos SET spent = 0, value = :value WHERE txHash = :txHash AND outputIndex = :index")
++    suspend fun unmarkSpent(txHash: String, index: Int, value: Long)
++
+     @Query("SELECT * FROM utxos WHERE scriptPubKey = :scriptHex AND spent = 0")
+     suspend fun getByScript(scriptHex: String): List<UtxoEntity>
+ 
+     @Query("SELECT * FROM utxos WHERE txHash = :txHash AND outputIndex = :outputIndex LIMIT 1")
+     suspend fun findByOutpoint(txHash: String, outputIndex: Int): UtxoEntity?
++
++    @Query("DELETE FROM utxos")
++    suspend fun deleteAll()
++
++    @Query("UPDATE utxos SET spent = 1")
++    suspend fun markAllSpent()
+ }
+ 
+ @Dao
+@@ -77,6 +89,9 @@ interface WalletTransactionDao {
+ 
+     @Query("SELECT COUNT(*) > 0 FROM wallet_transactions WHERE txHash = :txHash")
+     suspend fun exists(txHash: String): Boolean
++
++    @Query("DELETE FROM wallet_transactions")
++    suspend fun deleteAll()
+ }
+ 
+ @Dao
+@@ -89,6 +104,9 @@ interface SyncStateDao {
+ 
+     @Query("SELECT * FROM sync_state WHERE id = 1")
+     suspend fun get(): SyncStateEntity?
++
++    @Query("DELETE FROM sync_state")
++    suspend fun deleteAll()
+ }
+ 
+ @Dao
+@@ -113,4 +131,7 @@ interface SavedAddressDao {
+ 
+     @Query("UPDATE saved_addresses SET isDefault = 0 WHERE type = :type")
+     suspend fun clearDefault(type: String)
++
++    @Query("DELETE FROM saved_addresses")
++    suspend fun deleteAll()
+ }
+diff --git a/app/src/main/kotlin/com/twox2/wallet/sync/BlockchainSyncManager.kt b/app/src/main/kotlin/com/twox2/wallet/sync/BlockchainSyncManager.kt
+index b293334..2f6cf99 100644
+--- a/app/src/main/kotlin/com/twox2/wallet/sync/BlockchainSyncManager.kt
++++ b/app/src/main/kotlin/com/twox2/wallet/sync/BlockchainSyncManager.kt
+@@ -656,6 +656,36 @@ class BlockchainSyncManager(context: Context) {
+         )
+     }
+ 
++    suspend fun reindexBlockchain() = withContext(Dispatchers.IO) {
++        Log.i(TAG, "Reindexando blockchain — limpando blocos, UTXOs e transações")
++        stopSync()
++        running = false
++        synced = false
++        blockDownloadRunning = false
++        connectedPeers.clear()
++
++        blockDao.deleteAll()
++        utxoDao.deleteAll()
++        txDao.deleteAll()
++        resetLastScannedHeight()
++        syncDao.deleteAll()
++        syncDao.insert(
++            SyncStateEntity(
++                bestHeight = 0,
++                bestHash = ChainParams.GENESIS_HASH,
++                isSyncing = true,
++                progress = 0,
++                peerHost = null,
++                blockCount = 0
++            )
++        )
++        _syncProgress.value = SyncProgress(isSyncing = true, progress = 0)
++
++        ExplorerWalletSync.sync(appContext)
++        executeSyncLoop()
++        followUpTick()
++    }
++
+     private sealed class HeaderSyncResult {
+         data object Success : HeaderSyncResult()
+         data class AlreadySynced(val height: Int) : HeaderSyncResult()
+diff --git a/app/src/main/kotlin/com/twox2/wallet/sync/ExplorerWalletSync.kt b/app/src/main/kotlin/com/twox2/wallet/sync/ExplorerWalletSync.kt
+index df75bb5..63c26c4 100644
+--- a/app/src/main/kotlin/com/twox2/wallet/sync/ExplorerWalletSync.kt
++++ b/app/src/main/kotlin/com/twox2/wallet/sync/ExplorerWalletSync.kt
+@@ -48,9 +48,8 @@ object ExplorerWalletSync {
+                     val ourOutputs = detail.outputs.withIndex()
+                         .filter { it.value.address in addressSet && it.value.amount > 0 }
+ 
+-                    val sentCoins = summary.sent
+-                    if (sentCoins > 0) {
+-                        val sentSat = (sentCoins * ChainParams.COIN).toLong()
++                    if (summary.sent > 0) {
++                        val sentSat = (summary.sent * ChainParams.COIN).toLong()
+                         if (!txDao.exists(summary.txid)) {
+                             txDao.insert(
+                                 WalletTransactionEntity(
+@@ -87,7 +86,13 @@ object ExplorerWalletSync {
+                         }
+ 
+                         for ((index, output) in ourOutputs) {
+-                            if (utxoDao.findByOutpoint(summary.txid, index) != null) continue
++                            val existing = utxoDao.findByOutpoint(summary.txid, index)
++                            if (existing != null) {
++                                if (existing.spent) {
++                                    utxoDao.unmarkSpent(summary.txid, index, output.amount)
++                                }
++                                continue
++                            }
+                             utxoDao.insert(
+                                 UtxoEntity(
+                                     txHash = summary.txid,
+@@ -112,7 +117,7 @@ object ExplorerWalletSync {
+ 
+         val pruned = reconcileUtxos(addresses, utxoDao)
+         val localBalance = utxoDao.getUnspent().sumOf { it.value }
+-        val explorerBalance = addresses.sumOf { ExplorerApi.getAddressBalance(it) ?: 0L }
++        val explorerBalance = fetchExplorerBalance(addresses)
+         if (importedUtxos > 0 || importedTxs > 0 || pruned > 0) {
+             Log.i(
+                 TAG,
+@@ -122,17 +127,60 @@ object ExplorerWalletSync {
+         } else if (explorerBalance != localBalance) {
+             Log.w(
+                 TAG,
+-                "Saldo explorer ($explorerBalance) != local ($localBalance) após reconciliação"
++                "Saldo explorer ($explorerBalance) != local ($localBalance) — reconstruindo UTXOs"
+             )
++            rebuildUtxosFromExplorer(addresses, addressSet, utxoDao)
+         }
+     }
+ 
+-    /**
+-     * Remove UTXOs locais que excedem o saldo confirmado no explorer.
+-     * Isso evita tentativas de gasto com outputs já consumidos na rede.
+-     */
++    suspend fun fetchExplorerBalance(addresses: List<String>): Long {
++        return addresses.sumOf { ExplorerApi.getAddressBalance(it) ?: 0L }
++    }
++
++    suspend fun rebuildUtxosFromExplorer(
++        addresses: List<String>,
++        addressSet: Set<String>,
++        utxoDao: UtxoDao
++    ) {
++        utxoDao.markAllSpent()
++        for (address in addresses) {
++            var start = 0
++            repeat(MAX_TX_PAGES) {
++                val page = ExplorerApi.getAddressTxs(address, start, TX_PAGE_SIZE)
++                if (page.isEmpty()) return@repeat
++                for (summary in page) {
++                    val detail = ExplorerApi.getTx(summary.txid) ?: continue
++                    val ourOutputs = detail.outputs.withIndex()
++                        .filter { it.value.address in addressSet && it.value.amount > 0 }
++                    for ((index, output) in ourOutputs) {
++                        val existing = utxoDao.findByOutpoint(summary.txid, index)
++                        if (existing != null) {
++                            utxoDao.unmarkSpent(summary.txid, index, output.amount)
++                        } else {
++                            utxoDao.insert(
++                                UtxoEntity(
++                                    txHash = summary.txid,
++                                    outputIndex = index,
++                                    value = output.amount,
++                                    scriptPubKey = AddressEncoder
++                                        .addressToScriptPubKey(output.address)
++                                        .toHex(),
++                                    blockHeight = detail.blockHeight,
++                                    spent = false
++                                )
++                            )
++                        }
++                    }
++                }
++                start += TX_PAGE_SIZE
++                if (page.size < TX_PAGE_SIZE) return@repeat
++            }
++        }
++        reconcileUtxos(addresses, utxoDao)
++    }
++
+     suspend fun reconcileUtxos(addresses: List<String>, utxoDao: UtxoDao): Int {
+-        val explorerTotal = addresses.sumOf { ExplorerApi.getAddressBalance(it) ?: 0L }
++        val explorerTotal = fetchExplorerBalance(addresses)
+         val unspent = utxoDao.getUnspent().sortedBy { it.blockHeight }
+         val localTotal = unspent.sumOf { it.value }
+         if (localTotal <= explorerTotal) return 0
+diff --git a/app/src/main/kotlin/com/twox2/wallet/sync/SyncEngine.kt b/app/src/main/kotlin/com/twox2/wallet/sync/SyncEngine.kt
+index 180f7a6..0140d20 100644
+--- a/app/src/main/kotlin/com/twox2/wallet/sync/SyncEngine.kt
++++ b/app/src/main/kotlin/com/twox2/wallet/sync/SyncEngine.kt
+@@ -37,4 +37,9 @@ object SyncEngine {
+         init(context)
+         manager?.verifySync()
+     }
++
++    suspend fun reindexBlockchain(context: Context) {
++        init(context)
++        manager?.reindexBlockchain()
++    }
+ }
+diff --git a/app/src/main/kotlin/com/twox2/wallet/ui/WalletViewModel.kt b/app/src/main/kotlin/com/twox2/wallet/ui/WalletViewModel.kt
+index afd9aba..3465426 100644
+--- a/app/src/main/kotlin/com/twox2/wallet/ui/WalletViewModel.kt
++++ b/app/src/main/kotlin/com/twox2/wallet/ui/WalletViewModel.kt
+@@ -13,7 +13,6 @@ import com.twox2.wallet.sync.SyncEngine
+ import com.twox2.wallet.sync.SyncProgress
+ import com.twox2.wallet.wallet.WalletInfo
+ import com.twox2.wallet.wallet.WalletRepository
+-import com.twox2.wallet.wallet.TransactionBuilder
+ import kotlinx.coroutines.Job
+ import kotlinx.coroutines.delay
+ import kotlinx.coroutines.flow.MutableStateFlow
+@@ -24,16 +23,14 @@ import kotlinx.coroutines.flow.stateIn
+ import kotlinx.coroutines.isActive
+ import kotlinx.coroutines.launch
+ 
+-enum class FeeTier(val label: String, val feePerByte: Long) {
+-    STANDARD("Standard", 10L),
+-    FAST("Fast", 20L),
+-    PRIORITY("Priority", 40L);
+-
+-    fun estimateDefaultFee(): Long = TransactionBuilder.estimateFee(1, 2, feePerByte)
++enum class FeeTier(val label: String, val feeSatoshis: Long) {
++    STANDARD("Standard", 10_000L),
++    FAST("Fast", 20_000L),
++    PRIORITY("Priority", 400_000L);
+ 
+     fun formatFeeCoins(): String {
+-        val coins = estimateDefaultFee().toDouble() / ChainParams.COIN
+-        return "%.6f".format(coins)
++        val coins = feeSatoshis.toDouble() / ChainParams.COIN
++        return "%.4f".format(coins)
+     }
+ }
+ 
+@@ -68,6 +65,15 @@ class WalletViewModel(application: Application) : AndroidViewModel(application)
+     val balance = repository.balance
+         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
+ 
++    private val _displayBalance = MutableStateFlow(0L)
++    val displayBalance: StateFlow<Long> = _displayBalance.asStateFlow()
++
++    private val _reindexing = MutableStateFlow(false)
++    val reindexing: StateFlow<Boolean> = _reindexing.asStateFlow()
++
++    private val _deletingWallet = MutableStateFlow(false)
++    val deletingWallet: StateFlow<Boolean> = _deletingWallet.asStateFlow()
++
+     val transactions = repository.transactions
+         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+ 
+@@ -103,6 +109,7 @@ class WalletViewModel(application: Application) : AndroidViewModel(application)
+                 repository.ensurePrimaryReceiveAddress()
+                 _wallet.value = repository.getWallet()
+                 repository.syncWalletFromExplorer()
++                refreshDisplayBalance()
+             }
+             startAutoSync()
+             observeSyncForPeriodicVerification()
+@@ -145,6 +152,7 @@ class WalletViewModel(application: Application) : AndroidViewModel(application)
+                 runCatching {
+                     repository.verifySync()
+                     repository.syncWalletFromExplorer()
++                    refreshDisplayBalance()
+                 }
+                 if (!syncProgress.value.isSynced) {
+                     delay(10_000)
+@@ -260,7 +268,45 @@ class WalletViewModel(application: Application) : AndroidViewModel(application)
+ 
+     fun refreshWalletBalance() {
+         viewModelScope.launch {
+-            runCatching { repository.syncWalletFromExplorer() }
++            runCatching {
++                repository.syncWalletFromExplorer()
++                refreshDisplayBalance()
++            }
++        }
++    }
++
++    private suspend fun refreshDisplayBalance() {
++        _displayBalance.value = repository.fetchExplorerBalance()
++    }
++
++    fun reindexBlockchain() {
++        viewModelScope.launch {
++            _reindexing.value = true
++            runCatching {
++                repository.reindexBlockchain()
++                refreshDisplayBalance()
++                _snackbar.value = "Blockchain reindexada com sucesso"
++            }.onFailure {
++                _snackbar.value = it.message ?: "Falha ao reindexar blockchain"
++            }
++            _reindexing.value = false
++        }
++    }
++
++    fun deleteWallet() {
++        viewModelScope.launch {
++            _deletingWallet.value = true
++            runCatching {
++                verificationJob?.cancel()
++                repository.deleteWallet()
++                _wallet.value = null
++                _hasWallet.value = false
++                _displayBalance.value = 0L
++                _sendState.value = SendState.Idle
++            }.onFailure {
++                _snackbar.value = it.message ?: "Falha ao excluir carteira"
++            }
++            _deletingWallet.value = false
+         }
+     }
+ 
+@@ -281,18 +327,11 @@ class WalletViewModel(application: Application) : AndroidViewModel(application)
+         _darkTheme.value = enabled
+     }
+ 
+-    private val _estimatedFee = MutableStateFlow(0L)
++    private val _estimatedFee = MutableStateFlow(FeeTier.STANDARD.feeSatoshis)
+     val estimatedFee: StateFlow<Long> = _estimatedFee.asStateFlow()
+ 
+-    fun updateEstimatedFee(amount: String, feeTier: FeeTier) {
+-        viewModelScope.launch {
+-            val amountValue = amount.replace(",", ".").toDoubleOrNull() ?: 0.0
+-            _estimatedFee.value = if (amountValue > 0) {
+-                runCatching { repository.estimateSendFee(amountValue, feeTier) }.getOrDefault(feeTier.estimateDefaultFee())
+-            } else {
+-                feeTier.estimateDefaultFee()
+-            }
+-        }
++    fun updateEstimatedFee(feeTier: FeeTier) {
++        _estimatedFee.value = feeTier.feeSatoshis
+     }
+ 
+     fun formatFee(feeSatoshis: Long): String {
+diff --git a/app/src/main/kotlin/com/twox2/wallet/ui/screens/OverviewScreen.kt b/app/src/main/kotlin/com/twox2/wallet/ui/screens/OverviewScreen.kt
+index e4ab12f..1e4bd03 100644
+--- a/app/src/main/kotlin/com/twox2/wallet/ui/screens/OverviewScreen.kt
++++ b/app/src/main/kotlin/com/twox2/wallet/ui/screens/OverviewScreen.kt
+@@ -50,6 +50,7 @@ import com.twox2.wallet.ui.theme.OrangeSendStart
+ import com.twox2.wallet.ui.theme.TealPrimary
+ import com.twox2.wallet.ui.theme.TealReceiveEnd
+ import com.twox2.wallet.ui.theme.TealReceiveStart
++import androidx.compose.ui.graphics.Color
+ import com.twox2.wallet.ui.theme.TextMuted
+ 
+ @Composable
+@@ -59,7 +60,7 @@ fun OverviewScreen(
+     onNavigateToReceive: () -> Unit,
+     onNavigateToHistory: () -> Unit
+ ) {
+-    val balance by viewModel.balance.collectAsState()
++    val balance by viewModel.displayBalance.collectAsState()
+     val transactions by viewModel.transactions.collectAsState()
+     val syncProgress by viewModel.syncProgress.collectAsState()
+     val blockCount by viewModel.blockCount.collectAsState()
+@@ -191,7 +192,7 @@ private fun BalanceCard(balance: String, usdEstimate: String, blockHeight: Int)
+                 balance,
+                 style = MaterialTheme.typography.headlineLarge,
+                 fontWeight = FontWeight.Bold,
+-                color = MaterialTheme.colorScheme.onBackground
++                color = Color.White
+             )
+             Text(
+                 usdEstimate,
+diff --git a/app/src/main/kotlin/com/twox2/wallet/ui/screens/SendScreen.kt b/app/src/main/kotlin/com/twox2/wallet/ui/screens/SendScreen.kt
+index 28a73cd..74b5056 100644
+--- a/app/src/main/kotlin/com/twox2/wallet/ui/screens/SendScreen.kt
++++ b/app/src/main/kotlin/com/twox2/wallet/ui/screens/SendScreen.kt
+@@ -63,19 +63,33 @@ import com.twox2.wallet.ui.theme.TextMuted
+ import com.twox2.wallet.wallet.WalletRepository
+ 
+ @Composable
+-fun SendScreen(viewModel: WalletViewModel, onBack: () -> Unit = {}) {
++fun SendScreen(
++    viewModel: WalletViewModel,
++    onBack: () -> Unit = {},
++    onSendSuccess: () -> Unit = {}
++) {
+     var address by remember { mutableStateOf("") }
+     var amount by remember { mutableStateOf("") }
+     var selectedFee by remember { mutableStateOf(FeeTier.STANDARD) }
+     var showSaveDialog by remember { mutableStateOf(false) }
+     var saveName by remember { mutableStateOf("") }
+     val sendState by viewModel.sendState.collectAsState()
+-    val balance by viewModel.balance.collectAsState()
++    val balance by viewModel.displayBalance.collectAsState()
+     val sendAddresses by viewModel.sendAddresses.collectAsState()
+     val estimatedFeeSat by viewModel.estimatedFee.collectAsState()
+ 
+-    LaunchedEffect(amount, selectedFee) {
+-        viewModel.updateEstimatedFee(amount, selectedFee)
++    LaunchedEffect(selectedFee) {
++        viewModel.updateEstimatedFee(selectedFee)
++    }
++
++    LaunchedEffect(sendState) {
++        if (sendState is SendState.Success) {
++            address = ""
++            amount = ""
++            selectedFee = FeeTier.STANDARD
++            viewModel.resetSendState()
++            onSendSuccess()
++        }
+     }
+ 
+     val addressValidation = viewModel.validateAddress(address)
+@@ -237,13 +251,6 @@ fun SendScreen(viewModel: WalletViewModel, onBack: () -> Unit = {}) {
+         )
+ 
+         when (val state = sendState) {
+-            is SendState.Success -> {
+-                Text(
+-                    "Sent! TX: ${state.txHash}",
+-                    color = TealPrimary,
+-                    modifier = Modifier.padding(16.dp)
+-                )
+-            }
+             is SendState.Error -> {
+                 Text(
+                     state.message,
+diff --git a/app/src/main/kotlin/com/twox2/wallet/ui/screens/SettingsScreen.kt b/app/src/main/kotlin/com/twox2/wallet/ui/screens/SettingsScreen.kt
+index b0dd7dc..e9bc0c1 100644
+--- a/app/src/main/kotlin/com/twox2/wallet/ui/screens/SettingsScreen.kt
++++ b/app/src/main/kotlin/com/twox2/wallet/ui/screens/SettingsScreen.kt
+@@ -3,7 +3,6 @@ package com.twox2.wallet.ui.screens
+ import android.content.ClipData
+ import android.content.ClipboardManager
+ import android.content.Context
+-import android.content.Intent
+ import androidx.activity.compose.rememberLauncherForActivityResult
+ import androidx.activity.result.contract.ActivityResultContracts
+ import androidx.compose.foundation.layout.Arrangement
+@@ -20,7 +19,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
+ import androidx.compose.foundation.verticalScroll
+ import androidx.compose.material.icons.Icons
+ import androidx.compose.material.icons.filled.ContentCopy
++import androidx.compose.material.icons.filled.Delete
++import androidx.compose.material.icons.filled.Refresh
+ import androidx.compose.material.icons.filled.Save
++import androidx.compose.material3.AlertDialog
+ import androidx.compose.material3.Button
+ import androidx.compose.material3.ButtonDefaults
+ import androidx.compose.material3.Card
+@@ -31,13 +33,19 @@ import androidx.compose.material3.MaterialTheme
+ import androidx.compose.material3.OutlinedButton
+ import androidx.compose.material3.Switch
+ import androidx.compose.material3.Text
++import androidx.compose.material3.TextButton
+ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.LaunchedEffect
+ import androidx.compose.runtime.collectAsState
+ import androidx.compose.runtime.getValue
++import androidx.compose.runtime.mutableStateOf
++import androidx.compose.runtime.remember
++import androidx.compose.runtime.setValue
+ import androidx.compose.ui.Modifier
++import androidx.compose.ui.graphics.Color
+ import androidx.compose.ui.platform.LocalContext
+ import androidx.compose.ui.text.font.FontFamily
++import androidx.compose.ui.text.font.FontWeight
+ import androidx.compose.ui.unit.dp
+ import com.twox2.wallet.ui.WalletViewModel
+ import com.twox2.wallet.ui.components.PageHeader
+@@ -53,9 +61,14 @@ fun SettingsScreen(viewModel: WalletViewModel) {
+     val blockCount by viewModel.blockCount.collectAsState()
+     val explorerBlockCount by viewModel.explorerBlockCount.collectAsState()
+     val explorerLoading by viewModel.explorerLoading.collectAsState()
++    val reindexing by viewModel.reindexing.collectAsState()
++    val deletingWallet by viewModel.deletingWallet.collectAsState()
+     val context = LocalContext.current
+     val wif = wallet?.wif
+ 
++    var showReindexDialog by remember { mutableStateOf(false) }
++    var showDeleteDialog by remember { mutableStateOf(false) }
++
+     val saveLauncher = rememberLauncherForActivityResult(
+         ActivityResultContracts.CreateDocument("text/plain")
+     ) { uri ->
+@@ -150,6 +163,35 @@ fun SettingsScreen(viewModel: WalletViewModel) {
+                         color = TealPrimary
+                     )
+                 }
++                Spacer(modifier = Modifier.height(12.dp))
++                OutlinedButton(
++                    onClick = { showReindexDialog = true },
++                    enabled = !reindexing,
++                    modifier = Modifier.fillMaxWidth(),
++                    shape = RoundedCornerShape(12.dp),
++                    border = androidx.compose.foundation.BorderStroke(1.dp, TealPrimary),
++                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TealPrimary)
++                ) {
++                    if (reindexing) {
++                        CircularProgressIndicator(
++                            modifier = Modifier.size(18.dp),
++                            color = TealPrimary,
++                            strokeWidth = 2.dp
++                        )
++                    } else {
++                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
++                    }
++                    Text(
++                        if (reindexing) "Reindexando..." else "Reindexar blockchain",
++                        modifier = Modifier.padding(start = 6.dp)
++                    )
++                }
++                Text(
++                    "Exclui blocos locais, transações e saldo, e baixa tudo novamente da rede.",
++                    style = MaterialTheme.typography.bodySmall,
++                    color = MaterialTheme.colorScheme.onSurfaceVariant,
++                    modifier = Modifier.padding(top = 6.dp)
++                )
+             }
+         }
+ 
+@@ -210,6 +252,45 @@ fun SettingsScreen(viewModel: WalletViewModel) {
+ 
+         Spacer(modifier = Modifier.height(12.dp))
+ 
++        Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
++            Column(modifier = Modifier.padding(16.dp)) {
++                Text("Zona de Perigo", style = MaterialTheme.typography.titleSmall, color = Color(0xFFEF4444))
++                Spacer(modifier = Modifier.height(8.dp))
++                Text(
++                    "Excluir a carteira remove permanentemente todas as chaves, transações e dados locais.",
++                    style = MaterialTheme.typography.bodySmall,
++                    color = MaterialTheme.colorScheme.onSurfaceVariant
++                )
++                Spacer(modifier = Modifier.height(12.dp))
++                Button(
++                    onClick = { showDeleteDialog = true },
++                    enabled = !deletingWallet,
++                    modifier = Modifier.fillMaxWidth(),
++                    shape = RoundedCornerShape(12.dp),
++                    colors = ButtonDefaults.buttonColors(
++                        containerColor = Color(0xFFEF4444),
++                        contentColor = Color.White
++                    )
++                ) {
++                    if (deletingWallet) {
++                        CircularProgressIndicator(
++                            modifier = Modifier.size(18.dp),
++                            color = Color.White,
++                            strokeWidth = 2.dp
++                        )
++                    } else {
++                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
++                    }
++                    Text(
++                        if (deletingWallet) "Excluindo..." else "Excluir carteira",
++                        modifier = Modifier.padding(start = 6.dp)
++                    )
++                }
++            }
++        }
++
++        Spacer(modifier = Modifier.height(12.dp))
++
+         Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+             Column(modifier = Modifier.padding(16.dp)) {
+                 Text("Sobre", style = MaterialTheme.typography.titleSmall)
+@@ -223,6 +304,66 @@ fun SettingsScreen(viewModel: WalletViewModel) {
+             }
+         }
+     }
++
++    if (showReindexDialog) {
++        AlertDialog(
++            onDismissRequest = { if (!reindexing) showReindexDialog = false },
++            title = { Text("Reindexar blockchain?") },
++            text = {
++                Text(
++                    "Isso irá excluir todos os blocos, transações e saldo locais, " +
++                        "e baixar novamente da rede. Suas chaves da carteira serão mantidas."
++                )
++            },
++            confirmButton = {
++                TextButton(
++                    onClick = {
++                        showReindexDialog = false
++                        viewModel.reindexBlockchain()
++                    },
++                    enabled = !reindexing
++                ) { Text("Reindexar") }
++            },
++            dismissButton = {
++                TextButton(
++                    onClick = { showReindexDialog = false },
++                    enabled = !reindexing
++                ) { Text("Cancelar") }
++            }
++        )
++    }
++
++    if (showDeleteDialog) {
++        AlertDialog(
++            onDismissRequest = { if (!deletingWallet) showDeleteDialog = false },
++            title = { Text("Excluir carteira?", fontWeight = FontWeight.Bold) },
++            text = {
++                Text(
++                    "ATENÇÃO: Esta ação é irreversível.\n\n" +
++                        "Todos os dados serão perdidos permanentemente, incluindo chaves privadas, " +
++                        "transações e saldo local.\n\n" +
++                        "Certifique-se de ter salvo sua chave WIF antes de continuar."
++                )
++            },
++            confirmButton = {
++                TextButton(
++                    onClick = {
++                        showDeleteDialog = false
++                        viewModel.deleteWallet()
++                    },
++                    enabled = !deletingWallet
++                ) {
++                    Text("Excluir permanentemente", color = Color(0xFFEF4444))
++                }
++            },
++            dismissButton = {
++                TextButton(
++                    onClick = { showDeleteDialog = false },
++                    enabled = !deletingWallet
++                ) { Text("Cancelar") }
++            }
++        )
++    }
+ }
+ 
+ private fun buildBackupFileContent(wif: String): String = """
+diff --git a/app/src/main/kotlin/com/twox2/wallet/wallet/TransactionBuilder.kt b/app/src/main/kotlin/com/twox2/wallet/wallet/TransactionBuilder.kt
+index 491e24e..55d9014 100644
+--- a/app/src/main/kotlin/com/twox2/wallet/wallet/TransactionBuilder.kt
++++ b/app/src/main/kotlin/com/twox2/wallet/wallet/TransactionBuilder.kt
+@@ -19,36 +19,24 @@ object TransactionBuilder {
+ 
+     data class BuildResult(val transaction: Transaction, val fee: Long)
+ 
+-    fun estimateFee(inputCount: Int, outputCount: Int, feePerByte: Long): Long {
+-        val size = estimateSize(inputCount, outputCount)
+-        return size * feePerByte
+-    }
+-
+     fun buildAndSign(
+         utxos: List<UtxoEntity>,
+         utxoKeys: Map<Long, SigningKey>,
+         toAddress: String,
+         amount: Long,
+         changeAddress: String,
+-        feePerByte: Long = 10L,
++        fixedFee: Long,
+         networkTime: Long = System.currentTimeMillis() / 1000
+     ): BuildResult {
+         require(AddressEncoder.isValidAddress(toAddress)) { "Endereço de destino inválido" }
+         require(amount > DUST) { "Valor abaixo do mínimo" }
++        require(fixedFee > 0) { "Taxa inválida" }
+ 
+-        val selected = selectUtxos(utxos, amount, feePerByte)
++        val selected = selectUtxos(utxos, amount, fixedFee)
+         val totalInput = selected.sumOf { it.value }
++        require(totalInput >= amount + fixedFee) { "Saldo insuficiente" }
+ 
+-        var outputCount = 2
+-        var fee = estimateFee(selected.size, outputCount, feePerByte)
+-        var change = totalInput - amount - fee
+-        if (change <= DUST) {
+-            outputCount = 1
+-            fee = estimateFee(selected.size, outputCount, feePerByte)
+-            change = totalInput - amount - fee
+-        }
+-        require(totalInput >= amount + fee) { "Saldo insuficiente" }
+-
++        val change = totalInput - amount - fixedFee
+         val outputs = mutableListOf(TxOut(amount, AddressEncoder.addressToScriptPubKey(toAddress)))
+         if (change > DUST) {
+             outputs.add(TxOut(change, AddressEncoder.addressToScriptPubKey(changeAddress)))
+@@ -62,26 +50,13 @@ object TransactionBuilder {
+             )
+         }
+ 
+-        var tx = Transaction(
++        val tx = Transaction(
+             version = 1,
+             time = networkTime,
+             inputs = inputs,
+             outputs = outputs
+         )
+ 
+-        val actualSize = tx.serialize().size
+-        val actualFee = actualSize * feePerByte
+-        val actualChange = totalInput - amount - actualFee
+-        if (actualFee != fee || (actualChange > DUST) != (change > DUST)) {
+-            fee = actualFee
+-            val rebuiltOutputs = mutableListOf(TxOut(amount, AddressEncoder.addressToScriptPubKey(toAddress)))
+-            if (actualChange > DUST) {
+-                rebuiltOutputs.add(TxOut(actualChange, AddressEncoder.addressToScriptPubKey(changeAddress)))
+-            }
+-            require(totalInput >= amount + fee) { "Saldo insuficiente para valor + taxa" }
+-            tx = tx.copy(outputs = rebuiltOutputs)
+-        }
+-
+         val signedInputs = inputs.mapIndexed { index, input ->
+             val utxo = selected[index]
+             val signingKey = utxoKeys[utxo.id]
+@@ -98,14 +73,13 @@ object TransactionBuilder {
+         }
+ 
+         val signedTx = tx.copy(inputs = signedInputs)
+-        val finalFee = totalInput - signedTx.outputs.sumOf { it.value }
+-        return BuildResult(signedTx, finalFee)
++        return BuildResult(signedTx, fixedFee)
+     }
+ 
+     private fun selectUtxos(
+         utxos: List<UtxoEntity>,
+         target: Long,
+-        feePerByte: Long
++        fixedFee: Long
+     ): List<UtxoEntity> {
+         val sorted = utxos.sortedByDescending { it.value }
+         val selected = mutableListOf<UtxoEntity>()
+@@ -113,29 +87,12 @@ object TransactionBuilder {
+         for (utxo in sorted) {
+             selected.add(utxo)
+             total += utxo.value
+-            var outputCount = 2
+-            var fee = estimateFee(selected.size, outputCount, feePerByte)
+-            var change = total - target - fee
+-            if (change <= DUST) {
+-                outputCount = 1
+-                fee = estimateFee(selected.size, outputCount, feePerByte)
+-            }
+-            if (total >= target + fee) break
+-        }
+-        var outputCount = 2
+-        var finalFee = estimateFee(selected.size, outputCount, feePerByte)
+-        if (total - target - finalFee <= DUST) {
+-            outputCount = 1
+-            finalFee = estimateFee(selected.size, outputCount, feePerByte)
++            if (total >= target + fixedFee) break
+         }
+-        require(total >= target + finalFee) { "Saldo insuficiente para valor + taxa" }
++        require(total >= target + fixedFee) { "Saldo insuficiente para valor + taxa" }
+         return selected
+     }
+ 
+-    private fun estimateSize(inputCount: Int, outputCount: Int): Int {
+-        return 10 + inputCount * 148 + outputCount * 34
+-    }
+-
+     private fun buildSignatureHash(tx: Transaction, inputIndex: Int, scriptCode: ByteArray): ByteArray {
+         val serialized = tx.serialize(forSignature = true, inputIndex = inputIndex, scriptCode = scriptCode)
+         val withHashType = serialized + int32Le(SIGHASH_ALL)
+diff --git a/app/src/main/kotlin/com/twox2/wallet/wallet/WalletManager.kt b/app/src/main/kotlin/com/twox2/wallet/wallet/WalletManager.kt
+index 4e30b2c..aed1c9f 100644
+--- a/app/src/main/kotlin/com/twox2/wallet/wallet/WalletManager.kt
++++ b/app/src/main/kotlin/com/twox2/wallet/wallet/WalletManager.kt
+@@ -273,6 +273,19 @@ class WalletManager private constructor(context: Context) {
+ 
+     fun getDatabase() = db
+ 
++    suspend fun clearChainData() {
++        db.blockHeaderDao().deleteAll()
++        db.utxoDao().deleteAll()
++        db.walletTransactionDao().deleteAll()
++        db.syncStateDao().deleteAll()
++        db.savedAddressDao().deleteAll()
++    }
++
++    fun deleteWallet(context: Context) {
++        prefs.edit().clear().apply()
++        context.getSharedPreferences("sync_prefs", Context.MODE_PRIVATE).edit().clear().apply()
++    }
++
+     companion object {
+         private const val KEY_PRIVATE = "private_key"
+         private const val KEY_PUBLIC = "public_key"
+diff --git a/app/src/main/kotlin/com/twox2/wallet/wallet/WalletRepository.kt b/app/src/main/kotlin/com/twox2/wallet/wallet/WalletRepository.kt
+index c422d19..6c5f388 100644
+--- a/app/src/main/kotlin/com/twox2/wallet/wallet/WalletRepository.kt
++++ b/app/src/main/kotlin/com/twox2/wallet/wallet/WalletRepository.kt
+@@ -2,6 +2,7 @@ package com.twox2.wallet.wallet
+ 
+ import android.content.Context
+ import com.twox2.wallet.chain.ChainParams
++import com.twox2.wallet.chain.UInt256
+ import com.twox2.wallet.crypto.AddressEncoder
+ import com.twox2.wallet.data.db.SavedAddressEntity
+ import com.twox2.wallet.data.db.WalletTransactionEntity
+@@ -47,6 +48,12 @@ class WalletRepository(context: Context) {
+         ExplorerWalletSync.sync(context)
+     }
+ 
++    suspend fun fetchExplorerBalance(): Long = withContext(Dispatchers.IO) {
++        val addresses = walletManager.getAllReceiveLegacyAddresses()
++        if (addresses.isEmpty()) return@withContext 0L
++        ExplorerWalletSync.fetchExplorerBalance(addresses)
++    }
++
+     suspend fun createWallet(): WalletInfo = withContext(Dispatchers.IO) {
+         val info = walletManager.createWallet()
+         walletManager.ensurePrimaryReceiveAddress(info)
+@@ -67,6 +74,17 @@ class WalletRepository(context: Context) {
+         SyncEngine.verifySync(context)
+     }
+ 
++    suspend fun reindexBlockchain() = withContext(Dispatchers.IO) {
++        SyncEngine.reindexBlockchain(context)
++        fetchExplorerBalance()
++    }
++
++    suspend fun deleteWallet() = withContext(Dispatchers.IO) {
++        SyncEngine.stopSync()
++        walletManager.clearChainData()
++        walletManager.deleteWallet(context)
++    }
++
+     suspend fun fetchExplorerBlockCount(): Int? = ExplorerApi.getBlockCount()
+ 
+     suspend fun fetchUsdPrice(): Double? = withContext(Dispatchers.IO) {
+@@ -95,29 +113,6 @@ class WalletRepository(context: Context) {
+         walletManager.deleteSavedAddress(id)
+     }
+ 
+-    suspend fun estimateSendFee(amountCoins: Double, feeTier: FeeTier): Long = withContext(Dispatchers.IO) {
+-        val amount = (amountCoins * ChainParams.COIN).toLong()
+-        val utxos = walletManager.getDatabase().utxoDao().getUnspent()
+-        val spendable = utxos.filter { walletManager.resolveSigningKey(it.scriptPubKey) != null }
+-        if (spendable.isEmpty()) return@withContext feeTier.estimateDefaultFee()
+-
+-        val sorted = spendable.sortedByDescending { it.value }
+-        var total = 0L
+-        var inputCount = 0
+-        for (utxo in sorted) {
+-            inputCount++
+-            total += utxo.value
+-            var outputCount = 2
+-            var fee = TransactionBuilder.estimateFee(inputCount, outputCount, feeTier.feePerByte)
+-            if (total - amount - fee <= TransactionBuilder.DUST_THRESHOLD) {
+-                outputCount = 1
+-                fee = TransactionBuilder.estimateFee(inputCount, outputCount, feeTier.feePerByte)
+-            }
+-            if (total >= amount + fee) return@withContext fee
+-        }
+-        feeTier.estimateDefaultFee()
+-    }
+-
+     suspend fun sendCoins(
+         toAddress: String,
+         amountCoins: Double,
+@@ -132,6 +127,7 @@ class WalletRepository(context: Context) {
+ 
+             val wallet = walletManager.loadWallet() ?: error("Carteira não encontrada")
+             val amount = (amountCoins * ChainParams.COIN).toLong()
++            val fixedFee = feeTier.feeSatoshis
+             val db = walletManager.getDatabase()
+             val utxos = db.utxoDao().getUnspent()
+             val utxoKeys = mutableMapOf<Long, TransactionBuilder.SigningKey>()
+@@ -144,6 +140,15 @@ class WalletRepository(context: Context) {
+             val spendableUtxos = utxos.filter { utxoKeys.containsKey(it.id) }
+             require(spendableUtxos.isNotEmpty()) { "Nenhum UTXO disponível para gastar" }
+ 
++            val explorerBalance = fetchExplorerBalance()
++            val spendableTotal = spendableUtxos.sumOf { it.value }
++            require(spendableTotal >= amount + fixedFee) {
++                "Saldo insuficiente (disponível: ${spendableTotal / ChainParams.COIN} ${ChainParams.CURRENCY})"
++            }
++            if (explorerBalance > 0 && spendableTotal > explorerBalance) {
++                ExplorerWalletSync.sync(context)
++            }
++
+             val networkTime = ExplorerApi.getLatestBlockTime() ?: (System.currentTimeMillis() / 1000)
+             val buildResult = TransactionBuilder.buildAndSign(
+                 utxos = spendableUtxos,
+@@ -151,7 +156,7 @@ class WalletRepository(context: Context) {
+                 toAddress = toAddress.trim(),
+                 amount = amount,
+                 changeAddress = wallet.address,
+-                feePerByte = feeTier.feePerByte,
++                fixedFee = fixedFee,
+                 networkTime = networkTime
+             )
+             val tx = buildResult.transaction

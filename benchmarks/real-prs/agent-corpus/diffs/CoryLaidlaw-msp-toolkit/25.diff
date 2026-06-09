@@ -1,0 +1,28 @@
+diff --git a/windows/disk/DiskCleanup.ps1 b/windows/disk/DiskCleanup.ps1
+index 807834b..101c6ca 100644
+--- a/windows/disk/DiskCleanup.ps1
++++ b/windows/disk/DiskCleanup.ps1
+@@ -172,8 +172,12 @@ function Invoke-CleanMgrSageRun {
+             Set-ItemProperty -Path $cache.PSPath -Name 'StateFlags0001' -Value 2 -ErrorAction SilentlyContinue
+         }
+ 
+-        $proc = Start-Process -FilePath 'cleanmgr.exe' -ArgumentList '/sagerun:1' -Wait -WindowStyle Hidden -PassThru
+-        if ($proc.ExitCode -ne 0) {
++        $proc = Start-Process -FilePath 'cleanmgr.exe' -ArgumentList '/sagerun:1' -WindowStyle Hidden -PassThru
++        if (-not $proc.WaitForExit(300000)) {
++            $proc.Kill()
++            Write-Warning "cleanmgr did not finish within 5 minutes; process was terminated."
++        }
++        elseif ($proc.ExitCode -ne 0) {
+             Write-Warning "cleanmgr exited with code $($proc.ExitCode)."
+         }
+         else {
+@@ -268,7 +272,7 @@ function Invoke-Main {
+         Remove-FilesSafely -Path 'C:\inetpub\logs\LogFiles' -Description 'IIS Log Files'
+     }
+ 
+-    if ($isAdmin) {
++    if ($isAdmin -and -not $isSystem) {
+         Write-Output ''
+         Write-Output 'Running Windows Disk Cleanup utility (cleanmgr /sagerun); sets HKLM VolumeCaches flags and may show UI on some systems.'
+         Invoke-CleanMgrSageRun

@@ -1,0 +1,211 @@
+diff --git a/README.md b/README.md
+index f32e0f2..79f6bce 100644
+--- a/README.md
++++ b/README.md
+@@ -4,10 +4,10 @@
+ - **Архитектура:** Асинхронный конечный автомат (FSM) на базе FreeRTOS. Реализован сквозной контроль сети. При обрыве связи в фазах замера или отправки устройство автоматически возвращается в режим восстановления соединения.
+ - **Состояния FSM:** `ST_INIT` \(\rightarrow \) `ST_CONNECTING` \(\rightarrow \) `ST_READING` \(\rightarrow \) `ST_PUBLISHING` \(\rightarrow \) `ST_ERROR`.
+ - **Периферия и Датчики:**
+-    1. **DHT22 (GPIO_NUM_10):** Вынесен в отдельный асинхронный FreeRTOS-поток с циклом опроса раз в 10 секунд. Передает структуру `dht_data_t` в основной поток через потокобезопасную очередь (`QueueHandle_t`) размером в 1 элемент.
+-    2. **BH1750 (I2C, SDA=GPIO 18, SCL=GPIO 19):** Датчик освещенности. Интегрирован фоновый воркер, который отправляет структуру `bh1750_data_t` в основную задачу через очередь с перезаписью (`xQueueOverwrite`). Пины перенесены с GPIO 18/19 во избежание конфликта с DHT22.
+-    3. **Светодиодный индикатор (Отдельный компонент):** Параллельный поток FreeRTOS асинхронно читает указатель на текущее состояние FSM и мигает тремя LED: Красный (GPIO 3), Зеленый (GPIO 4), Синий (GPIO 5) с разной частотой (1, 2, 4 Гц) под каждый режим.
+-- **Сеть и Передача данных:** Подключение к Wi-Fi (режим STA) завязано на системные события LwIP. MQTT-клиент (`mqtt_client`) запускается строго после события получения IP-адреса. В состоянии `ST_PUBLISHING` формируется единый JSON-пакет со всеми метриками. Если датчики возвращают ошибку валидности (`is_valid == false`), в поля JSON отправляется `null` вместо старого кэша или нулей.
++    1. **DHT22 (`CONFIG_TEMP_SENSORS_DHT_GPIO_PIN`, по умолчанию GPIO 10):** Вынесен в отдельный асинхронный FreeRTOS-поток с циклом опроса раз в 10 секунд. Передает структуру `dht_data_t` в основной поток через потокобезопасную очередь (`QueueHandle_t`) размером в 1 элемент.
++    2. **BH1750 (I2C, `CONFIG_TEMP_SENSORS_BH1750_SDA_GPIO_PIN`/`CONFIG_TEMP_SENSORS_BH1750_SCL_GPIO_PIN`, по умолчанию SDA=GPIO 18, SCL=GPIO 19):** Датчик освещенности. Интегрирован фоновый воркер, который отправляет структуру `bh1750_data_t` в основную задачу через очередь с перезаписью (`xQueueOverwrite`). Пины перенесены с GPIO 18/19 во избежание конфликта с DHT22.
++    3. **Светодиодный индикатор (Отдельный компонент):** Параллельный поток FreeRTOS асинхронно читает указатель на текущее состояние FSM и мигает тремя LED: Красный (`CONFIG_TEMP_SENSORS_LED_RED_GPIO_PIN`, по умолчанию GPIO 3), Зеленый (`CONFIG_TEMP_SENSORS_LED_GREEN_GPIO_PIN`, по умолчанию GPIO 4), Синий (`CONFIG_TEMP_SENSORS_LED_BLUE_GPIO_PIN`, по умолчанию GPIO 5) с разной частотой (1, 2, 4 Гц) под каждый режим.
++- **Сеть и Передача данных:** SSID/пароль Wi-Fi и параметры MQTT вынесены в `menuconfig` (`CONFIG_TEMP_SENSORS_WIFI_SSID`, `CONFIG_TEMP_SENSORS_WIFI_PASSWORD`, `CONFIG_TEMP_SENSORS_MQTT_BROKER_URL`, `CONFIG_TEMP_SENSORS_MQTT_TOPIC`). Подключение к Wi-Fi (режим STA) завязано на системные события LwIP. MQTT-клиент (`mqtt_client`) запускается строго после события получения IP-адреса. В состоянии `ST_PUBLISHING` формируется единый JSON-пакет со всеми метриками. Если датчики возвращают ошибку валидности (`is_valid == false`), в поля JSON отправляется `null` вместо старого кэша или нулей.
+ - **Инфраструктура:** Проект успешно настроен через CMake, зависимости подключены через IDF Component Manager, а логика версионируется в Git/GitHub. Ошибки сборки и IntelliSense в VS Code полностью устранены.
+ 
+ 
+diff --git a/components/bh1750_component/bh1750_component.c b/components/bh1750_component/bh1750_component.c
+index 3b00ae9..68450b1 100644
+--- a/components/bh1750_component/bh1750_component.c
++++ b/components/bh1750_component/bh1750_component.c
+@@ -5,13 +5,14 @@
+ #include "bh1750.h"
+ #include "driver/gpio.h"
+ #include "esp_log.h"
++#include "sdkconfig.h"
+ #include "freertos/FreeRTOS.h"
+ #include "freertos/task.h"
+ #include "i2cdev.h"
+ 
+ #define BH1750_I2C_PORT I2C_NUM_0
+-#define BH1750_SDA_GPIO GPIO_NUM_18
+-#define BH1750_SCL_GPIO GPIO_NUM_19
++#define BH1750_SDA_GPIO ((gpio_num_t)CONFIG_TEMP_SENSORS_BH1750_SDA_GPIO_PIN)
++#define BH1750_SCL_GPIO ((gpio_num_t)CONFIG_TEMP_SENSORS_BH1750_SCL_GPIO_PIN)
+ #define BH1750_I2C_ADDRESS BH1750_ADDR_LO
+ #define BH1750_POLL_INTERVAL_MS 10000
+ 
+diff --git a/components/dht_component/dht_component.c b/components/dht_component/dht_component.c
+index 38cae99..9ad08d2 100644
+--- a/components/dht_component/dht_component.c
++++ b/components/dht_component/dht_component.c
+@@ -3,9 +3,10 @@
+ #include "freertos/FreeRTOS.h"
+ #include "freertos/task.h"
+ #include "dht_component.h"
++#include "sdkconfig.h"
+ #include <dht.h>
+ 
+-#define DHT_GPIO_PIN   GPIO_NUM_10
++#define DHT_GPIO_PIN ((gpio_num_t)CONFIG_TEMP_SENSORS_DHT_GPIO_PIN)
+ #define DHT_POLL_INTERVAL_MS 10000
+ #define DHT_SENSOR_TYPE DHT_TYPE_AM2301
+ 
+diff --git a/components/led_component/led_component.c b/components/led_component/led_component.c
+index 6cf105f..3c8d05c 100644
+--- a/components/led_component/led_component.c
++++ b/components/led_component/led_component.c
+@@ -4,14 +4,15 @@
+ 
+ #include "driver/gpio.h"
+ #include "esp_log.h"
++#include "sdkconfig.h"
+ #include "freertos/FreeRTOS.h"
+ #include "freertos/task.h"
+ 
+ static const char *TAG = "LED_COMPONENT";
+ 
+-#define LED_RED_GPIO   GPIO_NUM_3
+-#define LED_GREEN_GPIO GPIO_NUM_4
+-#define LED_BLUE_GPIO  GPIO_NUM_5
++#define LED_RED_GPIO   ((gpio_num_t)CONFIG_TEMP_SENSORS_LED_RED_GPIO_PIN)
++#define LED_GREEN_GPIO ((gpio_num_t)CONFIG_TEMP_SENSORS_LED_GREEN_GPIO_PIN)
++#define LED_BLUE_GPIO  ((gpio_num_t)CONFIG_TEMP_SENSORS_LED_BLUE_GPIO_PIN)
+ 
+ static volatile device_state_t s_led_state = ST_INIT;
+ 
+diff --git a/main/Kconfig.projbuild b/main/Kconfig.projbuild
+new file mode 100644
+index 0000000..663db03
+--- /dev/null
++++ b/main/Kconfig.projbuild
+@@ -0,0 +1,81 @@
++menu "Temp sensors configuration"
++
++    menu "GPIO pins"
++
++        config TEMP_SENSORS_DHT_GPIO_PIN
++            int "DHT sensor GPIO pin"
++            range 0 48
++            default 10
++            help
++                GPIO pin number connected to the DHT sensor data line.
++
++        config TEMP_SENSORS_BH1750_SDA_GPIO_PIN
++            int "BH1750 I2C SDA GPIO pin"
++            range 0 48
++            default 18
++            help
++                GPIO pin number used as the I2C SDA line for the BH1750 sensor.
++
++        config TEMP_SENSORS_BH1750_SCL_GPIO_PIN
++            int "BH1750 I2C SCL GPIO pin"
++            range 0 48
++            default 19
++            help
++                GPIO pin number used as the I2C SCL line for the BH1750 sensor.
++
++        config TEMP_SENSORS_LED_RED_GPIO_PIN
++            int "Red LED GPIO pin"
++            range 0 48
++            default 3
++            help
++                GPIO pin number connected to the red status LED.
++
++        config TEMP_SENSORS_LED_GREEN_GPIO_PIN
++            int "Green LED GPIO pin"
++            range 0 48
++            default 4
++            help
++                GPIO pin number connected to the green status LED.
++
++        config TEMP_SENSORS_LED_BLUE_GPIO_PIN
++            int "Blue LED GPIO pin"
++            range 0 48
++            default 5
++            help
++                GPIO pin number connected to the blue status LED.
++
++    endmenu
++
++    menu "Wi-Fi"
++
++        config TEMP_SENSORS_WIFI_SSID
++            string "Wi-Fi SSID"
++            default "GL_AXT1800"
++            help
++                Wi-Fi network SSID used by the station interface.
++
++        config TEMP_SENSORS_WIFI_PASSWORD
++            string "Wi-Fi password"
++            default "WRHD24ERWM"
++            help
++                Wi-Fi network password used by the station interface.
++
++    endmenu
++
++    menu "MQTT"
++
++        config TEMP_SENSORS_MQTT_BROKER_URL
++            string "MQTT broker URL"
++            default "mqtt://192.168.8.126"
++            help
++                MQTT broker URI used to initialize the MQTT client.
++
++        config TEMP_SENSORS_MQTT_TOPIC
++            string "MQTT publish topic"
++            default "esp32-e6e4/env"
++            help
++                MQTT topic where environment measurements are published.
++
++    endmenu
++
++endmenu
+diff --git a/main/main.c b/main/main.c
+index 2ecb72a..70d402c 100644
+--- a/main/main.c
++++ b/main/main.c
+@@ -4,6 +4,7 @@
+ #include "esp_err.h"
+ #include "esp_log.h"
+ #include "nvs_flash.h"
++#include "sdkconfig.h"
+ 
+ #include "freertos/FreeRTOS.h"
+ #include "freertos/queue.h"
+@@ -18,11 +19,6 @@
+ 
+ static const char *TAG = "TEMP_STATION";
+ 
+-#define WIFI_SSID       "GL_AXT1800"
+-#define WIFI_PASS       "WRHD24ERWM"
+-#define MQTT_BROKER_URL "mqtt://192.168.8.126"
+-#define MQTT_TOPIC      "esp32-e6e4/env"
+-
+ 
+ static device_state_t current_state = ST_INIT;
+ static sensor_data_t current_sensor_data = {0};
+@@ -65,8 +61,9 @@ void app_main(void)
+         switch (current_state) {
+             case ST_INIT:
+                 ESP_LOGI(TAG, "Initializing components...");
+-                ESP_ERROR_CHECK(wifi_component_init_station(WIFI_SSID, WIFI_PASS));
+-                ESP_ERROR_CHECK(mqtt_component_init(MQTT_BROKER_URL));
++                ESP_ERROR_CHECK(wifi_component_init_station(CONFIG_TEMP_SENSORS_WIFI_SSID,
++                                                            CONFIG_TEMP_SENSORS_WIFI_PASSWORD));
++                ESP_ERROR_CHECK(mqtt_component_init(CONFIG_TEMP_SENSORS_MQTT_BROKER_URL));
+                 ESP_ERROR_CHECK(sensor_component_init());
+                 esp_err_t bh1750_ret = bh1750_component_init();
+                 if (bh1750_ret == ESP_OK) {
+@@ -135,7 +132,7 @@ void app_main(void)
+                          dht_humidity,
+                          bh1750_lux_json);
+ 
+-                if (mqtt_component_publish(MQTT_TOPIC, payload, 1, 0) == ESP_OK) {
++                if (mqtt_component_publish(CONFIG_TEMP_SENSORS_MQTT_TOPIC, payload, 1, 0) == ESP_OK) {
+                     ESP_LOGI(TAG, "Published: %s", payload);
+                     set_device_state(ST_READING);
+                     vTaskDelay(pdMS_TO_TICKS(5000));

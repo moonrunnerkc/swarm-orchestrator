@@ -1,0 +1,21 @@
+diff --git a/.github/workflows/claude.yml b/.github/workflows/claude.yml
+index f6a8ab9b..948f14e8 100644
+--- a/.github/workflows/claude.yml
++++ b/.github/workflows/claude.yml
+@@ -133,10 +133,12 @@ jobs:
+           # Bash/Edit/Write to actually diagnose, run pest and open the PR. Blast
+           # radius is bounded by the trust gate (only OWNER/MEMBER/COLLABORATOR
+           # issues trigger) + github.token (cannot bypass CODEOWNERS or reach
+-          # prod) + 8a review. max-turns 10 keeps Max-subscription usage low;
+-          # with permission prompts no longer auto-denying, 10 turns is enough
+-          # for a small fix (raise only if bugs routinely hit the cap).
++          # prod) + 8a review. max-turns 25 gives real (multi-file) bugs room to
++          # diagnose → fix → test → PR; trivial fixes finish well under it, so the
++          # Max-subscription cost is only paid by genuinely hard bugs. Lowered to
++          # 10 once (CSJ, quota) but a real startup-repeat bug hit that cap after
++          # 1m32s of work (#517) — 25 is the balance.
+           claude_args: |
+             --model claude-opus-4-8
+-            --max-turns 10
++            --max-turns 25
+             --permission-mode bypassPermissions

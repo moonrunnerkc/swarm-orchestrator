@@ -1,0 +1,831 @@
+diff --git a/public/presentation/index.html b/public/presentation/index.html
+index 8fb21a6c..79945c74 100644
+--- a/public/presentation/index.html
++++ b/public/presentation/index.html
+@@ -1462,7 +1462,7 @@ <h1>The Two-Sided Marketplace</h1>
+ <div class="card">
+ <h3>&#127970; For Prime Contractors</h3>
+ <ul>
+-<li>Search 18,000+ verified subcontractors by trade, location, certification</li>
++<li>Search 175,000+ verified subcontractors by trade, radius, certification</li>
+ <li>AI auto-matches subs to RFQ requirements in real-time</li>
+ <li>One-click RFQ distribution to qualified subs</li>
+ <li>Build winning teams in minutes, not weeks</li>
+@@ -1486,8 +1486,8 @@ <h3>&#128119; For Subcontractors</h3>
+ <h1>Live Network Stats</h1>
+ <p class="subtitle">Growing daily through SAM.gov integration and direct registration</p>
+ <div class="stat-row" style="justify-content:center;margin-top:30px">
+-<div class="stat"><div class="number">18,000+</div><div class="label">Subcontractors Listed</div></div>
+-<div class="stat"><div class="number">200+</div><div class="label">Trade Categories</div></div>
++<div class="stat"><div class="number">175,000+</div><div class="label">Subcontractors Listed</div></div>
++<div class="stat"><div class="number">45+</div><div class="label">Trade Categories</div></div>
+ <div class="stat"><div class="number">50</div><div class="label">States Covered</div></div>
+ <div class="stat"><div class="number">775+</div><div class="label">Verified Contacts</div></div>
+ </div>
+@@ -1503,7 +1503,7 @@ <h1>How Auto-Matching Works</h1>
+ <p class="subtitle">The engine that makes the network valuable</p>
+ <div class="flow-step"><div class="step-num">1</div><div class="step-text"><strong>Prime uploads RFQ</strong> — AI extracts required trades, certifications, location needs</div></div>
+ <div class="arrow-right">&darr;</div>
+-<div class="flow-step"><div class="step-num">2</div><div class="step-text"><strong>System searches network</strong> — matches against 18,000+ subs by trade, coverage, verification status</div></div>
++<div class="flow-step"><div class="step-num">2</div><div class="step-text"><strong>System searches network</strong> — matches against 175,000+ subs by trade, radius, verification status</div></div>
+ <div class="arrow-right">&darr;</div>
+ <div class="flow-step"><div class="step-num">3</div><div class="step-text"><strong>Top matches surfaced</strong> — ranked by relevance score, verification status, past performance</div></div>
+ <div class="arrow-right">&darr;</div>
+@@ -1518,7 +1518,7 @@ <h1>Competitive Advantage</h1>
+ <div style="overflow-x:auto;margin-top:20px">
+ <table style="width:100%;border-collapse:collapse;font-size:0.95em">
+ <tr style="background:#1e293b"><th style="padding:12px 16px;text-align:left;border-bottom:1px solid #334155">Feature</th><th style="padding:12px 16px;text-align:center;color:#60a5fa;border-bottom:1px solid #334155">Procuvex</th><th style="padding:12px 16px;text-align:center;color:#94a3b8;border-bottom:1px solid #334155">GovWin / Govly / Spreadsheets</th></tr>
+-<tr style="background:#0f172a"><td style="padding:10px 16px">Verified Subcontractor Database</td><td style="text-align:center;color:#10b981">&#10003; 18,000+</td><td style="text-align:center;color:#ef4444">&#10007;</td></tr>
++<tr style="background:#0f172a"><td style="padding:10px 16px">Verified Subcontractor Database</td><td style="text-align:center;color:#10b981">&#10003; 175,000+</td><td style="text-align:center;color:#ef4444">&#10007;</td></tr>
+ <tr><td style="padding:10px 16px">AI Auto-Matching (Primes ↔ Subs)</td><td style="text-align:center;color:#10b981">&#10003; Real-Time</td><td style="text-align:center;color:#ef4444">&#10007;</td></tr>
+ <tr style="background:#0f172a"><td style="padding:10px 16px">Two-Sided Network</td><td style="text-align:center;color:#10b981">&#10003;</td><td style="text-align:center;color:#ef4444">&#10007;</td></tr>
+ <tr><td style="padding:10px 16px">Sub Verification & Badges</td><td style="text-align:center;color:#10b981">&#10003; $99/yr</td><td style="text-align:center;color:#ef4444">&#10007;</td></tr>
+@@ -1862,9 +1862,9 @@ <h1>Get Started Today</h1>
+ <h3>&#127970; Prime Contractors</h3>
+ <ul>
+ <li><strong>Step 1:</strong> Start your free 7-day trial at procuvex.com</li>
+-<li><strong>Step 2:</strong> Search 18,000+ subcontractors by trade, location & certification</li>
+-<li><strong>Step 3:</strong> Let AI auto-match qualified subs to your RFQ requirements</li>
+-<li><strong>Step 4:</strong> Send teaming invites and build winning teams in minutes</li>
++<li><strong>Step 2:</strong> Search 175,000+ subcontractors by trade, radius, & certification</li>
++<li><strong>Step 3:</strong> AI maps your SOW line items to trades and matches subs by location</li>
++<li><strong>Step 4:</strong> Compose branded RFQs with merge fields, preview, and send</li>
+ </ul>
+ </div>
+ <div class="card">
+@@ -1883,7 +1883,182 @@ <h3>The Network Advantage</h3>
+ </div>
+ </div>
+ 
+-<div class="slide title-slide" id="slide-61">
++<!-- NEW FEATURE SLIDES -->
++<div class="slide" id="slide-63" style="background: linear-gradient(135deg, #1e3a5f, #312e81);">
++<h1>Radius-Based Local Matching</h1>
++<p class="subtitle">Find subcontractors within a configurable mile radius of your project site</p>
++<div class="two-col">
++<div>
++<h3>How It Works</h3>
++<ul>
++<li><strong>Local:</strong> Configure radius (10, 25, 50, 100, 150, or 200 miles) from project ZIP code</li>
++<li><strong>Regional:</strong> Project state plus adjacent states via US adjacency map</li>
++<li><strong>National:</strong> No geographic restriction</li>
++<li><strong>Combinable:</strong> Checkboxes let you pick any combination (e.g., Local 25mi + Regional)</li>
++</ul>
++<h3>Results</h3>
++<ul>
++<li>Each result card shows distance from project: "Columbus, OH (9 mi)"</li>
++<li>Proximity bonus scoring — closer subs rank higher in results</li>
++<li>Results increase as radius expands</li>
++</ul>
++</div>
++<div class="card">
++<h3>&#128205; Example</h3>
++<p style="color:#94a3b8">Project: Jacksonville, FL (32202)</p>
++<div class="stat-row">
++<div class="stat"><div class="number">8</div><div class="label">Local 50mi</div></div>
++<div class="stat"><div class="number">100+</div><div class="label">Regional</div></div>
++</div>
++<p style="color:#94a3b8;font-size:0.9em">Local subs get proximity bonus score for higher ranking.</p>
++</div>
++</div>
++</div>
++
++<div class="slide" id="slide-64" style="background: linear-gradient(135deg, #312e81, #1e3a5f);">
++<h1>AI SOW-to-Trade Mapping</h1>
++<p class="subtitle">AI maps every SOW line item to our 45-trade taxonomy</p>
++<div class="two-col">
++<div>
++<h3>Before: The Problem</h3>
++<div class="problem-box">
++<h3>Generic Matching</h3>
++<p style="color:#fca5a5;margin:0">A single query returns 500 subs dominated by common trades (HVAC, Plumbing). Rare trades like Fire & Life Safety, Elevator, Security Systems return 0 matches.</p>
++</div>
++<h3>After: Per-Trade Queries</h3>
++<div class="roi-box">
++<h3>Precision Matching</h3>
++<p style="color:#a7f3d0;margin:0">Each SOW item gets its own dedicated query. Fire & Life Safety: 23+ local. Elevator: 50+ regional. Every trade covered.</p>
++</div>
++</div>
++<div>
++<h3>SOW Coverage Breakdown</h3>
++<div class="card">
++<p style="color:#94a3b8;font-size:0.9em">AI-assisted label mapping via GPT-4o-mini</p>
++<ul>
++<li>Collapsible SOW Coverage Breakdown table</li>
++<li>Per-SOW sub count and match status</li>
++<li>Green checkmarks for mapped trades</li>
++<li>Fallback to raw trades if AI unavailable</li>
++</ul>
++</div>
++</div>
++</div>
++</div>
++
++<div class="slide" id="slide-65" style="background: linear-gradient(135deg, #1e3a5f, #581c87);">
++<h1>RFQ Composer</h1>
++<p class="subtitle">Customize, preview, and send branded RFQs with merge fields</p>
++<div class="two-col">
++<div>
++<h3>Template Editor</h3>
++<ul>
++<li>Editable RFQ body with rich text formatting</li>
++<li>10 auto-populated merge fields: {org_name}, {contact_name}, {task_order_title}, {sow_name}, {location_city}, {due_date}, etc.</li>
++<li>Click any merge field to insert at cursor position</li>
++<li>Loads saved org template from Org Settings automatically</li>
++</ul>
++<h3>Preview & Send</h3>
++<ul>
++<li>"Preview Email" tab shows exactly what the recipient sees</li>
++<li>Branded header with org details</li>
++<li>Optional custom note callout (e.g., "Urgent — respond within 48 hours")</li>
++<li>Each sub gets personalized {contact_name} in their copy</li>
++</ul>
++</div>
++<div class="card">
++<h3>&#9993;&#65039; Merge Fields</h3>
++<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
++<span class="badge">{org_name}</span>
++<span class="badge">{contact_name}</span>
++<span class="badge">{task_order_title}</span>
++<span class="badge">{sow_name}</span>
++<span class="badge">{location_city}</span>
++<span class="badge">{due_date}</span>
++<span class="badge">{solicitation_number}</span>
++<span class="badge">{sow_categories}</span>
++<span class="badge">{project_description}</span>
++<span class="badge">{contact_email}</span>
++</div>
++<p style="color:#94a3b8;font-size:0.9em;margin-top:12px">All fields auto-populated from project + org data. No manual entry required.</p>
++</div>
++</div>
++</div>
++
++<div class="slide" id="slide-66" style="background: linear-gradient(135deg, #581c87, #1e3a5f);">
++<h1>Organization Sub Database</h1>
++<p class="subtitle">Private, organization-owned subcontractor records — separate from the master network</p>
++<div class="two-col">
++<div>
++<h3>Two-Tier Architecture</h3>
++<div class="card">
++<h3>&#127760; Master Network</h3>
++<p style="color:#94a3b8">175,000+ subs from SAM.gov, GSA eLibrary, SBA databases. Shared across the platform. Searchable by all primes.</p>
++</div>
++<div class="card">
++<h3>&#128274; Your Organization</h3>
++<p style="color:#94a3b8">Private sub records visible only to your team. Import your own subs, promote from master DB, or add manually. Fully isolated.</p>
++</div>
++</div>
++<div>
++<h3>Key Features</h3>
++<ul>
++<li>Independent database — your data stays private</li>
++<li>CSV / manual import for existing sub lists</li>
++<li>Promote master DB subs to your org with one click</li>
++<li>Org subs show in matching results alongside master DB subs</li>
++<li>Full edit access to org sub profiles</li>
++</ul>
++</div>
++</div>
++</div>
++
++<div class="slide" id="slide-67" style="background: linear-gradient(135deg, #1e3a5f, #312e81);">
++<h1>Contactability & Transparency</h1>
++<p class="subtitle">Know exactly how you can reach each subcontractor before investing time</p>
++<div class="three-col">
++<div class="card">
++<h3>&#128231; RFQ Ready</h3>
++<p style="color:#94a3b8">Sub has a verified email address on file. You can send RFQs directly from the platform.</p>
++<span class="badge-green badge">Email Available</span>
++</div>
++<div class="card">
++<h3>&#128222; Phone Only</h3>
++<p style="color:#94a3b8">Sub has phone but no email. You'll need to reach out by phone.</p>
++<span class="badge-amber badge">Phone Only</span>
++</div>
++<div class="card">
++<h3>&#128270; Explore Network</h3>
++<p style="color:#94a3b8">Public page at /explore-network with live stats, category grid, and state coverage map.</p>
++<div class="stat-row">
++<div class="stat"><div class="number">175K+</div><div class="label">Subs</div></div>
++<div class="stat"><div class="number">45+</div><div class="label">Trades</div></div>
++<div class="stat"><div class="number">50</div><div class="label">States</div></div>
++</div>
++</div>
++</div>
++</div>
++
++<div class="slide" id="slide-68" style="background: linear-gradient(135deg, #312e81, #1e3a5f);">
++<h1>Complete Matching Flow</h1>
++<p class="subtitle">From project creation to RFQ delivery — the full workflow</p>
++<div class="flow-step"><div class="step-num">1</div><div class="step-text">Create project, upload SOW documents</div></div>
++<div class="arrow-right">&darr;</div>
++<div class="flow-step"><div class="step-num">2</div><div class="step-text">Run AI analysis — extracts requirements, service categories, risks</div></div>
++<div class="arrow-right">&darr;</div>
++<div class="flow-step"><div class="step-num">3</div><div class="step-text">AI maps SOW line items to 45-trade taxonomy</div></div>
++<div class="arrow-right">&darr;</div>
++<div class="flow-step"><div class="step-num">4</div><div class="step-text">Select search scope: Local (10–200 mi) + Regional + National</div></div>
++<div class="arrow-right">&darr;</div>
++<div class="flow-step"><div class="step-num">5</div><div class="step-text">Per-trade queries find qualified subs — every SOW item covered</div></div>
++<div class="arrow-right">&darr;</div>
++<div class="flow-step"><div class="step-num">6</div><div class="step-text">Review SOW Coverage Breakdown — see sub counts per trade</div></div>
++<div class="arrow-right">&darr;</div>
++<div class="flow-step"><div class="step-num">7</div><div class="step-text">Compose branded RFQ with merge fields, preview, and send</div></div>
++</div>
++<!-- END NEW FEATURE SLIDES -->
++
++<div class="slide title-slide" id="slide-69">
+ <h1>Ready to Transform Your Bidding?</h1>
+ <div class="tagline">Start your free trial today at procuvex.com</div>
+ <div class="stat-row" style="justify-content:center;margin-top:40px">
+@@ -1901,13 +2076,13 @@ <h1>Ready to Transform Your Bidding?</h1>
+ <!-- Navigation Bar -->
+ <div class="nav-bar">
+ <button id="prevBtn" onclick="changeSlide(-1)" disabled>&larr; Previous</button>
+-<span class="slide-counter"><span id="currentSlide">1</span> / <span id="totalSlides">63</span></span>
++<span class="slide-counter"><span id="currentSlide">1</span> / <span id="totalSlides">69</span></span>
+ <button id="nextBtn" onclick="changeSlide(1)">Next &rarr;</button>
+ </div>
+ 
+ <script>
+ let current = 1;
+-const total = 63;
++const total = 69;
+ document.getElementById('totalSlides').textContent = total;
+ 
+ function changeSlide(dir) {
+diff --git a/src/App.tsx b/src/App.tsx
+index e8a77250..de4b0c8b 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -195,6 +195,7 @@ export default function App() {
+ 
+           {/* Auth */}
+           <Route path="/login" element={<Login />} />
++          <Route path="/create-account" element={<Navigate to="/login?tab=signup" replace />} />
+           <Route path="/reset-password" element={<ResetPassword />} />
+ 
+           {/* Beta Program (public, no auth) */}
+diff --git a/src/landing/components/JargonTooltip.tsx b/src/landing/components/JargonTooltip.tsx
+new file mode 100644
+index 00000000..8222f198
+--- /dev/null
++++ b/src/landing/components/JargonTooltip.tsx
+@@ -0,0 +1,41 @@
++import { useState } from 'react'
++
++const GLOSSARY: Record<string, string> = {
++  FAR: 'Federal Acquisition Regulation — the rules governing how the federal government buys goods and services.',
++  DFARS: 'Defense Federal Acquisition Regulation Supplement — additional rules for Department of Defense contracts.',
++  SOW: 'Statement of Work — a document that describes the tasks, deliverables, and timeline required under a contract.',
++  NAICS: 'North American Industry Classification System — a 6-digit code that classifies businesses by industry.',
++  RFP: 'Request for Proposal — a solicitation asking vendors to submit a formal proposal for a project or service.',
++  RFQ: 'Request for Quote — a solicitation asking vendors to submit pricing for specific goods or services.',
++  'SAM.gov': 'System for Award Management — the federal database where contractors register and opportunities are posted.',
++  CUI: 'Controlled Unclassified Information — sensitive but unclassified government data that requires safeguarding.',
++  ITAR: 'International Traffic in Arms Regulations — controls the export and import of defense-related articles and services.',
++  'FedRAMP': 'Federal Risk and Authorization Management Program — a government-wide program that provides a standardized approach to security assessment for cloud products.',
++  'SOC 2': 'Service Organization Control 2 — a framework for managing customer data based on trust service criteria.',
++}
++
++export default function JargonTooltip({ term, children }: { term: string; children?: React.ReactNode }) {
++  const [show, setShow] = useState(false)
++  const definition = GLOSSARY[term]
++  if (!definition) return <>{children || term}</>
++
++  return (
++    <span
++      className="relative inline-block"
++      onMouseEnter={() => setShow(true)}
++      onMouseLeave={() => setShow(false)}
++    >
++      <span className="border-b border-dotted border-current cursor-help">
++        {children || term}
++      </span>
++      {show && (
++        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 p-3 bg-slate-900 text-white text-xs leading-relaxed rounded-lg shadow-xl z-50 pointer-events-none">
++          <span className="font-semibold text-blue-300">{term}</span>
++          <br />
++          {definition}
++          <span className="absolute top-full left-1/2 -translate-x-1/2 -mt-px border-4 border-transparent border-t-slate-900" />
++        </span>
++      )}
++    </span>
++  )
++}
+diff --git a/src/landing/hooks/useNetworkStats.ts b/src/landing/hooks/useNetworkStats.ts
+new file mode 100644
+index 00000000..2e7d9b81
+--- /dev/null
++++ b/src/landing/hooks/useNetworkStats.ts
+@@ -0,0 +1,85 @@
++import { useState, useEffect } from 'react'
++import { supabase } from '../../lib/supabase'
++
++export interface NetworkStats {
++  total: number
++  contactable: number
++  smallBusiness: number
++  verified: number
++  statesCovered: number
++  tradeCategories: number
++  loading: boolean
++}
++
++const CACHE_KEY = 'procuvex_network_stats'
++const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
++
++interface CachedStats {
++  data: Omit<NetworkStats, 'loading'>
++  timestamp: number
++}
++
++function getCached(): Omit<NetworkStats, 'loading'> | null {
++  try {
++    const raw = sessionStorage.getItem(CACHE_KEY)
++    if (!raw) return null
++    const cached: CachedStats = JSON.parse(raw)
++    if (Date.now() - cached.timestamp > CACHE_TTL) return null
++    return cached.data
++  } catch {
++    return null
++  }
++}
++
++function setCache(data: Omit<NetworkStats, 'loading'>) {
++  try {
++    sessionStorage.setItem(CACHE_KEY, JSON.stringify({ data, timestamp: Date.now() }))
++  } catch { /* ignore */ }
++}
++
++export function useNetworkStats(): NetworkStats {
++  const cached = getCached()
++  const [stats, setStats] = useState<NetworkStats>({
++    total: cached?.total ?? 0,
++    contactable: cached?.contactable ?? 0,
++    smallBusiness: cached?.smallBusiness ?? 0,
++    verified: cached?.verified ?? 0,
++    statesCovered: cached?.statesCovered ?? 50,
++    tradeCategories: cached?.tradeCategories ?? 45,
++    loading: !cached,
++  })
++
++  useEffect(() => {
++    if (cached) return // already have fresh data
++
++    async function fetchStats() {
++      try {
++        const [totalRes, emailRes, smallBizRes, verifiedRes] = await Promise.all([
++          supabase.from('master_subcontractors').select('*', { count: 'exact', head: true }),
++          supabase.from('master_subcontractors').select('*', { count: 'exact', head: true }).not('contact_email', 'is', null),
++          supabase.from('master_subcontractors').select('*', { count: 'exact', head: true }).eq('small_business', true),
++          supabase.from('master_subcontractors').select('*', { count: 'exact', head: true }).in('verification_status', ['verified', 'claimed']),
++        ])
++
++        const data = {
++          total: totalRes.count || 0,
++          contactable: emailRes.count || 0,
++          smallBusiness: smallBizRes.count || 0,
++          verified: verifiedRes.count || 0,
++          statesCovered: 50,
++          tradeCategories: 45,
++        }
++
++        setCache(data)
++        setStats({ ...data, loading: false })
++      } catch (err) {
++        console.error('Failed to fetch network stats:', err)
++        setStats(prev => ({ ...prev, loading: false }))
++      }
++    }
++
++    fetchStats()
++  }, []) // eslint-disable-line react-hooks/exhaustive-deps
++
++  return stats
++}
+diff --git a/src/landing/pages/ExploreNetworkPage.tsx b/src/landing/pages/ExploreNetworkPage.tsx
+index 26266a3c..e8c8655f 100644
+--- a/src/landing/pages/ExploreNetworkPage.tsx
++++ b/src/landing/pages/ExploreNetworkPage.tsx
+@@ -206,7 +206,11 @@ export default function ExploreNetworkPage() {
+               The Procuvex Subcontractor Network
+             </motion.p>
+             <motion.h1 variants={fadeUp} className="text-5xl md:text-7xl font-bold text-white mb-6">
+-              <AnimatedCounter end={stats.total} suffix="+" /> Subcontractors
++              {loading ? (
++                <span className="inline-block w-64 h-16 bg-white/10 rounded-lg animate-pulse align-middle" />
++              ) : (
++                <><AnimatedCounter end={stats.total} suffix="+" /></>
++              )} Subcontractors
+             </motion.h1>
+             <motion.p variants={fadeUp} className="text-xl md:text-2xl text-blue-100 max-w-3xl mx-auto mb-12">
+               The largest searchable database of government-registered subcontractors.
+@@ -215,30 +219,23 @@ export default function ExploreNetworkPage() {
+ 
+             {/* Stats Row */}
+             <motion.div variants={fadeUp} className="grid grid-cols-2 md:grid-cols-4 gap-8 max-w-4xl mx-auto">
+-              <div className="text-center">
+-                <div className="text-3xl md:text-4xl font-bold text-white">
+-                  <AnimatedCounter end={stats.small_business} suffix="+" />
+-                </div>
+-                <div className="text-sm text-blue-200 mt-1">Small Businesses</div>
+-              </div>
+-              <div className="text-center">
+-                <div className="text-3xl md:text-4xl font-bold text-white">
+-                  <AnimatedCounter end={stats.contactable} suffix="+" />
+-                </div>
+-                <div className="text-sm text-blue-200 mt-1">With Direct Contact</div>
+-              </div>
+-              <div className="text-center">
+-                <div className="text-3xl md:text-4xl font-bold text-white">
+-                  <AnimatedCounter end={50} />
+-                </div>
+-                <div className="text-sm text-blue-200 mt-1">States Covered</div>
+-              </div>
+-              <div className="text-center">
++              {[
++                { end: stats.small_business, suffix: '+', label: 'Small Businesses' },
++                { end: stats.contactable, suffix: '+', label: 'With Direct Contact' },
++                { end: 50, suffix: '', label: 'States Covered' },
++                { end: 45, suffix: '+', label: 'Trade Categories' },
++              ].map((item, i) => (
++              <div key={i} className="text-center">
+                 <div className="text-3xl md:text-4xl font-bold text-white">
+-                  <AnimatedCounter end={45} suffix="+" />
++                  {loading ? (
++                    <span className="inline-block w-20 h-8 bg-white/10 rounded animate-pulse" />
++                  ) : (
++                    <AnimatedCounter end={item.end} suffix={item.suffix} />
++                  )}
+                 </div>
+-                <div className="text-sm text-blue-200 mt-1">Trade Categories</div>
++                <div className="text-sm text-blue-200 mt-1">{item.label}</div>
+               </div>
++              ))}
+             </motion.div>
+           </motion.div>
+         </div>
+diff --git a/src/landing/pages/ForSubcontractorsPage.tsx b/src/landing/pages/ForSubcontractorsPage.tsx
+index a401d522..2fa6b93c 100644
+--- a/src/landing/pages/ForSubcontractorsPage.tsx
++++ b/src/landing/pages/ForSubcontractorsPage.tsx
+@@ -9,6 +9,7 @@ import {
+ import Header from '../components/Header'
+ import Footer from '../components/Footer'
+ import { supabase } from '../../lib/supabase'
++import { useNetworkStats } from '../hooks/useNetworkStats'
+ 
+ const fadeUp = { hidden: { opacity: 0, y: 30 }, visible: { opacity: 1, y: 0 } }
+ const stagger = { visible: { transition: { staggerChildren: 0.1 } } }
+@@ -40,48 +41,13 @@ function AnimatedCounter({ end, duration = 2000, suffix = '' }: { end: number; d
+ 
+ // --- Stats Section ---
+ function LiveStats() {
+-  const [stats, setStats] = useState({ total: 0, withEmail: 0, verified: 0, trades: 0 })
+-
+-  useEffect(() => {
+-    async function fetchStats() {
+-      const { count: total } = await supabase
+-        .from('master_subcontractors')
+-        .select('*', { count: 'exact', head: true })
+-
+-      const { count: withEmail } = await supabase
+-        .from('master_subcontractors')
+-        .select('*', { count: 'exact', head: true })
+-        .not('contact_email', 'is', null)
+-
+-      const { count: verified } = await supabase
+-        .from('master_subcontractors')
+-        .select('*', { count: 'exact', head: true })
+-        .eq('verification_status', 'verified')
+-
+-      const { data: tradesData } = await supabase
+-        .from('master_subcontractors')
+-        .select('trade_categories')
+-
+-      const uniqueTrades = new Set<string>()
+-      tradesData?.forEach(r => {
+-        if (r.trade_categories) r.trade_categories.forEach((t: string) => uniqueTrades.add(t))
+-      })
+-
+-      setStats({
+-        total: total || 0,
+-        withEmail: withEmail || 0,
+-        verified: verified || 0,
+-        trades: uniqueTrades.size || 200,
+-      })
+-    }
+-    fetchStats()
+-  }, [])
++  const stats = useNetworkStats()
+ 
+   const metrics = [
+-    { value: stats.total || 18000, label: 'Subcontractors Listed', suffix: '+' },
+-    { value: stats.verified || 50, label: 'Verified Profiles', suffix: '+' },
++    { value: stats.total, label: 'Subcontractors Listed', suffix: '+' },
++    { value: stats.verified, label: 'Verified Profiles', suffix: '+' },
+     { value: 50, label: 'States Covered', suffix: '' },
+-    { value: stats.trades || 200, label: 'Trade Categories', suffix: '+' },
++    { value: stats.tradeCategories, label: 'Trade Categories', suffix: '+' },
+   ]
+ 
+   return (
+@@ -89,7 +55,11 @@ function LiveStats() {
+       {metrics.map((m, i) => (
+         <motion.div key={i} variants={fadeUp} className="text-center">
+           <div className="text-3xl md:text-4xl font-bold text-white">
+-            <AnimatedCounter end={m.value} suffix={m.suffix} />
++            {stats.loading ? (
++              <span className="inline-block w-24 h-8 bg-white/10 rounded animate-pulse" />
++            ) : (
++              <AnimatedCounter end={m.value} suffix={m.suffix} />
++            )}
+           </div>
+           <div className="text-sm text-blue-200 mt-1">{m.label}</div>
+         </motion.div>
+diff --git a/src/landing/pages/HowItWorksPage.tsx b/src/landing/pages/HowItWorksPage.tsx
+index 5f65a000..3da5bfc4 100644
+--- a/src/landing/pages/HowItWorksPage.tsx
++++ b/src/landing/pages/HowItWorksPage.tsx
+@@ -2,7 +2,7 @@ import { motion } from 'framer-motion'
+ import { Link } from 'react-router-dom'
+ import {
+   ArrowRight, Upload, Brain, Shield, FileText, Users,
+-  BarChart3,
++  BarChart3, Crosshair, Mail,
+ } from 'lucide-react'
+ import Header from '../components/Header'
+ import Footer from '../components/Footer'
+@@ -40,13 +40,27 @@ const steps = [
+   },
+   {
+     num: '5',
++    icon: Crosshair,
++    title: 'Match Subs by Location & Trade',
++    desc: 'AI maps each SOW line item to a trade category and finds qualified subcontractors within your chosen radius — 10 miles to nationwide.',
++    detail: 'Combine Local (configurable radius), Regional (adjacent states), and National scopes. Per-trade queries ensure every SOW item gets coverage. Results show distance from project site.',
++  },
++  {
++    num: '6',
++    icon: Mail,
++    title: 'Compose & Send RFQs',
++    desc: 'Customize your RFQ with your company branding, merge fields, and a custom note. Preview exactly what each subcontractor will receive before sending.',
++    detail: 'The RFQ Composer auto-populates project details (title, location, due date, SOW categories) and your company name. Select a saved template or write custom copy.',
++  },
++  {
++    num: '7',
+     icon: Users,
+     title: 'Collaborate & Track',
+     desc: 'Assign team members and subcontractors to the project. Track workflow stages from intake through submission. Monitor the bid readiness checklist.',
+     detail: 'The workflow engine supports stage changes with audit trails, approval notes, and team notifications. Every action is logged for accountability.',
+   },
+   {
+-    num: '6',
++    num: '8',
+     icon: BarChart3,
+     title: 'Win & Learn',
+     desc: 'After the outcome, complete a structured debrief. The Intelligence Library aggregates patterns across all your bids — win rates, competitor insights, pricing benchmarks.',
+@@ -64,7 +78,7 @@ export default function HowItWorksPage() {
+           <div className="max-w-3xl mx-auto text-center">
+             <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-blue-600 text-sm font-semibold uppercase tracking-wider mb-3">How It Works</motion.p>
+             <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="text-4xl sm:text-5xl font-extrabold tracking-tight leading-tight mb-6" style={{ fontFamily: 'Poppins, sans-serif' }}>
+-              From Upload to <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Award</span> in Six Steps
++              From Upload to <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Award</span> in Eight Steps
+             </motion.h1>
+             <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="text-lg text-slate-600 leading-relaxed">
+               Procuvex streamlines the entire bid lifecycle. Here is exactly how your team will use it.
+diff --git a/src/landing/pages/LandingPage.tsx b/src/landing/pages/LandingPage.tsx
+index 36369c4a..77b82073 100644
+--- a/src/landing/pages/LandingPage.tsx
++++ b/src/landing/pages/LandingPage.tsx
+@@ -5,11 +5,12 @@ import {
+   FileText, Brain, Target, BarChart3, Users, Kanban,
+   DollarSign, ClipboardCheck, Zap, CheckCircle, Building2,
+   HardHat, Monitor, ShoppingCart, AlertTriangle, Clock, TrendingUp,
+-  Award, Globe, Star, Quote,
++  Award, Globe, Star, Quote, Mail, Crosshair,
+ } from 'lucide-react'
+ import { useState } from 'react'
+ import Header from '../components/Header'
+ import Footer from '../components/Footer'
++import { useNetworkStats } from '../hooks/useNetworkStats'
+ 
+ const fadeUp = { hidden: { opacity: 0, y: 24 }, visible: { opacity: 1, y: 0 } }
+ const stagger = { visible: { transition: { staggerChildren: 0.08 } } }
+@@ -163,6 +164,7 @@ function FAQItem({ q, a }: { q: string; a: string }) {
+ }
+ 
+ export default function LandingPage() {
++  const stats = useNetworkStats()
+   return (
+     <div className="min-h-screen bg-white text-slate-900">
+       <Header />
+@@ -320,15 +322,15 @@ export default function LandingPage() {
+               The Verified Subcontractor Network
+             </h2>
+             <p className="text-lg text-blue-200 max-w-3xl mx-auto leading-relaxed">
+-              No other platform connects prime contractors with a verified database of 18,000+ subcontractors. This is the feature that changes how government teams are built.
++              No other platform connects prime contractors with a verified database of this size. AI-powered matching by trade, radius, and compliance — this is the feature that changes how government teams are built.
+             </p>
+           </motion.div>
+ 
+           {/* Animated Stats */}
+           <motion.div initial="hidden" whileInView="visible" viewport={{ once: true }} variants={stagger} className="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-4xl mx-auto my-12">
+             {[
+-              { value: '18,000+', label: 'Subcontractors' },
+-              { value: '200+', label: 'Trade Categories' },
++              { value: stats.loading ? '...' : `${Math.floor(stats.total / 1000)}K+`, label: 'Subcontractors' },
++              { value: '45+', label: 'Trade Categories' },
+               { value: '50', label: 'States Covered' },
+               { value: 'Real-Time', label: 'Auto-Matching' },
+             ].map((stat, i) => (
+@@ -347,7 +349,7 @@ export default function LandingPage() {
+               </div>
+               <h3 className="text-xl font-bold mb-3">For Prime Contractors</h3>
+               <ul className="space-y-3">
+-                {['Search verified subs by trade, location & certification', 'AI auto-matches subs to your RFQ requirements', 'One-click RFQ distribution to qualified subs', 'Build winning teams in minutes, not weeks'].map((item, i) => (
++                {['Search subs by trade, radius (10–200 mi), or region', 'AI maps your SOW line items to qualified subs', 'Compose & preview branded RFQs before sending', 'Combine Local + Regional + National search scopes'].map((item, i) => (
+                   <li key={i} className="flex items-center gap-2 text-blue-100 text-sm">
+                     <CheckCircle className="h-4 w-4 text-green-400 flex-shrink-0" />
+                     {item}
+@@ -1008,7 +1010,7 @@ export default function LandingPage() {
+             <motion.div variants={fadeUp} className="text-center mb-12">
+               <p className="text-blue-300 text-sm font-bold uppercase tracking-wider mb-3">Built-In Network</p>
+               <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-white mb-4" style={{ fontFamily: 'Poppins, sans-serif' }}>
+-                78,000+ Subcontractors at Your Fingertips
++                {stats.loading ? '...' : `${stats.total.toLocaleString()}+`} Subcontractors at Your Fingertips
+               </h2>
+               <p className="text-lg text-blue-200 max-w-2xl mx-auto leading-relaxed">
+                 The largest searchable database of government-registered subcontractors — sourced from SAM.gov, GSA eLibrary, and SBA databases. AI-matched to your SOW in seconds.
+@@ -1017,10 +1019,10 @@ export default function LandingPage() {
+ 
+             <motion.div variants={fadeUp} className="grid grid-cols-2 md:grid-cols-4 gap-6 max-w-4xl mx-auto mb-12">
+               {[
+-                { value: '78,000+', label: 'Subcontractors' },
++                { value: stats.loading ? '...' : `${stats.total.toLocaleString()}+`, label: 'Subcontractors' },
+                 { value: '45+', label: 'Trade Categories' },
+                 { value: '50', label: 'States Covered' },
+-                { value: '42,000+', label: 'Small Businesses' },
++                { value: stats.loading ? '...' : `${stats.smallBusiness.toLocaleString()}+`, label: 'Small Businesses' },
+               ].map((stat, i) => (
+                 <motion.div key={i} variants={fadeUp} className="text-center">
+                   <div className="text-3xl md:text-4xl font-bold text-white">{stat.value}</div>
+@@ -1031,9 +1033,9 @@ export default function LandingPage() {
+ 
+             <motion.div variants={fadeUp} className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto mb-10">
+               {[
+-                { icon: Brain, title: 'AI SOW Matching', desc: 'Upload your scope of work — AI extracts required trades and finds qualified subs instantly.' },
+-                { icon: Shield, title: 'Government-Verified', desc: 'Every sub sourced from official registries. SBA certifications auto-verified.' },
+-                { icon: Target, title: 'One-Click Outreach', desc: 'Connect with matched subs, send RFQs, and track responses from one dashboard.' },
++                { icon: Brain, title: 'AI SOW Matching', desc: 'Upload your SOW — AI maps each line item to our 45-trade taxonomy and finds qualified subs by radius, region, or nationwide.' },
++                { icon: Crosshair, title: 'Radius-Based Search', desc: 'Find subs within 10, 25, 50, or 200 miles of your project site. Combine Local + Regional + National scopes.' },
++                { icon: Mail, title: 'RFQ Composer', desc: 'Customize RFQ templates with merge fields, preview the email, then send branded RFQs to matched subs.' },
+               ].map((item, i) => (
+                 <div key={i} className="p-6 bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10">
+                   <item.icon className="h-8 w-8 text-blue-300 mb-3" />
+diff --git a/src/landing/pages/ProductPage.tsx b/src/landing/pages/ProductPage.tsx
+index ff82f60e..d5981a45 100644
+--- a/src/landing/pages/ProductPage.tsx
++++ b/src/landing/pages/ProductPage.tsx
+@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom'
+ import {
+   FileText, Brain, Shield, Users, DollarSign, ClipboardCheck,
+   Target, Kanban, BarChart3, Zap, Building2, ArrowRight,
+-  Upload, CheckCircle, FileCheck, Scale,
++  Upload, CheckCircle, FileCheck, Scale, Crosshair, Mail,
++  Database,
+ } from 'lucide-react'
+ import Header from '../components/Header'
+ import Footer from '../components/Footer'
+@@ -66,6 +67,30 @@ const modules = [
+     desc: 'Compare every subcontractor quote side by side across all SOW line items. AI-powered weighted scoring ranks subs by best value using FAR 15.101-1 criteria. Export to Excel or PDF for source selection boards.',
+     features: ['Side-by-side quote comparison grid', 'Weighted scoring (Price, Compliance, Past Performance, Certs)', 'AI compliance score overlay per quote', 'Excel workbook & PDF export', 'Markup profiles & option year projections'],
+   },
++  {
++    icon: Crosshair,
++    title: 'Radius-Based Sub Matching',
++    desc: 'Find subcontractors within a configurable mile radius of your project site. Combine Local (10–200 mi), Regional (adjacent states), and National scopes in a single search.',
++    features: ['Configurable radius: 10, 25, 50, 100, 150, 200 miles', 'Combinable scope checkboxes (Local + Regional + National)', 'Distance shown on each result card', 'Proximity bonus scoring — closer subs rank higher'],
++  },
++  {
++    icon: Brain,
++    title: 'AI SOW-to-Trade Mapping',
++    desc: 'Upload your SOW and AI maps each line item to the closest trade category from the 45-trade taxonomy. Per-trade queries ensure every SOW item gets subcontractor coverage.',
++    features: ['AI-assisted label mapping via GPT-4o-mini', 'Collapsible SOW Coverage Breakdown table', 'Per-SOW sub count and match status', 'Fallback to raw trades if AI unavailable'],
++  },
++  {
++    icon: Mail,
++    title: 'RFQ Composer',
++    desc: 'Customize RFQ emails before sending. Select a template, insert merge fields ({org_name}, {project_title}, {due_date}), preview exactly what subs receive, then send.',
++    features: ['10 auto-populated merge fields', 'Editable template with rich text', 'Live email preview before send', 'Custom note callout for urgency'],
++  },
++  {
++    icon: Database,
++    title: 'Organization Sub Database',
++    desc: 'Maintain a private, organization-owned subcontractor database isolated from the master network. Import your own subs or promote from the master DB.',
++    features: ['Private org-level sub records', 'Independent from master database', 'CSV/manual import', 'Promote master DB subs to your org'],
++  },
+   {
+     icon: Kanban,
+     title: 'Pipeline & Workflow Engine',
+@@ -111,7 +136,7 @@ export default function ProductPage() {
+               Every Tool Your <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">Bid Team</span> Needs
+             </motion.h1>
+             <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="text-lg text-slate-600 leading-relaxed">
+-              14 integrated modules that take you from document upload to bid submission — with AI doing the heavy lifting.
++              18 integrated modules that take you from document upload to bid submission — with AI doing the heavy lifting.
+             </motion.p>
+           </div>
+         </div>
+diff --git a/src/landing/pages/SolutionsPage.tsx b/src/landing/pages/SolutionsPage.tsx
+index 0f113ef3..d5294aee 100644
+--- a/src/landing/pages/SolutionsPage.tsx
++++ b/src/landing/pages/SolutionsPage.tsx
+@@ -21,9 +21,9 @@ const industries = [
+       'AI extracts FAR/DFARS compliance requirements from SOWs',
+       'SAM.gov integration pulls active opportunities into your pipeline',
+       'Compliance matrix maps every clause to your response',
+-      'Period of performance, labor categories, and wage determinations auto-detected',
++      'AI maps SOW line items to 45-trade taxonomy and matches subs by radius',
++      'RFQ Composer with merge fields, live preview, and branded templates',
+       'Workflow stages: New/Intake, Evaluating, Bid Review, Submitted, Awarded, Not Awarded',
+-      'Debrief system captures lessons learned after every award decision',
+     ],
+     color: 'blue',
+   },
+@@ -35,10 +35,10 @@ const industries = [
+     desc: 'Manage complex multi-trade bids where subcontractor alignment, material pricing, and compliance intersect. Procuvex keeps everything in one place.',
+     features: [
+       'Track multiple subcontractor quotes per service category',
+-      'RFQ packages generated and emailed directly to subs',
+-      'Material and labor cost risk identification',
+-      'Workflow stages: Bid Review, Estimating, Bid Finalization, Submitted, Awarded, Not Awarded',
+-      'Custom quote forms for each trade',
++      'Find subs within 10–200 miles of the job site with radius-based matching',
++      'Compose branded RFQs with merge fields and send to matched subs',
++      'AI Quote Compliance Engine analyzes every quote against your SOW',
++      'Pricing Decision Matrix ranks subs by best value with weighted scoring',
+       'Real-time pipeline visibility across all active bids',
+     ],
+     color: 'amber',
+@@ -51,9 +51,9 @@ const industries = [
+     desc: 'Respond to technical RFPs with AI that understands solution requirements, staffing plans, and technology stack compliance.',
+     features: [
+       'Technical requirement extraction from complex RFPs',
+-      'Service category mapping for multi-discipline proposals',
++      'AI SOW-to-trade mapping finds qualified subs automatically',
+       'Labor category and certification compliance tracking',
+-      'Workflow stages: Requirements Gathering, Solution Design, Technical Review, Submitted, Awarded, Not Awarded',
++      'Combinable Local/Regional/National search scopes for sub matching',
+       'Team assignment with role-based access',
+       'Executive summary generation for internal review boards',
+     ],
+@@ -198,6 +198,32 @@ export default function SolutionsPage() {
+         </div>
+       </section>
+ 
++      {/* Industry Glossary */}
++      <section className="py-16 lg:py-20 bg-white border-t border-slate-100">
++        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
++          <h2 className="text-2xl font-bold text-slate-900 mb-6 text-center" style={{ fontFamily: 'Poppins, sans-serif' }}>Industry Terms Glossary</h2>
++          <p className="text-sm text-slate-500 text-center mb-8">New to government contracting? Here are the key terms you'll see throughout Procuvex.</p>
++          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
++            {[
++              { term: 'FAR', def: 'Federal Acquisition Regulation — the rules governing how the federal government buys goods and services.' },
++              { term: 'DFARS', def: 'Defense Federal Acquisition Regulation Supplement — additional rules for Department of Defense contracts.' },
++              { term: 'SOW', def: 'Statement of Work — describes the tasks, deliverables, and timeline required under a contract.' },
++              { term: 'NAICS', def: 'North American Industry Classification System — a 6-digit code classifying businesses by industry.' },
++              { term: 'RFP', def: 'Request for Proposal — a solicitation asking vendors to submit a formal proposal.' },
++              { term: 'RFQ', def: 'Request for Quote — a solicitation asking vendors to submit pricing for specific goods or services.' },
++              { term: 'SAM.gov', def: 'System for Award Management — the federal database for contractor registration and opportunity posting.' },
++              { term: 'CUI', def: 'Controlled Unclassified Information — sensitive but unclassified government data requiring safeguarding.' },
++              { term: 'FedRAMP', def: 'Federal Risk and Authorization Management Program — standardized security assessment for cloud products.' },
++            ].map((item, i) => (
++              <div key={i} className="bg-slate-50 rounded-xl p-4 border border-slate-100">
++                <p className="font-semibold text-blue-600 text-sm mb-1">{item.term}</p>
++                <p className="text-xs text-slate-600 leading-relaxed">{item.def}</p>
++              </div>
++            ))}
++          </div>
++        </div>
++      </section>
++
+       <section className="py-20 bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
+         <div className="max-w-4xl mx-auto px-4 text-center">
+           <h2 className="text-3xl sm:text-4xl font-extrabold mb-4" style={{ fontFamily: 'Poppins, sans-serif' }}>Find Your Fit</h2>
+diff --git a/src/landing/pages/StatusPage.tsx b/src/landing/pages/StatusPage.tsx
+index a73f8e1f..f163ea46 100644
+--- a/src/landing/pages/StatusPage.tsx
++++ b/src/landing/pages/StatusPage.tsx
+@@ -73,7 +73,10 @@ export default function StatusPage() {
+     setError(null)
+ 
+     try {
+-      const res = await fetch('/.netlify/functions/health')
++      const controller = new AbortController()
++      const timeout = setTimeout(() => controller.abort(), 10000)
++      const res = await fetch('/.netlify/functions/health', { signal: controller.signal })
++      clearTimeout(timeout)
+       if (!res.ok) throw new Error(`HTTP ${res.status}`)
+       const data: HealthData = await res.json()
+       setHealth(data)

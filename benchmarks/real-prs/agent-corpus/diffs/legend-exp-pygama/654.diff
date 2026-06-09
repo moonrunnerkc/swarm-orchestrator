@@ -1,0 +1,61 @@
+diff --git a/src/pygama/evt/tcm.py b/src/pygama/evt/tcm.py
+index 930e04739..9df9e087f 100644
+--- a/src/pygama/evt/tcm.py
++++ b/src/pygama/evt/tcm.py
+@@ -199,7 +199,10 @@ def _merge_sorted_tcms(a: ak.Array, b: ak.Array, coin_windows_local) -> ak.Array
+                 row_in_table = np.arange(start, start + buf_len, dtype=int)
+             buf_ak = ak.with_field(buf_ak, row_in_table, "row_in_table")
+ 
+-            arrays.append(buf_ak)
++            # LH5Iterator reuses the same underlying buffer across iterations.
++            # Make an explicit copy so concatenation/merging isn't corrupted when the
++            # iterator advances and overwrites the buffer.
++            arrays.append(ak.copy(buf_ak))
+ 
+         if at_end.all() and len(arrays) == 0 and tcm is None:
+             break
+@@ -214,6 +217,9 @@ def _merge_sorted_tcms(a: ak.Array, b: ak.Array, coin_windows_local) -> ak.Array
+         else:
+             tcm = _merge_sorted_tcms(tcm, new_tcm, coin_windows)
+ 
++        # Ensure tcm doesn't retain views into iterator-reused buffers.
++        tcm = ak.copy(tcm)
++
+         if tcm is None or len(tcm) == 0:
+             continue
+ 
+diff --git a/tests/evt/test_build_tcm.py b/tests/evt/test_build_tcm.py
+index 77779ad2f..baaf6b59c 100644
+--- a/tests/evt/test_build_tcm.py
++++ b/tests/evt/test_build_tcm.py
+@@ -378,3 +378,30 @@ def test_build_tcm_multiple_files(lgnd_test_data, tmp_dir):
+ 
+     assert tcm_orig.fields == tcm.fields
+     assert all(ak.all(tcm_orig[f] == tcm[f]) for f in tcm.fields)
++
++
++def test_build_tcm_buffer_reuse_copy_regression(lgnd_test_data):
++    """
++    Regression test for LH5Iterator's buffer reuse: build_tcm must not retain
++    views into per-chunk buffers across iterations.
++    """
++    f_raw = lgnd_test_data.get_path(
++        "lh5/prod-ref-l200/generated/tier/raw/cal/p03/r001/l200-p03-r001-cal-20230318T012144Z-tier_raw.lh5"
++    )
++
++    # small buffer_len forces multiple iterator iterations, which used to expose
++    # corruption if per-chunk buffers weren't copied before concatenation/merge.
++    tcm_small = evt.build_tcm(
++        [(f_raw, ["ch1084803/raw", "ch1084804/raw", "ch1121600/raw"])],
++        coin_cols="timestamp",
++        buffer_len=1,
++    ).view_as("ak")
++
++    tcm_large = evt.build_tcm(
++        [(f_raw, ["ch1084803/raw", "ch1084804/raw", "ch1121600/raw"])],
++        coin_cols="timestamp",
++        buffer_len=1_000_000,
++    ).view_as("ak")
++
++    assert tcm_small.fields == tcm_large.fields
++    assert all(ak.all(tcm_small[f] == tcm_large[f]) for f in tcm_small.fields)

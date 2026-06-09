@@ -1,0 +1,1190 @@
+{
+  "fetchedAt": "2026-06-09T19:53:12.841Z",
+  "queries": [
+    "is:pr is:merged author:devin-ai-integration[bot] merged:>=2025-06-09",
+    "is:pr is:merged \"Generated with Claude Code\" in:body merged:>=2025-06-09",
+    "is:pr is:merged head:cursor/ merged:>=2025-06-09",
+    "is:pr is:merged head:codex/ merged:>=2025-06-09",
+    "is:pr is:merged author:copilot-swe-agent[bot] merged:>=2025-06-09",
+    "is:pr is:merged author:openhands-agent[bot] merged:>=2025-06-09",
+    "is:pr is:merged \"aider.chat\" in:body merged:>=2025-06-09",
+    "is:pr is:merged author:replit-agent[bot] merged:>=2025-06-09"
+  ],
+  "perVendorCap": 10,
+  "lineBand": {
+    "min": 10,
+    "max": 8000
+  },
+  "skipped": [
+    {
+      "vendor": "claude-code",
+      "reason": "outside line band or fingerprinter did not confirm",
+      "count": 4
+    },
+    {
+      "vendor": "copilot-workspace",
+      "reason": "outside line band or fingerprinter did not confirm",
+      "count": 4
+    },
+    {
+      "vendor": "openhands",
+      "reason": "search failed: Validation Failed: {\"message\":\"The listed users cannot be searched either because the users do not exist or you do not have permission to view the users.\",\"resource\":\"Search\",\"field\":\"q\",\"code\":\"invalid\"} - https://docs.github.com/v3/search/",
+      "count": 0
+    },
+    {
+      "vendor": "replit-agent",
+      "reason": "search failed: Validation Failed: {\"message\":\"The listed users cannot be searched either because the users do not exist or you do not have permission to view the users.\",\"resource\":\"Search\",\"field\":\"q\",\"code\":\"invalid\"} - https://docs.github.com/v3/search/",
+      "count": 0
+    }
+  ],
+  "prs": [
+    {
+      "repo": "AdityaParashar24/superset-devin-orchestrator",
+      "prNumber": 22,
+      "headSha": "e8cd9079d5bdd45e792509f30763949944a27dac",
+      "title": "chore: remove unused dev server config from vite.config.ts",
+      "bodyExcerpt": "## Summary\n\nRemoves the `server` block (port 5173, `/api` proxy) from `vite.config.ts`. This was only used for local `npm run dev` which is not a supported path — the app runs exclusively via Docker (nginx handles the proxy). Only `plugins: [react()]` is needed for the production build.\n\nLink to Devin session: https://app.devin.ai/sessions/2dc8b009513841c6bc24195cc734fb86\nRequested by: @AdityaParashar24",
+      "url": "https://github.com/AdityaParashar24/superset-devin-orchestrator/pull/22",
+      "mergedAt": "2026-06-09T19:49:48Z",
+      "additions": 0,
+      "deletions": 10,
+      "files": 1,
+      "diffPath": "diffs/AdityaParashar24-superset-devin-orchestrator/22.diff",
+      "agent": {
+        "vendor": "devin",
+        "confidence": "high",
+        "source": "bot-author"
+      },
+      "searchVendor": "devin"
+    },
+    {
+      "repo": "AdityaParashar24/superset-devin-orchestrator",
+      "prNumber": 21,
+      "headSha": "367c57359aa5079a6130dd17e9e5339f76dc057d",
+      "title": "refactor: remove dead code, unused fields, and orphaned files",
+      "bodyExcerpt": "## Summary\n\nRemoves ~150 lines of dead code across 11 files. Nothing here was called, displayed, or consumed.\n\n**Deleted methods:**\n- `DevinClient.create_session()` / `stop_session()` — backend no longer creates or stops sessions (GitHub Action handles session creation)\n- `GitHubClient.get_issue_with_comments()` — never called\n- `api.getIssue` in frontend — never called from any component\n\n**Deleted fields (stored in DB but never displayed or consumed):**\n- `remediation_prompt` — triage session produces it, nothing reads it\n- `suggested_validation` — same\n\n**Deleted config:**\n- `triage_max_acu` / `remediation_max_acu` in `config.py` + `docker-compose.yml` — ACU limits are set in the GitHub Action YAML, not by the backend\n\n**Deleted files:**\n- `backend/prompts/triage.md` and `backend/prompts/remediation.md` — no Python code references these; the GitHub Action constructs prompts independently\n\n**Deleted constants:**\n- `LABEL_GENERATED` — defined but never used by the backend\n\n**Kept:** `Stage.APPROVED` — never assigned by the backend, but used by the frontend timeline visualization to show the \"Human approval\" milestone.\n\nLink to Devin session: https://app.devin.ai/sessions/2dc8b009513841c6bc24195cc734fb86\nRequested by: @AdityaParashar24",
+      "url": "https://github.com/AdityaParashar24/superset-devin-orchestrator/pull/21",
+      "mergedAt": "2026-06-09T19:42:45Z",
+      "additions": 8,
+      "deletions": 161,
+      "files": 12,
+      "diffPath": "diffs/AdityaParashar24-superset-devin-orchestrator/21.diff",
+      "agent": {
+        "vendor": "devin",
+        "confidence": "high",
+        "source": "bot-author"
+      },
+      "searchVendor": "devin"
+    },
+    {
+      "repo": "vellum-ai/vellum-assistant",
+      "prNumber": 34129,
+      "headSha": "22c002466a17af496d2d1d714a7916a284d705bf",
+      "title": "refactor(skills): model plugin-resident skill ownership with OwnerInfo",
+      "bodyExcerpt": "Replaces the bespoke `SkillSummary.pluginName` field with the centralized `OwnerInfo` descriptor (`{ kind, id }`) already used by the tool registry, so skill ownership is modeled consistently instead of via a one-off string. The change is internal-only and safe: the client-facing wire field (`pluginName` in `daemon/message-types/skills.ts`) is unchanged and now derived from `owner`, so no mixed-version macOS/platform skew is introduced.\n\n---\n\n- Requested by: @Vargas\n- Closes #34121\n\nLink to Devin session: https://app.devin.ai/sessions/ad2d3cf440094885a18bb84d5321e664\nRequested by: @dvargas92495",
+      "url": "https://github.com/vellum-ai/vellum-assistant/pull/34129",
+      "mergedAt": "2026-06-09T19:48:21Z",
+      "additions": 18,
+      "deletions": 14,
+      "files": 3,
+      "diffPath": "diffs/vellum-ai-vellum-assistant/34129.diff",
+      "agent": {
+        "vendor": "devin",
+        "confidence": "high",
+        "source": "bot-author"
+      },
+      "searchVendor": "devin"
+    },
+    {
+      "repo": "Marcolino0531/crm-escolar",
+      "prNumber": 57,
+      "headSha": "37699c8bace960511fdf92858ec65eb8537c2b4b",
+      "title": "feat(rh): separar ranking de RH em Faltas e Atrasos/Saídas",
+      "bodyExcerpt": "## Summary\n\nDivide o ranking único de absenteísmo do RH em **dois cards independentes** (empilhados na coluna lateral), cada um com sua própria regra de contagem e ordenação. Ambos continuam recebendo a lista `funcionarios` já escopada pelo filtro global de unidade (`useFuncionarios` filtra por `selected`), então respeitam estritamente a unidade ativa.\n\nPara distinguir falta integral de ausência parcial, o registro de falta ganhou um novo eixo de classificação. Antes `Falta` só tinha `tipo` (com/sem atestado); agora também tem a **categoria da ocorrência** e a **duração** (para parciais):\n\n```ts\ntype CategoriaFalta = \"integral\" | \"atraso\" | \"saida_antecipada\";\ninterface Falta {\n  id; data;\n  tipo: \"com_atestado\" | \"sem_atestado\"; // justificativa\n  categoria?: CategoriaFalta;            // ausente => \"integral\" (registros antigos)\n  duracaoMinutos?: number;               // Tempo de Ausência (só atraso/saída)\n}\n```\n\nSem migration: `faltas` é JSONB; campos novos são opcionais e registros existentes são lidos como `categoria = \"integral\"`.\n\n**Card 1 — \"Ranking de Faltas\":** conta apenas `categoria === \"integral\"`.\n**Card 2 — \"Ranking de Atrasos e Saídas\":** conta `atraso` + `saida_antecipada`, exibe a contagem e a **soma do Tempo de Ausência** (`Σ duracaoMinutos`, formatado em h/min).\n\nOrdenação idêntica nos dois (regra do negócio): `total DESC`, desempate por `semAtestado DESC` (prioriza no topo quem tem mais ocorrências \"Sem Atestado/Injustificadas\").\n\n```ts\n.sort((a, b) => b.total - a.total || b.semAtestado - a.semAtestado)\n```\n\nNo modal \"Detalhes do Funcionário\", o formulário de \"+ Adicionar Falta\" agora tem o seletor **Ocorrência** (Falta Integral / Atraso / Saída Antecipada) e, quando parcial, um campo **Tempo de Ausência (min)**. A lista do histórico mostra a categoria e a duração ao lado do badge de atestado.\n\n## Test plan\n- `tsc --noEmit` e `npm run build` passando.\n- Registrar no modal uma Falta Integral, um Atraso (com minutos) e uma Saída Antecipada (com m",
+      "url": "https://github.com/Marcolino0531/crm-escolar/pull/57",
+      "mergedAt": "2026-06-09T19:38:26Z",
+      "additions": 198,
+      "deletions": 26,
+      "files": 4,
+      "diffPath": "diffs/Marcolino0531-crm-escolar/57.diff",
+      "agent": {
+        "vendor": "devin",
+        "confidence": "high",
+        "source": "bot-author"
+      },
+      "searchVendor": "devin"
+    },
+    {
+      "repo": "vellum-ai/vellum-assistant",
+      "prNumber": 34128,
+      "headSha": "f67a163a69e6f08afd1897418db7d1a033e360b9",
+      "title": "refactor(plugins): thread post-compact re-injection result on the hook context",
+      "bodyExcerpt": "Reshapes `postCompact` from a value-returning function into the threaded-context shape that `runHook` requires: it now mutates `ctx.history` in place and returns `void` (typed as `PluginHookFn<PostCompactContext>`), and the agent loop reads the re-injected history back off the context instead of a return value. This is the contract change that lets post-compaction re-injection become a registered `post-compact` hook (a later step) rather than a direct call.\n\nIt's safe because behavior is unchanged — the loop still passes the same inputs and consumes the same re-injected messages; only the plumbing (mutate-in-place vs. return) changes, mirroring how the memory `user-prompt-submit` hook already overwrites `latestMessages`. The injection blocks the transform captures were already dropped by the only caller, so nothing is lost by propagating just the messages.\n\n---\n\n- Requested by: @vargas@vellum.ai\n- Session: https://app.devin.ai/sessions/59e1d9bfdd584bcb9571addbcd80a056\n\nRequested by: @dvargas92495",
+      "url": "https://github.com/vellum-ai/vellum-assistant/pull/34128",
+      "mergedAt": "2026-06-09T19:43:04Z",
+      "additions": 43,
+      "deletions": 23,
+      "files": 4,
+      "diffPath": "diffs/vellum-ai-vellum-assistant/34128.diff",
+      "agent": {
+        "vendor": "devin",
+        "confidence": "high",
+        "source": "bot-author"
+      },
+      "searchVendor": "devin"
+    },
+    {
+      "repo": "vellum-ai/vellum-assistant",
+      "prNumber": 34127,
+      "headSha": "a10fa10a5bd829b10b872434c03fde211efff3eb",
+      "title": "ci: remove --no-compile flag from dev-release and its build machinery",
+      "bodyExcerpt": "Removes the experimental `--no-compile` build path now that the compiled-binary path is the only one we ship: drops the `no_compile` workflow_dispatch input and its conditional steps from the Dev Release workflow, and deletes the associated dead machinery in `clients/macos/build.sh` (runtime staging, launcher generation, native-addon signing, and symlink-dereferencing helpers). The default `--compile` path is untouched, so dev releases build exactly as before.\n\n---\n\n- Requested by: @dvargas92495\n- Session: https://app.devin.ai/sessions/f02f158eb44e45c7b1f6b8cf341f29d5",
+      "url": "https://github.com/vellum-ai/vellum-assistant/pull/34127",
+      "mergedAt": "2026-06-09T19:38:40Z",
+      "additions": 15,
+      "deletions": 351,
+      "files": 2,
+      "diffPath": "diffs/vellum-ai-vellum-assistant/34127.diff",
+      "agent": {
+        "vendor": "devin",
+        "confidence": "high",
+        "source": "bot-author"
+      },
+      "searchVendor": "devin"
+    },
+    {
+      "repo": "chembal/MinesweeperPlusPlus",
+      "prNumber": 5,
+      "headSha": "a3ffe90b22d52937addbfdbd70ea5cfa38c4f2e0",
+      "title": "Add Minesweeper++ testing skill",
+      "bodyExcerpt": "Adds a testing skill for end-to-end GUI testing of Minesweeper++, covering build steps, gameplay testing, and AI verification.\n\nDevin Session: https://app.devin.ai/sessions/62d40a83b4b14e578f0ceed0a2a834c7",
+      "url": "https://github.com/chembal/MinesweeperPlusPlus/pull/5",
+      "mergedAt": "2026-06-09T19:38:11Z",
+      "additions": 61,
+      "deletions": 0,
+      "files": 1,
+      "diffPath": "diffs/chembal-MinesweeperPlusPlus/5.diff",
+      "agent": {
+        "vendor": "devin",
+        "confidence": "high",
+        "source": "bot-author"
+      },
+      "searchVendor": "devin"
+    },
+    {
+      "repo": "vellum-ai/vellum-assistant",
+      "prNumber": 34125,
+      "headSha": "f298f49db55d4b588ae69c28f2e7f2b6721c6411",
+      "title": "feat(schema): mark toolCalls/surfaces @deprecated in favor of contentBlocks",
+      "bodyExcerpt": "Marks the conversation `toolCalls` and `surfaces` arrays `@deprecated` on `ConversationMessageSchema`, since each is already represented unconditionally by a `contentBlocks` variant (`tool_use`/`surface`). This continues the deprecation set toward the unified `contentBlocks` projection (following `content` in #34122 and the positional arrays in #34071); the fields keep their existing shape and are still emitted, so it's annotation-only with no wire impact. `attachments` is intentionally left non-deprecated because `contentBlocks` does not yet have attachment parity — orphan/unmatched file-block refs ship only via the flat `attachments` array (see `alignAttachments`), so deprecating it now would mislead clients into dropping those chips.\n\n---\n\n- Requested by: @dvargas92495\n- Session: https://app.devin.ai/sessions/dbd1c2f16a544f9bb42876e5e25f9f1a",
+      "url": "https://github.com/vellum-ai/vellum-assistant/pull/34125",
+      "mergedAt": "2026-06-09T19:35:07Z",
+      "additions": 37,
+      "deletions": 2,
+      "files": 2,
+      "diffPath": "diffs/vellum-ai-vellum-assistant/34125.diff",
+      "agent": {
+        "vendor": "devin",
+        "confidence": "high",
+        "source": "bot-author"
+      },
+      "searchVendor": "devin"
+    },
+    {
+      "repo": "mosesikpante/siweslogbook2026",
+      "prNumber": 1,
+      "headSha": "0c192b3c66020ea549017aeea9abe256f6ad3542",
+      "title": "Fix Supabase env config so app renders on localhost",
+      "bodyExcerpt": "## Summary\nThe dev server crashed with `SUPABASE_URL is not defined`, so the site never rendered on localhost. Root cause was the Supabase config being referenced as a bare global plus missing module exports/imports. This makes the landing route (`home` → `AuthPage`) render again **and look correct**, working in **demo (mock) mode** out of the box when no `.env` is present.\n\nWhat changed:\n- `app/data/mockdata.jsx`: the file used `SUPABASE_URL` as an undeclared global (the actual `ReferenceError`). Now imports it, and `export`s `isMockMode` / `MOCK_STATE` (they were declared but never exported, even though `Authpage` imports them).\n  ```diff\n  +import { SUPABASE_URL } from \"../pages/config\";\n  -const isMockMode = SUPABASE_URL.includes(\"YOUR_PROJECT\");\n  +export const isMockMode = !SUPABASE_URL || SUPABASE_URL.includes(\"YOUR_PROJECT\");\n  -const MOCK_STATE = { ... }\n  +export const MOCK_STATE = { ... }\n  ```\n- `app/pages/config.jsx`: read env via Vite (`import.meta.env.VITE_*`) with placeholder fallbacks so the app degrades to mock mode instead of crashing when env vars are absent.\n- `app/pages/lecturer/Authpage.jsx` and `app/pages/student/logentries.jsx`: fixed import paths/casing that didn't match committed files (`mockData`→`mockdata`, `components/ui/Alert`→`components/alert`). These fail on case-sensitive filesystems / Docker builds even though they resolve on Windows.\n- `app/root.tsx`: import `./styles/index.css`. The 293-line stylesheet with all the real design (`.auth-wrap`, `.btn-primary`, etc.) was never loaded — only `app.css` (Tailwind base) was — so the page rendered unstyled.\n  ```diff\n   import \"./app.css\";\n  +import \"./styles/index.css\";\n  ```\n\nTo use a real Supabase project, add a `.env` (already gitignored) with `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.\n\n## Note (out of scope, not fixed here)\nOther non-routed files have the same class of problems (e.g. `utils/helper.jsx` has no exports though `sidebar.jsx`/`logentries.jsx` import `{ initials }`",
+      "url": "https://github.com/mosesikpante/siweslogbook2026/pull/1",
+      "mergedAt": "2026-06-09T19:50:35Z",
+      "additions": 138,
+      "deletions": 37,
+      "files": 20,
+      "diffPath": "diffs/mosesikpante-siweslogbook2026/1.diff",
+      "agent": {
+        "vendor": "devin",
+        "confidence": "high",
+        "source": "bot-author"
+      },
+      "searchVendor": "devin"
+    },
+    {
+      "repo": "core314system-lgtm/core314-platform",
+      "prNumber": 661,
+      "headSha": "0028d8ee81ebfd7113f04bf6b7d5baf52ebe6abe",
+      "title": "feat: Phase 1-3 marketing page updates — dynamic stats, new features, presentation, glossary",
+      "bodyExcerpt": "## Summary\n\nAll marketing pages had hardcoded subcontractor counts that were stale (18K/78K/200+ when real count is 175K+/45) and 9 features shipped in PR #649-660 had zero marketing page presence. This PR fixes all three phases in one commit.\n\n### Phase 1: Dynamic stats (credibility fix)\n\nNew `useNetworkStats()` hook fetches live counts from `master_subcontractors` with a 5-minute `sessionStorage` cache:\n\n```tsx\n// src/landing/hooks/useNetworkStats.ts\nconst [totalRes, emailRes, smallBizRes, verifiedRes] = await Promise.all([\n  supabase.from('master_subcontractors').select('*', { count: 'exact', head: true }),\n  // ... 3 more parallel queries\n])\n```\n\n- **LandingPage**: Both stat blocks (hero + network section) now render `stats.total.toLocaleString()` instead of hardcoded `18,000+` / `78,000+`\n- **ForSubcontractorsPage**: `LiveStats()` now uses the shared hook; fallback `|| 200` → `|| 45` for trade categories\n- **ExploreNetworkPage**: Loading skeleton (`animate-pulse` placeholder) while stats load — no more \"0+\" flash\n\n### Phase 2: New feature marketing (PR #649-660)\n\n- **ProductPage**: 4 new module entries (Radius Matching, AI SOW Mapping, RFQ Composer, Org Sub DB) → 14→18 modules\n- **HowItWorksPage**: 6→8 steps — added \"Match Subs by Location & Trade\" and \"Compose & Send RFQs\" steps\n- **SolutionsPage**: Each industry's feature list updated with radius matching, RFQ composer, AI quote compliance\n- **LandingPage**: Network section features updated (radius search, SOW mapping, RFQ composer instead of generic descriptions)\n\n### Phase 3: Polish\n\n- **Presentation**: 6 new slides (Radius Matching, SOW Mapping, RFQ Composer, Org Sub DB, Contactability, Complete Flow) + all `18,000+` → `175,000+`, `200+` → `45+`\n- **SolutionsPage**: Industry Terms Glossary section (FAR, DFARS, SOW, NAICS, RFP, RFQ, SAM.gov, CUI, FedRAMP)\n- **App.tsx**: `/create-account` → redirect to `/login?tab=signup`\n- **StatusPage**: 10-second `AbortController` timeout on health endpoint fetch\n\nLink to",
+      "url": "https://github.com/core314system-lgtm/core314-platform/pull/661",
+      "mergedAt": "2026-06-09T19:23:30Z",
+      "additions": 437,
+      "deletions": 98,
+      "files": 11,
+      "diffPath": "diffs/core314system-lgtm-core314-platform/661.diff",
+      "agent": {
+        "vendor": "devin",
+        "confidence": "high",
+        "source": "bot-author"
+      },
+      "searchVendor": "devin"
+    },
+    {
+      "repo": "ubarino28/mongolagent-backend",
+      "prNumber": 53,
+      "headSha": "c17aa133b312e56499fedf6e680bd0691abf879a",
+      "title": "release: jordan1 search fix + color-only variants",
+      "bodyExcerpt": "?? Generated with Claude Code",
+      "url": "https://github.com/ubarino28/mongolagent-backend/pull/53",
+      "mergedAt": "2026-06-09T15:16:44Z",
+      "additions": 8,
+      "deletions": 3,
+      "files": 1,
+      "diffPath": "diffs/ubarino28-mongolagent-backend/53.diff",
+      "agent": {
+        "vendor": "claude-code",
+        "confidence": "high",
+        "source": "pr-body-marker"
+      },
+      "searchVendor": "claude-code"
+    },
+    {
+      "repo": "f5xc-salesdemos/docs-icons",
+      "prNumber": 501,
+      "headSha": "8bd9927bd39c5dcc1a167ec7f1a128426844c262",
+      "title": "fix(i18n): add missing translation files",
+      "bodyExcerpt": "Closes #500\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+      "url": "https://github.com/f5xc-salesdemos/docs-icons/pull/501",
+      "mergedAt": "2026-06-09T14:42:12Z",
+      "additions": 4075,
+      "deletions": 0,
+      "files": 1,
+      "diffPath": "diffs/f5xc-salesdemos-docs-icons/501.diff",
+      "agent": {
+        "vendor": "claude-code",
+        "confidence": "high",
+        "source": "pr-body-marker",
+        "version": "4.6"
+      },
+      "searchVendor": "claude-code"
+    },
+    {
+      "repo": "kokiebisu/life",
+      "prNumber": 746,
+      "headSha": "aca0e6a7e52fc08040535c4ffaf5f6606efdce11",
+      "title": "chore: update find kanpe パイプライン[0]品質ゲート追加",
+      "bodyExcerpt": "🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+      "url": "https://github.com/kokiebisu/life/pull/746",
+      "mergedAt": "2026-06-09T07:07:27Z",
+      "additions": 17,
+      "deletions": 10,
+      "files": 1,
+      "diffPath": "diffs/kokiebisu-life/746.diff",
+      "agent": {
+        "vendor": "claude-code",
+        "confidence": "high",
+        "source": "pr-body-marker",
+        "version": "4.6"
+      },
+      "searchVendor": "claude-code"
+    },
+    {
+      "repo": "kokiebisu/life",
+      "prNumber": 745,
+      "headSha": "8c0829abdedc5ba72323ee6f1e0f02dfb5571b89",
+      "title": "chore: update find kanpe ② AI統合開発パイプラインを主軸として整理",
+      "bodyExcerpt": "🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+      "url": "https://github.com/kokiebisu/life/pull/745",
+      "mergedAt": "2026-06-09T07:02:48Z",
+      "additions": 28,
+      "deletions": 1,
+      "files": 1,
+      "diffPath": "diffs/kokiebisu-life/745.diff",
+      "agent": {
+        "vendor": "claude-code",
+        "confidence": "high",
+        "source": "pr-body-marker",
+        "version": "4.6"
+      },
+      "searchVendor": "claude-code"
+    },
+    {
+      "repo": "kokiebisu/life",
+      "prNumber": 744,
+      "headSha": "db2dbac0816c98096b801160468cbc03317e6d28",
+      "title": "chore: update find kanpe ④ デプロイ手順書・CPU監視skill追加",
+      "bodyExcerpt": "🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+      "url": "https://github.com/kokiebisu/life/pull/744",
+      "mergedAt": "2026-06-09T06:54:25Z",
+      "additions": 15,
+      "deletions": 5,
+      "files": 1,
+      "diffPath": "diffs/kokiebisu-life/744.diff",
+      "agent": {
+        "vendor": "claude-code",
+        "confidence": "high",
+        "source": "pr-body-marker",
+        "version": "4.6"
+      },
+      "searchVendor": "claude-code"
+    },
+    {
+      "repo": "kokiebisu/life",
+      "prNumber": 743,
+      "headSha": "ca06bbbe251c3b2a0d61091293776d68a052f562",
+      "title": "chore: update find kanpe ④ テックリード後進育成エピソードを肉付け",
+      "bodyExcerpt": "🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+      "url": "https://github.com/kokiebisu/life/pull/743",
+      "mergedAt": "2026-06-09T06:50:44Z",
+      "additions": 21,
+      "deletions": 5,
+      "files": 1,
+      "diffPath": "diffs/kokiebisu-life/743.diff",
+      "agent": {
+        "vendor": "claude-code",
+        "confidence": "high",
+        "source": "pr-body-marker",
+        "version": "4.6"
+      },
+      "searchVendor": "claude-code"
+    },
+    {
+      "repo": "f5xc-salesdemos/vscode-f5xc-tools",
+      "prNumber": 345,
+      "headSha": "b4b881c69fb04964cd5d6ca5f3473966976b4ae7",
+      "title": "feat(i18n): retranslate with hero fix",
+      "bodyExcerpt": "Closes #344\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+      "url": "https://github.com/f5xc-salesdemos/vscode-f5xc-tools/pull/345",
+      "mergedAt": "2026-06-09T12:58:12Z",
+      "additions": 410,
+      "deletions": 407,
+      "files": 114,
+      "diffPath": "diffs/f5xc-salesdemos-vscode-f5xc-tools/345.diff",
+      "agent": {
+        "vendor": "claude-code",
+        "confidence": "high",
+        "source": "pr-body-marker",
+        "version": "4.6"
+      },
+      "searchVendor": "claude-code"
+    },
+    {
+      "repo": "f5xc-salesdemos/traffic-generator",
+      "prNumber": 192,
+      "headSha": "f6321f365a44229eda4d8a9a07098c32c6017f41",
+      "title": "feat(i18n): retranslate with hero fix",
+      "bodyExcerpt": "Closes #191\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+      "url": "https://github.com/f5xc-salesdemos/traffic-generator/pull/192",
+      "mergedAt": "2026-06-09T13:30:24Z",
+      "additions": 3312,
+      "deletions": 2810,
+      "files": 108,
+      "diffPath": "diffs/f5xc-salesdemos-traffic-generator/192.diff",
+      "agent": {
+        "vendor": "claude-code",
+        "confidence": "high",
+        "source": "pr-body-marker",
+        "version": "4.6"
+      },
+      "searchVendor": "claude-code"
+    },
+    {
+      "repo": "ubarino28/mongolagent-backend",
+      "prNumber": 51,
+      "headSha": "f4f369bbd97f7d17367a6eb5329880bf5a5c068e",
+      "title": "release: message queue fix",
+      "bodyExcerpt": "## Summary\n- psid ??? ???? message queue ?????????\n- ?????? ???????? ????? ????????? ??? ?????????? ????????????\n\n?? Generated with Claude Code",
+      "url": "https://github.com/ubarino28/mongolagent-backend/pull/51",
+      "mergedAt": "2026-06-09T15:07:33Z",
+      "additions": 14,
+      "deletions": 1,
+      "files": 1,
+      "diffPath": "diffs/ubarino28-mongolagent-backend/51.diff",
+      "agent": {
+        "vendor": "claude-code",
+        "confidence": "high",
+        "source": "pr-body-marker"
+      },
+      "searchVendor": "claude-code"
+    },
+    {
+      "repo": "Stoff73/fynla",
+      "prNumber": 519,
+      "headSha": "7373d1e3ad0459d0e31a7e39e363d5793cb8e583",
+      "title": "ci(bug-loop): sync max-turns 25 to main",
+      "bodyExcerpt": "Mirrors #518. Workflow-only, no app/prod impact.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+      "url": "https://github.com/Stoff73/fynla/pull/519",
+      "mergedAt": "2026-06-09T19:39:43Z",
+      "additions": 6,
+      "deletions": 4,
+      "files": 1,
+      "diffPath": "diffs/Stoff73-fynla/519.diff",
+      "agent": {
+        "vendor": "claude-code",
+        "confidence": "high",
+        "source": "pr-body-marker",
+        "version": "4.8"
+      },
+      "searchVendor": "claude-code"
+    },
+    {
+      "repo": "muexostudios-cell/Muxtext",
+      "prNumber": 271,
+      "headSha": "89ea0ddba9e7fa30f76ea6dec2aa04526fc0b961",
+      "title": "feat(dungeon): 語意配色與格子內像素裁切 (v2.24.53)",
+      "bodyExcerpt": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## 變更\n\n### 語意配色\n- **怪物格**：紅色\n- **空格 / 已走過**：白色\n- **寶箱格**：金色\n- **聖壇格**：紫色\n\n### 像素僅在格子內顯示\n- 移除 `#map` 格間像素網格背景（格間改為純色）\n- `.cell` / `.cell-inner` 設為 `overflow: hidden` 裁切像素圖\n- 移除格外光暈、drop-shadow；地圖怪物圖示不再帶粒子外框\n- 像素圖使用 `image-rendering: pixelated` 僅在格子內渲染\n\n### 版本\n**2.24.53**\n\n### 測試\n- `pixel-dungeon.spec.js` 驗證語意 class、格間無像素網格、格子 overflow 裁切\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-115079d3-cb64-45fe-b6c9-415a883d1458\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-115079d3-cb64-45fe-b6c9-415a883d1458\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+      "url": "https://github.com/muexostudios-cell/Muxtext/pull/271",
+      "mergedAt": "2026-06-09T19:49:56Z",
+      "additions": 183,
+      "deletions": 9,
+      "files": 5,
+      "diffPath": "diffs/muexostudios-cell-Muxtext/271.diff",
+      "agent": {
+        "vendor": "cursor",
+        "confidence": "high",
+        "source": "pr-body-marker"
+      },
+      "searchVendor": "cursor"
+    },
+    {
+      "repo": "2x2devcode/wallettest",
+      "prNumber": 11,
+      "headSha": "9a01f052562cf2a5cbe6652856048237af7fcd82",
+      "title": "Fix balance, fees, send UX, and settings actions (v1.6.3)",
+      "bodyExcerpt": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## Summary\n\nAddresses user feedback for balance accuracy, fixed send fees, post-send navigation, and new settings actions.\n\n## Changes (v1.6.3)\n\n### Balance fix\n- Dashboard now shows **explorer-confirmed balance** (sum of all receive addresses via API) instead of potentially stale local UTXO sum\n- Auto-rebuilds UTXOs from explorer when local balance mismatches network\n- Balance text color changed to **white**\n\n### Fixed send fees\n| Tier | Fee |\n|------|-----|\n| Standard | 0.0001 2X2 |\n| Fast | 0.0002 2X2 |\n| Priority | 0.004 2X2 |\n\n### Send UX\n- After successful send: clears address/amount fields and navigates back to **Dashboard** automatically\n\n### Settings — Reindex blockchain\n- Deletes local blocks, transactions, and UTXO balance\n- Re-downloads chain data and re-syncs from explorer\n- Wallet keys are preserved\n\n### Settings — Delete wallet\n- Confirmation dialog warns about **permanent data loss**\n- Clears all local wallet data and returns to wallet creation screen\n\n## Testing\n- `./gradlew assembleDebug` — BUILD SUCCESSFUL\n- APK: `app/build/outputs/apk/debug/app-debug-1.6.3.apk`\n\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-adfc5292-4d5c-42db-bce6-229cab18805a\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-adfc5292-4d5c-42db-bce6-229cab18805a\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.c",
+      "url": "https://github.com/2x2devcode/wallettest/pull/11",
+      "mergedAt": "2026-06-09T19:50:05Z",
+      "additions": 395,
+      "deletions": 124,
+      "files": 13,
+      "diffPath": "diffs/2x2devcode-wallettest/11.diff",
+      "agent": {
+        "vendor": "cursor",
+        "confidence": "high",
+        "source": "pr-body-marker"
+      },
+      "searchVendor": "cursor"
+    },
+    {
+      "repo": "CoryLaidlaw/msp-toolkit",
+      "prNumber": 26,
+      "headSha": "3f233b8eec58640b9cb42222742dd4b459ae6f0c",
+      "title": "Fix cleanmgr hang and add multi-profile cache cleanup for LocalSystem runs",
+      "bodyExcerpt": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## Problem\n\nTwo issues when running via RMM as LocalSystem:\n\n1. `cleanmgr /sagerun` hung permanently — `$isAdmin` is `$true` for LocalSystem, so the guard didn't exclude it. `cleanmgr.exe` requires an interactive desktop session; under LocalSystem its cleanup handlers block indefinitely.\n2. Profile cache cleanup was entirely skipped with a \"Skipping\" message, leaving temp files and browser caches for all local user accounts untouched.\n\n## Changes\n\n**Fix cleanmgr hang (`Invoke-Main`, `Invoke-CleanMgrSageRun`)**\n- Guard changed from `if ($isAdmin)` to `if ($isAdmin -and -not $isSystem)` so cleanmgr is skipped entirely under LocalSystem.\n- `Start-Process -Wait` replaced with `$proc.WaitForExit(300000)` + `$proc.Kill()` fallback — 5-minute ceiling prevents hang during interactive admin runs.\n\n**Multi-profile cache cleanup (`Get-CleanableUserProfile`, `Clear-UserProfileCache`)**\n- `Get-CleanableUserProfile` enumerates profiles via `Get-CimInstance Win32_UserProfile`, filtering out: service/system accounts (`Special = $true`), currently logged-on users (`Loaded = $true`), and roaming/network profiles (UNC `LocalPath`).\n- `Clear-UserProfileCache` cleans per profile: `AppData\\Local\\Temp`, thumbnail cache, Edge/Chrome (Default + all named `Profile *` subdirectories), and Firefox `cache2` directories.\n- The former \"Skipping profile caches\" `else`-branch is replaced with the enumeration loop.\n\n## Testing\n\n- ✅ Syntax check: `ParseFile` reports no errors\n- ✅ PSScriptAnalyzer: no new warnings introduced (only pre-existing warnings remain)\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-15a14415-f45a-4324-88c2-fadbd2ffe48a\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com",
+      "url": "https://github.com/CoryLaidlaw/msp-toolkit/pull/26",
+      "mergedAt": "2026-06-09T19:48:59Z",
+      "additions": 75,
+      "deletions": 4,
+      "files": 1,
+      "diffPath": "diffs/CoryLaidlaw-msp-toolkit/26.diff",
+      "agent": {
+        "vendor": "cursor",
+        "confidence": "high",
+        "source": "pr-body-marker"
+      },
+      "searchVendor": "cursor"
+    },
+    {
+      "repo": "Coinlooter/Mojiwar",
+      "prNumber": 3,
+      "headSha": "9a52f463026ce0cdb515a523456ad2dc88677864",
+      "title": "fix(ux): Lade-Feedback, Scroll-Fix und Performance",
+      "bodyExcerpt": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## Zusammenfassung\n\nBehebt das Gefühl von „reagiert nicht“ bei Klicks und das fehlende Mausrad-Scrolling auf der Startseite.\n\n## Änderungen\n\n### Scroll-Fix\n- Entfernt verschachtelten Scroll-Container in `.site-main` — die Seite scrollt jetzt natürlich über das Dokument\n- Mausrad funktioniert überall (auch über Header/Footer-Bereich)\n- `overflow: hidden` am Chrome-Header entfernt\n\n### Lade-Feedback\n- **`SubmitButton`** mit Spinner und Text (z. B. „Kampf startet…“) für alle Formulare\n- **`NavigationProgress`** — dünne Fortschrittsleiste oben bei Link-Klicks und Formular-Absendungen\n- **`StartPlayingButton`** und **`SignOutButton`** mit Spinner und `aria-busy`\n- Sofortiges `:active`-Feedback bei Button-Klicks\n\n### Performance\n- Gegner-Seite: parallele Abfrage von Spieler-Loadout und Gegner-IDs\n- Landing-Demo-Kampf in `landing-demo.ts` ausgelagert (einmal berechnet)\n\n## Testplan\n\n- [x] `npm run typecheck`\n- [x] `npm run lint`\n- [ ] Startseite mit Mausrad scrollen\n- [ ] „Herausfordern“ — Spinner + Fortschrittsleiste sichtbar\n- [ ] „Jetzt spielen“ — Ladezustand bis Dashboard\n- [ ] Deck-Slots ausrüsten/entfernen — Feedback sichtbar\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-cd81b0ab-2774-44b7-8bb3-d8d2ac8c5ea3\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-cd81b0ab-2774-44b7-8bb3-d8d2ac8c5ea3\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" w",
+      "url": "https://github.com/Coinlooter/Mojiwar/pull/3",
+      "mergedAt": "2026-06-09T19:48:06Z",
+      "additions": 380,
+      "deletions": 85,
+      "files": 17,
+      "diffPath": "diffs/Coinlooter-Mojiwar/3.diff",
+      "agent": {
+        "vendor": "cursor",
+        "confidence": "high",
+        "source": "pr-body-marker"
+      },
+      "searchVendor": "cursor"
+    },
+    {
+      "repo": "Daacad44/M",
+      "prNumber": 2,
+      "headSha": "3c676a1e249dd779daf017bd46a883d511de20d4",
+      "title": "Enterprise FLYHUB Flight Booking System with Pixel-Perfect UI",
+      "bodyExcerpt": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## Summary\n\nComplete enterprise flight booking platform with **pixel-perfect FLYHUB homepage UI** matching the provided reference design.\n\n### UI (Exact Replica)\n- Locked color palette: `#0A1F44`, `#102B63`, `#F4A52C`, `#F8F9FC`\n- Top bar, transparent nav, hero, search component, features, destinations, statistics\n- Poppins typography, responsive layout preserving visual identity\n\n### Backend\n- PHP/MySQL MVC: auth, flight search, booking, payments, e-tickets, admin panel\n- PHPMailer, FPDF, full documentation for shared hosting deployment\n\n## Credentials\n- Admin: admin@skywings.com / Admin@123\n- User: user@skywings.com / User@123\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-f01cd62a-81d0-4dc5-a375-5bcd9c4e80e7\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-f01cd62a-81d0-4dc5-a375-5bcd9c4e80e7\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+      "url": "https://github.com/Daacad44/M/pull/2",
+      "mergedAt": "2026-06-09T19:46:39Z",
+      "additions": 1294,
+      "deletions": 143,
+      "files": 9,
+      "diffPath": "diffs/Daacad44-M/2.diff",
+      "agent": {
+        "vendor": "cursor",
+        "confidence": "high",
+        "source": "pr-body-marker"
+      },
+      "searchVendor": "cursor"
+    },
+    {
+      "repo": "sarahsct/mongoproj",
+      "prNumber": 1,
+      "headSha": "49df5ada583541400f823135835cfa99d73362fa",
+      "title": "Build EcoExplorer Flask UI",
+      "bodyExcerpt": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## Summary\n- Add a Flask-ready EcoExplorer preview app with sample biodiversity data\n- Create responsive home/search, search results, and species detail templates\n- Add a polished nature-inspired CSS design system and lightweight JavaScript interactions\n- Document local preview and backend integration notes\n\n## Validation\n- `python3 -m py_compile app.py`\n- Rendered `/`, `/search`, filtered `/search`, and `/species/mountain-goat` through Flask test client with 200 responses\n- `git diff --check`\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-392e8ae7-c774-4b91-b744-a1f64335516e\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-392e8ae7-c774-4b91-b744-a1f64335516e\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+      "url": "https://github.com/sarahsct/mongoproj/pull/1",
+      "mergedAt": "2026-06-09T19:47:06Z",
+      "additions": 2329,
+      "deletions": 1,
+      "files": 9,
+      "diffPath": "diffs/sarahsct-mongoproj/1.diff",
+      "agent": {
+        "vendor": "cursor",
+        "confidence": "high",
+        "source": "pr-body-marker"
+      },
+      "searchVendor": "cursor"
+    },
+    {
+      "repo": "gsigler/pg-mcp",
+      "prNumber": 15,
+      "headSha": "f859c0d06efad8d57fa1a7212a54742046727caa",
+      "title": "Fix release artifact publishing",
+      "bodyExcerpt": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n### Summary\n- Split release builds from publishing so macOS and Windows jobs no longer race to create the same GitHub release.\n- Upload platform build outputs as workflow artifacts and publish them from a single final job.\n- Preserve the existing release asset set: macOS `.dmg` + `.app.tar.gz`, Windows `.msi` + `.exe`.\n\n### Testing\n- `go run github.com/rhysd/actionlint/cmd/actionlint@latest .github/workflows/release.yml`\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-23fd943c-3f8c-484e-861f-7b6d35bc5409\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-23fd943c-3f8c-484e-861f-7b6d35bc5409\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+      "url": "https://github.com/gsigler/pg-mcp/pull/15",
+      "mergedAt": "2026-06-09T19:44:52Z",
+      "additions": 62,
+      "deletions": 10,
+      "files": 1,
+      "diffPath": "diffs/gsigler-pg-mcp/15.diff",
+      "agent": {
+        "vendor": "cursor",
+        "confidence": "high",
+        "source": "pr-body-marker"
+      },
+      "searchVendor": "cursor"
+    },
+    {
+      "repo": "calwhel/calsbot",
+      "prNumber": 73,
+      "headSha": "e7872166ab5399f71259ccdc48a906a216e5ff79",
+      "title": "Fix bulk strategy delete network error",
+      "bodyExcerpt": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## Problem\n\nBulk delete showed a generic \"Network error\" because:\n1. `?uid=` was missing from the fetch URL (session auth middleware expects query/header UID like single delete)\n2. Deleting many strategies via ORM cascade timed out on Railway/gunicorn\n\n## Fix\n\n- Add `?uid=` + `credentials: same-origin` on bulk-delete requests\n- Fast bulk SQL: DELETE executions/performance/competition rows in one sweep\n- Run DB work in `asyncio.to_thread`; invalidate strategies cache\n- UI deletes in chunks of 20 with progress label and real error messages\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-e61e9b87-6aa8-4722-82e0-3f6c63047cb5\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-e61e9b87-6aa8-4722-82e0-3f6c63047cb5\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"></picture></a>&nbsp;</div>\n\n",
+      "url": "https://github.com/calwhel/calsbot/pull/73",
+      "mergedAt": "2026-06-09T19:39:48Z",
+      "additions": 129,
+      "deletions": 49,
+      "files": 2,
+      "diffPath": "diffs/calwhel-calsbot/73.diff",
+      "agent": {
+        "vendor": "cursor",
+        "confidence": "high",
+        "source": "pr-body-marker"
+      },
+      "searchVendor": "cursor"
+    },
+    {
+      "repo": "Sudesha-alt/agentos",
+      "prNumber": 37,
+      "headSha": "a0b29bd301bdf4602aa8f6b159ab66e6f1578cd7",
+      "title": "Always use max_completion_tokens via shared chat completion helper.",
+      "bodyExcerpt": "Centralize OpenAI requests so PM agent and agentic loops never send deprecated max_tokens after the main merge.",
+      "url": "https://github.com/Sudesha-alt/agentos/pull/37",
+      "mergedAt": "2026-06-09T19:38:17Z",
+      "additions": 35,
+      "deletions": 33,
+      "files": 5,
+      "diffPath": "diffs/Sudesha-alt-agentos/37.diff",
+      "agent": {
+        "vendor": "cursor",
+        "confidence": "medium",
+        "source": "branch-name"
+      },
+      "searchVendor": "cursor"
+    },
+    {
+      "repo": "CoryLaidlaw/msp-toolkit",
+      "prNumber": 25,
+      "headSha": "458b710f2fdef723ace84fc1839f21c89f8bd05f",
+      "title": "Fix cleanmgr hang under LocalSystem in DiskCleanup.ps1",
+      "bodyExcerpt": "<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## Problem\n\nWhen run via RMM as LocalSystem, the script hung indefinitely at the `cleanmgr /sagerun` step. Two root causes:\n\n1. `$isAdmin` is `$true` for LocalSystem, so the cleanmgr block was not guarded against the LocalSystem context. `cleanmgr.exe` requires an interactive desktop session; under LocalSystem several of its cleanup handlers block on COM/UI calls that never complete.\n2. `Start-Process -Wait` has no timeout, so a stalled `cleanmgr.exe` process stalled the entire script permanently.\n\n## Changes\n\n- **`Invoke-Main`:** Added `-and -not $isSystem` to the cleanmgr guard so the block is skipped entirely when running as LocalSystem.\n- **`Invoke-CleanMgrSageRun`:** Replaced `-Wait` with `$proc.WaitForExit(300000)` (5-minute ceiling). If cleanmgr does not exit within that window the process is force-killed and a warning is emitted. This protects interactive admin runs where cleanmgr might still misbehave.\n\n## Testing\n\n- ✅ Syntax check: `ParseFile` reports no errors\n- ✅ PSScriptAnalyzer: no new warnings introduced (pre-existing warnings unchanged)\n<!-- CURSOR_AGENT_PR_BODY_END -->\n\n<div><a href=\"https://cursor.com/agents/bc-15a14415-f45a-4324-88c2-fadbd2ffe48a\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-web-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-web-light.png\"><img alt=\"Open in Web\" width=\"114\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-web-dark.png\"></picture></a>&nbsp;<a href=\"https://cursor.com/background-agent?bcId=bc-15a14415-f45a-4324-88c2-fadbd2ffe48a\"><picture><source media=\"(prefers-color-scheme: dark)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-dark.png\"><source media=\"(prefers-color-scheme: light)\" srcset=\"https://cursor.com/assets/images/open-in-cursor-light.png\"><img alt=\"Open in Cursor\" width=\"131\" height=\"28\" src=\"https://cursor.com/assets/images/open-in-curso",
+      "url": "https://github.com/CoryLaidlaw/msp-toolkit/pull/25",
+      "mergedAt": "2026-06-09T19:38:18Z",
+      "additions": 7,
+      "deletions": 3,
+      "files": 1,
+      "diffPath": "diffs/CoryLaidlaw-msp-toolkit/25.diff",
+      "agent": {
+        "vendor": "cursor",
+        "confidence": "high",
+        "source": "pr-body-marker"
+      },
+      "searchVendor": "cursor"
+    },
+    {
+      "repo": "DBMaps/liberty-county-map",
+      "prNumber": 1445,
+      "headSha": "8e368793c964479ce3f91391f80eb643f0f0cac8",
+      "title": "Refactor About Gridly into mobile-friendly nested accordions",
+      "bodyExcerpt": "### Motivation\n- Improve the mobile reading experience by replacing a long, stacked About Gridly content block with scan-friendly expandable sections that match the existing Settings accordion UX. \n- Preserve all existing About Gridly copy and visual premium treatment while reducing scrolling and keeping tap targets readable on portrait mobile. \n\n### Description\n- Replace the stacked `article.settings-about-gridly-block` content with nested `<details class=\"settings-about-gridly-topic\">` sections in the static markup (`index.html`) and the runtime generator (`buildGridlyAboutGuidanceHtml()` in `js/app.js`).\n- Rename the last row from \"How Gridly Works\" to \"How Trust Works\" and add the requested Mission paragraph to the Mission section while keeping the original copy intact. \n- Add new accordion styling and portrait adjustments in `css/styles.css` under V272.4 to reuse the Settings expand/collapse visual language and provide open-state affordances for nested topics. \n- Presentation-only change that leaves Settings actions, build/version display, feedback controls, and all app logic untouched. \n\n### Testing\n- Ran `node --check js/app.js` to validate the modified JS and it passed. \n- Executed a `python3` content-presence check that verified the five topic labels and the additional Mission paragraph exist in both `index.html` and `js/app.js`, and it passed. \n- Ran `git diff --check` and `git status --short` to confirm no diff errors and a clean index state, and both checks passed. \n- Headless browser tooling (Playwright / local browser) was not available in this environment, so visual QA should be completed on a portrait mobile device following the provided phone testing steps.\n\n------\n[Codex Task](https://chatgpt.com/codex/cloud/tasks/task_e_6a286d86555c83229e6c1c766d1f68f7)",
+      "url": "https://github.com/DBMaps/liberty-county-map/pull/1445",
+      "mergedAt": "2026-06-09T19:51:46Z",
+      "additions": 134,
+      "deletions": 100,
+      "files": 3,
+      "diffPath": "diffs/DBMaps-liberty-county-map/1445.diff",
+      "agent": {
+        "vendor": "codex-cli",
+        "confidence": "medium",
+        "source": "branch-name"
+      },
+      "searchVendor": "codex-cli"
+    },
+    {
+      "repo": "PerrinMyerson/Search-Engine",
+      "prNumber": 692,
+      "headSha": "8e4c272ad92a07cc932c3025e710428320c0ffca",
+      "title": "Report snapshot replay budget dry runs",
+      "bodyExcerpt": "Summary: add report-only snapshot/replay budget dry-run line with candidate count, bytes, largest artifact, rows, duplicate pressure, and next action. Validation: cargo test --bin brutal-search storage_snapshot_replay_budget_dry_run_reports_snapshot_and_replay_pressure --target-dir /private/tmp/search-engine-storage-web-replay-snapshot-budget-target-9aab04e",
+      "url": "https://github.com/PerrinMyerson/Search-Engine/pull/692",
+      "mergedAt": "2026-06-09T19:51:40Z",
+      "additions": 75,
+      "deletions": 0,
+      "files": 1,
+      "diffPath": "diffs/PerrinMyerson-Search-Engine/692.diff",
+      "agent": {
+        "vendor": "codex-cli",
+        "confidence": "medium",
+        "source": "branch-name"
+      },
+      "searchVendor": "codex-cli"
+    },
+    {
+      "repo": "kartikhth-byte/NjordHR",
+      "prNumber": 27,
+      "headSha": "87ee8fd98cf5c2c631015277a037c1c6534fd477",
+      "title": "Use numeric Supabase migration versions",
+      "bodyExcerpt": "## Summary\n- rename cloud auth migration to 0040 and telemetry migration to 0041 so both are numeric and sort before 005\n- add a guard test requiring numeric Supabase migration version prefixes\n\n## Why\nSupabase CLI rejects non-numeric migration versions, and 0041 sorted before 004_cloud_auth_users.sql by filename. Numeric 0040/0041 keeps migration history valid and ordered.\n\n## Tests\n- /Users/kartikraghavan/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 -m unittest tests.test_supabase_migrations tests.test_candidate_facts_supabase_store tests.test_candidate_facts_repository",
+      "url": "https://github.com/kartikhth-byte/NjordHR/pull/27",
+      "mergedAt": "2026-06-09T19:51:41Z",
+      "additions": 10,
+      "deletions": 0,
+      "files": 3,
+      "diffPath": "diffs/kartikhth-byte-NjordHR/27.diff",
+      "agent": {
+        "vendor": "codex-cli",
+        "confidence": "medium",
+        "source": "branch-name"
+      },
+      "searchVendor": "codex-cli"
+    },
+    {
+      "repo": "Hangmeter/temp_sensors",
+      "prNumber": 1,
+      "headSha": "04b2f48e2d4bce48037b913dba70c1091b848c6f",
+      "title": "Move GPIO, Wi-Fi, and MQTT settings to Kconfig",
+      "bodyExcerpt": "### Motivation\n- Make hardware pin assignments and network/MQTT parameters configurable via `menuconfig` instead of hardcoded `#define` constants to simplify reconfiguration per board/deployment. \n- Avoid embedding Wi‑Fi credentials and broker settings in source files by exposing them as build-time `CONFIG_*` options. \n- Centralize GPIO defaults so sensor and LED pin mappings can be adjusted without editing component sources. \n\n### Description\n- Added `main/Kconfig.projbuild` which defines `CONFIG_TEMP_SENSORS_*` options for DHT/BH1750/LED GPIO pins, Wi‑Fi SSID/password and MQTT broker/topic with existing values set as defaults. \n- Replaced hardcoded Wi‑Fi and MQTT macros in `main/main.c` with `CONFIG_TEMP_SENSORS_WIFI_SSID`, `CONFIG_TEMP_SENSORS_WIFI_PASSWORD`, `CONFIG_TEMP_SENSORS_MQTT_BROKER_URL` and `CONFIG_TEMP_SENSORS_MQTT_TOPIC`, and added `#include \"sdkconfig.h\"` where needed. \n- Replaced fixed GPIO `#define`s in `components/dht_component/dht_component.c`, `components/bh1750_component/bh1750_component.c` and `components/led_component/led_component.c` with `((gpio_num_t)CONFIG_TEMP_SENSORS_...)` values and added `#include \"sdkconfig.h\"` in those files. \n- Updated `README.md` to document the new `menuconfig` options and default values. \n\n### Testing\n- Ran `git diff --cached --check` and `git show --check HEAD --` to validate no whitespace/check issues, both completed without errors. \n- Searched source files to confirm replacements (no remaining hardcoded Wi‑Fi/MQTT/pin `#define` usages in `main` and modified components). \n- Attempted `idf.py --version` to check IDF availability but `idf.py` is not present in this environment so a full build could not be executed here.\n\n------\n[Codex Task](https://chatgpt.com/codex/cloud/tasks/task_e_6a286d9f57948330999b71d21ab4a6d0)",
+      "url": "https://github.com/Hangmeter/temp_sensors/pull/1",
+      "mergedAt": "2026-06-09T19:52:21Z",
+      "additions": 99,
+      "deletions": 18,
+      "files": 6,
+      "diffPath": "diffs/Hangmeter-temp_sensors/1.diff",
+      "agent": {
+        "vendor": "codex-cli",
+        "confidence": "medium",
+        "source": "branch-name"
+      },
+      "searchVendor": "codex-cli"
+    },
+    {
+      "repo": "jbaron9393/Path",
+      "prNumber": 89,
+      "headSha": "726fda1bdc34bfa6de022385f56c7914faa2022e",
+      "title": "Support OPENAI_API_KEY_FILE for local dev, update docs/.env.example, and harden page chrome",
+      "bodyExcerpt": "### Motivation\n\n- Make local development safer and easier by allowing an API key to be loaded from a local file instead of pasting secrets into environment variables. \n- Provide clear local-run instructions and ship a non-secret ` .env.example` to demonstrate the recommended setup. \n- Improve UI resiliency so basic navigation (tabs/theme) works even if non-critical page chrome scripts fail in static previews or local-file contexts.\n\n### Description\n\n- Add a new ` .env.example` showing `OPENAI_API_KEY_FILE` usage and update `README.md` with Windows-friendly example paths and `npm install && npm start` instructions. \n- Update `.gitignore` to exclude `API.txt` and `*.key` to reduce the chance of committing secrets. \n- Implement `parseOpenAIKeyFile` and `loadOpenAIKeyFromFile` in `server.js` which read and parse a key or `OPENAI_API_KEY=...` line from the file referenced by `OPENAI_API_KEY_FILE` and set `process.env.OPENAI_API_KEY` when present. \n- Refactor page chrome in `cap_cloze_refiner.html` to isolate tab activation, consolidate theme handling, wrap non-critical UI initialization in a `try/catch`, and improve messaging for synoptic iframe theme posting. \n- Adjust `script.js` to prefer a local backend when the page is loaded as a file, introduce `localApiOrigin` and `deployedApiOrigin` variables, and clarify the static backend message to instruct running the local server when appropriate. \n\n### Testing\n\n- No automated tests were run for this change.\n\n------\n[Codex Task](https://chatgpt.com/codex/cloud/tasks/task_e_6a2850ff5dd4832b8fc0232fb1fcd2ef)",
+      "url": "https://github.com/jbaron9393/Path/pull/89",
+      "mergedAt": "2026-06-09T19:50:47Z",
+      "additions": 138,
+      "deletions": 137,
+      "files": 6,
+      "diffPath": "diffs/jbaron9393-Path/89.diff",
+      "agent": {
+        "vendor": "codex-cli",
+        "confidence": "medium",
+        "source": "branch-name"
+      },
+      "searchVendor": "codex-cli"
+    },
+    {
+      "repo": "DavinciDreams/tellus",
+      "prNumber": 34,
+      "headSha": "7cbc96eafb39069bb1a5c25a73bf9f0c2d106d49",
+      "title": "Add configurable world templates",
+      "bodyExcerpt": "",
+      "url": "https://github.com/DavinciDreams/tellus/pull/34",
+      "mergedAt": "2026-06-09T19:50:40Z",
+      "additions": 355,
+      "deletions": 28,
+      "files": 4,
+      "diffPath": "diffs/DavinciDreams-tellus/34.diff",
+      "agent": {
+        "vendor": "codex-cli",
+        "confidence": "medium",
+        "source": "branch-name"
+      },
+      "searchVendor": "codex-cli"
+    },
+    {
+      "repo": "adrendon/retromario",
+      "prNumber": 15,
+      "headSha": "b6ccda928fde5356e815f12ee01cab2b7f55184c",
+      "title": "Admin route & modal refactor; preserve likes/votes after board end; protect objective behind admin",
+      "bodyExcerpt": "### Motivation\n- Separar el flujo de administración del de participantes para permitir un acceso directo vía `/admin` sin mostrar elementos de participante y simplificar el proceso de toma de control por PIN. \n- Hacer que el tablero quede cerrado para nuevas tarjetas pero que las interacciones de votación (me gusta / votos de acciones) sigan disponibles tras el fin del tiempo. \n- Evitar que usuarios no-admin modifiquen el objetivo del sprint en el servidor.\n\n### Description\n- Añade `ADMIN_ROUTE` y marca `body.is-admin-route` para ocultar elementos de participante (`#music-bar`, `#participant-dashboard`, `#retro`, `#mini-race`) y oculta el botón de acceso admin en la UI con CSS. \n- Simplifica el modal de admin para que solicite solo el `PIN` y elimina campos de identidad/personaje del flujo admin; el admin ya no crea/ajusta `currentPilot` desde el modal. \n- Cambia la lógica cliente/servidor para permitir likes/votos aun cuando el tablero haya terminado, ajusta textos que informan que el tablero está \"cerrado\", y actualiza estilos para no deshabilitar botones de like cuando `board-ended`. \n- Protege la ruta de guardado del objetivo usando `adminFetch` en el cliente y añadiendo `requireAdmin` en el endpoint `POST /api/objective`, además de prevenir que usuarios no-admin intenten guardar desde la UI. \n- Varias mejoras de accesibilidad/UX en controles del cronómetro (`aria-label` / `title`) y pequeños ajustes de placeholders/labels.\n\n### Testing\n- Se ejecutó la suite de tests automatizados (`tests/server.test.js`) y los nuevos casos añadidos pasaron correctamente. \n- Nuevos tests incluidos: `Admin puede guardar objetivo sin perder pasos`, `POST /api/objective rechaza sin credenciales admin`, y `Votos de tarjetas y acciones siguen habilitados con tiempo terminado`, y todos ellos completaron con éxito. \n- Test modificado: `POST /api/cards rechaza cuando terminó el tiempo del tablero` actualizado para esperar el nuevo mensaje que indica que el tablero \"queda cerrado\" y pasó",
+      "url": "https://github.com/adrendon/retromario/pull/15",
+      "mergedAt": "2026-06-09T19:51:43Z",
+      "additions": 45,
+      "deletions": 12,
+      "files": 5,
+      "diffPath": "diffs/adrendon-retromario/15.diff",
+      "agent": {
+        "vendor": "codex-cli",
+        "confidence": "medium",
+        "source": "branch-name"
+      },
+      "searchVendor": "codex-cli"
+    },
+    {
+      "repo": "mitchelldurbincs/xushi2",
+      "prNumber": 113,
+      "headSha": "e8edfcad4a2cbb94105ae4a48260e9968f5592ed",
+      "title": "Remove Phase 5–10 Python env/obs code, configs and tests; consolidate observation adapters",
+      "bodyExcerpt": "### Motivation\n- Phase 4 recurrent MAPPO is the active branch; phase 5–10 Python-only env wrappers, observation adapters, probe configs and related tests are being removed to reduce maintenance surface while keeping Phase 4 and Phase 11 functionality intact.\n\n### Description\n- Deleted legacy phase env wrappers: `python/envs/phase5_entity_mappo.py`, `phase6_grid_mappo.py`, `phase7_fog_mappo.py`, `phase8_random_map_mappo.py`, `phase9_snapshot_mappo.py`, and `phase10_target_slot_mappo.py` while keeping `phase11_current_selfplay_mappo.py` and all Phase-4 envs.\n- Removed the separate `entity_obs.py` and `grid_obs.py` modules and folded/rewired the necessary constants and helpers into `multi_enemy_obs.py` and `partial_obs.py` (so existing Phase-4/11 callers still resolve the required symbols via the kept adapters).\n- Deleted `python/train/entity_attention.py` only if not referenced (kept when in use); module-level grep and imports were audited and preserved when still referenced by trainer code (no silent removals of used modules).\n- Updated registries and factories to remove phase5–10 entries: `python/envs/__init__.py`, `python/envs/runtime_factory.py`, `python/train/phases.py`, and `python/train/runtime_specs.py` now only expose/resolve Phase 4 and Phase 11 legacy paths and the explicit runtime API; removed PHASE_REGISTRY entries for 5–10.\n- Deleted probe/config YAMLs for phases 5–10 under `experiments/configs/` while keeping `experiments/configs/phase11/` and all `phase4/` configs untouched.\n- Removed tests which exercised the deleted env wrappers: `python/tests/test_phase5_entity_obs.py`, `test_phase6_grid_obs.py`, `test_phase10_target_slot.py`, and excised the parts of other tests that were solely about the removed phases; kept tests that exercise adapters/utilities still in use (partial obs, map randomization, snapshot helpers, phase11 and phase4 tests remain).\n- Adjusted imports across the codebase to reference the consolidated `multi_enemy_obs` / `partial_obs` sym",
+      "url": "https://github.com/mitchelldurbincs/xushi2/pull/113",
+      "mergedAt": "2026-06-09T19:50:34Z",
+      "additions": 280,
+      "deletions": 2892,
+      "files": 51,
+      "diffPath": "diffs/mitchelldurbincs-xushi2/113.diff",
+      "agent": {
+        "vendor": "codex-cli",
+        "confidence": "medium",
+        "source": "branch-name"
+      },
+      "searchVendor": "codex-cli"
+    },
+    {
+      "repo": "HooLeeUn/apss-social-frontend",
+      "prNumber": 385,
+      "headSha": "12b0cd9a49b241e8a0dd530f4c844136112651f8",
+      "title": "profile-feed: wire identity card user label and age to i18n",
+      "bodyExcerpt": "### Motivation\n- The profile identity card in `/profile-feed` used hardcoded Spanish strings for the user label and age, so these needed to be sourced from the existing i18n system to support CO/US locales dynamically without changing layout or backend logic.\n\n### Description\n- Added a new translation key `profileFeedAge` to `lib/i18n.ts` with CO value `\"{age} Años\"` and US value `\"{age} years old\"` for dynamic age formatting.\n- Extended `components/profile-feed/ProfileIdentityCard.tsx` with two presentation props: `userLabel` and `formatAge`, replacing the hardcoded `usuario` label and `age` rendering while keeping existing defaults intact.\n- Updated `app/profile-feed/page.tsx` to pass `userLabel={t(\"profileFeedUser\").toLocaleUpperCase(locale)}` and `formatAge={(value) => interpolate(t(\"profileFeedAge\"), { age: value })}` so the card renders `USUARIO`/`USER` and `X Años`/`X years old` according to locale.\n\n### Testing\n- Ran `npm run lint` which finished with 0 errors and the repository's existing 15 `@next/next/no-img-element` warnings (no new lint errors).\n- Started the dev server and performed `curl -I http://localhost:3000/profile-feed`, receiving `HTTP/1.1 200 OK`.\n- Verified whitespace/format checks via `git diff --check` which returned clean.\n\n------\n[Codex Task](https://chatgpt.com/codex/cloud/tasks/task_e_6a286d6483c4832bbb41ab473b853d28)",
+      "url": "https://github.com/HooLeeUn/apss-social-frontend/pull/385",
+      "mergedAt": "2026-06-09T19:51:51Z",
+      "additions": 10,
+      "deletions": 2,
+      "files": 3,
+      "diffPath": "diffs/HooLeeUn-apss-social-frontend/385.diff",
+      "agent": {
+        "vendor": "codex-cli",
+        "confidence": "medium",
+        "source": "branch-name"
+      },
+      "searchVendor": "codex-cli"
+    },
+    {
+      "repo": "PerrinMyerson/Search-Engine",
+      "prNumber": 691,
+      "headSha": "76de34fb57f5dad0020b3adb6220a71c8e3473d0",
+      "title": "Sync browser chrome after partial scroll",
+      "bodyExcerpt": "Summary: sync current/reload/images chrome links and hidden viewport fields after partial viewport scroll updates. Validation: cargo test --lib browser_session_registry_scrolls_visual_viewport_horizontally --target-dir /private/tmp/search-engine-hosted-interaction-bridge-target-5dd07d3",
+      "url": "https://github.com/PerrinMyerson/Search-Engine/pull/691",
+      "mergedAt": "2026-06-09T19:49:37Z",
+      "additions": 44,
+      "deletions": 0,
+      "files": 2,
+      "diffPath": "diffs/PerrinMyerson-Search-Engine/691.diff",
+      "agent": {
+        "vendor": "codex-cli",
+        "confidence": "medium",
+        "source": "branch-name"
+      },
+      "searchVendor": "codex-cli"
+    },
+    {
+      "repo": "lvanzijl/PoCompanion",
+      "prNumber": 1723,
+      "headSha": "e34d7d00d22b1a17845b61adfcea42f674aa95ca",
+      "title": "fix: preserve Portfolio Plan Board timeline scroll positions during epic selection",
+      "bodyExcerpt": "Browser-native focus scroll adjustment fires after the existing double-rAF restore pass, silently overwriting captured positions. Additionally, `selected → selected` transitions had no capture/restore path at all.\n\n## Root cause — two independent failure paths\n\n| Transition | Pre-fix behaviour | Cause |\n|---|---|---|\n| `normal → selected` | Incident jumps `959 → 405` | Browser deferred focus-scroll overwrites both rAF restore passes |\n| `selected → selected` | Crew jumps `959 → 783` | Guard `isSelectedLayout == willBeSelectedLayout` returned early — no restore issued |\n| `selected → normal` | Stable | Existing path, unaffected |\n\n## Changes\n\n### `portfolioPlanBoardScrollSync.js` — outlast browser focus-scroll deferral\n\nAdds a `setTimeout(0)` pass after the double-rAF, scheduling a macrotask that runs after the browser completes layout/paint (including any deferred focus adjustment) and re-asserts the snapshot one final time.\n\n```js\nwindow.requestAnimationFrame(function () {\n    applySnapshot();\n    window.requestAnimationFrame(function () {\n        applySnapshot();\n        // Macrotask boundary: outlasts native focus-scroll adjustment.\n        window.setTimeout(function () {\n            applySnapshot();\n            resolve();\n        }, 0);\n    });\n});\n```\n\n### `PortfolioPlanBoardPage.razor` — enable restore for `selected → selected`\n\nChanges the early-return guard so only `normal → normal` transitions skip capture/restore:\n\n```csharp\n// Before\nif (isSelectedLayout == willBeSelectedLayout) return;\n\n// After — skip only when no panel is involved on either side\nif (!isSelectedLayout && !willBeSelectedLayout) return;\n```\n\nThis ensures all three panel-involved transitions (`normal → selected`, `selected → selected`, `selected → normal`) go through capture/restore.\n\n## Validation\n\nMock runtime, profile 1 — all transitions stable:\n\n| Transition | Axis | Incident | Crew |\n|---|---:|---:|---:|\n| Baseline | 650 | 639 | 639 |\n| normal → selected | 650 | 639 | 639 |\n| selected",
+      "url": "https://github.com/lvanzijl/PoCompanion/pull/1723",
+      "mergedAt": "2026-06-09T19:51:01Z",
+      "additions": 2188,
+      "deletions": 2,
+      "files": 24,
+      "diffPath": "diffs/lvanzijl-PoCompanion/1723.diff",
+      "agent": {
+        "vendor": "copilot-workspace",
+        "confidence": "medium",
+        "source": "branch-name"
+      },
+      "searchVendor": "copilot-workspace"
+    },
+    {
+      "repo": "MUSTAQ-AHAMMAD/crm-inventory-missreceipt",
+      "prNumber": 164,
+      "headSha": "75eab89028cf6e08dc1f5aba43783aa1369708f6",
+      "title": "fix: use AR invoice txnDate as receipt date instead of payment file date",
+      "bodyExcerpt": "Receipt payloads (`ReceiptDate`, `AccountingDate`, `DepositDate`, `GlDate`) were sourced from the Vend payment Excel date column, which can differ from the matched AR invoice's `txnDate` by a day — receipts showed `2025-03-24` while the invoice date was `2025-03-25`.\n\n## Changes\n\n- **`findInvoiceHeader`** — returns `invoiceDate` extracted from the matched `FusionInvoiceHeader.txnDate`, formatted as `YYYY-MM-DD` UTC. Includes an `isNaN` guard for malformed dates.\n- **`generateReceipts` payload builder** — introduces `receiptDate = invoiceInfo.invoiceDate || date` and applies it to all date fields in both standard and misc receipt payloads. Falls back to the payment file date only when no invoice date is available.\n\n```js\n// Before — date from payment Excel\nReceiptDate: date,\nAccountingDate: date,\n\n// After — date from matched AR invoice, payment date as fallback\nconst receiptDate = invoiceInfo.invoiceDate || date;\nReceiptDate: receiptDate,\nAccountingDate: receiptDate,\n```",
+      "url": "https://github.com/MUSTAQ-AHAMMAD/crm-inventory-missreceipt/pull/164",
+      "mergedAt": "2026-06-09T19:49:58Z",
+      "additions": 23,
+      "deletions": 5,
+      "files": 1,
+      "diffPath": "diffs/MUSTAQ-AHAMMAD-crm-inventory-missreceipt/164.diff",
+      "agent": {
+        "vendor": "copilot-workspace",
+        "confidence": "medium",
+        "source": "branch-name"
+      },
+      "searchVendor": "copilot-workspace"
+    },
+    {
+      "repo": "impact2021/ClientDesk",
+      "prNumber": 25,
+      "headSha": "96e9bde7e5667a689605c490945e4e17c4cdd386",
+      "title": "Fix ClientDesk manual update flow for metadata-based releases",
+      "bodyExcerpt": "Plugin page updates regressed after the release format changed from a directly-installed ZIP to metadata-driven releases. WordPress still showed an update notice, but the ClientDesk “Update Now” path did not execute a valid plugin upgrade.\n\n- **What changed**\n  - The manual updater now resolves either:\n    - a direct ZIP URL, or\n    - a `clientdesk-update.json` metadata URL that contains the actual package URL and version\n  - The update path now performs a real plugin upgrade via `Plugin_Upgrader::upgrade()` instead of using install semantics.\n\n- **Update path hardening**\n  - Added `raw.githubusercontent.com` to the allowed package hosts so GitHub-hosted release packages are accepted.\n  - Seeded the plugin update transient with the resolved package/version before invoking the upgrader, so the update runs through the standard WordPress plugin-upgrade flow.\n\n- **Operator feedback**\n  - Added explicit plugin-page notices for:\n    - successful update\n    - failed update with surfaced error message\n    - local-mode blocked update\n    - no update available\n\n- **Release metadata**\n  - Bumped ClientDesk to `2.9.23`\n  - Updated `clientdesk-update.json` to point at `clientdesk-v2_9_23.zip`\n  - Rebuilt the packaged release zip\n\n```php\n$resolved_update = $this->resolve_update_package( $latest, $url );\n\n$current->response[ $plugin_file ] = (object) [\n    'plugin'      => $plugin_file,\n    'new_version' => $resolved_update['latest'],\n    'package'     => $resolved_update['url'],\n];\n\n$upgrader = new Plugin_Upgrader( new WP_Ajax_Upgrader_Skin() );\n$result   = $upgrader->upgrade( $plugin_file );\n```",
+      "url": "https://github.com/impact2021/ClientDesk/pull/25",
+      "mergedAt": "2026-06-09T19:49:40Z",
+      "additions": 140,
+      "deletions": 25,
+      "files": 4,
+      "diffPath": "diffs/impact2021-ClientDesk/25.diff",
+      "agent": {
+        "vendor": "copilot-workspace",
+        "confidence": "medium",
+        "source": "branch-name"
+      },
+      "searchVendor": "copilot-workspace"
+    },
+    {
+      "repo": "robrstein/wenuRoute",
+      "prNumber": 2,
+      "headSha": "68fe6b325be7663337bf63088553262834016b00",
+      "title": "Add layer-aware interactive HTML graph controls",
+      "bodyExcerpt": "The generated HTML graph was too dense to explain cross-layer relationships quickly. This update reshapes the graph around a simpler layered view: start from Frontend, expand toward Backend/Android and BD, and filter the view down to only the entities and dependencies that matter.\n\n- **Layered graph model**\n  - Classifies rendered nodes into `Frontend`, `Backend`, `Android`, and `BD`.\n  - Switches the HTML view to a left-to-right hierarchical layout so the default reading path is `Frontend → Backend/Android → BD`.\n  - Uses layer color as the primary visual cue while keeping node shape for technical type.\n\n- **Interactive graph controls**\n  - Adds per-layer checkboxes to show/hide full layers.\n  - Adds search to match domain entities, screens, buttons, endpoints, and packages such as `Pkg_productos`.\n  - Search narrows the graph to matches plus directly related nodes, hiding unrelated noise.\n  - Adds double-click expand/collapse on nodes to reveal dependencies incrementally instead of rendering the full dependency surface at once.\n\n- **Renderer changes**\n  - Replaces the previous PyVis-generated default HTML shell with a custom `vis-network` template.\n  - Serializes node metadata needed by the client view (`layer`, `searchText`, key-node flags, sizing, colors).\n  - Filters out invalid edges during render so the HTML only contains navigable relationships.\n\n- **Coverage and docs**\n  - Adds renderer-focused tests for controls, layer inference, label truncation, node serialization, and missing-edge filtering.\n  - Updates README copy to describe the new layered HTML interaction model.\n\n```python\ngraph.add_node(\n    RouteNode(\n        id=\"backend:endpoint\",\n        label=\"GET /productos\",\n        kind=NodeKind.ENDPOINT,\n        file=\"api/app.py\",\n        metadata={\"framework\": \"flask\"},\n    )\n)\n\ngraph.add_node(\n    RouteNode(\n        id=\"db:pkg\",\n        label=\"Pkg_productos\",\n        kind=NodeKind.SQL,\n        file=\"db/packages.sql\",\n    )\n)\n```\n\nThis produces HTML where ",
+      "url": "https://github.com/robrstein/wenuRoute/pull/2",
+      "mergedAt": "2026-06-09T19:46:58Z",
+      "additions": 751,
+      "deletions": 85,
+      "files": 17,
+      "diffPath": "diffs/robrstein-wenuRoute/2.diff",
+      "agent": {
+        "vendor": "copilot-workspace",
+        "confidence": "medium",
+        "source": "branch-name"
+      },
+      "searchVendor": "copilot-workspace"
+    },
+    {
+      "repo": "Philm013/MarkedUp",
+      "prNumber": 4,
+      "headSha": "103ea195d13ef5333f3d5ed5e6059b14cf13790c",
+      "title": "Make Snip toolbar action reliably invoke Windows Snipping Tool",
+      "bodyExcerpt": "The desktop **Snip** button was wired but produced no observable effect when clicked in real usage. This change hardens protocol launch behavior and removes button semantics that could interfere with click handling.\n\n- **Launch path reliability**\n  - Switches primary invocation to direct protocol navigation (`window.location.assign('ms-screenclip:')`).\n  - Keeps a DOM-anchor fallback launch path if the primary call throws.\n  - Centralizes protocol/message constants and fallback helper to reduce drift across paths.\n\n- **Toolbar button semantics**\n  - Sets the Snip control to `type=\"button\"` so it is never affected by default button/form behavior.\n\n- **User + diagnostic feedback**\n  - Uses a single, consistent launch toast message across primary/fallback paths.\n  - Improves error logging context when both launch attempts fail.\n\n```js\nconst snipProtocol = 'ms-screenclip:';\n\ntry {\n  window.location.assign(snipProtocol);\n  Toast.show(launchMsg);\n} catch (err) {\n  launchViaAnchor();\n}\n```",
+      "url": "https://github.com/Philm013/MarkedUp/pull/4",
+      "mergedAt": "2026-06-09T19:46:33Z",
+      "additions": 20,
+      "deletions": 10,
+      "files": 2,
+      "diffPath": "diffs/Philm013-MarkedUp/4.diff",
+      "agent": {
+        "vendor": "copilot-workspace",
+        "confidence": "medium",
+        "source": "branch-name"
+      },
+      "searchVendor": "copilot-workspace"
+    },
+    {
+      "repo": "cristhianflo/skills-expand-your-team-with-copilot",
+      "prNumber": 16,
+      "headSha": "c9dc637d42bddcdc54907a1f6b12240bb7ce5081",
+      "title": "Add social sharing buttons to activity cards",
+      "bodyExcerpt": "Users had no way to share activities with friends directly from the activities page.\n\n## Changes\n\n- **Share button on every activity card** — \"🔗 Share\" button appended below each card's action area\n- **Web Share API (primary)** — on supporting devices, triggers the native OS share sheet with activity name, description, and URL\n- **Fallback share panel** — on desktop, toggles an inline row of platform buttons:\n  - 𝕏 Twitter, f Facebook, 💬 WhatsApp (all open pre-filled share URLs in new tab)\n  - 📋 Copy link — writes `window.location.href` to clipboard, shows toast confirmation\n- **Panel dismissal** — clicking outside any open share panel closes it\n- **CSS** — new `.share-section`, `.share-toggle-button`, `.share-panel`, and per-platform `.share-link` variants added to `styles.css`",
+      "url": "https://github.com/cristhianflo/skills-expand-your-team-with-copilot/pull/16",
+      "mergedAt": "2026-06-09T19:44:34Z",
+      "additions": 135,
+      "deletions": 0,
+      "files": 2,
+      "diffPath": "diffs/cristhianflo-skills-expand-your-team-with-copilot/16.diff",
+      "agent": {
+        "vendor": "copilot-workspace",
+        "confidence": "medium",
+        "source": "branch-name"
+      },
+      "searchVendor": "copilot-workspace"
+    },
+    {
+      "repo": "cristhianflo/skills-expand-your-team-with-copilot",
+      "prNumber": 15,
+      "headSha": "359671312920c9b3f4c3abb4475338916046467b",
+      "title": "Add difficulty tracks filter for extracurricular activities",
+      "bodyExcerpt": "Adds an optional `difficulty` field (Beginner / Intermediate / Advanced) to activities, plus a sidebar filter so students can find level-appropriate activities. Activities without a difficulty are treated as open to all levels and surface under every filter selection.\n\n## Changes\n\n- **`database.py`** — Added `difficulty` to seed activities (Beginner: Chess Club, Soccer Team; Intermediate: Programming Class, Basketball Team, Debate Team; Advanced: Math Club, Robotics, Science Olympiad, Sunday Chess Tournament; unset: Morning Fitness, Art Club, Manga Maniacs, Drama Club)\n\n- **`index.html`** — New \"Filter by difficulty\" section in the sidebar with All / Beginner / Intermediate / Advanced buttons\n\n- **`app.js`** — Added `currentDifficulty` state and filter logic in `displayFilteredActivities()`:\n  ```js\n  if (currentDifficulty !== \"\") {\n    const activityDifficulty = details.difficulty;\n    // Activities with no difficulty are for all levels — always include them\n    if (activityDifficulty && activityDifficulty !== currentDifficulty) {\n      return;\n    }\n  }\n  ```\n  Difficulty filter is client-side only (no new API param needed). Event listeners follow the existing pattern for category/day/time filters.\n\n- **`styles.css`** — Extended existing filter button selectors to cover `.difficulty-filter` / `.difficulty-filters`; no new styles needed.\n\nDifficulty is intentionally not rendered on the activity card.",
+      "url": "https://github.com/cristhianflo/skills-expand-your-team-with-copilot/pull/15",
+      "mergedAt": "2026-06-09T19:51:01Z",
+      "additions": 69,
+      "deletions": 13,
+      "files": 4,
+      "diffPath": "diffs/cristhianflo-skills-expand-your-team-with-copilot/15.diff",
+      "agent": {
+        "vendor": "copilot-workspace",
+        "confidence": "medium",
+        "source": "branch-name"
+      },
+      "searchVendor": "copilot-workspace"
+    },
+    {
+      "repo": "cristhianflo/skills-expand-your-team-with-copilot",
+      "prNumber": 14,
+      "headSha": "bee2443b262e03a12e216f7a50cf0bf44cff23a8",
+      "title": "Add dark/light mode toggle to header",
+      "bodyExcerpt": "Students requested a dark mode option. Adds a toggle button in the top-right header that switches between dark and light themes, with the preference persisted via `localStorage`.\n\n## Changes\n\n- **`styles.css`** — Added `[data-theme=\"dark\"]` CSS block overriding all color variables for dark mode; added `#dark-mode-toggle` button styles; set `#user-controls` to flex layout\n- **`index.html`** — Added `#dark-mode-toggle` button in the header's `#user-controls` alongside the existing login controls\n- **`app.js`** — Added `applyTheme()` which sets `data-theme` on `<html>`, updates button label (🌙/☀️), and persists to `localStorage`; restores saved theme on load\n\n```js\nfunction applyTheme(theme) {\n  document.documentElement.setAttribute(\"data-theme\", theme);\n  darkModeToggle.textContent = theme === \"dark\" ? \"☀️ Light Mode\" : \"🌙 Dark Mode\";\n  localStorage.setItem(\"theme\", theme);\n}\nconst savedTheme = localStorage.getItem(\"theme\") || \"light\";\napplyTheme(savedTheme);\n```",
+      "url": "https://github.com/cristhianflo/skills-expand-your-team-with-copilot/pull/14",
+      "mergedAt": "2026-06-09T19:46:39Z",
+      "additions": 70,
+      "deletions": 0,
+      "files": 3,
+      "diffPath": "diffs/cristhianflo-skills-expand-your-team-with-copilot/14.diff",
+      "agent": {
+        "vendor": "copilot-workspace",
+        "confidence": "medium",
+        "source": "branch-name"
+      },
+      "searchVendor": "copilot-workspace"
+    },
+    {
+      "repo": "elhai-ai-edu/mileb-one-engine",
+      "prNumber": 267,
+      "headSha": "9f344bbffd0245726ca6f4f39df37d0e60ff8459",
+      "title": "speech_lab: force structured AI response format and replace heuristic transcript parsing",
+      "bodyExcerpt": "The speech_lab QA page was receiving valid AI responses but failing to extract a transcript because the model returned free-form text rather than a parseable structure.\n\n## Changes\n\n**Prompt (`speech_lab.html`)**\n- Replaced the vague `message` prompt with an explicit instruction requiring the model to respond in a fixed four-section format: `TRANSCRIPT:`, `LANGUAGE_FEEDBACK:`, `LOGIC_FEEDBACK:`, `NEXT_STEP:`\n\n**Parsing (`speech_lab.html`)**\n- Removed the heuristic `transcript[:\\s]+` regex that only caught single-line matches\n- Added `parseStructuredReply()` — a deterministic section extractor using a single `RegExp` over all four keys:\n\n```js\nfunction parseStructuredReply(reply) {\n  const KEYS = ['TRANSCRIPT', 'LANGUAGE_FEEDBACK', 'LOGIC_FEEDBACK', 'NEXT_STEP'];\n  const pattern = new RegExp(\n    '(' + KEYS.join('|') + '):\\\\s*([\\\\s\\\\S]*?)(?=\\\\n(?:' + KEYS.join('|') + '):|$)',\n    'g'\n  );\n  const sections = {};\n  let m;\n  while ((m = pattern.exec(reply)) !== null) sections[m[1]] = m[2].trim();\n  return sections;\n}\n```\n\n**Rendering**\n- Transcript box ← `sections.TRANSCRIPT`; feedback box ← the three remaining sections joined\n- If `TRANSCRIPT` is absent: transcript box shows `TRANSCRIPT_MISSING`, feedback box shows full raw AI response for debugging\n- All existing PASS/FAIL checklist items and audio diagnostics are unchanged",
+      "url": "https://github.com/elhai-ai-edu/mileb-one-engine/pull/267",
+      "mergedAt": "2026-06-09T19:41:46Z",
+      "additions": 33,
+      "deletions": 7,
+      "files": 1,
+      "diffPath": "diffs/elhai-ai-edu-mileb-one-engine/267.diff",
+      "agent": {
+        "vendor": "copilot-workspace",
+        "confidence": "medium",
+        "source": "branch-name"
+      },
+      "searchVendor": "copilot-workspace"
+    },
+    {
+      "repo": "jrondorf/SimpleTextNotes",
+      "prNumber": 44,
+      "headSha": "2914f3fd78085d3f787fe002debf4276340cb409",
+      "title": "Redesign share extension UI to match Apple Notes style",
+      "bodyExcerpt": "The share extension used a generic `Form`-based picker UI. This replaces it with a layout matching the native Apple Notes share sheet: custom chrome header, destination row with chevron, and a combined content input area showing the shared content inline.\n\n## Layout changes (`SharePickerView`)\n- **Header bar** — circular `×` dismiss button, app name title, yellow capsule Save button (`.foregroundStyle(.black)` to stay legible in dark mode)\n- **\"SAVE TO\" section** — tappable destination row (`New Note` or existing note title + chevron) with a contextual subtitle; tapping opens a `NavigationStack` picker sheet listing all existing notes for append mode\n- **Content input area** — single rounded-rect container with a `TextEditor` (placeholder: \"Add text to note...\") above a divider, then either an `LPLinkView` URL card (via `LinkPresentation`) or a plain text preview below\n\n## `LinkPreviewCard` (`UIViewRepresentable`)\nWraps `LPLinkView` with async metadata fetch via `LPMetadataProvider`. Uses `[weak linkView]` in the completion handler and cancels the in-flight fetch in `Coordinator.deinit` to avoid crashes on early dismissal.\n\n## Data changes\n`onSave` now carries `additionalText`; `saveNote` combines it with the shared content (`additionalText + \"\\n\\n\" + content`) before writing to the App Group `UserDefaults`. No changes needed in the main app's `importPendingSharedNotes`.",
+      "url": "https://github.com/jrondorf/SimpleTextNotes/pull/44",
+      "mergedAt": "2026-06-09T19:42:41Z",
+      "additions": 198,
+      "deletions": 71,
+      "files": 1,
+      "diffPath": "diffs/jrondorf-SimpleTextNotes/44.diff",
+      "agent": {
+        "vendor": "copilot-workspace",
+        "confidence": "medium",
+        "source": "branch-name"
+      },
+      "searchVendor": "copilot-workspace"
+    },
+    {
+      "repo": "bolin8017/ai-daily-report",
+      "prNumber": 103,
+      "headSha": "68ee2ea3d477e066808507829f46f63a0b9c4088",
+      "title": "feat(tech): add Aider polyglot to benchmark leaderboards",
+      "bodyExcerpt": "## What\n\nAdds **Aider polyglot** as a fourth benchmark on the 技術 tab, following the leaderboard-credibility research.\n\n## Why this one\n\nThe brief's audience builds agents/coding tooling, and Aider's polyglot leaderboard (225 Exercism code-editing exercises across C++/Go/Java/JS/Python/Rust) is a credible, widely-cited coding-agent ranking. Crucially, it's the only researched candidate with a **stable, official, machine-readable** endpoint:\n\n| candidate | credible? | machine-readable endpoint | verdict |\n|---|---|---|---|\n| **Aider polyglot** | yes | ✅ official raw-GitHub YAML, current | **added** |\n| LMArena | yes (highest value) | ⚠️ official HF space = 2-yr-stale pickle; live data only via unofficial scraper | deferred |\n| LiveCodeBench | yes | ⚠️ client-side-rendered (the MTEB/PinchBench failure mode) | deferred |\n| Artificial Analysis | yes | ❌ no free machine-readable endpoint | skipped |\n| HF Open LLM Leaderboard | — | ❌ discontinued 2025 | skipped |\n\n## How\n\n- `leaderboards-parsers/aider.js`: fetch `polyglot_leaderboard.yml`, keep the best `pass_rate_2` per model (models have multiple runs), rank descending.\n- Register the `aider` parser + a `leaderboard-aider` source (registry now 52 sources).\n- Add the canonical url (`aider.chat/docs/leaderboards/`) to `leaderboard-urls.js` and teach `benchOf` the \"aider\" title token, so the merge cure stamps the right link.\n- tech curator: add Aider polyglot to the active-benchmark list.\n\n## Tests\n\nParser unit tests (rank/dedupe/drop-bad/non-list) + `benchOf` + registry count.\n\n- `npm test` → 384 passed (60 files)\n- `npm run lint` → clean\n- **Live smoke-test**: fetched the real YAML → 68 models parsed, `gpt-5 (high)` #1.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n",
+      "url": "https://github.com/bolin8017/ai-daily-report/pull/103",
+      "mergedAt": "2026-06-08T04:02:39Z",
+      "additions": 99,
+      "deletions": 8,
+      "files": 8,
+      "diffPath": "diffs/bolin8017-ai-daily-report/103.diff",
+      "agent": {
+        "vendor": "claude-code",
+        "confidence": "high",
+        "source": "pr-body-marker"
+      },
+      "searchVendor": "aider"
+    },
+    {
+      "repo": "trilamsr/regatta",
+      "prNumber": 1122,
+      "headSha": "e19e6d36c7da32f7f631a3f312c20a90f90fc39d",
+      "title": "[DOCS] research: designer-first dispatch (#1084)",
+      "bodyExcerpt": "## Summary\n\nResearch-only survey for #1084. The orchestrator today hard-wires every spawn to the implementer template; some work items (audits, `[RESEARCH-DELTA]` spec amendments, wedge ideation) need a designer pass first so the brief lands before code. This document covers prior art, regatta-side router signals, the precise code seam, and the failure modes a router has to defend against.\n\n- Prior art: Aider v0.83.0 (Apache-2.0), OpenHands v0.31.x (MIT), SWE-agent v0.7.x (MIT). Recurring pattern: finite enum of role names + one explicit signal (operator command / config / label) + sequenced via graph or operator. Sweep (archived, LLM-classified) is the anti-pattern.\n- Signals: `WorkItem.Kind`, GitHub labels via `spec_adapter.selector`, title prefix (`idPrefixRE` at `parse.go:38`), `## Dispatch sequence` body H2, file-scope hint, GitHub native `issueType`. Layered priority (body > label > title-prefix).\n- Seam: `parseIssueBody` populates `WorkItem.DispatchRoles`; scheduler `dispatch` step picks the next-uncommitted role; spawner stays role-agnostic via existing `ClaudeSpawnerConfig.Prompt`.\n- Failure modes: label drift, body-heading typo, conflicting signals, designer deliverable detection, empty `DispatchRoles`, role enum drift, re-route on retry. Silent fallthrough is the dominant trap.\n\nNo design decisions committed; next step is a designer pass that produces a spec under `docs/engineer/specs/`.\n\n## Test plan\n\n- [x] `bash scripts/doc-check.sh` clean (banned-phrase + link gates).\n- [x] `bash scripts/check-phase-x-leak.sh` clean (no phase-x tokens in doc).\n- [x] `bash scripts/check-doc-links.sh` clean.\n- [x] All cited repo paths (`internal/orchestrator/spawner/claude.go`, `internal/orchestrator/scheduler/scheduler.go`, `internal/orchestrator/adapter/githubissues/parse.go`, `contracts/schemas/spec_adapter.go`, `docs/engineer/dispatch-templates/{designer,implementer,triage,reviewer}.md`, `docs/engineer/briefs/2026-06-07-research-loop-gap-bridge.md`) verified via `git",
+      "url": "https://github.com/trilamsr/regatta/pull/1122",
+      "mergedAt": "2026-06-09T09:22:09Z",
+      "additions": 95,
+      "deletions": 0,
+      "files": 1,
+      "diffPath": "diffs/trilamsr-regatta/1122.diff",
+      "agent": {
+        "vendor": "aider",
+        "confidence": "high",
+        "source": "pr-body-marker"
+      },
+      "searchVendor": "aider"
+    },
+    {
+      "repo": "BicameralAI/bicameral-integrations",
+      "prNumber": 16,
+      "headSha": "89be522a637ddfefc05e7dda0ee44ae2f41b80d6",
+      "title": "feat: add Continue and Aider developer-AI connector parse surfaces",
+      "bodyExcerpt": "## Summary\n\nAdds two developer-AI tool connectors as read-only parse surfaces, capturing developer-AI **decision and implementation evidence**. Each maps a provider artifact to a provider-neutral `Observation` feeding `adapter.core.pipeline.normalize()`. No canonical-state writes (ADR-0008); live ingestion deferred per `auth.md`. Both are local-artifact (T0) sources — neither tool exposes a public read API.\n\n## Connectors\n\n| Connector | Surface | Source | Trust tier |\n|---|---|---|---|\n| **continue** (pkg `continue_dev`) | `parse_event` | Continue dev-data JSONL event (versioned schema) | T0 |\n| **aider** | `parse_commit` | Aider `(aider)` git-commit attribution | T0 |\n\n- **Continue**: prompt/completion → excerpt with a `continue {name}` terminal floor; `name`→kind; model/schema→metadata. Package is `continue_dev` because `continue` is a Python keyword; `source_id` is `\"continue\"`.\n- **Aider**: commit subject → excerpt with an `aider-commit` floor; `_attributed_by` classifies the attribution channel (author / committer / co-author). Git attribution is the only stable, documented, code-free Aider surface; the unversioned transcript file is deferred.\n\nBoth excerpt paths end in a guaranteed non-empty terminal literal (`evidence_excerpt_blank` contract), and both parsers are type-defensive against version-skewed records.\n\n## Governance (full QOR cycle)\n\nResearch → plan → independent audit (PASS) → implement → independent review → substantiate, sealed at META_LEDGER Entries #27–#29. Both tools added to `INTEGRATION_CANDIDATE_CATALOG` (§6.1, P1, T0); `FEATURE_INDEX` rows `FX-CONTINUE-001` / `FX-AIDER-001` verified (21 total). SHADOW_GENOME SG-2026-06-04-H/I.\n\n## Verification\n\n- `pytest adapter/core/tests connectors` — **136 passed**\n- `ruff` + `mypy` — clean (67 files)\n- `python scripts/governance_gate.py` — ledger chain + FEATURE_INDEX verified\n- Independent review (objective observer + devil's advocate): **2 blockers + 3 non-blocking** found; both blockers (wrong-typed-",
+      "url": "https://github.com/BicameralAI/bicameral-integrations/pull/16",
+      "mergedAt": "2026-06-04T14:50:13Z",
+      "additions": 701,
+      "deletions": 16,
+      "files": 23,
+      "diffPath": "diffs/BicameralAI-bicameral-integrations/16.diff",
+      "agent": {
+        "vendor": "aider",
+        "confidence": "high",
+        "source": "pr-body-marker"
+      },
+      "searchVendor": "aider"
+    },
+    {
+      "repo": "NodeBB/NodeBB",
+      "prNumber": 14190,
+      "headSha": "c59513ca6f080b5f7a4669118c672e3359c95055",
+      "title": "Manually handle redirects in requests so that they can be checked for internal destination",
+      "bodyExcerpt": "Co-authored-by: aider (ollama/ministral-3:8b) <aider@aider.chat>\n",
+      "url": "https://github.com/NodeBB/NodeBB/pull/14190",
+      "mergedAt": "2026-04-21T14:02:55Z",
+      "additions": 70,
+      "deletions": 48,
+      "files": 1,
+      "diffPath": "diffs/NodeBB-NodeBB/14190.diff",
+      "agent": {
+        "vendor": "aider",
+        "confidence": "high",
+        "source": "pr-body-marker"
+      },
+      "searchVendor": "aider"
+    },
+    {
+      "repo": "legend-exp/pygama",
+      "prNumber": 654,
+      "headSha": "f0a73af188f9ce01bb558bc28b08a9cf5e57a583",
+      "title": "fix: copy per-chunk buffers and final tcm to avoid iterator-buffer reuse",
+      "bodyExcerpt": "Co-authored-by: aider (gpt-5.2) <aider@aider.chat>\n",
+      "url": "https://github.com/legend-exp/pygama/pull/654",
+      "mergedAt": "2026-02-22T19:01:14Z",
+      "additions": 34,
+      "deletions": 1,
+      "files": 2,
+      "diffPath": "diffs/legend-exp-pygama/654.diff",
+      "agent": {
+        "vendor": "aider",
+        "confidence": "high",
+        "source": "pr-body-marker"
+      },
+      "searchVendor": "aider"
+    },
+    {
+      "repo": "damien-robotsix/robotsix-mill",
+      "prNumber": 471,
+      "headSha": "8fd05043d828e4625bb25ae75dd4434052d69953",
+      "title": "mill: Add Python syntax-linter guard to `write_file` and `edit_file` in `fs_tools.py` (20260528T071800Z-add-python-syntax-linter-guard-to-write--83b1)",
+      "bodyExcerpt": "## Source\n\nSWE-agent's Agent-Computer Interface (ACI) design, principle #1: \"A linter runs when an edit command is issued and blocks the edit if the code isn't syntactically correct\" (https://swe-agent.com/latest/background/aci/). Aider implements the same pattern via `--auto-lint` / `--lint-cmd`: after each AI edit, it runs configured linters and feeds error output back to the LLM for correction before proceeding (https://aider.chat/docs/usage/lint-test.html).\n\n## Current gap\n\n`write_file` and `edit_file` in `src/robotsix_mill/agents/fs_tools.py` write content to disk with no syntax validation at all. The implement stage's fix loop (implement → test → retry) catches broken code only after the full test suite runs, which is expensive in both time and LLM tokens. A trivial syntax error (missing colon, unmatched paren) wastes an entire test cycle.\n\n## Proposed change\n\nAdd an optional, lightweight syntax check to `write_file` and `edit_file` that runs only for `.py` files (detected via file extension). Use `ast.parse(content)` or `compile(content, path, 'exec')` to validate syntax before writing to disk. If the syntax check fails, return a descriptive error with the line number and message — the agent can then correct the edit and retry without ever hitting the test gate.\n\nKey design decisions:\n- **Opt-in by extension**: only validate `.py` files; skip `.md`, `.yaml`, `.json`, etc. (avoid false positives on non-Python content).\n- **Non-blocking for non-Python**: if the repo has frontend code, a Python-only guard is still a strict improvement over no guard at all.\n- **Configurable off-switch**: add a `MILL_LINT_ON_EDIT=false` env var to disable the guard for repos where it causes problems.\n- **Do NOT run linters** (ruff, pylint): those require the full module graph and can fail on work-in-progress code. Stick to `ast.parse` / `compile` which only checks syntax, not semantics.\n\n## Implementation sketch\n\nIn `build_fs_tools()` (fs_tools.py), after constructing the `write_f",
+      "url": "https://github.com/damien-robotsix/robotsix-mill/pull/471",
+      "mergedAt": "2026-05-30T10:53:16Z",
+      "additions": 7,
+      "deletions": 7,
+      "files": 2,
+      "diffPath": "diffs/damien-robotsix-robotsix-mill/471.diff",
+      "agent": {
+        "vendor": "aider",
+        "confidence": "high",
+        "source": "pr-body-marker"
+      },
+      "searchVendor": "aider"
+    },
+    {
+      "repo": "blokzdev/ignaite",
+      "prNumber": 78,
+      "headSha": "f92c34f1f1019254ade813e7a4e40267d3712951",
+      "title": "chore(audit): directory freshness audit 2026-06-07 — batch 1 (aider → crewai)",
+      "bodyExcerpt": "## Directory Audit — 2026-06-07\n\nVerified 12 entries with the oldest `lastVerifiedAt` (all dated 2026-06-01):\n`aider`, `arize-phoenix`, `arxiv-sanity`, `bolt-new`, `braintrust`, `brave-search-api`, `cartesia`, `chroma`, `claude-code`, `cline`, `cloudflare`, `crewai`.\n\nEach was checked against its official site and/or GitHub repo for: link health, pricing tier, `openSource` correctness, `deployment`, platforms, model support, and insight accuracy.\n\n---\n\n## Re-verified — no change (lastVerifiedAt bumped)\n\n| Entry | Verified against | Result |\n|---|---|---|\n| aider | aider.chat | ✅ Still open-source, byo-key, local; 44k stars, active |\n| bolt-new | bolt.new | ✅ Still freemium, cloud |\n| braintrust | braintrust.dev/pricing | ✅ Still freemium (Starter $0/mo confirmed) |\n| brave-search-api | brave.com/search/api | ✅ Still freemium ($5 free credits/mo) |\n| cartesia | cartesia.ai/pricing | ✅ Still freemium (20K credits/mo free tier) |\n| chroma | trychroma.com | ✅ Still open-source Apache 2.0, still freemium |\n| claude-code | claude.com/claude-code | ✅ Still live; note: docs URL now redirects to code.claude.com/docs (see below) |\n| cline | cline.bot | ✅ Still open-source Apache 2.0, still byo-key |\n| cloudflare | cloudflare.com/developer-platform | ✅ Still freemium with generous free tiers |\n| crewai | github.com/crewAIInc/crewAI | ✅ Still MIT licensed, open-source, active |\n\n---\n\n## Substantive fixes\n\n### 1. `arize-phoenix` — `openSource: true` → `false`\n\n**Source:** [github.com/Arize-ai/phoenix](https://github.com/Arize-ai/phoenix)\n\nPhoenix is licensed under **Elastic License 2.0 (ELv2)**, which is source-available but explicitly not OSI-approved open-source (per CLAUDE.md: \"source-available ≠ OSI\"). The repo states: _\"This software is licensed under the terms of the Elastic License 2.0 (ELv2).\"_\n\nChanges made:\n- `openSource: true` → `openSource: false`\n- Tagline: removed \"Open-source\" prefix (was factually incorrect)\n- Description: removed \"open-source observability\" phra",
+      "url": "https://github.com/blokzdev/ignaite/pull/78",
+      "mergedAt": "2026-06-07T13:21:39Z",
+      "additions": 17,
+      "deletions": 16,
+      "files": 12,
+      "diffPath": "diffs/blokzdev-ignaite/78.diff",
+      "agent": {
+        "vendor": "claude-code",
+        "confidence": "high",
+        "source": "pr-body-marker"
+      },
+      "searchVendor": "aider"
+    },
+    {
+      "repo": "probabl-ai/scikit-learn-central",
+      "prNumber": 3,
+      "headSha": "53e6ce00cb7ff8732a74267fe3b2f0099f4eb978",
+      "title": "Add skorch to the catalogue",
+      "bodyExcerpt": "I used aider.chat and claude but I did review that the information are correct.",
+      "url": "https://github.com/probabl-ai/scikit-learn-central/pull/3",
+      "mergedAt": "2026-02-25T21:43:41Z",
+      "additions": 24,
+      "deletions": 0,
+      "files": 1,
+      "diffPath": "diffs/probabl-ai-scikit-learn-central/3.diff",
+      "agent": {
+        "vendor": "aider",
+        "confidence": "high",
+        "source": "pr-body-marker"
+      },
+      "searchVendor": "aider"
+    },
+    {
+      "repo": "legend-exp/legend-simflow",
+      "prNumber": 110,
+      "headSha": "2d1fb85916f6833f81aa8348b9e5c8405fa6cb7c",
+      "title": "feat: add streaming STP/OPT TCM merge to LH5 in chunks",
+      "bodyExcerpt": "Co-authored-by: aider (gpt-5.2) <aider@aider.chat>\n",
+      "url": "https://github.com/legend-exp/legend-simflow/pull/110",
+      "mergedAt": "2026-02-21T16:37:07Z",
+      "additions": 160,
+      "deletions": 26,
+      "files": 3,
+      "diffPath": "diffs/legend-exp-legend-simflow/110.diff",
+      "agent": {
+        "vendor": "aider",
+        "confidence": "high",
+        "source": "pr-body-marker"
+      },
+      "searchVendor": "aider"
+    },
+    {
+      "repo": "daytonaio/sandbox-network-whitelist",
+      "prNumber": 85,
+      "headSha": "4d9e8001887750c40bef25ee4ba6f7101f3cbed7",
+      "title": "Add installer endpoints used by harbor agents and benchmarks",
+      "bodyExcerpt": "Searched [harbor](https://github.com/harbor-framework/harbor)'s source for sandbox-side `curl`/`wget` endpoints; ten hosts referenced from agent installers and adapter Dockerfiles aren't currently whitelisted, so each RSTs on Tier 1/2 (`curl: (35) Connection reset by peer`).\r\n\r\n## Agent installers\r\n\r\n| domain | used by |\r\n|---|---|\r\n| `aider.chat` | aider |\r\n| `cursor.com` | cursor-cli (apex; `*.cursor.com` already there) |\r\n| `gh.io` | github copilot-cli (URL shortener → `raw.githubusercontent.com`, target already covered) |\r\n| `acli.atlassian.com` | rovodev-cli (GPG key + apt repo) |\r\n\r\n## Adapter Dockerfiles\r\n\r\n| domain | used by |\r\n|---|---|\r\n| `deb.nodesource.com` | adebench, aider_polyglot, ds1000 (apex `nodesource.com` already there) |\r\n| `golang.org` | aider_polyglot (apex; `*.golang.org` already there) |\r\n| `dl.google.com` | aider_polyglot (302 target of `golang.org/dl/...`) |\r\n| `sh.rustup.rs` | aider_polyglot (apex `rustup.rs` already there) |\r\n| `cmake.org` | featbench |\r\n| `repo.anaconda.com` | scienceagentbench, replicationbench (Miniconda installer) |\r\n\r\n## Repro\r\n\r\nIn a `debian:bookworm-slim` Tier 1/2 sandbox:\r\n\r\n```\r\napt-get update && apt-get install -y curl\r\ncurl -fsSL https://<host>/<path> -o /dev/null\r\n# → curl: (35) Recv failure: Connection reset by peer\r\n```\r\n\r\nAll ten verified failing on 2026-04-29; same URLs work on Tier 3/4.",
+      "url": "https://github.com/daytonaio/sandbox-network-whitelist/pull/85",
+      "mergedAt": "2026-04-29T10:33:01Z",
+      "additions": 22,
+      "deletions": 0,
+      "files": 1,
+      "diffPath": "diffs/daytonaio-sandbox-network-whitelist/85.diff",
+      "agent": {
+        "vendor": "aider",
+        "confidence": "high",
+        "source": "pr-body-marker"
+      },
+      "searchVendor": "aider"
+    }
+  ]
+}

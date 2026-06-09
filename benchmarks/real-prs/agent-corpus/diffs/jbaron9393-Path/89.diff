@@ -1,0 +1,366 @@
+diff --git a/.env.example b/.env.example
+new file mode 100644
+index 0000000..43955e2
+--- /dev/null
++++ b/.env.example
+@@ -0,0 +1,12 @@
++# Copy this file to .env for local development.
++# Do not paste real secrets into .env.example.
++
++# Option A: point the app at a local file containing your OpenAI API key.
++# Windows paths are safest with forward slashes in .env files.
++OPENAI_API_KEY_FILE=C:/Users/jspcb/OneDrive - The University of Colorado Denver/Documents/GitHub/API.txt
++
++# Option B: paste the key directly into .env instead of using OPENAI_API_KEY_FILE.
++# OPENAI_API_KEY=sk-your-key-here
++
++# Optional: set a local login/password gate for the app. Leave blank to disable.
++APP_USERNAME=
+diff --git a/.gitignore b/.gitignore
+index a85b299..0223c30 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -3,3 +3,5 @@ node_modules/
+ 
+ data/style_seed.json
+ data/rewrite_learning.json
++API.txt
++*.key
+diff --git a/README.md b/README.md
+index 38b4ef8..28981a0 100644
+--- a/README.md
++++ b/README.md
+@@ -10,25 +10,29 @@ Anki cloze batch refiner powered by OpenAI.
+ 
+ 
+ 
+-Create a .env file (not committed):
++A local `.env` file has been created for this checkout and points at:
+ 
++```text
++C:\Users\jspcb\OneDrive - The University of Colorado Denver\Documents\GitHub\API.txt
++```
+ 
++The committed `.env.example` shows the same setup without storing any real secret. If you clone this repo again, copy `.env.example` to `.env` or create `.env` in the repo root with:
+ 
+-OPENAI\_API\_KEY=PASTE\_YOUR\_KEY\_HERE  
+-
+-APP\_USERNAME=SET\_A\_USERNAME\_OR\_PATH\_HERE  
+-
+-
+-
+-Run:
+-
+-
++```env
++OPENAI_API_KEY_FILE=C:/Users/jspcb/OneDrive - The University of Colorado Denver/Documents/GitHub/API.txt
++APP_USERNAME=
++```
+ 
+-node server.js
++Your `API.txt` file can contain either just the raw key or a line like `OPENAI_API_KEY=sk-...`. Keep `API.txt` outside the repo or make sure it is listed in `.gitignore` so the secret is not committed. GitHub does not need to read this local file when you run the app locally; only your local Node process needs Windows read permission for it.
+ 
++Run these commands from the repo folder that contains `package.json`:
+ 
++```bash
++npm install
++npm start
++```
+ 
+-Open http://localhost:3000
++Then open **http://localhost:3000** in your browser. Do not double-click `cap_cloze_refiner.html` for local API testing; the browser page must be loaded from `localhost` so it talks to your local Node server and your local `API.txt` key file.
+ 
+ 
+ 
+diff --git a/cap_cloze_refiner.html b/cap_cloze_refiner.html
+index 8e48dd9..8a132f9 100644
+--- a/cap_cloze_refiner.html
++++ b/cap_cloze_refiner.html
+@@ -820,146 +820,91 @@ <h1 class="flex items-center gap-2 text-2xl font-bold text-slate-900 dark:text-s
+   <!-- Scripts -->
+   <script src="script.js?v=20260609-vercel-assets" defer></script>
+ 
+-<!-- Tabs script (ONE only) -->
++<!-- Page chrome script: tabs + theme only. Core app actions live in script.js. -->
+ <script>
+   document.addEventListener("DOMContentLoaded", () => {
+-    if (window.feather) feather.replace();
+-
+-    // ✅ SET SERVER BADGE DYNAMICALLY
+-    const sb = document.getElementById("serverBadge");
+-    if (sb) sb.textContent = `Server: ${window.location.host}`;
+-
+-    // ============================
+-    // THEME (Dark Mode) TOGGLE
+-    // ============================
+-    const root = document.documentElement; // <html>
+-    const toggleBtn = document.getElementById("themeToggle");
+-    const themeIcon = document.getElementById("themeIcon");
+-    const themeLabel = document.getElementById("themeLabel");
+-
+-    function applyTheme(mode) {
+-      const isDark = mode === "dark";
+-      root.classList.toggle("dark", isDark);
+-      if (themeIcon) themeIcon.textContent = isDark ? "☀️" : "🌙";
+-      if (themeLabel) themeLabel.textContent = isDark ? "Light" : "Dark";
++    // Keep tab switching isolated so unrelated UI errors do not break navigation.
++    const buttons = Array.from(document.querySelectorAll(".tab-btn"));
++    const panels = Array.from(document.querySelectorAll(".tab-panel"));
+ 
+-      const synopticFrame = document.getElementById("synopticFrame");
+-      if (synopticFrame && synopticFrame.contentWindow) {
+-        synopticFrame.contentWindow.postMessage({ type: "theme", theme: mode }, window.location.origin);
+-      }
+-    }
+-
+-    // Initialize from saved preference, else OS preference
+-    const saved = localStorage.getItem("theme");
+-    if (saved === "dark" || saved === "light") {
+-      applyTheme(saved);
+-    } else {
+-      const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches;
+-      applyTheme(prefersDark ? "dark" : "light");
+-    }
++    function activate(tabName) {
++      if (!tabName) return;
+ 
+-    const synopticFrame = document.getElementById("synopticFrame");
+-    if (synopticFrame) {
+-      synopticFrame.addEventListener("load", () => {
+-        const mode = root.classList.contains("dark") ? "dark" : "light";
+-        if (synopticFrame.contentWindow) {
+-          synopticFrame.contentWindow.postMessage({ type: "theme", theme: mode }, window.location.origin);
+-        }
++      panels.forEach((panel) => {
++        panel.classList.toggle("hidden", panel.dataset.panel !== tabName);
+       });
+-    }
+ 
+-    if (toggleBtn) {
+-      toggleBtn.addEventListener("click", () => {
+-        const next = root.classList.contains("dark") ? "light" : "dark";
+-        localStorage.setItem("theme", next);
+-        applyTheme(next);
+-      });
+-    }
++      buttons.forEach((button) => {
++        const isActive = button.dataset.tab === tabName;
+ 
+-    // ============================
+-    // Tabs
+-    // ============================
+-    const buttons = document.querySelectorAll(".tab-btn");
+-    const panels = document.querySelectorAll(".tab-panel");
++        button.classList.toggle("bg-primary-600", isActive);
++        button.classList.toggle("text-white", isActive);
++        button.classList.toggle("ring-2", isActive);
++        button.classList.toggle("ring-primary-500/40", isActive);
++
++        button.classList.toggle("bg-slate-100", !isActive);
++        button.classList.toggle("dark:bg-slate-800", !isActive);
++        button.classList.toggle("text-slate-700", !isActive);
++        button.classList.toggle("dark:text-slate-200", !isActive);
+ 
+-    function activate(tabName) {
+-      panels.forEach((p) => p.classList.toggle("hidden", p.dataset.panel !== tabName));
+-      buttons.forEach((b) => {
+-        const isActive = b.dataset.tab === tabName;
+-
+-        // Active state
+-        b.classList.toggle("bg-primary-600", isActive);
+-        b.classList.toggle("text-white", isActive);
+-        b.classList.toggle("ring-2", isActive);
+-        b.classList.toggle("ring-primary-500/40", isActive);
+-
+-        // Inactive state
+-        b.classList.toggle("bg-slate-100", !isActive);
+-        b.classList.toggle("dark:bg-slate-800", !isActive);
+-        b.classList.toggle("text-slate-700", !isActive);
+-        b.classList.toggle("dark:text-slate-200", !isActive);
+-
+-        // Clean up hover glow on inactive
+         if (!isActive) {
+-          b.classList.remove("ring-2", "ring-primary-500/40", "shadow-lg", "shadow-primary-500/30");
++          button.classList.remove("shadow-lg", "shadow-primary-500/30");
+         }
+       });
+ 
+-      if (window.feather) feather.replace();
++      if (window.feather) window.feather.replace();
+     }
+ 
+-        function clearRefinerTab() {
+-      bulkInput.value = "";
+-      if (extraRulesEl) extraRulesEl.value = "";
+-      renderCards([]);
+-      refreshStats();
+-      setStatus("");
+-    }
++    buttons.forEach((button) => {
++      button.addEventListener("click", () => activate(button.dataset.tab));
++    });
+ 
+-    function clearRewriterTab() {
+-      rwInput.value = "";
+-      rwRules.value = "";
+-      rwOutput.innerHTML = "";
+-      rwOutput.dataset.raw = "";
+-      rwCopy.disabled = true;
+-      setStatus("");
+-    }
++    window.activatePathTab = activate;
++    activate("rewriter");
++
++    // Everything below is non-critical page chrome. If it fails, tabs still work.
++    try {
++      if (window.feather) window.feather.replace();
++
++      const serverBadge = document.getElementById("serverBadge");
++      if (serverBadge) serverBadge.textContent = `Server: ${window.location.host || "local file"}`;
++
++      const root = document.documentElement;
++      const toggleBtn = document.getElementById("themeToggle");
++      const themeIcon = document.getElementById("themeIcon");
++      const themeLabel = document.getElementById("themeLabel");
++      const synopticFrame = document.getElementById("synopticFrame");
+ 
+-    buttons.forEach((btn) => btn.addEventListener("click", () => activate(btn.dataset.tab)));
+-    activate("rewriter"); // or "refiner" or "synoptic"
+-
+-    // ============================
+-    // Enter = Refine | Ctrl/Cmd+Enter = New line
+-    // bulkInput + extraRules
+-    // ============================
+-    document.addEventListener(
+-      "keydown",
+-      (e) => {
+-        const t = e.target;
+-        if (!(t instanceof HTMLTextAreaElement)) return;
+-        if (t.id !== "bulkInput" && t.id !== "extraRules") return;
+-
+-        const isEnter = e.key === "Enter" || e.key === "NumpadEnter";
+-        if (!isEnter) return;
+-
+-        const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+-
+-        // Ctrl/Cmd + Enter → newline
+-        if (isCtrlOrCmd) {
+-          e.preventDefault();
+-          const start = t.selectionStart ?? t.value.length;
+-          const end = t.selectionEnd ?? t.value.length;
+-          t.value = t.value.slice(0, start) + "\n" + t.value.slice(end);
+-          t.selectionStart = t.selectionEnd = start + 1;
+-          return;
++      function applyTheme(mode) {
++        const isDark = mode === "dark";
++        root.classList.toggle("dark", isDark);
++        if (themeIcon) themeIcon.textContent = isDark ? "☀️" : "🌙";
++        if (themeLabel) themeLabel.textContent = isDark ? "Light" : "Dark";
++
++        if (synopticFrame?.contentWindow) {
++          synopticFrame.contentWindow.postMessage(
++            { type: "theme", theme: mode },
++            window.location.origin || "*",
++          );
+         }
++      }
+ 
+-        // Enter → refine
+-        e.preventDefault();
+-        if (typeof refineAll === "function") refineAll();
+-      },
+-      true
+-    );
++      const saved = localStorage.getItem("theme");
++      const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches;
++      applyTheme(saved === "dark" || saved === "light" ? saved : prefersDark ? "dark" : "light");
++
++      synopticFrame?.addEventListener("load", () => {
++        applyTheme(root.classList.contains("dark") ? "dark" : "light");
++      });
++
++      toggleBtn?.addEventListener("click", () => {
++        const next = root.classList.contains("dark") ? "light" : "dark";
++        localStorage.setItem("theme", next);
++        applyTheme(next);
++      });
++    } catch (err) {
++      console.warn("Non-critical page chrome failed:", err);
++    }
+   });
+ </script>
+ </body>
+diff --git a/script.js b/script.js
+index cd5abe9..2fb520d 100644
+--- a/script.js
++++ b/script.js
+@@ -84,12 +84,14 @@ document.addEventListener("DOMContentLoaded", () => {
+ 
+   const isLocalFile = window.location.protocol === "file:";
+   const isGitHubPages = /(^|\.)github\.io$/i.test(window.location.hostname);
+-  const defaultApiOrigin = "https://path-lcq4f9pfy-jamesbar-s-projects.vercel.app";
++  const deployedApiOrigin = "https://path-lcq4f9pfy-jamesbar-s-projects.vercel.app";
++  const localApiOrigin = "http://localhost:3000";
++  const defaultApiOrigin = isLocalFile ? localApiOrigin : deployedApiOrigin;
+   const configuredApiOrigin = String(
+     window.PATH_API_ORIGIN || localStorage.getItem("PATH_API_ORIGIN") || defaultApiOrigin,
+   ).replace(/\/$/, "");
+   const staticBackendMessage =
+-    `AI actions are unavailable because the backend could not be reached. The configured API is ${configuredApiOrigin}. Sign in there if login is enabled, then reload this page.`;
++    `AI actions are unavailable because the backend could not be reached. The configured API is ${configuredApiOrigin}. If you are running locally, start the server with npm start and open http://localhost:3000 instead of double-clicking the HTML file.`;
+   let backendUnavailable = false;
+ 
+   function shouldUseRemoteApi() {
+diff --git a/server.js b/server.js
+index b29897c..f19212a 100644
+--- a/server.js
++++ b/server.js
+@@ -4,11 +4,47 @@ import express from "express";
+ import cors from "cors";
+ import dotenv from "dotenv";
+ import path from "path";
+-import { promises as fs } from "fs";
++import { promises as fs, readFileSync } from "fs";
+ import { fileURLToPath } from "url";
+ 
+ dotenv.config({ override: true });
+ 
++function parseOpenAIKeyFile(raw) {
++  const text = String(raw || "").trim();
++  if (!text) return "";
++
++  const envLine = text
++    .split(/\r?\n/)
++    .map((line) => line.trim())
++    .find((line) => /^OPENAI_API_KEY\s*=/.test(line));
++
++  const key = envLine ? envLine.replace(/^OPENAI_API_KEY\s*=\s*/, "") : text.split(/\r?\n/)[0];
++  return key.trim().replace(/^['"]|['"]$/g, "");
++}
++
++function loadOpenAIKeyFromFile() {
++  if (String(process.env.OPENAI_API_KEY || "").trim()) return;
++
++  const apiKeyFile = String(
++    process.env.OPENAI_API_KEY_FILE || process.env.API_KEY_FILE || "",
++  ).trim();
++  if (!apiKeyFile) return;
++
++  try {
++    const key = parseOpenAIKeyFile(readFileSync(apiKeyFile, "utf8"));
++    if (key) {
++      process.env.OPENAI_API_KEY = key;
++      console.log("Loaded OPENAI_API_KEY from file:", apiKeyFile);
++    } else {
++      console.warn("OPENAI_API_KEY_FILE was readable but did not contain a key:", apiKeyFile);
++    }
++  } catch (err) {
++    console.warn("Could not read OPENAI_API_KEY_FILE:", apiKeyFile, err?.message || err);
++  }
++}
++
++loadOpenAIKeyFromFile();
++
+ const __filename = fileURLToPath(import.meta.url);
+ const __dirname = path.dirname(__filename);
+ 

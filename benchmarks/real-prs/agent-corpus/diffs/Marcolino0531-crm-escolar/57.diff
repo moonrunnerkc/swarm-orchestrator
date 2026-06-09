@@ -1,0 +1,391 @@
+diff --git a/src/components/crm/FuncionarioModal.tsx b/src/components/crm/FuncionarioModal.tsx
+index 3ab3b5c..7142135 100644
+--- a/src/components/crm/FuncionarioModal.tsx
++++ b/src/components/crm/FuncionarioModal.tsx
+@@ -1,5 +1,12 @@
+ import React, { useState } from "react";
+-import { Unidade, Funcionario, Genero, EstadoCivil, TipoFalta } from "@/lib/crm/types";
++import {
++  Unidade,
++  Funcionario,
++  Genero,
++  EstadoCivil,
++  TipoFalta,
++  CategoriaFalta,
++} from "@/lib/crm/types";
+ import { UNIDADES } from "@/lib/crm/constants";
+ 
+ interface FuncionarioModalProps {
+@@ -9,7 +16,13 @@ interface FuncionarioModalProps {
+   onFechar: () => void;
+   onAdicionarFerias?: (funcionarioId: string, dataInicio: string, dataFim: string) => void;
+   onRemoverFerias?: (funcionarioId: string, feriasId: string) => void;
+-  onAdicionarFalta?: (funcionarioId: string, data: string, tipo: TipoFalta) => void;
++  onAdicionarFalta?: (
++    funcionarioId: string,
++    data: string,
++    tipo: TipoFalta,
++    categoria: CategoriaFalta,
++    duracaoMinutos?: number,
++  ) => void;
+   onRemoverFalta?: (funcionarioId: string, faltaId: string) => void;
+   isAdmin?: boolean;
+ }
+@@ -22,6 +35,24 @@ const TIPO_FALTA_OPCOES: { valor: TipoFalta; label: string }[] = [
+ const tipoFaltaLabel = (t: TipoFalta): string =>
+   TIPO_FALTA_OPCOES.find((o) => o.valor === t)?.label ?? "";
+ 
++const CATEGORIA_FALTA_OPCOES: { valor: CategoriaFalta; label: string }[] = [
++  { valor: "integral", label: "Falta Integral" },
++  { valor: "atraso", label: "Atraso" },
++  { valor: "saida_antecipada", label: "Saída Antecipada" },
++];
++
++const categoriaFaltaLabel = (c: CategoriaFalta): string =>
++  CATEGORIA_FALTA_OPCOES.find((o) => o.valor === c)?.label ?? "";
++
++const formatarDuracao = (minutos: number): string => {
++  if (!minutos || minutos <= 0) return "";
++  const h = Math.floor(minutos / 60);
++  const m = minutos % 60;
++  if (h > 0 && m > 0) return `${h}h${String(m).padStart(2, "0")}`;
++  if (h > 0) return `${h}h`;
++  return `${m}min`;
++};
++
+ const aplicarMascaraData = (valor: string) => {
+   const nums = valor.replace(/\D/g, "").slice(0, 8);
+   if (nums.length <= 2) return nums;
+@@ -136,10 +167,14 @@ const FuncionarioModal: React.FC<FuncionarioModalProps> = ({
+     dataDisplay: string;
+     data: string;
+     tipo: TipoFalta;
++    categoria: CategoriaFalta;
++    duracao: string;
+   }>({
+     dataDisplay: "",
+     data: "",
+     tipo: "sem_atestado",
++    categoria: "integral",
++    duracao: "",
+   });
+   const [mostrarFaltaForm, setMostrarFaltaForm] = useState(false);
+ 
+@@ -154,8 +189,18 @@ const FuncionarioModal: React.FC<FuncionarioModalProps> = ({
+ 
+   const handleAdicionarFalta = () => {
+     if (funcionarioExistente && onAdicionarFalta && faltaForm.data) {
+-      onAdicionarFalta(funcionarioExistente.id, faltaForm.data, faltaForm.tipo);
+-      setFaltaForm({ dataDisplay: "", data: "", tipo: "sem_atestado" });
++      const duracaoMinutos =
++        faltaForm.categoria === "integral"
++          ? undefined
++          : parseInt(faltaForm.duracao, 10) || undefined;
++      onAdicionarFalta(
++        funcionarioExistente.id,
++        faltaForm.data,
++        faltaForm.tipo,
++        faltaForm.categoria,
++        duracaoMinutos,
++      );
++      setFaltaForm({ dataDisplay: "", data: "", tipo: "sem_atestado", categoria: "integral", duracao: "" });
+       setMostrarFaltaForm(false);
+     }
+   };
+@@ -600,7 +645,7 @@ const FuncionarioModal: React.FC<FuncionarioModalProps> = ({
+                 <div className="bg-amber-50 rounded-lg p-3 mb-3 space-y-2">
+                   <div className="grid grid-cols-2 gap-2">
+                     <div>
+-                      <label className="block text-xs text-gray-600 mb-1">Data da Falta</label>
++                      <label className="block text-xs text-gray-600 mb-1">Data</label>
+                       <input
+                         type="text"
+                         value={faltaForm.dataDisplay}
+@@ -610,6 +655,28 @@ const FuncionarioModal: React.FC<FuncionarioModalProps> = ({
+                         className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
+                       />
+                     </div>
++                    <div>
++                      <label className="block text-xs text-gray-600 mb-1">Ocorrência</label>
++                      <select
++                        value={faltaForm.categoria}
++                        onChange={(e) =>
++                          setFaltaForm((prev) => ({
++                            ...prev,
++                            categoria: e.target.value as CategoriaFalta,
++                            duracao: e.target.value === "integral" ? "" : prev.duracao,
++                          }))
++                        }
++                        className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm bg-white"
++                      >
++                        {CATEGORIA_FALTA_OPCOES.map((o) => (
++                          <option key={o.valor} value={o.valor}>
++                            {o.label}
++                          </option>
++                        ))}
++                      </select>
++                    </div>
++                  </div>
++                  <div className="grid grid-cols-2 gap-2">
+                     <div>
+                       <label className="block text-xs text-gray-600 mb-1">Tipo</label>
+                       <select
+@@ -626,6 +693,23 @@ const FuncionarioModal: React.FC<FuncionarioModalProps> = ({
+                         ))}
+                       </select>
+                     </div>
++                    {faltaForm.categoria !== "integral" && (
++                      <div>
++                        <label className="block text-xs text-gray-600 mb-1">
++                          Tempo de Ausência (min)
++                        </label>
++                        <input
++                          type="number"
++                          min={0}
++                          value={faltaForm.duracao}
++                          onChange={(e) =>
++                            setFaltaForm((prev) => ({ ...prev, duracao: e.target.value }))
++                          }
++                          placeholder="Ex: 30"
++                          className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm"
++                        />
++                      </div>
++                    )}
+                   </div>
+                   <div className="flex gap-2">
+                     <button
+@@ -658,8 +742,14 @@ const FuncionarioModal: React.FC<FuncionarioModalProps> = ({
+                         key={falta.id}
+                         className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2"
+                       >
+-                        <span className="text-sm text-gray-700 flex items-center gap-2">
++                        <span className="text-sm text-gray-700 flex items-center gap-2 flex-wrap">
+                           📅 {converterParaBR(falta.data)}
++                          <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-sky-100 text-sky-700">
++                            {categoriaFaltaLabel(falta.categoria ?? "integral")}
++                            {falta.duracaoMinutos
++                              ? ` · ${formatarDuracao(falta.duracaoMinutos)}`
++                              : ""}
++                          </span>
+                           <span
+                             className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                               falta.tipo === "com_atestado"
+diff --git a/src/components/crm/RankingFaltas.tsx b/src/components/crm/RankingFaltas.tsx
+index 9afbdc1..fc51adc 100644
+--- a/src/components/crm/RankingFaltas.tsx
++++ b/src/components/crm/RankingFaltas.tsx
+@@ -1,5 +1,5 @@
+ import React from "react";
+-import { Funcionario } from "@/lib/crm/types";
++import { Funcionario, CategoriaFalta } from "@/lib/crm/types";
+ 
+ interface RankingFaltasProps {
+   funcionarios: Funcionario[];
+@@ -11,38 +11,74 @@ interface RankingItem {
+   total: number;
+   comAtestado: number;
+   semAtestado: number;
++  totalMinutos: number;
+ }
+ 
+-const RankingFaltas: React.FC<RankingFaltasProps> = ({ funcionarios }) => {
+-  const ranking: RankingItem[] = funcionarios
++const categoriaDe = (c?: CategoriaFalta): CategoriaFalta => c ?? "integral";
++
++const formatarDuracao = (minutos: number): string => {
++  if (!minutos || minutos <= 0) return "0min";
++  const h = Math.floor(minutos / 60);
++  const m = minutos % 60;
++  if (h > 0 && m > 0) return `${h}h${String(m).padStart(2, "0")}`;
++  if (h > 0) return `${h}h`;
++  return `${m}min`;
++};
++
++// Soma por funcionário considerando apenas as categorias pedidas, ordenando do
++// maior número de ocorrências para o menor e, em empate, priorizando quem tem
++// mais ocorrências "Sem Atestado".
++const construirRanking = (
++  funcionarios: Funcionario[],
++  categorias: CategoriaFalta[],
++): RankingItem[] =>
++  funcionarios
+     .map((f) => {
+-      const faltas = f.faltas ?? [];
+-      const comAtestado = faltas.filter((fa) => fa.tipo === "com_atestado").length;
+-      const semAtestado = faltas.filter((fa) => fa.tipo === "sem_atestado").length;
++      const ocorrencias = (f.faltas ?? []).filter((fa) =>
++        categorias.includes(categoriaDe(fa.categoria)),
++      );
+       return {
+         id: f.id,
+         nome: f.nomeCompleto,
+-        total: faltas.length,
+-        comAtestado,
+-        semAtestado,
++        total: ocorrencias.length,
++        comAtestado: ocorrencias.filter((fa) => fa.tipo === "com_atestado").length,
++        semAtestado: ocorrencias.filter((fa) => fa.tipo === "sem_atestado").length,
++        totalMinutos: ocorrencias.reduce((acc, fa) => acc + (fa.duracaoMinutos ?? 0), 0),
+       };
+     })
+     .filter((r) => r.total > 0)
+-    .sort((a, b) => b.total - a.total);
++    .sort((a, b) => b.total - a.total || b.semAtestado - a.semAtestado);
+ 
++interface RankingCardProps {
++  titulo: string;
++  icone: string;
++  vazio: string;
++  ranking: RankingItem[];
++  unidadeLabel: (total: number) => string;
++  mostrarTempo?: boolean;
++}
++
++const RankingCard: React.FC<RankingCardProps> = ({
++  titulo,
++  icone,
++  vazio,
++  ranking,
++  unidadeLabel,
++  mostrarTempo = false,
++}) => {
+   const maxTotal = ranking.length > 0 ? ranking[0].total : 0;
+ 
+   return (
+     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+       <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
+-        <span>🏆</span>
+-        <h3 className="text-sm font-bold text-gray-700">Ranking de Faltas</h3>
++        <span>{icone}</span>
++        <h3 className="text-sm font-bold text-gray-700">{titulo}</h3>
+       </div>
+ 
+       {ranking.length === 0 ? (
+         <div className="px-4 py-8 text-center text-gray-400">
+           <span className="text-3xl block mb-2">📋</span>
+-          <p className="text-sm">Nenhuma falta registrada.</p>
++          <p className="text-sm">{vazio}</p>
+         </div>
+       ) : (
+         <div className="divide-y divide-gray-100">
+@@ -66,7 +102,7 @@ const RankingFaltas: React.FC<RankingFaltasProps> = ({ funcionarios }) => {
+                   <span className="text-sm font-medium text-gray-800 truncate">{item.nome}</span>
+                 </div>
+                 <span className="flex-shrink-0 text-sm font-bold text-gray-700 ml-2">
+-                  {item.total} {item.total === 1 ? "falta" : "faltas"}
++                  {item.total} {unidadeLabel(item.total)}
+                 </span>
+               </div>
+ 
+@@ -85,7 +121,7 @@ const RankingFaltas: React.FC<RankingFaltasProps> = ({ funcionarios }) => {
+                 )}
+               </div>
+ 
+-              <div className="flex items-center gap-3 text-xs text-gray-500">
++              <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
+                 <span className="flex items-center gap-1">
+                   <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                   {item.comAtestado} com atestado
+@@ -94,6 +130,11 @@ const RankingFaltas: React.FC<RankingFaltasProps> = ({ funcionarios }) => {
+                   <span className="w-2 h-2 rounded-full bg-red-400" />
+                   {item.semAtestado} sem atestado
+                 </span>
++                {mostrarTempo && (
++                  <span className="flex items-center gap-1 text-gray-600 font-medium">
++                    ⏱ {formatarDuracao(item.totalMinutos)}
++                  </span>
++                )}
+               </div>
+             </div>
+           ))}
+@@ -103,4 +144,29 @@ const RankingFaltas: React.FC<RankingFaltasProps> = ({ funcionarios }) => {
+   );
+ };
+ 
++const RankingFaltas: React.FC<RankingFaltasProps> = ({ funcionarios }) => {
++  const rankingFaltas = construirRanking(funcionarios, ["integral"]);
++  const rankingParciais = construirRanking(funcionarios, ["atraso", "saida_antecipada"]);
++
++  return (
++    <div className="space-y-4">
++      <RankingCard
++        titulo="Ranking de Faltas"
++        icone="🏆"
++        vazio="Nenhuma falta integral registrada."
++        ranking={rankingFaltas}
++        unidadeLabel={(t) => (t === 1 ? "falta" : "faltas")}
++      />
++      <RankingCard
++        titulo="Ranking de Atrasos e Saídas"
++        icone="⏰"
++        vazio="Nenhum atraso ou saída antecipada registrado."
++        ranking={rankingParciais}
++        unidadeLabel={(t) => (t === 1 ? "ocorrência" : "ocorrências")}
++        mostrarTempo
++      />
++    </div>
++  );
++};
++
+ export default RankingFaltas;
+diff --git a/src/lib/crm/hooks.ts b/src/lib/crm/hooks.ts
+index 221749e..f6b79af 100644
+--- a/src/lib/crm/hooks.ts
++++ b/src/lib/crm/hooks.ts
+@@ -15,6 +15,7 @@ import type {
+   PeriodoFerias,
+   TarefaOnboardingId,
+   TipoFalta,
++  CategoriaFalta,
+ } from "./types";
+ import type { Json, TablesUpdate } from "@/integrations/supabase/types";
+ 
+@@ -369,13 +370,20 @@ export function useFuncionarios() {
+       if (error) throw error;
+     });
+ 
+-  const adicionarFalta = (funcionarioId: string, data: string, tipo: TipoFalta) =>
++  const adicionarFalta = (
++    funcionarioId: string,
++    data: string,
++    tipo: TipoFalta,
++    categoria: CategoriaFalta,
++    duracaoMinutos?: number,
++  ) =>
+     run(async () => {
+       const atual = funcionarios.find((f) => f.id === funcionarioId);
+-      const faltas: Falta[] = [
+-        ...(atual?.faltas ?? []),
+-        { id: crypto.randomUUID(), data, tipo },
+-      ];
++      const nova: Falta = { id: crypto.randomUUID(), data, tipo, categoria };
++      if (categoria !== "integral" && duracaoMinutos != null && duracaoMinutos > 0) {
++        nova.duracaoMinutos = duracaoMinutos;
++      }
++      const faltas: Falta[] = [...(atual?.faltas ?? []), nova];
+       const { error } = await supabase
+         .from("funcionarios")
+         .update({ faltas: faltas as unknown as Json })
+diff --git a/src/lib/crm/types.ts b/src/lib/crm/types.ts
+index aeedaec..c3bac47 100644
+--- a/src/lib/crm/types.ts
++++ b/src/lib/crm/types.ts
+@@ -96,10 +96,18 @@ export interface PeriodoFerias {
+ 
+ export type TipoFalta = "com_atestado" | "sem_atestado";
+ 
++// Tipo da ocorrência: falta integral (dia inteiro) ou ausência parcial.
++export type CategoriaFalta = "integral" | "atraso" | "saida_antecipada";
++
+ export interface Falta {
+   id: string;
+   data: string;
+   tipo: TipoFalta;
++  // Categoria da ocorrência. Registros antigos não têm este campo e são
++  // tratados como "integral".
++  categoria?: CategoriaFalta;
++  // Tempo de ausência em minutos (apenas para atraso/saída antecipada).
++  duracaoMinutos?: number;
+ }
+ 
+ export type Genero = "feminino" | "masculino" | "outro" | "prefiro-nao-informar";

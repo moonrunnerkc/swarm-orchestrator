@@ -1,0 +1,377 @@
+diff --git a/app/components/layout/sidebar.jsx b/app/components/layout/sidebar.jsx
+index 94ec8b8..b352185 100644
+--- a/app/components/layout/sidebar.jsx
++++ b/app/components/layout/sidebar.jsx
+@@ -1,4 +1,4 @@
+-import { initials } from '../../utils/helpers'
++import { initials } from '../../utils/helper'
+ import { supabase } from '../../lib/supabase'
+ 
+ const NAV_ITEMS = {
+diff --git a/app/data/mockdata.jsx b/app/data/mockdata.jsx
+index e78b874..dc8ab0a 100644
+--- a/app/data/mockdata.jsx
++++ b/app/data/mockdata.jsx
+@@ -1,7 +1,9 @@
+ // ─── MOCK DATA (used when Supabase is not configured) ───────
+-const isMockMode = SUPABASE_URL.includes("YOUR_PROJECT");
++import { SUPABASE_URL } from "../pages/config";
+ 
+-const MOCK_STATE = {
++export const isMockMode = !SUPABASE_URL || SUPABASE_URL.includes("YOUR_PROJECT");
++
++export const MOCK_STATE = {
+   currentUser: null,
+   users: [
+     { id: "s1", full_name: "Chidi Okonkwo", email: "student@demo.com", role: "student", matric_no: "ENG/2021/001", company_name: "Dangote Industries", department: "Computer Engineering", siwes_start_date: "2024-06-01", siwes_end_date: "2024-11-30", supervisor_id: "sup1", lecturer_id: "lec1" },
+diff --git a/app/lib/ai.jsx b/app/lib/ai.jsx
+index 00b38bd..954ec7e 100644
+--- a/app/lib/ai.jsx
++++ b/app/lib/ai.jsx
+@@ -1,7 +1,7 @@
+ // ─── AI HELPER ──────────────────────────────────────────────
+-import { CLAUDE_MODEL } from '../config'
++import { CLAUDE_MODEL } from '../pages/config'
+  
+-async function generateWeeklyReport(entries, studentName, companyName) {
++export async function generateWeeklyReport(entries, studentName, companyName) {
+   const prompt = `You are a professional SIWES (Student Industrial Work Experience Scheme) report writer. 
+ Generate a formal, corporate-style weekly summary report based on the following daily log entries.
+ 
+diff --git a/app/pages/config.jsx b/app/pages/config.jsx
+index 1a40fa2..88f3bc6 100644
+--- a/app/pages/config.jsx
++++ b/app/pages/config.jsx
+@@ -1,4 +1,4 @@
+ // ──── CONFIG
+-export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+-export const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
++export const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://YOUR_PROJECT.supabase.co";
++export const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "YOUR_ANON_KEY";
+ export const CLAUDE_MODEL = "claude-sonnet-4-20250514";
+\ No newline at end of file
+diff --git a/app/pages/lecturer/Authpage.jsx b/app/pages/lecturer/Authpage.jsx
+index dc5a51a..d78f5bf 100644
+--- a/app/pages/lecturer/Authpage.jsx
++++ b/app/pages/lecturer/Authpage.jsx
+@@ -1,8 +1,8 @@
+ // ─── AUTH PAGE ───────────────────────────────────────────────
+ import { useState } from 'react'
+ import { supabase } from '../../lib/supabase'
+-import { isMockMode, MOCK_STATE } from '../../data/mockData'
+-import Alert from '../../components/ui/Alert'
++import { isMockMode, MOCK_STATE } from '../../data/mockdata'
++import Alert from '../../components/alert'
+  
+ export default
+ function AuthPage({ onLogin }) {
+diff --git a/app/pages/lecturer/audittrial.jsx b/app/pages/lecturer/audittrial.jsx
+index 6cd4efb..8164b9a 100644
+--- a/app/pages/lecturer/audittrial.jsx
++++ b/app/pages/lecturer/audittrial.jsx
+@@ -1,4 +1,4 @@
+-function AuditTrail() {
++export default function AuditTrail() {
+   const events = [
+     { id: 1, action: "Log Entry Approved", user: "Mr. Emeka Nwosu", entity: "Entry #e3 — Chidi Okonkwo", time: "2024-06-07 09:14", icon: "✅" },
+     { id: 2, action: "Weekly Report Signed", user: "Mr. Emeka Nwosu", entity: "Week 1 Report — Chidi Okonkwo", time: "2024-06-10 09:00", icon: "✍️" },
+diff --git a/app/pages/lecturer/lecturedashboard.jsx b/app/pages/lecturer/lecturedashboard.jsx
+index c183e4d..1b5f9c1 100644
+--- a/app/pages/lecturer/lecturedashboard.jsx
++++ b/app/pages/lecturer/lecturedashboard.jsx
+@@ -1,5 +1,13 @@
++import { useState, useEffect } from "react";
++import { isMockMode, MOCK_STATE } from "../../data/mockdata";
++import { fmt, initials } from "../../utils/helper";
++import LecturerStudents from "./lecturerstudent";
++import LecturerReports from "./lecturerreport";
++import AuditTrail from "./audittrial";
++import ProfilePage from "../profilepage";
++
+ // ─── LECTURER DASHBOARD ─────────────────────────────────────
+-function LecturerDashboard({ user, activeTab }) {
++export default function LecturerDashboard({ user, activeTab }) {
+   const [students, setStudents] = useState([]);
+   const [entries, setEntries] = useState([]);
+   const [reports, setReports] = useState([]);
+diff --git a/app/pages/lecturer/lecturerreport.jsx b/app/pages/lecturer/lecturerreport.jsx
+index fa0a6fd..191845d 100644
+--- a/app/pages/lecturer/lecturerreport.jsx
++++ b/app/pages/lecturer/lecturerreport.jsx
+@@ -1,5 +1,10 @@
+ 
+-function LecturerReports({ students, reports }) {
++import { useState } from "react";
++import { fmt, initials } from "../../utils/helper";
++import Modal from "../../components/modal";
++import Alert from "../../components/alert";
++
++export default function LecturerReports({ students, reports }) {
+   const [selected, setSelected] = useState(null);
+   const allReports = reports.filter(r => students.some(s => s.id === r.student_id));
+   return (
+diff --git a/app/pages/lecturer/lecturerstudent.jsx b/app/pages/lecturer/lecturerstudent.jsx
+index ec99ce4..2d5800e 100644
+--- a/app/pages/lecturer/lecturerstudent.jsx
++++ b/app/pages/lecturer/lecturerstudent.jsx
+@@ -1,4 +1,9 @@
+-function LecturerStudents({ students, entries, reports }) {
++import { useState } from "react";
++import { fmt, initials } from "../../utils/helper";
++import Modal from "../../components/modal";
++import Alert from "../../components/alert";
++
++export default function LecturerStudents({ students, entries, reports }) {
+   const [selected, setSelected] = useState(null);
+   return (
+     <div className="page animate-in">
+diff --git a/app/pages/profilepage.jsx b/app/pages/profilepage.jsx
+index afe60ca..f7ee789 100644
+--- a/app/pages/profilepage.jsx
++++ b/app/pages/profilepage.jsx
+@@ -1,4 +1,6 @@
+-function ProfilePage({ user }) {
++import { initials, fmt } from "../utils/helper";
++
++export default function ProfilePage({ user }) {
+   return (
+     <div className="page animate-in">
+       <div className="page-header"><h1>My Profile</h1></div>
+diff --git a/app/pages/student/logentriemodal.jsx b/app/pages/student/logentriemodal.jsx
+index 84e2a2e..bd6dedf 100644
+--- a/app/pages/student/logentriemodal.jsx
++++ b/app/pages/student/logentriemodal.jsx
+@@ -1,4 +1,9 @@
+-function LogEntryModal({ user, entry, onClose, onSaved }) {
++import { useState } from "react";
++import { isMockMode, MOCK_STATE } from "../../data/mockdata";
++import { supabase } from "../../lib/supabase";
++import Modal from "../../components/modal";
++
++export default function LogEntryModal({ user, entry, onClose, onSaved }) {
+   const [form, setForm] = useState({
+     entry_date: entry?.entry_date || new Date().toISOString().split("T")[0],
+     activities: entry?.activities || "",
+diff --git a/app/pages/student/logentries.jsx b/app/pages/student/logentries.jsx
+index 470d671..25eeca8 100644
+--- a/app/pages/student/logentries.jsx
++++ b/app/pages/student/logentries.jsx
+@@ -1,17 +1,13 @@
+ // src/pages/student/LogEntries.jsx
+ import { useState } from "react";
+ import { supabase } from "../../lib/supabase";
+-import { isMockMode, MOCK_STATE } from "../../data/mockData";
+-import { fmt } from "../../utils/helpers";
+-import Modal from "../../components/ui/Modal";
+-import LogEntryModal from "./LogEntryModal";
+-
+-export default function LogEntries({ user, entries, onRefresh }) {
+-  // ... exact same function body as in the single file
+-}
++import { isMockMode, MOCK_STATE } from "../../data/mockdata";
++import { fmt } from "../../utils/helper";
++import Modal from "../../components/modal";
++import LogEntryModal from "./logentriemodal";
+ 
+ // ─── LOG ENTRIES PAGE ───────────────────────────────────────
+-function LogEntries({ user, entries, onRefresh }) {
++export default function LogEntries({ user, entries, onRefresh }) {
+   const [showModal, setShowModal] = useState(false);
+   const [editEntry, setEditEntry] = useState(null);
+   const [filter, setFilter] = useState("all");
+diff --git a/app/pages/student/studentdashboard.jsx b/app/pages/student/studentdashboard.jsx
+index cf04403..52e42b0 100644
+--- a/app/pages/student/studentdashboard.jsx
++++ b/app/pages/student/studentdashboard.jsx
+@@ -1,6 +1,16 @@
++import { useState, useEffect, useCallback } from "react";
++import { isMockMode, MOCK_STATE } from "../../data/mockdata";
++import { supabase } from "../../lib/supabase";
++import { generateWeeklyReport } from "../../lib/ai";
++import { fmt, weekNum, getWeekRange } from "../../utils/helper";
++import Spinner from "../../components/spinner";
++import LogEntries from "./logentries";
++import WeeklyReports, { ReportViewModal } from "./weeklyreport";
++import LogEntryModal from "./logentriemodal";
++import ProfilePage from "../profilepage";
+ 
+ // ─── STUDENT DASHBOARD ───────────────────────────────────────
+-function StudentDashboard({ user, activeTab }) {
++export default function StudentDashboard({ user, activeTab }) {
+   const [entries, setEntries] = useState([]);
+   const [reports, setReports] = useState([]);
+   const [showLogModal, setShowLogModal] = useState(false);
+diff --git a/app/pages/student/weeklyreport.jsx b/app/pages/student/weeklyreport.jsx
+index bbe023c..f0108e0 100644
+--- a/app/pages/student/weeklyreport.jsx
++++ b/app/pages/student/weeklyreport.jsx
+@@ -1,4 +1,13 @@
+-function WeeklyReports({ user, entries, reports, onRefresh }) {
++import { useState } from "react";
++import { isMockMode, MOCK_STATE } from "../../data/mockdata";
++import { supabase } from "../../lib/supabase";
++import { generateWeeklyReport } from "../../lib/ai";
++import { fmt, weekNum, getWeekRange } from "../../utils/helper";
++import Alert from "../../components/alert";
++import Modal from "../../components/modal";
++import Spinner from "../../components/spinner";
++
++export default function WeeklyReports({ user, entries, reports, onRefresh }) {
+   const [showModal, setShowModal] = useState(null);
+   const [generating, setGenerating] = useState(false);
+ 
+@@ -53,7 +62,7 @@ function WeeklyReports({ user, entries, reports, onRefresh }) {
+   );
+ }
+ 
+-function ReportViewModal({ report, user, onClose, onRefresh }) {
++export function ReportViewModal({ report, user, onClose, onRefresh }) {
+   const [review, setReview] = useState(report.student_review || "");
+   const [loading, setLoading] = useState(false);
+ 
+diff --git a/app/pages/supervisor/supervisordashboard.jsx b/app/pages/supervisor/supervisordashboard.jsx
+index 2190155..f7338aa 100644
+--- a/app/pages/supervisor/supervisordashboard.jsx
++++ b/app/pages/supervisor/supervisordashboard.jsx
+@@ -1,5 +1,12 @@
++import { useState, useEffect } from "react";
++import { isMockMode, MOCK_STATE } from "../../data/mockdata";
++import { fmt, initials } from "../../utils/helper";
++import SupervisorReview from "./supervisorreview";
++import SupervisorStudents from "./supervisorstudent";
++import ProfilePage from "../profilepage";
++
+ // ─── SUPERVISOR DASHBOARD ───────────────────────────────────
+-function SupervisorDashboard({ user, activeTab }) {
++export default function SupervisorDashboard({ user, activeTab }) {
+   const [students, setStudents] = useState([]);
+   const [entries, setEntries] = useState([]);
+   const [reports, setReports] = useState([]);
+diff --git a/app/pages/supervisor/supervisorreview.jsx b/app/pages/supervisor/supervisorreview.jsx
+index 72cd3cb..eb21aac 100644
+--- a/app/pages/supervisor/supervisorreview.jsx
++++ b/app/pages/supervisor/supervisorreview.jsx
+@@ -1,4 +1,10 @@
+-function SupervisorReview({ user, entries, reports, students, onRefresh }) {
++import { useState } from "react";
++import { isMockMode, MOCK_STATE } from "../../data/mockdata";
++import { supabase } from "../../lib/supabase";
++import { fmt, initials } from "../../utils/helper";
++import Modal from "../../components/modal";
++
++export default function SupervisorReview({ user, entries, reports, students, onRefresh }) {
+   const [activeTab, setActiveTab] = useState("entries");
+   const [selected, setSelected] = useState(null);
+   const [comment, setComment] = useState("");
+diff --git a/app/pages/supervisor/supervisorstudent.jsx b/app/pages/supervisor/supervisorstudent.jsx
+index c4d2d62..b6562e1 100644
+--- a/app/pages/supervisor/supervisorstudent.jsx
++++ b/app/pages/supervisor/supervisorstudent.jsx
+@@ -1,4 +1,8 @@
+-function SupervisorStudents({ students, entries, reports }) {
++import { useState } from "react";
++import { fmt, initials } from "../../utils/helper";
++import Modal from "../../components/modal";
++
++export default function SupervisorStudents({ students, entries, reports }) {
+   const [selected, setSelected] = useState(null);
+   return (
+     <div className="page animate-in">
+diff --git a/app/root.tsx b/app/root.tsx
+index 9fc6636..6f80cc9 100644
+--- a/app/root.tsx
++++ b/app/root.tsx
+@@ -9,6 +9,7 @@ import {
+ 
+ import type { Route } from "./+types/root";
+ import "./app.css";
++import "./styles/index.css";
+ 
+ export const links: Route.LinksFunction = () => [
+   { rel: "preconnect", href: "https://fonts.googleapis.com" },
+diff --git a/app/routes/home.tsx b/app/routes/home.tsx
+index d643db4..cd4c2e4 100644
+--- a/app/routes/home.tsx
++++ b/app/routes/home.tsx
+@@ -1,6 +1,16 @@
++import { useState } from "react";
+ import type { Route } from "./+types/home";
+ // @ts-ignore
+ import AuthPage from "../pages/lecturer/Authpage";
++// @ts-ignore
++import Sidebar from "../components/layout/sidebar";
++// @ts-ignore
++import StudentDashboard from "../pages/student/studentdashboard";
++// @ts-ignore
++import SupervisorDashboard from "../pages/supervisor/supervisordashboard";
++// @ts-ignore
++import LecturerDashboard from "../pages/lecturer/lecturedashboard";
++
+ export function meta({}: Route.MetaArgs) {
+   return [
+     { title: "SIWES Logbook App" },
+@@ -9,6 +19,37 @@ export function meta({}: Route.MetaArgs) {
+ }
+ 
+ export default function Home() {
+-  // 2. Added ': any' to explicitly fix the TypeScript parameter type error
+-  return <AuthPage onLogin={(user: any) => console.log("Logged in user:", user)} />;
+-}
+\ No newline at end of file
++  const [user, setUser] = useState<any>(null);
++  const [activeTab, setActiveTab] = useState("home");
++
++  const handleLogin = (u: any) => {
++    setUser(u);
++    setActiveTab("home");
++  };
++
++  const handleLogout = () => setUser(null);
++
++  if (!user) return <AuthPage onLogin={handleLogin} />;
++
++  return (
++    <div className="app">
++      <Sidebar
++        user={user}
++        activeTab={activeTab}
++        onTabChange={setActiveTab}
++        onLogout={handleLogout}
++      />
++      <main className="main">
++        {user.role === "student" && (
++          <StudentDashboard user={user} activeTab={activeTab} />
++        )}
++        {user.role === "supervisor" && (
++          <SupervisorDashboard user={user} activeTab={activeTab} />
++        )}
++        {user.role === "lecturer" && (
++          <LecturerDashboard user={user} activeTab={activeTab} />
++        )}
++      </main>
++    </div>
++  );
++}
+diff --git a/app/utils/helper.jsx b/app/utils/helper.jsx
+index 9191da5..be6bb09 100644
+--- a/app/utils/helper.jsx
++++ b/app/utils/helper.jsx
+@@ -1,14 +1,14 @@
+ // ─── UTILS ──────────────────────────────────────────────────
+-const fmt = (d) => d ? new Date(d).toLocaleDateString("en-NG", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+-const initials = (name) => name?.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase() || "??";
+-const weekNum = (date) => {
++export const fmt = (d) => d ? new Date(d).toLocaleDateString("en-NG", { day: "2-digit", month: "short", year: "numeric" }) : "—";
++export const initials = (name) => name?.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase() || "??";
++export const weekNum = (date) => {
+   const d = new Date(date);
+   d.setHours(0, 0, 0, 0);
+   d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
+   const w1 = new Date(d.getFullYear(), 0, 4);
+   return 1 + Math.round(((d - w1) / 86400000 - 3 + (w1.getDay() + 6) % 7) / 7);
+ };
+-const getWeekRange = (entries) => {
++export const getWeekRange = (entries) => {
+   if (!entries.length) return { start: "", end: "" };
+   const dates = entries.map(e => new Date(e.entry_date)).sort((a, b) => a - b);
+   return { start: dates[0].toISOString().split("T")[0], end: dates[dates.length - 1].toISOString().split("T")[0] };

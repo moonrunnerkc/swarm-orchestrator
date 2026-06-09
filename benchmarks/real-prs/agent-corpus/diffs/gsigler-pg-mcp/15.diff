@@ -1,0 +1,93 @@
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 31a95dd..8efc52e 100644
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -130,12 +130,12 @@ jobs:
+             os: macos-latest
+             target: universal-apple-darwin
+             rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+-            args: --target universal-apple-darwin
++            build-args: -- --target universal-apple-darwin
+           - name: Windows (x64)
+             os: windows-latest
+             target: x86_64-pc-windows-msvc
+             rust-targets: x86_64-pc-windows-msvc
+-            args: ""
++            build-args: ""
+ 
+     runs-on: ${{ matrix.os }}
+     name: ${{ matrix.name }}
+@@ -165,13 +165,65 @@ jobs:
+       - name: Install frontend dependencies
+         run: npm ci
+ 
+-      - name: Build & publish
+-        uses: tauri-apps/tauri-action@v0
++      - name: Build
++        run: npm run tauri build ${{ matrix.build-args }}
++
++      - name: Package macOS artifacts
++        if: runner.os == 'macOS'
++        shell: bash
++        run: |
++          set -euo pipefail
++          mkdir -p release-artifacts
++
++          cp src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg release-artifacts/
++          tar -czf release-artifacts/pg-mcp_universal.app.tar.gz \
++            -C src-tauri/target/universal-apple-darwin/release/bundle/macos \
++            pg-mcp.app
++
++      - name: Package Windows artifacts
++        if: runner.os == 'Windows'
++        shell: pwsh
++        run: |
++          New-Item -ItemType Directory -Force -Path release-artifacts
++          Copy-Item src-tauri/target/release/bundle/msi/*.msi release-artifacts/
++          Copy-Item src-tauri/target/release/bundle/nsis/*.exe release-artifacts/
++
++      - name: Upload release artifacts
++        uses: actions/upload-artifact@v4
++        with:
++          name: release-${{ matrix.target }}
++          path: release-artifacts/*
++          if-no-files-found: error
++
++  publish:
++    needs:
++      - version
++      - build
++    if: needs.version.result == 'success' && needs.build.result == 'success'
++    runs-on: ubuntu-latest
++    steps:
++      - name: Download release artifacts
++        uses: actions/download-artifact@v4
++        with:
++          pattern: release-*
++          path: release-artifacts
++          merge-multiple: true
++
++      - name: Publish draft release
+         env:
+           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+-        with:
+-          tagName: ${{ needs.version.outputs.tag }}
+-          releaseName: "pg-mcp ${{ needs.version.outputs.tag }}"
+-          releaseDraft: true
+-          prerelease: false
+-          args: ${{ matrix.args }}
++          TAG: ${{ needs.version.outputs.tag }}
++        run: |
++          set -euo pipefail
++
++          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
++            gh release create "$TAG" \
++              --repo "$GITHUB_REPOSITORY" \
++              --title "pg-mcp $TAG" \
++              --notes "" \
++              --draft
++          fi
++
++          gh release upload "$TAG" release-artifacts/* \
++            --repo "$GITHUB_REPOSITORY" \
++            --clobber

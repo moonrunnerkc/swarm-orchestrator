@@ -1,0 +1,100 @@
+diff --git a/src/bin/brutal-search.rs b/src/bin/brutal-search.rs
+index 970af64..161b6ee 100644
+--- a/src/bin/brutal-search.rs
++++ b/src/bin/brutal-search.rs
+@@ -2329,6 +2329,7 @@ fn storage_snapshot_readiness_lines(
+             web_summary.suggested_dry_runs
+         ),
+         format!("storage_snapshot_frontier_records: {}", frontier_records),
++        storage_snapshot_replay_budget_dry_run_line(stats, web_summary),
+         format!(
+             "storage_index_export_readiness: report_only=true status={export_status} total_bytes={} core_index_bytes={core_index_bytes} web_bytes={} browser_document_bytes={} crawl_bytes={} web_removable_rows={} browser_document_duplicates={} snapshot_duplicates={} frontier_failed_removable_records={frontier_failed_removable_records}",
+             stats.total_bytes,
+@@ -2350,6 +2351,51 @@ fn storage_snapshot_readiness_lines(
+     lines
+ }
+ 
++fn storage_snapshot_replay_budget_dry_run_line(
++    stats: &IndexStorageStats,
++    web_summary: &WebStoragePressureSummary,
++) -> String {
++    let snapshot_candidate_count = usize::from(stats.crawl_snapshot_bytes > 0);
++    let replay_candidate_count = stats
++        .web_artifacts
++        .iter()
++        .filter(|artifact| artifact.bytes > 0)
++        .count();
++    let candidate_artifacts = snapshot_candidate_count.saturating_add(replay_candidate_count);
++    let candidate_bytes = stats.crawl_snapshot_bytes.saturating_add(web_summary.bytes);
++    let (largest_artifact, largest_artifact_bytes) = stats
++        .web_artifacts
++        .iter()
++        .map(|artifact| (artifact.name, artifact.bytes))
++        .chain(std::iter::once((
++            "crawl-docs.jsonl",
++            stats.crawl_snapshot_bytes,
++        )))
++        .max_by_key(|(_, bytes)| *bytes)
++        .unwrap_or(("none", 0));
++    let snapshot_pressure = stats.crawl_snapshot_duplicate_entries > 0;
++    let replay_pressure = web_summary.duplicate_entries > 0 || web_summary.suggested_dry_runs > 0;
++    let next_action = if snapshot_pressure && replay_pressure {
++        "review-snapshot-and-web-replay-dry-runs"
++    } else if snapshot_pressure {
++        "review-crawl-snapshot-dry-run"
++    } else if replay_pressure {
++        "review-web-replay-dry-run"
++    } else if candidate_bytes.saturating_mul(2) >= index_storage_budget_bytes() {
++        "monitor-snapshot-replay-budget"
++    } else {
++        "snapshot-replay-budget-low"
++    };
++
++    format!(
++        "storage_snapshot_replay_budget_dry_run: report_only=true deletes=false compacts=false candidate_artifacts={candidate_artifacts} candidate_bytes={candidate_bytes} snapshot_entries={} replay_entries={} largest_artifact={largest_artifact} largest_artifact_bytes={largest_artifact_bytes} snapshot_duplicate_rows={} replay_duplicate_rows={} next_action={next_action}",
++        stats.crawl_snapshot_entries,
++        web_summary.entries,
++        stats.crawl_snapshot_duplicate_entries,
++        web_summary.duplicate_entries,
++    )
++}
++
+ #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+ struct CrawlSnapshotArtifactStats {
+     entries: usize,
+@@ -5451,6 +5497,35 @@ mod tests {
+         ));
+     }
+ 
++    #[test]
++    fn storage_snapshot_replay_budget_dry_run_reports_snapshot_and_replay_pressure() {
++        let dir = tempfile::tempdir().unwrap();
++        let crawl_snapshot_path = dir.path().join("crawl-docs.jsonl");
++        let crawl_snapshot =
++            b"{\"url\":\"https://example.com/a\"}\n{\"url\":\"https://example.com/a\"}\n";
++        std::fs::write(&crawl_snapshot_path, crawl_snapshot).unwrap();
++        let web_cache_path = dir.path().join("web-cache.jsonl");
++        let web_cache = b"{\"normalized_query\":\"rust\",\"provider\":\"brave\",\"fetched_at_unix\":100,\"results\":[{\"url\":\"https://example.com/a\",\"title\":\"A\",\"snippet\":\"Alpha\"}]}\n{\"normalized_query\":\"rust\",\"provider\":\"brave\",\"fetched_at_unix\":101,\"results\":[{\"url\":\"https://example.com/a\",\"title\":\"A\",\"snippet\":\"Alpha\"}]}\n";
++        std::fs::write(&web_cache_path, web_cache).unwrap();
++
++        let stats = collect_index_storage_stats(dir.path()).unwrap();
++        let web_summary = web_storage_pressure_summary(&stats.web_artifacts, 101, 60);
++        let lines = storage_snapshot_readiness_lines(&stats, &web_summary);
++        let expected_bytes = u64::try_from(crawl_snapshot.len() + web_cache.len()).unwrap();
++        let largest_artifact = if crawl_snapshot.len() >= web_cache.len() {
++            "crawl-docs.jsonl"
++        } else {
++            "web-cache.jsonl"
++        };
++        let largest_artifact_bytes = crawl_snapshot.len().max(web_cache.len());
++
++        assert!(lines.contains(&format!(
++            "storage_snapshot_replay_budget_dry_run: report_only=true deletes=false compacts=false candidate_artifacts=2 candidate_bytes={expected_bytes} snapshot_entries=2 replay_entries=2 largest_artifact={largest_artifact} largest_artifact_bytes={largest_artifact_bytes} snapshot_duplicate_rows=1 replay_duplicate_rows=1 next_action=review-snapshot-and-web-replay-dry-runs"
++        )));
++        assert_eq!(std::fs::read(&crawl_snapshot_path).unwrap(), crawl_snapshot);
++        assert_eq!(std::fs::read(&web_cache_path).unwrap(), web_cache);
++    }
++
+     #[test]
+     fn storage_snapshot_readiness_reports_index_export_risk() {
+         let stats = IndexStorageStats {

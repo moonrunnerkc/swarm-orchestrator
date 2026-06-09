@@ -1,0 +1,67 @@
+diff --git a/speech_lab.html b/speech_lab.html
+index 9e6e635..84fe0c1 100644
+--- a/speech_lab.html
++++ b/speech_lab.html
+@@ -491,7 +491,7 @@ <h2>✅ רשימת בדיקות — PASS / FAIL</h2>
+   const payload = {
+     botType: 'universal_presentation',
+     studentId: 'qa_lab',
+-    message: 'Analyze this spoken response. If you can understand the audio, provide: 1. short transcript or summary, 2. language feedback, 3. logic/content feedback. If you cannot process the audio, return a clear error.',
++    message: 'You are evaluating a student\'s spoken Hebrew response. Respond ONLY in this exact format with no additional text before or after:\n\nTRANSCRIPT:\n[Write a best-effort transcript of what the student said. If exact transcription is impossible, write a short best-effort summary and mark it as approximate.]\n\nLANGUAGE_FEEDBACK:\n[Give short feedback about clarity, language, pronunciation/fluency if detectable, and wording.]\n\nLOGIC_FEEDBACK:\n[Give short feedback about the logic/content of the answer.]\n\nNEXT_STEP:\n[One small concrete suggestion for the student\'s next attempt.]\n\nDo not add any other sections or text outside this format.',
+     history: [],
+     audioInput: {
+       inlineData: {
+@@ -552,14 +552,25 @@ <h2>✅ רשימת בדיקות — PASS / FAIL</h2>
+     pass('chk-ai');
+     setStatus('ai_ok');
+ 
+-    // Heuristic: if the reply contains a "transcript:" line, extract it
+-    const transcriptMatch = reply.match(/transcript[:\s]+([^\n]{5,})/i);
+-    if (transcriptMatch) {
+-      taTranscript.value = transcriptMatch[1].trim();
++    // Deterministic structured-format parser
++    const sections = parseStructuredReply(reply);
++
++    if (sections.TRANSCRIPT) {
++      taTranscript.value = sections.TRANSCRIPT;
++    } else {
++      taTranscript.value = 'TRANSCRIPT_MISSING';
++    }
++
++    if (sections.TRANSCRIPT) {
++      const feedbackParts = [];
++      if (sections.LANGUAGE_FEEDBACK) feedbackParts.push('LANGUAGE_FEEDBACK:\n' + sections.LANGUAGE_FEEDBACK);
++      if (sections.LOGIC_FEEDBACK)    feedbackParts.push('LOGIC_FEEDBACK:\n'    + sections.LOGIC_FEEDBACK);
++      if (sections.NEXT_STEP)         feedbackParts.push('NEXT_STEP:\n'         + sections.NEXT_STEP);
++      taFeedback.value = feedbackParts.length ? feedbackParts.join('\n\n') : reply;
+     } else {
+-      taTranscript.value = '(לא נמצא תמלול מובחן בתגובה)';
++      // TRANSCRIPT missing — show full raw response for debugging
++      taFeedback.value = reply;
+     }
+-    taFeedback.value = reply;
+   } else {
+     fail('chk-ai', 'empty reply field');
+     setStatus('failed');
+@@ -567,6 +578,21 @@ <h2>✅ רשימת בדיקות — PASS / FAIL</h2>
+   }
+ }
+ 
++// ── parseStructuredReply — deterministic section extractor ────────────
++function parseStructuredReply(reply) {
++  const KEYS = ['TRANSCRIPT', 'LANGUAGE_FEEDBACK', 'LOGIC_FEEDBACK', 'NEXT_STEP'];
++  const pattern = new RegExp(
++    '(' + KEYS.join('|') + '):\\s*([\\s\\S]*?)(?=\\n(?:' + KEYS.join('|') + '):|$)',
++    'g'
++  );
++  const sections = {};
++  let m;
++  while ((m = pattern.exec(reply)) !== null) {
++    sections[m[1]] = m[2].trim();
++  }
++  return sections;
++}
++
+ // ── Blob → base64 (Promise) ───────────────────────────────────────────
+ function blobToBase64(blob) {
+   return new Promise((resolve, reject) => {

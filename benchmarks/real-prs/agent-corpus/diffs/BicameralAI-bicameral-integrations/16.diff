@@ -1,0 +1,922 @@
+diff --git a/connectors/README.md b/connectors/README.md
+index ad3e3b2..c0503ce 100644
+--- a/connectors/README.md
++++ b/connectors/README.md
+@@ -29,6 +29,8 @@ payload parsing, exercised against synthetic fixtures.
+ | [slack](slack/) | Prototype | webhook | `parse_message` |
+ | [notion](notion/) | Prototype | active, webhook | `parse_page` |
+ | [mcp_registry](mcp_registry/) | Prototype | active | `parse_server` |
++| [continue_dev](continue_dev/) | Prototype | passive | `parse_event` |
++| [aider](aider/) | Prototype | passive | `parse_commit` |
+ | [jira](jira/) | Candidate | — | scaffold (not yet implemented) |
+ 
+ Candidate selection and trust tiers are tracked in the
+diff --git a/connectors/aider/README.md b/connectors/aider/README.md
+new file mode 100644
+index 0000000..656669f
+--- /dev/null
++++ b/connectors/aider/README.md
+@@ -0,0 +1,32 @@
++# Aider Connector
++
++Provider-facing Aider (aider.chat) adapter. **Status: Prototype** (catalog
++source-control/developer-AI tooling, priority P1, default trust tier T0). A
++candidate from the
++[Integration Candidate Catalog](../../docs/INTEGRATION_CANDIDATE_CATALOG.md).
++
++## Modes
++
++- **Passive** — Aider auto-commits its edits and attributes them (`(aider)` in
++  the git author/committer name, or a `Co-authored-by:` trailer). Each
++  attributed commit record maps to one neutral `Observation` (`parse_commit`).
++  Git attribution is Aider's most stable, documented, code-free provenance
++  surface. No canonical-state writes — evidence adapter, not state authority
++  (ADR-0008).
++
++The live git-log walk, the opt-in `--analytics-log` JSONL, and the unversioned
++`.aider.chat.history.md` transcript are deferred this cycle (see
++[`auth.md`](auth.md)); this connector is the parse surface only.
++
++## Surface
++
++- `parse_commit(record)` — Aider git-commit record → `Observation` (commit
++  subject → excerpt/title, with `hash` then an `aider-commit` terminal fallback;
++  `hash` → ref; `author_name` → author; `authored_at` → timestamp;
++  `attributed_by` (author/committer/co-author) + `short_hash` → metadata).
++- `AiderConnector` — connector identity and capabilities (`PASSIVE`).
++
++## References
++
++- Canonical documentation: [references.md](references.md)
++- Auth model (deferred): [auth.md](auth.md)
+diff --git a/connectors/aider/__init__.py b/connectors/aider/__init__.py
+new file mode 100644
+index 0000000..a795a8e
+--- /dev/null
++++ b/connectors/aider/__init__.py
+@@ -0,0 +1,5 @@
++"""Aider connector package."""
++
++from .connector import AiderConnector, parse_commit
++
++__all__ = ["AiderConnector", "parse_commit"]
+diff --git a/connectors/aider/auth.md b/connectors/aider/auth.md
+new file mode 100644
+index 0000000..3a28cc9
+--- /dev/null
++++ b/connectors/aider/auth.md
+@@ -0,0 +1,19 @@
++# Aider Auth
++
++Auth model recorded for the live cycle; this connector ships the **parse
++surface** only (the live collection path is deferred).
++
++- Default trust tier: T0
++- Auth: Not applicable (git/file import).
++
++## Deferred live paths
++
++- Passive `git log` walk of a configured repository, filtering to Aider-attributed
++  commits (`(aider)` author/committer or `Co-authored-by:` trailer).
++- Opt-in `--analytics-log <file>.jsonl` ingest (structured, code-free).
++- `.aider.chat.history.md` transcript parse — DEFERRED: no versioned/documented
++  schema (markdown prose), scraping-prone; gated behind explicit opt-in when built.
++
++Repositories and any local paths are provided by the operator runtime, never
++stored in this package. See [references.md](references.md) and
++[TRUST_TIER_MODEL](../../docs/TRUST_TIER_MODEL.md).
+diff --git a/connectors/aider/connector.py b/connectors/aider/connector.py
+new file mode 100644
+index 0000000..499b80a
+--- /dev/null
++++ b/connectors/aider/connector.py
+@@ -0,0 +1,82 @@
++# SPDX-License-Identifier: MIT
++"""Aider connector: attributed git commits into neutral Observations.
++
++Aider (aider.chat) auto-commits its edits and, by default, attributes them — it
++appends ``(aider)`` to the git author/committer name, or (opt-in) adds a
++``Co-authored-by:`` trailer. That git attribution is Aider's most stable,
++documented, code-free provenance surface; each attributed commit record maps to
++one provider-neutral Observation (trust tier T0, git import). The live git-log
++walk, the ``--analytics-log`` JSONL, and the unversioned chat-history transcript
++are deferred (see ``auth.md``); this is the parse surface only. Read-only
++evidence, no canonical writes (ADR-0008).
++"""
++
++from __future__ import annotations
++
++from adapter.core.capabilities import SourceCapabilities, SourceMode
++from adapter.core.emissions import SourceRef
++from adapter.core.observations import Observation
++
++
++def _trailer_texts(record: dict) -> list[str]:
++    """Trailers as plain strings (entries may be strings or {key,value} dicts)."""
++    out: list[str] = []
++    for entry in record.get("trailers") or []:
++        if isinstance(entry, dict):
++            out.append(f"{entry.get('key', '')}: {entry.get('value', '')}")
++        else:
++            out.append(str(entry))
++    return out
++
++
++def _attributed_by(record: dict) -> str:
++    """Which channel carries the Aider attribution, or '' if none is present.
++
++    Name fields are coerced to ``str`` so a malformed record (non-string field)
++    is classified, not crashed.
++    """
++    if "(aider)" in str(record.get("author_name") or ""):
++        return "author"
++    if "(aider)" in str(record.get("committer_name") or ""):
++        return "committer"
++    for text in _trailer_texts(record):
++        if "Co-authored-by" in text and "aider" in text.lower():
++            return "co-author"
++    return ""
++
++
++def parse_commit(record: dict) -> Observation:
++    """Map an Aider-attributed git commit record into a provider-neutral Observation.
++
++    Field values are coerced to ``str`` and stripped where the emission contract
++    needs a non-blank string, so a malformed record (non-string or
++    whitespace-only field) is normalized to a terminal literal, not crashed and
++    not silently blank.
++    """
++    message = record.get("message")
++    subject = message.split("\n", 1)[0].strip() if isinstance(message, str) else ""
++    commit_hash = str(record.get("hash") or "").strip()
++    excerpt = subject or commit_hash or "aider-commit"
++    return Observation(
++        source_ref=SourceRef(source_id="aider", ref=commit_hash or "aider-commit", kind="commit"),
++        excerpt=excerpt,
++        mode=SourceMode.PASSIVE,
++        title=subject or commit_hash or "aider-commit",
++        author=str(record.get("author_name") or ""),
++        timestamp=str(record.get("authored_at") or ""),
++        metadata={"attributed_by": _attributed_by(record), "short_hash": commit_hash[:7]},
++    )
++
++
++class AiderConnector:
++    """Aider connector identity plus the git-commit parse surface.
++
++    Trust tier T0 (git import). The live git-log walk + analytics/chat-history
++    secondary modes are deferred; this is the parse surface.
++    """
++
++    source_id = "aider"
++    capabilities = SourceCapabilities(modes=frozenset({SourceMode.PASSIVE}))
++
++    def observations(self, payload: dict) -> list[Observation]:
++        return [parse_commit(payload)]
+diff --git a/connectors/aider/fixtures/aider_commit.json b/connectors/aider/fixtures/aider_commit.json
+new file mode 100644
+index 0000000..2336dab
+--- /dev/null
++++ b/connectors/aider/fixtures/aider_commit.json
+@@ -0,0 +1,10 @@
++{
++  "hash": "9c1e4f7a2b6d8e0f1a3c5b7d9e1f2a4c6b8d0e2f",
++  "message": "aider: add exponential backoff to the retry helper\n\nWrap the call in a capped backoff loop with full jitter.",
++  "author_name": "Dev Example (aider)",
++  "committer_name": "Dev Example (aider)",
++  "authored_at": "2026-06-03T15:06:10-04:00",
++  "trailers": [
++    {"key": "Co-authored-by", "value": "aider (claude) <noreply@aider.chat>"}
++  ]
++}
+diff --git a/connectors/aider/references.md b/connectors/aider/references.md
+new file mode 100644
+index 0000000..e9a88ce
+--- /dev/null
++++ b/connectors/aider/references.md
+@@ -0,0 +1,37 @@
++# Aider Connector — Canonical References
++
++Single place tracking the canonical documentation links for the `aider` connector.
++See [INTEGRATION_DOCS_INDEX](../../docs/INTEGRATION_DOCS_INDEX.md) for the maintained provider-docs table and refresh cadence.
++
++## This connector
++
++| Field | Value |
++|---|---|
++| Catalog category | source-control / developer-AI tooling |
++| Priority | P1 |
++| Default trust tier | T0 |
++| Integration role | evidence + provenance (developer-AI commits) |
++| Readiness (lifecycle) | Prototype |
++
++## Provider documentation (verify on refresh)
++
++| Kind | Link |
++|---|---|
++| Git attribution | https://aider.chat/docs/git.html |
++| Config / options | https://aider.chat/docs/config/options.html |
++| Analytics (deferred) | https://aider.chat/docs/more/analytics.html |
++| Webhook/event | No public read API/webhook; git commits + local files |
++| Auth | Not applicable (git/file import) |
++| Changelog/notes | https://aider.chat/HISTORY.html · https://github.com/Aider-AI/aider |
++
++## Canonical governance references
++
++These apply to every Bicameral connector (see also the connector's own README/auth.md):
++
++- [Governed Adapter Contract](../../docs/GOVERNED_ADAPTER_CONTRACT.md)
++- [Trust Tier Model](../../docs/TRUST_TIER_MODEL.md)
++- [Data Classification & Redaction](../../docs/DATA_CLASSIFICATION_AND_REDACTION.md)
++- [Integration Strategy & Candidate Harvesting](../../docs/INTEGRATION_STRATEGY_AND_CANDIDATE_HARVESTING.md)
++- [Integration Candidate Catalog](../../docs/INTEGRATION_CANDIDATE_CATALOG.md)
++- [Integration Docs Index](../../docs/INTEGRATION_DOCS_INDEX.md)
++- ADRs: [0008 evidence-adapters-not-authorities](../../docs/adr/0008-integrations-are-evidence-adapters-not-state-authorities.md) · [0009 trust-tiered-governance](../../docs/adr/0009-trust-tiered-integration-governance.md) · [0010 product-agnostic-harvesting](../../docs/adr/0010-product-agnostic-candidate-harvesting.md) · [0004 adapter boundary](../../docs/adr/0004-integration-adapter-boundary.md) · [0005 emission contract](../../docs/adr/0005-adapter-emission-contract.md) · [0006 active/passive/webhook modes](../../docs/adr/0006-active-passive-webhook-modes.md)
+diff --git a/connectors/aider/tests/__init__.py b/connectors/aider/tests/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/connectors/aider/tests/test_aider_connector.py b/connectors/aider/tests/test_aider_connector.py
+new file mode 100644
+index 0000000..6e31657
+--- /dev/null
++++ b/connectors/aider/tests/test_aider_connector.py
+@@ -0,0 +1,95 @@
++# SPDX-License-Identifier: MIT
++"""Behavior tests for the Aider connector and end-to-end normalization."""
++
++from __future__ import annotations
++
++import json
++from pathlib import Path
++
++from adapter.core.emissions import AdapterEmission
++from adapter.core.pipeline import normalize
++from connectors.aider.connector import AiderConnector, parse_commit
++
++_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "aider_commit.json"
++
++
++def _commit() -> dict:
++    return json.loads(_FIXTURE.read_text(encoding="utf-8"))
++
++
++def test_fixture_loads():
++    assert _commit()["hash"].startswith("9c1e4f7a")
++
++
++def test_parse_maps_subject_hash_author():
++    obs = parse_commit(_commit())
++    assert obs.excerpt == "aider: add exponential backoff to the retry helper"
++    assert obs.title == obs.excerpt
++    assert obs.source_ref.ref == _commit()["hash"]
++    assert obs.source_ref.kind == "commit"
++    assert obs.author == "Dev Example (aider)"
++    assert obs.timestamp == "2026-06-03T15:06:10-04:00"
++    assert obs.metadata["short_hash"] == "9c1e4f7"
++
++
++def test_attributed_by_detects_author():
++    assert parse_commit(_commit()).metadata["attributed_by"] == "author"
++
++
++def test_attributed_by_detects_committer_only():
++    rec = {"hash": "abc", "message": "x", "author_name": "Dev", "committer_name": "Dev (aider)"}
++    assert parse_commit(rec).metadata["attributed_by"] == "committer"
++
++
++def test_attributed_by_detects_co_author_trailer():
++    rec = {
++        "hash": "def",
++        "message": "x",
++        "author_name": "Dev",
++        "trailers": [{"key": "Co-authored-by", "value": "aider (gpt) <noreply@aider.chat>"}],
++    }
++    assert parse_commit(rec).metadata["attributed_by"] == "co-author"
++
++
++def test_attributed_by_handles_string_trailers():
++    rec = {"hash": "g1", "message": "x", "trailers": ["Co-authored-by: aider <x@aider.chat>"]}
++    assert parse_commit(rec).metadata["attributed_by"] == "co-author"
++
++
++def test_floors_excerpt_when_empty():
++    # No subject and no hash → terminal literal keeps excerpt + ref non-blank.
++    obs = parse_commit({})
++    assert obs.excerpt == "aider-commit"
++    assert obs.source_ref.ref == "aider-commit"
++    out = normalize([obs], adapter_version="aider/0.1.0")
++    assert out[0].evidence[0].excerpt.strip()
++
++
++def test_excerpt_floors_to_hash_when_message_blank():
++    rec = {"hash": "feedface", "message": "   \n  "}
++    assert parse_commit(rec).excerpt == "feedface"
++
++
++def test_whitespace_hash_floors_to_literal():
++    # A whitespace-only hash must not yield a whitespace excerpt/ref (it would
++    # be blank after strip); the terminal literal applies.
++    obs = parse_commit({"hash": "   ", "message": "  \n "})
++    assert obs.excerpt == "aider-commit"
++    assert obs.source_ref.ref == "aider-commit"
++    out = normalize([obs], adapter_version="aider/0.1.0")
++    assert out[0].evidence[0].excerpt.strip()
++
++
++def test_non_string_fields_do_not_crash():
++    # A malformed record with non-string fields normalizes, not crashes.
++    obs = parse_commit({"hash": 12345, "message": 5, "author_name": 7, "committer_name": 9})
++    assert obs.excerpt == "12345"
++    assert obs.metadata["attributed_by"] == ""
++    out = normalize([obs], adapter_version="aider/0.1.0")
++    assert out[0].source_id == "aider" and out[0].evidence[0].excerpt.strip()
++
++
++def test_end_to_end_normalizes():
++    out = normalize(AiderConnector().observations(_commit()), adapter_version="aider/0.1.0")
++    assert len(out) == 1
++    assert isinstance(out[0], AdapterEmission) and out[0].source_id == "aider"
+diff --git a/connectors/continue_dev/README.md b/connectors/continue_dev/README.md
+new file mode 100644
+index 0000000..f9931ea
+--- /dev/null
++++ b/connectors/continue_dev/README.md
+@@ -0,0 +1,35 @@
++# Continue Connector
++
++Provider-facing Continue (continue.dev) adapter. **Status: Prototype** (catalog
++source-control/developer-AI tooling, priority P1, default trust tier T0). A
++candidate from the
++[Integration Candidate Catalog](../../docs/INTEGRATION_CANDIDATE_CATALOG.md).
++
++> The package is `continue_dev` because `continue` is a Python keyword; the
++> provider `source_id` is the string `"continue"`.
++
++## Modes
++
++- **Passive** — Continue writes "development data" as local JSONL (one event per
++  developer-AI interaction: `chatInteraction`, `editOutcome`, `autocomplete`,
++  …). Each event maps to one neutral `Observation` (`parse_event`). No
++  canonical-state writes — evidence adapter, not state authority (ADR-0008).
++
++The live JSONL file-watch / HTTP-sink collection, the `level: noCode` redaction
++lever, and any Continue Hub API are deferred this cycle (see
++[`auth.md`](auth.md)); this connector is the parse surface only.
++
++## Surface
++
++- `parse_event(event)` — Continue dev-data event → `Observation`. Excerpt is the
++  first non-empty of `prompt`/`completion`/`content`/`message`, with a
++  `continue {name}` terminal fallback (the event schema is versioned and churns,
++  and `noCode` strips text — the excerpt must never be blank); `name` → kind /
++  title; `eventId`/`id`/`name:timestamp` → ref; `userId` → author;
++  `name`/`schema`/`modelTitle` → metadata.
++- `ContinueConnector` — connector identity and capabilities (`PASSIVE`).
++
++## References
++
++- Canonical documentation: [references.md](references.md)
++- Auth model (deferred): [auth.md](auth.md)
+diff --git a/connectors/continue_dev/__init__.py b/connectors/continue_dev/__init__.py
+new file mode 100644
+index 0000000..ad119cf
+--- /dev/null
++++ b/connectors/continue_dev/__init__.py
+@@ -0,0 +1,5 @@
++"""Continue connector package."""
++
++from .connector import ContinueConnector, parse_event
++
++__all__ = ["ContinueConnector", "parse_event"]
+diff --git a/connectors/continue_dev/auth.md b/connectors/continue_dev/auth.md
+new file mode 100644
+index 0000000..781b1fc
+--- /dev/null
++++ b/connectors/continue_dev/auth.md
+@@ -0,0 +1,25 @@
++# Continue Auth
++
++Auth model recorded for the live cycle; this connector ships the **parse
++surface** only (the live collection path is deferred).
++
++- Default trust tier: T0
++- Auth: Not applicable for local file ingest. A Continue `config.yaml` `data`
++  block may also POST events to an HTTP sink with a Bearer `apiKey` (T1 path,
++  deferred).
++
++## Deferred live paths
++
++- Passive file-watch of `.continue/dev_data/*.jsonl` (the documented default).
++- Optional HTTP-sink registration via the `config.yaml` `data` block.
++- Continue Hub cloud read-API for development data — unverified (open question).
++
++## Redaction lever
++
++Continue's `data` block carries `level: all | noCode`; `noCode` strips file
++contents, prompts, and completions at the source. The operator sets this; the
++producer sensitive screen (`FX-SEC-001`) is the in-pipeline guard regardless.
++
++Credentials (HTTP-sink `apiKey`, if used) are resolved by the operator runtime,
++never stored in this package. See [references.md](references.md) and
++[TRUST_TIER_MODEL](../../docs/TRUST_TIER_MODEL.md).
+diff --git a/connectors/continue_dev/connector.py b/connectors/continue_dev/connector.py
+new file mode 100644
+index 0000000..8125f51
+--- /dev/null
++++ b/connectors/continue_dev/connector.py
+@@ -0,0 +1,73 @@
++# SPDX-License-Identifier: MIT
++"""Continue connector: development-data events into neutral Observations.
++
++Continue (continue.dev) writes "development data" as local JSONL — one event
++per developer-AI interaction (``chatInteraction``, ``editOutcome``,
++``autocomplete``, ...). Each event maps to one provider-neutral Observation
++(trust tier T0, file import). The live file-watch / HTTP-sink collection and the
++``level: noCode`` redaction lever stay in the operator runtime (see ``auth.md``);
++this is the parse surface only. Read-only evidence, no canonical writes
++(ADR-0008). The package is ``continue_dev`` because ``continue`` is a Python
++keyword; the provider id is the string ``"continue"``.
++"""
++
++from __future__ import annotations
++
++from adapter.core.capabilities import SourceCapabilities, SourceMode
++from adapter.core.emissions import SourceRef
++from adapter.core.observations import Observation
++
++
++def _event_excerpt(event: dict, name: str) -> str:
++    """First non-empty human-text field, else a terminal non-empty literal.
++
++    Continue's per-event schema is versioned and churns (``schema`` 0.1.0/0.2.0)
++    and ``level: noCode`` strips text fields entirely; the excerpt must never be
++    blank (the emission contract rejects it), so this falls through to a literal.
++    Non-string field values (a version-skewed event) are skipped, not coerced.
++    """
++    for key in ("prompt", "completion", "content", "message"):
++        value = event.get(key)
++        text = value.strip() if isinstance(value, str) else ""
++        if text:
++            return text
++    return f"continue {name}"
++
++
++def parse_event(event: dict) -> Observation:
++    """Map a Continue development-data event into a provider-neutral Observation.
++
++    Field values are coerced to ``str`` where the contract needs a string, so a
++    version-skewed event carrying a non-string field is normalized, not crashed
++    (the schema is documented to churn — see the connector docstring).
++    """
++    name = str(event.get("name") or "continue-event")
++    timestamp = str(event.get("timestamp") or event.get("ts") or "")
++    ref = str(event.get("eventId") or event.get("id") or f"{name}:{timestamp}")
++    return Observation(
++        source_ref=SourceRef(source_id="continue", ref=ref, kind=name),
++        excerpt=_event_excerpt(event, name),
++        mode=SourceMode.PASSIVE,
++        title=name,
++        author=str(event.get("userId") or ""),
++        timestamp=timestamp,
++        metadata={
++            "name": name,
++            "schema": str(event.get("schema") or ""),
++            "model": str(event.get("modelTitle") or event.get("model") or ""),
++        },
++    )
++
++
++class ContinueConnector:
++    """Continue connector identity plus the dev-data event parse surface.
++
++    Trust tier T0 (file import). The live JSONL file-watch / HTTP-sink path and
++    any Continue Hub API are deferred; this is the parse surface.
++    """
++
++    source_id = "continue"
++    capabilities = SourceCapabilities(modes=frozenset({SourceMode.PASSIVE}))
++
++    def observations(self, payload: dict) -> list[Observation]:
++        return [parse_event(payload)]
+diff --git a/connectors/continue_dev/fixtures/dev_data_event.json b/connectors/continue_dev/fixtures/dev_data_event.json
+new file mode 100644
+index 0000000..f4be6df
+--- /dev/null
++++ b/connectors/continue_dev/fixtures/dev_data_event.json
+@@ -0,0 +1,10 @@
++{
++  "name": "chatInteraction",
++  "schema": "0.2.0",
++  "eventId": "evt-7f3a9c21",
++  "timestamp": "2026-06-03T15:04:22.000Z",
++  "userId": "u-local",
++  "modelTitle": "Claude (Opus)",
++  "prompt": "Refactor the retry helper to use exponential backoff with jitter.",
++  "completion": "Wrapped the call in a backoff loop; capped at 5 attempts with full jitter."
++}
+diff --git a/connectors/continue_dev/references.md b/connectors/continue_dev/references.md
+new file mode 100644
+index 0000000..97700fc
+--- /dev/null
++++ b/connectors/continue_dev/references.md
+@@ -0,0 +1,37 @@
++# Continue Connector — Canonical References
++
++Single place tracking the canonical documentation links for the `continue` connector.
++See [INTEGRATION_DOCS_INDEX](../../docs/INTEGRATION_DOCS_INDEX.md) for the maintained provider-docs table and refresh cadence.
++
++## This connector
++
++| Field | Value |
++|---|---|
++| Catalog category | source-control / developer-AI tooling |
++| Priority | P1 |
++| Default trust tier | T0 |
++| Integration role | evidence + provenance (developer-AI interactions) |
++| Readiness (lifecycle) | Prototype |
++
++## Provider documentation (verify on refresh)
++
++| Kind | Link |
++|---|---|
++| API | https://docs.continue.dev/reference (config `data` block + `schema`) |
++| Development data | https://docs.continue.dev/customize/deep-dives/development-data |
++| Event schemas | https://github.com/continuedev/continue/tree/main/packages/config-yaml/src/schemas/data |
++| Webhook/event | No public read API/webhook; local JSONL or user-hosted HTTP sink |
++| Auth | None for local file ingest; Bearer `apiKey` for HTTP sink |
++| Changelog/notes | https://github.com/continuedev/continue |
++
++## Canonical governance references
++
++These apply to every Bicameral connector (see also the connector's own README/auth.md):
++
++- [Governed Adapter Contract](../../docs/GOVERNED_ADAPTER_CONTRACT.md)
++- [Trust Tier Model](../../docs/TRUST_TIER_MODEL.md)
++- [Data Classification & Redaction](../../docs/DATA_CLASSIFICATION_AND_REDACTION.md)
++- [Integration Strategy & Candidate Harvesting](../../docs/INTEGRATION_STRATEGY_AND_CANDIDATE_HARVESTING.md)
++- [Integration Candidate Catalog](../../docs/INTEGRATION_CANDIDATE_CATALOG.md)
++- [Integration Docs Index](../../docs/INTEGRATION_DOCS_INDEX.md)
++- ADRs: [0008 evidence-adapters-not-authorities](../../docs/adr/0008-integrations-are-evidence-adapters-not-state-authorities.md) · [0009 trust-tiered-governance](../../docs/adr/0009-trust-tiered-integration-governance.md) · [0010 product-agnostic-harvesting](../../docs/adr/0010-product-agnostic-candidate-harvesting.md) · [0004 adapter boundary](../../docs/adr/0004-integration-adapter-boundary.md) · [0005 emission contract](../../docs/adr/0005-adapter-emission-contract.md) · [0006 active/passive/webhook modes](../../docs/adr/0006-active-passive-webhook-modes.md)
+diff --git a/connectors/continue_dev/tests/__init__.py b/connectors/continue_dev/tests/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/connectors/continue_dev/tests/test_continue_connector.py b/connectors/continue_dev/tests/test_continue_connector.py
+new file mode 100644
+index 0000000..48f766c
+--- /dev/null
++++ b/connectors/continue_dev/tests/test_continue_connector.py
+@@ -0,0 +1,65 @@
++# SPDX-License-Identifier: MIT
++"""Behavior tests for the Continue connector and end-to-end normalization."""
++
++from __future__ import annotations
++
++import json
++from pathlib import Path
++
++from adapter.core.emissions import AdapterEmission
++from adapter.core.pipeline import normalize
++from connectors.continue_dev.connector import ContinueConnector, parse_event
++
++_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "dev_data_event.json"
++
++
++def _event() -> dict:
++    return json.loads(_FIXTURE.read_text(encoding="utf-8"))
++
++
++def test_fixture_loads():
++    assert _event()["name"] == "chatInteraction"
++
++
++def test_parse_maps_prompt_and_event_name():
++    obs = parse_event(_event())
++    assert obs.excerpt.startswith("Refactor the retry helper")
++    assert obs.title == "chatInteraction"
++    assert obs.source_ref.kind == "chatInteraction"
++    assert obs.metadata["model"] == "Claude (Opus)"
++    assert obs.metadata["schema"] == "0.2.0"
++    assert obs.source_ref.ref == "evt-7f3a9c21"
++    assert obs.timestamp == "2026-06-03T15:04:22.000Z"
++
++
++def test_excerpt_falls_back_to_completion_then_event_name():
++    no_prompt = {"name": "editOutcome", "completion": "applied 3-line edit"}
++    assert parse_event(no_prompt).excerpt == "applied 3-line edit"
++    no_text = {"name": "editOutcome"}
++    assert parse_event(no_text).excerpt == "continue editOutcome"
++
++
++def test_floors_excerpt_when_empty():
++    # No name and no text field → terminal literals keep excerpt + ref non-blank.
++    obs = parse_event({})
++    assert obs.excerpt == "continue continue-event"
++    assert obs.source_ref.ref.startswith("continue-event")
++    out = normalize([obs], adapter_version="continue/0.1.0")
++    assert out[0].evidence[0].excerpt.strip()
++
++
++def test_non_string_fields_do_not_crash():
++    # A version-skewed event with non-string fields normalizes, not crashes.
++    obs = parse_event({"name": 7, "prompt": 123, "completion": ["x"], "eventId": 99})
++    assert obs.excerpt == "continue 7"
++    assert obs.source_ref.ref == "99"
++    out = normalize([obs], adapter_version="continue/0.1.0")
++    assert out[0].source_id == "continue" and out[0].evidence[0].excerpt.strip()
++
++
++def test_end_to_end_normalizes():
++    out = normalize(
++        ContinueConnector().observations(_event()), adapter_version="continue/0.1.0"
++    )
++    assert len(out) == 1
++    assert isinstance(out[0], AdapterEmission) and out[0].source_id == "continue"
+diff --git a/docs/FEATURE_INDEX.md b/docs/FEATURE_INDEX.md
+index 767749f..4af2499 100644
+--- a/docs/FEATURE_INDEX.md
++++ b/docs/FEATURE_INDEX.md
+@@ -7,8 +7,8 @@ Single canonical cross-reference of every user-touchable feature in Bicameral In
+ 
+ ## Coverage Summary
+ 
+-- Total entries: **22**
+-- **Verified**: 22
++- Total entries: **24**
++- **Verified**: 24
+ - **Unverified**: 0
+ - **N/A (operator-justified)**: 0
+ 
+@@ -33,6 +33,8 @@ Single canonical cross-reference of every user-touchable feature in Bicameral In
+ | FX-SLACK-001 | Slack message event → Observation parser | docs/plan-connectors-phase1-2026-06-04.md | connectors/slack/connector.py | connectors/slack/tests/test_slack_connector.py | Verified | Catalog P0 (communication, T2); `event_callback` envelope or bare message; edit-subtype nested-message unwrap; pinned non-empty excerpt fallback; live Events-API/signature-verify + notify/write (T3+) deferred |
+ | FX-NOTION-001 | Notion page → Observation parser | docs/plan-connectors-phase1-2026-06-04.md | connectors/notion/connector.py | connectors/notion/tests/test_notion_connector.py | Verified | Catalog P0 (docs, T1); title via `type=="title"` property (id → `notion-page` terminal floor); ACTIVE+WEBHOOK declared, live API/OAuth/block-fetch deferred |
+ | FX-MCPREG-001 | MCP Registry server entry → Observation parser | docs/plan-connectors-phase1-2026-06-04.md | connectors/mcp_registry/connector.py | connectors/mcp_registry/tests/test_mcp_registry_connector.py | Verified | Catalog P0 (mcp/agent-ecosystem, T1); `server.json` title/description→excerpt, repository.url→url; ACTIVE; read-only scoring/allowlist, live registry-fetch deferred |
++| FX-CONTINUE-001 | Continue dev-data event → Observation parser | docs/plan-connectors-dev-tools-2026-06-04.md | connectors/continue_dev/connector.py | connectors/continue_dev/tests/test_continue_connector.py | Verified | Catalog P1 (developer-AI tooling, T0); dev-data JSONL event, prompt/completion→excerpt with `continue {name}` terminal floor; PASSIVE; package `continue_dev` (keyword), source_id `continue`; live file-watch/HTTP-sink/Hub deferred |
++| FX-AIDER-001 | Aider attributed git commit → Observation parser | docs/plan-connectors-dev-tools-2026-06-04.md | connectors/aider/connector.py | connectors/aider/tests/test_aider_connector.py | Verified | Catalog P1 (developer-AI tooling, T0); `(aider)` author/committer or Co-authored-by trailer → attributed_by; subject→excerpt with hash→`aider-commit` floor; PASSIVE; live git-log walk + analytics/chat-history deferred |
+ 
+ ---
+ 
+diff --git a/docs/INTEGRATION_CANDIDATE_CATALOG.md b/docs/INTEGRATION_CANDIDATE_CATALOG.md
+index a199aff..92f93cc 100644
+--- a/docs/INTEGRATION_CANDIDATE_CATALOG.md
++++ b/docs/INTEGRATION_CANDIDATE_CATALOG.md
+@@ -112,6 +112,8 @@ Each integration candidate should be evaluated against the following criteria.
+ | GitLab | P1 | Merge requests, issues, pipelines, code review evidence | Read-first, webhook ingest | T1/T3 | Important for self-hosted and enterprise teams. |
+ | Bitbucket Cloud | P2 | Pull requests, commits, pipelines | Read-first, webhook ingest | T1/T3 | Useful for Atlassian-heavy teams. |
+ | Azure DevOps Repos | P2 | Repos, PRs, work items, build/release data | Read-first, webhook ingest | T1/T3 | Valuable in Microsoft enterprise environments. |
++| Continue (continue.dev) | P1 | Developer-AI interaction evidence: chat/edit/autocomplete outcomes, model+prompt provenance | Read-only, passive file import (dev-data JSONL) | T0 | Schema-versioned dev-data (`level: noCode` redaction lever). No public read API. |
++| Aider (aider.chat) | P1 | Developer-AI implementation provenance via attributed git commits | Read-only, passive git import | T0 | Deterministic `(aider)` attribution is the stable surface; unversioned transcript deferred. |
+ 
+ ### 6.2 Project and Issue Management
+ 
+diff --git a/docs/META_LEDGER.md b/docs/META_LEDGER.md
+index f65c502..880ea64 100644
+--- a/docs/META_LEDGER.md
++++ b/docs/META_LEDGER.md
+@@ -741,7 +741,79 @@ SHA256(content_hash + previous_hash)
+ 
+ **Decision**: Ecosystem cycle 2 (the "2" of "1→2") — AGT-as-sidecar evaluation for `bicameral-bot`. AGT is **MIT** (no license blocker), Python, ~35 MB; its `agent-governance-gate.yml` is a **reusable `workflow_call`** (inputs: policy YAML, agent manifest, python_version → policy validation + Ed25519 receipts + audit log). **Recommendation: PROCEED with a bounded spike *in* `bicameral-bot` (separate repo, separate authorization)** — consume this repo's portable `_reusable-*` gates + AGT's `agent-governance-gate` as a **CI sidecar** (SHA-pinned), mapping a bot policy YAML to the CRIT-2 authority routes; integration is sidecar/reusable-workflow, **not** Rust↔Python in-process. Complementary to our gates (AGT adds agent-policy + signed receipts + OWASP-Agentic; we add ledger-integrity + ecosystem CI) — caveats: pin a SHA, don't double-gate scanners, reconcile provenance authority (ledger vs Ed25519 receipts). **No changes made to `bicameral-bot` or AGT.** Deliverable: `docs/ecosystem/agt-sidecar-evaluation.md`. Tracked: BACKLOG B3. Gate: `.qor/gates/agt-sidecar-eval-2026-06-04/research.json`. (Re-anchored onto Entry #29 at ecosystem merge; originally #25 on `feat/agt-sidecar-eval`.)
+ 
++### Entry #31: RESEARCH BRIEF
++
++**Timestamp**: 2026-06-04T00:00:00-04:00
++**Phase**: RESEARCH
++**Author**: Analyst (qor-auto-dev-1)
++**Risk Grade**: L2
++
++**Content Hash**:
++```
++SHA256(research-brief-connectors-dev-tools-2026-06-04.md)
++= 44abfdf5404cd02e6ab7c13f49986e9c80431874df1cdb695b8ec161a77adeab
++```
++
++**Previous Hash**: 3eae7a6dd1dab79e62f88e06207f98165eaca7aa70683b73222cb22ce90358b1
++
++**Chain Hash**:
++```
++SHA256(content_hash + previous_hash)
++= a71085be9e050f3bd642b770be5d5c7c1718f9b9747ff24c85c493a09266ec43
++```
++
++**Decision**: Evaluated **Continue** (continue.dev) + **Aider** (aider.chat) as next candidate connectors (operator request). Both clear the catalog §4 criteria as **read-only T0 file/git-import** evidence sources — neither has a public read API/webhook (grounded web research, cited). **Continue P1**: schema-versioned dev-data JSONL (`.continue/dev_data/`, `schema` 0.1.0/0.2.0, events `chatInteraction`/`editOutcome`/…, native `level: noCode` redaction) → `parse_event`. **Aider P1**: deterministic `(aider)` git-commit attribution (author/committer suffix or `Co-authored-by:` trailer) is the only stable/documented/code-free surface → `parse_commit`; its unversioned `.aider.chat.history.md` transcript + opt-in `--analytics-log` are DEFERRED secondary modes. Both reduce to `parse_*(record) -> Observation -> normalize()` (zero contract change) with the SG-2026-06-04-G terminal-literal excerpt floor. 0 blocking gaps, no DRIFT → `/qor-plan` at L2. SHADOW_GENOME **SG-2026-06-04-H**. Open question: Continue Hub cloud read-API for dev-data unverified (local-file/HTTP-sink paths confirmed). (Re-anchored onto Entry #30 at ecosystem merge; originally #27 on `feat/connectors-dev-tools`.)
++
++### Entry #32: GATE TRIBUNAL
++
++**Timestamp**: 2026-06-04T00:00:00-04:00
++**Phase**: AUDIT
++**Author**: Judge (independent architect-reviewer — Option B)
++**Risk Grade**: L2
++
++**Content Hash**:
++```
++SHA256(plan-connectors-dev-tools-2026-06-04.md)
++= 664a4662cdfed0932a66661f77fca6646437cf889a0b4f6927577a83c4b117db
++```
++
++**Previous Hash**: a71085be9e050f3bd642b770be5d5c7c1718f9b9747ff24c85c493a09266ec43
++
++**Chain Hash**:
++```
++SHA256(content_hash + previous_hash)
++= 82b927261f48f12e608df1a7d28f02d79e0e1cce78277bea372b34ec71a0503c
++```
++
++**Verdict**: **PASS** (iteration 1). Independent fresh-context audit of the Continue + Aider plan across all 7 passes. **Grounding** — LDs trace to research F1–F5; no version-fragile field is load-bearing (defensive `.get()` + terminal floor). **Contract fit** — `parse_event`/`parse_commit` produce valid `Observation`/`SourceRef`/`SourceMode`; the Python-keyword hazard is correctly resolved (package `continue_dev`, literal `source_id="continue"` matches `_SOURCE_ID_RE`). **Excerpt-blank (the recurring VETO class)** — every excerpt path terminates in a guaranteed non-empty literal (`f"continue {name}"` via the `name` floor; `"aider-commit"`), the degenerate `{}` case is explicitly tested in both suites, and `ref` is non-empty on `{}`; the Notion failure mode is closed (SG-2026-06-04-G honored). **Security/OWASP** — read-only dict→Observation parse, no network/exec/fs-control; code/secrets routed into excerpt are HARD-gated by `_screen_sensitive` (`FX-SEC-001`), Continue `level: noCode` documented. **Test functionality** — tests invoke the unit + assert output incl. terminal floor + end-to-end `normalize()`. **Razor** — both parse fns ≤40 lines, nesting ≤3. **Scope** — only the two parse surfaces; live paths deferred. Two non-dispositive concerns (Aider trailer-entry shape unspecified; `title` empty on `{}` — neither contract-enforced) → harden `_attributed_by` for string|dict trailers at implement. Cleared to `/qor-implement`. (Re-anchored onto Entry #31 at ecosystem merge; originally #28.)
++
++---
++
++### Entry #33: SESSION SEAL (connectors-dev-tools — implementation)
++
++**Entry ID**: `c0nndevt00ls`
++**Timestamp**: 2026-06-04T00:00:00-04:00
++**Phase**: SUBSTANTIATE (implement)
++**Author**: Judge / Orchestrator (qor-auto-dev-1)
++**Risk Grade**: L2
++
++**Content Hash**:
++```
++SHA256(FEATURE_INDEX.md)
++= a27c7f5145d743dba2c834150f5abda277a89d2716a97c9ba8e9fb6545ee5b6d
++```
++
++**Previous Hash**: 82b927261f48f12e608df1a7d28f02d79e0e1cce78277bea372b34ec71a0503c
++
++**Chain Hash**:
++```
++SHA256(content_hash + previous_hash)
++= 5233f1f66ed2a1e6f65b50ef90bfb06ea286f98d3bd2074daaf876c44beabcec
++```
++
++**Decision**: PASS-audit (Entry #32, iter 1) implemented + substantiated. Built **2 developer-AI parse surfaces** per `plan-connectors-dev-tools-2026-06-04.md`, each `parse_*(record) -> Observation` → `pipeline.normalize()`, read-only (ADR-0008), live paths deferred to `auth.md`: **continue** (`parse_event`, dev-data JSONL event, prompt/completion→excerpt with `continue {name}` floor, PASSIVE, T0; package `continue_dev` because `continue` is a Python keyword, `source_id="continue"`), **aider** (`parse_commit`, `(aider)` git attribution author/committer/co-author → `attributed_by`, subject→excerpt with `aider-commit` floor, PASSIVE, T0). Each with synthetic fixture + behavioral tests; READMEs at Prototype; `__init__` re-exports; catalog §6.1 + FEATURE_INDEX rows added. **Independent review** (objective observer + devil's advocate): observer Reality==Promise CONFIRMED; devil's advocate found **2 blockers + 3 non-blocking** — **HIGH** wrong-typed fields (int/list) crashed both parsers via `.strip()`/`.split()`/`[:7]`/`in` (fixed: coerce to `str` / `isinstance` guards), **HIGH** whitespace-only Aider `hash` produced a whitespace excerpt that skipped the `or`-floor (fixed: `.strip()` before the floor) — both with regression tests; 3 non-blocking accepted (typed `payload: dict` contract; `(aider)` substring + dict-trailers are non-load-bearing metadata). SHADOW_GENOME **SG-2026-06-04-H** (ingest the stable surface) + **SG-2026-06-04-I** (defend on type + whitespace, not just presence). **Verification**: pytest **136 passed**, ruff + mypy clean (67 files), governance gate verifies the chain. FEATURE_INDEX **FX-CONTINUE-001**, **FX-AIDER-001** Verified (24 total after ecosystem merge). (Re-anchored onto Entry #32 at ecosystem merge; originally #29.)
++
+ ---
+ *Chain integrity: VALID*
+-*Status: ecosystem "1→2" COMPLETE on `main` — reusable gates (Entry #29) + AGT-sidecar recommendation (Entry #30, `3eae7a6d`; L1, doc-only). BACKLOG B3 = cross-repo rollout when authorized.*
+-*Next required action: merge remaining PRs in order (#12/#13 dependabot, #16 connectors); re-anchor #16's entries onto the advancing tip.*
++*Status: ALL open PRs merged in order (#9 reusable gates, #10 AGT doc, #12/#13 dependabot, #16 connectors). `main` SEALED at Entry #33 (`5233f1f6`; L2). 12 connectors + reusable gate ecosystem + 24 verified features.*
++*Next required action: none queued — ecosystem reconciled on `main`.*
+diff --git a/docs/SHADOW_GENOME.md b/docs/SHADOW_GENOME.md
+index 3416c2d..db5559c 100644
+--- a/docs/SHADOW_GENOME.md
++++ b/docs/SHADOW_GENOME.md
+@@ -5,6 +5,24 @@ research. Each entry prevents a future drift. Newest first.
+ 
+ ---
+ 
++## SG-2026-06-04-I — A parse surface for a version-fragile schema must defend on TYPE and whitespace, not just presence
++
++**Discovered**: 2026-06-04 (independent devil's-advocate review, connectors-dev-tools implement)
++**Prevents**: a connector that claims "defensive parsing" crashing (or silently emitting blank) on a malformed/version-skewed record.
++
++The `x.get(k) or ""` idiom guards absent/`None` but NOT wrong-type: a non-string field reaches `.strip()`/`.split()`/`[:7]`/`in` and raises a raw `AttributeError`/`TypeError` that aborts the whole `normalize()` batch with a stack trace instead of being floored. And the terminal-literal floor (SG-2026-06-04-G) uses `or`, which only catches the empty string — a **whitespace-only** value (e.g. an Aider commit `hash` of `"   "`) is truthy, skips the literal, and produces a whitespace excerpt that violates the parse surface's own "never blank" invariant (caught only by the downstream `.strip()` gate). Rule for any parse surface over a churning/external schema: coerce to `str` where the contract needs a string (`str(x.get(k) or "")`), skip non-string text fields in the excerpt scan (`isinstance(v, str)`), and `.strip()` a value BEFORE it participates in an `or`-floor. Test the wrong-type and whitespace-only payloads explicitly, not just the happy fixture. Extends SG-2026-06-04-G (terminal literal) and SG-2026-06-04-H (ingest the stable surface).
++
++---
++
++## SG-2026-06-04-H — AI-coding tools expose evidence as local artifacts, not APIs; ingest the stable surface, defer the fragile one
++
++**Discovered**: 2026-06-04 (`/qor-research`, connectors-dev-tools)
++**Prevents**: building a Continue/Aider connector against an API that does not exist, or against an unversioned file format that breaks on the next release.
++
++Continue and Aider are both read-only, **file/git-import (T0)** evidence sources — neither has a public read API or webhook. **Continue** writes purpose-built "development data" as schema-*versioned* JSONL (`schema` 0.1.0/0.2.0) to `.continue/dev_data/` (events: `chatInteraction`/`editOutcome`/`autocomplete`/... ), with a native `level: noCode` redaction lever that strips file contents/prompts/completions. **Aider's** only stable, documented, code-free provenance surface is its deterministic **`(aider)` git-commit attribution** (author/committer name suffix, or a `Co-authored-by:` trailer); its rich transcript `.aider.chat.history.md` has **no versioned schema** (markdown prose) and is scraping-prone, so it is DEFERRED along with the opt-in `--analytics-log` JSONL. Rule: ingest the versioned/deterministic surface (Continue dev-data JSONL, Aider git attribution); defer the unversioned one. Both reduce to the same `parse_*(record) -> Observation -> normalize()` surface; both need the SG-2026-06-04-G terminal-literal excerpt floor (`"continue-event"` / `"aider-commit"`).
++
++---
++
+ ## SG-2026-06-04-G — An Observation excerpt needs a TERMINAL non-empty literal, not just a "better field" fallback
+ 
+ **Discovered**: 2026-06-04 (independent devil's-advocate review, connectors-phase1 implement)
+diff --git a/docs/SYSTEM_STATE.md b/docs/SYSTEM_STATE.md
+index 0601085..af0c231 100644
+--- a/docs/SYSTEM_STATE.md
++++ b/docs/SYSTEM_STATE.md
+@@ -6,9 +6,9 @@
+ |-----------|-------|
+ | **Last Updated** | 2026-06-04 |
+ | **Updated By** | Orchestrator (qor-auto-dev-1) |
+-| **Phase** | SEALED (cycle 6 — connectors-phase1 — substantiated + documented; commit/push/PR authorized) |
+-| **Iteration** | 6 governed cycles (adapter seam + GitHub; secret screen + CI; 5 connectors; L3 webhook verify; L3 CI governance/security gate ecosystem; **4 Phase-1 parse surfaces + doc pass**) |
+-| **Session Seal** | `f5b10cb6` (META_LEDGER Entry #26 chain hash) |
++| **Phase** | SEALED (cycle 7 — connectors-dev-tools — substantiated; commit/push/PR authorized) |
++| **Iteration** | 7 governed cycles (adapter seam + GitHub; secret screen + CI; 5 connectors; L3 webhook verify; L3 CI governance/security gate ecosystem; 4 Phase-1 parse surfaces + doc pass; **Continue + Aider developer-AI connectors**) |
++| **Session Seal** | `c8e9ddf3` (META_LEDGER Entry #29 chain hash) |
+ 
+ ---
+ 
+@@ -30,6 +30,8 @@ bicameral-integrations/
+ |   |-- slack/          (message event -> Observation; WEBHOOK; T2)
+ |   |-- notion/         (page -> Observation; ACTIVE+WEBHOOK; T1)
+ |   |-- mcp_registry/   (server.json -> Observation; ACTIVE; T1)
++|   |-- continue_dev/   (dev-data event -> Observation; PASSIVE; T0)
++|   |-- aider/          (git commit -> Observation; PASSIVE; T0)
+ |   `-- jira/           (scaffold — Candidate, no connector.py yet)
+ |-- mods/  (dependency_risk, noisy_source_gate, security_mentions — manifests)
+ |-- docs/  (CONCEPT, ARCHITECTURE_PLAN, META_LEDGER, SHADOW_GENOME,
+@@ -44,11 +46,11 @@ bicameral-integrations/
+ 
+ | Metric | Value |
+ |--------|-------|
+-| Source connector packages (with `connector.py`) | 10 (github, fathom, linear, granola, local_directory, google_drive, sarif, slack, notion, mcp_registry) + jira scaffold |
+-| Total Test Files | 15 |
+-| Pytest | 119 passed (adapter/core/tests + connectors) |
++| Source connector packages (with `connector.py`) | 12 (github, fathom, linear, granola, local_directory, google_drive, sarif, slack, notion, mcp_registry, continue_dev, aider) + jira scaffold |
++| Total Test Files | 17 |
++| Pytest | 136 passed (adapter/core/tests + connectors) |
+ | Max File Size | 160 lines (adapter/core/webhook_security.py) |
+-| Section 4 Violations | 0 (all 4 new connectors ≤69 lines, fns ≤21, nesting ≤2) |
++| Section 4 Violations | 0 (continue_dev 67 lines, aider 73 lines; fns ≤18, nesting ≤2) |
+ 
+ ---
+ 
+@@ -102,6 +104,8 @@ bicameral-integrations/
+ | Slack connector | connectors/slack/tests/test_slack_connector.py | OK |
+ | Notion connector | connectors/notion/tests/test_notion_connector.py | OK |
+ | MCP Registry connector | connectors/mcp_registry/tests/test_mcp_registry_connector.py | OK |
++| Continue connector | connectors/continue_dev/tests/test_continue_connector.py | OK |
++| Aider connector | connectors/aider/tests/test_aider_connector.py | OK |
+ 
+ ---
+ 
+@@ -109,19 +113,19 @@ bicameral-integrations/
+ 
+ | Indicator | Status | Details |
+ |-----------|--------|---------|
+-| Ledger Chain | VALID | through Entry #26 (`f5b10cb6`); machine-verified by `scripts/governance_gate.py` |
++| Ledger Chain | VALID | through Entry #29 (`c8e9ddf3`); machine-verified by `scripts/governance_gate.py` |
+ | Blueprint Sync | SYNCED | ADRs + research briefs + docs/compliance/ + all README docs current |
+ | Section 4 Compliance | PASS | 0 violations |
+-| Test Status | PASS | 119 passing; ruff + mypy clean (59 files) |
++| Test Status | PASS | 136 passing; ruff + mypy clean (67 files) |
+ | CI Gates | GREEN (local) | governance-integrity + CodeQL/Bandit/dep-review/Scorecard/SBOM/quality/PR-hygiene + TruffleHog; SHA-pinned; Review Boundary held (not committed) |
+ 
+ ---
+ 
+ ## Next Actions
+ 
+-- [ ] **Publish connectors-phase1** (commit authorized): stealth commit (per-connector split) + push + PR for `feat/connectors-phase1` (4 parse surfaces + doc pass).
+-- [ ] **Evaluate Continue + Aider** as next candidate connectors against the integration criterion (operator request); governed cycle.
+-- [ ] Remaining live-connector work: REST poll (Fathom/Granola) + Linear GraphQL clients + secret/keyring resolution + watermark/cursor two-phase commit + the live HTTP boundary (webhook signature verification + dedup core DONE).
++- [x] **connectors-phase1** merged (PR #15, Entry #26).
++- [x] **Continue + Aider** evaluated + built (Entry #27–#29); pending stealth commit + push + PR for `feat/connectors-dev-tools`.
++- [ ] Remaining live-connector work: REST poll (Fathom/Granola) + Linear GraphQL clients + secret/keyring resolution + watermark/cursor two-phase commit + the live HTTP boundary (webhook signature verification + dedup core DONE). Deferred dev-tool live paths: Continue file-watch/HTTP-sink, Aider git-log walk + analytics/chat-history.
+ - [ ] Add the adapter→gateway conformance test against bicameral-bot `protocol/schemas/v1/` (blocked until bot #99 lands the v1 schema on bot `main`).
+ - [ ] Track bot #108/#109 (gateway security) and #73 (release posture) as cross-repo dependencies.
+ 
+diff --git a/docs/research-brief-connectors-dev-tools-2026-06-04.md b/docs/research-brief-connectors-dev-tools-2026-06-04.md
+new file mode 100644
+index 0000000..8eb0633
+--- /dev/null
++++ b/docs/research-brief-connectors-dev-tools-2026-06-04.md
+@@ -0,0 +1,55 @@
++# Research Brief
++
++**Date**: 2026-06-04
++**Analyst**: The Qor-logic Analyst
++**Target**: Evaluate and prepare two AI-coding-tool connectors — **Continue** (continue.dev) and **Aider** (aider.chat) — as provider-neutral parse surfaces capturing developer-AI decision/implementation evidence.
++**Scope**: Verify each tool emits an official-or-stable, documented, normalizable artifact (read-only); map onto `adapter.core` `Observation`/`normalize()`. Live ingestion (file-watch / git-log walk / HTTP sink) DEFERRED per the parse-surface convention. Sources: official docs + source repos (cited inline below; full citations in the cycle research agent transcript).
++
++---
++
++## Executive Summary
++
++Both candidates clear the §4 evaluation criteria as **read-only, file/git-import evidence sources** that fit the existing `Observation` → `normalize()` seam with zero contract change. **Neither exposes a public read API or webhook** — both are ingested from local artifacts, so both are **Trust Tier T0** (file/git import). **Continue** is the stronger fit (**P1**): a purpose-built, schema-*versioned* "development data" JSONL surface. **Aider** (**P1**) is best ingested via its deterministic **git-commit attribution** (the only stable, documented, code-free provenance surface); its rich transcript file is unversioned and deferred. The producer sensitive screen (`FX-SEC-001`) is the relevant guard — both surfaces can carry source code/prompts. No blocking gaps → `/qor-plan` at L2.
++
++## Findings
++
++### F1 — Continue development data (T0, passive file import; dev-AI decision evidence)
++Continue writes "development data" as local **JSONL** to `.continue/dev_data/` (configurable via `config.yaml` `data` block: a `file://` dir or an HTTP sink). The `data` block carries a **versioned `schema`** (`0.1.0` / `0.2.0`) and a `level` of `all | noCode` (`noCode` strips file contents, prompts, completions). Documented event types: `autocomplete`, `chatInteraction`, `chatFeedback`, `editInteraction`, `editOutcome`, `nextEditOutcome`, `nextEditWithHistory`, `quickEdit`, `tokensGenerated`, `toolUsage` (per-event schemas in `packages/config-yaml/src/schemas/data`). Map **one Observation per event**: `source_id="continue"`, `kind=<eventName>`, excerpt from the event's human-meaningful text (prompt/completion/edit summary when present) with an event-name terminal fallback, `timestamp` from the event ts when present, `metadata={schema, eventName, model?}`. **No public read API** (docs route all dev-data to local files or a user-hosted HTTP sink); Continue Hub cloud read-API for dev-data is **unverified → open question**. Mode PASSIVE.
++
++### F2 — Aider git-commit attribution (T0, passive git import; implementation-evidence provenance)
++Aider auto-commits by default and, by default, appends **`(aider)`** to the git author *and* committer name; flags toggle `--attribute-commit-message-author` (`"aider: "` subject prefix), `--attribute-co-authored-by` (adds a `Co-authored-by:` trailer). This makes git-log the **most stable, documented, deterministic** Aider evidence surface, and it is code-free at the metadata level. Map **one Observation per attributed commit record** `{hash, message, author_name, committer_name, authored_at, trailers}`: `source_id="aider"`, `ref=<hash>`, `kind="commit"`, `excerpt=<commit subject>` with hash fallback, `author=<author_name>`, `timestamp=<authored_at>`, `metadata={attributed_by: author|committer|co-author, short_hash}`. Mode PASSIVE.
++
++### F3 — Aider secondary surfaces (DEFERRED)
++`--analytics-log <file.jsonl>` is documented and structured but **opt-in** and deliberately **code/prompt-free** (PostHog event shape); `.aider.chat.history.md` carries the rich transcript but has **no versioned/documented schema** (markdown prose) → scraping-prone. Both are deferred to a follow-up; the connector's `auth.md` records them as the planned secondary modes. Primary build is F2 (git attribution).
++
++### F4 — Contract fit + safety
++Both: read-only parse surfaces emitting `Observation` → `pipeline.normalize()`; no canonical writes (ADR-0008). Non-empty-excerpt **terminal-literal** fallback required per SG-2026-06-04-G (normalize rejects blank excerpt; use `"continue-event"` / `"aider-commit"` floors). Fixtures synthetic/PII-safe (`example.com`, no Luhn PAN, no secret-shaped tokens) so `FX-SEC-001` + TruffleHog stay green. Continue's `level: noCode` is the operator's native redaction lever; document it in `auth.md`.
++
++### F5 — Catalog placement
++Neither is in the current catalog. Both belong in a new/used category — **§6.1 Source Control & Code Review** (developer-AI tooling evidence) or §10 Related Tooling. Both **P1** (high value after foundation), default trust tier **T0**, integration role "evidence + provenance", readiness Scaffold → Prototype this cycle.
++
++## Blueprint Alignment
++
++| Claim | Finding | Status |
++|---|---|---|
++| Candidate must have official API OR stable documented ingestable artifact | Continue: versioned dev-data JSONL; Aider: documented git attribution | MATCH |
++| Evidence adapters, not state authorities (ADR-0008) | both read-only → Observation; no writes | MATCH |
++| Trust-tier model (T0–T5) | both T0 (file/git import) | MATCH |
++| Observation/AdapterEmission contract unchanged | both shapes fit existing fields | MATCH |
++| Excerpt terminal-literal floor (SG-2026-06-04-G) | `"continue-event"` / `"aider-commit"` floors planned | MATCH |
++
++No DRIFT.
++
++## Recommendations
++
++1. **[P1] `/qor-plan` at L2.** One plan, two connectors: Continue `parse_event(event)->Observation` (dev-data JSONL event) + Aider `parse_commit(record)->Observation` (git attribution) + `<Provider>Connector.observations` + synthetic fixture + end-to-end `normalize()` conformance test each.
++2. **[P1] Defer live paths**: Continue file-watch/HTTP-sink + Hub API; Aider git-log walk, analytics JSONL, and chat-history parse — record in each `auth.md`; parse surface only.
++3. **[P2] Catalog update**: add Continue + Aider rows (P1, T0) and a SHADOW_GENOME note.
++
++## Updated Knowledge
++
++SHADOW_GENOME **SG-2026-06-04-H** (proposed): AI-coding tools (Continue, Aider) expose evidence as *local artifacts*, not APIs — Continue via a schema-versioned dev-data JSONL (`level: noCode` is a native redaction lever), Aider via deterministic `(aider)` git-commit attribution (its rich transcript file is unversioned → defer). Ingest the stable surface; defer the fragile one.
++
++---
++
++_Research complete. Findings are advisory — implementation decisions remain with the Governor._

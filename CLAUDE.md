@@ -41,6 +41,8 @@ verification end-to-end. Don't introduce a merge path that bypasses
 | `npm run calibrate:judge` | Score every judge prompt version and pick the default. |
 | `npm run oracle:evasion` | Run the evader stack and emit survival curves. |
 | `npm run benchmarks:full` | Regenerate the whole oracle pipeline and `COVERAGE.md`. |
+| `npm run agent-incidence:full` | Fetch agent-attributed PRs, audit, dual-arbiter classify, render `benchmarks/real-prs/agent-corpus/INCIDENCE-REPORT.md`. |
+| `npm run block-eligibility:full` | Recalibrate block triggers against revert history; recompute `benchmarks/real-corpus/block-eligibility.json`. |
 
 Before any PR: `npm test`, `npm run typecheck`, then a descriptive commit. The LOC budget gate (`scripts/loc-budget-gate.sh`) runs in CI against `evidence/loc-budget.txt`.
 

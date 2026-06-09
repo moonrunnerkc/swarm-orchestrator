@@ -1,0 +1,80 @@
+diff --git a/src/server/browser_sessions.rs b/src/server/browser_sessions.rs
+index 88fcfe0..47fff70 100644
+--- a/src/server/browser_sessions.rs
++++ b/src/server/browser_sessions.rs
+@@ -11404,6 +11404,36 @@ fn render_browser_session_viewport_scroll_script() -> &'static str {
+     }
+     return url;
+   };
++  const syncChromeViewportState = () => {
++    const currentX = String(numberData("viewportX"));
++    const currentY = String(numberData("viewportY"));
++    const updateHref = (selector, hrefAttr) => {
++      const link = document.querySelector(selector);
++      if (!link || !link.href) {
++        return;
++      }
++      const url = stampCurrentViewportUrl(new URL(link.href, window.location.href));
++      link.href = url.toString();
++      link.setAttribute(hrefAttr, url.toString());
++    };
++    updateHref("[data-browser-chrome-current-action]", "data-browser-chrome-current-href");
++    updateHref("[data-browser-chrome-reload-action]", "data-browser-chrome-reload-href");
++    updateHref("[data-browser-chrome-images-action]", "data-browser-chrome-images-href");
++    for (const element of document.querySelectorAll("[data-browser-address-form], [data-browser-address], [data-browser-address-submit], [data-browser-primary-nav], [data-browser-chrome-status]")) {
++      element.dataset.browserAddressViewportX = currentX;
++      element.dataset.browserAddressViewportY = currentY;
++      element.dataset.browserPrimaryNavViewportX = currentX;
++      element.dataset.browserPrimaryNavViewportY = currentY;
++      element.dataset.browserChromeStatusViewportX = currentX;
++      element.dataset.browserChromeStatusViewportY = currentY;
++    }
++    for (const input of document.querySelectorAll("input[name=\"viewport_x\"]")) {
++      input.value = currentX;
++    }
++    for (const input of document.querySelectorAll("input[name=\"viewport_y\"]")) {
++      input.value = currentY;
++    }
++  };
+   const submitViewportClick = (point, messagePrefix) => {
+     const url = stampCurrentViewportUrl(new URL(shell.dataset.clickUrl, window.location.href));
+     const size = rasterSize();
+@@ -11517,6 +11547,7 @@ fn render_browser_session_viewport_scroll_script() -> &'static str {
+     if (keepFocus) {
+       shell.focus({ preventScroll: true });
+     }
++    syncChromeViewportState();
+     restoreClickMarkerAfterPartial();
+     replayDeferredClickAfterPartial();
+     return true;
+diff --git a/src/server/browser_sessions/tests.rs b/src/server/browser_sessions/tests.rs
+index d29c5e9..b656f8b 100644
+--- a/src/server/browser_sessions/tests.rs
++++ b/src/server/browser_sessions/tests.rs
+@@ -3406,6 +3406,18 @@ async fn browser_session_registry_scrolls_visual_viewport_horizontally() {
+     assert!(html.contains(r#"document.querySelector(idPrefix + "browser-viewport-click-x")"#));
+     assert!(html.contains(r#"document.querySelector(idPrefix + "browser-viewport-click-y")"#));
+     assert!(html.contains("const stampCurrentViewportUrl"));
++    assert!(html.contains("const syncChromeViewportState = () =>"));
++    assert!(html.contains(
++        r#"updateHref("[data-browser-chrome-current-action]", "data-browser-chrome-current-href")"#
++    ));
++    assert!(html.contains(
++        r#"updateHref("[data-browser-chrome-reload-action]", "data-browser-chrome-reload-href")"#
++    ));
++    assert!(html.contains(
++        r#"updateHref("[data-browser-chrome-images-action]", "data-browser-chrome-images-href")"#
++    ));
++    assert!(html.contains(r#"document.querySelectorAll("input[name=\"viewport_x\"]")"#));
++    assert!(html.contains(r#"document.querySelectorAll("input[name=\"viewport_y\"]")"#));
+     assert!(
+         html.contains(r#"url.searchParams.set("viewport_x", String(numberData("viewportX")))"#)
+     );
+@@ -3497,6 +3509,7 @@ async fn browser_session_registry_scrolls_visual_viewport_horizontally() {
+     assert!(html.contains("const shellTopAfter = shell.getBoundingClientRect().top"));
+     assert!(html.contains("window.scrollBy(0, shellShift)"));
+     assert!(html.contains(r#"shell.focus({ preventScroll: true })"#));
++    assert!(html.contains("syncChromeViewportState();"));
+     assert!(html.contains("restoreClickMarkerAfterPartial();"));
+     assert!(html.contains(r#"shell.removeAttribute("data-pending-viewport-x")"#));
+     assert!(html.contains(r#"shell.removeAttribute("data-pending-viewport-y")"#));

@@ -1,0 +1,29 @@
+diff --git a/src/routes/client.routes.js b/src/routes/client.routes.js
+index 836cb90..497dd8f 100644
+--- a/src/routes/client.routes.js
++++ b/src/routes/client.routes.js
+@@ -376,7 +376,12 @@ router.put("/profile/logo", async (req, res) => {
+ 
+ // KB merge helper functions
+ function normKB(s) {
+-  return s.toLowerCase().replace(/[?!。？！.,;:]/g, "").replace(/\s+/g, " ").trim();
++  return s.toLowerCase()
++    .replace(/[?!。？！.,;:]/g, "")
++    .replace(/([a-z])(\d)/g, "$1 $2")
++    .replace(/(\d)([a-z])/g, "$1 $2")
++    .replace(/\s+/g, " ")
++    .trim();
+ }
+ 
+ function kbSimilarity(a, b) {
+@@ -1342,8 +1347,8 @@ router.post("/chat", async (req, res) => {
+               result = scored.map((s) => {
+                 let text = `А: ${s.item.question}\nХ: ${s.item.answer}`;
+                 const vars = Array.isArray(s.item.variants) ? s.item.variants : [];
+-                const colorSizes = vars.filter((v) => (v.color || v.size) && (v.stock == null || v.stock > 0)).map((v) => [v.size, v.color].filter(Boolean).join("-"));
+-                if (colorSizes.length > 0) text += `\nХувилбарууд: ${colorSizes.join(", ")}`;
++                const colors = [...new Set(vars.filter((v) => v.color && (v.stock == null || v.stock > 0)).map((v) => v.color))];
++                if (colors.length > 0) text += `\nБайгаа өнгөнүүд: ${colors.join(", ")}`;
+                 return text;
+               }).join("\n\n");
+             }

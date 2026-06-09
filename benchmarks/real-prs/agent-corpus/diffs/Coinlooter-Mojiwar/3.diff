@@ -1,0 +1,731 @@
+diff --git a/package.json b/package.json
+index cc91207..1e67b83 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "mojiwar",
+-  "version": "1.1.4",
++  "version": "1.1.5",
+   "description": "Async multiplayer emoji auto-battler RPG.",
+   "private": true,
+   "scripts": {
+diff --git a/src/app/dashboard/page.tsx b/src/app/dashboard/page.tsx
+index 8f23548..4375b78 100644
+--- a/src/app/dashboard/page.tsx
++++ b/src/app/dashboard/page.tsx
+@@ -2,6 +2,7 @@ import Link from "next/link";
+ import type { Route } from "next";
+ import { redirect } from "next/navigation";
+ 
++import { SignOutButton } from "@/components/auth/SignOutButton";
+ import { StartPlayingButton } from "@/components/auth/StartPlayingButton";
+ import { getVerifiedUser } from "@/lib/auth/session";
+ 
+@@ -220,11 +221,7 @@ export default async function DashboardPage() {
+             Nicht abmelden, wenn du anonym spielst und den Fortschritt noch
+             nicht gesichert hast.
+           </p>
+-          <form action="/auth/signout" method="post">
+-            <button className="button" type="submit">
+-              Abmelden
+-            </button>
+-          </form>
++          <SignOutButton />
+         </article>
+       </section>
+     </>
+diff --git a/src/app/deck/page.tsx b/src/app/deck/page.tsx
+index c67f886..e6cc28b 100644
+--- a/src/app/deck/page.tsx
++++ b/src/app/deck/page.tsx
+@@ -1,4 +1,5 @@
+ import { equipDeckSlot, unequipDeckSlot } from "@/app/deck/actions";
++import { SubmitButton } from "@/components/ui/SubmitButton";
+ import { requireCharacter } from "@/lib/auth/require-character";
+ import { MAX_STARTER_DECK_SIZE } from "@/lib/game/cards";
+ import { mapCardRow } from "@/lib/game/loadout";
+@@ -75,9 +76,9 @@ export default async function DeckPage({
+                     <p className="muted">Karte ist aktiv.</p>
+                     <form action={unequipDeckSlot}>
+                       <input name="slotIndex" type="hidden" value={slotIndex} />
+-                      <button className="button" type="submit">
++                      <SubmitButton pendingLabel="Wird entfernt...">
+                         Ausruesten entfernen
+-                      </button>
++                      </SubmitButton>
+                     </form>
+                   </>
+                 ) : (
+@@ -127,9 +128,9 @@ export default async function DeckPage({
+                         value={ownedCard.id}
+                       />
+                       <input name="slotIndex" type="hidden" value={slotIndex} />
+-                      <button className="button" type="submit">
++                      <SubmitButton pendingLabel="Wird ausgeruestet...">
+                         Slot {slotIndex + 1}
+-                      </button>
++                      </SubmitButton>
+                     </form>
+                   ))}
+                 </div>
+diff --git a/src/app/globals.css b/src/app/globals.css
+index faf4fa1..c21e377 100644
+--- a/src/app/globals.css
++++ b/src/app/globals.css
+@@ -42,15 +42,12 @@ body {
+ 
+ .site-main {
+   flex: 1;
+-  min-height: 0;
+-  overflow-y: auto;
+-  overscroll-behavior-y: contain;
+ }
+ 
+ .glass-chrome {
+   position: relative;
+   isolation: isolate;
+-  overflow: hidden;
++  overflow: visible;
+   border-color: var(--border);
+   background: var(--chrome);
+   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+@@ -308,6 +305,90 @@ input {
+   transform: translateY(-1px);
+ }
+ 
++.nav-links a:active,
++.button:active:not(:disabled) {
++  transform: translateY(0) scale(0.98);
++}
++
++.button:disabled {
++  cursor: wait;
++  opacity: 0.78;
++}
++
++.button.is-loading,
++.nav-links a.is-loading {
++  display: inline-flex;
++  align-items: center;
++  gap: 8px;
++  cursor: wait;
++}
++
++.loading-spinner {
++  display: inline-flex;
++  align-items: center;
++}
++
++.loading-spinner-icon {
++  width: 1rem;
++  height: 1rem;
++  border: 2px solid currentColor;
++  border-right-color: transparent;
++  border-radius: 999px;
++  animation: loading-spin 700ms linear infinite;
++}
++
++.nav-progress {
++  position: fixed;
++  top: 0;
++  left: 0;
++  z-index: 60;
++  width: 100%;
++  height: 3px;
++  pointer-events: none;
++  opacity: 0;
++  transform: scaleX(0);
++  transform-origin: left center;
++  background: linear-gradient(90deg, var(--accent), var(--success));
++  transition: opacity 160ms ease;
++}
++
++.nav-progress.is-active {
++  opacity: 1;
++  animation: nav-progress-indeterminate 1.1s ease-in-out infinite;
++}
++
++.sr-only {
++  position: absolute;
++  width: 1px;
++  height: 1px;
++  padding: 0;
++  margin: -1px;
++  overflow: hidden;
++  clip: rect(0, 0, 0, 0);
++  white-space: nowrap;
++  border: 0;
++}
++
++@keyframes loading-spin {
++  to {
++    transform: rotate(360deg);
++  }
++}
++
++@keyframes nav-progress-indeterminate {
++  0% {
++    transform: scaleX(0.08);
++  }
++
++  50% {
++    transform: scaleX(0.72);
++  }
++
++  100% {
++    transform: scaleX(0.2);
++  }
++}
++
+ .button.primary {
+   border-color: transparent;
+   background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+@@ -1342,13 +1423,19 @@ h3 {
+   .battle-fighter-sprite,
+   .battle-float,
+   .battle-effect-burst,
+-  .battle-arena-critical {
++  .battle-arena-critical,
++  .loading-spinner-icon,
++  .nav-progress.is-active {
+     animation: none !important;
+   }
+ 
+   .battle-hp-fill {
+     transition: none;
+   }
++
++  .nav-progress.is-active {
++    transform: scaleX(0.45);
++  }
+ }
+ 
+ @media (max-width: 900px) {
+diff --git a/src/app/onboarding/page.tsx b/src/app/onboarding/page.tsx
+index b75e959..6a31330 100644
+--- a/src/app/onboarding/page.tsx
++++ b/src/app/onboarding/page.tsx
+@@ -1,6 +1,7 @@
+ import { redirect } from "next/navigation";
+ 
+ import { EmojiPicker } from "@/components/onboarding/EmojiPicker";
++import { SubmitButton } from "@/components/ui/SubmitButton";
+ import { createCharacter } from "./actions";
+ import { getVerifiedUser } from "@/lib/auth/session";
+ 
+@@ -71,9 +72,9 @@ export default async function OnboardingPage({
+           </p>
+         ) : null}
+ 
+-        <button className="button primary" type="submit">
++        <SubmitButton pendingLabel="Held wird erstellt..." variant="primary">
+           Charakter erstellen
+-        </button>
++        </SubmitButton>
+       </form>
+     </section>
+   );
+diff --git a/src/app/opponents/page.tsx b/src/app/opponents/page.tsx
+index 92c7cb8..76b6c46 100644
+--- a/src/app/opponents/page.tsx
++++ b/src/app/opponents/page.tsx
+@@ -1,4 +1,5 @@
+ import { challengeCharacter } from "@/app/battle/actions";
++import { SubmitButton } from "@/components/ui/SubmitButton";
+ import { requireCharacter } from "@/lib/auth/require-character";
+ import { BOT_OPPONENT_IDS } from "@/constants/bot-opponents";
+ import { calculatePower } from "@/lib/game/calculate-power";
+@@ -30,9 +31,7 @@ function OpponentCard({ candidate }: { candidate: CharacterLoadout }) {
+       </p>
+       <form action={challengeCharacter}>
+         <input name="defenderCharacterId" type="hidden" value={candidate.id} />
+-        <button className="button" type="submit">
+-          Herausfordern
+-        </button>
++        <SubmitButton pendingLabel="Kampf startet...">Herausfordern</SubmitButton>
+       </form>
+     </article>
+   );
+@@ -47,15 +46,16 @@ export default async function OpponentsPage({
+   const params = await searchParams;
+   const errorMessage = params.error ? errorMessages[params.error] : null;
+ 
+-  const player = await fetchCharacterLoadout(supabase, character.id);
++  const [player, opponentIds] = await Promise.all([
++    fetchCharacterLoadout(supabase, character.id),
++    fetchOpponentCharacterIds(supabase, character.user_id),
++  ]);
+ 
+   if (!player) {
+     return null;
+   }
+ 
+-  const { allIds, botIds, playerIds, hasRealPlayers } =
+-    await fetchOpponentCharacterIds(supabase, character.user_id);
+-
++  const { allIds, botIds, playerIds, hasRealPlayers } = opponentIds;
+   const candidates = await fetchCharacterLoadouts(supabase, allIds);
+   const botCandidates = candidates.filter((candidate) => botIds.includes(candidate.id));
+   const playerCandidates = candidates.filter((candidate) =>
+@@ -98,9 +98,9 @@ export default async function OpponentsPage({
+               type="hidden"
+               value={match.opponent.id}
+             />
+-            <button className="button primary" type="submit">
++            <SubmitButton pendingLabel="Kampf startet..." variant="primary">
+               Herausfordern
+-            </button>
++            </SubmitButton>
+           </form>
+         </section>
+       ) : null}
+diff --git a/src/app/page.tsx b/src/app/page.tsx
+index 4348ef0..9bc946f 100644
+--- a/src/app/page.tsx
++++ b/src/app/page.tsx
+@@ -1,44 +1,10 @@
+ import Link from "next/link";
+ 
+ import { StartPlayingButton } from "@/components/auth/StartPlayingButton";
+-import { simulateBattle } from "@/lib/game/battle-engine";
++import { landingDemoBattle } from "@/constants/landing-demo";
+ import { starterCards } from "@/lib/game/cards";
+ 
+-const demoBattle = simulateBattle({
+-  seed: "landing-demo",
+-  attacker: {
+-    id: "attacker",
+-    ownerUserId: "demo-a",
+-    emoji: "🦊",
+-    name: "Foxy",
+-    level: 4,
+-    xp: 280,
+-    baseStats: {
+-      hp: 110,
+-      attack: 19,
+-      defense: 7,
+-      speed: 13,
+-      critChance: 0.08,
+-    },
+-    deck: [starterCards[0], starterCards[3], starterCards[6]],
+-  },
+-  defender: {
+-    id: "defender",
+-    ownerUserId: "demo-b",
+-    emoji: "🐸",
+-    name: "Hopser",
+-    level: 3,
+-    xp: 190,
+-    baseStats: {
+-      hp: 126,
+-      attack: 16,
+-      defense: 9,
+-      speed: 9,
+-      critChance: 0.05,
+-    },
+-    deck: [starterCards[1], starterCards[2], starterCards[4]],
+-  },
+-});
++const demoBattle = landingDemoBattle;
+ 
+ const heroEmojis = ["🦊", "🐸", "👻", "🤖", "🐉", "🦄"] as const;
+ 
+diff --git a/src/components/auth/SignOutButton.tsx b/src/components/auth/SignOutButton.tsx
+new file mode 100644
+index 0000000..257f773
+--- /dev/null
++++ b/src/components/auth/SignOutButton.tsx
+@@ -0,0 +1,35 @@
++"use client";
++
++import { useState } from "react";
++
++import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
++
++export function SignOutButton() {
++  const [pending, setPending] = useState(false);
++
++  return (
++    <form
++      action="/auth/signout"
++      method="post"
++      onSubmit={() => {
++        setPending(true);
++      }}
++    >
++      <button
++        aria-busy={pending}
++        className={`button${pending ? " is-loading" : ""}`}
++        disabled={pending}
++        type="submit"
++      >
++        {pending ? (
++          <>
++            <LoadingSpinner />
++            Wird abgemeldet...
++          </>
++        ) : (
++          "Abmelden"
++        )}
++      </button>
++    </form>
++  );
++}
+diff --git a/src/components/auth/StartPlayingButton.tsx b/src/components/auth/StartPlayingButton.tsx
+index 7c707c9..2263e3b 100644
+--- a/src/components/auth/StartPlayingButton.tsx
++++ b/src/components/auth/StartPlayingButton.tsx
+@@ -3,7 +3,9 @@
+ import { useRouter } from "next/navigation";
+ import { useState, useTransition } from "react";
+ 
++import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
++import { signalNavigationStart } from "@/lib/ui/navigation-feedback";
+ 
+ export function StartPlayingButton({
+   children = "Sofort spielen",
+@@ -12,41 +14,61 @@ export function StartPlayingButton({
+ }) {
+   const router = useRouter();
+   const [isPending, startTransition] = useTransition();
++  const [isStarting, setIsStarting] = useState(false);
+   const [errorMessage, setErrorMessage] = useState<string | null>(null);
++  const busy = isPending || isStarting;
+ 
+   async function handleStart() {
+     setErrorMessage(null);
+-    const supabase = createSupabaseBrowserClient();
+-    const {
+-      data: { user },
+-    } = await supabase.auth.getUser();
+-
+-    if (!user) {
+-      const { error } = await supabase.auth.signInAnonymously();
+-
+-      if (error) {
+-        setErrorMessage(
+-          "Sofort spielen ist noch nicht aktiv. Bitte Anonymous Sign-ins in Supabase Auth aktivieren.",
+-        );
+-        return;
++    setIsStarting(true);
++    signalNavigationStart();
++
++    try {
++      const supabase = createSupabaseBrowserClient();
++      const {
++        data: { user },
++      } = await supabase.auth.getUser();
++
++      if (!user) {
++        const { error } = await supabase.auth.signInAnonymously();
++
++        if (error) {
++          setErrorMessage(
++            "Sofort spielen ist noch nicht aktiv. Bitte Anonymous Sign-ins in Supabase Auth aktivieren.",
++          );
++          setIsStarting(false);
++          return;
++        }
+       }
+-    }
+ 
+-    startTransition(() => {
+-      router.refresh();
+-      router.push("/dashboard");
+-    });
++      startTransition(() => {
++        setIsStarting(false);
++        router.refresh();
++        router.push("/dashboard");
++      });
++    } catch {
++      setErrorMessage("Etwas ist schiefgelaufen. Bitte versuche es erneut.");
++      setIsStarting(false);
++    }
+   }
+ 
+   return (
+     <div>
+       <button
+-        className="button primary"
+-        disabled={isPending}
++        aria-busy={busy}
++        className={`button primary${busy ? " is-loading" : ""}`}
++        disabled={busy}
+         onClick={handleStart}
+         type="button"
+       >
+-        {isPending ? "Wird vorbereitet..." : children}
++        {busy ? (
++          <>
++            <LoadingSpinner />
++            Wird vorbereitet...
++          </>
++        ) : (
++          children
++        )}
+       </button>
+       {errorMessage ? (
+         <p className="muted" role="alert" style={{ marginTop: 12 }}>
+diff --git a/src/components/battle/BattleReplay.tsx b/src/components/battle/BattleReplay.tsx
+index b21c838..3f90496 100644
+--- a/src/components/battle/BattleReplay.tsx
++++ b/src/components/battle/BattleReplay.tsx
+@@ -103,10 +103,12 @@ export function BattleReplay({
+           <button
+             className="button"
+             disabled={isComplete}
+-            onClick={() => setVisibleEvents(result.events.length)}
++            onClick={() => {
++              setVisibleEvents(result.events.length);
++            }}
+             type="button"
+           >
+-            Ueberspringen
++            {isComplete ? "Fertig" : "Ueberspringen"}
+           </button>
+         </div>
+       </div>
+diff --git a/src/components/layout/AppShell.tsx b/src/components/layout/AppShell.tsx
+index ac7f440..8436379 100644
+--- a/src/components/layout/AppShell.tsx
++++ b/src/components/layout/AppShell.tsx
+@@ -1,11 +1,13 @@
+ import type { ReactNode } from "react";
+ 
++import { NavigationProgress } from "@/components/layout/NavigationProgress";
+ import { SiteFooter } from "@/components/layout/SiteFooter";
+ import { SiteHeader } from "@/components/layout/SiteHeader";
+ 
+ export function AppShell({ children }: { children: ReactNode }) {
+   return (
+     <div className="app-shell">
++      <NavigationProgress />
+       <SiteHeader />
+       <main className="site-main">
+         <div className="page-shell">{children}</div>
+diff --git a/src/components/layout/NavigationProgress.tsx b/src/components/layout/NavigationProgress.tsx
+new file mode 100644
+index 0000000..fccf2eb
+--- /dev/null
++++ b/src/components/layout/NavigationProgress.tsx
+@@ -0,0 +1,79 @@
++"use client";
++
++import { usePathname } from "next/navigation";
++import { useEffect, useRef, useState } from "react";
++
++import { NAVIGATION_START_EVENT } from "@/lib/ui/navigation-feedback";
++
++export function NavigationProgress() {
++  const pathname = usePathname();
++  const [active, setActive] = useState(false);
++  const previousPathname = useRef(pathname);
++
++  useEffect(() => {
++    if (previousPathname.current !== pathname) {
++      setActive(false);
++      previousPathname.current = pathname;
++    }
++  }, [pathname]);
++
++  useEffect(() => {
++    const startProgress = () => {
++      setActive(true);
++    };
++
++    const onClick = (event: MouseEvent) => {
++      const target = event.target;
++
++      if (!(target instanceof Element)) {
++        return;
++      }
++
++      const link = target.closest("a[href]");
++
++      if (link) {
++        const href = link.getAttribute("href");
++
++        if (
++          href &&
++          href.startsWith("/") &&
++          !href.startsWith("//") &&
++          link.getAttribute("target") !== "_blank" &&
++          !link.hasAttribute("download")
++        ) {
++          startProgress();
++        }
++
++        return;
++      }
++
++      const submitControl = target.closest(
++        'button[type="submit"], input[type="submit"]',
++      );
++
++      if (submitControl instanceof HTMLButtonElement && submitControl.disabled) {
++        return;
++      }
++
++      if (submitControl) {
++        startProgress();
++      }
++    };
++
++    document.addEventListener("click", onClick, true);
++    document.addEventListener(NAVIGATION_START_EVENT, startProgress);
++
++    return () => {
++      document.removeEventListener("click", onClick, true);
++      document.removeEventListener(NAVIGATION_START_EVENT, startProgress);
++    };
++  }, []);
++
++  return (
++    <div
++      aria-hidden
++      className={`nav-progress${active ? " is-active" : ""}`}
++      role="presentation"
++    />
++  );
++}
+diff --git a/src/components/ui/LoadingSpinner.tsx b/src/components/ui/LoadingSpinner.tsx
+new file mode 100644
+index 0000000..6da5d36
+--- /dev/null
++++ b/src/components/ui/LoadingSpinner.tsx
+@@ -0,0 +1,8 @@
++export function LoadingSpinner({ label = "Laedt" }: { label?: string }) {
++  return (
++    <span aria-hidden className="loading-spinner">
++      <span className="loading-spinner-icon" />
++      <span className="sr-only">{label}</span>
++    </span>
++  );
++}
+diff --git a/src/components/ui/SubmitButton.tsx b/src/components/ui/SubmitButton.tsx
+new file mode 100644
+index 0000000..aac7b54
+--- /dev/null
++++ b/src/components/ui/SubmitButton.tsx
+@@ -0,0 +1,40 @@
++"use client";
++
++import { useFormStatus } from "react-dom";
++import type { ReactNode } from "react";
++
++import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
++
++export function SubmitButton({
++  children,
++  pendingLabel,
++  className = "button",
++  variant,
++}: {
++  children: ReactNode;
++  pendingLabel: string;
++  className?: string;
++  variant?: "primary";
++}) {
++  const { pending } = useFormStatus();
++  const classes = [
++    className,
++    variant === "primary" ? "primary" : "",
++    pending ? "is-loading" : "",
++  ]
++    .filter(Boolean)
++    .join(" ");
++
++  return (
++    <button aria-busy={pending} className={classes} disabled={pending} type="submit">
++      {pending ? (
++        <>
++          <LoadingSpinner />
++          {pendingLabel}
++        </>
++      ) : (
++        children
++      )}
++    </button>
++  );
++}
+diff --git a/src/constants/changelog.ts b/src/constants/changelog.ts
+index f314263..0140c65 100644
+--- a/src/constants/changelog.ts
++++ b/src/constants/changelog.ts
+@@ -5,6 +5,13 @@ export type ChangelogEntry = {
+ 
+ // Bei neuen Releases zuerst eintragen (neueste Version oben).
+ export const CHANGELOG_VERSIONS: ChangelogEntry[] = [
++  {
++    version: "1.1.5",
++    changes: [
++      "UX — Ladeanzeige bei Buttons und Navigation, Startseite scrollt wieder mit dem Mausrad",
++      "Performance — schnellere Gegner-Seite durch parallele Datenabfragen",
++    ],
++  },
+   {
+     version: "1.1.4",
+     changes: [
+diff --git a/src/constants/landing-demo.ts b/src/constants/landing-demo.ts
+new file mode 100644
+index 0000000..c4b4da5
+--- /dev/null
++++ b/src/constants/landing-demo.ts
+@@ -0,0 +1,39 @@
++import { simulateBattle } from "@/lib/game/battle-engine";
++import { starterCards } from "@/lib/game/cards";
++import type { BattleResult } from "@/lib/game/types";
++
++export const landingDemoBattle: BattleResult = simulateBattle({
++  seed: "landing-demo",
++  attacker: {
++    id: "attacker",
++    ownerUserId: "demo-a",
++    emoji: "🦊",
++    name: "Foxy",
++    level: 4,
++    xp: 280,
++    baseStats: {
++      hp: 110,
++      attack: 19,
++      defense: 7,
++      speed: 13,
++      critChance: 0.08,
++    },
++    deck: [starterCards[0], starterCards[3], starterCards[6]],
++  },
++  defender: {
++    id: "defender",
++    ownerUserId: "demo-b",
++    emoji: "🐸",
++    name: "Hopser",
++    level: 3,
++    xp: 190,
++    baseStats: {
++      hp: 126,
++      attack: 16,
++      defense: 9,
++      speed: 9,
++      critChance: 0.05,
++    },
++    deck: [starterCards[1], starterCards[2], starterCards[4]],
++  },
++});
+diff --git a/src/lib/ui/navigation-feedback.ts b/src/lib/ui/navigation-feedback.ts
+new file mode 100644
+index 0000000..9f7c336
+--- /dev/null
++++ b/src/lib/ui/navigation-feedback.ts
+@@ -0,0 +1,9 @@
++export const NAVIGATION_START_EVENT = "app:navigation-start";
++
++export function signalNavigationStart() {
++  if (typeof document === "undefined") {
++    return;
++  }
++
++  document.dispatchEvent(new Event(NAVIGATION_START_EVENT));
++}

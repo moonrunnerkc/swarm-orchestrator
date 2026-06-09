@@ -1,0 +1,264 @@
+diff --git a/tests/test_tcm.py b/tests/test_tcm.py
+index 28042875..7617fa58 100644
+--- a/tests/test_tcm.py
++++ b/tests/test_tcm.py
+@@ -2,8 +2,13 @@
+ 
+ import awkward as ak
+ import pytest
++from lgdo import Table, lh5
+ 
+-from legendsimflow.tcm import merge_stp_n_opt_tcms
++from legendsimflow.tcm import (
++    merge_stp_n_opt_tcms,
++    merge_stp_n_opt_tcms_chunk,
++    merge_stp_n_opt_tcms_to_lh5,
++)
+ 
+ 
+ def test_merge_tcm_basic():
+@@ -23,7 +28,7 @@ def test_merge_tcm_basic():
+         depth_limit=1,
+     )
+ 
+-    out = merge_stp_n_opt_tcms(tcm_stp, tcm_opt, scintillator_uid=-1)
++    out = merge_stp_n_opt_tcms_chunk(tcm_stp, tcm_opt, scintillator_uid=-1)
+ 
+     assert out.table_key[0].to_list() == [1052802, 1052803, 1086400]
+     assert out.row_in_table[0].to_list() == [1, 1, 0]
+@@ -55,7 +60,7 @@ def test_merge_tcm_no_placeholders():
+         depth_limit=1,
+     )
+ 
+-    out = merge_stp_n_opt_tcms(tcm_stp, tcm_opt, scintillator_uid=-1)
++    out = merge_stp_n_opt_tcms_chunk(tcm_stp, tcm_opt, scintillator_uid=-1)
+ 
+     assert out.table_key.to_list() == tcm_stp.table_key.to_list()
+     assert out.row_in_table.to_list() == tcm_stp.row_in_table.to_list()
+@@ -101,3 +106,51 @@ def test_merge_tcm_mismatched_counts_raises():
+ 
+     with pytest.raises(ValueError, match=r"len\(tcm_opt\).+must equal"):
+         merge_stp_n_opt_tcms(tcm_stp, tcm_opt, scintillator_uid=-1)
++
++
++def test_merge_stp_n_opt_tcms_to_lh5_roundtrip(tmp_path):
++    stp_file = tmp_path / "stp.lh5"
++    opt_file = tmp_path / "opt.lh5"
++    out_file = tmp_path / "out.lh5"
++
++    tcm_stp = ak.zip(
++        {
++            "table_key": ak.Array([[-1, 10], [20], [30, -1, 40]]),
++            "row_in_table": ak.Array([[0, 1], [2], [3, 4, 5]]),
++        },
++        depth_limit=1,
++    )
++
++    tcm_opt = ak.zip(
++        {
++            "table_key": ak.Array([[100, 101], [200]]),
++            "row_in_table": ak.Array([[7, 8], [9]]),
++        },
++        depth_limit=1,
++    )
++
++    lh5.write(Table(tcm_stp), "tcm", str(stp_file), wo_mode="write_safe")
++    lh5.write(Table(tcm_opt), "tcm", str(opt_file), wo_mode="write_safe")
++
++    merge_stp_n_opt_tcms_to_lh5(
++        stp_file,
++        opt_file,
++        out_file,
++        scintillator_uid=-1,
++        buffer_len=2,
++    )
++
++    merged = lh5.read_as("tcm", str(out_file), library="ak")
++
++    assert len(merged) == len(tcm_stp)
++
++    assert merged.table_key[0].to_list() == [100, 101, 10]
++    assert merged.row_in_table[0].to_list() == [7, 8, 1]
++
++    assert merged.table_key[1].to_list() == [20]
++    assert merged.row_in_table[1].to_list() == [2]
++
++    assert merged.table_key[2].to_list() == [30, 200, 40]
++    assert merged.row_in_table[2].to_list() == [3, 9, 5]
++
++    assert not ak.any(merged.table_key == -1)
+diff --git a/workflow/src/legendsimflow/scripts/tier/evt.py b/workflow/src/legendsimflow/scripts/tier/evt.py
+index 42ba8fca..ed600f0b 100644
+--- a/workflow/src/legendsimflow/scripts/tier/evt.py
++++ b/workflow/src/legendsimflow/scripts/tier/evt.py
+@@ -27,7 +27,7 @@
+ from legendsimflow.awkward import ak_isin
+ from legendsimflow.metadata import encode_usability
+ from legendsimflow.profile import make_profiler
+-from legendsimflow.tcm import build_tcm
++from legendsimflow.tcm import merge_stp_n_opt_tcms_to_lh5
+ 
+ GEDS_ENERGY_THR_KEV = 25
+ SPMS_ENERGY_THR_PE = 0
+@@ -56,28 +56,20 @@
+ perf_block, print_perf = make_profiler()
+ 
+ log.info("merging hit and opt TCMs")
+-with perf_block("build_tcm()"):
+-    build_tcm(hit_file.values(), evt_file)
+-
+-    # FIXME: TCM merging much faster but memory hungry!
+-    # tcm_stp = lh5.read_as("tcm", stp_file, library="ak")
+-    # tcm_opt = lh5.read_as("tcm", hit_file["opt"], library="ak")
+-
+-    # scintillator_uid = next(
+-    #     uid
+-    #     for uid, name in reboost_utils.get_remage_detector_uids(stp_file).items()
+-    #     if name == "liquid_argon"
+-    # )
+-
+-    # tcm_unified = merge_stp_n_opt_tcms(
+-    #     tcm_stp, tcm_opt, scintillator_uid=scintillator_uid
+-    # )
+-
+-    # del tcm_stp, tcm_opt
+-
+-    # lh5.write(Table(tcm_unified), "tcm", evt_file, wo_mode="write_safe")
++with perf_block("merge_tcms()"):
++    scintillator_uid = next(
++        uid
++        for uid, name in reboost_utils.get_remage_detector_uids(stp_file).items()
++        if name == "liquid_argon"
++    )
+ 
+-    # del tcm_unified
++    merge_stp_n_opt_tcms_to_lh5(
++        stp_file,
++        hit_file["opt"],
++        evt_file,
++        scintillator_uid=scintillator_uid,
++        buffer_len=BUFFER_LEN,
++    )
+ 
+ 
+ # test that the evt tcm has the same amount of rows as the stp tcm
+diff --git a/workflow/src/legendsimflow/tcm.py b/workflow/src/legendsimflow/tcm.py
+index d0c88ad7..89cb4328 100644
+--- a/workflow/src/legendsimflow/tcm.py
++++ b/workflow/src/legendsimflow/tcm.py
+@@ -21,6 +21,7 @@
+ import awkward as ak
+ import numpy as np
+ import pygama.evt
++from lgdo import Table, lh5
+ 
+ 
+ def build_tcm(
+@@ -72,7 +73,6 @@ def merge_stp_n_opt_tcms(tcm_stp, tcm_opt, *, scintillator_uid):
+         Record array with the same length as `tcm_stp`.
+     """
+     stp_k = tcm_stp.table_key
+-    stp_r = tcm_stp.row_in_table
+ 
+     is_ph = stp_k == scintillator_uid
+     n_ph_per_row = ak.sum(is_ph, axis=1)
+@@ -90,6 +90,24 @@ def merge_stp_n_opt_tcms(tcm_stp, tcm_opt, *, scintillator_uid):
+         )
+         raise ValueError(msg)
+ 
++    return merge_stp_n_opt_tcms_chunk(
++        tcm_stp, tcm_opt, scintillator_uid=scintillator_uid
++    )
++
++
++def merge_stp_n_opt_tcms_chunk(tcm_stp, tcm_opt, *, scintillator_uid):
++    """Chunk-level implementation of :func:`merge_stp_n_opt_tcms`.
++
++    This function assumes `tcm_opt` contains *exactly* as many rows as there are
++    rows in `tcm_stp` that contain `scintillator_uid`, in the same order.
++    """
++    stp_k = tcm_stp.table_key
++    stp_r = tcm_stp.row_in_table
++
++    is_ph = stp_k == scintillator_uid
++    n_ph_per_row = ak.sum(is_ph, axis=1)
++    has_ph = n_ph_per_row > 0
++
+     # index of the placeholder in each row; None if absent
+     pos_ph = ak.firsts(ak.local_index(stp_k)[is_ph])
+ 
+@@ -116,3 +134,74 @@ def merge_stp_n_opt_tcms(tcm_stp, tcm_opt, *, scintillator_uid):
+     merged_r = ak.where(has_ph, ak.concatenate([left_r, opt_r, right_r], axis=1), stp_r)
+ 
+     return ak.zip({"table_key": merged_k, "row_in_table": merged_r}, depth_limit=1)
++
++
++def merge_stp_n_opt_tcms_to_lh5(
++    stp_file: str | Path,
++    opt_file: str | Path,
++    out_file: str | Path,
++    *,
++    scintillator_uid: int,
++    buffer_len: str | int = "50*MB",
++) -> None:
++    """Stream-merge STP and OPT TCMs and write unified TCM to disk in chunks.
++
++    Iterates over `stp_file:/tcm` using :class:`lgdo.lh5.LH5Iterator`. For each
++    chunk, reads only the required number of OPT TCM rows (those corresponding
++    to STP rows containing the `scintillator_uid` placeholder) via `lh5.read_as`
++    with explicit indices. The merged output is appended to `out_file:/tcm`.
++    """
++    opt_pos = 0
++    out_wo_mode = "write_safe"
++
++    it_stp = lh5.LH5Iterator(
++        str(stp_file),
++        "tcm",
++        buffer_len=buffer_len,
++    )
++
++    for stp_chunk in it_stp:
++        tcm_stp_chunk = stp_chunk.view_as("ak")
++
++        stp_k = tcm_stp_chunk.table_key
++        is_ph = stp_k == scintillator_uid
++        n_ph_per_row = ak.sum(is_ph, axis=1)
++
++        if ak.any(n_ph_per_row > 1):
++            msg = "found multiple scintillator_uid placeholders in a single tcm_stp row"
++            raise ValueError(msg)
++
++        has_ph = n_ph_per_row > 0
++        n_need = int(ak.sum(has_ph))
++
++        if n_need > 0:
++            opt_rows = np.arange(opt_pos, opt_pos + n_need, dtype=np.int64)
++            tcm_opt_chunk = lh5.read_as(
++                "tcm", str(opt_file), idx=opt_rows, library="ak"
++            )
++            if len(tcm_opt_chunk) != n_need:
++                msg = (
++                    "Number of rows read from tcm_opt does not match expected count: "
++                    f"requested {n_need}, got {len(tcm_opt_chunk)}"
++                )
++                raise ValueError(msg)
++            opt_pos += n_need
++        else:
++            tcm_opt_chunk = ak.zip(
++                {"table_key": ak.Array([]), "row_in_table": ak.Array([])},
++                depth_limit=1,
++            )
++
++        merged = merge_stp_n_opt_tcms_chunk(
++            tcm_stp_chunk,
++            tcm_opt_chunk,
++            scintillator_uid=scintillator_uid,
++        )
++
++        lh5.write(Table(merged), "tcm", str(out_file), wo_mode=out_wo_mode)
++        out_wo_mode = "append"
++
++    n_opt = lh5.read_n_rows("tcm", str(opt_file))
++    if opt_pos != n_opt:
++        msg = f"len(tcm_opt) ({n_opt}) must equal number of tcm_stp rows containing scintillator_uid ({opt_pos})"
++        raise ValueError(msg)

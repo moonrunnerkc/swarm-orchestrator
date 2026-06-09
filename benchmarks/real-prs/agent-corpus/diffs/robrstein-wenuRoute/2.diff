@@ -1,0 +1,951 @@
+diff --git a/README.md b/README.md
+index c25cf3e..54dbc55 100644
+--- a/README.md
++++ b/README.md
+@@ -6,7 +6,7 @@
+ 
+ - 🔍 **Analiza proyectos** HTML, React/JSX/TypeScript, Python (Flask, FastAPI, Django), Node.js/Express, Flutter/Dart y Android (Java/Kotlin).
+ - 🔗 **Sigue cadenas de llamadas**: CSS → JS → endpoint → SQL.
+-- 📊 **Genera un grafo HTML interactivo** con PyVis (nodos coloreados por tipo, física habilitada, tooltips).
++- 📊 **Genera un grafo HTML interactivo** con filtros por capa, búsqueda, expansión de dependencias y tooltips.
+ - 🖥️ **Salida en consola** con `--format text` para entornos sin navegador.
+ - ⚡ **Arquitectura modular**: un parser por lenguaje, fácil de extender.
+ 
+@@ -43,7 +43,9 @@ wenuroute ./mi-proyecto --verbose
+ ```
+ 
+ Abre el archivo HTML generado en cualquier navegador para explorar el grafo:
+-- Haz clic y arrastra los nodos.
++- Usa checkboxes para mostrar u ocultar capas completas (Frontend, Backend, Android, BD).
++- Busca entidades por nombre (pantallas, botones, endpoints, paquetes SQL).
++- Haz doble clic en un nodo para expandir o colapsar dependencias.
+ - Pasa el cursor por encima para ver detalles (archivo, línea, parámetros).
+ - Usa los botones de navegación para hacer zoom.
+ 
+@@ -77,7 +79,7 @@ wenuroute/
+ ├── wenuroute/
+ │   ├── cli.py          # Punto de entrada CLI (Click)
+ │   ├── analyzer.py     # Orquestador: recorre el árbol de archivos
+-│   ├── graph.py        # Renderizado HTML (PyVis) y texto
++│   ├── graph.py        # Renderizado HTML interactivo por capas y salida texto
+ │   ├── models.py       # RouteNode, RouteEdge, RouteGraph
+ │   └── parsers/
+ │       ├── base.py     # Clase abstracta BaseParser
+@@ -101,4 +103,3 @@ python -m pytest tests/ -v
+ ## Licencia
+ 
+ MIT
+-
+diff --git a/tests/__pycache__/__init__.cpython-312.pyc b/tests/__pycache__/__init__.cpython-312.pyc
+index bad6cee..a69c81b 100644
+Binary files a/tests/__pycache__/__init__.cpython-312.pyc and b/tests/__pycache__/__init__.cpython-312.pyc differ
+diff --git a/tests/__pycache__/test_graph.cpython-312-pytest-9.0.3.pyc b/tests/__pycache__/test_graph.cpython-312-pytest-9.0.3.pyc
+new file mode 100644
+index 0000000..a9b7e22
+Binary files /dev/null and b/tests/__pycache__/test_graph.cpython-312-pytest-9.0.3.pyc differ
+diff --git a/tests/__pycache__/test_parsers.cpython-312-pytest-9.0.3.pyc b/tests/__pycache__/test_parsers.cpython-312-pytest-9.0.3.pyc
+index 96f7a5a..342acbe 100644
+Binary files a/tests/__pycache__/test_parsers.cpython-312-pytest-9.0.3.pyc and b/tests/__pycache__/test_parsers.cpython-312-pytest-9.0.3.pyc differ
+diff --git a/tests/test_graph.py b/tests/test_graph.py
+new file mode 100644
+index 0000000..67f2c24
+--- /dev/null
++++ b/tests/test_graph.py
+@@ -0,0 +1,149 @@
++"""Tests for HTML graph rendering."""
++
++from __future__ import annotations
++
++from wenuroute.graph import _infer_layer, _serialise_node, _truncate_label, render_html
++from wenuroute.models import NodeKind, RouteEdge, RouteGraph, RouteNode
++
++
++class TestRenderHtml:
++    def test_render_html_includes_interactive_controls(self, tmp_path):
++        graph = RouteGraph()
++        graph.add_node(
++            RouteNode(
++                id="frontend:page",
++                label="PaginaProductos",
++                kind=NodeKind.UI_ELEMENT,
++                file="src/pages/productos.jsx",
++                line=12,
++            )
++        )
++        graph.add_node(
++            RouteNode(
++                id="backend:endpoint",
++                label="GET /productos",
++                kind=NodeKind.ENDPOINT,
++                file="api/app.py",
++                line=24,
++                metadata={"framework": "flask"},
++            )
++        )
++        graph.add_node(
++            RouteNode(
++                id="db:pkg",
++                label="Pkg_productos",
++                kind=NodeKind.SQL,
++                file="db/packages.sql",
++                line=8,
++            )
++        )
++        graph.add_node(
++            RouteNode(
++                id="android:screen",
++                label="ProductosActivity",
++                kind=NodeKind.UI_ELEMENT,
++                file="android/app/src/main/java/com/example/ProductosActivity.kt",
++                line=4,
++            )
++        )
++        graph.add_edge(RouteEdge("frontend:page", "backend:endpoint", "calls"))
++        graph.add_edge(RouteEdge("backend:endpoint", "db:pkg", "query"))
++        graph.add_edge(RouteEdge("frontend:page", "android:screen", "opens"))
++
++        output = tmp_path / "graph.html"
++        render_html(graph, output)
++
++        html = output.read_text(encoding="utf-8")
++        assert 'id="searchInput"' in html
++        assert 'id="layer-Frontend"' in html
++        assert 'id="layer-Backend"' in html
++        assert 'id="layer-Android"' in html
++        assert 'id="layer-BD"' in html
++        assert 'doubleClick' in html
++        assert 'Pkg_productos' in html
++        assert '"layer": "Frontend"' in html
++        assert '"layer": "Backend"' in html
++        assert '"layer": "Android"' in html
++        assert '"layer": "BD"' in html
++
++    def test_render_html_skips_edges_with_missing_nodes(self, tmp_path):
++        graph = RouteGraph()
++        graph.add_node(
++            RouteNode(
++                id="frontend:page",
++                label="Home",
++                kind=NodeKind.UI_ELEMENT,
++                file="src/home.jsx",
++                line=1,
++            )
++        )
++        graph.add_edge(RouteEdge("frontend:page", "backend:missing", "calls"))
++        graph.add_edge(RouteEdge("backend:missing", "frontend:page", "calls"))
++
++        output = tmp_path / "graph.html"
++        render_html(graph, output)
++
++        html = output.read_text(encoding="utf-8")
++        assert "backend:missing" not in html
++        assert '"from": "frontend:page"' not in html
++        assert '"to": "frontend:page"' not in html
++
++
++class TestGraphHelpers:
++    def test_infer_layer_uses_kind_extension_and_framework(self):
++        assert _infer_layer(RouteNode(id="sql", label="SQL", kind=NodeKind.SQL, file="db/query.sql")) == "BD"
++        assert _infer_layer(
++            RouteNode(
++                id="backend",
++                label="GET /users",
++                kind=NodeKind.ENDPOINT,
++                file="server/routes.js",
++                metadata={"framework": "express"},
++            )
++        ) == "Backend"
++        assert _infer_layer(
++            RouteNode(
++                id="frontend",
++                label="Home",
++                kind=NodeKind.UI_ELEMENT,
++                file="src/pages/home.tsx",
++            )
++        ) == "Frontend"
++        assert _infer_layer(
++            RouteNode(
++                id="android",
++                label="MainActivity",
++                kind=NodeKind.UI_ELEMENT,
++                file="android/app/src/main/java/MainActivity.kt",
++            )
++        ) == "Android"
++
++    def test_truncate_label_adds_ellipsis_only_when_needed(self):
++        assert _truncate_label("Short label") == "Short label"
++        assert _truncate_label("X" * 60).endswith("...")
++        assert len(_truncate_label("X" * 60)) == 48
++
++    def test_serialise_node_includes_expected_fields(self):
++        node = RouteNode(
++            id="frontend:products",
++            label="PaginaProductos",
++            kind=NodeKind.UI_ELEMENT,
++            file="src/pages/productos.jsx",
++            line=9,
++            params=["onClick"],
++            metadata={"screen": "productos"},
++        )
++
++        payload = _serialise_node(node)
++
++        assert payload["id"] == "frontend:products"
++        assert payload["layer"] == "Frontend"
++        assert payload["kind"] == "ui_element"
++        assert payload["shape"] == "box"
++        assert payload["isKey"] is True
++        assert "paginaproductos" in payload["searchText"]
++        assert "ui_element" in payload["searchText"]
++        assert "frontend" in payload["searchText"]
++        assert "src/pages/productos.jsx" in payload["searchText"]
++        assert "onclick" in payload["searchText"]
++        assert "screen:productos" in payload["searchText"]
+diff --git a/wenuroute/__pycache__/__init__.cpython-312.pyc b/wenuroute/__pycache__/__init__.cpython-312.pyc
+index f39a7a0..16dc856 100644
+Binary files a/wenuroute/__pycache__/__init__.cpython-312.pyc and b/wenuroute/__pycache__/__init__.cpython-312.pyc differ
+diff --git a/wenuroute/__pycache__/graph.cpython-312.pyc b/wenuroute/__pycache__/graph.cpython-312.pyc
+index a0ed984..c250b1b 100644
+Binary files a/wenuroute/__pycache__/graph.cpython-312.pyc and b/wenuroute/__pycache__/graph.cpython-312.pyc differ
+diff --git a/wenuroute/__pycache__/models.cpython-312.pyc b/wenuroute/__pycache__/models.cpython-312.pyc
+index a505db9..dc41aa1 100644
+Binary files a/wenuroute/__pycache__/models.cpython-312.pyc and b/wenuroute/__pycache__/models.cpython-312.pyc differ
+diff --git a/wenuroute/graph.py b/wenuroute/graph.py
+index e7fbde4..f473a3c 100644
+--- a/wenuroute/graph.py
++++ b/wenuroute/graph.py
+@@ -1,113 +1,629 @@
+-"""Graph visualisation — generates an interactive HTML graph using PyVis."""
++"""Graph visualisation — generates an interactive HTML graph."""
+ 
+ from __future__ import annotations
+ 
++import json
+ from pathlib import Path
+ 
+-from wenuroute.models import NodeKind, RouteGraph
+-
+-# Colour palette per node kind
+-_COLOUR: dict[NodeKind, str] = {
+-    NodeKind.UI_ELEMENT: "#4CAF50",   # green
+-    NodeKind.FUNCTION:   "#2196F3",   # blue
+-    NodeKind.ENDPOINT:   "#FF9800",   # orange
+-    NodeKind.SQL:        "#F44336",   # red
+-    NodeKind.STYLE:      "#9C27B0",   # purple
+-    NodeKind.EVENT:      "#00BCD4",   # cyan
+-    NodeKind.MODULE:     "#607D8B",   # grey-blue
+-    NodeKind.UNKNOWN:    "#9E9E9E",   # grey
++from wenuroute.models import NodeKind, RouteGraph, RouteNode
++
++_LAYER_COLOUR: dict[str, str] = {
++    "Frontend": "#3B82F6",
++    "Backend": "#22C55E",
++    "Android": "#F59E0B",
++    "BD": "#A855F7",
++    "Other": "#94A3B8",
+ }
+ 
+ _SHAPE: dict[NodeKind, str] = {
+     NodeKind.UI_ELEMENT: "box",
+-    NodeKind.FUNCTION:   "ellipse",
+-    NodeKind.ENDPOINT:   "diamond",
+-    NodeKind.SQL:        "database",
+-    NodeKind.STYLE:      "dot",
+-    NodeKind.EVENT:      "star",
+-    NodeKind.MODULE:     "square",
+-    NodeKind.UNKNOWN:    "dot",
++    NodeKind.FUNCTION: "ellipse",
++    NodeKind.ENDPOINT: "diamond",
++    NodeKind.SQL: "database",
++    NodeKind.STYLE: "dot",
++    NodeKind.EVENT: "star",
++    NodeKind.MODULE: "square",
++    NodeKind.UNKNOWN: "dot",
++}
++
++_KEY_KINDS = {
++    NodeKind.UI_ELEMENT,
++    NodeKind.FUNCTION,
++    NodeKind.ENDPOINT,
++    NodeKind.SQL,
++    NodeKind.EVENT,
+ }
+ 
++_LABEL_MAX_LENGTH = 48
++
++_SIZE_BY_KIND: dict[NodeKind, int] = {
++    NodeKind.UI_ELEMENT: 22,
++    NodeKind.ENDPOINT: 20,
++}
++
++_ELLIPSIS = "..."
++
+ _TITLE_TMPL = """\
+ <b>{label}</b><br>
++layer: {layer}<br>
+ kind: {kind}<br>
+ file: {file}<br>
+ line: {line}<br>
+ params: {params}
+ """
+ 
++_HTML_TEMPLATE = """<!DOCTYPE html>
++<html lang="es">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1" />
++    <title>WenuRoute Graph</title>
++    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/vis-network.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
++    <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.2/dist/vis-network.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
++    <style>
++      :root {
++        color-scheme: dark;
++        --bg: #0f172a;
++        --panel: #111827;
++        --panel-border: #1f2937;
++        --text: #e5e7eb;
++        --muted: #94a3b8;
++        --accent: #38bdf8;
++      }
+ 
+-def render_html(graph: RouteGraph, output: Path) -> None:
+-    """Render *graph* as an interactive HTML file at *output*."""
+-    try:
+-        from pyvis.network import Network  # type: ignore[import]
+-    except ImportError as exc:
+-        raise ImportError(
+-            "pyvis is required for HTML output. Install it with: pip install pyvis"
+-        ) from exc
+-
+-    net = Network(
+-        height="100vh",
+-        width="100%",
+-        bgcolor="#1a1a2e",
+-        font_color="#e0e0e0",
+-        directed=True,
+-        notebook=False,
+-    )
++      * {
++        box-sizing: border-box;
++      }
++
++      body {
++        margin: 0;
++        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
++        background: var(--bg);
++        color: var(--text);
++      }
++
++      .layout {
++        display: grid;
++        grid-template-columns: 320px 1fr;
++        min-height: 100vh;
++      }
++
++      .sidebar {
++        padding: 20px;
++        border-right: 1px solid var(--panel-border);
++        background: rgba(15, 23, 42, 0.96);
++      }
++
++      .sidebar h1 {
++        margin: 0 0 8px;
++        font-size: 1.35rem;
++      }
++
++      .sidebar p,
++      .sidebar li,
++      .sidebar small {
++        color: var(--muted);
++      }
++
++      .panel {
++        background: var(--panel);
++        border: 1px solid var(--panel-border);
++        border-radius: 14px;
++        padding: 14px;
++        margin-top: 14px;
++      }
++
++      .panel h2 {
++        margin: 0 0 10px;
++        font-size: 0.95rem;
++      }
++
++      .layer-list {
++        display: grid;
++        gap: 10px;
++      }
++
++      .layer-toggle {
++        display: flex;
++        align-items: center;
++        gap: 10px;
++      }
++
++      .swatch {
++        width: 12px;
++        height: 12px;
++        border-radius: 999px;
++        display: inline-block;
++      }
++
++      .search-box {
++        width: 100%;
++        padding: 10px 12px;
++        border-radius: 10px;
++        border: 1px solid var(--panel-border);
++        background: #020617;
++        color: var(--text);
++      }
++
++      .button-row {
++        display: flex;
++        gap: 10px;
++        margin-top: 12px;
++      }
++
++      button {
++        appearance: none;
++        border: 1px solid #334155;
++        background: #1e293b;
++        color: var(--text);
++        border-radius: 10px;
++        padding: 9px 12px;
++        cursor: pointer;
++      }
++
++      button:hover {
++        border-color: var(--accent);
++      }
++
++      .legend {
++        display: grid;
++        gap: 8px;
++      }
++
++      .legend-item {
++        display: flex;
++        align-items: center;
++        gap: 10px;
++        font-size: 0.92rem;
++      }
++
++      .content {
++        position: relative;
++      }
++
++      #mynetwork {
++        width: 100%;
++        height: 100vh;
++        background: radial-gradient(circle at top, #14213d, #020617 70%);
++      }
++
++      .help {
++        margin-top: 10px;
++        font-size: 0.88rem;
++      }
++
++      .status {
++        margin-top: 10px;
++        font-size: 0.9rem;
++      }
++
++      @media (max-width: 1024px) {
++        .layout {
++          grid-template-columns: 1fr;
++        }
++
++        .sidebar {
++          border-right: 0;
++          border-bottom: 1px solid var(--panel-border);
++        }
+ 
+-    net.set_options("""
+-    {
+-      "physics": {
+-        "enabled": true,
+-        "solver": "forceAtlas2Based",
+-        "forceAtlas2Based": {
+-          "gravitationalConstant": -80,
+-          "centralGravity": 0.01,
+-          "springLength": 120,
+-          "springConstant": 0.08
++        #mynetwork {
++          height: 75vh;
++        }
++      }
++    </style>
++  </head>
++  <body>
++    <div class="layout">
++      <aside class="sidebar">
++        <h1>WenuRoute</h1>
++        <p>Vista simple por capas. El grafo arranca enfocado en Frontend y permite expandir dependencias hacia Backend, Android y BD.</p>
++
++        <section class="panel">
++          <h2>Capas</h2>
++          <div class="layer-list">
++            <label class="layer-toggle"><input type="checkbox" id="layer-Frontend" value="Frontend" checked /> <span class="swatch" style="background:#3B82F6"></span> Frontend</label>
++            <label class="layer-toggle"><input type="checkbox" id="layer-Backend" value="Backend" checked /> <span class="swatch" style="background:#22C55E"></span> Backend</label>
++            <label class="layer-toggle"><input type="checkbox" id="layer-Android" value="Android" checked /> <span class="swatch" style="background:#F59E0B"></span> Android</label>
++            <label class="layer-toggle"><input type="checkbox" id="layer-BD" value="BD" checked /> <span class="swatch" style="background:#A855F7"></span> BD</label>
++          </div>
++        </section>
++
++        <section class="panel">
++          <h2>Búsqueda</h2>
++          <input id="searchInput" class="search-box" type="search" placeholder="Buscar Pkg_productos, botón, página, endpoint..." />
++          <div class="button-row">
++            <button id="clearSearch" type="button">Limpiar</button>
++            <button id="resetGraph" type="button">Reset</button>
++          </div>
++          <div class="help">Doble clic en un nodo para expandir o colapsar dependencias. La búsqueda resalta relaciones directas y oculta el resto.</div>
++          <div class="status" id="graphStatus"></div>
++        </section>
++
++        <section class="panel">
++          <h2>Convención visual</h2>
++          <div class="legend">
++            <div class="legend-item"><span class="swatch" style="background:#3B82F6"></span> Frontend</div>
++            <div class="legend-item"><span class="swatch" style="background:#22C55E"></span> Backend</div>
++            <div class="legend-item"><span class="swatch" style="background:#F59E0B"></span> Android</div>
++            <div class="legend-item"><span class="swatch" style="background:#A855F7"></span> BD</div>
++          </div>
++          <small>Las formas siguen indicando el tipo técnico del nodo (UI, función, endpoint, SQL), pero el color principal ahora representa la capa.</small>
++        </section>
++      </aside>
++
++      <main class="content">
++        <div id="mynetwork"></div>
++      </main>
++    </div>
++
++    <script>
++      const rawNodes = __NODES__;
++      const rawEdges = __EDGES__;
++      const baseRootLayer = "Frontend";
++      const layerOrder = ["Frontend", "Backend", "Android", "BD", "Other"];
++      const nodes = new vis.DataSet(rawNodes);
++      const edges = new vis.DataSet(rawEdges);
++      const nodeIndex = new Map(rawNodes.map((node) => [node.id, node]));
++      const adjacent = new Map();
++      const expandedNodes = new Set();
++      const layerInputs = Array.from(document.querySelectorAll('.layer-toggle input'));
++      const searchInput = document.getElementById('searchInput');
++      const clearSearchButton = document.getElementById('clearSearch');
++      const resetGraphButton = document.getElementById('resetGraph');
++      const graphStatus = document.getElementById('graphStatus');
++
++      for (const node of rawNodes) {
++        adjacent.set(node.id, new Set());
++      }
++      for (const edge of rawEdges) {
++        adjacent.get(edge.from)?.add(edge.to);
++        adjacent.get(edge.to)?.add(edge.from);
++      }
++
++      const container = document.getElementById('mynetwork');
++      const network = new vis.Network(
++        container,
++        { nodes, edges },
++        {
++          autoResize: true,
++          layout: {
++            hierarchical: {
++              enabled: true,
++              direction: 'LR',
++              sortMethod: 'directed',
++              levelSeparation: 220,
++              nodeSpacing: 170,
++              treeSpacing: 220,
++            },
++          },
++          physics: false,
++          interaction: {
++            hover: true,
++            navigationButtons: true,
++            keyboard: true,
++            tooltipDelay: 80,
++          },
++          nodes: {
++            borderWidth: 1.5,
++            font: {
++              color: '#E2E8F0',
++              face: 'Inter, system-ui, sans-serif',
++              size: 13,
++            },
++            shadow: {
++              enabled: false,
++            },
++          },
++          edges: {
++            arrows: {
++              to: {
++                enabled: true,
++                scaleFactor: 0.7,
++              },
++            },
++            color: {
++              color: '#475569',
++              highlight: '#93C5FD',
++              hover: '#BFDBFE',
++            },
++            font: {
++              color: '#94A3B8',
++              size: 10,
++              strokeWidth: 0,
++              align: 'middle',
++            },
++            smooth: {
++              enabled: true,
++              type: 'cubicBezier',
++              roundness: 0.35,
++            },
++          },
+         },
+-        "stabilization": { "iterations": 150 }
+-      },
+-      "interaction": {
+-        "hover": true,
+-        "navigationButtons": true,
+-        "tooltipDelay": 100
+-      },
+-      "edges": {
+-        "arrows": { "to": { "enabled": true, "scaleFactor": 0.6 } },
+-        "color": { "color": "#555577", "highlight": "#aaaaff" },
+-        "font": { "size": 9, "color": "#888888" },
+-        "smooth": { "type": "dynamic" }
++      );
++
++      function getEnabledLayers() {
++        return new Set(layerInputs.filter((input) => input.checked).map((input) => input.value));
+       }
++
++      function pickRootLayer(enabledLayers) {
++        const preferred = layerOrder.filter((layer) => enabledLayers.has(layer));
++        for (const layer of preferred) {
++          if (rawNodes.some((node) => node.layer === layer && node.isKey)) {
++            return layer;
++          }
++        }
++        return preferred[0] || baseRootLayer;
++      }
++
++      function getBaseVisibleNodes(enabledLayers) {
++        if (!enabledLayers.size) {
++          return new Set();
++        }
++        const rootLayer = enabledLayers.has(baseRootLayer)
++          ? baseRootLayer
++          : pickRootLayer(enabledLayers);
++        const baseNodes = rawNodes.filter(
++          (node) => node.layer === rootLayer && node.isKey && enabledLayers.has(node.layer),
++        );
++        const fallbackNodes = rawNodes.filter((node) => enabledLayers.has(node.layer) && node.isKey);
++        const visible = new Set((baseNodes.length ? baseNodes : fallbackNodes).map((node) => node.id));
++        for (const nodeId of Array.from(expandedNodes)) {
++          if (!nodeIndex.has(nodeId)) {
++            expandedNodes.delete(nodeId);
++          }
++        }
++        let changed = true;
++        while (changed) {
++          changed = false;
++          for (const nodeId of expandedNodes) {
++            if (!visible.has(nodeId)) {
++              continue;
++            }
++            for (const neighborId of adjacent.get(nodeId) || []) {
++              const neighbor = nodeIndex.get(neighborId);
++              if (!neighbor || !enabledLayers.has(neighbor.layer)) {
++                continue;
++              }
++              if (!visible.has(neighborId)) {
++                visible.add(neighborId);
++                changed = true;
++              }
++            }
++          }
++        }
++        return visible;
++      }
++
++      function getSearchState(query, enabledLayers) {
++        const normalized = query.trim().toLowerCase();
++        if (!normalized) {
++          return { matched: new Set(), related: new Set(), visible: null };
++        }
++        const matched = new Set(
++          rawNodes
++            .filter((node) => enabledLayers.has(node.layer) && node.searchText.includes(normalized))
++            .map((node) => node.id),
++        );
++        const related = new Set();
++        const visible = new Set(matched);
++        for (const nodeId of matched) {
++          for (const neighborId of adjacent.get(nodeId) || []) {
++            const neighbor = nodeIndex.get(neighborId);
++            if (!neighbor || !enabledLayers.has(neighbor.layer)) {
++              continue;
++            }
++            visible.add(neighborId);
++            related.add(neighborId);
++          }
++        }
++        return { matched, related, visible };
++      }
++
++      function buildNodeUpdate(node, visibleNodes, searchState, enabledLayers) {
++        const isVisible = enabledLayers.has(node.layer) && visibleNodes.has(node.id);
++        const isMatched = searchState.matched.has(node.id);
++        const isRelated = searchState.related.has(node.id);
++        const border = isMatched ? '#FFFFFF' : isRelated ? '#BFDBFE' : '#0F172A';
++        return {
++          id: node.id,
++          hidden: !isVisible,
++          color: {
++            background: node.baseColor,
++            border,
++            highlight: {
++              background: node.baseColor,
++              border: '#FFFFFF',
++            },
++            hover: {
++              background: node.baseColor,
++              border: '#FFFFFF',
++            },
++          },
++          borderWidth: isMatched ? 4 : isRelated ? 2.5 : 1.5,
++          shadow: isMatched,
++          font: {
++            color: '#E2E8F0',
++            size: isMatched ? 15 : 13,
++            face: 'Inter, system-ui, sans-serif',
++          },
++        };
++      }
++
++      function buildEdgeUpdate(edge, visibleNodes, searchState) {
++        const isVisible = visibleNodes.has(edge.from) && visibleNodes.has(edge.to);
++        const isMatched = searchState.matched.has(edge.from) || searchState.matched.has(edge.to);
++        return {
++          id: edge.id,
++          hidden: !isVisible,
++          width: isMatched ? 2.6 : 1.2,
++          color: isMatched ? '#93C5FD' : '#475569',
++        };
++      }
++
++      function updateStatus(visibleNodes, searchState, enabledLayers) {
++        const visibleCount = Array.from(visibleNodes).length;
++        const totalCount = rawNodes.filter((node) => enabledLayers.has(node.layer)).length;
++        if (!enabledLayers.size) {
++          graphStatus.textContent = 'No hay capas activas.';
++          return;
++        }
++        if (searchInput.value.trim()) {
++          graphStatus.textContent = `${visibleCount} nodos visibles de ${totalCount}. Coincidencias: ${searchState.matched.size}.`;
++          return;
++        }
++        graphStatus.textContent = `${visibleCount} nodos visibles de ${totalCount}. Doble clic para expandir dependencias.`;
++      }
++
++      function applyState() {
++        const enabledLayers = getEnabledLayers();
++        const searchState = getSearchState(searchInput.value, enabledLayers);
++        const visibleNodes = searchState.visible || getBaseVisibleNodes(enabledLayers);
++        nodes.update(rawNodes.map((node) => buildNodeUpdate(node, visibleNodes, searchState, enabledLayers)));
++        edges.update(rawEdges.map((edge) => buildEdgeUpdate(edge, visibleNodes, searchState)));
++        updateStatus(visibleNodes, searchState, enabledLayers);
++        network.fit({ animation: { duration: 300, easingFunction: 'easeInOutQuad' } });
++      }
++
++      network.on('doubleClick', (params) => {
++        if (!params.nodes.length || searchInput.value.trim()) {
++          return;
++        }
++        const nodeId = params.nodes[0];
++        if (expandedNodes.has(nodeId)) {
++          expandedNodes.delete(nodeId);
++        } else {
++          expandedNodes.add(nodeId);
++        }
++        applyState();
++      });
++
++      clearSearchButton.addEventListener('click', () => {
++        searchInput.value = '';
++        applyState();
++      });
++
++      resetGraphButton.addEventListener('click', () => {
++        expandedNodes.clear();
++        searchInput.value = '';
++        layerInputs.forEach((input) => {
++          input.checked = true;
++        });
++        applyState();
++      });
++
++      searchInput.addEventListener('input', applyState);
++      layerInputs.forEach((input) => input.addEventListener('change', applyState));
++
++      applyState();
++    </script>
++  </body>
++</html>
++"""
++
++
++def _infer_layer(node: RouteNode) -> str:
++    framework = str(node.metadata.get("framework", "")).lower()
++    file_path = (node.file or "").lower()
++    ext = Path(file_path).suffix.lower()
++
++    if node.kind == NodeKind.SQL:
++        return "BD"
++    if framework in {"retrofit", "room"}:
++        return "Android"
++    if framework in {"flask", "fastapi", "django", "express"}:
++        return "Backend"
++    if "android" in file_path or "androidapk" in file_path or ext in {".java", ".kt", ".dart"}:
++        return "Android"
++    if ext in {".py", ".mjs", ".cjs"}:
++        return "Backend"
++    if ext in {".html", ".htm", ".css", ".jsx", ".tsx"}:
++        return "Frontend"
++    if ext in {".js", ".ts"}:
++        return "Frontend"
++    return "Other"
++
++
++def _layer_level(layer: str) -> int:
++    return {
++        "Frontend": 1,
++        "Backend": 2,
++        "Android": 2,
++        "BD": 3,
++        "Other": 4,
++    }.get(layer, 4)
++
++
++def _node_size(kind: NodeKind) -> int:
++    return _SIZE_BY_KIND.get(kind, 16)
++
++
++def _truncate_label(label: str) -> str:
++    if len(label) <= _LABEL_MAX_LENGTH:
++        return label
++    return f"{label[: _LABEL_MAX_LENGTH - len(_ELLIPSIS)]}{_ELLIPSIS}"
++
++
++def _serialise_node(node: RouteNode) -> dict[str, object]:
++    layer = _infer_layer(node)
++    colour = _LAYER_COLOUR.get(layer, _LAYER_COLOUR["Other"])
++    shape = _SHAPE.get(node.kind, "dot")
++    title = _TITLE_TMPL.format(
++        label=node.label,
++        layer=layer,
++        kind=node.kind.value,
++        file=node.file or "—",
++        line=node.line or "—",
++        params=", ".join(node.params) if node.params else "—",
++    )
++    search_parts = [
++        node.label,
++        node.kind.value,
++        layer,
++        node.file or "",
++        *node.params,
++        *(f"{key}:{value}" for key, value in sorted(node.metadata.items())),
++    ]
++    return {
++        "id": node.id,
++        "label": _truncate_label(node.label),
++        "title": title,
++        "shape": shape,
++        "size": _node_size(node.kind),
++        "baseColor": colour,
++        "layer": layer,
++        "kind": node.kind.value,
++        "level": _layer_level(layer),
++        "isKey": node.kind in _KEY_KINDS,
++        "searchText": " ".join(search_parts).lower(),
+     }
+-    """)
+ 
+-    for node in graph.nodes.values():
+-        colour = _COLOUR.get(node.kind, _COLOUR[NodeKind.UNKNOWN])
+-        shape = _SHAPE.get(node.kind, "dot")
+-        title = _TITLE_TMPL.format(
+-            label=node.label,
+-            kind=node.kind.value,
+-            file=node.file or "—",
+-            line=node.line or "—",
+-            params=", ".join(node.params) if node.params else "—",
+-        )
+-        net.add_node(
+-            node.id,
+-            label=node.label[:40],
+-            title=title,
+-            color=colour,
+-            shape=shape,
+-            size=18 if node.kind == NodeKind.MODULE else 12,
+-        )
+ 
++
++def render_html(graph: RouteGraph, output: Path) -> None:
++    """Render *graph* as an interactive HTML file at *output*."""
++    node_payload = [_serialise_node(node) for node in graph.nodes.values()]
++    node_ids = {node["id"] for node in node_payload}
++    edge_payload: list[dict[str, object]] = []
+     for edge in graph.edges:
+-        if edge.source_id in graph.nodes and edge.target_id in graph.nodes:
+-            net.add_edge(edge.source_id, edge.target_id, title=edge.label, label=edge.label)
++        if edge.source_id not in node_ids or edge.target_id not in node_ids:
++            continue
++        edge_payload.append(
++            {
++                "id": f"{edge.source_id}|{edge.label}|{edge.target_id}",
++                "from": edge.source_id,
++                "to": edge.target_id,
++                "label": edge.label,
++                "title": edge.label,
++            }
++        )
++
++    html = _HTML_TEMPLATE.replace("__NODES__", json.dumps(node_payload, ensure_ascii=False))
++    html = html.replace("__EDGES__", json.dumps(edge_payload, ensure_ascii=False))
+ 
+     output.parent.mkdir(parents=True, exist_ok=True)
+-    net.write_html(str(output))
++    output.write_text(html, encoding="utf-8")
++
+ 
+ 
+ def render_console(graph: RouteGraph) -> str:
+diff --git a/wenuroute/parsers/__pycache__/__init__.cpython-312.pyc b/wenuroute/parsers/__pycache__/__init__.cpython-312.pyc
+index d2c7d73..15022a4 100644
+Binary files a/wenuroute/parsers/__pycache__/__init__.cpython-312.pyc and b/wenuroute/parsers/__pycache__/__init__.cpython-312.pyc differ
+diff --git a/wenuroute/parsers/__pycache__/android.cpython-312.pyc b/wenuroute/parsers/__pycache__/android.cpython-312.pyc
+index 0e67739..80eef9e 100644
+Binary files a/wenuroute/parsers/__pycache__/android.cpython-312.pyc and b/wenuroute/parsers/__pycache__/android.cpython-312.pyc differ
+diff --git a/wenuroute/parsers/__pycache__/base.cpython-312.pyc b/wenuroute/parsers/__pycache__/base.cpython-312.pyc
+index d711d91..e4b676a 100644
+Binary files a/wenuroute/parsers/__pycache__/base.cpython-312.pyc and b/wenuroute/parsers/__pycache__/base.cpython-312.pyc differ
+diff --git a/wenuroute/parsers/__pycache__/flutter.cpython-312.pyc b/wenuroute/parsers/__pycache__/flutter.cpython-312.pyc
+index 8099146..c37f62e 100644
+Binary files a/wenuroute/parsers/__pycache__/flutter.cpython-312.pyc and b/wenuroute/parsers/__pycache__/flutter.cpython-312.pyc differ
+diff --git a/wenuroute/parsers/__pycache__/html.cpython-312.pyc b/wenuroute/parsers/__pycache__/html.cpython-312.pyc
+index fbc8be8..a207ab3 100644
+Binary files a/wenuroute/parsers/__pycache__/html.cpython-312.pyc and b/wenuroute/parsers/__pycache__/html.cpython-312.pyc differ
+diff --git a/wenuroute/parsers/__pycache__/nodejs.cpython-312.pyc b/wenuroute/parsers/__pycache__/nodejs.cpython-312.pyc
+index 462f51a..fef17d1 100644
+Binary files a/wenuroute/parsers/__pycache__/nodejs.cpython-312.pyc and b/wenuroute/parsers/__pycache__/nodejs.cpython-312.pyc differ
+diff --git a/wenuroute/parsers/__pycache__/python.cpython-312.pyc b/wenuroute/parsers/__pycache__/python.cpython-312.pyc
+index 1a8fa69..01ff336 100644
+Binary files a/wenuroute/parsers/__pycache__/python.cpython-312.pyc and b/wenuroute/parsers/__pycache__/python.cpython-312.pyc differ
+diff --git a/wenuroute/parsers/__pycache__/react.cpython-312.pyc b/wenuroute/parsers/__pycache__/react.cpython-312.pyc
+index 1dc0d72..9503f31 100644
+Binary files a/wenuroute/parsers/__pycache__/react.cpython-312.pyc and b/wenuroute/parsers/__pycache__/react.cpython-312.pyc differ

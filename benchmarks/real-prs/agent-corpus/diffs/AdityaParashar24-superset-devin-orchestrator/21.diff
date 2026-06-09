@@ -1,0 +1,371 @@
+diff --git a/README.md b/README.md
+index 903f754..bb6f1e1 100644
+--- a/README.md
++++ b/README.md
+@@ -82,10 +82,10 @@ regardless of how the session was triggered.
+ │                                                              │
+ │  orchestrator.py  — state machine, discover_sessions(),      │
+ │                     stage handlers                            │
+-│  devin_client.py  — create/get/list session                  │
++│  devin_client.py  — get/list session                          │
+ │  github_client.py — get_issue, add_label, comment            │
+ │  store.py         — SQLite persistence                       │
+-│  prompts/         — triage.md, remediation.md                │
++│                                                              │
+ └──────────┬──────────────────────────────────┬────────────────┘
+            │                                  │
+            ▼                                  ▼
+@@ -144,7 +144,7 @@ These go in `.env` (gitignored) — the only file you need to edit:
+ | `DEVIN_ORG_ID` | app.devin.ai → Settings → Organization (starts with `org-`) |
+ | `GITHUB_TOKEN` | GitHub PAT with `issues:write` + `pull_requests:read` on the target repo |
+ 
+-Non-secret config (`GITHUB_REPO`, poll interval, ACU limits) lives in `docker-compose.yml` under `environment:`.
++Non-secret config (`GITHUB_REPO`, poll interval) lives in `docker-compose.yml` under `environment:`.
+ 
+ ---
+ 
+@@ -234,10 +234,7 @@ superset-devin-orchestrator/
+ │   ├── models.py            # Pydantic models + Stage enum
+ │   ├── config.py            # .env loader
+ │   ├── requirements.txt     # Python dependencies
+-│   ├── Dockerfile           # Backend container
+-│   └── prompts/
+-│       ├── triage.md        # Read-only analysis prompt
+-│       └── remediation.md   # Fix + open PR prompt
++│   └── Dockerfile           # Backend container
+ └── frontend/
+     ├── src/                 # React + TypeScript components
+     ├── package.json
+diff --git a/backend/config.py b/backend/config.py
+index da8a0d7..4d86cf6 100644
+--- a/backend/config.py
++++ b/backend/config.py
+@@ -24,8 +24,6 @@ class Settings:
+     github_repo: str
+     db_path: str
+     poll_interval_seconds: int
+-    triage_max_acu: int
+-    remediation_max_acu: int
+ 
+     @property
+     def configured(self) -> bool:
+@@ -43,8 +41,6 @@ def get_settings() -> Settings:
+         github_repo=os.getenv("GITHUB_REPO", ""),
+         db_path=os.getenv("DB_PATH", "orchestrator.db"),
+         poll_interval_seconds=int(os.getenv("POLL_INTERVAL_SECONDS", "8")),
+-        triage_max_acu=int(os.getenv("TRIAGE_MAX_ACU", "5")),
+-        remediation_max_acu=int(os.getenv("REMEDIATION_MAX_ACU", "30")),
+     )
+ 
+ 
+diff --git a/backend/devin_client.py b/backend/devin_client.py
+index 21fbb19..a558f6f 100644
+--- a/backend/devin_client.py
++++ b/backend/devin_client.py
+@@ -1,10 +1,8 @@
+ """Thin async wrapper around the Devin REST API (v3).
+ 
+ Only the endpoints needed by the orchestrator:
+-  * POST /organizations/{org}/sessions          -> create a session
+   * GET  /organizations/{org}/sessions/{id}     -> poll status, PR, structured output
+   * GET  /organizations/{org}/sessions          -> list sessions (for discovery)
+-  * DELETE /organizations/{org}/sessions/{id}   -> stop a session
+ """
+ 
+ from __future__ import annotations
+@@ -29,39 +27,6 @@ def _headers(self) -> dict[str, str]:
+             "Content-Type": "application/json",
+         }
+ 
+-    async def create_session(
+-        self,
+-        prompt: str,
+-        repos: list[str],
+-        *,
+-        title: str | None = None,
+-        playbook_id: str | None = None,
+-        max_acu_limit: int | None = None,
+-        structured_output_schema: dict[str, Any] | None = None,
+-        tags: list[str] | None = None,
+-    ) -> dict[str, Any]:
+-        body: dict[str, Any] = {"prompt": prompt, "repos": repos}
+-        if title:
+-            body["title"] = title
+-        if playbook_id:
+-            body["playbook_id"] = playbook_id
+-        if max_acu_limit:
+-            body["max_acu_limit"] = max_acu_limit
+-        if structured_output_schema:
+-            body["structured_output_schema"] = structured_output_schema
+-            body["structured_output_required"] = True
+-        if tags:
+-            body["tags"] = tags
+-
+-        async with httpx.AsyncClient(timeout=60) as client:
+-            resp = await client.post(
+-                f"{self.base}/organizations/{self.org_id}/sessions",
+-                headers=self._headers,
+-                json=body,
+-            )
+-            resp.raise_for_status()
+-            return resp.json()
+-
+     async def get_session(self, session_id: str) -> dict[str, Any]:
+         async with httpx.AsyncClient(timeout=60) as client:
+             resp = await client.get(
+@@ -90,13 +55,3 @@ async def list_sessions(self, tags: list[str] | None = None) -> list[dict[str, A
+             return all_sessions
+         tag_set = set(tags)
+         return [s for s in all_sessions if tag_set.issubset(set(s.get("tags") or []))]
+-
+-    async def stop_session(self, session_id: str) -> None:
+-        """Stop a running session via DELETE (session ID needs devin- prefix)."""
+-        devin_id = session_id if session_id.startswith("devin-") else f"devin-{session_id}"
+-        async with httpx.AsyncClient(timeout=60) as client:
+-            resp = await client.delete(
+-                f"{self.base}/organizations/{self.org_id}/sessions/{devin_id}",
+-                headers=self._headers,
+-            )
+-            resp.raise_for_status()
+diff --git a/backend/github_client.py b/backend/github_client.py
+index b01ff53..3089462 100644
+--- a/backend/github_client.py
++++ b/backend/github_client.py
+@@ -15,7 +15,6 @@
+ 
+ LABEL_TRIAGE = "devin-triage"
+ LABEL_REMEDIATE = "devin-remediate"
+-LABEL_GENERATED = "devin-generated"
+ 
+ 
+ class GitHubClient:
+@@ -41,24 +40,6 @@ async def get_issue(self, num: int) -> dict[str, Any]:
+             resp.raise_for_status()
+             return resp.json()
+ 
+-    async def get_issue_with_comments(self, num: int) -> dict[str, Any]:
+-        """Fetch issue body + all comments, merged into a single body string."""
+-        issue = await self.get_issue(num)
+-        async with httpx.AsyncClient(timeout=30) as client:
+-            resp = await client.get(
+-                f"{self.base}/repos/{self.repo}/issues/{num}/comments",
+-                headers=self._headers,
+-            )
+-            resp.raise_for_status()
+-            comments = resp.json()
+-        if comments:
+-            comment_text = "\n\n".join(
+-                f"**Comment by {c['user']['login']}:**\n{c['body']}"
+-                for c in comments
+-            )
+-            issue["body"] = (issue.get("body") or "") + "\n\n---\n## Comments\n" + comment_text
+-        return issue
+-
+     async def get_labels(self, num: int) -> set[str]:
+         """Return the set of label names currently on an issue."""
+         async with httpx.AsyncClient(timeout=30) as client:
+diff --git a/backend/models.py b/backend/models.py
+index 0877648..81dd4c9 100644
+--- a/backend/models.py
++++ b/backend/models.py
+@@ -32,9 +32,7 @@ class TriageReport(BaseModel):
+     readiness_level: ReadinessLevel
+     recommendation: str
+     likely_files: list[str] = Field(default_factory=list)
+-    suggested_validation: str = ""
+     risk_notes: str = ""
+-    remediation_prompt: str = ""
+     clarification_needed: str = ""
+ 
+ 
+@@ -50,9 +48,7 @@ class Issue(BaseModel):
+     readiness_level: str | None = None
+     recommendation: str | None = None
+     likely_files: list[str] = Field(default_factory=list)
+-    suggested_validation: str | None = None
+     risk_notes: str | None = None
+-    remediation_prompt: str | None = None
+     clarification_needed: str | None = None
+     triage_session_id: str | None = None
+     triage_session_url: str | None = None
+diff --git a/backend/orchestrator.py b/backend/orchestrator.py
+index 42e904f..d1ab7aa 100644
+--- a/backend/orchestrator.py
++++ b/backend/orchestrator.py
+@@ -166,9 +166,7 @@ async def _on_triage_done(self, issue: Issue, session: dict) -> None:
+             issue.readiness_level = report.readiness_level.value
+             issue.recommendation = report.recommendation
+             issue.likely_files = report.likely_files
+-            issue.suggested_validation = report.suggested_validation
+             issue.risk_notes = report.risk_notes
+-            issue.remediation_prompt = report.remediation_prompt
+             issue.clarification_needed = report.clarification_needed
+             issue.state = Stage.TRIAGED
+         except Exception as exc:  # noqa: BLE001
+diff --git a/backend/prompts/remediation.md b/backend/prompts/remediation.md
+deleted file mode 100644
+index 3e79768..0000000
+--- a/backend/prompts/remediation.md
++++ /dev/null
+@@ -1,27 +0,0 @@
+-You are Devin acting as an autonomous maintainer for the repository {repo}
+-(an Apache Superset fork).
+-
+-**Issue #{issue_number}: {issue_title}**
+-
+-{issue_body}
+-
+-## Triage report (from the triage session)
+-{triage_report}
+-
+-## Task
+-Fix this issue.
+-
+-## Requirements
+-- Make the smallest safe code change that resolves the issue.
+-- Add or update regression tests where practical.
+-- Run the suggested validation: {suggested_validation}
+-- Open a pull request whose description includes: root cause, files changed,
+-  validation performed, assumptions made, and remaining risks.
+-- Add the `devin-generated` label to the PR.
+-
+-## Guardrails
+-- Do NOT auto-merge.
+-- Do NOT make broad refactors or touch unrelated files.
+-- Do NOT modify CI/CD configuration.
+-- Keep the diff focused (ideally under ~200 lines).
+-- Follow the repository's contribution standards (run pre-commit if available).
+diff --git a/backend/prompts/triage.md b/backend/prompts/triage.md
+deleted file mode 100644
+index c05b5f9..0000000
+--- a/backend/prompts/triage.md
++++ /dev/null
+@@ -1,38 +0,0 @@
+-You are acting as a senior engineer evaluating whether the following
+-GitHub issue in the Apache Superset repository is suitable for autonomous Devin
+-remediation.
+-
+-**Repository:** {repo}
+-**Issue #{issue_number}: {issue_title}**
+-
+-{issue_body}
+-
+-## Constraints
+-- DO NOT modify any files.
+-- DO NOT create a branch.
+-- DO NOT open a pull request.
+-- Spend no more than 10 minutes investigating.
+-
+-## Analyze
+-- Issue clarity and how well-bounded the work is
+-- The most likely code areas involved (concrete file paths)
+-- Reproduction evidence or the expected vs. actual behavior
+-- Testability — can the fix be validated with existing or easily-added tests?
+-- Risk level — could a fix here break unrelated code paths?
+-- Whether product or design judgment is required (if so, it is NOT Devin-ready)
+-
+-## Return (via structured output)
+-Provide your assessment using the required structured output schema:
+-- `readiness_score` (0-100)
+-- `readiness_level` (High / Medium / Low)
+-- `recommendation` (Proceed / Needs human clarification / Not suitable)
+-- `likely_files` (array of file paths)
+-- `suggested_validation` (a concrete test command or manual verification step)
+-- `risk_notes` (one sentence: what could break if this fix is done wrong 
+-  — e.g., "touches shared auth middleware" or "low risk, isolated utility")
+-- `remediation_prompt` (the exact prompt you would hand to a remediation agent to
+-  fix this issue, including acceptance criteria and guardrails)
+-- `clarification_needed` (list any specific questions, missing context, or decisions
+-  a human should consider before approving remediation. Format as a numbered list,
+-  one question per line, separated by newlines. Keep each question to one sentence.
+-  If everything is clear and no clarification is needed, return "None")
+\ No newline at end of file
+diff --git a/backend/store.py b/backend/store.py
+index cde2e49..afaeb8a 100644
+--- a/backend/store.py
++++ b/backend/store.py
+@@ -24,9 +24,7 @@
+     readiness_level         TEXT,
+     recommendation          TEXT,
+     likely_files            TEXT DEFAULT '[]',
+-    suggested_validation    TEXT,
+     risk_notes              TEXT,
+-    remediation_prompt      TEXT,
+     clarification_needed    TEXT DEFAULT '',
+     triage_session_id       TEXT,
+     triage_session_url      TEXT,
+@@ -80,15 +78,15 @@ def upsert_issue(self, issue: Issue) -> Issue:
+                 """
+                 INSERT INTO issues (
+                     github_issue_num, title, body, state, readiness_score,
+-                    readiness_level, recommendation, likely_files, suggested_validation,
+-                    risk_notes, remediation_prompt, clarification_needed, triage_session_id, triage_session_url,
++                    readiness_level, recommendation, likely_files,
++                    risk_notes, clarification_needed, triage_session_id, triage_session_url,
+                     remediation_session_id, remediation_session_url,
+                     pr_url, pr_state, failure_reason,
+                     created_at, updated_at
+                 ) VALUES (
+                     :github_issue_num, :title, :body, :state, :readiness_score,
+-                    :readiness_level, :recommendation, :likely_files, :suggested_validation,
+-                    :risk_notes, :remediation_prompt, :clarification_needed, :triage_session_id, :triage_session_url,
++                    :readiness_level, :recommendation, :likely_files,
++                    :risk_notes, :clarification_needed, :triage_session_id, :triage_session_url,
+                     :remediation_session_id, :remediation_session_url,
+                     :pr_url, :pr_state, :failure_reason,
+                     :created_at, :updated_at
+@@ -101,9 +99,7 @@ def upsert_issue(self, issue: Issue) -> Issue:
+                     readiness_level=excluded.readiness_level,
+                     recommendation=excluded.recommendation,
+                     likely_files=excluded.likely_files,
+-                    suggested_validation=excluded.suggested_validation,
+                     risk_notes=excluded.risk_notes,
+-                    remediation_prompt=excluded.remediation_prompt,
+                     clarification_needed=excluded.clarification_needed,
+                     triage_session_id=excluded.triage_session_id,
+                     triage_session_url=excluded.triage_session_url,
+@@ -140,5 +136,3 @@ def list_in_flight(self) -> list[Issue]:
+                 tuple(_IN_FLIGHT),
+             ).fetchall()
+         return [self._row_to_issue(r) for r in rows]
+-
+-
+diff --git a/docker-compose.yml b/docker-compose.yml
+index ce2082a..5670bc5 100644
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -8,8 +8,6 @@ services:
+       - DB_PATH=/app/data/orchestrator.db
+       - GITHUB_REPO=AdityaParashar24/superset
+       - POLL_INTERVAL_SECONDS=8
+-      - TRIAGE_MAX_ACU=5
+-      - REMEDIATION_MAX_ACU=30
+     ports:
+       - "8080:8080"
+ 
+diff --git a/frontend/src/api.ts b/frontend/src/api.ts
+index bfe41be..8b36508 100644
+--- a/frontend/src/api.ts
++++ b/frontend/src/api.ts
+@@ -16,7 +16,6 @@ export const api = {
+   health: () => req<Health>("/health"),
+   summary: () => req<Summary>("/summary"),
+   listIssues: () => req<Issue[]>("/issues"),
+-  getIssue: (n: number) => req<Issue>(`/issues/${n}`),
+   triage: (n: number) => req<Issue>(`/triage/${n}`, { method: "POST" }),
+   remediate: (n: number) => req<Issue>(`/remediate/${n}`, { method: "POST" }),
+   createIssue: (num: number) =>
+diff --git a/frontend/src/types.ts b/frontend/src/types.ts
+index 1dd5b23..8c1858c 100644
+--- a/frontend/src/types.ts
++++ b/frontend/src/types.ts
+@@ -16,9 +16,7 @@ export interface Issue {
+   readiness_level: string | null;
+   recommendation: string | null;
+   likely_files: string[];
+-  suggested_validation: string | null;
+   risk_notes: string | null;
+-  remediation_prompt: string | null;
+   clarification_needed: string | null;
+   triage_session_url: string | null;
+   remediation_session_url: string | null;

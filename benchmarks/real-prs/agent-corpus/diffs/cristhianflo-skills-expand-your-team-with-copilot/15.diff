@@ -1,0 +1,224 @@
+diff --git a/src/backend/database.py b/src/backend/database.py
+index 4a5b707..5466c6c 100644
+--- a/src/backend/database.py
++++ b/src/backend/database.py
+@@ -41,7 +41,8 @@ def init_database():
+             "end_time": "16:45"
+         },
+         "max_participants": 12,
+-        "participants": ["michael@mergington.edu", "daniel@mergington.edu"]
++        "participants": ["michael@mergington.edu", "daniel@mergington.edu"],
++        "difficulty": "Beginner"
+     },
+     "Programming Class": {
+         "description": "Learn programming fundamentals and build software projects",
+@@ -52,7 +53,8 @@ def init_database():
+             "end_time": "08:00"
+         },
+         "max_participants": 20,
+-        "participants": ["emma@mergington.edu", "sophia@mergington.edu"]
++        "participants": ["emma@mergington.edu", "sophia@mergington.edu"],
++        "difficulty": "Intermediate"
+     },
+     "Morning Fitness": {
+         "description": "Early morning physical training and exercises",
+@@ -74,7 +76,8 @@ def init_database():
+             "end_time": "17:30"
+         },
+         "max_participants": 22,
+-        "participants": ["liam@mergington.edu", "noah@mergington.edu"]
++        "participants": ["liam@mergington.edu", "noah@mergington.edu"],
++        "difficulty": "Beginner"
+     },
+     "Basketball Team": {
+         "description": "Practice and compete in basketball tournaments",
+@@ -85,7 +88,8 @@ def init_database():
+             "end_time": "17:00"
+         },
+         "max_participants": 15,
+-        "participants": ["ava@mergington.edu", "mia@mergington.edu"]
++        "participants": ["ava@mergington.edu", "mia@mergington.edu"],
++        "difficulty": "Intermediate"
+     },
+     "Art Club": {
+         "description": "Explore various art techniques and create masterpieces",
+@@ -129,7 +133,8 @@ def init_database():
+             "end_time": "08:00"
+         },
+         "max_participants": 10,
+-        "participants": ["james@mergington.edu", "benjamin@mergington.edu"]
++        "participants": ["james@mergington.edu", "benjamin@mergington.edu"],
++        "difficulty": "Advanced"
+     },
+     "Debate Team": {
+         "description": "Develop public speaking and argumentation skills",
+@@ -140,7 +145,8 @@ def init_database():
+             "end_time": "17:30"
+         },
+         "max_participants": 12,
+-        "participants": ["charlotte@mergington.edu", "amelia@mergington.edu"]
++        "participants": ["charlotte@mergington.edu", "amelia@mergington.edu"],
++        "difficulty": "Intermediate"
+     },
+     "Weekend Robotics Workshop": {
+         "description": "Build and program robots in our state-of-the-art workshop",
+@@ -151,7 +157,8 @@ def init_database():
+             "end_time": "14:00"
+         },
+         "max_participants": 15,
+-        "participants": ["ethan@mergington.edu", "oliver@mergington.edu"]
++        "participants": ["ethan@mergington.edu", "oliver@mergington.edu"],
++        "difficulty": "Advanced"
+     },
+     "Science Olympiad": {
+         "description": "Weekend science competition preparation for regional and state events",
+@@ -162,7 +169,8 @@ def init_database():
+             "end_time": "16:00"
+         },
+         "max_participants": 18,
+-        "participants": ["isabella@mergington.edu", "lucas@mergington.edu"]
++        "participants": ["isabella@mergington.edu", "lucas@mergington.edu"],
++        "difficulty": "Advanced"
+     },
+     "Sunday Chess Tournament": {
+         "description": "Weekly tournament for serious chess players with rankings",
+@@ -173,7 +181,8 @@ def init_database():
+             "end_time": "17:00"
+         },
+         "max_participants": 16,
+-        "participants": ["william@mergington.edu", "jacob@mergington.edu"]
++        "participants": ["william@mergington.edu", "jacob@mergington.edu"],
++        "difficulty": "Advanced"
+     }
+ }
+ 
+diff --git a/src/static/app.js b/src/static/app.js
+index a24ae57..145ee8e 100644
+--- a/src/static/app.js
++++ b/src/static/app.js
+@@ -14,6 +14,7 @@ document.addEventListener("DOMContentLoaded", () => {
+   const categoryFilters = document.querySelectorAll(".category-filter");
+   const dayFilters = document.querySelectorAll(".day-filter");
+   const timeFilters = document.querySelectorAll(".time-filter");
++  const difficultyFilters = document.querySelectorAll(".difficulty-filter");
+ 
+   // Authentication elements
+   const loginButton = document.getElementById("login-button");
+@@ -40,6 +41,7 @@ document.addEventListener("DOMContentLoaded", () => {
+   let searchQuery = "";
+   let currentDay = "";
+   let currentTimeRange = "";
++  let currentDifficulty = "";
+ 
+   // Authentication state
+   let currentUser = null;
+@@ -437,6 +439,15 @@ document.addEventListener("DOMContentLoaded", () => {
+         }
+       }
+ 
++      // Apply difficulty filter
++      if (currentDifficulty !== "") {
++        const activityDifficulty = details.difficulty;
++        // Show activities at the selected level, plus activities with no difficulty (for all levels)
++        if (activityDifficulty && activityDifficulty !== currentDifficulty) {
++          return;
++        }
++      }
++
+       // Apply search filter
+       const searchableContent = [
+         name.toLowerCase(),
+@@ -694,6 +705,19 @@ document.addEventListener("DOMContentLoaded", () => {
+     });
+   });
+ 
++  // Add event listeners for difficulty filter buttons
++  difficultyFilters.forEach((button) => {
++    button.addEventListener("click", () => {
++      // Update active class
++      difficultyFilters.forEach((btn) => btn.classList.remove("active"));
++      button.classList.add("active");
++
++      // Update current difficulty filter and display filtered activities
++      currentDifficulty = button.dataset.difficulty;
++      displayFilteredActivities();
++    });
++  });
++
+   // Open registration modal
+   function openRegistrationModal(activityName) {
+     modalActivityName.textContent = activityName;
+diff --git a/src/static/index.html b/src/static/index.html
+index dbf7205..f5401c9 100644
+--- a/src/static/index.html
++++ b/src/static/index.html
+@@ -100,6 +100,25 @@ <h3>Filter Activities</h3>
+                 <button class="time-filter" data-time="weekend">Weekend</button>
+               </div>
+             </div>
++
++            <!-- Difficulty Filter -->
++            <div class="filter-container difficulty-filter-container">
++              <div class="filter-label">Filter by difficulty:</div>
++              <div class="difficulty-filters" id="difficulty-filters">
++                <button class="difficulty-filter active" data-difficulty="">
++                  All
++                </button>
++                <button class="difficulty-filter" data-difficulty="Beginner">
++                  Beginner
++                </button>
++                <button class="difficulty-filter" data-difficulty="Intermediate">
++                  Intermediate
++                </button>
++                <button class="difficulty-filter" data-difficulty="Advanced">
++                  Advanced
++                </button>
++              </div>
++            </div>
+           </aside>
+ 
+           <!-- Activities Content -->
+diff --git a/src/static/styles.css b/src/static/styles.css
+index 3a70af9..fe82dca 100644
+--- a/src/static/styles.css
++++ b/src/static/styles.css
+@@ -569,7 +569,8 @@ footer {
+ 
+ .category-filters,
+ .day-filters,
+-.time-filters {
++.time-filters,
++.difficulty-filters {
+   display: flex;
+   flex-wrap: wrap;
+   gap: 6px;
+@@ -577,7 +578,8 @@ footer {
+ 
+ .category-filter,
+ .day-filter,
+-.time-filter {
++.time-filter,
++.difficulty-filter {
+   background-color: var(--background);
+   border: 1px solid var(--border);
+   color: var(--text-primary);
+@@ -590,7 +592,8 @@ footer {
+ 
+ .category-filter.active,
+ .day-filter.active,
+-.time-filter.active {
++.time-filter.active,
++.difficulty-filter.active {
+   background-color: var(--primary);
+   color: white;
+   border-color: var(--primary-dark);
+@@ -598,7 +601,8 @@ footer {
+ 
+ .category-filter:hover,
+ .day-filter:hover,
+-.time-filter:hover {
++.time-filter:hover,
++.difficulty-filter:hover {
+   background-color: var(--primary-light);
+   color: white;
+ }

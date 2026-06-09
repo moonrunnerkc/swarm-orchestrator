@@ -1,0 +1,2383 @@
+diff --git a/README.md b/README.md
+index 3776aa8..bb0b968 100644
+--- a/README.md
++++ b/README.md
+@@ -1 +1,24 @@
+-# mongoproj
++# EcoExplorer
++
++EcoExplorer is a modern, responsive Flask-ready web interface for exploring biodiversity records from U.S. National Parks.
++
++The generated UI includes:
++
++- Home/search page with hero banner, keyword search, area search, category filtering, and database statistics
++- Search results page with reusable species cards, top search, sidebar filters, and pagination styling
++- Species detail page with image hero, profile data, AI species summary, geospatial section, comments, add-comment form, and related species
++- Shared design system using Forest Green, Sage Green, Earth Beige, Dark Slate, and clean dashboard-style cards
++
++## Preview locally
++
++```bash
++pip install -r requirements.txt
++python app.py
++```
++
++Then open `http://127.0.0.1:5000`.
++
++## Flask integration
++
++Templates live in `templates/` and static assets live in `static/`.
++The demo `app.py` passes sample dictionaries that match likely MongoDB-backed fields such as common name, scientific name, park name, category, GridFS image URL, comments, geospatial coordinates, and AI summaries.
+diff --git a/app.py b/app.py
+new file mode 100644
+index 0000000..d146817
+--- /dev/null
++++ b/app.py
+@@ -0,0 +1,252 @@
++from flask import Flask, render_template, request, url_for
++
++app = Flask(__name__)
++
++CATEGORIES = [
++    "All Categories",
++    "Mammals",
++    "Birds",
++    "Reptiles",
++    "Amphibians",
++    "Fish",
++    "Plants",
++    "Insects",
++]
++
++STATS = [
++    {"value": "79,811", "label": "Species", "icon": "leaf"},
++    {"value": "56", "label": "National Parks", "icon": "mountain"},
++    {"value": "Thousands", "label": "of Images", "icon": "image"},
++    {"value": "Enabled", "label": "Geospatial Search", "icon": "map"},
++]
++
++SPECIES = [
++    {
++        "slug": "mountain-goat",
++        "common_name": "Mountain Goat",
++        "scientific_name": "Oreamnos americanus",
++        "park_name": "Glacier National Park",
++        "category": "Mammals",
++        "short_description": "A sure-footed alpine mammal adapted to cliffs, snowfields, and high-elevation meadows.",
++        "description": "Mountain goats are iconic alpine specialists found in rugged western mountain ranges. Their split hooves, muscular shoulders, and dense white coats help them navigate steep terrain and survive cold, exposed environments. In national parks they are often observed near rocky ledges, subalpine meadows, and mineral licks.",
++        "image_url": "https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=1200&q=80",
++        "conservation_status": "Stable",
++        "occurrence": "Present",
++        "nativeness": "Native",
++        "latitude": "48.7596",
++        "longitude": "-113.7870",
++        "park_location": "Northern Rocky Mountains, Montana",
++        "ai_summary": "Mountain goats are alpine mammals adapted to steep mountain environments and rocky terrain. They are commonly found in high-elevation habitats throughout western North America.",
++        "comments": [
++            {
++                "username": "Avery L.",
++                "timestamp": "Jun 8, 2026 at 2:14 PM",
++                "text": "Saw one above Hidden Lake overlook. The way it moved across the rocks was incredible.",
++            },
++            {
++                "username": "Dr. Chen",
++                "timestamp": "Jun 6, 2026 at 9:42 AM",
++                "text": "Great example of alpine adaptation and cold-weather morphology.",
++            },
++        ],
++    },
++    {
++        "slug": "california-condor",
++        "common_name": "California Condor",
++        "scientific_name": "Gymnogyps californianus",
++        "park_name": "Grand Canyon National Park",
++        "category": "Birds",
++        "short_description": "A critically important scavenger with a massive wingspan and a remarkable recovery story.",
++        "description": "California condors are among North America's largest flying birds. Intensive conservation programs have helped reintroduce them to portions of their historical range, including canyon landscapes where rising thermals support long-distance soaring.",
++        "image_url": "https://images.unsplash.com/photo-1551085254-e96b210db58a?auto=format&fit=crop&w=1200&q=80",
++        "conservation_status": "Endangered",
++        "occurrence": "Rare",
++        "nativeness": "Native",
++        "latitude": "36.1069",
++        "longitude": "-112.1129",
++        "park_location": "Colorado Plateau, Arizona",
++        "ai_summary": "California condors are large soaring scavengers that rely on open landscapes and canyon thermals. Their presence highlights major conservation recovery efforts in the American West.",
++        "comments": [
++            {
++                "username": "Mika R.",
++                "timestamp": "May 28, 2026 at 4:31 PM",
++                "text": "The wing tag made it easy to identify during our ranger program.",
++            }
++        ],
++    },
++    {
++        "slug": "giant-sequoia",
++        "common_name": "Giant Sequoia",
++        "scientific_name": "Sequoiadendron giganteum",
++        "park_name": "Sequoia National Park",
++        "category": "Plants",
++        "short_description": "One of the largest tree species on Earth, known for massive trunks and long lifespans.",
++        "description": "Giant sequoias are fire-adapted conifers that grow in scattered groves along the western Sierra Nevada. Their cinnamon-colored bark, enormous volume, and ecological dependence on disturbance make them a signature species of conservation landscapes.",
++        "image_url": "https://images.unsplash.com/photo-1515965567292-91b98a2c0b1d?auto=format&fit=crop&w=1200&q=80",
++        "conservation_status": "Vulnerable",
++        "occurrence": "Present",
++        "nativeness": "Native",
++        "latitude": "36.4864",
++        "longitude": "-118.5658",
++        "park_location": "Sierra Nevada, California",
++        "ai_summary": "Giant sequoias are immense, long-lived trees adapted to Sierra Nevada mixed-conifer forests. Their life cycle is closely connected to fire, which opens cones and creates space for seedlings.",
++        "comments": [
++            {
++                "username": "NPS Volunteer",
++                "timestamp": "Jun 1, 2026 at 11:05 AM",
++                "text": "Visitors are always surprised by how thick and soft-looking the bark is.",
++            }
++        ],
++    },
++    {
++        "slug": "american-alligator",
++        "common_name": "American Alligator",
++        "scientific_name": "Alligator mississippiensis",
++        "park_name": "Everglades National Park",
++        "category": "Reptiles",
++        "short_description": "A keystone wetland reptile that shapes freshwater habitats throughout the Everglades.",
++        "description": "American alligators create and maintain alligator holes that provide critical dry-season refuges for fish, birds, amphibians, and invertebrates. Their role as apex predators and ecosystem engineers makes them central to wetland health.",
++        "image_url": "https://images.unsplash.com/photo-1605281317010-fe5ffe798166?auto=format&fit=crop&w=1200&q=80",
++        "conservation_status": "Least Concern",
++        "occurrence": "Common",
++        "nativeness": "Native",
++        "latitude": "25.2866",
++        "longitude": "-80.8987",
++        "park_location": "South Florida wetlands",
++        "ai_summary": "American alligators are freshwater predators and ecosystem engineers. Their nesting, feeding, and digging behaviors influence wetland structure and support many other species.",
++        "comments": [],
++    },
++    {
++        "slug": "brook-trout",
++        "common_name": "Brook Trout",
++        "scientific_name": "Salvelinus fontinalis",
++        "park_name": "Great Smoky Mountains National Park",
++        "category": "Fish",
++        "short_description": "A cold-water fish associated with clear mountain streams and shaded headwaters.",
++        "description": "Brook trout require clean, cold, oxygen-rich water and are often used as indicators of stream health. In mountain parks, habitat restoration and monitoring programs track their response to warming temperatures and stream connectivity.",
++        "image_url": "https://images.unsplash.com/photo-1510130387422-82bed34b37e9?auto=format&fit=crop&w=1200&q=80",
++        "conservation_status": "Sensitive",
++        "occurrence": "Localized",
++        "nativeness": "Native",
++        "latitude": "35.6532",
++        "longitude": "-83.5070",
++        "park_location": "Southern Appalachian Mountains",
++        "ai_summary": "Brook trout are cold-water stream fish that depend on shaded, oxygen-rich habitats. Their distribution can reveal changes in watershed condition and climate stress.",
++        "comments": [
++            {
++                "username": "Stream Team",
++                "timestamp": "May 19, 2026 at 8:20 AM",
++                "text": "Found during a citizen science survey in a shaded tributary.",
++            }
++        ],
++    },
++    {
++        "slug": "monarch-butterfly",
++        "common_name": "Monarch Butterfly",
++        "scientific_name": "Danaus plexippus",
++        "park_name": "Shenandoah National Park",
++        "category": "Insects",
++        "short_description": "A migratory pollinator known for orange-and-black wings and milkweed dependence.",
++        "description": "Monarch butterflies rely on milkweed as host plants for caterpillars and nectar-rich flowers as adults. Protected park corridors can support migration, breeding, and public awareness of pollinator conservation.",
++        "image_url": "https://images.unsplash.com/photo-1546975490-e8b92a360b24?auto=format&fit=crop&w=1200&q=80",
++        "conservation_status": "At Risk",
++        "occurrence": "Seasonal",
++        "nativeness": "Native",
++        "latitude": "38.4755",
++        "longitude": "-78.4535",
++        "park_location": "Blue Ridge Mountains, Virginia",
++        "ai_summary": "Monarch butterflies are migratory pollinators whose life cycle depends on milkweed and flowering plants. Park meadows and corridors can contribute to seasonal habitat networks.",
++        "comments": [],
++    },
++]
++
++
++def get_species(slug):
++    return next((species for species in SPECIES if species["slug"] == slug), SPECIES[0])
++
++
++@app.route("/")
++def home():
++    featured_species = SPECIES[:3]
++    return render_template(
++        "index.html",
++        title="EcoExplorer",
++        categories=CATEGORIES,
++        stats=STATS,
++        featured_species=featured_species,
++    )
++
++
++@app.route("/search")
++def search():
++    query = request.args.get("q", "").strip().lower()
++    area = request.args.get("area", "").strip().lower()
++    category = request.args.get("category", "All Categories")
++    selected_park = request.args.get("park", "")
++    has_image = request.args.get("has_image") == "on"
++    has_comments = request.args.get("has_comments") == "on"
++
++    filtered_species = []
++    for species in SPECIES:
++        text_matches = not query or query in " ".join(
++            [
++                species["common_name"],
++                species["scientific_name"],
++                species["short_description"],
++                species["description"],
++            ]
++        ).lower()
++        area_matches = not area or area in " ".join(
++            [species["park_name"], species["park_location"]]
++        ).lower()
++        category_matches = category == "All Categories" or species["category"] == category
++        park_matches = not selected_park or species["park_name"] == selected_park
++        image_matches = not has_image or bool(species.get("image_url"))
++        comments_matches = not has_comments or bool(species.get("comments"))
++
++        if (
++            text_matches
++            and area_matches
++            and category_matches
++            and park_matches
++            and image_matches
++            and comments_matches
++        ):
++            filtered_species.append(species)
++
++    parks = sorted({species["park_name"] for species in SPECIES})
++    return render_template(
++        "results.html",
++        title="Search Results",
++        categories=CATEGORIES,
++        parks=parks,
++        species_results=filtered_species,
++        query=request.args.get("q", ""),
++        area=request.args.get("area", ""),
++        selected_category=category,
++        selected_park=selected_park,
++        has_image=has_image,
++        has_comments=has_comments,
++        total_results=len(filtered_species),
++    )
++
++
++@app.route("/species/<slug>")
++def species_detail(slug):
++    species = get_species(slug)
++    related_species = [item for item in SPECIES if item["slug"] != species["slug"]][:3]
++    return render_template(
++        "species_detail.html",
++        title=species["common_name"],
++        species=species,
++        related_species=related_species,
++    )
++
++
++@app.context_processor
++def inject_helpers():
++    return {"species_detail_url": lambda slug: url_for("species_detail", slug=slug)}
++
++
++if __name__ == "__main__":
++    app.run(debug=True)
+diff --git a/requirements.txt b/requirements.txt
+new file mode 100644
+index 0000000..e3e9a71
+--- /dev/null
++++ b/requirements.txt
+@@ -0,0 +1 @@
++Flask
+diff --git a/static/css/styles.css b/static/css/styles.css
+new file mode 100644
+index 0000000..9e98ad4
+--- /dev/null
++++ b/static/css/styles.css
+@@ -0,0 +1,1409 @@
++:root {
++  --forest: #2f6b3f;
++  --forest-dark: #214e2d;
++  --sage: #8faf88;
++  --sage-soft: #dce8d7;
++  --beige: #f4f1ea;
++  --beige-deep: #e5dccd;
++  --slate: #263238;
++  --slate-soft: #52636a;
++  --white: #ffffff;
++  --gold: #d5a84d;
++  --sky: #dfeeea;
++  --danger: #9b4d3f;
++  --shadow-sm: 0 10px 30px rgba(38, 50, 56, 0.08);
++  --shadow-md: 0 18px 50px rgba(38, 50, 56, 0.14);
++  --shadow-lg: 0 28px 80px rgba(38, 50, 56, 0.22);
++  --radius-sm: 14px;
++  --radius-md: 22px;
++  --radius-lg: 32px;
++  --container: 1180px;
++}
++
++* {
++  box-sizing: border-box;
++}
++
++html {
++  scroll-behavior: smooth;
++}
++
++body {
++  margin: 0;
++  background: linear-gradient(180deg, var(--beige) 0%, #fbfaf7 42%, var(--white) 100%);
++  color: var(--slate);
++  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
++  line-height: 1.6;
++  text-rendering: optimizeLegibility;
++}
++
++body::before {
++  position: fixed;
++  inset: 0;
++  z-index: -1;
++  pointer-events: none;
++  content: "";
++  background:
++    radial-gradient(circle at 12% 20%, rgba(143, 175, 136, 0.2), transparent 30%),
++    radial-gradient(circle at 90% 8%, rgba(213, 168, 77, 0.16), transparent 26%),
++    radial-gradient(circle at 80% 72%, rgba(47, 107, 63, 0.1), transparent 30%);
++}
++
++img,
++svg {
++  display: block;
++}
++
++img {
++  max-width: 100%;
++}
++
++a {
++  color: inherit;
++  text-decoration: none;
++}
++
++button,
++input,
++select,
++textarea {
++  font: inherit;
++}
++
++button,
++select {
++  cursor: pointer;
++}
++
++input,
++select,
++textarea {
++  width: 100%;
++  border: 1px solid rgba(38, 50, 56, 0.16);
++  border-radius: 16px;
++  background: rgba(255, 255, 255, 0.9);
++  color: var(--slate);
++  outline: none;
++  transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
++}
++
++input,
++select {
++  min-height: 54px;
++  padding: 0 16px;
++}
++
++textarea {
++  padding: 14px 16px;
++  resize: vertical;
++}
++
++input:focus,
++select:focus,
++textarea:focus,
++a:focus-visible,
++button:focus-visible {
++  border-color: var(--forest);
++  box-shadow: 0 0 0 4px rgba(47, 107, 63, 0.16);
++  outline: none;
++}
++
++.container {
++  width: min(var(--container), calc(100% - 40px));
++  margin-inline: auto;
++}
++
++.skip-link,
++.sr-only {
++  position: absolute;
++  width: 1px;
++  height: 1px;
++  padding: 0;
++  margin: -1px;
++  overflow: hidden;
++  clip: rect(0, 0, 0, 0);
++  white-space: nowrap;
++  border: 0;
++}
++
++.skip-link:focus {
++  top: 14px;
++  left: 14px;
++  z-index: 100;
++  width: auto;
++  height: auto;
++  padding: 10px 14px;
++  clip: auto;
++  border-radius: 999px;
++  background: var(--forest);
++  color: var(--white);
++}
++
++.site-header {
++  position: sticky;
++  top: 0;
++  z-index: 40;
++  background: rgba(244, 241, 234, 0.82);
++  border-bottom: 1px solid rgba(38, 50, 56, 0.08);
++  backdrop-filter: blur(18px);
++}
++
++.nav-shell {
++  width: min(1240px, calc(100% - 32px));
++  min-height: 78px;
++  margin: 0 auto;
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: 24px;
++}
++
++.brand {
++  display: inline-flex;
++  align-items: center;
++  gap: 12px;
++  color: var(--slate);
++}
++
++.brand-mark {
++  width: 46px;
++  height: 46px;
++  display: grid;
++  place-items: center;
++  border-radius: 16px;
++  background: linear-gradient(135deg, var(--forest), #1d4a2c);
++  box-shadow: 0 12px 26px rgba(47, 107, 63, 0.28);
++}
++
++.brand-mark svg {
++  width: 28px;
++  height: 28px;
++  fill: var(--beige);
++}
++
++.brand strong,
++.brand small {
++  display: block;
++}
++
++.brand strong {
++  font-size: 1.05rem;
++  letter-spacing: -0.03em;
++}
++
++.brand small {
++  margin-top: -3px;
++  color: var(--slate-soft);
++  font-size: 0.76rem;
++  font-weight: 600;
++  letter-spacing: 0.08em;
++  text-transform: uppercase;
++}
++
++.nav-menu {
++  display: flex;
++  align-items: center;
++  gap: 6px;
++  padding: 7px;
++  border: 1px solid rgba(38, 50, 56, 0.08);
++  border-radius: 999px;
++  background: rgba(255, 255, 255, 0.64);
++}
++
++.nav-menu a {
++  padding: 10px 16px;
++  border-radius: 999px;
++  color: var(--slate-soft);
++  font-size: 0.93rem;
++  font-weight: 700;
++  transition: background 180ms ease, color 180ms ease, transform 180ms ease;
++}
++
++.nav-menu a:hover {
++  transform: translateY(-1px);
++  background: var(--forest);
++  color: var(--white);
++}
++
++.nav-toggle {
++  display: none;
++  width: 46px;
++  height: 46px;
++  border: 0;
++  border-radius: 14px;
++  background: var(--forest);
++}
++
++.nav-toggle span:not(.sr-only) {
++  width: 20px;
++  height: 2px;
++  margin: 4px auto;
++  border-radius: 999px;
++  background: var(--white);
++}
++
++.hero {
++  position: relative;
++  isolation: isolate;
++  min-height: 720px;
++  display: grid;
++  align-items: center;
++  overflow: hidden;
++}
++
++.hero-media,
++.hero-overlay,
++.detail-hero-overlay {
++  position: absolute;
++  inset: 0;
++}
++
++.hero-media {
++  z-index: -3;
++  background:
++    linear-gradient(120deg, rgba(38, 50, 56, 0.82), rgba(47, 107, 63, 0.38)),
++    url("https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=2200&q=85") center/cover;
++  transform: scale(1.02);
++  animation: slow-pan 24s ease-in-out infinite alternate;
++}
++
++.hero-overlay {
++  z-index: -2;
++  background:
++    radial-gradient(circle at 72% 40%, rgba(244, 241, 234, 0.18), transparent 22%),
++    linear-gradient(180deg, rgba(38, 50, 56, 0.12), rgba(38, 50, 56, 0.78));
++}
++
++.hero-content {
++  max-width: 780px;
++  padding: 96px 0;
++  color: var(--white);
++}
++
++.eyebrow,
++.section-kicker {
++  display: inline-flex;
++  align-items: center;
++  gap: 10px;
++  margin: 0 0 14px;
++  color: var(--forest);
++  font-size: 0.78rem;
++  font-weight: 800;
++  letter-spacing: 0.14em;
++  text-transform: uppercase;
++}
++
++.eyebrow {
++  color: var(--sage-soft);
++}
++
++.eyebrow span,
++.section-kicker::before {
++  width: 34px;
++  height: 2px;
++  border-radius: 999px;
++  background: currentColor;
++  content: "";
++}
++
++.hero h1,
++.page-hero h1,
++.detail-hero h1 {
++  margin: 0;
++  font-family: "Playfair Display", Georgia, serif;
++  letter-spacing: -0.06em;
++}
++
++.hero h1 {
++  font-size: clamp(4rem, 10vw, 8.8rem);
++  line-height: 0.88;
++}
++
++.hero-subtitle {
++  max-width: 700px;
++  margin: 26px 0 0;
++  font-size: clamp(1.35rem, 3vw, 2.05rem);
++  font-weight: 700;
++  letter-spacing: -0.04em;
++}
++
++.hero-copy {
++  max-width: 680px;
++  margin: 18px 0 0;
++  color: rgba(255, 255, 255, 0.84);
++  font-size: 1.08rem;
++}
++
++.hero-actions {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 14px;
++  margin-top: 34px;
++}
++
++.btn {
++  display: inline-flex;
++  min-height: 48px;
++  align-items: center;
++  justify-content: center;
++  gap: 10px;
++  padding: 13px 20px;
++  border: 0;
++  border-radius: 999px;
++  font-weight: 800;
++  letter-spacing: -0.01em;
++  transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease, color 180ms ease;
++}
++
++.btn:hover {
++  transform: translateY(-2px);
++}
++
++.btn-primary {
++  background: linear-gradient(135deg, var(--forest), var(--forest-dark));
++  color: var(--white);
++  box-shadow: 0 16px 34px rgba(47, 107, 63, 0.28);
++}
++
++.btn-primary:hover {
++  box-shadow: 0 22px 44px rgba(47, 107, 63, 0.34);
++}
++
++.btn-secondary {
++  background: var(--sage-soft);
++  color: var(--forest-dark);
++}
++
++.btn-secondary:hover {
++  background: var(--forest);
++  color: var(--white);
++}
++
++.btn-ghost {
++  border: 1px solid rgba(255, 255, 255, 0.36);
++  background: rgba(255, 255, 255, 0.12);
++  color: var(--white);
++  backdrop-filter: blur(12px);
++}
++
++.btn-full {
++  width: 100%;
++}
++
++.search-panel-section,
++.feature-section,
++.spotlight-section,
++.related-section {
++  padding: 86px 0;
++}
++
++.section-heading {
++  max-width: 720px;
++  margin-bottom: 30px;
++}
++
++.section-heading h2,
++.card-heading h2,
++.sidebar-card h2,
++.results-toolbar h2 {
++  margin: 0;
++  color: var(--slate);
++  font-size: clamp(2rem, 4vw, 3.1rem);
++  line-height: 1.02;
++  letter-spacing: -0.06em;
++}
++
++.section-heading p:not(.section-kicker) {
++  margin: 14px 0 0;
++  color: var(--slate-soft);
++  font-size: 1.05rem;
++}
++
++.search-panel {
++  display: grid;
++  grid-template-columns: 1.35fr 1fr 0.8fr auto;
++  gap: 16px;
++  padding: 20px;
++  border: 1px solid rgba(38, 50, 56, 0.08);
++  border-radius: var(--radius-lg);
++  background:
++    linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.78)),
++    var(--white);
++  box-shadow: var(--shadow-lg);
++}
++
++.field {
++  display: grid;
++  gap: 8px;
++}
++
++.field label,
++.checkbox-group legend,
++.sort-control label {
++  color: var(--slate);
++  font-size: 0.86rem;
++  font-weight: 800;
++}
++
++.field small {
++  color: var(--slate-soft);
++  font-size: 0.78rem;
++}
++
++.input-icon {
++  position: relative;
++}
++
++.input-icon input {
++  padding-left: 48px;
++}
++
++.input-icon span {
++  position: absolute;
++  top: 50%;
++  left: 16px;
++  width: 20px;
++  color: var(--forest);
++  transform: translateY(-50%);
++}
++
++.input-icon svg,
++.search-submit svg {
++  width: 20px;
++  height: 20px;
++  fill: currentColor;
++}
++
++.select-wrap {
++  position: relative;
++}
++
++.select-wrap::after {
++  position: absolute;
++  top: 50%;
++  right: 16px;
++  width: 9px;
++  height: 9px;
++  border-right: 2px solid var(--forest);
++  border-bottom: 2px solid var(--forest);
++  pointer-events: none;
++  content: "";
++  transform: translateY(-70%) rotate(45deg);
++}
++
++.select-wrap select {
++  appearance: none;
++  padding-right: 42px;
++}
++
++.search-submit {
++  align-self: end;
++  min-height: 54px;
++  padding-inline: 28px;
++}
++
++.stats-section {
++  position: relative;
++  padding: 86px 0;
++  overflow: hidden;
++  background:
++    linear-gradient(135deg, rgba(38, 50, 56, 0.96), rgba(47, 107, 63, 0.9)),
++    url("https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=1800&q=80") center/cover fixed;
++  color: var(--white);
++}
++
++.section-heading-light h2,
++.section-heading-light .section-kicker {
++  color: var(--white);
++}
++
++.stats-grid {
++  display: grid;
++  grid-template-columns: repeat(4, minmax(0, 1fr));
++  gap: 18px;
++}
++
++.stat-card {
++  min-height: 190px;
++  padding: 24px;
++  border: 1px solid rgba(255, 255, 255, 0.15);
++  border-radius: var(--radius-md);
++  background: rgba(255, 255, 255, 0.12);
++  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.12);
++  backdrop-filter: blur(16px);
++}
++
++.stat-card strong,
++.stat-card span {
++  display: block;
++}
++
++.stat-card strong {
++  margin-top: 32px;
++  font-size: clamp(2rem, 4vw, 3rem);
++  line-height: 1;
++  letter-spacing: -0.07em;
++}
++
++.stat-card span {
++  margin-top: 8px;
++  color: rgba(255, 255, 255, 0.78);
++  font-weight: 700;
++}
++
++.stat-icon,
++.feature-icon {
++  width: 46px;
++  height: 46px;
++  border-radius: 16px;
++  background: rgba(244, 241, 234, 0.18);
++}
++
++.stat-icon {
++  position: relative;
++}
++
++.stat-icon::after {
++  position: absolute;
++  inset: 12px;
++  border-radius: 50%;
++  background: var(--gold);
++  content: "";
++}
++
++.feature-grid,
++.species-grid {
++  display: grid;
++  grid-template-columns: repeat(3, minmax(0, 1fr));
++  gap: 22px;
++}
++
++.feature-card,
++.species-card,
++.info-card,
++.content-card,
++.ai-summary-card,
++.comments-section,
++.add-comment-card,
++.sidebar-card,
++.empty-state {
++  border: 1px solid rgba(38, 50, 56, 0.08);
++  border-radius: var(--radius-md);
++  background: rgba(255, 255, 255, 0.86);
++  box-shadow: var(--shadow-sm);
++}
++
++.feature-card {
++  padding: 28px;
++  transition: transform 180ms ease, box-shadow 180ms ease;
++}
++
++.feature-card:hover,
++.species-card:hover,
++.result-card:hover {
++  transform: translateY(-4px);
++  box-shadow: var(--shadow-md);
++}
++
++.feature-icon {
++  display: grid;
++  place-items: center;
++  margin-bottom: 34px;
++  background: var(--sage-soft);
++  color: var(--forest-dark);
++  font-weight: 900;
++}
++
++.feature-card h3,
++.species-card h3,
++.result-card h3,
++.empty-state h3 {
++  margin: 0;
++  color: var(--slate);
++  font-size: 1.35rem;
++  line-height: 1.1;
++  letter-spacing: -0.04em;
++}
++
++.feature-card p,
++.species-card-content p,
++.result-card p,
++.content-card p,
++.comment-card p,
++.empty-state p {
++  color: var(--slate-soft);
++}
++
++.species-card {
++  overflow: hidden;
++  transition: transform 180ms ease, box-shadow 180ms ease;
++}
++
++.species-image {
++  position: relative;
++  display: block;
++  height: 250px;
++  overflow: hidden;
++}
++
++.species-image img,
++.result-image img {
++  width: 100%;
++  height: 100%;
++  object-fit: cover;
++  transition: transform 400ms ease;
++}
++
++.species-card:hover .species-image img,
++.result-card:hover .result-image img {
++  transform: scale(1.05);
++}
++
++.species-image span,
++.species-label,
++.pill {
++  display: inline-flex;
++  align-items: center;
++  min-height: 30px;
++  padding: 6px 12px;
++  border-radius: 999px;
++  background: var(--forest);
++  color: var(--white);
++  font-size: 0.78rem;
++  font-weight: 800;
++  letter-spacing: 0.04em;
++  text-transform: uppercase;
++}
++
++.species-image span {
++  position: absolute;
++  right: 16px;
++  bottom: 16px;
++}
++
++.species-card-content {
++  padding: 24px;
++}
++
++.species-card-content > p:first-child,
++.result-meta,
++.back-link {
++  color: var(--forest);
++  font-size: 0.78rem;
++  font-weight: 900;
++  letter-spacing: 0.1em;
++  text-transform: uppercase;
++}
++
++.species-card-content em,
++.result-card em {
++  display: block;
++  margin-top: 6px;
++  color: var(--slate-soft);
++}
++
++.text-link {
++  display: inline-flex;
++  margin-top: 6px;
++  color: var(--forest);
++  font-weight: 900;
++}
++
++.text-link:hover {
++  color: var(--forest-dark);
++}
++
++.page-hero {
++  padding: 78px 0;
++  background:
++    linear-gradient(135deg, rgba(38, 50, 56, 0.94), rgba(47, 107, 63, 0.86)),
++    url("https://images.unsplash.com/photo-1472396961693-142e6e269027?auto=format&fit=crop&w=1800&q=80") center/cover;
++  color: var(--white);
++}
++
++.page-hero-grid {
++  display: grid;
++  grid-template-columns: 1fr minmax(320px, 520px);
++  align-items: end;
++  gap: 32px;
++}
++
++.page-hero h1 {
++  font-size: clamp(3rem, 7vw, 5.8rem);
++  line-height: 0.92;
++}
++
++.page-hero p {
++  max-width: 620px;
++  color: rgba(255, 255, 255, 0.82);
++}
++
++.top-search {
++  display: grid;
++  grid-template-columns: 1fr auto;
++  gap: 10px;
++  padding: 10px;
++  border: 1px solid rgba(255, 255, 255, 0.2);
++  border-radius: 999px;
++  background: rgba(255, 255, 255, 0.14);
++  backdrop-filter: blur(16px);
++}
++
++.top-search input {
++  border-radius: 999px;
++  border-color: transparent;
++}
++
++.results-shell {
++  display: grid;
++  grid-template-columns: 300px 1fr;
++  align-items: start;
++  gap: 28px;
++  padding: 54px 0 90px;
++}
++
++.filter-sidebar {
++  position: sticky;
++  top: 102px;
++}
++
++.sidebar-card {
++  padding: 24px;
++}
++
++.sidebar-heading,
++.results-toolbar,
++.result-footer,
++.comment-card > div {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: 16px;
++}
++
++.sidebar-heading {
++  margin-bottom: 22px;
++}
++
++.sidebar-card h2,
++.results-toolbar h2,
++.card-heading h2 {
++  font-size: 1.65rem;
++}
++
++.sidebar-heading a {
++  color: var(--forest);
++  font-weight: 800;
++}
++
++.sidebar-card form {
++  display: grid;
++  gap: 18px;
++}
++
++.checkbox-group {
++  display: grid;
++  gap: 10px;
++  padding: 0;
++  border: 0;
++}
++
++.checkbox-group label {
++  display: flex;
++  align-items: center;
++  gap: 10px;
++  color: var(--slate-soft);
++  font-weight: 700;
++}
++
++.checkbox-group input {
++  width: 18px;
++  min-height: 18px;
++  accent-color: var(--forest);
++}
++
++.results-toolbar {
++  margin-bottom: 24px;
++}
++
++.sort-control {
++  display: flex;
++  align-items: center;
++  gap: 10px;
++}
++
++.sort-control select {
++  width: auto;
++  min-width: 160px;
++  border-radius: 999px;
++}
++
++.results-list {
++  display: grid;
++  gap: 18px;
++}
++
++.result-card {
++  display: grid;
++  grid-template-columns: 260px 1fr;
++  overflow: hidden;
++  border: 1px solid rgba(38, 50, 56, 0.08);
++  border-radius: var(--radius-md);
++  background: rgba(255, 255, 255, 0.9);
++  box-shadow: var(--shadow-sm);
++  transition: transform 180ms ease, box-shadow 180ms ease;
++}
++
++.result-image {
++  min-height: 235px;
++  overflow: hidden;
++}
++
++.result-body {
++  padding: 26px;
++}
++
++.result-meta {
++  display: flex;
++  flex-wrap: wrap;
++  gap: 10px;
++  justify-content: flex-start;
++  margin-bottom: 10px;
++  letter-spacing: 0.08em;
++}
++
++.result-meta span {
++  color: var(--forest);
++}
++
++.pill {
++  background: var(--sage-soft);
++  color: var(--forest-dark);
++}
++
++.pagination {
++  display: flex;
++  flex-wrap: wrap;
++  align-items: center;
++  justify-content: center;
++  gap: 8px;
++  margin-top: 34px;
++}
++
++.pagination-link {
++  min-width: 44px;
++  padding: 10px 14px;
++  border: 1px solid rgba(38, 50, 56, 0.12);
++  border-radius: 999px;
++  background: var(--white);
++  color: var(--slate-soft);
++  text-align: center;
++  font-weight: 800;
++}
++
++.pagination-link.is-active {
++  background: var(--forest);
++  color: var(--white);
++}
++
++.pagination-link.is-disabled {
++  opacity: 0.5;
++  pointer-events: none;
++}
++
++.empty-state {
++  padding: 48px;
++  text-align: center;
++}
++
++.empty-state span {
++  display: inline-flex;
++  margin-bottom: 16px;
++  padding: 8px 14px;
++  border-radius: 999px;
++  background: var(--sage-soft);
++  color: var(--forest-dark);
++  font-weight: 900;
++}
++
++.detail-hero {
++  position: relative;
++  min-height: 650px;
++  display: grid;
++  align-items: end;
++  overflow: hidden;
++  color: var(--white);
++}
++
++.detail-hero img {
++  position: absolute;
++  inset: 0;
++  z-index: -3;
++  width: 100%;
++  height: 100%;
++  object-fit: cover;
++}
++
++.detail-hero-overlay {
++  z-index: -2;
++  background:
++    linear-gradient(180deg, rgba(38, 50, 56, 0.06), rgba(38, 50, 56, 0.86)),
++    linear-gradient(90deg, rgba(38, 50, 56, 0.72), transparent 62%);
++}
++
++.detail-hero-content {
++  padding: 130px 0 70px;
++}
++
++.back-link {
++  display: inline-flex;
++  margin-bottom: 24px;
++  color: var(--sage-soft);
++}
++
++.detail-hero h1 {
++  max-width: 920px;
++  margin-top: 20px;
++  font-size: clamp(3.5rem, 9vw, 7.8rem);
++  line-height: 0.9;
++}
++
++.detail-hero p {
++  margin: 18px 0 0;
++  color: rgba(255, 255, 255, 0.82);
++  font-size: clamp(1.2rem, 2.6vw, 2rem);
++  font-style: italic;
++}
++
++.detail-layout {
++  display: grid;
++  grid-template-columns: 1fr 310px;
++  align-items: start;
++  gap: 28px;
++  padding: 64px 0 42px;
++}
++
++.detail-main {
++  display: grid;
++  gap: 24px;
++}
++
++.info-card,
++.content-card,
++.ai-summary-card,
++.comments-section,
++.add-comment-card {
++  padding: 28px;
++}
++
++.card-heading {
++  margin-bottom: 22px;
++}
++
++.info-grid,
++.geo-facts dl,
++.quick-facts {
++  display: grid;
++  gap: 14px;
++}
++
++.info-grid {
++  grid-template-columns: repeat(2, minmax(0, 1fr));
++}
++
++.info-grid div,
++.geo-facts dl div {
++  padding: 18px;
++  border-radius: 18px;
++  background: var(--beige);
++}
++
++dt,
++.quick-facts span {
++  color: var(--slate-soft);
++  font-size: 0.76rem;
++  font-weight: 900;
++  letter-spacing: 0.1em;
++  text-transform: uppercase;
++}
++
++dd {
++  margin: 6px 0 0;
++  color: var(--slate);
++  font-weight: 800;
++}
++
++.ai-summary-card {
++  display: grid;
++  grid-template-columns: auto 1fr;
++  gap: 20px;
++  overflow: hidden;
++  background:
++    linear-gradient(135deg, rgba(47, 107, 63, 0.96), rgba(38, 50, 56, 0.95)),
++    var(--forest);
++  color: var(--white);
++}
++
++.ai-summary-card .section-kicker,
++.ai-summary-card h2,
++.ai-summary-card p {
++  color: var(--white);
++}
++
++.ai-summary-card p:last-child {
++  margin-bottom: 0;
++  color: rgba(255, 255, 255, 0.84);
++  font-size: 1.08rem;
++}
++
++.ai-icon {
++  width: 58px;
++  height: 58px;
++  display: grid;
++  place-items: center;
++  border-radius: 20px;
++  background: rgba(244, 241, 234, 0.14);
++}
++
++.ai-icon svg {
++  width: 30px;
++  fill: var(--gold);
++}
++
++.geo-grid {
++  display: grid;
++  grid-template-columns: 0.9fr 1.1fr;
++  gap: 22px;
++}
++
++.map-placeholder {
++  position: relative;
++  min-height: 310px;
++  display: grid;
++  place-items: center;
++  overflow: hidden;
++  border-radius: var(--radius-md);
++  background:
++    linear-gradient(135deg, rgba(143, 175, 136, 0.36), rgba(47, 107, 63, 0.22)),
++    var(--sky);
++}
++
++.map-grid {
++  position: absolute;
++  inset: 0;
++  opacity: 0.44;
++  background-image:
++    linear-gradient(rgba(38, 50, 56, 0.18) 1px, transparent 1px),
++    linear-gradient(90deg, rgba(38, 50, 56, 0.18) 1px, transparent 1px);
++  background-size: 42px 42px;
++}
++
++.map-pin {
++  position: relative;
++  width: 34px;
++  height: 34px;
++  border: 8px solid var(--forest);
++  border-radius: 50% 50% 50% 0;
++  background: var(--white);
++  box-shadow: 0 12px 30px rgba(47, 107, 63, 0.28);
++  transform: rotate(-45deg);
++}
++
++.map-pin::after {
++  position: absolute;
++  inset: 6px;
++  border-radius: 50%;
++  background: var(--gold);
++  content: "";
++}
++
++.map-placeholder span {
++  position: absolute;
++  bottom: 18px;
++  left: 18px;
++  padding: 8px 12px;
++  border-radius: 999px;
++  background: rgba(255, 255, 255, 0.82);
++  color: var(--forest-dark);
++  font-size: 0.78rem;
++  font-weight: 900;
++  backdrop-filter: blur(10px);
++}
++
++.comment-list {
++  display: grid;
++  gap: 14px;
++}
++
++.comment-card {
++  padding: 18px;
++  border: 1px solid rgba(38, 50, 56, 0.08);
++  border-radius: 18px;
++  background: var(--beige);
++}
++
++.comment-card strong,
++.comment-card time {
++  display: block;
++}
++
++.comment-card time {
++  color: var(--slate-soft);
++  font-size: 0.82rem;
++  font-weight: 700;
++}
++
++.comment-card p {
++  margin-bottom: 0;
++}
++
++.comment-form {
++  display: grid;
++  gap: 16px;
++}
++
++.detail-sidebar {
++  position: sticky;
++  top: 102px;
++}
++
++.sticky-card {
++  display: grid;
++  gap: 20px;
++}
++
++.quick-facts {
++  padding: 18px;
++  border-radius: 18px;
++  background: var(--beige);
++}
++
++.quick-facts strong {
++  margin-bottom: 8px;
++}
++
++.site-footer {
++  margin-top: 40px;
++  padding: 56px 0;
++  background: var(--slate);
++  color: var(--white);
++}
++
++.footer-grid {
++  width: min(var(--container), calc(100% - 40px));
++  margin-inline: auto;
++  display: grid;
++  grid-template-columns: 1.4fr 0.6fr 0.8fr;
++  gap: 40px;
++}
++
++.footer-brand,
++.footer-brand small,
++.footer-grid p,
++.footer-grid a,
++.footer-grid span {
++  color: rgba(255, 255, 255, 0.72);
++}
++
++.footer-brand strong {
++  color: var(--white);
++}
++
++.footer-grid h2 {
++  margin: 0 0 14px;
++  font-size: 1rem;
++}
++
++.footer-grid a,
++.footer-grid span {
++  display: block;
++  margin-top: 8px;
++}
++
++.reveal {
++  opacity: 0;
++  transform: translateY(18px);
++}
++
++.reveal.is-visible {
++  opacity: 1;
++  transform: translateY(0);
++  transition: opacity 600ms ease, transform 600ms ease;
++}
++
++@keyframes slow-pan {
++  from {
++    transform: scale(1.02) translate3d(0, 0, 0);
++  }
++  to {
++    transform: scale(1.08) translate3d(-1.5%, -1%, 0);
++  }
++}
++
++@media (prefers-reduced-motion: reduce) {
++  *,
++  *::before,
++  *::after {
++    scroll-behavior: auto !important;
++    animation-duration: 0.01ms !important;
++    animation-iteration-count: 1 !important;
++    transition-duration: 0.01ms !important;
++  }
++
++  .reveal {
++    opacity: 1;
++    transform: none;
++  }
++}
++
++@media (max-width: 1040px) {
++  .search-panel {
++    grid-template-columns: repeat(2, minmax(0, 1fr));
++  }
++
++  .search-submit {
++    grid-column: 1 / -1;
++  }
++
++  .stats-grid,
++  .feature-grid,
++  .species-grid {
++    grid-template-columns: repeat(2, minmax(0, 1fr));
++  }
++
++  .page-hero-grid,
++  .results-shell,
++  .detail-layout {
++    grid-template-columns: 1fr;
++  }
++
++  .filter-sidebar,
++  .detail-sidebar {
++    position: static;
++  }
++
++  .detail-sidebar {
++    order: -1;
++  }
++}
++
++@media (max-width: 760px) {
++  .container,
++  .footer-grid {
++    width: min(100% - 28px, var(--container));
++  }
++
++  .nav-shell {
++    min-height: 70px;
++  }
++
++  .nav-toggle {
++    display: block;
++  }
++
++  .nav-menu {
++    position: absolute;
++    top: 78px;
++    right: 16px;
++    left: 16px;
++    display: none;
++    flex-direction: column;
++    align-items: stretch;
++    border-radius: 22px;
++    box-shadow: var(--shadow-md);
++  }
++
++  .nav-menu.is-open {
++    display: flex;
++  }
++
++  .nav-menu a {
++    text-align: center;
++  }
++
++  .hero {
++    min-height: 680px;
++  }
++
++  .hero-content,
++  .detail-hero-content {
++    padding: 80px 0 54px;
++  }
++
++  .search-panel-section,
++  .feature-section,
++  .spotlight-section,
++  .related-section,
++  .stats-section {
++    padding: 58px 0;
++  }
++
++  .search-panel,
++  .stats-grid,
++  .feature-grid,
++  .species-grid,
++  .geo-grid,
++  .info-grid,
++  .footer-grid {
++    grid-template-columns: 1fr;
++  }
++
++  .top-search,
++  .result-card {
++    grid-template-columns: 1fr;
++    border-radius: var(--radius-md);
++  }
++
++  .result-image {
++    min-height: 230px;
++  }
++
++  .results-toolbar,
++  .result-footer {
++    align-items: flex-start;
++    flex-direction: column;
++  }
++
++  .sort-control,
++  .sort-control select {
++    width: 100%;
++  }
++
++  .detail-hero {
++    min-height: 580px;
++  }
++
++  .ai-summary-card {
++    grid-template-columns: 1fr;
++  }
++}
++
++@media (max-width: 520px) {
++  .brand small {
++    display: none;
++  }
++
++  .hero h1 {
++    font-size: clamp(3.3rem, 20vw, 5rem);
++  }
++
++  .hero-actions,
++  .btn,
++  .top-search .btn {
++    width: 100%;
++  }
++
++  .page-hero {
++    padding: 56px 0;
++  }
++
++  .info-card,
++  .content-card,
++  .ai-summary-card,
++  .comments-section,
++  .add-comment-card,
++  .sidebar-card,
++  .empty-state {
++    padding: 22px;
++  }
++}
+diff --git a/static/js/main.js b/static/js/main.js
+new file mode 100644
+index 0000000..6925627
+--- /dev/null
++++ b/static/js/main.js
+@@ -0,0 +1,76 @@
++const navToggle = document.querySelector("[data-nav-toggle]");
++const navMenu = document.querySelector("[data-nav-menu]");
++const header = document.querySelector("[data-header]");
++
++if (navToggle && navMenu) {
++  navToggle.addEventListener("click", () => {
++    const isOpen = navMenu.classList.toggle("is-open");
++    navToggle.setAttribute("aria-expanded", String(isOpen));
++  });
++}
++
++if (header) {
++  const syncHeader = () => {
++    header.classList.toggle("is-scrolled", window.scrollY > 16);
++  };
++
++  syncHeader();
++  window.addEventListener("scroll", syncHeader, { passive: true });
++}
++
++const revealItems = document.querySelectorAll(".reveal");
++
++if ("IntersectionObserver" in window) {
++  const revealObserver = new IntersectionObserver(
++    (entries) => {
++      entries.forEach((entry) => {
++        if (entry.isIntersecting) {
++          entry.target.classList.add("is-visible");
++          revealObserver.unobserve(entry.target);
++        }
++      });
++    },
++    { threshold: 0.14 }
++  );
++
++  revealItems.forEach((item) => revealObserver.observe(item));
++} else {
++  revealItems.forEach((item) => item.classList.add("is-visible"));
++}
++
++const commentForm = document.querySelector("[data-comment-form]");
++const commentList = document.querySelector("[data-comment-list]");
++
++if (commentForm && commentList) {
++  commentForm.addEventListener("submit", (event) => {
++    event.preventDefault();
++
++    const formData = new FormData(commentForm);
++    const name = String(formData.get("name") || "").trim();
++    const comment = String(formData.get("comment") || "").trim();
++
++    if (!name || !comment) {
++      return;
++    }
++
++    const emptyComment = commentList.querySelector(".empty-comment");
++    if (emptyComment) {
++      emptyComment.remove();
++    }
++
++    const card = document.createElement("article");
++    card.className = "comment-card";
++    card.innerHTML = `
++      <div>
++        <strong></strong>
++        <time>Just now</time>
++      </div>
++      <p></p>
++    `;
++    card.querySelector("strong").textContent = name;
++    card.querySelector("p").textContent = comment;
++
++    commentList.prepend(card);
++    commentForm.reset();
++  });
++}
+diff --git a/templates/base.html b/templates/base.html
+new file mode 100644
+index 0000000..adfa2e1
+--- /dev/null
++++ b/templates/base.html
+@@ -0,0 +1,84 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8">
++    <meta name="viewport" content="width=device-width, initial-scale=1">
++    <meta name="description" content="EcoExplorer is an AI-powered biodiversity exploration platform for U.S. National Parks.">
++    <title>{{ title }} | EcoExplorer</title>
++    <link rel="preconnect" href="https://fonts.googleapis.com">
++    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
++    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
++    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
++  </head>
++  <body class="{% block body_class %}{% endblock %}">
++    <a class="skip-link" href="#main-content">Skip to main content</a>
++
++    <header class="site-header" data-header>
++      <nav class="nav-shell" aria-label="Primary navigation">
++        <a class="brand" href="{{ url_for('home') }}" aria-label="EcoExplorer home">
++          <span class="brand-mark" aria-hidden="true">
++            <svg viewBox="0 0 32 32" role="img">
++              <path d="M16 2.4c6.9 0 12.5 5.6 12.5 12.5 0 8.6-8.3 13.9-11.2 15.4a2.7 2.7 0 0 1-2.6 0C11.8 28.8 3.5 23.5 3.5 14.9 3.5 8 9.1 2.4 16 2.4Zm0 4.4c-2.9 2.8-4.3 5.5-4.1 8.1.2 2.7 1.9 4.8 4.9 6.4-.6-2.3-.1-4.5 1.5-6.7 1.1-1.5 1.8-3 2.1-4.5-1.3-1.3-2.8-2.4-4.4-3.3Z"/>
++            </svg>
++          </span>
++          <span>
++            <strong>EcoExplorer</strong>
++            <small>Biodiversity Atlas</small>
++          </span>
++        </a>
++
++        <button class="nav-toggle" type="button" data-nav-toggle aria-expanded="false" aria-controls="primary-menu">
++          <span class="sr-only">Toggle navigation</span>
++          <span></span>
++          <span></span>
++          <span></span>
++        </button>
++
++        <div class="nav-menu" id="primary-menu" data-nav-menu>
++          <a href="{{ url_for('home') }}">Discover</a>
++          <a href="{{ url_for('search') }}">Search</a>
++          <a href="{{ url_for('search', category='Plants') }}">Flora</a>
++          <a href="{{ url_for('search', category='Mammals') }}">Fauna</a>
++        </div>
++      </nav>
++    </header>
++
++    <main id="main-content">
++      {% block content %}{% endblock %}
++    </main>
++
++    <footer class="site-footer">
++      <div class="footer-grid">
++        <div>
++          <a class="brand footer-brand" href="{{ url_for('home') }}">
++            <span class="brand-mark" aria-hidden="true">
++              <svg viewBox="0 0 32 32" role="img">
++                <path d="M16 2.4c6.9 0 12.5 5.6 12.5 12.5 0 8.6-8.3 13.9-11.2 15.4a2.7 2.7 0 0 1-2.6 0C11.8 28.8 3.5 23.5 3.5 14.9 3.5 8 9.1 2.4 16 2.4Zm0 4.4c-2.9 2.8-4.3 5.5-4.1 8.1.2 2.7 1.9 4.8 4.9 6.4-.6-2.3-.1-4.5 1.5-6.7 1.1-1.5 1.8-3 2.1-4.5-1.3-1.3-2.8-2.4-4.4-3.3Z"/>
++              </svg>
++            </span>
++            <span>
++              <strong>EcoExplorer</strong>
++              <small>AI-powered species discovery</small>
++            </span>
++          </a>
++          <p>Presentation-ready Flask templates for exploring MongoDB-backed biodiversity data, GridFS images, comments, and AI species summaries.</p>
++        </div>
++        <div>
++          <h2>Explore</h2>
++          <a href="{{ url_for('search') }}">Species Search</a>
++          <a href="{{ url_for('search', has_image='on') }}">Image Archive</a>
++          <a href="{{ url_for('search', has_comments='on') }}">Community Notes</a>
++        </div>
++        <div>
++          <h2>Data Features</h2>
++          <span>Text Search</span>
++          <span>Geospatial Search</span>
++          <span>GridFS Images</span>
++          <span>AI Summaries</span>
++        </div>
++      </div>
++    </footer>
++
++    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
++  </body>
++</html>
+diff --git a/templates/index.html b/templates/index.html
+new file mode 100644
+index 0000000..c63ff3a
+--- /dev/null
++++ b/templates/index.html
+@@ -0,0 +1,141 @@
++{% extends "base.html" %}
++
++{% block body_class %}home-page{% endblock %}
++
++{% block content %}
++<section class="hero hero-home">
++  <div class="hero-media" aria-hidden="true"></div>
++  <div class="hero-overlay"></div>
++  <div class="hero-content container">
++    <div class="eyebrow">
++      <span></span>
++      AI-powered biodiversity platform
++    </div>
++    <h1>EcoExplorer</h1>
++    <p class="hero-subtitle">Discover biodiversity across U.S. National Parks.</p>
++    <p class="hero-copy">
++      Search species records, park habitats, GridFS image collections, community observations, and AI-generated ecological summaries from one polished dashboard.
++    </p>
++    <div class="hero-actions">
++      <a class="btn btn-primary" href="#search">Start exploring</a>
++      <a class="btn btn-ghost" href="{{ url_for('search') }}">Browse species</a>
++    </div>
++  </div>
++</section>
++
++<section class="search-panel-section container" id="search" aria-labelledby="search-title">
++  <div class="section-heading">
++    <p class="section-kicker">Find species faster</p>
++    <h2 id="search-title">Search by name, habitat, park, or category</h2>
++    <p>Designed for MongoDB text search, geospatial queries, and species metadata filtering.</p>
++  </div>
++
++  <form class="search-panel" action="{{ url_for('search') }}" method="get">
++    <div class="field field-wide">
++      <label for="q">Keyword Search</label>
++      <div class="input-icon">
++        <span aria-hidden="true">
++          <svg viewBox="0 0 24 24"><path d="M10.8 4a6.8 6.8 0 0 1 5.4 10.9l3.5 3.5-1.4 1.4-3.5-3.5A6.8 6.8 0 1 1 10.8 4Zm0 2a4.8 4.8 0 1 0 0 9.6 4.8 4.8 0 0 0 0-9.6Z"/></svg>
++        </span>
++        <input id="q" name="q" type="search" placeholder="Search species, animals, birds, plants..." autocomplete="off">
++      </div>
++      <small>Common name, scientific name, and species description</small>
++    </div>
++
++    <div class="field">
++      <label for="area">Search by Area</label>
++      <div class="input-icon">
++        <span aria-hidden="true">
++          <svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7Zm0 9.6A2.6 2.6 0 1 1 12 6.4a2.6 2.6 0 0 1 0 5.2Z"/></svg>
++        </span>
++        <input id="area" name="area" type="text" placeholder="Park name or location">
++      </div>
++    </div>
++
++    <div class="field">
++      <label for="category">Species Category</label>
++      <div class="select-wrap">
++        <select id="category" name="category">
++          {% for category in categories %}
++            <option value="{{ category }}">{{ category }}</option>
++          {% endfor %}
++        </select>
++      </div>
++    </div>
++
++    <button class="btn btn-primary search-submit" type="submit">
++      <span>Search biodiversity</span>
++      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13.2 5.3 5.7 5.7-5.7 5.7-1.4-1.4 3.3-3.3H5v-2h10.1l-3.3-3.3 1.4-1.4Z"/></svg>
++    </button>
++  </form>
++</section>
++
++<section class="stats-section" aria-labelledby="stats-title">
++  <div class="container">
++    <div class="section-heading section-heading-light">
++      <p class="section-kicker">MongoDB biodiversity index</p>
++      <h2 id="stats-title">Built for large-scale ecological discovery</h2>
++    </div>
++
++    <div class="stats-grid">
++      {% for stat in stats %}
++        <article class="stat-card reveal">
++          <div class="stat-icon icon-{{ stat.icon }}" aria-hidden="true"></div>
++          <strong>{{ stat.value }}</strong>
++          <span>{{ stat.label }}</span>
++        </article>
++      {% endfor %}
++    </div>
++  </div>
++</section>
++
++<section class="feature-section container" aria-labelledby="feature-title">
++  <div class="section-heading">
++    <p class="section-kicker">Platform capabilities</p>
++    <h2 id="feature-title">Explore parks through connected species intelligence</h2>
++  </div>
++
++  <div class="feature-grid">
++    <article class="feature-card reveal">
++      <span class="feature-icon" aria-hidden="true">01</span>
++      <h3>Text and taxonomy search</h3>
++      <p>Search common names, scientific names, descriptions, and park records with a clean interface designed for MongoDB indexes.</p>
++    </article>
++    <article class="feature-card reveal">
++      <span class="feature-icon" aria-hidden="true">02</span>
++      <h3>Geospatial exploration</h3>
++      <p>Area search fields support park-level and location-based workflows for map-driven biodiversity discovery.</p>
++    </article>
++    <article class="feature-card reveal">
++      <span class="feature-icon" aria-hidden="true">03</span>
++      <h3>AI species summaries</h3>
++      <p>Premium summary cards present generated ecological context in a polished, trustworthy visual treatment.</p>
++    </article>
++  </div>
++</section>
++
++<section class="spotlight-section container" aria-labelledby="spotlight-title">
++  <div class="section-heading">
++    <p class="section-kicker">Featured records</p>
++    <h2 id="spotlight-title">A preview of national park biodiversity</h2>
++  </div>
++
++  <div class="species-grid">
++    {% for species in featured_species %}
++      <article class="species-card reveal">
++        <a class="species-image" href="{{ species_detail_url(species.slug) }}" aria-label="View {{ species.common_name }}">
++          <img src="{{ species.image_url }}" alt="{{ species.common_name }} in {{ species.park_name }}" loading="lazy">
++          <span>{{ species.category }}</span>
++        </a>
++        <div class="species-card-content">
++          <p>{{ species.park_name }}</p>
++          <h3>{{ species.common_name }}</h3>
++          <em>{{ species.scientific_name }}</em>
++          <p>{{ species.short_description }}</p>
++          <a class="text-link" href="{{ species_detail_url(species.slug) }}">View details</a>
++        </div>
++      </article>
++    {% endfor %}
++  </div>
++</section>
++{% endblock %}
+diff --git a/templates/results.html b/templates/results.html
+new file mode 100644
+index 0000000..95e2ac5
+--- /dev/null
++++ b/templates/results.html
+@@ -0,0 +1,146 @@
++{% extends "base.html" %}
++
++{% block body_class %}results-page{% endblock %}
++
++{% block content %}
++<section class="page-hero compact-hero">
++  <div class="container page-hero-grid">
++    <div>
++      <div class="eyebrow">
++        <span></span>
++        Species database
++      </div>
++      <h1>Search Results</h1>
++      <p>Refine biodiversity records by keyword, park area, category, images, comments, and spatial context.</p>
++    </div>
++
++    <form class="top-search" action="{{ url_for('search') }}" method="get" role="search" aria-label="Search species">
++      <label class="sr-only" for="top-q">Search species</label>
++      <input id="top-q" name="q" type="search" placeholder="Search species, animals, birds, plants..." value="{{ query }}">
++      <input name="area" type="hidden" value="{{ area }}">
++      <input name="category" type="hidden" value="{{ selected_category }}">
++      <input name="park" type="hidden" value="{{ selected_park }}">
++      <button class="btn btn-primary" type="submit">Search</button>
++    </form>
++  </div>
++</section>
++
++<section class="results-shell container" aria-labelledby="results-title">
++  <aside class="filter-sidebar" aria-label="Search filters">
++    <div class="sidebar-card">
++      <div class="sidebar-heading">
++        <h2>Filters</h2>
++        <a href="{{ url_for('search') }}">Reset</a>
++      </div>
++
++      <form action="{{ url_for('search') }}" method="get">
++        <div class="field">
++          <label for="filter-q">Keyword Search</label>
++          <input id="filter-q" name="q" type="search" placeholder="Name or description" value="{{ query }}">
++        </div>
++
++        <div class="field">
++          <label for="filter-area">Park or Location</label>
++          <input id="filter-area" name="area" type="text" placeholder="Yosemite, Montana..." value="{{ area }}">
++        </div>
++
++        <div class="field">
++          <label for="filter-category">Category</label>
++          <div class="select-wrap">
++            <select id="filter-category" name="category">
++              {% for category in categories %}
++                <option value="{{ category }}" {% if category == selected_category %}selected{% endif %}>{{ category }}</option>
++              {% endfor %}
++            </select>
++          </div>
++        </div>
++
++        <div class="field">
++          <label for="filter-park">Park</label>
++          <div class="select-wrap">
++            <select id="filter-park" name="park">
++              <option value="">All Parks</option>
++              {% for park in parks %}
++                <option value="{{ park }}" {% if park == selected_park %}selected{% endif %}>{{ park }}</option>
++              {% endfor %}
++            </select>
++          </div>
++        </div>
++
++        <fieldset class="checkbox-group">
++          <legend>Record Features</legend>
++          <label>
++            <input type="checkbox" name="has_image" {% if has_image %}checked{% endif %}>
++            Has Image
++          </label>
++          <label>
++            <input type="checkbox" name="has_comments" {% if has_comments %}checked{% endif %}>
++            Has Comments
++          </label>
++        </fieldset>
++
++        <button class="btn btn-primary btn-full" type="submit">Apply filters</button>
++      </form>
++    </div>
++  </aside>
++
++  <div class="results-content">
++    <div class="results-toolbar">
++      <div>
++        <p class="section-kicker">Matching records</p>
++        <h2 id="results-title">{{ total_results }} species found</h2>
++      </div>
++      <div class="sort-control">
++        <label for="sort">Sort by</label>
++        <select id="sort" aria-label="Sort results">
++          <option>Relevance</option>
++          <option>Common Name</option>
++          <option>Park Name</option>
++          <option>Category</option>
++        </select>
++      </div>
++    </div>
++
++    {% if species_results %}
++      <div class="results-list">
++        {% for species in species_results %}
++          <article class="result-card reveal">
++            <a class="result-image" href="{{ species_detail_url(species.slug) }}" aria-label="View details for {{ species.common_name }}">
++              <img src="{{ species.image_url }}" alt="{{ species.common_name }} thumbnail" loading="lazy">
++            </a>
++            <div class="result-body">
++              <div class="result-meta">
++                <span>{{ species.category }}</span>
++                <span>{{ species.park_name }}</span>
++              </div>
++              <h3>{{ species.common_name }}</h3>
++              <em>{{ species.scientific_name }}</em>
++              <p>{{ species.short_description }}</p>
++              <div class="result-footer">
++                <span class="pill">{{ species.conservation_status }}</span>
++                <a class="btn btn-secondary" href="{{ species_detail_url(species.slug) }}">View Details</a>
++              </div>
++            </div>
++          </article>
++        {% endfor %}
++      </div>
++
++      <nav class="pagination" aria-label="Search results pagination">
++        <a class="pagination-link is-disabled" href="#" aria-disabled="true">Previous</a>
++        <a class="pagination-link is-active" href="#" aria-current="page">1</a>
++        <a class="pagination-link" href="#">2</a>
++        <a class="pagination-link" href="#">3</a>
++        <span>...</span>
++        <a class="pagination-link" href="#">Next</a>
++      </nav>
++    {% else %}
++      <div class="empty-state">
++        <span aria-hidden="true">No results</span>
++        <h3>No species matched your filters</h3>
++        <p>Try broadening your search terms, selecting all categories, or removing record feature filters.</p>
++        <a class="btn btn-primary" href="{{ url_for('search') }}">View all species</a>
++      </div>
++    {% endif %}
++  </div>
++</section>
++{% endblock %}
+diff --git a/templates/species_detail.html b/templates/species_detail.html
+new file mode 100644
+index 0000000..75d6fa6
+--- /dev/null
++++ b/templates/species_detail.html
+@@ -0,0 +1,196 @@
++{% extends "base.html" %}
++
++{% block body_class %}detail-page{% endblock %}
++
++{% block content %}
++<section class="detail-hero">
++  <img src="{{ species.image_url }}" alt="{{ species.common_name }} in {{ species.park_name }}">
++  <div class="detail-hero-overlay"></div>
++  <div class="container detail-hero-content">
++    <a class="back-link" href="{{ url_for('search') }}">Back to search results</a>
++    <div class="species-label">{{ species.category }} · {{ species.park_name }}</div>
++    <h1>{{ species.common_name }}</h1>
++    <p>{{ species.scientific_name }}</p>
++  </div>
++</section>
++
++<section class="detail-layout container">
++  <div class="detail-main">
++    <article class="info-card reveal" aria-labelledby="info-title">
++      <div class="card-heading">
++        <p class="section-kicker">Species profile</p>
++        <h2 id="info-title">Species Information</h2>
++      </div>
++
++      <dl class="info-grid">
++        <div>
++          <dt>Common Name</dt>
++          <dd>{{ species.common_name }}</dd>
++        </div>
++        <div>
++          <dt>Scientific Name</dt>
++          <dd><em>{{ species.scientific_name }}</em></dd>
++        </div>
++        <div>
++          <dt>Category</dt>
++          <dd>{{ species.category }}</dd>
++        </div>
++        <div>
++          <dt>Park Name</dt>
++          <dd>{{ species.park_name }}</dd>
++        </div>
++        <div>
++          <dt>Conservation Status</dt>
++          <dd>{{ species.conservation_status }}</dd>
++        </div>
++        <div>
++          <dt>Occurrence</dt>
++          <dd>{{ species.occurrence }}</dd>
++        </div>
++        <div>
++          <dt>Nativeness</dt>
++          <dd>{{ species.nativeness }}</dd>
++        </div>
++      </dl>
++    </article>
++
++    <article class="content-card reveal" aria-labelledby="description-title">
++      <div class="card-heading">
++        <p class="section-kicker">Complete record</p>
++        <h2 id="description-title">Full Description</h2>
++      </div>
++      <p>{{ species.description }}</p>
++    </article>
++
++    <article class="ai-summary-card reveal" aria-labelledby="ai-title">
++      <div class="ai-icon" aria-hidden="true">
++        <svg viewBox="0 0 24 24"><path d="M12 2 9.8 8.2 4 10.5l5.8 2.3L12 19l2.2-6.2 5.8-2.3-5.8-2.3L12 2Zm-6 13-1 2.7L2.5 19l2.5 1.3L6 23l1-2.7L9.5 19 7 17.7 6 15Zm12.5 1 .8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z"/></svg>
++      </div>
++      <div>
++        <p class="section-kicker">Premium insight</p>
++        <h2 id="ai-title">AI Species Summary</h2>
++        <p>{{ species.ai_summary }}</p>
++      </div>
++    </article>
++
++    <article class="content-card reveal" aria-labelledby="geo-title">
++      <div class="card-heading">
++        <p class="section-kicker">Spatial record</p>
++        <h2 id="geo-title">Geographic Information</h2>
++      </div>
++
++      <div class="geo-grid">
++        <div class="geo-facts">
++          <dl>
++            <div>
++              <dt>Latitude</dt>
++              <dd>{{ species.latitude }}</dd>
++            </div>
++            <div>
++              <dt>Longitude</dt>
++              <dd>{{ species.longitude }}</dd>
++            </div>
++            <div>
++              <dt>Park Location</dt>
++              <dd>{{ species.park_location }}</dd>
++            </div>
++          </dl>
++        </div>
++
++        <div class="map-placeholder" role="img" aria-label="Map placeholder for {{ species.park_location }}">
++          <div class="map-grid"></div>
++          <div class="map-pin" aria-hidden="true"></div>
++          <span>Interactive map placeholder</span>
++        </div>
++      </div>
++    </article>
++
++    <section class="comments-section reveal" aria-labelledby="comments-title">
++      <div class="card-heading">
++        <p class="section-kicker">Community observations</p>
++        <h2 id="comments-title">User Comments</h2>
++      </div>
++
++      <div class="comment-list" data-comment-list>
++        {% if species.comments %}
++          {% for comment in species.comments %}
++            <article class="comment-card">
++              <div>
++                <strong>{{ comment.username }}</strong>
++                <time>{{ comment.timestamp }}</time>
++              </div>
++              <p>{{ comment.text }}</p>
++            </article>
++          {% endfor %}
++        {% else %}
++          <article class="comment-card empty-comment">
++            <div>
++              <strong>No comments yet</strong>
++              <time>Be the first observer</time>
++            </div>
++            <p>Share field notes, visitor observations, or interpretation context for this species.</p>
++          </article>
++        {% endif %}
++      </div>
++    </section>
++
++    <section class="add-comment-card reveal" aria-labelledby="add-comment-title">
++      <div class="card-heading">
++        <p class="section-kicker">Add field notes</p>
++        <h2 id="add-comment-title">Add Comment</h2>
++      </div>
++      <form class="comment-form" data-comment-form>
++        <div class="field">
++          <label for="comment-name">Name</label>
++          <input id="comment-name" name="name" type="text" placeholder="Your name" required>
++        </div>
++        <div class="field">
++          <label for="comment-text">Comment</label>
++          <textarea id="comment-text" name="comment" rows="5" placeholder="Share an observation..." required></textarea>
++        </div>
++        <button class="btn btn-primary" type="submit">Add Comment</button>
++      </form>
++    </section>
++  </div>
++
++  <aside class="detail-sidebar" aria-label="Species quick facts">
++    <div class="sidebar-card sticky-card">
++      <h2>Quick Facts</h2>
++      <div class="quick-facts">
++        <span>Park</span>
++        <strong>{{ species.park_name }}</strong>
++        <span>Status</span>
++        <strong>{{ species.conservation_status }}</strong>
++        <span>Occurrence</span>
++        <strong>{{ species.occurrence }}</strong>
++      </div>
++      <a class="btn btn-secondary btn-full" href="{{ url_for('search', category=species.category) }}">Explore {{ species.category }}</a>
++    </div>
++  </aside>
++</section>
++
++<section class="related-section container" aria-labelledby="related-title">
++  <div class="section-heading">
++    <p class="section-kicker">Recommended similar records</p>
++    <h2 id="related-title">Related Species</h2>
++  </div>
++
++  <div class="species-grid">
++    {% for related in related_species %}
++      <article class="species-card reveal">
++        <a class="species-image" href="{{ species_detail_url(related.slug) }}" aria-label="View {{ related.common_name }}">
++          <img src="{{ related.image_url }}" alt="{{ related.common_name }}" loading="lazy">
++          <span>{{ related.category }}</span>
++        </a>
++        <div class="species-card-content">
++          <p>{{ related.park_name }}</p>
++          <h3>{{ related.common_name }}</h3>
++          <em>{{ related.scientific_name }}</em>
++          <p>{{ related.short_description }}</p>
++          <a class="text-link" href="{{ species_detail_url(related.slug) }}">View details</a>
++        </div>
++      </article>
++    {% endfor %}
++  </div>
++</section>
++{% endblock %}

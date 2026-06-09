@@ -1,0 +1,45 @@
+diff --git a/src/robotsix_mill/agents/fs_tools.py b/src/robotsix_mill/agents/fs_tools.py
+index e119bb44..3a9da1a4 100644
+--- a/src/robotsix_mill/agents/fs_tools.py
++++ b/src/robotsix_mill/agents/fs_tools.py
+@@ -423,11 +423,11 @@ def _check_python_syntax(path: str, content: str) -> str | None:
+ 
+     def write_file(path: str, content: str) -> str:
+         """Create or overwrite a file in the repository with ``content``."""
++        syntax_error = _check_python_syntax(path, content)
++        if syntax_error is not None:
++            return syntax_error
+         try:
+             p = _safe(root, path, extra_roots=extra_roots)
+-            err = _check_python_syntax(path, content)
+-            if err is not None:
+-                return f"write_file refused: {err}"
+             p.parent.mkdir(parents=True, exist_ok=True)
+             p.write_text(content, encoding="utf-8")
+         except (ValueError, OSError) as e:
+@@ -456,9 +456,9 @@ def edit_file(path: str, old_string: str, new_string: str) -> str:
+                     f"retry, or use write_file"
+                 )
+             new_content = content.replace(old_string, new_string, 1)
+-            err = _check_python_syntax(path, new_content)
+-            if err is not None:
+-                return f"edit_file refused: {err}"
++            syntax_error = _check_python_syntax(path, new_content)
++            if syntax_error is not None:
++                return syntax_error
+             p.write_text(new_content, encoding="utf-8")
+             _file_cache.pop(p.resolve(), None)
+             return f"edit_file: replaced 1 occurrence in {path}"
+diff --git a/tests/agents/test_fs_tools.py b/tests/agents/test_fs_tools.py
+index ed176a26..5ff2c76f 100644
+--- a/tests/agents/test_fs_tools.py
++++ b/tests/agents/test_fs_tools.py
+@@ -308,7 +308,7 @@ def test_docstring_visible(self, tmp_path, settings):
+         assert "limit" in rf.__doc__
+ 
+     def test_splitlines_keepends_preserves_lf(self, tmp_path, settings):
+-        """splitlines(keepends=True) preserves \\n endings — no
++        """splitlines(keepends=True) preserves \n endings — no
+         regressions from the offset/limit logic."""
+         root = tmp_path / "repo"
+         root.mkdir()

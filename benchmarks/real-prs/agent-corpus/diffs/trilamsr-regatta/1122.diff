@@ -1,0 +1,101 @@
+diff --git a/docs/engineer/research/2026-06-09-designer-first-dispatch.md b/docs/engineer/research/2026-06-09-designer-first-dispatch.md
+new file mode 100644
+index 00000000..8fc7696b
+--- /dev/null
++++ b/docs/engineer/research/2026-06-09-designer-first-dispatch.md
+@@ -0,0 +1,95 @@
++# Designer-first dispatch — research survey (#1084)
++
++Research-only survey for #1084. The orchestrator today hard-wires every spawn to a single role (implementer); some work items (audits, `[RESEARCH-DELTA]` spec amendments, wedge ideation) need a designer pass first so the brief lands before code. This document surveys prior art, enumerates the regatta-side signals available to a router, locates the precise code seam, and lists failure modes a router has to defend against.
++
++## Problem
++
++`internal/orchestrator/spawner/claude.go::defaultPromptBuilder` (lines 259-333) emits exactly one prompt shape — the implementer discipline block (TDD, scorecard, branch pin, PR contract). The role never varies. `internal/orchestrator/scheduler/scheduler.go` Tick step `dispatch` (lines 378-388) reserves work items and hands them to `spawner.Spawn` without inspecting whether the item asks for a design pass first.
++
++Operator excluded #832 (Sloth SLO audit) for this reason: dispatching an implementer at an audit-shaped issue reinvents prior-art alert primitives. The seven `[RESEARCH-DELTA]` issues filed off `docs/engineer/briefs/2026-06-07-research-loop-gap-bridge.md:175-181` share the same shape: spec amendments, not implementations, that need `docs/engineer/dispatch-templates/designer.md` before `docs/engineer/dispatch-templates/implementer.md`.
++
++## Prior art
++
++Three OSS systems route work by ticket shape; each anchors a different point on the spectrum.
++
++1. **Aider** — `Aider-AI/aider` v0.83.0 (Apache-2.0, https://github.com/Aider-AI/aider/blob/main/LICENSE). Distinguishes `/architect` from `/code` mode; `/architect` invokes a planner whose prose output feeds a `/code` pass. Signal is operator-driven (slash command), not ticket-derived. Minimum-shape comparator: two roles, sequenced, no auto-classifier. https://aider.chat/docs/usage/modes.html .
++
++2. **OpenHands** — `All-Hands-AI/OpenHands` v0.31.x (MIT, https://github.com/All-Hands-AI/OpenHands/blob/main/LICENSE). `AgentController` dispatches `CodeActAgent`, `PlannerAgent`, or `BrowsingAgent` chosen by config plus runtime hints (`openhands/controller/agent_controller.py`, registry under `openhands/agenthub/`). Registry-of-named-roles + controller-picks-by-config is the closest analogue to a regatta scheduler picking a template per work item.
++
++3. **SWE-agent** — `SWE-agent/SWE-agent` v0.7.x (MIT, https://github.com/SWE-agent/SWE-agent/blob/main/LICENSE). Ingests one GitHub issue and runs one role at a time, but `config/` YAML swaps the agent definition per problem class (`config/default.yaml` vs `config/coding_challenge.yaml`). Routing is offline. "Ahead-of-time routing via static config" comparator.
++
++Two near-misses:
++
++- **Linear AI workflows** — proprietary; emits webhook events keyed by label; downstream consumers route. Same shape as a label router, closed source.
++- **Sweep** — `sweepai/sweep` (archived 2024-12, was Apache-2.0) classified issues by body keywords via an LLM call. Regatta forbids this shape (`feedback_research_design_principles`; deterministic projection over LLM inference, cited at `parse.go:1`).
++
++Recurring pattern: (a) finite enum of role names in code, (b) one explicit signal — operator command, config, or label — picks the role, (c) sequencing is operator-driven or a graph of named transitions. No surveyed system routes by free-form LLM-classified body; the one that did is archived.
++
++## Regatta-specific signals
++
++The router needs a deterministic projection from `schemas.WorkItem` (`contracts/schemas/spec_adapter.go:39-50`) to a role token. Fields available today:
++
++- **`WorkItem.Kind`** — discriminates `feature` (leaf) from `program` (planner-routed). The `program` rail implies multi-step but has no planner wired. Reusing `Kind` for designer-first conflates two orthogonal axes (shape vs leafness).
++- **GitHub labels** — `parse.go:31-35` pins `autonomous` as the polled label; `spec_adapter.selector` can AND-combine further labels (`docs/engineer/specs/2026-06-04-mvr-1-t4-github-issues-adapter-impl.md:55`). Adding `kind:research-delta` or `needs:design` costs zero schema. Labels are operator-authored — trustworthy if dispatchers refuse to auto-apply.
++- **Title prefix** — adapter extracts `^[A-Z][A-Z0-9_-]{1,40}:` via `idPrefixRE` (`parse.go:38`). `RESEARCH-DELTA` parses cleanly. The seven `[RESEARCH-DELTA]` issues use bracketed form which the existing regex does NOT match; router either tightens the regex or adds a separate title-prefix probe.
++- **Body section** — issue #1084 sketches a `## Dispatch sequence` H2 with a bullet list of role names. The acceptance-criteria parser (`parse.go:93-134`) already walks H2 sections; an additive parser for a second heading is cheap. Most explicit signal, also most prone to typos.
++- **File-scope hint** — body prose like "touch `internal/X`" exists but deterministic extraction is fragile; the spec rule (`parse.go:1`) forbids LLM inference. Better left as implementer-side concern.
++- **Issue kind/type** (GitHub native) — `gh issue list --json issueType` exposes a typed field on org repos with custom types. Regatta does not consume this; opt-in would be low-cost.
++
++Shortest path is layered: one explicit signal wins (body heading or label), title prefix as fallback. Multi-signal disagreement is treated in the next section.
++
++## Seam
++
++Two candidate seams:
++
++- **Adapter-time** (`parse.go::parseIssueBody`, line 57). Add `Roles []string` to `projection` and stamp it on `WorkItem` during projection. Pros: signal sits next to the rest of the deterministic projection; no per-tick re-parse; test surface exists (`adapter_test.go:539`). Cons: schema field on `WorkItem` (covered in #1084 c1).
++- **Dispatch-time** (`claude.go::Spawn`, line 152 — at the `s.cfg.Prompt(req)` call on line 157). Inspect `req.ItemBody` inline and pick a `PromptBuilder`. Pros: no schema change. Cons: re-parses every spawn; couples the spawner to body conventions; the spawner is meant to be transport-agnostic.
++
++#1084 acceptance criteria already point at the right boundary: c1 names `WorkItem.DispatchRoles`, c2 names `parseIssueBody`, c3 names `scheduler/scheduler.go`. The scheduler is the actual router. Cleanest seam pair:
++
++1. Adapter populates `WorkItem.DispatchRoles` at projection time (`parse.go:57`).
++2. Scheduler's `dispatch` step (`scheduler.go:378-388`) consults `DispatchRoles[next-uncommitted]` and selects the per-role `PromptBuilder`.
++3. Spawner stays role-agnostic via existing `ClaudeSpawnerConfig.Prompt` (`claude.go:58`).
++
++Role selection lives in the scheduler, where lane caps and gate slices already live.
++
++## Failure modes
++
++Routing wrong is worse than not routing — false-routing a designer pass at an implementer-fit ticket burns a designer round-trip plus an operator approval window; false-routing the reverse re-introduces the #832 audit-skip regression. Known traps:
++
++1. **Label drift** — operator forgets `kind:research-delta`; ticket routes to implementer. Mitigation: title-prefix probe as secondary signal; refuse to auto-apply labels.
++2. **Body-heading typo** — `## Dispatch sequence` vs `## Dispatch Sequence` vs `## Dispatch order`. Acceptance-criteria parser is case-insensitive (`parse.go:40`); similar tolerance is cheap, but a typo silently falls through to default (implementer). Mitigation: emit `adapter.dispatch_sequence_unparseable` WARN on partial matches.
++3. **Conflicting signals** — body says `designer, implementer`, label says `kind:implementer-only`. Mitigation: pick one authoritative ordering (body > label > title-prefix); WARN on disagreement; never silently merge.
++4. **Designer deliverable detection** — c3 says "first role whose deliverable is not yet committed." Designer deliverable is a spec doc under `docs/engineer/specs/` plus a follow-up issue. Path-match (a) is fragile (designer might land under `docs/engineer/research/` instead, like this doc); follow-up-issue marker (b) is durable but requires the designer to file it.
++5. **Empty `DispatchRoles`** — null defaults to `[implementer]` per c1, preserving today's behavior. If an issue carries `## Dispatch sequence` with zero parseable bullets, parser must distinguish empty-on-purpose vs malformed. Mitigation: enforce one bullet minimum; emit `SkipReason` on malformed.
++6. **Role enum drift** — the four templates are `triage`, `designer`, `implementer`, `reviewer`. If a body lists `architect` or `planner`, the router rejects (closed enum). Mitigation: validate against a constant set at parse time; surface as `bad_metadata_yaml`-style skip.
++7. **Re-route on retry** — when an implementer dies and the scheduler retries, role selection must be stable (no flip from designer back to implementer mid-flow). Mitigation: persist the chosen role on the agent row, not just the work-item row.
++
++Dominant trap is silent fallthrough — every signal-miss path must emit a WARN with the work-item ID and the failed signal, else the operator sees identical implementer behavior whether routing fired or not.
++
++## Recommendation
++
++This is research-only — no decision committed. The path that lines up cleanly with prior art (named-role registry + scheduler-picks-by-projection), regatta's deterministic-projection rule, and #1084 acceptance criteria is: body-section signal as authoritative, label as secondary, title-prefix as tertiary; closed enum of four roles validated at parse time; persisted choice on the agent row; WARN on every fallthrough. Next step is a designer pass to produce a spec under `docs/engineer/specs/2026-06-NN-designer-first-dispatch.md` covering the schema additive, the scheduler step, the signal priority, and the test matrix for c4.
++
++## Open questions
++
++1. Does the closed-enum role list stay at four (`triage`, `designer`, `implementer`, `reviewer`), or does the spec wire `reviewer` as a tail role (e.g. `designer -> implementer -> reviewer`)?
++2. Is the designer's follow-up-issue marker mandatory, or is path-match on the spec doc sufficient for c3's "deliverable committed" detection?
++3. Should the router consume GitHub native issue types (`issueType` JSON field) as a fourth signal, or stay label-only for self-host parity (other adapters may not have a typed-issue concept)?
++4. When the spawner receives a `designer` role, does it pass through `defaultPromptBuilder` with a role-conditional block, or does each role get its own `PromptBuilder` registered on the scheduler side?
++
++## References
++
++- `internal/orchestrator/spawner/claude.go::defaultPromptBuilder` — current single-shape prompt (lines 259-333).
++- `internal/orchestrator/scheduler/scheduler.go` — Tick `dispatch` step (lines 378-388).
++- `internal/orchestrator/adapter/githubissues/parse.go::parseIssueBody` — projection seam (line 57).
++- `contracts/schemas/spec_adapter.go::WorkItem` — schema target (lines 37-50).
++- `docs/engineer/dispatch-templates/designer.md` — designer template body.
++- `docs/engineer/dispatch-templates/implementer.md` — implementer template body.
++- `docs/engineer/dispatch-templates/triage.md` — triage template body.
++- `docs/engineer/dispatch-templates/reviewer.md` — reviewer template body.
++- `docs/engineer/briefs/2026-06-07-research-loop-gap-bridge.md:175-181` — seven `[RESEARCH-DELTA]` issues motivating designer-first.
++- Aider modes — https://aider.chat/docs/usage/modes.html ; license https://github.com/Aider-AI/aider/blob/main/LICENSE (Apache-2.0).
++- OpenHands agent registry — https://github.com/All-Hands-AI/OpenHands/tree/main/openhands/agenthub ; license https://github.com/All-Hands-AI/OpenHands/blob/main/LICENSE (MIT).
++- SWE-agent config rail — https://github.com/SWE-agent/SWE-agent/tree/main/config ; license https://github.com/SWE-agent/SWE-agent/blob/main/LICENSE (MIT).
++- #1084 issue body — `gh issue view 1084`.

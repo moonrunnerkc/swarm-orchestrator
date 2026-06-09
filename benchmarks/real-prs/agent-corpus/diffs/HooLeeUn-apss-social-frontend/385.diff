@@ -1,0 +1,73 @@
+diff --git a/app/profile-feed/page.tsx b/app/profile-feed/page.tsx
+index a5ec854..d0ce114 100644
+--- a/app/profile-feed/page.tsx
++++ b/app/profile-feed/page.tsx
+@@ -493,6 +493,8 @@ export default function ProfileFeedPage() {
+                 ageVisible={profileUser?.ageVisible}
+                 genderIdentity={profileUser?.genderIdentity}
+                 genderIdentityVisible={profileUser?.genderIdentityVisible}
++                userLabel={t("profileFeedUser").toLocaleUpperCase(locale)}
++                formatAge={(value) => interpolate(t("profileFeedAge"), { age: value })}
+                 appBranding={branding}
+                 logoSlot="profile_feed_logo_url"
+               />
+diff --git a/components/profile-feed/ProfileIdentityCard.tsx b/components/profile-feed/ProfileIdentityCard.tsx
+index e5a22be..0a486db 100644
+--- a/components/profile-feed/ProfileIdentityCard.tsx
++++ b/components/profile-feed/ProfileIdentityCard.tsx
+@@ -15,6 +15,8 @@ interface ProfileIdentityCardProps {
+   appBranding?: AppBranding | null;
+   logoSlot?: BrandingLogoSlot;
+   autoHeight?: boolean;
++  userLabel?: string;
++  formatAge?: (age: number) => string;
+ }
+ 
+ function formatGender(gender: string): string {
+@@ -45,6 +47,8 @@ export default function ProfileIdentityCard({
+   appBranding = null,
+   logoSlot = "profile_feed_logo_url",
+   autoHeight = false,
++  userLabel = "usuario",
++  formatAge = (value) => `${value} Años`,
+ }: ProfileIdentityCardProps) {
+   const fullName = [firstName, lastName].filter(Boolean).join(" ").trim();
+   const canShowGender = genderIdentityVisible !== false && Boolean(genderIdentity);
+@@ -85,7 +89,7 @@ export default function ProfileIdentityCard({
+       </div>
+ 
+       <div className="relative min-w-0 space-y-2 pr-24">
+-        <p className="truncate text-sm uppercase tracking-[0.18em] text-zinc-500">usuario</p>
++        <p className="truncate text-sm uppercase tracking-[0.18em] text-zinc-500">{userLabel}</p>
+         <p
+           className="truncate overflow-hidden text-ellipsis whitespace-nowrap text-2xl font-semibold text-zinc-100"
+           title={`@${username}`}
+@@ -111,7 +115,7 @@ export default function ProfileIdentityCard({
+           ) : null}
+           {canShowAge ? (
+             <span className="rounded-full border border-white/15 bg-zinc-950/70 px-3 py-1 text-xs text-zinc-300">
+-              {age} Años
++              {formatAge(age)}
+             </span>
+           ) : null}
+         </div>
+diff --git a/lib/i18n.ts b/lib/i18n.ts
+index 02d4597..eb8741b 100644
+--- a/lib/i18n.ts
++++ b/lib/i18n.ts
+@@ -70,6 +70,7 @@ const translations = {
+     movieDetailYouLiked: "Te gustó",
+     movieDetailYouDisliked: "No te gustó",
+     profileFeedUser: "Usuario",
++    profileFeedAge: "{age} Años",
+     profileFeedFavoriteMovies: "Mis Películas Favoritas",
+     profileFeedSearchAndFollowFriends: "Buscar y Seguir Amigos",
+     profileFeedSearchFavoriteMoviePlaceholder: "Buscar película favorita {slot} por título, año, género, director o cast",
+@@ -273,6 +274,7 @@ const translations = {
+     movieDetailYouLiked: "You liked",
+     movieDetailYouDisliked: "You disliked",
+     profileFeedUser: "User",
++    profileFeedAge: "{age} years old",
+     profileFeedFavoriteMovies: "My Favorite Movies",
+     profileFeedSearchAndFollowFriends: "Search and Follow Friends",
+     profileFeedSearchFavoriteMoviePlaceholder: "Search favorite movie {slot} by title, year, genre, director or cast",

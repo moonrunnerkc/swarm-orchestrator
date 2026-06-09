@@ -1,0 +1,29 @@
+diff --git a/supabase/migrations/004_cloud_auth_users.sql b/supabase/migrations/0040_cloud_auth_users.sql
+similarity index 100%
+rename from supabase/migrations/004_cloud_auth_users.sql
+rename to supabase/migrations/0040_cloud_auth_users.sql
+diff --git a/supabase/migrations/004a_telemetry_logs.sql b/supabase/migrations/0041_telemetry_logs.sql
+similarity index 100%
+rename from supabase/migrations/004a_telemetry_logs.sql
+rename to supabase/migrations/0041_telemetry_logs.sql
+diff --git a/tests/test_supabase_migrations.py b/tests/test_supabase_migrations.py
+index 68388fb..979f7d5 100644
+--- a/tests/test_supabase_migrations.py
++++ b/tests/test_supabase_migrations.py
+@@ -28,6 +28,16 @@ def test_supabase_migration_versions_are_unique(self):
+ 
+         self.assertEqual([], duplicates)
+ 
++    def test_supabase_migration_versions_are_numeric(self):
++        migration_dir = REPO_ROOT / "supabase" / "migrations"
++        invalid_versions = [
++            path.name
++            for path in migration_dir.glob("*.sql")
++            if not path.name.split("_", 1)[0].isdigit()
++        ]
++
++        self.assertEqual([], sorted(invalid_versions))
++
+     def test_candidate_facts_promotion_rpc_serializes_current_row_flip(self):
+         sql = (
+             REPO_ROOT

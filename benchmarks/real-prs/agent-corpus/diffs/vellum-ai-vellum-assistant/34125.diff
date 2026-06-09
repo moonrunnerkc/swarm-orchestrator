@@ -1,0 +1,69 @@
+diff --git a/assistant/openapi.yaml b/assistant/openapi.yaml
+index eaa197ecdb..34dc2d1346 100644
+--- a/assistant/openapi.yaml
++++ b/assistant/openapi.yaml
+@@ -16251,6 +16251,8 @@ paths:
+                               - name
+                               - input
+                             additionalProperties: false
++                          deprecated: true
++                          description: "Deprecated: superseded by contentBlocks (the tool_use variant). Flat list of tool calls."
+                         surfaces:
+                           type: array
+                           items:
+@@ -16302,6 +16304,8 @@ paths:
+                               - surfaceType
+                               - data
+                             additionalProperties: false
++                          deprecated: true
++                          description: "Deprecated: superseded by contentBlocks (the surface variant). Flat list of surfaces."
+                         textSegments:
+                           type: array
+                           items:
+diff --git a/assistant/src/api/responses/conversation-message.ts b/assistant/src/api/responses/conversation-message.ts
+index c3710bf094..c4ca109188 100644
+--- a/assistant/src/api/responses/conversation-message.ts
++++ b/assistant/src/api/responses/conversation-message.ts
+@@ -374,9 +374,40 @@ export const ConversationMessageSchema = z.object({
+     .optional(),
+   /** Display timestamp as an ISO-8601 string. */
+   timestamp: z.string(),
++  /**
++   * Flat list of attachment metadata for the row. Not yet supersedable by
++   * `contentBlocks`: `renderHistoryContent` emits an `attachment` content
++   * block only for file-block refs with an inline placement, so orphan rows
++   * (unmatched ids, count mismatch, no DB rows — see `alignAttachments`) ship
++   * here alone. Kept non-deprecated until `contentBlocks` reaches attachment
++   * parity, so clients that migrate off the positional arrays don't drop those
++   * chips.
++   */
+   attachments: z.array(ConversationMessageAttachmentSchema),
+-  toolCalls: z.array(ConversationMessageToolCallSchema).optional(),
+-  surfaces: z.array(ConversationMessageSurfaceSchema).optional(),
++  /**
++   * @deprecated Superseded by `contentBlocks` (the `tool_use` variant). Flat
++   * list of tool calls for the row.
++   */
++  toolCalls: z
++    .array(ConversationMessageToolCallSchema)
++    .meta({
++      deprecated: true,
++      description:
++        "Deprecated: superseded by contentBlocks (the tool_use variant). Flat list of tool calls.",
++    })
++    .optional(),
++  /**
++   * @deprecated Superseded by `contentBlocks` (the `surface` variant). Flat
++   * list of surfaces for the row.
++   */
++  surfaces: z
++    .array(ConversationMessageSurfaceSchema)
++    .meta({
++      deprecated: true,
++      description:
++        "Deprecated: superseded by contentBlocks (the surface variant). Flat list of surfaces.",
++    })
++    .optional(),
+   /**
+    * @deprecated Superseded by `contentBlocks`. Text split by tool-call
+    * boundaries; positional sibling of `contentOrder`.

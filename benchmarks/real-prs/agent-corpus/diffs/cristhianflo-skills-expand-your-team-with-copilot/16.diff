@@ -1,0 +1,161 @@
+diff --git a/src/static/app.js b/src/static/app.js
+index f18b940..a49caa7 100644
+--- a/src/static/app.js
++++ b/src/static/app.js
+@@ -569,6 +569,17 @@ document.addEventListener("DOMContentLoaded", () => {
+         `
+         }
+       </div>
++      <div class="share-section">
++        <button class="share-toggle-button" aria-label="Share activity">
++          <span>🔗</span> Share
++        </button>
++        <div class="share-panel hidden">
++          <a class="share-link share-twitter" href="#" target="_blank" rel="noopener noreferrer" aria-label="Share on X (Twitter)">𝕏</a>
++          <a class="share-link share-facebook" href="#" target="_blank" rel="noopener noreferrer" aria-label="Share on Facebook">f</a>
++          <a class="share-link share-whatsapp" href="#" target="_blank" rel="noopener noreferrer" aria-label="Share on WhatsApp">💬</a>
++          <button class="share-link share-copy" aria-label="Copy link">📋</button>
++        </div>
++      </div>
+     `;
+ 
+     // Add click handlers for delete buttons
+@@ -587,6 +598,48 @@ document.addEventListener("DOMContentLoaded", () => {
+       }
+     }
+ 
++    // Set up social sharing
++    const shareText = `Check out "${name}" at Mergington High School! ${details.description}`;
++    const shareUrl = window.location.href;
++    const encodedText = encodeURIComponent(shareText);
++    const encodedUrl = encodeURIComponent(shareUrl);
++
++    const shareToggle = activityCard.querySelector(".share-toggle-button");
++    const sharePanel = activityCard.querySelector(".share-panel");
++
++    // Set share link URLs
++    activityCard.querySelector(".share-twitter").href =
++      `https://twitter.com/intent/tweet?text=${encodedText}&url=${encodedUrl}`;
++    activityCard.querySelector(".share-facebook").href =
++      `https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}&quote=${encodedText}`;
++    activityCard.querySelector(".share-whatsapp").href =
++      `https://wa.me/?text=${encodeURIComponent(shareText + " " + shareUrl)}`;
++
++    shareToggle.addEventListener("click", (e) => {
++      e.stopPropagation();
++      // Use native Web Share API if available
++      if (navigator.share) {
++        navigator.share({ title: name, text: shareText, url: shareUrl }).catch(() => {});
++        return;
++      }
++      // Otherwise toggle the share panel
++      sharePanel.classList.toggle("hidden");
++    });
++
++    activityCard.querySelector(".share-copy").addEventListener("click", () => {
++      navigator.clipboard.writeText(shareUrl).then(() => {
++        showMessage("Link copied to clipboard!", "success");
++        sharePanel.classList.add("hidden");
++      }).catch(() => {
++        showMessage("Could not copy link.", "error");
++      });
++    });
++
++    // Close share panel when clicking outside
++    document.addEventListener("click", () => {
++      sharePanel.classList.add("hidden");
++    }, { once: false, capture: false });
++
+     activitiesList.appendChild(activityCard);
+   }
+ 
+diff --git a/src/static/styles.css b/src/static/styles.css
+index 83361b1..d55c114 100644
+--- a/src/static/styles.css
++++ b/src/static/styles.css
+@@ -664,3 +664,85 @@ footer {
+ #logout-button:hover {
+   background-color: rgba(255, 255, 255, 0.3);
+ }
++
++/* Social sharing */
++.share-section {
++  margin-top: 8px;
++  padding-top: 8px;
++  border-top: 1px solid var(--border-light);
++  display: flex;
++  align-items: center;
++  gap: 8px;
++  flex-wrap: wrap;
++}
++
++.share-toggle-button {
++  background: none;
++  border: 1px solid var(--border);
++  color: var(--text-secondary);
++  padding: 3px 10px;
++  border-radius: 15px;
++  font-size: 0.75rem;
++  cursor: pointer;
++  display: flex;
++  align-items: center;
++  gap: 4px;
++  transition: all 0.2s ease;
++}
++
++.share-toggle-button:hover {
++  background-color: var(--background);
++  border-color: var(--primary-light);
++  color: var(--primary);
++}
++
++.share-panel {
++  display: flex;
++  align-items: center;
++  gap: 6px;
++}
++
++.share-panel.hidden {
++  display: none !important;
++}
++
++.share-link {
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  width: 28px;
++  height: 28px;
++  border-radius: 50%;
++  font-size: 0.8rem;
++  font-weight: bold;
++  text-decoration: none;
++  cursor: pointer;
++  border: none;
++  transition: opacity 0.2s ease;
++}
++
++.share-link:hover {
++  opacity: 0.8;
++}
++
++.share-twitter {
++  background-color: #000;
++  color: #fff;
++}
++
++.share-facebook {
++  background-color: #1877f2;
++  color: #fff;
++}
++
++.share-whatsapp {
++  background-color: #25d366;
++  color: #fff;
++  font-size: 1rem;
++}
++
++.share-copy {
++  background-color: var(--border);
++  color: var(--text-primary);
++  font-size: 0.9rem;
++}

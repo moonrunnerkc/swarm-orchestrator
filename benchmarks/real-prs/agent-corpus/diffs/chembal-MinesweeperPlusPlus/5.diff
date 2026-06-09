@@ -1,0 +1,67 @@
+diff --git a/.agents/skills/testing-minesweeper/SKILL.md b/.agents/skills/testing-minesweeper/SKILL.md
+new file mode 100644
+index 0000000..df6624d
+--- /dev/null
++++ b/.agents/skills/testing-minesweeper/SKILL.md
+@@ -0,0 +1,61 @@
++---
++name: testing-minesweeper
++description: End-to-end GUI testing of the Minesweeper++ Swing app. Use when verifying gameplay, AI, or refactoring changes.
++---
++
++# Testing Minesweeper++
++
++## Build
++
++```bash
++cd /home/ubuntu/repos/MinesweeperPlusPlus
++./gradlew jar
++# Output: build/libs/minesweeper-plus-plus-1.2.0.jar
++```
++
++## Launch
++
++Requires an X display (`:0` on the VM):
++
++```bash
++DISPLAY=:0 java -jar build/libs/minesweeper-plus-plus-1.2.0.jar &
++```
++
++The app opens a Swing window with the game board, menu bar (Game, Difficulty, AI, Help), status bar (mine count, Reset, Auto-Play, timer).
++
++## Key Test Flows
++
++### 1. Basic Gameplay
++- **Left-click** on a square to guess (reveal). Exercises `Field.guess()`, `validateAlive()`, `validateSquare()`, `countNeighbors()`, `notifyListener()`.
++- Clicking a 0-mine square triggers cascade reveal via `sweepField()` → `setKnownAboutSquare()` → `forEachNeighbor()`.
++- Verify: revealed numbers (1-8) are consistent with neighboring mine count.
++
++### 2. Mark/Unmark
++- **Right-click** on an unrevealed square to toggle flag. Exercises `Field.mark()`/`unmark()`, `validateAlive()`, `validateSquare()`, `notifyListener()`.
++- Verify: mine count label decreases by 1 on mark, increases by 1 on unmark.
++
++### 3. AI Auto-Play
++- Click **Auto-Play** button. Exercises `LogicalAI.play()`, `forEachUnknownUnmarkedNeighbor()`, `countNeighbors()`, `forEachNeighbor()`.
++- A "Game Result" dialog appears: "We won! Yay!" or "We lost. Darn."
++- Beginner difficulty is most likely to win; Expert usually loses (expected).
++
++### 4. Reset
++- Click **Reset** button. Exercises `Field.resetField()` → `notifyListener()`.
++- Verify: all squares revert to unknown, mine count resets.
++
++### 5. Difficulty Change
++- **Difficulty** menu → Beginner (10x10, 10 mines), Intermediate, Expert (30x16, 99 mines), Custom, Coastal Defense System.
++- Verify: board resizes, mine count updates.
++
++## Tips
++
++- Expert mode has 99 mines on a 30×16 board — first click often hits a mine. Switch to Beginner for reliable manual testing.
++- AI Auto-Play on Beginner reliably wins and exercises all AI code paths.
++- Check terminal output (`get_output` on the background shell) for Java exceptions. Clean runs show exit code 0 with no output.
++- The app bundles .gif icon resources (j0.gif–j12.gif) for square states. These must be in the jar.
++- No CI is configured for this repo. Verification is via `./gradlew build` (compiles + runs any tests) and manual GUI testing.
++- The AI menu has help levels (0–3) that affect `applyAIHelp()` behavior after each guess/mark. Default is 0 (no help).
++
++## Devin Secrets Needed
++
++None — this is a local Swing app with no external dependencies or auth.

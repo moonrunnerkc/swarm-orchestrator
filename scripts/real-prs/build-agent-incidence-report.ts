@@ -49,6 +49,30 @@ function main(): void {
     ? (JSON.parse(fs.readFileSync(agentLabelsFile(), 'utf8')) as DualArbiterLabel[])
     : [];
 
+  // No labels yet (the arbiter stage needs an LLM and may run on another
+  // machine): report the corpus and audit state honestly instead of a
+  // fake 0% incidence.
+  if (labels.length === 0) {
+    const audited0 = records.length;
+    const findings0 = records.reduce((n, r) => n + r.post.length, 0);
+    const vendorCounts = new Map<string, number>();
+    for (const p of sources.prs) vendorCounts.set(p.agent.vendor, (vendorCounts.get(p.agent.vendor) ?? 0) + 1);
+    const md = `# Agent-PR cheat incidence (pilot): classification pending
+
+The corpus and audit stages are complete; the dual-arbiter classification
+has not run yet (it needs two LLM arbiters), so **no incidence number is
+claimed here**. Run \`npm run agent-incidence:arbiter\` then
+\`npm run agent-incidence:report\` to produce the measured headline.
+
+- **Corpus:** ${sources.prs.length} merged agent-attributed PRs fetched at ${sources.fetchedAt} (${[...vendorCounts.entries()].map(([v, n]) => `${v}: ${n}`).join(', ')}).
+- **Audit:** ${audited0} PRs audited with the default product configuration; ${findings0} unclassified findings.
+- Queries, caps, and drop counts are in \`sources.json\`; per-PR findings in \`audit-results/\`.
+`;
+    fs.writeFileSync(agentIncidenceReportFile(), md);
+    log.info(`wrote ${agentIncidenceReportFile()}: classification pending (${findings0} findings unclassified)`);
+    return;
+  }
+
   const byPr = new Map<string, DualArbiterLabel[]>();
   for (const l of labels) {
     const k = `${l.repo}#${l.prNumber}`;
@@ -106,7 +130,7 @@ stated.
 
 - **Corpus:** ${audited} merged agent-attributed PRs (${sources.prs.length} fetched; selection below).
 - **Audit:** ${totalFindings} findings from the default product configuration.
-- **Dual-arbiter labels:** ${classified} findings classified (${models}); ${splits} arbiter-splits excluded from the headline.
+- **Dual-arbiter labels:** ${classified} of ${totalFindings} findings classified (${models}); ${splits} arbiter-splits excluded from the headline.${classified < totalFindings ? ` **Classification is partial**; the incidence below can only grow as the remaining ${totalFindings - classified} findings are classified.` : ''}
 - **Incidence:** ${flaggedPrs.size}/${audited} PRs carry at least one agreed true-cheat finding = **${pct(audited > 0 ? flaggedPrs.size / audited : 0)}** (Wilson 95%: ${pct(ci.lower)} to ${pct(ci.upper)}).
 - Agreed false-alarms: ${falseAlarms}; agreed true-cheats: ${trueCheats}.
 

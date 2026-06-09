@@ -1,0 +1,154 @@
+diff --git a/app.js b/app.js
+index ee31f66..d6e5ecd 100644
+--- a/app.js
++++ b/app.js
+@@ -141,7 +141,6 @@ function renderCategory(cat) {
+       if (!SERVER_MODE) { toast('Modo local: los me gusta requieren servidor', 'warn'); return; }
+       if (!currentPilot)  { toast('Únete primero para dar me gusta', 'warn'); return; }
+       if (!boardActive)   { toast('El tablero no está activo', 'warn'); return; }
+-      if (boardEnded)    { toast('Tiempo terminado: espera a que el admin añada más tiempo 🏁', 'warn'); return; }
+       // El autor de la tarjeta no puede darse like a sí mismo
+       if (currentPilot.name.toLowerCase() === (card.author || '').toLowerCase()) {
+         toast('No puedes darle me gusta a tu propia tarjeta 😅', 'warn'); return;
+@@ -369,7 +368,7 @@ function updateFormsEnabled() {
+       input.placeholder = !has
+         ? '🔒 Únete primero para escribir…'
+         : (!boardActive ? '⏳ El tablero aún no está activo…'
+-          : (boardEnded ? '🏁 Tiempo terminado: espera al admin…'
++          : (boardEnded ? '🏁 El tablero queda cerrado…'
+             : (input.dataset.basePlaceholder || input.placeholder)));
+     }
+   });
+@@ -539,7 +538,7 @@ document.querySelectorAll('.add-form').forEach(form => {
+       return;
+     }
+     if (!boardActive) { toast('El tablero aún no está activo', 'warn'); return; }
+-    if (boardEnded) { toast('Tiempo terminado: espera a que el admin añada más tiempo 🏁', 'warn'); return; }
++    if (boardEnded) { toast('El tablero queda cerrado.', 'warn'); return; }
+     const value = input.value.trim();
+     if (!value) return;
+     try {
+@@ -1440,7 +1439,7 @@ function setConnState(state, text) {
+   const labels = {
+     connecting: 'Conectando…',
+     live: 'En vivo',
+-    polling: 'Sondeo',
++    polling: 'Sincronizando',
+     reconnecting: 'Reconectando…',
+     offline: 'Sin conexión',
+   };
+diff --git a/index.html b/index.html
+index 988f3d1..419338f 100644
+--- a/index.html
++++ b/index.html
+@@ -134,13 +134,13 @@ <h2 id="actions-title">🏆 Acciones del próximo sprint</h2>
+   <div class="modal board-ended-dialog">
+     <span class="modal-confetti" aria-hidden="true">🏁</span>
+     <h2 id="board-ended-title">⏱️ ¡Tiempo terminado!</h2>
+-    <p class="modal-lead">El tablero queda cerrado para que nadie pueda escribir tarjetas ni votar hasta que el admin añada más tiempo.</p>
++    <p class="modal-lead">El tablero queda cerrado.</p>
+     <div class="board-ended-admin admin-only" hidden>
+       <div class="modal-actions" style="justify-content:flex-start;margin-top:0">
+         <button type="button" class="btn btn-primary" id="admin-add-5min">➕ Añadir 5 min</button>
+-        <button type="button" class="btn-mini" id="admin-close-ended">Cerrar</button>
+       </div>
+     </div>
++    <div class="modal-actions"><button type="button" class="btn-mini" id="admin-close-ended">Cerrar</button></div>
+   </div>
+ </div>
+ 
+diff --git a/server.js b/server.js
+index 351086e..9c4ec93 100644
+--- a/server.js
++++ b/server.js
+@@ -568,7 +568,7 @@ async function handleApi(req, res, url) {
+   if (req.method === 'POST' && parts.length === 2 && parts[1] === 'cards') {
+     const body = await readBody(req);
+     if (!data.boardActive) return send(res, 409, { error: 'El tablero no está activo' });
+-    if (!boardWritable()) return send(res, 409, { error: 'El tiempo del tablero terminó' });
++    if (!boardWritable()) return send(res, 409, { error: 'El tablero queda cerrado' });
+     const cat = String(body.cat || '');
+     if (!CATEGORIES.includes(cat)) return send(res, 400, { error: 'Categoría inválida' });
+     const text = sanitize(body.text, 200).trim();
+@@ -612,7 +612,6 @@ async function handleApi(req, res, url) {
+     const id  = parts[3];
+     if (!CATEGORIES.includes(cat)) return send(res, 404, { error: 'Categoría' });
+     if (!data.boardActive) return send(res, 409, { error: 'El tablero no está activo' });
+-    if (!boardWritable()) return send(res, 409, { error: 'El tiempo del tablero terminó' });
+     const body = await readBody(req);
+     const cid = normalizeClientId(body.clientId || req.headers['x-client-id'] || '');
+     const pilot = cid ? livePilots.get(cid) : null;
+diff --git a/styles.css b/styles.css
+index 41a5a68..36b7fae 100644
+--- a/styles.css
++++ b/styles.css
+@@ -30,9 +30,12 @@
+ /* ---------- Ruta admin: sin elementos de participante ---------- */
+ body.is-admin-route #music-bar,
+ body.is-admin-route .hero-participant-actions,
+-body.is-admin-route #participant-dashboard {
++body.is-admin-route #participant-dashboard,
++body.is-admin-route #retro,
++body.is-admin-route #mini-race {
+   display: none !important;
+ }
++body.is-admin-route #mini-race { position: static !important; }
+ 
+ /* ---------- Pasos: locks y estado admin-only ---------- */
+ .step { position: relative; }
+@@ -497,8 +500,7 @@ body:not(.is-admin) #mini-race { position:static; }
+ 
+ /* ---------- Tablero cerrado por tiempo ---------- */
+ body.board-ended .add-form input,
+-body.board-ended .add-form button,
+-body.board-ended .like-btn {
++body.board-ended .add-form button {
+   pointer-events:none;
+   opacity:.5;
+ }
+diff --git a/tests/server.test.js b/tests/server.test.js
+index 2ea2745..0960369 100644
+--- a/tests/server.test.js
++++ b/tests/server.test.js
+@@ -238,7 +238,40 @@ test('POST /api/cards rechaza cuando terminó el tiempo del tablero', async () =
+   try {
+     const r = await request('POST', '/api/cards', { clientId: pilotCid, cat: 'banana-past', text: 'fuera de tiempo' });
+     assert.strictEqual(r.status, 409);
+-    assert.match(r.body.error, /tiempo/i);
++    assert.match(r.body.error, /cerrado/i);
++  } finally {
++    Date.now = realNow;
++  }
++});
++
++
++test('Votos de tarjetas y acciones siguen habilitados con tiempo terminado', async () => {
++  const adminCid = 'admin-vote-ended-11112222';
++  const p1 = 'pilot-vote-ended-33334444';
++  const p2 = 'pilot-vote-ended-55556666';
++  await openStreamHello(adminCid);
++  await openStreamHello(p1);
++  await openStreamHello(p2);
++  await request('POST', '/api/admin/claim', { clientId: adminCid, pin: 'sitioBanco' });
++  await request('POST', '/api/board', { clientId: adminCid, active: true });
++  await request('POST', '/api/pilots', { clientId: p1, name: 'Ana', character: '🍄' });
++  await request('POST', '/api/pilots', { clientId: p2, name: 'Beto', character: '🦖' });
++  const started = await request('POST', '/api/timer', { clientId: adminCid, action: 'start', durationSec: 10 });
++  const card = await request('POST', '/api/cards', { clientId: p1, cat: 'banana-past', text: 'respuesta a votar' });
++  assert.strictEqual(card.status, 201);
++  const action = await request('POST', '/api/actions', { clientId: adminCid, text: 'acción a votar' });
++  assert.strictEqual(action.status, 201);
++
++  const realNow = Date.now;
++  Date.now = () => started.body.startedAt + 11_000;
++  try {
++    const like = await request('POST', `/api/cards/banana-past/${card.body.id}/like`, { clientId: p2 });
++    assert.strictEqual(like.status, 200);
++    assert.strictEqual(like.body.likeCount, 1);
++
++    const vote = await request('POST', `/api/actions/${action.body.id}/vote`, { clientId: p2 });
++    assert.strictEqual(vote.status, 200);
++    assert.strictEqual(vote.body.voteCount, 1);
+   } finally {
+     Date.now = realNow;
+   }

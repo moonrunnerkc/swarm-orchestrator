@@ -1,0 +1,4269 @@
+diff --git a/experiments/configs/phase10_target_slot_probe.yaml b/experiments/configs/phase10_target_slot_probe.yaml
+deleted file mode 100644
+index c5beda9..0000000
+--- a/experiments/configs/phase10_target_slot_probe.yaml
++++ /dev/null
+@@ -1,67 +0,0 @@
+-phase: 10
+-env:
+-  seed_base: 0xD1CEDA7A
+-  opponent_bot: noop
+-  learner_team: A
+-  fog_mode: team_shared
+-  visible_radius: 0.65
+-  map_randomization:
+-    span_jitter: 5.0
+-    min_span: 45.0
+-    max_span: 55.0
+-  reward:
+-    distance_shaping_coef: 0.05
+-    on_point_shaping_coef: 0.02
+-  sim:
+-    round_length_seconds: 30
+-    fog_of_war_enabled: false
+-    randomize_map: true
+-    hero_kinds: [Vanguard, Ranger, Mender, Vanguard, Ranger, Mender]
+-    seed: 0xD1CEDA7A
+-    action_repeat: 3
+-    mechanics:
+-      revolver_damage_centi_hp: 7500
+-      revolver_fire_cooldown_ticks: 15
+-      revolver_hitbox_radius: 0.75
+-      respawn_ticks: 240
+-model:
+-  use_recurrence: true
+-  obs_encoder: entity_attention_grid
+-  entity_token_count: 5
+-  entity_token_dim: 18
+-  entity_num_heads: 2
+-  grid_channels: 3
+-  grid_size: 32
+-  embed_dim: 32
+-  gru_hidden: 32
+-  head_hidden: 32
+-  action_log_std_init: -1.0
+-ppo:
+-  num_envs: 2
+-  rollout_len: 32
+-  num_epochs: 1
+-  minibatch_size: 1
+-  learning_rate: 1.0e-5
+-  value_normalization: true
+-  vector_env: sync
+-  torch_num_threads: 1
+-  lr_schedule: constant
+-  lr_final_ratio: 1.0
+-  warmup_updates: 0
+-  clip_ratio: 0.2
+-  value_clip_ratio: 0.2
+-  gamma: 0.997
+-  gae_lambda: 0.95
+-  entropy_coef: 0.001
+-  value_coef: 0.5
+-  max_grad_norm: 0.5
+-run:
+-  total_updates: 1
+-  eval_every: 1
+-  eval_episodes: 2
+-  checkpoint_every: 1
+-  log_every: 1
+-  bc_pretrain_steps: 500
+-  bc_batch_size: 900
+-  bc_learning_rate: 1.0e-3
+-  output_dir: runs/phase10_target_slot_probe
+diff --git a/experiments/configs/phase5_entity_attention_probe.yaml b/experiments/configs/phase5_entity_attention_probe.yaml
+deleted file mode 100644
+index 8259a81..0000000
+--- a/experiments/configs/phase5_entity_attention_probe.yaml
++++ /dev/null
+@@ -1,60 +0,0 @@
+-phase: 5
+-env:
+-  seed_base: 0xD1CEDA7A
+-  opponent_bot: noop
+-  learner_team: A
+-  reward:
+-    # Diagnostic shaping for a short entity-attention objective-path probe.
+-    # This isolates the Phase-5 observation/model delta from Phase-4 dynamics.
+-    distance_shaping_coef: 0.05
+-    on_point_shaping_coef: 0.02
+-  sim:
+-    round_length_seconds: 30
+-    fog_of_war_enabled: false
+-    randomize_map: false
+-    seed: 0xD1CEDA7A
+-    action_repeat: 3
+-    mechanics:
+-      revolver_damage_centi_hp: 7500
+-      revolver_fire_cooldown_ticks: 15
+-      revolver_hitbox_radius: 0.75
+-      respawn_ticks: 240
+-model:
+-  use_recurrence: true
+-  obs_encoder: entity_attention
+-  entity_token_count: 3
+-  entity_token_dim: 18
+-  entity_num_heads: 2
+-  embed_dim: 32
+-  gru_hidden: 32
+-  head_hidden: 32
+-  action_log_std_init: -1.0
+-ppo:
+-  num_envs: 2
+-  rollout_len: 32
+-  num_epochs: 1
+-  minibatch_size: 1
+-  learning_rate: 1.0e-5
+-  value_normalization: true
+-  vector_env: sync
+-  torch_num_threads: 1
+-  lr_schedule: constant
+-  lr_final_ratio: 1.0
+-  warmup_updates: 0
+-  clip_ratio: 0.2
+-  value_clip_ratio: 0.2
+-  gamma: 0.997
+-  gae_lambda: 0.95
+-  entropy_coef: 0.001
+-  value_coef: 0.5
+-  max_grad_norm: 0.5
+-run:
+-  total_updates: 1
+-  eval_every: 1
+-  eval_episodes: 2
+-  checkpoint_every: 1
+-  log_every: 1
+-  bc_pretrain_steps: 200
+-  bc_batch_size: 192
+-  bc_learning_rate: 1.0e-3
+-  output_dir: runs/phase5_entity_attention_probe
+diff --git a/experiments/configs/phase6_entity_grid_probe.yaml b/experiments/configs/phase6_entity_grid_probe.yaml
+deleted file mode 100644
+index 22ed18f..0000000
+--- a/experiments/configs/phase6_entity_grid_probe.yaml
++++ /dev/null
+@@ -1,61 +0,0 @@
+-phase: 6
+-env:
+-  seed_base: 0xD1CEDA7A
+-  opponent_bot: noop
+-  learner_team: A
+-  reward:
+-    # Diagnostic shaping for the first entity+grid encoder smoke run.
+-    distance_shaping_coef: 0.05
+-    on_point_shaping_coef: 0.02
+-  sim:
+-    round_length_seconds: 30
+-    fog_of_war_enabled: false
+-    randomize_map: false
+-    seed: 0xD1CEDA7A
+-    action_repeat: 3
+-    mechanics:
+-      revolver_damage_centi_hp: 7500
+-      revolver_fire_cooldown_ticks: 15
+-      revolver_hitbox_radius: 0.75
+-      respawn_ticks: 240
+-model:
+-  use_recurrence: true
+-  obs_encoder: entity_attention_grid
+-  entity_token_count: 3
+-  entity_token_dim: 18
+-  entity_num_heads: 2
+-  grid_channels: 3
+-  grid_size: 32
+-  embed_dim: 32
+-  gru_hidden: 32
+-  head_hidden: 32
+-  action_log_std_init: -1.0
+-ppo:
+-  num_envs: 2
+-  rollout_len: 32
+-  num_epochs: 1
+-  minibatch_size: 1
+-  learning_rate: 1.0e-5
+-  value_normalization: true
+-  vector_env: sync
+-  torch_num_threads: 1
+-  lr_schedule: constant
+-  lr_final_ratio: 1.0
+-  warmup_updates: 0
+-  clip_ratio: 0.2
+-  value_clip_ratio: 0.2
+-  gamma: 0.997
+-  gae_lambda: 0.95
+-  entropy_coef: 0.001
+-  value_coef: 0.5
+-  max_grad_norm: 0.5
+-run:
+-  total_updates: 1
+-  eval_every: 1
+-  eval_episodes: 2
+-  checkpoint_every: 1
+-  log_every: 1
+-  bc_pretrain_steps: 200
+-  bc_batch_size: 192
+-  bc_learning_rate: 1.0e-3
+-  output_dir: runs/phase6_entity_grid_probe
+diff --git a/experiments/configs/phase7_per_agent_fog_probe.yaml b/experiments/configs/phase7_per_agent_fog_probe.yaml
+deleted file mode 100644
+index b9b86e4..0000000
+--- a/experiments/configs/phase7_per_agent_fog_probe.yaml
++++ /dev/null
+@@ -1,70 +0,0 @@
+-phase: 7
+-env:
+-  seed_base: 0xD1CEDA7A
+-  opponent_bot: noop
+-  learner_team: A
+-  fog_mode: per_agent
+-  visible_radius: 0.65
+-  reward:
+-    distance_shaping_coef: 0.05
+-    on_point_shaping_coef: 0.02
+-  sim:
+-    round_length_seconds: 30
+-    fog_of_war_enabled: false
+-    randomize_map: false
+-    seed: 0xD1CEDA7A
+-    action_repeat: 3
+-    mechanics:
+-      revolver_damage_centi_hp: 7500
+-      revolver_fire_cooldown_ticks: 15
+-      revolver_hitbox_radius: 0.75
+-      respawn_ticks: 240
+-model:
+-  use_recurrence: true
+-  obs_encoder: entity_attention_grid
+-  entity_token_count: 5
+-  entity_token_dim: 18
+-  entity_num_heads: 2
+-  grid_channels: 3
+-  grid_size: 32
+-  embed_dim: 32
+-  gru_hidden: 32
+-  head_hidden: 32
+-  action_log_std_init: -1.0
+-ppo:
+-  num_envs: 2
+-  rollout_len: 32
+-  num_epochs: 1
+-  minibatch_size: 1
+-  learning_rate: 1.0e-5
+-  value_normalization: true
+-  vector_env: sync
+-  torch_num_threads: 1
+-  lr_schedule: constant
+-  lr_final_ratio: 1.0
+-  warmup_updates: 0
+-  clip_ratio: 0.2
+-  value_clip_ratio: 0.2
+-  gamma: 0.997
+-  gae_lambda: 0.95
+-  entropy_coef: 0.001
+-  value_coef: 0.5
+-  max_grad_norm: 0.5
+-run:
+-  total_updates: 1
+-  eval_every: 1
+-  eval_episodes: 2
+-  checkpoint_every: 1
+-  log_every: 1
+-  eval_gate:
+-    min_episodes: 2
+-    min_win_rate: 1.0
+-    max_draw_rate: 0.0
+-    min_mean_reward: 10.0
+-    min_mean_score_a: 7.0
+-    max_mean_score_b: 0.0
+-    output: eval_gate.json
+-  bc_pretrain_steps: 500
+-  bc_batch_size: 900
+-  bc_learning_rate: 1.0e-3
+-  output_dir: runs/phase7_per_agent_fog_probe
+diff --git a/experiments/configs/phase7_team_fog_probe.yaml b/experiments/configs/phase7_team_fog_probe.yaml
+deleted file mode 100644
+index daa8990..0000000
+--- a/experiments/configs/phase7_team_fog_probe.yaml
++++ /dev/null
+@@ -1,71 +0,0 @@
+-phase: 7
+-env:
+-  seed_base: 0xD1CEDA7A
+-  opponent_bot: noop
+-  learner_team: A
+-  fog_mode: team_shared
+-  visible_radius: 0.65
+-  reward:
+-    # Diagnostic shaping for the first partial-observation smoke run.
+-    distance_shaping_coef: 0.05
+-    on_point_shaping_coef: 0.02
+-  sim:
+-    round_length_seconds: 30
+-    fog_of_war_enabled: false
+-    randomize_map: false
+-    seed: 0xD1CEDA7A
+-    action_repeat: 3
+-    mechanics:
+-      revolver_damage_centi_hp: 7500
+-      revolver_fire_cooldown_ticks: 15
+-      revolver_hitbox_radius: 0.75
+-      respawn_ticks: 240
+-model:
+-  use_recurrence: true
+-  obs_encoder: entity_attention_grid
+-  entity_token_count: 5
+-  entity_token_dim: 18
+-  entity_num_heads: 2
+-  grid_channels: 3
+-  grid_size: 32
+-  embed_dim: 32
+-  gru_hidden: 32
+-  head_hidden: 32
+-  action_log_std_init: -1.0
+-ppo:
+-  num_envs: 2
+-  rollout_len: 32
+-  num_epochs: 1
+-  minibatch_size: 1
+-  learning_rate: 1.0e-5
+-  value_normalization: true
+-  vector_env: sync
+-  torch_num_threads: 1
+-  lr_schedule: constant
+-  lr_final_ratio: 1.0
+-  warmup_updates: 0
+-  clip_ratio: 0.2
+-  value_clip_ratio: 0.2
+-  gamma: 0.997
+-  gae_lambda: 0.95
+-  entropy_coef: 0.001
+-  value_coef: 0.5
+-  max_grad_norm: 0.5
+-run:
+-  total_updates: 1
+-  eval_every: 1
+-  eval_episodes: 2
+-  checkpoint_every: 1
+-  log_every: 1
+-  eval_gate:
+-    min_episodes: 2
+-    min_win_rate: 1.0
+-    max_draw_rate: 0.0
+-    min_mean_reward: 10.0
+-    min_mean_score_a: 7.0
+-    max_mean_score_b: 0.0
+-    output: eval_gate.json
+-  bc_pretrain_steps: 500
+-  bc_batch_size: 900
+-  bc_learning_rate: 1.0e-3
+-  output_dir: runs/phase7_team_fog_probe
+diff --git a/experiments/configs/phase8_random_map_probe.yaml b/experiments/configs/phase8_random_map_probe.yaml
+deleted file mode 100644
+index c76f470..0000000
+--- a/experiments/configs/phase8_random_map_probe.yaml
++++ /dev/null
+@@ -1,70 +0,0 @@
+-phase: 8
+-env:
+-  seed_base: 0xD1CEDA7A
+-  opponent_bot: noop
+-  learner_team: A
+-  fog_mode: team_shared
+-  visible_radius: 0.65
+-  map_randomization:
+-    span_jitter: 5.0
+-    min_span: 45.0
+-    max_span: 55.0
+-    cover_count_per_side: 2
+-    cover_jitter: 1.0
+-    cover_radius: 1.0
+-  reward:
+-    # Diagnostic shaping for the first randomized-map smoke run.
+-    distance_shaping_coef: 0.05
+-    on_point_shaping_coef: 0.02
+-  sim:
+-    round_length_seconds: 30
+-    fog_of_war_enabled: false
+-    randomize_map: true
+-    seed: 0xD1CEDA7A
+-    action_repeat: 3
+-    mechanics:
+-      revolver_damage_centi_hp: 7500
+-      revolver_fire_cooldown_ticks: 15
+-      revolver_hitbox_radius: 0.75
+-      respawn_ticks: 240
+-model:
+-  use_recurrence: true
+-  obs_encoder: entity_attention_grid
+-  entity_token_count: 5
+-  entity_token_dim: 18
+-  entity_num_heads: 2
+-  grid_channels: 3
+-  grid_size: 32
+-  embed_dim: 32
+-  gru_hidden: 32
+-  head_hidden: 32
+-  action_log_std_init: -1.0
+-ppo:
+-  num_envs: 2
+-  rollout_len: 32
+-  num_epochs: 1
+-  minibatch_size: 1
+-  learning_rate: 1.0e-5
+-  value_normalization: true
+-  vector_env: sync
+-  torch_num_threads: 1
+-  lr_schedule: constant
+-  lr_final_ratio: 1.0
+-  warmup_updates: 0
+-  clip_ratio: 0.2
+-  value_clip_ratio: 0.2
+-  gamma: 0.997
+-  gae_lambda: 0.95
+-  entropy_coef: 0.001
+-  value_coef: 0.5
+-  max_grad_norm: 0.5
+-run:
+-  total_updates: 1
+-  eval_every: 1
+-  eval_episodes: 2
+-  checkpoint_every: 1
+-  log_every: 1
+-  bc_pretrain_steps: 500
+-  bc_batch_size: 900
+-  bc_learning_rate: 1.0e-3
+-  output_dir: runs/phase8_random_map_probe
+diff --git a/experiments/configs/phase9_snapshot_probe.yaml b/experiments/configs/phase9_snapshot_probe.yaml
+deleted file mode 100644
+index 4f09530..0000000
+--- a/experiments/configs/phase9_snapshot_probe.yaml
++++ /dev/null
+@@ -1,107 +0,0 @@
+-phase: 9
+-env:
+-  seed_base: 0xD1CEDA7A
+-  opponent_bot: snapshot
+-  learner_team: A
+-  fog_mode: team_shared
+-  visible_radius: 0.65
+-  snapshot_paths:
+-    - runs/phase8_random_map_probe/mappo/ckpt_final.pt
+-  snapshot_league:
+-    latest:
+-      - runs/phase8_random_map_probe/mappo/ckpt_final.pt
+-    historical:
+-      - runs/phase8_random_map_probe/mappo/ckpt_final.pt
+-    anchor:
+-      - runs/phase8_random_map_probe/mappo/ckpt_final.pt
+-    weights:
+-      latest: 0.7
+-      historical: 0.2
+-      anchor: 0.1
+-  self_play_schedule:
+-    weights:
+-      current: 0.7
+-      snapshot: 0.2
+-      anchor: 0.1
+-    anchor_bot: noop
+-  map_randomization:
+-    span_jitter: 5.0
+-    min_span: 45.0
+-    max_span: 55.0
+-  reward:
+-    # Diagnostic shaping for the first frozen-snapshot opponent smoke run.
+-    distance_shaping_coef: 0.05
+-    on_point_shaping_coef: 0.02
+-  sim:
+-    round_length_seconds: 30
+-    fog_of_war_enabled: false
+-    randomize_map: true
+-    seed: 0xD1CEDA7A
+-    action_repeat: 3
+-    mechanics:
+-      revolver_damage_centi_hp: 7500
+-      revolver_fire_cooldown_ticks: 15
+-      revolver_hitbox_radius: 0.75
+-      respawn_ticks: 240
+-model:
+-  use_recurrence: true
+-  obs_encoder: entity_attention_grid
+-  entity_token_count: 5
+-  entity_token_dim: 18
+-  entity_num_heads: 2
+-  grid_channels: 3
+-  grid_size: 32
+-  embed_dim: 32
+-  gru_hidden: 32
+-  head_hidden: 32
+-  action_log_std_init: -1.0
+-ppo:
+-  num_envs: 2
+-  rollout_len: 32
+-  num_epochs: 1
+-  minibatch_size: 1
+-  learning_rate: 1.0e-5
+-  value_normalization: true
+-  vector_env: sync
+-  torch_num_threads: 1
+-  lr_schedule: constant
+-  lr_final_ratio: 1.0
+-  warmup_updates: 0
+-  clip_ratio: 0.2
+-  value_clip_ratio: 0.2
+-  gamma: 0.997
+-  gae_lambda: 0.95
+-  entropy_coef: 0.001
+-  value_coef: 0.5
+-  max_grad_norm: 0.5
+-run:
+-  total_updates: 1
+-  eval_every: 1
+-  eval_episodes: 2
+-  checkpoint_every: 1
+-  log_every: 1
+-  snapshot_retention:
+-    manifest: snapshot_league.json
+-    max_latest: 2
+-    preserve_best: 1
+-    include_config_anchors: true
+-  matrix_eval:
+-    episodes: 1
+-    anchor_bots:
+-      - noop
+-    opponent_checkpoints:
+-      - runs/phase8_random_map_probe/mappo/ckpt_final.pt
+-    output: matrix_eval.json
+-    gate:
+-      min_rows: 2
+-      min_win_rate:
+-        bot: 1.0
+-        snapshot: 1.0
+-      max_draw_rate:
+-        bot: 0.0
+-        snapshot: 0.0
+-    gate_output: matrix_gate.json
+-  bc_pretrain_steps: 500
+-  bc_batch_size: 900
+-  bc_learning_rate: 1.0e-3
+-  output_dir: runs/phase9_snapshot_probe
+diff --git a/python/envs/__init__.py b/python/envs/__init__.py
+index eeb48e2..0adfcae 100644
+--- a/python/envs/__init__.py
++++ b/python/envs/__init__.py
+@@ -18,15 +18,6 @@
+         "Phase4CurrentSelfplayMappoEnv",
+     ),
+     "Phase4MappoEnv": ("envs.phase4_mappo", "Phase4MappoEnv"),
+-    "Phase5EntityMappoEnv": ("envs.phase5_entity_mappo", "Phase5EntityMappoEnv"),
+-    "Phase6GridMappoEnv": ("envs.phase6_grid_mappo", "Phase6GridMappoEnv"),
+-    "Phase7FogMappoEnv": ("envs.phase7_fog_mappo", "Phase7FogMappoEnv"),
+-    "Phase8RandomMapMappoEnv": ("envs.phase8_random_map_mappo", "Phase8RandomMapMappoEnv"),
+-    "Phase9SnapshotMappoEnv": ("envs.phase9_snapshot_mappo", "Phase9SnapshotMappoEnv"),
+-    "Phase10TargetSlotMappoEnv": (
+-        "envs.phase10_target_slot_mappo",
+-        "Phase10TargetSlotMappoEnv",
+-    ),
+     "Phase11CurrentSelfplayMappoEnv": (
+         "envs.phase11_current_selfplay_mappo",
+         "Phase11CurrentSelfplayMappoEnv",
+@@ -36,12 +27,6 @@
+         "envs.phase4_selfplay_mappo",
+         "Phase4CurrentSelfplayMappoEnv",
+     ),
+-    "EntityObsMappoEnv": ("envs.phase5_entity_mappo", "Phase5EntityMappoEnv"),
+-    "EntityGridObsMappoEnv": ("envs.phase6_grid_mappo", "Phase6GridMappoEnv"),
+-    "FogMappoMatchEnv": ("envs.phase7_fog_mappo", "Phase7FogMappoEnv"),
+-    "RandomizedMapMappoEnv": ("envs.phase8_random_map_mappo", "Phase8RandomMapMappoEnv"),
+-    "SnapshotOpponentMappoEnv": ("envs.phase9_snapshot_mappo", "Phase9SnapshotMappoEnv"),
+-    "TargetSlotMappoEnv": ("envs.phase10_target_slot_mappo", "Phase10TargetSlotMappoEnv"),
+     "SixAgentCurrentSelfplayMappoEnv": (
+         "envs.phase11_current_selfplay_mappo",
+         "Phase11CurrentSelfplayMappoEnv",
+diff --git a/python/envs/phase10_target_slot_mappo.py b/python/envs/phase10_target_slot_mappo.py
+deleted file mode 100644
+index 0511b85..0000000
+--- a/python/envs/phase10_target_slot_mappo.py
++++ /dev/null
+@@ -1,132 +0,0 @@
+-"""Phase-10 MAPPO env wrapper that enables the target-slot action factor.
+-
+-The current simulator still consumes the Phase-1 six-control action surface.
+-This wrapper accepts a seventh categorical target-token field, records it in
+-``info``, and forwards all controls into the Phase-8 observation stack. The
+-five categories match the appended token mask: self, three enemies, objective.
+-"""
+-
+-from __future__ import annotations
+-
+-from typing import Any, ClassVar
+-
+-import gymnasium as gym
+-import numpy as np
+-from gymnasium import spaces
+-
+-from envs.phase8_random_map_mappo import Phase8RandomMapMappoEnv
+-from xushi2.entity_obs import ENTITY_TOKEN_DIM, MULTI_ENEMY_TOKEN_COUNT
+-from xushi2.grid_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+-from xushi2.obs_manifest import CRITIC_DIM
+-
+-__all__ = ["Phase10TargetSlotMappoEnv"]
+-
+-TARGET_SLOT_MASK_DIM: int = MULTI_ENEMY_TOKEN_COUNT
+-PHASE10_TARGET_OBS_DIM: int = MULTI_ENEMY_ENTITY_GRID_OBS_DIM + TARGET_SLOT_MASK_DIM
+-
+-
+-class Phase10TargetSlotMappoEnv(gym.Env):
+-    """Phase-8 env stack plus a categorical target-token action column."""
+-
+-    metadata: ClassVar[dict[str, list[str]]] = {"render_modes": []}
+-
+-    n_agents: int = 3
+-    actor_obs_dim: int = PHASE10_TARGET_OBS_DIM
+-    critic_obs_dim: int = CRITIC_DIM
+-    action_dim: int = 7
+-    target_action_dim: int = TARGET_SLOT_MASK_DIM
+-
+-    def __init__(
+-        self,
+-        sim_cfg: dict,
+-        *,
+-        opponent_bot: str,
+-        learner_team: str = "A",
+-        reward_cfg: dict[str, Any] | None = None,
+-        fog_mode: str = "team_shared",
+-        visible_radius: float = 0.65,
+-        map_randomization: dict[str, Any] | None = None,
+-    ) -> None:
+-        super().__init__()
+-        self._env = Phase8RandomMapMappoEnv(
+-            sim_cfg,
+-            opponent_bot=opponent_bot,
+-            learner_team=learner_team,
+-            reward_cfg=reward_cfg,
+-            fog_mode=fog_mode,
+-            visible_radius=visible_radius,
+-            map_randomization=map_randomization,
+-        )
+-        self.observation_space = spaces.Box(
+-            low=-np.inf,
+-            high=np.inf,
+-            shape=(3, PHASE10_TARGET_OBS_DIM),
+-            dtype=np.float32,
+-        )
+-        low = np.concatenate(
+-            (
+-                self._env.action_space.low,
+-                np.zeros((3, 1), dtype=np.float32),
+-            ),
+-            axis=1,
+-        )
+-        high = np.concatenate(
+-            (
+-                self._env.action_space.high,
+-                np.full((3, 1), self.target_action_dim - 1, dtype=np.float32),
+-            ),
+-            axis=1,
+-        )
+-        self.action_space = spaces.Box(low=low, high=high, shape=(3, 7), dtype=np.float32)
+-        self._last_target_slots = np.zeros(3, dtype=np.int64)
+-
+-    @property
+-    def last_map_bounds(self) -> dict[str, float] | None:
+-        return self._env.last_map_bounds
+-
+-    @property
+-    def last_target_slots(self) -> np.ndarray:
+-        return self._last_target_slots.copy()
+-
+-    def reset(self, *, seed=None, options=None):
+-        self._last_target_slots[:] = 0
+-        obs, info = self._env.reset(seed=seed, options=options)
+-        info = dict(info)
+-        info["target_slot_mask"] = self._target_slot_mask(obs)
+-        info["target_slots"] = self.last_target_slots
+-        return self._append_target_slot_mask(obs), info
+-
+-    def step(self, action: np.ndarray):
+-        action = np.asarray(action, dtype=np.float32)
+-        if action.shape != (3, 7):
+-            raise ValueError(f"action shape must be (3, 7), got {action.shape}")
+-        self._last_target_slots = (
+-            np.rint(action[:, 6]).clip(0, self.target_action_dim - 1).astype(np.int64, copy=False)
+-        )
+-        obs, reward, terminated, truncated, info = self._env.step(action)
+-        info = dict(info)
+-        info["target_slot_mask"] = self._target_slot_mask(obs)
+-        info["target_slots"] = self.last_target_slots
+-        return self._append_target_slot_mask(obs), reward, terminated, truncated, info
+-
+-    def build_critic_obs(self, out: np.ndarray) -> None:
+-        self._env.build_critic_obs(out)
+-
+-    def close(self) -> None:
+-        self._env.close()
+-
+-    @staticmethod
+-    def _target_slot_mask(obs: np.ndarray) -> np.ndarray:
+-        obs = np.asarray(obs, dtype=np.float32)
+-        if obs.shape[-1] != MULTI_ENEMY_ENTITY_GRID_OBS_DIM:
+-            raise ValueError(
+-                f"base obs last dim must be {MULTI_ENEMY_ENTITY_GRID_OBS_DIM}, got {obs.shape}"
+-            )
+-        mask_offset = MULTI_ENEMY_TOKEN_COUNT * ENTITY_TOKEN_DIM
+-        mask = obs[..., mask_offset : mask_offset + TARGET_SLOT_MASK_DIM]
+-        return mask.astype(np.float32, copy=True)
+-
+-    @classmethod
+-    def _append_target_slot_mask(cls, obs: np.ndarray) -> np.ndarray:
+-        mask = cls._target_slot_mask(obs)
+-        return np.concatenate((obs, mask), axis=-1).astype(np.float32, copy=False)
+diff --git a/python/envs/phase11_current_selfplay_mappo.py b/python/envs/phase11_current_selfplay_mappo.py
+index c72eca9..482a9d4 100644
+--- a/python/envs/phase11_current_selfplay_mappo.py
++++ b/python/envs/phase11_current_selfplay_mappo.py
+@@ -15,7 +15,7 @@
+ 
+ from envs.phase4_mappo import Phase4MappoEnv
+ from xushi2 import xushi2_cpp as _cpp
+-from xushi2.grid_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
++from xushi2.multi_enemy_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+ from xushi2.map_randomization import (
+     map_layout_hash,
+     randomized_cover_markers,
+@@ -186,9 +186,7 @@ def step(self, action: np.ndarray):
+                     )
+                 opponent = opponent[:, :6]
+                 for idx, slot in enumerate((3, 4, 5)):
+-                    actions[slot] = Phase4MappoEnv._action_to_cpp_for_slot(
+-                        opponent[idx], slot
+-                    )
++                    actions[slot] = Phase4MappoEnv._action_to_cpp_for_slot(opponent[idx], slot)
+                 self._last_opponent_actions[:] = opponent
+             else:
+                 bot = self._last_match.anchor_bot or "noop"
+@@ -215,7 +213,9 @@ def step(self, action: np.ndarray):
+         truncated = bool(self._sim.episode_over) and (self._sim.winner == _cpp.Team.Neutral)
+         if terminated or truncated:
+             ta, tb = self._reward_calc.add_terminal(self._sim)
+-            team_a_term, team_b_term = self._coerce_team_scalar_rewards(ta, tb, source="add_terminal")
++            team_a_term, team_b_term = self._coerce_team_scalar_rewards(
++                ta, tb, source="add_terminal"
++            )
+             for i in range(3):
+                 team_rewards[i] += team_a_term
+                 team_rewards[i + 3] += team_b_term
+@@ -232,9 +232,13 @@ def step(self, action: np.ndarray):
+             info,
+         )
+ 
+-    def _coerce_team_scalar_rewards(self, reward_a: Any, reward_b: Any, *, source: str) -> tuple[float, float]:
++    def _coerce_team_scalar_rewards(
++        self, reward_a: Any, reward_b: Any, *, source: str
++    ) -> tuple[float, float]:
+         if _PHASE11_PER_AGENT_REWARDS:
+-            raise RuntimeError("Phase-11 current self-play env expects scalar team rewards contract")
++            raise RuntimeError(
++                "Phase-11 current self-play env expects scalar team rewards contract"
++            )
+         team_a = self._coerce_single_team_scalar_reward(reward_a, team_name="A", source=source)
+         team_b = self._coerce_single_team_scalar_reward(reward_b, team_name="B", source=source)
+         return team_a, team_b
+diff --git a/python/envs/phase4_multi_enemy_mappo.py b/python/envs/phase4_multi_enemy_mappo.py
+index 8100dd8..91402a1 100644
+--- a/python/envs/phase4_multi_enemy_mappo.py
++++ b/python/envs/phase4_multi_enemy_mappo.py
+@@ -10,7 +10,7 @@
+ 
+ from envs.phase4_mappo import Phase4MappoEnv
+ from xushi2 import xushi2_cpp as _cpp
+-from xushi2.grid_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
++from xushi2.multi_enemy_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+ from xushi2.multi_enemy_obs import (
+     actor_obs_to_multi_enemy_entity_grid_obs,
+     map_bounds_from_sim_cfg,
+@@ -117,8 +117,7 @@ def _enemy_visibility_matrix(self, critic: np.ndarray) -> np.ndarray:
+             native = _cpp.observable_enemy_slots(self._base._sim, own_slot)
+             for enemy_idx, enemy_slot in enumerate(self._enemy_slots):
+                 alive = (
+-                    float(critic[row, critic_field_slice(f"enemy{enemy_idx}/alive_flag")][0])
+-                    > 0.5
++                    float(critic[row, critic_field_slice(f"enemy{enemy_idx}/alive_flag")][0]) > 0.5
+                 )
+                 visible[row, enemy_idx] = alive and bool(native[enemy_slot])
+         return visible
+diff --git a/python/envs/phase5_entity_mappo.py b/python/envs/phase5_entity_mappo.py
+deleted file mode 100644
+index f753818..0000000
+--- a/python/envs/phase5_entity_mappo.py
++++ /dev/null
+@@ -1,53 +0,0 @@
+-"""Phase-5 MAPPO env wrapper with entity-token actor observations."""
+-
+-from __future__ import annotations
+-
+-from typing import Any, ClassVar
+-
+-import numpy as np
+-
+-from envs.mappo_phase_common import BaseMappoPhaseEnv
+-from envs.phase4_mappo import VALID_OPPONENT_BOTS, Phase4MappoEnv
+-from xushi2.entity_obs import ENTITY_OBS_DIM, actor_obs_to_entity_obs
+-from xushi2.obs_manifest import CRITIC_DIM
+-
+-__all__ = ["Phase5EntityMappoEnv"]
+-
+-
+-class Phase5EntityMappoEnv(BaseMappoPhaseEnv):
+-    """3v3 MAPPO env that exposes flattened entity tokens to the actor.
+-
+-    The sim, action space, reward, and centralized critic stay identical to
+-    Phase 4. Only the actor observation changes, which keeps the first Phase 5
+-    diagnostic focused on the attention-observation delta.
+-    """
+-
+-    metadata: ClassVar[dict[str, list[str]]] = {"render_modes": []}
+-
+-    n_agents: int = 3
+-    actor_obs_dim: int = ENTITY_OBS_DIM
+-    critic_obs_dim: int = CRITIC_DIM
+-    action_dim: int = 6
+-
+-    def __init__(
+-        self,
+-        sim_cfg: dict,
+-        *,
+-        opponent_bot: str,
+-        learner_team: str = "A",
+-        reward_cfg: dict[str, Any] | None = None,
+-    ) -> None:
+-        if opponent_bot not in VALID_OPPONENT_BOTS:
+-            raise ValueError(
+-                f"unknown opponent_bot {opponent_bot!r}; valid: {sorted(VALID_OPPONENT_BOTS)}"
+-            )
+-        base = Phase4MappoEnv(
+-            sim_cfg,
+-            opponent_bot=opponent_bot,
+-            learner_team=learner_team,
+-            reward_cfg=reward_cfg,
+-        )
+-        super().__init__(base_env=base, actor_obs_dim=ENTITY_OBS_DIM)
+-
+-    def convert_obs(self, obs: np.ndarray) -> np.ndarray:
+-        return actor_obs_to_entity_obs(obs)
+diff --git a/python/envs/phase6_grid_mappo.py b/python/envs/phase6_grid_mappo.py
+deleted file mode 100644
+index a394f8b..0000000
+--- a/python/envs/phase6_grid_mappo.py
++++ /dev/null
+@@ -1,44 +0,0 @@
+-"""Phase-6 MAPPO env wrapper with entity tokens plus egocentric grid."""
+-
+-from __future__ import annotations
+-
+-from typing import Any, ClassVar
+-
+-import numpy as np
+-
+-from envs.mappo_phase_common import BaseMappoPhaseEnv
+-from envs.phase4_mappo import Phase4MappoEnv
+-from xushi2.grid_obs import ENTITY_GRID_OBS_DIM, actor_obs_to_entity_grid_obs
+-from xushi2.obs_manifest import CRITIC_DIM
+-
+-__all__ = ["Phase6GridMappoEnv"]
+-
+-
+-class Phase6GridMappoEnv(BaseMappoPhaseEnv):
+-    """3v3 MAPPO env that adds a compact grid branch to Phase-5 tokens."""
+-
+-    metadata: ClassVar[dict[str, list[str]]] = {"render_modes": []}
+-
+-    n_agents: int = 3
+-    actor_obs_dim: int = ENTITY_GRID_OBS_DIM
+-    critic_obs_dim: int = CRITIC_DIM
+-    action_dim: int = 6
+-
+-    def __init__(
+-        self,
+-        sim_cfg: dict,
+-        *,
+-        opponent_bot: str,
+-        learner_team: str = "A",
+-        reward_cfg: dict[str, Any] | None = None,
+-    ) -> None:
+-        base = Phase4MappoEnv(
+-            sim_cfg,
+-            opponent_bot=opponent_bot,
+-            learner_team=learner_team,
+-            reward_cfg=reward_cfg,
+-        )
+-        super().__init__(base_env=base, actor_obs_dim=ENTITY_GRID_OBS_DIM)
+-
+-    def convert_obs(self, obs: np.ndarray) -> np.ndarray:
+-        return actor_obs_to_entity_grid_obs(obs)
+diff --git a/python/envs/phase7_fog_mappo.py b/python/envs/phase7_fog_mappo.py
+deleted file mode 100644
+index de57ed5..0000000
+--- a/python/envs/phase7_fog_mappo.py
++++ /dev/null
+@@ -1,152 +0,0 @@
+-"""Phase-7 MAPPO env wrapper with diagnostic partial observation."""
+-
+-from __future__ import annotations
+-
+-from typing import Any, ClassVar
+-
+-import gymnasium as gym
+-import numpy as np
+-from gymnasium import spaces
+-
+-from envs.phase4_mappo import Phase4MappoEnv
+-from xushi2 import xushi2_cpp as _cpp
+-from xushi2.grid_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+-from xushi2.multi_enemy_obs import (
+-    actor_obs_to_multi_enemy_entity_grid_obs,
+-    map_bounds_from_sim_cfg,
+-    normalize_world_for_team,
+-)
+-from xushi2.obs_manifest import CRITIC_DIM, actor_field_slice, critic_field_slice
+-
+-__all__ = ["Phase7FogMappoEnv"]
+-
+-
+-class Phase7FogMappoEnv(gym.Env):
+-    """3v3 MAPPO env with team-shared or per-agent diagnostic fog masking."""
+-
+-    metadata: ClassVar[dict[str, list[str]]] = {"render_modes": []}
+-
+-    n_agents: int = 3
+-    actor_obs_dim: int = MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+-    critic_obs_dim: int = CRITIC_DIM
+-    action_dim: int = 6
+-
+-    def __init__(
+-        self,
+-        sim_cfg: dict,
+-        *,
+-        opponent_bot: str,
+-        learner_team: str = "A",
+-        reward_cfg: dict[str, Any] | None = None,
+-        fog_mode: str = "team_shared",
+-        visible_radius: float = 0.6,
+-    ) -> None:
+-        super().__init__()
+-        if fog_mode not in ("team_shared", "per_agent"):
+-            raise ValueError("fog_mode must be 'team_shared' or 'per_agent'")
+-        self._team_shared = fog_mode == "team_shared"
+-        self._visible_radius = float(visible_radius)
+-        self._base = Phase4MappoEnv(
+-            sim_cfg,
+-            opponent_bot=opponent_bot,
+-            learner_team=learner_team,
+-            reward_cfg=reward_cfg,
+-        )
+-        self.observation_space = spaces.Box(
+-            low=-np.inf,
+-            high=np.inf,
+-            shape=(3, MULTI_ENEMY_ENTITY_GRID_OBS_DIM),
+-            dtype=np.float32,
+-        )
+-        self.action_space = self._base.action_space
+-        self._map_bounds = map_bounds_from_sim_cfg(sim_cfg)
+-        self._last_seen_enemy_position = np.zeros((3, 3, 2), dtype=np.float32)
+-        self._last_seen_valid = np.zeros((3, 3), dtype=bool)
+-
+-    def reset(self, *, seed=None, options=None):
+-        obs, info = self._base.reset(seed=seed, options=options)
+-        self._last_seen_enemy_position[:] = 0.0
+-        self._last_seen_valid[:] = False
+-        out = self._convert(obs)
+-        info = dict(info)
+-        self._add_last_seen_info(info)
+-        return out, info
+-
+-    def step(self, action: np.ndarray):
+-        obs, reward, terminated, truncated, info = self._base.step(action)
+-        out = self._convert(obs)
+-        info = dict(info)
+-        self._add_last_seen_info(info)
+-        return out, reward, terminated, truncated, info
+-
+-    def build_critic_obs(self, out: np.ndarray) -> None:
+-        self._base.build_critic_obs(out)
+-
+-    def close(self) -> None:
+-        self._base.close()
+-
+-    def _add_last_seen_info(self, info: dict[str, Any]) -> None:
+-        info["last_seen_enemy_position"] = self._last_seen_enemy_position.copy()
+-        info["last_seen_valid"] = self._last_seen_valid.copy()
+-
+-    def _convert(self, obs: np.ndarray) -> np.ndarray:
+-        critic = np.zeros((3, CRITIC_DIM), dtype=np.float32)
+-        self._base.build_critic_obs(critic[0])
+-        critic[1:] = critic[0]
+-        flat = np.asarray(obs, dtype=np.float32).reshape(3, -1)
+-        visible = self._enemy_visibility_matrix(flat, critic)
+-        for row in range(3):
+-            for enemy_idx in range(3):
+-                if visible[row, enemy_idx]:
+-                    pos = self._enemy_norm_position(critic[row], enemy_idx)
+-                    self._last_seen_enemy_position[row, enemy_idx] = pos
+-                    self._last_seen_valid[row, enemy_idx] = True
+-        return actor_obs_to_multi_enemy_entity_grid_obs(
+-            obs,
+-            critic_obs=critic,
+-            map_bounds=self._map_bounds,
+-            visible_radius=self._visible_radius,
+-            visible_override=visible,
+-            last_seen_enemy_position=self._last_seen_enemy_position,
+-            last_seen_valid=self._last_seen_valid,
+-        )
+-
+-    def _enemy_visibility_matrix(self, flat_obs: np.ndarray, critic: np.ndarray) -> np.ndarray:
+-        if self._base._sim is None:
+-            raise RuntimeError("reset() must be called before converting obs")
+-        own_slots = self._base._own_slots
+-        enemy_slots = self._base._enemy_slots
+-        own_pos = flat_obs[:, actor_field_slice("own_position")]
+-        enemy_pos = np.zeros((3, 3, 2), dtype=np.float32)
+-        alive = np.zeros((3, 3), dtype=bool)
+-        for row in range(3):
+-            for enemy_idx in range(3):
+-                enemy_pos[row, enemy_idx] = self._enemy_norm_position(critic[row], enemy_idx)
+-                alive[row, enemy_idx] = (
+-                    critic[row, critic_field_slice(f"enemy{enemy_idx}/alive_flag")][0] > 0.5
+-                )
+-        radius = np.linalg.norm(enemy_pos - own_pos[:, None, :], axis=2) <= float(
+-            self._visible_radius
+-        )
+-        los = np.zeros((3, 3), dtype=bool)
+-        if self._team_shared:
+-            for enemy_idx, enemy_slot in enumerate(enemy_slots):
+-                for row in range(3):
+-                    los[row, enemy_idx] = any(
+-                        bool(_cpp.observable_enemy_slots(self._base._sim, ally)[enemy_slot])
+-                        for ally in own_slots
+-                    )
+-                    radius[row, enemy_idx] = bool(radius[:, enemy_idx].any())
+-        else:
+-            for row, own_slot in enumerate(own_slots):
+-                native = _cpp.observable_enemy_slots(self._base._sim, own_slot)
+-                for enemy_idx, enemy_slot in enumerate(enemy_slots):
+-                    los[row, enemy_idx] = bool(native[enemy_slot])
+-        return alive & radius & los
+-
+-    def _enemy_norm_position(self, critic: np.ndarray, enemy_idx: int) -> np.ndarray:
+-        return normalize_world_for_team(
+-            critic[critic_field_slice(f"enemy{enemy_idx}/world_position")],
+-            self._map_bounds,
+-            team_b_view=False,
+-        )
+diff --git a/python/envs/phase8_random_map_mappo.py b/python/envs/phase8_random_map_mappo.py
+deleted file mode 100644
+index d0b9cd5..0000000
+--- a/python/envs/phase8_random_map_mappo.py
++++ /dev/null
+@@ -1,119 +0,0 @@
+-"""Phase-8 MAPPO env wrapper with deterministic per-episode map randomization."""
+-
+-from __future__ import annotations
+-
+-from typing import Any, ClassVar
+-
+-import gymnasium as gym
+-import numpy as np
+-from gymnasium import spaces
+-
+-from envs.mappo_phase_common import RandomizedMapMixin
+-from envs.phase7_fog_mappo import Phase7FogMappoEnv
+-from xushi2.grid_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+-from xushi2.obs_manifest import CRITIC_DIM
+-
+-__all__ = ["Phase8RandomMapMappoEnv"]
+-
+-
+-class Phase8RandomMapMappoEnv(RandomizedMapMixin, gym.Env):
+-    """Phase-7 observation stack with deterministic randomized map bounds."""
+-
+-    metadata: ClassVar[dict[str, list[str]]] = {"render_modes": []}
+-
+-    n_agents: int = 3
+-    actor_obs_dim: int = MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+-    critic_obs_dim: int = CRITIC_DIM
+-    action_dim: int = 6
+-
+-    def __init__(
+-        self,
+-        sim_cfg: dict,
+-        *,
+-        opponent_bot: str,
+-        learner_team: str = "A",
+-        reward_cfg: dict[str, Any] | None = None,
+-        fog_mode: str = "team_shared",
+-        visible_radius: float = 0.65,
+-        map_randomization: dict[str, Any] | None = None,
+-    ) -> None:
+-        super().__init__()
+-        self._init_map_randomization(sim_cfg, map_randomization)
+-        self._opponent_bot = opponent_bot
+-        self._learner_team = learner_team
+-        self._reward_cfg = dict(reward_cfg or {})
+-        self._fog_mode = fog_mode
+-        self._visible_radius = float(visible_radius)
+-        self._env: Phase7FogMappoEnv | None = None
+-        self.observation_space = spaces.Box(
+-            low=-np.inf,
+-            high=np.inf,
+-            shape=(3, MULTI_ENEMY_ENTITY_GRID_OBS_DIM),
+-            dtype=np.float32,
+-        )
+-        probe = Phase7FogMappoEnv(
+-            sim_cfg,
+-            opponent_bot=opponent_bot,
+-            learner_team=learner_team,
+-            reward_cfg=reward_cfg,
+-            fog_mode=fog_mode,
+-            visible_radius=visible_radius,
+-        )
+-        try:
+-            self.action_space = probe.action_space
+-        finally:
+-            probe.close()
+-
+-    @property
+-    def last_map_bounds(self) -> dict[str, float] | None:
+-        return None if self._last_map_bounds is None else dict(self._last_map_bounds)
+-
+-    @property
+-    def last_cover_markers(self) -> list[dict[str, float]]:
+-        return [dict(marker) for marker in self._last_cover_markers]
+-
+-    @property
+-    def last_wall_segments(self) -> list[dict[str, float]]:
+-        return [dict(wall) for wall in self._last_wall_segments]
+-
+-    @property
+-    def last_layout_hash(self) -> str | None:
+-        return self._last_layout_hash
+-
+-    def reset(self, *, seed=None, options=None):
+-        seed_int = 0 if seed is None else int(seed)
+-        bounds, covers, walls, layout_hash = self._sample_map(seed_int)
+-        if self._env is not None:
+-            self._env.close()
+-        sim_cfg = self._randomized_sim_cfg(bounds, covers, walls)
+-        self._env = Phase7FogMappoEnv(
+-            sim_cfg,
+-            opponent_bot=self._opponent_bot,
+-            learner_team=self._learner_team,
+-            reward_cfg=self._reward_cfg,
+-            fog_mode=self._fog_mode,
+-            visible_radius=self._visible_radius,
+-        )
+-        obs, info = self._env.reset(seed=seed, options=options)
+-        info = dict(info)
+-        info.update(self._map_info())
+-        return obs, info
+-
+-    def step(self, action: np.ndarray):
+-        if self._env is None:
+-            raise RuntimeError("reset() must be called before step()")
+-        obs, reward, terminated, truncated, info = self._env.step(action)
+-        info = dict(info)
+-        if self._last_map_bounds is not None:
+-            info.update(self._map_info())
+-        return obs, reward, terminated, truncated, info
+-
+-    def build_critic_obs(self, out: np.ndarray) -> None:
+-        if self._env is None:
+-            raise RuntimeError("reset() must be called before build_critic_obs()")
+-        self._env.build_critic_obs(out)
+-
+-    def close(self) -> None:
+-        if self._env is not None:
+-            self._env.close()
+-            self._env = None
+diff --git a/python/envs/phase9_snapshot_mappo.py b/python/envs/phase9_snapshot_mappo.py
+deleted file mode 100644
+index a474269..0000000
+--- a/python/envs/phase9_snapshot_mappo.py
++++ /dev/null
+@@ -1,224 +0,0 @@
+-"""Phase-9 MAPPO env with frozen snapshot opponent sampling."""
+-
+-from __future__ import annotations
+-
+-from pathlib import Path
+-from typing import Any, ClassVar
+-
+-import gymnasium as gym
+-import numpy as np
+-from gymnasium import spaces
+-
+-from envs.phase4_mappo import Phase4MappoEnv
+-from xushi2 import xushi2_cpp as _cpp
+-from xushi2.grid_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+-from xushi2.map_randomization import (
+-    map_layout_hash,
+-    randomized_cover_markers,
+-    randomized_map_bounds,
+-    randomized_wall_segments,
+-    sim_cfg_with_map_bounds,
+-)
+-from xushi2.multi_enemy_obs import (
+-    actor_obs_to_multi_enemy_entity_grid_obs,
+-    normalize_world_for_team,
+-)
+-from xushi2.obs_manifest import CRITIC_DIM, actor_field_slice, critic_field_slice
+-from xushi2.snapshot_policy import SnapshotLeague, SnapshotPolicy
+-
+-__all__ = ["Phase9SnapshotMappoEnv"]
+-
+-
+-class Phase9SnapshotMappoEnv(gym.Env):
+-    """Phase-8 observation stack with a frozen snapshot driving Team B."""
+-
+-    metadata: ClassVar[dict[str, list[str]]] = {"render_modes": []}
+-
+-    n_agents: int = 3
+-    actor_obs_dim: int = MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+-    critic_obs_dim: int = CRITIC_DIM
+-    action_dim: int = 6
+-
+-    def __init__(
+-        self,
+-        sim_cfg: dict,
+-        *,
+-        opponent_bot: str,
+-        learner_team: str = "A",
+-        reward_cfg: dict[str, Any] | None = None,
+-        fog_mode: str = "team_shared",
+-        visible_radius: float = 0.65,
+-        map_randomization: dict[str, Any] | None = None,
+-        snapshot_paths: list[str] | tuple[str, ...] | None = None,
+-        snapshot_league: dict[str, Any] | None = None,
+-    ) -> None:
+-        super().__init__()
+-        if learner_team != "A":
+-            raise ValueError("Phase9SnapshotMappoEnv currently supports learner_team='A'")
+-        self._base_sim_cfg = dict(sim_cfg)
+-        self._reward_cfg = dict(reward_cfg or {})
+-        self._fog_mode = fog_mode
+-        self._team_shared = fog_mode == "team_shared"
+-        self._visible_radius = float(visible_radius)
+-        self._map_randomization = dict(map_randomization or {})
+-        paths = tuple(str(Path(p)) for p in (snapshot_paths or ()))
+-        self._snapshot_league = SnapshotLeague.from_config(paths, snapshot_league)
+-        self._env: Phase4MappoEnv | None = None
+-        self._last_map_bounds: dict[str, float] | None = None
+-        self._last_cover_markers: list[dict[str, float]] = []
+-        self._last_wall_segments: list[dict[str, float]] = []
+-        self._last_layout_hash: str | None = None
+-        self._last_snapshot_path: str | None = None
+-        self._last_snapshot_group: str | None = None
+-        self._last_seen_enemy_position = np.zeros((3, 3, 2), dtype=np.float32)
+-        self._last_seen_valid = np.zeros((3, 3), dtype=bool)
+-        self.observation_space = spaces.Box(
+-            low=-np.inf,
+-            high=np.inf,
+-            shape=(3, MULTI_ENEMY_ENTITY_GRID_OBS_DIM),
+-            dtype=np.float32,
+-        )
+-        low = np.tile(
+-            np.array([-1.0, -1.0, -1.0, 0.0, 0.0, 0.0], dtype=np.float32),
+-            (3, 1),
+-        )
+-        high = np.tile(
+-            np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float32),
+-            (3, 1),
+-        )
+-        self.action_space = spaces.Box(low=low, high=high, shape=(3, 6), dtype=np.float32)
+-
+-    def reset(self, *, seed=None, options=None):
+-        seed_int = 0 if seed is None else int(seed)
+-        bounds = randomized_map_bounds(seed_int, self._map_randomization)
+-        covers = randomized_cover_markers(seed_int, self._map_randomization)
+-        walls = randomized_wall_segments(seed_int, self._map_randomization)
+-        layout_hash = map_layout_hash(bounds, covers, walls)
+-        snapshot = self._snapshot_league.sample(seed_int)
+-        snapshot_path = snapshot.path
+-        self._last_map_bounds = bounds
+-        self._last_cover_markers = covers
+-        self._last_wall_segments = walls
+-        self._last_layout_hash = layout_hash
+-        self._last_snapshot_path = snapshot_path
+-        self._last_snapshot_group = snapshot.group
+-        self._last_seen_enemy_position[:] = 0.0
+-        self._last_seen_valid[:] = False
+-        if self._env is not None:
+-            self._env.close()
+-        sim_cfg = sim_cfg_with_map_bounds(self._base_sim_cfg, bounds)
+-        sim_cfg["randomize_map"] = True
+-        sim_cfg["cover_circles"] = [dict(marker) for marker in covers]
+-        sim_cfg["wall_segments"] = [dict(wall) for wall in walls]
+-        self._env = Phase4MappoEnv(
+-            sim_cfg,
+-            opponent_bot="snapshot",
+-            learner_team="A",
+-            reward_cfg=self._reward_cfg,
+-            opponent_policy=SnapshotPolicy(snapshot_path),
+-        )
+-        obs, info = self._env.reset(seed=seed, options=options)
+-        out = self._convert(obs)
+-        info = dict(info)
+-        info["map_bounds"] = dict(bounds)
+-        info["cover_markers"] = [dict(marker) for marker in covers]
+-        info["wall_segments"] = [dict(wall) for wall in walls]
+-        info["map_layout_hash"] = layout_hash
+-        info["snapshot_path"] = snapshot_path
+-        info["snapshot_group"] = snapshot.group
+-        info["snapshot_league"] = self._snapshot_league.summary
+-        return out, info
+-
+-    def step(self, action: np.ndarray):
+-        if self._env is None:
+-            raise RuntimeError("reset() must be called before step()")
+-        obs, reward, terminated, truncated, info = self._env.step(action)
+-        out = self._convert(obs)
+-        info = dict(info)
+-        if self._last_map_bounds is not None:
+-            info["map_bounds"] = dict(self._last_map_bounds)
+-            info["cover_markers"] = [dict(marker) for marker in self._last_cover_markers]
+-            info["wall_segments"] = [dict(wall) for wall in self._last_wall_segments]
+-            info["map_layout_hash"] = self._last_layout_hash
+-        if self._last_snapshot_path is not None:
+-            info["snapshot_path"] = self._last_snapshot_path
+-        if self._last_snapshot_group is not None:
+-            info["snapshot_group"] = self._last_snapshot_group
+-            info["snapshot_league"] = self._snapshot_league.summary
+-        return out, reward, terminated, truncated, info
+-
+-    def build_critic_obs(self, out: np.ndarray) -> None:
+-        if self._env is None:
+-            raise RuntimeError("reset() must be called before build_critic_obs()")
+-        self._env.build_critic_obs(out)
+-
+-    def close(self) -> None:
+-        if self._env is not None:
+-            self._env.close()
+-            self._env = None
+-
+-    def _convert(self, obs: np.ndarray) -> np.ndarray:
+-        if self._env is None:
+-            raise RuntimeError("reset() must be called before converting obs")
+-        critic = np.zeros((3, CRITIC_DIM), dtype=np.float32)
+-        self._env.build_critic_obs(critic[0])
+-        critic[1:] = critic[0]
+-        flat = np.asarray(obs, dtype=np.float32).reshape(3, -1)
+-        visible = self._enemy_visibility_matrix(flat, critic)
+-        for row in range(3):
+-            for enemy_idx in range(3):
+-                if visible[row, enemy_idx]:
+-                    self._last_seen_enemy_position[row, enemy_idx] = self._enemy_norm_position(
+-                        critic[row], enemy_idx
+-                    )
+-                    self._last_seen_valid[row, enemy_idx] = True
+-        return actor_obs_to_multi_enemy_entity_grid_obs(
+-            obs,
+-            critic_obs=critic,
+-            map_bounds=dict(self._last_map_bounds or {}),
+-            visible_radius=self._visible_radius,
+-            visible_override=visible,
+-            last_seen_enemy_position=self._last_seen_enemy_position,
+-            last_seen_valid=self._last_seen_valid,
+-        )
+-
+-    def _enemy_visibility_matrix(self, flat_obs: np.ndarray, critic: np.ndarray) -> np.ndarray:
+-        if self._env is None or self._env._sim is None:
+-            raise RuntimeError("reset() must be called before converting obs")
+-        own_slots = self._env._own_slots
+-        enemy_slots = self._env._enemy_slots
+-        own_pos = flat_obs[:, actor_field_slice("own_position")]
+-        enemy_pos = np.zeros((3, 3, 2), dtype=np.float32)
+-        alive = np.zeros((3, 3), dtype=bool)
+-        for row in range(3):
+-            for enemy_idx in range(3):
+-                enemy_pos[row, enemy_idx] = self._enemy_norm_position(critic[row], enemy_idx)
+-                alive[row, enemy_idx] = (
+-                    critic[row, critic_field_slice(f"enemy{enemy_idx}/alive_flag")][0] > 0.5
+-                )
+-        radius = np.linalg.norm(enemy_pos - own_pos[:, None, :], axis=2) <= float(
+-            self._visible_radius
+-        )
+-        los = np.zeros((3, 3), dtype=bool)
+-        if self._team_shared:
+-            for enemy_idx, enemy_slot in enumerate(enemy_slots):
+-                union_los = any(
+-                    bool(_cpp.observable_enemy_slots(self._env._sim, ally)[enemy_slot])
+-                    for ally in own_slots
+-                )
+-                union_radius = bool(radius[:, enemy_idx].any())
+-                los[:, enemy_idx] = union_los
+-                radius[:, enemy_idx] = union_radius
+-        else:
+-            for row, own_slot in enumerate(own_slots):
+-                native = _cpp.observable_enemy_slots(self._env._sim, own_slot)
+-                for enemy_idx, enemy_slot in enumerate(enemy_slots):
+-                    los[row, enemy_idx] = bool(native[enemy_slot])
+-        return alive & radius & los
+-
+-    def _enemy_norm_position(self, critic: np.ndarray, enemy_idx: int) -> np.ndarray:
+-        return normalize_world_for_team(
+-            critic[critic_field_slice(f"enemy{enemy_idx}/world_position")],
+-            dict(self._last_map_bounds or {}),
+-            team_b_view=False,
+-        )
+diff --git a/python/envs/runtime_factory.py b/python/envs/runtime_factory.py
+index 84467a5..d7cc38a 100644
+--- a/python/envs/runtime_factory.py
++++ b/python/envs/runtime_factory.py
+@@ -83,55 +83,6 @@ def make_mappo_match_env(
+     if mini_game not in (None, ""):
+         raise ValueError(f"unknown mappo mini_game {mini_game!r}")
+ 
+-    if target_slot:
+-        from envs.phase10_target_slot_mappo import Phase10TargetSlotMappoEnv
+-
+-        return Phase10TargetSlotMappoEnv(
+-            dict(sim_cfg),
+-            opponent_bot=str(opponent_bot),
+-            learner_team=str(learner_team),
+-            reward_cfg=reward,
+-            fog_mode=fog or "team_shared",
+-            visible_radius=float(visible_radius),
+-            map_randomization=map_cfg,
+-        )
+-    if tuple(snapshot_paths):
+-        from envs.phase9_snapshot_mappo import Phase9SnapshotMappoEnv
+-
+-        return Phase9SnapshotMappoEnv(
+-            dict(sim_cfg),
+-            opponent_bot=str(opponent_bot),
+-            learner_team=str(learner_team),
+-            reward_cfg=reward,
+-            fog_mode=fog or "team_shared",
+-            visible_radius=float(visible_radius),
+-            map_randomization=map_cfg,
+-            snapshot_paths=list(snapshot_paths),
+-            snapshot_league=league_cfg,
+-        )
+-    if map_cfg:
+-        from envs.phase8_random_map_mappo import Phase8RandomMapMappoEnv
+-
+-        return Phase8RandomMapMappoEnv(
+-            dict(sim_cfg),
+-            opponent_bot=str(opponent_bot),
+-            learner_team=str(learner_team),
+-            reward_cfg=reward,
+-            fog_mode=fog or "team_shared",
+-            visible_radius=float(visible_radius),
+-            map_randomization=map_cfg,
+-        )
+-    if fog is not None:
+-        from envs.phase7_fog_mappo import Phase7FogMappoEnv
+-
+-        return Phase7FogMappoEnv(
+-            dict(sim_cfg),
+-            opponent_bot=str(opponent_bot),
+-            learner_team=str(learner_team),
+-            reward_cfg=reward,
+-            fog_mode=fog,
+-            visible_radius=float(visible_radius),
+-        )
+     if actor_obs == "multi_enemy_entity_grid":
+         from envs.phase4_multi_enemy_mappo import Phase4MultiEnemyMappoEnv
+ 
+@@ -141,24 +92,6 @@ def make_mappo_match_env(
+             learner_team=str(learner_team),
+             reward_cfg=reward,
+         )
+-    if actor_obs == "entity_grid":
+-        from envs.phase6_grid_mappo import Phase6GridMappoEnv
+-
+-        return Phase6GridMappoEnv(
+-            dict(sim_cfg),
+-            opponent_bot=str(opponent_bot),
+-            learner_team=str(learner_team),
+-            reward_cfg=reward,
+-        )
+-    if actor_obs == "entity":
+-        from envs.phase5_entity_mappo import Phase5EntityMappoEnv
+-
+-        return Phase5EntityMappoEnv(
+-            dict(sim_cfg),
+-            opponent_bot=str(opponent_bot),
+-            learner_team=str(learner_team),
+-            reward_cfg=reward,
+-        )
+     if actor_obs != "flat":
+         raise ValueError(f"unknown mappo actor_obs {actor_obs!r}")
+ 
+@@ -191,9 +124,7 @@ def mappo_env_fn_from_config(env_cfg: dict[str, Any]) -> Callable[[], gym.Env]:
+         mini_game_cfg=dict(cfg.get("mini_game_config", {})),
+         self_play=bool(self_play_cfg.get("enabled", cfg.get("current_selfplay", False))),
+         self_play_schedule=(
+-            dict(cfg.get("self_play_schedule", {}))
+-            if "self_play_schedule" in cfg
+-            else None
++            dict(cfg.get("self_play_schedule", {})) if "self_play_schedule" in cfg else None
+         ),
+         snapshot_paths=tuple(str(p) for p in cfg.get("snapshot_paths", ())),
+         snapshot_league=(
+diff --git a/python/eval/sim_cfg.py b/python/eval/sim_cfg.py
+index b531803..fde8c1b 100644
+--- a/python/eval/sim_cfg.py
++++ b/python/eval/sim_cfg.py
+@@ -61,6 +61,7 @@ def _merge_sim_cfg_with_overrides(base_sim_cfg: dict, args: Namespace) -> dict:
+         mechanics["respawn_ticks"] = args.respawn_ticks
+ 
+     sim_cfg["mechanics"] = mechanics
++    sim_cfg.setdefault("seed", 0)
+     sim_cfg.setdefault("fog_of_war_enabled", False)
+     sim_cfg.setdefault("randomize_map", False)
+     return sim_cfg
+diff --git a/python/scripts/diagnose_full_env_teacher.py b/python/scripts/diagnose_full_env_teacher.py
+index cd89ecd..13f540e 100644
+--- a/python/scripts/diagnose_full_env_teacher.py
++++ b/python/scripts/diagnose_full_env_teacher.py
+@@ -9,10 +9,13 @@
+ 
+ import argparse
+ import json
++import sys
+ from collections.abc import Iterable
+ from pathlib import Path
+ from typing import Any
+ 
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++
+ import numpy as np
+ import torch
+ import yaml
+@@ -21,7 +24,7 @@
+ from train.mappo_rollout_trainer import make_mappo_config
+ from train.runtime_specs import resolve_runtime_spec
+ from xushi2 import xushi2_cpp as _cpp
+-from xushi2.entity_obs import ENTITY_TOKEN_DIM, MULTI_ENEMY_TOKEN_COUNT
++from xushi2.multi_enemy_obs import ENTITY_TOKEN_DIM, MULTI_ENEMY_TOKEN_COUNT
+ 
+ _AIM_DELTA_LIMIT = float(np.pi / 4.0)
+ _SELF_TOKEN = 0
+@@ -184,9 +187,7 @@ def run_teacher_diagnostic(
+                     "uncontested_on_point_seconds_a",
+                 ):
+                     episode_totals[key] += float(objective.get(key, 0.0))
+-                if term or trunc or (
+-                    max_decisions is not None and decisions >= int(max_decisions)
+-                ):
++                if term or trunc or (max_decisions is not None and decisions >= int(max_decisions)):
+                     break
+ 
+             final_tick = float(final_info.get("tick", 0.0))
+diff --git a/python/tests/contracts/test_mappo_config_compat_contract.py b/python/tests/contracts/test_mappo_config_compat_contract.py
+index a039244..2727cc9 100644
+--- a/python/tests/contracts/test_mappo_config_compat_contract.py
++++ b/python/tests/contracts/test_mappo_config_compat_contract.py
+@@ -6,28 +6,13 @@
+ from train.mappo import make_mappo_config
+ from train.mappo_bc_pretrain import _walk_to_objective_targets
+ from train.phases import resolve_phase
+-from xushi2.entity_obs import (
+-    ENTITY_OBS_DIM,
+-    ENTITY_TOKEN_COUNT,
+-    ENTITY_TOKEN_DIM,
+-    MULTI_ENEMY_TOKEN_COUNT,
+-)
+-from xushi2.grid_obs import (
+-    ENTITY_GRID_OBS_DIM,
+-    GRID_CHANNELS,
+-    GRID_SIZE,
+-    MULTI_ENEMY_ENTITY_GRID_OBS_DIM,
+-)
++from xushi2.multi_enemy_obs import GRID_CHANNELS, GRID_SIZE, MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+ 
+ pytestmark = pytest.mark.contract_fast
+ 
+-PHASE10_TARGET_OBS_DIM = MULTI_ENEMY_ENTITY_GRID_OBS_DIM + MULTI_ENEMY_TOKEN_COUNT
+-
+ 
+ def test_phase4_smoke_config_builds_mappo_config() -> None:
+-    with open(
+-        config_path("phase4/smoke/phase4_mappo_smoke.yaml"), encoding="utf-8"
+-    ) as fh:
++    with open(config_path("phase4/smoke/phase4_mappo_smoke.yaml"), encoding="utf-8") as fh:
+         config = yaml.safe_load(fh)
+     cfg = make_mappo_config(config)
+     assert cfg.num_envs == 2
+@@ -38,9 +23,7 @@ def test_phase4_smoke_config_builds_mappo_config() -> None:
+ 
+ 
+ def test_phase4_config_can_select_async_vector_backend() -> None:
+-    with open(
+-        config_path("phase4/smoke/phase4_mappo_smoke.yaml"), encoding="utf-8"
+-    ) as fh:
++    with open(config_path("phase4/smoke/phase4_mappo_smoke.yaml"), encoding="utf-8") as fh:
+         config = yaml.safe_load(fh)
+     config["ppo"] = dict(config["ppo"])
+     config["ppo"]["vector_env"] = "async"
+@@ -77,9 +60,7 @@ def test_phase4_config_can_select_async_vector_backend() -> None:
+ def test_mappo_config_rejects_out_of_range_hyperparameters(
+     key: str, value: float, msg: str
+ ) -> None:
+-    with open(
+-        config_path("phase4/smoke/phase4_mappo_smoke.yaml"), encoding="utf-8"
+-    ) as fh:
++    with open(config_path("phase4/smoke/phase4_mappo_smoke.yaml"), encoding="utf-8") as fh:
+         config = yaml.safe_load(fh)
+     config["ppo"] = dict(config["ppo"])
+     config["ppo"][key] = value
+@@ -88,9 +69,7 @@ def test_mappo_config_rejects_out_of_range_hyperparameters(
+ 
+ 
+ def test_phase4_basic_config_builds_mappo_config() -> None:
+-    with open(
+-        config_path("phase4/baseline/phase4_mappo_basic.yaml"), encoding="utf-8"
+-    ) as fh:
++    with open(config_path("phase4/baseline/phase4_mappo_basic.yaml"), encoding="utf-8") as fh:
+         config = yaml.safe_load(fh)
+     cfg = make_mappo_config(config)
+     assert cfg.num_envs == 8
+@@ -131,191 +110,6 @@ def test_phase4_objective_probe_config_is_compact() -> None:
+     assert config["run"]["total_updates"] == 1
+ 
+ 
+-def test_phase5_entity_attention_probe_config_is_compact() -> None:
+-    with open(
+-        config_path("phase5_entity_attention_probe.yaml"),
+-        encoding="utf-8",
+-    ) as fh:
+-        config = yaml.safe_load(fh)
+-    cfg = make_mappo_config(config)
+-    assert cfg.num_envs == 2
+-    assert cfg.rollout_len == 32
+-    assert cfg.obs_dim == ENTITY_OBS_DIM
+-    assert cfg.obs_encoder == "entity_attention"
+-    assert cfg.entity_token_count == ENTITY_TOKEN_COUNT
+-    assert cfg.entity_token_dim == ENTITY_TOKEN_DIM
+-    assert cfg.entity_num_heads == 2
+-    assert config["run"]["bc_pretrain_steps"] == 200
+-    assert config["run"]["total_updates"] == 1
+-
+-
+-def test_phase6_entity_grid_probe_config_is_compact() -> None:
+-    with open(
+-        config_path("phase6_entity_grid_probe.yaml"),
+-        encoding="utf-8",
+-    ) as fh:
+-        config = yaml.safe_load(fh)
+-    cfg = make_mappo_config(config)
+-    assert cfg.num_envs == 2
+-    assert cfg.rollout_len == 32
+-    assert cfg.obs_dim == ENTITY_GRID_OBS_DIM
+-    assert cfg.obs_encoder == "entity_attention_grid"
+-    assert cfg.entity_token_count == ENTITY_TOKEN_COUNT
+-    assert cfg.entity_token_dim == ENTITY_TOKEN_DIM
+-    assert cfg.grid_channels == GRID_CHANNELS
+-    assert cfg.grid_size == GRID_SIZE
+-    assert config["run"]["bc_pretrain_steps"] == 200
+-    assert config["run"]["total_updates"] == 1
+-
+-
+-def test_phase7_team_fog_probe_config_is_compact() -> None:
+-    with open(
+-        config_path("phase7_team_fog_probe.yaml"),
+-        encoding="utf-8",
+-    ) as fh:
+-        config = yaml.safe_load(fh)
+-    phase, spec = resolve_phase(config)
+-    _env_fn, ckpt_env_cfg, _seed = spec["env_bundle"](config)
+-    cfg = make_mappo_config(config)
+-    assert phase == 7
+-    assert cfg.num_envs == 2
+-    assert cfg.rollout_len == 32
+-    assert cfg.obs_dim == MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+-    assert cfg.entity_token_count == MULTI_ENEMY_TOKEN_COUNT
+-    assert cfg.obs_encoder == "entity_attention_grid"
+-    assert ckpt_env_cfg["fog_mode"] == "team_shared"
+-    assert ckpt_env_cfg["visible_radius"] == 0.65
+-    assert config["run"]["bc_pretrain_steps"] == 500
+-    assert config["run"]["bc_batch_size"] == 900
+-    assert config["run"]["total_updates"] == 1
+-    assert config["run"]["eval_gate"]["min_episodes"] == 2
+-    assert config["run"]["eval_gate"]["min_win_rate"] == 1.0
+-    assert config["run"]["eval_gate"]["max_draw_rate"] == 0.0
+-    assert config["run"]["eval_gate"]["min_mean_reward"] == 10.0
+-    assert config["run"]["eval_gate"]["min_mean_score_a"] == 7.0
+-    assert config["run"]["eval_gate"]["max_mean_score_b"] == 0.0
+-
+-
+-def test_phase7_per_agent_fog_probe_config_is_compact() -> None:
+-    with open(
+-        config_path("phase7_per_agent_fog_probe.yaml"),
+-        encoding="utf-8",
+-    ) as fh:
+-        config = yaml.safe_load(fh)
+-    phase, spec = resolve_phase(config)
+-    _env_fn, ckpt_env_cfg, _seed = spec["env_bundle"](config)
+-    cfg = make_mappo_config(config)
+-    assert phase == 7
+-    assert cfg.num_envs == 2
+-    assert cfg.rollout_len == 32
+-    assert cfg.obs_dim == MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+-    assert cfg.entity_token_count == MULTI_ENEMY_TOKEN_COUNT
+-    assert cfg.obs_encoder == "entity_attention_grid"
+-    assert ckpt_env_cfg["fog_mode"] == "per_agent"
+-    assert ckpt_env_cfg["visible_radius"] == 0.65
+-    assert config["run"]["bc_pretrain_steps"] == 500
+-    assert config["run"]["bc_batch_size"] == 900
+-    assert config["run"]["total_updates"] == 1
+-    assert config["run"]["eval_gate"]["min_episodes"] == 2
+-    assert config["run"]["eval_gate"]["min_win_rate"] == 1.0
+-    assert config["run"]["eval_gate"]["max_draw_rate"] == 0.0
+-    assert config["run"]["eval_gate"]["min_mean_reward"] == 10.0
+-    assert config["run"]["eval_gate"]["min_mean_score_a"] == 7.0
+-    assert config["run"]["eval_gate"]["max_mean_score_b"] == 0.0
+-
+-
+-def test_phase8_random_map_probe_config_is_compact() -> None:
+-    with open(
+-        config_path("phase8_random_map_probe.yaml"),
+-        encoding="utf-8",
+-    ) as fh:
+-        config = yaml.safe_load(fh)
+-    phase, spec = resolve_phase(config)
+-    _env_fn, ckpt_env_cfg, _seed = spec["env_bundle"](config)
+-    cfg = make_mappo_config(config)
+-    assert phase == 8
+-    assert cfg.num_envs == 2
+-    assert cfg.rollout_len == 32
+-    assert cfg.obs_dim == MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+-    assert cfg.entity_token_count == MULTI_ENEMY_TOKEN_COUNT
+-    assert cfg.obs_encoder == "entity_attention_grid"
+-    assert ckpt_env_cfg["fog_mode"] == "team_shared"
+-    assert ckpt_env_cfg["map_randomization"]["span_jitter"] == 5.0
+-    assert ckpt_env_cfg["map_randomization"]["cover_count_per_side"] == 2
+-    assert ckpt_env_cfg["map_randomization"]["cover_jitter"] == 1.0
+-    assert ckpt_env_cfg["map_randomization"]["cover_radius"] == 1.0
+-    assert ckpt_env_cfg["sim"]["randomize_map"] is True
+-    assert config["run"]["bc_pretrain_steps"] == 500
+-    assert config["run"]["bc_batch_size"] == 900
+-    assert config["run"]["total_updates"] == 1
+-
+-
+-def test_phase9_snapshot_probe_config_is_compact() -> None:
+-    with open(
+-        config_path("phase9_snapshot_probe.yaml"),
+-        encoding="utf-8",
+-    ) as fh:
+-        config = yaml.safe_load(fh)
+-    phase, spec = resolve_phase(config)
+-    _env_fn, ckpt_env_cfg, _seed = spec["env_bundle"](config)
+-    cfg = make_mappo_config(config)
+-    assert phase == 9
+-    assert cfg.num_envs == 2
+-    assert cfg.rollout_len == 32
+-    assert cfg.obs_dim == MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+-    assert cfg.entity_token_count == MULTI_ENEMY_TOKEN_COUNT
+-    assert cfg.obs_encoder == "entity_attention_grid"
+-    assert ckpt_env_cfg["opponent_bot"] == "snapshot"
+-    assert len(ckpt_env_cfg["snapshot_paths"]) == 1
+-    assert ckpt_env_cfg["snapshot_league"]["weights"]["latest"] == 0.7
+-    assert ckpt_env_cfg["snapshot_league"]["weights"]["historical"] == 0.2
+-    assert ckpt_env_cfg["snapshot_league"]["weights"]["anchor"] == 0.1
+-    assert ckpt_env_cfg["self_play_schedule"]["weights"]["current"] == 0.7
+-    assert ckpt_env_cfg["self_play_schedule"]["weights"]["snapshot"] == 0.2
+-    assert ckpt_env_cfg["self_play_schedule"]["weights"]["anchor"] == 0.1
+-    assert config["run"]["snapshot_retention"]["max_latest"] == 2
+-    assert config["run"]["snapshot_retention"]["preserve_best"] == 1
+-    assert config["run"]["matrix_eval"]["episodes"] == 1
+-    assert config["run"]["matrix_eval"]["anchor_bots"] == ["noop"]
+-    assert len(config["run"]["matrix_eval"]["opponent_checkpoints"]) == 1
+-    assert config["run"]["matrix_eval"]["gate"]["min_rows"] == 2
+-    assert config["run"]["matrix_eval"]["gate"]["min_win_rate"]["bot"] == 1.0
+-    assert config["run"]["bc_pretrain_steps"] == 500
+-    assert config["run"]["bc_batch_size"] == 900
+-    assert config["run"]["total_updates"] == 1
+-
+-
+-def test_phase10_target_slot_probe_config_is_compact() -> None:
+-    with open(
+-        config_path("phase10_target_slot_probe.yaml"),
+-        encoding="utf-8",
+-    ) as fh:
+-        config = yaml.safe_load(fh)
+-    phase, spec = resolve_phase(config)
+-    _env_fn, ckpt_env_cfg, _seed = spec["env_bundle"](config)
+-    cfg = make_mappo_config(config)
+-    assert phase == 10
+-    assert cfg.action_dim == 7
+-    assert cfg.target_action_dim == MULTI_ENEMY_TOKEN_COUNT
+-    assert cfg.num_envs == 2
+-    assert cfg.rollout_len == 32
+-    assert cfg.obs_dim == PHASE10_TARGET_OBS_DIM
+-    assert cfg.obs_encoder == "entity_attention_grid"
+-    assert ckpt_env_cfg["opponent_bot"] == "noop"
+-    assert ckpt_env_cfg["sim"]["hero_kinds"] == [
+-        "Vanguard",
+-        "Ranger",
+-        "Mender",
+-        "Vanguard",
+-        "Ranger",
+-        "Mender",
+-    ]
+-    assert ckpt_env_cfg["map_randomization"]["span_jitter"] == 5.0
+-    assert config["run"]["bc_pretrain_steps"] == 500
+-    assert config["run"]["bc_batch_size"] == 900
+-    assert config["run"]["total_updates"] == 1
+-
+-
+ def test_phase11_mixed_league_probe_config_is_compact() -> None:
+     with open(
+         config_path("phase11/probe/phase11_mixed_league_probe.yaml"),
+@@ -339,9 +133,7 @@ def test_phase11_mixed_league_probe_config_is_compact() -> None:
+ 
+ 
+ def test_phase4_walk_bc_target_points_toward_objective() -> None:
+-    with open(
+-        config_path("phase4/smoke/phase4_mappo_smoke.yaml"), encoding="utf-8"
+-    ) as fh:
++    with open(config_path("phase4/smoke/phase4_mappo_smoke.yaml"), encoding="utf-8") as fh:
+         config = yaml.safe_load(fh)
+     cfg = make_mappo_config(config)
+     obs = torch.tensor(
+diff --git a/python/tests/smoke/test_mappo_bc_probe_smoke.py b/python/tests/smoke/test_mappo_bc_probe_smoke.py
+index cfd2414..20929dd 100644
+--- a/python/tests/smoke/test_mappo_bc_probe_smoke.py
++++ b/python/tests/smoke/test_mappo_bc_probe_smoke.py
+@@ -13,11 +13,6 @@
+     ("config_name", "output_name"),
+     [
+         ("phase4/probe/phase4_mappo_objective_probe.yaml", "phase4_objective"),
+-        ("phase5_entity_attention_probe.yaml", "phase5_entity"),
+-        ("phase6_entity_grid_probe.yaml", "phase6_grid"),
+-        ("phase7_team_fog_probe.yaml", "phase7_fog"),
+-        ("phase7_per_agent_fog_probe.yaml", "phase7_per_agent_fog"),
+-        ("phase8_random_map_probe.yaml", "phase8_random_map"),
+     ],
+ )
+ def test_mappo_bc_probe_can_be_best_result(
+diff --git a/python/tests/smoke/test_phase_checkpoint_replay_dump_smoke.py b/python/tests/smoke/test_phase_checkpoint_replay_dump_smoke.py
+index 25a8fc6..123ab8f 100644
+--- a/python/tests/smoke/test_phase_checkpoint_replay_dump_smoke.py
++++ b/python/tests/smoke/test_phase_checkpoint_replay_dump_smoke.py
+@@ -102,65 +102,6 @@ def _assert_header_contains(lines: Sequence[str], expected: Sequence[str]) -> No
+             ("phase=4", "team_size=3", "obj_unlock_ticks=", "obj_capture_ticks="),
+             _SIX_SLOT_REPLAY_FIELDS,
+         ),
+-        (
+-            "phase5_entity_attention_probe.yaml",
+-            5,
+-            "phase5_mappo.pt",
+-            ("phase=5", "team_size=3"),
+-            _SIX_SLOT_REPLAY_FIELDS,
+-        ),
+-        (
+-            "phase6_entity_grid_probe.yaml",
+-            6,
+-            "phase6_mappo.pt",
+-            ("phase=6", "team_size=3"),
+-            _SIX_SLOT_REPLAY_FIELDS,
+-        ),
+-        (
+-            "phase7_team_fog_probe.yaml",
+-            7,
+-            "phase7_mappo.pt",
+-            ("phase=7", "fog=1", "last_seen=1", "fog_mode=team_shared", "team_size=3"),
+-            _SIX_SLOT_REPLAY_FIELDS,
+-        ),
+-        (
+-            "phase7_per_agent_fog_probe.yaml",
+-            7,
+-            "phase7b_mappo.pt",
+-            ("phase=7", "fog=1", "last_seen=1", "fog_mode=per_agent", "team_size=3"),
+-            _SIX_SLOT_REPLAY_FIELDS,
+-        ),
+-        (
+-            "phase8_random_map_probe.yaml",
+-            8,
+-            "phase8_mappo.pt",
+-            (
+-                "phase=8",
+-                "map_min_x=",
+-                "map_max_y=",
+-                "layout=0x",
+-                "cover=",
+-                "walls=",
+-                "fog=1",
+-                "team_size=3",
+-                "loss_mask=1,1,1",
+-            ),
+-            _SIX_SLOT_REPLAY_FIELDS,
+-        ),
+-        (
+-            "phase10_target_slot_probe.yaml",
+-            10,
+-            "phase10_mappo.pt",
+-            (
+-                "phase=10",
+-                "target_slot=1",
+-                "heroes=vanguard,ranger,mender,vanguard,ranger,mender",
+-                "map_min_x=",
+-                "fog=1",
+-                "team_size=3",
+-            ),
+-            1 + 6 * 7,
+-        ),
+         (
+             "phase11/probe/phase11_current_selfplay_probe.yaml",
+             11,
+@@ -231,60 +172,13 @@ def bias_current_policy(model: MappoActorCritic) -> None:
+     assert slot3[1] > 0.0
+ 
+ 
+-def test_dump_replay_supports_phase9_snapshot_checkpoint(
+-    tmp_path: Path,
+-) -> None:
+-    snapshot_path = _write_checkpoint(
+-        tmp_path,
+-        filename="snapshot.pt",
+-        config=_load_config("phase8_random_map_probe.yaml"),
+-        phase=8,
+-    )
+-
+-    config = _load_config("phase9_snapshot_probe.yaml")
+-    config["env"] = dict(config["env"])
+-    config["env"]["snapshot_paths"] = [str(snapshot_path)]
+-    config["env"]["snapshot_league"] = {
+-        "latest": [str(snapshot_path)],
+-        "historical": [str(snapshot_path)],
+-        "anchor": [str(snapshot_path)],
+-        "weights": {"latest": 0.7, "historical": 0.2, "anchor": 0.1},
+-    }
+-    checkpoint_path = _write_checkpoint(
+-        tmp_path,
+-        filename="phase9_mappo.pt",
+-        config=config,
+-        phase=9,
+-    )
+-    lines = _dump_replay(
+-        checkpoint_path=checkpoint_path,
+-        replay_path=tmp_path / "phase9_policy.replay",
+-    )
+-
+-    _assert_header_contains(
+-        lines,
+-        (
+-            "phase=9",
+-            "map_min_x=",
+-            "schedule=current:0.7,snapshot:0.2,anchor:0.1",
+-            "league=latest:0.7:1,historical:0.2:1,anchor:0.1:1",
+-            "snapshot_group=",
+-            "snapshot=snapshot.pt",
+-            "fog=1",
+-            "team_size=3",
+-            "loss_mask=1,1,1",
+-        ),
+-    )
+-    _assert_replay_shape(lines)
+-
+-
+ def test_dump_replay_supports_phase11_mixed_snapshot_checkpoint(
+     tmp_path: Path,
+ ) -> None:
+     snapshot_path = _write_checkpoint(
+         tmp_path,
+         filename="phase8_snapshot.pt",
+-        config=_load_config("phase8_random_map_probe.yaml"),
++        config=_load_config("phase4/probe/phase4_mappo_multi_enemy_actor_obs_v1.yaml"),
+         phase=8,
+     )
+ 
+diff --git a/python/tests/test_full_env_rehearsal.py b/python/tests/test_full_env_rehearsal.py
+index 0f4d9bc..8185194 100644
+--- a/python/tests/test_full_env_rehearsal.py
++++ b/python/tests/test_full_env_rehearsal.py
+@@ -19,8 +19,8 @@
+ from train.mappo_model import MappoActorCritic, MappoConfig
+ from envs.phase4_mappo import Phase4MappoEnv
+ from envs.phase4_multi_enemy_mappo import Phase4MultiEnemyMappoEnv
+-from xushi2.entity_obs import ENTITY_TOKEN_DIM, MULTI_ENEMY_TOKEN_COUNT
+-from xushi2.grid_obs import GRID_CHANNELS, GRID_SIZE, MULTI_ENEMY_ENTITY_GRID_OBS_DIM
++from xushi2.multi_enemy_obs import ENTITY_TOKEN_DIM, MULTI_ENEMY_TOKEN_COUNT
++from xushi2.multi_enemy_obs import GRID_CHANNELS, GRID_SIZE, MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+ from xushi2.obs_manifest import ACTOR_PHASE1_DIM, CRITIC_DIM, actor_field_slice
+ 
+ _OWN_AIM = actor_field_slice("own_aim_unit")
+diff --git a/python/tests/test_mappo_loss_mask.py b/python/tests/test_mappo_loss_mask.py
+index 6c6ecbd..7a53153 100644
+--- a/python/tests/test_mappo_loss_mask.py
++++ b/python/tests/test_mappo_loss_mask.py
+@@ -96,7 +96,9 @@ def test_mappo_rollout_per_agent_gae_keeps_opposing_team_rewards_separate() -> N
+ 
+ 
+ def test_make_mappo_config_validates_agent_loss_mask_shape() -> None:
+-    with open(config_path("phase9_snapshot_probe.yaml"), encoding="utf-8") as fh:
++    with open(
++        config_path("phase4/probe/phase4_mappo_multi_enemy_actor_obs_v1.yaml"), encoding="utf-8"
++    ) as fh:
+         config = yaml.safe_load(fh)
+     config["ppo"] = dict(config["ppo"])
+     config["ppo"]["agent_loss_mask"] = [1.0, 0.0]
+@@ -106,7 +108,9 @@ def test_make_mappo_config_validates_agent_loss_mask_shape() -> None:
+ 
+ 
+ def test_make_mappo_config_requires_one_active_agent() -> None:
+-    with open(config_path("phase9_snapshot_probe.yaml"), encoding="utf-8") as fh:
++    with open(
++        config_path("phase4/probe/phase4_mappo_multi_enemy_actor_obs_v1.yaml"), encoding="utf-8"
++    ) as fh:
+         config = yaml.safe_load(fh)
+     config["ppo"] = dict(config["ppo"])
+     config["ppo"]["agent_loss_mask"] = [0.0, 0.0, 0.0]
+diff --git a/python/tests/test_mappo_matrix_eval.py b/python/tests/test_mappo_matrix_eval.py
+index 672af6e..b46d153 100644
+--- a/python/tests/test_mappo_matrix_eval.py
++++ b/python/tests/test_mappo_matrix_eval.py
+@@ -118,11 +118,11 @@ def test_eval_outcome_counts_current_selfplay_decisive_games_as_draws() -> None:
+     ) == (0, 0, 1)
+ 
+ 
+-def test_eval_mappo_matrix_writes_bot_and_snapshot_rows(tmp_path: Path) -> None:
+-    checkpoint = tmp_path / "phase8.pt"
++def test_eval_mappo_matrix_writes_bot_rows(tmp_path: Path) -> None:
++    checkpoint = tmp_path / "phase4_multi_enemy.pt"
+     _write_checkpoint(
+         checkpoint,
+-        "phase8_random_map_probe.yaml",
++        "phase4/probe/phase4_mappo_multi_enemy_actor_obs_v1.yaml",
+         phase=8,
+     )
+     output = tmp_path / "matrix.json"
+@@ -131,14 +131,12 @@ def test_eval_mappo_matrix_writes_bot_and_snapshot_rows(tmp_path: Path) -> None:
+         checkpoint,
+         output,
+         anchor_bots=("noop",),
+-        opponent_checkpoints=(checkpoint,),
+     )
+ 
+     assert "opponent=bot:noop" in result.stdout
+-    assert "opponent=snapshot:phase8.pt" in result.stdout
+     rows = _load_matrix_rows(output)
+-    assert len(rows) == 2
+-    assert {row["opponent_type"] for row in rows} == {"bot", "snapshot"}
++    assert len(rows) == 1
++    assert {row["opponent_type"] for row in rows} == {"bot"}
+     for row in rows:
+         assert row["episodes"] == 1
+         assert 0.0 <= row["win_rate"] <= 1.0
+diff --git a/python/tests/test_mappo_phase_env_parity.py b/python/tests/test_mappo_phase_env_parity.py
+index 527e588..64481e9 100644
+--- a/python/tests/test_mappo_phase_env_parity.py
++++ b/python/tests/test_mappo_phase_env_parity.py
+@@ -3,11 +3,6 @@
+ import numpy as np
+ 
+ from envs.phase4_mappo import Phase4MappoEnv
+-from envs.phase5_entity_mappo import Phase5EntityMappoEnv
+-from envs.phase6_grid_mappo import Phase6GridMappoEnv
+-from envs.phase7_fog_mappo import Phase7FogMappoEnv
+-from envs.phase8_random_map_mappo import Phase8RandomMapMappoEnv
+-from envs.phase10_target_slot_mappo import Phase10TargetSlotMappoEnv
+ 
+ 
+ def _cfg() -> dict:
+@@ -30,11 +25,6 @@ def _envs():
+     cfg = _cfg()
+     return [
+         Phase4MappoEnv(cfg, opponent_bot="noop"),
+-        Phase5EntityMappoEnv(cfg, opponent_bot="noop"),
+-        Phase6GridMappoEnv(cfg, opponent_bot="noop"),
+-        Phase7FogMappoEnv(cfg, opponent_bot="noop"),
+-        Phase8RandomMapMappoEnv(cfg, opponent_bot="noop"),
+-        Phase10TargetSlotMappoEnv(cfg, opponent_bot="noop"),
+     ]
+ 
+ 
+diff --git a/python/tests/test_phase10_target_slot.py b/python/tests/test_phase10_target_slot.py
+deleted file mode 100644
+index 40275d1..0000000
+--- a/python/tests/test_phase10_target_slot.py
++++ /dev/null
+@@ -1,126 +0,0 @@
+-from __future__ import annotations
+-
+-import numpy as np
+-import torch
+-import yaml
+-
+-from envs.phase10_target_slot_mappo import (
+-    PHASE10_TARGET_OBS_DIM,
+-    TARGET_SLOT_MASK_DIM,
+-    Phase10TargetSlotMappoEnv,
+-)
+-from train.mappo import MappoActorCritic, make_mappo_config
+-from xushi2.obs_manifest import CRITIC_DIM
+-from _paths import config_path
+-
+-
+-def _load_config() -> dict:
+-    with open(
+-        config_path("phase10_target_slot_probe.yaml"),
+-        encoding="utf-8",
+-    ) as fh:
+-        return yaml.safe_load(fh)
+-
+-
+-def test_phase10_env_accepts_target_slot_and_forwards_controls() -> None:
+-    config = _load_config()
+-    env_cfg = config["env"]
+-    env = Phase10TargetSlotMappoEnv(
+-        env_cfg["sim"],
+-        opponent_bot=env_cfg["opponent_bot"],
+-        learner_team=env_cfg["learner_team"],
+-        reward_cfg=env_cfg["reward"],
+-        fog_mode=env_cfg["fog_mode"],
+-        visible_radius=float(env_cfg["visible_radius"]),
+-        map_randomization=env_cfg["map_randomization"],
+-    )
+-    try:
+-        obs, info = env.reset(seed=123)
+-        assert obs.shape == (3, PHASE10_TARGET_OBS_DIM)
+-        assert env.action_space.shape == (3, 7)
+-        assert info["target_slots"].tolist() == [0, 0, 0]
+-        assert info["target_slot_mask"].shape == (3, TARGET_SLOT_MASK_DIM)
+-        assert np.array_equal(obs[:, -TARGET_SLOT_MASK_DIM:], info["target_slot_mask"])
+-
+-        action = np.zeros((3, 7), dtype=np.float32)
+-        action[:, 6] = np.array([-1.0, 1.2, 8.0], dtype=np.float32)
+-        next_obs, reward, term, trunc, info = env.step(action)
+-        assert next_obs.shape == (3, PHASE10_TARGET_OBS_DIM)
+-        assert reward.shape == (3,)
+-        assert isinstance(term, bool)
+-        assert isinstance(trunc, bool)
+-        assert info["target_slots"].tolist() == [0, 1, 4]
+-        assert np.array_equal(
+-            next_obs[:, -TARGET_SLOT_MASK_DIM:],
+-            info["target_slot_mask"],
+-        )
+-
+-        critic_obs = np.zeros(CRITIC_DIM, dtype=np.float32)
+-        env.build_critic_obs(critic_obs)
+-        assert np.all(np.isfinite(critic_obs))
+-    finally:
+-        env.close()
+-
+-
+-def test_phase10_actor_samples_target_slot_factor() -> None:
+-    config = _load_config()
+-    cfg = make_mappo_config(config)
+-    model = MappoActorCritic(cfg)
+-    obs = torch.zeros(cfg.n_agents, cfg.obs_dim)
+-    token_width = cfg.entity_token_count * cfg.entity_token_dim
+-    obs[:, token_width : token_width + cfg.entity_token_count] = 1.0
+-    obs[:, -cfg.target_action_dim :] = 1.0
+-    h = model.init_hidden(cfg.n_agents)
+-
+-    action, logprob, h_next = model.sample_action(obs, h)
+-    assert action.shape == (cfg.n_agents, 7)
+-    assert logprob.shape == (cfg.n_agents,)
+-    assert h_next.shape == (cfg.n_agents, cfg.gru_hidden)
+-    target = action[:, 6]
+-    assert torch.all(target >= 0)
+-    assert torch.all(target < cfg.target_action_dim)
+-
+-    greedy, _ = model.greedy_action(obs, h)
+-    assert greedy.shape == (cfg.n_agents, 7)
+-
+-
+-def test_phase10_actor_respects_target_slot_mask() -> None:
+-    config = _load_config()
+-    cfg = make_mappo_config(config)
+-    model = MappoActorCritic(cfg)
+-    obs = torch.zeros(cfg.n_agents, cfg.obs_dim)
+-    obs[:, -cfg.target_action_dim :] = torch.tensor(
+-        [
+-            [1.0, 0.0, 0.0, 0.0, 0.0],
+-            [0.0, 1.0, 0.0, 0.0, 0.0],
+-            [0.0, 0.0, 0.0, 0.0, 1.0],
+-        ]
+-    )
+-    h = model.init_hidden(cfg.n_agents)
+-
+-    greedy, _ = model.greedy_action(obs, h)
+-    assert greedy[:, 6].tolist() == [0.0, 1.0, 4.0]
+-    for _ in range(20):
+-        action, _logprob, _ = model.sample_action(obs, h)
+-        assert action[:, 6].tolist() == [0.0, 1.0, 4.0]
+-
+-
+-def test_phase10_actor_sampling_generator_isolated_from_global_rng() -> None:
+-    config = _load_config()
+-    cfg = make_mappo_config(config)
+-    model = MappoActorCritic(cfg)
+-    obs = torch.zeros(cfg.n_agents, cfg.obs_dim)
+-    obs[:, -cfg.target_action_dim :] = 1.0
+-    h = model.init_hidden(cfg.n_agents)
+-    g1 = torch.Generator(device="cpu")
+-    g2 = torch.Generator(device="cpu")
+-    g1.manual_seed(777)
+-    g2.manual_seed(777)
+-
+-    torch.manual_seed(1)
+-    action1, logp1, _ = model.sample_action(obs, h, generator=g1)
+-    torch.manual_seed(999_999)
+-    action2, logp2, _ = model.sample_action(obs, h, generator=g2)
+-
+-    torch.testing.assert_close(action1, action2)
+-    torch.testing.assert_close(logp1, logp2)
+diff --git a/python/tests/test_phase11_current_selfplay.py b/python/tests/test_phase11_current_selfplay.py
+index 749ddb9..cb3470d 100644
+--- a/python/tests/test_phase11_current_selfplay.py
++++ b/python/tests/test_phase11_current_selfplay.py
+@@ -9,7 +9,7 @@
+ from envs.phase11_current_selfplay_mappo import Phase11CurrentSelfplayMappoEnv
+ from train.mappo import MappoActorCritic, make_mappo_config, train_phase4_from_config
+ from train.phases import resolve_phase
+-from xushi2.grid_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
++from xushi2.multi_enemy_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+ from xushi2.obs_manifest import CRITIC_DIM
+ from _paths import config_path
+ 
+@@ -33,8 +33,6 @@ def _env() -> Phase11CurrentSelfplayMappoEnv:
+     )
+ 
+ 
+-
+-
+ def test_phase11_current_selfplay_forces_team_scalar_reward_contract() -> None:
+     env = Phase11CurrentSelfplayMappoEnv(
+         {
+@@ -57,7 +55,6 @@ def test_phase11_current_selfplay_forces_team_scalar_reward_contract() -> None:
+         env.close()
+ 
+ 
+-
+ def test_phase11_current_selfplay_rejects_per_agent_reward_override() -> None:
+     try:
+         Phase11CurrentSelfplayMappoEnv(
+@@ -78,9 +75,11 @@ def test_phase11_current_selfplay_rejects_per_agent_reward_override() -> None:
+         raise AssertionError("expected ValueError for per_agent_rewards=True")
+     except ValueError as exc:
+         assert "per_agent_rewards" in str(exc)
++
++
+ def _write_phase8_snapshot(path: Path) -> None:
+     with open(
+-        config_path("phase8_random_map_probe.yaml"),
++        config_path("phase4/probe/phase4_mappo_multi_enemy_actor_obs_v1.yaml"),
+         encoding="utf-8",
+     ) as fh:
+         config = yaml.safe_load(fh)
+diff --git a/python/tests/test_phase4_multi_enemy_actor_obs.py b/python/tests/test_phase4_multi_enemy_actor_obs.py
+index 663dc44..7b7415d 100644
+--- a/python/tests/test_phase4_multi_enemy_actor_obs.py
++++ b/python/tests/test_phase4_multi_enemy_actor_obs.py
+@@ -8,8 +8,8 @@
+ from envs.runtime_factory import make_mappo_match_env
+ from train.runtime_specs import resolve_runtime_spec
+ from xushi2 import xushi2_cpp as _cpp
+-from xushi2.entity_obs import ENTITY_TOKEN_DIM, MULTI_ENEMY_TOKEN_COUNT
+-from xushi2.grid_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
++from xushi2.multi_enemy_obs import ENTITY_TOKEN_DIM, MULTI_ENEMY_TOKEN_COUNT
++from xushi2.multi_enemy_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+ from xushi2.multi_enemy_obs import (
+     actor_obs_to_multi_enemy_entity_grid_obs,
+     zero_masked_enemy_tokens,
+@@ -52,7 +52,9 @@ def _actor_obs() -> np.ndarray:
+     obs[:, actor_field_slice("own_hp")] = 1.0
+     obs[:, actor_field_slice("own_position")] = np.array([0.1, -0.2], dtype=np.float32)
+     obs[:, actor_field_slice("own_aim_unit")] = np.array([0.0, 1.0], dtype=np.float32)
+-    obs[:, actor_field_slice("objective_owner_onehot")] = np.array([1.0, 0.0, 0.0], dtype=np.float32)
++    obs[:, actor_field_slice("objective_owner_onehot")] = np.array(
++        [1.0, 0.0, 0.0], dtype=np.float32
++    )
+     return obs
+ 
+ 
+@@ -94,12 +96,16 @@ def test_zero_masked_multi_enemy_tokens_prevents_hidden_enemy_payload() -> None:
+ 
+     assert np.all(mask[:, _SELF_TOKEN] == 1.0)
+     assert np.all(mask[:, _OBJECTIVE_TOKEN] == 1.0)
+-    np.testing.assert_array_equal(mask[:, _FIRST_ENEMY_TOKEN:_OBJECTIVE_TOKEN], visible.astype(np.float32))
++    np.testing.assert_array_equal(
++        mask[:, _FIRST_ENEMY_TOKEN:_OBJECTIVE_TOKEN], visible.astype(np.float32)
++    )
+     for row in range(3):
+         for enemy_idx in range(3):
+             token_idx = _FIRST_ENEMY_TOKEN + enemy_idx
+             if not visible[row, enemy_idx]:
+-                np.testing.assert_array_equal(tokens[row, token_idx], np.zeros(ENTITY_TOKEN_DIM, dtype=np.float32))
++                np.testing.assert_array_equal(
++                    tokens[row, token_idx], np.zeros(ENTITY_TOKEN_DIM, dtype=np.float32)
++                )
+ 
+ 
+ def test_hidden_enemy_state_does_not_change_visible_multi_enemy_actor_obs() -> None:
+@@ -107,8 +113,12 @@ def test_hidden_enemy_state_does_not_change_visible_multi_enemy_actor_obs() -> N
+     critic_a = _critic_obs()
+     critic_b = critic_a.copy()
+     critic_b[:, critic_field_slice("enemy1/hp_normalized")] = 0.25
+-    critic_b[:, critic_field_slice("enemy1/world_position")] = np.array([5.0, 45.0], dtype=np.float32)
+-    critic_b[:, critic_field_slice("enemy1/world_velocity")] = np.array([4.0, -3.0], dtype=np.float32)
++    critic_b[:, critic_field_slice("enemy1/world_position")] = np.array(
++        [5.0, 45.0], dtype=np.float32
++    )
++    critic_b[:, critic_field_slice("enemy1/world_velocity")] = np.array(
++        [4.0, -3.0], dtype=np.float32
++    )
+     kwargs = {
+         "map_bounds": {"min_x": 0.0, "min_y": 0.0, "max_x": 50.0, "max_y": 50.0},
+         "visible_radius": 1.0,
+@@ -129,7 +139,9 @@ def test_visible_enemy_state_changes_visible_multi_enemy_actor_obs() -> None:
+     visible = np.array([[True, False, False]] * 3, dtype=bool)
+     critic_a = _critic_obs()
+     critic_b = critic_a.copy()
+-    critic_b[:, critic_field_slice("enemy0/world_position")] = np.array([40.0, 25.0], dtype=np.float32)
++    critic_b[:, critic_field_slice("enemy0/world_position")] = np.array(
++        [40.0, 25.0], dtype=np.float32
++    )
+     kwargs = {
+         "map_bounds": {"min_x": 0.0, "min_y": 0.0, "max_x": 50.0, "max_y": 50.0},
+         "visible_radius": 1.0,
+diff --git a/python/tests/test_phase5_entity_obs.py b/python/tests/test_phase5_entity_obs.py
+deleted file mode 100644
+index 8c8bcfa..0000000
+--- a/python/tests/test_phase5_entity_obs.py
++++ /dev/null
+@@ -1,69 +0,0 @@
+-from __future__ import annotations
+-
+-import numpy as np
+-
+-from envs.phase5_entity_mappo import Phase5EntityMappoEnv
+-from xushi2.entity_obs import (
+-    ENTITY_OBS_DIM,
+-    ENTITY_TOKEN_COUNT,
+-    ENTITY_TOKEN_DIM,
+-    actor_obs_to_entity_obs,
+-    entity_obs_self_position,
+-)
+-from xushi2.obs_manifest import ACTOR_PHASE1_DIM, CRITIC_DIM, actor_field_slice
+-
+-
+-def _make_sim_cfg(round_length: int = 5) -> dict:
+-    return {
+-        "seed": 0xD1CEDA7A,
+-        "round_length_seconds": round_length,
+-        "fog_of_war_enabled": False,
+-        "randomize_map": False,
+-        "action_repeat": 3,
+-        "mechanics": {
+-            "revolver_damage_centi_hp": 7500,
+-            "revolver_fire_cooldown_ticks": 15,
+-            "revolver_hitbox_radius": 0.75,
+-            "respawn_ticks": 240,
+-        },
+-    }
+-
+-
+-def test_actor_obs_to_entity_obs_shapes_mask_and_self_position() -> None:
+-    obs = np.zeros((2, ACTOR_PHASE1_DIM), dtype=np.float32)
+-    obs[:, actor_field_slice("own_position")] = np.array(
+-        [[0.25, -0.5], [-0.1, 0.3]], dtype=np.float32
+-    )
+-    obs[0, actor_field_slice("enemy_alive")] = 1.0
+-    obs[1, actor_field_slice("enemy_alive")] = 0.0
+-
+-    entity_obs = actor_obs_to_entity_obs(obs)
+-    assert entity_obs.shape == (2, ENTITY_OBS_DIM)
+-
+-    mask = entity_obs[:, ENTITY_TOKEN_COUNT * ENTITY_TOKEN_DIM :]
+-    np.testing.assert_array_equal(mask[0], np.array([1.0, 1.0, 1.0]))
+-    np.testing.assert_array_equal(mask[1], np.array([1.0, 0.0, 1.0]))
+-    np.testing.assert_allclose(
+-        entity_obs_self_position(entity_obs), obs[:, actor_field_slice("own_position")]
+-    )
+-
+-
+-def test_phase5_env_returns_entity_obs_and_phase4_critic_obs() -> None:
+-    env = Phase5EntityMappoEnv(_make_sim_cfg(), opponent_bot="noop")
+-    try:
+-        obs, info = env.reset(seed=0)
+-        assert obs.shape == (3, ENTITY_OBS_DIM)
+-        assert obs.dtype == np.float32
+-        assert info["learner_team"] == "A"
+-
+-        critic_obs = np.zeros(CRITIC_DIM, dtype=np.float32)
+-        env.build_critic_obs(critic_obs)
+-        assert np.all(np.isfinite(critic_obs))
+-
+-        next_obs, reward, term, trunc, _ = env.step(np.zeros((3, 6), dtype=np.float32))
+-        assert next_obs.shape == (3, ENTITY_OBS_DIM)
+-        assert reward.shape == (3,)
+-        assert isinstance(term, bool)
+-        assert isinstance(trunc, bool)
+-    finally:
+-        env.close()
+diff --git a/python/tests/test_phase6_grid_obs.py b/python/tests/test_phase6_grid_obs.py
+deleted file mode 100644
+index 22d8da4..0000000
+--- a/python/tests/test_phase6_grid_obs.py
++++ /dev/null
+@@ -1,64 +0,0 @@
+-from __future__ import annotations
+-
+-import numpy as np
+-
+-from envs.phase6_grid_mappo import Phase6GridMappoEnv
+-from xushi2.grid_obs import (
+-    ENTITY_GRID_OBS_DIM,
+-    GRID_CHANNELS,
+-    GRID_FLAT_DIM,
+-    GRID_SIZE,
+-    actor_obs_to_entity_grid_obs,
+-)
+-from xushi2.obs_manifest import ACTOR_PHASE1_DIM, CRITIC_DIM, actor_field_slice
+-
+-
+-def _make_sim_cfg(round_length: int = 5) -> dict:
+-    return {
+-        "seed": 0xD1CEDA7A,
+-        "round_length_seconds": round_length,
+-        "fog_of_war_enabled": False,
+-        "randomize_map": False,
+-        "action_repeat": 3,
+-        "mechanics": {
+-            "revolver_damage_centi_hp": 7500,
+-            "revolver_fire_cooldown_ticks": 15,
+-            "revolver_hitbox_radius": 0.75,
+-            "respawn_ticks": 240,
+-        },
+-    }
+-
+-
+-def test_actor_obs_to_entity_grid_obs_shapes_and_marks_grid() -> None:
+-    obs = np.zeros((1, ACTOR_PHASE1_DIM), dtype=np.float32)
+-    obs[0, actor_field_slice("own_position")] = np.array([0.5, 0.0], dtype=np.float32)
+-    obs[0, actor_field_slice("enemy_relative_position")] = np.array([-0.5, 0.0], dtype=np.float32)
+-    obs[0, actor_field_slice("enemy_alive")] = 1.0
+-
+-    out = actor_obs_to_entity_grid_obs(obs)
+-    assert out.shape == (1, ENTITY_GRID_OBS_DIM)
+-    grid = out[0, -GRID_FLAT_DIM:].reshape(GRID_CHANNELS, GRID_SIZE, GRID_SIZE)
+-    assert grid[0].max() == 1.0
+-    assert grid[1].max() == 1.0
+-    assert grid[2].max() == 1.0
+-
+-
+-def test_phase6_env_returns_entity_grid_obs_and_phase4_critic_obs() -> None:
+-    env = Phase6GridMappoEnv(_make_sim_cfg(), opponent_bot="noop")
+-    try:
+-        obs, info = env.reset(seed=0)
+-        assert obs.shape == (3, ENTITY_GRID_OBS_DIM)
+-        assert obs.dtype == np.float32
+-        assert info["learner_team"] == "A"
+-
+-        critic_obs = np.zeros(CRITIC_DIM, dtype=np.float32)
+-        env.build_critic_obs(critic_obs)
+-        assert np.all(np.isfinite(critic_obs))
+-
+-        next_obs, reward, term, trunc, _ = env.step(np.zeros((3, 6), dtype=np.float32))
+-        assert next_obs.shape == (3, ENTITY_GRID_OBS_DIM)
+-        assert reward.shape == (3,)
+-        assert isinstance(term, bool)
+-        assert isinstance(trunc, bool)
+-    finally:
+-        env.close()
+diff --git a/python/tests/test_phase7_partial_obs.py b/python/tests/test_phase7_partial_obs.py
+index f922fdb..ba87189 100644
+--- a/python/tests/test_phase7_partial_obs.py
++++ b/python/tests/test_phase7_partial_obs.py
+@@ -2,13 +2,9 @@
+ 
+ import numpy as np
+ 
+-from envs.phase7_fog_mappo import Phase7FogMappoEnv
+-from xushi2.entity_obs import ENTITY_TOKEN_COUNT, ENTITY_TOKEN_DIM
+-from xushi2.grid_obs import (
+-    GRID_FLAT_DIM,
+-    MULTI_ENEMY_ENTITY_GRID_OBS_DIM,
+-)
+-from xushi2.obs_manifest import ACTOR_PHASE1_DIM, CRITIC_DIM, actor_field_slice
++from xushi2.multi_enemy_obs import ENTITY_TOKEN_DIM, GRID_FLAT_DIM
++from xushi2.partial_obs import ENTITY_TOKEN_COUNT
++from xushi2.obs_manifest import ACTOR_PHASE1_DIM, actor_field_slice
+ from xushi2.partial_obs import actor_obs_to_partial_entity_grid_obs
+ 
+ 
+@@ -145,46 +141,3 @@ def test_partial_obs_hidden_enemy_live_fields_do_not_leak() -> None:
+     assert np.all(tokens[:, 1, 10:17] == 0.0)
+     assert np.all(tokens[:, 1, 17] == 0.5)
+     assert np.max(enemy_grid) == 0.5
+-
+-
+-def test_phase7_env_returns_partial_entity_grid_obs_and_phase4_critic_obs() -> None:
+-    env = Phase7FogMappoEnv(
+-        _make_sim_cfg(),
+-        opponent_bot="noop",
+-        fog_mode="team_shared",
+-        visible_radius=0.65,
+-    )
+-    try:
+-        obs, info = env.reset(seed=0)
+-        assert obs.shape == (3, MULTI_ENEMY_ENTITY_GRID_OBS_DIM)
+-        assert obs.dtype == np.float32
+-        assert info["learner_team"] == "A"
+-        assert info["last_seen_enemy_position"].shape == (3, 3, 2)
+-        assert info["last_seen_valid"].shape == (3, 3)
+-
+-        critic_obs = np.zeros(CRITIC_DIM, dtype=np.float32)
+-        env.build_critic_obs(critic_obs)
+-        assert np.all(np.isfinite(critic_obs))
+-
+-        next_obs, reward, term, trunc, _ = env.step(np.zeros((3, 6), dtype=np.float32))
+-        assert next_obs.shape == (3, MULTI_ENEMY_ENTITY_GRID_OBS_DIM)
+-        assert reward.shape == (3,)
+-        assert isinstance(term, bool)
+-        assert isinstance(trunc, bool)
+-    finally:
+-        env.close()
+-
+-
+-def test_phase7_env_accepts_per_agent_fog_mode() -> None:
+-    env = Phase7FogMappoEnv(
+-        _make_sim_cfg(),
+-        opponent_bot="noop",
+-        fog_mode="per_agent",
+-        visible_radius=0.65,
+-    )
+-    try:
+-        obs, _info = env.reset(seed=0)
+-        assert obs.shape == (3, MULTI_ENEMY_ENTITY_GRID_OBS_DIM)
+-        assert obs.dtype == np.float32
+-    finally:
+-        env.close()
+diff --git a/python/tests/test_phase8_random_map.py b/python/tests/test_phase8_random_map.py
+index 5ac664e..6473bbb 100644
+--- a/python/tests/test_phase8_random_map.py
++++ b/python/tests/test_phase8_random_map.py
+@@ -1,17 +1,13 @@
+ from __future__ import annotations
+ 
+-import numpy as np
+ import pytest
+ 
+-from envs.phase8_random_map_mappo import Phase8RandomMapMappoEnv
+-from xushi2.grid_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+ from xushi2.map_randomization import (
+     map_layout_hash,
+     randomized_cover_markers,
+     randomized_map_bounds,
+     randomized_wall_segments,
+ )
+-from xushi2.obs_manifest import CRITIC_DIM
+ from xushi2.runner import _build_config
+ 
+ 
+@@ -245,67 +241,3 @@ def test_map_layout_hash_is_deterministic_and_geometry_dependent() -> None:
+     assert len(a) == 18
+     assert a != c
+     assert a != d
+-
+-
+-def test_phase8_env_resets_with_seeded_randomized_map() -> None:
+-    env = Phase8RandomMapMappoEnv(
+-        _make_sim_cfg(),
+-        opponent_bot="noop",
+-        fog_mode="team_shared",
+-        visible_radius=0.65,
+-        map_randomization={
+-            "span_jitter": 5.0,
+-            "min_span": 45.0,
+-            "max_span": 55.0,
+-            "cover_count_per_side": 2,
+-            "cover_jitter": 1.0,
+-            "cover_radius": 1.0,
+-            "wall_count_per_side": 1,
+-            "wall_jitter": 1.0,
+-            "wall_half_width": 0.25,
+-            "wall_length": 5.0,
+-        },
+-    )
+-    try:
+-        obs_a, info_a = env.reset(seed=123)
+-        bounds_a = info_a["map_bounds"]
+-        covers_a = info_a["cover_markers"]
+-        walls_a = info_a["wall_segments"]
+-        layout_a = info_a["map_layout_hash"]
+-        obs_b, info_b = env.reset(seed=123)
+-        bounds_b = info_b["map_bounds"]
+-        covers_b = info_b["cover_markers"]
+-        walls_b = info_b["wall_segments"]
+-        layout_b = info_b["map_layout_hash"]
+-        obs_c, info_c = env.reset(seed=124)
+-        bounds_c = info_c["map_bounds"]
+-        covers_c = info_c["cover_markers"]
+-        walls_c = info_c["wall_segments"]
+-        layout_c = info_c["map_layout_hash"]
+-
+-        assert obs_a.shape == (3, MULTI_ENEMY_ENTITY_GRID_OBS_DIM)
+-        assert obs_b.shape == (3, MULTI_ENEMY_ENTITY_GRID_OBS_DIM)
+-        assert obs_c.shape == (3, MULTI_ENEMY_ENTITY_GRID_OBS_DIM)
+-        assert bounds_a == bounds_b
+-        assert bounds_a != bounds_c
+-        assert covers_a == covers_b
+-        assert covers_a != covers_c
+-        assert walls_a == walls_b
+-        assert walls_a != walls_c
+-        assert layout_a == layout_b
+-        assert layout_a == map_layout_hash(bounds_a, covers_a, walls_a)
+-        assert layout_a != layout_c
+-        assert len(covers_a) == 4
+-        assert covers_a[0]["radius"] == 1.0
+-        assert len(walls_a) == 2
+-        assert walls_a[0]["half_width"] == 0.25
+-
+-        _next_obs, _reward, _term, _trunc, step_info = env.step(np.zeros((3, 6), dtype=np.float32))
+-        assert step_info["map_layout_hash"] == layout_c
+-        assert step_info["wall_segments"] == walls_c
+-
+-        critic_obs = np.zeros(CRITIC_DIM, dtype=np.float32)
+-        env.build_critic_obs(critic_obs)
+-        assert np.all(np.isfinite(critic_obs))
+-    finally:
+-        env.close()
+diff --git a/python/tests/test_phase9_snapshot.py b/python/tests/test_phase9_snapshot.py
+index 1a7a267..2707ac3 100644
+--- a/python/tests/test_phase9_snapshot.py
++++ b/python/tests/test_phase9_snapshot.py
+@@ -7,13 +7,10 @@
+ import torch
+ import yaml
+ 
+-from envs.phase9_snapshot_mappo import Phase9SnapshotMappoEnv
+ from train.mappo import MappoActorCritic, make_mappo_config
+ from train.phases import resolve_phase
+ from xushi2 import xushi2_cpp as _cpp
+-from xushi2.grid_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+-from xushi2.map_randomization import map_layout_hash
+-from xushi2.obs_manifest import CRITIC_DIM
++from xushi2.multi_enemy_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+ from xushi2.runner import _build_config
+ from xushi2.self_play_schedule import SelfPlaySchedule
+ from xushi2.snapshot_policy import SnapshotLeague, SnapshotPolicy, SnapshotPool
+@@ -23,7 +20,7 @@
+ 
+ def _write_snapshot(path: Path) -> None:
+     with open(
+-        config_path("phase8_random_map_probe.yaml"),
++        config_path("phase4/probe/phase4_mappo_multi_enemy_actor_obs_v1.yaml"),
+         encoding="utf-8",
+     ) as fh:
+         config = yaml.safe_load(fh)
+@@ -208,7 +205,7 @@ def fake_normalize_world_for_team(world_xy, map_bounds, *, team_b_view):
+         fake_normalize_world_for_team,
+     )
+     with open(
+-        config_path("phase8_random_map_probe.yaml"),
++        config_path("phase4/probe/phase4_mappo_multi_enemy_actor_obs_v1.yaml"),
+         encoding="utf-8",
+     ) as fh:
+         config = yaml.safe_load(fh)
+@@ -221,56 +218,3 @@ def fake_normalize_world_for_team(world_xy, map_bounds, *, team_b_view):
+     assert captured_multi == [live_bounds]
+     assert captured_norm
+     assert all(bounds == live_bounds for bounds in captured_norm)
+-
+-
+-def test_phase9_env_uses_snapshot_opponent(shared_snapshot_path: Path) -> None:
+-    snapshot_path = shared_snapshot_path
+-    with open(
+-        config_path("phase9_snapshot_probe.yaml"),
+-        encoding="utf-8",
+-    ) as fh:
+-        config = yaml.safe_load(fh)
+-    sim_cfg = dict(config["env"]["sim"])
+-    league_cfg = {
+-        "latest": [str(snapshot_path)],
+-        "historical": [str(snapshot_path)],
+-        "anchor": [str(snapshot_path)],
+-        "weights": dict(config["env"]["snapshot_league"]["weights"]),
+-    }
+-    env = Phase9SnapshotMappoEnv(
+-        sim_cfg,
+-        opponent_bot="snapshot",
+-        snapshot_paths=[str(snapshot_path)],
+-        reward_cfg=config["env"]["reward"],
+-        fog_mode=config["env"]["fog_mode"],
+-        visible_radius=float(config["env"]["visible_radius"]),
+-        map_randomization=config["env"]["map_randomization"],
+-        snapshot_league=league_cfg,
+-    )
+-    try:
+-        obs, info = env.reset(seed=123)
+-        assert obs.shape == (3, MULTI_ENEMY_ENTITY_GRID_OBS_DIM)
+-        assert info["snapshot_path"] == str(snapshot_path)
+-        assert info["snapshot_group"] in {"latest", "historical", "anchor"}
+-        assert info["snapshot_league"] == "latest:0.7:1,historical:0.2:1,anchor:0.1:1"
+-        assert "map_bounds" in info
+-        assert len(info["cover_markers"]) == 4
+-        assert len(info["wall_segments"]) == 2
+-        assert info["map_layout_hash"] == map_layout_hash(
+-            info["map_bounds"], info["cover_markers"], info["wall_segments"]
+-        )
+-        reset_layout = info["map_layout_hash"]
+-        critic_obs = np.zeros(CRITIC_DIM, dtype=np.float32)
+-        env.build_critic_obs(critic_obs)
+-        assert np.all(np.isfinite(critic_obs))
+-        next_obs, reward, term, trunc, info = env.step(np.zeros((3, 6), dtype=np.float32))
+-        assert next_obs.shape == (3, MULTI_ENEMY_ENTITY_GRID_OBS_DIM)
+-        assert reward.shape == (3,)
+-        assert isinstance(term, bool)
+-        assert isinstance(trunc, bool)
+-        assert info["snapshot_path"] == str(snapshot_path)
+-        assert info["snapshot_group"] in {"latest", "historical", "anchor"}
+-        assert info["map_layout_hash"] == reset_layout
+-        assert len(info["wall_segments"]) == 2
+-    finally:
+-        env.close()
+diff --git a/python/tests/test_phase_registry.py b/python/tests/test_phase_registry.py
+index 2fb49db..02c2075 100644
+--- a/python/tests/test_phase_registry.py
++++ b/python/tests/test_phase_registry.py
+@@ -1,8 +1,5 @@
+ from train.phases import PHASE_REGISTRY, resolve_phase
+-from xushi2.entity_obs import ENTITY_OBS_DIM, MULTI_ENEMY_TOKEN_COUNT
+-from xushi2.grid_obs import ENTITY_GRID_OBS_DIM, MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+-
+-PHASE10_TARGET_OBS_DIM = MULTI_ENEMY_ENTITY_GRID_OBS_DIM + MULTI_ENEMY_TOKEN_COUNT
++from xushi2.multi_enemy_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+ 
+ 
+ def test_phase_registry_entries_have_required_shapes() -> None:
+@@ -37,73 +34,6 @@ def test_phase4_registry_declares_mappo_shapes() -> None:
+     assert spec["action_dim"] == 6
+ 
+ 
+-def test_phase5_registry_declares_entity_attention_shapes() -> None:
+-    phase, spec = resolve_phase({"phase": 5})
+-    assert phase == 5
+-    assert spec["label"] == "phase5"
+-    assert spec["training_variants"] == ("mappo",)
+-    assert spec["obs_dim"] == ENTITY_OBS_DIM
+-    assert spec["critic_obs_dim"] == 135
+-    assert spec["n_agents"] == 3
+-    assert spec["action_dim"] == 6
+-
+-
+-def test_phase6_registry_declares_entity_grid_shapes() -> None:
+-    phase, spec = resolve_phase({"phase": 6})
+-    assert phase == 6
+-    assert spec["label"] == "phase6"
+-    assert spec["training_variants"] == ("mappo",)
+-    assert spec["obs_dim"] == ENTITY_GRID_OBS_DIM
+-    assert spec["critic_obs_dim"] == 135
+-    assert spec["n_agents"] == 3
+-    assert spec["action_dim"] == 6
+-
+-
+-def test_phase7_registry_declares_partial_obs_shapes() -> None:
+-    phase, spec = resolve_phase({"phase": 7})
+-    assert phase == 7
+-    assert spec["label"] == "phase7"
+-    assert spec["training_variants"] == ("mappo",)
+-    assert spec["obs_dim"] == MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+-    assert spec["critic_obs_dim"] == 135
+-    assert spec["n_agents"] == 3
+-    assert spec["action_dim"] == 6
+-
+-
+-def test_phase8_registry_declares_random_map_shapes() -> None:
+-    phase, spec = resolve_phase({"phase": 8})
+-    assert phase == 8
+-    assert spec["label"] == "phase8"
+-    assert spec["training_variants"] == ("mappo",)
+-    assert spec["obs_dim"] == MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+-    assert spec["critic_obs_dim"] == 135
+-    assert spec["n_agents"] == 3
+-    assert spec["action_dim"] == 6
+-
+-
+-def test_phase9_registry_declares_snapshot_shapes() -> None:
+-    phase, spec = resolve_phase({"phase": 9})
+-    assert phase == 9
+-    assert spec["label"] == "phase9"
+-    assert spec["training_variants"] == ("mappo",)
+-    assert spec["obs_dim"] == MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+-    assert spec["critic_obs_dim"] == 135
+-    assert spec["n_agents"] == 3
+-    assert spec["action_dim"] == 6
+-
+-
+-def test_phase10_registry_declares_target_slot_shapes() -> None:
+-    phase, spec = resolve_phase({"phase": 10})
+-    assert phase == 10
+-    assert spec["label"] == "phase10"
+-    assert spec["training_variants"] == ("mappo",)
+-    assert spec["obs_dim"] == PHASE10_TARGET_OBS_DIM
+-    assert spec["critic_obs_dim"] == 135
+-    assert spec["n_agents"] == 3
+-    assert spec["action_dim"] == 7
+-    assert spec["target_action_dim"] == MULTI_ENEMY_TOKEN_COUNT
+-
+-
+ def test_phase11_registry_declares_current_selfplay_shapes() -> None:
+     phase, spec = resolve_phase({"phase": 11})
+     assert phase == 11
+diff --git a/python/tests/test_replay_objective_timing_metadata.py b/python/tests/test_replay_objective_timing_metadata.py
+index 1c3c056..9834f99 100644
+--- a/python/tests/test_replay_objective_timing_metadata.py
++++ b/python/tests/test_replay_objective_timing_metadata.py
+@@ -1,6 +1,6 @@
+ from __future__ import annotations
+ 
+-from pathlib import Path
++from _paths import repo_path
+ 
+ from scripts.analyze_replay_combat import _config_from_header
+ 
+@@ -35,7 +35,7 @@ def test_replay_analysis_legacy_header_defaults_objective_timing() -> None:
+ 
+ 
+ def test_replay_header_emits_objective_timing_keys_from_dump_smoke_fixture() -> None:
+-    fixture = Path("data/replays/golden_phase0_basic.txt")
++    fixture = repo_path("data/replays/golden_phase0_basic.txt")
+     first_line = fixture.read_text(encoding="utf-8").splitlines()[0]
+     # Existing fixture is a legacy text replay: absence of these keys is still
+     # valid and covered by fallback behavior.
+diff --git a/python/train/checkpoint_runtime.py b/python/train/checkpoint_runtime.py
+index 7cd01f2..cf91218 100644
+--- a/python/train/checkpoint_runtime.py
++++ b/python/train/checkpoint_runtime.py
+@@ -12,8 +12,7 @@
+ from typing import Any
+ 
+ from train.runtime_specs import RuntimeSpec, resolve_runtime_spec
+-from xushi2.entity_obs import ENTITY_OBS_DIM, MULTI_ENEMY_TOKEN_COUNT
+-from xushi2.grid_obs import ENTITY_GRID_OBS_DIM, MULTI_ENEMY_ENTITY_GRID_OBS_DIM
++from xushi2.multi_enemy_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM, MULTI_ENEMY_TOKEN_COUNT
+ 
+ 
+ @dataclass(frozen=True)
+@@ -74,9 +73,7 @@ def checkpoint_runtime(ckpt_config: dict[str, Any]) -> CheckpointRuntime:
+     has_mappo = "mappo" in ckpt_config
+     if not has_mappo:
+         raise ValueError("checkpoint runtime only supports MAPPO checkpoints")
+-    phase_int, phase_label = parse_phase_metadata(
+-        ckpt_config.get("phase"), has_mappo=has_mappo
+-    )
++    phase_int, phase_label = parse_phase_metadata(ckpt_config.get("phase"), has_mappo=has_mappo)
+     env_cfg = dict(ckpt_config.get("env", {}))
+     mappo_cfg = dict(ckpt_config.get("mappo", {}))
+     runtime_env_cfg = _runtime_env_cfg(env_cfg, mappo_cfg)
+@@ -121,10 +118,6 @@ def _actor_obs_from_mappo_cfg(mappo_cfg: dict[str, Any]) -> str:
+     obs_dim = int(mappo_cfg.get("obs_dim", 31))
+     if obs_dim == 31:
+         return "flat"
+-    if obs_dim == ENTITY_OBS_DIM:
+-        return "entity"
+-    if obs_dim == ENTITY_GRID_OBS_DIM:
+-        return "entity_grid"
+     if obs_dim in (
+         MULTI_ENEMY_ENTITY_GRID_OBS_DIM,
+         MULTI_ENEMY_ENTITY_GRID_OBS_DIM + MULTI_ENEMY_TOKEN_COUNT,
+diff --git a/python/train/full_env_rehearsal.py b/python/train/full_env_rehearsal.py
+index 6783e73..217cef1 100644
+--- a/python/train/full_env_rehearsal.py
++++ b/python/train/full_env_rehearsal.py
+@@ -18,7 +18,7 @@
+     MappoConfig,
+     target_selection_aux_loss_and_accuracy,
+ )
+-from xushi2.entity_obs import ENTITY_TOKEN_DIM, MULTI_ENEMY_TOKEN_COUNT
++from xushi2.multi_enemy_obs import ENTITY_TOKEN_DIM, MULTI_ENEMY_TOKEN_COUNT
+ from xushi2.obs_manifest import actor_field_slice
+ from xushi2 import xushi2_cpp as _cpp
+ 
+@@ -105,9 +105,7 @@ def scripted_objective_focus_fire_targets(
+     target_angle = torch.atan2(rel[:, 0], rel[:, 1])
+     aim_unit = obs[:, _OWN_AIM]
+     current_angle = torch.atan2(aim_unit[:, 0], aim_unit[:, 1])
+-    delta = _wrap_angle(target_angle - current_angle).clamp(
+-        -_AIM_DELTA_LIMIT, _AIM_DELTA_LIMIT
+-    )
++    delta = _wrap_angle(target_angle - current_angle).clamp(-_AIM_DELTA_LIMIT, _AIM_DELTA_LIMIT)
+     if cfg.continuous_action_dim > _AIM_ACTION_INDEX:
+         cont[:, _AIM_ACTION_INDEX] = torch.where(
+             visible,
+@@ -133,16 +131,12 @@ def multi_enemy_visible_targets(
+     if cfg.obs_encoder != "entity_attention_grid":
+         raise ValueError("multi_enemy_visible teacher requires entity_attention_grid obs")
+     if cfg.entity_token_count != MULTI_ENEMY_TOKEN_COUNT:
+-        raise ValueError(
+-            "multi_enemy_visible teacher requires the multi-enemy token layout"
+-        )
++        raise ValueError("multi_enemy_visible teacher requires the multi-enemy token layout")
+     obs = actor_obs
+     token_width = cfg.entity_token_count * cfg.entity_token_dim
+     if cfg.entity_token_dim != ENTITY_TOKEN_DIM or obs.shape[-1] < token_width:
+         raise ValueError("multi_enemy_visible teacher received incompatible token shape")
+-    tokens = obs[:, :token_width].view(
+-        obs.shape[0], cfg.entity_token_count, cfg.entity_token_dim
+-    )
++    tokens = obs[:, :token_width].view(obs.shape[0], cfg.entity_token_count, cfg.entity_token_dim)
+     mask = obs[:, token_width : token_width + cfg.entity_token_count] > 0.5
+ 
+     cont = torch.zeros(
+@@ -181,9 +175,7 @@ def multi_enemy_visible_targets(
+     target_angle = torch.atan2(target_rel[:, 1], target_rel[:, 0])
+     aim_unit = tokens[:, _SELF_TOKEN, _ENTITY_AIM]
+     current_angle = torch.atan2(aim_unit[:, 0], aim_unit[:, 1])
+-    delta = _wrap_angle(target_angle - current_angle).clamp(
+-        -_AIM_DELTA_LIMIT, _AIM_DELTA_LIMIT
+-    )
++    delta = _wrap_angle(target_angle - current_angle).clamp(-_AIM_DELTA_LIMIT, _AIM_DELTA_LIMIT)
+     if cfg.continuous_action_dim > _AIM_ACTION_INDEX:
+         cont[:, _AIM_ACTION_INDEX] = torch.where(
+             has_target,
+@@ -254,7 +246,9 @@ def full_env_rehearsal_loss(
+     }
+ 
+ 
+-def _cpp_bot_targets(env: gym.Env, cfg: MappoConfig, bot_name: str) -> tuple[torch.Tensor, torch.Tensor]:
++def _cpp_bot_targets(
++    env: gym.Env, cfg: MappoConfig, bot_name: str
++) -> tuple[torch.Tensor, torch.Tensor]:
+     sim = getattr(env, "_sim", None)
+     slots = tuple(getattr(env, "_own_slots", (0, 1, 2)))
+     if sim is None:
+@@ -390,10 +384,16 @@ def _collect_policy_state_batch(
+             target_cont_rows.append(cont.cpu().numpy().astype(np.float32, copy=True))
+             target_binary_rows.append(binary.cpu().numpy().astype(np.float32, copy=True))
+             policy_cont_rows.append(
+-                policy_action[:, : cfg.continuous_action_dim].cpu().numpy().astype(np.float32, copy=True)
++                policy_action[:, : cfg.continuous_action_dim]
++                .cpu()
++                .numpy()
++                .astype(np.float32, copy=True)
+             )
+             policy_binary_rows.append(
+-                policy_action[:, cfg.continuous_action_dim :].cpu().numpy().astype(np.float32, copy=True)
++                policy_action[:, cfg.continuous_action_dim :]
++                .cpu()
++                .numpy()
++                .astype(np.float32, copy=True)
+             )
+             obs_np, _reward, term, trunc, _info = env.step(action_np)
+             if term or trunc:
+@@ -429,7 +429,9 @@ def policy_state_agreement_metrics(batch: PolicyStateBatch) -> dict[str, float]:
+     target_fire = batch.target_binary[:, _PRIMARY_FIRE_BINARY_INDEX] > 0.5
+     policy_fire = batch.policy_binary[:, _PRIMARY_FIRE_BINARY_INDEX] > 0.5
+     fire_agreement = (target_fire == policy_fire).to(torch.float32).mean()
+-    fire_positive_agreement = ((target_fire & policy_fire).to(torch.float32).sum() / target_fire.to(torch.float32).sum().clamp(min=1.0))
++    fire_positive_agreement = (target_fire & policy_fire).to(torch.float32).sum() / target_fire.to(
++        torch.float32
++    ).sum().clamp(min=1.0)
+     return {
+         "move_mse": float(move_mse.item()),
+         "aim_abs_error": float(aim_abs_error.item()),
+@@ -513,7 +515,9 @@ def closed_loop_supervised_bridge_pretrain(
+     rounds = int(closed_cfg.get("rounds", 0))
+     updates_per_round = int(closed_cfg.get("updates_per_round", 0))
+     if rounds <= 0 or updates_per_round <= 0:
+-        raise ValueError("closed-loop supervised bridge requires positive bounded rounds and updates_per_round")
++        raise ValueError(
++            "closed-loop supervised bridge requires positive bounded rounds and updates_per_round"
++        )
+     batch_size = int(closed_cfg.get("batch_size", config.get("batch_size", 256)))
+     learning_rate = float(closed_cfg.get("learning_rate", config.get("learning_rate", 1.0e-4)))
+     seed = int(closed_cfg.get("seed", config.get("seed", 0)))
+@@ -579,7 +583,9 @@ def closed_loop_supervised_bridge_pretrain(
+         )
+     if diagnostics:
+         final_diag = diagnostics[-1]
+-        last.update({f"final_agreement_{k}": float(v) for k, v in final_diag.items() if k != "round"})
++        last.update(
++            {f"final_agreement_{k}": float(v) for k, v in final_diag.items() if k != "round"}
++        )
+     return last
+ 
+ 
+diff --git a/python/train/mappo_bc_pretrain.py b/python/train/mappo_bc_pretrain.py
+index dd7e2a7..0b4286c 100644
+--- a/python/train/mappo_bc_pretrain.py
++++ b/python/train/mappo_bc_pretrain.py
+@@ -18,7 +18,7 @@
+     mode_aux_targets,
+     target_selection_aux_loss_and_accuracy,
+ )
+-from xushi2.entity_obs import entity_obs_self_position
++from xushi2.multi_enemy_obs import entity_obs_self_position
+ from xushi2.obs_manifest import actor_field_slice
+ 
+ _AIM_ACTION_INDEX = 2
+@@ -293,9 +293,7 @@ def bc_pretrain_walk_to_objective(
+                 pred_cont = torch.tanh(mean)
+                 target = target_seq[t]
+                 cont_losses.append(
+-                    torch.nn.functional.mse_loss(
+-                        pred_cont, target[:, : cfg.continuous_action_dim]
+-                    )
++                    torch.nn.functional.mse_loss(pred_cont, target[:, : cfg.continuous_action_dim])
+                 )
+                 binary_losses.append(
+                     torch.nn.functional.binary_cross_entropy_with_logits(
+@@ -308,23 +306,17 @@ def bc_pretrain_walk_to_objective(
+                     )
+                 )
+                 aim_pred = model.aim_aux_prediction_from_features(features)
+-                aim_loss, aim_rmse, aim_count = aim_aux_loss_and_rmse(
+-                    aim_pred, obs_seq[t], cfg
+-                )
++                aim_loss, aim_rmse, aim_count = aim_aux_loss_and_rmse(aim_pred, obs_seq[t], cfg)
+                 aim_aux_losses.append(aim_loss)
+                 aim_aux_rmses.append(aim_rmse)
+                 aim_aux_counts.append(aim_count)
+                 target_aux_loss, target_aux_acc, target_aux_count = (
+-                    target_selection_aux_loss_and_accuracy(
+-                        target_selection_logits, obs_seq[t], cfg
+-                    )
++                    target_selection_aux_loss_and_accuracy(target_selection_logits, obs_seq[t], cfg)
+                 )
+                 target_aux_losses.append(target_aux_loss)
+                 target_aux_accs.append(target_aux_acc)
+                 target_aux_counts.append(target_aux_count)
+-                mode_target = torch.zeros(
+-                    obs_seq.shape[1], dtype=torch.long, device=obs_seq.device
+-                )
++                mode_target = torch.zeros(obs_seq.shape[1], dtype=torch.long, device=obs_seq.device)
+                 mode_loss, mode_acc, mode_count = mode_aux_loss_and_accuracy(
+                     mode_logits, obs_seq[t], cfg, labels=mode_target
+                 )
+@@ -482,9 +474,7 @@ def bc_pretrain_walk_and_shoot_to_objective(
+                         )
+                     )
+                     aim_pred = model.aim_aux_prediction_from_features(features)
+-                    aim_loss, aim_rmse, aim_count = aim_aux_loss_and_rmse(
+-                        aim_pred, seq_obs[t], cfg
+-                    )
++                    aim_loss, aim_rmse, aim_count = aim_aux_loss_and_rmse(aim_pred, seq_obs[t], cfg)
+                     aim_aux_losses.append(aim_loss)
+                     aim_aux_rmses.append(aim_rmse)
+                     aim_aux_counts.append(aim_count)
+diff --git a/python/train/mappo_metrics.py b/python/train/mappo_metrics.py
+index 7b63985..1289589 100644
+--- a/python/train/mappo_metrics.py
++++ b/python/train/mappo_metrics.py
+@@ -4,7 +4,7 @@
+ 
+ from train.mappo_model import _OWN_POSITION_SLICE
+ from train.losses import _masked_mean
+-from xushi2.entity_obs import entity_obs_self_position
++from xushi2.multi_enemy_obs import entity_obs_self_position
+ from xushi2.obs_manifest import actor_field_slice
+ 
+ 
+@@ -25,7 +25,9 @@ def rollout_metrics(cfg, rollout) -> dict[str, float]:
+     if cfg.obs_encoder in ("entity_attention", "entity_attention_grid"):
+         obs_np = rollout.actor_obs.detach().cpu().numpy()
+         own_pos_np = entity_obs_self_position(obs_np)
+-        own_pos = torch.as_tensor(own_pos_np, dtype=rollout.actor_obs.dtype, device=rollout.actor_obs.device)
++        own_pos = torch.as_tensor(
++            own_pos_np, dtype=rollout.actor_obs.dtype, device=rollout.actor_obs.device
++        )
+         self_on_point = torch.zeros_like(own_pos[..., :1])
+     else:
+         own_pos = rollout.actor_obs[:, :, :, _OWN_POSITION_SLICE]
+diff --git a/python/train/mappo_model.py b/python/train/mappo_model.py
+index 9ed0d2f..6783303 100644
+--- a/python/train/mappo_model.py
++++ b/python/train/mappo_model.py
+@@ -13,12 +13,7 @@
+ import torch
+ import torch.nn as nn
+ 
+-from xushi2.entity_obs import (
+-    ENTITY_OBS_DIM,
+-    ENTITY_TOKEN_COUNT,
+-    ENTITY_TOKEN_DIM,
+-)
+-from xushi2.grid_obs import GRID_CHANNELS, GRID_SIZE
++from xushi2.multi_enemy_obs import ENTITY_TOKEN_DIM, GRID_CHANNELS, GRID_SIZE
+ from xushi2.obs_manifest import actor_field_slice
+ 
+ _LOG2 = 0.6931471805599453
+@@ -260,28 +255,6 @@ def __init__(self, cfg: MappoConfig) -> None:
+                 nn.ReLU(),
+             )
+             self.actor_entity_encoder = None
+-        elif cfg.obs_encoder == "entity_attention":
+-            if cfg.obs_dim != ENTITY_OBS_DIM:
+-                raise ValueError(
+-                    f"entity_attention obs_dim must be {ENTITY_OBS_DIM}, got {cfg.obs_dim}"
+-                )
+-            if (
+-                cfg.entity_token_count != ENTITY_TOKEN_COUNT
+-                or cfg.entity_token_dim != ENTITY_TOKEN_DIM
+-            ):
+-                raise ValueError(
+-                    "entity_attention token shape must match "
+-                    f"({ENTITY_TOKEN_COUNT}, {ENTITY_TOKEN_DIM})"
+-                )
+-            from train.entity_attention import EntityAttentionEncoder
+-
+-            self.actor_embed = None
+-            self.actor_entity_encoder = EntityAttentionEncoder(
+-                entity_dim=cfg.entity_token_dim,
+-                embed_dim=cfg.embed_dim,
+-                num_heads=cfg.entity_num_heads,
+-                output_dim=cfg.embed_dim,
+-            )
+         elif cfg.obs_encoder == "entity_attention_grid":
+             base_obs_dim = (
+                 cfg.entity_token_count * cfg.entity_token_dim
+@@ -341,9 +314,7 @@ def __init__(self, cfg: MappoConfig) -> None:
+         ):
+             if cfg.obs_encoder != "flat":
+                 raise ValueError("target-conditioned combat currently supports only flat obs")
+-            expected_target_dim = (
+-                4 if cfg.target_selection_aux_mode == "team_focus_low_hp" else 3
+-            )
++            expected_target_dim = 4 if cfg.target_selection_aux_mode == "team_focus_low_hp" else 3
+             if cfg.target_selection_dim != expected_target_dim:
+                 raise ValueError(
+                     "target-conditioned combat requires target_selection_dim="
+@@ -377,15 +348,11 @@ def __init__(self, cfg: MappoConfig) -> None:
+         )
+         self.actor_mean_head = nn.Linear(cfg.head_hidden, cfg.continuous_action_dim)
+         self.actor_binary_head = nn.Linear(cfg.head_hidden, cfg.binary_action_dim)
+-        self.actor_mode_head = (
+-            nn.Linear(cfg.head_hidden, 2) if cfg.mode_gated_combat else None
+-        )
++        self.actor_mode_head = nn.Linear(cfg.head_hidden, 2) if cfg.mode_gated_combat else None
+         self.actor_target_head = (
+             nn.Linear(cfg.head_hidden, cfg.target_action_dim) if cfg.target_action_dim > 0 else None
+         )
+-        self.actor_aim_aux_head = (
+-            nn.Linear(cfg.head_hidden, 1) if cfg.aim_aux_coef > 0.0 else None
+-        )
++        self.actor_aim_aux_head = nn.Linear(cfg.head_hidden, 1) if cfg.aim_aux_coef > 0.0 else None
+         self.log_std = nn.Parameter(torch.ones(cfg.continuous_action_dim) * cfg.action_log_std_init)
+         self.critic = nn.Sequential(
+             nn.Linear(cfg.critic_obs_dim, cfg.head_hidden),
+@@ -427,9 +394,7 @@ def aim_aux_prediction_from_features(self, features: torch.Tensor) -> torch.Tens
+             return None
+         return self.actor_aim_aux_head(features).squeeze(-1)
+ 
+-    def target_selection_logits_from_features(
+-        self, features: torch.Tensor
+-    ) -> torch.Tensor | None:
++    def target_selection_logits_from_features(self, features: torch.Tensor) -> torch.Tensor | None:
+         if self.actor_target_selection_head is None:
+             return None
+         return self.actor_target_selection_head(features)
+@@ -450,11 +415,7 @@ def gated_binary_logits(
+         logits: torch.Tensor,
+         mode_logits: torch.Tensor | None,
+     ) -> torch.Tensor:
+-        if (
+-            not self.cfg.mode_gated_combat
+-            or mode_logits is None
+-            or logits.shape[-1] == 0
+-        ):
++        if not self.cfg.mode_gated_combat or mode_logits is None or logits.shape[-1] == 0:
+             return logits
+         p_fire_raw = torch.sigmoid(logits[:, 0])
+         p_combat = self.combat_probability(mode_logits)
+@@ -476,11 +437,7 @@ def policy_heads_from_features(
+         mean = self.actor_mean_head(head_features)
+         logits = self.actor_binary_head(head_features)
+         mode_logits = self.mode_logits_from_features(head_features)
+-        if (
+-            target_context is not None
+-            and logits.shape[-1] > 0
+-            and self.cfg.binary_action_dim > 0
+-        ):
++        if target_context is not None and logits.shape[-1] > 0 and self.cfg.binary_action_dim > 0:
+             fire_gate = (target_context.selected_visible * target_context.confidence).clamp(
+                 min=1.0e-3
+             )
+@@ -619,9 +576,7 @@ def greedy_action(
+         return action, h_next
+ 
+ 
+-def aim_aux_targets(
+-    obs: torch.Tensor, cfg: MappoConfig
+-) -> tuple[torch.Tensor, torch.Tensor]:
++def aim_aux_targets(obs: torch.Tensor, cfg: MappoConfig) -> tuple[torch.Tensor, torch.Tensor]:
+     """Return target enemy angle in radians and a visibility mask.
+ 
+     Phase-4 flat actor observations expose the nearest enemy alive flag at
+@@ -819,11 +774,9 @@ def target_selection_aux_targets(
+             own_g = _own_pos.view(groups, cfg.n_agents, 2)[:, 0, :]
+             enemy_pos_g = own_g[:, None, :] + rel_g
+             dist_obj = torch.linalg.vector_norm(enemy_pos_g, dim=-1)
+-            score = (
+-                1.0 / hp_g.clamp(min=1.0e-6)
+-                + cfg.target_selection_objective_proximity_coef
+-                / dist_obj.clamp(min=1.0e-6)
+-            )
++            score = 1.0 / hp_g.clamp(
++                min=1.0e-6
++            ) + cfg.target_selection_objective_proximity_coef / dist_obj.clamp(min=1.0e-6)
+             score = score.masked_fill(~visible_g, -float("inf"))
+             team_labels = score.argmax(dim=-1)
+             has_team_target = visible_g.any(dim=-1)
+@@ -837,13 +790,11 @@ def target_selection_aux_targets(
+             labels = labels_g.reshape(-1)
+             valid = torch.ones_like(row_visible, dtype=torch.bool)
+         else:
+-            score = (
+-                1.0 / hp.clamp(min=1.0e-6)
+-                + cfg.target_selection_objective_proximity_coef
+-                / torch.linalg.vector_norm(_own_pos[:, None, :] + rel, dim=-1).clamp(
+-                    min=1.0e-6
+-                )
+-            )
++            score = 1.0 / hp.clamp(
++                min=1.0e-6
++            ) + cfg.target_selection_objective_proximity_coef / torch.linalg.vector_norm(
++                _own_pos[:, None, :] + rel, dim=-1
++            ).clamp(min=1.0e-6)
+             score = score.masked_fill(~visible, -float("inf"))
+             team_labels = score.argmax(dim=-1)
+             labels = torch.where(row_visible & visible.any(dim=-1), team_labels, labels)
+diff --git a/python/train/mappo_rollout_trainer.py b/python/train/mappo_rollout_trainer.py
+index 2ef7709..23bb18b 100644
+--- a/python/train/mappo_rollout_trainer.py
++++ b/python/train/mappo_rollout_trainer.py
+@@ -36,7 +36,7 @@
+     set_optimizer_learning_rate,
+ )
+ from train.runtime_specs import resolve_runtime_spec
+-from xushi2.entity_obs import entity_obs_self_position
++from xushi2.multi_enemy_obs import entity_obs_self_position
+ from xushi2.obs_manifest import actor_field_slice
+ from xushi2.vector_env import make_xushi_vector_env
+ 
+@@ -141,9 +141,7 @@ def set_learning_rate(self, lr: float) -> None:
+     def set_update_index(self, update_idx: int) -> None:
+         self._active_update_idx = int(update_idx)
+ 
+-    def set_cap_duel_distill_anchor(
+-        self, anchor: CapDuelDistillAnchor | None
+-    ) -> None:
++    def set_cap_duel_distill_anchor(self, anchor: CapDuelDistillAnchor | None) -> None:
+         self.cap_duel_distill_anchor = anchor
+ 
+     def set_team_spirit(self, value: float) -> None:
+@@ -160,12 +158,8 @@ def set_majority_on_point_alpha(self, value: float) -> None:
+     def set_uncontested_on_point_alpha(self, value: float) -> None:
+         self.vec_env.set_uncontested_on_point_alpha(float(value))
+ 
+-    def set_objective_timing_seconds(
+-        self, unlock_seconds: float, capture_seconds: float
+-    ) -> None:
+-        self.vec_env.set_objective_timing_seconds(
+-            float(unlock_seconds), float(capture_seconds)
+-        )
++    def set_objective_timing_seconds(self, unlock_seconds: float, capture_seconds: float) -> None:
++        self.vec_env.set_objective_timing_seconds(float(unlock_seconds), float(capture_seconds))
+ 
+     @property
+     def current_learning_rate(self) -> float:
+@@ -212,9 +206,8 @@ def update(self, rollout: MappoRollout) -> dict[str, float]:
+             ret_mean, ret_std = 0.0, 1.0
+ 
+         distill_batch: CapDuelDistillBatch | None = None
+-        if (
+-            self.cap_duel_distill_anchor is not None
+-            and self.cap_duel_distill_anchor.should_run(self._active_update_idx)
++        if self.cap_duel_distill_anchor is not None and self.cap_duel_distill_anchor.should_run(
++            self._active_update_idx
+         ):
+             distill_batch = self.cap_duel_distill_anchor.collect_batch(
+                 update_idx=self._active_update_idx,
+@@ -464,9 +457,7 @@ def _update_full_rollout(
+             target_aux_losses.append(target_aux_loss)
+             target_aux_accs.append(target_aux_acc)
+             target_aux_counts.append(target_aux_count)
+-            for key, value in target_selection_aux_metrics(
+-                obs_t, cfg, mask=flat_mask
+-            ).items():
++            for key, value in target_selection_aux_metrics(obs_t, cfg, mask=flat_mask).items():
+                 target_aux_metric_parts[key].append(value)
+             done_mask = rollout.done[:, t].view(N, 1, 1).expand(N, A, cfg.gru_hidden)
+             h = h.view(N, A, cfg.gru_hidden)
+@@ -551,15 +542,13 @@ def _update_full_rollout(
+             aim_entropy_mean,
+             binary_entropy_mean,
+             other_entropy_mean,
+-        ) = (
+-            self._entropy_bonus(
+-                move_entropy=move_entropy,
+-                aim_entropy=aim_entropy,
+-                binary_entropy=binary_entropy,
+-                other_entropy=other_entropy,
+-                entropy=entropy,
+-                valid_agent=valid_agent,
+-            )
++        ) = self._entropy_bonus(
++            move_entropy=move_entropy,
++            aim_entropy=aim_entropy,
++            binary_entropy=binary_entropy,
++            other_entropy=other_entropy,
++            entropy=entropy,
++            valid_agent=valid_agent,
+         )
+         total_loss = (
+             policy_loss
+@@ -671,9 +660,7 @@ def make_mappo_config(config: dict) -> MappoConfig:
+         binary_action_dim=int(runtime.shapes.binary_action_dim),
+         target_action_dim=int(runtime.shapes.target_action_dim),
+         value_per_agent=bool(ppo_cfg.get("value_per_agent", False)),
+-        mask_fire_when_no_visible_enemy=bool(
+-            ppo_cfg.get("mask_fire_when_no_visible_enemy", False)
+-        ),
++        mask_fire_when_no_visible_enemy=bool(ppo_cfg.get("mask_fire_when_no_visible_enemy", False)),
+         embed_dim=int(model_cfg["embed_dim"]),
+         gru_hidden=int(model_cfg["gru_hidden"]),
+         head_hidden=int(model_cfg["head_hidden"]),
+@@ -690,9 +677,7 @@ def make_mappo_config(config: dict) -> MappoConfig:
+             else float(ppo_cfg["entropy_coef_move"])
+         ),
+         entropy_coef_aim=(
+-            None
+-            if ppo_cfg.get("entropy_coef_aim") is None
+-            else float(ppo_cfg["entropy_coef_aim"])
++            None if ppo_cfg.get("entropy_coef_aim") is None else float(ppo_cfg["entropy_coef_aim"])
+         ),
+         entropy_coef_binary=(
+             None
+@@ -739,9 +724,7 @@ def _validate_mappo_hyperparameters(ppo_cfg: dict) -> None:
+ 
+     gae_lambda = float(ppo_cfg["gae_lambda"])
+     if not (0.0 <= gae_lambda <= 1.0):
+-        raise ValueError(
+-            f"ppo.gae_lambda must satisfy 0 <= gae_lambda <= 1, got {gae_lambda!r}"
+-        )
++        raise ValueError(f"ppo.gae_lambda must satisfy 0 <= gae_lambda <= 1, got {gae_lambda!r}")
+ 
+     clip_ratio = float(ppo_cfg["clip_ratio"])
+     if clip_ratio <= 0.0:
+@@ -749,9 +732,7 @@ def _validate_mappo_hyperparameters(ppo_cfg: dict) -> None:
+ 
+     value_clip_ratio = float(ppo_cfg["value_clip_ratio"])
+     if value_clip_ratio <= 0.0:
+-        raise ValueError(
+-            f"ppo.value_clip_ratio must be > 0, got {value_clip_ratio!r}"
+-        )
++        raise ValueError(f"ppo.value_clip_ratio must be > 0, got {value_clip_ratio!r}")
+ 
+     for key in (
+         "entropy_coef",
+diff --git a/python/train/phases.py b/python/train/phases.py
+index cff7e42..aa5c00b 100644
+--- a/python/train/phases.py
++++ b/python/train/phases.py
+@@ -7,10 +7,7 @@
+ 
+ import gymnasium as gym
+ 
+-from xushi2.entity_obs import ENTITY_OBS_DIM, MULTI_ENEMY_TOKEN_COUNT
+-from xushi2.grid_obs import ENTITY_GRID_OBS_DIM, MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+-
+-PHASE10_TARGET_OBS_DIM = MULTI_ENEMY_ENTITY_GRID_OBS_DIM + MULTI_ENEMY_TOKEN_COUNT
++from xushi2.multi_enemy_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+ 
+ 
+ def _make_phase4_env(
+@@ -42,135 +39,6 @@ def _make_phase4_env(
+     )
+ 
+ 
+-def _make_phase5_env(
+-    sim_cfg: dict,
+-    opponent_bot: str,
+-    learner_team: str,
+-    reward_cfg: dict,
+-):
+-    from envs.runtime_factory import make_mappo_match_env
+-
+-    return make_mappo_match_env(
+-        sim_cfg=sim_cfg,
+-        opponent_bot=opponent_bot,
+-        learner_team=learner_team,
+-        reward_cfg=reward_cfg,
+-        actor_obs="entity",
+-    )
+-
+-
+-def _make_phase6_env(
+-    sim_cfg: dict,
+-    opponent_bot: str,
+-    learner_team: str,
+-    reward_cfg: dict,
+-):
+-    from envs.runtime_factory import make_mappo_match_env
+-
+-    return make_mappo_match_env(
+-        sim_cfg=sim_cfg,
+-        opponent_bot=opponent_bot,
+-        learner_team=learner_team,
+-        reward_cfg=reward_cfg,
+-        actor_obs="entity_grid",
+-    )
+-
+-
+-def _make_phase7_env(
+-    sim_cfg: dict,
+-    opponent_bot: str,
+-    learner_team: str,
+-    reward_cfg: dict,
+-    fog_mode: str,
+-    visible_radius: float,
+-):
+-    from envs.runtime_factory import make_mappo_match_env
+-
+-    return make_mappo_match_env(
+-        sim_cfg=sim_cfg,
+-        opponent_bot=opponent_bot,
+-        learner_team=learner_team,
+-        reward_cfg=reward_cfg,
+-        actor_obs="multi_enemy_entity_grid",
+-        fog_mode=fog_mode,
+-        visible_radius=visible_radius,
+-    )
+-
+-
+-def _make_phase8_env(
+-    sim_cfg: dict,
+-    opponent_bot: str,
+-    learner_team: str,
+-    reward_cfg: dict,
+-    fog_mode: str,
+-    visible_radius: float,
+-    map_randomization: dict,
+-):
+-    from envs.runtime_factory import make_mappo_match_env
+-
+-    return make_mappo_match_env(
+-        sim_cfg=sim_cfg,
+-        opponent_bot=opponent_bot,
+-        learner_team=learner_team,
+-        reward_cfg=reward_cfg,
+-        actor_obs="multi_enemy_entity_grid",
+-        fog_mode=fog_mode,
+-        visible_radius=visible_radius,
+-        map_randomization=map_randomization,
+-    )
+-
+-
+-def _make_phase9_env(
+-    sim_cfg: dict,
+-    opponent_bot: str,
+-    learner_team: str,
+-    reward_cfg: dict,
+-    fog_mode: str,
+-    visible_radius: float,
+-    map_randomization: dict,
+-    snapshot_paths: tuple[str, ...],
+-    snapshot_league: dict,
+-):
+-    from envs.runtime_factory import make_mappo_match_env
+-
+-    return make_mappo_match_env(
+-        sim_cfg=sim_cfg,
+-        opponent_bot=opponent_bot,
+-        learner_team=learner_team,
+-        reward_cfg=reward_cfg,
+-        actor_obs="multi_enemy_entity_grid",
+-        fog_mode=fog_mode,
+-        visible_radius=visible_radius,
+-        map_randomization=map_randomization,
+-        snapshot_paths=tuple(snapshot_paths),
+-        snapshot_league=snapshot_league,
+-    )
+-
+-
+-def _make_phase10_env(
+-    sim_cfg: dict,
+-    opponent_bot: str,
+-    learner_team: str,
+-    reward_cfg: dict,
+-    fog_mode: str,
+-    visible_radius: float,
+-    map_randomization: dict,
+-):
+-    from envs.runtime_factory import make_mappo_match_env
+-
+-    return make_mappo_match_env(
+-        sim_cfg=sim_cfg,
+-        opponent_bot=opponent_bot,
+-        learner_team=learner_team,
+-        reward_cfg=reward_cfg,
+-        actor_obs="multi_enemy_entity_grid",
+-        fog_mode=fog_mode,
+-        visible_radius=visible_radius,
+-        map_randomization=map_randomization,
+-        target_slot=True,
+-    )
+-
+-
+ def _make_phase11_env(
+     sim_cfg: dict,
+     reward_cfg: dict,
+@@ -261,136 +129,6 @@ def _phase4_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
+     )
+ 
+ 
+-def _phase5_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
+-    env_cfg = config.get("env", {})
+-    base_cfg = _extract_base_env_cfg(env_cfg)
+-    return (
+-        partial(
+-            _make_phase5_env,
+-            base_cfg["sim"],
+-            base_cfg["opponent_bot"],
+-            base_cfg["learner_team"],
+-            base_cfg["reward"],
+-        ),
+-        base_cfg,
+-        _resolve_seed_base(env_cfg, base_cfg["sim"]),
+-    )
+-
+-
+-def _phase6_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
+-    env_cfg = config.get("env", {})
+-    base_cfg = _extract_base_env_cfg(env_cfg)
+-    return (
+-        partial(
+-            _make_phase6_env,
+-            base_cfg["sim"],
+-            base_cfg["opponent_bot"],
+-            base_cfg["learner_team"],
+-            base_cfg["reward"],
+-        ),
+-        base_cfg,
+-        _resolve_seed_base(env_cfg, base_cfg["sim"]),
+-    )
+-
+-
+-def _phase7_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
+-    env_cfg = config.get("env", {})
+-    base_cfg = _extract_base_env_cfg(env_cfg)
+-    fog_cfg = _extract_fog_env_cfg(env_cfg, visible_radius_default=0.6)
+-    ckpt_env_cfg = {**base_cfg, **fog_cfg}
+-    return (
+-        partial(
+-            _make_phase7_env,
+-            base_cfg["sim"],
+-            base_cfg["opponent_bot"],
+-            base_cfg["learner_team"],
+-            base_cfg["reward"],
+-            fog_cfg["fog_mode"],
+-            fog_cfg["visible_radius"],
+-        ),
+-        ckpt_env_cfg,
+-        _resolve_seed_base(env_cfg, base_cfg["sim"]),
+-    )
+-
+-
+-def _phase8_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
+-    env_cfg = config.get("env", {})
+-    base_cfg = _extract_base_env_cfg(env_cfg)
+-    fog_cfg = _extract_fog_env_cfg(env_cfg)
+-    map_cfg = _extract_map_randomization(env_cfg)
+-    ckpt_env_cfg = {**base_cfg, **fog_cfg, **map_cfg}
+-    return (
+-        partial(
+-            _make_phase8_env,
+-            base_cfg["sim"],
+-            base_cfg["opponent_bot"],
+-            base_cfg["learner_team"],
+-            base_cfg["reward"],
+-            fog_cfg["fog_mode"],
+-            fog_cfg["visible_radius"],
+-            map_cfg["map_randomization"],
+-        ),
+-        ckpt_env_cfg,
+-        _resolve_seed_base(env_cfg, base_cfg["sim"]),
+-    )
+-
+-
+-def _phase9_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
+-    env_cfg = config.get("env", {})
+-    base_cfg = _extract_base_env_cfg(env_cfg, opponent_default="snapshot")
+-    fog_cfg = _extract_fog_env_cfg(env_cfg)
+-    map_cfg = _extract_map_randomization(env_cfg)
+-    snapshot_paths = tuple(str(p) for p in env_cfg.get("snapshot_paths", ()))
+-    snapshot_league = dict(env_cfg.get("snapshot_league", {}))
+-    self_play_schedule = dict(env_cfg.get("self_play_schedule", {}))
+-    ckpt_env_cfg = {
+-        **base_cfg,
+-        **fog_cfg,
+-        **map_cfg,
+-        "snapshot_paths": snapshot_paths,
+-        "snapshot_league": snapshot_league,
+-        "self_play_schedule": self_play_schedule,
+-    }
+-    return (
+-        partial(
+-            _make_phase9_env,
+-            base_cfg["sim"],
+-            base_cfg["opponent_bot"],
+-            base_cfg["learner_team"],
+-            base_cfg["reward"],
+-            fog_cfg["fog_mode"],
+-            fog_cfg["visible_radius"],
+-            map_cfg["map_randomization"],
+-            snapshot_paths,
+-            snapshot_league,
+-        ),
+-        ckpt_env_cfg,
+-        _resolve_seed_base(env_cfg, base_cfg["sim"]),
+-    )
+-
+-
+-def _phase10_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
+-    env_cfg = config.get("env", {})
+-    base_cfg = _extract_base_env_cfg(env_cfg, opponent_default="noop")
+-    fog_cfg = _extract_fog_env_cfg(env_cfg)
+-    map_cfg = _extract_map_randomization(env_cfg)
+-    ckpt_env_cfg = {**base_cfg, **fog_cfg, **map_cfg}
+-    return (
+-        partial(
+-            _make_phase10_env,
+-            base_cfg["sim"],
+-            base_cfg["opponent_bot"],
+-            base_cfg["learner_team"],
+-            base_cfg["reward"],
+-            fog_cfg["fog_mode"],
+-            fog_cfg["visible_radius"],
+-            map_cfg["map_randomization"],
+-        ),
+-        ckpt_env_cfg,
+-        _resolve_seed_base(env_cfg, base_cfg["sim"]),
+-    )
+-
+-
+ def _phase11_env_bundle(config: dict) -> tuple[Callable[[], gym.Env], dict, int]:
+     env_cfg = config.get("env", {})
+     sim_cfg = dict(env_cfg.get("sim", {}))
+@@ -450,73 +188,6 @@ def _phase0_seed(config: dict) -> int:
+         "training_variants": ("mappo",),
+         "env_bundle": _phase4_env_bundle,
+     },
+-    5: {
+-        "label": "phase5",
+-        "obs_dim": ENTITY_OBS_DIM,
+-        "critic_obs_dim": 135,
+-        "n_agents": 3,
+-        "action_dim": 6,
+-        "continuous_action_dim": 3,
+-        "binary_action_dim": 3,
+-        "training_variants": ("mappo",),
+-        "env_bundle": _phase5_env_bundle,
+-    },
+-    6: {
+-        "label": "phase6",
+-        "obs_dim": ENTITY_GRID_OBS_DIM,
+-        "critic_obs_dim": 135,
+-        "n_agents": 3,
+-        "action_dim": 6,
+-        "continuous_action_dim": 3,
+-        "binary_action_dim": 3,
+-        "training_variants": ("mappo",),
+-        "env_bundle": _phase6_env_bundle,
+-    },
+-    7: {
+-        "label": "phase7",
+-        "obs_dim": MULTI_ENEMY_ENTITY_GRID_OBS_DIM,
+-        "critic_obs_dim": 135,
+-        "n_agents": 3,
+-        "action_dim": 6,
+-        "continuous_action_dim": 3,
+-        "binary_action_dim": 3,
+-        "training_variants": ("mappo",),
+-        "env_bundle": _phase7_env_bundle,
+-    },
+-    8: {
+-        "label": "phase8",
+-        "obs_dim": MULTI_ENEMY_ENTITY_GRID_OBS_DIM,
+-        "critic_obs_dim": 135,
+-        "n_agents": 3,
+-        "action_dim": 6,
+-        "continuous_action_dim": 3,
+-        "binary_action_dim": 3,
+-        "training_variants": ("mappo",),
+-        "env_bundle": _phase8_env_bundle,
+-    },
+-    9: {
+-        "label": "phase9",
+-        "obs_dim": MULTI_ENEMY_ENTITY_GRID_OBS_DIM,
+-        "critic_obs_dim": 135,
+-        "n_agents": 3,
+-        "action_dim": 6,
+-        "continuous_action_dim": 3,
+-        "binary_action_dim": 3,
+-        "training_variants": ("mappo",),
+-        "env_bundle": _phase9_env_bundle,
+-    },
+-    10: {
+-        "label": "phase10",
+-        "obs_dim": PHASE10_TARGET_OBS_DIM,
+-        "critic_obs_dim": 135,
+-        "n_agents": 3,
+-        "action_dim": 7,
+-        "continuous_action_dim": 3,
+-        "binary_action_dim": 3,
+-        "target_action_dim": MULTI_ENEMY_TOKEN_COUNT,
+-        "training_variants": ("mappo",),
+-        "env_bundle": _phase10_env_bundle,
+-    },
+     11: {
+         "label": "phase11",
+         "obs_dim": MULTI_ENEMY_ENTITY_GRID_OBS_DIM,
+diff --git a/python/train/runtime_specs.py b/python/train/runtime_specs.py
+index 74fa794..38725cd 100644
+--- a/python/train/runtime_specs.py
++++ b/python/train/runtime_specs.py
+@@ -9,8 +9,7 @@
+ import gymnasium as gym
+ 
+ from envs.runtime_factory import mappo_env_fn_from_config
+-from xushi2.entity_obs import ENTITY_OBS_DIM, MULTI_ENEMY_TOKEN_COUNT
+-from xushi2.grid_obs import ENTITY_GRID_OBS_DIM, MULTI_ENEMY_ENTITY_GRID_OBS_DIM
++from xushi2.multi_enemy_obs import MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+ 
+ 
+ @dataclass(frozen=True)
+@@ -76,7 +75,9 @@ def resolve_runtime_spec(config: dict[str, Any]) -> RuntimeSpec:
+ def _has_explicit_runtime_spec(config: dict[str, Any]) -> bool:
+     learner = config.get("learner")
+     env = config.get("env")
+-    return isinstance(learner, dict) and "kind" in learner and isinstance(env, dict) and "kind" in env
++    return (
++        isinstance(learner, dict) and "kind" in learner and isinstance(env, dict) and "kind" in env
++    )
+ 
+ 
+ def _experiment_from_config(config: dict[str, Any], *, default_label: str) -> ExperimentSpec:
+@@ -139,7 +140,9 @@ def _explicit_mappo_match_spec(
+     snapshot_paths = tuple(str(p) for p in env_cfg.get("snapshot_paths", ()))
+     self_play = bool(dict(env_cfg.get("self_play", {})).get("enabled", False))
+     mini_game = env_cfg.get("mini_game")
+-    default_agents = 3 if mini_game == "cap_duel" else 6 if self_play else env_cfg.get("team_size", 3)
++    default_agents = (
++        3 if mini_game == "cap_duel" else 6 if self_play else env_cfg.get("team_size", 3)
++    )
+     n_agents = int(env_cfg.get("n_agents", default_agents))
+     shapes = _mappo_shapes(actor_obs=actor_obs, target_slot=target_slot, n_agents=n_agents)
+     ckpt_env_cfg = {
+@@ -196,23 +199,19 @@ def _explicit_mappo_match_spec(
+ 
+ def _mappo_shapes(*, actor_obs: str, target_slot: bool, n_agents: int) -> ShapeSpec:
+     if target_slot:
+-        obs_dim = MULTI_ENEMY_ENTITY_GRID_OBS_DIM + MULTI_ENEMY_TOKEN_COUNT
+-    elif actor_obs == "flat":
++        raise ValueError("target_slot actor observations were removed with phase10")
++    if actor_obs == "flat":
+         obs_dim = 31
+-    elif actor_obs == "entity":
+-        obs_dim = ENTITY_OBS_DIM
+-    elif actor_obs == "entity_grid":
+-        obs_dim = ENTITY_GRID_OBS_DIM
+     elif actor_obs in ("multi_enemy_entity_grid", "partial_entity_grid"):
+         obs_dim = MULTI_ENEMY_ENTITY_GRID_OBS_DIM
+     else:
+         raise ValueError(f"unsupported mappo actor_obs {actor_obs!r}")
+-    target_dim = MULTI_ENEMY_TOKEN_COUNT if target_slot else 0
++    target_dim = 0
+     return ShapeSpec(
+         obs_dim=obs_dim,
+         critic_obs_dim=135,
+         n_agents=int(n_agents),
+-        action_dim=6 + (1 if target_slot else 0),
++        action_dim=6,
+         continuous_action_dim=3,
+         binary_action_dim=3,
+         target_action_dim=target_dim,
+@@ -257,7 +256,9 @@ def _resolve_legacy_phase_runtime_spec(config: dict[str, Any]) -> RuntimeSpec:
+             critic_obs=("team_global" if shapes.critic_obs_dim is not None else None),
+             team_size=int(env_cfg.get("team_size", shapes.n_agents)),
+             learner_team=str(env_cfg.get("learner_team", ckpt_env_cfg.get("learner_team", "A"))),
+-            opponent_kind=str(env_cfg.get("opponent_bot", ckpt_env_cfg.get("opponent_bot", "basic"))),
++            opponent_kind=str(
++                env_cfg.get("opponent_bot", ckpt_env_cfg.get("opponent_bot", "basic"))
++            ),
+             features=_legacy_features(phase, env_cfg, ckpt_env_cfg, shapes),
+         ),
+         shapes=shapes,
+@@ -281,11 +282,7 @@ def _legacy_env_kind(phase: int) -> str:
+ 
+ 
+ def _legacy_actor_obs(phase: int) -> str:
+-    if phase in (5,):
+-        return "entity"
+-    if phase in (6,):
+-        return "entity_grid"
+-    if phase >= 7:
++    if phase == 11:
+         return "multi_enemy_entity_grid"
+     return "flat"
+ 
+@@ -298,7 +295,9 @@ def _legacy_features(
+ ) -> dict[str, Any]:
+     return {
+         "fog": str(env_cfg.get("fog_mode", ckpt_env_cfg.get("fog_mode", "none"))),
+-        "map_randomization": bool(env_cfg.get("map_randomization", ckpt_env_cfg.get("map_randomization", {}))),
++        "map_randomization": bool(
++            env_cfg.get("map_randomization", ckpt_env_cfg.get("map_randomization", {}))
++        ),
+         "snapshot": bool(env_cfg.get("snapshot_paths", ckpt_env_cfg.get("snapshot_paths", ()))),
+         "current_selfplay": bool(dict(env_cfg.get("self_play", {})).get("enabled", phase == 11)),
+         "target_slot": shapes.target_action_dim > 0,
+diff --git a/python/xushi2/entity_obs.py b/python/xushi2/entity_obs.py
+deleted file mode 100644
+index 0e4a15c..0000000
+--- a/python/xushi2/entity_obs.py
++++ /dev/null
+@@ -1,115 +0,0 @@
+-"""Entity-token observation adapter for Phase 5 MAPPO experiments."""
+-
+-from __future__ import annotations
+-
+-import numpy as np
+-
+-from xushi2.obs_manifest import ACTOR_PHASE1_DIM, actor_field_slice
+-
+-ENTITY_TOKEN_COUNT: int = 3
+-MULTI_ENEMY_TOKEN_COUNT: int = 5
+-ENTITY_TOKEN_DIM: int = 18
+-ENTITY_OBS_DIM: int = ENTITY_TOKEN_COUNT * ENTITY_TOKEN_DIM + ENTITY_TOKEN_COUNT
+-MULTI_ENEMY_ENTITY_OBS_DIM: int = (
+-    MULTI_ENEMY_TOKEN_COUNT * ENTITY_TOKEN_DIM + MULTI_ENEMY_TOKEN_COUNT
+-)
+-
+-_KIND_SELF = slice(0, 3)
+-_TEAM = slice(3, 6)
+-_HP = 6
+-_ALIVE = 7
+-_POSITION = slice(8, 10)
+-_VELOCITY = slice(10, 12)
+-_AIM = slice(12, 14)
+-_AMMO = 14
+-_RELOADING = 15
+-_ABILITY_CD = 16
+-_AUX = 17
+-
+-_SELF_TOKEN = 0
+-_ENEMY_TOKEN = 1
+-_OBJECTIVE_TOKEN = 2
+-
+-
+-def _as_actor_obs(obs: np.ndarray) -> np.ndarray:
+-    obs = np.asarray(obs, dtype=np.float32)
+-    if obs.shape[-1] != ACTOR_PHASE1_DIM:
+-        raise ValueError(f"actor obs last dim must be {ACTOR_PHASE1_DIM}, got {obs.shape}")
+-    return obs
+-
+-
+-def actor_obs_to_entity_obs(obs: np.ndarray) -> np.ndarray:
+-    """Convert Phase-4 flat actor observations to Phase-5 token observations.
+-
+-    The returned layout is ``tokens.flatten()`` followed by a valid-token mask.
+-    Tokens are self, enemy, objective. The enemy token is masked out when the
+-    current flat observation reports the enemy dead.
+-    """
+-    obs = _as_actor_obs(obs)
+-    out_shape = (*obs.shape[:-1], ENTITY_OBS_DIM)
+-    out = np.zeros(out_shape, dtype=np.float32)
+-    tokens = out[..., : ENTITY_TOKEN_COUNT * ENTITY_TOKEN_DIM].reshape(
+-        *obs.shape[:-1], ENTITY_TOKEN_COUNT, ENTITY_TOKEN_DIM
+-    )
+-    mask = out[..., ENTITY_TOKEN_COUNT * ENTITY_TOKEN_DIM :]
+-
+-    own_hp = obs[..., actor_field_slice("own_hp")]
+-    own_velocity = obs[..., actor_field_slice("own_velocity")]
+-    own_aim = obs[..., actor_field_slice("own_aim_unit")]
+-    own_position = obs[..., actor_field_slice("own_position")]
+-    own_ammo = obs[..., actor_field_slice("own_ammo")]
+-    own_reloading = obs[..., actor_field_slice("own_reloading")]
+-    own_cd = obs[..., actor_field_slice("own_combat_roll_cd")]
+-    enemy_alive = obs[..., actor_field_slice("enemy_alive")]
+-    enemy_position = obs[..., actor_field_slice("enemy_relative_position")]
+-    enemy_hp = obs[..., actor_field_slice("enemy_hp")]
+-    enemy_velocity = obs[..., actor_field_slice("enemy_velocity")]
+-    owner_onehot = obs[..., actor_field_slice("objective_owner_onehot")]
+-    cap_progress = obs[..., actor_field_slice("cap_progress")]
+-    self_on_point = obs[..., actor_field_slice("self_on_point")]
+-    enemy_on_point = obs[..., actor_field_slice("enemy_on_point")]
+-
+-    self_tok = tokens[..., _SELF_TOKEN, :]
+-    self_tok[..., _KIND_SELF] = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+-    self_tok[..., _TEAM] = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+-    self_tok[..., _HP] = own_hp[..., 0]
+-    self_tok[..., _ALIVE] = 1.0
+-    self_tok[..., _POSITION] = own_position
+-    self_tok[..., _VELOCITY] = own_velocity
+-    self_tok[..., _AIM] = own_aim
+-    self_tok[..., _AMMO] = own_ammo[..., 0]
+-    self_tok[..., _RELOADING] = own_reloading[..., 0]
+-    self_tok[..., _ABILITY_CD] = own_cd[..., 0]
+-    self_tok[..., _AUX] = self_on_point[..., 0]
+-
+-    enemy_tok = tokens[..., _ENEMY_TOKEN, :]
+-    enemy_tok[..., _KIND_SELF] = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+-    enemy_tok[..., _TEAM] = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+-    enemy_tok[..., _HP] = enemy_hp[..., 0]
+-    enemy_tok[..., _ALIVE] = enemy_alive[..., 0]
+-    enemy_tok[..., _POSITION] = enemy_position
+-    enemy_tok[..., _VELOCITY] = enemy_velocity
+-    enemy_tok[..., _AUX] = enemy_on_point[..., 0]
+-
+-    obj_tok = tokens[..., _OBJECTIVE_TOKEN, :]
+-    obj_tok[..., _KIND_SELF] = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+-    obj_tok[..., _TEAM] = owner_onehot
+-    obj_tok[..., _ALIVE] = 1.0
+-    obj_tok[..., _POSITION] = -own_position
+-    obj_tok[..., _AUX] = cap_progress[..., 0]
+-
+-    mask[..., _SELF_TOKEN] = 1.0
+-    mask[..., _ENEMY_TOKEN] = (enemy_alive[..., 0] > 0.5).astype(np.float32)
+-    mask[..., _OBJECTIVE_TOKEN] = 1.0
+-    return out
+-
+-
+-def entity_obs_self_position(obs: np.ndarray) -> np.ndarray:
+-    """Return the self-token team-frame position from flattened entity obs."""
+-    obs = np.asarray(obs, dtype=np.float32)
+-    if obs.shape[-1] < ENTITY_OBS_DIM:
+-        raise ValueError(f"entity obs last dim must be at least {ENTITY_OBS_DIM}, got {obs.shape}")
+-    tokens = obs[..., : ENTITY_TOKEN_COUNT * ENTITY_TOKEN_DIM].reshape(
+-        *obs.shape[:-1], ENTITY_TOKEN_COUNT, ENTITY_TOKEN_DIM
+-    )
+-    return tokens[..., _SELF_TOKEN, _POSITION]
+diff --git a/python/xushi2/grid_obs.py b/python/xushi2/grid_obs.py
+deleted file mode 100644
+index d7a2531..0000000
+--- a/python/xushi2/grid_obs.py
++++ /dev/null
+@@ -1,54 +0,0 @@
+-"""Small egocentric grid observation adapter for Phase 6 diagnostics."""
+-
+-from __future__ import annotations
+-
+-import numpy as np
+-
+-from xushi2.entity_obs import (
+-    ENTITY_OBS_DIM,
+-    MULTI_ENEMY_ENTITY_OBS_DIM,
+-    actor_obs_to_entity_obs,
+-)
+-from xushi2.obs_manifest import ACTOR_PHASE1_DIM, actor_field_slice
+-
+-GRID_SIZE: int = 32
+-GRID_CHANNELS: int = 3
+-GRID_FLAT_DIM: int = GRID_CHANNELS * GRID_SIZE * GRID_SIZE
+-ENTITY_GRID_OBS_DIM: int = ENTITY_OBS_DIM + GRID_FLAT_DIM
+-MULTI_ENEMY_ENTITY_GRID_OBS_DIM: int = MULTI_ENEMY_ENTITY_OBS_DIM + GRID_FLAT_DIM
+-
+-
+-def _paint(grid: np.ndarray, channel: int, xy: np.ndarray, value: float) -> None:
+-    # xy is in the current actor's team-relative [-1, 1] map frame.
+-    ix = int(np.clip(round((float(xy[0]) + 1.0) * 0.5 * (GRID_SIZE - 1)), 0, GRID_SIZE - 1))
+-    iy = int(np.clip(round((1.0 - (float(xy[1]) + 1.0) * 0.5) * (GRID_SIZE - 1)), 0, GRID_SIZE - 1))
+-    grid[channel, iy, ix] = max(grid[channel, iy, ix], float(value))
+-
+-
+-def actor_obs_to_entity_grid_obs(obs: np.ndarray) -> np.ndarray:
+-    """Convert Phase-4 flat actor observations to entity tokens plus grid.
+-
+-    Grid channels are intentionally tiny for the first Phase-6 probe:
+-    objective-relative marker, self marker, and visible/alive enemy marker.
+-    The policy still receives full-vision entity tokens; fog/LoS is a later
+-    phase delta.
+-    """
+-    obs = np.asarray(obs, dtype=np.float32)
+-    if obs.shape[-1] != ACTOR_PHASE1_DIM:
+-        raise ValueError(f"actor obs last dim must be {ACTOR_PHASE1_DIM}, got {obs.shape}")
+-    entity_obs = actor_obs_to_entity_obs(obs)
+-    flat = obs.reshape(-1, ACTOR_PHASE1_DIM)
+-    grids = np.zeros((flat.shape[0], GRID_CHANNELS, GRID_SIZE, GRID_SIZE), dtype=np.float32)
+-
+-    own_pos_sl = actor_field_slice("own_position")
+-    enemy_pos_sl = actor_field_slice("enemy_relative_position")
+-    enemy_alive_sl = actor_field_slice("enemy_alive")
+-    for i, row in enumerate(flat):
+-        own_pos = row[own_pos_sl]
+-        _paint(grids[i], 0, -own_pos, 1.0)
+-        _paint(grids[i], 1, np.array([0.0, 0.0], dtype=np.float32), 1.0)
+-        if float(row[enemy_alive_sl][0]) > 0.5:
+-            _paint(grids[i], 2, row[enemy_pos_sl], 1.0)
+-
+-    grid_flat = grids.reshape(*obs.shape[:-1], GRID_FLAT_DIM)
+-    return np.concatenate((entity_obs, grid_flat), axis=-1).astype(np.float32)
+diff --git a/python/xushi2/map_randomization.py b/python/xushi2/map_randomization.py
+index 19c2117..ff17ff2 100644
+--- a/python/xushi2/map_randomization.py
++++ b/python/xushi2/map_randomization.py
+@@ -20,8 +20,9 @@ def _raise_invalid(param: str, value: float | int, reason: str) -> None:
+ 
+ 
+ def _validate_topology_config(cfg: dict) -> None:
++    raw_base_bounds = dict(cfg.get("base_bounds", {}))
+     base = dict(DEFAULT_MAP_BOUNDS)
+-    base.update(dict(cfg.get("base_bounds", {})))
++    base.update(raw_base_bounds)
+     min_x = float(base["min_x"])
+     max_x = float(base["max_x"])
+     min_y = float(base["min_y"])
+@@ -38,9 +39,9 @@ def _validate_topology_config(cfg: dict) -> None:
+     wall_count_per_side = int(cfg.get("wall_count_per_side", 1))
+ 
+     if not min_x < max_x:
+-        _raise_invalid("base_bounds", base, "requires min_x < max_x")
++        _raise_invalid("base_bounds", raw_base_bounds or base, "requires min_x < max_x")
+     if not min_y < max_y:
+-        _raise_invalid("base_bounds", base, "requires min_y < max_y")
++        _raise_invalid("base_bounds", raw_base_bounds or base, "requires min_y < max_y")
+     if min_span > max_span:
+         _raise_invalid("min_span", min_span, f"must be <= max_span ({max_span!r})")
+ 
+diff --git a/python/xushi2/multi_enemy_obs.py b/python/xushi2/multi_enemy_obs.py
+index 0b0a8e0..83b6519 100644
+--- a/python/xushi2/multi_enemy_obs.py
++++ b/python/xushi2/multi_enemy_obs.py
+@@ -4,16 +4,16 @@
+ 
+ import numpy as np
+ 
+-from xushi2.entity_obs import (
+-    ENTITY_TOKEN_DIM,
+-    MULTI_ENEMY_TOKEN_COUNT,
+-)
+-from xushi2.grid_obs import (
+-    GRID_CHANNELS,
+-    GRID_FLAT_DIM,
+-    GRID_SIZE,
+-    MULTI_ENEMY_ENTITY_GRID_OBS_DIM,
++ENTITY_TOKEN_DIM: int = 18
++MULTI_ENEMY_TOKEN_COUNT: int = 5
++GRID_SIZE: int = 32
++GRID_CHANNELS: int = 3
++GRID_FLAT_DIM: int = GRID_CHANNELS * GRID_SIZE * GRID_SIZE
++MULTI_ENEMY_ENTITY_OBS_DIM: int = (
++    MULTI_ENEMY_TOKEN_COUNT * ENTITY_TOKEN_DIM + MULTI_ENEMY_TOKEN_COUNT
+ )
++MULTI_ENEMY_ENTITY_GRID_OBS_DIM: int = MULTI_ENEMY_ENTITY_OBS_DIM + GRID_FLAT_DIM
++
+ from xushi2.obs_manifest import (
+     ACTOR_PHASE1_DIM,
+     CRITIC_DIM,
+@@ -245,6 +245,15 @@ def actor_obs_to_multi_enemy_entity_grid_obs(
+     return out.reshape(*obs.shape[:-1], MULTI_ENEMY_ENTITY_GRID_OBS_DIM)
+ 
+ 
++def entity_obs_self_position(obs: np.ndarray) -> np.ndarray:
++    """Return the self-token team-frame position from flattened token observations."""
++    obs = np.asarray(obs, dtype=np.float32)
++    min_dim = ENTITY_TOKEN_DIM
++    if obs.shape[-1] < min_dim:
++        raise ValueError(f"entity obs last dim must be at least {min_dim}, got {obs.shape}")
++    return obs[..., _POSITION]
++
++
+ def zero_masked_enemy_tokens(obs: np.ndarray) -> np.ndarray:
+     """Zero masked enemy token payloads while preserving token masks.
+ 
+diff --git a/python/xushi2/partial_obs.py b/python/xushi2/partial_obs.py
+index 3d82b64..4e27bd9 100644
+--- a/python/xushi2/partial_obs.py
++++ b/python/xushi2/partial_obs.py
+@@ -4,16 +4,19 @@
+ 
+ import numpy as np
+ 
+-from xushi2.entity_obs import ENTITY_TOKEN_COUNT, ENTITY_TOKEN_DIM
+-from xushi2.grid_obs import (
+-    ENTITY_GRID_OBS_DIM,
++from xushi2.multi_enemy_obs import (
++    ENTITY_TOKEN_DIM,
+     GRID_CHANNELS,
+     GRID_FLAT_DIM,
+     GRID_SIZE,
+-    actor_obs_to_entity_grid_obs,
+ )
+ from xushi2.obs_manifest import ACTOR_PHASE1_DIM, actor_field_slice
+ 
++ENTITY_TOKEN_COUNT: int = 3
++ENTITY_OBS_DIM: int = ENTITY_TOKEN_COUNT * ENTITY_TOKEN_DIM + ENTITY_TOKEN_COUNT
++ENTITY_GRID_OBS_DIM: int = ENTITY_OBS_DIM + GRID_FLAT_DIM
++
++
+ _ENEMY_TOKEN = 1
+ _ENEMY_REL_POS = actor_field_slice("enemy_relative_position")
+ _ENEMY_ALIVE = actor_field_slice("enemy_alive")
+@@ -32,6 +35,85 @@
+ _AUX = 17
+ 
+ 
++def _paint(grid: np.ndarray, channel: int, xy: np.ndarray, value: float) -> None:
++    ix = int(np.clip(round((float(xy[0]) + 1.0) * 0.5 * (GRID_SIZE - 1)), 0, GRID_SIZE - 1))
++    iy = int(np.clip(round((1.0 - (float(xy[1]) + 1.0) * 0.5) * (GRID_SIZE - 1)), 0, GRID_SIZE - 1))
++    grid[channel, iy, ix] = max(grid[channel, iy, ix], float(value))
++
++
++def actor_obs_to_entity_grid_obs(obs: np.ndarray) -> np.ndarray:
++    obs = np.asarray(obs, dtype=np.float32)
++    if obs.shape[-1] != ACTOR_PHASE1_DIM:
++        raise ValueError(f"actor obs last dim must be {ACTOR_PHASE1_DIM}, got {obs.shape}")
++    out = np.zeros((*obs.shape[:-1], ENTITY_GRID_OBS_DIM), dtype=np.float32)
++    tokens = out[..., : ENTITY_TOKEN_COUNT * ENTITY_TOKEN_DIM].reshape(
++        *obs.shape[:-1], ENTITY_TOKEN_COUNT, ENTITY_TOKEN_DIM
++    )
++    mask = out[..., ENTITY_TOKEN_COUNT * ENTITY_TOKEN_DIM : ENTITY_OBS_DIM]
++
++    own_hp = obs[..., actor_field_slice("own_hp")]
++    own_velocity = obs[..., actor_field_slice("own_velocity")]
++    own_aim = obs[..., actor_field_slice("own_aim_unit")]
++    own_position = obs[..., actor_field_slice("own_position")]
++    own_ammo = obs[..., actor_field_slice("own_ammo")]
++    own_reloading = obs[..., actor_field_slice("own_reloading")]
++    own_cd = obs[..., actor_field_slice("own_combat_roll_cd")]
++    enemy_alive = obs[..., actor_field_slice("enemy_alive")]
++    enemy_position = obs[..., actor_field_slice("enemy_relative_position")]
++    enemy_hp = obs[..., actor_field_slice("enemy_hp")]
++    enemy_velocity = obs[..., actor_field_slice("enemy_velocity")]
++    owner_onehot = obs[..., actor_field_slice("objective_owner_onehot")]
++    cap_progress = obs[..., actor_field_slice("cap_progress")]
++    self_on_point = obs[..., actor_field_slice("self_on_point")]
++    enemy_on_point = obs[..., actor_field_slice("enemy_on_point")]
++
++    self_tok = tokens[..., 0, :]
++    self_tok[..., _KIND_SELF] = np.array([1.0, 0.0, 0.0], dtype=np.float32)
++    self_tok[..., _TEAM] = np.array([1.0, 0.0, 0.0], dtype=np.float32)
++    self_tok[..., _HP] = own_hp[..., 0]
++    self_tok[..., _ALIVE] = 1.0
++    self_tok[..., _POSITION] = own_position
++    self_tok[..., _VELOCITY] = own_velocity
++    self_tok[..., _AIM] = own_aim
++    self_tok[..., _AMMO] = own_ammo[..., 0]
++    self_tok[..., _RELOADING] = own_reloading[..., 0]
++    self_tok[..., _ABILITY_CD] = own_cd[..., 0]
++    self_tok[..., _AUX] = self_on_point[..., 0]
++
++    enemy_tok = tokens[..., _ENEMY_TOKEN, :]
++    enemy_tok[..., _KIND_SELF] = np.array([0.0, 1.0, 0.0], dtype=np.float32)
++    enemy_tok[..., _TEAM] = np.array([0.0, 1.0, 0.0], dtype=np.float32)
++    enemy_tok[..., _HP] = enemy_hp[..., 0]
++    enemy_tok[..., _ALIVE] = enemy_alive[..., 0]
++    enemy_tok[..., _POSITION] = enemy_position
++    enemy_tok[..., _VELOCITY] = enemy_velocity
++    enemy_tok[..., _AUX] = enemy_on_point[..., 0]
++
++    obj_tok = tokens[..., 2, :]
++    obj_tok[..., _KIND_SELF] = np.array([0.0, 0.0, 1.0], dtype=np.float32)
++    obj_tok[..., _TEAM] = owner_onehot
++    obj_tok[..., _ALIVE] = 1.0
++    obj_tok[..., _POSITION] = -own_position
++    obj_tok[..., _AUX] = cap_progress[..., 0]
++
++    mask[..., 0] = 1.0
++    mask[..., _ENEMY_TOKEN] = (enemy_alive[..., 0] > 0.5).astype(np.float32)
++    mask[..., 2] = 1.0
++
++    flat = obs.reshape(-1, ACTOR_PHASE1_DIM)
++    grids = out[..., -GRID_FLAT_DIM:].reshape(-1, GRID_CHANNELS, GRID_SIZE, GRID_SIZE)
++    own_pos_sl = actor_field_slice("own_position")
++    enemy_pos_sl = actor_field_slice("enemy_relative_position")
++    enemy_alive_sl = actor_field_slice("enemy_alive")
++    for i, row in enumerate(flat):
++        own_pos = row[own_pos_sl]
++        _paint(grids[i], 0, -own_pos, 1.0)
++        _paint(grids[i], 1, np.array([0.0, 0.0], dtype=np.float32), 1.0)
++        if float(row[enemy_alive_sl][0]) > 0.5:
++            _paint(grids[i], 2, row[enemy_pos_sl], 1.0)
++    return out
++
++
+ def actor_obs_to_partial_entity_grid_obs(
+     obs: np.ndarray,
+     *,
+diff --git a/python/xushi2/runner.py b/python/xushi2/runner.py
+index dc56d2c..a776260 100644
+--- a/python/xushi2/runner.py
++++ b/python/xushi2/runner.py
+@@ -85,8 +85,7 @@ def _objective_timing_value(sim_cfg: dict, field: str, default_ticks: int) -> in
+     raw_seconds = sim_cfg.get(seconds_key, nested.get(f"{field}_seconds"))
+     if raw_ticks is not None and raw_seconds is not None:
+         raise ValueError(
+-            f"set only one of sim.{ticks_key} and sim.{seconds_key} "
+-            f"(or objective_timing.{field}_*)"
++            f"set only one of sim.{ticks_key} and sim.{seconds_key} (or objective_timing.{field}_*)"
+         )
+     if raw_ticks is not None:
+         ticks = int(raw_ticks)
+@@ -130,12 +129,12 @@ def _build_mechanics(mech_cfg: dict) -> _cpp.Phase1MechanicsConfig:
+ 
+ 
+ def _build_config(sim_cfg: dict, seed_override: int | None = None) -> _cpp.MatchConfig:
+-    missing_root = _REQUIRED_SIM_KEYS - sim_cfg.keys()
+-    if missing_root:
+-        raise KeyError(f"sim config is missing required key(s): {sorted(missing_root)}")
+     unknown_root = sim_cfg.keys() - _REQUIRED_SIM_KEYS - _OPTIONAL_SIM_KEYS
+     if unknown_root:
+         raise ValueError(f"sim config has unknown key(s): {sorted(unknown_root)}")
++    missing_root = _REQUIRED_SIM_KEYS - sim_cfg.keys()
++    if missing_root:
++        raise KeyError(f"sim config is missing required key(s): {sorted(missing_root)}")
+ 
+     cfg = _cpp.MatchConfig()
+     cfg.seed = int(sim_cfg["seed"] if seed_override is None else seed_override)
+@@ -150,12 +149,12 @@ def _build_config(sim_cfg: dict, seed_override: int | None = None) -> _cpp.Match
+     )
+     if "map" in sim_cfg:
+         map_cfg = sim_cfg["map"]
+-        missing_map = _REQUIRED_MAP_KEYS - map_cfg.keys()
+-        if missing_map:
+-            raise KeyError(f"sim.map is missing required key(s): {sorted(missing_map)}")
+         unknown_map = map_cfg.keys() - _REQUIRED_MAP_KEYS
+         if unknown_map:
+             raise ValueError(f"sim.map has unknown key(s): {sorted(unknown_map)}")
++        missing_map = _REQUIRED_MAP_KEYS - map_cfg.keys()
++        if missing_map:
++            raise KeyError(f"sim.map is missing required key(s): {sorted(missing_map)}")
+         cfg.map.min_x = float(map_cfg["min_x"])
+         cfg.map.min_y = float(map_cfg["min_y"])
+         cfg.map.max_x = float(map_cfg["max_x"])
+diff --git a/python/xushi2/snapshot_policy.py b/python/xushi2/snapshot_policy.py
+index 40962e5..5dc4f8e 100644
+--- a/python/xushi2/snapshot_policy.py
++++ b/python/xushi2/snapshot_policy.py
+@@ -11,15 +11,13 @@
+ 
+ from train.mappo import MappoActorCritic, MappoConfig
+ from xushi2 import xushi2_cpp as _cpp
+-from xushi2.entity_obs import actor_obs_to_entity_obs
+-from xushi2.grid_obs import actor_obs_to_entity_grid_obs
+ from xushi2.multi_enemy_obs import (
+     actor_obs_to_multi_enemy_entity_grid_obs,
+     map_bounds_from_sim_cfg,
+     normalize_world_for_team,
+ )
+ from xushi2.obs_manifest import ACTOR_PHASE1_DIM, CRITIC_DIM, actor_field_slice, critic_field_slice
+-from xushi2.partial_obs import actor_obs_to_partial_entity_grid_obs
++from xushi2.partial_obs import actor_obs_to_entity_grid_obs, actor_obs_to_partial_entity_grid_obs
+ 
+ 
+ class SnapshotPolicy:
+@@ -72,7 +70,7 @@ def _convert_obs(
+         if self.cfg.obs_encoder == "flat":
+             return flat.astype(np.float32, copy=False)
+         if self.cfg.obs_encoder == "entity_attention":
+-            return actor_obs_to_entity_obs(flat)
++            raise ValueError("entity_attention snapshot observations are no longer supported")
+         if self.cfg.obs_encoder == "entity_attention_grid":
+             if self.phase >= 7:
+                 if self.cfg.entity_token_count > 3:

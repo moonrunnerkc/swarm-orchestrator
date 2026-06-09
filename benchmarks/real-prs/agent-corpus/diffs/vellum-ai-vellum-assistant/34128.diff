@@ -1,0 +1,180 @@
+diff --git a/assistant/src/__tests__/agent-loop-exit-reason.test.ts b/assistant/src/__tests__/agent-loop-exit-reason.test.ts
+index dc7d6af534..8120840d2b 100644
+--- a/assistant/src/__tests__/agent-loop-exit-reason.test.ts
++++ b/assistant/src/__tests__/agent-loop-exit-reason.test.ts
+@@ -39,18 +39,21 @@ import type {
+ 
+ // The agent loop invokes the default post-compaction re-injection hook directly
+ // when it compacts in place. Stub it so these unit tests can drive the
+-// re-injection result without the daemon-level injector chain. Tests assign
+-// `postCompactImpl` to observe the call or force a failure; when unset
+-// the hook is a no-op that returns the history it was handed.
++// re-injection result without the daemon-level injector chain. The hook writes
++// the re-injected history back onto the context; tests assign `postCompactImpl`
++// to observe the call or force a failure; when unset the hook leaves the
++// history it was handed untouched.
+ let postCompactImpl:
+   | ((input: PostCompactContext) => Promise<Message[]>)
+   | null = null;
+ mock.module(
+   "../plugins/defaults/memory-retrieval/hooks/post-compact.js",
+   () => ({
+-    default: async (input: PostCompactContext) => ({
+-      messages: postCompactImpl ? await postCompactImpl(input) : input.history,
+-    }),
++    default: async (input: PostCompactContext): Promise<void> => {
++      input.history = postCompactImpl
++        ? await postCompactImpl(input)
++        : input.history;
++    },
+   }),
+ );
+ 
+diff --git a/assistant/src/__tests__/conversation-runtime-assembly.test.ts b/assistant/src/__tests__/conversation-runtime-assembly.test.ts
+index 29f98bc9c0..fb7608a609 100644
+--- a/assistant/src/__tests__/conversation-runtime-assembly.test.ts
++++ b/assistant/src/__tests__/conversation-runtime-assembly.test.ts
+@@ -107,7 +107,9 @@ import {
+   writeSlackMetadata,
+ } from "../messaging/providers/slack/message-metadata.js";
+ import { parentAlias } from "../messaging/providers/slack/render-transcript.js";
+-import postCompact from "../plugins/defaults/memory-retrieval/hooks/post-compact.js";
++import postCompact, {
++  type PostCompactContext,
++} from "../plugins/defaults/memory-retrieval/hooks/post-compact.js";
+ import {
+   buildUnifiedTurnContextBlock,
+   type UnifiedTurnContextOptions,
+@@ -1029,7 +1031,7 @@ describe("applyRuntimeInjections — injection mode", () => {
+     // only resolve when `applyRuntimeInjections` finds it by conversation id
+     // AND the agent loop hands the post-compaction hook the turn-identity fields
+     // flat (`requestId`, `conversationId`, `trust`)
+-    const { messages: result } = await postCompact({
++    const postCompactCtx: PostCompactContext = {
+       history: baseMessages,
+       requestId: "reinject-req",
+       conversationId: "injection-mode-conv",
+@@ -1038,7 +1040,9 @@ describe("applyRuntimeInjections — injection mode", () => {
+       mode: "full",
+       modelProfile: null,
+       actorContext: null,
+-    });
++    };
++    await postCompact(postCompactCtx);
++    const result = postCompactCtx.history;
+     const allText = result[0].content
+       .filter((b): b is { type: "text"; text: string } => b.type === "text")
+       .map((b) => b.text)
+diff --git a/assistant/src/agent/loop.ts b/assistant/src/agent/loop.ts
+index 1cd171dd73..d3ff7df2cc 100644
+--- a/assistant/src/agent/loop.ts
++++ b/assistant/src/agent/loop.ts
+@@ -23,7 +23,9 @@ import type {
+ } from "../plugin-api/types.js";
+ import { defaultCompact } from "../plugins/defaults/compaction/compact.js";
+ import type { ContextWindowResult } from "../plugins/defaults/compaction/window-manager.js";
+-import postCompact from "../plugins/defaults/memory-retrieval/hooks/post-compact.js";
++import postCompact, {
++  type PostCompactContext,
++} from "../plugins/defaults/memory-retrieval/hooks/post-compact.js";
+ import { runHook } from "../plugins/pipeline.js";
+ import type { CompactionCircuitEvent } from "../plugins/types.js";
+ import { normalizeThinkingConfigForWire } from "../providers/thinking-config.js";
+@@ -767,7 +769,7 @@ export class AgentLoop {
+     // Re-inject onto the same base the `compaction_completed` dispatch commits:
+     // the compacted messages when the pipeline compacted, the stripped
+     // pre-compaction history otherwise.
+-    const injection = await postCompact({
++    const postCompactCtx: PostCompactContext = {
+       history: compactResult.compacted ? compactResult.messages : rawHistory,
+       requestId,
+       conversationId: this.conversationId,
+@@ -777,8 +779,11 @@ export class AgentLoop {
+       mode: "full",
+       modelProfile,
+       actorContext,
+-    });
+-    return injection.messages;
++    };
++    // The hook writes the re-injected history back onto the context; read it
++    // from there once the hook settles.
++    await postCompact(postCompactCtx);
++    return postCompactCtx.history;
+   }
+ 
+   async run(options: AgentLoopRunOptions): Promise<AgentLoopRunResult> {
+diff --git a/assistant/src/plugins/defaults/memory-retrieval/hooks/post-compact.ts b/assistant/src/plugins/defaults/memory-retrieval/hooks/post-compact.ts
+index 0373bef559..f7d9963660 100644
+--- a/assistant/src/plugins/defaults/memory-retrieval/hooks/post-compact.ts
++++ b/assistant/src/plugins/defaults/memory-retrieval/hooks/post-compact.ts
+@@ -6,9 +6,10 @@
+  * memory-v2 static block, workspace top-level context, and Slack chronological
+  * snapshot — onto the compacted history before the turn continues. This hook
+  * is the memory system's home for that transform: it receives the message
+- * history plus the resolved runtime-injection options and returns the edited
+- * history (and the blocks it captured), with no dependency on the agent loop's
+- * closure state.
++ * history plus the resolved runtime-injection options on a single context,
++ * writes the edited history back onto that context, and has no dependency on
++ * the agent loop's closure state. The injection blocks the transform captures
++ * are not needed by the re-injection caller, so only the messages propagate.
+  *
+  * It re-applies the runtime injections via {@link applyRuntimeInjections} and
+  * re-tracks the memory graph's cached nodes against the re-injected history.
+@@ -22,11 +23,12 @@
+  * something the generic loop should carry.
+  */
+ 
++import type { PluginHookFn } from "@vellumai/plugin-api";
++
+ import {
+   applyRuntimeInjections,
+   type InboundActorContext,
+   type InjectionMode,
+-  type RuntimeInjectionResult,
+ } from "../../../../daemon/conversation-runtime-assembly.js";
+ import {
+   resolveTrustClass,
+@@ -50,7 +52,11 @@ import type { Message } from "../../../../providers/types.js";
+  * {@link getLiveGraphMemory} rather than threaded in.
+  */
+ export interface PostCompactContext {
+-  /** Compacted message history to re-inject onto. */
++  /**
++   * Compacted message history to re-inject onto. The hook writes the
++   * re-injected result back onto this field once the transform settles, and
++   * the loop reads it from there.
++   */
+   history: Message[];
+   /**
+    * Stable ID for the current request, forwarded onto the injector turn
+@@ -107,9 +113,7 @@ export interface PostCompactContext {
+   actorContext: InboundActorContext | null;
+ }
+ 
+-export default async function postCompact(
+-  ctx: PostCompactContext,
+-): Promise<RuntimeInjectionResult> {
++const postCompact: PluginHookFn<PostCompactContext> = async (ctx) => {
+   const { history, requestId, conversationId, trust, ...options } = ctx;
+   // The remaining `options` carry the non-identity injection inputs
+   // (`isNonInteractive`, `mode`, `modelProfile`, `actorContext`). Forward the
+@@ -123,6 +127,9 @@ export default async function postCompact(
+     conversationId,
+     trust,
+   });
++  // Write the re-injected history back onto the threaded context; the loop
++  // reads it from there once the hook settles.
++  ctx.history = result.messages;
+   // Re-track the nodes the memory graph last injected so they survive against
+   // the re-injected history. Untrusted actors and minimal-mode turns never
+   // received a memory-graph injection, so there is nothing to re-track. The
+@@ -135,5 +142,6 @@ export default async function postCompact(
+   if (isTrustedActor && options.mode !== "minimal") {
+     getLiveGraphMemory(conversationId)?.retrackCachedNodes();
+   }
+-  return result;
+-}
++};
++
++export default postCompact;

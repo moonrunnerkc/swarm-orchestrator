@@ -1,0 +1,571 @@
+diff --git a/README.md b/README.md
+index ca2cdbd..c40b8ce 100644
+--- a/README.md
++++ b/README.md
+@@ -345,6 +345,7 @@ committed config:
+   "worldApiBase": "https://tellus-world.agentstarter.workers.dev",
+   "worldId": "main",
+   "skyboxUrl": "https://cdn.example.com/tellus/sky.glb",
++  "worldTemplate": "tellus",
+   "enabledAgents": ["johnny"],
+   "avatars": {
+     "johnny": "https://cdn.example.com/tellus/johnny.glb",
+@@ -362,6 +363,55 @@ variables when you want the URLs baked into a build, or replace
+ `public/tellus-config.json` during deployment if your hosting setup supports
+ runtime config injection.
+ 
++## World Templates
++
++Tellus is designed to be copied as a world template. For each deployed copy,
++change at least:
++
++```json
++{
++  "worldId": "garden-moon",
++  "skyboxUrl": "https://cdn.example.com/tellus/garden-moon-sky.glb",
++  "worldTemplate": "lowlands"
++}
++```
++
++`worldId` is the identity for shared terrain, generated objects, presence, and
++local browser saves. Use a new `worldId` for each new world so it starts clean.
++`skyboxUrl` changes the enclosing world art. `worldTemplate` changes the
++starting land shape before any player or agent sculpts it.
++
++Built-in land presets:
++
++```text
++tellus
++wide-island
++lowlands
++ridge
++```
++
++You can also override individual shape knobs with `landShape`:
++
++```json
++{
++  "worldId": "red-ridge",
++  "skyboxUrl": "/skybox/red-ridge.glb",
++  "worldTemplate": "ridge",
++  "landShape": {
++    "mountain": { "height": 16, "radius": 24, "exponent": 2.6 },
++    "ridge": { "sinScale": 1.4, "cosScale": 0.8, "diagonalScale": 0.7 },
++    "pond": { "x": -18, "z": -16, "radius": 8, "depth": 2.2 },
++    "shore": { "startRatio": 0.74, "drop": 6.2 },
++    "baseOffset": -0.7
++  }
++}
++```
++
++Supported `landShape` groups are `mountain`, `shoulder`, `southernRise`,
++`ridge`, `shore`, `pond`, and `baseOffset`. Runtime JSON is loaded before the
++3D scene is created, so deploying a copy can be as simple as replacing
++`public/tellus-config.json` with a new `worldId`, `skyboxUrl`, and template.
++
+ ## Agent Avatars
+ 
+ Set avatar URLs with:
+diff --git a/public/tellus-config.example.json b/public/tellus-config.example.json
+index 04158ff..f6bbd01 100644
+--- a/public/tellus-config.example.json
++++ b/public/tellus-config.example.json
+@@ -4,8 +4,16 @@
+   "generationProvider": "instantmesh-gradio",
+   "agentModel": "GLM-5.1",
+   "worldApiBase": "https://tellus-world.agentstarter.workers.dev",
+-  "worldId": "main",
++  "worldId": "new-world",
+   "skyboxUrl": "https://cdn.example.com/tellus/sky.glb",
++  "worldTemplate": "wide-island",
++  "landShape": {
++    "pond": {
++      "x": 24,
++      "z": -8,
++      "radius": 9.6
++    }
++  },
+   "dayNightCycleMs": 600000,
+   "dayNightStart": 0.18,
+   "enabledAgents": ["johnny"],
+diff --git a/public/tellus-config.json b/public/tellus-config.json
+index e69bbb8..c178930 100644
+--- a/public/tellus-config.json
++++ b/public/tellus-config.json
+@@ -8,6 +8,7 @@
+   "worldApiBase": "https://tellus-world.agentstarter.workers.dev",
+   "worldId": "main",
+   "skyboxUrl": "/skybox/free_-_skybox_in_the_cloud/scene.gltf",
++  "worldTemplate": "tellus",
+   "dayNightCycleMs": 600000,
+   "dayNightStart": 0.18,
+   "enabledAgents": ["johnny"],
+diff --git a/src/main.tsx b/src/main.tsx
+index b56406b..00f5520 100644
+--- a/src/main.tsx
++++ b/src/main.tsx
+@@ -243,12 +243,52 @@ interface TellusRuntimeConfig {
+   worldApiBase: string;
+   worldId: string;
+   skyboxUrl: string;
++  worldTemplate: string;
++  landShape: LandShapeTemplate;
+   dayNightCycleMs: number;
+   dayNightStart: number;
+   enabledAgents: AgentId[];
+   avatars: Partial<Record<AgentId, string>>;
+ }
+ 
++interface LandShapeTemplate {
++  mountain: {
++    height: number;
++    radius: number;
++    exponent: number;
++  };
++  shoulder: {
++    x: number;
++    z: number;
++    height: number;
++    spread: number;
++  };
++  southernRise: {
++    x: number;
++    z: number;
++    height: number;
++    spread: number;
++  };
++  ridge: {
++    sinScale: number;
++    cosScale: number;
++    diagonalScale: number;
++  };
++  shore: {
++    startRatio: number;
++    drop: number;
++  };
++  pond: {
++    x: number;
++    z: number;
++    radius: number;
++    depth: number;
++    waterOffset: number;
++    waterTerrainThreshold: number;
++  };
++  baseOffset: number;
++}
++
+ interface AgentDecision {
+   action?: "generate" | "moveSelf" | "sculptTerrain" | "moveAsset" | "rotateAsset" | "scaleAsset" | "moveAssetToWater";
+   prompt: string;
+@@ -370,8 +410,6 @@ const AUTONOMOUS_ASSET_INTERVAL_MS = 60_000;
+ const AUTONOMOUS_REFLECTION_OFFSET_MS = AUTONOMOUS_ASSET_INTERVAL_MS / 2;
+ const AUTONOMOUS_AGENT_GENERATION_ENABLED = false;
+ const PENDING_GENERATION_FALLBACK_MS = 3 * 60 * 1000;
+-const POND_CENTER: Vec3 = { x: 18, y: 0, z: -12 };
+-const POND_RADIUS = 7.4;
+ const TERRAIN_VERTEX_COUNT = TERRAIN_SEGMENTS + 1;
+ const TERRAIN_SCULPT_RADIUS = 6.2;
+ const TERRAIN_SCULPT_STEP = 0.72;
+@@ -416,6 +454,114 @@ function boundedNumber(
+   return Math.max(min, Math.min(max, parsed));
+ }
+ 
++function cloneLandShapeTemplate(template: LandShapeTemplate): LandShapeTemplate {
++  return {
++    mountain: { ...template.mountain },
++    shoulder: { ...template.shoulder },
++    southernRise: { ...template.southernRise },
++    ridge: { ...template.ridge },
++    shore: { ...template.shore },
++    pond: { ...template.pond },
++    baseOffset: template.baseOffset,
++  };
++}
++
++function landShapeWith(
++  base: LandShapeTemplate,
++  patch: Partial<{
++    mountain: Partial<LandShapeTemplate["mountain"]>;
++    shoulder: Partial<LandShapeTemplate["shoulder"]>;
++    southernRise: Partial<LandShapeTemplate["southernRise"]>;
++    ridge: Partial<LandShapeTemplate["ridge"]>;
++    shore: Partial<LandShapeTemplate["shore"]>;
++    pond: Partial<LandShapeTemplate["pond"]>;
++    baseOffset: number;
++  }>,
++): LandShapeTemplate {
++  return {
++    mountain: { ...base.mountain, ...patch.mountain },
++    shoulder: { ...base.shoulder, ...patch.shoulder },
++    southernRise: { ...base.southernRise, ...patch.southernRise },
++    ridge: { ...base.ridge, ...patch.ridge },
++    shore: { ...base.shore, ...patch.shore },
++    pond: { ...base.pond, ...patch.pond },
++    baseOffset: patch.baseOffset ?? base.baseOffset,
++  };
++}
++
++const DEFAULT_LAND_SHAPE: LandShapeTemplate = {
++  mountain: {
++    height: 21,
++    radius: 20,
++    exponent: 2.2,
++  },
++  shoulder: {
++    x: -16,
++    z: 12,
++    height: 4.2,
++    spread: 190,
++  },
++  southernRise: {
++    x: 9,
++    z: -24,
++    height: 3.1,
++    spread: 160,
++  },
++  ridge: {
++    sinScale: 1.05,
++    cosScale: 0.72,
++    diagonalScale: 0.42,
++  },
++  shore: {
++    startRatio: 0.72,
++    drop: 5.8,
++  },
++  pond: {
++    x: 18,
++    z: -12,
++    radius: 7.4,
++    depth: 2.5,
++    waterOffset: 0.55,
++    waterTerrainThreshold: 1.9,
++  },
++  baseOffset: -0.65,
++};
++
++const LAND_SHAPE_PRESETS: Record<string, LandShapeTemplate> = {
++  tellus: cloneLandShapeTemplate(DEFAULT_LAND_SHAPE),
++  "wide-island": landShapeWith(DEFAULT_LAND_SHAPE, {
++    mountain: { height: 15, radius: 27, exponent: 2 },
++    shoulder: { x: -24, z: 18, height: 3.4, spread: 320 },
++    southernRise: { x: 20, z: -22, height: 3.8, spread: 260 },
++    ridge: { sinScale: 0.7, cosScale: 0.55, diagonalScale: 0.32 },
++    shore: { startRatio: 0.82, drop: 4.4 },
++    pond: { x: 24, z: -8, radius: 9.6, depth: 2.1 },
++    baseOffset: -0.45,
++  }),
++  lowlands: landShapeWith(DEFAULT_LAND_SHAPE, {
++    mountain: { height: 7.5, radius: 34, exponent: 2.4 },
++    shoulder: { x: -20, z: 10, height: 2.2, spread: 280 },
++    southernRise: { x: 18, z: -20, height: 1.8, spread: 260 },
++    ridge: { sinScale: 0.42, cosScale: 0.34, diagonalScale: 0.24 },
++    shore: { startRatio: 0.78, drop: 3.6 },
++    pond: { x: 8, z: -18, radius: 13.2, depth: 1.7, waterOffset: 0.42 },
++    baseOffset: -0.25,
++  }),
++  ridge: landShapeWith(DEFAULT_LAND_SHAPE, {
++    mountain: { height: 13, radius: 18, exponent: 2.8 },
++    shoulder: { x: -10, z: 25, height: 5.5, spread: 180 },
++    southernRise: { x: 24, z: -18, height: 5.2, spread: 170 },
++    ridge: { sinScale: 1.8, cosScale: 1.1, diagonalScale: 0.9 },
++    shore: { startRatio: 0.7, drop: 6.6 },
++    pond: { x: -16, z: -18, radius: 6.8, depth: 1.9 },
++    baseOffset: -0.8,
++  }),
++};
++
++function configuredLandShapeTemplateName(): string {
++  return import.meta.env.VITE_TELLUS_WORLD_TEMPLATE?.trim() || "tellus";
++}
++
+ const runtimeConfig: TellusRuntimeConfig = {
+   apiBase:
+     import.meta.env.VITE_TELLUS_API_BASE?.replace(/\/+$/, "") ?? "",
+@@ -451,6 +597,10 @@ const runtimeConfig: TellusRuntimeConfig = {
+     import.meta.env.VITE_TELLUS_WORLD_API_BASE?.replace(/\/+$/, "") ?? "",
+   worldId: import.meta.env.VITE_TELLUS_WORLD_ID ?? "main",
+   skyboxUrl: import.meta.env.VITE_TELLUS_SKYBOX_URL ?? "",
++  worldTemplate: configuredLandShapeTemplateName(),
++  landShape: cloneLandShapeTemplate(
++    LAND_SHAPE_PRESETS[configuredLandShapeTemplateName()] ?? DEFAULT_LAND_SHAPE,
++  ),
+   dayNightCycleMs: boundedNumber(
+     import.meta.env.VITE_TELLUS_DAY_NIGHT_CYCLE_MS,
+     DEFAULT_DAY_NIGHT_CYCLE_MS,
+@@ -1107,20 +1257,39 @@ function movedVehiclePosition(
+ }
+ 
+ function baseTerrainHeight(x: number, z: number): number {
++  const shape = runtimeConfig.landShape;
+   const r = Math.hypot(x, z);
+-  const mountain = Math.max(0, 1 - r / 20);
+-  const mound = Math.pow(mountain, 2.2) * 21;
+-  const shoulder = Math.exp(-((x + 16) ** 2 + (z - 12) ** 2) / 190) * 4.2;
+-  const southernRise = Math.exp(-((x - 9) ** 2 + (z + 24) ** 2) / 160) * 3.1;
++  const mountain = Math.max(0, 1 - r / shape.mountain.radius);
++  const mound = Math.pow(mountain, shape.mountain.exponent) * shape.mountain.height;
++  const shoulder =
++    Math.exp(
++      -(
++        (x - shape.shoulder.x) ** 2 +
++        (z - shape.shoulder.z) ** 2
++      ) / shape.shoulder.spread,
++    ) * shape.shoulder.height;
++  const southernRise =
++    Math.exp(
++      -(
++        (x - shape.southernRise.x) ** 2 +
++        (z - shape.southernRise.z) ** 2
++      ) / shape.southernRise.spread,
++    ) * shape.southernRise.height;
+   const ridge =
+-    Math.sin(x * 0.22 + z * 0.08) * 1.05 +
+-    Math.cos(z * 0.2 - x * 0.06) * 0.72 +
+-    Math.sin((x + z) * 0.11) * 0.42;
+-  const rimStart = WORLD_RADIUS * 0.72;
++    Math.sin(x * 0.22 + z * 0.08) * shape.ridge.sinScale +
++    Math.cos(z * 0.2 - x * 0.06) * shape.ridge.cosScale +
++    Math.sin((x + z) * 0.11) * shape.ridge.diagonalScale;
++  const rimStart = WORLD_RADIUS * shape.shore.startRatio;
+   const rimWidth = WORLD_RADIUS * 0.28;
+-  const rimDrop = Math.max(0, (r - rimStart) / rimWidth) * 5.8;
+-  const pond = Math.exp(-((x - 18) ** 2 + (z + 12) ** 2) / 65) * 2.5;
+-  return mound + shoulder + southernRise + ridge - rimDrop - pond - 0.65;
++  const rimDrop = Math.max(0, (r - rimStart) / rimWidth) * shape.shore.drop;
++  const pond =
++    Math.exp(
++      -(
++        (x - shape.pond.x) ** 2 +
++        (z - shape.pond.z) ** 2
++      ) / (shape.pond.radius * shape.pond.radius * 1.18),
++    ) * shape.pond.depth;
++  return mound + shoulder + southernRise + ridge - rimDrop - pond + shape.baseOffset;
+ }
+ 
+ function terrainHeight(x: number, z: number): number {
+@@ -1130,8 +1299,11 @@ function terrainHeight(x: number, z: number): number {
+ function terrainKind(x: number, z: number, y: number): TerrainKind {
+   const painted = centralTerrainPaintAt(x, z);
+   if (painted) return painted;
+-  const pondDistance = Math.hypot(x - 18, z + 12);
+-  if (pondDistance < 7 && y < 1.9) return "water";
++  const { pond } = runtimeConfig.landShape;
++  const pondDistance = Math.hypot(x - pond.x, z - pond.z);
++  if (pondDistance < pond.radius * 0.95 && y < pond.waterTerrainThreshold) {
++    return "water";
++  }
+   if (y > 13.5) return "snow";
+   if (y > 6.8) return "rock";
+   const pathBand = Math.abs(Math.sin(Math.atan2(z, x) * 3 + 0.5)) < 0.13;
+@@ -1140,7 +1312,8 @@ function terrainKind(x: number, z: number, y: number): TerrainKind {
+ }
+ 
+ function pondWaterLevel(): number {
+-  return baseTerrainHeight(POND_CENTER.x, POND_CENTER.z) + 0.55;
++  const { pond } = runtimeConfig.landShape;
++  return baseTerrainHeight(pond.x, pond.z) + pond.waterOffset;
+ }
+ 
+ function makeId(prefix: string): string {
+@@ -1160,6 +1333,74 @@ function isRecord(value: unknown): value is Record<string, unknown> {
+   return typeof value === "object" && value !== null && !Array.isArray(value);
+ }
+ 
++function numberFromRecord(
++  record: Record<string, unknown>,
++  key: string,
++  fallback: number,
++  min: number,
++  max: number,
++): number {
++  const value = record[key];
++  return typeof value === "number"
++    ? boundedNumber(value, fallback, min, max)
++    : fallback;
++}
++
++function mergeLandShapeConfig(
++  base: LandShapeTemplate,
++  config: Record<string, unknown>,
++): LandShapeTemplate {
++  const next = cloneLandShapeTemplate(base);
++  const mountain = config.mountain;
++  if (isRecord(mountain)) {
++    next.mountain.height = numberFromRecord(mountain, "height", next.mountain.height, 0, 40);
++    next.mountain.radius = numberFromRecord(mountain, "radius", next.mountain.radius, 4, WORLD_RADIUS);
++    next.mountain.exponent = numberFromRecord(mountain, "exponent", next.mountain.exponent, 0.4, 6);
++  }
++  const shoulder = config.shoulder;
++  if (isRecord(shoulder)) {
++    next.shoulder.x = numberFromRecord(shoulder, "x", next.shoulder.x, -WORLD_RADIUS, WORLD_RADIUS);
++    next.shoulder.z = numberFromRecord(shoulder, "z", next.shoulder.z, -WORLD_RADIUS, WORLD_RADIUS);
++    next.shoulder.height = numberFromRecord(shoulder, "height", next.shoulder.height, -10, 16);
++    next.shoulder.spread = numberFromRecord(shoulder, "spread", next.shoulder.spread, 20, 600);
++  }
++  const southernRise = config.southernRise;
++  if (isRecord(southernRise)) {
++    next.southernRise.x = numberFromRecord(southernRise, "x", next.southernRise.x, -WORLD_RADIUS, WORLD_RADIUS);
++    next.southernRise.z = numberFromRecord(southernRise, "z", next.southernRise.z, -WORLD_RADIUS, WORLD_RADIUS);
++    next.southernRise.height = numberFromRecord(southernRise, "height", next.southernRise.height, -10, 16);
++    next.southernRise.spread = numberFromRecord(southernRise, "spread", next.southernRise.spread, 20, 600);
++  }
++  const ridge = config.ridge;
++  if (isRecord(ridge)) {
++    next.ridge.sinScale = numberFromRecord(ridge, "sinScale", next.ridge.sinScale, -4, 4);
++    next.ridge.cosScale = numberFromRecord(ridge, "cosScale", next.ridge.cosScale, -4, 4);
++    next.ridge.diagonalScale = numberFromRecord(ridge, "diagonalScale", next.ridge.diagonalScale, -4, 4);
++  }
++  const shore = config.shore;
++  if (isRecord(shore)) {
++    next.shore.startRatio = numberFromRecord(shore, "startRatio", next.shore.startRatio, 0.35, 0.95);
++    next.shore.drop = numberFromRecord(shore, "drop", next.shore.drop, 0, 14);
++  }
++  const pond = config.pond;
++  if (isRecord(pond)) {
++    next.pond.x = numberFromRecord(pond, "x", next.pond.x, -WORLD_RADIUS, WORLD_RADIUS);
++    next.pond.z = numberFromRecord(pond, "z", next.pond.z, -WORLD_RADIUS, WORLD_RADIUS);
++    next.pond.radius = numberFromRecord(pond, "radius", next.pond.radius, 1, 28);
++    next.pond.depth = numberFromRecord(pond, "depth", next.pond.depth, 0, 8);
++    next.pond.waterOffset = numberFromRecord(pond, "waterOffset", next.pond.waterOffset, -2, 3);
++    next.pond.waterTerrainThreshold = numberFromRecord(
++      pond,
++      "waterTerrainThreshold",
++      next.pond.waterTerrainThreshold,
++      -4,
++      8,
++    );
++  }
++  next.baseOffset = numberFromRecord(config, "baseOffset", next.baseOffset, -8, 8);
++  return next;
++}
++
+ function applyRuntimeConfig(config: unknown): void {
+   if (!isRecord(config)) return;
+ 
+@@ -1246,6 +1487,24 @@ function applyRuntimeConfig(config: unknown): void {
+     runtimeConfig.skyboxUrl = skyboxUrl.trim();
+   }
+ 
++  const worldTemplate = config.worldTemplate;
++  if (
++    !import.meta.env.VITE_TELLUS_WORLD_TEMPLATE?.trim() &&
++    typeof worldTemplate === "string" &&
++    worldTemplate.trim()
++  ) {
++    const templateName = worldTemplate.trim();
++    runtimeConfig.worldTemplate = templateName;
++    runtimeConfig.landShape = cloneLandShapeTemplate(
++      LAND_SHAPE_PRESETS[templateName] ?? runtimeConfig.landShape,
++    );
++  }
++
++  const landShape = config.landShape;
++  if (isRecord(landShape)) {
++    runtimeConfig.landShape = mergeLandShapeConfig(runtimeConfig.landShape, landShape);
++  }
++
+   const dayNightCycleMs = config.dayNightCycleMs;
+   if (typeof dayNightCycleMs === "number") {
+     runtimeConfig.dayNightCycleMs = boundedNumber(
+@@ -2666,9 +2925,10 @@ function createPondWater(): THREE.Group {
+   group.name = "tellus-pond-water";
+   group.userData = { waterSurface: true };
+ 
++  const { pond } = runtimeConfig.landShape;
+   const waterLevel = pondWaterLevel();
+   const water = new THREE.Mesh(
+-    new THREE.CircleGeometry(POND_RADIUS, 96),
++    new THREE.CircleGeometry(pond.radius, 96),
+     new THREE.MeshBasicMaterial({
+       color: 0x6fb7d7,
+       transparent: true,
+@@ -2679,7 +2939,7 @@ function createPondWater(): THREE.Group {
+   );
+   water.name = "tellus-pond-surface";
+   water.rotation.x = -Math.PI / 2;
+-  water.position.set(POND_CENTER.x, waterLevel, POND_CENTER.z);
++  water.position.set(pond.x, waterLevel, pond.z);
+   water.renderOrder = 2;
+ 
+   const rippleMaterial = new THREE.MeshBasicMaterial({
+@@ -2692,19 +2952,19 @@ function createPondWater(): THREE.Group {
+   const rippleGeometry = new THREE.RingGeometry(0.88, 0.93, 96);
+   const ripples = new THREE.Group();
+   ripples.name = "tellus-pond-ripples";
+-  ripples.position.set(POND_CENTER.x, waterLevel + 0.035, POND_CENTER.z);
++  ripples.position.set(pond.x, waterLevel + 0.035, pond.z);
+   ripples.rotation.x = -Math.PI / 2;
+ 
+   for (let i = 0; i < 4; i++) {
+     const ripple = new THREE.Mesh(rippleGeometry, rippleMaterial.clone());
+-    const scale = POND_RADIUS * (0.28 + i * 0.18);
++    const scale = pond.radius * (0.28 + i * 0.18);
+     ripple.scale.setScalar(scale);
+     ripple.userData = { rippleIndex: i };
+     ripples.add(ripple);
+   }
+ 
+   const shore = new THREE.Mesh(
+-    new THREE.RingGeometry(POND_RADIUS * 0.96, POND_RADIUS * 1.08, 128),
++    new THREE.RingGeometry(pond.radius * 0.96, pond.radius * 1.08, 128),
+     new THREE.MeshStandardMaterial({
+       color: 0x7b6b48,
+       roughness: 0.95,
+@@ -2713,7 +2973,7 @@ function createPondWater(): THREE.Group {
+   );
+   shore.name = "tellus-pond-shore";
+   shore.rotation.x = -Math.PI / 2;
+-  shore.position.set(POND_CENTER.x, waterLevel - 0.035, POND_CENTER.z);
++  shore.position.set(pond.x, waterLevel - 0.035, pond.z);
+ 
+   group.add(shore, water, ripples);
+   return group;
+@@ -3397,9 +3657,10 @@ function describeAgentPerception(
+ ): string {
+   const groundHeight = terrainHeight(agent.position.x, agent.position.z);
+   const localTerrain = terrainKind(agent.position.x, agent.position.z, groundHeight);
++  const { pond } = runtimeConfig.landShape;
+   const distanceToPond = Math.hypot(
+-    agent.position.x - POND_CENTER.x,
+-    agent.position.z - POND_CENTER.z,
++    agent.position.x - pond.x,
++    agent.position.z - pond.z,
+   );
+   const distanceToSummit = Math.hypot(agent.position.x, agent.position.z);
+   const distanceToShore = Math.max(0, WORLD_RADIUS - Math.hypot(agent.position.x, agent.position.z));
+@@ -5633,9 +5894,10 @@ function createTellusWorld(
+ 
+     const ripples = pondWater.getObjectByName("tellus-pond-ripples");
+     if (ripples) {
++      const { pond } = runtimeConfig.landShape;
+       ripples.children.forEach((child, index) => {
+         const phase = (now * 0.00028 + index * 0.23) % 1;
+-        const scale = POND_RADIUS * (0.22 + phase * 0.72);
++        const scale = pond.radius * (0.22 + phase * 0.72);
+         child.scale.setScalar(scale);
+         const material = (child as THREE.Mesh).material;
+         if (material instanceof THREE.MeshBasicMaterial) {
+@@ -5886,7 +6148,10 @@ function createTellusWorld(
+       }))
+       .sort((a, b) => a.distance - b.distance)[0]?.thing;
+     if (nearest) return nearest.position;
+-    if (agent.id === "johnny") return POND_CENTER;
++    if (agent.id === "johnny") {
++      const { pond } = runtimeConfig.landShape;
++      return { x: pond.x, y: pondWaterLevel(), z: pond.z };
++    }
+     return normalizedDiscPosition(agent.position.x + 1, agent.position.z + 1);
+   };
+ 
+@@ -6371,7 +6636,10 @@ function createTellusWorld(
+         position: { ...visitorPosition },
+         terrainType: terrainKind(visitorPosition.x, visitorPosition.z, groundHeight),
+         terrainHeight: groundHeight,
+-        distanceToPond: Math.hypot(visitorPosition.x - POND_CENTER.x, visitorPosition.z - POND_CENTER.z),
++        distanceToPond: Math.hypot(
++          visitorPosition.x - runtimeConfig.landShape.pond.x,
++          visitorPosition.z - runtimeConfig.landShape.pond.z,
++        ),
+         distanceToSummit: Math.hypot(visitorPosition.x, visitorPosition.z),
+         distanceToShore: Math.max(0, WORLD_RADIUS - Math.hypot(visitorPosition.x, visitorPosition.z)),
+         nearby: tellusAgent.getNearby(radius),

@@ -1,0 +1,115 @@
+diff --git a/src/static/app.js b/src/static/app.js
+index a49caa7..a24ae57 100644
+--- a/src/static/app.js
++++ b/src/static/app.js
+@@ -918,4 +918,23 @@ document.addEventListener("DOMContentLoaded", () => {
+   checkAuthentication();
+   initializeFilters();
+   fetchActivities();
++
++  // Dark mode toggle
++  const darkModeToggle = document.getElementById("dark-mode-toggle");
++
++  function applyTheme(theme) {
++    document.documentElement.setAttribute("data-theme", theme);
++    darkModeToggle.textContent = theme === "dark" ? "☀️ Light Mode" : "🌙 Dark Mode";
++    darkModeToggle.setAttribute("aria-label", theme === "dark" ? "Switch to light mode" : "Switch to dark mode");
++    localStorage.setItem("theme", theme);
++  }
++
++  // Load saved theme preference
++  const savedTheme = localStorage.getItem("theme") || "light";
++  applyTheme(savedTheme);
++
++  darkModeToggle.addEventListener("click", () => {
++    const currentTheme = document.documentElement.getAttribute("data-theme");
++    applyTheme(currentTheme === "dark" ? "light" : "dark");
++  });
+ });
+diff --git a/src/static/index.html b/src/static/index.html
+index 284d70b..dbf7205 100644
+--- a/src/static/index.html
++++ b/src/static/index.html
+@@ -11,6 +11,7 @@
+       <h1>Mergington High School</h1>
+       <h2>Extracurricular Activities</h2>
+       <div id="user-controls">
++        <button id="dark-mode-toggle" aria-label="Toggle dark mode">🌙 Dark Mode</button>
+         <div id="user-status">
+           <button id="login-button" class="icon-button">
+             <span class="user-icon">👤</span>
+diff --git a/src/static/styles.css b/src/static/styles.css
+index d55c114..3a70af9 100644
+--- a/src/static/styles.css
++++ b/src/static/styles.css
+@@ -32,6 +32,36 @@
+   --info-light: #d1ecf1;
+ }
+ 
++/* Dark mode variables */
++[data-theme="dark"] {
++  --primary: #3949ab;
++  --primary-light: #6f74dd;
++  --primary-dark: #00227b;
++  --primary-text: #ffffff;
++
++  --secondary: #ff9800;
++  --secondary-light: #ffc947;
++  --secondary-dark: #c66900;
++  --secondary-text: #ffffff;
++
++  --background: #121212;
++  --surface: #1e1e1e;
++  --text-primary: #e0e0e0;
++  --text-secondary: #9e9e9e;
++  --border: #333333;
++  --border-light: #2a2a2a;
++  --border-focus: #444444;
++
++  --success: #66bb6a;
++  --success-light: #1b3a1c;
++  --warning: #ffa726;
++  --warning-light: #3e2800;
++  --error: #ef5350;
++  --error-light: #3b1111;
++  --info: #4dd0e1;
++  --info-light: #003340;
++}
++
+ * {
+   box-sizing: border-box;
+   margin: 0;
+@@ -617,6 +647,8 @@ footer {
+   position: absolute;
+   top: 10px;
+   right: 15px;
++  display: flex;
++  align-items: center;
+ }
+ 
+ #user-status {
+@@ -665,6 +697,24 @@ footer {
+   background-color: rgba(255, 255, 255, 0.3);
+ }
+ 
++/* Dark mode toggle button */
++#dark-mode-toggle {
++  display: flex;
++  align-items: center;
++  gap: 5px;
++  background-color: rgba(255, 255, 255, 0.2);
++  border-radius: 20px;
++  padding: 4px 12px;
++  font-size: 0.85rem;
++  transition: background-color 0.2s;
++  cursor: pointer;
++  color: var(--primary-text);
++  border: none;
++  margin-right: 8px;
++}
++
++#dark-mode-toggle:hover {
++  background-color: rgba(255, 255, 255, 0.3);
+ /* Social sharing */
+ .share-section {
+   margin-top: 8px;

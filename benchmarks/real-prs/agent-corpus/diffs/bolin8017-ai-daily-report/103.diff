@@ -1,0 +1,220 @@
+diff --git a/src/fetchers/providers/leaderboard-html.js b/src/fetchers/providers/leaderboard-html.js
+index f21015f..5981447 100644
+--- a/src/fetchers/providers/leaderboard-html.js
++++ b/src/fetchers/providers/leaderboard-html.js
+@@ -1,6 +1,7 @@
+ import { BENCH_LEADERBOARD_URL } from '../../lib/leaderboard-urls.js';
+ import { defineProvider } from './_registry.js';
+ import { diffSnapshots, loadPrevSnapshot, saveSnapshot } from './leaderboards-parsers/_base.js';
++import { fetchAider } from './leaderboards-parsers/aider.js';
+ import { fetchBfcl } from './leaderboards-parsers/bfcl.js';
+ import { fetchOcrBench } from './leaderboards-parsers/ocrbench.js';
+ import { fetchSwebench } from './leaderboards-parsers/swebench.js';
+@@ -10,6 +11,7 @@ import { fetchSwebench } from './leaderboards-parsers/swebench.js';
+ // pinchbench exposes no stable API (data only lives in its Next.js RSC stream).
+ // Both would require exactly the fragile scraping this provider moved away from.
+ const FETCHERS = {
++  aider: fetchAider,
+   bfcl: fetchBfcl,
+   ocrbench: fetchOcrBench,
+   swebench: fetchSwebench,
+diff --git a/src/fetchers/providers/leaderboards-parsers/aider.js b/src/fetchers/providers/leaderboards-parsers/aider.js
+new file mode 100644
+index 0000000..275ec49
+--- /dev/null
++++ b/src/fetchers/providers/leaderboards-parsers/aider.js
+@@ -0,0 +1,33 @@
++import YAML from 'yaml';
++import { fetchText } from './_base.js';
++
++// Aider's polyglot leaderboard is published as a YAML data file in the aider
++// repo (the website renders it client-side, but the raw file is the canonical,
++// stable, machine-readable source). Each entry is one benchmark run, and a model
++// can appear several times (different edit formats / dates), so we keep the best
++// pass_rate_2 (percent of the 225 exercises solved) per model, then rank.
++const AIDER_YAML_URL =
++  'https://raw.githubusercontent.com/Aider-AI/aider/main/aider/website/_data/polyglot_leaderboard.yml';
++
++// Pure: parse polyglot_leaderboard.yml → [{ model_id, score, rank }] ranked by
++// best pass_rate_2 per model descending.
++export function parseAiderYaml(yamlText) {
++  const rows = YAML.parse(yamlText);
++  if (!Array.isArray(rows)) return [];
++  const best = new Map();
++  for (const r of rows) {
++    const model_id = typeof r?.model === 'string' ? r.model.trim() : '';
++    const score = Number.parseFloat(r?.pass_rate_2);
++    if (!model_id || !Number.isFinite(score)) continue;
++    const prev = best.get(model_id);
++    if (prev === undefined || score > prev) best.set(model_id, score);
++  }
++  return [...best.entries()]
++    .map(([model_id, score]) => ({ model_id, score }))
++    .sort((a, b) => b.score - a.score)
++    .map((e, i) => ({ ...e, rank: i + 1 }));
++}
++
++export async function fetchAider() {
++  return parseAiderYaml(await fetchText(AIDER_YAML_URL));
++}
+diff --git a/src/lib/leaderboard-urls.js b/src/lib/leaderboard-urls.js
+index dc942c9..8eb8d4a 100644
+--- a/src/lib/leaderboard-urls.js
++++ b/src/lib/leaderboard-urls.js
+@@ -12,6 +12,7 @@ export const BENCH_LEADERBOARD_URL = {
+   bfcl: 'https://gorilla.cs.berkeley.edu/leaderboard.html',
+   swebench: 'https://www.swebench.com/',
+   ocrbench: 'https://huggingface.co/spaces/ling99/OCRBench-v2-leaderboard',
++  aider: 'https://aider.chat/docs/leaderboards/',
+ };
+ 
+ // Identify which benchmark a curated tech.benchmarks item refers to. Prefer an
+@@ -26,5 +27,6 @@ export function benchOf(item) {
+   if (/ocrbench/i.test(title)) return 'ocrbench';
+   if (/bfcl/i.test(title)) return 'bfcl';
+   if (/swe-?bench/i.test(title)) return 'swebench';
++  if (/aider/i.test(title)) return 'aider';
+   return null;
+ }
+diff --git a/src/sources/registry.js b/src/sources/registry.js
+index 4ebbf7c..9522b2c 100644
+--- a/src/sources/registry.js
++++ b/src/sources/registry.js
+@@ -355,10 +355,10 @@ export default [
+     chain: [{ provider: 'mops-twse-openapi', config: {} }],
+   },
+ 
+-  // === Leaderboards (3) ===
+-  // Read each board's official machine-readable export (CSV / results JSON),
+-  // not the JS-rendered leaderboard HTML. mteb + pinchbench removed 2026-05-25
+-  // (no stable precomputed-ranking source — see leaderboard-html.js).
++  // === Leaderboards (4) ===
++  // Read each board's official machine-readable export (CSV / results JSON /
++  // YAML), not the JS-rendered leaderboard HTML. mteb + pinchbench removed
++  // 2026-05-25 (no stable precomputed-ranking source — see leaderboard-html.js).
+   {
+     id: 'leaderboard-bfcl',
+     label: 'BFCL Leaderboard',
+@@ -380,4 +380,11 @@ export default [
+     itemType: 'leaderboard-entry',
+     chain: [{ provider: 'leaderboard-html', config: { parser: 'ocrbench' } }],
+   },
++  {
++    id: 'leaderboard-aider',
++    label: 'Aider Polyglot Leaderboard',
++    category: 'leaderboard',
++    itemType: 'leaderboard-entry',
++    chain: [{ provider: 'leaderboard-html', config: { parser: 'aider' } }],
++  },
+ ];
+diff --git a/tests/leaderboard-urls.test.js b/tests/leaderboard-urls.test.js
+index 2cd4d6e..4a70996 100644
+--- a/tests/leaderboard-urls.test.js
++++ b/tests/leaderboard-urls.test.js
+@@ -13,6 +13,7 @@ describe('benchOf', () => {
+     expect(benchOf({ title: 'BFCL: function-calling parity across vendors' })).toBe('bfcl');
+     expect(benchOf({ title: 'SWE-Bench Verified: Opus 4.5 #1' })).toBe('swebench');
+     expect(benchOf({ title: 'SWEbench: collapsed spelling still matches' })).toBe('swebench');
++    expect(benchOf({ title: 'Aider polyglot: Opus 4.5 tops code editing' })).toBe('aider');
+   });
+ 
+   it('returns null for an unknown / ghost benchmark', () => {
+@@ -27,7 +28,12 @@ describe('benchOf', () => {
+   });
+ 
+   it('every known bench maps to a canonical https url', () => {
+-    expect(Object.keys(BENCH_LEADERBOARD_URL).sort()).toEqual(['bfcl', 'ocrbench', 'swebench']);
++    expect(Object.keys(BENCH_LEADERBOARD_URL).sort()).toEqual([
++      'aider',
++      'bfcl',
++      'ocrbench',
++      'swebench',
++    ]);
+     for (const url of Object.values(BENCH_LEADERBOARD_URL)) {
+       expect(url).toMatch(/^https:\/\//);
+     }
+diff --git a/tests/leaderboards-parsers.test.js b/tests/leaderboards-parsers.test.js
+index b0ab5db..1db6bb9 100644
+--- a/tests/leaderboards-parsers.test.js
++++ b/tests/leaderboards-parsers.test.js
+@@ -1,4 +1,5 @@
+ import { describe, expect, it } from 'vitest';
++import { parseAiderYaml } from '../src/fetchers/providers/leaderboards-parsers/aider.js';
+ import { parseBfclCsv } from '../src/fetchers/providers/leaderboards-parsers/bfcl.js';
+ import { parseOcrBenchCsv } from '../src/fetchers/providers/leaderboards-parsers/ocrbench.js';
+ import { parseSwebenchLeaderboards } from '../src/fetchers/providers/leaderboards-parsers/swebench.js';
+@@ -71,3 +72,43 @@ describe('parseSwebenchLeaderboards', () => {
+     expect(parseSwebenchLeaderboards({ leaderboards: [] })).toEqual([]);
+   });
+ });
++
++describe('parseAiderYaml', () => {
++  it('ranks by best pass_rate_2 per model, deduping multiple runs', () => {
++    const yaml = [
++      '- model: Model A',
++      '  edit_format: diff',
++      '  pass_rate_2: 70.0',
++      '- model: Model A',
++      '  edit_format: whole',
++      '  pass_rate_2: 82.5',
++      '- model: Model B',
++      '  pass_rate_2: 88.1',
++      '- model: Model C',
++      '  pass_rate_2: 40.0',
++    ].join('\n');
++    const entries = parseAiderYaml(yaml);
++    expect(entries).toHaveLength(3); // Model A's two runs collapse to one
++    expect(entries[0]).toMatchObject({ model_id: 'Model B', rank: 1, score: 88.1 });
++    expect(entries[1]).toMatchObject({ model_id: 'Model A', rank: 2, score: 82.5 });
++    expect(entries[2]).toMatchObject({ model_id: 'Model C', rank: 3 });
++  });
++
++  it('drops entries with no model or a non-numeric pass_rate_2', () => {
++    const yaml = [
++      '- model: Good',
++      '  pass_rate_2: 50.0',
++      '- model: Bad',
++      '  pass_rate_2: null',
++      '- edit_format: whole',
++      '  pass_rate_2: 99',
++    ].join('\n');
++    const entries = parseAiderYaml(yaml);
++    expect(entries).toHaveLength(1);
++    expect(entries[0].model_id).toBe('Good');
++  });
++
++  it('returns [] for non-list YAML', () => {
++    expect(parseAiderYaml('foo: bar')).toEqual([]);
++  });
++});
+diff --git a/tests/sources-registry.test.js b/tests/sources-registry.test.js
+index 5fdc5ec..cf46a2d 100644
+--- a/tests/sources-registry.test.js
++++ b/tests/sources-registry.test.js
+@@ -22,11 +22,11 @@ import '../src/fetchers/providers/native-rss.js';
+ import '../src/fetchers/providers/rsshub.js';
+ 
+ describe('source registry', () => {
+-  it('all 51 sources validate against RegistrySchema', () => {
++  it('all 52 sources validate against RegistrySchema', () => {
+     const result = RegistrySchema.safeParse(sources);
+     if (!result.success) console.error(JSON.stringify(result.error.issues, null, 2));
+     expect(result.success).toBe(true);
+-    expect(sources).toHaveLength(51);
++    expect(sources).toHaveLength(52);
+   });
+ 
+   it('every itemType referenced exists in ItemSchemas', () => {
+diff --git a/themes/ai-builder/sections/tech/curator.md b/themes/ai-builder/sections/tech/curator.md
+index 452be56..431c47e 100644
+--- a/themes/ai-builder/sections/tech/curator.md
++++ b/themes/ai-builder/sections/tech/curator.md
+@@ -50,7 +50,7 @@ For each item: `id`, `title`, `url`, `audience`, `takeaway`, `companies` (model
+ Source: leaderboards.json (per-bench snapshots + diff fields: `new_top_5`, `rank_changes`, `top_5_today`).
+ 
+ - **Include:** new top-5 entries, rank changes affecting top-10, new benchmark releases, third-party independent eval blog posts.
+-- **Active benchmarks:** BFCL, SWE-bench Verified, OCRBench — these are the ONLY benches in leaderboards.json. Emit an item only for a bench actually present there; never invent a benchmark or its rankings (e.g. do NOT add MTEB / PinchBench — they are not collected).
++- **Active benchmarks:** BFCL, SWE-bench Verified, OCRBench, Aider polyglot — these are the ONLY benches in leaderboards.json. Emit an item only for a bench actually present there; never invent a benchmark or its rankings (e.g. do NOT add MTEB / PinchBench — they are not collected).
+ - **Exclude:** internal-only benchmarks, vendor-self-reported numbers without independent replication.
+ 
+ For each item: `id`, `title` (e.g. "SWE-bench Verified: <model> enters top-5"), `audience`, `takeaway`, `benchmark_changes: { new_top_5: [...], rank_changes: [...] }`. Do NOT emit a `url` — the official leaderboard link is attached deterministically by the system; never construct, copy, or guess one.
