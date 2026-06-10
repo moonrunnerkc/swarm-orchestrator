@@ -9,6 +9,10 @@
 //   SWARM_EG_REPOS             comma list of repo slugs to include (default all)
 //   SWARM_EG_CORPUS            regression | clean | both (default both)
 //   SWARM_EG_MAX_PER_REPO      cap PRs per repo (default no cap)
+//   SWARM_EG_SHARD             "i/n": process only every n-th selected PR,
+//                              offset i (0-based). Lets one repo's PRs run
+//                              in parallel across n processes; results are
+//                              per-PR files, so shards cannot collide.
 //   SWARM_EG_INSTALL_TIMEOUT_MS  per-workspace install cap (default 12 min)
 //   SWARM_EG_WALLCLOCK_MS      per-PR wall-clock cap (default 30 min)
 //   SWARM_EG_FORCE             re-run PRs that already have a result.json
@@ -134,6 +138,20 @@ async function main(): Promise<void> {
   }
   const octokit = (token !== null ? makeOctokit(token) : null) as Octokit | null;
 
+  const shardSpec = process.env.SWARM_EG_SHARD;
+  let shardIndex = 0;
+  let shardCount = 1;
+  if (shardSpec !== undefined && shardSpec.trim().length > 0) {
+    const m = shardSpec.match(/^(\d+)\/(\d+)$/);
+    if (m === null || Number(m[2]) < 1 || Number(m[1]) >= Number(m[2])) {
+      log.error(`SWARM_EG_SHARD must be "i/n" with 0 <= i < n (got: ${shardSpec})`);
+      process.exitCode = 1;
+      return;
+    }
+    shardIndex = Number(m[1]);
+    shardCount = Number(m[2]);
+  }
+
   const corpora: Array<{ name: 'regression' | 'clean'; prs: CorpusPr[]; outBase: string }> = [];
   if (corpusSel === 'both' || corpusSel === 'regression') {
     corpora.push({
@@ -157,10 +175,13 @@ async function main(): Promise<void> {
 
   for (const corpus of corpora) {
     const perRepoCount = new Map<string, number>();
+    let selectedIdx = -1;
     for (const pr of corpus.prs) {
       const slug = repoSlug(pr.repo);
       if (repoFilter !== undefined && !repoFilter.includes(pr.repo) && !repoFilter.includes(slug)) continue;
       if (viability[slug]?.status === 'red') continue;
+      selectedIdx += 1;
+      if (selectedIdx % shardCount !== shardIndex) continue;
       const n = perRepoCount.get(slug) ?? 0;
       if (n >= maxPerRepo) continue;
       perRepoCount.set(slug, n + 1);
