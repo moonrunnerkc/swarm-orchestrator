@@ -38,7 +38,10 @@ the regression corpus's revert/hotfix proofs.
   is `revertedOrHotfixed = true`.
 - Negatives: 232 merged clean PRs with no such proof.
 - A trigger that needs an execution-grounded run can only fire on the PRs that
-  have one: 23 of the 72 reverted/hotfixed PRs and 22 of the 232 clean PRs.
+  have one: 62 of the 72 reverted/hotfixed PRs and 22 of the 232 clean PRs
+  (the v11.2 sweep raised reverted-side coverage from 23; the 10 still
+  without runs are withastro/astro's red-repo skips, tldraw's remaining
+  tail, and unfetchable head SHAs).
 
 For each trigger, precision is the share of the PRs it fired on that were
 reverted or hotfixed. A trigger is block-eligible only when its Wilson 95% lower
@@ -51,12 +54,13 @@ precision, is the bar.
 | Trigger | Firings | Confirmed reverted TP | False positives | Precision | Wilson 95% lower | Block-eligible |
 |---|---|---|---|---|---|---|
 | `claim-falsified` | 0 | 0 | 0 | n/a | 0.000 | no |
-| `corroborated-under-constraint` | 1 | 1 | 0 | 1.000 | 0.207 | no |
+| `corroborated-under-constraint` | 3 | 3 | 0 | 1.000 | 0.438 | no |
 | `obligation-failure` | 0 | 0 | 0 | n/a | 0.000 | no |
 
 Proof PRs behind the confirmed true positives:
 
-- `corroborated-under-constraint`: `expo/expo#35036` (reverted/hotfixed).
+- `corroborated-under-constraint`: `expo/expo#35036`, `expo/expo#38074`,
+  `expo/expo#39603` (each reverted/hotfixed).
 
 ## Outcome
 
@@ -64,10 +68,13 @@ No trigger can confidently block yet. `block-eligible` is 0 and `swarm audit
 --mode gate` keeps passing every PR that a structural detector did not already
 block.
 
-`corroborated-under-constraint` fired once, on a PR that was in fact reverted,
-so its point precision is 1.0. One confirmed case is not enough: the Wilson 95%
-lower bound is 0.207, far below the 0.90 bar, and 1 is below the 5-true-positive
-minimum. `claim-falsified` never fired because the corpus carries only one
+`corroborated-under-constraint` has fired three times, every one on a PR that
+was in fact reverted or hotfixed, so its point precision stays 1.0. Three
+confirmed cases are not enough: the Wilson 95% lower bound is 0.438, below
+the 0.90 bar, and 3 is below the 5-true-positive minimum. (With zero false
+positives the bound is n/(n+3.84), so the bar realistically demands on the
+order of 35 consecutive confirmed firings; the trend is in the right
+direction and the precision has not cracked.) `claim-falsified` never fired because the corpus carries only one
 issue-linked repro and it was unevaluable. `obligation-failure` never fired
 because the audit surface declares no obligations; it is the orchestrator's
 signal, surfaced here for when an audit runs against a declared contract.
