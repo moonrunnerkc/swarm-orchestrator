@@ -1,0 +1,157 @@
+diff --git a/packages/mui-material/src/Tabs/Tabs.js b/packages/mui-material/src/Tabs/Tabs.js
+index dc438a798452e9..86cedda11e4153 100644
+--- a/packages/mui-material/src/Tabs/Tabs.js
++++ b/packages/mui-material/src/Tabs/Tabs.js
+@@ -745,12 +745,6 @@ const Tabs = React.forwardRef(function Tabs(inProps, ref) {
+     return undefined;
+   }, [scrollable, scrollButtons, updateScrollObserver, childrenProp?.length]);
+ 
+-  React.useEffect(() => {
+-    if (scrollable && scrollButtons === 'auto' && (displayEndScroll || displayStartScroll)) {
+-      scrollSelectedIntoView(true);
+-    }
+-  }, [displayEndScroll, displayStartScroll, scrollable, scrollButtons, scrollSelectedIntoView]);
+-
+   React.useEffect(() => {
+     setMounted(true);
+   }, []);
+diff --git a/test/regressions/fixtures/Tabs/LTRHorizontalTabsAutoScrollable.js b/test/regressions/fixtures/Tabs/LTRHorizontalTabsAutoScrollable.js
+deleted file mode 100644
+index 0b41b06b893d50..00000000000000
+--- a/test/regressions/fixtures/Tabs/LTRHorizontalTabsAutoScrollable.js
++++ /dev/null
+@@ -1,20 +0,0 @@
+-import * as React from 'react';
+-import Box from '@mui/material/Box';
+-import Tabs from '@mui/material/Tabs';
+-import Tab from '@mui/material/Tab';
+-
+-export default function LTRHorizontalTabsAutoScrollable() {
+-  return (
+-    <Box sx={{ width: 300, display: 'flex' }}>
+-      <Tabs value={4} variant="scrollable" scrollButtons="auto" orientation="horizontal">
+-        <Tab label="Tab A" />
+-        <Tab label="Tab B" />
+-        <Tab label="Tab C" />
+-        <Tab label="Tab D" />
+-        <Tab label="Tab E" />
+-        <Tab label="Tab F" />
+-        <Tab label="Tab G" />
+-      </Tabs>
+-    </Box>
+-  );
+-}
+diff --git a/test/regressions/fixtures/Tabs/LTRVerticalTabsAutoScrollable.js b/test/regressions/fixtures/Tabs/LTRVerticalTabsAutoScrollable.js
+deleted file mode 100644
+index 0d9fd0d7ff028f..00000000000000
+--- a/test/regressions/fixtures/Tabs/LTRVerticalTabsAutoScrollable.js
++++ /dev/null
+@@ -1,20 +0,0 @@
+-import * as React from 'react';
+-import Box from '@mui/material/Box';
+-import Tabs from '@mui/material/Tabs';
+-import Tab from '@mui/material/Tab';
+-
+-export default function LTRVerticalTabsAutoScrollable() {
+-  return (
+-    <Box sx={{ height: 200, display: 'flex' }}>
+-      <Tabs value={4} variant="scrollable" scrollButtons="auto" orientation="vertical">
+-        <Tab label="Tab A" />
+-        <Tab label="Tab B" />
+-        <Tab label="Tab C" />
+-        <Tab label="Tab D" />
+-        <Tab label="Tab E" />
+-        <Tab label="Tab F" />
+-        <Tab label="Tab G" />
+-      </Tabs>
+-    </Box>
+-  );
+-}
+diff --git a/test/regressions/fixtures/Tabs/RTLHorizontalTabsAutoScrollable.js b/test/regressions/fixtures/Tabs/RTLHorizontalTabsAutoScrollable.js
+deleted file mode 100644
+index e94f642b0020c4..00000000000000
+--- a/test/regressions/fixtures/Tabs/RTLHorizontalTabsAutoScrollable.js
++++ /dev/null
+@@ -1,38 +0,0 @@
+-import * as React from 'react';
+-import { prefixer } from 'stylis';
+-import rtlPlugin from '@mui/stylis-plugin-rtl';
+-import { CacheProvider } from '@emotion/react';
+-import createCache from '@emotion/cache';
+-import { StyleSheetManager } from 'styled-components';
+-import { ThemeProvider, createTheme } from '@mui/material/styles';
+-import Box from '@mui/material/Box';
+-import Tabs from '@mui/material/Tabs';
+-import Tab from '@mui/material/Tab';
+-
+-// Create rtl cache
+-const cacheRtl = createCache({
+-  key: 'muirtl',
+-  stylisPlugins: [prefixer, rtlPlugin],
+-});
+-
+-export default function RTLHorizontalTabsAutoScrollable() {
+-  return (
+-    <StyleSheetManager stylisPlugins={[rtlPlugin]}>
+-      <CacheProvider value={cacheRtl}>
+-        <ThemeProvider theme={createTheme({ direction: 'rtl' })}>
+-          <Box dir="rtl" sx={{ width: 300, display: 'flex' }}>
+-            <Tabs value={2} variant="scrollable" scrollButtons="auto" orientation="horizontal">
+-              <Tab label="Tab A" />
+-              <Tab label="Tab B" />
+-              <Tab label="Tab C" />
+-              <Tab label="Tab D" />
+-              <Tab label="Tab E" />
+-              <Tab label="Tab F" />
+-              <Tab label="Tab G" />
+-            </Tabs>
+-          </Box>
+-        </ThemeProvider>
+-      </CacheProvider>
+-    </StyleSheetManager>
+-  );
+-}
+diff --git a/test/regressions/fixtures/Tabs/RTLVerticalTabsAutoScrollable.js b/test/regressions/fixtures/Tabs/RTLVerticalTabsAutoScrollable.js
+deleted file mode 100644
+index c93e3197c0db3a..00000000000000
+--- a/test/regressions/fixtures/Tabs/RTLVerticalTabsAutoScrollable.js
++++ /dev/null
+@@ -1,38 +0,0 @@
+-import * as React from 'react';
+-import { prefixer } from 'stylis';
+-import rtlPlugin from '@mui/stylis-plugin-rtl';
+-import { CacheProvider } from '@emotion/react';
+-import createCache from '@emotion/cache';
+-import { StyleSheetManager } from 'styled-components';
+-import { ThemeProvider, createTheme } from '@mui/material/styles';
+-import Box from '@mui/material/Box';
+-import Tabs from '@mui/material/Tabs';
+-import Tab from '@mui/material/Tab';
+-
+-// Create rtl cache
+-const cacheRtl = createCache({
+-  key: 'muirtl',
+-  stylisPlugins: [prefixer, rtlPlugin],
+-});
+-
+-export default function RTLVerticalTabs() {
+-  return (
+-    <StyleSheetManager stylisPlugins={[rtlPlugin]}>
+-      <CacheProvider value={cacheRtl}>
+-        <ThemeProvider theme={createTheme({ direction: 'rtl' })}>
+-          <Box dir="rtl" sx={{ height: 200, display: 'flex' }}>
+-            <Tabs value={2} variant="scrollable" scrollButtons="auto" orientation="vertical">
+-              <Tab label="Tab A" />
+-              <Tab label="Tab B" />
+-              <Tab label="Tab C" />
+-              <Tab label="Tab D" />
+-              <Tab label="Tab E" />
+-              <Tab label="Tab F" />
+-              <Tab label="Tab G" />
+-            </Tabs>
+-          </Box>
+-        </ThemeProvider>
+-      </CacheProvider>
+-    </StyleSheetManager>
+-  );
+-}

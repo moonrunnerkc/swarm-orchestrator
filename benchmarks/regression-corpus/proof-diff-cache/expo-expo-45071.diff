@@ -1,0 +1,17 @@
+diff --git a/packages/expo-media-library/ios/next/MediaLibraryNextModule.swift b/packages/expo-media-library/ios/next/MediaLibraryNextModule.swift
+index e553b2268d1fe4..0c32ce4f3b476a 100644
+--- a/packages/expo-media-library/ios/next/MediaLibraryNextModule.swift
++++ b/packages/expo-media-library/ios/next/MediaLibraryNextModule.swift
+@@ -250,10 +250,12 @@ public final class MediaLibraryNextModule: Module {
+     }
+ 
+     AsyncFunction("presentPermissionsPicker") { (_ mediaTypes: [String]?) in
++      #if os(iOS)
+       guard let vc = appContext?.utilities?.currentViewController() else {
+         return
+       }
+       PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: vc)
++      #endif
+     }.runOnQueue(.main)
+   }
+ 

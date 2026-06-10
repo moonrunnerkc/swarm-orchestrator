@@ -1,0 +1,81 @@
+diff --git a/packages/vite/src/node/__tests__/shortcuts.spec.ts b/packages/vite/src/node/__tests__/shortcuts.spec.ts
+index c2169018c42cc2..90a22f56f8f88d 100644
+--- a/packages/vite/src/node/__tests__/shortcuts.spec.ts
++++ b/packages/vite/src/node/__tests__/shortcuts.spec.ts
+@@ -67,4 +67,49 @@ describe('bindCLIShortcuts', () => {
+       await server.close()
+     }
+   })
++
++  test('rebinds shortcuts after server restart', async () => {
++    const server = await createServer()
++
++    try {
++      const action = vi.fn()
++
++      bindCLIShortcuts(
++        server,
++        {
++          customShortcuts: [{ key: 'x', description: 'test', action }],
++        },
++        true,
++      )
++
++      // Verify shortcut works initially
++      const initialReadline = server._rl
++
++      expect.assert(
++        initialReadline,
++        'The readline interface should be defined after binding shortcuts.',
++      )
++
++      initialReadline.emit('line', 'x')
++
++      await vi.waitFor(() => expect(action).toHaveBeenCalledOnce())
++
++      // Restart the server
++      action.mockClear()
++      await server.restart()
++
++      const newReadline = server._rl
++
++      expect.assert(
++        newReadline && newReadline !== initialReadline,
++        'A new readline interface should be created after server restart.',
++      )
++
++      // Shortcuts should still work after restart
++      newReadline.emit('line', 'x')
++      await vi.waitFor(() => expect(action).toHaveBeenCalledOnce())
++    } finally {
++      await server.close()
++    }
++  })
+ })
+diff --git a/packages/vite/src/node/server/index.ts b/packages/vite/src/node/server/index.ts
+index 5396aab5d42093..7944e0776c06f9 100644
+--- a/packages/vite/src/node/server/index.ts
++++ b/packages/vite/src/node/server/index.ts
+@@ -1252,6 +1252,8 @@ async function restartServer(server: ViteDevServer) {
+     const middlewares = server.middlewares
+     newServer._configServerPort = server._configServerPort
+     newServer._currentServerPort = server._currentServerPort
++    // Ensure the new server has no stale readline reference
++    newServer._rl = undefined
+     Object.assign(server, newServer)
+ 
+     // Keep the same connect instance so app.use(vite.middlewares) works
+@@ -1278,7 +1280,12 @@ async function restartServer(server: ViteDevServer) {
+ 
+   if (shortcutsOptions) {
+     shortcutsOptions.print = false
+-    bindCLIShortcuts(server, shortcutsOptions)
++    bindCLIShortcuts(
++      server,
++      shortcutsOptions,
++      // Skip environment checks since shortcuts were bound before restart
++      true,
++    )
+   }
+ }
+ 

@@ -1,0 +1,212 @@
+diff --git a/packages/next/src/server/lib/patch-fetch.ts b/packages/next/src/server/lib/patch-fetch.ts
+index 327ce73a2aab..4f17fbb9e37f 100644
+--- a/packages/next/src/server/lib/patch-fetch.ts
++++ b/packages/next/src/server/lib/patch-fetch.ts
+@@ -184,7 +184,8 @@ async function createCachedDynamicResponse(
+   serverComponentsHmrCache: ServerComponentsHmrCache | undefined,
+   revalidate: number,
+   input: RequestInfo | URL,
+-  handleUnlock: () => Promise<void> | void
++  handleUnlock: () => Promise<void> | void,
++  signal: AbortSignal | null
+ ): Promise<Response> {
+   // We're cloning the response using this utility because there exists a bug in
+   // the undici library around response cloning. See the following pull request
+@@ -216,7 +217,12 @@ async function createCachedDynamicResponse(
+         )
+       }
+     })
+-    .catch((error) => console.warn(`Failed to set fetch cache`, input, error))
++    .catch((error) => {
++      // Don't warn if the request was aborted intentionally.
++      if (!signal?.aborted) {
++        console.warn(`Failed to set fetch cache`, input, error)
++      }
++    })
+     .finally(handleUnlock)
+ 
+   const pendingRevalidateKey = `cache-set-${cacheKey}`
+@@ -871,10 +877,15 @@ export function createPatchedFetcher(
+                     if (
+                       process.env.NODE_ENV === 'development' &&
+                       workUnitStore.stagedRendering &&
+-                      workUnitStore.cacheSignal
++                      workUnitStore.cacheSignal &&
++                      isCacheableRevalidate
+                     ) {
+-                      // We're filling caches for a staged render,
+-                      // so we need to wait for the response to finish instead of streaming.
++                      // We're filling caches for a staged render with an
++                      // explicit cache config, so we need to wait for the
++                      // response to finish instead of streaming. For HMR-only
++                      // caching (no explicit revalidate), we fall through to
++                      // createCachedDynamicResponse which handles streaming
++                      // and abort gracefully.
+                       return createCachedPrerenderResponse(
+                         res,
+                         cacheKey,
+@@ -900,7 +911,8 @@ export function createPatchedFetcher(
+                       serverComponentsHmrCache,
+                       normalizedRevalidate,
+                       input,
+-                      handleUnlock
++                      handleUnlock,
++                      getRequestMeta('signal')
+                     )
+                   default:
+                     workUnitStore satisfies never
+diff --git a/test/cache-components-tests-manifest.json b/test/cache-components-tests-manifest.json
+index d8ac81fb3578..2c540fc5503d 100644
+--- a/test/cache-components-tests-manifest.json
++++ b/test/cache-components-tests-manifest.json
+@@ -87,7 +87,6 @@
+       "test/development/app-dir/segment-explorer/segment-explorer.test.ts",
+       "test/development/app-dir/serialize-circular-error/serialize-circular-error.test.ts",
+       "test/development/app-dir/serialize-circular-error/serialize-circular-error.test.ts",
+-      "test/development/app-dir/server-components-hmr-cache/server-components-hmr-cache.test.ts",
+       "test/development/app-dir/ssr-in-rsc/ssr-in-rsc.test.ts",
+       "test/development/app-dir/ssr-only-error/ssr-only-error.test.ts",
+       "test/development/app-hmr/hmr-env.test.ts",
+diff --git a/test/development/app-dir/react-performance-track/react-performance-track.test.ts b/test/development/app-dir/react-performance-track/react-performance-track.test.ts
+index c2bd55a8c5c8..0193cdf8457e 100644
+--- a/test/development/app-dir/react-performance-track/react-performance-track.test.ts
++++ b/test/development/app-dir/react-performance-track/react-performance-track.test.ts
+@@ -40,11 +40,10 @@ describe('react-performance-track', () => {
+         {
+           // React might decide to display the shorthand in round brackets differently.
+           // Double check with React changes if a shorthand change is intended.
+-          // TODO: Should include short name "(…/random)" and URL
+-          name: '\u200bfetch',
++          name: '\u200bfetch (…/random)',
+           properties: expect.arrayContaining([
+             ['status', '200'],
+-            ['url', '""'],
++            ['url', '"https://next-data-api-endpoint.vercel.app/api/random"'],
+           ]),
+         },
+       ])
+diff --git a/test/development/app-dir/server-components-hmr-cache/app/api/sse/route.ts b/test/development/app-dir/server-components-hmr-cache/app/api/sse/route.ts
+new file mode 100644
+index 000000000000..5bc7dbd8f364
+--- /dev/null
++++ b/test/development/app-dir/server-components-hmr-cache/app/api/sse/route.ts
+@@ -0,0 +1,19 @@
++import { setTimeout } from 'timers/promises'
++
++export async function GET() {
++  const encoder = new TextEncoder()
++
++  const stream = new ReadableStream({
++    async start(controller) {
++      let i = 1
++      while (true) {
++        controller.enqueue(encoder.encode(`data: chunk-${i++}\n\n`))
++        await setTimeout(300)
++      }
++    },
++  })
++
++  return new Response(stream, {
++    headers: { 'Content-Type': 'text/event-stream' },
++  })
++}
+diff --git a/test/development/app-dir/server-components-hmr-cache/app/infinite-stream/page.tsx b/test/development/app-dir/server-components-hmr-cache/app/infinite-stream/page.tsx
+new file mode 100644
+index 000000000000..7d4ce8e9b6aa
+--- /dev/null
++++ b/test/development/app-dir/server-components-hmr-cache/app/infinite-stream/page.tsx
+@@ -0,0 +1,19 @@
++async function fetchChunk() {
++  const controller = new AbortController()
++
++  const response = await fetch(`http://localhost:${process.env.PORT}/api/sse`, {
++    signal: controller.signal,
++  })
++
++  const reader = response.body!.getReader()
++  const { value } = await reader.read()
++  controller.abort()
++
++  return new TextDecoder().decode(value)
++}
++
++export default async function Page() {
++  const chunk = await fetchChunk()
++
++  return <p>{chunk}</p>
++}
+diff --git a/test/development/app-dir/server-components-hmr-cache/app/layout.tsx b/test/development/app-dir/server-components-hmr-cache/app/layout.tsx
+index c4215a0c905a..10dc13224069 100644
+--- a/test/development/app-dir/server-components-hmr-cache/app/layout.tsx
++++ b/test/development/app-dir/server-components-hmr-cache/app/layout.tsx
+@@ -1,9 +1,11 @@
+-import React from 'react'
++import { Suspense } from 'react'
+ 
+ export default function Root({ children }) {
+   return (
+     <html>
+-      <body>{children}</body>
++      <body>
++        <Suspense>{children}</Suspense>
++      </body>
+     </html>
+   )
+ }
+diff --git a/test/development/app-dir/server-components-hmr-cache/server-components-hmr-cache.test.ts b/test/development/app-dir/server-components-hmr-cache/server-components-hmr-cache.test.ts
+index 1bcf5da5b1d8..2ea1427aa6c3 100644
+--- a/test/development/app-dir/server-components-hmr-cache/server-components-hmr-cache.test.ts
++++ b/test/development/app-dir/server-components-hmr-cache/server-components-hmr-cache.test.ts
+@@ -1,6 +1,8 @@
+ import { nextTestSetup } from 'e2e-utils'
+ import { retry } from 'next-test-utils'
+ 
++const isCacheComponentsEnabled = process.env.__NEXT_CACHE_COMPONENTS === 'true'
++
+ describe('server-components-hmr-cache', () => {
+   const { next } = nextTestSetup({ files: __dirname, patchFileDelay: 1000 })
+   const loggedAfterValueRegexp = /After: (\d\.\d+)/
+@@ -17,7 +19,14 @@ describe('server-components-hmr-cache', () => {
+     return match[1]
+   }
+ 
+-  describe.each(['edge', 'node'])('%s runtime', (runtime) => {
++  // Edge runtime is not supported with Cache Components.
++  const runtimes = isCacheComponentsEnabled ? ['node'] : ['edge', 'node']
++
++  beforeEach(() => {
++    cliOutputLength = next.cliOutput.length
++  })
++
++  describe.each(runtimes)('%s runtime', (runtime) => {
+     it('should use cached fetch calls for fast refresh requests', async () => {
+       const browser = await next.browser(`/${runtime}`)
+       const valueBeforePatch = await browser.elementById('value').text()
+@@ -51,10 +60,6 @@ describe('server-components-hmr-cache', () => {
+     })
+ 
+     describe('in after()', () => {
+-      beforeEach(() => {
+-        cliOutputLength = next.cliOutput.length
+-      })
+-
+       it('should use cached fetch calls for fast refresh requests', async () => {
+         const browser = await next.browser(`/${runtime}`)
+         const valueBeforePatch = await retry(() => getLoggedAfterValue())
+@@ -217,4 +222,16 @@ describe('server-components-hmr-cache', () => {
+       })
+     })
+   })
++
++  it('should support reading from an infinite streaming fetch', async () => {
++    const browser = await next.browser('/infinite-stream')
++    const text = await browser.elementByCss('p').text()
++    expect(text).toBe('data: chunk-1')
++
++    // The fetch is aborted after reading the first chunk, which is intentional,
++    // so we shouldn't warn about failing to cache it.
++    expect(next.cliOutput.slice(cliOutputLength)).not.toContain(
++      'Failed to set fetch cache'
++    )
++  }, 10_000) // fail fast
+ })

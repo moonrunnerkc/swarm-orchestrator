@@ -1,0 +1,65 @@
+diff --git a/apps/native-component-list/src/screens/Audio/expo-audio/RecordingScreen.tsx b/apps/native-component-list/src/screens/Audio/expo-audio/RecordingScreen.tsx
+index 8d385f3c15639e..ed41a336c76c11 100644
+--- a/apps/native-component-list/src/screens/Audio/expo-audio/RecordingScreen.tsx
++++ b/apps/native-component-list/src/screens/Audio/expo-audio/RecordingScreen.tsx
+@@ -15,7 +15,7 @@ export default function RecordingScreen() {
+     return uri ? (
+       <>
+         <HeadingText>Last recording</HeadingText>
+-        <AudioPlayer source={{ uri }} />
++        <AudioPlayer key={uri} source={{ uri }} />
+       </>
+     ) : null;
+   };
+diff --git a/packages/expo-audio/CHANGELOG.md b/packages/expo-audio/CHANGELOG.md
+index 3b92e4e4fcb934..760095822245e0 100644
+--- a/packages/expo-audio/CHANGELOG.md
++++ b/packages/expo-audio/CHANGELOG.md
+@@ -8,6 +8,8 @@
+ 
+ ### 🐛 Bug fixes
+ 
++- [Android] Fix zero-byte audio recordings after calling `audioRecorder.stop()` ([#39788](https://github.com/expo/expo/pull/39788) by [@hirbod](https://github.com/hirbod))
++
+ ### 💡 Others
+ 
+ ## 1.0.12 — 2025-09-16
+diff --git a/packages/expo-audio/android/src/main/java/expo/modules/audio/AudioRecorder.kt b/packages/expo-audio/android/src/main/java/expo/modules/audio/AudioRecorder.kt
+index 080a6c33d5fc47..b3399aec9316e0 100644
+--- a/packages/expo-audio/android/src/main/java/expo/modules/audio/AudioRecorder.kt
++++ b/packages/expo-audio/android/src/main/java/expo/modules/audio/AudioRecorder.kt
+@@ -125,17 +125,12 @@ class AudioRecorder(
+   }
+ 
+   fun stopRecording(): Bundle {
+-    val currentFilePath = filePath // Capture file path before reset
+-
+     try {
+       recorder?.stop()
+     } finally {
+       reset()
+     }
+ 
+-    // Auto-prepare for next recording to match iOS/Web behavior
+-    prepareRecording(null)
+-
+     // Emit completion event on the main thread
+     appContext?.mainQueue?.launch {
+       emit(
+@@ -145,7 +140,7 @@ class AudioRecorder(
+           "isFinished" to true,
+           "hasError" to false,
+           "error" to null,
+-          "url" to currentFilePath?.toUri().toString()
++          "url" to filePath?.toUri().toString()
+         )
+       )
+     }
+@@ -164,7 +159,6 @@ class AudioRecorder(
+     durationAlreadyRecorded = 0
+     startTime = 0L
+     isPrepared = false
+-    filePath = null // Reset file path for next recording
+   }
+ 
+   private fun createRecorder(options: RecordingOptions) =

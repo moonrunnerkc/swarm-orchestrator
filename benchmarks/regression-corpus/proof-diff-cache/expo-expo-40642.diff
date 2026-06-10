@@ -1,0 +1,404 @@
+diff --git a/apps/test-suite/tests/Audio.ts b/apps/test-suite/tests/Audio.ts
+index 0e37b6daeec4b3..b0de2b7d735aa3 100644
+--- a/apps/test-suite/tests/Audio.ts
++++ b/apps/test-suite/tests/Audio.ts
+@@ -278,7 +278,7 @@ export function test({ describe, expect, it, ...t }: any) {
+         expect(player.paused).toBe(true);
+         expect(player.muted).toBe(false);
+         expect(player.loop).toBe(false);
+-        expect(player.shouldCorrectPitch).toBe(false);
++        expect(player.shouldCorrectPitch).toBe(true);
+         expect(player.currentTime).toBe(0);
+         expect(player.duration).toBeGreaterThan(0);
+       });
+diff --git a/packages/expo-audio/CHANGELOG.md b/packages/expo-audio/CHANGELOG.md
+index dfee57f9c41caa..83afd184ed5729 100644
+--- a/packages/expo-audio/CHANGELOG.md
++++ b/packages/expo-audio/CHANGELOG.md
+@@ -16,6 +16,7 @@
+ - [Android] Fix issue where after replacing the media source, events are emitted twice. ([#40133](https://github.com/expo/expo/pull/40133) by [@alanjhughes](https://github.com/alanjhughes))
+ - [Android] Fix issue where if `prepare` fails on android there was no error and the user would receive an empty file. ([#40239](https://github.com/expo/expo/pull/40239) by [@alanjhughes](https://github.com/alanjhughes))
+ - [Android] Fix incorrect volume read. ([#40258](https://github.com/expo/expo/pull/40258) by [@alanjhughes](https://github.com/alanjhughes))
++- Fix issue where local assets don't resolve correctly in release mode. ([#40642](https://github.com/expo/expo/pull/40642) by [@alanjhughes](https://github.com/alanjhughes))
+ 
+ ### 💡 Others
+ 
+diff --git a/packages/expo-audio/build/utils/resolveSource.d.ts.map b/packages/expo-audio/build/utils/resolveSource.d.ts.map
+index f9b4ec0bbca9eb..80346a839b3ea7 100644
+--- a/packages/expo-audio/build/utils/resolveSource.d.ts.map
++++ b/packages/expo-audio/build/utils/resolveSource.d.ts.map
+@@ -1 +1 @@
+-{"version":3,"file":"resolveSource.d.ts","sourceRoot":"","sources":["../../src/utils/resolveSource.ts"],"names":[],"mappings":"AAGA,OAAO,EAAE,WAAW,EAAE,MAAM,gBAAgB,CAAC;AAE7C,wBAAgB,aAAa,CAAC,MAAM,CAAC,EAAE,WAAW,GAAG,MAAM,GAAG,MAAM,GAAG,IAAI,GAAG,WAAW,GAAG,IAAI,CAS/F;AAED;;;GAGG;AACH,wBAAsB,yBAAyB,CAC7C,MAAM,EAAE,WAAW,GAAG,MAAM,GAAG,MAAM,GAAG,IAAI,GAC3C,OAAO,CAAC,WAAW,GAAG,IAAI,CAAC,CAiE7B"}
+\ No newline at end of file
++{"version":3,"file":"resolveSource.d.ts","sourceRoot":"","sources":["../../src/utils/resolveSource.ts"],"names":[],"mappings":"AAGA,OAAO,EAAE,WAAW,EAAE,MAAM,gBAAgB,CAAC;AAkD7C,wBAAgB,aAAa,CAAC,MAAM,CAAC,EAAE,WAAW,GAAG,MAAM,GAAG,MAAM,GAAG,IAAI,GAAG,WAAW,GAAG,IAAI,CA+B/F;AAED;;;GAGG;AACH,wBAAsB,yBAAyB,CAC7C,MAAM,EAAE,WAAW,GAAG,MAAM,GAAG,MAAM,GAAG,IAAI,GAC3C,OAAO,CAAC,WAAW,GAAG,IAAI,CAAC,CA0D7B"}
+\ No newline at end of file
+diff --git a/packages/expo-audio/build/utils/resolveSource.js b/packages/expo-audio/build/utils/resolveSource.js
+index c5b7c2b7173b25..470b72bea6bdba 100644
+--- a/packages/expo-audio/build/utils/resolveSource.js
++++ b/packages/expo-audio/build/utils/resolveSource.js
+@@ -1,12 +1,64 @@
+ import { Asset } from 'expo-asset';
+ import { Platform } from 'expo-modules-core';
++function getAssetFromSource(source) {
++    if (!source) {
++        return null;
++    }
++    if (source instanceof Asset) {
++        return source;
++    }
++    if (typeof source === 'number') {
++        return Asset.fromModule(source);
++    }
++    if (typeof source === 'object') {
++        if ('assetId' in source && typeof source.assetId === 'number') {
++            return Asset.fromModule(source.assetId);
++        }
++        if ('uri' in source && typeof source.uri === 'string') {
++            return Asset.fromURI(source.uri);
++        }
++    }
++    if (typeof source === 'string') {
++        return Asset.fromURI(source);
++    }
++    return null;
++}
++function createSourceFromAsset(asset, extras = {}) {
++    const uri = asset.localUri ?? asset.uri;
++    const result = { uri };
++    if (extras.assetId != null) {
++        result.assetId = extras.assetId;
++    }
++    if (extras.headers) {
++        result.headers = extras.headers;
++    }
++    return result;
++}
+ export function resolveSource(source) {
++    if (source == null) {
++        return null;
++    }
++    if (source instanceof Asset) {
++        return createSourceFromAsset(source);
++    }
+     if (typeof source === 'string') {
+         return { uri: source };
+     }
+     if (typeof source === 'number') {
+         const asset = Asset.fromModule(source);
+-        return { uri: asset.uri, assetId: source };
++        return createSourceFromAsset(asset, { assetId: source });
++    }
++    if (typeof source === 'object') {
++        if ('assetId' in source && typeof source.assetId === 'number') {
++            const asset = Asset.fromModule(source.assetId);
++            return {
++                ...source,
++                uri: asset.localUri ?? asset.uri,
++            };
++        }
++        if ('uri' in source && typeof source.uri === 'string') {
++            return source;
++        }
+     }
+     return source ?? null;
+ }
+@@ -15,34 +67,17 @@ export function resolveSource(source) {
+  * Similar to expo-av's getNativeSourceAndFullInitialStatusForLoadAsync but simplified for expo-audio.
+  */
+ export async function resolveSourceWithDownload(source) {
+-    let asset = null;
+-    // Get asset from different source types
+-    if (typeof source === 'number') {
+-        asset = Asset.fromModule(source);
+-    }
+-    else if (source instanceof Asset) {
+-        asset = source;
+-    }
+-    else if (typeof source === 'string') {
+-        // For remote URLs, create an asset from URI
+-        asset = Asset.fromURI(source);
+-    }
+-    else if (source && typeof source === 'object' && source.uri) {
+-        // For source objects with URI
+-        asset = Asset.fromURI(source.uri);
+-    }
+-    else if (source && typeof source === 'object' && source.assetId) {
+-        // For source objects with assetId
+-        asset = Asset.fromModule(source.assetId);
+-    }
++    const asset = getAssetFromSource(source);
++    const fallbackSource = resolveSource(source);
+     if (asset) {
++        let assetToDownload = asset;
+         try {
+             // iOS AVPlayer fails to load the asset if the type is not set or can't be inferred
+             // since this is an audio asset, we can safely set the type to mp3 or any other audio type
+             // and iOS will be able to download and play the asset
+             // Since expo-asset caches, this will only run once per asset, as long as the asset is not deleted from the cache
+-            if (!asset.type) {
+-                asset = new Asset({
++            if (!assetToDownload.type) {
++                assetToDownload = new Asset({
+                     name: asset.name,
+                     type: 'mp3',
+                     uri: asset.uri,
+@@ -50,19 +85,25 @@ export async function resolveSourceWithDownload(source) {
+             }
+             // FYI: downloadAsync is a no-op on web and immediately returns a promise that resolves to the original url
+             // TODO(@hirbod): evaluate if we should implement downloadAsync for web instead
+-            await asset.downloadAsync();
++            await assetToDownload.downloadAsync();
+             // Use the local URI if available after download
+-            if (asset.localUri) {
+-                let finalUri = asset.localUri;
++            if (assetToDownload.localUri) {
++                let finalUri = assetToDownload.localUri;
+                 // On web, we need to fetch the audio file and create a blob URL
+                 // this fully downloads the file to the user's device memory and makes it available for the user to play
+                 // fetch() is subject to CORS restrictions, so we need to document this for the users on web
+                 // TODO(@hirbod): evaluate if we should implement a downloadAsync for web instead of using fetch here
+                 if (Platform.OS === 'web') {
+-                    const response = await fetch(asset.localUri);
++                    const response = await fetch(assetToDownload.localUri);
+                     const blob = await response.blob();
+                     finalUri = URL.createObjectURL(blob);
+                 }
++                if (fallbackSource && typeof fallbackSource === 'object') {
++                    return {
++                        ...fallbackSource,
++                        uri: finalUri,
++                    };
++                }
+                 return { uri: finalUri };
+             }
+             else {
+@@ -75,6 +116,6 @@ export async function resolveSourceWithDownload(source) {
+         }
+     }
+     // Fallback to normal resolution
+-    return resolveSource(source);
++    return fallbackSource;
+ }
+ //# sourceMappingURL=resolveSource.js.map
+\ No newline at end of file
+diff --git a/packages/expo-audio/build/utils/resolveSource.js.map b/packages/expo-audio/build/utils/resolveSource.js.map
+index 4e47d3645e3104..bcbb9dd0073f7b 100644
+--- a/packages/expo-audio/build/utils/resolveSource.js.map
++++ b/packages/expo-audio/build/utils/resolveSource.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"resolveSource.js","sourceRoot":"","sources":["../../src/utils/resolveSource.ts"],"names":[],"mappings":"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","sourcesContent":["import { Asset } from 'expo-asset';\nimport { Platform } from 'expo-modules-core';\n\nimport { AudioSource } from '../Audio.types';\n\nexport function resolveSource(source?: AudioSource | string | number | null): AudioSource | null {\n  if (typeof source === 'string') {\n    return { uri: source };\n  }\n  if (typeof source === 'number') {\n    const asset = Asset.fromModule(source);\n    return { uri: asset.uri, assetId: source };\n  }\n  return source ?? null;\n}\n\n/**\n * Resolves and optionally downloads an audio source before loading.\n * Similar to expo-av's getNativeSourceAndFullInitialStatusForLoadAsync but simplified for expo-audio.\n */\nexport async function resolveSourceWithDownload(\n  source: AudioSource | string | number | null\n): Promise<AudioSource | null> {\n  let asset: Asset | null = null;\n\n  // Get asset from different source types\n  if (typeof source === 'number') {\n    asset = Asset.fromModule(source);\n  } else if (source instanceof Asset) {\n    asset = source;\n  } else if (typeof source === 'string') {\n    // For remote URLs, create an asset from URI\n    asset = Asset.fromURI(source);\n  } else if (source && typeof source === 'object' && source.uri) {\n    // For source objects with URI\n    asset = Asset.fromURI(source.uri);\n  } else if (source && typeof source === 'object' && source.assetId) {\n    // For source objects with assetId\n    asset = Asset.fromModule(source.assetId);\n  }\n\n  if (asset) {\n    try {\n      // iOS AVPlayer fails to load the asset if the type is not set or can't be inferred\n      // since this is an audio asset, we can safely set the type to mp3 or any other audio type\n      // and iOS will be able to download and play the asset\n      // Since expo-asset caches, this will only run once per asset, as long as the asset is not deleted from the cache\n      if (!asset.type) {\n        asset = new Asset({\n          name: asset.name,\n          type: 'mp3',\n          uri: asset.uri,\n        });\n      }\n\n      // FYI: downloadAsync is a no-op on web and immediately returns a promise that resolves to the original url\n      // TODO(@hirbod): evaluate if we should implement downloadAsync for web instead\n      await asset.downloadAsync();\n\n      // Use the local URI if available after download\n      if (asset.localUri) {\n        let finalUri = asset.localUri;\n\n        // On web, we need to fetch the audio file and create a blob URL\n        // this fully downloads the file to the user's device memory and makes it available for the user to play\n        // fetch() is subject to CORS restrictions, so we need to document this for the users on web\n        // TODO(@hirbod): evaluate if we should implement a downloadAsync for web instead of using fetch here\n        if (Platform.OS === 'web') {\n          const response = await fetch(asset.localUri);\n          const blob = await response.blob();\n          finalUri = URL.createObjectURL(blob);\n        }\n\n        return { uri: finalUri };\n      } else {\n        console.warn(\n          'No localUri found, asset may not have downloaded properly, returning the original source'\n        );\n      }\n    } catch (error) {\n      // If download fails, fall back to original source\n      console.warn('expo-audio: Failed to download asset, falling back to original source:', error);\n    }\n  }\n\n  // Fallback to normal resolution\n  return resolveSource(source);\n}\n"]}
+\ No newline at end of file
++{"version":3,"file":"resolveSource.js","sourceRoot":"","sources":["../../src/utils/resolveSource.ts"],"names":[],"mappings":"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","sourcesContent":["import { Asset } from 'expo-asset';\nimport { Platform } from 'expo-modules-core';\n\nimport { AudioSource } from '../Audio.types';\n\ntype AudioSourceObject = Exclude<AudioSource, string | number | null>;\n\nfunction getAssetFromSource(source?: AudioSource | string | number | Asset | null): Asset | null {\n  if (!source) {\n    return null;\n  }\n\n  if (source instanceof Asset) {\n    return source;\n  }\n\n  if (typeof source === 'number') {\n    return Asset.fromModule(source);\n  }\n\n  if (typeof source === 'object') {\n    if ('assetId' in source && typeof source.assetId === 'number') {\n      return Asset.fromModule(source.assetId);\n    }\n    if ('uri' in source && typeof source.uri === 'string') {\n      return Asset.fromURI(source.uri);\n    }\n  }\n\n  if (typeof source === 'string') {\n    return Asset.fromURI(source);\n  }\n\n  return null;\n}\n\nfunction createSourceFromAsset(\n  asset: Asset,\n  extras: { assetId?: number; headers?: Record<string, string> } = {}\n): AudioSourceObject {\n  const uri = asset.localUri ?? asset.uri;\n  const result: AudioSourceObject = { uri };\n\n  if (extras.assetId != null) {\n    result.assetId = extras.assetId;\n  }\n  if (extras.headers) {\n    result.headers = extras.headers;\n  }\n\n  return result;\n}\n\nexport function resolveSource(source?: AudioSource | string | number | null): AudioSource | null {\n  if (source == null) {\n    return null;\n  }\n\n  if (source instanceof Asset) {\n    return createSourceFromAsset(source);\n  }\n\n  if (typeof source === 'string') {\n    return { uri: source };\n  }\n  if (typeof source === 'number') {\n    const asset = Asset.fromModule(source);\n    return createSourceFromAsset(asset, { assetId: source });\n  }\n\n  if (typeof source === 'object') {\n    if ('assetId' in source && typeof source.assetId === 'number') {\n      const asset = Asset.fromModule(source.assetId);\n      return {\n        ...source,\n        uri: asset.localUri ?? asset.uri,\n      };\n    }\n    if ('uri' in source && typeof source.uri === 'string') {\n      return source;\n    }\n  }\n\n  return source ?? null;\n}\n\n/**\n * Resolves and optionally downloads an audio source before loading.\n * Similar to expo-av's getNativeSourceAndFullInitialStatusForLoadAsync but simplified for expo-audio.\n */\nexport async function resolveSourceWithDownload(\n  source: AudioSource | string | number | null\n): Promise<AudioSource | null> {\n  const asset = getAssetFromSource(source);\n  const fallbackSource = resolveSource(source);\n\n  if (asset) {\n    let assetToDownload: Asset = asset;\n    try {\n      // iOS AVPlayer fails to load the asset if the type is not set or can't be inferred\n      // since this is an audio asset, we can safely set the type to mp3 or any other audio type\n      // and iOS will be able to download and play the asset\n      // Since expo-asset caches, this will only run once per asset, as long as the asset is not deleted from the cache\n      if (!assetToDownload.type) {\n        assetToDownload = new Asset({\n          name: asset.name,\n          type: 'mp3',\n          uri: asset.uri,\n        });\n      }\n\n      // FYI: downloadAsync is a no-op on web and immediately returns a promise that resolves to the original url\n      // TODO(@hirbod): evaluate if we should implement downloadAsync for web instead\n      await assetToDownload.downloadAsync();\n\n      // Use the local URI if available after download\n      if (assetToDownload.localUri) {\n        let finalUri = assetToDownload.localUri;\n\n        // On web, we need to fetch the audio file and create a blob URL\n        // this fully downloads the file to the user's device memory and makes it available for the user to play\n        // fetch() is subject to CORS restrictions, so we need to document this for the users on web\n        // TODO(@hirbod): evaluate if we should implement a downloadAsync for web instead of using fetch here\n        if (Platform.OS === 'web') {\n          const response = await fetch(assetToDownload.localUri);\n          const blob = await response.blob();\n          finalUri = URL.createObjectURL(blob);\n        }\n\n        if (fallbackSource && typeof fallbackSource === 'object') {\n          return {\n            ...fallbackSource,\n            uri: finalUri,\n          };\n        }\n\n        return { uri: finalUri };\n      } else {\n        console.warn(\n          'No localUri found, asset may not have downloaded properly, returning the original source'\n        );\n      }\n    } catch (error) {\n      // If download fails, fall back to original source\n      console.warn('expo-audio: Failed to download asset, falling back to original source:', error);\n    }\n  }\n\n  // Fallback to normal resolution\n  return fallbackSource;\n}\n"]}
+\ No newline at end of file
+diff --git a/packages/expo-audio/package.json b/packages/expo-audio/package.json
+index 2a9e21fa2a2707..04afc3c4657516 100644
+--- a/packages/expo-audio/package.json
++++ b/packages/expo-audio/package.json
+@@ -38,6 +38,7 @@
+   "peerDependencies": {
+     "expo": "*",
+     "react": "*",
+-    "react-native": "*"
++    "react-native": "*",
++    "expo-asset": "*"
+   }
+ }
+diff --git a/packages/expo-audio/src/utils/resolveSource.ts b/packages/expo-audio/src/utils/resolveSource.ts
+index a5fa51a990e7c6..68f5cc462796b1 100644
+--- a/packages/expo-audio/src/utils/resolveSource.ts
++++ b/packages/expo-audio/src/utils/resolveSource.ts
+@@ -3,14 +3,84 @@ import { Platform } from 'expo-modules-core';
+ 
+ import { AudioSource } from '../Audio.types';
+ 
++type AudioSourceObject = Exclude<AudioSource, string | number | null>;
++
++function getAssetFromSource(source?: AudioSource | string | number | Asset | null): Asset | null {
++  if (!source) {
++    return null;
++  }
++
++  if (source instanceof Asset) {
++    return source;
++  }
++
++  if (typeof source === 'number') {
++    return Asset.fromModule(source);
++  }
++
++  if (typeof source === 'object') {
++    if ('assetId' in source && typeof source.assetId === 'number') {
++      return Asset.fromModule(source.assetId);
++    }
++    if ('uri' in source && typeof source.uri === 'string') {
++      return Asset.fromURI(source.uri);
++    }
++  }
++
++  if (typeof source === 'string') {
++    return Asset.fromURI(source);
++  }
++
++  return null;
++}
++
++function createSourceFromAsset(
++  asset: Asset,
++  extras: { assetId?: number; headers?: Record<string, string> } = {}
++): AudioSourceObject {
++  const uri = asset.localUri ?? asset.uri;
++  const result: AudioSourceObject = { uri };
++
++  if (extras.assetId != null) {
++    result.assetId = extras.assetId;
++  }
++  if (extras.headers) {
++    result.headers = extras.headers;
++  }
++
++  return result;
++}
++
+ export function resolveSource(source?: AudioSource | string | number | null): AudioSource | null {
++  if (source == null) {
++    return null;
++  }
++
++  if (source instanceof Asset) {
++    return createSourceFromAsset(source);
++  }
++
+   if (typeof source === 'string') {
+     return { uri: source };
+   }
+   if (typeof source === 'number') {
+     const asset = Asset.fromModule(source);
+-    return { uri: asset.uri, assetId: source };
++    return createSourceFromAsset(asset, { assetId: source });
++  }
++
++  if (typeof source === 'object') {
++    if ('assetId' in source && typeof source.assetId === 'number') {
++      const asset = Asset.fromModule(source.assetId);
++      return {
++        ...source,
++        uri: asset.localUri ?? asset.uri,
++      };
++    }
++    if ('uri' in source && typeof source.uri === 'string') {
++      return source;
++    }
+   }
++
+   return source ?? null;
+ }
+ 
+@@ -21,32 +91,18 @@ export function resolveSource(source?: AudioSource | string | number | null): Au
+ export async function resolveSourceWithDownload(
+   source: AudioSource | string | number | null
+ ): Promise<AudioSource | null> {
+-  let asset: Asset | null = null;
+-
+-  // Get asset from different source types
+-  if (typeof source === 'number') {
+-    asset = Asset.fromModule(source);
+-  } else if (source instanceof Asset) {
+-    asset = source;
+-  } else if (typeof source === 'string') {
+-    // For remote URLs, create an asset from URI
+-    asset = Asset.fromURI(source);
+-  } else if (source && typeof source === 'object' && source.uri) {
+-    // For source objects with URI
+-    asset = Asset.fromURI(source.uri);
+-  } else if (source && typeof source === 'object' && source.assetId) {
+-    // For source objects with assetId
+-    asset = Asset.fromModule(source.assetId);
+-  }
++  const asset = getAssetFromSource(source);
++  const fallbackSource = resolveSource(source);
+ 
+   if (asset) {
++    let assetToDownload: Asset = asset;
+     try {
+       // iOS AVPlayer fails to load the asset if the type is not set or can't be inferred
+       // since this is an audio asset, we can safely set the type to mp3 or any other audio type
+       // and iOS will be able to download and play the asset
+       // Since expo-asset caches, this will only run once per asset, as long as the asset is not deleted from the cache
+-      if (!asset.type) {
+-        asset = new Asset({
++      if (!assetToDownload.type) {
++        assetToDownload = new Asset({
+           name: asset.name,
+           type: 'mp3',
+           uri: asset.uri,
+@@ -55,22 +111,29 @@ export async function resolveSourceWithDownload(
+ 
+       // FYI: downloadAsync is a no-op on web and immediately returns a promise that resolves to the original url
+       // TODO(@hirbod): evaluate if we should implement downloadAsync for web instead
+-      await asset.downloadAsync();
++      await assetToDownload.downloadAsync();
+ 
+       // Use the local URI if available after download
+-      if (asset.localUri) {
+-        let finalUri = asset.localUri;
++      if (assetToDownload.localUri) {
++        let finalUri = assetToDownload.localUri;
+ 
+         // On web, we need to fetch the audio file and create a blob URL
+         // this fully downloads the file to the user's device memory and makes it available for the user to play
+         // fetch() is subject to CORS restrictions, so we need to document this for the users on web
+         // TODO(@hirbod): evaluate if we should implement a downloadAsync for web instead of using fetch here
+         if (Platform.OS === 'web') {
+-          const response = await fetch(asset.localUri);
++          const response = await fetch(assetToDownload.localUri);
+           const blob = await response.blob();
+           finalUri = URL.createObjectURL(blob);
+         }
+ 
++        if (fallbackSource && typeof fallbackSource === 'object') {
++          return {
++            ...fallbackSource,
++            uri: finalUri,
++          };
++        }
++
+         return { uri: finalUri };
+       } else {
+         console.warn(
+@@ -84,5 +147,5 @@ export async function resolveSourceWithDownload(
+   }
+ 
+   // Fallback to normal resolution
+-  return resolveSource(source);
++  return fallbackSource;
+ }
+diff --git a/yarn.lock b/yarn.lock
+index cee36678de5302..e5723373276756 100644
+--- a/yarn.lock
++++ b/yarn.lock
+@@ -13131,13 +13131,6 @@ pirates@^4.0.1, pirates@^4.0.4:
+   resolved "https://registry.yarnpkg.com/pirates/-/pirates-4.0.6.tgz#3018ae32ecfcff6c29ba2267cbf21166ac1f36b9"
+   integrity sha512-saLsH7WeYYPiD25LDuLRRY/i+6HaPYr6G1OUlN39otzkSTxKnubR9RTxS3/Kk50s1g2JTgFwWQDQyplC5/SHZg==
+ 
+-pixelmatch@^7.1.0:
+-  version "7.1.0"
+-  resolved "https://registry.yarnpkg.com/pixelmatch/-/pixelmatch-7.1.0.tgz#9d59bddc8c779340e791106c0f245ac33ae4d113"
+-  integrity sha512-1wrVzJ2STrpmONHKBy228LM1b84msXDUoAzVEl0R8Mz4Ce6EPr+IVtxm8+yvrqLYMHswREkjYFaMxnyGnaY3Ng==
+-  dependencies:
+-    pngjs "^7.0.0"
+-
+ pixi-gl-core@^1.1.4:
+   version "1.1.4"
+   resolved "https://registry.yarnpkg.com/pixi-gl-core/-/pixi-gl-core-1.1.4.tgz#8b4b5c433b31e419bc379dc565ce1b835a91b372"
+@@ -13206,11 +13199,6 @@ pngjs@^3.3.0:
+   resolved "https://registry.yarnpkg.com/pngjs/-/pngjs-3.4.0.tgz#99ca7d725965fb655814eaf65f38f12bbdbf555f"
+   integrity sha512-NCrCHhWmnQklfH4MtJMRjZ2a8c80qXeMlQMv2uVp9ISJMTt562SbGd6n2oq0PaPgKm7Z6pL9E2UlLIhC+SHL3w==
+ 
+-pngjs@^7.0.0:
+-  version "7.0.0"
+-  resolved "https://registry.yarnpkg.com/pngjs/-/pngjs-7.0.0.tgz#a8b7446020ebbc6ac739db6c5415a65d17090e26"
+-  integrity sha512-LKWqWJRhstyYo9pGvgor/ivk2w94eSjE3RGVuzLGlr3NmD8bf7RcYGze1mNdEHRP6TRP6rMuDHk5t44hnTRyow==
+-
+ posix-character-classes@^0.1.0:
+   version "0.1.1"
+   resolved "https://registry.yarnpkg.com/posix-character-classes/-/posix-character-classes-0.1.1.tgz#01eac0fe3b5af71a2a6c02feabb8c1fef7e00eab"

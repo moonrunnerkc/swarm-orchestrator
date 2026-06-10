@@ -1,0 +1,505 @@
+diff --git a/packages/nx/src/native/index.d.ts b/packages/nx/src/native/index.d.ts
+index 472de76d902..bf4ecf56f13 100644
+--- a/packages/nx/src/native/index.d.ts
++++ b/packages/nx/src/native/index.d.ts
+@@ -20,6 +20,7 @@ export declare class AppLifeCycle {
+   registerRunningTaskWithEmptyParser(taskId: string): void
+   appendTaskOutput(taskId: string, output: string, isPtyOutput: boolean): void
+   setTaskStatus(taskId: string, status: TaskStatus): void
++  setTaskTiming(taskId: string, startTime: number, endTime: number): void
+   registerForcedShutdownCallback(forcedShutdownCallback: (() => unknown)): void
+   __setCloudMessage(message: string): Promise<void>
+   setEstimatedTaskTimings(timings: Record<string, number>): void
+diff --git a/packages/nx/src/native/tui/action.rs b/packages/nx/src/native/tui/action.rs
+index 05cf1a9e994..d76526af078 100644
+--- a/packages/nx/src/native/tui/action.rs
++++ b/packages/nx/src/native/tui/action.rs
+@@ -31,6 +31,7 @@ pub enum Action {
+     ScrollPaneUp(usize),
+     ScrollPaneDown(usize),
+     UpdateTaskStatus(String, TaskStatus),
++    SetTaskTiming(String, i64, i64),
+     UpdateCloudMessage(String),
+     UpdateFocus(Focus),
+     StartCommand(Option<u32>),
+diff --git a/packages/nx/src/native/tui/app.rs b/packages/nx/src/native/tui/app.rs
+index 62e55823cc1..f734362b1d1 100644
+--- a/packages/nx/src/native/tui/app.rs
++++ b/packages/nx/src/native/tui/app.rs
+@@ -2541,6 +2541,10 @@ impl TuiApp for App {
+         self.dispatch_action(Action::StartTasks(tasks.to_vec()));
+     }
+ 
++    fn set_task_timing(&mut self, task_id: String, start_time: i64, end_time: i64) {
++        self.dispatch_action(Action::SetTaskTiming(task_id, start_time, end_time));
++    }
++
+     fn on_tasks_ended(&mut self, task_results: &[TaskResult]) {
+         // Resize PTYs when tasks finish (they may still be displaying output)
+         let _ = self.debounce_pty_resize();
+diff --git a/packages/nx/src/native/tui/components/tasks_list.rs b/packages/nx/src/native/tui/components/tasks_list.rs
+index f76375a39bb..92b2eefae8a 100644
+--- a/packages/nx/src/native/tui/components/tasks_list.rs
++++ b/packages/nx/src/native/tui/components/tasks_list.rs
+@@ -134,6 +134,21 @@ impl TaskItem {
+             }
+         }
+     }
++
++    pub fn update_timing(&mut self, start_time: Option<i64>, end_time: Option<i64>) {
++        self.start_time = start_time;
++        self.end_time = end_time;
++        let duration = match (start_time, end_time) {
++            (Some(start), Some(end)) => Some(format_duration_since(start, end)),
++            (Some(_), None) => Some(DURATION_NOT_YET_KNOWN.to_string()),
++            _ => None,
++        };
++        if let Some(d) = duration {
++            if !self.continuous || end_time.is_some() {
++                self.duration = d;
++            }
++        }
++    }
+ }
+ 
+ #[napi]
+@@ -1114,15 +1129,14 @@ impl TasksList {
+         end_time: Option<i64>,
+     ) {
+         if let Some(task_item) = self.task_lookup.get_mut(&task_name) {
+-            task_item.start_time = start_time;
+-            task_item.end_time = end_time;
+-
+-            // Update the duration string if we have both times
+-            if let (Some(start), Some(end)) = (start_time, end_time) {
+-                task_item.duration = format_duration_since(start, end);
+-            } else if start_time.is_some() && end_time.is_none() && !task_item.continuous {
+-                // Task is in progress
+-                task_item.duration = DURATION_NOT_YET_KNOWN.to_string();
++            task_item.update_timing(start_time, end_time);
++        }
++        for display_item in &mut self.display_items {
++            if let DisplayItem::Task(task_item) = display_item
++                && task_item.name == task_name
++            {
++                task_item.update_timing(start_time, end_time);
++                break;
+             }
+         }
+     }
+@@ -2882,6 +2896,9 @@ impl Component for TasksList {
+             Action::UpdateTaskStatus(task_name, status) => {
+                 self.update_task_status(task_name, status);
+             }
++            Action::SetTaskTiming(task_id, start_time, end_time) => {
++                self.set_task_timing(task_id, Some(start_time), Some(end_time));
++            }
+             Action::UpdateCloudMessage(message) => {
+                 self.cloud_message = Some(message);
+             }
+diff --git a/packages/nx/src/native/tui/lifecycle.rs b/packages/nx/src/native/tui/lifecycle.rs
+index 046faf8162f..23e67874d73 100644
+--- a/packages/nx/src/native/tui/lifecycle.rs
++++ b/packages/nx/src/native/tui/lifecycle.rs
+@@ -663,6 +663,11 @@ impl AppLifeCycle {
+         self.with_app(|app| app.update_task_status(task_id, status));
+     }
+ 
++    #[napi]
++    pub fn set_task_timing(&mut self, task_id: String, start_time: i64, end_time: i64) {
++        self.with_app(|app| app.set_task_timing(task_id, start_time, end_time));
++    }
++
+     // This method is excluded from test builds because it uses ThreadsafeFunction
+     // which requires Node.js runtime symbols.
+     #[cfg(not(test))]
+diff --git a/packages/nx/src/native/tui/tui_app.rs b/packages/nx/src/native/tui/tui_app.rs
+index 56ca5a9ce4b..29c2ede4ba5 100644
+--- a/packages/nx/src/native/tui/tui_app.rs
++++ b/packages/nx/src/native/tui/tui_app.rs
+@@ -185,6 +185,11 @@ pub trait TuiApp: Send {
+         self.core().update_task_status(task_id, status);
+     }
+ 
++    /// Set the start and end time for a task (in milliseconds since epoch)
++    fn set_task_timing(&mut self, _task_id: String, _start_time: i64, _end_time: i64) {
++        // Default: no-op. Full TUI overrides to update display items.
++    }
++
+     /// Called when tasks finish execution
+     ///
+     /// Default implementation records timing in TuiCore and calls hook.
+diff --git a/packages/nx/src/tasks-runner/life-cycle.ts b/packages/nx/src/tasks-runner/life-cycle.ts
+index 694d01f044a..19e3812a21f 100644
+--- a/packages/nx/src/tasks-runner/life-cycle.ts
++++ b/packages/nx/src/tasks-runner/life-cycle.ts
+@@ -71,6 +71,8 @@ export interface LifeCycle {
+ 
+   setTaskStatus?(taskId: string, status: NativeTaskStatus): void;
+ 
++  setTaskTiming?(taskId: string, startTime: number, endTime: number): void;
++
+   registerForcedShutdownCallback?(callback: () => void): void;
+ 
+   setEstimatedTaskTimings?(timings: Record<string, number>): void;
+@@ -196,6 +198,14 @@ export class CompositeLifeCycle implements LifeCycle {
+     }
+   }
+ 
++  setTaskTiming(taskId: string, startTime: number, endTime: number): void {
++    for (let l of this.lifeCycles) {
++      if (l.setTaskTiming) {
++        l.setTaskTiming(taskId, startTime, endTime);
++      }
++    }
++  }
++
+   registerForcedShutdownCallback(callback: () => void): void {
+     for (let l of this.lifeCycles) {
+       if (l.registerForcedShutdownCallback) {
+diff --git a/packages/nx/src/tasks-runner/task-orchestrator.ts b/packages/nx/src/tasks-runner/task-orchestrator.ts
+index af6f4094af3..824074b039b 100644
+--- a/packages/nx/src/tasks-runner/task-orchestrator.ts
++++ b/packages/nx/src/tasks-runner/task-orchestrator.ts
+@@ -82,7 +82,6 @@ export class TaskOrchestrator {
+   private initializingTaskIds = new Set(this.initiatingTasks.map((t) => t.id));
+ 
+   private processedTasks = new Map<string, Promise<NodeJS.ProcessEnv>>();
+-  private processedBatches = new Map<Batch, Promise<void>>();
+ 
+   private completedTasks: {
+     [id: string]: TaskStatus;
+@@ -112,8 +111,6 @@ export class TaskOrchestrator {
+   private discreteTaskExitHandled = new Map<string, Promise<void>>();
+   private cleanupDone = false;
+ 
+-  private batchTaskResultsStreamed = new Set<string>();
+-
+   // endregion internal state
+ 
+   constructor(
+@@ -290,22 +287,9 @@ export class TaskOrchestrator {
+     return taskSpecificEnv;
+   }
+ 
+-  private async processScheduledBatch(batch: Batch) {
+-    // Hashing moved to applyFromCacheOrRunBatch for topological ordering
+-    await Promise.all(
+-      Object.values(batch.taskGraph.tasks).map((task) =>
+-        this.options.lifeCycle.scheduleTask(task)
+-      )
+-    );
+-  }
+-
+   public processAllScheduledTasks() {
+-    const { scheduledTasks, scheduledBatches } =
+-      this.tasksSchedule.getAllScheduledTasks();
++    const { scheduledTasks } = this.tasksSchedule.getAllScheduledTasks();
+ 
+-    for (const batch of scheduledBatches) {
+-      this.processedBatches.set(batch, this.processScheduledBatch(batch));
+-    }
+     this.processTasks(scheduledTasks);
+   }
+ 
+@@ -361,6 +345,74 @@ export class TaskOrchestrator {
+   // endregion Applying Cache
+ 
+   // region Batch
++  /**
++   * Hash all batch tasks and resolve cache hits topologically.
++   *
++   * Walks the task graph level by level. Every task gets a preliminary hash
++   * (so startTasks always has a valid hash for Cloud). Tasks with depsOutputs
++   * whose deps weren't cached are ineligible for cache lookup but still
++   * receive a preliminary hash — they'll be re-hashed after execution.
++   */
++  private async applyBatchCachedResults(
++    batch: Batch,
++    doNotSkipCache: boolean
++  ): Promise<{
++    cachedResults: TaskResult[];
++    needsRehashAfterExecution: Set<string>;
++  }> {
++    const cachedResults: TaskResult[] = [];
++    const needsRehashAfterExecution = new Set<string>();
++    const tasks = Object.values(batch.taskGraph.tasks);
++
++    if (!doNotSkipCache) {
++      // Cache skipped — just hash so startTasks has valid hashes
++      await this.hashBatchTasks(tasks);
++      return { cachedResults, needsRehashAfterExecution };
++    }
++
++    const nonCachedTaskIds = new Set<string>();
++
++    let remaining = batch.taskGraph;
++
++    while (remaining.roots.length > 0) {
++      const rootTasks = remaining.roots.map((id) => remaining.tasks[id]);
++
++      await this.hashBatchTasks(rootTasks);
++
++      const eligible: Task[] = [];
++      for (const task of rootTasks) {
++        const depIds = batch.taskGraph.dependencies[task.id];
++        const hasNonCachedDep = depIds.some((id) => nonCachedTaskIds.has(id));
++
++        if (
++          hasNonCachedDep &&
++          getInputs(task, this.projectGraph, this.nxJson).depsOutputs.length > 0
++        ) {
++          nonCachedTaskIds.add(task.id);
++          needsRehashAfterExecution.add(task.id);
++        } else {
++          eligible.push(task);
++        }
++      }
++
++      if (eligible.length > 0) {
++        const cacheResults = await this.applyCachedResults(eligible);
++        const cachedIds = new Set(cacheResults.map((r) => r.task.id));
++        cachedResults.push(...cacheResults);
++
++        for (const task of eligible) {
++          if (!cachedIds.has(task.id)) {
++            nonCachedTaskIds.add(task.id);
++          }
++        }
++      }
++
++      remaining = removeTasksFromTaskGraph(remaining, remaining.roots);
++    }
++
++    return { cachedResults, needsRehashAfterExecution };
++  }
++
+   private async hashBatchTasks(tasks: Task[]): Promise<void> {
+     await Promise.all(
+       tasks.map((task) =>
+@@ -387,81 +439,33 @@ export class TaskOrchestrator {
+     const taskEntries = Object.entries(batch.taskGraph.tasks);
+     const tasks = taskEntries.map(([, task]) => task);
+ 
+-    // Wait for batch to be processed
+-    await this.processedBatches.get(batch);
+-
+     this.options.lifeCycle.registerRunningBatch?.(batch.id, {
+       executorName: batch.executorName,
+       taskIds: Object.keys(batch.taskGraph.tasks),
+     });
+ 
+-    await this.preRunSteps(tasks, { groupId });
+-
+-    // Phase 1: Topological cache resolution
+-    // Walk the entire batch task graph level by level. At each level, partition
+-    // root tasks into cache-eligible vs ineligible. A task is ineligible if it
+-    // has depsOutputs inputs AND any of its dependencies were not cached (their
+-    // outputs aren't on disk, so the hash would be wrong). All roots are removed
+-    // each iteration so the walk continues to deeper levels.
+-    let allCachedResults: TaskResult[] = [];
+-    let remaining = batch.taskGraph;
+-    const nonCachedTaskIds = new Set<string>();
+-
+-    if (doNotSkipCache) {
+-      while (remaining.roots.length > 0) {
+-        const rootTasks = remaining.roots.map((id) => remaining.tasks[id]);
+-
+-        // Partition: skip cache for depsOutputs tasks with non-cached deps.
+-        // Only call getInputs() when a task actually has a non-cached dep —
+-        // if all deps are cached, the task is always eligible regardless.
+-        const eligible: Task[] = [];
+-        for (const task of rootTasks) {
+-          const depIds = batch.taskGraph.dependencies[task.id];
+-          const hasNonCachedDep = depIds.some((id) => nonCachedTaskIds.has(id));
+-
+-          if (
+-            hasNonCachedDep &&
+-            getInputs(task, this.projectGraph, this.nxJson).depsOutputs.length >
+-              0
+-          ) {
+-            nonCachedTaskIds.add(task.id);
+-          } else {
+-            eligible.push(task);
+-          }
+-        }
+-
+-        // Hash and check cache for eligible tasks
+-        if (eligible.length > 0) {
+-          await this.hashBatchTasks(eligible);
+-          const cacheResults = await this.applyCachedResults(eligible);
+-          const cachedIds = new Set(cacheResults.map((r) => r.task.id));
+-          allCachedResults.push(...cacheResults);
++    const { cachedResults, needsRehashAfterExecution } =
++      await this.applyBatchCachedResults(batch, doNotSkipCache);
+ 
+-          for (const task of eligible) {
+-            if (!cachedIds.has(task.id)) {
+-              nonCachedTaskIds.add(task.id);
+-            }
+-          }
+-        }
++    // All tasks are now hashed — notify lifecycle (scheduleTask + startTasks)
++    await Promise.all(
++      tasks.map((task) => this.options.lifeCycle.scheduleTask(task))
++    );
++    await this.preRunSteps(tasks, { groupId });
+ 
+-        // Remove ALL roots to expose next level
+-        remaining = removeTasksFromTaskGraph(remaining, remaining.roots);
+-      }
++    // Complete cached results immediately — no need to wait for execution
++    if (cachedResults.length > 0) {
++      await this.postRunSteps(cachedResults, doNotSkipCache, { groupId });
+     }
+ 
+-    // Phase 2: Run remaining tasks without hashing, then hash after execution
+-    // Hashing is deferred until after the batch so that all outputs (including
+-    // from sibling tasks) are fresh on disk. This means tasks with depsOutputs
+-    // get correct hashes on the first pass — no re-hash needed.
+-    let results: TaskResult[] = allCachedResults;
++    // Phase 2: Run non-cached tasks, then re-hash depsOutputs tasks
++    const taskIdsToSkip = cachedResults.map((r) => r.task.id);
++    let batchResults: TaskResult[] = [];
+ 
+-    if (nonCachedTaskIds.size > 0) {
+-      const cachedTaskIds = tasks
+-        .map((t) => t.id)
+-        .filter((id) => !nonCachedTaskIds.has(id));
+-      const runGraph = removeTasksFromTaskGraph(batch.taskGraph, cachedTaskIds);
++    if (taskIdsToSkip.length < tasks.length) {
++      const runGraph = removeTasksFromTaskGraph(batch.taskGraph, taskIdsToSkip);
+ 
+-      const batchResults = await this.runBatch(
++      batchResults = await this.runBatch(
+         {
+           id: batch.id,
+           executorName: batch.executorName,
+@@ -471,34 +475,22 @@ export class TaskOrchestrator {
+         groupId
+       );
+ 
+-      // Hash all tasks that ran — outputs are now fresh on disk
+-      const tasksToHash = batchResults
+-        .filter((r) => r.status === 'success' || r.status === 'failure')
+-        .map((r) => r.task);
+-      await this.hashBatchTasks(tasksToHash);
+-
+-      results = [...allCachedResults, ...batchResults];
+-    } else if (!doNotSkipCache) {
+-      // Cache is skipped — run everything
+-      const batchResults = await this.runBatch(
+-        {
+-          id: batch.id,
+-          executorName: batch.executorName,
+-          taskGraph: batch.taskGraph,
+-        },
+-        this.batchEnv,
+-        groupId
+-      );
+-
+-      const tasksToHash = batchResults
+-        .filter((r) => r.status === 'success' || r.status === 'failure')
++      // Re-hash depsOutputs tasks — their dep outputs are now on disk
++      const tasksToRehash = batchResults
++        .filter(
++          (r) =>
++            needsRehashAfterExecution.has(r.task.id) &&
++            (r.status === 'success' || r.status === 'failure')
++        )
+         .map((r) => r.task);
+-      await this.hashBatchTasks(tasksToHash);
+-
+-      results = batchResults;
++      if (tasksToRehash.length > 0) {
++        await this.hashBatchTasks(tasksToRehash);
++      }
+     }
+ 
+-    await this.postRunSteps(results, doNotSkipCache, { groupId });
++    if (batchResults.length > 0) {
++      await this.postRunSteps(batchResults, doNotSkipCache, { groupId });
++    }
+ 
+     // Update batch status based on all task results
+     const hasFailures = taskEntries.some(([taskId]) => {
+@@ -540,7 +532,7 @@ export class TaskOrchestrator {
+       applyFromCacheOrRunBatchStart.name,
+       applyFromCacheOrRunBatchEnd.name
+     );
+-    return results;
++    return [...cachedResults, ...batchResults];
+   }
+ 
+   private async runBatch(
+@@ -586,19 +578,13 @@ export class TaskOrchestrator {
+         task.startTime = result.startTime;
+         task.endTime = result.endTime;
+ 
+-        this.options.lifeCycle.endTasks(
+-          [
+-            {
+-              task,
+-              status,
+-              code: result.success ? 0 : 1,
+-              terminalOutput: result.terminalOutput,
+-            },
+-          ],
+-          { groupId }
+-        );
+-
+-        this.batchTaskResultsStreamed.add(taskId);
++        if (result.startTime && result.endTime) {
++          this.options.lifeCycle.setTaskTiming?.(
++            taskId,
++            result.startTime,
++            result.endTime
++          );
++        }
+         this.options.lifeCycle.setTaskStatus(taskId, parseTaskStatus(status));
+       });
+ 
+@@ -1129,30 +1115,25 @@ export class TaskOrchestrator {
+     }[],
+     groupId: number
+   ): Promise<void> {
+-    // 1. endTasks FIRST (non-skipped only, and not already streamed for batch)
++    // 1. endTasks FIRST (non-skipped only)
+     const tasksToReport: TaskResult[] = [];
+     const taskIds: string[] = [];
+     for (const { task, status, terminalOutput } of results) {
+       taskIds.push(task.id);
+ 
+       if (this.completedTasks[task.id] === undefined && status !== 'skipped') {
+-        if (!this.batchTaskResultsStreamed.has(task.id)) {
+-          tasksToReport.push({
+-            task,
+-            status,
+-            terminalOutput,
+-            code:
+-              status === 'success' ||
+-              status === 'local-cache' ||
+-              status === 'local-cache-kept-existing' ||
+-              status === 'remote-cache'
+-                ? 0
+-                : 1,
+-          });
+-        } else {
+-          // clean up the task id from the set since we've already verified it
+-          this.batchTaskResultsStreamed.delete(task.id);
+-        }
++        tasksToReport.push({
++          task,
++          status,
++          terminalOutput,
++          code:
++            status === 'success' ||
++            status === 'local-cache' ||
++            status === 'local-cache-kept-existing' ||
++            status === 'remote-cache'
++              ? 0
++              : 1,
++        });
+       }
+     }
+ 

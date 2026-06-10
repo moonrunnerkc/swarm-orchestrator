@@ -1,0 +1,50 @@
+diff --git a/packages/mui-material/src/Autocomplete/Autocomplete.test.js b/packages/mui-material/src/Autocomplete/Autocomplete.test.js
+index 4b92c955916a55..53b8480b50a27d 100644
+--- a/packages/mui-material/src/Autocomplete/Autocomplete.test.js
++++ b/packages/mui-material/src/Autocomplete/Autocomplete.test.js
+@@ -588,6 +588,28 @@ describe('<Autocomplete />', () => {
+       expect(handleChange.callCount).to.equal(1);
+       expect(handleChange.args[0][1]).to.deep.equal(['a']);
+     });
++
++    it('should add new value when autoSelect & freeSolo & autoHighlight on blur', () => {
++      const handleChange = spy();
++      render(
++        <Autocomplete
++          autoSelect
++          freeSolo
++          autoHighlight
++          onChange={handleChange}
++          options={[]}
++          renderInput={(params) => <TextField {...params} autoFocus />}
++        />,
++      );
++
++      fireEvent.change(document.activeElement, { target: { value: 'a' } });
++      act(() => {
++        document.activeElement.blur();
++      });
++
++      expect(handleChange.callCount).to.equal(1);
++      expect(handleChange.args[0][1]).to.equal('a');
++    });
+   });
+ 
+   describe('prop: multiple', () => {
+diff --git a/packages/mui-material/src/useAutocomplete/useAutocomplete.js b/packages/mui-material/src/useAutocomplete/useAutocomplete.js
+index 1420190b27dc02..bd7831f4b1d966 100644
+--- a/packages/mui-material/src/useAutocomplete/useAutocomplete.js
++++ b/packages/mui-material/src/useAutocomplete/useAutocomplete.js
+@@ -615,10 +615,10 @@ function useAutocomplete(props) {
+   }
+ 
+   React.useEffect(() => {
+-    if (filteredOptionsChanged) {
++    if (filteredOptionsChanged || popupOpen) {
+       syncHighlightedIndex();
+     }
+-  }, [syncHighlightedIndex, filteredOptionsChanged]);
++  }, [syncHighlightedIndex, filteredOptionsChanged, popupOpen]);
+ 
+   const handleOpen = (event) => {
+     if (open) {

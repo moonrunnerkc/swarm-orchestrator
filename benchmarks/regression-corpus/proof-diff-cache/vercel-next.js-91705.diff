@@ -1,0 +1,307 @@
+diff --git a/crates/next-core/src/app_page_loader_tree.rs b/crates/next-core/src/app_page_loader_tree.rs
+index a10976b59291..46b8c5511d17 100644
+--- a/crates/next-core/src/app_page_loader_tree.rs
++++ b/crates/next-core/src/app_page_loader_tree.rs
+@@ -189,7 +189,7 @@ impl AppPageLoaderTreeBuilder {
+                 // when mixing ESM imports and requires).
+                 self.base.imports.push(
+                     format!(
+-                        "const {identifier} = require(/*turbopackChunkingType: \
++                        "const {identifier} = () => require(/*turbopackChunkingType: \
+                          shared*/\"{inner_module_id}\");"
+                     )
+                     .into(),
+@@ -208,7 +208,10 @@ impl AppPageLoaderTreeBuilder {
+                     .insert(inner_module_id.into(), module);
+ 
+                 let s = "      ";
+-                writeln!(self.loader_tree_code, "{s}{identifier}.default,")?;
++                writeln!(
++                    self.loader_tree_code,
++                    "{s}async (props) => interopDefault(await {identifier}())(props),"
++                )?;
+             }
+         }
+         Ok(())
+@@ -239,7 +242,7 @@ impl AppPageLoaderTreeBuilder {
+         // requires).
+         self.base.imports.push(
+             format!(
+-                "const {identifier} = require(/*turbopackChunkingType: \
++                "const {identifier} = () => require(/*turbopackChunkingType: \
+                  shared*/\"{inner_module_id}\");"
+             )
+             .into(),
+@@ -254,8 +257,51 @@ impl AppPageLoaderTreeBuilder {
+             .inner_assets
+             .insert(inner_module_id.into(), module);
+ 
++        let alt = if let Some(alt_path) = alt_path {
++            let identifier = magic_identifier::mangle(&format!("{name} alt text #{i}"));
++            let inner_module_id = format!("METADATA_ALT_{i}");
++
++            // This should use the same importing mechanism as create_module_tuple_code, so that the
++            // relative order of items is retained (which isn't the case when mixing ESM imports and
++            // requires).
++            self.base.imports.push(
++                format!(
++                    "const {identifier} = () => require(/*turbopackChunkingType: \
++                     shared*/\"{inner_module_id}\");"
++                )
++                .into(),
++            );
++
++            let module = self
++                .base
++                .process_source(Vc::upcast(TextContentFileSource::new(Vc::upcast(
++                    FileSource::new(alt_path),
++                ))))
++                .to_resolved()
++                .await?;
++
++            self.base
++                .inner_assets
++                .insert(inner_module_id.into(), module);
++
++            Some(identifier)
++        } else {
++            None
++        };
++
+         let s = "      ";
+-        writeln!(self.loader_tree_code, "{s}(async (props) => [{{")?;
++        writeln!(self.loader_tree_code, "{s}(async (props) => {{")?;
++        writeln!(
++            self.loader_tree_code,
++            "{s}  const mod = interopDefault(await {identifier}());"
++        )?;
++        if let Some(alt) = &alt {
++            writeln!(
++                self.loader_tree_code,
++                "{s}  const alt = interopDefault(await {alt}());"
++            )?;
++        }
++        writeln!(self.loader_tree_code, "{s}  return [{{")?;
+         let pathname_prefix = if let Some(base_path) = &self.base_path {
+             format!("{base_path}/{app_page}")
+         } else {
+@@ -264,68 +310,37 @@ impl AppPageLoaderTreeBuilder {
+         let metadata_route = &*get_metadata_route_name(item.clone().into()).await?;
+         writeln!(
+             self.loader_tree_code,
+-            "{s}  url: fillMetadataSegment({}, await props.params, {}, true) + \
+-             `?${{{identifier}.default.src.split(\"/\").splice(-1)[0]}}`,",
++            "{s}    url: fillMetadataSegment({}, await props.params, {}, true) + \
++             `?${{mod.src.split(\"/\").splice(-1)[0]}}`,",
+             StringifyJs(&pathname_prefix),
+             StringifyJs(metadata_route),
+         )?;
+ 
+         let numeric_sizes = name == "twitter" || name == "openGraph";
+         if numeric_sizes {
+-            writeln!(
+-                self.loader_tree_code,
+-                "{s}  width: {identifier}.default.width,"
+-            )?;
+-            writeln!(
+-                self.loader_tree_code,
+-                "{s}  height: {identifier}.default.height,"
+-            )?;
++            writeln!(self.loader_tree_code, "{s}    width: mod.width,")?;
++            writeln!(self.loader_tree_code, "{s}    height: mod.height,")?;
+         } else {
+             // For SVGs, skip sizes and use "any" to let it scale automatically based on viewport,
+             // For the images doesn't provide the size properly, use "any" as well.
+             // If the size is presented, use the actual size for the image.
+             let sizes = if path.has_extension(".svg") {
+-                "any".to_string()
++                "any"
+             } else {
+-                format!("${{{identifier}.default.width}}x${{{identifier}.default.height}}")
++                "${mod.width}x${mod.height}"
+             };
+-            writeln!(self.loader_tree_code, "{s}  sizes: `{sizes}`,")?;
++            writeln!(self.loader_tree_code, "{s}    sizes: `{sizes}`,")?;
+         }
+ 
+         let content_type = get_content_type(path).await?;
+-        writeln!(self.loader_tree_code, "{s}  type: `{content_type}`,")?;
+-
+-        if let Some(alt_path) = alt_path {
+-            let identifier = magic_identifier::mangle(&format!("{name} alt text #{i}"));
+-            let inner_module_id = format!("METADATA_ALT_{i}");
+-
+-            // This should use the same importing mechanism as create_module_tuple_code, so that the
+-            // relative order of items is retained (which isn't the case when mixing ESM imports and
+-            // requires).
+-            self.base.imports.push(
+-                format!(
+-                    "const {identifier} = require(/*turbopackChunkingType: \
+-                     shared*/\"{inner_module_id}\");"
+-                )
+-                .into(),
+-            );
+-
+-            let module = self
+-                .base
+-                .process_source(Vc::upcast(TextContentFileSource::new(Vc::upcast(
+-                    FileSource::new(alt_path),
+-                ))))
+-                .to_resolved()
+-                .await?;
+-
+-            self.base
+-                .inner_assets
+-                .insert(inner_module_id.into(), module);
++        writeln!(self.loader_tree_code, "{s}    type: `{content_type}`,")?;
+ 
+-            writeln!(self.loader_tree_code, "{s}  alt: {identifier}.default,")?;
++        if alt.is_some() {
++            writeln!(self.loader_tree_code, "{s}    alt,")?;
+         }
+ 
+-        writeln!(self.loader_tree_code, "{s}}}]),")?;
++        writeln!(self.loader_tree_code, "{s}  }}];")?;
++        writeln!(self.loader_tree_code, "{s}}}),")?;
+ 
+         Ok(())
+     }
+diff --git a/packages/next/src/lib/metadata/resolve-metadata.ts b/packages/next/src/lib/metadata/resolve-metadata.ts
+index bac8bb9e146b..1ae86da5d768 100644
+--- a/packages/next/src/lib/metadata/resolve-metadata.ts
++++ b/packages/next/src/lib/metadata/resolve-metadata.ts
+@@ -41,7 +41,6 @@ import {
+   getComponentTypeModule,
+   getLayoutOrPageModule,
+ } from '../../server/lib/app-dir-module'
+-import { interopDefault } from '../interop-default'
+ import {
+   resolveAlternates,
+   resolveAppleWebApp,
+@@ -572,11 +571,11 @@ async function collectStaticImagesFiles(
+ 
+   const iconPromises = metadata[type as 'icon' | 'apple'].map(
+     async (imageModule: (p: any) => Promise<MetadataImageModule[]>) =>
+-      await interopDefault(imageModule)(props)
++      await imageModule(props)
+   )
+ 
+   return iconPromises?.length > 0
+-    ? (await Promise.all(iconPromises))?.flat()
++    ? (await Promise.all(iconPromises)).flat()
+     : undefined
+ }
+ 
+diff --git a/test/e2e/app-dir/metadata-dynamic-routes-async-deps/app/blog/[slug]/opengraph-image.tsx b/test/e2e/app-dir/metadata-dynamic-routes-async-deps/app/blog/[slug]/opengraph-image.tsx
+new file mode 100644
+index 000000000000..c9132932508d
+--- /dev/null
++++ b/test/e2e/app-dir/metadata-dynamic-routes-async-deps/app/blog/[slug]/opengraph-image.tsx
+@@ -0,0 +1,22 @@
++import { ImageResponse } from 'next/og'
++import { getAllSlugs } from '../../data'
++
++export default function og() {
++  return new ImageResponse(
++    (
++      <div
++        style={{
++          width: '100%',
++          height: '100%',
++          display: 'flex',
++          alignItems: 'center',
++          justifyContent: 'center',
++          fontSize: 88,
++          background: 'lavender',
++        }}
++      >
++        Posts: {getAllSlugs().join(', ')}
++      </div>
++    )
++  )
++}
+diff --git a/test/e2e/app-dir/metadata-dynamic-routes-async-deps/app/blog/[slug]/page.tsx b/test/e2e/app-dir/metadata-dynamic-routes-async-deps/app/blog/[slug]/page.tsx
+new file mode 100644
+index 000000000000..b00f1ce0a289
+--- /dev/null
++++ b/test/e2e/app-dir/metadata-dynamic-routes-async-deps/app/blog/[slug]/page.tsx
+@@ -0,0 +1,14 @@
++import { getAllSlugs } from '../../data'
++
++export function generateStaticParams() {
++  return getAllSlugs().map((slug) => ({ slug }))
++}
++
++export default async function Page({
++  params,
++}: {
++  params: Promise<{ slug: string }>
++}) {
++  const { slug } = await params
++  return <p>Post: {slug}</p>
++}
+diff --git a/test/e2e/app-dir/metadata-dynamic-routes-async-deps/app/data.ts b/test/e2e/app-dir/metadata-dynamic-routes-async-deps/app/data.ts
+new file mode 100644
+index 000000000000..8226c7adf635
+--- /dev/null
++++ b/test/e2e/app-dir/metadata-dynamic-routes-async-deps/app/data.ts
+@@ -0,0 +1,9 @@
++// Async module: top-level await makes this an async module,
++// which causes any transitive importer to also become async.
++const data = await Promise.resolve({
++  slugs: ['hello-world', 'another-post'],
++})
++
++export function getAllSlugs(): string[] {
++  return data.slugs
++}
+diff --git a/test/e2e/app-dir/metadata-dynamic-routes-async-deps/app/layout.tsx b/test/e2e/app-dir/metadata-dynamic-routes-async-deps/app/layout.tsx
+new file mode 100644
+index 000000000000..762515029332
+--- /dev/null
++++ b/test/e2e/app-dir/metadata-dynamic-routes-async-deps/app/layout.tsx
+@@ -0,0 +1,8 @@
++export default function Layout({ children }) {
++  return (
++    <html>
++      <head></head>
++      <body>{children}</body>
++    </html>
++  )
++}
+diff --git a/test/e2e/app-dir/metadata-dynamic-routes-async-deps/index.test.ts b/test/e2e/app-dir/metadata-dynamic-routes-async-deps/index.test.ts
+new file mode 100644
+index 000000000000..69dce22f6e94
+--- /dev/null
++++ b/test/e2e/app-dir/metadata-dynamic-routes-async-deps/index.test.ts
+@@ -0,0 +1,22 @@
++import { nextTestSetup } from 'e2e-utils'
++
++describe('app dir - metadata dynamic routes with async deps', () => {
++  const { next } = nextTestSetup({
++    files: __dirname,
++    dependencies: {
++      '@vercel/og': 'latest',
++    },
++  })
++
++  it('should render page with og:image meta tag when opengraph-image has async dependencies', async () => {
++    const $ = await next.render$('/blog/hello-world')
++    const ogImageUrl = $('meta[property="og:image"]').attr('content')
++    expect(ogImageUrl).toContain('/blog/hello-world/opengraph-image')
++  })
++
++  it('should serve the opengraph-image route as a valid image', async () => {
++    const res = await next.fetch('/blog/hello-world/opengraph-image')
++    expect(res.status).toBe(200)
++    expect(res.headers.get('content-type')).toBe('image/png')
++  })
++})
+diff --git a/test/e2e/app-dir/metadata-dynamic-routes-async-deps/next.config.js b/test/e2e/app-dir/metadata-dynamic-routes-async-deps/next.config.js
+new file mode 100644
+index 000000000000..5a877d2dbfab
+--- /dev/null
++++ b/test/e2e/app-dir/metadata-dynamic-routes-async-deps/next.config.js
+@@ -0,0 +1,2 @@
++/** @type {import('next').NextConfig} */
++module.exports = {}

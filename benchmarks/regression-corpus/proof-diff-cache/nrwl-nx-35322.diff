@@ -1,0 +1,24 @@
+diff --git a/packages/nx/src/tasks-runner/task-orchestrator.ts b/packages/nx/src/tasks-runner/task-orchestrator.ts
+index 2c180ece508..1a2e1e43799 100644
+--- a/packages/nx/src/tasks-runner/task-orchestrator.ts
++++ b/packages/nx/src/tasks-runner/task-orchestrator.ts
+@@ -265,7 +265,7 @@ export class TaskOrchestrator {
+                 this.completedTasks.has(depId)
+               )
+           );
+-        if (unhashed.length > 1) {
++        if (unhashed.length > 0) {
+           const perTaskEnvs: Record<string, NodeJS.ProcessEnv> = {};
+           for (const task of unhashed) {
+             perTaskEnvs[task.id] = getTaskSpecificEnv(task, this.projectGraph);
+@@ -851,6 +851,10 @@ export class TaskOrchestrator {
+     );
+     if (cacheableTasks.length === 0) return [];
+ 
++    // Wait for any queued processTask promises to settle so task.hash is
++    // populated before cache.getBatch maps it into a Rust String.
++    await Promise.all(cacheableTasks.map((t) => this.processedTasks.get(t.id)));
++
+     const cacheHits = await this.fetchCacheHits(cacheableTasks);
+     if (cacheHits.length === 0) return [];
+ 

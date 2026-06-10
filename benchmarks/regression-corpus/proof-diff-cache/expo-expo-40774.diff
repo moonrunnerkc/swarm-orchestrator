@@ -1,0 +1,331 @@
+diff --git a/packages/@expo/metro-config/build/babel-transformer.js b/packages/@expo/metro-config/build/babel-transformer.js
+index f70404501b340b..400a3235883198 100644
+--- a/packages/@expo/metro-config/build/babel-transformer.js
++++ b/packages/@expo/metro-config/build/babel-transformer.js
+@@ -65,8 +65,11 @@ function getBabelCaller({ filename, options, }) {
+         // Provide the project root for accurately reading the Expo config.
+         projectRoot: options.projectRoot,
+         isNodeModule,
+-        // TODO(@kitten): Removed and the default; however, we set this to be always enabled to imitate the
+-        // new default, in case this is used against an older version of `babel-preset-expo`
++        // TODO(@kitten): Removed and the default; The `hot` parameter is now force-enabled in Metro
++        // to align caching for `dev` with `hot` being enforced. Hence, we match this by forcing our
++        // own caller flag to `true` for `babel-preset-expo`. However, `babel-preset-expo` is still
++        // able to disable the React Refresh transform plugin for other runtimes and uses this flag
++        // to identify Metro / React Refresh runtime targets
+         isHMREnabled: true,
+         // Pass on the input type. Scripts shall be transformed to avoid dependencies (imports/requires),
+         // for example by polyfills or Babel runtime
+diff --git a/packages/@expo/metro-config/build/babel-transformer.js.map b/packages/@expo/metro-config/build/babel-transformer.js.map
+index dfd7dbea5d080e..e1fbd935f25474 100644
+--- a/packages/@expo/metro-config/build/babel-transformer.js.map
++++ b/packages/@expo/metro-config/build/babel-transformer.js.map
+@@ -1 +1 @@
+-{"version":3,"file":"babel-transformer.js","sourceRoot":"","sources":["../src/babel-transformer.ts"],"names":[],"mappings":"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"}
+\ No newline at end of file
++{"version":3,"file":"babel-transformer.js","sourceRoot":"","sources":["../src/babel-transformer.ts"],"names":[],"mappings":"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"}
+\ No newline at end of file
+diff --git a/packages/@expo/metro-config/src/babel-transformer.ts b/packages/@expo/metro-config/src/babel-transformer.ts
+index b5812c0a2d4d6d..e0072add84d23b 100644
+--- a/packages/@expo/metro-config/src/babel-transformer.ts
++++ b/packages/@expo/metro-config/src/babel-transformer.ts
+@@ -114,8 +114,11 @@ function getBabelCaller({
+ 
+     isNodeModule,
+ 
+-    // TODO(@kitten): Removed and the default; however, we set this to be always enabled to imitate the
+-    // new default, in case this is used against an older version of `babel-preset-expo`
++    // TODO(@kitten): Removed and the default; The `hot` parameter is now force-enabled in Metro
++    // to align caching for `dev` with `hot` being enforced. Hence, we match this by forcing our
++    // own caller flag to `true` for `babel-preset-expo`. However, `babel-preset-expo` is still
++    // able to disable the React Refresh transform plugin for other runtimes and uses this flag
++    // to identify Metro / React Refresh runtime targets
+     isHMREnabled: true,
+ 
+     // Pass on the input type. Scripts shall be transformed to avoid dependencies (imports/requires),
+diff --git a/packages/babel-preset-expo/CHANGELOG.md b/packages/babel-preset-expo/CHANGELOG.md
+index 644d16659ac584..f0e6a9f3dac313 100644
+--- a/packages/babel-preset-expo/CHANGELOG.md
++++ b/packages/babel-preset-expo/CHANGELOG.md
+@@ -10,8 +10,12 @@
+ 
+ ### 🐛 Bug fixes
+ 
++- Ensure React Fast Refresh is disabled in `jest-expo` and other non-Expo environments ([#40774](https://github.com/expo/expo/pull/40774) by [@kitten](https://github.com/kitten))
++
+ ### 💡 Others
+ 
++- Add `enableReactFastRefresh` option to allow force-disabling `react-refresh` ([#40774](https://github.com/expo/expo/pull/40774) by [@kitten](https://github.com/kitten))
++
+ ### ⚠️ Notices
+ 
+ - Added support for React Native 0.82.x. ([#39678](https://github.com/expo/expo/pull/39678) by [@gabrieldonadel](https://github.com/gabrieldonadel))
+diff --git a/packages/babel-preset-expo/build/common.js b/packages/babel-preset-expo/build/common.js
+index 9598d3cf7c300f..fd1f9845972140 100644
+--- a/packages/babel-preset-expo/build/common.js
++++ b/packages/babel-preset-expo/build/common.js
+@@ -92,7 +92,9 @@ function getIsFastRefreshEnabled(caller) {
+     assertExpoBabelCaller(caller);
+     if (!caller)
+         return false;
+-    return !caller.isServer && !caller.isNodeModule && getIsDev(caller);
++    // NOTE(@kitten): `isHMREnabled` is always true in `@expo/metro-config`.
++    // However, we still use this option to ensure fast refresh is only enabled in supported runtimes (Metro + Expo)
++    return !!caller.isHMREnabled && !caller.isServer && !caller.isNodeModule && getIsDev(caller);
+ }
+ function getIsProd(caller) {
+     assertExpoBabelCaller(caller);
+diff --git a/packages/babel-preset-expo/build/index.d.ts b/packages/babel-preset-expo/build/index.d.ts
+index aaab73583e2eb4..e78491d10a95b5 100644
+--- a/packages/babel-preset-expo/build/index.d.ts
++++ b/packages/babel-preset-expo/build/index.d.ts
+@@ -26,6 +26,8 @@ type BabelPresetExpoPlatformOptions = {
+     unstable_transformProfile?: 'default' | 'hermes-stable' | 'hermes-canary';
+     /** Settings to pass to `babel-plugin-react-compiler`. Set as `false` to disable the plugin. */
+     'react-compiler'?: false | ReactCompilerOptions;
++    /** Only set to `false` to disable `react-refresh/babel` forcefully, defaults to `undefined` */
++    enableReactFastRefresh?: boolean;
+     /** Enable `typeof window` runtime checks. The default behavior is to minify `typeof window` on web clients to `"object"` and `"undefined"` on servers. */
+     minifyTypeofWindow?: boolean;
+     /**
+diff --git a/packages/babel-preset-expo/build/index.js b/packages/babel-preset-expo/build/index.js
+index 55c2b79e18b9d3..110ebff3747da4 100644
+--- a/packages/babel-preset-expo/build/index.js
++++ b/packages/babel-preset-expo/build/index.js
+@@ -181,12 +181,13 @@ function babelPresetExpo(api, options = {}) {
+     }
+     // This plugin is fine to run whenever as the server-only imports were introduced as part of RSC and shouldn't be used in any client code.
+     extraPlugins.push(environment_restricted_imports_1.environmentRestrictedImportsPlugin);
+-    if (isFastRefreshEnabled) {
++    if (platformOptions.enableReactFastRefresh ||
++        (isFastRefreshEnabled && platformOptions.enableReactFastRefresh !== false)) {
+         extraPlugins.push([
+             require('react-refresh/babel'),
+             {
+-                // We perform the env check to enable `isFastRefreshEnabled`.
+-                skipEnvCheck: true,
++                // We perform the env check to enable `isFastRefreshEnabled`, unless the plugin is force-enabled
++                skipEnvCheck: platformOptions.enableReactFastRefresh !== true,
+             },
+         ]);
+     }
+diff --git a/packages/babel-preset-expo/src/__tests__/inline-env-vars.test.ts b/packages/babel-preset-expo/src/__tests__/inline-env-vars.test.ts
+index 267e2072754fa4..86d230c11c92ce 100644
+--- a/packages/babel-preset-expo/src/__tests__/inline-env-vars.test.ts
++++ b/packages/babel-preset-expo/src/__tests__/inline-env-vars.test.ts
+@@ -7,6 +7,7 @@ const ENABLED_CALLER = {
+   name: 'metro',
+   isDev: false,
+   isServer: false,
++  isHMREnabled: true,
+ };
+ 
+ describe(getInlineEnvVarsEnabled, () => {
+diff --git a/packages/babel-preset-expo/src/__tests__/jsx-import.test.ts b/packages/babel-preset-expo/src/__tests__/jsx-import.test.ts
+index 39d887359e8c11..c317846b7652ca 100644
+--- a/packages/babel-preset-expo/src/__tests__/jsx-import.test.ts
++++ b/packages/babel-preset-expo/src/__tests__/jsx-import.test.ts
+@@ -22,7 +22,13 @@ const DEF_OPTIONS = {
+ it(`compiles React auto jsx import`, () => {
+   const options = {
+     ...DEF_OPTIONS,
+-    caller: getCaller({ name: 'metro', engine: 'hermes', platform: 'ios', isDev: true }),
++    caller: getCaller({
++      name: 'metro',
++      engine: 'hermes',
++      platform: 'ios',
++      isDev: true,
++      isHMREnabled: true,
++    }),
+   };
+ 
+   const sourceCode = `
+@@ -38,7 +44,13 @@ function App() {
+ 
+   const productionOptions = {
+     ...DEF_OPTIONS,
+-    caller: getCaller({ name: 'metro', engine: 'hermes', platform: 'ios', isDev: false }),
++    caller: getCaller({
++      name: 'metro',
++      engine: 'hermes',
++      platform: 'ios',
++      isDev: false,
++      isHMREnabled: true,
++    }),
+   };
+   expect(babel.transform(sourceCode, productionOptions)!.code).toMatchInlineSnapshot(`
+     "var _jsxRuntime = require("react/jsx-runtime");
+@@ -51,7 +63,13 @@ function App() {
+ it(`transforms React display name`, () => {
+   const options = {
+     ...DEF_OPTIONS,
+-    caller: getCaller({ name: 'metro', engine: 'hermes', platform: 'ios', isDev: true }),
++    caller: getCaller({
++      name: 'metro',
++      engine: 'hermes',
++      platform: 'ios',
++      isDev: true,
++      isHMREnabled: true,
++    }),
+   };
+ 
+   // Ensure no duplication
+@@ -79,6 +97,7 @@ describe('classic runtime', () => {
+       caller: getCaller({
+         name: 'babel-loader',
+         isDev: true,
++        isHMREnabled: true,
+       }),
+     };
+ 
+@@ -101,6 +120,7 @@ describe('classic runtime', () => {
+       caller: getCaller({
+         name: 'babel-loader',
+         isDev: false,
++        isHMREnabled: true,
+       }),
+     };
+ 
+@@ -126,6 +146,7 @@ describe('classic runtime', () => {
+           name: 'metro',
+           platform,
+           isDev: true,
++          isHMREnabled: true,
+         }),
+       };
+ 
+@@ -144,6 +165,7 @@ describe('classic runtime', () => {
+           name: 'metro',
+           platform,
+           isDev: false,
++          isHMREnabled: true,
+         }),
+       };
+ 
+@@ -167,6 +189,7 @@ it(`supports nested React components in destructured props in Metro + developmen
+       platform: 'ios',
+       engine: 'hermes',
+       isDev: true,
++      isHMREnabled: true,
+     }),
+     retainLines: false,
+   };
+@@ -223,6 +246,7 @@ describe('auto runtime (default)', () => {
+       caller: getCaller({
+         name: 'babel-loader',
+         isDev: true,
++        isHMREnabled: true,
+       }),
+     };
+ 
+@@ -245,6 +269,7 @@ describe('auto runtime (default)', () => {
+       caller: getCaller({
+         name: 'babel-loader',
+         isDev: false,
++        isHMREnabled: true,
+       }),
+     };
+ 
+@@ -270,6 +295,7 @@ describe('auto runtime (default)', () => {
+           name: 'metro',
+           platform,
+           isDev: true,
++          isHMREnabled: true,
+         }),
+       };
+ 
+@@ -288,6 +314,7 @@ describe('auto runtime (default)', () => {
+           name: 'metro',
+           platform,
+           isDev: false,
++          isHMREnabled: true,
+         }),
+       };
+ 
+diff --git a/packages/babel-preset-expo/src/__tests__/react-refresh.test.ts b/packages/babel-preset-expo/src/__tests__/react-refresh.test.ts
+index 526e470c1430de..9489762532cff2 100644
+--- a/packages/babel-preset-expo/src/__tests__/react-refresh.test.ts
++++ b/packages/babel-preset-expo/src/__tests__/react-refresh.test.ts
+@@ -1,21 +1,16 @@
+ import * as babel from '@babel/core';
++import type { ExpoBabelCaller } from '@expo/metro-config/build/babel-transformer';
+ 
+ import preset from '..';
+ 
+-type Caller = {
+-  name: string;
+-  platform: string;
+-  isDev: boolean;
+-  isServer: boolean;
+-  isNodeModule: boolean;
+-};
+-
+-const ENABLED_CALLER: Caller = {
++const ENABLED_CALLER: ExpoBabelCaller = {
+   name: 'metro',
+   platform: 'ios',
++  projectRoot: '.',
+   isDev: true,
+   isServer: false,
+   isNodeModule: false,
++  isHMREnabled: true,
+ };
+ 
+ function getCaller(props: Record<string, string | boolean>): babel.TransformCaller {
+@@ -45,7 +40,7 @@ const DEF_OPTIONS = {
+     {
+       isNodeModule: true,
+     },
+-  ] as Partial<Caller>[]
++  ] as Partial<ExpoBabelCaller>[]
+ ).forEach((caller) => {
+   const key = Object.entries(caller)
+     .map(([key, value]) => `${key}: ${value}`)
+diff --git a/packages/babel-preset-expo/src/common.ts b/packages/babel-preset-expo/src/common.ts
+index d16346420ead82..2506e927128c8f 100644
+--- a/packages/babel-preset-expo/src/common.ts
++++ b/packages/babel-preset-expo/src/common.ts
+@@ -73,7 +73,9 @@ export function getIsDev(caller?: any) {
+ export function getIsFastRefreshEnabled(caller?: any) {
+   assertExpoBabelCaller(caller);
+   if (!caller) return false;
+-  return !caller.isServer && !caller.isNodeModule && getIsDev(caller);
++  // NOTE(@kitten): `isHMREnabled` is always true in `@expo/metro-config`.
++  // However, we still use this option to ensure fast refresh is only enabled in supported runtimes (Metro + Expo)
++  return !!caller.isHMREnabled && !caller.isServer && !caller.isNodeModule && getIsDev(caller);
+ }
+ 
+ export function getIsProd(caller?: any) {
+diff --git a/packages/babel-preset-expo/src/index.ts b/packages/babel-preset-expo/src/index.ts
+index a54ea0b17ce80d..dc5814b9392688 100644
+--- a/packages/babel-preset-expo/src/index.ts
++++ b/packages/babel-preset-expo/src/index.ts
+@@ -60,6 +60,9 @@ type BabelPresetExpoPlatformOptions = {
+   /** Settings to pass to `babel-plugin-react-compiler`. Set as `false` to disable the plugin. */
+   'react-compiler'?: false | ReactCompilerOptions;
+ 
++  /** Only set to `false` to disable `react-refresh/babel` forcefully, defaults to `undefined` */
++  enableReactFastRefresh?: boolean;
++
+   /** Enable `typeof window` runtime checks. The default behavior is to minify `typeof window` on web clients to `"object"` and `"undefined"` on servers. */
+   minifyTypeofWindow?: boolean;
+ 
+@@ -289,12 +292,15 @@ function babelPresetExpo(api: ConfigAPI, options: BabelPresetExpoOptions = {}):
+   // This plugin is fine to run whenever as the server-only imports were introduced as part of RSC and shouldn't be used in any client code.
+   extraPlugins.push(environmentRestrictedImportsPlugin);
+ 
+-  if (isFastRefreshEnabled) {
++  if (
++    platformOptions.enableReactFastRefresh ||
++    (isFastRefreshEnabled && platformOptions.enableReactFastRefresh !== false)
++  ) {
+     extraPlugins.push([
+       require('react-refresh/babel'),
+       {
+-        // We perform the env check to enable `isFastRefreshEnabled`.
+-        skipEnvCheck: true,
++        // We perform the env check to enable `isFastRefreshEnabled`, unless the plugin is force-enabled
++        skipEnvCheck: platformOptions.enableReactFastRefresh !== true,
+       },
+     ]);
+   }

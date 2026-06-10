@@ -1,0 +1,21 @@
+diff --git a/packages/mui-material/src/Unstable_TrapFocus/FocusTrap.tsx b/packages/mui-material/src/Unstable_TrapFocus/FocusTrap.tsx
+index 70790d64e317af..1678182dcd84f1 100644
+--- a/packages/mui-material/src/Unstable_TrapFocus/FocusTrap.tsx
++++ b/packages/mui-material/src/Unstable_TrapFocus/FocusTrap.tsx
+@@ -211,7 +211,6 @@ function FocusTrap(props: FocusTrapProps): React.JSX.Element {
+     }
+ 
+     const doc = ownerDocument(rootRef.current);
+-    const activeElement = getActiveElement(doc);
+ 
+     const loopFocus = (nativeEvent: KeyboardEvent) => {
+       lastKeydown.current = nativeEvent;
+@@ -220,6 +219,8 @@ function FocusTrap(props: FocusTrapProps): React.JSX.Element {
+         return;
+       }
+ 
++      const activeElement = getActiveElement(doc);
++
+       // Make sure the next tab starts from the right place.
+       // activeElement refers to the origin.
+       if (activeElement === rootRef.current && nativeEvent.shiftKey) {

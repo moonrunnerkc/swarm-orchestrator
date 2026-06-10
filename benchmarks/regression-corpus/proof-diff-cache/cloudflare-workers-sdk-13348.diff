@@ -1,0 +1,776 @@
+diff --git a/.changeset/images-local-delivery-variant-urls.md b/.changeset/images-local-delivery-variant-urls.md
+new file mode 100644
+index 0000000000..1fb69047e9
+--- /dev/null
++++ b/.changeset/images-local-delivery-variant-urls.md
+@@ -0,0 +1,9 @@
++---
++"miniflare": patch
++---
++
++Improve variant URLs returned by the hosted images mock for local development
++
++The miniflare hosted images mock previously returned bare variant names (e.g. `"public"`) in the `variants` field of `ImageMetadata`. In production, this field contains full delivery URLs. The bare names were not usable as image sources, causing applications that render images from variant URLs to fail during local development.
++
++Variant URLs now point to a new local delivery endpoint at `/cdn-cgi/imagedelivery/<image_id>/<variant>` which serves image bytes directly from the local KV store with content-type detection via Sharp.
+diff --git a/packages/miniflare/src/plugins/core/index.ts b/packages/miniflare/src/plugins/core/index.ts
+index 3f2b7f440a..01c0ae5482 100644
+--- a/packages/miniflare/src/plugins/core/index.ts
++++ b/packages/miniflare/src/plugins/core/index.ts
+@@ -26,6 +26,7 @@ import { CoreBindings, CoreHeaders, viewToBuffer } from "../../workers";
+ import { RPC_PROXY_SERVICE_NAME } from "../assets/constants";
+ import { getCacheServiceName } from "../cache";
+ import { DURABLE_OBJECTS_STORAGE_SERVICE_NAME } from "../do";
++import { IMAGES_PLUGIN_NAME } from "../images";
+ import {
+ 	getUserBindingServiceName,
+ 	kUnsafeEphemeralUniqueKey,
+@@ -1094,6 +1095,22 @@ export function getGlobalServices({
+ 			},
+ 		});
+ 	}
++	const imagesBinding = allWorkerOpts
++		?.map((worker) => worker.images?.images)
++		.find(
++			(images) => images !== undefined && !images.remoteProxyConnectionString
++		);
++	if (imagesBinding) {
++		serviceEntryBindings.push({
++			name: CoreBindings.SERVICE_IMAGES_DELIVERY,
++			service: {
++				name: getUserBindingServiceName(
++					IMAGES_PLUGIN_NAME,
++					imagesBinding.binding
++				),
++			},
++		});
++	}
+ 	if (sharedOptions.upstream !== undefined) {
+ 		serviceEntryBindings.push({
+ 			name: CoreBindings.TEXT_UPSTREAM_URL,
+diff --git a/packages/miniflare/src/workers/core/constants.ts b/packages/miniflare/src/workers/core/constants.ts
+index 6087425c02..47eeed82c4 100644
+--- a/packages/miniflare/src/workers/core/constants.ts
++++ b/packages/miniflare/src/workers/core/constants.ts
+@@ -19,6 +19,8 @@ export const CorePaths = {
+ 	LEGACY_SCHEDULED: "/cdn-cgi/mf/scheduled",
+ 	/** Stream video serving endpoint */
+ 	STREAM_VIDEO: "/cdn-cgi/mf/stream",
++	/** Local image delivery endpoint for serving hosted images */
++	IMAGE_DELIVERY: "/cdn-cgi/mf/imagedelivery",
+ } as const;
+ 
+ export const CoreHeaders = {
+@@ -78,6 +80,7 @@ export const CoreBindings = {
+ 	JSON_TELEMETRY_CONFIG: "MINIFLARE_TELEMETRY_CONFIG",
+ 	DEV_REGISTRY_DEBUG_PORT: "DEV_REGISTRY_DEBUG_PORT",
+ 	SERVICE_STREAM: "MINIFLARE_STREAM",
++	SERVICE_IMAGES_DELIVERY: "MINIFLARE_IMAGES_DELIVERY",
+ } as const;
+ 
+ export const ProxyOps = {
+diff --git a/packages/miniflare/src/workers/core/entry.worker.ts b/packages/miniflare/src/workers/core/entry.worker.ts
+index f6be283e0c..ac8eb4b83a 100644
+--- a/packages/miniflare/src/workers/core/entry.worker.ts
++++ b/packages/miniflare/src/workers/core/entry.worker.ts
+@@ -14,6 +14,7 @@ type Env = {
+ 	[CoreBindings.SERVICE_USER_FALLBACK]: Fetcher;
+ 	[CoreBindings.SERVICE_LOCAL_EXPLORER]: Fetcher;
+ 	[CoreBindings.SERVICE_STREAM]?: Fetcher;
++	[CoreBindings.SERVICE_IMAGES_DELIVERY]?: Fetcher;
+ 	[CoreBindings.TEXT_CUSTOM_SERVICE]: string;
+ 	[CoreBindings.TEXT_UPSTREAM_URL]?: string;
+ 	[CoreBindings.JSON_CF_BLOB]: IncomingRequestCfProperties;
+@@ -537,6 +538,14 @@ export default <ExportedHandler<Env>>{
+ 					return await env[CoreBindings.SERVICE_LOCAL_EXPLORER].fetch(request);
+ 				}
+ 			}
++			const imagesDelivery = env[CoreBindings.SERVICE_IMAGES_DELIVERY];
++			if (
++				(url.pathname === CorePaths.IMAGE_DELIVERY ||
++					url.pathname.startsWith(`${CorePaths.IMAGE_DELIVERY}/`)) &&
++				imagesDelivery
++			) {
++				return await imagesDelivery.fetch(request);
++			}
+ 			if (env[CoreBindings.TRIGGER_HANDLERS]) {
+ 				if (
+ 					url.pathname === CorePaths.SCHEDULED ||
+diff --git a/packages/miniflare/src/workers/images/images.worker.ts b/packages/miniflare/src/workers/images/images.worker.ts
+index 265a22ee4a..836a85afae 100644
+--- a/packages/miniflare/src/workers/images/images.worker.ts
++++ b/packages/miniflare/src/workers/images/images.worker.ts
+@@ -3,13 +3,39 @@
+ // Transforms and info operations are handled via HTTP loopback to Node.js Sharp
+ 
+ import { RpcTarget, WorkerEntrypoint } from "cloudflare:workers";
+-import { CoreBindings, CoreHeaders } from "../core/constants";
++import { getPublicUrl } from "miniflare:shared";
++import { CoreBindings, CoreHeaders, CorePaths } from "../core/constants";
+ 
+ interface Env {
+ 	IMAGES_STORE: KVNamespace;
+ 	[CoreBindings.SERVICE_LOOPBACK]: Fetcher;
+ }
+ 
++function buildVariantUrl(
++	publicUrl: URL,
++	imageId: string,
++	variant: string
++): string {
++	return new URL(
++		`${CorePaths.IMAGE_DELIVERY}/${imageId}/${variant}`,
++		publicUrl
++	).toString();
++}
++
++// Rewrites stored variant names (e.g. `["public"]`) to absolute URLs.
++async function withResolvedVariants(
++	metadata: ImageMetadata,
++	env: Env
++): Promise<ImageMetadata> {
++	const publicUrl = await getPublicUrl(env[CoreBindings.SERVICE_LOOPBACK]);
++	return {
++		...metadata,
++		variants: metadata.variants.map((variant) =>
++			buildVariantUrl(publicUrl, metadata.id, variant)
++		),
++	};
++}
++
+ function base64DecodeArrayBuffer(buffer: ArrayBuffer): ArrayBuffer {
+ 	const decoder = new TextDecoder();
+ 	const base64String = decoder.decode(buffer);
+@@ -31,24 +57,27 @@ async function base64DecodeStream(
+ 
+ class ImageHandleImpl extends RpcTarget {
+ 	readonly #imageId: string;
+-	readonly #store: KVNamespace;
++	readonly #env: Env;
+ 
+-	constructor(imageId: string, store: KVNamespace) {
++	constructor(imageId: string, env: Env) {
+ 		super();
+ 		this.#imageId = imageId;
+-		this.#store = store;
++		this.#env = env;
+ 	}
+ 
+ 	async details(): Promise<ImageMetadata | null> {
+-		const result = await this.#store.getWithMetadata<ImageMetadata>(
++		const result = await this.#env.IMAGES_STORE.getWithMetadata<ImageMetadata>(
+ 			this.#imageId,
+ 			"arrayBuffer"
+ 		);
+-		return result.metadata ?? null;
++		if (result.metadata === null) {
++			return null;
++		}
++		return withResolvedVariants(result.metadata, this.#env);
+ 	}
+ 
+ 	async bytes(): Promise<ReadableStream<Uint8Array> | null> {
+-		const data = await this.#store.get(this.#imageId, "arrayBuffer");
++		const data = await this.#env.IMAGES_STORE.get(this.#imageId, "arrayBuffer");
+ 		if (data === null) {
+ 			return null;
+ 		}
+@@ -56,10 +85,11 @@ class ImageHandleImpl extends RpcTarget {
+ 	}
+ 
+ 	async update(options: ImageUpdateOptions): Promise<ImageMetadata> {
+-		const existing = await this.#store.getWithMetadata<ImageMetadata>(
+-			this.#imageId,
+-			"arrayBuffer"
+-		);
++		const existing =
++			await this.#env.IMAGES_STORE.getWithMetadata<ImageMetadata>(
++				this.#imageId,
++				"arrayBuffer"
++			);
+ 		if (existing.value === null || existing.metadata === null) {
+ 			throw new Error(`Image not found: ${this.#imageId}`);
+ 		}
+@@ -72,25 +102,28 @@ class ImageHandleImpl extends RpcTarget {
+ 			creator: options.creator ?? existing.metadata.creator,
+ 		};
+ 
+-		await this.#store.put(this.#imageId, existing.value, {
++		await this.#env.IMAGES_STORE.put(this.#imageId, existing.value, {
+ 			metadata: updatedMetadata,
+ 		});
+-		return updatedMetadata;
++		return withResolvedVariants(updatedMetadata, this.#env);
+ 	}
+ 
+ 	async delete(): Promise<boolean> {
+-		const existing = await this.#store.get(this.#imageId, "arrayBuffer");
++		const existing = await this.#env.IMAGES_STORE.get(
++			this.#imageId,
++			"arrayBuffer"
++		);
+ 		if (existing === null) {
+ 			return false;
+ 		}
+-		await this.#store.delete(this.#imageId);
++		await this.#env.IMAGES_STORE.delete(this.#imageId);
+ 		return true;
+ 	}
+ }
+ 
+ export default class ImagesService extends WorkerEntrypoint<Env> {
+ 	image(imageId: string): ImageHandleImpl {
+-		return new ImageHandleImpl(imageId, this.env.IMAGES_STORE);
++		return new ImageHandleImpl(imageId, this.env);
+ 	}
+ 
+ 	async upload(
+@@ -124,7 +157,7 @@ export default class ImagesService extends WorkerEntrypoint<Env> {
+ 		};
+ 
+ 		await this.env.IMAGES_STORE.put(id, buffer, { metadata });
+-		return metadata;
++		return withResolvedVariants(metadata, this.env);
+ 	}
+ 
+ 	async list(options?: ImageListOptions): Promise<ImageList> {
+@@ -173,16 +206,73 @@ export default class ImagesService extends WorkerEntrypoint<Env> {
+ 		const hasMore = startIndex + limit < allImages.length;
+ 		const lastImage = page[page.length - 1];
+ 
++		const publicUrl = await getPublicUrl(
++			this.env[CoreBindings.SERVICE_LOOPBACK]
++		);
++		const resolvedPage = page.map((metadata) => ({
++			...metadata,
++			variants: metadata.variants.map((variant) =>
++				buildVariantUrl(publicUrl, metadata.id, variant)
++			),
++		}));
++
+ 		return {
+-			images: page,
++			images: resolvedPage,
+ 			cursor: hasMore && lastImage ? lastImage.id : undefined,
+ 			listComplete: !hasMore,
+ 		};
+ 	}
+ 
+-	// Handle HTTP requests for info and transform operations
+-	// These are forwarded to Node.js via the loopback service where Sharp runs
++	async #detectContentType(data: ArrayBuffer): Promise<string> {
++		const formData = new FormData();
++		formData.append("image", new Blob([data]));
++
++		const infoRequest = new Request("http://placeholder/info", {
++			method: "POST",
++			body: formData,
++		});
++		infoRequest.headers.set(
++			CoreHeaders.CUSTOM_FETCH_SERVICE,
++			CoreBindings.IMAGES_SERVICE
++		);
++
++		const response =
++			await this.env[CoreBindings.SERVICE_LOOPBACK].fetch(infoRequest);
++		if (response.ok) {
++			const info = (await response.json()) as { format?: string };
++			if (info.format) {
++				return info.format;
++			}
++		}
++		return "application/octet-stream";
++	}
++
++	// Handle HTTP requests for image delivery and transform operations
+ 	async fetch(request: Request): Promise<Response> {
++		const url = new URL(request.url);
++
++		// Serve image bytes at /cdn-cgi/mf/imagedelivery/<id>/<variant>
++		if (url.pathname.startsWith(`${CorePaths.IMAGE_DELIVERY}/`)) {
++			const parts = url.pathname
++				.slice(CorePaths.IMAGE_DELIVERY.length + 1)
++				.split("/");
++			const imageId = parts[0];
++			if (!imageId) {
++				return new Response("Missing image ID", { status: 400 });
++			}
++
++			const data = await this.env.IMAGES_STORE.get(imageId, "arrayBuffer");
++			if (data === null) {
++				return new Response("Image not found", { status: 404 });
++			}
++
++			const contentType = await this.#detectContentType(data);
++			return new Response(data, {
++				headers: { "Content-Type": contentType },
++			});
++		}
++
++		// Forward transform/info operations to Node.js via loopback where Sharp runs
+ 		const forwardRequest = new Request(request);
+ 		forwardRequest.headers.set(
+ 			CoreHeaders.CUSTOM_FETCH_SERVICE,
+diff --git a/packages/miniflare/src/workers/shared/index.worker.ts b/packages/miniflare/src/workers/shared/index.worker.ts
+index e126a93ee2..b12e3ec090 100644
+--- a/packages/miniflare/src/workers/shared/index.worker.ts
++++ b/packages/miniflare/src/workers/shared/index.worker.ts
+@@ -29,6 +29,8 @@ export type {
+ 	MiniflareDurableObjectCf,
+ } from "./object.worker";
+ 
++export { getPublicUrl } from "./public-url";
++
+ export { parseRanges } from "./range";
+ export type { InclusiveRange } from "./range";
+ 
+diff --git a/packages/miniflare/src/workers/shared/public-url.ts b/packages/miniflare/src/workers/shared/public-url.ts
+new file mode 100644
+index 0000000000..13907381c0
+--- /dev/null
++++ b/packages/miniflare/src/workers/shared/public-url.ts
+@@ -0,0 +1,15 @@
++// Fetches the public URL from the Miniflare loopback. This returns
++// the publicUrl if one was set (e.g. Vite dev server URL), otherwise
++// falls back to the runtime entry URL. Using the loopback means the
++// binding always sees the latest value — even if the URL was
++// updated after workerd started (e.g. when Vite bumps the port).
++export async function getPublicUrl(loopback: Fetcher): Promise<URL> {
++	const resp = await loopback.fetch("http://localhost/core/public-url");
++	const url = (await resp.json()) as string | null;
++	if (!url) {
++		throw new Error(
++			"Runtime entry URL is not available. This may be because the worker is not yet ready to accept requests."
++		);
++	}
++	return new URL(url);
++}
+diff --git a/packages/miniflare/src/workers/stream/binding.worker.ts b/packages/miniflare/src/workers/stream/binding.worker.ts
+index c498de6236..aea8246612 100644
+--- a/packages/miniflare/src/workers/stream/binding.worker.ts
++++ b/packages/miniflare/src/workers/stream/binding.worker.ts
+@@ -1,4 +1,5 @@
+ import { RpcTarget, WorkerEntrypoint } from "cloudflare:workers";
++import { getPublicUrl } from "miniflare:shared";
+ import { BadRequestError, InvalidURLError } from "./errors";
+ import {
+ 	rowToStreamCaption,
+@@ -18,24 +19,6 @@ function getStub(env: Env): DurableObjectStub<StreamObject> {
+ 	return env.store.get(id);
+ }
+ 
+-async function getEntryUrl(env: Env): Promise<URL> {
+-	// Fetches the public URL from the Miniflare loopback. This returns
+-	// the publicUrl if one was set (e.g. Vite dev server URL), otherwise
+-	// falls back to the runtime entry URL. Using the loopback means the
+-	// stream binding always sees the latest value — even if the URL was
+-	// updated after workerd started (e.g. when Vite bumps the port).
+-	const resp = await env.MINIFLARE_LOOPBACK.fetch(
+-		"http://localhost/core/public-url"
+-	);
+-	const url = (await resp.json()) as string | null;
+-	if (!url) {
+-		throw new Error(
+-			"Runtime entry URL is not available. This may be because the worker is not yet ready to accept requests."
+-		);
+-	}
+-	return new URL(url);
+-}
+-
+ function rowsToDownloadResponse(
+ 	rows: { type: StreamDownloadType; download: StreamDownload }[]
+ ): StreamDownloadGetResponse {
+@@ -89,7 +72,7 @@ export class StreamBinding extends WorkerEntrypoint<Env> {
+ 		}
+ 		const stub = getStub(this.env);
+ 		const row = await stub.createVideo(body, params ?? {});
+-		const entryUrl = await getEntryUrl(this.env);
++		const entryUrl = await getPublicUrl(this.env.MINIFLARE_LOOPBACK);
+ 		return rowToStreamVideo(row, entryUrl);
+ 	}
+ 
+@@ -201,14 +184,14 @@ class StreamVideoHandleImpl extends RpcTarget implements StreamVideoHandle {
+ 	async details(): Promise<StreamVideo> {
+ 		const stub = getStub(this.#env);
+ 		const row = await stub.getVideo(this.id);
+-		const entryUrl = await getEntryUrl(this.#env);
++		const entryUrl = await getPublicUrl(this.#env.MINIFLARE_LOOPBACK);
+ 		return rowToStreamVideo(row, entryUrl);
+ 	}
+ 
+ 	async update(params: StreamUpdateVideoParams): Promise<StreamVideo> {
+ 		const stub = getStub(this.#env);
+ 		const row = await stub.updateVideo(this.id, params);
+-		const entryUrl = await getEntryUrl(this.#env);
++		const entryUrl = await getPublicUrl(this.#env.MINIFLARE_LOOPBACK);
+ 		return rowToStreamVideo(row, entryUrl);
+ 	}
+ 
+@@ -242,7 +225,7 @@ class StreamVideosImpl extends RpcTarget implements StreamVideos {
+ 	async list(params?: StreamVideosListParams): Promise<StreamVideo[]> {
+ 		const stub = getStub(this.#env);
+ 		const rows = await stub.listVideos(params);
+-		const entryUrl = await getEntryUrl(this.#env);
++		const entryUrl = await getPublicUrl(this.#env.MINIFLARE_LOOPBACK);
+ 		return rows.map((row) => rowToStreamVideo(row, entryUrl));
+ 	}
+ }
+diff --git a/packages/miniflare/test/plugins/images/index.spec.ts b/packages/miniflare/test/plugins/images/index.spec.ts
+index 7fa052c3d2..178d2e3f21 100644
+--- a/packages/miniflare/test/plugins/images/index.spec.ts
++++ b/packages/miniflare/test/plugins/images/index.spec.ts
+@@ -1,14 +1,54 @@
+-import assert from "node:assert";
+ import { Miniflare } from "miniflare";
+ import { describe, test } from "vitest";
+ import { useDispose } from "../../test-shared";
++import type { ImageList, ImageMetadata } from "@cloudflare/workers-types";
++import type { MiniflareOptions } from "miniflare";
+ 
+ // The worker stores and retrieves bytes without validation, so we don't need a real image.
+ const TEST_IMAGE_BYTES = new Uint8Array([1, 2, 3, 4, 5]);
+ 
+-function imageBuffer(): ArrayBuffer {
+-	return new Uint8Array(TEST_IMAGE_BYTES).buffer as ArrayBuffer;
++const WORKER_SCRIPT = `
++export default {
++	async fetch(request, env) {
++		try {
++			const { op, args } = await request.json();
++			const result = await handleCommand(env.IMAGES, op, args || {});
++			return Response.json({ ok: true, result });
++		} catch (err) {
++			return Response.json(
++				{ ok: false, error: err.message },
++				{ status: 200 }
++			);
++		}
++	}
++};
++
++async function handleCommand(images, op, args) {
++	const hosted = images.hosted;
++	switch (op) {
++		case "upload": {
++			const bytes = new Uint8Array(args.bytes);
++			return hosted.upload(bytes.buffer, args.options);
++		}
++		case "bytes": {
++			const stream = await hosted.image(args.id).bytes();
++			if (stream === null) return null;
++			const buffer = await new Response(stream).arrayBuffer();
++			return Array.from(new Uint8Array(buffer));
++		}
++		case "details":
++			return hosted.image(args.id).details();
++		case "update":
++			return hosted.image(args.id).update(args.options);
++		case "delete":
++			return hosted.image(args.id).delete();
++		case "list":
++			return hosted.list(args.options);
++		default:
++			throw new Error("Unknown op: " + op);
++	}
+ }
++`;
+ 
+ function createMiniflare(): Miniflare {
+ 	return new Miniflare({
+@@ -16,20 +56,93 @@ function createMiniflare(): Miniflare {
+ 		images: { binding: "IMAGES" },
+ 		imagesPersist: false,
+ 		modules: true,
+-		script: `export default { fetch() { return new Response(null, { status: 404 }); } }`,
++		script: WORKER_SCRIPT,
++	} satisfies MiniflareOptions);
++}
++
++async function sendCmd<T>(
++	mf: Miniflare,
++	op: string,
++	args: Record<string, unknown> = {}
++): Promise<T> {
++	const resp = await mf.dispatchFetch("http://placeholder", {
++		method: "POST",
++		body: JSON.stringify({ op, args }),
++		headers: { "Content-Type": "application/json" },
++	});
++	const data = (await resp.json()) as {
++		ok: boolean;
++		result: T;
++		error?: string;
++	};
++	if (!data.ok) {
++		throw new Error(data.error);
++	}
++	return data.result;
++}
++
++function upload(
++	mf: Miniflare,
++	bytes: Uint8Array,
++	options?: Record<string, unknown>
++): Promise<ImageMetadata> {
++	return sendCmd(mf, "upload", {
++		bytes: Array.from(bytes),
++		options,
+ 	});
+ }
+ 
+-// Tests temporarily skipped pending workerd API change (https://github.com/cloudflare/workerd/pull/6288)
+-describe.skip("Images hosted CRUD", () => {
++describe("Images local delivery", () => {
++	test("variant URLs are absolute and use /cdn-cgi/mf/imagedelivery/ path", async ({
++		expect,
++	}) => {
++		const mf = createMiniflare();
++		useDispose(mf);
++		const url = await mf.ready;
++
++		const metadata = await upload(mf, TEST_IMAGE_BYTES, { id: "variant-test" });
++		expect(metadata.variants).toHaveLength(1);
++		expect(metadata.variants[0]).toBe(
++			`${url.origin}/cdn-cgi/mf/imagedelivery/variant-test/public`
++		);
++	});
++
++	test("image delivery endpoint serves image bytes", async ({ expect }) => {
++		const mf = createMiniflare();
++		useDispose(mf);
++		const url = await mf.ready;
++
++		await upload(mf, TEST_IMAGE_BYTES, { id: "delivery-test" });
++
++		const response = await mf.dispatchFetch(
++			`${url.origin}/cdn-cgi/mf/imagedelivery/delivery-test/public`
++		);
++		expect(response.status).toBe(200);
++		const data = new Uint8Array(await response.arrayBuffer());
++		expect(data).toEqual(TEST_IMAGE_BYTES);
++	});
++
++	test("image delivery returns 404 for non-existent image", async ({
++		expect,
++	}) => {
++		const mf = createMiniflare();
++		useDispose(mf);
++
++		const url = await mf.ready;
++		const response = await mf.dispatchFetch(
++			`${url.origin}/cdn-cgi/mf/imagedelivery/does-not-exist/public`
++		);
++		expect(response.status).toBe(404);
++		await response.arrayBuffer();
++	});
++});
++
++describe("Images hosted CRUD", () => {
+ 	test("upload and retrieve metadata", async ({ expect }) => {
+ 		const mf = createMiniflare();
+ 		useDispose(mf);
+-		const images = await mf.getImagesBinding("IMAGES");
+ 
+-		const metadata = await images.hosted.upload(imageBuffer(), {
+-			id: "test-123",
+-		});
++		const metadata = await upload(mf, TEST_IMAGE_BYTES, { id: "test-123" });
+ 		expect(metadata.id).toBe("test-123");
+ 		expect(metadata.filename).toBe("uploaded.jpg");
+ 		expect(metadata.requireSignedURLs).toBe(false);
+@@ -38,37 +151,28 @@ describe.skip("Images hosted CRUD", () => {
+ 	test("upload and retrieve image data", async ({ expect }) => {
+ 		const mf = createMiniflare();
+ 		useDispose(mf);
+-		const images = await mf.getImagesBinding("IMAGES");
+ 
+-		await images.hosted.upload(imageBuffer(), { id: "blob-test" });
++		await upload(mf, TEST_IMAGE_BYTES, { id: "blob-test" });
+ 
+-		const stream = await images.hosted.image("blob-test").bytes();
+-		assert(stream !== null);
+-		const data = new Uint8Array(await new Response(stream).arrayBuffer());
+-		expect(data).toEqual(TEST_IMAGE_BYTES);
++		const data = await sendCmd<number[]>(mf, "bytes", { id: "blob-test" });
++		expect(new Uint8Array(data)).toEqual(TEST_IMAGE_BYTES);
+ 	});
+ 
+ 	test("upload with base64 encoding", async ({ expect }) => {
+ 		const mf = createMiniflare();
+ 		useDispose(mf);
+-		const images = await mf.getImagesBinding("IMAGES");
+ 
+ 		const base64String = btoa(String.fromCharCode(...TEST_IMAGE_BYTES));
+ 		const base64Bytes = new TextEncoder().encode(base64String);
+ 
+-		const metadata = await images.hosted.upload(
+-			base64Bytes.buffer as ArrayBuffer,
+-			{
+-				id: "base64-test",
+-				encoding: "base64",
+-			}
+-		);
++		const metadata = await upload(mf, base64Bytes, {
++			id: "base64-test",
++			encoding: "base64",
++		});
+ 		expect(metadata.id).toBe("base64-test");
+ 
+-		const stream = await images.hosted.image("base64-test").bytes();
+-		assert(stream !== null);
+-		const data = new Uint8Array(await new Response(stream).arrayBuffer());
+-		expect(data).toEqual(TEST_IMAGE_BYTES);
++		const data = await sendCmd<number[]>(mf, "bytes", { id: "base64-test" });
++		expect(new Uint8Array(data)).toEqual(TEST_IMAGE_BYTES);
+ 	});
+ 
+ 	test("get details for non-existent image returns null", async ({
+@@ -76,9 +180,10 @@ describe.skip("Images hosted CRUD", () => {
+ 	}) => {
+ 		const mf = createMiniflare();
+ 		useDispose(mf);
+-		const images = await mf.getImagesBinding("IMAGES");
+ 
+-		const metadata = await images.hosted.image("does-not-exist").details();
++		const metadata = await sendCmd<ImageMetadata | null>(mf, "details", {
++			id: "does-not-exist",
++		});
+ 		expect(metadata).toBe(null);
+ 	});
+ 
+@@ -87,21 +192,22 @@ describe.skip("Images hosted CRUD", () => {
+ 	}) => {
+ 		const mf = createMiniflare();
+ 		useDispose(mf);
+-		const images = await mf.getImagesBinding("IMAGES");
+ 
+-		const stream = await images.hosted.image("does-not-exist").bytes();
+-		expect(stream).toBe(null);
++		const data = await sendCmd<number[] | null>(mf, "bytes", {
++			id: "does-not-exist",
++		});
++		expect(data).toBe(null);
+ 	});
+ 
+ 	test("update image metadata", async ({ expect }) => {
+ 		const mf = createMiniflare();
+ 		useDispose(mf);
+-		const images = await mf.getImagesBinding("IMAGES");
+ 
+-		await images.hosted.upload(imageBuffer(), { id: "update-test" });
++		await upload(mf, TEST_IMAGE_BYTES, { id: "update-test" });
+ 
+-		const metadata = await images.hosted.image("update-test").update({
+-			requireSignedURLs: true,
++		const metadata = await sendCmd<ImageMetadata>(mf, "update", {
++			id: "update-test",
++			options: { requireSignedURLs: true },
+ 		});
+ 		expect(metadata.requireSignedURLs).toBe(true);
+ 	});
+@@ -109,34 +215,35 @@ describe.skip("Images hosted CRUD", () => {
+ 	test("delete image", async ({ expect }) => {
+ 		const mf = createMiniflare();
+ 		useDispose(mf);
+-		const images = await mf.getImagesBinding("IMAGES");
+ 
+-		await images.hosted.upload(imageBuffer(), { id: "delete-test" });
++		await upload(mf, TEST_IMAGE_BYTES, { id: "delete-test" });
+ 
+-		const deleted = await images.hosted.image("delete-test").delete();
++		const deleted = await sendCmd<boolean>(mf, "delete", { id: "delete-test" });
+ 		expect(deleted).toBe(true);
+ 
+-		const metadata = await images.hosted.image("delete-test").details();
++		const metadata = await sendCmd<ImageMetadata | null>(mf, "details", {
++			id: "delete-test",
++		});
+ 		expect(metadata).toBe(null);
+ 	});
+ 
+ 	test("delete non-existent image returns false", async ({ expect }) => {
+ 		const mf = createMiniflare();
+ 		useDispose(mf);
+-		const images = await mf.getImagesBinding("IMAGES");
+ 
+-		const deleted = await images.hosted.image("does-not-exist").delete();
++		const deleted = await sendCmd<boolean>(mf, "delete", {
++			id: "does-not-exist",
++		});
+ 		expect(deleted).toBe(false);
+ 	});
+ 
+ 	test("list images", async ({ expect }) => {
+ 		const mf = createMiniflare();
+ 		useDispose(mf);
+-		const images = await mf.getImagesBinding("IMAGES");
+ 
+-		await images.hosted.upload(imageBuffer(), { id: "list-1" });
++		await upload(mf, TEST_IMAGE_BYTES, { id: "list-1" });
+ 
+-		const list = await images.hosted.list();
++		const list = await sendCmd<ImageList>(mf, "list");
+ 		expect(list.listComplete).toBe(true);
+ 		expect(list.images).toHaveLength(1);
+ 		expect(list.images[0].id).toBe("list-1");
+@@ -145,18 +252,13 @@ describe.skip("Images hosted CRUD", () => {
+ 	test("list images filtered by creator", async ({ expect }) => {
+ 		const mf = createMiniflare();
+ 		useDispose(mf);
+-		const images = await mf.getImagesBinding("IMAGES");
+ 
+-		await images.hosted.upload(imageBuffer(), {
+-			id: "img1",
+-			creator: "socrates",
+-		});
+-		await images.hosted.upload(imageBuffer(), {
+-			id: "img2",
+-			creator: "plato",
+-		});
++		await upload(mf, TEST_IMAGE_BYTES, { id: "img1", creator: "socrates" });
++		await upload(mf, TEST_IMAGE_BYTES, { id: "img2", creator: "plato" });
+ 
+-		const list = await images.hosted.list({ creator: "plato" });
++		const list = await sendCmd<ImageList>(mf, "list", {
++			options: { creator: "plato" },
++		});
+ 		expect(list.images).toHaveLength(1);
+ 		expect(list.images[0].id).toBe("img2");
+ 	});
+@@ -164,28 +266,27 @@ describe.skip("Images hosted CRUD", () => {
+ 	test("list images with cursor pagination", async ({ expect }) => {
+ 		const mf = createMiniflare();
+ 		useDispose(mf);
+-		const images = await mf.getImagesBinding("IMAGES");
+ 
+ 		for (const id of ["img1", "img2", "img3", "img4", "img5"]) {
+-			await images.hosted.upload(imageBuffer(), { id });
++			await upload(mf, TEST_IMAGE_BYTES, { id });
+ 		}
+ 
+-		const page1 = await images.hosted.list({ limit: 2 });
++		const page1 = await sendCmd<ImageList>(mf, "list", {
++			options: { limit: 2 },
++		});
+ 		expect(page1.images).toHaveLength(2);
+ 		expect(page1.listComplete).toBe(false);
+ 		expect(page1.cursor).toBeDefined();
+ 
+-		const page2 = await images.hosted.list({
+-			limit: 2,
+-			cursor: page1.cursor,
++		const page2 = await sendCmd<ImageList>(mf, "list", {
++			options: { limit: 2, cursor: page1.cursor },
+ 		});
+ 		expect(page2.images).toHaveLength(2);
+ 		expect(page2.listComplete).toBe(false);
+ 		expect(page2.cursor).toBeDefined();
+ 
+-		const page3 = await images.hosted.list({
+-			limit: 2,
+-			cursor: page2.cursor,
++		const page3 = await sendCmd<ImageList>(mf, "list", {
++			options: { limit: 2, cursor: page2.cursor },
+ 		});
+ 		expect(page3.images).toHaveLength(1);
+ 		expect(page3.listComplete).toBe(true);
