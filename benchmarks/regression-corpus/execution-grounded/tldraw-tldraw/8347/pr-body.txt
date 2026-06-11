@@ -1,0 +1,38 @@
+Adds the standard `Cmd+Shift+V` / `Ctrl+Shift+V` shortcut to paste clipboard content as plain text, skipping HTML and rich content.
+
+**Breaking behavior change:** Previously, `Cmd+Shift+V` toggled paste-at-cursor positioning (added in #4088 for Autodesk). Since the "Paste at cursor" preference (#4066) now covers that use case, this repurposes `Cmd+Shift+V` for plain text paste — the standard shortcut in most apps. Users who relied on `Cmd+Shift+V` for paste-at-cursor should use the preference toggle instead.
+
+- **Preference off:** `Cmd+V` pastes at center, `Cmd+Shift+V` pastes plain text at center
+- **Preference on:** `Cmd+V` pastes at cursor, `Cmd+Shift+V` pastes plain text at cursor
+
+Note: depends on #8345 for consistent paste positioning between plain text and rich text paste.
+
+Closes #8183
+
+### Change type
+
+- [x] `feature`
+
+### Test plan
+
+1. Copy rich text from a web page
+2. `Cmd+V` — pastes with formatting (existing behavior, unchanged)
+3. `Cmd+Shift+V` — pastes as plain text, no HTML formatting
+4. Toggle "Paste at cursor" preference and verify both shortcuts respect it
+5. Verify that `Cmd+Shift+V` no longer triggers paste-at-cursor positioning
+
+- [ ] Unit tests
+- [ ] End to end tests
+
+### Release notes
+
+- Added `Cmd+Shift+V` / `Ctrl+Shift+V` shortcut to paste clipboard content as plain text
+- Changed `Cmd+Shift+V` from paste-at-cursor to paste-as-plain-text
+
+### Code changes
+
+| Section        | LOC change  |
+| -------------- | ----------- |
+| Core code      | +105 / -12  |
+| Tests          | +97 / -0    |
+| Config/tooling | +1 / -1     |

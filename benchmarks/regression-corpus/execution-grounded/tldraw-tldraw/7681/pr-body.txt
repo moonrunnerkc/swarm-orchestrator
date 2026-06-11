@@ -1,0 +1,54 @@
+In order to make the laser pointer behave like a telestrator (where all annotations remain visible until the user stops drawing), this PR adds session management to the ScribbleManager. Closes #7579.
+
+Previously, each laser stroke segment would fade independently after a delay, creating a "trailing" effect. Now, all laser strokes in a drawing session persist together and fade simultaneously when the user stops drawing.
+
+## Before
+![2026-01-12 at 17 32 13 - Olive Possum](https://github.com/user-attachments/assets/a5a14497-eb8a-460e-8cd7-c0f1f01e09cb)
+
+## After
+![2026-01-12 at 17 30 30 - Yellow Pony](https://github.com/user-attachments/assets/1cfa37a3-5be2-49f3-9018-025277b5bc38)
+
+https://github.com/user-attachments/assets/07f67e23-dbec-4fce-b318-886448ac1237
+
+### API changes
+
+- Added `ScribbleManager.endLaserSession()` method to manually end the active laser session
+- Added `ScribbleManager.isScribbleInLaserSession(scribbleId)` method to check if a scribble belongs to the active session
+- Added `TldrawOptions.laserSessionTimeoutMs` option (default: 2000ms) - duration of inactivity before laser session ends
+- Added `TldrawOptions.laserMaxSessionDurationMs` option (default: 60000ms) - maximum duration for a laser session
+- Added `LaserTool.onExit()` lifecycle method (calls `endLaserSession()` when exiting the tool)
+
+### Change type
+
+- [x] `improvement`
+
+### Test plan
+
+1. Select the laser tool and draw on the canvas
+2. Observe that all strokes remain visible while drawing
+3. Lift the pointer and wait ~2 seconds
+4. Verify all strokes fade together
+5. Draw multiple separate strokes within 2 seconds
+6. Confirm they all persist as part of the same session
+7. Switch away from laser tool - strokes should fade immediately
+
+- [x] Unit tests
+
+### Release notes
+
+- Laser pointer now keeps all strokes visible until you stop drawing for 2 seconds (telestrator pattern)
+
+<!-- CURSOR_SUMMARY -->
+---
+
+> [!NOTE]
+> Introduces session-based scribbles and updates the laser tool to keep all strokes visible during a session and fade them together afterward.
+> 
+> - Adds `ScribbleManager` session API: `startSession`, `addScribbleToSession`, `addPointToSession`, `extendSession`, `stopSession`, `clearSession`, `isSessionActive`; updates simple APIs (`addScribble`, `addPoint`, `stop`, `reset`) to work with sessions
+> - Implements grouped fade logic and idle timeouts; exports `ScribbleSessionOptions`
+> - Adds `editor.options.laserFadeoutMs` (default 500) and uses `laserDelayMs` as session idle timeout
+> - Refactors `LaserTool` to manage a shared session across strokes; handles cancel/exit and reuse/new session creation
+> - Replaces/expands unit tests for `ScribbleManager` and `LaserTool`
+> 
+> <sup>Written by [Cursor Bugbot](https://cursor.com/dashboard?tab=bugbot) for commit b8651045841130e48da93d975be8e06e0a89592f. This will update automatically on new commits. Configure [here](https://cursor.com/dashboard?tab=bugbot).</sup>
+<!-- /CURSOR_SUMMARY -->

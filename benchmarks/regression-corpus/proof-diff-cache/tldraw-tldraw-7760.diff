@@ -1,0 +1,108 @@
+diff --git a/packages/editor/api-report.api.md b/packages/editor/api-report.api.md
+index 750b3e079b35..cb1c46f732ae 100644
+--- a/packages/editor/api-report.api.md
++++ b/packages/editor/api-report.api.md
+@@ -2711,6 +2711,7 @@ export class ScribbleManager {
+     addScribble(scribble: Partial<TLScribble>, id?: string): ScribbleItem;
+     addScribbleToSession(sessionId: string, scribble: Partial<TLScribble>, scribbleId?: string): ScribbleItem;
+     clearSession(sessionId: string): void;
++    complete(id: string): ScribbleItem;
+     extendSession(sessionId: string): void;
+     isSessionActive(sessionId: string): boolean;
+     reset(): void;
+diff --git a/packages/editor/src/lib/editor/managers/ScribbleManager/ScribbleManager.ts b/packages/editor/src/lib/editor/managers/ScribbleManager/ScribbleManager.ts
+index ef44dcaac994..d6ca5bd00953 100644
+--- a/packages/editor/src/lib/editor/managers/ScribbleManager/ScribbleManager.ts
++++ b/packages/editor/src/lib/editor/managers/ScribbleManager/ScribbleManager.ts
+@@ -295,6 +295,26 @@ export class ScribbleManager {
+ 		throw Error(`Scribble with id ${id} not found`)
+ 	}
+ 
++	/**
++	 * Mark a scribble as complete (done being drawn but not yet fading).
++	 * Searches all sessions.
++	 *
++	 * @param id - The scribble id
++	 * @public
++	 */
++	complete(id: string): ScribbleItem {
++		for (const session of this.sessions.values()) {
++			const item = session.items.find((i) => i.id === id)
++			if (item) {
++				if (item.scribble.state === 'starting' || item.scribble.state === 'active') {
++					item.scribble.state = 'complete'
++				}
++				return item
++			}
++		}
++		throw Error(`Scribble with id ${id} not found`)
++	}
++
+ 	/**
+ 	 * Stop a scribble. Searches all sessions.
+ 	 *
+diff --git a/packages/tldraw/src/lib/canvas/TldrawScribble.tsx b/packages/tldraw/src/lib/canvas/TldrawScribble.tsx
+index 596c8c1f09fd..cc424274e536 100644
+--- a/packages/tldraw/src/lib/canvas/TldrawScribble.tsx
++++ b/packages/tldraw/src/lib/canvas/TldrawScribble.tsx
+@@ -9,7 +9,7 @@ export function TldrawScribble({ scribble, zoom, color, opacity, className }: TL
+ 	const stroke = getStroke(scribble.points, {
+ 		size: scribble.size / zoom,
+ 		start: { taper: scribble.taper, easing: EASINGS.linear },
+-		last: scribble.state === 'stopping',
++		last: scribble.state === 'complete' || scribble.state === 'stopping',
+ 		simulatePressure: false,
+ 		streamline: 0.32,
+ 	})
+diff --git a/packages/tldraw/src/lib/tools/LaserTool/childStates/Lasering.ts b/packages/tldraw/src/lib/tools/LaserTool/childStates/Lasering.ts
+index 22346fe26055..03203833b724 100644
+--- a/packages/tldraw/src/lib/tools/LaserTool/childStates/Lasering.ts
++++ b/packages/tldraw/src/lib/tools/LaserTool/childStates/Lasering.ts
+@@ -38,6 +38,7 @@ export class Lasering extends StateNode {
+ 	}
+ 
+ 	private complete() {
++		this.editor.scribbles.complete(this.scribbleId)
+ 		this.parent.transition('idle')
+ 	}
+ }
+diff --git a/packages/tlschema/api-report.api.md b/packages/tlschema/api-report.api.md
+index d0e443695713..6e45a3ee8468 100644
+--- a/packages/tlschema/api-report.api.md
++++ b/packages/tlschema/api-report.api.md
+@@ -707,7 +707,7 @@ export const TL_CURSOR_TYPES: Set<string>;
+ export const TL_HANDLE_TYPES: Set<"clone" | "create" | "vertex" | "virtual">;
+ 
+ // @public
+-export const TL_SCRIBBLE_STATES: Set<"active" | "paused" | "starting" | "stopping">;
++export const TL_SCRIBBLE_STATES: Set<"active" | "complete" | "paused" | "starting" | "stopping">;
+ 
+ // @public
+ export type TLArrowBinding = TLBaseBinding<'arrow', TLArrowBindingProps>;
+diff --git a/packages/tlschema/src/misc/TLScribble.ts b/packages/tlschema/src/misc/TLScribble.ts
+index e678f6a5924e..a841e837437e 100644
+--- a/packages/tlschema/src/misc/TLScribble.ts
++++ b/packages/tlschema/src/misc/TLScribble.ts
+@@ -11,6 +11,7 @@ import { VecModel, vecModelValidator } from './geometry-types'
+  * - `starting`: The scribble is being initiated
+  * - `paused`: The scribble is temporarily paused
+  * - `active`: The scribble is actively being drawn
++ * - `complete`: The scribble is done being drawn but not yet fading
+  * - `stopping`: The scribble is being finished
+  *
+  * These states help manage the drawing lifecycle and apply appropriate
+@@ -29,7 +30,13 @@ import { VecModel, vecModelValidator } from './geometry-types'
+  *
+  * @public
+  */
+-export const TL_SCRIBBLE_STATES = new Set(['starting', 'paused', 'active', 'stopping'] as const)
++export const TL_SCRIBBLE_STATES = new Set([
++	'starting',
++	'paused',
++	'active',
++	'complete',
++	'stopping',
++] as const)
+ 
+ /**
+  * A scribble object representing a drawing stroke in tldraw.

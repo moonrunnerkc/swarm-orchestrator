@@ -1,0 +1,49 @@
+Closes #7876
+
+SVG files pasted/dropped into tldraw had no sanitization. The main risk is `defaultHandleExternalSvgTextContent()` which parses SVG with DOMParser, temporarily appends to `document.body` for measurement (potential script execution), and stores raw SVG text as an asset. While `<img>` rendering sandboxes scripts, SVGs served from the same origin as the host app (e.g. via a same-domain asset store) can bypass this and execute arbitrary code. This PR adds defense-in-depth sanitization using [DOMPurify](https://github.com/cure53/DOMPurify) — the industry-standard XSS sanitizer with first-class SVG support.
+
+Sanitization is applied unconditionally in all SVG entry points:
+- `defaultHandleExternalSvgTextContent` — SVG text pasting
+- `defaultHandleExternalFileAsset` — SVG file drops
+- `defaultHandleExternalFileContent` — multi-file drops
+- `defaultHandleExternalFileReplaceContent` — image replacement
+
+DOMPurify config uses `USE_PROFILES: { svg: true, svgFilters: true }` which allows safe SVG elements/attributes (including filter primitives like `feGaussianBlur`, `feDropShadow`, etc.) while stripping scripts, event handlers, `javascript:` URLs, `foreignObject`, etc. `<use>` and `xlink:href` are preserved for valid SVG features.
+
+If sanitization strips all content (fully malicious SVG), the file is rejected with a clear error rather than silently creating a broken empty asset.
+
+**Bundle size impact:** ~9 KB gzipped additional transfer for end users (DOMPurify is 62 KB raw / 17 KB gzipped).
+
+### Change type
+
+- [x] `improvement`
+
+### Test plan
+
+1. `yarn dev`, paste SVG with `<script>alert(1)</script>` — should render without script
+2. Paste SVG with `onload="alert(1)"` attribute — should render without attribute
+3. Paste normal SVG with gradients/filters — should render correctly
+4. Drop SVG file onto canvas — should sanitize
+5. Paste a fully malicious SVG (only script content) — should get a clear error, not a blank asset
+
+- [ ] Unit tests
+- [ ] End to end tests
+
+### Release notes
+
+- Sanitize SVG content on paste and file drop using DOMPurify to prevent XSS
+
+<!-- CURSOR_SUMMARY -->
+---
+
+> [!NOTE]
+> **Medium Risk**
+> Touches external content ingestion and asset upload/replace flows, so regressions could affect SVG handling or asset hashing/identity. Security logic changes are beneficial but must be correct to avoid bypasses or false positives that reject valid SVGs.
+> 
+> **Overview**
+> **Adds SVG sanitization to default external content ingestion paths** so pasted SVG text and dropped/replaced SVG files are cleaned before parsing, hashing, previewing, uploading, or being written to the store; SVGs that sanitize down to no usable content are rejected.
+> 
+> Introduces a new internal sanitizer (`utils/svg/sanitizeSvg.ts`) with DOMPurify-like allowlists, URI protocol filtering, and basic CSS `url()`/`@import` stripping, and updates the Assets docs with a new *Security* section recommending separate-domain asset hosting for defense in depth.
+> 
+> <sup>Written by [Cursor Bugbot](https://cursor.com/dashboard?tab=bugbot) for commit 4cb539be6c90113d98dc660298b03d35c8c700be. This will update automatically on new commits. Configure [here](https://cursor.com/dashboard?tab=bugbot).</sup>
+<!-- /CURSOR_SUMMARY -->

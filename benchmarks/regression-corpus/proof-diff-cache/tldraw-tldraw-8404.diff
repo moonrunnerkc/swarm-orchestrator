@@ -1,0 +1,136 @@
+diff --git a/packages/tldraw/api-report.api.md b/packages/tldraw/api-report.api.md
+index f98c071fd85f..42fe51bdd16c 100644
+--- a/packages/tldraw/api-report.api.md
++++ b/packages/tldraw/api-report.api.md
+@@ -5439,6 +5439,9 @@ export function UndoRedoGroup(): JSX.Element;
+ // @public (undocumented)
+ export function UngroupMenuItem(): JSX.Element | null;
+ 
++// @public
++export const unknownEmbedShapePermissionOverrides: TLEmbedShapePermissions;
++
+ // @public (undocumented)
+ export function UnlockAllMenuItem(): JSX.Element;
+ 
+diff --git a/packages/tldraw/src/index.ts b/packages/tldraw/src/index.ts
+index 9f6bc2c34154..311b6970ac3e 100644
+--- a/packages/tldraw/src/index.ts
++++ b/packages/tldraw/src/index.ts
+@@ -65,6 +65,7 @@ export { defaultBindingUtils } from './lib/defaultBindingUtils'
+ export {
+ 	DEFAULT_EMBED_DEFINITIONS,
+ 	embedShapePermissionDefaults,
++	unknownEmbedShapePermissionOverrides,
+ 	type CustomEmbedDefinition,
+ 	type DefaultEmbedDefinitionType,
+ 	type EmbedDefinition,
+diff --git a/packages/tldraw/src/lib/defaultEmbedDefinitions.ts b/packages/tldraw/src/lib/defaultEmbedDefinitions.ts
+index 68b39085a93f..de01392731bc 100644
+--- a/packages/tldraw/src/lib/defaultEmbedDefinitions.ts
++++ b/packages/tldraw/src/lib/defaultEmbedDefinitions.ts
+@@ -654,6 +654,21 @@ export const embedShapePermissionDefaults = {
+ /** @public */
+ export type TLEmbedShapePermissions = { [K in keyof typeof embedShapePermissionDefaults]?: boolean }
+ 
++/**
++ * Overrides for unknown/arbitrary embeds that aren't in the curated embed definitions list.
++ * These restrict the most dangerous sandbox permissions to mitigate:
++ * - Same-origin sandbox escape (allow-scripts + allow-same-origin lets the iframe remove its own sandbox)
++ * - Phishing via embedded forms
++ * - Popup-based social engineering
++ *
++ * @public
++ */
++export const unknownEmbedShapePermissionOverrides: TLEmbedShapePermissions = {
++	'allow-same-origin': false,
++	'allow-forms': false,
++	'allow-popups': false,
++}
++
+ /** @public */
+ export interface EmbedDefinition {
+ 	readonly type: string
+diff --git a/packages/tldraw/src/lib/shapes/embed/EmbedShapeUtil.tsx b/packages/tldraw/src/lib/shapes/embed/EmbedShapeUtil.tsx
+index 1cbda54d1494..a7d42e1b2ee4 100644
+--- a/packages/tldraw/src/lib/shapes/embed/EmbedShapeUtil.tsx
++++ b/packages/tldraw/src/lib/shapes/embed/EmbedShapeUtil.tsx
+@@ -21,6 +21,7 @@ import {
+ 	TLEmbedDefinition,
+ 	TLEmbedShapePermissions,
+ 	embedShapePermissionDefaults,
++	unknownEmbedShapePermissionOverrides,
+ } from '../../defaultEmbedDefinitions'
+ import { TLEmbedResult, getEmbedInfo } from '../../utils/embeds/embeds'
+ import { BookmarkShapeComponent } from '../bookmark/BookmarkShapeUtil'
+@@ -188,7 +189,9 @@ export class EmbedShapeUtil extends BaseBoxShapeUtil<TLEmbedShape> {
+ 
+ 		const sandbox = getSandboxPermissions({
+ 			...embedShapePermissionDefaults,
+-			...(embedInfo?.definition?.overridePermissions ?? {}),
++			...(embedInfo
++				? (embedInfo.definition.overridePermissions ?? {})
++				: unknownEmbedShapePermissionOverrides),
+ 		})
+ 
+ 		if (embedInfo?.definition.type === 'github_gist') {
+diff --git a/packages/tldraw/src/lib/utils/embeds/embeds.test.ts b/packages/tldraw/src/lib/utils/embeds/embeds.test.ts
+index 9f79c5993329..b4e8e4c8e351 100644
+--- a/packages/tldraw/src/lib/utils/embeds/embeds.test.ts
++++ b/packages/tldraw/src/lib/utils/embeds/embeds.test.ts
+@@ -1,6 +1,55 @@
+-import { DEFAULT_EMBED_DEFINITIONS } from '../../defaultEmbedDefinitions'
++import {
++	DEFAULT_EMBED_DEFINITIONS,
++	embedShapePermissionDefaults,
++	unknownEmbedShapePermissionOverrides,
++} from '../../defaultEmbedDefinitions'
+ import { getEmbedInfo, matchEmbedUrl, matchUrl } from './embeds'
+ 
++describe('embed sandbox permissions', () => {
++	function getSandboxString(permissions: Record<string, boolean | undefined>): string {
++		return Object.entries(permissions)
++			.filter(([, isEnabled]) => isEnabled)
++			.map(([perm]) => perm)
++			.join(' ')
++	}
++
++	test('known embeds get default permissions including allow-same-origin', () => {
++		const sandbox = getSandboxString(embedShapePermissionDefaults)
++		expect(sandbox).toContain('allow-same-origin')
++		expect(sandbox).toContain('allow-scripts')
++		expect(sandbox).toContain('allow-forms')
++		expect(sandbox).toContain('allow-popups')
++	})
++
++	test('unknown embeds get restricted permissions without allow-same-origin', () => {
++		const sandbox = getSandboxString({
++			...embedShapePermissionDefaults,
++			...unknownEmbedShapePermissionOverrides,
++		})
++		expect(sandbox).not.toContain('allow-same-origin')
++		expect(sandbox).not.toContain('allow-forms')
++		expect(sandbox).not.toContain('allow-popups')
++		expect(sandbox).toContain('allow-scripts')
++	})
++
++	test('known embed overrides still apply on top of defaults', () => {
++		const youtubeEmbed = DEFAULT_EMBED_DEFINITIONS.find((d) => d.type === 'youtube')!
++		const sandbox = getSandboxString({
++			...embedShapePermissionDefaults,
++			...youtubeEmbed.overridePermissions,
++		})
++		expect(sandbox).toContain('allow-same-origin')
++		expect(sandbox).toContain('allow-presentation')
++		expect(sandbox).toContain('allow-popups-to-escape-sandbox')
++	})
++
++	test('unknownEmbedShapePermissionOverrides disables the dangerous permission combination', () => {
++		expect(unknownEmbedShapePermissionOverrides['allow-same-origin']).toBe(false)
++		expect(unknownEmbedShapePermissionOverrides['allow-forms']).toBe(false)
++		expect(unknownEmbedShapePermissionOverrides['allow-popups']).toBe(false)
++	})
++})
++
+ interface MatchUrlTestMatchDef {
+ 	url: string
+ 	match: true

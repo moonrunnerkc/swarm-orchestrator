@@ -1,0 +1,65 @@
+diff --git a/packages/tldraw/api-report.api.md b/packages/tldraw/api-report.api.md
+index c353aa05b83e..7960e0a19d06 100644
+--- a/packages/tldraw/api-report.api.md
++++ b/packages/tldraw/api-report.api.md
+@@ -2953,6 +2953,7 @@ export interface StylePanelDropdownPickerProps<T extends string> {
+     style: StyleProp<T>;
+     // (undocumented)
+     stylePanelType: string;
++    testIdType?: string;
+     // (undocumented)
+     type: 'icon' | 'menu' | 'tool';
+     // (undocumented)
+diff --git a/packages/tldraw/src/lib/ui/components/StylePanel/DefaultStylePanelContent.tsx b/packages/tldraw/src/lib/ui/components/StylePanel/DefaultStylePanelContent.tsx
+index b4dec9b4131b..f50ae9df0bd5 100644
+--- a/packages/tldraw/src/lib/ui/components/StylePanel/DefaultStylePanelContent.tsx
++++ b/packages/tldraw/src/lib/ui/components/StylePanel/DefaultStylePanelContent.tsx
+@@ -169,7 +169,8 @@ export function StylePanelFillPicker() {
+ 				<StylePanelDropdownPickerInline
+ 					type="icon"
+ 					id="fill-extra"
+-					uiType="fill-extra"
++					uiType="fill"
++					testIdType="fill-extra"
+ 					stylePanelType="fill"
+ 					style={DefaultFillStyle}
+ 					items={STYLES.fillExtra}
+diff --git a/packages/tldraw/src/lib/ui/components/StylePanel/StylePanelDropdownPicker.tsx b/packages/tldraw/src/lib/ui/components/StylePanel/StylePanelDropdownPicker.tsx
+index ec279bb57fda..c4973bf2d9dc 100644
+--- a/packages/tldraw/src/lib/ui/components/StylePanel/StylePanelDropdownPicker.tsx
++++ b/packages/tldraw/src/lib/ui/components/StylePanel/StylePanelDropdownPicker.tsx
+@@ -26,6 +26,8 @@ export interface StylePanelDropdownPickerProps<T extends string> {
+ 	items: StyleValuesForUi<T>
+ 	type: 'icon' | 'tool' | 'menu'
+ 	onValueChange?(style: StyleProp<T>, value: T): void
++	/** Override the test ID prefix. Defaults to uiType. */
++	testIdType?: string
+ }
+ 
+ function StylePanelDropdownPickerInner<T extends string>(props: StylePanelDropdownPickerProps<T>) {
+@@ -54,6 +56,7 @@ function StylePanelDropdownPickerInlineInner<T extends string>(
+ 		type,
+ 		value,
+ 		onValueChange = ctx.onValueChange,
++		testIdType = uiType,
+ 	} = props
+ 	const msg = useTranslation()
+ 	const editor = useEditor()
+@@ -84,7 +87,7 @@ function StylePanelDropdownPickerInlineInner<T extends string>(
+ 			<TldrawUiPopoverTrigger>
+ 				<TldrawUiToolbarButton
+ 					type={type}
+-					data-testid={`style.${uiType}`}
++					data-testid={`style.${testIdType}`}
+ 					data-direction="left"
+ 					title={titleStr}
+ 				>
+@@ -100,7 +103,7 @@ function StylePanelDropdownPickerInlineInner<T extends string>(
+ 								<TldrawUiToolbarButton
+ 									key={item.value}
+ 									type="icon"
+-									data-testid={`style.${uiType}.${item.value}`}
++									data-testid={`style.${testIdType}.${item.value}`}
+ 									title={
+ 										stylePanelName +
+ 										' — ' +

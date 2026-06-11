@@ -1,0 +1,90 @@
+diff --git a/apps/docs/content/releases/next.mdx b/apps/docs/content/releases/next.mdx
+index 96a5db4d56c4..5a1805d5e44f 100644
+--- a/apps/docs/content/releases/next.mdx
++++ b/apps/docs/content/releases/next.mdx
+@@ -5,7 +5,7 @@ author: tldraw
+ date: 03/18/2026
+ order: 0
+ status: published
+-last_version: v4.5.7
++last_version: v4.5.8
+ ---
+ 
+ This release adds a first-class theme system with display values for customizing default shapes, extensible asset types via a new `AssetUtil` system, shape attribution with a new `TLUserStore` provider and extensible user records, clipboard hooks for intercepting copy, cut, and paste, custom record types to the store, a new `@tldraw/mermaid` package for converting Mermaid diagrams to native shapes, WebSocket hibernation support for tlsync, a new `@tldraw/editor-controller` package for scripting and automation, RTL language support in the UI, cross-window embedding support, arbitrary iframe embed pasting, a paste-as-plain-text keyboard shortcut, and smarter export trimming. It also includes various other improvements and bug fixes.
+diff --git a/apps/docs/content/sdk-features/ui-components.mdx b/apps/docs/content/sdk-features/ui-components.mdx
+index 13790b3b2e3e..fcb53983f4c6 100644
+--- a/apps/docs/content/sdk-features/ui-components.mdx
++++ b/apps/docs/content/sdk-features/ui-components.mdx
+@@ -80,39 +80,39 @@ Each slot is optional. Pass `null` as an override to hide a component entirely,
+ 
+ The UI portion of the `components` prop is shaped by [TLUiComponents](?). Every key is optional: use `null` to hide that slot, or pass a React component. When a slot has a documented props type in the table below, import that type from `tldraw` and type your replacement as `React.ComponentType<…>` (or implement the matching props). When the props column says **none**, the SDK does not declare extra props for that slot beyond what a plain `ComponentType` allows.
+ 
+-| Slot                      | Props (import from `tldraw`)                                           |
+-| ------------------------- | ---------------------------------------------------------------------- |
+-| `ContextMenu`             | [TLUiContextMenuProps](?)                                              |
+-| `ActionsMenu`             | [TLUiActionsMenuProps](?)                                              |
+-| `HelpMenu`                | [TLUiHelpMenuProps](?)                                                 |
+-| `ZoomMenu`                | [TLUiZoomMenuProps](?)                                                 |
+-| `MainMenu`                | [TLUiMainMenuProps](?)                                                 |
+-| `Minimap`                 | none                                                                   |
+-| `StylePanel`              | [TLUiStylePanelProps](?)                                               |
+-| `PageMenu`                | none                                                                   |
+-| `NavigationPanel`         | none                                                                   |
+-| `Toolbar`                 | none                                                                   |
+-| `RichTextToolbar`         | [TLUiRichTextToolbarProps](?)                                          |
+-| `ImageToolbar`            | none                                                                   |
+-| `VideoToolbar`            | none                                                                   |
+-| `KeyboardShortcutsDialog` | [TLUiKeyboardShortcutsDialogProps](?)                                  |
+-| `QuickActions`            | [TLUiQuickActionsProps](?)                                             |
+-| `HelperButtons`           | [TLUiHelperButtonsProps](?)                                            |
+-| `DebugPanel`              | none                                                                   |
+-| `DebugMenu`               | none                                                                   |
+-| `MenuPanel`               | none                                                                   |
+-| `TopPanel`                | none                                                                   |
+-| `SharePanel`              | none                                                                   |
+-| `CursorChatBubble`        | none                                                                   |
+-| `Dialogs`                 | none                                                                   |
+-| `Toasts`                  | none                                                                   |
+-| `A11y`                    | none                                                                   |
+-| `FollowingIndicator`      | none                                                                   |
+-| `PeopleMenu`              | none (default component: optional `children` via [PeopleMenuProps](?)) |
+-| `PeopleMenuAvatar`        | [TLUiPeopleMenuAvatarProps](?)                                         |
+-| `PeopleMenuFacePile`      | [TLUiPeopleMenuFacePileProps](?)                                       |
+-| `PeopleMenuItem`          | [TLUiPeopleMenuItemProps](?)                                           |
+-| `UserPresenceEditor`      | none                                                                   |
++| Slot                      | Props (import from `tldraw`)                                                  |
++| ------------------------- | ----------------------------------------------------------------------------- |
++| `ContextMenu`             | [TLUiContextMenuProps](?)                                                     |
++| `ActionsMenu`             | [TLUiActionsMenuProps](?)                                                     |
++| `HelpMenu`                | [TLUiHelpMenuProps](?)                                                        |
++| `ZoomMenu`                | [TLUiZoomMenuProps](?)                                                        |
++| `MainMenu`                | [TLUiMainMenuProps](?)                                                        |
++| `Minimap`                 | none                                                                          |
++| `StylePanel`              | [TLUiStylePanelProps](?)                                                      |
++| `PageMenu`                | none                                                                          |
++| `NavigationPanel`         | none                                                                          |
++| `Toolbar`                 | none                                                                          |
++| `RichTextToolbar`         | [TLUiRichTextToolbarProps](?)                                                 |
++| `ImageToolbar`            | none                                                                          |
++| `VideoToolbar`            | none                                                                          |
++| `KeyboardShortcutsDialog` | [TLUiKeyboardShortcutsDialogProps](?)                                         |
++| `QuickActions`            | [TLUiQuickActionsProps](?)                                                    |
++| `HelperButtons`           | [TLUiHelperButtonsProps](?)                                                   |
++| `DebugPanel`              | none                                                                          |
++| `DebugMenu`               | none                                                                          |
++| `MenuPanel`               | none                                                                          |
++| `TopPanel`                | none                                                                          |
++| `SharePanel`              | none                                                                          |
++| `CursorChatBubble`        | none                                                                          |
++| `Dialogs`                 | none                                                                          |
++| `Toasts`                  | none                                                                          |
++| `A11y`                    | none                                                                          |
++| `FollowingIndicator`      | none                                                                          |
++| `PeopleMenu`              | none (default component: optional `children` via [DefaultPeopleMenuProps](?)) |
++| `PeopleMenuAvatar`        | [TLUiPeopleMenuAvatarProps](?)                                                |
++| `PeopleMenuFacePile`      | [TLUiPeopleMenuFacePileProps](?)                                              |
++| `PeopleMenuItem`          | [TLUiPeopleMenuItemProps](?)                                                  |
++| `UserPresenceEditor`      | none                                                                          |
+ 
+ This table is an index; the authoritative list and types remain [TLUiComponents](?) in the API reference and in the package typings.
+ 

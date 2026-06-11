@@ -1,0 +1,32 @@
+In order to fix visual glitches with sticky notes and geo shapes in dynamic size mode at high zoom levels, this PR clamps the note shadow offset and switches both note and geo shape labels to use CSS `transform: scale()` instead of direct fontSize/padding multiplication.
+
+<img width="455" height="328" alt="image" src="https://github.com/user-attachments/assets/c8a02fcd-5b26-4cd2-ad71-6be7bf445a75" />
+<img width="272" height="315" alt="image" src="https://github.com/user-attachments/assets/976ee4a2-d7f2-4200-a8b3-9a601697a6af" />
+
+
+Closes #8377
+
+### Change type
+
+- [x] `bugfix`
+
+### Test plan
+
+1. Enable dynamic size mode (View menu → Dynamic size mode)
+2. Create a sticky note and a geo shape with a text label
+3. Zoom to 800%
+4. Verify no shadow appears above the sticky note
+5. Double-click to edit text in both shapes — verify the caret is proportionally sized
+
+- [x] Unit tests
+
+### Release notes
+
+- Fix shadow rendering above sticky notes at high zoom in dynamic size mode
+- Fix oversized text caret when editing notes and geo shapes at high zoom in dynamic size mode
+
+### Code changes
+
+| Section    | LOC change |
+| ---------- | ---------- |
+| Core code  | +18 / -5   |

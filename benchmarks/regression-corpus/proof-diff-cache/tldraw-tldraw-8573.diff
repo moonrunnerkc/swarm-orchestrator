@@ -1,0 +1,492 @@
+diff --git a/apps/dotcom/client/src/hooks/useCanvasIndicatorsAb.ts b/apps/dotcom/client/src/hooks/useCanvasIndicatorsAb.ts
+new file mode 100644
+index 000000000000..74c4d7a1c284
+--- /dev/null
++++ b/apps/dotcom/client/src/hooks/useCanvasIndicatorsAb.ts
+@@ -0,0 +1,59 @@
++import { useEffect, useState } from 'react'
++import {
++	fetchFeatureFlags,
++	getCurrentFlags,
++	hasResolvedFlagsOnce,
++} from '../tla/utils/FeatureFlagPoller'
++
++// Hard upper bound on how long we'll wait for the feature flag fetch before
++// falling back to the control (svg) group. This keeps the editor from being
++// blocked indefinitely if the flags endpoint is slow or unavailable.
++const FLAG_RESOLUTION_TIMEOUT_MS = 500
++
++/**
++ * Returns the A/B test group for canvas indicators.
++ * - 'canvas': treatment group — uses 2D canvas indicator rendering
++ * - 'svg': control group — falls back to legacy SVG indicator rendering
++ * - `null`: flags haven't resolved yet. Callers should avoid mounting the
++ *   editor while this is `null` to prevent misbucketing the user into the
++ *   control group just because the fetch hasn't landed.
++ *
++ * The value is resolved once at mount time and stays stable for the session.
++ * If the flag fetch takes longer than {@link FLAG_RESOLUTION_TIMEOUT_MS} we
++ * fall back to `'svg'` so the editor isn't blocked on the network.
++ */
++export function useCanvasIndicatorsAb(): 'canvas' | 'svg' | null {
++	const [group, setGroup] = useState<'canvas' | 'svg' | null>(() => {
++		// Fast path — if the eager `fetchFeatureFlags()` call on module load
++		// has already settled, read synchronously and skip the async wait.
++		if (hasResolvedFlagsOnce()) {
++			return getCurrentFlags().canvas_indicators_ab?.enabled ? 'canvas' : 'svg'
++		}
++		return null
++	})
++
++	useEffect(() => {
++		if (group !== null) return
++
++		let settled = false
++		const timeout = setTimeout(() => {
++			if (settled) return
++			settled = true
++			setGroup('svg')
++		}, FLAG_RESOLUTION_TIMEOUT_MS)
++
++		fetchFeatureFlags().then((flags) => {
++			if (settled) return
++			settled = true
++			clearTimeout(timeout)
++			setGroup(flags.canvas_indicators_ab?.enabled ? 'canvas' : 'svg')
++		})
++
++		return () => {
++			settled = true
++			clearTimeout(timeout)
++		}
++	}, [group])
++
++	return group
++}
+diff --git a/apps/dotcom/client/src/hooks/usePerformanceTracking.ts b/apps/dotcom/client/src/hooks/usePerformanceTracking.ts
+index 481b1a945fb0..060d31b6b49e 100644
+--- a/apps/dotcom/client/src/hooks/usePerformanceTracking.ts
++++ b/apps/dotcom/client/src/hooks/usePerformanceTracking.ts
+@@ -29,23 +29,25 @@ function commonStats(event: TLPerfFrameTimeStats & { shapeCount: number; zoomLev
+ 	}
+ }
+ 
+-function handleInteractionEnd(event: TLInteractionEndPerfEvent) {
++function handleInteractionEnd(event: TLInteractionEndPerfEvent, abIndicators: 'canvas' | 'svg') {
+ 	trackEvent('rum', {
+ 		type: 'interaction',
+ 		interaction_name: event.name,
+ 		interaction_path: event.path,
+ 		selected_shape_count: Object.values(event.selectedShapeTypes).reduce((a, b) => a + b, 0),
+ 		selected_shape_types: event.selectedShapeTypes,
++		ab_indicators: abIndicators,
+ 		...commonStats(event),
+ 	})
+ }
+ 
+-function handleCameraEnd(event: TLCameraEndPerfEvent) {
++function handleCameraEnd(event: TLCameraEndPerfEvent, abIndicators: 'canvas' | 'svg') {
+ 	trackEvent('rum', {
+ 		type: 'camera',
+ 		camera_type: event.type,
+ 		visible_shape_count: event.visibleShapeCount,
+ 		culled_shape_count: event.culledShapeCount,
++		ab_indicators: abIndicators,
+ 		...commonStats(event),
+ 	})
+ }
+@@ -59,8 +61,16 @@ export function usePerformanceTracking() {
+ 		fetchFeatureFlags().then((flags) => {
+ 			if (disposed || !flags.rum_enabled?.enabled) return
+ 
+-			unsubInteraction = editor.performance.on('interaction-end', handleInteractionEnd)
+-			unsubCamera = editor.performance.on('camera-end', handleCameraEnd)
++			// Derive from the editor option — this is the ground truth for what's
++			// actually rendering, so the RUM tag always matches the UI path.
++			const abIndicators = editor.options.useCanvasIndicators ? 'canvas' : 'svg'
++
++			unsubInteraction = editor.performance.on('interaction-end', (event) =>
++				handleInteractionEnd(event, abIndicators)
++			)
++			unsubCamera = editor.performance.on('camera-end', (event) =>
++				handleCameraEnd(event, abIndicators)
++			)
+ 		})
+ 
+ 		return () => {
+diff --git a/apps/dotcom/client/src/tla/app/shouldUseProperZero.test.ts b/apps/dotcom/client/src/tla/app/shouldUseProperZero.test.ts
+index da294e456c3d..97361881ebf3 100644
+--- a/apps/dotcom/client/src/tla/app/shouldUseProperZero.test.ts
++++ b/apps/dotcom/client/src/tla/app/shouldUseProperZero.test.ts
+@@ -25,6 +25,7 @@ const FLAGS_OFF: FeatureFlags = {
+ 	zero_enabled: { enabled: false },
+ 	zero_kill_switch: { enabled: false },
+ 	rum_enabled: { enabled: false },
++	canvas_indicators_ab: { enabled: false },
+ }
+ 
+ describe('shouldUseProperZero', () => {
+@@ -142,6 +143,7 @@ describe('shouldUseProperZero', () => {
+ 				zero_enabled: { enabled: true },
+ 				zero_kill_switch: { enabled: true },
+ 				rum_enabled: { enabled: false },
++				canvas_indicators_ab: { enabled: false },
+ 			}
+ 			// Kill switch wins over everything
+ 			const result = shouldUseProperZero(flags, 'dev@tldraw.com')
+diff --git a/apps/dotcom/client/src/tla/components/TlaEditor/TlaEditor.tsx b/apps/dotcom/client/src/tla/components/TlaEditor/TlaEditor.tsx
+index 13c4caa8800b..cf935d2f768e 100644
+--- a/apps/dotcom/client/src/tla/components/TlaEditor/TlaEditor.tsx
++++ b/apps/dotcom/client/src/tla/components/TlaEditor/TlaEditor.tsx
+@@ -27,6 +27,7 @@ import {
+ } from 'tldraw'
+ import { SneakyMermaidHandler } from '../../../components/SneakyMermaidHandler/SneakyMermaidHandler'
+ import { ThemeUpdater } from '../../../components/ThemeUpdater/ThemeUpdater'
++import { useCanvasIndicatorsAb } from '../../../hooks/useCanvasIndicatorsAb'
+ import { useOpenUrlAndTrack } from '../../../hooks/useOpenUrlAndTrack'
+ import { usePerformanceTracking } from '../../../hooks/usePerformanceTracking'
+ import { useRoomLoadTracking } from '../../../hooks/useRoomLoadTracking'
+@@ -118,6 +119,7 @@ function TlaEditorInner({ fileSlug, deepLinks }: TlaEditorProps) {
+ 
+ 	const trackRoomLoaded = useRoomLoadTracking()
+ 	const trackNewRoomCreation = useNewRoomCreationTracking()
++	const canvasIndicatorsAb = useCanvasIndicatorsAb()
+ 	const trackPerformance = usePerformanceTracking()
+ 
+ 	const handleMount = useCallback(
+@@ -276,6 +278,12 @@ function TlaEditorInner({ fileSlug, deepLinks }: TlaEditorProps) {
+ 		}
+ 	}, [])
+ 
++	// Wait for the canvas_indicators_ab assignment to resolve before mounting
++	// the editor. This avoids misbucketing users into the control group just
++	// because the feature flag fetch hadn't landed yet. The hook has a bounded
++	// 500ms timeout so a slow/unreachable flags endpoint can't block the app.
++	if (canvasIndicatorsAb === null) return null
++
+ 	return (
+ 		<TlaEditorWrapper>
+ 			<Tldraw
+@@ -287,7 +295,11 @@ function TlaEditorInner({ fileSlug, deepLinks }: TlaEditorProps) {
+ 				onMount={handleMount}
+ 				onUiEvent={handleUiEvent}
+ 				components={instanceComponents}
+-				options={{ actionShortcutsLocation: 'toolbar', deepLinks: deepLinks ? true : undefined }}
++				options={{
++					actionShortcutsLocation: 'toolbar',
++					deepLinks: deepLinks ? true : undefined,
++					useCanvasIndicators: canvasIndicatorsAb === 'canvas',
++				}}
+ 				overrides={[overrides, extraDragIconOverrides]}
+ 				getShapeVisibility={getShapeVisibility}
+ 			>
+diff --git a/apps/dotcom/client/src/tla/components/TlaEditor/TlaPublishEditor.tsx b/apps/dotcom/client/src/tla/components/TlaEditor/TlaPublishEditor.tsx
+index be5ddc137621..876a252dc473 100644
+--- a/apps/dotcom/client/src/tla/components/TlaEditor/TlaPublishEditor.tsx
++++ b/apps/dotcom/client/src/tla/components/TlaEditor/TlaPublishEditor.tsx
+@@ -2,6 +2,7 @@ import { getLicenseKey } from '@tldraw/dotcom-shared'
+ import { useMemo } from 'react'
+ import { SerializedSchema, TLComponents, TLRecord, Tldraw } from 'tldraw'
+ import { ThemeUpdater } from '../../../components/ThemeUpdater/ThemeUpdater'
++import { useCanvasIndicatorsAb } from '../../../hooks/useCanvasIndicatorsAb'
+ import { useLegacyUrlParams } from '../../../hooks/useLegacyUrlParams'
+ import { usePerformanceTracking } from '../../../hooks/usePerformanceTracking'
+ import { useHandleUiEvents } from '../../../utils/analytics'
+@@ -30,6 +31,7 @@ export function TlaPublishEditor({ schema, records }: TlaPublishEditorProps) {
+ 	useLegacyUrlParams()
+ 
+ 	const handleUiEvent = useHandleUiEvents()
++	const canvasIndicatorsAb = useCanvasIndicatorsAb()
+ 	const trackPerformance = usePerformanceTracking()
+ 	const fileEditorOverrides = useFileEditorOverrides({
+ 		fileSlug: undefined,
+@@ -43,6 +45,11 @@ export function TlaPublishEditor({ schema, records }: TlaPublishEditorProps) {
+ 		[schema, records]
+ 	)
+ 
++	// Wait for the canvas_indicators_ab assignment to resolve before mounting
++	// the editor. The hook has a bounded 500ms timeout so a slow flags endpoint
++	// can't block the app.
++	if (canvasIndicatorsAb === null) return null
++
+ 	return (
+ 		<div className={styles.editor} data-testid="tla-editor">
+ 			<Tldraw
+@@ -59,7 +66,7 @@ export function TlaPublishEditor({ schema, records }: TlaPublishEditorProps) {
+ 					return trackPerformance(editor)
+ 				}}
+ 				components={components}
+-				options={{ deepLinks: true }}
++				options={{ deepLinks: true, useCanvasIndicators: canvasIndicatorsAb === 'canvas' }}
+ 			>
+ 				<ThemeUpdater />
+ 				<SneakyDarkModeSync />
+diff --git a/apps/dotcom/client/src/tla/utils/FeatureFlagPoller.test.ts b/apps/dotcom/client/src/tla/utils/FeatureFlagPoller.test.ts
+index 08beb9c8432a..bb6304f09dc4 100644
+--- a/apps/dotcom/client/src/tla/utils/FeatureFlagPoller.test.ts
++++ b/apps/dotcom/client/src/tla/utils/FeatureFlagPoller.test.ts
+@@ -15,6 +15,7 @@ function makeFlags(overrides: Partial<FeatureFlags> = {}): FeatureFlags {
+ 		zero_enabled: { enabled: false },
+ 		zero_kill_switch: { enabled: false },
+ 		rum_enabled: { enabled: false },
++		canvas_indicators_ab: { enabled: false },
+ 		...overrides,
+ 	}
+ }
+diff --git a/apps/dotcom/client/src/tla/utils/FeatureFlagPoller.tsx b/apps/dotcom/client/src/tla/utils/FeatureFlagPoller.tsx
+index 0b79c023f89e..3c662535c296 100644
+--- a/apps/dotcom/client/src/tla/utils/FeatureFlagPoller.tsx
++++ b/apps/dotcom/client/src/tla/utils/FeatureFlagPoller.tsx
+@@ -8,11 +8,13 @@ export const DEFAULT_FLAGS: FeatureFlags = {
+ 	zero_enabled: { enabled: false },
+ 	zero_kill_switch: { enabled: false },
+ 	rum_enabled: { enabled: false },
++	canvas_indicators_ab: { enabled: false },
+ }
+ 
+-let flagsPromise: Promise<FeatureFlags> | null = null
+ let currentFlags: FeatureFlags = { ...DEFAULT_FLAGS }
++let flagsPromise: Promise<FeatureFlags> | null = null
+ let _wasAuthenticated = false
++let _hasResolvedOnce = false
+ 
+ export function fetchFeatureFlags(): Promise<FeatureFlags> {
+ 	if (!flagsPromise) {
+@@ -25,14 +27,16 @@ export function fetchFeatureFlags(): Promise<FeatureFlags> {
+ 					// Allow subsequent callers to refetch once auth is available
+ 					flagsPromise = null
+ 				}
+-				const flags = await r.json()
++				const flags = (await r.json()) as FeatureFlags
+ 				currentFlags = flags
+-				return flags as FeatureFlags
++				_hasResolvedOnce = true
++				return flags
+ 			} catch (err) {
+ 				console.error('[FeatureFlags] fetch failed:', err)
+ 				flagsPromise = null
+ 				_wasAuthenticated = false
+ 				currentFlags = { ...DEFAULT_FLAGS }
++				_hasResolvedOnce = true
+ 				return { ...DEFAULT_FLAGS }
+ 			}
+ 		})()
+@@ -44,6 +48,20 @@ export function wasAuthenticated(): boolean {
+ 	return _wasAuthenticated
+ }
+ 
++export function getCurrentFlags(): FeatureFlags {
++	return currentFlags
++}
++
++/**
++ * Whether the feature flag fetch has settled at least once (either
++ * successfully or by falling back to defaults). Used by the A/B hook to
++ * decide whether the values returned by `getCurrentFlags()` are meaningful
++ * yet, or whether we should wait.
++ */
++export function hasResolvedFlagsOnce(): boolean {
++	return _hasResolvedOnce
++}
++
+ // Start fetching immediately — fast path for returning users with valid cookies.
+ // If the session cookie is missing/expired the response header indicates the flags
+ // were evaluated without auth, and useAppState will retry once Clerk is ready.
+@@ -79,7 +97,7 @@ export function FeatureFlagPoller() {
+ 			try {
+ 				const response = await fetch('/api/app/feature-flags')
+ 				if (!response.ok) return
+-				const data = await response.json()
++				const data = (await response.json()) as FeatureFlags
+ 				if (!mounted) return
+ 
+ 				if (shouldReloadForFlagChange(prevFlags, data)) {
+diff --git a/apps/dotcom/sync-worker/src/utils/featureFlags.test.ts b/apps/dotcom/sync-worker/src/utils/featureFlags.test.ts
+index 9bd2f10924bf..3cb0e20a3c1a 100644
+--- a/apps/dotcom/sync-worker/src/utils/featureFlags.test.ts
++++ b/apps/dotcom/sync-worker/src/utils/featureFlags.test.ts
+@@ -283,6 +283,11 @@ describe('getFeatureFlagsAdmin (route handler)', () => {
+ 		const response = await getFeatureFlagsAdmin({} as any, env as any)
+ 		const body: any = await response.json()
+ 
+-		expect(Object.keys(body).sort()).toEqual(['rum_enabled', 'zero_enabled', 'zero_kill_switch'])
++		expect(Object.keys(body).sort()).toEqual([
++			'canvas_indicators_ab',
++			'rum_enabled',
++			'zero_enabled',
++			'zero_kill_switch',
++		])
+ 	})
+ })
+diff --git a/apps/dotcom/sync-worker/src/utils/featureFlags.ts b/apps/dotcom/sync-worker/src/utils/featureFlags.ts
+index cc0502d0e7c8..321cc98023e7 100644
+--- a/apps/dotcom/sync-worker/src/utils/featureFlags.ts
++++ b/apps/dotcom/sync-worker/src/utils/featureFlags.ts
+@@ -27,6 +27,13 @@ function getFlagDefaults(_env: Environment): Record<FeatureFlagKey, FeatureFlagV
+ 			enabled: false,
+ 			description: 'Real User Monitoring for editor performance metrics',
+ 		},
++		canvas_indicators_ab: {
++			type: 'percentage',
++			percentage: 0,
++			enabled: false,
++			description:
++				'A/B test for canvas indicators vs legacy SVG indicators. Users in the percentage get canvas indicators (treatment); others get SVG (control).',
++		},
+ 	}
+ }
+ 
+diff --git a/packages/dotcom-shared/src/types.ts b/packages/dotcom-shared/src/types.ts
+index e815df81a2ad..139a9687c342 100644
+--- a/packages/dotcom-shared/src/types.ts
++++ b/packages/dotcom-shared/src/types.ts
+@@ -219,7 +219,12 @@ export type TLCustomServerEvent = { type: 'persistence_good' } | { type: 'persis
+ 
+ /* ----------------------- Feature Flags ---------------------- */
+ 
+-export const FEATURE_FLAG_KEYS = ['zero_enabled', 'zero_kill_switch', 'rum_enabled'] as const
++export const FEATURE_FLAG_KEYS = [
++	'zero_enabled',
++	'zero_kill_switch',
++	'rum_enabled',
++	'canvas_indicators_ab',
++] as const
+ export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number]
+ 
+ export type FeatureFlagValue = BooleanFeatureFlag | PercentageFeatureFlag
+diff --git a/packages/editor/api-report.api.md b/packages/editor/api-report.api.md
+index 010dae8a6161..de1985a77888 100644
+--- a/packages/editor/api-report.api.md
++++ b/packages/editor/api-report.api.md
+@@ -793,6 +793,7 @@ export const defaultTldrawOptions: {
+     readonly tooltipDelayMs: 700;
+     readonly uiCoarseDragDistanceSquared: 625;
+     readonly uiDragDistanceSquared: 16;
++    readonly useCanvasIndicators: true;
+     readonly zoomToFitPadding: 128;
+ };
+ 
+@@ -3816,6 +3817,7 @@ export interface TldrawOptions {
+     readonly uiCoarseDragDistanceSquared: number;
+     // (undocumented)
+     readonly uiDragDistanceSquared: number;
++    readonly useCanvasIndicators: boolean;
+     readonly zoomToFitPadding: number;
+ }
+ 
+diff --git a/packages/editor/src/lib/components/LiveCollaborators.tsx b/packages/editor/src/lib/components/LiveCollaborators.tsx
+index fd334ac583e4..0ed1bce4f160 100644
+--- a/packages/editor/src/lib/components/LiveCollaborators.tsx
++++ b/packages/editor/src/lib/components/LiveCollaborators.tsx
+@@ -123,8 +123,14 @@ const Collaborator = track(function Collaborator({
+ 					.filter((id) => {
+ 						// Skip hidden shapes
+ 						if (editor.isShapeHidden(id)) return false
+-						// Only render SVG indicators for shapes that use legacy indicators
+-						// Canvas-based indicators are handled by CanvasShapeIndicators
++						// When canvas indicators are disabled, render SVG indicators for
++						// every selected shape. Otherwise shapes that opt into the canvas
++						// path via useLegacyIndicator() === false would never get a
++						// collaborator indicator drawn.
++						if (!editor.options.useCanvasIndicators) return true
++						// Otherwise, only render SVG indicators for shapes that opt in to
++						// the legacy path — canvas-based indicators are handled by
++						// CanvasShapeIndicators.
+ 						const shape = editor.getShape(id)
+ 						if (!shape) return false
+ 						const util = editor.getShapeUtil(shape)
+diff --git a/packages/editor/src/lib/components/default-components/CanvasShapeIndicators.tsx b/packages/editor/src/lib/components/default-components/CanvasShapeIndicators.tsx
+index 4d484a8f5151..24a474edfa17 100644
+--- a/packages/editor/src/lib/components/default-components/CanvasShapeIndicators.tsx
++++ b/packages/editor/src/lib/components/default-components/CanvasShapeIndicators.tsx
+@@ -129,6 +129,17 @@ function renderIndicatorPath(ctx: CanvasRenderingContext2D, indicatorPath: TLInd
+ /** @internal @react */
+ export const CanvasShapeIndicators = memo(function CanvasShapeIndicators() {
+ 	const editor = useEditor()
++
++	// Skip canvas indicator rendering when the option is disabled (e.g. A/B test)
++	if (!editor.options.useCanvasIndicators) {
++		return null
++	}
++
++	return <CanvasShapeIndicatorsInner />
++})
++
++const CanvasShapeIndicatorsInner = memo(function CanvasShapeIndicatorsInner() {
++	const editor = useEditor()
+ 	const canvasRef = useRef<HTMLCanvasElement>(null)
+ 
+ 	// Cache the selected color to avoid getComputedStyle on every render
+diff --git a/packages/editor/src/lib/components/default-components/DefaultCanvas.tsx b/packages/editor/src/lib/components/default-components/DefaultCanvas.tsx
+index 0a3320b4956d..cf6727c2da71 100644
+--- a/packages/editor/src/lib/components/default-components/DefaultCanvas.tsx
++++ b/packages/editor/src/lib/components/default-components/DefaultCanvas.tsx
+@@ -465,8 +465,11 @@ function HintedShapeIndicator() {
+ 	const ids = useValue(
+ 		'hinting shape ids without canvas indicator',
+ 		() => {
++			const hintingIds = dedupe(editor.getHintingShapeIds())
++			// When canvas indicators are disabled, render all hints via SVG
++			if (!editor.options.useCanvasIndicators) return hintingIds
+ 			// Filter to only shapes that use legacy SVG indicators
+-			return dedupe(editor.getHintingShapeIds()).filter((id) => {
++			return hintingIds.filter((id) => {
+ 				const shape = editor.getShape(id)
+ 				if (!shape) return false
+ 				const util = editor.getShapeUtil(shape)
+diff --git a/packages/editor/src/lib/components/default-components/DefaultShapeIndicator.tsx b/packages/editor/src/lib/components/default-components/DefaultShapeIndicator.tsx
+index 490ccc0f5e3b..1eb9d0c2e2e8 100644
+--- a/packages/editor/src/lib/components/default-components/DefaultShapeIndicator.tsx
++++ b/packages/editor/src/lib/components/default-components/DefaultShapeIndicator.tsx
+@@ -34,8 +34,8 @@ const InnerIndicator = memo(({ editor, id }: { editor: Editor; id: TLShapeId })
+ 
+ 	const util = editor.getShapeUtil(shape)
+ 
+-	// If the shape uses canvas indicators, it will be rendered by CanvasShapeIndicators
+-	if (!util.useLegacyIndicator()) return null
++	// If canvas indicators are enabled and the shape uses them, it will be rendered by CanvasShapeIndicators
++	if (editor.options.useCanvasIndicators && !util.useLegacyIndicator()) return null
+ 
+ 	return (
+ 		<OptionalErrorBoundary
+diff --git a/packages/editor/src/lib/components/default-components/DefaultShapeIndicators.tsx b/packages/editor/src/lib/components/default-components/DefaultShapeIndicators.tsx
+index d2526f8b1ba5..086088d9a2f0 100644
+--- a/packages/editor/src/lib/components/default-components/DefaultShapeIndicators.tsx
++++ b/packages/editor/src/lib/components/default-components/DefaultShapeIndicators.tsx
+@@ -91,9 +91,11 @@ export const DefaultShapeIndicators = memo(function DefaultShapeIndicators({
+ 	const { ShapeIndicator } = useEditorComponents()
+ 
+ 	// Filter out shapes that have canvas indicator support - only render shapes that use legacy SVG indicators
++	// When useCanvasIndicators is disabled, render all shapes via SVG
+ 	const shapesToRender = useValue(
+ 		'shapes to render for svg indicators',
+ 		() => {
++			if (!editor.options.useCanvasIndicators) return renderingShapes
+ 			return renderingShapes.filter(({ id }) => {
+ 				const shape = editor.getShape(id)
+ 				if (!shape) return false
+diff --git a/packages/editor/src/lib/options.ts b/packages/editor/src/lib/options.ts
+index 62f3fd99f578..52e0322c108e 100644
+--- a/packages/editor/src/lib/options.ts
++++ b/packages/editor/src/lib/options.ts
+@@ -202,6 +202,12 @@ export interface TldrawOptions {
+ 	 * viewport's page dimensions regardless of overview zoom changes.
+ 	 */
+ 	readonly quickZoomPreservesScreenBounds: boolean
++	/**
++	 * Whether to use 2D canvas rendering for shape indicators. When true (default),
++	 * shapes that support it will render indicators on a 2D canvas for better
++	 * performance. When false, all indicators use legacy SVG rendering.
++	 */
++	readonly useCanvasIndicators: boolean
+ 	/**
+ 	 * Called before content is written to the clipboard during a copy or cut operation.
+ 	 * Receives the serialized content (shapes, bindings, assets) and can filter or transform
+@@ -338,6 +344,7 @@ export const defaultTldrawOptions = {
+ 	camera: DEFAULT_CAMERA_OPTIONS,
+ 	text: {},
+ 	deepLinks: undefined,
++	useCanvasIndicators: true,
+ 	quickZoomPreservesScreenBounds: true,
+ 	onBeforeCopyToClipboard: undefined,
+ 	onBeforePasteFromClipboard: undefined,

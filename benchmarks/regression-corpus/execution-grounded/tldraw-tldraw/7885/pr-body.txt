@@ -1,0 +1,46 @@
+In order to expose additional fill styles (pattern, fill, lined-fill) that were previously hidden from the UI, this PR replaces the 4th fill button with a dropdown picker. The first three fill options (none, semi, solid) remain as inline buttons, following the same pattern used by the vertical alignment dropdown.
+
+Closes #7578
+
+https://github.com/user-attachments/assets/13b1969f-2719-422d-8023-61ca21272c35
+
+### Change type
+
+- [x] `improvement`
+
+### Test plan
+
+1. Select a shape that supports fill (e.g. geo shape)
+2. Verify none, semi, solid buttons appear as inline buttons in the style panel
+3. Verify a dropdown appears after the solid button with access to pattern, lined-fill, and fill options
+4. Verify selecting a dropdown option applies the fill style correctly
+5. Verify the dropdown icon shows the correct fill style when a dropdown fill is active
+6. Verify the mixed icon only appears when multiple shapes truly have different fill values
+
+- [ ] Unit tests
+- [ ] End to end tests
+
+### Release notes
+
+- Add a dropdown to the fill style picker exposing pattern, fill, and lined-fill options that were previously hidden from the UI.
+
+### API changes
+
+- Added `fillExtra` to `STYLES` object for additional fill style options shown in the dropdown
+
+<!-- CURSOR_SUMMARY -->
+---
+
+> [!NOTE]
+> **Medium Risk**
+> Moderate risk: changes core style-panel interaction patterns and icon-selection logic, which could regress fill selection or mixed-state display across shape types, but scope is limited to UI/assets and e2e updates.
+> 
+> **Overview**
+> Updates the style panel’s fill picker to show `none`/`semi`/`solid` as inline buttons and moves additional fill options into a new dropdown (`fill-extra`), including newly-exposed `lined-fill` and the previously-hidden `fill` option.
+> 
+> Adds the new `fill-lined-fill` icon across the assets pipeline (SVG + generated URL maps/types) and extends `STYLES` with `fillExtra` to back the dropdown. The dropdown picker logic is adjusted to show the correct icon for the current value (including `mixed`) and to fall back safely when the current value isn’t in the dropdown items.
+> 
+> Updates Playwright e2e fixtures/tests to reflect the new fill UI (removing direct access to the old `pattern` fill button and asserting `solid` behavior instead).
+> 
+> <sup>Written by [Cursor Bugbot](https://cursor.com/dashboard?tab=bugbot) for commit fbc1addd6f11659cdd0c3a95e00e6c30260aa3b0. This will update automatically on new commits. Configure [here](https://cursor.com/dashboard?tab=bugbot).</sup>
+<!-- /CURSOR_SUMMARY -->

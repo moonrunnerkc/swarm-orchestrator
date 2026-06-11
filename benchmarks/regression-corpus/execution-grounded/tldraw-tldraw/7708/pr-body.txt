@@ -1,0 +1,285 @@
+Implements canvas-based rendering for shape indicators with indicator2d methods across all shape utilities.
+
+* I've also added some throwaway logging (enabled with the debug menu) for those reviewing to see the per improvements. I'm seeing around 25x increases as well as the time we save mounting/unmounting on page load.
+* I've added a new method to the `ShapeUtil` and a new type to allow for more complex shape drawing (arrows require clip paths for the label etc)
+
+I've also appended a snippet that you can run in the console which will create a bunch of shapes to test out the new feature too.
+
+https://github.com/user-attachments/assets/62bbaa48-479a-4057-8bfb-763f5b2ccd56
+
+<details>
+<summary>create shapes snippet</summary>
+
+```ts
+// Shape Test Generator for CanvasShapeIndicators.tsx
+// Run this in the Chrome DevTools console when tldraw is loaded
+
+(function generateTestShapes() {
+  // Get the editor instance
+  const editor = window.editor || document.querySelector('[data-testid="tldraw"]')?.__tldraw_editor__;
+  
+  if (!editor) {
+    console.error('Could not find editor instance. Make sure tldraw is loaded.');
+    console.log('Tip: The editor is usually available as window.editor in development mode');
+    return;
+  }
+
+  // Style options (no blue colors to avoid confusion with indicators)
+  const colors = ['black', 'grey', 'light-violet', 'violet', 'yellow', 'orange', 'green', 'light-green', 'light-red', 'red'];
+  const geoTypes = ['rectangle', 'ellipse', 'triangle', 'diamond', 'pentagon', 'hexagon', 'octagon', 'star', 'rhombus', 'oval', 'trapezoid', 'arrow-right', 'arrow-left', 'arrow-up', 'arrow-down', 'x-box', 'check-box', 'cloud', 'heart'];
+  const fills = ['none', 'semi', 'solid', 'pattern', 'fill'];
+  const dashes = ['draw', 'solid', 'dashed', 'dotted'];
+  const sizes = ['s', 'm', 'l', 'xl'];
+  
+  const shapes = [];
+  let x = 0;
+  let y = 0;
+  const spacing = 150;
+  const rowHeight = 150;
+  let shapeIndex = 0;
+
+  // Helper to create unique shape IDs
+  const createId = () => `shape:test_${Date.now()}_${shapeIndex++}`;
+
+  // 1. GEO SHAPES - All types with different styles
+  console.log('Creating geo shapes...');
+  geoTypes.forEach((geo, i) => {
+    const col = i % 6;
+    const row = Math.floor(i / 6);
+    shapes.push({
+      id: createId(),
+      type: 'geo',
+      x: col * spacing,
+      y: row * rowHeight,
+      props: {
+        geo,
+        w: 100,
+        h: 100,
+        color: colors[i % colors.length],
+        fill: fills[i % fills.length],
+        dash: dashes[i % dashes.length],
+        size: sizes[i % sizes.length],
+      }
+    });
+  });
+
+  // Offset for next section
+  let sectionY = Math.ceil(geoTypes.length / 6) * rowHeight + 100;
+
+  // 2. ARROWS with different styles
+  console.log('Creating arrow shapes...');
+  const arrowheadTypes = ['arrow', 'triangle', 'square', 'dot', 'pipe', 'diamond', 'inverted', 'bar', 'none'];
+  arrowheadTypes.forEach((arrowhead, i) => {
+    shapes.push({
+      id: createId(),
+      type: 'arrow',
+      x: (i % 4) * 200,
+      y: sectionY + Math.floor(i / 4) * 120,
+      props: {
+        color: colors[i % colors.length],
+        fill: fills[i % fills.length],
+        dash: dashes[i % dashes.length],
+        size: sizes[i % sizes.length],
+        arrowheadStart: arrowhead,
+        arrowheadEnd: arrowheadTypes[(i + 1) % arrowheadTypes.length],
+        start: { x: 0, y: 0 },
+        end: { x: 150, y: 80 },
+      }
+    });
+  });
+
+  sectionY += Math.ceil(arrowheadTypes.length / 4) * 120 + 100;
+
+  // 3. NOTE shapes with different colors and sizes
+  console.log('Creating note shapes...');
+  colors.slice(0, 8).forEach((color, i) => {
+    shapes.push({
+      id: createId(),
+      type: 'note',
+      x: (i % 4) * 250,
+      y: sectionY + Math.floor(i / 4) * 200,
+      props: {
+        color,
+        size: sizes[i % sizes.length],
+        scale: 1,
+      }
+    });
+  });
+
+  sectionY += Math.ceil(8 / 4) * 200 + 100;
+
+  // 4. TEXT shapes with different fonts and colors
+  console.log('Creating text shapes...');
+  const fonts = ['draw', 'sans', 'serif', 'mono'];
+  const textAligns = ['start', 'middle', 'end'];
+  fonts.forEach((font, i) => {
+    shapes.push({
+      id: createId(),
+      type: 'text',
+      x: (i % 4) * 200,
+      y: sectionY,
+      props: {
+        color: colors[i % colors.length],
+        size: sizes[i % sizes.length],
+        font,
+        textAlign: textAligns[i % textAligns.length],
+        w: 150,
+        autoSize: true,
+        scale: 1,
+      }
+    });
+  });
+
+  sectionY += 150;
+
+  // 5. FRAME shapes
+  console.log('Creating frame shapes...');
+  colors.slice(0, 4).forEach((color, i) => {
+    shapes.push({
+      id: createId(),
+      type: 'frame',
+      x: i * 300,
+      y: sectionY,
+      props: {
+        w: 250,
+        h: 200,
+        name: `Frame ${i + 1}`,
+        color,
+      }
+    });
+  });
+
+  sectionY += 300;
+
+  // 6. LINE shapes with different styles
+  console.log('Creating line shapes...');
+  dashes.forEach((dash, i) => {
+    shapes.push({
+      id: createId(),
+      type: 'line',
+      x: i * 200,
+      y: sectionY,
+      props: {
+        color: colors[i % colors.length],
+        dash,
+        size: sizes[i % sizes.length],
+        points: {
+          a1: { id: 'a1', index: 'a1', x: 0, y: 0 },
+          a2: { id: 'a2', index: 'a2', x: 100, y: 50 },
+          a3: { id: 'a3', index: 'a3', x: 150, y: 0 },
+        }
+      }
+    });
+  });
+
+  sectionY += 150;
+
+  // 7. Shapes at various OPACITIES
+  console.log('Creating shapes with varying opacity...');
+  [1, 0.75, 0.5, 0.25].forEach((opacity, i) => {
+    shapes.push({
+      id: createId(),
+      type: 'geo',
+      x: i * spacing,
+      y: sectionY,
+      opacity,
+      props: {
+        geo: 'rectangle',
+        w: 100,
+        h: 100,
+        color: 'red',
+        fill: 'solid',
+      }
+    });
+  });
+
+  sectionY += rowHeight + 50;
+
+  // 8. Rotated shapes
+  console.log('Creating rotated shapes...');
+  [0, Math.PI / 6, Math.PI / 4, Math.PI / 3, Math.PI / 2].forEach((rotation, i) => {
+    shapes.push({
+      id: createId(),
+      type: 'geo',
+      x: i * spacing + 50,
+      y: sectionY + 50,
+      rotation,
+      props: {
+        geo: 'star',
+        w: 80,
+        h: 80,
+        color: colors[i % colors.length],
+        fill: 'solid',
+      }
+    });
+  });
+
+  sectionY += rowHeight + 100;
+
+  // 9. Different sizes
+  console.log('Creating shapes with different sizes...');
+  [50, 100, 150, 200].forEach((size, i) => {
+    shapes.push({
+      id: createId(),
+      type: 'geo',
+      x: i * 250,
+      y: sectionY,
+      props: {
+        geo: 'ellipse',
+        w: size,
+        h: size,
+        color: colors[i % colors.length],
+        fill: fills[i % fills.length],
+        dash: dashes[i % dashes.length],
+      }
+    });
+  });
+
+  // Create all shapes
+  console.log(`Creating ${shapes.length} shapes...`);
+  editor.createShapes(shapes);
+
+  // Select all created shapes
+  const createdIds = shapes.map(s => s.id);
+  editor.select(...createdIds);
+
+  // Zoom to fit all shapes
+  editor.zoomToSelection();
+
+  console.log(`✅ Created ${shapes.length} test shapes!`);
+  console.log('Shape types created: geo (all variants), arrow, note, text, frame, line');
+  console.log('Variations include: colors (no blues), fills, dashes, sizes, opacities, rotations');
+
+  return shapes;
+})();
+```
+</details>
+
+### Change type
+
+- [ ] `bugfix`
+- [ ] `improvement`
+- [x] `feature`
+- [x] `api`
+- [ ] `other`
+
+### API changes
+- Added `getIndicatorPath()` for canvas indicators
+- Added a `TLIndicatorPath` for the return canvas 2d paths
+
+
+<!-- CURSOR_SUMMARY -->
+---
+
+> [!NOTE]
+> Introduces 2D canvas rendering for shape indicators and migrates built-in shapes to it, reducing DOM overhead.
+> 
+> - New `CanvasShapeIndicators` canvas overlay hooked into `DefaultCanvas`; legacy SVG indicators are now rendered only when `ShapeUtil.useLegacyIndicator()` returns `true`
+> - API: adds `ShapeUtil.getIndicatorPath(shape)` and `useLegacyIndicator()`, plus `TLIndicatorPath` type and `PathBuilder.toPath2D` for converting `PathBuilder` to `Path2D`
+> - Implements canvas indicators across shapes (`arrow` with clip support, `bookmark`, `draw`, `embed`, `frame`, `geo`, `highlight`, `image`, `line`, `note`, `text`, `video`); each overrides `useLegacyIndicator()` to `false`
+> - Styling: adds `.tl-canvas-indicators` layer; tests updated to assert its presence instead of per-shape SVGs
+> - Test infra: adds `Path2D.roundRect` polyfill in Vitest setup
+> - Public exports/docs updated (`api-report` changes, `index.ts` exports `TLIndicatorPath`)
+> 
+> <sup>Written by [Cursor Bugbot](https://cursor.com/dashboard?tab=bugbot) for commit 0eabd14fcb029b49005436fb0e6649d559df52c3. This will update automatically on new commits. Configure [here](https://cursor.com/dashboard?tab=bugbot).</sup>
+<!-- /CURSOR_SUMMARY -->
