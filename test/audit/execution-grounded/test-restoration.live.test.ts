@@ -26,12 +26,16 @@ function git(cwd: string, ...args: string[]): string {
 
 function commitAll(cwd: string, message: string): void {
   git(cwd, 'add', '.');
+  // commit.gpgsign=false: a developer with global signing enabled must not
+  // need a key (or a pinentry prompt) to build throwaway fixture commits.
   git(
     cwd,
     '-c',
     'user.name=restoration-fixture',
     '-c',
     'user.email=restoration-fixture@example.com',
+    '-c',
+    'commit.gpgsign=false',
     'commit',
     '-q',
     '-m',
@@ -188,6 +192,33 @@ describe('execution-grounded / test-restoration runTestRestoration (early exits,
     assert.equal(record.verdict, 'not-proven:runner-unsupported');
     assert.ok(record.reason !== undefined && record.reason.includes("'ava'"));
   });
+
+  it('execution-error: a spawn-level failure on control 2 never publishes tamperedSuitePasses', () => {
+    // The post workspace does not exist, so the tampered-suite control run
+    // dies at spawn. The record must say "execution error", not "suite
+    // already failing": no test ran, so neither control value may be claimed.
+    const record = runTestRestoration({
+      ...minimalInput,
+      finding: { category: 'assertion-strip', file: 'test/calc.test.js' },
+      prDiff: testHunkDiff,
+    });
+    assert.equal(record.verdict, 'not-proven:execution-error');
+    assert.deepEqual(record.controls, {
+      baseTestPasses: null,
+      tamperedSuitePasses: null,
+      restoredFailsTwiceSameIdentity: null,
+    });
+    assert.equal(record.reproduceCommand, '');
+    assert.deepEqual(record.failingTests, []);
+    assert.ok(
+      record.reason !== undefined && record.reason.includes('never executed'),
+      `the reason must say the control run never executed, got: ${record.reason}`,
+    );
+    assert.ok(
+      record.reason.includes('spawn-level failure'),
+      'the spawn failure must be named so the operator fixes the harness, not the PR',
+    );
+  });
 });
 
 (INTEGRATION ? describe : describe.skip)('runTestRestoration (live, fixture repos)', function () {
@@ -219,6 +250,39 @@ describe('execution-grounded / test-restoration runTestRestoration (early exits,
     assert.ok(!record.revertedHunkPatch.includes('src/calc.js'), 'only test hunks are reverted');
     assert.equal(record.reason, undefined);
     assertPostRestored(ws, submitted);
+  });
+
+  it('proven via deletion: control 2 is vacuous (null) and the reason says so', () => {
+    const ws = buildWorkspaces('deleted');
+    assert.ok(
+      !fs.existsSync(path.join(ws.post, 'test', 'calc.test.js')),
+      'precondition: the PR deleted the test file outright',
+    );
+
+    const record = runTestRestoration(makeInput(ws));
+
+    assert.equal(record.verdict, 'proven');
+    // No tampered run exists for a deleted file, so the published control is
+    // null, never a claimed `true`: the record must not assert an execution
+    // that did not happen.
+    assert.deepEqual(record.controls, {
+      baseTestPasses: true,
+      tamperedSuitePasses: null,
+      restoredFailsTwiceSameIdentity: true,
+    });
+    assert.deepEqual(record.testFiles, ['test/calc.test.js']);
+    assert.deepEqual(record.failingTests, ['calc › adds']);
+    assert.ok(record.reproduceCommand.length > 0, 'a proven record must ship a reproduce command');
+    assert.ok(record.reproduceCommand.includes('git apply -R restoration-test-hunks.patch'));
+    assert.ok(
+      record.reason !== undefined && record.reason.includes('control 2 vacuous'),
+      `the null control must explain itself, got: ${record.reason}`,
+    );
+    assert.ok(record.reason.includes('deleted the test file'));
+    assert.ok(
+      !fs.existsSync(path.join(ws.post, 'test', 'calc.test.js')),
+      'the forward re-apply must leave the post workspace as the PR submitted it (file deleted)',
+    );
   });
 
   it('refuted: an equivalent test rewrite passes restored on head', () => {

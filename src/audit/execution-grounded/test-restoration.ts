@@ -32,6 +32,8 @@ export type RestorationVerdict =
   | 'not-proven:no-test-hunks'
   | 'not-proven:patch-apply-failed'
   | 'not-proven:runner-unsupported'
+  // Reserved for the execution-grounded caller when no sandbox workspace could
+  // be provisioned; never produced by this orchestrator.
   | 'not-proven:no-workspace'
   | 'not-proven:execution-error';
 
@@ -447,6 +449,13 @@ export interface TestRunResult {
   /** Captured stdout+stderr, or the spawn error message when nothing ran. */
   rawOutput: string;
   timedOut: boolean;
+  /** True when the command never completed under its own exit code: the spawn
+   *  itself failed (missing binary, nonexistent cwd) or the process was
+   *  signal-killed. exec-env reports both as `status === null` without
+   *  `timedOut`. No test executed to a verdict, so `passed: false` here is a
+   *  harness fact, not a claim about the suite; callers must not publish it
+   *  as one. */
+  spawnFailed: boolean;
 }
 
 /**
@@ -469,7 +478,13 @@ export function executeTestRun(opts: ExecuteTestRunOptions): TestRunResult {
       maxBuffer: 16 * 1024 * 1024,
       ...(opts.docker !== undefined ? { docker: opts.docker } : {}),
     });
-    return { passed: true, failingTests: [], rawOutput: stdout, timedOut: false };
+    return {
+      passed: true,
+      failingTests: [],
+      rawOutput: stdout,
+      timedOut: false,
+      spawnFailed: false,
+    };
   } catch (err) {
     // execFileGuarded throws a GuardedRunError for nonzero exits, timeouts,
     // and spawn failures alike, always carrying stdout/stderr/timedOut; the
@@ -478,17 +493,23 @@ export function executeTestRun(opts: ExecuteTestRunOptions): TestRunResult {
     const stdout = typeof guarded.stdout === 'string' ? guarded.stdout : '';
     const stderr = typeof guarded.stderr === 'string' ? guarded.stderr : '';
     const timedOut = guarded.timedOut === true;
+    // exec-env sets `status` to a number exactly when the child exited under
+    // its own exit code; null (or a foreign error without the field) means
+    // nothing ran to completion, which is a harness failure, not a test run.
+    const spawnFailed = !timedOut && typeof guarded.status !== 'number';
     const captured = [stdout, stderr].filter((s) => s.length > 0).join('\n');
     const rawOutput =
       captured.length > 0 ? captured : err instanceof Error ? err.message : String(err);
-    // A timed-out run's partial output proves nothing; report no identities
-    // so the classifier lands on an execution anomaly, not a proof.
-    const failingTests = timedOut ? [] : parseFailingTests(opts.runner, stdout, stderr);
+    // A timed-out run's partial output proves nothing, and a spawn failure
+    // produced no runner output at all; report no identities so the
+    // classifier lands on an execution anomaly, not a proof.
+    const failingTests =
+      timedOut || spawnFailed ? [] : parseFailingTests(opts.runner, stdout, stderr);
     log.debug(
-      `test run failed (runner=${opts.runner}, timedOut=${timedOut}, identities=${failingTests.length}): ` +
-        `${command} ${args.join(' ')}`,
+      `test run failed (runner=${opts.runner}, timedOut=${timedOut}, spawnFailed=${spawnFailed}, ` +
+        `identities=${failingTests.length}): ${command} ${args.join(' ')}`,
     );
-    return { passed: false, failingTests, rawOutput, timedOut };
+    return { passed: false, failingTests, rawOutput, timedOut, spawnFailed };
   }
 }
 
@@ -525,6 +546,19 @@ function gitApplyPatch(opts: { patch: string; cwd: string; reverse: boolean }): 
     };
   }
   return { ok: true, detail: '' };
+}
+
+/** `git status --porcelain --untracked-files=no` in `cwd`, or null when git
+ *  itself failed. Tracked files only: untracked scratch (caches, markers a
+ *  test writes) is expected workspace noise, not what this probe watches. */
+function readTrackedStatus(cwd: string): string | null {
+  const res = spawnSync('git', ['status', '--porcelain', '--untracked-files=no'], {
+    cwd,
+    encoding: 'utf8',
+    timeout: 60_000,
+  });
+  if (res.error !== undefined || res.status !== 0) return null;
+  return res.stdout;
 }
 
 interface RestoredPhaseOutcome {
@@ -578,12 +612,26 @@ function runRestoredPhase(
       reason: `restored run 1 timed out after ${input.timeoutMs}ms`,
     };
   }
+  if (run1.spawnFailed) {
+    return {
+      verdict: 'not-proven:execution-error',
+      failingTests: [],
+      reason: `restored run 1 never executed (spawn-level failure): ${run1.rawOutput}`,
+    };
+  }
   const run2 = executeTestRun(runOpts);
   if (run2.timedOut) {
     return {
       verdict: 'not-proven:execution-error',
       failingTests: [],
       reason: `restored run 2 timed out after ${input.timeoutMs}ms`,
+    };
+  }
+  if (run2.spawnFailed) {
+    return {
+      verdict: 'not-proven:execution-error',
+      failingTests: [],
+      reason: `restored run 2 never executed (spawn-level failure): ${run2.rawOutput}`,
     };
   }
 
@@ -634,6 +682,17 @@ function runRestoredPhase(
       reason: `base-control run timed out after ${input.timeoutMs}ms`,
     };
   }
+  // A base control that never executed is not a base failure: publishing
+  // `baseTestPasses: false` here would read as "the failure predates the PR"
+  // for a run that never happened, so the control stays null and the verdict
+  // is an execution error.
+  if (baseRun.spawnFailed) {
+    return {
+      verdict: 'not-proven:execution-error',
+      failingTests: [],
+      reason: `base-control run never executed (spawn-level failure): ${baseRun.rawOutput}`,
+    };
+  }
   controls.baseTestPasses = baseRun.passed;
   const final = classifyRestoration({
     tamperedSuitePasses: true,
@@ -658,11 +717,43 @@ function runRestoredPhase(
  * the restored phase errors.
  */
 export function runTestRestoration(input: TestRestorationInput): RestorationProofRecord {
+  // Last-resort guard so "never throws" holds by construction: the pipeline's
+  // building blocks are individually fail-closed, but a harness bug anywhere
+  // in between must still come back as a verdict, never an exception.
+  try {
+    return runRestorationPipeline(input);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log.error(`test-restoration: orchestrator threw unexpectedly: ${message}`);
+    return {
+      schemaVersion: 1,
+      verdict: 'not-proven:execution-error',
+      category: input.finding.category,
+      findingFile: input.finding.file,
+      testFiles: [],
+      failingTests: [],
+      controls: {
+        baseTestPasses: null,
+        tamperedSuitePasses: null,
+        restoredFailsTwiceSameIdentity: null,
+      },
+      reproduceCommand: '',
+      revertedHunkPatch: '',
+      reason: `test-restoration orchestrator threw unexpectedly: ${message}`,
+    };
+  }
+}
+
+function runRestorationPipeline(input: TestRestorationInput): RestorationProofRecord {
   const controls: RestorationControls = {
     baseTestPasses: null,
     tamperedSuitePasses: null,
     restoredFailsTwiceSameIdentity: null,
   };
+  // Set when control 2 cannot exist at all (the PR deleted the test file);
+  // folded into every record's reason so a published null control always
+  // explains itself.
+  let vacuousControl2Note: string | null = null;
   const record = (
     verdict: RestorationVerdict,
     fields: {
@@ -672,18 +763,23 @@ export function runTestRestoration(input: TestRestorationInput): RestorationProo
       revertedHunkPatch?: string;
       reason?: string;
     },
-  ): RestorationProofRecord => ({
-    schemaVersion: 1,
-    verdict,
-    category: input.finding.category,
-    findingFile: input.finding.file,
-    testFiles: fields.testFiles ?? [],
-    failingTests: fields.failingTests ?? [],
-    controls,
-    reproduceCommand: fields.reproduceCommand ?? '',
-    revertedHunkPatch: fields.revertedHunkPatch ?? '',
-    ...(fields.reason !== undefined ? { reason: fields.reason } : {}),
-  });
+  ): RestorationProofRecord => {
+    const reasonParts = [fields.reason, vacuousControl2Note ?? undefined].filter(
+      (part): part is string => part !== undefined,
+    );
+    return {
+      schemaVersion: 1,
+      verdict,
+      category: input.finding.category,
+      findingFile: input.finding.file,
+      testFiles: fields.testFiles ?? [],
+      failingTests: fields.failingTests ?? [],
+      controls,
+      reproduceCommand: fields.reproduceCommand ?? '',
+      revertedHunkPatch: fields.revertedHunkPatch ?? '',
+      ...(reasonParts.length > 0 ? { reason: reasonParts.join('; ') } : {}),
+    };
+  };
 
   // Step 1: the finding must come with revertible test hunks.
   const patch = extractTestHunkPatch(input.prDiff, input.finding.file);
@@ -722,7 +818,9 @@ export function runTestRestoration(input: TestRestorationInput): RestorationProo
 
   // Step 3 / control 2: the PR's own test run must pass as submitted. A PR
   // that deleted the test file outright has nothing to run here, which
-  // trivially passes (CI saw no failure).
+  // trivially passes for classification purposes (CI saw no failure), but the
+  // published control stays null: no tampered run executed, and the record
+  // must never claim one did.
   if (tamperedFile !== null) {
     const tamperedRun = executeTestRun({
       runner,
@@ -739,6 +837,18 @@ export function runTestRestoration(input: TestRestorationInput): RestorationProo
         reason: `tampered-suite control run timed out after ${input.timeoutMs}ms`,
       });
     }
+    // A spawn-level failure (missing workspace, missing npx) is a harness
+    // problem, not a failing suite: publishing `tamperedSuitePasses: false`
+    // here would read as "CI would have caught this PR" for a run that never
+    // executed, so the control stays null and the verdict is an execution
+    // error.
+    if (tamperedRun.spawnFailed) {
+      return record('not-proven:execution-error', {
+        testFiles,
+        revertedHunkPatch: patch,
+        reason: `tampered-suite control run never executed (spawn-level failure): ${tamperedRun.rawOutput}`,
+      });
+    }
     if (!tamperedRun.passed) {
       controls.tamperedSuitePasses = false;
       const ids = tamperedRun.failingTests;
@@ -750,8 +860,17 @@ export function runTestRestoration(input: TestRestorationInput): RestorationProo
           `${ids.length > 0 ? ` (${ids.join(', ')})` : ''}; CI would have caught this PR`,
       });
     }
+    controls.tamperedSuitePasses = true;
+  } else {
+    vacuousControl2Note =
+      'control 2 vacuous: the PR deleted the test file outright, so no tampered run exists';
   }
-  controls.tamperedSuitePasses = true;
+
+  // Tracked-state observability baseline. The fixture builder commits its
+  // workspaces clean, but a production caller may hand over a checkout with
+  // legitimate uncommitted state, so the post-restore probe below warns only
+  // on a DIFFERENCE from this snapshot, never on dirt that was already there.
+  const trackedBefore = readTrackedStatus(input.postWorkspacePath);
 
   // Step 4: revert the test hunks in the post workspace.
   const reverse = gitApplyPatch({ patch, cwd: input.postWorkspacePath, reverse: true });
@@ -778,6 +897,17 @@ export function runTestRestoration(input: TestRestorationInput): RestorationProo
         log.error(
           `test-restoration: ${restoreFailure} (cwd=${input.postWorkspacePath}, file=${input.finding.file})`,
         );
+      } else if (trackedBefore !== null) {
+        // Log-only observability: a restored test that mutated tracked files
+        // is worth a look, but it is not by itself evidence about the PR, so
+        // it never changes the record.
+        const trackedAfter = readTrackedStatus(input.postWorkspacePath);
+        if (trackedAfter !== null && trackedAfter !== trackedBefore) {
+          log.warn(
+            `test-restoration: tracked files in the post workspace changed across the restoration ` +
+              `(cwd=${input.postWorkspacePath}); git status --porcelain now reads:\n${trackedAfter}`,
+          );
+        }
       }
     }
   } catch (err) {

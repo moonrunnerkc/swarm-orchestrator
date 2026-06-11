@@ -952,7 +952,13 @@ describe('execution-grounded / test-restoration executeTestRun', () => {
 
   it('a zero-exit run is passed with no failing tests', () => {
     const result = runWithFakeNpx('exit 0');
-    assert.deepEqual(result, { passed: true, failingTests: [], rawOutput: '', timedOut: false });
+    assert.deepEqual(result, {
+      passed: true,
+      failingTests: [],
+      rawOutput: '',
+      timedOut: false,
+      spawnFailed: false,
+    });
   });
 
   it('a nonzero-exit run with parseable output yields the failing-test identities', () => {
@@ -961,6 +967,7 @@ describe('execution-grounded / test-restoration executeTestRun', () => {
     const result = runWithFakeNpx(script);
     assert.equal(result.passed, false);
     assert.equal(result.timedOut, false);
+    assert.equal(result.spawnFailed, false, 'a nonzero exit is a real run, not a spawn failure');
     assert.deepEqual(result.failingTests, ['calc › adds', 'calc › subtracts']);
     assert.ok(result.rawOutput.includes('2 failing'), 'raw output must be captured');
   });
@@ -969,6 +976,7 @@ describe('execution-grounded / test-restoration executeTestRun', () => {
     const result = runWithFakeNpx("echo 'segmentation fault'; exit 139");
     assert.equal(result.passed, false);
     assert.equal(result.timedOut, false);
+    assert.equal(result.spawnFailed, false, 'the child exited under its own exit code');
     assert.deepEqual(result.failingTests, []);
     assert.ok(result.rawOutput.includes('segmentation fault'), 'output must not be discarded');
   });
@@ -981,7 +989,7 @@ describe('execution-grounded / test-restoration executeTestRun', () => {
     assert.ok(result.rawOutput.includes('canary=tamper-proof'), 'recipe env must reach the child');
   });
 
-  it('a spawn-level error (nonexistent binary) returns passed:false with the error message', () => {
+  it('a spawn-level error (nonexistent binary) returns passed:false with spawnFailed:true', () => {
     process.env.SWARM_EG_NODE_BIN = '/nonexistent-swarm-eg-bin-dir';
     const result = executeTestRun({
       runner: 'mocha',
@@ -991,6 +999,23 @@ describe('execution-grounded / test-restoration executeTestRun', () => {
     });
     assert.equal(result.passed, false);
     assert.equal(result.timedOut, false);
+    assert.equal(result.spawnFailed, true, 'nothing executed: the flag callers key on must be set');
+    assert.deepEqual(result.failingTests, []);
+    assert.ok(result.rawOutput.length > 0, 'the spawn error message must surface in rawOutput');
+  });
+
+  it('a spawn-level error (nonexistent cwd) returns spawnFailed:true with the error message', () => {
+    const dir = makeFakeNpx('exit 0');
+    process.env.SWARM_EG_NODE_BIN = dir;
+    const result = executeTestRun({
+      runner: 'mocha',
+      files: ['t.test.js'],
+      cwd: '/nonexistent-swarm-restoration-workspace',
+      timeoutMs: 5_000,
+    });
+    assert.equal(result.passed, false);
+    assert.equal(result.timedOut, false);
+    assert.equal(result.spawnFailed, true);
     assert.deepEqual(result.failingTests, []);
     assert.ok(result.rawOutput.length > 0, 'the spawn error message must surface in rawOutput');
   });
@@ -999,6 +1024,7 @@ describe('execution-grounded / test-restoration executeTestRun', () => {
     const result = runWithFakeNpx('sleep 30', { timeoutMs: 500 });
     assert.equal(result.passed, false);
     assert.equal(result.timedOut, true);
+    assert.equal(result.spawnFailed, false, 'a timeout is its own anomaly, not a spawn failure');
     assert.deepEqual(result.failingTests, []);
   });
 });
