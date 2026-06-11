@@ -335,15 +335,20 @@ export interface LedgerEntryPayloadMap {
   };
   // A verifiable-evidence block-trigger candidate: a self-certifying
   // runtime fact (a falsified issue repro, a structural finding a surviving
-  // mutant or coverage gap corroborates on the same line, or a failed
-  // declared obligation). `eligible` records whether the trigger is allowed
-  // to gate per the revert-calibrated block-eligibility policy; `blocked`
-  // records whether it actually failed the merge on this run. Both are false
-  // until the calibration promotes the trigger. `evidenceSha256` pins the
-  // canonical evidence so the rendered verdict ties back to a replayable fact,
-  // and `reproduce` is the exact command that regenerates it.
+  // mutant or coverage gap corroborates on the same line, a failed declared
+  // obligation, or a fully-controlled test-restoration proof). `eligible`
+  // records whether the trigger is allowed to gate per the revert-calibrated
+  // block-eligibility policy; `blocked` records whether it actually failed the
+  // merge on this run. Both are false until the calibration promotes the
+  // trigger. `evidenceSha256` pins the canonical evidence so the rendered
+  // verdict ties back to a replayable fact, and `reproduce` is the exact
+  // command that regenerates it.
   'pr-audit-block-trigger': {
-    trigger: 'claim-falsified' | 'corroborated-under-constraint' | 'obligation-failure';
+    trigger:
+      | 'claim-falsified'
+      | 'corroborated-under-constraint'
+      | 'obligation-failure'
+      | 'test-tamper-proven';
     eligible: boolean;
     blocked: boolean;
     summary: string;

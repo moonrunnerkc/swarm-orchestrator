@@ -4,6 +4,7 @@ import {
   type TriggerCalibration,
   type TriggerFiringRecord,
 } from '../../../src/audit/gate/calibrate-triggers';
+import { ALL_BLOCK_TRIGGER_KINDS } from '../../../src/audit/gate/block-trigger-types';
 import { wilsonLowerBound } from '../../../src/audit/gate/wilson';
 
 function byTrigger(rows: TriggerCalibration[], trigger: string): TriggerCalibration {
@@ -38,7 +39,10 @@ describe('calibrateTriggers', () => {
     assert.equal(claim.firingCount, 1);
     assert.equal(claim.truePositive, 1);
     assert.equal(claim.precision, 1);
-    assert.ok(claim.wilsonLowerBound < 0.5, 'one firing cannot clear the bar even at precision 1.0');
+    assert.ok(
+      claim.wilsonLowerBound < 0.5,
+      'one firing cannot clear the bar even at precision 1.0',
+    );
   });
 
   it('reports a trigger that never fired as zero, not undefined', () => {
@@ -51,6 +55,9 @@ describe('calibrateTriggers', () => {
   });
 
   it('returns a row for every trigger kind', () => {
-    assert.equal(calibrateTriggers([]).length, 3);
+    assert.deepEqual(
+      calibrateTriggers([]).map((r) => r.trigger),
+      [...ALL_BLOCK_TRIGGER_KINDS],
+    );
   });
 });

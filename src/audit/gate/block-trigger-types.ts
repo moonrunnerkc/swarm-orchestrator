@@ -6,13 +6,15 @@
 // import the re-export from block-triggers.ts.
 
 import type { CheatCategory } from '../types';
+import type { RestorationControls } from '../execution-grounded/test-restoration';
 
-/** The three verifiable-evidence triggers. Each is self-certifying and
+/** The four verifiable-evidence triggers. Each is self-certifying and
  *  label-free: its truth comes from running the change, not from a label. */
 export type BlockTriggerKind =
   | 'claim-falsified'
   | 'corroborated-under-constraint'
-  | 'obligation-failure';
+  | 'obligation-failure'
+  | 'test-tamper-proven';
 
 /** Every trigger kind, in a fixed order, for callers that iterate over all of
  *  them (the calibrator and the eligibility policy). */
@@ -20,6 +22,7 @@ export const ALL_BLOCK_TRIGGER_KINDS: readonly BlockTriggerKind[] = [
   'claim-falsified',
   'corroborated-under-constraint',
   'obligation-failure',
+  'test-tamper-proven',
 ];
 
 /**
@@ -83,10 +86,36 @@ export interface ObligationFailureEvidence {
   output: string;
 }
 
+/**
+ * A differential test-restoration proof: the PR's test changes were reverted
+ * in a sandbox, the restored tests failed twice with identical identity
+ * against the PR's source, the same tests passed on the base checkout, and the
+ * tampered suite passed as submitted. Execution proves the PR weakened a test
+ * that was guarding a real failure. Evidence is the proof record's published
+ * facts; the controls must all be true for the trigger to ever gate.
+ */
+export interface TestTamperProvenEvidence {
+  kind: 'test-tamper-proven';
+  /** Pinned to `proven`: only a proven restoration record becomes evidence. */
+  verdict: 'proven';
+  /** The structural finding's cheat category the proof backs. */
+  category: CheatCategory;
+  /** Test files whose PR hunks were reverted to restore the original tests. */
+  testFiles: string[];
+  /** Failing-test identities from the restored runs (identical across both). */
+  failingTests: string[];
+  /** The proof's three internal controls, published as recorded. A candidate
+   *  is only emitted when all three are true; null means a run never executed. */
+  controls: RestorationControls;
+  /** Exact command a human runs in a fresh checkout to see the restored test fail. */
+  reproduceCommand: string;
+}
+
 export type BlockTriggerEvidence =
   | ClaimFalsifiedEvidence
   | CorroboratedUnderConstraintEvidence
-  | ObligationFailureEvidence;
+  | ObligationFailureEvidence
+  | TestTamperProvenEvidence;
 
 /**
  * A block-trigger candidate. `reproduce` is the exact command the author runs

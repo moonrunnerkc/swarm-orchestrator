@@ -544,9 +544,10 @@ export function publishAuditVerdict<T>(
 
 /**
  * Build the verifiable-evidence block triggers for a --pr audit from the
- * execution-grounded outcome: a falsified fix claim (T1) and a structural
+ * execution-grounded outcome: a falsified fix claim (T1), a structural
  * finding a surviving mutant or coverage gap corroborates on the same line
- * (T2). The audit surface declares no obligations, so T3 does not apply here.
+ * (T2), and a fully-controlled test-restoration proof (T4). The audit surface
+ * declares no obligations, so T3 does not apply here.
  */
 function buildBlockTriggers(
   outcome: ExecutionGroundedOutcome,
@@ -571,6 +572,7 @@ function buildBlockTriggers(
       signals: executionSignalsFromOutcome(outcome),
       prRef: prRef ?? `${pr.repository}#${pr.number}`,
     },
+    restorations: { restorations: outcome.restorations },
   });
 }
 

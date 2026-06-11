@@ -4,8 +4,9 @@
 // benchmarks/real-corpus/promotions.json). The block decision therefore comes
 // from self-certifying runtime facts, not from a detector's opinion: a fix
 // claim execution contradicts, a structural finding a surviving mutant or
-// coverage gap corroborates on the same line, or a declared obligation that
-// fails on the patched workspace. Each candidate carries a JSON-serializable
+// coverage gap corroborates on the same line, a declared obligation that
+// fails on the patched workspace, or a restoration proof that the PR's test
+// changes concealed a real failure. Each candidate carries a JSON-serializable
 // evidence object and the exact command to reproduce it, so a blocked author
 // can re-run the proof and see the same result.
 //
@@ -22,12 +23,14 @@ import type { ReproComparison } from '../execution-grounded';
 import { renderReproCommand, type IssueRef } from '../execution-grounded/issue-repro';
 import type { TestRunner } from '../execution-grounded/sandbox';
 import { corroborationFor, type ExecutionSignals } from '../execution-grounded/corroborate';
+import type { RestorationProofRecord } from '../execution-grounded/test-restoration';
 import type {
   BlockTrigger,
   BlockTriggerEvidence,
   ClaimFalsifiedEvidence,
   CorroboratedUnderConstraintEvidence,
   ObligationFailureEvidence,
+  TestTamperProvenEvidence,
 } from './block-trigger-types';
 
 export type {
@@ -37,6 +40,7 @@ export type {
   ClaimFalsifiedEvidence,
   CorroboratedUnderConstraintEvidence,
   ObligationFailureEvidence,
+  TestTamperProvenEvidence,
 } from './block-trigger-types';
 
 /**
@@ -83,7 +87,8 @@ export function detectClaimFalsified(input: ClaimFalsifiedInput): BlockTrigger[]
     if (comparison.verdict !== 'fix-not-delivered') continue;
     const issueRef = `${comparison.issue.owner}/${comparison.issue.repo}#${comparison.issue.number}`;
     const reproCommand = renderReproCommand(comparison.repro, input.testRunner);
-    const claim = input.prIntent.evidence.length > 0 ? input.prIntent.evidence : `closes ${issueRef}`;
+    const claim =
+      input.prIntent.evidence.length > 0 ? input.prIntent.evidence : `closes ${issueRef}`;
     const evidence: ClaimFalsifiedEvidence = {
       kind: 'claim-falsified',
       issueRef,
@@ -153,7 +158,8 @@ export function detectCorroboratedUnderConstraint(
     if (!CORROBORATED_BLOCK_CATEGORIES.has(finding.category)) continue;
     const corroboration = corroborationFor(finding, input.signals);
     if (corroboration === null) continue;
-    if (corroboration.signal !== 'surviving-mutant' && corroboration.signal !== 'coverage-gap') continue;
+    if (corroboration.signal !== 'surviving-mutant' && corroboration.signal !== 'coverage-gap')
+      continue;
     const evidence: CorroboratedUnderConstraintEvidence = {
       kind: 'corroborated-under-constraint',
       category: finding.category,
@@ -162,7 +168,9 @@ export function detectCorroboratedUnderConstraint(
       ...(finding.location.endLine !== undefined ? { endLine: finding.location.endLine } : {}),
       signal: corroboration.signal,
       ...(corroboration.mutants !== undefined ? { mutants: corroboration.mutants } : {}),
-      ...(corroboration.uncoveredLines !== undefined ? { uncoveredLines: corroboration.uncoveredLines } : {}),
+      ...(corroboration.uncoveredLines !== undefined
+        ? { uncoveredLines: corroboration.uncoveredLines }
+        : {}),
       findingEvidence: finding.evidence,
     };
     out.push({
@@ -210,7 +218,9 @@ export function detectObligationFailure(outcomes: ObligationOutcome[]): BlockTri
     const evidence: ObligationFailureEvidence = {
       kind: 'obligation-failure',
       obligationType: outcome.obligationType,
-      ...(outcome.obligationIndex !== undefined ? { obligationIndex: outcome.obligationIndex } : {}),
+      ...(outcome.obligationIndex !== undefined
+        ? { obligationIndex: outcome.obligationIndex }
+        : {}),
       command: outcome.command,
       output: outcome.detail,
     };
@@ -224,6 +234,64 @@ export function detectObligationFailure(outcomes: ObligationOutcome[]): BlockTri
   return out;
 }
 
+export interface TestTamperProvenInput {
+  /** Restoration proof records from the execution-grounded run, every verdict
+   *  included; the detector keeps only the proven, all-controls-true ones. */
+  restorations: RestorationProofRecord[];
+}
+
+/** One restored failing test, two restored failing tests, ... */
+function failureCount(n: number): string {
+  return `${n} restored test${n === 1 ? '' : 's'}`;
+}
+
+/**
+ * T4: a differential test-restoration proof. The PR's test hunks were reverted
+ * in a sandbox, the restored tests failed twice with identical identity
+ * against the PR's source, the same tests passed on the base checkout, and the
+ * tampered suite passed as submitted: the PR weakened a test that was guarding
+ * a real failure. Fires one candidate per `proven` record whose three controls
+ * are all true; a proven record with any unexecuted (null) or false control is
+ * advisory only and produces nothing (fail closed). The reproduce command is
+ * the proof record's own, which replays the restoration in a fresh checkout.
+ *
+ * @param input the run's restoration proof records
+ * @returns one block-trigger candidate per fully-controlled proof, or []
+ */
+export function detectTestTamperProven(input: TestTamperProvenInput): BlockTrigger[] {
+  const out: BlockTrigger[] = [];
+  for (const record of input.restorations) {
+    if (record.verdict !== 'proven') continue;
+    const { baseTestPasses, tamperedSuitePasses, restoredFailsTwiceSameIdentity } = record.controls;
+    if (
+      baseTestPasses !== true ||
+      tamperedSuitePasses !== true ||
+      restoredFailsTwiceSameIdentity !== true
+    ) {
+      continue;
+    }
+    const evidence: TestTamperProvenEvidence = {
+      kind: 'test-tamper-proven',
+      verdict: 'proven',
+      category: record.category,
+      testFiles: record.testFiles,
+      failingTests: record.failingTests,
+      controls: record.controls,
+      reproduceCommand: record.reproduceCommand,
+    };
+    out.push({
+      kind: 'test-tamper-proven',
+      summary:
+        `A \`${record.category}\` restoration proof at ${record.findingFile}: with the PR's ` +
+        `test changes reverted, ${failureCount(record.failingTests.length)} failed twice with ` +
+        `identical identity against the PR's source and passed on the base checkout.`,
+      reproduce: record.reproduceCommand,
+      evidence,
+    });
+  }
+  return out;
+}
+
 /** The inputs each trigger needs, bundled so one call produces every candidate
  *  a run can raise. A field left undefined skips that trigger (e.g. an audit
  *  with no declared obligations omits `obligations`). */
@@ -231,6 +299,7 @@ export interface BlockTriggerContext {
   claimFalsified?: ClaimFalsifiedInput;
   corroborated?: CorroboratedUnderConstraintInput;
   obligations?: ObligationOutcome[];
+  restorations?: TestTamperProvenInput;
 }
 
 /**
@@ -243,8 +312,11 @@ export interface BlockTriggerContext {
  */
 export function detectBlockTriggers(context: BlockTriggerContext): BlockTrigger[] {
   const out: BlockTrigger[] = [];
-  if (context.claimFalsified !== undefined) out.push(...detectClaimFalsified(context.claimFalsified));
-  if (context.corroborated !== undefined) out.push(...detectCorroboratedUnderConstraint(context.corroborated));
+  if (context.claimFalsified !== undefined)
+    out.push(...detectClaimFalsified(context.claimFalsified));
+  if (context.corroborated !== undefined)
+    out.push(...detectCorroboratedUnderConstraint(context.corroborated));
   if (context.obligations !== undefined) out.push(...detectObligationFailure(context.obligations));
+  if (context.restorations !== undefined) out.push(...detectTestTamperProven(context.restorations));
   return out;
 }

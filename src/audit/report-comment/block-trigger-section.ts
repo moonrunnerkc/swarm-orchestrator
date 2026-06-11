@@ -2,8 +2,9 @@
 // trigger blocks a merge, the author must be able to read the comment, copy the
 // reproduce command, run it, and see the same failing result. Each trigger
 // therefore renders its summary, the exact reproduce command, and the captured
-// evidence (the failing repro output, the surviving mutant, or the obligation
-// output). Kept out of index.ts so the renderer stays focused.
+// evidence (the failing repro output, the surviving mutant, the obligation
+// output, or the restored failing tests). Kept out of index.ts so the renderer
+// stays focused.
 
 import type { AuditMode } from '../types';
 import type { BlockTrigger, BlockTriggerEvidence } from '../gate/block-trigger-types';
@@ -17,10 +18,16 @@ import type { BlockTrigger, BlockTriggerEvidence } from '../gate/block-trigger-t
  * @param mode the audit mode, which changes only the framing
  * @returns the section's markdown lines
  */
-export function renderBlockTriggerSection(triggers: readonly BlockTrigger[], mode: AuditMode): string[] {
+export function renderBlockTriggerSection(
+  triggers: readonly BlockTrigger[],
+  mode: AuditMode,
+): string[] {
   if (triggers.length === 0) return [];
   const gating = mode === 'gate';
-  const lines: string[] = [`## ${gating ? 'Blocking evidence' : 'Verifiable evidence'} (${triggers.length})`, ''];
+  const lines: string[] = [
+    `## ${gating ? 'Blocking evidence' : 'Verifiable evidence'} (${triggers.length})`,
+    '',
+  ];
   lines.push(
     gating
       ? '_This PR is blocked by self-certifying runtime evidence. Run the command under each item to see the same result._'
@@ -79,6 +86,12 @@ function renderEvidence(evidence: BlockTriggerEvidence): string[] {
         '```text',
         evidence.output,
         '```',
+        '',
+      ];
+    case 'test-tamper-proven':
+      return [
+        `*Restoration proof:* \`${evidence.category}\` on ${evidence.testFiles.join(', ')}. ` +
+          `*Restored failing test(s):* ${evidence.failingTests.join('; ')}.`,
         '',
       ];
   }
