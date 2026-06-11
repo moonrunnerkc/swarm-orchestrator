@@ -40,6 +40,16 @@ const calibration = {
       wilsonLowerBound: 0.912,
       truePositivePrs: Array.from({ length: 40 }, (_unused, i) => `acme/w#${i + 10}`),
     },
+    {
+      // self-cert trigger (low N, would not clear circumstantial bar)
+      trigger: 'test-tamper-proven',
+      firingCount: 1,
+      truePositive: 1,
+      falsePositive: 0,
+      precision: 1,
+      wilsonLowerBound: 0.2,
+      truePositivePrs: ['acme/w#99'],
+    },
   ],
 };
 
@@ -70,21 +80,34 @@ describe('check-block-policy (CLI)', function () {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('marks only the trigger that clears the bar as block-eligible', () => {
+  it('marks the trigger that clears the bar plus self-certifying triggers (tier) as block-eligible', () => {
     const policy = JSON.parse(fs.readFileSync(policyFile, 'utf8'));
-    assert.deepEqual(policy.blockEligibleTriggers, ['obligation-failure']);
-    assert.equal(policy.blockEligibleCount, 1);
+    // obligation clears Wilson; claim and test-tamper are self-cert (eligible by tier even low Wilson)
+    assert.deepEqual(policy.blockEligibleTriggers.sort(), ['claim-falsified', 'obligation-failure', 'test-tamper-proven'].sort());
+    assert.equal(policy.blockEligibleCount, 3);
   });
 
   it('passes on the honestly-computed file', () => {
     assert.equal(runCheck(policyFile).code, 0);
   });
 
+  it('self-certifying tier triggers are eligible (and check passes) even when below Wilson bar', () => {
+    const policy = JSON.parse(fs.readFileSync(policyFile, 'utf8'));
+    const selfRow = policy.rows.find((r: any) => r.trigger === 'test-tamper-proven');
+    assert.ok(selfRow);
+    assert.equal(selfRow.tier, 'self-certifying');
+    assert.equal(selfRow.blockEligible, true);
+    // check accepts it (no Wilson enforcement for self tier)
+    assert.equal(runCheck(policyFile).code, 0);
+  });
+
   it('fails when a trigger is hand-flipped to eligible without clearing the bar', () => {
     const policy = JSON.parse(fs.readFileSync(policyFile, 'utf8'));
-    const claim = policy.rows.find((r: { trigger: string }) => r.trigger === 'claim-falsified');
-    claim.blockEligible = true;
-    policy.blockEligibleTriggers = ['claim-falsified', 'obligation-failure'];
+    // Use a circumstantial trigger (corroborated) for the Wilson bar violation test;
+    // self-cert ones are allowed to be eligible by tier even with low Wilson.
+    const circ = policy.rows.find((r: { trigger: string }) => r.trigger === 'corroborated-under-constraint');
+    circ.blockEligible = true;
+    policy.blockEligibleTriggers = ['corroborated-under-constraint', 'obligation-failure'];
     policy.blockEligibleCount = 2;
     fs.writeFileSync(policyFile, JSON.stringify(policy, null, 2));
     const result = runCheck(policyFile);

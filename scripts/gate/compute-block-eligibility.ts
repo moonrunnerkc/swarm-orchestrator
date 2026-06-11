@@ -65,10 +65,9 @@ function main(): void {
   const output = { generatedAt: new Date().toISOString(), ...core };
   fs.mkdirSync(path.dirname(args.out), { recursive: true });
   fs.writeFileSync(args.out, JSON.stringify(output, null, 2) + '\n');
-  // eslint-disable-next-line no-console
-  console.log(
+  process.stdout.write(
     `compute-block-eligibility: block-eligible=${core.blockEligibleCount} ` +
-      `(${core.blockEligibleTriggers.join(', ') || 'none'}) out=${args.out}`,
+      `(${core.blockEligibleTriggers.join(', ') || 'none'}) out=${args.out}\n`,
   );
 }
 

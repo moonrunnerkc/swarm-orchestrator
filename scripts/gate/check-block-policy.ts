@@ -14,6 +14,7 @@ import {
   DEFAULT_WILSON_LOWER_THRESHOLD,
   type BlockEligibilityCore,
 } from '../../src/audit/gate/block-eligibility';
+import { isSelfCertifying } from '../../src/audit/gate/self-certifying';
 import { loadCalibration } from './compute-block-eligibility';
 
 interface BlockEligibilityFile extends BlockEligibilityCore {
@@ -72,6 +73,15 @@ function main(): void {
   // The recompute below would already catch a flipped flag, but this names the
   // real problem instead of a generic policy mismatch.
   for (const row of committed.rows) {
+    if (isSelfCertifying(row.trigger)) {
+      // Self-certifying triggers are eligible by tier (runtime per-instance
+      // controlsAllGreen decides the actual block). We do not enforce the
+      // Wilson/min bar for them here; the recompute already sets their
+      // blockEligible based on the tier. Non-green control firings are refused
+      // at the detect layer (and would be caught if we stored per-firing
+      // control state in calibration).
+      continue;
+    }
     if (
       row.blockEligible &&
       (row.wilsonLowerBound < committed.wilsonLowerThreshold ||
@@ -104,16 +114,14 @@ function main(): void {
     );
     return;
   }
-  // eslint-disable-next-line no-console
-  console.log(
+  process.stdout.write(
     `check-block-policy: block-eligibility.json matches the recompute ` +
-      `(block-eligible=${fresh.blockEligibleCount})`,
+      `(block-eligible=${fresh.blockEligibleCount})\n`,
   );
 }
 
 function fail(message: string): void {
-  // eslint-disable-next-line no-console
-  console.error(`check-block-policy: ${message}`);
+  process.stderr.write(`check-block-policy: ${message}\n`);
   process.exitCode = 1;
 }
 

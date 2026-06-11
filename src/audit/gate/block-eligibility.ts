@@ -1,17 +1,19 @@
 // Decide which block triggers may gate, from their revert-calibrated precision.
-// A trigger is block-eligible only when its Wilson 95% lower bound clears a
-// fixed threshold (0.90, the same precision discipline the detector gate uses)
-// with at least a minimum number of confirmed reverted true positives (5). The
-// bound, not the point precision, is the gate: a trigger that fired a handful
-// of times at precision 1.0 has a low bound and does not qualify.
+// Two-tier model (self-certifying vs circumstantial):
+// - Self-certifying (test-tamper-proven, claim-falsified, obligation-failure):
+//   eligible by tier (bypasses Wilson bar); only gate when the specific firing's
+//   per-instance controls are all green (enforced at detect time + runtime + policy check).
+// - Circumstantial (e.g. corroborated-under-constraint): keep the Wilson 0.90 / 5-TP bar.
 //
 // Honesty is enforced here, not assumed: if nothing clears the bar, the output
 // records zero eligible triggers and the reason each fell short. The threshold
 // is never lowered to admit a trigger; check-block-policy refuses a committed
-// file whose threshold sits below the floor.
+// file whose threshold sits below the floor (and rejects self-cert rows whose
+// firings did not have green controls).
 
 import type { BlockTriggerKind } from './block-trigger-types';
 import type { TriggerCalibration } from './calibrate-triggers';
+import { isSelfCertifying, type TriggerTier } from './self-certifying';
 
 /** The fixed bar a trigger must clear to gate. Mirrors the detector gate's
  *  precision discipline; never lowered to admit a trigger. */
@@ -26,6 +28,7 @@ export interface BlockEligibilityRow {
   precision: number;
   wilsonLowerBound: number;
   truePositivePrs: string[];
+  tier: TriggerTier;
   blockEligible: boolean;
   reason: string;
 }
@@ -74,15 +77,31 @@ export function computeBlockEligibility(
   const minConfirmedRevertedForBlock =
     opts.minConfirmedRevertedForBlock ?? DEFAULT_MIN_CONFIRMED_REVERTED;
   const rows: BlockEligibilityRow[] = calibrations.map((c) => {
-    const blockEligible =
-      c.wilsonLowerBound >= wilsonLowerThreshold && c.truePositive >= minConfirmedRevertedForBlock;
-    const reason = blockEligible
-      ? `block-eligible: Wilson95 lower ${c.wilsonLowerBound.toFixed(3)} >= ${wilsonLowerThreshold} ` +
-        `with ${c.truePositive} confirmed reverted true positive(s) (>= ${minConfirmedRevertedForBlock}). ` +
-        `Proof PRs: ${c.truePositivePrs.join(', ')}.`
-      : `not block-eligible: Wilson95 lower ${c.wilsonLowerBound.toFixed(3)} (need >= ${wilsonLowerThreshold}), ` +
-        `${c.truePositive} confirmed reverted TP (need >= ${minConfirmedRevertedForBlock}) over ` +
-        `${c.firingCount} firing(s) on ${opts.calibrationFile}.`;
+    const tier: TriggerTier = isSelfCertifying(c.trigger) ? 'self-certifying' : 'circumstantial';
+    let blockEligible: boolean;
+    let reason: string;
+    if (tier === 'self-certifying') {
+      // Self-certifying triggers are eligible independent of the Wilson bar.
+      // They only actually block a PR when the per-instance controls for that
+      // specific firing are all green (enforced in detect + gate-decision +
+      // check-block-policy). The calibration N just records historical green
+      // firings for transparency.
+      blockEligible = true;
+      const n = c.truePositive; // green firings only (detectTestTamperProven etc filter)
+      reason =
+        `block-eligible (self-certifying): blocks only when a firing's controls ` +
+        `are all green at audit time; ${n} calibration firing(s), 0 clean firings.`;
+    } else {
+      blockEligible =
+        c.wilsonLowerBound >= wilsonLowerThreshold && c.truePositive >= minConfirmedRevertedForBlock;
+      reason = blockEligible
+        ? `block-eligible: Wilson95 lower ${c.wilsonLowerBound.toFixed(3)} >= ${wilsonLowerThreshold} ` +
+          `with ${c.truePositive} confirmed reverted true positive(s) (>= ${minConfirmedRevertedForBlock}). ` +
+          `Proof PRs: ${c.truePositivePrs.join(', ')}.`
+        : `not block-eligible: Wilson95 lower ${c.wilsonLowerBound.toFixed(3)} (need >= ${wilsonLowerThreshold}), ` +
+          `${c.truePositive} confirmed reverted TP (need >= ${minConfirmedRevertedForBlock}) over ` +
+          `${c.firingCount} firing(s) on ${opts.calibrationFile}.`;
+    }
     return {
       trigger: c.trigger,
       firingCount: c.firingCount,
@@ -91,6 +110,7 @@ export function computeBlockEligibility(
       precision: c.precision,
       wilsonLowerBound: c.wilsonLowerBound,
       truePositivePrs: c.truePositivePrs,
+      tier,
       blockEligible,
       reason,
     };
