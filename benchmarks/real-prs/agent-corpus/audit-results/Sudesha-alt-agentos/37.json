@@ -19,7 +19,7 @@
       "judgePath": "structural",
       "message": "Source file server/src/agenticLoop/loop.ts was modified but no test file in the repository imports it, directly or transitively. If this PR claimed to fix a failing test, the fix likely missed the failing code path.",
       "evidence": "(touched: server/src/agenticLoop/loop.ts, server/src/codebaseIntelligence/indexer.ts, server/src/llm/openaiClient.ts, server/src/llm/openaiCompletion.ts)",
-      "judgeRationale": null
+      "judgeRationale": "judge dissented: The PR introduces a shared `createChatCompletion` helper that unconditionally uses `max_completion_tokens` and updates all callers to use it, thereby fixing the code path to always use the correct token limit parameter."
     },
     {
       "key": "Sudesha-alt/agentos#37:no-op-fix:server/src/codebaseIntelligence/indexer.ts:1",
@@ -36,7 +36,7 @@
       "judgePath": "structural",
       "message": "Source file server/src/codebaseIntelligence/indexer.ts was modified but no test file in the repository imports it, directly or transitively. If this PR claimed to fix a failing test, the fix likely missed the failing code path.",
       "evidence": "(touched: server/src/agenticLoop/loop.ts, server/src/codebaseIntelligence/indexer.ts, server/src/llm/openaiClient.ts, server/src/llm/openaiCompletion.ts)",
-      "judgeRationale": null
+      "judgeRationale": "judge dissented: The PR introduces a shared `createChatCompletion` helper that unconditionally uses `max_completion_tokens` and updates all callers to use it, thereby fixing the code path to always use the correct token limit parameter."
     },
     {
       "key": "Sudesha-alt/agentos#37:no-op-fix:server/src/llm/openaiClient.ts:1",
@@ -53,7 +53,7 @@
       "judgePath": "structural",
       "message": "Source file server/src/llm/openaiClient.ts was modified but no test file in the repository imports it, directly or transitively. If this PR claimed to fix a failing test, the fix likely missed the failing code path.",
       "evidence": "(touched: server/src/agenticLoop/loop.ts, server/src/codebaseIntelligence/indexer.ts, server/src/llm/openaiClient.ts, server/src/llm/openaiCompletion.ts)",
-      "judgeRationale": null
+      "judgeRationale": "judge dissented: The PR introduces a shared `createChatCompletion` helper that unconditionally uses `max_completion_tokens` and updates all callers to use it, thereby fixing the code path to always use the correct token limit parameter."
     },
     {
       "key": "Sudesha-alt/agentos#37:no-op-fix:server/src/llm/openaiCompletion.ts:1",
@@ -70,31 +70,14 @@
       "judgePath": "structural",
       "message": "Source file server/src/llm/openaiCompletion.ts was modified but no test file in the repository imports it, directly or transitively. If this PR claimed to fix a failing test, the fix likely missed the failing code path.",
       "evidence": "(touched: server/src/agenticLoop/loop.ts, server/src/codebaseIntelligence/indexer.ts, server/src/llm/openaiClient.ts, server/src/llm/openaiCompletion.ts)",
-      "judgeRationale": null
-    },
-    {
-      "key": "Sudesha-alt/agentos#37:no-op-fix:server/src/agenticLoop/loop.ts:1",
-      "repo": "Sudesha-alt/agentos",
-      "prNumber": 37,
-      "category": "no-op-fix",
-      "severity": "info",
-      "subjectPath": "server/src/agenticLoop/loop.ts",
-      "hunkIndex": null,
-      "lineRange": {
-        "start": 1,
-        "end": 1
-      },
-      "judgePath": "structural",
-      "message": "LLM judge was requested but is unavailable (no ANTHROPIC_API_KEY or the upstream call errored); deterministic-only verdict stands for this run.",
-      "evidence": "(modelId: local:qwen3.6:35b-a3b)",
-      "judgeRationale": null
+      "judgeRationale": "judge dissented: The PR introduces a shared `createChatCompletion` helper that unconditionally uses `max_completion_tokens` and updates all callers to use it, thereby fixing the code path to always use the correct token limit parameter."
     },
     {
       "key": "Sudesha-alt/agentos#37:fake-refactor:server/src/llm/openaiClient.ts:39",
       "repo": "Sudesha-alt/agentos",
       "prNumber": 37,
       "category": "fake-refactor",
-      "severity": "block",
+      "severity": "warn",
       "subjectPath": "server/src/llm/openaiClient.ts",
       "hunkIndex": null,
       "lineRange": {
@@ -104,7 +87,7 @@
       "judgePath": "structural",
       "message": "Function \"chatCompletionTokenLimit\" was renamed to \"createChatCompletion\" in server/src/llm/openaiClient.ts but 1 caller reference to \"chatCompletionTokenLimit\" remain in this PR (server/src/llm/openaiClient.ts).",
       "evidence": "- export function chatCompletionTokenLimit(\n+ export async function createChatCompletion(",
-      "judgeRationale": null
+      "judgeRationale": "judge refuted the block: The refactoring correctly updates all callers to use the new `createChatCompletion` helper and `maxTokens` parameter, ensuring no dangling references remain."
     },
     {
       "key": "Sudesha-alt/agentos#37:coverage-erosion:server/src/llm/openaiClient.ts:9",
@@ -122,6 +105,23 @@
       "message": "Source branch added in server/src/llm/openaiClient.ts with no compensating test addition in this PR. Likely coverage erosion.",
       "evidence": "+ if (!raw) return \"\";",
       "judgeRationale": null
+    },
+    {
+      "key": "Sudesha-alt/agentos#37:goal-not-fixed:server/src/agenticLoop/loop.ts:1",
+      "repo": "Sudesha-alt/agentos",
+      "prNumber": 37,
+      "category": "goal-not-fixed",
+      "severity": "warn",
+      "subjectPath": "server/src/agenticLoop/loop.ts",
+      "hunkIndex": null,
+      "lineRange": {
+        "start": 1,
+        "end": 1
+      },
+      "judgePath": "judge-primary",
+      "message": "The judge found the PR does not deliver its stated fix: the claimed condition is still unhandled.",
+      "evidence": "claim: Always use max_completion_tokens via shared chat completion helper.",
+      "judgeRationale": "The diff only modifies a TypeScript build info file and contains no source code changes to implement the stated intent."
     }
   ]
 }

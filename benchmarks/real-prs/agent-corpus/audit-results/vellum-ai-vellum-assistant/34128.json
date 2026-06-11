@@ -3,5 +3,23 @@
   "prNumber": 34128,
   "headSha": "f67a163a69e6f08afd1897418db7d1a033e360b9",
   "pre": null,
-  "post": []
+  "post": [
+    {
+      "key": "vellum-ai/vellum-assistant#34128:no-op-fix:assistant/src/agent/loop.ts:1",
+      "repo": "vellum-ai/vellum-assistant",
+      "prNumber": 34128,
+      "category": "no-op-fix",
+      "severity": "info",
+      "subjectPath": "assistant/src/agent/loop.ts",
+      "hunkIndex": null,
+      "lineRange": {
+        "start": 1,
+        "end": 1
+      },
+      "judgePath": "structural",
+      "message": "LLM judge reported the PR title claims a fix that the changed non-test code does not plausibly exercise. Deterministic checks did not fire, but the judge's reading of intent vs. diff disagrees.",
+      "evidence": "(judge NO; modelId: ollama:qwen3.6:35b-a3b)",
+      "judgeRationale": "The PR title claims to fix a threading issue for the post-compact re-injection result, but the provided diff only contains changes to test files and the implementation of the `post-compact` hook itself, without showing any modifications to the `AgentLoop` class or other callers that would propagate this change to fix a broader code path."
+    }
+  ]
 }
