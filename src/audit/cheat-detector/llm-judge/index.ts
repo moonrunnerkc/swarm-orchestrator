@@ -210,8 +210,22 @@ function hasCredentials(opts: AskJudgeOptions): boolean {
 // ~120k chars is well under Haiku's 200k-token ceiling once the prompt
 // scaffold is added. It is the per-chunk budget for the hunk-aware
 // chunker, and is exported so the benchmark harnesses size their context
-// the same way.
-export const MAX_JUDGE_DIFF_CHARS = 120_000;
+// the same way. `SWARM_JUDGE_MAX_DIFF_CHARS` overrides it for judges
+// with smaller context windows: chars-per-token collapses toward 1 on
+// base64/SVG-heavy diffs, so a 120k-char chunk can overflow a 131k-token
+// local model and make the server truncate the prompt (front-first,
+// eating the question) where Haiku would still have headroom.
+function resolveMaxJudgeDiffChars(): number {
+  const raw = process.env.SWARM_JUDGE_MAX_DIFF_CHARS;
+  if (raw === undefined || raw.trim().length === 0) return 120_000;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 1_000) {
+    logger.warn(`ignoring SWARM_JUDGE_MAX_DIFF_CHARS=${raw} (need a number >= 1000)`);
+    return 120_000;
+  }
+  return Math.floor(n);
+}
+export const MAX_JUDGE_DIFF_CHARS = resolveMaxJudgeDiffChars();
 
 function recordLedger(
   ledger: JudgeLedgerSink | undefined,
