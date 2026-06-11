@@ -6,7 +6,7 @@ import * as path from 'path';
 import {
   appendFindingEntries,
   appendRestorationEntries,
-  buildCompletedEntry,
+  publishAuditVerdict,
   recomputeAuditPass,
 } from '../../../src/cli/v8/audit-handler';
 import { applyRestorationToFinding } from '../../../src/audit/execution-grounded';
@@ -22,13 +22,13 @@ import type {
 // The audit handler's publishing seam. Driving handleAudit end-to-end with
 // the execution-grounded layer active requires a --pr input, and a --pr input
 // resolves its PR context through the live GitHub API (pr-fetch has no
-// injectable transport), so these tests exercise the exported helpers the
-// handler calls, in the exact order runAudit calls them after the
-// execution-grounded layer returns: recomputeAuditPass, then
-// appendFindingEntries, then buildCompletedEntry. What they pin is the
-// invariant the ordering exists for: nothing published (pass flag, finding
-// entries, completed entry) may contradict a restoration verdict that already
-// rode onto a finding.
+// injectable transport), so these tests drive publishAuditVerdict, the one
+// exported function runAudit calls after the execution-grounded layer
+// returns. The ordering is pinned by construction: recomputing the pass flag,
+// appending the finding entries, taking the gate decision, and appending the
+// completed entry all happen inside that single seam, so nothing published
+// (pass flag, finding entries, gate decision, completed entry) can contradict
+// a restoration verdict that already rode onto a finding.
 
 function blockFinding(over: Partial<Finding> = {}): Finding {
   return {
@@ -97,8 +97,8 @@ after(() => {
 });
 
 describe('cli/v8 audit-handler publishing seam', () => {
-  describe('recomputeAuditPass', () => {
-    it('a refuted demotion flips pass to true and the completed entry agrees', () => {
+  describe('publishAuditVerdict', () => {
+    it('a refuted demotion flips pass and every published artifact agrees', () => {
       const finding = blockFinding();
       const result = auditResult([finding]);
       assert.equal(result.pass, false, 'precondition: the block finding fails the audit');
@@ -106,15 +106,69 @@ describe('cli/v8 audit-handler publishing seam', () => {
       applyRestorationToFinding(finding, refutedRecord());
       assert.equal(finding.severity, 'info', 'precondition: restoration demoted the finding');
 
-      recomputeAuditPass(result);
+      const { ledger, ledgerPath } = makeLedger();
+      const returned = publishAuditVerdict(
+        {
+          ledger,
+          result,
+          attribution: ATTRIBUTION,
+          pr: { number: 7, repository: 'o/r' },
+          wallTimeMs: 1234,
+        },
+        (pass) => ({ blocked: !pass }),
+      );
       assert.equal(result.pass, true, 'execution cleared the only blocking finding');
+      assert.deepEqual(returned, { blocked: false }, 'the gate decision saw the recomputed pass');
 
-      const entry = buildCompletedEntry(result, { number: 7, repository: 'o/r' }, 1234);
-      assert.equal(entry.pass, true);
-      assert.equal(entry.blockingCount, 0);
-      assert.match(entry.detail, /^audit pass — 1 non-blocking finding\(s\)$/);
+      const entries = readEntries(ledgerPath);
+      assert.deepEqual(
+        entries.map((e) => e.type),
+        ['pr-audit-finding', 'pr-audit-completed'],
+        'finding entries precede the completed entry',
+      );
+      const findingEntry = entries[0] as LedgerEntry<'pr-audit-finding'>;
+      assert.equal(findingEntry.severity, 'info', 'the entry records the demoted severity');
+      const completed = entries[1] as LedgerEntry<'pr-audit-completed'>;
+      assert.equal(completed.pass, true);
+      assert.equal(completed.blockingCount, 0);
+      assert.match(completed.detail, /^audit pass — 1 non-blocking finding\(s\)$/);
+      assert.equal(completed.prNumber, 7);
+      assert.equal(completed.prRepository, 'o/r');
     });
 
+    it('the gate decision runs after the finding entries and before the completed entry', () => {
+      const demoted = blockFinding();
+      applyRestorationToFinding(demoted, refutedRecord());
+      const stillBlocking = blockFinding({
+        category: 'test-relaxation',
+        location: { file: 'test/other.test.ts', line: 9 },
+      });
+      const result = auditResult([demoted, stillBlocking]);
+      const { ledger, ledgerPath } = makeLedger();
+      publishAuditVerdict({ ledger, result, attribution: undefined, pr: undefined, wallTimeMs: 50 }, (pass) => {
+        assert.equal(pass, false, 'a remaining block finding keeps pass false');
+        const mid = readEntries(ledgerPath);
+        assert.deepEqual(
+          mid.map((e) => e.type),
+          ['pr-audit-finding', 'pr-audit-finding'],
+          'at decision time the finding entries are published, the completed entry is not',
+        );
+        return null;
+      });
+      const completedEntries = readEntries<'pr-audit-completed'>(ledgerPath).filter(
+        (e) => e.type === 'pr-audit-completed',
+      );
+      assert.equal(completedEntries.length, 1);
+      const completed = completedEntries[0]!;
+      assert.equal(completed.pass, false);
+      assert.equal(completed.blockingCount, 1);
+      assert.match(completed.detail, /^audit block — 1 blocking finding\(s\)$/);
+      assert.equal(completed.prNumber, null);
+      assert.equal(completed.prRepository, null);
+    });
+  });
+
+  describe('recomputeAuditPass', () => {
     it('advisory execution-grounded findings never flip pass on their own', () => {
       const demoted = blockFinding();
       applyRestorationToFinding(demoted, refutedRecord());
@@ -128,25 +182,6 @@ describe('cli/v8 audit-handler publishing seam', () => {
       const result = auditResult([demoted, egFinding]);
       recomputeAuditPass(result);
       assert.equal(result.pass, true, 'warn/info severities do not block');
-    });
-
-    it('a remaining block finding keeps pass false and the completed entry consistent', () => {
-      const demoted = blockFinding();
-      applyRestorationToFinding(demoted, refutedRecord());
-      const stillBlocking = blockFinding({
-        category: 'test-relaxation',
-        location: { file: 'test/other.test.ts', line: 9 },
-      });
-      const result = auditResult([demoted, stillBlocking]);
-      recomputeAuditPass(result);
-      assert.equal(result.pass, false);
-
-      const entry = buildCompletedEntry(result, undefined, 50);
-      assert.equal(entry.pass, false);
-      assert.equal(entry.blockingCount, 1);
-      assert.match(entry.detail, /^audit block — 1 blocking finding\(s\)$/);
-      assert.equal(entry.prNumber, null);
-      assert.equal(entry.prRepository, null);
     });
   });
 
@@ -218,7 +253,7 @@ describe('cli/v8 audit-handler publishing seam', () => {
         reproduceCommand: 'git fetch origin pull/7/head && npx mocha test/calc.test.ts',
       };
       const { ledger, ledgerPath } = makeLedger();
-      appendRestorationEntries(ledger, [proven, refutedRecord()], { aiAgent: ATTRIBUTION });
+      appendRestorationEntries(ledger, [proven, refutedRecord()], ATTRIBUTION);
 
       const entries = readEntries<'pr-audit-restoration'>(ledgerPath);
       assert.equal(entries.length, 2);

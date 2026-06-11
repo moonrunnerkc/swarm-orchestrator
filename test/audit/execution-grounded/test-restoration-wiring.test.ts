@@ -25,9 +25,10 @@ import type {
 // orchestrator: the outcome carries every proof record, qualifying findings
 // still produce honest no-workspace records when the layer bails before a
 // sandbox exists, the records persist as a PR-identity-stamped envelope on
-// every enabled run with an evidenceDir, and a verdict rides back onto its
-// structural finding (refuted demotes, proven corroborates, everything else
-// is record-only).
+// every enabled run with an evidenceDir (written empty up front so a stale
+// envelope from a prior run cannot outlive even a run that throws), and a
+// verdict rides back onto its structural finding (refuted demotes, proven
+// corroborates, everything else is record-only).
 
 const tempDirs: string[] = [];
 
@@ -190,6 +191,33 @@ describe('execution-grounded / test-restoration wiring', () => {
       const envelope = readEnvelope(evidenceDir);
       assert.equal(envelope.prRef, 'o/r#1');
       assert.deepEqual(envelope.records, [], 'an empty records array is itself evidence');
+    });
+
+    it('a stale envelope from a prior run never survives an enabled run with qualifying findings', async () => {
+      const evidenceDir = tempDir('swarm-eg-evidence-');
+      // A stale envelope from an earlier run, different PR identity, claiming
+      // a proven restoration.
+      fs.mkdirSync(evidenceDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(evidenceDir, 'restoration-proof.json'),
+        JSON.stringify({
+          schemaVersion: 1,
+          prRef: 'old/run#9',
+          prHeadSha: 'c'.repeat(40),
+          generatedAt: new Date(0).toISOString(),
+          records: [proofRecord('proven')],
+        }),
+        'utf8',
+      );
+      await runExecutionGrounded(
+        baseInput({ prDiff: DOC_DIFF, evidenceDir, structuralFindings: [blockFinding()] }),
+      );
+      const envelope = readEnvelope(evidenceDir);
+      assert.equal(envelope.prRef, 'o/r#1', 'the stale identity is gone');
+      assert.ok(
+        envelope.records.every((r) => r.verdict === 'not-proven:no-workspace'),
+        'the stale proven claim did not survive',
+      );
     });
 
     it('noWorkspaceRecords builds a null-control, empty-evidence record per finding', () => {

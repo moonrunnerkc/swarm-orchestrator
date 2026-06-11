@@ -373,7 +373,7 @@ async function runExecutionGroundedLayer(
     result.findings.push(finding);
   }
 
-  appendRestorationEntries(ledger, outcome.restorations, aiAgent);
+  appendRestorationEntries(ledger, outcome.restorations, attribution);
 
   // Runtime corroboration (opt-in). When this run's execution layer actually
   // produced signals, mark the structural findings that a surviving mutant,
@@ -398,8 +398,9 @@ async function runExecutionGroundedLayer(
 export function appendRestorationEntries(
   ledger: HashChainedLedger,
   restorations: readonly RestorationProofRecord[],
-  aiAgent: { aiAgent: LedgerAgentAttribution } | undefined,
+  attribution: LedgerAgentAttribution | undefined,
 ): void {
+  const opts = attribution !== undefined ? { aiAgent: attribution } : undefined;
   for (const restoration of restorations) {
     const payload: Omit<PrAuditRestorationEntry, 'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'> = {
       type: 'pr-audit-restoration',
@@ -411,7 +412,7 @@ export function appendRestorationEntries(
       controls: restoration.controls,
       reproduceCommand: restoration.reproduceCommand,
     };
-    ledger.append<PrAuditRestorationEntry>(payload, aiAgent);
+    ledger.append<PrAuditRestorationEntry>(payload, opts);
   }
 }
 
@@ -504,6 +505,41 @@ export function buildCompletedEntry(
       ? `audit pass — ${result.findings.length} non-blocking finding(s)`
       : `audit block — ${blockingCount} blocking finding(s)`,
   };
+}
+
+/**
+ * The single post-execution publication seam. The execution-grounded layer
+ * can demote a blocking finding (a refuted restoration) and appends its own
+ * advisory findings, so everything published afterwards must work from the
+ * findings' final state, in this order: recompute the pass flag, append the
+ * finding entries (each reflecting its finding as published, judge-primary
+ * routed to its own kind), take the gate decision against the recomputed
+ * pass, then append the completed entry derived from the same findings. The
+ * ordering lives in one function so it cannot regress by a call-site move:
+ * runAudit calls this exactly once, after the execution-grounded layer.
+ * `recordGateDecision` runs between the finding entries and the completed
+ * entry (where the block-trigger entries land on the ledger today) and its
+ * result is returned to the caller.
+ */
+export function publishAuditVerdict<T>(
+  args: {
+    ledger: HashChainedLedger;
+    result: AuditResult;
+    attribution: LedgerAgentAttribution | undefined;
+    pr: { number: number; repository: string } | undefined;
+    wallTimeMs: number;
+  },
+  recordGateDecision: (pass: boolean) => T,
+): T {
+  const { ledger, result, attribution, pr, wallTimeMs } = args;
+  recomputeAuditPass(result);
+  appendFindingEntries(ledger, result.findings, attribution);
+  const decision = recordGateDecision(result.pass);
+  ledger.append<PrAuditCompletedEntry>(
+    buildCompletedEntry(result, pr, wallTimeMs),
+    attribution !== undefined ? { aiAgent: attribution } : undefined,
+  );
+  return decision;
 }
 
 /**
@@ -635,40 +671,32 @@ async function runAudit(flags: AuditFlags): Promise<number> {
     });
   }
 
-  // The execution-grounded layer can demote a blocking finding (a refuted
-  // restoration) and appends its own advisory findings, so everything
-  // published from here on (the gate decision, the ledger entries, the shadow
-  // outputs, the rendered comment) works from the findings' final state.
-  recomputeAuditPass(result);
-
-  // Finding entries are appended after the execution-grounded layer so each
-  // entry reflects its finding as published; the pr-audit-restoration entries
-  // the layer wrote document what changed and why.
-  appendFindingEntries(ledger, result.findings, attribution);
-
-  // Verifiable-evidence block triggers. Built from the execution-grounded
-  // outcome's runtime facts and recorded to the ledger whether or not they
-  // gate. Only a block-eligible trigger affects the exit code, and only in
-  // gate mode; advise mode never blocks. The eligible set is empty today, so a
-  // clean PR's behavior is unchanged.
-  const blockTriggers =
-    egOutcome !== undefined && prContext !== undefined
-      ? buildBlockTriggers(egOutcome, result, prContext, flags.prRef)
-      : [];
-  for (const trigger of blockTriggers) {
-    const eligible = isBlockEligible(trigger.kind);
-    appendBlockTriggerEntry(
-      ledger,
-      trigger,
-      { eligible, blocked: eligible && flags.mode === 'gate' },
-      attribution,
-    );
-  }
-  const decision = decideBlock(blockTriggers, flags.mode, result.pass);
-
-  ledger.append<PrAuditCompletedEntry>(
-    buildCompletedEntry(result, prContext?.prMetadata, wallTimeMs),
-    attribution !== undefined ? { aiAgent: attribution } : undefined,
+  // Everything published from here on (the pass flag, the ledger entries,
+  // the gate decision, the shadow outputs, the rendered comment) works from
+  // the findings' final post-execution state; the seam owns that ordering.
+  const decision = publishAuditVerdict(
+    { ledger, result, attribution, pr: prContext?.prMetadata, wallTimeMs },
+    (pass) => {
+      // Verifiable-evidence block triggers. Built from the execution-grounded
+      // outcome's runtime facts and recorded to the ledger whether or not they
+      // gate. Only a block-eligible trigger affects the exit code, and only in
+      // gate mode; advise mode never blocks. The eligible set is empty today,
+      // so a clean PR's behavior is unchanged.
+      const blockTriggers =
+        egOutcome !== undefined && prContext !== undefined
+          ? buildBlockTriggers(egOutcome, result, prContext, flags.prRef)
+          : [];
+      for (const trigger of blockTriggers) {
+        const eligible = isBlockEligible(trigger.kind);
+        appendBlockTriggerEntry(
+          ledger,
+          trigger,
+          { eligible, blocked: eligible && flags.mode === 'gate' },
+          attribution,
+        );
+      }
+      return decideBlock(blockTriggers, flags.mode, pass);
+    },
   );
 
   if (flags.emitAibom !== undefined) {

@@ -442,6 +442,10 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
       input.evidenceDir,
     );
   };
+  // Fail closed: the envelope is written empty before any phase that can
+  // throw, so an exception escaping the run cannot leave a stale envelope
+  // from a prior run on disk. Every completion path below overwrites it.
+  persistProofs([]);
   // Every return below this point happens before a workspace exists. A
   // qualifying finding must still surface in the restoration funnel, so each
   // bail emits (and persists) explicit no-workspace records instead of
@@ -631,7 +635,10 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
       // A candidate the budget ran out on still gets a record (controls all
       // null: no execution is claimed), so the funnel accounts for it.
       if (restorationBudgetExhausted(deadline, Date.now())) {
-        skipped.push(`restoration[${finding.location.file}]: wall-clock budget reached`);
+        const dropped = qualifying.length - i;
+        skipped.push(
+          `restoration: wall-clock budget exhausted; ${dropped} finding(s) recorded without execution`,
+        );
         outcome.restorations.push(...budgetExhaustedRecords(qualifying.slice(i)));
         break;
       }
