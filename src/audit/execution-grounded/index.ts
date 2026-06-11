@@ -280,7 +280,9 @@ export interface ExecutionGroundedOutcome {
   repros: ReproComparison[];
   /** One proof record per qualifying structural finding, every verdict
    *  included (no-workspace records when the layer bailed before a sandbox
-   *  existed), so downstream funnel counts account for every candidate. */
+   *  existed, all-null-controls execution-error records for candidates the
+   *  wall-clock budget ran out on before their first test run), so downstream
+   *  funnel counts account for every candidate. */
   restorations: RestorationProofRecord[];
   skipped: string[];
 }
@@ -307,16 +309,75 @@ export function noWorkspaceRecords(
   }));
 }
 
-/** Persist the run's proof records as one JSON array under
+/** Minimum remaining wall-clock budget worth starting one more restoration
+ *  attempt with. An attempt is at least one spawned test run; with less than
+ *  this left it cannot realistically complete, so the remaining candidates
+ *  are recorded as budget-exhausted instead of started doomed. */
+export const RESTORATION_MIN_BUDGET_MS = 5_000;
+
+/** True when the remaining wall-clock budget cannot fit one more restoration
+ *  attempt: already past the deadline, or under the per-attempt floor. */
+export function restorationBudgetExhausted(deadline: number, now: number): boolean {
+  return deadline - now < RESTORATION_MIN_BUDGET_MS;
+}
+
+/** One honesty record per qualifying finding the per-PR wall-clock budget ran
+ *  out on before its first test run. All controls null and every evidence
+ *  field empty: the record claims no execution, only that the candidate is
+ *  accounted for in the funnel. */
+export function budgetExhaustedRecords(findings: readonly Finding[]): RestorationProofRecord[] {
+  return findings.map((f) => ({
+    schemaVersion: 1,
+    verdict: 'not-proven:execution-error',
+    category: f.category,
+    findingFile: f.location.file,
+    testFiles: [],
+    failingTests: [],
+    controls: {
+      baseTestPasses: null,
+      tamperedSuitePasses: null,
+      restoredFailsTwiceSameIdentity: null,
+    },
+    reproduceCommand: '',
+    revertedHunkPatch: '',
+    reason: 'wall-clock budget exhausted before any test run executed for this finding',
+  }));
+}
+
+/** The persisted restoration-proof artifact. The PR identity is stamped on
+ *  the envelope (the records themselves carry none), and the file is written
+ *  on every enabled run with an evidenceDir, so a stale file from an earlier
+ *  head SHA cannot survive a re-audit: an empty records array is itself
+ *  evidence that this run had nothing to prove. */
+export interface RestorationProofEnvelope {
+  schemaVersion: 1;
+  prRef: string;
+  prHeadSha: string;
+  generatedAt: string;
+  records: RestorationProofRecord[];
+}
+
+/** Persist the run's proof records as one identity-stamped envelope under
  *  `<evidenceDir>/restoration-proof.json`. Single write, every verdict. */
 export function persistRestorationProofs(
-  records: readonly RestorationProofRecord[],
+  proofs: {
+    prRef: string;
+    prHeadSha: string;
+    records: readonly RestorationProofRecord[];
+  },
   evidenceDir: string,
 ): void {
+  const envelope: RestorationProofEnvelope = {
+    schemaVersion: 1,
+    prRef: proofs.prRef,
+    prHeadSha: proofs.prHeadSha,
+    generatedAt: new Date().toISOString(),
+    records: [...proofs.records],
+  };
   fs.mkdirSync(evidenceDir, { recursive: true });
   fs.writeFileSync(
     path.join(evidenceDir, 'restoration-proof.json'),
-    JSON.stringify(records, null, 2),
+    JSON.stringify(envelope, null, 2),
     'utf8',
   );
 }
@@ -333,6 +394,12 @@ export function persistRestorationProofs(
 export function applyRestorationToFinding(finding: Finding, record: RestorationProofRecord): void {
   if (record.verdict === 'refuted') {
     finding.severity = 'info';
+    // The detector pipeline assigns confidence only after all of its own
+    // demotions, so no published info finding elsewhere carries a grade above
+    // the structural floor. This demotion runs after that assignment, and an
+    // executed restoration outranks the judge's static confirmation, so the
+    // grade is recomputed down to match the demoted severity.
+    finding.confidence = 'structural-only';
     finding.evidence =
       `${finding.evidence}\n` +
       `demoted: the restored original test passes against the PR's source, so the test ` +
@@ -366,15 +433,22 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
   const qualifying = (input.structuralFindings ?? []).filter(
     (f) => f.severity === 'block' && RESTORATION_CATEGORIES.includes(f.category),
   );
+  // Written on every enabled run, zero records included, so a stale proof
+  // file from an earlier head SHA never outlives its run.
+  const persistProofs = (records: readonly RestorationProofRecord[]): void => {
+    if (input.evidenceDir === undefined) return;
+    persistRestorationProofs(
+      { prRef: `${input.repo}#${input.prNumber}`, prHeadSha: input.prHeadSha, records },
+      input.evidenceDir,
+    );
+  };
   // Every return below this point happens before a workspace exists. A
   // qualifying finding must still surface in the restoration funnel, so each
   // bail emits (and persists) explicit no-workspace records instead of
   // silently dropping the candidates.
   const bailBeforeWorkspace = (detail: string): ExecutionGroundedOutcome => {
     empty.restorations = noWorkspaceRecords(qualifying, detail);
-    if (input.evidenceDir !== undefined && empty.restorations.length > 0) {
-      persistRestorationProofs(empty.restorations, input.evidenceDir);
-    }
+    persistProofs(empty.restorations);
     return empty;
   };
   const changed: ChangedLineRanges = extractChangedLineRanges(input.prDiff, mutableSourceFilter);
@@ -552,9 +626,13 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
     // Differential test restoration against the already-provisioned pair.
     // The engine never throws and re-applies the patch forward before
     // returning, so the shared post workspace stays valid for the cleanup.
-    for (const finding of qualifying) {
-      if (Date.now() >= deadline) {
+    for (let i = 0; i < qualifying.length; i++) {
+      const finding = qualifying[i]!;
+      // A candidate the budget ran out on still gets a record (controls all
+      // null: no execution is claimed), so the funnel accounts for it.
+      if (restorationBudgetExhausted(deadline, Date.now())) {
         skipped.push(`restoration[${finding.location.file}]: wall-clock budget reached`);
+        outcome.restorations.push(...budgetExhaustedRecords(qualifying.slice(i)));
         break;
       }
       const record = runTestRestoration({
@@ -575,9 +653,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
       outcome.restorations.push(record);
       applyRestorationToFinding(finding, record);
     }
-    if (input.evidenceDir !== undefined && outcome.restorations.length > 0) {
-      persistRestorationProofs(outcome.restorations, input.evidenceDir);
-    }
+    persistProofs(outcome.restorations);
   } finally {
     workspaces.cleanup();
   }

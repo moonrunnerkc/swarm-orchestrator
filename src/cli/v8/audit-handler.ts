@@ -45,6 +45,7 @@ import type {
   AuditResult,
   AuditAgentAttribution,
   DetectorSetName,
+  Finding,
   JudgeLedgerEntry,
   JudgeLedgerSink,
 } from '../../audit/types';
@@ -63,6 +64,7 @@ import type {
 import { isExecutionGroundedCategory } from '../../audit/types';
 import { loadAuditConfig, type ExecutionGroundedConfig } from '../../audit/cheat-detector/audit-config';
 import { runExecutionGrounded, type ExecutionGroundedOutcome } from '../../audit/execution-grounded';
+import type { RestorationProofRecord } from '../../audit/execution-grounded/test-restoration';
 import {
   corroborateStructuralFindings,
   executionSignalsFromOutcome,
@@ -371,19 +373,7 @@ async function runExecutionGroundedLayer(
     result.findings.push(finding);
   }
 
-  for (const restoration of outcome.restorations) {
-    const payload: Omit<PrAuditRestorationEntry, 'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'> = {
-      type: 'pr-audit-restoration',
-      category: restoration.category,
-      verdict: restoration.verdict,
-      findingFile: restoration.findingFile,
-      testFiles: restoration.testFiles,
-      failingTests: restoration.failingTests,
-      controls: restoration.controls,
-      reproduceCommand: restoration.reproduceCommand,
-    };
-    ledger.append<PrAuditRestorationEntry>(payload, aiAgent);
-  }
+  appendRestorationEntries(ledger, outcome.restorations, aiAgent);
 
   // Runtime corroboration (opt-in). When this run's execution layer actually
   // produced signals, mark the structural findings that a surviving mutant,
@@ -401,6 +391,119 @@ async function runExecutionGroundedLayer(
     }
   }
   return outcome;
+}
+
+/** One pr-audit-restoration entry per proof record, so the ledger carries the
+ *  full restoration funnel with the run's agent attribution. */
+export function appendRestorationEntries(
+  ledger: HashChainedLedger,
+  restorations: readonly RestorationProofRecord[],
+  aiAgent: { aiAgent: LedgerAgentAttribution } | undefined,
+): void {
+  for (const restoration of restorations) {
+    const payload: Omit<PrAuditRestorationEntry, 'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'> = {
+      type: 'pr-audit-restoration',
+      category: restoration.category,
+      verdict: restoration.verdict,
+      findingFile: restoration.findingFile,
+      testFiles: restoration.testFiles,
+      failingTests: restoration.failingTests,
+      controls: restoration.controls,
+      reproduceCommand: restoration.reproduceCommand,
+    };
+    ledger.append<PrAuditRestorationEntry>(payload, aiAgent);
+  }
+}
+
+/**
+ * Recompute the published pass flag from the findings' final severities.
+ * `runCheatDetectors` computes `pass` before the execution-grounded layer can
+ * demote a blocking finding (a refuted restoration), so the flag must be
+ * recomputed after that layer or the gate decision, the completed ledger
+ * entry, and the rendered comment would all publish a stale BLOCK. Safe over
+ * the merged findings list: the execution-grounded builders only ever emit
+ * warn/info severities, never block, so they cannot flip the flag themselves.
+ */
+export function recomputeAuditPass(result: AuditResult): void {
+  result.pass = result.findings.every((f) => f.severity !== 'block');
+}
+
+/**
+ * Append one ledger entry per finding, reflecting each finding's final
+ * published state. A judge-primary finding has no deterministic candidate
+ * behind it, so it is recorded under its own kind to stay distinguishable
+ * from a detector finding the judge merely confirmed; execution-grounded
+ * findings are skipped because the execution-grounded layer records them
+ * under their dedicated kinds when it runs. Called after that layer so a
+ * demoted finding's entry carries the demoted severity and a hash of the
+ * evidence as published (the demotion note included).
+ */
+export function appendFindingEntries(
+  ledger: HashChainedLedger,
+  findings: readonly Finding[],
+  attribution: LedgerAgentAttribution | undefined,
+): void {
+  const opts = attribution !== undefined ? { aiAgent: attribution } : undefined;
+  for (const finding of findings) {
+    if (isExecutionGroundedCategory(finding.category)) continue;
+    if (finding.judgePrimary === true) {
+      const primaryPayload: Omit<
+        PrAuditJudgePrimaryEntry,
+        'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'
+      > = {
+        type: 'pr-audit-judge-primary',
+        category: finding.category,
+        modelId: finding.judgeModelId ?? 'unknown',
+        answer: 'yes',
+        file: finding.location.file,
+        line: finding.location.line,
+      };
+      if (finding.judgeReasoning !== undefined) {
+        (primaryPayload as PrAuditJudgePrimaryEntry).reason = finding.judgeReasoning;
+      }
+      ledger.append<PrAuditJudgePrimaryEntry>(primaryPayload, opts);
+      continue;
+    }
+    const evidenceSha256 = crypto.createHash('sha256').update(finding.evidence).digest('hex');
+    const payload: Omit<PrAuditFindingEntry, 'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'> = {
+      type: 'pr-audit-finding',
+      category: finding.category,
+      severity: finding.severity,
+      file: finding.location.file,
+      line: finding.location.line,
+      message: finding.message,
+      evidenceSha256,
+    };
+    if (finding.location.endLine !== undefined) {
+      (payload as PrAuditFindingEntry).endLine = finding.location.endLine;
+    }
+    ledger.append<PrAuditFindingEntry>(payload, opts);
+  }
+}
+
+/** The completed-entry payload. Pass, blockingCount, and detail all derive
+ *  from the same findings array, so the published verdict cannot contradict
+ *  its own counts. */
+export function buildCompletedEntry(
+  result: AuditResult,
+  pr: { number: number; repository: string } | undefined,
+  wallTimeMs: number,
+): Omit<PrAuditCompletedEntry, 'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'> {
+  const blockingCount = result.findings.filter((f) => f.severity === 'block').length;
+  return {
+    type: 'pr-audit-completed',
+    prNumber: pr?.number ?? null,
+    prRepository: pr?.repository ?? null,
+    pass: result.pass,
+    findingCount: result.findings.length,
+    blockingCount,
+    warningCount: result.findings.filter((f) => f.severity === 'warn').length,
+    detectorVersions: result.detectorVersions,
+    wallTimeMs,
+    detail: result.pass
+      ? `audit pass — ${result.findings.length} non-blocking finding(s)`
+      : `audit block — ${blockingCount} blocking finding(s)`,
+  };
 }
 
 /**
@@ -515,50 +618,6 @@ async function runAudit(flags: AuditFlags): Promise<number> {
     attribution !== undefined ? { aiAgent: attribution } : undefined,
   );
 
-  for (const finding of result.findings) {
-    // A judge-primary finding has no deterministic candidate behind it, so
-    // it is recorded under its own kind to stay distinguishable from a
-    // detector finding the judge merely confirmed.
-    if (finding.judgePrimary === true) {
-      const primaryPayload: Omit<
-        PrAuditJudgePrimaryEntry,
-        'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'
-      > = {
-        type: 'pr-audit-judge-primary',
-        category: finding.category,
-        modelId: finding.judgeModelId ?? 'unknown',
-        answer: 'yes',
-        file: finding.location.file,
-        line: finding.location.line,
-      };
-      if (finding.judgeReasoning !== undefined) {
-        (primaryPayload as PrAuditJudgePrimaryEntry).reason = finding.judgeReasoning;
-      }
-      ledger.append<PrAuditJudgePrimaryEntry>(
-        primaryPayload,
-        attribution !== undefined ? { aiAgent: attribution } : undefined,
-      );
-      continue;
-    }
-    const evidenceSha256 = crypto.createHash('sha256').update(finding.evidence).digest('hex');
-    const payload: Omit<PrAuditFindingEntry, 'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'> = {
-      type: 'pr-audit-finding',
-      category: finding.category,
-      severity: finding.severity,
-      file: finding.location.file,
-      line: finding.location.line,
-      message: finding.message,
-      evidenceSha256,
-    };
-    if (finding.location.endLine !== undefined) {
-      (payload as PrAuditFindingEntry).endLine = finding.location.endLine;
-    }
-    ledger.append<PrAuditFindingEntry>(
-      payload,
-      attribution !== undefined ? { aiAgent: attribution } : undefined,
-    );
-  }
-
   // Execution-grounded layer (opt-in, advisory). Only meaningful for --pr
   // audits, where we have the repo and the head/base commits to provision a
   // sandboxed checkout. Defaults off; a failure here is logged and does not
@@ -575,6 +634,17 @@ async function runAudit(flags: AuditFlags): Promise<number> {
       attribution,
     });
   }
+
+  // The execution-grounded layer can demote a blocking finding (a refuted
+  // restoration) and appends its own advisory findings, so everything
+  // published from here on (the gate decision, the ledger entries, the shadow
+  // outputs, the rendered comment) works from the findings' final state.
+  recomputeAuditPass(result);
+
+  // Finding entries are appended after the execution-grounded layer so each
+  // entry reflects its finding as published; the pr-audit-restoration entries
+  // the layer wrote document what changed and why.
+  appendFindingEntries(ledger, result.findings, attribution);
 
   // Verifiable-evidence block triggers. Built from the execution-grounded
   // outcome's runtime facts and recorded to the ledger whether or not they
@@ -597,20 +667,7 @@ async function runAudit(flags: AuditFlags): Promise<number> {
   const decision = decideBlock(blockTriggers, flags.mode, result.pass);
 
   ledger.append<PrAuditCompletedEntry>(
-    {
-      type: 'pr-audit-completed',
-      prNumber: prContext?.prMetadata.number ?? null,
-      prRepository: prContext?.prMetadata.repository ?? null,
-      pass: result.pass,
-      findingCount: result.findings.length,
-      blockingCount: result.findings.filter((f) => f.severity === 'block').length,
-      warningCount: result.findings.filter((f) => f.severity === 'warn').length,
-      detectorVersions: result.detectorVersions,
-      wallTimeMs,
-      detail: result.pass
-        ? `audit pass — ${result.findings.length} non-blocking finding(s)`
-        : `audit block — ${result.findings.filter((f) => f.severity === 'block').length} blocking finding(s)`,
-    },
+    buildCompletedEntry(result, prContext?.prMetadata, wallTimeMs),
     attribution !== undefined ? { aiAgent: attribution } : undefined,
   );
 
