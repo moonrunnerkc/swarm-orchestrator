@@ -77,6 +77,149 @@ describe('execution-grounded / test-restoration extractTestHunkPatch', () => {
     assert.equal(extractTestHunkPatch(PR_DIFF, 'src/calc.ts'), null);
   });
 
+  it('extracts a deleted test file so the reverse patch restores it', () => {
+    const diff = [
+      'diff --git a/test/gone.test.js b/test/gone.test.js',
+      'deleted file mode 100644',
+      'index 1111111..0000000',
+      '--- a/test/gone.test.js',
+      '+++ /dev/null',
+      '@@ -1,3 +0,0 @@',
+      "-it('gone', () => {",
+      '-  assert.ok(true);',
+      '-});',
+      '',
+    ].join('\n');
+
+    const patch = extractTestHunkPatch(diff, 'test/gone.test.js');
+
+    assert.notEqual(patch, null, 'a deleted test file must still be extractable');
+    const lines = patch!.split('\n');
+    assert.ok(lines.includes('--- a/test/gone.test.js'), 'old side must carry the real path');
+    assert.ok(lines.includes('+++ /dev/null'), 'new side must be /dev/null for a deletion');
+    assert.ok(lines.includes('deleted file mode 100644'), 'deleted-file header must survive');
+    assert.ok(lines.includes("-it('gone', () => {"));
+    assert.ok(lines.includes('-  assert.ok(true);'));
+    assert.ok(lines.includes('-});'));
+
+    const reparsed = parseDiff(patch!);
+    assert.equal(reparsed.length, 1);
+    assert.equal(reparsed[0]!.deleted, true, 're-parsing must yield a deletion');
+    assert.equal(reparsed[0]!.from, 'test/gone.test.js');
+    assert.equal(reparsed[0]!.to, '/dev/null');
+  });
+
+  it('extracts a new test file with /dev/null on the old side', () => {
+    const diff = [
+      'diff --git a/test/fresh.test.ts b/test/fresh.test.ts',
+      'new file mode 100644',
+      'index 0000000..1234567',
+      '--- /dev/null',
+      '+++ b/test/fresh.test.ts',
+      '@@ -0,0 +1,3 @@',
+      "+it('fresh', () => {",
+      '+  assert.ok(true);',
+      '+});',
+      '',
+    ].join('\n');
+
+    const patch = extractTestHunkPatch(diff, 'test/fresh.test.ts');
+
+    assert.notEqual(patch, null);
+    const lines = patch!.split('\n');
+    assert.equal(lines[0], 'diff --git a/test/fresh.test.ts b/test/fresh.test.ts');
+    assert.ok(lines.includes('new file mode 100644'), 'new-file header must survive');
+    assert.ok(lines.includes('--- /dev/null'), 'old side must be /dev/null for a new file');
+    assert.ok(lines.includes('+++ b/test/fresh.test.ts'), 'new side must carry the real path');
+
+    const reparsed = parseDiff(patch!);
+    assert.equal(reparsed.length, 1);
+    assert.equal(reparsed[0]!.new, true, 're-parsing must yield a new file');
+    assert.deepEqual(
+      chunkShapes(patch!, 'test/fresh.test.ts'),
+      chunkShapes(diff, 'test/fresh.test.ts'),
+    );
+  });
+
+  it('extracts a renamed-and-modified test file with both paths in the headers', () => {
+    const diff = [
+      'diff --git a/test/old-name.test.ts b/test/new-name.test.ts',
+      'similarity index 90%',
+      'rename from test/old-name.test.ts',
+      'rename to test/new-name.test.ts',
+      'index 1111111..2222222 100644',
+      '--- a/test/old-name.test.ts',
+      '+++ b/test/new-name.test.ts',
+      '@@ -5,3 +5,3 @@',
+      " it('renamed', () => {",
+      '-  assert.equal(add(2, 2), 4);',
+      '+  assert.equal(add(2, 2), 5);',
+      ' });',
+      '',
+    ].join('\n');
+
+    const patch = extractTestHunkPatch(diff, 'test/new-name.test.ts');
+
+    assert.notEqual(patch, null);
+    const lines = patch!.split('\n');
+    assert.equal(lines[0], 'diff --git a/test/old-name.test.ts b/test/new-name.test.ts');
+    assert.ok(lines.includes('--- a/test/old-name.test.ts'), 'old side keeps the pre-rename path');
+    assert.ok(lines.includes('+++ b/test/new-name.test.ts'), 'new side keeps the post-rename path');
+    assert.deepEqual(
+      chunkShapes(patch!, 'test/new-name.test.ts'),
+      chunkShapes(diff, 'test/new-name.test.ts'),
+      'the modification hunks must be preserved through the rename',
+    );
+  });
+
+  it('preserves a trailing "\\ No newline at end of file" marker verbatim', () => {
+    const diff = [
+      'diff --git a/test/eol.test.ts b/test/eol.test.ts',
+      'index 1111111..2222222 100644',
+      '--- a/test/eol.test.ts',
+      '+++ b/test/eol.test.ts',
+      '@@ -1,3 +1,2 @@',
+      " it('eol', () => {",
+      '-  assert.equal(add(1, 1), 2);',
+      ' });',
+      '\\ No newline at end of file',
+      '',
+    ].join('\n');
+
+    const patch = extractTestHunkPatch(diff, 'test/eol.test.ts');
+
+    assert.notEqual(patch, null);
+    assert.ok(
+      patch!.split('\n').includes('\\ No newline at end of file'),
+      'the no-newline marker must survive extraction byte-for-byte',
+    );
+    assert.deepEqual(
+      chunkShapes(patch!, 'test/eol.test.ts'),
+      chunkShapes(diff, 'test/eol.test.ts'),
+    );
+  });
+
+  it('preserves an omitted-count hunk header "@@ -1 +1 @@" verbatim', () => {
+    const diff = [
+      'diff --git a/test/one.test.ts b/test/one.test.ts',
+      'index 1111111..2222222 100644',
+      '--- a/test/one.test.ts',
+      '+++ b/test/one.test.ts',
+      '@@ -1 +1 @@',
+      '-assert.ok(false);',
+      '+assert.ok(true);',
+      '',
+    ].join('\n');
+
+    const patch = extractTestHunkPatch(diff, 'test/one.test.ts');
+
+    assert.notEqual(patch, null);
+    const lines = patch!.split('\n');
+    assert.ok(lines.includes('@@ -1 +1 @@'), 'omitted-count header must not be rewritten');
+    assert.ok(lines.includes('-assert.ok(false);'));
+    assert.ok(lines.includes('+assert.ok(true);'));
+  });
+
   it('preserves every hunk of a multi-hunk test file with correct @@ headers', () => {
     const patch = extractTestHunkPatch(PR_DIFF, 'test/calc.test.ts');
 
@@ -154,6 +297,29 @@ describe('execution-grounded / test-restoration classifyRestoration', () => {
     assert.deepEqual(result.failingTests, []);
   });
 
+  it('execution-error: both runs failed but neither yielded a failing-test identity', () => {
+    // A restored test that fails without parseable identities (e.g. a compile
+    // error after a legitimate rename) is an execution anomaly, not proof.
+    const result = classifyRestoration({
+      ...base,
+      run1FailingTests: [],
+      run2FailingTests: [],
+    });
+    assert.equal(result.verdict, 'not-proven:execution-error');
+    assert.deepEqual(result.failingTests, []);
+  });
+
+  it('flaky: one run yields identities and the other yields none', () => {
+    // The identity-mismatch check precedes the empty-identity guard.
+    const result = classifyRestoration({
+      ...base,
+      run1FailingTests: ['calc > adds'],
+      run2FailingTests: [],
+    });
+    assert.equal(result.verdict, 'not-proven:flaky');
+    assert.deepEqual(result.failingTests, []);
+  });
+
   it('pre-existing-failure: restored test also fails on the base checkout', () => {
     const result = classifyRestoration({ ...base, baseTestPasses: false });
     assert.equal(result.verdict, 'not-proven:pre-existing-failure');
@@ -223,6 +389,63 @@ describe('execution-grounded / test-restoration buildReproduceCommand', () => {
       () => buildReproduceCommand({ ...opts, testRunner: 'ava' }),
       /ava/,
       'ava has no locked file-scoped reproduce shape yet',
+    );
+  });
+
+  it('throws on a test file path containing a backtick', () => {
+    assert.throws(() =>
+      buildReproduceCommand({
+        ...opts,
+        testFiles: ['test/`touch pwned`.test.ts'],
+        testRunner: 'jest',
+      }),
+    );
+  });
+
+  it('throws on a test file path containing a semicolon', () => {
+    assert.throws(() =>
+      buildReproduceCommand({
+        ...opts,
+        testFiles: ['test/calc.test.ts;rm -rf .'],
+        testRunner: 'jest',
+      }),
+    );
+  });
+
+  it('throws on a test file path containing a space', () => {
+    assert.throws(() =>
+      buildReproduceCommand({
+        ...opts,
+        testFiles: ['test/calc.test.ts --reporter evil'],
+        testRunner: 'jest',
+      }),
+    );
+  });
+
+  it('throws on a path-traversal test file path', () => {
+    assert.throws(() =>
+      buildReproduceCommand({ ...opts, testFiles: ['../escape.test.ts'], testRunner: 'jest' }),
+    );
+    assert.throws(() =>
+      buildReproduceCommand({ ...opts, testFiles: ['/etc/passwd'], testRunner: 'jest' }),
+    );
+  });
+
+  it('throws on a head sha that is uppercase, too short, or not hex', () => {
+    assert.throws(() =>
+      buildReproduceCommand({ ...opts, prHeadSha: 'DEADBEEFCAFE', testRunner: 'jest' }),
+    );
+    assert.throws(() =>
+      buildReproduceCommand({ ...opts, prHeadSha: 'abc123', testRunner: 'jest' }),
+    );
+    assert.throws(() =>
+      buildReproduceCommand({ ...opts, prHeadSha: 'deadbeef$(id)', testRunner: 'jest' }),
+    );
+  });
+
+  it('throws on a PR ref whose owner/repo part is not conservatively shaped', () => {
+    assert.throws(() =>
+      buildReproduceCommand({ ...opts, prRef: 'octo/calc;rm -rf .#42', testRunner: 'jest' }),
     );
   });
 });

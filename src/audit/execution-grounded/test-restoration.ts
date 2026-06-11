@@ -8,7 +8,7 @@
 
 import parseDiff from 'parse-diff';
 import { SwarmError } from '../../errors';
-import { filePath, isTestFile } from '../cheat-detector/diff-walker';
+import { isTestFile } from '../cheat-detector/diff-walker';
 import type { CheatCategory } from '../types';
 import type { TestRunner, PackageManager } from './sandbox';
 import type { MutationRecipe } from './mutation-check';
@@ -72,16 +72,26 @@ export const RESTORATION_CATEGORIES: readonly CheatCategory[] = [
   'coverage-erosion',
 ];
 
+/** A parsed-diff path with the '/dev/null' placeholder normalized away. */
+function realPath(p: string | undefined): string | null {
+  return p !== undefined && p !== '/dev/null' ? p : null;
+}
+
 /** Pure: extract the PR's test-file hunks the finding points at, as a standalone unified diff. */
 export function extractTestHunkPatch(prDiff: string, findingFile: string): string | null {
   if (!isTestFile(findingFile)) return null;
-  const target = parseDiff(prDiff).find((f) => filePath(f) === findingFile);
+  // parse-diff sets a deleted file's `to` (and a new file's `from`) to
+  // '/dev/null', so match the finding file against whichever side carries a
+  // real path: a deletion's finding file is its from-path by contract, and
+  // '/dev/null' itself is never a valid finding file.
+  const target = parseDiff(prDiff).find(
+    (f) => realPath(f.to) === findingFile || realPath(f.from) === findingFile,
+  );
   if (target === undefined || target.chunks.length === 0) return null;
 
-  // parse-diff normalizes a new file's `from` (and a deleted file's `to`)
-  // to '/dev/null'; the git header wants the real path on both sides.
-  const oldPath = target.from !== undefined && target.from !== '/dev/null' ? target.from : null;
-  const newPath = target.to !== undefined && target.to !== '/dev/null' ? target.to : null;
+  // The git header wants the real path on both sides.
+  const oldPath = realPath(target.from);
+  const newPath = realPath(target.to);
   const lines: string[] = [`diff --git a/${oldPath ?? newPath} b/${newPath ?? oldPath}`];
   if (target.new === true) lines.push('new file mode 100644');
   if (target.deleted === true) lines.push('deleted file mode 100644');
@@ -127,6 +137,12 @@ export function classifyRestoration(c: {
   if (!sameIdentity) {
     return { verdict: 'not-proven:flaky', failingTests: [] };
   }
+  // Both runs failed "the same way" but neither yielded a single parseable
+  // failing-test identity (e.g. a compile error after a legitimate rename).
+  // Failure without identity is an execution anomaly, not proof: fail closed.
+  if (run1.length === 0) {
+    return { verdict: 'not-proven:execution-error', failingTests: [] };
+  }
   if (c.baseTestPasses === false) {
     return { verdict: 'not-proven:pre-existing-failure', failingTests: [] };
   }
@@ -145,6 +161,45 @@ const RUNNER_COMMANDS: Partial<Record<TestRunner, (files: string[]) => string>> 
   mocha: (files) => `npx mocha ${files.join(' ')}`,
 };
 
+// The reproduce command is published verbatim in PR comments and pasted into
+// maintainers' shells, while its inputs (file paths, sha, ref) originate from
+// an attacker-controlled PR. Everything interpolated into it must match a
+// conservative shape; on violation we throw rather than emit a sanitized but
+// different command (fail closed: a command we never executed is not proof).
+const SAFE_TEST_PATH = /^[A-Za-z0-9._/@-]+$/;
+const SAFE_HEAD_SHA = /^[0-9a-f]{7,40}$/;
+const SAFE_PR_REF = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+#\d+$/;
+
+function assertShellSafe(opts: { prRef: string; prHeadSha: string; testFiles: string[] }): void {
+  for (const file of opts.testFiles) {
+    const traversal = file.startsWith('/') || file.split('/').includes('..');
+    if (!SAFE_TEST_PATH.test(file) || traversal) {
+      throw new SwarmError(
+        `test file path '${file}' is not safe to publish in a reproduce command`,
+        'RESTORATION_UNSAFE_TEST_PATH',
+        {
+          remediation:
+            'Reproduce manually: save revertedHunkPatch to a file, run `git apply -R` on it, then invoke the test runner on the restored files yourself.',
+        },
+      );
+    }
+  }
+  if (!SAFE_HEAD_SHA.test(opts.prHeadSha)) {
+    throw new SwarmError(
+      `PR head sha '${opts.prHeadSha}' is not a 7-40 character lowercase hex string`,
+      'RESTORATION_UNSAFE_HEAD_SHA',
+      { remediation: 'Pass the full lowercase commit sha of the PR head as reported by git.' },
+    );
+  }
+  if (/#\d+$/.test(opts.prRef) && !SAFE_PR_REF.test(opts.prRef)) {
+    throw new SwarmError(
+      `PR ref '${opts.prRef}' does not match the owner/repo#N shape`,
+      'RESTORATION_UNSAFE_PR_REF',
+      { remediation: 'Pass the PR ref as owner/repo#N with conservative repository characters.' },
+    );
+  }
+}
+
 /**
  * Pure: deterministic reproduce command for the proof record.
  *
@@ -159,6 +214,7 @@ export function buildReproduceCommand(opts: {
   testFiles: string[];
   testRunner: TestRunner;
 }): string {
+  assertShellSafe(opts);
   const runner = RUNNER_COMMANDS[opts.testRunner];
   if (runner === undefined) {
     throw new SwarmError(
