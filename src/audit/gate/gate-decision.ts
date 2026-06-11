@@ -6,17 +6,28 @@
 // The eligible set is pinned in source here, the same way detector-precision.ts
 // pins the measured-precision table: a consumer's audit must not read a
 // benchmark JSON out of the installed package, and pinning makes the gate's
-// honest status auditable from git log. The set is empty until a trigger clears
-// the bar in benchmarks/real-corpus/block-eligibility.json (Wilson 95% lower
-// >= 0.90 with >= 5 confirmed reverted true positives); when one does, this set
-// and the calibration are bumped in the same commit.
+// honest status auditable from git log.
+//
+// Block eligibility is two-tier (see block-eligibility.ts and self-certifying.ts).
+// Circumstantial triggers (corroborated-under-constraint) become eligible only
+// when their Wilson 95% lower bound clears 0.90 with >= 5 confirmed reverted true
+// positives in benchmarks/real-corpus/block-eligibility.json. Self-certifying
+// triggers (test-tamper-proven, claim-falsified, obligation-failure) are eligible
+// by tier in that calibration and gate only on a firing whose per-instance
+// controls are all green, not on the Wilson bar.
+//
+// This runtime set stays empty: no circumstantial trigger has cleared the Wilson
+// bar, and acting on the self-certifying tier at audit time (gating only when
+// controlsAllGreen holds for the firing) is not yet wired here. Until it is, gate
+// mode blocks nothing on a trigger alone. When that changes, this set and the
+// calibration are bumped in the same commit.
 
 import type { AuditMode } from '../types';
 import type { BlockTrigger, BlockTriggerKind } from './block-trigger-types';
 
-/** The triggers currently allowed to gate, pinned from the committed
- *  block-eligibility policy. Empty: no trigger has yet cleared the revert
- *  calibration bar. */
+/** The triggers the runtime gate currently acts on, pinned from the committed
+ *  block-eligibility policy. Empty: no circumstantial trigger has cleared the
+ *  Wilson bar, and the self-certifying tier is not yet enforced at audit time. */
 export const BLOCK_ELIGIBLE_TRIGGERS: readonly BlockTriggerKind[] = [];
 
 /** Whether a trigger kind is currently allowed to gate a merge. */

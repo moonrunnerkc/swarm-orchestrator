@@ -103,7 +103,7 @@ function loadStructural(file: string): Finding[] {
 }
 
 /** Load restoration proof records if present (for test-tamper-proven replay from
- *  Task 6 executed layer outputs). */
+ *  the committed execution-grounded restoration outputs). */
 function loadRestorations(egDir: string, slug: string, prNumber: number): RestorationProofRecord[] {
   const file = path.join(egDir, slug, String(prNumber), 'restoration-proof.json');
   const proof = readJson<{ records?: RestorationProofRecord[] }>(file);
