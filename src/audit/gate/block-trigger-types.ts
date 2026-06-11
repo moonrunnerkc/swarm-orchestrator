@@ -43,6 +43,13 @@ export interface ClaimFalsifiedEvidence {
   preStatus: string;
   /** Repro status after the PR (`failed`: the claimed fix did not land). */
   postStatus: string;
+  /** Per-side repro statuses across the re-run controls, in run order. The
+   *  claim is only control-confirmed (and so able to gate) when both pre runs
+   *  and both post runs failed: the repro reproduces on the base and on the
+   *  patched code, twice. A single-entry array is a firing that was not re-run
+   *  (advisory only, never green). */
+  preRuns: string[];
+  postRuns: string[];
   /** Captured failing output from the post-PR repro run. */
   postOutput: string;
 }
@@ -84,6 +91,10 @@ export interface ObligationFailureEvidence {
   command: string;
   /** Captured failure output / detail from the verifier. */
   output: string;
+  /** Pass status of each run, in run order. A confirmed failure ran twice and
+   *  failed both times (`[false, false]`); a single run records `[false]`. The
+   *  trigger is only control-confirmed (able to gate) when it failed twice. */
+  runsPassed: boolean[];
 }
 
 /**

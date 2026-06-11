@@ -15,6 +15,8 @@ const claimTrigger: BlockTrigger = {
     reproCommand: 'node __swarm_repro__.js',
     preStatus: 'failed',
     postStatus: 'failed',
+    preRuns: ['failed', 'failed'],
+    postRuns: ['failed', 'failed'],
     postOutput: 'Error: charge not applied',
   },
 };

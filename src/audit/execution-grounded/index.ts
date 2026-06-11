@@ -196,6 +196,13 @@ export interface ReproComparison {
   postStatus: string;
   preOutput: string;
   postOutput: string;
+  /** Per-side statuses across the double-run controls, in run order. A
+   *  fix-not-delivered candidate is re-run on both sides to confirm the claim
+   *  before it can gate; every other verdict records the single first run.
+   *  Optional so callers that reconstruct a comparison from a stored summary
+   *  (the calibrator) need not synthesize a second run. */
+  preRuns?: string[];
+  postRuns?: string[];
 }
 
 /** Build repro findings: a fix that did not deliver (still fails) or a PR that
@@ -707,14 +714,28 @@ async function runIssueRepros(
     for (const repro of extractRepros(issue.body)) {
       if (Date.now() >= deadline) break;
       const dockerArg = dockerCtx !== undefined ? { docker: dockerCtx } : {};
-      const pre = executeIssueRepro({ workspacePath: workspaces.pre.workspacePath, repro, testRunner: workspaces.pre.testRunner, ...dockerArg });
-      const post = executeIssueRepro({ workspacePath: workspaces.post.workspacePath, repro, testRunner: workspaces.post.testRunner, ...dockerArg });
+      const runOnce = (workspacePath: string, testRunner: import('./sandbox').TestRunner | null) =>
+        executeIssueRepro({ workspacePath, repro, testRunner, ...dockerArg });
+      const pre = runOnce(workspaces.pre.workspacePath, workspaces.pre.testRunner);
+      const post = runOnce(workspaces.post.workspacePath, workspaces.post.testRunner);
+      const verdict = classifyComparison(pre.status, post.status);
+      // The claim-falsified block trigger gates only on a confirmed fix-not-delivered:
+      // the repro must fail twice on each side (D8). Re-run both sides only for that
+      // verdict; every other verdict cannot gate, so a second run would be wasted.
+      const preRuns = [pre.status];
+      const postRuns = [post.status];
+      if (verdict === 'fix-not-delivered' && Date.now() < deadline) {
+        preRuns.push(runOnce(workspaces.pre.workspacePath, workspaces.pre.testRunner).status);
+        postRuns.push(runOnce(workspaces.post.workspacePath, workspaces.post.testRunner).status);
+      }
       out.push({
         issue: { owner, repo, number: ref.number },
         repro,
-        verdict: classifyComparison(pre.status, post.status),
+        verdict,
         preStatus: pre.status,
         postStatus: post.status,
+        preRuns,
+        postRuns,
         preOutput: `${pre.stdout}\n${pre.stderr}`.trim(),
         postOutput: `${post.stdout}\n${post.stderr}`.trim(),
       });

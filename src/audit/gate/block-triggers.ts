@@ -96,6 +96,8 @@ export function detectClaimFalsified(input: ClaimFalsifiedInput): BlockTrigger[]
       reproCommand,
       preStatus: comparison.preStatus,
       postStatus: comparison.postStatus,
+      preRuns: comparison.preRuns ?? [comparison.preStatus],
+      postRuns: comparison.postRuns ?? [comparison.postStatus],
       postOutput: comparison.postOutput,
     };
     out.push({
@@ -198,6 +200,10 @@ export interface ObligationOutcome {
   passed: boolean;
   command: string;
   detail: string;
+  /** Pass status of a confirmation re-run, when the obligation was run a second
+   *  time. Absent for a single run. The obligation is only control-confirmed
+   *  (able to gate) when both the first run and this re-run failed. */
+  confirmRunPassed?: boolean;
 }
 
 /**
@@ -223,6 +229,10 @@ export function detectObligationFailure(outcomes: ObligationOutcome[]): BlockTri
         : {}),
       command: outcome.command,
       output: outcome.detail,
+      runsPassed:
+        outcome.confirmRunPassed !== undefined
+          ? [outcome.passed, outcome.confirmRunPassed]
+          : [outcome.passed],
     };
     out.push({
       kind: 'obligation-failure',

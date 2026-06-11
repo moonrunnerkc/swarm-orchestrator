@@ -21,10 +21,10 @@ export function isSelfCertifying(kind: BlockTriggerKind): boolean {
 
 /** Returns true only for firings whose per-instance controls are all green.
  * For test-tamper-proven this is the three restoration controls. For
- * claim-falsified / obligation-failure the double-run controls (pre and post both
- * failed, twice) are not yet recorded on the evidence; until they are, a firing of
- * these (which by construction is a failure case) is treated as control-green for
- * the purpose of the tier.
+ * claim-falsified the repro must have failed twice on both the base and the
+ * patched side (the re-run controls). For obligation-failure the obligation
+ * must have failed on both runs. A single-run or split-run firing is advisory
+ * only: the trigger may still surface in the comment, but it never gates.
  */
 export function controlsAllGreen(trigger: BlockTrigger): boolean {
   const e = trigger.evidence;
@@ -36,11 +36,16 @@ export function controlsAllGreen(trigger: BlockTrigger): boolean {
       c.restoredFailsTwiceSameIdentity === true
     );
   }
-  if (e.kind === 'claim-falsified' || e.kind === 'obligation-failure') {
-    // Once double-run evidence is recorded, these are green only when the re-run
-    // controls pass. For today's single-status evidence (0 such firings in the
-    // corpus) we treat a firing as green: the repro or obligation did fail.
-    return true;
+  if (e.kind === 'claim-falsified') {
+    return (
+      e.preRuns.length === 2 &&
+      e.postRuns.length === 2 &&
+      e.preRuns.every((s) => s === 'failed') &&
+      e.postRuns.every((s) => s === 'failed')
+    );
+  }
+  if (e.kind === 'obligation-failure') {
+    return e.runsPassed.length === 2 && e.runsPassed.every((passed) => passed === false);
   }
   return false;
 }

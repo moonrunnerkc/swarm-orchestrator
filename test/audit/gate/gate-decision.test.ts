@@ -10,7 +10,7 @@ const obligationTrigger: BlockTrigger = {
   kind: 'obligation-failure',
   summary: 'test-must-pass failed',
   reproduce: 'npm test',
-  evidence: { kind: 'obligation-failure', obligationType: 'test-must-pass', command: 'npm test', output: 'boom' },
+  evidence: { kind: 'obligation-failure', obligationType: 'test-must-pass', command: 'npm test', output: 'boom', runsPassed: [false, false] },
 };
 
 describe('gate-decision', () => {

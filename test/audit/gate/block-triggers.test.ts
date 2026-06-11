@@ -28,14 +28,19 @@ function finding(category: CheatCategory, file: string, line: number): Finding {
 const noSignals: ExecutionSignals = { survivingMutants: [], coverageGaps: [], reproFailures: [] };
 
 function reproComparison(verdict: ReproComparison['verdict']): ReproComparison {
+  const postStatus = verdict === 'fix-not-delivered' ? 'failed' : 'passed';
   return {
     issue: { owner: 'acme', repo: 'widgets', number: 42 },
     repro: { kind: 'script', language: 'js', code: 'require("./").charge()' },
     verdict,
     preStatus: 'failed',
-    postStatus: verdict === 'fix-not-delivered' ? 'failed' : 'passed',
+    postStatus,
     preOutput: 'before',
     postOutput: 'Error: charge not applied',
+    // A fix-not-delivered candidate is re-run on both sides to confirm the
+    // controls; every other verdict records the single first run.
+    preRuns: verdict === 'fix-not-delivered' ? ['failed', 'failed'] : ['failed'],
+    postRuns: verdict === 'fix-not-delivered' ? ['failed', 'failed'] : [postStatus],
   };
 }
 
@@ -49,6 +54,8 @@ const claimFalsified: ClaimFalsifiedEvidence = {
   reproCommand: 'npx mocha __swarm_repro__.test.js',
   preStatus: 'failed',
   postStatus: 'failed',
+  preRuns: ['failed', 'failed'],
+  postRuns: ['failed', 'failed'],
   postOutput: 'AssertionError: expected 1 to equal 2',
 };
 
@@ -68,6 +75,7 @@ const obligationFailure: ObligationFailureEvidence = {
   obligationIndex: 0,
   command: 'npm test',
   output: '1 failing\n  AssertionError: charge not applied',
+  runsPassed: [false, false],
 };
 
 function triggerFor(
@@ -97,6 +105,8 @@ describe('block-trigger evidence', () => {
       postOutput: claimFalsified.postOutput,
       postStatus: claimFalsified.postStatus,
       preStatus: claimFalsified.preStatus,
+      postRuns: claimFalsified.postRuns,
+      preRuns: claimFalsified.preRuns,
       reproCommand: claimFalsified.reproCommand,
       claim: claimFalsified.claim,
       issueRef: claimFalsified.issueRef,
@@ -136,6 +146,26 @@ describe('detectClaimFalsified (T1)', () => {
     assert.match(evidence.postOutput, /charge not applied/);
     assert.equal(evidence.reproCommand, 'node __swarm_repro__.js');
     assert.equal(trigger.reproduce, evidence.reproCommand, 'reproduce is the repro command');
+    assert.deepEqual(evidence.preRuns, ['failed', 'failed'], 'records both base-side runs');
+    assert.deepEqual(evidence.postRuns, ['failed', 'failed'], 'records both patched-side runs');
+  });
+
+  it('carries the single first run when the side was not re-run (split repro)', () => {
+    const split: ReproComparison = {
+      ...reproComparison('fix-not-delivered'),
+      preRuns: ['failed'],
+      postRuns: ['failed'],
+    };
+    const triggers = detectClaimFalsified({
+      prIntent: claimsFix,
+      linkedIssues: [{ owner: 'acme', repo: 'widgets', number: 42 }],
+      repros: [split],
+      testRunner: null,
+    });
+    assert.equal(triggers.length, 1, 'still fires as an advisory candidate');
+    const evidence = triggers[0]!.evidence as ClaimFalsifiedEvidence;
+    assert.deepEqual(evidence.preRuns, ['failed']);
+    assert.deepEqual(evidence.postRuns, ['failed']);
   });
 
   it('stays silent when the claimed fix actually delivered', () => {
@@ -232,6 +262,37 @@ describe('detectObligationFailure (T3)', () => {
     const evidence = triggers[0]!.evidence as ObligationFailureEvidence;
     assert.equal(evidence.obligationType, 'test-must-pass');
     assert.match(evidence.output, /1 failing/);
+    assert.deepEqual(evidence.runsPassed, [false], 'a single run records one false');
+  });
+
+  it('records both runs when a confirmation re-run is supplied', () => {
+    const triggers = detectObligationFailure([
+      {
+        obligationType: 'test-must-pass',
+        passed: false,
+        command: 'npm test',
+        detail: 'failed twice',
+        confirmRunPassed: false,
+      },
+    ]);
+    assert.equal(triggers.length, 1);
+    const evidence = triggers[0]!.evidence as ObligationFailureEvidence;
+    assert.deepEqual(evidence.runsPassed, [false, false], 'confirmed failure ran twice');
+  });
+
+  it('records a split re-run as it happened (not control-confirmed)', () => {
+    const triggers = detectObligationFailure([
+      {
+        obligationType: 'test-must-pass',
+        passed: false,
+        command: 'npm test',
+        detail: 'flaky',
+        confirmRunPassed: true,
+      },
+    ]);
+    assert.equal(triggers.length, 1, 'still fires as an advisory candidate');
+    const evidence = triggers[0]!.evidence as ObligationFailureEvidence;
+    assert.deepEqual(evidence.runsPassed, [false, true]);
   });
 
   it('stays silent when every obligation passed', () => {

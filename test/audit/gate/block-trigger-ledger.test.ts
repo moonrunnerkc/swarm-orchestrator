@@ -34,6 +34,7 @@ const obligationTrigger: BlockTrigger = {
     obligationType: 'test-must-pass',
     command: 'npm test',
     output: '1 failing',
+    runsPassed: [false, false],
   },
 };
 
