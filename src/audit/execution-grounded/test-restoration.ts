@@ -10,6 +10,7 @@
 // (the one impure helper here) runs the command in an already-provisioned
 // workspace. Workspace provisioning itself lives with the caller.
 
+import { spawnSync } from 'child_process';
 import parseDiff from 'parse-diff';
 import { SwarmError } from '../../errors';
 import { getLogger } from '../../logger';
@@ -489,4 +490,349 @@ export function executeTestRun(opts: ExecuteTestRunOptions): TestRunResult {
     );
     return { passed: false, failingTests, rawOutput, timedOut };
   }
+}
+
+// ---------------------------------------------------------------------------
+// The orchestrator. The proof engine that later blocks PRs, so fail-closed
+// discipline is absolute: it never throws, and every early exit is a loud
+// not-proven verdict with a reason. The order is cheap-first: patch
+// extraction, then the runner gate, then the tampered-suite control, then the
+// reverse-apply, then the double restored run, and only when everything up to
+// there is proven-shaped does the base-checkout control run.
+// ---------------------------------------------------------------------------
+
+/** Run `git apply [-R]` in `cwd` with the patch on stdin. Never throws. */
+function gitApplyPatch(opts: { patch: string; cwd: string; reverse: boolean }): {
+  ok: boolean;
+  detail: string;
+} {
+  const args = ['apply', ...(opts.reverse ? ['-R'] : []), '--whitespace=nowarn', '-'];
+  const res = spawnSync('git', args, {
+    cwd: opts.cwd,
+    input: opts.patch,
+    encoding: 'utf8',
+    timeout: 60_000,
+  });
+  if (res.error !== undefined) return { ok: false, detail: res.error.message };
+  if (res.status !== 0) {
+    const detail = [res.stderr, res.stdout]
+      .filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+      .join('\n')
+      .trim();
+    return {
+      ok: false,
+      detail: detail.length > 0 ? detail : `git apply exited with status ${res.status ?? 'null'}`,
+    };
+  }
+  return { ok: true, detail: '' };
+}
+
+interface RestoredPhaseOutcome {
+  verdict: RestorationVerdict;
+  failingTests: string[];
+  reason?: string;
+}
+
+function reasonForRestoredAnomaly(
+  verdict: RestorationVerdict,
+  run1: TestRunResult,
+  run2: TestRunResult,
+): string {
+  if (verdict === 'not-proven:flaky') {
+    if (run1.passed !== run2.passed) {
+      return (
+        `restored runs split: run 1 ${run1.passed ? 'passed' : 'failed'}, ` +
+        `run 2 ${run2.passed ? 'passed' : 'failed'}`
+      );
+    }
+    return (
+      `restored runs failed with different identities: run 1 [${run1.failingTests.join(', ')}], ` +
+      `run 2 [${run2.failingTests.join(', ')}]`
+    );
+  }
+  return 'restored runs failed twice without parseable failing-test identities (execution anomaly, not proof)';
+}
+
+/** Steps 5-6 of the locked order: the double restored run, then (only when
+ *  the result is proven-shaped) the base-checkout control. Mutates `controls`
+ *  to reflect exactly what ran. Runs inside the reverse-applied workspace. */
+function runRestoredPhase(
+  input: TestRestorationInput,
+  runner: TestRunner,
+  testFiles: string[],
+  controls: RestorationControls,
+): RestoredPhaseOutcome {
+  const runOpts: ExecuteTestRunOptions = {
+    runner,
+    files: testFiles,
+    cwd: input.postWorkspacePath,
+    timeoutMs: input.timeoutMs,
+    ...(input.recipe !== undefined ? { recipe: input.recipe } : {}),
+    ...(input.docker !== undefined ? { docker: input.docker } : {}),
+  };
+  const run1 = executeTestRun(runOpts);
+  if (run1.timedOut) {
+    return {
+      verdict: 'not-proven:execution-error',
+      failingTests: [],
+      reason: `restored run 1 timed out after ${input.timeoutMs}ms`,
+    };
+  }
+  const run2 = executeTestRun(runOpts);
+  if (run2.timedOut) {
+    return {
+      verdict: 'not-proven:execution-error',
+      failingTests: [],
+      reason: `restored run 2 timed out after ${input.timeoutMs}ms`,
+    };
+  }
+
+  const runs = {
+    restoredRun1Failed: !run1.passed,
+    restoredRun2Failed: !run2.passed,
+    run1FailingTests: run1.failingTests,
+    run2FailingTests: run2.failingTests,
+  };
+
+  // Control-1-independent probe: with both other controls assumed green, the
+  // classifier returns 'proven' exactly when the restored runs failed twice
+  // with the same nonempty identity. Every other verdict (refuted, flaky,
+  // identityless execution-error) is decided before the base control is
+  // consulted, so it is final without running control 1 (cheap-first), and
+  // the probe is also how restoredFailsTwiceSameIdentity is derived without
+  // re-implementing the identity comparison.
+  const probe = classifyRestoration({ tamperedSuitePasses: true, baseTestPasses: true, ...runs });
+  if (probe.verdict !== 'proven') {
+    controls.restoredFailsTwiceSameIdentity = false;
+    if (probe.verdict === 'refuted') {
+      return { verdict: 'refuted', failingTests: [] };
+    }
+    return {
+      verdict: probe.verdict,
+      failingTests: [],
+      reason: reasonForRestoredAnomaly(probe.verdict, run1, run2),
+    };
+  }
+  controls.restoredFailsTwiceSameIdentity = true;
+
+  // Control 1: the restored test must pass on the base checkout, or the
+  // failure predates the PR. The base workspace already carries the original
+  // tests; nothing is applied there.
+  if (input.preWorkspacePath === null) {
+    const final = classifyRestoration({ tamperedSuitePasses: true, baseTestPasses: null, ...runs });
+    return {
+      verdict: final.verdict,
+      failingTests: final.failingTests,
+      reason: 'base-workspace-unavailable: control 1 cannot run without a base checkout',
+    };
+  }
+  const baseRun = executeTestRun({ ...runOpts, cwd: input.preWorkspacePath });
+  if (baseRun.timedOut) {
+    return {
+      verdict: 'not-proven:execution-error',
+      failingTests: [],
+      reason: `base-control run timed out after ${input.timeoutMs}ms`,
+    };
+  }
+  controls.baseTestPasses = baseRun.passed;
+  const final = classifyRestoration({
+    tamperedSuitePasses: true,
+    baseTestPasses: baseRun.passed,
+    ...runs,
+  });
+  if (final.verdict === 'proven') {
+    return { verdict: 'proven', failingTests: final.failingTests };
+  }
+  return {
+    verdict: final.verdict,
+    failingTests: [],
+    reason: 'the restored test also fails on the base checkout: the failure predates the PR',
+  };
+}
+
+/**
+ * Impure orchestrator: prove (or fail to prove) that the PR tampered with a
+ * test to conceal a failure. Never throws; every non-proven verdict carries a
+ * reason. The post workspace is shared with later consumers, so the reverse-
+ * applied test patch is always re-applied forward before returning, even when
+ * the restored phase errors.
+ */
+export function runTestRestoration(input: TestRestorationInput): RestorationProofRecord {
+  const controls: RestorationControls = {
+    baseTestPasses: null,
+    tamperedSuitePasses: null,
+    restoredFailsTwiceSameIdentity: null,
+  };
+  const record = (
+    verdict: RestorationVerdict,
+    fields: {
+      testFiles?: string[];
+      failingTests?: string[];
+      reproduceCommand?: string;
+      revertedHunkPatch?: string;
+      reason?: string;
+    },
+  ): RestorationProofRecord => ({
+    schemaVersion: 1,
+    verdict,
+    category: input.finding.category,
+    findingFile: input.finding.file,
+    testFiles: fields.testFiles ?? [],
+    failingTests: fields.failingTests ?? [],
+    controls,
+    reproduceCommand: fields.reproduceCommand ?? '',
+    revertedHunkPatch: fields.revertedHunkPatch ?? '',
+    ...(fields.reason !== undefined ? { reason: fields.reason } : {}),
+  });
+
+  // Step 1: the finding must come with revertible test hunks.
+  const patch = extractTestHunkPatch(input.prDiff, input.finding.file);
+  if (patch === null) {
+    return record('not-proven:no-test-hunks', {
+      reason: `the PR diff carries no test-file hunks for '${input.finding.file}'`,
+    });
+  }
+
+  // Step 2: only runners with a locked file-scoped invocation and identity
+  // parser may execute (jest, vitest, mocha).
+  const runner = input.testRunner;
+  if (runner === null || RUNNER_ARGV[runner] === undefined) {
+    return record('not-proven:runner-unsupported', {
+      revertedHunkPatch: patch,
+      reason:
+        runner === null
+          ? 'no supported test runner detected in the workspace'
+          : `test runner '${runner}' has no locked file-scoped invocation (jest, vitest, mocha only)`,
+    });
+  }
+
+  // The restored state carries the patch's old-side path (a deleted test file
+  // exists again after the revert); the submitted state carries the new side.
+  const patchedFile = parseDiff(patch)[0];
+  const restoredFile =
+    patchedFile !== undefined ? (realPath(patchedFile.from) ?? realPath(patchedFile.to)) : null;
+  if (restoredFile === null) {
+    return record('not-proven:execution-error', {
+      revertedHunkPatch: patch,
+      reason: 'the extracted test-hunk patch names no real file path on either side',
+    });
+  }
+  const testFiles = [restoredFile];
+  const tamperedFile = patchedFile !== undefined ? realPath(patchedFile.to) : null;
+
+  // Step 3 / control 2: the PR's own test run must pass as submitted. A PR
+  // that deleted the test file outright has nothing to run here, which
+  // trivially passes (CI saw no failure).
+  if (tamperedFile !== null) {
+    const tamperedRun = executeTestRun({
+      runner,
+      files: [tamperedFile],
+      cwd: input.postWorkspacePath,
+      timeoutMs: input.timeoutMs,
+      ...(input.recipe !== undefined ? { recipe: input.recipe } : {}),
+      ...(input.docker !== undefined ? { docker: input.docker } : {}),
+    });
+    if (tamperedRun.timedOut) {
+      return record('not-proven:execution-error', {
+        testFiles,
+        revertedHunkPatch: patch,
+        reason: `tampered-suite control run timed out after ${input.timeoutMs}ms`,
+      });
+    }
+    if (!tamperedRun.passed) {
+      controls.tamperedSuitePasses = false;
+      const ids = tamperedRun.failingTests;
+      return record('not-proven:suite-already-failing', {
+        testFiles,
+        revertedHunkPatch: patch,
+        reason:
+          `the PR's own test run fails as submitted` +
+          `${ids.length > 0 ? ` (${ids.join(', ')})` : ''}; CI would have caught this PR`,
+      });
+    }
+  }
+  controls.tamperedSuitePasses = true;
+
+  // Step 4: revert the test hunks in the post workspace.
+  const reverse = gitApplyPatch({ patch, cwd: input.postWorkspacePath, reverse: true });
+  if (!reverse.ok) {
+    return record('not-proven:patch-apply-failed', {
+      testFiles,
+      revertedHunkPatch: patch,
+      reason: `git apply -R failed in the post workspace: ${reverse.detail}`,
+    });
+  }
+
+  // Steps 5-6 run against the reverse-applied workspace; the forward re-apply
+  // in the finally restores the shared workspace for later consumers no
+  // matter what happened in between.
+  let outcome: RestoredPhaseOutcome;
+  let restoreFailure: string | null = null;
+  try {
+    try {
+      outcome = runRestoredPhase(input, runner, testFiles, controls);
+    } finally {
+      const forward = gitApplyPatch({ patch, cwd: input.postWorkspacePath, reverse: false });
+      if (!forward.ok) {
+        restoreFailure = `forward re-apply failed, the post workspace is corrupted (harness bug): ${forward.detail}`;
+        log.error(
+          `test-restoration: ${restoreFailure} (cwd=${input.postWorkspacePath}, file=${input.finding.file})`,
+        );
+      }
+    }
+  } catch (err) {
+    // runRestoredPhase's building blocks never throw by contract; anything
+    // that still surfaces here is a harness bug, reported fail-closed.
+    const message = err instanceof Error ? err.message : String(err);
+    log.error(`test-restoration: restored phase threw unexpectedly: ${message}`);
+    outcome = {
+      verdict: 'not-proven:execution-error',
+      failingTests: [],
+      reason: `restored phase threw unexpectedly: ${message}`,
+    };
+  }
+  if (restoreFailure !== null) {
+    outcome = {
+      ...outcome,
+      reason:
+        outcome.reason !== undefined ? `${outcome.reason}; ${restoreFailure}` : restoreFailure,
+    };
+  }
+
+  // Step 7: a proven verdict must ship its reproduce command; a proof a human
+  // cannot replay is not published as a proof (fail closed).
+  if (outcome.verdict === 'proven') {
+    let reproduceCommand: string;
+    try {
+      reproduceCommand = buildReproduceCommand({
+        prRef: input.prRef,
+        prHeadSha: input.prHeadSha,
+        testFiles,
+        testRunner: runner,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.warn(
+        `test-restoration: proven restoration cannot render its reproduce command: ${message}`,
+      );
+      const reason = `proven restoration could not render its reproduce command: ${message}`;
+      return record('not-proven:execution-error', {
+        testFiles,
+        revertedHunkPatch: patch,
+        reason: outcome.reason !== undefined ? `${reason}; ${outcome.reason}` : reason,
+      });
+    }
+    return record('proven', {
+      testFiles,
+      failingTests: outcome.failingTests,
+      reproduceCommand,
+      revertedHunkPatch: patch,
+      ...(outcome.reason !== undefined ? { reason: outcome.reason } : {}),
+    });
+  }
+  return record(outcome.verdict, {
+    testFiles,
+    revertedHunkPatch: patch,
+    ...(outcome.reason !== undefined ? { reason: outcome.reason } : {}),
+  });
 }
