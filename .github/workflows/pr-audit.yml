@@ -20,7 +20,9 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # Node 22: the execution-grounded sandbox runs the PR's tests under the
+          # ambient toolchain, and the corpus / dogfood suites target Node 22.
+          node-version: '22'
       - run: npm ci
       - run: npm run build
       - name: Run swarm audit
@@ -30,6 +32,7 @@ jobs:
         run: |
           set +e
           node dist/src/cli.js audit "${GITHUB_REPOSITORY}#${{ github.event.pull_request.number }}" \
+            --mode gate \
             --output json \
             --emit-aibom cyclonedx-ml \
             > audit.json
@@ -47,7 +50,15 @@ jobs:
           PAYLOAD=$(node -e "
             const r = require('./audit.json');
             const { renderPrComment } = require('./dist/src/audit/report-comment');
-            process.stdout.write(JSON.stringify({ body: renderPrComment(r, { ledgerUrl: process.env.LEDGER }) }));
+            // r carries mode and blockingTriggers (emitOutput's json shape), so the
+            // posted comment shows the gate framing and the block-trigger section
+            // (verdict, controls table, reproduce command) when a trigger gates.
+            const body = renderPrComment(r, {
+              ledgerUrl: process.env.LEDGER,
+              mode: r.mode,
+              blockTriggers: r.blockingTriggers || [],
+            });
+            process.stdout.write(JSON.stringify({ body }));
           ")
           curl -sS -X POST \
             -H "Authorization: token ${GITHUB_TOKEN}" \
