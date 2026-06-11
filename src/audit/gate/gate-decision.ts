@@ -16,19 +16,22 @@
 // by tier in that calibration and gate only on a firing whose per-instance
 // controls are all green, not on the Wilson bar.
 //
-// This runtime set stays empty: no circumstantial trigger has cleared the Wilson
-// bar, and acting on the self-certifying tier at audit time (gating only when
-// controlsAllGreen holds for the firing) is not yet wired here. Until it is, gate
-// mode blocks nothing on a trigger alone. When that changes, this set and the
-// calibration are bumped in the same commit.
+// The runtime set is the self-certifying tier: those kinds are allowed to gate,
+// but a firing blocks only when controlsAllGreen holds for it (the second filter
+// in decideBlock). No circumstantial trigger has cleared the Wilson bar, so none
+// is listed here. When one does, this set and the calibration are bumped in the
+// same commit.
 
 import type { AuditMode } from '../types';
 import type { BlockTrigger, BlockTriggerKind } from './block-trigger-types';
+import { controlsAllGreen, isSelfCertifying, SELF_CERTIFYING_TRIGGERS } from './self-certifying';
 
-/** The triggers the runtime gate currently acts on, pinned from the committed
- *  block-eligibility policy. Empty: no circumstantial trigger has cleared the
- *  Wilson bar, and the self-certifying tier is not yet enforced at audit time. */
-export const BLOCK_ELIGIBLE_TRIGGERS: readonly BlockTriggerKind[] = [];
+/** The triggers the runtime gate acts on, pinned from the committed
+ *  block-eligibility policy. The self-certifying tier is eligible by kind; a
+ *  self-certifying firing still blocks only when its per-instance controls are
+ *  all green (enforced in decideBlock). No circumstantial trigger has cleared
+ *  the Wilson bar, so none is added here. */
+export const BLOCK_ELIGIBLE_TRIGGERS: readonly BlockTriggerKind[] = SELF_CERTIFYING_TRIGGERS;
 
 /** Whether a trigger kind is currently allowed to gate a merge. */
 export function isBlockEligible(
@@ -49,14 +52,18 @@ export interface GateDecision {
 /**
  * Decide whether a run blocks. In advise mode, never. In gate mode, block when
  * the structural result already failed (a detector earned a block) or when at
- * least one block-eligible trigger fired. A trigger that fired but is not
- * eligible is advisory and does not block.
+ * least one blocking trigger fired. A trigger is blocking only when its kind is
+ * block-eligible AND, for a self-certifying kind, its per-instance controls are
+ * all green: a self-certifying firing with a missing, false, or unevaluated
+ * control surfaces in the comment but never gates. A circumstantial kind that
+ * has been promoted to the eligible set blocks on eligibility alone (the Wilson
+ * calibration already vouched for it).
  *
  * @param triggers every block-trigger candidate the run produced
  * @param mode the audit mode (advise never blocks)
  * @param structuralPass the AuditResult.pass flag (false when a detector blocked)
  * @param eligible the currently block-eligible trigger kinds (injectable for tests)
- * @returns the eligible-fired triggers and whether to exit 1
+ * @returns the blocking triggers and whether to exit 1
  */
 export function decideBlock(
   triggers: readonly BlockTrigger[],
@@ -64,7 +71,10 @@ export function decideBlock(
   structuralPass: boolean,
   eligible: readonly BlockTriggerKind[] = BLOCK_ELIGIBLE_TRIGGERS,
 ): GateDecision {
-  const blockingTriggers = triggers.filter((t) => isBlockEligible(t.kind, eligible));
+  const blockingTriggers = triggers.filter(
+    (t) =>
+      isBlockEligible(t.kind, eligible) && (!isSelfCertifying(t.kind) || controlsAllGreen(t)),
+  );
   if (mode === 'advise') return { blockingTriggers, blocked: false };
   return { blockingTriggers, blocked: !structuralPass || blockingTriggers.length > 0 };
 }

@@ -681,23 +681,26 @@ async function runAudit(flags: AuditFlags): Promise<number> {
     (pass) => {
       // Verifiable-evidence block triggers. Built from the execution-grounded
       // outcome's runtime facts and recorded to the ledger whether or not they
-      // gate. Only a block-eligible trigger affects the exit code, and only in
-      // gate mode; advise mode never blocks. The eligible set is empty today,
-      // so a clean PR's behavior is unchanged.
+      // gate. A trigger affects the exit code only in gate mode, only when its
+      // kind is block-eligible, and (for the self-certifying tier) only when its
+      // per-instance controls are all green; the decision owns that filter, so
+      // the ledger records each trigger's actual blocking state, not just its
+      // eligibility.
       const blockTriggers =
         egOutcome !== undefined && prContext !== undefined
           ? buildBlockTriggers(egOutcome, result, prContext, flags.prRef)
           : [];
+      const triggerDecision = decideBlock(blockTriggers, flags.mode, pass);
+      const blockedTriggers = new Set(triggerDecision.blockingTriggers);
       for (const trigger of blockTriggers) {
-        const eligible = isBlockEligible(trigger.kind);
         appendBlockTriggerEntry(
           ledger,
           trigger,
-          { eligible, blocked: eligible && flags.mode === 'gate' },
+          { eligible: isBlockEligible(trigger.kind), blocked: blockedTriggers.has(trigger) },
           attribution,
         );
       }
-      return decideBlock(blockTriggers, flags.mode, pass);
+      return triggerDecision;
     },
   );
 

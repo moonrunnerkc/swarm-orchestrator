@@ -13,10 +13,52 @@ const obligationTrigger: BlockTrigger = {
   evidence: { kind: 'obligation-failure', obligationType: 'test-must-pass', command: 'npm test', output: 'boom', runsPassed: [false, false] },
 };
 
+function tamperTrigger(controlsGreen: boolean): BlockTrigger {
+  return {
+    kind: 'test-tamper-proven',
+    summary: 'restoration proof',
+    reproduce: 'git checkout … && npx mocha test/calc.test.js',
+    evidence: {
+      kind: 'test-tamper-proven',
+      verdict: 'proven',
+      category: 'assertion-strip',
+      testFiles: ['test/calc.test.js'],
+      failingTests: ['calc › adds'],
+      controls: {
+        baseTestPasses: controlsGreen ? true : null,
+        tamperedSuitePasses: true,
+        restoredFailsTwiceSameIdentity: true,
+      },
+      reproduceCommand: 'git checkout … && npx mocha test/calc.test.js',
+    },
+  };
+}
+
 describe('gate-decision', () => {
-  it('ships with an empty eligible set (no trigger has cleared the bar yet)', () => {
-    assert.deepEqual(BLOCK_ELIGIBLE_TRIGGERS, []);
-    assert.equal(isBlockEligible('obligation-failure'), false);
+  it('ships with the self-certifying triggers eligible (the runtime tier)', () => {
+    assert.deepEqual(
+      [...BLOCK_ELIGIBLE_TRIGGERS].sort(),
+      ['claim-falsified', 'obligation-failure', 'test-tamper-proven'],
+    );
+    assert.equal(isBlockEligible('test-tamper-proven'), true);
+    assert.equal(isBlockEligible('corroborated-under-constraint'), false);
+  });
+
+  it('blocks in gate mode on a proven restoration whose controls are all green', () => {
+    const decision = decideBlock([tamperTrigger(true)], 'gate', true);
+    assert.equal(decision.blocked, true);
+    assert.equal(decision.blockingTriggers[0]!.kind, 'test-tamper-proven');
+  });
+
+  it('never blocks on a self-certifying trigger whose controls are not all green', () => {
+    const decision = decideBlock([tamperTrigger(false)], 'gate', true);
+    assert.equal(decision.blocked, false, 'non-green controls must never gate');
+    assert.equal(decision.blockingTriggers.length, 0, 'and the trigger is not a blocking one');
+  });
+
+  it('never blocks on a non-green self-certifying trigger in advise mode either', () => {
+    const decision = decideBlock([tamperTrigger(false)], 'advise', true);
+    assert.equal(decision.blocked, false);
   });
 
   it('never blocks in advise mode, even when an eligible trigger fired', () => {

@@ -7,7 +7,11 @@
 // stays focused.
 
 import type { AuditMode } from '../types';
-import type { BlockTrigger, BlockTriggerEvidence } from '../gate/block-trigger-types';
+import type {
+  BlockTrigger,
+  BlockTriggerEvidence,
+  TestTamperProvenEvidence,
+} from '../gate/block-trigger-types';
 
 /**
  * Render the block-trigger section, or [] when there are none. In gate mode the
@@ -89,10 +93,32 @@ function renderEvidence(evidence: BlockTriggerEvidence): string[] {
         '',
       ];
     case 'test-tamper-proven':
-      return [
-        `*Restoration proof:* \`${evidence.category}\` on ${evidence.testFiles.join(', ')}. ` +
-          `*Restored failing test(s):* ${evidence.failingTests.join('; ')}.`,
-        '',
-      ];
+      return renderTestTamperProven(evidence);
   }
+}
+
+/** ✅ / ❌ / — for a control that passed, failed, or never executed (null). */
+function controlMark(value: boolean | null): string {
+  if (value === true) return '✅';
+  if (value === false) return '❌';
+  return '—';
+}
+
+/** The three internal controls behind a restoration proof, in a fixed order so
+ *  the table renders byte-identical for the same proof. The trigger only gates
+ *  when all three are ✅ (see self-certifying.controlsAllGreen). */
+function renderTestTamperProven(evidence: TestTamperProvenEvidence): string[] {
+  const c = evidence.controls;
+  return [
+    `*Verdict:* \`${evidence.verdict}\` — \`${evidence.category}\` on ${evidence.testFiles.join(', ')}.`,
+    '',
+    `*Restored failing test(s):* ${evidence.failingTests.join('; ')}.`,
+    '',
+    '| Control | Result |',
+    '| --- | --- |',
+    `| Restored test passes on the base checkout | ${controlMark(c.baseTestPasses)} |`,
+    `| Tampered suite passes as submitted | ${controlMark(c.tamperedSuitePasses)} |`,
+    `| Restored run fails twice with the same test identity | ${controlMark(c.restoredFailsTwiceSameIdentity)} |`,
+    '',
+  ];
 }

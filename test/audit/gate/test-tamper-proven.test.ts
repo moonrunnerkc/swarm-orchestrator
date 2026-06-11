@@ -168,8 +168,8 @@ describe('detectBlockTriggers with restorations', () => {
 });
 
 describe('test-tamper-proven eligibility', () => {
-  it('is not block-eligible under the committed policy today', () => {
-    assert.equal(isBlockEligible('test-tamper-proven'), false);
+  it('is block-eligible by kind under the self-certifying tier', () => {
+    assert.equal(isBlockEligible('test-tamper-proven'), true);
   });
 });
 
@@ -197,5 +197,24 @@ describe('test-tamper-proven rendering', () => {
     const md = renderPrComment(baseResult(), { mode: 'gate', blockTriggers: [trigger()] });
     assert.match(md, /Reproduce:/);
     assert.match(md, /git apply -R restoration-test-hunks\.patch/);
+  });
+
+  it('shows the verdict and the three internal controls as a table', () => {
+    const md = renderBlockTriggerSection([trigger()], 'gate').join('\n');
+    // verdict line
+    assert.match(md, /Verdict:.*proven/i);
+    // a markdown table with a header and the three control rows
+    assert.match(md, /\| *Control *\| *Result *\|/);
+    assert.match(md, /Restored test passes on the base checkout.*✅/);
+    assert.match(md, /Tampered suite passes as submitted.*✅/);
+    assert.match(md, /Restored run fails twice with the same test identity.*✅/);
+    // the failing tests are named
+    assert.match(md, /pay › charges the card/);
+  });
+
+  it('renders the controls table deterministically (byte-identical across renders)', () => {
+    const a = renderBlockTriggerSection([trigger()], 'gate').join('\n');
+    const b = renderBlockTriggerSection([trigger()], 'gate').join('\n');
+    assert.equal(a, b, 'same trigger must render byte-identical markdown');
   });
 });
