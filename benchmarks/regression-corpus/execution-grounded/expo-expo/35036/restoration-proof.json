@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "prRef": "expo/expo#35036",
+  "prHeadSha": "cf80d527bb5029d5239999f06a17b68ce157bd9e",
+  "generatedAt": "2026-06-11T22:46:01.624Z",
+  "records": [
+    {
+      "schemaVersion": 1,
+      "verdict": "not-proven:runner-unsupported",
+      "category": "test-relaxation",
+      "findingFile": "packages/@expo/cli/src/api/user/__tests__/UserSettings-test.ts",
+      "testFiles": [],
+      "failingTests": [],
+      "controls": {
+        "baseTestPasses": null,
+        "tamperedSuitePasses": null,
+        "restoredFailsTwiceSameIdentity": null
+      },
+      "reproduceCommand": "",
+      "revertedHunkPatch": "diff --git a/packages/@expo/cli/src/api/user/__tests__/UserSettings-test.ts b/packages/@expo/cli/src/api/user/__tests__/UserSettings-test.ts\n--- a/packages/@expo/cli/src/api/user/__tests__/UserSettings-test.ts\n+++ b/packages/@expo/cli/src/api/user/__tests__/UserSettings-test.ts\n@@ -1,4 +1,4 @@\n-import fs from 'fs-extra';\n+import fs from 'fs';\n import { vol } from 'memfs';\n import path from 'path';\n \n@@ -56,8 +56,8 @@ describe(getSession, () => {\n   });\n \n   it('returns stored session data', async () => {\n-    await fs.mkdirp(path.dirname(getSettingsFilePath()));\n-    await fs.writeJSON(getSettingsFilePath(), { auth: authStub });\n+    await fs.promises.mkdir(path.dirname(getSettingsFilePath()), { recursive: true });\n+    await fs.promises.writeFile(getSettingsFilePath(), JSON.stringify({ auth: authStub }));\n     expect(getSession()).toMatchObject(authStub);\n   });\n });\n@@ -65,12 +65,13 @@ describe(getSession, () => {\n describe(setSessionAsync, () => {\n   it('stores empty session data', async () => {\n     await setSessionAsync();\n-    expect(await fs.pathExists(getSettingsFilePath())).toBeTruthy();\n+    expect(fs.existsSync(getSettingsFilePath())).toBeTruthy();\n   });\n \n   it('stores actual session data', async () => {\n     await setSessionAsync(authStub);\n-    expect(await fs.readJSON(getSettingsFilePath())).toMatchObject({ auth: authStub });\n+    const contents = await fs.promises.readFile(getSettingsFilePath(), 'utf8');\n+    expect(JSON.parse(contents)).toMatchObject({ auth: authStub });\n   });\n });\n \n",
+      "reason": "no supported test runner detected in the workspace"
+    }
+  ]
+}
