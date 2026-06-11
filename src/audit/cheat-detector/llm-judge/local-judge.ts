@@ -11,8 +11,11 @@
 // Like every JudgeClient it returns `'unavailable'` rather than throwing,
 // so a down server degrades to deterministic-only behavior.
 
+import { getLogger } from '../../../logger';
 import type { JudgeAnswer, JudgeClient } from './types';
 import { parseJudgeReply } from './anthropic-judge';
+
+const logger = getLogger('audit:judge:local');
 
 interface OpenAiChatResponse {
   choices?: Array<{ message?: { content?: string } }>;
@@ -57,14 +60,23 @@ export class LocalJudge implements JudgeClient {
           enable_thinking: false,
         }),
       });
-      if (!res.ok) return { raw: '', answer: 'unavailable' };
+      if (!res.ok) {
+        logger.warn(`local judge request failed (${res.status} ${res.statusText})`);
+        return { raw: '', answer: 'unavailable' };
+      }
       const json = (await res.json()) as OpenAiChatResponse;
       const raw = (json.choices?.[0]?.message?.content ?? '').trim();
       const parsed = parseJudgeReply(raw);
+      if (parsed.answer === 'unavailable') {
+        logger.warn(
+          `local judge reply did not parse as YES/NO (head: ${JSON.stringify(raw.slice(0, 120))})`,
+        );
+      }
       const out: { raw: string; answer: JudgeAnswer; reason?: string } = { raw, answer: parsed.answer };
       if (parsed.reason !== undefined) out.reason = parsed.reason;
       return out;
-    } catch {
+    } catch (err) {
+      logger.warn(`local judge call failed: ${err instanceof Error ? err.message : String(err)}`);
       return { raw: '', answer: 'unavailable' };
     }
   }

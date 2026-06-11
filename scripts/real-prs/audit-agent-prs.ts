@@ -23,9 +23,15 @@ const log = getLogger('real-prs:audit-agent');
 class JudgeCounter implements JudgeLedgerSink {
   liveCalls = 0;
   cacheHits = 0;
+  // Asks that produced no verdict (server down, timeout, unparseable
+  // reply). Counted separately: in the finding output a judge that
+  // silently answered nothing is indistinguishable from one that
+  // answered NO, and that hides false negatives.
+  unavailable = 0;
   appendJudgeEntry(entry: JudgeLedgerEntry): void {
     if (entry.cacheHit) this.cacheHits += 1;
     else if (entry.answer !== 'unavailable') this.liveCalls += 1;
+    else this.unavailable += 1;
   }
 }
 
@@ -94,10 +100,19 @@ async function main(): Promise<void> {
     done += 1;
     log.info(
       `${pr.repo}#${pr.prNumber} (${pr.agent.vendor}): ${post.length} findings ` +
-        `(${done}/${sources.prs.length}) judge live=${counter.liveCalls} cache=${counter.cacheHits}`,
+        `(${done}/${sources.prs.length}) judge live=${counter.liveCalls} cache=${counter.cacheHits} unavailable=${counter.unavailable}`,
     );
   }
-  log.info(`agent audit complete: ${done} PRs; billable judge calls=${counter.liveCalls}, cache hits=${counter.cacheHits}`);
+  log.info(
+    `agent audit complete: ${done} PRs; billable judge calls=${counter.liveCalls}, ` +
+      `cache hits=${counter.cacheHits}, unavailable=${counter.unavailable}`,
+  );
+  if (counter.unavailable > 0) {
+    log.warn(
+      `${counter.unavailable} judge asks produced no verdict; the affected categories ` +
+        `degraded to deterministic-only for those PRs. Check the judge server and re-run with --force.`,
+    );
+  }
 }
 
 main().catch((err: unknown) => {

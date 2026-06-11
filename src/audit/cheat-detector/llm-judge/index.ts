@@ -19,6 +19,7 @@ import {
   primarySystemPrompt,
 } from './anthropic-judge';
 import { LocalJudge, localJudgeModelId } from './local-judge';
+import { OllamaJudge, ollamaJudgeModelId } from './ollama-judge';
 import {
   computeJudgeCacheKey,
   readCachedAnswer,
@@ -48,14 +49,20 @@ export interface AskJudgeOptions {
 }
 
 /** Resolve the judge provider. `SWARM_JUDGE_PROVIDER=local` points the
- *  judge at a free OpenAI-compatible server (so the audit's judge gate
- *  works without a paid API); anything else keeps the pinned Anthropic
- *  Haiku judge. The model id is folded into the cache key, so a local
- *  answer never collides with a Haiku one. */
+ *  judge at a free OpenAI-compatible server and
+ *  `SWARM_JUDGE_PROVIDER=ollama` at Ollama's native /api/chat (the /v1
+ *  bridge cannot disable a thinking model's reasoning, so local and
+ *  ollama are distinct providers); anything else keeps the pinned
+ *  Anthropic Haiku judge. The model id is folded into the cache key, so
+ *  answers from different providers never collide. */
 function resolveJudgeProvider(opts: AskJudgeOptions): { client: JudgeClient; modelId: string } {
   if (opts.client !== undefined) return { client: opts.client, modelId: opts.modelId ?? PINNED_JUDGE_MODEL_ID };
-  if ((process.env.SWARM_JUDGE_PROVIDER ?? '').toLowerCase() === 'local') {
+  const provider = (process.env.SWARM_JUDGE_PROVIDER ?? '').toLowerCase();
+  if (provider === 'local') {
     return { client: new LocalJudge(), modelId: opts.modelId ?? localJudgeModelId() };
+  }
+  if (provider === 'ollama') {
+    return { client: new OllamaJudge(), modelId: opts.modelId ?? ollamaJudgeModelId() };
   }
   return { client: new AnthropicJudge(), modelId: opts.modelId ?? PINNED_JUDGE_MODEL_ID };
 }
