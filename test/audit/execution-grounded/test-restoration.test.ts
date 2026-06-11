@@ -1,9 +1,15 @@
 import { strict as assert } from 'assert';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import parseDiff from 'parse-diff';
 import {
   buildReproduceCommand,
+  buildTestCommand,
   classifyRestoration,
+  executeTestRun,
   extractTestHunkPatch,
+  parseFailingTests,
 } from '../../../src/audit/execution-grounded/test-restoration';
 
 // A PR that touches one source file and one test file; the test file has
@@ -447,5 +453,412 @@ describe('execution-grounded / test-restoration buildReproduceCommand', () => {
     assert.throws(() =>
       buildReproduceCommand({ ...opts, prRef: 'octo/calc;rm -rf .#42', testRunner: 'jest' }),
     );
+  });
+});
+
+// Captured-shape runner output samples. Each failing sample carries exactly
+// two named failures; each passing sample carries none. The shapes follow the
+// runners' default reporters (jest writes its report to stderr; mocha and
+// vitest write to stdout).
+const JEST_PASSING_STDERR = [
+  'PASS test/calc.test.js',
+  '  calc',
+  '    ✓ adds (2 ms)',
+  '    ✓ subtracts (1 ms)',
+  '',
+  'Test Suites: 1 passed, 1 total',
+  'Tests:       2 passed, 2 total',
+  'Snapshots:   0 total',
+  'Time:        0.412 s',
+  'Ran all test suites.',
+  '',
+].join('\n');
+
+const JEST_FAILING_STDERR = [
+  'FAIL test/calc.test.js',
+  '  calc',
+  '    ✓ multiplies (1 ms)',
+  '    ✕ adds (3 ms)',
+  '    ✕ subtracts (1 ms)',
+  '',
+  '  ● calc › adds',
+  '',
+  '    expect(received).toBe(expected) // Object.is equality',
+  '',
+  '    Expected: 4',
+  '    Received: 5',
+  '',
+  "       6 |   it('adds', () => {",
+  '    >  7 |     expect(add(2, 2)).toBe(4);',
+  '         |                       ^',
+  '',
+  '      at Object.<anonymous> (test/calc.test.js:7:23)',
+  '',
+  '  ● calc › subtracts',
+  '',
+  '    expect(received).toBe(expected) // Object.is equality',
+  '',
+  '    Expected: 0',
+  '    Received: 1',
+  '',
+  '      at Object.<anonymous> (test/calc.test.js:12:28)',
+  '',
+  'Test Suites: 1 failed, 1 total',
+  'Tests:       2 failed, 1 passed, 3 total',
+  'Snapshots:   0 total',
+  'Time:        0.689 s',
+  'Ran all test suites.',
+  '',
+].join('\n');
+
+const MOCHA_PASSING_STDOUT = [
+  '',
+  '',
+  '  calc',
+  '    ✓ adds',
+  '    ✓ subtracts',
+  '',
+  '',
+  '  2 passing (8ms)',
+  '',
+].join('\n');
+
+const MOCHA_FAILING_STDOUT = [
+  '',
+  '',
+  '  calc',
+  '    ✓ multiplies',
+  '    1) adds',
+  '    2) subtracts',
+  '',
+  '',
+  '  1 passing (10ms)',
+  '  2 failing',
+  '',
+  '  1) calc',
+  '       adds:',
+  '',
+  '      AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:',
+  '',
+  '5 !== 4',
+  '',
+  '      + expected - actual',
+  '',
+  '      -5',
+  '      +4',
+  '',
+  '      at Context.<anonymous> (test/calc.test.js:7:12)',
+  '',
+  '  2) calc',
+  '       subtracts:',
+  '     Error: boom',
+  '      at Context.<anonymous> (test/calc.test.js:11:11)',
+  '',
+  '',
+].join('\n');
+
+const VITEST_PASSING_STDOUT = [
+  ' RUN  v1.6.0 /tmp/project',
+  '',
+  ' ✓ test/calc.test.js (2 tests) 3ms',
+  '',
+  ' Test Files  1 passed (1)',
+  '      Tests  2 passed (2)',
+  '   Start at  12:00:00',
+  '   Duration  312ms',
+  '',
+].join('\n');
+
+const VITEST_FAILING_STDOUT = [
+  ' RUN  v1.6.0 /tmp/project',
+  '',
+  ' ❯ test/calc.test.js (3 tests | 2 failed) 7ms',
+  '   × calc > adds 4ms',
+  '   × calc > subtracts 2ms',
+  '',
+  '⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯',
+  '',
+  ' FAIL  test/calc.test.js > calc > adds',
+  'AssertionError: expected 5 to be 4 // Object.is equality',
+  '',
+  '- Expected',
+  '+ Received',
+  '',
+  '- 4',
+  '+ 5',
+  '',
+  ' ❯ test/calc.test.js:7:21',
+  '',
+  '⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯',
+  '',
+  ' FAIL  test/calc.test.js > calc > subtracts',
+  'AssertionError: expected 1 to be 0 // Object.is equality',
+  '',
+  ' ❯ test/calc.test.js:11:23',
+  '',
+  '⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯',
+  '',
+  ' Test Files  1 failed (1)',
+  '      Tests  2 failed | 1 passed (3)',
+  '   Start at  12:00:01',
+  '   Duration  354ms',
+  '',
+].join('\n');
+
+describe('execution-grounded / test-restoration parseFailingTests', () => {
+  it('jest: a passing run yields no identities', () => {
+    assert.deepEqual(parseFailingTests('jest', '', JEST_PASSING_STDERR), []);
+  });
+
+  it('jest: a failing run yields both identities from the ● blocks, deduped and sorted', () => {
+    assert.deepEqual(parseFailingTests('jest', '', JEST_FAILING_STDERR), [
+      'calc › adds',
+      'calc › subtracts',
+    ]);
+  });
+
+  it('jest: identities are stable across two identical runs', () => {
+    assert.deepEqual(
+      parseFailingTests('jest', '', JEST_FAILING_STDERR),
+      parseFailingTests('jest', '', JEST_FAILING_STDERR),
+    );
+  });
+
+  it('jest: ANSI color codes are stripped before parsing', () => {
+    const colored = JEST_FAILING_STDERR.replace(
+      '  ● calc › adds',
+      '  \u001b[1m\u001b[31m● calc › adds\u001b[39m\u001b[22m',
+    ).replace('    ✕ adds (3 ms)', '    \u001b[31m✕\u001b[39m \u001b[2madds (3 ms)\u001b[22m');
+    assert.deepEqual(parseFailingTests('jest', '', colored), ['calc › adds', 'calc › subtracts']);
+  });
+
+  it('jest: a suite that failed to run yields no identities (fails closed)', () => {
+    const stderr = [
+      'FAIL test/calc.test.js',
+      '  ● Test suite failed to run',
+      '',
+      "    Cannot find module './missing' from 'test/calc.test.js'",
+      '',
+      'Test Suites: 1 failed, 1 total',
+      'Tests:       0 total',
+      '',
+    ].join('\n');
+    assert.deepEqual(parseFailingTests('jest', '', stderr), []);
+  });
+
+  it('jest: falls back to ✕ lines when no ● failure blocks are present', () => {
+    const stderr = ['  calc', '    ✕ adds (3 ms)', '    ✕ subtracts (1 ms)', ''].join('\n');
+    assert.deepEqual(parseFailingTests('jest', '', stderr), ['adds', 'subtracts']);
+  });
+
+  it('mocha: a passing run yields no identities', () => {
+    assert.deepEqual(parseFailingTests('mocha', MOCHA_PASSING_STDOUT, ''), []);
+  });
+
+  it('mocha: a failing run yields both identities from the epilogue, not the in-run markers', () => {
+    assert.deepEqual(parseFailingTests('mocha', MOCHA_FAILING_STDOUT, ''), [
+      'calc › adds',
+      'calc › subtracts',
+    ]);
+  });
+
+  it('mocha: identities are stable across two identical runs', () => {
+    assert.deepEqual(
+      parseFailingTests('mocha', MOCHA_FAILING_STDOUT, ''),
+      parseFailingTests('mocha', MOCHA_FAILING_STDOUT, ''),
+    );
+  });
+
+  it('mocha: nested suites join every level of the epilogue block', () => {
+    const stdout = [
+      '  1 passing (10ms)',
+      '  1 failing',
+      '',
+      '  1) outer',
+      '       inner',
+      '         deep test:',
+      '     Error: boom',
+      '',
+    ].join('\n');
+    assert.deepEqual(parseFailingTests('mocha', stdout, ''), ['outer › inner › deep test']);
+  });
+
+  it('vitest: a passing run yields no identities', () => {
+    assert.deepEqual(parseFailingTests('vitest', VITEST_PASSING_STDOUT, ''), []);
+  });
+
+  it('vitest: a failing run yields both identities from the FAIL headers', () => {
+    assert.deepEqual(parseFailingTests('vitest', VITEST_FAILING_STDOUT, ''), [
+      'test/calc.test.js > calc > adds',
+      'test/calc.test.js > calc > subtracts',
+    ]);
+  });
+
+  it('vitest: identities are stable across two identical runs', () => {
+    assert.deepEqual(
+      parseFailingTests('vitest', VITEST_FAILING_STDOUT, ''),
+      parseFailingTests('vitest', VITEST_FAILING_STDOUT, ''),
+    );
+  });
+
+  it('vitest: falls back to × lines when no per-test FAIL headers are present', () => {
+    const stdout = [
+      ' ❯ test/calc.test.js (3 tests | 2 failed) 7ms',
+      '   × calc > adds 4ms',
+      '   × calc > subtracts 2ms',
+      '',
+    ].join('\n');
+    assert.deepEqual(parseFailingTests('vitest', stdout, ''), ['calc > adds', 'calc > subtracts']);
+  });
+
+  it('vitest: a file-level FAIL line without a test path yields no identities (fails closed)', () => {
+    const stdout = [' FAIL  test/calc.test.js [ unhandled error ]', ''].join('\n');
+    assert.deepEqual(parseFailingTests('vitest', stdout, ''), []);
+  });
+
+  it('a runner with no locked parser yields no identities (fails closed)', () => {
+    assert.deepEqual(parseFailingTests('ava', 'anything', '1 test failed'), []);
+  });
+});
+
+describe('execution-grounded / test-restoration buildTestCommand', () => {
+  const files = ['test/calc.test.ts', 'test/calc-extra.test.ts'];
+
+  it('builds the jest argv form', () => {
+    assert.deepEqual(buildTestCommand('jest', files), {
+      command: 'npx',
+      args: ['jest', '--runTestsByPath', 'test/calc.test.ts', 'test/calc-extra.test.ts'],
+    });
+  });
+
+  it('builds the vitest argv form', () => {
+    assert.deepEqual(buildTestCommand('vitest', files), {
+      command: 'npx',
+      args: ['vitest', 'run', 'test/calc.test.ts', 'test/calc-extra.test.ts'],
+    });
+  });
+
+  it('builds the mocha argv form', () => {
+    assert.deepEqual(buildTestCommand('mocha', files), {
+      command: 'npx',
+      args: ['mocha', 'test/calc.test.ts', 'test/calc-extra.test.ts'],
+    });
+  });
+
+  it('matches the human-facing reproduce command rendering exactly', () => {
+    for (const runner of ['jest', 'vitest', 'mocha'] as const) {
+      const { command, args } = buildTestCommand(runner, files);
+      const reproduce = buildReproduceCommand({
+        prRef: 'octo/calc#42',
+        prHeadSha: 'deadbeefcafe',
+        testFiles: files,
+        testRunner: runner,
+      });
+      assert.ok(
+        reproduce.endsWith(`${command} ${args.join(' ')}`),
+        `reproduce command for ${runner} must render the same invocation`,
+      );
+    }
+  });
+
+  it('throws for runners with no locked file-scoped invocation', () => {
+    assert.throws(() => buildTestCommand('ava', files), /ava/);
+    assert.throws(() => buildTestCommand('node-test', files), /node-test/);
+  });
+});
+
+describe('execution-grounded / test-restoration executeTestRun', () => {
+  // executeTestRun resolves its runner binary through SWARM_EG_NODE_BIN (the
+  // exec-env contract), so pointing that at a directory with a fake `npx`
+  // exercises the full spawn path deterministically: no network, no real
+  // runner install, and proof the pinned-bin-dir env var is honored.
+  const tempDirs: string[] = [];
+  let savedNodeBin: string | undefined;
+
+  beforeEach(() => {
+    savedNodeBin = process.env.SWARM_EG_NODE_BIN;
+  });
+
+  afterEach(() => {
+    if (savedNodeBin === undefined) delete process.env.SWARM_EG_NODE_BIN;
+    else process.env.SWARM_EG_NODE_BIN = savedNodeBin;
+  });
+
+  after(() => {
+    for (const dir of tempDirs) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  function makeFakeNpx(script: string): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-test-restoration-'));
+    tempDirs.push(dir);
+    fs.writeFileSync(path.join(dir, 'npx'), `#!/bin/sh\n${script}\n`, { mode: 0o755 });
+    return dir;
+  }
+
+  function runWithFakeNpx(
+    script: string,
+    extra?: { timeoutMs?: number; recipe?: { env?: Record<string, string> } },
+  ): ReturnType<typeof executeTestRun> {
+    const dir = makeFakeNpx(script);
+    process.env.SWARM_EG_NODE_BIN = dir;
+    return executeTestRun({
+      runner: 'mocha',
+      files: ['t.test.js'],
+      cwd: dir,
+      timeoutMs: extra?.timeoutMs ?? 30_000,
+      ...(extra?.recipe !== undefined ? { recipe: extra.recipe } : {}),
+    });
+  }
+
+  it('a zero-exit run is passed with no failing tests', () => {
+    const result = runWithFakeNpx('exit 0');
+    assert.deepEqual(result, { passed: true, failingTests: [], rawOutput: '', timedOut: false });
+  });
+
+  it('a nonzero-exit run with parseable output yields the failing-test identities', () => {
+    const escaped = MOCHA_FAILING_STDOUT;
+    const script = ["cat <<'SWARM_EOF'", escaped, 'SWARM_EOF', 'exit 1'].join('\n');
+    const result = runWithFakeNpx(script);
+    assert.equal(result.passed, false);
+    assert.equal(result.timedOut, false);
+    assert.deepEqual(result.failingTests, ['calc › adds', 'calc › subtracts']);
+    assert.ok(result.rawOutput.includes('2 failing'), 'raw output must be captured');
+  });
+
+  it('a nonzero-exit run with unparseable output is passed:false with empty identities, not a throw', () => {
+    const result = runWithFakeNpx("echo 'segmentation fault'; exit 139");
+    assert.equal(result.passed, false);
+    assert.equal(result.timedOut, false);
+    assert.deepEqual(result.failingTests, []);
+    assert.ok(result.rawOutput.includes('segmentation fault'), 'output must not be discarded');
+  });
+
+  it('threads recipe env into the child process', () => {
+    const result = runWithFakeNpx('echo "canary=$SWARM_RESTORATION_CANARY"; exit 1', {
+      recipe: { env: { SWARM_RESTORATION_CANARY: 'tamper-proof' } },
+    });
+    assert.equal(result.passed, false);
+    assert.ok(result.rawOutput.includes('canary=tamper-proof'), 'recipe env must reach the child');
+  });
+
+  it('a spawn-level error (nonexistent binary) returns passed:false with the error message', () => {
+    process.env.SWARM_EG_NODE_BIN = '/nonexistent-swarm-eg-bin-dir';
+    const result = executeTestRun({
+      runner: 'mocha',
+      files: ['t.test.js'],
+      cwd: os.tmpdir(),
+      timeoutMs: 5_000,
+    });
+    assert.equal(result.passed, false);
+    assert.equal(result.timedOut, false);
+    assert.deepEqual(result.failingTests, []);
+    assert.ok(result.rawOutput.length > 0, 'the spawn error message must surface in rawOutput');
+  });
+
+  it('a hung run times out: timedOut:true, passed:false, no identities', () => {
+    const result = runWithFakeNpx('sleep 30', { timeoutMs: 500 });
+    assert.equal(result.passed, false);
+    assert.equal(result.timedOut, true);
+    assert.deepEqual(result.failingTests, []);
   });
 });

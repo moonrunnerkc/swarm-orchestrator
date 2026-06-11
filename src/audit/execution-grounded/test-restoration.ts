@@ -1,18 +1,26 @@
-// Differential test-restoration: the pure core. Given a PR finding that
+// Differential test-restoration. The pure core: given a PR finding that
 // points at a tampered test file, `extractTestHunkPatch` lifts ONLY that
 // file's hunks out of the PR diff as a standalone unified diff (the patch
 // a sandbox reverts with `git apply -R`), `classifyRestoration` turns the
 // executed control results into a verdict, and `buildReproduceCommand`
 // renders the one-line command a human runs to see the restored test fail.
-// Everything impure (workspaces, runners, docker) lives with the caller.
+// The per-runner execution building blocks: `buildTestCommand` shapes the
+// argv that runs a set of test files under a runner, `parseFailingTests`
+// lifts failing-test identities out of runner output, and `executeTestRun`
+// (the one impure helper here) runs the command in an already-provisioned
+// workspace. Workspace provisioning itself lives with the caller.
 
 import parseDiff from 'parse-diff';
 import { SwarmError } from '../../errors';
+import { getLogger } from '../../logger';
 import { isTestFile } from '../cheat-detector/diff-walker';
 import type { CheatCategory } from '../types';
 import type { TestRunner, PackageManager } from './sandbox';
 import type { MutationRecipe } from './mutation-check';
 import type { DockerContext } from './docker-runner';
+import { execBin, execEnv, execFileGuarded, type GuardedRunError } from './exec-env';
+
+const log = getLogger('audit:execution-grounded:test-restoration');
 
 export type RestorationVerdict =
   | 'proven'
@@ -152,14 +160,40 @@ export function classifyRestoration(c: {
   return { verdict: 'proven', failingTests: run1 };
 }
 
-// File-scoped invocations per runner. ava and node-test are deliberately
-// absent: the orchestrator reports 'not-proven:runner-unsupported' for them
-// instead of guessing a command shape that was never executed.
-const RUNNER_COMMANDS: Partial<Record<TestRunner, (files: string[]) => string>> = {
-  jest: (files) => `npx jest --runTestsByPath ${files.join(' ')}`,
-  vitest: (files) => `npx vitest run ${files.join(' ')}`,
-  mocha: (files) => `npx mocha ${files.join(' ')}`,
+// File-scoped invocations per runner, in argv form for child_process
+// execution (matching how issue-repro shapes its runner commands). ava and
+// node-test are deliberately absent: `parseFailingTests` has no locked
+// identity parser for them, so the orchestrator reports
+// 'not-proven:runner-unsupported' instead of executing a run whose failures
+// it cannot attribute. The human-facing reproduce command below renders the
+// exact same invocation, so what we executed and what we publish never drift.
+const RUNNER_ARGV: Partial<Record<TestRunner, (files: string[]) => RunnerCommand>> = {
+  jest: (files) => ({ command: 'npx', args: ['jest', '--runTestsByPath', ...files] }),
+  vitest: (files) => ({ command: 'npx', args: ['vitest', 'run', ...files] }),
+  mocha: (files) => ({ command: 'npx', args: ['mocha', ...files] }),
 };
+
+export interface RunnerCommand {
+  command: string;
+  args: string[];
+}
+
+/** Pure: the argv that runs `files` under `runner` via child_process. Throws
+ *  for runners with no locked file-scoped invocation (ava, node-test). */
+export function buildTestCommand(runner: TestRunner, files: string[]): RunnerCommand {
+  const build = RUNNER_ARGV[runner];
+  if (build === undefined) {
+    throw new SwarmError(
+      `no file-scoped test command for test runner '${runner}'`,
+      'RESTORATION_RUNNER_UNSUPPORTED',
+      {
+        remediation:
+          'Restoration proofs only execute under jest, vitest, or mocha; report not-proven:runner-unsupported for this workspace.',
+      },
+    );
+  }
+  return build(files);
+}
 
 // The reproduce command is published verbatim in PR comments and pasted into
 // maintainers' shells, while its inputs (file paths, sha, ref) originate from
@@ -215,14 +249,9 @@ export function buildReproduceCommand(opts: {
   testRunner: TestRunner;
 }): string {
   assertShellSafe(opts);
-  const runner = RUNNER_COMMANDS[opts.testRunner];
-  if (runner === undefined) {
-    throw new SwarmError(
-      `no file-scoped reproduce command for test runner '${opts.testRunner}'`,
-      'RESTORATION_RUNNER_UNSUPPORTED',
-      { remediation: 'Reproduce manually: save revertedHunkPatch and run `git apply -R` on it.' },
-    );
-  }
+  // Throws RESTORATION_RUNNER_UNSUPPORTED for ava/node-test; the published
+  // command is the rendered form of the exact argv the sandbox executed.
+  const { command, args } = buildTestCommand(opts.testRunner, opts.testFiles);
   const prNumber = /#(\d+)$/.exec(opts.prRef)?.[1];
   const fetch =
     prNumber !== undefined
@@ -232,6 +261,210 @@ export function buildReproduceCommand(opts: {
     fetch,
     `git checkout ${opts.prHeadSha}`,
     'git apply -R restoration-test-hunks.patch',
-    runner(opts.testFiles),
+    `${command} ${args.join(' ')}`,
   ].join(' && ');
+}
+
+// ---------------------------------------------------------------------------
+// Failing-test identity parsing.
+//
+// The identity a parser yields is the human-readable test name path the
+// runner printed, locked per runner so the same failure produces the same
+// string on every run (the fails-twice-with-same-identity control compares
+// these sets verbatim):
+//   jest   -> '<suite> › <name>' (the ● failure-block header)
+//   mocha  -> '<suite> › <name>' (the numbered epilogue block, levels joined)
+//   vitest -> '<file> > <suite> > <name>' (the FAIL header)
+// ---------------------------------------------------------------------------
+
+// CSI escape sequences (colors, cursor movement). Runners colorize when they
+// believe they have a TTY; identities must not depend on that.
+const ANSI_RE = /\u001b\[[0-9;]*[A-Za-z]/g;
+
+function stripAnsi(text: string): string {
+  return text.replace(ANSI_RE, '');
+}
+
+// '● Console' and '● Test suite failed to run' are jest failure-block headers
+// that carry no test identity; '<n> snapshot...' bullets come from the
+// snapshot summary. A run that only produced these fails without identities,
+// which the classifier maps to not-proven:execution-error (fail closed).
+const JEST_NON_TEST_BULLET_RE = /^(Console$|Test suite failed to run|\d+ snapshot)/;
+const JEST_BULLET_RE = /^\s*●\s+(.+?)\s*$/;
+const JEST_CROSS_RE = /^\s*✕\s+(.+?)(?:\s+\(\d+(?:\.\d+)?\s*m?s\))?\s*$/;
+
+function parseJestFailures(output: string): string[] {
+  const bullets: string[] = [];
+  const crosses: string[] = [];
+  for (const line of output.split('\n')) {
+    const bullet = JEST_BULLET_RE.exec(line);
+    if (bullet !== null) {
+      if (!JEST_NON_TEST_BULLET_RE.test(bullet[1]!)) bullets.push(bullet[1]!);
+      continue;
+    }
+    const cross = JEST_CROSS_RE.exec(line);
+    if (cross !== null) crosses.push(cross[1]!);
+  }
+  // ● headers carry the full suite path; ✕ lines only the leaf name. Prefer
+  // the headers, and only fall back so a truncated report still attributes.
+  return bullets.length > 0 ? bullets : crosses;
+}
+
+const MOCHA_NUMBERED_RE = /^(\s*)\d+\)\s+(.+?)\s*$/;
+
+// Mocha's spec reporter prints a failure twice: an in-run marker
+// ('    1) adds') and an epilogue block ('  1) suite' followed by
+// deeper-indented lines ending in '<name>:'). Only the epilogue carries the
+// full suite path, so a numbered line counts only when a deeper-indented
+// colon-terminated header line follows before any blank or shallower line.
+function parseMochaFailures(output: string): string[] {
+  const lines = output.split('\n');
+  const identities: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const numbered = MOCHA_NUMBERED_RE.exec(lines[i]!);
+    if (numbered === null) continue;
+    const indent = numbered[1]!.length;
+    const first = numbered[2]!;
+    if (first.endsWith(':')) {
+      identities.push(first.slice(0, -1));
+      continue;
+    }
+    const parts = [first];
+    for (let j = i + 1; j < lines.length; j++) {
+      const line = lines[j]!;
+      if (line.trim().length === 0) break;
+      if (line.length - line.trimStart().length <= indent) break;
+      const content = line.trim();
+      if (content.endsWith(':')) {
+        parts.push(content.slice(0, -1));
+        identities.push(parts.join(' › '));
+        break;
+      }
+      parts.push(content);
+    }
+  }
+  return identities;
+}
+
+const VITEST_FAIL_RE = /^\s*FAIL\s+(.+?)\s*$/;
+const VITEST_CROSS_RE = /^\s*×\s+(.+?)(?:\s+\d+(?:\.\d+)?\s*m?s)?\s*$/;
+
+function parseVitestFailures(output: string): string[] {
+  const fails: string[] = [];
+  const crosses: string[] = [];
+  for (const line of output.split('\n')) {
+    const fail = VITEST_FAIL_RE.exec(line);
+    // A FAIL header without ' > ' is file-level (suite failed to load): it
+    // names no test, so it contributes no identity and the run fails closed.
+    if (fail !== null) {
+      if (fail[1]!.includes(' > ')) fails.push(fail[1]!);
+      continue;
+    }
+    const cross = VITEST_CROSS_RE.exec(line);
+    if (cross !== null) crosses.push(cross[1]!);
+  }
+  return fails.length > 0 ? fails : crosses;
+}
+
+/**
+ * Pure: lift failing-test identities out of a runner's output (stdout and
+ * stderr both, since jest reports on stderr). Deduplicated and sorted, so the
+ * result is deterministic and directly comparable across runs. Runners with
+ * no locked parser yield no identities, which the classifier maps to
+ * not-proven:execution-error rather than a proof.
+ */
+export function parseFailingTests(runner: TestRunner, stdout: string, stderr: string): string[] {
+  const output = stripAnsi(`${stdout}\n${stderr}`);
+  let identities: string[];
+  switch (runner) {
+    case 'jest':
+      identities = parseJestFailures(output);
+      break;
+    case 'mocha':
+      identities = parseMochaFailures(output);
+      break;
+    case 'vitest':
+      identities = parseVitestFailures(output);
+      break;
+    default:
+      identities = [];
+      break;
+  }
+  return identitySet(identities);
+}
+
+// ---------------------------------------------------------------------------
+// Test-run execution. The one impure helper in this module: it runs the
+// buildTestCommand argv inside an already-provisioned workspace and never
+// provisions anything itself.
+// ---------------------------------------------------------------------------
+
+export interface ExecuteTestRunOptions {
+  runner: TestRunner;
+  /** Test files to run, relative to `cwd`. */
+  files: string[];
+  /** An already-provisioned workspace (deps installed, patch state applied). */
+  cwd: string;
+  timeoutMs: number;
+  /** Package-manager cache override, threaded into execEnv. */
+  cacheDir?: string;
+  /** Per-repo recipe; its `env` entries override the sandbox environment. */
+  recipe?: MutationRecipe;
+  /** When set, run inside this container with `cwd` bind-mounted, exactly as
+   *  the other execution-grounded checks do via execFileGuarded. */
+  docker?: DockerContext;
+}
+
+export interface TestRunResult {
+  passed: boolean;
+  /** Parsed failing-test identities; empty when the run passed, timed out,
+   *  or failed without parseable identities (the classifier fails closed on
+   *  the latter as not-proven:execution-error). */
+  failingTests: string[];
+  /** Captured stdout+stderr, or the spawn error message when nothing ran. */
+  rawOutput: string;
+  timedOut: boolean;
+}
+
+/**
+ * Run one restoration test command in a provisioned workspace. Never throws
+ * for run-shaped problems: a nonzero exit parses identities from the output,
+ * a nonzero exit with unparseable output surfaces as `passed: false` with no
+ * identities (loud, distinct, and fail-closed downstream), a timeout sets
+ * `timedOut`, and a spawn-level error (ENOENT and friends) returns the error
+ * message as `rawOutput`. Honors SWARM_EG_NODE_BIN and the sandbox env
+ * allowlist via execBin/execEnv.
+ */
+export function executeTestRun(opts: ExecuteTestRunOptions): TestRunResult {
+  const { command, args } = buildTestCommand(opts.runner, opts.files);
+  try {
+    const stdout = execFileGuarded(execBin(command), args, {
+      cwd: opts.cwd,
+      env: { ...execEnv(opts.cacheDir), ...(opts.recipe?.env ?? {}) },
+      timeoutMs: opts.timeoutMs,
+      captureStdout: true,
+      maxBuffer: 16 * 1024 * 1024,
+      ...(opts.docker !== undefined ? { docker: opts.docker } : {}),
+    });
+    return { passed: true, failingTests: [], rawOutput: stdout, timedOut: false };
+  } catch (err) {
+    // execFileGuarded throws a GuardedRunError for nonzero exits, timeouts,
+    // and spawn failures alike, always carrying stdout/stderr/timedOut; the
+    // Partial cast keeps this safe should a foreign error ever surface.
+    const guarded = err as Partial<GuardedRunError>;
+    const stdout = typeof guarded.stdout === 'string' ? guarded.stdout : '';
+    const stderr = typeof guarded.stderr === 'string' ? guarded.stderr : '';
+    const timedOut = guarded.timedOut === true;
+    const captured = [stdout, stderr].filter((s) => s.length > 0).join('\n');
+    const rawOutput =
+      captured.length > 0 ? captured : err instanceof Error ? err.message : String(err);
+    // A timed-out run's partial output proves nothing; report no identities
+    // so the classifier lands on an execution anomaly, not a proof.
+    const failingTests = timedOut ? [] : parseFailingTests(opts.runner, stdout, stderr);
+    log.debug(
+      `test run failed (runner=${opts.runner}, timedOut=${timedOut}, identities=${failingTests.length}): ` +
+        `${command} ${args.join(' ')}`,
+    );
+    return { passed: false, failingTests, rawOutput, timedOut };
+  }
 }
