@@ -25,6 +25,10 @@ import type { BlockTriggerKind } from '../../src/audit/gate/block-trigger-types'
 import { wasRevertedOrHotfixed, type Proof } from '../../src/audit/gate/revert-proof';
 import type { CheatCategory, Finding, Severity } from '../../src/audit/types';
 import { repoSlug } from '../real-prs/lib/paths';
+import { getLogger } from '../../src/logger';
+import type { RestorationProofRecord } from '../../src/audit/execution-grounded/test-restoration';
+
+const log = getLogger('gate:calibration');
 
 interface SourcePr {
   repo: string;
@@ -98,6 +102,14 @@ function loadStructural(file: string): Finding[] {
   return out;
 }
 
+/** Load restoration proof records if present (for test-tamper-proven replay from
+ *  Task 6 executed layer outputs). */
+function loadRestorations(egDir: string, slug: string, prNumber: number): RestorationProofRecord[] {
+  const file = path.join(egDir, slug, String(prNumber), 'restoration-proof.json');
+  const proof = readJson<{ records?: RestorationProofRecord[] }>(file);
+  return proof?.records ?? [];
+}
+
 /** Derive the execution signals from a PR's persisted execution-grounded
  *  findings: a surviving (covered or uncovered) mutant becomes a surviving
  *  mutant, an uncovered changed line a coverage gap, a still-failing repro a
@@ -143,7 +155,12 @@ function reprosFrom(eg: EgResult | null): ReproComparison[] {
   }));
 }
 
-function firedTriggers(pr: SourcePr, structural: Finding[], eg: EgResult | null): BlockTriggerKind[] {
+function firedTriggers(
+  pr: SourcePr,
+  structural: Finding[],
+  eg: EgResult | null,
+  restorations: RestorationProofRecord[],
+): BlockTriggerKind[] {
   const prText = `${pr.title ?? ''}\n\n${pr.bodyExcerpt ?? ''}`;
   const triggers = detectBlockTriggers({
     claimFalsified: {
@@ -157,6 +174,7 @@ function firedTriggers(pr: SourcePr, structural: Finding[], eg: EgResult | null)
       signals: signalsFrom(eg),
       prRef: `${pr.repo}#${pr.prNumber}`,
     },
+    ...(restorations.length > 0 ? { restorations: { restorations } } : {}),
   });
   return Array.from(new Set(triggers.map((t) => t.kind)));
 }
@@ -180,9 +198,10 @@ function buildRecords(input: CorpusInput): { records: TriggerFiringRecord[]; egR
     const structural = loadStructural(path.join(input.auditDir, slug, `${pr.prNumber}.json`));
     const eg = readJson<EgResult>(path.join(input.egDir, slug, String(pr.prNumber), 'result.json'));
     if (eg !== null) egRuns += 1;
+    const restorations = loadRestorations(input.egDir, slug, pr.prNumber);
     records.push({
       pr: `${pr.repo}#${pr.prNumber}`,
-      fired: firedTriggers(pr, structural, eg),
+      fired: firedTriggers(pr, structural, eg, restorations),
       revertedOrHotfixed: input.reverted ?? wasRevertedOrHotfixed(pr.proofs ?? []),
     });
   }
@@ -213,21 +232,22 @@ function main(): void {
       cleanPrs: clean.records.length,
       cleanEgRuns: clean.egRuns,
       note:
-        'Trigger firings replayed from committed execution-grounded results and structural audit ' +
-        'findings; revert/hotfix ground truth from the regression-corpus proofs. Triggers that need ' +
-        'an execution-grounded run can only fire on the PRs that have one.',
+        'Trigger firings replayed from committed execution-grounded results, structural audit ' +
+        'findings, and restoration-proof.json (for test-tamper-proven). Revert/hotfix ground truth ' +
+        'from the regression-corpus proofs. Triggers that need an execution-grounded run can only ' +
+        'fire on the PRs that have one.',
     },
     rows,
   };
   const outFile = path.join(root, 'benchmarks', 'real-corpus', 'trigger-calibration.json');
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
   fs.writeFileSync(outFile, JSON.stringify(out, null, 2) + '\n');
-  // eslint-disable-next-line no-console
-  console.log(
+  process.stdout.write(
     `run-trigger-calibration: ${records.length} PRs ` +
       `(${regression.records.length} reverted/hotfixed, ${clean.records.length} clean), ` +
       `EG runs ${regression.egRuns}+${clean.egRuns}. ` +
-      rows.map((r) => `${r.trigger}: ${r.truePositive}/${r.firingCount}`).join('  '),
+      rows.map((r) => `${r.trigger}: ${r.truePositive}/${r.firingCount}`).join('  ') +
+      '\n',
   );
 }
 
