@@ -58,4 +58,56 @@ describe('cheat-detector / diff-chunker', () => {
       assert.equal(parseDiff(h.text).length, 1, 'each per-hunk chunk parses to one file');
     }
   });
+
+  // A single hunk over the budget used to pass through whole, which made
+  // the model provider truncate it silently (tail-blindness on 400k-char
+  // generated-file hunks in the agent corpus). It must now split into
+  // valid sub-hunks that each respect the budget.
+  it('splits a single oversized hunk into budget-sized valid sub-hunks', () => {
+    const bodyLines: string[] = [];
+    for (let i = 0; i < 200; i += 1) bodyLines.push(`+const line_${i} = ${'x'.repeat(40)};`);
+    const diff =
+      'diff --git a/big.ts b/big.ts\n--- a/big.ts\n+++ b/big.ts\n' +
+      `@@ -1,0 +1,200 @@\n${bodyLines.join('\n')}\n`;
+    const maxChars = 2000;
+    const chunks = chunkUnifiedDiff(diff, maxChars);
+    assert.ok(chunks.length > 1, 'expected the oversized hunk to split');
+    for (const c of chunks) {
+      assert.ok(c.length <= maxChars, `chunk of ${c.length} chars exceeds the ${maxChars} budget`);
+      const parsed = parseDiff(c);
+      assert.equal(parsed.length, 1, 'each sub-hunk chunk parses as one file');
+      assert.ok((parsed[0]?.chunks.length ?? 0) >= 1, 'each chunk carries a hunk');
+    }
+    // No dropped tail: every body line survives across the sub-hunks.
+    const joined = chunks.join('\n');
+    for (let i = 0; i < 200; i += 1) {
+      assert.ok(joined.includes(`const line_${i} =`), `line ${i} was dropped`);
+    }
+  });
+
+  it('recomputes sub-hunk @@ headers so line numbers stay consistent', () => {
+    const bodyLines: string[] = [];
+    // Alternate context/added lines so old and new counts differ.
+    for (let i = 0; i < 100; i += 1) {
+      bodyLines.push(` ctx_${i}_${'p'.repeat(30)}`);
+      bodyLines.push(`+add_${i}_${'q'.repeat(30)}`);
+    }
+    const diff =
+      'diff --git a/n.ts b/n.ts\n--- a/n.ts\n+++ b/n.ts\n' +
+      `@@ -10,100 +20,200 @@\n${bodyLines.join('\n')}\n`;
+    const chunks = chunkUnifiedDiff(diff, 1500);
+    assert.ok(chunks.length > 1);
+    let expectedOld = 10;
+    let expectedNew = 20;
+    for (const c of chunks) {
+      const m = /@@ -(\d+),(\d+) \+(\d+),(\d+) @@/.exec(c);
+      assert.ok(m !== null, 'sub-hunk must carry a parseable @@ header');
+      assert.equal(Number(m![1]), expectedOld, 'old start must continue from the previous sub-hunk');
+      assert.equal(Number(m![3]), expectedNew, 'new start must continue from the previous sub-hunk');
+      expectedOld += Number(m![2]);
+      expectedNew += Number(m![4]);
+    }
+    assert.equal(expectedOld, 110, 'old line coverage must equal the original hunk');
+    assert.equal(expectedNew, 220, 'new line coverage must equal the original hunk');
+  });
 });
