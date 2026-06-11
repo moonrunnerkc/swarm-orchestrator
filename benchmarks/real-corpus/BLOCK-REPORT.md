@@ -96,30 +96,57 @@ firings behind them.
 
 ## Outcome
 
-No trigger blocks a PR today. The runtime gate set (`BLOCK_ELIGIBLE_TRIGGERS` in
-`src/audit/gate/gate-decision.ts`) is empty: the circumstantial trigger has not
-cleared the Wilson bar, and the runtime does not yet act on the self-certifying
-tier at audit time. `swarm audit --mode gate` keeps passing every PR that a
-structural detector did not already block.
+The runtime gate now acts on the self-certifying tier. `BLOCK_ELIGIBLE_TRIGGERS`
+in `src/audit/gate/gate-decision.ts` is the three self-certifying kinds, and
+`decideBlock` gates a self-certifying firing only when its per-instance controls
+are all green (`controlsAllGreen` in `src/audit/gate/self-certifying.ts`). A
+firing whose controls are missing, false, or unevaluated surfaces in the comment
+but never changes the exit code. The circumstantial trigger is still held out:
+it has not cleared the Wilson bar.
 
-`corroborated-under-constraint` has fired four times, every one on a PR that
-was in fact reverted or hotfixed, so its point precision stays 1.0. Four
-confirmed cases are not enough: the Wilson 95% lower bound is 0.510, below
-the 0.90 bar, and 4 is below the 5-true-positive minimum. (With zero false
-positives the bound is n/(n+3.84), so the bar realistically demands on the
-order of 35 consecutive confirmed firings; the trend is in the right
-direction and the precision has not cracked.) The self-certifying triggers
-carry their own proof and do not wait on that bar, but none has fired yet:
-`claim-falsified` saw only one issue-linked repro and it was unevaluable,
-`obligation-failure` needs a declared contract the audit surface does not carry,
-and `test-tamper-proven` found zero proven restorations across the executed
-funnel.
+No self-certifying trigger has fired on this corpus, so `swarm audit --mode gate`
+still passes every corpus PR. The runtime path is wired and tested; what is
+absent is a firing, not the gate. The three self-certifying firing counts are 0
+for the reasons in the table above: `test-tamper-proven` found zero proven
+restorations across the executed funnel
+([`benchmarks/results/RESTORATION-REPORT.md`](../results/RESTORATION-REPORT.md)),
+`claim-falsified` saw one issue-linked repro and it was unevaluable, and
+`obligation-failure` needs a declared contract the audit surface does not carry.
 
-The bar was not moved to manufacture a block. The honest state is that the
-evidence does not yet support a block, and gate mode blocks nothing on a trigger
-alone. Two things change it: more execution-grounded coverage of reverted PRs
-raising `corroborated-under-constraint`'s Wilson bound past 0.90 with at least 5
-confirmed cases, or the first self-certifying firing with all-green controls once
-the runtime acts on that tier. Either way the eligible set and the calibration
-are bumped in the same commit, and gate mode begins blocking with the reproduce
-command and evidence attached.
+`corroborated-under-constraint` has fired four times, every one on a PR that was
+in fact reverted or hotfixed, so its point precision stays 1.0. Four confirmed
+cases are not enough: the Wilson 95% lower bound is 0.510, below the 0.90 bar,
+and 4 is below the 5-true-positive minimum. (With zero false positives the bound
+is n/(n+3.84), so the bar realistically demands on the order of 35 consecutive
+confirmed firings; the trend is in the right direction and the precision has not
+cracked.) The bar was not moved to manufacture a block.
+
+## What blocks today
+
+A self-certifying trigger blocks `swarm audit --mode gate` the moment it fires
+with all-green controls. The gate decision is exercised end to end by the
+dogfooded PR in the next section. On a `--diff-file` or `--diff-stdin` audit no
+trigger can fire (the proofs are execution-grounded and need the workspace a
+`--pr` audit provisions), and every structural detector is advisory-only
+(`promotions.json`), so a diff-only audit exits 0 by construction.
+
+## Claims
+
+**CLAIM A (calibrated):** `swarm audit --mode gate` blocks a PR only on
+self-certifying runtime proof whose per-instance controls are all green. No
+structural detector blocks (every detector is `advisory-only` in
+[`promotions.json`](./promotions.json)), and no circumstantial trigger blocks
+yet (`corroborated-under-constraint` sits at Wilson 95% lower 0.510, below the
+0.90 bar, in [`block-eligibility.json`](./block-eligibility.json)). The gate
+wiring is in `src/audit/gate/gate-decision.ts` and `self-certifying.ts`, the
+controls are defined in `src/audit/execution-grounded/test-restoration.ts`, and
+the behavior is pinned by the gate tests (`test/audit/gate/gate-decision.test.ts`,
+`test/audit/gate/self-certifying.test.ts`, `test/audit/gate/test-tamper-proven.test.ts`).
+
+**CLAIM B (dogfooded):** see "First blocked PR" below. _(recorded when the
+dogfood PR runs to a block.)_
+
+## First blocked PR
+
+_Pending the dogfood run; the PR URL, the failed check-run URL, and the comment
+URL are recorded here once CI blocks the dogfood PR with the proof comment._
