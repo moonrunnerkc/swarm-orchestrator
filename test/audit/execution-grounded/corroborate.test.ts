@@ -132,6 +132,18 @@ describe('execution-grounded / corroborate', () => {
       assert.equal(f.confidence, 'runtime-corroborated');
     });
 
+    it('never clobbers a finding that already carries runtime backing', () => {
+      const f = finding('assertion-strip', 'src/a.ts', 3);
+      f.runtimeCorroboration = { signal: 'restored-test-fails', failingTests: ['suite › name'] };
+      const n = corroborateStructuralFindings([f], {
+        survivingMutants: [{ file: 'src/a.ts', line: 3, id: 'm' }],
+        coverageGaps: [],
+        reproFailures: [],
+      });
+      assert.equal(n, 0, 'an already-backed finding is not re-counted');
+      assert.equal(f.runtimeCorroboration.signal, 'restored-test-fails');
+    });
+
     it('runtime corroboration outranks a prior judge-confirmed grade', () => {
       const f = finding('coverage-erosion', 'src/a.ts', 12);
       f.judgeConfirmed = true;
@@ -150,6 +162,7 @@ describe('execution-grounded / corroborate', () => {
       const outcome: ExecutionGroundedOutcome = {
         findings: [],
         skipped: [],
+        restorations: [],
         mutationRuns: [
           {
             packageDir: 'packages/core',

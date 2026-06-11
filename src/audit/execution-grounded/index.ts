@@ -5,10 +5,12 @@
 // and unit-tested; runExecutionGrounded wires them to the live workspaces and
 // is exercised by the evidence run.
 
+import * as fs from 'fs';
 import * as path from 'path';
 import { SwarmError } from '../../errors';
 import { getLogger } from '../../logger';
 import type { Finding } from '../types';
+import { setFindingConfidence } from '../cheat-detector/verify-findings';
 import { extractChangedLineRanges, isPlausiblyTestReachable, isTestFile } from '../cheat-detector/diff-walker';
 import type { ChangedLineRanges } from '../cheat-detector/diff-walker';
 import type { ExecutionGroundedConfig } from '../cheat-detector/audit-config';
@@ -42,9 +44,15 @@ import {
   extractRepros,
   fetchIssue,
   parseIssueReferences,
+  TEST_TIMEOUT_MS,
   type Repro,
   type ReproVerdict,
 } from './issue-repro';
+import {
+  RESTORATION_CATEGORIES,
+  runTestRestoration,
+  type RestorationProofRecord,
+} from './test-restoration';
 
 const log = getLogger('audit:execution-grounded');
 
@@ -247,6 +255,11 @@ export interface ExecutionGroundedInput {
   /** Per-repo mutation recipe (env and Stryker-config adjustments) for repos
    *  whose suite cannot start under the generic sandbox. */
   mutationRecipe?: MutationRecipe;
+  /** The structural cheat-detector findings from the audit result. The
+   *  restoration phase consumes the block-severity findings in
+   *  RESTORATION_CATEGORIES (the layer's own findings never qualify) and
+   *  mutates them in place: refuted demotes, proven corroborates. */
+  structuralFindings?: Finding[];
 }
 
 export interface PackagedMutationRun {
@@ -265,7 +278,74 @@ export interface ExecutionGroundedOutcome {
   mutationRuns: PackagedMutationRun[];
   coverageRuns: PackagedCoverageRun[];
   repros: ReproComparison[];
+  /** One proof record per qualifying structural finding, every verdict
+   *  included (no-workspace records when the layer bailed before a sandbox
+   *  existed), so downstream funnel counts account for every candidate. */
+  restorations: RestorationProofRecord[];
   skipped: string[];
+}
+
+/** One honesty record per qualifying structural finding when restoration
+ *  cannot run because no sandbox workspace exists (provisioning failed or the
+ *  layer bailed before provisioning). The proof engine never produces this
+ *  verdict; only this caller does. */
+export function noWorkspaceRecords(
+  findings: readonly Finding[],
+  detail: string,
+): RestorationProofRecord[] {
+  return findings.map((f) => ({
+    schemaVersion: 1,
+    verdict: 'not-proven:no-workspace',
+    category: f.category,
+    findingFile: f.location.file,
+    testFiles: [],
+    failingTests: [],
+    controls: { baseTestPasses: null, tamperedSuitePasses: null, restoredFailsTwiceSameIdentity: null },
+    reproduceCommand: '',
+    revertedHunkPatch: '',
+    reason: `restoration could not run: no sandbox workspace was provisioned (${detail})`,
+  }));
+}
+
+/** Persist the run's proof records as one JSON array under
+ *  `<evidenceDir>/restoration-proof.json`. Single write, every verdict. */
+export function persistRestorationProofs(
+  records: readonly RestorationProofRecord[],
+  evidenceDir: string,
+): void {
+  fs.mkdirSync(evidenceDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(evidenceDir, 'restoration-proof.json'),
+    JSON.stringify(records, null, 2),
+    'utf8',
+  );
+}
+
+/**
+ * Ride one restoration verdict onto its structural finding, in place. A
+ * refuted finding is demoted, not dropped, so a reader can still see what the
+ * detector flagged and why execution cleared it. A proven finding gets the
+ * runtime corroboration and its confidence raised through the shared setter
+ * (the same path corroborate.ts uses, so the grades cannot disagree). Every
+ * other verdict is record-only: the finding stays exactly as the detector
+ * left it.
+ */
+export function applyRestorationToFinding(finding: Finding, record: RestorationProofRecord): void {
+  if (record.verdict === 'refuted') {
+    finding.severity = 'info';
+    finding.evidence =
+      `${finding.evidence}\n` +
+      `demoted: the restored original test passes against the PR's source, so the test ` +
+      `change is a legitimate refactor rather than concealment of a failure`;
+    return;
+  }
+  if (record.verdict === 'proven') {
+    finding.runtimeCorroboration = {
+      signal: 'restored-test-fails',
+      failingTests: record.failingTests,
+    };
+    setFindingConfidence(finding);
+  }
 }
 
 /**
@@ -276,15 +356,31 @@ export interface ExecutionGroundedOutcome {
  */
 export async function runExecutionGrounded(input: ExecutionGroundedInput): Promise<ExecutionGroundedOutcome> {
   const skipped: string[] = [];
-  const empty: ExecutionGroundedOutcome = { findings: [], mutationRuns: [], coverageRuns: [], repros: [], skipped };
+  const empty: ExecutionGroundedOutcome = { findings: [], mutationRuns: [], coverageRuns: [], repros: [], restorations: [], skipped };
   if (!input.config.enabled) {
+    // Disabled means the layer never ran at all: no honesty records, because
+    // nothing was promised to run.
     skipped.push('executionGrounded disabled');
     return empty;
   }
+  const qualifying = (input.structuralFindings ?? []).filter(
+    (f) => f.severity === 'block' && RESTORATION_CATEGORIES.includes(f.category),
+  );
+  // Every return below this point happens before a workspace exists. A
+  // qualifying finding must still surface in the restoration funnel, so each
+  // bail emits (and persists) explicit no-workspace records instead of
+  // silently dropping the candidates.
+  const bailBeforeWorkspace = (detail: string): ExecutionGroundedOutcome => {
+    empty.restorations = noWorkspaceRecords(qualifying, detail);
+    if (input.evidenceDir !== undefined && empty.restorations.length > 0) {
+      persistRestorationProofs(empty.restorations, input.evidenceDir);
+    }
+    return empty;
+  };
   const changed: ChangedLineRanges = extractChangedLineRanges(input.prDiff, mutableSourceFilter);
   if (Object.keys(changed).length === 0) {
     skipped.push('no mutable source lines in diff');
-    return empty;
+    return bailBeforeWorkspace('no mutable source lines in diff');
   }
 
   // Optional container isolation for the untrusted-execution checks. When
@@ -302,7 +398,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
     });
     if (reason !== null) {
       skipped.push(reason);
-      return empty;
+      return bailBeforeWorkspace(reason);
     }
     dockerCtx = { image, network: dockerSandboxNetwork() };
     log.info(`execution-grounded checks will run in docker (image ${image}, network ${dockerCtx.network})`);
@@ -333,12 +429,12 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
     const reason = err instanceof SwarmError ? `${err.code}: ${err.message}` : String(err);
     log.warn(`provisioning failed for ${input.repo}#${input.prNumber}: ${reason}`);
     skipped.push(`provision: ${reason}`);
-    return empty;
+    return bailBeforeWorkspace(`provisioning failed: ${reason}`);
   }
 
   const deadline = Date.now() + input.config.maxWallClockPerPrMs;
   const findings: Finding[] = [];
-  const outcome: ExecutionGroundedOutcome = { findings, mutationRuns: [], coverageRuns: [], repros: [], skipped };
+  const outcome: ExecutionGroundedOutcome = { findings, mutationRuns: [], coverageRuns: [], repros: [], restorations: [], skipped };
   const cacheArg = input.cacheDir !== undefined ? { cacheDir: input.cacheDir } : {};
 
   try {
@@ -451,6 +547,36 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
       const repros = await runIssueRepros(input, workspaces, deadline, dockerCtx);
       outcome.repros = repros;
       findings.push(...reproFindings(repros));
+    }
+
+    // Differential test restoration against the already-provisioned pair.
+    // The engine never throws and re-applies the patch forward before
+    // returning, so the shared post workspace stays valid for the cleanup.
+    for (const finding of qualifying) {
+      if (Date.now() >= deadline) {
+        skipped.push(`restoration[${finding.location.file}]: wall-clock budget reached`);
+        break;
+      }
+      const record = runTestRestoration({
+        finding: { category: finding.category, file: finding.location.file },
+        prDiff: input.prDiff,
+        prRef: `${input.repo}#${input.prNumber}`,
+        prHeadSha: input.prHeadSha,
+        preWorkspacePath: workspaces.pre.workspacePath,
+        postWorkspacePath: workspaces.post.workspacePath,
+        testRunner: workspaces.post.testRunner,
+        packageManager: workspaces.post.packageManager,
+        // Per-run cap mirrors the issue-repro test timeout, clipped to the
+        // remaining wall-clock budget.
+        timeoutMs: Math.min(TEST_TIMEOUT_MS, Math.max(1, deadline - Date.now())),
+        ...(input.mutationRecipe !== undefined ? { recipe: input.mutationRecipe } : {}),
+        ...(dockerCtx !== undefined ? { docker: dockerCtx } : {}),
+      });
+      outcome.restorations.push(record);
+      applyRestorationToFinding(finding, record);
+    }
+    if (input.evidenceDir !== undefined && outcome.restorations.length > 0) {
+      persistRestorationProofs(outcome.restorations, input.evidenceDir);
     }
   } finally {
     workspaces.cleanup();

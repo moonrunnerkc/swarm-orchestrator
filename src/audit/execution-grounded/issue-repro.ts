@@ -186,7 +186,9 @@ export interface ReproExecution {
 }
 
 const SCRIPT_TIMEOUT_MS = 60_000;
-const TEST_TIMEOUT_MS = 120_000;
+/** Per-run cap for a single test invocation. The restoration phase reuses it
+ *  so one tampered/restored/base run is bounded the same way a repro test is. */
+export const TEST_TIMEOUT_MS = 120_000;
 
 function testCommand(runner: TestRunner, file: string): { cmd: string; args: string[] } | null {
   switch (runner) {

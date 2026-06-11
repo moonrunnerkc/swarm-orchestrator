@@ -151,16 +151,19 @@ export interface Finding {
 
 /** Evidence that an execution-grounded signal corroborates a structural
  *  finding. Exactly one signal kind is recorded, with its underlying data: the
- *  mutant ids that survived, the uncovered changed lines, or the issue repro
- *  reference that still fails. */
+ *  mutant ids that survived, the uncovered changed lines, the issue repro
+ *  reference that still fails, or the restored-test identities that fail. */
 export interface RuntimeCorroboration {
-  signal: 'surviving-mutant' | 'coverage-gap' | 'repro-still-fails';
+  signal: 'surviving-mutant' | 'coverage-gap' | 'repro-still-fails' | 'restored-test-fails';
   /** Surviving-mutant ids, e.g. `BlockStatement@src/x.ts:12 -> Survived`. */
   mutants?: string[];
   /** Changed lines no test executed. */
   uncoveredLines?: number[];
   /** Issue reference whose repro still fails, e.g. `owner/repo#123`. */
   repro?: string;
+  /** Failing-test identities from a proven test restoration, e.g.
+   *  `calc › adds two numbers`. */
+  failingTests?: string[];
 }
 
 export interface AuditAgentAttribution {

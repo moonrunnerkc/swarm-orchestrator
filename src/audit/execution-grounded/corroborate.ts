@@ -124,6 +124,10 @@ export function corroborationFor(finding: Finding, signals: ExecutionSignals): R
 export function corroborateStructuralFindings(findings: Finding[], signals: ExecutionSignals): number {
   let corroborated = 0;
   for (const finding of findings) {
+    // A finding that already carries runtime backing (a proven test
+    // restoration ran earlier in the same pass) keeps it: a restored test
+    // failing is stronger evidence than any signal matched here.
+    if (finding.runtimeCorroboration !== undefined) continue;
     const corroboration = corroborationFor(finding, signals);
     if (corroboration !== null) {
       finding.runtimeCorroboration = corroboration;

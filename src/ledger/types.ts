@@ -313,6 +313,26 @@ export interface LedgerEntryPayloadMap {
     line: number;
     evidencePath?: string;
   };
+  // Test-restoration proof record: one entry per qualifying structural
+  // finding the restoration phase evaluated, every verdict included, so the
+  // ledger carries the full proof funnel and not just the proven tail.
+  // `controls` mirrors the proof record's three internal controls; null means
+  // that control never executed. `reproduceCommand` is the exact command a
+  // human runs in a fresh checkout to replay a proven verdict (empty
+  // otherwise).
+  'pr-audit-restoration': {
+    category: string;
+    verdict: string;
+    findingFile: string;
+    testFiles: string[];
+    failingTests: string[];
+    controls: {
+      baseTestPasses: boolean | null;
+      tamperedSuitePasses: boolean | null;
+      restoredFailsTwiceSameIdentity: boolean | null;
+    };
+    reproduceCommand: string;
+  };
   // A verifiable-evidence block-trigger candidate: a self-certifying
   // runtime fact (a falsified issue repro, a structural finding a surviving
   // mutant or coverage gap corroborates on the same line, or a failed
@@ -376,4 +396,5 @@ export type PrAuditJudgePrimaryEntry = LedgerEntry<'pr-audit-judge-primary'>;
 export type PrAuditMutationFindingEntry = LedgerEntry<'pr-audit-mutation-finding'>;
 export type PrAuditIssueReproFindingEntry = LedgerEntry<'pr-audit-issue-repro-finding'>;
 export type PrAuditCoverageFindingEntry = LedgerEntry<'pr-audit-coverage-finding'>;
+export type PrAuditRestorationEntry = LedgerEntry<'pr-audit-restoration'>;
 export type PrAuditBlockTriggerEntry = LedgerEntry<'pr-audit-block-trigger'>;

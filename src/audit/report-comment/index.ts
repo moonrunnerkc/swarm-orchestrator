@@ -206,6 +206,8 @@ function formatCorroboration(rc: RuntimeCorroboration): string {
       return `an uncovered changed line (${(rc.uncoveredLines ?? []).join(', ')})`;
     case 'repro-still-fails':
       return `a still-failing issue repro (${rc.repro ?? ''})`;
+    case 'restored-test-fails':
+      return `a restored original test that fails on the PR's source (${(rc.failingTests ?? []).join('; ')})`;
   }
 }
 

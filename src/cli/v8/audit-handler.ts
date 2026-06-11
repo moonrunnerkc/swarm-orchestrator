@@ -58,6 +58,7 @@ import type {
   PrAuditMutationFindingEntry,
   PrAuditIssueReproFindingEntry,
   PrAuditCoverageFindingEntry,
+  PrAuditRestorationEntry,
 } from '../../ledger/types';
 import { isExecutionGroundedCategory } from '../../audit/types';
 import { loadAuditConfig, type ExecutionGroundedConfig } from '../../audit/cheat-detector/audit-config';
@@ -307,6 +308,10 @@ async function runExecutionGroundedLayer(
       ...(process.env.GITHUB_TOKEN !== undefined && process.env.GITHUB_TOKEN.length > 0
         ? { githubToken: process.env.GITHUB_TOKEN }
         : {}),
+      // The restoration phase consumes the structural detector findings, not
+      // the layer's own (outcome.findings only ever holds execution-grounded
+      // categories), and mutates the qualifying ones in place.
+      structuralFindings: result.findings,
     });
   } catch (err) {
     logger.warn(`execution-grounded layer failed for ${pr.repository}#${pr.number}: ${String(err)}`);
@@ -364,6 +369,20 @@ async function runExecutionGroundedLayer(
       ledger.append<PrAuditIssueReproFindingEntry>(payload, aiAgent);
     }
     result.findings.push(finding);
+  }
+
+  for (const restoration of outcome.restorations) {
+    const payload: Omit<PrAuditRestorationEntry, 'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'> = {
+      type: 'pr-audit-restoration',
+      category: restoration.category,
+      verdict: restoration.verdict,
+      findingFile: restoration.findingFile,
+      testFiles: restoration.testFiles,
+      failingTests: restoration.failingTests,
+      controls: restoration.controls,
+      reproduceCommand: restoration.reproduceCommand,
+    };
+    ledger.append<PrAuditRestorationEntry>(payload, aiAgent);
   }
 
   // Runtime corroboration (opt-in). When this run's execution layer actually
