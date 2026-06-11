@@ -287,11 +287,22 @@ function stripAnsi(text: string): string {
 
 // '● Console' and '● Test suite failed to run' are jest failure-block headers
 // that carry no test identity; '<n> snapshot...' bullets come from the
-// snapshot summary. A run that only produced these fails without identities,
-// which the classifier maps to not-proven:execution-error (fail closed).
-const JEST_NON_TEST_BULLET_RE = /^(Console$|Test suite failed to run|\d+ snapshot)/;
-const JEST_BULLET_RE = /^\s*●\s+(.+?)\s*$/;
-const JEST_CROSS_RE = /^\s*✕\s+(.+?)(?:\s+\(\d+(?:\.\d+)?\s*m?s\))?\s*$/;
+// snapshot summary; 'Validation Warning/Error', 'Deprecation Warning', and
+// 'Multiple configurations found' come from jest-validate / jest-config and
+// describe the run, never a test. A run that only produced these fails
+// without identities, which the classifier maps to
+// not-proven:execution-error (fail closed): the alternative, harvesting a
+// config bullet as an identity, is stable across runs and would wrongfully
+// prove a restoration against a suite that never even compiled.
+const JEST_NON_TEST_BULLET_RE =
+  /^(Console$|Test suite failed to run|\d+ snapshot|Validation (Warning|Error):|Deprecation Warning:|Multiple configurations found)/;
+// Anchored to the reporter's exact shape so code-under-test prints cannot
+// forge or perturb the identity set: jest renders failure-block headers at
+// exactly two spaces ('  ● suite › name') and re-indents captured console
+// output to four-or-deeper under a '  console.log' header. ✕ leaf lines sit
+// at 2 + 2·depth spaces (top-level test = 2, one describe = 4, ...).
+const JEST_BULLET_RE = /^ {2}●\s+(.+?)\s*$/;
+const JEST_CROSS_RE = /^(?: {2})+✕\s+(.+?)(?:\s+\(\d+(?:\.\d+)?\s*m?s\))?\s*$/;
 
 function parseJestFailures(output: string): string[] {
   const bullets: string[] = [];
@@ -310,21 +321,27 @@ function parseJestFailures(output: string): string[] {
   return bullets.length > 0 ? bullets : crosses;
 }
 
-const MOCHA_NUMBERED_RE = /^(\s*)\d+\)\s+(.+?)\s*$/;
+// Mocha's base reporter renders every epilogue entry at exactly two spaces
+// ('  1) suite'); anchoring there is what separates the epilogue from
+// everything else numbered: in-run spec markers sit at four-or-deeper, and an
+// error body quoting '      2) some detail:' sits deeper still, so neither
+// can start an epilogue block (and so invent an identity).
+const MOCHA_EPILOGUE_INDENT = 2;
+const MOCHA_NUMBERED_RE = /^ {2}\d+\)\s+(.+?)\s*$/;
 
 // Mocha's spec reporter prints a failure twice: an in-run marker
 // ('    1) adds') and an epilogue block ('  1) suite' followed by
 // deeper-indented lines ending in '<name>:'). Only the epilogue carries the
-// full suite path, so a numbered line counts only when a deeper-indented
-// colon-terminated header line follows before any blank or shallower line.
+// full suite path, so a numbered line counts only when it sits at the
+// epilogue's two-space column and a deeper-indented colon-terminated header
+// line follows before any blank or shallower line.
 function parseMochaFailures(output: string): string[] {
   const lines = output.split('\n');
   const identities: string[] = [];
   for (let i = 0; i < lines.length; i++) {
     const numbered = MOCHA_NUMBERED_RE.exec(lines[i]!);
     if (numbered === null) continue;
-    const indent = numbered[1]!.length;
-    const first = numbered[2]!;
+    const first = numbered[1]!;
     if (first.endsWith(':')) {
       identities.push(first.slice(0, -1));
       continue;
@@ -333,7 +350,7 @@ function parseMochaFailures(output: string): string[] {
     for (let j = i + 1; j < lines.length; j++) {
       const line = lines[j]!;
       if (line.trim().length === 0) break;
-      if (line.length - line.trimStart().length <= indent) break;
+      if (line.length - line.trimStart().length <= MOCHA_EPILOGUE_INDENT) break;
       const content = line.trim();
       if (content.endsWith(':')) {
         parts.push(content.slice(0, -1));
@@ -346,8 +363,13 @@ function parseMochaFailures(output: string): string[] {
   return identities;
 }
 
-const VITEST_FAIL_RE = /^\s*FAIL\s+(.+?)\s*$/;
-const VITEST_CROSS_RE = /^\s*×\s+(.+?)(?:\s+\d+(?:\.\d+)?\s*m?s)?\s*$/;
+// Vitest's default reporter prints per-test failure headers at exactly one
+// leading space (' FAIL  file > suite > name') and per-test × lines at
+// exactly three ('   × suite > name 4ms'). Code-under-test stdout is
+// forwarded verbatim under a 'stdout |' header, so anchoring to the
+// reporter's columns rejects decoys printed at any other indent.
+const VITEST_FAIL_RE = /^ FAIL\s+(.+?)\s*$/;
+const VITEST_CROSS_RE = /^ {3}×\s+(.+?)(?:\s+\d+(?:\.\d+)?\s*m?s)?\s*$/;
 
 function parseVitestFailures(output: string): string[] {
   const fails: string[] = [];

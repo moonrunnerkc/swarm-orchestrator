@@ -651,6 +651,75 @@ describe('execution-grounded / test-restoration parseFailingTests', () => {
     assert.deepEqual(parseFailingTests('jest', '', stderr), ['adds', 'subtracts']);
   });
 
+  it('jest: a config validation warning plus a suite that failed to run yields no identities', () => {
+    // jest-validate prints its warning bullet at column 0 before the report;
+    // it describes the config, not a test, and must never become an identity.
+    const stderr = [
+      '● Validation Warning:',
+      '',
+      '  Unknown option "testPathPatern" with value "calc" was found.',
+      '  This is probably a typing mistake. Fixing it will remove this message.',
+      '',
+      '  Configuration Documentation:',
+      '  https://jestjs.io/docs/configuration',
+      '',
+      'FAIL test/calc.test.js',
+      '  ● Test suite failed to run',
+      '',
+      "    Cannot find module './missing' from 'test/calc.test.js'",
+      '',
+      'Test Suites: 1 failed, 1 total',
+      'Tests:       0 total',
+      '',
+    ].join('\n');
+    assert.deepEqual(parseFailingTests('jest', '', stderr), []);
+  });
+
+  it('jest: validation, deprecation, and multi-config bullets are excluded at any accepted indent', () => {
+    const stderr = [
+      '  ● Validation Warning:',
+      '  ● Validation Error:',
+      '  ● Deprecation Warning:',
+      '  ● Multiple configurations found:',
+      '',
+    ].join('\n');
+    assert.deepEqual(parseFailingTests('jest', '', stderr), []);
+  });
+
+  it('jest: console-reindented decoy ● lines are not harvested', () => {
+    // jest re-indents captured console output to four-or-deeper under a
+    // '  console.log' header; only the two-space failure-block bullets are
+    // reporter-authored.
+    const stderr = [
+      'FAIL test/calc.test.js',
+      '  console.log',
+      '    ● fake › test',
+      '',
+      '      at Object.log (test/calc.test.js:3:11)',
+      '',
+      '  ● calc › adds',
+      '',
+      '    expect(received).toBe(expected) // Object.is equality',
+      '',
+      'Tests:       1 failed, 1 total',
+      '',
+    ].join('\n');
+    assert.deepEqual(parseFailingTests('jest', '', stderr), ['calc › adds']);
+  });
+
+  it('jest: the ✕ fallback only accepts reporter-shaped indentation', () => {
+    // Real leaf lines sit at 2 + 2·depth spaces; zero, one, and three-space
+    // decoys are code-under-test output, not the reporter.
+    const stderr = [
+      '✕ fake zero-indent',
+      ' ✕ fake one-space',
+      '   ✕ fake three-space',
+      '    ✕ adds (3 ms)',
+      '',
+    ].join('\n');
+    assert.deepEqual(parseFailingTests('jest', '', stderr), ['adds']);
+  });
+
   it('mocha: a passing run yields no identities', () => {
     assert.deepEqual(parseFailingTests('mocha', MOCHA_PASSING_STDOUT, ''), []);
   });
@@ -681,6 +750,43 @@ describe('execution-grounded / test-restoration parseFailingTests', () => {
       '',
     ].join('\n');
     assert.deepEqual(parseFailingTests('mocha', stdout, ''), ['outer › inner › deep test']);
+  });
+
+  it('mocha: numbered-colon lines inside an error body do not invent identities', () => {
+    // An assertion message quoting '      2) some detail:' sits deeper than
+    // the two-space epilogue column; it must not become an identity.
+    const stdout = [
+      '  1 passing (10ms)',
+      '  1 failing',
+      '',
+      '  1) calc',
+      '       adds:',
+      '     Error: expected the payload to contain:',
+      '      2) some detail:',
+      '      at Context.<anonymous> (test/calc.test.js:7:12)',
+      '',
+    ].join('\n');
+    assert.deepEqual(parseFailingTests('mocha', stdout, ''), ['calc › adds']);
+  });
+
+  it('mocha: in-run markers and deeper-indented decoy blocks are not harvested', () => {
+    // The spec reporter prints in-run failure markers at four-or-deeper
+    // ('    1) adds'); only the two-space epilogue entries carry identities,
+    // so a code-under-test decoy printed at in-run depth contributes nothing.
+    const stdout = [
+      '  calc',
+      '    1) adds',
+      '    4) fake decoy',
+      '         fake deep:',
+      '',
+      '  1 failing',
+      '',
+      '  1) calc',
+      '       adds:',
+      '     Error: boom',
+      '',
+    ].join('\n');
+    assert.deepEqual(parseFailingTests('mocha', stdout, ''), ['calc › adds']);
   });
 
   it('vitest: a passing run yields no identities', () => {
@@ -714,6 +820,40 @@ describe('execution-grounded / test-restoration parseFailingTests', () => {
   it('vitest: a file-level FAIL line without a test path yields no identities (fails closed)', () => {
     const stdout = [' FAIL  test/calc.test.js [ unhandled error ]', ''].join('\n');
     assert.deepEqual(parseFailingTests('vitest', stdout, ''), []);
+  });
+
+  it('vitest: decoy FAIL and × lines at wrong indent are not harvested', () => {
+    // vitest forwards code-under-test stdout verbatim under a 'stdout |'
+    // header; reporter-authored FAIL headers sit at exactly one leading
+    // space, so zero- and two-space decoys are rejected.
+    const stdout = [
+      ' RUN  v1.6.0 /tmp/project',
+      '',
+      'stdout | test/calc.test.js > calc > adds',
+      'FAIL fake/file.test.js > fake > test',
+      '  FAIL  fake/file.test.js > fake > test',
+      '× fake > test 1ms',
+      '     × fake > test 1ms',
+      '',
+      ' ❯ test/calc.test.js (1 test | 1 failed) 7ms',
+      '   × calc > adds 4ms',
+      '',
+      ' FAIL  test/calc.test.js > calc > adds',
+      'AssertionError: expected 5 to be 4 // Object.is equality',
+      '',
+    ].join('\n');
+    assert.deepEqual(parseFailingTests('vitest', stdout, ''), ['test/calc.test.js > calc > adds']);
+  });
+
+  it('vitest: the × fallback only accepts the reporter three-space indent', () => {
+    const stdout = [
+      '× fake > test 1ms',
+      '  × fake > test 1ms',
+      '    × fake > test 1ms',
+      '   × calc > adds 4ms',
+      '',
+    ].join('\n');
+    assert.deepEqual(parseFailingTests('vitest', stdout, ''), ['calc > adds']);
   });
 
   it('a runner with no locked parser yields no identities (fails closed)', () => {
