@@ -93,10 +93,32 @@ jobs:
       - name: Publish to npm
         if: env.NODE_AUTH_TOKEN != ''
         # prepublishOnly runs the full build + test suite before the tarball
-        # is created, so a broken tree cannot reach the registry.
+        # is created, so a broken tree cannot reach the registry. Idempotent:
+        # if this exact version is already on the registry (a re-run after a
+        # later step failed), skip the publish instead of failing on a
+        # republish conflict, so the SBOM steps below can still complete.
         run: |
           npm ci
-          npm publish --provenance --access public
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if npm view "swarm-orchestrator@${PKG_VERSION}" version >/dev/null 2>&1; then
+            echo "swarm-orchestrator@${PKG_VERSION} is already published; skipping npm publish"
+          else
+            npm publish --provenance --access public
+          fi
+
+      - name: Ensure the GitHub Release exists
+        if: env.NODE_AUTH_TOKEN != '' && startsWith(github.ref, 'refs/tags/v')
+        # Pushing a tag does not create a Release object, and the SBOM upload
+        # below targets one. Create it (notes from the tag) if it is missing,
+        # so a tag-triggered run is self-contained and re-runnable.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME" \
+              --notes "Release $GITHUB_REF_NAME. See CHANGELOG.md."
+          fi
 
       - name: Generate CycloneDX SBOM
         if: env.NODE_AUTH_TOKEN != ''
