@@ -61,7 +61,7 @@ const log = getLogger('labeling:outcome');
 
 type Outcome = 'reverted' | 'hotfixed' | 'survived' | 'indeterminate';
 
-interface OutcomeEvidence {
+export interface OutcomeEvidence {
   kind: 'revert-commit' | 'hotfix-commit';
   /** The reverting / hotfixing commit sha. */
   ref: string;
@@ -151,7 +151,7 @@ interface CommitData {
   files?: { filename: string; patch?: string }[];
 }
 
-interface OctokitLike {
+export interface OctokitLike {
   repos: {
     get(p: { owner: string; repo: string }): Promise<{ data: { default_branch: string } }>;
     getCommit(p: { owner: string; repo: string; ref: string }): Promise<{ data: CommitData }>;
@@ -210,7 +210,7 @@ async function searchCommitsRetry(
 const repoDefaultBranchCache = new Map<string, string | null>();
 
 /** The repo's default branch, cached. null when the repo is inaccessible. */
-async function defaultBranchOf(octokit: OctokitLike, repo: string): Promise<string | null> {
+export async function defaultBranchOf(octokit: OctokitLike, repo: string): Promise<string | null> {
   if (repoDefaultBranchCache.has(repo)) return repoDefaultBranchCache.get(repo) ?? null;
   const target = parseRepo(repo);
   let branch: string | null;
@@ -461,9 +461,56 @@ async function resolveOutcome(
     if (!isStatus(err, 404, 422, 451)) throw err;
   }
 
+  // 3 + 4. Revert search + follow-up scan, shared with the Part B miner.
+  const diff = readVendoredDiff(entry);
+  const prRanges = diff !== null ? extractChangedLineRanges(diff) : {};
+  const found = await findOutcomeEvidence(octokit, {
+    repo,
+    headSha,
+    defaultBranch,
+    landedAt,
+    prRanges,
+    hotfixWindowDays: args.hotfixWindowDays,
+  });
+
+  return {
+    ...base,
+    outcome: found.outcome,
+    evidence: dedupeEvidence(found.evidence),
+    scanLimited: found.scanLimited,
+    reachability,
+  };
+}
+
+export interface OutcomeEvidenceResult {
+  outcome: 'reverted' | 'hotfixed' | 'survived';
+  evidence: OutcomeEvidence[];
+  scanLimited: boolean;
+}
+
+/**
+ * The shared revert/hotfix evidence core: given a landed commit and the lines
+ * its change touched, search for a revert of the sha and scan the follow-up
+ * window for a surgical fix-shaped commit re-touching the same source lines.
+ * Used by both the corpus labeler and the Part B confirmed-bad miner so the two
+ * derive "bad" identically.
+ *
+ * @returns the outcome (reverted | hotfixed | survived) and its evidence
+ */
+export async function findOutcomeEvidence(
+  octokit: OctokitLike,
+  input: {
+    repo: string;
+    headSha: string;
+    defaultBranch: string;
+    landedAt: string;
+    prRanges: ChangedLineRanges;
+    hotfixWindowDays: number;
+  },
+): Promise<OutcomeEvidenceResult> {
+  const { repo, headSha, defaultBranch, landedAt, prRanges, hotfixWindowDays } = input;
   const evidence: OutcomeEvidence[] = [];
 
-  // 3. Revert via commit search ("This reverts commit <headSha>").
   const short = headSha.slice(0, 12);
   const items = await searchCommitsRetry(octokit, `repo:${repo} "This reverts commit ${short}"`);
   const revertHit = items.find((it) => messageRevertsSha(it.commit.message, headSha));
@@ -471,35 +518,18 @@ async function resolveOutcome(
     evidence.push({ kind: 'revert-commit', ref: revertHit.sha, detail: `reverts ${short}: ${revertHit.html_url}` });
   }
 
-  // 4. Follow-up scan (line-overlap hotfix + any revert in the window).
   let scanLimited = false;
-  if (evidence.length === 0) {
-    const diff = readVendoredDiff(entry);
-    const prRanges = diff !== null ? extractChangedLineRanges(diff) : {};
-    if (Object.keys(prRanges).length > 0) {
-      const scan = await scanFollowups(
-        octokit,
-        repo,
-        defaultBranch,
-        headSha,
-        prRanges,
-        landedAt,
-        args.hotfixWindowDays,
-      );
-      scanLimited = scan.limited;
-      if (scan.revert !== undefined) evidence.push(scan.revert);
-      if (scan.hotfix !== undefined) evidence.push(scan.hotfix);
-    }
+  if (evidence.length === 0 && Object.keys(prRanges).length > 0) {
+    const scan = await scanFollowups(octokit, repo, defaultBranch, headSha, prRanges, landedAt, hotfixWindowDays);
+    scanLimited = scan.limited;
+    if (scan.revert !== undefined) evidence.push(scan.revert);
+    if (scan.hotfix !== undefined) evidence.push(scan.hotfix);
   }
 
   const reverted = evidence.some((e) => e.kind === 'revert-commit');
   const hotfixed = evidence.some((e) => e.kind === 'hotfix-commit');
-  let outcome: Outcome;
-  if (reverted) outcome = 'reverted';
-  else if (hotfixed) outcome = 'hotfixed';
-  else outcome = 'survived';
-
-  return { ...base, outcome, evidence: dedupeEvidence(evidence), scanLimited, reachability };
+  const outcome = reverted ? 'reverted' : hotfixed ? 'hotfixed' : 'survived';
+  return { outcome, evidence: dedupeEvidence(evidence), scanLimited };
 }
 
 function dedupeEvidence(evidence: OutcomeEvidence[]): OutcomeEvidence[] {
