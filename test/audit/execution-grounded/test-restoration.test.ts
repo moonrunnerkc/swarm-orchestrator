@@ -348,41 +348,56 @@ describe('execution-grounded / test-restoration classifyRestoration', () => {
 });
 
 describe('execution-grounded / test-restoration buildReproduceCommand', () => {
+  const PATCH =
+    '--- a/test/calc.test.ts\n+++ b/test/calc.test.ts\n@@ -1,2 +1,1 @@\n test\n-  assert.equal(add(1, 1), 2);';
   const opts = {
     prRef: 'octo/calc#42',
     prHeadSha: 'deadbeefcafe',
     testFiles: ['test/calc.test.ts', 'test/calc-extra.test.ts'],
+    revertedHunkPatch: PATCH,
   };
 
-  it('builds a deterministic jest command pinning the PR head sha', () => {
+  it('builds a self-contained jest command that embeds the restore patch', () => {
     const cmd = buildReproduceCommand({ ...opts, testRunner: 'jest' });
     assert.equal(
       cmd,
       'git fetch origin pull/42/head && git checkout deadbeefcafe && ' +
-        'git apply -R restoration-test-hunks.patch && ' +
-        'npx jest --runTestsByPath test/calc.test.ts test/calc-extra.test.ts',
+        "git apply -R <<'SWARM_RESTORE_PATCH' && " +
+        'npx jest --runTestsByPath test/calc.test.ts test/calc-extra.test.ts\n' +
+        PATCH +
+        '\nSWARM_RESTORE_PATCH',
     );
     assert.equal(cmd, buildReproduceCommand({ ...opts, testRunner: 'jest' }), 'deterministic');
   });
 
-  it('builds a deterministic vitest command pinning the PR head sha', () => {
+  it('builds a self-contained vitest command that embeds the restore patch', () => {
     const cmd = buildReproduceCommand({ ...opts, testRunner: 'vitest' });
     assert.equal(
       cmd,
       'git fetch origin pull/42/head && git checkout deadbeefcafe && ' +
-        'git apply -R restoration-test-hunks.patch && ' +
-        'npx vitest run test/calc.test.ts test/calc-extra.test.ts',
+        "git apply -R <<'SWARM_RESTORE_PATCH' && " +
+        'npx vitest run test/calc.test.ts test/calc-extra.test.ts\n' +
+        PATCH +
+        '\nSWARM_RESTORE_PATCH',
     );
   });
 
-  it('builds a deterministic mocha command pinning the PR head sha', () => {
+  it('builds a self-contained mocha command that embeds the restore patch', () => {
     const cmd = buildReproduceCommand({ ...opts, testRunner: 'mocha' });
     assert.equal(
       cmd,
       'git fetch origin pull/42/head && git checkout deadbeefcafe && ' +
-        'git apply -R restoration-test-hunks.patch && ' +
-        'npx mocha test/calc.test.ts test/calc-extra.test.ts',
+        "git apply -R <<'SWARM_RESTORE_PATCH' && " +
+        'npx mocha test/calc.test.ts test/calc-extra.test.ts\n' +
+        PATCH +
+        '\nSWARM_RESTORE_PATCH',
     );
+  });
+
+  it('needs no external file: the embedded heredoc carries the patch', () => {
+    const cmd = buildReproduceCommand({ ...opts, testRunner: 'mocha' });
+    assert.ok(!cmd.includes('restoration-test-hunks.patch'), 'no external patch file referenced');
+    assert.ok(cmd.includes(PATCH.trimEnd()), 'the restore patch is embedded inline');
   });
 
   it('falls back to fetching the pinned sha when the ref carries no PR number', () => {
@@ -893,9 +908,10 @@ describe('execution-grounded / test-restoration buildTestCommand', () => {
         prHeadSha: 'deadbeefcafe',
         testFiles: files,
         testRunner: runner,
+        revertedHunkPatch: '--- a/test/calc.test.ts\n+++ b/test/calc.test.ts\n',
       });
       assert.ok(
-        reproduce.endsWith(`${command} ${args.join(' ')}`),
+        reproduce.includes(`&& ${command} ${args.join(' ')}\n`),
         `reproduce command for ${runner} must render the same invocation`,
       );
     }

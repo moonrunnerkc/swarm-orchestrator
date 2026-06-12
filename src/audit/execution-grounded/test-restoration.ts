@@ -237,19 +237,27 @@ function assertShellSafe(opts: { prRef: string; prHeadSha: string; testFiles: st
   }
 }
 
+/** The quoted heredoc delimiter the reproduce command feeds to `git apply -R`.
+ *  Single-quoted so the embedded patch is literal (no shell expansion), and
+ *  distinctive enough not to collide with a unified-diff body. */
+const RESTORE_PATCH_DELIMITER = 'SWARM_RESTORE_PATCH';
+
 /**
- * Pure: deterministic reproduce command for the proof record.
+ * Pure: deterministic, self-contained reproduce command for the proof record.
  *
- * `restoration-test-hunks.patch` is the proof record's `revertedHunkPatch`
- * saved to a file; `git apply -R` re-restores the tests the PR tampered with.
- * No timestamps, no absolute local paths: the same inputs always render the
- * same string.
+ * The reverted-hunk patch is embedded inline in a quoted heredoc, so the whole
+ * command pastes into a fresh checkout and runs without any external file: it
+ * fetches the PR head, checks it out, `git apply -R`s the restore patch from
+ * stdin to put the original tests back, and runs the affected tests against the
+ * PR's source. No timestamps, no absolute local paths: the same inputs always
+ * render the same string.
  */
 export function buildReproduceCommand(opts: {
   prRef: string;
   prHeadSha: string;
   testFiles: string[];
   testRunner: TestRunner;
+  revertedHunkPatch: string;
 }): string {
   assertShellSafe(opts);
   // Throws RESTORATION_RUNNER_UNSUPPORTED for ava/node-test; the published
@@ -260,12 +268,13 @@ export function buildReproduceCommand(opts: {
     prNumber !== undefined
       ? `git fetch origin pull/${prNumber}/head`
       : `git fetch origin ${opts.prHeadSha}`;
-  return [
-    fetch,
-    `git checkout ${opts.prHeadSha}`,
-    'git apply -R restoration-test-hunks.patch',
-    `${command} ${args.join(' ')}`,
-  ].join(' && ');
+  // The heredoc feeds the patch to `git apply -R` on stdin; the trailing
+  // `&& <testcmd>` runs only if the restore applied, and the patch body plus
+  // the closing delimiter follow on their own lines.
+  const head =
+    `${fetch} && git checkout ${opts.prHeadSha} && ` +
+    `git apply -R <<'${RESTORE_PATCH_DELIMITER}' && ${command} ${args.join(' ')}`;
+  return `${head}\n${opts.revertedHunkPatch.replace(/\n+$/, '')}\n${RESTORE_PATCH_DELIMITER}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -939,6 +948,7 @@ function runRestorationPipeline(input: TestRestorationInput): RestorationProofRe
         prHeadSha: input.prHeadSha,
         testFiles,
         testRunner: runner,
+        revertedHunkPatch: patch,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

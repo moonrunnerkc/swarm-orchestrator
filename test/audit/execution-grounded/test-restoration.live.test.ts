@@ -243,7 +243,7 @@ describe('execution-grounded / test-restoration runTestRestoration (early exits,
     assert.deepEqual(record.testFiles, ['test/calc.test.js']);
     assert.deepEqual(record.failingTests, ['calc › adds']);
     assert.ok(record.reproduceCommand.length > 0, 'a proven record must ship a reproduce command');
-    assert.ok(record.reproduceCommand.includes('git apply -R restoration-test-hunks.patch'));
+    assert.ok(record.reproduceCommand.includes("git apply -R <<'SWARM_RESTORE_PATCH'"));
     assert.ok(record.reproduceCommand.includes(ws.headSha));
     assert.ok(record.reproduceCommand.endsWith('npx mocha test/calc.test.js'));
     assert.ok(record.revertedHunkPatch.includes('test/calc.test.js'));
@@ -273,7 +273,7 @@ describe('execution-grounded / test-restoration runTestRestoration (early exits,
     assert.deepEqual(record.testFiles, ['test/calc.test.js']);
     assert.deepEqual(record.failingTests, ['calc › adds']);
     assert.ok(record.reproduceCommand.length > 0, 'a proven record must ship a reproduce command');
-    assert.ok(record.reproduceCommand.includes('git apply -R restoration-test-hunks.patch'));
+    assert.ok(record.reproduceCommand.includes("git apply -R <<'SWARM_RESTORE_PATCH'"));
     assert.ok(
       record.reason !== undefined && record.reason.includes('control 2 vacuous'),
       `the null control must explain itself, got: ${record.reason}`,
