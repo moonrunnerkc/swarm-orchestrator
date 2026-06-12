@@ -166,6 +166,11 @@ const TEST_FILE_PATTERNS: RegExp[] = [
   /(^|\/)__tests__\//,
   /\.test\.[jt]sx?$/,
   /\.spec\.[jt]sx?$/,
+  // Single-file mocha convention: the whole suite in a file literally named
+  // test.js / tests.js (is-number, kind-of, is-glob, and many small npm
+  // packages). Anchored to the basename so latest.js, attest.ts, and
+  // contest.js do not match.
+  /(^|\/)tests?\.[jt]sx?$/,
   /(^|\/)test_[^/]+\.py$/,
   /(^|\/)[^/]+_test\.py$/,
   /(^|\/)tests?\//,
