@@ -28,11 +28,13 @@ import type { MockRestorationProofRecord } from '../execution-grounded/mock-rest
 import type { NoOpFixProofRecord } from '../execution-grounded/no-op-fix-restoration';
 import type { TypeSuppressionProofRecord } from '../execution-grounded/type-suppression-restoration';
 import type { FakeRefactorProofRecord } from '../execution-grounded/fake-refactor-restoration';
+import type { DeadBranchProofRecord } from '../execution-grounded/dead-branch-restoration';
 import type {
   BlockTrigger,
   BlockTriggerEvidence,
   ClaimFalsifiedEvidence,
   CorroboratedUnderConstraintEvidence,
+  DeadBranchProvenEvidence,
   FakeRefactorProvenEvidence,
   MockMutationProvenEvidence,
   NoOpFixProvenEvidence,
@@ -47,6 +49,7 @@ export type {
   BlockTriggerKind,
   ClaimFalsifiedEvidence,
   CorroboratedUnderConstraintEvidence,
+  DeadBranchProvenEvidence,
   FakeRefactorProvenEvidence,
   MockMutationProvenEvidence,
   NoOpFixProvenEvidence,
@@ -549,6 +552,62 @@ function referenceCount(n: number): string {
   return `${n} reference${n === 1 ? '' : 's'}`;
 }
 
+export interface DeadBranchProvenInput {
+  /** Dead-branch restoration proof records from the execution-grounded run; the
+   *  detector keeps only the proven, all-controls-true ones. */
+  deadBranchRestorations: DeadBranchProofRecord[];
+}
+
+/**
+ * T9: a dead-branch restoration proof. The PR inserted an `if` branch the
+ * structural detector flagged as dead; the affected tests were run with the
+ * branch instrumented, a positive control before the `if` fired (the condition
+ * was evaluated) and the branch-body probe never fired (the body never ran), so
+ * the inserted branch is dead in the exercised paths. Fires one candidate per
+ * `proven` record whose three controls are all true; a proven record with any
+ * unexecuted (null) or false control produces nothing (fail closed). The
+ * reproduce command runs the affected tests under coverage to show the branch
+ * line uncovered.
+ *
+ * @param input the run's dead-branch restoration proof records
+ * @returns one block-trigger candidate per fully-controlled proof, or []
+ */
+export function detectDeadBranchProven(input: DeadBranchProvenInput): BlockTrigger[] {
+  const out: BlockTrigger[] = [];
+  for (const record of input.deadBranchRestorations) {
+    if (record.verdict !== 'proven') continue;
+    const { branchResolved, suitePassesAsSubmitted, branchNeverExecuted } = record.controls;
+    if (
+      branchResolved !== true ||
+      suitePassesAsSubmitted !== true ||
+      branchNeverExecuted !== true
+    ) {
+      continue;
+    }
+    const evidence: DeadBranchProvenEvidence = {
+      kind: 'dead-branch-proven',
+      verdict: 'proven',
+      file: record.findingFile,
+      branchCondition: record.branchCondition,
+      branchLine: record.branchLine,
+      affectedTestFiles: record.affectedTestFiles,
+      controls: record.controls,
+      reproduceCommand: record.reproduceCommand,
+    };
+    out.push({
+      kind: 'dead-branch-proven',
+      summary:
+        `A dead-branch proof at ${record.findingFile}:${record.branchLine}: the inserted ` +
+        `\`if (${record.branchCondition})\` branch was evaluated by the affected tests ` +
+        `(${record.affectedTestFiles.join(', ')}) but its body never executed, so it is ` +
+        `unreachable dead code.`,
+      reproduce: record.reproduceCommand,
+      evidence,
+    });
+  }
+  return out;
+}
+
 /** The inputs each trigger needs, bundled so one call produces every candidate
  *  a run can raise. A field left undefined skips that trigger (e.g. an audit
  *  with no declared obligations omits `obligations`). */
@@ -561,6 +620,7 @@ export interface BlockTriggerContext {
   noOpRestorations?: NoOpFixProvenInput;
   typeSuppressionRestorations?: TypeSuppressionProvenInput;
   fakeRefactorRestorations?: FakeRefactorProvenInput;
+  deadBranchRestorations?: DeadBranchProvenInput;
 }
 
 /**
@@ -587,5 +647,7 @@ export function detectBlockTriggers(context: BlockTriggerContext): BlockTrigger[
     out.push(...detectTypeSuppressionProven(context.typeSuppressionRestorations));
   if (context.fakeRefactorRestorations !== undefined)
     out.push(...detectFakeRefactorProven(context.fakeRefactorRestorations));
+  if (context.deadBranchRestorations !== undefined)
+    out.push(...detectDeadBranchProven(context.deadBranchRestorations));
   return out;
 }

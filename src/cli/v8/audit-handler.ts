@@ -64,6 +64,7 @@ import type {
   PrAuditNoOpFixRestorationEntry,
   PrAuditTypeSuppressionRestorationEntry,
   PrAuditFakeRefactorRestorationEntry,
+  PrAuditDeadBranchRestorationEntry,
 } from '../../ledger/types';
 import { isExecutionGroundedCategory } from '../../audit/types';
 import { loadAuditConfig, type ExecutionGroundedConfig } from '../../audit/cheat-detector/audit-config';
@@ -73,6 +74,7 @@ import type { MockRestorationProofRecord } from '../../audit/execution-grounded/
 import type { NoOpFixProofRecord } from '../../audit/execution-grounded/no-op-fix-restoration';
 import type { TypeSuppressionProofRecord } from '../../audit/execution-grounded/type-suppression-restoration';
 import type { FakeRefactorProofRecord } from '../../audit/execution-grounded/fake-refactor-restoration';
+import type { DeadBranchProofRecord } from '../../audit/execution-grounded/dead-branch-restoration';
 import {
   corroborateStructuralFindings,
   executionSignalsFromOutcome,
@@ -413,6 +415,7 @@ async function runExecutionGroundedLayer(
   appendNoOpRestorationEntries(ledger, outcome.noOpRestorations, attribution);
   appendTypeSuppressionRestorationEntries(ledger, outcome.typeSuppressionRestorations, attribution);
   appendFakeRefactorRestorationEntries(ledger, outcome.fakeRefactorRestorations, attribution);
+  appendDeadBranchRestorationEntries(ledger, outcome.deadBranchRestorations, attribution);
 
   // Runtime corroboration (opt-in). When this run's execution layer actually
   // produced signals, mark the structural findings that a surviving mutant,
@@ -547,6 +550,30 @@ export function appendFakeRefactorRestorationEntries(
       reproduceCommand: r.reproduceCommand,
     };
     ledger.append<PrAuditFakeRefactorRestorationEntry>(payload, opts);
+  }
+}
+
+/** One pr-audit-dead-branch-restoration entry per dead-branch proof record,
+ *  every verdict included, so the ledger carries the full proof funnel. */
+export function appendDeadBranchRestorationEntries(
+  ledger: HashChainedLedger,
+  records: readonly DeadBranchProofRecord[],
+  attribution: LedgerAgentAttribution | undefined,
+): void {
+  const opts = attribution !== undefined ? { aiAgent: attribution } : undefined;
+  for (const r of records) {
+    const payload: Omit<PrAuditDeadBranchRestorationEntry, 'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'> = {
+      type: 'pr-audit-dead-branch-restoration',
+      category: r.category,
+      verdict: r.verdict,
+      findingFile: r.findingFile,
+      branchCondition: r.branchCondition,
+      branchLine: r.branchLine,
+      affectedTestFiles: r.affectedTestFiles,
+      controls: r.controls,
+      reproduceCommand: r.reproduceCommand,
+    };
+    ledger.append<PrAuditDeadBranchRestorationEntry>(payload, opts);
   }
 }
 
@@ -715,6 +742,9 @@ function buildBlockTriggers(
     },
     fakeRefactorRestorations: {
       fakeRefactorRestorations: outcome.fakeRefactorRestorations,
+    },
+    deadBranchRestorations: {
+      deadBranchRestorations: outcome.deadBranchRestorations,
     },
   });
 }

@@ -11,6 +11,7 @@ import type { MockRestorationControls } from '../execution-grounded/mock-restora
 import type { NoOpFixControls } from '../execution-grounded/no-op-fix-restoration';
 import type { TypeSuppressionControls } from '../execution-grounded/type-suppression-restoration';
 import type { FakeRefactorControls } from '../execution-grounded/fake-refactor-restoration';
+import type { DeadBranchControls } from '../execution-grounded/dead-branch-restoration';
 
 /** The verifiable-evidence triggers. Each is self-certifying and label-free:
  *  its truth comes from running the change, not from a label. */
@@ -22,7 +23,8 @@ export type BlockTriggerKind =
   | 'mock-mutation-proven'
   | 'no-op-fix-proven'
   | 'type-suppression-proven'
-  | 'fake-refactor-proven';
+  | 'fake-refactor-proven'
+  | 'dead-branch-proven';
 
 /** Every trigger kind, in a fixed order, for callers that iterate over all of
  *  them (the calibrator and the eligibility policy). */
@@ -35,6 +37,7 @@ export const ALL_BLOCK_TRIGGER_KINDS: readonly BlockTriggerKind[] = [
   'no-op-fix-proven',
   'type-suppression-proven',
   'fake-refactor-proven',
+  'dead-branch-proven',
 ];
 
 /**
@@ -238,6 +241,34 @@ export interface FakeRefactorProvenEvidence {
   reproduceCommand: string;
 }
 
+/**
+ * A dead-branch restoration proof: the PR inserted an `if` branch the structural
+ * detector flagged as dead, and execution confirms it. The affected tests (those
+ * whose import closure reaches the branch file) were run with the branch
+ * instrumented; a positive control before the `if` fired (the condition was
+ * evaluated) while the branch-body probe never fired (the body never ran), so the
+ * inserted branch is dead in the exercised paths. A branch the suite enters
+ * refutes instead. The three controls must all be true for the trigger to gate.
+ */
+export interface DeadBranchProvenEvidence {
+  kind: 'dead-branch-proven';
+  /** Pinned to `proven`: only a proven restoration record becomes evidence. */
+  verdict: 'proven';
+  /** The file the dead branch was inserted into. */
+  file: string;
+  /** The inserted branch's condition text (e.g. `false`, `0`). */
+  branchCondition: string;
+  /** The 1-based line of the inserted `if`. */
+  branchLine: number;
+  /** Repo tests whose closure reaches the branch file (what was run). */
+  affectedTestFiles: string[];
+  /** The proof's three internal controls, published as recorded. A candidate is
+   *  only emitted when all three are true; null means a check never ran. */
+  controls: DeadBranchControls;
+  /** Exact command a human runs to see the branch line stay uncovered. */
+  reproduceCommand: string;
+}
+
 export type BlockTriggerEvidence =
   | ClaimFalsifiedEvidence
   | CorroboratedUnderConstraintEvidence
@@ -246,7 +277,8 @@ export type BlockTriggerEvidence =
   | MockMutationProvenEvidence
   | NoOpFixProvenEvidence
   | TypeSuppressionProvenEvidence
-  | FakeRefactorProvenEvidence;
+  | FakeRefactorProvenEvidence
+  | DeadBranchProvenEvidence;
 
 /**
  * A block-trigger candidate. `reproduce` is the exact command the author runs

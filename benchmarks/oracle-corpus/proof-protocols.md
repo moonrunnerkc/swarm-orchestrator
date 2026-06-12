@@ -32,6 +32,7 @@ such, never padded.
 | `no-op-fix-proven` | `proven` (1/1) | `refuted` (1/1) | `no-fix-claim`, `no-source-hunks`, `no-affected-tests`, `closure-capped`, `suite-already-failing`, `flaky`, `patch-apply-failed`, `runner-unsupported`, `no-workspace`, `execution-error` | `test/audit/execution-grounded/no-op-fix-restoration-e2e.test.ts` (live vitest), `test/audit/execution-grounded/no-op-fix-restoration.test.ts` (pure core) |
 | `type-suppression-proven` | `proven` (1/1) | `refuted` (1/1) | `non-typescript-file`, `not-tsc-checkable`, `no-suppression-hunks`, `no-tsconfig`, `tsc-unavailable`, `file-drifted`, `already-failing`, `patch-apply-failed`, `no-workspace`, `execution-error` | `test/audit/execution-grounded/type-suppression-restoration-e2e.test.ts` (live tsc), `test/audit/execution-grounded/type-suppression-restoration.test.ts` (pure core), `test/audit/execution-grounded/proof-wiring.live.test.ts` (seam wiring) |
 | `fake-refactor-proven` | `proven` (1/1) | `refuted` (1/1) | `non-source-file`, `no-rename`, `ambiguous-old-symbol`, `old-symbol-still-declared`, `scan-capped`, `no-workspace`, `execution-error` | `test/audit/execution-grounded/fake-refactor-restoration-e2e.test.ts` (real checkout), `test/audit/execution-grounded/fake-refactor-restoration.test.ts` (pure core, full orchestrator), `test/audit/execution-grounded/proof-wiring.live.test.ts` (seam wiring) |
+| `dead-branch-proven` | `proven` (1/1) | `refuted` (1/1) | `non-source-file`, `no-dead-branch`, `ambiguous-branch`, `no-affected-tests`, `closure-capped`, `suite-already-failing`, `instrumentation-failed`, `control-not-reached`, `runner-unsupported`, `no-workspace`, `execution-error` | `test/audit/execution-grounded/dead-branch-restoration-e2e.test.ts` (live mocha, CommonJS), `test/audit/execution-grounded/dead-branch-restoration.test.ts` (pure core, full orchestrator), `test/audit/execution-grounded/proof-wiring.live.test.ts` (seam wiring) |
 | restoration closure refuter | n/a (refuter only: it never confirms, only downgrades a behaviorally-proven restoration) | refutes on a confident no-link; abstains (keeps the proof) on a capped BFS, no source change, or a closure error | `test-not-closure-linked` | `test/audit/execution-grounded/restoration-closure-link.test.ts`, `test/audit/execution-grounded/test-restoration.live.test.ts` |
 
 Live e2e run (`SWARM_EG_INTEGRATION=1`): `no-op-fix-proven` confirmed in 2.3s,
@@ -112,3 +113,35 @@ when all three per-instance controls are green
 name, an ambiguous rename, or a capped scan are fail-closed not-proven verdicts
 (never refuted, never proven). The proof spawns no process; it reads the
 checkout the audit already provisioned.
+
+## What a dead-branch proof gates on
+
+The structural dead-branch-insertion detector flags an inserted `if` whose
+condition is a literal that can never be true (`if (false)`, `if (0)`, ...), but
+it reads the condition shape, not the running program. The proof instruments the
+inserted branch in the provisioned head workspace and runs the affected tests
+(those whose import closure reaches the branch file): a probe inside the branch
+body records whether the body ever runs, and a positive-control probe placed
+immediately before the `if` records whether the condition is evaluated at all. A
+`dead-branch-proven` candidate becomes a block only when all three per-instance
+controls are green (`src/audit/gate/self-certifying.ts`):
+
+1. `branchResolved`: a single inserted if-branch with a brace block body is
+   resolved from the diff at the finding line (the `if` line is one the PR added,
+   and its then-clause is a block the probe can enter).
+2. `suitePassesAsSubmitted`: the affected tests pass with the PR applied and the
+   probes injected (a suite red as submitted is a case CI catches, not a clean
+   baseline).
+3. `branchNeverExecuted`: across two instrumented runs the positive control fired
+   (the `if` was evaluated) and the branch-body probe never fired (the body never
+   ran).
+
+`refuted` is the branch-executed case: a probe inside the body fired, so the
+branch is live, not dead, and the finding is demoted. A control that never fired
+(`control-not-reached`: the affected tests never evaluated the `if`), an
+ambiguous or unresolved branch, an empty or capped affected-test closure, or a
+failed instrumentation are fail-closed not-proven verdicts (never refuted, never
+proven). The injected probe uses a path-baked `require('node:fs')` write, so a
+pure-ESM module that cannot `require` records nothing and lands on
+`control-not-reached` rather than a false proof; CommonJS and transpiled-CommonJS
+runners (mocha, jest, vitest) record reliably.

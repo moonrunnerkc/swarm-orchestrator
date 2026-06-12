@@ -65,6 +65,7 @@ describe('self-certifying tier', () => {
       [...SELF_CERTIFYING_TRIGGERS].sort(),
       [
         'claim-falsified',
+        'dead-branch-proven',
         'fake-refactor-proven',
         'mock-mutation-proven',
         'no-op-fix-proven',
@@ -78,6 +79,7 @@ describe('self-certifying tier', () => {
     assert.equal(isSelfCertifying('no-op-fix-proven'), true);
     assert.equal(isSelfCertifying('type-suppression-proven'), true);
     assert.equal(isSelfCertifying('fake-refactor-proven'), true);
+    assert.equal(isSelfCertifying('dead-branch-proven'), true);
     assert.equal(isSelfCertifying('corroborated-under-constraint'), false);
   });
 });

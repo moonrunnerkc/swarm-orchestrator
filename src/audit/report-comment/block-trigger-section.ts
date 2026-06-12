@@ -15,6 +15,7 @@ import type {
   TestTamperProvenEvidence,
   TypeSuppressionProvenEvidence,
   FakeRefactorProvenEvidence,
+  DeadBranchProvenEvidence,
 } from '../gate/block-trigger-types';
 
 /**
@@ -106,6 +107,8 @@ function renderEvidence(evidence: BlockTriggerEvidence): string[] {
       return renderTypeSuppressionProven(evidence);
     case 'fake-refactor-proven':
       return renderFakeRefactorProven(evidence);
+    case 'dead-branch-proven':
+      return renderDeadBranchProven(evidence);
   }
 }
 
@@ -216,6 +219,27 @@ function renderFakeRefactorProven(evidence: FakeRefactorProvenEvidence): string[
     `| Old symbol resolved unambiguously from the diff | ${controlMark(c.oldSymbolResolved)} |`,
     `| Old symbol no longer declared anywhere in the checkout | ${controlMark(c.oldSymbolDeclarationRemoved)} |`,
     `| At least one reference to the old symbol survives | ${controlMark(c.oldSymbolStillReferenced)} |`,
+    '',
+  ];
+}
+
+/** The three controls behind a dead-branch proof, in a fixed order so the table
+ *  renders byte-identical for the same proof. The trigger only gates when all
+ *  three are ✅ (see self-certifying.controlsAllGreen). */
+function renderDeadBranchProven(evidence: DeadBranchProvenEvidence): string[] {
+  const c = evidence.controls;
+  return [
+    `*Verdict:* \`${evidence.verdict}\` — dead-branch; the inserted ` +
+      `\`if (${evidence.branchCondition})\` at ${evidence.file}:${evidence.branchLine} never ` +
+      `executes.`,
+    '',
+    `*Affected test(s) that reached the branch:* ${evidence.affectedTestFiles.join(', ')}.`,
+    '',
+    '| Control | Result |',
+    '| --- | --- |',
+    `| A single inserted if-branch with a block body resolved from the diff | ${controlMark(c.branchResolved)} |`,
+    `| The affected tests pass as submitted with the probes injected | ${controlMark(c.suitePassesAsSubmitted)} |`,
+    `| The condition was evaluated but the branch body never ran | ${controlMark(c.branchNeverExecuted)} |`,
     '',
   ];
 }

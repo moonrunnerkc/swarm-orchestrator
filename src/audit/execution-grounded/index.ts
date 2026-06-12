@@ -64,6 +64,10 @@ import {
   runFakeRefactorRestoration,
   type FakeRefactorProofRecord,
 } from './fake-refactor-restoration';
+import {
+  runDeadBranchRestoration,
+  type DeadBranchProofRecord,
+} from './dead-branch-restoration';
 import { parsePrIntent, type PrIntent } from '../cheat-detector/pr-intent';
 
 const log = getLogger('audit:execution-grounded');
@@ -325,6 +329,10 @@ export interface ExecutionGroundedOutcome {
    *  phase evaluated (every verdict included). Finding-gated; the proof is a
    *  static scan of the head checkout, not a test run. */
   fakeRefactorRestorations: FakeRefactorProofRecord[];
+  /** One proof record per qualifying `dead-branch-insertion` finding the
+   *  restoration phase evaluated (every verdict included). Finding-gated; the
+   *  proof instruments the inserted branch and runs the affected tests. */
+  deadBranchRestorations: DeadBranchProofRecord[];
   skipped: string[];
 }
 
@@ -340,6 +348,7 @@ interface ProofCandidates {
   noOp: { findingFile: string; prIntent: PrIntent; linkedIssueCount: number } | null;
   typeSuppression: Finding[];
   fakeRefactor: Finding[];
+  deadBranch: Finding[];
 }
 
 function selectProofCandidates(
@@ -378,7 +387,13 @@ function selectProofCandidates(
   const fakeRefactor = structuralFindings.filter(
     (f) => f.category === 'fake-refactor' && f.severity !== 'info',
   );
-  return { test, mock, noOp, typeSuppression, fakeRefactor };
+  // The structural dead-branch-insertion detector emits `block`; the proof
+  // instruments the inserted branch and runs the affected tests to confirm it is
+  // unreachable (or refute it). Select every non-demoted dead-branch finding.
+  const deadBranch = structuralFindings.filter(
+    (f) => f.category === 'dead-branch-insertion' && f.severity !== 'info',
+  );
+  return { test, mock, noOp, typeSuppression, fakeRefactor, deadBranch };
 }
 
 /** One honesty record per qualifying structural finding when restoration
@@ -584,6 +599,52 @@ export function fakeRefactorBudgetExhaustedRecords(
   }));
 }
 
+/** no-workspace honesty records for the dead-branch candidate findings. */
+export function noWorkspaceDeadBranchRecords(
+  findings: readonly Finding[],
+  detail: string,
+): DeadBranchProofRecord[] {
+  return findings.map((f) => ({
+    schemaVersion: 1,
+    verdict: 'not-proven:no-workspace',
+    category: 'dead-branch-insertion',
+    findingFile: f.location.file,
+    branchCondition: '',
+    branchLine: 0,
+    affectedTestFiles: [],
+    controls: {
+      branchResolved: null,
+      suitePassesAsSubmitted: null,
+      branchNeverExecuted: null,
+    },
+    reproduceCommand: '',
+    reason: `dead-branch restoration could not run: no sandbox workspace was provisioned (${detail})`,
+  }));
+}
+
+/** Budget-exhausted honesty records for dead-branch candidates the per-PR
+ *  wall-clock ran out on before the instrumented run executed. */
+export function deadBranchBudgetExhaustedRecords(
+  findings: readonly Finding[],
+): DeadBranchProofRecord[] {
+  return findings.map((f) => ({
+    schemaVersion: 1,
+    verdict: 'not-proven:execution-error',
+    category: 'dead-branch-insertion',
+    findingFile: f.location.file,
+    branchCondition: '',
+    branchLine: 0,
+    affectedTestFiles: [],
+    controls: {
+      branchResolved: null,
+      suitePassesAsSubmitted: null,
+      branchNeverExecuted: null,
+    },
+    reproduceCommand: '',
+    reason: 'wall-clock budget exhausted before the dead-branch instrumented run executed',
+  }));
+}
+
 /** The no-op-fix proof is PR-level, so its honesty records carry one synthetic
  *  candidate (the first changed non-test source file). */
 function noOpHonestyRecord(
@@ -785,6 +846,33 @@ export function applyFakeRefactorRestorationToFinding(
   }
 }
 
+/**
+ * Ride a dead-branch verdict onto its `dead-branch-insertion` finding, in place.
+ * Refuted demotes the block to advisory (the suite entered the branch, so it is
+ * live, not dead); proven keeps the block and records the tests that reached the
+ * branch as runtime corroboration. Every other verdict is record-only.
+ */
+export function applyDeadBranchRestorationToFinding(
+  finding: Finding,
+  record: DeadBranchProofRecord,
+): void {
+  if (record.verdict === 'refuted') {
+    finding.severity = 'info';
+    finding.confidence = 'structural-only';
+    finding.evidence =
+      `${finding.evidence}\n` +
+      `demoted: the inserted branch executed under the affected tests, so it is live, not dead`;
+    return;
+  }
+  if (record.verdict === 'proven') {
+    finding.runtimeCorroboration = {
+      signal: 'dead-branch-unreached',
+      reachedByTests: record.affectedTestFiles,
+    };
+    setFindingConfidence(finding);
+  }
+}
+
 /** Persist a typed proof envelope under `<evidenceDir>/<filename>`, identity
  *  stamped and written on every enabled run (empty included) so a stale file
  *  from an earlier head SHA never outlives its run. Generic sibling of
@@ -830,6 +918,7 @@ export interface ProofRestorationOutcome {
   noOpRestorations: NoOpFixProofRecord[];
   typeSuppressionRestorations: TypeSuppressionProofRecord[];
   fakeRefactorRestorations: FakeRefactorProofRecord[];
+  deadBranchRestorations: DeadBranchProofRecord[];
   skipped: string[];
 }
 
@@ -851,6 +940,7 @@ export function runProofRestorations(input: ProofRestorationInput): ProofRestora
   const noOpRestorations: NoOpFixProofRecord[] = [];
   const typeSuppressionRestorations: TypeSuppressionProofRecord[] = [];
   const fakeRefactorRestorations: FakeRefactorProofRecord[] = [];
+  const deadBranchRestorations: DeadBranchProofRecord[] = [];
   const candidates = selectProofCandidates(
     input.structuralFindings,
     input.prDiff,
@@ -1000,12 +1090,47 @@ export function runProofRestorations(input: ProofRestorationInput): ProofRestora
     applyFakeRefactorRestorationToFinding(finding, record);
   }
 
+  // T9: dead-branch restoration (finding-gated; instruments the branch and runs
+  // the affected tests).
+  for (let i = 0; i < candidates.deadBranch.length; i++) {
+    const finding = candidates.deadBranch[i]!;
+    if (restorationBudgetExhausted(input.deadline, Date.now())) {
+      const dropped = candidates.deadBranch.length - i;
+      skipped.push(
+        `dead-branch-restoration: wall-clock budget exhausted; ${dropped} finding(s) recorded without execution`,
+      );
+      deadBranchRestorations.push(
+        ...deadBranchBudgetExhaustedRecords(candidates.deadBranch.slice(i)),
+      );
+      break;
+    }
+    const record = runDeadBranchRestoration({
+      finding: {
+        category: 'dead-branch-insertion',
+        file: finding.location.file,
+        line: finding.location.line,
+      },
+      prDiff: input.prDiff,
+      prRef: input.prRef,
+      prHeadSha: input.prHeadSha,
+      postWorkspacePath: input.postWorkspacePath,
+      repoRoot: input.postWorkspacePath,
+      testRunner: input.testRunner,
+      packageManager: input.packageManager,
+      timeoutMs: timeoutFor(),
+      ...common,
+    });
+    deadBranchRestorations.push(record);
+    applyDeadBranchRestorationToFinding(finding, record);
+  }
+
   return {
     restorations,
     mockRestorations,
     noOpRestorations,
     typeSuppressionRestorations,
     fakeRefactorRestorations,
+    deadBranchRestorations,
     skipped,
   };
 }
@@ -1018,7 +1143,7 @@ export function runProofRestorations(input: ProofRestorationInput): ProofRestora
  */
 export async function runExecutionGrounded(input: ExecutionGroundedInput): Promise<ExecutionGroundedOutcome> {
   const skipped: string[] = [];
-  const empty: ExecutionGroundedOutcome = { findings: [], mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], fakeRefactorRestorations: [], skipped };
+  const empty: ExecutionGroundedOutcome = { findings: [], mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], fakeRefactorRestorations: [], deadBranchRestorations: [], skipped };
   if (!input.config.enabled) {
     // Disabled means the layer never ran at all: no honesty records, because
     // nothing was promised to run.
@@ -1041,6 +1166,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
     noOpRestorations: readonly NoOpFixProofRecord[];
     typeSuppressionRestorations: readonly TypeSuppressionProofRecord[];
     fakeRefactorRestorations: readonly FakeRefactorProofRecord[];
+    deadBranchRestorations: readonly DeadBranchProofRecord[];
   }): void => {
     if (input.evidenceDir === undefined) return;
     persistRestorationProofs(
@@ -1051,6 +1177,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
     writeProofEnvelope(input.evidenceDir, 'no-op-fix-restoration-proof.json', prRef, input.prHeadSha, out.noOpRestorations);
     writeProofEnvelope(input.evidenceDir, 'type-suppression-restoration-proof.json', prRef, input.prHeadSha, out.typeSuppressionRestorations);
     writeProofEnvelope(input.evidenceDir, 'fake-refactor-restoration-proof.json', prRef, input.prHeadSha, out.fakeRefactorRestorations);
+    writeProofEnvelope(input.evidenceDir, 'dead-branch-restoration-proof.json', prRef, input.prHeadSha, out.deadBranchRestorations);
   };
   // Fail closed: the envelopes are written empty before any phase that can
   // throw, so an exception escaping the run cannot leave a stale envelope
@@ -1069,6 +1196,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
       detail,
     );
     empty.fakeRefactorRestorations = noWorkspaceFakeRefactorRecords(candidates.fakeRefactor, detail);
+    empty.deadBranchRestorations = noWorkspaceDeadBranchRecords(candidates.deadBranch, detail);
     persistProofs(empty);
     return empty;
   };
@@ -1129,7 +1257,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
 
   const deadline = Date.now() + input.config.maxWallClockPerPrMs;
   const findings: Finding[] = [];
-  const outcome: ExecutionGroundedOutcome = { findings, mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], fakeRefactorRestorations: [], skipped };
+  const outcome: ExecutionGroundedOutcome = { findings, mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], fakeRefactorRestorations: [], deadBranchRestorations: [], skipped };
   const cacheArg = input.cacheDir !== undefined ? { cacheDir: input.cacheDir } : {};
 
   try {
@@ -1269,6 +1397,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
     outcome.noOpRestorations = proofs.noOpRestorations;
     outcome.typeSuppressionRestorations = proofs.typeSuppressionRestorations;
     outcome.fakeRefactorRestorations = proofs.fakeRefactorRestorations;
+    outcome.deadBranchRestorations = proofs.deadBranchRestorations;
     skipped.push(...proofs.skipped);
     persistProofs(outcome);
   } finally {

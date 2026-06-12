@@ -160,7 +160,8 @@ export interface RuntimeCorroboration {
     | 'repro-still-fails'
     | 'restored-test-fails'
     | 'type-error-surfaces'
-    | 'dangling-reference';
+    | 'dangling-reference'
+    | 'dead-branch-unreached';
   /** Surviving-mutant ids, e.g. `BlockStatement@src/x.ts:12 -> Survived`. */
   mutants?: string[];
   /** Changed lines no test executed. */
@@ -177,6 +178,9 @@ export interface RuntimeCorroboration {
    *  restoration found surviving in the head checkout (signal
    *  `dangling-reference`). */
   references?: string[];
+  /** Repo tests that reached the inserted branch's condition but never its body
+   *  in a proven dead-branch restoration (signal `dead-branch-unreached`). */
+  reachedByTests?: string[];
 }
 
 export interface AuditAgentAttribution {
