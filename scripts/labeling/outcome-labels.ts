@@ -675,11 +675,18 @@ async function main(): Promise<void> {
   );
 }
 
-main().catch((err: unknown) => {
-  if (err instanceof SwarmError) {
-    log.error(`${err.message}${err.remediation ? ` — ${err.remediation}` : ''}`);
-  } else {
-    log.error(err instanceof Error ? err.stack ?? err.message : String(err));
-  }
-  process.exit(1);
-});
+// Guard the entry point so importing this module for its reusable core
+// (findOutcomeEvidence, defaultBranchOf) does not trigger a live labeling run
+// as a side effect. Without this, any module that imports the shared core (the
+// confirmed-bad miners) would kick off a full GitHub API labeling pass at import
+// time and rewrite the committed outcome-labels.json.
+if (require.main === module) {
+  main().catch((err: unknown) => {
+    if (err instanceof SwarmError) {
+      log.error(`${err.message}${err.remediation ? ` — ${err.remediation}` : ''}`);
+    } else {
+      log.error(err instanceof Error ? err.stack ?? err.message : String(err));
+    }
+    process.exit(1);
+  });
+}

@@ -1,0 +1,56 @@
+name: Backward mine confirmed-bad
+
+# Nightly backward mine of outcome-confirmed-bad agent commits. Starts from
+# revert markers in the wild, walks back to the reverted agent commit, confirms
+# the outcome with the same findOutcomeEvidence the corpus labeler uses, appends
+# to the confirmed-bad backward corpus, and commits the recomputed artifact.
+# Bounded by a hard API-call budget and a wall-clock cap so a run cannot run
+# away. The first scheduled execution happens after this workflow merges.
+
+on:
+  schedule:
+    - cron: '0 4 * * *' # 04:00 UTC nightly
+  workflow_dispatch:
+    inputs:
+      apiBudget:
+        description: 'Max GitHub API calls'
+        default: '1500'
+      limit:
+        description: 'Max entries to mine this run'
+        default: '50'
+
+permissions:
+  contents: write
+
+jobs:
+  mine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm run build
+      - name: Backward mine (capped)
+        # Secrets reach the step only through the env block, never via with: or args.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node dist/scripts/real-prs/mine-backward.js \
+            --api-budget "${{ github.event.inputs.apiBudget || '1500' }}" \
+            --wall-clock-ms 2400000 \
+            --limit "${{ github.event.inputs.limit || '50' }}" \
+            --months 18
+      - name: Commit the grown corpus
+        run: |
+          if ! git diff --quiet -- benchmarks/real-prs/agent-corpus/confirmed-bad-backward.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add benchmarks/real-prs/agent-corpus/confirmed-bad-backward.json
+            git commit -m "chore(corpus): nightly backward mine of confirmed-bad agent commits"
+            git push
+          else
+            echo "no new confirmed-bad entries this run"
+          fi
