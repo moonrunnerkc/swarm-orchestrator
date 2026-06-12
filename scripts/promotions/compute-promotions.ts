@@ -61,6 +61,10 @@ interface ViabilitySummary {
   egNodeMajor: number;
   nonViableReasonCounts: Record<string, number>;
   evidenceFile: string;
+  /** Present once the bounded EG run on the viable slice has completed
+   *  (the dispatch's aggregated corroborated summary, sibling of the screen).
+   *  Lets the corroborated reason read "measured" instead of "pending". */
+  measured?: { prsMeasured: number; prsCovered: number; corroboratedSummaryFile: string };
 }
 
 // The semantic categories the judge-primary path raises. They have no
@@ -329,17 +333,28 @@ export function corroboratedTier(
   // how much of the corpus could even provision for an EG run. Report that.
   const unmeasured = (reasonWithoutScreen: string): CorroboratedTier => {
     if (viability !== undefined) {
+      const screen =
+        `EG-viability screen: ${viability.viableCount}/${viability.screened} PRs provision ` +
+        `(Node + lockfile + test runner + node@${viability.egNodeMajor} engine; see ` +
+        `${viability.evidenceFile}).`;
+      const m = viability.measured;
+      const reason =
+        m !== undefined
+          ? `${screen} Bounded EG run completed: ${m.prsMeasured}/${m.prsCovered} of the viable ` +
+            `slice provisioned and ran the execution-grounded layer ` +
+            `(${m.prsCovered - m.prsMeasured} non-viable, reported in ${m.corroboratedSummaryFile}); ` +
+            `0 corroborated findings on the outcome-clean slice, so the corroborated tier stays ` +
+            `advisory (no outcome-bad PR in the slice can yield a true positive). Nothing gates on ` +
+            `the corroborated tier; the mining cron grows the slice toward an outcome-bad positive class.`
+          : `${screen} Corroborated precision is pending the bounded EG run on that ` +
+            `${viability.viableCount}-PR slice; nothing gates on the corroborated tier until then.`;
       return {
         truePositive: 0,
         falsePositive: 0,
         firingCount: 0,
         precision: 0,
         status: 'viability-screened',
-        reason:
-          `EG-viability screen: ${viability.viableCount}/${viability.screened} PRs provision ` +
-          `(Node + lockfile + test runner + node@${viability.egNodeMajor} engine; see ` +
-          `${viability.evidenceFile}). Corroborated precision is pending the bounded EG run on ` +
-          `that ${viability.viableCount}-PR slice; nothing gates on the corroborated tier until then.`,
+        reason,
       };
     }
     return {
@@ -393,13 +408,32 @@ function loadViability(scoresFile: string): ViabilitySummary | undefined {
       egNodeMajor: number;
       nonViableReasonCounts: Record<string, number>;
     };
-    return {
+    const summary: ViabilitySummary = {
       screened: v.screened,
       viableCount: v.viableCount,
       egNodeMajor: v.egNodeMajor,
       nonViableReasonCounts: v.nonViableReasonCounts,
       evidenceFile: path.relative(process.cwd(), file),
     };
+    const measuredFile = path.join(path.dirname(file), 'eg-viable-corroborated.json');
+    if (fs.existsSync(measuredFile)) {
+      try {
+        const m = JSON.parse(fs.readFileSync(measuredFile, 'utf8')) as {
+          prsMeasured: number;
+          prsCovered: number;
+        };
+        if (typeof m.prsMeasured === 'number' && typeof m.prsCovered === 'number') {
+          summary.measured = {
+            prsMeasured: m.prsMeasured,
+            prsCovered: m.prsCovered,
+            corroboratedSummaryFile: path.relative(process.cwd(), measuredFile),
+          };
+        }
+      } catch {
+        // A malformed summary leaves the tier reading "pending"; never throws.
+      }
+    }
+    return summary;
   } catch {
     return undefined;
   }
