@@ -30,6 +30,7 @@ such, never padded.
 | Protocol | confirm fixture → | refute fixture → | unprovable verdicts (fail-closed, never block) | evidence |
 | --- | --- | --- | --- | --- |
 | `no-op-fix-proven` | `proven` (1/1) | `refuted` (1/1) | `no-fix-claim`, `no-source-hunks`, `no-affected-tests`, `closure-capped`, `suite-already-failing`, `flaky`, `patch-apply-failed`, `runner-unsupported`, `no-workspace`, `execution-error` | `test/audit/execution-grounded/no-op-fix-restoration-e2e.test.ts` (live vitest), `test/audit/execution-grounded/no-op-fix-restoration.test.ts` (pure core) |
+| `type-suppression-proven` | `proven` (1/1) | `refuted` (1/1) | `non-typescript-file`, `not-tsc-checkable`, `no-suppression-hunks`, `no-tsconfig`, `tsc-unavailable`, `file-drifted`, `already-failing`, `patch-apply-failed`, `no-workspace`, `execution-error` | `test/audit/execution-grounded/type-suppression-restoration-e2e.test.ts` (live tsc), `test/audit/execution-grounded/type-suppression-restoration.test.ts` (pure core), `test/audit/execution-grounded/proof-wiring.live.test.ts` (seam wiring) |
 | restoration closure refuter | n/a (refuter only: it never confirms, only downgrades a behaviorally-proven restoration) | refutes on a confident no-link; abstains (keeps the proof) on a capped BFS, no source change, or a closure error | `test-not-closure-linked` | `test/audit/execution-grounded/restoration-closure-link.test.ts`, `test/audit/execution-grounded/test-restoration.live.test.ts` |
 
 Live e2e run (`SWARM_EG_INTEGRATION=1`): `no-op-fix-proven` confirmed in 2.3s,
@@ -61,3 +62,28 @@ controls are green (`src/audit/gate/self-certifying.ts`):
 
 Any null or false control leaves the finding advisory. The affected-test set is
 empty or capped → no proof, not a block.
+
+## What a type-suppression proof gates on
+
+The structural type-suppression detector flags an added `@ts-ignore` /
+`@ts-expect-error` but cannot tell whether the directive was hiding a real type
+error or papering over nothing. The proof reverts only the added directive in
+the provisioned head workspace and runs `tsc` scoped to the finding's file. A
+`type-suppression-proven` candidate becomes a block only when all three
+per-instance controls are green (`src/audit/gate/self-certifying.ts`):
+
+1. `directiveRemoved`: the added directive line(s) were located in the workspace
+   file and reverted (the counterfactual was applied).
+2. `fileCleanAsSubmitted`: tsc reports zero diagnostics in the file with the
+   directive in place (a file already red as submitted is a case CI catches).
+3. `diagnosticSurfacesWhenRemoved`: with the directive reverted, tsc reports at
+   least one diagnostic in the file (the error the directive was hiding).
+
+Scope decisions: only `@ts-ignore` and `@ts-expect-error` are line-scoped
+directives tsc can adjudicate. `@ts-nocheck` (whole-file) is too broad to
+localize, and `eslint-disable` / `# type: ignore` / `@SuppressWarnings` silence
+checkers tsc does not run, so each lands on a fail-closed not-proven verdict
+(`not-tsc-checkable`) rather than a refuted or proven one. A `.js`/`.jsx`
+finding file is fail-closed (`non-typescript-file`) because tsc only checks it
+under `checkJs`, which the proof does not assume. Any null or false control
+leaves the finding advisory.

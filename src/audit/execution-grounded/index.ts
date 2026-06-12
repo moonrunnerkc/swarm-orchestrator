@@ -56,6 +56,10 @@ import {
 } from './test-restoration';
 import { runMockRestoration, type MockRestorationProofRecord } from './mock-restoration';
 import { runNoOpFixRestoration, type NoOpFixProofRecord } from './no-op-fix-restoration';
+import {
+  runTypeSuppressionRestoration,
+  type TypeSuppressionProofRecord,
+} from './type-suppression-restoration';
 import { parsePrIntent, type PrIntent } from '../cheat-detector/pr-intent';
 
 const log = getLogger('audit:execution-grounded');
@@ -309,18 +313,24 @@ export interface ExecutionGroundedOutcome {
    *  most one record per run; empty when the PR makes no fix claim or changed no
    *  non-test source. */
   noOpRestorations: NoOpFixProofRecord[];
+  /** One proof record per qualifying `type-suppression` finding the restoration
+   *  phase evaluated (every verdict included, same funnel honesty as the
+   *  others). Finding-gated, like the test and mock proofs. */
+  typeSuppressionRestorations: TypeSuppressionProofRecord[];
   skipped: string[];
 }
 
 /** The proof candidates a run evaluates, selected from the structural findings
- *  and the PR's diff/intent. Test and mock proofs are finding-gated; the no-op
- *  proof is PR-level (a fix claim plus a reverted source hunk), mirroring the
- *  claim-falsified trigger, because the structural `no-op-fix` block finding
- *  fires only on a test-only change with no source to revert. */
+ *  and the PR's diff/intent. Test, mock, and type-suppression proofs are
+ *  finding-gated; the no-op proof is PR-level (a fix claim plus a reverted
+ *  source hunk), mirroring the claim-falsified trigger, because the structural
+ *  `no-op-fix` block finding fires only on a test-only change with no source to
+ *  revert. */
 interface ProofCandidates {
   test: Finding[];
   mock: Finding[];
   noOp: { findingFile: string; prIntent: PrIntent; linkedIssueCount: number } | null;
+  typeSuppression: Finding[];
 }
 
 function selectProofCandidates(
@@ -346,7 +356,14 @@ function selectProofCandidates(
     claimsFix && sourceFiles.length > 0
       ? { findingFile: sourceFiles[0]!, prIntent, linkedIssueCount }
       : null;
-  return { test, mock, noOp };
+  // The structural type-suppression detector emits `warn`, not `block`: a
+  // suppression is sometimes legitimate, so it informs rather than gates. The
+  // proof is what can upgrade it. Select every non-demoted type-suppression
+  // finding (an `info` finding was already cleared by an earlier refuter).
+  const typeSuppression = structuralFindings.filter(
+    (f) => f.category === 'type-suppression' && f.severity !== 'info',
+  );
+  return { test, mock, noOp, typeSuppression };
 }
 
 /** One honesty record per qualifying structural finding when restoration
@@ -453,6 +470,54 @@ export function mockBudgetExhaustedRecords(
     reproduceCommand: '',
     revertedHunkPatch: '',
     reason: 'wall-clock budget exhausted before any test run executed for the mock-mutation proof',
+  }));
+}
+
+/** no-workspace honesty records for the type-suppression candidate findings:
+ *  the layer bailed before a sandbox existed, so each candidate is accounted
+ *  for with a null-control record instead of vanishing. */
+export function noWorkspaceTypeSuppressionRecords(
+  findings: readonly Finding[],
+  detail: string,
+): TypeSuppressionProofRecord[] {
+  return findings.map((f) => ({
+    schemaVersion: 1,
+    verdict: 'not-proven:no-workspace',
+    category: 'type-suppression',
+    findingFile: f.location.file,
+    removedDirectives: [],
+    surfacedDiagnostics: [],
+    controls: {
+      directiveRemoved: null,
+      fileCleanAsSubmitted: null,
+      diagnosticSurfacesWhenRemoved: null,
+    },
+    reproduceCommand: '',
+    revertedHunkPatch: '',
+    reason: `type-suppression restoration could not run: no sandbox workspace was provisioned (${detail})`,
+  }));
+}
+
+/** Budget-exhausted honesty records for type-suppression candidates the per-PR
+ *  wall-clock ran out on before any tsc run executed. */
+export function typeSuppressionBudgetExhaustedRecords(
+  findings: readonly Finding[],
+): TypeSuppressionProofRecord[] {
+  return findings.map((f) => ({
+    schemaVersion: 1,
+    verdict: 'not-proven:execution-error',
+    category: 'type-suppression',
+    findingFile: f.location.file,
+    removedDirectives: [],
+    surfacedDiagnostics: [],
+    controls: {
+      directiveRemoved: null,
+      fileCleanAsSubmitted: null,
+      diagnosticSurfacesWhenRemoved: null,
+    },
+    reproduceCommand: '',
+    revertedHunkPatch: '',
+    reason: 'wall-clock budget exhausted before any tsc run executed for the type-suppression proof',
   }));
 }
 
@@ -597,6 +662,37 @@ export function applyMockRestorationToFinding(
   }
 }
 
+/**
+ * Ride a type-suppression verdict onto its `type-suppression` finding, in place.
+ * Refuted demotes (removing the directive surfaced no diagnostic, so the
+ * suppression was harmless); proven upgrades the advisory `warn` to `block` and
+ * records the surfaced diagnostics as runtime corroboration, so the rendered
+ * comment shows the confirmed cheat alongside the gating trigger. Every other
+ * verdict is record-only.
+ */
+export function applyTypeSuppressionRestorationToFinding(
+  finding: Finding,
+  record: TypeSuppressionProofRecord,
+): void {
+  if (record.verdict === 'refuted') {
+    finding.severity = 'info';
+    finding.confidence = 'structural-only';
+    finding.evidence =
+      `${finding.evidence}\n` +
+      `demoted: with the added ${record.removedDirectives.join(', ')} reverted, tsc reports no ` +
+      `diagnostic in ${record.findingFile}, so the suppression silenced nothing and the change is benign`;
+    return;
+  }
+  if (record.verdict === 'proven') {
+    finding.severity = 'block';
+    finding.runtimeCorroboration = {
+      signal: 'type-error-surfaces',
+      diagnostics: record.surfacedDiagnostics,
+    };
+    setFindingConfidence(finding);
+  }
+}
+
 /** Persist a typed proof envelope under `<evidenceDir>/<filename>`, identity
  *  stamped and written on every enabled run (empty included) so a stale file
  *  from an earlier head SHA never outlives its run. Generic sibling of
@@ -640,6 +736,7 @@ export interface ProofRestorationOutcome {
   restorations: RestorationProofRecord[];
   mockRestorations: MockRestorationProofRecord[];
   noOpRestorations: NoOpFixProofRecord[];
+  typeSuppressionRestorations: TypeSuppressionProofRecord[];
   skipped: string[];
 }
 
@@ -659,6 +756,7 @@ export function runProofRestorations(input: ProofRestorationInput): ProofRestora
   const restorations: RestorationProofRecord[] = [];
   const mockRestorations: MockRestorationProofRecord[] = [];
   const noOpRestorations: NoOpFixProofRecord[] = [];
+  const typeSuppressionRestorations: TypeSuppressionProofRecord[] = [];
   const candidates = selectProofCandidates(
     input.structuralFindings,
     input.prDiff,
@@ -757,7 +855,34 @@ export function runProofRestorations(input: ProofRestorationInput): ProofRestora
     applyMockRestorationToFinding(finding, record);
   }
 
-  return { restorations, mockRestorations, noOpRestorations, skipped };
+  // T7: type-suppression restoration (finding-gated on type-suppression findings).
+  for (let i = 0; i < candidates.typeSuppression.length; i++) {
+    const finding = candidates.typeSuppression[i]!;
+    if (restorationBudgetExhausted(input.deadline, Date.now())) {
+      const dropped = candidates.typeSuppression.length - i;
+      skipped.push(
+        `type-suppression-restoration: wall-clock budget exhausted; ${dropped} finding(s) recorded without execution`,
+      );
+      typeSuppressionRestorations.push(
+        ...typeSuppressionBudgetExhaustedRecords(candidates.typeSuppression.slice(i)),
+      );
+      break;
+    }
+    const record = runTypeSuppressionRestoration({
+      finding: { category: 'type-suppression', file: finding.location.file },
+      prDiff: input.prDiff,
+      prRef: input.prRef,
+      prHeadSha: input.prHeadSha,
+      postWorkspacePath: input.postWorkspacePath,
+      repoRoot: input.postWorkspacePath,
+      timeoutMs: timeoutFor(),
+      ...(input.docker !== undefined ? { docker: input.docker } : {}),
+    });
+    typeSuppressionRestorations.push(record);
+    applyTypeSuppressionRestorationToFinding(finding, record);
+  }
+
+  return { restorations, mockRestorations, noOpRestorations, typeSuppressionRestorations, skipped };
 }
 
 /**
@@ -768,7 +893,7 @@ export function runProofRestorations(input: ProofRestorationInput): ProofRestora
  */
 export async function runExecutionGrounded(input: ExecutionGroundedInput): Promise<ExecutionGroundedOutcome> {
   const skipped: string[] = [];
-  const empty: ExecutionGroundedOutcome = { findings: [], mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], skipped };
+  const empty: ExecutionGroundedOutcome = { findings: [], mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], skipped };
   if (!input.config.enabled) {
     // Disabled means the layer never ran at all: no honesty records, because
     // nothing was promised to run.
@@ -789,6 +914,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
     restorations: readonly RestorationProofRecord[];
     mockRestorations: readonly MockRestorationProofRecord[];
     noOpRestorations: readonly NoOpFixProofRecord[];
+    typeSuppressionRestorations: readonly TypeSuppressionProofRecord[];
   }): void => {
     if (input.evidenceDir === undefined) return;
     persistRestorationProofs(
@@ -797,6 +923,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
     );
     writeProofEnvelope(input.evidenceDir, 'mock-restoration-proof.json', prRef, input.prHeadSha, out.mockRestorations);
     writeProofEnvelope(input.evidenceDir, 'no-op-fix-restoration-proof.json', prRef, input.prHeadSha, out.noOpRestorations);
+    writeProofEnvelope(input.evidenceDir, 'type-suppression-restoration-proof.json', prRef, input.prHeadSha, out.typeSuppressionRestorations);
   };
   // Fail closed: the envelopes are written empty before any phase that can
   // throw, so an exception escaping the run cannot leave a stale envelope
@@ -810,6 +937,10 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
     empty.restorations = noWorkspaceRecords(candidates.test, detail);
     empty.mockRestorations = noWorkspaceMockRecords(candidates.mock, detail);
     empty.noOpRestorations = noWorkspaceNoOpRecords(candidates.noOp, detail);
+    empty.typeSuppressionRestorations = noWorkspaceTypeSuppressionRecords(
+      candidates.typeSuppression,
+      detail,
+    );
     persistProofs(empty);
     return empty;
   };
@@ -870,7 +1001,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
 
   const deadline = Date.now() + input.config.maxWallClockPerPrMs;
   const findings: Finding[] = [];
-  const outcome: ExecutionGroundedOutcome = { findings, mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], skipped };
+  const outcome: ExecutionGroundedOutcome = { findings, mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], skipped };
   const cacheArg = input.cacheDir !== undefined ? { cacheDir: input.cacheDir } : {};
 
   try {
@@ -1008,6 +1139,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
     outcome.restorations = proofs.restorations;
     outcome.mockRestorations = proofs.mockRestorations;
     outcome.noOpRestorations = proofs.noOpRestorations;
+    outcome.typeSuppressionRestorations = proofs.typeSuppressionRestorations;
     skipped.push(...proofs.skipped);
     persistProofs(outcome);
   } finally {

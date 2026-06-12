@@ -69,11 +69,13 @@ describe('self-certifying tier', () => {
         'no-op-fix-proven',
         'obligation-failure',
         'test-tamper-proven',
+        'type-suppression-proven',
       ],
     );
     assert.equal(isSelfCertifying('claim-falsified'), true);
     assert.equal(isSelfCertifying('mock-mutation-proven'), true);
     assert.equal(isSelfCertifying('no-op-fix-proven'), true);
+    assert.equal(isSelfCertifying('type-suppression-proven'), true);
     assert.equal(isSelfCertifying('corroborated-under-constraint'), false);
   });
 });

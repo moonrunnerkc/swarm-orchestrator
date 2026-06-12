@@ -13,6 +13,7 @@ import type {
   MockMutationProvenEvidence,
   NoOpFixProvenEvidence,
   TestTamperProvenEvidence,
+  TypeSuppressionProvenEvidence,
 } from '../gate/block-trigger-types';
 
 /**
@@ -100,6 +101,8 @@ function renderEvidence(evidence: BlockTriggerEvidence): string[] {
       return renderMockMutationProven(evidence);
     case 'no-op-fix-proven':
       return renderNoOpFixProven(evidence);
+    case 'type-suppression-proven':
+      return renderTypeSuppressionProven(evidence);
   }
 }
 
@@ -167,6 +170,29 @@ function renderNoOpFixProven(evidence: NoOpFixProvenEvidence): string[] {
     `| PR claims a fix | ${controlMark(c.prClaimsFix)} |`,
     `| Affected tests pass as submitted | ${controlMark(c.suitePassesAsSubmitted)} |`,
     `| Affected tests still pass with the fix reverted (twice) | ${controlMark(c.revertedSuiteStillPassesTwice)} |`,
+    '',
+  ];
+}
+
+/** The three controls behind a type-suppression proof, in a fixed order so the
+ *  table renders byte-identical for the same proof. The trigger only gates when
+ *  all three are ✅ (see self-certifying.controlsAllGreen). */
+function renderTypeSuppressionProven(evidence: TypeSuppressionProvenEvidence): string[] {
+  const c = evidence.controls;
+  return [
+    `*Verdict:* \`${evidence.verdict}\` — type-suppression; reverted ${evidence.removedDirectives.join(', ')} in ${evidence.file}.`,
+    '',
+    `*Diagnostic(s) the directive was hiding:*`,
+    '',
+    '```text',
+    evidence.surfacedDiagnostics.join('\n'),
+    '```',
+    '',
+    '| Control | Result |',
+    '| --- | --- |',
+    `| Added directive reverted in the sandbox | ${controlMark(c.directiveRemoved)} |`,
+    `| File typechecks clean as submitted | ${controlMark(c.fileCleanAsSubmitted)} |`,
+    `| A tsc diagnostic surfaces once the directive is gone | ${controlMark(c.diagnosticSurfacesWhenRemoved)} |`,
     '',
   ];
 }

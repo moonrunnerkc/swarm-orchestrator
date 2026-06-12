@@ -62,6 +62,7 @@ import type {
   PrAuditRestorationEntry,
   PrAuditMockRestorationEntry,
   PrAuditNoOpFixRestorationEntry,
+  PrAuditTypeSuppressionRestorationEntry,
 } from '../../ledger/types';
 import { isExecutionGroundedCategory } from '../../audit/types';
 import { loadAuditConfig, type ExecutionGroundedConfig } from '../../audit/cheat-detector/audit-config';
@@ -69,6 +70,7 @@ import { runExecutionGrounded, type ExecutionGroundedOutcome } from '../../audit
 import type { RestorationProofRecord } from '../../audit/execution-grounded/test-restoration';
 import type { MockRestorationProofRecord } from '../../audit/execution-grounded/mock-restoration';
 import type { NoOpFixProofRecord } from '../../audit/execution-grounded/no-op-fix-restoration';
+import type { TypeSuppressionProofRecord } from '../../audit/execution-grounded/type-suppression-restoration';
 import {
   corroborateStructuralFindings,
   executionSignalsFromOutcome,
@@ -407,6 +409,7 @@ async function runExecutionGroundedLayer(
   appendRestorationEntries(ledger, outcome.restorations, attribution);
   appendMockRestorationEntries(ledger, outcome.mockRestorations, attribution);
   appendNoOpRestorationEntries(ledger, outcome.noOpRestorations, attribution);
+  appendTypeSuppressionRestorationEntries(ledger, outcome.typeSuppressionRestorations, attribution);
 
   // Runtime corroboration (opt-in). When this run's execution layer actually
   // produced signals, mark the structural findings that a surviving mutant,
@@ -494,6 +497,29 @@ export function appendNoOpRestorationEntries(
       reproduceCommand: r.reproduceCommand,
     };
     ledger.append<PrAuditNoOpFixRestorationEntry>(payload, opts);
+  }
+}
+
+/** One pr-audit-type-suppression-restoration entry per type-suppression proof
+ *  record, every verdict included, so the ledger carries the full proof funnel. */
+export function appendTypeSuppressionRestorationEntries(
+  ledger: HashChainedLedger,
+  records: readonly TypeSuppressionProofRecord[],
+  attribution: LedgerAgentAttribution | undefined,
+): void {
+  const opts = attribution !== undefined ? { aiAgent: attribution } : undefined;
+  for (const r of records) {
+    const payload: Omit<PrAuditTypeSuppressionRestorationEntry, 'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'> = {
+      type: 'pr-audit-type-suppression-restoration',
+      category: r.category,
+      verdict: r.verdict,
+      findingFile: r.findingFile,
+      removedDirectives: r.removedDirectives,
+      surfacedDiagnostics: r.surfacedDiagnostics,
+      controls: r.controls,
+      reproduceCommand: r.reproduceCommand,
+    };
+    ledger.append<PrAuditTypeSuppressionRestorationEntry>(payload, opts);
   }
 }
 
@@ -657,6 +683,9 @@ function buildBlockTriggers(
     restorations: { restorations: outcome.restorations },
     mockRestorations: { mockRestorations: outcome.mockRestorations },
     noOpRestorations: { noOpRestorations: outcome.noOpRestorations },
+    typeSuppressionRestorations: {
+      typeSuppressionRestorations: outcome.typeSuppressionRestorations,
+    },
   });
 }
 

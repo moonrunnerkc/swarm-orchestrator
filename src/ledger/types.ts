@@ -370,6 +370,24 @@ export interface LedgerEntryPayloadMap {
     };
     reproduceCommand: string;
   };
+  // Type-suppression restoration proof record: one entry per qualifying
+  // `type-suppression` finding the restoration phase evaluated, every verdict
+  // included. `controls` mirrors the proof's three internal controls; null
+  // means that control never executed. `surfacedDiagnostics` are the tsc
+  // diagnostics that appeared once the directive was reverted (the proof).
+  'pr-audit-type-suppression-restoration': {
+    category: string;
+    verdict: string;
+    findingFile: string;
+    removedDirectives: string[];
+    surfacedDiagnostics: string[];
+    controls: {
+      directiveRemoved: boolean | null;
+      fileCleanAsSubmitted: boolean | null;
+      diagnosticSurfacesWhenRemoved: boolean | null;
+    };
+    reproduceCommand: string;
+  };
   // A verifiable-evidence block-trigger candidate: a self-certifying
   // runtime fact (a falsified issue repro, a structural finding a surviving
   // mutant or coverage gap corroborates on the same line, a failed declared
@@ -387,7 +405,8 @@ export interface LedgerEntryPayloadMap {
       | 'obligation-failure'
       | 'test-tamper-proven'
       | 'mock-mutation-proven'
-      | 'no-op-fix-proven';
+      | 'no-op-fix-proven'
+      | 'type-suppression-proven';
     eligible: boolean;
     blocked: boolean;
     summary: string;
@@ -443,4 +462,6 @@ export type PrAuditCoverageFindingEntry = LedgerEntry<'pr-audit-coverage-finding
 export type PrAuditRestorationEntry = LedgerEntry<'pr-audit-restoration'>;
 export type PrAuditMockRestorationEntry = LedgerEntry<'pr-audit-mock-restoration'>;
 export type PrAuditNoOpFixRestorationEntry = LedgerEntry<'pr-audit-no-op-fix-restoration'>;
+export type PrAuditTypeSuppressionRestorationEntry =
+  LedgerEntry<'pr-audit-type-suppression-restoration'>;
 export type PrAuditBlockTriggerEntry = LedgerEntry<'pr-audit-block-trigger'>;

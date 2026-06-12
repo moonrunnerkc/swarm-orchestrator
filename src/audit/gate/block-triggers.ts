@@ -26,6 +26,7 @@ import { corroborationFor, type ExecutionSignals } from '../execution-grounded/c
 import type { RestorationProofRecord } from '../execution-grounded/test-restoration';
 import type { MockRestorationProofRecord } from '../execution-grounded/mock-restoration';
 import type { NoOpFixProofRecord } from '../execution-grounded/no-op-fix-restoration';
+import type { TypeSuppressionProofRecord } from '../execution-grounded/type-suppression-restoration';
 import type {
   BlockTrigger,
   BlockTriggerEvidence,
@@ -35,6 +36,7 @@ import type {
   NoOpFixProvenEvidence,
   ObligationFailureEvidence,
   TestTamperProvenEvidence,
+  TypeSuppressionProvenEvidence,
 } from './block-trigger-types';
 
 export type {
@@ -47,6 +49,7 @@ export type {
   NoOpFixProvenEvidence,
   ObligationFailureEvidence,
   TestTamperProvenEvidence,
+  TypeSuppressionProvenEvidence,
 } from './block-trigger-types';
 
 /**
@@ -422,6 +425,66 @@ function affectedCount(n: number): string {
   return `${n} affected test${n === 1 ? '' : 's'}`;
 }
 
+export interface TypeSuppressionProvenInput {
+  /** Type-suppression restoration proof records from the execution-grounded
+   *  run; the detector keeps only the proven, all-controls-true ones. */
+  typeSuppressionRestorations: TypeSuppressionProofRecord[];
+}
+
+/**
+ * T7: a type-suppression restoration proof. The PR's added `@ts-ignore` /
+ * `@ts-expect-error` was reverted in a sandbox; tsc reported zero diagnostics in
+ * the file as submitted and at least one once the directive was gone. Execution
+ * proves the suppression hid a real type error. Fires one candidate per `proven`
+ * record whose three controls are all true; a proven record with any unexecuted
+ * (null) or false control is advisory only and produces nothing (fail closed).
+ * The reproduce command is the record's own, which reverts the directive and
+ * reruns tsc in a fresh checkout.
+ *
+ * @param input the run's type-suppression restoration proof records
+ * @returns one block-trigger candidate per fully-controlled proof, or []
+ */
+export function detectTypeSuppressionProven(input: TypeSuppressionProvenInput): BlockTrigger[] {
+  const out: BlockTrigger[] = [];
+  for (const record of input.typeSuppressionRestorations) {
+    if (record.verdict !== 'proven') continue;
+    const { directiveRemoved, fileCleanAsSubmitted, diagnosticSurfacesWhenRemoved } =
+      record.controls;
+    if (
+      directiveRemoved !== true ||
+      fileCleanAsSubmitted !== true ||
+      diagnosticSurfacesWhenRemoved !== true
+    ) {
+      continue;
+    }
+    const evidence: TypeSuppressionProvenEvidence = {
+      kind: 'type-suppression-proven',
+      verdict: 'proven',
+      file: record.findingFile,
+      removedDirectives: record.removedDirectives,
+      surfacedDiagnostics: record.surfacedDiagnostics,
+      controls: record.controls,
+      reproduceCommand: record.reproduceCommand,
+    };
+    out.push({
+      kind: 'type-suppression-proven',
+      summary:
+        `A type-suppression proof at ${record.findingFile}: the PR added ` +
+        `${record.removedDirectives.join(', ')}; with the directive reverted, tsc reports ` +
+        `${diagnosticCount(record.surfacedDiagnostics.length)} the directive was hiding, so the ` +
+        `suppression shipped a real type error instead of fixing it.`,
+      reproduce: record.reproduceCommand,
+      evidence,
+    });
+  }
+  return out;
+}
+
+/** one diagnostic, two diagnostics, ... */
+function diagnosticCount(n: number): string {
+  return `${n} diagnostic${n === 1 ? '' : 's'}`;
+}
+
 /** The inputs each trigger needs, bundled so one call produces every candidate
  *  a run can raise. A field left undefined skips that trigger (e.g. an audit
  *  with no declared obligations omits `obligations`). */
@@ -432,6 +495,7 @@ export interface BlockTriggerContext {
   restorations?: TestTamperProvenInput;
   mockRestorations?: MockMutationProvenInput;
   noOpRestorations?: NoOpFixProvenInput;
+  typeSuppressionRestorations?: TypeSuppressionProvenInput;
 }
 
 /**
@@ -454,5 +518,7 @@ export function detectBlockTriggers(context: BlockTriggerContext): BlockTrigger[
     out.push(...detectMockMutationProven(context.mockRestorations));
   if (context.noOpRestorations !== undefined)
     out.push(...detectNoOpFixProven(context.noOpRestorations));
+  if (context.typeSuppressionRestorations !== undefined)
+    out.push(...detectTypeSuppressionProven(context.typeSuppressionRestorations));
   return out;
 }

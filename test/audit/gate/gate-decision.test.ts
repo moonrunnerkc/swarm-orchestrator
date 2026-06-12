@@ -44,6 +44,7 @@ describe('gate-decision', () => {
         'no-op-fix-proven',
         'obligation-failure',
         'test-tamper-proven',
+        'type-suppression-proven',
       ],
     );
     assert.equal(isBlockEligible('test-tamper-proven'), true);

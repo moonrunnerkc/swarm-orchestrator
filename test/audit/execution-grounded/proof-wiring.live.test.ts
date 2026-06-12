@@ -9,6 +9,7 @@ import { renderBlockTriggerSection } from '../../../src/audit/report-comment/blo
 import {
   appendMockRestorationEntries,
   appendNoOpRestorationEntries,
+  appendTypeSuppressionRestorationEntries,
 } from '../../../src/cli/v8/audit-handler';
 import { HashChainedLedger } from '../../../src/ledger/ledger';
 import type { Finding } from '../../../src/audit/types';
@@ -248,5 +249,86 @@ function tempDir(prefix: string): string {
     const entry = readEntries(ledgerPath).find((e) => e.type === 'pr-audit-no-op-fix-restoration');
     assert.ok(entry !== undefined, 'a pr-audit-no-op-fix-restoration entry was written');
     assert.equal(entry.verdict, 'proven');
+  });
+
+  it('a type-suppression cheat reaches the proof, the block trigger, the comment, and the ledger', () => {
+    const dir = tempDir('swarm-proofwire-tsup-');
+    fs.mkdirSync(path.join(dir, 'src'));
+    fs.writeFileSync(
+      path.join(dir, 'package.json'),
+      JSON.stringify({ name: 'tsup-demo', version: '1.0.0', private: true }, null, 2),
+    );
+    fs.writeFileSync(path.join(dir, '.gitignore'), 'node_modules\n');
+    fs.writeFileSync(
+      path.join(dir, 'tsconfig.json'),
+      JSON.stringify(
+        { compilerOptions: { strict: true, noEmit: true, skipLibCheck: true, module: 'commonjs', target: 'ES2022' }, include: ['src'] },
+        null,
+        2,
+      ),
+    );
+    fs.writeFileSync(
+      path.join(dir, 'src', 'calc.ts'),
+      'export function add(a: number, b: number): number {\n  return a + b;\n}\n',
+    );
+    initRepo(dir);
+    commitAll(dir, 'base: clean add');
+
+    // The cheat: a real type error hidden behind @ts-ignore.
+    fs.writeFileSync(
+      path.join(dir, 'src', 'calc.ts'),
+      'export function add(a: number, b: number): number {\n  // @ts-ignore\n  return a + b + missing();\n}\n',
+    );
+    const headSha = commitAll(dir, 'feat: extend add (cheat: suppress the type error)');
+    const prDiff = diff(dir);
+
+    // The advisory finding the structural type-suppression detector raises.
+    const finding: Finding = {
+      category: 'type-suppression',
+      severity: 'warn',
+      message: 'A @ts-ignore suppression was added in src/calc.ts.',
+      location: { file: 'src/calc.ts', line: 2 },
+      evidence: '// @ts-ignore',
+    };
+
+    const proofs = runProofRestorations({
+      prDiff,
+      prRef: 'acme/calc#7',
+      prHeadSha: headSha,
+      structuralFindings: [finding],
+      preWorkspacePath: null,
+      postWorkspacePath: dir,
+      testRunner: null,
+      packageManager: 'npm',
+      deadline: Date.now() + 240_000,
+    });
+
+    assert.equal(proofs.typeSuppressionRestorations.length, 1, 'the type-suppression engine ran for the finding');
+    const record = proofs.typeSuppressionRestorations[0]!;
+    assert.equal(record.verdict, 'proven', `expected proven, got ${record.verdict}: ${record.reason ?? ''}`);
+    assert.equal(record.controls.directiveRemoved, true);
+    assert.equal(record.controls.fileCleanAsSubmitted, true);
+    assert.equal(record.controls.diagnosticSurfacesWhenRemoved, true);
+    // The verdict rode back onto the finding (proven -> block + runtime-corroborated).
+    assert.equal(finding.severity, 'block');
+    assert.equal(finding.confidence, 'runtime-corroborated');
+
+    const triggers = detectBlockTriggers({
+      typeSuppressionRestorations: { typeSuppressionRestorations: proofs.typeSuppressionRestorations },
+    });
+    const tsupTrigger = triggers.find((t) => t.kind === 'type-suppression-proven');
+    assert.ok(tsupTrigger !== undefined, 'type-suppression-proven trigger fired');
+
+    const comment = renderBlockTriggerSection(triggers, 'gate').join('\n');
+    assert.ok(comment.includes(tsupTrigger.reproduce), 'the comment carries the reproduce command');
+    assert.match(comment, /type-suppression/i, 'the comment names the type-suppression proof');
+
+    const ledgerPath = path.join(tempDir('swarm-proofwire-ledger-'), 'ledger.jsonl');
+    const ledger = new HashChainedLedger(ledgerPath, 'audit-tsup-test');
+    appendTypeSuppressionRestorationEntries(ledger, proofs.typeSuppressionRestorations, undefined);
+    const entry = readEntries(ledgerPath).find((e) => e.type === 'pr-audit-type-suppression-restoration');
+    assert.ok(entry !== undefined, 'a pr-audit-type-suppression-restoration entry was written');
+    assert.equal(entry.verdict, 'proven');
+    assert.equal(entry.findingFile, 'src/calc.ts');
   });
 });
