@@ -98,6 +98,28 @@ jobs:
           npm ci
           npm publish --provenance --access public
 
+      - name: Generate CycloneDX SBOM
+        if: env.NODE_AUTH_TOKEN != ''
+        # Publishes a CycloneDX 1.6 software bill of materials alongside
+        # the tagged release so consumers can verify dependency provenance.
+        # Aligns the package's own provenance posture with the AI-BOM the
+        # tool generates for its audit targets (OWASP A03:2025 supply
+        # chain failures, L4 of the security review).
+        run: |
+          npx --yes @cyclonedx/cyclonedx-npm \
+            --output-format JSON \
+            --output-file swarm-orchestrator-sbom.cdx.json
+          ls -l swarm-orchestrator-sbom.cdx.json
+
+      - name: Attach SBOM to GitHub Release
+        if: env.NODE_AUTH_TOKEN != '' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" \
+            swarm-orchestrator-sbom.cdx.json \
+            --clobber
+
       - name: Skipped (no NPM_TOKEN)
         if: env.NODE_AUTH_TOKEN == ''
         run: |
