@@ -279,6 +279,7 @@ async function main(): Promise<void> {
       'no-op-fix-proven',
       'type-suppression-proven',
       'fake-refactor-proven',
+      'dead-branch-proven',
     ],
     provenFindingPrecision: {
       n: provenTotal,
