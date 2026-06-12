@@ -24,11 +24,13 @@ import { renderReproCommand, type IssueRef } from '../execution-grounded/issue-r
 import type { TestRunner } from '../execution-grounded/sandbox';
 import { corroborationFor, type ExecutionSignals } from '../execution-grounded/corroborate';
 import type { RestorationProofRecord } from '../execution-grounded/test-restoration';
+import type { MockRestorationProofRecord } from '../execution-grounded/mock-restoration';
 import type {
   BlockTrigger,
   BlockTriggerEvidence,
   ClaimFalsifiedEvidence,
   CorroboratedUnderConstraintEvidence,
+  MockMutationProvenEvidence,
   ObligationFailureEvidence,
   TestTamperProvenEvidence,
 } from './block-trigger-types';
@@ -39,6 +41,7 @@ export type {
   BlockTriggerKind,
   ClaimFalsifiedEvidence,
   CorroboratedUnderConstraintEvidence,
+  MockMutationProvenEvidence,
   ObligationFailureEvidence,
   TestTamperProvenEvidence,
 } from './block-trigger-types';
@@ -302,6 +305,62 @@ export function detectTestTamperProven(input: TestTamperProvenInput): BlockTrigg
   return out;
 }
 
+export interface MockMutationProvenInput {
+  /** Mock-restoration proof records from the execution-grounded run; the
+   *  detector keeps only the proven, all-controls-true ones. */
+  mockRestorations: MockRestorationProofRecord[];
+}
+
+/**
+ * T5: a mock-mutation restoration proof. The PR's value-injecting mock hunks
+ * were reverted in a sandbox, the un-mocked test failed twice with identical
+ * identity against the PR's source, the PR's mocked test passed as submitted,
+ * and the added mock returns the exact value the test asserts. Execution plus
+ * the tautology control prove the PR concealed a real failure behind a mock.
+ * Fires one candidate per `proven` record whose three controls are all true; a
+ * proven record with any unexecuted (null) or false control is advisory only
+ * and produces nothing (fail closed). The reproduce command is the record's
+ * own, which replays the un-mocked failure in a fresh checkout.
+ *
+ * @param input the run's mock-restoration proof records
+ * @returns one block-trigger candidate per fully-controlled proof, or []
+ */
+export function detectMockMutationProven(input: MockMutationProvenInput): BlockTrigger[] {
+  const out: BlockTrigger[] = [];
+  for (const record of input.mockRestorations) {
+    if (record.verdict !== 'proven') continue;
+    const { tamperedSuitePasses, restoredFailsTwiceSameIdentity, mockReturnsAssertedValue } =
+      record.controls;
+    if (
+      tamperedSuitePasses !== true ||
+      restoredFailsTwiceSameIdentity !== true ||
+      mockReturnsAssertedValue !== true
+    ) {
+      continue;
+    }
+    const evidence: MockMutationProvenEvidence = {
+      kind: 'mock-mutation-proven',
+      verdict: 'proven',
+      testFiles: record.testFiles,
+      failingTests: record.failingTests,
+      mockedReturnValues: record.mockedReturnValues,
+      controls: record.controls,
+      reproduceCommand: record.reproduceCommand,
+    };
+    out.push({
+      kind: 'mock-mutation-proven',
+      summary:
+        `A mock-mutation proof at ${record.findingFile}: the PR's test passes only because an ` +
+        `added mock returns the asserted value. With the mock reverted, ` +
+        `${failureCount(record.failingTests.length)} failed twice with identical identity against ` +
+        `the PR's source, so the mock concealed a real failure instead of fixing the unit.`,
+      reproduce: record.reproduceCommand,
+      evidence,
+    });
+  }
+  return out;
+}
+
 /** The inputs each trigger needs, bundled so one call produces every candidate
  *  a run can raise. A field left undefined skips that trigger (e.g. an audit
  *  with no declared obligations omits `obligations`). */
@@ -310,6 +369,7 @@ export interface BlockTriggerContext {
   corroborated?: CorroboratedUnderConstraintInput;
   obligations?: ObligationOutcome[];
   restorations?: TestTamperProvenInput;
+  mockRestorations?: MockMutationProvenInput;
 }
 
 /**
@@ -328,5 +388,7 @@ export function detectBlockTriggers(context: BlockTriggerContext): BlockTrigger[
     out.push(...detectCorroboratedUnderConstraint(context.corroborated));
   if (context.obligations !== undefined) out.push(...detectObligationFailure(context.obligations));
   if (context.restorations !== undefined) out.push(...detectTestTamperProven(context.restorations));
+  if (context.mockRestorations !== undefined)
+    out.push(...detectMockMutationProven(context.mockRestorations));
   return out;
 }

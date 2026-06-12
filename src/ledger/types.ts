@@ -348,7 +348,8 @@ export interface LedgerEntryPayloadMap {
       | 'claim-falsified'
       | 'corroborated-under-constraint'
       | 'obligation-failure'
-      | 'test-tamper-proven';
+      | 'test-tamper-proven'
+      | 'mock-mutation-proven';
     eligible: boolean;
     blocked: boolean;
     summary: string;

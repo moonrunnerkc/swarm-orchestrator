@@ -7,14 +7,16 @@
 
 import type { CheatCategory } from '../types';
 import type { RestorationControls } from '../execution-grounded/test-restoration';
+import type { MockRestorationControls } from '../execution-grounded/mock-restoration';
 
-/** The four verifiable-evidence triggers. Each is self-certifying and
- *  label-free: its truth comes from running the change, not from a label. */
+/** The verifiable-evidence triggers. Each is self-certifying and label-free:
+ *  its truth comes from running the change, not from a label. */
 export type BlockTriggerKind =
   | 'claim-falsified'
   | 'corroborated-under-constraint'
   | 'obligation-failure'
-  | 'test-tamper-proven';
+  | 'test-tamper-proven'
+  | 'mock-mutation-proven';
 
 /** Every trigger kind, in a fixed order, for callers that iterate over all of
  *  them (the calibrator and the eligibility policy). */
@@ -23,6 +25,7 @@ export const ALL_BLOCK_TRIGGER_KINDS: readonly BlockTriggerKind[] = [
   'corroborated-under-constraint',
   'obligation-failure',
   'test-tamper-proven',
+  'mock-mutation-proven',
 ];
 
 /**
@@ -122,11 +125,39 @@ export interface TestTamperProvenEvidence {
   reproduceCommand: string;
 }
 
+/**
+ * A mock-mutation restoration proof: the PR's value-injecting mock hunks were
+ * reverted in a sandbox, the un-mocked test failed twice with identical
+ * identity against the PR's source, the PR's mocked test passed as submitted,
+ * and the added mock returns the exact value the test asserts. Execution plus
+ * the tautology control prove the PR concealed a real failure behind a mock
+ * instead of fixing the unit. Evidence is the proof record's published facts;
+ * the three controls must all be true for the trigger to ever gate.
+ */
+export interface MockMutationProvenEvidence {
+  kind: 'mock-mutation-proven';
+  /** Pinned to `proven`: only a proven restoration record becomes evidence. */
+  verdict: 'proven';
+  /** Test files whose mock hunks were reverted to restore the original tests. */
+  testFiles: string[];
+  /** Failing-test identities from the restored runs (identical across both). */
+  failingTests: string[];
+  /** The returned expressions the reverted mocks injected (also the asserted
+   *  values, since control 3 requires they match). */
+  mockedReturnValues: string[];
+  /** The proof's three internal controls, published as recorded. A candidate
+   *  is only emitted when all three are true; null means a run never executed. */
+  controls: MockRestorationControls;
+  /** Exact command a human runs in a fresh checkout to see the un-mocked test fail. */
+  reproduceCommand: string;
+}
+
 export type BlockTriggerEvidence =
   | ClaimFalsifiedEvidence
   | CorroboratedUnderConstraintEvidence
   | ObligationFailureEvidence
-  | TestTamperProvenEvidence;
+  | TestTamperProvenEvidence
+  | MockMutationProvenEvidence;
 
 /**
  * A block-trigger candidate. `reproduce` is the exact command the author runs

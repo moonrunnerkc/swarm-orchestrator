@@ -60,12 +60,13 @@ function tamperTrigger(
 }
 
 describe('self-certifying tier', () => {
-  it('lists the three self-certifying trigger kinds', () => {
+  it('lists the self-certifying trigger kinds', () => {
     assert.deepEqual(
       [...SELF_CERTIFYING_TRIGGERS].sort(),
-      ['claim-falsified', 'obligation-failure', 'test-tamper-proven'],
+      ['claim-falsified', 'mock-mutation-proven', 'obligation-failure', 'test-tamper-proven'],
     );
     assert.equal(isSelfCertifying('claim-falsified'), true);
+    assert.equal(isSelfCertifying('mock-mutation-proven'), true);
     assert.equal(isSelfCertifying('corroborated-under-constraint'), false);
   });
 });
