@@ -13,7 +13,7 @@ For engineers reviewing AI-written PRs at volume. Compliance teams generate Cycl
 [![license ISC](https://img.shields.io/static/v1?label=license&message=ISC&color=blue)](LICENSE)
 [![node >= 20](https://img.shields.io/static/v1?label=node&message=%3E%3D%2020&color=3c873a)](package.json)
 [![version 11.2.0](https://img.shields.io/static/v1?label=version&message=11.2.0&color=22d3ee)](package.json)
-[![oracle recall 84% (253/300)](https://img.shields.io/static/v1?label=oracle%20recall&message=84%25%20(253%2F300)&color=brightgreen)](benchmarks/results/AB-REPORT.md)
+[![oracle recall 93% (301/325)](https://img.shields.io/static/v1?label=oracle%20recall&message=93%25%20(301%2F325)&color=brightgreen)](benchmarks/results/AB-REPORT.md)
 [![real-PR false alarms 0.11/PR](https://img.shields.io/static/v1?label=real-PR%20false%20alarms&message=0.11%2FPR&color=brightgreen)](benchmarks/real-prs/REAL-WORLD-REPORT.md)
 [![real-PR cheats vs linters 4 confirmed (Semgrep+ESLint: 1)](https://img.shields.io/static/v1?label=real-PR%20cheats%20vs%20linters&message=4%20confirmed%20(Semgrep%2BESLint%3A%201)&color=brightgreen)](benchmarks/real-prs/v11-BENEFIT-REPORT.md)
 <!-- BADGES:END -->
@@ -82,7 +82,7 @@ Both reproduce deterministically from the committed diffs. Semgrep (210 rules) a
 
 ### Detection numbers
 
-**253 of 300** planted cheats recovered (84%), up 20.5% from the 210/300 pre-upgrade baseline, across twelve categories scored against a defect-injection oracle. Reproduce with `npm run benchmarks:full`; pre/post A/B in [`benchmarks/results/AB-REPORT.md`](benchmarks/results/AB-REPORT.md) and per-detector recall in [`benchmarks/oracle-corpus/per-detector-recall.md`](benchmarks/oracle-corpus/per-detector-recall.md).
+**301 of 325** planted cheats recovered (92.6%) across thirteen categories scored against a defect-injection oracle: 258/275 structural plus 43/50 on the two semantic categories the judge-primary path covers. The behavioral `cheat-mock-mutation` category drove the latest gain: focusing the judge on the hunks that add a value-injecting mock lifted its recall from 0.16 (the prior rapid-mlx glm47 run) to 0.96 (24/25) on the local qwen3.6 judge, while the clean-PR judge false-positive rate fell from 10% to 0%. Reproduce with `SWARM_JUDGE_PROVIDER=ollama SWARM_JUDGE_MODEL=qwen3.6:35b-a3b npm run benchmarks:full`; A/B with the same-model decomposition in [`benchmarks/results/AB-REPORT.md`](benchmarks/results/AB-REPORT.md) and per-detector recall in [`benchmarks/oracle-corpus/per-detector-recall.md`](benchmarks/oracle-corpus/per-detector-recall.md).
 
 **0.11 findings per PR** on an 18-PR pilot across five public repos. At or below the pre-upgrade auditor's false-alarm burden, with the oracle recall gain intact. Full numbers in [`benchmarks/real-prs/REAL-WORLD-REPORT.md`](benchmarks/real-prs/REAL-WORLD-REPORT.md).
 
@@ -108,7 +108,7 @@ Eleven detectors. Eight load by default; three (`comment-only-fix`, `exception-r
 | `exception-rethrow-lost-context` | experimental | `throw err` replaced with `throw new Error(...)` and `{ cause }` not forwarded. |
 | `dead-branch-insertion` | experimental | Branch guarded by a literal-false condition added. |
 
-Beyond the structural detectors, a judge-primary path catches two semantic categories (`goal-not-fixed`, `cheat-mock-mutation`) by asking the judge whether the diff delivers the PR's stated claim. Large diffs are split into hunk-grouped chunks rather than head-truncated.
+Beyond the structural detectors, a judge-primary path catches two semantic categories (`goal-not-fixed`, `cheat-mock-mutation`) by asking the judge whether the diff delivers the PR's stated claim. For `cheat-mock-mutation` a deterministic pre-filter hands the judge only the test hunks that add a value-injecting mock, so the judge reads the six-line cheat instead of skimming a 40k-char diff, and is never asked on a clean PR that adds no such mock. A proven mock-mutation can also block under `--mode gate` as a self-certifying `mock-mutation-proven` trigger (see [`docs/limitations.md`](docs/limitations.md)).
 
 Per-repo configuration in `.swarm/audit-config.yaml`: `excludePaths`, `intentSeverityPolicy` (`strict` | `lenient` | `off`), and `judgePrimary`. See [`docs/audit-config.md`](docs/audit-config.md).
 

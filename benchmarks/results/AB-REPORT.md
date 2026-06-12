@@ -26,6 +26,64 @@ Pre numbers: `benchmarks/baselines/pre-upgrade/oracle-results.json` (derivation
 documented there). Post numbers: `benchmarks/results/post-upgrade/oracle-results.json`.
 Regenerate everything with `npm run benchmarks:full`.
 
+> The sections below the next one are the original v11 A/B, scored on a
+> 300-injection corpus against the rapid-mlx glm47 judge. The current oracle
+> corpus is 325 injections (11 structural detectors plus 2 semantic
+> categories) and the judge is the local qwen3.6 (the rapid-mlx server is
+> retired). The increment section that follows is the current measurement; it
+> supersedes the semantic rows of the v11 table.
+
+## Behavioral-cheat focusing increment
+
+The worst number in the system was `cheat-mock-mutation` judge-primary recall:
+0.16 on the prior glm47 run. A mutated mock leaves no structural tell, so the
+category is judge-only, and the judge was asked one yes/no over the whole PR
+diff. Diagnosis (`scripts` are deterministic; the oracle diffs are committed):
+the six-line mock hunk reaches the judge in all 25 injections (none past the
+120k-char cap), so truncation was not the cause; the cheat is a needle in a
+40k-char haystack and the whole-diff judge skims past it, failing outright on
+the largest diffs.
+
+The fix is a deterministic pre-filter (`src/audit/cheat-detector/mock-delta.ts`):
+locate the test hunks that add a value-injecting mock and hand the judge only
+those hunks, skipping the call when none exist. No judge prompt was edited; the
+focused diff folds into the cache key so a committed benchmark replays the exact
+prompt it was scored against.
+
+**Same-model A/B (qwen3.6:35b-a3b, so the delta isolates the pipeline change,
+not the judge).** From `benchmarks/oracle-corpus/judge-primary-vs-structural.md`:
+
+| category | whole-diff (pre-focus) | focused (shipped) | delta |
+|---|---|---|---|
+| cheat-mock-mutation | 0.68 (17/25) | 0.96 (24/25) | +0.28 |
+| goal-not-fixed | 0.76 (19/25) | 0.76 (19/25) | 0 (focus passes the whole diff through) |
+
+**Across the judge migration** (glm47 whole-diff 0.16 -> qwen3.6 focused 0.96),
+the model accounts for 0.16 -> 0.68 and the focusing for 0.68 -> 0.96.
+
+**Clean-PR judge-primary false-positive rate fell, it did not rise.** From
+`benchmarks/oracle-corpus/judge-calibration.md`, v1-conservative on qwen3.6 with
+focusing: 0.0% on the seeded 30-PR clean sample, down from the 10% the prior
+whole-diff path carried, because the `cheat-mock-mutation` judge is now invoked
+only when an added value-injecting mock exists, so a clean PR without one can no
+longer raise a false yes. v2-balanced still blows the ceiling (16.7%) and is not
+promoted; v1-conservative stays the default. So recall rose and FP fell: a
+strictly positive trade, not a recall-for-FP swap.
+
+**Evasion.** `benchmarks/oracle-corpus/evasion-report.md` adds a semantic
+survival curve: `cheat-mock-mutation` holds 1.00 detection at every evasion
+depth, cosmetic (identifier rename, whitespace, line reorder, noise file) and
+behavioral (swap the mockReturnValue family for an arrow mockImplementation,
+inject a benign decoy mock), because the focus discards noise and matches the
+whole mock family rather than one spelling.
+
+**Current totals (qwen3.6, focused):** structural 258/275, semantic 43/50
+(goal-not-fixed 19/25, cheat-mock-mutation 24/25), overall **301/325 (92.6%)**.
+The structural recall is byte-identical to the prior run
+(`benchmarks/oracle-corpus/per-detector-recall.md` unchanged). Reproduce with
+`SWARM_JUDGE_PROVIDER=ollama SWARM_JUDGE_MODEL=qwen3.6:35b-a3b npm run benchmarks:full`;
+the committed judge cache replays the qwen3.6 answers offline.
+
 ## Injected-cheat recall by category
 
 | category | pre | post | delta | source of the change |
@@ -123,8 +181,8 @@ recall numbers are held down by the judge, not the splitter.
 
 ## Robustness deltas
 
-- **Evasion survival** (`evasion-report.md`): every detector is robust to the
-  cosmetic evader stack (rename, whitespace, reorder, noise file) — flat
+- **Evasion survival** (`evasion-report.md`): every detector withstands the
+  cosmetic evader stack (rename, whitespace, reorder, noise file) with flat
   survival curves at their base recall.
 
 ## Honesty caveats
