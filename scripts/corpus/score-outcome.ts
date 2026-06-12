@@ -167,6 +167,17 @@ async function main(): Promise<void> {
   let aggFn = 0;
   let aggTn = 0;
   let detectorVersions: Record<string, string> = {};
+  const firings: {
+    detector: CheatCategory;
+    id: string;
+    repo: string;
+    outcome: Outcome;
+    isFalsePositive: boolean;
+    file: string;
+    line: number;
+    message: string;
+    evidence: string;
+  }[] = [];
 
   let processed = 0;
   for (const label of scored) {
@@ -204,6 +215,17 @@ async function main(): Promise<void> {
         fl.total += 1;
         if (bad) fl.onBad += 1;
       }
+      firings.push({
+        detector: f.category,
+        id: label.id,
+        repo: label.repo,
+        outcome: label.outcome,
+        isFalsePositive: !bad,
+        file: f.location.file,
+        line: f.location.line,
+        message: f.message,
+        evidence: f.evidence,
+      });
     }
     for (const cat of ALL_DETECTOR_CATEGORIES) {
       if (!firedCategories.has(cat)) continue;
@@ -275,7 +297,16 @@ async function main(): Promise<void> {
 
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.writeFileSync(path.join(OUT_DIR, 'latest.json'), JSON.stringify(snapshot, null, 2) + '\n');
-  log.info(`wrote ${path.join(OUT_DIR, 'latest.json')}`);
+  firings.sort((a, b) =>
+    a.detector === b.detector
+      ? Number(a.isFalsePositive) - Number(b.isFalsePositive) || a.id.localeCompare(b.id)
+      : a.detector.localeCompare(b.detector),
+  );
+  fs.writeFileSync(
+    path.join(OUT_DIR, 'firings.json'),
+    JSON.stringify({ generatedAt: snapshot.generatedAt, firings }, null, 2) + '\n',
+  );
+  log.info(`wrote ${path.join(OUT_DIR, 'latest.json')} and firings.json (${firings.length} block firings)`);
 
   if (args.writeCanonical) writeCanonical(snapshot);
 
