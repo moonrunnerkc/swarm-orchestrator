@@ -143,10 +143,24 @@ controls are defined in `src/audit/execution-grounded/test-restoration.ts`, and
 the behavior is pinned by the gate tests (`test/audit/gate/gate-decision.test.ts`,
 `test/audit/gate/self-certifying.test.ts`, `test/audit/gate/test-tamper-proven.test.ts`).
 
-**CLAIM B (dogfooded):** see "First blocked PR" below. _(recorded when the
-dogfood PR runs to a block.)_
+**CLAIM B (dogfooded):** see "First blocked PR" below.
 
 ## First blocked PR
 
-_Pending the dogfood run; the PR URL, the failed check-run URL, and the comment
-URL are recorded here once CI blocks the dogfood PR with the proof comment._
+On 2026-06-12 the gate blocked a dogfood PR that weakened a real test. The PR
+deletes the assertion `clamp(15, 0, 10) === 10` in `dogfood/clamp.test.js` and
+changes `dogfood/clamp.js` so the upper bound is no longer capped. The
+execution-grounded layer reverted only the test hunk in the sandbox, found the
+restored assertion failed twice against the PR's source and passed on the base
+checkout with the tampered suite green, raised a `test-tamper-proven` proof, and
+`swarm audit --mode gate` exited 1.
+
+- PR: https://github.com/moonrunnerkc/swarm-orchestrator/pull/61
+- Failed check run: https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/27385900587/job/80932730889
+- Proof comment: https://github.com/moonrunnerkc/swarm-orchestrator/pull/61#issuecomment-4686206549
+
+The proof comment carries a self-contained reproduce command (the restore patch
+is embedded in a heredoc). Pasted into a fresh clone with the test runner
+installed, it restores the assertion and the test fails with
+`AssertionError: 15 !== 10`, the regression the deleted assertion was guarding.
+The PR was closed unmerged.
