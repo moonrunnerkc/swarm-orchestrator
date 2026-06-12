@@ -133,9 +133,11 @@ export async function runTrickyGoal(
       return JSON.stringify({ score, rationale: `tricky-${tag}` });
     }
     // Detect obligation type by inspecting the rendered user message.
-    // `renderDynamicMessage` embeds `JSON.stringify(obligation)` on the
-    // second line, which contains the type tag.
-    const isFileObligation = req.userMessage.includes('"type":"file-must-exist"');
+    // renderDynamicMessage routes through renderObligationFields which
+    // emits one `Type: <kind>` line per obligation.
+    const isFileObligation =
+      req.userMessage.includes('Type: file-must-exist') ||
+      req.userMessage.includes('"type":"file-must-exist"');
     if (isFileObligation) {
       const isBad = rng() < goal.expectedFailureRate;
       const tag = isBad ? 'bad' : 'good';
