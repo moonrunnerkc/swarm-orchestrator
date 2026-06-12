@@ -48,6 +48,18 @@ export interface AskJudgeOptions {
   allowLiveCall?: boolean;
 }
 
+/** Resolve the production Anthropic judge model id. Defaults to the
+ *  pinned snapshot; `SWARM_JUDGE_MODEL` overrides without a code change
+ *  so an operator can move past a deprecation announcement without
+ *  shipping a new build. The model id folds into the cache key, so an
+ *  override never collides with cached answers from a prior model. */
+function resolveAnthropicModelId(opts: AskJudgeOptions): string {
+  if (opts.modelId !== undefined) return opts.modelId;
+  const override = process.env.SWARM_JUDGE_MODEL;
+  if (override !== undefined && override.trim().length > 0) return override.trim();
+  return PINNED_JUDGE_MODEL_ID;
+}
+
 /** Resolve the judge provider. `SWARM_JUDGE_PROVIDER=local` points the
  *  judge at a free OpenAI-compatible server and
  *  `SWARM_JUDGE_PROVIDER=ollama` at Ollama's native /api/chat (the /v1
@@ -56,7 +68,7 @@ export interface AskJudgeOptions {
  *  Anthropic Haiku judge. The model id is folded into the cache key, so
  *  answers from different providers never collide. */
 function resolveJudgeProvider(opts: AskJudgeOptions): { client: JudgeClient; modelId: string } {
-  if (opts.client !== undefined) return { client: opts.client, modelId: opts.modelId ?? PINNED_JUDGE_MODEL_ID };
+  if (opts.client !== undefined) return { client: opts.client, modelId: resolveAnthropicModelId(opts) };
   const provider = (process.env.SWARM_JUDGE_PROVIDER ?? '').toLowerCase();
   if (provider === 'local') {
     return { client: new LocalJudge(), modelId: opts.modelId ?? localJudgeModelId() };
@@ -64,7 +76,7 @@ function resolveJudgeProvider(opts: AskJudgeOptions): { client: JudgeClient; mod
   if (provider === 'ollama') {
     return { client: new OllamaJudge(), modelId: opts.modelId ?? ollamaJudgeModelId() };
   }
-  return { client: new AnthropicJudge(), modelId: opts.modelId ?? PINNED_JUDGE_MODEL_ID };
+  return { client: new AnthropicJudge(), modelId: resolveAnthropicModelId(opts) };
 }
 
 export async function askJudge(opts: AskJudgeOptions): Promise<JudgeResult> {
