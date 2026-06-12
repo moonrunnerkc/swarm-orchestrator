@@ -15,10 +15,10 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           # Node 22: the execution-grounded sandbox runs the PR's tests under the
           # ambient toolchain, and the corpus / dogfood suites target Node 22.
@@ -69,14 +69,14 @@ jobs:
             > /dev/null
       - name: Upload AI-BOM artifact
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: aibom
           path: .swarm/aibom/
           if-no-files-found: ignore
       - name: Upload audit ledger
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: audit-ledger
           path: .swarm/ledger/audit-*.jsonl
