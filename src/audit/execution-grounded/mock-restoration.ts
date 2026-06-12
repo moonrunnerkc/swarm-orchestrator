@@ -38,7 +38,6 @@ import {
   buildReproduceCommand,
   executeTestRun,
   type ExecuteTestRunOptions,
-  type TestRunResult,
 } from './test-restoration';
 
 const log = getLogger('audit:execution-grounded:mock-restoration');
