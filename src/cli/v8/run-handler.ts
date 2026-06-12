@@ -191,6 +191,95 @@ interface RunHandlerInjections {
   adapterRegistry?: AdapterRegistry | null;
 }
 
+/** Apply the flag > env > config > default precedence chain for the
+ *  local provider fields and the session-kind selector. Mutates `flags`
+ *  in place. Throws when the provider config file is malformed. */
+function applyProviderConfigCascade(flags: RunFlags, repoRoot: string): void {
+  const providerConfig = loadProviderConfig(repoRoot);
+  flags.local = resolveEffectiveLocalProvider(flags.local, providerConfig.local);
+  if (
+    providerConfig.session &&
+    !flags.flagsSource.sessionFromFlag &&
+    process.env['SESSION_PROVIDER'] === undefined
+  ) {
+    flags.sessionKind = providerConfig.session;
+  }
+}
+
+/** Assemble the runPopulation options from the resolved flags plus the
+ *  upstream-built session, ledger, registry, and wasm runtime. Returns
+ *  the options object; throws when --snapshot-cleanup is malformed. */
+function buildPopulationRunOptions(args: {
+  flags: RunFlags;
+  contract: ReturnType<typeof readContract>;
+  repoRoot: string;
+  runId: string;
+  session: Session;
+  ledger: JsonlLedger;
+  registry: PersonaRegistry;
+  wasmRuntime: WasmRuntime | undefined;
+  adapterRegistry: AdapterRegistry | undefined;
+}): Parameters<typeof runPopulation>[0] {
+  const { flags, contract, repoRoot, runId, session, ledger, registry, wasmRuntime, adapterRegistry } = args;
+  const runOptions: Parameters<typeof runPopulation>[0] = {
+    contract,
+    repoRoot,
+    registry,
+    session,
+    ledger,
+    runId,
+    mode: flags.mode,
+    preGeneration: flags.preGeneration,
+    postMerge: flags.postMerge,
+    falsifiers: flags.falsifiers,
+  };
+  if (adapterRegistry) runOptions.adapterRegistry = adapterRegistry;
+  if (flags.streaming) {
+    runOptions.streaming = { forbiddenImports: flags.forbiddenImports };
+  }
+  if (wasmRuntime) runOptions.wasmRuntime = wasmRuntime;
+  if (flags.snapshotCleanup) {
+    runOptions.snapshotCleanupPolicy = parseSnapshotPolicy(flags.snapshotCleanup);
+  }
+  if (flags.tokenBudget !== null) {
+    runOptions.costTracker = new LiveCostTracker({ budgetTokens: flags.tokenBudget });
+  }
+  if (flags.falsifierScheduler === 'ucb1') {
+    const statsPath = flags.falsifierStatsPath
+      ? path.resolve(flags.falsifierStatsPath)
+      : path.join(repoRoot, '.swarm', 'falsifier-stats.json');
+    runOptions.falsifierScheduler = new FalsifierScheduler({
+      kind: 'ucb1',
+      statsPath,
+    });
+  }
+  if (flags.maxObligations !== null) runOptions.maxObligations = flags.maxObligations;
+  if (flags.commandTimeoutMs !== null) runOptions.commandTimeoutMs = flags.commandTimeoutMs;
+  if (flags.candidates !== null && flags.mode === 'tournament') {
+    runOptions.tournamentConfig = {
+      'file-must-exist': {
+        candidatesPerRound: flags.candidates,
+        roundCap: 3,
+        scoreThreshold: 0.5,
+        temperatureSchedule: [0.2, 0.5, 0.8],
+      },
+      'build-must-pass': {
+        candidatesPerRound: flags.candidates,
+        roundCap: 3,
+        scoreThreshold: 0.5,
+        temperatureSchedule: [0.1, 0.4, 0.7],
+      },
+      'test-must-pass': {
+        candidatesPerRound: flags.candidates,
+        roundCap: 3,
+        scoreThreshold: 0.5,
+        temperatureSchedule: [0.1, 0.4, 0.7],
+      },
+    };
+  }
+  return runOptions;
+}
+
 /**
  * Implementation of `swarm v8 run <contract-path> [flags]`. Returns an
  * exit code:
@@ -233,20 +322,8 @@ export async function handleRun(
 
   const projectContext = renderProjectContext(contract.manifest.goal, repoRoot);
 
-  // Precedence chain: flag > env > config > default. Fold config
-  // fallback into any local-provider field still null after the flag
-  // and env parsed at parseRunFlags time; do the same for the session
-  // provider when neither the flag nor the env explicitly set it.
   try {
-    const providerConfig = loadProviderConfig(repoRoot);
-    flags.local = resolveEffectiveLocalProvider(flags.local, providerConfig.local);
-    if (
-      providerConfig.session &&
-      !flags.flagsSource.sessionFromFlag &&
-      process.env['SESSION_PROVIDER'] === undefined
-    ) {
-      flags.sessionKind = providerConfig.session;
-    }
+    applyProviderConfigCascade(flags, repoRoot);
   } catch (err) {
     logger.error((err as Error).message);
     return 1;
@@ -278,9 +355,7 @@ export async function handleRun(
 
   const registry = injections.registry ?? createDefaultRegistry();
   const ledger = new JsonlLedger(ledgerPath, runId);
-
   const wasmRuntime = injections.wasmRuntime ?? (flags.deterministic ? createDefaultRuntime() : undefined);
-
   // Adapter-reintegration: build the falsifier registry the population
   // manager dispatches against after each obligation. Phase 1's flag
   // plumbing in `RunFlags.falsifiers` finally wires through to the run
@@ -291,75 +366,22 @@ export async function handleRun(
       : injections.adapterRegistry ??
         (flags.falsifiers === 'on' ? defaultAdapterRegistry() : undefined);
 
-  const runOptions: Parameters<typeof runPopulation>[0] = {
-    contract,
-    repoRoot,
-    registry,
-    session,
-    ledger,
-    runId,
-    mode: flags.mode,
-    preGeneration: flags.preGeneration,
-    postMerge: flags.postMerge,
-    falsifiers: flags.falsifiers,
-  };
-  if (adapterRegistry) runOptions.adapterRegistry = adapterRegistry;
-  if (flags.streaming) {
-    runOptions.streaming = { forbiddenImports: flags.forbiddenImports };
-  }
-  if (wasmRuntime) runOptions.wasmRuntime = wasmRuntime;
-
-  // Phase 7: snapshot cleanup policy. Parsed early so a malformed spec
-  // surfaces before we spend tokens.
-  if (flags.snapshotCleanup) {
-    try {
-      runOptions.snapshotCleanupPolicy = parseSnapshotPolicy(flags.snapshotCleanup);
-    } catch (err) {
-      logger.error((err as Error).message);
-      return 1;
-    }
-  }
-
-  if (flags.tokenBudget !== null) {
-    runOptions.costTracker = new LiveCostTracker({ budgetTokens: flags.tokenBudget });
-  }
-
-  // Phase 7: adaptive falsifier scheduler. Default sequential preserves
-  // historical behavior; ucb1 enables the bandit. Stats persist to
-  // `.swarm/falsifier-stats.json` by default; override via flag.
-  if (flags.falsifierScheduler === 'ucb1') {
-    const statsPath = flags.falsifierStatsPath
-      ? path.resolve(flags.falsifierStatsPath)
-      : path.join(repoRoot, '.swarm', 'falsifier-stats.json');
-    runOptions.falsifierScheduler = new FalsifierScheduler({
-      kind: 'ucb1',
-      statsPath,
+  let runOptions: Parameters<typeof runPopulation>[0];
+  try {
+    runOptions = buildPopulationRunOptions({
+      flags,
+      contract,
+      repoRoot,
+      runId,
+      session,
+      ledger,
+      registry,
+      wasmRuntime,
+      adapterRegistry,
     });
-  }
-
-  if (flags.maxObligations !== null) runOptions.maxObligations = flags.maxObligations;
-  if (flags.commandTimeoutMs !== null) runOptions.commandTimeoutMs = flags.commandTimeoutMs;
-  if (flags.candidates !== null && flags.mode === 'tournament') {
-    runOptions.tournamentConfig = {
-      'file-must-exist': {
-        candidatesPerRound: flags.candidates,
-        roundCap: 3,
-        scoreThreshold: 0.5,
-        temperatureSchedule: [0.2, 0.5, 0.8],
-      },
-      'build-must-pass': {
-        candidatesPerRound: flags.candidates,
-        roundCap: 3,
-        scoreThreshold: 0.5,
-        temperatureSchedule: [0.1, 0.4, 0.7],
-      },
-      'test-must-pass': {
-        candidatesPerRound: flags.candidates,
-        roundCap: 3,
-        scoreThreshold: 0.5,
-        temperatureSchedule: [0.1, 0.4, 0.7],
-      },
-    };
+  } catch (err) {
+    logger.error((err as Error).message);
+    return 1;
   }
 
   let result;

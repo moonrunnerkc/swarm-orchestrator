@@ -601,27 +601,47 @@ function buildBlockTriggers(
   });
 }
 
-async function runAudit(flags: AuditFlags): Promise<number> {
-  const startedAt = Date.now();
+/** Resolved audit inputs: the diff text, the optional PR context, the
+ *  detected AI agent, the fetched manifest tree (when --pr), and the
+ *  effective repo root the detector engine reads manifests from. */
+interface AuditInputs {
+  unifiedDiff: string;
+  prContext: PrContext | undefined;
+  agent: AuditAgentAttribution | undefined;
+  fetchedManifests: Awaited<ReturnType<typeof maybeFetchManifests>>;
+  effectiveRepoRoot: string;
+}
+
+async function loadAuditInputs(flags: AuditFlags): Promise<AuditInputs> {
   const unifiedDiff = await loadDiff(flags);
   const prContext = await loadPrContext(flags);
   const agent = prContext !== undefined ? detectAgent(prContext.fingerprintInput) : undefined;
-
   // For --pr audits, the user's cwd has no relationship to the target
-  // repo, so the cheat-detector's manifest readers would see swarm's
-  // own package.json instead of the PR's actual manifest(s). Fetch the
-  // candidate manifests via the GitHub Contents API and run the audit
-  // with `repoRoot` pointed at the resulting temp tree. For other
-  // input modes (--diff-file, --diff-stdin), the caller's --repo-root
-  // is the right answer.
+  // repo, so the cheat-detector's manifest readers would otherwise see
+  // swarm's own package.json instead of the PR's actual manifest(s).
+  // Fetch the candidate manifests via the GitHub Contents API and run
+  // the audit with repoRoot pointed at the resulting temp tree. For
+  // other input modes (--diff-file, --diff-stdin), the caller's
+  // --repo-root is the right answer.
   const fetchedManifests = await maybeFetchManifests(flags, unifiedDiff, prContext);
   const effectiveRepoRoot =
     fetchedManifests !== undefined ? fetchedManifests.tempRoot : flags.repoRoot;
+  return { unifiedDiff, prContext, agent, fetchedManifests, effectiveRepoRoot };
+}
 
-  // Ledger is created up-front so the judge can write
-  // `llm-judge-result` entries onto the same hash chain as the audit
-  // metadata. We capture the started entry once we know the detector
-  // versions; the judge entries are appended in between by the engine.
+/** The ledger plus the judge sink that writes onto the same hash chain. */
+interface LedgerAndSink {
+  runId: string;
+  ledgerPath: string;
+  ledger: HashChainedLedger;
+  attribution: LedgerAgentAttribution | undefined;
+  judgeLedgerSink: JudgeLedgerSink;
+}
+
+function buildLedgerAndSink(
+  flags: AuditFlags,
+  agent: AuditAgentAttribution | undefined,
+): LedgerAndSink {
   const runId = `audit-${crypto.randomUUID()}`;
   const ledgerPath =
     flags.ledgerPath !== undefined
@@ -629,7 +649,6 @@ async function runAudit(flags: AuditFlags): Promise<number> {
       : path.join('.swarm', 'ledger', `${runId}.jsonl`);
   const ledger = new HashChainedLedger(ledgerPath, runId);
   const attribution = agentToLedger(agent);
-
   const judgeLedgerSink: JudgeLedgerSink = {
     appendJudgeEntry(entry: JudgeLedgerEntry): void {
       const payload: Omit<
@@ -650,32 +669,99 @@ async function runAudit(flags: AuditFlags): Promise<number> {
       ledger.append<LlmJudgeResultEntry>(payload);
     },
   };
+  return { runId, ledgerPath, ledger, attribution, judgeLedgerSink };
+}
 
+async function runDetectors(
+  flags: AuditFlags,
+  inputs: AuditInputs,
+  judgeLedgerSink: JudgeLedgerSink,
+): Promise<AuditResult> {
   const auditInput: AuditInput = {
-    unifiedDiff,
-    repoRoot: effectiveRepoRoot,
+    unifiedDiff: inputs.unifiedDiff,
+    repoRoot: inputs.effectiveRepoRoot,
     detectorSet: flags.detectorSet,
     judgeEnabled: flags.enableLlmJudge,
     judgeLedger: judgeLedgerSink,
   };
-  if (agent !== undefined) auditInput.agent = agent;
-  if (prContext !== undefined) auditInput.pr = prContext.prMetadata;
-
-  let result: AuditResult;
+  if (inputs.agent !== undefined) auditInput.agent = inputs.agent;
+  if (inputs.prContext !== undefined) auditInput.pr = inputs.prContext.prMetadata;
   try {
-    result = await runCheatDetectors(auditInput);
+    return await runCheatDetectors(auditInput);
   } finally {
-    fetchedManifests?.cleanup();
+    inputs.fetchedManifests?.cleanup();
   }
+}
+
+/** Translate the gate decision and the resolved flags into the
+ *  shadow-output, shadow, or text/json/markdown publication path and
+ *  return the audit's exit code. */
+function emitAuditResult(args: {
+  flags: AuditFlags;
+  result: AuditResult;
+  prContext: PrContext | undefined;
+  runId: string;
+  ledgerPath: string;
+  wallTimeMs: number;
+  decision: { blocked: boolean; blockingTriggers: BlockTrigger[] };
+}): number {
+  const { flags, result, prContext, runId, ledgerPath, wallTimeMs, decision } = args;
+  // --shadow-output: write the v10.3 single-file schema and exit
+  // without posting a comment or affecting the merge gate. Resolved
+  // before --shadow so a caller can pass both flags and get both
+  // outputs from a single run.
+  if (flags.shadowOutput !== undefined) {
+    const entry = buildShadowOutput({
+      prRef: flags.prRef ?? null,
+      durationMs: wallTimeMs,
+      result,
+      mode: flags.mode,
+      ledgerPath,
+      ledgerUrl: ledgerPath,
+    });
+    writeShadowOutputFile(flags.shadowOutput, entry);
+    logger.info(`shadow-output: wrote ${flags.shadowOutput}`);
+    return 0;
+  }
+  // Shadow mode: record the verdict to disk for later analysis against
+  // the human merge decision, suppress text output (the operator does
+  // not want this surfaced as a CI signal), and never block.
+  if (flags.shadow !== undefined) {
+    writeShadowEntry(flags.shadowDir, flags.shadow, runId, {
+      mode: flags.mode,
+      detectorSet: flags.detectorSet,
+      result,
+      wallTimeMs,
+      pr: prContext?.prMetadata,
+    });
+    return 0;
+  }
+  emitOutput(flags.output, result, ledgerPath, flags.mode, decision.blockingTriggers);
+  if (flags.mode === 'advise') return 0;
+  return decision.blocked ? 1 : 0;
+}
+
+async function runAudit(flags: AuditFlags): Promise<number> {
+  const startedAt = Date.now();
+  const inputs = await loadAuditInputs(flags);
+  // Ledger is created up-front so the judge can write
+  // `llm-judge-result` entries onto the same hash chain as the audit
+  // metadata. We capture the started entry once we know the detector
+  // versions; the judge entries are appended in between by the engine.
+  const { runId, ledgerPath, ledger, attribution, judgeLedgerSink } = buildLedgerAndSink(
+    flags,
+    inputs.agent,
+  );
+  const result = await runDetectors(flags, inputs, judgeLedgerSink);
   const wallTimeMs = Date.now() - startedAt;
 
   ledger.append<PrAuditStartedEntry>(
     {
       type: 'pr-audit-started',
-      prNumber: prContext?.prMetadata.number ?? null,
-      prRepository: prContext?.prMetadata.repository ?? null,
-      prHeadSha: prContext?.prMetadata.headSha ?? '',
-      prBaseSha: prContext?.prMetadata.baseSha ?? '',
+      prNumber: inputs.prContext?.prMetadata.number ?? null,
+      prRepository: inputs.prContext?.prMetadata.repository ?? null,
+      prHeadSha: inputs.prContext?.prMetadata.headSha ?? '',
+      prBaseSha: inputs.prContext?.prMetadata.baseSha ?? '',
       detectorsScheduled: Object.keys(result.detectorVersions),
     },
     attribution !== undefined ? { aiAgent: attribution } : undefined,
@@ -687,11 +773,11 @@ async function runAudit(flags: AuditFlags): Promise<number> {
   // fail the audit (the findings ship advisory and never gate).
   const auditConfig = loadAuditConfig(flags.repoRoot);
   let egOutcome: ExecutionGroundedOutcome | undefined;
-  if (auditConfig.executionGrounded.enabled && prContext !== undefined) {
+  if (auditConfig.executionGrounded.enabled && inputs.prContext !== undefined) {
     egOutcome = await runExecutionGroundedLayer({
       result,
-      prContext,
-      unifiedDiff,
+      prContext: inputs.prContext,
+      unifiedDiff: inputs.unifiedDiff,
       config: auditConfig.executionGrounded,
       ledger,
       attribution,
@@ -702,7 +788,7 @@ async function runAudit(flags: AuditFlags): Promise<number> {
   // the gate decision, the shadow outputs, the rendered comment) works from
   // the findings' final post-execution state; the seam owns that ordering.
   const decision = publishAuditVerdict(
-    { ledger, result, attribution, pr: prContext?.prMetadata, wallTimeMs },
+    { ledger, result, attribution, pr: inputs.prContext?.prMetadata, wallTimeMs },
     (pass) => {
       // Verifiable-evidence block triggers. Built from the execution-grounded
       // outcome's runtime facts and recorded to the ledger whether or not they
@@ -712,8 +798,8 @@ async function runAudit(flags: AuditFlags): Promise<number> {
       // the ledger records each trigger's actual blocking state, not just its
       // eligibility.
       const blockTriggers =
-        egOutcome !== undefined && prContext !== undefined
-          ? buildBlockTriggers(egOutcome, result, prContext, flags.prRef)
+        egOutcome !== undefined && inputs.prContext !== undefined
+          ? buildBlockTriggers(egOutcome, result, inputs.prContext, flags.prRef)
           : [];
       const triggerDecision = decideBlock(blockTriggers, flags.mode, pass);
       const blockedTriggers = new Set(triggerDecision.blockingTriggers);
@@ -733,42 +819,15 @@ async function runAudit(flags: AuditFlags): Promise<number> {
     await emitAibom(flags.emitAibom, flags.aibomPath, ledgerPath, runId);
   }
 
-  // --shadow-output: write the v10.3 single-file schema and exit
-  // without posting a comment or affecting the merge gate. Resolved
-  // before --shadow so a caller can pass both flags and get both
-  // outputs from a single run.
-  if (flags.shadowOutput !== undefined) {
-    const entry = buildShadowOutput({
-      prRef: flags.prRef ?? null,
-      durationMs: wallTimeMs,
-      result,
-      mode: flags.mode,
-      ledgerPath,
-      ledgerUrl: ledgerPath,
-    });
-    writeShadowOutputFile(flags.shadowOutput, entry);
-    logger.info(`shadow-output: wrote ${flags.shadowOutput}`);
-    return 0;
-  }
-
-  // Shadow mode: record the verdict to disk for later analysis against
-  // the human merge decision, suppress text output (the operator does
-  // not want this surfaced as a CI signal), and never block.
-  if (flags.shadow !== undefined) {
-    writeShadowEntry(flags.shadowDir, flags.shadow, runId, {
-      mode: flags.mode,
-      detectorSet: flags.detectorSet,
-      result,
-      wallTimeMs,
-      pr: prContext?.prMetadata,
-    });
-    return 0;
-  }
-
-  emitOutput(flags.output, result, ledgerPath, flags.mode, decision.blockingTriggers);
-
-  if (flags.mode === 'advise') return 0;
-  return decision.blocked ? 1 : 0;
+  return emitAuditResult({
+    flags,
+    result,
+    prContext: inputs.prContext,
+    runId,
+    ledgerPath,
+    wallTimeMs,
+    decision,
+  });
 }
 
 async function loadDiff(flags: AuditFlags): Promise<string> {
