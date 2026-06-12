@@ -15,6 +15,11 @@ import {
   resolveSessionProvider,
 } from '../../session/factory';
 import {
+  BoundedSession,
+  BudgetExceededError,
+  type SessionBudget,
+} from '../../session/bounded-session';
+import {
   buildLocalProviderFlagValues,
   LOCAL_PROVIDER_FLAG_SCHEMA,
   resolveEffectiveLocalProvider,
@@ -162,6 +167,10 @@ interface RunFlags {
   preset: string | null;
   /** Resolved pipeline config (populated from preset + per-flag overrides). */
   pipelineConfig: PipelineConfig;
+  /** Global LLM call ceiling. Null disables the gate. */
+  maxLlmCalls: number | null;
+  /** Global cumulative output-token ceiling. Null disables the gate. */
+  maxLlmTokens: number | null;
 }
 
 /** Test seam: lets tests inject a custom session, registry, or WASM runtime. */
@@ -255,6 +264,18 @@ export async function handleRun(
     return 3;
   }
 
+  // Denial-of-wallet ceiling. A pathological contract can otherwise drive
+  // unbounded API spending; the wrapper aborts the run with exit 1 once
+  // either ceiling is crossed. Null on both fields collapses to a
+  // transparent passthrough.
+  if (flags.maxLlmCalls !== null || flags.maxLlmTokens !== null) {
+    const budget: SessionBudget = {
+      maxCalls: flags.maxLlmCalls,
+      maxOutputTokens: flags.maxLlmTokens,
+    };
+    session = new BoundedSession(session, budget);
+  }
+
   const registry = injections.registry ?? createDefaultRegistry();
   const ledger = new JsonlLedger(ledgerPath, runId);
 
@@ -341,7 +362,16 @@ export async function handleRun(
     };
   }
 
-  const result = await runPopulation(runOptions);
+  let result;
+  try {
+    result = await runPopulation(runOptions);
+  } catch (err) {
+    if (err instanceof BudgetExceededError) {
+      logger.error(err.message);
+      return 1;
+    }
+    throw err;
+  }
 
   const eff = effectiveInputTokens(result.totalUsage);
   const rate = cacheHitRate(result.totalUsage);
@@ -494,6 +524,8 @@ const RUN_SCHEMA: ParseArgsOptions = {
   'no-pre-generation': { type: 'boolean' },
   'forbid-import': { type: 'string', multiple: true },
   'cost-cap': { type: 'string' },
+  'max-llm-calls': { type: 'string' },
+  'max-llm-tokens': { type: 'string' },
   falsifiers: { type: 'string' },
   'snapshot-cleanup': { type: 'string' },
   'falsifier-scheduler': { type: 'string' },
@@ -517,6 +549,8 @@ export function parseRunFlags(argv: string[]): RunFlags {
   const maxObligationsRaw = readString(values, 'max-obligations');
   const commandTimeoutRaw = readString(values, 'command-timeout-ms');
   const tokenBudgetRaw = readString(values, 'cost-cap');
+  const maxLlmCallsRaw = readString(values, 'max-llm-calls');
+  const maxLlmTokensRaw = readString(values, 'max-llm-tokens');
   const falsifiersRaw = readString(values, 'falsifiers');
   const falsifierSchedulerRaw = readString(values, 'falsifier-scheduler');
   const forbidImports = values['forbid-import'];
@@ -647,6 +681,12 @@ export function parseRunFlags(argv: string[]): RunFlags {
     falsifiersExplicitlySet,
     preset,
     pipelineConfig,
+    maxLlmCalls: maxLlmCallsRaw !== undefined
+      ? requirePositiveInt(maxLlmCallsRaw, '--max-llm-calls')
+      : null,
+    maxLlmTokens: maxLlmTokensRaw !== undefined
+      ? requirePositiveInt(maxLlmTokensRaw, '--max-llm-tokens')
+      : null,
   };
 
   if (positionals.length === 0) {
@@ -734,6 +774,8 @@ function printRunUsage(): void {
       '  --no-post-merge              disable Phase 6 post-merge integration check (default: enabled)',
       '  --forbid-import <names>      comma-separated module names the streaming verifier rejects',
       '  --cost-cap <n>               live output-token ceiling (positive integer); aborts streams once projected output crosses it',
+      '  --max-llm-calls <n>          global cap on cumulative LLM calls across the run (sessions + adapters); aborts with exit 1 at the ceiling',
+      '  --max-llm-tokens <n>         global cap on cumulative output tokens charged across the run; aborts with exit 1 at the ceiling',
       '  --snapshot-cleanup <spec>    snapshot policy (retain-on-failure|always|never|',
       '                               retain-last:<n>|max-age:<duration>|max-disk:<size>)',
       '  --falsifier-scheduler <kind> sequential (default) | ucb1 (adaptive bandit)',
