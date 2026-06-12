@@ -1,0 +1,102 @@
+name: EG-viable measurement (12-repo matrix)
+
+# The bounded execution-grounded run over the EG-viable slice of the
+# outcome-labeled real corpus, fanned one container per repo so each provisions
+# and runs under its own time cap. User-triggered (workflow_dispatch) and run
+# after review, not on a schedule: it clones and installs 12 third-party repos
+# and runs their suites under mutation. Each job uploads its per-PR result
+# artifact; the aggregate job folds them into the corroborated summary that the
+# promotions scripts read. promotions.json keeps its honest pending-dispatch
+# status (corroborated tier: viability-screened) until a maintainer reviews the
+# artifacts and runs the promotions recompute.
+
+on:
+  workflow_dispatch:
+    inputs:
+      installTimeoutMs:
+        description: 'Per-workspace dependency-install cap (ms)'
+        default: '600000'
+      wallClockMs:
+        description: 'Per-PR execution-grounded wall-clock cap (ms)'
+        default: '1200000'
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        id:
+          - claude-code-anthropics-anthropic-sdk-typescript-pr1062
+          - claude-code-ChadFarrow-MSP-2.0-pr65
+          - copilot-workspace-Renumics-spotlight-pr557
+          - copilot-workspace-Renumics-spotlight-pr558
+          - cursor-birdwell-trading-cards-pr7
+          - cursor-birdwell-trading-cards-pr8
+          - cursor-dookbrah-king-myco-runner-pr28
+          - cursor-DukkyGames-Minnow-pr60
+          - devin-aalikes-rest-api-pr1
+          - devin-dev-crorx-uplytech-central-api-pr11
+          - devin-dev-crorx-uplytech-central-api-pr2
+          - devin-NotJayDee119-TECHO_123-pr1
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm run build
+      - name: Measure one EG-viable PR
+        # Secrets reach the step only through the env block.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SWARM_EG_INSTALL_TIMEOUT_MS: ${{ github.event.inputs.installTimeoutMs || '600000' }}
+          SWARM_EG_WALLCLOCK_MS: ${{ github.event.inputs.wallClockMs || '1200000' }}
+        run: node dist/scripts/real-prs/eg-viable-measure.js --only "${{ matrix.id }}"
+      - name: Upload per-PR result
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: eg-viable-${{ matrix.id }}
+          path: benchmarks/real-corpus/eg-viable-results/${{ matrix.id }}/result.json
+          if-no-files-found: warn
+
+  aggregate:
+    needs: measure
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm run build
+      - name: Download all per-PR results
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: artifacts
+      - name: Reassemble the results tree
+        run: |
+          mkdir -p benchmarks/real-corpus/eg-viable-results
+          for dir in artifacts/eg-viable-*; do
+            id="${dir#artifacts/eg-viable-}"
+            mkdir -p "benchmarks/real-corpus/eg-viable-results/${id}"
+            [ -f "${dir}/result.json" ] && cp "${dir}/result.json" "benchmarks/real-corpus/eg-viable-results/${id}/result.json" || true
+          done
+      - name: Aggregate corroborated tier
+        run: node dist/scripts/real-prs/eg-viable-measure.js --aggregate
+      - name: Upload the corroborated summary for review
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: eg-viable-corroborated-summary
+          path: benchmarks/real-corpus/eg-viable-corroborated.json
+          if-no-files-found: warn
+      # promotions.json is NOT recomputed here: a maintainer reviews the summary
+      # first, then runs `npm run promotions:compute` to fold the measured
+      # corroborated precision in. Until then the corroborated tier stays
+      # viability-screened (the honest pending-dispatch status).
