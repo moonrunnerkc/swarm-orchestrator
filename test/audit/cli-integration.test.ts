@@ -146,4 +146,40 @@ describe('cli / swarm audit', function () {
     const { exitCode } = runCli(['audit'], dir);
     assert.equal(exitCode, 2);
   });
+
+  it('rejects a --diff-file path that escapes --repo-root with exit 2', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-cli-escape-'));
+    // The diff sits outside the repo root we declare; rejecting this is the
+    // remediation for CWE-22 surfaced by the security review (L3).
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-cli-outside-'));
+    const diffFile = path.join(outsideDir, 'attack.patch');
+    fs.writeFileSync(diffFile, TEST_RELAXATION_DIFF);
+    const { exitCode, stderr } = runCli(
+      ['audit', '--diff-file', diffFile, '--repo-root', dir, '--output', 'json'],
+      dir,
+    );
+    assert.equal(exitCode, 2);
+    assert.ok(
+      stderr.includes('resolves outside'),
+      `expected stderr to name the bounds-check, got: ${stderr}`,
+    );
+  });
+
+  it('honors SWARM_DIFF_FILE_ALLOW_OUTSIDE=1 to opt back into out-of-tree diffs', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-cli-allow-out-'));
+    const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-cli-outside-2-'));
+    const diffFile = path.join(outsideDir, 'allowed.patch');
+    fs.writeFileSync(diffFile, TEST_RELAXATION_DIFF);
+    const res = spawnSync(
+      'node',
+      [CLI_RESOLVED, 'audit', '--diff-file', diffFile, '--repo-root', dir, '--output', 'json'],
+      {
+        cwd: dir,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, SWARM_DIFF_FILE_ALLOW_OUTSIDE: '1' },
+      },
+    );
+    assert.notEqual(res.status, 2, `expected non-usage exit, got 2 with stderr: ${res.stderr}`);
+  });
 });

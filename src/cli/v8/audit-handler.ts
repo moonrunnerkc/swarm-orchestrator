@@ -257,6 +257,31 @@ function validateFlags(flags: AuditFlags): void {
       { remediation: 'Try: swarm audit --diff-stdin < my.patch' },
     );
   }
+  // --repo-root is the trust boundary for filesystem reads. A workflow
+  // author can pass `--diff-file ../../etc/passwd` via the Action's
+  // extra-args input; resolve it against the repo root and reject when
+  // it lands outside. `SWARM_DIFF_FILE_ALLOW_OUTSIDE=1` opts an operator
+  // back into the old behavior for local dev flows that diff against an
+  // out-of-tree patch file.
+  if (
+    flags.diffFile !== undefined &&
+    (process.env.SWARM_DIFF_FILE_ALLOW_OUTSIDE ?? '').trim() !== '1'
+  ) {
+    const repoRoot = path.resolve(flags.repoRoot);
+    const resolved = path.resolve(repoRoot, flags.diffFile);
+    const rel = path.relative(repoRoot, resolved);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) {
+      throw new SwarmError(
+        `--diff-file "${flags.diffFile}" resolves outside --repo-root "${repoRoot}"`,
+        'AUDIT_USAGE',
+        {
+          remediation:
+            'Move the diff inside the repo root, or set SWARM_DIFF_FILE_ALLOW_OUTSIDE=1 to allow out-of-tree paths',
+        },
+      );
+    }
+    flags.diffFile = resolved;
+  }
 }
 
 export async function handleAudit(argv: string[]): Promise<number> {

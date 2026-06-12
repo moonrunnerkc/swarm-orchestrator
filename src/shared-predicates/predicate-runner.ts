@@ -15,6 +15,7 @@
  */
 
 import { execSync } from 'child_process';
+import { sanitizedChildEnv } from '../shared/child-env';
 
 export interface PredicateExecResult {
   /** Concatenated stdout+stderr captured from running the predicate. */
@@ -44,7 +45,7 @@ export function runPredicate(predicate: string, workspaceRoot: string): Predicat
       cwd: workspaceRoot,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: process.env,
+      env: sanitizedChildEnv(),
     });
     return { output: stdout, exitCode: 0 };
   } catch (cause) {

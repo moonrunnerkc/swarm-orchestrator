@@ -1,6 +1,7 @@
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import { sanitizedChildEnv } from '../shared/child-env';
 
 /**
  * Shell to use for verification commands (build, test, predicates,
@@ -103,7 +104,7 @@ function verifyCommand(
     shell: VERIFICATION_SHELL,
     encoding: 'utf8',
     timeout,
-    env: process.env,
+    env: sanitizedChildEnv(),
   });
 
   const label = contextLabel ? `${contextLabel}: ` : '';
@@ -576,7 +577,7 @@ function verifyPerformance(
     shell: VERIFICATION_SHELL,
     encoding: 'utf8',
     timeout,
-    env: process.env,
+    env: sanitizedChildEnv(),
   });
   if (result.error) {
     const errCode = (result.error as NodeJS.ErrnoException).code;
