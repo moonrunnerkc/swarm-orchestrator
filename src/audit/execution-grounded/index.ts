@@ -60,6 +60,10 @@ import {
   runTypeSuppressionRestoration,
   type TypeSuppressionProofRecord,
 } from './type-suppression-restoration';
+import {
+  runFakeRefactorRestoration,
+  type FakeRefactorProofRecord,
+} from './fake-refactor-restoration';
 import { parsePrIntent, type PrIntent } from '../cheat-detector/pr-intent';
 
 const log = getLogger('audit:execution-grounded');
@@ -317,6 +321,10 @@ export interface ExecutionGroundedOutcome {
    *  phase evaluated (every verdict included, same funnel honesty as the
    *  others). Finding-gated, like the test and mock proofs. */
   typeSuppressionRestorations: TypeSuppressionProofRecord[];
+  /** One proof record per qualifying `fake-refactor` finding the restoration
+   *  phase evaluated (every verdict included). Finding-gated; the proof is a
+   *  static scan of the head checkout, not a test run. */
+  fakeRefactorRestorations: FakeRefactorProofRecord[];
   skipped: string[];
 }
 
@@ -331,6 +339,7 @@ interface ProofCandidates {
   mock: Finding[];
   noOp: { findingFile: string; prIntent: PrIntent; linkedIssueCount: number } | null;
   typeSuppression: Finding[];
+  fakeRefactor: Finding[];
 }
 
 function selectProofCandidates(
@@ -363,7 +372,13 @@ function selectProofCandidates(
   const typeSuppression = structuralFindings.filter(
     (f) => f.category === 'type-suppression' && f.severity !== 'info',
   );
-  return { test, mock, noOp, typeSuppression };
+  // The structural fake-refactor detector emits `block`; the proof confirms the
+  // dangling reference against the whole checkout (the detector saw only the
+  // diff). Select every non-demoted fake-refactor finding.
+  const fakeRefactor = structuralFindings.filter(
+    (f) => f.category === 'fake-refactor' && f.severity !== 'info',
+  );
+  return { test, mock, noOp, typeSuppression, fakeRefactor };
 }
 
 /** One honesty record per qualifying structural finding when restoration
@@ -518,6 +533,54 @@ export function typeSuppressionBudgetExhaustedRecords(
     reproduceCommand: '',
     revertedHunkPatch: '',
     reason: 'wall-clock budget exhausted before any tsc run executed for the type-suppression proof',
+  }));
+}
+
+/** no-workspace honesty records for the fake-refactor candidate findings: the
+ *  layer bailed before a sandbox existed, so each candidate is accounted for
+ *  with a null-control record instead of vanishing. */
+export function noWorkspaceFakeRefactorRecords(
+  findings: readonly Finding[],
+  detail: string,
+): FakeRefactorProofRecord[] {
+  return findings.map((f) => ({
+    schemaVersion: 1,
+    verdict: 'not-proven:no-workspace',
+    category: 'fake-refactor',
+    findingFile: f.location.file,
+    oldName: '',
+    newName: '',
+    references: [],
+    controls: {
+      oldSymbolResolved: null,
+      oldSymbolDeclarationRemoved: null,
+      oldSymbolStillReferenced: null,
+    },
+    reproduceCommand: '',
+    reason: `fake-refactor restoration could not run: no sandbox workspace was provisioned (${detail})`,
+  }));
+}
+
+/** Budget-exhausted honesty records for fake-refactor candidates the per-PR
+ *  wall-clock ran out on before the static scan ran. */
+export function fakeRefactorBudgetExhaustedRecords(
+  findings: readonly Finding[],
+): FakeRefactorProofRecord[] {
+  return findings.map((f) => ({
+    schemaVersion: 1,
+    verdict: 'not-proven:execution-error',
+    category: 'fake-refactor',
+    findingFile: f.location.file,
+    oldName: '',
+    newName: '',
+    references: [],
+    controls: {
+      oldSymbolResolved: null,
+      oldSymbolDeclarationRemoved: null,
+      oldSymbolStillReferenced: null,
+    },
+    reproduceCommand: '',
+    reason: 'wall-clock budget exhausted before the fake-refactor scan ran',
   }));
 }
 
@@ -693,6 +756,35 @@ export function applyTypeSuppressionRestorationToFinding(
   }
 }
 
+/**
+ * Ride a fake-refactor verdict onto its `fake-refactor` finding, in place.
+ * Refuted demotes the block to advisory (the diff-visible reference the detector
+ * saw was a member access or otherwise not a dangling reference: the rename is
+ * complete in the checkout); proven keeps the block and records the surviving
+ * references as runtime corroboration. Every other verdict is record-only.
+ */
+export function applyFakeRefactorRestorationToFinding(
+  finding: Finding,
+  record: FakeRefactorProofRecord,
+): void {
+  if (record.verdict === 'refuted') {
+    finding.severity = 'info';
+    finding.confidence = 'structural-only';
+    finding.evidence =
+      `${finding.evidence}\n` +
+      `demoted: no surviving reference to '${record.oldName}' remains anywhere in the checkout, so ` +
+      `the rename is complete and the diff-visible match was not a dangling reference`;
+    return;
+  }
+  if (record.verdict === 'proven') {
+    finding.runtimeCorroboration = {
+      signal: 'dangling-reference',
+      references: record.references,
+    };
+    setFindingConfidence(finding);
+  }
+}
+
 /** Persist a typed proof envelope under `<evidenceDir>/<filename>`, identity
  *  stamped and written on every enabled run (empty included) so a stale file
  *  from an earlier head SHA never outlives its run. Generic sibling of
@@ -737,6 +829,7 @@ export interface ProofRestorationOutcome {
   mockRestorations: MockRestorationProofRecord[];
   noOpRestorations: NoOpFixProofRecord[];
   typeSuppressionRestorations: TypeSuppressionProofRecord[];
+  fakeRefactorRestorations: FakeRefactorProofRecord[];
   skipped: string[];
 }
 
@@ -757,6 +850,7 @@ export function runProofRestorations(input: ProofRestorationInput): ProofRestora
   const mockRestorations: MockRestorationProofRecord[] = [];
   const noOpRestorations: NoOpFixProofRecord[] = [];
   const typeSuppressionRestorations: TypeSuppressionProofRecord[] = [];
+  const fakeRefactorRestorations: FakeRefactorProofRecord[] = [];
   const candidates = selectProofCandidates(
     input.structuralFindings,
     input.prDiff,
@@ -882,7 +976,38 @@ export function runProofRestorations(input: ProofRestorationInput): ProofRestora
     applyTypeSuppressionRestorationToFinding(finding, record);
   }
 
-  return { restorations, mockRestorations, noOpRestorations, typeSuppressionRestorations, skipped };
+  // T8: fake-refactor restoration (finding-gated; a static scan of the checkout).
+  for (let i = 0; i < candidates.fakeRefactor.length; i++) {
+    const finding = candidates.fakeRefactor[i]!;
+    if (restorationBudgetExhausted(input.deadline, Date.now())) {
+      const dropped = candidates.fakeRefactor.length - i;
+      skipped.push(
+        `fake-refactor-restoration: wall-clock budget exhausted; ${dropped} finding(s) recorded without execution`,
+      );
+      fakeRefactorRestorations.push(
+        ...fakeRefactorBudgetExhaustedRecords(candidates.fakeRefactor.slice(i)),
+      );
+      break;
+    }
+    const record = runFakeRefactorRestoration({
+      finding: { category: 'fake-refactor', file: finding.location.file, line: finding.location.line },
+      prDiff: input.prDiff,
+      prRef: input.prRef,
+      prHeadSha: input.prHeadSha,
+      repoRoot: input.postWorkspacePath,
+    });
+    fakeRefactorRestorations.push(record);
+    applyFakeRefactorRestorationToFinding(finding, record);
+  }
+
+  return {
+    restorations,
+    mockRestorations,
+    noOpRestorations,
+    typeSuppressionRestorations,
+    fakeRefactorRestorations,
+    skipped,
+  };
 }
 
 /**
@@ -893,7 +1018,7 @@ export function runProofRestorations(input: ProofRestorationInput): ProofRestora
  */
 export async function runExecutionGrounded(input: ExecutionGroundedInput): Promise<ExecutionGroundedOutcome> {
   const skipped: string[] = [];
-  const empty: ExecutionGroundedOutcome = { findings: [], mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], skipped };
+  const empty: ExecutionGroundedOutcome = { findings: [], mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], fakeRefactorRestorations: [], skipped };
   if (!input.config.enabled) {
     // Disabled means the layer never ran at all: no honesty records, because
     // nothing was promised to run.
@@ -915,6 +1040,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
     mockRestorations: readonly MockRestorationProofRecord[];
     noOpRestorations: readonly NoOpFixProofRecord[];
     typeSuppressionRestorations: readonly TypeSuppressionProofRecord[];
+    fakeRefactorRestorations: readonly FakeRefactorProofRecord[];
   }): void => {
     if (input.evidenceDir === undefined) return;
     persistRestorationProofs(
@@ -924,6 +1050,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
     writeProofEnvelope(input.evidenceDir, 'mock-restoration-proof.json', prRef, input.prHeadSha, out.mockRestorations);
     writeProofEnvelope(input.evidenceDir, 'no-op-fix-restoration-proof.json', prRef, input.prHeadSha, out.noOpRestorations);
     writeProofEnvelope(input.evidenceDir, 'type-suppression-restoration-proof.json', prRef, input.prHeadSha, out.typeSuppressionRestorations);
+    writeProofEnvelope(input.evidenceDir, 'fake-refactor-restoration-proof.json', prRef, input.prHeadSha, out.fakeRefactorRestorations);
   };
   // Fail closed: the envelopes are written empty before any phase that can
   // throw, so an exception escaping the run cannot leave a stale envelope
@@ -941,6 +1068,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
       candidates.typeSuppression,
       detail,
     );
+    empty.fakeRefactorRestorations = noWorkspaceFakeRefactorRecords(candidates.fakeRefactor, detail);
     persistProofs(empty);
     return empty;
   };
@@ -1001,7 +1129,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
 
   const deadline = Date.now() + input.config.maxWallClockPerPrMs;
   const findings: Finding[] = [];
-  const outcome: ExecutionGroundedOutcome = { findings, mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], skipped };
+  const outcome: ExecutionGroundedOutcome = { findings, mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], fakeRefactorRestorations: [], skipped };
   const cacheArg = input.cacheDir !== undefined ? { cacheDir: input.cacheDir } : {};
 
   try {
@@ -1140,6 +1268,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
     outcome.mockRestorations = proofs.mockRestorations;
     outcome.noOpRestorations = proofs.noOpRestorations;
     outcome.typeSuppressionRestorations = proofs.typeSuppressionRestorations;
+    outcome.fakeRefactorRestorations = proofs.fakeRefactorRestorations;
     skipped.push(...proofs.skipped);
     persistProofs(outcome);
   } finally {

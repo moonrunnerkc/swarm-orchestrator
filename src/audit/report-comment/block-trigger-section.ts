@@ -14,6 +14,7 @@ import type {
   NoOpFixProvenEvidence,
   TestTamperProvenEvidence,
   TypeSuppressionProvenEvidence,
+  FakeRefactorProvenEvidence,
 } from '../gate/block-trigger-types';
 
 /**
@@ -103,6 +104,8 @@ function renderEvidence(evidence: BlockTriggerEvidence): string[] {
       return renderNoOpFixProven(evidence);
     case 'type-suppression-proven':
       return renderTypeSuppressionProven(evidence);
+    case 'fake-refactor-proven':
+      return renderFakeRefactorProven(evidence);
   }
 }
 
@@ -193,6 +196,26 @@ function renderTypeSuppressionProven(evidence: TypeSuppressionProvenEvidence): s
     `| Added directive reverted in the sandbox | ${controlMark(c.directiveRemoved)} |`,
     `| File typechecks clean as submitted | ${controlMark(c.fileCleanAsSubmitted)} |`,
     `| A tsc diagnostic surfaces once the directive is gone | ${controlMark(c.diagnosticSurfacesWhenRemoved)} |`,
+    '',
+  ];
+}
+
+/** The three controls behind a fake-refactor proof, in a fixed order so the
+ *  table renders byte-identical for the same proof. The trigger only gates when
+ *  all three are ✅ (see self-certifying.controlsAllGreen). */
+function renderFakeRefactorProven(evidence: FakeRefactorProvenEvidence): string[] {
+  const c = evidence.controls;
+  return [
+    `*Verdict:* \`${evidence.verdict}\` — fake-refactor; \`${evidence.oldName}\` renamed to ` +
+      `\`${evidence.newName}\` in ${evidence.file}.`,
+    '',
+    `*Surviving reference(s) to \`${evidence.oldName}\`:* ${evidence.references.join(', ')}.`,
+    '',
+    '| Control | Result |',
+    '| --- | --- |',
+    `| Old symbol resolved unambiguously from the diff | ${controlMark(c.oldSymbolResolved)} |`,
+    `| Old symbol no longer declared anywhere in the checkout | ${controlMark(c.oldSymbolDeclarationRemoved)} |`,
+    `| At least one reference to the old symbol survives | ${controlMark(c.oldSymbolStillReferenced)} |`,
     '',
   ];
 }

@@ -388,6 +388,25 @@ export interface LedgerEntryPayloadMap {
     };
     reproduceCommand: string;
   };
+  // Fake-refactor restoration proof record: one entry per qualifying
+  // `fake-refactor` finding the restoration phase evaluated, every verdict
+  // included. `controls` mirrors the proof's three internal controls; null
+  // means that check never ran. `references` are the `file:line` locations
+  // where the renamed-away symbol still appears in the head checkout.
+  'pr-audit-fake-refactor-restoration': {
+    category: string;
+    verdict: string;
+    findingFile: string;
+    oldName: string;
+    newName: string;
+    references: string[];
+    controls: {
+      oldSymbolResolved: boolean | null;
+      oldSymbolDeclarationRemoved: boolean | null;
+      oldSymbolStillReferenced: boolean | null;
+    };
+    reproduceCommand: string;
+  };
   // A verifiable-evidence block-trigger candidate: a self-certifying
   // runtime fact (a falsified issue repro, a structural finding a surviving
   // mutant or coverage gap corroborates on the same line, a failed declared
@@ -406,7 +425,8 @@ export interface LedgerEntryPayloadMap {
       | 'test-tamper-proven'
       | 'mock-mutation-proven'
       | 'no-op-fix-proven'
-      | 'type-suppression-proven';
+      | 'type-suppression-proven'
+      | 'fake-refactor-proven';
     eligible: boolean;
     blocked: boolean;
     summary: string;
@@ -464,4 +484,6 @@ export type PrAuditMockRestorationEntry = LedgerEntry<'pr-audit-mock-restoration
 export type PrAuditNoOpFixRestorationEntry = LedgerEntry<'pr-audit-no-op-fix-restoration'>;
 export type PrAuditTypeSuppressionRestorationEntry =
   LedgerEntry<'pr-audit-type-suppression-restoration'>;
+export type PrAuditFakeRefactorRestorationEntry =
+  LedgerEntry<'pr-audit-fake-refactor-restoration'>;
 export type PrAuditBlockTriggerEntry = LedgerEntry<'pr-audit-block-trigger'>;

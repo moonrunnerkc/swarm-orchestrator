@@ -40,6 +40,7 @@ describe('gate-decision', () => {
       [...BLOCK_ELIGIBLE_TRIGGERS].sort(),
       [
         'claim-falsified',
+        'fake-refactor-proven',
         'mock-mutation-proven',
         'no-op-fix-proven',
         'obligation-failure',

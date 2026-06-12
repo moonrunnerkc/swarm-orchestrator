@@ -159,7 +159,8 @@ export interface RuntimeCorroboration {
     | 'coverage-gap'
     | 'repro-still-fails'
     | 'restored-test-fails'
-    | 'type-error-surfaces';
+    | 'type-error-surfaces'
+    | 'dangling-reference';
   /** Surviving-mutant ids, e.g. `BlockStatement@src/x.ts:12 -> Survived`. */
   mutants?: string[];
   /** Changed lines no test executed. */
@@ -172,6 +173,10 @@ export interface RuntimeCorroboration {
   /** tsc diagnostics a proven type-suppression restoration surfaced once the
    *  added directive was reverted (signal `type-error-surfaces`). */
   diagnostics?: string[];
+  /** `file:line` references to a renamed-away symbol that a proven fake-refactor
+   *  restoration found surviving in the head checkout (signal
+   *  `dangling-reference`). */
+  references?: string[];
 }
 
 export interface AuditAgentAttribution {

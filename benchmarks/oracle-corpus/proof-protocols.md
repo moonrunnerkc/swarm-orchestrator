@@ -31,6 +31,7 @@ such, never padded.
 | --- | --- | --- | --- | --- |
 | `no-op-fix-proven` | `proven` (1/1) | `refuted` (1/1) | `no-fix-claim`, `no-source-hunks`, `no-affected-tests`, `closure-capped`, `suite-already-failing`, `flaky`, `patch-apply-failed`, `runner-unsupported`, `no-workspace`, `execution-error` | `test/audit/execution-grounded/no-op-fix-restoration-e2e.test.ts` (live vitest), `test/audit/execution-grounded/no-op-fix-restoration.test.ts` (pure core) |
 | `type-suppression-proven` | `proven` (1/1) | `refuted` (1/1) | `non-typescript-file`, `not-tsc-checkable`, `no-suppression-hunks`, `no-tsconfig`, `tsc-unavailable`, `file-drifted`, `already-failing`, `patch-apply-failed`, `no-workspace`, `execution-error` | `test/audit/execution-grounded/type-suppression-restoration-e2e.test.ts` (live tsc), `test/audit/execution-grounded/type-suppression-restoration.test.ts` (pure core), `test/audit/execution-grounded/proof-wiring.live.test.ts` (seam wiring) |
+| `fake-refactor-proven` | `proven` (1/1) | `refuted` (1/1) | `non-source-file`, `no-rename`, `ambiguous-old-symbol`, `old-symbol-still-declared`, `scan-capped`, `no-workspace`, `execution-error` | `test/audit/execution-grounded/fake-refactor-restoration-e2e.test.ts` (real checkout), `test/audit/execution-grounded/fake-refactor-restoration.test.ts` (pure core, full orchestrator), `test/audit/execution-grounded/proof-wiring.live.test.ts` (seam wiring) |
 | restoration closure refuter | n/a (refuter only: it never confirms, only downgrades a behaviorally-proven restoration) | refutes on a confident no-link; abstains (keeps the proof) on a capped BFS, no source change, or a closure error | `test-not-closure-linked` | `test/audit/execution-grounded/restoration-closure-link.test.ts`, `test/audit/execution-grounded/test-restoration.live.test.ts` |
 
 Live e2e run (`SWARM_EG_INTEGRATION=1`): `no-op-fix-proven` confirmed in 2.3s,
@@ -87,3 +88,27 @@ checkers tsc does not run, so each lands on a fail-closed not-proven verdict
 finding file is fail-closed (`non-typescript-file`) because tsc only checks it
 under `checkJs`, which the proof does not assume. Any null or false control
 leaves the finding advisory.
+
+## What a fake-refactor proof gates on
+
+The structural fake-refactor detector flags a rename whose old name still
+appears in the PR's own diff-visible lines, but it cannot see the rest of the
+repository. The proof is static against the provisioned head checkout: it
+resolves the renamed-away symbol from the diff, scans the whole checkout with
+the same TypeScript-AST identifier matching the detector uses, and gates only
+when all three per-instance controls are green
+(`src/audit/gate/self-certifying.ts`):
+
+1. `oldSymbolResolved`: exactly one old symbol name is determined unambiguously
+   from the diff for the finding (the finding's line localizes the rename pair).
+2. `oldSymbolDeclarationRemoved`: no file in the checkout still declares the old
+   name, so a surviving reference is dangling rather than a coincidental live
+   symbol of the same name.
+3. `oldSymbolStillReferenced`: at least one identifier reference to the old name
+   survives in the checkout (a named import of the old export counts; an
+   `obj.oldName` member access does not).
+
+`refuted` is the no-reference case: the rename is complete. A still-declared old
+name, an ambiguous rename, or a capped scan are fail-closed not-proven verdicts
+(never refuted, never proven). The proof spawns no process; it reads the
+checkout the audit already provisioned.

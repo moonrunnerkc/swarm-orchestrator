@@ -27,11 +27,13 @@ import type { RestorationProofRecord } from '../execution-grounded/test-restorat
 import type { MockRestorationProofRecord } from '../execution-grounded/mock-restoration';
 import type { NoOpFixProofRecord } from '../execution-grounded/no-op-fix-restoration';
 import type { TypeSuppressionProofRecord } from '../execution-grounded/type-suppression-restoration';
+import type { FakeRefactorProofRecord } from '../execution-grounded/fake-refactor-restoration';
 import type {
   BlockTrigger,
   BlockTriggerEvidence,
   ClaimFalsifiedEvidence,
   CorroboratedUnderConstraintEvidence,
+  FakeRefactorProvenEvidence,
   MockMutationProvenEvidence,
   NoOpFixProvenEvidence,
   ObligationFailureEvidence,
@@ -45,6 +47,7 @@ export type {
   BlockTriggerKind,
   ClaimFalsifiedEvidence,
   CorroboratedUnderConstraintEvidence,
+  FakeRefactorProvenEvidence,
   MockMutationProvenEvidence,
   NoOpFixProvenEvidence,
   ObligationFailureEvidence,
@@ -485,6 +488,67 @@ function diagnosticCount(n: number): string {
   return `${n} diagnostic${n === 1 ? '' : 's'}`;
 }
 
+export interface FakeRefactorProvenInput {
+  /** Fake-refactor restoration proof records from the execution-grounded run;
+   *  the detector keeps only the proven, all-controls-true ones. */
+  fakeRefactorRestorations: FakeRefactorProofRecord[];
+}
+
+/**
+ * T8: a fake-refactor restoration proof. The PR renamed an exported symbol, the
+ * old name has no remaining declaration anywhere in the head checkout, and at
+ * least one identifier reference to it survives. Execution-grounded (a static
+ * scan of the whole provisioned checkout, not just the diff) proves the rename
+ * left dangling references. Fires one candidate per `proven` record whose three
+ * controls are all true; a proven record with any unexecuted (null) or false
+ * control is advisory only and produces nothing (fail closed). The reproduce
+ * command is the record's own, which greps the restored checkout for the symbol.
+ *
+ * @param input the run's fake-refactor restoration proof records
+ * @returns one block-trigger candidate per fully-controlled proof, or []
+ */
+export function detectFakeRefactorProven(input: FakeRefactorProvenInput): BlockTrigger[] {
+  const out: BlockTrigger[] = [];
+  for (const record of input.fakeRefactorRestorations) {
+    if (record.verdict !== 'proven') continue;
+    const { oldSymbolResolved, oldSymbolDeclarationRemoved, oldSymbolStillReferenced } =
+      record.controls;
+    if (
+      oldSymbolResolved !== true ||
+      oldSymbolDeclarationRemoved !== true ||
+      oldSymbolStillReferenced !== true
+    ) {
+      continue;
+    }
+    const evidence: FakeRefactorProvenEvidence = {
+      kind: 'fake-refactor-proven',
+      verdict: 'proven',
+      file: record.findingFile,
+      oldName: record.oldName,
+      newName: record.newName,
+      references: record.references,
+      controls: record.controls,
+      reproduceCommand: record.reproduceCommand,
+    };
+    out.push({
+      kind: 'fake-refactor-proven',
+      summary:
+        `A fake-refactor proof at ${record.findingFile}: \`${record.oldName}\` was renamed to ` +
+        `\`${record.newName}\` and no longer declared anywhere, but ` +
+        `${referenceCount(record.references.length)} to \`${record.oldName}\` survive in the ` +
+        `checkout (${record.references.join(', ')}), so the rename is incomplete.`,
+      reproduce: record.reproduceCommand,
+      evidence,
+    });
+  }
+  return out;
+}
+
+/** one reference, two references, ... */
+function referenceCount(n: number): string {
+  return `${n} reference${n === 1 ? '' : 's'}`;
+}
+
 /** The inputs each trigger needs, bundled so one call produces every candidate
  *  a run can raise. A field left undefined skips that trigger (e.g. an audit
  *  with no declared obligations omits `obligations`). */
@@ -496,6 +560,7 @@ export interface BlockTriggerContext {
   mockRestorations?: MockMutationProvenInput;
   noOpRestorations?: NoOpFixProvenInput;
   typeSuppressionRestorations?: TypeSuppressionProvenInput;
+  fakeRefactorRestorations?: FakeRefactorProvenInput;
 }
 
 /**
@@ -520,5 +585,7 @@ export function detectBlockTriggers(context: BlockTriggerContext): BlockTrigger[
     out.push(...detectNoOpFixProven(context.noOpRestorations));
   if (context.typeSuppressionRestorations !== undefined)
     out.push(...detectTypeSuppressionProven(context.typeSuppressionRestorations));
+  if (context.fakeRefactorRestorations !== undefined)
+    out.push(...detectFakeRefactorProven(context.fakeRefactorRestorations));
   return out;
 }

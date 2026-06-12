@@ -63,6 +63,7 @@ import type {
   PrAuditMockRestorationEntry,
   PrAuditNoOpFixRestorationEntry,
   PrAuditTypeSuppressionRestorationEntry,
+  PrAuditFakeRefactorRestorationEntry,
 } from '../../ledger/types';
 import { isExecutionGroundedCategory } from '../../audit/types';
 import { loadAuditConfig, type ExecutionGroundedConfig } from '../../audit/cheat-detector/audit-config';
@@ -71,6 +72,7 @@ import type { RestorationProofRecord } from '../../audit/execution-grounded/test
 import type { MockRestorationProofRecord } from '../../audit/execution-grounded/mock-restoration';
 import type { NoOpFixProofRecord } from '../../audit/execution-grounded/no-op-fix-restoration';
 import type { TypeSuppressionProofRecord } from '../../audit/execution-grounded/type-suppression-restoration';
+import type { FakeRefactorProofRecord } from '../../audit/execution-grounded/fake-refactor-restoration';
 import {
   corroborateStructuralFindings,
   executionSignalsFromOutcome,
@@ -410,6 +412,7 @@ async function runExecutionGroundedLayer(
   appendMockRestorationEntries(ledger, outcome.mockRestorations, attribution);
   appendNoOpRestorationEntries(ledger, outcome.noOpRestorations, attribution);
   appendTypeSuppressionRestorationEntries(ledger, outcome.typeSuppressionRestorations, attribution);
+  appendFakeRefactorRestorationEntries(ledger, outcome.fakeRefactorRestorations, attribution);
 
   // Runtime corroboration (opt-in). When this run's execution layer actually
   // produced signals, mark the structural findings that a surviving mutant,
@@ -520,6 +523,30 @@ export function appendTypeSuppressionRestorationEntries(
       reproduceCommand: r.reproduceCommand,
     };
     ledger.append<PrAuditTypeSuppressionRestorationEntry>(payload, opts);
+  }
+}
+
+/** One pr-audit-fake-refactor-restoration entry per fake-refactor proof record,
+ *  every verdict included, so the ledger carries the full proof funnel. */
+export function appendFakeRefactorRestorationEntries(
+  ledger: HashChainedLedger,
+  records: readonly FakeRefactorProofRecord[],
+  attribution: LedgerAgentAttribution | undefined,
+): void {
+  const opts = attribution !== undefined ? { aiAgent: attribution } : undefined;
+  for (const r of records) {
+    const payload: Omit<PrAuditFakeRefactorRestorationEntry, 'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'> = {
+      type: 'pr-audit-fake-refactor-restoration',
+      category: r.category,
+      verdict: r.verdict,
+      findingFile: r.findingFile,
+      oldName: r.oldName,
+      newName: r.newName,
+      references: r.references,
+      controls: r.controls,
+      reproduceCommand: r.reproduceCommand,
+    };
+    ledger.append<PrAuditFakeRefactorRestorationEntry>(payload, opts);
   }
 }
 
@@ -685,6 +712,9 @@ function buildBlockTriggers(
     noOpRestorations: { noOpRestorations: outcome.noOpRestorations },
     typeSuppressionRestorations: {
       typeSuppressionRestorations: outcome.typeSuppressionRestorations,
+    },
+    fakeRefactorRestorations: {
+      fakeRefactorRestorations: outcome.fakeRefactorRestorations,
     },
   });
 }

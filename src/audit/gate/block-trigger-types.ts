@@ -10,6 +10,7 @@ import type { RestorationControls } from '../execution-grounded/test-restoration
 import type { MockRestorationControls } from '../execution-grounded/mock-restoration';
 import type { NoOpFixControls } from '../execution-grounded/no-op-fix-restoration';
 import type { TypeSuppressionControls } from '../execution-grounded/type-suppression-restoration';
+import type { FakeRefactorControls } from '../execution-grounded/fake-refactor-restoration';
 
 /** The verifiable-evidence triggers. Each is self-certifying and label-free:
  *  its truth comes from running the change, not from a label. */
@@ -20,7 +21,8 @@ export type BlockTriggerKind =
   | 'test-tamper-proven'
   | 'mock-mutation-proven'
   | 'no-op-fix-proven'
-  | 'type-suppression-proven';
+  | 'type-suppression-proven'
+  | 'fake-refactor-proven';
 
 /** Every trigger kind, in a fixed order, for callers that iterate over all of
  *  them (the calibrator and the eligibility policy). */
@@ -32,6 +34,7 @@ export const ALL_BLOCK_TRIGGER_KINDS: readonly BlockTriggerKind[] = [
   'mock-mutation-proven',
   'no-op-fix-proven',
   'type-suppression-proven',
+  'fake-refactor-proven',
 ];
 
 /**
@@ -208,6 +211,33 @@ export interface TypeSuppressionProvenEvidence {
   reproduceCommand: string;
 }
 
+/**
+ * A fake-refactor restoration proof: the PR renamed an exported symbol, the old
+ * name has no remaining declaration anywhere in the head checkout, and at least
+ * one identifier reference to it survives. Execution-grounded (a static scan of
+ * the provisioned checkout, not just the diff) proves the rename left dangling
+ * references against a symbol that no longer exists. The three controls must all
+ * be true for the trigger to ever gate.
+ */
+export interface FakeRefactorProvenEvidence {
+  kind: 'fake-refactor-proven';
+  /** Pinned to `proven`: only a proven restoration record becomes evidence. */
+  verdict: 'proven';
+  /** The file where the rename was declared. */
+  file: string;
+  /** The renamed-away symbol still referenced. */
+  oldName: string;
+  /** The symbol it was renamed to. */
+  newName: string;
+  /** `file:line` references to the old name surviving in the checkout. */
+  references: string[];
+  /** The proof's three internal controls, published as recorded. A candidate
+   *  is only emitted when all three are true; null means a check never ran. */
+  controls: FakeRefactorControls;
+  /** Exact command a human runs in a fresh checkout to see the references. */
+  reproduceCommand: string;
+}
+
 export type BlockTriggerEvidence =
   | ClaimFalsifiedEvidence
   | CorroboratedUnderConstraintEvidence
@@ -215,7 +245,8 @@ export type BlockTriggerEvidence =
   | TestTamperProvenEvidence
   | MockMutationProvenEvidence
   | NoOpFixProvenEvidence
-  | TypeSuppressionProvenEvidence;
+  | TypeSuppressionProvenEvidence
+  | FakeRefactorProvenEvidence;
 
 /**
  * A block-trigger candidate. `reproduce` is the exact command the author runs

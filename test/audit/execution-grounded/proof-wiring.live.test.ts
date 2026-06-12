@@ -10,6 +10,7 @@ import {
   appendMockRestorationEntries,
   appendNoOpRestorationEntries,
   appendTypeSuppressionRestorationEntries,
+  appendFakeRefactorRestorationEntries,
 } from '../../../src/cli/v8/audit-handler';
 import { HashChainedLedger } from '../../../src/ledger/ledger';
 import type { Finding } from '../../../src/audit/types';
@@ -328,6 +329,80 @@ function tempDir(prefix: string): string {
     appendTypeSuppressionRestorationEntries(ledger, proofs.typeSuppressionRestorations, undefined);
     const entry = readEntries(ledgerPath).find((e) => e.type === 'pr-audit-type-suppression-restoration');
     assert.ok(entry !== undefined, 'a pr-audit-type-suppression-restoration entry was written');
+    assert.equal(entry.verdict, 'proven');
+    assert.equal(entry.findingFile, 'src/calc.ts');
+  });
+
+  it('a fake refactor reaches the proof, the block trigger, the comment, and the ledger', () => {
+    const dir = tempDir('swarm-proofwire-fakeref-');
+    fs.mkdirSync(path.join(dir, 'src'));
+    fs.writeFileSync(
+      path.join(dir, 'package.json'),
+      JSON.stringify({ name: 'fakeref-demo', version: '1.0.0', private: true }, null, 2),
+    );
+    fs.writeFileSync(path.join(dir, '.gitignore'), 'node_modules\n');
+    fs.writeFileSync(
+      path.join(dir, 'src', 'calc.ts'),
+      'export function oldTotal(a: number, b: number): number {\n  return a + b;\n}\n',
+    );
+    fs.writeFileSync(path.join(dir, 'src', 'report.ts'), "import { oldTotal } from './calc';\nexport const r = oldTotal(1, 2);\n");
+    initRepo(dir);
+    commitAll(dir, 'base: oldTotal and its caller');
+
+    // The cheat: rename the export but leave the caller on the old name.
+    fs.writeFileSync(
+      path.join(dir, 'src', 'calc.ts'),
+      'export function computeTotal(a: number, b: number): number {\n  return a + b;\n}\n',
+    );
+    const headSha = commitAll(dir, 'refactor: rename oldTotal -> computeTotal');
+    const prDiff = diff(dir);
+
+    // The block-severity finding the structural fake-refactor detector raises.
+    const finding: Finding = {
+      category: 'fake-refactor',
+      severity: 'block',
+      message: 'Function "oldTotal" was renamed to "computeTotal".',
+      location: { file: 'src/calc.ts', line: 1 },
+      evidence: '- export function oldTotal\n+ export function computeTotal',
+    };
+
+    const proofs = runProofRestorations({
+      prDiff,
+      prRef: 'acme/calc#3',
+      prHeadSha: headSha,
+      structuralFindings: [finding],
+      preWorkspacePath: null,
+      postWorkspacePath: dir,
+      testRunner: null,
+      packageManager: 'npm',
+      deadline: Date.now() + 240_000,
+    });
+
+    assert.equal(proofs.fakeRefactorRestorations.length, 1, 'the fake-refactor engine ran for the finding');
+    const record = proofs.fakeRefactorRestorations[0]!;
+    assert.equal(record.verdict, 'proven', `expected proven, got ${record.verdict}: ${record.reason ?? ''}`);
+    assert.equal(record.controls.oldSymbolResolved, true);
+    assert.equal(record.controls.oldSymbolDeclarationRemoved, true);
+    assert.equal(record.controls.oldSymbolStillReferenced, true);
+    // The verdict rode back onto the finding (proven stays block + runtime-corroborated).
+    assert.equal(finding.severity, 'block');
+    assert.equal(finding.confidence, 'runtime-corroborated');
+
+    const triggers = detectBlockTriggers({
+      fakeRefactorRestorations: { fakeRefactorRestorations: proofs.fakeRefactorRestorations },
+    });
+    const fakeRefTrigger = triggers.find((t) => t.kind === 'fake-refactor-proven');
+    assert.ok(fakeRefTrigger !== undefined, 'fake-refactor-proven trigger fired');
+
+    const comment = renderBlockTriggerSection(triggers, 'gate').join('\n');
+    assert.ok(comment.includes(fakeRefTrigger.reproduce), 'the comment carries the reproduce command');
+    assert.match(comment, /fake-refactor/i, 'the comment names the fake-refactor proof');
+
+    const ledgerPath = path.join(tempDir('swarm-proofwire-ledger-'), 'ledger.jsonl');
+    const ledger = new HashChainedLedger(ledgerPath, 'audit-fakeref-test');
+    appendFakeRefactorRestorationEntries(ledger, proofs.fakeRefactorRestorations, undefined);
+    const entry = readEntries(ledgerPath).find((e) => e.type === 'pr-audit-fake-refactor-restoration');
+    assert.ok(entry !== undefined, 'a pr-audit-fake-refactor-restoration entry was written');
     assert.equal(entry.verdict, 'proven');
     assert.equal(entry.findingFile, 'src/calc.ts');
   });
