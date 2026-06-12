@@ -407,10 +407,12 @@ export function applyRestorationToFinding(finding: Finding, record: RestorationP
     // executed restoration outranks the judge's static confirmation, so the
     // grade is recomputed down to match the demoted severity.
     finding.confidence = 'structural-only';
+    const restored =
+      record.testFiles.length > 0 ? record.testFiles.join(', ') : record.findingFile;
     finding.evidence =
       `${finding.evidence}\n` +
-      `demoted: the restored original test passes against the PR's source, so the test ` +
-      `change is a legitimate refactor rather than concealment of a failure`;
+      `demoted: the restored original test passes against the PR's source (${restored}), so ` +
+      `the test change is a legitimate refactor rather than concealment of a failure`;
     return;
   }
   if (record.verdict === 'proven') {
@@ -656,6 +658,9 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
         prHeadSha: input.prHeadSha,
         preWorkspacePath: workspaces.pre.workspacePath,
         postWorkspacePath: workspaces.post.workspacePath,
+        // Enables the Protocol-1 closure relevance refuter: a proven restoration
+        // is downgraded if the restored test reaches none of the changed source.
+        repoRoot: workspaces.post.workspacePath,
         testRunner: workspaces.post.testRunner,
         packageManager: workspaces.post.packageManager,
         // Per-run cap mirrors the issue-repro test timeout, clipped to the

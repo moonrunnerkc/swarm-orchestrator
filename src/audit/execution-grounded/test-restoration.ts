@@ -11,6 +11,7 @@
 // workspace. Workspace provisioning itself lives with the caller.
 
 import { spawnSync } from 'child_process';
+import * as path from 'path';
 import parseDiff from 'parse-diff';
 import { SwarmError } from '../../errors';
 import { getLogger } from '../../logger';
@@ -20,6 +21,7 @@ import type { TestRunner, PackageManager } from './sandbox';
 import type { MutationRecipe } from './mutation-check';
 import type { DockerContext } from './docker-runner';
 import { execBin, execEnv, execFileGuarded, type GuardedRunError } from './exec-env';
+import { reachableSourceFiles, type ClosureResult } from '../cheat-detector/test-import-closure';
 
 const log = getLogger('audit:execution-grounded:test-restoration');
 
@@ -32,6 +34,11 @@ export type RestorationVerdict =
   | 'not-proven:no-test-hunks'
   | 'not-proven:patch-apply-failed'
   | 'not-proven:runner-unsupported'
+  // The restored test fails twice on the PR's source, but its import closure
+  // reaches none of the production code the PR changed, so the failure is not
+  // attributable to this PR's change (Protocol-1 relevance refuter). Only
+  // produced when a repoRoot is threaded in.
+  | 'not-proven:test-not-closure-linked'
   // Reserved for the execution-grounded caller when no sandbox workspace could
   // be provisioned; never produced by this orchestrator.
   | 'not-proven:no-workspace'
@@ -70,6 +77,11 @@ export interface TestRestorationInput {
   prHeadSha: string;
   preWorkspacePath: string | null; // base checkout; null => control 1 unevaluable
   postWorkspacePath: string; // head checkout (PR applied)
+  /** Repo root for the Protocol-1 closure relevance refuter. When set, a proven
+   *  restoration is downgraded if the restored test's import closure confidently
+   *  reaches none of the source the PR changed. Omitted by every existing
+   *  caller, so the refuter never runs and behavior is unchanged for them. */
+  repoRoot?: string;
   testRunner: TestRunner | null;
   packageManager: PackageManager;
   recipe?: MutationRecipe;
@@ -116,6 +128,63 @@ export function extractTestHunkPatch(prDiff: string, findingFile: string): strin
     for (const change of chunk.changes) lines.push(change.content);
   }
   return `${lines.join('\n')}\n`;
+}
+
+/**
+ * Pure: the non-test production files the PR changed, by their real new-side
+ * (or old-side) path. The Protocol-1 relevance gate links a restored test to
+ * the code it guards: a restoration is only proof of a concealed failure when
+ * the test's import closure reaches one of these. A diff that touched only
+ * tests yields [], which the gate reads as "nothing to link to" (fail closed).
+ */
+export function changedNonTestSourceFiles(prDiff: string): string[] {
+  const out = new Set<string>();
+  for (const file of parseDiff(prDiff)) {
+    const p = realPath(file.to) ?? realPath(file.from);
+    if (p === null || isTestFile(p)) continue;
+    out.add(p);
+  }
+  return [...out].sort();
+}
+
+/**
+ * Pure: true when at least one changed production source file resolves into the
+ * restored test's import-graph closure. `reachable` is the closure's
+ * absolute-path set (from reachableSourceFiles); `changedSourceFiles` are
+ * repo-relative. An empty changed set is false: with no production change to
+ * link to, the restored failure cannot be attributed to the PR (fail closed).
+ */
+export function closureLinksChangedSource(
+  reachable: ReadonlySet<string>,
+  changedSourceFiles: readonly string[],
+  repoRoot: string,
+): boolean {
+  for (const file of changedSourceFiles) {
+    const abs = path.isAbsolute(file) ? file : path.resolve(repoRoot, file);
+    if (reachable.has(abs)) return true;
+  }
+  return false;
+}
+
+/**
+ * Pure: the Protocol-1 relevance refuter. Returns true (downgrade the proof)
+ * only when the restored test's closure *confidently* reaches none of the
+ * production code the PR changed: the BFS was not capped, the PR did change
+ * source, and no changed source file is in the closure. The behavioral controls
+ * (passes on base, fails twice on the PR's source) already establish relevance,
+ * so this refuter abstains on every uncertainty (capped closure, no source
+ * change) rather than risk dropping a real proof on a closure false negative
+ * (dynamic imports, an unresolved spec). It can only turn proven into
+ * not-proven, never the reverse.
+ */
+export function closureRefutesRestoration(
+  closure: ClosureResult,
+  changedSourceFiles: readonly string[],
+  repoRoot: string,
+): boolean {
+  if (closure.capped) return false;
+  if (changedSourceFiles.length === 0) return false;
+  return !closureLinksChangedSource(closure.reachable, changedSourceFiles, repoRoot);
 }
 
 function identitySet(tests: string[]): string[] {
@@ -709,13 +778,57 @@ function runRestoredPhase(
     ...runs,
   });
   if (final.verdict === 'proven') {
-    return { verdict: 'proven', failingTests: final.failingTests };
+    return closureRelevanceGate(input, testFiles, final.failingTests);
   }
   return {
     verdict: final.verdict,
     failingTests: [],
     reason: 'the restored test also fails on the base checkout: the failure predates the PR',
   };
+}
+
+/**
+ * Protocol-1 relevance refuter, applied to an otherwise-proven restoration. When
+ * a repoRoot is threaded in, confirm the restored test's import closure reaches
+ * production code the PR changed; if it confidently reaches none, downgrade to
+ * not-proven:test-not-closure-linked (the restored failure is not attributable
+ * to this PR's change). Abstains — keeps the proof — when no repoRoot is given,
+ * the closure cannot be computed, or the refuter is uncertain (capped BFS, no
+ * source change). Never throws.
+ */
+function closureRelevanceGate(
+  input: TestRestorationInput,
+  testFiles: string[],
+  failingTests: string[],
+): RestoredPhaseOutcome {
+  if (input.repoRoot === undefined) {
+    return { verdict: 'proven', failingTests };
+  }
+  const changedSrc = changedNonTestSourceFiles(input.prDiff);
+  let closure;
+  try {
+    closure = reachableSourceFiles(testFiles, input.repoRoot);
+  } catch (err) {
+    // The behavioral controls already proved the restoration; a closure failure
+    // is not grounds to drop it, so the refuter abstains.
+    log.debug(
+      `closure relevance gate could not run for ${testFiles.join(', ')}: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+    return { verdict: 'proven', failingTests };
+  }
+  if (closureRefutesRestoration(closure, changedSrc, input.repoRoot)) {
+    return {
+      verdict: 'not-proven:test-not-closure-linked',
+      failingTests: [],
+      reason:
+        `the restored test's import closure reaches none of the source this PR changed ` +
+        `(${changedSrc.join(', ')}), so the restored failure is not attributable to the PR's ` +
+        `production change`,
+    };
+  }
+  return { verdict: 'proven', failingTests };
 }
 
 /**
