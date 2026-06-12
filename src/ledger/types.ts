@@ -407,6 +407,25 @@ export interface LedgerEntryPayloadMap {
     };
     reproduceCommand: string;
   };
+  // Dead-branch restoration proof record: one entry per qualifying
+  // `dead-branch-insertion` finding the restoration phase evaluated, every
+  // verdict included. `controls` mirrors the proof's three internal controls;
+  // null means that check never ran. `affectedTestFiles` are the repo tests
+  // whose closure reaches the branch file (what was run instrumented).
+  'pr-audit-dead-branch-restoration': {
+    category: string;
+    verdict: string;
+    findingFile: string;
+    branchCondition: string;
+    branchLine: number;
+    affectedTestFiles: string[];
+    controls: {
+      branchResolved: boolean | null;
+      suitePassesAsSubmitted: boolean | null;
+      branchNeverExecuted: boolean | null;
+    };
+    reproduceCommand: string;
+  };
   // A verifiable-evidence block-trigger candidate: a self-certifying
   // runtime fact (a falsified issue repro, a structural finding a surviving
   // mutant or coverage gap corroborates on the same line, a failed declared
@@ -426,7 +445,8 @@ export interface LedgerEntryPayloadMap {
       | 'mock-mutation-proven'
       | 'no-op-fix-proven'
       | 'type-suppression-proven'
-      | 'fake-refactor-proven';
+      | 'fake-refactor-proven'
+      | 'dead-branch-proven';
     eligible: boolean;
     blocked: boolean;
     summary: string;
@@ -486,4 +506,6 @@ export type PrAuditTypeSuppressionRestorationEntry =
   LedgerEntry<'pr-audit-type-suppression-restoration'>;
 export type PrAuditFakeRefactorRestorationEntry =
   LedgerEntry<'pr-audit-fake-refactor-restoration'>;
+export type PrAuditDeadBranchRestorationEntry =
+  LedgerEntry<'pr-audit-dead-branch-restoration'>;
 export type PrAuditBlockTriggerEntry = LedgerEntry<'pr-audit-block-trigger'>;

@@ -4,6 +4,7 @@ import type { MockRestorationControls } from '../execution-grounded/mock-restora
 import type { NoOpFixControls } from '../execution-grounded/no-op-fix-restoration';
 import type { TypeSuppressionControls } from '../execution-grounded/type-suppression-restoration';
 import type { FakeRefactorControls } from '../execution-grounded/fake-refactor-restoration';
+import type { DeadBranchControls } from '../execution-grounded/dead-branch-restoration';
 
 /** Two-tier model for block triggers. Self-certifying triggers (test-tamper-proven,
  * claim-falsified, obligation-failure) are eligible independent of the Wilson
@@ -21,6 +22,7 @@ export const SELF_CERTIFYING_TRIGGERS: readonly BlockTriggerKind[] = [
   'no-op-fix-proven',
   'type-suppression-proven',
   'fake-refactor-proven',
+  'dead-branch-proven',
 ];
 
 export function isSelfCertifying(kind: BlockTriggerKind): boolean {
@@ -85,6 +87,14 @@ export function controlsAllGreen(trigger: BlockTrigger): boolean {
       c.oldSymbolResolved === true &&
       c.oldSymbolDeclarationRemoved === true &&
       c.oldSymbolStillReferenced === true
+    );
+  }
+  if (e.kind === 'dead-branch-proven') {
+    const c: DeadBranchControls = e.controls;
+    return (
+      c.branchResolved === true &&
+      c.suitePassesAsSubmitted === true &&
+      c.branchNeverExecuted === true
     );
   }
   return false;

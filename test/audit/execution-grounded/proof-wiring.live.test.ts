@@ -11,6 +11,7 @@ import {
   appendNoOpRestorationEntries,
   appendTypeSuppressionRestorationEntries,
   appendFakeRefactorRestorationEntries,
+  appendDeadBranchRestorationEntries,
 } from '../../../src/cli/v8/audit-handler';
 import { HashChainedLedger } from '../../../src/ledger/ledger';
 import type { Finding } from '../../../src/audit/types';
@@ -405,5 +406,83 @@ function tempDir(prefix: string): string {
     assert.ok(entry !== undefined, 'a pr-audit-fake-refactor-restoration entry was written');
     assert.equal(entry.verdict, 'proven');
     assert.equal(entry.findingFile, 'src/calc.ts');
+  });
+
+  it('a dead branch reaches the proof, the block trigger, the comment, and the ledger', () => {
+    const dir = tempDir('swarm-proofwire-deadbranch-');
+    fs.mkdirSync(path.join(dir, 'src'));
+    fs.mkdirSync(path.join(dir, 'test'));
+    // CommonJS so the injected `require('node:fs')` probe records reliably.
+    fs.writeFileSync(
+      path.join(dir, 'package.json'),
+      JSON.stringify({ name: 'deadbranch-demo', version: '1.0.0', private: true }, null, 2),
+    );
+    fs.writeFileSync(path.join(dir, '.gitignore'), 'node_modules\n');
+    fs.writeFileSync(
+      path.join(dir, 'src', 'calc.js'),
+      'function compute(x) {\n  return x.a + x.b;\n}\nmodule.exports = { compute };\n',
+    );
+    fs.writeFileSync(
+      path.join(dir, 'test', 'calc.test.js'),
+      "const assert = require('assert');\nconst { compute } = require('../src/calc');\ndescribe('calc', () => {\n  it('sums', () => { assert.equal(compute({ a: 2, b: 3 }), 5); });\n});\n",
+    );
+    initRepo(dir);
+    commitAll(dir, 'base: compute and its test');
+
+    // The cheat: insert a literal-false branch the suite reaches but never enters.
+    fs.writeFileSync(
+      path.join(dir, 'src', 'calc.js'),
+      'function compute(x) {\n  if (false) {\n    return -1;\n  }\n  return x.a + x.b;\n}\nmodule.exports = { compute };\n',
+    );
+    const headSha = commitAll(dir, 'feat: add a guard branch');
+    const prDiff = diff(dir);
+
+    const finding: Finding = {
+      category: 'dead-branch-insertion',
+      severity: 'block',
+      message: 'Dead branch inserted: condition is a literal that can never be true.',
+      location: { file: 'src/calc.js', line: 2 },
+      evidence: '+  if (false) {',
+    };
+
+    const proofs = runProofRestorations({
+      prDiff,
+      prRef: 'acme/calc#4',
+      prHeadSha: headSha,
+      structuralFindings: [finding],
+      preWorkspacePath: null,
+      postWorkspacePath: dir,
+      testRunner: 'mocha',
+      packageManager: 'npm',
+      deadline: Date.now() + 240_000,
+    });
+
+    assert.equal(proofs.deadBranchRestorations.length, 1, 'the dead-branch engine ran for the finding');
+    const record = proofs.deadBranchRestorations[0]!;
+    assert.equal(record.verdict, 'proven', `expected proven, got ${record.verdict}: ${record.reason ?? ''}`);
+    assert.equal(record.controls.branchResolved, true);
+    assert.equal(record.controls.suitePassesAsSubmitted, true);
+    assert.equal(record.controls.branchNeverExecuted, true);
+    // The verdict rode back onto the finding (proven stays block + runtime-corroborated).
+    assert.equal(finding.severity, 'block');
+    assert.equal(finding.confidence, 'runtime-corroborated');
+
+    const triggers = detectBlockTriggers({
+      deadBranchRestorations: { deadBranchRestorations: proofs.deadBranchRestorations },
+    });
+    const dbTrigger = triggers.find((t) => t.kind === 'dead-branch-proven');
+    assert.ok(dbTrigger !== undefined, 'dead-branch-proven trigger fired');
+
+    const comment = renderBlockTriggerSection(triggers, 'gate').join('\n');
+    assert.ok(comment.includes(dbTrigger.reproduce), 'the comment carries the reproduce command');
+    assert.match(comment, /dead-branch/i, 'the comment names the dead-branch proof');
+
+    const ledgerPath = path.join(tempDir('swarm-proofwire-ledger-'), 'ledger.jsonl');
+    const ledger = new HashChainedLedger(ledgerPath, 'audit-deadbranch-test');
+    appendDeadBranchRestorationEntries(ledger, proofs.deadBranchRestorations, undefined);
+    const entry = readEntries(ledgerPath).find((e) => e.type === 'pr-audit-dead-branch-restoration');
+    assert.ok(entry !== undefined, 'a pr-audit-dead-branch-restoration entry was written');
+    assert.equal(entry.verdict, 'proven');
+    assert.equal(entry.findingFile, 'src/calc.js');
   });
 });

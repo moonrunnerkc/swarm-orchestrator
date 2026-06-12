@@ -212,6 +212,8 @@ function formatCorroboration(rc: RuntimeCorroboration): string {
       return `a tsc diagnostic that surfaces once the added suppression is reverted (${(rc.diagnostics ?? []).join('; ')})`;
     case 'dangling-reference':
       return `a renamed-away symbol still referenced in the checkout (${(rc.references ?? []).join(', ')})`;
+    case 'dead-branch-unreached':
+      return `an inserted branch the affected tests reached but never entered (${(rc.reachedByTests ?? []).join(', ')})`;
   }
 }
 
