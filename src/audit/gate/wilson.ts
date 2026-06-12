@@ -25,3 +25,35 @@ export function wilsonLowerBound(successes: number, trials: number): number {
   const margin = z * Math.sqrt((phat * (1 - phat) + z2 / (4 * trials)) / trials);
   return Math.max(0, (center - margin) / denom);
 }
+
+/** A two-sided Wilson score interval at 95% confidence. */
+export interface WilsonInterval {
+  point: number;
+  lower: number;
+  upper: number;
+}
+
+/**
+ * Two-sided Wilson score interval at 95% confidence. Shares the lower-bound
+ * math with {@link wilsonLowerBound}; the upper bound flips the margin sign.
+ * Used by the outcome-grounded scorer to report precision/recall with bounds
+ * at both PR and finding level.
+ *
+ * @param successes number of successes (e.g. true positives)
+ * @param trials total trials; an interval of all-zeros when 0
+ * @returns the point estimate and both 95% bounds in [0, 1]
+ */
+export function wilsonInterval(successes: number, trials: number): WilsonInterval {
+  if (trials === 0) return { point: 0, lower: 0, upper: 0 };
+  const z = 1.96;
+  const phat = successes / trials;
+  const z2 = z * z;
+  const denom = 1 + z2 / trials;
+  const center = phat + z2 / (2 * trials);
+  const margin = z * Math.sqrt((phat * (1 - phat) + z2 / (4 * trials)) / trials);
+  return {
+    point: phat,
+    lower: Math.max(0, (center - margin) / denom),
+    upper: Math.min(1, (center + margin) / denom),
+  };
+}

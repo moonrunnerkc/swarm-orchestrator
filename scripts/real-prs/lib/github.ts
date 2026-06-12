@@ -413,6 +413,38 @@ export function bucketFromFilenames(names: string[]): RegressionBucket {
   return 'other';
 }
 
+/** `This reverts commit <sha>` is the message git writes for a `git revert`.
+ *  Capture group is the reverted commit sha (full 40-hex or abbreviated). */
+const REVERTS_COMMIT_RE = /this reverts commit ([0-9a-f]{7,40})/gi;
+
+/**
+ * Extract every commit sha a commit message claims to revert. Shared so the
+ * outcome-label deriver and any future caller detect reverts the same way the
+ * block path detects revert PRs — by the artifact git itself writes, not a
+ * bespoke regex per call site.
+ *
+ * @param message a commit message
+ * @returns the lower-cased reverted shas named in the message
+ */
+export function revertedShasInMessage(message: string): string[] {
+  const out: string[] = [];
+  REVERTS_COMMIT_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = REVERTS_COMMIT_RE.exec(message)) !== null) {
+    if (m[1] !== undefined) out.push(m[1].toLowerCase());
+  }
+  return out;
+}
+
+/** True when `message` reverts `sha` (matching on the abbreviated prefix, the
+ *  form git records when the original was abbreviated). */
+export function messageRevertsSha(message: string, sha: string): boolean {
+  const target = sha.toLowerCase();
+  return revertedShasInMessage(message).some(
+    (r) => target.startsWith(r) || r.startsWith(target),
+  );
+}
+
 /** Fetch the raw unified diff for a PR. */
 export async function fetchPrDiff(octokit: Octokit, target: RepoTarget, prNumber: number): Promise<string> {
   const res = await octokit.pulls.get({
