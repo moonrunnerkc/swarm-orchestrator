@@ -252,19 +252,29 @@ function fmtRanges(ranges: LineRange[]): string {
 // about whether the change was wrong, so they are excluded from the hotfix
 // signal (language-agnostic exclusion, since the corpus spans py/rs/go/ts/...).
 const NON_CODE_FILE =
-  /(\.(md|markdown|txt|rst|json|ya?ml|toml|lock|cfg|ini|csv|svg|png|jpe?g|gif|lockb)$)|((^|\/)(docs?|\.github|build|dist|out|node_modules|vendor|third_party|generated|__generated__|fixtures?)\/)|((^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|poetry\.lock|cargo\.lock|go\.sum)$)/i;
+  /(\.(md|mdx|mdc|markdown|txt|rst|json|ya?ml|toml|lock|cfg|ini|csv|svg|png|jpe?g|gif|lockb|j2|jinja2?|tpl|template|hbs|ejs|mustache|env)$)|((^|\/)(docs?|\.github|\.cursor|build|dist|out|node_modules|vendor|third_party|generated|__generated__|fixtures?)\/)|((^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|poetry\.lock|cargo\.lock|go\.sum)$)/i;
 
 function isCodeFile(filename: string): boolean {
   return !NON_CODE_FILE.test(filename);
 }
+
+// A merge commit is the change landing, not a fix of it. Excluding merge
+// commits keeps a PR's own merge (and unrelated branch merges) out of the
+// hotfix signal; the individual fix commits a merge brings in are still
+// scanned as their own listCommits entries.
+const MERGE_COMMIT = /^Merge (pull request|branch|remote-tracking|commit|tag)\b/i;
 
 // A genuine hotfix commit usually says so. Requiring fix-shaped language makes
 // the signal squash-robust and cuts the coincidental same-line overlap a random
 // small edit would otherwise produce. Missing a silently-fixed change is the
 // conservative error (it lands in "survived"), which is the safe direction for
 // ground truth: it never inflates the broken count.
+// Strong fix-intent markers only. Weak substring matchers (error, fail, wrong,
+// incorrect, repair) are deliberately excluded: they fire on feature commits
+// ("improve error messaging", "fail-safe defaults") and would admit non-fix
+// follow-ups. A genuine hotfix names itself fix / bug / regression / revert.
 const FIX_LANGUAGE =
-  /\b(fix(es|ed)?|bug|regression|revert(s|ed)?|broke|broken|hotfix|patch(es|ed)?|incorrect|crash(es|ed)?|fault|defect|wrong|fail(s|ed|ing)?|repair)\b/i;
+  /\b(fix(es|ed)?|bug|hotfix|regression|revert(s|ed)?|broke|broken|patch(es|ed)?|defect|crash(es|ed)?)\b/i;
 
 function readVendoredDiff(entry: PrCorpusEntry): string | null {
   const file = path.join(RAW_DIR, entry.vendoredDiffPath);
@@ -352,8 +362,10 @@ async function scanFollowups(
     }
     const commitSize = detail.data.stats?.total ?? Number.POSITIVE_INFINITY;
     const message = detail.data.commit.message;
-    const fixShaped = FIX_LANGUAGE.test(message.split('\n')[0] ?? '') || FIX_LANGUAGE.test(message);
-    if (result.hotfix === undefined && commitSize <= HOTFIX_MAX_COMMIT_LINES && fixShaped) {
+    const subjectLine = message.split('\n')[0] ?? '';
+    const isMerge = MERGE_COMMIT.test(subjectLine);
+    const fixShaped = FIX_LANGUAGE.test(subjectLine) || FIX_LANGUAGE.test(message);
+    if (result.hotfix === undefined && !isMerge && commitSize <= HOTFIX_MAX_COMMIT_LINES && fixShaped) {
       for (const f of detail.data.files ?? []) {
         const prFileRanges = prRanges[f.filename];
         if (prFileRanges === undefined || f.patch === undefined || !isCodeFile(f.filename)) continue;
