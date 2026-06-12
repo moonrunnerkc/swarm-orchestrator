@@ -18,6 +18,19 @@ For engineers reviewing AI-written PRs at volume. Compliance teams generate Cycl
 [![real-PR cheats vs linters 4 confirmed (Semgrep+ESLint: 1)](https://img.shields.io/static/v1?label=real-PR%20cheats%20vs%20linters&message=4%20confirmed%20(Semgrep%2BESLint%3A%201)&color=brightgreen)](benchmarks/real-prs/v11-BENEFIT-REPORT.md)
 <!-- BADGES:END -->
 
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#results">Results</a> ·
+  <a href="#cheat-detectors">Detectors</a> ·
+  <a href="#use-as-a-github-action">GitHub Action</a> ·
+  <a href="#ai-bom">AI-BOM</a> ·
+  <a href="#orchestrator-mode">Orchestrator</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#commands">Commands</a> ·
+  <a href="#limitations">Limitations</a>
+</p>
+
 ## Install
 
 Node 20 or later. See [`package.json`](package.json).
