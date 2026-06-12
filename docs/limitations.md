@@ -2,13 +2,29 @@
 
 An honest accounting of where the tool is weak today and what is being worked on.
 
-## It over-flags clean PRs at scale
+## It over-flags PRs that survive in production
 
-On a large clean-PR corpus the structural detectors fire on legitimate patterns: relocated tests, refactors that change assertion shape, pragmatic suppressions. That's why `--mode advise` is the default and nothing blocks unless you opt in. Narrowing the false-alarm rate until a detector can earn the gate is the active work.
+Against outcome-grounded labels (PRs that were never reverted or hotfixed), the
+structural detectors still fire on legitimate patterns: relocated tests,
+refactors that change assertion shape, pragmatic suppressions, and (under
+diff-only scoring without the repo) mocks of real dependencies and "no test
+imports this" on projects that have no test suite. PR-level union precision is
+0.217 (18 of 23 firing PRs survived). That's why `--mode advise` is the default
+and nothing blocks unless you opt in. The deterministic refuters in
+[`verify-findings.ts`](../src/audit/cheat-detector/verify-findings.ts) cut the
+recurring, repo-context-free classes (a bare empty catch in a file the PR
+creates; a mock of a `@/` path alias) without costing oracle recall; the
+remaining classes are documented as diff-only-scoring artifacts that a real
+`swarm audit --pr` (which provisions the repo) does not hit.
 
 ## No single structural detector has cleared the gate bar
 
-A detector becomes gate-eligible only when its measured precision clears a 0.90 Wilson 95% lower bound with a minimum true-positive count behind it. Today every detector is advisory-only; the tier is computed into [`benchmarks/real-corpus/promotions.json`](../benchmarks/real-corpus/promotions.json) and CI fails if it drifts (`npm run promotions:check`).
+A detector becomes gate-eligible only when its measured precision clears a 0.90
+Wilson 95% lower bound with a minimum true-positive count behind it. Against
+outcome labels every detector is advisory-only (the best is error-swallow at
+PR-level precision 0.40, 2 TP / 3 FP, far under the bar); the tier is computed
+into [`benchmarks/real-corpus/promotions.json`](../benchmarks/real-corpus/promotions.json)
+and CI fails if it drifts (`npm run promotions:check`).
 
 A second tier applies the same 0.90 bar to the subset of a detector's findings that the opt-in execution-grounded layer backs (a surviving mutant, a coverage gap, or a still-failing repro). A detector that is noisy standalone can clear this corroborated tier, which is the concrete path to the first structural gate.
 
@@ -27,9 +43,44 @@ The first self-certifying block fired on a dogfood PR in June 2026: [PR #61](htt
 
 A circumstantial trigger (`corroborated-under-constraint`) is calibrated but held: it fired four times on the corpus, each on a reverted or hotfixed PR, giving Wilson 95% lower 0.510, still below the 0.90 bar. Block eligibility is tracked in [`benchmarks/real-corpus/block-eligibility.json`](../benchmarks/real-corpus/block-eligibility.json) and pinned by CI via `npm run block-policy:check`.
 
-## The real-corpus baseline is AI-labeled
+## Ground truth is repository outcomes, not model opinion
 
-Against the 205-PR model-labeled baseline the structural detectors score low (F1 0.140, [`benchmarks/real-corpus/scores/latest.json`](../benchmarks/real-corpus/scores/latest.json)), and every label carries a "pending human review" stamp. Closing that gap with human labels is the next milestone. The adjudication loop is built and tested in [`scripts/labeling/adjudicate.ts`](../scripts/labeling/adjudicate.ts): it queues the arbiter-split findings (where two model families disagree), records human verdicts, and promotes them to the scored baseline only once pairwise Cohen's kappa clears 0.60. See [`docs/labeling-methodology.md`](labeling-methodology.md).
+The real-corpus baseline used to be AI-labeled: a model judged each PR and every
+label carried a "pending human review" stamp. That baseline is retired. Ground
+truth now comes from repository history alone, derived by
+[`scripts/labeling/outcome-labels.ts`](../scripts/labeling/outcome-labels.ts)
+(`npm run labeling:outcome`): for every corpus entry we ask git/GitHub whether
+the landed change was later **reverted** (a `This reverts commit <sha>`), or
+**hotfixed** (a surgical, fix-shaped follow-up within 30 days re-touching the
+same source lines), or **survived**. Every non-survived label carries its
+evidence (the reverting/hotfixing commit sha and the overlapping line ranges) so
+it is auditable with `git log` alone. The corpus is commit-grounded: the anchor
+is the vendored commit sha, because the entries are agent-attributed commits
+whose PR numbers do not resolve to merged upstream PRs.
+
+Of the 205 entries, 197 are usable (8 are indeterminate: the commit 404'd). The
+outcome distribution is **0 reverted, 22 hotfixed, 175 survived**, a true bad
+base rate of 11.2%. Scored against these outcome labels, the structural
+detectors' PR-level union is **precision 0.217, recall 0.227, F1 0.222**
+([`benchmarks/real-corpus/scores-outcome/latest.json`](../benchmarks/real-corpus/scores-outcome/latest.json),
+with Wilson 95% bounds), versus the retired AI-labeled F1 0.140
+([`scores/ai-labeled-baseline.json`](../benchmarks/real-corpus/scores/ai-labeled-baseline.json)).
+F1 is slightly higher under outcome grounding because some firings the AI labels
+counted as false positives land on PRs that history proves bad.
+
+The AI labels and the outcomes are essentially uncorrelated (Cohen's kappa ~0.00;
+of the 22 outcome-bad PRs, exactly one was also AI-labeled broken). That is the
+whole point: model-opinion labels were not tracking what happened to the code.
+Human adjudication is no longer the path forward; outcomes are. The agreement
+arithmetic is in [`outcome-labels.json`](../benchmarks/real-corpus/outcome-labels.json)
+and the methodology in [`docs/labeling-methodology.md`](labeling-methodology.md).
+
+A second, agent-attributed corpus is mined the same way
+([`npm run agent-incidence:confirmed-bad`](../scripts/real-prs/mine-confirmed-bad.ts)):
+a bounded mine of 60 merged agent PRs yields 5 outcome-confirmed-bad (8.3%,
+consistent with the 11.2% above). Reaching a 50-PR positive class needs roughly
+600 mined agent PRs; that ceiling is recorded, not padded, in
+[`agent-corpus/confirmed-bad.json`](../benchmarks/real-prs/agent-corpus/confirmed-bad.json).
 
 ## Mock-mutation focusing is a shipped recall win; tail-defect chunking is not yet
 
@@ -37,9 +88,28 @@ Focusing the judge on the hunks that add a value-injecting mock is a shipped rec
 
 Hunk-grouped chunking and per-hunk localization, by contrast, remain infrastructure rather than shipped recall wins. Their mechanism tests pass, but on the current judge the tail-defect and per-hunk recall numbers stay low. A localized confirm prompt lifts tail-defect recovery to 0.5 in measurement, but it is not shipped pending real-PR false-positive validation. Numbers are reported honestly in [`benchmarks/oracle-corpus/tail-defect-recovery.md`](../benchmarks/oracle-corpus/tail-defect-recovery.md) and [`benchmarks/oracle-corpus/per-hunk-localization.md`](../benchmarks/oracle-corpus/per-hunk-localization.md).
 
-## The corroborated promotion tier is still unmeasured
+## The corroborated promotion tier is viability-screened, not yet run
 
-A detector whose runtime-corroborated findings clear the gate bar would earn the first structural block. That tier stays unmeasured: scoring it needs the execution-grounded layer run across the labeled corpus, and the labeled corpus is arbitrary AI-demo repositories whose suites do not provision in a generic sandbox (the execution-grounded evidence run instead targeted the regression and clean monorepo corpora, disjoint from the labeled scoring corpus; see [`benchmarks/real-prs/v11-EXECUTION-GROUNDED-REPORT.md`](../benchmarks/real-prs/v11-EXECUTION-GROUNDED-REPORT.md)). Every detector's `corroborated` field in [`benchmarks/real-corpus/promotions.json`](../benchmarks/real-corpus/promotions.json) therefore reads `unmeasured`, and `npm run promotions:check` holds that honest state in CI rather than a fabricated number.
+A detector whose runtime-corroborated findings clear the gate bar would earn the
+first structural block. Scoring that tier needs the execution-grounded layer run
+across the corpus, but the corpus is arbitrary AI-demo repositories, most of
+which cannot provision in a generic sandbox. Rather than leave the tier an opaque
+`unmeasured`, a cheap static viability screen
+([`npm run execution-grounded:viability-screen`](../scripts/real-prs/eg-viability-screen.ts))
+now measures exactly how much of the corpus could even run: per PR it checks for
+a Node project, a lockfile, a recognizable test runner, and a satisfiable node
+engine. The result is **12 of 197 usable PRs are EG-viable**; 137 are not Node
+projects at all, 41 have no recognizable test runner, 2 pin node 20.x
+([`benchmarks/real-corpus/eg-viability.json`](../benchmarks/real-corpus/eg-viability.json)).
+
+Every detector's `corroborated` field in
+[`benchmarks/real-corpus/promotions.json`](../benchmarks/real-corpus/promotions.json)
+therefore now reads `viability-screened` (12/197 provision; corroborated
+precision pending the bounded EG run on that 12-PR slice) instead of the bare
+`unmeasured`. The 0.90 Wilson precision floor and the minimum-TP count are
+unchanged; no detector gates on the corroborated tier, and `npm run
+promotions:check` holds that honest state in CI. The EG mutation run on the
+12-viable slice is the next bounded step.
 
 ## It is a cheat signal, not a bug finder
 
