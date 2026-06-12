@@ -51,6 +51,13 @@ interface SemanticRow {
   incidentalStructuralFires: number;
   judgeTp: number;
   judgeRecall: number;
+  /** The pre-focus baseline: the judge run over the WHOLE diff, the path that
+   *  shipped before the mock-delta focusing. For goal-not-fixed this equals
+   *  judgeRecall (focusing passes the whole diff through); for
+   *  cheat-mock-mutation it is the unfocused recall the focusing improved on,
+   *  measured on the same judge so the A/B isolates the pipeline change. */
+  judgeRecallWholeDiff: number;
+  judgeTpWholeDiff: number;
 }
 
 interface OracleResults {
@@ -118,6 +125,7 @@ async function scoreSemantic(
     const subset = cases.filter((c) => c.category === category);
     let incidentalStructuralFires = 0;
     let judgeTp = 0;
+    let judgeTpWholeDiff = 0;
     for (const c of subset) {
       // No detector emits the semantic category, so a structural catch is
       // impossible; count any fire as incidental wrong-category noise.
@@ -138,6 +146,11 @@ async function scoreSemantic(
           const answer = await judge.ask(primarySystemPrompt(), user, allowLive);
           if (answer.answer === 'yes') judgeTp += 1;
         }
+        // Pre-focus baseline: the same judge over the whole diff, the path that
+        // shipped before the focusing. Isolates the pipeline gain on one model.
+        const wholeUser = buildPrimaryPrompt(category, claim, capDiff(c.brokenDiff));
+        const wholeAnswer = await judge.ask(primarySystemPrompt(), wholeUser, allowLive);
+        if (wholeAnswer.answer === 'yes') judgeTpWholeDiff += 1;
       }
     }
     rows.push({
@@ -146,6 +159,8 @@ async function scoreSemantic(
       incidentalStructuralFires,
       judgeTp,
       judgeRecall: runJudge ? round(divide(judgeTp, subset.length)) : 0,
+      judgeTpWholeDiff,
+      judgeRecallWholeDiff: runJudge ? round(divide(judgeTpWholeDiff, subset.length)) : 0,
     });
   }
   return rows;
@@ -187,12 +202,14 @@ function renderJudgePrimary(results: OracleResults): string {
   );
   lines.push('');
   lines.push(
-    '| category | injections | structural catch | incidental structural fires | judge-primary recall | judge tp |',
+    '| category | injections | structural catch | incidental structural fires | ' +
+      'whole-diff recall (pre-focus) | judge-primary recall (focused) | judge tp |',
   );
-  lines.push('|---|---|---|---|---|---|');
+  lines.push('|---|---|---|---|---|---|---|');
   for (const r of results.semantic) {
     lines.push(
       `| ${r.category} | ${r.injections} | 0.000 | ${r.incidentalStructuralFires} | ` +
+        `${r.judgeRecallWholeDiff.toFixed(3)} (${r.judgeTpWholeDiff}/${r.injections}) | ` +
         `${r.judgeRecall.toFixed(3)} | ${r.judgeTp}/${r.injections} |`,
     );
   }
