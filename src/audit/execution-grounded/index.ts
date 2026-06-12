@@ -24,7 +24,7 @@ import {
 } from './docker-runner';
 import type { EgCacheContext } from './eg-cache';
 import { provisionPRWorkspaces } from './sandbox';
-import { detectTestRunner, type TestRunner } from './sandbox';
+import { detectTestRunner, type PackageManager, type TestRunner } from './sandbox';
 import { groupChangedLinesByPackage, rerootToRepo } from './monorepo';
 import {
   runMutationCheck,
@@ -50,9 +50,13 @@ import {
 } from './issue-repro';
 import {
   RESTORATION_CATEGORIES,
+  changedNonTestSourceFiles,
   runTestRestoration,
   type RestorationProofRecord,
 } from './test-restoration';
+import { runMockRestoration, type MockRestorationProofRecord } from './mock-restoration';
+import { runNoOpFixRestoration, type NoOpFixProofRecord } from './no-op-fix-restoration';
+import { parsePrIntent, type PrIntent } from '../cheat-detector/pr-intent';
 
 const log = getLogger('audit:execution-grounded');
 
@@ -244,6 +248,11 @@ export interface ExecutionGroundedInput {
   prBaseSha?: string;
   /** PR body plus commit messages, scanned for issue references. */
   prText?: string;
+  /** PR title and body, parsed for a fix claim by the no-op-fix proof (the
+   *  imperative-title pattern only matches at a real title start, so these are
+   *  threaded separately from the combined `prText`). */
+  prTitle?: string;
+  prBody?: string;
   config: ExecutionGroundedConfig;
   baseDir: string;
   cacheDir?: string;
@@ -291,7 +300,53 @@ export interface ExecutionGroundedOutcome {
    *  wall-clock budget ran out on before their first test run), so downstream
    *  funnel counts account for every candidate. */
   restorations: RestorationProofRecord[];
+  /** One proof record per qualifying `cheat-mock-mutation` block finding the
+   *  restoration phase evaluated (every verdict included, same funnel honesty
+   *  as `restorations`). */
+  mockRestorations: MockRestorationProofRecord[];
+  /** The no-op-fix proof record(s) for this run. The no-op proof is PR-level
+   *  (gated by a fix claim, like the claim-falsified trigger), so this holds at
+   *  most one record per run; empty when the PR makes no fix claim or changed no
+   *  non-test source. */
+  noOpRestorations: NoOpFixProofRecord[];
   skipped: string[];
+}
+
+/** The proof candidates a run evaluates, selected from the structural findings
+ *  and the PR's diff/intent. Test and mock proofs are finding-gated; the no-op
+ *  proof is PR-level (a fix claim plus a reverted source hunk), mirroring the
+ *  claim-falsified trigger, because the structural `no-op-fix` block finding
+ *  fires only on a test-only change with no source to revert. */
+interface ProofCandidates {
+  test: Finding[];
+  mock: Finding[];
+  noOp: { findingFile: string; prIntent: PrIntent; linkedIssueCount: number } | null;
+}
+
+function selectProofCandidates(
+  structuralFindings: readonly Finding[],
+  prDiff: string,
+  prTitle: string | undefined,
+  prBody: string | undefined,
+): ProofCandidates {
+  const test = structuralFindings.filter(
+    (f) => f.severity === 'block' && RESTORATION_CATEGORIES.includes(f.category),
+  );
+  const mock = structuralFindings.filter(
+    (f) => f.severity === 'block' && f.category === 'cheat-mock-mutation',
+  );
+  const prIntent = parsePrIntent({
+    ...(prTitle !== undefined ? { title: prTitle } : {}),
+    ...(prBody !== undefined ? { body: prBody } : {}),
+  });
+  const linkedIssueCount = parseIssueReferences(`${prTitle ?? ''}\n${prBody ?? ''}`).length;
+  const claimsFix = prIntent.claimsFix || linkedIssueCount > 0;
+  const sourceFiles = changedNonTestSourceFiles(prDiff);
+  const noOp =
+    claimsFix && sourceFiles.length > 0
+      ? { findingFile: sourceFiles[0]!, prIntent, linkedIssueCount }
+      : null;
+  return { test, mock, noOp };
 }
 
 /** One honesty record per qualifying structural finding when restoration
@@ -349,6 +404,96 @@ export function budgetExhaustedRecords(findings: readonly Finding[]): Restoratio
     revertedHunkPatch: '',
     reason: 'wall-clock budget exhausted before any test run executed for this finding',
   }));
+}
+
+/** no-workspace honesty records for the mock-mutation candidate findings: the
+ *  layer bailed before a sandbox existed, so each candidate is accounted for
+ *  with a null-control record instead of vanishing. */
+export function noWorkspaceMockRecords(
+  findings: readonly Finding[],
+  detail: string,
+): MockRestorationProofRecord[] {
+  return findings.map((f) => ({
+    schemaVersion: 1,
+    verdict: 'not-proven:no-workspace',
+    category: 'cheat-mock-mutation',
+    findingFile: f.location.file,
+    testFiles: [],
+    failingTests: [],
+    mockedReturnValues: [],
+    controls: {
+      tamperedSuitePasses: null,
+      restoredFailsTwiceSameIdentity: null,
+      mockReturnsAssertedValue: null,
+    },
+    reproduceCommand: '',
+    revertedHunkPatch: '',
+    reason: `mock-restoration could not run: no sandbox workspace was provisioned (${detail})`,
+  }));
+}
+
+/** Budget-exhausted honesty records for mock-mutation candidates the per-PR
+ *  wall-clock ran out on before any test run executed. */
+export function mockBudgetExhaustedRecords(
+  findings: readonly Finding[],
+): MockRestorationProofRecord[] {
+  return findings.map((f) => ({
+    schemaVersion: 1,
+    verdict: 'not-proven:execution-error',
+    category: 'cheat-mock-mutation',
+    findingFile: f.location.file,
+    testFiles: [],
+    failingTests: [],
+    mockedReturnValues: [],
+    controls: {
+      tamperedSuitePasses: null,
+      restoredFailsTwiceSameIdentity: null,
+      mockReturnsAssertedValue: null,
+    },
+    reproduceCommand: '',
+    revertedHunkPatch: '',
+    reason: 'wall-clock budget exhausted before any test run executed for the mock-mutation proof',
+  }));
+}
+
+/** The no-op-fix proof is PR-level, so its honesty records carry one synthetic
+ *  candidate (the first changed non-test source file). */
+function noOpHonestyRecord(
+  findingFile: string,
+  verdict: 'not-proven:no-workspace' | 'not-proven:execution-error',
+  reason: string,
+): NoOpFixProofRecord {
+  return {
+    schemaVersion: 1,
+    verdict,
+    category: 'no-op-fix',
+    findingFile,
+    revertedSourceFiles: [],
+    affectedTestFiles: [],
+    controls: {
+      prClaimsFix: null,
+      suitePassesAsSubmitted: null,
+      revertedSuiteStillPassesTwice: null,
+    },
+    prClaim: '',
+    reproduceCommand: '',
+    revertedHunkPatch: '',
+    reason,
+  };
+}
+
+export function noWorkspaceNoOpRecords(
+  candidate: { findingFile: string } | null,
+  detail: string,
+): NoOpFixProofRecord[] {
+  if (candidate === null) return [];
+  return [
+    noOpHonestyRecord(
+      candidate.findingFile,
+      'not-proven:no-workspace',
+      `no-op-fix restoration could not run: no sandbox workspace was provisioned (${detail})`,
+    ),
+  ];
 }
 
 /** The persisted restoration-proof artifact. The PR identity is stamped on
@@ -425,6 +570,197 @@ export function applyRestorationToFinding(finding: Finding, record: RestorationP
 }
 
 /**
+ * Ride a mock-mutation verdict onto its `cheat-mock-mutation` finding, in
+ * place, exactly as `applyRestorationToFinding` does for a test-restoration
+ * proof: refuted demotes (the reverted mock was not load-bearing), proven
+ * corroborates, every other verdict is record-only.
+ */
+export function applyMockRestorationToFinding(
+  finding: Finding,
+  record: MockRestorationProofRecord,
+): void {
+  if (record.verdict === 'refuted') {
+    finding.severity = 'info';
+    finding.confidence = 'structural-only';
+    finding.evidence =
+      `${finding.evidence}\n` +
+      `demoted: with the added mock reverted, ${record.findingFile}'s test still passes, so the ` +
+      `mock was not load-bearing and the change is a legitimate collaborator mock, not concealment`;
+    return;
+  }
+  if (record.verdict === 'proven') {
+    finding.runtimeCorroboration = {
+      signal: 'restored-test-fails',
+      failingTests: record.failingTests,
+    };
+    setFindingConfidence(finding);
+  }
+}
+
+/** Persist a typed proof envelope under `<evidenceDir>/<filename>`, identity
+ *  stamped and written on every enabled run (empty included) so a stale file
+ *  from an earlier head SHA never outlives its run. Generic sibling of
+ *  `persistRestorationProofs` for the mock and no-op proof artifacts. */
+function writeProofEnvelope<T>(
+  evidenceDir: string,
+  filename: string,
+  prRef: string,
+  prHeadSha: string,
+  records: readonly T[],
+): void {
+  const envelope = {
+    schemaVersion: 1 as const,
+    prRef,
+    prHeadSha,
+    generatedAt: new Date().toISOString(),
+    records: [...records],
+  };
+  fs.mkdirSync(evidenceDir, { recursive: true });
+  fs.writeFileSync(path.join(evidenceDir, filename), JSON.stringify(envelope, null, 2), 'utf8');
+}
+
+export interface ProofRestorationInput {
+  prDiff: string;
+  prRef: string;
+  prHeadSha: string;
+  prTitle?: string;
+  prBody?: string;
+  structuralFindings: Finding[];
+  preWorkspacePath: string | null;
+  postWorkspacePath: string;
+  testRunner: TestRunner | null;
+  packageManager: PackageManager;
+  /** Absolute wall-clock deadline (epoch ms) shared with the rest of the run. */
+  deadline: number;
+  recipe?: MutationRecipe;
+  docker?: DockerContext;
+}
+
+export interface ProofRestorationOutcome {
+  restorations: RestorationProofRecord[];
+  mockRestorations: MockRestorationProofRecord[];
+  noOpRestorations: NoOpFixProofRecord[];
+  skipped: string[];
+}
+
+/**
+ * Run the three differential-restoration proof engines against an
+ * already-provisioned workspace pair, in cheap-first order, sharing one
+ * wall-clock budget. Each engine never throws and restores its workspace
+ * forward before returning, so the shared post workspace stays valid across
+ * candidates and for the layer's cleanup. Verdicts ride back onto their
+ * finding (test and mock are finding-gated; the no-op proof is PR-level and
+ * tied to no structural finding, like claim-falsified). Extracted from
+ * `runExecutionGrounded` so the live wiring is drivable against a local
+ * sandbox without a GitHub provision.
+ */
+export function runProofRestorations(input: ProofRestorationInput): ProofRestorationOutcome {
+  const skipped: string[] = [];
+  const restorations: RestorationProofRecord[] = [];
+  const mockRestorations: MockRestorationProofRecord[] = [];
+  const noOpRestorations: NoOpFixProofRecord[] = [];
+  const candidates = selectProofCandidates(
+    input.structuralFindings,
+    input.prDiff,
+    input.prTitle,
+    input.prBody,
+  );
+  const timeoutFor = (): number =>
+    Math.min(TEST_TIMEOUT_MS, Math.max(1, input.deadline - Date.now()));
+  const common = {
+    ...(input.recipe !== undefined ? { recipe: input.recipe } : {}),
+    ...(input.docker !== undefined ? { docker: input.docker } : {}),
+  };
+
+  // T4: differential test restoration.
+  for (let i = 0; i < candidates.test.length; i++) {
+    const finding = candidates.test[i]!;
+    if (restorationBudgetExhausted(input.deadline, Date.now())) {
+      const dropped = candidates.test.length - i;
+      skipped.push(
+        `restoration: wall-clock budget exhausted; ${dropped} finding(s) recorded without execution`,
+      );
+      restorations.push(...budgetExhaustedRecords(candidates.test.slice(i)));
+      break;
+    }
+    const record = runTestRestoration({
+      finding: { category: finding.category, file: finding.location.file },
+      prDiff: input.prDiff,
+      prRef: input.prRef,
+      prHeadSha: input.prHeadSha,
+      preWorkspacePath: input.preWorkspacePath,
+      postWorkspacePath: input.postWorkspacePath,
+      repoRoot: input.postWorkspacePath,
+      testRunner: input.testRunner,
+      packageManager: input.packageManager,
+      timeoutMs: timeoutFor(),
+      ...common,
+    });
+    restorations.push(record);
+    applyRestorationToFinding(finding, record);
+  }
+
+  // T6: no-op-fix restoration (PR-level, gated by a fix claim).
+  if (candidates.noOp !== null) {
+    if (restorationBudgetExhausted(input.deadline, Date.now())) {
+      skipped.push('no-op-fix restoration: wall-clock budget exhausted; recorded without execution');
+      noOpRestorations.push(
+        noOpHonestyRecord(
+          candidates.noOp.findingFile,
+          'not-proven:execution-error',
+          'wall-clock budget exhausted before any test run executed for the no-op-fix proof',
+        ),
+      );
+    } else {
+      noOpRestorations.push(
+        runNoOpFixRestoration({
+          finding: { category: 'no-op-fix', file: candidates.noOp.findingFile },
+          prDiff: input.prDiff,
+          prRef: input.prRef,
+          prHeadSha: input.prHeadSha,
+          prIntent: candidates.noOp.prIntent,
+          linkedIssueCount: candidates.noOp.linkedIssueCount,
+          postWorkspacePath: input.postWorkspacePath,
+          repoRoot: input.postWorkspacePath,
+          testRunner: input.testRunner,
+          packageManager: input.packageManager,
+          timeoutMs: timeoutFor(),
+          ...common,
+        }),
+      );
+    }
+  }
+
+  // T5: mock-mutation restoration (finding-gated on cheat-mock-mutation block findings).
+  for (let i = 0; i < candidates.mock.length; i++) {
+    const finding = candidates.mock[i]!;
+    if (restorationBudgetExhausted(input.deadline, Date.now())) {
+      const dropped = candidates.mock.length - i;
+      skipped.push(
+        `mock-restoration: wall-clock budget exhausted; ${dropped} finding(s) recorded without execution`,
+      );
+      mockRestorations.push(...mockBudgetExhaustedRecords(candidates.mock.slice(i)));
+      break;
+    }
+    const record = runMockRestoration({
+      finding: { category: 'cheat-mock-mutation', file: finding.location.file },
+      prDiff: input.prDiff,
+      prRef: input.prRef,
+      prHeadSha: input.prHeadSha,
+      postWorkspacePath: input.postWorkspacePath,
+      testRunner: input.testRunner,
+      packageManager: input.packageManager,
+      timeoutMs: timeoutFor(),
+      ...common,
+    });
+    mockRestorations.push(record);
+    applyMockRestorationToFinding(finding, record);
+  }
+
+  return { restorations, mockRestorations, noOpRestorations, skipped };
+}
+
+/**
  * Run the enabled execution-grounded checks against a PR and return advisory
  * findings. Provisioning or a single check failing is an obstacle, not a
  * throw: it is recorded in `skipped` and the run continues with whatever the
@@ -432,36 +768,49 @@ export function applyRestorationToFinding(finding: Finding, record: RestorationP
  */
 export async function runExecutionGrounded(input: ExecutionGroundedInput): Promise<ExecutionGroundedOutcome> {
   const skipped: string[] = [];
-  const empty: ExecutionGroundedOutcome = { findings: [], mutationRuns: [], coverageRuns: [], repros: [], restorations: [], skipped };
+  const empty: ExecutionGroundedOutcome = { findings: [], mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], skipped };
   if (!input.config.enabled) {
     // Disabled means the layer never ran at all: no honesty records, because
     // nothing was promised to run.
     skipped.push('executionGrounded disabled');
     return empty;
   }
-  const qualifying = (input.structuralFindings ?? []).filter(
-    (f) => f.severity === 'block' && RESTORATION_CATEGORIES.includes(f.category),
+  const candidates = selectProofCandidates(
+    input.structuralFindings ?? [],
+    input.prDiff,
+    input.prTitle,
+    input.prBody,
   );
-  // Written on every enabled run, zero records included, so a stale proof
-  // file from an earlier head SHA never outlives its run.
-  const persistProofs = (records: readonly RestorationProofRecord[]): void => {
+  const prRef = `${input.repo}#${input.prNumber}`;
+  // Written on every enabled run, zero records included, so a stale proof file
+  // from an earlier head SHA never outlives its run. One envelope per proof
+  // family (test / mock / no-op) under their own filenames.
+  const persistProofs = (out: {
+    restorations: readonly RestorationProofRecord[];
+    mockRestorations: readonly MockRestorationProofRecord[];
+    noOpRestorations: readonly NoOpFixProofRecord[];
+  }): void => {
     if (input.evidenceDir === undefined) return;
     persistRestorationProofs(
-      { prRef: `${input.repo}#${input.prNumber}`, prHeadSha: input.prHeadSha, records },
+      { prRef, prHeadSha: input.prHeadSha, records: out.restorations },
       input.evidenceDir,
     );
+    writeProofEnvelope(input.evidenceDir, 'mock-restoration-proof.json', prRef, input.prHeadSha, out.mockRestorations);
+    writeProofEnvelope(input.evidenceDir, 'no-op-fix-restoration-proof.json', prRef, input.prHeadSha, out.noOpRestorations);
   };
-  // Fail closed: the envelope is written empty before any phase that can
+  // Fail closed: the envelopes are written empty before any phase that can
   // throw, so an exception escaping the run cannot leave a stale envelope
-  // from a prior run on disk. Every completion path below overwrites it.
-  persistProofs([]);
+  // from a prior run on disk. Every completion path below overwrites them.
+  persistProofs(empty);
   // Every return below this point happens before a workspace exists. A
-  // qualifying finding must still surface in the restoration funnel, so each
-  // bail emits (and persists) explicit no-workspace records instead of
-  // silently dropping the candidates.
+  // qualifying candidate must still surface in its proof funnel, so each bail
+  // emits (and persists) explicit no-workspace records instead of silently
+  // dropping the candidates.
   const bailBeforeWorkspace = (detail: string): ExecutionGroundedOutcome => {
-    empty.restorations = noWorkspaceRecords(qualifying, detail);
-    persistProofs(empty.restorations);
+    empty.restorations = noWorkspaceRecords(candidates.test, detail);
+    empty.mockRestorations = noWorkspaceMockRecords(candidates.mock, detail);
+    empty.noOpRestorations = noWorkspaceNoOpRecords(candidates.noOp, detail);
+    persistProofs(empty);
     return empty;
   };
   const changed: ChangedLineRanges = extractChangedLineRanges(input.prDiff, mutableSourceFilter);
@@ -521,7 +870,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
 
   const deadline = Date.now() + input.config.maxWallClockPerPrMs;
   const findings: Finding[] = [];
-  const outcome: ExecutionGroundedOutcome = { findings, mutationRuns: [], coverageRuns: [], repros: [], restorations: [], skipped };
+  const outcome: ExecutionGroundedOutcome = { findings, mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], skipped };
   const cacheArg = input.cacheDir !== undefined ? { cacheDir: input.cacheDir } : {};
 
   try {
@@ -636,43 +985,31 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
       findings.push(...reproFindings(repros));
     }
 
-    // Differential test restoration against the already-provisioned pair.
-    // The engine never throws and re-applies the patch forward before
-    // returning, so the shared post workspace stays valid for the cleanup.
-    for (let i = 0; i < qualifying.length; i++) {
-      const finding = qualifying[i]!;
-      // A candidate the budget ran out on still gets a record (controls all
-      // null: no execution is claimed), so the funnel accounts for it.
-      if (restorationBudgetExhausted(deadline, Date.now())) {
-        const dropped = qualifying.length - i;
-        skipped.push(
-          `restoration: wall-clock budget exhausted; ${dropped} finding(s) recorded without execution`,
-        );
-        outcome.restorations.push(...budgetExhaustedRecords(qualifying.slice(i)));
-        break;
-      }
-      const record = runTestRestoration({
-        finding: { category: finding.category, file: finding.location.file },
-        prDiff: input.prDiff,
-        prRef: `${input.repo}#${input.prNumber}`,
-        prHeadSha: input.prHeadSha,
-        preWorkspacePath: workspaces.pre.workspacePath,
-        postWorkspacePath: workspaces.post.workspacePath,
-        // Enables the Protocol-1 closure relevance refuter: a proven restoration
-        // is downgraded if the restored test reaches none of the changed source.
-        repoRoot: workspaces.post.workspacePath,
-        testRunner: workspaces.post.testRunner,
-        packageManager: workspaces.post.packageManager,
-        // Per-run cap mirrors the issue-repro test timeout, clipped to the
-        // remaining wall-clock budget.
-        timeoutMs: Math.min(TEST_TIMEOUT_MS, Math.max(1, deadline - Date.now())),
-        ...(input.mutationRecipe !== undefined ? { recipe: input.mutationRecipe } : {}),
-        ...(dockerCtx !== undefined ? { docker: dockerCtx } : {}),
-      });
-      outcome.restorations.push(record);
-      applyRestorationToFinding(finding, record);
-    }
-    persistProofs(outcome.restorations);
+    // Differential restoration proofs against the already-provisioned pair
+    // (test-tamper, no-op-fix, mock-mutation), sharing the run's wall-clock
+    // budget. Each engine never throws and re-applies its patch forward before
+    // returning, so the shared post workspace stays valid across candidates and
+    // for the cleanup. Verdicts ride back onto their findings in place.
+    const proofs = runProofRestorations({
+      prDiff: input.prDiff,
+      prRef,
+      prHeadSha: input.prHeadSha,
+      ...(input.prTitle !== undefined ? { prTitle: input.prTitle } : {}),
+      ...(input.prBody !== undefined ? { prBody: input.prBody } : {}),
+      structuralFindings: input.structuralFindings ?? [],
+      preWorkspacePath: workspaces.pre.workspacePath,
+      postWorkspacePath: workspaces.post.workspacePath,
+      testRunner: workspaces.post.testRunner,
+      packageManager: workspaces.post.packageManager,
+      deadline,
+      ...(input.mutationRecipe !== undefined ? { recipe: input.mutationRecipe } : {}),
+      ...(dockerCtx !== undefined ? { docker: dockerCtx } : {}),
+    });
+    outcome.restorations = proofs.restorations;
+    outcome.mockRestorations = proofs.mockRestorations;
+    outcome.noOpRestorations = proofs.noOpRestorations;
+    skipped.push(...proofs.skipped);
+    persistProofs(outcome);
   } finally {
     workspaces.cleanup();
   }

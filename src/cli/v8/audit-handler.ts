@@ -60,11 +60,15 @@ import type {
   PrAuditIssueReproFindingEntry,
   PrAuditCoverageFindingEntry,
   PrAuditRestorationEntry,
+  PrAuditMockRestorationEntry,
+  PrAuditNoOpFixRestorationEntry,
 } from '../../ledger/types';
 import { isExecutionGroundedCategory } from '../../audit/types';
 import { loadAuditConfig, type ExecutionGroundedConfig } from '../../audit/cheat-detector/audit-config';
 import { runExecutionGrounded, type ExecutionGroundedOutcome } from '../../audit/execution-grounded';
 import type { RestorationProofRecord } from '../../audit/execution-grounded/test-restoration';
+import type { MockRestorationProofRecord } from '../../audit/execution-grounded/mock-restoration';
+import type { NoOpFixProofRecord } from '../../audit/execution-grounded/no-op-fix-restoration';
 import {
   corroborateStructuralFindings,
   executionSignalsFromOutcome,
@@ -328,6 +332,8 @@ async function runExecutionGroundedLayer(
       prHeadSha: pr.headSha,
       ...(pr.baseSha.length > 0 ? { prBaseSha: pr.baseSha } : {}),
       prText: `${pr.title}\n\n${pr.body}`,
+      prTitle: pr.title,
+      prBody: pr.body,
       config,
       baseDir: path.join(os.tmpdir(), 'swarm-eg'),
       evidenceDir,
@@ -399,6 +405,8 @@ async function runExecutionGroundedLayer(
   }
 
   appendRestorationEntries(ledger, outcome.restorations, attribution);
+  appendMockRestorationEntries(ledger, outcome.mockRestorations, attribution);
+  appendNoOpRestorationEntries(ledger, outcome.noOpRestorations, attribution);
 
   // Runtime corroboration (opt-in). When this run's execution layer actually
   // produced signals, mark the structural findings that a surviving mutant,
@@ -438,6 +446,54 @@ export function appendRestorationEntries(
       reproduceCommand: restoration.reproduceCommand,
     };
     ledger.append<PrAuditRestorationEntry>(payload, opts);
+  }
+}
+
+/** One pr-audit-mock-restoration entry per mock-mutation proof record, every
+ *  verdict included, so the ledger carries the full mock proof funnel. */
+export function appendMockRestorationEntries(
+  ledger: HashChainedLedger,
+  records: readonly MockRestorationProofRecord[],
+  attribution: LedgerAgentAttribution | undefined,
+): void {
+  const opts = attribution !== undefined ? { aiAgent: attribution } : undefined;
+  for (const r of records) {
+    const payload: Omit<PrAuditMockRestorationEntry, 'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'> = {
+      type: 'pr-audit-mock-restoration',
+      category: r.category,
+      verdict: r.verdict,
+      findingFile: r.findingFile,
+      testFiles: r.testFiles,
+      failingTests: r.failingTests,
+      mockedReturnValues: r.mockedReturnValues,
+      controls: r.controls,
+      reproduceCommand: r.reproduceCommand,
+    };
+    ledger.append<PrAuditMockRestorationEntry>(payload, opts);
+  }
+}
+
+/** One pr-audit-no-op-fix-restoration entry per no-op proof record (PR-level,
+ *  so at most one), every verdict included. */
+export function appendNoOpRestorationEntries(
+  ledger: HashChainedLedger,
+  records: readonly NoOpFixProofRecord[],
+  attribution: LedgerAgentAttribution | undefined,
+): void {
+  const opts = attribution !== undefined ? { aiAgent: attribution } : undefined;
+  for (const r of records) {
+    const payload: Omit<PrAuditNoOpFixRestorationEntry, 'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'> = {
+      type: 'pr-audit-no-op-fix-restoration',
+      category: r.category,
+      verdict: r.verdict,
+      findingFile: r.findingFile,
+      revertedSourceFiles: r.revertedSourceFiles,
+      affectedTestFiles: r.affectedTestFiles,
+      prClaim: r.prClaim,
+      controls: r.controls,
+      reproduceCommand: r.reproduceCommand,
+    };
+    ledger.append<PrAuditNoOpFixRestorationEntry>(payload, opts);
   }
 }
 
@@ -571,8 +627,9 @@ export function publishAuditVerdict<T>(
  * Build the verifiable-evidence block triggers for a --pr audit from the
  * execution-grounded outcome: a falsified fix claim (T1), a structural
  * finding a surviving mutant or coverage gap corroborates on the same line
- * (T2), and a fully-controlled test-restoration proof (T4). The audit surface
- * declares no obligations, so T3 does not apply here.
+ * (T2), a fully-controlled test-restoration proof (T4), a mock-mutation proof
+ * (T5), and a no-op-fix proof (T6). The audit surface declares no obligations,
+ * so T3 does not apply here.
  */
 function buildBlockTriggers(
   outcome: ExecutionGroundedOutcome,
@@ -598,6 +655,8 @@ function buildBlockTriggers(
       prRef: prRef ?? `${pr.repository}#${pr.number}`,
     },
     restorations: { restorations: outcome.restorations },
+    mockRestorations: { mockRestorations: outcome.mockRestorations },
+    noOpRestorations: { noOpRestorations: outcome.noOpRestorations },
   });
 }
 
