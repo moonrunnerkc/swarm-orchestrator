@@ -1,6 +1,32 @@
 #!/bin/bash
 set -euo pipefail
 
+# ── Secret redaction on exit ──────────────────────────────────────────────
+# Trap-driven so it fires from both the audit-mode and legacy orchestrator
+# paths and even on an unexpected exit. Covers /tmp scratch files, the
+# .swarm/ run artifacts, and any GITHUB_OUTPUT file that buffered values
+# before the harness consumed it. The exit code is preserved so callers
+# see the underlying CLI's status, not the trap's.
+redact_known_secrets() {
+  local rc=$?
+  local redact_keys=("ANTHROPIC_API_KEY" "OPENAI_API_KEY" "GITHUB_TOKEN" "NPM_TOKEN")
+  local key_name key_value
+  local -a scrub_targets=("/tmp")
+  if [ -d ".swarm" ]; then scrub_targets+=(".swarm"); fi
+  if [ -n "${GITHUB_OUTPUT:-}" ] && [ -f "${GITHUB_OUTPUT}" ]; then
+    scrub_targets+=("${GITHUB_OUTPUT}")
+  fi
+  for key_name in "${redact_keys[@]}"; do
+    key_value="${!key_name:-}"
+    if [ -n "$key_value" ]; then
+      find "${scrub_targets[@]}" -type f -print0 2>/dev/null \
+        | xargs -0 perl -pi -e "s/\Q${key_value}\E/[REDACTED:${key_name}]/g" 2>/dev/null
+    fi
+  done
+  return $rc
+}
+trap redact_known_secrets EXIT
+
 # ── Inputs ────────────────────────────────────────────────────────────────
 AUDIT_MODE="${INPUT_AUDIT_MODE:-false}"
 AUDIT_PR="${INPUT_PR:-}"
@@ -71,7 +97,10 @@ if [ "$AUDIT_MODE" = "true" ]; then
       AUDIT_CMD+=("$AUDIT_PR")
     fi
   elif [ -n "${GITHUB_REPOSITORY:-}" ] && [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "${GITHUB_EVENT_PATH}" ]; then
-    INFERRED_PR=$(node -e "const e=require('${GITHUB_EVENT_PATH}'); process.stdout.write(String(e.pull_request?.number ?? e.number ?? ''))")
+    # Pass GITHUB_EVENT_PATH via the child env instead of splicing it into
+    # the -e string; an event-path value with a single quote would otherwise
+    # close the require() literal and inject the rest as JavaScript.
+    INFERRED_PR=$(SWARM_EVT_PATH="${GITHUB_EVENT_PATH}" node -e "const e=require(process.env.SWARM_EVT_PATH); process.stdout.write(String(e.pull_request?.number ?? e.number ?? ''))")
     if [ -n "$INFERRED_PR" ]; then
       AUDIT_CMD+=("${GITHUB_REPOSITORY}#${INFERRED_PR}")
     else
@@ -102,7 +131,7 @@ if [ "$AUDIT_MODE" = "true" ]; then
   AUDIT_LEDGER="$(ls -t ${AUDIT_LEDGER_DIR}/audit-*.jsonl 2>/dev/null | head -n1 || true)"
   PASS_STR="false"
   if [ "$AUDIT_EXIT" = "0" ]; then PASS_STR="true"; fi
-  BLOCKING_COUNT=$(node -e "try{const r=require('${AUDIT_JSON}');process.stdout.write(String(r.findings.filter(f=>f.severity==='block').length))}catch(e){process.stdout.write('0')}")
+  BLOCKING_COUNT=$(SWARM_AUDIT_JSON="${AUDIT_JSON}" node -e "try{const r=require(process.env.SWARM_AUDIT_JSON);process.stdout.write(String(r.findings.filter(f=>f.severity==='block').length))}catch(e){process.stdout.write('0')}")
 
   if [ -n "${GITHUB_OUTPUT:-}" ]; then
     {
@@ -115,15 +144,17 @@ if [ "$AUDIT_MODE" = "true" ]; then
   if [ "$AUDIT_COMMENT" = "true" ] && [ -n "${GITHUB_TOKEN:-}" ] && [ -n "${GITHUB_REPOSITORY:-}" ]; then
     PR_FOR_COMMENT="$AUDIT_PR"
     if [ -z "$PR_FOR_COMMENT" ] && [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "${GITHUB_EVENT_PATH}" ]; then
-      PR_FOR_COMMENT=$(node -e "const e=require('${GITHUB_EVENT_PATH}'); process.stdout.write(String(e.pull_request?.number ?? e.number ?? ''))")
+      PR_FOR_COMMENT=$(SWARM_EVT_PATH="${GITHUB_EVENT_PATH}" node -e "const e=require(process.env.SWARM_EVT_PATH); process.stdout.write(String(e.pull_request?.number ?? e.number ?? ''))")
     fi
     if [ -n "$PR_FOR_COMMENT" ]; then
       PR_NUMBER="${PR_FOR_COMMENT##*#}"
-      COMMENT_PAYLOAD=$(node -e "
-        const fs = require('fs');
-        const r = require('${AUDIT_JSON}');
+      # Audit json path and ledger path both reach Node via env vars so a
+      # filename with a single quote cannot escape the require() literal
+      # or the ledgerUrl string literal.
+      COMMENT_PAYLOAD=$(SWARM_AUDIT_JSON="${AUDIT_JSON}" SWARM_LEDGER_URL="${AUDIT_LEDGER}" node -e "
+        const r = require(process.env.SWARM_AUDIT_JSON);
         const { renderPrComment } = require('/app/dist/src/audit/report-comment');
-        const body = renderPrComment(r, { ledgerUrl: '${AUDIT_LEDGER}' });
+        const body = renderPrComment(r, { ledgerUrl: process.env.SWARM_LEDGER_URL });
         process.stdout.write(JSON.stringify({ body }));
       ")
       curl -sS -X POST \
@@ -238,18 +269,6 @@ if [ -n "${GITHUB_OUTPUT:-}" ] && [ -f "$RESULT_PATH" ]; then
   } >> "$GITHUB_OUTPUT"
 fi
 
-# ── Redact known secret values from any temp files ────────────────────────
-REDACT_KEYS=(
-  "ANTHROPIC_API_KEY"
-  "OPENAI_API_KEY"
-  "GITHUB_TOKEN"
-)
-
-for key_name in "${REDACT_KEYS[@]}"; do
-  key_value="${!key_name:-}"
-  if [ -n "$key_value" ]; then
-    find /tmp -type f -print0 2>/dev/null \
-      | xargs -0 perl -pi -e "s/\Q${key_value}\E/[REDACTED:${key_name}]/g" 2>/dev/null \
-      || true
-  fi
-done
+# Redaction runs from the `trap redact_known_secrets EXIT` declared at the
+# top of the script; that covers both the audit-mode and legacy paths plus
+# any unexpected exits.
