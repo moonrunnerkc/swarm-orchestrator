@@ -31,24 +31,40 @@ export interface JudgeAnswer {
 }
 
 export interface JudgeProviderConfig {
-  provider: 'local' | 'anthropic';
+  provider: 'local' | 'anthropic' | 'ollama';
   model: string;
   baseUrl: string;
   maxTokens: number;
 }
 
 export function resolveProvider(): JudgeProviderConfig {
-  const provider = process.env.SWARM_JUDGE_PROVIDER === 'anthropic' ? 'anthropic' : 'local';
-  if (provider === 'anthropic') {
+  const raw = (process.env.SWARM_JUDGE_PROVIDER ?? '').toLowerCase();
+  if (raw === 'anthropic') {
     return {
-      provider,
+      provider: 'anthropic',
       model: process.env.SWARM_JUDGE_MODEL ?? 'claude-haiku-4-5-20251001',
       baseUrl: '',
       maxTokens: 256,
     };
   }
+  // Ollama native /api/chat. A thinking model (qwen3) only honors think:false
+  // here, not on its /v1 bridge (where it spends the budget reasoning and
+  // returns empty content). The model id is required and folds into the cache
+  // key, so ollama answers never collide with the OpenAI-compatible ones.
+  if (raw === 'ollama') {
+    return {
+      provider: 'ollama',
+      model: process.env.SWARM_JUDGE_MODEL ?? '',
+      baseUrl: (
+        process.env.SWARM_JUDGE_BASE_URL ??
+        process.env.OLLAMA_BASE_URL ??
+        'http://localhost:11434'
+      ).replace(/\/$/, ''),
+      maxTokens: 256,
+    };
+  }
   return {
-    provider,
+    provider: 'local',
     model: process.env.SWARM_JUDGE_MODEL ?? 'glm47-flash-abl',
     baseUrl: process.env.SWARM_JUDGE_BASE_URL ?? 'http://localhost:8000/v1',
     // Non-thinking mode answers in a handful of tokens, so a tight cap is
@@ -180,7 +196,9 @@ export class BenchJudge {
       const reply =
         this.cfg.provider === 'anthropic'
           ? await this.callAnthropic(system, user)
-          : await this.callOpenAiCompatible(system, user);
+          : this.cfg.provider === 'ollama'
+            ? await this.callOllama(system, user)
+            : await this.callOpenAiCompatible(system, user);
       const parsed = parseVerdict(reply.text);
       const latencyMs = Date.now() - started;
       const out: Omit<JudgeAnswer, 'cacheHit'> = {
@@ -238,6 +256,44 @@ export class BenchJudge {
       text: json.choices?.[0]?.message?.content ?? '',
       promptTokens: json.usage?.prompt_tokens ?? 0,
       completionTokens: json.usage?.completion_tokens ?? 0,
+    };
+  }
+
+  private async callOllama(
+    system: string,
+    user: string,
+  ): Promise<{ text: string; promptTokens: number; completionTokens: number }> {
+    if (this.cfg.model.length === 0) {
+      throw new Error('ollama judge selected but SWARM_JUDGE_MODEL is unset');
+    }
+    const res = await fetch(`${this.cfg.baseUrl}/api/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: this.cfg.model,
+        // Native /api/chat is the only endpoint that honors think:false for a
+        // reasoning model; the /v1 bridge cannot, so it returns empty content.
+        think: false,
+        stream: false,
+        options: { temperature: 0, num_predict: this.cfg.maxTokens },
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+      }),
+    });
+    if (!res.ok) {
+      throw new Error(`${this.cfg.baseUrl} returned HTTP ${res.status}`);
+    }
+    const json = (await res.json()) as {
+      message?: { content?: string };
+      prompt_eval_count?: number;
+      eval_count?: number;
+    };
+    return {
+      text: json.message?.content ?? '',
+      promptTokens: json.prompt_eval_count ?? 0,
+      completionTokens: json.eval_count ?? 0,
     };
   }
 

@@ -18,6 +18,7 @@ import {
   primarySystemPrompt,
 } from '../../src/audit/cheat-detector/llm-judge/anthropic-judge';
 import { MAX_JUDGE_DIFF_CHARS } from '../../src/audit/cheat-detector/llm-judge';
+import { focusSemanticDiff } from '../../src/audit/cheat-detector/mock-delta';
 import { JUDGE_PROMPT_SETS } from '../../src/audit/cheat-detector/judge-prompts';
 import type { SemanticCheatCategory } from '../../src/audit/types';
 import { loadDotenv } from '../../src/env-loader';
@@ -70,7 +71,12 @@ async function evalVersion(
   for (const c of heldOut) {
     const category = c.category as SemanticCheatCategory;
     const claim = c.label.claim ?? c.label.prTitle;
-    const user = buildPrimaryPrompt(category, claim, capDiff(c.brokenDiff), version);
+    // Mirror the shipped focusing: cheat-mock-mutation reads its mock hunks
+    // only (a no-mock diff is skipped, scored a miss); goal-not-fixed reads
+    // the whole diff.
+    const focus = focusSemanticDiff(category, c.brokenDiff);
+    if (focus.skip) continue;
+    const user = buildPrimaryPrompt(category, claim, capDiff(focus.diff), version);
     const a = await judge.ask(primarySystemPrompt(version), user, allowLive);
     latencies.push(a.latencyMs);
     costs.push(estimateHaikuUsd(a.promptTokens, a.completionTokens));
@@ -80,7 +86,13 @@ async function evalVersion(
   for (const clean of cleanDiffs) {
     let flagged = false;
     for (const category of SEMANTIC) {
-      const user = buildPrimaryPrompt(category, clean.title, capDiff(clean.diff), version);
+      // A clean PR with no value-injecting mock never reaches the
+      // cheat-mock-mutation judge, so it cannot raise a false yes for that
+      // category: that suppression is exactly how focusing holds the
+      // judge-primary FP rate under its ceiling while recall rises.
+      const focus = focusSemanticDiff(category, clean.diff);
+      if (focus.skip) continue;
+      const user = buildPrimaryPrompt(category, clean.title, capDiff(focus.diff), version);
       const a = await judge.ask(primarySystemPrompt(version), user, allowLive);
       latencies.push(a.latencyMs);
       costs.push(estimateHaikuUsd(a.promptTokens, a.completionTokens));

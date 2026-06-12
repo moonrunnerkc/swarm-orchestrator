@@ -13,6 +13,7 @@ import type { Finding, JudgeLedgerSink, SemanticCheatCategory } from '../types';
 import { filePath, fileKind } from './diff-walker';
 import { askJudge, formatJudgePromptHash } from './llm-judge';
 import type { JudgeClient } from './llm-judge';
+import { focusSemanticDiff } from './mock-delta';
 
 export interface JudgePrimaryContext {
   unifiedDiff: string;
@@ -44,12 +45,17 @@ export async function runJudgePrimary(ctx: JudgePrimaryContext): Promise<Finding
   const findings: Finding[] = [];
   const location = primaryLocation(ctx.files);
   for (const category of ctx.categories) {
+    // Focus the judge. For cheat-mock-mutation, hand it only the test hunks
+    // that add a value-injecting mock, and skip the call when the diff has
+    // none (no signal, so no finding). goal-not-fixed reads the whole diff.
+    const focus = focusSemanticDiff(category, ctx.unifiedDiff);
+    if (focus.skip) continue;
     const askOpts: Parameters<typeof askJudge>[0] = {
       repoRoot: ctx.repoRoot,
       request: {
         detector: `primary:${category}`,
         prTitle: ctx.claim,
-        unifiedDiff: ctx.unifiedDiff,
+        unifiedDiff: focus.diff,
       },
     };
     if (ctx.ledger !== undefined) askOpts.ledger = ctx.ledger;

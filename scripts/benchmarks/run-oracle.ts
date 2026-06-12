@@ -24,6 +24,7 @@ import {
   primarySystemPrompt,
 } from '../../src/audit/cheat-detector/llm-judge/anthropic-judge';
 import { MAX_JUDGE_DIFF_CHARS } from '../../src/audit/cheat-detector/llm-judge';
+import { focusSemanticDiff } from '../../src/audit/cheat-detector/mock-delta';
 import { catchPathFor } from '../../src/audit/oracle/category-map';
 import type { CheatCategory, SemanticCheatCategory } from '../../src/audit/types';
 import { loadDotenv } from '../../src/env-loader';
@@ -127,9 +128,16 @@ async function scoreSemantic(
       if (fired.size > 0) incidentalStructuralFires += 1;
       if (runJudge) {
         const claim = c.label.claim ?? c.label.prTitle;
-        const user = buildPrimaryPrompt(category, claim, capDiff(c.brokenDiff));
-        const answer = await judge.ask(primarySystemPrompt(), user, allowLive);
-        if (answer.answer === 'yes') judgeTp += 1;
+        // Focus the judge the same way production does: cheat-mock-mutation is
+        // judged on its mock-bearing hunks only (skipped when none exist),
+        // goal-not-fixed on the whole diff. Scoring the shipped prompt is the
+        // point: the committed recall replays what the product actually runs.
+        const focus = focusSemanticDiff(category, c.brokenDiff);
+        if (!focus.skip) {
+          const user = buildPrimaryPrompt(category, claim, capDiff(focus.diff));
+          const answer = await judge.ask(primarySystemPrompt(), user, allowLive);
+          if (answer.answer === 'yes') judgeTp += 1;
+        }
       }
     }
     rows.push({
