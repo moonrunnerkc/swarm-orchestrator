@@ -8,6 +8,7 @@
 import type { CheatCategory } from '../types';
 import type { RestorationControls } from '../execution-grounded/test-restoration';
 import type { MockRestorationControls } from '../execution-grounded/mock-restoration';
+import type { NoOpFixControls } from '../execution-grounded/no-op-fix-restoration';
 
 /** The verifiable-evidence triggers. Each is self-certifying and label-free:
  *  its truth comes from running the change, not from a label. */
@@ -16,7 +17,8 @@ export type BlockTriggerKind =
   | 'corroborated-under-constraint'
   | 'obligation-failure'
   | 'test-tamper-proven'
-  | 'mock-mutation-proven';
+  | 'mock-mutation-proven'
+  | 'no-op-fix-proven';
 
 /** Every trigger kind, in a fixed order, for callers that iterate over all of
  *  them (the calibrator and the eligibility policy). */
@@ -26,6 +28,7 @@ export const ALL_BLOCK_TRIGGER_KINDS: readonly BlockTriggerKind[] = [
   'obligation-failure',
   'test-tamper-proven',
   'mock-mutation-proven',
+  'no-op-fix-proven',
 ];
 
 /**
@@ -152,12 +155,38 @@ export interface MockMutationProvenEvidence {
   reproduceCommand: string;
 }
 
+/**
+ * A no-op-fix restoration proof: the PR's non-test source hunks were reverted in
+ * a sandbox and the affected tests (those whose import closure reaches the
+ * reverted source) still passed, twice, while the PR claimed a fix and its suite
+ * passed as submitted. Execution proves no test verifies the claimed fix. The
+ * three controls must all be true for the trigger to ever gate.
+ */
+export interface NoOpFixProvenEvidence {
+  kind: 'no-op-fix-proven';
+  /** Pinned to `proven`: only a proven restoration record becomes evidence. */
+  verdict: 'proven';
+  /** Non-test source files whose hunks were reverted (the claimed fix). */
+  revertedSourceFiles: string[];
+  /** Repo tests whose closure reaches the reverted source (what was rerun). */
+  affectedTestFiles: string[];
+  /** The PR's own fix-claim text, quoted back so the contradiction is plain. */
+  prClaim: string;
+  /** The proof's three internal controls, published as recorded. A candidate
+   *  is only emitted when all three are true; null means a run never executed. */
+  controls: NoOpFixControls;
+  /** Exact command a human runs in a fresh checkout to see the affected tests
+   *  still pass with the fix reverted. */
+  reproduceCommand: string;
+}
+
 export type BlockTriggerEvidence =
   | ClaimFalsifiedEvidence
   | CorroboratedUnderConstraintEvidence
   | ObligationFailureEvidence
   | TestTamperProvenEvidence
-  | MockMutationProvenEvidence;
+  | MockMutationProvenEvidence
+  | NoOpFixProvenEvidence;
 
 /**
  * A block-trigger candidate. `reproduce` is the exact command the author runs

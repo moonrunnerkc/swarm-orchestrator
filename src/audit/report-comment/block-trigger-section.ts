@@ -11,6 +11,7 @@ import type {
   BlockTrigger,
   BlockTriggerEvidence,
   MockMutationProvenEvidence,
+  NoOpFixProvenEvidence,
   TestTamperProvenEvidence,
 } from '../gate/block-trigger-types';
 
@@ -97,6 +98,8 @@ function renderEvidence(evidence: BlockTriggerEvidence): string[] {
       return renderTestTamperProven(evidence);
     case 'mock-mutation-proven':
       return renderMockMutationProven(evidence);
+    case 'no-op-fix-proven':
+      return renderNoOpFixProven(evidence);
   }
 }
 
@@ -143,6 +146,27 @@ function renderMockMutationProven(evidence: MockMutationProvenEvidence): string[
     `| Tampered (mocked) suite passes as submitted | ${controlMark(c.tamperedSuitePasses)} |`,
     `| Restored run fails twice with the same test identity | ${controlMark(c.restoredFailsTwiceSameIdentity)} |`,
     `| Added mock returns the asserted value | ${controlMark(c.mockReturnsAssertedValue)} |`,
+    '',
+  ];
+}
+
+/** The three controls behind a no-op-fix proof, in a fixed order so the table
+ *  renders byte-identical for the same proof. The trigger only gates when all
+ *  three are ✅ (see self-certifying.controlsAllGreen). */
+function renderNoOpFixProven(evidence: NoOpFixProvenEvidence): string[] {
+  const c = evidence.controls;
+  return [
+    `*Verdict:* \`${evidence.verdict}\` — no-op-fix; reverted ${evidence.revertedSourceFiles.join(', ')}.`,
+    '',
+    `*PR claim:* \`${evidence.prClaim}\`.`,
+    '',
+    `*Affected test(s) rerun with the fix reverted:* ${evidence.affectedTestFiles.join('; ')}.`,
+    '',
+    '| Control | Result |',
+    '| --- | --- |',
+    `| PR claims a fix | ${controlMark(c.prClaimsFix)} |`,
+    `| Affected tests pass as submitted | ${controlMark(c.suitePassesAsSubmitted)} |`,
+    `| Affected tests still pass with the fix reverted (twice) | ${controlMark(c.revertedSuiteStillPassesTwice)} |`,
     '',
   ];
 }

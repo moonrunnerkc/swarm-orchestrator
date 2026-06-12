@@ -25,12 +25,14 @@ import type { TestRunner } from '../execution-grounded/sandbox';
 import { corroborationFor, type ExecutionSignals } from '../execution-grounded/corroborate';
 import type { RestorationProofRecord } from '../execution-grounded/test-restoration';
 import type { MockRestorationProofRecord } from '../execution-grounded/mock-restoration';
+import type { NoOpFixProofRecord } from '../execution-grounded/no-op-fix-restoration';
 import type {
   BlockTrigger,
   BlockTriggerEvidence,
   ClaimFalsifiedEvidence,
   CorroboratedUnderConstraintEvidence,
   MockMutationProvenEvidence,
+  NoOpFixProvenEvidence,
   ObligationFailureEvidence,
   TestTamperProvenEvidence,
 } from './block-trigger-types';
@@ -42,6 +44,7 @@ export type {
   ClaimFalsifiedEvidence,
   CorroboratedUnderConstraintEvidence,
   MockMutationProvenEvidence,
+  NoOpFixProvenEvidence,
   ObligationFailureEvidence,
   TestTamperProvenEvidence,
 } from './block-trigger-types';
@@ -361,6 +364,64 @@ export function detectMockMutationProven(input: MockMutationProvenInput): BlockT
   return out;
 }
 
+export interface NoOpFixProvenInput {
+  /** No-op-fix restoration proof records from the execution-grounded run; the
+   *  detector keeps only the proven, all-controls-true ones. */
+  noOpRestorations: NoOpFixProofRecord[];
+}
+
+/**
+ * T6: a no-op-fix restoration proof. The PR's non-test source hunks were
+ * reverted in a sandbox and the affected tests (those whose import closure
+ * reaches the reverted source) still passed, twice, while the PR claimed a fix
+ * and its suite passed as submitted. Execution proves no test verifies the
+ * claimed fix. Fires one candidate per `proven` record whose three controls are
+ * all true; a proven record with any unexecuted (null) or false control is
+ * advisory only and produces nothing (fail closed). The reproduce command is the
+ * record's own, which reruns the affected tests with the fix reverted.
+ *
+ * @param input the run's no-op-fix restoration proof records
+ * @returns one block-trigger candidate per fully-controlled proof, or []
+ */
+export function detectNoOpFixProven(input: NoOpFixProvenInput): BlockTrigger[] {
+  const out: BlockTrigger[] = [];
+  for (const record of input.noOpRestorations) {
+    if (record.verdict !== 'proven') continue;
+    const { prClaimsFix, suitePassesAsSubmitted, revertedSuiteStillPassesTwice } = record.controls;
+    if (
+      prClaimsFix !== true ||
+      suitePassesAsSubmitted !== true ||
+      revertedSuiteStillPassesTwice !== true
+    ) {
+      continue;
+    }
+    const evidence: NoOpFixProvenEvidence = {
+      kind: 'no-op-fix-proven',
+      verdict: 'proven',
+      revertedSourceFiles: record.revertedSourceFiles,
+      affectedTestFiles: record.affectedTestFiles,
+      prClaim: record.prClaim,
+      controls: record.controls,
+      reproduceCommand: record.reproduceCommand,
+    };
+    out.push({
+      kind: 'no-op-fix-proven',
+      summary:
+        `A no-op-fix proof at ${record.findingFile}: the PR claims a fix (${record.prClaim}), but ` +
+        `with its source change reverted the ${affectedCount(record.affectedTestFiles.length)} that ` +
+        `reach it still passed twice. No test verifies the fix, so the change is a no-op.`,
+      reproduce: record.reproduceCommand,
+      evidence,
+    });
+  }
+  return out;
+}
+
+/** one affected test, two affected tests, ... */
+function affectedCount(n: number): string {
+  return `${n} affected test${n === 1 ? '' : 's'}`;
+}
+
 /** The inputs each trigger needs, bundled so one call produces every candidate
  *  a run can raise. A field left undefined skips that trigger (e.g. an audit
  *  with no declared obligations omits `obligations`). */
@@ -370,6 +431,7 @@ export interface BlockTriggerContext {
   obligations?: ObligationOutcome[];
   restorations?: TestTamperProvenInput;
   mockRestorations?: MockMutationProvenInput;
+  noOpRestorations?: NoOpFixProvenInput;
 }
 
 /**
@@ -390,5 +452,7 @@ export function detectBlockTriggers(context: BlockTriggerContext): BlockTrigger[
   if (context.restorations !== undefined) out.push(...detectTestTamperProven(context.restorations));
   if (context.mockRestorations !== undefined)
     out.push(...detectMockMutationProven(context.mockRestorations));
+  if (context.noOpRestorations !== undefined)
+    out.push(...detectNoOpFixProven(context.noOpRestorations));
   return out;
 }

@@ -1,6 +1,7 @@
 import type { BlockTrigger, BlockTriggerKind } from './block-trigger-types';
 import type { RestorationControls } from '../execution-grounded/test-restoration';
 import type { MockRestorationControls } from '../execution-grounded/mock-restoration';
+import type { NoOpFixControls } from '../execution-grounded/no-op-fix-restoration';
 
 /** Two-tier model for block triggers. Self-certifying triggers (test-tamper-proven,
  * claim-falsified, obligation-failure) are eligible independent of the Wilson
@@ -15,6 +16,7 @@ export const SELF_CERTIFYING_TRIGGERS: readonly BlockTriggerKind[] = [
   'claim-falsified',
   'obligation-failure',
   'mock-mutation-proven',
+  'no-op-fix-proven',
 ];
 
 export function isSelfCertifying(kind: BlockTriggerKind): boolean {
@@ -55,6 +57,14 @@ export function controlsAllGreen(trigger: BlockTrigger): boolean {
       c.tamperedSuitePasses === true &&
       c.restoredFailsTwiceSameIdentity === true &&
       c.mockReturnsAssertedValue === true
+    );
+  }
+  if (e.kind === 'no-op-fix-proven') {
+    const c: NoOpFixControls = e.controls;
+    return (
+      c.prClaimsFix === true &&
+      c.suitePassesAsSubmitted === true &&
+      c.revertedSuiteStillPassesTwice === true
     );
   }
   return false;
