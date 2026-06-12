@@ -245,7 +245,7 @@ describe('execution-grounded / test-restoration runTestRestoration (early exits,
     assert.ok(record.reproduceCommand.length > 0, 'a proven record must ship a reproduce command');
     assert.ok(record.reproduceCommand.includes("git apply -R <<'SWARM_RESTORE_PATCH'"));
     assert.ok(record.reproduceCommand.includes(ws.headSha));
-    assert.ok(record.reproduceCommand.endsWith('npx mocha test/calc.test.js'));
+    assert.ok(record.reproduceCommand.includes('&& npx mocha test/calc.test.js\n'));
     assert.ok(record.revertedHunkPatch.includes('test/calc.test.js'));
     assert.ok(!record.revertedHunkPatch.includes('src/calc.js'), 'only test hunks are reverted');
     assert.equal(record.reason, undefined);
