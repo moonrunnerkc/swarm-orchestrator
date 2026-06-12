@@ -38,7 +38,7 @@ describe('extractMockRevertPatch', () => {
     assert.doesNotMatch(patch!, /src\/totals\.ts/);
     // It restores the real call by reverse-applying: the original '-' line and
     // the added '+' lines round-trip verbatim.
-    assert.match(patch!, /-    const out = compute\(input\);/);
+    assert.match(patch!, /- {4}const out = compute\(input\);/);
   });
 
   it('returns null for a non-test finding file', () => {
