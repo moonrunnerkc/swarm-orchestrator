@@ -8,13 +8,13 @@ Reads a pull request (PR) diff and flags the shortcuts artificial intelligence (
 
 For engineers reviewing AI-written PRs at volume. Compliance teams generate CycloneDX-ML (machine learning) and SPDX (Software Package Data Exchange) 3.0 AI-BOM (bill of materials) artifacts. The artifacts map to EU AI Act (European Union Artificial Intelligence Act) Annex IV and CISA (Cybersecurity and Infrastructure Security Agency) reporting. Maintainers keep a hash-chained evidence record for every graded patch.
 
-**Flags are tips, blocks are proof.** A flag is a structural detector seeing a cheat-shaped pattern; it is advisory and never blocks a merge (`--mode advise` is the default). A block is a self-certifying runtime result whose per-instance controls are all green, and every block ships the exact command that reproduces it in a fresh checkout. Seven proof protocols back the gate today (`test-tamper`, `mock-mutation`, `no-op-fix`, `type-suppression`, `fake-refactor`, `claim-falsified`, `obligation-failure`); the measured proven-finding precision on the execution-grounded-viable corpus slice, with its plain n, is in [`benchmarks/real-corpus/GATE-PRECISION-REPORT.md`](benchmarks/real-corpus/GATE-PRECISION-REPORT.md).
+**Flags are tips, blocks are proof.** A flag is a structural detector seeing a cheat-shaped pattern; it is advisory and never blocks a merge (`--mode advise` is the default). A block is a self-certifying runtime result whose per-instance controls are all green, and every block ships the exact command that reproduces it in a fresh checkout. Eight proof protocols back the gate today: six execution-grounded restoration proofs (`test-tamper`, `mock-mutation`, `no-op-fix`, `type-suppression`, `fake-refactor`, `dead-branch`) plus `claim-falsified` and `obligation-failure`. The measured proven-finding precision on the execution-grounded-viable corpus slice, with its plain n, is in [`benchmarks/real-corpus/GATE-PRECISION-REPORT.md`](benchmarks/real-corpus/GATE-PRECISION-REPORT.md).
 
 <!-- BADGES:START -->
 [![CI](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml)
 [![license ISC](https://img.shields.io/static/v1?label=license&message=ISC&color=blue)](LICENSE)
 [![node >= 20](https://img.shields.io/static/v1?label=node&message=%3E%3D%2020&color=3c873a)](package.json)
-[![version 11.2.0](https://img.shields.io/static/v1?label=version&message=11.2.0&color=22d3ee)](package.json)
+[![version 12.0.0](https://img.shields.io/static/v1?label=version&message=12.0.0&color=22d3ee)](package.json)
 [![oracle recall 93% (301/325)](https://img.shields.io/static/v1?label=oracle%20recall&message=93%25%20(301%2F325)&color=brightgreen)](benchmarks/results/AB-REPORT.md)
 [![real-PR false alarms 0.11/PR](https://img.shields.io/static/v1?label=real-PR%20false%20alarms&message=0.11%2FPR&color=brightgreen)](benchmarks/real-prs/REAL-WORLD-REPORT.md)
 [![real-PR cheats vs linters 4 confirmed (Semgrep+ESLint: 1)](https://img.shields.io/static/v1?label=real-PR%20cheats%20vs%20linters&message=4%20confirmed%20(Semgrep%2BESLint%3A%201)&color=brightgreen)](benchmarks/real-prs/v11-BENEFIT-REPORT.md)
@@ -142,6 +142,12 @@ jobs:
 ```
 
 Outputs: `audit-pass`, `audit-findings`, `audit-ledger`. Full input list in [`action.yml`](action.yml).
+
+### Enabling the execution-grounded layer
+
+Structural detectors run with no setup and only ever flag (advisory). The six runtime proofs that can gate a merge (`test-tamper`, `mock-mutation`, `no-op-fix`, `type-suppression`, `fake-refactor`, `dead-branch`) need the execution-grounded layer, which is off until you set `executionGrounded.enabled: true` in [`.swarm/audit-config.yaml`](docs/audit-config.md). Turning it on is what lets `--mode gate` block, and every block it produces ships the exact command that reproduces it in a fresh checkout.
+
+What it costs: for each audited PR the layer provisions the repository in a sandbox (clone the head, install dependencies, run the affected tests), so it adds clone, install, and test wall-clock to the job, and only PRs in a Node project with a lockfile and a recognized test runner (jest, vitest, mocha) provision at all. Everything else fails closed to advisory. The static viability screen on the project corpus measured 12 of 197 PRs as provisionable ([`benchmarks/real-corpus/eg-viability.json`](benchmarks/real-corpus/eg-viability.json)); your own repository, where the suite is known to run in CI, provisions far more reliably than an arbitrary sample. Nothing the layer cannot prove ever blocks: with the layer off, or on a non-provisionable PR, gate mode passes on advisory findings alone.
 
 ## AI-BOM
 
