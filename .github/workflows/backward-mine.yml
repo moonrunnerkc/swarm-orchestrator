@@ -3,9 +3,15 @@ name: Backward mine confirmed-bad
 # Nightly backward mine of outcome-confirmed-bad agent commits. Starts from
 # revert markers in the wild, walks back to the reverted agent commit, confirms
 # the outcome with the same findOutcomeEvidence the corpus labeler uses, appends
-# to the confirmed-bad backward corpus, and commits the recomputed artifact.
-# Bounded by a hard API-call budget and a wall-clock cap so a run cannot run
-# away. The first scheduled execution happens after this workflow merges.
+# to the confirmed-bad backward corpus, and uploads the recomputed artifact for
+# a maintainer to fold. Bounded by a hard API-call budget and a wall-clock cap
+# so a run cannot run away.
+#
+# The grown corpus is uploaded as an artifact, not pushed: main is a protected
+# ref and the github-actions token cannot bypass it, so a maintainer reviews the
+# mined entries (spot-checking each against its evidence SHAs) and folds them in,
+# the same review-then-fold contract eg-viable-measure.yml uses. Nothing reaches
+# main without going through the normal verified path.
 
 on:
   schedule:
@@ -20,7 +26,7 @@ on:
         default: '50'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   mine:
@@ -43,14 +49,17 @@ jobs:
             --wall-clock-ms 2400000 \
             --limit "${{ github.event.inputs.limit || '50' }}" \
             --months 18
-      - name: Commit the grown corpus
+      - name: Report the mine result
         run: |
-          if ! git diff --quiet -- benchmarks/real-prs/agent-corpus/confirmed-bad-backward.json; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add benchmarks/real-prs/agent-corpus/confirmed-bad-backward.json
-            git commit -m "chore(corpus): nightly backward mine of confirmed-bad agent commits"
-            git push
+          if git diff --quiet -- benchmarks/real-prs/agent-corpus/confirmed-bad-backward.json; then
+            echo "no change to the backward corpus this run"
           else
-            echo "no new confirmed-bad entries this run"
+            echo "backward corpus changed; uploading for maintainer review and fold"
+            git --no-pager diff --stat -- benchmarks/real-prs/agent-corpus/confirmed-bad-backward.json
           fi
+      - name: Upload the grown corpus for review
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: confirmed-bad-backward
+          path: benchmarks/real-prs/agent-corpus/confirmed-bad-backward.json
+          if-no-files-found: warn
