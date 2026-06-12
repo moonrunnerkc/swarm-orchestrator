@@ -302,6 +302,29 @@ function gitRevert(opts: { patch: string; cwd: string }): { ok: boolean; detail:
   return { ok: true, detail: '' };
 }
 
+/** Re-apply the reverted mock hunks forward, restoring the post workspace to
+ *  exactly the PR-submitted state. The engine reverts in place to run the
+ *  restored test; a forward re-apply afterwards keeps the shared post workspace
+ *  valid for the next candidate the live restoration phase evaluates (and for
+ *  the layer's cleanup). Mirrors no-op-fix-restoration's hygiene. */
+function gitForwardApply(opts: { patch: string; cwd: string }): { ok: boolean; detail: string } {
+  const res = spawnSync('git', ['apply', '--whitespace=nowarn', '-'], {
+    cwd: opts.cwd,
+    input: opts.patch,
+    encoding: 'utf8',
+    timeout: 60_000,
+  });
+  if (res.error !== undefined) return { ok: false, detail: res.error.message };
+  if (res.status !== 0) {
+    const detail = [res.stderr, res.stdout]
+      .filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+      .join('\n')
+      .trim();
+    return { ok: false, detail: detail.length > 0 ? detail : `git apply status ${res.status}` };
+  }
+  return { ok: true, detail: '' };
+}
+
 const SUPPORTED_RUNNERS: readonly TestRunner[] = ['jest', 'vitest', 'mocha'];
 
 function record(
@@ -383,20 +406,34 @@ export function runMockRestoration(input: MockRestorationInput): MockRestoration
     });
   }
 
-  // Revert the mock hunks in place, then run the restored test twice.
+  // Revert the mock hunks in place, run the restored test twice, then always
+  // re-apply forward so the shared post workspace is left exactly as the PR
+  // submitted it (the live restoration phase evaluates more candidates against
+  // the same workspace). Mirrors no-op-fix-restoration.
   const revert = gitRevert({ patch: revertedHunkPatch, cwd: input.postWorkspacePath });
   if (!revert.ok) {
     return record(base, 'not-proven:patch-apply-failed', controls, {
       reason: `reverse-applying the mock patch failed: ${revert.detail}`,
     });
   }
-  const run1 = executeTestRun(runOpts);
+  let run1, run2;
+  try {
+    run1 = executeTestRun(runOpts);
+    run2 = executeTestRun(runOpts);
+  } finally {
+    const forward = gitForwardApply({ patch: revertedHunkPatch, cwd: input.postWorkspacePath });
+    if (!forward.ok) {
+      log.error(
+        `mock-restoration: forward re-apply failed, the post workspace is corrupted ` +
+          `(harness bug): ${forward.detail} (cwd=${input.postWorkspacePath})`,
+      );
+    }
+  }
   if (run1.timedOut || run1.spawnFailed) {
     return record(base, 'not-proven:execution-error', controls, {
       reason: `restored run 1 did not complete: ${run1.rawOutput.slice(0, 200)}`,
     });
   }
-  const run2 = executeTestRun(runOpts);
   if (run2.timedOut || run2.spawnFailed) {
     return record(base, 'not-proven:execution-error', controls, {
       reason: `restored run 2 did not complete: ${run2.rawOutput.slice(0, 200)}`,

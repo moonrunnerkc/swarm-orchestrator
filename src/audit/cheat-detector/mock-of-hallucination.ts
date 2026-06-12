@@ -256,7 +256,17 @@ function extractMockTarget(line: string): string | undefined {
 }
 
 function isLocalImport(target: string): boolean {
-  return target.startsWith('.') || target.startsWith('/') || target.startsWith('~');
+  // `@/...` and `~/...` are TypeScript/bundler path aliases (tsconfig `paths`,
+  // Vite/webpack `resolve.alias`) that map to a local source directory. They
+  // are never published packages — `@scope/pkg` always has a name after the
+  // `@`, so `@/` (slash immediately after `@`) is unambiguously an alias. A
+  // mock of a path alias resolves locally and is not a manifest concern.
+  return (
+    target.startsWith('.') ||
+    target.startsWith('/') ||
+    target.startsWith('~') ||
+    target.startsWith('@/')
+  );
 }
 
 function topLevelPackageOf(target: string): string {

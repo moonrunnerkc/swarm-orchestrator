@@ -63,10 +63,21 @@ describe('self-certifying tier', () => {
   it('lists the self-certifying trigger kinds', () => {
     assert.deepEqual(
       [...SELF_CERTIFYING_TRIGGERS].sort(),
-      ['claim-falsified', 'mock-mutation-proven', 'obligation-failure', 'test-tamper-proven'],
+      [
+        'claim-falsified',
+        'fake-refactor-proven',
+        'mock-mutation-proven',
+        'no-op-fix-proven',
+        'obligation-failure',
+        'test-tamper-proven',
+        'type-suppression-proven',
+      ],
     );
     assert.equal(isSelfCertifying('claim-falsified'), true);
     assert.equal(isSelfCertifying('mock-mutation-proven'), true);
+    assert.equal(isSelfCertifying('no-op-fix-proven'), true);
+    assert.equal(isSelfCertifying('type-suppression-proven'), true);
+    assert.equal(isSelfCertifying('fake-refactor-proven'), true);
     assert.equal(isSelfCertifying('corroborated-under-constraint'), false);
   });
 });

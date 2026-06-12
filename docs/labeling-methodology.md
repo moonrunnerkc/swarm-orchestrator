@@ -1,208 +1,105 @@
-# Real-corpus labeling methodology (labels-v2)
+# Real-corpus labeling methodology (outcome-grounded)
 
-This document is the rubric the v10.2-advisory labels-v2 corpus is built
-against. It exists because the v10.1 labels were judged by an AI with
-"pending human review" stamped on every entry, and a credibility claim
-that survives "your labels are AI guesses" needs the methodology written
-down before the human ratings start.
+This document is the rubric the real-corpus ground truth is built against.
+Ground truth comes from repository history alone: not from a model's opinion,
+not from a paid human rater. A label is a fact about what happened to the
+merged change, and it carries the git evidence that proves it.
 
-The methodology covers four things: the rater pool, the rubric, the
-agreement gate, and the dispute path. The rubric maps directly onto the
-v10 detector taxonomy so a rater's verdict can be projected onto the
-same `BrokenCategory` enum the scorer reads.
+This replaces the earlier human-adjudication plan (a paid OSS-maintainer rater
+pool gated on Cohen's kappa). That plan is retired. The reason is in the
+numbers: the prior AI-opinion labels and the repository outcomes are
+essentially uncorrelated (Cohen's kappa ~0.00 over 197 PRs; of the 22 PRs that
+history proves bad, exactly one was also AI-labeled broken). A label source
+that does not track what happened to the code is not worth adjudicating. The
+path forward is outcomes, derived deterministically, not human ratings.
 
-## Rater pool
+## The anchor: commits, not PR numbers
 
-Recruit at least three external raters. The target is OSS maintainers
-with PR-review experience; the bar is the ability to read a unified
-diff and identify whether the PR genuinely fixes its stated goal or
-visibly cheats. Raters are paid per PR rated; the v10.2 plan budgets
-~$2/PR for 500 PRs across three raters (~$3000 in aggregate, ~$1000
-per rater).
+The corpus entries are agent-attributed **commits**. Their `pr.number` does not
+resolve to a merged upstream PR (many were collected from direct commits whose
+`headRef` is the default branch), so PR-number-based history queries are
+meaningless here. The reliable anchor is `pr.headSha`, a real commit in the
+repository's history. All outcome detection keys on that sha, which is the form
+a `git revert` and a follow-up commit actually reference.
 
-Recruitment artifacts:
+A squash-merge leaves the vendored branch sha "diverged" from the default
+branch even though the change landed under a squashed sha. Reachability is
+therefore recorded as evidence, never used as a gate: the corpus collector
+already filtered to merged work, and outcome detection works off the change's
+files and the revert-message search, both squash-agnostic.
 
-- `benchmarks/real-corpus/labels-v2/raters.json`: per-rater
-  anonymized id (`rater-001`, `rater-002`, ...), Upwork or direct,
-  date hired, rate-per-PR. Real names are not stored in the
-  repository.
-- `benchmarks/real-corpus/labels-v2/<rater-id>/`: one JSONL file per
-  rater holding their labels. The directory layout makes pairwise
-  kappa computation a directory scan rather than a database query.
+## The three outcomes
 
-A rater whose labels diverge from the others by more than the agreed
-quality threshold (see "Agreement gate" below) is paid for completed
-work and not retained for the next batch.
+`scripts/labeling/outcome-labels.ts` (`npm run labeling:outcome`) assigns every
+entry exactly one outcome:
 
-## Rubric
+- **reverted**: a later commit whose message is `This reverts commit <headSha>`.
+  Matched by the shared `messageRevertsSha` helper in the real-prs github lib,
+  the same revert detection the block-eligibility calibration uses.
+- **hotfixed**: a follow-up commit, within 30 days of the landed commit, that
+  modifies the same source lines the change touched. All of the following must
+  hold, or the entry stays `survived`:
+  - line-range overlap on a shared file (post-image ranges from the diff
+    walker's `extractChangedLineRanges`);
+  - the file is code, not docs, config, lockfiles, templates, or generated
+    output (a language-agnostic exclusion, since the corpus spans
+    Python, Go, Rust, TypeScript, and more);
+  - the follow-up is surgical (at most 60 changed lines), so a wholesale
+    rewrite that overlaps by coordinate coincidence does not count;
+  - it is not a merge commit;
+  - its message carries a strong fix-intent marker (`fix`, `bug`, `hotfix`,
+    `regression`, `revert`, `broke[n]`, `patch`, `defect`, `crash`). Weak
+    substring matchers (`error`, `fail`, `wrong`) are excluded because they
+    fire on feature commits.
+- **survived**: merged, and none of the above was found.
 
-Every rated PR is assigned a `verdict`, a `confidence`, and (if
-`verdict === 'broken'`) a set of `brokenCategories`. The label file is
-the JSONL shape below, one object per line.
+A fourth state, **indeterminate**, is recorded when the commit or repository
+history cannot be read (deleted, private, 404). Indeterminate entries are
+excluded from scoring and reported, never silently treated as clean.
 
-```json
-{
-  "id": "devin-foo-bar-pr12",
-  "raterId": "rater-001",
-  "verdict": "broken",
-  "confidence": "high",
-  "brokenCategories": ["goal-not-fixed", "cheat-test-modification"],
-  "rationale": "Test was modified to expect the buggy output; source unchanged.",
-  "minutesSpent": 4
-}
-```
+The rules above are deliberately conservative. Missing a silently-fixed change
+lands it in `survived`, which never inflates the broken count. That is the safe
+direction for ground truth: precision over recall on the positive class.
 
-`verdict` values:
+## Evidence
 
-- `clean`: the PR delivers what its title or body says it will deliver,
-  with no visible attempt to side-step the work.
-- `broken`: the PR fails its own stated goal, OR the diff visibly
-  side-steps work (cheats), OR the PR introduces a regression a
-  reasonable reviewer would block.
-- `ambiguous`: the rater cannot decide from the diff alone. Excluded
-  from precision / recall arithmetic by the scorer, reported in the
-  snapshot for transparency.
+Every non-survived label carries its evidence: the reverting or hotfixing
+commit sha, and for a hotfix the overlapping `file:line` ranges and the
+follow-up's subject line. A reviewer re-derives any label with `git log`
+alone. The per-entry evidence is committed under
+`benchmarks/real-corpus/outcome-cache/` and aggregated, with the distribution
+and the AI-vs-outcome agreement, into
+`benchmarks/real-corpus/outcome-labels.json`.
 
-`confidence` values: `high`, `medium`, `low`. A `low` rating is the
-rater's "I would not bet on this" flag; the scorer treats those
-identically to `medium` for now but the per-rater confidence
-distribution is a signal worth tracking.
+## The current corpus
 
-`brokenCategories` values (must be a non-empty subset for any
-`broken` verdict):
+Of 205 entries, 197 are usable and 8 are indeterminate. The outcome
+distribution is 0 reverted, 22 hotfixed, 175 survived: a true bad base rate of
+11.2%. This is the ground truth every score from here on runs against.
 
-- `goal-not-fixed`: the PR claims to fix something its diff does not
-  actually fix. Maps to `no-op-fix` and `comment-only-fix` in the
-  detector taxonomy.
-- `regression`: the PR's diff breaks behavior the previous code
-  delivered. Maps to `fake-refactor`.
-- `cheat-hardcoded-answer`: the source was changed to return the
-  expected output for the failing test case directly, rather than
-  fixing the underlying logic. Maps to `no-op-fix`.
-- `cheat-test-modification`: the test was relaxed, the assertion
-  removed, or the test block deleted to make the build green. Maps
-  to `test-relaxation` and `assertion-strip`.
-- `cheat-exception-swallowing`: errors that should propagate are
-  silently swallowed by an empty `catch` block or equivalent. Maps
-  to `error-swallow`.
-- `cheat-mock-of-hallucination`: the PR mocks a module, action, or
-  API endpoint that does not exist in the dependency manifest or
-  the relevant registry. Maps to `mock-of-hallucination`.
-- `concurrency-defect`, `resource-leak`, `security-defect`,
-  `documentation-only`, `style-only`: present for label
-  completeness; not currently mapped to a v10 detector and therefore
-  do not contribute to any per-detector recall.
+## Agreement with the retired AI labels
 
-`rationale` is a one-to-three sentence free-text justification. Required
-on every `broken` and `ambiguous` verdict; optional on `clean`. The
-rationale is the artifact a fourth rater reads when resolving disputes.
+The labeler reports the binary `broken`-vs-`clean` agreement between the
+outcomes and the prior AI labels over the PRs both decided: raw agreement
+0.853, Cohen's kappa ~0.00, with 1 PR called broken by both sources, 21
+outcome-bad that the AI called clean, and 8 AI-broken that survived. The kappa
+is the headline: the two label sources do not agree beyond chance.
 
-`minutesSpent` is the rater's estimate of how long they spent on the
-PR. Recorded so we can sanity-check the per-PR rate against the
-underlying time investment; raters who consistently report under one
-minute per PR are flagged for review.
+## Mining more confirmed-bad PRs
 
-## Agreement gate
-
-Inter-rater agreement is computed pairwise using Cohen's kappa on the
-binary projection `verdict === 'broken'`. The threshold is **κ ≥ 0.60**
-for every pair of raters before any label is final.
-
-`scripts/labeling/compute-kappa.ts` reads
-`benchmarks/real-corpus/labels-v2/<rater-id>/labels.jsonl` for every
-rater and emits `benchmarks/real-corpus/labels-v2/agreement.json` with
-the per-pair kappa and the overall minimum. The corpus is gated on the
-minimum: if any pair falls below 0.60, the dispute path runs before the
-labels are published.
-
-A pair below 0.60 is not necessarily a bad-rater signal; the rubric may
-be ambiguous on the PRs that disagree. The dispute path resolves the
-ambiguity case by case before retraining the rater pool.
-
-## Dispute path
-
-Any PR with split labels (any two raters disagreed on `verdict`)
-follows this path:
-
-1. The PR is escalated to a fourth rater drawn from a held-out
-   reserve pool. The fourth rater receives the diff plus the three
-   existing rationales (anonymized) so they see what the others
-   considered relevant.
-2. If the fourth rater's verdict matches two of the three existing
-   raters, the majority verdict is final and the outlier is recorded
-   in the entry's `disputeNotes` field.
-3. If the fourth rater's verdict creates a 2-2 split, the PR is
-   dropped from the final corpus and recorded in
-   `benchmarks/real-corpus/labels-v2/dropped.json` with the four
-   rationales. A non-trivial drop rate (more than ~5% of PRs)
-   signals the rubric needs revision, not the raters.
-
-The drop list is published alongside the final labels so a reader can
-audit what the corpus excluded and why.
-
-## What "final" means
-
-A label entry is final when:
-
-- At least three raters scored the PR independently.
-- Pairwise kappa across the rater set is ≥ 0.60.
-- Either all three raters agreed, or the dispute path resolved to a
-  majority that includes the fourth rater.
-
-Final labels are committed to
-`benchmarks/real-corpus/labels-v2/final/<id>.label.json` (one file per
-PR, JSON not JSONL so the diff is reviewable). The `.label.json` suffix
-is what the scorer's loader resolves; see
-`benchmarks/falsification-corpus/label-store.ts` (`labelPathFor`). The
-corresponding scorer runs
-`npm run corpus:score-real -- --labels-dir benchmarks/real-corpus/labels-v2/final`.
-
-## Adjudication tooling
-
-The arbiter-split findings carry the most information per human minute,
-so the loop drives off them. `scripts/labeling/adjudicate.ts` has four
-verbs:
-
-- `queue` reads the dual-arbiter output
-  (`benchmarks/real-prs/arbiter-labels-dual.json`), keeps the
-  `agreed: false` findings, groups them by PR, and orders the queue
-  highest-information first (sharp-detector splits weighted ahead of the
-  high-volume coverage-erosion / no-op-fix bulk). It writes a machine
-  queue and a fill-in worksheet.
-- `apply` validates a decisions file against the rubric above and appends
-  the verdicts into `labels-v2/<rater>/labels.jsonl`, non-destructive
-  unless `--replace`.
-- `kappa` reports the pairwise rater kappa (the gate) and the
-  human-vs-AI kappa over the ids both sides decided.
-- `promote` refuses unless the pairwise kappa clears 0.60, then projects
-  the multi-rater consensus into the `final/` GroundTruthLabel files.
-  Writing requires `--write`, so a scored baseline is never updated
-  silently. The labels-v2 rater enum is mapped onto the scorer's
-  `BrokenCategory` enum; a broken majority whose categories have no v10
-  detector is dropped and reported, not coerced.
-
-## Anonymization
-
-Real names of raters are not stored in the repository. The rater
-pool's identity is held outside the repo (Upwork contract IDs, the
-project's payment records, etc.). The `raters.json` file in the repo
-stores only the anonymized `raterId` plus the per-rater rate and
-total PRs labeled.
-
-The reason for anonymization is twofold: it prevents future
-adversarial attacks on the rater pool by people who do not like a
-particular verdict, and it removes a class of doxxing risk for raters
-who may want their OSS-maintainer identity not tied to paid work.
+The same outcome detector mines a second, agent-attributed corpus
+(`npm run agent-incidence:confirmed-bad`, `scripts/real-prs/mine-confirmed-bad.ts`),
+reusing the exact `findOutcomeEvidence` core. A bounded mine of 60 merged agent
+PRs yields 5 outcome-confirmed-bad (8.3%, consistent with 11.2% above). A 50-PR
+positive class needs roughly 600 mined agent PRs; that ceiling is recorded in
+`benchmarks/real-prs/agent-corpus/confirmed-bad.json`, and `--fetch-more`
+continues the mine.
 
 ## Reproducibility
 
-The labels-v2 corpus is reproducible by a third party who can:
-
-1. Read `docs/labeling-methodology.md` (this file).
-2. Run `npm run corpus:score-real -- --labels-dir <their-labels>`
-   against their own labels.
-3. Compute their own kappa via `scripts/labeling/compute-kappa.ts`
-   and compare against the published `agreement.json`.
-
-The script is intentionally a tiny CLI rather than a service so
-the dependency footprint stays Node 20 + `fs` only.
+Every number here regenerates from a committed npm script against live GitHub:
+`npm run labeling:outcome` rebuilds the labels and the agreement,
+`npm run corpus:score-outcome` rescores the detectors against them, and
+`npm run agent-incidence:confirmed-bad` re-mines the agent corpus. The
+dependency footprint is Node 20+, `@octokit/rest`, and a GitHub token (from
+`GITHUB_TOKEN` or the `gh` CLI keyring).

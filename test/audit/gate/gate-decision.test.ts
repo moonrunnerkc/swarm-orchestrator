@@ -38,7 +38,15 @@ describe('gate-decision', () => {
   it('ships with the self-certifying triggers eligible (the runtime tier)', () => {
     assert.deepEqual(
       [...BLOCK_ELIGIBLE_TRIGGERS].sort(),
-      ['claim-falsified', 'mock-mutation-proven', 'obligation-failure', 'test-tamper-proven'],
+      [
+        'claim-falsified',
+        'fake-refactor-proven',
+        'mock-mutation-proven',
+        'no-op-fix-proven',
+        'obligation-failure',
+        'test-tamper-proven',
+        'type-suppression-proven',
+      ],
     );
     assert.equal(isBlockEligible('test-tamper-proven'), true);
     assert.equal(isBlockEligible('corroborated-under-constraint'), false);

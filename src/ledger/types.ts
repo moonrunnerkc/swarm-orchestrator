@@ -333,6 +333,80 @@ export interface LedgerEntryPayloadMap {
     };
     reproduceCommand: string;
   };
+  // Mock-mutation restoration proof record: one entry per qualifying
+  // `cheat-mock-mutation` finding the restoration phase evaluated, every
+  // verdict included. `controls` mirrors the proof's three internal controls;
+  // null means that control never executed. `mockedReturnValues` are the
+  // expressions the added mocks inject (for the comment).
+  'pr-audit-mock-restoration': {
+    category: string;
+    verdict: string;
+    findingFile: string;
+    testFiles: string[];
+    failingTests: string[];
+    mockedReturnValues: string[];
+    controls: {
+      tamperedSuitePasses: boolean | null;
+      restoredFailsTwiceSameIdentity: boolean | null;
+      mockReturnsAssertedValue: boolean | null;
+    };
+    reproduceCommand: string;
+  };
+  // No-op-fix restoration proof record. PR-level (the proof is gated by a fix
+  // claim, not a structural finding), so a run carries at most one. `controls`
+  // mirrors the proof's three internal controls; null means that control never
+  // executed.
+  'pr-audit-no-op-fix-restoration': {
+    category: string;
+    verdict: string;
+    findingFile: string;
+    revertedSourceFiles: string[];
+    affectedTestFiles: string[];
+    prClaim: string;
+    controls: {
+      prClaimsFix: boolean | null;
+      suitePassesAsSubmitted: boolean | null;
+      revertedSuiteStillPassesTwice: boolean | null;
+    };
+    reproduceCommand: string;
+  };
+  // Type-suppression restoration proof record: one entry per qualifying
+  // `type-suppression` finding the restoration phase evaluated, every verdict
+  // included. `controls` mirrors the proof's three internal controls; null
+  // means that control never executed. `surfacedDiagnostics` are the tsc
+  // diagnostics that appeared once the directive was reverted (the proof).
+  'pr-audit-type-suppression-restoration': {
+    category: string;
+    verdict: string;
+    findingFile: string;
+    removedDirectives: string[];
+    surfacedDiagnostics: string[];
+    controls: {
+      directiveRemoved: boolean | null;
+      fileCleanAsSubmitted: boolean | null;
+      diagnosticSurfacesWhenRemoved: boolean | null;
+    };
+    reproduceCommand: string;
+  };
+  // Fake-refactor restoration proof record: one entry per qualifying
+  // `fake-refactor` finding the restoration phase evaluated, every verdict
+  // included. `controls` mirrors the proof's three internal controls; null
+  // means that check never ran. `references` are the `file:line` locations
+  // where the renamed-away symbol still appears in the head checkout.
+  'pr-audit-fake-refactor-restoration': {
+    category: string;
+    verdict: string;
+    findingFile: string;
+    oldName: string;
+    newName: string;
+    references: string[];
+    controls: {
+      oldSymbolResolved: boolean | null;
+      oldSymbolDeclarationRemoved: boolean | null;
+      oldSymbolStillReferenced: boolean | null;
+    };
+    reproduceCommand: string;
+  };
   // A verifiable-evidence block-trigger candidate: a self-certifying
   // runtime fact (a falsified issue repro, a structural finding a surviving
   // mutant or coverage gap corroborates on the same line, a failed declared
@@ -349,7 +423,10 @@ export interface LedgerEntryPayloadMap {
       | 'corroborated-under-constraint'
       | 'obligation-failure'
       | 'test-tamper-proven'
-      | 'mock-mutation-proven';
+      | 'mock-mutation-proven'
+      | 'no-op-fix-proven'
+      | 'type-suppression-proven'
+      | 'fake-refactor-proven';
     eligible: boolean;
     blocked: boolean;
     summary: string;
@@ -403,4 +480,10 @@ export type PrAuditMutationFindingEntry = LedgerEntry<'pr-audit-mutation-finding
 export type PrAuditIssueReproFindingEntry = LedgerEntry<'pr-audit-issue-repro-finding'>;
 export type PrAuditCoverageFindingEntry = LedgerEntry<'pr-audit-coverage-finding'>;
 export type PrAuditRestorationEntry = LedgerEntry<'pr-audit-restoration'>;
+export type PrAuditMockRestorationEntry = LedgerEntry<'pr-audit-mock-restoration'>;
+export type PrAuditNoOpFixRestorationEntry = LedgerEntry<'pr-audit-no-op-fix-restoration'>;
+export type PrAuditTypeSuppressionRestorationEntry =
+  LedgerEntry<'pr-audit-type-suppression-restoration'>;
+export type PrAuditFakeRefactorRestorationEntry =
+  LedgerEntry<'pr-audit-fake-refactor-restoration'>;
 export type PrAuditBlockTriggerEntry = LedgerEntry<'pr-audit-block-trigger'>;

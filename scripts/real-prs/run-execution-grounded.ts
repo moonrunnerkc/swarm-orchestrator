@@ -241,7 +241,7 @@ async function main(): Promise<void> {
         });
       } catch (err) {
         log.warn(`run failed for ${pr.repo}#${pr.prNumber}: ${String(err)}`);
-        outcome = { findings: [], mutationRuns: [], coverageRuns: [], repros: [], restorations: [], skipped: [`error: ${String(err)}`] };
+        outcome = { findings: [], mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], fakeRefactorRestorations: [], skipped: [`error: ${String(err)}`] };
       }
       const ms = Date.now() - started;
       const record = {

@@ -163,6 +163,10 @@ describe('execution-grounded / corroborate', () => {
         findings: [],
         skipped: [],
         restorations: [],
+        mockRestorations: [],
+        noOpRestorations: [],
+        typeSuppressionRestorations: [],
+        fakeRefactorRestorations: [],
         mutationRuns: [
           {
             packageDir: 'packages/core',

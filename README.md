@@ -8,6 +8,8 @@ Reads a pull request (PR) diff and flags the shortcuts artificial intelligence (
 
 For engineers reviewing AI-written PRs at volume. Compliance teams generate CycloneDX-ML (machine learning) and SPDX (Software Package Data Exchange) 3.0 AI-BOM (bill of materials) artifacts. The artifacts map to EU AI Act (European Union Artificial Intelligence Act) Annex IV and CISA (Cybersecurity and Infrastructure Security Agency) reporting. Maintainers keep a hash-chained evidence record for every graded patch.
 
+**Flags are tips, blocks are proof.** A flag is a structural detector seeing a cheat-shaped pattern; it is advisory and never blocks a merge (`--mode advise` is the default). A block is a self-certifying runtime result whose per-instance controls are all green, and every block ships the exact command that reproduces it in a fresh checkout. Seven proof protocols back the gate today (`test-tamper`, `mock-mutation`, `no-op-fix`, `type-suppression`, `fake-refactor`, `claim-falsified`, `obligation-failure`); the measured proven-finding precision on the execution-grounded-viable corpus slice, with its plain n, is in [`benchmarks/real-corpus/GATE-PRECISION-REPORT.md`](benchmarks/real-corpus/GATE-PRECISION-REPORT.md).
+
 <!-- BADGES:START -->
 [![CI](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml)
 [![license ISC](https://img.shields.io/static/v1?label=license&message=ISC&color=blue)](LICENSE)
@@ -231,7 +233,7 @@ Two command-line interface (CLI) surfaces share one core. `swarm run` drives the
 
 ## Limitations
 
-No single detector has cleared the precision bar to block on its own. Gate mode blocks only on a self-certifying runtime proof whose per-instance controls are all green: test restoration, claim falsification, or obligation failure. The first such proof fired on a dogfood PR in June 2026. The full accounting, including what blocks today and what doesn't, is in [`docs/limitations.md`](docs/limitations.md).
+No single detector has cleared the precision bar to block on its own. Gate mode blocks only on a self-certifying runtime proof whose per-instance controls are all green: test-tamper, mock-mutation, no-op-fix, type-suppression, or fake-refactor restoration, claim falsification, or obligation failure. The first such proof fired on a dogfood PR in June 2026. The full accounting, including the measured gate precision and what blocks today and what doesn't, is in [`docs/limitations.md`](docs/limitations.md).
 
 ## Contributing
 

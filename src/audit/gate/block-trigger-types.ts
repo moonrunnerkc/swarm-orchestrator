@@ -8,6 +8,9 @@
 import type { CheatCategory } from '../types';
 import type { RestorationControls } from '../execution-grounded/test-restoration';
 import type { MockRestorationControls } from '../execution-grounded/mock-restoration';
+import type { NoOpFixControls } from '../execution-grounded/no-op-fix-restoration';
+import type { TypeSuppressionControls } from '../execution-grounded/type-suppression-restoration';
+import type { FakeRefactorControls } from '../execution-grounded/fake-refactor-restoration';
 
 /** The verifiable-evidence triggers. Each is self-certifying and label-free:
  *  its truth comes from running the change, not from a label. */
@@ -16,7 +19,10 @@ export type BlockTriggerKind =
   | 'corroborated-under-constraint'
   | 'obligation-failure'
   | 'test-tamper-proven'
-  | 'mock-mutation-proven';
+  | 'mock-mutation-proven'
+  | 'no-op-fix-proven'
+  | 'type-suppression-proven'
+  | 'fake-refactor-proven';
 
 /** Every trigger kind, in a fixed order, for callers that iterate over all of
  *  them (the calibrator and the eligibility policy). */
@@ -26,6 +32,9 @@ export const ALL_BLOCK_TRIGGER_KINDS: readonly BlockTriggerKind[] = [
   'obligation-failure',
   'test-tamper-proven',
   'mock-mutation-proven',
+  'no-op-fix-proven',
+  'type-suppression-proven',
+  'fake-refactor-proven',
 ];
 
 /**
@@ -152,12 +161,92 @@ export interface MockMutationProvenEvidence {
   reproduceCommand: string;
 }
 
+/**
+ * A no-op-fix restoration proof: the PR's non-test source hunks were reverted in
+ * a sandbox and the affected tests (those whose import closure reaches the
+ * reverted source) still passed, twice, while the PR claimed a fix and its suite
+ * passed as submitted. Execution proves no test verifies the claimed fix. The
+ * three controls must all be true for the trigger to ever gate.
+ */
+export interface NoOpFixProvenEvidence {
+  kind: 'no-op-fix-proven';
+  /** Pinned to `proven`: only a proven restoration record becomes evidence. */
+  verdict: 'proven';
+  /** Non-test source files whose hunks were reverted (the claimed fix). */
+  revertedSourceFiles: string[];
+  /** Repo tests whose closure reaches the reverted source (what was rerun). */
+  affectedTestFiles: string[];
+  /** The PR's own fix-claim text, quoted back so the contradiction is plain. */
+  prClaim: string;
+  /** The proof's three internal controls, published as recorded. A candidate
+   *  is only emitted when all three are true; null means a run never executed. */
+  controls: NoOpFixControls;
+  /** Exact command a human runs in a fresh checkout to see the affected tests
+   *  still pass with the fix reverted. */
+  reproduceCommand: string;
+}
+
+/**
+ * A type-suppression restoration proof: the PR's added `@ts-ignore` /
+ * `@ts-expect-error` directive was reverted in a sandbox, tsc reported zero
+ * diagnostics in the file as submitted, and at least one diagnostic surfaced in
+ * that same file once the directive was gone. Execution proves the suppression
+ * was hiding a real type error rather than papering over nothing. The three
+ * controls must all be true for the trigger to ever gate.
+ */
+export interface TypeSuppressionProvenEvidence {
+  kind: 'type-suppression-proven';
+  /** Pinned to `proven`: only a proven restoration record becomes evidence. */
+  verdict: 'proven';
+  /** The file whose suppression was reverted. */
+  file: string;
+  /** The directive label(s) reverted (e.g. `@ts-ignore`). */
+  removedDirectives: string[];
+  /** The tsc diagnostics that surfaced in the file once the directive was gone. */
+  surfacedDiagnostics: string[];
+  /** The proof's three internal controls, published as recorded. A candidate
+   *  is only emitted when all three are true; null means a run never executed. */
+  controls: TypeSuppressionControls;
+  /** Exact command a human runs in a fresh checkout to see the diagnostic. */
+  reproduceCommand: string;
+}
+
+/**
+ * A fake-refactor restoration proof: the PR renamed an exported symbol, the old
+ * name has no remaining declaration anywhere in the head checkout, and at least
+ * one identifier reference to it survives. Execution-grounded (a static scan of
+ * the provisioned checkout, not just the diff) proves the rename left dangling
+ * references against a symbol that no longer exists. The three controls must all
+ * be true for the trigger to ever gate.
+ */
+export interface FakeRefactorProvenEvidence {
+  kind: 'fake-refactor-proven';
+  /** Pinned to `proven`: only a proven restoration record becomes evidence. */
+  verdict: 'proven';
+  /** The file where the rename was declared. */
+  file: string;
+  /** The renamed-away symbol still referenced. */
+  oldName: string;
+  /** The symbol it was renamed to. */
+  newName: string;
+  /** `file:line` references to the old name surviving in the checkout. */
+  references: string[];
+  /** The proof's three internal controls, published as recorded. A candidate
+   *  is only emitted when all three are true; null means a check never ran. */
+  controls: FakeRefactorControls;
+  /** Exact command a human runs in a fresh checkout to see the references. */
+  reproduceCommand: string;
+}
+
 export type BlockTriggerEvidence =
   | ClaimFalsifiedEvidence
   | CorroboratedUnderConstraintEvidence
   | ObligationFailureEvidence
   | TestTamperProvenEvidence
-  | MockMutationProvenEvidence;
+  | MockMutationProvenEvidence
+  | NoOpFixProvenEvidence
+  | TypeSuppressionProvenEvidence
+  | FakeRefactorProvenEvidence;
 
 /**
  * A block-trigger candidate. `reproduce` is the exact command the author runs

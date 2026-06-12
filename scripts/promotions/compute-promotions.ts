@@ -46,6 +46,23 @@ interface ScoresSnapshot {
 
 export type PromotionStatus = 'gate-eligible' | 'advisory-only' | 'unmeasured';
 
+// The corroborated tier has one extra state the standalone tier does not: a
+// static EG-viability screen can run (cheaply) even when the execution-grounded
+// corroboration run has not, so the tier reports `viability-screened` (the
+// viable slice is measured, corroborated precision pending the bounded EG run)
+// instead of the opaque `unmeasured`.
+export type CorroboratedStatus = PromotionStatus | 'viability-screened';
+
+/** Summary of the static EG-viability screen, folded into the corroborated
+ *  tier so promotions.json reports the measured viable slice. */
+interface ViabilitySummary {
+  screened: number;
+  viableCount: number;
+  egNodeMajor: number;
+  nonViableReasonCounts: Record<string, number>;
+  evidenceFile: string;
+}
+
 // The semantic categories the judge-primary path raises. They have no
 // structural detector and so no detector-level precision row; their
 // promotion is governed separately, below.
@@ -102,7 +119,7 @@ export interface CorroboratedTier {
   falsePositive: number;
   firingCount: number;
   precision: number;
-  status: PromotionStatus;
+  status: CorroboratedStatus;
   reason: string;
 }
 
@@ -137,6 +154,10 @@ export interface PromotionsOutput {
    *  if they do not clear it standalone. The path to the first gate. */
   corroboratedGateEligibleDetectors: string[];
   judgePrimary: JudgePrimaryPolicy;
+  /** The static EG-viability screen result, present once the screen has run.
+   *  Replaces the bare corroborated-"unmeasured" with the measured viable
+   *  slice; the corroborated precision run on that slice is the next step. */
+  executionGroundedViability?: ViabilitySummary;
 }
 
 interface Args {
@@ -301,27 +322,43 @@ export function corroboratedTier(
   gatePrecision: number,
   minTruePositive: number,
   scoresFile: string,
+  viability?: ViabilitySummary,
 ): CorroboratedTier {
-  if (corroborated === undefined) {
+  // When a corroborated subset has not been scored, the honest state is no
+  // longer a bare "unmeasured": the static viability screen tells us exactly
+  // how much of the corpus could even provision for an EG run. Report that.
+  const unmeasured = (reasonWithoutScreen: string): CorroboratedTier => {
+    if (viability !== undefined) {
+      return {
+        truePositive: 0,
+        falsePositive: 0,
+        firingCount: 0,
+        precision: 0,
+        status: 'viability-screened',
+        reason:
+          `EG-viability screen: ${viability.viableCount}/${viability.screened} PRs provision ` +
+          `(Node + lockfile + test runner + node@${viability.egNodeMajor} engine; see ` +
+          `${viability.evidenceFile}). Corroborated precision is pending the bounded EG run on ` +
+          `that ${viability.viableCount}-PR slice; nothing gates on the corroborated tier until then.`,
+      };
+    }
     return {
       truePositive: 0,
       falsePositive: 0,
       firingCount: 0,
       precision: 0,
       status: 'unmeasured',
-      reason: 'no runtime-corroborated subset scored (run the execution-grounded layer on the labeled corpus)',
+      reason: reasonWithoutScreen,
     };
+  };
+  if (corroborated === undefined) {
+    return unmeasured(
+      'no runtime-corroborated subset scored (run the execution-grounded layer on the labeled corpus)',
+    );
   }
   const firingCount = corroborated.truePositive + corroborated.falsePositive;
   if (firingCount === 0) {
-    return {
-      truePositive: 0,
-      falsePositive: 0,
-      firingCount: 0,
-      precision: 0,
-      status: 'unmeasured',
-      reason: 'detector produced no runtime-corroborated findings on the sample',
-    };
+    return unmeasured('detector produced no runtime-corroborated findings on the sample');
   }
   const precision = corroborated.truePositive / firingCount;
   const lower = wilsonLowerBound(corroborated.truePositive, firingCount);
@@ -342,9 +379,36 @@ export function corroboratedTier(
   };
 }
 
+/** Read the EG-viability screen that sits beside the scores snapshot
+ *  (`<corpus>/eg-viability.json`, sibling of `<corpus>/scores/`). Derived from
+ *  the scoresFile so a recompute and the committed policy agree, and so the
+ *  unit test's temp scoresFile (no sibling screen) is unaffected. */
+function loadViability(scoresFile: string): ViabilitySummary | undefined {
+  const file = path.join(path.dirname(scoresFile), '..', 'eg-viability.json');
+  if (!fs.existsSync(file)) return undefined;
+  try {
+    const v = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+      screened: number;
+      viableCount: number;
+      egNodeMajor: number;
+      nonViableReasonCounts: Record<string, number>;
+    };
+    return {
+      screened: v.screened,
+      viableCount: v.viableCount,
+      egNodeMajor: v.egNodeMajor,
+      nonViableReasonCounts: v.nonViableReasonCounts,
+      evidenceFile: path.relative(process.cwd(), file),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 export function computePromotions(args: Args): PromotionsOutput {
   const text = fs.readFileSync(args.scoresFile, 'utf8');
   const scores = JSON.parse(text) as ScoresSnapshot;
+  const viability = loadViability(args.scoresFile);
   const rows: PromotionRow[] = scores.perDetector.map((row) => {
     const firingCount = row.truePositive + row.falsePositive;
     const base = {
@@ -358,7 +422,13 @@ export function computePromotions(args: Args): PromotionsOutput {
       trueNegative: row.trueNegative,
       falseNegative: row.falseNegative,
       firingCount,
-      corroborated: corroboratedTier(row.corroborated, args.gatePrecision, args.minTruePositive, args.scoresFile),
+      corroborated: corroboratedTier(
+        row.corroborated,
+        args.gatePrecision,
+        args.minTruePositive,
+        args.scoresFile,
+        viability,
+      ),
     };
     if (firingCount === 0 && row.falseNegative === 0) {
       return {
@@ -406,6 +476,7 @@ export function computePromotions(args: Args): PromotionsOutput {
       .filter((r) => r.corroborated.status === 'gate-eligible')
       .map((r) => r.detector),
     judgePrimary: computeJudgePrimaryPolicy(loadMeasurements(args.measurementsFile)),
+    ...(viability !== undefined ? { executionGroundedViability: viability } : {}),
   };
 }
 

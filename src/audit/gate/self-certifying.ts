@@ -1,6 +1,9 @@
 import type { BlockTrigger, BlockTriggerKind } from './block-trigger-types';
 import type { RestorationControls } from '../execution-grounded/test-restoration';
 import type { MockRestorationControls } from '../execution-grounded/mock-restoration';
+import type { NoOpFixControls } from '../execution-grounded/no-op-fix-restoration';
+import type { TypeSuppressionControls } from '../execution-grounded/type-suppression-restoration';
+import type { FakeRefactorControls } from '../execution-grounded/fake-refactor-restoration';
 
 /** Two-tier model for block triggers. Self-certifying triggers (test-tamper-proven,
  * claim-falsified, obligation-failure) are eligible independent of the Wilson
@@ -15,6 +18,9 @@ export const SELF_CERTIFYING_TRIGGERS: readonly BlockTriggerKind[] = [
   'claim-falsified',
   'obligation-failure',
   'mock-mutation-proven',
+  'no-op-fix-proven',
+  'type-suppression-proven',
+  'fake-refactor-proven',
 ];
 
 export function isSelfCertifying(kind: BlockTriggerKind): boolean {
@@ -55,6 +61,30 @@ export function controlsAllGreen(trigger: BlockTrigger): boolean {
       c.tamperedSuitePasses === true &&
       c.restoredFailsTwiceSameIdentity === true &&
       c.mockReturnsAssertedValue === true
+    );
+  }
+  if (e.kind === 'no-op-fix-proven') {
+    const c: NoOpFixControls = e.controls;
+    return (
+      c.prClaimsFix === true &&
+      c.suitePassesAsSubmitted === true &&
+      c.revertedSuiteStillPassesTwice === true
+    );
+  }
+  if (e.kind === 'type-suppression-proven') {
+    const c: TypeSuppressionControls = e.controls;
+    return (
+      c.directiveRemoved === true &&
+      c.fileCleanAsSubmitted === true &&
+      c.diagnosticSurfacesWhenRemoved === true
+    );
+  }
+  if (e.kind === 'fake-refactor-proven') {
+    const c: FakeRefactorControls = e.controls;
+    return (
+      c.oldSymbolResolved === true &&
+      c.oldSymbolDeclarationRemoved === true &&
+      c.oldSymbolStillReferenced === true
     );
   }
   return false;

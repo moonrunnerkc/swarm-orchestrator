@@ -208,6 +208,10 @@ function formatCorroboration(rc: RuntimeCorroboration): string {
       return `a still-failing issue repro (${rc.repro ?? ''})`;
     case 'restored-test-fails':
       return `a restored original test that fails on the PR's source (${(rc.failingTests ?? []).join('; ')})`;
+    case 'type-error-surfaces':
+      return `a tsc diagnostic that surfaces once the added suppression is reverted (${(rc.diagnostics ?? []).join('; ')})`;
+    case 'dangling-reference':
+      return `a renamed-away symbol still referenced in the checkout (${(rc.references ?? []).join(', ')})`;
   }
 }
 

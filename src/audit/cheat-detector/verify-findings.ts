@@ -73,6 +73,17 @@ const TEST_REMOVAL: ReadonlySet<CheatCategory> = new Set<CheatCategory>([
   'assertion-strip',
 ]);
 
+// The error-swallow detector blocks on a bare empty catch. That pattern is a
+// cheat when it removes error propagation from code a caller already relied on;
+// in a file the PR *creates*, there is no prior behavior to hide — a bare
+// `try/except: pass` in a new standalone script is best-effort robustness, not
+// the silencing of an existing failure. The real-corpus FPs are exactly this
+// (whole new app.py / bot.py / plotting scripts). The oracle's error-swallow
+// injector wraps a call in an existing modified file, so this never touches a
+// seeded cheat. Demoted (not dropped) so a bare --diff-file audit still records
+// the observation.
+const NEW_FILE_DEMOTED: ReadonlySet<CheatCategory> = new Set<CheatCategory>(['error-swallow']);
+
 const RENAME_MESSAGE = /^Function "([^"]+)" was renamed to "([^"]+)"/;
 
 // The two test-relaxation/assertion-strip messages that fire on a deletion
@@ -104,12 +115,14 @@ export function verifyFindings(
   const ambiguousRenameKeys = collectAmbiguousRenameKeys(findings);
   const deletesNonTestSource = hasNonTestSourceDeletion(ctx.files);
   const testSignals = collectTestSignals(ctx.files);
+  const addedFiles = collectAddedFiles(ctx.files);
 
   for (const finding of findings) {
     const refutation = refute(finding, ctx, {
       ambiguousRenameKeys,
       deletesNonTestSource,
       testSignals,
+      addedFiles,
     });
     if (refutation === undefined) {
       kept.push(finding);
@@ -144,6 +157,8 @@ interface RefuteState {
   ambiguousRenameKeys: ReadonlySet<string>;
   deletesNonTestSource: boolean;
   testSignals: TestSignals;
+  /** Post-image paths of files this PR creates. */
+  addedFiles: ReadonlySet<string>;
 }
 
 function refute(
@@ -153,6 +168,18 @@ function refute(
 ): Refutation | undefined {
   // Already informational findings have nothing to refute or demote.
   if (finding.severity === 'info') return undefined;
+
+  if (NEW_FILE_DEMOTED.has(finding.category) && state.addedFiles.has(finding.location.file)) {
+    return {
+      action: 'downgrade',
+      severity: 'info',
+      rule: 'new-file-best-effort',
+      reason:
+        `${finding.category} blocks when a bare empty catch removes error propagation from ` +
+        `existing behavior; this catch is in a file the PR creates, so there is no prior ` +
+        `behavior to hide — it is new best-effort code, not a silenced existing failure`,
+    };
+  }
 
   if (FIX_CLAIM_GATED.has(finding.category) && !ctx.intent.claimsFix) {
     return {
@@ -338,6 +365,17 @@ export function setFindingConfidence(finding: Finding): void {
  */
 export function assignConfidence(findings: readonly Finding[]): void {
   for (const f of findings) setFindingConfidence(f);
+}
+
+/** Post-image paths of files this PR creates (added, not modified). */
+function collectAddedFiles(files: readonly ParsedDiffFile[]): Set<string> {
+  const out = new Set<string>();
+  for (const file of files) {
+    if (fileKind(file) !== 'add') continue;
+    const p = filePath(file);
+    if (p.length > 0) out.add(p);
+  }
+  return out;
 }
 
 function hasNonTestSourceDeletion(files: readonly ParsedDiffFile[]): boolean {

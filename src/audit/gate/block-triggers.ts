@@ -25,14 +25,20 @@ import type { TestRunner } from '../execution-grounded/sandbox';
 import { corroborationFor, type ExecutionSignals } from '../execution-grounded/corroborate';
 import type { RestorationProofRecord } from '../execution-grounded/test-restoration';
 import type { MockRestorationProofRecord } from '../execution-grounded/mock-restoration';
+import type { NoOpFixProofRecord } from '../execution-grounded/no-op-fix-restoration';
+import type { TypeSuppressionProofRecord } from '../execution-grounded/type-suppression-restoration';
+import type { FakeRefactorProofRecord } from '../execution-grounded/fake-refactor-restoration';
 import type {
   BlockTrigger,
   BlockTriggerEvidence,
   ClaimFalsifiedEvidence,
   CorroboratedUnderConstraintEvidence,
+  FakeRefactorProvenEvidence,
   MockMutationProvenEvidence,
+  NoOpFixProvenEvidence,
   ObligationFailureEvidence,
   TestTamperProvenEvidence,
+  TypeSuppressionProvenEvidence,
 } from './block-trigger-types';
 
 export type {
@@ -41,9 +47,12 @@ export type {
   BlockTriggerKind,
   ClaimFalsifiedEvidence,
   CorroboratedUnderConstraintEvidence,
+  FakeRefactorProvenEvidence,
   MockMutationProvenEvidence,
+  NoOpFixProvenEvidence,
   ObligationFailureEvidence,
   TestTamperProvenEvidence,
+  TypeSuppressionProvenEvidence,
 } from './block-trigger-types';
 
 /**
@@ -361,6 +370,185 @@ export function detectMockMutationProven(input: MockMutationProvenInput): BlockT
   return out;
 }
 
+export interface NoOpFixProvenInput {
+  /** No-op-fix restoration proof records from the execution-grounded run; the
+   *  detector keeps only the proven, all-controls-true ones. */
+  noOpRestorations: NoOpFixProofRecord[];
+}
+
+/**
+ * T6: a no-op-fix restoration proof. The PR's non-test source hunks were
+ * reverted in a sandbox and the affected tests (those whose import closure
+ * reaches the reverted source) still passed, twice, while the PR claimed a fix
+ * and its suite passed as submitted. Execution proves no test verifies the
+ * claimed fix. Fires one candidate per `proven` record whose three controls are
+ * all true; a proven record with any unexecuted (null) or false control is
+ * advisory only and produces nothing (fail closed). The reproduce command is the
+ * record's own, which reruns the affected tests with the fix reverted.
+ *
+ * @param input the run's no-op-fix restoration proof records
+ * @returns one block-trigger candidate per fully-controlled proof, or []
+ */
+export function detectNoOpFixProven(input: NoOpFixProvenInput): BlockTrigger[] {
+  const out: BlockTrigger[] = [];
+  for (const record of input.noOpRestorations) {
+    if (record.verdict !== 'proven') continue;
+    const { prClaimsFix, suitePassesAsSubmitted, revertedSuiteStillPassesTwice } = record.controls;
+    if (
+      prClaimsFix !== true ||
+      suitePassesAsSubmitted !== true ||
+      revertedSuiteStillPassesTwice !== true
+    ) {
+      continue;
+    }
+    const evidence: NoOpFixProvenEvidence = {
+      kind: 'no-op-fix-proven',
+      verdict: 'proven',
+      revertedSourceFiles: record.revertedSourceFiles,
+      affectedTestFiles: record.affectedTestFiles,
+      prClaim: record.prClaim,
+      controls: record.controls,
+      reproduceCommand: record.reproduceCommand,
+    };
+    out.push({
+      kind: 'no-op-fix-proven',
+      summary:
+        `A no-op-fix proof at ${record.findingFile}: the PR claims a fix (${record.prClaim}), but ` +
+        `with its source change reverted the ${affectedCount(record.affectedTestFiles.length)} that ` +
+        `reach it still passed twice. No test verifies the fix, so the change is a no-op.`,
+      reproduce: record.reproduceCommand,
+      evidence,
+    });
+  }
+  return out;
+}
+
+/** one affected test, two affected tests, ... */
+function affectedCount(n: number): string {
+  return `${n} affected test${n === 1 ? '' : 's'}`;
+}
+
+export interface TypeSuppressionProvenInput {
+  /** Type-suppression restoration proof records from the execution-grounded
+   *  run; the detector keeps only the proven, all-controls-true ones. */
+  typeSuppressionRestorations: TypeSuppressionProofRecord[];
+}
+
+/**
+ * T7: a type-suppression restoration proof. The PR's added `@ts-ignore` /
+ * `@ts-expect-error` was reverted in a sandbox; tsc reported zero diagnostics in
+ * the file as submitted and at least one once the directive was gone. Execution
+ * proves the suppression hid a real type error. Fires one candidate per `proven`
+ * record whose three controls are all true; a proven record with any unexecuted
+ * (null) or false control is advisory only and produces nothing (fail closed).
+ * The reproduce command is the record's own, which reverts the directive and
+ * reruns tsc in a fresh checkout.
+ *
+ * @param input the run's type-suppression restoration proof records
+ * @returns one block-trigger candidate per fully-controlled proof, or []
+ */
+export function detectTypeSuppressionProven(input: TypeSuppressionProvenInput): BlockTrigger[] {
+  const out: BlockTrigger[] = [];
+  for (const record of input.typeSuppressionRestorations) {
+    if (record.verdict !== 'proven') continue;
+    const { directiveRemoved, fileCleanAsSubmitted, diagnosticSurfacesWhenRemoved } =
+      record.controls;
+    if (
+      directiveRemoved !== true ||
+      fileCleanAsSubmitted !== true ||
+      diagnosticSurfacesWhenRemoved !== true
+    ) {
+      continue;
+    }
+    const evidence: TypeSuppressionProvenEvidence = {
+      kind: 'type-suppression-proven',
+      verdict: 'proven',
+      file: record.findingFile,
+      removedDirectives: record.removedDirectives,
+      surfacedDiagnostics: record.surfacedDiagnostics,
+      controls: record.controls,
+      reproduceCommand: record.reproduceCommand,
+    };
+    out.push({
+      kind: 'type-suppression-proven',
+      summary:
+        `A type-suppression proof at ${record.findingFile}: the PR added ` +
+        `${record.removedDirectives.join(', ')}; with the directive reverted, tsc reports ` +
+        `${diagnosticCount(record.surfacedDiagnostics.length)} the directive was hiding, so the ` +
+        `suppression shipped a real type error instead of fixing it.`,
+      reproduce: record.reproduceCommand,
+      evidence,
+    });
+  }
+  return out;
+}
+
+/** one diagnostic, two diagnostics, ... */
+function diagnosticCount(n: number): string {
+  return `${n} diagnostic${n === 1 ? '' : 's'}`;
+}
+
+export interface FakeRefactorProvenInput {
+  /** Fake-refactor restoration proof records from the execution-grounded run;
+   *  the detector keeps only the proven, all-controls-true ones. */
+  fakeRefactorRestorations: FakeRefactorProofRecord[];
+}
+
+/**
+ * T8: a fake-refactor restoration proof. The PR renamed an exported symbol, the
+ * old name has no remaining declaration anywhere in the head checkout, and at
+ * least one identifier reference to it survives. Execution-grounded (a static
+ * scan of the whole provisioned checkout, not just the diff) proves the rename
+ * left dangling references. Fires one candidate per `proven` record whose three
+ * controls are all true; a proven record with any unexecuted (null) or false
+ * control is advisory only and produces nothing (fail closed). The reproduce
+ * command is the record's own, which greps the restored checkout for the symbol.
+ *
+ * @param input the run's fake-refactor restoration proof records
+ * @returns one block-trigger candidate per fully-controlled proof, or []
+ */
+export function detectFakeRefactorProven(input: FakeRefactorProvenInput): BlockTrigger[] {
+  const out: BlockTrigger[] = [];
+  for (const record of input.fakeRefactorRestorations) {
+    if (record.verdict !== 'proven') continue;
+    const { oldSymbolResolved, oldSymbolDeclarationRemoved, oldSymbolStillReferenced } =
+      record.controls;
+    if (
+      oldSymbolResolved !== true ||
+      oldSymbolDeclarationRemoved !== true ||
+      oldSymbolStillReferenced !== true
+    ) {
+      continue;
+    }
+    const evidence: FakeRefactorProvenEvidence = {
+      kind: 'fake-refactor-proven',
+      verdict: 'proven',
+      file: record.findingFile,
+      oldName: record.oldName,
+      newName: record.newName,
+      references: record.references,
+      controls: record.controls,
+      reproduceCommand: record.reproduceCommand,
+    };
+    out.push({
+      kind: 'fake-refactor-proven',
+      summary:
+        `A fake-refactor proof at ${record.findingFile}: \`${record.oldName}\` was renamed to ` +
+        `\`${record.newName}\` and no longer declared anywhere, but ` +
+        `${referenceCount(record.references.length)} to \`${record.oldName}\` survive in the ` +
+        `checkout (${record.references.join(', ')}), so the rename is incomplete.`,
+      reproduce: record.reproduceCommand,
+      evidence,
+    });
+  }
+  return out;
+}
+
+/** one reference, two references, ... */
+function referenceCount(n: number): string {
+  return `${n} reference${n === 1 ? '' : 's'}`;
+}
+
 /** The inputs each trigger needs, bundled so one call produces every candidate
  *  a run can raise. A field left undefined skips that trigger (e.g. an audit
  *  with no declared obligations omits `obligations`). */
@@ -370,6 +558,9 @@ export interface BlockTriggerContext {
   obligations?: ObligationOutcome[];
   restorations?: TestTamperProvenInput;
   mockRestorations?: MockMutationProvenInput;
+  noOpRestorations?: NoOpFixProvenInput;
+  typeSuppressionRestorations?: TypeSuppressionProvenInput;
+  fakeRefactorRestorations?: FakeRefactorProvenInput;
 }
 
 /**
@@ -390,5 +581,11 @@ export function detectBlockTriggers(context: BlockTriggerContext): BlockTrigger[
   if (context.restorations !== undefined) out.push(...detectTestTamperProven(context.restorations));
   if (context.mockRestorations !== undefined)
     out.push(...detectMockMutationProven(context.mockRestorations));
+  if (context.noOpRestorations !== undefined)
+    out.push(...detectNoOpFixProven(context.noOpRestorations));
+  if (context.typeSuppressionRestorations !== undefined)
+    out.push(...detectTypeSuppressionProven(context.typeSuppressionRestorations));
+  if (context.fakeRefactorRestorations !== undefined)
+    out.push(...detectFakeRefactorProven(context.fakeRefactorRestorations));
   return out;
 }

@@ -333,6 +333,9 @@ describe('execution-grounded / test-restoration wiring', () => {
       assert.ok(finding.evidence.startsWith(before), 'original evidence preserved');
       assert.match(finding.evidence, /restored original test passes/i);
       assert.match(finding.evidence, /legitimate refactor/i);
+      // Sharpened: the demotion names the test execution that cleared it, so a
+      // reader knows exactly what was run, not just that "a" test passed.
+      assert.match(finding.evidence, /test\/calc\.test\.ts/);
       assert.equal(finding.runtimeCorroboration, undefined);
     });
 
