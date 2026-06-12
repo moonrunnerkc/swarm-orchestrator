@@ -40,6 +40,36 @@ import {
 
 const log = getLogger('real-prs:mine-backward');
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Retry a GitHub call through GitHub's *secondary* rate limit, honoring
+ * Retry-After. The secondary limit is burst-triggered and separate from the
+ * primary hourly quota (it never shows in the rate_limit counters), so without
+ * this a bounded backward mine stalls on a 403 without ever returning, blowing
+ * past the wall-clock cap (which is only checked between candidates, never
+ * during an in-flight request). Primary-quota exhaustion is the caller's budget
+ * concern and is not retried here.
+ */
+async function withRetry<T>(fn: () => Promise<T>, label: string, attempt = 0): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    const status = (err as { status?: number }).status;
+    const headers = (err as { response?: { headers?: Record<string, string> } }).response?.headers;
+    const retryAfter = Number(headers?.['retry-after']);
+    if ((status === 403 || status === 429) && attempt < 5) {
+      const waitMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 2_000 * 2 ** attempt;
+      log.warn(`${label} hit a secondary rate limit; waiting ${waitMs}ms (attempt ${attempt + 1})`);
+      await sleep(waitMs);
+      return withRetry(fn, label, attempt + 1);
+    }
+    throw err;
+  }
+}
+
 const OUT_FILE = path.join('benchmarks', 'real-prs', 'agent-corpus', 'confirmed-bad-backward.json');
 const HOTFIX_WINDOW_DAYS = 30;
 
@@ -92,11 +122,61 @@ export interface BackwardEntry {
   surfacedBy: string;
 }
 
+/**
+ * Staged funnel counts for one mine run, so a zero yield is diagnosable at a
+ * glance: the stage where the count collapses is the diagnosis (the world or the
+ * instrument). Each candidate advances through the stages in order; a candidate
+ * that drops out is tallied under `dropReasons` with the stage it died at.
+ */
+export interface BackwardFunnel {
+  /** Revert search items returned by the discovery query. */
+  revertMarkers: number;
+  /** (repo, reverted-sha) candidates derived from those markers. */
+  revertCandidates: number;
+  /** Candidates that reached attribution (post-dedup, pre-budget-stop). */
+  candidatesProcessed: number;
+  /** Candidates whose associated-PR lookup returned (call succeeded). */
+  prLookupResolved: number;
+  /** Candidates whose reverted commit was fetchable (identifiable commit). */
+  commitResolved: number;
+  /** Candidates that carried an identifiable author (PR user or commit author). */
+  identifiableAuthor: number;
+  /** Candidates the shipped fingerprinter attributed to an agent. */
+  agentAttributed: number;
+  /** Candidates that reached the findOutcomeEvidence confirmation stage. */
+  evidenceChecked: number;
+  /** Candidates confirmed outcome-bad (reverted | hotfixed) — the final entries. */
+  evidenceConfirmed: number;
+  /** Why candidates dropped, keyed by stage. */
+  dropReasons: Record<string, number>;
+}
+
+function emptyFunnel(): BackwardFunnel {
+  return {
+    revertMarkers: 0,
+    revertCandidates: 0,
+    candidatesProcessed: 0,
+    prLookupResolved: 0,
+    commitResolved: 0,
+    identifiableAuthor: 0,
+    agentAttributed: 0,
+    evidenceChecked: 0,
+    evidenceConfirmed: 0,
+    dropReasons: {},
+  };
+}
+
+function drop(funnel: BackwardFunnel | undefined, reason: string): void {
+  if (funnel === undefined) return;
+  funnel.dropReasons[reason] = (funnel.dropReasons[reason] ?? 0) + 1;
+}
+
 export interface BackwardResult {
   entries: BackwardEntry[];
   apiCalls: number;
   revertCommitsScanned: number;
   stoppedReason: 'limit' | 'api-budget' | 'wall-clock' | 'exhausted';
+  funnel: BackwardFunnel;
 }
 
 /** Pure: the (repo, reverted-sha) candidates a revert commit search item yields. */
@@ -124,63 +204,103 @@ export async function attributeAndConfirm(
   octokit: BackwardOctokit,
   candidate: { repo: string; revertedSha: string; surfacedBy: string },
   spend: () => boolean,
+  funnel?: BackwardFunnel,
 ): Promise<BackwardEntry | null> {
   const { owner, repo } = parseRepo(candidate.repo);
+  if (funnel !== undefined) funnel.candidatesProcessed += 1;
 
-  if (!spend()) return null;
+  if (!spend()) {
+    drop(funnel, 'budget-before-pr-lookup');
+    return null;
+  }
   let prs;
   try {
-    const res = await octokit.repos.listPullRequestsAssociatedWithCommit({
-      owner,
-      repo,
-      commit_sha: candidate.revertedSha,
-    });
+    const res = await withRetry(
+      () =>
+        octokit.repos.listPullRequestsAssociatedWithCommit({
+          owner,
+          repo,
+          commit_sha: candidate.revertedSha,
+        }),
+      `listPRs ${candidate.repo}`,
+    );
     prs = res.data;
   } catch (err) {
     log.debug(`PR lookup failed for ${candidate.repo}@${candidate.revertedSha.slice(0, 8)}: ${String(err)}`);
+    drop(funnel, 'pr-lookup-failed');
     return null;
   }
+  if (funnel !== undefined) funnel.prLookupResolved += 1;
   const pr = prs.find((p) => p.merged_at !== null && p.merged_at !== undefined) ?? prs[0];
 
-  // Attribute from whichever signal we have: the PR (preferred) or the commit.
-  if (!spend()) return null;
+  // Fetch the reverted commit ONCE and reuse it for both attribution (author,
+  // message) and confirmation (landedAt, changed ranges). The previous code
+  // fetched the same commit twice per candidate, doubling the real API cost of
+  // every candidate that passed the PR lookup.
+  if (!spend()) {
+    drop(funnel, 'budget-before-commit-fetch');
+    return null;
+  }
   let commitMessage = '';
   let commitAuthor = '';
-  try {
-    const commit = await octokit.repos.getCommit({ owner, repo, ref: candidate.revertedSha });
-    commitMessage = commit.data.commit.message;
-    commitAuthor = (commit.data as { author?: { login?: string } }).author?.login ?? '';
-  } catch (err) {
-    log.debug(`commit fetch failed for ${candidate.repo}@${candidate.revertedSha.slice(0, 8)}: ${String(err)}`);
-  }
-  const attribution = detectAgent({
-    ...(pr !== undefined ? { prTitle: pr.title, prBody: pr.body ?? '', headRef: pr.head.ref } : {}),
-    commitMessages: commitMessage.length > 0 ? [commitMessage] : [],
-    authors: [pr?.user?.login ?? '', commitAuthor].filter((a) => a.length > 0),
-  });
-  if (attribution === undefined) return null;
-
-  // Confirm via the shared core: derive the reverted commit's changed ranges and
-  // ask findOutcomeEvidence whether history proves it bad. This attaches the same
-  // canonical evidence SHAs the labeler writes.
-  if (!spend()) return null;
-  const branch = await defaultBranchOf(octokit, candidate.repo);
-  if (branch === null) return null;
   let landedAt = '';
   let ranges = {};
+  let commitResolved = false;
   try {
-    const commit = await octokit.repos.getCommit({ owner, repo, ref: candidate.revertedSha });
+    const commit = await withRetry(
+      () => octokit.repos.getCommit({ owner, repo, ref: candidate.revertedSha }),
+      `getCommit ${candidate.repo}`,
+    );
+    commitMessage = commit.data.commit.message;
+    commitAuthor = (commit.data as { author?: { login?: string } }).author?.login ?? '';
     landedAt = commit.data.commit.committer?.date ?? commit.data.commit.author?.date ?? '';
     const patch = (commit.data.files ?? [])
       .map((f) => `diff --git a/${f.filename} b/${f.filename}\n${f.patch ?? ''}`)
       .join('\n');
     ranges = extractChangedLineRanges(patch);
-  } catch {
+    commitResolved = true;
+  } catch (err) {
+    log.debug(`commit fetch failed for ${candidate.repo}@${candidate.revertedSha.slice(0, 8)}: ${String(err)}`);
+  }
+  if (commitResolved && funnel !== undefined) funnel.commitResolved += 1;
+
+  const authors = [pr?.user?.login ?? '', commitAuthor].filter((a) => a.length > 0);
+  if (funnel !== undefined && (pr !== undefined || authors.length > 0)) funnel.identifiableAuthor += 1;
+
+  // Attribute from whichever signal we have: the PR (preferred) or the commit.
+  const attribution = detectAgent({
+    ...(pr !== undefined ? { prTitle: pr.title, prBody: pr.body ?? '', headRef: pr.head.ref } : {}),
+    commitMessages: commitMessage.length > 0 ? [commitMessage] : [],
+    authors,
+  });
+  if (attribution === undefined) {
+    drop(funnel, 'not-agent-attributed');
     return null;
   }
-  if (landedAt === '') return null;
+  if (funnel !== undefined) funnel.agentAttributed += 1;
 
-  if (!spend()) return null;
+  // Confirm via the shared core: derive the reverted commit's changed ranges and
+  // ask findOutcomeEvidence whether history proves it bad. This attaches the same
+  // canonical evidence SHAs the labeler writes.
+  if (!spend()) {
+    drop(funnel, 'budget-before-confirm');
+    return null;
+  }
+  const branch = await defaultBranchOf(octokit, candidate.repo);
+  if (branch === null) {
+    drop(funnel, 'no-default-branch');
+    return null;
+  }
+  if (landedAt === '') {
+    drop(funnel, 'no-landed-date');
+    return null;
+  }
+
+  if (!spend()) {
+    drop(funnel, 'budget-before-confirm');
+    return null;
+  }
+  if (funnel !== undefined) funnel.evidenceChecked += 1;
   const confirmed = await findOutcomeEvidence(octokit, {
     repo: candidate.repo,
     headSha: candidate.revertedSha,
@@ -189,7 +309,11 @@ export async function attributeAndConfirm(
     prRanges: ranges,
     hotfixWindowDays: HOTFIX_WINDOW_DAYS,
   });
-  if (confirmed.outcome === 'survived') return null;
+  if (confirmed.outcome === 'survived') {
+    drop(funnel, 'evidence-survived');
+    return null;
+  }
+  if (funnel !== undefined) funnel.evidenceConfirmed += 1;
 
   return {
     repo: candidate.repo,
@@ -225,6 +349,7 @@ export async function mineBackward(
 
   const entries: BackwardEntry[] = [];
   const seen = new Set<string>();
+  const funnel = emptyFunnel();
   let revertCommitsScanned = 0;
   let stoppedReason: BackwardResult['stoppedReason'] = 'exhausted';
   const since = sinceDate(startedAt, budget.months);
@@ -241,7 +366,10 @@ export async function mineBackward(
     }
     let items;
     try {
-      const res = await octokit.search.commits({ q: query, per_page: 50, page });
+      const res = await withRetry(
+        () => octokit.search.commits({ q: query, per_page: 50, page }),
+        `discovery search page ${page}`,
+      );
       items = res.data.items as Array<{
         sha: string;
         commit: { message: string };
@@ -257,18 +385,23 @@ export async function mineBackward(
     }
     for (const item of items) {
       revertCommitsScanned += 1;
+      funnel.revertMarkers += 1;
       for (const candidate of revertCandidatesFromItem(item)) {
+        funnel.revertCandidates += 1;
         if (entries.length >= budget.limit) {
           stoppedReason = 'limit';
           break;
         }
-        if (seen.has(`${candidate.repo}@${candidate.revertedSha}`)) continue;
+        if (seen.has(`${candidate.repo}@${candidate.revertedSha}`)) {
+          drop(funnel, 'duplicate-candidate');
+          continue;
+        }
         seen.add(`${candidate.repo}@${candidate.revertedSha}`);
         if (now() - startedAt >= budget.wallClockMs || apiCalls >= budget.apiBudget) {
           stoppedReason = apiCalls >= budget.apiBudget ? 'api-budget' : 'wall-clock';
           break;
         }
-        const entry = await attributeAndConfirm(octokit, candidate, spend);
+        const entry = await attributeAndConfirm(octokit, candidate, spend, funnel);
         if (entry !== null) {
           entries.push(entry);
           log.info(`mined ${entry.vendor} ${entry.repo}@${entry.revertedSha.slice(0, 8)} (${entry.outcome})`);
@@ -279,7 +412,7 @@ export async function mineBackward(
     if (stoppedReason !== 'exhausted') break;
   }
 
-  return { entries, apiCalls, revertCommitsScanned, stoppedReason };
+  return { entries, apiCalls, revertCommitsScanned, stoppedReason, funnel };
 }
 
 /** Merge new entries into the committed backward corpus, deduped by reverted sha. */
@@ -338,6 +471,11 @@ async function main(): Promise<void> {
       revertCommitsScanned: result.revertCommitsScanned,
       stoppedReason: result.stoppedReason,
       freshEntries: result.entries.length,
+      // Staged funnel: the stage where the count collapses is the diagnosis.
+      // `apiCalls` is the budget-unit counter (the four guarded spend points per
+      // candidate); real GitHub calls are higher because the shared
+      // findOutcomeEvidence / defaultBranchOf make their own uncounted requests.
+      funnel: result.funnel,
     },
     total: merged.length,
     distribution,
@@ -345,9 +483,17 @@ async function main(): Promise<void> {
   };
   fs.mkdirSync(path.dirname(OUT_FILE), { recursive: true });
   fs.writeFileSync(OUT_FILE, `${JSON.stringify(out, null, 2)}\n`);
+  const f = result.funnel;
   log.info(
     `backward mine: ${result.entries.length} fresh, ${merged.length} total ` +
       `(${result.apiCalls} API calls, stopped: ${result.stoppedReason}) -> ${OUT_FILE}`,
+  );
+  log.info(
+    `funnel: markers=${f.revertMarkers} candidates=${f.revertCandidates} ` +
+      `processed=${f.candidatesProcessed} prLookup=${f.prLookupResolved} ` +
+      `commit=${f.commitResolved} author=${f.identifiableAuthor} ` +
+      `agentAttributed=${f.agentAttributed} evidenceChecked=${f.evidenceChecked} ` +
+      `confirmed=${f.evidenceConfirmed}; drops=${JSON.stringify(f.dropReasons)}`,
   );
 }
 

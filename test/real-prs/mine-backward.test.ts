@@ -163,6 +163,27 @@ describe('mineBackward (budgets)', () => {
     assert.ok(result.entries[0]!.evidence.some((e) => e.ref === REVERT_SHA));
   });
 
+  it('records a staged funnel that ends at the confirmed entry', async () => {
+    const { octokit } = makeOctokit();
+    const result = await mineBackward(octokit, { ...generousBudget });
+    const f = result.funnel;
+    // The mock surfaces the same revert on every page, so dedup collapses all
+    // but the first candidate; the surviving one passes the whole funnel.
+    assert.equal(f.candidatesProcessed, 1);
+    assert.equal(f.agentAttributed, 1);
+    assert.equal(f.evidenceChecked, 1);
+    assert.equal(f.evidenceConfirmed, 1);
+    assert.ok(f.dropReasons['duplicate-candidate']! >= 1);
+  });
+
+  it('funnel localizes a non-agent drop to the attribution stage', async () => {
+    const { octokit } = makeOctokit({ headRef: 'feature/manual', hasPr: true });
+    const result = await mineBackward(octokit, { ...generousBudget });
+    assert.equal(result.entries.length, 0);
+    assert.equal(result.funnel.agentAttributed, 0);
+    assert.equal(result.funnel.dropReasons['not-agent-attributed'], 1);
+  });
+
   it('stops at the api budget and reports it', async () => {
     const { octokit } = makeOctokit();
     const result = await mineBackward(octokit, { ...generousBudget, apiBudget: 1 });
