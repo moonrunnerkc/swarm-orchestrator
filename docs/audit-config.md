@@ -87,6 +87,30 @@ false positives on presumed-clean PRs (see
 `benchmarks/results/AB-REPORT.md`). `swarm doctor` warns when it is enabled
 with no inference provider configured and errors on an unknown category.
 
+## `executionGrounded`
+
+Opt-in layer that provisions a sandboxed checkout of the PR (base and
+head) and runs executed checks. It is off by default; a normal audit
+stays deterministic and needs no checkout.
+
+```yaml
+executionGrounded:
+  enabled: true
+  mutation: false
+  coverage: false
+  issueRepro: false
+```
+
+Default: `enabled: false`. This layer is what makes `swarm audit --mode
+gate` able to block: the differential test-restoration proof
+(`test-tamper-proven`) is produced here, so without it enabled the gate
+has nothing self-certifying to block on and passes every PR. It runs on
+`--pr` audits only, since `--diff-file` and `--diff-stdin` have no
+checkout to provision. The `mutation`, `coverage`, and `issueRepro`
+sub-flags add circumstantial signals that are not gate-eligible yet (see
+`benchmarks/real-corpus/block-eligibility.json`); restoration runs
+regardless of them.
+
 ## Example
 
 ```yaml
@@ -97,4 +121,6 @@ intentSeverityPolicy: strict
 judgePrimary:
   enabled: true
   categories: [goal-not-fixed, cheat-mock-mutation]
+executionGrounded:
+  enabled: true
 ```

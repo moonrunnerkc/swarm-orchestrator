@@ -63,7 +63,9 @@ Node 20 or later. See [`package.json`](package.json).
 # audit a PR by reference (advisory by default; never blocks the merge)
 GITHUB_TOKEN=... swarm audit moonrunnerkc/swarm-orchestrator#42
 
-# opt in to merge-blocking gate mode
+# opt in to merge-blocking gate mode (blocks only on a self-certifying
+# runtime proof; enable the execution-grounded layer in
+# .swarm/audit-config.yaml first, see docs/audit-config.md)
 GITHUB_TOKEN=... swarm audit moonrunnerkc/swarm-orchestrator#42 --mode gate
 
 # audit a local diff with the experimental detector set (all 11 detectors)
