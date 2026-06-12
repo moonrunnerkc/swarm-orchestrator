@@ -17,7 +17,6 @@ import type { RunResumedEntry } from '../../ledger/types';
 import { createDefaultRegistry, PersonaRegistry } from '../../persona/persona-registry';
 import { runPopulation } from '../../population/manager';
 import {
-  buildSession as buildSessionFromFactory,
   type SessionProvider,
   resolveSessionProvider,
 } from '../../session/factory';
@@ -39,7 +38,12 @@ import {
   type ParseArgsOptions,
 } from './argv-schema';
 import { loadProviderConfig } from '../../config/provider-config';
-import { formatGrammarWarning, resolveGrammarForConsumer } from './grammar-resolve';
+import {
+  buildSessionFromFlags,
+  parseCandidates,
+  renderProjectContext,
+  writeResultFile,
+} from './session-utils';
 
 const logger = getLogger('cli:v8:resume');
 
@@ -100,10 +104,6 @@ interface ResumeHandlerInjections {
   /** Phase 5: override the deterministic-floor runtime. */
   wasmRuntime?: WasmRuntime;
 }
-
-const DEFAULT_PROJECT_CONTEXT_PREAMBLE =
-  'You are a persona inside the swarm-orchestrator v8 population. ' +
-  'Multiple personas share this prefix; per-call instructions follow.';
 
 /**
  * Implementation of `swarm v8 resume <run-id> [flags]`.
@@ -268,7 +268,7 @@ export async function handleResume(
 
   let session: Session;
   try {
-    session = injections.session ?? buildSession(flags, projectContext);
+    session = injections.session ?? buildSessionFromFlags(flags, projectContext);
   } catch (err) {
     logger.error((err as Error).message);
     return 3;
@@ -415,48 +415,6 @@ function inferContractPath(
   return null;
 }
 
-function buildSession(flags: ResumeFlags, projectContext: string): Session {
-  const resolution = resolveGrammarForConsumer('session', flags.local.grammar);
-  // Only the local session reads `localGrammar`; emitting a warning when
-  // the deterministic or anthropic branch would ignore the value would be
-  // misleading.
-  if (resolution.coercion && flags.sessionKind === 'local') {
-    process.stderr.write(formatGrammarWarning(resolution.coercion) + '\n');
-  }
-  const opts: Parameters<typeof buildSessionFromFactory>[0] = {
-    provider: flags.sessionKind,
-    projectContext,
-    apiKey: flags.apiKey,
-    model: flags.model,
-    externalPatchesDir: flags.externalPatchesDir,
-    externalPatchesQueue: flags.externalPatchesQueue,
-    externalPatchesStdin: flags.externalPatchesStdin,
-    externalPatchesTimeoutMs: flags.externalPatchesTimeoutMs,
-    localBackend: flags.local.backend,
-    localBaseUrl: flags.local.baseUrl,
-    localModel: flags.local.modelSession,
-    localGrammar: resolution.effective,
-    localSeed: flags.local.seed,
-    localApiKey: flags.local.apiKey,
-    localRequestTimeoutMs: flags.local.requestTimeoutMs,
-    localMaxConcurrency: flags.local.maxConcurrency,
-  };
-  if (flags.local.personaModelMap) opts.localPersonaModelMap = flags.local.personaModelMap;
-  return buildSessionFromFactory(opts);
-}
-
-/** Build the static project-context prefix the session caches. */
-function renderProjectContext(goal: string, repoRoot: string): string {
-  return [
-    DEFAULT_PROJECT_CONTEXT_PREAMBLE,
-    '',
-    `Repository root: ${repoRoot}`,
-    `User goal: ${goal}`,
-    '',
-    'Persona-specific instructions follow this block.',
-  ].join('\n');
-}
-
 const RESUME_SCHEMA: ParseArgsOptions = {
   ...LOCAL_PROVIDER_FLAG_SCHEMA,
   ledger: { type: 'string' },
@@ -571,19 +529,6 @@ export function parseResumeFlags(argv: string[]): ResumeFlags {
   }
 
   return flags;
-}
-
-function parseCandidates(raw: string): number {
-  const n = Number.parseInt(raw, 10);
-  if (!Number.isFinite(n) || n <= 0 || n > 8) {
-    throw new Error(`invalid --candidates "${raw}"; must be a positive integer ≤ 8`);
-  }
-  return n;
-}
-
-function writeResultFile(filePath: string, payload: unknown): void {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2) + '\n', 'utf8');
 }
 
 function printResumeUsage(): void {
