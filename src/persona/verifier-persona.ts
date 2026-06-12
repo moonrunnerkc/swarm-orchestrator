@@ -10,6 +10,7 @@
  */
 import type { ObligationV1 } from '../contract/types';
 import type { Session, SessionUsage } from '../session/types';
+import { renderObligationFields } from '../shared/obligation-rendering';
 import type { PersonaSpec } from './types';
 
 /**
@@ -72,7 +73,7 @@ export function renderVerifierPrompt(
 ): string {
   const lines = [
     `Obligation:`,
-    JSON.stringify(obligation),
+    renderObligationFields(obligation),
     '',
     `Candidate index: ${candidateIndex}`,
     'Candidate response (verbatim, between markers):',

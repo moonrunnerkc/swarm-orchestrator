@@ -1,5 +1,6 @@
 import type { ContractManifest, ObligationV1 } from '../contract/types';
 import { verifyObligation } from '../verification/run-verifier';
+import { renderObligationFields } from '../shared/obligation-rendering';
 import { appendFileContext } from './file-context';
 import { isTestFilePath, type TestFramework } from './test-framework-misuse';
 
@@ -24,7 +25,7 @@ export function renderDynamicMessage(
 ): string {
   const lines = [
     `Obligation:`,
-    JSON.stringify(obligation),
+    renderObligationFields(obligation),
     '',
     `Repository root: ${repoRoot}`,
     '',
