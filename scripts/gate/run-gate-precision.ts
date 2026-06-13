@@ -188,13 +188,18 @@ async function evaluatePr(rec: ViabilityRecord): Promise<PerPrVerdict> {
     tally(outcome.noOpRestorations, base.proofFunnel, 'no-op');
     tally(outcome.typeSuppressionRestorations, base.proofFunnel, 'type-suppression');
     tally(outcome.fakeRefactorRestorations, base.proofFunnel, 'fake-refactor');
+    tally(outcome.deadBranchRestorations, base.proofFunnel, 'dead-branch');
 
+    // All six engines feed the trigger detector. dead-branch (the sixth) was
+    // previously omitted here, so a dead-branch proof could never fire a block
+    // in this measurement despite being listed in `proofTier`; wired in now.
     const triggers: BlockTrigger[] = detectBlockTriggers({
       restorations: { restorations: outcome.restorations },
       mockRestorations: { mockRestorations: outcome.mockRestorations },
       noOpRestorations: { noOpRestorations: outcome.noOpRestorations },
       typeSuppressionRestorations: { typeSuppressionRestorations: outcome.typeSuppressionRestorations },
       fakeRefactorRestorations: { fakeRefactorRestorations: outcome.fakeRefactorRestorations },
+      deadBranchRestorations: { deadBranchRestorations: outcome.deadBranchRestorations },
     });
     const proven = triggers.filter((t) => controlsAllGreen(t));
     base.provenTriggers = proven.map((t) => ({

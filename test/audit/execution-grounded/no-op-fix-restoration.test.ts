@@ -9,6 +9,7 @@ import {
   selectAffectedTestFiles,
   type NoOpFixVerdict,
 } from '../../../src/audit/execution-grounded/no-op-fix-restoration';
+import { behaviorallyRevertableSourceFiles } from '../../../src/audit/execution-grounded/test-restoration';
 
 // A PR that claims a fix: it edits one source file and one (unrelated) test
 // file. Reverting the source hunk is the counterfactual: if no affected test
@@ -97,6 +98,34 @@ describe('execution-grounded / no-op-fix-restoration (pure core)', () => {
         verdict({ suitePassesAsSubmitted: true, revertedRun1Passed: true, revertedRun2Passed: false }),
         'not-proven:flaky',
       );
+    });
+  });
+
+  describe('behaviorallyRevertableSourceFiles (witness-relevance gate)', () => {
+    it('keeps a file with a deleted/modified line (a real fix can change behaviour)', () => {
+      // PR_DIFF's src/calc.ts has a `-  return a + b;` line.
+      assert.deepEqual(behaviorallyRevertableSourceFiles(PR_DIFF), ['src/calc.ts']);
+    });
+
+    it('drops a purely-additive source change (a feature PR adding untested code)', () => {
+      // A new interface field added to an existing file: only `+` lines. A test
+      // that imports an unchanged symbol from this file is not a no-op witness.
+      const ADDITIVE_DIFF = [
+        'diff --git a/src/types.ts b/src/types.ts',
+        'index 1111111..2222222 100644',
+        '--- a/src/types.ts',
+        '+++ b/src/types.ts',
+        '@@ -5,3 +5,7 @@',
+        ' export const BOARD_SIZE = 10;',
+        '+export interface PlacementState {',
+        '+  index: number;',
+        '+}',
+        ' export type Phase = string;',
+        '',
+      ].join('\n');
+      assert.deepEqual(behaviorallyRevertableSourceFiles(ADDITIVE_DIFF), []);
+      // ...even though the file is in the full changed-source set.
+      assert.ok(extractSourceRevertPatch(ADDITIVE_DIFF) !== null);
     });
   });
 

@@ -39,6 +39,7 @@ import type { TestRunner, PackageManager } from './sandbox';
 import type { MutationRecipe } from './mutation-check';
 import type { DockerContext } from './docker-runner';
 import {
+  behaviorallyRevertableSourceFiles,
   buildReproduceCommand,
   changedNonTestSourceFiles,
   closureLinksChangedSource,
@@ -283,7 +284,7 @@ function notProvenReason(verdict: NoOpFixVerdict): string {
     case 'not-proven:flaky':
       return 'the two reverted runs disagreed (split pass/fail)';
     case 'not-proven:no-affected-tests':
-      return 'no repo test imports the changed source, directly or transitively, so there is no affected test to run (fail closed)';
+      return 'no repo test imports a behaviorally-revertable changed source file (a hunk with a deleted/modified line), directly or transitively, so there is no witness test to run; a purely-additive change is new code no pre-existing test can verify (fail closed)';
     case 'not-proven:closure-capped':
       return 'the import-graph closure hit its node cap, so affected-test reachability is not trustworthy (fail closed)';
     default:
@@ -367,9 +368,16 @@ function runNoOpFixPipeline(input: NoOpFixRestorationInput): NoOpFixProofRecord 
   }
   const runner = input.testRunner;
 
+  // A witness test must reach a source file whose change is behaviorally
+  // revertable (a deleted/modified line). A test that only imports an unchanged
+  // symbol from a purely-additive changed file is not a witness: reverting the
+  // addition leaves it passing for a reason unrelated to any fix. Selecting on
+  // the full reverted set (including additive-only files) fired the proof on
+  // feature PRs that add untested code.
+  const witnessSourceFiles = behaviorallyRevertableSourceFiles(input.prDiff);
   const selection = selectAffectedTestFiles(
     input.repoRoot,
-    revertedSourceFiles,
+    witnessSourceFiles,
     input.maxTestFilesExamined ?? DEFAULT_MAX_TEST_FILES_EXAMINED,
   );
   base.affectedTestFiles = selection.affected;

@@ -34,7 +34,7 @@ const LOCKFILES = ['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'npm-shri
 // Installed runtime the EG evidence run pins (SWARM_EG_NODE_BIN=node@22).
 const EG_NODE_MAJOR = 22;
 
-interface OutcomeLabel {
+export interface OutcomeLabel {
   id: string;
   repo: string;
   headSha: string;
@@ -45,7 +45,7 @@ interface OutcomeLabelsFile {
   labels: OutcomeLabel[];
 }
 
-interface ViabilityRecord {
+export interface ViabilityRecord {
   id: string;
   repo: string;
   headSha: string;
@@ -65,7 +65,7 @@ interface RootEntry {
   type: string;
 }
 
-interface OctokitContents {
+export interface OctokitContents {
   repos: {
     getContent(p: { owner: string; repo: string; path: string; ref: string }): Promise<{
       data: unknown;
@@ -112,7 +112,10 @@ function nodeSatisfiable(engine: string | null): boolean {
   return true;
 }
 
-async function screenPr(octokit: OctokitContents, label: OutcomeLabel): Promise<ViabilityRecord> {
+export async function screenPr(
+  octokit: OctokitContents,
+  label: OutcomeLabel,
+): Promise<ViabilityRecord> {
   const base = {
     id: label.id,
     repo: label.repo,
@@ -246,7 +249,11 @@ async function main(): Promise<void> {
   );
 }
 
-main().catch((err: unknown) => {
-  log.error(err instanceof Error ? (err.stack ?? err.message) : String(err));
-  process.exit(1);
-});
+// Guard the entry point so importing this module for its reusable screen
+// (screenPr) does not kick off a live 197-PR viability run as a side effect.
+if (require.main === module) {
+  main().catch((err: unknown) => {
+    log.error(err instanceof Error ? (err.stack ?? err.message) : String(err));
+    process.exit(1);
+  });
+}
