@@ -148,6 +148,37 @@ export function changedNonTestSourceFiles(prDiff: string): string[] {
 }
 
 /**
+ * Pure: the non-test source files whose change is *behaviorally revertable* —
+ * the hunk contains at least one deleted/modified line (a `del` change), not
+ * purely additions. This is the no-op proof's witness-relevance gate.
+ *
+ * Why it matters: the affected-test closure is file-level (does a test's import
+ * graph reach a changed file). A purely-additive change to a file (a new export,
+ * a new interface field) cannot alter the behaviour of pre-existing code that a
+ * pre-existing test exercises, so a test that merely imports an *unchanged*
+ * symbol from that file is not a witness: reverting the addition leaves it
+ * passing for a reason unrelated to any "fix". Counting such a test made the
+ * no-op proof fire on feature PRs that add untested code (observed on a real
+ * `feat:` PR that closed an issue). A file with a `del` line, by contrast, can
+ * change an existing code path a test runs, so its passing-after-revert is
+ * informative. Fail-closed: a purely-additive PR yields [] and the proof
+ * abstains (a new function no pre-existing test can verify is not provably a
+ * no-op vs. a legitimately untested feature).
+ */
+export function behaviorallyRevertableSourceFiles(prDiff: string): string[] {
+  const out = new Set<string>();
+  for (const file of parseDiff(prDiff)) {
+    const p = realPath(file.to) ?? realPath(file.from);
+    if (p === null || isTestFile(p)) continue;
+    const hasDeletion = file.chunks.some((chunk) =>
+      chunk.changes.some((c) => c.type === 'del'),
+    );
+    if (hasDeletion) out.add(p);
+  }
+  return [...out].sort();
+}
+
+/**
  * Pure: true when at least one changed production source file resolves into the
  * restored test's import-graph closure. `reachable` is the closure's
  * absolute-path set (from reachableSourceFiles); `changedSourceFiles` are
