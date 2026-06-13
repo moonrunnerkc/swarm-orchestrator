@@ -73,6 +73,10 @@ const RECORDS_DIR = path.join(OUT_DIR, 'records');
 const DIFFS_DIR = path.join(OUT_DIR, 'diffs');
 const SUMMARY_FILE = path.join(OUT_DIR, 'hunt2-summary.json');
 const CHECKPOINT_FILE = path.join(OUT_DIR, 'checkpoint.json');
+// The assembled population (complaint + viable-repo agent PRs, screened and
+// advisory-audited) is persisted here so a kill or cap after the expensive fetch
+// stages never re-pays them: `--resume` loads this and jumps straight to proofs.
+const POPULATION_FILE = path.join(OUT_DIR, 'population.json');
 
 interface Args {
   target: number;
@@ -567,60 +571,81 @@ async function main(): Promise<void> {
     return true;
   };
 
-  // Complaint mining is the priority vein but must not starve the volume stage.
-  // Cap it at half the API budget; the viability-first repo population gets the
-  // rest. A separate counter enforces the partition on top of the shared budget.
-  const complaintCap = Math.floor(args.apiBudget * 0.5);
-  let complaintCalls = 0;
-  const complaintSpend = (): boolean => {
-    if (complaintCalls >= complaintCap) return false;
-    if (!spend()) return false;
-    complaintCalls += 1;
-    return true;
-  };
+  let population: CascadePr[];
+  let repoViability: Record<string, { viable: boolean; reason: string }> = {};
 
-  log.info(`stage: complaint mining (budget cap ${complaintCap})`);
-  const complaintPrs = await mineComplaints(octokit, args, complaintSpend, new Set());
+  if (args.resume && fs.existsSync(POPULATION_FILE)) {
+    // Resume: the expensive fetch + screen + advisory stages already ran. Load the
+    // assembled population and jump straight to the proof tier.
+    const saved = JSON.parse(fs.readFileSync(POPULATION_FILE, 'utf8')) as {
+      population: CascadePr[];
+      repoViability: Record<string, { viable: boolean; reason: string }>;
+    };
+    population = saved.population;
+    repoViability = saved.repoViability ?? {};
+    log.info(`resume: loaded ${population.length} assembled PRs from ${POPULATION_FILE}; skipping fetch stages`);
+  } else {
+    // Complaint mining is the priority vein but must not starve the volume stage.
+    // Cap it at half the API budget; the viability-first repo population gets the
+    // rest. A separate counter enforces the partition on top of the shared budget.
+    const complaintCap = Math.floor(args.apiBudget * 0.5);
+    let complaintCalls = 0;
+    const complaintSpend = (): boolean => {
+      if (complaintCalls >= complaintCap) return false;
+      if (!spend()) return false;
+      complaintCalls += 1;
+      return true;
+    };
 
-  log.info('stage: viability-first repo population');
-  const { prs: repoPrs, repoViability } = await discoverViableRepoPrs(octokit, args, spend);
+    log.info(`stage: complaint mining (budget cap ${complaintCap})`);
+    const complaintPrs = await mineComplaints(octokit, args, complaintSpend, new Set());
 
-  // Merge populations; complaint PRs first (priority). Dedupe by id.
-  const byId = new Map<string, CascadePr>();
-  for (const p of [...complaintPrs, ...repoPrs]) if (!byId.has(p.id)) byId.set(p.id, p);
-  const population = [...byId.values()];
+    log.info('stage: viability-first repo population');
+    const discovered = await discoverViableRepoPrs(octokit, args, spend);
+    const repoPrs = discovered.prs;
+    repoViability = discovered.repoViability;
 
-  // Any PR not yet screened (a complaint hit the inline screen skipped on budget)
-  // gets one more chance here; repo-population PRs are already viable.
-  for (const pr of population) {
-    if (pr.viabilityReason !== 'not screened') continue;
-    if (!spend()) {
-      pr.viabilityReason = 'skipped-by-cap (api/wall-clock)';
-      continue;
+    // Merge populations; complaint PRs first (priority). Dedupe by id.
+    const byId = new Map<string, CascadePr>();
+    for (const p of [...complaintPrs, ...repoPrs]) if (!byId.has(p.id)) byId.set(p.id, p);
+    population = [...byId.values()];
+
+    // Any PR not yet screened (a complaint hit the inline screen skipped on budget)
+    // gets one more chance here; repo-population PRs are already viable.
+    for (const pr of population) {
+      if (pr.viabilityReason !== 'not screened') continue;
+      if (!spend()) {
+        pr.viabilityReason = 'skipped-by-cap (api/wall-clock)';
+        continue;
+      }
+      try {
+        const rec = await withRetry(
+          () =>
+            screenPr(octokit as unknown as OctokitContents, {
+              id: pr.id,
+              repo: pr.repo,
+              headSha: pr.headSha,
+              outcome: pr.outcome,
+            }),
+          `screen ${pr.repo}`,
+        );
+        pr.viable = rec.viable;
+        pr.viabilityReason = rec.reason;
+      } catch (err) {
+        pr.viabilityReason = `screen failed: ${(err as Error).message}`;
+      }
     }
-    try {
-      const rec = await withRetry(
-        () =>
-          screenPr(octokit as unknown as OctokitContents, {
-            id: pr.id,
-            repo: pr.repo,
-            headSha: pr.headSha,
-            outcome: pr.outcome,
-          }),
-        `screen ${pr.repo}`,
-      );
-      pr.viable = rec.viable;
-      pr.viabilityReason = rec.reason;
-    } catch (err) {
-      pr.viabilityReason = `screen failed: ${(err as Error).message}`;
-    }
-  }
 
-  // Triage cascade: advisory audit (free) on everything, then prove only the
-  // (candidate ∪ complaint) ∩ viable set, complaint PRs first, bounded by caps.
-  log.info(`cascade: advisory audit on ${population.length} PRs`);
-  for (const pr of population) {
-    pr.candidateCategories = await advisoryCategories(pr);
+    // Triage cascade: advisory audit (diff-only, free) on everything.
+    log.info(`cascade: advisory audit on ${population.length} PRs`);
+    for (const pr of population) {
+      pr.candidateCategories = await advisoryCategories(pr);
+    }
+
+    // Persist the assembled, screened, advisory-audited population so a later
+    // kill or cap during the proof tier resumes without re-fetching.
+    fs.writeFileSync(POPULATION_FILE, `${JSON.stringify({ population, repoViability }, null, 2)}\n`);
+    log.info(`persisted ${population.length} assembled PRs -> ${POPULATION_FILE}`);
   }
 
   const funnel = emptyFunnel();

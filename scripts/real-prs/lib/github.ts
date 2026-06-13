@@ -278,6 +278,7 @@ async function searchIssuesWithRetry(
   page: number,
   attempt = 0,
 ): Promise<SearchIssueItem[]> {
+  await awaitThrottle();
   try {
     const res = await octokit.search.issuesAndPullRequests({ q, per_page: 100, page });
     return res.data.items.map((i) => ({
@@ -302,24 +303,46 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Global throttle shared by every withRetry caller in the process. GitHub's
+// secondary (abuse) rate limit is burst-triggered: once tripped, hammering the
+// next call keeps it hot, so per-call backoff alone tarpits (every subsequent
+// call eats its own 62s backoff then skips, doing no useful work). The fix is a
+// PROCESS-WIDE cooldown plus a small inter-call gap, so a burst is paced out and
+// a trip makes ALL callers wait, letting the abuse flag cool.
+const MIN_CALL_GAP_MS = 90;
+let nextAllowedAt = 0;
+
+async function awaitThrottle(): Promise<void> {
+  const now = Date.now();
+  const waitFor = nextAllowedAt - now;
+  if (waitFor > 0) await sleep(waitFor);
+  // Reserve the next slot so concurrent-ish callers space themselves out.
+  nextAllowedAt = Math.max(nextAllowedAt, Date.now()) + MIN_CALL_GAP_MS;
+}
+
 /**
  * Retry a GitHub call through GitHub's secondary rate limit (burst-triggered,
- * separate from the primary hourly quota), honoring Retry-After. Without this a
- * bounded rapid-fire run stalls on a 403 without returning, blowing past its
- * wall-clock cap. Primary-quota exhaustion is the caller's budget concern and is
- * not retried here.
+ * separate from the primary hourly quota), honoring Retry-After, and pace all
+ * calls through a shared throttle so a burst never trips the limit in the first
+ * place. Without the throttle a bounded rapid-fire run tarpits: each call eats a
+ * full backoff then skips, blowing the wall clock with no progress. Primary-quota
+ * exhaustion is the caller's budget concern and is not retried here.
  */
 export async function withRetry<T>(fn: () => Promise<T>, label: string, attempt = 0): Promise<T> {
+  await awaitThrottle();
   try {
     return await fn();
   } catch (err) {
     const status = (err as { status?: number }).status;
     const headers = (err as { response?: { headers?: Record<string, string> } }).response?.headers;
     const retryAfter = Number(headers?.['retry-after']);
-    if ((status === 403 || status === 429) && attempt < 5) {
+    if ((status === 403 || status === 429) && attempt < 6) {
       const waitMs =
         Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 2_000 * 2 ** attempt;
-      log.warn(`${label} hit a secondary rate limit; waiting ${waitMs}ms (attempt ${attempt + 1})`);
+      // Push the global cooldown forward so every other caller also waits; this is
+      // what actually lets the secondary limit reset instead of re-tripping it.
+      nextAllowedAt = Date.now() + waitMs;
+      log.warn(`${label} hit a secondary rate limit; global cooldown ${waitMs}ms (attempt ${attempt + 1})`);
       await sleep(waitMs);
       return withRetry(fn, label, attempt + 1);
     }
