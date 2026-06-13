@@ -218,9 +218,11 @@ function runInstall(
   // slow install, not a lockfile mismatch.
   const attempts = [installInvocation(manager), fallbackInstallInvocation(manager)];
   let lastErr: unknown;
+  let lastBin = '';
   let lastArgs: string[] = [];
   for (let i = 0; i < attempts.length; i += 1) {
     const { bin, args } = attempts[i]!;
+    lastBin = bin;
     lastArgs = args;
     try {
       execFileGuarded(bin, args, { cwd: dir, env, timeoutMs });
@@ -235,7 +237,9 @@ function runInstall(
   const stderr = lastErr instanceof Error && 'stderr' in lastErr ? String((lastErr as { stderr: unknown }).stderr) : '';
   const timedOut = isGuardedTimeout(lastErr);
   throw new SwarmError(
-    `dependency install (${manager} ${lastArgs.join(' ')}) failed in ${dir}`,
+    // Real command (`corepack yarn install`), not `manager + args`: the latter
+    // printed a misleading "yarn yarn install" that reads as a doubled command.
+    `dependency install (${lastBin} ${lastArgs.join(' ')}) failed in ${dir}`,
     'sandbox-install-failed',
     {
       remediation: timedOut
