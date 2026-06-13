@@ -82,6 +82,10 @@ Every number here is reproducible from this repo and runs offline.
 
 Both reproduce deterministically from the committed diffs. Semgrep (210 rules) and the ESLint security ruleset flag neither. Reproduce either with `swarm audit --diff-file benchmarks/real-prs/diffs/cloudflare-workers-sdk/<pr>.diff`. Full study across twelve repos in [`benchmarks/real-prs/v11-BENEFIT-REPORT.md`](benchmarks/real-prs/v11-BENEFIT-REPORT.md).
 
+### How often agents cheat in the wild
+
+Mining maintainer review comments across 327 agent-attributed PRs surfaced 27 that a maintainer explicitly called a cheat (assertion-strip, test-relaxation, no-op fix, goal-not-fixed, error swallow, mock-of-hallucination, hardcoded output); 20 were caught and rejected at review, 7 merged. The control-verifiable proof gate proved none of them: it fires only on its own structural plus execution evidence, never on a human's accusation, so the cheats it can prove without a reviewer are rarer than the ones reviewers complain about. The advisory tier is the daily value (it surfaced all 27); the gate is the insurance against the rare provable case. Method, the full 27-PR catalog, and the staged funnel are in [`benchmarks/real-prs/HUNT-2-REPORT.md`](benchmarks/real-prs/HUNT-2-REPORT.md).
+
 ### Detection numbers
 
 **301 of 325** planted cheats recovered (92.6%) across thirteen categories scored against a defect-injection oracle: 258/275 structural plus 43/50 on the two semantic categories the judge-primary path covers. The behavioral `cheat-mock-mutation` category drove the latest gain: focusing the judge on the hunks that add a value-injecting mock lifted its recall from 0.16 (the prior rapid-mlx glm47 run) to 0.96 (24/25) on the local qwen3.6 judge, while the clean-PR judge false-positive rate fell from 10% to 0%. Reproduce with `SWARM_JUDGE_PROVIDER=ollama SWARM_JUDGE_MODEL=qwen3.6:35b-a3b npm run benchmarks:full`; A/B with the same-model decomposition in [`benchmarks/results/AB-REPORT.md`](benchmarks/results/AB-REPORT.md) and per-detector recall in [`benchmarks/oracle-corpus/per-detector-recall.md`](benchmarks/oracle-corpus/per-detector-recall.md).
