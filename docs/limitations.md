@@ -55,6 +55,40 @@ A circumstantial trigger (`corroborated-under-constraint`) is calibrated but hel
 
 The proof tier (all six restoration engines, dead-branch included) was run across the execution-grounded-viable slice of the outcome-labeled real corpus, scored against the outcome labels (`npm run gate-precision`). It ran on 11 of the 12 viable PRs (one repo's dependency install failed deterministically, recorded), every one of which repository history shows survived, and fired **zero** proven block triggers. So proven-finding precision is an honest **n=0**: there were no false positives on clean PRs, but the denominator is empty because the slice carries no genuine cheats to prove. The artifact and the per-PR verdict records are in [`benchmarks/real-corpus/gate-precision.json`](../benchmarks/real-corpus/gate-precision.json) and [`GATE-PRECISION-REPORT.md`](../benchmarks/real-corpus/GATE-PRECISION-REPORT.md). A confirmed finding on an outcome-clean PR would be a stop-the-line defect; each per-PR row carries the head SHA and the proof funnel so the control-vs-label diagnosis can run before any number is trusted. The denominator grows through two now-live automated paths: the nightly backward-mining cron ([`.github/workflows/backward-mine.yml`](../.github/workflows/backward-mine.yml), 04:00 UTC, which mines outcome-bad agent commits the forward sample misses and uploads the grown corpus for review) and the EG-viable measurement dispatch ([`.github/workflows/eg-viable-measure.yml`](../.github/workflows/eg-viable-measure.yml)), with a re-run of the proof tier over any slice that grows an outcome-bad positive class.
 
+## Two control defects fixed by the wild hunt
+
+A bounded hunt ([`scripts/real-prs/hunt.ts`](../scripts/real-prs/hunt.ts)) pointed
+the proof tier at 216 recent agent-attributed PRs, screened them, and ran the
+six-engine proof tier on the execution-grounded-viable subset. The full record is
+in [`benchmarks/real-prs/HUNT-REPORT.md`](../benchmarks/real-prs/HUNT-REPORT.md).
+It surfaced two false positives on legitimate feature PRs that the stop-the-line
+protocol (replay in a fresh clone, read the production diff, check subsequent
+history) caught before they were trusted. Each was a control defect the synthetic
+oracle never exercised (it injects a defect into otherwise-unchanged code, never a
+legitimate behaviour change with a matching test update). Both were root-caused
+and fixed:
+
+- **`no-op-fix-proven` fired on a feature PR that added untested code.** The
+  affected-test closure was file-level, so a test that imported an unchanged
+  symbol from a file the PR changed by *adding* an unrelated declaration counted
+  as a witness. Fixed: a witness test must reach a source file whose hunk has a
+  deleted/modified line (`behaviorallyRevertableSourceFiles`); a purely-additive
+  change is new code no pre-existing test can verify, so the proof abstains.
+- **`test-tamper-proven` fired on a feature PR that re-specified a test.** The PR
+  deliberately changed a value and replaced two looser `toContain` checks on the
+  subject with one stricter `toBe` exact match; `assertion-strip` counted raw
+  assertion lines and read the consolidation as a strip. Fixed: a removed
+  assertion whose subject gained an added exact-match is a re-specification, not a
+  strip. Oracle-safe (the strip injector never adds a replacement); structural
+  recall held at 258/275.
+
+Both fixes are strictly more conservative: each can only drop a false proof,
+never invent one. The lesson is general: a self-certifying proof whose controls
+are all green still cannot distinguish a deliberate behaviour change with a
+matching test update from a regression hidden behind a relaxed test on structure
+alone; the fixes narrow the structural gate so the proof abstains on the
+re-specification shapes the wild actually produces.
+
 ## Ground truth is repository outcomes, not model opinion
 
 The real-corpus baseline used to be AI-labeled: a model judged each PR and every
