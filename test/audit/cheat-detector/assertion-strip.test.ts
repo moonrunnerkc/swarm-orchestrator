@@ -39,6 +39,39 @@ describe('cheat-detector / assertion-strip', () => {
     assert.equal(findings.length, 0);
   });
 
+  it('does not flag consolidating looser matchers into one exact-match on the same subject', () => {
+    // The wild-PR pattern: two toContain substring checks on one subject become
+    // a single exact toBe re-specification for a deliberate behaviour change.
+    const diff = `diff --git a/x.test.ts b/x.test.ts
+--- a/x.test.ts
++++ b/x.test.ts
+@@ -1,5 +1,4 @@
+ it('captions', () => {
+-  expect(model.shareCaption).toContain("300");
+-  expect(model.shareCaption).toContain("200");
++  expect(model.shareCaption).toBe("closeout for day 7");
+ });
+`;
+    assert.equal(runOn(diff).length, 0);
+  });
+
+  it('still flags a genuine strip even when an unrelated exact-match is added', () => {
+    const diff = `diff --git a/x.test.ts b/x.test.ts
+--- a/x.test.ts
++++ b/x.test.ts
+@@ -1,5 +1,3 @@
+ it('does X', () => {
+-  expect(a).toContain("x");
+-  expect(b).toBe(2);
++  expect(c).toBe(3);
+ });
+`;
+    // a's subject gained no exact-match add, so its removed assertion is still a
+    // strip (only c gained an exact-match).
+    const findings = runOn(diff);
+    assert.ok(findings.length >= 1, 'the dropped assertion on `a` is still flagged');
+  });
+
   it('ignores non-test files', () => {
     const diff = `diff --git a/lib.ts b/lib.ts
 --- a/lib.ts
