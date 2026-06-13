@@ -32,7 +32,7 @@ const log = getLogger('real-prs:fetch-agent');
 /** One global search query per vendor. Author queries are exact; marker
  *  queries are the strongest body marker the fingerprinter keys on. The
  *  fingerprinter confirmation pass drops anything the search over-matched. */
-const VENDOR_QUERIES: ReadonlyArray<{ vendor: string; q: string }> = [
+export const VENDOR_QUERIES: ReadonlyArray<{ vendor: string; q: string }> = [
   { vendor: 'devin', q: 'is:pr is:merged author:devin-ai-integration[bot]' },
   { vendor: 'claude-code', q: 'is:pr is:merged "Generated with Claude Code" in:body' },
   { vendor: 'cursor', q: 'is:pr is:merged head:cursor/' },
@@ -46,7 +46,7 @@ const VENDOR_QUERIES: ReadonlyArray<{ vendor: string; q: string }> = [
 // Skip our own repos (dogfooding would bias the sample) and forks of this
 // project. Anthropic-org repos are skipped for the same arbiter-independence
 // reason the clean corpus documents.
-const EXCLUDED_OWNERS = new Set(['moonrunnerkc', 'anthropics', 'anthropic-experimental']);
+export const EXCLUDED_OWNERS = new Set(['moonrunnerkc', 'anthropics', 'anthropic-experimental']);
 
 interface Args {
   perVendor: number;
@@ -182,7 +182,12 @@ async function main(): Promise<void> {
   log.info(`agent corpus: ${prs.length} PRs (${[...byVendor.entries()].map(([v, n]) => `${v}:${n}`).join(', ')})`);
 }
 
-main().catch((err: unknown) => {
-  log.error(err instanceof Error ? err.message : String(err));
-  process.exit(1);
-});
+// Guard the entry point so importing this module for its exported constants
+// (VENDOR_QUERIES, EXCLUDED_OWNERS) does not trigger a live fetch as a side
+// effect, the same guard outcome-labels.ts documents.
+if (require.main === module) {
+  main().catch((err: unknown) => {
+    log.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  });
+}
