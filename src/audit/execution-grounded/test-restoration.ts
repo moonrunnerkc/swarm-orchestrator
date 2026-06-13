@@ -45,6 +45,12 @@ export type RestorationVerdict =
   // re-specification asserts new behaviour (which base does not satisfy). Only
   // produced when a base workspace is available.
   | 'not-proven:re-specified'
+  // The restored (deleted) test exercises a production symbol the PR itself
+  // removed as an export, so the test was deleted because its subject was
+  // refactored away, not to conceal a regression. Restoring it fails on the PR
+  // source because the import resolves to nothing, which is a refactor, not a
+  // tamper. Pure diff signal; only turns proven into not-proven.
+  | 'not-proven:subject-removed'
   // Reserved for the execution-grounded caller when no sandbox workspace could
   // be provisioned; never produced by this orchestrator.
   | 'not-proven:no-workspace'
@@ -918,6 +924,66 @@ function reSpecifiesOnBase(
 }
 
 /**
+ * Pure: the exported symbol names a PR removed from its non-test source. A
+ * deleted `export function NAME`, `export const/let/var NAME`, `export class
+ * NAME`, or `export interface/type/enum NAME` line (a `-` change) in a
+ * production file. The test-file filter keeps `describe`/`it` and test-local
+ * exports out. Used by the subject-removed refuter; conservative (only the
+ * declaration forms, not re-export lists) so it under-matches rather than over.
+ */
+export function removedExportedSymbols(prDiff: string): Set<string> {
+  const out = new Set<string>();
+  const patterns = [
+    /\bexport\s+(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/,
+    /\bexport\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)/,
+    /\bexport\s+(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/,
+    /\bexport\s+(?:interface|type|enum)\s+([A-Za-z_$][\w$]*)/,
+  ];
+  for (const file of parseDiff(prDiff)) {
+    const p = realPath(file.to) ?? realPath(file.from);
+    if (p === null || isTestFile(p)) continue;
+    for (const chunk of file.chunks) {
+      for (const change of chunk.changes) {
+        if (change.type !== 'del') continue;
+        for (const re of patterns) {
+          const m = change.content.match(re);
+          if (m && m[1] !== undefined) out.add(m[1]);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Pure: the subject-removed refuter. Returns the matched symbol when the
+ * restored (deleted) test references a production symbol the PR removed as an
+ * export, otherwise null. The restored test patch's deletions are the tests the
+ * PR removed; if any identifier they reference is a symbol the PR also removed
+ * from production source, the test was deleted because its subject was
+ * refactored away (its import would now resolve to nothing), not to conceal a
+ * regression. The re-spec refuter cannot catch this: there is no submitted test
+ * to run on base. Conservative: matches only a removed export *declaration*, so
+ * it abstains on every uncertainty and can only turn proven into not-proven. It
+ * never matches an oracle tamper, which weakens an assertion in a test whose
+ * production subject is unchanged (no removed export to match).
+ */
+export function restoredTestSubjectRemoved(prDiff: string, testPatch: string): string | null {
+  const removed = removedExportedSymbols(prDiff);
+  if (removed.size === 0) return null;
+  // Identifiers referenced on the restored test's deleted lines.
+  const referenced = new Set<string>();
+  for (const line of testPatch.split('\n')) {
+    if (!line.startsWith('-') || line.startsWith('---')) continue;
+    for (const id of line.slice(1).match(/[A-Za-z_$][\w$]*/g) ?? []) referenced.add(id);
+  }
+  for (const sym of removed) {
+    if (referenced.has(sym)) return sym;
+  }
+  return null;
+}
+
+/**
  * Impure orchestrator: prove (or fail to prove) that the PR tampered with a
  * test to conceal a failure. Never throws; every non-proven verdict carries a
  * reason. The post workspace is shared with later consumers, so the reverse-
@@ -1151,6 +1217,24 @@ function runRestorationPipeline(input: TestRestorationInput): RestorationProofRe
         'the submitted test fails on the base source: the PR re-specified the asserted behaviour ' +
         'to match an intentional source change, not a concealed regression',
     };
+  }
+
+  // Step 6c: subject-removed refuter. A deleted test whose subject the PR also
+  // removed from production (an export the PR deleted) is a refactor, not a
+  // tamper: the restored test fails on the PR source only because its import no
+  // longer resolves. The re-spec refuter cannot see this (there is no submitted
+  // test to run on base), so it is checked separately, purely from the diff.
+  if (outcome.verdict === 'proven') {
+    const removedSubject = restoredTestSubjectRemoved(input.prDiff, patch);
+    if (removedSubject !== null) {
+      outcome = {
+        verdict: 'not-proven:subject-removed',
+        failingTests: [],
+        reason:
+          `the restored test exercises "${removedSubject}", which this PR removed from production ` +
+          `source: the test was deleted because its subject was refactored away, not to conceal a regression`,
+      };
+    }
   }
 
   // Step 7: a proven verdict must ship its reproduce command; a proof a human

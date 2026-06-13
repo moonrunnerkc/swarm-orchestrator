@@ -10,6 +10,8 @@ import {
   executeTestRun,
   extractTestHunkPatch,
   parseFailingTests,
+  removedExportedSymbols,
+  restoredTestSubjectRemoved,
 } from '../../../src/audit/execution-grounded/test-restoration';
 
 // A PR that touches one source file and one test file; the test file has
@@ -1042,5 +1044,99 @@ describe('execution-grounded / test-restoration executeTestRun', () => {
     assert.equal(result.timedOut, true);
     assert.equal(result.spawnFailed, false, 'a timeout is its own anomaly, not a spawn failure');
     assert.deepEqual(result.failingTests, []);
+  });
+});
+
+// The subject-removed refuter. The proof rests on "the restored old test fails
+// on the PR source", which is also true when the PR removed the production
+// symbol the deleted test exercised: the test was deleted because its subject
+// was refactored away (its import now resolves to nothing), not to conceal a
+// regression. The re-spec refuter cannot catch this (no submitted test to run
+// on base). This is the wild false-proof from vdekrijger/review123#81
+// (a `getPendingProvider` export removed and its tests deleted).
+describe('execution-grounded / test-restoration subject-removed refuter', () => {
+  // A PR that deletes an exported function from production AND deletes the test
+  // describe block that imported and exercised it: a refactor, not a tamper.
+  const REFACTOR_DIFF = [
+    'diff --git a/src/lib/auth/gitlabAuth.ts b/src/lib/auth/gitlabAuth.ts',
+    'index 1111111..2222222 100644',
+    '--- a/src/lib/auth/gitlabAuth.ts',
+    '+++ b/src/lib/auth/gitlabAuth.ts',
+    '@@ -40,4 +40,1 @@',
+    '-export function getPendingProvider(): string | null {',
+    '-  return readSession();',
+    '-}',
+    ' export function resolveGitlabToken(): string { return ""; }',
+    'diff --git a/src/lib/auth/gitlabAuth.test.ts b/src/lib/auth/gitlabAuth.test.ts',
+    'index 3333333..4444444 100644',
+    '--- a/src/lib/auth/gitlabAuth.test.ts',
+    '+++ b/src/lib/auth/gitlabAuth.test.ts',
+    '@@ -14,5 +13,4 @@',
+    ' import {',
+    '   beginGitlabSignIn,',
+    '-  getPendingProvider,',
+    '   resolveGitlabToken,',
+    ' } from "./gitlabAuth"',
+    '@@ -289,6 +287,1 @@',
+    "-describe('getPendingProvider', () => {",
+    "-  it('returns gitlab', () => {",
+    '-    expect(getPendingProvider()).toBe("gitlab");',
+    '-  });',
+    '-});',
+    ' // unchanged',
+    '',
+  ].join('\n');
+
+  it('lists exported symbols the PR removed from non-test source', () => {
+    const removed = removedExportedSymbols(REFACTOR_DIFF);
+    assert.ok(removed.has('getPendingProvider'));
+    // resolveGitlabToken is a context (unchanged) line, not removed.
+    assert.equal(removed.has('resolveGitlabToken'), false);
+  });
+
+  it('ignores test files when collecting removed exports', () => {
+    // describe/it/expect appear only in the test file; never treated as removed
+    // production exports.
+    const removed = removedExportedSymbols(REFACTOR_DIFF);
+    assert.equal(removed.has('describe'), false);
+    assert.equal(removed.has('expect'), false);
+  });
+
+  it('fires when the restored test references a removed production export', () => {
+    const patch = extractTestHunkPatch(REFACTOR_DIFF, 'src/lib/auth/gitlabAuth.test.ts');
+    assert.ok(patch, 'expected a test hunk patch');
+    assert.equal(restoredTestSubjectRemoved(REFACTOR_DIFF, patch as string), 'getPendingProvider');
+  });
+
+  it('abstains on a canonical tamper (assertion weakened, no export removed)', () => {
+    // PR_DIFF modifies the body of `add` but does not remove its export, so the
+    // refuter must not fire: a real tamper keeps its production subject.
+    const patch = extractTestHunkPatch(PR_DIFF, 'test/calc.test.ts');
+    assert.ok(patch, 'expected a test hunk patch');
+    assert.equal(restoredTestSubjectRemoved(PR_DIFF, patch as string), null);
+  });
+
+  it('abstains when the PR removes an export the deleted test never referenced', () => {
+    const diff = [
+      'diff --git a/src/util.ts b/src/util.ts',
+      'index 1111111..2222222 100644',
+      '--- a/src/util.ts',
+      '+++ b/src/util.ts',
+      '@@ -1,2 +1,1 @@',
+      '-export function unrelatedHelper(): void {}',
+      ' export function kept(): void {}',
+      'diff --git a/test/calc.test.ts b/test/calc.test.ts',
+      'index 3333333..4444444 100644',
+      '--- a/test/calc.test.ts',
+      '+++ b/test/calc.test.ts',
+      '@@ -5,3 +5,2 @@',
+      " it('adds', () => {",
+      '-  assert.equal(add(2, 2), 4);',
+      ' });',
+      '',
+    ].join('\n');
+    const patch = extractTestHunkPatch(diff, 'test/calc.test.ts');
+    assert.ok(patch, 'expected a test hunk patch');
+    assert.equal(restoredTestSubjectRemoved(diff, patch as string), null);
   });
 });
