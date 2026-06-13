@@ -39,6 +39,12 @@ export type RestorationVerdict =
   // attributable to this PR's change (Protocol-1 relevance refuter). Only
   // produced when a repoRoot is threaded in.
   | 'not-proven:test-not-closure-linked'
+  // The submitted (new) test fails on the BASE source, so the PR re-specified the
+  // asserted behaviour to match an intentional source change, not a concealed
+  // regression. A tamper weakens a passing test (which still passes on base); a
+  // re-specification asserts new behaviour (which base does not satisfy). Only
+  // produced when a base workspace is available.
+  | 'not-proven:re-specified'
   // Reserved for the execution-grounded caller when no sandbox workspace could
   // be provisioned; never produced by this orchestrator.
   | 'not-proven:no-workspace'
@@ -863,6 +869,55 @@ function closureRelevanceGate(
 }
 
 /**
+ * Conservative re-specification refuter for an otherwise-proven restoration.
+ *
+ * The proof rests on "the restored OLD test fails on the PR source". That is
+ * equally true of a tamper (a regression hidden behind a weakened test) and of a
+ * legitimate behaviour change (the PR changed the source intentionally and
+ * updated the test to assert the NEW behaviour; the old test asserted the OLD
+ * behaviour, so it fails). The discriminator is the SUBMITTED test run on the
+ * BASE source:
+ *
+ *   - a tamper weakens a test that already passed, so the submitted test still
+ *     PASSES on the base source;
+ *   - a re-specification asserts new behaviour the base source does not have, so
+ *     the submitted test FAILS on the base source.
+ *
+ * Fires (drops the proof) only on a clean, definite submitted-fails-on-base.
+ * Abstains (keeps the proof) on every uncertainty — no base workspace, the PR
+ * deleted the test file, a patch-apply, spawn, or timeout problem — so it can
+ * only turn proven into not-proven, never the reverse, and never drops an oracle
+ * tamper (whose weakened test passes on base). The base workspace is restored to
+ * its original tests before returning.
+ */
+function reSpecifiesOnBase(
+  input: TestRestorationInput,
+  runner: TestRunner,
+  tamperedFile: string | null,
+  patch: string,
+): boolean {
+  if (input.preWorkspacePath === null || tamperedFile === null) return false;
+  // Put the submitted (new) test onto the base source: apply the test hunk
+  // forward in the base workspace (which carries the old test), run, then revert.
+  const applied = gitApplyPatch({ patch, cwd: input.preWorkspacePath, reverse: false });
+  if (!applied.ok) return false;
+  try {
+    const run = executeTestRun({
+      runner,
+      files: [tamperedFile],
+      cwd: input.preWorkspacePath,
+      timeoutMs: input.timeoutMs,
+      ...(input.recipe !== undefined ? { recipe: input.recipe } : {}),
+      ...(input.docker !== undefined ? { docker: input.docker } : {}),
+    });
+    if (run.timedOut || run.spawnFailed) return false;
+    return !run.passed;
+  } finally {
+    gitApplyPatch({ patch, cwd: input.preWorkspacePath, reverse: true });
+  }
+}
+
+/**
  * Impure orchestrator: prove (or fail to prove) that the PR tampered with a
  * test to conceal a failure. Never throws; every non-proven verdict carries a
  * reason. The post workspace is shared with later consumers, so the reverse-
@@ -1079,6 +1134,22 @@ function runRestorationPipeline(input: TestRestorationInput): RestorationProofRe
       ...outcome,
       reason:
         outcome.reason !== undefined ? `${outcome.reason}; ${restoreFailure}` : restoreFailure,
+    };
+  }
+
+  // Step 6b: re-specification refuter. The restored old test failing on the PR
+  // source proves a concealed regression only if the test was weakened; if the
+  // PR instead re-specified the test to match an intentional source change, the
+  // submitted test asserts new behaviour and fails on the base source. Drop the
+  // proof in that case (a real behaviour change with a matching test update is
+  // not a tamper). Conservative: only fires on a clean submitted-fails-on-base.
+  if (outcome.verdict === 'proven' && reSpecifiesOnBase(input, runner, tamperedFile, patch)) {
+    outcome = {
+      verdict: 'not-proven:re-specified',
+      failingTests: [],
+      reason:
+        'the submitted test fails on the base source: the PR re-specified the asserted behaviour ' +
+        'to match an intentional source change, not a concealed regression',
     };
   }
 

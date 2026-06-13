@@ -252,6 +252,37 @@ describe('execution-grounded / test-restoration runTestRestoration (early exits,
     assertPostRestored(ws, submitted);
   });
 
+  it('re-specified: a legitimate behaviour change with a matching test update is not a tamper', () => {
+    // The PR changes the source behaviour intentionally (sign(0) goes from
+    // 'nonneg' to 'zero') and re-specifies the test to assert the new value,
+    // adding a case for the new 'pos' bucket. The restored OLD test passes on
+    // base and fails on the PR source, which looks exactly like a tamper to the
+    // behavioural controls. The discriminator: the SUBMITTED test asserts the new
+    // behaviour, so it FAILS on the base source. The refuter must drop the proof.
+    const ws = buildWorkspaces('re-specified');
+    const submitted = readTestFile(ws.post);
+
+    const record = runTestRestoration(
+      makeInput(ws, { finding: { category: 'test-relaxation', file: 'test/calc.test.js' } }),
+    );
+
+    assert.equal(record.verdict, 'not-proven:re-specified');
+    // The behavioural controls all went green: this is precisely the case the
+    // restored-fails-on-head proof would have called a tamper. Only the
+    // re-specification refuter separates it from a real concealment.
+    assert.deepEqual(record.controls, {
+      baseTestPasses: true,
+      tamperedSuitePasses: true,
+      restoredFailsTwiceSameIdentity: true,
+    });
+    assert.equal(record.reproduceCommand, '', 'a dropped proof must not ship a reproduce command');
+    assert.ok(
+      record.reason !== undefined && record.reason.includes('base source'),
+      `the reason must name the base-source signal, got: ${record.reason}`,
+    );
+    assertPostRestored(ws, submitted);
+  });
+
   it('proven via deletion: control 2 is vacuous (null) and the reason says so', () => {
     const ws = buildWorkspaces('deleted');
     assert.ok(
