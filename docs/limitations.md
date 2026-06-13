@@ -2,6 +2,48 @@
 
 An honest accounting of where the tool is weak today and what is being worked on.
 
+## The advisory detectors reproduce a minority of human-caught cheats
+
+This is the measure that decides what the tool is worth. Hunt 2 produced 27
+agent PRs that a maintainer explicitly called a cheat and named the category
+([`benchmarks/real-prs/HUNT-2-REPORT.md`](../benchmarks/real-prs/HUNT-2-REPORT.md)).
+Running the full advisory tier on each of those 27 diffs alone, with the
+maintainer's complaint text excluded from the signal, the detectors
+independently reproduce the maintainer's exact category on **5 of 27 (18.5%)**
+and raise a finding in some category on **13 of 27 (48%)**. Category-precision
+on the labeled-and-flagged subset is 5 of 13 (38.5%). All numbers trace to
+[`benchmarks/real-prs/overlap-matrix.json`](../benchmarks/real-prs/overlap-matrix.json);
+the per-miss accounting is in
+[`benchmarks/real-prs/OVERLAP-REPORT.md`](../benchmarks/real-prs/OVERLAP-REPORT.md).
+
+The 22 misses were each root-caused from the diff, and none is a recall hole a
+sound, precision-safe detector change would close:
+
+- **Net-additive test edits (4):** the test files add more assertions than they
+  remove, so the structural strip detectors stay silent on purpose. A detector
+  that flagged net-additive edits would reintroduce the re-specification
+  false-positive class the wild-hunt control fixes removed.
+- **Sibling-category flags (8):** the advisory tier flagged the PR, in a
+  related category (six `goal-not-fixed` complaints drew a `no-op-fix` finding,
+  the same "this fix does nothing" accusation under a different detector).
+- **Diff-only judge recall (4):** the judge-primary path read the diff and
+  concluded the stated fix is delivered. The verdicts are genuine, not a
+  harness fault (the raw `no`/`unavailable` answers are recorded per PR); the
+  maintainer judged these by running the code or from context the diff does not
+  carry.
+- **No structural tell or unsupported language (4):** a C# test deletion, a
+  dependency-only PR, a removed mock (not what the mock detector keys on), a
+  legitimately-logged error path.
+- **No detector for the category (2):** no detector keys on a hardcoded return
+  value as its own category.
+
+The honest reading: the detectors are corroboration with a known ceiling, not a
+replacement for review. They reproduce a maintainer's exact label on about a
+fifth of human-caught cheats and raise some suspicion on about half, while
+holding the precision that keeps them usable. The judge-primary figure was
+measured with a free local model and is a floor for that path; the structural
+result is model-independent.
+
 ## It over-flags PRs that survive in production
 
 Against outcome-grounded labels (PRs that were never reverted or hotfixed), the

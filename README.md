@@ -82,9 +82,13 @@ Every number here is reproducible from this repo and runs offline.
 
 Both reproduce deterministically from the committed diffs. Semgrep (210 rules) and the ESLint security ruleset flag neither. Reproduce either with `swarm audit --diff-file benchmarks/real-prs/diffs/cloudflare-workers-sdk/<pr>.diff`. Full study across twelve repos in [`benchmarks/real-prs/v11-BENEFIT-REPORT.md`](benchmarks/real-prs/v11-BENEFIT-REPORT.md).
 
-### How often agents cheat in the wild
+### How often agents cheat, and how often the detectors agree
 
-Mining maintainer review comments across 327 agent-attributed PRs surfaced 27 that a maintainer explicitly called a cheat (assertion-strip, test-relaxation, no-op fix, goal-not-fixed, error swallow, mock-of-hallucination, hardcoded output); 20 were caught and rejected at review, 7 merged. The control-verifiable proof gate proved none of them: it fires only on its own structural plus execution evidence, never on a human's accusation, so the cheats it can prove without a reviewer are rarer than the ones reviewers complain about. The advisory tier is the daily value (it surfaced all 27); the gate is the insurance against the rare provable case. Method, the full 27-PR catalog, and the staged funnel are in [`benchmarks/real-prs/HUNT-2-REPORT.md`](benchmarks/real-prs/HUNT-2-REPORT.md).
+Mining maintainer review comments across 327 agent-attributed PRs surfaced 27 that a maintainer explicitly called a cheat (assertion-strip, test-relaxation, no-op fix, goal-not-fixed, error swallow, mock-of-hallucination, hardcoded output): about 8% of the cascaded PRs. 20 were caught and rejected at review, 7 merged. That is the prevalence figure; the catalog and funnel are in [`benchmarks/real-prs/HUNT-2-REPORT.md`](benchmarks/real-prs/HUNT-2-REPORT.md).
+
+The number that matters for the tool is the overlap: run the advisory detectors on each of those 27 diffs alone, with the maintainer's complaint text excluded from the signal, and they independently reproduce the maintainer's exact cheat category on **5 of 27 (18.5%)** and raise a finding in some category on **13 of 27 (48%)**. The misses are not detector defects: most are net-additive test edits where firing would reintroduce the false-positive class three prior fixes removed, a sibling-category flag, a diff-only judge that reads the fix as delivered, an unsupported language, or a category with no detector. Each of the 22 is root-caused in [`benchmarks/real-prs/OVERLAP-REPORT.md`](benchmarks/real-prs/OVERLAP-REPORT.md), traced to [`benchmarks/real-prs/overlap-matrix.json`](benchmarks/real-prs/overlap-matrix.json). The detectors are corroboration with a known ceiling, not a replacement for review.
+
+The control-verifiable proof gate proved none of the 27: it fires only on its own structural plus execution evidence, never on a human's accusation, so the cheats it can prove without a reviewer are rarer than the ones reviewers complain about. Complaint-mining is the discovery method, the detectors are advisory corroboration, and the gate is the trust floor that blocks only what it can reproduce in a fresh checkout.
 
 ### Detection numbers
 
@@ -243,7 +247,9 @@ Two command-line interface (CLI) surfaces share one core. `swarm run` drives the
 
 ## Limitations
 
-No single detector has cleared the precision bar to block on its own. Gate mode blocks only on a self-certifying runtime proof whose per-instance controls are all green: test-tamper, mock-mutation, no-op-fix, type-suppression, or fake-refactor restoration, claim falsification, or obligation failure. The first such proof fired on a dogfood PR in June 2026. The full accounting, including the measured gate precision and what blocks today and what doesn't, is in [`docs/limitations.md`](docs/limitations.md).
+No single detector has cleared the precision bar to block on its own. Gate mode blocks only on a self-certifying runtime proof whose per-instance controls are all green: test-tamper, mock-mutation, no-op-fix, type-suppression, or fake-refactor restoration, claim falsification, or obligation failure. The first such proof fired on a dogfood PR in June 2026.
+
+Measured against 27 maintainer-confirmed wild cheats, the advisory detectors independently reproduce the maintainer's exact category on 5 (18.5%) and flag some suspicion on 13 (48%); the proof gate proved zero. The detectors corroborate a known fraction of human-caught cheats at high precision, and the gate blocks only what it can reproduce. The full accounting, the overlap matrix, the measured gate precision, and what blocks today and what doesn't, is in [`docs/limitations.md`](docs/limitations.md).
 
 ## Contributing
 
