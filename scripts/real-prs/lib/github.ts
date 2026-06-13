@@ -336,6 +336,16 @@ export async function withRetry<T>(fn: () => Promise<T>, label: string, attempt 
     const status = (err as { status?: number }).status;
     const headers = (err as { response?: { headers?: Record<string, string> } }).response?.headers;
     const retryAfter = Number(headers?.['retry-after']);
+    const remaining = Number(headers?.['x-ratelimit-remaining']);
+    // PRIMARY quota exhaustion (x-ratelimit-remaining: 0) does NOT recover until
+    // the hourly reset, so retrying is futile and only multiplies real calls (the
+    // very thing that drained the quota). Throw immediately; the caller skips and
+    // the run finishes assembly with what it has. Only the SECONDARY (abuse) limit
+    // — burst-triggered, recovers in seconds — is worth backing off and retrying.
+    if (remaining === 0) {
+      log.warn(`${label}: primary rate limit exhausted (remaining 0); not retrying until hourly reset`);
+      throw err;
+    }
     if ((status === 403 || status === 429) && attempt < 6) {
       const waitMs =
         Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 2_000 * 2 ** attempt;
