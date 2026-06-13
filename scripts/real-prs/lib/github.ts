@@ -302,6 +302,31 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Retry a GitHub call through GitHub's secondary rate limit (burst-triggered,
+ * separate from the primary hourly quota), honoring Retry-After. Without this a
+ * bounded rapid-fire run stalls on a 403 without returning, blowing past its
+ * wall-clock cap. Primary-quota exhaustion is the caller's budget concern and is
+ * not retried here.
+ */
+export async function withRetry<T>(fn: () => Promise<T>, label: string, attempt = 0): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    const status = (err as { status?: number }).status;
+    const headers = (err as { response?: { headers?: Record<string, string> } }).response?.headers;
+    const retryAfter = Number(headers?.['retry-after']);
+    if ((status === 403 || status === 429) && attempt < 5) {
+      const waitMs =
+        Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 2_000 * 2 ** attempt;
+      log.warn(`${label} hit a secondary rate limit; waiting ${waitMs}ms (attempt ${attempt + 1})`);
+      await sleep(waitMs);
+      return withRetry(fn, label, attempt + 1);
+    }
+    throw err;
+  }
+}
+
 /** One PR returned by a global (cross-repo) search. The repo slug is
  *  parsed from the result URL because the search API does not return a
  *  repository object on issue items. */
