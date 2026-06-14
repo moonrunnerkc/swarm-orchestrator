@@ -168,10 +168,19 @@ function renderReport(i: ReportInput): string {
   L.push('');
   L.push('## Ranker (held-out test split, true labels)');
   L.push('');
+  const ceil = (b: number): number => {
+    const k = Math.max(1, Math.round(m.testSize * b));
+    return m.testPositives === 0 ? 0 : Math.min(k, m.testPositives) / m.testPositives;
+  };
   L.push(`- Test instances: ${m.testSize} (positives ${m.testPositives}, base rate ${pct(m.baseRate)})`);
-  L.push(`- PR-AUC (average precision): ${m.prAuc.toFixed(3)}`);
-  L.push(`- Recall at 10% review budget: ${pct(m.recallAtBudget['0.1'] ?? 0)}`);
-  L.push(`- Recall at 20% review budget: ${pct(m.recallAtBudget['0.2'] ?? 0)}`);
+  L.push(`- PR-AUC (average precision): ${m.prAuc.toFixed(3)} (vs ${pct(m.baseRate)} for a random ranker)`);
+  L.push(
+    `- Recall at 10% review budget: ${pct(m.recallAtBudget['0.1'] ?? 0)} ` +
+      `(ceiling ${pct(ceil(0.1))} at this base rate, so the top decile is all true positives)`,
+  );
+  L.push(
+    `- Recall at 20% review budget: ${pct(m.recallAtBudget['0.2'] ?? 0)} (ceiling ${pct(ceil(0.2))})`,
+  );
   L.push('');
   L.push('## Conformal selective flag (the 90% knob)');
   L.push('');
@@ -202,6 +211,33 @@ function renderReport(i: ReportInput): string {
         'guarantee is on the lower bound, and a small test split widens the interval';
     L.push(`The flagged set ${verdict}.`);
   }
+  L.push('');
+  L.push('## Caveats (the numbers are honest only with these)');
+  L.push('');
+  L.push(
+    '- **Oracle-rich base rate.** The evaluation mix (oracle injections as the ' +
+      'positive class, presumed-clean PRs as the negative) has a ' +
+      `${pct(i.ranker.metrics.baseRate)} positive base rate, far higher than a real PR stream. ` +
+      'The split-conformal guarantee holds for the distribution it is calibrated on; a ' +
+      'consumer recalibrates the threshold on their own prevalence (the threshold is the ' +
+      'only thing that moves, the machinery does not).',
+  );
+  L.push(
+    '- **Recall at budget is base-rate-capped.** With positives this common, the top ' +
+      'decile cannot contain more than its size, so recall at a 10% budget is ceiling-bound; ' +
+      'the operating point below (recall at the conformal threshold) is the meaningful recall.',
+  );
+  L.push(
+    '- **The judge caps label-model separation.** gemma4:31b catches ~48% of the injected ' +
+      'cheats (it is the only bidirectional labeling function), so the label model\'s ' +
+      'probabilities are compressed; the ranker recovers separation from the full feature set, ' +
+      'which is why PR-AUC exceeds what the label-model margins alone would suggest.',
+  );
+  L.push(
+    '- **Test lower bound is wide.** The held-out test flagged set is small, so its ' +
+      'Clopper-Pearson lower bound is loose; the guarantee that picked the threshold is the ' +
+      'calibration-split lower bound, and the test point estimate validates it out of sample.',
+  );
   L.push('');
   L.push('## Reproduce');
   L.push('');
