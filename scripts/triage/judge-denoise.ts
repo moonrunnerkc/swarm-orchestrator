@@ -21,12 +21,29 @@ import { applyDenoise, type InstanceVerdict, type JudgeVerdict } from '../../src
 import type { TriageDataset } from '../../src/audit/triage/types';
 import { getJudgePromptSet } from '../../src/audit/cheat-detector/judge-prompts';
 import { JudgeCache } from '../benchmarks/lib/judge-cache';
-import { BenchJudge } from '../benchmarks/lib/judge-client';
+import { BenchJudge, type JudgeProviderConfig } from '../benchmarks/lib/judge-client';
 import { repoRoot } from '../real-prs/lib/paths';
 
 const log = getLogger('triage:denoise');
 
 const PROMPT_VERSION = 'v3-denoise';
+/** The triage judge is gemma4:31b on Ollama by default, overridable via
+ *  SWARM_JUDGE_MODEL / SWARM_JUDGE_BASE_URL. Pinning the default (rather than
+ *  inheriting the local-judge default) is what lets the committed cache replay
+ *  deterministically: the cache key folds the model id, so a replay must use
+ *  the same model the verdicts were recorded under. */
+function triageJudgeConfig(): JudgeProviderConfig {
+  return {
+    provider: 'ollama',
+    model: process.env.SWARM_JUDGE_MODEL ?? 'gemma4:31b',
+    baseUrl: (
+      process.env.SWARM_JUDGE_BASE_URL ??
+      process.env.OLLAMA_BASE_URL ??
+      'http://localhost:11434'
+    ).replace(/\/$/, ''),
+    maxTokens: 256,
+  };
+}
 /** Tail-biased cap: oracle defects are appended at the diff tail, so when a
  *  diff is oversized we keep the tail (and a slice of the head for context).
  *  Kept small because a 31B model's prompt-eval time dominates the latency on
@@ -80,7 +97,7 @@ async function main(): Promise<void> {
   const system = promptSet.denoiseSystem;
 
   const cache = new JudgeCache(root);
-  const judge = new BenchJudge(cache);
+  const judge = new BenchJudge(cache, triageJudgeConfig());
   log.info(`judge provider ${judge.config().provider} model ${judge.config().model}`);
 
   // Single full pass over every instance. Only the selected slice
