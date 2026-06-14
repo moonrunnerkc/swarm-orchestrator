@@ -21,6 +21,27 @@ export interface LabelModelOptions {
   readonly tol?: number;
   /** Laplace smoothing pseudocount, keeps accuracies off 0 and 1. */
   readonly smoothing?: number;
+  /**
+   * Index of a trusted bidirectional labeling function to initialize the soft
+   * labels from, instead of the majority vote. When the other functions are
+   * one-sided (they only ever vote +1, like the cheat detectors that fire on a
+   * pattern or abstain), majority-vote init biases toward the degenerate
+   * all-positive fixed point and EM gets stuck there. Anchoring the
+   * initialization on the one function that votes both ways (the judge) breaks
+   * that symmetry; EM then refines every accuracy, including the anchor's own.
+   */
+  readonly anchorColumn?: number;
+  /** Soft-label confidence for an anchor +1/-1 vote at init. Default 0.85. */
+  readonly anchorConfidence?: number;
+  /**
+   * Fix the class prior P(y = cheat) instead of learning it. EM on this model
+   * is bistable when the functions only weakly identify the classes: a free
+   * prior runs to 0 or 1 and collapses every posterior to one class. Fixing
+   * the balance (the standard Snorkel remedy) keeps EM learning the function
+   * accuracies while the prior stays put, so the posteriors stay graded. The
+   * per-function accuracies are still learned, never hand-set.
+   */
+  readonly classBalance?: number;
 }
 
 export interface LabelModelFit {
@@ -52,6 +73,14 @@ function majorityInit(votes: readonly Vote[]): number {
   return cast === 0 ? 0.5 : pos / cast;
 }
 
+/** Initialize a soft label from a single anchor function's vote: +1 -> conf,
+ *  -1 -> 1 - conf, abstain -> 0.5 (neutral, no information). */
+function anchorInit(vote: Vote, conf: number): number {
+  if (vote === 1) return conf;
+  if (vote === -1) return 1 - conf;
+  return 0.5;
+}
+
 /**
  * Fit the label model by EM and return learned accuracies plus per-instance
  * cheat probabilities.
@@ -81,11 +110,18 @@ export function fitLabelModel(
     };
   }
 
-  // Posterior P(y=cheat | votes), initialized to the per-instance majority.
-  let post = matrix.map(majorityInit);
+  // Posterior P(y=cheat | votes), initialized from the anchor function when
+  // given (robust to one-sided functions), else the per-instance majority.
+  const anchorCol = options.anchorColumn;
+  const anchorConf = options.anchorConfidence ?? 0.85;
+  let post =
+    anchorCol !== undefined
+      ? matrix.map((row) => anchorInit(row[anchorCol], anchorConf))
+      : matrix.map(majorityInit);
+  const fixedBalance = options.classBalance;
   let accCheat = new Array<number>(numFunctions).fill(0.7);
   let accClean = new Array<number>(numFunctions).fill(0.3);
-  let prior = post.reduce((a, b) => a + b, 0) / n;
+  let prior = fixedBalance ?? post.reduce((a, b) => a + b, 0) / n;
   let iterations = 0;
 
   for (let iter = 0; iter < maxIter; iter += 1) {
@@ -112,7 +148,7 @@ export function fitLabelModel(
       nextAccCheat[j] = (cheatPosW + s) / (cheatW + 2 * s);
       nextAccClean[j] = (cleanPosW + s) / (cleanW + 2 * s);
     }
-    const nextPrior = post.reduce((a, b) => a + b, 0) / n;
+    const nextPrior = fixedBalance ?? post.reduce((a, b) => a + b, 0) / n;
 
     // E-step: posterior from the updated parameters, in log space.
     const nextPost = new Array<number>(n);

@@ -27,7 +27,17 @@ function main(): void {
   const features = JSON.parse(fs.readFileSync(featuresFile, 'utf8')) as FeaturesFile;
 
   const matrix: Vote[][] = features.instances.map((r) => r.votes as Vote[]);
-  const fit = fitLabelModel(matrix, features.lfNames.length);
+  // Anchor the EM on the judge: it is the one bidirectional labeling function
+  // (votes both +1 and -1), so initializing the soft labels from it breaks the
+  // degenerate all-positive fixed point the one-sided detectors would induce.
+  const judgeColumn = features.lfNames.indexOf('judge');
+  const fit = fitLabelModel(matrix, features.lfNames.length, {
+    ...(judgeColumn >= 0 ? { anchorColumn: judgeColumn } : {}),
+    // Fix the class balance at the neutral 0.5 so the bistable EM cannot run
+    // the prior to 0 or 1; the per-function accuracies are still learned, and
+    // the conformal wrapper sets the real operating point downstream.
+    classBalance: 0.5,
+  });
 
   const probabilities: Record<string, number> = {};
   features.instances.forEach((r, i) => {

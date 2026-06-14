@@ -108,4 +108,35 @@ describe('triage/label-model', () => {
     assert.equal(fit.probabilities.length, 0);
     assert.equal(fit.classPrior, 0.5);
   });
+
+  it('fixed class balance plus an anchor keeps posteriors graded when other LFs are one-sided', () => {
+    // col0 is a one-sided detector (fires on everything: +1 or abstain), col1 is
+    // a bidirectional anchor (the judge). A free prior collapses toward one class
+    // because the detector only ever votes +1; fixing the balance and anchoring on
+    // col1 keeps the prior put and the posteriors separated by the anchor.
+    const matrix: Vote[][] = [
+      [1, 1],
+      [1, 1],
+      [1, -1],
+      [1, -1],
+    ];
+    const fixed = fitLabelModel(matrix, 2, { anchorColumn: 1, classBalance: 0.5 });
+    assert.ok(Math.abs(fixed.classPrior - 0.5) < 1e-9, `prior ${fixed.classPrior}`);
+    // Anchor-yes instances rank above anchor-no instances.
+    assert.ok(fixed.probabilities[0] > 0.5, `anchor-yes ${fixed.probabilities[0]}`);
+    assert.ok(fixed.probabilities[2] < 0.5, `anchor-no ${fixed.probabilities[2]}`);
+    assert.ok(fixed.probabilities[0] > fixed.probabilities[2]);
+  });
+
+  it('a free prior on the same one-sided data collapses, motivating the fix', () => {
+    const matrix: Vote[][] = [
+      [1, 1],
+      [1, 1],
+      [1, -1],
+      [1, -1],
+    ];
+    const free = fitLabelModel(matrix, 2);
+    // The free EM drives the prior to an extreme on one-sided data.
+    assert.ok(free.classPrior > 0.9 || free.classPrior < 0.1, `prior ${free.classPrior}`);
+  });
 });
