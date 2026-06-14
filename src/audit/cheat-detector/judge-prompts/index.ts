@@ -7,10 +7,12 @@
 import type { JudgePromptSet } from './types';
 import { v1Conservative } from './v1-conservative';
 import { v2Balanced } from './v2-balanced';
+import { v3Denoise } from './v3-denoise';
 
 export const JUDGE_PROMPT_SETS: Readonly<Record<string, JudgePromptSet>> = {
   'v1-conservative': v1Conservative,
   'v2-balanced': v2Balanced,
+  'v3-denoise': v3Denoise,
 };
 
 // Chosen by the calibration run (see benchmarks/oracle-corpus/judge-calibration.md):
