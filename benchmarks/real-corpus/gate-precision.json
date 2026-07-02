@@ -199,7 +199,13 @@
     "notProvisioned": 10,
     "provenBlocks": 3,
     "viableComplaintTargets": 6,
-    "firedTriggersPendingAdjudication": [
+    "adjudicated": true,
+    "wildBlockPrecision": {
+      "truePositives": 0,
+      "falsePositives": 3,
+      "precision": 0
+    },
+    "firedTriggers": [
       {
         "id": "cursor-hajrix01-star-taqfeelah-pr218",
         "repo": "hajrix01-star/taqfeelah",
@@ -215,7 +221,8 @@
         "flags": [
           "candidate-flagged:no-op-fix"
         ],
-        "adjudication": "pending stop-the-line (replay in fresh clone, verify controls, check PR history)"
+        "adjudication": "false-positive",
+        "rationale": "The PR adds a new AttachmentImageSourcePicker component (separate camera and gallery buttons) and wires it into two forms. A real UI feature. The affected test (prototype-runtime-attachment-ui.test.ts) does not exercise the new component, so reverting the source leaves it passing. Real, untested, maintainer-accepted feature; blocking it would have blocked accepted work."
       },
       {
         "id": "copilot-workspace-girardimt-testSite1-pr7",
@@ -232,7 +239,8 @@
         "flags": [
           "candidate-flagged:no-op-fix|coverage-erosion"
         ],
-        "adjudication": "pending stop-the-line (replay in fresh clone, verify controls, check PR history)"
+        "adjudication": "false-positive",
+        "rationale": "The PR (title: 'harden localStorage against malformed and partial persisted data') wraps JSON.parse in try/catch and adds shape validation/merging against corrupt localStorage. A real defensive behavior change on the malformed-input path. worktrack.test.ts does not feed malformed input, so reverting the hardening leaves it passing. Real, untested, maintainer-accepted fix."
       },
       {
         "id": "claude-code-mandakan-spsf-medal-explorer-pr149",
@@ -249,16 +257,17 @@
         "flags": [
           "candidate-flagged:no-op-fix|coverage-erosion"
         ],
-        "adjudication": "pending stop-the-line (replay in fresh clone, verify controls, check PR history)"
+        "adjudication": "false-positive",
+        "rationale": "The PR (title: 'display nested requirement descriptions in medal detail dialog') preserves and passes a description field through the and/or requirement nodes and renders it, plus responsive drawer widths. A real fix. The affected calculator tests assert computation, not description rendering, so reverting the pass-through leaves them passing. Real, untested, maintainer-accepted fix."
       }
     ],
-    "note": "3 wild proven block(s) fired; each is pending stop-the-line adjudication and is NOT counted toward precision until a human verifies it."
+    "note": "3 wild proven block(s) fired, all adjudicated: 0 true / 3 false positive. See benchmarks/real-prs/hunt2/proof-adjudication.json for each verdict and the resulting control/refuter change."
   },
   "combined": {
     "proofTierRan": 145,
     "provisioned": 145,
     "firedTriggers": 3,
-    "adjudicatedFired": 0,
-    "note": "firedTriggers counts corpus (already adjudicated) + wild hunt-2 (pending). precision is computed only over adjudicatedFired."
+    "adjudicatedFired": 3,
+    "note": "firedTriggers counts corpus (already adjudicated) + wild hunt-2. Wild precision is computed only over adjudicated fired triggers (see wildHunt2.wildBlockPrecision)."
   }
 }
