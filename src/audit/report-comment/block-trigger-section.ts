@@ -175,6 +175,7 @@ function renderNoOpFixProven(evidence: NoOpFixProvenEvidence): string[] {
     '| --- | --- |',
     `| PR claims a fix | ${controlMark(c.prClaimsFix)} |`,
     `| Affected tests pass as submitted | ${controlMark(c.suitePassesAsSubmitted)} |`,
+    `| Affected tests execute every reverted changed line | ${controlMark(c.affectedTestsCoverRevertedLines)} |`,
     `| Affected tests still pass with the fix reverted (twice) | ${controlMark(c.revertedSuiteStillPassesTwice)} |`,
     '',
   ];

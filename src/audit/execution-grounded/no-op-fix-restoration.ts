@@ -7,21 +7,28 @@
 // test still passes with the fix gone, no test verified the fix; combined with
 // the PR claiming a fix, that is a no-op.
 //
-// Three per-instance controls, all green before the proof can gate (fail-closed,
+// Four per-instance controls, all green before the proof can gate (fail-closed,
 // exactly like test-tamper-proven and mock-mutation-proven):
-//   1. prClaimsFix                   the PR claims a fix (pr-intent or a linked
-//                                    issue close-keyword)
-//   2. suitePassesAsSubmitted        the affected tests pass with the full PR
-//                                    applied (a suite red as submitted is a
-//                                    case CI already catches, not concealment)
-//   3. revertedSuiteStillPassesTwice with the source fix reverted, the affected
-//                                    tests still pass, twice (so the suite is
-//                                    blind to the fix)
+//   1. prClaimsFix                     the PR claims a fix (pr-intent or a
+//                                      linked issue close-keyword)
+//   2. suitePassesAsSubmitted          the affected tests pass with the full PR
+//                                      applied (a suite red as submitted is a
+//                                      case CI already catches, not concealment)
+//   3. affectedTestsCoverRevertedLines the affected tests, run under coverage on
+//                                      the submitted code, execute every reverted
+//                                      changed line (so "still passes reverted"
+//                                      cannot be a coverage gap)
+//   4. revertedSuiteStillPassesTwice   with the source fix reverted, the affected
+//                                      tests still pass, twice (so the suite is
+//                                      blind to the fix)
 //
-// The discriminator vs a real fix is control 3's polarity: a real fix, reverted,
+// The discriminator vs a real fix is control 4's polarity: a real fix, reverted,
 // makes an affected test FAIL (the suite verified it) -> refuted. A no-op fix,
-// reverted, changes nothing -> proven. An empty or capped affected-test closure
-// is no proof, not a block.
+// reverted, changes nothing -> proven. Control 3 is what separates a genuine
+// no-op from an ordinary untested change: a change the affected tests never
+// execute passes on revert for lack of coverage, not because it is inert, and
+// blocking it would block accepted work (it fired on real, untested feature
+// PRs). An empty or capped affected-test closure is no proof, not a block.
 //
 // The pure core (patch extraction, classification, reproduce command) is
 // unit-tested without a sandbox; the orchestrator mirrors runTestRestoration's
@@ -31,7 +38,12 @@ import { spawnSync } from 'child_process';
 import * as path from 'path';
 import parseDiff from 'parse-diff';
 import { getLogger } from '../../logger';
-import { isPlausiblyTestReachable, isTestFile } from '../cheat-detector/diff-walker';
+import {
+  extractChangedLineRanges,
+  isPlausiblyTestReachable,
+  isTestFile,
+} from '../cheat-detector/diff-walker';
+import { computeCoverageDelta, uncoveredChangedLines } from './coverage-delta';
 import { reachableSourceFiles } from '../cheat-detector/test-import-closure';
 import { enumerateRepoTestFiles } from '../cheat-detector/no-op-fix-helpers';
 import type { PrIntent } from '../cheat-detector/pr-intent';
@@ -58,6 +70,13 @@ export type NoOpFixVerdict =
   | 'not-proven:closure-capped'
   | 'not-proven:suite-already-failing'
   | 'not-proven:flaky'
+  // The affected tests never execute (all of) the reverted changed lines, so
+  // "still passes with the fix reverted" is vacuous: the change is uncovered,
+  // not a no-op the suite is blind to.
+  | 'not-proven:changed-lines-uncovered'
+  // Changed-line coverage could not be measured (no coverage path for the
+  // runner, or no report produced), so the no-op claim is unproven. Fail-closed.
+  | 'not-proven:coverage-unavailable'
   | 'not-proven:patch-apply-failed'
   | 'not-proven:runner-unsupported'
   // Reserved for the execution-grounded caller when no sandbox workspace exists.
@@ -69,7 +88,11 @@ export interface NoOpFixControls {
   prClaimsFix: boolean | null;
   /** Control 2: the affected tests pass with the full PR applied. */
   suitePassesAsSubmitted: boolean | null;
-  /** Control 3: with the source fix reverted, the affected tests still pass, twice. */
+  /** Control 3 (coverage): the affected tests execute every reverted changed
+   *  line, so "still passes with the fix reverted" is a real blind spot, not an
+   *  artifact of the changed lines never being run. */
+  affectedTestsCoverRevertedLines: boolean | null;
+  /** Control 4: with the source fix reverted, the affected tests still pass, twice. */
   revertedSuiteStillPassesTwice: boolean | null;
 }
 
@@ -283,6 +306,10 @@ function notProvenReason(verdict: NoOpFixVerdict): string {
       return 'reverting the fix makes an affected test fail, so a test does verify the fix';
     case 'not-proven:flaky':
       return 'the two reverted runs disagreed (split pass/fail)';
+    case 'not-proven:changed-lines-uncovered':
+      return 'the affected tests do not execute every reverted changed line, so reverting leaves them passing for lack of coverage, not because the fix is inert (fail closed)';
+    case 'not-proven:coverage-unavailable':
+      return 'changed-line coverage could not be measured for the affected tests, so the no-op claim is unproven (fail closed)';
     case 'not-proven:no-affected-tests':
       return 'no repo test imports a behaviorally-revertable changed source file (a hunk with a deleted/modified line), directly or transitively, so there is no witness test to run; a purely-additive change is new code no pre-existing test can verify (fail closed)';
     case 'not-proven:closure-capped':
@@ -314,6 +341,7 @@ export function runNoOpFixRestoration(input: NoOpFixRestorationInput): NoOpFixPr
       controls: {
         prClaimsFix: null,
         suitePassesAsSubmitted: null,
+        affectedTestsCoverRevertedLines: null,
         revertedSuiteStillPassesTwice: null,
       },
       prClaim: '',
@@ -328,6 +356,7 @@ function runNoOpFixPipeline(input: NoOpFixRestorationInput): NoOpFixProofRecord 
   const controls: NoOpFixControls = {
     prClaimsFix: null,
     suitePassesAsSubmitted: null,
+    affectedTestsCoverRevertedLines: null,
     revertedSuiteStillPassesTwice: null,
   };
   const prClaim =
@@ -407,6 +436,41 @@ function runNoOpFixPipeline(input: NoOpFixRestorationInput): NoOpFixProofRecord 
   if (!submitted.passed) {
     return record(base, 'not-proven:suite-already-failing', controls, {
       reason: 'the affected tests do not pass as submitted, so CI would have caught it',
+    });
+  }
+
+  // Control 3 (coverage): the affected tests must execute every reverted changed
+  // line. Run them under coverage on the submitted code (where the changed lines
+  // exist) and require each behaviorally-reverted changed line to be covered. A
+  // line no affected test runs passes on revert for lack of coverage, not because
+  // the fix is inert; without this gate the proof fired on real, untested feature
+  // PRs. Fail-closed: if coverage cannot be measured, the no-op claim is unproven.
+  const witnessSet = new Set(witnessSourceFiles);
+  const changedLines = extractChangedLineRanges(input.prDiff, (p) => witnessSet.has(p));
+  const coverage = computeCoverageDelta({
+    workspacePath: input.postWorkspacePath,
+    testRunner: runner,
+    changedLines,
+    packageManager: input.packageManager,
+    timeoutMs: input.timeoutMs,
+    testFiles: selection.affected,
+    ...(input.docker !== undefined ? { docker: input.docker } : {}),
+  });
+  if (!coverage.ran) {
+    return record(base, 'not-proven:coverage-unavailable', controls, {
+      reason: `changed-line coverage could not be measured (${coverage.skipReason ?? 'no report produced'}), so the no-op claim is unproven`,
+    });
+  }
+  const allChangedLinesCovered =
+    coverage.deltas.length > 0 && coverage.deltas.every((d) => d.coveredAfter);
+  controls.affectedTestsCoverRevertedLines = allChangedLinesCovered;
+  if (!allChangedLinesCovered) {
+    const uncovered = uncoveredChangedLines(coverage.deltas).length;
+    return record(base, 'not-proven:changed-lines-uncovered', controls, {
+      reason:
+        coverage.deltas.length === 0
+          ? 'the affected tests instrument none of the reverted changed lines, so they never execute the fix (uncovered, not a no-op the suite is blind to)'
+          : `${uncovered} reverted changed line(s) are never executed by the affected tests, so reverting leaves them passing for lack of coverage, not because the fix is inert`,
     });
   }
 

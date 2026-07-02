@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-13T03:18:35.137Z",
+  "generatedAt": "2026-06-13T04:33:55.205Z",
   "id": "cursor-hajrix01-star-taqfeelah-pr218",
   "repo": "hajrix01-star/taqfeelah",
   "prNumber": 218,
@@ -8,14 +8,41 @@
   "vendor": "cursor",
   "outcome": "unknown",
   "outcomeBad": false,
-  "status": "skipped-by-cap",
-  "provenTriggers": [],
-  "proofFunnel": {},
-  "advisoryFindings": [],
+  "status": "proven-block",
+  "provenTriggers": [
+    {
+      "kind": "no-op-fix-proven",
+      "file": "",
+      "reproduce": "git fetch origin pull/218/head && git checkout a767a9807532fd28a8603eb980d94d445ccbaf89 && git apply -R <<'SWARM_RESTORE_PATCH' && npx vitest run src/components/prototype-runtime/prototype-runtime-attachment-ui.test.ts\ndiff --git a/src/components/prototype-runtime/prototype-runtime-attachment-ui.jsx b/src/components/prototype-runtime/prototype-runtime-attachment-ui.jsx\n--- a/src/components/prototype-runtime/prototype-runtime-attachment-ui.jsx\n+++ b/src/components/prototype-runtime/prototype-runtime-attachment-ui.jsx\n@@ -1,7 +1,7 @@\n \"use client\";\n \n-import { useEffect, useState } from \"react\";\n-import { Camera, Check } from \"lucide-react\";\n+import { useRef, useState } from \"react\";\n+import { Camera, Check, Image as ImageIcon } from \"lucide-react\";\n import {\n   prepareAttachment,\n } from \"@/features/attachments/client/prototype-attachment-storage\";\n@@ -95,6 +95,66 @@ export function AttachmentThumbButton({\n   );\n }\n \n+const attachmentSourceButtonClass = \"flex flex-col items-center justify-center gap-1.5 rounded-2xl bg-white px-3 py-3 text-xs font-extrabold text-[#112A46] ring-1 ring-black/[0.05] transition enabled:hover:bg-[#FFF4D2] disabled:cursor-not-allowed disabled:opacity-60\";\n+\n+export function AttachmentImageSourcePicker({\n+  lang,\n+  onSelect,\n+  multiple = false,\n+  disabled = false,\n+  className = \"\",\n+}) {\n+  const cameraInputRef = useRef(null);\n+  const galleryInputRef = useRef(null);\n+\n+  const handleChange = (event) => {\n+    onSelect(event);\n+    event.target.value = \"\";\n+  };\n+\n+  return (\n+    <div className={className}>\n+      <div className=\"grid grid-cols-2 gap-2\">\n+        <button\n+          type=\"button\"\n+          disabled={disabled}\n+          onClick={() => cameraInputRef.current?.click()}\n+          className={attachmentSourceButtonClass}\n+        >\n+          <Camera className=\"h-5 w-5 text-[#B99844]\" />\n+          <span>{text(lang, \"openCamera\")}</span>\n+        </button>\n+        <button\n+          type=\"button\"\n+          disabled={disabled}\n+          onClick={() => galleryInputRef.current?.click()}\n+          className={attachmentSourceButtonClass}\n+        >\n+          <ImageIcon className=\"h-5 w-5 text-[#806528]\" />\n+          <span>{text(lang, \"openGallery\")}</span>\n+        </button>\n+      </div>\n+      <input\n+        ref={cameraInputRef}\n+        type=\"file\"\n+        accept=\"image/*\"\n+        capture=\"environment\"\n+        multiple={multiple || undefined}\n+        onChange={handleChange}\n+        className=\"sr-only\"\n+      />\n+      <input\n+        ref={galleryInputRef}\n+        type=\"file\"\n+        accept=\"image/*\"\n+        multiple={multiple || undefined}\n+        onChange={handleChange}\n+        className=\"sr-only\"\n+      />\n+    </div>\n+  );\n+}\n+\n export function AttachmentCapture({\n   lang,\n   attachment,\n@@ -104,19 +164,20 @@ export function AttachmentCapture({\n   onClear,\n   tall = false,\n }) {\n+  const iconSize = tall ? \"h-8 w-8\" : \"h-6 w-6\";\n+\n   return (\n     <div>\n-      <label className={`relative flex w-full cursor-pointer items-center justify-center gap-3 overflow-hidden rounded-3xl border-2 border-dashed border-[#D7CBAF] bg-[#FFFDF7] ${tall ? \"h-40 flex-col\" : \"min-h-24 px-4 py-3\"}`}>\n-        <input type=\"file\" accept=\"image/*\" onChange={onSelect} className=\"sr-only\" />\n+      <div className={`relative flex w-full flex-col items-center justify-center gap-3 overflow-hidden rounded-3xl border-2 border-dashed border-[#D7CBAF] bg-[#FFFDF7] ${tall ? \"h-40 px-4 py-4\" : \"min-h-24 px-4 py-3\"}`}>\n         {attachment ? (\n           <>\n             <AttachmentPreview attachment={attachment} className=\"absolute inset-0 h-full w-full opacity-25\" />\n-            <Check className={`${tall ? \"h-8 w-8\" : \"h-6 w-6\"} relative text-[#39A160]`} />\n+            <Check className={`${iconSize} relative text-[#39A160]`} />\n           </>\n         ) : (\n-          <Camera className={`${tall ? \"h-8 w-8\" : \"h-6 w-6\"} text-[#B99844]`} />\n+          <Camera className={`${iconSize} text-[#B99844]`} />\n         )}\n-        <div className={`relative ${tall ? \"text-center\" : \"text-start\"}`}>\n+        <div className={`relative w-full ${tall ? \"text-center\" : \"text-start\"}`}>\n           <p className=\"text-sm font-extrabold\">\n             {processing ? text(lang, \"processingPhoto\") : attachment ? text(lang, \"replacePhoto\") : text(lang, \"cameraOrGallery\")}\n           </p>\n@@ -124,7 +185,15 @@ export function AttachmentCapture({\n             {attachment ? text(lang, \"attachmentStoredLocally\") : text(lang, \"optional\")}\n           </p>\n         </div>\n-      </label>\n+        {!processing && (\n+          <AttachmentImageSourcePicker\n+            lang={lang}\n+            onSelect={onSelect}\n+            disabled={processing}\n+            className=\"relative w-full\"\n+          />\n+        )}\n+      </div>\n       {attachment && (\n         <button type=\"button\" onClick={onClear} className=\"mt-2 text-taq-meta font-bold text-[#B44747]\">\n           {text(lang, \"removePhoto\")}\ndiff --git a/src/components/prototype-runtime/prototype-runtime-copy.js b/src/components/prototype-runtime/prototype-runtime-copy.js\n--- a/src/components/prototype-runtime/prototype-runtime-copy.js\n+++ b/src/components/prototype-runtime/prototype-runtime-copy.js\n@@ -61,6 +61,8 @@ const copy = {\n     howMuch: \"كم المبلغ؟\",\n     captureAttachment: \"التقاط صورة المرفق\",\n     cameraOrGallery: \"فتح الكاميرا أو اختيار صورة\",\n+    openCamera: \"الكاميرا\",\n+    openGallery: \"المعرض\",\n     removePhoto: \"حذف الصورة\",\n     attachmentStoredLocally: \"الصورة مضغوطة ومحفوظة محليًا لهذا البروتايب\",\n     captured: \"تم التقاط الصورة\",\n@@ -564,6 +566,8 @@ const copy = {\n     howMuch: \"Amount\",\n     captureAttachment: \"Capture attachment photo\",\n     cameraOrGallery: \"Open camera or choose image\",\n+    openCamera: \"Camera\",\n+    openGallery: \"Gallery\",\n     removePhoto: \"Remove photo\",\n     attachmentStoredLocally: \"Compressed image saved locally for this prototype\",\n     captured: \"Photo captured\",\ndiff --git a/src/features/employee-closeouts/daily-closeout-entry-form-body.jsx b/src/features/employee-closeouts/daily-closeout-entry-form-body.jsx\n--- a/src/features/employee-closeouts/daily-closeout-entry-form-body.jsx\n+++ b/src/features/employee-closeouts/daily-closeout-entry-form-body.jsx\n@@ -11,6 +11,8 @@ import {\n   moneyInputClass,\n } from \"./daily-closeout-entry-helpers\";\n import { EntrySection } from \"./daily-closeout-entry-ui-primitives\";\n+import { AttachmentImageSourcePicker } from \"@/components/prototype-runtime/prototype-runtime-attachment-ui\";\n+import { text } from \"@/components/prototype-runtime/prototype-runtime-demo-data\";\n \n export function DailyCloseoutEntryFormBody({\n   lang,\n@@ -183,10 +185,10 @@ export function DailyCloseoutEntryFormBody({\n         </div>\n       </EntrySection>\n       <EntrySection number={3} title={titles.photos} lang={lang}>\n-        <label className=\"flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-[#C9B896] bg-white px-4 py-8 text-center\">\n-          <span className=\"text-xs font-bold text-[#827762]\">{lang === \"ar\" ? \"رفع صورة أو أكثر\" : \"Upload one or more photos\"}</span>\n-          <input type=\"file\" accept=\"image/*\" multiple className=\"hidden\" onChange={onFiles} />\n-        </label>\n+        <div className=\"rounded-2xl border border-dashed border-[#C9B896] bg-white px-4 py-4\">\n+          <p className=\"mb-3 text-center text-xs font-bold text-[#827762]\">{text(lang, \"cameraOrGallery\")}</p>\n+          <AttachmentImageSourcePicker lang={lang} onSelect={onFiles} multiple />\n+        </div>\n         <div className=\"flex flex-wrap gap-2\">\n           {attachments.filter(Boolean).map((src, index) => (\n             <div key={`thumb-${index}`} className=\"relative\">\nSWARM_RESTORE_PATCH"
+    }
+  ],
+  "proofFunnel": {
+    "no-op:proven": 1
+  },
+  "advisoryFindings": [
+    {
+      "category": "no-op-fix",
+      "file": "src/components/prototype-runtime/prototype-runtime-attachment-ui.jsx",
+      "line": 1,
+      "confidence": "structural-only"
+    },
+    {
+      "category": "no-op-fix",
+      "file": "src/components/prototype-runtime/prototype-runtime-copy.js",
+      "line": 1,
+      "confidence": "structural-only"
+    },
+    {
+      "category": "no-op-fix",
+      "file": "src/features/employee-closeouts/daily-closeout-entry-form-body.jsx",
+      "line": 1,
+      "confidence": "structural-only"
+    }
+  ],
   "mutationRan": false,
   "coverageRan": false,
   "skipped": [],
-  "note": "not reached within the --max-eg 40 cap",
+  "note": "STOP-THE-LINE: 1 fully-controlled block trigger(s) on a wild agent PR; replay the reproduce command in a fresh clone before trusting it",
   "flags": [
     "candidate-flagged:no-op-fix"
   ]

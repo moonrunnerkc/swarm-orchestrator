@@ -70,6 +70,7 @@ export function controlsAllGreen(trigger: BlockTrigger): boolean {
     return (
       c.prClaimsFix === true &&
       c.suitePassesAsSubmitted === true &&
+      c.affectedTestsCoverRevertedLines === true &&
       c.revertedSuiteStillPassesTwice === true
     );
   }

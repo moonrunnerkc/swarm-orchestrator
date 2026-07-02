@@ -153,6 +153,12 @@ export interface CoverageRunOptions {
   workspacePath: string;
   testRunner: TestRunner | null;
   changedLines: ChangedLineRanges;
+  /** When set, scope the coverage run to these test files (relative to
+   *  `workspacePath`) instead of the whole suite. Used by the no-op-fix proof
+   *  to ask whether the *affected* tests execute the changed lines, not whether
+   *  any test in the repo does. Appended positionally, which the jest, vitest,
+   *  and c8/mocha invocations all read as a file filter. */
+  testFiles?: string[];
   packageManager?: PackageManager;
   timeoutMs?: number;
   evidenceDir?: string;
@@ -236,6 +242,16 @@ function versionPinnedInstall(pkg: string, installDir: string): string {
   }
 }
 
+/** Resolve symlinks in a path, falling back to the input when it cannot be
+ *  resolved (a non-existent path in a unit test). */
+function realpathOrSelf(p: string): string {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
 export function computeCoverageDelta(opts: CoverageRunOptions): CoverageRunOutcome {
   const { workspacePath, testRunner, changedLines } = opts;
   if (testRunner === null) {
@@ -251,7 +267,10 @@ export function computeCoverageDelta(opts: CoverageRunOptions): CoverageRunOutco
 
   // Content-addressed cache: an identical re-audit skips the install and the
   // coverage spawn. Keyed on (repo, head sha, changed lines, toolchain).
-  const useCache = opts.cache !== undefined && egCacheEnabled();
+  // A file-scoped run must never share a cache slot with a whole-suite run
+  // (same repo/sha/changed-lines/toolchain, different coverage): skip the cache.
+  const scoped = opts.testFiles !== undefined && opts.testFiles.length > 0;
+  const useCache = opts.cache !== undefined && egCacheEnabled() && !scoped;
   const cacheKey = useCache
     ? computeEgCacheKey({
         repo: opts.cache!.repo,
@@ -284,8 +303,14 @@ export function computeCoverageDelta(opts: CoverageRunOptions): CoverageRunOutco
     }
   }
 
+  // A scoped run appends the affected test files positionally; jest, vitest,
+  // and c8/mocha each read trailing positionals as a file filter.
+  const runArgs =
+    opts.testFiles !== undefined && opts.testFiles.length > 0
+      ? [...command.args, ...opts.testFiles]
+      : command.args;
   try {
-    execFileGuarded(execBin(command.cmd), command.args, {
+    execFileGuarded(execBin(command.cmd), runArgs, {
       cwd: workspacePath,
       env,
       timeoutMs: Math.max(1, deadline - Date.now()),
@@ -310,7 +335,11 @@ export function computeCoverageDelta(opts: CoverageRunOptions): CoverageRunOutco
   } catch (err) {
     return { ran: false, deltas: [], skipReason: `coverage-final.json unparseable: ${String(err).slice(-120)}` };
   }
-  const coverage = parseIstanbulCoverage(report, workspacePath);
+  // Coverage tools report realpath'd file paths, so relativize against the
+  // canonical workspace: a symlinked base (e.g. the macOS /var -> /private/var
+  // tmpdir, or a symlinked sandbox) would otherwise mangle every key and drop
+  // all changed lines, silently failing coverage closed.
+  const coverage = parseIstanbulCoverage(report, realpathOrSelf(workspacePath));
   const deltas = coverageDeltaForChanges(coverage, changedLines);
 
   let rawReportPath: string | undefined;

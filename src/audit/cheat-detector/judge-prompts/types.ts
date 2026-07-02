@@ -24,4 +24,15 @@ export interface JudgePromptSet {
   /** The primary question for a semantic category, framed around the PR's
    *  stated claim. */
   primaryQuestion(category: SemanticCheatCategory): string;
+  /** Triage denoise path (Phase 2 of the triage surface): given a diff, decide
+   *  whether it contains a genuine cheat (a change that games its own checks)
+   *  or is a legitimate change. Used to drop tangled/ghost-commit false
+   *  positives from the weak distant-supervision anchors, and as the judge
+   *  labeling function for the label model. Optional: only the denoise version
+   *  defines it, so the cache key (which folds the prompt text) stays distinct
+   *  from the confirm/primary paths. */
+  denoiseSystem?: string;
+  /** The denoise question, optionally framed for a known cheat category (null
+   *  when the source carries no category, e.g. a revert-anchored PR). */
+  denoiseQuestion?(category: string | null): string;
 }

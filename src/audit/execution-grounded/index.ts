@@ -662,6 +662,7 @@ function noOpHonestyRecord(
     controls: {
       prClaimsFix: null,
       suitePassesAsSubmitted: null,
+      affectedTestsCoverRevertedLines: null,
       revertedSuiteStillPassesTwice: null,
     },
     prClaim: '',

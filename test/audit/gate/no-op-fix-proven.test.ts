@@ -23,6 +23,7 @@ const REPRODUCE =
 const allGreen: NoOpFixControls = {
   prClaimsFix: true,
   suitePassesAsSubmitted: true,
+  affectedTestsCoverRevertedLines: true,
   revertedSuiteStillPassesTwice: true,
 };
 
@@ -50,6 +51,8 @@ const NOT_PROVEN_VERDICTS: NoOpFixVerdict[] = [
   'not-proven:closure-capped',
   'not-proven:suite-already-failing',
   'not-proven:flaky',
+  'not-proven:changed-lines-uncovered',
+  'not-proven:coverage-unavailable',
   'not-proven:patch-apply-failed',
   'not-proven:runner-unsupported',
   'not-proven:no-workspace',
@@ -92,6 +95,7 @@ describe('detectNoOpFixProven (T6)', () => {
     const keys: (keyof NoOpFixControls)[] = [
       'prClaimsFix',
       'suitePassesAsSubmitted',
+      'affectedTestsCoverRevertedLines',
       'revertedSuiteStillPassesTwice',
     ];
     for (const key of keys) {
@@ -108,6 +112,7 @@ describe('detectNoOpFixProven (T6)', () => {
     const keys: (keyof NoOpFixControls)[] = [
       'prClaimsFix',
       'suitePassesAsSubmitted',
+      'affectedTestsCoverRevertedLines',
       'revertedSuiteStillPassesTwice',
     ];
     for (const key of keys) {
@@ -166,9 +171,34 @@ describe('no-op-fix-proven eligibility and gating', () => {
     assert.equal(isBlockEligible('no-op-fix-proven'), true);
   });
 
-  it('controlsAllGreen is true only when all three controls are true', () => {
+  it('controlsAllGreen is true only when all four controls are true', () => {
     const green = detectNoOpFixProven({ noOpRestorations: [provenRecord()] })[0]!;
     assert.equal(controlsAllGreen(green), true);
+  });
+
+  it('does not gate when only the changed-line-coverage control is missing (the wild-FP shape)', () => {
+    // The three wild false positives were real, untested fixes whose affected
+    // tests never executed the reverted changed lines: proven and every other
+    // control green, but the fix is uncovered, not a no-op. Build that shape
+    // directly (a proven record with the coverage control false) and confirm it
+    // neither becomes a candidate nor gates.
+    const uncovered = provenRecord({
+      controls: { ...allGreen, affectedTestsCoverRevertedLines: false },
+    });
+    assert.equal(detectNoOpFixProven({ noOpRestorations: [uncovered] }).length, 0);
+
+    // Even if such a trigger were hand-constructed downstream, the runtime gate
+    // refuses it: controlsAllGreen is false, so decideBlock never blocks.
+    const trigger = detectNoOpFixProven({ noOpRestorations: [provenRecord()] })[0]!;
+    const withUncovered: BlockTrigger = {
+      ...trigger,
+      evidence: {
+        ...(trigger.evidence as NoOpFixProvenEvidence),
+        controls: { ...allGreen, affectedTestsCoverRevertedLines: false },
+      },
+    };
+    assert.equal(controlsAllGreen(withUncovered), false);
+    assert.equal(decideBlock([withUncovered], 'gate', true).blocked, false);
   });
 
   it('gates a merge in gate mode when controls are all green', () => {
@@ -200,6 +230,7 @@ describe('no-op-fix-proven rendering', () => {
     assert.match(md, /Verdict:.*proven/i);
     assert.match(md, /PR claims a fix.*✅/);
     assert.match(md, /Affected tests pass as submitted.*✅/);
+    assert.match(md, /Affected tests execute every reverted changed line.*✅/);
     assert.match(md, /Affected tests still pass with the fix reverted.*✅/);
     assert.match(md, /test\/calc\.test\.ts/);
     assert.match(md, /src\/calc\.ts/);
