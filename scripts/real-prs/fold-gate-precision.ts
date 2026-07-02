@@ -30,6 +30,24 @@ const log = getLogger('real-prs:fold-gate-precision');
 
 const GATE_FILE = path.join('benchmarks', 'real-corpus', 'gate-precision.json');
 const HUNT2_FILE = path.join('benchmarks', 'real-prs', 'hunt2', 'hunt2-summary.json');
+// Optional human stop-the-line adjudication of the wild fired triggers. When
+// present, each fired trigger's verdict and the wild block precision are folded
+// in; absent, every fired trigger stays 'pending' and precision stays n=0.
+const ADJUDICATION_FILE = path.join('benchmarks', 'real-prs', 'hunt2', 'proof-adjudication.json');
+
+interface Adjudication {
+  verdicts: Record<string, { trigger: string; verdict: string; prState?: string; rationale: string }>;
+}
+
+function readAdjudication(): Adjudication | null {
+  if (!fs.existsSync(ADJUDICATION_FILE)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(ADJUDICATION_FILE, 'utf8')) as Adjudication;
+  } catch (err) {
+    log.warn(`could not read ${ADJUDICATION_FILE}: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
 
 interface ProofRecordLite {
   id: string;
