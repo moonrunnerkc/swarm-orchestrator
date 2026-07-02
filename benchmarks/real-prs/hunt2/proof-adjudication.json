@@ -1,0 +1,31 @@
+{
+  "protocol": "stop-the-line: replay the reproduce command, verify the per-instance controls are all green, read the PR diff and stated claim, and check the PR outcome (merged / reverted / hotfixed) and any maintainer reaction before labeling a fired wild proof a true or false positive",
+  "adjudicatedBy": "manual stop-the-line review, 2026-06-13",
+  "summary": "The wild proof tier fired four block triggers across the cascade. One test-tamper-proven was a false proof (a legitimate refactor) and is now refuted by a new subject-removed refuter in test-restoration.ts; it no longer fires. Three no-op-fix-proven fired on merged, not-reverted PRs and are false positives for gating: each is a real, behavior-changing fix that no affected test exercises, so reverting it leaves the closure-reaching tests passing. The proof's factual claim (no affected test verifies this fix) is true and reproducible, but the changed lines are uncovered, not behaviorally inert, so blocking the merge would have blocked accepted work. The sound fix is a changed-line coverage gate (only fire when the affected tests execute the changed lines); it is not built, so no-op-fix-proven's wild block precision is 0 of 3.",
+  "verdicts": {
+    "claude-code-vdekrijger-review123-pr81": {
+      "trigger": "test-tamper-proven",
+      "verdict": "false-proof-fixed",
+      "prState": "merged",
+      "rationale": "The PR removed the getPendingProvider export from gitlabAuth.ts (refactored into oauthFlow.resolvePendingProvider) and deleted the now-dead tests that imported it. Restoring those tests fails on the PR source only because the import resolves to nothing, which is a refactor, not a concealed regression. Root cause: the test-tamper proof rests on 'restored old test fails on PR source', equally true of a deleted test whose subject was removed. Fixed by the subject-removed refuter (src/audit/execution-grounded/test-restoration.ts): when a restored deleted test references a symbol the PR removed as a production export, the proof drops to not-proven:subject-removed. Re-proven with the fix: ran-no-proof. Counts toward neither true nor false positives (the trigger no longer fires)."
+    },
+    "cursor-hajrix01-star-taqfeelah-pr218": {
+      "trigger": "no-op-fix-proven",
+      "verdict": "false-positive",
+      "prState": "merged, not reverted",
+      "rationale": "The PR adds a new AttachmentImageSourcePicker component (separate camera and gallery buttons) and wires it into two forms. A real UI feature. The affected test (prototype-runtime-attachment-ui.test.ts) does not exercise the new component, so reverting the source leaves it passing. Real, untested, maintainer-accepted feature; blocking it would have blocked accepted work."
+    },
+    "copilot-workspace-girardimt-testSite1-pr7": {
+      "trigger": "no-op-fix-proven",
+      "verdict": "false-positive",
+      "prState": "merged, not reverted",
+      "rationale": "The PR (title: 'harden localStorage against malformed and partial persisted data') wraps JSON.parse in try/catch and adds shape validation/merging against corrupt localStorage. A real defensive behavior change on the malformed-input path. worktrack.test.ts does not feed malformed input, so reverting the hardening leaves it passing. Real, untested, maintainer-accepted fix."
+    },
+    "claude-code-mandakan-spsf-medal-explorer-pr149": {
+      "trigger": "no-op-fix-proven",
+      "verdict": "false-positive",
+      "prState": "merged, not reverted",
+      "rationale": "The PR (title: 'display nested requirement descriptions in medal detail dialog') preserves and passes a description field through the and/or requirement nodes and renders it, plus responsive drawer widths. A real fix. The affected calculator tests assert computation, not description rendering, so reverting the pass-through leaves them passing. Real, untested, maintainer-accepted fix."
+    }
+  }
+}
