@@ -116,6 +116,10 @@ function commitAll(dir: string, message: string): string {
       assert.equal(record.verdict, 'proven', `expected proven, got ${record.verdict}: ${record.reason ?? ''}`);
       assert.equal(record.controls.prClaimsFix, true);
       assert.equal(record.controls.suitePassesAsSubmitted, true);
+      // The changed line (`return x.a + x.b + 0`) IS executed by the test (it
+      // calls compute), so the coverage control is green: this is a genuine
+      // no-op on a covered line, not an uncovered change.
+      assert.equal(record.controls.affectedTestsCoverRevertedLines, true);
       assert.equal(record.controls.revertedSuiteStillPassesTwice, true);
       assert.deepEqual(record.affectedTestFiles, ['test/totals.test.js']);
 
@@ -140,6 +144,63 @@ function commitAll(dir: string, message: string): string {
       } finally {
         fs.rmSync(fresh, { recursive: true, force: true });
       }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not prove a real fix on a line the affected tests never execute (the wild-FP shape)', () => {
+    // The three wild false positives were real, maintainer-merged fixes whose
+    // affected tests never ran the reverted lines: uncovered, not no-ops (e.g. a
+    // new component the test file's closure reaches but never renders). Model
+    // that with a second exported function the test imports through but never
+    // calls; the "fix" edits that function. Reverting it leaves the test passing
+    // only because the line is never executed, so the changed-line coverage
+    // control must land this on not-proven, not proven.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-noopproof-uncovered-'));
+    try {
+      scaffold(
+        dir,
+        'export function compute(x) {\n  return x.a + x.b;\n}\n\nexport function computeTax(x) {\n  return x.a;\n}\n',
+        TYPE_ONLY_TEST,
+      );
+      git(dir, ['init', '-q']);
+      git(dir, ['config', 'user.email', 'demo@example.com']);
+      git(dir, ['config', 'user.name', 'demo']);
+      commitAll(dir, 'base: compute plus an untested computeTax');
+
+      // The "fix": correct computeTax, which the type-only test never calls.
+      fs.writeFileSync(
+        path.join(dir, 'src', 'totals.js'),
+        'export function compute(x) {\n  return x.a + x.b;\n}\n\nexport function computeTax(x) {\n  return x.a + x.b; // fix\n}\n',
+      );
+      const headSha = commitAll(dir, 'fix: totals computeTax (#1)');
+      assert.equal(runVitest(dir, 'test/totals.test.js'), true, 'submitted suite passes');
+      const prDiff = spawnSync('git', ['diff', 'HEAD~1', 'HEAD'], { cwd: dir, encoding: 'utf8' }).stdout;
+
+      const record = runNoOpFixRestoration({
+        finding: { category: 'no-op-fix', file: 'src/totals.js' },
+        prDiff,
+        prRef: 'acme/totals#1',
+        prHeadSha: headSha,
+        prIntent: CLAIMS_FIX,
+        linkedIssueCount: 0,
+        postWorkspacePath: dir,
+        repoRoot: dir,
+        testRunner: 'vitest',
+        packageManager: 'npm',
+        timeoutMs: 180_000,
+      });
+
+      assert.equal(
+        record.verdict,
+        'not-proven:changed-lines-uncovered',
+        `expected not-proven:changed-lines-uncovered, got ${record.verdict}: ${record.reason ?? ''}`,
+      );
+      assert.equal(record.controls.suitePassesAsSubmitted, true);
+      assert.equal(record.controls.affectedTestsCoverRevertedLines, false);
+      // The proof stops before the revert runs, so control 4 was never reached.
+      assert.equal(record.controls.revertedSuiteStillPassesTwice, null);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

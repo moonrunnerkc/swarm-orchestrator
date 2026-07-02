@@ -384,8 +384,9 @@ export interface NoOpFixProvenInput {
  * reverted in a sandbox and the affected tests (those whose import closure
  * reaches the reverted source) still passed, twice, while the PR claimed a fix
  * and its suite passed as submitted. Execution proves no test verifies the
- * claimed fix. Fires one candidate per `proven` record whose three controls are
- * all true; a proven record with any unexecuted (null) or false control is
+ * claimed fix. Fires one candidate per `proven` record whose four controls are
+ * all true (including that the affected tests execute every reverted changed
+ * line); a proven record with any unexecuted (null) or false control is
  * advisory only and produces nothing (fail closed). The reproduce command is the
  * record's own, which reruns the affected tests with the fix reverted.
  *
@@ -396,10 +397,16 @@ export function detectNoOpFixProven(input: NoOpFixProvenInput): BlockTrigger[] {
   const out: BlockTrigger[] = [];
   for (const record of input.noOpRestorations) {
     if (record.verdict !== 'proven') continue;
-    const { prClaimsFix, suitePassesAsSubmitted, revertedSuiteStillPassesTwice } = record.controls;
+    const {
+      prClaimsFix,
+      suitePassesAsSubmitted,
+      affectedTestsCoverRevertedLines,
+      revertedSuiteStillPassesTwice,
+    } = record.controls;
     if (
       prClaimsFix !== true ||
       suitePassesAsSubmitted !== true ||
+      affectedTestsCoverRevertedLines !== true ||
       revertedSuiteStillPassesTwice !== true
     ) {
       continue;

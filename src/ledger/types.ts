@@ -366,6 +366,7 @@ export interface LedgerEntryPayloadMap {
     controls: {
       prClaimsFix: boolean | null;
       suitePassesAsSubmitted: boolean | null;
+      affectedTestsCoverRevertedLines: boolean | null;
       revertedSuiteStillPassesTwice: boolean | null;
     };
     reproduceCommand: string;
