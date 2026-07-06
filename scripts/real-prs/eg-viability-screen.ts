@@ -249,6 +249,18 @@ async function main(): Promise<void> {
   }
 
   const viable = records.filter((r) => r.viable);
+  // The proof tier (mutation, coverage, restoration) provisions with Node
+  // package managers only, so the count that actually provisions the proof
+  // tier is the Node-viable subset, distinct from the broader screen viability
+  // (which also recognizes pytest and Go). compute-promotions reads this count
+  // for the corroborated tier so the "PRs provision" claim stays honest until
+  // the Python and Go install paths land.
+  const provisionable = viable.filter((r) => r.ecosystem === 'node');
+  const viableByEcosystem: Record<string, number> = {};
+  for (const r of viable) {
+    const eco = r.ecosystem ?? 'unknown';
+    viableByEcosystem[eco] = (viableByEcosystem[eco] ?? 0) + 1;
+  }
   const reasons: Record<string, number> = {};
   for (const r of records) {
     if (r.viable) continue;
@@ -260,6 +272,8 @@ async function main(): Promise<void> {
     egNodeMajor: EG_NODE_MAJOR,
     screened: records.length,
     viableCount: viable.length,
+    viableByEcosystem,
+    provisionableCount: provisionable.length,
     viableIds: viable.map((v) => v.id),
     nonViableReasonCounts: reasons,
     records,
