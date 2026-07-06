@@ -17,7 +17,7 @@ import { commandTimeoutMs, execBin, execEnv, execFileGuarded, isGuardedTimeout }
 const log = getLogger('audit:execution-grounded:sandbox');
 
 export type PackageManager = 'npm' | 'yarn' | 'pnpm' | 'bun';
-export type TestRunner = 'jest' | 'vitest' | 'mocha' | 'ava' | 'node-test';
+export type TestRunner = 'jest' | 'vitest' | 'mocha' | 'ava' | 'node-test' | 'pytest' | 'go-test';
 
 /** Lockfile -> package manager. Order matters: a repo can carry more than
  *  one lockfile after a migration; the most specific modern manager wins. */
@@ -116,7 +116,7 @@ export function detectPackageManager(workspacePath: string): PackageManager {
  *  the highest-signal match, or null when no runner is recognizable. */
 export function detectTestRunner(workspacePath: string): TestRunner | null {
   const pkgPath = path.join(workspacePath, 'package.json');
-  if (!fs.existsSync(pkgPath)) return null;
+  if (!fs.existsSync(pkgPath)) return detectNonNodeRunner(workspacePath);
   let pkg: {
     devDependencies?: Record<string, string>;
     dependencies?: Record<string, string>;
@@ -154,6 +154,35 @@ export function detectTestRunner(workspacePath: string): TestRunner | null {
   }
   if (['jest.config.js', 'jest.config.ts', 'jest.config.cjs', 'jest.config.mjs', 'jest.config.json'].some(has)) {
     return 'jest';
+  }
+  // A polyglot repo can carry a package.json with no recognizable Node runner
+  // but still be, at root, a Go or Python project with tests.
+  return detectNonNodeRunner(workspacePath);
+}
+
+/** Python project markers that carry a plausible pytest layout. Root-level
+ *  only, matching the corpus viability screen's cheapness. */
+const PYTHON_PROJECT_FILES: readonly string[] = [
+  'pyproject.toml',
+  'setup.py',
+  'setup.cfg',
+  'requirements.txt',
+];
+const PYTEST_SIGNAL_FILES: readonly string[] = ['pytest.ini', 'tox.ini', 'conftest.py'];
+
+/** Detect a non-Node runner from ecosystem markers at the workspace root:
+ *  a Go module (go.mod) runs under `go test`, and a Python project with a
+ *  pytest signal (a pytest config, or a `tests`/`test` directory) runs under
+ *  pytest. Go is checked first so a repo carrying both resolves to Go, matching
+ *  the Node-first precedence above. Returns null when neither is recognizable. */
+export function detectNonNodeRunner(workspacePath: string): TestRunner | null {
+  const has = (f: string): boolean => fs.existsSync(path.join(workspacePath, f));
+  if (has('go.mod')) return 'go-test';
+  const isPythonProject = PYTHON_PROJECT_FILES.some(has);
+  if (isPythonProject) {
+    const hasPytestSignal =
+      PYTEST_SIGNAL_FILES.some(has) || has('tests') || has('test');
+    if (hasPytestSignal) return 'pytest';
   }
   return null;
 }

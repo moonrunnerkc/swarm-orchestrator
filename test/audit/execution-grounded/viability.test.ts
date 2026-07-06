@@ -12,8 +12,40 @@ describe('execution-grounded / assessViability', () => {
     const a = assessViability(path.join(FIX, 'pm-npm'));
     assert.equal(a.viable, true);
     assert.equal(a.reason, '');
+    assert.equal(a.ecosystem, 'node');
     assert.equal(a.packageManager, 'npm');
     assert.equal(a.testRunner, 'jest');
+  });
+
+  it('marks a Go module as viable under go-test', () => {
+    const a = assessViability(path.join(FIX, 'runner-go'));
+    assert.equal(a.viable, true);
+    assert.equal(a.ecosystem, 'go');
+    assert.equal(a.testRunner, 'go-test');
+    assert.equal(a.packageManager, null);
+  });
+
+  it('marks a Python project with a pytest signal as viable under pytest', () => {
+    const a = assessViability(path.join(FIX, 'runner-pytest'));
+    assert.equal(a.viable, true);
+    assert.equal(a.ecosystem, 'python');
+    assert.equal(a.testRunner, 'pytest');
+    assert.equal(a.packageManager, null);
+  });
+
+  it('is not viable for a Python project with no pytest signal', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'viability-pynosig-'));
+    try {
+      // pyproject.toml marks a Python project, but with no tests dir or pytest
+      // config there is no recognizable runner.
+      fs.writeFileSync(path.join(dir, 'pyproject.toml'), '[project]\nname = "x"\n');
+      fs.writeFileSync(path.join(dir, 'main.py'), 'print("hi")\n');
+      const a = assessViability(dir);
+      assert.equal(a.viable, false);
+      assert.equal(a.ecosystem, null);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('is not viable when no test runner is recognizable', () => {
@@ -29,6 +61,7 @@ describe('execution-grounded / assessViability', () => {
       const a = assessViability(dir);
       assert.equal(a.viable, false);
       assert.equal(a.hasPackageJson, false);
+      assert.equal(a.ecosystem, null);
       assert.match(a.reason, /no package\.json/);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });

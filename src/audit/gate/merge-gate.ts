@@ -51,7 +51,9 @@ export interface MergeGateOutcome {
  */
 export function runMergeGate(input: MergeGateInput): MergeGateOutcome {
   const viability = assessViability(input.workspacePath);
-  if (!viability.viable || viability.testRunner === null || viability.packageManager === null) {
+  // packageManager is legitimately null for pytest and Go; viability plus a
+  // detected runner is what gates whether the controls can run.
+  if (!viability.viable || viability.testRunner === null) {
     const decision = composeMergeDecision({
       egViable: false,
       egViabilityReason: viability.reason,

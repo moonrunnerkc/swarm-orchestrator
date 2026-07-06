@@ -73,10 +73,10 @@ export const GROUND_TRUTH_V12: readonly BaselineFloor[] = [
   {
     id: 'eg-viable-count',
     label: 'Execution-grounded-viable PRs over the 197-PR corpus',
-    floor: 12,
+    floor: 78,
     denominator: 197,
     source: 'benchmarks/real-corpus/eg-viability.json',
-    note: 'Phase 2 (pytest and Go runners) must beat this; as a floor it must never drop. The sandbox is Node-only today, so 185 of 197 PRs are dark.',
+    note: 'Re-measured in Phase 2 after adding pytest and Go runners: 78/197 (12 Node + 52 Python + 14 Go), up from 12/197. As a floor it must never drop.',
   },
 ];
 

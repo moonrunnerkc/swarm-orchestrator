@@ -31,7 +31,8 @@ export type FalsifierProbe = (obligations: readonly ObligationV1[]) => MergeCont
 export interface PositiveGateOptions {
   /** Provisioned workspace root the obligations run against. */
   readonly workspacePath: string;
-  readonly packageManager: PackageManager;
+  /** The Node package manager, or null for a non-Node ecosystem (pytest, Go). */
+  readonly packageManager: PackageManager | null;
   /** The detected runner, used to invoke the suite when no `test` script exists. */
   readonly testRunner: TestRunner;
   /** Consumer obligations from .swarm/merge-obligations.yaml, appended to the default set. */
@@ -73,6 +74,12 @@ function runnerSuiteCommand(runner: TestRunner): string {
       return 'npx ava';
     case 'node-test':
       return 'node --test';
+    case 'pytest':
+      // `python3 -m pytest` resolves whenever pytest is importable, more
+      // robustly than a bare `pytest` entry-point on PATH.
+      return 'python3 -m pytest';
+    case 'go-test':
+      return 'go test ./...';
   }
 }
 
@@ -89,18 +96,41 @@ function runnerSuiteCommand(runner: TestRunner): string {
  * @param testRunner the detected runner (used when no `test` script exists).
  * @returns the default obligations in run order (build first when present, then test).
  */
+const NODE_RUNNERS: readonly TestRunner[] = ['jest', 'vitest', 'mocha', 'ava', 'node-test'];
+
+function isNodeRunner(runner: TestRunner): boolean {
+  return NODE_RUNNERS.includes(runner);
+}
+
 export function buildDefaultMergeObligations(
   workspacePath: string,
-  packageManager: PackageManager,
+  packageManager: PackageManager | null,
   testRunner: TestRunner,
 ): ObligationV1[] {
   const scripts = readScripts(workspacePath);
+  const isNode = isNodeRunner(testRunner);
   const obligations: ObligationV1[] = [];
-  if (typeof scripts.build === 'string' && scripts.build.trim().length > 0) {
+
+  // Build obligation. Go compiles the whole module; a Node project builds only
+  // when it declares a build script; pytest has no build step.
+  if (testRunner === 'go-test') {
+    obligations.push({ type: 'build-must-pass', command: 'go build ./...' });
+  } else if (
+    isNode &&
+    packageManager !== null &&
+    typeof scripts.build === 'string' &&
+    scripts.build.trim().length > 0
+  ) {
     obligations.push({ type: 'build-must-pass', command: `${packageManager} run build` });
   }
+
+  // Test obligation. A Node project prefers its own `test` script; every other
+  // case invokes the detected runner directly.
   const testCommand =
-    typeof scripts.test === 'string' && scripts.test.trim().length > 0
+    isNode &&
+    packageManager !== null &&
+    typeof scripts.test === 'string' &&
+    scripts.test.trim().length > 0
       ? `${packageManager} run test`
       : runnerSuiteCommand(testRunner);
   obligations.push({ type: 'test-must-pass', command: testCommand });

@@ -58,6 +58,10 @@ export type CorroboratedStatus = PromotionStatus | 'viability-screened';
 interface ViabilitySummary {
   screened: number;
   viableCount: number;
+  /** The Node-viable subset that actually provisions the proof tier (the
+   *  sandbox install path is Node-only). Distinct from viableCount, which also
+   *  counts screen-viable pytest and Go PRs. */
+  provisionableCount: number;
   egNodeMajor: number;
   nonViableReasonCounts: Record<string, number>;
   evidenceFile: string;
@@ -334,20 +338,23 @@ export function corroboratedTier(
   const unmeasured = (reasonWithoutScreen: string): CorroboratedTier => {
     if (viability !== undefined) {
       const screen =
-        `EG-viability screen: ${viability.viableCount}/${viability.screened} PRs provision ` +
-        `(Node + lockfile + test runner + node@${viability.egNodeMajor} engine; see ` +
-        `${viability.evidenceFile}).`;
+        `EG-viability screen: ${viability.viableCount}/${viability.screened} recognized ` +
+        `(Node, pytest, Go), of which ${viability.provisionableCount} provision the Node proof ` +
+        `tier (Node + lockfile + test runner + node@${viability.egNodeMajor} engine); pytest and ` +
+        `Go are screen-viable but their sandbox install is not built yet. See ` +
+        `${viability.evidenceFile}.`;
       const m = viability.measured;
       const reason =
         m !== undefined
-          ? `${screen} Bounded EG run completed: ${m.prsMeasured}/${m.prsCovered} of the viable ` +
-            `slice provisioned and ran the execution-grounded layer ` +
+          ? `${screen} Bounded EG run completed: ${m.prsMeasured}/${m.prsCovered} of the ` +
+            `provisionable slice provisioned and ran the execution-grounded layer ` +
             `(${m.prsCovered - m.prsMeasured} non-viable, reported in ${m.corroboratedSummaryFile}); ` +
             `0 corroborated findings on the outcome-clean slice, so the corroborated tier stays ` +
             `advisory (no outcome-bad PR in the slice can yield a true positive). Nothing gates on ` +
             `the corroborated tier; the mining cron grows the slice toward an outcome-bad positive class.`
           : `${screen} Corroborated precision is pending the bounded EG run on that ` +
-            `${viability.viableCount}-PR slice; nothing gates on the corroborated tier until then.`;
+            `${viability.provisionableCount}-PR provisionable slice; nothing gates on the ` +
+            `corroborated tier until then.`;
       return {
         truePositive: 0,
         falsePositive: 0,
@@ -405,12 +412,15 @@ function loadViability(scoresFile: string): ViabilitySummary | undefined {
     const v = JSON.parse(fs.readFileSync(file, 'utf8')) as {
       screened: number;
       viableCount: number;
+      provisionableCount?: number;
       egNodeMajor: number;
       nonViableReasonCounts: Record<string, number>;
     };
     const summary: ViabilitySummary = {
       screened: v.screened,
       viableCount: v.viableCount,
+      // Fallback for a pre-polyglot screen where every viable PR was Node.
+      provisionableCount: v.provisionableCount ?? v.viableCount,
       egNodeMajor: v.egNodeMajor,
       nonViableReasonCounts: v.nonViableReasonCounts,
       evidenceFile: path.relative(process.cwd(), file),

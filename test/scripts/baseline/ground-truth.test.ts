@@ -25,7 +25,7 @@ function liveAtFloor(over: Partial<LiveMetrics> = {}): LiveMetrics {
     realCorpusF1: 0.222,
     realCorpusTruePositive: 5,
     realCorpusFalsePositive: 18,
-    egViableCount: 12,
+    egViableCount: 78,
     egScreened: 197,
     ...over,
   };
@@ -87,7 +87,7 @@ describe('scripts/baseline/ground-truth evaluateBaseline', () => {
   });
 
   it('flags a drop in execution-grounded viability', () => {
-    const result = evaluateBaseline(GROUND_TRUTH_V12, liveAtFloor({ egViableCount: 11 }));
+    const result = evaluateBaseline(GROUND_TRUTH_V12, liveAtFloor({ egViableCount: 77 }));
     assert.equal(result.pass, false);
     assert.deepEqual(
       result.regressions.map((r) => r.id),

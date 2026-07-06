@@ -31,6 +31,12 @@ const OUT_FILE = path.join('benchmarks', 'real-corpus', 'eg-viability.json');
 // ecosystem; a recognizable runner is the gate for "tests could run at all".
 const KNOWN_RUNNERS = ['vitest', 'jest', 'mocha', 'ava', 'jasmine', 'node:test', 'tap', 'uvu'];
 const LOCKFILES = ['package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'npm-shrinkwrap.json', 'bun.lockb'];
+// Non-Node ecosystems the gate's pytest and Go runners can provision and run.
+// Root-level markers only, matching the screen's cheapness and the src-side
+// detectNonNodeRunner seam. A Go module runs under `go test`; a Python project
+// with a pytest signal (a pytest config or a tests directory) runs under pytest.
+const PY_PROJECT_FILES = ['pyproject.toml', 'setup.py', 'setup.cfg', 'requirements.txt'];
+const PY_PYTEST_FILES = ['pytest.ini', 'tox.ini', 'conftest.py'];
 // Installed runtime the EG evidence run pins (SWARM_EG_NODE_BIN=node@22).
 const EG_NODE_MAJOR = 22;
 
@@ -50,6 +56,7 @@ export interface ViabilityRecord {
   repo: string;
   headSha: string;
   outcome: string;
+  ecosystem: 'node' | 'python' | 'go' | null;
   hasPackageJson: boolean;
   hasLockfile: boolean;
   lockfile: string | null;
@@ -121,6 +128,7 @@ export async function screenPr(
     repo: label.repo,
     headSha: label.headSha,
     outcome: label.outcome,
+    ecosystem: null as 'node' | 'python' | 'go' | null,
     hasPackageJson: false,
     hasLockfile: false,
     lockfile: null as string | null,
@@ -146,10 +154,23 @@ export async function screenPr(
     return { ...base, reason: `repo/sha contents unreadable (HTTP ${statusOf(err) ?? '?'})` };
   }
   const names = new Set(root.filter((e) => e.type === 'file').map((e) => e.name));
+  const dirs = new Set(root.filter((e) => e.type === 'dir').map((e) => e.name));
   const hasPackageJson = names.has('package.json');
   const lockfile = LOCKFILES.find((l) => names.has(l)) ?? null;
   if (!hasPackageJson) {
-    return { ...base, hasLockfile: lockfile !== null, lockfile, reason: 'no package.json (not a Node project)' };
+    // Go module: `go test` needs no declared runner, so go.mod is enough.
+    if (names.has('go.mod')) {
+      return { ...base, ecosystem: 'go', testRunner: 'go-test', viable: true, reason: 'viable: Go module (go.mod)' };
+    }
+    // Python project with a pytest signal (a pytest config or a tests dir).
+    const isPython = PY_PROJECT_FILES.some((f) => names.has(f));
+    const hasPytestSignal =
+      PY_PYTEST_FILES.some((f) => names.has(f)) || dirs.has('tests') || dirs.has('test');
+    if (isPython && hasPytestSignal) {
+      return { ...base, ecosystem: 'python', testRunner: 'pytest', viable: true, reason: 'viable: Python + pytest signal' };
+    }
+    const why = isPython ? 'Python project but no pytest signal' : 'not a Node, Go, or pytest project';
+    return { ...base, hasLockfile: lockfile !== null, lockfile, reason: `no package.json (${why})` };
   }
 
   let pkg: { scripts?: Record<string, string>; devDependencies?: Record<string, string>; dependencies?: Record<string, string>; engines?: { node?: string } } = {};
@@ -184,6 +205,7 @@ export async function screenPr(
   if (!nodeOk) reasons.push(`node engine "${nodeEngine}" excludes ${EG_NODE_MAJOR}`);
   return {
     ...base,
+    ecosystem: 'node',
     hasPackageJson: true,
     hasLockfile: lockfile !== null,
     lockfile,
@@ -227,6 +249,18 @@ async function main(): Promise<void> {
   }
 
   const viable = records.filter((r) => r.viable);
+  // The proof tier (mutation, coverage, restoration) provisions with Node
+  // package managers only, so the count that actually provisions the proof
+  // tier is the Node-viable subset, distinct from the broader screen viability
+  // (which also recognizes pytest and Go). compute-promotions reads this count
+  // for the corroborated tier so the "PRs provision" claim stays honest until
+  // the Python and Go install paths land.
+  const provisionable = viable.filter((r) => r.ecosystem === 'node');
+  const viableByEcosystem: Record<string, number> = {};
+  for (const r of viable) {
+    const eco = r.ecosystem ?? 'unknown';
+    viableByEcosystem[eco] = (viableByEcosystem[eco] ?? 0) + 1;
+  }
   const reasons: Record<string, number> = {};
   for (const r of records) {
     if (r.viable) continue;
@@ -238,6 +272,8 @@ async function main(): Promise<void> {
     egNodeMajor: EG_NODE_MAJOR,
     screened: records.length,
     viableCount: viable.length,
+    viableByEcosystem,
+    provisionableCount: provisionable.length,
     viableIds: viable.map((v) => v.id),
     nonViableReasonCounts: reasons,
     records,
