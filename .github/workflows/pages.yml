@@ -6,6 +6,15 @@ name: Pages
 # at runtime, so the deployed artifact mirrors the repo layout: docs/
 # and benchmarks/ side by side at the Pages root.
 #
+# This is the sole leaderboard deployer. The build job regenerates
+# docs/leaderboard/data.json (corpus:generate + leaderboard) into the
+# workspace before staging, so every deploy serves freshly computed
+# numbers without committing derived data back to a protected main. The
+# weekly schedule replaces the old leaderboard-refresh workflow, which
+# pushed the regenerated data to main and could not: the repository
+# ruleset blocks a bot push to a protected ref, so that job failed every
+# week. Deploying the artifact directly needs no push.
+#
 # Pages must be enabled in repo settings with "GitHub Actions" as the
 # source. The default GITHUB_TOKEN can't auto-enable Pages on
 # repos whose workflow-permission settings forbid it, so the first
@@ -20,6 +29,8 @@ on:
       - 'benchmarks/real-corpus/scores/**'
       - 'benchmarks/real-corpus/promotions.json'
       - '.github/workflows/pages.yml'
+  schedule:
+    - cron: '0 13 * * MON'  # 13:00 UTC every Monday: weekly leaderboard refresh
   workflow_dispatch:
 
 permissions:
@@ -55,6 +66,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+      - run: npm ci
+      - run: npm run build
+      # Regenerate the leaderboard data into the workspace so the deployed
+      # docs/leaderboard/data.json reflects the current corpus and scoring,
+      # not a committed snapshot. corpus:generate writes the synthetic corpus
+      # that the scorer reads; leaderboard (benchmarks/leaderboard/score.js)
+      # writes docs/leaderboard/data.json. Both are deterministic and offline.
+      - run: npm run corpus:generate
+      - run: npm run leaderboard
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
       - name: Stage Pages artifact
         run: |
