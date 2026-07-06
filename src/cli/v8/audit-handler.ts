@@ -84,6 +84,8 @@ import { parseIssueReferences } from '../../audit/execution-grounded/issue-repro
 import { detectBlockTriggers, type BlockTrigger } from '../../audit/gate/block-triggers';
 import { appendBlockTriggerEntry } from '../../audit/gate/block-trigger-ledger';
 import { decideBlock, isBlockEligible } from '../../audit/gate/gate-decision';
+import { summarizeMergeDecision, type MergeDecision } from '../../audit/gate/merge-decision';
+import { runMergeGateForPr } from './merge-gate-runner';
 import { fetchPrDiffViaGithub, parsePrRef, type GithubPrRef } from './pr-fetch';
 import { fetchPrManifests } from './pr-manifest-fetch';
 import { writeShadowEntry } from '../../audit/shadow';
@@ -107,6 +109,7 @@ interface AuditFlags {
   shadowDir: string;
   shadowOutput?: string;
   enableLlmJudge: boolean;
+  mergeGate: boolean;
 }
 
 const AUDIT_SCHEMA: ParseArgsOptions = {
@@ -124,6 +127,7 @@ const AUDIT_SCHEMA: ParseArgsOptions = {
   'shadow-dir': { type: 'string' },
   'shadow-output': { type: 'string' },
   'enable-llm-judge': { type: 'boolean' },
+  'merge-gate': { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
 };
 
@@ -153,6 +157,9 @@ const USAGE = [
   '                            invocation count, rendered comment). No comment post, no gate.',
   '  --enable-llm-judge        opt into the Anthropic Haiku judge for detectors that integrate it',
   '                            (also enabled by SWARM_AUDIT_LLM_JUDGE=1). Requires ANTHROPIC_API_KEY.',
+  '  --merge-gate              (--pr only) after the cheat gate, provision the merged tree and run',
+  '                            the positive merge-safety gate (build/test/obligations); emit an',
+  '                            AUTO-MERGE / HUMAN verdict. Does not itself merge or change the exit code.',
   '  --help, -h                show this message',
   '',
   'exit codes:',
@@ -182,6 +189,7 @@ function parseFlags(argv: string[]): AuditFlags {
     detectorSet: parseDetectorsFlag(readString(values, 'detectors')),
     shadowDir: readString(values, 'shadow-dir') ?? '.swarm/shadow',
     enableLlmJudge: judgeFromFlag || judgeFromEnv,
+    mergeGate: readBoolean(values, 'merge-gate'),
   };
   const diffFile = readString(values, 'diff-file');
   if (diffFile !== undefined) flags.diffFile = diffFile;
@@ -212,6 +220,7 @@ function makeMinimalFlags(helpRequested: boolean): AuditFlags {
     detectorSet: 'default',
     shadowDir: '.swarm/shadow',
     enableLlmJudge: false,
+    mergeGate: false,
   };
 }
 
@@ -265,6 +274,16 @@ function validateFlags(flags: AuditFlags): void {
       'exactly one of --diff-file, --diff-stdin, or --pr/<pr-ref> must be provided',
       'AUDIT_USAGE',
       { remediation: 'Try: swarm audit --diff-stdin < my.patch' },
+    );
+  }
+  // The positive merge-safety gate provisions the PR's merged tree from its
+  // repo and head SHA, which only the --pr input carries. A raw diff has no
+  // repo to check out, so --merge-gate without --pr is a usage error.
+  if (flags.mergeGate && flags.prRef === undefined) {
+    throw new SwarmError(
+      '--merge-gate requires --pr (a raw diff has no repo to provision the merged tree from)',
+      'AUDIT_USAGE',
+      { remediation: 'Try: swarm audit --pr <owner>/<repo>#<n> --merge-gate' },
     );
   }
   // --repo-root is the trust boundary for filesystem reads. A workflow
@@ -852,8 +871,9 @@ function emitAuditResult(args: {
   ledgerPath: string;
   wallTimeMs: number;
   decision: { blocked: boolean; blockingTriggers: BlockTrigger[] };
+  mergeDecision?: MergeDecision;
 }): number {
-  const { flags, result, prContext, runId, ledgerPath, wallTimeMs, decision } = args;
+  const { flags, result, prContext, runId, ledgerPath, wallTimeMs, decision, mergeDecision } = args;
   // --shadow-output: write the v10.3 single-file schema and exit
   // without posting a comment or affecting the merge gate. Resolved
   // before --shadow so a caller can pass both flags and get both
@@ -884,7 +904,7 @@ function emitAuditResult(args: {
     });
     return 0;
   }
-  emitOutput(flags.output, result, ledgerPath, flags.mode, decision.blockingTriggers);
+  emitOutput(flags.output, result, ledgerPath, flags.mode, decision.blockingTriggers, mergeDecision);
   if (flags.mode === 'advise') return 0;
   return decision.blocked ? 1 : 0;
 }
@@ -963,6 +983,36 @@ async function runAudit(flags: AuditFlags): Promise<number> {
     },
   );
 
+  // Positive merge-safety gate (opt-in via --merge-gate, --pr only). After the
+  // negative (cheat) gate, provision the merged tree and prove build/test plus
+  // any declared obligations, then compose the two-sided AUTO-MERGE / HUMAN
+  // verdict. Fail-closed: not viable, a failing control, or a control that
+  // could not run all route to HUMAN. It surfaces a verdict; it does not merge
+  // and does not change the audit exit code.
+  let mergeDecision: MergeDecision | undefined;
+  if (flags.mergeGate && inputs.prContext !== undefined) {
+    const pr = inputs.prContext.prMetadata;
+    const negativeGateClean = result.pass && decision.blockingTriggers.length === 0;
+    const negativeGateDetail = decision.blockingTriggers.map((t) => t.kind).join(', ');
+    const outcome = runMergeGateForPr({
+      prMetadata: {
+        number: pr.number,
+        repository: pr.repository,
+        headSha: pr.headSha,
+        ...(pr.baseSha !== undefined && pr.baseSha !== '' ? { baseSha: pr.baseSha } : {}),
+      },
+      negativeGateClean,
+      negativeGateDetail,
+    });
+    mergeDecision = outcome.decision;
+    logger.info(
+      `merge-gate: ${summarizeMergeDecision(outcome.decision)}` +
+        (outcome.decision.verdict === 'human'
+          ? ` (${outcome.decision.reasons.map((r) => r.code).join(', ')})`
+          : ''),
+    );
+  }
+
   if (flags.emitAibom !== undefined) {
     await emitAibom(flags.emitAibom, flags.aibomPath, ledgerPath, runId);
   }
@@ -975,6 +1025,7 @@ async function runAudit(flags: AuditFlags): Promise<number> {
     ledgerPath,
     wallTimeMs,
     decision,
+    ...(mergeDecision !== undefined ? { mergeDecision } : {}),
   });
 }
 
@@ -1077,9 +1128,14 @@ function emitOutput(
   ledgerPath: string,
   mode: AuditMode,
   blockingTriggers: BlockTrigger[],
+  mergeDecision?: MergeDecision,
 ): void {
   if (format === 'json') {
-    process.stdout.write(JSON.stringify({ ...result, mode, blockingTriggers }, null, 2) + '\n');
+    const payload =
+      mergeDecision !== undefined
+        ? { ...result, mode, blockingTriggers, mergeDecision }
+        : { ...result, mode, blockingTriggers };
+    process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
     return;
   }
   if (format === 'markdown') {
@@ -1099,6 +1155,12 @@ function emitOutput(
   for (const trigger of blockingTriggers) {
     const verb = mode === 'gate' ? 'BLOCK' : 'advisory';
     logger.info(`  [${verb}] ${trigger.kind}: ${trigger.summary} reproduce: ${trigger.reproduce}`);
+  }
+  if (mergeDecision !== undefined) {
+    logger.info(`  merge-gate: ${summarizeMergeDecision(mergeDecision)}`);
+    for (const reason of mergeDecision.reasons) {
+      logger.info(`    [human] ${reason.code}: ${reason.detail}`);
+    }
   }
 }
 
