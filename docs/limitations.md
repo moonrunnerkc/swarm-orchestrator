@@ -185,16 +185,26 @@ which cannot provision in a generic sandbox. Rather than leave the tier an opaqu
 `unmeasured`, a cheap static viability screen
 ([`npm run execution-grounded:viability-screen`](../scripts/real-prs/eg-viability-screen.ts))
 now measures exactly how much of the corpus could even run: per PR it checks for
-a Node project, a lockfile, a recognizable test runner, and a satisfiable node
-engine. The result is **12 of 197 usable PRs are EG-viable**; 137 are not Node
-projects at all, 41 have no recognizable test runner, 2 pin node 20.x
+a recognizable ecosystem the sandbox can run (a Node project with a lockfile and
+runner and a satisfiable node engine, a Go module, or a Python project with a
+pytest signal). After Phase 2 added the pytest and Go runners the result is
+**78 of 197 usable PRs are EG-viable** (12 Node + 52 Python + 14 Go), up from
+the Node-only 12/197; of the rest, 58 are not a Node, Go, or pytest project, 45
+are Node with no recognizable runner, 5 are Python with no pytest signal, 9 are
+unreadable (deleted or private), and 2 pin node 20.x
 ([`benchmarks/real-corpus/eg-viability.json`](../benchmarks/real-corpus/eg-viability.json)).
+The screen is a viability upper bound: it recognizes the ecosystem, not that
+dependencies install or tests pass. The proof-tier run and the corroborated
+precision below still cover only the 12 Node PRs, because the sandbox's
+dependency-install path is Node-only; the 66 Python and Go PRs are screen-viable
+but not yet proof-tier-provisionable
+([`benchmarks/real-corpus/EG-VIABILITY-POLYGLOT-REPORT.md`](../benchmarks/real-corpus/EG-VIABILITY-POLYGLOT-REPORT.md)).
 
 Every detector's `corroborated` field in
 [`benchmarks/real-corpus/promotions.json`](../benchmarks/real-corpus/promotions.json)
-therefore now reads `viability-screened` (12/197 provision; corroborated
-precision pending the bounded EG run on that 12-PR slice) instead of the bare
-`unmeasured`. The 0.90 Wilson precision floor and the minimum-TP count are
+therefore now reads `viability-screened` (12 Node PRs provision the proof tier;
+corroborated precision pending the bounded EG run on that 12-PR slice) instead of
+the bare `unmeasured`. The 0.90 Wilson precision floor and the minimum-TP count are
 unchanged; no detector gates on the corroborated tier, and `npm run
 promotions:check` holds that honest state in CI.
 
