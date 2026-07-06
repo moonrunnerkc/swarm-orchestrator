@@ -118,6 +118,16 @@ jobs:
       # constants. See benchmarks/baselines/ground-truth-v12.json.
       run: npm run baseline:check
 
+    - name: Check corroborated-gate precision is fresh and honest
+      if: matrix.node-version == 22
+      # The committed corroborated-gate precision must equal a fresh recompute
+      # from the EG-viable corroborated TP/FP and the outcome-labeled viability
+      # screen, and it must never claim the gate is ready on undefined n (a
+      # slice with no outcome-bad PR). This closes the v12 measurement loop:
+      # the corroborated structural gate cannot be lit without the measured
+      # precision to back it. See benchmarks/real-corpus/corroborated-gate-precision.json.
+      run: npm run corroborated-gate:check
+
     - name: Publish test summary
       if: always() && matrix.node-version == 22
       run: |
