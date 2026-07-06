@@ -92,6 +92,9 @@ import { fetchPrManifests } from './pr-manifest-fetch';
 import { writeShadowEntry } from '../../audit/shadow';
 import { buildShadowOutput, writeShadowOutputFile } from '../../audit/shadow-output';
 import { sha256FileIfPresent } from '../../audit/evidence-pack/hashing';
+import { assembleEvidencePack } from '../../audit/evidence-pack/evidence-pack';
+import { deriveBomIdentity, readSourceDateEpoch } from '../../audit/aibom/bom-identity';
+import { readToolVersion } from '../../audit/aibom/tool-version';
 
 const logger = getLogger('cli:v8:audit');
 
@@ -112,6 +115,7 @@ interface AuditFlags {
   shadowOutput?: string;
   enableLlmJudge: boolean;
   mergeGate: boolean;
+  evidencePack?: string;
 }
 
 const AUDIT_SCHEMA: ParseArgsOptions = {
@@ -130,6 +134,7 @@ const AUDIT_SCHEMA: ParseArgsOptions = {
   'shadow-output': { type: 'string' },
   'enable-llm-judge': { type: 'boolean' },
   'merge-gate': { type: 'boolean' },
+  'evidence-pack': { type: 'string' },
   help: { type: 'boolean', short: 'h' },
 };
 
@@ -162,6 +167,8 @@ const USAGE = [
   '  --merge-gate              (--pr only) after the cheat gate, provision the merged tree and run',
   '                            the positive merge-safety gate (build/test/obligations); emit an',
   '                            AUTO-MERGE / HUMAN verdict. Does not itself merge or change the exit code.',
+  '  --evidence-pack <dir>     (--pr only) write a replay-identical evidence pack (AIBOMs, raw',
+  '                            evidence, MANIFEST.json) to <dir> for offline re-verification',
   '  --help, -h                show this message',
   '',
   'exit codes:',
@@ -207,6 +214,8 @@ function parseFlags(argv: string[]): AuditFlags {
   if (shadowLabel !== undefined) flags.shadow = shadowLabel;
   const shadowOutput = readString(values, 'shadow-output');
   if (shadowOutput !== undefined) flags.shadowOutput = shadowOutput;
+  const evidencePack = readString(values, 'evidence-pack');
+  if (evidencePack !== undefined) flags.evidencePack = evidencePack;
   validateFlags(flags);
   return flags;
 }
@@ -286,6 +295,16 @@ function validateFlags(flags: AuditFlags): void {
       '--merge-gate requires --pr (a raw diff has no repo to provision the merged tree from)',
       'AUDIT_USAGE',
       { remediation: 'Try: swarm audit --pr <owner>/<repo>#<n> --merge-gate' },
+    );
+  }
+  // The evidence pack's replay-identical identity keys off the PR's repo and
+  // head/base SHA, which only the --pr input carries; a raw diff has no such
+  // coordinates, so --evidence-pack without --pr is a usage error.
+  if (flags.evidencePack !== undefined && flags.prRef === undefined) {
+    throw new SwarmError(
+      '--evidence-pack requires --pr (a raw diff has no repo/head SHA to pin the pack identity to)',
+      'AUDIT_USAGE',
+      { remediation: 'Try: swarm audit --pr <owner>/<repo>#<n> --evidence-pack ./pack' },
     );
   }
   // --repo-root is the trust boundary for filesystem reads. A workflow
@@ -1066,6 +1085,18 @@ async function runAudit(flags: AuditFlags): Promise<number> {
     await emitAibom(flags.emitAibom, flags.aibomPath, ledgerPath, runId);
   }
 
+  // Evidence pack (opt-in via --evidence-pack, --pr only). Built after the
+  // ledger is fully written so the pack captures every finding, the positive
+  // gate's work-verified entry, and the raw execution-grounded evidence.
+  if (flags.evidencePack !== undefined && inputs.prContext !== undefined) {
+    writeEvidencePack(
+      flags.evidencePack,
+      inputs.prContext.prMetadata,
+      ledgerPath,
+      result.detectorVersions,
+    );
+  }
+
   return emitAuditResult({
     flags,
     result,
@@ -1168,6 +1199,38 @@ async function emitAibom(
     const target = path.join(outDir, `${runId}.spdx.json`);
     writeSpdxAiProfileBom(ledgerPath, target);
     logger.info(`AIBOM (SPDX-AI): ${target}`);
+  }
+}
+
+/** Derive the replay-identical identity from the PR inputs and assemble the
+ *  evidence pack. A failure here is logged and does not fail the audit: the pack
+ *  is a downstream artifact, not part of the gate decision. */
+function writeEvidencePack(
+  outDir: string,
+  pr: { number: number; repository: string; headSha: string; baseSha: string },
+  ledgerPath: string,
+  detectorVersions: Record<string, string>,
+): void {
+  const toolVersion = readToolVersion();
+  const identity = deriveBomIdentity(
+    {
+      repository: pr.repository,
+      prNumber: pr.number,
+      headSha: pr.headSha,
+      baseSha: pr.baseSha,
+      detectorVersions,
+      toolVersion,
+    },
+    readSourceDateEpoch(),
+  );
+  try {
+    const pack = assembleEvidencePack({ outDir, ledgerPath, toolVersion, identity });
+    logger.info(
+      `evidence-pack: wrote ${pack.manifest.files.length} attested file(s) + ${pack.evidenceFileCount} evidence artifact(s) to ${outDir} ` +
+        `(re-verify offline against ${outDir}/MANIFEST.json)`,
+    );
+  } catch (err) {
+    logger.warn(`evidence-pack: could not assemble pack at ${outDir}: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 

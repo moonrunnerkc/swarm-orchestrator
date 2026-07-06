@@ -15,6 +15,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { readAuditLedger, type AuditLedgerSummary } from './ledger-reader';
+import { readToolVersion } from './tool-version';
 import type { BomIdentity } from './bom-identity';
 import type { PrAuditFindingEntry, LedgerAgentAttribution } from '../../ledger/types';
 
@@ -147,7 +148,7 @@ export function buildCycloneDxMlBom(
 export function writeCycloneDxMlBom(
   ledgerFilePath: string,
   outFilePath: string,
-  toolVersion: string = readPackageVersion(),
+  toolVersion: string = readToolVersion(),
   identity?: BomIdentity,
   ledgerRef?: LedgerRefOverride,
 ): void {
@@ -248,23 +249,4 @@ function renderExternalRefs(
       hashes: [{ alg: 'SHA-256', content: sha256 }],
     },
   ];
-}
-
-function readPackageVersion(): string {
-  const candidates = [
-    path.resolve(__dirname, '..', '..', '..', 'package.json'),
-    path.resolve(__dirname, '..', '..', '..', '..', 'package.json'),
-  ];
-  for (const candidate of candidates) {
-    if (!fs.existsSync(candidate)) continue;
-    try {
-      const parsed = JSON.parse(fs.readFileSync(candidate, 'utf8')) as { version?: string };
-      if (typeof parsed.version === 'string') return parsed.version;
-    } catch (err) {
-      throw new Error(`failed to read package.json at ${candidate}: ${(err as Error).message}`, {
-        cause: err,
-      });
-    }
-  }
-  return '0.0.0';
 }
