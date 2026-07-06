@@ -99,6 +99,15 @@ jobs:
       # floor. README points at this check; keep it wired.
       run: npm run block-policy:check
 
+    - name: Check ground-truth baseline holds
+      if: matrix.node-version == 22
+      # The frozen v12 GROUND TRUTH (oracle recall, real-corpus precision,
+      # EG-viable fraction) must be held or beaten by every change. Fails if
+      # a live metric regressed below its committed floor, or if the
+      # reference floors were hand-edited out of step with the code
+      # constants. See benchmarks/baselines/ground-truth-v12.json.
+      run: npm run baseline:check
+
     - name: Publish test summary
       if: always() && matrix.node-version == 22
       run: |

@@ -1,0 +1,79 @@
+{
+  "schema": "swarm.ground-truth.v12",
+  "generatedAt": "2026-07-06T03:27:47.884Z",
+  "computedBy": "scripts/baseline/freeze-ground-truth.ts",
+  "note": "Frozen GROUND TRUTH the v12 upgrade must hold or beat. Floors are code constants in scripts/baseline/ground-truth.ts (GROUND_TRUTH_V12); this file is the committed, human-readable mirror. Guarded by npm run baseline:check. Re-freeze with npm run baseline:freeze after a measured improvement, then raise the code floors to match.",
+  "sources": {
+    "benchmarks/oracle-corpus/oracle-results.json": {
+      "sha256": "198cc8e7dce95a1eddcb72708576041cf428af1b9cbc31a97fc7f078e76d7a4f",
+      "bytes": 2715
+    },
+    "benchmarks/real-corpus/scores-outcome/latest.json": {
+      "sha256": "2c0e4d6f4bb0d2dd1f055331086bc95dd8f690ea93d2168a6eabccab9a8a6b7e",
+      "bytes": 6892
+    },
+    "benchmarks/real-corpus/eg-viability.json": {
+      "sha256": "8075c9c51651aedd86fb6e4f8cb55e81f08cebd704dbeada7f855b75fed6d58b",
+      "bytes": 89009
+    }
+  },
+  "floors": [
+    {
+      "id": "oracle-structural-recall",
+      "label": "Oracle structural detector recall (true positives over injections)",
+      "floor": 258,
+      "denominator": 275,
+      "source": "benchmarks/oracle-corpus/oracle-results.json",
+      "note": "Sum of per-detector tp across 11 structural detectors. Deterministic and byte-identical across runs; no judge involved.",
+      "liveAtFreeze": 258
+    },
+    {
+      "id": "oracle-overall-recall",
+      "label": "Oracle overall recall including judge-primary semantic categories",
+      "floor": 301,
+      "denominator": 325,
+      "source": "benchmarks/oracle-corpus/oracle-results.json",
+      "note": "Structural tp plus semantic judgeTp (goal-not-fixed, cheat-mock-mutation). The semantic component replays from the committed qwen3.6 v1-conservative judge cache.",
+      "liveAtFreeze": 301
+    },
+    {
+      "id": "real-corpus-precision-point-vs-interval",
+      "label": "Real-corpus PR-level union precision (point) held above the frozen interval floor",
+      "floor": 0.09663835601719065,
+      "denominator": null,
+      "source": "benchmarks/real-corpus/scores-outcome/latest.json",
+      "note": "Live point precision must stay at or above the frozen Wilson-95 lower bound. Outcome-grounded over 197 PRs at an 11.2% bad base rate; point 0.217, interval [0.097, 0.419].",
+      "liveAtFreeze": 0.21739130434782608
+    },
+    {
+      "id": "real-corpus-precision-wilson-lower",
+      "label": "Real-corpus PR-level union precision Wilson-95 lower bound",
+      "floor": 0.09663835601719065,
+      "denominator": null,
+      "source": "benchmarks/real-corpus/scores-outcome/latest.json",
+      "note": "The interval floor itself must not collapse below where it was frozen.",
+      "liveAtFreeze": 0.09663835601719065
+    },
+    {
+      "id": "eg-viable-count",
+      "label": "Execution-grounded-viable PRs over the 197-PR corpus",
+      "floor": 12,
+      "denominator": 197,
+      "source": "benchmarks/real-corpus/eg-viability.json",
+      "note": "Phase 2 (pytest and Go runners) must beat this; as a floor it must never drop. The sandbox is Node-only today, so 185 of 197 PRs are dark.",
+      "liveAtFreeze": 12
+    }
+  ],
+  "context": {
+    "realCorpusRecall": 0.22727272727272727,
+    "realCorpusF1": 0.22222222222222224,
+    "realCorpusTruePositive": 5,
+    "realCorpusFalsePositive": 18,
+    "egScreened": 197,
+    "proofTierProvenFindingPrecision": {
+      "n": 0,
+      "precision": null,
+      "note": "No fully-controlled block trigger has fired on the EG-viable slice; proven-finding precision is undefined (n=0). Recorded for honesty, not gated. Phase 4 lights this up only once n is real and the Wilson-95 lower bound clears 0.90."
+    }
+  }
+}
