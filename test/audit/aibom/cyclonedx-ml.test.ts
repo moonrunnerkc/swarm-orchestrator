@@ -3,6 +3,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { buildCycloneDxMlBom, writeCycloneDxMlBom } from '../../../src/audit/aibom/cyclonedx-ml';
+import { deriveBomIdentity } from '../../../src/audit/aibom/bom-identity';
+import { readAuditLedger } from '../../../src/audit/aibom/ledger-reader';
 import { HashChainedLedger } from '../../../src/ledger/ledger';
 import type {
   PrAuditStartedEntry,
@@ -113,5 +115,35 @@ describe('aibom / cyclonedx-ml', () => {
       '10.0.0',
     );
     assert.equal(summary.vulnerabilities.length, 0);
+  });
+
+  it('is replay-identical when built with a pinned identity and a stable ledger ref', () => {
+    const { ledgerPath } = seedLedger();
+    const identity = deriveBomIdentity({
+      repository: 'owner/repo',
+      prNumber: 42,
+      headSha: 'abc',
+      baseSha: 'def',
+      detectorVersions: { 'test-relaxation': '1.0.0' },
+      toolVersion: '12.0.0',
+    });
+    const summary = readAuditLedger(ledgerPath);
+    const ledgerRef = { url: 'ledger.jsonl', pinHash: false };
+    const first = buildCycloneDxMlBom(summary, ledgerPath, '12.0.0', identity, ledgerRef);
+    const second = buildCycloneDxMlBom(summary, ledgerPath, '12.0.0', identity, ledgerRef);
+    assert.equal(JSON.stringify(first), JSON.stringify(second));
+    assert.equal(first.serialNumber, identity.serialNumber);
+    assert.equal(first.metadata.timestamp, identity.timestamp);
+    assert.equal(first.metadata.properties?.[0]?.name, 'swarm.timestamp.basis');
+    assert.equal(first.externalReferences[0]?.url, 'ledger.jsonl');
+    assert.equal(first.externalReferences[0]?.hashes, undefined);
+  });
+
+  it('embeds a random serialNumber when no identity is given (default mode)', () => {
+    const { ledgerPath } = seedLedger();
+    const summary = readAuditLedger(ledgerPath);
+    const a = buildCycloneDxMlBom(summary, ledgerPath, '12.0.0');
+    const b = buildCycloneDxMlBom(summary, ledgerPath, '12.0.0');
+    assert.notEqual(a.serialNumber, b.serialNumber);
   });
 });
