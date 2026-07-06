@@ -2,7 +2,9 @@ import { strict as assert } from 'assert';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { writeSpdxAiProfileBom } from '../../../src/audit/aibom/spdx-ai-profile';
+import { buildSpdxAiProfileBom, writeSpdxAiProfileBom } from '../../../src/audit/aibom/spdx-ai-profile';
+import { deriveBomIdentity } from '../../../src/audit/aibom/bom-identity';
+import { readAuditLedger } from '../../../src/audit/aibom/ledger-reader';
 import { HashChainedLedger } from '../../../src/ledger/ledger';
 import type {
   PrAuditStartedEntry,
@@ -72,5 +74,32 @@ describe('aibom / spdx-ai-profile', () => {
     assert.equal(annotation?.annotationType, 'review');
     const rel = graph.find((e: { '@type': string }) => e['@type'] === 'Relationship');
     assert.equal(rel?.relationshipType, 'audited');
+  });
+
+  it('is replay-identical when built with a pinned identity (no random runId in @ids)', () => {
+    const { ledgerPath } = seed();
+    const summary = readAuditLedger(ledgerPath);
+    const identity = deriveBomIdentity({
+      repository: 'owner/repo',
+      prNumber: 7,
+      headSha: 'h',
+      baseSha: 'b',
+      detectorVersions: { 'mock-of-hallucination': '1.0.0' },
+      toolVersion: '12.0.0',
+    });
+    const first = buildSpdxAiProfileBom(summary, '12.0.0', identity);
+    const second = buildSpdxAiProfileBom(summary, '12.0.0', identity);
+    assert.equal(JSON.stringify(first), JSON.stringify(second));
+    const idUuid = identity.serialNumber.slice('urn:uuid:'.length);
+    const subject = first['@graph'].find((e) => e['@type'] === 'SoftwareApplication');
+    assert.equal(subject?.['@id'], `spdx:subject:${idUuid}`);
+    const creation = first['@graph'].find((e) => e['@type'] === 'CreationInfo');
+    assert.equal((creation as { created?: string })?.created, identity.timestamp);
+    // The stable doc id, not the random runId, keys the graph.
+    assert.equal(
+      JSON.stringify(first).includes('audit-spdx-test'),
+      false,
+      'the random runId must not leak into a replay-identical document',
+    );
   });
 });

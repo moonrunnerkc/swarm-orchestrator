@@ -15,6 +15,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { readAuditLedger, type AuditLedgerSummary } from './ledger-reader';
+import { readToolVersion } from './tool-version';
+import type { BomIdentity } from './bom-identity';
 import type { PrAuditFindingEntry, LedgerAgentAttribution } from '../../ledger/types';
 
 export const SPDX_SPEC_VERSION = 'SPDX-3.0';
@@ -69,16 +71,32 @@ const SPDX_CONTEXT = [
   'https://spdx.org/rdf/3.0.0/ai-profile-context.jsonld',
 ];
 
+/**
+ * Build an SPDX 3.0 AI-Profile document from an audit ledger summary.
+ *
+ * @param summary the projected audit ledger.
+ * @param toolVersion the swarm-audit version to stamp.
+ * @param identity optional replay-identical identity. When provided, every
+ *   `@id` keys off the identity's stable UUID (not the random runId) and every
+ *   time field is the pinned timestamp, so the document is a pure function of
+ *   the run inputs. When omitted the document keys off the runId and wall-clock
+ *   times (the default, non-reproducible mode).
+ * @returns the SPDX document.
+ */
 export function buildSpdxAiProfileBom(
   summary: AuditLedgerSummary,
   toolVersion: string,
+  identity?: BomIdentity,
 ): SpdxDocument {
-  const creationInfoId = `_:creation-${summary.runId}`;
+  const docId = identity !== undefined ? stripUrnUuid(identity.serialNumber) : summary.runId;
+  const created = identity !== undefined ? identity.timestamp : summary.generatedAt;
+  const releaseTime = identity !== undefined ? identity.timestamp : summary.started.ts;
+  const creationInfoId = `_:creation-${docId}`;
   const creationInfo: SpdxCreationInfo = {
     '@id': creationInfoId,
     '@type': 'CreationInfo',
     specVersion: SPDX_SPEC_VERSION,
-    created: summary.generatedAt,
+    created,
     createdBy: [
       {
         '@id': `_:tool-swarm-audit`,
@@ -90,44 +108,62 @@ export function buildSpdxAiProfileBom(
     profile: ['core', SPDX_AI_PROFILE],
   };
 
-  const subject = renderSubject(summary, creationInfoId);
+  const subject = renderSubject(summary, creationInfoId, docId, releaseTime);
   const graph: SpdxDocument['@graph'] = [creationInfo, subject];
 
   if (summary.agent !== undefined) {
     const agentElement = renderAgent(summary.agent, creationInfoId);
     graph.push(agentElement);
-    graph.push(renderRelationship('audited', agentElement['@id'], subject['@id'], creationInfoId, summary.runId, 0));
+    graph.push(renderRelationship('audited', agentElement['@id'], subject['@id'], creationInfoId, docId, 0));
   }
 
   let idx = 0;
   for (const finding of summary.findings) {
-    graph.push(renderFindingAnnotation(finding, subject['@id'], creationInfoId, summary.runId, idx));
+    graph.push(renderFindingAnnotation(finding, subject['@id'], creationInfoId, docId, idx));
     idx += 1;
   }
 
   return { '@context': SPDX_CONTEXT, '@graph': graph };
 }
 
+/**
+ * Render an SPDX AI-Profile document to disk.
+ *
+ * @param ledgerFilePath the audit ledger to project.
+ * @param outFilePath the output path.
+ * @param toolVersion the swarm-audit version (defaults to package.json).
+ * @param identity optional replay-identical identity; see buildSpdxAiProfileBom.
+ */
 export function writeSpdxAiProfileBom(
   ledgerFilePath: string,
   outFilePath: string,
-  toolVersion: string = readPackageVersion(),
+  toolVersion: string = readToolVersion(),
+  identity?: BomIdentity,
 ): void {
   const summary = readAuditLedger(ledgerFilePath);
-  const doc = buildSpdxAiProfileBom(summary, toolVersion);
+  const doc = buildSpdxAiProfileBom(summary, toolVersion, identity);
   fs.mkdirSync(path.dirname(outFilePath), { recursive: true });
   fs.writeFileSync(outFilePath, JSON.stringify(doc, null, 2) + '\n', { encoding: 'utf8' });
 }
 
-function renderSubject(summary: AuditLedgerSummary, creationInfoId: string): SpdxElement {
+function stripUrnUuid(serialNumber: string): string {
+  return serialNumber.startsWith('urn:uuid:') ? serialNumber.slice('urn:uuid:'.length) : serialNumber;
+}
+
+function renderSubject(
+  summary: AuditLedgerSummary,
+  creationInfoId: string,
+  docId: string,
+  releaseTime: string,
+): SpdxElement {
   const repo = summary.started.prRepository ?? 'unknown-repository';
   const prNum = summary.started.prNumber ?? -1;
   return {
-    '@id': `spdx:subject:${summary.runId}`,
+    '@id': `spdx:subject:${docId}`,
     '@type': 'SoftwareApplication',
     name: `${repo}#${prNum}`,
     creationInfo: creationInfoId,
-    releaseTime: summary.started.ts,
+    releaseTime,
     summary: `PR audit subject ${repo}#${prNum} at head ${summary.started.prHeadSha}.`,
   };
 }
@@ -148,11 +184,11 @@ function renderFindingAnnotation(
   finding: PrAuditFindingEntry,
   subjectId: string,
   creationInfoId: string,
-  runId: string,
+  docId: string,
   idx: number,
 ): SpdxAnnotation {
   return {
-    '@id': `spdx:annotation:${runId}:${idx}`,
+    '@id': `spdx:annotation:${docId}:${idx}`,
     '@type': 'Annotation',
     annotationType: finding.severity === 'block' ? 'review' : 'other',
     contentType: 'text/plain',
@@ -169,36 +205,17 @@ function renderRelationship(
   fromId: string,
   toId: string,
   creationInfoId: string,
-  runId: string,
+  docId: string,
   idx: number,
 ): SpdxRelationship {
   return {
-    '@id': `spdx:relationship:${runId}:${idx}`,
+    '@id': `spdx:relationship:${docId}:${idx}`,
     '@type': 'Relationship',
     relationshipType,
     from: { '@id': fromId },
     to: [{ '@id': toId }],
     creationInfo: creationInfoId,
   };
-}
-
-function readPackageVersion(): string {
-  const candidates = [
-    path.resolve(__dirname, '..', '..', '..', 'package.json'),
-    path.resolve(__dirname, '..', '..', '..', '..', 'package.json'),
-  ];
-  for (const candidate of candidates) {
-    if (!fs.existsSync(candidate)) continue;
-    try {
-      const parsed = JSON.parse(fs.readFileSync(candidate, 'utf8')) as { version?: string };
-      if (typeof parsed.version === 'string') return parsed.version;
-    } catch (err) {
-      throw new Error(`failed to read package.json at ${candidate}: ${(err as Error).message}`, {
-        cause: err,
-      });
-    }
-  }
-  return '0.0.0';
 }
 
 // Crypto reference kept for future inline-evidence-hash use.
