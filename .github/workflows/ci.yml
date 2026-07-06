@@ -59,8 +59,18 @@ jobs:
       # pytest on PATH, every Python candidate is rejected with a
       # collection error and the related test-synthesizer specs (Django
       # placement, pytest flatten, .venv rewrite, --collect-only reject)
-      # all fail. ubuntu-latest does not include pytest by default.
+      # all fail. ubuntu-latest does not include pytest by default. The
+      # positive merge-safety gate's pytest runner is exercised here too.
       run: pip install pytest
+
+    - name: Setup Go
+      # The positive merge-safety gate's Go runner (go build + go test) is
+      # exercised by the live polyglot gate tests, which skip when `go` is
+      # not on PATH. ubuntu-latest ships Go, but pin the toolchain so the
+      # gated Go tests actually run in CI rather than silently skipping.
+      uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      with:
+        go-version: '1.21'
 
     - name: Configure git identity
       # Production code paths that spawn git directly (e.g.
