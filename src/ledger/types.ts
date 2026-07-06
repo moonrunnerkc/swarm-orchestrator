@@ -290,6 +290,10 @@ export interface LedgerEntryPayloadMap {
   // distinguishable in the ledger from a structural or judge finding.
   // `evidencePath` points at the stored raw artifact (Stryker JSON, repro
   // stdout/stderr, coverage JSON) that backs the finding.
+  // `evidenceSha256` pins the raw artifact bytes at `evidencePath` (Stryker
+  // JSON, coverage JSON, repro stdout/stderr) so the ledger carries an
+  // integrity anchor for the file an evidence pack copies in, not just its
+  // path. Absent when the artifact was not on disk when the entry was written.
   'pr-audit-mutation-finding': {
     category: string;
     severity: 'block' | 'warn' | 'info';
@@ -298,6 +302,7 @@ export interface LedgerEntryPayloadMap {
     mutator: string;
     status: string;
     evidencePath?: string;
+    evidenceSha256?: string;
   };
   'pr-audit-issue-repro-finding': {
     category: string;
@@ -305,6 +310,7 @@ export interface LedgerEntryPayloadMap {
     issueRef: string;
     verdict: string;
     evidencePath?: string;
+    evidenceSha256?: string;
   };
   'pr-audit-coverage-finding': {
     category: string;
@@ -312,6 +318,7 @@ export interface LedgerEntryPayloadMap {
     file: string;
     line: number;
     evidencePath?: string;
+    evidenceSha256?: string;
   };
   // Test-restoration proof record: one entry per qualifying structural
   // finding the restoration phase evaluated, every verdict included, so the
@@ -457,6 +464,34 @@ export interface LedgerEntryPayloadMap {
     file?: string;
     line?: number;
   };
+  // v12 positive merge-safety gate result. Records the two-sided AUTO-MERGE /
+  // HUMAN verdict the positive gate composed for a --pr audit: whether the PR
+  // was execution-groundable, whether the negative (cheat) gate was clean, each
+  // positive-gate control (build, test, declared obligation, falsifier) with its
+  // pass/fail/unavailable status, and every reason the decision routed to HUMAN.
+  // Fail-closed by construction: a null (unavailable) control is recorded as
+  // "not proven", never a pass. The unions are inlined (not imported from the
+  // gate module) so the ledger type layer stays free of a dependency on the gate.
+  'pr-audit-work-verified': {
+    verdict: 'auto-merge' | 'human';
+    egViable: boolean;
+    negativeGateClean: boolean;
+    controls: ReadonlyArray<{
+      id: string;
+      kind: 'build' | 'test' | 'obligation' | 'falsifier';
+      status: 'pass' | 'fail' | 'unavailable';
+      detail: string;
+    }>;
+    reasons: ReadonlyArray<{
+      code:
+        | 'not-execution-groundable'
+        | 'negative-gate-blocked'
+        | 'positive-control-failed'
+        | 'positive-control-unavailable'
+        | 'no-controls-ran';
+      detail: string;
+    }>;
+  };
 }
 
 export type LedgerEntryType = keyof LedgerEntryPayloadMap;
@@ -510,3 +545,4 @@ export type PrAuditFakeRefactorRestorationEntry =
 export type PrAuditDeadBranchRestorationEntry =
   LedgerEntry<'pr-audit-dead-branch-restoration'>;
 export type PrAuditBlockTriggerEntry = LedgerEntry<'pr-audit-block-trigger'>;
+export type PrAuditWorkVerifiedEntry = LedgerEntry<'pr-audit-work-verified'>;

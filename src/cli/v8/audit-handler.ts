@@ -65,6 +65,7 @@ import type {
   PrAuditTypeSuppressionRestorationEntry,
   PrAuditFakeRefactorRestorationEntry,
   PrAuditDeadBranchRestorationEntry,
+  PrAuditWorkVerifiedEntry,
 } from '../../ledger/types';
 import { isExecutionGroundedCategory } from '../../audit/types';
 import { loadAuditConfig, type ExecutionGroundedConfig } from '../../audit/cheat-detector/audit-config';
@@ -90,6 +91,7 @@ import { fetchPrDiffViaGithub, parsePrRef, type GithubPrRef } from './pr-fetch';
 import { fetchPrManifests } from './pr-manifest-fetch';
 import { writeShadowEntry } from '../../audit/shadow';
 import { buildShadowOutput, writeShadowOutputFile } from '../../audit/shadow-output';
+import { sha256FileIfPresent } from '../../audit/evidence-pack/hashing';
 
 const logger = getLogger('cli:v8:audit');
 
@@ -404,7 +406,11 @@ async function runExecutionGroundedLayer(
         mutator: detail?.mutator ?? 'unknown',
         status: detail?.status ?? 'Survived',
       };
-      if (detail?.evidencePath !== undefined) (payload as PrAuditMutationFindingEntry).evidencePath = detail.evidencePath;
+      if (detail?.evidencePath !== undefined) {
+        (payload as PrAuditMutationFindingEntry).evidencePath = detail.evidencePath;
+        const sha = sha256FileIfPresent(detail.evidencePath);
+        if (sha !== undefined) (payload as PrAuditMutationFindingEntry).evidenceSha256 = sha;
+      }
       ledger.append<PrAuditMutationFindingEntry>(payload, aiAgent);
     } else if (finding.category === 'uncovered-changed-line') {
       const payload: Omit<PrAuditCoverageFindingEntry, 'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'> = {
@@ -414,7 +420,11 @@ async function runExecutionGroundedLayer(
         file: finding.location.file,
         line: finding.location.line,
       };
-      if (coverageReport !== undefined) (payload as PrAuditCoverageFindingEntry).evidencePath = coverageReport;
+      if (coverageReport !== undefined) {
+        (payload as PrAuditCoverageFindingEntry).evidencePath = coverageReport;
+        const sha = sha256FileIfPresent(coverageReport);
+        if (sha !== undefined) (payload as PrAuditCoverageFindingEntry).evidenceSha256 = sha;
+      }
       ledger.append<PrAuditCoverageFindingEntry>(payload, aiAgent);
     } else {
       const payload: Omit<PrAuditIssueReproFindingEntry, 'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'> = {
@@ -594,6 +604,44 @@ export function appendDeadBranchRestorationEntries(
     };
     ledger.append<PrAuditDeadBranchRestorationEntry>(payload, opts);
   }
+}
+
+/**
+ * Record the positive merge-safety gate's two-sided verdict on the ledger. One
+ * entry per --pr audit that ran the merge gate; it captures the decision as
+ * composed (viability, negative-gate cleanliness, every control with its
+ * pass/fail/unavailable status, and every HUMAN reason), so the evidence pack
+ * carries the positive attestation alongside the negative-gate findings. The
+ * controls and reasons are copied verbatim from the decision, which is
+ * fail-closed by construction (a null control is `unavailable`, never a pass).
+ *
+ * @param ledger the audit ledger to append to.
+ * @param decision the composed merge decision from the positive gate.
+ * @param attribution the run's AI-agent attribution, folded into the hash chain.
+ */
+export function appendWorkVerifiedEntry(
+  ledger: HashChainedLedger,
+  decision: MergeDecision,
+  attribution: LedgerAgentAttribution | undefined,
+): void {
+  const opts = attribution !== undefined ? { aiAgent: attribution } : undefined;
+  const payload: Omit<
+    PrAuditWorkVerifiedEntry,
+    'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'
+  > = {
+    type: 'pr-audit-work-verified',
+    verdict: decision.verdict,
+    egViable: decision.egViable,
+    negativeGateClean: decision.negativeGateClean,
+    controls: decision.controls.map((c) => ({
+      id: c.id,
+      kind: c.kind,
+      status: c.status,
+      detail: c.detail,
+    })),
+    reasons: decision.reasons.map((r) => ({ code: r.code, detail: r.detail })),
+  };
+  ledger.append<PrAuditWorkVerifiedEntry>(payload, opts);
 }
 
 /**
@@ -1005,6 +1053,7 @@ async function runAudit(flags: AuditFlags): Promise<number> {
       negativeGateDetail,
     });
     mergeDecision = outcome.decision;
+    appendWorkVerifiedEntry(ledger, outcome.decision, attribution);
     logger.info(
       `merge-gate: ${summarizeMergeDecision(outcome.decision)}` +
         (outcome.decision.verdict === 'human'
