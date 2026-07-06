@@ -12,7 +12,13 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { detectPackageManager, detectTestRunner, type PackageManager, type TestRunner } from './sandbox';
+import {
+  detectNonNodeRunner,
+  detectPackageManager,
+  detectTestRunner,
+  type PackageManager,
+  type TestRunner,
+} from './sandbox';
 
 /** Lockfiles that mark an installable Node tree. Mirrors the corpus screen. */
 const LOCKFILES: readonly string[] = [
@@ -26,14 +32,21 @@ const LOCKFILES: readonly string[] = [
 /** The runtime major the execution-grounded evidence run pins (SWARM_EG_NODE_BIN=node@22). */
 export const EG_NODE_MAJOR = 22;
 
+/** The project ecosystem the gate can provision and run. */
+export type Ecosystem = 'node' | 'python' | 'go';
+
 /** Outcome of the viability assessment. `reason` is '' when viable, else why not. */
 export interface ViabilityAssessment {
   readonly viable: boolean;
   readonly reason: string;
+  /** The recognized ecosystem, or null when none is. */
+  readonly ecosystem: Ecosystem | null;
   readonly hasPackageJson: boolean;
   readonly lockfile: string | null;
+  /** The Node package manager; null for non-Node ecosystems. */
   readonly packageManager: PackageManager | null;
   readonly testRunner: TestRunner | null;
+  /** The Node engine range; null for non-Node ecosystems. */
   readonly nodeEngine: string | null;
 }
 
@@ -80,19 +93,53 @@ function readNodeEngine(pkgPath: string): string | null {
  */
 export function assessViability(workspaceDir: string): ViabilityAssessment {
   const pkgPath = path.join(workspaceDir, 'package.json');
-  const hasPackageJson = fs.existsSync(pkgPath);
-  if (!hasPackageJson) {
+  if (fs.existsSync(pkgPath)) {
+    return assessNode(workspaceDir, pkgPath);
+  }
+
+  // Non-Node ecosystems. Go (go.mod) runs under `go test`; a Python project
+  // with a pytest signal runs under pytest. Both are viable: no lockfile or
+  // node-engine gate applies. detectNonNodeRunner encodes the Go-before-Python
+  // precedence.
+  const runner = detectNonNodeRunner(workspaceDir);
+  if (runner === 'go-test') {
     return {
-      viable: false,
-      reason: 'not execution-groundable: not a Node project (no package.json)',
+      viable: true,
+      reason: '',
+      ecosystem: 'go',
       hasPackageJson: false,
       lockfile: null,
       packageManager: null,
-      testRunner: null,
+      testRunner: 'go-test',
       nodeEngine: null,
     };
   }
+  if (runner === 'pytest') {
+    return {
+      viable: true,
+      reason: '',
+      ecosystem: 'python',
+      hasPackageJson: false,
+      lockfile: null,
+      packageManager: null,
+      testRunner: 'pytest',
+      nodeEngine: null,
+    };
+  }
+  return {
+    viable: false,
+    reason:
+      'not execution-groundable: no package.json, go.mod, or Python project with a pytest signal',
+    ecosystem: null,
+    hasPackageJson: false,
+    lockfile: null,
+    packageManager: null,
+    testRunner: null,
+    nodeEngine: null,
+  };
+}
 
+function assessNode(workspaceDir: string, pkgPath: string): ViabilityAssessment {
   const lockfile = LOCKFILES.find((f) => fs.existsSync(path.join(workspaceDir, f))) ?? null;
   const testRunner = detectTestRunner(workspaceDir);
   const packageManager = detectPackageManager(workspaceDir);
@@ -108,6 +155,7 @@ export function assessViability(workspaceDir: string): ViabilityAssessment {
   return {
     viable,
     reason: viable ? '' : `not execution-groundable: ${reasons.join('; ')}`,
+    ecosystem: 'node',
     hasPackageJson: true,
     lockfile,
     packageManager,

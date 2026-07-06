@@ -525,6 +525,10 @@ const COVERAGE_COMMAND: Record<TestRunner, string | null> = {
   mocha: 'npx c8 mocha',
   ava: null,
   'node-test': null,
+  // The dead-branch coverage proof is a JS-coverage mechanism; pytest and Go
+  // have their own coverage flags but are not wired into this proof.
+  pytest: null,
+  'go-test': null,
 };
 
 /**

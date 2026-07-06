@@ -80,6 +80,12 @@ describe('execution-grounded / sandbox detection', () => {
     it('returns null when there is no package.json', () => {
       assert.equal(detectTestRunner(path.join(FIX, 'pm-mixed', 'does-not-exist')), null);
     });
+    it('detects go-test from a go.mod', () => {
+      assert.equal(detectTestRunner(path.join(FIX, 'runner-go')), 'go-test');
+    });
+    it('detects pytest from a Python project with a tests directory', () => {
+      assert.equal(detectTestRunner(path.join(FIX, 'runner-pytest')), 'pytest');
+    });
   });
 
   (INTEGRATION ? describe : describe.skip)('provisionWorkspace (live)', function () {

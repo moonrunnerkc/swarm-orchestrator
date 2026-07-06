@@ -73,6 +73,12 @@ function runnerSuiteCommand(runner: TestRunner): string {
       return 'npx ava';
     case 'node-test':
       return 'node --test';
+    case 'pytest':
+      // `python3 -m pytest` resolves whenever pytest is importable, more
+      // robustly than a bare `pytest` entry-point on PATH.
+      return 'python3 -m pytest';
+    case 'go-test':
+      return 'go test ./...';
   }
 }
 
