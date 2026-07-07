@@ -3,10 +3,12 @@
 // Kept out of claim-witness.ts so that module stays deterministic under test with
 // injected stubs; only this file talks to a model.
 //
-// Temperature 0 and pinned model ids so a replayed measurement folds the exact
-// call it was scored against. The arbiter gate wants two independent models; this
-// environment has only Anthropic, so it uses two distinct Anthropic tiers, and the
-// model ids ride into the record. A cross-vendor second family is a config swap.
+// Pinned model ids so a replayed measurement folds the exact call it was scored
+// against; temperature is omitted because the current models reject an explicit
+// value (the judge path does the same) and take their deterministic default. The
+// arbiter gate wants two independent models; this environment has only Anthropic,
+// so it uses two distinct Anthropic tiers, and the model ids ride into the record.
+// A cross-vendor second family is a config swap.
 
 import Anthropic from '@anthropic-ai/sdk';
 import { getLogger } from '../../logger';
@@ -81,10 +83,13 @@ export function createClaimLlm(options: ClaimLlmOptions = {}): ClaimLlm {
   const arbiterBModel = options.arbiterBModel ?? DEFAULT_ARBITER_B_MODEL;
 
   const complete: Completer = async (prompt) => {
+    // max_tokens is generous because the current models think before answering
+    // and the thinking is billed against this budget: a tight cap (e.g. 1500)
+    // is spent entirely on a thinking block, leaving no text and no witness.
+    // 8000 leaves ample room for the thinking plus the short test that follows.
     const response = await client.messages.create({
       model: witnessModel,
-      max_tokens: 1500,
-      temperature: 0,
+      max_tokens: 8000,
       messages: [{ role: 'user', content: prompt }],
     });
     return { text: textOf(response.content), model: witnessModel };
@@ -95,7 +100,6 @@ export function createClaimLlm(options: ClaimLlmOptions = {}): ClaimLlm {
       const response = await client.messages.create({
         model,
         max_tokens: 128,
-        temperature: 0,
         tools: [ARBITER_TOOL],
         tool_choice: { type: 'tool', name: ARBITER_TOOL.name },
         messages: [{ role: 'user', content: prompt }],
