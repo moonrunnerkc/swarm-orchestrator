@@ -4,11 +4,7 @@
 
 # Swarm Orchestrator
 
-Reads a pull request (PR) diff and flags the shortcuts artificial intelligence (AI) coding agents use to look done without being done. Relaxed tests, swallowed errors, fake renames, eleven categories in all. Grading patches against typed obligation contracts via a multi-persona pipeline is the second surface.
-
-For engineers reviewing AI-written PRs at volume. Compliance teams generate CycloneDX-ML (machine learning) and SPDX (Software Package Data Exchange) 3.0 AI-BOM (bill of materials) artifacts. The artifacts map to EU AI Act (European Union Artificial Intelligence Act) Annex IV and CISA (Cybersecurity and Infrastructure Security Agency) reporting. Maintainers keep a hash-chained evidence record for every graded patch.
-
-**Flags are tips, blocks are proof.** A flag is a structural detector seeing a cheat-shaped pattern; it is advisory and never blocks a merge (`--mode advise` is the default). A block is a self-certifying runtime result whose per-instance controls are all green, and every block ships the exact command that reproduces it in a fresh checkout. Eight proof protocols back the gate today: six execution-grounded restoration proofs (`test-tamper`, `mock-mutation`, `no-op-fix`, `type-suppression`, `fake-refactor`, `dead-branch`) plus `claim-falsified` and `obligation-failure`. The measured proven-finding precision on the execution-grounded-viable corpus slice, with its plain n, is in [`benchmarks/real-corpus/GATE-PRECISION-REPORT.md`](benchmarks/real-corpus/GATE-PRECISION-REPORT.md).
+> Advisory PR audit and contract gate for AI-generated code.
 
 <!-- BADGES:START -->
 [![CI](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/ci.yml)
@@ -23,6 +19,7 @@ For engineers reviewing AI-written PRs at volume. Compliance teams generate Cycl
 <p align="center">
   <a href="#install">Install</a> ·
   <a href="#quick-start">Quick start</a> ·
+  <a href="#configuration">Configuration</a> ·
   <a href="#results">Results</a> ·
   <a href="#cheat-detectors">Detectors</a> ·
   <a href="#use-as-a-github-action">GitHub Action</a> ·
@@ -30,8 +27,13 @@ For engineers reviewing AI-written PRs at volume. Compliance teams generate Cycl
   <a href="#orchestrator-mode">Orchestrator</a> ·
   <a href="#architecture">Architecture</a> ·
   <a href="#commands">Commands</a> ·
-  <a href="#limitations">Limitations</a>
+  <a href="#limitations">Limitations</a> ·
+  <a href="#links">Links</a>
 </p>
+
+Reads a pull request (PR) diff and flags the shortcuts artificial intelligence (AI) coding agents use to look done without being done: relaxed tests, swallowed errors, fake renames, eleven categories in all. Grading patches against typed obligation contracts via a multi-persona pipeline is the second surface. It runs offline against a committed diff, so you can try every claim below in a fresh checkout with no credentials.
+
+**Flags are tips, blocks are proof.** A flag is a structural detector seeing a cheat-shaped pattern; it is advisory and never blocks a merge (`--mode advise` is the default). A block is a self-certifying runtime result whose per-instance controls are all green, and every block ships the exact command that reproduces it in a fresh checkout. Eight proof protocols back the gate today: six execution-grounded restoration proofs (`test-tamper`, `mock-mutation`, `no-op-fix`, `type-suppression`, `fake-refactor`, `dead-branch`) plus `claim-falsified` and `obligation-failure`. The measured proven-finding precision on the execution-grounded-viable corpus slice, with its plain n, is in [`benchmarks/real-corpus/GATE-PRECISION-REPORT.md`](benchmarks/real-corpus/GATE-PRECISION-REPORT.md).
 
 ## Install
 
@@ -45,6 +47,8 @@ npm run build
 npm link
 swarm --help
 ```
+
+`npm run build` compiles TypeScript into `dist/` and marks the CLI executable; `npm link` puts the `swarm`, `swarm-audit`, and `swarm-orchestrator` bins on your `PATH`. The final `swarm --help` should print the subcommand list, which confirms the link took.
 
 ## Quick start
 
@@ -67,7 +71,37 @@ swarm audit --diff-file my.patch --emit-aibom cyclonedx-ml
 swarm audit --pr <ref> --shadow my-org/my-repo
 ```
 
-Exit codes: `0` advisory or any advise-mode run, `1` block (gate mode only), `2` usage error.
+The first command fetches the PR diff, walks it through the eight default detectors plus the judge-primary path, prints any findings, and exits `0` because advise mode never gates. `--mode gate` runs the same detectors but exits `1` only when a runtime proof self-certifies against a green control set; on any PR it cannot prove, it falls back to advisory and still exits `0`. Exit codes overall: `0` advisory or any advise-mode run, `1` block (gate mode only), `2` usage error.
+
+## Configuration
+
+Audit behavior is set by CLI flags, with per-repo defaults in `.swarm/audit-config.yaml`. The flags that change what runs and what blocks:
+
+#### `--mode`
+Type: `advise | gate`
+Default: `advise`
+
+`advise` prints findings and always exits `0`. `gate` exits `1` only on a self-certifying runtime proof and requires the execution-grounded layer to be enabled; see [Enabling the execution-grounded layer](#enabling-the-execution-grounded-layer).
+
+#### `--detectors`
+Type: `default | experimental`
+Default: `default`
+
+`default` loads the eight detectors with real-PR signal. `experimental` adds `comment-only-fix`, `exception-rethrow-lost-context`, and `dead-branch-insertion`, which have no measured wild signal yet.
+
+#### `--emit-aibom`
+Type: `cyclonedx-ml | spdx-ai | both`
+Default: off
+
+Writes one AI bill-of-materials document per format per run under `.swarm/aibom/`. See [AI-BOM](#ai-bom).
+
+#### `--shadow`
+Type: `String` (repo slug, for example `my-org/my-repo`)
+Default: off
+
+Records the verdict for the given repo to `.swarm/shadow/<repo>/` without posting a comment or gating. See [`docs/shadow-mode.md`](docs/shadow-mode.md).
+
+Per-repo keys in `.swarm/audit-config.yaml`: `excludePaths`, `intentSeverityPolicy` (`strict` | `lenient` | `off`), `judgePrimary`, and `executionGrounded.enabled`. Full reference in [`docs/audit-config.md`](docs/audit-config.md).
 
 ## Results
 
@@ -120,8 +154,6 @@ Eleven detectors. Eight load by default; three (`comment-only-fix`, `exception-r
 
 Beyond the structural detectors, a judge-primary path catches two semantic categories (`goal-not-fixed`, `cheat-mock-mutation`) by asking the judge whether the diff delivers the PR's stated claim. For `cheat-mock-mutation` a deterministic pre-filter hands the judge only the test hunks that add a value-injecting mock, so the judge reads the six-line cheat instead of skimming a 40k-char diff, and is never asked on a clean PR that adds no such mock. A proven mock-mutation can also block under `--mode gate` as a self-certifying `mock-mutation-proven` trigger (see [`docs/limitations.md`](docs/limitations.md)).
 
-Per-repo configuration in `.swarm/audit-config.yaml`: `excludePaths`, `intentSeverityPolicy` (`strict` | `lenient` | `off`), and `judgePrimary`. See [`docs/audit-config.md`](docs/audit-config.md).
-
 ## Use as a GitHub Action
 
 ```yaml
@@ -149,7 +181,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-Outputs: `audit-pass`, `audit-findings`, `audit-ledger`. Full input list in [`action.yml`](action.yml).
+The action checks out the PR at full depth, runs `swarm audit` on the diff, and posts the rendered finding back to the PR via `GITHUB_TOKEN`. It exposes `audit-pass`, `audit-findings`, and `audit-ledger` outputs; the full input list is in [`action.yml`](action.yml).
 
 ### Enabling the execution-grounded layer
 
@@ -159,7 +191,7 @@ What it costs: for each audited PR the layer provisions the repository in a sand
 
 ## AI-BOM
 
-`--emit-aibom cyclonedx-ml | spdx-ai | both` writes one document per format per run under `.swarm/aibom/`. Emitters in [`src/audit/aibom/`](src/audit/aibom/) produce hand-rolled JSON against the upstream specs with no third-party AI-BOM runtime dependency.
+`--emit-aibom cyclonedx-ml | spdx-ai | both` writes one document per format per run under `.swarm/aibom/`. Emitters in [`src/audit/aibom/`](src/audit/aibom/) produce hand-rolled JSON against the upstream specs with no third-party AI-BOM runtime dependency, so compliance teams get a CycloneDX-ML (machine learning) or SPDX (Software Package Data Exchange) 3.0 AI-Profile artifact for every graded patch alongside the hash-chained evidence record.
 
 Procurement mappings:
 
@@ -175,7 +207,7 @@ swarm init                                    # Scaffold contract.yaml + patches
 swarm run --goal "check this project builds"  # Deterministic provider, no API key
 ```
 
-Minimal contract:
+`swarm init` writes a starter `contract.yaml` and `patches.jsonl` for the detected language; `swarm run` compiles the goal into obligations and grades the patches with the deterministic provider, so this pair runs with no model credentials. A minimal contract:
 
 ```yaml
 obligations:
@@ -202,7 +234,7 @@ swarm run --goal "add a named export sum(a, b)" \
   --local-grammar none --local-max-concurrency 1 --preset fast
 ```
 
-Provider details in [`docs/providers.md`](docs/providers.md). Obligation taxonomy in [`docs/check-types.md`](docs/check-types.md). Schema in [`src/contract/schema/v1.json`](src/contract/schema/v1.json).
+The hosted and local blocks swap the deterministic provider for a model that writes the patch, then run it through the same verifier and falsifier gates; no patch is admitted unless every obligation passes. Provider details in [`docs/providers.md`](docs/providers.md). Obligation taxonomy in [`docs/check-types.md`](docs/check-types.md). Schema in [`src/contract/schema/v1.json`](src/contract/schema/v1.json).
 
 ## Architecture
 
@@ -251,14 +283,33 @@ No single detector has cleared the precision bar to block on its own. Gate mode 
 
 Measured against 27 maintainer-confirmed wild cheats, the advisory detectors independently reproduce the maintainer's exact category on 5 (18.5%) and flag some suspicion on 13 (48%); the proof gate proved zero. The detectors corroborate a known fraction of human-caught cheats at high precision, and the gate blocks only what it can reproduce. The full accounting, the overlap matrix, the measured gate precision, and what blocks today and what doesn't, is in [`docs/limitations.md`](docs/limitations.md).
 
-## Contributing
+## Developing
 
 ```bash
-npm install && npm run build && npm test
+git clone https://github.com/moonrunnerkc/swarm-orchestrator.git
+cd swarm-orchestrator
+npm install
+npm run build && npm test
 npm run typecheck && npm run lint
 ```
 
-Project conventions in [`CONTRIBUTING.md`](CONTRIBUTING.md). New cheat detectors must include an injector under `src/audit/oracle/inject/` so recall is measurable from day one. Security disclosures via [`SECURITY.md`](SECURITY.md), never via public issues.
+`npm run build` runs `tsc` against `tsconfig.build.json` and emits `dist/`; `npm test` builds and runs the Mocha suite; `npm run typecheck` and `npm run lint` are the two gates every PR must pass before commit. CI runs the same steps on Node 20 and 22 plus the LOC-budget gate (`scripts/loc-budget-gate.sh`) against `evidence/loc-budget.txt`.
+
+To regenerate the benchmark corpus, `npm run benchmarks:full` rebuilds the oracle, recall, calibration, and evasion reports plus `COVERAGE.md`. The full command list is in [`CLAUDE.md`](CLAUDE.md).
+
+## Contributing
+
+Fork the repository, work on a feature branch, and open a PR; the audit that runs on it is the same one shipped here. New cheat detectors must include an injector under `src/audit/oracle/inject/` so recall is measurable from day one, and judge prompts are versioned rather than edited in place. Project conventions and the full checklist are in [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+Report security issues through [GitHub Security Advisories](https://github.com/moonrunnerkc/swarm-orchestrator/security/advisories), never via public issues. See [`SECURITY.md`](SECURITY.md).
+
+## Links
+
+- Repository: https://github.com/moonrunnerkc/swarm-orchestrator
+- Issue tracker: https://github.com/moonrunnerkc/swarm-orchestrator/issues
+- Changelog: [`CHANGELOG.md`](CHANGELOG.md)
+- Methodology and honesty caveats: [`docs/audit/methodology.md`](docs/audit/methodology.md)
+- Reproducible leaderboard: [`benchmarks/leaderboard/`](benchmarks/leaderboard/)
 
 ## License
 
