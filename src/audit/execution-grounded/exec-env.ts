@@ -6,6 +6,9 @@
 // here so every shelled-out command in this surface resolves the same way.
 
 import { spawnSync, type SpawnSyncOptionsWithStringEncoding } from 'child_process';
+import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { buildDockerRunArgs, type DockerContext } from './docker-runner';
 
@@ -14,6 +17,61 @@ import { buildDockerRunArgs, type DockerContext } from './docker-runner';
 export function execBin(name: string): string {
   const dir = process.env.SWARM_EG_NODE_BIN;
   return dir !== undefined && dir.length > 0 ? path.join(dir, name) : name;
+}
+
+/** Per-node-bin memo of the corepack shim dir: the resolved path, or null once
+ *  an attempt found corepack unavailable. Keyed by the node bin dir so a run that
+ *  re-pins the toolchain re-attempts rather than reusing a stale miss. */
+const shimDirCache = new Map<string, string | null>();
+
+/** Write the pnpm/yarn corepack shims into `dir`. Returns true when a `pnpm`
+ *  shim landed. Best-effort: any failure (no corepack, no write access, a
+ *  non-zero enable) returns false so the caller falls back to the pre-shim PATH. */
+function writeCorepackShims(nodeBin: string, dir: string): boolean {
+  const corepack = path.join(nodeBin, 'corepack');
+  if (!fs.existsSync(corepack)) return false;
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    // corepack is a node script; it needs node on PATH to run and HOME for its
+    // own cache. It only writes shim files here, so this is a trusted host-side
+    // setup step, not the untrusted-child boundary execEnv otherwise guards.
+    const res = spawnSync(corepack, ['enable', '--install-directory', dir, 'pnpm', 'yarn'], {
+      env: {
+        PATH: `${nodeBin}${path.delimiter}${process.env.PATH ?? ''}`,
+        HOME: process.env.HOME ?? os.homedir(),
+        COREPACK_ENABLE_DOWNLOAD_PROMPT: '0',
+      },
+      encoding: 'utf8',
+      timeout: 60_000,
+    });
+    return res.status === 0 && fs.existsSync(path.join(dir, 'pnpm'));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Ensure a directory of corepack-managed pnpm/yarn shims exists and return it, so
+ * a lifecycle script (a repo's `prepare` / `postinstall`) that shells `pnpm` or
+ * `yarn` resolves an executable. The pinned Node bin dir (SWARM_EG_NODE_BIN)
+ * ships node/npm/npx/corepack but no pnpm/yarn entrypoint, so without this a repo
+ * whose `prepare` runs `pnpm run build` fails its own frozen install with
+ * "pnpm: not found" even though the dependency install itself succeeded. The
+ * result is memoized per node bin dir.
+ *
+ * @returns the shim directory, or null when SWARM_EG_NODE_BIN is unset or corepack
+ *   cannot produce the shims (fail-open: PATH is then built exactly as before).
+ */
+export function corepackShimDir(): string | null {
+  const nodeBin = process.env.SWARM_EG_NODE_BIN;
+  if (nodeBin === undefined || nodeBin.length === 0) return null;
+  const cached = shimDirCache.get(nodeBin);
+  if (cached !== undefined) return cached;
+  const hash = crypto.createHash('sha1').update(nodeBin).digest('hex').slice(0, 12);
+  const dir = path.join(os.tmpdir(), `swarm-eg-corepack-${hash}`);
+  const result = writeCorepackShims(nodeBin, dir) ? dir : null;
+  shimDirCache.set(nodeBin, result);
+  return result;
 }
 
 /** Headless / non-interactive forcing for every sandboxed child process.
@@ -106,7 +164,16 @@ export function execEnv(cacheDir?: string): NodeJS.ProcessEnv {
 
   const dir = process.env.SWARM_EG_NODE_BIN;
   const basePath = process.env.PATH ?? '';
-  env.PATH = dir !== undefined && dir.length > 0 ? `${dir}${path.delimiter}${basePath}` : basePath;
+  if (dir !== undefined && dir.length > 0) {
+    // Pinned Node bin dir first (so node/npm/npx resolve to the pinned runtime),
+    // then the corepack pnpm/yarn shim dir when available (so lifecycle scripts
+    // that shell pnpm/yarn resolve them), then the ambient PATH.
+    const shimDir = corepackShimDir();
+    const segments = shimDir !== null ? [dir, shimDir, basePath] : [dir, basePath];
+    env.PATH = segments.filter((s) => s.length > 0).join(path.delimiter);
+  } else {
+    env.PATH = basePath;
+  }
   if (cacheDir !== undefined) env.npm_config_cache = cacheDir;
   return env;
 }

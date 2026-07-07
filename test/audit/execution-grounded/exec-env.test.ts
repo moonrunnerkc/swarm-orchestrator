@@ -92,6 +92,55 @@ describe('execution-grounded / exec-env env scrubbing', () => {
     );
     assert.equal(env.npm_config_cache, '/var/cache/eg');
   });
+
+  it('leaves PATH shim-free when the pinned bin dir has no corepack (fail-open)', () => {
+    // /opt/node20/bin does not exist, so corepack cannot write shims; PATH must
+    // be exactly bin-dir + ambient, with no extra segment.
+    process.env.SWARM_EG_NODE_BIN = '/opt/node20/bin';
+    process.env.PATH = '/usr/bin';
+
+    const env = execEnv();
+
+    assert.equal(env.PATH, `/opt/node20/bin${path.delimiter}/usr/bin`);
+  });
+
+  it('prepends a corepack pnpm/yarn shim dir so lifecycle scripts resolve pnpm', () => {
+    // A repo whose `prepare` runs `pnpm run build` needs a pnpm on PATH. The
+    // pinned bin dir ships corepack but not pnpm/yarn, so execEnv derives a shim
+    // dir from corepack. Fake corepack here so the test is hermetic (no network,
+    // no real corepack): it writes pnpm/yarn shims into --install-directory.
+    const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eg-nodebin-'));
+    const corepack = path.join(binDir, 'corepack');
+    fs.writeFileSync(
+      corepack,
+      [
+        '#!/usr/bin/env bash',
+        'dir=""; prev=""',
+        'for a in "$@"; do',
+        '  if [ "$prev" = "--install-directory" ]; then dir="$a"; fi',
+        '  prev="$a"',
+        'done',
+        'mkdir -p "$dir"',
+        'printf "#!/bin/sh\\nexit 0\\n" > "$dir/pnpm"',
+        'printf "#!/bin/sh\\nexit 0\\n" > "$dir/yarn"',
+        'chmod +x "$dir/pnpm" "$dir/yarn"',
+        '',
+      ].join('\n'),
+    );
+    fs.chmodSync(corepack, 0o755);
+    process.env.SWARM_EG_NODE_BIN = binDir;
+
+    const env = execEnv();
+
+    const segments = (env.PATH ?? '').split(path.delimiter);
+    assert.equal(segments[0], binDir, 'pinned bin dir stays first');
+    const shimSegment = segments[1];
+    assert.ok(shimSegment !== undefined, 'a shim dir segment is inserted after the bin dir');
+    assert.ok(
+      fs.existsSync(path.join(shimSegment, 'pnpm')),
+      'the inserted shim dir actually contains a pnpm shim',
+    );
+  });
 });
 
 // The sandbox runs a PR's own (untrusted) test command; a suite that hangs or
