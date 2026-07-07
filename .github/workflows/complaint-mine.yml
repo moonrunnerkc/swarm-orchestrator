@@ -1,0 +1,69 @@
+name: Complaint mine wild cheats
+
+# Scheduled mining of maintainer-complaint agent PRs. Searches PR conversations
+# for cheat-language, verifies each hit against the fetched conversation,
+# attributes the PR to an agent, and confirms the category with a dual arbiter,
+# then uploads the grown candidate corpus for a maintainer to review and fold.
+# Bounded by a hard API budget, a wall-clock cap, and an arbiter cost ceiling so a
+# run cannot run away, and checkpointed so a cap or crash never loses work.
+#
+# The candidates are uploaded as an artifact, NOT pushed and NOT folded: main is a
+# protected ref, and folding a mined entry is a maintainer decision (spot-check
+# each against its complaint and attribution). Same review-then-fold contract as
+# backward-mine.yml and eg-viable-measure.yml. Nothing reaches main without the
+# normal verified path.
+
+on:
+  schedule:
+    - cron: '30 4 * * *' # 04:30 UTC nightly, offset from backward-mine's 04:00
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Max candidates to accept this run'
+        default: '25'
+      apiBudget:
+        description: 'Max GitHub API calls'
+        default: '400'
+      maxCostUsd:
+        description: 'Arbiter cost ceiling (USD)'
+        default: '5'
+
+permissions:
+  contents: read
+
+jobs:
+  mine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm run build
+      - name: Mine complaints (capped)
+        # Secrets reach the step only through the env block, never via with: or args.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          node dist/scripts/real-prs/mine-complaints.js \
+            --limit "${{ github.event.inputs.limit || '25' }}" \
+            --api-budget "${{ github.event.inputs.apiBudget || '400' }}" \
+            --wall-clock-ms 2100000 \
+            --max-cost-usd "${{ github.event.inputs.maxCostUsd || '5' }}"
+      - name: Report the mine result
+        run: |
+          if [ -f benchmarks/real-prs/wild-cheat-corpus/mined-candidates.json ]; then
+            echo "mined-candidates.json written; uploading for maintainer review and fold"
+            node -e "const j=require('./benchmarks/real-prs/wild-cheat-corpus/mined-candidates.json'); console.log('counts:', JSON.stringify(j.counts), 'funnel:', JSON.stringify(j.funnel));"
+          else
+            echo "no candidates file produced this run"
+          fi
+      - name: Upload the grown candidate corpus for review
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mined-complaint-candidates
+          path: benchmarks/real-prs/wild-cheat-corpus/mined-candidates.json
+          if-no-files-found: warn
