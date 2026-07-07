@@ -33,6 +33,9 @@ export interface TwinPair {
   injectorId?: string;
   prId: string;
   sourcePrUrl: string;
+  /** The PR title, or (for a semantic injector) the claim the injected code
+   *  contradicts. The judge baseline reads this as the stated claim. */
+  claim: string;
   cheatDiff: string;
   honestDiff: string;
   holdout: boolean;
@@ -101,6 +104,7 @@ function main(): void {
     injectorId: c.injectorId,
     prId: c.prId,
     sourcePrUrl: c.label.sourcePrUrl,
+    claim: c.label.claim ?? c.label.prTitle,
     cheatDiff: c.brokenDiff,
     honestDiff: byId.get(c.prId)?.cleanDiff ?? '',
     holdout: false,

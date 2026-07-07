@@ -4,6 +4,65 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project follows
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased] - 12.2.0
+
+Frontier cycle: polyglot provisioning, the wild-cheat dataset, the claim-differential
+proof family, and paired twin separation. Everything new ships advisory-only; nothing
+new gates. All numbers regenerate from committed scripts and are reported per tier
+(synthetic, semi-synthetic, wild) without blending.
+
+### Added
+
+- **pytest and Go dependency install in the execution-grounded sandbox.**
+  `polyglot-install.ts` adds a Python path (isolated `.venv` + pip for a pinned
+  `requirements.txt` and/or the project, or `poetry install` when a `poetry.lock`
+  is present) and a Go path (`go mod download`, checksum-frozen against `go.sum`).
+  `provisionWorkspace` routes by ecosystem; the proof tier stays Node-only and
+  fail-closed on a pytest/Go runner. Honest finding: install was never the binding
+  constraint for the corroborated gate; the corroboration engine is Node-only and
+  seven of the eight outcome-bad EG-viable PRs are purely additive, so the gate
+  stays `undefined-n` (`polyglot-provisioning.json`).
+- **Wild cheat dataset.** `export-wild-cheats.ts` turns the 27 maintainer-confirmed
+  wild cheats into a versioned, citable dataset (`benchmarks/real-prs/wild-cheat-corpus/v1/`,
+  7 merged, 20 closed, 6 EG-viable) with a generated `DATASET.md` card.
+  `loadWildCheatCorpus` enforces the held-out contract in code: no tuning or
+  calibration caller can read it. `complaint-mine.yml` + `mine-complaints.ts` grow
+  it continuously (scheduled, budgeted, checkpointed, dual-arbiter category
+  confirmation) and upload the candidates for maintainer review, never folding.
+- **Claim-differential proof family** (advisory-only). Compiles a PR's stated
+  claim into one executable witness test, requires two independent models to agree
+  the witness tests the claim, and runs it against the base and head: base fails +
+  head passes is claim-delivered, base fails + head fails is
+  `claim-falsified-synthesized` (a finding), base passes or any control not green
+  is abstain. Opt-in via `.swarm/audit-config.yaml`, `--pr` only. Pinned
+  advisory-only in `promotions.json` with a `check-policy` guard that fails on any
+  gate-eligible flip without a measured Wilson-95 clearance. Measured over the six
+  EG-viable held-out wild entries: 5 witnesses compiled, 2 passed the arbiter gate,
+  2 provisioned, both `closure-unlinked`, 0 findings
+  (`WILD-CLAIM-DIFFERENTIAL-REPORT.md`).
+- **Paired twin separation.** `build-twin-corpus.ts` builds semi-synthetic
+  cheat/honest twins via the oracle injectors; `measure-twin-separation.ts`
+  computes the paired detector-tier separation with an exact McNemar test and
+  Wilson bounds (`mcnemar.ts`). Semi-synthetic tier (n=52): cheat fire rate 56%,
+  honest 2%, separation 0.54, McNemar p = 7.4e-9. `mine-honest-twins.ts` links
+  closed wild cheats to their landed fixes (1 resolved of 20, 19 unpaired).
+  Tiers are reported separately (`TWIN-SEPARATION-REPORT.md`).
+- **Judge baseline.** `judge-baseline-measure.ts` runs the shipped judge-primary
+  diff-only path over the semantic twins (goal-not-fixed, cheat-mock-mutation),
+  where no structural detector fires. Judge recall 88% (7/8) on the cheat twins,
+  false positives 13% (1/8) on the honest twins, versus the proof tier's 0% recall
+  and 0% false positives on the same slice: the judge is the reachable recall on
+  diff alone, the proof tier trades that recall for zero false positives. Both ship
+  advisory (`JUDGE-BASELINE-REPORT.md`).
+
+### Fixed
+
+- **README version badge could lag a release.** The badge row is generated, but
+  nothing enforced its freshness, so 12.1.0 shipped with a 12.0.0 badge. The
+  generator now sources the oracle-recall badge from the CI-guarded frozen baseline
+  (not a volatile A/B report that drifted), and CI runs `badges:regen --check` so a
+  stale row fails the build.
+
 ## [12.0.0] - 2026-06-12
 
 ### The proof tier: six execution-grounded restoration proofs
