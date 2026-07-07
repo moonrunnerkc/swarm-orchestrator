@@ -10,17 +10,16 @@ The frozen dataset records `egViable: 6`. That 6 is the **proof-executable** cou
 
 | surface | count | entries |
 | --- | --- | --- |
-| proof-executable (Node tier runs) | 6 | inmanta/web-console#6972, lesmartiepants/poetry-bil-araby#545, myhuemungusD/SkateHubba-play#382, yorickdewid/flight-planner#149, vitejs/vite-plugin-react#1246, cybersemics/em#4339 |
+| proof-executable (Node tier runs) | 7 | inmanta/web-console#6972, lesmartiepants/poetry-bil-araby#545, myhuemungusD/SkateHubba-play#382, outline/outline#12197, yorickdewid/flight-planner#149, vitejs/vite-plugin-react#1246, cybersemics/em#4339 |
 | install-viable only (pytest/Go; proof tier abstains) | 7 | canvas-medical/canvas-hyperscribe#256 (python), Hypefury/initech#2 (go), ibenian/algebench#371 (python), jaseci-labs/jaseci#6480 (python), jeduden/mdsmith#232 (go), Skyvern-AI/skyvern#6350 (python), torch-spyre/ktir-cpu#104 (python) |
-| not viable | 14 | see buckets below |
+| not viable | 13 | see buckets below |
 
-## Non-viable buckets (14 entries)
+## Non-viable buckets (13 entries)
 
 | bucket | count | entries |
 | --- | --- | --- |
 | no-node-go-or-pytest-manifest | 9 | D4M13N-D3V/MechanicBuddy#52, eelywasa/sf-bulk-loader#70, GoliattCo/odoo-custom#28, omniscient/markethawk#408, nahharris/aura#39, pgsty/pigsty#747, live-host/Nexus-AI-Build#4, microsoft/testfx#8513, pwncollege/ctf-archive#133 |
 | no-runner | 2 | unqdlphn/quirgs#29, VidDazzleLLC/velocityos#21 |
-| node-engine-excludes-22 | 1 | outline/outline#12197 |
 | python-no-pytest-signal | 1 | potassco/clingcon#122 |
 | unreachable-or-gone | 1 | flipflowglobal/D.L#47 |
 
@@ -40,7 +39,7 @@ The frozen dataset records `egViable: 6`. That 6 is the **proof-executable** cou
 | lesmartiepants/poetry-bil-araby#545 | assertion-strip | yes | node | package-lock.json | vitest | — | VIABLE | viable |
 | myhuemungusD/SkateHubba-play#382 | error-swallow | yes | node | package-lock.json | vitest | >=22 | VIABLE | viable |
 | omniscient/markethawk#408 | hardcoded-output | no | — | — | — | — | no package.json (not a Node, Go, or pytest project) | no-node-go-or-pytest-manifest |
-| outline/outline#12197 | mock-of-hallucination | no | node | yarn.lock | jest | >=20.12 <21 || 22 || 24 | node engine ">=20.12 <21 || 22 || 24" excludes 22 | node-engine-excludes-22 |
+| outline/outline#12197 | mock-of-hallucination | no | node | yarn.lock | jest | >=20.12 <21 || 22 || 24 | VIABLE | viable |
 | potassco/clingcon#122 | test-relaxation | no | — | — | — | — | no package.json (Python project but no pytest signal) | python-no-pytest-signal |
 | Skyvern-AI/skyvern#6350 | goal-not-fixed | no | python | — | pytest | — | VIABLE | viable |
 | torch-spyre/ktir-cpu#104 | assertion-strip | no | python | — | pytest | — | VIABLE | viable |
