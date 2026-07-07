@@ -82,6 +82,10 @@ export interface Hunt3Record {
     isFinding: boolean;
     reason: string;
     witnessModel: string | null;
+    witnessPromptVersion: string | null;
+    witnessSamplingPolicy: string | null;
+    witnessRetried: boolean | null;
+    witnessRegeneratedForClosure: boolean | null;
     arbiterAgreed: boolean | null;
     closureLinked: boolean | null;
     baseRuns: string[] | null;
@@ -197,6 +201,10 @@ function claimRecord(cd: ClaimDifferentialResult | undefined): Hunt3Record['clai
     isFinding: cd.isFinding,
     reason: cd.reason,
     witnessModel: cd.witness?.model ?? null,
+    witnessPromptVersion: cd.witness?.promptVersion ?? null,
+    witnessSamplingPolicy: cd.witness?.samplingPolicy ?? null,
+    witnessRetried: cd.witness?.retried ?? null,
+    witnessRegeneratedForClosure: cd.witness?.regeneratedForClosure ?? null,
     arbiterAgreed: cd.arbiter?.agreed ?? null,
     closureLinked: cd.closure?.linked ?? null,
     baseRuns: cd.baseRuns ?? null,

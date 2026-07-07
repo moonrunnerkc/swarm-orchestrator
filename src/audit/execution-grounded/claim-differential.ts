@@ -17,6 +17,8 @@ import { getLogger } from '../../logger';
 import type { DockerContext } from './docker-runner';
 import { renderReproCommand, type ReproStatus } from './issue-repro';
 import type { TestRunner } from './sandbox';
+import { extractChangedUnits } from './claim-changed-units';
+import { behaviorallyRevertableSourceFiles } from './test-restoration';
 import {
   arbiterPairAgrees,
   buildClaimText,
@@ -112,6 +114,9 @@ export interface ClaimDifferentialResult {
     promptVersion: string;
     promptHash: string;
     witnessHash: string;
+    samplingPolicy?: string;
+    retried?: boolean;
+    regeneratedForClosure?: boolean;
   };
   readonly arbiter?: {
     agreed: boolean;
@@ -192,9 +197,19 @@ export async function runClaimDifferential(
   });
   if (claim.trim().length === 0) return terminal('abstain:no-claim');
 
+  // Feed the compiler the behaviorally-revertable changed files (and their
+  // exported symbols) so a witness can import the real revertable unit instead of
+  // being synthesized from claim text alone; the closure control is unchanged.
+  const revertableFiles = behaviorallyRevertableSourceFiles(input.prDiff);
+  const changedUnits = extractChangedUnits(revertableFiles, input.postWorkspacePath);
+
   let witness: ClaimWitness | null;
   try {
-    witness = await compileWitness(claim, input.complete);
+    witness = await compileWitness(claim, input.complete, {
+      changedUnits,
+      headWorkspace: input.postWorkspacePath,
+      revertableFiles,
+    });
   } catch (err) {
     log.warn(`witness compilation failed: ${String(err)}`);
     return terminal('abstain:witness-not-compiled');
@@ -205,6 +220,11 @@ export async function runClaimDifferential(
     promptVersion: witness.promptVersion,
     promptHash: witness.promptHash,
     witnessHash: witness.witnessHash,
+    ...(witness.samplingPolicy !== undefined ? { samplingPolicy: witness.samplingPolicy } : {}),
+    ...(witness.retried !== undefined ? { retried: witness.retried } : {}),
+    ...(witness.regeneratedForClosure !== undefined
+      ? { regeneratedForClosure: witness.regeneratedForClosure }
+      : {}),
   };
 
   let arbiter;

@@ -10,16 +10,13 @@
 // witness, an arbiter split, or an unresolvable closure yields no witness / no
 // agreement rather than a guess.
 
-import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getLogger } from '../../logger';
 import { reachableSourceFiles } from '../cheat-detector/test-import-closure';
 import type { DockerContext } from './docker-runner';
 import {
-  classifyRepro,
   executeIssueRepro,
-  extractCodeBlocks,
   reproFileName,
   type Repro,
   type ReproExecution,
@@ -27,17 +24,27 @@ import {
 import { behaviorallyRevertableSourceFiles, closureLinksChangedSource } from './test-restoration';
 import type { TestRunner } from './sandbox';
 
-const log = getLogger('audit:execution-grounded:claim-witness');
+// Witness compilation (the claim -> one runnable test step, with the
+// witness-not-compiled and closure-unlinked hardening) lives in
+// claim-witness-compile.ts; re-exported here so callers keep one import surface.
+export {
+  compileWitness,
+  witnessPrompt,
+  WITNESS_PROMPT_VERSION,
+  type CompileWitnessOptions,
+} from './claim-witness-compile';
 
-/** The versioned witness-compilation prompt. A new wording gets a new id so a
- *  replayed measurement folds the exact prompt it was scored against. */
-export const WITNESS_PROMPT_VERSION = 'cw-v1';
+const log = getLogger('audit:execution-grounded:claim-witness');
 
 /** The versioned arbiter prompt for the "does this test the claim?" gate. */
 export const WITNESS_ARBITER_PROMPT_VERSION = 'ca-v1';
 
-/** One completion call: a prompt in, generated text plus the model id out. */
-export type Completer = (prompt: string) => Promise<{ text: string; model: string }>;
+/** One completion call: a prompt in, generated text, the model id, and the
+ *  sampling policy that produced it (recorded so a replay knows exactly how the
+ *  witness was sampled; the witness model rejects an explicit temperature). */
+export type Completer = (
+  prompt: string,
+) => Promise<{ text: string; model: string; samplingPolicy?: string }>;
 
 /** One arbiter call: yes when the witness genuinely tests the stated claim. */
 export type WitnessArbiter = (prompt: string) => Promise<{ yes: boolean; model: string }>;
@@ -51,6 +58,13 @@ export interface ClaimWitness {
   readonly promptHash: string;
   /** sha256 of the generated witness source. */
   readonly witnessHash: string;
+  /** How the witness was sampled (the witness model rejects an explicit
+   *  temperature, so this records the model default rather than a pinned value). */
+  readonly samplingPolicy?: string;
+  /** True when a first empty emission was recovered by one format-only retry. */
+  readonly retried?: boolean;
+  /** True when an unlinked witness was regenerated once with the changed files to import. */
+  readonly regeneratedForClosure?: boolean;
 }
 
 /**
@@ -73,52 +87,6 @@ export function buildClaimText(parts: {
     parts.issueBody?.trim() ?? '',
   ].filter((s) => s.length > 0);
   return segments.join('\n\n').slice(0, 6000);
-}
-
-function sha256(text: string): string {
-  return createHash('sha256').update(text).digest('hex');
-}
-
-function witnessPrompt(claim: string): string {
-  return [
-    'You are given the stated claim of a pull request (its title, body, and any linked issue).',
-    'Write ONE self-contained test that FAILS on code where the claim is NOT delivered and',
-    'PASSES only when the claimed behaviour is present. Assert the claimed behaviour directly.',
-    'Import the real module under test from the repository; do not stub the code under test.',
-    'Use the repository test runner conventions (describe/it/expect or assert). Output only a',
-    'single fenced code block containing the test, no prose.',
-    '',
-    '--- CLAIM ---',
-    claim,
-  ].join('\n');
-}
-
-/**
- * Compile the claim into a witness test. Fails closed: returns null when the
- * completion carries no runnable test code block.
- *
- * @param claim the assembled claim text.
- * @param complete the injected completion function (Anthropic in production).
- * @returns the compiled witness with provenance, or null when none was extractable.
- */
-export async function compileWitness(claim: string, complete: Completer): Promise<ClaimWitness | null> {
-  if (claim.trim().length === 0) return null;
-  const prompt = witnessPrompt(claim);
-  const { text, model } = await complete(prompt);
-  for (const block of extractCodeBlocks(text)) {
-    const repro = classifyRepro(block);
-    if (repro !== null && repro.kind === 'test') {
-      return {
-        repro,
-        model,
-        promptVersion: WITNESS_PROMPT_VERSION,
-        promptHash: sha256(prompt),
-        witnessHash: sha256(repro.code),
-      };
-    }
-  }
-  log.debug('witness compilation produced no runnable test block');
-  return null;
 }
 
 function arbiterPrompt(claim: string, witnessCode: string): string {

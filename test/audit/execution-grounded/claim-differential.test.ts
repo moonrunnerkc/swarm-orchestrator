@@ -146,14 +146,96 @@ describe('compileWitness (injected LLM)', () => {
     assert.ok(witness !== null);
     assert.equal(witness!.repro.kind, 'test');
     assert.equal(witness!.model, 'stub-model');
-    assert.equal(witness!.promptVersion, 'cw-v1');
+    assert.equal(witness!.promptVersion, 'cw-v2');
     assert.equal(witness!.promptHash.length, 64, 'prompt hash is a sha256 hex digest');
     assert.equal(witness!.witnessHash.length, 64);
+    assert.equal(witness!.retried, false, 'a first-try success is not marked retried');
   });
 
-  it('fails closed to null when the completion carries no runnable test', async () => {
-    const complete: Completer = async () => ({ text: 'I cannot write that test.', model: 'stub' });
+  it('accepts a bare (unfenced) test source, as a structured-output reply returns', async () => {
+    const bare = 'it("adds", () => { expect(add(1,2)).toBe(3); });';
+    const complete: Completer = async () => ({ text: bare, model: 'm', samplingPolicy: 'policy-x' });
+    const witness = await compileWitness('add', complete);
+    assert.ok(witness !== null);
+    assert.equal(witness!.repro.kind, 'test');
+    assert.equal(witness!.samplingPolicy, 'policy-x', 'the sampling policy is recorded on the witness');
+  });
+
+  it('retries once with a format reminder when the first emission carries no test', async () => {
+    let call = 0;
+    const complete: Completer = async () => {
+      call += 1;
+      // First reply is all reasoning and no code; the retry emits the test.
+      return call === 1
+        ? { text: 'Let me think about how the claim should be tested...', model: 'm' }
+        : { text: codeBlock, model: 'm' };
+    };
+    const witness = await compileWitness('add(a,b) returns a+b', complete);
+    assert.ok(witness !== null, 'the retry recovers a runnable witness');
+    assert.equal(call, 2, 'exactly one retry');
+    assert.equal(witness!.retried, true, 'the recovery is recorded as a retry');
+  });
+
+  it('fails closed to null when neither the first emission nor the retry has a test', async () => {
+    let call = 0;
+    const complete: Completer = async () => {
+      call += 1;
+      return { text: 'I cannot write that test.', model: 'stub' };
+    };
     assert.equal(await compileWitness('claim', complete), null);
+    assert.equal(call, 2, 'it tried once and retried once, then gave up');
+  });
+
+  it('regenerates once, naming the changed file, when the first witness imports nothing changed', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cw-regen-'));
+    try {
+      // A revertable changed source file in the head checkout the witness must reach.
+      fs.writeFileSync(path.join(dir, 'adder.js'), 'function add(a, b) { return a + b; }\nmodule.exports = { add };\n');
+      const unlinked = 'it("adds", () => { expect(1 + 2).toBe(3); });'; // imports nothing
+      const linked = "const { add } = require('./adder');\nit('adds', () => { expect(add(1,2)).toBe(3); });";
+      let call = 0;
+      const prompts: string[] = [];
+      const complete: Completer = async (prompt) => {
+        call += 1;
+        prompts.push(prompt);
+        return call === 1 ? { text: unlinked, model: 'm' } : { text: linked, model: 'm' };
+      };
+      const witness = await compileWitness('add(a,b) returns a+b', complete, {
+        changedUnits: [{ file: 'adder.js', exports: ['add'] }],
+        headWorkspace: dir,
+        revertableFiles: ['adder.js'],
+      });
+      assert.ok(witness !== null);
+      assert.equal(call, 2, 'exactly one regeneration');
+      assert.equal(witness!.regeneratedForClosure, true);
+      assert.ok(prompts[1]!.includes('adder.js'), 'the regeneration prompt names the changed file to import');
+      assert.ok(witness!.repro.code.includes("require('./adder')"), 'the regenerated witness imports the changed unit');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not regenerate when the first witness already imports a changed unit', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cw-linked-'));
+    try {
+      fs.writeFileSync(path.join(dir, 'adder.js'), 'function add(a, b) { return a + b; }\nmodule.exports = { add };\n');
+      const linked = "const { add } = require('./adder');\nit('adds', () => { expect(add(1,2)).toBe(3); });";
+      let call = 0;
+      const complete: Completer = async () => {
+        call += 1;
+        return { text: linked, model: 'm' };
+      };
+      const witness = await compileWitness('add', complete, {
+        changedUnits: [{ file: 'adder.js', exports: ['add'] }],
+        headWorkspace: dir,
+        revertableFiles: ['adder.js'],
+      });
+      assert.ok(witness !== null);
+      assert.equal(call, 1, 'a linked witness is not regenerated');
+      assert.equal(witness!.regeneratedForClosure, false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
