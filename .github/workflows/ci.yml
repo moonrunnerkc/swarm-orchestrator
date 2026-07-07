@@ -128,6 +128,14 @@ jobs:
       # precision to back it. See benchmarks/real-corpus/corroborated-gate-precision.json.
       run: npm run corroborated-gate:check
 
+    - name: Check README badges are fresh
+      if: matrix.node-version == 22
+      # The README badge row is generated from the sources it cites (package.json
+      # version, the CI-guarded oracle baseline, the real-PR reports), so it cannot
+      # lag a version bump. A stale row (e.g. a version badge behind package.json)
+      # fails here; regenerate with `npm run badges:regen` and commit.
+      run: node dist/scripts/badges/regen-badges.js --check
+
     - name: Publish test summary
       if: always() && matrix.node-version == 22
       run: |

@@ -34,11 +34,18 @@ function shield(label: string, message: string, color: string, href: string): st
   return `[![${label} ${message}](${url})](${href})`;
 }
 
-/** Oracle recall as caught/total from the A/B report's "253/300 vs" phrase. */
+/** Oracle overall recall (caught/total) from the CI-guarded frozen baseline, the
+ *  same number `baseline:check` enforces. Reading the volatile A/B report instead
+ *  drifted the badge to a stale 253/300 while the guaranteed recall stayed
+ *  301/325; sourcing the baseline is the fix that lets `badges:check` gate in CI
+ *  without the badge ever misreporting a non-regression. */
 function oracleRecall(): { caught: number; total: number } | null {
-  const m = read('benchmarks/results/AB-REPORT.md').match(/(\d+)\/(\d+)\s+vs/);
-  if (m === null || m[1] === undefined || m[2] === undefined) return null;
-  return { caught: Number(m[1]), total: Number(m[2]) };
+  const gt = JSON.parse(read('benchmarks/baselines/ground-truth-v12.json')) as {
+    floors?: { id: string; floor: number; denominator?: number }[];
+  };
+  const f = (gt.floors ?? []).find((x) => x.id === 'oracle-overall-recall');
+  if (f === undefined || f.denominator === undefined) return null;
+  return { caught: f.floor, total: f.denominator };
 }
 
 /** Real-PR false-alarm burden per PR from the real-world report headline. */
