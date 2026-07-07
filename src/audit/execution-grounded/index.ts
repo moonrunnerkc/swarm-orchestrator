@@ -54,6 +54,8 @@ import {
   runTestRestoration,
   type RestorationProofRecord,
 } from './test-restoration';
+import { runClaimDifferential, type ClaimDifferentialResult } from './claim-differential';
+import { createClaimLlm, type ClaimLlm } from './claim-llm';
 import { runMockRestoration, type MockRestorationProofRecord } from './mock-restoration';
 import { runNoOpFixRestoration, type NoOpFixProofRecord } from './no-op-fix-restoration';
 import {
@@ -265,6 +267,10 @@ export interface ExecutionGroundedInput {
    *  threaded separately from the combined `prText`). */
   prTitle?: string;
   prBody?: string;
+  /** Injected LLM for the claim-differential proof (test seam). When absent and
+   *  the proof is enabled, an Anthropic-backed client is built from the env key;
+   *  when no key is present the proof records a skip. */
+  claimLlm?: ClaimLlm;
   config: ExecutionGroundedConfig;
   baseDir: string;
   cacheDir?: string;
@@ -333,6 +339,11 @@ export interface ExecutionGroundedOutcome {
    *  restoration phase evaluated (every verdict included). Finding-gated; the
    *  proof instruments the inserted branch and runs the affected tests. */
   deadBranchRestorations: DeadBranchProofRecord[];
+  /** The claim-differential result for this run (at most one: one primary claim
+   *  per PR). Empty when the proof is disabled, no model is available, or the PR
+   *  carries no claim. Advisory-only; a `claim-falsified-synthesized` verdict
+   *  raises a warn finding but never gates. */
+  claimDifferentials: ClaimDifferentialResult[];
   skipped: string[];
 }
 
@@ -1144,7 +1155,7 @@ export function runProofRestorations(input: ProofRestorationInput): ProofRestora
  */
 export async function runExecutionGrounded(input: ExecutionGroundedInput): Promise<ExecutionGroundedOutcome> {
   const skipped: string[] = [];
-  const empty: ExecutionGroundedOutcome = { findings: [], mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], fakeRefactorRestorations: [], deadBranchRestorations: [], skipped };
+  const empty: ExecutionGroundedOutcome = { findings: [], mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], fakeRefactorRestorations: [], deadBranchRestorations: [], claimDifferentials: [], skipped };
   if (!input.config.enabled) {
     // Disabled means the layer never ran at all: no honesty records, because
     // nothing was promised to run.
@@ -1258,7 +1269,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
 
   const deadline = Date.now() + input.config.maxWallClockPerPrMs;
   const findings: Finding[] = [];
-  const outcome: ExecutionGroundedOutcome = { findings, mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], fakeRefactorRestorations: [], deadBranchRestorations: [], skipped };
+  const outcome: ExecutionGroundedOutcome = { findings, mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], fakeRefactorRestorations: [], deadBranchRestorations: [], claimDifferentials: [], skipped };
   const cacheArg = input.cacheDir !== undefined ? { cacheDir: input.cacheDir } : {};
 
   try {
@@ -1373,6 +1384,14 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
       findings.push(...reproFindings(repros));
     }
 
+    if (input.config.claimDifferential && Date.now() < deadline) {
+      const claimResult = await runClaimDifferentialPhase(input, workspaces, dockerCtx, skipped);
+      if (claimResult !== null) {
+        outcome.claimDifferentials.push(claimResult);
+        findings.push(...claimDifferentialFindings(claimResult, prRef));
+      }
+    }
+
     // Differential restoration proofs against the already-provisioned pair
     // (test-tamper, no-op-fix, mock-mutation), sharing the run's wall-clock
     // budget. Each engine never throws and re-applies its patch forward before
@@ -1475,4 +1494,72 @@ async function runIssueRepros(
     }
   }
   return out;
+}
+
+/**
+ * Run the claim-differential proof once against the provisioned pair. Resolves
+ * the LLM (injected for tests, else Anthropic when a key is present), fetches the
+ * first linked issue for claim enrichment, and returns the result. Records a skip
+ * and returns null when no model is available; never throws.
+ */
+async function runClaimDifferentialPhase(
+  input: ExecutionGroundedInput,
+  workspaces: ProvisionedPair,
+  dockerCtx: DockerContext | undefined,
+  skipped: string[],
+): Promise<ClaimDifferentialResult | null> {
+  const hasKey = process.env.ANTHROPIC_API_KEY !== undefined && process.env.ANTHROPIC_API_KEY.length > 0;
+  const llm = input.claimLlm ?? (hasKey ? createClaimLlm() : null);
+  if (llm === null) {
+    skipped.push('claim-differential: no model (set ANTHROPIC_API_KEY or inject claimLlm)');
+    return null;
+  }
+  // Enrich the claim with the first fetchable linked issue, best-effort.
+  let issue: { title: string; body: string } | null = null;
+  const [defaultOwner, defaultRepo] = input.repo.split('/');
+  const refs = parseIssueReferences(input.prText ?? `${input.prTitle ?? ''}\n${input.prBody ?? ''}`);
+  const firstRef = refs[0];
+  if (firstRef !== undefined) {
+    issue = await fetchIssue({
+      owner: firstRef.owner ?? defaultOwner ?? '',
+      repo: firstRef.repo ?? defaultRepo ?? '',
+      number: firstRef.number,
+      ...(input.githubToken !== undefined ? { token: input.githubToken } : {}),
+      ...(input.issueCacheDir !== undefined ? { cacheDir: input.issueCacheDir } : {}),
+    });
+  }
+  return runClaimDifferential({
+    prDiff: input.prDiff,
+    prTitle: input.prTitle ?? '',
+    prBody: input.prBody ?? '',
+    ...(issue !== null ? { issueTitle: issue.title, issueBody: issue.body } : {}),
+    preWorkspacePath: workspaces.pre.workspacePath,
+    postWorkspacePath: workspaces.post.workspacePath,
+    testRunner: workspaces.post.testRunner,
+    complete: llm.complete,
+    arbiterA: llm.arbiterA,
+    arbiterB: llm.arbiterB,
+    ...(dockerCtx !== undefined ? { docker: dockerCtx } : {}),
+  });
+}
+
+/** Map a claim-falsified-synthesized verdict to an advisory warn finding. Every
+ *  other verdict (delivered, or any abstain) produces no finding. */
+export function claimDifferentialFindings(result: ClaimDifferentialResult, prRef: string): Finding[] {
+  if (!result.isFinding) return [];
+  return [
+    {
+      category: 'claim-falsified-synthesized',
+      severity: 'warn',
+      message:
+        `A witness test synthesized from ${prRef}'s stated claim (two models agreed it tests the claim) ` +
+        `fails on both the base and the head checkout: the PR does not deliver its claim. ` +
+        `Reproduce: ${result.reproduceCommand ?? '(command unavailable)'}`,
+      location: { file: 'claim-differential-witness', line: 1 },
+      evidence: shortEvidence(
+        `witness ${result.witness?.witnessHash ?? '?'} (model ${result.witness?.model ?? '?'}, ` +
+          `prompt ${result.witness?.promptVersion ?? '?'}); base=${(result.baseRuns ?? []).join('/')} head=${result.headStatus ?? '?'}`,
+      ),
+    },
+  ];
 }

@@ -166,6 +166,60 @@ export interface PromotionsOutput {
    *  Replaces the bare corroborated-"unmeasured" with the measured viable
    *  slice; the corroborated precision run on that slice is the next step. */
   executionGroundedViability?: ViabilitySummary;
+  /** The claim-differential proof's promotion policy. Advisory-only and pinned
+   *  there: it can only become gate-eligible with a measured Wilson-95 lower at
+   *  or above the floor and enough true positives, which check-policy enforces. */
+  claimDifferential: ClaimDifferentialPolicy;
+}
+
+/** The claim-differential promotion policy. `measured` is null until a precision
+ *  measurement is folded in; while null the status is always advisory-only. */
+export interface ClaimDifferentialPolicy {
+  status: 'advisory-only' | 'gate-eligible';
+  reason: string;
+  wilsonFloor: number;
+  minTruePositive: number;
+  measured: { truePositive: number; falsePositive: number; wilsonLower: number } | null;
+}
+
+const CLAIM_DIFFERENTIAL_WILSON_FLOOR = 0.9;
+const CLAIM_DIFFERENTIAL_MIN_TP = 5;
+
+/**
+ * Compute the claim-differential promotion policy. Advisory-only by default and
+ * whenever no precision has been measured; gate-eligible only when a folded
+ * measurement clears the Wilson-95 floor with enough true positives. The
+ * claim-differential proof is new and unmeasured on real outcomes, so this
+ * returns advisory-only until a maintainer folds a measured precision in.
+ *
+ * @param measured a folded {truePositive, falsePositive, wilsonLower}, or null.
+ * @returns the policy; status is advisory-only unless the measurement clears.
+ */
+export function computeClaimDifferentialPolicy(
+  measured: { truePositive: number; falsePositive: number; wilsonLower: number } | null,
+): ClaimDifferentialPolicy {
+  if (measured === null) {
+    return {
+      status: 'advisory-only',
+      reason:
+        'no measured claim-differential precision on real outcomes yet; advisory-only until a folded ' +
+        `measurement clears Wilson-95 lower >= ${CLAIM_DIFFERENTIAL_WILSON_FLOOR} with >= ${CLAIM_DIFFERENTIAL_MIN_TP} true positives`,
+      wilsonFloor: CLAIM_DIFFERENTIAL_WILSON_FLOOR,
+      minTruePositive: CLAIM_DIFFERENTIAL_MIN_TP,
+      measured: null,
+    };
+  }
+  const clears =
+    measured.wilsonLower >= CLAIM_DIFFERENTIAL_WILSON_FLOOR && measured.truePositive >= CLAIM_DIFFERENTIAL_MIN_TP;
+  return {
+    status: clears ? 'gate-eligible' : 'advisory-only',
+    reason: clears
+      ? `claim-differential precision Wilson-95 lower ${measured.wilsonLower.toFixed(4)} clears the floor with ${measured.truePositive} true positives`
+      : `claim-differential precision below the floor or too few true positives; advisory-only`,
+    wilsonFloor: CLAIM_DIFFERENTIAL_WILSON_FLOOR,
+    minTruePositive: CLAIM_DIFFERENTIAL_MIN_TP,
+    measured,
+  };
 }
 
 interface Args {
@@ -521,6 +575,7 @@ export function computePromotions(args: Args): PromotionsOutput {
       .map((r) => r.detector),
     judgePrimary: computeJudgePrimaryPolicy(loadMeasurements(args.measurementsFile)),
     ...(viability !== undefined ? { executionGroundedViability: viability } : {}),
+    claimDifferential: computeClaimDifferentialPolicy(null),
   };
 }
 

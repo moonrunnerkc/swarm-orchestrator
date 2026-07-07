@@ -75,6 +75,27 @@ function main(): void {
       }
     }
   }
+  // Claim-differential is advisory-only until measured. It may show gate-eligible
+  // only with a folded measurement clearing the Wilson-95 floor and the minimum
+  // true-positive count; a hand-edit flipping it without that measurement fails
+  // here (and would already fail the recompute, which folds no measurement).
+  const cd = committed.claimDifferential;
+  if (cd !== undefined && cd.status === 'gate-eligible') {
+    const ok =
+      cd.measured !== null &&
+      cd.measured.wilsonLower >= cd.wilsonFloor &&
+      cd.measured.truePositive >= cd.minTruePositive;
+    if (!ok) {
+      fail(
+        'claim-differential is marked gate-eligible without a measured Wilson-95 lower ' +
+          `>= ${cd.wilsonFloor} and >= ${cd.minTruePositive} true positives on file. ` +
+          'The claim-differential proof ships advisory-only and earns gating exclusively through ' +
+          'the promotions machinery on measured data. Record the measurement and re-run: ' +
+          'npm run promotions:compute.',
+      );
+      return;
+    }
+  }
   const a = JSON.stringify(comparable(committed));
   const b = JSON.stringify(comparable(fresh));
   if (a !== b) {

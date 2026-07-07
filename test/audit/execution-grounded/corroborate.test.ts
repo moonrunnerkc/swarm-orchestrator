@@ -168,6 +168,7 @@ describe('execution-grounded / corroborate', () => {
         typeSuppressionRestorations: [],
         fakeRefactorRestorations: [],
         deadBranchRestorations: [],
+        claimDifferentials: [],
         mutationRuns: [
           {
             packageDir: 'packages/core',

@@ -155,6 +155,7 @@ async function measureOne(rec: ViabilityRecord): Promise<PrMeasurement> {
       issueRepro: false,
       runner: 'host',
       corroborateStructural: true,
+      claimDifferential: false,
       maxWallClockPerPrMs: Number(process.env.SWARM_EG_WALLCLOCK_MS ?? 20 * 60 * 1000),
     };
     const outcome = await runExecutionGrounded({

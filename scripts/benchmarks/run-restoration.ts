@@ -483,6 +483,7 @@ async function executeFunnelPr(
         maxWallClockPerPrMs: wallClockMs,
         runner: 'host',
         corroborateStructural: false,
+        claimDifferential: false,
       },
       baseDir: scratch,
       cacheDir: path.join(scratch, '.pm-cache'),

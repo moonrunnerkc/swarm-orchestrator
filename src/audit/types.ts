@@ -31,6 +31,7 @@ export type CheatCategory =
   | 'mutation-survives-on-uncovered-changed-line'
   | 'issue-repro-still-fails'
   | 'pr-breaks-issue-repro'
+  | 'claim-falsified-synthesized'
   | 'uncovered-changed-line';
 
 /** The two judge-primary-only categories, separated for the call sites
@@ -50,6 +51,7 @@ export type ExecutionGroundedCategory =
   | 'mutation-survives-on-uncovered-changed-line'
   | 'issue-repro-still-fails'
   | 'pr-breaks-issue-repro'
+  | 'claim-falsified-synthesized'
   | 'uncovered-changed-line';
 
 export const EXECUTION_GROUNDED_CATEGORIES: readonly ExecutionGroundedCategory[] = [
@@ -57,6 +59,7 @@ export const EXECUTION_GROUNDED_CATEGORIES: readonly ExecutionGroundedCategory[]
   'mutation-survives-on-uncovered-changed-line',
   'issue-repro-still-fails',
   'pr-breaks-issue-repro',
+  'claim-falsified-synthesized',
   'uncovered-changed-line',
 ];
 

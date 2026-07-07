@@ -165,6 +165,7 @@ async function evaluatePr(rec: ViabilityRecord): Promise<PerPrVerdict> {
       issueRepro: false,
       runner: 'host',
       corroborateStructural: false,
+      claimDifferential: false,
       maxWallClockPerPrMs: PER_PR_WALLCLOCK_MS,
     };
     const outcome = await runExecutionGrounded({

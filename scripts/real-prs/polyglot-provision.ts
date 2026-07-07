@@ -161,6 +161,7 @@ async function attemptOne(rec: ViabilityRecord): Promise<ProvisionAttempt> {
       issueRepro: false,
       runner: 'host',
       corroborateStructural: true,
+      claimDifferential: false,
       maxWallClockPerPrMs: Number(process.env.SWARM_EG_WALLCLOCK_MS ?? 5 * 60 * 1000),
     };
     const eg = await runExecutionGrounded({

@@ -24,6 +24,7 @@ function baseConfig(over: Partial<ExecutionGroundedConfig> = {}): ExecutionGroun
     maxWallClockPerPrMs: 60_000,
     runner: 'host',
     corroborateStructural: false,
+    claimDifferential: false,
     ...over,
   };
 }

@@ -70,6 +70,11 @@ export interface ExecutionGroundedConfig {
    *  execution-grounded layer actually ran. Raises a corroborated finding's
    *  confidence without touching uncorroborated findings, which stay advisory. */
   corroborateStructural: boolean;
+  /** Run the claim-differential proof (compile the PR's claim into a witness,
+   *  require two models to agree it tests the claim, run it against base and
+   *  head). Opt-in and advisory-only: it needs a model and a provisioned `--pr`
+   *  workspace, and it never gates. Off by default. */
+  claimDifferential: boolean;
 }
 
 export interface AuditConfig {
@@ -93,6 +98,7 @@ const DEFAULT_EXECUTION_GROUNDED: ExecutionGroundedConfig = {
   maxWallClockPerPrMs: 30 * 60 * 1000,
   runner: 'host',
   corroborateStructural: false,
+  claimDifferential: false,
 };
 
 const EMPTY_CONFIG: AuditConfig = {
@@ -140,11 +146,18 @@ function parseExecutionGrounded(text: string): ExecutionGroundedConfig {
     if (!inBlock) continue;
     if (trimmed.length > 0 && !/^\s/.test(rawLine)) break;
     const boolMatch = trimmed.match(
-      /^(enabled|mutation|issueRepro|coverage|corroborateStructural)\s*:\s*(true|false)\s*$/i,
+      /^(enabled|mutation|issueRepro|coverage|corroborateStructural|claimDifferential)\s*:\s*(true|false)\s*$/i,
     );
     if (boolMatch && boolMatch[1] !== undefined && boolMatch[2] !== undefined) {
-      cfg[boolMatch[1] as 'enabled' | 'mutation' | 'issueRepro' | 'coverage' | 'corroborateStructural'] =
-        boolMatch[2].toLowerCase() === 'true';
+      cfg[
+        boolMatch[1] as
+          | 'enabled'
+          | 'mutation'
+          | 'issueRepro'
+          | 'coverage'
+          | 'corroborateStructural'
+          | 'claimDifferential'
+      ] = boolMatch[2].toLowerCase() === 'true';
       continue;
     }
     const numMatch = trimmed.match(/^maxWallClockPerPrMs\s*:\s*(\d+)\s*$/);
