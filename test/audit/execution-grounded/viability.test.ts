@@ -122,4 +122,21 @@ describe('execution-grounded / nodeEngineSatisfiable', () => {
     assert.equal(nodeEngineSatisfiable('18.x'), false);
     assert.equal(nodeEngineSatisfiable('22'), true);
   });
+
+  it('admits an OR range when any alternative names the pinned major', () => {
+    // The real engine string outline/outline declares: an excluding clause plus
+    // an explicit `22`. The pinned runtime is admitted by the `|| 22` clause and
+    // must not be rejected on the first clause's `<21` upper bound.
+    assert.equal(nodeEngineSatisfiable('>=20.12 <21 || 22 || 24'), true);
+    assert.equal(nodeEngineSatisfiable('20 || 22'), true);
+    assert.equal(nodeEngineSatisfiable('^20.19.0 || >=22.12.0'), true);
+  });
+
+  it('rejects an OR range whose every alternative excludes the pinned major', () => {
+    // A pure bare-pin OR that never names 22 is not satisfiable; the old
+    // whole-string check wrongly admitted this because the spaces defeated its
+    // bare-pin regex.
+    assert.equal(nodeEngineSatisfiable('18 || 20'), false);
+    assert.equal(nodeEngineSatisfiable('<20 || <21'), false);
+  });
 });

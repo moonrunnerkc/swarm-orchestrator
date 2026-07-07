@@ -51,26 +51,40 @@ export interface ViabilityAssessment {
 }
 
 /**
+ * Whether a single `||`-free engine alternative admits the pinned EG runtime.
+ * Conservative: no version token admits anything, an upper bound at or below the
+ * pinned major (e.g. "<21") excludes it, and a bare pin (e.g. "18", "18.x")
+ * admits only its own major.
+ */
+function alternativeAdmitsPinned(alternative: string): boolean {
+  const alt = alternative.trim();
+  const majors = [...alt.matchAll(/(\d+)/g)].map((m) => Number(m[1]));
+  if (majors.length === 0) return true;
+  if (/<\s*\d+/.test(alt)) {
+    const upper = Number((alt.match(/<\s*(\d+)/) ?? [])[1]);
+    if (Number.isFinite(upper) && upper <= EG_NODE_MAJOR) return false;
+  }
+  if (/^\s*\d+(\.\d+|\.x)?\s*$/.test(alt)) {
+    return Number(majors[0]) === EG_NODE_MAJOR;
+  }
+  return true;
+}
+
+/**
  * Whether a package.json `engines.node` range admits the pinned EG runtime.
- * Conservative and ported verbatim from the corpus screen: an absent engine is
- * fine, a bare pin (e.g. "18", "18.x") is fine only if it is the pinned major,
- * and an upper bound at or below the pinned major (e.g. "<16") excludes it.
+ * Conservative: an absent engine is fine, a bare pin (e.g. "18", "18.x") is fine
+ * only if it is the pinned major, and an upper bound at or below the pinned major
+ * (e.g. "<16") excludes it. A `||` range admits the runtime when any one of its
+ * alternatives does, so an OR that names the pinned major alongside an excluding
+ * clause (e.g. ">=20.12 <21 || 22 || 24") is correctly admitted rather than
+ * rejected on the first clause's upper bound.
  *
  * @param engine the raw engines.node string, or null when unspecified.
  * @returns true when node EG_NODE_MAJOR satisfies the range.
  */
 export function nodeEngineSatisfiable(engine: string | null): boolean {
   if (engine === null || engine.trim().length === 0) return true;
-  const majors = [...engine.matchAll(/(\d+)/g)].map((m) => Number(m[1]));
-  if (majors.length === 0) return true;
-  if (/<\s*\d+/.test(engine)) {
-    const upper = Number((engine.match(/<\s*(\d+)/) ?? [])[1]);
-    if (Number.isFinite(upper) && upper <= EG_NODE_MAJOR) return false;
-  }
-  if (/^\s*\d+(\.\d+|\.x)?\s*$/.test(engine)) {
-    return Number(majors[0]) === EG_NODE_MAJOR;
-  }
-  return true;
+  return engine.split('||').some(alternativeAdmitsPinned);
 }
 
 function readNodeEngine(pkgPath: string): string | null {

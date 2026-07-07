@@ -98,25 +98,32 @@ function statusOf(err: unknown): number | undefined {
   return (err as { status?: number }).status;
 }
 
-/** Major version range satisfiability, conservative: absent engine => yes;
- *  a range that obviously excludes 22 => no; otherwise yes. We only need to
- *  exclude repos that pin an old major (e.g. "14.x", "<16"). */
-function nodeSatisfiable(engine: string | null): boolean {
-  if (engine === null || engine.trim().length === 0) return true;
-  const majors = [...engine.matchAll(/(\d+)/g)].map((m) => Number(m[1]));
+/** Whether a single `||`-free engine alternative admits the pinned EG runtime. */
+function alternativeSatisfiable(alternative: string): boolean {
+  const alt = alternative.trim();
+  const majors = [...alt.matchAll(/(\d+)/g)].map((m) => Number(m[1]));
   if (majors.length === 0) return true;
-  // If the engine names only majors all below the EG runtime and uses an upper
-  // bound, treat as not satisfiable; a `>=` lower bound at/under 22 is fine.
-  if (/<\s*\d+/.test(engine)) {
-    const upper = Number((engine.match(/<\s*(\d+)/) ?? [])[1]);
+  // An upper bound at/under the EG runtime excludes it; a `>=` lower bound is fine.
+  if (/<\s*\d+/.test(alt)) {
+    const upper = Number((alt.match(/<\s*(\d+)/) ?? [])[1]);
     if (Number.isFinite(upper) && upper <= EG_NODE_MAJOR) return false;
   }
-  // A bare pin like "18" or "18.x" with no range operator: satisfiable only if
-  // it includes 22 conceptually; a single pin != 22 is not satisfiable.
-  if (/^\s*\d+(\.\d+|\.x)?\s*$/.test(engine)) {
+  // A bare pin like "18" or "18.x": satisfiable only when it is the EG major.
+  if (/^\s*\d+(\.\d+|\.x)?\s*$/.test(alt)) {
     return Number(majors[0]) === EG_NODE_MAJOR;
   }
   return true;
+}
+
+/** Major version range satisfiability, conservative: absent engine => yes;
+ *  a range that obviously excludes 22 => no; otherwise yes. A `||` range is
+ *  satisfiable when any alternative is, so an OR that names 22 alongside an
+ *  excluding clause (e.g. ">=20.12 <21 || 22 || 24") is admitted rather than
+ *  rejected on the first clause. We only need to exclude repos that pin an old
+ *  major (e.g. "14.x", "<16") with no clause admitting 22. */
+function nodeSatisfiable(engine: string | null): boolean {
+  if (engine === null || engine.trim().length === 0) return true;
+  return engine.split('||').some(alternativeSatisfiable);
 }
 
 export async function screenPr(
