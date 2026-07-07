@@ -275,6 +275,19 @@ async function main(): Promise<void> {
   const detClient = meteredClient(anthropic, 0, meter);
   const sampleClient = meteredClient(anthropic, SAMPLE_TEMPERATURE, meter);
 
+  // Fail fast if the judge model is unreachable (e.g. exhausted credits). Without
+  // this probe, askJudge collapses every API error to `unavailable`, so a fully
+  // blocked run would silently write an all-zero report that reads like a real
+  // zero-false-positive measurement. Abort before any set is scored instead.
+  try {
+    await detClient.ask({ system: 'probe', user: 'probe', modelId: PINNED_JUDGE_MODEL_ID });
+  } catch (err) {
+    throw new Error(
+      `judge model ${PINNED_JUDGE_MODEL_ID} is unreachable; refusing to write an all-zero report. ` +
+        `Top up ANTHROPIC credits and re-run. Underlying error: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
   const entries = [...loadSemiSyntheticEntries(), ...(await loadWildGoalNotFixed(new Octokit()))];
   log.info(`judge-gate-cost over ${entries.length} entries (model ${PINNED_JUDGE_MODEL_ID}, prompt ${DEFAULT_JUDGE_PROMPT_VERSION})`);
 

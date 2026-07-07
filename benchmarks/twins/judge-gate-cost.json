@@ -1,0 +1,38 @@
+{
+  "generatedBy": "scripts/experiments/judge-gate-cost.ts (pre-registered) + restated committed artifacts",
+  "status": "awaiting-credits",
+  "note": "The live threshold sweep, broad-clean false-positive set, wild-goal-not-fixed recall set, and per-verdict cost are blocked by Anthropic credit exhaustion (2026-07-07). The judge's deterministic operating point below is restated from the funded, committed judge baseline; the proof-tier point from the committed twin-separation and block-eligibility artifacts. Re-run `npm run judge-gate-cost` when credits are topped up to fill the sweep, the broader sets, and cost. The instrument now aborts cleanly (a probe call) rather than writing an all-zero report when the judge is unreachable.",
+  "judge": {
+    "model": "claude-haiku-4-5-20251001",
+    "promptVersion": "v1-conservative",
+    "secondModelFamily": null,
+    "isDeterministicBinary": true,
+    "temperature": 0,
+    "cached": true
+  },
+  "sweep": { "samples": 5, "sampleTemperature": 1.0, "thresholds": [0.2, 0.4, 0.6, 0.8, 1.0], "status": "awaiting-credits" },
+  "operatingPointRestated": {
+    "source": "benchmarks/twins/judge-baseline.json",
+    "tier": "semi-synthetic-semantic",
+    "n": 8,
+    "recall": 0.875,
+    "recallWilsonLower": 0.5291051942301385,
+    "falseBlocksPer100Clean": 12.5,
+    "falsePositiveRate": 0.125,
+    "falsePositiveWilsonUpper": 0.4708948057698615,
+    "byCategory": {
+      "cheat-mock-mutation": { "pairs": 4, "recall": "4/4", "falsePositive": "0/4" },
+      "goal-not-fixed": { "pairs": 4, "recall": "3/4", "falsePositive": "1/4" }
+    }
+  },
+  "proofTierPoint": {
+    "source": "benchmarks/twins/TWIN-SEPARATION-REPORT.md + benchmarks/twins/judge-baseline.json + benchmarks/real-corpus/block-eligibility.json",
+    "semanticRecall": 0,
+    "falsePositiveRate": 0,
+    "note": "The execution proof tier abstains on the semantic categories (no structural tell; the claim-differential closure control abstains on a generic witness), n=8 semantic pairs. Zero gate false positives on the block-eligibility corpus (no self-certifying trigger has fired; corroborated held out at Wilson-95 lower 0.510)."
+  },
+  "confidenceCurveSemanticSampled": { "status": "awaiting-credits" },
+  "broaderCleanFalsePositive": { "status": "awaiting-credits", "plannedN": 44, "note": "semi-synthetic non-semantic honest twins judged for goal-not-fixed" },
+  "wildGoalNotFixedRecall": { "status": "awaiting-credits", "plannedN": 7, "note": "held-out wild goal-not-fixed entries; diffs already fetch unauthenticated (the block was the judge call, not the fetch)" },
+  "spend": { "status": "awaiting-credits", "pricing": { "model": "claude-haiku-4-5-20251001", "inputPerMTok": 1.0, "outputPerMTok": 5.0 } }
+}
