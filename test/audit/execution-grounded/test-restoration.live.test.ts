@@ -193,6 +193,21 @@ describe('execution-grounded / test-restoration runTestRestoration (early exits,
     assert.ok(record.reason !== undefined && record.reason.includes("'ava'"));
   });
 
+  // Polyglot provisioning (Phase 1) makes pytest and Go trees installable, but
+  // the restoration proofs stay Node-only and must fail closed on those runners
+  // rather than execute a Node invocation against a Python or Go suite.
+  for (const runner of ['pytest', 'go-test'] as const) {
+    it(`runner-unsupported: a ${runner} runner fails closed, never proven`, () => {
+      const record = runTestRestoration({
+        ...minimalInput,
+        finding: { category: 'assertion-strip', file: 'test/calc.test.js' },
+        prDiff: testHunkDiff,
+        testRunner: runner,
+      });
+      assert.equal(record.verdict, 'not-proven:runner-unsupported');
+    });
+  }
+
   it('execution-error: a spawn-level failure on control 2 never publishes tamperedSuitePasses', () => {
     // The post workspace does not exist, so the tampered-suite control run
     // dies at spawn. The record must say "execution error", not "suite

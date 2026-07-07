@@ -194,11 +194,15 @@ are Node with no recognizable runner, 5 are Python with no pytest signal, 9 are
 unreadable (deleted or private), and 2 pin node 20.x
 ([`benchmarks/real-corpus/eg-viability.json`](../benchmarks/real-corpus/eg-viability.json)).
 The screen is a viability upper bound: it recognizes the ecosystem, not that
-dependencies install or tests pass. The proof-tier run and the corroborated
-precision below still cover only the 12 Node PRs, because the sandbox's
-dependency-install path is Node-only; the 66 Python and Go PRs are screen-viable
-but not yet proof-tier-provisionable
-([`benchmarks/real-corpus/EG-VIABILITY-POLYGLOT-REPORT.md`](../benchmarks/real-corpus/EG-VIABILITY-POLYGLOT-REPORT.md)).
+dependencies install or tests pass. The sandbox now installs Python (venv + pip
+or poetry) and Go (`go mod download`) as well as Node, but the proof-tier run and
+the corroborated precision below still cover only the 12 Node PRs, because the
+corroboration engine (mutation, coverage, issue-repro) is Node-only: a pytest or
+Go tree installs but scores no corroborated finding. Attempting all 8 outcome-bad
+EG-viable PRs confirmed this (7 are purely additive, 1 needs poetry the sandbox
+lacks), so provisioning was never the binding constraint
+([`benchmarks/real-corpus/EG-VIABILITY-POLYGLOT-REPORT.md`](../benchmarks/real-corpus/EG-VIABILITY-POLYGLOT-REPORT.md),
+[`benchmarks/real-corpus/polyglot-provisioning.json`](../benchmarks/real-corpus/polyglot-provisioning.json)).
 
 Every detector's `corroborated` field in
 [`benchmarks/real-corpus/promotions.json`](../benchmarks/real-corpus/promotions.json)

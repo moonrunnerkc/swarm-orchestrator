@@ -48,15 +48,42 @@ things follow:
    (`test/audit/gate/positive-gate-polyglot.test.ts`), so the runner-scoped
    execute-and-parse path works on a provisioned tree.
 2. The proof tier (mutation, coverage, the six restoration engines) and the
-   corroborated-precision measurement still cover only the 12 Node PRs. The
-   sandbox's dependency-install path (`provisionWorkspace` /`runInstall`) is
-   Node package managers only; a Python or Go PR is screen-viable but its
-   dependencies are not yet installed by the sandbox, so the proof tier cannot
-   run on the 66 new PRs. Wiring `pip install` / `go mod download` into the
-   provisioning install step is the bounded follow-on that turns screen-viable
-   into proof-tier-provisionable.
+   corroborated-precision measurement still cover only the 12 Node PRs. Phase 1
+   (below) landed the Python and Go dependency install, but the proof tier's
+   scoped commands stay Node-only, so a pytest/Go PR is now installable yet still
+   not corroboration-scoreable.
 
 So Phase 2 moves the measured screen viability from 6.1% to 39.6% and proves the
 pytest and Go runners end to end on fixtures, while the corroborated proof-tier
-denominator stays at the 12 Node PRs until the Python and Go install paths land.
-No proof-tier or corroborated number was inflated by the re-measurement.
+denominator stays at the 12 Node PRs. No proof-tier or corroborated number was
+inflated by the re-measurement.
+
+## Phase 1: the install path lands, and disproves the "install is the blocker" claim
+
+Phase 1 wired the two missing install paths into `provisionWorkspace`
+(`src/audit/execution-grounded/polyglot-install.ts`): a Python path (isolated
+`.venv` + pip for a pinned `requirements.txt` and/or the project, or `poetry
+install` when a `poetry.lock` is present) and a Go path (`go mod download`,
+checksum-frozen against `go.sum`). The Node install path is unchanged. Unit and
+offline-live coverage is in
+`test/audit/execution-grounded/polyglot-install.test.ts`; the restoration proofs
+are pinned to fail closed on a pytest/Go runner
+(`test/audit/execution-grounded/test-restoration.live.test.ts`).
+
+With the install path live, every one of the 8 outcome-bad EG-viable PRs was
+attempted (`npm run polyglot-provision`,
+[`polyglot-provisioning.json`](polyglot-provisioning.json)). The result: **7 of 8
+are purely additive** (`no-mutable-source`: a new file plus its test, so the
+additive-code control finds nothing to revert) and **1 of 8** cloned and then
+failed `poetry install` (`provision-failed`: poetry is not on the sandbox PATH,
+recorded with the real command). The 8 break down as 5 pytest
+(All-Hands-AI/OpenHands) and 3 Go (divord97/ccc), correcting the "eight pytest"
+figure in an earlier draft.
+
+The honest finding: the Node-only install path was never the binding constraint
+for the corroborated gate. The binding constraint is the Node-only corroboration
+engine (mutation/coverage/issue-repro emit no signal on pytest/Go) plus the
+additive shape of these specific outcome-bad PRs. `provisionableCount` therefore
+stays 12 (corroboration-scoreable = Node), the corroborated gate stays
+`undefined-n`, and no number moved. See
+[`CORROBORATED-GATE-READINESS.md`](CORROBORATED-GATE-READINESS.md).

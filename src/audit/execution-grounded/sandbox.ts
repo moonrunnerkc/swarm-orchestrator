@@ -13,6 +13,7 @@ import * as path from 'path';
 import { SwarmError } from '../../errors';
 import { getLogger } from '../../logger';
 import { commandTimeoutMs, execBin, execEnv, execFileGuarded, isGuardedTimeout } from './exec-env';
+import { provisionNonNode, type NonNodeEcosystem } from './polyglot-install';
 
 const log = getLogger('audit:execution-grounded:sandbox');
 
@@ -185,6 +186,24 @@ export function detectNonNodeRunner(workspacePath: string): TestRunner | null {
     if (hasPytestSignal) return 'pytest';
   }
   return null;
+}
+
+/**
+ * Route a provisioned checkout to its install ecosystem: a package.json marks a
+ * Node tree; otherwise a go.mod marks Go and a Python project with a pytest
+ * signal marks Python (Go-before-Python, matching detectNonNodeRunner). A tree
+ * with no recognizable marker falls back to Node so the npm install path records
+ * the honest failure rather than silently skipping.
+ *
+ * @param workspacePath a checked-out project root.
+ * @returns 'node', 'python', or 'go'.
+ */
+export function provisionEcosystem(workspacePath: string): 'node' | NonNodeEcosystem {
+  if (fs.existsSync(path.join(workspacePath, 'package.json'))) return 'node';
+  const runner = detectNonNodeRunner(workspacePath);
+  if (runner === 'go-test') return 'go';
+  if (runner === 'pytest') return 'python';
+  return 'node';
 }
 
 function gitFetchCheckout(repo: string, commit: string, dir: string, depth: number): void {
@@ -411,14 +430,27 @@ export function provisionWorkspace(opts: ProvisionOptions): Workspace {
     gitFetchCheckout(repo, commit, workspacePath, opts.depth ?? 1);
     const packageManager = detectPackageManager(workspacePath);
     if (opts.skipInstall !== true) {
-      runInstall(packageManager, workspacePath, cacheDir, opts.installTimeoutMs);
+      const ecosystem = provisionEcosystem(workspacePath);
+      if (ecosystem === 'node') {
+        runInstall(packageManager, workspacePath, cacheDir, opts.installTimeoutMs);
+      } else {
+        // pytest / Go: dependency install only. The proof tier's scoped commands
+        // stay Node-only and fail-closed on these runners, so nothing here runs
+        // the suite; provisioning just makes the tree installable and records an
+        // honest success or failure.
+        provisionNonNode(workspacePath, ecosystem, {
+          ...(opts.installTimeoutMs !== undefined ? { timeoutMs: opts.installTimeoutMs } : {}),
+          ...(cacheDir !== undefined ? { cacheDir } : {}),
+        });
+      }
       const size = directorySizeBytes(workspacePath);
       if (size > DISK_CAP_BYTES) {
         log.warn(
           `workspace ${workspacePath} is ${(size / 1e9).toFixed(2)}GB, over the ${DISK_CAP_BYTES / 1e9}GB soft cap`,
         );
       }
-      if (opts.runBuild === true) {
+      // The build script is a Node concept; a pytest/Go tree has no npm build.
+      if (ecosystem === 'node' && opts.runBuild === true) {
         buildWorkspace(workspacePath, packageManager, opts.buildTimeoutMs ?? 10 * 60 * 1000);
         // A build script can leave a hung native-binary step (profiling-node's
         // linux-target prune) running detached after the build itself returns;

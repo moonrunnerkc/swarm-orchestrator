@@ -249,12 +249,14 @@ async function main(): Promise<void> {
   }
 
   const viable = records.filter((r) => r.viable);
-  // The proof tier (mutation, coverage, restoration) provisions with Node
-  // package managers only, so the count that actually provisions the proof
-  // tier is the Node-viable subset, distinct from the broader screen viability
-  // (which also recognizes pytest and Go). compute-promotions reads this count
-  // for the corroborated tier so the "PRs provision" claim stays honest until
-  // the Python and Go install paths land.
+  // Phase 1 wired pytest (venv + pip / poetry) and Go (go mod download) into the
+  // sandbox install path, so a pytest or Go tree can now be cloned and installed.
+  // provisionableCount stays the Node-viable subset on purpose: it counts the PRs
+  // the corroboration engine (mutation, coverage, issue-repro) can actually score,
+  // and that engine is still Node-only. A pytest/Go PR is install-provisionable but
+  // not corroboration-scoreable, so folding it into this count would overstate the
+  // measurable slice. compute-promotions and the corroborated-gate measurement read
+  // this count, so it tracks corroboration reach, not install reach.
   const provisionable = viable.filter((r) => r.ecosystem === 'node');
   const viableByEcosystem: Record<string, number> = {};
   for (const r of viable) {
