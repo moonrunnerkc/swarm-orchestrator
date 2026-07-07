@@ -95,7 +95,7 @@ ground truth = repository history only:
 `benchmarks/real-corpus/outcome-labels.json` (`npm run labeling:outcome`):
 
 - 205 corpus entries, **197 usable** (8 indeterminate: the commit 404'd).
-- **0 reverted, 22 hotfixed, 175 survived** — a true bad base rate of 11.2%.
+- **0 reverted, 22 hotfixed, 175 survived**, a true bad base rate of 11.2%.
 
 ## CI regression baselines
 
