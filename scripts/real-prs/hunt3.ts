@@ -238,7 +238,7 @@ function upgradedConfig(egWallClockMs: number): ExecutionGroundedConfig {
   };
 }
 
-async function proveEntry(target: FrozenTarget, egWallClockMs: number): Promise<Hunt3Record> {
+export async function proveEntry(target: FrozenTarget, egWallClockMs: number): Promise<Hunt3Record> {
   const { entry } = target;
   const meter: TokenMeter = new Map();
   const base: Hunt3Record = {
