@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { assembleEvidencePack, RUN_RECORD_FILENAME } from '../../../src/audit/evidence-pack/evidence-pack';
 import { verifyManifest, EVIDENCE_MANIFEST_FILENAME } from '../../../src/audit/evidence-pack/manifest';
+import { buildProofCoverage } from '../../../src/audit/attestation/proof-coverage';
 import { sha256File } from '../../../src/audit/evidence-pack/hashing';
 import { deriveBomIdentity } from '../../../src/audit/aibom/bom-identity';
 import { HashChainedLedger } from '../../../src/ledger/ledger';
@@ -172,6 +173,52 @@ describe('evidence-pack / assembleEvidencePack', () => {
     const after = verifyManifest(outDir);
     assert.equal(after.ok, false);
     assert.equal(after.mismatches[0]?.path, 'attestation/cyclonedx.json');
+  });
+
+  it('content-addresses the proof-coverage attestation into the MANIFEST', () => {
+    const { ledgerPath } = seedAudit('audit-run-A');
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-ep-att-'));
+    const proofCoverage = buildProofCoverage({
+      findings: [],
+      mutationRuns: [],
+      coverageRuns: [],
+      repros: [],
+      restorations: [],
+      mockRestorations: [],
+      noOpRestorations: [],
+      typeSuppressionRestorations: [],
+      fakeRefactorRestorations: [],
+      deadBranchRestorations: [],
+      claimDifferentials: [],
+      skipped: ['provision: no lockfile'],
+    } as never);
+    const result = assembleEvidencePack({
+      outDir,
+      ledgerPath,
+      toolVersion: '12.0.0',
+      identity: IDENTITY,
+      proofCoverage,
+    });
+
+    const coverage = result.manifest.files.find((f) => f.path === 'attestation/proof-coverage.json');
+    assert.ok(coverage, 'the attestation must be listed in the MANIFEST');
+    assert.equal(coverage.role, 'attestation');
+    assert.equal(coverage.sha256, sha256File(path.join(outDir, 'attestation/proof-coverage.json')));
+    // The written file records what the silence covers (the provisioning miss).
+    const written = JSON.parse(fs.readFileSync(path.join(outDir, 'attestation/proof-coverage.json'), 'utf8'));
+    assert.equal(written.provisioning.provisioned, false);
+    assert.equal(written.provisioning.reason, 'no lockfile');
+    assert.equal(verifyManifest(outDir).ok, true);
+  });
+
+  it('omits the attestation file when no proof coverage is supplied', () => {
+    const { ledgerPath } = seedAudit('audit-run-A');
+    const outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-ep-noatt-'));
+    const result = assembleEvidencePack({ outDir, ledgerPath, toolVersion: '12.0.0', identity: IDENTITY });
+    assert.equal(
+      result.manifest.files.some((f) => f.path === 'attestation/proof-coverage.json'),
+      false,
+    );
   });
 
   it('throws when the ledger has no audit metadata to attest', () => {

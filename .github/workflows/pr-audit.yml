@@ -41,6 +41,24 @@ jobs:
           LEDGER=$(ls -t .swarm/ledger/audit-*.jsonl 2>/dev/null | head -n1 || true)
           echo "ledger=$LEDGER" >> "$GITHUB_OUTPUT"
           echo "exit=$AUDIT_EXIT" >> "$GITHUB_OUTPUT"
+      - name: Proof-coverage summary
+        if: ${{ always() }}
+        run: |
+          # What the proof engines proved, exonerated, or abstained on, into the
+          # run's check summary. Reports; does not judge.
+          [ -f audit.json ] || exit 0
+          SUMMARY=$(node -e "
+            try {
+              const r = require('./audit.json');
+              const cov = r.proofCoverage;
+              if (!cov) process.exit(0);
+              const { renderProofCoverageSummary } = require('./dist/src/audit/attestation/proof-coverage');
+              process.stdout.write(renderProofCoverageSummary(cov));
+            } catch (e) { process.exit(0); }
+          ")
+          if [ -n "$SUMMARY" ]; then
+            { echo "### Proof coverage"; echo ""; echo '```'; echo "$SUMMARY"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Render and post comment
         if: ${{ always() }}
         env:

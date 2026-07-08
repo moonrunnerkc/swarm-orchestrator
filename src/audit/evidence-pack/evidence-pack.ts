@@ -23,6 +23,7 @@ import { readEntries } from '../../ledger/ledger';
 import { writeCycloneDxMlBom } from '../aibom/cyclonedx-ml';
 import { writeSpdxAiProfileBom } from '../aibom/spdx-ai-profile';
 import type { BomIdentity } from '../aibom/bom-identity';
+import { serializeProofCoverage, type ProofCoverageAttestation } from '../attestation/proof-coverage';
 import { sha256File } from './hashing';
 import {
   buildManifest,
@@ -52,6 +53,10 @@ export interface AssembleEvidencePackInput {
   readonly toolVersion: string;
   /** The replay-identical AIBOM identity derived from the run inputs. */
   readonly identity: BomIdentity;
+  /** The proof-coverage attestation (what the proof engines proved, exonerated,
+   *  or abstained on). Written into the pack as a content-addressed attestation
+   *  file. A pure function of the audit inputs, so it stays replay-identical. */
+  readonly proofCoverage?: ProofCoverageAttestation;
 }
 
 export interface EvidencePackResult {
@@ -101,11 +106,23 @@ export function assembleEvidencePack(input: AssembleEvidencePackInput): Evidence
   });
   writeSpdxAiProfileBom(input.ledgerPath, path.join(packDir, spdxRel), input.toolVersion, input.identity);
 
+  // Proof-coverage attestation: a replay-identical statement of what the proof
+  // engines proved, exonerated, or abstained on, so a policy reading the pack
+  // knows what "no findings" covers. Optional so pre-attestation callers keep
+  // working; when present it is content-addressed into the MANIFEST like the AIBOMs.
+  const attestationFiles: Array<{ path: string; role: ManifestFileRole }> = [];
+  if (input.proofCoverage !== undefined) {
+    const coverageRel = 'attestation/proof-coverage.json';
+    fs.writeFileSync(path.join(packDir, coverageRel), serializeProofCoverage(input.proofCoverage), 'utf8');
+    attestationFiles.push({ path: coverageRel, role: 'attestation' });
+  }
+
   const evidenceFiles = copyEvidence(entries, evidenceDir);
 
   const files: Array<{ path: string; role: ManifestFileRole }> = [
     { path: cdxRel, role: 'attestation' },
     { path: spdxRel, role: 'attestation' },
+    ...attestationFiles,
     ...evidenceFiles.map((rel) => ({ path: rel, role: 'evidence' as const })),
   ];
 

@@ -34,6 +34,9 @@ outputs:
   ledger:
     description: 'Path to the audit ledger JSONL file.'
     value: ${{ steps.audit.outputs.ledger }}
+  proof-coverage:
+    description: 'Compact proof-coverage roll-up line (proofs executed N of M, findings, abstains).'
+    value: ${{ steps.coverage.outputs.summary }}
 
 runs:
   using: 'composite'
@@ -100,6 +103,35 @@ runs:
         } >> "$GITHUB_OUTPUT"
         exit $EXIT
       continue-on-error: true
+
+    - name: Proof-coverage summary
+      id: coverage
+      shell: bash
+      env:
+        AUDIT_JSON: ${{ steps.audit.outputs.json_path }}
+      run: |
+        # Report what the audit's proof engines proved, exonerated, or abstained
+        # on, into the run's check summary. No judgment language; a policy decides.
+        if [ -z "${AUDIT_JSON:-}" ] || [ ! -f "$AUDIT_JSON" ]; then exit 0; fi
+        SUMMARY=$(node -e "
+          try {
+            const r = require('$AUDIT_JSON');
+            const cov = r.proofCoverage;
+            if (!cov) process.exit(0);
+            const { renderProofCoverageSummary } = require('swarm-orchestrator/dist/src/audit/attestation/proof-coverage');
+            process.stdout.write(renderProofCoverageSummary(cov));
+          } catch (e) { process.exit(0); }
+        ")
+        if [ -n "$SUMMARY" ]; then
+          {
+            echo "### Proof coverage"
+            echo ""
+            echo '```'
+            echo "$SUMMARY"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "summary=$(printf '%s' "$SUMMARY" | head -n1)" >> "$GITHUB_OUTPUT"
+        fi
 
     - name: Post audit comment
       if: ${{ inputs.comment == 'true' }}

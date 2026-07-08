@@ -93,6 +93,11 @@ import { writeShadowEntry } from '../../audit/shadow';
 import { buildShadowOutput, writeShadowOutputFile } from '../../audit/shadow-output';
 import { sha256FileIfPresent } from '../../audit/evidence-pack/hashing';
 import { assembleEvidencePack } from '../../audit/evidence-pack/evidence-pack';
+import {
+  buildProofCoverage,
+  renderProofCoverageSummary,
+  type ProofCoverageAttestation,
+} from '../../audit/attestation/proof-coverage';
 import { deriveBomIdentity, readSourceDateEpoch } from '../../audit/aibom/bom-identity';
 import { readToolVersion } from '../../audit/aibom/tool-version';
 
@@ -938,9 +943,11 @@ function emitAuditResult(args: {
   ledgerPath: string;
   wallTimeMs: number;
   decision: { blocked: boolean; blockingTriggers: BlockTrigger[] };
+  proofCoverage: ProofCoverageAttestation;
   mergeDecision?: MergeDecision;
 }): number {
-  const { flags, result, prContext, runId, ledgerPath, wallTimeMs, decision, mergeDecision } = args;
+  const { flags, result, prContext, runId, ledgerPath, wallTimeMs, decision, proofCoverage, mergeDecision } =
+    args;
   // --shadow-output: write the v10.3 single-file schema and exit
   // without posting a comment or affecting the merge gate. Resolved
   // before --shadow so a caller can pass both flags and get both
@@ -971,7 +978,7 @@ function emitAuditResult(args: {
     });
     return 0;
   }
-  emitOutput(flags.output, result, ledgerPath, flags.mode, decision.blockingTriggers, mergeDecision);
+  emitOutput(flags.output, result, ledgerPath, flags.mode, decision.blockingTriggers, proofCoverage, mergeDecision);
   if (flags.mode === 'advise') return 0;
   return decision.blocked ? 1 : 0;
 }
@@ -1018,6 +1025,12 @@ async function runAudit(flags: AuditFlags): Promise<number> {
       attribution,
     });
   }
+
+  // Proof-coverage attestation: a machine-readable statement of what the proof
+  // engines proved, exonerated, or abstained on, so a merge policy knows what a
+  // clean audit's silence covers. A pure projection of the execution-grounded
+  // outcome (empty when that layer did not run).
+  const proofCoverage = buildProofCoverage(egOutcome);
 
   // Everything published from here on (the pass flag, the ledger entries,
   // the gate decision, the shadow outputs, the rendered comment) works from
@@ -1094,6 +1107,7 @@ async function runAudit(flags: AuditFlags): Promise<number> {
       inputs.prContext.prMetadata,
       ledgerPath,
       result.detectorVersions,
+      proofCoverage,
     );
   }
 
@@ -1105,6 +1119,7 @@ async function runAudit(flags: AuditFlags): Promise<number> {
     ledgerPath,
     wallTimeMs,
     decision,
+    proofCoverage,
     ...(mergeDecision !== undefined ? { mergeDecision } : {}),
   });
 }
@@ -1210,6 +1225,7 @@ function writeEvidencePack(
   pr: { number: number; repository: string; headSha: string; baseSha: string },
   ledgerPath: string,
   detectorVersions: Record<string, string>,
+  proofCoverage: ProofCoverageAttestation,
 ): void {
   const toolVersion = readToolVersion();
   const identity = deriveBomIdentity(
@@ -1224,7 +1240,7 @@ function writeEvidencePack(
     readSourceDateEpoch(),
   );
   try {
-    const pack = assembleEvidencePack({ outDir, ledgerPath, toolVersion, identity });
+    const pack = assembleEvidencePack({ outDir, ledgerPath, toolVersion, identity, proofCoverage });
     logger.info(
       `evidence-pack: wrote ${pack.manifest.files.length} attested file(s) + ${pack.evidenceFileCount} evidence artifact(s) to ${outDir} ` +
         `(re-verify offline against ${outDir}/MANIFEST.json)`,
@@ -1240,13 +1256,14 @@ function emitOutput(
   ledgerPath: string,
   mode: AuditMode,
   blockingTriggers: BlockTrigger[],
+  proofCoverage: ProofCoverageAttestation,
   mergeDecision?: MergeDecision,
 ): void {
   if (format === 'json') {
     const payload =
       mergeDecision !== undefined
-        ? { ...result, mode, blockingTriggers, mergeDecision }
-        : { ...result, mode, blockingTriggers };
+        ? { ...result, mode, blockingTriggers, proofCoverage, mergeDecision }
+        : { ...result, mode, blockingTriggers, proofCoverage };
     process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
     return;
   }
@@ -1267,6 +1284,11 @@ function emitOutput(
   for (const trigger of blockingTriggers) {
     const verb = mode === 'gate' ? 'BLOCK' : 'advisory';
     logger.info(`  [${verb}] ${trigger.kind}: ${trigger.summary} reproduce: ${trigger.reproduce}`);
+  }
+  if (proofCoverage.summary.enginesApplicable > 0) {
+    for (const line of renderProofCoverageSummary(proofCoverage).trimEnd().split('\n')) {
+      logger.info(`  ${line}`);
+    }
   }
   if (mergeDecision !== undefined) {
     logger.info(`  merge-gate: ${summarizeMergeDecision(mergeDecision)}`);
