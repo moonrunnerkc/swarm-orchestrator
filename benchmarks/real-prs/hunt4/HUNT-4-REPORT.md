@@ -66,7 +66,7 @@ The runner recorded outline/outline#12197 as `proven-block`
 (`claim-falsified-synthesized`): arbiters agreed, closure linked, base failed
 twice, head failed. Per the pre-registration and the run's hard rules, a proven
 trigger is diagnosed before any number is trusted. Diagnosis
-(`hunt4-diagnose-outline.ts`, output in `outline-diagnosis.log`, three re-runs on a
+(`hunt4-diagnose-outline.ts`, output in `outline-diagnosis.md`, three re-runs on a
 freshly provisioned pre/post pair):
 
 **1. It fails the proven definition (part 3, fresh-clone replay).** The synthesized
