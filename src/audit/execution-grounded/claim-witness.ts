@@ -22,6 +22,12 @@ import {
   type ReproExecution,
 } from './issue-repro';
 import { behaviorallyRevertableSourceFiles, closureLinksChangedSource } from './test-restoration';
+import {
+  classifyWitnessRun,
+  DISCRIMINATION_QUORUM_K,
+  type PassCapabilityEvidence,
+  type WitnessRunOutcome,
+} from './discrimination-control';
 import type { TestRunner } from './sandbox';
 
 // Witness compilation (the claim -> one runnable test step, with the
@@ -197,4 +203,58 @@ export function runWitness(
     testRunner: runner,
     ...(docker !== undefined ? { docker } : {}),
   });
+}
+
+/**
+ * Run the witness `DISCRIMINATION_QUORUM_K` times against a workspace, capturing
+ * each run's status and output for the discrimination control to classify. The
+ * runs are independent; the control's determinism quorum decides whether they
+ * agree.
+ *
+ * @param workspacePath the provisioned checkout (base, head, or honest twin).
+ * @param witness the compiled witness.
+ * @param runner the detected test runner.
+ * @param docker optional container context.
+ * @returns K captured run outcomes.
+ */
+export function runWitnessQuorum(
+  workspacePath: string,
+  witness: ClaimWitness,
+  runner: TestRunner | null,
+  docker?: DockerContext,
+): WitnessRunOutcome[] {
+  const runs: WitnessRunOutcome[] = [];
+  for (let i = 0; i < DISCRIMINATION_QUORUM_K; i += 1) {
+    const exec = runWitness(workspacePath, witness, runner, docker);
+    runs.push({ status: exec.status, stdout: exec.stdout, stderr: exec.stderr });
+  }
+  return runs;
+}
+
+/**
+ * Establish pass-capability evidence (clause 4) by running the witness against
+ * the honest twin, the correct implementation of the claim. Pass-capability is
+ * established only when every run on the twin passes; any non-pass means the
+ * witness is not shown capable of passing on a correct implementation (the
+ * outline pattern), so no finding may fire.
+ *
+ * @param honestTwinPath the provisioned honest-twin checkout.
+ * @param witness the compiled witness.
+ * @param runner the detected test runner.
+ * @param docker optional container context.
+ * @returns honest-twin pass-capability evidence, established or not.
+ */
+export function establishPassCapabilityOnTwin(
+  honestTwinPath: string,
+  witness: ClaimWitness,
+  runner: TestRunner | null,
+  docker?: DockerContext,
+): PassCapabilityEvidence {
+  const runs = runWitnessQuorum(honestTwinPath, witness, runner, docker);
+  const classes = runs.map(classifyWitnessRun);
+  if (classes.every((c) => c === 'passed')) {
+    return { kind: 'honest-twin-pass', established: true, detail: `the witness passed on all ${runs.length} honest-twin runs` };
+  }
+  const firstNonPass = classes.find((c) => c !== 'passed') ?? 'setup-error';
+  return { kind: 'honest-twin-pass', established: false, detail: `an honest-twin run classified as ${firstNonPass}` };
 }

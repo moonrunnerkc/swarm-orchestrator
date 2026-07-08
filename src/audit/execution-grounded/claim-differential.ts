@@ -1,17 +1,33 @@
 // Claim-differential proof. Restoration proofs falsify the diff; this falsifies
 // the CLAIM. It compiles the PR's stated claim into one executable witness test,
 // requires two independent models to agree the witness tests the claim, then runs
-// the witness against the base and head checkouts:
+// the witness against the base and head checkouts under the discrimination
+// control (discrimination-control.ts):
 //
 //   base fails, head passes -> claim-delivered   (exonerating record)
-//   base fails, head fails   -> claim-falsified-synthesized  (a finding)
+//   base fails, head fails   -> claim-falsified-synthesized  ONLY when the witness
+//                               is shown capable of passing on a correct
+//                               implementation (pass-capability, clause 4);
+//                               otherwise an abstain, because a witness that fails
+//                               identically everywhere for its own setup reasons
+//                               provides no differential signal (the Hunt 4
+//                               outline false positive).
 //   base passes              -> witness invalid, abstain
 //   any control not green    -> abstain, with the reason recorded
 //
 // Fail-closed everywhere. The witness must fail deterministically on the base
-// (flake quorum, two runs), its import closure must reach a behaviorally-revertable
-// source file the PR changed, and it must actually run. This targets the misses
-// the restoration proofs cannot reach: goal-not-fixed and no-test-edit cheats.
+// (K-run determinism quorum), its import closure must reach a
+// behaviorally-revertable source file the PR changed, it must actually run (only
+// assertion failures count; a setup error abstains), and the base and head must
+// fail the same assertion the same way. In production no reference implementation
+// exists and no bounded proxy certifies pass-capability, so the finding abstains
+// there; on twins the honest twin supplies pass-capability directly. This targets
+// the misses the restoration proofs cannot reach: goal-not-fixed and no-test-edit
+// cheats.
+//
+// The verdict vocabulary and raw pre-discrimination table live in
+// claim-differential-verdict.ts (re-exported here so callers keep one import
+// surface); the discrimination logic lives in discrimination-control.ts.
 
 import { getLogger } from '../../logger';
 import type { DockerContext } from './docker-runner';
@@ -23,86 +39,38 @@ import {
   arbiterPairAgrees,
   buildClaimText,
   compileWitness,
+  establishPassCapabilityOnTwin,
   evaluateClosureControl,
-  runWitness,
+  runWitnessQuorum,
   type ClaimWitness,
   type Completer,
   type ClosureControl,
   type WitnessArbiter,
 } from './claim-witness';
+import {
+  assessDiscrimination,
+  DISCRIMINATION_QUORUM_K,
+  type DiscriminationVerdict,
+  type PassCapabilityEvidence,
+  type WitnessRunOutcome,
+} from './discrimination-control';
+import {
+  discriminationAbstainVerdict,
+  verdictReason,
+  type ClaimDifferentialVerdict,
+} from './claim-differential-verdict';
+
+export {
+  baseSideVerdict,
+  classifyClaimDifferential,
+  headVerdict,
+  type ClaimDifferentialVerdict,
+} from './claim-differential-verdict';
 
 const log = getLogger('audit:execution-grounded:claim-differential');
 
-export type ClaimDifferentialVerdict =
-  | 'claim-delivered'
-  | 'claim-falsified-synthesized'
-  | 'abstain:no-claim'
-  | 'abstain:witness-not-compiled'
-  | 'abstain:arbiter-disagreement'
-  | 'abstain:witness-not-runnable'
-  | 'abstain:flaky-base'
-  | 'abstain:closure-unlinked'
-  | 'abstain:base-passes'
-  | 'abstain:execution-error';
-
-/**
- * Decide the base-side outcome from the two base runs and the controls, before
- * any head run. Returns a terminal abstain verdict, or 'run-head' when the base
- * side is clean (arbiter agreed, closure linked, witness failed on the base
- * twice) and the head run is what decides delivered vs falsified. Pure.
- *
- * @param c arbiter agreement, closure link, and the two base run statuses.
- * @returns a terminal abstain verdict or the 'run-head' signal.
- */
-export function baseSideVerdict(c: {
-  arbiterAgreed: boolean;
-  closureLinked: boolean | null;
-  baseRun1: ReproStatus;
-  baseRun2: ReproStatus;
-}): ClaimDifferentialVerdict | 'run-head' {
-  if (!c.arbiterAgreed) return 'abstain:arbiter-disagreement';
-  if (c.baseRun1 === 'errored' || c.baseRun2 === 'errored') return 'abstain:witness-not-runnable';
-  if (c.baseRun1 === 'timeout' || c.baseRun2 === 'timeout') return 'abstain:execution-error';
-  const failed1 = c.baseRun1 === 'failed';
-  const failed2 = c.baseRun2 === 'failed';
-  if (failed1 !== failed2) return 'abstain:flaky-base';
-  if (!failed1) return 'abstain:base-passes';
-  if (c.closureLinked !== true) return 'abstain:closure-unlinked';
-  return 'run-head';
-}
-
-/**
- * Decide the final verdict from the head run, given the base side was clean.
- *
- * @param headStatus the witness status on the head checkout.
- * @returns claim-delivered (head passes), claim-falsified-synthesized (head
- *   fails), or abstain:execution-error (head could not run).
- */
-export function headVerdict(
-  headStatus: ReproStatus,
-): 'claim-delivered' | 'claim-falsified-synthesized' | 'abstain:execution-error' {
-  if (headStatus === 'errored' || headStatus === 'timeout') return 'abstain:execution-error';
-  if (headStatus === 'passed') return 'claim-delivered';
-  return 'claim-falsified-synthesized';
-}
-
-/**
- * The full verdict table as one pure function (base side then head side), for
- * tests and for a caller that already has every input.
- *
- * @param c arbiter agreement, closure link, both base runs, and the head status.
- * @returns the claim-differential verdict.
- */
-export function classifyClaimDifferential(c: {
-  arbiterAgreed: boolean;
-  closureLinked: boolean | null;
-  baseRun1: ReproStatus;
-  baseRun2: ReproStatus;
-  headStatus: ReproStatus;
-}): ClaimDifferentialVerdict {
-  const base = baseSideVerdict(c);
-  return base === 'run-head' ? headVerdict(c.headStatus) : base;
-}
+/** The witness provenance recorded on the result (always defined once compiled). */
+type WitnessMeta = NonNullable<ClaimDifferentialResult['witness']>;
 
 export interface ClaimDifferentialResult {
   readonly verdict: ClaimDifferentialVerdict;
@@ -124,8 +92,23 @@ export interface ClaimDifferentialResult {
     b: { yes: boolean; model: string };
   };
   readonly closure?: ClosureControl;
-  readonly baseRuns?: [ReproStatus, ReproStatus];
+  /** The K base run statuses (the discrimination quorum). */
+  readonly baseRuns?: ReproStatus[];
+  /** The K head run statuses; absent when the base side abstained before head. */
+  readonly headRuns?: ReproStatus[];
+  /** The representative head status (first head run), kept for readers that
+   *  expect a single value; absent when no head run happened. */
   readonly headStatus?: ReproStatus;
+  /** The discrimination control's decision and evidence, recorded into the
+   *  ledger so a reader can see which clause held back or let through a verdict. */
+  readonly discrimination?: {
+    outcome: 'fire' | 'claim-delivered' | 'abstain';
+    reason?: string;
+    detail: string;
+    identity?: string;
+    passCapability: PassCapabilityEvidence;
+    quorumK: number;
+  };
   /** The exact command that runs the witness, published on a finding. */
   readonly reproduceCommand?: string;
 }
@@ -138,6 +121,10 @@ export interface ClaimDifferentialInput {
   readonly issueBody?: string;
   readonly preWorkspacePath: string;
   readonly postWorkspacePath: string;
+  /** The honest-twin (correct-implementation) checkout for the pass-capability
+   *  control (clause 4). Supplied only by the twin measurement harness; absent
+   *  in production, where the finding therefore abstains. */
+  readonly honestTwinWorkspacePath?: string;
   readonly testRunner: TestRunner | null;
   readonly complete: Completer;
   readonly arbiterA: WitnessArbiter;
@@ -145,44 +132,85 @@ export interface ClaimDifferentialInput {
   readonly docker?: DockerContext;
 }
 
-function reason(verdict: ClaimDifferentialVerdict): string {
-  switch (verdict) {
-    case 'claim-delivered':
-      return 'the witness fails on the base and passes on the head: the claim is delivered';
-    case 'claim-falsified-synthesized':
-      return 'the witness fails on both the base and the head: the PR does not deliver its claim';
-    case 'abstain:no-claim':
-      return 'the PR carries no usable claim text to compile a witness from';
-    case 'abstain:witness-not-compiled':
-      return 'no runnable witness test could be compiled from the claim';
-    case 'abstain:arbiter-disagreement':
-      return 'the two arbiters did not both agree the witness tests the claim';
-    case 'abstain:witness-not-runnable':
-      return 'the witness could not run against the base checkout (setup/parse failure)';
-    case 'abstain:flaky-base':
-      return 'the witness gave different results across two base runs (flaky); no proof';
-    case 'abstain:closure-unlinked':
-      return "the witness's import closure does not reach a behaviorally-revertable changed source file";
-    case 'abstain:base-passes':
-      return 'the witness passes on the base: the claimed defect is not present, so the witness is invalid';
-    case 'abstain:execution-error':
-      return 'the witness execution errored or timed out; no proof';
-  }
-}
-
 function terminal(
   verdict: ClaimDifferentialVerdict,
   extra: Partial<ClaimDifferentialResult> = {},
 ): ClaimDifferentialResult {
-  return { verdict, isFinding: verdict === 'claim-falsified-synthesized', reason: reason(verdict), ...extra };
+  return { verdict, isFinding: verdict === 'claim-falsified-synthesized', reason: verdictReason(verdict), ...extra };
+}
+
+/** Establish pass-capability from the honest twin when the harness supplied one;
+ *  otherwise the production `none` evidence, which abstains the finding. */
+function resolvePassCapability(
+  input: ClaimDifferentialInput,
+  witness: ClaimWitness,
+): PassCapabilityEvidence {
+  if (input.honestTwinWorkspacePath === undefined) {
+    return {
+      kind: 'none',
+      reason:
+        'no reference implementation is available in production, and no bounded runtime proxy is sound enough to certify pass-capability (see the discrimination-control production semantics); the finding abstains',
+    };
+  }
+  return establishPassCapabilityOnTwin(
+    input.honestTwinWorkspacePath,
+    witness,
+    input.testRunner,
+    input.docker,
+  );
+}
+
+/** Turn the discrimination verdict into a claim-differential result, threading
+ *  the run provenance and (on a finding) the reproduce command. */
+function fromDiscrimination(
+  verdict: DiscriminationVerdict,
+  ctx: {
+    witnessMeta: WitnessMeta;
+    arbiter: ClaimDifferentialResult['arbiter'];
+    closure: ClosureControl;
+    baseStatuses: ReproStatus[];
+    headStatuses: ReproStatus[];
+    passCapability: PassCapabilityEvidence;
+    witness: ClaimWitness;
+    testRunner: TestRunner | null;
+  },
+): ClaimDifferentialResult {
+  const base: Partial<ClaimDifferentialResult> = {
+    witness: ctx.witnessMeta,
+    ...(ctx.arbiter !== undefined ? { arbiter: ctx.arbiter } : {}),
+    closure: ctx.closure,
+    baseRuns: ctx.baseStatuses,
+    headRuns: ctx.headStatuses,
+    ...(ctx.headStatuses[0] !== undefined ? { headStatus: ctx.headStatuses[0] } : {}),
+    discrimination: {
+      outcome: verdict.outcome,
+      ...(verdict.outcome === 'abstain' ? { reason: verdict.reason } : {}),
+      detail: verdict.outcome === 'abstain' ? verdict.detail : `matched identity: ${verdict.identity}`,
+      ...(verdict.outcome !== 'abstain' ? { identity: verdict.identity } : {}),
+      passCapability: ctx.passCapability,
+      quorumK: DISCRIMINATION_QUORUM_K,
+    },
+  };
+  if (verdict.outcome === 'fire') {
+    return {
+      ...terminal('claim-falsified-synthesized', base),
+      reproduceCommand: renderReproCommand(ctx.witness.repro, ctx.testRunner),
+    };
+  }
+  if (verdict.outcome === 'claim-delivered') return terminal('claim-delivered', base);
+  return terminal(discriminationAbstainVerdict(verdict.reason), base);
 }
 
 /**
- * Run the claim-differential proof end to end against a provisioned PR pair.
- * Short-circuits: the head witness runs only when the base side is clean, so an
- * abstaining PR spends no head execution.
+ * Run the claim-differential proof end to end against a provisioned PR pair. The
+ * base and head witness runs go through the discrimination control: only an
+ * assertion failure that reproduces deterministically on both checkouts, with the
+ * same failure identity, and with affirmative evidence the witness can pass on a
+ * correct implementation, becomes `claim-falsified-synthesized`. In production
+ * (no honest twin) the finding always abstains at the pass-capability clause.
  *
- * @param input the PR text, both workspaces, the runner, and the injected LLM deps.
+ * @param input the PR text, both workspaces, the runner, the injected LLM deps,
+ *   and (twin harness only) the honest-twin checkout.
  * @returns the verdict with its controls, provenance, and (on a finding) the
  *   reproduce command. Never throws; an execution error becomes an abstain.
  */
@@ -215,7 +243,7 @@ export async function runClaimDifferential(
     return terminal('abstain:witness-not-compiled');
   }
   if (witness === null) return terminal('abstain:witness-not-compiled');
-  const witnessMeta = {
+  const witnessMeta: WitnessMeta = {
     model: witness.model,
     promptVersion: witness.promptVersion,
     promptHash: witness.promptHash,
@@ -234,28 +262,33 @@ export async function runClaimDifferential(
     log.warn(`arbiter gate failed: ${String(err)}`);
     return terminal('abstain:arbiter-disagreement', { witness: witnessMeta });
   }
+  if (!arbiter.agreed) return terminal('abstain:arbiter-disagreement', { witness: witnessMeta, arbiter });
 
   const closure = evaluateClosureControl(input.postWorkspacePath, witness, input.prDiff);
+  if (closure.linked !== true) {
+    return terminal('abstain:closure-unlinked', { witness: witnessMeta, arbiter, closure });
+  }
 
-  const baseRun1 = runWitness(input.preWorkspacePath, witness, input.testRunner, input.docker).status;
-  const baseRun2 = runWitness(input.preWorkspacePath, witness, input.testRunner, input.docker).status;
-  const baseRuns: [ReproStatus, ReproStatus] = [baseRun1, baseRun2];
+  // The determinism quorum: K runs on the base and K on the head. The witness
+  // execution is a model-free sandbox run, so the cost is wall-clock only.
+  const baseRuns = runWitnessQuorum(input.preWorkspacePath, witness, input.testRunner, input.docker);
+  const headRuns = runWitnessQuorum(input.postWorkspacePath, witness, input.testRunner, input.docker);
+  const passCapability = resolvePassCapability(input, witness);
 
-  const base = baseSideVerdict({
-    arbiterAgreed: arbiter.agreed,
-    closureLinked: closure.linked,
-    baseRun1,
-    baseRun2,
+  const verdict = assessDiscrimination({ baseRuns, headRuns, passCapability });
+  return fromDiscrimination(verdict, {
+    witnessMeta,
+    arbiter,
+    closure,
+    baseStatuses: statusesOf(baseRuns),
+    headStatuses: statusesOf(headRuns),
+    passCapability,
+    witness,
+    testRunner: input.testRunner,
   });
-  if (base !== 'run-head') {
-    return terminal(base, { witness: witnessMeta, arbiter, closure, baseRuns });
-  }
+}
 
-  const headStatus = runWitness(input.postWorkspacePath, witness, input.testRunner, input.docker).status;
-  const verdict = headVerdict(headStatus);
-  const result = terminal(verdict, { witness: witnessMeta, arbiter, closure, baseRuns, headStatus });
-  if (verdict === 'claim-falsified-synthesized') {
-    return { ...result, reproduceCommand: renderReproCommand(witness.repro, input.testRunner) };
-  }
-  return result;
+/** Project the captured run outcomes down to their statuses for the record. */
+function statusesOf(runs: readonly WitnessRunOutcome[]): ReproStatus[] {
+  return runs.map((r) => r.status);
 }
