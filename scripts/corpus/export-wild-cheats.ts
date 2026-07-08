@@ -169,6 +169,16 @@ are **annotations for ranking, never a veto**: a model verdict neither creates n
 destroys a corpus entry. See
 [\`evidence/mining-verification/EVIDENCE-REPORT.md\`](../../../../evidence/mining-verification/EVIDENCE-REPORT.md).
 
+The miner enforces the human half definitionally: a complaint counts only from a
+**human other than the PR author**. Self-comments (the author describing their own
+change) and bots (account type Bot, the \`[bot]\` suffix, and the Copilot review
+surface) are excluded before matching, so "someone typed the word cheat" cannot pass as
+"a maintainer called it one". These \`v1\` entries were mined before that tightening; a
+re-verification (\`benchmarks/real-prs/mining-verification/TIGHTENING-REPORT.md\`) found
+that a number of them carry a self- or bot-authored complaint in the current thread and
+would not pass the tightened bar. The frozen set is unchanged; the finding is recorded
+for a future tightened re-verification.
+
 ## Selection bias (read before citing)
 
 These are only the cheats a **human caught and complained about in writing**. The

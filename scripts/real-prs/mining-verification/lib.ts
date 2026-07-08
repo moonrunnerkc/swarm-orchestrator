@@ -8,7 +8,12 @@
 import { detectAgent } from '../../../src/audit/pr-source';
 import type { AuditAgentAttribution } from '../../../src/audit/types';
 import { dedupeSignals } from '../mine-complaints';
-import { extractComplaintSignals, type ComplaintSignal, type ConversationEntry } from '../lib/github';
+import {
+  extractComplaintSignals,
+  isMaintainerComplaintEntry,
+  type ComplaintSignal,
+  type ConversationEntry,
+} from '../lib/github';
 
 export interface PrMeta {
   title: string;
@@ -57,10 +62,18 @@ export interface PatternStage {
  * signals; the first signal is the category the pipeline would carry forward.
  *
  * @param conversation the PR's human review/issue comments.
+ * @param prAuthor the PR author's login, so self-comments are excluded (empty disables the check).
  * @returns whether a complaint pattern matched and the deduped signals.
  */
-export function patternStage(conversation: readonly ConversationEntry[]): PatternStage {
-  const signals = dedupeSignals(conversation.flatMap((c) => extractComplaintSignals(c.body, c.source)));
+export function patternStage(
+  conversation: readonly ConversationEntry[],
+  prAuthor = '',
+): PatternStage {
+  // Definitional restoration: only a human other than the PR author can carry a
+  // maintainer complaint. Self-comments and bots are excluded before matching,
+  // matching the tightened miner.
+  const maintainerEntries = conversation.filter((c) => isMaintainerComplaintEntry(c, prAuthor));
+  const signals = dedupeSignals(maintainerEntries.flatMap((c) => extractComplaintSignals(c.body, c.source)));
   return { hit: signals.length > 0, signals };
 }
 

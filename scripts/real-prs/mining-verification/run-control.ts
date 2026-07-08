@@ -235,7 +235,7 @@ async function main(): Promise<void> {
       continue;
     }
 
-    const ps = patternStage(conversation);
+    const ps = patternStage(conversation, meta.authorLogin);
     const am = attributionModes(meta);
     base.pattern = {
       hit: ps.hit,

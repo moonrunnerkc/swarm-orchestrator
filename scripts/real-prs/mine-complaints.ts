@@ -25,6 +25,7 @@ import { detectAgent } from '../../src/audit/pr-source';
 import {
   COMPLAINT_SEARCH_PHRASES,
   extractComplaintSignals,
+  isMaintainerComplaintEntry,
   fetchPrAgentSignals,
   fetchPrConversation,
   fetchPrDiff,
@@ -294,11 +295,21 @@ async function main(): Promise<void> {
         log.warn(`conversation fetch for ${id} failed: ${String(err)}`);
         continue;
       }
+      // Definitional restoration: a maintainer complaint comes from a human other
+      // than the PR author. Drop self-comments (the author describing their own
+      // change) and any bot that slipped past the fetch filter before matching, so
+      // "someone typed the word cheat" cannot pass as "a maintainer called it one".
+      const maintainerEntries = conversation.filter((c) => isMaintainerComplaintEntry(c, hit.author));
       const signals = dedupeSignals(
-        conversation.flatMap((c) => extractComplaintSignals(c.body, c.source)),
+        maintainerEntries.flatMap((c) => extractComplaintSignals(c.body, c.source)),
       );
       if (signals.length === 0) {
-        bump('complaint-not-confirmed-in-conversation');
+        // Distinguish "no cheat phrase at all" from "a cheat phrase, but only from
+        // the PR author or a bot" so the funnel shows the tightening's effect.
+        const selfOrBotSignals = dedupeSignals(
+          conversation.flatMap((c) => extractComplaintSignals(c.body, c.source)),
+        );
+        bump(selfOrBotSignals.length > 0 ? 'complaint-self-or-bot-only' : 'complaint-not-confirmed-in-conversation');
         continue;
       }
       bump('complaint-confirmed');

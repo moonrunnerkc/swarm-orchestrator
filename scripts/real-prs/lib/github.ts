@@ -11,7 +11,26 @@ import { getLogger } from '../../../src/logger';
 
 const log = getLogger('real-prs:github');
 
-const BOT_AUTHOR = /(\[bot\]$)|^(dependabot|renovate|github-actions|greenkeeper|snyk-bot)/i;
+// A bot login: the `[bot]` account suffix, a named CI/dependency bot, or the
+// GitHub Copilot review surface (which authors as bare "Copilot" without the
+// `[bot]` suffix, so it needs its own anchor). A bot is not a human maintainer,
+// so its comments never satisfy the corpus bar; the account-type check in
+// `isBotAuthor` catches every other bot GitHub classifies as one.
+const BOT_AUTHOR = /(\[bot\]$)|^(dependabot|renovate|github-actions|greenkeeper|snyk-bot)|^copilot\b/i;
+
+/**
+ * Whether a comment author is a bot rather than a human maintainer. True when
+ * GitHub classifies the account as a Bot, or the login matches a known bot shape
+ * (the `[bot]` suffix, a named CI/dependency bot, or the Copilot review surface).
+ *
+ * @param login the author login.
+ * @param accountType the GitHub account `type` when known ('User' | 'Bot' | 'Organization').
+ * @returns true when the author is a bot.
+ */
+export function isBotAuthor(login: string, accountType?: string): boolean {
+  if (accountType !== undefined && accountType.toLowerCase() === 'bot') return true;
+  return BOT_AUTHOR.test(login);
+}
 
 const TEST_FILE = /(^|\/)(__tests__|__test__)\//i;
 const TEST_NAME = /\.(test|spec)\.[cm]?[jt]sx?$/i;
@@ -630,6 +649,9 @@ export function extractComplaintSignals(text: string, source = 'comment'): Compl
 export interface ConversationEntry {
   source: 'review' | 'review-comment' | 'issue-comment';
   author: string;
+  /** GitHub account type when known ('User' | 'Bot' | 'Organization'); used to
+   *  drop bot authors by classification, not just by login shape. */
+  authorType?: string;
   body: string;
 }
 
@@ -645,10 +667,16 @@ export async function fetchPrConversation(
   prNumber: number,
 ): Promise<ConversationEntry[]> {
   const entries: ConversationEntry[] = [];
-  const pushIf = (source: ConversationEntry['source'], author: string, body: string | null | undefined): void => {
+  const pushIf = (
+    source: ConversationEntry['source'],
+    user: { login?: string | null; type?: string | null } | null | undefined,
+    body: string | null | undefined,
+  ): void => {
     if (body === null || body === undefined || body.trim().length === 0) return;
-    if (BOT_AUTHOR.test(author)) return;
-    entries.push({ source, author, body });
+    const author = user?.login ?? '';
+    const authorType = user?.type ?? undefined;
+    if (isBotAuthor(author, authorType ?? undefined)) return;
+    entries.push({ source, author, ...(authorType !== undefined ? { authorType } : {}), body });
   };
   try {
     const reviews = await octokit.paginate(octokit.pulls.listReviews, {
@@ -657,7 +685,7 @@ export async function fetchPrConversation(
       pull_number: prNumber,
       per_page: 100,
     });
-    for (const r of reviews) pushIf('review', r.user?.login ?? '', r.body);
+    for (const r of reviews) pushIf('review', r.user, r.body);
   } catch (err) {
     log.debug(`listReviews failed for ${target.owner}/${target.repo}#${prNumber}: ${(err as Error).message}`);
   }
@@ -668,7 +696,7 @@ export async function fetchPrConversation(
       pull_number: prNumber,
       per_page: 100,
     });
-    for (const c of rc) pushIf('review-comment', c.user?.login ?? '', c.body);
+    for (const c of rc) pushIf('review-comment', c.user, c.body);
   } catch (err) {
     log.debug(`listReviewComments failed for ${target.owner}/${target.repo}#${prNumber}: ${(err as Error).message}`);
   }
@@ -679,11 +707,29 @@ export async function fetchPrConversation(
       issue_number: prNumber,
       per_page: 100,
     });
-    for (const c of ic) pushIf('issue-comment', c.user?.login ?? '', c.body);
+    for (const c of ic) pushIf('issue-comment', c.user, c.body);
   } catch (err) {
     log.debug(`listComments failed for ${target.owner}/${target.repo}#${prNumber}: ${(err as Error).message}`);
   }
   return entries;
+}
+
+/**
+ * Whether a conversation entry can carry a maintainer complaint: a human other
+ * than the PR author authored it. A self-comment (the PR author using the phrase
+ * to describe their own change) cannot satisfy "a maintainer publicly called it a
+ * cheat"; a bot is not a human maintainer (bots are dropped at fetch, this is
+ * defense-in-depth). Definitional, not a filter tuning: it restores the corpus bar
+ * the last review sitting made visible (2 real in 24, 8 of the noise self-authored,
+ * 7 Copilot bot reviews).
+ *
+ * @param entry a fetched conversation entry.
+ * @param prAuthor the PR author's login (empty when unknown, which disables the self check).
+ * @returns true when the entry is eligible to carry a maintainer complaint.
+ */
+export function isMaintainerComplaintEntry(entry: ConversationEntry, prAuthor: string): boolean {
+  if (prAuthor.length > 0 && entry.author.toLowerCase() === prAuthor.toLowerCase()) return false;
+  return !isBotAuthor(entry.author, entry.authorType);
 }
 
 /** The deeper agent-attribution signals a PR carries beyond its title and body:
