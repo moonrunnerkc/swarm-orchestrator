@@ -61,9 +61,28 @@ jobs:
           else
             echo "no candidates file produced this run"
           fi
+      - name: Package candidates for review
+        # Enriches each mined candidate with intake metadata (head/base SHA, PR
+        # state, EG-viability screen, content-addressed evidence id) and renders
+        # the review package + single fold command. GitHub core API only, no
+        # arbiter, so ANTHROPIC_API_KEY is not passed here. Skipped when the mine
+        # produced no candidates file.
+        if: ${{ hashFiles('benchmarks/real-prs/wild-cheat-corpus/mined-candidates.json') != '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node dist/scripts/real-prs/intake-package.js
       - name: Upload the grown candidate corpus for review
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: mined-complaint-candidates
           path: benchmarks/real-prs/wild-cheat-corpus/mined-candidates.json
+          if-no-files-found: warn
+      - name: Upload the review package for maintainer fold
+        # The maintainer reviews incoming/REVIEW.md, picks approved ids, and runs
+        # the fold command it names. Nothing here folds: main is protected and a
+        # fold is a maintainer decision (the review-then-fold contract).
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: complaint-review-package
+          path: benchmarks/real-prs/wild-cheat-corpus/incoming/
           if-no-files-found: warn

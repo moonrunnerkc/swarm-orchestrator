@@ -6,7 +6,9 @@ stated), **unchecked-with-path** (not ready; the path to ready is named), or
 **blocked-with-owner** (an external dependency owns it). No aspirational entries:
 every line carries a measured value and the script that regenerates it.
 
-Measured at the soundness run (branch point `cc1d1c42`). Re-probe before trusting
+Measured at the soundness run (branch point `cc1d1c42`); items 2, 4, and 6
+re-probed at the endgame run (the token is now valid, so corpus mining actually
+ran, and a derived-witness advisory line was measured). Re-probe before trusting
 any credit- or token-dependent line.
 
 ## 1. Every gate trigger is sound (no verdict producible by its own harness defect)
@@ -54,6 +56,14 @@ the tier is advisory, not gating).
   honest-twin false positives 0/16, twin-mode recall 16/16, separation 1.00,
   production reach cost 16/16 abstains. Regenerate: `npm run
   discrimination-control:measure`.
+- **Derived-witness, twin measurement** (n=8 executable twins, half
+  output-preserving, half output-changing): honest-twin false positives 0/8,
+  special-casing recall 8/8, production abstain 8/8, separation 1.00; the
+  pure-constant hardcode splits 4/4 caught on output-changing, 0/4 on
+  output-preserving (a documented indistinguishability limit, not a false fire).
+  Advisory; abstains in production for the same pass-capability reason as the
+  discrimination control. Regenerate: `npm run derived-witness:measure`
+  (`benchmarks/twins/DERIVED-WITNESS-REPORT.md`).
 - **Judge comparison** (`benchmarks/twins/JUDGE-GATE-COST-REPORT.md`): wild-cheat
   recall 1/7, clean-side false-block rate 1/52 (Wilson-95 [0.00, 0.10]), proof
   tier 0% recall / 0% false positive on the same semantic set. Regenerate: `npm run
@@ -69,13 +79,20 @@ dist/scripts/real-prs/hunt3-provision-proof.js`.
 
 ## 4. Corpus freshness
 
-**Blocked (owner: maintainer, token).** Fresh (unspent) proof-executable wild
-entries: **0**. All 7 proof-executable entries were diagnosed in Hunt 3/4
-(SECONDARY, confirmatory-after-exploration); outline/outline#12197 is now formally
-`diagnosed` in the wild-cheat dataset. A new PRIMARY pre-registered hunt needs
-post-freeze entries, which the complaint-mine workflow dispatch produces, and that
-needs a valid `GITHUB_TOKEN`. The token returned HTTP 401 at this run's Phase 0, so
-no entries were mined. This is an external dependency, not a code gap.
+**Blocked (owner: arbiter yield).** Fresh (unspent) proof-executable wild
+entries: **0**. The `GITHUB_TOKEN` that blocked this at the soundness run is now
+valid (HTTP 200 at the endgame run's Phase 0), so the complaint-mine workflow ran
+at full budget: **1721** PRs examined, 25 complaint-confirmed, **0
+dual-arbiter-confirmed** (21 arbiter-not-cheat, 3 arbiter-split, 1 unevaluable).
+The blocker is no longer the token; it is yield. This pass surfaced no confirmable
+wild cheat to grow the corpus, so the corpus is unchanged and no PRIMARY hunt can
+be pre-registered. The review package is committed at
+`benchmarks/real-prs/wild-cheat-corpus/incoming/` (REVIEW.md + intake.json) with a
+single fold command, and the nightly complaint-mine cron now packages every run
+for maintainer review (never folds). A new PRIMARY pre-registered hunt still needs
+post-freeze folded entries; none landed. Regenerate: dispatch complaint-mine.yml
+(or `node dist/scripts/real-prs/mine-complaints.js` with a valid token), then
+`node dist/scripts/real-prs/intake-package.js`.
 
 ## 5. Documentation consistency (the Phase 2 sweep)
 
@@ -92,13 +109,25 @@ new test. Full inventory: `evidence/soundness/SWEEP-INVENTORY.md`. Regenerate:
 
 | blocker | state | owner |
 | --- | --- | --- |
-| `GITHUB_TOKEN` invalid (HTTP 401) | blocks Phase 4 corpus mining (item 4) | maintainer |
+| Fresh-corpus yield | complaint-mine ran token-valid; 0/1721 arbiter-confirmed, corpus did not grow (item 4) | miner, maintainer |
 | Anthropic credits fluctuate | live at this run (HTTP 200); probe every run | maintainer |
+
+(`GITHUB_TOKEN` was the item-4 blocker at the soundness run; it is valid again
+here, so it is no longer the constraint. Yield is.)
 
 ## What content work is ready
 
 Items 1, 2, 3, and 5 are checked: the gate-soundness story, the advisory-tier
-numbers, the executable surface, and the documentation consistency can be written
-about as stated. Item 4 (fresh-corpus claims, and therefore any "we caught N new
-wild cheats" statement) is blocked on the token and must not be written until fresh
-entries are mined and diagnosed.
+numbers (now including the derived-witness advisory measurement), the executable
+surface, and the documentation consistency can be written about as stated. The
+machine-readable proof-coverage attestation (`docs/attestation.md`, emitted on
+every `swarm audit` run and content-addressed into the evidence pack) is a
+consumption surface that a downstream auto-merge policy can read; it makes each
+engine's executed/verdict/abstain-reason claim byte-checkable rather than
+asserted, so it is safe to write about as a mechanism.
+
+Item 4 (fresh-corpus claims, and therefore any "we caught N new wild cheats"
+statement) stays blocked: the token is unblocked but the mining pass produced 0
+arbiter-confirmed entries, so no fresh cheat has been diagnosed. It must not be
+written until a mining pass yields confirmable entries, a maintainer folds them,
+and a PRIMARY hunt runs against them.
