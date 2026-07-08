@@ -303,13 +303,12 @@ export function renderReviewMarkdown(pkg: ReviewPackage, foldCommand: string): s
  * @returns the corpus entry for the fold.
  */
 export function intakeToWildCheatEntry(r: IntakeRecord): WildCheatEntry {
-  const state: 'merged' | 'closed' = r.state === 'merged' ? 'merged' : 'closed';
   return {
     id: r.id,
     repo: r.repo,
     prNumber: r.prNumber,
     url: r.url,
-    state,
+    state: r.state,
     vendor: r.vendor,
     vendorConfidence: r.vendorConfidence,
     headSha: r.headSha,

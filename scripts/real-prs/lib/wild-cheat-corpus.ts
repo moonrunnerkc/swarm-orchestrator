@@ -26,8 +26,10 @@ export interface WildCheatEntry {
   readonly repo: string;
   readonly prNumber: number;
   readonly url: string;
-  /** 'merged' shipped despite the complaint; 'closed' the maintainer rejected it. */
-  readonly state: 'merged' | 'closed';
+  /** 'merged' shipped despite the complaint; 'closed' the maintainer rejected it;
+   *  'open' the maintainer flagged it in an in-flight PR (the head SHA pins the
+   *  cheat diff even if the PR later changes). */
+  readonly state: 'merged' | 'closed' | 'open';
   /** The agent the pr-source fingerprinter attributed the PR to. */
   readonly vendor: string;
   /** The fingerprinter's confidence in that attribution. */

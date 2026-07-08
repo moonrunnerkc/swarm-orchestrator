@@ -157,6 +157,15 @@ describe('renderReviewMarkdown', () => {
   });
 });
 
+describe('intakeToWildCheatEntry', () => {
+  it('preserves an open PR state instead of collapsing it to closed', () => {
+    const rec = buildIntakeRecord(candidate({ id: 'o-1' }), 'open', { headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40) }, VIABLE);
+    const entry = intakeToWildCheatEntry(rec);
+    assert.equal(entry.state, 'open');
+    assert.equal(entry.holdout, true);
+  });
+});
+
 describe('nextVersion', () => {
   it('bumps the highest present version', () => {
     assert.equal(nextVersion(['v1']), 'v2');
