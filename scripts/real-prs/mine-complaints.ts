@@ -25,6 +25,7 @@ import { detectAgent } from '../../src/audit/pr-source';
 import {
   COMPLAINT_SEARCH_PHRASES,
   extractComplaintSignals,
+  fetchPrAgentSignals,
   fetchPrConversation,
   fetchPrDiff,
   makeOctokit,
@@ -55,6 +56,7 @@ interface Args {
   primaryModel: string | undefined;
   secondaryModel: string | undefined;
   resume: boolean;
+  deepAttribution: boolean;
   out: string;
 }
 
@@ -75,6 +77,7 @@ function parseArgs(argv: string[]): Args {
     primaryModel: undefined,
     secondaryModel: undefined,
     resume: false,
+    deepAttribution: false,
     out: DEFAULT_OUT,
   };
   for (let i = 0; i < argv.length; i += 1) {
@@ -92,6 +95,7 @@ function parseArgs(argv: string[]): Args {
     else if (arg === '--secondary-model' && next !== undefined) (a.secondaryModel = next), (i += 1);
     else if (arg === '--out' && next !== undefined) (a.out = next), (i += 1);
     else if (arg === '--resume') a.resume = true;
+    else if (arg === '--deep-attribution') a.deepAttribution = true;
   }
   return a;
 }
@@ -104,6 +108,9 @@ interface MinedCandidate {
   vendor: string;
   vendorConfidence: string;
   vendorSource: string;
+  /** Whether attribution came from the free title/body/author gate ('cheap') or
+   *  the on-demand branch+commit fetch ('deep', only under --deep-attribution). */
+  attributionDepth: 'cheap' | 'deep';
   complaintCategory: string;
   complaints: ComplaintSignal[];
   arbiter: {
@@ -256,7 +263,22 @@ async function main(): Promise<void> {
       cp.processedIds.push(id);
       bump('examined');
 
-      const attribution = detectAgent({ prTitle: hit.title, prBody: hit.body });
+      const authors = hit.author.length > 0 ? [hit.author] : [];
+      let attribution = detectAgent({ prTitle: hit.title, prBody: hit.body, authors });
+      let attributionDepth: 'cheap' | 'deep' = 'cheap';
+      // A PR whose only agent tell is its head branch or a commit trailer is
+      // invisible to the title/body/author gate. Under --deep-attribution, spend
+      // one extra fetch to recover it; this is the narrowing the instrument
+      // regression set proved (the miner re-detected 9 of 27, the fingerprinter 26).
+      if (attribution === undefined && args.deepAttribution && spend()) {
+        const sig = await withRetry(
+          () => fetchPrAgentSignals(octokit, parseRepo(hit.repo), hit.number),
+          `agent-signals ${id}`,
+        ).catch(() => ({ headRef: '', commitMessages: [] }));
+        attribution = detectAgent({ prTitle: hit.title, prBody: hit.body, authors, headRef: sig.headRef, commitMessages: sig.commitMessages });
+        attributionDepth = 'deep';
+        if (attribution !== undefined) bump('attribution-deep-recovered');
+      }
       if (attribution === undefined) {
         bump('not-agent-attributed');
         continue;
@@ -302,6 +324,7 @@ async function main(): Promise<void> {
         vendor: attribution.vendor,
         vendorConfidence: attribution.confidence,
         vendorSource: attribution.source,
+        attributionDepth,
         complaintCategory: signals[0]!.category,
         complaints: signals,
         arbiter,

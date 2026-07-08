@@ -192,6 +192,7 @@ interface SearchIssueItem {
   title: string;
   body: string;
   html_url: string;
+  user?: { login?: string } | null;
 }
 
 /**
@@ -369,6 +370,10 @@ export interface GlobalSearchPr {
   title: string;
   body: string;
   url: string;
+  /** The PR author's login, from the search item. Empty when the search API
+   *  omits the user. Carried so a consumer can feed the fingerprinter its
+   *  highest-confidence signal (bot-author) without a second fetch. */
+  author: string;
 }
 
 /**
@@ -389,7 +394,7 @@ export async function searchMergedPrsGlobal(
     for (const item of items) {
       const m = item.html_url.match(/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/);
       if (m === null) continue;
-      out.push({ repo: m[1] as string, number: item.number, title: item.title, body: item.body, url: item.html_url });
+      out.push({ repo: m[1] as string, number: item.number, title: item.title, body: item.body, url: item.html_url, author: item.user?.login ?? '' });
       if (out.length >= cap) break;
     }
   }
@@ -679,6 +684,48 @@ export async function fetchPrConversation(
     log.debug(`listComments failed for ${target.owner}/${target.repo}#${prNumber}: ${(err as Error).message}`);
   }
   return entries;
+}
+
+/** The deeper agent-attribution signals a PR carries beyond its title and body:
+ *  the head branch name and the commit-message trailers. Fetched on demand for a
+ *  PR whose title/body/author did not already attribute it, so the fingerprinter
+ *  can match a `codex/` branch or a `Co-Authored-By: Claude` trailer. */
+export interface PrAgentSignals {
+  headRef: string;
+  commitMessages: string[];
+}
+
+/**
+ * Fetch a PR's head branch and commit messages for a deep agent-attribution pass.
+ * One `pulls.get` (head ref) plus the first page of `listCommits` (messages); it
+ * does not paginate commits, since an agent trailer appears on every commit it
+ * authored, so the first page is sufficient to attribute.
+ *
+ * @param octokit an authenticated client.
+ * @param target the owner/repo.
+ * @param prNumber the PR number.
+ * @returns the head ref and up to 100 commit messages (empty on a fetch error).
+ */
+export async function fetchPrAgentSignals(
+  octokit: Octokit,
+  target: RepoTarget,
+  prNumber: number,
+): Promise<PrAgentSignals> {
+  let headRef = '';
+  let commitMessages: string[] = [];
+  try {
+    const pr = await octokit.pulls.get({ owner: target.owner, repo: target.repo, pull_number: prNumber });
+    headRef = pr.data.head?.ref ?? '';
+  } catch (err) {
+    log.debug(`pulls.get head for ${target.owner}/${target.repo}#${prNumber}: ${(err as Error).message}`);
+  }
+  try {
+    const commits = await octokit.pulls.listCommits({ owner: target.owner, repo: target.repo, pull_number: prNumber, per_page: 100 });
+    commitMessages = commits.data.map((c) => c.commit.message);
+  } catch (err) {
+    log.debug(`listCommits for ${target.owner}/${target.repo}#${prNumber}: ${(err as Error).message}`);
+  }
+  return { headRef, commitMessages };
 }
 
 /** Fetch the raw unified diff for a PR. */
