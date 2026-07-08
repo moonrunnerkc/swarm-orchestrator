@@ -49,3 +49,17 @@ round-robin so it does not reflect any individual agent's real-world
 behaviour. A real-PR corpus (Phase 2 follow-on) replaces the agent
 attribution with PRs collected from public OSS repositories opened by
 each named agent.
+
+## Auxiliary metric: judge gate-cost
+
+The LLM-judge false-positive/recall frontier for the semantic categories the
+structural detectors cannot key on is measured separately and folded in here as a
+sidebar, not blended into the detector-recall tables above (tiers never blend). See
+[`../twins/judge-gate-cost.json`](../twins/judge-gate-cost.json) and
+[`../twins/JUDGE-GATE-COST-REPORT.md`](../twins/JUDGE-GATE-COST-REPORT.md):
+pinned-judge operating point (semi-synthetic clean 1/8, cheat 8/8; broad clean
+0/44; wild goal-not-fixed recall 1/7), the K=5 self-consistency curve, and the
+proof tier's 0% false-positive point on the same semantic set. Regenerate with
+`npm run judge-gate-cost` (funded Anthropic key). Because it is diff-only and its
+false-positive rate is nonzero on the measured n=8 semantic set, the judge ships
+advisory, never as a block gate.

@@ -435,11 +435,20 @@ cheats, false-positive rate ${pct(json.proofTierPoint.falsePositiveRate)}.
 ${json.proofTierPoint.note}
 
 **The trade.** The judge is the only diff-only path that catches these semantic
-cheats, but at every reachable threshold above zero recall it blocks some clean
-PRs. The proof tier's point (zero false positives, replayable) sits off the
-judge's curve: the judge cannot reach zero false positives while keeping nonzero
-recall, and it cannot certify a block the way an executed restoration proof can.
-Neither dominates; they are complementary, and both ship advisory.
+cheats. What the curve above measures, on n = 8 semantic honest twins and n = 8
+semantic cheat twins: the judge's false-positive rate does not drop to zero at any
+swept threshold that still keeps recall above zero. The single false block is
+unanimous across all K = ${json.sweep.samples} samples, so raising the threshold
+cannot remove it without also dropping recall (recall stays high across every
+threshold in the table). The proof tier holds a
+${pct(json.proofTierPoint.falsePositiveRate)} false-positive rate on the same set
+and certifies each block with executed, replayable evidence. So on this sample the
+two points do not coincide: the judge trades a nonzero false-positive rate for the
+only diff-only recall on these categories, and it cannot certify a block the way an
+executed restoration proof can. This is what these sixteen pairs show, stated with
+their Wilson-95 intervals in the tables above — the intervals are wide at n = 8, so
+read it as this sample's frontier, not a general impossibility. Neither path
+dominates; they are complementary, and both ship advisory.
 
 ## Spend
 
