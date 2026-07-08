@@ -79,20 +79,38 @@ dist/scripts/real-prs/hunt3-provision-proof.js`.
 
 ## 4. Corpus freshness
 
-**Blocked (owner: arbiter yield).** Fresh (unspent) proof-executable wild
-entries: **0**. The `GITHUB_TOKEN` that blocked this at the soundness run is now
-valid (HTTP 200 at the endgame run's Phase 0), so the complaint-mine workflow ran
-at full budget: **1721** PRs examined, 25 complaint-confirmed, **0
-dual-arbiter-confirmed** (21 arbiter-not-cheat, 3 arbiter-split, 1 unevaluable).
-The blocker is no longer the token; it is yield. This pass surfaced no confirmable
-wild cheat to grow the corpus, so the corpus is unchanged and no PRIMARY hunt can
-be pre-registered. The review package is committed at
+**Blocked (owner: arbiter yield), and the 0/1721 is now instrument-verified, not a
+defect.** Fresh (unspent) proof-executable wild entries: **0**. The endgame pass
+examined **1721** PRs, 25 complaint-confirmed, **0 dual-arbiter-confirmed**. The
+mining-verification run (`evidence/mining-verification/EVIDENCE-REPORT.md`) asked
+whether that 0 is a fact or a broken instrument and answered with controls:
+
+- **Positive control (the 27 Hunt-2 cheats):** the pattern stage re-matches 26/26
+  fetchable; the arbiter confirms 0 of 11 evaluated. The same Opus/v2 primary
+  returns `true-cheat` on 21/23 planted oracle cheats (91.3%), so it is a working
+  discriminator, not stuck. The 0 is the dual-arbiter bar (diff-grounded), which is
+  stricter than the maintainer-complaint bar the 27 were confirmed at.
+- **Negative control (30 non-cheat complaints):** 24/28 pattern-miss; the 2
+  spurious trippers evaluated both arbitrated `false-alarm`; 0 confirmed. No
+  false-positive path.
+- **Population:** `0/1721` (arbiter bar, global cheat-comment population) and
+  `27/327` (complaint bar, enumerated-agent-PR population) do not compare. At the
+  matched complaint bar the endgame rate (25/176 to ~8% corrected) is flat-to-higher
+  than Hunt 2's 8.3%, so there is no measured decline in wild cheating.
+- **One proven defect, fixed:** the miner attributed by PR body only, re-detecting 9
+  of the 27; the fingerprinter fed author/branch/commit signals recovers 26. Fixed
+  (`fix(real-prs): feed the fingerprinter author/branch/commit signals`); a bounded
+  re-mine recovered 10 agent PRs per 144 examined. This widens the funnel but does
+  not change the terminal 0 (the arbiter still gates).
+
+No confirmable wild cheat surfaced, so the corpus is unchanged and no PRIMARY hunt
+can be pre-registered; the constraint is arbiter yield, not the token (valid, HTTP
+200) and not a broken miner. The review package is committed at
 `benchmarks/real-prs/wild-cheat-corpus/incoming/` (REVIEW.md + intake.json) with a
-single fold command, and the nightly complaint-mine cron now packages every run
-for maintainer review (never folds). A new PRIMARY pre-registered hunt still needs
-post-freeze folded entries; none landed. Regenerate: dispatch complaint-mine.yml
-(or `node dist/scripts/real-prs/mine-complaints.js` with a valid token), then
-`node dist/scripts/real-prs/intake-package.js`.
+single fold command; the nightly complaint-mine cron packages every run for review
+(never folds). Regenerate: the controls under
+`scripts/real-prs/mining-verification/`, or dispatch complaint-mine.yml (now with
+`--deep-attribution` available) then `node dist/scripts/real-prs/intake-package.js`.
 
 ## 5. Documentation consistency (the Phase 2 sweep)
 
@@ -109,7 +127,7 @@ new test. Full inventory: `evidence/soundness/SWEEP-INVENTORY.md`. Regenerate:
 
 | blocker | state | owner |
 | --- | --- | --- |
-| Fresh-corpus yield | complaint-mine ran token-valid; 0/1721 arbiter-confirmed, corpus did not grow (item 4) | miner, maintainer |
+| Fresh-corpus yield | 0/1721 arbiter-confirmed is instrument-verified (controls + funnel), not a defect; corpus did not grow (item 4) | arbiter yield, maintainer |
 | Anthropic credits fluctuate | live at this run (HTTP 200); probe every run | maintainer |
 
 (`GITHUB_TOKEN` was the item-4 blocker at the soundness run; it is valid again
