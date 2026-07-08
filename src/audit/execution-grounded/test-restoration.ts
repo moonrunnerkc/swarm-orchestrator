@@ -275,17 +275,34 @@ export function classifyRestoration(c: {
   return { verdict: 'proven', failingTests: run1 };
 }
 
-// File-scoped invocations per runner, in argv form for child_process
-// execution (matching how issue-repro shapes its runner commands). ava and
-// node-test are deliberately absent: `parseFailingTests` has no locked
-// identity parser for them, so the orchestrator reports
-// 'not-proven:runner-unsupported' instead of executing a run whose failures
-// it cannot attribute. The human-facing reproduce command below renders the
-// exact same invocation, so what we executed and what we publish never drift.
+/** Go is package-scoped: `go test` runs a directory's whole `_test.go` set, not a
+ *  single file, so a test file maps to its package (`./dir`, or `.` at the root).
+ *  Deduped and sorted so the argv is deterministic. */
+function goPackagesFor(files: readonly string[]): string[] {
+  const dirs = new Set<string>();
+  for (const f of files) {
+    const dir = path.posix.dirname(f);
+    dirs.add(dir === '.' || dir === '' ? '.' : `./${dir}`);
+  }
+  return [...dirs].sort();
+}
+
+// Invocations per runner, in argv form for child_process execution (matching how
+// issue-repro shapes its runner commands). jest/vitest/mocha and pytest are
+// file-scoped; go-test is package-scoped (goPackagesFor maps the test file to its
+// package). `-count=1` on go defeats Go's test result cache so the fails-twice
+// control actually re-executes rather than replaying a cached PASS. ava and
+// node-test are deliberately absent: `parseFailingTests` has no locked identity
+// parser for them, so the orchestrator reports 'not-proven:runner-unsupported'
+// instead of executing a run whose failures it cannot attribute. The human-facing
+// reproduce command below renders the exact same invocation, so what we executed
+// and what we publish never drift.
 const RUNNER_ARGV: Partial<Record<TestRunner, (files: string[]) => RunnerCommand>> = {
   jest: (files) => ({ command: 'npx', args: ['jest', '--runTestsByPath', ...files] }),
   vitest: (files) => ({ command: 'npx', args: ['vitest', 'run', ...files] }),
   mocha: (files) => ({ command: 'npx', args: ['mocha', ...files] }),
+  pytest: (files) => ({ command: 'python3', args: ['-m', 'pytest', '-v', '--no-header', '-p', 'no:cacheprovider', ...files] }),
+  'go-test': (files) => ({ command: 'go', args: ['test', '-v', '-count=1', ...goPackagesFor(files)] }),
 };
 
 export interface RunnerCommand {
@@ -303,7 +320,7 @@ export function buildTestCommand(runner: TestRunner, files: string[]): RunnerCom
       'RESTORATION_RUNNER_UNSUPPORTED',
       {
         remediation:
-          'Restoration proofs only execute under jest, vitest, or mocha; report not-proven:runner-unsupported for this workspace.',
+          'Restoration proofs execute under jest, vitest, mocha, pytest, or go-test; report not-proven:runner-unsupported for this workspace.',
       },
     );
   }
@@ -396,9 +413,11 @@ export function buildReproduceCommand(opts: {
 // runner printed, locked per runner so the same failure produces the same
 // string on every run (the fails-twice-with-same-identity control compares
 // these sets verbatim):
-//   jest   -> '<suite> › <name>' (the ● failure-block header)
-//   mocha  -> '<suite> › <name>' (the numbered epilogue block, levels joined)
-//   vitest -> '<file> > <suite> > <name>' (the FAIL header)
+//   jest    -> '<suite> › <name>' (the ● failure-block header)
+//   mocha   -> '<suite> › <name>' (the numbered epilogue block, levels joined)
+//   vitest  -> '<file> > <suite> > <name>' (the FAIL header)
+//   pytest  -> '<file>::<test>' (the -v per-test nodeid before FAILED)
+//   go-test -> '<TestName>' (the '--- FAIL: <name>' marker; subtests as Test/sub)
 // ---------------------------------------------------------------------------
 
 // CSI escape sequences (colors, cursor movement). Runners colorize when they
@@ -512,6 +531,37 @@ function parseVitestFailures(output: string): string[] {
   return fails.length > 0 ? fails : crosses;
 }
 
+// pytest -v prints one line per test: '<nodeid> FAILED   [ 50%]' (or PASSED /
+// ERROR / SKIPPED). The nodeid ('file::test' or 'file::Class::test', params in
+// '[...]') carries no spaces, so it anchors cleanly; a bare FAILED without a
+// '::' nodeid is a summary or collection line and names no test.
+const PYTEST_FAIL_RE = /^(\S+?::\S+)\s+(?:FAILED|ERROR)\b/;
+
+function parsePytestFailures(output: string): string[] {
+  const out: string[] = [];
+  for (const line of output.split('\n')) {
+    const m = PYTEST_FAIL_RE.exec(line);
+    if (m !== null) out.push(m[1]!);
+  }
+  return out;
+}
+
+// `go test -v` prints '--- FAIL: TestName (0.00s)' per failing test, and
+// '    --- FAIL: TestName/subtest (0.00s)' (indented) for subtests. The test
+// name is a single whitespace-free token. The package-level 'FAIL\tpkg\t0.1s'
+// summary and the trailing bare 'FAIL' carry no '--- FAIL:' prefix, so they do
+// not forge an identity.
+const GO_FAIL_RE = /^\s*--- FAIL: (\S+)/;
+
+function parseGoFailures(output: string): string[] {
+  const out: string[] = [];
+  for (const line of output.split('\n')) {
+    const m = GO_FAIL_RE.exec(line);
+    if (m !== null) out.push(m[1]!);
+  }
+  return out;
+}
+
 /**
  * Pure: lift failing-test identities out of a runner's output (stdout and
  * stderr both, since jest reports on stderr). Deduplicated and sorted, so the
@@ -531,6 +581,12 @@ export function parseFailingTests(runner: TestRunner, stdout: string, stderr: st
       break;
     case 'vitest':
       identities = parseVitestFailures(output);
+      break;
+    case 'pytest':
+      identities = parsePytestFailures(output);
+      break;
+    case 'go-test':
+      identities = parseGoFailures(output);
       break;
     default:
       identities = [];

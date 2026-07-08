@@ -193,18 +193,25 @@ describe('execution-grounded / test-restoration runTestRestoration (early exits,
     assert.ok(record.reason !== undefined && record.reason.includes("'ava'"));
   });
 
-  // Polyglot provisioning (Phase 1) makes pytest and Go trees installable, but
-  // the restoration proofs stay Node-only and must fail closed on those runners
-  // rather than execute a Node invocation against a Python or Go suite.
+  // pytest and Go are now supported runners (test-tamper generalization): they
+  // route to execution, not to runner-unsupported. With a nonexistent workspace
+  // the tampered-suite control dies at spawn, so the verdict is execution-error
+  // (a harness fact), never runner-unsupported (which would wrongly say the
+  // runner cannot be executed at all). A proven verdict on a real workspace is
+  // exercised by the polyglot fixtures below.
   for (const runner of ['pytest', 'go-test'] as const) {
-    it(`runner-unsupported: a ${runner} runner fails closed, never proven`, () => {
+    it(`${runner} is a supported runner: reaches execution, not runner-unsupported`, () => {
       const record = runTestRestoration({
         ...minimalInput,
         finding: { category: 'assertion-strip', file: 'test/calc.test.js' },
         prDiff: testHunkDiff,
         testRunner: runner,
       });
-      assert.equal(record.verdict, 'not-proven:runner-unsupported');
+      assert.equal(record.verdict, 'not-proven:execution-error');
+      assert.ok(
+        record.reason !== undefined && record.reason.includes('spawn-level failure'),
+        `${runner} must reach the spawn-level control run, got: ${record.reason}`,
+      );
     });
   }
 

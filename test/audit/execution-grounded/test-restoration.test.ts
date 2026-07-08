@@ -1140,3 +1140,64 @@ describe('execution-grounded / test-restoration subject-removed refuter', () => 
     assert.equal(restoredTestSubjectRemoved(diff, patch as string), null);
   });
 });
+
+describe('execution-grounded / test-restoration polyglot runners (pytest, go-test)', () => {
+  it('buildTestCommand shapes a file-scoped pytest invocation', () => {
+    assert.deepEqual(buildTestCommand('pytest', ['tests/test_calc.py']), {
+      command: 'python3',
+      args: ['-m', 'pytest', '-v', '--no-header', '-p', 'no:cacheprovider', 'tests/test_calc.py'],
+    });
+  });
+
+  it('buildTestCommand maps a go test file to its package (package-scoped, cache-defeating)', () => {
+    assert.deepEqual(buildTestCommand('go-test', ['internal/config/calc_test.go']), {
+      command: 'go',
+      args: ['test', '-v', '-count=1', './internal/config'],
+    });
+    assert.deepEqual(buildTestCommand('go-test', ['calc_test.go']), {
+      command: 'go',
+      args: ['test', '-v', '-count=1', '.'],
+    });
+  });
+
+  it('parseFailingTests lifts pytest nodeids from -v output, ignoring passes and summaries', () => {
+    const out = [
+      'collected 2 items',
+      '',
+      'tests/test_calc.py::test_adds FAILED                                      [ 50%]',
+      'tests/test_calc.py::test_subtracts PASSED                                 [100%]',
+      '',
+      '=================================== FAILURES ===================================',
+      'FAILED tests/test_calc.py::test_adds - assert 3 == 4',
+    ].join('\n');
+    assert.deepEqual(parseFailingTests('pytest', out, ''), ['tests/test_calc.py::test_adds']);
+  });
+
+  it('parseFailingTests captures a parametrized/class pytest nodeid', () => {
+    const out = 'tests/test_x.py::TestC::test_m[1-2] FAILED                       [100%]';
+    assert.deepEqual(parseFailingTests('pytest', out, ''), ['tests/test_x.py::TestC::test_m[1-2]']);
+  });
+
+  it('parseFailingTests lifts go test names from --- FAIL markers, not the package summary', () => {
+    const out = [
+      '=== RUN   TestAdds',
+      '    calc_test.go:8: adds: got 3 want 4',
+      '--- FAIL: TestAdds (0.00s)',
+      '=== RUN   TestSubtracts',
+      '--- PASS: TestSubtracts (0.00s)',
+      'FAIL',
+      'FAIL\texample/calc\t0.002s',
+    ].join('\n');
+    assert.deepEqual(parseFailingTests('go-test', out, ''), ['TestAdds']);
+  });
+
+  it('parseFailingTests captures a go subtest identity', () => {
+    const out = ['--- FAIL: TestTable (0.00s)', '    --- FAIL: TestTable/negative (0.00s)'].join('\n');
+    assert.deepEqual(parseFailingTests('go-test', out, ''), ['TestTable', 'TestTable/negative']);
+  });
+
+  it('a passing pytest/go run yields no identities', () => {
+    assert.deepEqual(parseFailingTests('pytest', 'tests/test_x.py::test_ok PASSED [100%]', ''), []);
+    assert.deepEqual(parseFailingTests('go-test', '--- PASS: TestOk (0.00s)\nok\texample\t0.1s', ''), []);
+  });
+});
