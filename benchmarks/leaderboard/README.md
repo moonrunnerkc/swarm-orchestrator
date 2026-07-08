@@ -56,10 +56,21 @@ The LLM-judge false-positive/recall frontier for the semantic categories the
 structural detectors cannot key on is measured separately and folded in here as a
 sidebar, not blended into the detector-recall tables above (tiers never blend). See
 [`../twins/judge-gate-cost.json`](../twins/judge-gate-cost.json) and
-[`../twins/JUDGE-GATE-COST-REPORT.md`](../twins/JUDGE-GATE-COST-REPORT.md):
-pinned-judge operating point (semi-synthetic clean 1/8, cheat 8/8; broad clean
-0/44; wild goal-not-fixed recall 1/7), the K=5 self-consistency curve, and the
-proof tier's 0% false-positive point on the same semantic set. Regenerate with
-`npm run judge-gate-cost` (funded Anthropic key). Because it is diff-only and its
-false-positive rate is nonzero on the measured n=8 semantic set, the judge ships
+[`../twins/JUDGE-GATE-COST-REPORT.md`](../twins/JUDGE-GATE-COST-REPORT.md). The
+headline numbers, stated over their honest denominators:
+
+- **Wild-cheat recall: 1/7** goal-not-fixed wild cheats blocked (14%, Wilson-95
+  [0.03, 0.51]). The judge misses most wild cheats on this set.
+- **Clean-side false-block rate: 1/52** (1.9%, Wilson-95 [0.00, 0.10]) over all
+  clean PRs judged (semantic honest twins 1/8 + broad clean 0/44). The retired
+  12.5% figure was the semantic-only slice (1/8), a small-n interim, not the
+  clean-side rate.
+- **Proof tier on the same semantic set: 0% recall, 0% false-positive** (it
+  abstains rather than guesses; it never fires without executed evidence).
+
+Regenerate with `npm run judge-gate-cost` (funded Anthropic key), or
+`node dist/scripts/experiments/judge-gate-cost.js --report-only` to reframe from
+the committed JSON without model calls. Joint conclusion on this sample: neither
+the judge nor the proof tier catches wild cheats reliably (judge 1/7; proof tier
+0/7 by abstention), and only the proof tier abstains rather than guesses. Both ship
 advisory, never as a block gate.

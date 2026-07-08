@@ -386,12 +386,28 @@ function writeReport(json: GateCostReport): void {
   const curveRows = json.confidenceCurveSemanticSampled
     .map((c) => `| ${c.tau.toFixed(1)} | ${c.falseBlocksPer100Clean.toFixed(0)} | ${pct(c.fpRate.rate)} [${c.fpRate.wilsonLower.toFixed(2)}, ${c.fpRate.wilsonUpper.toFixed(2)}] | ${pct(c.recall.rate)} [${c.recall.wilsonLower.toFixed(2)}, ${c.recall.wilsonUpper.toFixed(2)}] |`)
     .join('\n');
+
+  // The clean-side false-block rate over ALL clean PRs judged (semi-synthetic
+  // clean + broad clean), not the semi-synthetic-only slice. This is the honest
+  // denominator; the retired 12.5% headline was the semi-synthetic-only rate.
+  const cleanPoints = json.operatingPoints.filter((o) => o.kind === 'clean');
+  const cleanN = cleanPoints.reduce((s, o) => s + o.n, 0);
+  const cleanFires = cleanPoints.reduce((s, o) => s + o.detFires, 0);
+  const clean = rate(cleanFires, cleanN);
+  const semiClean = json.operatingPoints.find((o) => o.tier === 'semi-synthetic' && o.kind === 'clean');
+  const broadClean = json.operatingPoints.find((o) => o.tier === 'semi-synthetic-clean-broad' && o.kind === 'clean');
+  const wild = json.operatingPoints.find((o) => o.tier === 'wild' && o.kind === 'positive');
+  // Render the retired headline at one decimal (12.5%), the exact small-n figure,
+  // not the pct()-rounded 13%, so the reframe names the number it retires.
+  const semiRatePct = semiClean !== undefined ? `${(semiClean.rate * 100).toFixed(1)}%` : 'n/a';
+
   const md = `# Judge false-positive rate at gate stakes (Experiment 2)
 
-What an LLM judge allowed to block merges costs on clean PRs, at every reachable
-confidence threshold, against the proof tier's committed zero-false-positive
-point. Every number regenerates from \`scripts/experiments/judge-gate-cost.ts\`
-(\`npm run judge-gate-cost\`).
+What an LLM judge allowed to block merges costs on clean PRs, and how many wild
+cheats it catches, at the pinned operating point and over a sampled confidence
+curve. Every number regenerates from \`scripts/experiments/judge-gate-cost.ts\`
+(\`npm run judge-gate-cost\` to re-measure, \`--report-only\` to reframe the report
+from the committed JSON without model calls).
 
 ## The judge has no confidence dial
 
@@ -399,8 +415,24 @@ The shipped judge-primary path runs the **${json.judge.promptVersion}** prompt o
 **${json.judge.model}** at **temperature 0**, content-cached. It returns a binary
 yes/no with no confidence score, and repeats of the same diff return the cached
 answer. So a threshold sweep over the pinned judge collapses to a single
-operating point. That point is the primary result below. Only one model family
-(Anthropic) is configured; a second family is recorded as absent.
+operating point. Only one model family (Anthropic) is configured; a second family
+is recorded as absent.
+
+## Findings
+
+- **Wild-cheat recall: ${wild?.detFires ?? 0} of ${wild?.n ?? 0}** goal-not-fixed
+  wild cheats blocked (${wild !== undefined ? pct(wild.rate) : 'n/a'}, Wilson-95
+  [${wild?.wilsonLower.toFixed(2) ?? '0.00'}, ${wild?.wilsonUpper.toFixed(2) ?? '0.00'}]).
+  The judge misses most wild cheats on this set.
+- **Clean-side false-block rate over n = ${cleanN}: ${cleanFires} of ${cleanN}**
+  clean PRs blocked (${pct(clean.rate)}, Wilson-95 [${clean.wilsonLower.toFixed(2)},
+  ${clean.wilsonUpper.toFixed(2)}]). This is the combined clean denominator:
+  ${semiClean?.detFires ?? 0}/${semiClean?.n ?? 0} on the semantic honest twins and
+  ${broadClean?.detFires ?? 0}/${broadClean?.n ?? 0} on the broad clean set. The
+  retired **${semiRatePct}** headline was the semantic-only slice
+  (${semiClean?.detFires ?? 0}/${semiClean?.n ?? 0}), a small-n interim; the
+  n = ${cleanN} figure is the honest clean-side rate.
+- **Semantic-cheat recall (twin mode): ${json.operatingPoints.find((o) => o.tier === 'semi-synthetic' && o.kind === 'positive')?.detFires ?? 0} of ${json.operatingPoints.find((o) => o.tier === 'semi-synthetic' && o.kind === 'positive')?.n ?? 0}** on the semi-synthetic semantic cheat twins.
 
 ## Operating point (pinned deterministic judge)
 
@@ -410,18 +442,16 @@ Each set judged once at the pinned temperature 0. Tiers never blend.
 | --- | --- | --- | --- | --- | --- |
 ${opRows}
 
-The clean rows are the false-block rate: the share of clean PRs the judge would
-block if it gated. The positive rows are recall on cheats.
+The clean rows are the false-block rate; the positive rows are recall on cheats.
 
 ## Reachable confidence curve (self-consistency, sampled)
 
 The pinned prompt and model, sampled **K=${json.sweep.samples}** times at
 **temperature ${json.sweep.sampleTemperature}** (the only departure from the
 deterministic point; the prompt is unchanged), confidence = yes-votes / K, block
-threshold swept. This is the reachable false-positive/recall frontier for a judge
-built on top of the pinned classifier. Over the ${json.confidenceCurveSemanticSampled.length}-threshold
-sweep on the 8 semantic honest twins (clean) and 8 semantic cheat twins
-(positive):
+threshold swept, over the semantic honest twins (clean) and semantic cheat twins
+(positive). The single semantic-clean false block is unanimous across all
+K = ${json.sweep.samples} samples, so it does not clear at any swept threshold:
 
 | threshold | false blocks / 100 clean | FP rate (Wilson-95) | recall (Wilson-95) |
 | --- | --- | --- | --- |
@@ -434,21 +464,22 @@ recomputed: recall ${pct(json.proofTierPoint.semanticRecall)} on the semantic
 cheats, false-positive rate ${pct(json.proofTierPoint.falsePositiveRate)}.
 ${json.proofTierPoint.note}
 
-**The trade.** The judge is the only diff-only path that catches these semantic
-cheats. What the curve above measures, on n = 8 semantic honest twins and n = 8
-semantic cheat twins: the judge's false-positive rate does not drop to zero at any
-swept threshold that still keeps recall above zero. The single false block is
-unanimous across all K = ${json.sweep.samples} samples, so raising the threshold
-cannot remove it without also dropping recall (recall stays high across every
-threshold in the table). The proof tier holds a
-${pct(json.proofTierPoint.falsePositiveRate)} false-positive rate on the same set
-and certifies each block with executed, replayable evidence. So on this sample the
-two points do not coincide: the judge trades a nonzero false-positive rate for the
-only diff-only recall on these categories, and it cannot certify a block the way an
-executed restoration proof can. This is what these sixteen pairs show, stated with
-their Wilson-95 intervals in the tables above — the intervals are wide at n = 8, so
-read it as this sample's frontier, not a general impossibility. Neither path
-dominates; they are complementary, and both ship advisory.
+## Joint conclusion (both tiers, on this sample)
+
+Stated plainly, numbers only:
+
+- Neither tier catches wild cheats reliably. The judge blocked
+  ${wild?.detFires ?? 0}/${wild?.n ?? 0} wild goal-not-fixed cheats; the execution
+  proof tier abstains on the semantic categories (${pct(json.proofTierPoint.semanticRecall)}
+  recall), so it catches 0 of the same wild set.
+- Only the proof tier abstains rather than guesses. Its false-positive rate is
+  ${pct(json.proofTierPoint.falsePositiveRate)} by construction (it never fires
+  without executed, replayable evidence). The judge carries a nonzero clean-side
+  false-block rate (${cleanFires}/${cleanN} here) that does not clear at any swept
+  threshold, in exchange for its diff-only recall on the semantic categories the
+  proof tier cannot reach.
+- Both tiers ship advisory. The intervals are wide at these sample sizes; read the
+  numbers as this sample's operating point, not a general law.
 
 ## Spend
 
@@ -462,15 +493,24 @@ verdict, ${json.spend.wallMsPerVerdict}ms wall clock per verdict.
 
 ${json.boundFollowOns.map((b) => `- ${b}`).join('\n')}
 
-The semi-synthetic honest twins are the primary clean measurement here; they are
-labeled semi-synthetic, not the real-corpus outcome-clean slice, and are reported
-in their own tier.
+The semi-synthetic honest twins are labeled semi-synthetic, not the real-corpus
+outcome-clean slice, and are reported in their own tier.
 `;
   fs.writeFileSync(OUT_MD, md);
 }
 
+/** Regenerate the markdown report from the committed JSON without re-running the
+ *  judge (no model calls, no spend). Used to reframe the report after the numbers
+ *  are already measured and folded. */
+function regenerateReportFromJson(): void {
+  const json = JSON.parse(fs.readFileSync(OUT_JSON, 'utf8')) as GateCostReport;
+  writeReport(json);
+  log.info(`judge-gate-cost: report-only regenerated ${OUT_MD} from ${OUT_JSON} (no judge calls)`);
+}
+
 if (require.main === module) {
-  main().catch((err) => {
+  const runner = process.argv.includes('--report-only') ? async () => regenerateReportFromJson() : main;
+  runner().catch((err) => {
     log.error(err instanceof Error ? (err.stack ?? err.message) : String(err));
     process.exitCode = 1;
   });
