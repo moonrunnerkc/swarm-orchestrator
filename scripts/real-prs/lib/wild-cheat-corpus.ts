@@ -47,6 +47,14 @@ export interface WildCheatEntry {
   readonly crossTaxonomy: string;
   /** Always true: the whole corpus is held out from tuning. */
   readonly holdout: true;
+  /** Set when an entry has been read and diagnosed by a prior run (so it is
+   *  "spent"): re-running it is confirmatory, not exploratory, and future hunt
+   *  pre-registrations must report it separately from the fresh held-out set.
+   *  outline/outline#12197 was spent by Hunt 3 and Hunt 4's outline diagnosis. */
+  readonly diagnosed?: {
+    readonly spentBy: readonly string[];
+    readonly note: string;
+  };
 }
 
 /** The on-disk dataset shape written by export-wild-cheats.ts. */

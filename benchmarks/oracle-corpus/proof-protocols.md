@@ -145,3 +145,88 @@ proven). The injected probe uses a path-baked `require('node:fs')` write, so a
 pure-ESM module that cannot `require` records nothing and lands on
 `control-not-reached` rather than a false proof; CommonJS and transpiled-CommonJS
 runners (mocha, jest, vitest) record reliably.
+
+## The claim-differential proof and its discrimination control
+
+The claim-differential proof (`src/audit/execution-grounded/claim-differential.ts`)
+does not revert a hunk; it falsifies the CLAIM. It compiles the PR's stated claim
+into one executable witness test, requires two independent models to agree the
+witness tests the claim, then runs the witness against the base and head
+checkouts. The verdict `claim-falsified-synthesized` (base fails, head fails) is
+the one finding it can raise, and it is **advisory** everywhere: it is not a block
+trigger, and it earns gating only through the promotions machinery on measured
+data. It is not self-certifying and not gate-eligible.
+
+**Witness compilation is recorded, not pinned.** The witness model
+(`claude-sonnet-5`) rejects an explicit `temperature` with an HTTP 400, so the
+witness cannot be temperature-pinned or seed-pinned; a re-run may synthesize a
+different witness. Rather than imply determinism it does not have, every witness
+records its `samplingPolicy`
+(`temperature-unset (claude-sonnet-5 rejects explicit temperature); output_config.effort=low`),
+model id, and prompt version into the ledger. This is permanent on this model:
+recorded-not-pinned, never a false pin.
+
+### The discrimination control (the Hunt 4 fix)
+
+Hunt 4 surfaced a false positive: `claim-falsified-synthesized` was defined as
+"base fails AND head fails," which a witness that fails identically everywhere for
+its own setup reasons satisfies without any differential signal (outline#12197's
+witness read a cached counter through the wrong path, asserted
+`expect(count).toEqual(1)` against `undefined`, and failed the same way on base and
+head regardless of the PR). The discrimination control
+(`src/audit/execution-grounded/discrimination-control.ts`) closes it as a
+four-clause conjunction, each clause its own cut, and it can only hold a verdict
+back, never let a new one through:
+
+1. **Failure classification.** Every witness run is classified as an assertion
+   failure (the test ran and its assertion did not hold) or a setup error
+   (exception, missing dependency, timeout, or a non-assertion crash). Only
+   assertion failures count. A setup error on any run is an immediate abstain
+   (`abstain:setup-error`). Fail-closed: a non-zero exit with no assertion banner
+   reads as a setup error.
+2. **Determinism quorum (K=3).** K runs on the base and K on the head. K=3 is the
+   minimum that catches a one-in-three nondeterministic run (the outline witness
+   flipped between a crash and a falsification across three re-runs); each run is a
+   model-free sandbox execution, so the cost is wall-clock only. Every counted run
+   on a side must produce the same classification and the same failure identity;
+   any divergence abstains (`abstain:nondeterministic-classification`).
+3. **Failure-identity discrimination.** The base failure and the head failure must
+   be the same assertion failing the same way; a divergence abstains
+   (`abstain:failure-identity-divergence`). An identical everywhere-failure passes
+   to clause 4. The matched identity is recorded in the ledger.
+4. **Pass-capability evidence.** The heart of the fix: affirmative evidence the
+   witness can pass on some correct implementation of the claim. Only when this is
+   established does `claim-falsified-synthesized` fire; otherwise
+   `abstain:no-pass-capability-evidence`.
+
+### Production semantics: the finding abstains in production
+
+Clause 4 is direct on twins: the honest twin (the correct implementation) must pass
+the witness, which is the development-time ground truth. In production there is no
+reference implementation, and the honest design work found **no bounded runtime
+proxy sound enough** to certify pass-capability:
+
+- A **sensitivity probe** that perturbs the asserted expectation shows only that
+  the assertion is *live* (it responds to the expected value), not that a correct
+  implementation would satisfy it. The outline witness's assertion was live and
+  still could never pass, so a live-assertion probe would have certified it
+  falsely.
+- A **self-check scaffold** that reconstructs a known-correct scenario needs the
+  domain knowledge the witness compiler lacked in the first place; if the model
+  knew how to set up the cached counter correctly, the witness would not have been
+  broken.
+
+Certifying "the witness can pass on a correct implementation" without a reference
+implementation reduces to synthesizing a correct implementation, which carries the
+same blind spot. So the sound conclusion is: **no production proxy is trustworthy,
+and `claim-falsified-synthesized` abstains in production** (it fires only in the
+twin measurement harness, where the honest twin supplies pass-capability directly).
+An honest abstaining trigger beats an unsound firing one.
+
+The control is measured on an executable semantic-twin corpus
+(`scripts/gate/discrimination-twins.ts`,
+`benchmarks/twins/DISCRIMINATION-CONTROL-REPORT.md`): honest-twin false positives
+0/16, twin-mode recall 16/16, production reach cost 16/16 abstains,
+outline-pattern (broken-witness) refusal 16/16. The committed outline record was
+replayed through the finished control as a disclosed verification and abstains at
+clause 4 (`test/audit/execution-grounded/outline-discrimination-replay.test.ts`).
