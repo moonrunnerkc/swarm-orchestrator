@@ -86,28 +86,57 @@ into the hunt3 ledger record. A replay now knows exactly how the witness was
 sampled; it is honestly not temperature-pinnable on this model, and the record says
 so rather than implying otherwise.
 
-## After: the validation gate is credit-gated
+## After: funded evaluation (Hunt 4) and the gap it exposed
 
-The Phase 2 acceptance gate — on the semi-synthetic twin set, the hardened engine
-reaches a head-run verdict on a majority of entries where the sandbox provisions,
-with **zero findings on honest twins** — requires live model calls (the witness
-compile and the two arbiters). The Anthropic credit probe returns HTTP 400
-"credit balance is too low" (`evidence/lift/BASELINE.md`), so this gate could not
-run. It is not skipped: the engine is built and unit-validated, and the gate runs
-the moment a credit probe passes.
+The maintainer topped up credits mid-run, so the hardened engine ran live. The
+funded evaluation is Hunt 4 (`benchmarks/real-prs/hunt4/HUNT-4-REPORT.md`): the
+hardened engine over the six provisioned held-out wild entries. What the fixes did,
+measured:
 
-Reproduce when credits return:
+| claim-differential verdict | Hunt 3 (4 provisioned) | Hunt 4 (6 provisioned) |
+| --- | --- | --- |
+| `witness-not-compiled` | 3 | **0** |
+| `arbiter-disagreement` | 0 | 3 |
+| `closure-unlinked` | 1 | 2 |
+| `claim-falsified-synthesized` | 0 | 1 (diagnosed false positive) |
 
-```sh
-npm run build
-# ANTHROPIC_API_KEY funded; SWARM_EG_NODE_BIN=/path/to/node@22/bin.
-# Run the hardened engine over the semi-synthetic twin set and read the per-reason
-# abstain distribution and the honest-twin finding count (must be zero).
-SWARM_EG_NODE_BIN=/path/to/node@22/bin node dist/scripts/real-prs/claim-differential-measure.js
-```
+**Fix 1 works live:** every witness now compiles (`witnessRetried: false` on all
+entries), so the engine reaches the real controls instead of dying at emission.
+**Fix 2 works live:** on poetry-bil-araby the closure regen fired
+(`regeneratedForClosure: true`) with the changed files named. **Fix 3 works live:**
+every record carries the sampling provenance
+(`temperature-unset ...; output_config.effort=low`, model, prompt cw-v2).
 
-A finding on an honest twin is stop-the-line, not a data point: it would trigger a
-fresh-clone replay and a control-vs-label diagnosis before any number is trusted.
+But reaching the controls surfaced a real gap the unit tests could not: on
+outline/outline#12197 the engine returned `claim-falsified-synthesized`, and the
+stop-the-line diagnosis (`benchmarks/real-prs/hunt4/outline-diagnosis.md`) shows it
+is a **false positive**. The synthesized witness fails identically on base and head
+because it cannot reproduce a cached-counter setup, and the controls (arbiter
+agreement, closure link, base-fails-twice) do not include a **discrimination /
+positive control** — nothing establishes the witness would pass on a correct
+implementation. `claim-falsified-synthesized` ("base fails AND head fails") is
+therefore satisfiable by a witness that fails everywhere for its own reasons.
+
+## The remaining gate, and the discipline boundary
+
+The Phase 2 acceptance gate as literally specified — zero findings on **honest
+twins** — is a detection-logic development gate that should run on the
+semi-synthetic twin pairs. Those pairs are diffs-to-apply over external (largely
+Python) source PRs, and no instrument provisions them through the claim-differential
+base/head path; `claim-differential-measure.ts` runs over the wild corpus, not the
+twins. Building a twin-provisioning claim-differential harness is out of this run's
+scope, so the honest-twin false-positive rate was not measured on the twin set.
+What the funded wild evaluation shows instead is that the false-positive path is
+real (outline), so the discrimination control is required.
+
+That control is **not** built here: this run already read outline to diagnose the
+fire, and held-out discipline forbids iterating detection logic against a wild
+entry. The fix — require a `claim-falsified-synthesized` witness to discriminate
+(pass on a correct implementation, or produce a materially different base-vs-head
+outcome) — is designed from first principles and validated on the twin set as
+disclosed future work. Until then, `claim-falsified-synthesized` stays an advisory
+`warn` and never reaches the proven bar (which also requires a fresh-clone replay
+the nondeterministic, unpersisted witness cannot satisfy).
 
 ## What changed, in files
 
