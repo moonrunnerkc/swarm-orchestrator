@@ -58,9 +58,12 @@ describe('hunt3 status derivation', () => {
     assert.equal(status, 'proven-block');
   });
 
-  it('marks a controlled claim-falsified-synthesized as a proven block', () => {
-    const { status } = deriveStatus(0, true, []);
-    assert.equal(status, 'proven-block');
+  it('records a controlled claim-falsified-synthesized as advisory, NOT a proven block', () => {
+    // A synthesized finding is advisory-pending-measurement: it is never proven or
+    // gate-eligible until it clears the promotions bar on measured data.
+    const { status, note } = deriveStatus(0, true, []);
+    assert.equal(status, 'claim-differential-advisory');
+    assert.match(note, /ADVISORY-pending-measurement/);
   });
 
   it('reports not-provisioned when a provision skip and no proof', () => {

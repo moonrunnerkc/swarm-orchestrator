@@ -75,7 +75,7 @@ export interface Hunt3Record {
   state: string;
   maintainerCategory: string;
   egViable: true;
-  status: 'proven-block' | 'ran-no-proof' | 'not-provisioned' | 'error';
+  status: 'proven-block' | 'claim-differential-advisory' | 'ran-no-proof' | 'not-provisioned' | 'error';
   restorationProvenTriggers: { kind: string; file: string; reproduce: string }[];
   claimDifferential: {
     verdict: string;
@@ -124,10 +124,15 @@ export function selectFrozenEgViable(
 
 /**
  * Derive the proof status from the proven restoration triggers, the
- * claim-differential result, and the skip list. A restoration trigger with all
- * controls green, or a controlled `claim-falsified-synthesized`, is a proven
- * block candidate; a provisioning skip with no proof is `not-provisioned`;
- * otherwise the tier ran and found nothing.
+ * claim-differential result, and the skip list. Only a restoration trigger with
+ * all controls green is a proven block: those are self-certifying (executed,
+ * replayable evidence). A controlled `claim-falsified-synthesized` is
+ * advisory-pending-measurement, never proven and never gate-eligible until it
+ * clears the promotions bar on measured data; it is recorded separately as
+ * `claim-differential-advisory`. (After the discrimination control it also cannot
+ * fire at all in production, where no honest twin establishes pass-capability.) A
+ * provisioning skip with no proof is `not-provisioned`; otherwise the tier ran and
+ * found nothing.
  *
  * @param restorationProvenCount count of restoration triggers with all controls green.
  * @param claimIsFinding true when claim-differential returned claim-falsified-synthesized.
@@ -139,16 +144,16 @@ export function deriveStatus(
   claimIsFinding: boolean,
   skipped: readonly string[],
 ): { status: Hunt3Record['status']; note: string } {
-  if (restorationProvenCount > 0 || claimIsFinding) {
-    const kinds = [
-      restorationProvenCount > 0 ? `${restorationProvenCount} restoration proof(s)` : '',
-      claimIsFinding ? 'claim-falsified-synthesized' : '',
-    ]
-      .filter(Boolean)
-      .join(' + ');
+  if (restorationProvenCount > 0) {
     return {
       status: 'proven-block',
-      note: `STOP-THE-LINE: ${kinds} on a held-out wild agent PR; confirm via the live swarm audit --pr path and a fresh-clone replay before trusting it`,
+      note: `STOP-THE-LINE: ${restorationProvenCount} restoration proof(s) on a held-out wild agent PR; confirm via the live swarm audit --pr path and a fresh-clone replay before trusting it`,
+    };
+  }
+  if (claimIsFinding) {
+    return {
+      status: 'claim-differential-advisory',
+      note: 'a controlled claim-falsified-synthesized was raised; ADVISORY-pending-measurement (not proven, not gate-eligible) until it clears the promotions bar on measured data',
     };
   }
   const provisionSkip = skipped.find((s) => s.startsWith('provision:'));
@@ -404,7 +409,7 @@ function writeSummary(records: readonly Hunt3Record[]): void {
     provenBlocks: provenCount,
     baselineProven: 0,
     funnel: {
-      provisioned: records.filter((r) => r.status === 'ran-no-proof' || r.status === 'proven-block').length,
+      provisioned: records.filter((r) => r.status !== 'not-provisioned' && r.status !== 'error').length,
       notProvisioned: records.filter((r) => r.status === 'not-provisioned').length,
       errored: records.filter((r) => r.status === 'error').length,
       claimCompiled: records.filter((r) => r.claimDifferential?.witnessModel != null).length,

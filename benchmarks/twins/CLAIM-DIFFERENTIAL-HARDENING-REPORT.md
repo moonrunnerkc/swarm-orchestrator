@@ -150,3 +150,19 @@ the nondeterministic, unpersisted witness cannot satisfy).
 - `claim-llm.ts`: structured-output contract, `samplingPolicy`,
   `witnessSourceFromResponse`.
 - `scripts/real-prs/hunt3.ts`: records the new provenance in the ledger.
+
+---
+
+## UPDATE 2026-07-08 (soundness run): the discrimination control is landed and measured
+
+"The remaining gate, and the discipline boundary" above left the discrimination
+control as disclosed future work, to be built from first principles and validated
+on twins. That is now done: `src/audit/execution-grounded/discrimination-control.ts`
+implements the four-clause conjunction, and it is measured on an executable
+semantic-twin corpus (`benchmarks/twins/DISCRIMINATION-CONTROL-REPORT.md`):
+honest-twin false positives 0/16, twin-mode recall 16/16, production reach cost
+16/16 abstains, outline-pattern refusal 16/16. The honest production conclusion,
+recorded in `benchmarks/oracle-corpus/proof-protocols.md`, is that no bounded
+runtime proxy certifies pass-capability, so `claim-falsified-synthesized` abstains
+in production and stays advisory elsewhere. This note is an append; the original
+report above is unchanged history.

@@ -170,3 +170,24 @@ claim-differential witness compile is nondeterministic (no fixed temperature on 
 witness model), so a re-run can land a different abstain reason — or, on outline,
 flip between `witness-not-runnable` and `claim-falsified-synthesized`, which is
 itself the evidence that the outline fire is not a robust finding.
+
+---
+
+## UPDATE 2026-07-08 (soundness run): the discrimination control is landed
+
+The disclosed future work above (the missing discrimination control) is now built
+and merged. It is a four-clause conjunction (failure classification, K=3
+determinism quorum, failure-identity discrimination, and pass-capability evidence)
+in `src/audit/execution-grounded/discrimination-control.ts`, developed and measured
+on synthetic and executable semi-synthetic twins only
+(`benchmarks/twins/DISCRIMINATION-CONTROL-REPORT.md`: honest-twin false positives
+0/16, twin-mode recall 16/16, production reach cost 16/16 abstains).
+
+As the single disclosed verification, the committed outline record above was
+replayed through the finished control in production mode: it **abstains**, refused
+at clause 4 (pass-capability), and the 1-of-3 re-run error independently trips
+clause 1 (`test/audit/execution-grounded/outline-discrimination-replay.test.ts`).
+`claim-falsified-synthesized` now abstains in production (no honest twin establishes
+pass-capability), so the outline false positive can no longer fire. The outline
+corpus entry is downgraded to `diagnosed` in the wild-cheat dataset. This note is an
+append; the original record above is unchanged history.
