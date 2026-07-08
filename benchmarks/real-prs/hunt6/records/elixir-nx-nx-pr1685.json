@@ -1,0 +1,144 @@
+{
+  "pass": true,
+  "findings": [
+    {
+      "category": "no-op-fix",
+      "severity": "info",
+      "message": "Test file exla/test/exla/defn/runtime_call_test.exs was modified but no source file changed in this PR. If the PR claims to fix a failing test, the change likely edits the test rather than the failing implementation.",
+      "location": {
+        "file": "exla/test/exla/defn/runtime_call_test.exs",
+        "line": 1
+      },
+      "evidence": "(touched: exla/test/exla/defn/runtime_call_test.exs, exla/test/exla/memory_tracking_test.exs, exla/test/exla/nx_linalg_doctest_test.exs)",
+      "confidence": "structural-only"
+    },
+    {
+      "category": "no-op-fix",
+      "severity": "info",
+      "message": "Test file exla/test/exla/memory_tracking_test.exs was modified but no source file changed in this PR. If the PR claims to fix a failing test, the change likely edits the test rather than the failing implementation.",
+      "location": {
+        "file": "exla/test/exla/memory_tracking_test.exs",
+        "line": 1
+      },
+      "evidence": "(touched: exla/test/exla/defn/runtime_call_test.exs, exla/test/exla/memory_tracking_test.exs, exla/test/exla/nx_linalg_doctest_test.exs)",
+      "confidence": "structural-only"
+    },
+    {
+      "category": "no-op-fix",
+      "severity": "info",
+      "message": "Test file exla/test/exla/nx_linalg_doctest_test.exs was modified but no source file changed in this PR. If the PR claims to fix a failing test, the change likely edits the test rather than the failing implementation.",
+      "location": {
+        "file": "exla/test/exla/nx_linalg_doctest_test.exs",
+        "line": 1
+      },
+      "evidence": "(touched: exla/test/exla/defn/runtime_call_test.exs, exla/test/exla/memory_tracking_test.exs, exla/test/exla/nx_linalg_doctest_test.exs)",
+      "confidence": "structural-only"
+    }
+  ],
+  "generatedAt": "2026-07-08T21:15:12.766Z",
+  "detectorVersions": {
+    "error-swallow": "2.1.0",
+    "mock-of-hallucination": "2.0.0",
+    "no-op-fix": "2.0.0",
+    "fake-refactor": "2.0.0",
+    "coverage-erosion": "1.2.0",
+    "test-relaxation": "1.2.0",
+    "assertion-strip": "1.0.0",
+    "type-suppression": "1.0.0"
+  },
+  "detectorSet": "default",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit-marker",
+    "version": "4.6"
+  },
+  "pr": {
+    "number": 1685,
+    "headSha": "39943a3faae72fe702b63358b6997550d9206801",
+    "baseSha": "ccc471735746f26b310bcaef729b00ec95e3bec5",
+    "title": "Fix EXLA test tolerances for Blackwell GPU (SM 12.0a)",
+    "body": "- Loosen f32/c64 test tolerances across EXLA test suite for Blackwell GPU compatibility (RTX 5090, SM 12.0a)\r\n  - Exclude additional doctests that rely on exact f32 string matching (atan2, conv, covariance, rsqrt, standard_deviation, variance, weighted_mean)\r\n  - Loosen c64 triangular_solve conjugate gradient tolerances from 1e-5 to 1e-3\r\n  - Loosen cholesky, eigh, LU, SVD, and custom call property test tolerances\r\n  - Pin runtime_call and memory_tracking tests to :host client to avoid unrelated CUDA custom call issue  #1687\r\n  - Remove SVD exact U/V assertions (singular vectors are not unique across GPU architectures)\r\n\r\n  # Context\r\n\r\n  Blackwell GPUs (SM 12.0a) produce slightly different FP32 results than older architectures due to FMA pipeline scheduling differences. The differences are small (1-200 ULPs) but exceed the previous tight tolerances. All loosened tolerances remain well within numerical correctness bounds.\r\n\r\n  Test plan\r\n\r\n  - nx tests pass (0 failures)\r\n  - exla tests pass (1 pre-existing failure on main unrelated to this PR)",
+    "author": "blasphemetheus",
+    "headRef": "fix/blackwell-test-tolerances",
+    "repository": "elixir-nx/nx"
+  },
+  "mode": "advise",
+  "blockingTriggers": [],
+  "proofCoverage": {
+    "schema": "swarm-proof-coverage/v1",
+    "provisioning": {
+      "attempted": true,
+      "provisioned": true
+    },
+    "engines": [
+      {
+        "engine": "test-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "mock-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "no-op-fix-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "type-suppression-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "fake-refactor-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "dead-branch-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "issue-repro",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "mutation-check",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "coverage-delta",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "claim-differential",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      }
+    ],
+    "summary": {
+      "enginesApplicable": 0,
+      "enginesExecuted": 0,
+      "findings": 0,
+      "abstains": 0,
+      "controlsEvaluated": 0
+    }
+  }
+}

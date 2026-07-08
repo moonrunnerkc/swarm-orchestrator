@@ -1,0 +1,45 @@
+{
+  "computedBy": "benchmarks/real-prs/hunt6 (swarm audit --pr per entry, Go toolchain on PATH)",
+  "preregistration": "benchmarks/real-prs/hunt6/PREREGISTRATION.md",
+  "primarySet": {
+    "total": 2,
+    "proven": 0,
+    "egEnginesExecutedTotal": 0
+  },
+  "proven": 0,
+  "note": "0 proven of 2. Both entries bail at the EG entry gate (mutableSourceFilter, JS/TS extensions only) before any engine executes or any workspace provisions, same as Hunt 5. The test-tamper engine is now polyglot (pytest/Go, fixture-validated) but the swarm audit pipeline front-end that feeds it candidates (mutableSourceFilter + the JS/TS structural detectors) is not, so no non-JS/TS wild cheat reaches the engine through the full pipeline yet. The barrier moved from engine (Hunt 5: runner cannot execute non-Node) to pipeline front-end (Hunt 6: entry gate does not admit non-JS/TS diffs).",
+  "records": [
+    {
+      "id": "vlebo-ctx-pr24",
+      "repo": "vlebo/ctx",
+      "prNumber": 24,
+      "headSha": "2a4c958d5f482a3db5556297aa68e31aab448f97",
+      "pass": true,
+      "advisoryFindings": 0,
+      "advisoryCategories": [],
+      "egEnginesExecuted": 0,
+      "egSkipReason": "no mutable source lines in diff",
+      "proven": false,
+      "ecosystem": "go",
+      "complaintCategory": "error-swallow",
+      "barrier": "category+entry-gate: error-swallow has no restoration proof and mutableSourceFilter (JS/TS only) bails before provisioning"
+    },
+    {
+      "id": "elixir-nx-nx-pr1685",
+      "repo": "elixir-nx/nx",
+      "prNumber": 1685,
+      "headSha": "39943a3faae72fe702b63358b6997550d9206801",
+      "pass": true,
+      "advisoryFindings": 3,
+      "advisoryCategories": [
+        "no-op-fix"
+      ],
+      "egEnginesExecuted": 0,
+      "egSkipReason": "no mutable source lines in diff",
+      "proven": false,
+      "ecosystem": "elixir",
+      "complaintCategory": "test-relaxation",
+      "barrier": "entry-gate+language: mutableSourceFilter (JS/TS only) bails before provisioning; Elixir also has no provisioner"
+    }
+  ]
+}
