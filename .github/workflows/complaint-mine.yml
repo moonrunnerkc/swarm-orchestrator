@@ -2,8 +2,10 @@ name: Complaint mine wild cheats
 
 # Scheduled mining of maintainer-complaint agent PRs. Searches PR conversations
 # for cheat-language, verifies each hit against the fetched conversation,
-# attributes the PR to an agent, and confirms the category with a dual arbiter,
-# then uploads the grown candidate corpus for a maintainer to review and fold.
+# attributes the PR to an agent (author + branch + commit via --deep-attribution),
+# and annotates the category with a dual arbiter (ranking only, never an existence
+# gate: the arbiters measured 0/11 recall on real maintainer-confirmed cheats), then
+# uploads the grown candidate corpus for a maintainer to review and fold.
 # Bounded by a hard API budget, a wall-clock cap, and an arbiter cost ceiling so a
 # run cannot run away, and checkpointed so a cap or crash never loses work.
 #
@@ -49,6 +51,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           node dist/scripts/real-prs/mine-complaints.js \
+            --deep-attribution \
             --limit "${{ github.event.inputs.limit || '25' }}" \
             --api-budget "${{ github.event.inputs.apiBudget || '400' }}" \
             --wall-clock-ms 2100000 \
@@ -63,10 +66,10 @@ jobs:
           fi
       - name: Package candidates for review
         # Enriches each mined candidate with intake metadata (head/base SHA, PR
-        # state, EG-viability screen, content-addressed evidence id) and renders
-        # the review package + single fold command. GitHub core API only, no
-        # arbiter, so ANTHROPIC_API_KEY is not passed here. Skipped when the mine
-        # produced no candidates file.
+        # state, EG-viability screen, content-addressed evidence id), dedups against
+        # the frozen corpus, and renders the review package + single fold command.
+        # GitHub core API only, no arbiter, so ANTHROPIC_API_KEY is not passed here.
+        # Skipped when the mine produced no candidates file.
         if: ${{ hashFiles('benchmarks/real-prs/wild-cheat-corpus/mined-candidates.json') != '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
