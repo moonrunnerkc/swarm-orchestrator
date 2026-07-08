@@ -7,9 +7,16 @@ stated), **unchecked-with-path** (not ready; the path to ready is named), or
 every line carries a measured value and the script that regenerates it.
 
 Measured at the soundness run (branch point `cc1d1c42`); items 2, 4, and 6
-re-probed at the endgame run (the token is now valid, so corpus mining actually
-ran, and a derived-witness advisory line was measured). Re-probe before trusting
-any credit- or token-dependent line.
+re-probed at the endgame run; items 3, 4, and 6 re-probed at the intake-rewire and
+reach runs (the corpus grew to v2, the intake was tightened, the restoration engine
+was generalized to pytest/Go, and Hunt 5/6 ran). Re-probe before trusting any credit-
+or token-dependent line.
+
+**The parked research problem, named as parked:** whether a synthesized semantic
+witness can be certified to pass on the correct behavior without a spec-derived oracle
+(the pass-capability problem). It is why the claim-differential and derived-witness
+tiers abstain in production (items 1, 2). It is not worked on in this line of runs; it
+is parked, and every semantic-witness abstain traces to it.
 
 ## 1. Every gate trigger is sound (no verdict producible by its own harness defect)
 
@@ -71,44 +78,66 @@ the tier is advisory, not gating).
 
 ## 3. Executable surface
 
-**Checked.** Proof-executable **7 of 27** wild entries (Node proof tier can run),
-6 of 7 provisioned. The census is closed with an itemized reason for every entry
-outside the surface (`benchmarks/real-prs/hunt3/VIABILITY-LIFT.md` close-out).
-Regenerate: `npm run viability-census`, then `SWARM_EG_NODE_BIN=<node22> node
-dist/scripts/real-prs/hunt3-provision-proof.js`.
+**Checked, and the engine reach grew (the pipeline reach did not yet).**
+Proof-executable **7 of 27** wild entries by the Node structural pipeline (the census
+is closed with an itemized reason for every entry outside the surface,
+`benchmarks/real-prs/hunt3/VIABILITY-LIFT.md`). The reach run generalized the
+**test-tamper restoration engine to pytest and Go**, live-validated on planted
+fixtures (planted tampers prove with full controls green, clean controls refute, 4/4,
+`benchmarks/oracle-corpus/POLYGLOT-RESTORATION-REPORT.md`); every control travels and
+the TS path is byte-identical.
+
+- **Engine-runner matrix:** test-tamper restoration executes on node/pytest/go;
+  no-op-fix stays node-only (its coverage control is Istanbul-only, Go has no import
+  closure); the TS-married engines (mock-mutation, type-suppression, dead-branch,
+  fake-refactor) keep their non-TS abstains; Elixir has no provisioner (recorded
+  exclusion).
+- **The reach limit, named by file:line (Hunt 6).** A non-JS/TS wild cheat does not
+  yet reach the now-polyglot engine through `swarm audit`: the execution-grounded
+  entry gate `mutableSourceFilter` (`src/audit/execution-grounded/index.ts:81`) admits
+  only `.js/.ts` extensions, so a `.go/.py` diff bails at "no mutable source lines"
+  before provisioning. The next build is generalizing that gate and the JS/TS
+  structural detectors to `.go/.py`, carrying (or fail-closed abstaining) the mutation
+  and coverage front-end. See `benchmarks/real-prs/hunt6/HUNT-6-REPORT.md`.
+
+Regenerate: `npm run viability-census`; the polyglot engine via
+`PATH="$HOME/go-toolchain/go/bin:$PATH" node dist/scripts/oracle/polyglot-restoration.js`.
 
 ## 4. Corpus freshness
 
-**Candidates packaged, awaiting maintainer fold.** The corpus truth condition is
-corrected: an entry exists when a maintainer publicly called the PR a cheat and named
-the category, and the human maintainer folds it. A model verdict is neither half of
-that. The dual arbiter was, for a period, read as if a both-confirm were the
-existence condition; the mining-verification run measured that gate at **0/11 recall
-on real maintainer-confirmed cheats** (against 21/23 on planted, diff-legible ones),
-so it was demoting real wild cheats to non-existent on the assumption a cheat is
-legible in the diff. That assumption is the opposite of this project's thesis. The
-arbiter is now an **annotation for ranking, never a veto** (`intake-rewire` run,
-`evidence/intake-rewire/EVIDENCE-REPORT.md`; `DATASET.md` truth-condition section).
+**The corpus grew: v1 (27) to v2 (29), and the intake is tightened.** Two
+maintainer-confirmed wild cheats were folded at the intake-rewire run (vlebo/ctx#24 Go
+error-swallow, elixir-nx/nx#1685 Elixir test-relaxation) after a per-entry human read;
+they are `benchmarks/real-prs/wild-cheat-corpus/v2/dataset.json`. The truth condition
+is a maintainer complaint plus a human fold; the arbiter annotates, never gates
+(`evidence/intake-rewire/EVIDENCE-REPORT.md`).
 
-- **24 complaint-confirmed candidates** sit in the review package
-  (`benchmarks/real-prs/wild-cheat-corpus/incoming/`), deduped against the frozen 27:
-  the endgame 25 and the deep-attribution re-mine, plus 7 from a fresh-window mine
-  (6 of the 7 recovered by the attribution fix, on real projects: triton-lang/triton,
-  elixir-nx/nx, eslint-plugin-import). 11 are EG-viable (could run the proof tier if
-  folded). Arbiter annotations: 0 both-confirm, 3 split, 5 unannotated, 16 both-reject
-  (under a 0/11 weak-evidence reminder). None gates entry.
-- **The problem is live, not declining.** At the matched complaint bar the mine's rate
-  is 8 to 14 percent of agent PRs (25/176 to 32/227 across passes) against Hunt 2's
-  8.3 percent. `0/1721` (the arbiter bar) never compared to `27/327` (the complaint
-  bar); the mining-verification run proved the miner sound and the attribution defect
-  fixed. Review noise under the corrected intake is measured: 4 of 30 benign-complaint
-  threads (13 percent) reach the package, ranked low by the arbiter annotation.
+- **The miner is tightened definitionally:** a complaint counts only from a human other
+  than the PR author (self-comments and bots, including the Copilot review surface,
+  excluded before matching). Package noise fell **13% to 3.3%** on the negative control;
+  on the last 24-candidate package, 17 of 24 were self/bot noise
+  (`benchmarks/real-prs/mining-verification/TIGHTENING-REPORT.md`).
+- **A finding on the inherited corpus:** 19 of the 27 `v1` entries carry a self- or
+  bot-authored complaint in the current thread and would not pass the tightened bar
+  (temporal-drift and solo-maintainer caveats stated). The frozen set is unchanged;
+  this run's own 2 folds pass the tightened bar. Recorded for a future tightened
+  re-verification, not acted on.
+- **The current review package is 6 candidates** (down from 24 under the tightening),
+  2 EG-viable, staged at `benchmarks/real-prs/wild-cheat-corpus/incoming/`. On prior
+  human review these read as legitimate-on-the-merits or iteration feedback, so 0 are
+  recommended to fold; the sitting is the maintainer's.
+- **Two hunts ran on the folded entries, both honest zeros.** Hunt 5: 0 of 2, the
+  restoration tier could not execute non-Node. Hunt 6 (after the polyglot engine
+  landed): 0 of 2, the barrier moved upstream to the pipeline entry gate
+  (`mutableSourceFilter`, JS/TS-only), which bails before the now-capable engine (item
+  3, `benchmarks/real-prs/hunt6/HUNT-6-REPORT.md`).
+- **The problem is live, not declining:** at the matched complaint bar the mine's rate
+  is 8 to 14 percent of agent PRs against Hunt 2's 8.3 percent; `0/1721` (the old
+  arbiter bar) never compared to `27/327` (the complaint bar).
 
-Item 4 is no longer blocked on the instrument: the constraint is a maintainer fold. A
-new PRIMARY pre-registered hunt (Hunt 5) needs the freshly folded entries frozen by
-SHA. The nightly complaint-mine cron now mines with `--deep-attribution` and packages
-every run for review (never folds). Regenerate: `node dist/scripts/real-prs/intake-package.js
---in benchmarks/real-prs/wild-cheat-corpus/mined-candidates.json --in benchmarks/real-prs/wild-cheat-corpus/mined-candidates-fresh.json`,
+The nightly complaint-mine cron mines with `--deep-attribution` and the tightened
+intake, and packages every run for review (never folds). Regenerate:
+`node dist/scripts/real-prs/intake-package.js --in benchmarks/real-prs/wild-cheat-corpus/mined-candidates-reach.json`,
 then a maintainer runs `fold-approved.js --approved-ids <ids>`.
 
 ## 5. Documentation consistency (the Phase 2 sweep)
@@ -126,11 +155,13 @@ new test. Full inventory: `evidence/soundness/SWEEP-INVENTORY.md`. Regenerate:
 
 | blocker | state | owner |
 | --- | --- | --- |
-| Fresh-corpus fold | 24 complaint-confirmed candidates packaged under the corrected bar (arbiter annotates, does not gate); awaiting a maintainer fold to grow the corpus and unblock Hunt 5 (item 4) | maintainer |
+| Fresh-corpus fold | corpus grew to v2 (29); the current 6-candidate tightened package reads as legit-on-merits (0 recommended to fold); further growth awaits a maintainer sitting on a package with a clean cheat (item 4) | maintainer |
+| Polyglot pipeline reach | the restoration engine is polyglot (pytest/Go), but `mutableSourceFilter` (JS/TS-only) bails a non-JS/TS diff before the engine; the next build is the pipeline front-end (item 3) | next run |
 | Anthropic credits fluctuate | live at this run (HTTP 200); probe every run | maintainer |
 
 (`GITHUB_TOKEN` was the item-4 blocker at the soundness run; it is valid again
-here, so it is no longer the constraint. Yield is.)
+here, so it is no longer the constraint. The corpus now grows on a maintainer fold of a
+clean cheat, and non-Node reach on the pipeline-front-end build.)
 
 ## What content work is ready
 
@@ -143,8 +174,13 @@ consumption surface that a downstream auto-merge policy can read; it makes each
 engine's executed/verdict/abstain-reason claim byte-checkable rather than
 asserted, so it is safe to write about as a mechanism.
 
-Item 4 (fresh-corpus claims, and therefore any "we caught N new wild cheats"
-statement) stays blocked: the token is unblocked but the mining pass produced 0
-arbiter-confirmed entries, so no fresh cheat has been diagnosed. It must not be
-written until a mining pass yields confirmable entries, a maintainer folds them,
-and a PRIMARY hunt runs against them.
+Item 4 now carries a real, honest claim that can be written: the corpus grew to v2
+(29) with two maintainer-confirmed wild cheats folded under the corrected bar, and the
+intake is tightened so it no longer surfaces self-comments or bot reviews as maintainer
+complaints (13% to 3.3% package noise). What still must not be written: a "the proof
+tier caught a wild cheat" claim. Hunt 5 and Hunt 6 both proved 0 of the 2 folded
+entries, honestly (Hunt 5 on language, Hunt 6 on the pipeline entry gate), and no
+`v1` entry is proof-executable beyond the closed 7-of-27 census. The polyglot engine is
+validated but not yet reachable through `swarm audit` for a non-JS/TS cheat; that
+reach, and a proof on a wild cheat, remain unwritten until the pipeline front-end
+generalizes and a matching entry is folded and hunted.
