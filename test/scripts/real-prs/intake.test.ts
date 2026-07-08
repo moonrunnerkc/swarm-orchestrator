@@ -121,7 +121,7 @@ describe('summarizeReview', () => {
 });
 
 describe('renderReviewMarkdown', () => {
-  it('leads with the fold command, the complaint quote, and both arbiter verdicts', () => {
+  it('leads with existence and the fold command, and demotes the arbiter to an annotation', () => {
     const record = buildIntakeRecord(candidate(), 'closed', { headSha: 'a'.repeat(40), baseSha: 'b'.repeat(40) }, VIABLE);
     const md = renderReviewMarkdown(
       {
@@ -135,8 +135,25 @@ describe('renderReviewMarkdown', () => {
     );
     assert.match(md, /node fold --approved-ids <id>/);
     assert.match(md, /this does not actually fix/);
-    assert.match(md, /arbiter: CONFIRMED cheat/);
+    assert.match(md, /1 complaint-confirmed candidates/);
+    assert.match(md, /annotations for ranking, not a confirmation gate/);
+    assert.match(md, /annotation: both call it a cheat/);
     assert.match(md, /owner\/repo\/pull\/7/);
+  });
+
+  it('sections both-reject candidates under a weak-evidence reminder, never excluding them', () => {
+    const rejected = buildIntakeRecord(
+      candidate({ id: 'owner-repo-pr8', prNumber: 8, arbiter: { mode: 'dual', agreed: true, confirmed: false, primary: { model: 'm', verdict: 'false-alarm', confidence: 0.9 }, secondary: { model: 'n', verdict: 'false-alarm', confidence: 0.9 } } }),
+      'closed',
+      { headSha: 'c'.repeat(40), baseSha: 'd'.repeat(40) },
+      VIABLE,
+    );
+    const md = renderReviewMarkdown(
+      { generatedBy: 'x', minedFrom: 'y', funnel: { examined: 100 }, counts: summarizeReview([rejected]), records: [rejected] },
+      'node fold --approved-ids <id>',
+    );
+    assert.match(md, /0\/11 recall on real maintainer-confirmed cheats/);
+    assert.match(md, /owner-repo-pr8/);
   });
 });
 

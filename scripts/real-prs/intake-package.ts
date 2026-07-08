@@ -22,9 +22,9 @@ import {
   renderReviewMarkdown,
   summarizeReview,
   type IntakeRecord,
-  type MinedCandidate,
   type ReviewPackage,
 } from './lib/intake';
+import { candidateKey, mergeMinedCandidates, type MinedFile } from './lib/intake-merge';
 
 const log = getLogger('real-prs:intake-package');
 
@@ -36,11 +36,6 @@ const OUT_MD = path.join(OUT_DIR, 'REVIEW.md');
 
 const FOLD_COMMAND =
   'node dist/scripts/real-prs/fold-approved.js --approved-ids <id-1>,<id-2>,...';
-
-interface MinedFile {
-  readonly funnel: Record<string, number>;
-  readonly candidates: readonly MinedCandidate[];
-}
 
 interface PullState {
   readonly headSha: string;
@@ -75,23 +70,55 @@ function readMined(file: string): MinedFile {
   return JSON.parse(fs.readFileSync(file, 'utf8')) as MinedFile;
 }
 
-function parseInFile(argv: string[]): string {
-  const i = argv.indexOf('--in');
-  return i >= 0 && argv[i + 1] !== undefined ? (argv[i + 1] as string) : DEFAULT_IN;
+/** Every `--in <file>` in order; defaults to the endgame mine when none given. */
+function parseInFiles(argv: string[]): string[] {
+  const files: string[] = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] === '--in' && argv[i + 1] !== undefined) {
+      files.push(argv[i + 1] as string);
+      i += 1;
+    }
+  }
+  return files.length > 0 ? files : [DEFAULT_IN];
+}
+
+/** PR-identity keys (repo#number) already frozen in the corpus (highest version),
+ *  read directly for dedup so the package never re-offers an entry the maintainer
+ *  already folded. Reads only ids, not held-out cheat content, so it is not a
+ *  held-out evaluation read. Keys on repo#number because corpus ids are
+ *  vendor-prefixed and miner ids are not. */
+function loadCorpusKeys(): Set<string> {
+  const keys = new Set<string>();
+  if (!fs.existsSync(CORPUS_DIR)) return keys;
+  const versions = fs
+    .readdirSync(CORPUS_DIR, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && /^v\d+$/.test(e.name))
+    .map((e) => e.name);
+  if (versions.length === 0) return keys;
+  const latest = versions.sort((a, b) => Number(a.slice(1)) - Number(b.slice(1))).at(-1) as string;
+  const file = path.join(CORPUS_DIR, latest, 'dataset.json');
+  if (!fs.existsSync(file)) return keys;
+  const ds = JSON.parse(fs.readFileSync(file, 'utf8')) as { entries?: Array<{ repo: string; prNumber: number }> };
+  for (const e of ds.entries ?? []) keys.add(candidateKey(e.repo, e.prNumber));
+  return keys;
 }
 
 async function main(): Promise<void> {
   loadDotenv();
-  const inFile = parseInFile(process.argv.slice(2));
-  const mined = readMined(inFile);
+  const inFiles = parseInFiles(process.argv.slice(2));
+  const corpusKeys = loadCorpusKeys();
+  const merged = mergeMinedCandidates(inFiles.map(readMined), corpusKeys);
   const token = resolveGithubToken();
   const octokit = makeOctokit(token);
   const pullsApi = octokit as unknown as PullsApi;
   const contentsApi = octokit as unknown as OctokitContents;
 
-  log.info(`enriching ${mined.candidates.length} mined candidate(s) for review`);
+  log.info(
+    `merged ${merged.candidates.length} candidate(s) from ${inFiles.length} input(s); ` +
+      `dropped ${merged.droppedInCorpus} already in corpus, ${merged.droppedDuplicate} duplicate`,
+  );
   const records: IntakeRecord[] = [];
-  for (const candidate of mined.candidates) {
+  for (const candidate of merged.candidates) {
     let pull: PullState;
     try {
       pull = await fetchPullState(pullsApi, candidate.repo, candidate.prNumber);
@@ -114,8 +141,8 @@ async function main(): Promise<void> {
 
   const pkg: ReviewPackage = {
     generatedBy: 'scripts/real-prs/intake-package.ts',
-    minedFrom: inFile,
-    funnel: mined.funnel,
+    minedFrom: inFiles.join(', '),
+    funnel: merged.funnel,
     counts: summarizeReview(records),
     records,
   };

@@ -156,6 +156,19 @@ caller in code (\`scripts/real-prs/lib/wild-cheat-corpus.ts\`).
 - Full mining record and funnel:
   [\`benchmarks/real-prs/HUNT-2-REPORT.md\`](../../HUNT-2-REPORT.md).
 
+## Truth condition (corrected)
+
+A corpus entry exists when a maintainer publicly called the PR a cheat and named the
+category, and the human maintainer of this project confirmed it at fold time. Entries
+1 through ${e.length} entered under that complaint-plus-human bar. A model verdict is
+neither half of it. For a period the intake path was read as if a dual-arbiter
+both-confirm were the existence condition; the mining-verification run measured that
+gate at **0/11 recall on these very maintainer-confirmed cheats** (against 21/23 on
+planted, diff-legible cheats) and it was removed. The arbiter fields on every entry
+are **annotations for ranking, never a veto**: a model verdict neither creates nor
+destroys a corpus entry. See
+[\`evidence/mining-verification/EVIDENCE-REPORT.md\`](../../../../evidence/mining-verification/EVIDENCE-REPORT.md).
+
 ## Selection bias (read before citing)
 
 These are only the cheats a **human caught and complained about in writing**. The
@@ -164,6 +177,14 @@ cheats that shipped silently (no complaint) or were never reviewed. It is a
 lower bound on wild-cheat prevalence, not a random sample. The proof tier proved
 **zero** of the execution-grounded-viable ones (HUNT-2-REPORT.md): control-
 verifiable cheats are rarer than complained-about cheats.
+
+A second bias the corpus must never acquire: gating entry on diff-legibility. A cheat
+two arbiters can both see in a 6000-character slice is, by construction, the cheat
+existing instruments already catch. Had entry been gated on a both-confirm, the
+corpus would have biased every future evaluation toward what the tools already see
+and away from the wild cheats that are the point (the 0/11 above is that bias made
+measurable). Entry is gated on the human complaint, not on any instrument's ability
+to re-derive it from the diff.
 
 ## Category distribution
 

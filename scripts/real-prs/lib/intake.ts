@@ -189,31 +189,61 @@ export function summarizeReview(records: readonly IntakeRecord[]): ReviewPackage
   };
 }
 
-/** Review priority: confirmed first, then the cases that need a human call
- *  (split, unevaluable), then the arbiter-cleared remainder. */
-const BUCKET_ORDER: Record<IntakeRecord['reviewBucket'], number> = {
-  'arbiter-confirmed': 0,
-  'arbiter-split': 1,
-  'arbiter-unevaluable': 2,
-  'arbiter-not-cheat': 3,
-};
+/** One review section, in reading order. The arbiter annotation ranks candidates;
+ *  it never gates them. A both-reject is the weakest annotation, not an exclusion:
+ *  the arbiters measured 0/11 recall on real maintainer-confirmed cheats, so a
+ *  reject there is weak evidence and the section carries that reminder. */
+const REVIEW_SECTIONS: ReadonlyArray<{
+  bucket: IntakeRecord['reviewBucket'];
+  heading: string;
+  note?: string;
+}> = [
+  { bucket: 'arbiter-confirmed', heading: 'Both arbiters annotate as a cheat' },
+  { bucket: 'arbiter-split', heading: 'Arbiters split (a human call)' },
+  { bucket: 'arbiter-unevaluable', heading: 'Unannotated (arbiter not run)' },
+  {
+    bucket: 'arbiter-not-cheat',
+    heading: 'Both arbiters annotate as not-a-cheat',
+    note:
+      'Reminder: the arbiters measured 0/11 recall on real maintainer-confirmed cheats, so a ' +
+      'reject here is weak evidence. Review these on the maintainer complaint, not the annotation.',
+  },
+];
 
-function arbiterVerdictLine(arbiter: MinedArbiter): string {
-  if (arbiter.mode === 'off') return 'arbiter: unevaluable (diff not fetched)';
+function arbiterAnnotationLine(arbiter: MinedArbiter): string {
+  if (arbiter.mode === 'off') return 'annotation: unannotated (arbiter not run)';
   const side = (s: MinedArbiterSide | undefined): string =>
     s === undefined ? 'n/a' : `${s.verdict} (${s.model}, conf ${s.confidence.toFixed(2)})`;
   const call =
     arbiter.confirmed === true
-      ? 'CONFIRMED cheat'
+      ? 'both call it a cheat'
       : arbiter.agreed === false
-        ? 'SPLIT (disagreement)'
-        : 'not a cheat';
-  return `arbiter: ${call} — primary ${side(arbiter.primary)}; secondary ${side(arbiter.secondary)}`;
+        ? 'split (disagreement)'
+        : 'both call it not-a-cheat (weak: arbiters scored 0/11 recall on real cheats)';
+  return `annotation: ${call}; primary ${side(arbiter.primary)}, secondary ${side(arbiter.secondary)}`;
+}
+
+function renderCandidate(r: IntakeRecord): string[] {
+  const complaint = r.complaints[0];
+  return [
+    `### ${r.id}`,
+    '',
+    `- PR: ${r.url} (${r.state})`,
+    `- category (maintainer-named): **${r.complaintCategory}**`,
+    `- agent: ${r.vendor} (${r.vendorConfidence}, via ${r.vendorSource})`,
+    `- complaint: "${complaint?.phrase ?? '(none)'}" (${complaint?.source ?? 'n/a'})`,
+    `- ${arbiterAnnotationLine(r.arbiter)}`,
+    `- EG-viability: ${r.egViable ? 'viable' : 'not viable'}, ${r.egViabilityReason}`,
+    `- evidence sha256: \`${r.evidenceSha256}\``,
+    `- SHAs: base \`${r.baseSha.slice(0, 12)}\` head \`${r.headSha.slice(0, 12)}\``,
+    '',
+  ];
 }
 
 /**
- * Render the maintainer review package as Markdown: a funnel summary, the fold
- * command, and one section per candidate ordered by review priority.
+ * Render the maintainer review package as Markdown: an existence-first summary, the
+ * fold command, and one section per arbiter annotation (strongest first) so the
+ * maintainer reviews on the complaint, not on a model verdict.
  *
  * @param pkg the review package.
  * @param foldCommand the exact fold command a maintainer runs on approved ids.
@@ -221,33 +251,30 @@ function arbiterVerdictLine(arbiter: MinedArbiter): string {
  */
 export function renderReviewMarkdown(pkg: ReviewPackage, foldCommand: string): string {
   const c = pkg.counts;
-  const ordered = [...pkg.records].sort(
-    (a, b) =>
-      BUCKET_ORDER[a.reviewBucket] - BUCKET_ORDER[b.reviewBucket] ||
-      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
-  );
   const lines: string[] = [
     '# Complaint-mine review package',
     '',
-    'Agent-attributed PRs a maintainer flagged with cheat-language, each verified',
-    'against the fetched conversation and given a dual-arbiter category verdict.',
-    'Nothing here is folded automatically: approve ids explicitly, then run the fold',
-    'command. This corpus is the held-out set for the next pre-registered hunt, so',
-    'do not diagnose entries before the pre-registration freezes them.',
+    'Agent-attributed PRs a maintainer publicly flagged with cheat-language, each',
+    'verified against the fetched conversation. Every candidate here already meets the',
+    'corpus bar: a maintainer complaint naming a cheat, on an agent-attributed PR. The',
+    'dual-arbiter fields are **annotations for ranking, not a confirmation gate**; the',
+    'arbiters measured 0/11 recall on real maintainer-confirmed cheats, so they neither',
+    'admit nor exclude a candidate. Nothing folds automatically: approve ids explicitly,',
+    'then run the fold. Do not diagnose entries before the next pre-registration freezes',
+    'them.',
     '',
     `Mined from \`${pkg.minedFrom}\` by \`${pkg.generatedBy}\`.`,
     '',
-    '## Funnel',
+    '## Summary',
     '',
-    `Examined ${pkg.funnel.examined ?? 0}; agent-attributed complaint PRs confirmed ` +
-      `${c.total}; dual-arbiter CONFIRMED **${c.arbiterConfirmed}**; splits ${c.arbiterSplit}; ` +
-      `unevaluable ${c.arbiterUnevaluable}; arbiter-cleared (not a cheat) ${c.arbiterNotCheat}. ` +
-      `EG-viable ${c.egViable}/${c.total}.`,
+    `**${c.total} complaint-confirmed candidates** for review (examined ` +
+      `${pkg.funnel.examined ?? 0}). EG-viable ${c.egViable}/${c.total}. Arbiter ` +
+      `annotations (ranking only): both-confirm ${c.arbiterConfirmed}, split ${c.arbiterSplit}, ` +
+      `unannotated ${c.arbiterUnevaluable}, both-reject ${c.arbiterNotCheat}.`,
     '',
     '## Fold the ones you approve',
     '',
-    'Review the sections below (confirmed and split first). Then fold exactly the',
-    'ids you judge to be real cheats:',
+    'Review the sections below and fold exactly the ids you judge to be real cheats:',
     '',
     '```sh',
     foldCommand,
@@ -255,24 +282,15 @@ export function renderReviewMarkdown(pkg: ReviewPackage, foldCommand: string): s
     '',
     'An empty approval folds nothing and leaves the corpus version unchanged.',
     '',
-    '## Candidates',
-    '',
   ];
-  for (const r of ordered) {
-    const complaint = r.complaints[0];
-    lines.push(
-      `### ${r.id}`,
-      '',
-      `- PR: ${r.url} (${r.state})`,
-      `- category (maintainer-named): **${r.complaintCategory}**`,
-      `- agent: ${r.vendor} (${r.vendorConfidence}, via ${r.vendorSource})`,
-      `- complaint: "${complaint?.phrase ?? '(none)'}" (${complaint?.source ?? 'n/a'})`,
-      `- ${arbiterVerdictLine(r.arbiter)}`,
-      `- EG-viability: ${r.egViable ? 'viable' : 'not viable'} — ${r.egViabilityReason}`,
-      `- evidence sha256: \`${r.evidenceSha256}\``,
-      `- SHAs: base \`${r.baseSha.slice(0, 12)}\` head \`${r.headSha.slice(0, 12)}\``,
-      '',
-    );
+  for (const section of REVIEW_SECTIONS) {
+    const inSection = pkg.records
+      .filter((r) => r.reviewBucket === section.bucket)
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    if (inSection.length === 0) continue;
+    lines.push(`## ${section.heading} (${inSection.length})`, '');
+    if (section.note !== undefined) lines.push(`> ${section.note}`, '');
+    for (const r of inSection) lines.push(...renderCandidate(r));
   }
   return lines.join('\n');
 }
