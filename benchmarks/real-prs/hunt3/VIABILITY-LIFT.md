@@ -128,3 +128,38 @@ false-negative corrected and one install-path defect fixed, both validated by re
 clone-and-install output. The corpus's ceiling is structural: it is dominated by
 non-Node and non-project repositories the Node proof tier cannot execute on, and
 that is stated plainly rather than papered over.
+
+---
+
+## Close-out 2026-07-08 (soundness run): the census stops being an open item
+
+Read the census (`VIABILITY-CENSUS.md`), then looked for a remaining category with
+a bounded, honest provisioner path covering two or more entries, under this run's
+hard rules (no paid registries, no recipe that changes what runs, no new proof
+tier). There is none, so this is the itemized close-out.
+
+**Executable surface: 7 of 27** (proof-executable, the Node proof tier can run):
+inmanta/web-console#6972, lesmartiepants/poetry-bil-araby#545,
+myhuemungusD/SkateHubba-play#382, outline/outline#12197,
+yorickdewid/flight-planner#149, vitejs/vite-plugin-react#1246, cybersemics/em#4339.
+Provisioned 6 of the 7 (inmanta fails on a paid private registry).
+
+**The 20 outside the surface, per category, with the honest reason a provisioner
+cannot honestly reach them:**
+
+| category | n | why no bounded provisioner (within scope) |
+| --- | --- | --- |
+| install-viable pytest/Go | 7 | These provision already; the proof tier (restoration + claim-differential) is Node-only and fail-closed abstains on a pytest/Go runner. Reaching them needs a Python/Go PROOF TIER, a new capability, not a provisioner. This run ships no new capability except the discrimination control, so it is out of scope and recorded as future work in `polyglot-install.ts`. |
+| monorepo Node subpackage, no lockfile | 4 | Frozen-lockfile discipline (a hard rule) refuses an install with no committed lockfile; generating one would change what resolves and runs (forbidden). In 3 of 4 the maintainer complaint lands on the Python/.NET part, not the Node subpackage, so even a relaxed install would not reach the accused code. |
+| unsupported language / non-project | 5 | Rust workspace, Ansible/YAML/Terraform, .NET/C#, Python-no-pytest subdirs, and a monorepo of unrelated CTF challenges. No supported test tier applies; a provisioner has nothing to provision honestly. |
+| Node, genuinely no test runner | 2 | quirgs (no `scripts.test`, no runner dep) and velocityos (`scripts.test` is `echo "no root tests yet" && exit 0`). Forcing viability would fabricate a suite that does not exist. |
+| Python, no pytest signal at root | 1 | clingcon is a C++/CMake project with a `pyproject.toml` shim; the tests are C++ under CMake, which no supported tier runs. |
+| repo or PR head gone | 1 | flipflowglobal/D.L#47 returns HTTP 404 for its head SHA. Unreachable. |
+
+**Conclusion.** The corpus ceiling is structural: 7/27 are Node-proof-executable,
+and the dominant blocker (7 entries) is the Node-only proof tier, not provisioning.
+No category outside the surface has a bounded, honest provisioner path that this
+run's scope permits, so no provisioner was implemented. The single highest-value
+lift is a Python/Go proof tier (7 entries), recorded as out-of-scope future work.
+The census is closed as an open item: every entry has an itemized, honest reason,
+and the executable surface number (7/27) is stable.
