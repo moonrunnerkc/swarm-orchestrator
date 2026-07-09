@@ -68,6 +68,19 @@ badge, a README line, or a slide, the artifact wins and the other is stale.
 | Twin separation (detector tier, semi-synthetic n=52) | separation 0.54, McNemar p = 7.5e-9 | `benchmarks/twins/TWIN-SEPARATION-REPORT.md` | `npm run twins:separation` |
 | Derived-witness twin measurement (n=8) | honest-twin FP 0/8, special-casing recall 8/8 | `benchmarks/twins/DERIVED-WITNESS-REPORT.md` | `npm run derived-witness:measure` |
 
+## Capability run: FP hardening, reach, binding, the hunt (this run)
+
+| claim | number | artifact | regenerate |
+|---|---|---|---|
+| The jeduden coverage-moving false positive is neutralized in-proof and pinned; CI fails if it regresses | refuter fires on both finding files; twins 6/6 | `benchmarks/results/FP-HARDENING-REPORT.md`, `benchmarks/real-corpus/fp-registry/` | `npm run fp-registry:check`, `npm run coverage-relocation:measure` |
+| A self-certifying gate trigger auto-demotes to advisory when accrued false positives drop its Wilson-95 bound below 0.90 | mechanism tested; jeduden neutralized so block-eligible stays 8 | `src/audit/gate/block-eligibility.ts`, `benchmarks/real-corpus/block-eligibility.json` | `npm run block-policy:check`, `npm test` |
+| The error-swallow restoration engine proves a load-bearing swallow and refutes a defensive one | 4/4 (mocha + pytest) | `benchmarks/twins/ERROR-SWALLOW-PROOF-REPORT.md` | `npm run error-swallow:measure` |
+| The proof tier's executable fraction of an intake, tracked | intake 2/6 (33.3%), corpus 78/197 (39.6%) | `benchmarks/real-corpus/executable-fraction.json`, `POLYGLOT-PROVISION-REPORT.md` | `npm run executable-fraction` |
+| Tier C binds a claim to an existing test with green history and fires only on a real undelivered claim | honest FP 0/4, recall 4/4, separation 1.00 | `benchmarks/twins/CLAIM-BINDING-REPORT.md`, `benchmarks/twins/claim-binding.json` | `npm run claim-binding:measure` |
+| Both new proof tiers ship advisory; nothing new is gate-eligible | gate-eligible detectors 0, block-eligible triggers 8 | `benchmarks/real-corpus/promotions.json` | `npm run promotions:check`, `npm run block-policy:check` |
+| The backfill hunt proved 0 cheats on 30 merged agent-authored PRs (no milestone candidate) | 0 gate triggers / 30 PRs; 22/28 provisioned | `benchmarks/real-prs/capability-hunt/BACKFILL-HUNT-REPORT.md`, `.../records/` | `npm run hunt:backfill -- --batch-size 15` |
+| The hunt's verdicts feed the promotion machinery; promotion is symmetric with the FP-driven demotion | synthetic fold promotes claimBinding, removal reverts to advisory | `benchmarks/real-corpus/PROMOTION-ON-DATA-REPORT.md`, `hunt-verdict-evidence.json` | `npm run hunt:aggregate`, `npm run promotions:compute` |
+
 ## The parked research problem (stated, not claimed as solved)
 
 The pass-capability problem (certifying a synthesized semantic witness passes on the correct

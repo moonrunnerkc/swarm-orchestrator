@@ -8,11 +8,14 @@ every line carries a measured value and the script that regenerates it.
 
 Measured at the soundness run (branch point `cc1d1c42`); items 2, 4, and 6
 re-probed at the endgame run; items 3, 4, and 6 re-probed at the intake-rewire and
-reach runs. **Items 3, 4, and 6 re-probed again at the close-out run:** the corpus was
-stratified by complaint bar (v3), both polyglot front-end walls were fixed, a Go and a
-Python test-tamper proved end-to-end through `swarm audit --pr`, and Hunt 7 ran (the
-polyglot pipeline proved on wild Go, a false-positive-for-cheat refactor). Re-probe before
-trusting any credit- or token-dependent line.
+reach runs; items 3, 4, and 6 re-probed at the close-out run. **Items 1, 2, 3, and 6
+re-probed at the capability run:** the jeduden coverage-moving false positive is
+neutralized in-proof (the coverage-relocation refuter) and pinned in a CI-failing FP
+registry; self-certifying triggers now auto-demote on accrued false positives (symmetric
+with the promotion path); two new advisory proof tiers (error-swallow restoration, Tier C
+claim-to-existing-test binding) are twin-validated; a pre-registered backfill hunt proved
+0 cheats on 30 merged agent PRs and a nightly stream workflow is scheduled. Re-probe
+before trusting any credit- or token-dependent line.
 
 **The parked research problem, named as parked:** whether a synthesized semantic
 witness can be certified to pass on the correct behavior without a spec-derived oracle
@@ -173,7 +176,7 @@ new test. Full inventory: `evidence/soundness/SWEEP-INVENTORY.md`. Regenerate:
 | --- | --- | --- |
 | Fresh-corpus fold | corpus grew to v2 (29), stratified to v3; the current 6-candidate tightened package reads as legit-on-merits (0 recommended to fold); further growth awaits a maintainer sitting on a package with a clean cheat (item 4) | maintainer |
 | Polyglot pipeline reach | **resolved.** Both front-end walls fixed (`layerHasWork`, `isClosureAnalyzable`); a Go and a Python test-tamper prove end-to-end through `swarm audit --pr` (item 3, `LIVE-PATH-POLYGLOT-REPORT.md`) | closed this run |
-| Gate false-positive class | the `test-tamper-proven` trigger fires on assertion-weakening refactors that relocate coverage (Hunt 7 jeduden); keeps ADVISE the correct default, unattended gate-mode auto-block unsafe on wild PRs; a fix (detect relocated coverage) is unbounded | recorded, not built |
+| Gate false-positive class | **neutralized this run.** The coverage-relocation refuter (`test-restoration.ts` Step 6d) downgrades a proven restoration to `not-proven:coverage-relocated` when the PR adds replacement coverage in a changed production directory; the attestation surfaces it as `disputed` (human-review), never clean. Pinned in the CI-failing FP registry (jeduden entry one); twins 6/6. | fixed (`benchmarks/results/FP-HARDENING-REPORT.md`) |
 | pytest provisioning-install | the sandbox installs pytest into a `.venv` but the run uses ambient `python3 -m pytest`; works where a system pytest exists, not on a clean sandbox (Go has no such gap) | next run |
 | Anthropic credits fluctuate | live at this run (HTTP 200 via `.env`); probe every run | maintainer |
 

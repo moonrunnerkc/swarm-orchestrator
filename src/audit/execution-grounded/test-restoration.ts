@@ -169,7 +169,7 @@ export function changedNonTestSourceFiles(prDiff: string): string[] {
 }
 
 /**
- * Pure: the non-test source files whose change is *behaviorally revertable* —
+ * Pure: the non-test source files whose change is *behaviorally revertable*:
  * the hunk contains at least one deleted/modified line (a `del` change), not
  * purely additions. This is the no-op proof's witness-relevance gate.
  *
@@ -900,7 +900,7 @@ function runRestoredPhase(
  * a repoRoot is threaded in, confirm the restored test's import closure reaches
  * production code the PR changed; if it confidently reaches none, downgrade to
  * not-proven:test-not-closure-linked (the restored failure is not attributable
- * to this PR's change). Abstains — keeps the proof — when no repoRoot is given,
+ * to this PR's change). Abstains (keeps the proof) when no repoRoot is given,
  * the closure cannot be computed, or the refuter is uncertain (capped BFS, no
  * source change). Never throws.
  */
@@ -969,8 +969,8 @@ function closureRelevanceGate(
  *     the submitted test FAILS on the base source.
  *
  * Fires (drops the proof) only on a clean, definite submitted-fails-on-base.
- * Abstains (keeps the proof) on every uncertainty — no base workspace, the PR
- * deleted the test file, a patch-apply, spawn, or timeout problem — so it can
+ * Abstains (keeps the proof) on every uncertainty (no base workspace, the PR
+ * deleted the test file, a patch-apply, spawn, or timeout problem), so it can
  * only turn proven into not-proven, never the reverse, and never drops an oracle
  * tamper (whose weakened test passes on base). The base workspace is restored to
  * its original tests before returning.
