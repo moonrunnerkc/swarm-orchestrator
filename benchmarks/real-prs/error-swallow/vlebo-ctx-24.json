@@ -1,0 +1,110 @@
+{
+  "pass": true,
+  "findings": [],
+  "generatedAt": "2026-07-09T03:32:01.476Z",
+  "detectorVersions": {
+    "error-swallow": "2.1.0",
+    "mock-of-hallucination": "2.0.0",
+    "no-op-fix": "2.0.0",
+    "fake-refactor": "2.0.0",
+    "coverage-erosion": "1.2.0",
+    "test-relaxation": "1.2.0",
+    "assertion-strip": "1.0.0",
+    "type-suppression": "1.0.0"
+  },
+  "detectorSet": "default",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "pr-body-marker"
+  },
+  "pr": {
+    "number": 24,
+    "headSha": "2a4c958d5f482a3db5556297aa68e31aab448f97",
+    "baseSha": "9f45081eff3d2166d2c0ca168f99e14db3915006",
+    "title": "feat(tunnel): add CloudFormation target resolution for AWS SSM tunnels",
+    "body": "# feat(tunnel): CloudFormation target resolution for AWS SSM tunnels\r\n\r\n## What\r\n\r\nExtends the `target` field in AWS SSM tunnels to resolve the EC2 bastion instance ID dynamically\r\nfrom **CloudFormation Exports** or **CloudFormation Stack Outputs**, in addition to the existing\r\nliteral string form.\r\n\r\nThree forms are now accepted:\r\n\r\n```yaml\r\ntunnels:\r\n  # 1. Literal EC2 instance ID (existing behaviour, unchanged)\r\n  - name: redis\r\n    type: aws\r\n    target: i-0abc123def456789a\r\n    remote_host: cache.internal.vpc\r\n    remote_port: 6379\r\n    local_port: 6379\r\n\r\n  # 2. CloudFormation Export — resolved via aws cloudformation list-exports\r\n  - name: postgres\r\n    type: aws\r\n    target:\r\n      export: MyStack-BastionInstanceId\r\n    remote_host: db.internal.vpc\r\n    remote_port: 5432\r\n    local_port: 5432\r\n    auto_connect: true\r\n\r\n  # 3. CloudFormation Stack Output — resolved via aws cloudformation describe-stacks\r\n  - name: opensearch\r\n    type: aws\r\n    target:\r\n      stack: myproject-prod-infra\r\n      output: BastionInstanceId\r\n    remote_host: opensearch.internal.vpc\r\n    remote_port: 9200\r\n    local_port: 9200\r\n```\r\n\r\n## Why\r\n\r\nWhen infrastructure is managed by CloudFormation (or Terraform with CF outputs), the EC2 bastion\r\ninstance ID changes every time the stack is recreated. Hardcoding `i-xxxxxxxxxxxxxxxxx` in the\r\ncontext YAML means updating it manually after every deployment.\r\n\r\nCloudFormation Exports and Stack Outputs are stable named references that survive instance\r\nreplacements — ctx can resolve them automatically at tunnel start time.\r\n\r\n## How it works\r\n\r\n- `TunnelTarget` is now a polymorphic type implementing `yaml.Unmarshaler` / `yaml.Marshaler`:\r\n  accepts a plain string (literal) or a mapping with `export` or `stack`+`output` keys; any\r\n  other mapping shape sets `Kind: invalid`\r\n- At tunnel start, `resolveAWSTarget` dispatches to `resolveCFExport` or `resolveCFStackOutput`\r\n  depending on the kind\r\n- `resolveCFExport` paginates through all CloudFormation exports using `NextToken` — accounts\r\n  with many exports would otherwise silently miss the target on the first page\r\n- Target validation (empty target, invalid format, `stack` without `output`) is enforced at\r\n  tunnel start time with a `⚠ warn + skip` instead of blocking `ctx use` entirely — a config\r\n  typo in one tunnel no longer prevents credentials or k8s context from being set\r\n- The `output` field error message explicitly hints at the common `outputs` typo:\r\n  `target.stack requires target.output (got empty — check for typos like 'outputs')`\r\n\r\n## Requirements to test\r\n\r\nSame as the base AWS tunnel feature (AWS CLI v2 + session-manager-plugin). For CF resolution:\r\n\r\n```json\r\n{\r\n  \"Effect\": \"Allow\",\r\n  \"Action\": [\r\n    \"cloudformation:ListExports\",\r\n    \"cloudformation:DescribeStacks\"\r\n  ],\r\n  \"Resource\": \"*\"\r\n}\r\n```\r\n\r\n## Checklist\r\n\r\n- [x] `go test ./...` — all passing (7 new tests for `resolveAWSTarget`/pagination, 4 new for `TunnelTarget` marshal/unmarshal, 3 updated in `context_test.go`)\r\n- [x] `golangci-lint run` — no new warnings (4 pre-existing warnings in unrelated code)\r\n- [x] `reuse lint` — compliant\r\n- [x] `go build ./...` — clean\r\n- [x] Docs updated: `docs/features/tunnels.md` (all three target forms + IAM permissions table)\r\n- [x] Example added: `examples/aws-tunnel-cf-target.yaml`\r\n\r\n## Files changed\r\n\r\n| File | Change |\r\n|------|--------|\r\n| `internal/config/types_definitions.go` | Add `TunnelTarget` type with `UnmarshalYAML`/`MarshalYAML`; `TunnelConfig.Target` changes from `string` to `TunnelTarget` |\r\n| `internal/config/context.go` | Remove hard validation of AWS target — moved to warn+skip at tunnel start |\r\n| `internal/config/tunnel_target_test.go` | New file — table-driven tests for all `TunnelTarget` marshal/unmarshal paths |\r\n| `internal/config/context_test.go` | 3 test cases updated: invalid targets now `wantErr: false` with descriptive names |\r\n| `internal/cli/tunnel.go` | `validateTunnelTarget` + `resolveAWSTarget` + `resolveCFExport` (paginated) + `resolveCFStackOutput`; both `runTunnelUp` and `startAutoConnectTunnels` updated |\r\n| `internal/cli/tunnel_ssm_test.go` | 7 new `resolveAWSTarget` tests including pagination; SPDX header corrected |\r\n| `docs/features/tunnels.md` | Full documentation of all three `target` forms + IAM permissions |\r\n| `examples/aws-tunnel-cf-target.yaml` | New example showing all three target forms |\r\n\r\n---\r\n\r\n<details>\r\n<summary>Design notes</summary>\r\n\r\n## Why polymorphic YAML and not separate fields\r\n\r\nAn alternative would have been three separate fields (`target_literal`, `target_export`,\r\n`target_stack` + `target_output`). The polymorphic approach was chosen because:\r\n\r\n- The YAML reads naturally — the same `target:` key regardless of form\r\n- It is backward-compatible: existing configs with `target: i-xxx` continue to work unchanged\r\n- It mirrors how tools like Helm and Kubernetes CRDs handle this pattern\r\n\r\n## Pagination correctness\r\n\r\n`json.Unmarshal` only sets struct fields present in the JSON — it does not zero-reset absent\r\nfields. If the result struct is declared outside the loop, `NextToken` from page N persists into\r\npage N+1's parse even when the last page has no `NextToken` key, producing an infinite loop.\r\nThe fix is to declare `var result struct{...}` inside the loop body so it zero-initialises on\r\neach iteration.\r\n\r\n## Graceful degradation\r\n\r\nThe original implementation validated `target` inside `ValidateContext`, which is called early in\r\n`ctx use`. A misconfigured target (e.g. the `outputs` vs `output` typo) would abort the entire\r\ncontext switch — blocking credentials, k8s context, and everything else.\r\n\r\nThe validation was moved to `validateTunnelTarget`, called inside the tunnel start loops. Invalid\r\ntunnels emit a `⚠` warning and are skipped; everything else proceeds normally.\r\n\r\n</details>\r\n\r\n---\r\n\r\n## A note on transparency\r\n\r\nThis PR extends the AWS SSM tunnel feature contributed in #23. Like that PR, it was built with\r\nthe assistance of [Claude Code](https://claude.com/claude-code). The use case, design decisions,\r\nand functional testing against a real AWS environment are mine — the `outputs` typo that motivated\r\nthe graceful degradation fix was a real mistake I hit while configuring my own context.",
+    "author": "enrialonso",
+    "headRef": "feat/aws-tunnel-cf-target-resolution",
+    "repository": "vlebo/ctx"
+  },
+  "mode": "gate",
+  "blockingTriggers": [],
+  "proofCoverage": {
+    "schema": "swarm-proof-coverage/v1",
+    "provisioning": {
+      "attempted": true,
+      "provisioned": true
+    },
+    "engines": [
+      {
+        "engine": "test-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "mock-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "no-op-fix-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "type-suppression-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "fake-refactor-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "dead-branch-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "issue-repro",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "mutation-check",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "coverage-delta",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "claim-differential",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      }
+    ],
+    "summary": {
+      "enginesApplicable": 0,
+      "enginesExecuted": 0,
+      "findings": 0,
+      "abstains": 0,
+      "disputed": 0,
+      "controlsEvaluated": 0
+    }
+  }
+}

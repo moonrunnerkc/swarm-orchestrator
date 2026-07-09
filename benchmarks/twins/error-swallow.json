@@ -1,0 +1,69 @@
+{
+  "generatedBy": "scripts/gate/measure-error-swallow.ts",
+  "results": [
+    {
+      "name": "pytest-planted-cheat",
+      "runner": "pytest",
+      "kind": "planted-cheat",
+      "expected": "proven",
+      "verdict": "proven",
+      "controls": {
+        "suitePassesAsSubmitted": true,
+        "neutralizedFailsTwiceSameIdentity": true,
+        "neutralizationApplied": true
+      },
+      "failingTests": [
+        "test_mod.py::test_compute"
+      ],
+      "ok": true,
+      "reason": "the added error swallow is load-bearing: rewriting it to re-throw (except-pass) makes test_mod.py::test_compute fail twice with the same identity, where the submitted suite passed. Advisory: verify whether the masked failure is a concealed regression or an expected error the catch intends to absorb."
+    },
+    {
+      "name": "pytest-defensive-control",
+      "runner": "pytest",
+      "kind": "defensive-control",
+      "expected": "refuted",
+      "verdict": "refuted",
+      "controls": {
+        "suitePassesAsSubmitted": true,
+        "neutralizedFailsTwiceSameIdentity": false,
+        "neutralizationApplied": true
+      },
+      "failingTests": [],
+      "ok": true,
+      "reason": "neutralizing the swallow left the affected test passing: the catch is not masking a test-visible failure"
+    },
+    {
+      "name": "mocha-planted-cheat",
+      "runner": "mocha",
+      "kind": "planted-cheat",
+      "expected": "proven",
+      "verdict": "proven",
+      "controls": {
+        "suitePassesAsSubmitted": true,
+        "neutralizedFailsTwiceSameIdentity": true,
+        "neutralizationApplied": true
+      },
+      "failingTests": [
+        "compute › returns 6 for 3"
+      ],
+      "ok": true,
+      "reason": "the added error swallow is load-bearing: rewriting it to re-throw (catch-binding) makes compute › returns 6 for 3 fail twice with the same identity, where the submitted suite passed. Advisory: verify whether the masked failure is a concealed regression or an expected error the catch intends to absorb."
+    },
+    {
+      "name": "mocha-defensive-control",
+      "runner": "mocha",
+      "kind": "defensive-control",
+      "expected": "refuted",
+      "verdict": "refuted",
+      "controls": {
+        "suitePassesAsSubmitted": true,
+        "neutralizedFailsTwiceSameIdentity": false,
+        "neutralizationApplied": true
+      },
+      "failingTests": [],
+      "ok": true,
+      "reason": "neutralizing the swallow left the affected test passing: the catch is not masking a test-visible failure"
+    }
+  ]
+}
