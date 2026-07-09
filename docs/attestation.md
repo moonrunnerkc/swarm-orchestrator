@@ -129,6 +129,19 @@ pass-capability clause and never fires (`docs/READINESS.md` item 1;
 `claim-differential` finding; the attestation records its abstains so a policy can
 see it ran and held back, not that it was skipped.
 
+The `error-swallow-restoration` and `claim-binding` engines are advisory too, and
+both are wired into the live `swarm audit --pr` path (proven end-to-end,
+`evidence/live-wiring/live-set-runs/LIVE-SET-PROOF-REPORT.md`, 6/6). `error-swallow-restoration`
+neutralizes a PR-added empty catch / `except: pass` and reruns the affected tests; a
+`proven` verdict is a load-bearing swallow, which can be a concealed regression OR a
+legitimate graceful-degradation a test relies on, so its finding is surfaced for a
+human and is never a gate trigger. `claim-binding` (Tier C) binds the PR's claim to
+an existing repo test; in production it abstains at the pass-capability clause
+(`abstain:no-pass-capability-evidence`) because a `--pr` audit carries no
+green-history checkout, so `claim-falsified-bound` does not fire in production and a
+policy must not key on it. The attestation records both engines' rows (executed,
+verdict, abstain class) so a policy sees what they covered.
+
 The corroboration engines (`mutation-check`, `coverage-delta`) emit `signal`, not
 findings; a policy reads them as coverage context, not as a gate.
 

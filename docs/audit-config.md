@@ -99,6 +99,8 @@ executionGrounded:
   mutation: false
   coverage: false
   issueRepro: false
+  errorSwallow: true
+  claimBinding: false
 ```
 
 Default: `enabled: false`. This layer is what makes `swarm audit --mode
@@ -110,6 +112,15 @@ checkout to provision. The `mutation`, `coverage`, and `issueRepro`
 sub-flags add circumstantial signals that are not gate-eligible yet (see
 `benchmarks/real-corpus/block-eligibility.json`); restoration runs
 regardless of them.
+
+`errorSwallow` (default `true` when the layer is enabled) and `claimBinding`
+(default `false`) are two advisory execution-grounded engines that never gate.
+`errorSwallow` neutralizes a PR-added empty catch / `except: pass` and reruns the
+affected tests to surface a load-bearing swallow. `claimBinding` (Tier C) binds the
+PR's claim to an existing repo test; in production it abstains without a
+green-history checkout, so it fires no finding on a real `--pr` audit. Both are
+proven end-to-end through the shipped CLI
+(`evidence/live-wiring/live-set-runs/LIVE-SET-PROOF-REPORT.md`).
 
 ## Example
 

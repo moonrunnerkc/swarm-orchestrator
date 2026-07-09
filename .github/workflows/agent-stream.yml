@@ -67,6 +67,11 @@ jobs:
         # forward stream spends USD 0.00 on models. Exit 3 = a proven gate trigger
         # halted the batch for the FP protocol; that surfaces the finding, so the
         # upload still runs (if: always below).
+        #
+        # The complete wired engine set runs here: swarm audit --pr reads
+        # .swarm/audit-config.yaml, which enables errorSwallow + claimBinding (both
+        # advisory, never gate). The backfill runner's engineSet default records that
+        # provenance in every stream funnel.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
