@@ -170,6 +170,10 @@ export interface PromotionsOutput {
    *  there: it can only become gate-eligible with a measured Wilson-95 lower at
    *  or above the floor and enough true positives, which check-policy enforces. */
   claimDifferential: ClaimDifferentialPolicy;
+  /** The Tier C claim-binding proof's promotion policy. Same advisory-by-
+   *  construction discipline; check-policy enforces it stays advisory-only until
+   *  a folded measurement clears the floor. */
+  claimBinding: ClaimBindingPolicy;
 }
 
 /** The claim-differential promotion policy. `measured` is null until a precision
@@ -181,6 +185,13 @@ export interface ClaimDifferentialPolicy {
   minTruePositive: number;
   measured: { truePositive: number; falsePositive: number; wilsonLower: number } | null;
 }
+
+/** The Tier C claim-binding promotion policy. Same advisory-by-construction shape
+ *  as claim-differential: `claim-falsified-bound` binds to an existing test with a
+ *  real green history (so, unlike the synthesized route, it does not abstain in
+ *  production), but it ships advisory until a folded precision measurement on real
+ *  outcomes clears the floor. `measured` null => always advisory-only. */
+export type ClaimBindingPolicy = ClaimDifferentialPolicy;
 
 const CLAIM_DIFFERENTIAL_WILSON_FLOOR = 0.9;
 const CLAIM_DIFFERENTIAL_MIN_TP = 5;
@@ -216,6 +227,43 @@ export function computeClaimDifferentialPolicy(
     reason: clears
       ? `claim-differential precision Wilson-95 lower ${measured.wilsonLower.toFixed(4)} clears the floor with ${measured.truePositive} true positives`
       : `claim-differential precision below the floor or too few true positives; advisory-only`,
+    wilsonFloor: CLAIM_DIFFERENTIAL_WILSON_FLOOR,
+    minTruePositive: CLAIM_DIFFERENTIAL_MIN_TP,
+    measured,
+  };
+}
+
+/**
+ * Compute the Tier C claim-binding promotion policy. Advisory-only by default and
+ * whenever no precision has been measured; gate-eligible only when a folded
+ * measurement clears the Wilson-95 floor with enough true positives. The Tier C
+ * finding is new and unmeasured on real outcomes, so this returns advisory-only
+ * until a maintainer folds a measured precision in.
+ *
+ * @param measured a folded {truePositive, falsePositive, wilsonLower}, or null.
+ * @returns the policy; status is advisory-only unless the measurement clears.
+ */
+export function computeClaimBindingPolicy(
+  measured: { truePositive: number; falsePositive: number; wilsonLower: number } | null,
+): ClaimBindingPolicy {
+  if (measured === null) {
+    return {
+      status: 'advisory-only',
+      reason:
+        'no measured claim-binding precision on real outcomes yet; advisory-only until a folded ' +
+        `measurement clears Wilson-95 lower >= ${CLAIM_DIFFERENTIAL_WILSON_FLOOR} with >= ${CLAIM_DIFFERENTIAL_MIN_TP} true positives`,
+      wilsonFloor: CLAIM_DIFFERENTIAL_WILSON_FLOOR,
+      minTruePositive: CLAIM_DIFFERENTIAL_MIN_TP,
+      measured: null,
+    };
+  }
+  const clears =
+    measured.wilsonLower >= CLAIM_DIFFERENTIAL_WILSON_FLOOR && measured.truePositive >= CLAIM_DIFFERENTIAL_MIN_TP;
+  return {
+    status: clears ? 'gate-eligible' : 'advisory-only',
+    reason: clears
+      ? `claim-binding precision Wilson-95 lower ${measured.wilsonLower.toFixed(4)} clears the floor with ${measured.truePositive} true positives`
+      : `claim-binding precision below the floor or too few true positives; advisory-only`,
     wilsonFloor: CLAIM_DIFFERENTIAL_WILSON_FLOOR,
     minTruePositive: CLAIM_DIFFERENTIAL_MIN_TP,
     measured,
@@ -576,6 +624,7 @@ export function computePromotions(args: Args): PromotionsOutput {
     judgePrimary: computeJudgePrimaryPolicy(loadMeasurements(args.measurementsFile)),
     ...(viability !== undefined ? { executionGroundedViability: viability } : {}),
     claimDifferential: computeClaimDifferentialPolicy(null),
+    claimBinding: computeClaimBindingPolicy(null),
   };
 }
 

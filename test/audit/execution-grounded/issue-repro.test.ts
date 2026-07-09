@@ -64,6 +64,24 @@ describe('execution-grounded / issue-repro (pure logic)', () => {
       assert.equal(classifyRepro({ lang: 'bash', code: 'npm install' }), null);
       assert.equal(classifyRepro({ lang: '', code: 'just some words here' }), null);
     });
+    it('classifies a Python pytest snippet (Tier B widening)', () => {
+      const r = classifyRepro({ lang: 'python', code: 'def test_bug():\n    from mod import f\n    assert f(3) == 6\n' });
+      assert.equal(r?.kind, 'test');
+      assert.equal(r?.language, 'py');
+    });
+    it('classifies a runnable Python script', () => {
+      const r = classifyRepro({ lang: 'py', code: 'from mod import f\nprint(f(3))\n' });
+      assert.equal(r?.kind, 'script');
+      assert.equal(r?.language, 'py');
+    });
+    it('renders Python repros under pytest / python3, with a pytest-discoverable test name', () => {
+      const pyTest = classifyRepro({ lang: 'python', code: 'def test_x():\n    assert 1 == 2\n' })!;
+      const pyScript = classifyRepro({ lang: 'py', code: 'print(1)\n' })!;
+      assert.equal(reproFileName(pyTest), 'test_swarm_repro.py');
+      assert.equal(reproFileName(pyScript), '__swarm_repro__.py');
+      assert.match(renderReproCommand(pyTest, 'pytest'), /python3 -m pytest .*test_swarm_repro\.py/);
+      assert.equal(renderReproCommand(pyScript, null), 'python3 __swarm_repro__.py');
+    });
   });
 
   describe('extractRepros', () => {

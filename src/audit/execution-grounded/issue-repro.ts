@@ -84,7 +84,7 @@ export function extractCodeBlocks(markdown: string): CodeBlock[] {
 }
 
 export type ReproKind = 'script' | 'test' | 'unknown';
-export type ReproLanguage = 'js' | 'ts';
+export type ReproLanguage = 'js' | 'ts' | 'py';
 
 export interface Repro {
   kind: ReproKind;
@@ -96,14 +96,28 @@ const TEST_MARKER_RE = /\b(it|test|describe)\s*\(|\bexpect\s*\(|\bassert(?:\.\w+
 const SCRIPT_MARKER_RE = /\bconsole\.(log|error)\s*\(|\brequire\s*\(|^\s*import\s|\bawait\s|\.then\s*\(/m;
 const TS_MARKER_RE = /:\s*(string|number|boolean|void|unknown|any)\b|^\s*interface\s|\bas\s+[A-Z]\w*|<[A-Z]\w*>/m;
 
+// Python repro markers. A test block defines a `test_`/`def test`/unittest case
+// or bare `assert`; a script block prints, imports, or defines. Anchored so a
+// stack trace or prose does not match.
+const PY_TEST_MARKER_RE = /^\s*def\s+test_|\bimport\s+pytest\b|\bimport\s+unittest\b|\bself\.assert\w+\s*\(|^\s*assert\s/m;
+const PY_SCRIPT_MARKER_RE = /^\s*(?:import|from)\s+\w|\bprint\s*\(|^\s*def\s+\w/m;
+const PY_TAGS = ['py', 'python', 'python3'];
+const JS_TS_TAGS = ['js', 'javascript', 'jsx', 'ts', 'typescript', 'tsx', 'node', ''];
+
 /** Classify a code block into a runnable repro, or return null when it is not
- *  plausibly runnable JS/TS (e.g. a shell snippet, a stack trace, prose). */
+ *  plausibly runnable JS/TS/Python (e.g. a shell snippet, a stack trace, prose). */
 export function classifyRepro(block: CodeBlock): Repro | null {
   const lang = block.lang;
-  const isJsTsTag = ['js', 'javascript', 'jsx', 'ts', 'typescript', 'tsx', 'node', ''].includes(lang);
-  if (!isJsTsTag) return null;
   const code = block.code.trim();
   if (code.length === 0) return null;
+  if (PY_TAGS.includes(lang)) {
+    let kind: ReproKind = 'unknown';
+    if (PY_TEST_MARKER_RE.test(code)) kind = 'test';
+    else if (PY_SCRIPT_MARKER_RE.test(code)) kind = 'script';
+    if (kind === 'unknown') return null;
+    return { kind, language: 'py', code };
+  }
+  if (!JS_TS_TAGS.includes(lang)) return null;
   const isTs = ['ts', 'typescript', 'tsx'].includes(lang) || TS_MARKER_RE.test(code);
   const language: ReproLanguage = isTs ? 'ts' : 'js';
   let kind: ReproKind = 'unknown';
@@ -212,6 +226,9 @@ function testCommand(runner: TestRunner, file: string): { cmd: string; args: str
  *  agree on one name. */
 export function reproFileName(repro: Repro): string {
   const isTest = repro.kind === 'test';
+  // A Python test file must be pytest-discoverable, so it carries the `test_`
+  // prefix rather than the shared `__swarm_repro__` stem.
+  if (repro.language === 'py') return isTest ? 'test_swarm_repro.py' : '__swarm_repro__.py';
   const ext = repro.language === 'ts' ? (isTest ? 'test.ts' : 'ts') : isTest ? 'test.js' : 'js';
   return `__swarm_repro__.${ext}`;
 }
@@ -222,6 +239,14 @@ export function reproFileName(repro: Repro): string {
  *  source of truth for both the executor below and `renderReproCommand`. */
 function reproCommandParts(repro: Repro, runner: TestRunner | null): { cmd: string; args: string[] } | null {
   const fileName = reproFileName(repro);
+  if (repro.language === 'py') {
+    // A Python repro runs under Python regardless of the workspace's Node runner:
+    // a test through pytest, a script directly. This keeps a Python issue-repro
+    // executing its own base-fail evidence rather than being unrunnable.
+    return repro.kind === 'test'
+      ? { cmd: 'python3', args: ['-m', 'pytest', '-v', '--no-header', '-p', 'no:cacheprovider', fileName] }
+      : { cmd: 'python3', args: [fileName] };
+  }
   if (repro.kind === 'test') {
     return runner !== null ? testCommand(runner, fileName) : null;
   }

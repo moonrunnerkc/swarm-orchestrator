@@ -96,6 +96,25 @@ function main(): void {
       return;
     }
   }
+  // Same discipline for the Tier C claim-binding policy: advisory-only until a
+  // folded measurement clears the floor and the minimum true-positive count.
+  const cb = committed.claimBinding;
+  if (cb !== undefined && cb.status === 'gate-eligible') {
+    const ok =
+      cb.measured !== null &&
+      cb.measured.wilsonLower >= cb.wilsonFloor &&
+      cb.measured.truePositive >= cb.minTruePositive;
+    if (!ok) {
+      fail(
+        'claim-binding is marked gate-eligible without a measured Wilson-95 lower ' +
+          `>= ${cb.wilsonFloor} and >= ${cb.minTruePositive} true positives on file. ` +
+          'The Tier C claim-binding proof ships advisory-only and earns gating exclusively through ' +
+          'the promotions machinery on measured data. Record the measurement and re-run: ' +
+          'npm run promotions:compute.',
+      );
+      return;
+    }
+  }
   const a = JSON.stringify(comparable(committed));
   const b = JSON.stringify(comparable(fresh));
   if (a !== b) {
