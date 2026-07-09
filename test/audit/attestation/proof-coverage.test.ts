@@ -21,6 +21,7 @@ function emptyOutcome(over: Partial<ExecutionGroundedOutcome> = {}): ExecutionGr
     typeSuppressionRestorations: [],
     fakeRefactorRestorations: [],
     deadBranchRestorations: [],
+    errorSwallowRestorations: [],
     claimDifferentials: [],
     skipped: [],
   };
@@ -159,6 +160,67 @@ describe('buildProofCoverage', () => {
     assert.equal(engine?.records[0]?.verdict, 'abstain:no-pass-capability-evidence');
     assert.equal(engine?.records[0]?.abstainClass, 'control-clause');
     assert.equal(engine?.records[0]?.controlsEvaluated, 6);
+  });
+
+  it('projects a proven error-swallow restoration as an advisory finding', () => {
+    const att = buildProofCoverage(
+      emptyOutcome({
+        errorSwallowRestorations: [
+          {
+            schemaVersion: 1,
+            verdict: 'proven',
+            category: 'error-swallow',
+            findingFile: 'src/handler.ts',
+            testFiles: ['test/handler.test.ts'],
+            failingTests: ['handler › rethrows'],
+            controls: {
+              suitePassesAsSubmitted: true,
+              neutralizedFailsTwiceSameIdentity: true,
+              neutralizationApplied: true,
+            },
+            neutralization: 'catch-binding',
+          },
+        ] as never,
+      }),
+    );
+    const engine = att.engines.find((e) => e.engine === 'error-swallow-restoration');
+    assert.equal(engine?.applicable, true);
+    assert.equal(engine?.executed, true);
+    assert.equal(engine?.records[0]?.outcome, 'finding');
+    assert.equal(engine?.records[0]?.controlsEvaluated, 3);
+  });
+
+  it('projects a refuted error-swallow restoration as exonerated and an abstain by class', () => {
+    const att = buildProofCoverage(
+      emptyOutcome({
+        errorSwallowRestorations: [
+          {
+            schemaVersion: 1,
+            verdict: 'refuted',
+            category: 'error-swallow',
+            findingFile: 'src/a.ts',
+            testFiles: ['test/a.test.ts'],
+            failingTests: [],
+            controls: { suitePassesAsSubmitted: true, neutralizedFailsTwiceSameIdentity: false, neutralizationApplied: true },
+            neutralization: 'catch-binding',
+          },
+          {
+            schemaVersion: 1,
+            verdict: 'not-proven:no-swallow-located',
+            category: 'error-swallow',
+            findingFile: 'src/b.ts',
+            testFiles: ['test/b.test.ts'],
+            failingTests: [],
+            controls: { suitePassesAsSubmitted: true, neutralizedFailsTwiceSameIdentity: null, neutralizationApplied: false },
+            neutralization: '',
+          },
+        ] as never,
+      }),
+    );
+    const engine = att.engines.find((e) => e.engine === 'error-swallow-restoration');
+    assert.equal(engine?.records[0]?.outcome, 'exonerated');
+    assert.equal(engine?.records[1]?.outcome, 'abstain');
+    assert.equal(engine?.records[1]?.abstainClass, 'structurally-inapplicable');
   });
 
   it('reports the sandbox provisioning failure from the skip log', () => {

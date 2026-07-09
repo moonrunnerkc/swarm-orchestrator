@@ -230,6 +230,7 @@ async function main(): Promise<void> {
             runner: process.env.SWARM_EG_RUNNER === 'docker' ? 'docker' : 'host',
             corroborateStructural: false,
             claimDifferential: false,
+            errorSwallow: false,
           },
           baseDir: scratch,
           cacheDir,
@@ -242,7 +243,7 @@ async function main(): Promise<void> {
         });
       } catch (err) {
         log.warn(`run failed for ${pr.repo}#${pr.prNumber}: ${String(err)}`);
-        outcome = { findings: [], mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], fakeRefactorRestorations: [], deadBranchRestorations: [], claimDifferentials: [], skipped: [`error: ${String(err)}`] };
+        outcome = { findings: [], mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], fakeRefactorRestorations: [], deadBranchRestorations: [], errorSwallowRestorations: [], claimDifferentials: [], skipped: [`error: ${String(err)}`] };
       }
       const ms = Date.now() - started;
       const record = {

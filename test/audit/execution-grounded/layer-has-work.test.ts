@@ -8,7 +8,7 @@ import type { Finding } from '../../../src/audit/types';
 // is the predicate that decides whether the layer provisions at all.
 
 function emptyCandidates(over: Partial<ProofCandidates> = {}): ProofCandidates {
-  return { test: [], mock: [], noOp: null, typeSuppression: [], fakeRefactor: [], deadBranch: [], ...over };
+  return { test: [], mock: [], noOp: null, typeSuppression: [], fakeRefactor: [], deadBranch: [], errorSwallow: [], ...over };
 }
 
 function blockFinding(file: string, category: Finding['category']): Finding {
@@ -47,6 +47,11 @@ describe('execution-grounded / layerHasWork (entry gate)', () => {
     const candidates = emptyCandidates({
       noOp: { findingFile: 'calc.py', prIntent: { claimsFix: true, evidence: 'fixes #1' }, linkedIssueCount: 1 },
     });
+    assert.equal(layerHasWork(NO_CHANGED, candidates), true);
+  });
+
+  it('proceeds on an error-swallow candidate with no mutable source', () => {
+    const candidates = emptyCandidates({ errorSwallow: [blockFinding('handler.py', 'error-swallow')] });
     assert.equal(layerHasWork(NO_CHANGED, candidates), true);
   });
 });

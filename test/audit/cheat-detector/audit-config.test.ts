@@ -179,6 +179,14 @@ describe('cheat-detector / audit-config', () => {
         assert.equal(loadAuditConfig(repo).executionGrounded.corroborateStructural, true);
       });
     });
+    it('reads errorSwallow, defaulting to true (on with the deterministic engines)', () => {
+      withConfig('executionGrounded:\n  enabled: true\n', (repo) => {
+        assert.equal(loadAuditConfig(repo).executionGrounded.errorSwallow, true);
+      });
+      withConfig('executionGrounded:\n  enabled: true\n  errorSwallow: false\n', (repo) => {
+        assert.equal(loadAuditConfig(repo).executionGrounded.errorSwallow, false);
+      });
+    });
     it('reads the enabled flag, the per-check flags, and the wall-clock cap', () => {
       const yaml = [
         'executionGrounded:',

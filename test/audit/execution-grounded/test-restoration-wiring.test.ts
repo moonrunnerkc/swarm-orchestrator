@@ -52,6 +52,7 @@ function baseConfig(over: Partial<ExecutionGroundedConfig> = {}): ExecutionGroun
     runner: 'host',
     corroborateStructural: false,
     claimDifferential: false,
+    errorSwallow: false,
     ...over,
   };
 }

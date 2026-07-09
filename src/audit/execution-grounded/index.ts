@@ -57,7 +57,15 @@ import {
 import { runClaimDifferential, type ClaimDifferentialResult } from './claim-differential';
 import { createClaimLlm, type ClaimLlm } from './claim-llm';
 import { runMockRestoration, type MockRestorationProofRecord } from './mock-restoration';
-import { runNoOpFixRestoration, type NoOpFixProofRecord } from './no-op-fix-restoration';
+import {
+  runNoOpFixRestoration,
+  selectAffectedTestFiles,
+  type NoOpFixProofRecord,
+} from './no-op-fix-restoration';
+import {
+  runErrorSwallowRestoration,
+  type ErrorSwallowProofRecord,
+} from './error-swallow-restoration';
 import {
   runTypeSuppressionRestoration,
   type TypeSuppressionProofRecord,
@@ -339,6 +347,13 @@ export interface ExecutionGroundedOutcome {
    *  restoration phase evaluated (every verdict included). Finding-gated; the
    *  proof instruments the inserted branch and runs the affected tests. */
   deadBranchRestorations: DeadBranchProofRecord[];
+  /** One proof record per qualifying `error-swallow` block finding the restoration
+   *  phase evaluated (every verdict included, same funnel honesty as the others).
+   *  Finding-gated; the proof neutralizes the added empty catch / `except: pass` and
+   *  reruns the affected tests. Advisory: a load-bearing swallow can be a concealed
+   *  regression OR a legitimate graceful-degradation a test relies on, so it never
+   *  gates. */
+  errorSwallowRestorations: ErrorSwallowProofRecord[];
   /** The claim-differential result for this run (at most one: one primary claim
    *  per PR). Empty when the proof is disabled, no model is available, or the PR
    *  carries no claim. Advisory-only; a `claim-falsified-synthesized` verdict
@@ -360,6 +375,7 @@ export interface ProofCandidates {
   typeSuppression: Finding[];
   fakeRefactor: Finding[];
   deadBranch: Finding[];
+  errorSwallow: Finding[];
 }
 
 /**
@@ -392,7 +408,8 @@ export function layerHasWork(changed: ChangedLineRanges, candidates: ProofCandid
     candidates.noOp !== null ||
     candidates.typeSuppression.length > 0 ||
     candidates.fakeRefactor.length > 0 ||
-    candidates.deadBranch.length > 0
+    candidates.deadBranch.length > 0 ||
+    candidates.errorSwallow.length > 0
   );
 }
 
@@ -438,7 +455,15 @@ function selectProofCandidates(
   const deadBranch = structuralFindings.filter(
     (f) => f.category === 'dead-branch-insertion' && f.severity !== 'info',
   );
-  return { test, mock, noOp, typeSuppression, fakeRefactor, deadBranch };
+  // The structural error-swallow detector emits `block` on a bare empty catch /
+  // `except: pass`; the comment-only form is `info`. The proof neutralizes the
+  // swallow and reruns the affected tests to confirm it was load-bearing. Select
+  // every `block` error-swallow finding (an `info` finding was already cleared by
+  // an earlier refuter or is the non-blocking comment-only shape).
+  const errorSwallow = structuralFindings.filter(
+    (f) => f.category === 'error-swallow' && f.severity === 'block',
+  );
+  return { test, mock, noOp, typeSuppression, fakeRefactor, deadBranch, errorSwallow };
 }
 
 /** One honesty record per qualifying structural finding when restoration
@@ -690,6 +715,51 @@ export function deadBranchBudgetExhaustedRecords(
   }));
 }
 
+/** no-workspace honesty records for the error-swallow candidate findings: the
+ *  swallow-neutralization proof cannot run without a provisioned workspace. */
+export function noWorkspaceErrorSwallowRecords(
+  findings: readonly Finding[],
+  detail: string,
+): ErrorSwallowProofRecord[] {
+  return findings.map((f) => ({
+    schemaVersion: 1,
+    verdict: 'not-proven:no-workspace',
+    category: 'error-swallow',
+    findingFile: f.location.file,
+    testFiles: [],
+    failingTests: [],
+    controls: {
+      suitePassesAsSubmitted: null,
+      neutralizedFailsTwiceSameIdentity: null,
+      neutralizationApplied: null,
+    },
+    neutralization: '',
+    reason: `error-swallow restoration could not run: no sandbox workspace was provisioned (${detail})`,
+  }));
+}
+
+/** Budget-exhausted honesty records for error-swallow candidates the per-PR
+ *  wall-clock ran out on before the neutralized run executed. */
+export function errorSwallowBudgetExhaustedRecords(
+  findings: readonly Finding[],
+): ErrorSwallowProofRecord[] {
+  return findings.map((f) => ({
+    schemaVersion: 1,
+    verdict: 'not-proven:execution-error',
+    category: 'error-swallow',
+    findingFile: f.location.file,
+    testFiles: [],
+    failingTests: [],
+    controls: {
+      suitePassesAsSubmitted: null,
+      neutralizedFailsTwiceSameIdentity: null,
+      neutralizationApplied: null,
+    },
+    neutralization: '',
+    reason: 'wall-clock budget exhausted before the error-swallow neutralized run executed',
+  }));
+}
+
 /** The no-op-fix proof is PR-level, so its honesty records carry one synthetic
  *  candidate (the first changed non-test source file). */
 function noOpHonestyRecord(
@@ -919,6 +989,38 @@ export function applyDeadBranchRestorationToFinding(
   }
 }
 
+/**
+ * Ride an error-swallow verdict onto its `error-swallow` finding, in place.
+ * Refuted demotes the block to advisory (neutralizing the swallow left the
+ * affected test passing, so the catch masks no test-visible failure); proven
+ * records the masked failing tests as runtime corroboration and raises confidence
+ * but does NOT change severity or make the finding a gate trigger: a load-bearing
+ * swallow is advisory (a concealed regression OR a legitimate graceful-degradation
+ * a test relies on), so it surfaces for a human and never gates. Every other
+ * verdict is record-only.
+ */
+export function applyErrorSwallowRestorationToFinding(
+  finding: Finding,
+  record: ErrorSwallowProofRecord,
+): void {
+  if (record.verdict === 'refuted') {
+    finding.severity = 'info';
+    finding.confidence = 'structural-only';
+    finding.evidence =
+      `${finding.evidence}\n` +
+      `demoted: rewriting the added catch to re-throw left the affected test passing, so the ` +
+      `catch is not masking a test-visible failure`;
+    return;
+  }
+  if (record.verdict === 'proven') {
+    finding.runtimeCorroboration = {
+      signal: 'error-swallow-load-bearing',
+      failingTests: record.failingTests,
+    };
+    setFindingConfidence(finding);
+  }
+}
+
 /** Persist a typed proof envelope under `<evidenceDir>/<filename>`, identity
  *  stamped and written on every enabled run (empty included) so a stale file
  *  from an earlier head SHA never outlives its run. Generic sibling of
@@ -956,6 +1058,11 @@ export interface ProofRestorationInput {
   deadline: number;
   recipe?: MutationRecipe;
   docker?: DockerContext;
+  /** Gate for the error-swallow engine (config `executionGrounded.errorSwallow`).
+   *  Undefined or true runs it; false skips it (no candidates dispatched). The
+   *  sibling deterministic engines have no flag, so only this one is gated, and it
+   *  defaults on to match them. */
+  errorSwallow?: boolean;
 }
 
 export interface ProofRestorationOutcome {
@@ -965,6 +1072,7 @@ export interface ProofRestorationOutcome {
   typeSuppressionRestorations: TypeSuppressionProofRecord[];
   fakeRefactorRestorations: FakeRefactorProofRecord[];
   deadBranchRestorations: DeadBranchProofRecord[];
+  errorSwallowRestorations: ErrorSwallowProofRecord[];
   skipped: string[];
 }
 
@@ -987,6 +1095,7 @@ export function runProofRestorations(input: ProofRestorationInput): ProofRestora
   const typeSuppressionRestorations: TypeSuppressionProofRecord[] = [];
   const fakeRefactorRestorations: FakeRefactorProofRecord[] = [];
   const deadBranchRestorations: DeadBranchProofRecord[] = [];
+  const errorSwallowRestorations: ErrorSwallowProofRecord[] = [];
   const candidates = selectProofCandidates(
     input.structuralFindings,
     input.prDiff,
@@ -1170,6 +1279,37 @@ export function runProofRestorations(input: ProofRestorationInput): ProofRestora
     applyDeadBranchRestorationToFinding(finding, record);
   }
 
+  // T10: error-swallow restoration (finding-gated; neutralizes the added empty
+  // catch / `except: pass` and reruns the affected tests to confirm the swallow
+  // was load-bearing). The affected tests are the repo tests whose import closure
+  // reaches the finding's source file, resolved with the same inverse-closure
+  // helper the no-op proof uses; an empty selection yields not-proven, not a block.
+  for (let i = 0; input.errorSwallow !== false && i < candidates.errorSwallow.length; i++) {
+    const finding = candidates.errorSwallow[i]!;
+    if (restorationBudgetExhausted(input.deadline, Date.now())) {
+      const dropped = candidates.errorSwallow.length - i;
+      skipped.push(
+        `error-swallow-restoration: wall-clock budget exhausted; ${dropped} finding(s) recorded without execution`,
+      );
+      errorSwallowRestorations.push(...errorSwallowBudgetExhaustedRecords(candidates.errorSwallow.slice(i)));
+      break;
+    }
+    const affected = selectAffectedTestFiles(input.postWorkspacePath, [finding.location.file]);
+    const record = runErrorSwallowRestoration({
+      finding: { category: 'error-swallow', file: finding.location.file },
+      testFiles: affected.affected,
+      prRef: input.prRef,
+      preWorkspacePath: input.preWorkspacePath,
+      postWorkspacePath: input.postWorkspacePath,
+      testRunner: input.testRunner,
+      packageManager: input.packageManager,
+      timeoutMs: timeoutFor(),
+      ...common,
+    });
+    errorSwallowRestorations.push(record);
+    applyErrorSwallowRestorationToFinding(finding, record);
+  }
+
   return {
     restorations,
     mockRestorations,
@@ -1177,6 +1317,7 @@ export function runProofRestorations(input: ProofRestorationInput): ProofRestora
     typeSuppressionRestorations,
     fakeRefactorRestorations,
     deadBranchRestorations,
+    errorSwallowRestorations,
     skipped,
   };
 }
@@ -1189,7 +1330,7 @@ export function runProofRestorations(input: ProofRestorationInput): ProofRestora
  */
 export async function runExecutionGrounded(input: ExecutionGroundedInput): Promise<ExecutionGroundedOutcome> {
   const skipped: string[] = [];
-  const empty: ExecutionGroundedOutcome = { findings: [], mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], fakeRefactorRestorations: [], deadBranchRestorations: [], claimDifferentials: [], skipped };
+  const empty: ExecutionGroundedOutcome = { findings: [], mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], fakeRefactorRestorations: [], deadBranchRestorations: [], errorSwallowRestorations: [], claimDifferentials: [], skipped };
   if (!input.config.enabled) {
     // Disabled means the layer never ran at all: no honesty records, because
     // nothing was promised to run.
@@ -1213,6 +1354,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
     typeSuppressionRestorations: readonly TypeSuppressionProofRecord[];
     fakeRefactorRestorations: readonly FakeRefactorProofRecord[];
     deadBranchRestorations: readonly DeadBranchProofRecord[];
+    errorSwallowRestorations: readonly ErrorSwallowProofRecord[];
   }): void => {
     if (input.evidenceDir === undefined) return;
     persistRestorationProofs(
@@ -1224,6 +1366,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
     writeProofEnvelope(input.evidenceDir, 'type-suppression-restoration-proof.json', prRef, input.prHeadSha, out.typeSuppressionRestorations);
     writeProofEnvelope(input.evidenceDir, 'fake-refactor-restoration-proof.json', prRef, input.prHeadSha, out.fakeRefactorRestorations);
     writeProofEnvelope(input.evidenceDir, 'dead-branch-restoration-proof.json', prRef, input.prHeadSha, out.deadBranchRestorations);
+    writeProofEnvelope(input.evidenceDir, 'error-swallow-restoration-proof.json', prRef, input.prHeadSha, out.errorSwallowRestorations);
   };
   // Fail closed: the envelopes are written empty before any phase that can
   // throw, so an exception escaping the run cannot leave a stale envelope
@@ -1243,6 +1386,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
     );
     empty.fakeRefactorRestorations = noWorkspaceFakeRefactorRecords(candidates.fakeRefactor, detail);
     empty.deadBranchRestorations = noWorkspaceDeadBranchRecords(candidates.deadBranch, detail);
+    empty.errorSwallowRestorations = noWorkspaceErrorSwallowRecords(candidates.errorSwallow, detail);
     persistProofs(empty);
     return empty;
   };
@@ -1308,7 +1452,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
 
   const deadline = Date.now() + input.config.maxWallClockPerPrMs;
   const findings: Finding[] = [];
-  const outcome: ExecutionGroundedOutcome = { findings, mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], fakeRefactorRestorations: [], deadBranchRestorations: [], claimDifferentials: [], skipped };
+  const outcome: ExecutionGroundedOutcome = { findings, mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], fakeRefactorRestorations: [], deadBranchRestorations: [], errorSwallowRestorations: [], claimDifferentials: [], skipped };
   const cacheArg = input.cacheDir !== undefined ? { cacheDir: input.cacheDir } : {};
 
   try {
@@ -1448,6 +1592,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
       testRunner: workspaces.post.testRunner,
       packageManager: workspaces.post.packageManager,
       deadline,
+      errorSwallow: input.config.errorSwallow,
       ...(input.mutationRecipe !== undefined ? { recipe: input.mutationRecipe } : {}),
       ...(dockerCtx !== undefined ? { docker: dockerCtx } : {}),
     });
@@ -1457,6 +1602,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
     outcome.typeSuppressionRestorations = proofs.typeSuppressionRestorations;
     outcome.fakeRefactorRestorations = proofs.fakeRefactorRestorations;
     outcome.deadBranchRestorations = proofs.deadBranchRestorations;
+    outcome.errorSwallowRestorations = proofs.errorSwallowRestorations;
     skipped.push(...proofs.skipped);
     persistProofs(outcome);
   } finally {

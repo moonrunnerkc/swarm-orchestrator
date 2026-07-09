@@ -434,6 +434,26 @@ export interface LedgerEntryPayloadMap {
     };
     reproduceCommand: string;
   };
+  // Error-swallow restoration proof record: one entry per qualifying `block`
+  // `error-swallow` finding the restoration phase evaluated, every verdict
+  // included. `controls` mirrors the proof's three internal controls; null means
+  // that control never executed. `neutralization` is the rewrite id that turned
+  // the added swallow into a re-throw ('catch-binding' / 'except-pass' / ...);
+  // `testFiles` are the affected repo tests run to observe the masked failure.
+  // Advisory: a load-bearing swallow is surfaced, never gated.
+  'pr-audit-error-swallow-restoration': {
+    category: string;
+    verdict: string;
+    findingFile: string;
+    testFiles: string[];
+    failingTests: string[];
+    neutralization: string;
+    controls: {
+      suitePassesAsSubmitted: boolean | null;
+      neutralizedFailsTwiceSameIdentity: boolean | null;
+      neutralizationApplied: boolean | null;
+    };
+  };
   // A verifiable-evidence block-trigger candidate: a self-certifying
   // runtime fact (a falsified issue repro, a structural finding a surviving
   // mutant or coverage gap corroborates on the same line, a failed declared
@@ -544,5 +564,7 @@ export type PrAuditFakeRefactorRestorationEntry =
   LedgerEntry<'pr-audit-fake-refactor-restoration'>;
 export type PrAuditDeadBranchRestorationEntry =
   LedgerEntry<'pr-audit-dead-branch-restoration'>;
+export type PrAuditErrorSwallowRestorationEntry =
+  LedgerEntry<'pr-audit-error-swallow-restoration'>;
 export type PrAuditBlockTriggerEntry = LedgerEntry<'pr-audit-block-trigger'>;
 export type PrAuditWorkVerifiedEntry = LedgerEntry<'pr-audit-work-verified'>;

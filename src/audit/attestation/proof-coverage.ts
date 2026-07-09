@@ -18,6 +18,7 @@ import {
   claimDifferentialEngine,
   corroborationEngine,
   deriveProvisioning,
+  errorSwallowEngine,
   reproEngine,
   restorationEngine,
 } from './engine-projection';
@@ -166,6 +167,7 @@ export function buildProofCoverage(
       r.controls.suitePassesAsSubmitted,
       r.controls.branchNeverExecuted,
     ]),
+    errorSwallowEngine(outcome.errorSwallowRestorations),
     reproEngine(outcome.repros),
     corroborationEngine('mutation-check', outcome.mutationRuns),
     corroborationEngine('coverage-delta', outcome.coverageRuns),

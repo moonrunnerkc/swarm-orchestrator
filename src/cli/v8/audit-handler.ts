@@ -65,6 +65,7 @@ import type {
   PrAuditTypeSuppressionRestorationEntry,
   PrAuditFakeRefactorRestorationEntry,
   PrAuditDeadBranchRestorationEntry,
+  PrAuditErrorSwallowRestorationEntry,
   PrAuditWorkVerifiedEntry,
 } from '../../ledger/types';
 import { isExecutionGroundedCategory } from '../../audit/types';
@@ -76,6 +77,7 @@ import type { NoOpFixProofRecord } from '../../audit/execution-grounded/no-op-fi
 import type { TypeSuppressionProofRecord } from '../../audit/execution-grounded/type-suppression-restoration';
 import type { FakeRefactorProofRecord } from '../../audit/execution-grounded/fake-refactor-restoration';
 import type { DeadBranchProofRecord } from '../../audit/execution-grounded/dead-branch-restoration';
+import type { ErrorSwallowProofRecord } from '../../audit/execution-grounded/error-swallow-restoration';
 import {
   corroborateStructuralFindings,
   executionSignalsFromOutcome,
@@ -469,6 +471,7 @@ async function runExecutionGroundedLayer(
   appendTypeSuppressionRestorationEntries(ledger, outcome.typeSuppressionRestorations, attribution);
   appendFakeRefactorRestorationEntries(ledger, outcome.fakeRefactorRestorations, attribution);
   appendDeadBranchRestorationEntries(ledger, outcome.deadBranchRestorations, attribution);
+  appendErrorSwallowRestorationEntries(ledger, outcome.errorSwallowRestorations, attribution);
 
   // Runtime corroboration (opt-in). When this run's execution layer actually
   // produced signals, mark the structural findings that a surviving mutant,
@@ -627,6 +630,29 @@ export function appendDeadBranchRestorationEntries(
       reproduceCommand: r.reproduceCommand,
     };
     ledger.append<PrAuditDeadBranchRestorationEntry>(payload, opts);
+  }
+}
+
+/** One pr-audit-error-swallow-restoration entry per error-swallow proof record,
+ *  every verdict included, so the ledger carries the full advisory proof funnel. */
+export function appendErrorSwallowRestorationEntries(
+  ledger: HashChainedLedger,
+  records: readonly ErrorSwallowProofRecord[],
+  attribution: LedgerAgentAttribution | undefined,
+): void {
+  const opts = attribution !== undefined ? { aiAgent: attribution } : undefined;
+  for (const r of records) {
+    const payload: Omit<PrAuditErrorSwallowRestorationEntry, 'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'> = {
+      type: 'pr-audit-error-swallow-restoration',
+      category: r.category,
+      verdict: r.verdict,
+      findingFile: r.findingFile,
+      testFiles: r.testFiles,
+      failingTests: r.failingTests,
+      neutralization: r.neutralization,
+      controls: r.controls,
+    };
+    ledger.append<PrAuditErrorSwallowRestorationEntry>(payload, opts);
   }
 }
 

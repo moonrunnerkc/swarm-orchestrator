@@ -484,6 +484,7 @@ async function executeFunnelPr(
         runner: 'host',
         corroborateStructural: false,
         claimDifferential: false,
+        errorSwallow: false,
       },
       baseDir: scratch,
       cacheDir: path.join(scratch, '.pm-cache'),

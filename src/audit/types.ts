@@ -164,7 +164,8 @@ export interface RuntimeCorroboration {
     | 'restored-test-fails'
     | 'type-error-surfaces'
     | 'dangling-reference'
-    | 'dead-branch-unreached';
+    | 'dead-branch-unreached'
+    | 'error-swallow-load-bearing';
   /** Surviving-mutant ids, e.g. `BlockStatement@src/x.ts:12 -> Survived`. */
   mutants?: string[];
   /** Changed lines no test executed. */

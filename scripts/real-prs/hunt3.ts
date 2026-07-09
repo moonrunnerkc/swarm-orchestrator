@@ -239,6 +239,7 @@ function upgradedConfig(egWallClockMs: number): ExecutionGroundedConfig {
     runner: 'host',
     corroborateStructural: false,
     claimDifferential: true,
+    errorSwallow: false,
     maxWallClockPerPrMs: egWallClockMs,
   };
 }

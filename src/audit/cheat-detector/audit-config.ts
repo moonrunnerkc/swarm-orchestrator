@@ -75,6 +75,14 @@ export interface ExecutionGroundedConfig {
    *  head). Opt-in and advisory-only: it needs a model and a provisioned `--pr`
    *  workspace, and it never gates. Off by default. */
   claimDifferential: boolean;
+  /** Run the error-swallow restoration proof: when a PR adds a bare empty catch /
+   *  `except: pass` (a `block` `error-swallow` structural finding), neutralize the
+   *  swallow in the sandbox (rewrite to re-throw) and rerun the affected tests to
+   *  confirm it was load-bearing. Deterministic, model-free, advisory-only: a
+   *  load-bearing swallow can be a concealed regression OR a legitimate
+   *  graceful-degradation a test relies on, so it never gates. On by default when
+   *  the layer is enabled (like the other deterministic engines). */
+  errorSwallow: boolean;
 }
 
 export interface AuditConfig {
@@ -99,6 +107,7 @@ const DEFAULT_EXECUTION_GROUNDED: ExecutionGroundedConfig = {
   runner: 'host',
   corroborateStructural: false,
   claimDifferential: false,
+  errorSwallow: true,
 };
 
 const EMPTY_CONFIG: AuditConfig = {
@@ -146,7 +155,7 @@ function parseExecutionGrounded(text: string): ExecutionGroundedConfig {
     if (!inBlock) continue;
     if (trimmed.length > 0 && !/^\s/.test(rawLine)) break;
     const boolMatch = trimmed.match(
-      /^(enabled|mutation|issueRepro|coverage|corroborateStructural|claimDifferential)\s*:\s*(true|false)\s*$/i,
+      /^(enabled|mutation|issueRepro|coverage|corroborateStructural|claimDifferential|errorSwallow)\s*:\s*(true|false)\s*$/i,
     );
     if (boolMatch && boolMatch[1] !== undefined && boolMatch[2] !== undefined) {
       cfg[
@@ -157,6 +166,7 @@ function parseExecutionGrounded(text: string): ExecutionGroundedConfig {
           | 'coverage'
           | 'corroborateStructural'
           | 'claimDifferential'
+          | 'errorSwallow'
       ] = boolMatch[2].toLowerCase() === 'true';
       continue;
     }

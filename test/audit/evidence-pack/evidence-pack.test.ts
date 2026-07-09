@@ -189,6 +189,7 @@ describe('evidence-pack / assembleEvidencePack', () => {
       typeSuppressionRestorations: [],
       fakeRefactorRestorations: [],
       deadBranchRestorations: [],
+      errorSwallowRestorations: [],
       claimDifferentials: [],
       skipped: ['provision: no lockfile'],
     } as never);

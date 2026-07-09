@@ -92,6 +92,19 @@ interface RestorationLike {
   readonly reproduceCommand: string;
 }
 
+/** The error-swallow record fields the projector reads. Structural subset of
+ *  `ErrorSwallowProofRecord`, kept local so the attestation stays decoupled from
+ *  the engine's full type. */
+interface ErrorSwallowRecordLike {
+  readonly verdict: string;
+  readonly findingFile: string;
+  readonly controls: {
+    readonly suitePassesAsSubmitted: boolean | null;
+    readonly neutralizedFailsTwiceSameIdentity: boolean | null;
+    readonly neutralizationApplied: boolean | null;
+  };
+}
+
 /** Project one restoration-family engine (test/mock/no-op/type/refactor/branch)
  *  into uniform coverage. `controlsOf` extracts the record's boolean|null control
  *  values so the count of executed controls is exact. */
@@ -112,6 +125,31 @@ export function restorationEngine<R extends RestorationLike>(
   });
   return {
     engine,
+    applicable: projected.length > 0,
+    executed: projected.some((p) => p.outcome !== 'abstain' || p.controlsEvaluated > 0),
+    records: projected,
+  };
+}
+
+/** Project the error-swallow restoration engine. Its record shape differs from the
+ *  test/mock/etc. family (a `neutralization` id, no `reproduceCommand`), so it has
+ *  its own projector. Proven -> finding (advisory), refuted -> exonerated, every
+ *  other verdict -> abstain, with the coarse abstain bucket from `classifyAbstain`. */
+export function errorSwallowEngine(
+  records: ReadonlyArray<ErrorSwallowRecordLike>,
+): ProofEngineCoverage {
+  const projected = records.map((r) => {
+    const outcome: ProofOutcome =
+      r.verdict === 'proven' ? 'finding' : r.verdict === 'refuted' ? 'exonerated' : 'abstain';
+    const controlsEvaluated = [
+      r.controls.suitePassesAsSubmitted,
+      r.controls.neutralizedFailsTwiceSameIdentity,
+      r.controls.neutralizationApplied,
+    ].filter((v) => v !== null).length;
+    return projectRecord(r.findingFile, r.verdict, outcome, controlsEvaluated, undefined);
+  });
+  return {
+    engine: 'error-swallow-restoration',
     applicable: projected.length > 0,
     executed: projected.some((p) => p.outcome !== 'abstain' || p.controlsEvaluated > 0),
     records: projected,
