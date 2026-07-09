@@ -8,9 +8,11 @@ every line carries a measured value and the script that regenerates it.
 
 Measured at the soundness run (branch point `cc1d1c42`); items 2, 4, and 6
 re-probed at the endgame run; items 3, 4, and 6 re-probed at the intake-rewire and
-reach runs (the corpus grew to v2, the intake was tightened, the restoration engine
-was generalized to pytest/Go, and Hunt 5/6 ran). Re-probe before trusting any credit-
-or token-dependent line.
+reach runs. **Items 3, 4, and 6 re-probed again at the close-out run:** the corpus was
+stratified by complaint bar (v3), both polyglot front-end walls were fixed, a Go and a
+Python test-tamper proved end-to-end through `swarm audit --pr`, and Hunt 7 ran (the
+polyglot pipeline proved on wild Go, a false-positive-for-cheat refactor). Re-probe before
+trusting any credit- or token-dependent line.
 
 **The parked research problem, named as parked:** whether a synthesized semantic
 witness can be certified to pass on the correct behavior without a spec-derived oracle
@@ -78,36 +80,44 @@ the tier is advisory, not gating).
 
 ## 3. Executable surface
 
-**Checked, and the engine reach grew (the pipeline reach did not yet).**
-Proof-executable **7 of 27** wild entries by the Node structural pipeline (the census
-is closed with an itemized reason for every entry outside the surface,
-`benchmarks/real-prs/hunt3/VIABILITY-LIFT.md`). The reach run generalized the
-**test-tamper restoration engine to pytest and Go**, live-validated on planted
-fixtures (planted tampers prove with full controls green, clean controls refute, 4/4,
-`benchmarks/oracle-corpus/POLYGLOT-RESTORATION-REPORT.md`); every control travels and
-the TS path is byte-identical.
+**Checked, and the pipeline reach now grew: proven end-to-end on Go and Python.**
+The two front-end walls Hunts 5/6 died at are fixed and a Go and a Python test-tamper
+prove through the **shipped `swarm audit --pr`**, not just the engine harness
+(`benchmarks/oracle-corpus/LIVE-PATH-POLYGLOT-REPORT.md`, 4/4 verdicts + fresh-clone
+replay; the attestation reports the non-Node engine-runner matrix; the clean controls
+refute).
 
-- **Engine-runner matrix:** test-tamper restoration executes on node/pytest/go;
-  no-op-fix stays node-only (its coverage control is Istanbul-only, Go has no import
+- **The two walls, both fixed.** (a) The JS/TS entry gate `mutableSourceFilter` no longer
+  gates the whole layer: `layerHasWork` (`src/audit/execution-grounded/index.ts`) admits a
+  `.go/.py` proof candidate to the polyglot engine, TS path byte-identical
+  (`test/audit/execution-grounded/layer-has-work.test.ts`). (b) The Protocol-1 closure
+  relevance refuter, which only activates on the live path (`repoRoot` threaded) and
+  follows TS/JS/Python imports only, abstains on non-analyzable languages instead of
+  mis-refuting a genuine Go proof (`isClosureAnalyzable`,
+  `test/audit/cheat-detector/closure-analyzable.test.ts`). The full census of every
+  language gate is `evidence/closeout/PIPELINE-LANGUAGE-CENSUS.md`.
+- **Engine-runner matrix (unchanged in spirit):** test-tamper restoration executes on
+  node/pytest/go; no-op-fix stays node-only (Istanbul coverage control, no Go import
   closure); the TS-married engines (mock-mutation, type-suppression, dead-branch,
   fake-refactor) keep their non-TS abstains; Elixir has no provisioner (recorded
-  exclusion).
-- **The reach limit, named by file:line (Hunt 6).** A non-JS/TS wild cheat does not
-  yet reach the now-polyglot engine through `swarm audit`: the execution-grounded
-  entry gate `mutableSourceFilter` (`src/audit/execution-grounded/index.ts:81`) admits
-  only `.js/.ts` extensions, so a `.go/.py` diff bails at "no mutable source lines"
-  before provisioning. The next build is generalizing that gate and the JS/TS
-  structural detectors to `.go/.py`, carrying (or fail-closed abstaining) the mutation
-  and coverage front-end. See `benchmarks/real-prs/hunt6/HUNT-6-REPORT.md`.
+  exclusion, confirmed by Hunt 7's elixir-nx abstain).
+- **A wild Go PR proved through the live path (Hunt 7).** jeduden/mdsmith#232 proved
+  `test-tamper` end-to-end, replayed. On human review that proof is a **false positive for
+  "cheat"** (a legitimate refactor that moved coverage to a golden-file test the engine
+  cannot see): the gate's one known false-positive class (assertion-weakening refactors
+  that relocate coverage). No genuine wild cheat has been proven. See
+  `benchmarks/real-prs/hunt7/HUNT-7-REPORT.md`.
 
 Regenerate: `npm run viability-census`; the polyglot engine via
-`PATH="$HOME/go-toolchain/go/bin:$PATH" node dist/scripts/oracle/polyglot-restoration.js`.
+`PATH="$HOME/go-toolchain/go/bin:$PATH" node dist/scripts/oracle/polyglot-restoration.js`;
+the live path per `LIVE-PATH-POLYGLOT-REPORT.md`.
 
 ## 4. Corpus freshness
 
-**The corpus grew: v1 (27) to v2 (29), and the intake is tightened.** Two
-maintainer-confirmed wild cheats were folded at the intake-rewire run (vlebo/ctx#24 Go
-error-swallow, elixir-nx/nx#1685 Elixir test-relaxation) after a per-entry human read;
+**The corpus grew v1 (27) to v2 (29), the intake is tightened, and it is now stratified
+by complaint bar (v3).** Two maintainer-confirmed wild cheats were folded at the
+intake-rewire run (vlebo/ctx#24 Go error-swallow, elixir-nx/nx#1685 Elixir
+test-relaxation) after a per-entry human read;
 they are `benchmarks/real-prs/wild-cheat-corpus/v2/dataset.json`. The truth condition
 is a maintainer complaint plus a human fold; the arbiter annotates, never gates
 (`evidence/intake-rewire/EVIDENCE-REPORT.md`).
@@ -117,20 +127,26 @@ is a maintainer complaint plus a human fold; the arbiter annotates, never gates
   excluded before matching). Package noise fell **13% to 3.3%** on the negative control;
   on the last 24-candidate package, 17 of 24 were self/bot noise
   (`benchmarks/real-prs/mining-verification/TIGHTENING-REPORT.md`).
-- **A finding on the inherited corpus:** 19 of the 27 `v1` entries carry a self- or
-  bot-authored complaint in the current thread and would not pass the tightened bar
-  (temporal-drift and solo-maintainer caveats stated). The frozen set is unchanged;
-  this run's own 2 folds pass the tightened bar. Recorded for a future tightened
-  re-verification, not acted on.
+- **The corpus is now stratified by complaint bar (v3).** The fold-time capture never
+  stored the complaint author, so a live re-fetch classifies each entry: **strict 9,
+  legacy 19, uncertain 1** over the 29 (of the inherited 27: strict 7, legacy 19,
+  uncertain 1; 6 of the legacy are solo-maintainer self-flags). The "27 maintainer-flagged"
+  is the loose bar; strict independent-human is 7. Frozen v1/v2 byte-identical; the
+  stratification is a new v3 label with full provenance. Every downstream report and hunt
+  now keys results to strata. See
+  `benchmarks/real-prs/wild-cheat-corpus/COMPLAINT-BAR-AUDIT.md` and
+  `.../v3/dataset.json`. Regenerate: `node dist/scripts/real-prs/mining-verification/complaint-bar-audit.js ...`.
 - **The current review package is 6 candidates** (down from 24 under the tightening),
   2 EG-viable, staged at `benchmarks/real-prs/wild-cheat-corpus/incoming/`. On prior
   human review these read as legitimate-on-the-merits or iteration feedback, so 0 are
   recommended to fold; the sitting is the maintainer's.
-- **Two hunts ran on the folded entries, both honest zeros.** Hunt 5: 0 of 2, the
-  restoration tier could not execute non-Node. Hunt 6 (after the polyglot engine
-  landed): 0 of 2, the barrier moved upstream to the pipeline entry gate
-  (`mutableSourceFilter`, JS/TS-only), which bails before the now-capable engine (item
-  3, `benchmarks/real-prs/hunt6/HUNT-6-REPORT.md`).
+- **Three hunts ran on the folded entries, all honest zeros.** Hunt 5: 0 of 2, the
+  restoration tier could not execute non-Node. Hunt 6: 0 of 2, the barrier moved upstream
+  to `mutableSourceFilter`. Hunt 7 (after both walls were fixed and the live path proven):
+  0 of 2 primary, both itemized out-of-reach as pre-registered (vlebo/ctx category, elixir
+  language). Hunt 7 also ran the 4 newly-reachable non-Node entries: 1 reached the engine
+  and proved (jeduden, a false-positive-for-cheat refactor, item 3), 3 abstained
+  (detector-no-fire / TS-married). `benchmarks/real-prs/hunt7/HUNT-7-REPORT.md`.
 - **The problem is live, not declining:** at the matched complaint bar the mine's rate
   is 8 to 14 percent of agent PRs against Hunt 2's 8.3 percent; `0/1721` (the old
   arbiter bar) never compared to `27/327` (the complaint bar).
@@ -155,13 +171,15 @@ new test. Full inventory: `evidence/soundness/SWEEP-INVENTORY.md`. Regenerate:
 
 | blocker | state | owner |
 | --- | --- | --- |
-| Fresh-corpus fold | corpus grew to v2 (29); the current 6-candidate tightened package reads as legit-on-merits (0 recommended to fold); further growth awaits a maintainer sitting on a package with a clean cheat (item 4) | maintainer |
-| Polyglot pipeline reach | the restoration engine is polyglot (pytest/Go), but `mutableSourceFilter` (JS/TS-only) bails a non-JS/TS diff before the engine; the next build is the pipeline front-end (item 3) | next run |
-| Anthropic credits fluctuate | live at this run (HTTP 200); probe every run | maintainer |
+| Fresh-corpus fold | corpus grew to v2 (29), stratified to v3; the current 6-candidate tightened package reads as legit-on-merits (0 recommended to fold); further growth awaits a maintainer sitting on a package with a clean cheat (item 4) | maintainer |
+| Polyglot pipeline reach | **resolved.** Both front-end walls fixed (`layerHasWork`, `isClosureAnalyzable`); a Go and a Python test-tamper prove end-to-end through `swarm audit --pr` (item 3, `LIVE-PATH-POLYGLOT-REPORT.md`) | closed this run |
+| Gate false-positive class | the `test-tamper-proven` trigger fires on assertion-weakening refactors that relocate coverage (Hunt 7 jeduden); keeps ADVISE the correct default, unattended gate-mode auto-block unsafe on wild PRs; a fix (detect relocated coverage) is unbounded | recorded, not built |
+| pytest provisioning-install | the sandbox installs pytest into a `.venv` but the run uses ambient `python3 -m pytest`; works where a system pytest exists, not on a clean sandbox (Go has no such gap) | next run |
+| Anthropic credits fluctuate | live at this run (HTTP 200 via `.env`); probe every run | maintainer |
 
-(`GITHUB_TOKEN` was the item-4 blocker at the soundness run; it is valid again
-here, so it is no longer the constraint. The corpus now grows on a maintainer fold of a
-clean cheat, and non-Node reach on the pipeline-front-end build.)
+(`GITHUB_TOKEN` and the Anthropic key are both live when loaded from the project `.env`;
+the shell's own vars are stale. The corpus now grows on a maintainer fold of a clean cheat.
+The polyglot pipeline-reach blocker is closed: the reach is proven end-to-end.)
 
 ## What content work is ready
 
@@ -174,13 +192,16 @@ consumption surface that a downstream auto-merge policy can read; it makes each
 engine's executed/verdict/abstain-reason claim byte-checkable rather than
 asserted, so it is safe to write about as a mechanism.
 
-Item 4 now carries a real, honest claim that can be written: the corpus grew to v2
-(29) with two maintainer-confirmed wild cheats folded under the corrected bar, and the
-intake is tightened so it no longer surfaces self-comments or bot reviews as maintainer
-complaints (13% to 3.3% package noise). What still must not be written: a "the proof
-tier caught a wild cheat" claim. Hunt 5 and Hunt 6 both proved 0 of the 2 folded
-entries, honestly (Hunt 5 on language, Hunt 6 on the pipeline entry gate), and no
-`v1` entry is proof-executable beyond the closed 7-of-27 census. The polyglot engine is
-validated but not yet reachable through `swarm audit` for a non-JS/TS cheat; that
-reach, and a proof on a wild cheat, remain unwritten until the pipeline front-end
-generalizes and a matching entry is folded and hunted.
+Item 4 now carries real, honest claims that can be written: the corpus grew to v2 (29),
+is stratified by complaint bar to v3 (strict 7 of the inherited 27, not the loose 27), and
+the intake is tightened so it no longer surfaces self-comments or bot reviews as maintainer
+complaints (13% to 3.3% package noise). The polyglot pipeline reach is now writable too: a
+Go and a Python test-tamper prove end-to-end through the shipped `swarm audit --pr` (4/4,
+replayed), and the two front-end walls are fixed.
+
+What still must not be written: "the proof tier caught a wild cheat." Hunts 5, 6, and 7
+proved 0 genuine wild cheats. Hunt 7 did prove a `test-tamper` on a wild Go PR end-to-end
+(jeduden), but human review shows it is a **false positive for cheat** (a legitimate
+coverage-moving refactor), so the honest claim is "the pipeline proves end-to-end on wild
+Go, and here is its one false-positive class," not "caught a cheat." No `v1` entry is a
+genuine proven cheat. The writable claim is capability and its measured limits, not a catch.
