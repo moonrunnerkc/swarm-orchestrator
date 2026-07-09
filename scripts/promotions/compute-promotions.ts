@@ -334,6 +334,36 @@ const DEFAULT_MEASUREMENTS_FILE = path.join(
   'judge-primary-measurements.json',
 );
 
+// The maintainer-folded promotion measurements for the proof tiers (the Tier C
+// binder and the claim-differential). Absent by default, which keeps both tiers
+// advisory; a maintainer folds a real-outcome precision here (a confirmed hunt
+// catch, aggregated by aggregate-hunt-verdicts) to move a tier toward
+// gate-eligible. compute and check read the same file so the recompute agrees.
+const DEFAULT_PROMOTION_MEASUREMENTS_FILE = path.join(
+  'benchmarks',
+  'real-corpus',
+  'promotion-measurements.json',
+);
+
+interface FoldedMeasurement {
+  truePositive: number;
+  falsePositive: number;
+  wilsonLower: number;
+}
+
+/** Load the maintainer-folded proof-tier measurements, or an empty set when the
+ *  file is absent (the shipped default: everything advisory). */
+export function loadPromotionMeasurements(
+  file: string = DEFAULT_PROMOTION_MEASUREMENTS_FILE,
+): { claimDifferential: FoldedMeasurement | null; claimBinding: FoldedMeasurement | null } {
+  if (!fs.existsSync(file)) return { claimDifferential: null, claimBinding: null };
+  const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, FoldedMeasurement>;
+  return {
+    claimDifferential: raw.claimDifferential ?? null,
+    claimBinding: raw.claimBinding ?? null,
+  };
+}
+
 function loadMeasurements(
   file: string | undefined,
 ): Partial<Record<(typeof JUDGE_PRIMARY_CATEGORIES)[number], JudgePrimaryMeasurement>> {
@@ -555,6 +585,7 @@ export function computePromotions(args: Args): PromotionsOutput {
   const text = fs.readFileSync(args.scoresFile, 'utf8');
   const scores = JSON.parse(text) as ScoresSnapshot;
   const viability = loadViability(args.scoresFile);
+  const folded = loadPromotionMeasurements();
   const rows: PromotionRow[] = scores.perDetector.map((row) => {
     const firingCount = row.truePositive + row.falsePositive;
     const base = {
@@ -623,8 +654,8 @@ export function computePromotions(args: Args): PromotionsOutput {
       .map((r) => r.detector),
     judgePrimary: computeJudgePrimaryPolicy(loadMeasurements(args.measurementsFile)),
     ...(viability !== undefined ? { executionGroundedViability: viability } : {}),
-    claimDifferential: computeClaimDifferentialPolicy(null),
-    claimBinding: computeClaimBindingPolicy(null),
+    claimDifferential: computeClaimDifferentialPolicy(folded.claimDifferential),
+    claimBinding: computeClaimBindingPolicy(folded.claimBinding),
   };
 }
 
