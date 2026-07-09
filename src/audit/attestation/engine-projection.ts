@@ -47,6 +47,12 @@ const CONTROL_CLAUSE_VERDICTS: ReadonlySet<string> = new Set([
   'abstain:arbiter-disagreement',
 ]);
 
+/** Fired-then-disputed verdicts: every control went green (the proof fired), but
+ *  a static refuter contested the leap from pattern to cheat. Distinct from an
+ *  abstain, which never reached a proof. A merge policy reads these as
+ *  human-review-required, never as clean (docs/attestation.md). */
+const DISPUTED_VERDICTS: ReadonlySet<string> = new Set(['not-proven:coverage-relocated']);
+
 /** Classify an abstaining verdict into its coarse bucket. The precise reason is
  *  the verdict string itself; this answers "which kind of abstain". */
 export function classifyAbstain(verdict: string): AbstainClass {
@@ -59,6 +65,7 @@ export function classifyAbstain(verdict: string): AbstainClass {
 function restorationOutcome(verdict: string): ProofOutcome {
   if (verdict === 'proven') return 'finding';
   if (verdict === 'refuted') return 'exonerated';
+  if (DISPUTED_VERDICTS.has(verdict)) return 'disputed';
   return 'abstain';
 }
 

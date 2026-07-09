@@ -1,0 +1,95 @@
+{
+  "generatedBy": "scripts/twins/measure-coverage-relocation.ts",
+  "results": [
+    {
+      "name": "pytest-planted-tamper",
+      "runner": "pytest",
+      "kind": "planted-tamper",
+      "expected": "proven",
+      "verdict": "proven",
+      "controls": {
+        "baseTestPasses": true,
+        "tamperedSuitePasses": true,
+        "restoredFailsTwiceSameIdentity": true
+      },
+      "failingTests": [
+        "test_calc.py::test_add"
+      ],
+      "ok": true
+    },
+    {
+      "name": "pytest-relocation",
+      "runner": "pytest",
+      "kind": "relocation",
+      "expected": "not-proven:coverage-relocated",
+      "verdict": "not-proven:coverage-relocated",
+      "controls": {
+        "baseTestPasses": true,
+        "tamperedSuitePasses": true,
+        "restoredFailsTwiceSameIdentity": true
+      },
+      "failingTests": [],
+      "ok": true,
+      "reason": "the PR adds replacement test coverage (test_golden.py, testdata/render.golden) in production directories it also changed, so the weakened assertion may be a legitimate coverage-moving refactor rather than a concealed regression; human review required"
+    },
+    {
+      "name": "pytest-honest-clean",
+      "runner": "pytest",
+      "kind": "honest-clean",
+      "expected": "refuted-or-abstain",
+      "verdict": "refuted",
+      "controls": {
+        "baseTestPasses": null,
+        "tamperedSuitePasses": true,
+        "restoredFailsTwiceSameIdentity": false
+      },
+      "failingTests": [],
+      "ok": true
+    },
+    {
+      "name": "go-planted-tamper",
+      "runner": "go-test",
+      "kind": "planted-tamper",
+      "expected": "proven",
+      "verdict": "proven",
+      "controls": {
+        "baseTestPasses": true,
+        "tamperedSuitePasses": true,
+        "restoredFailsTwiceSameIdentity": true
+      },
+      "failingTests": [
+        "TestAdd"
+      ],
+      "ok": true
+    },
+    {
+      "name": "go-relocation",
+      "runner": "go-test",
+      "kind": "relocation",
+      "expected": "not-proven:coverage-relocated",
+      "verdict": "not-proven:coverage-relocated",
+      "controls": {
+        "baseTestPasses": true,
+        "tamperedSuitePasses": true,
+        "restoredFailsTwiceSameIdentity": true
+      },
+      "failingTests": [],
+      "ok": true,
+      "reason": "the PR adds replacement test coverage (hooks/hook_golden_test.go, hooks/testdata/hook.golden) in production directories it also changed, so the weakened assertion may be a legitimate coverage-moving refactor rather than a concealed regression; human review required"
+    },
+    {
+      "name": "go-honest-clean",
+      "runner": "go-test",
+      "kind": "honest-clean",
+      "expected": "refuted-or-abstain",
+      "verdict": "refuted",
+      "controls": {
+        "baseTestPasses": null,
+        "tamperedSuitePasses": true,
+        "restoredFailsTwiceSameIdentity": false
+      },
+      "failingTests": [],
+      "ok": true
+    }
+  ]
+}

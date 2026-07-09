@@ -60,6 +60,33 @@ describe('buildProofCoverage', () => {
     assert.equal(att.summary.findings, 1);
   });
 
+  it('projects a coverage-relocated restoration as disputed, not clean, with controls counted', () => {
+    const att = buildProofCoverage(
+      emptyOutcome({
+        restorations: [
+          restoration('not-proven:coverage-relocated', {
+            baseTestPasses: true,
+            tamperedSuitePasses: true,
+            restoredFailsTwiceSameIdentity: true,
+          }),
+        ] as never,
+      }),
+    );
+    const record = att.engines.find((e) => e.engine === 'test-restoration')?.records[0];
+    assert.equal(record?.outcome, 'disputed');
+    // A disputed record is not an abstain, so it carries no abstainClass, and it
+    // is neither a finding nor a clean pass.
+    assert.equal(record?.abstainClass, undefined);
+    assert.equal(record?.controlsEvaluated, 3);
+    assert.equal(att.summary.findings, 0);
+    assert.equal(att.summary.abstains, 0);
+    assert.equal(att.summary.disputed, 1);
+    // The engine executed (controls went green) before being disputed.
+    assert.equal(att.engines.find((e) => e.engine === 'test-restoration')?.executed, true);
+    // The rendered summary names the human-review-required state.
+    assert.match(renderProofCoverageSummary(att), /disputed 1 \(human-review-required\)/);
+  });
+
   it('classifies a no-workspace abstain as not-provisioned and not executed', () => {
     const att = buildProofCoverage(
       emptyOutcome({

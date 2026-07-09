@@ -24,8 +24,11 @@ import {
 
 /** Normalized outcome of one proof-engine record. `signal` is a corroboration
  *  run (mutation, coverage, non-terminal repro) that informs but never itself
- *  becomes a finding. */
-export type ProofOutcome = 'finding' | 'exonerated' | 'abstain' | 'signal';
+ *  becomes a finding. `disputed` is a fired-then-disputed proof: every control
+ *  went green, but a static refuter (coverage relocation) contested it, so it is
+ *  neither a finding nor a clean pass. A merge policy must read it as
+ *  human-review-required, never as clean (see docs/attestation.md). */
+export type ProofOutcome = 'finding' | 'exonerated' | 'abstain' | 'signal' | 'disputed';
 
 /** Coarse bucket over the precise verdict, answering "why did this abstain".
  *  The precise reason is the `verdict` string; this classifies it. */
@@ -72,6 +75,9 @@ export interface ProofCoverageSummary {
   readonly enginesExecuted: number;
   readonly findings: number;
   readonly abstains: number;
+  /** Fired-then-disputed proofs: controls green, a static refuter contested it.
+   *  A cautious policy reads any nonzero value as human-review-required. */
+  readonly disputed: number;
   readonly controlsEvaluated: number;
 }
 
@@ -85,6 +91,7 @@ export interface ProofCoverageAttestation {
 function summarize(engines: ReadonlyArray<ProofEngineCoverage>): ProofCoverageSummary {
   let findings = 0;
   let abstains = 0;
+  let disputed = 0;
   let controlsEvaluated = 0;
   let enginesApplicable = 0;
   let enginesExecuted = 0;
@@ -94,10 +101,11 @@ function summarize(engines: ReadonlyArray<ProofEngineCoverage>): ProofCoverageSu
     for (const record of engine.records) {
       if (record.outcome === 'finding') findings += 1;
       if (record.outcome === 'abstain') abstains += 1;
+      if (record.outcome === 'disputed') disputed += 1;
       controlsEvaluated += record.controlsEvaluated;
     }
   }
-  return { enginesApplicable, enginesExecuted, findings, abstains, controlsEvaluated };
+  return { enginesApplicable, enginesExecuted, findings, abstains, disputed, controlsEvaluated };
 }
 
 const EMPTY_ATTESTATION: ProofCoverageAttestation = {
@@ -109,6 +117,7 @@ const EMPTY_ATTESTATION: ProofCoverageAttestation = {
     enginesExecuted: 0,
     findings: 0,
     abstains: 0,
+    disputed: 0,
     controlsEvaluated: 0,
   },
 };
@@ -217,6 +226,7 @@ export function renderProofCoverageSummary(attestation: ProofCoverageAttestation
     `Proof coverage (${prov}): proofs executed ${s.enginesExecuted}/${s.enginesApplicable} applicable; ` +
       `${s.controlsEvaluated} controls evaluated; findings ${s.findings}; abstains ${s.abstains}` +
       (abstainDetail.length > 0 ? ` (${abstainDetail})` : '') +
+      (s.disputed > 0 ? `; disputed ${s.disputed} (human-review-required)` : '') +
       '.',
   ];
   for (const engine of attestation.engines) {

@@ -51,6 +51,15 @@ export type RestorationVerdict =
   // source because the import resolves to nothing, which is a refactor, not a
   // tamper. Pure diff signal; only turns proven into not-proven.
   | 'not-proven:subject-removed'
+  // The PR weakened an assertion but, in the same diff, added REPLACEMENT
+  // coverage (a net-new test file or a golden/testdata fixture) inside a
+  // production directory it also changed. The restored old assertion still
+  // fails on the PR source, so the behavioural controls prove, but the coverage
+  // it guarded relocated to a file the engine cannot see (jeduden/mdsmith#232,
+  // the gate's coverage-moving false-positive class). Fired-then-disputed: the
+  // attestation surfaces it as `disputed` (human-review-required), never clean.
+  // Pure diff signal; only turns proven into not-proven.
+  | 'not-proven:coverage-relocated'
   // Reserved for the execution-grounded caller when no sandbox workspace could
   // be provisioned; never produced by this orchestrator.
   | 'not-proven:no-workspace'
@@ -1053,6 +1062,93 @@ export function restoredTestSubjectRemoved(prDiff: string, testPatch: string): s
   return null;
 }
 
+// Data files a test compares against (golden/approved outputs, snapshots): a
+// PR that adds one is adding coverage even though isTestFile does not classify
+// the data file itself as a test. Keyed by a path segment (a `testdata`,
+// `__snapshots__`, or `snapshots` directory) or a basename shape
+// (`*.golden`, `*.golden.*`, `*.snap`, `*.approved.*`).
+const COVERAGE_DATA_SEGMENTS: ReadonlySet<string> = new Set([
+  'testdata',
+  '__snapshots__',
+  '__fixtures__',
+  'snapshots',
+]);
+const COVERAGE_DATA_BASENAME = /\.(golden|snap|approved)(\.[^.]+)?$/;
+
+/** Pure: true when `p` is a golden/snapshot/approved fixture a test reads. */
+export function isCoverageDataFile(p: string): boolean {
+  const segments = p.split('/');
+  if (segments.some((s) => COVERAGE_DATA_SEGMENTS.has(s))) return true;
+  return COVERAGE_DATA_BASENAME.test(segments[segments.length - 1] ?? '');
+}
+
+/** Pure: true when `p`'s directory, or any ancestor, is a directory the PR also
+ *  changed production source in. Walks up so a `testdata` subdir under a changed
+ *  package (`internal/githooks/testdata/x.golden` under `internal/githooks`)
+ *  links to it. */
+function dirWithinChangedProd(p: string, changedProdDirs: ReadonlySet<string>): boolean {
+  let dir = path.posix.dirname(p);
+  for (;;) {
+    if (changedProdDirs.has(dir)) return true;
+    const parent = path.posix.dirname(dir);
+    if (parent === dir) return false;
+    dir = parent;
+  }
+}
+
+/**
+ * Pure: the coverage-relocation refuter. Returns a reason when the PR, in the
+ * same diff, adds REPLACEMENT test coverage over the same production code the
+ * tampered test guarded, otherwise null.
+ *
+ * The restoration proof establishes "a guarding assertion was removed and the
+ * guarded behaviour changed". That pattern is equally the signature of a
+ * legitimate refactor that MOVED coverage elsewhere: the weakened assertion
+ * checked the old shape, the PR redesigned the subject, and a new dedicated test
+ * (or golden file) now verifies it more thoroughly. The proof cannot see
+ * coverage that moved to a different file (jeduden/mdsmith#232, the gate's one
+ * known false-positive class). This refuter detects the relocation statically:
+ * the PR adds a net-new test file, or a golden/snapshot/testdata fixture with
+ * added content, whose directory sits within production source the PR itself
+ * changed. Present => downgrade to not-proven:coverage-relocated (fail closed:
+ * an abstain is human review, never a clean pass; the attestation records it as
+ * `disputed`). Ties the relocation to "the same code" via directory proximity to
+ * a changed production file, so an unrelated added test elsewhere does not fire
+ * it and a pure assertion-deletion tamper (which adds no replacement coverage)
+ * proves unchanged. Conservative: only turns proven into not-proven, never the
+ * reverse.
+ *
+ * @param prDiff the PR's full unified diff.
+ * @param findingFile the tampered test file (excluded from the added set).
+ * @returns a human-facing reason when replacement coverage is present, else null.
+ */
+export function coverageRelocated(prDiff: string, findingFile: string): string | null {
+  const changedProdDirs = new Set<string>();
+  const added: string[] = [];
+  for (const file of parseDiff(prDiff)) {
+    const p = realPath(file.to) ?? realPath(file.from);
+    if (p === null) continue;
+    if (!isTestFile(p) && !isCoverageDataFile(p)) {
+      changedProdDirs.add(path.posix.dirname(p));
+      continue;
+    }
+    if (p === findingFile) continue;
+    const isNew = file.new === true;
+    const addsContent = file.chunks.some((c) => c.changes.some((ch) => ch.type === 'add'));
+    if ((isTestFile(p) && isNew) || (isCoverageDataFile(p) && (isNew || addsContent))) {
+      added.push(p);
+    }
+  }
+  if (added.length === 0) return null;
+  const relocated = added.filter((p) => dirWithinChangedProd(p, changedProdDirs)).sort();
+  if (relocated.length === 0) return null;
+  return (
+    `the PR adds replacement test coverage (${relocated.join(', ')}) in production ` +
+    `directories it also changed, so the weakened assertion may be a legitimate ` +
+    `coverage-moving refactor rather than a concealed regression; human review required`
+  );
+}
+
 /**
  * Impure orchestrator: prove (or fail to prove) that the PR tampered with a
  * test to conceal a failure. Never throws; every non-proven verdict carries a
@@ -1304,6 +1400,19 @@ function runRestorationPipeline(input: TestRestorationInput): RestorationProofRe
           `the restored test exercises "${removedSubject}", which this PR removed from production ` +
           `source: the test was deleted because its subject was refactored away, not to conceal a regression`,
       };
+    }
+  }
+
+  // Step 6d: coverage-relocation refuter. A weakened assertion whose guarded
+  // coverage the PR moved to a new test or golden file (in a production
+  // directory it also changed) is a legitimate refactor, not concealment; the
+  // proof cannot see the relocated coverage (jeduden/mdsmith#232). Downgrade to
+  // a fired-then-disputed verdict the attestation surfaces as human-review, not
+  // a clean pass. Pure diff signal, checked only on an otherwise-proven record.
+  if (outcome.verdict === 'proven') {
+    const relocation = coverageRelocated(input.prDiff, input.finding.file);
+    if (relocation !== null) {
+      outcome = { verdict: 'not-proven:coverage-relocated', failingTests: [], reason: relocation };
     }
   }
 
