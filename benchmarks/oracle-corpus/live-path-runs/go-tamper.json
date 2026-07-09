@@ -1,0 +1,164 @@
+{
+  "pass": false,
+  "findings": [
+    {
+      "category": "test-relaxation",
+      "severity": "warn",
+      "message": "Assertion-bearing line was deleted with no compensating assertion in the same hunk.",
+      "location": {
+        "file": "calc_test.go",
+        "line": 7
+      },
+      "evidence": "- t.Errorf(\"want 5\")",
+      "confidence": "structural-only"
+    },
+    {
+      "category": "assertion-strip",
+      "severity": "block",
+      "message": "Net assertion count for calc_test.go dropped by 1 after this PR. Assertions were removed without equivalents added back.",
+      "location": {
+        "file": "calc_test.go",
+        "line": 7
+      },
+      "evidence": "- t.Errorf(\"want 5\")",
+      "confidence": "runtime-corroborated",
+      "runtimeCorroboration": {
+        "signal": "restored-test-fails",
+        "failingTests": [
+          "TestAdd"
+        ]
+      }
+    }
+  ],
+  "generatedAt": "2026-07-09T00:36:05.238Z",
+  "detectorVersions": {
+    "error-swallow": "2.1.0",
+    "mock-of-hallucination": "2.0.0",
+    "no-op-fix": "2.0.0",
+    "fake-refactor": "2.0.0",
+    "coverage-erosion": "1.2.0",
+    "test-relaxation": "1.2.0",
+    "assertion-strip": "1.0.0",
+    "type-suppression": "1.0.0"
+  },
+  "detectorSet": "default",
+  "pr": {
+    "number": 1,
+    "headSha": "42f1e976bfd17ddb5e39becb411a3ad69fdf0de1",
+    "baseSha": "c2564a1365b0020df93a69ab13b9527b23f330d8",
+    "title": "Simplify Add and trim test",
+    "body": "Cleaned up Add() and removed a redundant check.",
+    "author": "moonrunnerkc",
+    "headRef": "tamper-hide-regression",
+    "repository": "moonrunnerkc/swarm-eg-fixture-go"
+  },
+  "mode": "gate",
+  "blockingTriggers": [
+    {
+      "kind": "test-tamper-proven",
+      "summary": "A `assertion-strip` restoration proof at calc_test.go: with the PR's test changes reverted, 1 restored test failed twice with identical identity against the PR's source and passed on the base checkout.",
+      "reproduce": "git fetch origin pull/1/head && git checkout 42f1e976bfd17ddb5e39becb411a3ad69fdf0de1 && git apply -R <<'SWARM_RESTORE_PATCH' && go test -v -count=1 .\ndiff --git a/calc_test.go b/calc_test.go\n--- a/calc_test.go\n+++ b/calc_test.go\n@@ -3,9 +3,6 @@ package calc\n import \"testing\"\n \n func TestAdd(t *testing.T) {\n-\tif Add(2, 3) != 5 {\n-\t\tt.Errorf(\"want 5\")\n-\t}\n \tif Add(0, 0) != 0 {\n \t\tt.Errorf(\"want 0\")\n \t}\nSWARM_RESTORE_PATCH",
+      "evidence": {
+        "kind": "test-tamper-proven",
+        "verdict": "proven",
+        "category": "assertion-strip",
+        "testFiles": [
+          "calc_test.go"
+        ],
+        "failingTests": [
+          "TestAdd"
+        ],
+        "controls": {
+          "baseTestPasses": true,
+          "tamperedSuitePasses": true,
+          "restoredFailsTwiceSameIdentity": true
+        },
+        "reproduceCommand": "git fetch origin pull/1/head && git checkout 42f1e976bfd17ddb5e39becb411a3ad69fdf0de1 && git apply -R <<'SWARM_RESTORE_PATCH' && go test -v -count=1 .\ndiff --git a/calc_test.go b/calc_test.go\n--- a/calc_test.go\n+++ b/calc_test.go\n@@ -3,9 +3,6 @@ package calc\n import \"testing\"\n \n func TestAdd(t *testing.T) {\n-\tif Add(2, 3) != 5 {\n-\t\tt.Errorf(\"want 5\")\n-\t}\n \tif Add(0, 0) != 0 {\n \t\tt.Errorf(\"want 0\")\n \t}\nSWARM_RESTORE_PATCH"
+      }
+    }
+  ],
+  "proofCoverage": {
+    "schema": "swarm-proof-coverage/v1",
+    "provisioning": {
+      "attempted": true,
+      "provisioned": true
+    },
+    "engines": [
+      {
+        "engine": "test-restoration",
+        "applicable": true,
+        "executed": true,
+        "records": [
+          {
+            "subject": "calc_test.go",
+            "verdict": "proven",
+            "outcome": "finding",
+            "controlsEvaluated": 3,
+            "replayCommand": "git fetch origin pull/1/head && git checkout 42f1e976bfd17ddb5e39becb411a3ad69fdf0de1 && git apply -R <<'SWARM_RESTORE_PATCH' && go test -v -count=1 .\ndiff --git a/calc_test.go b/calc_test.go\n--- a/calc_test.go\n+++ b/calc_test.go\n@@ -3,9 +3,6 @@ package calc\n import \"testing\"\n \n func TestAdd(t *testing.T) {\n-\tif Add(2, 3) != 5 {\n-\t\tt.Errorf(\"want 5\")\n-\t}\n \tif Add(0, 0) != 0 {\n \t\tt.Errorf(\"want 0\")\n \t}\nSWARM_RESTORE_PATCH"
+          }
+        ]
+      },
+      {
+        "engine": "mock-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "no-op-fix-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "type-suppression-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "fake-refactor-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "dead-branch-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "issue-repro",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "mutation-check",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "coverage-delta",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "claim-differential",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      }
+    ],
+    "summary": {
+      "enginesApplicable": 1,
+      "enginesExecuted": 1,
+      "findings": 1,
+      "abstains": 0,
+      "controlsEvaluated": 3
+    }
+  }
+}

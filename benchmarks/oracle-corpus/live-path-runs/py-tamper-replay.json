@@ -1,0 +1,164 @@
+{
+  "pass": false,
+  "findings": [
+    {
+      "category": "test-relaxation",
+      "severity": "warn",
+      "message": "Assertion-bearing line was deleted with no compensating assertion in the same hunk.",
+      "location": {
+        "file": "test_calc.py",
+        "line": 5
+      },
+      "evidence": "- assert add(2, 3) == 5",
+      "confidence": "structural-only"
+    },
+    {
+      "category": "assertion-strip",
+      "severity": "block",
+      "message": "Net assertion count for test_calc.py dropped by 1 after this PR. Assertions were removed without equivalents added back.",
+      "location": {
+        "file": "test_calc.py",
+        "line": 5
+      },
+      "evidence": "- assert add(2, 3) == 5",
+      "confidence": "runtime-corroborated",
+      "runtimeCorroboration": {
+        "signal": "restored-test-fails",
+        "failingTests": [
+          "test_calc.py::test_add"
+        ]
+      }
+    }
+  ],
+  "generatedAt": "2026-07-09T00:36:42.765Z",
+  "detectorVersions": {
+    "error-swallow": "2.1.0",
+    "mock-of-hallucination": "2.0.0",
+    "no-op-fix": "2.0.0",
+    "fake-refactor": "2.0.0",
+    "coverage-erosion": "1.2.0",
+    "test-relaxation": "1.2.0",
+    "assertion-strip": "1.0.0",
+    "type-suppression": "1.0.0"
+  },
+  "detectorSet": "default",
+  "pr": {
+    "number": 1,
+    "headSha": "424bfb1839cb6a6fcdcff2182942c969ec6c248c",
+    "baseSha": "097caac067c4de841ed681052d05b1b88a4d8781",
+    "title": "Simplify add and trim test",
+    "body": "Cleaned up add() and removed a redundant assertion.",
+    "author": "moonrunnerkc",
+    "headRef": "tamper-hide-regression",
+    "repository": "moonrunnerkc/swarm-eg-fixture-py"
+  },
+  "mode": "gate",
+  "blockingTriggers": [
+    {
+      "kind": "test-tamper-proven",
+      "summary": "A `assertion-strip` restoration proof at test_calc.py: with the PR's test changes reverted, 1 restored test failed twice with identical identity against the PR's source and passed on the base checkout.",
+      "reproduce": "git fetch origin pull/1/head && git checkout 424bfb1839cb6a6fcdcff2182942c969ec6c248c && git apply -R <<'SWARM_RESTORE_PATCH' && python3 -m pytest -v --no-header -p no:cacheprovider test_calc.py\ndiff --git a/test_calc.py b/test_calc.py\n--- a/test_calc.py\n+++ b/test_calc.py\n@@ -2,5 +2,4 @@\n \n \n def test_add():\n-    assert add(2, 3) == 5\n     assert add(0, 0) == 0\nSWARM_RESTORE_PATCH",
+      "evidence": {
+        "kind": "test-tamper-proven",
+        "verdict": "proven",
+        "category": "assertion-strip",
+        "testFiles": [
+          "test_calc.py"
+        ],
+        "failingTests": [
+          "test_calc.py::test_add"
+        ],
+        "controls": {
+          "baseTestPasses": true,
+          "tamperedSuitePasses": true,
+          "restoredFailsTwiceSameIdentity": true
+        },
+        "reproduceCommand": "git fetch origin pull/1/head && git checkout 424bfb1839cb6a6fcdcff2182942c969ec6c248c && git apply -R <<'SWARM_RESTORE_PATCH' && python3 -m pytest -v --no-header -p no:cacheprovider test_calc.py\ndiff --git a/test_calc.py b/test_calc.py\n--- a/test_calc.py\n+++ b/test_calc.py\n@@ -2,5 +2,4 @@\n \n \n def test_add():\n-    assert add(2, 3) == 5\n     assert add(0, 0) == 0\nSWARM_RESTORE_PATCH"
+      }
+    }
+  ],
+  "proofCoverage": {
+    "schema": "swarm-proof-coverage/v1",
+    "provisioning": {
+      "attempted": true,
+      "provisioned": true
+    },
+    "engines": [
+      {
+        "engine": "test-restoration",
+        "applicable": true,
+        "executed": true,
+        "records": [
+          {
+            "subject": "test_calc.py",
+            "verdict": "proven",
+            "outcome": "finding",
+            "controlsEvaluated": 3,
+            "replayCommand": "git fetch origin pull/1/head && git checkout 424bfb1839cb6a6fcdcff2182942c969ec6c248c && git apply -R <<'SWARM_RESTORE_PATCH' && python3 -m pytest -v --no-header -p no:cacheprovider test_calc.py\ndiff --git a/test_calc.py b/test_calc.py\n--- a/test_calc.py\n+++ b/test_calc.py\n@@ -2,5 +2,4 @@\n \n \n def test_add():\n-    assert add(2, 3) == 5\n     assert add(0, 0) == 0\nSWARM_RESTORE_PATCH"
+          }
+        ]
+      },
+      {
+        "engine": "mock-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "no-op-fix-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "type-suppression-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "fake-refactor-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "dead-branch-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "issue-repro",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "mutation-check",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "coverage-delta",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "claim-differential",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      }
+    ],
+    "summary": {
+      "enginesApplicable": 1,
+      "enginesExecuted": 1,
+      "findings": 1,
+      "abstains": 0,
+      "controlsEvaluated": 3
+    }
+  }
+}
