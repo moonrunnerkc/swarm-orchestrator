@@ -14,7 +14,13 @@ neutralized in-proof (the coverage-relocation refuter) and pinned in a CI-failin
 registry; self-certifying triggers now auto-demote on accrued false positives (symmetric
 with the promotion path); two new advisory proof tiers (error-swallow restoration, Tier C
 claim-to-existing-test binding) are twin-validated; a pre-registered backfill hunt proved
-0 cheats on 30 merged agent PRs and a nightly stream workflow is scheduled. Re-probe
+0 cheats on 30 merged agent PRs and a nightly stream workflow is scheduled. **Items 2 and 3
+re-probed at the live-wiring run:** those two advisory tiers, twin-validated but unwired at
+the capability run (its deviation 3), are now wired into the shipped `swarm audit --pr`
+pipeline and proven end-to-end (6/6 planted fixtures with fresh-clone replays,
+`evidence/live-wiring/live-set-runs/LIVE-SET-PROOF-REPORT.md`); the backfill re-ran with the
+complete engine set over 120 merged agent PRs (0 proven, 0 HALT); the nightly stream and the
+dogfood config now run the complete set. Deviation-3 carry-over closed. Re-probe
 before trusting any credit- or token-dependent line.
 
 **The parked research problem, named as parked:** whether a synthesized semantic

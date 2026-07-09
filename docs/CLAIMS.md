@@ -81,6 +81,16 @@ badge, a README line, or a slide, the artifact wins and the other is stale.
 | The backfill hunt proved 0 cheats on 30 merged agent-authored PRs (no milestone candidate) | 0 gate triggers / 30 PRs; 22/28 provisioned | `benchmarks/real-prs/capability-hunt/BACKFILL-HUNT-REPORT.md`, `.../records/` | `npm run hunt:backfill -- --batch-size 15` |
 | The hunt's verdicts feed the promotion machinery; promotion is symmetric with the FP-driven demotion | synthetic fold promotes claimBinding, removal reverts to advisory | `benchmarks/real-corpus/PROMOTION-ON-DATA-REPORT.md`, `hunt-verdict-evidence.json` | `npm run hunt:aggregate`, `npm run promotions:compute` |
 
+## Live-wiring run: the two engines wired and proven through the CLI (this run)
+
+| claim | number | artifact | regenerate |
+|---|---|---|---|
+| Error-swallow and Tier C claim-binding are wired into `swarm audit --pr` and prove/refute/abstain correctly end-to-end (not the engine harness) | 6/6 fixtures, identical fresh-clone replays | `evidence/live-wiring/live-set-runs/LIVE-SET-PROOF-REPORT.md` | `node dist/scripts/live-wiring/prove-live-set.js` |
+| Error-swallow proves a load-bearing swallow through the CLI as an advisory finding, never a gate trigger | proven, `blockingTriggers: []`, 3/3 controls | `evidence/live-wiring/live-set-runs/error-swallow-cheat.run.json` | same harness |
+| The Tier C binder abstains in production through the CLI (no green-history checkout) and delivers a real verdict on the honest twin | cheat `abstain:no-pass-capability-evidence`; honest `claim-delivered` | `evidence/live-wiring/live-set-runs/claim-binding-*.run.json` | same harness |
+| The backfill re-ran with the complete wired engine set over 120 merged agent PRs and proved 0 cheats (no milestone candidate) | 0 gate triggers / 120 PRs; 46/115 provisioned; error-swallow 0 proven, binder 0 findings | `benchmarks/real-prs/capability-hunt/live-wiring-batches/LIVE-WIRING-BACKFILL-REPORT.md`, `.../records/` | `node dist/scripts/real-prs/capability-hunt-backfill.js --population benchmarks/real-prs/capability-hunt/live-wiring-population.json --out benchmarks/real-prs/capability-hunt/live-wiring-batches --batch-size 15 --offset <n>` |
+| Wiring the two engines kept every gate green and added nothing gate-eligible | 2340 passing, gate-eligible 0, block-eligible 8 unchanged | `benchmarks/real-corpus/promotions.json` | `npm run promotions:check`, `npm test` |
+
 ## The parked research problem (stated, not claimed as solved)
 
 The pass-capability problem (certifying a synthesized semantic witness passes on the correct
