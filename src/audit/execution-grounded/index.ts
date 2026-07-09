@@ -353,13 +353,47 @@ export interface ExecutionGroundedOutcome {
  *  source hunk), mirroring the claim-falsified trigger, because the structural
  *  `no-op-fix` block finding fires only on a test-only change with no source to
  *  revert. */
-interface ProofCandidates {
+export interface ProofCandidates {
   test: Finding[];
   mock: Finding[];
   noOp: { findingFile: string; prIntent: PrIntent; linkedIssueCount: number } | null;
   typeSuppression: Finding[];
   fakeRefactor: Finding[];
   deadBranch: Finding[];
+}
+
+/**
+ * Whether the execution-grounded layer has any work worth provisioning for: a
+ * JS/TS mutable-source set for the mutation/coverage engines, or at least one
+ * proof candidate for the (polyglot) restoration engines. When both are empty
+ * the layer bails before provisioning, because nothing downstream could run.
+ *
+ * This is deliberately separate from the JS/TS-only `changed` map. `changed`
+ * (built with `mutableSourceFilter`) is the mutation/coverage target set and
+ * stays JS/TS by design, because Stryker and Istanbul only mutate/cover JS/TS.
+ * But the restoration engines (test-tamper, no-op-fix) are polyglot and
+ * finding-gated, not driven by `changed`. Gating the whole layer on an empty
+ * `changed` map conflated "nothing for the mutation engine" with "nothing for
+ * any engine", which is exactly why a `.go`/`.py` test-tamper bailed at the
+ * front door before reaching the already-polyglot restoration engine. Keying the
+ * entry on proof candidates too lets a Go/Python cheat through while leaving the
+ * TS path byte-identical (a JS/TS source diff has a non-empty `changed`, so the
+ * first clause short-circuits exactly as before).
+ *
+ * @param changed the JS/TS mutable-source line ranges from `mutableSourceFilter`.
+ * @param candidates the proof candidates selected from the structural findings.
+ * @returns true when at least one engine could run.
+ */
+export function layerHasWork(changed: ChangedLineRanges, candidates: ProofCandidates): boolean {
+  if (Object.keys(changed).length > 0) return true;
+  return (
+    candidates.test.length > 0 ||
+    candidates.mock.length > 0 ||
+    candidates.noOp !== null ||
+    candidates.typeSuppression.length > 0 ||
+    candidates.fakeRefactor.length > 0 ||
+    candidates.deadBranch.length > 0
+  );
 }
 
 function selectProofCandidates(
@@ -1212,10 +1246,15 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
     persistProofs(empty);
     return empty;
   };
+  // `changed` is the JS/TS mutation/coverage target set (Stryker and Istanbul are
+  // JS/TS-only, so `mutableSourceFilter` stays JS/TS by design). It is NOT the
+  // layer's entry condition: `layerHasWork` proceeds when there is either a JS/TS
+  // mutable set or any proof candidate for the polyglot restoration engines, so a
+  // `.go`/`.py` test-tamper reaches the restoration engine instead of dying here.
   const changed: ChangedLineRanges = extractChangedLineRanges(input.prDiff, mutableSourceFilter);
-  if (Object.keys(changed).length === 0) {
-    skipped.push('no mutable source lines in diff');
-    return bailBeforeWorkspace('no mutable source lines in diff');
+  if (!layerHasWork(changed, candidates)) {
+    skipped.push('no mutable source lines and no proof candidate in diff');
+    return bailBeforeWorkspace('no mutable source lines and no proof candidate in diff');
   }
 
   // Optional container isolation for the untrusted-execution checks. When

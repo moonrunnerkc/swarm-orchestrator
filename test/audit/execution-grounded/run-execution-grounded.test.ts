@@ -74,10 +74,10 @@ describe('execution-grounded / runExecutionGrounded (orchestrator)', () => {
     assert.ok(outcome.skipped.includes('executionGrounded disabled'));
   });
 
-  it('skips before provisioning when the diff has no mutable source lines', async () => {
+  it('skips before provisioning when the diff has no mutable source and no proof candidate', async () => {
     const outcome = await runExecutionGrounded(baseInput({ prDiff: DOC_DIFF }));
     assert.deepEqual(outcome.findings, []);
-    assert.ok(outcome.skipped.includes('no mutable source lines in diff'));
+    assert.ok(outcome.skipped.includes('no mutable source lines and no proof candidate in diff'));
     assert.deepEqual(outcome.mutationRuns, []);
   });
 

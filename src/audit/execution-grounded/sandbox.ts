@@ -434,10 +434,10 @@ export function provisionWorkspace(opts: ProvisionOptions): Workspace {
       if (ecosystem === 'node') {
         runInstall(packageManager, workspacePath, cacheDir, opts.installTimeoutMs);
       } else {
-        // pytest / Go: dependency install only. The proof tier's scoped commands
-        // stay Node-only and fail-closed on these runners, so nothing here runs
-        // the suite; provisioning just makes the tree installable and records an
-        // honest success or failure.
+        // pytest / Go: dependency install only. The test-restoration proof runs
+        // the suite on these runners (its runner seam is polyglot); mutation and
+        // coverage stay Node-only and fail-closed. Provisioning just makes the
+        // tree installable and records an honest success or failure.
         provisionNonNode(workspacePath, ecosystem, {
           ...(opts.installTimeoutMs !== undefined ? { timeoutMs: opts.installTimeoutMs } : {}),
           ...(cacheDir !== undefined ? { cacheDir } : {}),
