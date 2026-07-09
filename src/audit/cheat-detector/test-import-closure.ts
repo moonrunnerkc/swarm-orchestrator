@@ -34,6 +34,29 @@ const log = getLogger('test-import-closure');
 
 const DEFAULT_MAX_NODES = 5000;
 
+/** Extensions whose imports `extractImports` can actually follow: TypeScript /
+ *  JavaScript (the compiler API) and Python (the python3 `ast` subprocess).
+ *  Mirrors `ast-imports.ts` (TS_LIKE_EXTS ∪ PY_EXTS). Any other extension (a
+ *  `.go`, `.rs`, ... test) is parsed by the TS fallback, which yields no
+ *  resolvable specs, so the resulting closure is unreliable rather than genuinely
+ *  empty. Callers that refute on a "confidently empty" closure must first check
+ *  this, or they will refute a real proof on a language they cannot analyze. */
+const CLOSURE_ANALYZABLE_EXTS = new Set<string>([
+  '.ts', '.tsx', '.cts', '.mts',
+  '.js', '.jsx', '.cjs', '.mjs',
+  '.py',
+]);
+
+/** True when this file's imports can be followed by the closure BFS (TS/JS or
+ *  Python). For any other language the closure cannot be built, so a relevance
+ *  refuter that keys on the closure must abstain rather than treat the empty
+ *  result as "reaches nothing". */
+export function isClosureAnalyzable(filePath: string): boolean {
+  const dot = filePath.lastIndexOf('.');
+  if (dot < 0) return false;
+  return CLOSURE_ANALYZABLE_EXTS.has(filePath.slice(dot).toLowerCase());
+}
+
 export interface ClosureOptions {
   maxNodes?: number;
 }

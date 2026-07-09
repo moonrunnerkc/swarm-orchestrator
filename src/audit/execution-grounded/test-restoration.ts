@@ -21,7 +21,7 @@ import type { TestRunner, PackageManager } from './sandbox';
 import type { MutationRecipe } from './mutation-check';
 import type { DockerContext } from './docker-runner';
 import { execBin, execEnv, execFileGuarded, type GuardedRunError } from './exec-env';
-import { reachableSourceFiles, type ClosureResult } from '../cheat-detector/test-import-closure';
+import { reachableSourceFiles, isClosureAnalyzable, type ClosureResult } from '../cheat-detector/test-import-closure';
 
 const log = getLogger('audit:execution-grounded:test-restoration');
 
@@ -901,6 +901,20 @@ function closureRelevanceGate(
   failingTests: string[],
 ): RestoredPhaseOutcome {
   if (input.repoRoot === undefined) {
+    return { verdict: 'proven', failingTests };
+  }
+  // The closure refuter follows TS/JS/Python imports only; a Go (or other
+  // non-analyzable) test file is parsed by the TS fallback and yields an
+  // unreliable, effectively-empty closure. Treating that as "reaches none of the
+  // changed source" would refute a real proof the behavioral controls already
+  // established, so abstain when the closure cannot be built for these test files
+  // (same fail-closed stance the refuter takes for a capped BFS). The Protocol-1
+  // relevance check is a JS/TS/Python refinement; the language-agnostic behavioral
+  // controls and the re-spec refuter carry the proof on other languages.
+  if (!testFiles.every(isClosureAnalyzable)) {
+    log.debug(
+      `closure relevance gate abstains: ${testFiles.join(', ')} is not import-analyzable (TS/JS/Python only)`,
+    );
     return { verdict: 'proven', failingTests };
   }
   const changedSrc = changedNonTestSourceFiles(input.prDiff);

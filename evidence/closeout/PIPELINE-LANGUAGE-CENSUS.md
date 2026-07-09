@@ -67,6 +67,31 @@ already computed above the gate (`selectProofCandidates`, index.ts:1165), so no 
 | `cheat-detector/index.ts:36` registry filter | subject-path + config exclude | `isAuditSubjectPath` blocks data extensions (`.md/.json`), includes source of any language |
 | `subject-paths.ts:83` `isAuditSubjectPath` | data-file filter | `DATA_EXTENSIONS` blocklist; `.go`/`.py` are subjects, not excluded |
 
+## A2. Second wall, found during the Phase 3 live-path proof (not the static trace)
+
+The static census above traces structure. One gate is invisible to a structural trace
+because it only activates at **runtime**, when a `repoRoot` is threaded into the
+restoration engine — which the live `swarm audit --pr` path does (`index.ts:987`,
+`repoRoot: input.postWorkspacePath`) but the reach run's engine-harness validation
+(`scripts/oracle/polyglot-restoration.ts`) does **not**. So the reach run's "go proven
+4/4" never exercised it, and it surfaced only when Phase 3 ran the fixtures through the
+full pipeline.
+
+| # | file:line | code | why it wrongly refutes Go |
+|---|---|---|---|
+| A2 | `test-restoration.ts` `closureRelevanceGate` → `test-import-closure.ts` `reachableSourceFiles` | the Protocol-1 relevance refuter follows the restored test's import closure to confirm it reaches the PR's changed source | the closure's `extractImports` (`ast-imports.ts:81-88`) handles **TS/JS and Python only**; a `.go` test is parsed by the TS fallback and yields no resolvable specs, so the closure is `{the test file}`, `capped=false`. The refuter then reads that as "confidently reaches none of the changed source" and demotes a genuinely-proven Go restoration to `not-proven:test-not-closure-linked`. |
+
+**Fix (in the same commit as this amendment):** `isClosureAnalyzable` recognizes the
+languages the closure can actually follow (TS/JS/Python); `closureRelevanceGate` abstains
+(keeps the proof) when a test file is not analyzable, the same fail-closed stance it already
+takes for a capped BFS or a closure error. The Protocol-1 check is a JS/TS/Python
+refinement; the language-agnostic behavioral controls (base passes, tampered passes,
+restored fails twice same identity) and the behavioral re-spec refuter carry the proof on
+Go. This is exactly how the reach run validated Go (with the closure gate not running), so
+the fix makes the live path match the engine-harness result rather than change the bar.
+Verified: go-tamper goes `not-proven:test-not-closure-linked` → `proven`; go-clean stays
+`refuted`; the TS/Python paths are byte-identical (their extensions still run the gate).
+
 ## C. TS-married engines (keep the documented fail-closed abstain — do NOT generalize)
 
 Each proves a property that is intrinsically JS/TS/AST-shaped. Per the standing rule (the
