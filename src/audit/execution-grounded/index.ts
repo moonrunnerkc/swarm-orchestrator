@@ -405,11 +405,24 @@ export interface ProofCandidates {
  * TS path byte-identical (a JS/TS source diff has a non-empty `changed`, so the
  * first clause short-circuits exactly as before).
  *
+ * The `claimWork` flag is the claim-driven analog of the proof candidates: the
+ * Tier C claim-binding engine is not finding-gated (it keys on the PR's claim plus
+ * a changed non-test source that an existing test covers), so a PR whose only work
+ * is a claim binding carries no structural candidate and would otherwise bail here
+ * before provisioning. The caller sets it when claim-binding is enabled and the
+ * diff changed a non-test source; leaving it false keeps every existing entry
+ * decision byte-identical.
+ *
  * @param changed the JS/TS mutable-source line ranges from `mutableSourceFilter`.
  * @param candidates the proof candidates selected from the structural findings.
+ * @param claimWork whether a claim-driven proof (claim-binding) could run.
  * @returns true when at least one engine could run.
  */
-export function layerHasWork(changed: ChangedLineRanges, candidates: ProofCandidates): boolean {
+export function layerHasWork(
+  changed: ChangedLineRanges,
+  candidates: ProofCandidates,
+  claimWork = false,
+): boolean {
   if (Object.keys(changed).length > 0) return true;
   return (
     candidates.test.length > 0 ||
@@ -418,7 +431,8 @@ export function layerHasWork(changed: ChangedLineRanges, candidates: ProofCandid
     candidates.typeSuppression.length > 0 ||
     candidates.fakeRefactor.length > 0 ||
     candidates.deadBranch.length > 0 ||
-    candidates.errorSwallow.length > 0
+    candidates.errorSwallow.length > 0 ||
+    claimWork
   );
 }
 
@@ -1405,7 +1419,12 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
   // mutable set or any proof candidate for the polyglot restoration engines, so a
   // `.go`/`.py` test-tamper reaches the restoration engine instead of dying here.
   const changed: ChangedLineRanges = extractChangedLineRanges(input.prDiff, mutableSourceFilter);
-  if (!layerHasWork(changed, candidates)) {
+  // Claim-binding is not finding-gated: it keys on the PR claim plus a changed
+  // non-test source an existing test covers, so a claim-only PR carries no
+  // structural candidate. Let the layer provision for it when it is enabled.
+  const claimWork =
+    input.config.claimBinding && changedNonTestSourceFiles(input.prDiff).length > 0;
+  if (!layerHasWork(changed, candidates, claimWork)) {
     skipped.push('no mutable source lines and no proof candidate in diff');
     return bailBeforeWorkspace('no mutable source lines and no proof candidate in diff');
   }

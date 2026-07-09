@@ -92,6 +92,7 @@ import { decideBlock, isBlockEligible } from '../../audit/gate/gate-decision';
 import { summarizeMergeDecision, type MergeDecision } from '../../audit/gate/merge-decision';
 import { runMergeGateForPr } from './merge-gate-runner';
 import { fetchPrDiffViaGithub, parsePrRef, type GithubPrRef } from './pr-fetch';
+import { fixturePrContext, fixturePrDiff } from '../../audit/pr-fixture';
 import { fetchPrManifests } from './pr-manifest-fetch';
 import { writeShadowEntry } from '../../audit/shadow';
 import { buildShadowOutput, writeShadowOutputFile } from '../../audit/shadow-output';
@@ -1198,6 +1199,9 @@ async function loadDiff(flags: AuditFlags): Promise<string> {
     return readStdin();
   }
   if (flags.prRef !== undefined) {
+    // Local fixture seam (fail-closed: null unless SWARM_PR_FIXTURE_DIR is set).
+    const fixtureDiff = fixturePrDiff();
+    if (fixtureDiff !== null) return fixtureDiff;
     const ref = parsePrRef(flags.prRef);
     return fetchPrDiffViaGithub(ref);
   }
@@ -1219,6 +1223,9 @@ interface PrContext {
 
 async function loadPrContext(flags: AuditFlags): Promise<PrContext | undefined> {
   if (flags.prRef === undefined) return undefined;
+  // Local fixture seam (fail-closed: null unless SWARM_PR_FIXTURE_DIR is set).
+  const fixture = fixturePrContext();
+  if (fixture !== null) return fixture as PrContext;
   const ref = parsePrRef(flags.prRef);
   return await fetchPrContextViaGithub(ref);
 }

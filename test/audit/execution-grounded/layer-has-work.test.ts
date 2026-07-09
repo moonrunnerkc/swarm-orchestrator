@@ -54,4 +54,11 @@ describe('execution-grounded / layerHasWork (entry gate)', () => {
     const candidates = emptyCandidates({ errorSwallow: [blockFinding('handler.py', 'error-swallow')] });
     assert.equal(layerHasWork(NO_CHANGED, candidates), true);
   });
+
+  it('proceeds on claim-binding work (no structural candidate) only when claimWork is set', () => {
+    // A claim-only PR (changed source + covering test, no structural cheat) carries
+    // no candidate; the claimWork flag is what lets the layer provision for it.
+    assert.equal(layerHasWork(NO_CHANGED, emptyCandidates(), false), false);
+    assert.equal(layerHasWork(NO_CHANGED, emptyCandidates(), true), true);
+  });
 });

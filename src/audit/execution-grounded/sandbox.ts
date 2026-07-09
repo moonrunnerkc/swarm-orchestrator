@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { SwarmError } from '../../errors';
 import { getLogger } from '../../logger';
+import { fixtureRepoUrl } from '../pr-fixture';
 import { commandTimeoutMs, execBin, execEnv, execFileGuarded, isGuardedTimeout } from './exec-env';
 import { provisionNonNode, type NonNodeEcosystem } from './polyglot-install';
 
@@ -207,7 +208,11 @@ export function provisionEcosystem(workspacePath: string): 'node' | NonNodeEcosy
 }
 
 function gitFetchCheckout(repo: string, commit: string, dir: string, depth: number): void {
-  const url = `https://github.com/${repo}.git`;
+  // Local fixture seam (fail-closed: null unless SWARM_PR_FIXTURE_DIR points at a
+  // fixture whose repo matches). Lets a planted-cheat fixture clone from a local
+  // git repo instead of github.com so the whole --pr path runs offline; production
+  // (env unset) uses github.com byte-identically.
+  const url = fixtureRepoUrl(repo) ?? `https://github.com/${repo}.git`;
   const run = (args: string[], timeoutMs: number): void => {
     execFileSync('git', args, {
       cwd: dir,
