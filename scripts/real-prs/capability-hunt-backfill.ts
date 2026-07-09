@@ -40,6 +40,10 @@ interface Args {
   timeoutMs: number;
   outDir: string;
   batchId: string;
+  /** Engine-set provenance recorded in the batch funnel: which engines were live
+   *  for this batch, so hunt numbers stay comparable across the tool's history
+   *  (the pre-wiring capability batches carry a different, narrower set). */
+  engineSet: string;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -54,6 +58,7 @@ function parseArgs(argv: string[]): Args {
     timeoutMs: Number(get('--timeout-ms', '200000')),
     outDir: get('--out', path.join('benchmarks', 'real-prs', 'capability-hunt')),
     batchId: get('--batch-id', 'batch-1'),
+    engineSet: get('--engine-set', 'restoration+error-swallow+claim-binding (live)'),
   };
 }
 
@@ -264,7 +269,7 @@ function main(): void {
   const outFile = path.join(args.outDir, `BACKFILL-${args.batchId}.json`);
   fs.writeFileSync(
     outFile,
-    `${JSON.stringify({ computedBy: 'scripts/real-prs/capability-hunt-backfill.ts', halted, ...metrics }, null, 2)}\n`,
+    `${JSON.stringify({ computedBy: 'scripts/real-prs/capability-hunt-backfill.ts', engineSet: args.engineSet, halted, ...metrics }, null, 2)}\n`,
   );
   log.info(
     `backfill ${args.batchId}: audited ${metrics.audited} (skipped ${skipped}), ` +

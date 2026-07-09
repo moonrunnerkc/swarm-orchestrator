@@ -25,8 +25,15 @@ excludePaths:
 # wall-clock cost and, running before restoration in the per-PR budget, could
 # starve the proof that does gate. They stay off here; restoration runs against
 # the provisioned pair regardless of these sub-flags.
+# errorSwallow (deterministic, model-free) and claimBinding (deterministic-first,
+# abstains in production without a green-history checkout) are both advisory and
+# never gate; enabling them exercises the complete wired engine set on every --pr
+# audit. errorSwallow defaults on with the deterministic engines; claimBinding is
+# opt-in and is turned on here so the dogfood and the backfill run the full set.
 executionGrounded:
   enabled: true
   mutation: false
   coverage: false
   issueRepro: false
+  errorSwallow: true
+  claimBinding: true
