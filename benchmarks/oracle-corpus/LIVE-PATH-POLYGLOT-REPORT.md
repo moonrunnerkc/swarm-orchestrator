@@ -19,7 +19,7 @@ found and cleared here:
 1. **The structural detector must fire first.** A tautology tamper (the reach fixtures'
    `assert x == x`) trips no structural detector, so it never produces a candidate and
    never routes to the engine. These fixtures use an assertion **deletion** (net count
-   drops), which `assertion-strip` raises as a `block` finding — the candidate the engine
+   drops), which `assertion-strip` raises as a `block` finding, the candidate the engine
    needs. This is a real limitation of the tautology fixtures, recorded here (see Scope).
 2. **The closure relevance refuter mis-refutes Go.** The live path threads a `repoRoot`
    into the engine (the harness did not), which activates the Protocol-1 closure refuter.

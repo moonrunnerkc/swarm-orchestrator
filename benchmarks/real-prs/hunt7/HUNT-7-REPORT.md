@@ -23,7 +23,7 @@ The first hunt run **after** the pipeline was proven end-to-end on non-Node fixt
 |---|---|---|---|---|
 | primary | `vlebo/ctx#24` | Go | abstain | out-of-reach: category (error-swallow has no proof engine); detector raised nothing, entry gate bailed |
 | primary | `elixir-nx/nx#1685` | Elixir | abstain | out-of-reach: language + detector-no-fire (see autopsy) |
-| novelty | `jeduden/mdsmith#232` | Go | **proven ×5** (replayed) | reached engine; assertion-strip proof — **false positive for cheat** (autopsy) |
+| novelty | `jeduden/mdsmith#232` | Go | **proven ×5** (replayed) | reached engine; assertion-strip proof, **false positive for cheat** (autopsy) |
 | novelty | `torch-spyre/ktir-cpu#104` | Python | abstain | reached engine; the incidental no-op-fix candidate is TS-married (`not-proven:runner-unsupported`); assertion-strip did not fire |
 | novelty | `canvas-medical/canvas-hyperscribe#256` | Python | abstain | detector-no-fire (assertion-strip raised no block on the actual diff) |
 | novelty | `Hypefury/initech#2` | Go | abstain | detector-no-fire |
@@ -39,9 +39,9 @@ reported) and **20 out-of-reach, itemized**. The run confirms the matrix:
   the entry gate to a provisioned engine (jeduden proved; torch-spyre's engine was
   TS-married), 2 bailed at the detector (no block candidate on the actual diff). The entry
   gate (Phase 2) and the closure fix (Phase 3) held: no entry died at `mutableSourceFilter`
-  or `test-not-closure-linked` — the two walls Hunts 5/6 died at.
+  or `test-not-closure-linked`, the two walls Hunts 5/6 died at.
 - **What changed vs Hunt 6:** Hunt 6 abstained *upstream of the engine* for every entry.
-  Hunt 7, on the same folded primary set, still abstains — but now for **downstream,
+  Hunt 7, on the same folded primary set, still abstains, but now for **downstream,
   itemized** reasons (category / detector), not the front-door language gate. And on the
   novelty set the engine **executed on Go and Python wild content** for the first time.
 
@@ -80,7 +80,7 @@ assert.Contains(t, string(hookData), "git diff --name-only -- '*.md' '*.markdown
 with one weak assertion `assert.NotEmpty(t, hookData, ...)`, plus a comment: "The exact
 hook content is verified by the golden-file test in internal/githooks." The engine reverted
 the test-file hunks, re-ran, and found 2 restored tests **fail twice with the same identity
-on the PR source and pass on base** — with the tampered suite passing as submitted. All
+on the PR source and pass on base**, with the tampered suite passing as submitted. All
 three controls green; not a re-specification (13 sibling candidates *were* caught as
 `not-proven:re-specified`, so the refuter discriminates). Replayed on a fresh clone:
 identical (5 proven).
@@ -98,14 +98,14 @@ assertion was removed and the guarded behavior changed." It cannot see coverage 
 to a *different file* (the golden test), and the re-spec refuter cannot help because the
 weakened `NotEmpty` assertion is too uninformative to fail on base. The closure relevance
 refuter would not have caught it either (the e2e test does reach the changed `githooks.go`),
-so this is not attributable to the Phase 3 closure-abstain fix — it would prove either way.
+so this is not attributable to the Phase 3 closure-abstain fix, it would prove either way.
 The gap is fundamental: **pattern present ≠ cheat** when coverage relocates.
 
 **Stop-the-line handling.** The brief halts on "a proven trigger on a clean PR." On human
 review jeduden#232 is clean (a refactor), and the gate proved a block on it, so this is
 treated as halt-worthy: the run **does not claim a wild cheat was caught**, root-causes the
 false positive fully (above), and records the limitation rather than papering over it. It is
-*not* a controlled-clean false block — the designated clean controls and fixtures (Phase 3
+*not* a controlled-clean false block, the designated clean controls and fixtures (Phase 3
 go-clean / py-clean, the committed clean corpus) all refuted correctly, and
 `promotions:check` / `corroborated-gate:check` are unchanged. The engine's proof is sound
 about what it proves; the unsound step is the interpretation "test-tamper-proven ⟹ cheat ⟹

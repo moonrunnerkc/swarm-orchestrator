@@ -37,7 +37,7 @@ stale-comment note are folded into sections A-note and E below.
 
 | # | file:line | code | why it blocks Go/Python |
 |---|---|---|---|
-| A1 | `src/audit/execution-grounded/index.ts:1215-1219` | `const changed = extractChangedLineRanges(prDiff, mutableSourceFilter); if (Object.keys(changed).length === 0) { ... return bailBeforeWorkspace('no mutable source lines in diff'); }` | `mutableSourceFilter` (index.ts:81) admits only `MUTABLE_EXTENSIONS = /\.(?:[cm]?[jt]sx?)$/`. A `.go`/`.py` diff yields an empty `changed` map, so **the whole layer bails before provisioning** — including the polyglot restoration engine, which does not need `changed` at all. |
+| A1 | `src/audit/execution-grounded/index.ts:1215-1219` | `const changed = extractChangedLineRanges(prDiff, mutableSourceFilter); if (Object.keys(changed).length === 0) { ... return bailBeforeWorkspace('no mutable source lines in diff'); }` | `mutableSourceFilter` (index.ts:81) admits only `MUTABLE_EXTENSIONS = /\.(?:[cm]?[jt]sx?)$/`. A `.go`/`.py` diff yields an empty `changed` map, so **the whole layer bails before provisioning**, including the polyglot restoration engine, which does not need `changed` at all. |
 
 **Root cause:** `changed` is the *mutation/coverage target set* (Stryker/Istanbul are
 JS/TS-only, so keeping it JS/TS is correct), but its emptiness is being reused as the
@@ -52,7 +52,7 @@ any proof candidate; bail only when both are empty. Mutation/coverage keep
 `changed` is non-empty the condition is satisfied exactly as before. `candidates` is
 already computed above the gate (`selectProofCandidates`, index.ts:1165), so no new fetch.
 
-## B. Already ecosystem-aware (do not touch — reach run generalized these)
+## B. Already ecosystem-aware (do not touch, reach run generalized these)
 
 | file:line | what | Go/Python status |
 |---|---|---|
@@ -71,7 +71,7 @@ already computed above the gate (`selectProofCandidates`, index.ts:1165), so no 
 
 The static census above traces structure. One gate is invisible to a structural trace
 because it only activates at **runtime**, when a `repoRoot` is threaded into the
-restoration engine — which the live `swarm audit --pr` path does (`index.ts:987`,
+restoration engine, which the live `swarm audit --pr` path does (`index.ts:987`,
 `repoRoot: input.postWorkspacePath`) but the reach run's engine-harness validation
 (`scripts/oracle/polyglot-restoration.ts`) does **not**. So the reach run's "go proven
 4/4" never exercised it, and it surfaced only when Phase 3 ran the fixtures through the
@@ -92,7 +92,7 @@ the fix makes the live path match the engine-harness result rather than change t
 Verified: go-tamper goes `not-proven:test-not-closure-linked` → `proven`; go-clean stays
 `refuted`; the TS/Python paths are byte-identical (their extensions still run the gate).
 
-## C. TS-married engines (keep the documented fail-closed abstain — do NOT generalize)
+## C. TS-married engines (keep the documented fail-closed abstain, do NOT generalize)
 
 Each proves a property that is intrinsically JS/TS/AST-shaped. Per the standing rule (the
 full control set travels or the engine does not ship on a language), these keep their
@@ -155,7 +155,7 @@ drift, corrected alongside the fix (a comment-only change; no behavior).
 
 - **Does:** let a Go/Python diff carrying a restoration candidate (or any proof candidate)
   reach the already-polyglot provisioning + restoration engine, instead of bailing at the
-  JS/TS mutation-target gate. This closes wall A1 — the exact barrier Hunt 6 named.
+  JS/TS mutation-target gate. This closes wall A1, the exact barrier Hunt 6 named.
 - **Does not:** change any control, threshold, or bar; touch the mutation/coverage JS/TS
   target set; generalize a TS-married engine; or port Go-native assertion/error grammar
   (D, recorded and route-around). The TS path stays byte-identical, pinned by regression

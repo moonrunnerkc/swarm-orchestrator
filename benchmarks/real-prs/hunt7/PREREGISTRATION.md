@@ -12,7 +12,7 @@ Hunt 6 abstained upstream of the engine at `mutableSourceFilter` (the JS/TS-only
 gate) for both folded entries. This run's Phase 2 generalized that gate (`layerHasWork`),
 and Phase 3 found and fixed a second wall (the closure relevance refuter mis-refuting Go)
 and then **proved a Go and a Python test-tamper end-to-end through `swarm audit --pr`**
-(4/4). So for the first time a non-Node wild cheat can reach the restoration engine — if
+(4/4). So for the first time a non-Node wild cheat can reach the restoration engine, if
 its category has a proof engine and its ecosystem is provisionable.
 
 ## Primary set: the folded entries (frozen by SHA)
@@ -42,9 +42,9 @@ They are run this hunt.
 | `Hypefury/initech#2` | `3e6e11dba15a` | Go | assertion-strip | legacy | REACHABLE (restoration/go) |
 | `jeduden/mdsmith#232` | `6a810f742f8a` | Go | assertion-strip | legacy | REACHABLE (restoration/go) |
 
-**Pre-registered outcome per entry:** each will either (a) prove — a structural
+**Pre-registered outcome per entry:** each will either (a) prove, a structural
 `assertion-strip` block finding is raised, the entry gate admits it, the sandbox
-provisions, and restoration confirms a concealed failure (all controls green) — or
+provisions, and restoration confirms a concealed failure (all controls green), or
 (b) abstain, with the abstain itemized as one of: `detector-no-fire` (no block candidate
 raised on this diff), `install-fail` (provisioning could not build the tree),
 `refuted` (restoration ran and the restored test still passed), or
@@ -82,7 +82,7 @@ install-viability / language). No out-of-reach entry is a miss.
 
 The primary set proves nothing by construction (both out-of-reach). The novelty set is a
 real test, but two priors temper it: (1) the assertion-strip **detector** must raise a
-`block` candidate on the actual diff — a tautology or subject re-spec would not (census D);
+`block` candidate on the actual diff, a tautology or subject re-spec would not (census D);
 (2) real repos may fail to install in the sandbox (large monorepos, private deps). A `0
 proven` result is fully consistent with a correctly-working, honest pipeline; the value is
 the itemized funnel, not a headline.

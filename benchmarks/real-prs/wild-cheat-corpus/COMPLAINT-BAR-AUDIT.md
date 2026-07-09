@@ -29,14 +29,14 @@ changed to run this audit; the definition is read, not edited.
 
 ## The three strata
 
-- **strict** — a human other than the PR author currently carries a cheat phrase in
+- **strict**: a human other than the PR author currently carries a cheat phrase in
   the thread. This is the independent-maintainer bar the published claim implies.
-- **legacy** — only the PR author (self) or a bot carries a cheat phrase. Present in the
+- **legacy**: only the PR author (self) or a bot carries a cheat phrase. Present in the
   corpus under the original loose miner (any phrase match), fails the strict bar. The
   `solo` sub-label marks a legacy entry whose only complaint is a **self-flag by the repo
   owner**: a maintainer critiquing their own agent's PR is a real signal of a different
   kind, not the strict bar and not noise.
-- **uncertain** — the live thread cannot settle it (the PR is deleted/private, or the
+- **uncertain**: the live thread cannot settle it (the PR is deleted/private, or the
   cheat phrase no longer appears in any comment).
 
 ## Counts

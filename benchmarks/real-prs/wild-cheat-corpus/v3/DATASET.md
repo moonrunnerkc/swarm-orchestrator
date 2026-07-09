@@ -13,15 +13,15 @@ methodology, the per-entry table, and the decision material for the published
 
 ## Strata
 
-- **strict** (9) — a human other than the PR author currently carries a cheat phrase.
+- **strict** (9): a human other than the PR author currently carries a cheat phrase.
   The independent-maintainer bar. One of the 9 (pwncollege/ctf-archive#133) hinges on a
   `-bot`-suffixed User account posting automated verdicts; a content-aware bar reads it as
   8. See the audit's edge-case note.
-- **legacy** (19) — only the PR author (self) or a bot carries a cheat phrase. Present
+- **legacy** (19): only the PR author (self) or a bot carries a cheat phrase. Present
   under the original loose miner, fails the strict bar. `solo: true` marks the 6 whose
   only complaint is a repo-owner self-flag (a maintainer critiquing their own agent PR):
   a real signal of a different kind, not the strict bar and not noise.
-- **uncertain** (1) — the live thread cannot settle it. flipflowglobal/D.L#47 is deleted.
+- **uncertain** (1): the live thread cannot settle it. flipflowglobal/D.L#47 is deleted.
 
 ## Counts
 
