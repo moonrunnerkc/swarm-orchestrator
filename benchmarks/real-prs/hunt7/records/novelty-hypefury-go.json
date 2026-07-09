@@ -1,0 +1,110 @@
+{
+  "pass": true,
+  "findings": [],
+  "generatedAt": "2026-07-09T00:45:54.252Z",
+  "detectorVersions": {
+    "error-swallow": "2.1.0",
+    "mock-of-hallucination": "2.0.0",
+    "no-op-fix": "2.0.0",
+    "fake-refactor": "2.0.0",
+    "coverage-erosion": "1.2.0",
+    "test-relaxation": "1.2.0",
+    "assertion-strip": "1.0.0",
+    "type-suppression": "1.0.0"
+  },
+  "detectorSet": "default",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "pr-body-marker",
+    "version": "4.7"
+  },
+  "pr": {
+    "number": 2,
+    "headSha": "3e6e11dba15add83c85bbe24a8192e7a79b38c89",
+    "baseSha": "ef135314368c16241849b693b2e14c8f926f2238",
+    "title": "refactor(tui): clean up status bar layout + label battery readout",
+    "body": "## Summary\nStacked on top of [#1](https://github.com/Hypefury/initech/pull/1).\n\nThree commits:\n1. **Group status bar items by category** — right side is now contiguous app state (mode, pending, update, quota) followed by system state (battery, branch, clock). Previously battery and clock were split by the shortcut string, mixing ambient state with teaching aids.\n2. **Label battery readout and pad the percent** — `Bat 100%`. Plain text label so the meaning is unambiguous without an icon (no font dependency); percent is left-padded to 3 chars (right-aligned) so the readout stays the same width as the value changes. Charging/low-battery state shown via color only (green/yellow/red).\n3. **Drop the static shortcut hints** — `` `:cmd  Alt+z:zoom  Alt+s:overlay  ?:help  Alt+q:quit `` duplicated what the rotating tips on the left already teach and what \\`?\\` shows on demand. Right side is now pure ambient state.\n\n## Test plan\n- [ ] Status bar groups read left-to-right: tip · | mode pending update quota · battery branch clock\n- [ ] Battery shows \\`Bat NNN%\\` with the percent right-aligned in a 3-char slot\n- [ ] Charging color = green; <10% = red; <20% = yellow\n- [ ] \\`?\\` still opens the help modal with the full shortcut list\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    "author": "Dinduks",
+    "headRef": "feat/status-bar-cleanup",
+    "repository": "Hypefury/initech"
+  },
+  "mode": "gate",
+  "blockingTriggers": [],
+  "proofCoverage": {
+    "schema": "swarm-proof-coverage/v1",
+    "provisioning": {
+      "attempted": true,
+      "provisioned": true
+    },
+    "engines": [
+      {
+        "engine": "test-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "mock-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "no-op-fix-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "type-suppression-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "fake-refactor-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "dead-branch-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "issue-repro",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "mutation-check",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "coverage-delta",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "claim-differential",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      }
+    ],
+    "summary": {
+      "enginesApplicable": 0,
+      "enginesExecuted": 0,
+      "findings": 0,
+      "abstains": 0,
+      "controlsEvaluated": 0
+    }
+  }
+}

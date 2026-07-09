@@ -1,0 +1,118 @@
+{
+  "pass": true,
+  "findings": [],
+  "generatedAt": "2026-07-09T00:44:59.138Z",
+  "detectorVersions": {
+    "error-swallow": "2.1.0",
+    "mock-of-hallucination": "2.0.0",
+    "no-op-fix": "2.0.0",
+    "fake-refactor": "2.0.0",
+    "coverage-erosion": "1.2.0",
+    "test-relaxation": "1.2.0",
+    "assertion-strip": "1.0.0",
+    "type-suppression": "1.0.0"
+  },
+  "detectorSet": "default",
+  "agent": {
+    "vendor": "claude-code",
+    "confidence": "high",
+    "source": "commit-marker",
+    "version": "4.6"
+  },
+  "pr": {
+    "number": 104,
+    "headSha": "55259d4750f142b273ce52309c91388dfb36f51f",
+    "baseSha": "c42884428eec3403c2a0a212f8df750b693a58da",
+    "title": "fix: track_lx for multi-result ops; unify result-binding; strengthen batch_matmul test",
+    "body": "## What\n\nAddresses two review comments from #89.\n\n## Changes\n\n- **`interpreter.py`** — multi-result branch (`op.result` is a list) never called `context.track_lx` for `Tile` values, while the single-result path did. Unified both paths into one loop over zipped names/values so `track_lx` is called for any `Tile` regardless of result count.\n- **`test_batch_matmul`** — replaced identity-matrix `A` with non-identity data; uses `np.einsum` as the reference so index transposition bugs would produce wrong values.\n\n## Related\n\n- Follows #89",
+    "author": "fabianlim",
+    "headRef": "fix-pr-89",
+    "repository": "torch-spyre/ktir-cpu"
+  },
+  "mode": "gate",
+  "blockingTriggers": [],
+  "proofCoverage": {
+    "schema": "swarm-proof-coverage/v1",
+    "provisioning": {
+      "attempted": true,
+      "provisioned": true
+    },
+    "engines": [
+      {
+        "engine": "test-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "mock-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "no-op-fix-restoration",
+        "applicable": true,
+        "executed": true,
+        "records": [
+          {
+            "subject": "ktir_cpu/interpreter.py",
+            "verdict": "not-proven:runner-unsupported",
+            "outcome": "abstain",
+            "abstainClass": "structurally-inapplicable",
+            "controlsEvaluated": 1
+          }
+        ]
+      },
+      {
+        "engine": "type-suppression-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "fake-refactor-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "dead-branch-restoration",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "issue-repro",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "mutation-check",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "coverage-delta",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      },
+      {
+        "engine": "claim-differential",
+        "applicable": false,
+        "executed": false,
+        "records": []
+      }
+    ],
+    "summary": {
+      "enginesApplicable": 1,
+      "enginesExecuted": 1,
+      "findings": 0,
+      "abstains": 1,
+      "controlsEvaluated": 1
+    }
+  }
+}
