@@ -1,0 +1,76 @@
+# Claims ledger
+
+Every publishable claim this project can currently make, each mapped to the evidence
+artifact that backs it and the command that regenerates that artifact. A claim that cannot
+be regenerated from committed inputs is not in this file.
+
+Rule of use: cite the claim with its artifact link. If a number here disagrees with a
+badge, a README line, or a slide, the artifact wins and the other is stale.
+
+## Gate soundness and the zero-false-block record
+
+| claim | number | artifact | regenerate |
+|---|---|---|---|
+| No advisory detector is gate-eligible; all 10 are advisory-only | gate-eligible = 0, advisory = 10 | `benchmarks/real-corpus/promotions.json` | `npm run promotions:check` |
+| The corroborated structural gate is not-ready by construction (no outcome-bad PR in the provisionable slice), not by a harness defect | status `undefined-n`, n_bad = 0 | `benchmarks/real-corpus/corroborated-gate-precision.json`, `benchmarks/real-corpus/CORROBORATED-GATE-READINESS.md` | `npm run corroborated-gate:check` |
+| The one known harness-defect gap (`claim-falsified-synthesized`) is closed: advisory, abstains in production | honest-twin FP 0/16, outline refusal 16/16 | `benchmarks/twins/DISCRIMINATION-CONTROL-REPORT.md` | `npm run discrimination-control:measure` |
+| Clean controls and fixtures never produce a proven block | Phase 3 go-clean / py-clean 0 triggers; committed clean corpus unchanged | `benchmarks/oracle-corpus/LIVE-PATH-POLYGLOT-REPORT.md` | see live-path reproduce below |
+
+## The wild corpus and its complaint-bar strata
+
+| claim | number | artifact | regenerate |
+|---|---|---|---|
+| The wild cheat corpus is 29 entries (v1 27 + 2 maintainer-confirmed folds) | 29: merged 8, closed 20, egViable 7 | `benchmarks/real-prs/wild-cheat-corpus/v3/dataset.json` | folded by `scripts/real-prs/fold-approved.ts` (v2), stratified by `complaint-bar-audit.ts` (v3) |
+| Of the 27 inherited entries, only 7 meet the strict independent-human complaint bar | strict 7, legacy 19 (6 solo self-flag), uncertain 1 | `benchmarks/real-prs/wild-cheat-corpus/COMPLAINT-BAR-AUDIT.md` | `node dist/scripts/real-prs/mining-verification/complaint-bar-audit.js --input benchmarks/real-prs/mining-verification/tightening-input-corpus29.json --dataset benchmarks/real-prs/wild-cheat-corpus/v2/dataset.json --dataset-out benchmarks/real-prs/wild-cheat-corpus/v3/dataset.json --version v3 --out benchmarks/real-prs/mining-verification/complaint-bar-audit.json` |
+| The published "27 maintainer-flagged" is the loose bar; the strict independent-human count is 7 (6 content-aware) | 27 loose / 7 strict / 6 content-aware | same as above | same |
+| The miner is tightened definitionally (self-comments and bots excluded); package noise fell 13% to 3.3% | 13% to 3.3% | `benchmarks/real-prs/mining-verification/TIGHTENING-REPORT.md` | `node dist/scripts/real-prs/mining-verification/tightening-regression.js ...` |
+
+## Diff illegibility (why complaint-mining is the discovery method, not the detectors)
+
+| claim | number | artifact | regenerate |
+|---|---|---|---|
+| An LLM judge reading the diff recovers only a fraction of the wild cheats | wild-cheat recall 1 of 7 | `benchmarks/twins/JUDGE-GATE-COST-REPORT.md` | `npm run judge-gate-cost` (funded) or `--report-only` from the committed JSON |
+| A judge allowed to block costs a low but nonzero clean-PR false-block rate | 1/52 clean blocked (2%, Wilson-95 [0.00, 0.10]) | same | same |
+| A dual Opus arbiter reading the diff alone confirms zero of the wild true-positives, though it confirms planted cheats | 0 of 11 evaluated (vs 21/23 planted) | `benchmarks/real-prs/mining-verification/POSITIVE-CONTROL.md` | `node dist/scripts/real-prs/arbiter-sanity-dual.js ...` |
+
+## The pre-registered hunt record (including the zeros)
+
+| claim | number | artifact | regenerate |
+|---|---|---|---|
+| Hunt 5: the restoration tier could not execute non-Node; 0 of 2 folded entries proven | 0/2 | `benchmarks/real-prs/hunt5/` (per its report) | `swarm audit --pr` on the pinned heads |
+| Hunt 6: with the polyglot engine present, the barrier moved upstream to `mutableSourceFilter`; 0 of 2 | 0/2 | `benchmarks/real-prs/hunt6/HUNT-6-REPORT.md` | `swarm audit --pr` on the pinned heads |
+| Hunt 7: the primary folds are out-of-reach (category / language); 0 wild cheats proven | 0/2 primary; funnel confirms the pre-registered reach matrix | `benchmarks/real-prs/hunt7/HUNT-7-REPORT.md`, `PREREGISTRATION.md` | `swarm audit --pr` on the pinned heads (records in `hunt7/records/`) |
+
+## The polyglot live-path proof
+
+| claim | number | artifact | regenerate |
+|---|---|---|---|
+| The `test-tamper` restoration engine executes on node, pytest, and go-test (planted fixtures) | 4/4 | `benchmarks/oracle-corpus/POLYGLOT-RESTORATION-REPORT.md` | `PATH="$HOME/go-toolchain/go/bin:$PATH" node dist/scripts/oracle/polyglot-restoration.js` |
+| A Go and a Python test-tamper prove end-to-end through the shipped `swarm audit --pr` (tamper proves, clean refutes, attestation reports the non-Node matrix, fresh-clone replay reproduces) | 4/4 verdicts + 2 replays | `benchmarks/oracle-corpus/LIVE-PATH-POLYGLOT-REPORT.md`, `live-path-runs/*.json` | recreate the fixture PRs, then `swarm audit --pr <ref> --mode gate --output json` (see the report) |
+| The pipeline front-end is ecosystem-aware: a `.go`/`.py` test-tamper reaches the restoration engine instead of bailing at the JS/TS entry gate | `layerHasWork` admits Go/Python candidates | `test/audit/execution-grounded/layer-has-work.test.js` | `npm test` |
+| The closure relevance refuter abstains on non-analyzable languages (does not mis-refute Go) | go-tamper proven, not `test-not-closure-linked` | `test/audit/cheat-detector/closure-analyzable.test.js` | `npm test` |
+
+## Hunt 7's substantive result (the honest one)
+
+| claim | detail | artifact | regenerate |
+|---|---|---|---|
+| The polyglot pipeline proved a `test-tamper` on a wild Go PR end-to-end (deterministic, replayed) | jeduden/mdsmith#232, 5 test-tamper-proven, replay identical | `benchmarks/real-prs/hunt7/records/novelty-jeduden-go{,-replay}.json`, `HUNT-7-REPORT.md` | `swarm audit --pr jeduden/mdsmith#232 --mode gate --output json` |
+| That proof is a false positive for "cheat": a legitimate refactor that moved coverage to a golden-file test the engine cannot see | the gate's one known false-positive class (assertion-weakening refactors that relocate coverage) | `benchmarks/real-prs/hunt7/HUNT-7-REPORT.md` (jeduden autopsy) | same |
+| No genuine wild cheat has been proven by the gate | 0 across hunts 2-7 | the hunt reports above | same |
+
+## Detection and false-alarm numbers (prior runs, still current)
+
+| claim | number | artifact | regenerate |
+|---|---|---|---|
+| Oracle recall over the defect-injection corpus | 301 of 325 (92.6%) | `benchmarks/results/AB-REPORT.md`, `benchmarks/oracle-corpus/per-detector-recall.md` | `SWARM_JUDGE_PROVIDER=ollama SWARM_JUDGE_MODEL=qwen3.6:35b-a3b npm run benchmarks:full` |
+| Real-PR false-alarm burden | 0.11 findings per PR (18-PR pilot) | `benchmarks/real-prs/REAL-WORLD-REPORT.md` | see report |
+| Advisory-tier precision on the real-outcome corpus | all 10 below the gate floor (Wilson-95 lower >= 0.9) | `benchmarks/real-corpus/promotions.json` | `npm run promotions:check` |
+| Twin separation (detector tier, semi-synthetic n=52) | separation 0.54, McNemar p = 7.5e-9 | `benchmarks/twins/TWIN-SEPARATION-REPORT.md` | `npm run twins:separation` |
+| Derived-witness twin measurement (n=8) | honest-twin FP 0/8, special-casing recall 8/8 | `benchmarks/twins/DERIVED-WITNESS-REPORT.md` | `npm run derived-witness:measure` |
+
+## The parked research problem (stated, not claimed as solved)
+
+The pass-capability problem (certifying a synthesized semantic witness passes on the correct
+behavior without a spec-derived oracle) is **unsolved and parked**. It is why the
+claim-differential and derived-witness tiers abstain in production. This is a limitation on
+record, not a claim; see `docs/READINESS.md`.

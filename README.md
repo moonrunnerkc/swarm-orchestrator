@@ -118,7 +118,7 @@ Both reproduce deterministically from the committed diffs. Semgrep (210 rules) a
 
 ### How often agents cheat, and how often the detectors agree
 
-Mining maintainer review comments across 327 agent-attributed PRs surfaced 27 that a maintainer explicitly called a cheat (assertion-strip, test-relaxation, no-op fix, goal-not-fixed, error swallow, mock-of-hallucination, hardcoded output): about 8% of the cascaded PRs. 20 were caught and rejected at review, 7 merged. That is the prevalence figure; the catalog and funnel are in [`benchmarks/real-prs/HUNT-2-REPORT.md`](benchmarks/real-prs/HUNT-2-REPORT.md).
+Mining maintainer review comments across 327 agent-attributed PRs surfaced 27 that a review comment called a cheat (assertion-strip, test-relaxation, no-op fix, goal-not-fixed, error swallow, mock-of-hallucination, hardcoded output): about 8% of the cascaded PRs. 20 were caught and rejected at review, 7 merged. That "27" is the **loose bar** (any cheat-phrase match, author unrecorded at capture); a later authorship audit found only **7 of the 27** carry a complaint from an independent human (not the PR author, not a bot), 12 are self-comments (6 of them solo-maintainer self-flags) and 7 are bot review surfaces, with 1 PR since deleted. Both counts and the per-entry stratification are in [`benchmarks/real-prs/wild-cheat-corpus/COMPLAINT-BAR-AUDIT.md`](benchmarks/real-prs/wild-cheat-corpus/COMPLAINT-BAR-AUDIT.md); the catalog and funnel are in [`benchmarks/real-prs/HUNT-2-REPORT.md`](benchmarks/real-prs/HUNT-2-REPORT.md).
 
 The number that matters for the tool is the overlap: run the advisory detectors on each of those 27 diffs alone, with the maintainer's complaint text excluded from the signal, and they independently reproduce the maintainer's exact cheat category on **5 of 27 (18.5%)** and raise a finding in some category on **13 of 27 (48%)**. The misses are not detector defects: most are net-additive test edits where firing would reintroduce the false-positive class three prior fixes removed, a sibling-category flag, a diff-only judge that reads the fix as delivered, an unsupported language, or a category with no detector. Each of the 22 is root-caused in [`benchmarks/real-prs/OVERLAP-REPORT.md`](benchmarks/real-prs/OVERLAP-REPORT.md), traced to [`benchmarks/real-prs/overlap-matrix.json`](benchmarks/real-prs/overlap-matrix.json). The detectors are corroboration with a known ceiling, not a replacement for review.
 
@@ -174,20 +174,19 @@ jobs:
       - uses: moonrunnerkc/swarm-orchestrator@main
         with:
           audit-mode: true
-          mode: advise           # advise | gate
-          detectors: default     # default | experimental
           emit-aibom: cyclonedx-ml
+          # audit-comment: true    # default; posts the rendered finding
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-The action checks out the PR at full depth, runs `swarm audit` on the diff, and posts the rendered finding back to the PR via `GITHUB_TOKEN`. It exposes `audit-pass`, `audit-findings`, and `audit-ledger` outputs; the full input list is in [`action.yml`](action.yml).
+The action checks out the PR at full depth, runs `swarm audit` on the diff **in advise mode** (the shipped default: it flags, never blocks the merge), and posts the rendered finding back to the PR via `GITHUB_TOKEN`. It exposes `audit-pass`, `audit-findings`, and `audit-ledger` outputs. The action's audit inputs are `audit-mode`, `pr`, `diff-file`, `emit-aibom`, and `audit-comment`; the full input list is in [`action.yml`](action.yml). Gate mode and detector-set selection are CLI-only today (`swarm audit --mode gate` / `--detectors experimental`); the action does not expose them, so a workflow using this action is always advisory. Each run also emits a machine-readable proof-coverage attestation a downstream merge policy can consume; the consumption contract is [`docs/attestation.md`](docs/attestation.md).
 
 ### Enabling the execution-grounded layer
 
 Structural detectors run with no setup and only ever flag (advisory). The six runtime proofs that can gate a merge (`test-tamper`, `mock-mutation`, `no-op-fix`, `type-suppression`, `fake-refactor`, `dead-branch`) need the execution-grounded layer, which is off until you set `executionGrounded.enabled: true` in [`.swarm/audit-config.yaml`](docs/audit-config.md). Turning it on is what lets `--mode gate` block, and every block it produces ships the exact command that reproduces it in a fresh checkout.
 
-What it costs: for each audited PR the layer provisions the repository in a sandbox (clone the head, install dependencies, run the affected tests), so it adds clone, install, and test wall-clock to the job, and only PRs in a Node project with a lockfile and a recognized test runner (jest, vitest, mocha) reach the gating runtime proofs. A pytest or Go tree now installs in the sandbox, but the proofs stay Node-only and fail closed to advisory on it, as does everything else. The static viability screen measured 12 of 197 PRs as proof-tier-provisionable ([`benchmarks/real-corpus/eg-viability.json`](benchmarks/real-corpus/eg-viability.json)); your own repository, where the suite is known to run in CI, provisions far more reliably than an arbitrary sample. Nothing the layer cannot prove ever blocks: with the layer off, or on a non-provisionable PR, gate mode passes on advisory findings alone.
+What it costs: for each audited PR the layer provisions the repository in a sandbox (clone the head, install dependencies, run the affected tests), so it adds clone, install, and test wall-clock to the job. The `test-tamper` restoration proof runs on **node (jest/vitest/mocha), pytest, and go-test**, proven end-to-end through the shipped CLI on planted Go and Python fixtures ([`benchmarks/oracle-corpus/LIVE-PATH-POLYGLOT-REPORT.md`](benchmarks/oracle-corpus/LIVE-PATH-POLYGLOT-REPORT.md), 4/4). The other five proofs (`mock-mutation`, `no-op-fix`, `type-suppression`, `fake-refactor`, `dead-branch`) stay Node/TypeScript-only by construction (their controls are AST- or Istanbul-based) and fail closed to advisory on a pytest or Go tree. The static viability screen measured 12 of 197 PRs as Node proof-tier-provisionable ([`benchmarks/real-corpus/eg-viability.json`](benchmarks/real-corpus/eg-viability.json)); your own repository, where the suite is known to run in CI, provisions far more reliably than an arbitrary sample. Nothing the layer cannot prove ever blocks: with the layer off, or on a non-provisionable PR, gate mode passes on advisory findings alone.
 
 ## AI-BOM
 
@@ -281,7 +280,7 @@ Two command-line interface (CLI) surfaces share one core. `swarm run` drives the
 
 No single detector has cleared the precision bar to block on its own. Gate mode blocks only on a self-certifying runtime proof whose per-instance controls are all green: test-tamper, mock-mutation, no-op-fix, type-suppression, or fake-refactor restoration, claim falsification, or obligation failure. The first such proof fired on a dogfood PR in June 2026.
 
-Measured against 27 maintainer-confirmed wild cheats, the advisory detectors independently reproduce the maintainer's exact category on 5 (18.5%) and flag some suspicion on 13 (48%); the proof gate proved zero. The detectors corroborate a known fraction of human-caught cheats at high precision, and the gate blocks only what it can reproduce. The full accounting, the overlap matrix, the measured gate precision, and what blocks today and what doesn't, is in [`docs/limitations.md`](docs/limitations.md).
+Measured against the 27 wild complaint-mined entries (7 of which meet the strict independent-human bar; see [`COMPLAINT-BAR-AUDIT.md`](benchmarks/real-prs/wild-cheat-corpus/COMPLAINT-BAR-AUDIT.md)), the advisory detectors independently reproduce the maintainer's exact category on 5 (18.5%) and flag some suspicion on 13 (48%); the proof gate proved zero of them. The polyglot pipeline has since proven a `test-tamper` on a wild **Go** PR end-to-end through the shipped CLI, but on human review that proof is a false positive for "cheat": the same PR moved the guarded coverage to a golden-file test the engine cannot see, a legitimate refactor. That is the gate's one known false-positive class (assertion-weakening refactors that relocate coverage), and it is why the audit's ADVISE default is correct and unattended gate-mode auto-block stays unsafe on wild PRs; the autopsy is in [`benchmarks/real-prs/hunt7/HUNT-7-REPORT.md`](benchmarks/real-prs/hunt7/HUNT-7-REPORT.md). The detectors corroborate a known fraction of human-caught cheats at high precision, and the gate blocks only what it can reproduce. The full accounting, the overlap matrix, the measured gate precision, and what blocks today and what doesn't, is in [`docs/limitations.md`](docs/limitations.md).
 
 ## Developing
 
@@ -309,6 +308,8 @@ Report security issues through [GitHub Security Advisories](https://github.com/m
 - Issue tracker: https://github.com/moonrunnerkc/swarm-orchestrator/issues
 - Changelog: [`CHANGELOG.md`](CHANGELOG.md)
 - Methodology and honesty caveats: [`docs/audit/methodology.md`](docs/audit/methodology.md)
+- Claims ledger (every claim mapped to its evidence and regenerating script): [`docs/CLAIMS.md`](docs/CLAIMS.md)
+- What it cannot do: [`docs/limitations.md`](docs/limitations.md)
 - Reproducible leaderboard: [`benchmarks/leaderboard/`](benchmarks/leaderboard/)
 
 ## License
