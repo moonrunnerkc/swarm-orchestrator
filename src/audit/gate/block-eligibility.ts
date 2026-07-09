@@ -14,11 +14,22 @@
 import type { BlockTriggerKind } from './block-trigger-types';
 import type { TriggerCalibration } from './calibrate-triggers';
 import { isSelfCertifying, type TriggerTier } from './self-certifying';
+import { wilsonLowerBound } from './wilson';
 
 /** The fixed bar a trigger must clear to gate. Mirrors the detector gate's
  *  precision discipline; never lowered to admit a trigger. */
 export const DEFAULT_WILSON_LOWER_THRESHOLD = 0.9;
 export const DEFAULT_MIN_CONFIRMED_REVERTED = 5;
+
+/** One diagnosed, still-live false positive from the FP registry: the gate fired
+ *  its trigger on a PR later confirmed clean, and no refuter yet neutralizes it.
+ *  A registry entry that a refuter DOES neutralize contributes none of these (it
+ *  no longer fires), so a fixed FP class does not keep demoting its trigger. */
+export interface RegistryFalsePositive {
+  trigger: BlockTriggerKind;
+  /** The PR the false positive fired on, for the row's provenance. */
+  pr: string;
+}
 
 export interface BlockEligibilityRow {
   trigger: BlockTriggerKind;
@@ -72,43 +83,64 @@ export interface BlockEligibilityOptions {
 export function computeBlockEligibility(
   calibrations: readonly TriggerCalibration[],
   opts: BlockEligibilityOptions,
+  registryFalsePositives: readonly RegistryFalsePositive[] = [],
 ): BlockEligibilityCore {
   const wilsonLowerThreshold = opts.wilsonLowerThreshold ?? DEFAULT_WILSON_LOWER_THRESHOLD;
   const minConfirmedRevertedForBlock =
     opts.minConfirmedRevertedForBlock ?? DEFAULT_MIN_CONFIRMED_REVERTED;
   const rows: BlockEligibilityRow[] = calibrations.map((c) => {
     const tier: TriggerTier = isSelfCertifying(c.trigger) ? 'self-certifying' : 'circumstantial';
+    // Fold any still-live FP-registry firings for this trigger into its
+    // denominators. A registry entry a refuter neutralizes contributes nothing
+    // (it no longer fires), so a fixed FP class stops demoting.
+    const registryFps = registryFalsePositives.filter((r) => r.trigger === c.trigger).length;
+    const truePositive = c.truePositive;
+    const falsePositive = c.falsePositive + registryFps;
+    const firingCount = c.firingCount + registryFps;
+    const precision = firingCount === 0 ? 0 : truePositive / firingCount;
+    const wilson = registryFps === 0 ? c.wilsonLowerBound : wilsonLowerBound(truePositive, firingCount);
     let blockEligible: boolean;
     let reason: string;
     if (tier === 'self-certifying') {
-      // Self-certifying triggers are eligible independent of the Wilson bar.
-      // They only actually block a PR when the per-instance controls for that
-      // specific firing are all green (enforced in detect + gate-decision +
-      // check-block-policy). The calibration N just records historical green
-      // firings for transparency.
-      blockEligible = true;
-      const n = c.truePositive; // green firings only (detectTestTamperProven etc filter)
-      reason =
-        `block-eligible (self-certifying): blocks only when a firing's controls ` +
-        `are all green at audit time; ${n} calibration firing(s), 0 clean firings.`;
+      // Self-certifying triggers are eligible by tier and block only when the
+      // per-instance controls for that firing are all green (enforced in detect
+      // + gate-decision + check-block-policy). They stay eligible independent of
+      // the Wilson bar UNLESS confirmed false positives accrue and drop the
+      // Wilson-95 lower bound below it: a trigger demonstrably firing on clean
+      // PRs auto-demotes to advisory by the same bar the circumstantial tier
+      // uses, until the FP class is neutralized (a refuter drops the firings) and
+      // precision recovers. A trigger with zero false positives is never demoted,
+      // whatever its true-positive count.
+      if (falsePositive >= 1 && wilson < wilsonLowerThreshold) {
+        blockEligible = false;
+        reason =
+          `auto-demoted to advisory (self-certifying): ${falsePositive} confirmed false positive(s) ` +
+          `drop Wilson95 lower to ${wilson.toFixed(3)} (< ${wilsonLowerThreshold}) over ${firingCount} ` +
+          `firing(s); the trigger stays advisory until the FP class is neutralized and precision recovers.`;
+      } else {
+        blockEligible = true;
+        reason =
+          `block-eligible (self-certifying): blocks only when a firing's controls ` +
+          `are all green at audit time; ${truePositive} calibration firing(s), ${falsePositive} clean firings.`;
+      }
     } else {
       blockEligible =
-        c.wilsonLowerBound >= wilsonLowerThreshold && c.truePositive >= minConfirmedRevertedForBlock;
+        wilson >= wilsonLowerThreshold && truePositive >= minConfirmedRevertedForBlock;
       reason = blockEligible
-        ? `block-eligible: Wilson95 lower ${c.wilsonLowerBound.toFixed(3)} >= ${wilsonLowerThreshold} ` +
-          `with ${c.truePositive} confirmed reverted true positive(s) (>= ${minConfirmedRevertedForBlock}). ` +
+        ? `block-eligible: Wilson95 lower ${wilson.toFixed(3)} >= ${wilsonLowerThreshold} ` +
+          `with ${truePositive} confirmed reverted true positive(s) (>= ${minConfirmedRevertedForBlock}). ` +
           `Proof PRs: ${c.truePositivePrs.join(', ')}.`
-        : `not block-eligible: Wilson95 lower ${c.wilsonLowerBound.toFixed(3)} (need >= ${wilsonLowerThreshold}), ` +
-          `${c.truePositive} confirmed reverted TP (need >= ${minConfirmedRevertedForBlock}) over ` +
-          `${c.firingCount} firing(s) on ${opts.calibrationFile}.`;
+        : `not block-eligible: Wilson95 lower ${wilson.toFixed(3)} (need >= ${wilsonLowerThreshold}), ` +
+          `${truePositive} confirmed reverted TP (need >= ${minConfirmedRevertedForBlock}) over ` +
+          `${firingCount} firing(s) on ${opts.calibrationFile}.`;
     }
     return {
       trigger: c.trigger,
-      firingCount: c.firingCount,
-      truePositive: c.truePositive,
-      falsePositive: c.falsePositive,
-      precision: c.precision,
-      wilsonLowerBound: c.wilsonLowerBound,
+      firingCount,
+      truePositive,
+      falsePositive,
+      precision,
+      wilsonLowerBound: wilson,
       truePositivePrs: c.truePositivePrs,
       tier,
       blockEligible,

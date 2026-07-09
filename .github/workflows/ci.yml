@@ -109,6 +109,15 @@ jobs:
       # floor. README points at this check; keep it wired.
       run: npm run block-policy:check
 
+    - name: Check false-positive regression registry holds
+      if: matrix.node-version == 22
+      # Every diagnosed gate false positive is a permanent registry entry
+      # (benchmarks/real-corpus/fp-registry/). This fails if a gate trigger
+      # would fire again on any entry, i.e. if the refuter that neutralized a
+      # diagnosed FP class has regressed. The ratchet that keeps the jeduden
+      # coverage-relocation false positive dead.
+      run: npm run fp-registry:check
+
     - name: Check ground-truth baseline holds
       if: matrix.node-version == 22
       # The frozen v12 GROUND TRUTH (oracle recall, real-corpus precision,

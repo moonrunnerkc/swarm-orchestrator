@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { calibrateTriggers, type TriggerCalibration } from '../../src/audit/gate/calibrate-triggers';
 import { computeBlockEligibility } from '../../src/audit/gate/block-eligibility';
+import { loadRegistry, liveFalsePositives } from './fp-registry';
 
 interface CalibrationFile {
   generatedAt: string;
@@ -57,11 +58,18 @@ export function loadCalibration(file: string): {
 function main(): void {
   const args = parseArgs(process.argv.slice(2));
   const { calibrations, generatedAt } = loadCalibration(args.calibrationFile);
-  const core = computeBlockEligibility(calibrations, {
-    computedBy: 'scripts/gate/compute-block-eligibility.ts',
-    calibrationFile: args.calibrationFile,
-    calibrationGeneratedAt: generatedAt,
-  });
+  // Still-live FP-registry firings flow into the trigger denominators; a
+  // neutralized entry contributes nothing, so a fixed FP class stops demoting.
+  const registryFps = liveFalsePositives(loadRegistry());
+  const core = computeBlockEligibility(
+    calibrations,
+    {
+      computedBy: 'scripts/gate/compute-block-eligibility.ts',
+      calibrationFile: args.calibrationFile,
+      calibrationGeneratedAt: generatedAt,
+    },
+    registryFps,
+  );
   const output = { generatedAt: new Date().toISOString(), ...core };
   fs.mkdirSync(path.dirname(args.out), { recursive: true });
   fs.writeFileSync(args.out, JSON.stringify(output, null, 2) + '\n');

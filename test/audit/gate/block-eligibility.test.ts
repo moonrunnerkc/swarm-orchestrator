@@ -94,4 +94,43 @@ describe('computeBlockEligibility', () => {
     assert.equal(row.blockEligible, true);
     assert.match(row.reason, /self-certifying/);
   });
+
+  it('auto-demotes a self-certifying trigger whose accrued false positives drop the Wilson bound below the bar', () => {
+    // A self-certifying trigger whose only real-world firings were false
+    // positives (1 TP, 3 FP): Wilson-95 lower is far below 0.90, so it demotes.
+    const noisySelf = calibration('test-tamper-proven', 1, 3);
+    const out = computeBlockEligibility([noisySelf], opts);
+    const row = out.rows[0]!;
+    assert.equal(row.tier, 'self-certifying');
+    assert.equal(row.blockEligible, false);
+    assert.match(row.reason, /auto-demoted to advisory/);
+    assert.equal(out.blockEligibleCount, 0);
+  });
+
+  it('demotes a self-certifying trigger on a still-live FP-registry entry, and keeps it eligible once neutralized', () => {
+    // 0 calibration firings, but one live FP from the registry: falsePositive
+    // becomes 1, Wilson(0,1)=0, so it demotes.
+    const clean = calibration('test-tamper-proven', 0, 0);
+    const demoted = computeBlockEligibility([clean], opts, [
+      { trigger: 'test-tamper-proven', pr: 'acme/live#1' },
+    ]);
+    assert.equal(demoted.rows[0]!.blockEligible, false);
+    assert.equal(demoted.rows[0]!.falsePositive, 1);
+    assert.match(demoted.rows[0]!.reason, /auto-demoted/);
+
+    // With no live registry FP (the refuter neutralized it), the same trigger
+    // stays eligible: a fixed FP class does not keep demoting.
+    const eligible = computeBlockEligibility([clean], opts, []);
+    assert.equal(eligible.rows[0]!.blockEligible, true);
+    assert.equal(eligible.rows[0]!.falsePositive, 0);
+  });
+
+  it('does not demote a self-certifying trigger whose true positives keep Wilson above the bar despite a false positive', () => {
+    // 100 TP, 1 FP: Wilson-95 lower stays above 0.90, so an isolated FP does not
+    // demote a well-calibrated trigger. Demotion is Wilson-driven, not any-FP.
+    const strong = calibration('test-tamper-proven', 100, 1);
+    const out = computeBlockEligibility([strong], opts);
+    assert.equal(out.rows[0]!.blockEligible, true);
+    assert.match(out.rows[0]!.reason, /block-eligible \(self-certifying\)/);
+  });
 });

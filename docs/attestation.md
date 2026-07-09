@@ -60,9 +60,12 @@ Source: `src/audit/attestation/proof-coverage.ts` (the roll-up and public types)
 }
 ```
 
-- `outcome` is one of `finding`, `exonerated`, `abstain`, `signal`. A `signal` is
-  a corroboration run (mutation, coverage) that informs but never becomes a
-  finding on its own.
+- `outcome` is one of `finding`, `exonerated`, `abstain`, `signal`, `disputed`. A
+  `signal` is a corroboration run (mutation, coverage) that informs but never
+  becomes a finding on its own. A `disputed` outcome is a fired-then-disputed
+  proof: every per-instance control went green, but a static refuter (today,
+  coverage relocation) contested the leap from pattern to cheat, so the record is
+  neither a finding nor a clean pass. `summary.disputed` counts them.
 - `abstainClass` (present only on an abstain) is one of `not-provisioned`,
   `control-clause`, `structurally-inapplicable`, `execution-error`. The precise
   reason is always the `verdict` string; `abstainClass` buckets it.
@@ -102,6 +105,13 @@ verdict. The attestation tells a policy what the negative (cheat) side covered.
 - `enginesExecuted < enginesApplicable`: some applicable engine bailed before
   executing.
 - Any `outcome === 'finding'`: a proof reached a finding.
+- Any `outcome === 'disputed'` (equivalently `summary.disputed > 0`): a proof
+  fired with all controls green and a static refuter then contested it (a
+  coverage-moving refactor, the jeduden/mdsmith#232 class). This is
+  human-review-required: the pattern is real but the cheat interpretation is not
+  established, and a cautious policy must never read a disputed record as clean.
+  It is deliberately kept distinct from a finding (do not auto-block on it) and
+  from an abstain (a proof did fire, so it is not "nothing happened").
 
 ## What today's honest policy keys on
 

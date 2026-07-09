@@ -1,0 +1,816 @@
+diff --git a/cmd/mdsmith/e2e_test.go b/cmd/mdsmith/e2e_test.go
+index 224d0ba33..b6e870f54 100644
+--- a/cmd/mdsmith/e2e_test.go
++++ b/cmd/mdsmith/e2e_test.go
+@@ -13,6 +13,7 @@ import (
+ 	"strings"
+ 	"testing"
+ 
++	"github.com/jeduden/mdsmith/internal/githooks"
+ 	"github.com/jeduden/mdsmith/internal/testutil"
+ 	"github.com/stretchr/testify/assert"
+ 	"github.com/stretchr/testify/require"
+@@ -1260,12 +1261,11 @@ func TestE2E_MergeDriver_Install(t *testing.T) {
+ 	if runtime.GOOS != "windows" {
+ 		assert.NotZero(t, info.Mode()&0o111, "hook must be executable")
+ 	}
++	// The exact hook content is verified by the golden-file test in
++	// internal/githooks; here we confirm that install wrote a non-empty file.
+ 	hookData, err := os.ReadFile(hookPath)
+ 	require.NoError(t, err)
+-	assert.Contains(t, string(hookData), "fix .; then",
+-		"hook must invoke mdsmith fix . via the exit-1-tolerant guard; got:\n%s", hookData)
+-	assert.Contains(t, string(hookData), "git diff --name-only -- '*.md' '*.markdown'",
+-		"hook must stage modified markdown files via the glob-based diff")
++	assert.NotEmpty(t, hookData, "installed hook must not be empty")
+ }
+ 
+ func TestE2E_MergeDriver_Install_Idempotent(t *testing.T) {
+@@ -1771,3 +1771,158 @@ func TestQuery_MaxInputSize_InvalidValue(t *testing.T) {
+ 	assert.Equal(t, 2, exitCode, "expected exit code 2 for invalid size")
+ 	assert.Contains(t, stderr, "invalid max-input-size")
+ }
++
++// ── pre-merge-commit hook behavior ──────────────────────────────────────────
++//
++// Each test runs the installed hook script directly (as git would after
++// `git merge --no-commit`) and verifies one branch of the hook logic.
++
++// runHookScript executes .git/hooks/pre-merge-commit in dir and returns
++// its exit code.
++func runHookScript(t *testing.T, dir string) int {
++	t.Helper()
++	hookPath := filepath.Join(gitHooksDir(t, dir), "pre-merge-commit")
++	cmd := exec.Command(hookPath)
++	cmd.Dir = dir
++	if err := cmd.Run(); err != nil {
++		if exitErr, ok := err.(*exec.ExitError); ok {
++			return exitErr.ExitCode()
++		}
++		t.Fatalf("unexpected error running hook: %v", err)
++	}
++	return 0
++}
++
++// gitDiffNames returns the set of files shown by `git diff --name-only`
++// (working tree vs index) in dir — the same query the hook uses to decide
++// what to stage.
++func gitDiffNames(t *testing.T, dir string) string {
++	t.Helper()
++	out, err := exec.Command("git", "-C", dir, "diff", "--name-only").Output()
++	require.NoError(t, err)
++	return strings.TrimSpace(string(out))
++}
++
++// TestE2E_PreMergeCommitHook_ExitZeroNothingStaged covers the branch
++// where mdsmith fix exits 0 and the working tree is already clean: the
++// staging loop runs but `git diff` finds nothing, so nothing is staged
++// and the hook exits 0.
++func TestE2E_PreMergeCommitHook_ExitZeroNothingStaged(t *testing.T) {
++	if runtime.GOOS == "windows" {
++		t.Skip("pre-merge-commit is a POSIX shell script")
++	}
++	dir := t.TempDir()
++	gitInit(t, dir)
++	writeFixture(t, dir, ".mdsmith.yml", "rules: {}\n")
++	writeFixture(t, dir, "README.md", "# Title\n\nHello\n")
++	gitCommit(t, dir, "init")
++
++	_, _, code := runBinaryInDir(t, dir, "", "pre-merge-commit", "install")
++	require.Equal(t, 0, code, "pre-merge-commit install must succeed")
++
++	assert.Equal(t, 0, runHookScript(t, dir),
++		"hook must exit 0 when there is nothing to fix")
++	assert.Empty(t, gitDiffNames(t, dir),
++		"nothing should be staged when the working tree is already clean")
++}
++
++// TestE2E_PreMergeCommitHook_ExitZeroStagesFixed covers the branch
++// where mdsmith fix modifies files and exits 0 (all issues resolved):
++// the staging loop must detect the changed files and stage them.
++func TestE2E_PreMergeCommitHook_ExitZeroStagesFixed(t *testing.T) {
++	if runtime.GOOS == "windows" {
++		t.Skip("pre-merge-commit is a POSIX shell script")
++	}
++	dir := t.TempDir()
++	gitInit(t, dir)
++	writeFixture(t, dir, ".mdsmith.yml", "rules: {}\n")
++	writeFixture(t, dir, "README.md", "# Title\n\nHello\n")
++	gitCommit(t, dir, "init")
++
++	// Simulate post-merge index state: the merged file has trailing spaces.
++	writeFixture(t, dir, "README.md", "# Title\n\nHello   \n")
++	gitInDir(t, dir, "add", "README.md")
++
++	_, _, code := runBinaryInDir(t, dir, "", "pre-merge-commit", "install")
++	require.Equal(t, 0, code)
++
++	assert.Equal(t, 0, runHookScript(t, dir),
++		"hook must exit 0 when all issues are fixed")
++	assert.Empty(t, gitDiffNames(t, dir),
++		"hook must stage the fix so working tree and index match")
++
++	data, err := os.ReadFile(filepath.Join(dir, "README.md"))
++	require.NoError(t, err)
++	assert.Equal(t, "# Title\n\nHello\n", string(data),
++		"mdsmith fix must have removed the trailing spaces")
++}
++
++// TestE2E_PreMergeCommitHook_ExitOneStagesFixed is the regression test
++// for the merge-queue bisect failure: when mdsmith exits 1 (unfixable
++// diagnostics remain), the staging loop must still run and stage the
++// files that fix did manage to clean up.
++func TestE2E_PreMergeCommitHook_ExitOneStagesFixed(t *testing.T) {
++	if runtime.GOOS == "windows" {
++		t.Skip("pre-merge-commit is a POSIX shell script")
++	}
++	dir := t.TempDir()
++	gitInit(t, dir)
++	writeFixture(t, dir, ".mdsmith.yml", "rules: {}\n")
++	writeFixture(t, dir, "README.md", "# Title\n\nHello\n")
++	gitCommit(t, dir, "init")
++
++	// File with a fixable issue (trailing space) AND an unfixable one
++	// (heading contains `!`, caught by a default rule), so fix exits 1.
++	writeFixture(t, dir, "README.md", "# Title!\n\nHello   \n")
++	gitInDir(t, dir, "add", "README.md")
++
++	_, _, code := runBinaryInDir(t, dir, "", "pre-merge-commit", "install")
++	require.Equal(t, 0, code)
++
++	assert.Equal(t, 0, runHookScript(t, dir),
++		"hook must exit 0 even when mdsmith fix exits 1 (unfixed diagnostics remain)")
++	assert.Empty(t, gitDiffNames(t, dir),
++		"hook must stage the fixable changes even when mdsmith fix exits 1")
++
++	data, err := os.ReadFile(filepath.Join(dir, "README.md"))
++	require.NoError(t, err)
++	assert.NotContains(t, string(data), "Hello   ",
++		"trailing spaces must have been removed and staged")
++
++	// Confirm that unfixable diagnostics genuinely remain after the hook ran,
++	// which is what drives `mdsmith fix` to exit 1. If check exits 0 here the
++	// fixture no longer exercises the exit-1 branch and the test is vacuous.
++	_, _, checkCode := runBinaryInDir(t, dir, "", "check", ".")
++	assert.NotEqual(t, 0, checkCode,
++		"mdsmith check must still report diagnostics after the hook: "+
++			"the unfixable issue (heading punctuation) must remain so the "+
++			"test actually exercises the fix-exits-1 branch")
++}
++
++// TestE2E_PreMergeCommitHook_PropagatesHardError covers the branch
++// where mdsmith exits with a code other than 0 or 1 (fatal error). The
++// hook must propagate that code so the merge commit aborts.
++func TestE2E_PreMergeCommitHook_PropagatesHardError(t *testing.T) {
++	if runtime.GOOS == "windows" {
++		t.Skip("pre-merge-commit is a POSIX shell script")
++	}
++	dir := t.TempDir()
++	gitInit(t, dir)
++
++	// Fake mdsmith that exits 2, simulating a fatal error (config parse
++	// failure, crash, etc.).
++	fakeMdsmith := filepath.Join(dir, "fake-mdsmith")
++	require.NoError(t, os.WriteFile(fakeMdsmith,
++		[]byte("#!/bin/sh\nexit 2\n"), 0o755))
++
++	hooksDir := gitHooksDir(t, dir)
++	require.NoError(t, os.MkdirAll(hooksDir, 0o755))
++	require.NoError(t, os.WriteFile(
++		filepath.Join(hooksDir, "pre-merge-commit"),
++		[]byte(githooks.BuildHookScript(fakeMdsmith)),
++		0o755,
++	))
++
++	assert.Equal(t, 2, runHookScript(t, dir),
++		"hook must propagate fatal exit codes (anything other than 0 or 1) to abort the merge")
++}
+diff --git a/cmd/mdsmith/mergedriver_test.go b/cmd/mdsmith/mergedriver_test.go
+index 6f74a0d95..ddf08a1d6 100644
+--- a/cmd/mdsmith/mergedriver_test.go
++++ b/cmd/mdsmith/mergedriver_test.go
+@@ -9,6 +9,7 @@ import (
+ 	"strings"
+ 	"testing"
+ 
++	"github.com/jeduden/mdsmith/internal/githooks"
+ 	"github.com/stretchr/testify/assert"
+ 	"github.com/stretchr/testify/require"
+ )
+@@ -478,14 +479,8 @@ func TestEnsurePreMergeCommitHook_CreatesExecutableHook(t *testing.T) {
+ 
+ 	data, err := os.ReadFile(hookPath)
+ 	require.NoError(t, err)
+-	content := string(data)
+-	assert.Contains(t, content, preMergeCommitHookMarker)
+-	assert.Contains(t, content, "if ! '/usr/local/bin/mdsmith' fix .; then",
+-		"hook must invoke the resolved mdsmith binary inside the exit-1-tolerant guard")
+-	assert.Contains(t, content, `if [ "$status" -ne 1 ]; then`,
+-		"hook must propagate exit codes other than 1 (unfixed diagnostics)")
+-	assert.Contains(t, content, "git diff --name-only -- '*.md' '*.markdown'",
+-		"hook must stage modified markdown files via the glob-based diff")
++	assert.Equal(t, githooks.BuildHookScript("/usr/local/bin/mdsmith"), string(data),
++		"installed hook must match the canonical template")
+ }
+ 
+ func TestEnsurePreMergeCommitHook_OverwritesManagedHook(t *testing.T) {
+@@ -507,8 +502,8 @@ func TestEnsurePreMergeCommitHook_OverwritesManagedHook(t *testing.T) {
+ 	require.NoError(t, err)
+ 	assert.NotContains(t, string(data), "stale content",
+ 		"managed hook must be replaced, not preserved")
+-	assert.Contains(t, string(data), "fix .; then",
+-		"replaced hook must use the glob-based template")
++	assert.Equal(t, githooks.BuildHookScript("/usr/local/bin/mdsmith"), string(data),
++		"replaced hook must match the canonical template")
+ }
+ 
+ func TestEnsurePreMergeCommitHook_SetsExecutableBitOnExistingHook(t *testing.T) {
+diff --git a/cmd/mdsmith/premergecommit_test.go b/cmd/mdsmith/premergecommit_test.go
+index cb3027453..47e9af6f3 100644
+--- a/cmd/mdsmith/premergecommit_test.go
++++ b/cmd/mdsmith/premergecommit_test.go
+@@ -253,8 +253,8 @@ func TestPreMergeCommitInstall_NoArgsInstallsCanonicalHook(t *testing.T) {
+ 	assert.Contains(t, got, "pre-merge-commit hook installed")
+ 	hookData, err := os.ReadFile(filepath.Join(resolveHooksDir(dir), "pre-merge-commit"))
+ 	require.NoError(t, err)
+-	assert.Contains(t, string(hookData), "fix .; then",
+-		"installed hook must use the glob-based template")
++	assert.Equal(t, githooks.BuildHookScript("/usr/local/bin/mdsmith"), string(hookData),
++		"installed hook must match the canonical template")
+ }
+ 
+ func TestPreMergeCommitStatus_UnmanagedHook(t *testing.T) {
+@@ -358,10 +358,8 @@ func TestPreMergeCommitInstall_CreatesHook(t *testing.T) {
+ 
+ 	data, err := os.ReadFile(hookPath)
+ 	require.NoError(t, err)
+-	content := string(data)
+-	assert.Contains(t, content, preMergeCommitHookMarker)
+-	assert.Contains(t, content, "if ! '/usr/local/bin/mdsmith' fix .; then")
+-	assert.Contains(t, content, "git diff --name-only -- '*.md' '*.markdown'")
++	assert.Equal(t, githooks.BuildHookScript("/usr/local/bin/mdsmith"), string(data),
++		"installed hook must match the canonical template")
+ }
+ 
+ func TestPreMergeCommitUninstall_RemovesHook(t *testing.T) {
+diff --git a/internal/githooks/githooks.go b/internal/githooks/githooks.go
+index 62a62a4c9..9868e2f89 100644
+--- a/internal/githooks/githooks.go
++++ b/internal/githooks/githooks.go
+@@ -937,11 +937,18 @@ func BuildHookScript(exe string) string {
+ 		"# marked with merge=mdsmith in .gitattributes.\n" +
+ 		"set -e\n" +
+ 		"cd \"$(git rev-parse --show-toplevel)\"\n" +
+-		"if ! " + shellQuote(exe) + " fix .; then\n" +
+-		"  status=$?\n" +
+-		"  if [ \"$status\" -ne 1 ]; then\n" +
+-		"    exit \"$status\"\n" +
+-		"  fi\n" +
++		"# `set +e` around the fix invocation so we can capture its\n" +
++		"# raw exit code. `if ! cmd; then status=$?; ...` looks\n" +
++		"# tempting, but POSIX `! cmd` returns the logical NOT of\n" +
++		"# cmd's exit status, so `$?` immediately after is 0 when\n" +
++		"# cmd exited 1 — and the `[ \"$status\" -ne 1 ]` guard\n" +
++		"# would then exit before the staging loop ever runs.\n" +
++		"set +e\n" +
++		shellQuote(exe) + " fix .\n" +
++		"status=$?\n" +
++		"set -e\n" +
++		"if [ \"$status\" -ne 0 ] && [ \"$status\" -ne 1 ]; then\n" +
++		"  exit \"$status\"\n" +
+ 		"fi\n" +
+ 		"git diff --name-only -- '*.md' '*.markdown' | " +
+ 		"while IFS= read -r f; do\n" +
+@@ -966,8 +973,10 @@ func BuildHookScript(exe string) string {
+ func HookMatchesCanonical(hook string) bool {
+ 	required := []string{
+ 		`cd "$(git rev-parse --show-toplevel)"`,
+-		"fix .; then",
+-		`if [ "$status" -ne 1 ]; then`,
++		"set +e",
++		" fix .",
++		"status=$?",
++		`if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then`,
+ 		"git diff --name-only -- '*.md' '*.markdown' |",
+ 		`while IFS= read -r f; do`,
+ 	}
+diff --git a/internal/githooks/githooks_test.go b/internal/githooks/githooks_test.go
+index 1f88e6e4b..affc9fd46 100644
+--- a/internal/githooks/githooks_test.go
++++ b/internal/githooks/githooks_test.go
+@@ -942,21 +942,19 @@ func TestGlobsEqual(t *testing.T) {
+ 	))
+ }
+ 
+-func TestBuildHookScript_EmbedsBinaryAndUsesGlobs(t *testing.T) {
++func TestBuildHookScript_GoldenFile(t *testing.T) {
+ 	got := BuildHookScript("/usr/local/bin/mdsmith")
+-	assert.Contains(t, got, "#!/bin/sh")
+-	assert.Contains(t, got, PreMergeCommitMarker)
+-	assert.Contains(t, got, "cd \"$(git rev-parse --show-toplevel)\"")
+-	assert.Contains(t, got, "if ! '/usr/local/bin/mdsmith' fix .; then")
+-	assert.Contains(t, got, `if [ "$status" -ne 1 ]; then`,
+-		"hook must propagate exit codes other than 1 (unfixed diagnostics)")
+-	assert.Contains(t, got, "git diff --name-only -- '*.md' '*.markdown' |")
+-}
+-
+-func TestBuildHookScript_QuotesBinaryWithEmbeddedQuote(t *testing.T) {
+-	got := BuildHookScript("/path/it's/mdsmith")
+-	assert.Contains(t, got, `if ! '/path/it'\''s/mdsmith' fix .; then`,
+-		"single quote in path must be encoded as `'\\''` so the shell sees the literal path")
++	golden, err := os.ReadFile(filepath.Join("testdata", "pre-merge-commit.golden.sh"))
++	require.NoError(t, err, "missing golden file; regenerate with UPDATE_GOLDEN=1")
++	if os.Getenv("UPDATE_GOLDEN") == "1" {
++		require.NoError(t, os.WriteFile(
++			filepath.Join("testdata", "pre-merge-commit.golden.sh"),
++			[]byte(got), 0o644))
++		return
++	}
++	assert.Equal(t, string(golden), got,
++		"BuildHookScript output differs from testdata/pre-merge-commit.golden.sh; "+
++			"run tests with UPDATE_GOLDEN=1 to regenerate")
+ }
+ 
+ func TestShellQuote_RoundTrip(t *testing.T) {
+@@ -970,50 +968,18 @@ func TestHookMatchesCanonical_AcceptsCanonicalScript(t *testing.T) {
+ 	assert.True(t, HookMatchesCanonical(hook))
+ }
+ 
+-func TestHookMatchesCanonical_RejectsMissingChdir(t *testing.T) {
+-	// Drop the `cd "$(git rev-parse ...)"` line.
+-	hook := "#!/bin/sh\n" + PreMergeCommitMarker + "\n" +
+-		"set -e\n" +
+-		"if ! '/usr/local/bin/mdsmith' fix .; then\n" +
+-		"  status=$?\n" +
+-		"  if [ \"$status\" -ne 1 ]; then exit \"$status\"; fi\n" +
+-		"fi\n" +
+-		"git diff --name-only -- '*.md' '*.markdown' |\n"
+-	assert.False(t, HookMatchesCanonical(hook))
+-}
+-
+-func TestHookMatchesCanonical_RejectsLegacyFixCommand(t *testing.T) {
+-	// Old per-file `fix --` style instead of glob-based `fix .`.
+-	hook := "#!/bin/sh\n" + PreMergeCommitMarker + "\n" +
+-		"set -e\n" +
+-		"cd \"$(git rev-parse --show-toplevel)\"\n" +
+-		"'/usr/local/bin/mdsmith' fix -- 'PLAN.md'\n" +
+-		"git diff --name-only -- '*.md' '*.markdown' |\n"
+-	assert.False(t, HookMatchesCanonical(hook))
+-}
+-
+-func TestHookMatchesCanonical_RejectsLegacyOrTrueGuard(t *testing.T) {
+-	// Old `fix . || true` form swallowed every non-zero exit. The new
+-	// canonical template uses an `if ! ... fix .; then` block so
+-	// genuine errors propagate. The drift check must reject the
+-	// permissive legacy form.
+-	hook := "#!/bin/sh\n" + PreMergeCommitMarker + "\n" +
+-		"set -e\n" +
+-		"cd \"$(git rev-parse --show-toplevel)\"\n" +
+-		"'/usr/local/bin/mdsmith' fix . || true\n" +
+-		"git diff --name-only -- '*.md' '*.markdown' |\n"
+-	assert.False(t, HookMatchesCanonical(hook))
+-}
+-
+-func TestHookMatchesCanonical_RejectsMissingStagingLine(t *testing.T) {
+-	hook := "#!/bin/sh\n" + PreMergeCommitMarker + "\n" +
+-		"set -e\n" +
+-		"cd \"$(git rev-parse --show-toplevel)\"\n" +
+-		"if ! '/usr/local/bin/mdsmith' fix .; then\n" +
+-		"  status=$?\n" +
+-		"  if [ \"$status\" -ne 1 ]; then exit \"$status\"; fi\n" +
+-		"fi\n"
+-	assert.False(t, HookMatchesCanonical(hook))
++func TestHookMatchesCanonical_RejectsNonCanonicalHooks(t *testing.T) {
++	entries, err := os.ReadDir(filepath.Join("testdata", "hooks", "bad"))
++	require.NoError(t, err, "testdata/hooks/bad directory must exist")
++	require.NotEmpty(t, entries, "testdata/hooks/bad must contain at least one golden file")
++	for _, entry := range entries {
++		t.Run(entry.Name(), func(t *testing.T) {
++			data, err := os.ReadFile(filepath.Join("testdata", "hooks", "bad", entry.Name()))
++			require.NoError(t, err)
++			assert.False(t, HookMatchesCanonical(string(data)),
++				"bad hook %s must be flagged as drifted", entry.Name())
++		})
++	}
+ }
+ 
+ func TestIsRepresentableGitattributesPattern(t *testing.T) {
+@@ -1051,46 +1017,6 @@ func TestGlobsFromConfig_DropsUnrepresentablePatterns(t *testing.T) {
+ 		"dropped patterns are returned in input order so callers can warn")
+ }
+ 
+-func TestHookMatchesCanonical_RejectsMissingStagingPipeline(t *testing.T) {
+-	hook := "#!/bin/sh\n" + PreMergeCommitMarker + "\n" +
+-		"set -e\n" +
+-		"cd \"$(git rev-parse --show-toplevel)\"\n" +
+-		"if ! '/usr/local/bin/mdsmith' fix .; then\n" +
+-		"  status=$?\n" +
+-		"  if [ \"$status\" -ne 1 ]; then exit \"$status\"; fi\n" +
+-		"fi\n" +
+-		// Missing the `git diff --name-only ... |` pipeline header.
+-		"while IFS= read -r f; do git add -- \"$f\"; done\n"
+-	assert.False(t, HookMatchesCanonical(hook))
+-}
+-
+-func TestHookMatchesCanonical_RejectsMissingReadLoop(t *testing.T) {
+-	hook := "#!/bin/sh\n" + PreMergeCommitMarker + "\n" +
+-		"set -e\n" +
+-		"cd \"$(git rev-parse --show-toplevel)\"\n" +
+-		"if ! '/usr/local/bin/mdsmith' fix .; then\n" +
+-		"  status=$?\n" +
+-		"  if [ \"$status\" -ne 1 ]; then exit \"$status\"; fi\n" +
+-		"fi\n" +
+-		"git diff --name-only -- '*.md' '*.markdown' | xargs git add --\n"
+-	assert.False(t, HookMatchesCanonical(hook),
+-		"a non-canonical staging pipeline (e.g. xargs without the read loop) must be flagged")
+-}
+-
+-func TestHookMatchesCanonical_RejectsMissingExitGuard(t *testing.T) {
+-	// fix .; then is present but the `[ "$status" -ne 1 ]` guard
+-	// is missing, meaning genuine errors would be swallowed.
+-	hook := "#!/bin/sh\n" + PreMergeCommitMarker + "\n" +
+-		"set -e\n" +
+-		"cd \"$(git rev-parse --show-toplevel)\"\n" +
+-		"if ! '/usr/local/bin/mdsmith' fix .; then\n" +
+-		"  true\n" +
+-		"fi\n" +
+-		"git diff --name-only -- '*.md' '*.markdown' | while IFS= read -r f; do\n" +
+-		"  git add -- \"$f\"\ndone\n"
+-	assert.False(t, HookMatchesCanonical(hook))
+-}
+-
+ func TestExtractGlobs_SkipsSingleFieldLines(t *testing.T) {
+ 	// A managed-block line with only a pattern (no attribute) is
+ 	// not a valid merge=mdsmith or -merge assignment; ExtractGlobs
+@@ -1312,21 +1238,6 @@ func TestWriteGitattributes_RejectsDirectory(t *testing.T) {
+ 	assert.Contains(t, err.Error(), "not a regular file")
+ }
+ 
+-func TestHookMatchesCanonical_RejectsCanonicalLinesInsideComments(t *testing.T) {
+-	// A drifted hook that mentions the canonical commands inside
+-	// shell comments must not be treated as canonical. Only
+-	// non-comment lines satisfy the required-fragment checks.
+-	hook := "#!/bin/sh\n" + PreMergeCommitMarker + "\n" +
+-		"# example: cd \"$(git rev-parse --show-toplevel)\"\n" +
+-		"# example: fix .; then\n" +
+-		"# example: if [ \"$status\" -ne 1 ]; then\n" +
+-		"# example: git diff --name-only -- '*.md' '*.markdown' |\n" +
+-		"# example: while IFS= read -r f; do\n" +
+-		"echo placeholder\n"
+-	assert.False(t, HookMatchesCanonical(hook),
+-		"required commands sitting in comments must not satisfy the drift check")
+-}
+-
+ func TestHookHasNonCommentLineContaining_IgnoresBlankAndComments(t *testing.T) {
+ 	got := hookHasNonCommentLineContaining(
+ 		"#!/bin/sh\n# example: needle\n\n  needle in real line\n",
+diff --git a/internal/githooks/githooks_unix_test.go b/internal/githooks/githooks_unix_test.go
+index 8e49b75fc..0e621dacb 100644
+--- a/internal/githooks/githooks_unix_test.go
++++ b/internal/githooks/githooks_unix_test.go
+@@ -4,7 +4,9 @@ package githooks
+ 
+ import (
+ 	"os"
++	"os/exec"
+ 	"path/filepath"
++	"strings"
+ 	"testing"
+ 
+ 	"github.com/stretchr/testify/assert"
+@@ -73,3 +75,137 @@ func TestWriteGitattributes_PreservesExistingFileMode(t *testing.T) {
+ 	assert.Equal(t, os.FileMode(0o600), info.Mode().Perm(),
+ 		"WriteGitattributes must not change the existing file's permission bits")
+ }
++
++// TestBuildHookScript_StagesFixesWhenUnfixedRemain reproduces the
++// merge-queue scenario where `mdsmith fix` modifies files in the
++// working tree but also exits with code 1 because some diagnostics
++// are not auto-fixable. The hook must still stage the modified
++// files so the merge commit captures them.
++//
++// Regression for the case observed on
++// merge-queue/batch-bisect-224-1777817057 (SHA b1ade018) where the
++// catalog regeneration reached the working tree but never made it
++// into the merge commit.
++func TestBuildHookScript_StagesFixesWhenUnfixedRemain(t *testing.T) {
++	if _, err := exec.LookPath("git"); err != nil {
++		t.Skip("git not available")
++	}
++
++	dir := t.TempDir()
++
++	// Stand up a fake mdsmith that:
++	//   1. modifies a tracked file in the working tree (simulating
++	//      mdsmith fix regenerating a catalog), and
++	//   2. exits 1 to signal "diagnostics remain unfixed".
++	fakeMdsmith := filepath.Join(dir, "fake-mdsmith")
++	target := filepath.Join(dir, "PLAN.md")
++	script := "#!/bin/sh\n" +
++		"echo 'fixed by fake mdsmith' > " + shellQuote(target) + "\n" +
++		"exit 1\n"
++	require.NoError(t, os.WriteFile(fakeMdsmith, []byte(script), 0o755))
++
++	// Initialise a git repo with one tracked file and a clean index.
++	runGit := func(args ...string) {
++		t.Helper()
++		cmd := exec.Command("git", args...)
++		cmd.Dir = dir
++		out, err := cmd.CombinedOutput()
++		require.NoErrorf(t, err, "git %s: %s", strings.Join(args, " "), out)
++	}
++	runGit("init", "-q", "-b", "main")
++	runGit("config", "user.email", "test@test")
++	runGit("config", "user.name", "test")
++	runGit("config", "commit.gpgsign", "false")
++	runGit("config", "tag.gpgsign", "false")
++	require.NoError(t, os.WriteFile(target, []byte("original\n"), 0o644))
++	runGit("add", "PLAN.md")
++	runGit("commit", "-q", "-m", "init")
++
++	// Install the canonical hook.
++	hooksDir := filepath.Join(dir, ".git", "hooks")
++	require.NoError(t, os.MkdirAll(hooksDir, 0o755))
++	hookPath := filepath.Join(hooksDir, "pre-merge-commit")
++	require.NoError(t, os.WriteFile(
++		hookPath, []byte(BuildHookScript(fakeMdsmith)), 0o755))
++
++	// Run the hook directly. This simulates merge-queue-action
++	// invoking it after `git merge --no-commit`.
++	cmd := exec.Command(hookPath)
++	cmd.Dir = dir
++	out, err := cmd.CombinedOutput()
++	require.NoErrorf(t, err, "hook should not fail when fix exits 1: %s", out)
++
++	// The fake mdsmith modified PLAN.md. The hook must stage that
++	// change so the subsequent merge commit captures it. If the
++	// hook exits early (e.g. because `! cmd` clobbers the exit
++	// code that the script tries to inspect via $?), the working
++	// tree change is left unstaged and the bug we hit on the
++	// merge queue's bisect branch reproduces.
++	staged := exec.Command("git", "diff", "--cached", "--name-only")
++	staged.Dir = dir
++	stagedOut, err := staged.Output()
++	require.NoError(t, err)
++	assert.Contains(t, string(stagedOut), "PLAN.md",
++		"hook must stage files modified by `mdsmith fix .` even when "+
++			"fix exits 1; got staged=%q", string(stagedOut))
++}
++
++// TestHookScript_MissingSetPlusE_FailsToStageOnExitOne proves that a hook
++// without the `set +e` guard around the fix invocation does NOT stage files
++// when `mdsmith fix` exits 1. This is the original merge-queue bug: under
++// `set -e`, a non-zero exit aborts the shell before the staging loop runs.
++// The test documents the defect so drift detection (HookMatchesCanonical) is
++// shown to be meaningful — flagging the bad hook prevents silent data loss.
++func TestHookScript_MissingSetPlusE_FailsToStageOnExitOne(t *testing.T) {
++	if _, err := exec.LookPath("git"); err != nil {
++		t.Skip("git not available")
++	}
++
++	dir := t.TempDir()
++
++	fakeMdsmith := filepath.Join(dir, "fake-mdsmith")
++	target := filepath.Join(dir, "PLAN.md")
++	script := "#!/bin/sh\n" +
++		"echo 'fixed by fake mdsmith' > " + shellQuote(target) + "\n" +
++		"exit 1\n"
++	require.NoError(t, os.WriteFile(fakeMdsmith, []byte(script), 0o755))
++
++	runGit := func(args ...string) {
++		t.Helper()
++		cmd := exec.Command("git", args...)
++		cmd.Dir = dir
++		out, err := cmd.CombinedOutput()
++		require.NoErrorf(t, err, "git %s: %s", strings.Join(args, " "), out)
++	}
++	runGit("init", "-q", "-b", "main")
++	runGit("config", "user.email", "test@test")
++	runGit("config", "user.name", "test")
++	runGit("config", "commit.gpgsign", "false")
++	runGit("config", "tag.gpgsign", "false")
++	require.NoError(t, os.WriteFile(target, []byte("original\n"), 0o644))
++	runGit("add", "PLAN.md")
++	runGit("commit", "-q", "-m", "init")
++
++	// Read the bad hook golden file and substitute the real fake-mdsmith path.
++	golden, err := os.ReadFile(filepath.Join("testdata", "hooks", "bad", "missing-set-plus-e.sh"))
++	require.NoError(t, err)
++	hookScript := strings.ReplaceAll(string(golden), "/usr/local/bin/mdsmith", fakeMdsmith)
++
++	hooksDir := filepath.Join(dir, ".git", "hooks")
++	require.NoError(t, os.MkdirAll(hooksDir, 0o755))
++	hookPath := filepath.Join(hooksDir, "pre-merge-commit")
++	require.NoError(t, os.WriteFile(hookPath, []byte(hookScript), 0o755))
++
++	cmd := exec.Command(hookPath)
++	cmd.Dir = dir
++	// The hook exits non-zero because fix exits 1 and set -e propagates it.
++	_ = cmd.Run()
++
++	staged := exec.Command("git", "diff", "--cached", "--name-only")
++	staged.Dir = dir
++	stagedOut, err := staged.Output()
++	require.NoError(t, err)
++	assert.NotContains(t, string(stagedOut), "PLAN.md",
++		"hook without set +e must NOT stage files when fix exits 1 — "+
++			"this is the original merge-queue bug; got staged=%q", string(stagedOut))
++}
+diff --git a/internal/githooks/testdata/hooks/bad/canonical-in-comments.sh b/internal/githooks/testdata/hooks/bad/canonical-in-comments.sh
+new file mode 100644
+index 000000000..259ab8d22
+--- /dev/null
++++ b/internal/githooks/testdata/hooks/bad/canonical-in-comments.sh
+@@ -0,0 +1,10 @@
++#!/bin/sh
++# mdsmith merge-driver pre-merge-commit hook
++# example: cd "$(git rev-parse --show-toplevel)"
++# example: set +e
++# example: '/usr/local/bin/mdsmith' fix .
++# example: status=$?
++# example: if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
++# example: git diff --name-only -- '*.md' '*.markdown' |
++# example: while IFS= read -r f; do
++echo placeholder
+diff --git a/internal/githooks/testdata/hooks/bad/legacy-fix-command.sh b/internal/githooks/testdata/hooks/bad/legacy-fix-command.sh
+new file mode 100644
+index 000000000..f67382935
+--- /dev/null
++++ b/internal/githooks/testdata/hooks/bad/legacy-fix-command.sh
+@@ -0,0 +1,10 @@
++#!/bin/sh
++# mdsmith merge-driver pre-merge-commit hook
++set -e
++cd "$(git rev-parse --show-toplevel)"
++'/usr/local/bin/mdsmith' fix -- 'PLAN.md'
++git diff --name-only -- '*.md' '*.markdown' | while IFS= read -r f; do
++  if [ -n "$f" ]; then
++    git add -- "$f"
++  fi
++done
+diff --git a/internal/githooks/testdata/hooks/bad/legacy-or-true.sh b/internal/githooks/testdata/hooks/bad/legacy-or-true.sh
+new file mode 100644
+index 000000000..f25f011fd
+--- /dev/null
++++ b/internal/githooks/testdata/hooks/bad/legacy-or-true.sh
+@@ -0,0 +1,10 @@
++#!/bin/sh
++# mdsmith merge-driver pre-merge-commit hook
++set -e
++cd "$(git rev-parse --show-toplevel)"
++'/usr/local/bin/mdsmith' fix . || true
++git diff --name-only -- '*.md' '*.markdown' | while IFS= read -r f; do
++  if [ -n "$f" ]; then
++    git add -- "$f"
++  fi
++done
+diff --git a/internal/githooks/testdata/hooks/bad/missing-chdir.sh b/internal/githooks/testdata/hooks/bad/missing-chdir.sh
+new file mode 100644
+index 000000000..969d1e520
+--- /dev/null
++++ b/internal/githooks/testdata/hooks/bad/missing-chdir.sh
+@@ -0,0 +1,15 @@
++#!/bin/sh
++# mdsmith merge-driver pre-merge-commit hook
++set -e
++set +e
++'/usr/local/bin/mdsmith' fix .
++status=$?
++set -e
++if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
++  exit "$status"
++fi
++git diff --name-only -- '*.md' '*.markdown' | while IFS= read -r f; do
++  if [ -n "$f" ]; then
++    git add -- "$f"
++  fi
++done
+diff --git a/internal/githooks/testdata/hooks/bad/missing-exit-guard.sh b/internal/githooks/testdata/hooks/bad/missing-exit-guard.sh
+new file mode 100644
+index 000000000..8d96b2ba0
+--- /dev/null
++++ b/internal/githooks/testdata/hooks/bad/missing-exit-guard.sh
+@@ -0,0 +1,13 @@
++#!/bin/sh
++# mdsmith merge-driver pre-merge-commit hook
++set -e
++cd "$(git rev-parse --show-toplevel)"
++set +e
++'/usr/local/bin/mdsmith' fix .
++status=$?
++set -e
++git diff --name-only -- '*.md' '*.markdown' | while IFS= read -r f; do
++  if [ -n "$f" ]; then
++    git add -- "$f"
++  fi
++done
+diff --git a/internal/githooks/testdata/hooks/bad/missing-read-loop.sh b/internal/githooks/testdata/hooks/bad/missing-read-loop.sh
+new file mode 100644
+index 000000000..b8a39394e
+--- /dev/null
++++ b/internal/githooks/testdata/hooks/bad/missing-read-loop.sh
+@@ -0,0 +1,12 @@
++#!/bin/sh
++# mdsmith merge-driver pre-merge-commit hook
++set -e
++cd "$(git rev-parse --show-toplevel)"
++set +e
++'/usr/local/bin/mdsmith' fix .
++status=$?
++set -e
++if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
++  exit "$status"
++fi
++git diff --name-only -- '*.md' '*.markdown' | xargs git add --
+diff --git a/internal/githooks/testdata/hooks/bad/missing-set-plus-e.sh b/internal/githooks/testdata/hooks/bad/missing-set-plus-e.sh
+new file mode 100644
+index 000000000..5f814545f
+--- /dev/null
++++ b/internal/githooks/testdata/hooks/bad/missing-set-plus-e.sh
+@@ -0,0 +1,14 @@
++#!/bin/sh
++# mdsmith merge-driver pre-merge-commit hook
++set -e
++cd "$(git rev-parse --show-toplevel)"
++'/usr/local/bin/mdsmith' fix .
++status=$?
++if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
++  exit "$status"
++fi
++git diff --name-only -- '*.md' '*.markdown' | while IFS= read -r f; do
++  if [ -n "$f" ]; then
++    git add -- "$f"
++  fi
++done
+diff --git a/internal/githooks/testdata/hooks/bad/missing-staging-line.sh b/internal/githooks/testdata/hooks/bad/missing-staging-line.sh
+new file mode 100644
+index 000000000..19024a82d
+--- /dev/null
++++ b/internal/githooks/testdata/hooks/bad/missing-staging-line.sh
+@@ -0,0 +1,11 @@
++#!/bin/sh
++# mdsmith merge-driver pre-merge-commit hook
++set -e
++cd "$(git rev-parse --show-toplevel)"
++set +e
++'/usr/local/bin/mdsmith' fix .
++status=$?
++set -e
++if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
++  exit "$status"
++fi
+diff --git a/internal/githooks/testdata/hooks/bad/missing-staging-pipeline.sh b/internal/githooks/testdata/hooks/bad/missing-staging-pipeline.sh
+new file mode 100644
+index 000000000..4e922116b
+--- /dev/null
++++ b/internal/githooks/testdata/hooks/bad/missing-staging-pipeline.sh
+@@ -0,0 +1,16 @@
++#!/bin/sh
++# mdsmith merge-driver pre-merge-commit hook
++set -e
++cd "$(git rev-parse --show-toplevel)"
++set +e
++'/usr/local/bin/mdsmith' fix .
++status=$?
++set -e
++if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
++  exit "$status"
++fi
++while IFS= read -r f; do
++  if [ -n "$f" ]; then
++    git add -- "$f"
++  fi
++done
+diff --git a/internal/githooks/testdata/pre-merge-commit.golden.sh b/internal/githooks/testdata/pre-merge-commit.golden.sh
+new file mode 100644
+index 000000000..fd1a92ff5
+--- /dev/null
++++ b/internal/githooks/testdata/pre-merge-commit.golden.sh
+@@ -0,0 +1,27 @@
++#!/bin/sh
++# mdsmith merge-driver pre-merge-commit hook
++# Re-runs mdsmith fix once git has resolved every per-file
++# merge, so generated sections reflect the final merged
++# state of every source file. mdsmith fix walks the worktree
++# respecting .mdsmith.yml ignore patterns — the same set
++# marked with merge=mdsmith in .gitattributes.
++set -e
++cd "$(git rev-parse --show-toplevel)"
++# `set +e` around the fix invocation so we can capture its
++# raw exit code. `if ! cmd; then status=$?; ...` looks
++# tempting, but POSIX `! cmd` returns the logical NOT of
++# cmd's exit status, so `$?` immediately after is 0 when
++# cmd exited 1 — and the `[ "$status" -ne 1 ]` guard
++# would then exit before the staging loop ever runs.
++set +e
++'/usr/local/bin/mdsmith' fix .
++status=$?
++set -e
++if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
++  exit "$status"
++fi
++git diff --name-only -- '*.md' '*.markdown' | while IFS= read -r f; do
++  if [ -n "$f" ]; then
++    git add -- "$f"
++  fi
++done

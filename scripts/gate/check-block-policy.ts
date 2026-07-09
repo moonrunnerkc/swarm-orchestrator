@@ -16,6 +16,7 @@ import {
 } from '../../src/audit/gate/block-eligibility';
 import { isSelfCertifying } from '../../src/audit/gate/self-certifying';
 import { loadCalibration } from './compute-block-eligibility';
+import { loadRegistry, liveFalsePositives } from './fp-registry';
 
 interface BlockEligibilityFile extends BlockEligibilityCore {
   generatedAt: string;
@@ -98,13 +99,18 @@ function main(): void {
   }
 
   const { calibrations, generatedAt } = loadCalibration(committed.calibrationFile);
-  const fresh = computeBlockEligibility(calibrations, {
-    computedBy: committed.computedBy,
-    calibrationFile: committed.calibrationFile,
-    calibrationGeneratedAt: generatedAt,
-    wilsonLowerThreshold: committed.wilsonLowerThreshold,
-    minConfirmedRevertedForBlock: committed.minConfirmedRevertedForBlock,
-  });
+  const registryFps = liveFalsePositives(loadRegistry());
+  const fresh = computeBlockEligibility(
+    calibrations,
+    {
+      computedBy: committed.computedBy,
+      calibrationFile: committed.calibrationFile,
+      calibrationGeneratedAt: generatedAt,
+      wilsonLowerThreshold: committed.wilsonLowerThreshold,
+      minConfirmedRevertedForBlock: committed.minConfirmedRevertedForBlock,
+    },
+    registryFps,
+  );
   if (JSON.stringify(comparable(committed)) !== JSON.stringify(fresh)) {
     fail(
       `block-eligibility.json is stale: it does not match a fresh recompute from ` +
