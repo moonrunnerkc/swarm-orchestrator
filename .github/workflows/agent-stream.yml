@@ -1,0 +1,83 @@
+name: Agent-PR stream hunt
+
+# Forward arm of the capability hunt (benchmarks/real-prs/capability-hunt/
+# PREREGISTRATION.md). Nightly, it surfaces FRESH merged agent-authored PRs with
+# the shipped attribution fingerprinter (fetch-agent-prs, not complaint-filtered),
+# then audits a bounded batch through the shipped, deterministic `swarm audit --pr`
+# and records each PR's full funnel. No --enable-llm-judge, so ANTHROPIC_API_KEY is
+# never needed and Anthropic spend is USD 0.00; the audits run on GitHub core API +
+# clones only.
+#
+# On any proven gate trigger the runner HALTS the batch (exit 3) for the
+# false-positive protocol, and the funnels are uploaded for a maintainer to review.
+# Same review-then-fold, never-push contract as complaint-mine.yml and
+# backward-mine.yml: main is a protected ref, nothing here folds or claims. A
+# proven finding is a milestone CANDIDATE only after a maintainer confirms it
+# against the four-check FP protocol.
+
+on:
+  schedule:
+    - cron: '0 5 * * *' # 05:00 UTC nightly, offset from complaint-mine (04:30)
+  workflow_dispatch:
+    inputs:
+      months:
+        description: 'How many months back to surface merged agent PRs'
+        default: '12'
+      perVendor:
+        description: 'Max PRs to keep per vendor after fingerprinter confirmation'
+        default: '10'
+      batchSize:
+        description: 'Max PRs to audit this run'
+        default: '15'
+      timeoutMs:
+        description: 'Per-audit wall-clock cap (ms)'
+        default: '200000'
+
+permissions:
+  contents: read
+
+jobs:
+  stream:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: 'stable'
+      - run: npm ci
+      - run: npm run build
+      - run: pip install pytest
+      - name: Surface fresh merged agent-authored PRs
+        # Secrets reach the step only through the env block, never via with: or args.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node dist/scripts/real-prs/fetch-agent-prs.js \
+            --months "${{ github.event.inputs.months || '12' }}" \
+            --per-vendor "${{ github.event.inputs.perVendor || '10' }}"
+      - name: Audit a bounded batch through the deterministic gate
+        # No ANTHROPIC_API_KEY: the audits are deterministic (no judge), so the
+        # forward stream spends USD 0.00 on models. Exit 3 = a proven gate trigger
+        # halted the batch for the FP protocol; that surfaces the finding, so the
+        # upload still runs (if: always below).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node dist/scripts/real-prs/capability-hunt-backfill.js \
+            --batch-size "${{ github.event.inputs.batchSize || '15' }}" \
+            --timeout-ms "${{ github.event.inputs.timeoutMs || '200000' }}" \
+            --batch-id "stream-${{ github.run_id }}"
+      - name: Upload the stream funnels and metrics for review
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: agent-stream-funnels
+          path: benchmarks/real-prs/capability-hunt/
+          if-no-files-found: warn
