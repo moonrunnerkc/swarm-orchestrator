@@ -136,6 +136,7 @@ export async function proveOne(pr: HuntPr, opts: ProveOptions): Promise<ProofRec
       corroborateStructural: false,
       claimDifferential: false,
       errorSwallow: false,
+      claimBinding: false,
       maxWallClockPerPrMs: opts.egWallClockMs,
     };
     const outcome = await runExecutionGrounded({

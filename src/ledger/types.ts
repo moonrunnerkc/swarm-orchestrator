@@ -454,6 +454,24 @@ export interface LedgerEntryPayloadMap {
       neutralizationApplied: boolean | null;
     };
   };
+  // Tier C claim-binding proof record: at most one per --pr audit (one primary
+  // claim), every verdict included so the ledger carries the full funnel. `verdict`
+  // is the binder's union member (claim-falsified-bound / claim-delivered / an
+  // abstain / an execution error). `boundTestFile` and `bindingScore`/`signals`
+  // record the deterministic binding; `passCapabilityKind` is why the pass-
+  // capability clause did or did not hold (in production, `none`: no green ref).
+  // Advisory: a claim-falsified-bound is surfaced, never gated.
+  'pr-audit-claim-binding': {
+    verdict: string;
+    reason: string;
+    boundTestFile: string;
+    bindingScore: number;
+    signals: string[];
+    identity: string;
+    baseRuns: number;
+    headRuns: number;
+    passCapabilityKind: string;
+  };
   // A verifiable-evidence block-trigger candidate: a self-certifying
   // runtime fact (a falsified issue repro, a structural finding a surviving
   // mutant or coverage gap corroborates on the same line, a failed declared
@@ -566,5 +584,6 @@ export type PrAuditDeadBranchRestorationEntry =
   LedgerEntry<'pr-audit-dead-branch-restoration'>;
 export type PrAuditErrorSwallowRestorationEntry =
   LedgerEntry<'pr-audit-error-swallow-restoration'>;
+export type PrAuditClaimBindingEntry = LedgerEntry<'pr-audit-claim-binding'>;
 export type PrAuditBlockTriggerEntry = LedgerEntry<'pr-audit-block-trigger'>;
 export type PrAuditWorkVerifiedEntry = LedgerEntry<'pr-audit-work-verified'>;

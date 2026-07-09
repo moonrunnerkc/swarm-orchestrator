@@ -83,6 +83,13 @@ export interface ExecutionGroundedConfig {
    *  graceful-degradation a test relies on, so it never gates. On by default when
    *  the layer is enabled (like the other deterministic engines). */
   errorSwallow: boolean;
+  /** Run the Tier C claim-to-existing-test binding proof: when the PR's claim
+   *  references behaviour an EXISTING repo test already covers, bind to that test
+   *  and run it on base and head. Deterministic-first (an arbiter may rank
+   *  candidate bindings but never creates one); abstains in production without a
+   *  green-history checkout, so it makes 0 model calls on a real `--pr` audit.
+   *  Advisory-only (`claim-falsified-bound`); never gates. Off by default. */
+  claimBinding: boolean;
 }
 
 export interface AuditConfig {
@@ -108,6 +115,7 @@ const DEFAULT_EXECUTION_GROUNDED: ExecutionGroundedConfig = {
   corroborateStructural: false,
   claimDifferential: false,
   errorSwallow: true,
+  claimBinding: false,
 };
 
 const EMPTY_CONFIG: AuditConfig = {
@@ -155,7 +163,7 @@ function parseExecutionGrounded(text: string): ExecutionGroundedConfig {
     if (!inBlock) continue;
     if (trimmed.length > 0 && !/^\s/.test(rawLine)) break;
     const boolMatch = trimmed.match(
-      /^(enabled|mutation|issueRepro|coverage|corroborateStructural|claimDifferential|errorSwallow)\s*:\s*(true|false)\s*$/i,
+      /^(enabled|mutation|issueRepro|coverage|corroborateStructural|claimDifferential|errorSwallow|claimBinding)\s*:\s*(true|false)\s*$/i,
     );
     if (boolMatch && boolMatch[1] !== undefined && boolMatch[2] !== undefined) {
       cfg[
@@ -167,6 +175,7 @@ function parseExecutionGrounded(text: string): ExecutionGroundedConfig {
           | 'corroborateStructural'
           | 'claimDifferential'
           | 'errorSwallow'
+          | 'claimBinding'
       ] = boolMatch[2].toLowerCase() === 'true';
       continue;
     }

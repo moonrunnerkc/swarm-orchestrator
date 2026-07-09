@@ -240,6 +240,7 @@ function upgradedConfig(egWallClockMs: number): ExecutionGroundedConfig {
     corroborateStructural: false,
     claimDifferential: true,
     errorSwallow: false,
+    claimBinding: false,
     maxWallClockPerPrMs: egWallClockMs,
   };
 }

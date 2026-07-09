@@ -55,6 +55,8 @@ import {
   type RestorationProofRecord,
 } from './test-restoration';
 import { runClaimDifferential, type ClaimDifferentialResult } from './claim-differential';
+import { runClaimBinding, type ClaimBindingResult } from './claim-binding';
+import { gatherExistingTests } from './claim-binding-candidates';
 import { createClaimLlm, type ClaimLlm } from './claim-llm';
 import { runMockRestoration, type MockRestorationProofRecord } from './mock-restoration';
 import {
@@ -359,6 +361,13 @@ export interface ExecutionGroundedOutcome {
    *  carries no claim. Advisory-only; a `claim-falsified-synthesized` verdict
    *  raises a warn finding but never gates. */
   claimDifferentials: ClaimDifferentialResult[];
+  /** The Tier C claim-binding result for this run (at most one: one primary claim
+   *  per PR). Empty when the proof is disabled or the claim binds to no existing
+   *  test. Advisory-only and deterministic-first; a `claim-falsified-bound` verdict
+   *  raises a warn finding but never gates, and it abstains in production without a
+   *  green-history checkout (so its real-outcome finding count is 0 on a `--pr`
+   *  audit). */
+  claimBindings: ClaimBindingResult[];
   skipped: string[];
 }
 
@@ -1330,7 +1339,7 @@ export function runProofRestorations(input: ProofRestorationInput): ProofRestora
  */
 export async function runExecutionGrounded(input: ExecutionGroundedInput): Promise<ExecutionGroundedOutcome> {
   const skipped: string[] = [];
-  const empty: ExecutionGroundedOutcome = { findings: [], mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], fakeRefactorRestorations: [], deadBranchRestorations: [], errorSwallowRestorations: [], claimDifferentials: [], skipped };
+  const empty: ExecutionGroundedOutcome = { findings: [], mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], fakeRefactorRestorations: [], deadBranchRestorations: [], errorSwallowRestorations: [], claimDifferentials: [], claimBindings: [], skipped };
   if (!input.config.enabled) {
     // Disabled means the layer never ran at all: no honesty records, because
     // nothing was promised to run.
@@ -1452,7 +1461,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
 
   const deadline = Date.now() + input.config.maxWallClockPerPrMs;
   const findings: Finding[] = [];
-  const outcome: ExecutionGroundedOutcome = { findings, mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], fakeRefactorRestorations: [], deadBranchRestorations: [], errorSwallowRestorations: [], claimDifferentials: [], skipped };
+  const outcome: ExecutionGroundedOutcome = { findings, mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], fakeRefactorRestorations: [], deadBranchRestorations: [], errorSwallowRestorations: [], claimDifferentials: [], claimBindings: [], skipped };
   const cacheArg = input.cacheDir !== undefined ? { cacheDir: input.cacheDir } : {};
 
   try {
@@ -1572,6 +1581,14 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
       if (claimResult !== null) {
         outcome.claimDifferentials.push(claimResult);
         findings.push(...claimDifferentialFindings(claimResult, prRef));
+      }
+    }
+
+    if (input.config.claimBinding && Date.now() < deadline) {
+      const bindResult = runClaimBindingPhase(input, workspaces, deadline, dockerCtx, skipped);
+      if (bindResult !== null) {
+        outcome.claimBindings.push(bindResult);
+        findings.push(...claimBindingFindings(bindResult, prRef));
       }
     }
 
@@ -1744,6 +1761,73 @@ export function claimDifferentialFindings(result: ClaimDifferentialResult, prRef
       evidence: shortEvidence(
         `witness ${result.witness?.witnessHash ?? '?'} (model ${result.witness?.model ?? '?'}, ` +
           `prompt ${result.witness?.promptVersion ?? '?'}); base=${(result.baseRuns ?? []).join('/')} head=${result.headStatus ?? '?'}`,
+      ),
+    },
+  ];
+}
+
+/**
+ * Run the Tier C claim-binding proof against the provisioned pair. Deterministic:
+ * builds the claim from the PR title/body, gathers existing-test candidates whose
+ * closure reaches the changed source, and runs the binder. No model call is made
+ * here (an arbiter, if wired, may only rank the deterministic candidates). No
+ * green-history checkout is cheaply available on a `--pr` audit, so the binder
+ * abstains at the pass-capability clause in production. Returns null (with a skip
+ * note) when there is no claim text or no bindable existing test.
+ */
+function runClaimBindingPhase(
+  input: ExecutionGroundedInput,
+  workspaces: ProvisionedPair,
+  deadline: number,
+  dockerCtx: DockerContext | undefined,
+  skipped: string[],
+): ClaimBindingResult | null {
+  const claim = `${input.prTitle ?? ''}\n${input.prBody ?? ''}`.trim();
+  if (claim.length === 0) {
+    skipped.push('claim-binding: no PR claim text');
+    return null;
+  }
+  const existingTests = gatherExistingTests({
+    prDiff: input.prDiff,
+    postWorkspacePath: workspaces.post.workspacePath,
+  });
+  if (existingTests.length === 0) {
+    skipped.push('claim-binding: no existing repo test closes over the changed source');
+    return null;
+  }
+  const timeoutMs = Math.min(TEST_TIMEOUT_MS, Math.max(1, deadline - Date.now()));
+  return runClaimBinding({
+    claim,
+    existingTests,
+    preWorkspacePath: workspaces.pre.workspacePath,
+    postWorkspacePath: workspaces.post.workspacePath,
+    testRunner: workspaces.post.testRunner,
+    timeoutMs,
+    ...(input.mutationRecipe !== undefined ? { recipe: input.mutationRecipe } : {}),
+    ...(dockerCtx !== undefined ? { docker: dockerCtx } : {}),
+  });
+}
+
+/** Map a `claim-falsified-bound` verdict to an advisory warn finding. Every other
+ *  verdict (delivered, or any abstain) produces no finding. The binder abstains in
+ *  production, so this returns [] on a real `--pr` audit; it fires only when a
+ *  green-history checkout established the bound test's pass-capability. */
+export function claimBindingFindings(result: ClaimBindingResult, prRef: string): Finding[] {
+  if (!result.isFinding) return [];
+  const b = result.binding;
+  return [
+    {
+      category: 'claim-falsified-bound',
+      severity: 'warn',
+      message:
+        `${prRef}'s claim binds to the existing test ${b?.test.file ?? '?'} ` +
+        `(${(b?.signals ?? []).join('; ')}), which fails identically on base and head with a proven ` +
+        `green history: the claimed fix was not delivered. Advisory: an existing test the PR claimed ` +
+        `to satisfy still fails.`,
+      location: { file: b?.test.file ?? 'claim-binding', line: 1 },
+      evidence: shortEvidence(
+        `bound test ${b?.test.file ?? '?'} (score ${b?.score ?? 0}); identity ${result.identity ?? '?'}; ` +
+          `${result.baseRuns} base / ${result.headRuns} head runs`,
       ),
     },
   ];

@@ -191,6 +191,7 @@ describe('evidence-pack / assembleEvidencePack', () => {
       deadBranchRestorations: [],
       errorSwallowRestorations: [],
       claimDifferentials: [],
+      claimBindings: [],
       skipped: ['provision: no lockfile'],
     } as never);
     const result = assembleEvidencePack({

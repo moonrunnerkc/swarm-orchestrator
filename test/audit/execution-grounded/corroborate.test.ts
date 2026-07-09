@@ -166,6 +166,7 @@ describe('execution-grounded / corroborate', () => {
         mockRestorations: [],
         noOpRestorations: [],
         errorSwallowRestorations: [],
+        claimBindings: [],
         typeSuppressionRestorations: [],
         fakeRefactorRestorations: [],
         deadBranchRestorations: [],

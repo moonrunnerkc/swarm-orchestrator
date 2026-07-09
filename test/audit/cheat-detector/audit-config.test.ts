@@ -187,6 +187,14 @@ describe('cheat-detector / audit-config', () => {
         assert.equal(loadAuditConfig(repo).executionGrounded.errorSwallow, false);
       });
     });
+    it('reads claimBinding, defaulting to false (advisory, opt-in like claimDifferential)', () => {
+      withConfig('executionGrounded:\n  enabled: true\n', (repo) => {
+        assert.equal(loadAuditConfig(repo).executionGrounded.claimBinding, false);
+      });
+      withConfig('executionGrounded:\n  enabled: true\n  claimBinding: true\n', (repo) => {
+        assert.equal(loadAuditConfig(repo).executionGrounded.claimBinding, true);
+      });
+    });
     it('reads the enabled flag, the per-check flags, and the wall-clock cap', () => {
       const yaml = [
         'executionGrounded:',

@@ -15,6 +15,7 @@
 
 import type { ExecutionGroundedOutcome } from '../execution-grounded';
 import {
+  claimBindingEngine,
   claimDifferentialEngine,
   corroborationEngine,
   deriveProvisioning,
@@ -172,6 +173,7 @@ export function buildProofCoverage(
     corroborationEngine('mutation-check', outcome.mutationRuns),
     corroborationEngine('coverage-delta', outcome.coverageRuns),
     claimDifferentialEngine(outcome.claimDifferentials),
+    claimBindingEngine(outcome.claimBindings),
   ];
   return {
     schema: 'swarm-proof-coverage/v1',

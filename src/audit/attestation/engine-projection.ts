@@ -10,6 +10,7 @@ import type {
   ReproComparison,
 } from '../execution-grounded';
 import type { ClaimDifferentialResult } from '../execution-grounded/claim-differential';
+import type { ClaimBindingResult } from '../execution-grounded/claim-binding';
 import type {
   AbstainClass,
   ProofEngineCoverage,
@@ -177,6 +178,38 @@ export function claimDifferentialEngine(
   });
   return {
     engine: 'claim-differential',
+    applicable: projected.length > 0,
+    executed: projected.some((p) => p.controlsEvaluated > 0),
+    records: projected,
+  };
+}
+
+/** Project the Tier C claim-binding engine. `claim-falsified-bound` -> finding
+ *  (advisory), `claim-delivered` -> exonerated, every abstain / execution error ->
+ *  abstain bucketed by `classifyAbstain`. In production the binder abstains at the
+ *  pass-capability clause (`abstain:no-pass-capability-evidence` -> control-clause),
+ *  so a policy sees it ran and held back, not that it was skipped. */
+export function claimBindingEngine(
+  records: ReadonlyArray<ClaimBindingResult>,
+): ProofEngineCoverage {
+  const projected = records.map((r) => {
+    const outcome: ProofOutcome =
+      r.verdict === 'claim-falsified-bound'
+        ? 'finding'
+        : r.verdict === 'claim-delivered'
+          ? 'exonerated'
+          : 'abstain';
+    const controlsEvaluated = r.baseRuns + r.headRuns;
+    return projectRecord(
+      r.binding?.test.file ?? 'claim-binding',
+      r.verdict,
+      outcome,
+      controlsEvaluated,
+      undefined,
+    );
+  });
+  return {
+    engine: 'claim-binding',
     applicable: projected.length > 0,
     executed: projected.some((p) => p.controlsEvaluated > 0),
     records: projected,

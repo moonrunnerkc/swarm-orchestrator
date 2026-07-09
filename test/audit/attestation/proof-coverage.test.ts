@@ -23,6 +23,7 @@ function emptyOutcome(over: Partial<ExecutionGroundedOutcome> = {}): ExecutionGr
     deadBranchRestorations: [],
     errorSwallowRestorations: [],
     claimDifferentials: [],
+    claimBindings: [],
     skipped: [],
   };
   return { ...base, ...over } as unknown as ExecutionGroundedOutcome;
@@ -221,6 +222,51 @@ describe('buildProofCoverage', () => {
     assert.equal(engine?.records[0]?.outcome, 'exonerated');
     assert.equal(engine?.records[1]?.outcome, 'abstain');
     assert.equal(engine?.records[1]?.abstainClass, 'structurally-inapplicable');
+  });
+
+  it('projects a claim-binding production abstain as control-clause, ran', () => {
+    const att = buildProofCoverage(
+      emptyOutcome({
+        claimBindings: [
+          {
+            verdict: 'abstain:no-pass-capability-evidence',
+            isFinding: false,
+            reason: 'no green ref',
+            binding: { test: { file: 'calc.test.ts', testName: 'adds', referencedSymbols: ['add'] }, score: 7, signals: [] },
+            identity: null,
+            baseRuns: 3,
+            headRuns: 3,
+            passCapability: { kind: 'none', reason: 'no green ref' },
+          },
+        ] as never,
+      }),
+    );
+    const engine = att.engines.find((e) => e.engine === 'claim-binding');
+    assert.equal(engine?.executed, true);
+    assert.equal(engine?.records[0]?.outcome, 'abstain');
+    assert.equal(engine?.records[0]?.abstainClass, 'control-clause');
+    assert.equal(engine?.records[0]?.controlsEvaluated, 6);
+  });
+
+  it('projects a claim-falsified-bound as an advisory finding', () => {
+    const att = buildProofCoverage(
+      emptyOutcome({
+        claimBindings: [
+          {
+            verdict: 'claim-falsified-bound',
+            isFinding: true,
+            reason: 'not delivered',
+            binding: { test: { file: 'calc.test.ts', testName: 'adds', referencedSymbols: ['add'] }, score: 8, signals: [] },
+            identity: 'calc › adds',
+            baseRuns: 3,
+            headRuns: 3,
+            passCapability: { kind: 'honest-twin-pass', established: true, detail: 'green' },
+          },
+        ] as never,
+      }),
+    );
+    const engine = att.engines.find((e) => e.engine === 'claim-binding');
+    assert.equal(engine?.records[0]?.outcome, 'finding');
   });
 
   it('reports the sandbox provisioning failure from the skip log', () => {

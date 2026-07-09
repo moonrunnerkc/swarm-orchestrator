@@ -53,6 +53,7 @@ function baseConfig(over: Partial<ExecutionGroundedConfig> = {}): ExecutionGroun
     corroborateStructural: false,
     claimDifferential: false,
     errorSwallow: false,
+    claimBinding: false,
     ...over,
   };
 }

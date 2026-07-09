@@ -66,6 +66,7 @@ import type {
   PrAuditFakeRefactorRestorationEntry,
   PrAuditDeadBranchRestorationEntry,
   PrAuditErrorSwallowRestorationEntry,
+  PrAuditClaimBindingEntry,
   PrAuditWorkVerifiedEntry,
 } from '../../ledger/types';
 import { isExecutionGroundedCategory } from '../../audit/types';
@@ -78,6 +79,7 @@ import type { TypeSuppressionProofRecord } from '../../audit/execution-grounded/
 import type { FakeRefactorProofRecord } from '../../audit/execution-grounded/fake-refactor-restoration';
 import type { DeadBranchProofRecord } from '../../audit/execution-grounded/dead-branch-restoration';
 import type { ErrorSwallowProofRecord } from '../../audit/execution-grounded/error-swallow-restoration';
+import type { ClaimBindingResult } from '../../audit/execution-grounded/claim-binding';
 import {
   corroborateStructuralFindings,
   executionSignalsFromOutcome,
@@ -452,6 +454,11 @@ async function runExecutionGroundedLayer(
         if (sha !== undefined) (payload as PrAuditCoverageFindingEntry).evidenceSha256 = sha;
       }
       ledger.append<PrAuditCoverageFindingEntry>(payload, aiAgent);
+    } else if (finding.category === 'claim-falsified-bound') {
+      // The claim-binding funnel is recorded authoritatively by
+      // appendClaimBindingEntries below (a dedicated pr-audit-claim-binding entry
+      // per result). Surface the advisory finding for the comment, but do not
+      // mis-file it as an issue-repro entry here.
     } else {
       const payload: Omit<PrAuditIssueReproFindingEntry, 'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'> = {
         type: 'pr-audit-issue-repro-finding',
@@ -472,6 +479,7 @@ async function runExecutionGroundedLayer(
   appendFakeRefactorRestorationEntries(ledger, outcome.fakeRefactorRestorations, attribution);
   appendDeadBranchRestorationEntries(ledger, outcome.deadBranchRestorations, attribution);
   appendErrorSwallowRestorationEntries(ledger, outcome.errorSwallowRestorations, attribution);
+  appendClaimBindingEntries(ledger, outcome.claimBindings, attribution);
 
   // Runtime corroboration (opt-in). When this run's execution layer actually
   // produced signals, mark the structural findings that a surviving mutant,
@@ -653,6 +661,33 @@ export function appendErrorSwallowRestorationEntries(
       controls: r.controls,
     };
     ledger.append<PrAuditErrorSwallowRestorationEntry>(payload, opts);
+  }
+}
+
+/** One pr-audit-claim-binding entry per Tier C binding result (at most one per
+ *  --pr audit), every verdict included so the ledger carries the full advisory
+ *  funnel: the deterministic binding, the run counts, and why the pass-capability
+ *  clause did or did not hold. */
+export function appendClaimBindingEntries(
+  ledger: HashChainedLedger,
+  results: readonly ClaimBindingResult[],
+  attribution: LedgerAgentAttribution | undefined,
+): void {
+  const opts = attribution !== undefined ? { aiAgent: attribution } : undefined;
+  for (const r of results) {
+    const payload: Omit<PrAuditClaimBindingEntry, 'ts' | 'runId' | 'seq' | 'prevHash' | 'entryHash' | 'aiAgent'> = {
+      type: 'pr-audit-claim-binding',
+      verdict: r.verdict,
+      reason: r.reason,
+      boundTestFile: r.binding?.test.file ?? '',
+      bindingScore: r.binding?.score ?? 0,
+      signals: r.binding?.signals ?? [],
+      identity: r.identity ?? '',
+      baseRuns: r.baseRuns,
+      headRuns: r.headRuns,
+      passCapabilityKind: r.passCapability.kind,
+    };
+    ledger.append<PrAuditClaimBindingEntry>(payload, opts);
   }
 }
 
