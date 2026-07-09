@@ -164,6 +164,31 @@ export function classifyArbiterAgreement(
   return { agreed, confirmed: agreed ? primaryVerdict === 'true-cheat' : null };
 }
 
+/**
+ * Whether a requested arbiter cannot run and should be skipped (annotation
+ * degraded off) rather than hard-failing. True only when the arbiter is requested,
+ * at least one of its two backends is the Anthropic one, and no ANTHROPIC_API_KEY
+ * is available. A local/ollama backend needs no key, so it is never skipped for
+ * this reason; `--arbiter off` skips through the normal path, not this one. Keeps
+ * the scheduled CI mine green when the Anthropic key is not set as a repo secret.
+ *
+ * @param arbiterRequested whether the run asked for the arbiter (`args.arbiter`).
+ * @param primaryProvider the primary arbiter backend.
+ * @param secondaryProvider the secondary arbiter backend.
+ * @param anthropicKeyPresent whether a non-empty ANTHROPIC_API_KEY is in the env.
+ * @returns true when the arbiter should be skipped gracefully.
+ */
+export function arbiterUnavailable(
+  arbiterRequested: boolean,
+  primaryProvider: ArbiterProvider,
+  secondaryProvider: ArbiterProvider,
+  anthropicKeyPresent: boolean,
+): boolean {
+  if (!arbiterRequested) return false;
+  const needsAnthropicKey = primaryProvider === 'anthropic' || secondaryProvider === 'anthropic';
+  return needsAnthropicKey && !anthropicKeyPresent;
+}
+
 export function dedupeSignals(signals: readonly ComplaintSignal[]): ComplaintSignal[] {
   const seen = new Set<string>();
   const out: ComplaintSignal[] = [];
@@ -225,7 +250,22 @@ async function main(): Promise<void> {
   const ledger = new CostLedger(args.maxCostUsd);
   let primary: Arbiter | undefined;
   let secondary: Arbiter | undefined;
-  if (args.arbiter) {
+  // The arbiter annotation is optional. If it is requested but the only backend it
+  // can use is the Anthropic one and no ANTHROPIC_API_KEY is available, degrade
+  // gracefully: skip the annotation and package candidates pattern+attribution-only
+  // (the downstream classifier already treats undefined arbiters as mode 'off').
+  // This is what keeps the scheduled CI mine green when the key is not set as a repo
+  // secret, instead of the whole mine failing at createArbiter. Set the secret to
+  // turn dual-arbiter confirmation back on with no other change.
+  const anthropicKeyPresent =
+    process.env.ANTHROPIC_API_KEY !== undefined && process.env.ANTHROPIC_API_KEY.length > 0;
+  if (arbiterUnavailable(args.arbiter, args.primaryProvider, args.secondaryProvider, anthropicKeyPresent)) {
+    log.warn(
+      'arbiter requested but ANTHROPIC_API_KEY is not set; skipping arbiter annotation. ' +
+        'Candidates are packaged pattern+attribution-only. Set ANTHROPIC_API_KEY (a repo secret in CI) ' +
+        'to enable dual-arbiter confirmation, or pass --arbiter-provider local for a local server.',
+    );
+  } else if (args.arbiter) {
     primary = await createArbiter({
       provider: args.primaryProvider,
       ledger,
