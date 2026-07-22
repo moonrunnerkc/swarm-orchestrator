@@ -43,16 +43,31 @@ async function loadCleanPrs(root: string): Promise<CleanPrInput[]> {
   return out;
 }
 
-function writeCases(root: string, cases: InjectedCase[]): { path: string; sha: string }[] {
+/**
+ * The corpus directories this build owns and may delete before writing:
+ * exactly the category names of the registered injectors (defect plus
+ * honest). Everything else under benchmarks/oracle-corpus/ belongs to
+ * other scripts and must survive a rebuild.
+ */
+export function ownedCategoryDirs(): Set<string> {
+  const owned = new Set<string>();
+  for (const injector of [...INJECTORS, ...HONEST_INJECTORS]) owned.add(injector.category);
+  return owned;
+}
+
+export function writeCases(root: string, cases: InjectedCase[]): { path: string; sha: string }[] {
   const outRoot = path.join(root, ...OUT);
   fs.mkdirSync(outRoot, { recursive: true });
-  // Remove only the category defect directories this build owns; sibling
-  // report files (per-detector-recall.md, COVERAGE.md, ...) live here too
-  // and must survive a rebuild. Without this, oracle:build wipes them and
-  // the case-insensitive COVERAGE.md/coverage.md collision corrupts state.
+  // Deletion is ownership-based: only directories named after a category
+  // in the injector registries are removed. Sibling report files
+  // (per-detector-recall.md, COVERAGE.md, ...) and sidecar directories
+  // committed by other scripts (live-path-runs/) survive a rebuild.
+  const owned = ownedCategoryDirs();
   for (const entry of fs.readdirSync(outRoot)) {
     const full = path.join(outRoot, entry);
-    if (fs.statSync(full).isDirectory()) fs.rmSync(full, { recursive: true, force: true });
+    if (fs.statSync(full).isDirectory() && owned.has(entry)) {
+      fs.rmSync(full, { recursive: true, force: true });
+    }
   }
   const written: { path: string; sha: string }[] = [];
   for (const c of cases) {
