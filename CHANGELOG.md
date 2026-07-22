@@ -63,6 +63,103 @@ new gates. All numbers regenerate from committed scripts and are reported per ti
   (not a volatile A/B report that drifted), and CI runs `badges:regen --check` so a
   stale row fails the build.
 
+## [12.1.0] - 2026-07-06
+
+### Wild-PR hunts, the triage cascade, evidence packs, and the positive merge gate
+
+Two bounded hunts ran the six-engine proof tier over wild agent PRs and both
+returned zero proven blocks: the first over 216 forward-sampled PRs (28
+EG-viable), the second a complaint-mining cascade over 327 fetched PRs (144
+proof-eligible). The honest zero is load-bearing: it came with a stop-the-line
+false-proof fix, a measured advisory-detector overlap of 5/27 matching-category
+(13/27 any-flag) on the complaint-labeled wild cheats
+([`OVERLAP-REPORT.md`](benchmarks/real-prs/OVERLAP-REPORT.md)), and every miss
+root-caused. The release also lands the distant-supervision triage pipeline,
+the replay-identical evidence pack, the corroborated-gate readiness loop
+(honestly `undefined-n`), and the positive merge-safety gate.
+
+#### Added
+
+- **Wild-PR hunt over the proof tier.** A bounded hunt provisioned and ran the
+  six restoration-proof engines across 216 wild agent PRs; 28 were
+  execution-grounded viable, 0 proven blocks fired
+  ([`HUNT-REPORT.md`](benchmarks/real-prs/HUNT-REPORT.md)).
+- **Complaint-mining cascade (hunt 2).** A viability-first cascade that mines
+  maintainer complaints, fetched 327 PRs, found 144 proof-eligible, and fired 0
+  proven blocks ([`HUNT-2-REPORT.md`](benchmarks/real-prs/HUNT-2-REPORT.md)).
+  Ships a global rate-limit pacer, a resumable population store, and an autopsy
+  of the six outcome-bad ran-no-proof PRs.
+- **Distant-supervision triage pipeline (phases 0 through 5).** Phase 0
+  measured label validity per cheat category and forced the pivot to a PU
+  (positive-unlabeled) design; a label miner over the offline anchors built the
+  triage dataset; a versioned denoise judge pass and a weak-supervision label
+  model produced training labels; a ranker plus a conformal selective wrapper
+  expose a precision knob. On the held-out test split: ranker PR-AUC 0.899;
+  at a 90% target precision the calibration-split lower bound is 90.9%, and the
+  held-out flagged precision is 92.7% at 36% coverage, catching 56.7% of the
+  test cheats, abstaining below threshold
+  ([`triage-report.md`](benchmarks/results/triage-report.md), with base-rate
+  and guarantee caveats folded into the report).
+- **Replay-identical evidence pack.** `swarm audit --pr <ref> --evidence-pack
+  <dir>` assembles the two AIBOMs, content-addressed raw evidence, a sha256
+  `MANIFEST.json`, and the per-run ledger with a `run-record.json` sidecar;
+  `verifyManifest` re-checks the index. BOM identity is deterministic (RFC-4122
+  v5 serialNumber over the run inputs, `SOURCE_DATE_EPOCH`-honoring timestamp),
+  and execution-grounded evidence is sha256-pinned under the new
+  `pr-audit-work-verified` ledger kind
+  ([`docs/audit/evidence-pack.md`](docs/audit/evidence-pack.md)).
+- **Corroborated-gate readiness loop.** `assessCorroboratedGate` measures the
+  corroborated structural gate's precision over the outcome-bad EG-viable slice
+  with a Wilson-95 lower bound and refuses a `ready` verdict on undefined n or
+  below the 0.90 floor; `npm run corroborated-gate:check` holds the committed
+  result fresh in CI. Current status is `undefined-n`
+  ([`CORROBORATED-GATE-READINESS.md`](benchmarks/real-corpus/CORROBORATED-GATE-READINESS.md)).
+- **Positive merge-safety gate.** A `.swarm/merge-obligations.yaml` loader, a
+  gate runner over `verifyObligation`, the `runMergeGate` orchestrator over a
+  provisioned tree, a PR merge-gate runner with an injected provisioner, and a
+  pure two-sided merge-decision composer, wired into `swarm audit --pr` via
+  `--merge-gate`. The positive gate and the execution-grounded seam now detect
+  and run pytest and Go suites; re-measuring EG-viability with the new runners
+  lifted the recognized slice from 12 to 78 of 197.
+- **v12 ground-truth freeze.** `npm run baseline:freeze` pins the measured
+  baseline (oracle recall, corpus counts) and `baseline:check` fails CI on any
+  regression against the frozen reference.
+- **Changed-line coverage gate on `no-op-fix-proven`.** The proof only fires
+  when the witness closure actually covers the changed lines, closing the gap
+  the three wild false positives exposed.
+
+#### Fixed
+
+- **Stop-the-line: a wild false proof.** Hunt 2's targeted re-prove caught a
+  test-restoration proof firing on a legitimate re-specification; a
+  re-specification refuter now demotes it, and the test-tamper proof is refuted
+  when the PR removed the test's subject.
+- **Three wild no-op-fix triggers adjudicated as false positives.** The
+  wider-cap hunt-2 re-run fired three no-op-fix proofs; adjudication classed
+  all three as false positives and the verdicts are folded into wild precision
+  (0 of 3), with optional stop-the-line adjudication folded into the
+  computation.
+- **Assertion-strip exempts exact-match re-specification.** The detector no
+  longer flags a test that re-specifies the same assertions, not just
+  equal-count rewrites.
+- **Triage judge model pinned.** The committed denoise cache replays against
+  the pinned model id; the label-model EM anchor and class balance were fixed
+  in the same phase.
+- **Hunt infrastructure.** Primary-quota exhaustion is no longer retried, the
+  execution-grounded sandbox reports the real install command on failure, and
+  the backward-mine funnel no longer double-fetches commits against its budget.
+- **CD ordering.** The GitHub Release is created before the SBOM upload and
+  publishing is idempotent.
+
+#### Changed
+
+- **`promotions.json` splits screen-viable from proof-tier-provisionable.**
+  The EG-viability re-measure (78/197 recognized) made the old single count
+  ambiguous; the policy now records which slice provisions the Node proof tier
+  separately from what the viability screen recognizes.
+- **Docs lead with the measured overlap.** The wild-cheat results pages open
+  with the 5/27 matching-category overlap number instead of the funnel counts.
+
 ## [12.0.0] - 2026-06-12
 
 ### The proof tier: six execution-grounded restoration proofs
