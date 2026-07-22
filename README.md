@@ -37,7 +37,7 @@ and both run offline with no credentials, so every number below reproduces
 from a clone of this repo.
 
 <p align="center">
-  <img src="./assets/audit-demo.svg" alt="swarm audit flagging a real error-swallow finding in cloudflare/workers-sdk PR 14132" width="100%">
+  <img src="./assets/audit-demo.gif" alt="swarm audit flagging a real error-swallow finding in cloudflare/workers-sdk PR 14132" width="100%">
 </p>
 
 Real finding from [cloudflare/workers-sdk#14132](https://github.com/cloudflare/workers-sdk/pull/14132);
