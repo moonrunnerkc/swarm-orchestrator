@@ -1,10 +1,12 @@
 // Regenerate the README badges row from the committed evidence so the
-// badges never drift from the numbers they cite. Reads the version from
-// package.json, the oracle recall from the A/B report, and the real-PR
-// false-alarm burden from the real-world report, and rewrites the block
-// between the <!-- BADGES:START --> and <!-- BADGES:END --> markers in
-// README.md (inserting the markers around the existing badge block if they
-// are not present yet).
+// badges never drift from the numbers they cite. Emits five badges (CI,
+// license, node, version, oracle recall), reading the version from
+// package.json and the oracle recall from the CI-guarded frozen baseline,
+// and rewrites the block between the <!-- BADGES:START --> and
+// <!-- BADGES:END --> markers in README.md (inserting the markers around
+// the existing badge block if they are not present yet). The remaining
+// measured numbers live in the README results table, backed by
+// docs/CLAIMS.md, rather than in badges.
 //
 // Usage:
 //   node dist/scripts/badges/regen-badges.js          # rewrite README
@@ -48,31 +50,6 @@ function oracleRecall(): { caught: number; total: number } | null {
   return { caught: f.floor, total: f.denominator };
 }
 
-/** Real-PR false-alarm burden per PR from the real-world report headline. */
-function realPrBurden(): number | null {
-  const file = path.join(root(), 'benchmarks', 'real-prs', 'REAL-WORLD-REPORT.md');
-  if (!fs.existsSync(file)) return null;
-  const m = fs.readFileSync(file, 'utf8').match(/false-alarm burden of \*\*([\d.]+)\/PR\*\*/);
-  return m && m[1] !== undefined ? Number(m[1]) : null;
-}
-
-/** The honest real-PR numbers from the v11 benefit report: how many cheats
- *  two independent arbiters confirmed that the linters missed, and the
- *  external-tool finding count on the bad PRs (the empty set the auditor is
- *  measured against). Cites the real, non-overclaiming result. */
-function benefitHeadline(): { confirmedCheats: number; externalOnBad: number } | null {
-  const file = path.join(root(), 'benchmarks', 'real-prs', 'v11-BENEFIT-REPORT.md');
-  if (!fs.existsSync(file)) return null;
-  const text = fs.readFileSync(file, 'utf8');
-  const confirmed = text.match(/The (\d+) confirmed true-cheats both models/);
-  const external = text.match(/raised essentially nothing on the bad PRs \((\d+) findings? across all/);
-  if (confirmed === null || confirmed[1] === undefined) return null;
-  return {
-    confirmedCheats: Number(confirmed[1]),
-    externalOnBad: external && external[1] !== undefined ? Number(external[1]) : 0,
-  };
-}
-
 function buildBadges(): string {
   const version = (JSON.parse(read('package.json')) as { version: string }).version;
   // The CI badge is GitHub's live workflow badge, not a shields.io static
@@ -95,28 +72,6 @@ function buildBadges(): string {
         `${pct}% (${recall.caught}/${recall.total})`,
         'brightgreen',
         'benchmarks/results/AB-REPORT.md',
-      ),
-    );
-  }
-  const burden = realPrBurden();
-  if (burden !== null) {
-    lines.push(
-      shield(
-        'real-PR false alarms',
-        `${burden.toFixed(2)}/PR`,
-        burden <= 0.2 ? 'brightgreen' : 'orange',
-        'benchmarks/real-prs/REAL-WORLD-REPORT.md',
-      ),
-    );
-  }
-  const benefit = benefitHeadline();
-  if (benefit !== null) {
-    lines.push(
-      shield(
-        'real-PR cheats vs linters',
-        `${benefit.confirmedCheats} confirmed (Semgrep+ESLint: ${benefit.externalOnBad})`,
-        benefit.confirmedCheats > 0 ? 'brightgreen' : 'lightgrey',
-        'benchmarks/real-prs/v11-BENEFIT-REPORT.md',
       ),
     );
   }

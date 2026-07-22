@@ -284,3 +284,26 @@ canonical contract bytes, and identical `contractHash` values when given
 identical inputs. The benchmark harness (`benchmarks/`) runs the same
 contract through each provider and compares satisfied-count and falsifier
 catch rate so cross-provider quality is measurable.
+
+## Command examples
+
+Hosted-model run:
+
+```bash
+export ANTHROPIC_API_KEY=sk-...
+swarm run --goal "add a /health endpoint" --extractor anthropic --session anthropic
+```
+
+Local-LLM run (Ollama):
+
+```bash
+swarm run --goal "add a named export sum(a, b)" \
+  --session local --local-backend ollama \
+  --local-base-url http://localhost:11434 \
+  --local-model-session gemma4:31b \
+  --local-grammar none --local-max-concurrency 1 --preset fast
+```
+
+Both swap the deterministic provider for a model that writes the patch, then
+run it through the same verifier and falsifier gates; no patch is admitted
+unless every obligation passes.

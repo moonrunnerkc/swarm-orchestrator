@@ -135,3 +135,17 @@ judgePrimary:
 executionGrounded:
   enabled: true
 ```
+
+## Run artifacts
+
+Every run writes under `.swarm/`, which is gitignored at the consumer-repo
+level (only `audit-config.yaml` is tracked):
+
+```text
+.swarm/contracts/<id>/contract.jsonl   compiled contract (orchestrator mode)
+.swarm/ledger/<run-id>.jsonl           orchestrator ledger
+.swarm/ledger/audit-<run-id>.jsonl     audit ledger
+.swarm/aibom/<run-id>.cdx.json         CycloneDX-ML (when --emit-aibom)
+.swarm/aibom/<run-id>.spdx.json        SPDX 3.0 AI-Profile (when --emit-aibom)
+.swarm/shadow/<repo>/<run-id>.json     shadow-mode verdict (when --shadow)
+```

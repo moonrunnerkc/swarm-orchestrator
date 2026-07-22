@@ -38,5 +38,5 @@ The first-class deliverable. Defined at the repo root
 ([`action.yml`](../action.yml)) and as a composite sub-action
 ([`.github/actions/swarm-audit/action.yml`](../.github/actions/swarm-audit/action.yml)).
 
-See [the README's GitHub Action section](../README.md#github-action)
+See [the README's GitHub Action section](../README.md#use-as-a-github-action)
 for the recommended workflow shape.
