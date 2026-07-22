@@ -183,6 +183,10 @@ export class BenchJudge {
       };
       if (live.reason !== undefined) entry.reason = live.reason;
       this.cache.set(key, entry);
+      // Checkpoint after every live answer: a model call costs seconds
+      // while the flush costs milliseconds, and an interrupted sweep
+      // then resumes from the cached prefix instead of restarting.
+      this.cache.flush();
     }
     return { ...live, cacheHit: false };
   }
