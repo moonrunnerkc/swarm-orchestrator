@@ -4,7 +4,8 @@ Constructively-injected defects over presumed-clean real PRs. Each entry is a br
 
 - source PRs (presumed-clean carriers): 195
 - total injected defects: 325
-- corpus sha256: `75fbcd24927e15f4c4f97bd0ff4f3a0e44027095d357bce4a4f0825beea78964`
+- honest (exemption) cases: 1
+- corpus sha256: `5952c358c6fdd6c0534c758d52c6dde8392ac1f3ea8d746452ed19add4f7a3bc`
 
 | injector | category | injected | refused (no carrier) | dropped to cap |
 |---|---|---|---|---|
@@ -351,4 +352,12 @@ Constructively-injected defects over presumed-clean real PRs. Each entry is a br
 | type-suppression | type-suppression | cursor-Freedomfarms-Forward-Freedom-Main-pr25 | src/components/AccountsView.jsx | 100100-100103 | c4248c005a54 |
 | type-suppression | type-suppression | cursor-getum06-LaundromatFacilityBuy-pr8 | src/components/demographics/DemographicsModule.jsx | 100100-100103 | e7fa79d58da9 |
 | type-suppression | type-suppression | cursor-hasanigordon-afk-unbound-pr1 | src/App.jsx | 100100-100103 | 55458d5ac373 |
+
+## Honest (exemption) cases
+
+Negative cases: legitimate code that resembles the category, spliced by an honest injector. The mapped detector must emit nothing; `npm run benchmarks:oracle` scores any finding on these as a false positive. Labels carry `honest: true`.
+
+| category | injector | pr | file | lines | sha256 (12) |
+|---|---|---|---|---|---|
+| mock-of-hallucination | builtin-mock-honest | claude-code-ChadFarrow-MSP-2.0-pr65 | src/utils/builtin_mock_claude_code_ChadFarrow_MSP_2_0_pr65_builtin_mock.test.ts | 1-6 | 7beed7f8ca19 |
 

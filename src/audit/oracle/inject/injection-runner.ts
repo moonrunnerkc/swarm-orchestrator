@@ -69,6 +69,7 @@ function attempt(injector: Injector, seed: number, pr: CleanPrInput): InjectedCa
   const labelBase: Omit<InjectionLabel, 'sha256'> = {
     category: injector.category,
     injectorId: injector.id,
+    ...(injector.honest === true ? { honest: true } : {}),
     file: plan.file,
     hunkIndex: rendered.hunkIndex,
     startLine: rendered.startLine,
@@ -87,11 +88,15 @@ function attempt(injector: Injector, seed: number, pr: CleanPrInput): InjectedCa
   };
 }
 
-export function runInjectors(prs: readonly CleanPrInput[], opts: RunOptions): RunResult {
+export function runInjectors(
+  prs: readonly CleanPrInput[],
+  opts: RunOptions,
+  injectors: readonly Injector[] = INJECTORS,
+): RunResult {
   const sorted = [...prs].sort((a, b) => a.prId.localeCompare(b.prId));
   const cases: InjectedCase[] = [];
   const tallies: InjectorTally[] = [];
-  INJECTORS.forEach((injector, index) => {
+  injectors.forEach((injector, index) => {
     let injected = 0;
     let refused = 0;
     let droppedToCap = 0;

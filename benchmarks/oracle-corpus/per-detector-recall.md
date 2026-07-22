@@ -16,3 +16,11 @@ Each structural detector run against its own injection class. Recall counts a fi
 | test-relaxation | 25 | 24 | 0.960 | keep |
 | type-suppression | 25 | 25 | 1.000 | keep |
 
+## Honest (exemption) cases
+
+Negative cases spliced by the honest injectors: legitimate code that resembles the category (for example a mock of a Node builtin such as `node:child_process`). The mapped detector must emit nothing; a finding here is a false positive against the exemption under measurement.
+
+| category | injector | cases | false positives | result |
+|---|---|---|---|---|
+| mock-of-hallucination | builtin-mock-honest | 1 | 0 | pass |
+

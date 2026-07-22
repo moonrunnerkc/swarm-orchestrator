@@ -60,10 +60,21 @@ interface SemanticRow {
   judgeTpWholeDiff: number;
 }
 
+interface HonestRow {
+  category: string;
+  injectorId: string;
+  cases: number;
+  /** Cases where the mapped detector fired anyway: exemption failures. */
+  falsePositives: number;
+  pass: boolean;
+}
+
 interface OracleResults {
   header: { tool: string; generatedAt: string; promptVersion: string; judgeModel: string; note: string };
   structural: StructuralRow[];
   semantic: SemanticRow[];
+  /** Negative (honest) cases: the mapped detector must emit nothing. */
+  honest: HonestRow[];
 }
 
 const RETIRE_THRESHOLD = 0.2;
@@ -110,6 +121,32 @@ async function scoreStructural(cases: OracleCase[], root: string): Promise<Struc
     });
   }
   return rows.sort((a, b) => a.detector.localeCompare(b.detector));
+}
+
+// Honest cases invert the recall question: the injected hunk is
+// legitimate code resembling the category, so a finding of the mapped
+// category is a false positive against the exemption the case measures.
+async function scoreHonest(cases: OracleCase[], root: string): Promise<HonestRow[]> {
+  const byInjector = new Map<string, { category: string; cases: number; falsePositives: number }>();
+  for (const c of cases) {
+    const path = catchPathFor(c.category as never);
+    if (path.kind !== 'detector') continue;
+    const bucket =
+      byInjector.get(c.injectorId) ?? { category: c.category, cases: 0, falsePositives: 0 };
+    bucket.cases += 1;
+    const fired = await firedCategories(c.brokenDiff, root);
+    if (fired.has(path.detector)) bucket.falsePositives += 1;
+    byInjector.set(c.injectorId, bucket);
+  }
+  return [...byInjector.entries()]
+    .map(([injectorId, b]) => ({
+      category: b.category,
+      injectorId,
+      cases: b.cases,
+      falsePositives: b.falsePositives,
+      pass: b.falsePositives === 0,
+    }))
+    .sort((a, b) => a.injectorId.localeCompare(b.injectorId));
 }
 
 async function scoreSemantic(
@@ -187,6 +224,27 @@ function renderPerDetector(results: OracleResults): string {
     lines.push(`| ${r.detector} | ${r.injections} | ${r.tp} | ${r.recall.toFixed(3)} | ${r.decision} |`);
   }
   lines.push('');
+  if (results.honest.length > 0) {
+    lines.push('## Honest (exemption) cases');
+    lines.push('');
+    lines.push(
+      'Negative cases spliced by the honest injectors: legitimate code that ' +
+        'resembles the category (for example a mock of a Node builtin such as ' +
+        '`node:child_process`). The mapped detector must emit nothing; a ' +
+        'finding here is a false positive against the exemption under ' +
+        'measurement.',
+    );
+    lines.push('');
+    lines.push('| category | injector | cases | false positives | result |');
+    lines.push('|---|---|---|---|---|');
+    for (const r of results.honest) {
+      lines.push(
+        `| ${r.category} | ${r.injectorId} | ${r.cases} | ${r.falsePositives} | ` +
+          `${r.pass ? 'pass' : 'FAIL'} |`,
+      );
+    }
+    lines.push('');
+  }
   return `${lines.join('\n')}\n`;
 }
 
@@ -230,7 +288,9 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
   const allowLive = !argv.includes('--no-live');
   loadDotenv();
   const root = repoRoot();
-  const cases = loadOracleCorpus(root);
+  const allCases = loadOracleCorpus(root, { includeHonest: true });
+  const cases = allCases.filter((c) => c.label.honest !== true);
+  const honestCases = allCases.filter((c) => c.label.honest === true);
   if (cases.length === 0) {
     process.stderr.write('run-oracle: oracle corpus is empty; run npm run oracle:build first\n');
     process.exitCode = 1;
@@ -240,6 +300,7 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
   const judge = new BenchJudge(cache);
   const structural = await scoreStructural(cases, root);
   const semantic = await scoreSemantic(cases, root, judge, runJudge, allowLive);
+  const honest = await scoreHonest(honestCases, root);
   cache.flush();
 
   const results: OracleResults = {
@@ -252,6 +313,7 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
     },
     structural,
     semantic,
+    honest,
   };
 
   const outDir = path.join(root, 'benchmarks', 'oracle-corpus');
@@ -260,9 +322,11 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
   fs.writeFileSync(path.join(outDir, 'judge-primary-vs-structural.md'), renderJudgePrimary(results));
 
   const retire = structural.filter((r) => r.decision !== 'keep').map((r) => r.detector);
+  const honestFps = honest.reduce((sum, r) => sum + r.falsePositives, 0);
   process.stdout.write(
     `run-oracle: structural-detectors=${structural.length} ` +
       `below-threshold=[${retire.join(', ')}] ` +
+      `honest-cases=${honestCases.length} honest-false-positives=${honestFps} ` +
       `judge-recall=[${semantic.map((s) => `${s.category}:${s.judgeRecall}`).join(', ')}]\n`,
   );
 }

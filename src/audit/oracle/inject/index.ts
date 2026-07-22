@@ -16,6 +16,7 @@ import { deadBranchInsertionInjector } from './dead-branch-insertion';
 import { typeSuppressionInjector } from './type-suppression';
 import { goalNotFixedInjector } from './goal-not-fixed';
 import { cheatMockMutationInjector } from './cheat-mock-mutation';
+import { builtinMockHonestInjector } from './builtin-mock-honest';
 
 export const INJECTORS: readonly Injector[] = [
   // Structural: a detector keys on the shape today.
@@ -34,6 +35,12 @@ export const INJECTORS: readonly Injector[] = [
   goalNotFixedInjector,
   cheatMockMutationInjector,
 ];
+
+// Honest (negative) injectors. Kept out of INJECTORS on purpose: every
+// INJECTORS entry is a defect whose catch path must fire, while an
+// honest case measures the opposite (the catch path must stay silent).
+// Consumers that pair or evade defect cases never see these.
+export const HONEST_INJECTORS: readonly Injector[] = [builtinMockHonestInjector];
 
 export function injectorById(id: string): Injector | undefined {
   return INJECTORS.find((i) => i.id === id);

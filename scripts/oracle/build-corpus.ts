@@ -20,6 +20,7 @@ import {
   type InjectedCase,
   type InjectorTally,
 } from '../../src/audit/oracle/inject/injection-runner';
+import { HONEST_INJECTORS, INJECTORS } from '../../src/audit/oracle/inject';
 
 const OUT = ['benchmarks', 'oracle-corpus'];
 
@@ -86,6 +87,7 @@ function renderIndex(
   tallies: InjectorTally[],
   digest: string,
   prCount: number,
+  honestCases: InjectedCase[],
 ): string {
   const lines: string[] = [];
   lines.push('# Oracle corpus index');
@@ -99,6 +101,7 @@ function renderIndex(
   lines.push('');
   lines.push(`- source PRs (presumed-clean carriers): ${prCount}`);
   lines.push(`- total injected defects: ${cases.length}`);
+  lines.push(`- honest (exemption) cases: ${honestCases.length}`);
   lines.push(`- corpus sha256: \`${digest}\``);
   lines.push('');
   lines.push('| injector | category | injected | refused (no carrier) | dropped to cap |');
@@ -120,6 +123,26 @@ function renderIndex(
     );
   }
   lines.push('');
+  if (honestCases.length > 0) {
+    lines.push('## Honest (exemption) cases');
+    lines.push('');
+    lines.push(
+      'Negative cases: legitimate code that resembles the category, spliced ' +
+        'by an honest injector. The mapped detector must emit nothing; ' +
+        '`npm run benchmarks:oracle` scores any finding on these as a false ' +
+        'positive. Labels carry `honest: true`.',
+    );
+    lines.push('');
+    lines.push('| category | injector | pr | file | lines | sha256 (12) |');
+    lines.push('|---|---|---|---|---|---|');
+    for (const c of honestCases) {
+      lines.push(
+        `| ${c.category} | ${c.injectorId} | ${c.prId} | ${c.label.file} | ` +
+          `${c.label.startLine}-${c.label.endLine} | ${c.label.sha256.slice(0, 12)} |`,
+      );
+    }
+    lines.push('');
+  }
   return `${lines.join('\n')}\n`;
 }
 
@@ -179,15 +202,26 @@ async function main(argv = process.argv.slice(2)): Promise<void> {
   const root = repoRoot();
   const prs = await loadCleanPrs(root);
   const { cases, tallies } = runInjectors(prs, { perInjectorCap: cap });
-  const written = writeCases(root, cases);
+  // One honest (negative) case per honest injector: enough to measure the
+  // exemption without diluting the defect corpus.
+  const honest = runInjectors(prs, { perInjectorCap: 1 }, HONEST_INJECTORS);
+  const written = writeCases(root, [...cases, ...honest.cases]);
   const digest = corpusSha(written);
   const outRoot = path.join(root, ...OUT);
-  fs.writeFileSync(path.join(outRoot, 'INDEX.md'), renderIndex(cases, tallies, digest, prs.length));
-  fs.writeFileSync(path.join(outRoot, 'injection-coverage.md'), renderCoverage(cases, tallies));
+  fs.writeFileSync(
+    path.join(outRoot, 'INDEX.md'),
+    renderIndex(cases, tallies, digest, prs.length, honest.cases),
+  );
+  fs.writeFileSync(
+    path.join(outRoot, 'injection-coverage.md'),
+    renderCoverage([...cases, ...honest.cases], [...tallies, ...honest.tallies]),
+  );
 
   process.stdout.write(
     `oracle:build carriers=${prs.length} injected=${cases.length} ` +
-      `categories=${new Set(cases.map((c) => c.category)).size}/12 sha=${digest.slice(0, 12)}\n`,
+      `honest=${honest.cases.length} ` +
+      `categories=${new Set(cases.map((c) => c.category)).size}/${new Set(INJECTORS.map((i) => i.category)).size} ` +
+      `sha=${digest.slice(0, 12)}\n`,
   );
 }
 

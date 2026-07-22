@@ -1,11 +1,12 @@
 import { strict as assert } from 'assert';
 import * as crypto from 'crypto';
 import parseDiff from 'parse-diff';
-import { INJECTORS } from '../../../../src/audit/oracle/inject';
+import { HONEST_INJECTORS, INJECTORS } from '../../../../src/audit/oracle/inject';
 import {
   runInjectors,
   type CleanPrInput,
 } from '../../../../src/audit/oracle/inject/injection-runner';
+import { mockOfHallucinationDetector } from '../../../../src/audit/cheat-detector/mock-of-hallucination';
 
 // A carrier PR that touches both a source file and a test file, so every
 // injector has a carrier of the kind it needs.
@@ -132,5 +133,39 @@ describe('oracle / injectors', () => {
     assert.ok(!got.has('cheat-mock-mutation'), 'cheat-mock-mutation should refuse without a test file');
     // Source-carrier categories still inject.
     assert.ok(got.has('error-swallow'));
+  });
+});
+
+describe('oracle / honest injectors', () => {
+  it('keeps honest injectors out of the defect registry', () => {
+    const defectIds = new Set(INJECTORS.map((i) => i.id));
+    assert.ok(HONEST_INJECTORS.length >= 1);
+    for (const honest of HONEST_INJECTORS) {
+      assert.equal(honest.honest, true, `${honest.id} must be marked honest`);
+      assert.ok(!defectIds.has(honest.id), `${honest.id} must not be in INJECTORS`);
+    }
+  });
+
+  it('stamps honest: true on rendered honest cases', () => {
+    const { cases } = runInjectors([SAMPLE_PR], { perInjectorCap: 1 }, HONEST_INJECTORS);
+    assert.equal(cases.length, HONEST_INJECTORS.length);
+    for (const c of cases) {
+      assert.equal(c.label.honest, true, `${c.injectorId}: label missing honest flag`);
+    }
+  });
+
+  it('builtin-mock-honest case triggers no mock-of-hallucination finding', () => {
+    const { cases } = runInjectors([SAMPLE_PR], { perInjectorCap: 1 }, HONEST_INJECTORS);
+    const builtin = cases.find((c) => c.injectorId === 'builtin-mock-honest');
+    assert.ok(builtin, 'builtin-mock-honest produced no case for a test-bearing PR');
+    const findings = mockOfHallucinationDetector.run({
+      files: parseDiff(builtin.brokenDiff),
+      repoRoot: '.',
+    });
+    assert.ok(!(findings instanceof Promise));
+    assert.deepEqual(
+      findings.filter((f) => f.category === 'mock-of-hallucination'),
+      [],
+    );
   });
 });

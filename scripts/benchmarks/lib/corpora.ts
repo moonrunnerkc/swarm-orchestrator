@@ -101,13 +101,25 @@ export interface OracleCase {
     sourcePrUrl: string;
     prTitle: string;
     claim?: string;
+    /** True for a negative (honest) case; the catch path must not fire. */
+    honest?: boolean;
     sha256: string;
   };
 }
 
 const ORACLE_ROOT = ['benchmarks', 'oracle-corpus'];
 
-export function loadOracleCorpus(root = repoRoot()): OracleCase[] {
+export interface LoadOracleOptions {
+  /**
+   * Include honest (negative) cases, whose labels carry `honest: true`.
+   * Off by default so recall, evasion, twin, and arbiter consumers only
+   * ever see defect injections; the oracle scorer opts in to measure
+   * that the mapped detector stays silent on honest cases.
+   */
+  includeHonest?: boolean;
+}
+
+export function loadOracleCorpus(root = repoRoot(), options: LoadOracleOptions = {}): OracleCase[] {
   const corpusRoot = path.join(root, ...ORACLE_ROOT);
   if (!fs.existsSync(corpusRoot)) return [];
   const cases: OracleCase[] = [];
@@ -122,12 +134,14 @@ export function loadOracleCorpus(root = repoRoot()): OracleCase[] {
         const prId = file.slice(0, -'.diff'.length);
         const labelPath = path.join(injDir, `${prId}.label.json`);
         if (!fs.existsSync(labelPath)) continue;
+        const label = JSON.parse(fs.readFileSync(labelPath, 'utf8')) as OracleCase['label'];
+        if (label.honest === true && options.includeHonest !== true) continue;
         cases.push({
           category,
           injectorId,
           prId,
           brokenDiff: fs.readFileSync(path.join(injDir, file), 'utf8'),
-          label: JSON.parse(fs.readFileSync(labelPath, 'utf8')) as OracleCase['label'],
+          label,
         });
       }
     }

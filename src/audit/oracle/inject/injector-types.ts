@@ -85,6 +85,12 @@ export interface InjectionPlan {
 export interface InjectionLabel {
   category: OracleCategory;
   injectorId: string;
+  /**
+   * True for a negative (honest) case: the injected hunk is legitimate
+   * code that superficially resembles the category, and the mapped
+   * catch path must NOT fire on it. Absent for defect injections.
+   */
+  honest?: boolean;
   file: string;
   hunkIndex: number;
   startLine: number;
@@ -101,6 +107,13 @@ export interface Injector {
   id: string;
   category: OracleCategory;
   description: string;
+  /**
+   * True for an honest injector: it splices legitimate code that
+   * resembles the category, and the corpus scorer measures that the
+   * mapped catch path stays silent instead of counting recall. Honest
+   * injectors are registered in `HONEST_INJECTORS`, never `INJECTORS`.
+   */
+  honest?: boolean;
   /** Return a plan, or null to refuse this PR (no suitable carrier, or
    *  the site already exhibits the defect shape). */
   plan(input: InjectionInput): InjectionPlan | null;
