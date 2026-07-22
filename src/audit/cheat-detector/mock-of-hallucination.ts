@@ -36,6 +36,7 @@ import {
   collectInternalRootsFromFiles,
   resolvesToInternalRoot,
 } from './internal-roots';
+import { isNodeBuiltinMockTarget } from './node-builtins';
 import {
   defaultRegistryProbe,
   extractUsesRefs,
@@ -44,7 +45,7 @@ import {
   type RegistryProbe,
 } from './registries';
 
-const VERSION = '2.0.0';
+const VERSION = '2.1.0';
 
 const JS_MOCK_PATTERNS: RegExp[] = [
   /jest\.mock\(\s*['"]([^'"]+)['"]/,
@@ -138,6 +139,10 @@ export function buildMockOfHallucinationDetector(
           const claimed = extractMockTarget(addition.content);
           if (claimed === undefined) continue;
           if (isLocalImport(claimed)) continue;
+          // A Node builtin (`node:child_process`, bare `fs`, subpath
+          // `node:fs/promises`) ships with the runtime; no manifest
+          // declares it, so it can never be a hallucinated package.
+          if (isNodeBuiltinMockTarget(claimed)) continue;
           if (resolvesToInternalRoot(claimed, internalRoots)) continue;
           if (resolvesAgainst(claimed, knownDeps, knownLower)) continue;
           const probeResult = probe.query(toMockProbeQuery(claimed));

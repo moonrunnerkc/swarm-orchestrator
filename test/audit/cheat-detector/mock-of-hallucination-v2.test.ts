@@ -76,6 +76,48 @@ describe('mock-of-hallucination v2.0', () => {
     assert.match(findings[0]!.message, /not in the offline allowlist/);
   });
 
+  it('emits nothing for a node:-prefixed builtin mock (node:child_process)', () => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-mockv2-'));
+    fs.writeFileSync(path.join(repo, 'package.json'), JSON.stringify({ dependencies: {} }));
+    const diff = `diff --git a/src/x.test.ts b/src/x.test.ts
+--- a/src/x.test.ts
++++ b/src/x.test.ts
+@@ -1,2 +1,3 @@
+ import { foo } from './x';
++vi.mock('node:child_process');
+ test('foo', () => {});
+`;
+    assert.deepEqual(run(diff, repo), []);
+  });
+
+  it('emits nothing for a bare builtin mock (fs)', () => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-mockv2-'));
+    fs.writeFileSync(path.join(repo, 'package.json'), JSON.stringify({ dependencies: {} }));
+    const diff = `diff --git a/src/x.test.ts b/src/x.test.ts
+--- a/src/x.test.ts
++++ b/src/x.test.ts
+@@ -1,2 +1,3 @@
+ import { foo } from './x';
++jest.mock('fs');
+ test('foo', () => {});
+`;
+    assert.deepEqual(run(diff, repo), []);
+  });
+
+  it('emits nothing for a builtin subpath mock (node:fs/promises)', () => {
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-mockv2-'));
+    fs.writeFileSync(path.join(repo, 'package.json'), JSON.stringify({ dependencies: {} }));
+    const diff = `diff --git a/src/x.test.ts b/src/x.test.ts
+--- a/src/x.test.ts
++++ b/src/x.test.ts
+@@ -1,2 +1,3 @@
+ import { foo } from './x';
++jest.mock('node:fs/promises');
+ test('foo', () => {});
+`;
+    assert.deepEqual(run(diff, repo), []);
+  });
+
   it('keeps blocking mocks against modules not in any manifest', async () => {
     const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'swarm-mockv2-'));
     fs.writeFileSync(path.join(repo, 'package.json'), JSON.stringify({ dependencies: {} }));
