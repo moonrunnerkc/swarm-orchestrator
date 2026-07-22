@@ -63,6 +63,68 @@ new gates. All numbers regenerate from committed scripts and are reported per ti
   (not a volatile A/B report that drifted), and CI runs `badges:regen --check` so a
   stale row fails the build.
 
+## [12.1.1] - 2026-07-22
+
+Patch cycle: one detector bug, one dead surface gap, one repo-wide content-rule
+violation, one record gap. Every anomaly found on the way is logged in
+[`evidence/patch-12-1-1/incidents.md`](evidence/patch-12-1-1/incidents.md).
+
+### Fixed
+
+- **Node builtin mocks no longer flagged as hallucinated packages.** The
+  mock-of-hallucination detector normalizes mock target specifiers (strips the
+  `node:` prefix, resolves a subpath such as `node:fs/promises` to its root)
+  and treats every member of `builtinModules` from `node:module` as declared
+  for the npm ecosystem, so a builtin mock emits no finding at any severity.
+  This was a block-severity false positive on real PRs
+  (cloudflare/workers-sdk#14091 mocked `node:child_process`); that PR now
+  audits advisory-clean while #14063 and #14132 keep their documented
+  findings. Detector version 2.1.0. A negative (honest) oracle case
+  (`builtin-mock-honest`, in a separate `HONEST_INJECTORS` registry that
+  defect-recall consumers never see) measures the exemption: the scorer
+  requires silence on it, and mock-of-hallucination recall on its own
+  injection class held at 25/25.
+- **`oracle:build` no longer deletes the committed `live-path-runs/`
+  sidecar.** Corpus-rebuild deletion is ownership-based (only directories
+  named after a registered injector category), with a sentinel survival test.
+- **`benchmarks:full` is reproducible under one declared environment.**
+  Evasion robustness is judged per category at its own max tested depth (a
+  gap in depth rows is a hard error naming the category), COVERAGE.md gains a
+  tested-depth column, and the canonical judge environment (ollama,
+  qwen3.6:35b-a3b, the committed cache) is pinned in
+  `benchmarks/judge-env.json`; a conflicting ambient env aborts unless
+  `--override-judge-env` is passed. The judge cache checkpoints after every
+  live answer so interrupted sweeps resume. Numbers that moved when the
+  pipeline first ran under the canonical environment, each with old and new
+  values and mechanism: oracle overall recall 301/325 to 303/325
+  (goal-not-fixed 0.76 to 0.84; two queries the cache had never held),
+  COVERAGE.md robust column restored to per-category truth, and the
+  tail-defect / per-hunk reports relineaged from the glm47 judge
+  (`evidence/patch-12-1-1/incidents.md`, I-6 through I-8). Ground-truth floor
+  raised 301 to 303 and re-frozen.
+- **Em dashes eradicated from everything authored here.**
+  `scripts/prose-gate.sh` (`npm run prose:check`, CI-wired beside
+  `badges:check`) fails on any em dash in tracked files outside an explicit
+  exemption list of vendored diffs, frozen records, and third-party fixtures.
+  Renderers went first (PR-comment, audit CLI finding line, verdict lines),
+  with pinned test assertions updated in the same change; historical
+  CHANGELOG entries were corrected character-level with zero semantic edits.
+
+### Added
+
+- **The missing `[12.1.0]` changelog section**, reconstructed from
+  `git log v12.0.0..v12.1.0` and the committed evidence artifacts.
+
+### Changed
+
+- **README surface truth.** Install leads with `npm i -g swarm-orchestrator`
+  and says what the tarball ships (the audit CLI and its three bins); the
+  quick start puts the zero-credential `--diff-stdin` command first with the
+  token commands labeled; the reproduce command notes the benchmark diffs
+  live in the repo, not the tarball; the GitHub Action example pins
+  `@v12.1.1` instead of `@main`. Every runnable README command was executed
+  against the local build.
+
 ## [12.1.0] - 2026-07-06
 
 ### Wild-PR hunts, the triage cascade, evidence packs, and the positive merge gate
