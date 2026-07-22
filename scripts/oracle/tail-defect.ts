@@ -100,15 +100,16 @@ function buildReport(args: {
   lines.push(`| hunk-aware chunking (post-change) | ${chunkHits}/${count} | ${round(divide(chunkHits, count)).toFixed(3)} |`);
   lines.push('');
   lines.push(
-    '> Head-truncation never sees the tail hunk, so the judge cannot confirm ' +
-      'a defect it was never shown (recall 0). Chunking judges every hunk, so ' +
-      'the tail defect reaches the judge. The post-change absolute is held ' +
-      'down by the conservative confirm prompt, which often declines to flag ' +
-      'an isolated empty catch; the point is that the defect now reaches the ' +
-      'judge at all. The mechanism is pinned deterministically in ' +
+    '> Head-truncation drops the tail hunk before the judge ever sees it, so ' +
+      'a head-truncate hit is the judge flagging the truncated head on other ' +
+      'grounds, never a read of the planted tail defect. Chunking judges ' +
+      'every hunk, so the tail defect actually reaches the judge; the ' +
+      'absolute confirm rate is held down by the conservative confirm ' +
+      'prompt, which often declines to flag an isolated empty catch. The ' +
+      'mechanism (tail hunk presented under chunking, dropped under ' +
+      'head-truncation) is pinned deterministically in ' +
       '`test/audit/cheat-detector/tail-defect.test.ts` with a marker-seeking ' +
-      'stub that confirms the tail hunk is presented to the judge under ' +
-      'chunking and dropped under head-truncation.',
+      'stub, independent of any live judge.',
   );
   lines.push('');
   // The localized-prompt numbers are frozen evidence (see the sidecar);
