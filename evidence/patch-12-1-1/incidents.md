@@ -96,3 +96,60 @@ root cause, fix commit, numbers moved, verification command.
   and per the truth hierarchy the committed raw data is authoritative.
 - Numbers moved: none (evidence prose only).
 - Verification: the depth census command above.
+
+## I-6: oracle overall recall moved 301 to 303 (goal-not-fixed 0.76 to 0.84)
+
+- Symptom: after the canonical-environment live run, the ground-truth
+  sanity pin (301/325) failed with a live value of 303.
+- Classification: expected outcome of fixing I-3 (protocol d), not a
+  regression. Two goal-not-fixed judge queries had never been answered
+  in the committed cache (an unavailable answer is not cached and
+  counts as no); the first live run under the canonical
+  ollama/qwen3.6:35b-a3b environment answered both yes, and the
+  answers are now cached, so cache-only replays are stable at the new
+  value.
+- Numbers moved: oracle overall recall 301/325 (92.6%) to 303/325
+  (93.2%); goal-not-fixed judge-primary recall 0.76 (19/25) to 0.84
+  (21/25). Structural recall byte-identical (258/275).
+- Fix: GROUND_TRUTH_V12 floor raised 301 to 303 per the documented
+  ratchet (raise the code constant, `npm run baseline:freeze`, update
+  the sanity pin); README, docs/CLAIMS.md, and
+  benchmarks/results/AB-REPORT.md updated to cite 303/325 and the
+  0.84 row.
+- Verification: `npm run baseline:check` (all 5 floors held);
+  `node dist/scripts/benchmarks/full.js --no-live` twice,
+  Markdown outputs byte-identical, oracle-results.json identical
+  aside from the by-design generatedAt timestamp.
+
+## I-7: tail-defect and per-hunk rerun under the canonical env (ruling 5)
+
+- Symptom: the two glm47-lineage artifacts could not replay under the
+  canonical environment (I-3).
+- Classification: expected relineage, recorded old to new.
+- Numbers moved (tail-defect-recovery.md): head-truncate 0/10 to
+  1/10; hunk-aware chunking 1/10 to 0/10. The head-truncate hit is
+  the judge flagging the truncated head on other grounds, never a
+  read of the planted tail defect (the tail hunk is dropped before
+  the judge sees it); the report prose now states the mechanism
+  instead of asserting a recall the model can move.
+- Numbers moved (per-hunk-localization.md): whole-diff flag 2/10 to
+  0/10; per-hunk defect flag stays 0/10; benign false-flag stays
+  10/10 under qwen live. The localized-experiment rows stay frozen
+  sidecar evidence (unchanged).
+- Fix commits: the template rewrite in scripts/oracle/tail-defect.ts
+  and scripts/oracle/per-hunk.ts (mechanism-stated prose derived from
+  the measured variables), plus the canonical regeneration.
+- Verification: double `--no-live` run byte-identical.
+
+## I-8: COVERAGE.md regenerated under the fixed loader
+
+- Symptom: see I-2 and I-4.
+- Numbers moved: "survives cosmetic evasion" restored to "yes
+  (robust)" for all eleven structural detectors, now judged per
+  category at its own tested depth (4 everywhere except
+  cheat-mock-mutation at 6, shown in the new tested-depth column);
+  semantic recall rows now mirror oracle-results.json (0.84 / 0.96,
+  formerly 0.68 / 0.16 from a stale mixed-lineage run).
+- Verification: double `--no-live` run byte-identical; the evasion
+  CSV and evasion-report.md replay byte-identical to their committed
+  state under the canonical environment.

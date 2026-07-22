@@ -62,7 +62,7 @@ badge, a README line, or a slide, the artifact wins and the other is stale.
 
 | claim | number | artifact | regenerate |
 |---|---|---|---|
-| Oracle recall over the defect-injection corpus | 301 of 325 (92.6%) | `benchmarks/results/AB-REPORT.md`, `benchmarks/oracle-corpus/per-detector-recall.md` | `SWARM_JUDGE_PROVIDER=ollama SWARM_JUDGE_MODEL=qwen3.6:35b-a3b npm run benchmarks:full` |
+| Oracle recall over the defect-injection corpus | 303 of 325 (93.2%) | `benchmarks/results/AB-REPORT.md`, `benchmarks/oracle-corpus/per-detector-recall.md` | `npm run benchmarks:full` |
 | Real-PR false-alarm burden | 0.11 findings per PR (18-PR pilot) | `benchmarks/real-prs/REAL-WORLD-REPORT.md` | see report |
 | Advisory-tier precision on the real-outcome corpus | all 10 below the gate floor (Wilson-95 lower >= 0.9) | `benchmarks/real-corpus/promotions.json` | `npm run promotions:check` |
 | Twin separation (detector tier, semi-synthetic n=52) | separation 0.54, McNemar p = 7.5e-9 | `benchmarks/twins/TWIN-SEPARATION-REPORT.md` | `npm run twins:separation` |

@@ -40,38 +40,36 @@ Reads a pull request (PR) diff and flags the shortcuts artificial intelligence (
 Node 20 or later. See [`package.json`](package.json).
 
 ```bash
-git clone https://github.com/moonrunnerkc/swarm-orchestrator.git
-cd swarm-orchestrator
-npm install
-npm run build
-npm link
+npm i -g swarm-orchestrator
 swarm --help
 ```
 
-`npm run build` compiles TypeScript into `dist/` and marks the CLI executable; `npm link` puts the `swarm`, `swarm-audit`, and `swarm-orchestrator` bins on your `PATH`. The final `swarm --help` should print the subcommand list, which confirms the link took.
+The tarball ships the compiled audit CLI plus its three bins (`swarm`, `swarm-audit`, `swarm-orchestrator`); `swarm --help` printing the subcommand list confirms the install took. To work on the source, or to reproduce the benchmark numbers below, clone the repo instead: see [Developing](#developing).
 
 ## Quick start
 
 ```bash
-# Audit a PR by reference (advisory by default; never blocks the merge)
-GITHUB_TOKEN=... swarm audit moonrunnerkc/swarm-orchestrator#42
-
-# Opt in to merge-blocking gate mode (blocks only on a self-certifying
-# runtime proof; enable the execution-grounded layer in
-# .swarm/audit-config.yaml first; see docs/audit-config.md)
-GITHUB_TOKEN=... swarm audit moonrunnerkc/swarm-orchestrator#42 --mode gate
-
-# Audit a local diff with all 11 detectors
+# No credentials: audit a local diff with all 11 detectors
 git diff main...HEAD | swarm audit --diff-stdin --detectors experimental
 
-# Audit and emit a CycloneDX 1.6 ML-BOM
+# No credentials: audit a patch file and emit a CycloneDX 1.6 ML-BOM
 swarm audit --diff-file my.patch --emit-aibom cyclonedx-ml
 
-# Shadow mode: record verdicts to disk without commenting or gating
+# Requires GITHUB_TOKEN: audit a PR by reference (advisory by default;
+# never blocks the merge)
+GITHUB_TOKEN=... swarm audit moonrunnerkc/swarm-orchestrator#42
+
+# Requires GITHUB_TOKEN: opt in to merge-blocking gate mode (blocks only
+# on a self-certifying runtime proof; enable the execution-grounded layer
+# in .swarm/audit-config.yaml first; see docs/audit-config.md)
+GITHUB_TOKEN=... swarm audit moonrunnerkc/swarm-orchestrator#42 --mode gate
+
+# Requires GITHUB_TOKEN: shadow mode records verdicts to disk without
+# commenting or gating
 swarm audit --pr <ref> --shadow my-org/my-repo
 ```
 
-The first command fetches the PR diff, walks it through the eight default detectors plus the judge-primary path, prints any findings, and exits `0` because advise mode never gates. `--mode gate` runs the same detectors but exits `1` only when a runtime proof self-certifies against a green control set; on any PR it cannot prove, it falls back to advisory and still exits `0`. Exit codes overall: `0` advisory or any advise-mode run, `1` block (gate mode only), `2` usage error.
+The first command reads the diff from stdin, walks it through the detector battery, prints any findings, and exits `0` because advise mode never gates; no token or API key is involved. The `GITHUB_TOKEN` commands fetch the PR diff first. `--mode gate` runs the same detectors but exits `1` only when a runtime proof self-certifies against a green control set; on any PR it cannot prove, it falls back to advisory and still exits `0`. Exit codes overall: `0` advisory or any advise-mode run, `1` block (gate mode only), `2` usage error.
 
 ## Configuration
 
@@ -114,7 +112,7 @@ Every number here is reproducible from this repo and runs offline.
 | [cloudflare/workers-sdk#14063](https://github.com/cloudflare/workers-sdk/pull/14063) | fake refactor: function renamed but two callers still use the old name | not flagged |
 | [cloudflare/workers-sdk#14132](https://github.com/cloudflare/workers-sdk/pull/14132) | error swallow: bare empty `catch` silently hides every error in the block | not flagged |
 
-Both reproduce deterministically from the committed diffs. Semgrep (210 rules) and the ESLint security ruleset flag neither. Reproduce either with `swarm audit --diff-file benchmarks/real-prs/diffs/cloudflare-workers-sdk/<pr>.diff`. Full study across twelve repos in [`benchmarks/real-prs/v11-BENEFIT-REPORT.md`](benchmarks/real-prs/v11-BENEFIT-REPORT.md).
+Both reproduce deterministically from the committed diffs. Semgrep (210 rules) and the ESLint security ruleset flag neither. Reproduce either with `swarm audit --diff-file benchmarks/real-prs/diffs/cloudflare-workers-sdk/<pr>.diff`, run from a clone: the benchmark diffs live in this repository, not in the npm tarball. Full study across twelve repos in [`benchmarks/real-prs/v11-BENEFIT-REPORT.md`](benchmarks/real-prs/v11-BENEFIT-REPORT.md).
 
 ### How often agents cheat, and how often the detectors agree
 
@@ -126,7 +124,7 @@ The control-verifiable proof gate proved none of the 27: it fires only on its ow
 
 ### Detection numbers
 
-**301 of 325** planted cheats recovered (92.6%) across thirteen categories scored against a defect-injection oracle: 258/275 structural plus 43/50 on the two semantic categories the judge-primary path covers. The behavioral `cheat-mock-mutation` category drove the latest gain: focusing the judge on the hunks that add a value-injecting mock lifted its recall from 0.16 (the prior rapid-mlx glm47 run) to 0.96 (24/25) on the local qwen3.6 judge, while the clean-PR judge false-positive rate fell from 10% to 0%. Reproduce with `SWARM_JUDGE_PROVIDER=ollama SWARM_JUDGE_MODEL=qwen3.6:35b-a3b npm run benchmarks:full`; A/B with the same-model decomposition in [`benchmarks/results/AB-REPORT.md`](benchmarks/results/AB-REPORT.md) and per-detector recall in [`benchmarks/oracle-corpus/per-detector-recall.md`](benchmarks/oracle-corpus/per-detector-recall.md).
+**303 of 325** planted cheats recovered (93.2%) across thirteen categories scored against a defect-injection oracle: 258/275 structural plus 45/50 on the two semantic categories the judge-primary path covers. The behavioral `cheat-mock-mutation` category drove the latest gain: focusing the judge on the hunks that add a value-injecting mock lifted its recall from 0.16 (the prior rapid-mlx glm47 run) to 0.96 (24/25) on the local qwen3.6 judge, while the clean-PR judge false-positive rate fell from 10% to 0%. Reproduce with `npm run benchmarks:full` (the judge environment is pinned by `benchmarks/judge-env.json`); A/B with the same-model decomposition in [`benchmarks/results/AB-REPORT.md`](benchmarks/results/AB-REPORT.md) and per-detector recall in [`benchmarks/oracle-corpus/per-detector-recall.md`](benchmarks/oracle-corpus/per-detector-recall.md).
 
 **0.11 findings per PR** on an 18-PR pilot across five public repos. At or below the pre-upgrade auditor's false-alarm burden, with the oracle recall gain intact. Full numbers in [`benchmarks/real-prs/REAL-WORLD-REPORT.md`](benchmarks/real-prs/REAL-WORLD-REPORT.md).
 
@@ -171,7 +169,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: moonrunnerkc/swarm-orchestrator@main
+      - uses: moonrunnerkc/swarm-orchestrator@v12.1.1
         with:
           audit-mode: true
           emit-aibom: cyclonedx-ml

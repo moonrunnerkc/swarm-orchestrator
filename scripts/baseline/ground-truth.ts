@@ -49,10 +49,10 @@ export const GROUND_TRUTH_V12: readonly BaselineFloor[] = [
   {
     id: 'oracle-overall-recall',
     label: 'Oracle overall recall including judge-primary semantic categories',
-    floor: 301,
+    floor: 303,
     denominator: 325,
     source: 'benchmarks/oracle-corpus/oracle-results.json',
-    note: 'Structural tp plus semantic judgeTp (goal-not-fixed, cheat-mock-mutation). The semantic component replays from the committed qwen3.6 v1-conservative judge cache.',
+    note: 'Structural tp plus semantic judgeTp (goal-not-fixed, cheat-mock-mutation). The semantic component replays from the committed qwen3.6 v1-conservative judge cache. Raised 301 to 303 in 12.1.1 after the canonical-env live run answered two goal-not-fixed queries the cache had never held.',
   },
   {
     id: 'real-corpus-precision-point-vs-interval',

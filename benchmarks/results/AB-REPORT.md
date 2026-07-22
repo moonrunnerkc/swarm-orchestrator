@@ -56,7 +56,7 @@ not the judge).** From `benchmarks/oracle-corpus/judge-primary-vs-structural.md`
 | category | whole-diff (pre-focus) | focused (shipped) | delta |
 |---|---|---|---|
 | cheat-mock-mutation | 0.68 (17/25) | 0.96 (24/25) | +0.28 |
-| goal-not-fixed | 0.76 (19/25) | 0.76 (19/25) | 0 (focus passes the whole diff through) |
+| goal-not-fixed | 0.84 (21/25) | 0.84 (21/25) | 0 (focus passes the whole diff through) |
 
 **Across the judge migration** (glm47 whole-diff 0.16 -> qwen3.6 focused 0.96),
 the model accounts for 0.16 -> 0.68 and the focusing for 0.68 -> 0.96.
@@ -77,12 +77,15 @@ behavioral (swap the mockReturnValue family for an arrow mockImplementation,
 inject a benign decoy mock), because the focus discards noise and matches the
 whole mock family rather than one spelling.
 
-**Current totals (qwen3.6, focused):** structural 258/275, semantic 43/50
-(goal-not-fixed 19/25, cheat-mock-mutation 24/25), overall **301/325 (92.6%)**.
+**Current totals (qwen3.6, focused):** structural 258/275, semantic 45/50
+(goal-not-fixed 21/25, cheat-mock-mutation 24/25), overall **303/325 (93.2%)**.
 The structural recall is byte-identical to the prior run
-(`benchmarks/oracle-corpus/per-detector-recall.md` unchanged). Reproduce with
-`SWARM_JUDGE_PROVIDER=ollama SWARM_JUDGE_MODEL=qwen3.6:35b-a3b npm run benchmarks:full`;
-the committed judge cache replays the qwen3.6 answers offline.
+(`benchmarks/oracle-corpus/per-detector-recall.md` unchanged); goal-not-fixed
+rose 19 to 21 in 12.1.1 when the canonical-environment live run answered two
+queries the committed cache had never held. Reproduce with
+`npm run benchmarks:full` (the canonical judge environment is pinned by
+`benchmarks/judge-env.json`); the committed judge cache replays the qwen3.6
+answers offline.
 
 ## Injected-cheat recall by category
 

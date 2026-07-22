@@ -17,7 +17,7 @@ function liveAtFloor(over: Partial<LiveMetrics> = {}): LiveMetrics {
   return {
     oracleStructuralTp: 258,
     oracleStructuralInjections: 275,
-    oracleSemanticJudgeTp: 43,
+    oracleSemanticJudgeTp: 45,
     oracleSemanticInjections: 50,
     realCorpusPrecisionPoint: 0.09663835601719065,
     realCorpusPrecisionWilsonLower: 0.09663835601719065,
@@ -109,7 +109,7 @@ describe('scripts/baseline/ground-truth evaluateBaseline', () => {
 describe('scripts/baseline/ground-truth liveValueForFloor', () => {
   it('sums structural and semantic true positives for the overall floor', () => {
     const value = liveValueForFloor('oracle-overall-recall', liveAtFloor());
-    assert.equal(value, 301);
+    assert.equal(value, 303);
   });
 
   it('throws on an unknown floor id', () => {
@@ -140,8 +140,8 @@ describe('scripts/baseline/ground-truth referenceMatchesConstants', () => {
 describe('scripts/baseline/ground-truth against the committed tree', () => {
   it('holds every frozen floor on the current committed artifacts', () => {
     const live = readLiveMetrics(COMMITTED_SOURCES);
-    // Sanity: the committed oracle really is 301/325.
-    assert.equal(live.oracleStructuralTp + live.oracleSemanticJudgeTp, 301);
+    // Sanity: the committed oracle really is 303/325.
+    assert.equal(live.oracleStructuralTp + live.oracleSemanticJudgeTp, 303);
     assert.equal(live.oracleStructuralInjections + live.oracleSemanticInjections, 325);
     const result = evaluateBaseline(GROUND_TRUTH_V12, live);
     assert.equal(result.pass, true, JSON.stringify(result.regressions));
