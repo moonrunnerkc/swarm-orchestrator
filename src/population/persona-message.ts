@@ -152,7 +152,7 @@ function extractFilePathsFromPredicate(predicate: string): string[] {
   return candidates;
 }
 
-// Prescriptive when framework is known; silent when null —
+// Prescriptive when framework is known; silent when null,
 // over-specifying is worse than under-specifying.
 function renderTestFrameworkHint(
   relPath: string,
@@ -167,7 +167,7 @@ function renderTestFrameworkHint(
     case 'mocha':
       return 'This is a test file. Use Mocha API: `import { describe, it } from \'mocha\'` plus an assertion library that the project already depends on (typically `chai` or `node:assert`). Do NOT use Jest `expect(x).toBe(y)`.';
     case 'node-test':
-      return 'This is a test file. Use Node.js built-in test runner: `import { describe, it } from \'node:test\'` and `import assert from \'node:assert/strict\'`. Use `assert.equal(actual, expected)` (or `assert.deepEqual`); do NOT use Jest `expect(...).toBe(...)` — node:test has no `expect`. Import source files using extension-less paths that match the project\'s tsconfig moduleResolution.';
+      return 'This is a test file. Use Node.js built-in test runner: `import { describe, it } from \'node:test\'` and `import assert from \'node:assert/strict\'`. Use `assert.equal(actual, expected)` (or `assert.deepEqual`); do NOT use Jest `expect(...).toBe(...)`: node:test has no `expect`. Import source files using extension-less paths that match the project\'s tsconfig moduleResolution.';
     case 'pytest':
       return 'This is a test file. Use pytest API: `def test_xxx():` with plain `assert <expr>`. Do NOT use unittest.TestCase classes unless the project already does.';
     case null:

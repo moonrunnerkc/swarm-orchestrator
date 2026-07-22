@@ -2,9 +2,9 @@
  * Adaptive falsifier scheduler (UCB1).
  *
  * The sequential dispatcher runs adapters in registration order. When
- * multiple adapters claim the same obligation type — `codex-falsifier`
+ * multiple adapters claim the same obligation type, `codex-falsifier`
  * and `copilot-falsifier` both implementing `property-must-hold`, for
- * example — pure registration order leaves measurable performance on
+ * example, pure registration order leaves measurable performance on
  * the table and gives every operator the same blunt rotation.
  *
  * UCB1 (Auer, Cesa-Bianchi, Fischer 2002) is the smallest legitimate

@@ -174,10 +174,10 @@ function renderMarkdown(rows: CensusRow[]): string {
   lines.push('| surface | count | entries |');
   lines.push('| --- | --- | --- |');
   lines.push(
-    `| proof-executable (Node tier runs) | ${proofExecutable.length} | ${proofExecutable.map((r) => `${r.repo}#${r.prNumber}`).join(', ') || '—'} |`,
+    `| proof-executable (Node tier runs) | ${proofExecutable.length} | ${proofExecutable.map((r) => `${r.repo}#${r.prNumber}`).join(', ') || '-'} |`,
   );
   lines.push(
-    `| install-viable only (pytest/Go; proof tier abstains) | ${installOnly.length} | ${installOnly.map((r) => `${r.repo}#${r.prNumber} (${r.ecosystem})`).join(', ') || '—'} |`,
+    `| install-viable only (pytest/Go; proof tier abstains) | ${installOnly.length} | ${installOnly.map((r) => `${r.repo}#${r.prNumber} (${r.ecosystem})`).join(', ') || '-'} |`,
   );
   lines.push(`| not viable | ${nonViable.length} | see buckets below |`);
   lines.push('');
@@ -196,7 +196,7 @@ function renderMarkdown(rows: CensusRow[]): string {
   for (const r of rows) {
     lines.push(
       `| ${r.repo}#${r.prNumber} | ${r.complaintCategory} | ${r.frozenEgViable ? 'yes' : 'no'} | ` +
-        `${r.ecosystem ?? '—'} | ${r.lockfile ?? '—'} | ${r.testRunner ?? '—'} | ${r.nodeEngine ?? '—'} | ` +
+        `${r.ecosystem ?? '-'} | ${r.lockfile ?? '-'} | ${r.testRunner ?? '-'} | ${r.nodeEngine ?? '-'} | ` +
         `${r.viable ? 'VIABLE' : r.reason} | ${censusBucket(r)} |`,
     );
   }

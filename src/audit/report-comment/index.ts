@@ -83,7 +83,7 @@ export function renderPrComment(result: AuditResult, options: RenderOptions = {}
 function renderHeadline(result: AuditResult, mode: AuditMode): string {
   if (mode === 'advise') {
     return result.findings.length === 0
-      ? '# Swarm Audit: ADVISORY — clean'
+      ? '# Swarm Audit: ADVISORY, clean'
       : '# Swarm Audit: ADVISORY';
   }
   return result.pass ? '# Swarm Audit: PASS' : '# Swarm Audit: BLOCK';
@@ -92,9 +92,9 @@ function renderHeadline(result: AuditResult, mode: AuditMode): string {
 function renderSubtitle(result: AuditResult, mode: AuditMode): string {
   if (mode === 'advise') {
     if (result.findings.length === 0) {
-      return '_No suspicion-score signal raised on this PR. Advisory mode — not a merge gate._';
+      return '_No suspicion-score signal raised on this PR. Advisory mode, not a merge gate._';
     }
-    return '_Suspicion-score signal raised below for human review. Advisory mode — not a merge gate._';
+    return '_Suspicion-score signal raised below for human review. Advisory mode, not a merge gate._';
   }
   return result.pass
     ? '_No blocking cheat patterns detected. Audit obligations are satisfied._'
@@ -150,7 +150,7 @@ function renderSummary(result: AuditResult): string {
     .join(', ');
   const setLabel = result.detectorSet ?? 'default';
   return [
-    `**Findings:** ${total} total — ${blocking} blocking, ${warnings} warnings.`,
+    `**Findings:** ${total} total, ${blocking} blocking, ${warnings} warnings.`,
     `**Detector set:** \`${setLabel}\``,
     `**Detectors run:** ${detectorList}`,
   ].join('\n');
@@ -159,7 +159,7 @@ function renderSummary(result: AuditResult): string {
 function renderSeverityHeader(severity: Severity, count: number, mode: AuditMode): string {
   const label = severity === 'block' ? 'Blocking' : severity === 'warn' ? 'Warning' : 'Informational';
   if (mode === 'advise' && severity === 'block') {
-    return `## Blocking-severity findings (${count}) — advisory only, not gating`;
+    return `## Blocking-severity findings (${count}): advisory only, not gating`;
   }
   return `## ${label} (${count})`;
 }
@@ -226,7 +226,7 @@ function renderFinding(finding: Finding): string {
   const badge = formatPrecisionBadge(finding.category);
   const confidence = finding.confidence ?? 'structural-only';
   const lines: string[] = [
-    `### \`${finding.category}\` — ${fileLine}`,
+    `### \`${finding.category}\`: ${fileLine}`,
     '',
     `*Confidence:* ${confidence}. *Detector precision badge:* ${badge}.`,
     '',

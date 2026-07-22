@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────
-# fetch-fixtures.sh — clone pinned OSS SHAs, tar the relevant
+# fetch-fixtures.sh, clone pinned OSS SHAs, tar the relevant
 # subset, and verify each tarball matches the sha256 recorded in
 # SOURCES.md.
 #
@@ -80,13 +80,13 @@ for row in "${ROWS[@]}"; do
   # ── verify-only path ─────────────────────────────────────────
   if [ "$VERIFY_ONLY" -eq 1 ]; then
     if [ ! -f "$tar_out" ]; then
-      echo "✗ $id — tarball missing: $tar_out"
+      echo "✗ $id, tarball missing: $tar_out"
       FAIL=$((FAIL+1))
       continue
     fi
     actual="$(sha256sum "$tar_out" | awk '{print $1}')"
     if [ "$actual" != "$hash" ]; then
-      echo "✗ $id — sha256 mismatch"
+      echo "✗ $id, sha256 mismatch"
       echo "    recorded: $hash"
       echo "    actual:   $actual"
       FAIL=$((FAIL+1))
@@ -100,11 +100,11 @@ for row in "${ROWS[@]}"; do
   if [ -f "$tar_out" ]; then
     actual="$(sha256sum "$tar_out" | awk '{print $1}')"
     if [ "$actual" = "$hash" ]; then
-      echo "✓ $id — cached, sha256 matches"
+      echo "✓ $id, cached, sha256 matches"
       PASS=$((PASS+1))
       continue
     fi
-    echo "⟳ $id — cached tarball differs; refetching"
+    echo "⟳ $id, cached tarball differs; refetching"
     rm -f "$tar_out"
   fi
 
@@ -118,7 +118,7 @@ for row in "${ROWS[@]}"; do
   fi
   ( cd "$repo_cache" && git fetch --quiet origin "$sha" 2>/dev/null || true )
   if ! ( cd "$repo_cache" && git cat-file -e "${sha}^{commit}" 2>/dev/null ); then
-    echo "✗ $id — SHA $sha not reachable in $repo"
+    echo "✗ $id, SHA $sha not reachable in $repo"
     FAIL=$((FAIL+1))
     continue
   fi
@@ -130,7 +130,7 @@ for row in "${ROWS[@]}"; do
   #
   # Subpath handling: `git archive <sha> -- <subpath>` preserves the subpath
   # as a prefix on every tar entry (files appear as `databases/turso/...`).
-  # That's wrong for our use case — the task prompt tells the agent about
+  # That's wrong for our use case, the task prompt tells the agent about
   # files at `prisma/schema.prisma`, not `databases/turso/prisma/schema.prisma`,
   # and the extracted workspace should match. `git archive <sha>:<subpath>`
   # uses a tree-ish reference that treats the subpath as the archive root,
@@ -145,15 +145,15 @@ for row in "${ROWS[@]}"; do
 
   actual="$(sha256sum "$tar_out" | awk '{print $1}')"
   if [ "$hash" = "pending" ] || [ -z "$hash" ]; then
-    echo "→ $id — fetched, sha256=$actual (SOURCES.md has placeholder; update it)"
+    echo "→ $id, fetched, sha256=$actual (SOURCES.md has placeholder; update it)"
     PASS=$((PASS+1))
   elif [ "$actual" != "$hash" ]; then
-    echo "✗ $id — sha256 mismatch after fetch"
+    echo "✗ $id, sha256 mismatch after fetch"
     echo "    recorded: $hash"
     echo "    actual:   $actual"
     FAIL=$((FAIL+1))
   else
-    echo "✓ $id — fetched, sha256 matches"
+    echo "✓ $id, fetched, sha256 matches"
     PASS=$((PASS+1))
   fi
 done

@@ -1,6 +1,6 @@
 // Real-corpus entry shape for the v10.1 PR-derived leaderboard. Parallel
 // to `benchmarks/falsification-corpus/schema.ts` (the v8-shaped
-// verification-run schema) — kept separate so PR fixtures do not have
+// verification-run schema): kept separate so PR fixtures do not have
 // to pretend to be verification-run steps.
 //
 // `GroundTruthLabel` / `BrokenCategory` are reused from the

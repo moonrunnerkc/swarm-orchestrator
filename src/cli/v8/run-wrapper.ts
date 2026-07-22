@@ -30,13 +30,13 @@ const DEFAULT_DEPS: RunV8Deps = { handleCompile, handleRun };
  * `swarm v8 run <contract>`. Other flags pass through to the run step.
  *
  * Exit codes are the union of compile and run:
- *   0 — every obligation satisfied
- *   1 — flag parsing or compile/runtime error
- *   2 — at least one obligation failed verification
- *   3 — missing API key for the default session
- *   4 — ledger chain tampered (resume only; not raised here)
- *   5 — resume preconditions not met (not raised here)
- *   6 — cost cap exceeded (--cost-cap)
+ *   0: every obligation satisfied
+ *   1: flag parsing or compile/runtime error
+ *   2: at least one obligation failed verification
+ *   3: missing API key for the default session
+ *   4: ledger chain tampered (resume only; not raised here)
+ *   5: resume preconditions not met (not raised here)
+ *   6: cost cap exceeded (--cost-cap)
  *
  * @param argv arguments AFTER the literal `run` token. The wrapper picks
  *   off `--goal`, `--extractor`, `--api-key`, `--model`, `--temperature`,

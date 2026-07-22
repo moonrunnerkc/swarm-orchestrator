@@ -476,7 +476,7 @@ def run_real_analysis(args: argparse.Namespace) -> int:
     if len(discarded) > 0.10 * len(full_config_a):
         sys.stderr.write(
             f"WARNING: {len(discarded)}/{len(full_config_a)} obligations discarded "
-            f"({100 * len(discarded) / len(full_config_a):.1f}%) — "
+            f"({100 * len(discarded) / len(full_config_a):.1f}%): "
             f"above the 10% threshold; analysis still proceeds, but the close-out "
             f"must cite the elevated discard rate as a caveat on the result.\n"
         )

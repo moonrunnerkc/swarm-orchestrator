@@ -1,5 +1,5 @@
 /**
- * Consolidated pipeline configuration — all feature flags that control
+ * Consolidated pipeline configuration, all feature flags that control
  * the population-manager run path in a single type so callers don't
  * need to thread a dozen individual booleans.
  *

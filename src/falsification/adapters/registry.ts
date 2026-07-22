@@ -27,7 +27,7 @@ export class AdapterRegistry {
 
   /**
    * Register `adapter` under `adapter.name`. Throws if an adapter with the
-   * same name is already registered — silent overwrite hides bugs.
+   * same name is already registered, silent overwrite hides bugs.
    */
   register(adapter: FalsifierAdapter): void {
     const existing = this.adapters.get(adapter.name);

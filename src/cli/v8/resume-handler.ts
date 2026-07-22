@@ -109,12 +109,12 @@ interface ResumeHandlerInjections {
  * Implementation of `swarm v8 resume <run-id> [flags]`.
  *
  * Returns an exit code:
- *   0 — every remaining obligation satisfied (or all already satisfied)
- *   1 — argv parsing or runtime error
- *   2 — at least one obligation failed verification
- *   3 — missing API key for the default session
- *   4 — ledger chain is tampered; resume aborts
- *   5 — resume preconditions not met (no matching prior run, etc.)
+ *   0: every remaining obligation satisfied (or all already satisfied)
+ *   1: argv parsing or runtime error
+ *   2: at least one obligation failed verification
+ *   3: missing API key for the default session
+ *   4: ledger chain is tampered; resume aborts
+ *   5: resume preconditions not met (no matching prior run, etc.)
  */
 export async function handleResume(
   argv: string[],

@@ -179,7 +179,7 @@ const INVALID_FIXTURES: InvalidFixture[] = [
   },
 ];
 
-describe('contract/extractor — DeterministicExtractor', () => {
+describe('contract/extractor, DeterministicExtractor', () => {
   describe('valid fixtures', () => {
     for (const fixture of VALID_FIXTURES) {
       it(`accepts: ${fixture.name}`, async () => {

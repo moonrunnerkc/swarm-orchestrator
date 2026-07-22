@@ -117,7 +117,7 @@ export async function runTrickyGoal(
   // guide §10) expands the default registry to eight personas; rounds
   // beyond round 0 draw from the broader fallback pool, and the older
   // persona-id-keyed responder would accidentally route Phase 7 personas
-  // through the catch-all 'no-op' branch — coupling the rng-advance
+  // through the catch-all 'no-op' branch, coupling the rng-advance
   // count to the registry size and changing tournament outcomes for
   // reasons unrelated to the bench's stated invariant. Routing by
   // obligation type eliminates that coupling: every synthesis persona

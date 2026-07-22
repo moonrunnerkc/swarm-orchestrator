@@ -662,7 +662,7 @@ hand-labeled entries. Synthetic regression suite still passes 520 of
 
 ## [10.0.0] - 2026-05-23
 
-### v10 — Auditor repositioning
+### v10: Auditor repositioning
 
 Refocuses the project from "AI coding swarm" to *the merge gate for AI-generated
 PRs.* Internal API names (`Obligation`, `Contract`, `verifier`) are stable; only
@@ -792,10 +792,10 @@ cleanup; no behavioral changes to the v6 or v8 code paths.
 
 ### Added
 
-- `evidence/baseline-v8.0.3/` — captured baselines (build log, test log,
+- `evidence/baseline-v8.0.3/`: captured baselines (build log, test log,
   end-to-end smoke against `fixtures/v8-empty`, LOC count, file count) so
   later cleanup phases can gate against a comparable reference point.
-- `evidence/loc-budget.txt` — per-phase LOC ceiling consumed by the
+- `evidence/loc-budget.txt`: per-phase LOC ceiling consumed by the
   cleanup CI gate.
 - CI gate (`cleanup-boundary` job in `.github/workflows/ci.yml`) that
   enforces three invariants on every PR: total `src/` LOC stays at or

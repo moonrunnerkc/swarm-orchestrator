@@ -53,7 +53,7 @@ function main(): void {
   fs.writeFileSync(args.out, JSON.stringify(output, null, 2) + '\n', 'utf8');
   // eslint-disable-next-line no-console
   console.log(
-    `measure-corroborated-gate: wrote ${args.out} — ${summarizeCorroboratedGate(comparable.aggregate)} ` +
+    `measure-corroborated-gate: wrote ${args.out}: ${summarizeCorroboratedGate(comparable.aggregate)} ` +
       `(provisionable=${comparable.slice.provisionableCount}, n_bad=${comparable.slice.outcomeBadInProvisionable})`,
   );
 }

@@ -21,7 +21,7 @@ import {
  *
  * Prefix-cache mapping: vLLM honors `enable_prefix_caching` at server
  * startup. When enabled, the server reports `cached_tokens` in the usage
- * block — the backend surfaces that as `cacheReadTokens` for the cost
+ * block, the backend surfaces that as `cacheReadTokens` for the cost
  * model.
  */
 export class VllmBackend implements LocalBackend {

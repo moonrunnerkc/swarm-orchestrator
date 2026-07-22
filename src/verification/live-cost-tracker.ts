@@ -25,7 +25,7 @@ export const COST_CAP_ABORT_REASON = 'cost-cap exceeded';
 // One instance per run. Observers built by `observerForStream()` route
 // into the same accounting state so concurrent tournament candidates
 // each contribute their in-flight output to a single ceiling. The
-// ceiling is denominated in output tokens — every provider's session
+// ceiling is denominated in output tokens, every provider's session
 // contract reports tokens uniformly, so the gate is provider-agnostic.
 export class LiveCostTracker {
   private readonly budgetTokens: number | null;

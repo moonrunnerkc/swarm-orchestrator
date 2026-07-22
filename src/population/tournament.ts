@@ -1,6 +1,6 @@
 // Speculative-synthesis tournament harness. Per impl guide §6:
 // diversity injection across rounds, hard cap of three rounds before
-// escalating. The harness is agnostic to *what* personas produce —
+// escalating. The harness is agnostic to *what* personas produce,
 // applyCandidate knows how to translate the winner into on-disk
 // changes.
 
@@ -153,7 +153,7 @@ export interface RunTournamentOptions {
   // of the same obligation type inherits that verdict and skips the
   // verifier call.
   memoStore?: MemoStore;
-  // Stream aborts are independent across candidates — one aborting does
+  // Stream aborts are independent across candidates, one aborting does
   // not cancel the others. Aborted candidates get a synthetic verdict
   // with score -1 so they cannot win.
   streamingAssertions?: readonly StreamingAssertion[];
@@ -486,7 +486,7 @@ export async function runTournament(
           streamingCharsBeforeAbort,
         };
       }
-      // Winner failed application/verification — discard and fall
+      // Winner failed application/verification, discard and fall
       // through to the next round (or escalate when cap is hit).
       ledgerSink?.recordDiscard({
         obligationIndex,
@@ -546,7 +546,7 @@ export async function runTournament(
 }
 
 // Round 0 uses primaries; later rounds rotate in fallbacks. Repeats
-// from primary when the slate is shorter than `count` — the
+// from primary when the slate is shorter than `count`: the
 // "same persona at different temperatures" path.
 export function pickPersonaSlate(
   slate: TournamentPersonaSlate,

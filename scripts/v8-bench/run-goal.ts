@@ -22,7 +22,7 @@ import type { BenchGoal } from './goals';
  * highlights, ~100K characters ⇒ ~25K tokens at the 4-chars-per-token
  * estimator. The v6 model in §6 also assumes ~40K tokens of bootstrap
  * input per CLI invocation; sizing v8's cached prefix in the same range
- * keeps the comparison honest — both substrates are paying for "the
+ * keeps the comparison honest, both substrates are paying for "the
  * project," just at different cache rates.
  *
  * The exact text is filler; the size is what matters for the synthetic

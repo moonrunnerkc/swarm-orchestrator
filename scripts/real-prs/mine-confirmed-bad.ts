@@ -286,7 +286,7 @@ async function main(): Promise<void> {
         ? `reached the ${TARGET_CONFIRMED_BAD} target`
         : `bounded mine of ${records.length} agent PRs yielded ${bad.length} outcome-confirmed-bad ` +
           `(${((bad.length / Math.max(1, records.length - dist.indeterminate)) * 100).toFixed(1)}% of usable); ` +
-          `below the ${TARGET_CONFIRMED_BAD} target — grow with --fetch-more to scan further`,
+          `below the ${TARGET_CONFIRMED_BAD} target, grow with --fetch-more to scan further`,
     distribution: dist,
     confirmedBadPrs: bad,
   };

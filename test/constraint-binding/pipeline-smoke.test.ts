@@ -51,7 +51,7 @@ describe('Constraint-binding pipeline smoke', function () {
 
   it('every pilot fixture extracts and every validator is rejected on the un-modified baseline', () => {
     // This is the core smoke: if the validator passes the UN-MODIFIED fixture,
-    // it has no teeth — it would also pass a broken agent output. The correct
+    // it has no teeth, it would also pass a broken agent output. The correct
     // behavior is that each task's validators fail until the prompted change
     // is applied. One task failing a validator on the baseline proves the
     // validator actually gates correctness.
@@ -73,7 +73,7 @@ describe('Constraint-binding pipeline smoke', function () {
 
         const report = engine.runValidators(task, work, { timeoutMs: 30_000 });
 
-        // The untouched baseline MUST fail — if it passes, the validators are
+        // The untouched baseline MUST fail, if it passes, the validators are
         // grep-only placeholders and will pass agent garbage too.
         assert.strictEqual(
           report.passed,
@@ -83,7 +83,7 @@ describe('Constraint-binding pipeline smoke', function () {
             JSON.stringify(report, null, 2),
         );
         const firstFailed = report.validators.find((v) => !v.passed);
-        rows.push(`  ${task.id} (${task.pattern}) — baseline rejected at "${firstFailed?.name}"`);
+        rows.push(`  ${task.id} (${task.pattern}): baseline rejected at "${firstFailed?.name}"`);
       } finally {
         fs.rmSync(work, { recursive: true, force: true });
       }
@@ -92,7 +92,7 @@ describe('Constraint-binding pipeline smoke', function () {
   });
 });
 
-describe('Constraint-binding validator engine — adversarial', () => {
+describe('Constraint-binding validator engine, adversarial', () => {
   it('times out a runaway validator instead of hanging forever', () => {
     const dir = tmpDir('cb-timeout');
     try {

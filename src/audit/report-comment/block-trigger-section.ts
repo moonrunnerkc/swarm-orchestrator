@@ -112,11 +112,11 @@ function renderEvidence(evidence: BlockTriggerEvidence): string[] {
   }
 }
 
-/** ✅ / ❌ / — for a control that passed, failed, or never executed (null). */
+/** ✅ / ❌ / - for a control that passed, failed, or never executed (null). */
 function controlMark(value: boolean | null): string {
   if (value === true) return '✅';
   if (value === false) return '❌';
-  return '—';
+  return '-';
 }
 
 /** The three internal controls behind a restoration proof, in a fixed order so
@@ -125,7 +125,7 @@ function controlMark(value: boolean | null): string {
 function renderTestTamperProven(evidence: TestTamperProvenEvidence): string[] {
   const c = evidence.controls;
   return [
-    `*Verdict:* \`${evidence.verdict}\` — \`${evidence.category}\` on ${evidence.testFiles.join(', ')}.`,
+    `*Verdict:* \`${evidence.verdict}\`: \`${evidence.category}\` on ${evidence.testFiles.join(', ')}.`,
     '',
     `*Restored failing test(s):* ${evidence.failingTests.join('; ')}.`,
     '',
@@ -144,7 +144,7 @@ function renderTestTamperProven(evidence: TestTamperProvenEvidence): string[] {
 function renderMockMutationProven(evidence: MockMutationProvenEvidence): string[] {
   const c = evidence.controls;
   return [
-    `*Verdict:* \`${evidence.verdict}\` — cheat-mock-mutation on ${evidence.testFiles.join(', ')}.`,
+    `*Verdict:* \`${evidence.verdict}\`: cheat-mock-mutation on ${evidence.testFiles.join(', ')}.`,
     '',
     `*Restored failing test(s):* ${evidence.failingTests.join('; ')}.`,
     '',
@@ -165,7 +165,7 @@ function renderMockMutationProven(evidence: MockMutationProvenEvidence): string[
 function renderNoOpFixProven(evidence: NoOpFixProvenEvidence): string[] {
   const c = evidence.controls;
   return [
-    `*Verdict:* \`${evidence.verdict}\` — no-op-fix; reverted ${evidence.revertedSourceFiles.join(', ')}.`,
+    `*Verdict:* \`${evidence.verdict}\`: no-op-fix; reverted ${evidence.revertedSourceFiles.join(', ')}.`,
     '',
     `*PR claim:* \`${evidence.prClaim}\`.`,
     '',
@@ -187,7 +187,7 @@ function renderNoOpFixProven(evidence: NoOpFixProvenEvidence): string[] {
 function renderTypeSuppressionProven(evidence: TypeSuppressionProvenEvidence): string[] {
   const c = evidence.controls;
   return [
-    `*Verdict:* \`${evidence.verdict}\` — type-suppression; reverted ${evidence.removedDirectives.join(', ')} in ${evidence.file}.`,
+    `*Verdict:* \`${evidence.verdict}\`: type-suppression; reverted ${evidence.removedDirectives.join(', ')} in ${evidence.file}.`,
     '',
     `*Diagnostic(s) the directive was hiding:*`,
     '',
@@ -210,7 +210,7 @@ function renderTypeSuppressionProven(evidence: TypeSuppressionProvenEvidence): s
 function renderFakeRefactorProven(evidence: FakeRefactorProvenEvidence): string[] {
   const c = evidence.controls;
   return [
-    `*Verdict:* \`${evidence.verdict}\` — fake-refactor; \`${evidence.oldName}\` renamed to ` +
+    `*Verdict:* \`${evidence.verdict}\`: fake-refactor; \`${evidence.oldName}\` renamed to ` +
       `\`${evidence.newName}\` in ${evidence.file}.`,
     '',
     `*Surviving reference(s) to \`${evidence.oldName}\`:* ${evidence.references.join(', ')}.`,
@@ -230,7 +230,7 @@ function renderFakeRefactorProven(evidence: FakeRefactorProvenEvidence): string[
 function renderDeadBranchProven(evidence: DeadBranchProvenEvidence): string[] {
   const c = evidence.controls;
   return [
-    `*Verdict:* \`${evidence.verdict}\` — dead-branch; the inserted ` +
+    `*Verdict:* \`${evidence.verdict}\`: dead-branch; the inserted ` +
       `\`if (${evidence.branchCondition})\` at ${evidence.file}:${evidence.branchLine} never ` +
       `executes.`,
     '',

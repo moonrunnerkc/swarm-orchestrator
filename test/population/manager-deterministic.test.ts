@@ -40,7 +40,7 @@ function trackingSession(): StubSession {
   });
 }
 
-describe('population/manager — deterministic dispatch', () => {
+describe('population/manager, deterministic dispatch', () => {
   it('satisfies a tagged file-must-exist with zero session calls for that obligation (§8 exit (a))', async () => {
     const repo = tmpDir();
     // Contract validator requires ≥1 build + ≥1 test; both run no-ops
@@ -70,8 +70,8 @@ describe('population/manager — deterministic dispatch', () => {
     // The build and test obligations DO call into the session (architect
     // is the file-must-exist persona; build/test go through the
     // implementer/verifier personas), but they declare 'no-op' so no
-    // diff is applied. The architect persona — the only one that would
-    // have generated a file body — is never called because the
+    // diff is applied. The architect persona, the only one that would
+    // have generated a file body, is never called because the
     // deterministic floor already satisfied the file obligation.
     // For the explicit "zero tokens" check we look at the ledger: there
     // must be no candidate-recorded entry for the file-must-exist
@@ -210,7 +210,7 @@ describe('population/manager — deterministic dispatch', () => {
 
   it('omitting the runtime keeps the synthesis path entirely', async () => {
     const repo = tmpDir();
-    // Tag the obligation but pass no runtime — population manager must
+    // Tag the obligation but pass no runtime, population manager must
     // ignore the tag and run synthesis as usual.
     const contract = makeContract(repo, [
       { type: 'file-must-exist', path: 'LICENSE', deterministicStrategy: 'scaffold-template' },

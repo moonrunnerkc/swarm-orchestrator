@@ -2,7 +2,7 @@
 // by every adapter whose prompt mandates a single fenced ```json```
 // block. The extractor is string-aware so embedded triple-backticks
 // inside `bytes` cannot truncate the document (codex tests pin this).
-// Strict by design — malformed output is a real error worth surfacing.
+// Strict by design, malformed output is a real error worth surfacing.
 
 import type { ParsedCandidate, ParsedCandidateFile } from './cli-falsifier';
 

@@ -7,7 +7,7 @@
  *
  * to stdout or stderr and then exits with a non-zero status code,
  * leaving the caller holding the bag. The CLI's "Retrying..." message
- * is misleading — internally it gave up. End-of-run-battery and
+ * is misleading, internally it gave up. End-of-run-battery and
  * falsifier dispatch then read the failed exec as a real CLI failure,
  * which surfaces as either a `dispatcher-error` ledger entry or, worse,
  * an empty worker branch because the spawn happened in the middle of a
@@ -51,7 +51,7 @@ export interface TransientRetryOptions<R extends TransientRetryableResult> {
   /**
    * Side-effect hook fired after every attempt (including transient
    * ones). The integration in `CopilotFalsifier` uses this to keep the
-   * existing observability `onInvocation` semantics — every real spawn
+   * existing observability `onInvocation` semantics, every real spawn
    * goes into the per-obligation transcript so transient failures stay
    * visible.
    */

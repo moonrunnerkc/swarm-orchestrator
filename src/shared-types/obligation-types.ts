@@ -1,4 +1,4 @@
-// TypeScript-side mirror of `schema/v1.json`. Kept in lockstep — schema
+// TypeScript-side mirror of `schema/v1.json`. Kept in lockstep, schema
 // changes mean a v2.json, new union member, and new schema-version
 // string. Phase 7 added five obligation types additively; v1 still
 // accepts every Phase 0–6 obligation document.
@@ -123,7 +123,7 @@ export interface ExtractorProvenance {
   promptSha256: string | null;
 }
 
-// Predicates that already hold against the unmodified workspace —
+// Predicates that already hold against the unmodified workspace,
 // trivial tautologies the compiler drops from the obligation list and
 // surfaces here for caller audit. Never part of the contract hash.
 export interface TautologyWarning {

@@ -128,7 +128,7 @@ function fakeCodexStdoutFor(candidate: RegressionCandidate): string {
 
 describe('Phase 1 confirmed-yields regression fixtures', () => {
   for (const candidate of REGRESSION_FIXTURES) {
-    describe(`${candidate.id} (stratum ${candidate.stratum}) — ${candidate.target}`, () => {
+    describe(`${candidate.id} (stratum ${candidate.stratum}): ${candidate.target}`, () => {
       it('predicate exits 0 against the bare fixture (sanity)', () => {
         const ws = makeWorkspaceFromFixture();
         try {

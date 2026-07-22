@@ -11,7 +11,7 @@ export function isTestFilePath(relPath: string): boolean {
 
 // Conservative: only obvious cross-framework imports/API references
 // trip it. Lookalike frameworks (Jest vs Vitest) are not flagged
-// against each other — a false positive (rewrite a valid file) is
+// against each other, a false positive (rewrite a valid file) is
 // costlier than letting an ambiguous case through.
 export function detectTestFrameworkMisuse(
   repoRoot: string,

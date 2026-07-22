@@ -108,13 +108,13 @@ export async function attemptApplyAndVerify(
       applyDetail = `unified diff parse/apply error: ${message}`;
       // A throw mid-application means an earlier hunk may have already
       // landed on disk before the failing hunk's context mismatch was
-      // detected. Treat as "may have mutated" — fires the rollback
+      // detected. Treat as "may have mutated": fires the rollback
       // below, which is idempotent (no-op if pre==current).
       applied = true;
     }
   } else {
     applyDetail =
-      'persona response is neither a unified diff nor "no-op" — ' +
+      'persona response is neither a unified diff nor "no-op": ' +
       'workspace left unchanged. Response head: ' +
       responseText.trim().slice(0, 120).replace(/\s+/g, ' ');
   }

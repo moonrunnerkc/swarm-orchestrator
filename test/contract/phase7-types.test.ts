@@ -80,7 +80,7 @@ describe('contract Phase 7 obligation types', () => {
     it('rejects an import-graph-must-satisfy obligation with an unknown constraint', () => {
       const r = validateObligations(
         withMinimalShell([
-          // @ts-expect-error — exercising the schema branch
+          // @ts-expect-error, exercising the schema branch
           { type: 'import-graph-must-satisfy', constraint: 'no-imports', scope: 'src' },
         ]),
       );

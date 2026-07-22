@@ -66,7 +66,7 @@ describe('cli/v8/grammar-resolve warning text', () => {
   });
 
   it('formats the both-coerced case naming both consumers', () => {
-    // Synthesize a coercion record manually — no live value triggers
+    // Synthesize a coercion record manually, no live value triggers
     // this branch today, but the formatter must still cover it for
     // forward-compat tests of new grammars.
     const msg = formatGrammarWarning({

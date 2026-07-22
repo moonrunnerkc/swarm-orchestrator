@@ -18,7 +18,7 @@ const FILE_MUST_EXIST: ObligationV1 = { type: 'file-must-exist', path: 'OUT.txt'
 const TEST_MUST_PASS: ObligationV1 = { type: 'test-must-pass', command: 'true' };
 const TEST_MUST_FAIL: ObligationV1 = { type: 'test-must-pass', command: 'false' };
 
-describe('population/manager — attemptApplyAndVerify', () => {
+describe('population/manager, attemptApplyAndVerify', () => {
   it('applies a file-must-exist obligation and reports success', async () => {
     const repo = tmpDir('aaaV-');
     const ledger = new JsonlLedger(path.join(repo, 'ledger.jsonl'), 'r1');
@@ -91,7 +91,7 @@ describe('population/manager — attemptApplyAndVerify', () => {
     const ledger = new JsonlLedger(path.join(repo, 'ledger.jsonl'), 'r4');
     fs.writeFileSync(path.join(repo, 'src.txt'), 'actual line\n');
     // Diff header + hunk header are valid, but the context line "expected
-    // line" doesn't exist in src.txt — strict applier rejects it.
+    // line" doesn't exist in src.txt, strict applier rejects it.
     const diff = [
       '--- a/src.txt',
       '+++ b/src.txt',

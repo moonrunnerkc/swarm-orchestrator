@@ -1,7 +1,7 @@
 # Rule check types
 
 Swarm's orchestration mode (`swarm run`, `swarm compile`) grades a patch
-against a typed *rule set*. The internal API name is still `Obligation` — only
+against a typed *rule set*. The internal API name is still `Obligation`: only
 the docs vocabulary moved to *rule* / *check* in v10.
 
 Every rule entry has a `type` field; the engine knows how to evaluate each

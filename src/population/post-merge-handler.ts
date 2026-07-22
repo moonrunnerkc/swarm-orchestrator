@@ -46,7 +46,7 @@ export interface PostMergeResult {
  * - Structural regressions (test-must-pass, build-must-pass, file-must-exist)
  *   trigger full rollback of all synthesis-applied obligations.
  * - Predicate-only regressions (property-must-hold, etc.) are quality
- *   warnings that do NOT trigger rollback — rolling back working code
+ *   warnings that do NOT trigger rollback, rolling back working code
  *   for cosmetic predicate misses destroys real progress.
  */
 export async function handlePostMerge(
@@ -117,7 +117,7 @@ export async function handlePostMerge(
         restoredFiles: [],
         detail:
           `post-merge regression detected (${regressionGap} obligation(s)) but ` +
-          'no structural failure — keeping applied work. ' +
+          'no structural failure, keeping applied work. ' +
           'Predicate-only regressions are quality warnings, not rollback triggers.',
       });
     }

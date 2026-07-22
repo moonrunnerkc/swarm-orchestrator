@@ -2,7 +2,7 @@
  * Heuristic pre-classifier for falsifier candidates.
  *
  * Hand inspections of grep-style predicates found roughly 33% of
- * machine-claimed yields were "predicate-gaming" — text that the
+ * machine-claimed yields were "predicate-gaming": text that the
  * predicate counted as a violation but a human would not consider a
  * real instance. The AST-backed verifier filters most string-literal
  * gaming, but operator inspection is still required. This classifier
@@ -67,7 +67,7 @@ function parseSource(file: CandidateFile): ts.SourceFile {
 
 /**
  * Whether `text` appears in `source.text` in any form *not* parsed as
- * code — i.e., inside a JSDoc / line comment / block comment / string
+ * code, i.e., inside a JSDoc / line comment / block comment / string
  * literal / template literal. Used to decide between
  * `likely-gaming` (the constraint pattern only shows up in comments or
  * strings) and `ambiguous` (the pattern is absent from both code and
@@ -143,7 +143,7 @@ function containsNonCodeMention(source: ts.SourceFile, needle: string): boolean 
  * a path-shape rule rather than an import edge).
  *
  * Implementation note: re-exports (`export { x } from './y'`) count as
- * import edges per the AST shape — the obligation is about the *graph*
+ * import edges per the AST shape, the obligation is about the *graph*
  * regardless of whether the edge is an import or a re-export.
  */
 export function classifyImportGraphCandidate(
@@ -211,7 +211,7 @@ export function classifyImportGraphCandidate(
   // For no-upward-imports the constraint can also be falsified by an
   // import path containing `..`; with no AST edges at all and no
   // mention in trivia, the candidate likely relies on a different
-  // mechanism (path-based file presence, etc.) — operator decides.
+  // mechanism (path-based file presence, etc.): operator decides.
   const constraintHint =
     obligation.constraint === 'no-upward-imports'
       ? '..'
@@ -356,10 +356,10 @@ export function classifyFunctionSignatureCandidate(
     // ambiguous with the matching pair noted.
     return {
       label: 'ambiguous',
-      reason: `declaration of "${obligation.name}" matches the expected signature \`${matchingSignature.signature}\`; the candidate did not drift the signature — operator should check whether the obligation falsifies via a different mechanism`,
+      reason: `declaration of "${obligation.name}" matches the expected signature \`${matchingSignature.signature}\`; the candidate did not drift the signature, operator should check whether the obligation falsifies via a different mechanism`,
     };
   }
-  // The declaration exists but the signature is different — that *is*
+  // The declaration exists but the signature is different, that *is*
   // a real signature drift, which is what
   // function-must-have-signature falsification looks like.
   const observed = matchingName[0]!;

@@ -28,7 +28,7 @@ that traverse above `repoRoot` (using `path.relative` to detect `..`). This
 prevents a malicious patch from writing outside the repository directory.
 
 **Protected paths:** `file-must-exist` obligations with `body` content
-register the path as "protected" — downstream patch appliers will not
+register the path as "protected": downstream patch appliers will not
 overwrite or delete those files. This preserves contract-authored content
 from being stomped by later persona patches.
 
@@ -49,7 +49,7 @@ al. 1992):
 3. **Rollback.** Each file is restored from the sidecar directory. After
    writing, the on-disk content is re-hashed and compared to `preBlobSha`.
    If the hash doesn't match, rollback returns `recovery-invariant-violated`
-   and stops — the workspace state is considered unrecoverable.
+   and stops, the workspace state is considered unrecoverable.
 4. **Idempotency.** Calling rollback twice is safe: if the current hash
    already equals `preBlobSha`, the file is treated as already-restored
    and skipped.
@@ -99,7 +99,7 @@ winner's changes pass all obligations simultaneously, not just individually.
 Falsification adapters (Codex, Copilot, Claude Code) are external CLI tools
 that run in their own sandbox postures. These are documented in
 [docs/falsification-adapters.md](docs/falsification-adapters.md). The main
-verification path does **not** use these adapters — they are opt-in and run
+verification path does **not** use these adapters, they are opt-in and run
 only when `--falsifiers on` is active.
 
 ### Snapshot cleanup
@@ -148,10 +148,10 @@ container.
 |---|---|---|---|---|
 | Patch apply (no-op) | N/A | N/A | N/A | N/A |
 | Patch apply (diff / whole-file) | In-process file write | Path traversal guard, protected paths, truncation guard | ARIES rollback with SHA-1 verification | N/A |
-| Obligation commands (build, test, property, perf) | `spawnSync` via `/bin/bash` in `repoRoot` | **None** — runs as invoking user | ARIES rollback after each obligation | 5 min default |
-| Falsifier adapters (opt-in) | External CLI in its own sandbox | Per-adapter (see docs) | N/A — adapters operate on already-verified patches | Per-adapter timeout |
-| Post-merge verification | `spawnSync` via `/bin/bash` in `repoRoot` | **None** — runs as invoking user | N/A — final pass | 5 min default |
-| Execution-grounded checks (opt-in) | `spawnSync` in a temp checkout, or `docker run` when `runner: docker` | Env-scrubbed allowlist (host); plus bind mount, `--network none`, process-group kill (docker) for mutation/coverage/repro | N/A — disposable checkout, removed after the run | 5 min/command default |
+| Obligation commands (build, test, property, perf) | `spawnSync` via `/bin/bash` in `repoRoot` | **None**, runs as invoking user | ARIES rollback after each obligation | 5 min default |
+| Falsifier adapters (opt-in) | External CLI in its own sandbox | Per-adapter (see docs) | N/A, adapters operate on already-verified patches | Per-adapter timeout |
+| Post-merge verification | `spawnSync` via `/bin/bash` in `repoRoot` | **None**, runs as invoking user | N/A, final pass | 5 min default |
+| Execution-grounded checks (opt-in) | `spawnSync` in a temp checkout, or `docker run` when `runner: docker` | Env-scrubbed allowlist (host); plus bind mount, `--network none`, process-group kill (docker) for mutation/coverage/repro | N/A, disposable checkout, removed after the run | 5 min/command default |
 
 ## Secret Handling
 

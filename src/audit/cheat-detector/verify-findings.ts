@@ -75,7 +75,7 @@ const TEST_REMOVAL: ReadonlySet<CheatCategory> = new Set<CheatCategory>([
 
 // The error-swallow detector blocks on a bare empty catch. That pattern is a
 // cheat when it removes error propagation from code a caller already relied on;
-// in a file the PR *creates*, there is no prior behavior to hide — a bare
+// in a file the PR *creates*, there is no prior behavior to hide, a bare
 // `try/except: pass` in a new standalone script is best-effort robustness, not
 // the silencing of an existing failure. The real-corpus FPs are exactly this
 // (whole new app.py / bot.py / plotting scripts). The oracle's error-swallow
@@ -177,7 +177,7 @@ function refute(
       reason:
         `${finding.category} blocks when a bare empty catch removes error propagation from ` +
         `existing behavior; this catch is in a file the PR creates, so there is no prior ` +
-        `behavior to hide — it is new best-effort code, not a silenced existing failure`,
+        `behavior to hide, it is new best-effort code, not a silenced existing failure`,
     };
   }
 

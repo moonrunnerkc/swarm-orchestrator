@@ -6,7 +6,7 @@ import {
 import { DeterministicExtractor } from '../../src/contract/extractor/deterministic-extractor';
 import { AnthropicExtractor } from '../../src/contract/extractor/anthropic-extractor';
 
-describe('contract/extractor — factory', () => {
+describe('contract/extractor, factory', () => {
   describe('resolveExtractorProvider', () => {
     const originalEnv = process.env.EXTRACTOR_PROVIDER;
     afterEach(() => {

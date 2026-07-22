@@ -1,10 +1,10 @@
 // Reader for Maven `pom.xml`. We do not introduce an XML parser
-// dep — the schema fields we care about (`<groupId>`, `<artifactId>`
+// dep, the schema fields we care about (`<groupId>`, `<artifactId>`
 // inside a `<dependency>` block) are line-greppable and the parser
 // cost would be high for one detector. We include test-scope and
 // provided-scope dependencies because mocks of those are still
 // legitimate; the detector only asks "does this dependency exist in
-// the project's declared set?" — not whether it would ship at
+// the project's declared set?": not whether it would ship at
 // runtime.
 
 import * as fs from 'fs';

@@ -15,7 +15,7 @@ Constraints, all hard:
 2. Produce exactly ${candidateCount} candidates, each with a short
    rationale and a list of files to add or overwrite (relPath relative
    to the workspace root, plus byte content as a UTF-8 string).
-3. Each candidate must be independently sufficient — the orchestrator
+3. Each candidate must be independently sufficient, the orchestrator
    applies one candidate at a time and rolls back before applying the
    next, so candidates must not depend on each other.
 4. Files must use a source extension the verifier walks: .ts, .tsx,

@@ -35,7 +35,7 @@ const DATA_EXTENSIONS = new Set([
   '.rst',
   '.txt',
   '.adoc',
-  // Stylesheets — modified routinely in real PRs, never imported by
+  // Stylesheets, modified routinely in real PRs, never imported by
   // a unit test, never the carrier of an AI cheat pattern at this
   // detector's level.
   '.css',

@@ -223,7 +223,7 @@ function renderReport(args: ReportArgs): string {
   );
   lines.push('');
   lines.push(
-    'Goals dominated by boilerplate (LICENSE, README.md, .gitignore, .editorconfig, CHANGELOG.md) auto-tag with `scaffold-template` via the contract compiler. The mixed goal includes one source-file obligation that does NOT auto-tag — it always falls through to synthesis.',
+    'Goals dominated by boilerplate (LICENSE, README.md, .gitignore, .editorconfig, CHANGELOG.md) auto-tag with `scaffold-template` via the contract compiler. The mixed goal includes one source-file obligation that does NOT auto-tag, it always falls through to synthesis.',
   );
   lines.push('');
   lines.push('## Results');

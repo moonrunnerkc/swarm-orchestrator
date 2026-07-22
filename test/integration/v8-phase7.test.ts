@@ -17,8 +17,8 @@ import type { SessionRequest } from '../../src/session/types';
  *   1. The default registry exposes every Phase 7 persona AND each Phase 7
  *      obligation type is dispatched to its owning persona by the
  *      predicate evaluator.
- *   2. The population manager can drive an 8-obligation contract — one
- *      obligation per type — through to satisfaction in single mode using
+ *   2. The population manager can drive an 8-obligation contract, one
+ *      obligation per type, through to satisfaction in single mode using
  *      stub responses tailored to each persona.
  *   3. The ledger records one `obligation-attempted` entry per persona,
  *      and `run-finished` reports `failed=0` once all eight verifiers
@@ -178,7 +178,7 @@ describe('integration: v8 Phase 7 milestone', () => {
 
   it('Phase 7 obligation types fail loudly on a non-compliant workspace', async () => {
     // No README, signature missing, cycle in src, coverage absent,
-    // baseline missing — every Phase 7 verifier should report a
+    // baseline missing, every Phase 7 verifier should report a
     // verifiable failure detail.
     writeFile(repoRoot, 'src/a.ts', `import './b';\n`);
     writeFile(repoRoot, 'src/b.ts', `import './a';\n`); // cycle

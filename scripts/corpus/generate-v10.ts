@@ -2,7 +2,7 @@
 // (broken + clean) = 1000 diff files plus an index.json.
 //
 // Each case is generated through `renderHunk` so the `@@` header
-// counts always match the body's line counts — parse-diff stops
+// counts always match the body's line counts, parse-diff stops
 // consuming content once the header's quota is met, and a lying
 // header silently truncates multi-file diffs (we discovered this
 // the hard way when the leaderboard scorer's first run reported
@@ -272,8 +272,8 @@ function buildCoverageErosion(i: number): GeneratedCase {
 
 function buildFakeRefactor(i: number): GeneratedCase {
   // v2.0 (TS-compiler-API closure) fires when an Identifier with the
-  // old name remains visible in the diff — added line OR unchanged
-  // context line — in any other file touched by the PR. The earlier
+  // old name remains visible in the diff, added line OR unchanged
+  // context line, in any other file touched by the PR. The earlier
   // fixture shape (rename only, no caller hunk) doesn't satisfy that
   // contract, so the broken case here ships a caller hunk where the
   // import and the existing call site appear as context lines and the

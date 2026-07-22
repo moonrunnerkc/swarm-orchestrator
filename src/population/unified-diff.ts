@@ -250,7 +250,7 @@ interface ApplyUnifiedDiffOptions {
    * `skippedFiles`); modify-in-place patches are allowed, since they don't
    * stomp on the architect's body. Without this exemption every downstream
    * persona's legitimate edit to a file-must-exist path gets silently
-   * dropped — the May 2026 eval failure mode.
+   * dropped, the May 2026 eval failure mode.
    */
   readonly protectedPaths?: ReadonlySet<string>;
 }

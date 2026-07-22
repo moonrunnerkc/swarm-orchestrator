@@ -9,7 +9,7 @@ help: ## Show this help
 # ── Development ──
 
 init: ## Create .env from .env.example if it doesn't exist
-	@test -f .env || (cp .env.example .env && echo "Created .env from .env.example — edit it to add your API keys")
+	@test -f .env || (cp .env.example .env && echo "Created .env from .env.example, edit it to add your API keys")
 	@test -f .env && echo ".env already exists" || true
 
 install: init ## Install all dependencies

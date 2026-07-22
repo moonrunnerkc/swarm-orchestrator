@@ -6,9 +6,9 @@ import { extractImports } from '../../src/verification/ast-imports';
 
 /**
  * Tests for the AST-backed import extractor. These cover shapes the
- * v8.0 regex matcher could not parse — multi-line imports, dynamic
- * `import()` calls, `import x = require(...)` — and shapes that would
- * have produced false positives — `require` inside a string literal,
+ * v8.0 regex matcher could not parse, multi-line imports, dynamic
+ * `import()` calls, `import x = require(...)`: and shapes that would
+ * have produced false positives, `require` inside a string literal,
  * `import` keyword inside a comment.
  */
 

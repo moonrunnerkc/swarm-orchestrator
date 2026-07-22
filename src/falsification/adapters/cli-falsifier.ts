@@ -99,7 +99,7 @@ export class CliFalsifier implements FalsifierAdapter {
     if (sub.exitCode !== 0) {
       throw new Error(
         `${this.profile.errorLabel} exec failed with exit code ${sub.exitCode}. ` +
-          `stderr: ${truncate(sub.stderr, 1024)} — ` +
+          `stderr: ${truncate(sub.stderr, 1024)}: ` +
           `surface the failure rather than treating it as no-falsification-found.`,
         { cause: { exitCode: sub.exitCode, stderr: sub.stderr, stdout: sub.stdout } },
       );

@@ -78,7 +78,7 @@ export function dollarsForUsageByAuth(
   };
 }
 
-/** Probe codex auth-tier. Cached per process — auth doesn't change mid-run. */
+/** Probe codex auth-tier. Cached per process, auth doesn't change mid-run. */
 export function detectCodexAuthMethod(binaryPath = 'codex'): AdapterAuthMethod {
   if (cachedAuthMethod !== null) return cachedAuthMethod;
   const r = spawnSync(binaryPath, ['login', 'status'], {

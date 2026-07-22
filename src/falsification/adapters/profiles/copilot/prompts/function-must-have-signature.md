@@ -15,7 +15,7 @@ the file at the obligation path either:
   (b) declares it with a different normalized signature; or
   (c) cannot be parsed at all (so the AST extractor finds no match).
 Each candidate should be a full replacement of the target file with a
-concrete drift — different parameter list, different return type,
+concrete drift, different parameter list, different return type,
 renamed function, removed function, etc. Keep the rest of the file
 syntactically valid TypeScript so the AST extractor still runs and the
 mismatch is reported as a real signature drift rather than a parser
@@ -26,7 +26,7 @@ Constraints, all hard:
    files you describe.
 2. Produce exactly ${candidateCount} candidates, each with a short
    rationale and a list of files to add or overwrite.
-3. Each candidate must be independently sufficient — the orchestrator
+3. Each candidate must be independently sufficient, the orchestrator
    applies one candidate at a time and rolls back before applying the
    next. Each candidate should overwrite ${file} with a
    different drift; do not propose three identical candidates.

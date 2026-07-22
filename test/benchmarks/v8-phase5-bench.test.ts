@@ -12,7 +12,7 @@ describe('v8 phase-5 bench: deterministic-goal shape', () => {
   });
 });
 
-describe('v8 phase-5 bench: §8 (a) — tagged obligations satisfied with zero LLM tokens', () => {
+describe('v8 phase-5 bench: §8 (a): tagged obligations satisfied with zero LLM tokens', () => {
   it('every goal: tagged-count == deterministic-satisfied count and ledger has no candidates for those obligations', async function () {
     this.timeout(20000);
     for (const goal of DETERMINISTIC_GOALS) {
@@ -30,7 +30,7 @@ describe('v8 phase-5 bench: §8 (a) — tagged obligations satisfied with zero L
   });
 });
 
-describe('v8 phase-5 bench: §8 (b) — deterministic configuration costs less', () => {
+describe('v8 phase-5 bench: §8 (b): deterministic configuration costs less', () => {
   it('deterministic effective input is strictly lower than baseline on every dominated goal', async function () {
     this.timeout(20000);
     for (const goal of DETERMINISTIC_GOALS) {

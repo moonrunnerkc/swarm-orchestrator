@@ -22,7 +22,7 @@ import type { LiveCostTracker } from './live-cost-tracker';
 
 /**
  * A checkable assertion the streaming verifier evaluates against the
- * accumulating partial output. Assertions are sync and cheap — they run
+ * accumulating partial output. Assertions are sync and cheap, they run
  * on every chunk. Returning `null` means "no violation observed (yet)";
  * returning a string is the violation reason and triggers an abort.
  */

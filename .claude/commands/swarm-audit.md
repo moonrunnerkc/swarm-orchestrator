@@ -39,8 +39,8 @@ fi
 
 ## Exit codes
 
-- `0` — no blocking findings, PR is mergeable.
-- `1` — blocking finding caught. Read the rendered Markdown and fix
+- `0`: no blocking findings, PR is mergeable.
+- `1`: blocking finding caught. Read the rendered Markdown and fix
   the flagged hunk(s) before pushing.
 
 ## Notes

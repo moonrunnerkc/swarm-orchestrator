@@ -361,7 +361,7 @@ export async function withRetry<T>(fn: () => Promise<T>, label: string, attempt 
     // the hourly reset, so retrying is futile and only multiplies real calls (the
     // very thing that drained the quota). Throw immediately; the caller skips and
     // the run finishes assembly with what it has. Only the SECONDARY (abuse) limit
-    // — burst-triggered, recovers in seconds — is worth backing off and retrying.
+    //, burst-triggered, recovers in seconds, is worth backing off and retrying.
     if (remaining === 0) {
       log.warn(`${label}: primary rate limit exhausted (remaining 0); not retrying until hourly reset`);
       throw err;
@@ -502,7 +502,7 @@ const REVERTS_COMMIT_RE = /this reverts commit ([0-9a-f]{7,40})/gi;
 /**
  * Extract every commit sha a commit message claims to revert. Shared so the
  * outcome-label deriver and any future caller detect reverts the same way the
- * block path detects revert PRs — by the artifact git itself writes, not a
+ * block path detects revert PRs, by the artifact git itself writes, not a
  * bespoke regex per call site.
  *
  * @param message a commit message

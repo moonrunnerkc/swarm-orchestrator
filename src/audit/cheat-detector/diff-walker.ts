@@ -26,7 +26,7 @@ export interface HunkPair {
 
 // A line is "comment-only" if its first non-whitespace characters
 // open or continue a single-line or block comment. Comments are prose
-// describing code, not the code itself — a detector looking for a
+// describing code, not the code itself, a detector looking for a
 // `jest.mock(...)` call should not fire on `// jest.mock('foo') is a
 // cheat`. The exact set of opener tokens here covers JS/TS, Python,
 // SQL/Lua (--), block comments (/* */), and continuations (*).
@@ -185,7 +185,7 @@ export function isTestFile(path: string): boolean {
 
 // Extensions whose files are plausibly imported by a test. Used by
 // no-op-fix and coverage-erosion to gate their "no compensating test"
-// findings — a docs file, config blob, lockfile, or storybook story
+// findings, a docs file, config blob, lockfile, or storybook story
 // can't be imported by a unit test in any reasonable repo, so flagging
 // the absence of a test for one is only noise.
 const TEST_REACHABLE_EXTENSIONS = new Set<string>([
@@ -220,7 +220,7 @@ const NEVER_TEST_REACHABLE_RE: RegExp[] = [
 ];
 
 // Filenames that are never test-reachable code regardless of extension
-// or absence thereof. LICENSE, .env, .gitignore class — config and
+// or absence thereof. LICENSE, .env, .gitignore class, config and
 // project-metadata files.
 const NEVER_TEST_REACHABLE_BASENAMES = new Set<string>([
   'LICENSE', 'LICENSE.md', 'LICENSE.txt', 'COPYING', 'NOTICE',
@@ -236,7 +236,7 @@ const NEVER_TEST_REACHABLE_BASENAMES = new Set<string>([
 /**
  * Returns true when a unit test could plausibly import this file.
  * Used to gate detector findings whose entire question is "does any
- * test reach this file?" — for files outside this set, the answer is
+ * test reach this file?": for files outside this set, the answer is
  * "no" by definition, and the finding has no value.
  */
 export function isPlausiblyTestReachable(p: string): boolean {

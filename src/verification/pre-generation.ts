@@ -27,7 +27,7 @@ export interface PreGenerationOptions {
 
 // Obligation types whose verification result depends on the integrated
 // state of the workspace. Pre-verifying these while another synthesis
-// obligation is still pending is unsound — the pending obligation can
+// obligation is still pending is unsound, the pending obligation can
 // flip the global-state verifier's outcome, producing vacuous
 // "pre-verified" entries that post-merge then has to revoke (May 2026
 // eval failure: `node --test` exited 0 against an empty repo for a

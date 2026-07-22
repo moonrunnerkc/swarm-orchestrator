@@ -240,7 +240,7 @@ function renderDefensibleCatches(c: Computed): string {
   for (const { label, corpus } of c.confirmedCheats) {
     const finding = findingForKey(corpus, label.repo, label.prNumber, label.key);
     const url = `https://github.com/${label.repo}/pull/${label.prNumber}`;
-    lines.push(`### ${i}. ${label.repo}#${label.prNumber} — ${label.category} (${corpus})`);
+    lines.push(`### ${i}. ${label.repo}#${label.prNumber}: ${label.category} (${corpus})`);
     lines.push('');
     lines.push(`- PR: ${url}`);
     if (finding !== undefined) {
@@ -285,9 +285,9 @@ function renderWorstFalseAlarms(c: Computed): string {
   }
   let i = 1;
   for (const { pr, finding } of top) {
-    lines.push(`### ${i}. ${pr.repo}#${pr.prNumber} — ${finding.category} (${finding.judgePath})`);
+    lines.push(`### ${i}. ${pr.repo}#${pr.prNumber}: ${finding.category} (${finding.judgePath})`);
     lines.push('');
-    lines.push(`- PR: ${pr.url} — "${pr.title.replace(/\n/g, ' ')}"`);
+    lines.push(`- PR: ${pr.url}: "${pr.title.replace(/\n/g, ' ')}"`);
     lines.push(`- Finding: ${finding.message.replace(/\n/g, ' ')}`);
     lines.push(`- Arbiters: ${dualLabelText(c.dual, finding.key)}`);
     lines.push('');

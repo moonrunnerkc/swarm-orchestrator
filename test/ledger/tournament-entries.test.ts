@@ -16,7 +16,7 @@ function tmpFile(): string {
   return path.join(dir, 'ledger.jsonl');
 }
 
-describe('ledger — Phase 3 tournament entry types', () => {
+describe('ledger, Phase 3 tournament entry types', () => {
   it('round-trips tournament-round-started entries', () => {
     const file = tmpFile();
     const led = new JsonlLedger(file, 'rT');

@@ -14,15 +14,15 @@
  *                              GITHUB_TOKEN if available)
  *
  * Exit code:
- *   0 — no blocking findings, or any result in `advise` mode
- *   1 — at least one blocking finding in `gate` mode (the merge gate)
- *   2 — usage error or unrecoverable failure
+ *   0: no blocking findings, or any result in `advise` mode
+ *   1: at least one blocking finding in `gate` mode (the merge gate)
+ *   2: usage error or unrecoverable failure
  *
  * The `--mode` flag toggles between `advise` (default, suspicion-score
  * only) and `gate` (the v10.1 merge-blocking contract). In `advise`
  * the rendered comment is unchanged in content (every finding is still
  * surfaced with its measured precision), but the exit code never goes
- * to 1 on a blocking finding — the audit's role is signal, not refusal.
+ * to 1 on a blocking finding, the audit's role is signal, not refusal.
  */
 
 import * as fs from 'fs';
@@ -182,9 +182,9 @@ const USAGE = [
   '  --help, -h                show this message',
   '',
   'exit codes:',
-  '  0 — pass, or any result in advise mode',
-  '  1 — block (one or more blocking findings, gate mode only)',
-  '  2 — usage error or unrecoverable failure',
+  '  0: pass, or any result in advise mode',
+  '  1: block (one or more blocking findings, gate mode only)',
+  '  2: usage error or unrecoverable failure',
   '',
 ].join('\n');
 
@@ -816,8 +816,8 @@ export function buildCompletedEntry(
     detectorVersions: result.detectorVersions,
     wallTimeMs,
     detail: result.pass
-      ? `audit pass — ${result.findings.length} non-blocking finding(s)`
-      : `audit block — ${blockingCount} blocking finding(s)`,
+      ? `audit pass, ${result.findings.length} non-blocking finding(s)`
+      : `audit block, ${blockingCount} blocking finding(s)`,
   };
 }
 
@@ -1242,7 +1242,7 @@ async function maybeFetchManifests(
   } catch (err) {
     // Manifest fetch is a best-effort optimization. A failure here
     // (rate-limit, auth, network) should not prevent the audit from
-    // running — it just means the mock-of-hallucination detector
+    // running, it just means the mock-of-hallucination detector
     // works from whatever `--repo-root` already had.
     logger.debug(
       `manifest fetch failed: ${err instanceof Error ? err.message : String(err)}`,
@@ -1347,7 +1347,7 @@ function emitOutput(
   const warnings = result.findings.filter((f) => f.severity === 'warn').length;
   logger.info(`audit ${header} (mode=${mode}): ${blocking} blocking, ${warnings} warning (ledger: ${ledgerPath})`);
   for (const finding of result.findings) {
-    logger.info(`  [${finding.severity}] ${finding.category}: ${finding.location.file}:${finding.location.line} — ${finding.message}`);
+    logger.info(`  [${finding.severity}] ${finding.category}: ${finding.location.file}:${finding.location.line}: ${finding.message}`);
   }
   for (const trigger of blockingTriggers) {
     const verb = mode === 'gate' ? 'BLOCK' : 'advisory';

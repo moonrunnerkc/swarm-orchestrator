@@ -128,7 +128,7 @@ describe('population/whole-file-apply', () => {
         // Big existing file (40 lines).
         const big = Array.from({ length: 40 }, (_, i) => `line${i}`).join('\n');
         fs.writeFileSync(path.join(repo, 'big.js'), big);
-        // Persona response replaces with only 3 lines — likely truncation.
+        // Persona response replaces with only 3 lines, likely truncation.
         const text = '<<<FILE big.js\nA\nB\nC\nFILE>>>';
         const r = applyWholeFileResponse(repo, text);
         assert.equal(r.applied, false);

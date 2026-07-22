@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Walk outputs/wild-scan/raw/**/audit-*.json and produce:
-//   1. outputs/wild-scan/summary.json — machine-readable rollup
-//   2. outputs/wild-scan/summary.md   — human-readable rollup
-//   3. outputs/wild-scan/findings-ranked.json — per-finding rows, ranked
+//   1. outputs/wild-scan/summary.json, machine-readable rollup
+//   2. outputs/wild-scan/summary.md  , human-readable rollup
+//   3. outputs/wild-scan/findings-ranked.json, per-finding rows, ranked
 //
 // "Ranked" finding score: warn > info, blocking detectors weighted higher,
 // pure-data PRs (no source touched) deprioritized. Used to pick the top
@@ -158,7 +158,7 @@ function main() {
     }
   }
 
-  // Ranked findings — flatten one row per finding for triage.
+  // Ranked findings, flatten one row per finding for triage.
   const ranked = [];
   for (const r of rows) {
     for (const f of r.findings) {
@@ -221,7 +221,7 @@ function main() {
 
   // Markdown rollup.
   const md = [];
-  md.push('# Wild PR Scan — Summary');
+  md.push('# Wild PR Scan, Summary');
   md.push('');
   md.push(`Generated: ${summary.generatedAt}`);
   md.push('');

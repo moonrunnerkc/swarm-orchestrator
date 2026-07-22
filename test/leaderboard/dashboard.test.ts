@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 // The dashboard is plain HTML + a single vanilla-JS file. These tests
-// verify the shape contractually — that the page references the score
+// verify the shape contractually, that the page references the score
 // file the spec calls out, that the JS module is wired up, and that
 // the expected headline elements are present. The dashboard is not
 // JS-executed under jsdom; the assertions are structural.
@@ -47,7 +47,7 @@ describe('leaderboard / dashboard (v10.3-advisory)', () => {
       /benchmarks\/real-corpus\/scores\/latest\.json/u,
       'score.js must reference the score snapshot path',
     );
-    // Sortable interaction is part of the spec — assert the handler
+    // Sortable interaction is part of the spec, assert the handler
     // mechanism is present (a click-listener on data-sort headers).
     assert.match(js, /data-sort/u);
     assert.match(js, /addEventListener\(['"]click['"]/u);

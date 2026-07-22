@@ -8,7 +8,7 @@
 //
 // `npm run leaderboard` runs this script and exits non-zero when any
 // `expectedBrokenDetected: true` case fails to fire or any clean
-// control returns a blocking finding — i.e. it doubles as a Phase 1
+// control returns a blocking finding, i.e. it doubles as a Phase 1
 // exit-criterion CI gate.
 
 import * as fs from 'fs';

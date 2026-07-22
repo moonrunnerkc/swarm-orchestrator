@@ -7,7 +7,7 @@
  * The interface is intentionally small. Each backend implements four
  * methods: a non-streaming chat completion, a streaming variant, a grammar
  * capability report, and a usage-reporting hint. The local extractor and
- * local session compose against this interface — they do not import any
+ * local session compose against this interface, they do not import any
  * specific backend module.
  */
 

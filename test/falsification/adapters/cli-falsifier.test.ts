@@ -117,7 +117,7 @@ function newSpy(): StrategySpy {
   return { buildPromptCalls: 0, parseCandidatesCalls: 0, runCandidateCalls: 0, checkBaselineCalls: 0 };
 }
 
-describe('CliFalsifier — profile-driven pipeline', () => {
+describe('CliFalsifier, profile-driven pipeline', () => {
   describe('strategy dispatch', () => {
     it('returns strategy-not-applicable when the profile has no strategy for the obligation type', async () => {
       const spy = newSpy();
@@ -355,6 +355,6 @@ describe('CliFalsifier — profile-driven pipeline', () => {
   });
 });
 
-// Silence unused-import warnings for CliFalsifierOptions — re-exported
+// Silence unused-import warnings for CliFalsifierOptions, re-exported
 // for downstream test fixtures that want the type without re-importing.
 type _OptionsAlias = CliFalsifierOptions;

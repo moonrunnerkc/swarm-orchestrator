@@ -275,7 +275,7 @@ function toSemanticCategories(raw: readonly string[]): SemanticCheatCategory[] {
 // Surface a typo or indentation slip in `.swarm/audit-config.yaml`
 // instead of silently returning the default. Without this, the user
 // edits the file, the parser fails to recognize anything, and the
-// audit runs as if the file weren't there — the worst kind of silent
+// audit runs as if the file weren't there, the worst kind of silent
 // failure for a config that exists to suppress findings.
 function warnIfUnrecognized(
   file: string,
@@ -300,7 +300,7 @@ function warnIfUnrecognized(
 // Parses the optional `intentSeverityPolicy:` scalar. Accepts
 // 'strict' | 'lenient' | 'off' (case-insensitive, optional quotes).
 // Any other value or absent key falls back to the default 'strict'.
-// We do not throw on a bad value here — silently defaulting matches
+// We do not throw on a bad value here, silently defaulting matches
 // the existing excludePaths behavior and keeps a typo from breaking
 // the audit run on a repo where the user is just experimenting.
 function parseIntentSeverityPolicy(text: string): IntentSeverityPolicy {

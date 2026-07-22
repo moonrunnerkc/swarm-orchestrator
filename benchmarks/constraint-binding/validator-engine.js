@@ -149,7 +149,7 @@ function validateTask(task, label = '<task>') {
 /**
  * Execute every validator in order against `workdir`. Stops at the first
  * failure; returns { passed, validators: [{ name, passed, exitCode, stderr }] }.
- * Does not throw on validator failure — that's the normal observation path.
+ * Does not throw on validator failure, that's the normal observation path.
  *
  * @param {object} task loaded task object
  * @param {string} workdir extracted fixture workspace

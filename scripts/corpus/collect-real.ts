@@ -9,7 +9,7 @@
 //   <vendor>/<owner>-<repo>-pr<number>.diff     (vendored fallback diff)
 //   unconfirmed/<vendor>/...                    (single-signal candidates)
 //
-// Idempotent on `{repository, pr_number}` — re-running skips entries
+// Idempotent on `{repository, pr_number}`: re-running skips entries
 // already present. Reuses `src/cli/v8/pr-fetch.ts` for PR context and
 // diff fetching; this script does not reimplement Octokit pagination.
 //

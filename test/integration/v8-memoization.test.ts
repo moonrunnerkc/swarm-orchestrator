@@ -17,7 +17,7 @@ describe('integration: in-run memoization measurably reduces verifier calls', ()
   it('saves verifier calls on a goal with repeated patterns (4 health-check files)', async () => {
     const repoRoot = tmpDir();
 
-    // Build a 4-file-must-exist contract — the canonical "add health
+    // Build a 4-file-must-exist contract, the canonical "add health
     // checks to N services" repeated-pattern goal from impl guide §7.
     const contract = finalize({
       schemaVersion: 'v1',
@@ -35,7 +35,7 @@ describe('integration: in-run memoization measurably reduces verifier calls', ()
     });
 
     // Architect responds with the same body for every file-must-exist
-    // obligation — the natural shape for "repeated patterns." Tournament
+    // obligation, the natural shape for "repeated patterns." Tournament
     // verifier returns a passing score.
     const responder = (req: { personaId: string }) => {
       if (req.personaId === 'tournament-verifier') {
@@ -95,14 +95,14 @@ describe('integration: in-run memoization measurably reduces verifier calls', ()
     });
     assert.equal(memoResult.satisfied, 6);
     // Memoization saves strictly more verifier calls than the
-    // implicit in-round dedup alone — that's the §7 "share work
+    // implicit in-round dedup alone, that's the §7 "share work
     // across repeated patterns" criterion.
     assert.ok(
       memoResult.verifierCallsSavedByMemoization > baselineResult.verifierCallsSavedByMemoization,
       `expected memoized saves (${memoResult.verifierCallsSavedByMemoization}) > baseline saves (${baselineResult.verifierCallsSavedByMemoization})`,
     );
     // Aggregate output-token usage on the memoized run is strictly
-    // lower — skipped verifier calls don't bill output tokens.
+    // lower, skipped verifier calls don't bill output tokens.
     assert.ok(
       memoResult.totalUsage.outputTokens < baselineResult.totalUsage.outputTokens,
       `expected memoized output tokens < baseline (${memoResult.totalUsage.outputTokens} vs ${baselineResult.totalUsage.outputTokens})`,

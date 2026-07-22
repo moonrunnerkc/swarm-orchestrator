@@ -3,7 +3,7 @@ import { buildSession, resolveSessionProvider } from '../../src/session/factory'
 import { DeterministicSession } from '../../src/session/deterministic-session';
 import { AnthropicSession } from '../../src/session/anthropic-session';
 
-describe('session — factory', () => {
+describe('session, factory', () => {
   describe('resolveSessionProvider', () => {
     const originalEnv = process.env.SESSION_PROVIDER;
     afterEach(() => {

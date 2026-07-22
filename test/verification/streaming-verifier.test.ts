@@ -110,7 +110,7 @@ describe('streaming-verifier (Phase 6)', () => {
     });
     it('NULL_STREAMING_CONFIG yields a no-op assertion list', () => {
       const list = buildAssertions(NULL_STREAMING_CONFIG);
-      // Single forbidden-imports assertion with empty list — never fires.
+      // Single forbidden-imports assertion with empty list, never fires.
       assert.equal(list.length, 1);
       assert.equal(
         list[0]?.evaluate({ obligation: FILE_OBLIGATION, partialText: `import x from 'foo'` }),
@@ -171,7 +171,7 @@ describe('streaming-verifier (Phase 6)', () => {
       assert.equal(outcome.abortAssertionId, 'forbidden-imports');
       assert.match(outcome.abortReason ?? '', /forbidden import "doomed-pkg"/);
       // Partial text contains the doomed import line and stops shortly
-      // after — strictly shorter than the full response.
+      // after, strictly shorter than the full response.
       const fullLength =
         "import x from 'doomed-pkg'\n// remaining body that won't be paid for\nconsole.log('still going')".length;
       assert.ok(outcome.streamResult.response.text.length < fullLength);

@@ -44,7 +44,7 @@ export function findPatchesSource(cwd: string): string | undefined {
         return abs;
       }
     } catch {
-      // not found or not a directory — ignore
+      // not found or not a directory, ignore
     }
 
     const parent = path.dirname(dir);

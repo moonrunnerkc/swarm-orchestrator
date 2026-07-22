@@ -35,7 +35,7 @@ interface BaselineCheckResult {
 
 /**
  * Execute `predicate` as a shell command in `workspaceRoot`. Returns
- * the exit code and combined output. Never throws on non-zero exit —
+ * the exit code and combined output. Never throws on non-zero exit,
  * that is the predicate's expected failure path. Throws only if the
  * shell itself cannot be invoked.
  */
@@ -61,7 +61,7 @@ export function runPredicate(predicate: string, workspaceRoot: string): Predicat
  * Run the obligation's predicate against the workspace *before* any
  * candidate is applied. A property-must-hold obligation must FAIL
  * (exit non-zero) against the unmodified workspace for the obligation
- * to be meaningful — if it already exits zero on the baseline, the
+ * to be meaningful, if it already exits zero on the baseline, the
  * obligation is a tautology (passes regardless of any changes).
  *
  * Callers in the falsification path short-circuit on `ok === true`

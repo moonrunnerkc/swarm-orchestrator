@@ -1,4 +1,4 @@
-# CISA AI SBOM mapping — swarm-audit
+# CISA AI SBOM mapping, swarm-audit
 
 This page maps the **CISA SBOM-for-AI minimum elements** (published early
 2026, building on the 2021 NTIA SBOM minimum elements) to the
@@ -25,10 +25,10 @@ inline.
 | Element | Where it lives |
 |---|---|
 | Model identifier | `components[type=machine-learning-model].name` + `.version` |
-| Training data identifier or fingerprint | not emitted by swarm-audit (the audit grades the patch, not the model — sourced separately from the AI provider) |
+| Training data identifier or fingerprint | not emitted by swarm-audit (the audit grades the patch, not the model, sourced separately from the AI provider) |
 | Inference parameters | not applicable to a patch audit |
 | Provenance of model invocation | `components[type=machine-learning-model].modelCard.properties[name=attribution.source]` carries the signal that identified the agent (`bot-author`, `pr-body-marker`, `commit-marker`, `branch-name`) |
-| Hash of the audit evidence | `externalReferences[type=attestation].hashes[alg=SHA-256]` — SHA-256 over the hash-chained JSONL ledger that drove the document |
+| Hash of the audit evidence | `externalReferences[type=attestation].hashes[alg=SHA-256]`: SHA-256 over the hash-chained JSONL ledger that drove the document |
 
 ## Verification workflow
 
@@ -38,12 +38,12 @@ inline.
    exercises this.
 2. Recompute the SHA-256 over the referenced ledger file; compare to
    `externalReferences[type=attestation].hashes[content]`.
-3. Walk the ledger's hash chain — every entry's `entryHash` is the SHA-256
+3. Walk the ledger's hash chain, every entry's `entryHash` is the SHA-256
    of the canonical JSON of the entry minus `entryHash`, with `prevHash`
    matching the prior entry's `entryHash`. Genesis `prevHash` is the
    all-zero digest. `swarm stats` and the `verifyChainEntries` helper
    both perform this verification.
-4. The chain anchors the cheat findings — any in-flight tampering with
+4. The chain anchors the cheat findings, any in-flight tampering with
    the audit record breaks the chain.
 
 ## Limitations and gaps

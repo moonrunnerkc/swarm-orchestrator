@@ -7,8 +7,8 @@
 // (goal-not-fixed, cheat-mock-mutation) never ran and the confirmation gate
 // never saw a finding. This script computes the number that pass left out: for
 // each of the 27, run the FULL advisory tier (the shipped `default` detector
-// set + the judge gate + judge-primary) on the diff alone — the PR title and
-// body are the only claim signal, the maintainer's complaint text is excluded —
+// set + the judge gate + judge-primary) on the diff alone, the PR title and
+// body are the only claim signal, the maintainer's complaint text is excluded,
 // and check whether the advisory tier independently flagged the SAME category
 // the maintainer named.
 //
@@ -55,7 +55,7 @@ const JUDGE_CACHE_ROOT = path.join(HUNT2_DIR, 'overlap-judge-cache');
 
 // The assertion tells the two structural test-assertion detectors key on
 // (assertion-strip + test-relaxation), unioned. Used only to compute, per test
-// file, whether a complained PR is net-additive (added >= removed) — the
+// file, whether a complained PR is net-additive (added >= removed): the
 // reason assertion-strip deliberately stays silent, recorded as in-artifact
 // evidence so the "net-additive, not a recall hole" claim is traceable.
 const ASSERTION_TELLS: RegExp[] = [

@@ -1,6 +1,6 @@
 /**
  * Phase 6 streaming-verification benchmark runner. Drives a single
- * streaming goal through the population manager twice — once with
+ * streaming goal through the population manager twice, once with
  * streaming disabled (baseline; full response generated and billed)
  * and once with streaming enabled (doomed responses abort mid-stream
  * via the configured forbidden-imports assertion).
@@ -76,7 +76,7 @@ export async function runStreamingGoal(
     session,
     ledger,
     mode: 'single',
-    // Phase 6 floor only — leave Phase 4/5 features off so the
+    // Phase 6 floor only, leave Phase 4/5 features off so the
     // benchmark cleanly attributes savings to streaming.
     preGeneration: false,
     postMerge: false,

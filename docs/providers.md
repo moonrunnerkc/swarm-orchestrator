@@ -74,9 +74,9 @@ path is used directly.
 
 ### Explicit contract forms (resolved in this precedence order when auto-discovery is not used)
 
-1. `--contract-file <path>` — YAML (`.yaml` / `.yml`) or JSON (`.json`). The
+1. `--contract-file <path>`: YAML (`.yaml` / `.yml`) or JSON (`.json`). The
    file extension picks the parser. UTF-8 only.
-2. `--contract-module <path>` — JavaScript module (`.js` / `.cjs`, or
+2. `--contract-module <path>`: JavaScript module (`.js` / `.cjs`, or
    precompiled TypeScript) loadable by `require()`, exporting a default value
    matching `{ obligations: [...] }`. Raw `.ts` sources require an external
    loader.
@@ -109,12 +109,12 @@ path is used directly.
 
 ### Explicit input channels (resolved in this order when auto-discovery is not used)
 
-1. `--external-patches-dir <path>` (or `EXTERNAL_PATCHES_DIR`) — watched
+1. `--external-patches-dir <path>` (or `EXTERNAL_PATCHES_DIR`): watched
    directory; each file is a JSON envelope. Consumed files are moved to
    `<dir>/consumed/` so re-runs see the same input.
-2. `--external-patches-queue <path>` (or `EXTERNAL_PATCHES_QUEUE`) — JSONL
+2. `--external-patches-queue <path>` (or `EXTERNAL_PATCHES_QUEUE`): JSONL
    file; one envelope per line.
-3. `--external-patches-stdin` — newline-delimited envelopes on stdin.
+3. `--external-patches-stdin`: newline-delimited envelopes on stdin.
 
 ### Envelope shape
 
@@ -219,7 +219,7 @@ The local provider passes `temperature: 0` and `seed: 0` (configurable via
 `LOCAL_LLM_SEED`) on every call. The seed lands in the ledger entry so
 "same goal + same workspace + same seed + same model + same backend version"
 reproduces identically. Reproducibility is bounded by what the backend
-itself honors — backends that do not honor the seed advertise this in their
+itself honors, backends that do not honor the seed advertise this in their
 documentation.
 
 ### Ledger fields

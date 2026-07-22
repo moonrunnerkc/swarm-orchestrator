@@ -552,7 +552,7 @@ function writeSummaryMd(
 
   const lines: string[] = [];
   const label = config === 'b' ? "B (producer + Codex)" : "B' (producer + Codex + Copilot)";
-  lines.push(`# Phase 3 run summary (config ${config.toUpperCase()} — ${label})`);
+  lines.push(`# Phase 3 run summary (config ${config.toUpperCase()}: ${label})`);
   lines.push('');
   lines.push(`- Patch SHA: \`${patchSha}\``);
   lines.push(`- Fixture root: \`${fixtureRoot}\``);

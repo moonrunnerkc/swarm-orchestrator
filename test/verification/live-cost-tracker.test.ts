@@ -43,7 +43,7 @@ describe('LiveCostTracker', () => {
   });
 
   it('accounts for multiple concurrent streams against the same ceiling', () => {
-    // 150 chars ≈ 38 tokens — one stream stays under 50-token budget; two combined cross it.
+    // 150 chars ≈ 38 tokens, one stream stays under 50-token budget; two combined cross it.
     const t = new LiveCostTracker({ budgetTokens: 50 });
     const a = t.observerForStream();
     const b = t.observerForStream();

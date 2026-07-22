@@ -233,7 +233,7 @@ function newestMtimeMs(dir: string, fallback: number): number {
         if (st.mtimeMs > best) best = st.mtimeMs;
         if (e.isDirectory()) stack.push(full);
       } catch {
-        // ignore — file may have been removed concurrently
+        // ignore, file may have been removed concurrently
       }
     }
   }

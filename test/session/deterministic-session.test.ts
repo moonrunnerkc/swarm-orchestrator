@@ -28,7 +28,7 @@ const FORMAT_2_PATCH = [
 ].join('\n');
 const FORMAT_3_PATCH = 'no-op';
 
-describe('session — validatePatchFormat', () => {
+describe('session, validatePatchFormat', () => {
   it('accepts FORMAT 1 whole-file blocks', () => {
     const r = validatePatchFormat(FORMAT_1_PATCH);
     assert.equal(r.valid, true);
@@ -68,7 +68,7 @@ describe('session — validatePatchFormat', () => {
   });
 });
 
-describe('session — DeterministicSession (preloaded)', () => {
+describe('session, DeterministicSession (preloaded)', () => {
   it('returns zero usage on every counter', () => {
     const session = new DeterministicSession({
       projectContext: 'ctx',
@@ -168,7 +168,7 @@ describe('session — DeterministicSession (preloaded)', () => {
   });
 });
 
-describe('session — DeterministicSession (directory channel)', () => {
+describe('session, DeterministicSession (directory channel)', () => {
   let tmpDir: string;
 
   beforeEach(() => {
@@ -210,7 +210,7 @@ describe('session — DeterministicSession (directory channel)', () => {
   });
 });
 
-describe('session — DeterministicSession (queue channel)', () => {
+describe('session, DeterministicSession (queue channel)', () => {
   let tmpDir: string;
 
   beforeEach(() => {

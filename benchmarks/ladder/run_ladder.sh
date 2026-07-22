@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ──────────────────────────────────────────────────────────────
-# run_ladder.sh — Deterministic iterative-prompt ladder baseline
+# run_ladder.sh, Deterministic iterative-prompt ladder baseline
 #
 # For a given task, iterates through ladder_prompts from the task
 # definition, re-scoring the rubric after each step. Stops when:
@@ -13,10 +13,10 @@
 # the budget cap.
 #
 # Arguments:
-#   $1 — path to tasks JSON file
-#   $2 — task index (0-based)
-#   $3 — run output directory
-#   $4 — budget cap (max premium requests)
+#   $1: path to tasks JSON file
+#   $2: task index (0-based)
+#   $3: run output directory
+#   $4: budget cap (max premium requests)
 #
 # Called by: run_fresh.sh (LADDER producer)
 # ──────────────────────────────────────────────────────────────
@@ -70,7 +70,7 @@ TOTAL_ATTRS=$(echo "$TASK_JSON" | python3 -c "import json,sys; print(len(json.lo
 request_count=0
 step=0
 
-echo "[$TASK_ID] Starting ladder — $TOTAL_ATTRS applicable attributes, budget=$BUDGET_CAP"
+echo "[$TASK_ID] Starting ladder, $TOTAL_ATTRS applicable attributes, budget=$BUDGET_CAP"
 
 # Phase 1: Explicit ladder prompts
 while IFS= read -r prompt; do
@@ -103,7 +103,7 @@ except: print(0)
     echo "    Score after step $step: $local_score"
 
     if [ "$local_score" = "1.0" ] || [ "$local_score" = "1" ]; then
-      echo "  All attributes present — stopping early"
+      echo "  All attributes present, stopping early"
       break
     fi
   fi
@@ -149,7 +149,7 @@ except: print(0)
     echo "    Score after repair step $step: $local_score"
 
     if [ "$local_score" = "1.0" ] || [ "$local_score" = "1" ]; then
-      echo "  All attributes present — stopping"
+      echo "  All attributes present, stopping"
       break
     fi
   done

@@ -162,8 +162,8 @@ function anchorBlock(
     const f = findings.get(l.key);
     const r = rationale.get(l.key);
     const pr = prByKey.get(`${l.repo}#${l.prNumber}`);
-    lines.push(`### ${i + 1}. ${l.repo}#${l.prNumber} — ${l.category} (${l.judgePath})`);
-    if (pr !== undefined) lines.push(`PR: ${pr.url} — "${pr.title}"`);
+    lines.push(`### ${i + 1}. ${l.repo}#${l.prNumber}: ${l.category} (${l.judgePath})`);
+    if (pr !== undefined) lines.push(`PR: ${pr.url}: "${pr.title}"`);
     lines.push(`Arbiter: **${l.verdict}** (confidence ${l.confidence.toFixed(2)})`);
     if (f !== undefined) {
       lines.push('', `Finding: ${f.message}`);

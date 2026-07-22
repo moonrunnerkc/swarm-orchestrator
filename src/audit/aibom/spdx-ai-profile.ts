@@ -193,7 +193,7 @@ function renderFindingAnnotation(
     annotationType: finding.severity === 'block' ? 'review' : 'other',
     contentType: 'text/plain',
     statement:
-      `[${finding.severity.toUpperCase()}] ${finding.category}: ${finding.file}:${finding.line} — ` +
+      `[${finding.severity.toUpperCase()}] ${finding.category}: ${finding.file}:${finding.line}: ` +
       `${finding.message} (evidence sha256: ${finding.evidenceSha256})`,
     subject: { '@id': subjectId },
     creationInfo: creationInfoId,

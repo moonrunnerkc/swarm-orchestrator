@@ -4,7 +4,7 @@
 // holds only a comment is suspicious. v1.1.0 only distinguished bare
 // empty catches from comment-only catches; the FP audit on the
 // real-corpus baseline showed that the dominant FP class is
-// "best-effort fallback paths that emit no signal" — graceful-
+// "best-effort fallback paths that emit no signal": graceful-
 // degradation patterns where the agent already does the right thing.
 //
 // Severity table:
@@ -203,19 +203,19 @@ function messageFor(classification: CatchClass, file: string): string {
       return (
         `A logging-only catch block was added in ${file}. The error is being ` +
         `preserved as a log entry rather than rethrown. [body-class: ` +
-        `logging-only — typically legitimate observability shape]`
+        `logging-only, typically legitimate observability shape]`
       );
     case 'metrics-only':
       return (
         `A metrics-only catch block was added in ${file}. The error is being ` +
-        `counted but not propagated. [body-class: metrics-only — typically ` +
+        `counted but not propagated. [body-class: metrics-only, typically ` +
         `legitimate; verify the metric is alerted on if propagation matters]`
       );
     case 'fallback-assignment':
       return (
         `A fallback-assignment catch block was added in ${file}. The body ` +
-        `assigns a literal default value. [body-class: fallback-assignment ` +
-        `— typically legitimate graceful-degradation]`
+        `assigns a literal default value. [body-class: fallback-assignment, ` +
+        `typically legitimate graceful-degradation]`
       );
     /* istanbul ignore next */
     default:

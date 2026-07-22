@@ -151,7 +151,7 @@ function buildStubResponse(req: SessionRequest): string {
     return JSON.stringify({ score: 0.85, rationale: 'synthetic-bench score' });
   }
   if (req.personaId === 'architect') {
-    // Identical body for every architect dispatch — the natural shape
+    // Identical body for every architect dispatch, the natural shape
     // for "the same code in N services."
     return [
       '```',

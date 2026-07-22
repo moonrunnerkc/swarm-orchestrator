@@ -2,7 +2,7 @@
 /**
  * Build the Phase 4 redo inspection.md skeleton at
  * `evidence/phase4-redo/run/config-b-prime-prime/inspection.md`,
- * focused on **ClaudeCode-unique catches** — the small set of
+ * focused on **ClaudeCode-unique catches**, the small set of
  * obligations that B'' (Codex + ClaudeCode) falsified but B' (Codex
  * alone) did not. That is the slice that matters for the cross-family
  * diversity question; the other slices are not load-bearing.
@@ -131,7 +131,7 @@ function main(): void {
   }
 
   const out: string[] = [];
-  out.push("# Phase 4 redo inspection — config B'' (audit-and-corrections, 2026-05-09)");
+  out.push("# Phase 4 redo inspection, config B'' (audit-and-corrections, 2026-05-09)");
   out.push('');
   out.push(
     'Operator inspection of every **ClaudeCode-unique catch** from the ' +
@@ -167,7 +167,7 @@ function main(): void {
     for (const id of claudeUniqueIds) {
       const o = obligationsById.get(id)!;
       const bppResultPath = path.join(bppDir, id, 'claude-code-result.json');
-      out.push(`## ${id} — ${o.target} (stratum ${o.stratum})`);
+      out.push(`## ${id}: ${o.target} (stratum ${o.stratum})`);
       out.push('');
       out.push(`**Predicate:** \`${o.predicate.replace(/\n/g, ' ')}\``);
       out.push('');
@@ -196,7 +196,7 @@ function main(): void {
       out.push('');
       for (let i = 0; i < inputs.length; i++) {
         const c = inputs[i]!;
-        out.push(`### ${id} — candidate ${i + 1}`);
+        out.push(`### ${id}: candidate ${i + 1}`);
         out.push('');
         out.push('**Files written by the candidate:**');
         out.push('');

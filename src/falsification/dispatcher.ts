@@ -6,7 +6,7 @@
  * feature flag short-circuits the dispatcher entirely so production runs
  * can disable falsification without removing adapter code from the tree.
  *
- * The dispatcher does not own time budgets, retries, or cost caps —
+ * The dispatcher does not own time budgets, retries, or cost caps,
  * those flow in via `DispatcherOptions`. Future phases extend this
  * function additively (Phase 5 introduces bandit selection by replacing
  * the in-loop registry traversal); the public signature stays stable.

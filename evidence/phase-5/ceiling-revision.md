@@ -12,7 +12,7 @@ The plan document carried two numbers that did not agree:
 | Plan-document ceiling | **48,500** |
 
 A 235 LOC delta from a 52,327 baseline cannot reach 48,500. The discrepancy
-is 3,592 LOC — larger than the entire plan-stated delta by a factor of 15.
+is 3,592 LOC, larger than the entire plan-stated delta by a factor of 15.
 
 ## What was measured
 

@@ -64,7 +64,7 @@ function makeRequest(personaId: string, userMessage = 'do the thing'): SessionRe
   };
 }
 
-describe('session — LocalSession', () => {
+describe('session, LocalSession', () => {
   it('renders system content as projectContext + persona suffix', async () => {
     const backend = new FakeBackend('no-op');
     const session = new LocalSession({

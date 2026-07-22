@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-// 6 KB ≈ 1500 tokens — covers a typical controller/route file without
+// 6 KB ≈ 1500 tokens, covers a typical controller/route file without
 // dominating the prompt budget.
 const FILE_CONTEXT_MAX_BYTES = 6 * 1024;
 const TOTAL_FILE_CONTEXT_MAX_BYTES = 16 * 1024;

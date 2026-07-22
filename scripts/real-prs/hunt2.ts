@@ -11,8 +11,8 @@
 //      each repo ONCE for EG viability (Node + lockfile + runner + node engine),
 //      then enumerate agent PRs only inside the viable repos. Proof budget is
 //      never spent fetching diffs from repos that can never provision.
-//   2. COMPLAINT MINING (the richest vein). Search PR review comments — including
-//      CLOSED-WITHOUT-MERGE PRs, which the first hunt ignored — for maintainer
+//   2. COMPLAINT MINING (the richest vein). Search PR review comments, including
+//      CLOSED-WITHOUT-MERGE PRs, which the first hunt ignored, for maintainer
 //      cheat-language ("you just changed the test", "this doesn't actually fix",
 //      "removed the assertion", ...). A verified complaint on an agent PR is a
 //      human-labeled wild cheat before any proof runs, and is the priority target
@@ -155,7 +155,7 @@ interface Funnel {
   complaintFlagged: number;
   candidateFlagged: number;
   viable: number;
-  /** (candidate ∪ complaint) ∩ viable — the proof-eligible set. */
+  /** (candidate ∪ complaint) ∩ viable, the proof-eligible set. */
   proofEligible: number;
   provisioned: number;
   proofRan: number;

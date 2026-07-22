@@ -13,14 +13,14 @@ npm run leaderboard       # score and write results
 
 Outputs:
 
-- `benchmarks/leaderboard/results.json` — full result document.
-- `docs/leaderboard/data.json` — copy consumed by the GitHub Pages site
+- `benchmarks/leaderboard/results.json`: full result document.
+- `docs/leaderboard/data.json`: copy consumed by the GitHub Pages site
   at <https://moonrunnerkc.github.io/swarm-orchestrator/leaderboard/>.
 
 Exit code:
 
-- `0` — every broken case caught, every clean case clean.
-- `1` — at least one failed expectation (broken not caught, or clean
+- `0`: every broken case caught, every clean case clean.
+- `1`: at least one failed expectation (broken not caught, or clean
   control returned a blocking finding). This doubles as a CI gate.
 
 ## How it works

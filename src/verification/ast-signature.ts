@@ -122,7 +122,7 @@ export interface SignatureCheckResult {
   expectedNormalized: string;
   /** Normalized form of every declared signature for the requested name. */
   observedNormalized: string[];
-  /** Free-form diagnostic — non-empty when an internal error stopped the check. */
+  /** Free-form diagnostic, non-empty when an internal error stopped the check. */
   error?: string;
 }
 
@@ -230,7 +230,7 @@ function checkTypeScriptSignature(
  *
  * The wrapper-call form is the dominant Express idiom (catchAsync,
  * asyncHandler, expressAsync, etc.). The verifier used to ignore it
- * because the initializer is a CallExpression, not a function literal —
+ * because the initializer is a CallExpression, not a function literal,
  * which meant the entire express-controller pattern flunked the
  * function-must-have-signature check even when the signature was
  * exactly right.

@@ -46,17 +46,17 @@ export const TOURNAMENT_VERIFIER_PERSONA: PersonaSpec = {
     '  {"score": <0..1>, "rationale": "<≤140 chars>"}',
     '',
     'Scoring rubric:',
-    '- 1.0 — candidate clearly satisfies the obligation, low risk of regression.',
-    '- 0.7-0.9 — candidate satisfies the obligation but has cosmetic concerns.',
-    '- 0.4-0.6 — candidate partially addresses the obligation.',
-    '- 0.0-0.3 — candidate is wrong, empty, or actively harmful.',
+    '- 1.0: candidate clearly satisfies the obligation, low risk of regression.',
+    '- 0.7-0.9: candidate satisfies the obligation but has cosmetic concerns.',
+    '- 0.4-0.6: candidate partially addresses the obligation.',
+    '- 0.0-0.3: candidate is wrong, empty, or actively harmful.',
     '',
     'Output the JSON envelope and nothing else. No prose, no fences, no preamble.',
   ].join('\n'),
   sampling: { temperature: 0.0, maxTokens: 256 },
   tier: 'haiku',
-  // The tournament verifier doesn't dispatch on obligations directly — it
-  // is invoked imperatively by the tournament harness — so `handles` is
+  // The tournament verifier doesn't dispatch on obligations directly, it
+  // is invoked imperatively by the tournament harness, so `handles` is
   // intentionally empty. The persona registry's selection walk skips it.
   handles: [] as const,
 };

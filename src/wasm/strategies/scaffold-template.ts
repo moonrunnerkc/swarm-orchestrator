@@ -28,7 +28,7 @@ import {
 import { ensureInsideRepoRoot } from '../wasm-runtime';
 import type { DeterministicStrategy, StrategyContext, StrategyResult } from '../types';
 
-// Re-export for backward compatibility — consumers that imported
+// Re-export for backward compatibility, consumers that imported
 // these from '../wasm/strategies/scaffold-template' still work.
 export { hasTemplateFor, registerTemplate, listTemplateKeys };
 

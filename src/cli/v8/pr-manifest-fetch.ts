@@ -1,6 +1,6 @@
 // Manifest-fetch helper for `swarm audit --pr <ref>`. Without it, the
 // mock-of-hallucination detector reads manifests from `--repo-root`,
-// which defaults to the cwd of whoever runs the audit — typically a
+// which defaults to the cwd of whoever runs the audit, typically a
 // different repo than the PR's. The detector then has no view of the
 // target project's declared dependencies and flags every internal
 // module mock as a hallucination.

@@ -21,8 +21,8 @@
  *   - Wrong file permissions on .swarm/ → fix with chmod
  *
  * Exit codes:
- *   0 — every probe passed (or all failures were auto-fixed with --fix)
- *   9 — at least one probe failed (a `swarm run` will likely produce
+ *   0: every probe passed (or all failures were auto-fixed with --fix)
+ *   9: at least one probe failed (a `swarm run` will likely produce
  *       misleading output without intervention)
  *
  * The doctor never invokes the Anthropic API or any falsifier; it only
@@ -62,13 +62,13 @@ interface DoctorFlags {
   cwd: string;
   /**
    * When true, doctor fails if cwd is not inside a writable git repo.
-   * Default false — many projects run swarm against subdirectories that
+   * Default false, many projects run swarm against subdirectories that
    * aren't standalone git repos.
    */
   requireGit: boolean;
   /**
    * When true, doctor attempts to automatically fix fixable issues.
-   * Default false — just report issues.
+   * Default false, just report issues.
    */
   fix: boolean;
   /**
@@ -192,7 +192,7 @@ function parseFlags(argv: string[]): DoctorFlags {
 
 // Probes the v10 audit-connector surface. Each probe is non-required
 // (does not flip the exit code on its own) unless the user explicitly
-// configured something that depends on it — checking the surface lets
+// configured something that depends on it, checking the surface lets
 // platform engineers verify CI before a PR opens.
 function probeConnectorSurface(cwd: string): ProbeResult[] {
   const out: ProbeResult[] = [];
@@ -224,7 +224,7 @@ function probeConnectorSurface(cwd: string): ProbeResult[] {
         ? 'pull-requests:write declared'
         : tokenPerms.length === 0
           ? 'GITHUB_TOKEN_PERMISSIONS not set; assuming default permissions'
-          : 'pull-requests:write missing — PR comments cannot be posted',
+          : 'pull-requests:write missing, PR comments cannot be posted',
       required: false,
       fixable: false,
     });
@@ -306,7 +306,7 @@ function probeCommandOnPath(command: string, required: boolean, role: string): P
     return {
       name: `binary "${command}"`,
       ok: false,
-      detail: `not on PATH — ${role}`,
+      detail: `not on PATH, ${role}`,
       required,
       fixable: false,
     };
@@ -478,7 +478,7 @@ function probeSwarmDirectory(cwd: string): ProbeResult[] {
     return results;
   }
 
-  // .swarm/ exists — check permissions
+  // .swarm/ exists, check permissions
   try {
     fs.accessSync(swarmDir, fs.constants.W_OK | fs.constants.R_OK);
   } catch {

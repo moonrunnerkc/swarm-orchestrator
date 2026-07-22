@@ -7,7 +7,7 @@
  *
  *   - Only obligations explicitly marked `obligation-satisfied` (or
  *     `obligation-memoized`) in a prior run with the SAME contractHash
- *     are considered satisfied. Same-run satisfactions count too — a
+ *     are considered satisfied. Same-run satisfactions count too, a
  *     resume against a partial in-place run is the common case.
  *   - Obligations marked `obligation-failed` are reset to `pending`;
  *     resume re-attempts them.
@@ -49,7 +49,7 @@ export interface ResumeState {
   /** Obligation indexes that previously failed; resume will retry them. */
   failedIndexes: Set<number>;
   /**
-   * Obligation indexes still pending after the partial run — i.e.
+   * Obligation indexes still pending after the partial run, i.e.
    * everything in the contract that isn't satisfied. Failed indexes
    * are part of pending; the population manager attempts them on
    * resume.
@@ -92,7 +92,7 @@ export class ResumeError extends SwarmError {
  * Derive resume state from a list of ledger entries plus the contract
  * the caller wants to resume against. The contract serves two roles:
  *   - confirms the contractHash matches at least one prior run-started
- *     entry (otherwise resume is suspicious — different contract);
+ *     entry (otherwise resume is suspicious, different contract);
  *   - supplies the canonical obligation order so pending indexes line
  *     up correctly.
  */
@@ -155,7 +155,7 @@ function findLatestRunStarted(
 
 /**
  * Walk the contract's obligation list and return the entries the caller
- * should write as `obligation-memoized` ledger entries on resume — one
+ * should write as `obligation-memoized` ledger entries on resume, one
  * per index in `state.satisfiedIndexes`. The returned shape is a
  * partial entry minus the header (the ledger stamps those).
  */

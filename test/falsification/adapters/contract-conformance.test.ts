@@ -16,7 +16,7 @@ import { CODEX_CANDIDATE_COUNT, codexProfile } from '../../../src/falsification/
  * that asserts an adapter implementation conforms to the
  * `FalsifierAdapter` contract. The test exercises a `CodexFalsifier`
  * with a fake invocation that returns a syntactically valid Codex
- * response — this verifies the adapter's *parsing/dispatch/result*
+ * response, this verifies the adapter's *parsing/dispatch/result*
  * contract end-to-end without spawning the real binary. The actual CLI
  * is exercised in
  * `test/falsification/adapters/codex/codex-falsifier.integration.test.ts`

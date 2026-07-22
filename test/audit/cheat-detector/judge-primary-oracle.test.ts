@@ -20,7 +20,7 @@ import { withVerdictSuffix } from '../../../scripts/benchmarks/lib/judge-client'
 // JudgeClient and only exercised routing logic. The end-to-end
 // `npm run calibrate:judge` was the only signal that recall or precision
 // moved when PINNED_JUDGE_MODEL_ID or the v2-balanced prompts changed,
-// and it sat outside the mocha gate — a prompt tweak could land without
+// and it sat outside the mocha gate, a prompt tweak could land without
 // surfacing the regression.
 //
 // The suite gates on SWARM_JUDGE_INTEGRATION=1 the same way as the

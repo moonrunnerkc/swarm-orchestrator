@@ -48,7 +48,7 @@ for (const name of fixtures) {
   results.push(`${name}\t${outcome}`);
 }
 
-// Synthetic edge cases — exercise parser branches not in the on-disk fixtures.
+// Synthetic edge cases, exercise parser branches not in the on-disk fixtures.
 const repoCases = [
   {
     name: 'create-via-dev-null',

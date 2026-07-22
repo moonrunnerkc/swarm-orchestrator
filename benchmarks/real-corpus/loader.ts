@@ -41,7 +41,7 @@ export class PrCorpusLoaderError extends Error {
  * Walk `rawDir` (e.g. `benchmarks/real-corpus/raw/`) and return every
  * `UnlabeledPrCorpusEntry` found. Entries are sorted by id for
  * deterministic downstream scoring. Duplicates on `{repository, prNumber}`
- * are surfaced as structural issues — the collector should be idempotent
+ * are surfaced as structural issues, the collector should be idempotent
  * but the loader does not trust that invariant blindly.
  */
 export async function loadPrCorpus(rawDir: string): Promise<UnlabeledPrCorpusEntry[]> {

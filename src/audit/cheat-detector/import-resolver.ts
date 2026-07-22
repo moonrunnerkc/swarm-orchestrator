@@ -6,7 +6,7 @@
 //
 // Lives in its own module to keep `test-import-closure.ts` under the
 // per-file LOC budget. The resolver is intentionally separate from the
-// v8 verification path's `tracked-file lookup` resolver — they answer
+// v8 verification path's `tracked-file lookup` resolver, they answer
 // different questions (does this on-disk file exist? vs does this
 // patch include this file?) and shared abstractions would couple
 // unrelated subsystems.

@@ -3,7 +3,7 @@
 // every corpus entry we ask git/GitHub whether the landed change was later
 // reverted, hotfixed, or left standing.
 //
-// IMPORTANT — the corpus is commit-grounded, not PR-grounded. The entries are
+// IMPORTANT, the corpus is commit-grounded, not PR-grounded. The entries are
 // agent-attributed *commits* (the `headRef` is frequently `main`; the
 // `pr.number` does not resolve to a merged upstream PR). The reliable anchor is
 // `pr.headSha`, a real commit in the repo's history. So outcome detection keys
@@ -81,7 +81,7 @@ interface OutcomeLabel {
   /** The compare(default-branch...headSha) status, kept as evidence rather than
    *  a gate. `diverged`/`ahead` is the normal signature of a squash-merge (the
    *  vendored sha is the pre-merge branch tip; the change landed on the default
-   *  branch under a different squashed sha), so it is NOT treated as unmerged —
+   *  branch under a different squashed sha), so it is NOT treated as unmerged,
    *  the corpus collector already filtered to merged PRs. `unverified` means the
    *  compare call 422'd (too-distant commit). */
   reachability: 'identical' | 'behind' | 'ahead' | 'diverged' | 'unverified';
@@ -287,7 +287,7 @@ const HOTFIX_COMMIT_CAP = 15;
 // A hotfix is a small, surgical follow-up. A later commit that rewrites or
 // extends a whole file trivially "overlaps" the change's lines by coordinate
 // coincidence (worsened by squash-merge line drift), so a follow-up larger than
-// this many changed lines is not accepted as a hotfix — only as a possible
+// this many changed lines is not accepted as a hotfix, only as a possible
 // revert (which is matched on the commit message, not on line overlap).
 const HOTFIX_MAX_COMMIT_LINES = 60;
 
@@ -683,7 +683,7 @@ async function main(): Promise<void> {
 if (require.main === module) {
   main().catch((err: unknown) => {
     if (err instanceof SwarmError) {
-      log.error(`${err.message}${err.remediation ? ` — ${err.remediation}` : ''}`);
+      log.error(`${err.message}${err.remediation ? `: ${err.remediation}` : ''}`);
     } else {
       log.error(err instanceof Error ? err.stack ?? err.message : String(err));
     }

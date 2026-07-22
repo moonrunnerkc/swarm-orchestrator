@@ -3,7 +3,7 @@
  *
  * Extracted from manager.ts so the main loop focuses on scheduling
  * while the retry loop with reprompt-on-failure feedback lives in its
- * own module. Streaming path takes the first attempt and skips retry —
+ * own module. Streaming path takes the first attempt and skips retry,
  * the streaming verifier already aborts early on forbidden imports,
  * which is its own corrective signal.
  */
@@ -193,8 +193,8 @@ export async function executeSingleMode(
       '\n\nReissue your response. If the failure was a context mismatch, ' +
       'look at the file contents in this prompt and use ONLY those exact ' +
       'lines as ` ` and `-` lines in your diff. If the failure was a ' +
-      'predicate exit-1, your diff did not produce the asserted property ' +
-      '— adjust the diff to make the predicate exit zero.';
+      'predicate exit-1, your diff did not produce the asserted property; ' +
+      'adjust the diff to make the predicate exit zero.';
     attempt += 1;
   }
 

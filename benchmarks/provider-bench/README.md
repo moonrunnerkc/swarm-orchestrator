@@ -49,16 +49,16 @@ node dist/benchmarks/provider-bench/provider-bench.js --compare-providers
 The harness writes `report.md` and `report.json` to the output
 directory. Each row carries:
 
-- `extractor`, `session` — provider names used
-- `contractHash` — 12-character prefix of the compiled contract's
+- `extractor`, `session`: provider names used
+- `contractHash`: 12-character prefix of the compiled contract's
   manifest hash. The deterministic extractor produces identical hashes
   across runs of the same fixture; non-deterministic extractors do not,
   so this field is informational.
-- `satisfied` / `failed` — verifier counts from the run result
-- `wallTimeMs` — wall clock for compile + run
-- `tokens` — input / cache-read / cache-write / output tokens from
+- `satisfied` / `failed`: verifier counts from the run result
+- `wallTimeMs`: wall clock for compile + run
+- `tokens`: input / cache-read / cache-write / output tokens from
   `totalUsage`
-- `exitCode` — the run's exit code (0 = every obligation satisfied)
+- `exitCode`: the run's exit code (0 = every obligation satisfied)
 
 ## Fixture
 

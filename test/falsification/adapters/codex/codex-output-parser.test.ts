@@ -46,7 +46,7 @@ describe('parseCodexCandidates', () => {
     // Use a body the brace scanner accepts as balanced but JSON.parse
     // rejects (unquoted key). The earlier `{ this is not json` test
     // was unbalanced, which the new scanner now catches earlier with a
-    // different message — that path is exercised by the unbalanced-
+    // different message, that path is exercised by the unbalanced-
     // braces case below.
     assert.throws(
       () => parseCodexCandidates(fenceJson('{not-a-quoted-key: 1}')),

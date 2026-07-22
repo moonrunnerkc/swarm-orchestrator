@@ -513,7 +513,7 @@ export function provisionPRWorkspaces(opts: ProvisionPROptions): PRWorkspaces {
   });
   // Resolve the base commit. With an explicit base we fetch it directly;
   // otherwise the post workspace already has the head, and its first parent
-  // is the pre-PR state — resolve the parent sha from that checkout.
+  // is the pre-PR state, resolve the parent sha from that checkout.
   let baseCommit = opts.prBaseSha;
   if (baseCommit === undefined) {
     try {

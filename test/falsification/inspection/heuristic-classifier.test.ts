@@ -28,7 +28,7 @@ const computeSig: FunctionMustHaveSignatureObligation = {
   signature: '(x: number): number',
 };
 
-describe('heuristic classifier — import-graph-must-satisfy', () => {
+describe('heuristic classifier, import-graph-must-satisfy', () => {
   it('positive: real import statement → likely-real', () => {
     const c = classifyImportGraphCandidate(
       {
@@ -146,7 +146,7 @@ describe('heuristic classifier — import-graph-must-satisfy', () => {
     assert.match(c.reason, /import '.\/other'/);
   });
 
-  it('edge: conditional require — still parsed as require call → likely-real', () => {
+  it('edge: conditional require, still parsed as require call → likely-real', () => {
     const c = classifyImportGraphCandidate(
       {
         relPath: 'src/lib1/leak.cjs',
@@ -158,7 +158,7 @@ describe('heuristic classifier — import-graph-must-satisfy', () => {
   });
 });
 
-describe('heuristic classifier — function-must-have-signature', () => {
+describe('heuristic classifier, function-must-have-signature', () => {
   it('positive: declaration with drifted signature → likely-real', () => {
     const c = classifyFunctionSignatureCandidate(
       {
@@ -244,7 +244,7 @@ describe('heuristic classifier — function-must-have-signature', () => {
   });
 });
 
-describe('heuristic classifier — entry point', () => {
+describe('heuristic classifier, entry point', () => {
   it('dispatches to the correct branch by obligation type', () => {
     const importCase = classifyCandidate(
       {

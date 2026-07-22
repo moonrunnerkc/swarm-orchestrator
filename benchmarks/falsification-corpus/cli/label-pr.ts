@@ -6,7 +6,7 @@
 // Reuses `label-rules` (validation, prompt text, broken-category
 // vocabulary) and `label-store` (write + path helpers) verbatim. The
 // readline prompt helpers are intentionally duplicated rather than
-// extracted into a shared module — they are small, mechanical, and
+// extracted into a shared module, they are small, mechanical, and
 // the two CLIs may diverge as the PR-flow gains agent-specific cues.
 //
 // Run:

@@ -11,7 +11,7 @@
  * candidate file, runs the AST-based heuristic classifier, and
  * generates a per-candidate section the operator fills in.
  *
- * The classifier output is heuristic, not authoritative — operator
+ * The classifier output is heuristic, not authoritative, operator
  * verdict has the final word. The aggregate section reports
  * heuristic counts and an explicit `TODO: operator inspection
  * pending` for confirmed counts; those land when the operator commits
@@ -105,9 +105,9 @@ function fenceContent(content: string, lang: string): string {
 
 function renderObligationHeader(o: Phase3Obligation): string {
   if (o.type === 'import-graph-must-satisfy') {
-    return `${o.id} — ${o.constraint} in \`${o.scope}\` (stratum ${o.stratum}, import-graph-must-satisfy)`;
+    return `${o.id}: ${o.constraint} in \`${o.scope}\` (stratum ${o.stratum}, import-graph-must-satisfy)`;
   }
-  return `${o.id} — \`${o.name}${o.signature}\` in \`${o.file}\` (stratum ${o.stratum}, function-must-have-signature)`;
+  return `${o.id}: \`${o.name}${o.signature}\` in \`${o.file}\` (stratum ${o.stratum}, function-must-have-signature)`;
 }
 
 function renderCandidate(
@@ -117,7 +117,7 @@ function renderCandidate(
   classification: { label: HeuristicLabel; reason: string },
 ): string {
   const out: string[] = [];
-  out.push(`### ${obligationHeader} — candidate ${candidateIdx + 1}`);
+  out.push(`### ${obligationHeader}: candidate ${candidateIdx + 1}`);
   out.push('');
   out.push(`**Heuristic label:** \`${classification.label}\``);
   out.push('');
@@ -169,7 +169,7 @@ function main(): void {
   };
 
   const out: string[] = [];
-  out.push('# Phase 3 inspection — config B\' (audit-and-corrections, 2026-05-09)');
+  out.push('# Phase 3 inspection, config B\' (audit-and-corrections, 2026-05-09)');
   out.push('');
   out.push(
     'Operator inspection of every machine-claimed Copilot catch from the ' +
@@ -221,7 +221,7 @@ function main(): void {
       // file (Phase 3 candidates each write exactly one file).
       const firstFile = candidate.files[0];
       if (firstFile === undefined) {
-        out.push(`### ${obligationHeader} — candidate ${i + 1}`);
+        out.push(`### ${obligationHeader}: candidate ${i + 1}`);
         out.push('');
         out.push('**Heuristic label:** `ambiguous` (candidate wrote zero files; operator decides)');
         out.push('');

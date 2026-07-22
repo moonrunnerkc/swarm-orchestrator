@@ -99,7 +99,7 @@ describe('pre-generation verification (Phase 6)', () => {
       skipIndexes: new Set([0, 1]),
       verifyOptions: { repoRoot: root },
     });
-    // Both excluded — no checks ran.
+    // Both excluded, no checks ran.
     assert.equal(r.checks.length, 0);
     assert.equal(r.satisfiedIndexes.size, 0);
   });

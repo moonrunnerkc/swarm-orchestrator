@@ -106,7 +106,7 @@ export interface CliFalsifierOptions {
   readonly invocationOverride?: (req: CliInvocationRequest) => Promise<CliInvocationResult>;
   readonly onInvocation?: (req: CliInvocationRequest, res: CliInvocationResult) => void;
   readonly authMethodOverride?: () => AdapterAuthMethod;
-  // Profile-specific extras — only honored by the matching profile.
+  // Profile-specific extras, only honored by the matching profile.
   readonly allowedTools?: readonly string[] | 'all';
   readonly premiumRequestsOverride?: (output: string) => number | null;
   readonly maxBudgetUsd?: number;

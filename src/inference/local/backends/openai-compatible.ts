@@ -22,7 +22,7 @@ import {
  * extractor can request structured output via `response_format` when the
  * server honors it. Servers that don't honor `response_format` simply
  * return prose; the caller falls back to soft-prompt parsing. The backend
- * does not silently retry — it surfaces the body it received.
+ * does not silently retry, it surfaces the body it received.
  */
 export class OpenAiCompatibleBackend implements LocalBackend {
   readonly name = 'openai-compatible';

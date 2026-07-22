@@ -4,7 +4,7 @@
  * The §7 exit criterion calls for a measurable cost reduction on goals
  * that contain "repeated obligation patterns (e.g., 'add health checks
  * to 4 services')." Each goal in this suite is a contract whose
- * file-must-exist obligations all share the same architect output —
+ * file-must-exist obligations all share the same architect output,
  * the natural shape for "repeat the same change in N locations."
  *
  * The synthetic responder under scripts/v8-bench/run-goal.ts returns a
@@ -20,7 +20,7 @@ export interface RepeatedPatternGoal {
   goal: string;
   /** Canonical-order obligation list. */
   obligations: ObligationV1[];
-  /** Number of obligations of the repeated type — for reporting. */
+  /** Number of obligations of the repeated type, for reporting. */
   repeatedCount: number;
   /** Obligation type the repetition is over. */
   repeatedType: ObligationV1['type'];

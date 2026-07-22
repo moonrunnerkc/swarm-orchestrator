@@ -19,7 +19,7 @@ import {
  * the server's `grammar` field, which expects a GBNF string.
  *
  * The server's prefix cache (the `--cache-prompt` flag) is opaque from the
- * client side — the backend reports zero cacheReadTokens and documents the
+ * client side, the backend reports zero cacheReadTokens and documents the
  * limitation.
  */
 export class LlamaCppBackend implements LocalBackend {

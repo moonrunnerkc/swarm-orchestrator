@@ -22,11 +22,11 @@
   let sortDir = -1; // descending
 
   function fmtPct(x, digits = 3) {
-    if (x === null || x === undefined || Number.isNaN(x)) return '—';
+    if (x === null || x === undefined || Number.isNaN(x)) return '-';
     return Number(x).toFixed(digits);
   }
   function fmtInt(x) {
-    if (x === null || x === undefined) return '—';
+    if (x === null || x === undefined) return '-';
     return String(x);
   }
 

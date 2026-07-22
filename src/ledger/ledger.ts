@@ -3,7 +3,7 @@
 // sha256-of-canonical-JSON pattern so a swap to an IRONROOT-style
 // library is mechanical.
 //
-// Genesis prevHash is 64 hex zeros — string-comparator-safe vs the
+// Genesis prevHash is 64 hex zeros, string-comparator-safe vs the
 // empty-string variant some implementations use.
 
 import * as crypto from 'crypto';
@@ -72,7 +72,7 @@ export class HashChainedLedger {
 
   // Stamps ts, runId, seq, prevHash, entryHash. Optional `aiAgent`
   // attribution flows into the canonical-JSON hash chain when provided
-  // — v10 audit pipelines pass it; pre-v10 callers omit it and the
+  //, v10 audit pipelines pass it; pre-v10 callers omit it and the
   // emitted JSON stays byte-identical to legacy output.
   append<E extends LedgerEntry>(
     payload: Omit<E, keyof LedgerEntryHeader>,
@@ -107,7 +107,7 @@ export class HashChainedLedger {
   }
 }
 
-// Does NOT verify the chain — call `verifyChain` for that.
+// Does NOT verify the chain, call `verifyChain` for that.
 export function readEntries(filePath: string): LedgerEntry[] {
   if (!fs.existsSync(filePath)) return [];
   const text = fs.readFileSync(filePath, 'utf8');
@@ -169,7 +169,7 @@ export function verifyChainAt(filePath: string): void {
   verifyChainEntries(entries);
 }
 
-// RFC 8785 in spirit (without full I-JSON number normalization — the
+// RFC 8785 in spirit (without full I-JSON number normalization, the
 // ledger never serializes exotic numbers): keys sorted in JS string
 // order, arrays preserve order, primitives via JSON.stringify.
 export function canonicalJson(value: unknown): string {

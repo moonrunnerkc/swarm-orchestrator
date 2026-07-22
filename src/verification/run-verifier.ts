@@ -6,7 +6,7 @@ import { sanitizedChildEnv } from '../shared/child-env';
 /**
  * Shell to use for verification commands (build, test, predicates,
  * benchmarks). LLM-authored property predicates routinely use bash-only
- * syntax — process substitution `<(...)`, `[[ ]]`, `$'...'`. Node's default
+ * syntax, process substitution `<(...)`, `[[ ]]`, `$'...'`. Node's default
  * `shell: true` resolves to `/bin/sh` on POSIX, which doesn't accept those
  * forms and aborts with `syntax error near unexpected token '('`. Forcing
  * bash here keeps the verifier from rejecting otherwise-valid predicates.
@@ -143,7 +143,7 @@ function verifyCommand(
  * obligation's name, and compares each declaration's parameter list and
  * return type to the obligation's expected signature.
  *
- * Comparison is whitespace-insensitive — both sides are re-rendered
+ * Comparison is whitespace-insensitive, both sides are re-rendered
  * through the AST and stripped of whitespace before equality, so
  * formatter variation (`(req, res)` vs `( req , res )`) is irrelevant
  * but param types and return types are compared structurally rather
@@ -431,7 +431,7 @@ function findCycle(graph: Map<string, string[]>): string[] | null {
       const neighbor = next.value;
       const neighborColor = color.get(neighbor) ?? WHITE;
       if (neighborColor === GRAY) {
-        // Back-edge — reconstruct cycle from `neighbor` up to top.node.
+        // Back-edge, reconstruct cycle from `neighbor` up to top.node.
         const cycle: string[] = [neighbor];
         for (let i = stack.length - 1; i >= 0; i -= 1) {
           const frame = stack[i];

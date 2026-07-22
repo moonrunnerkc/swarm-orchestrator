@@ -15,7 +15,7 @@ import {
  * Backend for the Ollama daemon's native `/api/chat` endpoint. Streaming
  * uses Ollama's NDJSON format (one JSON object per line). Grammar-
  * constrained decoding is requested via the `format` field, which accepts
- * either the literal string `"json"` or a JSON Schema object — when the
+ * either the literal string `"json"` or a JSON Schema object, when the
  * caller passes a JSON Schema, Ollama enforces it during generation.
  *
  * Prefix-cache mapping: Ollama's KV cache is opaque from the client side

@@ -22,7 +22,7 @@ export interface CompileOptions {
   goal: string;
   repoContext: RepoContext;
   extractor: Extractor;
-  // Default true — tagging is opt-out so production compilation always
+  // Default true, tagging is opt-out so production compilation always
   // considers the deterministic floor. Tests inspecting raw extractor
   // output use this flag.
   autoTagDeterministic?: boolean;
@@ -57,7 +57,7 @@ export async function compileGoal(options: CompileOptions): Promise<DraftContrac
   }
 
   // Drop property-must-hold obligations whose predicate already exits
-  // zero against the unmodified workspace — May 2026 eval ran with
+  // zero against the unmodified workspace, May 2026 eval ran with
   // "8/13 satisfied" and zero code emitted because of this failure mode.
   const { obligations: filteredObligations, tautologyWarnings } = filterBaselineTautologies(
     extracted.obligations,

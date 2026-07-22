@@ -8,10 +8,10 @@
  *   - v8 tournament (Phase 3 substrate, default 3 candidates per round)
  *
  * Two suites contribute:
- *   1. The Phase 2 §5 ten-goal suite — same goals as Phase 2; we verify
+ *   1. The Phase 2 §5 ten-goal suite, same goals as Phase 2; we verify
  *      tournament cost stays within 1.5× of single-mode cost on goals
  *      where every candidate scores well (the "easy" suite).
- *   2. The Phase 3 tricky-goal suite — synthetic goals with non-trivial
+ *   2. The Phase 3 tricky-goal suite, synthetic goals with non-trivial
  *      candidate-failure rates so tournament's diversity injection
  *      actually lifts pass rate measurably above single mode.
  *
@@ -21,8 +21,8 @@
  *     a strict improvement on at least one goal.
  *
  * Output:
- *   - `docs/v8-phase-3-benchmark.md` — Markdown report.
- *   - `docs/benchmarks/v8-history.jsonl` — appended rows.
+ *   - `docs/v8-phase-3-benchmark.md`: Markdown report.
+ *   - `docs/benchmarks/v8-history.jsonl`: appended rows.
  */
 
 import * as fs from 'fs';
@@ -270,10 +270,10 @@ function renderReport(args: ReportArgs): string {
     'The Phase 3 benchmark compares three modes against the Phase 2 §6 cost model:',
   );
   lines.push('');
-  lines.push('- **v6** — Phase 2 cost model (40K bootstrap + 0.9 retry tax per obligation).');
-  lines.push('- **v8 single** — Phase 2 substrate (one persona, one candidate per obligation).');
+  lines.push('- **v6**, Phase 2 cost model (40K bootstrap + 0.9 retry tax per obligation).');
+  lines.push('- **v8 single**, Phase 2 substrate (one persona, one candidate per obligation).');
   lines.push(
-    '- **v8 tournament** — Phase 3 substrate (N candidates per round, scored by the haiku-tier tournament-verifier persona, winner committed, losers logged with full diff hash and token cost).',
+    '- **v8 tournament**, Phase 3 substrate (N candidates per round, scored by the haiku-tier tournament-verifier persona, winner committed, losers logged with full diff hash and token cost).',
   );
   lines.push('');
   lines.push(
@@ -284,11 +284,11 @@ function renderReport(args: ReportArgs): string {
     'Tricky-mode synthesizes candidates as good/bad with the goal\'s `expectedFailureRate` and a deterministic LCG PRNG seeded by goal-id and mode; the tournament verifier scores good candidates 0.9 and bad candidates 0.1, so the 0.5 score threshold rejects bad candidates exactly as it would in production.',
   );
   lines.push('');
-  lines.push('## Easy suite — cost cap (Phase 3 §6 (b))');
+  lines.push('## Easy suite, cost cap (Phase 3 §6 (b))');
   lines.push('');
   lines.push(renderModeComparison(args.easyRows, args.easySummary));
   lines.push('');
-  lines.push('## Tricky suite — accuracy lift (Phase 3 §6 (a))');
+  lines.push('## Tricky suite, accuracy lift (Phase 3 §6 (a))');
   lines.push('');
   lines.push(renderModeComparison(args.trickyRows, args.trickySummary));
   lines.push('');

@@ -49,7 +49,7 @@ type AstObligation = ImportGraphMustSatisfyObligation | FunctionMustHaveSignatur
 export function parseClaudeCodeEnvelope(stdout: string): ClaudeCodeEnvelope {
   const trimmed = stdout.trim();
   if (trimmed.length === 0) {
-    throw new Error('Claude Code emitted no stdout — investigate auth or binary state');
+    throw new Error('Claude Code emitted no stdout, investigate auth or binary state');
   }
   let parsed: unknown;
   try {

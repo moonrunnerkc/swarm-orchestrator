@@ -2,7 +2,7 @@
 // Phase 2b parity check: dump each PersonaSpec from the default registry to
 // evidence/phase-2-parity/personas/<id>.txt in a fixed serialization order.
 // Pre-cut: run this and commit the captures. Post-cut: re-run and diff against
-// the committed captures — every byte must match. Drift in systemSuffix,
+// the committed captures, every byte must match. Drift in systemSuffix,
 // sampling, tier, role, or handles all show up here.
 
 const fs = require('fs');

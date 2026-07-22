@@ -45,7 +45,7 @@ function buildSession(): StubSession {
   });
 }
 
-describe('population/manager — tournament mode', () => {
+describe('population/manager, tournament mode', () => {
   it('runs a tournament for every obligation and reports satisfied', async () => {
     const repo = tmpDir('v8-mgrT-');
     const contract = makeContract(repo, 'CHANGES.md');

@@ -280,7 +280,7 @@ const TRANSFORMATIONS: ReadonlyArray<Transformation> = [
   },
 ];
 
-describe('contract/compiler — 22 goal-to-contract transformations', () => {
+describe('contract/compiler, 22 goal-to-contract transformations', () => {
   it('is at least 20 fixtures (Phase 1 exit criterion)', () => {
     assert.ok(TRANSFORMATIONS.length >= 20, `expected ≥20 fixtures, got ${TRANSFORMATIONS.length}`);
   });
@@ -383,7 +383,7 @@ describe('contract/compiler — 22 goal-to-contract transformations', () => {
   });
 });
 
-describe('contract/compiler — discoverRepoContext', () => {
+describe('contract/compiler, discoverRepoContext', () => {
   it('detects typescript when tsconfig.json is present', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'compiler-discover-ts-'));
     try {
@@ -424,7 +424,7 @@ describe('contract/compiler — discoverRepoContext', () => {
   });
 });
 
-describe('contract/compiler — baseline tautology filter', () => {
+describe('contract/compiler, baseline tautology filter', () => {
   function makeRepo(prefix: string): string {
     return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   }
@@ -515,7 +515,7 @@ describe('contract/compiler — baseline tautology filter', () => {
   });
 });
 
-describe('contract/compiler — detectPackageManager', () => {
+describe('contract/compiler, detectPackageManager', () => {
   function makeRepo(prefix: string): string {
     return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   }
@@ -525,7 +525,7 @@ describe('contract/compiler — detectPackageManager', () => {
     try {
       fs.writeFileSync(path.join(dir, 'yarn.lock'), '', 'utf8');
       fs.writeFileSync(path.join(dir, 'pnpm-lock.yaml'), '', 'utf8');
-      // packageManager declared as pnpm — wins regardless of yarn.lock.
+      // packageManager declared as pnpm, wins regardless of yarn.lock.
       assert.equal(detectPackageManager(dir, 'pnpm@8.0.0'), 'pnpm');
       assert.equal(detectPackageManager(dir, 'npm@10.0.0'), 'npm');
     } finally {
@@ -566,7 +566,7 @@ describe('contract/compiler — detectPackageManager', () => {
     try {
       fs.writeFileSync(path.join(dir, 'yarn.lock'), '', 'utf8');
       // Shadow PATH with an empty dir so `command -v yarn` resolves nothing.
-      // Also shadow pnpm. npm is always available — we want the detector to
+      // Also shadow pnpm. npm is always available, we want the detector to
       // fall back to npm rather than emit "yarn test" which would exit 127.
       const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'compiler-pm-emptypath-'));
       const originalPath = process.env.PATH;

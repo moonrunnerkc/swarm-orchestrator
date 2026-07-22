@@ -29,7 +29,7 @@ export async function runCheatDetectors(input: AuditInput): Promise<AuditResult>
   // Two filters compose: the built-in subject-path filter (data files
   // and conventional fixture / corpus dirs) and the project-level
   // `.swarm/audit-config.yaml` exclude list (for repos whose own
-  // source legitimately contains literal cheat patterns — detector
+  // source legitimately contains literal cheat patterns, detector
   // tests, rule packs, generator scripts).
   const config = loadAuditConfig(input.repoRoot);
   const excludeFromConfig = buildExcludeMatcher(config.excludePaths);

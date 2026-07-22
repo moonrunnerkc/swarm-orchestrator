@@ -145,6 +145,13 @@ jobs:
       # fails here; regenerate with `npm run badges:regen` and commit.
       run: node dist/scripts/badges/regen-badges.js --check
 
+    - name: Check authored prose carries no em dashes
+      if: matrix.node-version == 22
+      # Repo writing rule: no em dashes in anything authored here. The gate
+      # scans tracked files outside an explicit exemption list (vendored
+      # diffs, frozen records, third-party fixtures); see scripts/prose-gate.sh.
+      run: npm run prose:check
+
     - name: Publish test summary
       if: always() && matrix.node-version == 22
       run: |

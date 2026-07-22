@@ -115,7 +115,7 @@ describe('ledger/hash-chain', () => {
     });
   });
 
-  describe('verifyChain — tamper detection', () => {
+  describe('verifyChain, tamper detection', () => {
     it('rejects an edited payload', () => {
       const file = tmpFile();
       const led = new HashChainedLedger(file, 'r1');

@@ -26,7 +26,7 @@ export interface LocalExtractorOptions {
  * completion against the configured backend with a grammar-constrained
  * decoding request targeting the contract envelope schema; falls back to
  * soft-prompt parsing when the backend doesn't support json-schema
- * grammar (still strict — invalid JSON surfaces as an error).
+ * grammar (still strict, invalid JSON surfaces as an error).
  *
  * Determinism: every call passes `temperature: 0` and a configurable
  * seed, captured in the provenance via the prompt sha256. Same goal +
@@ -105,7 +105,7 @@ function buildUserPrompt(input: ExtractorInput): string {
     JSON.stringify(input.repoContext, null, 2),
     '',
     `Respond with a JSON object matching the obligations envelope schema. ` +
-      `Do not include any prose, markdown, or commentary — only the JSON.`,
+      `Do not include any prose, markdown, or commentary, only the JSON.`,
   ].join('\n');
 }
 

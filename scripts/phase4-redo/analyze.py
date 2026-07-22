@@ -276,14 +276,14 @@ class MarginalYieldResult:
     """Phase 4 redo ClaudeCode marginal yield-per-dollar calculation,
     reported on three bases per the audit-and-corrections fix."""
     claudecode_unique_yield: int
-    # billed-basis (dollarsBilled) — what was actually charged
+    # billed-basis (dollarsBilled): what was actually charged
     additional_dollars_billed: float
     yield_per_dollar_billed: float
-    # token-estimate basis (dollarsTokenEstimate) — preserves the
+    # token-estimate basis (dollarsTokenEstimate): preserves the
     # original Phase 3/4 headline surface for back-compat
     additional_dollars_token_estimate: float
     yield_per_dollar_token_estimate: float
-    # API-equivalent basis (dollarsApiEquivalent) — like-for-like
+    # API-equivalent basis (dollarsApiEquivalent): like-for-like
     # cross-adapter denominator
     additional_dollars_api_equivalent: float
     yield_per_dollar_api_equivalent: float
@@ -377,7 +377,7 @@ def render_markdown(
         "`evidence/phase4/analysis.md` (now status-banner INVALIDATED). "
         "The original Phase 4 reused Phase 3's `import-graph` + "
         "`function-signature` obligations, which targeted Copilot's "
-        "specialties — uninterpretable for ClaudeCode's "
+        "specialties, uninterpretable for ClaudeCode's "
         "adversarial-test-input strategy. The redo's obligation set is "
         "20 `property-must-hold` obligations disjoint from Phases 1, "
         "2, and 3 (`evidence/phase4-redo/obligations.json`)."
@@ -411,14 +411,14 @@ def render_markdown(
     out.append(f"| Total wall-clock (s) | {bp_wall_total / 1000:.2f} | {bpp_wall_total / 1000:.2f} | |")
     out.append(f"| Total LLM calls | {bp_calls_total} | {bpp_calls_total} | |")
     out.append("")
-    out.append("## ClaudeCode marginal yield per dollar — both bases")
+    out.append("## ClaudeCode marginal yield per dollar, both bases")
     out.append("")
     out.append(f"- ClaudeCode unique yield (B'' falsified, B' did not): **{marginal.claudecode_unique_yield}** (machine-claimed; operator inspection skeleton at `evidence/phase4-redo/run/config-b-prime-prime/inspection.md`).")
     out.append("")
     out.append("**Billed basis:**")
     out.append(f"- Additional `dollarsBilled` spend: **${marginal.additional_dollars_billed:.4f}**")
     if math.isinf(marginal.yield_per_dollar_billed):
-        out.append("- ClaudeCode billed-basis yield/$: **infinite** (zero additional billed with positive yield — runs under subscription)")
+        out.append("- ClaudeCode billed-basis yield/$: **infinite** (zero additional billed with positive yield, runs under subscription)")
     else:
         out.append(f"- ClaudeCode billed-basis yield/$: **{marginal.yield_per_dollar_billed:.2f}**")
     out.append("")
@@ -457,7 +457,7 @@ def render_markdown(
             "(same family as the producer) added unique yield over the "
             "Codex baseline on the property-must-hold obligation set. "
             "The diversity thesis is weaker than the architecture's "
-            "premise assumes — investigate what ClaudeCode caught that "
+            "premise assumes, investigate what ClaudeCode caught that "
             "Codex did not, and whether the gap reflects a strategy "
             "ceiling or a model-family advantage. This invalidates the "
             "Phase 5 skip's third-adapter-revisit condition; Phase 5 "
@@ -478,7 +478,7 @@ def render_markdown(
             "ClaudeCode marginal yield is positive on the property-must-hold "
             "obligation surface; Phase 5 (bandit dispatcher) becomes eligible. "
             "The \"third adapter that earns its slot\" revisit condition has "
-            "fired — Phase 5 returns to the table."
+            "fired, Phase 5 returns to the table."
         )
     out.append("")
     out.append("## Hypothesis tests")
@@ -596,7 +596,7 @@ def run_real_analysis(args: argparse.Namespace) -> int:
     if len(discarded) > 0.10 * len(full_config_bp):
         sys.stderr.write(
             f"WARNING: {len(discarded)}/{len(full_config_bp)} obligations discarded "
-            f"({100 * len(discarded) / len(full_config_bp):.1f}%) — "
+            f"({100 * len(discarded) / len(full_config_bp):.1f}%): "
             f"above the 10% threshold; close-out must cite the elevated discard rate.\n"
         )
 

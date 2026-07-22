@@ -19,7 +19,7 @@ import { loadProviderConfig } from '../../src/config/provider-config';
  * source and the resolver picks the higher one. This proves the chain
  * works without relying on any handler-level integration code.
  */
-describe('cli/v8 — precedence chain: --local-base-url / LOCAL_LLM_BASE_URL / config', () => {
+describe('cli/v8: precedence chain: --local-base-url / LOCAL_LLM_BASE_URL / config', () => {
   let root: string;
   const originalBaseUrl = process.env['LOCAL_LLM_BASE_URL'];
 

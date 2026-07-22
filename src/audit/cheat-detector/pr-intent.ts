@@ -16,13 +16,13 @@
 const BODY_INSPECTION_BYTES = 500;
 
 // Pattern 1: GitHub close-keyword followed by an issue reference. This
-// is the canonical "fix-claim" — GitHub itself recognizes these in PR
+// is the canonical "fix-claim": GitHub itself recognizes these in PR
 // bodies to auto-close issues on merge.
 const CLOSE_KEYWORD_PATTERN =
   /\b(?:fix(?:es|ed)?|close[ds]?|resolve[ds]?|patch(?:es|ed)?|address(?:es|ed)?)\s+#\d+/i;
 
 // Pattern 2: Imperative-mood title prefix. "fix:", "resolves:", "closed:"
-// — the prefix conventions agents adopt to flag a bug-fix PR. Requires
+//, the prefix conventions agents adopt to flag a bug-fix PR. Requires
 // a trailing colon (not just whitespace) so titles like "fixes #123:
 // payment bug" fall through to the close-keyword pattern that captures
 // the issue ref as evidence.

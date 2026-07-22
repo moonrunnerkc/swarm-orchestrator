@@ -63,7 +63,7 @@ runs:
           PR=$(node -e "const e=require(process.env.GITHUB_EVENT_PATH); process.stdout.write(String(e.pull_request?.number ?? e.number ?? ''))")
         fi
         if [ -z "$PR" ]; then
-          echo "no PR ref available — pass an explicit `pr` input or trigger on pull_request" >&2
+          echo "no PR ref available, pass an explicit `pr` input or trigger on pull_request" >&2
           exit 2
         fi
         if [[ "$PR" =~ ^[0-9]+$ ]] && [ -n "${GITHUB_REPOSITORY:-}" ]; then
@@ -164,5 +164,5 @@ runs:
       if: ${{ steps.audit.outputs.pass != 'true' }}
       shell: bash
       run: |
-        echo "swarm-audit: ${{ steps.audit.outputs.blocking }} blocking finding(s) — see comment above." >&2
+        echo "swarm-audit: ${{ steps.audit.outputs.blocking }} blocking finding(s): see comment above." >&2
         exit 1

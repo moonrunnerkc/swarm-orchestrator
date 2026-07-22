@@ -1,5 +1,5 @@
 // Reader for Rust `Cargo.toml`. Reads the `[dependencies]` and
-// `[dev-dependencies]` tables. No TOML parser dep — the field set we
+// `[dev-dependencies]` tables. No TOML parser dep, the field set we
 // care about is line-greppable.
 
 import * as fs from 'fs';

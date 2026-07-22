@@ -76,7 +76,7 @@ diff --git a/test/bar.test.ts b/test/bar.test.ts
     // correctly says: no test actually imports it.
     const repo = tempRepo({
       'src/utils.ts': 'export function helperOne() { return 1; }\n',
-      // A test that mentions "utils" in prose only — never imports the file.
+      // A test that mentions "utils" in prose only, never imports the file.
       'test/unrelated.test.ts':
         'import { describe } from "node:test";\n' +
         '// notes about utils and helpers in this suite\n' +

@@ -87,7 +87,7 @@ interface RunFlags {
    * Population mode. `single` dispatches one persona per obligation
    * (the persona registered as the canonical handler for that
    * obligation type) and verifies its candidate immediately. This is
-   * the default — it minimizes cost and is sufficient for most
+   * the default, it minimizes cost and is sufficient for most
    * goals. `tournament` races multiple candidates per obligation via
    * the Phase 3 tournament loop (`--candidates N`); use it when you
    * want adversarial selection across personas at higher token cost.
@@ -97,7 +97,7 @@ interface RunFlags {
   candidates: number | null;
   /**
    * Phase 5: when false, the WASM deterministic runtime is not
-   * supplied to the population manager. Default true — the §8 floor
+   * supplied to the population manager. Default true, the §8 floor
    * is enabled by default. Useful for benchmarks that compare
    * tournament-only vs. deterministic-floor cost.
    */
@@ -283,10 +283,10 @@ function buildPopulationRunOptions(args: {
 /**
  * Implementation of `swarm v8 run <contract-path> [flags]`. Returns an
  * exit code:
- *   0 — every obligation satisfied
- *   1 — argv parsing or runtime error
- *   2 — at least one obligation failed verification
- *   3 — missing API key for the default session
+ *   0: every obligation satisfied
+ *   1: argv parsing or runtime error
+ *   2: at least one obligation failed verification
+ *   3: missing API key for the default session
  */
 export async function handleRun(
   argv: string[],
@@ -470,7 +470,7 @@ export async function handleRun(
   // Exit non-zero when any obligation regressed, even if the regression
   // was downgraded by the post-merge handler (e.g. predicate-only
   // regressions where the work is kept rather than rolled back). The
-  // applied work staying in place is a rollback policy decision — it
+  // applied work staying in place is a rollback policy decision, it
   // does not change the fact that a contract obligation failed.
   const postMergeFailed = result.postMerge !== null && !result.postMerge.passed;
   if (result.failed === 0 && !postMergeFailed) return 0;

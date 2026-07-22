@@ -26,7 +26,7 @@
 //      renamed). We include it.
 //
 // We parse with `ts.ScriptKind.TSX` so the same path covers `.ts`,
-// `.tsx`, `.js`, `.jsx`, and `.mjs` source — TSX is a strict superset.
+// `.tsx`, `.js`, `.jsx`, and `.mjs` source, TSX is a strict superset.
 // `ts.createSourceFile` parses fragments without complaining about
 // incomplete top-level statements, which is exactly what diff-added
 // text is.
@@ -172,7 +172,7 @@ function referencesIdentifier(
       if (excludeDeclName !== undefined) {
         const parent = node.parent;
         if (parent !== undefined && isOwnDeclarationName(parent, node, excludeDeclName)) {
-          // skip — this is the export's own declaration name node
+          // skip, this is the export's own declaration name node
         } else {
           found = true;
           return;

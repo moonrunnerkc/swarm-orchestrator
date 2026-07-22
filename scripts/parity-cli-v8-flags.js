@@ -12,7 +12,7 @@
 //   resume-handler    parseResumeFlags
 //   doctor-handler    (parseFlags is internal; exercised via handleDoctor argv pass-through)
 //   stats-handler     (parseStatsFlags internal; exercised via handleStatsCommand)
-//   run-wrapper       splitArgv (internal — exercised via importing the module)
+//   run-wrapper       splitArgv (internal, exercised via importing the module)
 //   local-provider-flags  applyLocalProviderFlag (exercised via run-handler parser)
 //
 // For internal-only parsers the harness exercises them indirectly: it

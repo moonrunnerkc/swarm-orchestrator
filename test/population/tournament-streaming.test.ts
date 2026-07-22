@@ -61,7 +61,7 @@ function buildSession(perPersona: Record<string, string>, scoreFor: (text: strin
 
 const fileObligation: ObligationV1 = { type: 'file-must-exist', path: 'out.txt' };
 
-describe('population/tournament — streaming verification', () => {
+describe('population/tournament, streaming verification', () => {
   it('aborts only the offending candidate; survivors continue and one wins', async () => {
     // architect's stream contains a forbidden import; implementer's does not.
     const session = buildSession(

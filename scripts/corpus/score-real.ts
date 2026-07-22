@@ -5,7 +5,7 @@
 //
 // Output: `benchmarks/real-corpus/scores/<UTC-timestamp>.json` (one
 // snapshot per run) and `benchmarks/real-corpus/scores/latest.json`
-// (always overwritten — convenience symlink alternative for the
+// (always overwritten, convenience symlink alternative for the
 // leaderboard renderer).
 //
 // `ambiguous`-verdict entries are excluded from precision/recall

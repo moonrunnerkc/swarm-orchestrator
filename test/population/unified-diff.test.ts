@@ -250,7 +250,7 @@ describe('population/unified-diff', () => {
       const protectedAbs = path.join(repo, protectedPath);
       fs.mkdirSync(path.dirname(protectedAbs), { recursive: true });
       fs.writeFileSync(protectedAbs, "const a = 1;\nconst b = 2;\n");
-      // A modify-in-place patch — adds a new line. The architect's
+      // A modify-in-place patch, adds a new line. The architect's
       // body is preserved (no overwrite), the new line is appended.
       const diff = [
         '--- a/' + protectedPath,
@@ -278,7 +278,7 @@ describe('population/unified-diff', () => {
       const protectedAbs = path.join(repo, protectedPath);
       fs.mkdirSync(path.dirname(protectedAbs), { recursive: true });
       fs.writeFileSync(protectedAbs, '// architect body\n');
-      // A CREATE patch attempts to overwrite — the architect's body
+      // A CREATE patch attempts to overwrite, the architect's body
       // would be replaced. Must be blocked.
       const diff = [
         '--- /dev/null',

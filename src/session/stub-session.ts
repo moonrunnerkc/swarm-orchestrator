@@ -43,7 +43,7 @@ export interface StubSessionOptions {
   model?: string;
   /**
    * The stub's response generator. If omitted, the session echoes the
-   * persona id and a fingerprint of the dynamic message — useful for tests
+   * persona id and a fingerprint of the dynamic message, useful for tests
    * that assert calls happened, not specific text.
    */
   responder?: StubResponder;
@@ -60,7 +60,7 @@ export interface StubSessionOptions {
  * Deterministic in-memory session. Reports synthetic but consistent token
  * usage so the run-time pipeline can be exercised end-to-end without real
  * API access. Cache modeling: the static project context counts as a cache
- * write on the first call and a cache read on every subsequent call —
+ * write on the first call and a cache read on every subsequent call,
  * matching how Anthropic's prompt cache actually behaves on a hot prefix.
  *
  * Token estimates use the conventional "4 chars per token" heuristic. This

@@ -176,7 +176,7 @@ jobs:
           # Override the image's ENTRYPOINT (entrypoint.sh) so the smoke test
           # invokes the CLI directly. entrypoint.sh is the GitHub-Action wrapper
           # that requires INPUT_GOAL / INPUT_PLAN / INPUT_RECIPE env vars and
-          # ignores trailing argv — without --entrypoint, `node cli.js --help`
+          # ignores trailing argv, without --entrypoint, `node cli.js --help`
           # gets dropped and the wrapper errors out for missing INPUT_*.
           docker run --rm --entrypoint node ${{ env.REGISTRY }}/${{ env.OWNER }}/swarm-orchestrator:sha-${GITHUB_SHA::7} /app/dist/src/cli.js --help
 

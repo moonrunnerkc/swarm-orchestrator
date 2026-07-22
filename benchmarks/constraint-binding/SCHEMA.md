@@ -47,7 +47,7 @@ worse than no validator. When in doubt, chain a grep with a behavioural test:
 
 The `prompt` field is passed **verbatim** to every producer (ORCHESTRATOR,
 SINGLE_SHOT, LADDER, and any comparator). Producers may decompose the prompt
-internally — the orchestrator is expected to — but the string each producer
+internally, the orchestrator is expected to, but the string each producer
 receives from the harness must match the YAML byte-for-byte.
 
 This is a hard constraint, not a convention. The unit test

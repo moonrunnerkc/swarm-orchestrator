@@ -74,7 +74,7 @@ describe('copilot-cost', () => {
       assert.equal(dollarsBilled, dollarsTokenEstimate);
     });
 
-    it('treats unknown auth as billed (conservative — bills full estimate)', () => {
+    it('treats unknown auth as billed (conservative, bills full estimate)', () => {
       const { dollarsBilled, dollarsTokenEstimate } = dollarsForRequestsByAuth(4, 'unknown', {});
       assert.equal(dollarsBilled, dollarsTokenEstimate);
     });

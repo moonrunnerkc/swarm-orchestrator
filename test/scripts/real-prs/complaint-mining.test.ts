@@ -23,7 +23,7 @@ describe('scripts/real-prs/lib/github extractComplaintSignals', () => {
   });
 
   it('flags a mock-of-hallucination complaint', () => {
-    const sigs = extractComplaintSignals("Please don't mock this — it's the function under test.");
+    const sigs = extractComplaintSignals("Please don't mock this, it's the function under test.");
     assert.equal(sigs[0]?.category, 'mock-of-hallucination');
   });
 

@@ -131,7 +131,7 @@ describe('cli/v8 audit-handler publishing seam', () => {
       const completed = entries[1] as LedgerEntry<'pr-audit-completed'>;
       assert.equal(completed.pass, true);
       assert.equal(completed.blockingCount, 0);
-      assert.match(completed.detail, /^audit pass — 1 non-blocking finding\(s\)$/);
+      assert.match(completed.detail, /^audit pass, 1 non-blocking finding\(s\)$/);
       assert.equal(completed.prNumber, 7);
       assert.equal(completed.prRepository, 'o/r');
     });
@@ -162,7 +162,7 @@ describe('cli/v8 audit-handler publishing seam', () => {
       const completed = completedEntries[0]!;
       assert.equal(completed.pass, false);
       assert.equal(completed.blockingCount, 1);
-      assert.match(completed.detail, /^audit block — 1 blocking finding\(s\)$/);
+      assert.match(completed.detail, /^audit block, 1 blocking finding\(s\)$/);
       assert.equal(completed.prNumber, null);
       assert.equal(completed.prRepository, null);
     });

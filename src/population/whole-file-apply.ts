@@ -20,13 +20,13 @@
  *
  * Each block delimits one file write. The path on the opening marker
  * is repo-relative. The body lines (between `<<<FILE <path>` and
- * `FILE>>>`) are written verbatim — no fence stripping, no context
+ * `FILE>>>`) are written verbatim, no fence stripping, no context
  * inference. Multiple blocks may appear in a single response.
  *
  * Safety guards:
  *   - Paths must stay inside repoRoot (path.relative gates against ../).
  *   - protectedPaths (file-must-exist owned) cannot be overwritten by
- *     whole-file blocks — the architect's body is preserved. This is
+ *     whole-file blocks, the architect's body is preserved. This is
  *     parallel to the unified-diff CREATE-block protection.
  *   - Truncation guard: if a block's body is dramatically shorter than
  *     the existing file (< 20% of original lines AND original was
@@ -66,7 +66,7 @@ export function looksLikeWholeFileResponse(text: string): boolean {
 
 /**
  * Parse whole-file blocks out of a persona response. Returns one entry
- * per recognised block. Tolerant of leading prose or fence wrappers —
+ * per recognised block. Tolerant of leading prose or fence wrappers,
  * the regex anchors on the `<<<FILE` marker only. Throws when a block
  * is unterminated (no `FILE>>>` close marker after an opener).
  */

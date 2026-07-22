@@ -10,7 +10,7 @@ emits ``evidence/phase3/analysis.md`` with test statistics, p-values
 (corrected and uncorrected), 95% confidence intervals, and effect sizes.
 
 In addition to the paired tests, the script computes Copilot's
-**marginal yield per dollar** — the Phase 3 decision metric. Because
+**marginal yield per dollar**, the Phase 3 decision metric. Because
 Codex's strategy does not handle the Phase 3 obligation types (Codex
 targets property-must-hold; Phase 3 targets import-graph-must-satisfy
 and function-must-have-signature), every Copilot falsification is by
@@ -293,7 +293,7 @@ def compute_marginal_yield(
 ) -> MarginalYieldResult:
     # Codex (Config B) does not handle Phase 3 obligation types. Every
     # Copilot falsification on a Phase 3 obligation is therefore unique
-    # to Copilot — Codex contributes zero yield by construction.
+    # to Copilot, Codex contributes zero yield by construction.
     pairs = list(zip(config_b, config_bp))
     copilot_unique_yield = sum(
         1 for b, bp in pairs if (not bp.pass_) and b.pass_
@@ -415,7 +415,7 @@ def render_markdown(
         f"- Codex Phase 2 baseline yield/$ (locked): **{CODEX_PHASE2_YIELD_PER_DOLLAR:.2f}** "
         f"({CODEX_PHASE2_YIELD} yields ÷ ${CODEX_PHASE2_DOLLARS:.4f})"
     )
-    out.append(f"- **Decision: {marginal.decision.upper()}** — {marginal.rationale}")
+    out.append(f"- **Decision: {marginal.decision.upper()}**, {marginal.rationale}")
     out.append("")
     out.append("## Hypothesis tests")
     out.append("")
@@ -532,7 +532,7 @@ def run_real_analysis(args: argparse.Namespace) -> int:
     if len(discarded) > 0.10 * len(full_config_b):
         sys.stderr.write(
             f"WARNING: {len(discarded)}/{len(full_config_b)} obligations discarded "
-            f"({100 * len(discarded) / len(full_config_b):.1f}%) — "
+            f"({100 * len(discarded) / len(full_config_b):.1f}%): "
             f"above the 10% threshold; close-out must cite the elevated discard rate.\n"
         )
 
@@ -577,7 +577,7 @@ def synthetic_dataset(seed: int) -> tuple[list[PerObligation], list[PerObligatio
     - Cost median diff = $0.05.
     - Wall-clock median diff = +25000 ms.
     - LLM-calls median diff = +1.
-    - Marginal yield/$: 14 yields / (20 * $0.05) = 14 / $1.00 = 14/$ —
+    - Marginal yield/$: 14 yields / (20 * $0.05) = 14 / $1.00 = 14/$,
       well above the Codex Phase 2 baseline of ~5.91/$, so decision = ship-bp.
     """
     strata = ["I"] * 10 + ["F"] * 10

@@ -9,7 +9,7 @@ import * as ts from 'typescript';
  * Replaces the v8.0 regex matcher: TypeScript / JavaScript files are
  * parsed with the TypeScript compiler API; Python files are parsed with
  * the `ast` module via a python3 subprocess. Each call returns the list
- * of module specifiers the file imports — relative paths, bare specifiers,
+ * of module specifiers the file imports, relative paths, bare specifiers,
  * package paths, all in the original textual form.
  *
  * The verifier's downstream resolution (mapping a relative spec back to

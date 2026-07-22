@@ -24,19 +24,19 @@
  * is removed after the call returns.
  *
  * Per-obligation artifacts (one directory per obligation per config):
- *   - `result.json` — the FalsifyOutcome (config A: a synthesized
+ *   - `result.json`: the FalsifyOutcome (config A: a synthesized
  *     producer-only outcome; config B: the actual CodexFalsifier outcome)
- *   - `cost.json` — { dollarsBilled, dollarsTokenEstimate, wallClockMs,
- *     llmCalls, costCapHit } — the four pre-registered metrics plus a
+ *   - `cost.json`: { dollarsBilled, dollarsTokenEstimate, wallClockMs,
+ *     llmCalls, costCapHit }: the four pre-registered metrics plus a
  *     boolean for "did this obligation hit the cost cap?"
- *   - `stdout.log` — predicate stdout/stderr (always) plus codex
+ *   - `stdout.log`: predicate stdout/stderr (always) plus codex
  *     stdout/stderr (config B only)
  *
  * Aggregate artifacts under each run directory:
- *   - `summary.md` — operator-readable rendering, schema parallel to Phase 1
- *   - `summary.tsv` — one row per obligation, machine-friendly
- *   - `runtime.json` — wall-clock total, cost total, LLM-call total
- *   - `environment.json` — config, fixture path/hash, patch SHA, node version
+ *   - `summary.md`: operator-readable rendering, schema parallel to Phase 1
+ *   - `summary.tsv`: one row per obligation, machine-friendly
+ *   - `runtime.json`: wall-clock total, cost total, LLM-call total
+ *   - `environment.json`: config, fixture path/hash, patch SHA, node version
  *
  * Invocation:
  *   node dist/scripts/phase2/run-harness.js --config <a|b> [flags]

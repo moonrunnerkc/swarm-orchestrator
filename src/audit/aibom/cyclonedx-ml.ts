@@ -7,7 +7,7 @@
 // document's `externalReferences` so a downstream procurement reviewer
 // can verify the hash chain.
 //
-// We hand-roll the JSON rather than pull in a CycloneDX npm package —
+// We hand-roll the JSON rather than pull in a CycloneDX npm package,
 // the schema is stable, the document is small, and the project policy
 // is "no new runtime deps in Phase 1".
 

@@ -4,7 +4,7 @@
 //   * the diff has at least one source-file (non-test) modification
 //   * every added line in source files is a comment line (//, #, --, *)
 //   * no lines were deleted from source files (excluding pure
-//     whitespace) — a pure addition of comments to existing code
+//     whitespace): a pure addition of comments to existing code
 
 import type { Detector, DetectorContext } from './detector-types';
 import type { Finding } from '../types';

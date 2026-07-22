@@ -9,7 +9,7 @@
  *   2. The orchestrator's own install directory (where cli.js lives)
  *   3. The user's home directory (~/.env) as a last-resort fallback
  *
- * Keys already present in `process.env` are *not* overwritten — the
+ * Keys already present in `process.env` are *not* overwritten, the
  * shell's exported value beats any `.env` file.
  */
 

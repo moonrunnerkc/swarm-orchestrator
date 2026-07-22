@@ -6,7 +6,7 @@ import { handleCompile } from '../../../src/cli/v8/compile-handler';
  * End-to-end assertion that the `--local-grammar` coercion warning lands
  * on stderr (not stdout) when the user supplies a value the extractor
  * cannot honor. We exercise the compile handler with `--extractor local`
- * but without a configured backend so the factory throws fast — the
+ * but without a configured backend so the factory throws fast, the
  * warning has already been written by then.
  */
 

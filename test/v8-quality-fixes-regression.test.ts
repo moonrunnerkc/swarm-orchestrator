@@ -15,27 +15,27 @@ import { preVerifyObligations } from '../src/verification/pre-generation';
  *
  * Findings the tests cover:
  *
- *   F1 — implementer was given a `build-must-pass` obligation with no
+ *   F1: implementer was given a `build-must-pass` obligation with no
  *        signal about why the build was failing, and produced an off-target
  *        diff that wrote a stray file at repo root. Fix: pre-run the
  *        verifier and embed the failure tail into the persona prompt so
  *        the diff is targeted at the actual error.
  *
- *   F2 — architect emitted Jest-shaped tests (`test()`/`expect()`) into a
+ *   F2: architect emitted Jest-shaped tests (`test()`/`expect()`) into a
  *        `node --test` project because the persona had no signal about
  *        which test framework was in scope. Fix: detect testFramework in
  *        `discoverRepoContext`, plumb it through the manifest, and embed
  *        a prescriptive framework hint in the dynamic prompt for any
  *        file-must-exist whose path looks like a test file.
  *
- *   F3 — pre-generation verification vacuously satisfied `test-must-pass`
+ *   F3: pre-generation verification vacuously satisfied `test-must-pass`
  *        against an empty repo (`node --test` with no tests exits 0),
  *        which the post-merge check then had to flip to failed. Fix: pre-
  *        gen now defers global-state obligations (build/test/property/
  *        coverage/performance) until every local obligation is satisfied.
  */
 describe('v8 quality fixes (post-2026-05-08 e2e regression suite)', () => {
-  describe('F2 — architect sees the project test framework', () => {
+  describe('F2: architect sees the project test framework', () => {
     it('isTestFilePath identifies common test-file shapes', () => {
       assert.equal(isTestFilePath('src/hello.test.ts'), true);
       assert.equal(isTestFilePath('src/hello.spec.ts'), true);
@@ -145,7 +145,7 @@ describe('v8 quality fixes (post-2026-05-08 e2e regression suite)', () => {
     });
   });
 
-  describe('F1 — implementer/verifier sees the actual command failure', () => {
+  describe('F1: implementer/verifier sees the actual command failure', () => {
     it('renderDynamicMessage embeds command failure tail for build-must-pass', () => {
       const tail = "src/foo.ts(3,1): error TS2304: Cannot find name 'expect'.";
       const msg = renderDynamicMessage(
@@ -229,7 +229,7 @@ describe('v8 quality fixes (post-2026-05-08 e2e regression suite)', () => {
     });
   });
 
-  describe('F2 defense-in-depth — post-write framework misuse is caught at the per-obligation verifier', () => {
+  describe('F2 defense-in-depth, post-write framework misuse is caught at the per-obligation verifier', () => {
     // Integration-shaped: drive the population manager against a stub
     // session that emits a Jest-shaped test file into a node:test
     // project. Without the defense-in-depth check, file-must-exist
@@ -369,10 +369,10 @@ describe('v8 quality fixes (post-2026-05-08 e2e regression suite)', () => {
     });
   });
 
-  describe('F3 — pre-gen does not vacuously satisfy global-state obligations', () => {
+  describe('F3: pre-gen does not vacuously satisfy global-state obligations', () => {
     it('global obligations stay pending while local obligations are unsatisfied', () => {
       const root = mkTmp();
-      // node --test against an empty repo exits 0 — exactly the vacuous
+      // node --test against an empty repo exits 0: exactly the vacuous
       // pass that historically misled the manager into recording
       // test-must-pass as already satisfied.
       const r = preVerifyObligations({

@@ -12,7 +12,7 @@ import type {
   PrAuditCompletedEntry,
 } from '../../../src/ledger/types';
 
-// Local schemas are intentionally minimal — they assert the shape Swarm
+// Local schemas are intentionally minimal, they assert the shape Swarm
 // emits, not full upstream-spec validation. Full upstream-spec validation
 // would require committing or fetching the multi-megabyte CycloneDX
 // 1.6 + SPDX 3.0 JSON Schemas, which is out of scope for unit tests.

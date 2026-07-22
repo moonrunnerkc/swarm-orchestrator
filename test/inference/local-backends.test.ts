@@ -50,7 +50,7 @@ function mockFetchErroring(status: number, body: string): typeof fetch {
     }) as unknown as Response) as unknown as typeof fetch;
 }
 
-describe('inference/local — OpenAiCompatibleBackend', () => {
+describe('inference/local, OpenAiCompatibleBackend', () => {
   it('advertises json-schema grammar support', () => {
     const backend = new OpenAiCompatibleBackend({ baseUrl: 'http://x', fetch: mockFetchReturning({}).fetchImpl });
     assert.deepEqual([...backend.supportsGrammar()].sort(), ['json-schema', 'none']);
@@ -101,7 +101,7 @@ describe('inference/local — OpenAiCompatibleBackend', () => {
   });
 });
 
-describe('inference/local — OllamaBackend', () => {
+describe('inference/local, OllamaBackend', () => {
   it('advertises json-schema grammar support', () => {
     const backend = new OllamaBackend({ baseUrl: 'http://x', fetch: mockFetchReturning({}).fetchImpl });
     assert.deepEqual([...backend.supportsGrammar()].sort(), ['json-schema', 'none']);
@@ -138,7 +138,7 @@ describe('inference/local — OllamaBackend', () => {
   });
 });
 
-describe('inference/local — LlamaCppBackend', () => {
+describe('inference/local, LlamaCppBackend', () => {
   it('advertises gbnf grammar support', () => {
     const backend = new LlamaCppBackend({ baseUrl: 'http://x', fetch: mockFetchReturning({}).fetchImpl });
     assert.deepEqual([...backend.supportsGrammar()].sort(), ['gbnf', 'none']);
@@ -174,7 +174,7 @@ describe('inference/local — LlamaCppBackend', () => {
   });
 });
 
-describe('inference/local — VllmBackend', () => {
+describe('inference/local, VllmBackend', () => {
   it('advertises json-schema grammar support', () => {
     const backend = new VllmBackend({ baseUrl: 'http://x', fetch: mockFetchReturning({}).fetchImpl });
     assert.deepEqual([...backend.supportsGrammar()].sort(), ['json-schema', 'none']);

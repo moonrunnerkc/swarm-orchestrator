@@ -13,7 +13,7 @@
  *
  * Workspace source: a purpose-built fixture under
  * `evidence/fixtures/phase-1-gate/`. The fixture is contamination-free by
- * construction — every locked predicate in sample-obligations.json exits
+ * construction, every locked predicate in sample-obligations.json exits
  * 0 against it before any candidate is applied. The earlier run-1
  * approach (`git archive HEAD | tar -x`) was re-entrant against the
  * orchestrator's own evidence/ subtree, which contaminated four
@@ -23,18 +23,18 @@
  * on git history; this fixture is self-contained.
  *
  * Per-obligation artifacts (one directory per obligation):
- *   - `request.json` — codex CLI binary, args, prompt, cwd
- *   - `codex-stdout.txt`, `codex-stderr.txt`, `codex-exit-code.txt` — raw
- *   - `result.json` — parsed `FalsifyOutcome` (result + cost)
- *   - `error.txt` — present iff the call threw, with the captured message
- *   - `baseline-skipped.txt` — present iff the obligation was skipped by
+ *   - `request.json`: codex CLI binary, args, prompt, cwd
+ *   - `codex-stdout.txt`, `codex-stderr.txt`, `codex-exit-code.txt`: raw
+ *   - `result.json`: parsed `FalsifyOutcome` (result + cost)
+ *   - `error.txt`: present iff the call threw, with the captured message
+ *   - `baseline-skipped.txt`: present iff the obligation was skipped by
  *     the baseline predicate check before codex was invoked
  *
  * Aggregate artifacts under the run directory:
- *   - `summary.tsv` — one row per obligation, machine-friendly
- *   - `summary.md` — operator-readable rendering of the same data
- *   - `runtime.json` — wall-clock total, per-obligation count, dollar total
- *   - `runtime-progress.json` — written after each obligation; consumed by
+ *   - `summary.tsv`: one row per obligation, machine-friendly
+ *   - `summary.md`: operator-readable rendering of the same data
+ *   - `runtime.json`: wall-clock total, per-obligation count, dollar total
+ *   - `runtime-progress.json`: written after each obligation; consumed by
  *     `--resume` to skip already-completed obligations
  *
  * Invocation:
@@ -434,7 +434,7 @@ function writeSummaryMd(
   totalWallClockMs: number,
 ): void {
   const lines: string[] = [];
-  lines.push('# Phase 1 dev gate — run summary');
+  lines.push('# Phase 1 dev gate, run summary');
   lines.push('');
   lines.push(`- Patch SHA: \`${patchSha}\``);
   lines.push(`- Fixture root: \`${fixtureRoot}\``);

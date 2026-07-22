@@ -72,10 +72,10 @@ interface CompileHandlerInjections {
  * Implementation of `swarm v8 compile <goal> [flags]`.
  *
  * Returns an exit code:
- *   0 — contract written
- *   1 — validation or runtime error
- *   2 — user rejected the contract
- *   3 — missing API key for default extractor
+ *   0: contract written
+ *   1: validation or runtime error
+ *   2: user rejected the contract
+ *   3: missing API key for default extractor
  */
 export async function handleCompile(
   argv: string[],
@@ -200,7 +200,7 @@ export async function handleCompile(
 
 function buildExtractor(flags: CompileFlags): Extractor {
   const resolution = resolveGrammarForConsumer('extractor', flags.local.grammar);
-  // The warning fires only when this extractor is the local one — the
+  // The warning fires only when this extractor is the local one, the
   // deterministic and anthropic branches ignore `localGrammar` entirely,
   // and emitting a coercion message for a consumer that isn't reading
   // the value would be misleading.

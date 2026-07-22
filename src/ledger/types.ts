@@ -1,7 +1,7 @@
 // Append-only evidence ledger type definitions. The hash chain in
 // ledger.ts canonicalizes each entry minus `entryHash`, so the on-disk
 // JSON bytes are determined by the *runtime* field order callers
-// produce — these types only constrain shape, not serialization order.
+// produce, these types only constrain shape, not serialization order.
 
 import type { SessionUsage } from '../session/types';
 
@@ -22,7 +22,7 @@ export interface ProviderAttribution {
 // in response to work an AI coding agent did (e.g. an audit of a PR
 // opened by Cursor), the attribution flows into the canonical-JSON
 // hash chain just like any other field. Absent on entries that did not
-// originate from a recognizable agent — pre-v10 ledger files parse
+// originate from a recognizable agent, pre-v10 ledger files parse
 // without surfacing this field at all.
 export interface LedgerAgentAttribution {
   vendor: string;

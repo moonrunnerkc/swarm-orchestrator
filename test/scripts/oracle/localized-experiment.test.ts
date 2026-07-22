@@ -46,7 +46,7 @@ describe('oracle / localized-experiment', () => {
       assert.ok(md.includes('## v2: localized confirm prompt'));
       assert.ok(md.includes('| localized (experiment) | 5/10 | 0.500 |'));
       assert.ok(md.includes('lifts tail-defect recall to 0.5 (+0.4 absolute)'));
-      assert.ok(!md.includes('—'), 'no em dash');
+      assert.ok(!md.includes('\u2014'), 'no em dash');
     });
   });
 
@@ -62,7 +62,7 @@ describe('oracle / localized-experiment', () => {
       });
       assert.ok(md.includes('## v2: localized confirm prompt'));
       assert.ok(md.includes('| localized (experiment) | 0/10 | 0/10 | 10/10 |'));
-      assert.ok(!md.includes('—'), 'no em dash');
+      assert.ok(!md.includes('\u2014'), 'no em dash');
     });
   });
 });

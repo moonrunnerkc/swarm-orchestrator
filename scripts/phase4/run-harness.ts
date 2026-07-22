@@ -527,7 +527,7 @@ function writeSummaryMd(
   const capHits = outcomes.filter((o) => o.costCapHit).length;
   const label = config === 'bp' ? "B' (Codex + Copilot)" : "B'' (Codex + Copilot + ClaudeCode)";
   const lines: string[] = [];
-  lines.push(`# Phase 4 run summary (config ${config.toUpperCase()} — ${label})`);
+  lines.push(`# Phase 4 run summary (config ${config.toUpperCase()}: ${label})`);
   lines.push('');
   lines.push(`- Patch SHA: \`${patchSha}\``);
   lines.push(`- Fixture root: \`${fixtureRoot}\``);
@@ -547,7 +547,7 @@ function writeSummaryMd(
   lines.push('|---|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---|---|');
   for (const o of outcomes) {
     lines.push(
-      `| ${o.id} | ${o.stratum} | ${o.type} | ${o.pass ? 'yes' : 'no'} | ${o.falsifyingAdapters || '—'} | ${o.perAdapterYield} | ${o.counterExamplesFound} | ${o.falsePositives} | ${o.dollarsBilled.toFixed(4)} | ${o.dollarsTokenEstimate.toFixed(4)} | ${o.llmCalls} | ${o.wallClockMs} | ${o.costCapHit ? 'HIT' : ''} | ${o.errorMessage ?? ''} |`,
+      `| ${o.id} | ${o.stratum} | ${o.type} | ${o.pass ? 'yes' : 'no'} | ${o.falsifyingAdapters || '-'} | ${o.perAdapterYield} | ${o.counterExamplesFound} | ${o.falsePositives} | ${o.dollarsBilled.toFixed(4)} | ${o.dollarsTokenEstimate.toFixed(4)} | ${o.llmCalls} | ${o.wallClockMs} | ${o.costCapHit ? 'HIT' : ''} | ${o.errorMessage ?? ''} |`,
     );
   }
   lines.push('');
@@ -667,7 +667,7 @@ async function main(): Promise<void> {
     completedIds.add(outcome.id);
     process.stderr.write(
       `[phase4-${flags.config}]   ${outcome.id} -> pass=${outcome.pass} ` +
-        `falsifying=${outcome.falsifyingAdapters || '—'} ` +
+        `falsifying=${outcome.falsifyingAdapters || '-'} ` +
         `yield=${outcome.counterExamplesFound} ` +
         `per=${outcome.perAdapterYield} ` +
         `billed=$${outcome.dollarsBilled.toFixed(4)} ` +

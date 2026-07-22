@@ -93,7 +93,7 @@ describe('population/tournament', () => {
     });
   });
 
-  describe('runTournament — happy path', () => {
+  describe('runTournament, happy path', () => {
     it('selects the highest-scoring candidate and applies it', async () => {
       const obligation: ObligationV1 = { type: 'file-must-exist', path: 'out.txt' };
       const session = buildScoredSession({
@@ -145,7 +145,7 @@ describe('population/tournament', () => {
     });
   });
 
-  describe('runTournament — diversity injection', () => {
+  describe('runTournament, diversity injection', () => {
     it('rotates personas and temperatures across failed rounds', async () => {
       // Round 0: only architect, both candidates score 0.3 → below threshold.
       // Round 1: implementer rotated in via fallback, scores 0.8.
@@ -187,7 +187,7 @@ describe('population/tournament', () => {
     });
   });
 
-  describe('runTournament — escalation', () => {
+  describe('runTournament, escalation', () => {
     it('escalates after the round cap with all candidates failing', async () => {
       const obligation: ObligationV1 = { type: 'file-must-exist', path: 'x.txt' };
       const session = buildScoredSession({
@@ -255,7 +255,7 @@ describe('population/tournament', () => {
     });
   });
 
-  describe('runTournament — discard cost attribution', () => {
+  describe('runTournament, discard cost attribution', () => {
     it('records loser usage for cost attribution per impl guide §6', async () => {
       const obligation: ObligationV1 = { type: 'file-must-exist', path: 'x.txt' };
       const session = buildScoredSession({
@@ -285,7 +285,7 @@ describe('population/tournament', () => {
     });
   });
 
-  describe('runTournament — totalUsage', () => {
+  describe('runTournament, totalUsage', () => {
     it('sums every generation and verifier call', async () => {
       const obligation: ObligationV1 = { type: 'file-must-exist', path: 'x.txt' };
       const session = buildScoredSession({
@@ -317,7 +317,7 @@ describe('population/tournament', () => {
 
   // Phase 3 §6 exit criterion (a): a tricky obligation produces multiple
   // candidates, the verifier picks the best, and the top candidate commits.
-  describe('Phase 3 §6 (a) — tricky-obligation exit criterion', () => {
+  describe('Phase 3 §6 (a): tricky-obligation exit criterion', () => {
     it('runs multiple candidates, scores them, and commits the best', async () => {
       const obligation: ObligationV1 = {
         type: 'file-must-exist',

@@ -3,11 +3,11 @@
  * Phase 4 §7 memoization-savings benchmark.
  *
  * Compares two run modes against the repeated-pattern goal suite:
- *   - **baseline** — tournament mode, no memoStore. The harness still
+ *   - **baseline**, tournament mode, no memoStore. The harness still
  *     does implicit in-round dedup (two same-hash candidates in one
  *     round share one verifier call) but no cross-obligation
  *     memoization.
- *   - **memoized** — tournament mode with a fresh MemoStore. Later
+ *   - **memoized**, tournament mode with a fresh MemoStore. Later
  *     tournaments inherit prior winners' verdicts, skipping their
  *     verifier calls entirely.
  *
@@ -18,8 +18,8 @@
  *     memoization for every goal.
  *
  * Output:
- *   - `docs/v8-phase-4-benchmark.md` — Markdown report.
- *   - `docs/benchmarks/v8-history.jsonl` — appended rows.
+ *   - `docs/v8-phase-4-benchmark.md`: Markdown report.
+ *   - `docs/benchmarks/v8-history.jsonl`: appended rows.
  */
 
 import * as fs from 'fs';
@@ -231,7 +231,7 @@ function renderReport(args: ReportArgs): string {
   lines.push('## Methodology');
   lines.push('');
   lines.push(
-    'Phase 4 §7 says memoization "measurably reduces cost on a goal that contains repeated obligation patterns." The benchmark exercises three repeated-pattern goals — health-check files for 3, 4, and 6 services — under two configurations:',
+    'Phase 4 §7 says memoization "measurably reduces cost on a goal that contains repeated obligation patterns." The benchmark exercises three repeated-pattern goals, health-check files for 3, 4, and 6 services, under two configurations:',
   );
   lines.push('');
   lines.push('- **baseline**: tournament mode, no `MemoStore`. Implicit in-round dedup is still active (two identical-hash candidates in the same round share one verifier call), but no cross-obligation memoization.');

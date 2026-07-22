@@ -36,7 +36,7 @@ export interface ValidationError {
 }
 
 export interface ValidateOptions {
-  // When false, contracts without a `build-must-pass` are accepted —
+  // When false, contracts without a `build-must-pass` are accepted,
   // library projects published as source (no scripts.build) need this;
   // forcing a synthetic `npm run build` against such a repo generates
   // a phantom obligation that can never satisfy.
@@ -44,7 +44,7 @@ export interface ValidateOptions {
 }
 
 // Per-type field-validation table. The order in each row is the order
-// the original switch enforced — preserved so errors fire in the same
+// the original switch enforced, preserved so errors fire in the same
 // order on the same input.
 type FieldKind = 'path' | 'command' | 'nonempty-string';
 type EmptyFieldName = 'name' | 'signature' | 'target';

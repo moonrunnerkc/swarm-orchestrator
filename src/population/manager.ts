@@ -143,7 +143,7 @@ export async function runPopulation(
     ? buildAssertions(streamingConfig)
     : [];
   const usingStreaming = streamingAssertions.length > 0;
-  // §8: never retry a failed WASM strategy — once rerouted to synthesis,
+  // §8: never retry a failed WASM strategy, once rerouted to synthesis,
   // the deterministic floor is out of the picture for that index.
   const deterministicTried = new Set<number>();
 
@@ -222,7 +222,7 @@ export async function runPopulation(
 
   // ── Pre-generation check ────────────────────────────────────────
   // Order matters: pre-generation runs build/test commands, costlier
-  // than memoization or the deterministic floor — only the obligations
+  // than memoization or the deterministic floor, only the obligations
   // that survived both cheap paths reach this pass.
   if (options.preGeneration) {
     const alreadyExcluded = new Set<number>(skip);

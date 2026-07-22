@@ -46,7 +46,7 @@ export interface BenchSummary {
  * Exit criteria:
  *   1. v8 effective input ≥ 30% lower than v6 (totalInputReductionPct ≥ 0.3).
  *   2. Pass rate within 5% of v6 (|passRateDelta| ≤ 0.05).
- *   3. Cache hit rate measurable (>0) — implicit in usage data.
+ *   3. Cache hit rate measurable (>0): implicit in usage data.
  */
 export function summarize(results: readonly GoalRunResult[]): BenchSummary {
   let totalObligations = 0;

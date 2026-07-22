@@ -1,7 +1,7 @@
 /**
  * Phase 5 deterministic-floor benchmark runner. Drives a single goal
- * through the population manager twice — once with the WASM runtime
- * disabled (baseline) and once with it enabled (deterministic) — and
+ * through the population manager twice, once with the WASM runtime
+ * disabled (baseline) and once with it enabled (deterministic): and
  * captures comparable cost, satisfaction, and ledger-shape metrics.
  */
 

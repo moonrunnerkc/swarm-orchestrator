@@ -169,7 +169,7 @@ export const testRelaxationDetector: Detector = {
 
       // Pure-deletion assertions where the chunk added no compensating
       // assertion. Treated as a relaxation only when the added side has
-      // *no* new assertion at all in this chunk — the assertion-strip
+      // *no* new assertion at all in this chunk, the assertion-strip
       // detector reports the bare strip case separately.
       const pureDeletions = deletions.filter((d) => !isStrictAssertion(d.content));
       if (pureDeletions.length > 0 && additions.length === 0) {

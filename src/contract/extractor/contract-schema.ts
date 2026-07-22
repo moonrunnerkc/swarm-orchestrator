@@ -12,7 +12,7 @@ import { type ObligationV1 } from '../types';
  * schema that shipped through Phases 1–7 byte-for-byte, so contract hashes
  * produced by the existing model remain stable. The on-disk single-obligation
  * schema (`src/contract/schema/v1.json`) additionally allows the optional
- * `deterministicStrategy` field that the post-extraction tagger writes — kept
+ * `deterministicStrategy` field that the post-extraction tagger writes, kept
  * out of this envelope schema because the LLM (and any hand-authored input
  * that goes through this validator) should not set the tag directly.
  */

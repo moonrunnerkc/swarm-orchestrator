@@ -7,10 +7,10 @@
  * synthesis. The benchmark compares two configurations against this
  * suite:
  *
- *   - **baseline** — `wasmRuntime: undefined`. Every file obligation
+ *   - **baseline**, `wasmRuntime: undefined`. Every file obligation
  *     hits the synthesis path; the architect persona generates a body
  *     for each one.
- *   - **deterministic** — `wasmRuntime: createDefaultRuntime()`. Tagged
+ *   - **deterministic**, `wasmRuntime: createDefaultRuntime()`. Tagged
  *     obligations short-circuit through the WASM runtime at zero
  *     LLM token cost; untagged ones still go through synthesis.
  *

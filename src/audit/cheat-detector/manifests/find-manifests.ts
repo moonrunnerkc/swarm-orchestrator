@@ -4,7 +4,7 @@
 // real-corpus run showed that the dominant `mock-of-hallucination`
 // false-positive class on enterprise/* monorepos was a root manifest
 // that doesn't declare the packages the tests under `enterprise/`
-// actually import — the relevant `pyproject.toml` lives one or two
+// actually import, the relevant `pyproject.toml` lives one or two
 // levels down at `enterprise/pyproject.toml`.
 
 import * as fs from 'fs';
@@ -59,7 +59,7 @@ const MAX_MATCHES = 64;
  * `filename`, up to MAX_MATCHES. Skips SKIP_DIRS and stops descending
  * past MAX_DEPTH. The root-level file (if present) is included.
  *
- * Silent on individual readdir failures — a permission-denied
+ * Silent on individual readdir failures, a permission-denied
  * subdirectory in a monorepo should not crash the entire audit.
  */
 export function findManifestFiles(repoRoot: string, filename: string): string[] {

@@ -71,7 +71,7 @@ export default tseslint.config(
     // Declare Node globals so `require`/`module`/`process`/`__dirname` do not
     // fire `no-undef`. The runtime-checks quality gate runs `npx eslint` on
     // agent-changed files directly, so *.js files reached by that gate also
-    // need this language-options block — it cannot rely on the npm-script's
+    // need this language-options block, it cannot rely on the npm-script's
     // scoped file glob.
     files: ['**/*.js', '**/*.cjs'],
     languageOptions: {

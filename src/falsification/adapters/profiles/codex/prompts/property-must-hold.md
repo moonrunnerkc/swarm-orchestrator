@@ -19,7 +19,7 @@ Constraints, all hard:
    or any other generated/ignored directory. Use a fresh subdirectory
    if the predicate scopes its search to a specific path; otherwise
    place files under the workspace root with descriptive names.
-5. Each candidate should be independent — the adapter applies one at a
+5. Each candidate should be independent, the adapter applies one at a
    time and removes it before applying the next.
 6. Reply with one fenced ```json``` block matching the schema below.
    No prose before, after, or inside the block.

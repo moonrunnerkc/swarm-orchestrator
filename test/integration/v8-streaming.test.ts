@@ -268,7 +268,7 @@ describe('integration: v8 streaming + pre-gen + post-merge (Phase 6)', () => {
       projectContext: 'CTX',
       responder: (req) => {
         if (req.personaId === 'architect') return 'value=A';
-        // implementer (build-must-pass) — pretend to no-op; build will
+        // implementer (build-must-pass): pretend to no-op; build will
         // fail at apply-time and at post-merge.
         return 'no-op';
       },

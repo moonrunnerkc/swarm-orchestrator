@@ -136,9 +136,9 @@ of combining multiple boolean toggles:
 
 ### New commands
 
-- `swarm init` — scaffolds `contract.yaml` + `patches.jsonl` for the detected
+- `swarm init`: scaffolds `contract.yaml` + `patches.jsonl` for the detected
   or specified language.
-- `swarm doctor --fix` — auto-resolves common setup problems (missing `.swarm/`
+- `swarm doctor --fix`: auto-resolves common setup problems (missing `.swarm/`
   directories, stale locks, missing patches.jsonl, incorrect permissions).
 
 ### Internal changes (no user-facing behavior change)

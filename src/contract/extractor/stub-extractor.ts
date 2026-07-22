@@ -14,10 +14,10 @@ import { type Extractor, type ExtractorInput, type ExtractorOutput } from './typ
  *
  * Two construction modes:
  *
- *   1. `StubExtractor.fromObligations(obligations)` — return the exact list
+ *   1. `StubExtractor.fromObligations(obligations)`: return the exact list
  *      regardless of input. Useful for unit tests of the compiler pipeline.
  *
- *   2. `StubExtractor.fromGoalMap(map, fallback?)` — look up the goal in a
+ *   2. `StubExtractor.fromGoalMap(map, fallback?)`: look up the goal in a
  *      map; fall back to the supplied function (or the default heuristic) on
  *      miss. Useful for wide test suites where each goal needs a different
  *      response.

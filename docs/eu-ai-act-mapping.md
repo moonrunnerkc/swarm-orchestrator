@@ -1,4 +1,4 @@
-# EU AI Act mapping — swarm-audit AI-BOM
+# EU AI Act mapping, swarm-audit AI-BOM
 
 This page maps the fields a `swarm audit --emit-aibom cyclonedx-ml`
 artifact carries to the technical-documentation surface the
@@ -19,7 +19,7 @@ Article 11 and Annex IV. The mapping is per-record: every
 that single artifact answers each field below from the audit's
 ledger evidence.
 
-## Article 11 — Technical documentation
+## Article 11: Technical documentation
 
 > *"Documentation shall be drawn up before that system is placed on the
 > market and shall be kept up to date."*
@@ -31,15 +31,15 @@ ledger evidence.
 | Description of monitoring, functioning, and control | `vulnerabilities` array | one entry per cheat finding |
 | Detailed description of the risk-management system | `vulnerabilities[*].ratings[*].severity` | `block` ↔ `high`, `warn` ↔ `medium`, `info` ↔ `info` |
 
-## Annex IV — Technical documentation contents
+## Annex IV, Technical documentation contents
 
 | Annex IV section | swarm-audit field |
 |---|---|
 | 1(a) intended purpose | `components[0].description` |
 | 1(c) date and version | `metadata.timestamp`, `metadata.tools[*].version`, `serialNumber` |
-| 1(e) description of forms in which the AI system is placed on the market | implicit — one document per PR audit run |
+| 1(e) description of forms in which the AI system is placed on the market | implicit, one document per PR audit run |
 | 2(b) design specifications including: a description of the general logic of the AI system and of the algorithms | `metadata.tools[*]` carries the detector engine version + per-detector versions |
-| 2(c) description of the system architecture | `externalReferences[type=attestation]` — link + SHA-256 of the hash-chained evidence ledger reconstructs the per-finding chain |
+| 2(c) description of the system architecture | `externalReferences[type=attestation]`: link + SHA-256 of the hash-chained evidence ledger reconstructs the per-finding chain |
 | 2(d) data sheets describing the training methodologies, datasets, and provenance | `components[type=machine-learning-model].modelCard.properties` carries agent vendor + version + attribution signal |
 | 3 description of monitoring, functioning, control | `vulnerabilities[*]` carries every cheat finding with file/line/severity |
 | 4 description of risk-management system | severity ladder maps to procurement-standard rating |

@@ -43,7 +43,7 @@ const REPO_CTX: RepoContext = {
   language: 'unknown',
 };
 
-describe('contract/extractor — LocalExtractor', () => {
+describe('contract/extractor, LocalExtractor', () => {
   it('parses a JSON-only response into obligations', async () => {
     const backend = new FakeBackend(
       JSON.stringify({ obligations: [{ type: 'test-must-pass', command: 'npm test' }] }),

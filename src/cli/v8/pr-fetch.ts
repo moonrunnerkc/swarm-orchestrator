@@ -132,7 +132,7 @@ async function fetchPrDiffViaListFiles(
     for (const f of files) {
       // listFiles omits `patch` for binary files and for files whose
       // single-file patch exceeds GitHub's per-file truncation limit.
-      // Skip those — including a header with no hunks would produce a
+      // Skip those, including a header with no hunks would produce a
       // malformed unified diff downstream.
       if (typeof f.patch !== 'string' || f.patch.length === 0) continue;
       const oldPath = f.status === 'added' ? '/dev/null' : `a/${f.previous_filename ?? f.filename}`;

@@ -125,7 +125,7 @@ describe('cheat-detector engine', () => {
 
   // ---- PR-intent severity escalation ----
 
-  // A diff that produces a comment-only catch block — error-swallow v1.1.0
+  // A diff that produces a comment-only catch block, error-swallow v1.1.0
   // emits this at `info` severity, which is exactly what the intent layer
   // can escalate when the PR claims a fix. Single-line form so the
   // detector's comment-only-catch regex matches (multi-line catches with

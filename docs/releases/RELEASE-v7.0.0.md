@@ -36,7 +36,7 @@ are archived outside the public repository.
 Composite catch rate (3-of-18 broken entries flagged for review based on
 the composite-score threshold): 16.7%. The headline composite number is
 low because most synthetic broken patches still score above the
-human-review threshold — calibration data, not a quality claim. The
+human-review threshold, calibration data, not a quality claim. The
 load-bearing finding is the per-layer FN rates: each layer catches its
 target patterns at 0% FN on the synthetic targets it was designed for.
 

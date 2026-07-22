@@ -13,7 +13,7 @@ import { readContract } from '../../src/contract/serializer';
  * deterministic extractor; the run uses the deterministic session with a
  * pre-staged JSONL patch queue. The fixture's package.json declares trivial
  * build/test scripts so the obligations are satisfied by pre-generation
- * verification alone — no patch from the deterministic session is consumed.
+ * verification alone, no patch from the deterministic session is consumed.
  *
  * This is the contract test for the prompt's central claim: "a user can
  * clone the repo, run the tool against a hand-authored contract and
@@ -21,7 +21,7 @@ import { readContract } from '../../src/contract/serializer';
  * without making any network call, without installing any model, and
  * without configuring any API key."
  */
-describe('e2e — deterministic full cycle', () => {
+describe('e2e, deterministic full cycle', () => {
   const originalApiKey = process.env.ANTHROPIC_API_KEY;
   const originalExtractor = process.env.EXTRACTOR_PROVIDER;
   const originalSession = process.env.SESSION_PROVIDER;
@@ -129,7 +129,7 @@ describe('e2e — deterministic full cycle', () => {
     const ledgerTypes = ledger.map((e) => e.type);
     assert.ok(ledgerTypes.includes('run-started'));
     assert.ok(ledgerTypes.includes('run-finished'));
-    // ANTHROPIC_API_KEY must remain unset throughout — the test fails by
+    // ANTHROPIC_API_KEY must remain unset throughout, the test fails by
     // accidental leak if anything in the pipeline silently reaches for it.
     assert.equal(process.env.ANTHROPIC_API_KEY, undefined);
   });

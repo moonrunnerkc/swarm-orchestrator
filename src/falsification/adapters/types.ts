@@ -105,7 +105,7 @@ export interface FalsifierAdapter {
   readonly name: string;
   readonly handles: readonly ObligationType[];
   // Errors from the underlying tool (missing CLI, auth failure, parse
-  // failure) must be thrown — the dispatcher surfaces them, it does
+  // failure) must be thrown, the dispatcher surfaces them, it does
   // not silently treat them as `no-falsification-found`.
   falsify(input: FalsificationInput): Promise<FalsifyOutcome>;
 }

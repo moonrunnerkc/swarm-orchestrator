@@ -113,7 +113,7 @@ function resolveExistingPath(abs: string): string {
 
 /**
  * The deterministic-floor runtime. Construct one per orchestrator run
- * (or share across runs — the registry has no per-run state).
+ * (or share across runs, the registry has no per-run state).
  */
 export class WasmRuntime {
   private readonly byName: Map<string, DeterministicStrategy> = new Map();

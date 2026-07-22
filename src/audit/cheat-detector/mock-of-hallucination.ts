@@ -14,7 +14,7 @@
 //
 // New finding sub-classes:
 //
-//   - `mock-target-unknown`: same as v1.x — the mocked module is not
+//   - `mock-target-unknown`: same as v1.x, the mocked module is not
 //     in the manifest. Severity `block` when the module is also not
 //     in the offline allowlist; `info` when it is (probable false-
 //     positive on a project-local mock path the manifest cannot see).
@@ -116,7 +116,7 @@ export function buildMockOfHallucinationDetector(
       // The wild-PR scan surfaced a class of false positive on
       // monorepos with subproject layouts: a Python test that mocks
       // `integrations.jira_dc.foo` was flagged as a hallucinated
-      // package because `integrations` is not a pypi name — it's an
+      // package because `integrations` is not a pypi name, it's an
       // internal directory in the repo. We resolve a mock target as
       // "internal" when its top-level segment matches a real
       // directory under repoRoot.
@@ -263,7 +263,7 @@ function extractMockTarget(line: string): string | undefined {
 function isLocalImport(target: string): boolean {
   // `@/...` and `~/...` are TypeScript/bundler path aliases (tsconfig `paths`,
   // Vite/webpack `resolve.alias`) that map to a local source directory. They
-  // are never published packages — `@scope/pkg` always has a name after the
+  // are never published packages, `@scope/pkg` always has a name after the
   // `@`, so `@/` (slash immediately after `@`) is unambiguously an alias. A
   // mock of a path alias resolves locally and is not a manifest concern.
   return (

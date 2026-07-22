@@ -145,7 +145,7 @@ export interface BackwardFunnel {
   agentAttributed: number;
   /** Candidates that reached the findOutcomeEvidence confirmation stage. */
   evidenceChecked: number;
-  /** Candidates confirmed outcome-bad (reverted | hotfixed) — the final entries. */
+  /** Candidates confirmed outcome-bad (reverted | hotfixed): the final entries. */
   evidenceConfirmed: number;
   /** Why candidates dropped, keyed by stage. */
   dropReasons: Record<string, number>;

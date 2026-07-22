@@ -9,7 +9,7 @@ correction across the four comparisons, and emits
 ``evidence/phase4/analysis.md`` with test statistics, p-values
 (corrected and uncorrected), 95% confidence intervals, and effect sizes.
 
-Computes ClaudeCode's **marginal yield per dollar** — the Phase 4
+Computes ClaudeCode's **marginal yield per dollar**, the Phase 4
 diversity-thesis signal:
 
     marginal yield = obligations B'' falsified that B' did not
@@ -380,14 +380,14 @@ def render_markdown(
             "(same family as the producer) added zero unique yield over "
             "the cross-family Codex+Copilot pair. The cross-family "
             "diversity is doing the work the architecture's premise "
-            "expects — a same-family adapter is redundant."
+            "expects, a same-family adapter is redundant."
         )
     else:
         out.append(
             "**Cross-family diversity thesis: WEAKENED.** ClaudeCode "
             "(same family as the producer) added unique yield over the "
             "cross-family Codex+Copilot pair. The diversity thesis is "
-            "weaker than the architecture's premise assumes — investigate "
+            "weaker than the architecture's premise assumes, investigate "
             "what ClaudeCode caught that Copilot did not, and whether "
             "the gap reflects a strategy ceiling or a model-family "
             "advantage."
@@ -522,7 +522,7 @@ def run_real_analysis(args: argparse.Namespace) -> int:
     if len(discarded) > 0.10 * len(full_config_bp):
         sys.stderr.write(
             f"WARNING: {len(discarded)}/{len(full_config_bp)} obligations discarded "
-            f"({100 * len(discarded) / len(full_config_bp):.1f}%) — "
+            f"({100 * len(discarded) / len(full_config_bp):.1f}%): "
             f"above the 10% threshold; close-out must cite the elevated discard rate.\n"
         )
 

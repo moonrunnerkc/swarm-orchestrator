@@ -4,7 +4,7 @@ v6.0.0 consolidates three workstreams on top of v5.0.0's foundation: statistical
 
 ## Theme 1: Statistical Benchmarking Rigor
 
-The benchmark infrastructure was rebuilt from subjective author-scored rubrics to fully automated, reproducible metrics with statistical reporting. Every claim is backed by raw data, bootstrap confidence intervals, and an ABC-compliance audit that closed at 30/30 verified items. Detailed P2-P5 work — the statistical harness, parseCopilotRequestCount fix, ABC audit, and legacy rubric cleanup — is documented in the April 18 session report rather than re-narrated here.
+The benchmark infrastructure was rebuilt from subjective author-scored rubrics to fully automated, reproducible metrics with statistical reporting. Every claim is backed by raw data, bootstrap confidence intervals, and an ABC-compliance audit that closed at 30/30 verified items. Detailed P2-P5 work, the statistical harness, parseCopilotRequestCount fix, ABC audit, and legacy rubric cleanup, is documented in the April 18 session report rather than re-narrated here.
 
 ### Statistical Harness and Benchmarks
 
@@ -16,7 +16,7 @@ Commits: `85fe1c7` (harness), `b5afb40` (demo-fast N=10 run), `9e93bf7` + `5b7da
 
 ### ABC-Compliance Audit
 
-The Agentic Benchmark Checklist (ABC) — 30 items covering fixed public tasks, multiple runs, automated metrics, and full disclosure — was audited item by item. Initial state per the session report: 28 verified, 2 partial (items 3.3 and 5.2). Two post-report commits closed the remaining partials: `23fc541` updated D5/3.3 evidence pointers after the parseCopilotRequestCount fix, and `ab2d03c` added a named Conflicts of Interest section closing 5.2. Final state: 30 verified, 0 partial, 0 missing. The detailed audit and ABC-compliance summary are historical artifacts archived outside the public repository.
+The Agentic Benchmark Checklist (ABC): 30 items covering fixed public tasks, multiple runs, automated metrics, and full disclosure, was audited item by item. Initial state per the session report: 28 verified, 2 partial (items 3.3 and 5.2). Two post-report commits closed the remaining partials: `23fc541` updated D5/3.3 evidence pointers after the parseCopilotRequestCount fix, and `ab2d03c` added a named Conflicts of Interest section closing 5.2. Final state: 30 verified, 0 partial, 0 missing. The detailed audit and ABC-compliance summary are historical artifacts archived outside the public repository.
 
 Commit: `7cecd8b` (initial audit), `23fc541` + `ab2d03c` (closeout)
 
@@ -42,7 +42,7 @@ Modified: harness wiring in `benchmarks/harness/`
 
 ## Theme 2: Planner Fidelity
 
-Two independent benchmark observations — a contract-change-then-client task in the PR #22 constraint-binding pilot and the sympy-12481 SWE-bench smoke — surfaced three structural defects in the plan-generator's goal classification and template system. All three landed as separate PRs traceable to investigation issue #27.
+Two independent benchmark observations, a contract-change-then-client task in the PR #22 constraint-binding pilot and the sympy-12481 SWE-bench smoke, surfaced three structural defects in the plan-generator's goal classification and template system. All three landed as separate PRs traceable to investigation issue #27.
 
 ### Preamble Hygiene (PR #29)
 
@@ -102,7 +102,7 @@ Merge commit: `ab002c1` (via sync PR #39)
 
 ### Classifier Preamble Leak
 
-Preamble text concatenated onto the goal string before classification caused the TesterElite keyword regex to match "tests" in the preamble and allocate TesterElite as primary agent for bug-fix tasks. PR #29 — merge commit `19bdd19`.
+Preamble text concatenated onto the goal string before classification caused the TesterElite keyword regex to match "tests" in the preamble and allocate TesterElite as primary agent for bug-fix tasks. PR #29: merge commit `19bdd19`.
 
 ### Plan-Generator Missing Bug-Fix Template
 
@@ -110,19 +110,19 @@ Bug-fix goals had no dedicated template or classifier branch. After preamble hyg
 
 ### Plan-Generator Rigid Library Template
 
-Separate impl and test-update steps caused verifier to run `npm test` after impl change but before test update, rolling back correct work. PR #31 — merge commit `28e34e9`.
+Separate impl and test-update steps caused verifier to run `npm test` after impl change but before test update, rolling back correct work. PR #31: merge commit `28e34e9`.
 
 ### SWE-bench Branch Reset Missing
 
-`checkout_repo` did `git checkout master` on detached HEAD, leaving `master` at HEAD (tip) rather than `base_commit`, causing the orchestrator to diff against the wrong baseline. Fixed with `git checkout -B master base_commit`. PR #38, regression test `test_checkout_resets_master_to_base_commit` — merge commit `ab002c1`.
+`checkout_repo` did `git checkout master` on detached HEAD, leaving `master` at HEAD (tip) rather than `base_commit`, causing the orchestrator to diff against the wrong baseline. Fixed with `git checkout -B master base_commit`. PR #38, regression test `test_checkout_resets_master_to_base_commit`: merge commit `ab002c1`.
 
 ### Capture-Time Diff Leak
 
-`git diff base_commit` without pathspec excludes leaked `.copilot-instructions.md` and `runs/` scaffolding into SWE-bench patches, causing `git apply` failures in the evaluation container. PR #38 — merge commit `ab002c1`.
+`git diff base_commit` without pathspec excludes leaked `.copilot-instructions.md` and `runs/` scaffolding into SWE-bench patches, causing `git apply` failures in the evaluation container. PR #38: merge commit `ab002c1`.
 
 ### Per-Step Commit Scaffolding Leak
 
-`git add -A` at the per-step auto-commit site staged `runs/`, `node_modules/`, and `__pycache__/` alongside agent work, inflating commits with orchestrator-internal noise (31.7 MB in smoke3). PR #36 — merge commit `aa5fc6a`.
+`git add -A` at the per-step auto-commit site staged `runs/`, `node_modules/`, and `__pycache__/` alongside agent work, inflating commits with orchestrator-internal noise (31.7 MB in smoke3). PR #36: merge commit `aa5fc6a`.
 
 ### Intent-to-Add Completeness Gap
 
@@ -134,11 +134,11 @@ Separate impl and test-update steps caused verifier to run `npm test` after impl
 
 ### Branch Default Detection
 
-Orchestrator hardcoded `'main'` as the integration branch fallback. On repos with `master` as default (sympy, scikit-learn pre-2022, astropy pre-2022), the orchestrator bailed with `Error: Failed to switch to branch main` on first branch switch. Affects approximately half the planned 50-instance SWE-bench sweep. PR #23 — merge commit `93dc360`.
+Orchestrator hardcoded `'main'` as the integration branch fallback. On repos with `master` as default (sympy, scikit-learn pre-2022, astropy pre-2022), the orchestrator bailed with `Error: Failed to switch to branch main` on first branch switch. Affects approximately half the planned 50-instance SWE-bench sweep. PR #23: merge commit `93dc360`.
 
 ### Pytest Rootdir Isolation
 
-Verifier's outcome-check `pytest` invocation had no `--rootdir`. When a worktree copy of the repo's `conftest.py` existed under `runs/`, pytest's rootdir search walked up to the common ancestor and registered both conftests, triggering `ValueError: option names {'--slow'} already added` and false test-failure reports. PR #24 — merge commit `2778c2d`.
+Verifier's outcome-check `pytest` invocation had no `--rootdir`. When a worktree copy of the repo's `conftest.py` existed under `runs/`, pytest's rootdir search walked up to the common ancestor and registered both conftests, triggering `ValueError: option names {'--slow'} already added` and false test-failure reports. PR #24: merge commit `2778c2d`.
 
 ---
 
@@ -150,10 +150,10 @@ Pilot ran 2026-04-21T15:09Z to 16:26Z. Tool: `claude-code`. All four tasks under
 
 | Task | Wall Clock | Premium Req | Failing Validator | Hypothesis |
 |------|-----------|-------------|-------------------|------------|
-| rename-then-update-callers-001 | 2443s | 5/5 est | no references to old name remain in source files | VALIDATOR TOO STRICT — grep scanned `node_modules/` and self-asserting test file |
-| contract-change-then-client-001 | 442s | (bailed early) | implementation throws on missing userAgent | PLAN-GENERATOR ORDERING — impl step verified before test-update step ran |
-| lift-then-reuse-001 | 555s | (bailed early) | resolveScheduler helper is declared in index.js | VALIDATOR TOO STRICT — space before paren in function declaration |
-| schema-then-query-001 | 1157s | 3/8 est | schema declares publishedAt on Post | FIXTURE DEFECT — subpath prefix preserved on extraction, file at wrong path |
+| rename-then-update-callers-001 | 2443s | 5/5 est | no references to old name remain in source files | VALIDATOR TOO STRICT, grep scanned `node_modules/` and self-asserting test file |
+| contract-change-then-client-001 | 442s | (bailed early) | implementation throws on missing userAgent | PLAN-GENERATOR ORDERING, impl step verified before test-update step ran |
+| lift-then-reuse-001 | 555s | (bailed early) | resolveScheduler helper is declared in index.js | VALIDATOR TOO STRICT, space before paren in function declaration |
+| schema-then-query-001 | 1157s | 3/8 est | schema declares publishedAt on Post | FIXTURE DEFECT, subpath prefix preserved on extraction, file at wrong path |
 
 **Aggregate:** 0/4 pass, 76.6 min wall clock, 8 total premium requests. No halt triggers fired (no invocation exceeded 2× estimate, no validator disagreed with baseline-rejection smoke, no auth failures).
 
@@ -171,7 +171,7 @@ Target-mode gate scoping (PR #35) reduced smoke-run wall clock approximately 3×
 
 ### Session Report Reference
 
-The April 18 session report covers prior E2E validation: `demo-fast` at N=10 (100% step completion, 2 premium requests/run, 84.3s mean wall clock) and `api-quick` at N=5 (100% step completion, 3 premium requests/run, 359s mean wall clock). Both confirm clean orchestrator exit with real—not hardcoded—premium request counts. Full results tables in the report.
+The April 18 session report covers prior E2E validation: `demo-fast` at N=10 (100% step completion, 2 premium requests/run, 84.3s mean wall clock) and `api-quick` at N=5 (100% step completion, 3 premium requests/run, 359s mean wall clock). Both confirm clean orchestrator exit with real, not hardcoded, premium request counts. Full results tables in the report.
 
 ---
 
@@ -179,15 +179,15 @@ The April 18 session report covers prior E2E validation: `demo-fast` at N=10 (10
 
 All three v5.0.0 features remain functional and were exercised during v6.0 validation runs:
 
-- **SARIF output from quality gates** — still produces valid SARIF 2.1.0 JSON; gate-scoping work in PR #35 preserved SARIF compatibility.
-- **Per-project gate configuration** — `.swarm/gates.yaml` resolution unchanged; PR #35's `targetMode` flag is orthogonal to per-project config.
-- **Spec-aware planning** — gate-aware prompt clauses continue to fire correctly; `testCoverage` auto-injection guard added in PR #31 for contract-change goal type.
+- **SARIF output from quality gates**, still produces valid SARIF 2.1.0 JSON; gate-scoping work in PR #35 preserved SARIF compatibility.
+- **Per-project gate configuration**, `.swarm/gates.yaml` resolution unchanged; PR #35's `targetMode` flag is orthogonal to per-project config.
+- **Spec-aware planning**, gate-aware prompt clauses continue to fire correctly; `testCoverage` auto-injection guard added in PR #31 for contract-change goal type.
 
 ---
 
 ## Dependencies
 
-Five pip range bumps (pytest ≥9.0.3, httpx ≥0.28.1, fastapi ≥0.136.0, uvicorn ≥0.44.0, pydantic ≥2.13.2) deferred — dependabot branches were stale at PR close; dependabot will reopen against v6.0 main. PRs #6, #8, #10, #12, #17 closed 2026-04-22.
+Five pip range bumps (pytest ≥9.0.3, httpx ≥0.28.1, fastapi ≥0.136.0, uvicorn ≥0.44.0, pydantic ≥2.13.2) deferred, dependabot branches were stale at PR close; dependabot will reopen against v6.0 main. PRs #6, #8, #10, #12, #17 closed 2026-04-22.
 
 ---
 

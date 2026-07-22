@@ -26,14 +26,14 @@ registry-construction concern at the API layer, not a CLI flag.
 | File | Responsibility |
 |---|---|
 | `src/falsification/adapters/types.ts` | `FalsifierAdapter` interface and the four-variant `FalsificationResult` union (counter-example-input, regression-fixture, property-violation-trace, no-falsification-found). Per-call `AdapterCostRecord` carries `dollarsBilled` (real charge) and `dollarsApiEquivalent` (rate-card-derived; see "Cost reporting" below). |
-| `src/falsification/adapters/registry.ts` | `AdapterRegistry`: in-process keyed map. Registration order is part of the contract — the dispatcher walks adapters in registration order. |
+| `src/falsification/adapters/registry.ts` | `AdapterRegistry`: in-process keyed map. Registration order is part of the contract, the dispatcher walks adapters in registration order. |
 | `src/falsification/adapters/cost-aggregator.ts` | Reduces per-call records into the per-`(adapter, obligation-type)` `AdapterCostAggregate` shape written to `runs/<id>/cost-attribution.json`. Sums both `dollarsBilled` and `dollarsApiEquivalent`. |
 | `src/falsification/adapters/index.ts` | Public entry point. `defaultAdapterRegistry({ includeCopilot?, includeClaudeCode? })` returns a registry pre-populated with the production adapters. |
 | `src/falsification/adapters/codex/` | Codex falsifier (Phase 1). `codex exec --sandbox workspace-write --ask-for-approval never`. Strategy: adversarial test input generation, three candidates per call. |
 | `src/falsification/adapters/copilot/` | Copilot falsifier (Phase 3). `copilot -p` with constrained per-tool permissions. Strategy: import-graph perturbation + function-signature drift, three candidates per call. |
 | `src/falsification/adapters/claude-code/` | ClaudeCode falsifier (Phase 4). `claude -p --output-format json --max-budget-usd 1.00`. Strategy: mirrored from Codex (adversarial test input generation against `property-must-hold`); same family as the producer for the cross-family-diversity ablation. |
 | `src/falsification/dispatcher.ts` | Sequential dispatcher. Honors `--falsifiers off` by short-circuiting before any adapter runs. |
-| `src/falsification/inspection/heuristic-classifier.ts` | AST-based heuristic classifier for inspection skeletons. **Verdict-aid, not a verdict source** — operator hand inspection is the authoritative verdict. The 2026-05-09 close-out used the heuristic as the verdict source under explicit operator-bypass approval and reported bounds rather than point estimates; that is an exception, not the rule. |
+| `src/falsification/inspection/heuristic-classifier.ts` | AST-based heuristic classifier for inspection skeletons. **Verdict-aid, not a verdict source**, operator hand inspection is the authoritative verdict. The 2026-05-09 close-out used the heuristic as the verdict source under explicit operator-bypass approval and reported bounds rather than point estimates; that is an exception, not the rule. |
 
 ## Contract summary
 
@@ -231,14 +231,14 @@ were previously never pruned. The run lifecycle now invokes
 written, so cleanup never races an active writer. Policies, set with
 `--snapshot-cleanup`:
 
-- `retain-on-failure` (default) — drop the current run's directory on
+- `retain-on-failure` (default): drop the current run's directory on
   success, keep everything on failure.
-- `always` — always drop the current run's directory after run-end.
-- `never` — never prune anything.
-- `retain-last:N` — keep the N most-recent run directories by mtime.
-- `max-age:<duration>` — prune any run directory whose newest mtime is
+- `always`: always drop the current run's directory after run-end.
+- `never`: never prune anything.
+- `retain-last:N`: keep the N most-recent run directories by mtime.
+- `max-age:<duration>`: prune any run directory whose newest mtime is
   older than the given duration (`500ms`, `30m`, `7d`).
-- `max-disk:<size>` — prune oldest-first until the snapshot root is
+- `max-disk:<size>`: prune oldest-first until the snapshot root is
   under the given size (`100MB`, `2GB`).
 
 Cleanup is idempotent and tolerates concurrently-removed directories
@@ -247,6 +247,6 @@ final state.
 
 ## See also
 
-- [`src/verification/battery-runner.ts`](../src/verification/battery-runner.ts) —
+- [`src/verification/battery-runner.ts`](../src/verification/battery-runner.ts),
   the v7 battery's entry point. The adapter system runs *alongside* the
   battery, not instead of it.

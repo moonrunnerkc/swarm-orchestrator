@@ -131,7 +131,7 @@ async function main(): Promise<void> {
       `(${provisioned.length} provisioned); wrote ${SUMMARY_FILE}`,
   );
   if (proven.length > 0) {
-    log.warn(`STOP-THE-LINE: ${proven.length} proven block(s) — replay in a fresh clone before recording proven`);
+    log.warn(`STOP-THE-LINE: ${proven.length} proven block(s): replay in a fresh clone before recording proven`);
   }
 }
 

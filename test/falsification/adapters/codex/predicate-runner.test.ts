@@ -56,7 +56,7 @@ describe('runCandidateAgainstPredicate', () => {
   it('reports false positive when the candidate does not falsify', () => {
     const ws = makeWorkspace();
     try {
-      // predicate stays satisfied — file content lacks the forbidden token.
+      // predicate stays satisfied, file content lacks the forbidden token.
       const predicate = '! grep -r "FORBIDDEN" allowed 2>/dev/null';
       const result = runCandidateAgainstPredicate(
         candidate('allowed/safe.txt', 'no token here'),

@@ -107,7 +107,7 @@ describe('session/bounded-session', () => {
   it('throws BudgetExceededError once the output-token ceiling is crossed', async () => {
     const inner = new CountingSession(60);
     const bounded = new BoundedSession(inner, { maxCalls: null, maxOutputTokens: 100 });
-    // First call adds 60, still under 100 — succeeds.
+    // First call adds 60, still under 100: succeeds.
     await bounded.complete(aRequest());
     // Second call sees outputSoFar=60 < 100, still succeeds.
     await bounded.complete(aRequest());
