@@ -89,6 +89,16 @@ Judge-enabled arm (differences from deterministic in bold):
 | legacy | no-op-fix | 0 | 0 | 0 | 4 |
 | uncertain | assertion-strip | 0 | 0 | 0 | 1 |
 
+A structural-blindness note the deterministic table must carry: 9 of the 29
+entries sit in categories no structural detector keys on, `goal-not-fixed` (7)
+and `hardcoded-output` (2). For those entries the deterministic arm has no
+detection path by design; its zeros there are methodology, not detector misses,
+and only the judge-primary path can reach them. Among the 7 provisionable
+entries this covers yorickdewid/flight-planner#149 and cybersemics/em#4339
+(both `goal-not-fixed`); both `hardcoded-output` entries are frozen
+non-viable. This is why the judge arm exists and why the arms are never merged
+into one headline.
+
 Neither advisory-found entry in the deterministic arm fired in the complaint's
 own category: lesmartiepants/poetry-bil-araby#545 (complaint assertion-strip)
 drew an error-swallow finding on a different hunk, and
@@ -214,11 +224,15 @@ that an empty diff gives it nothing to evaluate).
 
 Recorded per the run instructions; nothing here was fixed beyond the harness.
 
-1. **`plans/capability-hunt-changeplan.md` does not exist** in the working
-   tree (`plans/` is local-only and does not contain it). The measurement ran
-   from the Workstream A instructions supplied with the session plus the
-   frozen amendment, which fully specify population, arms, outcomes, and
-   ceiling.
+1. **The change plan was absent at run time.**
+   `plans/capability-hunt-changeplan.md` (local-only; `plans/` is gitignored)
+   was not present when the measurement ran, so it ran from the Workstream A
+   instructions supplied with the session plus the frozen amendment, which
+   fully specify population, arms, outcomes, and ceiling. The plan file was
+   provided immediately after and the run was verified against its Workstream
+   A section point by point; the one textual gap found (the deterministic
+   arm's structural blindness to `goal-not-fixed` / `hardcoded-output` had to
+   be stated explicitly) is fixed in this report. No measurement deviated.
 2. **Transient GitHub socket failures in the harness.** The first API request
    after a multi-minute child audit died twice per arm (`write EPIPE` /
    `other side closed`) on the same two entries. Harness-level defect, not
