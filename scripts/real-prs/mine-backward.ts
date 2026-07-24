@@ -3,19 +3,26 @@
 // The forward miner (mine-confirmed-bad.ts) starts from a sample of agent PRs
 // and asks "was this later reverted or hotfixed?". It only ever sees the agent
 // PRs it happened to fetch. This miner runs the other direction: it starts from
-// the BAD OUTCOMES already visible in the wild (revert commits, strong-marker
-// hotfix commits), walks back to the commit they undo, and keeps the ones an
-// agent authored. Starting from the revert means we find agent-introduced
-// defects the forward sample never drew.
+// the BAD OUTCOMES already visible in the wild, walks back to the commit they
+// blame, and keeps the ones an agent authored. Discovery runs four labeled
+// sources (see backward-discovery.ts): revert markers (the original net),
+// hotfix markers that blame a sha, issue-linked regression fixes that blame a
+// sha, and agent-authored thin-review merges checked for short-interval
+// follow-up fixes. Yield per source is recorded in the funnel so the nightly
+// artifact says which net catches and which does not.
 //
 // Reuse, not fork: the revert/hotfix confirmation is the exact
 // `findOutcomeEvidence` the corpus labeler and the forward miner use, so every
 // mined entry carries the same canonical evidence SHAs. Agent attribution is the
-// same `detectAgent` fingerprinter the audit surface uses.
+// same `detectAgent` fingerprinter the audit surface uses. Discovery widening
+// touches neither: a wider net proposes more candidates, the unchanged bar
+// disposes of them.
 //
 // Bounded by construction: a hard GitHub API-call budget and a wall-clock cap,
-// both parameters, so a nightly cron cannot run away. A run that hits either cap
-// records how far it got and stops; it never pads.
+// both parameters, so a nightly cron cannot run away. The budget is split
+// across the sources by cumulative shares (SOURCE_BUDGET_SHARES) so the first
+// source cannot starve the rest; a run that hits a cap records how far it got
+// and stops; it never pads.
 //
 // Usage:
 //   node dist/scripts/real-prs/mine-backward.js \
@@ -29,14 +36,27 @@ import * as path from 'path';
 import { loadDotenv } from '../../src/env-loader';
 import { getLogger } from '../../src/logger';
 import { detectAgent } from '../../src/audit/pr-source';
-import { makeOctokit, parseRepo, resolveGithubToken, revertedShasInMessage } from './lib/github';
+import { makeOctokit, parseRepo, resolveGithubToken } from './lib/github';
 import { extractChangedLineRanges } from '../../src/audit/cheat-detector/diff-walker';
+import {
+  buildDiscoveryPlan,
+  followupCandidateFromDetail,
+  revertCandidatesFromItem,
+  SOURCE_BUDGET_SHARES,
+  type BackwardCandidate,
+  type CommitSearchItem,
+  type DiscoverySource,
+  type DiscoverySourcePlan,
+} from './backward-discovery';
 import {
   defaultBranchOf,
   findOutcomeEvidence,
   type OctokitLike,
   type OutcomeEvidence,
 } from '../labeling/outcome-labels';
+
+// Re-exported so callers and tests keep one import path for the miner surface.
+export { revertCandidatesFromItem };
 
 const log = getLogger('real-prs:mine-backward');
 
@@ -91,6 +111,31 @@ export interface BackwardOctokit extends OctokitLike {
       }>;
     }>;
   };
+  pulls: {
+    get(p: { owner: string; repo: string; pull_number: number }): Promise<{
+      data: {
+        number: number;
+        merged_at: string | null;
+        merge_commit_sha: string | null;
+        head: { sha: string };
+        user: { login: string } | null;
+        merged_by: { login: string } | null;
+        review_comments: number;
+      };
+    }>;
+  };
+  search: OctokitLike['search'] & {
+    issuesAndPullRequests(p: { q: string; per_page: number; page: number }): Promise<{
+      data: {
+        items: Array<{
+          number: number;
+          title: string;
+          html_url: string;
+          user?: { login?: string } | null;
+        }>;
+      };
+    }>;
+  };
 }
 
 export interface BackwardBudget {
@@ -100,7 +145,7 @@ export interface BackwardBudget {
   wallClockMs: number;
   /** Max confirmed entries to mine (stop early once reached). */
   limit: number;
-  /** Only consider reverts on or after this many months ago. */
+  /** Only consider markers on or after this many months ago. */
   months: number;
   /** Injectable clock for tests; defaults to Date.now. */
   now?: () => number;
@@ -118,26 +163,48 @@ export interface BackwardEntry {
   outcome: 'reverted' | 'hotfixed';
   /** Canonical evidence SHAs from findOutcomeEvidence (the same the labeler emits). */
   evidence: OutcomeEvidence[];
-  /** The revert/hotfix commit that surfaced this entry in the backward scan. */
+  /** The marker commit or PR that surfaced this entry in the backward scan. */
   surfacedBy: string;
+  /** The discovery source that surfaced it. Absent on pre-widening corpus
+   *  entries, which were all revert-marker discovered. */
+  source?: DiscoverySource;
+}
+
+/** Per-source yield accounting: markers found, candidates derived, entries
+ *  confirmed, and the rejection-reason distribution, so the artifact says
+ *  which net catches. Additive to the flat funnel; old readers ignore it. */
+export interface SourceFunnel {
+  /** Search items this source returned (markers found). */
+  markers: number;
+  /** Candidates this source derived from those markers. */
+  candidates: number;
+  /** Candidates confirmed outcome-bad (the final entries). */
+  confirmed: number;
+  /** Why this source's candidates (and pre-candidate hits) dropped. */
+  dropReasons: Record<string, number>;
+  /** Set when the source stopped before exhausting its input
+   *  ('source-budget' when it hit its budget share). */
+  stopped?: string;
 }
 
 /**
  * Staged funnel counts for one mine run, so a zero yield is diagnosable at a
  * glance: the stage where the count collapses is the diagnosis (the world or the
- * instrument). Each candidate advances through the stages in order; a candidate
- * that drops out is tallied under `dropReasons` with the stage it died at.
+ * instrument). The flat stage counters total across every discovery source
+ * (their names predate the multi-source widening and are kept for reader
+ * compatibility); `bySource` splits markers, candidates, confirmations, and
+ * drop reasons per source.
  */
 export interface BackwardFunnel {
-  /** Revert search items returned by the discovery query. */
+  /** Discovery search items returned, all sources. */
   revertMarkers: number;
-  /** (repo, reverted-sha) candidates derived from those markers. */
+  /** (repo, blamed-sha) candidates derived, all sources. */
   revertCandidates: number;
   /** Candidates that reached attribution (post-dedup, pre-budget-stop). */
   candidatesProcessed: number;
   /** Candidates whose associated-PR lookup returned (call succeeded). */
   prLookupResolved: number;
-  /** Candidates whose reverted commit was fetchable (identifiable commit). */
+  /** Candidates whose blamed commit was fetchable (identifiable commit). */
   commitResolved: number;
   /** Candidates that carried an identifiable author (PR user or commit author). */
   identifiableAuthor: number;
@@ -147,8 +214,10 @@ export interface BackwardFunnel {
   evidenceChecked: number;
   /** Candidates confirmed outcome-bad (reverted | hotfixed): the final entries. */
   evidenceConfirmed: number;
-  /** Why candidates dropped, keyed by stage. */
+  /** Why candidates dropped, keyed by stage, all sources. */
   dropReasons: Record<string, number>;
+  /** Per-discovery-source split of markers / candidates / confirmations / drops. */
+  bySource: Record<string, SourceFunnel>;
 }
 
 function emptyFunnel(): BackwardFunnel {
@@ -163,54 +232,67 @@ function emptyFunnel(): BackwardFunnel {
     evidenceChecked: 0,
     evidenceConfirmed: 0,
     dropReasons: {},
+    bySource: {},
   };
 }
 
-function drop(funnel: BackwardFunnel | undefined, reason: string): void {
+function sourceFunnel(funnel: BackwardFunnel, source: DiscoverySource): SourceFunnel {
+  const existing = funnel.bySource[source];
+  if (existing !== undefined) return existing;
+  const fresh: SourceFunnel = { markers: 0, candidates: 0, confirmed: 0, dropReasons: {} };
+  funnel.bySource[source] = fresh;
+  return fresh;
+}
+
+function drop(funnel: BackwardFunnel | undefined, reason: string, source?: DiscoverySource): void {
   if (funnel === undefined) return;
   funnel.dropReasons[reason] = (funnel.dropReasons[reason] ?? 0) + 1;
+  if (source !== undefined) {
+    const sf = sourceFunnel(funnel, source);
+    sf.dropReasons[reason] = (sf.dropReasons[reason] ?? 0) + 1;
+  }
+}
+
+/** One discovery source's query set, recorded in the artifact verbatim so a
+ *  reviewer can replay exactly what was searched. */
+export interface DiscoveryDescriptor {
+  source: DiscoverySource;
+  kind: 'commit-search' | 'pr-search';
+  queries: string[];
+  aim?: string;
 }
 
 export interface BackwardResult {
   entries: BackwardEntry[];
   apiCalls: number;
+  /** Discovery items scanned across all sources (name kept for artifact
+   *  readers that predate the multi-source widening). */
   revertCommitsScanned: number;
   stoppedReason: 'limit' | 'api-budget' | 'wall-clock' | 'exhausted';
   funnel: BackwardFunnel;
-}
-
-/** Pure: the (repo, reverted-sha) candidates a revert commit search item yields. */
-export function revertCandidatesFromItem(item: {
-  repository?: { full_name?: string } | null;
-  commit: { message: string };
-  sha: string;
-}): { repo: string; revertedSha: string; surfacedBy: string }[] {
-  const repo = item.repository?.full_name;
-  if (repo === undefined || repo === null) return [];
-  return revertedShasInMessage(item.commit.message).map((revertedSha) => ({
-    repo,
-    revertedSha,
-    surfacedBy: item.sha,
-  }));
+  discovery: DiscoveryDescriptor[];
 }
 
 /**
- * Walk one revert candidate back to its agent attribution and confirm the
- * outcome. Returns null (not an entry) when the reverted commit is not
- * agent-attributed, has no resolvable PR, or the confirmation does not hold.
- * Counts every GitHub call against the shared budget via `spend`.
+ * Walk one candidate back to its agent attribution and confirm the outcome.
+ * Returns null (not an entry) when the blamed commit is not agent-attributed,
+ * has no resolvable PR, or the confirmation does not hold. Counts every GitHub
+ * call against the shared budget via `spend`. This is the confirmation bar the
+ * discovery widening does NOT touch: every source's candidates pass through
+ * the same findOutcomeEvidence the corpus labeler uses.
  */
 export async function attributeAndConfirm(
   octokit: BackwardOctokit,
-  candidate: { repo: string; revertedSha: string; surfacedBy: string },
+  candidate: { repo: string; revertedSha: string; surfacedBy: string; source?: DiscoverySource },
   spend: () => boolean,
   funnel?: BackwardFunnel,
 ): Promise<BackwardEntry | null> {
   const { owner, repo } = parseRepo(candidate.repo);
+  const source = candidate.source ?? 'revert-marker';
   if (funnel !== undefined) funnel.candidatesProcessed += 1;
 
   if (!spend()) {
-    drop(funnel, 'budget-before-pr-lookup');
+    drop(funnel, 'budget-before-pr-lookup', source);
     return null;
   }
   let prs;
@@ -227,18 +309,18 @@ export async function attributeAndConfirm(
     prs = res.data;
   } catch (err) {
     log.debug(`PR lookup failed for ${candidate.repo}@${candidate.revertedSha.slice(0, 8)}: ${String(err)}`);
-    drop(funnel, 'pr-lookup-failed');
+    drop(funnel, 'pr-lookup-failed', source);
     return null;
   }
   if (funnel !== undefined) funnel.prLookupResolved += 1;
   const pr = prs.find((p) => p.merged_at !== null && p.merged_at !== undefined) ?? prs[0];
 
-  // Fetch the reverted commit ONCE and reuse it for both attribution (author,
+  // Fetch the blamed commit ONCE and reuse it for both attribution (author,
   // message) and confirmation (landedAt, changed ranges). The previous code
   // fetched the same commit twice per candidate, doubling the real API cost of
   // every candidate that passed the PR lookup.
   if (!spend()) {
-    drop(funnel, 'budget-before-commit-fetch');
+    drop(funnel, 'budget-before-commit-fetch', source);
     return null;
   }
   let commitMessage = '';
@@ -274,30 +356,30 @@ export async function attributeAndConfirm(
     authors,
   });
   if (attribution === undefined) {
-    drop(funnel, 'not-agent-attributed');
+    drop(funnel, 'not-agent-attributed', source);
     return null;
   }
   if (funnel !== undefined) funnel.agentAttributed += 1;
 
-  // Confirm via the shared core: derive the reverted commit's changed ranges and
+  // Confirm via the shared core: derive the blamed commit's changed ranges and
   // ask findOutcomeEvidence whether history proves it bad. This attaches the same
   // canonical evidence SHAs the labeler writes.
   if (!spend()) {
-    drop(funnel, 'budget-before-confirm');
+    drop(funnel, 'budget-before-confirm', source);
     return null;
   }
   const branch = await defaultBranchOf(octokit, candidate.repo);
   if (branch === null) {
-    drop(funnel, 'no-default-branch');
+    drop(funnel, 'no-default-branch', source);
     return null;
   }
   if (landedAt === '') {
-    drop(funnel, 'no-landed-date');
+    drop(funnel, 'no-landed-date', source);
     return null;
   }
 
   if (!spend()) {
-    drop(funnel, 'budget-before-confirm');
+    drop(funnel, 'budget-before-confirm', source);
     return null;
   }
   if (funnel !== undefined) funnel.evidenceChecked += 1;
@@ -310,10 +392,13 @@ export async function attributeAndConfirm(
     hotfixWindowDays: HOTFIX_WINDOW_DAYS,
   });
   if (confirmed.outcome === 'survived') {
-    drop(funnel, 'evidence-survived');
+    drop(funnel, 'evidence-survived', source);
     return null;
   }
-  if (funnel !== undefined) funnel.evidenceConfirmed += 1;
+  if (funnel !== undefined) {
+    funnel.evidenceConfirmed += 1;
+    sourceFunnel(funnel, source).confirmed += 1;
+  }
 
   return {
     repo: candidate.repo,
@@ -323,6 +408,7 @@ export async function attributeAndConfirm(
     outcome: confirmed.outcome,
     evidence: confirmed.evidence,
     surfacedBy: candidate.surfacedBy,
+    source,
   };
 }
 
@@ -333,6 +419,14 @@ function sinceDate(now: number, months: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+function describePlan(plan: DiscoverySourcePlan): DiscoveryDescriptor {
+  return plan.kind === 'commit-search'
+    ? { source: plan.source, kind: plan.kind, queries: [plan.query] }
+    : { source: plan.source, kind: plan.kind, queries: plan.queries, aim: plan.aim };
+}
+
+type FlowSignal = 'ok' | 'break-source' | 'break-all';
+
 export async function mineBackward(
   octokit: BackwardOctokit,
   budget: BackwardBudget,
@@ -340,79 +434,171 @@ export async function mineBackward(
   const now = budget.now ?? (() => Date.now());
   const startedAt = now();
   let apiCalls = 0;
-  const spend = (): boolean => {
-    if (apiCalls >= budget.apiBudget) return false;
-    if (now() - startedAt >= budget.wallClockMs) return false;
-    apiCalls += 1;
-    return true;
-  };
+  const wallExceeded = (): boolean => now() - startedAt >= budget.wallClockMs;
 
   const entries: BackwardEntry[] = [];
   const seen = new Set<string>();
   const funnel = emptyFunnel();
-  let revertCommitsScanned = 0;
+  let itemsScanned = 0;
   let stoppedReason: BackwardResult['stoppedReason'] = 'exhausted';
   const since = sinceDate(startedAt, budget.months);
-  const query = `"This reverts commit" committer-date:>=${since}`;
+  const plans = buildDiscoveryPlan(since);
 
-  for (let page = 1; page <= 10; page += 1) {
-    if (entries.length >= budget.limit) {
-      stoppedReason = 'limit';
-      break;
-    }
-    if (!spend()) {
-      stoppedReason = apiCalls >= budget.apiBudget ? 'api-budget' : 'wall-clock';
-      break;
-    }
-    let items;
-    try {
-      const res = await withRetry(
-        () => octokit.search.commits({ q: query, per_page: 50, page }),
-        `discovery search page ${page}`,
-      );
-      items = res.data.items as Array<{
-        sha: string;
-        commit: { message: string };
-        repository?: { full_name?: string } | null;
-      }>;
-    } catch (err) {
-      log.warn(`revert search page ${page} failed: ${String(err)}`);
-      break;
-    }
-    if (items.length === 0) {
-      stoppedReason = 'exhausted';
-      break;
-    }
-    for (const item of items) {
-      revertCommitsScanned += 1;
-      funnel.revertMarkers += 1;
-      for (const candidate of revertCandidatesFromItem(item)) {
-        funnel.revertCandidates += 1;
-        if (entries.length >= budget.limit) {
-          stoppedReason = 'limit';
+  let cumulativeShare = 0;
+  plans: for (const plan of plans) {
+    cumulativeShare += SOURCE_BUDGET_SHARES[plan.source];
+    // Cumulative cap: a source may spend until the run's total reaches its
+    // cumulative share of the budget, so slack from a thin earlier source
+    // rolls forward instead of going unspent.
+    const cap = Math.min(budget.apiBudget, Math.ceil(budget.apiBudget * cumulativeShare));
+    const sf = sourceFunnel(funnel, plan.source);
+    const spend = (): boolean => {
+      if (apiCalls >= cap || wallExceeded()) return false;
+      apiCalls += 1;
+      return true;
+    };
+    const gate = (): FlowSignal => {
+      if (entries.length >= budget.limit) {
+        stoppedReason = 'limit';
+        return 'break-all';
+      }
+      if (apiCalls >= budget.apiBudget) {
+        stoppedReason = 'api-budget';
+        return 'break-all';
+      }
+      if (wallExceeded()) {
+        stoppedReason = 'wall-clock';
+        return 'break-all';
+      }
+      if (apiCalls >= cap) {
+        sf.stopped = 'source-budget';
+        return 'break-source';
+      }
+      return 'ok';
+    };
+    const handleCandidate = async (candidate: BackwardCandidate): Promise<FlowSignal> => {
+      funnel.revertCandidates += 1;
+      sf.candidates += 1;
+      const key = `${candidate.repo}@${candidate.revertedSha}`;
+      if (seen.has(key)) {
+        drop(funnel, 'duplicate-candidate', candidate.source);
+        return 'ok';
+      }
+      seen.add(key);
+      const flow = gate();
+      if (flow !== 'ok') return flow;
+      const entry = await attributeAndConfirm(octokit, candidate, spend, funnel);
+      if (entry !== null) {
+        entries.push(entry);
+        log.info(
+          `mined ${entry.vendor} ${entry.repo}@${entry.revertedSha.slice(0, 8)} ` +
+            `(${entry.outcome}, via ${candidate.source})`,
+        );
+      }
+      return 'ok';
+    };
+
+    if (plan.kind === 'commit-search') {
+      pages: for (let page = 1; page <= 10; page += 1) {
+        const flow = gate();
+        if (flow === 'break-all') break plans;
+        if (flow === 'break-source') break;
+        if (!spend()) break;
+        let items: CommitSearchItem[];
+        try {
+          const res = await withRetry(
+            () => octokit.search.commits({ q: plan.query, per_page: 50, page }),
+            `discovery ${plan.source} page ${page}`,
+          );
+          items = res.data.items as CommitSearchItem[];
+        } catch (err) {
+          log.warn(`${plan.source} search page ${page} failed: ${String(err)}`);
           break;
         }
-        if (seen.has(`${candidate.repo}@${candidate.revertedSha}`)) {
-          drop(funnel, 'duplicate-candidate');
-          continue;
-        }
-        seen.add(`${candidate.repo}@${candidate.revertedSha}`);
-        if (now() - startedAt >= budget.wallClockMs || apiCalls >= budget.apiBudget) {
-          stoppedReason = apiCalls >= budget.apiBudget ? 'api-budget' : 'wall-clock';
-          break;
-        }
-        const entry = await attributeAndConfirm(octokit, candidate, spend, funnel);
-        if (entry !== null) {
-          entries.push(entry);
-          log.info(`mined ${entry.vendor} ${entry.repo}@${entry.revertedSha.slice(0, 8)} (${entry.outcome})`);
+        if (items.length === 0) break;
+        for (const item of items) {
+          itemsScanned += 1;
+          funnel.revertMarkers += 1;
+          sf.markers += 1;
+          for (const candidate of plan.extract(item)) {
+            const candidateFlow = await handleCandidate(candidate);
+            if (candidateFlow === 'break-all') break plans;
+            if (candidateFlow === 'break-source') break pages;
+          }
         }
       }
-      if (stoppedReason === 'limit' || stoppedReason === 'api-budget' || stoppedReason === 'wall-clock') break;
+    } else {
+      queries: for (const query of plan.queries) {
+        const flow = gate();
+        if (flow === 'break-all') break plans;
+        if (flow === 'break-source') break;
+        if (!spend()) break;
+        let prItems;
+        try {
+          const res = await withRetry(
+            () => octokit.search.issuesAndPullRequests({ q: query, per_page: 20, page: 1 }),
+            `discovery ${plan.source}`,
+          );
+          prItems = res.data.items;
+        } catch (err) {
+          log.warn(`${plan.source} search failed: ${String(err)}`);
+          continue;
+        }
+        for (const item of prItems) {
+          itemsScanned += 1;
+          funnel.revertMarkers += 1;
+          sf.markers += 1;
+          const m = item.html_url.match(/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/);
+          if (m === null || m[1] === undefined) continue;
+          const repoSlugName = m[1];
+          const itemFlow = gate();
+          if (itemFlow === 'break-all') break plans;
+          if (itemFlow === 'break-source') break queries;
+          if (!spend()) break queries;
+          const target = parseRepo(repoSlugName);
+          let detail;
+          try {
+            const res = await withRetry(
+              () => octokit.pulls.get({ owner: target.owner, repo: target.repo, pull_number: item.number }),
+              `pulls.get ${repoSlugName}#${item.number}`,
+            );
+            detail = res.data;
+          } catch (err) {
+            log.debug(`PR detail failed for ${repoSlugName}#${item.number}: ${String(err)}`);
+            drop(funnel, 'pr-detail-failed', plan.source);
+            continue;
+          }
+          const derived = followupCandidateFromDetail({
+            repo: repoSlugName,
+            number: item.number,
+            url: item.html_url,
+            mergedAt: detail.merged_at,
+            mergeCommitSha: detail.merge_commit_sha,
+            headSha: detail.head.sha,
+            authorLogin: detail.user?.login ?? item.user?.login ?? '',
+            mergedByLogin: detail.merged_by?.login ?? null,
+            reviewCommentCount: detail.review_comments,
+          });
+          if ('dropReason' in derived) {
+            drop(funnel, derived.dropReason, plan.source);
+            continue;
+          }
+          const candidateFlow = await handleCandidate(derived.candidate);
+          if (candidateFlow === 'break-all') break plans;
+          if (candidateFlow === 'break-source') break queries;
+        }
+      }
     }
-    if (stoppedReason !== 'exhausted') break;
   }
 
-  return { entries, apiCalls, revertCommitsScanned, stoppedReason, funnel };
+  return {
+    entries,
+    apiCalls,
+    revertCommitsScanned: itemsScanned,
+    stoppedReason,
+    funnel,
+    discovery: plans.map(describePlan),
+  };
 }
 
 /** Merge new entries into the committed backward corpus, deduped by reverted sha. */
@@ -462,23 +648,37 @@ async function main(): Promise<void> {
   const merged = mergeCorpus(existing, result.entries);
   const distribution = { reverted: 0, hotfixed: 0 };
   for (const e of merged) distribution[e.outcome] += 1;
+  const sourceDistribution: Record<string, number> = {};
+  for (const e of merged) {
+    // Pre-widening entries carry no source label; they were all revert-mined.
+    const s = e.source ?? 'revert-marker';
+    sourceDistribution[s] = (sourceDistribution[s] ?? 0) + 1;
+  }
   const out = {
     generatedAt: new Date().toISOString(),
     computedBy: 'scripts/real-prs/mine-backward.ts',
-    method: 'backward: revert markers -> reverted agent commit -> findOutcomeEvidence confirmation',
+    method:
+      'backward: outcome markers (revert, hotfix, issue-linked regression fix, thin-review agent merge) ' +
+      '-> blamed agent commit -> findOutcomeEvidence confirmation',
     lastRun: {
       apiCalls: result.apiCalls,
       revertCommitsScanned: result.revertCommitsScanned,
       stoppedReason: result.stoppedReason,
       freshEntries: result.entries.length,
       // Staged funnel: the stage where the count collapses is the diagnosis.
-      // `apiCalls` is the budget-unit counter (the four guarded spend points per
+      // `apiCalls` is the budget-unit counter (the guarded spend points per
       // candidate); real GitHub calls are higher because the shared
       // findOutcomeEvidence / defaultBranchOf make their own uncounted requests.
+      // `funnel.bySource` splits markers found, candidates derived, entries
+      // confirmed, and rejection reasons per discovery source; the flat fields
+      // total across sources, so pre-widening readers keep working.
       funnel: result.funnel,
+      discovery: result.discovery,
+      budgetShares: SOURCE_BUDGET_SHARES,
     },
     total: merged.length,
     distribution,
+    sourceDistribution,
     entries: merged,
   };
   fs.mkdirSync(path.dirname(OUT_FILE), { recursive: true });
@@ -495,6 +695,13 @@ async function main(): Promise<void> {
       `agentAttributed=${f.agentAttributed} evidenceChecked=${f.evidenceChecked} ` +
       `confirmed=${f.evidenceConfirmed}; drops=${JSON.stringify(f.dropReasons)}`,
   );
+  for (const [src, sf] of Object.entries(f.bySource)) {
+    log.info(
+      `source ${src}: markers=${sf.markers} candidates=${sf.candidates} ` +
+        `confirmed=${sf.confirmed}${sf.stopped !== undefined ? ` stopped=${sf.stopped}` : ''} ` +
+        `drops=${JSON.stringify(sf.dropReasons)}`,
+    );
+  }
 }
 
 if (require.main === module) {
