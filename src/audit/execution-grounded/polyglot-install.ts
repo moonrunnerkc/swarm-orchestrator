@@ -13,9 +13,9 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { SwarmError } from '../../errors';
 import { getLogger } from '../../logger';
 import { commandTimeoutMs, execEnv, execFileGuarded, isGuardedTimeout } from './exec-env';
+import { captureInstallFailure, SandboxInstallError } from './install-failure';
 
 const log = getLogger('audit:execution-grounded:polyglot-install');
 
@@ -129,9 +129,16 @@ export function runNonNodeInstall(
       execFileGuarded(step.bin, step.args, { cwd: dir, env, timeoutMs });
     } catch (err) {
       const timedOut = isGuardedTimeout(err);
-      throw new SwarmError(
+      // Measurement only: same message, code, remediation, and cause as before;
+      // the structured evidence rides along for the funnel record.
+      const installFailure = captureInstallFailure(err, {
+        packageManager:
+          ecosystem === 'go' ? 'go' : step.label.startsWith('poetry') ? 'poetry' : 'pip',
+        lockfile: nonNodeLockfileName(dir, ecosystem),
+        nodeEngineRange: null,
+      });
+      throw new SandboxInstallError(
         `${ecosystem} dependency install step "${step.label}" (${step.bin} ${step.args.join(' ')}) failed in ${dir}`,
-        'sandbox-install-failed',
         {
           remediation: timedOut
             ? `Install exceeded ${Math.round(timeoutMs / 1000)}s. Raise installTimeoutMs or exclude this repo.`
@@ -141,10 +148,21 @@ export function runNonNodeInstall(
               : 'The Python project may need poetry, a system library, or a build toolchain the sandbox lacks. ' +
                 'Install the missing tool or record the repo as non-viable.',
           cause: stderrCause(err),
+          installFailure,
         },
       );
     }
   }
+}
+
+/** The frozen-resolution file this non-Node ecosystem actually has on disk:
+ *  go.sum for Go, poetry.lock or requirements.txt for Python, else null. */
+export function nonNodeLockfileName(dir: string, ecosystem: NonNodeEcosystem): string | null {
+  const candidates = ecosystem === 'go' ? ['go.sum'] : ['poetry.lock', 'requirements.txt'];
+  for (const file of candidates) {
+    if (fs.existsSync(path.join(dir, file))) return file;
+  }
+  return null;
 }
 
 /**

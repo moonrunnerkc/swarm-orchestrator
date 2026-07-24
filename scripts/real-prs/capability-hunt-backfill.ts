@@ -89,7 +89,22 @@ interface AuditFunnel {
   pass: boolean | null;
   gateTriggers: string[];
   advisoryFindings: Array<{ category: string; severity: string }>;
-  provisioning: { attempted: boolean; provisioned: boolean; reason?: string } | null;
+  provisioning: {
+    attempted: boolean;
+    provisioned: boolean;
+    reason?: string;
+    /** Present since the B1 instrumentation when the bail was an install
+     *  failure. Older records lack it; every reader treats it as optional. */
+    installFailure?: {
+      packageManager: string;
+      exitCode: number | null;
+      timedOut: boolean;
+      stderrTail: string;
+      lockfile: string | null;
+      nodeEngineRange: string | null;
+      bucket: string;
+    };
+  } | null;
   enginesApplicable: number;
   enginesExecuted: number;
   disputed: number;
@@ -178,6 +193,9 @@ interface BatchMetrics {
   audited: number;
   skippedExisting: number;
   viability: { attempted: number; provisioned: number };
+  /** Install-failure cause buckets (B1 instrumentation). Zero-count on batches
+   *  whose records predate the installFailure field. */
+  installFailureBuckets: Record<string, number>;
   verdicts: { pass: number; block: number; timeout: number; error: number };
   gateTriggers: Record<string, number>;
   advisoryFindings: Record<string, number>;
@@ -194,6 +212,7 @@ function tally(funnels: AuditFunnel[], args: Args, skipped: number): BatchMetric
     audited: funnels.length,
     skippedExisting: skipped,
     viability: { attempted: 0, provisioned: 0 },
+    installFailureBuckets: {},
     verdicts: { pass: 0, block: 0, timeout: 0, error: 0 },
     gateTriggers: {},
     advisoryFindings: {},
@@ -207,6 +226,10 @@ function tally(funnels: AuditFunnel[], args: Args, skipped: number): BatchMetric
     else m.verdicts.pass += 1;
     if (f.provisioning?.attempted) m.viability.attempted += 1;
     if (f.provisioning?.provisioned) m.viability.provisioned += 1;
+    const bucket = f.provisioning?.installFailure?.bucket;
+    if (bucket !== undefined) {
+      m.installFailureBuckets[bucket] = (m.installFailureBuckets[bucket] ?? 0) + 1;
+    }
     for (const t of f.gateTriggers) {
       m.gateTriggers[t] = (m.gateTriggers[t] ?? 0) + 1;
       if (!m.provenRefs.includes(f.ref)) m.provenRefs.push(f.ref);

@@ -14,6 +14,7 @@ import { SwarmError } from '../../errors';
 import { getLogger } from '../../logger';
 import { fixtureRepoUrl } from '../pr-fixture';
 import { commandTimeoutMs, execBin, execEnv, execFileGuarded, isGuardedTimeout } from './exec-env';
+import { captureInstallFailure, SandboxInstallError } from './install-failure';
 import { provisionNonNode, type NonNodeEcosystem } from './polyglot-install';
 
 const log = getLogger('audit:execution-grounded:sandbox');
@@ -111,6 +112,30 @@ export function detectPackageManager(workspacePath: string): PackageManager {
     if (fs.existsSync(path.join(workspacePath, file))) return manager;
   }
   return 'npm';
+}
+
+/** The lockfile filename actually present at the workspace root, for the
+ *  install-failure record. Same precedence as detectPackageManager; null when
+ *  no known lockfile exists (the npm-default case). */
+export function detectLockfileName(workspacePath: string): string | null {
+  for (const { file } of LOCKFILES) {
+    if (fs.existsSync(path.join(workspacePath, file))) return file;
+  }
+  return null;
+}
+
+/** The `engines.node` range declared in the root package.json, or null when
+ *  undeclared or unreadable. Recorded on install failure so an engines-mismatch
+ *  bucket can be checked against the pinned sandbox runtime. */
+export function readNodeEngineRange(workspacePath: string): string | null {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(workspacePath, 'package.json'), 'utf8')) as {
+      engines?: { node?: unknown };
+    };
+    return typeof pkg.engines?.node === 'string' ? pkg.engines.node : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Detect the test runner by reading package.json: a devDependency or
@@ -289,17 +314,24 @@ function runInstall(
   }
   const stderr = lastErr instanceof Error && 'stderr' in lastErr ? String((lastErr as { stderr: unknown }).stderr) : '';
   const timedOut = isGuardedTimeout(lastErr);
-  throw new SwarmError(
+  // Measurement only: the evidence capture and classification never change what
+  // was run above; message, code, remediation, and cause are unchanged too.
+  const installFailure = captureInstallFailure(lastErr, {
+    packageManager: manager,
+    lockfile: detectLockfileName(dir),
+    nodeEngineRange: readNodeEngineRange(dir),
+  });
+  throw new SandboxInstallError(
     // Real command (`corepack yarn install`), not `manager + args`: the latter
     // printed a misleading "yarn yarn install" that reads as a doubled command.
     `dependency install (${lastBin} ${lastArgs.join(' ')}) failed in ${dir}`,
-    'sandbox-install-failed',
     {
       remediation: timedOut
         ? `Install exceeded ${Math.round(timeoutMs / 1000)}s. Raise installTimeoutMs or exclude this repo.`
         : 'The repo may need a native toolchain or a different package manager. ' +
           'Record it as yellow (with a documented config patch) or red (excluded) in stryker-viability.json.',
       cause: stderr.length > 0 ? new Error(stderr.trim().slice(-2000)) : lastErr instanceof Error ? lastErr : new Error(String(lastErr)),
+      installFailure,
     },
   );
 }

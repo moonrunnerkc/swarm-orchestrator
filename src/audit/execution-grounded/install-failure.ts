@@ -1,0 +1,188 @@
+// Structured evidence for a sandbox dependency-install failure. The live-wiring
+// backfill showed 69 of 115 provisioning attempts dying as
+// `sandbox-install-failed` with only a one-line reason in the funnel record, so
+// the causes were unmeasurable. This module owns the capture (a redacted stderr
+// tail plus the install context) and a deterministic classifier that buckets the
+// failure at record time. Measurement only: nothing here changes what the
+// installer runs or how it retries.
+
+import { SwarmError } from '../../errors';
+import { isGuardedTimeout } from './exec-env';
+
+/** Deterministic cause bucket for one install failure, derived purely from the
+ *  captured evidence. `other` is the honesty bucket; the B1 acceptance target
+ *  is keeping it under 10% of failures. */
+export type InstallFailureBucket =
+  | 'registry-or-network'
+  | 'native-build'
+  | 'engines-mismatch'
+  | 'peer-dep-conflict'
+  | 'lifecycle-script'
+  | 'workspace-protocol'
+  | 'disk-or-timeout'
+  | 'other';
+
+/** The raw evidence captured at the failing install's throw site. */
+export interface InstallFailureEvidence {
+  /** The manager whose invocation failed: npm/yarn/pnpm/bun, or pip/poetry/go
+   *  for the non-Node path. */
+  readonly packageManager: string;
+  /** Child exit code; null when the process was killed (timeout) or never ran. */
+  readonly exitCode: number | null;
+  /** True when the guarded runner killed the install at its wall-clock cap. */
+  readonly timedOut: boolean;
+  /** Last STDERR_TAIL_LINES lines of stderr, secret-redacted and byte-capped. */
+  readonly stderrTail: string;
+  /** The lockfile filename found at the workspace root, or null. */
+  readonly lockfile: string | null;
+  /** The package.json `engines.node` range, or null when undeclared / non-Node. */
+  readonly nodeEngineRange: string | null;
+}
+
+/** The evidence plus its bucket: the shape funnel records and EG sidecars carry. */
+export interface InstallFailureRecord extends InstallFailureEvidence {
+  readonly bucket: InstallFailureBucket;
+}
+
+export const STDERR_TAIL_LINES = 40;
+export const STDERR_TAIL_MAX_BYTES = 8 * 1024;
+
+/** Secret shapes that must never land in a committed record. The sandbox env is
+ *  already deny-by-default, but stderr can still echo a registry URL with
+ *  embedded auth or an .npmrc `_authToken` line, so the tail is scrubbed too. */
+const SECRET_PATTERNS: ReadonlyArray<{ re: RegExp; mask: string }> = [
+  // URL userinfo: https://user:token@registry.example -> https://***@registry.example
+  { re: /(https?:\/\/)[^/\s@]+@/g, mask: '$1***@' },
+  { re: /(_authToken\s*=\s*)\S+/gi, mask: '$1***' },
+  { re: /(authorization\s*[:=]\s*)(?:bearer\s+|basic\s+)?\S+/gi, mask: '$1***' },
+  { re: /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}/g, mask: '***' },
+  { re: /\bgithub_pat_[A-Za-z0-9_]{20,}/g, mask: '***' },
+  { re: /\bnpm_[A-Za-z0-9]{30,}/g, mask: '***' },
+  { re: /\bglpat-[A-Za-z0-9_-]{15,}/g, mask: '***' },
+  { re: /\bxox[baprs]-[A-Za-z0-9-]{10,}/g, mask: '***' },
+  { re: /\bAKIA[0-9A-Z]{16}\b/g, mask: '***' },
+  // Key names ending in token/password/secret/key (NODE_AUTH_TOKEN=..., api_key: ...).
+  { re: /([\w-]*(?:token|password|secret|api[_-]?key)\s*[:=]\s*)\S+/gi, mask: '$1***' },
+];
+
+/** Scrub token-shaped substrings from captured stderr before it is recorded. */
+export function redactSecrets(text: string): string {
+  let out = text;
+  for (const { re, mask } of SECRET_PATTERNS) out = out.replace(re, mask);
+  return out;
+}
+
+/**
+ * Reduce raw stderr to its recordable tail: the last STDERR_TAIL_LINES lines,
+ * secret-redacted, then byte-capped from the end (the end is where package
+ * managers print their error summary).
+ *
+ * @param stderr the raw stderr of the failed install.
+ * @returns the redacted, truncated tail; empty string for empty input.
+ */
+export function stderrTail(stderr: string): string {
+  const lines = stderr.split('\n');
+  const tail = lines.slice(-STDERR_TAIL_LINES).join('\n').trimEnd();
+  const redacted = redactSecrets(tail);
+  if (Buffer.byteLength(redacted, 'utf8') <= STDERR_TAIL_MAX_BYTES) return redacted;
+  const buf = Buffer.from(redacted, 'utf8');
+  return buf.subarray(buf.length - STDERR_TAIL_MAX_BYTES).toString('utf8');
+}
+
+/** Ordered bucket matchers. First hit wins, so the more specific tells sit
+ *  above the ones their stderr often also contains (a node-gyp failure runs
+ *  inside a postinstall lifecycle; an engines refusal mentions the registry). */
+const BUCKET_MATCHERS: ReadonlyArray<{ bucket: InstallFailureBucket; re: RegExp }> = [
+  { bucket: 'disk-or-timeout', re: /ENOSPC|no space left on device|disk quota exceeded/i },
+  {
+    bucket: 'engines-mismatch',
+    re: /npm (?:ERR!|error) code EBADENGINE|ERR_PNPM_UNSUPPORTED_ENGINE|The engine "node" is incompatible|Your Node version is incompatible/,
+  },
+  {
+    bucket: 'workspace-protocol',
+    re: /EUNSUPPORTEDPROTOCOL|Unsupported URL Type "workspace:|Workspace not found|ERR_PNPM_[A-Z_]*WORKSPACE/,
+  },
+  {
+    bucket: 'peer-dep-conflict',
+    re: /ERESOLVE|unable to resolve dependency tree|Conflicting peer dependency|ERR_PNPM_PEER_DEP_ISSUES/,
+  },
+  {
+    bucket: 'native-build',
+    re: /gyp ERR!|node-gyp|node-pre-gyp|prebuild-install|make: \*\*\*|error: command '(?:gcc|g\+\+|cc|clang)|fatal error: [^\n]*\.h|cc1plus/,
+  },
+  {
+    bucket: 'lifecycle-script',
+    re: /ELIFECYCLE|npm (?:ERR!|error) command sh -c|(?:postinstall|preinstall|prepare) script failed|error running (?:postinstall|preinstall|prepare)/i,
+  },
+  {
+    bucket: 'registry-or-network',
+    re: /E404|E401|E403|E429|EINTEGRITY|ENOTFOUND|EAI_AGAIN|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EPROTO\b|socket hang up|getaddrinfo|ERR_PNPM_FETCH|ERR_PNPM_REGISTRIES|404 Not Found|401 Unauthorized|403 Forbidden|fetch failed/i,
+  },
+];
+
+/**
+ * Bucket one install failure from its captured evidence. Pure and deterministic:
+ * the same evidence always yields the same bucket, so a committed record can be
+ * re-derived. A guarded-runner timeout is `disk-or-timeout` regardless of what
+ * stderr says (the kill truncates output mid-write); everything else is matched
+ * against the stderr tail in specificity order.
+ *
+ * @param evidence the captured failure evidence.
+ * @returns the first matching bucket, or `other`.
+ */
+export function classifyInstallFailure(evidence: InstallFailureEvidence): InstallFailureBucket {
+  if (evidence.timedOut) return 'disk-or-timeout';
+  for (const { bucket, re } of BUCKET_MATCHERS) {
+    if (re.test(evidence.stderrTail)) return bucket;
+  }
+  return 'other';
+}
+
+/** The install context the throw site knows and the failed child does not. */
+export interface InstallFailureContext {
+  readonly packageManager: string;
+  readonly lockfile: string | null;
+  readonly nodeEngineRange: string | null;
+}
+
+/**
+ * Build the full failure record from a guarded-run error and the install
+ * context: extract exit code, timeout flag, and the redacted stderr tail, then
+ * classify. Tolerates a non-Error throw (records what it can).
+ *
+ * @param err the error the guarded runner (or spawn) threw.
+ * @param ctx the manager, lockfile, and engine range the caller detected.
+ * @returns the evidence plus its bucket, ready for the funnel record.
+ */
+export function captureInstallFailure(err: unknown, ctx: InstallFailureContext): InstallFailureRecord {
+  const stderr = err instanceof Error && 'stderr' in err ? String((err as { stderr: unknown }).stderr) : '';
+  const status = err instanceof Error && 'status' in err ? (err as { status: unknown }).status : null;
+  const evidence: InstallFailureEvidence = {
+    packageManager: ctx.packageManager,
+    exitCode: typeof status === 'number' ? status : null,
+    timedOut: isGuardedTimeout(err),
+    stderrTail: stderrTail(stderr),
+    lockfile: ctx.lockfile,
+    nodeEngineRange: ctx.nodeEngineRange,
+  };
+  return { ...evidence, bucket: classifyInstallFailure(evidence) };
+}
+
+/** The `sandbox-install-failed` error, now carrying its structured evidence so
+ *  the execution-grounded layer can surface the failure into funnel records and
+ *  EG sidecars instead of collapsing it to a one-line reason. Code, message,
+ *  remediation, and cause are unchanged from the plain SwarmError it replaces. */
+export class SandboxInstallError extends SwarmError {
+  readonly installFailure: InstallFailureRecord;
+
+  constructor(
+    message: string,
+    options: { remediation: string; cause: unknown; installFailure: InstallFailureRecord },
+  ) {
+    super(message, 'sandbox-install-failed', {
+      remediation: options.remediation,
+      cause: options.cause,
+    });
+    this.installFailure = options.installFailure;
+  }
+}

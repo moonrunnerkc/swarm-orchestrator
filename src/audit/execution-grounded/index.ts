@@ -25,6 +25,7 @@ import {
 import type { EgCacheContext } from './eg-cache';
 import { provisionPRWorkspaces } from './sandbox';
 import { detectTestRunner, type PackageManager, type TestRunner } from './sandbox';
+import { SandboxInstallError, type InstallFailureRecord } from './install-failure';
 import { groupChangedLinesByPackage, rerootToRepo } from './monorepo';
 import {
   runMutationCheck,
@@ -369,6 +370,11 @@ export interface ExecutionGroundedOutcome {
    *  audit). */
   claimBindings: ClaimBindingResult[];
   skipped: string[];
+  /** Structured evidence for a `sandbox-install-failed` provision bail: the
+   *  redacted stderr tail, exit code, manager, lockfile, engine range, and the
+   *  deterministic cause bucket. Absent on success and on non-install bails;
+   *  readers of older records must tolerate its absence. */
+  installFailure?: InstallFailureRecord;
 }
 
 /** The proof candidates a run evaluates, selected from the structural findings
@@ -1475,7 +1481,9 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
     const reason = err instanceof SwarmError ? `${err.code}: ${err.message}` : String(err);
     log.warn(`provisioning failed for ${input.repo}#${input.prNumber}: ${reason}`);
     skipped.push(`provision: ${reason}`);
-    return bailBeforeWorkspace(`provisioning failed: ${reason}`);
+    const bailed = bailBeforeWorkspace(`provisioning failed: ${reason}`);
+    if (err instanceof SandboxInstallError) bailed.installFailure = err.installFailure;
+    return bailed;
   }
 
   const deadline = Date.now() + input.config.maxWallClockPerPrMs;

@@ -14,6 +14,7 @@
 // engine-projection.ts; this file is the public surface and the roll-up.
 
 import type { ExecutionGroundedOutcome } from '../execution-grounded';
+import type { InstallFailureRecord } from '../execution-grounded/install-failure';
 import {
   claimBindingEngine,
   claimDifferentialEngine,
@@ -70,6 +71,11 @@ export interface ProvisioningStatus {
   readonly provisioned: boolean;
   /** When not provisioned, the sandbox's own reason. */
   readonly reason?: string;
+  /** When the provision bail was a dependency-install failure, the captured
+   *  evidence (redacted stderr tail, exit code, manager, lockfile, engine
+   *  range) plus its deterministic cause bucket. Absent on older records and
+   *  on non-install bails; readers must tolerate its absence. */
+  readonly installFailure?: InstallFailureRecord;
 }
 
 export interface ProofCoverageSummary {
@@ -177,7 +183,7 @@ export function buildProofCoverage(
   ];
   return {
     schema: 'swarm-proof-coverage/v1',
-    provisioning: deriveProvisioning(outcome.skipped),
+    provisioning: deriveProvisioning(outcome.skipped, outcome.installFailure),
     engines,
     summary: summarize(engines),
   };

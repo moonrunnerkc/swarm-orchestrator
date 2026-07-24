@@ -11,6 +11,7 @@ import type {
 } from '../execution-grounded';
 import type { ClaimDifferentialResult } from '../execution-grounded/claim-differential';
 import type { ClaimBindingResult } from '../execution-grounded/claim-binding';
+import type { InstallFailureRecord } from '../execution-grounded/install-failure';
 import type {
   AbstainClass,
   ProofEngineCoverage,
@@ -266,12 +267,22 @@ export function corroborationEngine(
 }
 
 /** Derive the sandbox provisioning status from the outcome's skip log: a
- *  `provision:`-prefixed skip means the sandbox never provisioned. */
-export function deriveProvisioning(skipped: ReadonlyArray<string>): ProvisioningStatus {
+ *  `provision:`-prefixed skip means the sandbox never provisioned. When the
+ *  bail was an install failure, the outcome's captured evidence rides along so
+ *  the funnel record carries a measurable cause instead of a one-line reason. */
+export function deriveProvisioning(
+  skipped: ReadonlyArray<string>,
+  installFailure?: InstallFailureRecord,
+): ProvisioningStatus {
   const provisionSkip = skipped.find((s) => s.startsWith('provision:'));
   if (provisionSkip !== undefined) {
     const reason = provisionSkip.slice('provision:'.length).trim();
-    return { attempted: true, provisioned: false, ...(reason.length > 0 ? { reason } : {}) };
+    return {
+      attempted: true,
+      provisioned: false,
+      ...(reason.length > 0 ? { reason } : {}),
+      ...(installFailure !== undefined ? { installFailure } : {}),
+    };
   }
   return { attempted: true, provisioned: true };
 }
