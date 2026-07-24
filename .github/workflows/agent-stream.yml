@@ -1,19 +1,30 @@
 name: Agent-PR stream hunt
 
 # Forward arm of the capability hunt (benchmarks/real-prs/capability-hunt/
-# PREREGISTRATION.md). Nightly, it surfaces FRESH merged agent-authored PRs with
-# the shipped attribution fingerprinter (fetch-agent-prs, not complaint-filtered),
-# then audits a bounded batch through the shipped, deterministic `swarm audit --pr`
-# and records each PR's full funnel. No --enable-llm-judge, so ANTHROPIC_API_KEY is
-# never needed and Anthropic spend is USD 0.00; the audits run on GitHub core API +
-# clones only.
+# PREREGISTRATION.md, amended by PREREGISTRATION-AMENDMENT-3.md). Nightly, it
+# surfaces FRESH merged agent-authored PRs with the shipped attribution
+# fingerprinter (fetch-agent-prs, two arms: per-vendor control + thin-review,
+# not complaint-filtered), then audits bounded batches through the shipped,
+# deterministic `swarm audit --pr` and records each PR's full funnel. No
+# --enable-llm-judge, so ANTHROPIC_API_KEY is never needed and Anthropic spend
+# is USD 0.00; the audits run on GitHub core API + clones only.
 #
-# On any proven gate trigger the runner HALTS the batch (exit 3) for the
-# false-positive protocol, and the funnels are uploaded for a maintainer to review.
-# Same review-then-fold, never-push contract as complaint-mine.yml and
-# backward-mine.yml: main is a protected ref, nothing here folds or claims. A
-# proven finding is a milestone CANDIDATE only after a maintainer confirms it
-# against the four-check FP protocol.
+# Sharded: four matrix jobs, each auditing its own contiguous slice of the
+# fetched population (offset = shard * batchSize), each with its own batch cap,
+# per-workspace checkpoint, and artifact. Per-audit behavior is unchanged; the
+# sharding only raises how many slices run per night (~4x). Each shard fetches
+# its own population; the queries are newest-first, so the slices are
+# approximately disjoint, and the per-PR record filename dedupes any overlap at
+# review time. The fetcher interleaves the two arms, so every shard's slice
+# samples both.
+#
+# On any proven gate trigger the runner HALTS that shard's batch (exit 3) for
+# the false-positive protocol, which fails that shard and the run; fail-fast is
+# off so the other shards finish their batches, and the funnels are uploaded for
+# a maintainer to review (if: always). Same review-then-fold, never-push
+# contract as complaint-mine.yml and backward-mine.yml: main is a protected ref,
+# nothing here folds or claims. A proven finding is a milestone CANDIDATE only
+# after a maintainer confirms it against the four-check FP protocol.
 
 on:
   schedule:
@@ -24,10 +35,10 @@ on:
         description: 'How many months back to surface merged agent PRs'
         default: '12'
       perVendor:
-        description: 'Max PRs to keep per vendor after fingerprinter confirmation'
+        description: 'Max PRs to keep per vendor and arm after fingerprinter confirmation'
         default: '10'
       batchSize:
-        description: 'Max PRs to audit this run'
+        description: 'Max PRs to audit per shard this run'
         default: '15'
       timeoutMs:
         description: 'Per-audit wall-clock cap (ms)'
@@ -40,6 +51,12 @@ jobs:
   stream:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      # A proven trigger halts ITS shard (exit 3) and fails the run; the other
+      # shards keep auditing their own slices, per the per-shard halt semantics.
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -54,7 +71,7 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: pip install pytest
-      - name: Surface fresh merged agent-authored PRs
+      - name: Surface fresh merged agent-authored PRs (both arms)
         # Secrets reach the step only through the env block, never via with: or args.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -62,11 +79,11 @@ jobs:
           node dist/scripts/real-prs/fetch-agent-prs.js \
             --months "${{ github.event.inputs.months || '12' }}" \
             --per-vendor "${{ github.event.inputs.perVendor || '10' }}"
-      - name: Audit a bounded batch through the deterministic gate
+      - name: Audit this shard's bounded batch through the deterministic gate
         # No ANTHROPIC_API_KEY: the audits are deterministic (no judge), so the
         # forward stream spends USD 0.00 on models. Exit 3 = a proven gate trigger
-        # halted the batch for the FP protocol; that surfaces the finding, so the
-        # upload still runs (if: always below).
+        # halted this shard's batch for the FP protocol; that surfaces the finding,
+        # so the upload still runs (if: always below).
         #
         # The complete wired engine set runs here: swarm audit --pr reads
         # .swarm/audit-config.yaml, which enables errorSwallow + claimBinding (both
@@ -74,15 +91,17 @@ jobs:
         # provenance in every stream funnel.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BATCH_SIZE: ${{ github.event.inputs.batchSize || '15' }}
         run: |
           node dist/scripts/real-prs/capability-hunt-backfill.js \
-            --batch-size "${{ github.event.inputs.batchSize || '15' }}" \
+            --batch-size "$BATCH_SIZE" \
+            --offset "$(( ${{ matrix.shard }} * BATCH_SIZE ))" \
             --timeout-ms "${{ github.event.inputs.timeoutMs || '200000' }}" \
-            --batch-id "stream-${{ github.run_id }}"
-      - name: Upload the stream funnels and metrics for review
+            --batch-id "stream-${{ github.run_id }}-shard-${{ matrix.shard }}"
+      - name: Upload the shard's stream funnels and metrics for review
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: agent-stream-funnels
+          name: agent-stream-funnels-shard-${{ matrix.shard }}
           path: benchmarks/real-prs/capability-hunt/
           if-no-files-found: warn
