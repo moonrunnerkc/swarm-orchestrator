@@ -31,6 +31,12 @@ interface PopulationRecord {
   headSha?: string;
   agent?: { vendor?: string; confidence?: string; source?: string };
   title?: string;
+  /** Fetch-arm label (amendment 3): 'per-vendor-control' | 'thin-review'.
+   *  Absent on populations fetched before the two-arm fetcher. */
+  arm?: string;
+  /** Per-PR context features the fetcher recorded (amendment 3). Carried
+   *  into the funnel record verbatim so every record is a dataset row. */
+  context?: Record<string, unknown>;
 }
 
 interface Args {
@@ -82,9 +88,14 @@ function loadPopulation(file: string): PopulationRecord[] {
 
 const GATE_TRIGGER_KINDS = new Set<string>(SELF_CERTIFYING_TRIGGERS as readonly string[]);
 
-interface AuditFunnel {
+export interface AuditFunnel {
   ref: string;
   agent: string;
+  /** Fetch-arm label copied from the population record (amendment 3);
+   *  absent on records audited from pre-amendment populations. */
+  arm?: string;
+  /** Context features copied from the population record (amendment 3). */
+  context?: Record<string, unknown>;
   status: 'audited' | 'timeout' | 'error';
   pass: boolean | null;
   gateTriggers: string[];
@@ -109,6 +120,11 @@ interface AuditFunnel {
   enginesExecuted: number;
   disputed: number;
   abstainVerdicts: string[];
+  /** Tally of every engine-record outcome from the proof-coverage
+   *  attestation ('finding' | 'exonerated' | 'abstain' | 'signal' |
+   *  'disputed'). The EG-corroboration metric (amendment 3) reads
+   *  'finding' + 'signal'. Absent on records older than the field. */
+  engineOutcomes?: Record<string, number>;
   elapsedMs: number;
   detail?: string;
 }
@@ -131,6 +147,8 @@ function auditOne(rec: PopulationRecord, timeoutMs: number): AuditFunnel {
   const base: AuditFunnel = {
     ref,
     agent,
+    ...(rec.arm !== undefined ? { arm: rec.arm } : {}),
+    ...(rec.context !== undefined ? { context: rec.context } : {}),
     status: 'audited',
     pass: null,
     gateTriggers: [],
@@ -161,9 +179,13 @@ function auditOne(rec: PopulationRecord, timeoutMs: number): AuditFunnel {
   const summary = (pc.summary ?? {}) as Record<string, number>;
   const engines = Array.isArray(pc.engines) ? (pc.engines as Array<Record<string, unknown>>) : [];
   const abstainVerdicts: string[] = [];
+  const engineOutcomes: Record<string, number> = {};
   for (const e of engines) {
     const records = Array.isArray(e.records) ? (e.records as Array<Record<string, unknown>>) : [];
     for (const r of records) {
+      if (typeof r.outcome === 'string') {
+        engineOutcomes[r.outcome] = (engineOutcomes[r.outcome] ?? 0) + 1;
+      }
       if (r.outcome === 'abstain' && typeof r.verdict === 'string') abstainVerdicts.push(r.verdict);
     }
   }
@@ -182,16 +204,20 @@ function auditOne(rec: PopulationRecord, timeoutMs: number): AuditFunnel {
     enginesExecuted: Number(summary.enginesExecuted ?? 0),
     disputed: Number(summary.disputed ?? 0),
     abstainVerdicts,
+    engineOutcomes,
   };
 }
 
-interface BatchMetrics {
+export interface BatchMetrics {
   batchId: string;
   populationFile: string;
   offset: number;
   requested: number;
   audited: number;
   skippedExisting: number;
+  /** Audited count per fetch arm (amendment 3). Records without a label
+   *  (pre-amendment populations) tally under 'unlabeled'. */
+  arms: Record<string, number>;
   viability: { attempted: number; provisioned: number };
   /** Install-failure cause buckets (B1 instrumentation). Zero-count on batches
    *  whose records predate the installFailure field. */
@@ -203,7 +229,13 @@ interface BatchMetrics {
   provenRefs: string[];
 }
 
-function tally(funnels: AuditFunnel[], args: Args, skipped: number): BatchMetrics {
+/** Aggregate a batch's funnels into the committed metrics record. Exported
+ *  for the arm-labeling test; the runner is the only production caller. */
+export function tally(
+  funnels: AuditFunnel[],
+  args: Pick<Args, 'batchId' | 'population' | 'offset' | 'batchSize'>,
+  skipped: number,
+): BatchMetrics {
   const m: BatchMetrics = {
     batchId: args.batchId,
     populationFile: args.population,
@@ -211,6 +243,7 @@ function tally(funnels: AuditFunnel[], args: Args, skipped: number): BatchMetric
     requested: args.batchSize,
     audited: funnels.length,
     skippedExisting: skipped,
+    arms: {},
     viability: { attempted: 0, provisioned: 0 },
     installFailureBuckets: {},
     verdicts: { pass: 0, block: 0, timeout: 0, error: 0 },
@@ -220,6 +253,8 @@ function tally(funnels: AuditFunnel[], args: Args, skipped: number): BatchMetric
     provenRefs: [],
   };
   for (const f of funnels) {
+    const arm = f.arm ?? 'unlabeled';
+    m.arms[arm] = (m.arms[arm] ?? 0) + 1;
     if (f.status === 'timeout') m.verdicts.timeout += 1;
     else if (f.status === 'error') m.verdicts.error += 1;
     else if (f.pass === false) m.verdicts.block += 1;

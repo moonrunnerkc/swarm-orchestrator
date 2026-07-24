@@ -774,6 +774,85 @@ export async function fetchPrAgentSignals(
   return { headRef, commitMessages };
 }
 
+/**
+ * Total item count of a paginated GitHub collection fetched with `per_page=1`,
+ * derived from the response's Link header: the `rel="last"` page number IS the
+ * count when each page holds one item. Falls back to the first page's own
+ * length (0 or 1) when there is no Link header, which GitHub omits for
+ * single-page results.
+ *
+ * @param link the raw Link response header, or undefined when absent.
+ * @param firstPageLength how many items the per_page=1 first page returned.
+ * @returns the total item count.
+ */
+export function countFromLinkHeader(link: string | undefined, firstPageLength: number): number {
+  if (link !== undefined) {
+    const m = link.match(/[?&]page=(\d+)>;\s*rel="last"/);
+    if (m !== null && m[1] !== undefined) return Number(m[1]);
+  }
+  return firstPageLength;
+}
+
+/**
+ * Count a repo's contributors with one API call (per_page=1 plus the Link
+ * header trick). Returns null when the call fails (empty repo, 403 on a very
+ * large anonymous-contributor repo, rate limit), so a recorder can carry the
+ * gap instead of losing the PR.
+ *
+ * @param octokit an authenticated client.
+ * @param target the owner/repo.
+ * @returns the contributor count, or null when unavailable.
+ */
+export async function countRepoContributors(
+  octokit: Octokit,
+  target: RepoTarget,
+): Promise<number | null> {
+  try {
+    const res = await octokit.repos.listContributors({
+      owner: target.owner,
+      repo: target.repo,
+      per_page: 1,
+    });
+    return countFromLinkHeader(res.headers.link, res.data.length);
+  } catch (err) {
+    log.debug(
+      `listContributors failed for ${target.owner}/${target.repo}: ${(err as Error).message}`,
+    );
+    return null;
+  }
+}
+
+/**
+ * Count a PR's submitted reviews with one API call (per_page=1 plus the Link
+ * header trick). Returns null when the call fails, so a recorder can carry the
+ * gap instead of losing the PR.
+ *
+ * @param octokit an authenticated client.
+ * @param target the owner/repo.
+ * @param prNumber the PR number.
+ * @returns the review count, or null when unavailable.
+ */
+export async function countPrReviews(
+  octokit: Octokit,
+  target: RepoTarget,
+  prNumber: number,
+): Promise<number | null> {
+  try {
+    const res = await octokit.pulls.listReviews({
+      owner: target.owner,
+      repo: target.repo,
+      pull_number: prNumber,
+      per_page: 1,
+    });
+    return countFromLinkHeader(res.headers.link, res.data.length);
+  } catch (err) {
+    log.debug(
+      `listReviews count failed for ${target.owner}/${target.repo}#${prNumber}: ${(err as Error).message}`,
+    );
+    return null;
+  }
+}
+
 /** Fetch the raw unified diff for a PR. */
 export async function fetchPrDiff(octokit: Octokit, target: RepoTarget, prNumber: number): Promise<string> {
   const res = await octokit.pulls.get({
