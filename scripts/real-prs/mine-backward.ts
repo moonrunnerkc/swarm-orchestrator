@@ -24,9 +24,18 @@
 // source cannot starve the rest; a run that hits a cap records how far it got
 // and stops; it never pads.
 //
+// Confirmations persist across runs through a checkpoint (default
+// .swarm/backward-mine/checkpoint.json, gitignored; CI restores and saves it
+// via actions/cache). Candidates already confirmed by a prior run are skipped
+// (dropped as `already-confirmed`) so the budget goes to discovery, not
+// re-confirmation, and the output corpus is the checkpoint-grown, deduped
+// set rather than a from-scratch rediscovery. The checkpoint is miner state
+// only: folding into the committed corpus stays a maintainer review decision.
+//
 // Usage:
 //   node dist/scripts/real-prs/mine-backward.js \
-//     [--api-budget 300] [--wall-clock-ms 1800000] [--limit 50] [--months 18]
+//     [--api-budget 300] [--wall-clock-ms 1800000] [--limit 50] [--months 18] \
+//     [--checkpoint .swarm/backward-mine/checkpoint.json]
 //
 // Output (merged, deduped by reverted sha):
 //   benchmarks/real-prs/agent-corpus/confirmed-bad-backward.json
@@ -91,6 +100,7 @@ async function withRetry<T>(fn: () => Promise<T>, label: string, attempt = 0): P
 }
 
 const OUT_FILE = path.join('benchmarks', 'real-prs', 'agent-corpus', 'confirmed-bad-backward.json');
+const DEFAULT_CHECKPOINT_FILE = path.join('.swarm', 'backward-mine', 'checkpoint.json');
 const HOTFIX_WINDOW_DAYS = 30;
 
 /** The GitHub surface this miner needs, beyond the labeler's OctokitLike. */
@@ -427,9 +437,17 @@ function describePlan(plan: DiscoverySourcePlan): DiscoveryDescriptor {
 
 type FlowSignal = 'ok' | 'break-source' | 'break-all';
 
+export interface MineOptions {
+  /** `repo@revertedSha` keys a prior run already confirmed. Matching candidates
+   *  are skipped (dropped as `already-confirmed`) instead of re-walking the
+   *  attribution and confirmation stages, so the budget buys new discovery. */
+  alreadyConfirmed?: ReadonlySet<string>;
+}
+
 export async function mineBackward(
   octokit: BackwardOctokit,
   budget: BackwardBudget,
+  opts: MineOptions = {},
 ): Promise<BackwardResult> {
   const now = budget.now ?? (() => Date.now());
   const startedAt = now();
@@ -480,6 +498,10 @@ export async function mineBackward(
       funnel.revertCandidates += 1;
       sf.candidates += 1;
       const key = `${candidate.repo}@${candidate.revertedSha}`;
+      if (opts.alreadyConfirmed?.has(key) === true) {
+        drop(funnel, 'already-confirmed', candidate.source);
+        return 'ok';
+      }
       if (seen.has(key)) {
         drop(funnel, 'duplicate-candidate', candidate.source);
         return 'ok';
@@ -601,6 +623,80 @@ export async function mineBackward(
   };
 }
 
+/** One persisted confirmation: the entry plus when this miner first confirmed
+ *  it, so review provenance survives the nightly re-runs. */
+export interface CheckpointEntry extends BackwardEntry {
+  firstConfirmedAt: string;
+}
+
+/** The cross-run miner state: every confirmation any prior run made, deduped by
+ *  `repo@revertedSha`. Miner state only; folding into the committed corpus is
+ *  still the maintainer's review decision. */
+export interface BackwardCheckpoint {
+  savedAt: string;
+  entries: CheckpointEntry[];
+}
+
+/**
+ * Load the checkpoint a prior run saved. Returns null when the file does not
+ * exist (first run, or an expired CI cache) or does not parse as a checkpoint;
+ * the miner then starts from the committed corpus alone.
+ *
+ * @param file the checkpoint path.
+ * @returns the parsed checkpoint, or null.
+ */
+export function loadCheckpoint(file: string): BackwardCheckpoint | null {
+  if (!fs.existsSync(file)) return null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as Partial<BackwardCheckpoint>;
+    if (!Array.isArray(parsed.entries)) return null;
+    return { savedAt: parsed.savedAt ?? '', entries: parsed.entries };
+  } catch (err) {
+    log.warn(`checkpoint at ${file} is unreadable, starting fresh: ${String(err)}`);
+    return null;
+  }
+}
+
+/**
+ * Grow the checkpoint with this run's fresh confirmations, deduped by
+ * `repo@revertedSha`. A prior entry wins over a re-confirmation of the same
+ * key (its `firstConfirmedAt` is the provenance being preserved); a fresh key
+ * is stamped with `nowIso`.
+ *
+ * @param prior the loaded checkpoint, or null on a first run.
+ * @param fresh this run's confirmed entries.
+ * @param nowIso the timestamp for fresh entries and the save.
+ * @returns the grown, deduped checkpoint.
+ */
+export function mergeCheckpoint(
+  prior: BackwardCheckpoint | null,
+  fresh: BackwardEntry[],
+  nowIso: string,
+): BackwardCheckpoint {
+  const byKey = new Map<string, CheckpointEntry>();
+  for (const e of prior?.entries ?? []) byKey.set(`${e.repo}@${e.revertedSha}`, e);
+  for (const e of fresh) {
+    const key = `${e.repo}@${e.revertedSha}`;
+    if (!byKey.has(key)) byKey.set(key, { ...e, firstConfirmedAt: nowIso });
+  }
+  const entries = [...byKey.values()].sort((a, b) =>
+    a.repo === b.repo ? a.revertedSha.localeCompare(b.revertedSha) : a.repo.localeCompare(b.repo),
+  );
+  return { savedAt: nowIso, entries };
+}
+
+/**
+ * Write the checkpoint, creating its directory. Lives under `.swarm/` so it is
+ * gitignored by construction.
+ *
+ * @param file the checkpoint path.
+ * @param checkpoint the state to persist.
+ */
+export function saveCheckpoint(file: string, checkpoint: BackwardCheckpoint): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify(checkpoint, null, 2)}\n`);
+}
+
 /** Merge new entries into the committed backward corpus, deduped by reverted sha. */
 export function mergeCorpus(
   existing: { entries?: BackwardEntry[] } | null,
@@ -614,11 +710,12 @@ export function mergeCorpus(
   );
 }
 
-function parseArgs(argv: string[]): BackwardBudget {
+function parseArgs(argv: string[]): { budget: BackwardBudget; checkpointFile: string } {
   let apiBudget = 300;
   let wallClockMs = 30 * 60 * 1000;
   let limit = 50;
   let months = 18;
+  let checkpointFile = DEFAULT_CHECKPOINT_FILE;
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     const next = argv[i + 1];
@@ -626,13 +723,14 @@ function parseArgs(argv: string[]): BackwardBudget {
     else if (a === '--wall-clock-ms' && next !== undefined) (wallClockMs = Number(next)), (i += 1);
     else if (a === '--limit' && next !== undefined) (limit = Number(next)), (i += 1);
     else if (a === '--months' && next !== undefined) (months = Number(next)), (i += 1);
+    else if (a === '--checkpoint' && next !== undefined) (checkpointFile = next), (i += 1);
   }
-  return { apiBudget, wallClockMs, limit, months };
+  return { budget: { apiBudget, wallClockMs, limit, months }, checkpointFile };
 }
 
 async function main(): Promise<void> {
   loadDotenv();
-  const budget = parseArgs(process.argv.slice(2));
+  const { budget, checkpointFile } = parseArgs(process.argv.slice(2));
   const token = resolveGithubToken();
   if (token === '') {
     log.error('no GitHub token (GITHUB_TOKEN). The live backward mine needs one; running in CI with the secret.');
@@ -640,12 +738,24 @@ async function main(): Promise<void> {
     return;
   }
   const octokit = makeOctokit(token) as unknown as BackwardOctokit;
-  const result = await mineBackward(octokit, budget);
 
   const existing = fs.existsSync(OUT_FILE)
     ? (JSON.parse(fs.readFileSync(OUT_FILE, 'utf8')) as { entries?: BackwardEntry[] })
     : null;
-  const merged = mergeCorpus(existing, result.entries);
+  const checkpoint = loadCheckpoint(checkpointFile);
+  const alreadyConfirmed = new Set<string>();
+  for (const e of checkpoint?.entries ?? []) alreadyConfirmed.add(`${e.repo}@${e.revertedSha}`);
+  for (const e of existing?.entries ?? []) alreadyConfirmed.add(`${e.repo}@${e.revertedSha}`);
+  log.info(
+    `checkpoint ${checkpointFile}: ${checkpoint?.entries.length ?? 0} prior confirmations ` +
+      `(${alreadyConfirmed.size} keys skipped from re-confirmation)`,
+  );
+
+  const result = await mineBackward(octokit, budget, { alreadyConfirmed });
+
+  const grown = mergeCheckpoint(checkpoint, result.entries, new Date().toISOString());
+  saveCheckpoint(checkpointFile, grown);
+  const merged = mergeCorpus(existing, grown.entries);
   const distribution = { reverted: 0, hotfixed: 0 };
   for (const e of merged) distribution[e.outcome] += 1;
   const sourceDistribution: Record<string, number> = {};
@@ -676,6 +786,13 @@ async function main(): Promise<void> {
       discovery: result.discovery,
       budgetShares: SOURCE_BUDGET_SHARES,
     },
+    // Cross-run accumulation: entries this artifact carries beyond the committed
+    // corpus came from the checkpoint, not a from-scratch rediscovery.
+    checkpoint: {
+      path: checkpointFile,
+      priorEntries: checkpoint?.entries.length ?? 0,
+      entries: grown.entries.length,
+    },
     total: merged.length,
     distribution,
     sourceDistribution,
@@ -685,8 +802,8 @@ async function main(): Promise<void> {
   fs.writeFileSync(OUT_FILE, `${JSON.stringify(out, null, 2)}\n`);
   const f = result.funnel;
   log.info(
-    `backward mine: ${result.entries.length} fresh, ${merged.length} total ` +
-      `(${result.apiCalls} API calls, stopped: ${result.stoppedReason}) -> ${OUT_FILE}`,
+    `backward mine: ${result.entries.length} fresh, ${grown.entries.length} checkpointed, ` +
+      `${merged.length} total (${result.apiCalls} API calls, stopped: ${result.stoppedReason}) -> ${OUT_FILE}`,
   );
   log.info(
     `funnel: markers=${f.revertMarkers} candidates=${f.revertCandidates} ` +

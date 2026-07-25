@@ -1,11 +1,18 @@
 import { strict as assert } from 'assert';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import {
   revertCandidatesFromItem,
   attributeAndConfirm,
   mineBackward,
   mergeCorpus,
+  loadCheckpoint,
+  mergeCheckpoint,
+  saveCheckpoint,
   type BackwardOctokit,
   type BackwardEntry,
+  type BackwardCheckpoint,
 } from '../../scripts/real-prs/mine-backward';
 import {
   blamedShasInMessage,
@@ -508,6 +515,88 @@ describe('mineBackward (widened discovery)', () => {
     assert.ok(followup.queries.every((q) => q.includes('review:none comments:0')));
     const revert = result.discovery.find((d) => d.source === 'revert-marker')!;
     assert.ok(revert.queries[0]!.includes('"This reverts commit"'));
+  });
+});
+
+describe('mineBackward (checkpoint resume)', () => {
+  it('skips an already-confirmed candidate without re-walking confirmation', async () => {
+    const { octokit, calls } = makeOctokit();
+    const alreadyConfirmed = new Set([`${REPO}@${REVERTED_SHA.toLowerCase()}`]);
+    const result = await mineBackward(octokit, { ...generousBudget }, { alreadyConfirmed });
+    assert.equal(result.entries.length, 0);
+    assert.ok(result.funnel.dropReasons['already-confirmed']! >= 1);
+    assert.equal(result.funnel.candidatesProcessed, 0);
+    assert.equal(result.funnel.evidenceChecked, 0);
+    // Only discovery searches spent calls; no per-candidate confirmation ran.
+    assert.ok(calls() > 0);
+  });
+
+  it('still mines a candidate the checkpoint does not know', async () => {
+    const { octokit } = makeOctokit();
+    const alreadyConfirmed = new Set([`other/repo@${'9'.repeat(40)}`]);
+    const result = await mineBackward(octokit, { ...generousBudget }, { alreadyConfirmed });
+    assert.equal(result.entries.length, 1);
+  });
+});
+
+describe('checkpoint persistence', () => {
+  const entry = (repo: string, sha: string): BackwardEntry => ({
+    repo,
+    revertedSha: sha,
+    prNumber: 1,
+    vendor: 'cursor',
+    outcome: 'reverted',
+    evidence: [],
+    surfacedBy: 'x',
+  });
+
+  it('mergeCheckpoint accumulates across runs, deduped by repo@sha', () => {
+    const run1 = mergeCheckpoint(null, [entry('a/b', '111')], '2026-07-24T05:00:00Z');
+    assert.equal(run1.entries.length, 1);
+    assert.equal(run1.entries[0]!.firstConfirmedAt, '2026-07-24T05:00:00Z');
+    const run2 = mergeCheckpoint(run1, [entry('a/b', '111'), entry('c/d', '222')], '2026-07-25T05:00:00Z');
+    assert.equal(run2.entries.length, 2);
+    assert.equal(run2.savedAt, '2026-07-25T05:00:00Z');
+  });
+
+  it('mergeCheckpoint keeps the prior entry and its firstConfirmedAt on a re-confirmation', () => {
+    const prior: BackwardCheckpoint = {
+      savedAt: '2026-07-16T05:00:00Z',
+      entries: [{ ...entry('a/b', '111'), firstConfirmedAt: '2026-07-16T05:00:00Z' }],
+    };
+    const grown = mergeCheckpoint(prior, [{ ...entry('a/b', '111'), vendor: 'devin' }], '2026-07-25T05:00:00Z');
+    assert.equal(grown.entries.length, 1);
+    assert.equal(grown.entries[0]!.firstConfirmedAt, '2026-07-16T05:00:00Z');
+    assert.equal(grown.entries[0]!.vendor, 'cursor');
+  });
+
+  it('round-trips through save and load', () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'backward-ckpt-')), 'sub', 'checkpoint.json');
+    const grown = mergeCheckpoint(null, [entry('a/b', '111')], '2026-07-25T05:00:00Z');
+    saveCheckpoint(file, grown);
+    const loaded = loadCheckpoint(file);
+    assert.deepEqual(loaded, grown);
+  });
+
+  it('loadCheckpoint returns null for a missing or malformed file', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'backward-ckpt-'));
+    assert.equal(loadCheckpoint(path.join(dir, 'nope.json')), null);
+    const bad = path.join(dir, 'bad.json');
+    fs.writeFileSync(bad, 'not json');
+    assert.equal(loadCheckpoint(bad), null);
+    const wrongShape = path.join(dir, 'shape.json');
+    fs.writeFileSync(wrongShape, JSON.stringify({ savedAt: 'x' }));
+    assert.equal(loadCheckpoint(wrongShape), null);
+  });
+
+  it('the artifact corpus is the checkpoint-grown set merged over the committed one', () => {
+    // The evaporation defect: committed corpus empty, checkpoint carries the
+    // prior nights' confirmations, tonight confirms nothing fresh. The output
+    // must still list the checkpointed entries.
+    const checkpoint = mergeCheckpoint(null, [entry('a/b', '111'), entry('c/d', '222')], '2026-07-24T05:00:00Z');
+    const grown = mergeCheckpoint(checkpoint, [], '2026-07-25T05:00:00Z');
+    const merged = mergeCorpus({ entries: [] }, grown.entries);
+    assert.equal(merged.length, 2);
   });
 });
 

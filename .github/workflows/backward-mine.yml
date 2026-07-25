@@ -12,6 +12,10 @@ name: Backward mine confirmed-bad
 # mined entries (spot-checking each against its evidence SHAs) and folds them in,
 # the same review-then-fold contract eg-viable-measure.yml uses. Nothing reaches
 # main without going through the normal verified path.
+#
+# Confirmations persist across nights through a checkpoint restored and saved
+# with actions/cache, so the artifact is the accumulated, deduped corpus rather
+# than a from-scratch rediscovery whose entries evaporate when the run ends.
 
 on:
   schedule:
@@ -39,6 +43,13 @@ jobs:
           node-version: '22'
       - run: npm ci
       - run: npm run build
+      - name: Restore the confirmation checkpoint
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: .swarm/backward-mine/checkpoint.json
+          key: backward-mine-checkpoint-${{ github.run_id }}
+          restore-keys: |
+            backward-mine-checkpoint-
       - name: Backward mine (capped)
         # Secrets reach the step only through the env block, never via with: or args.
         env:
@@ -48,7 +59,17 @@ jobs:
             --api-budget "${{ github.event.inputs.apiBudget || '1500' }}" \
             --wall-clock-ms 2400000 \
             --limit "${{ github.event.inputs.limit || '50' }}" \
-            --months 18
+            --months 18 \
+            --checkpoint .swarm/backward-mine/checkpoint.json
+      - name: Save the confirmation checkpoint
+        # Cache keys are immutable, so each run saves under its own run id and
+        # the next run restores the newest via the restore-keys prefix. Skipped
+        # when the mine died before writing a checkpoint (nothing to save).
+        if: always() && hashFiles('.swarm/backward-mine/checkpoint.json') != ''
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: .swarm/backward-mine/checkpoint.json
+          key: backward-mine-checkpoint-${{ github.run_id }}
       - name: Report the mine result
         run: |
           if git diff --quiet -- benchmarks/real-prs/agent-corpus/confirmed-bad-backward.json; then
