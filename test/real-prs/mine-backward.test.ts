@@ -10,9 +10,11 @@ import {
   loadCheckpoint,
   mergeCheckpoint,
   saveCheckpoint,
+  splitClaimable,
   type BackwardOctokit,
   type BackwardEntry,
   type BackwardCheckpoint,
+  type CheckpointRejection,
 } from '../../scripts/real-prs/mine-backward';
 import {
   blamedShasInMessage,
@@ -537,6 +539,18 @@ describe('mineBackward (checkpoint resume)', () => {
     const result = await mineBackward(octokit, { ...generousBudget }, { alreadyConfirmed });
     assert.equal(result.entries.length, 1);
   });
+
+  it('skips a review-rejected candidate with its labeled drop reason, spending nothing', async () => {
+    const { octokit } = makeOctokit();
+    const rejected = new Map([
+      [`${REPO}@${REVERTED_SHA.toLowerCase()}`, 'rejected-revert-of-revert-restored'],
+    ]);
+    const result = await mineBackward(octokit, { ...generousBudget }, { rejected });
+    assert.equal(result.entries.length, 0);
+    assert.ok(result.funnel.dropReasons['rejected-revert-of-revert-restored']! >= 1);
+    assert.equal(result.funnel.candidatesProcessed, 0);
+    assert.equal(result.funnel.evidenceChecked, 0);
+  });
 });
 
 describe('checkpoint persistence', () => {
@@ -589,6 +603,29 @@ describe('checkpoint persistence', () => {
     assert.equal(loadCheckpoint(wrongShape), null);
   });
 
+  it('round-trips rejections through save, load, and merge', () => {
+    const rejection: CheckpointRejection = {
+      repo: 'mhmugisha/anything-property-management',
+      revertedSha: '54b6ba499d4d61cc81d40da4d95ae19ad4e7749d',
+      reason: 'revert-of-revert-restored',
+      decidedBy: 'automated-review',
+      decidedAt: '2026-07-25',
+      note: 'evidence commit is a revert of the revert; the agent change is live on main',
+    };
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'backward-ckpt-')), 'checkpoint.json');
+    const prior: BackwardCheckpoint = {
+      savedAt: '2026-07-25T00:00:00Z',
+      entries: [{ ...entry('a/b', '111'), firstConfirmedAt: '2026-07-16T05:00:00Z' }],
+      rejections: [rejection],
+    };
+    saveCheckpoint(file, prior);
+    const loaded = loadCheckpoint(file);
+    assert.deepEqual(loaded?.rejections, [rejection]);
+    const grown = mergeCheckpoint(loaded, [entry('c/d', '222')], '2026-07-26T05:00:00Z');
+    assert.deepEqual(grown.rejections, [rejection]);
+    assert.equal(grown.entries.length, 2);
+  });
+
   it('the artifact corpus is the checkpoint-grown set merged over the committed one', () => {
     // The evaporation defect: committed corpus empty, checkpoint carries the
     // prior nights' confirmations, tonight confirms nothing fresh. The output
@@ -611,7 +648,7 @@ describe('mergeCorpus', () => {
     surfacedBy: 'x',
   });
 
-  it('dedupes by repo@sha, fresh overrides existing', () => {
+  it('dedupes by repo@sha across existing and fresh entries', () => {
     const merged = mergeCorpus({ entries: [e('a/b', '111'), e('a/b', '222')] }, [e('a/b', '222'), e('c/d', '333')]);
     assert.equal(merged.length, 3);
   });
@@ -625,5 +662,47 @@ describe('mergeCorpus', () => {
     assert.equal(merged.length, 2);
     assert.equal(merged.find((x) => x.repo === 'a/b')!.source, undefined);
     assert.equal(merged.find((x) => x.repo === 'c/d')!.source, 'hotfix-marker');
+  });
+
+  it('a committed entry keeps its review annotations over a fresh re-confirmation', () => {
+    const labeled: BackwardEntry = {
+      ...e('kayan2004/ground-trip', '21cad8d'),
+      outcomeLabel: 'reverted-motive-ambiguous',
+      incidentId: 'kayan2004-ground-trip-edbcac71',
+    };
+    const merged = mergeCorpus({ entries: [labeled] }, [e('kayan2004/ground-trip', '21cad8d')]);
+    assert.equal(merged.length, 1);
+    assert.equal(merged[0]!.outcomeLabel, 'reverted-motive-ambiguous');
+    assert.equal(merged[0]!.incidentId, 'kayan2004-ground-trip-edbcac71');
+  });
+});
+
+describe('splitClaimable', () => {
+  const e = (sha: string, outcomeLabel?: 'reverted-motive-ambiguous'): BackwardEntry => ({
+    repo: 'kayan2004/ground-trip',
+    revertedSha: sha,
+    prNumber: null,
+    vendor: 'claude-code',
+    outcome: 'reverted',
+    evidence: [],
+    surfacedBy: 'x',
+    ...(outcomeLabel !== undefined ? { outcomeLabel } : {}),
+  });
+
+  it('excludes motive-ambiguous entries from the claimable set, keeping the data', () => {
+    const { claimable, motiveAmbiguous } = splitClaimable([
+      e('111'),
+      e('21cad8d', 'reverted-motive-ambiguous'),
+      e('73b22bc', 'reverted-motive-ambiguous'),
+    ]);
+    assert.equal(claimable.length, 1);
+    assert.equal(claimable[0]!.revertedSha, '111');
+    assert.equal(motiveAmbiguous, 2);
+  });
+
+  it('claims everything when nothing is labeled', () => {
+    const { claimable, motiveAmbiguous } = splitClaimable([e('111'), e('222')]);
+    assert.equal(claimable.length, 2);
+    assert.equal(motiveAmbiguous, 0);
   });
 });

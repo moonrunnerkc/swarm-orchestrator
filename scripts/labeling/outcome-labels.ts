@@ -45,7 +45,8 @@ import { getLogger } from '../../src/logger';
 import { SwarmError } from '../../src/errors';
 import {
   makeOctokit,
-  messageRevertsSha,
+  messageDirectlyRevertsSha,
+  messageRestoresSha,
   parseRepo,
   resolveGithubToken,
 } from '../real-prs/lib/github';
@@ -353,15 +354,24 @@ async function scanFollowups(
       if (isStatus(err, 404, 422, 451)) continue;
       throw err;
     }
-    if (result.revert === undefined && messageRevertsSha(detail.data.commit.message, headSha)) {
-      result.revert = {
-        kind: 'revert-commit',
-        ref: sha,
-        detail: `reverts ${headSha.slice(0, 12)}: ${detail.data.html_url}`,
-      };
+    const message = detail.data.commit.message;
+    // A revert-of-revert that restores the landed change re-touches its exact
+    // lines and carries fix-shaped language ("Revert"), so without this skip it
+    // reads as a hotfix (and, via the quoted title, as a revert) of the very
+    // change it puts back. The mhmugisha false positive was this shape.
+    if (messageRestoresSha(message, headSha)) continue;
+    if (messageDirectlyRevertsSha(message, headSha)) {
+      if (result.revert === undefined) {
+        result.revert = {
+          kind: 'revert-commit',
+          ref: sha,
+          detail: `reverts ${headSha.slice(0, 12)}: ${detail.data.html_url}`,
+        };
+      }
+      // A revert is not a hotfix of the change; it is the change's removal.
+      continue;
     }
     const commitSize = detail.data.stats?.total ?? Number.POSITIVE_INFINITY;
-    const message = detail.data.commit.message;
     const subjectLine = message.split('\n')[0] ?? '';
     const isMerge = MERGE_COMMIT.test(subjectLine);
     const fixShaped = FIX_LANGUAGE.test(subjectLine) || FIX_LANGUAGE.test(message);
@@ -488,6 +498,48 @@ export interface OutcomeEvidenceResult {
   scanLimited: boolean;
 }
 
+// Revert chains longer than this go unresolved (and unresolved never confirms
+// outcome-bad). Real chains are almost always depth 1 (a revert) or 2 (a
+// revert restored); the cap only bounds the per-level search cost.
+const MAX_REVERT_CHAIN_DEPTH = 4;
+
+/**
+ * Whether a revert commit still stands, i.e. was not itself reverted. A revert
+ * that was reverted (`Revert "This reverts commit <sha>."`) RESTORES the
+ * original change, so confirming outcome-bad on it would label a live change
+ * as reverted. Walks the chain of direct trailers, bounded by depth.
+ *
+ * @param octokit the GitHub client
+ * @param repo owner/repo of the chain
+ * @param revertSha the revert commit to check
+ * @param depth current chain depth (callers pass 0)
+ * @returns 'stands' when no standing revert of `revertSha` exists, 'restored'
+ *   when one does, 'unresolved' at the depth cap (treated as not confirming)
+ */
+async function revertIsStanding(
+  octokit: OctokitLike,
+  repo: string,
+  revertSha: string,
+  depth: number,
+): Promise<'stands' | 'restored' | 'unresolved'> {
+  if (depth >= MAX_REVERT_CHAIN_DEPTH) return 'unresolved';
+  const items = await searchCommitsRetry(
+    octokit,
+    `repo:${repo} "This reverts commit ${revertSha.slice(0, 12)}"`,
+  );
+  const reverters = items.filter(
+    (it) =>
+      it.sha.toLowerCase() !== revertSha.toLowerCase() &&
+      messageDirectlyRevertsSha(it.commit.message, revertSha),
+  );
+  for (const r of reverters) {
+    const state = await revertIsStanding(octokit, repo, r.sha, depth + 1);
+    if (state === 'stands') return 'restored';
+    if (state === 'unresolved') return 'unresolved';
+  }
+  return 'stands';
+}
+
 /**
  * The shared revert/hotfix evidence core: given a landed commit and the lines
  * its change touched, search for a revert of the sha and scan the follow-up
@@ -511,22 +563,39 @@ export async function findOutcomeEvidence(
   const { repo, headSha, defaultBranch, landedAt, prRanges, hotfixWindowDays } = input;
   const evidence: OutcomeEvidence[] = [];
 
+  // A revert-commit candidate only becomes evidence after the chain check: a
+  // revert that was itself reverted restores the change, so the change's FINAL
+  // state, not the first matching trailer, decides the outcome.
+  let scanLimited = false;
+  const admitStandingRevert = async (candidate: OutcomeEvidence): Promise<boolean> => {
+    const state = await revertIsStanding(octokit, repo, candidate.ref, 0);
+    if (state === 'stands') {
+      evidence.push(candidate);
+      return true;
+    }
+    if (state === 'unresolved') scanLimited = true;
+    return false;
+  };
+
   const short = headSha.slice(0, 12);
   const items = await searchCommitsRetry(octokit, `repo:${repo} "This reverts commit ${short}"`);
-  const revertHit = items.find((it) => messageRevertsSha(it.commit.message, headSha));
+  const revertHit = items.find((it) => messageDirectlyRevertsSha(it.commit.message, headSha));
+  let reverted = false;
   if (revertHit !== undefined) {
-    evidence.push({ kind: 'revert-commit', ref: revertHit.sha, detail: `reverts ${short}: ${revertHit.html_url}` });
+    reverted = await admitStandingRevert({
+      kind: 'revert-commit',
+      ref: revertHit.sha,
+      detail: `reverts ${short}: ${revertHit.html_url}`,
+    });
   }
 
-  let scanLimited = false;
-  if (evidence.length === 0 && Object.keys(prRanges).length > 0) {
+  if (!reverted && Object.keys(prRanges).length > 0) {
     const scan = await scanFollowups(octokit, repo, defaultBranch, headSha, prRanges, landedAt, hotfixWindowDays);
-    scanLimited = scan.limited;
-    if (scan.revert !== undefined) evidence.push(scan.revert);
+    scanLimited = scanLimited || scan.limited;
+    if (scan.revert !== undefined) reverted = await admitStandingRevert(scan.revert);
     if (scan.hotfix !== undefined) evidence.push(scan.hotfix);
   }
 
-  const reverted = evidence.some((e) => e.kind === 'revert-commit');
   const hotfixed = evidence.some((e) => e.kind === 'hotfix-commit');
   const outcome = reverted ? 'reverted' : hotfixed ? 'hotfixed' : 'survived';
   return { outcome, evidence: dedupeEvidence(evidence), scanLimited };

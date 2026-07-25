@@ -178,6 +178,14 @@ export interface BackwardEntry {
   /** The discovery source that surfaced it. Absent on pre-widening corpus
    *  entries, which were all revert-marker discovered. */
   source?: DiscoverySource;
+  /** Review-layer annotation. `reverted-motive-ambiguous` marks a mechanical
+   *  revert whose message shows a non-defect motive (e.g. a feature removed per
+   *  request); such entries are kept as data but excluded from every published
+   *  confirmed-bad count and from any corroborated-gate positive class. */
+  outcomeLabel?: 'reverted-motive-ambiguous';
+  /** Groups commit records that share one outcome event (e.g. one multi-commit
+   *  revert), so an incident is counted once however many commits it spans. */
+  incidentId?: string;
 }
 
 /** Per-source yield accounting: markers found, candidates derived, entries
@@ -442,6 +450,11 @@ export interface MineOptions {
    *  are skipped (dropped as `already-confirmed`) instead of re-walking the
    *  attribution and confirmation stages, so the budget buys new discovery. */
   alreadyConfirmed?: ReadonlySet<string>;
+  /** `repo@revertedSha` keys a review decision rejected, mapped to the labeled
+   *  drop reason to record (e.g. `rejected-revert-of-revert-restored`).
+   *  Matching candidates are skipped before any budget is spent, so a rejected
+   *  entry can never be re-confirmed by a later run. */
+  rejected?: ReadonlyMap<string, string>;
 }
 
 export async function mineBackward(
@@ -498,6 +511,11 @@ export async function mineBackward(
       funnel.revertCandidates += 1;
       sf.candidates += 1;
       const key = `${candidate.repo}@${candidate.revertedSha}`;
+      const rejectedReason = opts.rejected?.get(key);
+      if (rejectedReason !== undefined) {
+        drop(funnel, rejectedReason, candidate.source);
+        return 'ok';
+      }
       if (opts.alreadyConfirmed?.has(key) === true) {
         drop(funnel, 'already-confirmed', candidate.source);
         return 'ok';
@@ -629,12 +647,26 @@ export interface CheckpointEntry extends BackwardEntry {
   firstConfirmedAt: string;
 }
 
+/** One review-rejected key: a candidate a review decision disposed of, kept so
+ *  dedup skips it with a labeled drop reason instead of re-confirming it. */
+export interface CheckpointRejection {
+  repo: string;
+  revertedSha: string;
+  /** Labeled drop reason recorded when the miner skips this key
+   *  (e.g. `rejected-revert-of-revert-restored`). */
+  reason: string;
+  decidedBy: string;
+  decidedAt: string;
+  note?: string;
+}
+
 /** The cross-run miner state: every confirmation any prior run made, deduped by
- *  `repo@revertedSha`. Miner state only; folding into the committed corpus is
- *  still the maintainer's review decision. */
+ *  `repo@revertedSha`, plus review rejections dedup must keep skipping. Miner
+ *  state only; folding into the committed corpus is still a review decision. */
 export interface BackwardCheckpoint {
   savedAt: string;
   entries: CheckpointEntry[];
+  rejections?: CheckpointRejection[];
 }
 
 /**
@@ -650,7 +682,11 @@ export function loadCheckpoint(file: string): BackwardCheckpoint | null {
   try {
     const parsed = JSON.parse(fs.readFileSync(file, 'utf8')) as Partial<BackwardCheckpoint>;
     if (!Array.isArray(parsed.entries)) return null;
-    return { savedAt: parsed.savedAt ?? '', entries: parsed.entries };
+    return {
+      savedAt: parsed.savedAt ?? '',
+      entries: parsed.entries,
+      ...(Array.isArray(parsed.rejections) ? { rejections: parsed.rejections } : {}),
+    };
   } catch (err) {
     log.warn(`checkpoint at ${file} is unreadable, starting fresh: ${String(err)}`);
     return null;
@@ -682,7 +718,24 @@ export function mergeCheckpoint(
   const entries = [...byKey.values()].sort((a, b) =>
     a.repo === b.repo ? a.revertedSha.localeCompare(b.revertedSha) : a.repo.localeCompare(b.repo),
   );
-  return { savedAt: nowIso, entries };
+  const rejections = prior?.rejections;
+  return { savedAt: nowIso, entries, ...(rejections !== undefined ? { rejections } : {}) };
+}
+
+/**
+ * Split entries into the claimable set and the motive-ambiguous count. A
+ * motive-ambiguous entry (its revert shows a non-defect motive) is kept as
+ * data but excluded from every published confirmed-bad count.
+ *
+ * @param entries the merged corpus entries.
+ * @returns the claimable entries and how many were excluded as ambiguous.
+ */
+export function splitClaimable(entries: readonly BackwardEntry[]): {
+  claimable: BackwardEntry[];
+  motiveAmbiguous: number;
+} {
+  const claimable = entries.filter((e) => e.outcomeLabel === undefined);
+  return { claimable, motiveAmbiguous: entries.length - claimable.length };
 }
 
 /**
@@ -697,14 +750,17 @@ export function saveCheckpoint(file: string, checkpoint: BackwardCheckpoint): vo
   fs.writeFileSync(file, `${JSON.stringify(checkpoint, null, 2)}\n`);
 }
 
-/** Merge new entries into the committed backward corpus, deduped by reverted sha. */
+/** Merge new entries into the committed backward corpus, deduped by reverted
+ *  sha. The existing entry wins a key collision: committed entries can carry
+ *  review annotations (outcomeLabel, incidentId) a fresh re-confirmation does
+ *  not know about, and those must survive the merge. */
 export function mergeCorpus(
   existing: { entries?: BackwardEntry[] } | null,
   fresh: BackwardEntry[],
 ): BackwardEntry[] {
   const byKey = new Map<string, BackwardEntry>();
-  for (const e of existing?.entries ?? []) byKey.set(`${e.repo}@${e.revertedSha}`, e);
   for (const e of fresh) byKey.set(`${e.repo}@${e.revertedSha}`, e);
+  for (const e of existing?.entries ?? []) byKey.set(`${e.repo}@${e.revertedSha}`, e);
   return [...byKey.values()].sort((a, b) =>
     a.repo === b.repo ? a.revertedSha.localeCompare(b.revertedSha) : a.repo.localeCompare(b.repo),
   );
@@ -740,24 +796,40 @@ async function main(): Promise<void> {
   const octokit = makeOctokit(token) as unknown as BackwardOctokit;
 
   const existing = fs.existsSync(OUT_FILE)
-    ? (JSON.parse(fs.readFileSync(OUT_FILE, 'utf8')) as { entries?: BackwardEntry[] })
+    ? (JSON.parse(fs.readFileSync(OUT_FILE, 'utf8')) as {
+        entries?: BackwardEntry[];
+        rejections?: CheckpointRejection[];
+      })
     : null;
   const checkpoint = loadCheckpoint(checkpointFile);
   const alreadyConfirmed = new Set<string>();
   for (const e of checkpoint?.entries ?? []) alreadyConfirmed.add(`${e.repo}@${e.revertedSha}`);
   for (const e of existing?.entries ?? []) alreadyConfirmed.add(`${e.repo}@${e.revertedSha}`);
+  // Review rejections travel in both the checkpoint (fast-moving, cached) and
+  // the committed corpus artifact (durable, in the checkout), so a rejected key
+  // is skipped with its labeled reason wherever the miner runs.
+  const rejections = new Map<string, CheckpointRejection>();
+  for (const r of [...(existing?.rejections ?? []), ...(checkpoint?.rejections ?? [])]) {
+    rejections.set(`${r.repo}@${r.revertedSha}`, r);
+  }
+  const rejected = new Map<string, string>();
+  for (const [key, r] of rejections) rejected.set(key, `rejected-${r.reason}`);
   log.info(
     `checkpoint ${checkpointFile}: ${checkpoint?.entries.length ?? 0} prior confirmations ` +
-      `(${alreadyConfirmed.size} keys skipped from re-confirmation)`,
+      `(${alreadyConfirmed.size} keys skipped from re-confirmation, ${rejected.size} rejected)`,
   );
 
-  const result = await mineBackward(octokit, budget, { alreadyConfirmed });
+  const result = await mineBackward(octokit, budget, { alreadyConfirmed, rejected });
 
   const grown = mergeCheckpoint(checkpoint, result.entries, new Date().toISOString());
+  if (rejections.size > 0) grown.rejections = [...rejections.values()];
   saveCheckpoint(checkpointFile, grown);
   const merged = mergeCorpus(existing, grown.entries);
+  // Published counts claim only the claimable set: motive-ambiguous entries are
+  // carried in `entries` (the data is kept) but never counted as confirmed-bad.
+  const { claimable, motiveAmbiguous } = splitClaimable(merged);
   const distribution = { reverted: 0, hotfixed: 0 };
-  for (const e of merged) distribution[e.outcome] += 1;
+  for (const e of claimable) distribution[e.outcome] += 1;
   const sourceDistribution: Record<string, number> = {};
   for (const e of merged) {
     // Pre-widening entries carry no source label; they were all revert-mined.
@@ -793,10 +865,14 @@ async function main(): Promise<void> {
       priorEntries: checkpoint?.entries.length ?? 0,
       entries: grown.entries.length,
     },
-    total: merged.length,
+    // `total` and `distribution` claim only claimable (unlabeled) entries;
+    // motive-ambiguous records ride along in `entries` without being counted.
+    total: claimable.length,
+    motiveAmbiguous,
     distribution,
     sourceDistribution,
     entries: merged,
+    ...(rejections.size > 0 ? { rejections: [...rejections.values()] } : {}),
   };
   fs.mkdirSync(path.dirname(OUT_FILE), { recursive: true });
   fs.writeFileSync(OUT_FILE, `${JSON.stringify(out, null, 2)}\n`);

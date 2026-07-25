@@ -527,6 +527,63 @@ export function messageRevertsSha(message: string, sha: string): boolean {
   );
 }
 
+// A `git revert` subject quotes the reverted commit's own title: `Revert "<title>"`.
+// When the reverted commit was itself a revert whose title carried the trailer
+// (`Revert "This reverts commit <sha>."`), the sha inside the quotes names the
+// commit being RESTORED by this revert-of-revert, not a commit being reverted.
+// Matching greedily to the last quote on the line keeps nested titles
+// (`Revert "Revert "feat""`) inside the mask.
+const QUOTED_REVERT_TITLE_RE = /\brevert\s+"(.*)"/i;
+
+function maskQuotedRevertTitles(message: string): string {
+  return message
+    .split('\n')
+    .map((line) => line.replace(QUOTED_REVERT_TITLE_RE, (m, quoted: string) => m.replace(quoted, '')))
+    .join('\n');
+}
+
+function shaPrefixMatch(a: string, b: string): boolean {
+  return a.startsWith(b) || b.startsWith(a);
+}
+
+/**
+ * The shas this commit's OWN revert trailers name, excluding occurrences that
+ * sit inside a quoted `Revert "..."` title (those belong to the reverted
+ * commit's message and point the other way). The mhmugisha false positive was
+ * exactly this: `Revert "This reverts commit <agent-sha>."` was read as a
+ * revert of the agent sha when it actually restores it.
+ *
+ * @param message a commit message
+ * @returns the lower-cased shas the message directly reverts
+ */
+export function directlyRevertedShas(message: string): string[] {
+  return revertedShasInMessage(maskQuotedRevertTitles(message));
+}
+
+/** True when `message` directly reverts `sha` (quoted-title trailers excluded). */
+export function messageDirectlyRevertsSha(message: string, sha: string): boolean {
+  const target = sha.toLowerCase();
+  return directlyRevertedShas(message).some((r) => shaPrefixMatch(target, r));
+}
+
+/**
+ * The shas this commit RESTORES: trailer text that appears only inside a quoted
+ * `Revert "..."` title, meaning the commit reverts a revert of that sha.
+ *
+ * @param message a commit message
+ * @returns the lower-cased restored shas
+ */
+export function restoredShasInMessage(message: string): string[] {
+  const direct = directlyRevertedShas(message);
+  return revertedShasInMessage(message).filter((r) => !direct.some((d) => shaPrefixMatch(r, d)));
+}
+
+/** True when `message` is a revert-of-revert that restores `sha`. */
+export function messageRestoresSha(message: string, sha: string): boolean {
+  const target = sha.toLowerCase();
+  return restoredShasInMessage(message).some((r) => shaPrefixMatch(target, r));
+}
+
 // --- Complaint mining -----------------------------------------------------
 //
 // Maintainers catch agent cheats in review and say so in plain language. A
