@@ -111,6 +111,9 @@ export interface AuditFunnel {
       exitCode: number | null;
       timedOut: boolean;
       stderrTail: string;
+      /** Present since the yarn-capture fix: corepack yarn errors on stdout.
+       *  Older records lack it. */
+      stdoutTail?: string;
       lockfile: string | null;
       nodeEngineRange: string | null;
       bucket: string;

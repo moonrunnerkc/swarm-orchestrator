@@ -87,10 +87,13 @@ export function planGoInstall(_dir: string): InstallStep[] {
   return [{ bin: 'go', args: ['mod', 'download'], label: 'go mod download' }];
 }
 
-/** Extract the trailing stderr from a guarded-run error for the failure cause. */
-function stderrCause(err: unknown): Error {
+/** Extract the trailing error text (stderr, else stdout: pip and go usually
+ *  report on stderr, but the fallback mirrors the Node path) for the cause. */
+function outputCause(err: unknown): Error {
   const stderr = err instanceof Error && 'stderr' in err ? String((err as { stderr: unknown }).stderr) : '';
-  if (stderr.trim().length > 0) return new Error(stderr.trim().slice(-2000));
+  const stdout = err instanceof Error && 'stdout' in err ? String((err as { stdout: unknown }).stdout) : '';
+  const text = (stderr.trim().length > 0 ? stderr : stdout).trim();
+  if (text.length > 0) return new Error(text.slice(-2000));
   return err instanceof Error ? err : new Error(String(err));
 }
 
@@ -126,7 +129,7 @@ export function runNonNodeInstall(
   for (const step of steps) {
     try {
       log.info(`${ecosystem} install: ${step.label} in ${dir}`);
-      execFileGuarded(step.bin, step.args, { cwd: dir, env, timeoutMs });
+      execFileGuarded(step.bin, step.args, { cwd: dir, env, timeoutMs, captureStdout: true });
     } catch (err) {
       const timedOut = isGuardedTimeout(err);
       // Measurement only: same message, code, remediation, and cause as before;
@@ -147,7 +150,7 @@ export function runNonNodeInstall(
                 'Provision Go (actions/setup-go in CI) or exclude this repo.'
               : 'The Python project may need poetry, a system library, or a build toolchain the sandbox lacks. ' +
                 'Install the missing tool or record the repo as non-viable.',
-          cause: stderrCause(err),
+          cause: outputCause(err),
           installFailure,
         },
       );

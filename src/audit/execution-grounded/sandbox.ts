@@ -303,7 +303,10 @@ function runInstall(
     lastBin = bin;
     lastArgs = args;
     try {
-      execFileGuarded(bin, args, { cwd: dir, env, timeoutMs });
+      // captureStdout: corepack yarn (berry and classic) prints its errors on
+      // stdout; without it the failure record's tails are empty and the
+      // classifier can only say `other`.
+      execFileGuarded(bin, args, { cwd: dir, env, timeoutMs, captureStdout: true });
       if (i > 0) log.info(`install in ${dir} succeeded with the non-frozen fallback`);
       return;
     } catch (err) {
@@ -313,6 +316,8 @@ function runInstall(
     }
   }
   const stderr = lastErr instanceof Error && 'stderr' in lastErr ? String((lastErr as { stderr: unknown }).stderr) : '';
+  const stdout = lastErr instanceof Error && 'stdout' in lastErr ? String((lastErr as { stdout: unknown }).stdout) : '';
+  const causeText = stderr.trim().length > 0 ? stderr : stdout;
   const timedOut = isGuardedTimeout(lastErr);
   // Measurement only: the evidence capture and classification never change what
   // was run above; message, code, remediation, and cause are unchanged too.
@@ -330,7 +335,7 @@ function runInstall(
         ? `Install exceeded ${Math.round(timeoutMs / 1000)}s. Raise installTimeoutMs or exclude this repo.`
         : 'The repo may need a native toolchain or a different package manager. ' +
           'Record it as yellow (with a documented config patch) or red (excluded) in stryker-viability.json.',
-      cause: stderr.length > 0 ? new Error(stderr.trim().slice(-2000)) : lastErr instanceof Error ? lastErr : new Error(String(lastErr)),
+      cause: causeText.trim().length > 0 ? new Error(causeText.trim().slice(-2000)) : lastErr instanceof Error ? lastErr : new Error(String(lastErr)),
       installFailure,
     },
   );

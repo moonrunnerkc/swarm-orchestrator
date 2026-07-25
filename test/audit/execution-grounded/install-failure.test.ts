@@ -6,10 +6,10 @@ import {
   captureInstallFailure,
   classifyInstallFailure,
   redactSecrets,
-  stderrTail,
+  outputTail,
   SandboxInstallError,
-  STDERR_TAIL_LINES,
-  STDERR_TAIL_MAX_BYTES,
+  OUTPUT_TAIL_LINES,
+  OUTPUT_TAIL_MAX_BYTES,
   type InstallFailureEvidence,
 } from '../../../src/audit/execution-grounded/install-failure';
 import { detectLockfileName, readNodeEngineRange } from '../../../src/audit/execution-grounded/sandbox';
@@ -142,27 +142,103 @@ describe('classifyInstallFailure', () => {
     const e = evidence('gyp ERR! build error');
     assert.equal(classifyInstallFailure(e), classifyInstallFailure(e));
   });
+
+  it('classifies a pre-stdoutTail record parsed from JSON exactly as before', () => {
+    const old = JSON.parse(
+      JSON.stringify({
+        packageManager: 'yarn',
+        exitCode: 1,
+        timedOut: false,
+        stderrTail: '',
+        lockfile: 'yarn.lock',
+        nodeEngineRange: null,
+      }),
+    ) as InstallFailureEvidence;
+    assert.equal(classifyInstallFailure(old), 'other');
+  });
 });
 
-describe('stderrTail', () => {
+describe('yarn failures reported on stdout (real corepack output)', () => {
+  const FIX = path.resolve(
+    __dirname,
+    '..',
+    '..',
+    '..',
+    '..',
+    'test',
+    'audit',
+    'execution-grounded',
+    'fixtures',
+    'install-failure',
+  );
+  const berryStdout = fs.readFileSync(path.join(FIX, 'corepack-yarn-berry-404.stdout.txt'), 'utf8');
+  const classicStderr = fs.readFileSync(
+    path.join(FIX, 'corepack-yarn-classic-404.stderr.txt'),
+    'utf8',
+  );
+
+  it('buckets a yarn berry registry 404 (YN0035, stdout only) as registry-or-network', () => {
+    const err = Object.assign(new Error('corepack exited with status 1'), {
+      stderr: '',
+      stdout: berryStdout,
+      status: 1,
+      timedOut: false,
+      signal: null,
+    });
+    const rec = captureInstallFailure(err, {
+      packageManager: 'yarn',
+      lockfile: 'yarn.lock',
+      nodeEngineRange: null,
+    });
+    assert.equal(rec.bucket, 'registry-or-network');
+    assert.equal(rec.stderrTail, '');
+    assert.ok(rec.stdoutTail !== undefined && rec.stdoutTail.includes('YN0035'));
+  });
+
+  it('buckets a yarn classic registry 404 (`registry...: Not found`) as registry-or-network', () => {
+    assert.equal(
+      classifyInstallFailure(evidence(classicStderr, { packageManager: 'yarn' })),
+      'registry-or-network',
+    );
+  });
+
+  it('buckets a yarn berry build-script failure (YN0009) as lifecycle-script', () => {
+    const e = evidence('', {
+      packageManager: 'yarn',
+      stdoutTail: '➤ YN0009: │ esbuild@npm:0.19.0 couldn’t be built successfully (exit code 1)',
+    });
+    assert.equal(classifyInstallFailure(e), 'lifecycle-script');
+  });
+
+  it('buckets a yarn berry node-version refusal as engines-mismatch', () => {
+    const e = evidence('', {
+      packageManager: 'yarn',
+      stdoutTail:
+        'The current Node version v18.19.1 does not satisfy the required version >=20.0.0.',
+    });
+    assert.equal(classifyInstallFailure(e), 'engines-mismatch');
+  });
+});
+
+describe('outputTail', () => {
   it('keeps only the last 40 lines', () => {
     const lines = Array.from({ length: 100 }, (_, i) => `line ${i}`);
-    const tail = stderrTail(lines.join('\n'));
+    const tail = outputTail(lines.join('\n'));
     const kept = tail.split('\n');
-    assert.equal(kept.length, STDERR_TAIL_LINES);
+    assert.equal(kept.length, OUTPUT_TAIL_LINES);
     assert.equal(kept[0], 'line 60');
     assert.equal(kept[kept.length - 1], 'line 99');
   });
 
   it('caps the tail at the byte limit, keeping the end', () => {
     const big = Array.from({ length: 40 }, () => 'x'.repeat(1000)).join('\n') + '\nEND-MARKER';
-    const tail = stderrTail(big);
-    assert.ok(Buffer.byteLength(tail, 'utf8') <= STDERR_TAIL_MAX_BYTES);
+    const tail = outputTail(big);
+    assert.ok(Buffer.byteLength(tail, 'utf8') <= OUTPUT_TAIL_MAX_BYTES);
     assert.ok(tail.endsWith('END-MARKER'));
   });
 
-  it('returns an empty string for empty stderr', () => {
-    assert.equal(stderrTail(''), '');
+  it('returns an empty string for empty output', () => {
+    assert.equal(outputTail(''), '');
   });
 });
 
@@ -219,6 +295,12 @@ describe('captureInstallFailure', () => {
     assert.equal(rec.lockfile, 'package-lock.json');
     assert.equal(rec.nodeEngineRange, '>=20');
     assert.ok(rec.stderrTail.includes('ERESOLVE'));
+  });
+
+  it('omits stdoutTail entirely when stdout was empty, keeping the pre-fix record shape', () => {
+    const err = guardedErr({ stderr: 'npm error code ERESOLVE', status: 1 });
+    const rec = captureInstallFailure(err, { packageManager: 'npm', lockfile: null, nodeEngineRange: null });
+    assert.ok(!('stdoutTail' in rec));
   });
 
   it('records a timeout with a null exit code as disk-or-timeout', () => {
