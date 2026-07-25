@@ -9,8 +9,12 @@
 //
 // Usage:
 //   node dist/scripts/real-prs/recall-v3.js --arm <deterministic|judge>
-//     [--only <id>] [--timeout-ms 2400000] [--ceiling-usd 10]
-//   node dist/scripts/real-prs/recall-v3.js --screen-nonviable
+//     [--only <id>] [--timeout-ms 2400000] [--ceiling-usd 10] [--out-dir <dir>]
+//   node dist/scripts/real-prs/recall-v3.js --screen-nonviable [--out-dir <dir>]
+//
+// --out-dir redirects every artifact (records, ledgers, RUN summaries,
+// nonviable.json) so a repeat pass never collides with the checkpointed
+// first-pass records under recall-v3/.
 //
 // The judge arm requires ANTHROPIC_API_KEY and stops paid work at the ceiling
 // (live judge calls priced at the documented per-call Haiku rate).
@@ -28,7 +32,8 @@ const log = getLogger('hunt:recall-v3');
 
 const DATASET_FILE = path.join('benchmarks', 'real-prs', 'wild-cheat-corpus', 'v3', 'dataset.json');
 const CENSUS_FILE = path.join('benchmarks', 'real-prs', 'hunt3', 'viability-census.json');
-const OUT_DIR = path.join('benchmarks', 'real-prs', 'capability-hunt', 'recall-v3');
+const DEFAULT_OUT_DIR = path.join('benchmarks', 'real-prs', 'capability-hunt', 'recall-v3');
+const OUT_DIR = arg('--out-dir', DEFAULT_OUT_DIR)!;
 const FIXTURE_ROOT = path.join('.swarm', 'recall-v3-fixtures');
 // The pinned sandbox toolchain every prior evidence run used.
 const EG_NODE_BIN = path.join(process.env.HOME ?? '', '.nvm', 'versions', 'node', 'v22.15.0', 'bin');
@@ -373,7 +378,9 @@ async function measureArm(arm: Arm): Promise<void> {
       enginesExecuted: 0,
       abstains: [],
       elapsedMs: 0,
-      replayCommand: `node dist/scripts/real-prs/recall-v3.js --arm ${arm} --only ${entry.id}`,
+      replayCommand:
+        `node dist/scripts/real-prs/recall-v3.js --arm ${arm} --only ${entry.id}` +
+        (OUT_DIR === DEFAULT_OUT_DIR ? '' : ` --out-dir ${OUT_DIR}`),
     };
     log.info(`measuring ${entry.id} (${entry.repo}#${entry.prNumber}, ${arm} arm)`);
     let fixtureDir: string | null = null;

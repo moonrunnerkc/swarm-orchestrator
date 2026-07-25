@@ -1,4 +1,9 @@
-# Recall on the v3 wild-cheat corpus: first pass
+# Recall on the v3 wild-cheat corpus
+
+Two passes: the first pass (2026-07-24, sections below through "Replay") and a
+second pass run later the same day (the "Second pass" section at the end).
+
+## First pass
 
 The measurement pre-registered by
 [`PREREGISTRATION-AMENDMENT-2.md`](PREREGISTRATION-AMENDMENT-2.md) (frozen at
@@ -301,3 +306,109 @@ SWARM_EG_NODE_BIN=~/.nvm/versions/node/v22.15.0/bin \
 For the two moved entries the harness reconstructs the pinned fixture under
 `.swarm/recall-v3-fixtures/<id>/` and sets `SWARM_PR_FIXTURE_DIR` around the
 same invocation.
+
+## Second pass (2026-07-24, after B1 instrumentation, before any installer fix)
+
+Re-run of the full measurement under the same pre-registration
+(PREREGISTRATION-AMENDMENT-2.md, still frozen at `6f00fc4f`), same dataset
+sha256 (`9c354282...`, re-verified), same engine set, same harness
+(`scripts/real-prs/recall-v3.ts`, extended only with an `--out-dir` flag so a
+repeat pass cannot collide with the checkpointed first-pass records). All
+second-pass artifacts live under [`recall-v3/pass2/`](recall-v3/pass2/):
+records, per-entry ledgers, `RUN-deterministic.json`, `RUN-judge.json`, and a
+refreshed `nonviable.json`.
+
+A framing caveat this section must carry: the change plan scheduled this pass
+"after installer fixes", but no B2 installer fix has landed; the only change
+between passes is the B1 install-failure instrumentation (`eae2f6c5`), which
+records causes and changes no install behavior. This pass is therefore a
+stability replication of pass 1, not a post-fix measurement.
+
+### Viability screen, refreshed
+
+- `eg-viability-screen --refresh` (real-corpus screen): 78/197 viable;
+  refreshed `benchmarks/real-corpus/eg-viability.json`.
+- The v3 non-viable re-screen (`--screen-nonviable --out-dir .../pass2`)
+  produced a `nonviable.json` byte-identical to the committed pass-1 file:
+  the same 22 frozen non-viable entries with the same reasons.
+- **Viable now: the same 7 of 29 entries as pass 1.** No entry changed
+  viability in either direction, as expected with no installer change.
+
+### Headline
+
+**Zero proven, in both arms, again.** Every entry landed in the same bucket
+as pass 1, with the same findings and the same abstain verdicts.
+
+| arm | proven | advisory-found | abstained | not-provisionable | Anthropic spend |
+| --- | --- | --- | --- | --- | --- |
+| deterministic | 0 | 2 | 4 | 1 + 22 frozen non-viable | USD 0.00 |
+| judge-enabled | 0 | 3 | 3 | 1 + 22 frozen non-viable | USD 0.0765 (17 live calls x 0.0045; ceiling 10.00 never approached) |
+
+Strict-9, stated beside the headline per the binding reporting rule: 0/9
+proven in both arms; 3 of 9 provisionable; no deterministic advisory on any
+strict entry; the judge arm's single strict advisory (cybersemics/em#4339)
+remains the corpus pin artifact from pass-1 incident note 4.
+
+### Per-stratum, per-category
+
+Identical to the pass-1 tables, cell for cell, in both arms (compare
+`recall-v3/pass2/RUN-<arm>.json` against `recall-v3/RUN-<arm>.json`). The
+structural-blindness note carries over unchanged: deterministic zeros on
+`goal-not-fixed` (7 entries) and `hardcoded-output` (2) are methodology, not
+detector misses.
+
+### Pass 1 versus pass 2, per entry
+
+| entry | arm | pass 1 | pass 2 | changed |
+| --- | --- | --- | --- | --- |
+| inmanta/web-console#6972 | both | not-provisionable (yarn install exit 1) | not-provisionable (yarn install exit 1) | no |
+| lesmartiepants/poetry-bil-araby#545 | det | advisory-found (error-swallow info) | advisory-found (error-swallow info) | no |
+| lesmartiepants/poetry-bil-araby#545 | judge | advisory-found (error-swallow warn + no-op-fix warn) | advisory-found (error-swallow warn + no-op-fix warn) | no |
+| myhuemungusD/SkateHubba-play#382 | both | abstained (claim-binding abstain:base-passes) | abstained (claim-binding abstain:base-passes) | no |
+| yorickdewid/flight-planner#149 | both | advisory-found (no-op-fix info) | advisory-found (no-op-fix info) | no |
+| vitejs/vite-plugin-react#1246 | both | abstained (claim-binding abstain:setup-error), fixture | abstained (claim-binding abstain:setup-error), fixture | no |
+| cybersemics/em#4339 | det | abstained (empty pinned diff) | abstained (empty pinned diff) | no |
+| cybersemics/em#4339 | judge | advisory-found (no-op-fix info, pin artifact) | advisory-found (no-op-fix info, pin artifact) | no |
+| vlebo/ctx#24 | both | abstained (zero applicable engines, Go) | abstained (zero applicable engines, Go) | no |
+
+The two fixture-mode entries (vite-plugin-react, em) were rebuilt at the
+recorded pairs again; the five live entries still sit at their recorded
+SHA pairs. Nothing was re-pinned.
+
+### What the second pass adds
+
+- **Replication.** The pass-1 result is stable under re-execution: same
+  buckets, same categories, same severities, same abstain verdicts across
+  all 14 entry-arm cells. The zero is not run-to-run noise.
+- **First instrumented install failure.** The B1 code was live in this pass,
+  so the inmanta record now carries an `installFailure` object: packageManager
+  yarn, lockfile yarn.lock, exitCode 1, bucket `other`, and an empty
+  stderrTail, because corepack yarn emits its failure output on stdout. That
+  empty tail is the first measured B1 defect: the capture needs stdout for
+  yarn before the 120-replay, or the npm-dominated bucket table will
+  misclassify yarn failures as `other`.
+- **Holdout discipline unchanged.** Strict-9 results are recorded above and
+  motivate no engine work in this session or any session; engine fixes
+  develop against legacy-19 and synthetic injections only.
+
+### Replay (second pass)
+
+```bash
+# Refresh screens
+node dist/scripts/real-prs/eg-viability-screen.js --refresh
+node dist/scripts/real-prs/recall-v3.js --screen-nonviable \
+  --out-dir benchmarks/real-prs/capability-hunt/recall-v3/pass2
+
+# Full arms (checkpointed per entry under pass2/records/)
+node dist/scripts/real-prs/recall-v3.js --arm deterministic \
+  --out-dir benchmarks/real-prs/capability-hunt/recall-v3/pass2
+node dist/scripts/real-prs/recall-v3.js --arm judge \
+  --out-dir benchmarks/real-prs/capability-hunt/recall-v3/pass2
+
+# Single entry (delete its pass2/records/<id>.<arm>.json first)
+node dist/scripts/real-prs/recall-v3.js --arm deterministic --only vlebo-ctx-pr24 \
+  --out-dir benchmarks/real-prs/capability-hunt/recall-v3/pass2
+```
+
+Each pass-2 record embeds the same per-row `replayCommand` with its
+`--out-dir` included.
