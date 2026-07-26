@@ -133,6 +133,18 @@ describe('classifyInstallFailure', () => {
     );
   });
 
+  it('buckets the npm ENOENT-no-package.json signature as no-manifest-found, not other', () => {
+    const stderr = [
+      'npm error code ENOENT',
+      'npm error syscall open',
+      "npm error path /tmp/swarm-eg/eg-some-repo-1234abcd-XXXXXX/package.json",
+      'npm error errno -2',
+      "npm error enoent Could not read package.json: Error: ENOENT: no such file or directory, open '/tmp/swarm-eg/eg-some-repo-1234abcd-XXXXXX/package.json'",
+      'npm error enoent This is related to npm not being able to find a file.',
+    ].join('\n');
+    assert.equal(classifyInstallFailure(evidence(stderr, { exitCode: 254, lockfile: null })), 'no-manifest-found');
+  });
+
   it('buckets unrecognized stderr as other', () => {
     assert.equal(classifyInstallFailure(evidence('some entirely novel failure text')), 'other');
     assert.equal(classifyInstallFailure(evidence('')), 'other');

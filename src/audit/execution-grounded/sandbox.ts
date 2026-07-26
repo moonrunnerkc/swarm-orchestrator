@@ -15,6 +15,7 @@ import { getLogger } from '../../logger';
 import { fixtureRepoUrl } from '../pr-fixture';
 import { commandTimeoutMs, execBin, execEnv, execFileGuarded, isGuardedTimeout } from './exec-env';
 import { captureInstallFailure, SandboxInstallError } from './install-failure';
+import { chooseManifestDir, discoverManifestDirs } from './manifest-discovery';
 import { provisionNonNode, type NonNodeEcosystem } from './polyglot-install';
 
 const log = getLogger('audit:execution-grounded:sandbox');
@@ -95,12 +96,19 @@ export interface ProvisionOptions {
   runBuild?: boolean;
   /** Wall-clock cap for the build step. Defaults to 10 minutes. */
   buildTimeoutMs?: number;
+  /** Repo-relative paths the PR changed. Used only when the clone root carries
+   *  no manifest: subdirectory manifest discovery picks the directory that owns
+   *  these files. Roots with a manifest never consult it. */
+  changedFiles?: readonly string[];
 }
 
 export interface Workspace {
   workspacePath: string;
   packageManager: PackageManager;
   testRunner: TestRunner | null;
+  /** Repo-relative directory the install ran in: '' for the clone root, or the
+   *  subdirectory manifest discovery chose when the root had no manifest. */
+  manifestDir: string;
   cleanup: () => void;
 }
 
@@ -448,10 +456,82 @@ function directorySizeBytes(dir: string): number {
   }
 }
 
+/** A directory is provisionable when it carries a Node manifest or a marker the
+ *  polyglot install path acts on (go.mod, or a Python project with a pytest
+ *  signal). Mirrors provisionEcosystem: anything else would fall to the npm
+ *  path and fail on the missing package.json. */
+function isProvisionableManifestDir(absDir: string): boolean {
+  return fs.existsSync(path.join(absDir, 'package.json')) || detectNonNodeRunner(absDir) !== null;
+}
+
+/** An install-failure record for a failure decided before any installer ran:
+ *  no output, no exit code, just the pre-assigned bucket. */
+function preInstallFailure(bucket: 'no-manifest-found' | 'no-manifest-for-diff'): SandboxInstallError['installFailure'] {
+  return {
+    packageManager: 'none',
+    exitCode: null,
+    timedOut: false,
+    stderrTail: '',
+    lockfile: null,
+    nodeEngineRange: null,
+    bucket,
+  };
+}
+
+/**
+ * Resolve the manifest directory for a clone root that has none: discover
+ * subdirectory manifests (bounded depth, dependency and vendor trees skipped)
+ * and choose the one that owns the PR's changed files. Throws a
+ * SandboxInstallError carrying the `no-manifest-found` or `no-manifest-for-diff`
+ * bucket when no choice exists, so the failure classifies instead of dying as
+ * an npm ENOENT in a manifest-less directory.
+ *
+ * @param workspacePath the clone root.
+ * @param changedFiles repo-relative paths the PR changed.
+ * @returns the repo-relative manifest directory to provision in.
+ * @throws SandboxInstallError with a pre-assigned bucket on either miss.
+ */
+export function resolveSubdirManifest(
+  workspacePath: string,
+  changedFiles: readonly string[] | undefined,
+): string {
+  const candidates = discoverManifestDirs(workspacePath, isProvisionableManifestDir);
+  const resolution = chooseManifestDir(candidates, changedFiles);
+  if (resolution.kind === 'no-manifest-found') {
+    throw new SandboxInstallError(`no package manifest found at the clone root or in any subdirectory of ${workspacePath}`, {
+      remediation:
+        'The repo carries no package.json, go.mod, or pytest-capable Python project anywhere the ' +
+        'bounded discovery looks; exclude this PR or provision it manually.',
+      cause: null,
+      installFailure: preInstallFailure('no-manifest-found'),
+    });
+  }
+  if (resolution.kind === 'no-manifest-for-diff') {
+    throw new SandboxInstallError(
+      `subdirectory manifests exist (${resolution.candidates.join(', ')}) but none owns a file this PR changed`,
+      {
+        remediation:
+          'The PR touches files outside every discovered package, so no install target is ' +
+          'meaningful for it; exclude this PR from execution-grounded checks.',
+        cause: null,
+        installFailure: preInstallFailure('no-manifest-for-diff'),
+      },
+    );
+  }
+  log.info(
+    `no root manifest; provisioning in ${resolution.manifestDir} ` +
+      `(${resolution.strategy}, owns ${resolution.ownedChangedFiles} changed file(s))`,
+  );
+  return resolution.manifestDir;
+}
+
 /**
  * Provision a single workspace: shallow-clone `repo` at `commit`, install
  * dependencies with the detected package manager, and report the detected
- * test runner. The returned `cleanup` removes the workspace; callers must
+ * test runner. When the clone root has no manifest, subdirectory discovery
+ * picks the manifest directory that owns `changedFiles` and the install, the
+ * runner detection, and the build all run there (`manifestDir` records the
+ * choice). The returned `cleanup` removes the workspace; callers must
  * invoke it (a `finally` is the idiom).
  */
 export function provisionWorkspace(opts: ProvisionOptions): Workspace {
@@ -470,17 +550,30 @@ export function provisionWorkspace(opts: ProvisionOptions): Workspace {
   try {
     log.info(`provisioning ${repo}@${commit.slice(0, 10)} -> ${workspacePath}`);
     gitFetchCheckout(repo, commit, workspacePath, opts.depth ?? 1);
-    const packageManager = detectPackageManager(workspacePath);
+    // A root with a manifest provisions exactly as before. Only the class B1
+    // measured, no manifest of any kind at the clone root, goes through
+    // subdirectory discovery; the chosen directory then hosts the install, the
+    // runner detection, and the build.
+    let manifestDir = '';
+    if (
+      opts.skipInstall !== true &&
+      !fs.existsSync(path.join(workspacePath, 'package.json')) &&
+      provisionEcosystem(workspacePath) === 'node'
+    ) {
+      manifestDir = resolveSubdirManifest(workspacePath, opts.changedFiles);
+    }
+    const installRoot = manifestDir === '' ? workspacePath : path.join(workspacePath, manifestDir);
+    const packageManager = detectPackageManager(installRoot);
     if (opts.skipInstall !== true) {
-      const ecosystem = provisionEcosystem(workspacePath);
+      const ecosystem = provisionEcosystem(installRoot);
       if (ecosystem === 'node') {
-        runInstall(packageManager, workspacePath, cacheDir, opts.installTimeoutMs);
+        runInstall(packageManager, installRoot, cacheDir, opts.installTimeoutMs);
       } else {
         // pytest / Go: dependency install only. The test-restoration proof runs
         // the suite on these runners (its runner seam is polyglot); mutation and
         // coverage stay Node-only and fail-closed. Provisioning just makes the
         // tree installable and records an honest success or failure.
-        provisionNonNode(workspacePath, ecosystem, {
+        provisionNonNode(installRoot, ecosystem, {
           ...(opts.installTimeoutMs !== undefined ? { timeoutMs: opts.installTimeoutMs } : {}),
           ...(cacheDir !== undefined ? { cacheDir } : {}),
         });
@@ -493,15 +586,15 @@ export function provisionWorkspace(opts: ProvisionOptions): Workspace {
       }
       // The build script is a Node concept; a pytest/Go tree has no npm build.
       if (ecosystem === 'node' && opts.runBuild === true) {
-        buildWorkspace(workspacePath, packageManager, opts.buildTimeoutMs ?? 10 * 60 * 1000);
+        buildWorkspace(installRoot, packageManager, opts.buildTimeoutMs ?? 10 * 60 * 1000);
         // A build script can leave a hung native-binary step (profiling-node's
         // linux-target prune) running detached after the build itself returns;
         // sweep it now so it does not idle through the whole check phase.
         killWorkspaceProcesses(workspacePath);
       }
     }
-    const testRunner = detectTestRunner(workspacePath);
-    return { workspacePath, packageManager, testRunner, cleanup };
+    const testRunner = detectTestRunner(installRoot);
+    return { workspacePath, packageManager, testRunner, manifestDir, cleanup };
   } catch (err) {
     cleanup();
     throw err;
@@ -520,6 +613,9 @@ export interface ProvisionPROptions {
   installTimeoutMs?: number;
   /** Run the repo's build after install on both workspaces. */
   runBuild?: boolean;
+  /** Repo-relative paths the PR changed, for subdirectory manifest discovery
+   *  when the clone root has no manifest. */
+  changedFiles?: readonly string[];
 }
 
 export interface PRWorkspaces {
@@ -547,6 +643,7 @@ export function provisionPRWorkspaces(opts: ProvisionPROptions): PRWorkspaces {
     ...(opts.prBaseSha === undefined ? { depth: 2 } : {}),
     ...(opts.installTimeoutMs !== undefined ? { installTimeoutMs: opts.installTimeoutMs } : {}),
     ...(opts.runBuild !== undefined ? { runBuild: opts.runBuild } : {}),
+    ...(opts.changedFiles !== undefined ? { changedFiles: opts.changedFiles } : {}),
   });
   // Resolve the base commit. With an explicit base we fetch it directly;
   // otherwise the post workspace already has the head, and its first parent
@@ -580,6 +677,7 @@ export function provisionPRWorkspaces(opts: ProvisionPROptions): PRWorkspaces {
       cacheDir,
       ...(opts.installTimeoutMs !== undefined ? { installTimeoutMs: opts.installTimeoutMs } : {}),
       ...(opts.runBuild !== undefined ? { runBuild: opts.runBuild } : {}),
+      ...(opts.changedFiles !== undefined ? { changedFiles: opts.changedFiles } : {}),
     });
   } catch (err) {
     post.cleanup();

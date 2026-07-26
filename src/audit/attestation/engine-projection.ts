@@ -273,6 +273,7 @@ export function corroborationEngine(
 export function deriveProvisioning(
   skipped: ReadonlyArray<string>,
   installFailure?: InstallFailureRecord,
+  manifestDir?: string,
 ): ProvisioningStatus {
   const provisionSkip = skipped.find((s) => s.startsWith('provision:'));
   if (provisionSkip !== undefined) {
@@ -284,5 +285,9 @@ export function deriveProvisioning(
       ...(installFailure !== undefined ? { installFailure } : {}),
     };
   }
-  return { attempted: true, provisioned: true };
+  return {
+    attempted: true,
+    provisioned: true,
+    ...(manifestDir !== undefined ? { manifestDir } : {}),
+  };
 }

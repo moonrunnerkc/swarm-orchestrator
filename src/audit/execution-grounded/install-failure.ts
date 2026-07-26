@@ -11,7 +11,13 @@ import { isGuardedTimeout } from './exec-env';
 
 /** Deterministic cause bucket for one install failure, derived purely from the
  *  captured evidence. `other` is the honesty bucket; the B1 acceptance target
- *  is keeping it under 10% of failures. */
+ *  is keeping it under 10% of failures. The two `no-manifest-*` buckets are the
+ *  B2 manifest-discovery outcomes: `no-manifest-found` means no package manifest
+ *  exists anywhere the discovery looks (pre-discovery records with the npm
+ *  ENOENT-package.json signature re-derive here too, meaning no manifest at the
+ *  clone root, where their install ran); `no-manifest-for-diff` means subdir
+ *  manifests exist but none owns a file the PR changed, so there is nothing
+ *  meaningful to provision. */
 export type InstallFailureBucket =
   | 'registry-or-network'
   | 'native-build'
@@ -20,6 +26,8 @@ export type InstallFailureBucket =
   | 'lifecycle-script'
   | 'workspace-protocol'
   | 'disk-or-timeout'
+  | 'no-manifest-found'
+  | 'no-manifest-for-diff'
   | 'other';
 
 /** The raw evidence captured at the failing install's throw site. */
@@ -100,6 +108,13 @@ export function outputTail(output: string): string {
  *  inside a postinstall lifecycle; an engines refusal mentions the registry). */
 const BUCKET_MATCHERS: ReadonlyArray<{ bucket: InstallFailureBucket; re: RegExp }> = [
   { bucket: 'disk-or-timeout', re: /ENOSPC|no space left on device|disk quota exceeded/i },
+  {
+    // npm ran in a directory with no package.json (the 27/27 signature the B1
+    // instrumentation measured on 2026-07-26: manifest lives in a subdirectory).
+    // Post-discovery this only fires on a genuinely manifest-less tree.
+    bucket: 'no-manifest-found',
+    re: /enoent Could not read package\.json|Could not read package\.json: Error: ENOENT/i,
+  },
   {
     bucket: 'engines-mismatch',
     re: /npm (?:ERR!|error) code EBADENGINE|ERR_PNPM_UNSUPPORTED_ENGINE|The engine "node" is incompatible|Your Node version is incompatible|The current Node version [^\n]+ does not satisfy/,

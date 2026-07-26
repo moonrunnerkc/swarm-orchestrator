@@ -76,6 +76,10 @@ export interface ProvisioningStatus {
    *  range) plus its deterministic cause bucket. Absent on older records and
    *  on non-install bails; readers must tolerate its absence. */
   readonly installFailure?: InstallFailureRecord;
+  /** Where the install ran, repo-relative: '.' for the clone root, or the
+   *  subdirectory manifest discovery chose (B2). Present on provisioned
+   *  records since the field existed; absent on older ones and on bails. */
+  readonly manifestDir?: string;
 }
 
 export interface ProofCoverageSummary {
@@ -183,7 +187,7 @@ export function buildProofCoverage(
   ];
   return {
     schema: 'swarm-proof-coverage/v1',
-    provisioning: deriveProvisioning(outcome.skipped, outcome.installFailure),
+    provisioning: deriveProvisioning(outcome.skipped, outcome.installFailure, outcome.provisionedManifestDir),
     engines,
     summary: summarize(engines),
   };

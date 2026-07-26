@@ -375,6 +375,10 @@ export interface ExecutionGroundedOutcome {
    *  deterministic cause bucket. Absent on success and on non-install bails;
    *  readers of older records must tolerate its absence. */
   installFailure?: InstallFailureRecord;
+  /** Repo-relative directory the install ran in: '.' for the clone root, or the
+   *  subdirectory manifest discovery chose when the root had no manifest (B2).
+   *  Absent when provisioning failed and on records older than the field. */
+  provisionedManifestDir?: string;
 }
 
 /** The proof candidates a run evaluates, selected from the structural findings
@@ -1476,6 +1480,9 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
       ...(input.cacheDir !== undefined ? { cacheDir: input.cacheDir } : {}),
       ...(input.installTimeoutMs !== undefined ? { installTimeoutMs: input.installTimeoutMs } : {}),
       ...(input.runBuild !== undefined ? { runBuild: input.runBuild } : {}),
+      // Every changed path, tests included: subdirectory manifest discovery
+      // needs the whole diff footprint to pick the owning package.
+      changedFiles: Object.keys(extractChangedLineRanges(input.prDiff)),
     });
   } catch (err) {
     const reason = err instanceof SwarmError ? `${err.code}: ${err.message}` : String(err);
@@ -1488,7 +1495,7 @@ export async function runExecutionGrounded(input: ExecutionGroundedInput): Promi
 
   const deadline = Date.now() + input.config.maxWallClockPerPrMs;
   const findings: Finding[] = [];
-  const outcome: ExecutionGroundedOutcome = { findings, mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], fakeRefactorRestorations: [], deadBranchRestorations: [], errorSwallowRestorations: [], claimDifferentials: [], claimBindings: [], skipped };
+  const outcome: ExecutionGroundedOutcome = { findings, mutationRuns: [], coverageRuns: [], repros: [], restorations: [], mockRestorations: [], noOpRestorations: [], typeSuppressionRestorations: [], fakeRefactorRestorations: [], deadBranchRestorations: [], errorSwallowRestorations: [], claimDifferentials: [], claimBindings: [], skipped, provisionedManifestDir: workspaces.post.manifestDir === '' ? '.' : workspaces.post.manifestDir };
   const cacheArg = input.cacheDir !== undefined ? { cacheDir: input.cacheDir } : {};
 
   try {

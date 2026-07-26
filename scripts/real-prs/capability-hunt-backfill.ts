@@ -104,6 +104,9 @@ export interface AuditFunnel {
     attempted: boolean;
     provisioned: boolean;
     reason?: string;
+    /** Where the install ran ('.' or a subdirectory), present on provisioned
+     *  records since the B2 manifest discovery. Older records lack it. */
+    manifestDir?: string;
     /** Present since the B1 instrumentation when the bail was an install
      *  failure. Older records lack it; every reader treats it as optional. */
     installFailure?: {
