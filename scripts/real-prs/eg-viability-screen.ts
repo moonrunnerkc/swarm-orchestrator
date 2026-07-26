@@ -19,7 +19,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { loadDotenv } from '../../src/env-loader';
 import { getLogger } from '../../src/logger';
-import { makeOctokit, parseRepo, resolveGithubToken } from './lib/github';
+import { makeOctokit, parseRepo, resolveGithubToken, type RepoTarget } from './lib/github';
+import { subdirManifestCandidates } from './lib/subdir-manifest-screen';
 
 const log = getLogger('real-prs:eg-viability');
 
@@ -65,6 +66,10 @@ export interface ViabilityRecord {
   nodeSatisfiable: boolean;
   viable: boolean;
   reason: string;
+  /** Present when viability comes from a subdirectory manifest (B2 discovery
+   *  mirror): the repo-relative directory that screened viable. Root-viable
+   *  and pre-B2 records lack it. */
+  manifestDir?: string;
 }
 
 interface RootEntry {
@@ -75,6 +80,14 @@ interface RootEntry {
 export interface OctokitContents {
   repos: {
     getContent(p: { owner: string; repo: string; path: string; ref: string }): Promise<{
+      data: unknown;
+    }>;
+  };
+  /** Recursive tree listing, used only when the repo root has no manifest (the
+   *  B2 subdirectory-manifest discovery mirror). Optional so pre-B2 fakes and
+   *  callers keep working; without it the screen behaves exactly as before. */
+  git?: {
+    getTree(p: { owner: string; repo: string; tree_sha: string; recursive: string }): Promise<{
       data: unknown;
     }>;
   };
@@ -177,7 +190,8 @@ export async function screenPr(
       return { ...base, ecosystem: 'python', testRunner: 'pytest', viable: true, reason: 'viable: Python + pytest signal' };
     }
     const why = isPython ? 'Python project but no pytest signal' : 'not a Node, Go, or pytest project';
-    return { ...base, hasLockfile: lockfile !== null, lockfile, reason: `no package.json (${why})` };
+    const rootMiss = { ...base, hasLockfile: lockfile !== null, lockfile, reason: `no package.json (${why})` };
+    return screenSubdirManifests(octokit, target, label.headSha, base, rootMiss);
   }
 
   let pkg: { scripts?: Record<string, string>; devDependencies?: Record<string, string>; dependencies?: Record<string, string>; engines?: { node?: string } } = {};
@@ -222,6 +236,141 @@ export async function screenPr(
     viable,
     reason: viable ? 'viable: Node + lockfile + runner + node engine OK' : reasons.join('; '),
   };
+}
+
+/** The package.json fields the node-candidate screen reads. */
+interface ScreenedPackageJson {
+  scripts?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  dependencies?: Record<string, string>;
+  engines?: { node?: string };
+}
+
+/** Live subdir package.json fetches per repo, so one screen stays cheap. */
+const MAX_SUBDIR_NODE_FETCHES = 3;
+
+/**
+ * Screen subdirectory manifests for a repo whose root has none, mirroring the
+ * provisioner's B2 discovery. One recursive tree listing, then the same
+ * lockfile/runner/engine checks against the shallowest candidates (at most
+ * MAX_SUBDIR_NODE_FETCHES subdir package.json fetches). The screen has no PR
+ * diff, so a viable result is an upper bound: the provisioner's ownership rule
+ * decides per PR, and the reason says so.
+ *
+ * @param octokit the contents/tree client.
+ * @param target the owner/repo.
+ * @param headSha the pinned commit.
+ * @param base the field skeleton screenPr built.
+ * @param rootMiss the pre-discovery not-viable record, returned unchanged when
+ *   discovery cannot run or finds nothing.
+ * @returns a viable record naming its manifestDir, or a not-viable record whose
+ *   reason lists what each candidate was missing.
+ */
+async function screenSubdirManifests(
+  octokit: OctokitContents,
+  target: RepoTarget,
+  headSha: string,
+  base: Omit<ViabilityRecord, 'reason'>,
+  rootMiss: ViabilityRecord,
+): Promise<ViabilityRecord> {
+  if (octokit.git === undefined) return rootMiss;
+  let paths: string[];
+  try {
+    const res = await octokit.git.getTree({
+      owner: target.owner,
+      repo: target.repo,
+      tree_sha: headSha,
+      recursive: '1',
+    });
+    const data = res.data as { tree?: Array<{ path?: string; type?: string }> };
+    paths = (data.tree ?? [])
+      .filter((e) => e.type === 'blob' && typeof e.path === 'string')
+      .map((e) => e.path!);
+  } catch (err) {
+    return { ...rootMiss, reason: `${rootMiss.reason}; tree unreadable (HTTP ${statusOf(err) ?? '?'})` };
+  }
+  const candidates = subdirManifestCandidates(paths);
+  if (candidates.length === 0) return rootMiss;
+  const pathSet = new Set(paths);
+  const misses: string[] = [];
+  let nodeFetches = 0;
+  for (const cand of candidates) {
+    if (cand.ecosystem === 'go') {
+      return {
+        ...base,
+        ecosystem: 'go',
+        testRunner: 'go-test',
+        viable: true,
+        manifestDir: cand.dir,
+        reason: `viable: subdir Go module (${cand.dir}/go.mod); diff ownership decided at provision time`,
+      };
+    }
+    if (cand.ecosystem === 'python') {
+      return {
+        ...base,
+        ecosystem: 'python',
+        testRunner: 'pytest',
+        viable: true,
+        manifestDir: cand.dir,
+        reason: `viable: subdir Python + pytest signal (${cand.dir}); diff ownership decided at provision time`,
+      };
+    }
+    if (nodeFetches >= MAX_SUBDIR_NODE_FETCHES) {
+      misses.push(`${cand.dir} (over the fetch budget)`);
+      continue;
+    }
+    nodeFetches += 1;
+    let pkg: ScreenedPackageJson;
+    try {
+      const res = await octokit.repos.getContent({
+        owner: target.owner,
+        repo: target.repo,
+        path: `${cand.dir}/package.json`,
+        ref: headSha,
+      });
+      const data = res.data as { content?: string; encoding?: string };
+      pkg =
+        typeof data.content === 'string'
+          ? (JSON.parse(
+              Buffer.from(data.content, (data.encoding as BufferEncoding) ?? 'base64').toString('utf8'),
+            ) as ScreenedPackageJson)
+          : {};
+    } catch (err) {
+      misses.push(`${cand.dir} (package.json unreadable, HTTP ${statusOf(err) ?? '?'})`);
+      continue;
+    }
+    const subLockfile = LOCKFILES.find((l) => pathSet.has(`${cand.dir}/${l}`)) ?? null;
+    const deps = { ...(pkg.devDependencies ?? {}), ...(pkg.dependencies ?? {}) };
+    const testScript = pkg.scripts?.test ?? '';
+    const runner =
+      KNOWN_RUNNERS.find((r) => r in deps) ??
+      KNOWN_RUNNERS.find(
+        (r) => testScript.includes(r) || (r === 'node:test' && /node --test/.test(testScript)),
+      ) ??
+      null;
+    const nodeEngine = pkg.engines?.node ?? null;
+    const nodeOk = nodeSatisfiable(nodeEngine);
+    if (subLockfile !== null && runner !== null && nodeOk) {
+      return {
+        ...base,
+        ecosystem: 'node',
+        hasLockfile: true,
+        lockfile: subLockfile,
+        testRunner: runner,
+        nodeEngine,
+        nodeSatisfiable: nodeOk,
+        viable: true,
+        manifestDir: cand.dir,
+        reason: `viable: subdir Node manifest (${cand.dir}) + lockfile + runner + node engine OK`,
+      };
+    }
+    const parts: string[] = [];
+    if (subLockfile === null) parts.push('no lockfile');
+    if (runner === null) parts.push('no recognizable test runner');
+    if (!nodeOk) parts.push(`node engine "${nodeEngine}" excludes ${EG_NODE_MAJOR}`);
+    misses.push(`${cand.dir} (${parts.join(', ')})`);
+  }
+  return { ...rootMiss, reason: `no root manifest; subdir manifests not viable: ${misses.join('; ')}` };
 }
 
 async function main(): Promise<void> {
