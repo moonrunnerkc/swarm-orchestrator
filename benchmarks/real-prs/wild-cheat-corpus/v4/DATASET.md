@@ -14,6 +14,21 @@ additions is `benchmarks/real-prs/wild-cheat-corpus/incoming/intake.json`.
 - egViable: 8
 - folded this version: 2
 
+## Complaint-bar strata
+
+The v3 stratification carries forward unchanged (strict 9 / legacy 19 /
+uncertain 1). Both folded entries record as **strict**: the complaint comes
+from a human other than the PR author (ljharb on eslint-plugin-import#3230,
+XuPeng-SH on matrixone#25683), with complainant evidence on each entry's
+`complaintBarNote` and `humanComplainants` fields.
+
+Recall reporting is bound by
+`benchmarks/real-prs/capability-hunt/PREREGISTRATION-AMENDMENT-4.md`: the v3
+29 stay the pre-registered headline, and the two folded entries report as a
+separately labeled `v4-additions` slice, never mixed in. EG-viability at the
+pinned SHAs: eslint-plugin-import#3230 not viable (no lockfile),
+matrixone#25683 viable (Go module, go.mod).
+
 ## Held-out status
 
 This corpus is held out. No detector, prompt, or calibration reads the folded
