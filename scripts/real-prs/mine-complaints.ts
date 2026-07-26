@@ -36,8 +36,10 @@ import {
   withRetry,
   type ComplaintSignal,
 } from './lib/github';
+import { isAiGeneratedReviewBody } from './lib/ai-review';
 import { createArbiter, type Arbiter, type ArbiterProvider } from './lib/arbiter';
 import { CostLedger } from './lib/cost';
+import type { ConversationEntry } from './lib/github';
 
 const log = getLogger('real-prs:mine-complaints');
 
@@ -124,21 +126,42 @@ interface MinedCandidate {
   };
 }
 
+/** A PR whose only cheat-language comes from its own author. Not a candidate
+ *  (no maintainer complaint exists), but not silently discarded either: v3
+ *  records solo self-flags as a real signal of a different kind, so they ride
+ *  along in a sidecar list for that separate analysis. */
+interface SoloFlag {
+  id: string;
+  repo: string;
+  prNumber: number;
+  url: string;
+  vendor: string;
+  signals: ComplaintSignal[];
+}
+
 interface Checkpoint {
   processedIds: string[];
   candidates: MinedCandidate[];
+  soloFlags: SoloFlag[];
   funnel: Record<string, number>;
 }
 
 function readCheckpoint(): Checkpoint {
   if (fs.existsSync(CHECKPOINT)) {
     try {
-      return JSON.parse(fs.readFileSync(CHECKPOINT, 'utf8')) as Checkpoint;
+      const parsed = JSON.parse(fs.readFileSync(CHECKPOINT, 'utf8')) as Partial<Checkpoint>;
+      return {
+        processedIds: parsed.processedIds ?? [],
+        candidates: parsed.candidates ?? [],
+        // Checkpoints written before the standing intake filter carry no sidecar.
+        soloFlags: parsed.soloFlags ?? [],
+        funnel: parsed.funnel ?? {},
+      };
     } catch (err) {
       log.warn(`checkpoint unreadable, starting fresh: ${String(err)}`);
     }
   }
-  return { processedIds: [], candidates: [], funnel: {} };
+  return { processedIds: [], candidates: [], soloFlags: [], funnel: {} };
 }
 
 function saveCheckpoint(cp: Checkpoint): void {
@@ -187,6 +210,60 @@ export function arbiterUnavailable(
   if (!arbiterRequested) return false;
   const needsAnthropicKey = primaryProvider === 'anthropic' || secondaryProvider === 'anthropic';
   return needsAnthropicKey && !anthropicKeyPresent;
+}
+
+/** How a fetched conversation classifies at complaint intake, before any
+ *  arbiter spend. `drop: 'none'` means a standing maintainer complaint exists. */
+export interface IntakeClassification {
+  /** Every signal in the thread, filter-free: the raw-hit number that keeps
+   *  historical funnel counts comparable and makes the filter's cost visible. */
+  rawSignals: ComplaintSignal[];
+  /** Signals from a human other than the PR author whose body is not
+   *  recognizable AI review output: the only signals that make a candidate. */
+  maintainerSignals: ComplaintSignal[];
+  /** Signals authored by the PR author themselves, kept for the solo-flag sidecar. */
+  authorSoloSignals: ComplaintSignal[];
+  drop: 'none' | 'no-signal' | 'author-solo-flag' | 'bot-or-ai-review-only';
+}
+
+/**
+ * The standing filter at complaint intake. Round one of the delegated corpus
+ * review rejected 14 of 18 candidates, and the pattern was structural: 10 were
+ * the PR author narrating their own iteration and 2 were AI-generated review
+ * bodies. This classifies a conversation before any arbiter spend: only a
+ * cheat-language signal from a human other than the PR author, in a body that
+ * is not recognizable AI review output (v3's strict-bar definition), makes a
+ * candidate. Author self-flags classify as `author-solo-flag` so the caller
+ * can route them to the sidecar instead of discarding them silently.
+ *
+ * @param conversation the fetched PR conversation (bot accounts already dropped at fetch).
+ * @param prAuthor the PR author's login (empty when unknown, which disables the self check).
+ * @returns the raw, maintainer, and author-solo signal sets plus the drop class.
+ */
+export function classifyComplaintIntake(
+  conversation: readonly ConversationEntry[],
+  prAuthor: string,
+): IntakeClassification {
+  const rawSignals = dedupeSignals(
+    conversation.flatMap((c) => extractComplaintSignals(c.body, c.source)),
+  );
+  const maintainerSignals = dedupeSignals(
+    conversation
+      .filter((c) => isMaintainerComplaintEntry(c, prAuthor) && !isAiGeneratedReviewBody(c.body))
+      .flatMap((c) => extractComplaintSignals(c.body, c.source)),
+  );
+  const authorSoloSignals = dedupeSignals(
+    conversation
+      .filter((c) => prAuthor.length > 0 && c.author.toLowerCase() === prAuthor.toLowerCase())
+      .flatMap((c) => extractComplaintSignals(c.body, c.source)),
+  );
+  let drop: IntakeClassification['drop'] = 'none';
+  if (maintainerSignals.length === 0) {
+    if (rawSignals.length === 0) drop = 'no-signal';
+    else if (authorSoloSignals.length > 0) drop = 'author-solo-flag';
+    else drop = 'bot-or-ai-review-only';
+  }
+  return { rawSignals, maintainerSignals, authorSoloSignals, drop };
 }
 
 export function dedupeSignals(signals: readonly ComplaintSignal[]): ComplaintSignal[] {
@@ -241,7 +318,9 @@ async function main(): Promise<void> {
     return apiCalls <= args.apiBudget && Date.now() - started < args.wallClockMs;
   };
 
-  const cp = args.resume ? readCheckpoint() : { processedIds: [], candidates: [], funnel: {} };
+  const cp: Checkpoint = args.resume
+    ? readCheckpoint()
+    : { processedIds: [], candidates: [], soloFlags: [], funnel: {} };
   const processed = new Set(cp.processedIds);
   const bump = (k: string): void => {
     cp.funnel[k] = (cp.funnel[k] ?? 0) + 1;
@@ -335,23 +414,35 @@ async function main(): Promise<void> {
         log.warn(`conversation fetch for ${id} failed: ${String(err)}`);
         continue;
       }
-      // Definitional restoration: a maintainer complaint comes from a human other
-      // than the PR author. Drop self-comments (the author describing their own
-      // change) and any bot that slipped past the fetch filter before matching, so
-      // "someone typed the word cheat" cannot pass as "a maintainer called it one".
-      const maintainerEntries = conversation.filter((c) => isMaintainerComplaintEntry(c, hit.author));
-      const signals = dedupeSignals(
-        maintainerEntries.flatMap((c) => extractComplaintSignals(c.body, c.source)),
-      );
-      if (signals.length === 0) {
-        // Distinguish "no cheat phrase at all" from "a cheat phrase, but only from
-        // the PR author or a bot" so the funnel shows the tightening's effect.
-        const selfOrBotSignals = dedupeSignals(
-          conversation.flatMap((c) => extractComplaintSignals(c.body, c.source)),
-        );
-        bump(selfOrBotSignals.length > 0 ? 'complaint-self-or-bot-only' : 'complaint-not-confirmed-in-conversation');
+      // The standing intake filter: classify the whole thread before any arbiter
+      // spend. Raw hits and post-filter hits both land in the funnel so historical
+      // counts stay comparable and the filter's cost is visible.
+      const intake = classifyComplaintIntake(conversation, hit.author);
+      if (intake.rawSignals.length > 0) bump('complaint-raw-hit');
+      if (intake.drop === 'no-signal') {
+        bump('complaint-not-confirmed-in-conversation');
         continue;
       }
+      if (intake.drop === 'author-solo-flag') {
+        // Not a candidate (no maintainer complaint), but v3 records solo
+        // self-flags as a real signal of a different kind: sidecar, not silence.
+        bump('complaint-author-solo-flag');
+        cp.soloFlags.push({
+          id,
+          repo: hit.repo,
+          prNumber: hit.number,
+          url: hit.url,
+          vendor: attribution.vendor,
+          signals: intake.authorSoloSignals,
+        });
+        saveCheckpoint(cp);
+        continue;
+      }
+      if (intake.drop === 'bot-or-ai-review-only') {
+        bump('complaint-bot-or-ai-review-only');
+        continue;
+      }
+      const signals = intake.maintainerSignals;
       bump('complaint-confirmed');
 
       let arbiter: MinedCandidate['arbiter'] = { mode: 'off', confirmed: null };
@@ -393,7 +484,8 @@ async function main(): Promise<void> {
     note:
       'Complaint-mined agent-PR candidates for MAINTAINER REVIEW. Not folded into the corpus. ' +
       'Each carries the maintainer complaint, agent attribution, and a dual-arbiter category ' +
-      'confirmation; arbiter splits are excluded from the confirmed count and reported.',
+      'confirmation; arbiter splits are excluded from the confirmed count and reported. ' +
+      'Author solo self-flags are routed to soloFlags (a separate signal class), never candidates.',
     args: { ...args },
     apiCalls,
     wallClockMs: Date.now() - started,
@@ -403,8 +495,10 @@ async function main(): Promise<void> {
       candidates: cp.candidates.length,
       arbiterConfirmed: cp.candidates.filter((c) => c.arbiter.confirmed === true).length,
       arbiterSplits: splits,
+      soloFlags: cp.soloFlags.length,
     },
     candidates: cp.candidates,
+    soloFlags: cp.soloFlags,
   };
   fs.mkdirSync(path.dirname(args.out), { recursive: true });
   fs.writeFileSync(args.out, `${JSON.stringify(out, null, 2)}\n`);
