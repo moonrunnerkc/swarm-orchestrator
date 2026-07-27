@@ -339,6 +339,12 @@ export interface LedgerEntryPayloadMap {
       restoredFailsTwiceSameIdentity: boolean | null;
     };
     reproduceCommand: string;
+    // Why a not-proven verdict came out that way. Absent on `proven` and on
+    // records written before the field existed. Without it a reader cannot tell
+    // an execution error caused by a missing toolchain from one caused by a
+    // broken workspace, which is the difference between "never looked" and
+    // "looked and could not prove".
+    reason?: string;
   };
   // Mock-mutation restoration proof record: one entry per qualifying
   // `cheat-mock-mutation` finding the restoration phase evaluated, every

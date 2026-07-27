@@ -77,6 +77,7 @@ function projectRecord(
   outcome: ProofOutcome,
   controlsEvaluated: number,
   replay: string | undefined,
+  reason?: string,
 ): ProofRecordCoverage {
   return {
     subject,
@@ -85,6 +86,7 @@ function projectRecord(
     ...(outcome === 'abstain' ? { abstainClass: classifyAbstain(verdict) } : {}),
     controlsEvaluated,
     ...(replay !== undefined && replay.length > 0 ? { replayCommand: replay } : {}),
+    ...(reason !== undefined && reason.length > 0 ? { reason } : {}),
   };
 }
 
@@ -92,6 +94,7 @@ interface RestorationLike {
   readonly verdict: string;
   readonly findingFile: string;
   readonly reproduceCommand: string;
+  readonly reason?: string;
 }
 
 /** The error-swallow record fields the projector reads. Structural subset of
@@ -123,6 +126,7 @@ export function restorationEngine<R extends RestorationLike>(
       restorationOutcome(r.verdict),
       controlsEvaluated,
       r.reproduceCommand,
+      r.reason,
     );
   });
   return {

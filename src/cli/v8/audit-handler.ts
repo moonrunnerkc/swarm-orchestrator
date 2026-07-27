@@ -518,6 +518,7 @@ export function appendRestorationEntries(
       failingTests: restoration.failingTests,
       controls: restoration.controls,
       reproduceCommand: restoration.reproduceCommand,
+      ...(restoration.reason !== undefined ? { reason: restoration.reason } : {}),
     };
     ledger.append<PrAuditRestorationEntry>(payload, opts);
   }

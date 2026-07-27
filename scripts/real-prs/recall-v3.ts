@@ -139,6 +139,8 @@ interface EngineCoverage {
     verdict: string;
     outcome: string;
     abstainClass?: string;
+    /** The engine's own explanation of a not-proven verdict, when it carries one. */
+    reason?: string;
     controlsEvaluated: number;
   }>;
 }
@@ -393,6 +395,7 @@ function runAudit(
         verdict: String(r.verdict ?? ''),
         outcome: String(r.outcome ?? ''),
         ...(typeof r.abstainClass === 'string' ? { abstainClass: r.abstainClass } : {}),
+        ...(typeof r.reason === 'string' ? { reason: r.reason } : {}),
         controlsEvaluated: Number(r.controlsEvaluated ?? 0),
       });
     }

@@ -53,6 +53,11 @@ export interface ProofRecordCoverage {
   readonly controlsEvaluated: number;
   /** The command that reproduces the record in a fresh checkout, where one exists. */
   readonly replayCommand?: string;
+  /** The engine's own explanation of a not-proven verdict, where it carries one.
+   *  `verdict` says which class the record fell into; this says what actually
+   *  happened, which is what separates "the toolchain was never installed" from
+   *  "the workspace was broken" inside a single execution-error verdict. */
+  readonly reason?: string;
 }
 
 export interface ProofEngineCoverage {
