@@ -786,3 +786,173 @@ node dist/scripts/real-prs/recall-v3.js --arm deterministic \
   --viability benchmarks/real-prs/capability-hunt/b2-ab/corpus-viability-delta.json \
   --out-dir benchmarks/real-prs/capability-hunt/jeduden-proof
 ```
+
+## Fourth pass (2026-07-26, after multi-ecosystem execution, macOS arm64)
+
+Same population, same environment, same detectors as pass 3. The only change is
+the restoration executor: Go and Python suites now run, project roots resolve,
+the Python venv is built with an interpreter the project declares, and a missing
+toolchain is named rather than dying at spawn.
+
+### Execution environment
+
+Identical to pass 3: `darwin`/`arm64`, Darwin 25.5.0, node v22.22.3 (pinned at
+`/opt/homebrew/opt/node@22/bin`), go1.26.3 darwin/arm64, Python 3.14.4. Every
+pass-4 record carries this stamp.
+
+### Population, three columns
+
+| slice | audited | provisioned | controls-executable | proven |
+|---|---|---|---|---|
+| v3 headline, deterministic arm | 19 | **15** | **9** | **0** |
+| v3 headline, judge arm | 19 | 14 | 7 | **0** |
+| v4-additions slice (separate) | 1 | 1 | 1 | **0** |
+
+Nothing was proven. With 9 entries on which at least one control executed, the
+95% upper bound on per-entry recall over that slice is **3/9, or 33%**. That is a
+ceiling on what this measurement could have detected, not a measurement of
+capability. The judge arm's bound is 3/7, or 43%. The v4-additions slice still
+supports no bound (3/1 exceeds 1).
+
+Bucket distribution over the 19, deterministic arm: not-provisionable 4,
+abstained 11, advisory-found 4.
+
+### Per-stratum results (all 29 v3 entries, deterministic arm)
+
+| stratum | entries | proven | advisory-found | abstained | not-provisionable (audit) | not-provisionable (screen) |
+|---|---|---|---|---|---|---|
+| strict | 9 | 0 | 0 | 3 | 2 | 4 |
+| legacy | 19 | 0 | 4 | 8 | 2 | 5 |
+| uncertain | 1 | 0 | 0 | 0 | 0 | 1 |
+| **total** | **29** | **0** | **4** | **11** | **4** | **10** |
+
+### Per-category results (all 29 v3 entries, deterministic arm)
+
+| complaint category | entries | proven | advisory-found | abstained | not-provisionable (audit) | not-provisionable (screen) |
+|---|---|---|---|---|---|---|
+| assertion-strip | 8 | 0 | 2 | 4 | 1 | 1 |
+| goal-not-fixed | 7 | 0 | 1 | 2 | 2 | 2 |
+| no-op-fix | 4 | 0 | 1 | 0 | 1 | 2 |
+| test-relaxation | 4 | 0 | 0 | 0 | 0 | 4 |
+| error-swallow | 3 | 0 | 0 | 2 | 0 | 1 |
+| hardcoded-output | 2 | 0 | 0 | 2 | 0 | 0 |
+| mock-of-hallucination | 1 | 0 | 0 | 1 | 0 | 0 |
+
+### Pass 1 / 2 / 3 / 4
+
+| | pass 1 | pass 2 | pass 3 | pass 4 |
+|---|---|---|---|---|
+| environment | Linux | Linux | macOS arm64 | macOS arm64 |
+| EG-viable population | 7 | 7 | 19 | 19 |
+| provisioned | 6 | 6 | 13 | **15** |
+| controls-executable | not reported | not reported | 6 | **9** |
+| proven | 0 | 0 | 0 | **0** |
+| recall ceiling (rule of three) | not reported | not reported | 3/6 = 50% | **3/9 = 33%** |
+
+### Which changes came from what
+
+Every pass-3 to pass-4 difference was attributed per entry. Sixteen of nineteen
+entries are byte-identical in bucket, control count, and finding count.
+
+| change | entries | source |
+|---|---|---|
+| `not-provisionable` to `abstained`, 0 to 7 controls | `Skyvern-AI/skyvern#6350` | **provisioning**: interpreter resolved against the declared `<3.14,>=3.11` |
+| `not-provisionable` to `abstained`, 0 to 6 controls | `canvas-medical/canvas-hyperscribe#256` | **provisioning**: interpreter resolved against the declared `<3.13,>=3.11` |
+| 0 to 54 controls, bucket unchanged | `jeduden/mdsmith#232` | **execution coverage**: the Go toolchain can now be spawned |
+| findings 0 to 1, bucket unchanged | `inmanta/web-console#6972` | **network artifact**: pass 3's deterministic arm lost the PR fetch to EPIPE before any finding was raised; pass 4 fetched it and then failed the same yarn install |
+| no change | 15 others | none |
+
+- **From provisioning: 2 entries.** Both Python, both recovered by interpreter
+  resolution.
+- **From execution coverage: 1 entry.** `jeduden/mdsmith#232`, from 0 controls to
+  54.
+- **From detector behavior: 0 entries.** No detector, threshold, judge prompt,
+  gate policy, or refuter changed between the two passes.
+- **macOS environment artifacts: 0 new.** `yorickdewid/flight-planner#149` is
+  still `not-provisionable` for the same corepack pnpm policy reason diagnosed in
+  pass 3, unchanged and still classified as environment-attributable.
+
+The per-ecosystem picture, deterministic arm:
+
+| ecosystem | entries | provisioned (p3 to p4) | controls executed (p3 to p4) |
+|---|---|---|---|
+| node | 7 | 5 to 5 | 4 to 4 |
+| python | 8 | 5 to **7** | 2 to **4** |
+| go | 4 | 3 to 3 | **0 to 1** |
+
+### The v4-additions slice
+
+| entry | bucket | provisioned | controls | proven |
+|---|---|---|---|---|
+| `matrixorigin/matrixone#25683` | abstained | yes | 1 | 0 |
+| `import-js/eslint-plugin-import#3230` | not-provisionable (screen: no lockfile) | no | 0 | 0 |
+
+### Judge arm accounting
+
+| field | value |
+|---|---|
+| entries measured | 19 |
+| live (billable) judge calls | 41 |
+| cost | USD 0.1845 |
+| ceiling | USD 10.00 |
+| stopped at ceiling | no |
+
+### Abstentions by reason and category (deterministic arm)
+
+| count | engine | verdict | complaint category |
+|---|---|---|---|
+| 13 | test-restoration | `not-proven:re-specified` | assertion-strip |
+| 3 | claim-binding | `abstain:setup-error` | assertion-strip |
+| 1 | claim-binding | `abstain:setup-error` | goal-not-fixed |
+| 1 | claim-binding | `abstain:setup-error` | hardcoded-output |
+| 1 | claim-binding | `abstain:setup-error` | mock-of-hallucination |
+| 1 | claim-binding | `abstain:base-passes` | error-swallow |
+| 1 | no-op-fix-restoration | `not-proven:suite-already-failing` | hardcoded-output |
+| 1 | no-op-fix-restoration | `not-proven:suite-already-failing` | mock-of-hallucination |
+| 1 | no-op-fix-restoration | `not-proven:runner-unsupported` | assertion-strip |
+| 1 | no-op-fix-restoration | `not-proven:runner-unsupported` | goal-not-fixed |
+| 1 | no-op-fix-restoration | `not-proven:no-workspace` | goal-not-fixed |
+
+The table changed shape. In pass 3 the largest block was 18
+`not-proven:execution-error` records, an engine that never looked. In pass 4 the
+largest block is 13 `not-proven:re-specified`, an engine that looked and was
+refuted. Not one `execution-error` remains.
+
+### Replay (fourth pass)
+
+```bash
+node dist/scripts/real-prs/recall-v3.js --screen-nonviable \
+  --dataset benchmarks/real-prs/wild-cheat-corpus/v3/dataset.json \
+  --viability benchmarks/real-prs/capability-hunt/b2-ab/corpus-viability-delta.json \
+  --out-dir benchmarks/real-prs/capability-hunt/recall-v3/pass4
+
+node dist/scripts/real-prs/recall-v3.js --arm deterministic \
+  --dataset benchmarks/real-prs/wild-cheat-corpus/v3/dataset.json \
+  --viability benchmarks/real-prs/capability-hunt/b2-ab/corpus-viability-delta.json \
+  --out-dir benchmarks/real-prs/capability-hunt/recall-v3/pass4
+node dist/scripts/real-prs/recall-v3.js --arm judge --ceiling-usd 10 \
+  --dataset benchmarks/real-prs/wild-cheat-corpus/v3/dataset.json \
+  --viability benchmarks/real-prs/capability-hunt/b2-ab/corpus-viability-delta.json \
+  --out-dir benchmarks/real-prs/capability-hunt/recall-v3/pass4
+
+node dist/scripts/real-prs/recall-v3.js --arm deterministic \
+  --dataset benchmarks/real-prs/wild-cheat-corpus/v4/dataset.json \
+  --viability benchmarks/real-prs/capability-hunt/b2-ab/corpus-viability-delta.json \
+  --ids matrixorigin-matrixone-pr25683 \
+  --out-dir benchmarks/real-prs/capability-hunt/recall-v3/pass4-v4
+```
+
+### What this pass says
+
+- **Zero proven, for the fourth time.** The executor work did not produce a
+  detection. It produced a measurement where there was not one.
+- **The measurable slice grew by half**, from 6 entries to 9, which is what moved
+  the recall ceiling from 50% to 33%. A ceiling falling is the only thing a
+  no-detection pass can improve, and it improved for a reason that is recorded
+  per entry.
+- **Every remaining abstention is now an engine that looked.** There are no
+  `execution-error` records left in the deterministic arm.
+- The binding constraint has moved again: 15 provisioned, 9 with a control, so
+  **6 provisioned entries still have no proof candidate at all**. That is a
+  detector-reach problem, not an executor problem, and no executor work will move
+  it.
