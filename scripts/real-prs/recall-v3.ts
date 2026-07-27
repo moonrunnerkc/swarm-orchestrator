@@ -10,33 +10,59 @@
 // Usage:
 //   node dist/scripts/real-prs/recall-v3.js --arm <deterministic|judge>
 //     [--only <id>] [--timeout-ms 2400000] [--ceiling-usd 10] [--out-dir <dir>]
+//     [--dataset <file>] [--viability <file>] [--ids <a,b,c>]
 //   node dist/scripts/real-prs/recall-v3.js --screen-nonviable [--out-dir <dir>]
 //
 // --out-dir redirects every artifact (records, ledgers, RUN summaries,
 // nonviable.json) so a repeat pass never collides with the checkpointed
 // first-pass records under recall-v3/.
 //
+// --viability points at a viability refresh (b2-ab/corpus-viability-delta.json)
+// whose verdict supersedes the frozen egViable flag per entry. The frozen
+// dataset is never rewritten; the pass records which screen decided each entry.
+// --ids restricts the population to an explicit comma-separated list, which is
+// how the v4 additions run into their own out-dir without summing into the v3
+// headline (pre-registration amendment 4).
+//
 // The judge arm requires ANTHROPIC_API_KEY and stops paid work at the ceiling
 // (live judge calls priced at the documented per-call Haiku rate).
 
 import { spawnSync } from 'child_process';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { loadDotenv } from '../../src/env-loader';
 import { getLogger } from '../../src/logger';
 import { SELF_CERTIFYING_TRIGGERS } from '../../src/audit/gate/self-certifying';
 import { makeOctokit, parseRepo, resolveGithubToken } from './lib/github';
+import { huntChildPath, resolveHuntEnvironment, type HuntEnvironment } from './lib/hunt-env';
+import {
+  resolvePopulation,
+  threeColumnPopulation,
+  type ViabilityRow,
+} from './lib/recall-population';
 import { screenPr } from './eg-viability-screen';
 
 const log = getLogger('hunt:recall-v3');
 
-const DATASET_FILE = path.join('benchmarks', 'real-prs', 'wild-cheat-corpus', 'v3', 'dataset.json');
+const DEFAULT_DATASET_FILE = path.join(
+  'benchmarks',
+  'real-prs',
+  'wild-cheat-corpus',
+  'v3',
+  'dataset.json',
+);
+const DATASET_FILE = arg('--dataset', DEFAULT_DATASET_FILE)!;
+const VIABILITY_FILE = arg('--viability', null);
 const CENSUS_FILE = path.join('benchmarks', 'real-prs', 'hunt3', 'viability-census.json');
 const DEFAULT_OUT_DIR = path.join('benchmarks', 'real-prs', 'capability-hunt', 'recall-v3');
 const OUT_DIR = arg('--out-dir', DEFAULT_OUT_DIR)!;
 const FIXTURE_ROOT = path.join('.swarm', 'recall-v3-fixtures');
-// The pinned sandbox toolchain every prior evidence run used.
-const EG_NODE_BIN = path.join(process.env.HOME ?? '', '.nvm', 'versions', 'node', 'v22.15.0', 'bin');
+// The sandbox toolchain, resolved to absolute bin dirs. A detached batch does
+// not inherit an interactive profile, so this must not depend on the login
+// shell's PATH; see scripts/real-prs/lib/hunt-env.ts.
+const HUNT_ENV: HuntEnvironment = resolveHuntEnvironment();
+const EG_NODE_BIN = HUNT_ENV.nodeBin;
 // Per-call Haiku rate from benchmarks/results/AB-REPORT.md, the same rate
 // build-cost-ledger.ts prices billable judge calls at.
 const HAIKU_PER_CALL_USD = 0.0045;
@@ -80,11 +106,52 @@ interface EntryRecord {
   provisioning: { attempted: boolean; provisioned: boolean; reason?: string } | null;
   enginesApplicable: number;
   enginesExecuted: number;
+  /** Control clauses that actually ran (returned non-null) across every engine.
+   *  This, not `provisioned`, is the controls-executable column of amendment 5. */
+  controlsEvaluated: number;
   abstains: Array<{ engine: string; verdict: string }>;
+  /** Per-engine coverage detail, so a later scope pass can split "never looked"
+   *  from "looked and could not prove" without re-running the batch. */
+  engineCoverage: EngineCoverage[];
   elapsedMs: number;
   replayCommand: string;
   detail?: string;
+  /** Which screen decided this entry's viability, and why. */
+  viability: { source: string; reason: string | null };
+  /** The execution environment this record was measured in. Provisioning
+   *  numbers are not interchangeable across environments (amendment 5). */
+  environment: {
+    platform: string;
+    arch: string;
+    release: string;
+    node: string;
+    go: string | null;
+    python: string | null;
+  };
 }
+
+interface EngineCoverage {
+  engine: string;
+  applicable: boolean;
+  executed: boolean;
+  records: Array<{
+    subject: string;
+    verdict: string;
+    outcome: string;
+    abstainClass?: string;
+    controlsEvaluated: number;
+  }>;
+}
+
+/** The environment stamp every record this run writes carries. */
+const ENV_STAMP: EntryRecord['environment'] = {
+  platform: HUNT_ENV.platform,
+  arch: HUNT_ENV.arch,
+  release: HUNT_ENV.release,
+  node: HUNT_ENV.nodeVersion,
+  go: HUNT_ENV.goVersion,
+  python: HUNT_ENV.pythonVersion,
+};
 
 function arg(flag: string, fallback: string | null): string | null {
   const i = process.argv.indexOf(flag);
@@ -93,6 +160,38 @@ function arg(flag: string, fallback: string | null): string | null {
 
 function loadDataset(): DatasetEntry[] {
   return (JSON.parse(fs.readFileSync(DATASET_FILE, 'utf8')) as { entries: DatasetEntry[] }).entries;
+}
+
+/** The viability refresh rows named by --viability, or null when unset. */
+function loadViability(): ViabilityRow[] | null {
+  if (VIABILITY_FILE === null) return null;
+  const parsed = JSON.parse(fs.readFileSync(VIABILITY_FILE, 'utf8')) as { records: ViabilityRow[] };
+  return parsed.records;
+}
+
+/** The measured population: the effective-viable entries, each carrying the
+ *  screen that decided it. --only and --ids narrow it without changing the
+ *  viability verdict, so a single-entry replay reproduces its batch row. */
+function selectPopulation(): Array<{
+  entry: DatasetEntry;
+  viability: EntryRecord['viability'];
+}> {
+  const only = arg('--only', null);
+  const idsArg = arg('--ids', null);
+  const allowed =
+    idsArg === null
+      ? null
+      : new Set(
+          idsArg
+            .split(',')
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0),
+        );
+  const resolved = resolvePopulation(loadDataset(), loadViability());
+  return resolved.viable
+    .filter((p) => only === null || p.entry.id === only)
+    .filter((p) => allowed === null || allowed.has(p.entry.id))
+    .map((p) => ({ entry: p.entry, viability: { source: p.source, reason: p.reason } }));
 }
 
 interface LivePr {
@@ -111,9 +210,17 @@ async function fetchLivePr(entry: DatasetEntry): Promise<LivePr> {
   // stale keep-alive socket (EPIPE / other side closed).
   let res;
   try {
-    res = await octokit.pulls.get({ owner: target.owner, repo: target.repo, pull_number: entry.prNumber });
+    res = await octokit.pulls.get({
+      owner: target.owner,
+      repo: target.repo,
+      pull_number: entry.prNumber,
+    });
   } catch {
-    res = await octokit.pulls.get({ owner: target.owner, repo: target.repo, pull_number: entry.prNumber });
+    res = await octokit.pulls.get({
+      owner: target.owner,
+      repo: target.repo,
+      pull_number: entry.prNumber,
+    });
   }
   return {
     headSha: res.data.head.sha,
@@ -195,12 +302,20 @@ interface AuditRun {
   provisioning: EntryRecord['provisioning'];
   enginesApplicable: number;
   enginesExecuted: number;
+  controlsEvaluated: number;
   abstains: Array<{ engine: string; verdict: string }>;
+  engineCoverage: EngineCoverage[];
   elapsedMs: number;
   detail?: string;
 }
 
-function runAudit(entry: DatasetEntry, arm: Arm, ledgerPath: string, fixtureDir: string | null, timeoutMs: number): AuditRun {
+function runAudit(
+  entry: DatasetEntry,
+  arm: Arm,
+  ledgerPath: string,
+  fixtureDir: string | null,
+  timeoutMs: number,
+): AuditRun {
   const cliArgs = [
     'dist/src/cli.js',
     'audit',
@@ -216,7 +331,7 @@ function runAudit(entry: DatasetEntry, arm: Arm, ledgerPath: string, fixtureDir:
   if (arm === 'judge') cliArgs.push('--enable-llm-judge');
   const env: NodeJS.ProcessEnv = {
     ...process.env,
-    PATH: `${EG_NODE_BIN}${path.delimiter}${process.env.HOME}/go-toolchain/go/bin${path.delimiter}${process.env.PATH ?? ''}`,
+    PATH: huntChildPath(HUNT_ENV),
     SWARM_EG_NODE_BIN: EG_NODE_BIN,
   };
   if (fixtureDir !== null) env.SWARM_PR_FIXTURE_DIR = path.resolve(fixtureDir);
@@ -237,7 +352,9 @@ function runAudit(entry: DatasetEntry, arm: Arm, ledgerPath: string, fixtureDir:
     provisioning: null,
     enginesApplicable: 0,
     enginesExecuted: 0,
+    controlsEvaluated: 0,
     abstains: [],
+    engineCoverage: [],
     elapsedMs,
   };
   if (res.error !== undefined && (res.error as NodeJS.ErrnoException).code === 'ETIMEDOUT') {
@@ -247,9 +364,15 @@ function runAudit(entry: DatasetEntry, arm: Arm, ledgerPath: string, fixtureDir:
   try {
     parsed = JSON.parse(res.stdout ?? '') as Record<string, unknown>;
   } catch {
-    return { ...base, status: 'error', detail: `unparseable audit output: ${(res.stderr ?? '').slice(-400)}` };
+    return {
+      ...base,
+      status: 'error',
+      detail: `unparseable audit output: ${(res.stderr ?? '').slice(-400)}`,
+    };
   }
-  const findings = Array.isArray(parsed.findings) ? (parsed.findings as Array<Record<string, unknown>>) : [];
+  const findings = Array.isArray(parsed.findings)
+    ? (parsed.findings as Array<Record<string, unknown>>)
+    : [];
   const triggers = Array.isArray(parsed.blockingTriggers)
     ? (parsed.blockingTriggers as Array<Record<string, unknown>>)
     : [];
@@ -257,18 +380,35 @@ function runAudit(entry: DatasetEntry, arm: Arm, ledgerPath: string, fixtureDir:
   const summary = (pc.summary ?? {}) as Record<string, number>;
   const engines = Array.isArray(pc.engines) ? (pc.engines as Array<Record<string, unknown>>) : [];
   const abstains: Array<{ engine: string; verdict: string }> = [];
+  const engineCoverage: EngineCoverage[] = [];
   for (const e of engines) {
     const records = Array.isArray(e.records) ? (e.records as Array<Record<string, unknown>>) : [];
+    const covered: EngineCoverage['records'] = [];
     for (const r of records) {
       if (r.outcome === 'abstain' && typeof r.verdict === 'string') {
         abstains.push({ engine: String(e.engine ?? 'unknown'), verdict: r.verdict });
       }
+      covered.push({
+        subject: String(r.subject ?? ''),
+        verdict: String(r.verdict ?? ''),
+        outcome: String(r.outcome ?? ''),
+        ...(typeof r.abstainClass === 'string' ? { abstainClass: r.abstainClass } : {}),
+        controlsEvaluated: Number(r.controlsEvaluated ?? 0),
+      });
     }
+    engineCoverage.push({
+      engine: String(e.engine ?? 'unknown'),
+      applicable: e.applicable === true,
+      executed: e.executed === true,
+      records: covered,
+    });
   }
   return {
     ...base,
     pass: typeof parsed.pass === 'boolean' ? parsed.pass : null,
-    gateTriggers: triggers.map((t) => (typeof t.kind === 'string' ? t.kind : '')).filter((k) => GATE_TRIGGER_KINDS.has(k)),
+    gateTriggers: triggers
+      .map((t) => (typeof t.kind === 'string' ? t.kind : ''))
+      .filter((k) => GATE_TRIGGER_KINDS.has(k)),
     advisoryFindings: findings.map((f) => ({
       category: String(f.category ?? 'unknown'),
       severity: String(f.severity ?? 'unknown'),
@@ -276,7 +416,9 @@ function runAudit(entry: DatasetEntry, arm: Arm, ledgerPath: string, fixtureDir:
     provisioning: (pc.provisioning ?? null) as EntryRecord['provisioning'],
     enginesApplicable: Number(summary.enginesApplicable ?? 0),
     enginesExecuted: Number(summary.enginesExecuted ?? 0),
+    controlsEvaluated: Number(summary.controlsEvaluated ?? 0),
     abstains,
+    engineCoverage,
   };
 }
 
@@ -293,7 +435,11 @@ function classify(rec: EntryRecord): void {
   } else if (rec.status === 'error') {
     rec.bucket = 'not-provisionable';
     rec.bucketStage = 'audit-error';
-  } else if (rec.provisioning !== null && rec.provisioning.attempted && !rec.provisioning.provisioned) {
+  } else if (
+    rec.provisioning !== null &&
+    rec.provisioning.attempted &&
+    !rec.provisioning.provisioned
+  ) {
     rec.bucket = 'not-provisionable';
     rec.bucketStage = `provision: ${rec.provisioning.reason ?? 'unknown'}`;
   } else if (rec.gateTriggers.length > 0 && rec.replayConfirmed === true) {
@@ -302,6 +448,23 @@ function classify(rec: EntryRecord): void {
     rec.bucket = 'advisory-found';
   } else {
     rec.bucket = 'abstained';
+  }
+}
+
+/** Remove any execution-grounded workspace left behind by a killed or timed-out
+ *  child audit. The audit cleans up its own workspaces in a `finally`; this only
+ *  catches the crash case, where 20+ provisions would otherwise fill the disk. */
+function sweepStaleWorkspaces(): void {
+  const baseDir = path.join(os.tmpdir(), 'swarm-eg');
+  if (!fs.existsSync(baseDir)) return;
+  for (const name of fs.readdirSync(baseDir)) {
+    if (!name.startsWith('eg-')) continue;
+    try {
+      fs.rmSync(path.join(baseDir, name), { recursive: true, force: true });
+      log.warn(`swept stale workspace ${name} (left by a killed audit)`);
+    } catch (err) {
+      log.warn(`could not sweep ${name}: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 }
 
@@ -327,10 +490,16 @@ function countLiveJudgeCalls(ledgerDir: string): number {
 async function measureArm(arm: Arm): Promise<void> {
   const timeoutMs = Number(arg('--timeout-ms', '2400000'));
   const ceilingUsd = Number(arg('--ceiling-usd', '10'));
-  const only = arg('--only', null);
-  const entries = loadDataset().filter((e) => e.egViable && (only === null || e.id === only));
+  const population = selectPopulation();
+  log.info(
+    `population: ${population.length} viable entries from ${DATASET_FILE}` +
+      (VIABILITY_FILE !== null ? ` refreshed by ${VIABILITY_FILE}` : '') +
+      ` | env ${HUNT_ENV.label} go=${HUNT_ENV.goVersion ?? 'absent'} python=${HUNT_ENV.pythonVersion ?? 'absent'}`,
+  );
   if (arm === 'judge' && (process.env.ANTHROPIC_API_KEY ?? '').length === 0) {
-    throw new Error('judge arm requires ANTHROPIC_API_KEY; load it from .env or record the arm as not-run');
+    throw new Error(
+      'judge arm requires ANTHROPIC_API_KEY; load it from .env or record the arm as not-run',
+    );
   }
   const recordsDir = path.join(OUT_DIR, 'records');
   const ledgerDir = path.join(OUT_DIR, 'ledgers', arm);
@@ -339,7 +508,7 @@ async function measureArm(arm: Arm): Promise<void> {
 
   const records: EntryRecord[] = [];
   let stoppedAtCeiling = false;
-  for (const entry of entries) {
+  for (const { entry, viability } of population) {
     const recordFile = path.join(recordsDir, `${entry.id}.${arm}.json`);
     if (fs.existsSync(recordFile)) {
       records.push(JSON.parse(fs.readFileSync(recordFile, 'utf8')) as EntryRecord);
@@ -350,7 +519,9 @@ async function measureArm(arm: Arm): Promise<void> {
       const cost = countLiveJudgeCalls(ledgerDir) * HAIKU_PER_CALL_USD;
       if (cost >= ceilingUsd) {
         stoppedAtCeiling = true;
-        log.error(`cost ceiling reached (USD ${cost.toFixed(2)} >= ${ceilingUsd}); stopping paid work`);
+        log.error(
+          `cost ceiling reached (USD ${cost.toFixed(2)} >= ${ceilingUsd}); stopping paid work`,
+        );
         break;
       }
     }
@@ -376,11 +547,17 @@ async function measureArm(arm: Arm): Promise<void> {
       provisioning: null,
       enginesApplicable: 0,
       enginesExecuted: 0,
+      controlsEvaluated: 0,
       abstains: [],
+      engineCoverage: [],
       elapsedMs: 0,
       replayCommand:
         `node dist/scripts/real-prs/recall-v3.js --arm ${arm} --only ${entry.id}` +
-        (OUT_DIR === DEFAULT_OUT_DIR ? '' : ` --out-dir ${OUT_DIR}`),
+        (OUT_DIR === DEFAULT_OUT_DIR ? '' : ` --out-dir ${OUT_DIR}`) +
+        (DATASET_FILE === DEFAULT_DATASET_FILE ? '' : ` --dataset ${DATASET_FILE}`) +
+        (VIABILITY_FILE === null ? '' : ` --viability ${VIABILITY_FILE}`),
+      viability,
+      environment: ENV_STAMP,
     };
     log.info(`measuring ${entry.id} (${entry.repo}#${entry.prNumber}, ${arm} arm)`);
     let fixtureDir: string | null = null;
@@ -409,13 +586,25 @@ async function measureArm(arm: Arm): Promise<void> {
     }
 
     if (rec.status === 'audited') {
-      const run = runAudit(entry, arm, path.join(ledgerDir, `${entry.id}.jsonl`), fixtureDir, timeoutMs);
+      const run = runAudit(
+        entry,
+        arm,
+        path.join(ledgerDir, `${entry.id}.jsonl`),
+        fixtureDir,
+        timeoutMs,
+      );
       Object.assign(rec, run);
       if (run.status === 'audited' && run.gateTriggers.length > 0) {
         // The standing proven definition requires a fresh replay before a gate
         // trigger is believed. The audit clones fresh on every run.
         log.info(`  gate trigger(s) [${run.gateTriggers.join(', ')}]; replaying fresh`);
-        const replay = runAudit(entry, arm, path.join(ledgerDir, `${entry.id}.replay.jsonl`), fixtureDir, timeoutMs);
+        const replay = runAudit(
+          entry,
+          arm,
+          path.join(ledgerDir, `${entry.id}.replay.jsonl`),
+          fixtureDir,
+          timeoutMs,
+        );
         rec.replayConfirmed =
           replay.status === 'audited' &&
           replay.gateTriggers.length === run.gateTriggers.length &&
@@ -425,6 +614,10 @@ async function measureArm(arm: Arm): Promise<void> {
     classify(rec);
     fs.writeFileSync(recordFile, `${JSON.stringify(rec, null, 2)}\n`);
     records.push(rec);
+    // The audit removes its own workspaces in a finally, but a killed or
+    // timed-out child leaves them behind and 20+ provisions fill a laptop fast.
+    // Sweeping after the record is written keeps a crash from cascading.
+    sweepStaleWorkspaces();
     log.info(
       `  ${entry.id}: ${rec.bucket}${rec.bucketStage !== undefined ? ` (${rec.bucketStage})` : ''} ` +
         `mode=${rec.mode} triggers=[${rec.gateTriggers.join(',')}] advisory=${rec.advisoryFindings.length} ` +
@@ -438,11 +631,26 @@ async function measureArm(arm: Arm): Promise<void> {
     arm,
     engineSet: 'restoration+error-swallow+claim-binding (live), per .swarm/audit-config.yaml',
     dataset: DATASET_FILE,
-    preregistration: 'benchmarks/real-prs/capability-hunt/PREREGISTRATION-AMENDMENT-2.md',
+    viabilitySource: VIABILITY_FILE,
+    preregistration: 'benchmarks/real-prs/capability-hunt/PREREGISTRATION-AMENDMENT-5.md',
+    environment: ENV_STAMP,
     entriesMeasured: records.length,
+    // Amendment 5: provisioned, controls-executable, and proven are three
+    // different sets; reporting only the first and last overstates coverage.
+    population: threeColumnPopulation(
+      records.map((r) => ({
+        bucket: r.bucket,
+        provisioned: r.provisioning !== null && r.provisioning.provisioned,
+        controlsExecuted: r.controlsEvaluated > 0,
+      })),
+    ),
     stoppedAtCeiling,
     ...(arm === 'judge'
-      ? { liveJudgeCalls, judgeCostUsd: Number((liveJudgeCalls * HAIKU_PER_CALL_USD).toFixed(4)), ceilingUsd }
+      ? {
+          liveJudgeCalls,
+          judgeCostUsd: Number((liveJudgeCalls * HAIKU_PER_CALL_USD).toFixed(4)),
+          ceilingUsd,
+        }
       : { judgeCostUsd: 0 }),
     buckets: records.reduce<Record<string, number>>((acc, r) => {
       acc[r.bucket] = (acc[r.bucket] ?? 0) + 1;
@@ -463,9 +671,23 @@ async function screenNonviable(): Promise<void> {
   };
   const byId = new Map(census.rows.map((r) => [r.id, r]));
   const rows: Array<Record<string, unknown>> = [];
-  for (const entry of loadDataset().filter((e) => !e.egViable)) {
+  const nonviable = resolvePopulation(loadDataset(), loadViability()).nonviable;
+  for (const { entry, source, reason } of nonviable) {
     const censusRow = byId.get(entry.id);
-    if (censusRow !== undefined) {
+    if (source === 'viability-refresh') {
+      // The refresh is the deciding screen for this pass, so its reason is the
+      // one the report quotes; the census row (if any) is the earlier screen.
+      rows.push({
+        id: entry.id,
+        repo: entry.repo,
+        prNumber: entry.prNumber,
+        complaintCategory: entry.complaintCategory,
+        complaintBar: entry.complaintBar,
+        screenReason: reason ?? 'not viable per the viability refresh',
+        screenSource: `viability refresh (${VIABILITY_FILE ?? 'unknown'})`,
+        installViableOnly: false,
+      });
+    } else if (censusRow !== undefined) {
       rows.push({
         id: entry.id,
         repo: entry.repo,
@@ -498,10 +720,13 @@ async function screenNonviable(): Promise<void> {
   }
   const out = {
     computedBy: 'scripts/real-prs/recall-v3.ts --screen-nonviable',
+    dataset: DATASET_FILE,
+    viabilitySource: VIABILITY_FILE,
+    environment: ENV_STAMP,
     note:
-      'Frozen non-viable entries with the eg-viability-screen reason. installViableOnly=true means ' +
-      'the screen would clone and install (pytest/Go or a lifted Node tree) but the frozen egViable ' +
-      'flag predates or excludes it; the frozen flag is the population rule for this measurement.',
+      'Non-viable entries with the deciding screen reason. installViableOnly=true means the screen ' +
+      'would clone and install (pytest/Go or a lifted Node tree) but the deciding flag excludes it. ' +
+      'When --viability is passed, the refresh is the deciding screen and supersedes the frozen flag.',
     entries: rows,
   };
   fs.mkdirSync(OUT_DIR, { recursive: true });
