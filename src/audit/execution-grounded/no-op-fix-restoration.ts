@@ -50,6 +50,7 @@ import type { PrIntent } from '../cheat-detector/pr-intent';
 import type { TestRunner, PackageManager } from './sandbox';
 import type { MutationRecipe } from './mutation-check';
 import type { DockerContext } from './docker-runner';
+import { NODE_ONLY_PROOF_RUNNERS } from './ecosystem-runner';
 import {
   behaviorallyRevertableSourceFiles,
   buildReproduceCommand,
@@ -248,7 +249,10 @@ export function selectAffectedTestFiles(
   return { affected: [...new Set(affected)].sort(), capped, examined: testFiles.length };
 }
 
-const SUPPORTED_RUNNERS: readonly TestRunner[] = ['jest', 'vitest', 'mocha'];
+// This proof needs Node-only machinery beyond the test run itself, so it stays
+// on the Node runners even though the run-the-tests step is now polyglot. The
+// reason per engine is recorded on NODE_ONLY_PROOF_RUNNERS.
+const SUPPORTED_RUNNERS: readonly TestRunner[] = NODE_ONLY_PROOF_RUNNERS;
 
 /** `git apply [-R]` the source patch in `cwd`. Never throws. */
 function gitApply(opts: { patch: string; cwd: string; reverse: boolean }): {

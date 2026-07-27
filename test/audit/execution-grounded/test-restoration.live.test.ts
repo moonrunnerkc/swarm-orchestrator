@@ -195,9 +195,10 @@ describe('execution-grounded / test-restoration runTestRestoration (early exits,
 
   // pytest and Go are now supported runners (test-tamper generalization): they
   // route to execution, not to runner-unsupported. With a nonexistent workspace
-  // the tampered-suite control dies at spawn, so the verdict is execution-error
-  // (a harness fact), never runner-unsupported (which would wrongly say the
-  // runner cannot be executed at all). A proven verdict on a real workspace is
+  // no suite can run, so the verdict is execution-error (a harness fact), never
+  // runner-unsupported (which would wrongly say the runner cannot be executed at
+  // all). The reason names which harness step gave up, so an operator fixes the
+  // harness rather than the PR. A proven verdict on a real workspace is
   // exercised by the polyglot fixtures below.
   for (const runner of ['pytest', 'go-test'] as const) {
     it(`${runner} is a supported runner: reaches execution, not runner-unsupported`, () => {
@@ -209,8 +210,15 @@ describe('execution-grounded / test-restoration runTestRestoration (early exits,
       });
       assert.equal(record.verdict, 'not-proven:execution-error');
       assert.ok(
-        record.reason !== undefined && record.reason.includes('spawn-level failure'),
-        `${runner} must reach the spawn-level control run, got: ${record.reason}`,
+        record.reason !== undefined && record.reason.includes('never executed'),
+        `${runner} must reach the control run, got: ${record.reason}`,
+      );
+      assert.ok(
+        record.reason.includes('module-root-unresolved') ||
+          record.reason.includes('workspace-missing') ||
+          record.reason.includes('spawn-failed') ||
+          record.reason.includes('toolchain-missing'),
+        `${runner} must name a classified not-executed reason, got: ${record.reason}`,
       );
     });
   }
@@ -237,8 +245,10 @@ describe('execution-grounded / test-restoration runTestRestoration (early exits,
       `the reason must say the control run never executed, got: ${record.reason}`,
     );
     assert.ok(
-      record.reason.includes('spawn-level failure'),
-      'the spawn failure must be named so the operator fixes the harness, not the PR',
+      /module-root-unresolved|workspace-missing|spawn-failed|toolchain-missing|timeout/.test(
+        record.reason,
+      ),
+      'the non-execution must be classified so the operator fixes the harness, not the PR',
     );
   });
 });

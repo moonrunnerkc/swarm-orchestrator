@@ -12,11 +12,36 @@ import * as os from 'os';
 import * as path from 'path';
 import { buildDockerRunArgs, type DockerContext } from './docker-runner';
 
-/** Resolve a toolchain binary (node/npm/npx) to the pinned Node bin dir when
- *  SWARM_EG_NODE_BIN is set, otherwise to the bare name (ambient PATH). */
+/** The binaries SWARM_EG_NODE_BIN actually ships. Pinning is what makes a repo's
+ *  suite run under the Node version it targets, so these must resolve inside the
+ *  pinned directory. Everything else (go, python3, and any future toolchain) is
+ *  NOT in that directory: joining it onto the Node bin dir produces a path that
+ *  does not exist, the spawn dies with ENOENT, and the caller records an
+ *  execution error for a run that never had a chance to start. Those resolve on
+ *  the ambient PATH instead. */
+const PINNED_NODE_BINARIES: ReadonlySet<string> = new Set([
+  'node',
+  'npm',
+  'npx',
+  'corepack',
+  'pnpm',
+  'pnpx',
+  'yarn',
+  'yarnpkg',
+]);
+
+/**
+ * Resolve a toolchain binary to the pinned Node bin dir when SWARM_EG_NODE_BIN
+ * is set and the binary is one that directory provides; otherwise return the
+ * bare name so the ambient PATH resolves it.
+ *
+ * @param name the binary to run, e.g. `npx`, `go`, `python3`.
+ * @returns an absolute path for pinned Node binaries, the bare name otherwise.
+ */
 export function execBin(name: string): string {
   const dir = process.env.SWARM_EG_NODE_BIN;
-  return dir !== undefined && dir.length > 0 ? path.join(dir, name) : name;
+  if (dir === undefined || dir.length === 0) return name;
+  return PINNED_NODE_BINARIES.has(name) ? path.join(dir, name) : name;
 }
 
 /** Per-node-bin memo of the corepack shim dir: the resolved path, or null once

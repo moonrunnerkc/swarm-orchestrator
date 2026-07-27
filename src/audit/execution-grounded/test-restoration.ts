@@ -21,6 +21,13 @@ import type { TestRunner, PackageManager } from './sandbox';
 import type { MutationRecipe } from './mutation-check';
 import type { DockerContext } from './docker-runner';
 import { execBin, execEnv, execFileGuarded, type GuardedRunError } from './exec-env';
+import {
+  buildTestCommand,
+  isSupportedRunner,
+  preflightRunner,
+  resolveTestScope,
+  type NotExecutedReason,
+} from './ecosystem-runner';
 import { reachableSourceFiles, isClosureAnalyzable, type ClosureResult } from '../cheat-detector/test-import-closure';
 
 const log = getLogger('audit:execution-grounded:test-restoration');
@@ -284,57 +291,18 @@ export function classifyRestoration(c: {
   return { verdict: 'proven', failingTests: run1 };
 }
 
-/** Go is package-scoped: `go test` runs a directory's whole `_test.go` set, not a
- *  single file, so a test file maps to its package (`./dir`, or `.` at the root).
- *  Deduped and sorted so the argv is deterministic. */
-function goPackagesFor(files: readonly string[]): string[] {
-  const dirs = new Set<string>();
-  for (const f of files) {
-    const dir = path.posix.dirname(f);
-    dirs.add(dir === '.' || dir === '' ? '.' : `./${dir}`);
-  }
-  return [...dirs].sort();
-}
-
-// Invocations per runner, in argv form for child_process execution (matching how
-// issue-repro shapes its runner commands). jest/vitest/mocha and pytest are
-// file-scoped; go-test is package-scoped (goPackagesFor maps the test file to its
-// package). `-count=1` on go defeats Go's test result cache so the fails-twice
-// control actually re-executes rather than replaying a cached PASS. ava and
-// node-test are deliberately absent: `parseFailingTests` has no locked identity
-// parser for them, so the orchestrator reports 'not-proven:runner-unsupported'
-// instead of executing a run whose failures it cannot attribute. The human-facing
-// reproduce command below renders the exact same invocation, so what we executed
-// and what we publish never drift.
-const RUNNER_ARGV: Partial<Record<TestRunner, (files: string[]) => RunnerCommand>> = {
-  jest: (files) => ({ command: 'npx', args: ['jest', '--runTestsByPath', ...files] }),
-  vitest: (files) => ({ command: 'npx', args: ['vitest', 'run', ...files] }),
-  mocha: (files) => ({ command: 'npx', args: ['mocha', ...files] }),
-  pytest: (files) => ({ command: 'python3', args: ['-m', 'pytest', '-v', '--no-header', '-p', 'no:cacheprovider', ...files] }),
-  'go-test': (files) => ({ command: 'go', args: ['test', '-v', '-count=1', ...goPackagesFor(files)] }),
-};
-
-export interface RunnerCommand {
-  command: string;
-  args: string[];
-}
-
-/** Pure: the argv that runs `files` under `runner` via child_process. Throws
- *  for runners with no locked file-scoped invocation (ava, node-test). */
-export function buildTestCommand(runner: TestRunner, files: string[]): RunnerCommand {
-  const build = RUNNER_ARGV[runner];
-  if (build === undefined) {
-    throw new SwarmError(
-      `no file-scoped test command for test runner '${runner}'`,
-      'RESTORATION_RUNNER_UNSUPPORTED',
-      {
-        remediation:
-          'Restoration proofs execute under jest, vitest, mocha, pytest, or go-test; report not-proven:runner-unsupported for this workspace.',
-      },
-    );
-  }
-  return build(files);
-}
+// The runner invocation table, Go package scoping, project-root resolution, and
+// the toolchain preflight live in ecosystem-runner.ts: they are the only parts of
+// a proof that vary by language, and keeping them there is what stops the proof
+// logic below from forking per ecosystem. Re-exported here because this module
+// has always been their public surface.
+export {
+  buildTestCommand,
+  goPackagesFor,
+  isSupportedRunner,
+  type NotExecutedReason,
+  type RunnerCommand,
+} from './ecosystem-runner';
 
 // The reproduce command is published verbatim in PR comments and pasted into
 // maintainers' shells, while its inputs (file paths, sha, ref) originate from
@@ -642,6 +610,29 @@ export interface TestRunResult {
    *  harness fact, not a claim about the suite; callers must not publish it
    *  as one. */
   spawnFailed: boolean;
+  /** The ecosystem-agnostic outcome: the suite executed and passed, executed and
+   *  failed, or never executed. A caller that needs to distinguish "could not
+   *  prove" from "never looked" reads this, not `passed`. */
+  outcome: 'executed-with-pass' | 'executed-with-fail' | 'not-executed';
+  /** Set exactly when `outcome` is 'not-executed': why no suite ran. */
+  notExecutedReason?: NotExecutedReason;
+  /** Human-readable elaboration of `notExecutedReason`. */
+  notExecutedDetail?: string;
+}
+
+/** A run that never started, with its classified reason. Never reports
+ *  `passed: true`, and never claims a suite result. */
+function notExecuted(reason: NotExecutedReason, detail: string): TestRunResult {
+  return {
+    passed: false,
+    failingTests: [],
+    rawOutput: detail,
+    timedOut: reason === 'timeout',
+    spawnFailed: reason !== 'timeout',
+    outcome: 'not-executed',
+    notExecutedReason: reason,
+    notExecutedDetail: detail,
+  };
 }
 
 /**
@@ -652,13 +643,33 @@ export interface TestRunResult {
  * `timedOut`, and a spawn-level error (ENOENT and friends) returns the error
  * message as `rawOutput`. Honors SWARM_EG_NODE_BIN and the sandbox env
  * allowlist via execBin/execEnv.
+ *
+ * The scope and preflight steps are ecosystem-specific and delegate to
+ * ecosystem-runner: Node runs at the workspace root with workspace-relative
+ * paths exactly as before, while Go and Python resolve their module or project
+ * root first, and a missing toolchain is reported as a named not-executed reason
+ * instead of dying at spawn.
  */
 export function executeTestRun(opts: ExecuteTestRunOptions): TestRunResult {
-  const { command, args } = buildTestCommand(opts.runner, opts.files);
+  const env = { ...execEnv(opts.cacheDir), ...(opts.recipe?.env ?? {}) };
+  const scoped = resolveTestScope(opts.runner, opts.cwd, opts.files);
+  if (!scoped.ok) return notExecuted(scoped.reason, scoped.detail);
+  // Docker supplies its own image toolchain, so a host-side preflight would
+  // reject runs that are perfectly able to execute in the container.
+  if (opts.docker === undefined) {
+    const pre = preflightRunner(opts.runner, scoped.scope.cwd, env);
+    if (!pre.ok) {
+      log.warn(
+        `test run not attempted (runner=${opts.runner}, reason=${pre.reason}): ${pre.detail}`,
+      );
+      return notExecuted(pre.reason, pre.detail);
+    }
+  }
+  const { command, args } = buildTestCommand(opts.runner, scoped.scope.targets);
   try {
     const stdout = execFileGuarded(execBin(command), args, {
-      cwd: opts.cwd,
-      env: { ...execEnv(opts.cacheDir), ...(opts.recipe?.env ?? {}) },
+      cwd: scoped.scope.cwd,
+      env,
       timeoutMs: opts.timeoutMs,
       captureStdout: true,
       maxBuffer: 16 * 1024 * 1024,
@@ -670,6 +681,7 @@ export function executeTestRun(opts: ExecuteTestRunOptions): TestRunResult {
       rawOutput: stdout,
       timedOut: false,
       spawnFailed: false,
+      outcome: 'executed-with-pass',
     };
   } catch (err) {
     // execFileGuarded throws a GuardedRunError for nonzero exits, timeouts,
@@ -695,7 +707,16 @@ export function executeTestRun(opts: ExecuteTestRunOptions): TestRunResult {
       `test run failed (runner=${opts.runner}, timedOut=${timedOut}, spawnFailed=${spawnFailed}, ` +
         `identities=${failingTests.length}): ${command} ${args.join(' ')}`,
     );
-    return { passed: false, failingTests, rawOutput, timedOut, spawnFailed };
+    if (timedOut) return notExecuted('timeout', `run exceeded ${opts.timeoutMs}ms: ${rawOutput}`);
+    if (spawnFailed) return notExecuted('spawn-failed', rawOutput);
+    return {
+      passed: false,
+      failingTests,
+      rawOutput,
+      timedOut,
+      spawnFailed,
+      outcome: 'executed-with-fail',
+    };
   }
 }
 
@@ -1230,15 +1251,16 @@ function runRestorationPipeline(input: TestRestorationInput): RestorationProofRe
   }
 
   // Step 2: only runners with a locked file-scoped invocation and identity
-  // parser may execute (jest, vitest, mocha).
+  // parser may execute (jest, vitest, mocha, pytest, go-test).
   const runner = input.testRunner;
-  if (runner === null || RUNNER_ARGV[runner] === undefined) {
+  if (runner === null || !isSupportedRunner(runner)) {
     return record('not-proven:runner-unsupported', {
       revertedHunkPatch: patch,
       reason:
         runner === null
           ? 'no supported test runner detected in the workspace'
-          : `test runner '${runner}' has no locked file-scoped invocation (jest, vitest, mocha only)`,
+          : `test runner '${runner}' has no locked file-scoped invocation ` +
+            `(jest, vitest, mocha, pytest, go-test only)`,
     });
   }
 
@@ -1270,23 +1292,21 @@ function runRestorationPipeline(input: TestRestorationInput): RestorationProofRe
       ...(input.recipe !== undefined ? { recipe: input.recipe } : {}),
       ...(input.docker !== undefined ? { docker: input.docker } : {}),
     });
-    if (tamperedRun.timedOut) {
+    // A run that never executed (missing toolchain, missing workspace, timeout)
+    // is a harness or environment fact, not a failing suite: publishing
+    // `tamperedSuitePasses: false` here would read as "CI would have caught this
+    // PR" for a run that never happened, so the control stays null and the
+    // verdict is an execution error carrying the classified reason. Naming the
+    // reason is what lets a reader tell "the Go toolchain was absent" from "the
+    // workspace was corrupt" without re-running the audit.
+    if (tamperedRun.outcome === 'not-executed') {
       return record('not-proven:execution-error', {
         testFiles,
         revertedHunkPatch: patch,
-        reason: `tampered-suite control run timed out after ${input.timeoutMs}ms`,
-      });
-    }
-    // A spawn-level failure (missing workspace, missing npx) is a harness
-    // problem, not a failing suite: publishing `tamperedSuitePasses: false`
-    // here would read as "CI would have caught this PR" for a run that never
-    // executed, so the control stays null and the verdict is an execution
-    // error.
-    if (tamperedRun.spawnFailed) {
-      return record('not-proven:execution-error', {
-        testFiles,
-        revertedHunkPatch: patch,
-        reason: `tampered-suite control run never executed (spawn-level failure): ${tamperedRun.rawOutput}`,
+        reason:
+          `tampered-suite control run never executed ` +
+          `(${tamperedRun.notExecutedReason ?? 'unclassified'}): ` +
+          `${tamperedRun.notExecutedDetail ?? tamperedRun.rawOutput}`,
       });
     }
     if (!tamperedRun.passed) {

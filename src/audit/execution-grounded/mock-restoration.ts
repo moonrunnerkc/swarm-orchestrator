@@ -34,6 +34,7 @@ import { isTestFile } from '../cheat-detector/diff-walker';
 import type { TestRunner, PackageManager } from './sandbox';
 import type { MutationRecipe } from './mutation-check';
 import type { DockerContext } from './docker-runner';
+import { NODE_ONLY_PROOF_RUNNERS } from './ecosystem-runner';
 import {
   buildReproduceCommand,
   executeTestRun,
@@ -325,7 +326,10 @@ function gitForwardApply(opts: { patch: string; cwd: string }): { ok: boolean; d
   return { ok: true, detail: '' };
 }
 
-const SUPPORTED_RUNNERS: readonly TestRunner[] = ['jest', 'vitest', 'mocha'];
+// This proof needs Node-only machinery beyond the test run itself, so it stays
+// on the Node runners even though the run-the-tests step is now polyglot. The
+// reason per engine is recorded on NODE_ONLY_PROOF_RUNNERS.
+const SUPPORTED_RUNNERS: readonly TestRunner[] = NODE_ONLY_PROOF_RUNNERS;
 
 function record(
   base: Pick<MockRestorationProofRecord, 'findingFile' | 'revertedHunkPatch' | 'mockedReturnValues'>,

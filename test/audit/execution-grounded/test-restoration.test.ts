@@ -976,6 +976,7 @@ describe('execution-grounded / test-restoration executeTestRun', () => {
       rawOutput: '',
       timedOut: false,
       spawnFailed: false,
+      outcome: 'executed-with-pass',
     });
   });
 
