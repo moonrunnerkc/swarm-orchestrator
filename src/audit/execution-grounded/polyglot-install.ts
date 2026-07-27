@@ -16,6 +16,7 @@ import * as path from 'path';
 import { getLogger } from '../../logger';
 import { commandTimeoutMs, execEnv, execFileGuarded, isGuardedTimeout } from './exec-env';
 import { captureInstallFailure, SandboxInstallError } from './install-failure';
+import { resolvePythonInterpreter } from './python-interpreter';
 
 const log = getLogger('audit:execution-grounded:polyglot-install');
 
@@ -58,13 +59,17 @@ const PIP_INSTALL = ['-m', 'pip', 'install', '--no-input'] as const;
  * @returns the ordered steps; an empty-install project still gets its venv so the
  *   provision succeeds honestly (a venv with nothing to install is not a failure).
  */
-export function planPythonInstall(dir: string): InstallStep[] {
+export function planPythonInstall(dir: string, interpreterBin = 'python3'): InstallStep[] {
   const has = (f: string): boolean => fs.existsSync(path.join(dir, f));
   if (has('poetry.lock') && has('pyproject.toml')) {
     return [{ bin: 'poetry', args: ['install', '--no-interaction', '--no-ansi'], label: 'poetry install' }];
   }
   const venvPython = path.join(dir, '.venv', 'bin', 'python');
-  const steps: InstallStep[] = [{ bin: 'python3', args: ['-m', 'venv', '.venv'], label: 'create venv' }];
+  // The venv inherits the interpreter it was built with, so this one choice
+  // decides whether every later pip step is in or out of the declared range.
+  const steps: InstallStep[] = [
+    { bin: interpreterBin, args: ['-m', 'venv', '.venv'], label: 'create venv' },
+  ];
   if (has('requirements.txt')) {
     steps.push({ bin: venvPython, args: [...PIP_INSTALL, '-r', 'requirements.txt'], label: 'pip install -r requirements.txt' });
   }
@@ -178,6 +183,34 @@ export function nonNodeLockfileName(dir: string, ecosystem: NonNodeEcosystem): s
  * @throws {SwarmError} code `sandbox-install-failed` on any install failure.
  */
 export function provisionNonNode(dir: string, ecosystem: NonNodeEcosystem, opts: NonNodeInstallOptions): void {
-  const steps = ecosystem === 'python' ? planPythonInstall(dir) : planGoInstall(dir);
-  runNonNodeInstall(dir, ecosystem, steps, opts);
+  if (ecosystem === 'go') {
+    runNonNodeInstall(dir, ecosystem, planGoInstall(dir), opts);
+    return;
+  }
+  // Build the venv with an interpreter the project actually supports. Without
+  // this, a repo declaring `>=3.11,<3.13` fails its own metadata resolution on a
+  // host whose default python3 is 3.14, and the recorded provision failure
+  // describes the auditor's machine rather than the repo.
+  const resolved = resolvePythonInterpreter(dir, execEnv());
+  if (!resolved.ok) {
+    const detail = resolved.failure.detail;
+    // An interpreter range the host cannot satisfy is the Python analog of a
+    // Node engines mismatch, so it buckets there rather than into `other`.
+    throw new SandboxInstallError(`sandbox-install-failed: ${detail}`, {
+      remediation:
+        `Install a Python matching '${resolved.failure.declaredRange}' and put it on the sandbox ` +
+        `PATH (available: ${resolved.failure.available.join(', ') || 'none'}).`,
+      cause: new Error(detail),
+      installFailure: {
+        packageManager: 'pip',
+        exitCode: null,
+        timedOut: false,
+        stderrTail: detail,
+        lockfile: nonNodeLockfileName(dir, 'python'),
+        nodeEngineRange: null,
+        bucket: 'engines-mismatch',
+      },
+    });
+  }
+  runNonNodeInstall(dir, ecosystem, planPythonInstall(dir, resolved.interpreter.bin), opts);
 }
