@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { statSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -95,6 +96,12 @@ function createSystemRandom(): RandomSource {
 async function main(): Promise<number> {
   const options = parseCommandLine(process.argv.slice(2), process.env);
   const spec = parseModelSpec(options.modelSpec);
+
+  if (!statSync(options.workspace, { throwIfNoEntry: false })?.isDirectory()) {
+    throw new Error(
+      `workspace ${options.workspace} is not a directory. Create it, or pass --workspace.`,
+    );
+  }
 
   const sandbox = createSandbox({
     workspaceRoot: options.workspace,
