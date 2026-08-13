@@ -1,15 +1,28 @@
 import { resolve } from "node:path";
 
-export interface CommandLine {
+export interface RunCommand {
+  readonly command: "run";
   readonly task: string;
   readonly modelSpec: string;
   readonly workspace: string;
   readonly maxSteps: number;
+  /** Null means the session's own directory, which is outside the workspace by design. */
+  readonly bundleDirectory: string | null;
 }
+
+export interface ReplayCommand {
+  readonly command: "replay";
+  readonly bundleDirectory: string;
+}
+
+export type CommandLine = RunCommand | ReplayCommand;
 
 export class InvalidCommandLineError extends Error {
   constructor(problem: string) {
-    super(`${problem}. Usage: swarm [--model <provider:id>] [--workspace <dir>] "<task>"`);
+    super(
+      `${problem}. Usage: swarm [--model <provider:id>] [--workspace <dir>] [--bundle <dir>] "<task>", ` +
+        "or swarm replay <bundle directory>",
+    );
     this.name = "InvalidCommandLineError";
   }
 }
@@ -43,18 +56,32 @@ export function parseCommandLine(
     index += 1;
   }
 
+  if (words[0] === "replay") {
+    const target = words.slice(1).join(" ").trim();
+    if (target.length === 0) {
+      throw new InvalidCommandLineError("replay needs a bundle directory");
+    }
+    return {
+      command: "replay",
+      bundleDirectory: resolve(context.currentDirectory, target),
+    };
+  }
+
   const task = words.join(" ").trim();
   if (task.length === 0) {
     throw new InvalidCommandLineError("nothing to do");
   }
 
+  const bundle = flags.get("bundle");
   return {
+    command: "run",
     task,
     modelSpec: flags.get("model") ?? context.env.SWARM_MODEL ?? defaultModelSpec,
     // Resolved against the injected directory, not the ambient cwd, so a relative
     // --workspace lands where the caller says it does.
     workspace: resolve(context.currentDirectory, flags.get("workspace") ?? "."),
     maxSteps: parseMaxSteps(flags.get("max-steps")),
+    bundleDirectory: bundle === undefined ? null : resolve(context.currentDirectory, bundle),
   };
 }
 

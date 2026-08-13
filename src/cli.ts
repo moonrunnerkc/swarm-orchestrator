@@ -1,16 +1,33 @@
 #!/usr/bin/env node
 import { statSync } from "node:fs";
-import { homedir } from "node:os";
-import { resolve } from "node:path";
+import { homedir, platform } from "node:os";
+import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
-import { parseCommandLine } from "./cli-options.ts";
+import {
+  type CommandLine,
+  parseCommandLine,
+  type ReplayCommand,
+  type RunCommand,
+} from "./cli-options.ts";
 import type { Clock } from "./core/clock.ts";
 import { runAgentLoop } from "./core/loop.ts";
 import type { RandomSource } from "./core/random-source.ts";
+import { bundleSourceFromRecorder, exportBundle } from "./evidence/bundle.ts";
+import { createRecordingModelClient } from "./evidence/model-call-recording.ts";
+import { replayBundle } from "./evidence/replay.ts";
+import {
+  createSessionId,
+  defaultSessionRoot,
+  type EvidenceRecorder,
+  openEvidenceSession,
+} from "./evidence/session.ts";
+import { createKeychainSecretStore, resolveSigningKey } from "./evidence/signing.ts";
 import { parseModelSpec } from "./providers/model-spec.ts";
 import { createProviderRegistry } from "./providers/registry.ts";
 import { createToolChokepoint } from "./tools/chokepoint.ts";
-import { createStderrRecorder } from "./tools/chokepoint-record.ts";
+import { createLedgerChokepointRecorder } from "./tools/chokepoint-record.ts";
+import { createClaimTool } from "./tools/claim-tool.ts";
+import { createDerivationHeuristic } from "./tools/derivation.ts";
 import { createSandbox } from "./tools/sandbox.ts";
 import { createWorkspaceTools } from "./tools/workspace-tools.ts";
 import { startSessionInterface } from "./tui/session-interface.ts";
@@ -34,8 +51,11 @@ const systemPrompt = [
   "You are a coding agent working inside one workspace directory.",
   "State a short plan on your first turn, then use the tools to carry it out.",
   "Read before you edit. Make the smallest change that satisfies the task.",
+  "Every tool result ends with an [evidence record sha256:...] trailer naming the ledger record it produced.",
+  "To assert that work is done, call the claim tool with a predicate over such a record,",
+  'for example predicate "facts.exitCode == 0" citing the record of the test command you ran.',
+  "The harness evaluates the predicate and decides the verdict; your prose never counts as a result.",
   "When the work is done, reply with a summary and no tool calls.",
-  "Your summary is a claim, not a result: the harness decides what actually passed.",
 ].join(" ");
 
 /** The ambient clock lives at the composition root; src/core only ever sees the port. */
@@ -53,11 +73,14 @@ function createSystemRandom(): RandomSource {
   return { next: () => Math.random() };
 }
 
-async function main(): Promise<number> {
-  const options = parseCommandLine(process.argv.slice(2), {
-    env: process.env,
-    currentDirectory: process.cwd(),
-  });
+async function replay(options: ReplayCommand): Promise<number> {
+  for (const line of await replayBundle(options.bundleDirectory)) {
+    process.stdout.write(`${line}\n`);
+  }
+  return 0;
+}
+
+async function run(options: RunCommand): Promise<number> {
   const spec = parseModelSpec(options.modelSpec);
 
   if (!statSync(options.workspace, { throwIfNoEntry: false })?.isDirectory()) {
@@ -66,14 +89,32 @@ async function main(): Promise<number> {
     );
   }
 
+  const clock = createSystemClock();
+  const random = createSystemRandom();
+  const sessionRoot = defaultSessionRoot(homedir());
+  const evidence = await openEvidenceSession({
+    root: sessionRoot,
+    sessionId: createSessionId(clock, random),
+    clock,
+  });
+
   const sandbox = createSandbox({
     workspaceRoot: options.workspace,
     homeDir: homedir(),
     shellAllowlist: defaultShellAllowlist,
+    // The session store is denied to tools: evidence the subject can reach is not evidence.
     deniedRoots: [resolve(homedir(), ".swarm")],
   });
 
-  const definitions = createWorkspaceTools(sandbox);
+  const registry = createProviderRegistry({
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+    openaiApiKey: process.env.OPENAI_API_KEY,
+    googleApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+    localBaseUrl: process.env.SWARM_LOCAL_BASE_URL,
+  });
+  const model = createRecordingModelClient(registry.create(spec), evidence);
+
+  const definitions = [...createWorkspaceTools(sandbox), createClaimTool(evidence, model.modelId)];
   const isTty = process.stdout.isTTY === true && process.stdin.isTTY === true;
 
   const ui = startSessionInterface({
@@ -87,31 +128,36 @@ async function main(): Promise<number> {
   const toolInvoker = createToolChokepoint({
     definitions,
     sandbox,
+    derivation: createDerivationHeuristic(),
     confirm: async (request) => {
       if (!isTty) {
         process.stderr.write(
-          `[chokepoint] refusing ${request.toolName} without a terminal to confirm on: ${request.detail}\n`,
+          `[chokepoint] refusing ${request.toolName} without a terminal to confirm on: ${request.explanation}\n`,
         );
         return false;
       }
       const prompt = createInterface({ input: process.stdin, output: process.stderr });
       try {
+        process.stderr.write(`${request.explanation}\n`);
         const answer = await prompt.question(`Run "${request.detail}"? [y/N] `);
         return answer.trim().toLowerCase() === "y";
       } finally {
         prompt.close();
       }
     },
-    recorder: createStderrRecorder((line) => {
-      process.stderr.write(`${line}\n`);
-    }),
+    recorder: createLedgerChokepointRecorder(evidence),
   });
 
-  const registry = createProviderRegistry({
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-    openaiApiKey: process.env.OPENAI_API_KEY,
-    googleApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-    localBaseUrl: process.env.SWARM_LOCAL_BASE_URL,
+  await evidence.record({
+    type: "session-started",
+    actor: "harness",
+    provenance: ["user"],
+    payload: {
+      task: options.task,
+      workspace: options.workspace,
+      modelSpec: options.modelSpec,
+      maxSteps: options.maxSteps,
+    },
   });
 
   const interruption = new AbortController();
@@ -122,11 +168,11 @@ async function main(): Promise<number> {
 
   try {
     const outcome = await runAgentLoop(options.task, {
-      model: registry.create(spec),
+      model,
       toolInvoker,
       toolSchemas: definitions,
-      clock: createSystemClock(),
-      random: createSystemRandom(),
+      clock,
+      random,
       emit: (event) => {
         ui.emit(event);
       },
@@ -141,11 +187,58 @@ async function main(): Promise<number> {
       retryPolicy: { attempts: 3, baseDelayMs: 500, maxJitterRatio: 0.5 },
     });
 
+    await evidence.record({
+      type: "session-stopped",
+      actor: "harness",
+      // The stop reason is the harness's; the narrative in it came from the model.
+      provenance: ["model"],
+      payload: {
+        stopReason: outcome.stopReason,
+        steps: outcome.steps,
+        tokensUsed: outcome.tokensUsed,
+        // Recorded as what it is: the model's account, never a result.
+        completionNarrative: outcome.completionClaim,
+      },
+    });
+
     await ui.stop();
+    const directory = await writeBundle(evidence, options.bundleDirectory, clock);
+    process.stdout.write(`\nevidence bundle: ${directory}\n`);
+    process.stdout.write(
+      `verify it anywhere: node ${join(directory, "verify.mjs")} ${directory}\n`,
+    );
+    process.stdout.write(`review it: open ${join(directory, "review.html")}\n`);
     return outcome.stopReason === "completed" ? 0 : 1;
   } finally {
     process.off("SIGINT", onInterrupt);
   }
+}
+
+async function writeBundle(
+  evidence: EvidenceRecorder,
+  destination: string | null,
+  clock: Clock,
+): Promise<string> {
+  const signing = await resolveSigningKey(createKeychainSecretStore({ platform: platform() }));
+  if (signing.notice !== null) {
+    process.stderr.write(`[signing] ${signing.notice}\n`);
+  }
+  const directory = destination ?? join(evidence.directory, "bundle");
+  await exportBundle({
+    source: bundleSourceFromRecorder(evidence),
+    destination: directory,
+    signingKey: signing.key,
+    clock,
+  });
+  return directory;
+}
+
+async function main(): Promise<number> {
+  const options: CommandLine = parseCommandLine(process.argv.slice(2), {
+    env: process.env,
+    currentDirectory: process.cwd(),
+  });
+  return options.command === "replay" ? replay(options) : run(options);
 }
 
 main().then(
