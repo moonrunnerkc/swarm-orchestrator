@@ -3,6 +3,7 @@ import { statSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
+import { parseCommandLine } from "./cli-options.ts";
 import type { Clock } from "./core/clock.ts";
 import { runAgentLoop } from "./core/loop.ts";
 import type { RandomSource } from "./core/random-source.ts";
@@ -37,47 +38,6 @@ const systemPrompt = [
   "Your summary is a claim, not a result: the harness decides what actually passed.",
 ].join(" ");
 
-interface CommandLine {
-  readonly task: string;
-  readonly modelSpec: string;
-  readonly workspace: string;
-  readonly maxSteps: number;
-}
-
-function parseCommandLine(
-  argv: readonly string[],
-  env: Record<string, string | undefined>,
-): CommandLine {
-  const positional: string[] = [];
-  const flags = new Map<string, string>();
-
-  for (let index = 0; index < argv.length; index += 1) {
-    const argument = argv[index] ?? "";
-    if (argument.startsWith("--")) {
-      const next = argv[index + 1];
-      if (next === undefined) {
-        throw new Error(`flag ${argument} needs a value`);
-      }
-      flags.set(argument.slice(2), next);
-      index += 1;
-      continue;
-    }
-    positional.push(argument);
-  }
-
-  const task = positional.join(" ").trim();
-  if (task.length === 0) {
-    throw new Error('nothing to do. Usage: swarm "add a --version flag to this CLI"');
-  }
-
-  return {
-    task,
-    modelSpec: flags.get("model") ?? env.SWARM_MODEL ?? "anthropic:claude-opus-5",
-    workspace: resolve(flags.get("workspace") ?? process.cwd()),
-    maxSteps: Number.parseInt(flags.get("max-steps") ?? "40", 10),
-  };
-}
-
 /** The ambient clock lives at the composition root; src/core only ever sees the port. */
 function createSystemClock(): Clock {
   return {
@@ -94,7 +54,10 @@ function createSystemRandom(): RandomSource {
 }
 
 async function main(): Promise<number> {
-  const options = parseCommandLine(process.argv.slice(2), process.env);
+  const options = parseCommandLine(process.argv.slice(2), {
+    env: process.env,
+    currentDirectory: process.cwd(),
+  });
   const spec = parseModelSpec(options.modelSpec);
 
   if (!statSync(options.workspace, { throwIfNoEntry: false })?.isDirectory()) {
