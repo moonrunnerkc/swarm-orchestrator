@@ -34,10 +34,14 @@ export function createSearchTool(sandbox: Sandbox): ToolDefinition {
 
       const matches: string[] = [];
       await collectMatches(root, sandbox, pattern, limit, matches);
-      if (matches.length === 0) {
-        return `no match for /${input.pattern}/`;
-      }
-      return matches.join("\n");
+      return {
+        text: matches.length === 0 ? `no match for /${input.pattern}/` : matches.join("\n"),
+        facts: {
+          pattern: input.pattern,
+          matches: matches.length,
+          truncated: matches.length >= limit,
+        },
+      };
     },
   });
 }

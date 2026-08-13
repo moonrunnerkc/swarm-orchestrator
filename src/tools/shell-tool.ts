@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
 import type { Sandbox } from "./sandbox.ts";
-import { defineTool, type ToolDefinition } from "./tool-definition.ts";
+import { defineTool, type ToolDefinition, type ToolOutput } from "./tool-definition.ts";
 
 const runCommand = promisify(execFile);
 
@@ -17,6 +17,7 @@ interface CommandFailure {
   readonly stdout?: string;
   readonly stderr?: string;
   readonly code?: number;
+  readonly killed?: boolean;
 }
 
 /**
@@ -38,22 +39,52 @@ export function createShellTool(sandbox: Sandbox): ToolDefinition {
           timeout,
           maxBuffer: 4_000_000,
         });
-        return combineStreams(stdout, stderr, 0);
+        return describeRun(input.command, stdout, stderr, 0, false);
       } catch (cause) {
         const failure = cause as CommandFailure;
-        return combineStreams(failure.stdout ?? "", failure.stderr ?? "", failure.code ?? 1);
+        return describeRun(
+          input.command,
+          failure.stdout ?? "",
+          failure.stderr ?? "",
+          failure.code ?? 1,
+          failure.killed === true,
+        );
       }
     },
   });
 }
 
-function combineStreams(stdout: string, stderr: string, exitCode: number): string {
+/**
+ * The exit code is measured here and carried as a fact, not left for someone to read back
+ * out of the text. A gate result or a claim about a test run has to rest on something the
+ * harness observed, and text the model was shown is not that.
+ */
+function describeRun(
+  command: string,
+  stdout: string,
+  stderr: string,
+  exitCode: number,
+  timedOut: boolean,
+): ToolOutput {
   const sections = [`exit code: ${exitCode}`];
+  if (timedOut) {
+    sections.push("the command was killed for exceeding its timeout");
+  }
   if (stdout.length > 0) {
     sections.push(`stdout:\n${stdout.trimEnd()}`);
   }
   if (stderr.length > 0) {
     sections.push(`stderr:\n${stderr.trimEnd()}`);
   }
-  return sections.join("\n");
+
+  return {
+    text: sections.join("\n"),
+    facts: {
+      command,
+      exitCode,
+      timedOut,
+      stdoutBytes: stdout.length,
+      stderrBytes: stderr.length,
+    },
+  };
 }

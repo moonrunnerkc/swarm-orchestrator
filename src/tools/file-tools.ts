@@ -39,10 +39,13 @@ export function createReadTool(sandbox: Sandbox): ToolDefinition {
       const absolutePath = resolveInsideWorkspace(sandbox, input.path);
       const limit = input.maxBytes ?? defaultReadLimit;
       const content = await readFile(absolutePath, "utf8");
-      if (content.length <= limit) {
-        return content;
-      }
-      return `${content.slice(0, limit)}\n[truncated at ${limit} of ${content.length} bytes]`;
+      const truncated = content.length > limit;
+      return {
+        text: truncated
+          ? `${content.slice(0, limit)}\n[truncated at ${limit} of ${content.length} bytes]`
+          : content,
+        facts: { path: input.path, bytes: content.length, truncated },
+      };
     },
   });
 }
@@ -58,7 +61,10 @@ export function createWriteTool(sandbox: Sandbox): ToolDefinition {
       const absolutePath = resolveInsideWorkspace(sandbox, input.path);
       await mkdir(dirname(absolutePath), { recursive: true });
       await writeFile(absolutePath, input.content, "utf8");
-      return `wrote ${input.content.length} bytes to ${input.path}`;
+      return {
+        text: `wrote ${input.content.length} bytes to ${input.path}`,
+        facts: { path: input.path, bytes: input.content.length },
+      };
     },
   });
 }
@@ -92,7 +98,10 @@ export function createEditTool(sandbox: Sandbox): ToolDefinition {
           ? before.split(input.find).join(input.replace)
           : before.replace(input.find, input.replace);
       await writeFile(absolutePath, after, "utf8");
-      return `replaced ${occurrences} occurrence(s) in ${input.path}`;
+      return {
+        text: `replaced ${occurrences} occurrence(s) in ${input.path}`,
+        facts: { path: input.path, occurrences, bytes: after.length },
+      };
     },
   });
 }
@@ -107,13 +116,13 @@ export function createListTool(sandbox: Sandbox): ToolDefinition {
     async execute(input) {
       const absolutePath = resolveInsideWorkspace(sandbox, input.path ?? ".");
       const entries = await readdir(absolutePath, { withFileTypes: true });
-      if (entries.length === 0) {
-        return "(empty directory)";
-      }
-      return entries
+      const names = entries
         .map((entry) => (entry.isDirectory() ? `${entry.name}/` : entry.name))
-        .sort()
-        .join("\n");
+        .sort();
+      return {
+        text: names.length === 0 ? "(empty directory)" : names.join("\n"),
+        facts: { path: input.path ?? ".", entries: names.length },
+      };
     },
   });
 }
