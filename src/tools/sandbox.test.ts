@@ -92,6 +92,9 @@ describe("sandbox credential denylist", () => {
     ".git/config",
     // The rule is the documented glob `.env*`, so a template file is refused too.
     ".env.example",
+    // The config file may carry provider keys, so it is a credential file to tools.
+    "swarm.toml",
+    "pkg/swarm.toml",
   ];
 
   for (const path of denied) {

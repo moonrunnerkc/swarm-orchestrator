@@ -10,6 +10,8 @@ const credentialPatterns: readonly RegExp[] = [
   /\.pem$/,
   /\.key$/,
   /(^|\/)\.git\/config$/,
+  // The one optional config file may carry provider keys, so tools never read it.
+  /(^|\/)swarm\.toml$/,
 ];
 
 /**
@@ -97,7 +99,7 @@ export function createSandbox(policy: SandboxPolicy): Sandbox {
       if (credentialPatterns.some((pattern) => pattern.test(`/${workspacePath}`))) {
         return {
           allowed: false,
-          reason: `${workspacePath} matches the credential denylist (.env*, *.pem, *.key, .git/config)`,
+          reason: `${workspacePath} matches the credential denylist (.env*, *.pem, *.key, .git/config, swarm.toml)`,
         };
       }
 

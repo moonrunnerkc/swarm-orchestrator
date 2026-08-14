@@ -1,23 +1,24 @@
 import { resolve } from "node:path";
 import { bundledShortlistKeyword } from "./select/shortlist-source.ts";
 
+/**
+ * Flags only, left null wherever the caller said nothing: the environment and swarm.toml sit
+ * between flags and defaults, and only the composition root sees all three layers, so
+ * resolution lives in src/config/settings.ts rather than here.
+ */
 export interface RunCommand {
   readonly command: "run";
   readonly task: string;
-  readonly modelSpec: string;
-  /**
-   * True when the caller named the model, by flag or by environment. A pinned model is a
-   * decision, so the router leaves it alone; a defaulted one is not.
-   */
-  readonly modelPinned: boolean;
+  readonly modelSpec: string | null;
   readonly workspace: string;
-  readonly maxSteps: number;
+  readonly maxSteps: number | null;
   /** Null means the session's own directory, which is outside the workspace by design. */
   readonly bundleDirectory: string | null;
   /** The commit the gates measure the change against. */
   readonly baseRef: string;
   /** How many auto-resolve retries a blocking gate failure gets. */
-  readonly attempts: number;
+  readonly attempts: number | null;
+  readonly localEndpoint: string | null;
 }
 
 /** Runs the gates over a workspace and reports, with no model and no retries. */
@@ -60,10 +61,11 @@ export interface ParallelCommand {
   readonly tasksFile: string;
   readonly workspace: string;
   readonly baseRef: string;
-  readonly maxSteps: number;
-  readonly attempts: number;
+  readonly maxSteps: number | null;
+  readonly attempts: number | null;
   readonly bundleDirectory: string | null;
-  readonly modelSpec: string;
+  readonly modelSpec: string | null;
+  readonly localEndpoint: string | null;
 }
 
 /** Prints the routing table the reward log adds up to. */
@@ -92,7 +94,8 @@ export class InvalidCommandLineError extends Error {
   constructor(problem: string) {
     super(
       `${problem}. Usage: swarm [--model <provider:id>] [--workspace <dir>] [--bundle <dir>] ` +
-        `[--base <ref>] [--attempts <n>] "<task>", swarm gates [--workspace <dir>] [--base <ref>], ` +
+        `[--base <ref>] [--attempts <n>] [--local-endpoint <url>] "<task>", ` +
+        "swarm gates [--workspace <dir>] [--base <ref>], " +
         "swarm select [--shortlist <file|url|bundled>], swarm calibrate [--models <a,b>] " +
         '[--repeats <n>], swarm calibrate --add-case "<task>" --seed <a,b> --gate "<command>", ' +
         "swarm routing, swarm parallel --tasks <file>, or swarm replay <bundle directory>",
@@ -101,15 +104,11 @@ export class InvalidCommandLineError extends Error {
   }
 }
 
-const defaultModelSpec = "anthropic:claude-opus-5";
-const defaultMaxSteps = 40;
 const defaultBaseRef = "HEAD";
-const defaultAttempts = 3;
 /** Three is the floor: two repeats cannot show a spread, and a spread is the point. */
 const defaultRepeats = 3;
 
 export interface CommandLineContext {
-  readonly env: Record<string, string | undefined>;
   readonly currentDirectory: string;
 }
 
@@ -169,10 +168,11 @@ export function parseCommandLine(
       tasksFile: resolve(context.currentDirectory, tasksFile),
       workspace,
       baseRef: flags.get("base") ?? defaultBaseRef,
-      maxSteps: parseMaxSteps(flags.get("max-steps")),
-      attempts: parseCount(flags.get("attempts"), "--attempts", defaultAttempts),
+      maxSteps: parseFlagCount(flags.get("max-steps"), "--max-steps"),
+      attempts: parseFlagCount(flags.get("attempts"), "--attempts"),
       bundleDirectory,
-      modelSpec: flags.get("model") ?? context.env.SWARM_MODEL ?? defaultModelSpec,
+      modelSpec: flags.get("model") ?? null,
+      localEndpoint: parseLocalEndpoint(flags.get("local-endpoint")),
     };
   }
 
@@ -209,17 +209,16 @@ export function parseCommandLine(
     throw new InvalidCommandLineError("nothing to do");
   }
 
-  const pinnedModel = flags.get("model") ?? context.env.SWARM_MODEL;
   return {
     command: "run",
     task,
-    modelSpec: pinnedModel ?? defaultModelSpec,
-    modelPinned: pinnedModel !== undefined,
+    modelSpec: flags.get("model") ?? null,
     workspace,
-    maxSteps: parseMaxSteps(flags.get("max-steps")),
+    maxSteps: parseFlagCount(flags.get("max-steps"), "--max-steps"),
     bundleDirectory,
     baseRef: flags.get("base") ?? defaultBaseRef,
-    attempts: parseCount(flags.get("attempts"), "--attempts", defaultAttempts),
+    attempts: parseFlagCount(flags.get("attempts"), "--attempts"),
+    localEndpoint: parseLocalEndpoint(flags.get("local-endpoint")),
   };
 }
 
@@ -251,7 +250,7 @@ function splitList(raw: string): readonly string[] {
 }
 
 function parseRepeats(raw: string | undefined): number {
-  const repeats = parseCount(raw, "--repeats", defaultRepeats);
+  const repeats = parseFlagCount(raw, "--repeats") ?? defaultRepeats;
   if (repeats < defaultRepeats) {
     throw new InvalidCommandLineError(
       `--repeats must be at least ${defaultRepeats}: fewer cannot show a spread, and the ` +
@@ -279,17 +278,23 @@ function resolveShortlist(raw: string | undefined, context: CommandLineContext):
  * A non-numeric budget used to reach the loop as NaN, and every `steps >= NaN`
  * comparison is false, so the step limit silently stopped applying.
  */
-function parseMaxSteps(raw: string | undefined): number {
-  return parseCount(raw, "--max-steps", defaultMaxSteps);
-}
-
-function parseCount(raw: string | undefined, flag: string, fallback: number): number {
+function parseFlagCount(raw: string | undefined, flag: string): number | null {
   if (raw === undefined) {
-    return fallback;
+    return null;
   }
   const parsed = Number(raw);
   if (!Number.isSafeInteger(parsed) || parsed < 1) {
     throw new InvalidCommandLineError(`${flag} must be a positive whole number, got "${raw}"`);
   }
   return parsed;
+}
+
+function parseLocalEndpoint(raw: string | undefined): string | null {
+  if (raw === undefined) {
+    return null;
+  }
+  if (!raw.startsWith("http://") && !raw.startsWith("https://")) {
+    throw new InvalidCommandLineError(`--local-endpoint must be an http(s) url, got "${raw}"`);
+  }
+  return raw;
 }

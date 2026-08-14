@@ -151,6 +151,18 @@ describe("runAgentTask", () => {
     expect(fileSet?.status).toBe("passed");
   });
 
+  it("measures the change against a configured diff budget instead of the built-in one", async () => {
+    const result = await task(goodTurns(stillGreen), {
+      diffBudget: { maxChangedFiles: 12, maxAddedLines: 0 },
+    });
+
+    const budget = result.gates.outcome.finalCycle.runs.find(
+      (gate) => gate.gateId === "diff-budget",
+    );
+    expect(budget?.detail).toMatch(/over budget/);
+    expect(budget?.detail).toMatch(/against 0/);
+  });
+
   it("leaves the model's completion narrative recorded as narrative, never as a result", async () => {
     const result = await task(goodTurns(broken));
 

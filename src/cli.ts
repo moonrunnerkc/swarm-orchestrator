@@ -16,6 +16,12 @@ import {
   type RunCommand,
   type SelectCommand,
 } from "./cli-options.ts";
+import {
+  type CommandLineSettings,
+  type ResolvedSettings,
+  resolveSettings,
+} from "./config/settings.ts";
+import { readSwarmToml } from "./config/swarm-toml.ts";
 import type { Clock } from "./core/clock.ts";
 import type { RandomSource } from "./core/random-source.ts";
 import { bundleSourceFromRecorder, exportBundle } from "./evidence/bundle.ts";
@@ -30,9 +36,11 @@ import {
 } from "./evidence/session.ts";
 import { createKeychainSecretStore, resolveSigningKey } from "./evidence/signing.ts";
 import type { AutoResolveOutcome } from "./gates/auto-resolve.ts";
-import { runGatesEngine } from "./gates/engine.ts";
+import type { GateSetOptions } from "./gates/default-gates.ts";
+import { defaultDiffBudget, runGatesEngine } from "./gates/engine.ts";
 import { describeEscalation } from "./gates/escalation.ts";
 import { createFileSetRegistry } from "./gates/file-set.ts";
+import type { DiffBudget } from "./gates/gate-definition.ts";
 import { citedRecords, type GateCycle, outstandingJustifications } from "./gates/gate-runner.ts";
 import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { summarizeRatchet } from "./gates/ratchet-summary.ts";
@@ -73,6 +81,51 @@ function createSystemClock(): Clock {
 
 function createSystemRandom(): RandomSource {
   return { next: () => Math.random() };
+}
+
+const noFlagSettings: CommandLineSettings = {
+  model: null,
+  maxSteps: null,
+  attempts: null,
+  localEndpoint: null,
+};
+
+/**
+ * Config is read once, here at the composition root, and injected downward: nothing below
+ * cli.ts sees the file or the environment. Precedence lives in src/config/settings.ts.
+ */
+async function settingsFor(
+  directory: string,
+  flags: CommandLineSettings,
+): Promise<ResolvedSettings> {
+  const found = await readSwarmToml({ directory, readFile: (path) => readFile(path, "utf8") });
+  return resolveSettings({ flags, env: process.env, toml: found?.toml ?? null });
+}
+
+function gateOptionsFrom(settings: ResolvedSettings): GateSetOptions | undefined {
+  return Object.keys(settings.gateCommandOverrides).length === 0
+    ? undefined
+    : { commandOverrides: settings.gateCommandOverrides };
+}
+
+function diffBudgetFrom(settings: ResolvedSettings): DiffBudget | undefined {
+  return Object.keys(settings.diffBudget).length === 0
+    ? undefined
+    : { ...defaultDiffBudget, ...settings.diffBudget };
+}
+
+function registrySettingsFrom(settings: ResolvedSettings): {
+  anthropicApiKey: string | undefined;
+  openaiApiKey: string | undefined;
+  googleApiKey: string | undefined;
+  localBaseUrl: string | undefined;
+} {
+  return {
+    anthropicApiKey: settings.providerKeys.anthropic,
+    openaiApiKey: settings.providerKeys.openai,
+    googleApiKey: settings.providerKeys.google,
+    localBaseUrl: settings.localEndpoint?.url,
+  };
 }
 
 async function replay(options: ReplayCommand): Promise<number> {
@@ -140,11 +193,17 @@ async function run(options: RunCommand): Promise<number> {
     );
   }
 
+  const settings = await settingsFor(options.workspace, {
+    model: options.modelSpec,
+    maxSteps: options.maxSteps,
+    attempts: options.attempts,
+    localEndpoint: options.localEndpoint,
+  });
   const random = createSystemRandom();
-  const routed = options.modelPinned
+  const routed = settings.modelPinned
     ? { modelSpec: null as string | null, assignment: "pinned" as const }
     : await chooseModel(options.task, homedir(), random);
-  const modelSpec = routed.modelSpec ?? options.modelSpec;
+  const modelSpec = routed.modelSpec ?? settings.modelSpec;
   const spec = parseModelSpec(modelSpec);
 
   const clock = createSystemClock();
@@ -155,12 +214,7 @@ async function run(options: RunCommand): Promise<number> {
     clock,
   });
 
-  const registry = createProviderRegistry({
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-    openaiApiKey: process.env.OPENAI_API_KEY,
-    googleApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-    localBaseUrl: process.env.SWARM_LOCAL_BASE_URL,
-  });
+  const registry = createProviderRegistry(registrySettingsFrom(settings));
   const model = createRecordingModelClient(registry.create(spec), evidence);
   const fileSet = createFileSetRegistry(evidence);
   const isTty = process.stdout.isTTY === true && process.stdin.isTTY === true;
@@ -179,14 +233,16 @@ async function run(options: RunCommand): Promise<number> {
   };
   process.on("SIGINT", onInterrupt);
   const startedAt = clock.now();
+  const gateOptions = gateOptionsFrom(settings);
+  const diffBudget = diffBudgetFrom(settings);
 
   try {
     const { loop, gates } = await runAgentTask({
       task: options.task,
       workspace: options.workspace,
       baseRef: options.baseRef,
-      maxSteps: options.maxSteps,
-      attempts: options.attempts,
+      maxSteps: settings.maxSteps,
+      attempts: settings.attempts,
       model,
       evidence,
       fileSet,
@@ -198,6 +254,8 @@ async function run(options: RunCommand): Promise<number> {
       confirm: (request) => confirmOnTerminal(request, isTty),
       abortSignal: interruption.signal,
       homeDir: homedir(),
+      ...(gateOptions === undefined ? {} : { gateOptions }),
+      ...(diffBudget === undefined ? {} : { diffBudget }),
     });
 
     await ui.stop();
@@ -334,6 +392,7 @@ function announceBundle(directory: string): void {
 
 /** The gates on their own: no model, no retries, just what the workspace measures right now. */
 async function gates(options: GatesCommand): Promise<number> {
+  const settings = await settingsFor(options.workspace, noFlagSettings);
   const clock = createSystemClock();
   const random = createSystemRandom();
   const evidence = await openEvidenceSession({
@@ -350,6 +409,8 @@ async function gates(options: GatesCommand): Promise<number> {
     payload: { task: "gates", workspace: options.workspace, baseRef: options.baseRef },
   });
 
+  const gateOptions = gateOptionsFrom(settings);
+  const diffBudget = diffBudgetFrom(settings);
   const run = await runGatesEngine({
     workspaceRoot: options.workspace,
     baseRef: options.baseRef,
@@ -360,6 +421,8 @@ async function gates(options: GatesCommand): Promise<number> {
     // No retries are offered, so none are spent: this command measures and reports.
     cap: 0,
     resolve: () => Promise.reject(new Error("swarm gates reports; it does not fix")),
+    ...(gateOptions === undefined ? {} : { gateOptions }),
+    ...(diffBudget === undefined ? {} : { budgets: diffBudget }),
   });
 
   process.stdout.write(
@@ -396,6 +459,7 @@ async function writeBundle(
 const calibrationModelLimit = 2;
 
 async function calibrate(options: CalibrateCommand): Promise<number> {
+  const settings = await settingsFor(process.cwd(), noFlagSettings);
   const clock = createSystemClock();
   const random = createSystemRandom();
   const home = homedir();
@@ -440,12 +504,7 @@ async function calibrate(options: CalibrateCommand): Promise<number> {
     },
   });
 
-  const registry = createProviderRegistry({
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-    openaiApiKey: process.env.OPENAI_API_KEY,
-    googleApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-    localBaseUrl: process.env.SWARM_LOCAL_BASE_URL,
-  });
+  const registry = createProviderRegistry(registrySettingsFrom(settings));
   // Outside the session store, which tools may never write to, and outside any workspace.
   const scratchRoot = await mkdtemp(join(tmpdir(), "swarm-calibration-"));
 
@@ -467,7 +526,7 @@ async function calibrate(options: CalibrateCommand): Promise<number> {
         createModel: (modelSpec) => registry.create(parseModelSpec(modelSpec)),
         commands: createNodeCommandRunner(clock),
         probeMemory: createOllamaMemoryProbe({
-          baseUrl: process.env.SWARM_LOCAL_BASE_URL ?? "http://127.0.0.1:11434/v1",
+          baseUrl: settings.localEndpoint?.url ?? "http://127.0.0.1:11434/v1",
           fetch: (url) => fetch(url, { signal: AbortSignal.timeout(2_000) }),
         }),
         scratchRoot,
@@ -542,6 +601,12 @@ async function addCase(options: AddCaseCommand): Promise<number> {
  * every ambient thing enters here, and the coordinator itself stays testable without one.
  */
 async function parallel(options: ParallelCommand): Promise<number> {
+  const settings = await settingsFor(options.workspace, {
+    model: options.modelSpec,
+    maxSteps: options.maxSteps,
+    attempts: options.attempts,
+    localEndpoint: options.localEndpoint,
+  });
   const clock = createSystemClock();
   const random = createSystemRandom();
   const home = homedir();
@@ -559,13 +624,8 @@ async function parallel(options: ParallelCommand): Promise<number> {
     );
   }
 
-  const spec = parseModelSpec(options.modelSpec);
-  const registry = createProviderRegistry({
-    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
-    openaiApiKey: process.env.OPENAI_API_KEY,
-    googleApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-    localBaseUrl: process.env.SWARM_LOCAL_BASE_URL,
-  });
+  const spec = parseModelSpec(settings.modelSpec);
+  const registry = createProviderRegistry(registrySettingsFrom(settings));
 
   const coordinator = await openEvidenceSession({
     root: sessionRoot,
@@ -577,6 +637,7 @@ async function parallel(options: ParallelCommand): Promise<number> {
   const scratchRoot = await mkdtemp(join(tmpdir(), "swarm-parallel-"));
 
   process.stdout.write(`starting ${tasks.length} worker(s) from ${options.baseRef}\n`);
+  const gateOptions = gateOptionsFrom(settings);
 
   try {
     const result = await runInParallel({
@@ -598,8 +659,9 @@ async function parallel(options: ParallelCommand): Promise<number> {
           process.stdout.write(`[${workerId}] ${line}\n`);
         }
       },
-      maxSteps: options.maxSteps,
-      attempts: options.attempts,
+      maxSteps: settings.maxSteps,
+      attempts: settings.attempts,
+      ...(gateOptions === undefined ? {} : { gateOptions }),
       abortSignal: new AbortController().signal,
     });
 
@@ -646,7 +708,6 @@ async function routing(): Promise<number> {
 
 async function main(): Promise<number> {
   const options: CommandLine = parseCommandLine(process.argv.slice(2), {
-    env: process.env,
     currentDirectory: process.cwd(),
   });
   if (options.command === "replay") {

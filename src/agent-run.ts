@@ -10,6 +10,7 @@ import type { GateSetOptions } from "./gates/default-gates.ts";
 import { type GatesEngineRun, runGatesEngine } from "./gates/engine.ts";
 import type { FileSetRegistry } from "./gates/file-set.ts";
 import { createAmendFileSetTool, createDeclareFileSetTool } from "./gates/file-set-tool.ts";
+import type { DiffBudget } from "./gates/gate-definition.ts";
 import { type ConfirmationPrompt, createToolChokepoint } from "./tools/chokepoint.ts";
 import { createLedgerChokepointRecorder } from "./tools/chokepoint-record.ts";
 import { createClaimTool } from "./tools/claim-tool.ts";
@@ -53,6 +54,8 @@ export interface AgentTaskOptions {
   /** Denied to tools along with everything under it, since the session store lives there. */
   readonly homeDir: string;
   readonly gateOptions?: GateSetOptions;
+  /** Replaces the engine's built-in size budget, from swarm.toml. */
+  readonly diffBudget?: DiffBudget;
   readonly singleFileTestCommand?: (testFile: string) => string | null;
 }
 
@@ -153,6 +156,7 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
     cap: options.attempts,
     resolve: (request) => resolveWithModel(request, options, loopDependencies),
     ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
+    ...(options.diffBudget === undefined ? {} : { budgets: options.diffBudget }),
     ...(options.singleFileTestCommand === undefined
       ? {}
       : { singleFileTestCommand: options.singleFileTestCommand }),

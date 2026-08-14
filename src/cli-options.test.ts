@@ -6,7 +6,7 @@ import {
   type RunCommand,
 } from "./cli-options.ts";
 
-const context = { env: {}, currentDirectory: "/work/repo" };
+const context = { currentDirectory: "/work/repo" };
 
 /** Every test below drives the run command; replay has its own block. */
 function parseRun(argv: readonly string[], overrides = context): RunCommand {
@@ -39,42 +39,38 @@ describe("parseCommandLine", () => {
     expect(parsed).toEqual({
       command: "run",
       baseRef: "HEAD",
-      attempts: 3,
+      attempts: null,
       task: "fix the build",
       modelSpec: "local:qwen3-coder:30b-a3b",
-      modelPinned: true,
       workspace: "/work/repo",
       maxSteps: 12,
       bundleDirectory: null,
+      localEndpoint: null,
     });
   });
 
-  it("defaults the model, workspace, and step budget", () => {
+  it("leaves every unset flag null, because resolution against config is not its job", () => {
+    // The environment and swarm.toml sit between flags and defaults, and only the
+    // composition root sees all three, so an unset flag must stay visibly unset here.
     expect(parseRun(["do a thing"])).toEqual({
       command: "run",
       baseRef: "HEAD",
-      attempts: 3,
+      attempts: null,
       task: "do a thing",
-      modelSpec: "anthropic:claude-opus-5",
-      modelPinned: false,
+      modelSpec: null,
       workspace: "/work/repo",
-      maxSteps: 40,
+      maxSteps: null,
       bundleDirectory: null,
+      localEndpoint: null,
     });
   });
 
-  it("says whether the model was chosen or merely defaulted, so routing knows to stay out", () => {
-    // A pinned model is a decision the router must not override; the default is not.
-    expect(parseRun(["t"]).modelPinned).toBe(false);
-    expect(parseRun(["--model", "local:a", "t"]).modelPinned).toBe(true);
-    expect(parseRun(["t"], { ...context, env: { SWARM_MODEL: "local:b" } }).modelPinned).toBe(true);
-  });
-
-  it("lets the environment set the model and a flag override it", () => {
-    const withEnv = { ...context, env: { SWARM_MODEL: "openai:gpt-5" } };
-    expect(parseRun(["t"], withEnv).modelSpec).toBe("openai:gpt-5");
-    expect(parseRun(["--model", "google:gemini-3-pro", "t"], withEnv).modelSpec).toBe(
-      "google:gemini-3-pro",
+  it("takes an explicit local endpoint and refuses one that is not an http(s) url", () => {
+    expect(parseRun(["--local-endpoint", "http://127.0.0.1:8000/v1", "t"]).localEndpoint).toBe(
+      "http://127.0.0.1:8000/v1",
+    );
+    expect(() => parseCommandLine(["--local-endpoint", "127.0.0.1:8000", "t"], context)).toThrow(
+      /--local-endpoint must be an http\(s\) url/,
     );
   });
 
@@ -184,8 +180,8 @@ describe("the select command", () => {
 });
 
 describe("the auto-resolve budget", () => {
-  it("defaults the attempt cap to three and the base to HEAD", () => {
-    expect(parseRun(["t"])).toMatchObject({ attempts: 3, baseRef: "HEAD" });
+  it("leaves the attempt cap null and defaults the base to HEAD", () => {
+    expect(parseRun(["t"])).toMatchObject({ attempts: null, baseRef: "HEAD" });
   });
 
   it("takes an attempt cap, and refuses one that is not a positive whole number", () => {
@@ -288,10 +284,11 @@ describe("the parallel command", () => {
       tasksFile: "/work/repo/tasks.txt",
       workspace: "/work/repo/pkg",
       baseRef: "HEAD",
-      maxSteps: 40,
-      attempts: 3,
+      maxSteps: null,
+      attempts: null,
       bundleDirectory: "/work/repo/out",
-      modelSpec: "anthropic:claude-opus-5",
+      modelSpec: null,
+      localEndpoint: null,
     });
   });
 
