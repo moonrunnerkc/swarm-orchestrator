@@ -721,7 +721,7 @@ describe("8. a shell command copied from file content (derivation-heuristic path
     // Neither substring containment nor 3-gram overlap reaches the threshold. This is the
     // inherent gap in a text-overlap heuristic, which build-guide section 3.4 already names
     // as a tunable heuristic with a false-positive rate rather than a guarantee, and section
-    // 7 lists as a known residual. Lowering the threshold to catch this flags ordinary
+    // 7.1 lists as a known residual. Lowering the threshold to catch this flags ordinary
     // commands the model read a filename from, so the heuristic is left alone.
     expect(assessment.matched).toBe(false);
     expect(assessment.score).toBeLessThan(0.6);
