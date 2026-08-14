@@ -106,47 +106,24 @@ describe("gate output parsers", () => {
 });
 
 describe("reading a coverage report", () => {
-  it("takes the uncovered line ranges out of the node runner's table", () => {
-    const uncovered = parseUncoveredLines(
-      [
-        "# start of coverage report",
-        "# ------------------------------------------",
-        "# file      | line % | branch % | funcs % | uncovered lines",
-        "# ------------------------------------------",
-        "# math.js   |  66.67 |    66.67 |  100.00 | 3-4",
-        "# util.js   |  80.00 |   100.00 |  100.00 | 7, 11-12",
-        "# all files |  70.00 |    80.00 |  100.00 | ",
-        "# ------------------------------------------",
-        "# end of coverage report",
-      ].join("\n"),
-    );
-
-    expect([...(uncovered.get("math.js") ?? [])]).toEqual([3, 4]);
-    expect([...(uncovered.get("util.js") ?? [])]).toEqual([7, 11, 12]);
-    expect(uncovered.has("all files")).toBe(false);
-  });
-
-  it("finds nothing in output that carries no coverage report", () => {
-    expect(parseUncoveredLines(tapOutput).size).toBe(0);
-  });
+  const mathSection = [
+    "TN:",
+    "SF:/build/src/math.ts",
+    "FNF:1",
+    "DA:1,1",
+    "DA:2,0",
+    "DA:3,0",
+    "DA:4,2",
+    "LF:4",
+    "LH:2",
+    "end_of_record",
+  ];
 
   it("takes the uncovered lines out of an lcov report, which is what the harness asks for", () => {
     const uncovered = parseUncoveredLines(
-      [
-        "TN:",
-        "SF:/build/src/math.ts",
-        "FNF:1",
-        "DA:1,1",
-        "DA:2,0",
-        "DA:3,0",
-        "DA:4,2",
-        "LF:4",
-        "LH:2",
-        "end_of_record",
-        "SF:/build/src/util.ts",
-        "DA:1,1",
-        "end_of_record",
-      ].join("\n"),
+      [...mathSection, "SF:/build/src/util.ts", "DA:1,1", "LF:1", "LH:1", "end_of_record"].join(
+        "\n",
+      ),
     );
 
     expect([...(uncovered.get("/build/src/math.ts") ?? [])]).toEqual([2, 3]);
@@ -155,14 +132,48 @@ describe("reading a coverage report", () => {
     expect([...(uncovered.get("/build/src/util.ts") ?? [])]).toEqual([]);
   });
 
-  it("unions every row naming one file, so an empty spelling cannot shadow a populated one", () => {
+  it("finds nothing in output that carries no coverage report", () => {
+    expect(parseUncoveredLines(tapOutput).size).toBe(0);
+  });
+
+  it("reads nothing out of an artifact that is not a complete lcov report", () => {
+    for (const artifact of [
+      "",
+      "SF:/build/src/math.ts\n",
+      "SF:/build/src/math.ts\nend_of_record\n",
+      "SF:/build/src/math.ts\nDA:1,1\nend_of_record\n",
+      "SF:/build/src/math.ts\nDA:1,1\nLF:2\nLH:1\nend_of_record\n",
+      "SF:/build/src/math.ts\nDA:1,0\nLF:1\nLH:1\nend_of_record\n",
+      "DA:1,1\nLF:1\nLH:1\nend_of_record\n",
+      [
+        "start of coverage report",
+        "file | line % | branch % | funcs % | uncovered lines",
+        "math.js | 100.00 | 100.00 | 100.00 | ",
+        "end of coverage report",
+      ].join("\n"),
+      [...mathSection, "the runner also printed this"].join("\n"),
+    ]) {
+      expect({ artifact, files: parseUncoveredLines(artifact).size }).toEqual({
+        artifact,
+        files: 0,
+      });
+    }
+  });
+
+  it("unions every section naming one file, so an empty one cannot shadow a populated one", () => {
     const uncovered = parseUncoveredLines(
       [
-        "# start of coverage report",
-        "# file | line % | branch % | funcs % | uncovered lines",
-        "# src/math.ts | 100.00 | 100.00 | 100.00 | ",
-        "# /workspace/src/math.ts | 50.00 | 50.00 | 100.00 | 2-3",
-        "# end of coverage report",
+        "SF:src/math.ts",
+        "DA:1,1",
+        "LF:1",
+        "LH:1",
+        "end_of_record",
+        "SF:/workspace/src/math.ts",
+        "DA:2,0",
+        "DA:3,0",
+        "LF:2",
+        "LH:0",
+        "end_of_record",
       ].join("\n"),
     );
 

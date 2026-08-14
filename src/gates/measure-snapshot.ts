@@ -98,7 +98,9 @@ interface CoverageResult {
  * change added. When no runner left a report, the answer is null: there is no proxy here,
  * because "the tests were not run against these lines" and "these lines are not covered" are
  * different findings and only one of them is measured. In particular there is no fallback to
- * what a gate printed, since that is a number the code under measurement can author.
+ * what a gate printed, since that is a number the code under measurement can author, and an
+ * artifact that is not a complete lcov report parses as nothing, which lands here as the same
+ * null a coverage-free project produces.
  */
 function changedLineCoverage(input: SnapshotInput): CoverageResult | null {
   const uncovered = new Map<string, Set<number>>();

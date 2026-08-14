@@ -102,6 +102,47 @@ function snapshot(
   return { ...emptyMeasureSnapshot, ...extra, perTestFile };
 }
 
+/**
+ * Nine lines with two branches, and the lcov the node runner really writes for it when only
+ * the in-range case is exercised: lines 3, 4, 6 and 7 are never reached, so five of the nine
+ * are. Both are fixtures for the coverage arm, which is the only thing a forged artifact can
+ * lie to.
+ */
+const clampSource = [
+  "export function clamp(value, low, high) {",
+  "  if (value < low) {",
+  "    return low;",
+  "  }",
+  "  if (value > high) {",
+  "    return high;",
+  "  }",
+  "  return value;",
+  "}",
+  "",
+].join("\n");
+
+const genuineLcov = [
+  "TN:",
+  "SF:clamp.mjs",
+  "FN:1,clamp",
+  "FNDA:1,clamp",
+  "FNF:1",
+  "FNH:1",
+  "DA:1,1",
+  "DA:2,1",
+  "DA:3,0",
+  "DA:4,0",
+  "DA:5,1",
+  "DA:6,0",
+  "DA:7,0",
+  "DA:8,1",
+  "DA:9,1",
+  "LH:5",
+  "LF:9",
+  "end_of_record",
+  "",
+].join("\n");
+
 const declared: FileSetState = {
   declared: ["src/a.ts"],
   amendments: [],
@@ -1080,5 +1121,54 @@ describe("15. spell a marker or a tautology so a reader sees it and the gate doe
     ].join("\n");
 
     expect(measureTestFile(gutted).assertions).toBe(0);
+  });
+});
+
+describe("16. hand the coverage arm an artifact that is not a measurement", () => {
+  const changed = createMemoryWorkspace({
+    base: { "clamp.mjs": "export const nothing = 0;\n" },
+    current: { "clamp.mjs": clampSource },
+  });
+
+  it("reads a truncated, header-only, or table artifact as not measured, never as 100%", async () => {
+    for (const report of [
+      // Named the file and stopped: no line was reported, so no line was measured.
+      "SF:clamp.mjs\n",
+      "SF:clamp.mjs\nend_of_record\n",
+      // One line reported and no totals declared beside it, which is a report cut in half.
+      "SF:clamp.mjs\nDA:1,1\nend_of_record\n",
+      // The printed table a test can write into any stream, including a file destination.
+      [
+        "start of coverage report",
+        "file | line % | branch % | funcs % | uncovered lines",
+        "clamp.mjs | 100.00 | 100.00 | 100.00 | ",
+        "end of coverage report",
+      ].join("\n"),
+    ]) {
+      const measured = await takeMeasureSnapshot({
+        changes: await changed.changes(),
+        probe: changed,
+        trackedTestFiles: [],
+        gateMeasures: {},
+        coverageReports: [report],
+      });
+
+      expect({ report: report.slice(0, 24), coverage: measured.changedLineCoverage }).toEqual({
+        report: report.slice(0, 24),
+        coverage: null,
+      });
+    }
+  });
+
+  it("still reads the real number out of a complete report", async () => {
+    const measured = await takeMeasureSnapshot({
+      changes: await changed.changes(),
+      probe: changed,
+      trackedTestFiles: [],
+      gateMeasures: {},
+      coverageReports: [genuineLcov],
+    });
+
+    expect(measured.changedLineCoverage).toBeCloseTo(5 / 9);
   });
 });

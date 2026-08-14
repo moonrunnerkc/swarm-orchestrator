@@ -49,9 +49,16 @@ describe("changed-line coverage", () => {
       trackedTestFiles: [],
       gateMeasures: {},
       coverageReports: [
-        ["SF:/build/src/math.ts", "DA:2,1", "DA:3,0", "DA:4,0", "DA:5,1", "end_of_record"].join(
-          "\n",
-        ),
+        [
+          "SF:/build/src/math.ts",
+          "DA:2,1",
+          "DA:3,0",
+          "DA:4,0",
+          "DA:5,1",
+          "LF:4",
+          "LH:2",
+          "end_of_record",
+        ].join("\n"),
       ],
     });
 
@@ -61,7 +68,7 @@ describe("changed-line coverage", () => {
     expect(measured.changedLineCoverage).toBe(0.5);
   });
 
-  it("does not let an empty row for one path spelling hide misses under another", async () => {
+  it("does not let an empty section for one path spelling hide misses under another", async () => {
     const probe = workspace();
 
     const measured = await takeMeasureSnapshot({
@@ -71,11 +78,17 @@ describe("changed-line coverage", () => {
       gateMeasures: {},
       coverageReports: [
         [
-          "# start of coverage report",
-          "# file | line % | branch % | funcs % | uncovered lines",
-          "# src/math.ts | 100.00 | 100.00 | 100.00 | ",
-          "# /workspace/src/math.ts | 50.00 | 50.00 | 100.00 | 3-4",
-          "# end of coverage report",
+          "SF:src/math.ts",
+          "DA:2,1",
+          "LF:1",
+          "LH:1",
+          "end_of_record",
+          "SF:/workspace/src/math.ts",
+          "DA:3,0",
+          "DA:4,0",
+          "LF:2",
+          "LH:0",
+          "end_of_record",
         ].join("\n"),
       ],
     });
@@ -91,7 +104,7 @@ describe("changed-line coverage", () => {
       probe,
       trackedTestFiles: [],
       gateMeasures: {},
-      coverageReports: ["SF:src/elsewhere.ts\nDA:1,0\nend_of_record"],
+      coverageReports: ["SF:src/elsewhere.ts\nDA:1,0\nLF:1\nLH:0\nend_of_record"],
     });
 
     expect(measured.changedLineCoverage).toBeNull();

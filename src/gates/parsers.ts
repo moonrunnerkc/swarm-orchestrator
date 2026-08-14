@@ -223,92 +223,127 @@ function describeTestRun(counters: TestCounters, exitCode: number): string {
 }
 
 /**
- * The lines an executed run did not reach, per file, read from a report the runner wrote.
- * Intersecting that with the lines this change added is the only honest way to say
- * "coverage of changed lines": it is measured from a run, and it is absent when no run
- * measured it.
+ * The lines an executed run did not reach, per file, read from a report the runner wrote to a
+ * path the harness named. Intersecting that with the lines this change added is the only
+ * honest way to say "coverage of changed lines": it is measured from a run, and it is absent
+ * when no run measured it.
  *
- * Two shapes, because a runner writes one or the other: lcov, which is what the harness asks
- * for since it carries coverage records and nothing else, and node's printed table, which is
- * what a project that configured its own reporter leaves behind. Neither is read from a
- * gate's stdout; see coverage-artifact.ts for why that distinction is the whole point.
+ * The artifact is a complete lcov report or it is nothing. There used to be a second shape
+ * here, node's printed table, and carrying it made every artifact that is not lcov read like
+ * one: a truncated file, a header-only file, and a table a test printed all reached the same
+ * "the file is mentioned and nothing is missed" reading, which is a ratio of 1 for lines no
+ * run measured. So the framing is checked before a single ratio is trusted, and an artifact
+ * that fails the check yields nothing, exactly as a coverage-free project does. Not measured
+ * is a verdict; 100% is a claim.
  */
 export function parseUncoveredLines(text: string): ReadonlyMap<string, ReadonlySet<number>> {
-  return /^SF:/m.test(text) ? parseLcov(text) : parseCoverageTable(text);
+  return parseCompleteLcov(text) ?? new Map();
 }
 
-/** `SF:` opens a file, `DA:<line>,<count>` reports one line, `end_of_record` closes it. */
-function parseLcov(text: string): ReadonlyMap<string, ReadonlySet<number>> {
+/** The line kinds an lcov report is built from. Anything else in the file is not lcov. */
+const lcovRecordLine = /^(?:TN|SF|VER|FN|FNDA|FNF|FNH|BRDA|BRF|BRH|DA|LF|LH):/;
+
+/**
+ * One `SF:` section under construction. `found` and `hit` are what the section declares about
+ * itself in `LF:` and `LH:`; `measured` and `reached` are what its own `DA:` lines add up to.
+ * A section whose declaration disagrees with its lines was cut short somewhere.
+ */
+interface LcovSection {
+  readonly file: string;
+  readonly uncovered: Set<number>;
+  measured: number;
+  reached: number;
+  found: number | null;
+  hit: number | null;
+}
+
+/**
+ * `TN:` opens, `SF:` names the file, `DA:<line>,<count>` reports one line, `LF:`/`LH:` declare
+ * the section's own totals, `end_of_record` closes it. Null for anything that is not all of
+ * that: a section left open, a section with no `DA:` line, a section whose declared totals do
+ * not match the lines beside them, a line no lcov producer writes, or a report with no
+ * complete section in it. Null is what the caller renders as not measured.
+ */
+function parseCompleteLcov(text: string): ReadonlyMap<string, ReadonlySet<number>> | null {
   const uncovered = new Map<string, Set<number>>();
-  let file: string | null = null;
+  let section: LcovSection | null = null;
+  let complete = 0;
 
   for (const raw of text.split("\n")) {
     const line = raw.trim();
-    if (line.startsWith("SF:")) {
-      file = line.slice(3).trim();
-      if (file.length > 0 && !uncovered.has(file)) {
-        uncovered.set(file, new Set<number>());
-      }
+    if (line.length === 0) {
       continue;
     }
+
     if (line === "end_of_record") {
-      file = null;
+      if (section === null || !sectionIsComplete(section)) {
+        return null;
+      }
+      const merged = uncovered.get(section.file) ?? new Set<number>();
+      for (const missed of section.uncovered) {
+        merged.add(missed);
+      }
+      uncovered.set(section.file, merged);
+      complete += 1;
+      section = null;
       continue;
     }
-    if (file === null || !line.startsWith("DA:")) {
-      continue;
-    }
-    const reading = /^DA:(\d+),(\d+)/.exec(line);
-    if (reading?.[1] === undefined || reading[2] === undefined) {
-      continue;
-    }
-    if (Number(reading[2]) === 0) {
-      uncovered.get(file)?.add(Number(reading[1]));
-    }
-  }
 
-  return uncovered;
-}
-
-function parseCoverageTable(text: string): ReadonlyMap<string, ReadonlySet<number>> {
-  const uncovered = new Map<string, Set<number>>();
-  let inReport = false;
-
-  for (const raw of text.split("\n")) {
-    const line = raw.replace(/^[#ℹ]\s?/, "").trimEnd();
-    if (/^start of coverage report/.test(line)) {
-      inReport = true;
+    if (!lcovRecordLine.test(line)) {
+      return null;
+    }
+    if (line.startsWith("SF:")) {
+      const file = line.slice(3).trim();
+      if (section !== null || file.length === 0) {
+        return null;
+      }
+      section = {
+        file,
+        uncovered: new Set<number>(),
+        measured: 0,
+        reached: 0,
+        found: null,
+        hit: null,
+      };
       continue;
     }
-    if (/^end of coverage report/.test(line)) {
-      inReport = false;
-      continue;
-    }
-    if (!inReport || !line.includes("|")) {
-      continue;
-    }
-    const columns = line.split("|").map((column) => column.trim());
-    const file = columns[0] ?? "";
-    const ranges = columns[4] ?? "";
-    if (file.length === 0 || file === "file" || file === "all files" || /^-+$/.test(file)) {
-      continue;
-    }
-    const lines = uncovered.get(file) ?? new Set<number>();
-    for (const range of ranges.split(/[\s,]+/).filter((part) => part.length > 0)) {
-      const bounds = /^(\d+)(?:-(\d+))?$/.exec(range);
-      if (bounds?.[1] === undefined) {
+    // The test name precedes the file it belongs to, so it is the one line that may sit
+    // outside a section. Every other record line without one is a report cut in half.
+    if (section === null) {
+      if (line.startsWith("TN:")) {
         continue;
       }
-      const from = Number(bounds[1]);
-      const to = bounds[2] === undefined ? from : Number(bounds[2]);
-      for (let current = from; current <= to; current += 1) {
-        lines.add(current);
-      }
+      return null;
     }
-    uncovered.set(file, lines);
+
+    const counts = /^DA:(\d+),(\d+)/.exec(line);
+    if (counts?.[1] !== undefined && counts[2] !== undefined) {
+      section.measured += 1;
+      if (Number(counts[2]) === 0) {
+        section.uncovered.add(Number(counts[1]));
+      } else {
+        section.reached += 1;
+      }
+      continue;
+    }
+    const found = /^LF:(\d+)$/.exec(line)?.[1];
+    if (found !== undefined) {
+      section.found = Number(found);
+      continue;
+    }
+    const hit = /^LH:(\d+)$/.exec(line)?.[1];
+    if (hit !== undefined) {
+      section.hit = Number(hit);
+    }
   }
 
-  return uncovered;
+  return section === null && complete > 0 ? uncovered : null;
+}
+
+function sectionIsComplete(section: LcovSection): boolean {
+  return (
+    section.measured > 0 && section.found === section.measured && section.hit === section.reached
+  );
 }
 
 /**
