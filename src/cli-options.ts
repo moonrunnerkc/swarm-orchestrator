@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { bundledShortlistKeyword } from "./select/shortlist-source.ts";
 
 export interface RunCommand {
   readonly command: "run";
@@ -27,14 +28,21 @@ export interface ReplayCommand {
   readonly bundleDirectory: string;
 }
 
-export type CommandLine = RunCommand | ReplayCommand | GatesCommand;
+/** Probes the machine and recommends a local model for it. */
+export interface SelectCommand {
+  readonly command: "select";
+  /** A URL, a file path, or "bundled". Null takes the list the project publishes. */
+  readonly shortlist: string | null;
+}
+
+export type CommandLine = RunCommand | ReplayCommand | GatesCommand | SelectCommand;
 
 export class InvalidCommandLineError extends Error {
   constructor(problem: string) {
     super(
       `${problem}. Usage: swarm [--model <provider:id>] [--workspace <dir>] [--bundle <dir>] ` +
         `[--base <ref>] [--attempts <n>] "<task>", swarm gates [--workspace <dir>] [--base <ref>], ` +
-        "or swarm replay <bundle directory>",
+        "swarm select [--shortlist <file|url|bundled>], or swarm replay <bundle directory>",
     );
     this.name = "InvalidCommandLineError";
   }
@@ -89,6 +97,10 @@ export function parseCommandLine(
   // --workspace lands where the caller says it does.
   const workspace = resolve(context.currentDirectory, flags.get("workspace") ?? ".");
 
+  if (words[0] === "select") {
+    return { command: "select", shortlist: resolveShortlist(flags.get("shortlist"), context) };
+  }
+
   if (words[0] === "gates") {
     return {
       command: "gates",
@@ -113,6 +125,20 @@ export function parseCommandLine(
     baseRef: flags.get("base") ?? defaultBaseRef,
     attempts: parseCount(flags.get("attempts"), "--attempts", defaultAttempts),
   };
+}
+
+/**
+ * Only a path is resolved: a URL and the "bundled" keyword are not filesystem locations, and
+ * resolving them would turn both into a path under the current directory that does not exist.
+ */
+function resolveShortlist(raw: string | undefined, context: CommandLineContext): string | null {
+  if (raw === undefined) {
+    return null;
+  }
+  if (raw === bundledShortlistKeyword || raw.startsWith("http://") || raw.startsWith("https://")) {
+    return raw;
+  }
+  return resolve(context.currentDirectory, raw);
 }
 
 /**

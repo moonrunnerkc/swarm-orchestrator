@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { statSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { homedir, platform } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -9,6 +10,7 @@ import {
   parseCommandLine,
   type ReplayCommand,
   type RunCommand,
+  type SelectCommand,
 } from "./cli-options.ts";
 import type { Clock } from "./core/clock.ts";
 import { runAgentLoop } from "./core/loop.ts";
@@ -32,6 +34,11 @@ import { createAmendFileSetTool, createDeclareFileSetTool } from "./gates/file-s
 import { citedRecords, type GateCycle, outstandingJustifications } from "./gates/gate-runner.ts";
 import { parseModelSpec } from "./providers/model-spec.ts";
 import { createProviderRegistry } from "./providers/registry.ts";
+import { probeHardware } from "./select/hardware-probe.ts";
+import { recommendModel } from "./select/recommendation.ts";
+import { renderSelectReport } from "./select/select-report.ts";
+import { loadShortlist } from "./select/shortlist-source.ts";
+import { systemProbeEnvironment } from "./select/system-probe.ts";
 import { createToolChokepoint } from "./tools/chokepoint.ts";
 import { createLedgerChokepointRecorder } from "./tools/chokepoint-record.ts";
 import { createClaimTool } from "./tools/claim-tool.ts";
@@ -92,6 +99,28 @@ async function replay(options: ReplayCommand): Promise<number> {
     process.stdout.write(`${line}\n`);
   }
   return 0;
+}
+
+/** Long enough for a cold CDN, short enough that the bundled snapshot takes over quickly. */
+const shortlistFetchTimeoutMs = 4_000;
+
+/**
+ * No model, no ledger: every number this prints came off the machine or out of the shortlist,
+ * so there is no claim here for evidence to answer.
+ */
+async function select(options: SelectCommand): Promise<number> {
+  const profile = await probeHardware(systemProbeEnvironment());
+  const loaded = await loadShortlist({
+    fetch: (url) => fetch(url, { signal: AbortSignal.timeout(shortlistFetchTimeoutMs) }),
+    readFile: (path) => readFile(path, "utf8"),
+    requested: options.shortlist,
+  });
+  const recommendation = recommendModel(profile, loaded.shortlist);
+
+  for (const line of renderSelectReport({ profile, loaded, recommendation })) {
+    process.stdout.write(`${line}\n`);
+  }
+  return recommendation.outcome === "model" ? 0 : 1;
 }
 
 async function run(options: RunCommand): Promise<number> {
@@ -410,6 +439,9 @@ async function main(): Promise<number> {
   });
   if (options.command === "replay") {
     return replay(options);
+  }
+  if (options.command === "select") {
+    return select(options);
   }
   return options.command === "gates" ? gates(options) : run(options);
 }

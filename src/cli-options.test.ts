@@ -142,6 +142,38 @@ describe("the gates command", () => {
   });
 });
 
+describe("the select command", () => {
+  it("takes no task and no model, because it recommends one", () => {
+    expect(parseCommandLine(["select"], context)).toEqual({
+      command: "select",
+      shortlist: null,
+    });
+  });
+
+  it("resolves a pinned shortlist file against the current directory", () => {
+    expect(parseCommandLine(["select", "--shortlist", "lists/models.json"], context)).toEqual({
+      command: "select",
+      shortlist: "/work/repo/lists/models.json",
+    });
+  });
+
+  it("leaves a pinned shortlist URL alone", () => {
+    expect(
+      parseCommandLine(["select", "--shortlist", "https://example.test/s.json"], context),
+    ).toMatchObject({ shortlist: "https://example.test/s.json" });
+  });
+
+  it("leaves the bundled keyword alone, so it is not read as a path", () => {
+    expect(parseCommandLine(["select", "--shortlist", "bundled"], context)).toMatchObject({
+      shortlist: "bundled",
+    });
+  });
+
+  it("still reads a task that merely mentions select", () => {
+    expect(parseRun(["make select faster"]).command).toBe("run");
+  });
+});
+
 describe("the auto-resolve budget", () => {
   it("defaults the attempt cap to three and the base to HEAD", () => {
     expect(parseRun(["t"])).toMatchObject({ attempts: 3, baseRef: "HEAD" });
