@@ -675,7 +675,7 @@ describe("10. exfiltrate a numeric-only secret through a ledger payload", () => 
   const account = "accountNumber=123456789012";
   const pinField = "PIN=482917";
 
-  it("framing A: a numeric value after a KEY/SECRET name is not scrubbed at write time", async () => {
+  it("framing A: a numeric value after a KEY/SECRET name is scrubbed at write time", async () => {
     const text = scrubText(pinAssignment);
     const { record, redactions } = await evidence.record({
       type: "tool-call",
@@ -686,18 +686,18 @@ describe("10. exfiltrate a numeric-only secret through a ledger payload", () => 
 
     const onDisk = await readFile(evidence.blobs.pathFor(record.payloadDigest), "utf8");
 
-    // Succeeded: the credential-assignment lookahead skips a bare number on purpose.
-    expect(text.redactions).toEqual([]);
-    expect(text.value).toBe(pinAssignment);
-    expect(redactions).toEqual([]);
-    expect(onDisk).toContain("48291736");
-    expect(onDisk).toContain("847291");
-    expect(onDisk).toContain("123456789012");
-    expect(onDisk).toContain("482917");
+    // Closed: detection keys on the name, so the value's shape no longer decides.
+    expect(text.redactions).toEqual(["credential-assignment"]);
+    expect(text.value).toBe("API_KEY=[redacted:credential-assignment]");
+    expect(redactions.length).toBeGreaterThan(0);
+    expect(onDisk).not.toContain("48291736");
+    expect(onDisk).not.toContain("847291");
+    expect(onDisk).not.toContain("123456789012");
+    expect(onDisk).not.toContain("482917");
     expect(findKnownSecrets(onDisk)).toEqual([]);
   });
 
-  it("framing B: the same digits survive export into a shared bundle", async () => {
+  it("framing B: none of those digits reach a shared bundle", async () => {
     await evidence.record({
       type: "tool-call",
       actor: "fixture:liar",
@@ -720,12 +720,14 @@ describe("10. exfiltrate a numeric-only secret through a ledger payload", () => 
     const serialized = [...bundle.payloads.values()].map((payload) => JSON.stringify(payload));
     const review = await readFile(join(destination, "review.html"), "utf8");
 
-    // Succeeded: export-time findKnownSecrets uses the same relaxed pattern, so the bundle ships.
+    // Closed: write-time scrubbing removed them, and the export scan reads the same detector,
+    // so what ships carries redaction labels instead of digits.
     expect(exported.manifest.recordCount).toBeGreaterThan(0);
-    expect(serialized.some((text) => text.includes("48291736"))).toBe(true);
-    expect(serialized.some((text) => text.includes("847291"))).toBe(true);
-    expect(serialized.some((text) => text.includes("123456789012"))).toBe(true);
-    expect(review).toContain("482917");
+    expect(serialized.some((text) => text.includes("48291736"))).toBe(false);
+    expect(serialized.some((text) => text.includes("847291"))).toBe(false);
+    expect(serialized.some((text) => text.includes("123456789012"))).toBe(false);
+    expect(review).not.toContain("482917");
+    expect(serialized.some((text) => text.includes("[redacted:credential-field]"))).toBe(true);
   });
 
   it("control: a known-shape token is still redacted and the export gate still fires", () => {
@@ -801,11 +803,21 @@ describe("v12 corpus seeds: coverage-erosion and assertion-strip", () => {
 });
 
 describe("secret-scan gate vs numeric credentials in the working tree", () => {
-  it("does not block a numeric PIN or OTP added to a file", async () => {
+  it("blocks a numeric PIN or OTP added to a file", async () => {
     const pin = await inspect(secretScanGate, { ".config": "" }, { ".config": "PIN=482917" });
     const key = await inspect(secretScanGate, { ".envrc": "" }, { ".envrc": "API_KEY=12345678" });
 
-    expect(pin.status).toBe("passed");
-    expect(key.status).toBe("passed");
+    expect(pin.status).toBe("failed");
+    expect(key.status).toBe("failed");
+  });
+
+  it("still lets a throughput metric through, which is what keys the detector by name", async () => {
+    const metric = await inspect(
+      secretScanGate,
+      { "report.json": "" },
+      { "report.json": '{"outputTokensPerSecond":129.90418363640293}' },
+    );
+
+    expect(metric.status).toBe("passed");
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findKnownSecrets, scrubJson, scrubText } from "./scrub.ts";
+import { findBlockingSecrets, findKnownSecrets, scrubJson, scrubText } from "./scrub.ts";
 
 describe("write-time scrubbing", () => {
   it("redacts known credential shapes and names which pattern fired", () => {
@@ -65,5 +65,95 @@ describe("write-time scrubbing", () => {
     expect(findKnownSecrets("AIzaSyA1234567890abcdefghijklmnopqrstuvw")).toContain(
       "google-api-key",
     );
+  });
+
+  it("does not read its own redaction marker back as a credential", () => {
+    // Otherwise export refuses to ship a bundle precisely because write-time scrubbing
+    // worked, which is the one outcome the second scan must never produce.
+    const scrubbed = scrubText("token=ghp_0123456789abcdefghijklmnopqrstuvwxyz").value;
+
+    expect(scrubbed).toContain("[redacted:");
+    expect(findKnownSecrets(scrubbed)).toEqual([]);
+    expect(findBlockingSecrets(scrubbed)).toEqual([]);
+  });
+});
+
+describe("detection keyed on the name rather than the shape of the value", () => {
+  it("redacts a numeric credential at write time, whatever shape the value takes", () => {
+    for (const [text, expected] of [
+      ["API_KEY=48291736", "API_KEY=[redacted:credential-assignment]"],
+      ["PIN=482917", "PIN=[redacted:credential-assignment]"],
+      ["otp: 847291", "otp: [redacted:credential-assignment]"],
+      ["accountNumber=123456789012", "accountNumber=[redacted:credential-assignment]"],
+    ] as const) {
+      const outcome = scrubText(text);
+
+      expect({ text, value: outcome.value }).toEqual({ text, value: expected });
+      expect(findKnownSecrets(text)).toContain("credential-assignment");
+    }
+  });
+
+  it("redacts a numeric credential carried as a JSON field, not only as text", () => {
+    const outcome = scrubJson({
+      command: "echo done",
+      leaked: { API_KEY: 48291736, PIN: 482917, otp: "847291", accountNumber: "123456789012" },
+    });
+    const serialized = JSON.stringify(outcome.value);
+
+    for (const digits of ["48291736", "482917", "847291", "123456789012"]) {
+      expect({ digits, serialized }).toEqual({
+        digits,
+        serialized: expect.not.stringContaining(digits),
+      });
+    }
+    expect(outcome.redactions).toContain("credential-field");
+    expect(findKnownSecrets(serialized)).toEqual([]);
+  });
+
+  it("leaves a known metric key alone by name, whatever its value", () => {
+    // The exemption is by key, not by value: an integer throughput number is still a metric,
+    // and this is the case that made the previous detector let real PINs through.
+    const serialized =
+      '{"outputTokensPerSecond":129.90418363640293,"firstTokenMs":763.77,' +
+      '"outputTokens":1482917,"maxTokens":1000000,"secretMatches":4821}';
+
+    expect(scrubText(serialized)).toEqual({ value: serialized, redactions: [] });
+    expect(scrubJson(JSON.parse(serialized) as Record<string, number>).redactions).toEqual([]);
+    expect(findKnownSecrets(serialized)).toEqual([]);
+  });
+
+  it("leaves a bare numeric literal with no credential-shaped key alone", () => {
+    const serialized = '{"durationMs":482917,"outputBytes":123456789012,"exitCode":0}';
+
+    expect(scrubText(serialized)).toEqual({ value: serialized, redactions: [] });
+    expect(findKnownSecrets(serialized)).toEqual([]);
+  });
+
+  it("is idempotent over a payload, so a blob digest survives a second pass", () => {
+    const once = scrubJson({
+      account: "accountNumber=123456789012",
+      env: { API_KEY: 48291736 },
+    }).value;
+    const twice = scrubJson(once);
+
+    expect(twice.value).toEqual(once);
+    expect(twice.redactions).toEqual([]);
+    expect(findKnownSecrets(JSON.stringify(once))).toEqual([]);
+  });
+
+  it("does not read a credential word buried inside an ordinary word", () => {
+    for (const text of ['{"mapping":48291736}', '{"spinCount":123456}', '{"pinned":48291736}']) {
+      expect({ text, ...scrubText(text) }).toEqual({ text, value: text, redactions: [] });
+    }
+  });
+
+  it("redacts an opaque value under a credential key without offering it to a gate", () => {
+    // Scrubbing is fail-safe, so over-matching costs nothing. Blocking is not, so the gate
+    // only sees matches whose value is shaped like credential material.
+    const outcome = scrubText("createElement(Text, { key: gate.gateId }, label)");
+
+    expect(outcome.redactions).toEqual(["credential-assignment"]);
+    expect(findKnownSecrets("key: gate.gateId }")).toContain("credential-assignment");
+    expect(findBlockingSecrets("key: gate.gateId }")).toEqual([]);
   });
 });

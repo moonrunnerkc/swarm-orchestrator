@@ -1,4 +1,4 @@
-import { findKnownSecrets } from "../evidence/scrub.ts";
+import { findBlockingSecrets } from "../evidence/scrub.ts";
 import { checkFileSet } from "./file-set.ts";
 import {
   type GateContext,
@@ -164,31 +164,14 @@ export const fileSetGate: GateDefinition = {
 };
 
 /**
- * A second condition the scrub deliberately does not impose. Scrubbing is fail-safe: over-
- * matching redacts something harmless and costs nothing, so `key: gate.gateId` is redacted
- * on its way to the ledger and nobody minds. Blocking is not fail-safe: the same match stops
- * a legitimate change, and a gate that cries wolf on ordinary code is a gate people learn to
- * work around. So the gate additionally requires a value shaped like credential material.
- *
- * The asymmetry is intended, and it is safe in the direction that matters: a credential the
- * gate lets through is still scrubbed out of every record (invariant 9). What is lost is a
- * warning, never the redaction.
+ * The same detector as the write-time scrub and the export scan, asked its blocking question
+ * instead of its redaction one. Scrubbing is fail-safe, so it over-matches on purpose and
+ * `key: gate.gateId` is redacted on its way to the ledger and nobody minds. Blocking is not
+ * fail-safe, so this gate only sees matches whose value is shaped like credential material.
+ * The asymmetry is safe in the direction that matters: a credential this gate lets through is
+ * still scrubbed out of every record (invariant 9). What is lost is a warning, never the
+ * redaction.
  */
-const credentialShapedToken = /[A-Za-z0-9+/_=-]{12,}/g;
-
-function carriesCredentialShapedValue(line: string): boolean {
-  for (const token of line.match(credentialShapedToken) ?? []) {
-    // Letters and digits together, or base64 padding at length: an identifier is neither.
-    if (/[0-9]/.test(token) && /[A-Za-z]/.test(token)) {
-      return true;
-    }
-    if (/[+/=]/.test(token) && token.length >= 20) {
-      return true;
-    }
-  }
-  return false;
-}
-
 export const secretScanGate: GateDefinition = {
   id: "secret-scan",
   title: "no credential material in the change",
@@ -199,8 +182,8 @@ export const secretScanGate: GateDefinition = {
       const hits: { path: string; line: number; labels: readonly string[] }[] = [];
       for (const file of context.changes.files) {
         for (const added of file.addedLines) {
-          const labels = findKnownSecrets(added.text);
-          if (labels.length > 0 && carriesCredentialShapedValue(added.text)) {
+          const labels = findBlockingSecrets(added.text);
+          if (labels.length > 0) {
             hits.push({ path: file.path, line: added.line, labels });
           }
         }

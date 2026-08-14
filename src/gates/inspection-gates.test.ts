@@ -200,6 +200,24 @@ describe("the secret scan gate", () => {
       expect({ line, status: reading.status }).toEqual({ line, status: "failed" });
     }
   });
+
+  it("blocks a credential whose value is nothing but digits", async () => {
+    for (const line of ["PIN=482917", "API_KEY=12345678", "accountNumber=123456789012"]) {
+      const reading = await readGate(secretScanGate, { ".config": "" }, { ".config": line });
+      expect({ line, status: reading.status }).toEqual({ line, status: "failed" });
+    }
+  });
+
+  it("passes a measurement whose key happens to carry a credential word", async () => {
+    for (const line of [
+      "  outputTokensPerSecond: 129.90418363640293,",
+      '  "outputTokens": 1482917,',
+      "  budget: { maxTokens: 1_000_000 },",
+    ]) {
+      const reading = await readGate(secretScanGate, { "src/a.ts": "" }, { "src/a.ts": line });
+      expect({ line, status: reading.status }).toEqual({ line, status: "passed" });
+    }
+  });
 });
 
 describe("the diff budget gate", () => {
