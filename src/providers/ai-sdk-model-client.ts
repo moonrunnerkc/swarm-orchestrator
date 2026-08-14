@@ -1,16 +1,26 @@
-import { generateText, type LanguageModel, type ToolSet, tool } from "ai";
-import type { ModelClient, ModelRequest, ModelResponse, ToolSchema } from "../core/model-client.ts";
+import { type LanguageModel, streamText, type ToolSet, tool } from "ai";
+import type {
+  ModelClient,
+  ModelPerformance,
+  ModelRequest,
+  ModelResponse,
+  ToolSchema,
+} from "../core/model-client.ts";
 import { toModelMessages } from "./message-conversion.ts";
 
 /**
- * Wraps an AI SDK language model as a ModelClient. One model call per invocation:
- * the agent loop owns iteration, so the SDK is never asked to run its own.
+ * Wraps an AI SDK language model as a ModelClient. One model call per invocation: the agent
+ * loop owns iteration, so the SDK is never asked to run its own.
+ *
+ * Streamed rather than generated in one shot, for one reason: time to first token is a
+ * calibration dimension, and a complete-response call cannot observe it. The stream is drained
+ * here, so the loop still sees a whole response and nothing downstream changes.
  */
 export function createAiSdkModelClient(modelId: string, model: LanguageModel): ModelClient {
   return {
     modelId,
     async generate(request: ModelRequest): Promise<ModelResponse> {
-      const result = await generateText({
+      const result = streamText({
         model,
         system: request.system,
         messages: toModelMessages(request.messages),
@@ -19,18 +29,42 @@ export function createAiSdkModelClient(modelId: string, model: LanguageModel): M
         abortSignal: request.abortSignal,
       });
 
+      for await (const part of result.fullStream) {
+        // A stream error is the call failing, so it is raised rather than left to surface as
+        // an empty response the loop would read as a completion claim.
+        if (part.type === "error") {
+          throw part.error;
+        }
+      }
+
+      const usage = await result.usage;
       return {
-        text: result.text,
-        toolCalls: result.toolCalls.map((call) => ({
+        text: await result.text,
+        toolCalls: (await result.toolCalls).map((call) => ({
           callId: call.toolCallId,
           toolName: call.toolName,
           input: call.input,
         })),
-        inputTokens: result.usage.inputTokens ?? 0,
-        outputTokens: result.usage.outputTokens ?? 0,
-        finishReason: result.finishReason,
+        inputTokens: usage.inputTokens ?? 0,
+        outputTokens: usage.outputTokens ?? 0,
+        finishReason: await result.finishReason,
+        performance: performanceOf(await result.steps),
       };
     },
+  };
+}
+
+/**
+ * Timed inside the stream pipeline by the SDK, which is why this is read off the step rather
+ * than measured around the call: a consumer-side clock sees the buffered pipeline, not the
+ * arrival of the first token.
+ */
+function performanceOf(steps: Awaited<ReturnType<typeof streamText>["steps"]>): ModelPerformance {
+  const step = steps[steps.length - 1]?.performance;
+  return {
+    firstTokenMs: step?.timeToFirstOutputMs ?? null,
+    outputTokensPerSecond: step?.outputTokensPerSecond ?? null,
+    responseTimeMs: step?.responseTimeMs ?? 0,
   };
 }
 

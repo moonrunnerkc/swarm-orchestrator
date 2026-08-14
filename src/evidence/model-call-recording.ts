@@ -58,6 +58,13 @@ export function createRecordingModelClient(
           outputTokens: response.outputTokens,
           finishReason: response.finishReason,
           toolCallCount: response.toolCalls.length,
+          // Flat and named, so a calibration score is a predicate over this record rather
+          // than a number someone reports about it.
+          performance: {
+            firstTokenMs: response.performance.firstTokenMs,
+            outputTokensPerSecond: response.performance.outputTokensPerSecond,
+            responseTimeMs: response.performance.responseTimeMs,
+          },
         },
         promptDigest,
         responseDigest: digestOfJson(recordedResponse),

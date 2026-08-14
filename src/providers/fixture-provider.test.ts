@@ -60,4 +60,39 @@ describe("fixture model client", () => {
     await expect(client.generate(request())).rejects.toThrow(FixtureExhaustedError);
     await expect(client.generate(request())).rejects.toThrow(/Add another turn/);
   });
+  it("reports no timings by default, rather than a zero that reads as a measurement", async () => {
+    const client = createFixtureModelClient({
+      modelId: "fixture:demo",
+      turns: [respondWithText("done")],
+    });
+
+    expect((await client.generate(request())).performance).toEqual({
+      firstTokenMs: null,
+      outputTokensPerSecond: null,
+      responseTimeMs: 0,
+    });
+  });
+
+  it("lets a script set the timings, so a calibration run can be driven without a model", async () => {
+    const client = createFixtureModelClient({
+      modelId: "fixture:demo",
+      turns: [
+        respondWithText(
+          "done",
+          { input: 10, output: 40 },
+          {
+            firstTokenMs: 120,
+            outputTokensPerSecond: 33.5,
+            responseTimeMs: 1_400,
+          },
+        ),
+      ],
+    });
+
+    const response = await client.generate(request());
+
+    expect(response.performance.firstTokenMs).toBe(120);
+    expect(response.performance.outputTokensPerSecond).toBe(33.5);
+    expect(response.performance.responseTimeMs).toBe(1_400);
+  });
 });

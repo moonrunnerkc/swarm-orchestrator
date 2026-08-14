@@ -43,13 +43,36 @@ export interface ModelRequest {
   readonly abortSignal: AbortSignal;
 }
 
+/**
+ * What the call cost in time. Measured by the provider, which is the only layer that sees the
+ * response arrive; a wrapper timing `generate` can only ever report the whole call. Null means
+ * the provider could not observe that number, stated rather than omitted so an unmeasured
+ * dimension never reads as a zero.
+ */
+export interface ModelPerformance {
+  /** Milliseconds from the request to the first output token, tool calls included. */
+  readonly firstTokenMs: number | null;
+  /** Output tokens per second after the first token arrived. */
+  readonly outputTokensPerSecond: number | null;
+  /** Wall time of the whole call. */
+  readonly responseTimeMs: number;
+}
+
 export interface ModelResponse {
   readonly text: string;
   readonly toolCalls: readonly ModelToolCall[];
   readonly inputTokens: number;
   readonly outputTokens: number;
   readonly finishReason: string;
+  readonly performance: ModelPerformance;
 }
+
+/** For providers and doubles that have no timings to report. */
+export const unobservedPerformance: ModelPerformance = {
+  firstTokenMs: null,
+  outputTokensPerSecond: null,
+  responseTimeMs: 0,
+};
 
 /** The model port. Providers implement it; the loop never imports a provider. */
 export interface ModelClient {

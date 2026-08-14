@@ -128,4 +128,37 @@ describe("model call recording", () => {
     );
     expect(steps).toEqual([1, 2]);
   });
+
+  it("records what the call cost in time, so a calibration score cites a record", async () => {
+    const evidence = await openSession();
+    const model = createRecordingModelClient(
+      createFixtureModelClient({
+        modelId: "fixture:one",
+        turns: [
+          respondWithText(
+            "hello",
+            { input: 30, output: 90 },
+            {
+              firstTokenMs: 210,
+              outputTokensPerSecond: 44.5,
+              responseTimeMs: 2_300,
+            },
+          ),
+        ],
+      }),
+      evidence,
+    );
+
+    await model.generate(request("rename the widget"));
+
+    const record = evidence.records()[0];
+    const payload = (await evidence.blobs.get(record?.payloadDigest ?? "")) as {
+      readonly performance: Record<string, number>;
+    };
+    expect(payload.performance).toEqual({
+      firstTokenMs: 210,
+      outputTokensPerSecond: 44.5,
+      responseTimeMs: 2_300,
+    });
+  });
 });

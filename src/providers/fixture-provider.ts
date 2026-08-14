@@ -1,8 +1,10 @@
-import type {
-  ModelClient,
-  ModelRequest,
-  ModelResponse,
-  ModelToolCall,
+import {
+  type ModelClient,
+  type ModelPerformance,
+  type ModelRequest,
+  type ModelResponse,
+  type ModelToolCall,
+  unobservedPerformance,
 } from "../core/model-client.ts";
 
 /**
@@ -67,7 +69,11 @@ export function createFixtureModelClient(script: FixtureScript): FixtureModelCli
   };
 }
 
-export function respondWithText(text: string, tokens = { input: 10, output: 5 }): FixtureTurn {
+export function respondWithText(
+  text: string,
+  tokens = { input: 10, output: 5 },
+  performance: ModelPerformance = unobservedPerformance,
+): FixtureTurn {
   return {
     kind: "response",
     response: {
@@ -76,6 +82,7 @@ export function respondWithText(text: string, tokens = { input: 10, output: 5 })
       inputTokens: tokens.input,
       outputTokens: tokens.output,
       finishReason: "stop",
+      performance,
     },
   };
 }
@@ -84,6 +91,7 @@ export function respondWithToolCalls(
   text: string,
   toolCalls: readonly ModelToolCall[],
   tokens = { input: 10, output: 5 },
+  performance: ModelPerformance = unobservedPerformance,
 ): FixtureTurn {
   return {
     kind: "response",
@@ -93,6 +101,7 @@ export function respondWithToolCalls(
       inputTokens: tokens.input,
       outputTokens: tokens.output,
       finishReason: "tool-calls",
+      performance,
     },
   };
 }
