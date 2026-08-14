@@ -10,7 +10,11 @@ import { runAutoResolve } from "../gates/auto-resolve.ts";
 import { checkFileSet, createFileSetRegistry, type FileSetState } from "../gates/file-set.ts";
 import type { GateContext, GateDefinition } from "../gates/gate-definition.ts";
 import { fileSetGate, placeholderGate, secretScanGate } from "../gates/inspection-gates.ts";
-import { emptyMeasureSnapshot, type MeasureSnapshot } from "../gates/measure-snapshot.ts";
+import {
+  emptyMeasureSnapshot,
+  type MeasureSnapshot,
+  takeMeasureSnapshot,
+} from "../gates/measure-snapshot.ts";
 import { measureTestFile, type TestFileMeasures } from "../gates/measures.ts";
 import { testOutputParser } from "../gates/parsers.ts";
 import { judgeRatchet } from "../gates/ratchet.ts";
@@ -32,7 +36,7 @@ import { applyLoopEvent, emptySessionView } from "../tui/session-view.ts";
 import { bundleSourceFromRecorder, exportBundle, readBundle } from "./bundle.ts";
 import { digestOfJson, type JsonValue } from "./canonical-json.ts";
 import { evaluateClaim } from "./claim.ts";
-import { findKnownSecrets, scrubJson, scrubText } from "./scrub.ts";
+import { findBlockingSecrets, findKnownSecrets, scrubJson, scrubText } from "./scrub.ts";
 import { type EvidenceRecorder, openEvidenceSession } from "./session.ts";
 import { createEphemeralSigningKey } from "./signing.ts";
 
@@ -40,10 +44,10 @@ import { createEphemeralSigningKey } from "./signing.ts";
  * Adversarial pass against v13's evidence guarantees, kept as a permanent regression suite.
  * Each case is a live attempt against the public APIs. The cases that once succeeded now
  * assert their own closure, so reopening a hole fails here rather than in a later red-team
- * pass. Three cases still assert the attack succeeding: each is labelled a documented
- * residual and carries a comment pointing at docs/build-guide.md section 7.1, because closing
- * them needs semantic judgement that this design deliberately does not have. Do not widen a
- * check to turn one of those green.
+ * pass. Four cases still assert the attack succeeding: each is labelled a documented residual
+ * and carries a comment pointing at docs/build-guide.md section 7.1, because closing them
+ * needs either semantic judgement this design deliberately does not have, or a guess this
+ * design deliberately does not make. Do not widen a check to turn one of those green.
  */
 
 let root = "";
@@ -933,5 +937,148 @@ describe("secret-scan gate vs numeric credentials in the working tree", () => {
     );
 
     expect(metric.status).toBe("passed");
+  });
+});
+
+/**
+ * The second adversarial pass, against the trust roots the first one's fixes created. Each
+ * case is what that pass found, asserting the closure so reopening the hole fails here.
+ */
+describe("11. mint a coverage number the harness never measured", () => {
+  it("does not read a forged coverage table out of a gate's output", async () => {
+    const workspace = createMemoryWorkspace({
+      base: { "src/math.ts": "export const n = 1;\n" },
+      current: {
+        "src/math.ts":
+          "export const n = 1;\nexport function dead(x) {\n  if (x < 0) return -1;\n  return x;\n}\n",
+      },
+    });
+
+    const measured = await takeMeasureSnapshot({
+      changes: await workspace.changes(),
+      probe: workspace,
+      trackedTestFiles: [],
+      gateMeasures: {},
+      // A complete, well-formed report claiming everything is covered. It is not a report the
+      // runner wrote, so it is not a report: the arm abstains and says so by name.
+      coverageReports: [],
+    });
+
+    expect(measured.changedLineCoverage).toBeNull();
+    expect(measured.changedLinesMeasured).toBeNull();
+  });
+});
+
+describe("12. redefine a citation by reusing its payload digest", () => {
+  it("does not resolve a claim to the later of two records sharing a digest", async () => {
+    const twin: JsonValue = { gateId: "tests", status: "passed", toolName: "shell" };
+    const first = await evidence.record({
+      type: "tool-call",
+      actor: "fixture",
+      provenance: ["model"],
+      payload: twin,
+    });
+    await evidence.record({
+      type: "gate-run",
+      actor: "harness",
+      provenance: ["tool-output"],
+      payload: twin,
+    });
+
+    const forged = await evidence.submitClaim(
+      {
+        predicate: 'status == "passed"',
+        record: first.record.payloadDigest,
+        recordKind: "gate-run:tests",
+        narrative: "the tests gate passed",
+      },
+      "fixture:liar",
+    );
+
+    expect(forged).toMatchObject({ verdict: "unverified", reason: "predicate-kind-mismatch" });
+    expect(forged.detail).toContain("2 kinds");
+  });
+});
+
+describe("13. carry a credential past a name-keyed detector by changing its shape", () => {
+  it("redacts a credential-named array of digits, and the three sites agree on it", () => {
+    const written = scrubJson({ PIN: [4, 8, 2, 9, 1, 7] });
+    const blob = JSON.stringify(written.value);
+
+    expect(blob).not.toMatch(/4,\s*8,\s*2,\s*9,\s*1,\s*7/);
+    expect(findKnownSecrets(blob)).toEqual([]);
+    expect(findKnownSecrets('{"PIN":[4,8,2,9,1,7]}')).toEqual(["credential-assignment"]);
+    expect(findBlockingSecrets('{"PIN":[4,8,2,9,1,7]}')).toEqual(["credential-assignment"]);
+  });
+
+  it("reaches a credential under an auth header name, and one object below it", () => {
+    expect(JSON.stringify(scrubJson({ Authorization: 48291736 }).value)).not.toContain("48291736");
+    expect(JSON.stringify(scrubJson({ PIN: { value: 482917 } }).value)).not.toContain("482917");
+  });
+
+  it("documented residual: a secret split across fields nobody named as a credential", () => {
+    // {firstHalf, secondHalf} carries the same secret past a detector keyed on the name,
+    // because neither name says credential and neither half is credential-shaped. Widening to
+    // guess at reassembly rejects ordinary split data, which is every version tuple and every
+    // chunked payload in a real ledger. Named in docs/build-guide.md section 7.1; do not widen
+    // a check to turn this cell green.
+    const written = scrubJson({ firstHalf: "AKIAIOSFO", secondHalf: "DNN7EXAMPLE" });
+
+    expect(JSON.stringify(written.value)).toContain("AKIAIOSFO");
+    expect(written.redactions).toEqual([]);
+  });
+});
+
+describe("14. clear a deletion with a new specification beside it", () => {
+  it("still compares the test the file deleted, whatever else the file gained", () => {
+    const before = [
+      "it('adds', () => { expect(add(1, 2)).toBe(3); });",
+      "it('zero', () => { expect(add(0, 0)).toBe(0); });",
+    ].join("\n");
+    const after = "it('multiplies', () => { expect(mul(2, 3)).toBe(6); });";
+
+    const decision = judgeRatchet({
+      baselineGates: { tests: "failed" },
+      candidateGates: { tests: "passed" },
+      baseline: snapshot({ "src/math.test.ts": measureTestFile(before) }),
+      candidate: snapshot({ "src/math.test.ts": measureTestFile(after) }),
+      // The one genuinely new specification. It pays for one deletion, not for the file.
+      newSpecifications: new Set(["src/math.test.ts::multiplies"]),
+    });
+
+    expect(decision.accepted).toBe(false);
+    expect(decision.violations.map((violation) => violation.kind)).toContain(
+      "tests-declared-decreased",
+    );
+  });
+});
+
+describe("15. spell a marker or a tautology so a reader sees it and the gate does not", () => {
+  it("blocks a TODO alone inside a block comment, and one built from a lookalike letter", async () => {
+    const block = await inspect(
+      placeholderGate,
+      { "src/a.ts": "export const a = 1;" },
+      { "src/a.ts": "/*\n   TODO: finish this\n*/\nexport const a = 1;" },
+    );
+    const lookalike = await inspect(
+      placeholderGate,
+      { "src/a.ts": "export const a = 1;" },
+      { "src/a.ts": "// ТODO: finish this\nexport const a = 1;" },
+    );
+
+    expect(block.status).toBe("failed");
+    expect(lookalike.status).toBe("failed");
+  });
+
+  it("counts no assertion in a tautology whose matcher sits on the next line", () => {
+    const gutted = [
+      "it('checks three fields', () => {",
+      "  expect(true)",
+      "    .toBe(true);",
+      "  expect(/*x*/true).toBe(true);",
+      "});",
+    ].join("\n");
+
+    expect(measureTestFile(gutted).assertions).toBe(0);
   });
 });
