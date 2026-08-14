@@ -1,0 +1,478 @@
+{
+  "schemaVersion": 1,
+  "revision": "2026-08-13",
+  "backends": [
+    {
+      "name": "ollama",
+      "label": "Ollama",
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "install": "ollama pull {model}",
+      "serve": "ollama serve"
+    },
+    {
+      "name": "rapid-mlx",
+      "label": "rapid-mlx",
+      "baseUrl": "http://127.0.0.1:8000/v1",
+      "install": "rapid-mlx pull {model}",
+      "serve": "rapid-mlx serve --model {model} --port 8000"
+    }
+  ],
+  "tiers": [
+    {
+      "id": "cpu-8gb",
+      "label": "8 GB class, no GPU memory the probe could use",
+      "rank": 10,
+      "minRamGb": 7,
+      "minVramGb": null,
+      "appleSilicon": null,
+      "models": [
+        {
+          "id": "qwen2.5-coder:3b",
+          "backend": "ollama",
+          "parameters": "3B",
+          "quantization": "Q4_K_M",
+          "diskGb": 1.9,
+          "residentGb": 2.6,
+          "contextWindow": 32768
+        },
+        {
+          "id": "qwen2.5-coder:1.5b",
+          "backend": "ollama",
+          "parameters": "1.5B",
+          "quantization": "Q4_K_M",
+          "diskGb": 1,
+          "residentGb": 1.6,
+          "contextWindow": 32768
+        }
+      ]
+    },
+    {
+      "id": "apple-8gb",
+      "label": "Apple Silicon, 8 GB class",
+      "rank": 15,
+      "minRamGb": 7,
+      "minVramGb": null,
+      "appleSilicon": true,
+      "models": [
+        {
+          "id": "mlx-community/Qwen2.5-Coder-3B-Instruct-4bit",
+          "backend": "rapid-mlx",
+          "parameters": "3B",
+          "quantization": "4-bit",
+          "diskGb": 1.7,
+          "residentGb": 2.4,
+          "contextWindow": 32768
+        },
+        {
+          "id": "qwen2.5-coder:3b",
+          "backend": "ollama",
+          "parameters": "3B",
+          "quantization": "Q4_K_M",
+          "diskGb": 1.9,
+          "residentGb": 2.6,
+          "contextWindow": 32768
+        }
+      ]
+    },
+    {
+      "id": "cpu-16gb",
+      "label": "16 GB class, no GPU memory the probe could use",
+      "rank": 20,
+      "minRamGb": 15,
+      "minVramGb": null,
+      "appleSilicon": null,
+      "models": [
+        {
+          "id": "qwen2.5-coder:7b",
+          "backend": "ollama",
+          "parameters": "7B",
+          "quantization": "Q4_K_M",
+          "diskGb": 4.7,
+          "residentGb": 6,
+          "contextWindow": 32768
+        },
+        {
+          "id": "qwen2.5-coder:3b",
+          "backend": "ollama",
+          "parameters": "3B",
+          "quantization": "Q4_K_M",
+          "diskGb": 1.9,
+          "residentGb": 2.6,
+          "contextWindow": 32768
+        }
+      ]
+    },
+    {
+      "id": "apple-16gb",
+      "label": "Apple Silicon, 16 GB class",
+      "rank": 25,
+      "minRamGb": 15,
+      "minVramGb": null,
+      "appleSilicon": true,
+      "models": [
+        {
+          "id": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
+          "backend": "rapid-mlx",
+          "parameters": "7B",
+          "quantization": "4-bit",
+          "diskGb": 4.3,
+          "residentGb": 5.6,
+          "contextWindow": 32768
+        },
+        {
+          "id": "qwen2.5-coder:7b",
+          "backend": "ollama",
+          "parameters": "7B",
+          "quantization": "Q4_K_M",
+          "diskGb": 4.7,
+          "residentGb": 6,
+          "contextWindow": 32768
+        }
+      ]
+    },
+    {
+      "id": "cpu-32gb",
+      "label": "32 GB class or more, no GPU memory the probe could use",
+      "rank": 30,
+      "minRamGb": 30,
+      "minVramGb": null,
+      "appleSilicon": null,
+      "models": [
+        {
+          "id": "qwen2.5-coder:14b",
+          "backend": "ollama",
+          "parameters": "14B",
+          "quantization": "Q4_K_M",
+          "diskGb": 9,
+          "residentGb": 11,
+          "contextWindow": 32768
+        },
+        {
+          "id": "qwen2.5-coder:7b",
+          "backend": "ollama",
+          "parameters": "7B",
+          "quantization": "Q4_K_M",
+          "diskGb": 4.7,
+          "residentGb": 6,
+          "contextWindow": 32768
+        }
+      ]
+    },
+    {
+      "id": "gpu-8gb",
+      "label": "8 GB class discrete GPU",
+      "rank": 40,
+      "minRamGb": 15,
+      "minVramGb": 7,
+      "appleSilicon": false,
+      "models": [
+        {
+          "id": "qwen2.5-coder:7b",
+          "backend": "ollama",
+          "parameters": "7B",
+          "quantization": "Q4_K_M",
+          "diskGb": 4.7,
+          "residentGb": 6,
+          "contextWindow": 32768
+        },
+        {
+          "id": "qwen2.5-coder:3b",
+          "backend": "ollama",
+          "parameters": "3B",
+          "quantization": "Q4_K_M",
+          "diskGb": 1.9,
+          "residentGb": 2.6,
+          "contextWindow": 32768
+        }
+      ]
+    },
+    {
+      "id": "gpu-12gb",
+      "label": "12 GB class discrete GPU",
+      "rank": 50,
+      "minRamGb": 15,
+      "minVramGb": 11,
+      "appleSilicon": false,
+      "models": [
+        {
+          "id": "qwen2.5-coder:14b",
+          "backend": "ollama",
+          "parameters": "14B",
+          "quantization": "Q4_K_M",
+          "diskGb": 9,
+          "residentGb": 11,
+          "contextWindow": 32768
+        },
+        {
+          "id": "qwen2.5-coder:7b",
+          "backend": "ollama",
+          "parameters": "7B",
+          "quantization": "Q4_K_M",
+          "diskGb": 4.7,
+          "residentGb": 6,
+          "contextWindow": 32768
+        }
+      ]
+    },
+    {
+      "id": "apple-24gb",
+      "label": "Apple Silicon, 24 GB class",
+      "rank": 55,
+      "minRamGb": 22,
+      "minVramGb": null,
+      "appleSilicon": true,
+      "models": [
+        {
+          "id": "mlx-community/Qwen2.5-Coder-14B-Instruct-4bit",
+          "backend": "rapid-mlx",
+          "parameters": "14B",
+          "quantization": "4-bit",
+          "diskGb": 8.3,
+          "residentGb": 10.5,
+          "contextWindow": 32768
+        },
+        {
+          "id": "qwen2.5-coder:14b",
+          "backend": "ollama",
+          "parameters": "14B",
+          "quantization": "Q4_K_M",
+          "diskGb": 9,
+          "residentGb": 11,
+          "contextWindow": 32768
+        }
+      ]
+    },
+    {
+      "id": "gpu-16gb",
+      "label": "16 GB class discrete GPU",
+      "rank": 60,
+      "minRamGb": 15,
+      "minVramGb": 15,
+      "appleSilicon": false,
+      "models": [
+        {
+          "id": "gpt-oss:20b",
+          "backend": "ollama",
+          "parameters": "20B-A3.6B",
+          "quantization": "MXFP4",
+          "diskGb": 13.8,
+          "residentGb": 14.5,
+          "contextWindow": 131072
+        },
+        {
+          "id": "qwen2.5-coder:14b",
+          "backend": "ollama",
+          "parameters": "14B",
+          "quantization": "Q4_K_M",
+          "diskGb": 9,
+          "residentGb": 11,
+          "contextWindow": 32768
+        }
+      ]
+    },
+    {
+      "id": "apple-36gb",
+      "label": "Apple Silicon, 32 GB class and up",
+      "rank": 65,
+      "minRamGb": 30,
+      "minVramGb": null,
+      "appleSilicon": true,
+      "models": [
+        {
+          "id": "mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit",
+          "backend": "rapid-mlx",
+          "parameters": "30B-A3B",
+          "quantization": "4-bit",
+          "diskGb": 17.2,
+          "residentGb": 19.5,
+          "contextWindow": 262144
+        },
+        {
+          "id": "mlx-community/Qwen2.5-Coder-32B-Instruct-4bit",
+          "backend": "rapid-mlx",
+          "parameters": "32B",
+          "quantization": "4-bit",
+          "diskGb": 18,
+          "residentGb": 20.5,
+          "contextWindow": 32768
+        },
+        {
+          "id": "qwen3-coder:30b-a3b",
+          "backend": "ollama",
+          "parameters": "30B-A3B",
+          "quantization": "Q4_K_M",
+          "diskGb": 18.6,
+          "residentGb": 21,
+          "contextWindow": 262144
+        }
+      ]
+    },
+    {
+      "id": "gpu-24gb",
+      "label": "24 GB class discrete GPU",
+      "rank": 70,
+      "minRamGb": 30,
+      "minVramGb": 22,
+      "appleSilicon": false,
+      "models": [
+        {
+          "id": "qwen3-coder:30b-a3b",
+          "backend": "ollama",
+          "parameters": "30B-A3B",
+          "quantization": "Q4_K_M",
+          "diskGb": 18.6,
+          "residentGb": 21,
+          "contextWindow": 262144
+        },
+        {
+          "id": "qwen2.5-coder:32b",
+          "backend": "ollama",
+          "parameters": "32B",
+          "quantization": "Q4_K_M",
+          "diskGb": 20,
+          "residentGb": 22.5,
+          "contextWindow": 32768
+        },
+        {
+          "id": "qwen2.5-coder:14b",
+          "backend": "ollama",
+          "parameters": "14B",
+          "quantization": "Q4_K_M",
+          "diskGb": 9,
+          "residentGb": 11,
+          "contextWindow": 32768
+        }
+      ]
+    },
+    {
+      "id": "apple-64gb",
+      "label": "Apple Silicon, 64 GB class",
+      "rank": 75,
+      "minRamGb": 60,
+      "minVramGb": null,
+      "appleSilicon": true,
+      "models": [
+        {
+          "id": "mlx-community/Qwen3-Coder-30B-A3B-Instruct-8bit",
+          "backend": "rapid-mlx",
+          "parameters": "30B-A3B",
+          "quantization": "8-bit",
+          "diskGb": 32.5,
+          "residentGb": 35,
+          "contextWindow": 262144
+        },
+        {
+          "id": "mlx-community/Qwen2.5-Coder-32B-Instruct-8bit",
+          "backend": "rapid-mlx",
+          "parameters": "32B",
+          "quantization": "8-bit",
+          "diskGb": 34.9,
+          "residentGb": 37.5,
+          "contextWindow": 32768
+        },
+        {
+          "id": "qwen3-coder:30b-a3b",
+          "backend": "ollama",
+          "parameters": "30B-A3B",
+          "quantization": "Q4_K_M",
+          "diskGb": 18.6,
+          "residentGb": 21,
+          "contextWindow": 262144
+        }
+      ]
+    },
+    {
+      "id": "gpu-48gb",
+      "label": "48 GB class discrete GPU",
+      "rank": 80,
+      "minRamGb": 60,
+      "minVramGb": 44,
+      "appleSilicon": false,
+      "models": [
+        {
+          "id": "qwen2.5-coder:32b-instruct-q8_0",
+          "backend": "ollama",
+          "parameters": "32B",
+          "quantization": "Q8_0",
+          "diskGb": 34.8,
+          "residentGb": 37,
+          "contextWindow": 32768
+        },
+        {
+          "id": "qwen3-coder:30b-a3b",
+          "backend": "ollama",
+          "parameters": "30B-A3B",
+          "quantization": "Q4_K_M",
+          "diskGb": 18.6,
+          "residentGb": 21,
+          "contextWindow": 262144
+        }
+      ]
+    },
+    {
+      "id": "apple-128gb",
+      "label": "Apple Silicon, 128 GB class",
+      "rank": 85,
+      "minRamGb": 120,
+      "minVramGb": null,
+      "appleSilicon": true,
+      "models": [
+        {
+          "id": "mlx-community/gpt-oss-120b-4bit",
+          "backend": "rapid-mlx",
+          "parameters": "120B-A5.1B",
+          "quantization": "4-bit",
+          "diskGb": 63,
+          "residentGb": 68,
+          "contextWindow": 131072
+        },
+        {
+          "id": "mlx-community/Qwen3-Coder-30B-A3B-Instruct-8bit",
+          "backend": "rapid-mlx",
+          "parameters": "30B-A3B",
+          "quantization": "8-bit",
+          "diskGb": 32.5,
+          "residentGb": 35,
+          "contextWindow": 262144
+        },
+        {
+          "id": "gpt-oss:120b",
+          "backend": "ollama",
+          "parameters": "120B-A5.1B",
+          "quantization": "MXFP4",
+          "diskGb": 65,
+          "residentGb": 70,
+          "contextWindow": 131072
+        }
+      ]
+    },
+    {
+      "id": "gpu-80gb",
+      "label": "80 GB class discrete GPU",
+      "rank": 90,
+      "minRamGb": 120,
+      "minVramGb": 76,
+      "appleSilicon": false,
+      "models": [
+        {
+          "id": "gpt-oss:120b",
+          "backend": "ollama",
+          "parameters": "120B-A5.1B",
+          "quantization": "MXFP4",
+          "diskGb": 65,
+          "residentGb": 70,
+          "contextWindow": 131072
+        },
+        {
+          "id": "qwen2.5-coder:32b-instruct-q8_0",
+          "backend": "ollama",
+          "parameters": "32B",
+          "quantization": "Q8_0",
+          "diskGb": 34.8,
+          "residentGb": 37,
+          "contextWindow": 32768
+        }
+      ]
+    }
+  ]
+}
