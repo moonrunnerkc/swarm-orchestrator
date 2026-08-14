@@ -31,6 +31,28 @@ export function recordKindOf(type, payload) {
   return typeof subject === "string" && subject.length > 0 ? `${type}:${subject}` : type;
 }
 
+/**
+ * What a cited payload digest resolves to. Identical content is one blob by design, so two
+ * writers can share a digest; what must not follow is that the citation means whichever of
+ * them wrote last. The payload cannot differ between them, the kind can, and a digest naming
+ * more than one kind names no single record.
+ */
+export function indexCitedRecords(records, payloads) {
+  const index = new Map();
+  for (const entry of records) {
+    if (!payloads.has(entry.payloadDigest)) continue;
+    const payload = payloads.get(entry.payloadDigest);
+    const kind = recordKindOf(entry.type, payload);
+    const found = index.get(entry.payloadDigest);
+    if (found === undefined) {
+      index.set(entry.payloadDigest, { kinds: [kind], payload });
+    } else if (!found.kinds.includes(kind)) {
+      found.kinds.push(kind);
+    }
+  }
+  return index;
+}
+
 export function canonicalJson(value) {
   if (value === null) return "null";
   if (typeof value === "string") return JSON.stringify(value);
@@ -266,13 +288,17 @@ export function evaluateClaim(claim, lookup) {
     };
   }
   // Checked before the predicate: a predicate that is true of another kind of record is not
-  // an honest near miss, it is a claim bound to the wrong evidence.
-  const actualKind = recordKindOf(cited.type, cited.payload);
-  if (actualKind !== claim.recordKind) {
+  // an honest near miss, it is a claim bound to the wrong evidence. The digest has to name
+  // exactly one kind, since two records sharing a payload name neither.
+  const kinds = cited.kinds ?? [];
+  if (kinds.length !== 1 || kinds[0] !== claim.recordKind) {
     return {
       verdict: "unverified",
       reason: "predicate-kind-mismatch",
-      detail: `the claim asserts against ${claim.recordKind}, but the cited record is ${actualKind}`,
+      detail:
+        kinds.length > 1
+          ? `the digest ${claim.record} is carried by records of ${kinds.length} kinds (${kinds.join(", ")})`
+          : `the claim asserts against ${claim.recordKind}, but the cited record is ${kinds[0]}`,
     };
   }
   let node;
@@ -431,15 +457,7 @@ function collectChecks(directory) {
       : `${missing.length} missing: ${missing.join(", ")}`,
   );
 
-  const cited = new Map();
-  for (const entry of records) {
-    if (payloads.has(entry.payloadDigest)) {
-      cited.set(entry.payloadDigest, {
-        type: entry.type,
-        payload: payloads.get(entry.payloadDigest),
-      });
-    }
-  }
+  const cited = indexCitedRecords(records, payloads);
   const lookup = (digest) => cited.get(digest);
   const verdicts = records
     .filter((entry) => entry.type === "claim")

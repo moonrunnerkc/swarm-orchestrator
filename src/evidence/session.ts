@@ -4,14 +4,10 @@ import type { ProvenanceTag } from "../core/model-client.ts";
 import type { RandomSource } from "../core/random-source.ts";
 import { type BlobStore, openBlobStore } from "./blob-store.ts";
 import type { JsonValue } from "./canonical-json.ts";
-import {
-  type CitedRecord,
-  type ClaimEvaluation,
-  type ClaimPayload,
-  evaluateClaim,
-} from "./claim.ts";
+import { type ClaimEvaluation, type ClaimPayload, evaluateClaim } from "./claim.ts";
 import { type ChainHead, type Ledger, openLedger } from "./ledger.ts";
 import type { LedgerRecord, RecordType } from "./ledger-record.ts";
+import { indexCitedRecords } from "./record-index.ts";
 import { scrubJson } from "./scrub.ts";
 
 interface EvidenceEntry {
@@ -124,13 +120,9 @@ export async function openEvidenceSession(
           narrative: claim.narrative,
         },
       });
-      const cited = new Map<string, CitedRecord>();
-      for (const entry of ledger.records()) {
-        const payload = payloads.get(entry.payloadDigest);
-        if (payload !== undefined) {
-          cited.set(entry.payloadDigest, { type: entry.type, payload });
-        }
-      }
+      // Built over the whole chain rather than kept as a running map, so a digest two
+      // writers happened to share resolves to both kinds instead of to the later writer.
+      const cited = indexCitedRecords(ledger.records(), payloads);
       return evaluateClaim(claim, (digest) => cited.get(digest));
     },
 

@@ -81,10 +81,12 @@ describe("the embedded verifier agrees with the implementation it ships beside",
 
   it("reaches the same verdict on every way a claim can fail", () => {
     const digest = digestOfJson(subject);
-    const cited: CitedRecord = { type: "gate-run", payload: subject };
+    const kind = recordKindOf("gate-run", subject);
+    const cited: CitedRecord = { kinds: [kind], payload: subject };
+    const collidedDigest = `sha256:${"7".repeat(64)}`;
+    const collided: CitedRecord = { kinds: ["tool-call:shell", kind], payload: subject };
     const lookup = (candidate: string): CitedRecord | undefined =>
-      candidate === digest ? cited : undefined;
-    const kind = recordKindOf(cited.type, cited.payload);
+      candidate === digest ? cited : candidate === collidedDigest ? collided : undefined;
 
     const claims: ClaimPayload[] = [
       { predicate: "tests.failed == 0", record: digest, recordKind: kind, narrative: "" },
@@ -105,6 +107,13 @@ describe("the embedded verifier agrees with the implementation it ships beside",
         narrative: "",
       },
       { predicate: "tests.failed == 0", record: digest, recordKind: "escalation", narrative: "" },
+      // A digest two writers share names neither of them, in both implementations.
+      {
+        predicate: "tests.failed == 0",
+        record: collidedDigest,
+        recordKind: kind,
+        narrative: "",
+      },
     ];
 
     for (const claim of claims) {

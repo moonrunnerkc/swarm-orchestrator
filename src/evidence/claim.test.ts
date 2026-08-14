@@ -33,10 +33,10 @@ const lintDigest = digestOfJson(lintGate);
 const stoppedDigest = digestOfJson(sessionStopped);
 
 const chain = new Map<string, CitedRecord>([
-  [failingDigest, { type: "tool-call", payload: failingRun }],
-  [passingDigest, { type: "tool-call", payload: passingRun }],
-  [lintDigest, { type: "gate-run", payload: lintGate }],
-  [stoppedDigest, { type: "session-stopped", payload: sessionStopped }],
+  [failingDigest, { kinds: ["tool-call:shell"], payload: failingRun }],
+  [passingDigest, { kinds: ["tool-call:shell"], payload: passingRun }],
+  [lintDigest, { kinds: ["gate-run:lint"], payload: lintGate }],
+  [stoppedDigest, { kinds: ["session-stopped"], payload: sessionStopped }],
 ]);
 
 const lookup = (digest: string): CitedRecord | undefined => chain.get(digest);

@@ -8,6 +8,7 @@ import {
   evaluateClaim,
 } from "./claim.ts";
 import type { LedgerRecord, RecordType } from "./ledger-record.ts";
+import { indexCitedRecords } from "./record-index.ts";
 
 export interface EvidenceNode {
   readonly digest: string;
@@ -59,13 +60,7 @@ export function buildEvidenceDag(
 ): EvidenceDag {
   const claimRecords = records.filter((record) => record.type === "claim");
   const citable = new Set(records.map((record) => record.payloadDigest));
-  const cited = new Map<string, CitedRecord>();
-  for (const record of records) {
-    const payload = payloads.get(record.payloadDigest);
-    if (payload !== undefined) {
-      cited.set(record.payloadDigest, { type: record.type, payload });
-    }
-  }
+  const cited = indexCitedRecords(records, payloads);
   const lookup = (digest: string): CitedRecord | undefined => cited.get(digest);
 
   const evidence: EvidenceNode[] = records

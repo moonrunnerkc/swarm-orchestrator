@@ -1,9 +1,7 @@
 import { z } from "zod";
 import type { JsonValue } from "./canonical-json.ts";
 import { digestPattern } from "./canonical-json.ts";
-import type { RecordType } from "./ledger-record.ts";
 import { evaluatePredicate, PredicateParseError, parsePredicate } from "./predicate.ts";
-import { recordKindOf } from "./record-kind.ts";
 
 /**
  * What the model may assert. The predicate, the cited record, and the kind of record the
@@ -42,13 +40,18 @@ export interface ClaimEvaluation {
   readonly detail: string;
 }
 
-/** One ledger record as the harness reads it back: what kind of thing it is, and what it says. */
+/**
+ * What one cited payload digest resolves to: the content every record carrying it holds, and
+ * the kinds of record that carry it. More than one kind means the digest identifies no single
+ * record, which is a state a verdict has to see rather than a tie to be broken. See
+ * record-index.ts, which is the one place this is built.
+ */
 export interface CitedRecord {
-  readonly type: RecordType;
+  readonly kinds: readonly string[];
   readonly payload: JsonValue;
 }
 
-/** Resolves a cited digest to the ledger record that carries it. */
+/** Resolves a cited digest to the ledger records that carry it. */
 export type EvidenceLookup = (digest: string) => CitedRecord | undefined;
 
 /**
@@ -75,15 +78,22 @@ export function evaluateClaim(claim: ClaimPayload, lookup: EvidenceLookup): Clai
   }
 
   // Before the predicate, because a predicate that is true of the wrong kind of record is
-  // exactly the case a verdict of "false" would misreport as an honest near miss.
-  const actualKind = recordKindOf(cited.type, cited.payload);
-  if (actualKind !== claim.recordKind) {
+  // exactly the case a verdict of "false" would misreport as an honest near miss. The digest
+  // has to name exactly one kind: where two records share a payload it names neither, and a
+  // claim whose evidence edge cannot be traced to one record is not evidence.
+  const actualKind = cited.kinds[0];
+  if (cited.kinds.length !== 1 || actualKind !== claim.recordKind) {
     return {
       verdict: "unverified",
       reason: "predicate-kind-mismatch",
       detail:
-        `the claim asserts against ${claim.recordKind}, but the cited record is ${actualKind}. ` +
-        "A predicate holding against a record of another kind is not evidence for this claim.",
+        cited.kinds.length > 1
+          ? `the digest ${claim.record} is carried by records of ${cited.kinds.length} kinds ` +
+            `(${cited.kinds.join(", ")}), so it names no single record and the claim's binding ` +
+            `to ${claim.recordKind} cannot be checked.`
+          : `the claim asserts against ${claim.recordKind}, but the cited record is ` +
+            `${actualKind ?? "of no kind"}. A predicate holding against a record of another ` +
+            "kind is not evidence for this claim.",
     };
   }
 

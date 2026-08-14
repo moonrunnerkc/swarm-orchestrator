@@ -226,7 +226,7 @@ describe("2. bind a plausible predicate to the wrong genuine record", () => {
         narrative: "the suite is green",
       },
       (cited) =>
-        cited === digest ? { type: "tool-call" as const, payload: failingRun } : undefined,
+        cited === digest ? { kinds: ["tool-call:shell"], payload: failingRun } : undefined,
     );
 
     expect(evaluation).toMatchObject({ verdict: "unverified", reason: "predicate-false" });
