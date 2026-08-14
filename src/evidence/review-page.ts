@@ -53,6 +53,7 @@ function renderHeader(manifest: BundleManifest, dag: EvidenceDag): string {
     field("records", String(manifest.recordCount)),
     field("chain head", manifest.chainHead),
     field("claims verified", `${dag.verifiedCount} of ${dag.claims.length}`),
+    field("coverage of changed lines", describeChangedLineCoverage(dag)),
     "</dl>",
     '<p class="note">',
     "Green is computed by the harness: it means a machine-checkable predicate was evaluated ",
@@ -63,6 +64,26 @@ function renderHeader(manifest: BundleManifest, dag: EvidenceDag): string {
     "</p>",
     "</header>",
   ].join("");
+}
+
+/**
+ * The ratchet abstains when no run measured coverage of the changed lines, and an abstention
+ * that is only visible inside a payload reads as a pass. This says which of the two happened
+ * on the face of the page: a ratio the harness measured, or nothing measured at all.
+ */
+function describeChangedLineCoverage(dag: EvidenceDag): string {
+  const decisions = dag.evidence.filter((node) => node.type === "ratchet-decision");
+  const last = decisions[decisions.length - 1]?.payload;
+  const after =
+    last !== null && last !== undefined && typeof last === "object" && !Array.isArray(last)
+      ? (
+          last as {
+            readonly measures?: { readonly after?: { readonly changedLineCoverage?: unknown } };
+          }
+        ).measures?.after?.changedLineCoverage
+      : undefined;
+
+  return typeof after === "number" ? `${(after * 100).toFixed(1)}%` : "not measured";
 }
 
 function renderClaim(claim: ClaimNode, evidenceByDigest: Map<string, EvidenceNode>): string {

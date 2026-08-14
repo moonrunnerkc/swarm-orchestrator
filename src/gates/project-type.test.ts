@@ -109,6 +109,50 @@ describe("assembling the default gate set", () => {
     expect(commandOf(gates, "typecheck")).toBeNull();
   });
 
+  it("asks node's own runner for the coverage report the ratchet needs", async () => {
+    // The changed-line-coverage arm can only compare what a run measured, and node rejects
+    // the flag after the file patterns, so the assembled command carries it in front of them.
+    const gates = assembleGates(
+      await detectProject(
+        reader({
+          "package.json": JSON.stringify({ scripts: { test: "node --test ./test/*.mjs" } }),
+        }),
+      ),
+    );
+
+    expect(commandOf(gates, "tests")).toBe("node --test --experimental-test-coverage ./test/*.mjs");
+  });
+
+  it("leaves a runner it cannot ask for a readable report alone", async () => {
+    // Vitest and pytest report coverage in shapes this harness does not parse, and asking
+    // for it can fail outright. Those runs are recorded as not measured, never guessed at.
+    for (const command of ["vitest run", "pytest -q && node --test", "jest"]) {
+      const gates = assembleGates(
+        await detectProject(
+          reader({ "package.json": JSON.stringify({ scripts: { test: command } }) }),
+        ),
+      );
+      expect({ command, assembled: commandOf(gates, "tests") }).toEqual({
+        command,
+        assembled: "npm run --silent test",
+      });
+    }
+  });
+
+  it("does not ask twice when the script already reports coverage", async () => {
+    const gates = assembleGates(
+      await detectProject(
+        reader({
+          "package.json": JSON.stringify({
+            scripts: { test: "node --test --experimental-test-coverage" },
+          }),
+        }),
+      ),
+    );
+
+    expect(commandOf(gates, "tests")).toBe("npm run --silent test");
+  });
+
   it("refuses to run a writing formatter as a gate", async () => {
     const gates = assembleGates(
       await detectProject(

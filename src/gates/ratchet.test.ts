@@ -266,8 +266,9 @@ describe("the ratchet's own record", () => {
       candidate: snapshot({ "a.test.ts": measures({ tests: 0, assertions: 0, skips: 1 }) }),
     });
 
-    const payload = ratchetPayload(2, judged, judgeRatchet(judged), []);
+    const payload = ratchetPayload("retry", 2, judged, judgeRatchet(judged), []);
 
+    expect(payload.scope).toBe("retry");
     expect(payload.attempt).toBe(2);
     expect(payload.accepted).toBe(false);
     expect(payload.measures.before).toMatchObject({

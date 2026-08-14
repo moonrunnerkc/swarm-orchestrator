@@ -156,8 +156,14 @@ function summarize(record: LedgerRecord, payload: JsonValue | null): string {
       return `${stringField(fields, "stopReason")} after ${numberField(fields, "steps")} steps`;
     case "gate-run":
       return `gate ${stringField(fields, "gateId")}: ${stringField(fields, "status")} (${stringField(fields, "detail")})`;
-    case "ratchet-decision":
-      return `attempt ${numberField(fields, "attempt")} ${fields.accepted === true ? "accepted" : "rejected"}: ${stringField(fields, "detail")}`;
+    case "ratchet-decision": {
+      const verdict = fields.accepted === true ? "accepted" : "rejected";
+      const compared =
+        fields.scope === "base"
+          ? "the final state against the base commit"
+          : `attempt ${numberField(fields, "attempt")}`;
+      return `${compared} ${verdict}: ${stringField(fields, "detail")}`;
+    }
     case "file-set-declared":
       return `the planner declared ${numberField(fields, "fileCount")} intended file(s)`;
     case "file-set-amended":

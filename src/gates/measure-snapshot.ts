@@ -136,6 +136,24 @@ function changedLineCoverage(input: SnapshotInput): CoverageResult | null {
   return measured === 0 ? null : { ratio: covered / measured, covered, measured };
 }
 
+/**
+ * The same universe of test files as they stood at the base commit, so the final state can be
+ * judged against where the run started rather than only against the retry before it. The
+ * runner-reported measures are null on purpose: the suite was not executed at the base, and
+ * an absent measure the ratchet declines to compare is honest where a zero would not be.
+ */
+export function measuresAtBase(snapshot: MeasureSnapshot): MeasureSnapshot {
+  return {
+    perTestFile: snapshot.perTestFileAtBase,
+    perTestFileAtBase: snapshot.perTestFileAtBase,
+    testsCollected: null,
+    testsSkippedByRunner: null,
+    changedLineCoverage: null,
+    changedLinesCovered: null,
+    changedLinesMeasured: null,
+  };
+}
+
 interface ComparableTotals {
   readonly tests: number;
   readonly assertions: number;

@@ -90,12 +90,15 @@ async function write(path: string, contents: string): Promise<void> {
 }
 
 /** A repository whose committed state already carries the failing test. */
-async function seedRepository(source: string): Promise<void> {
+async function seedRepository(
+  source: string,
+  testScript = "node --test --experimental-test-coverage",
+): Promise<void> {
   const manifest = {
     name: "scratch",
     type: "module",
     scripts: {
-      test: "node --test --experimental-test-coverage",
+      test: testScript,
       lint: "node tools/lint.mjs",
     },
   };
@@ -181,9 +184,14 @@ describe("acceptance 1: a seeded failing test is auto-resolved within the cap", 
     const gateRuns = bundle.records.filter((record) => record.type === "gate-run");
     const ratchets = bundle.records.filter((record) => record.type === "ratchet-decision");
 
-    // Two cycles of the full gate set, and the attempt that separated them.
+    // Two cycles of the full gate set, the attempt that separated them, and the final state
+    // judged against the base commit.
     expect(gateRuns.length).toBe(gates.length * 2);
-    expect(ratchets).toHaveLength(1);
+    expect(
+      ratchets.map(
+        (record) => (bundle.payloads.get(record.payloadDigest) as { scope?: string }).scope,
+      ),
+    ).toEqual(["retry", "base"]);
 
     const failing = gateRuns
       .map((record) => bundle.payloads.get(record.payloadDigest) as Record<string, unknown>)
@@ -387,5 +395,46 @@ describe("the gates measure coverage of changed lines from an executed run", () 
     expect(outcome.finalMeasures.changedLinesMeasured).toBeGreaterThan(0);
     expect(outcome.finalMeasures.changedLineCoverage).toBeLessThan(1);
     expect(outcome.finalMeasures.changedLineCoverage).not.toBeNull();
+  }, 60_000);
+
+  it("measures it from the command it assembled itself, with nothing configured", async () => {
+    // The case above pre-configures the coverage flag, which is how the arm looked alive
+    // while being dead in ordinary use: a project that just declares `node --test` printed
+    // no report, so the measure was null on every run and the ratchet abstained forever.
+    await seedRepository(correctSource, "node --test");
+    await fileSet.declare(["src/math.js"], "model");
+    await write(
+      "src/math.js",
+      correctSource.replace(
+        "  return 'other';",
+        "  if (value > 1000) {\n    return 'huge';\n  }\n  return 'other';",
+      ),
+    );
+
+    const { gates, outcome } = await runGatesEngine({
+      workspaceRoot: workspace,
+      baseRef: "HEAD",
+      evidence,
+      fileSet,
+      clock: wallClock,
+      emit: () => undefined,
+      resolve: () => Promise.resolve(),
+      cap: 1,
+      // Everything but the tests gate, so the assembled test command is the thing under test.
+      gateOptions: {
+        commandOverrides: {
+          lint: gateOverrides.lint,
+          typecheck: gateOverrides.typecheck,
+          format: gateOverrides.format,
+        },
+      },
+    });
+
+    const testsGate = gates.find((gate) => gate.id === "tests");
+    expect(testsGate?.source).toMatchObject({
+      command: "node --test --experimental-test-coverage",
+    });
+    expect(outcome.finalMeasures.changedLinesMeasured).toBeGreaterThan(0);
+    expect(outcome.finalMeasures.changedLineCoverage).toBeLessThan(1);
   }, 60_000);
 });

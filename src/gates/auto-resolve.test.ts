@@ -224,7 +224,11 @@ describe("auto-resolve within the cap", () => {
       ["lint", 1, "passed"],
     ]);
     expect(gateRuns[0]?.stdout).toContain("# fail 2");
-    expect(ledgerPayloads("ratchet-decision")).toHaveLength(1);
+    // One for the retry, one for the final state against the base commit.
+    expect(ledgerPayloads("ratchet-decision").map((payload) => payload.scope)).toEqual([
+      "retry",
+      "base",
+    ]);
   });
 
   it("emits a gate event carrying the digest of the record it was written from", async () => {
@@ -246,6 +250,80 @@ describe("auto-resolve within the cap", () => {
     for (const event of gateEvents) {
       expect(digests.has(event.record)).toBe(true);
     }
+  });
+});
+
+describe("the ratchet against the base commit", () => {
+  const twoTests = originalTests;
+  const oneTest = [
+    "import { it, expect } from 'vitest';",
+    "import { add } from './math.ts';",
+    "it('adds zero', () => {",
+    "  expect(add(0, 0)).toBe(0);",
+    "});",
+  ].join("\n");
+
+  function runFromBase(base: string, current: string): Promise<AutoResolveOutcome> {
+    const workspace = createMemoryWorkspace({
+      base: { [sourcePath]: fixedSource, [testPath]: base },
+      current: { [sourcePath]: fixedSource, [testPath]: current },
+    });
+
+    return runAutoResolve({
+      gates: [testsGate],
+      context: async () => ({
+        workspaceRoot: "/workspace",
+        changes: await workspace.changes(),
+        fileSet: declaredFileSet,
+        budgets: { maxChangedFiles: 12, maxAddedLines: 600 },
+        probe: workspace,
+      }),
+      cycleDeps: { commands: stubCommands(workspace), evidence, emit: () => undefined },
+      evidence,
+      checkpoint: createMemoryCheckpoint(workspace),
+      baseControl: null,
+      resolve: () => Promise.resolve(),
+      emit: () => undefined,
+      cap: 3,
+    });
+  }
+
+  it("rejects a deletion that made the first cycle green before any retry was judged", async () => {
+    const outcome = await runFromBase(twoTests, oneTest);
+
+    // The gate itself is honestly green: the surviving test passes. What is not honest is
+    // that a test the base commit had is gone, and no retry ever ran to be judged.
+    expect(outcome.firstCycle.statuses.tests).toBe("passed");
+    expect(outcome.attempts).toEqual([]);
+    expect(outcome.baseComparison.decision.accepted).toBe(false);
+    expect(outcome.baseComparison.decision.violations.map((violation) => violation.kind)).toEqual([
+      "tests-declared-decreased",
+      "assertions-decreased",
+    ]);
+    expect(outcome.settled).toBe("escalated");
+    expect(outcome.escalation?.gateId).toBe("ratchet");
+  });
+
+  it("stays green when the run left the tests where the base commit had them", async () => {
+    const outcome = await runFromBase(twoTests, twoTests);
+
+    expect(outcome.settled).toBe("green");
+    expect(outcome.baseComparison.decision.accepted).toBe(true);
+  });
+
+  it("records the base comparison as its own ledger decision, on every run", async () => {
+    await runFromBase(twoTests, twoTests);
+
+    const decisions = ledgerPayloads("ratchet-decision");
+    expect(decisions).toHaveLength(1);
+    expect(decisions[0]).toMatchObject({ scope: "base", attempt: 0, accepted: true });
+  });
+
+  it("names the measures it could not compare rather than counting them", async () => {
+    await runFromBase(twoTests, twoTests);
+
+    const decision = ledgerPayloads("ratchet-decision")[0];
+    expect(decision?.detail).toContain("not compared: testsCollected, changedLineCoverage");
   });
 });
 

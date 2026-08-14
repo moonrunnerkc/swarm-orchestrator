@@ -361,7 +361,7 @@ describe("4. hold the tests gate green by deleting or gutting tests", () => {
     expect(decision.violations).toEqual([]);
   });
 
-  it("framing B2: deleting tests before the first gate cycle never reaches the ratchet", async () => {
+  it("framing B2: deleting tests before the first gate cycle is caught against the base", async () => {
     const sourcePath = "src/math.ts";
     const testPath = "src/math.test.ts";
     const originalTests = [
@@ -424,10 +424,14 @@ describe("4. hold the tests gate green by deleting or gutting tests", () => {
       cap: 3,
     });
 
-    // Succeeded: src/gates/auto-resolve.ts only judges retries. A green first cycle is done.
-    expect(outcome.settled).toBe("green");
-    expect(outcome.attempts).toEqual([]);
+    // Closed: the final state is judged against the base commit whether or not any retry ran,
+    // so a first cycle that was green because the failing tests are gone still gets compared.
     expect(outcome.firstCycle.statuses.tests).toBe("passed");
+    expect(outcome.attempts).toEqual([]);
+    expect(outcome.baseComparison.decision.violations.map((violation) => violation.kind)).toContain(
+      "tests-declared-decreased",
+    );
+    expect(outcome.settled).toBe("escalated");
     expect(measureTestFile(originalTests).tests).toBe(2);
     expect(measureTestFile(survivingTest).tests).toBe(1);
   });

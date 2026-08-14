@@ -6,6 +6,11 @@ export interface ProjectDetection {
   readonly manifests: readonly string[];
   /** Script names declared in package.json, empty for every other project type. */
   readonly nodeScripts: readonly string[];
+  /**
+   * What each of those scripts actually runs. The gate set needs the body, not just the
+   * name, to know whether it can ask the runner for a coverage report.
+   */
+  readonly nodeScriptCommands: Readonly<Record<string, string>>;
   /** Tool sections found in pyproject.toml, so a python gate is only assembled if configured. */
   readonly pythonTools: readonly string[];
 }
@@ -28,7 +33,7 @@ export type ManifestReader = (path: string) => Promise<string | null>;
 export async function detectProject(read: ManifestReader): Promise<ProjectDetection> {
   const types: ProjectType[] = [];
   const manifests: string[] = [];
-  let nodeScripts: readonly string[] = [];
+  let nodeScriptCommands: Readonly<Record<string, string>> = {};
   let pythonTools: readonly string[] = [];
 
   for (const [type, manifest] of Object.entries(manifestsByType) as [ProjectType, string][]) {
@@ -39,23 +44,33 @@ export async function detectProject(read: ManifestReader): Promise<ProjectDetect
     types.push(type);
     manifests.push(manifest);
     if (type === "node") {
-      nodeScripts = readNodeScripts(text);
+      nodeScriptCommands = readNodeScripts(text);
     }
     if (type === "python") {
       pythonTools = readPythonTools(text);
     }
   }
 
-  return { types, manifests, nodeScripts, pythonTools };
+  return {
+    types,
+    manifests,
+    nodeScripts: Object.keys(nodeScriptCommands).sort(),
+    nodeScriptCommands,
+    pythonTools,
+  };
 }
 
-function readNodeScripts(text: string): readonly string[] {
+function readNodeScripts(text: string): Readonly<Record<string, string>> {
   try {
     const parsed = JSON.parse(text) as { scripts?: Record<string, unknown> };
-    return Object.keys(parsed.scripts ?? {}).sort();
+    const scripts: Record<string, string> = {};
+    for (const [name, command] of Object.entries(parsed.scripts ?? {})) {
+      scripts[name] = typeof command === "string" ? command : "";
+    }
+    return scripts;
   } catch {
     // A package.json that does not parse still identifies the project; it just declares nothing.
-    return [];
+    return {};
   }
 }
 

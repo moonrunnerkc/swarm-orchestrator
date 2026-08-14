@@ -189,6 +189,38 @@ describe("bundle export", () => {
     // The narrative is present, but labelled, and never inside a verified badge.
     expect(page).toContain("unverified prose");
   });
+
+  it("says coverage was not measured rather than leaving the gap to read as a pass", async () => {
+    await exportRecordedSession();
+    const page = await readFile(join(destination, "review.html"), "utf8");
+
+    expect(page).toContain("coverage of changed lines");
+    expect(page).toContain("not measured");
+  });
+
+  it("reports the ratio once a run has measured one", async () => {
+    const evidence = await recordedSession();
+    await evidence.record({
+      type: "ratchet-decision",
+      actor: "harness",
+      provenance: ["tool-output"],
+      payload: {
+        scope: "base",
+        attempt: 0,
+        accepted: true,
+        detail: "the ratchet accepted the attempt: no measure moved the wrong way",
+        measures: { after: { changedLineCoverage: 0.875 } },
+      },
+    });
+    await exportBundle({
+      source: bundleSourceFromRecorder(evidence),
+      destination,
+      signingKey: createEphemeralSigningKey(),
+      clock: createTestClock(1_700_000_100_000),
+    });
+
+    expect(await readFile(join(destination, "review.html"), "utf8")).toContain("87.5%");
+  });
 });
 
 describe("the embedded verifier", () => {

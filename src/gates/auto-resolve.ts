@@ -9,7 +9,12 @@ import {
   isGreen,
   runGateCycle,
 } from "./gate-runner.ts";
-import { type MeasureSnapshot, measuresFor, takeMeasureSnapshot } from "./measure-snapshot.ts";
+import {
+  type MeasureSnapshot,
+  measuresAtBase,
+  measuresFor,
+  takeMeasureSnapshot,
+} from "./measure-snapshot.ts";
 import { isTestFile } from "./measures.ts";
 import { judgeRatchet, type RatchetDecision, ratchetPayload } from "./ratchet.ts";
 import {
@@ -52,6 +57,13 @@ interface AutoResolveAttempt {
   readonly ratchetRecord: string;
 }
 
+/** The final workspace judged against the base commit, which happens on every run. */
+export interface BaseComparison {
+  readonly decision: RatchetDecision;
+  readonly respecification: readonly RespecificationFinding[];
+  readonly ratchetRecord: string;
+}
+
 export interface AutoResolveOutcome {
   readonly settled: "green" | "escalated";
   readonly firstCycle: GateCycle;
@@ -60,6 +72,7 @@ export interface AutoResolveOutcome {
   /** The numbers as they stand in that state, for the run's own report. */
   readonly finalMeasures: MeasureSnapshot;
   readonly attempts: readonly AutoResolveAttempt[];
+  readonly baseComparison: BaseComparison;
   readonly escalation: EscalationPayload | null;
 }
 
@@ -75,6 +88,11 @@ export const defaultAttemptCap = 3;
  * the wrong way never becomes the baseline the next attempt starts from. The attempt still
  * counts against the cap, so a model that keeps offering the same trade escalates quickly
  * instead of burning the budget.
+ *
+ * Whatever the retries did, the state this returns in is then judged against the base commit.
+ * Without that, a run whose very first edit deleted the failing tests goes green on the first
+ * cycle and no numeric comparison ever happens: the ratchet only ever saw retries, and there
+ * were none.
  */
 export async function runAutoResolve(deps: AutoResolveDependencies): Promise<AutoResolveOutcome> {
   const trackedTestFiles = new Set<string>();
@@ -139,7 +157,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       type: "ratchet-decision",
       actor: "harness",
       provenance: ["tool-output"],
-      payload: ratchetPayload(attempt, input, decision, respecification),
+      payload: ratchetPayload("retry", attempt, input, decision, respecification),
     });
 
     deps.emit({
@@ -168,24 +186,28 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     baseline = candidate;
   }
 
-  if (isGreen(cycle)) {
+  const baseComparison = await judgeAgainstBase(deps, cycle, baseline);
+
+  if (isGreen(cycle) && baseComparison.decision.accepted) {
     return {
       settled: "green",
       firstCycle,
       finalCycle: cycle,
       finalMeasures: baseline,
       attempts,
+      baseComparison,
       escalation: null,
     };
   }
 
-  const escalation = await escalate(deps, cycle, attempts);
+  const escalation = await escalate(deps, cycle, attempts, baseComparison);
   return {
     settled: "escalated",
     firstCycle,
     finalCycle: cycle,
     finalMeasures: baseline,
     attempts,
+    baseComparison,
     escalation,
   };
 
@@ -202,6 +224,41 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       gateOutputs: forCycle.runs.map((run) => run.observation),
     });
   }
+}
+
+/**
+ * The final state against the base commit, unconditionally. The suite was never run at the
+ * base, so the collected count and the coverage ratio abstain by name rather than being
+ * invented; what does compare is what the test files themselves declare, which is exactly
+ * what a deletion moves.
+ */
+async function judgeAgainstBase(
+  deps: AutoResolveDependencies,
+  cycle: GateCycle,
+  final: MeasureSnapshot,
+): Promise<BaseComparison> {
+  const base = measuresAtBase(final);
+  const respecification = await findExemptFiles(regressedTestFiles(base, final), deps.baseControl);
+  const input = {
+    // Nothing is known to have passed at the base commit, so no gate result is compared here.
+    baselineGates: {},
+    candidateGates: cycle.statuses,
+    baseline: base,
+    candidate: final,
+    exemptFiles: new Set(
+      respecification.filter((finding) => finding.exempt).map((finding) => finding.file),
+    ),
+  };
+
+  const decision = judgeRatchet(input);
+  const recorded = await deps.evidence.record({
+    type: "ratchet-decision",
+    actor: "harness",
+    provenance: ["tool-output"],
+    payload: ratchetPayload("base", 0, input, decision, respecification),
+  });
+
+  return { decision, respecification, ratchetRecord: recorded.record.payloadDigest };
 }
 
 async function tryResolve(
@@ -243,7 +300,7 @@ async function recordFailedAttempt(
     type: "ratchet-decision",
     actor: "harness",
     provenance: ["tool-output"],
-    payload: ratchetPayload(attempt, input, decision, []),
+    payload: ratchetPayload("retry", attempt, input, decision, []),
   });
 
   deps.emit({
@@ -298,9 +355,13 @@ async function escalate(
   deps: AutoResolveDependencies,
   cycle: GateCycle,
   attempts: readonly AutoResolveAttempt[],
+  base: BaseComparison,
 ): Promise<EscalationPayload> {
   const blocking = cycle.blockingFailures[0];
   const rejected = attempts.filter((attempt) => !attempt.decision.accepted);
+  // A run can reach here with every gate green and the base comparison rejected, which is
+  // the erosion a cap-bounded retry loop never saw because it never had to retry.
+  const eroded = base.decision.accepted ? null : base;
 
   const history: AttemptSummary[] = attempts.map((attempt) => ({
     attempt: attempt.attempt,
@@ -311,16 +372,17 @@ async function escalate(
   }));
 
   const payload = escalationSchema.parse({
-    gateId: blocking?.gateId ?? "unknown",
-    title: blocking?.title ?? "unknown",
+    gateId: blocking?.gateId ?? (eroded === null ? "unknown" : "ratchet"),
+    title: blocking?.title ?? (eroded === null ? "unknown" : "the ratchet against the base commit"),
     reason:
-      blocking === undefined
+      blocking?.detail ??
+      (eroded === null
         ? "the run stopped with a blocking failure that is no longer in the final cycle"
-        : blocking.detail,
+        : eroded.decision.detail),
     attemptsUsed: attempts.length,
     cap: deps.cap,
-    attemptsRejectedByRatchet: rejected.length,
-    lastGateRecord: blocking?.record ?? "",
+    attemptsRejectedByRatchet: rejected.length + (eroded === null ? 0 : 1),
+    lastGateRecord: blocking?.record ?? eroded?.ratchetRecord ?? "",
     history,
   });
 

@@ -86,6 +86,30 @@ const nodeScriptCandidates: Readonly<Record<string, readonly string[]>> = {
   tests: ["test", "tests"],
 };
 
+/**
+ * The ratchet's changed-line-coverage arm can only compare what a run measured, so a test
+ * command that prints no report leaves that arm permanently abstaining, which reads as a
+ * pass. Where the declared runner is node's own, the flag that makes it print one goes in
+ * front of the file patterns (node rejects it after them, and refuses it in NODE_OPTIONS),
+ * so the gate runs the rewritten command rather than the script name. Every other runner
+ * reports coverage in a format this harness does not read, and asking for it can fail
+ * outright, so those runs are recorded as not measured instead of guessed at.
+ */
+function coverageVariant(body: string | undefined): string | null {
+  if (body === undefined || /[|&;]/.test(body) || body.includes("--experimental-test-coverage")) {
+    return null;
+  }
+  const runner = /\bnode\b[^\n]*?\s--test(?![\w-])/.exec(body);
+  if (runner === null) {
+    return null;
+  }
+  return (
+    body.slice(0, runner.index + runner[0].length) +
+    " --experimental-test-coverage" +
+    body.slice(runner.index + runner[0].length)
+  );
+}
+
 function nodeGates(detection: ProjectDetection): readonly GateDefinition[] {
   const scripts = new Set(detection.nodeScripts);
   const pick = (id: string): string | null =>
@@ -103,6 +127,15 @@ function nodeGates(detection: ProjectDetection): readonly GateDefinition[] {
               "as a gate would edit the tree it is judging"
           : `package.json declares no ${id} script`,
       );
+    }
+    const coverage = id === "tests" ? coverageVariant(detection.nodeScriptCommands[script]) : null;
+    if (coverage !== null) {
+      return commandGate({
+        id,
+        title: `tests (${coverage})`,
+        severity: "blocking",
+        command: coverage,
+      });
     }
     return commandGate({
       id,

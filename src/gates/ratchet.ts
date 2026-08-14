@@ -54,8 +54,17 @@ export interface RatchetInput {
   readonly exemptFiles: ReadonlySet<string>;
 }
 
+/**
+ * Which two states a decision compared. A retry is judged against the state before it; the
+ * final workspace is judged against the base commit whether or not any retry ever ran, since
+ * a first cycle that was already green would otherwise never be compared to anything.
+ */
+export type RatchetScope = "retry" | "base";
+
 const ratchetDecisionSchema = z.object({
-  attempt: z.number().int().positive(),
+  scope: z.enum(["retry", "base"]),
+  /** Zero for the base comparison, which belongs to no attempt. */
+  attempt: z.number().int().nonnegative(),
   accepted: z.boolean(),
   detail: z.string(),
   violations: z.array(
@@ -203,7 +212,11 @@ export function judgeRatchet(input: RatchetInput): RatchetDecision {
     exemptFiles: [...input.exemptFiles].sort(),
     detail: accepted
       ? "the ratchet accepted the attempt: no measure moved the wrong way" +
-        (abstentions.length > 0 ? ` (${abstentions.length} measure(s) not compared)` : "")
+        // Named, not counted. An abstention that reads as a pass is the defect: a reviewer
+        // has to be able to see which arm measured nothing without opening the payload.
+        (abstentions.length > 0
+          ? ` (not compared: ${abstentions.map((abstention) => abstention.measure).join(", ")})`
+          : "")
       : `the ratchet rejected the attempt: ${violations.map((violation) => violation.detail).join("; ")}`,
   };
 }
@@ -274,6 +287,7 @@ function percent(ratio: number): string {
 }
 
 export function ratchetPayload(
+  scope: RatchetScope,
   attempt: number,
   input: RatchetInput,
   decision: RatchetDecision,
@@ -282,6 +296,7 @@ export function ratchetPayload(
   const { before, after } = comparableTotals(input.baseline, input.candidate, input.exemptFiles);
 
   return ratchetDecisionSchema.parse({
+    scope,
     attempt,
     accepted: decision.accepted,
     detail: decision.detail,
