@@ -274,7 +274,12 @@ export function evaluateClaim(claim, lookup) {
   };
 }
 
-export function verifyBundle(directory) {
+/**
+ * Every check for one bundle directory, without printing any of them. Split out so a combined
+ * bundle can fold in its workers' checks: a worker chain is verified by exactly the same code
+ * as the coordinator's, rather than by a second, looser reading of the same format.
+ */
+function collectChecks(directory) {
   const checks = [];
   const record = (name, ok, detail) => {
     checks.push({ name, ok, detail });
@@ -290,12 +295,19 @@ export function verifyBundle(directory) {
     );
   } catch (cause) {
     record("manifest reads", false, cause.message);
-    return report(checks);
+    return { checks, verdicts: [], payloads: new Map(), manifest: null };
   }
 
-  const lines = readFileSync(join(directory, "ledger.jsonl"), "utf8")
-    .split("\n")
-    .filter((line) => line.trim().length > 0);
+  let lines = [];
+  try {
+    lines = readFileSync(join(directory, "ledger.jsonl"), "utf8")
+      .split("\n")
+      .filter((line) => line.trim().length > 0);
+  } catch (cause) {
+    record("ledger reads", false, cause.message);
+    return { checks, verdicts: [], payloads: new Map(), manifest };
+  }
+
   const records = [];
   let parseFailures = 0;
   for (const [index, line] of lines.entries()) {
@@ -398,14 +410,13 @@ export function verifyBundle(directory) {
 
   const citable = new Set(records.map((entry) => entry.payloadDigest));
   const lookup = (digest) => (citable.has(digest) ? payloads.get(digest) : undefined);
-  const claims = records
+  const verdicts = records
     .filter((entry) => entry.type === "claim")
-    .map((entry) => ({ sequence: entry.sequence, claim: payloads.get(entry.payloadDigest) }));
+    .map((entry) => {
+      const claim = payloads.get(entry.payloadDigest);
+      return { sequence: entry.sequence, claim, evaluation: evaluateClaim(claim, lookup) };
+    });
 
-  const verdicts = claims.map((entry) => ({
-    ...entry,
-    evaluation: evaluateClaim(entry.claim, lookup),
-  }));
   const verified = verdicts.filter((entry) => entry.evaluation.verdict === "verified").length;
   record(
     "claim verdicts recomputed",
@@ -413,13 +424,60 @@ export function verifyBundle(directory) {
     `${verified} verified, ${verdicts.length - verified} unverified; manifest says ${manifest.claims.verified} verified`,
   );
 
-  console.log("");
-  for (const entry of verdicts) {
-    const label = entry.evaluation.verdict === "verified" ? "VERIFIED  " : "UNVERIFIED";
-    const reason = entry.evaluation.reason === null ? "" : ` [${entry.evaluation.reason}]`;
-    console.log(
-      `  ${label} record ${entry.sequence}: ${entry.claim?.predicate ?? "(no predicate)"}${reason}`,
-    );
+  return { checks, verdicts, payloads, manifest };
+}
+
+/** Does any payload in this bundle name that chain head? That is the coordinator's linkage. */
+function namesChainHead(payloads, chainHead) {
+  for (const payload of payloads.values()) {
+    if (payload !== null && typeof payload === "object" && payload.chainHead === chainHead) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function verifyBundle(directory) {
+  const top = collectChecks(directory);
+  const checks = [...top.checks];
+  const sections = [{ title: null, verdicts: top.verdicts }];
+
+  for (const worker of top.manifest?.workers ?? []) {
+    const label = `worker ${worker.workerId}`;
+    const nested = collectChecks(join(directory, worker.directory));
+    for (const check of nested.checks) {
+      checks.push({ ...check, name: `${label}: ${check.name}` });
+    }
+    checks.push({
+      name: `${label}: chain head matches the one this manifest lists`,
+      ok: nested.manifest?.chainHead === worker.chainHead,
+      detail: `listed ${worker.chainHead}, its own manifest says ${nested.manifest?.chainHead ?? "nothing"}`,
+    });
+    checks.push({
+      name: `${label}: named by a coordinator record`,
+      ok: namesChainHead(top.payloads, worker.chainHead),
+      detail: namesChainHead(top.payloads, worker.chainHead)
+        ? "a coordinator record carries this chain head"
+        : "no coordinator record carries this chain head, so the signature says nothing about it",
+    });
+    sections.push({ title: label, verdicts: nested.verdicts });
+  }
+
+  for (const section of sections) {
+    if (section.verdicts.length === 0) {
+      continue;
+    }
+    console.log("");
+    if (section.title !== null) {
+      console.log(`  ${section.title}`);
+    }
+    for (const entry of section.verdicts) {
+      const mark = entry.evaluation.verdict === "verified" ? "VERIFIED  " : "UNVERIFIED";
+      const reason = entry.evaluation.reason === null ? "" : ` [${entry.evaluation.reason}]`;
+      console.log(
+        `  ${mark} record ${entry.sequence}: ${entry.claim?.predicate ?? "(no predicate)"}${reason}`,
+      );
+    }
   }
 
   return report(checks);

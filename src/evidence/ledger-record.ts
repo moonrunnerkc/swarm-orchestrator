@@ -33,6 +33,9 @@ export const recordTypes = [
   "calibration-summary",
   "routing-decision",
   "reward",
+  "worker-started",
+  "worker-finished",
+  "merge-attempt",
 ] as const;
 
 export type RecordType = (typeof recordTypes)[number];

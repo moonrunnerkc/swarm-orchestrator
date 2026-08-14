@@ -6,6 +6,7 @@ import {
   bundleFileNames,
   bundleFormatVersion,
   bundleManifestSchema,
+  type WorkerChain,
 } from "./bundle-manifest.ts";
 import { digestFileName, digestOfBytes, type JsonValue } from "./canonical-json.ts";
 import { buildEvidenceDag, type EvidenceDag } from "./dag.ts";
@@ -58,6 +59,8 @@ export interface ExportBundleOptions {
   readonly destination: string;
   readonly signingKey: SigningKey;
   readonly clock: Clock;
+  /** Worker bundles already written under this destination. Empty for an ordinary run. */
+  readonly workers?: readonly WorkerChain[];
 }
 
 export interface BundleExport {
@@ -121,6 +124,7 @@ export async function exportBundle(options: ExportBundleOptions): Promise<Bundle
     blobs: digests,
     missingBlobs,
     claims: { verified: dag.verifiedCount, unverified: dag.unverifiedCount },
+    workers: options.workers ?? [],
   });
 
   const blobDirectory = join(options.destination, bundleFileNames.blobs);
