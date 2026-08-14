@@ -221,7 +221,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       probe: forContext.probe,
       trackedTestFiles: tracked,
       gateMeasures: forCycle.measures,
-      gateOutputs: forCycle.runs.map((run) => run.observation),
+      coverageReports: forCycle.coverageReports,
     });
   }
 }

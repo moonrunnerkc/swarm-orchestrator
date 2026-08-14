@@ -90,10 +90,7 @@ async function write(path: string, contents: string): Promise<void> {
 }
 
 /** A repository whose committed state already carries the failing test. */
-async function seedRepository(
-  source: string,
-  testScript = "node --test --experimental-test-coverage",
-): Promise<void> {
+async function seedRepository(source: string, testScript = "node --test"): Promise<void> {
   const manifest = {
     name: "scratch",
     type: "module",
@@ -117,7 +114,7 @@ async function seedRepository(
 const gateOverrides = {
   // Direct commands rather than npm wrappers: the same gate definitions, without paying
   // for a package manager on every one of a dozen runs.
-  tests: "node --test --experimental-test-coverage --test-reporter=tap",
+  tests: "node --test",
   lint: "node tools/lint.mjs",
   typecheck: "node --check src/math.js",
   format: "node --check src/math.test.js",
@@ -390,7 +387,9 @@ describe("the gates measure coverage of changed lines from an executed run", () 
     const testsRun = outcome.firstCycle.runs.find((gate) => gate.gateId === "tests");
 
     expect(testsRun?.status).toBe("passed");
-    expect(testsRun?.observation.stdout).toContain("coverage report");
+    // The number came out of the report the runner wrote, not out of what it printed.
+    expect(testsRun?.coverageReport).toContain("SF:");
+    expect(outcome.firstCycle.coverageReports).toHaveLength(1);
     // Three lines added, none of them reached by any test, so the ratio is measured and low.
     expect(outcome.finalMeasures.changedLinesMeasured).toBeGreaterThan(0);
     expect(outcome.finalMeasures.changedLineCoverage).toBeLessThan(1);
@@ -432,7 +431,8 @@ describe("the gates measure coverage of changed lines from an executed run", () 
 
     const testsGate = gates.find((gate) => gate.id === "tests");
     expect(testsGate?.source).toMatchObject({
-      command: "node --test --experimental-test-coverage",
+      command: expect.stringContaining("--test-reporter=lcov"),
+      coverageArtifact: expect.stringContaining("tests.lcov"),
     });
     expect(outcome.finalMeasures.changedLinesMeasured).toBeGreaterThan(0);
     expect(outcome.finalMeasures.changedLineCoverage).toBeLessThan(1);

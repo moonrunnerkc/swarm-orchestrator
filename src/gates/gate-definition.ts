@@ -51,7 +51,17 @@ export interface GateContext {
 type GateInspection = (context: GateContext) => Promise<GateObservation>;
 
 type GateSource =
-  | { readonly kind: "command"; readonly command: string; readonly timeoutMs?: number }
+  | {
+      readonly kind: "command";
+      readonly command: string;
+      readonly timeoutMs?: number;
+      /**
+       * Absolute path this command's runner was told to write its coverage report to. The
+       * harness reads that file and nothing the command printed, so the number it ends up
+       * with is one the runner authored rather than one the tests could have.
+       */
+      readonly coverageArtifact?: string;
+    }
   | { readonly kind: "inspection"; readonly inspect: GateInspection };
 
 /**

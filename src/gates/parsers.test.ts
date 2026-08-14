@@ -3,6 +3,7 @@ import type { GateObservation } from "./gate-definition.ts";
 import {
   exitCodeParser,
   inspectionParser,
+  matchCoverageFile,
   parseUncoveredLines,
   testOutputParser,
   vitestTestParser,
@@ -127,5 +128,45 @@ describe("reading a coverage report", () => {
 
   it("finds nothing in output that carries no coverage report", () => {
     expect(parseUncoveredLines(tapOutput).size).toBe(0);
+  });
+
+  it("takes the uncovered lines out of an lcov report, which is what the harness asks for", () => {
+    const uncovered = parseUncoveredLines(
+      [
+        "TN:",
+        "SF:/build/src/math.ts",
+        "FNF:1",
+        "DA:1,1",
+        "DA:2,0",
+        "DA:3,0",
+        "DA:4,2",
+        "LF:4",
+        "LH:2",
+        "end_of_record",
+        "SF:/build/src/util.ts",
+        "DA:1,1",
+        "end_of_record",
+      ].join("\n"),
+    );
+
+    expect([...(uncovered.get("/build/src/math.ts") ?? [])]).toEqual([2, 3]);
+    // A file the report covers completely is present with nothing missed, which is a
+    // measurement. A file it never mentions is absent, which is not.
+    expect([...(uncovered.get("/build/src/util.ts") ?? [])]).toEqual([]);
+  });
+
+  it("unions every row naming one file, so an empty spelling cannot shadow a populated one", () => {
+    const uncovered = parseUncoveredLines(
+      [
+        "# start of coverage report",
+        "# file | line % | branch % | funcs % | uncovered lines",
+        "# src/math.ts | 100.00 | 100.00 | 100.00 | ",
+        "# /workspace/src/math.ts | 50.00 | 50.00 | 100.00 | 2-3",
+        "# end of coverage report",
+      ].join("\n"),
+    );
+
+    expect([...(matchCoverageFile(uncovered, "src/math.ts") ?? [])]).toEqual([2, 3]);
+    expect(matchCoverageFile(uncovered, "src/other.ts")).toBeNull();
   });
 });

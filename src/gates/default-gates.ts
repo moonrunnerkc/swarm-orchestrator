@@ -1,3 +1,4 @@
+import { coverageArtifactPath, coverageReportingCommand } from "./coverage-artifact.ts";
 import {
   type GateDefinition,
   type GateParser,
@@ -20,6 +21,8 @@ interface GateSpec {
   readonly severity: GateSeverity;
   readonly command: string;
   readonly parse?: GateParser;
+  /** Where this command's runner was told to write its coverage report, when it was. */
+  readonly coverageArtifact?: string;
 }
 
 function commandGate(spec: GateSpec): GateDefinition {
@@ -27,7 +30,11 @@ function commandGate(spec: GateSpec): GateDefinition {
     id: spec.id,
     title: spec.title,
     severity: spec.severity,
-    source: { kind: "command", command: spec.command },
+    source: {
+      kind: "command",
+      command: spec.command,
+      ...(spec.coverageArtifact === undefined ? {} : { coverageArtifact: spec.coverageArtifact }),
+    },
     parse: spec.parse ?? parserFor(spec.id),
   };
 }
@@ -88,29 +95,35 @@ const nodeScriptCandidates: Readonly<Record<string, readonly string[]>> = {
 
 /**
  * The ratchet's changed-line-coverage arm can only compare what a run measured, so a test
- * command that prints no report leaves that arm permanently abstaining, which reads as a
- * pass. Where the declared runner is node's own, the flag that makes it print one goes in
- * front of the file patterns (node rejects it after them, and refuses it in NODE_OPTIONS),
- * so the gate runs the rewritten command rather than the script name. Every other runner
- * reports coverage in a format this harness does not read, and asking for it can fail
- * outright, so those runs are recorded as not measured instead of guessed at.
+ * command that leaves no report behind keeps that arm permanently abstaining, which reads as
+ * a pass. Where the declared runner is node's own, the gate runs a rewritten command that
+ * writes the runner's own report to a path under the session store, and the harness reads
+ * that file rather than anything the command printed. Every other runner reports coverage in
+ * a shape this harness does not read, and asking for it can fail outright, so those runs are
+ * recorded as not measured instead of guessed at.
+ *
+ * One rule, applied to whatever command the gate ends up running: the script a manifest
+ * declares here, and an override from swarm.toml where there is one.
  */
-function coverageVariant(body: string | undefined): string | null {
-  if (body === undefined || /[|&;]/.test(body) || body.includes("--experimental-test-coverage")) {
-    return null;
+function askedForCoverage(
+  spec: GateSpec,
+  body: string | undefined,
+  directory: string | undefined,
+): GateSpec {
+  if (directory === undefined) {
+    return spec;
   }
-  const runner = /\bnode\b[^\n]*?\s--test(?![\w-])/.exec(body);
-  if (runner === null) {
-    return null;
-  }
-  return (
-    body.slice(0, runner.index + runner[0].length) +
-    " --experimental-test-coverage" +
-    body.slice(runner.index + runner[0].length)
-  );
+  const artifact = coverageArtifactPath(directory, spec.id);
+  const command = coverageReportingCommand(body, artifact);
+  return command === null
+    ? spec
+    : { ...spec, title: `${spec.id} (${command})`, command, coverageArtifact: artifact };
 }
 
-function nodeGates(detection: ProjectDetection): readonly GateDefinition[] {
+function nodeGates(
+  detection: ProjectDetection,
+  options: GateSetOptions,
+): readonly GateDefinition[] {
   const scripts = new Set(detection.nodeScripts);
   const pick = (id: string): string | null =>
     (nodeScriptCandidates[id] ?? []).find((name) => scripts.has(name)) ?? null;
@@ -128,21 +141,18 @@ function nodeGates(detection: ProjectDetection): readonly GateDefinition[] {
           : `package.json declares no ${id} script`,
       );
     }
-    const coverage = id === "tests" ? coverageVariant(detection.nodeScriptCommands[script]) : null;
-    if (coverage !== null) {
-      return commandGate({
-        id,
-        title: `tests (${coverage})`,
-        severity: "blocking",
-        command: coverage,
-      });
-    }
-    return commandGate({
-      id,
-      title: `${id} (npm run ${script})`,
-      severity: "blocking",
-      command: `npm run --silent ${script}`,
-    });
+    return commandGate(
+      askedForCoverage(
+        {
+          id,
+          title: `${id} (npm run ${script})`,
+          severity: "blocking",
+          command: `npm run --silent ${script}`,
+        },
+        detection.nodeScriptCommands[script],
+        options.coverageArtifactDirectory,
+      ),
+    );
   });
 }
 
@@ -258,7 +268,10 @@ const goGates: readonly GateDefinition[] = [
 ];
 
 const commandGatesByType: Readonly<
-  Record<ProjectType, (detection: ProjectDetection) => readonly GateDefinition[]>
+  Record<
+    ProjectType,
+    (detection: ProjectDetection, options: GateSetOptions) => readonly GateDefinition[]
+  >
 > = {
   node: nodeGates,
   python: pythonGates,
@@ -284,6 +297,12 @@ const undetectedGates: readonly GateDefinition[] = (
 export interface GateSetOptions {
   /** Replaces the assembled command for one gate id, from swarm.toml or a flag. */
   readonly commandOverrides?: Readonly<Record<string, string>>;
+  /**
+   * Where a test runner is asked to write its coverage report. It belongs outside the
+   * workspace, which is what stops the code being measured from authoring the measurement;
+   * absent means no report is asked for and the coverage arm abstains.
+   */
+  readonly coverageArtifactDirectory?: string;
 }
 
 /**
@@ -302,7 +321,7 @@ export function assembleGates(
     detection.types.length === 0
       ? undetectedGates
       : detection.types.flatMap((type) =>
-          commandGatesByType[type](detection).map((gate) =>
+          commandGatesByType[type](detection, options).map((gate) =>
             multiple ? { ...gate, id: `${gate.id}:${type}` } : gate,
           ),
         );
@@ -314,6 +333,18 @@ export function assembleGates(
     if (override === undefined) {
       return gate;
     }
-    return { ...gate, source: { kind: "command", command: override } };
+    return commandGate(
+      askedForCoverage(
+        {
+          id: gate.id,
+          title: gate.title,
+          severity: gate.severity,
+          command: override,
+          parse: gate.parse,
+        },
+        override,
+        options.coverageArtifactDirectory,
+      ),
+    );
   });
 }

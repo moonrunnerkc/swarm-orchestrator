@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { GateStatus, LoopEvent } from "../core/loop-events.ts";
 import { claimPayloadSchema } from "../evidence/claim.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
+import type { CoverageArtifactStore } from "./coverage-artifact.ts";
 import {
   defaultGateTimeoutMs,
   type GateCommandRunner,
@@ -41,6 +42,8 @@ interface GateRun {
   readonly detail: string;
   readonly measures: GateMeasures;
   readonly observation: GateObservation;
+  /** What this gate's runner wrote to the report path it was given, or null for neither. */
+  readonly coverageReport: string | null;
   /** The payload digest of this run's ledger record, which a claim may cite. */
   readonly record: string;
 }
@@ -53,12 +56,22 @@ export interface GateCycle {
   readonly advisoryFailures: readonly GateRun[];
   /** Every gate's measures merged. Later gates win on a name collision, which is recorded. */
   readonly measures: GateMeasures;
+  /**
+   * The reports the runners wrote this cycle, which is the only place coverage is read from.
+   * Empty means nothing measured it, which the ratchet abstains on by name.
+   */
+  readonly coverageReports: readonly string[];
 }
 
 export interface GateCycleDependencies {
   readonly commands: GateCommandRunner;
   readonly evidence: EvidenceRecorder;
   readonly emit: (event: LoopEvent) => void;
+  /**
+   * Reads back the reports gate commands were told to write. Absent means no report is
+   * collected and coverage of changed lines goes unmeasured, which is the honest reading.
+   */
+  readonly coverageArtifacts?: CoverageArtifactStore;
 }
 
 export function isGreen(cycle: GateCycle): boolean {
@@ -81,7 +94,7 @@ export async function runGateCycle(
   const measures: Record<string, number> = {};
 
   for (const gate of gates) {
-    const observation = await observe(gate, context, deps.commands);
+    const { observation, coverageReport } = await observe(gate, context, deps);
     const reading = gate.parse(observation);
     const blocking = gate.severity === "blocking";
 
@@ -120,6 +133,7 @@ export async function runGateCycle(
       detail: reading.detail,
       measures: reading.measures,
       observation,
+      coverageReport,
       record: recorded.record.payloadDigest,
     };
     runs.push(run);
@@ -145,21 +159,47 @@ export async function runGateCycle(
     blockingFailures: runs.filter((run) => run.status === "failed" && run.severity === "blocking"),
     advisoryFailures: runs.filter((run) => run.status === "failed" && run.severity === "advisory"),
     measures,
+    coverageReports: runs
+      .map((run) => run.coverageReport)
+      .filter((report): report is string => report !== null),
   };
 }
 
+interface GateOutput {
+  readonly observation: GateObservation;
+  readonly coverageReport: string | null;
+}
+
+/**
+ * Runs one gate and collects whatever the runner wrote beside its output. The report path is
+ * cleared first: a file left behind by an earlier attempt would otherwise be read as this
+ * attempt's measurement, which is the same defect as reading stdout, one run later.
+ */
 async function observe(
   gate: GateDefinition,
   context: GateContext,
-  commands: GateCommandRunner,
-): Promise<GateObservation> {
+  deps: GateCycleDependencies,
+): Promise<GateOutput> {
   if (gate.source.kind === "inspection") {
-    return gate.source.inspect(context);
+    return { observation: await gate.source.inspect(context), coverageReport: null };
   }
-  return commands.run(gate.source.command, {
+
+  const artifact = gate.source.coverageArtifact;
+  const store = deps.coverageArtifacts;
+  const collecting = artifact !== undefined && store !== undefined;
+  if (collecting) {
+    await store.clear(artifact);
+  }
+
+  const observation = await deps.commands.run(gate.source.command, {
     cwd: context.workspaceRoot,
     timeoutMs: gate.source.timeoutMs ?? defaultGateTimeoutMs,
   });
+
+  return {
+    observation,
+    coverageReport: collecting ? await store.read(artifact) : null,
+  };
 }
 
 function truncate(text: string): string {

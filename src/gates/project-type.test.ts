@@ -109,9 +109,27 @@ describe("assembling the default gate set", () => {
     expect(commandOf(gates, "typecheck")).toBeNull();
   });
 
-  it("asks node's own runner for the coverage report the ratchet needs", async () => {
-    // The changed-line-coverage arm can only compare what a run measured, and node rejects
-    // the flag after the file patterns, so the assembled command carries it in front of them.
+  it("asks node's own runner to write the coverage report the ratchet needs", async () => {
+    // The changed-line-coverage arm can only compare what a run measured, and it measures
+    // from a file the runner wrote rather than from what the run printed. Node rejects the
+    // flags after the file patterns, so the assembled command carries them in front.
+    const gates = assembleGates(
+      await detectProject(
+        reader({
+          "package.json": JSON.stringify({ scripts: { test: "node --test ./test/*.mjs" } }),
+        }),
+      ),
+      { coverageArtifactDirectory: "/session/coverage" },
+    );
+
+    expect(commandOf(gates, "tests")).toBe(
+      "node --test --experimental-test-coverage --test-reporter=tap " +
+        "--test-reporter-destination=stdout --test-reporter=lcov " +
+        "--test-reporter-destination='/session/coverage/tests.lcov' ./test/*.mjs",
+    );
+  });
+
+  it("runs the declared script and measures nothing when no report path was given", async () => {
     const gates = assembleGates(
       await detectProject(
         reader({
@@ -120,7 +138,7 @@ describe("assembling the default gate set", () => {
       ),
     );
 
-    expect(commandOf(gates, "tests")).toBe("node --test --experimental-test-coverage ./test/*.mjs");
+    expect(commandOf(gates, "tests")).toBe("npm run --silent test");
   });
 
   it("leaves a runner it cannot ask for a readable report alone", async () => {

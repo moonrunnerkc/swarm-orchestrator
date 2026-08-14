@@ -223,11 +223,54 @@ function describeTestRun(counters: TestCounters, exitCode: number): string {
 }
 
 /**
- * Node's coverage table names the lines it did not reach, per file. Intersecting that with
- * the lines this change added is the only honest way to say "coverage of changed lines":
- * it is measured from an executed run, and it is absent when no run measured it.
+ * The lines an executed run did not reach, per file, read from a report the runner wrote.
+ * Intersecting that with the lines this change added is the only honest way to say
+ * "coverage of changed lines": it is measured from a run, and it is absent when no run
+ * measured it.
+ *
+ * Two shapes, because a runner writes one or the other: lcov, which is what the harness asks
+ * for since it carries coverage records and nothing else, and node's printed table, which is
+ * what a project that configured its own reporter leaves behind. Neither is read from a
+ * gate's stdout; see coverage-artifact.ts for why that distinction is the whole point.
  */
 export function parseUncoveredLines(text: string): ReadonlyMap<string, ReadonlySet<number>> {
+  return /^SF:/m.test(text) ? parseLcov(text) : parseCoverageTable(text);
+}
+
+/** `SF:` opens a file, `DA:<line>,<count>` reports one line, `end_of_record` closes it. */
+function parseLcov(text: string): ReadonlyMap<string, ReadonlySet<number>> {
+  const uncovered = new Map<string, Set<number>>();
+  let file: string | null = null;
+
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (line.startsWith("SF:")) {
+      file = line.slice(3).trim();
+      if (file.length > 0 && !uncovered.has(file)) {
+        uncovered.set(file, new Set<number>());
+      }
+      continue;
+    }
+    if (line === "end_of_record") {
+      file = null;
+      continue;
+    }
+    if (file === null || !line.startsWith("DA:")) {
+      continue;
+    }
+    const reading = /^DA:(\d+),(\d+)/.exec(line);
+    if (reading?.[1] === undefined || reading[2] === undefined) {
+      continue;
+    }
+    if (Number(reading[2]) === 0) {
+      uncovered.get(file)?.add(Number(reading[1]));
+    }
+  }
+
+  return uncovered;
+}
+
+function parseCoverageTable(text: string): ReadonlyMap<string, ReadonlySet<number>> {
   const uncovered = new Map<string, Set<number>>();
   let inReport = false;
 
@@ -271,20 +314,34 @@ export function parseUncoveredLines(text: string): ReadonlyMap<string, ReadonlyS
 /**
  * A coverage report names files however the runner saw them, so match on a path suffix
  * rather than demanding the two spellings agree.
+ *
+ * Every matching row counts, not the first one found. Stopping at an exact-path hit let an
+ * empty row shadow a populated one under another spelling, and an empty row reads as "every
+ * changed line was covered": the two spellings describe one file, so the honest reading of
+ * them is the union of the lines they say were missed.
  */
 export function matchCoverageFile(
   uncovered: ReadonlyMap<string, ReadonlySet<number>>,
   path: string,
 ): ReadonlySet<number> | null {
-  const direct = uncovered.get(path);
-  if (direct !== undefined) {
-    return direct;
-  }
-  for (const [reported, lines] of uncovered) {
-    const normalized = reported.replaceAll("\\", "/");
-    if (normalized.endsWith(`/${path}`) || path.endsWith(`/${normalized}`)) {
-      return lines;
+  const missed = new Set<number>();
+  let reported = false;
+
+  for (const [candidate, lines] of uncovered) {
+    if (!namesSameFile(candidate, path)) {
+      continue;
+    }
+    reported = true;
+    for (const line of lines) {
+      missed.add(line);
     }
   }
-  return null;
+
+  return reported ? missed : null;
+}
+
+function namesSameFile(reported: string, path: string): boolean {
+  const left = reported.replaceAll("\\", "/");
+  const right = path.replaceAll("\\", "/");
+  return left === right || left.endsWith(`/${right}`) || right.endsWith(`/${left}`);
 }

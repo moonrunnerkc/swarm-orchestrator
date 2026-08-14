@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import type { Clock } from "../core/clock.ts";
 import type { LoopEvent } from "../core/loop-events.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
@@ -8,6 +9,7 @@ import {
   runAutoResolve,
 } from "./auto-resolve.ts";
 import { createBaseControlRunner, singleFileTestCommand } from "./base-control.ts";
+import { createFileCoverageArtifactStore } from "./coverage-artifact.ts";
 import { assembleGates, type GateSetOptions } from "./default-gates.ts";
 import type { FileSetRegistry } from "./file-set.ts";
 import type { DiffBudget, GateContext, GateDefinition } from "./gate-definition.ts";
@@ -49,7 +51,12 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
   const probe = createGitWorkspaceProbe(workspace);
   const commands = createNodeCommandRunner(options.clock);
   const detection = await detectProject(probe.readCurrent);
-  const gates = assembleGates(detection, options.gateOptions ?? {});
+  const gates = assembleGates(detection, {
+    ...(options.gateOptions ?? {}),
+    // Under the session store, which invariant 11 puts outside the workspace and denies to
+    // tools: a coverage report the workspace can reach is a coverage report it can write.
+    coverageArtifactDirectory: join(options.evidence.directory, "coverage"),
+  });
   const budgets = options.budgets ?? defaultDiffBudget;
 
   const context = async (): Promise<GateContext> => ({
@@ -63,7 +70,12 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
   const outcome = await runAutoResolve({
     gates,
     context,
-    cycleDeps: { commands, evidence: options.evidence, emit: options.emit },
+    cycleDeps: {
+      commands,
+      evidence: options.evidence,
+      emit: options.emit,
+      coverageArtifacts: createFileCoverageArtifactStore(),
+    },
     evidence: options.evidence,
     checkpoint: createGitCheckpoint(workspace),
     baseControl: createBaseControlRunner({

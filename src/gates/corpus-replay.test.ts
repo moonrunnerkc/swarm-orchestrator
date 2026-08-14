@@ -116,7 +116,7 @@ async function rejects(patch: string): Promise<boolean> {
     }
   }
 
-  const shared = { changes, trackedTestFiles: [], gateMeasures: {}, gateOutputs: [] };
+  const shared = { changes, trackedTestFiles: [], gateMeasures: {}, coverageReports: [] };
   const decision = judgeRatchet({
     baselineGates: {},
     candidateGates: {},

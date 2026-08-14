@@ -1,7 +1,7 @@
-import type { GateObservation } from "./gate-definition.ts";
 import {
   emptyTestFileMeasures,
   isTestFile,
+  isTestReachableSource,
   measureTestFile,
   type TestFileMeasures,
 } from "./measures.ts";
@@ -47,8 +47,11 @@ interface SnapshotInput {
   readonly trackedTestFiles: Iterable<string>;
   /** The measures the gates parsed this cycle, merged across gates. */
   readonly gateMeasures: Readonly<Record<string, number>>;
-  /** Raw output of gates that may carry a coverage report. */
-  readonly gateOutputs: readonly GateObservation[];
+  /**
+   * Coverage reports the runners wrote to paths the harness named. Never a gate's stdout: a
+   * number printed by the code under measurement is not a measurement of it.
+   */
+  readonly coverageReports: readonly string[];
 }
 
 /**
@@ -91,19 +94,19 @@ interface CoverageResult {
 }
 
 /**
- * Coverage of changed lines, from an executed run's own report intersected with the lines
- * this change added. When no gate printed a report, the answer is null: there is no proxy
- * here, because "the tests were not run against these lines" and "these lines are not
- * covered" are different findings and only one of them is measured.
+ * Coverage of changed lines, from a report the runner wrote intersected with the lines this
+ * change added. When no runner left a report, the answer is null: there is no proxy here,
+ * because "the tests were not run against these lines" and "these lines are not covered" are
+ * different findings and only one of them is measured. In particular there is no fallback to
+ * what a gate printed, since that is a number the code under measurement can author.
  */
 function changedLineCoverage(input: SnapshotInput): CoverageResult | null {
   const uncovered = new Map<string, Set<number>>();
-  for (const observation of input.gateOutputs) {
-    const text = `${observation.stdout}\n${observation.stderr}`;
-    if (!text.includes("coverage report")) {
-      continue;
-    }
-    for (const [file, lines] of parseUncoveredLines(text)) {
+  // Required in the type so every caller in this package has to decide, and tolerated when
+  // absent so a caller that hands in no report abstains rather than aborting the run: an arm
+  // with nothing to read is not measured, which is a verdict, not an error.
+  for (const report of input.coverageReports ?? []) {
+    for (const [file, lines] of parseUncoveredLines(report)) {
       const merged = uncovered.get(file) ?? new Set<number>();
       for (const line of lines) {
         merged.add(line);
@@ -118,7 +121,9 @@ function changedLineCoverage(input: SnapshotInput): CoverageResult | null {
   let measured = 0;
   let covered = 0;
   for (const file of input.changes.files) {
-    if (isTestFile(file.path)) {
+    // A markdown file whose fenced block contains an `if (` is not something a coverage
+    // report can speak about, and counting it would put noise into a blocking number.
+    if (!isTestReachableSource(file.path)) {
       continue;
     }
     const missed = matchCoverageFile(uncovered, file.path);
