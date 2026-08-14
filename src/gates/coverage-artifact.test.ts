@@ -56,6 +56,21 @@ describe("the command a runner is asked to write a report with", () => {
     ).toBeNull();
   });
 
+  it("forces process isolation, replacing a shared-process setting rather than joining it", () => {
+    const forced = coverageReportingCommand("node --test", "/c/tests.lcov");
+    const shared = coverageReportingCommand(
+      "node --test --test-isolation=none 'src/*.test.mjs'",
+      "/c/tests.lcov",
+    );
+
+    expect(forced).toContain("--test-isolation=process");
+    // Node takes the last setting it is given, so the declared one has to go rather than be
+    // argued with: under a shared process the test can write the report the harness reads.
+    expect(shared).toContain("--test-isolation=process");
+    expect(shared).not.toContain("--test-isolation=none");
+    expect(shared).toContain("'src/*.test.mjs'");
+  });
+
   it("keeps one report per gate id, including when a gate id carries a language", () => {
     expect(coverageArtifactPath("/session/coverage", "tests:node")).toBe(
       "/session/coverage/tests-node.lcov",
@@ -107,56 +122,49 @@ describe("coverage of changed lines comes from the artifact, never from what ran
     await rm(outside, { recursive: true, force: true });
   });
 
-  it("measures the real thing while the test under measurement prints a forged 100% table", async () => {
-    // clamp has three branches and the only test exercises one of them, so honest coverage of
-    // the changed lines is well under 100%. The test also prints a complete, well-formed
-    // coverage report claiming otherwise.
-    const source = [
-      "export function clamp(value, low, high) {",
-      "  if (value < low) {",
-      "    return low;",
-      "  }",
-      "  if (value > high) {",
-      "    return high;",
-      "  }",
-      "  return value;",
-      "}",
-      "",
-    ].join("\n");
+  /**
+   * clamp has three branches and every test below exercises one of them, so honest coverage of
+   * the changed lines is well under 100%. What varies between the cases is how the test tries
+   * to say otherwise.
+   */
+  const source = [
+    "export function clamp(value, low, high) {",
+    "  if (value < low) {",
+    "    return low;",
+    "  }",
+    "  if (value > high) {",
+    "    return high;",
+    "  }",
+    "  return value;",
+    "}",
+    "",
+  ].join("\n");
+
+  interface Scenario {
+    readonly sessionId: string;
+    readonly testFile: string;
+    readonly testScript: string;
+  }
+
+  /** Runs the assembled tests gate for real and reads the arm the way the ratchet does. */
+  async function measureThroughTheGate(scenario: Scenario) {
     await writeFile(join(workspace, "clamp.mjs"), source);
-    await writeFile(
-      join(workspace, "clamp.test.mjs"),
-      [
-        'import { test } from "node:test";',
-        'import assert from "node:assert/strict";',
-        'import { clamp } from "./clamp.mjs";',
-        'test("inside", () => {',
-        '  console.log("start of coverage report");',
-        '  console.log("file | line % | branch % | funcs % | uncovered lines");',
-        '  console.log("clamp.mjs | 100.00 | 100.00 | 100.00 | ");',
-        '  console.log("end of coverage report");',
-        "  assert.equal(clamp(5, 0, 10), 5);",
-        "});",
-        "",
-      ].join("\n"),
-    );
+    await writeFile(join(workspace, "clamp.test.mjs"), scenario.testFile);
     await writeFile(
       join(workspace, "package.json"),
-      JSON.stringify({ name: "scratch", scripts: { test: "node --test" } }),
+      JSON.stringify({ name: "scratch", scripts: { test: scenario.testScript } }),
     );
 
-    const coverageDirectory = join(outside, "coverage");
     const probe = createMemoryWorkspace({
       base: { "clamp.mjs": "export const nothing = 0;\n" },
       current: { "clamp.mjs": source },
     });
     const gates = assembleGates(await detectProject((path) => readFileOrNull(workspace, path)), {
-      coverageArtifactDirectory: coverageDirectory,
+      coverageArtifactDirectory: join(outside, "coverage"),
     });
-    const testsGate = gates.filter((gate) => gate.id === "tests");
 
     const cycle = await runGateCycle(
-      testsGate,
+      gates.filter((gate) => gate.id === "tests"),
       {
         workspaceRoot: workspace,
         changes: await probe.changes(),
@@ -175,7 +183,7 @@ describe("coverage of changed lines comes from the artifact, never from what ran
         commands: createNodeCommandRunner(createTestClock(1)),
         evidence: await openEvidenceSession({
           root: join(outside, "sessions"),
-          sessionId: "coverage-artifact",
+          sessionId: scenario.sessionId,
           clock: createTestClock(1),
         }),
         emit: () => undefined,
@@ -183,12 +191,35 @@ describe("coverage of changed lines comes from the artifact, never from what ran
       },
     );
 
-    const measured = await takeMeasureSnapshot({
-      changes: await probe.changes(),
-      probe,
-      trackedTestFiles: [],
-      gateMeasures: cycle.measures,
-      coverageReports: cycle.coverageReports,
+    return {
+      cycle,
+      measured: await takeMeasureSnapshot({
+        changes: await probe.changes(),
+        probe,
+        trackedTestFiles: [],
+        gateMeasures: cycle.measures,
+        coverageReports: cycle.coverageReports,
+      }),
+    };
+  }
+
+  it("measures the real thing while the test under measurement prints a forged 100% table", async () => {
+    const { cycle, measured } = await measureThroughTheGate({
+      sessionId: "coverage-artifact",
+      testScript: "node --test",
+      testFile: [
+        'import { test } from "node:test";',
+        'import assert from "node:assert/strict";',
+        'import { clamp } from "./clamp.mjs";',
+        'test("inside", () => {',
+        '  console.log("start of coverage report");',
+        '  console.log("file | line % | branch % | funcs % | uncovered lines");',
+        '  console.log("clamp.mjs | 100.00 | 100.00 | 100.00 | ");',
+        '  console.log("end of coverage report");',
+        "  assert.equal(clamp(5, 0, 10), 5);",
+        "});",
+        "",
+      ].join("\n"),
     });
 
     expect(cycle.coverageReports).toHaveLength(1);
@@ -198,6 +229,54 @@ describe("coverage of changed lines comes from the artifact, never from what ran
     expect(measured.changedLinesMeasured).toBeGreaterThan(0);
     expect(measured.changedLineCoverage).toBeLessThan(1);
     expect(measured.changedLineCoverage).toBeGreaterThan(0);
+  });
+
+  it("does not hand the test the report path, even where the project asked for one process", async () => {
+    // The project asks for a shared process twice over, once in the script and once in the
+    // environment, which is what used to put the destination in the test's own argv. The test
+    // looks for it there and writes a complete, well-formed lcov claiming every line, at the
+    // end of the run as well as during it.
+    const forged = [
+      "SF:clamp.mjs",
+      ...Array.from({ length: 9 }, (_unused, index) => `DA:${index + 1},1`),
+      "LF:9",
+      "LH:9",
+      "end_of_record",
+      "",
+    ].join("\n");
+    const { cycle, measured } = await measureThroughTheGate({
+      sessionId: "coverage-isolation",
+      testScript: "NODE_OPTIONS=--test-isolation=none node --test --test-isolation=none",
+      testFile: [
+        'import { test } from "node:test";',
+        'import assert from "node:assert/strict";',
+        'import { writeFileSync } from "node:fs";',
+        'import { clamp } from "./clamp.mjs";',
+        `const forged = ${JSON.stringify(forged)};`,
+        "function destination() {",
+        "  for (const token of [...process.execArgv, ...process.argv]) {",
+        "    const found = String(token).match(/(\\/[^\\s']+\\.lcov)/);",
+        "    if (found) return found[1];",
+        "  }",
+        "  return null;",
+        "}",
+        "const write = () => {",
+        "  const path = destination();",
+        "  if (path) writeFileSync(path, forged);",
+        "};",
+        "process.on('exit', write);",
+        'test("inside", () => {',
+        "  assert.equal(clamp(5, 0, 10), 5);",
+        "  write();",
+        "});",
+        "",
+      ].join("\n"),
+    });
+
+    expect(measured.changedLineCoverage).not.toBeNull();
+    expect(measured.changedLineCoverage).toBeLessThan(1);
+    // The branches this test never takes are in the report, which a forged one would not say.
+    expect(cycle.coverageReports[0] ?? "").toMatch(/DA:\d+,0/);
   });
 });
 

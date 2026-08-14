@@ -14,6 +14,12 @@ import { dirname, join } from "node:path";
  * test printing "start of coverage report" opens a section in a table artifact just as it
  * does on the terminal. An lcov report carries coverage records and nothing else, so there
  * is no line in it for a test to write.
+ *
+ * That holds only while the tests are somewhere else. Under `--test-isolation=none` they run
+ * in the process that hosts the reporter, so the destination path is in their own argv and a
+ * test can simply write the file the harness is about to read. The rewritten command forces
+ * process isolation for that reason, and a command that cannot be rewritten is not asked for
+ * a report at all.
  */
 
 /** Reads back what a gate command was told to write, and clears it first. */
@@ -59,6 +65,16 @@ export function coverageArtifactPath(directory: string, gateId: string): string 
  * started and refuses them in NODE_OPTIONS. The stdout reporter is restated because naming
  * any reporter replaces the default one, and the test counters the ratchet reads still have
  * to arrive on stdout.
+ *
+ * Process isolation is forced, and that is a precondition rather than a preference. Under
+ * `--test-isolation=none` the tests share the process that hosts the reporter, so the
+ * destination path sits in the test's own argv and a test can write the report the harness
+ * is about to read; under process isolation the tests run in children that never see the
+ * path. Any isolation setting already in the command is replaced rather than appended to,
+ * because node takes the last one it is given, and a command-line flag beats one carried in
+ * NODE_OPTIONS, so this one setting covers every place the mode can be declared. Where the
+ * mode cannot be forced (any command this function declines to rewrite), no report is asked
+ * for and the arm is not measured.
  */
 export function coverageReportingCommand(
   body: string | undefined,
@@ -72,20 +88,22 @@ export function coverageReportingCommand(
   if (body.includes("--experimental-test-coverage") || body.includes("--test-reporter")) {
     return null;
   }
-  const runner = /\bnode\b[^\n]*?\s--test(?![\w-])/.exec(body);
+  const withoutIsolation = body.replaceAll(/\s--test-isolation(?:=|\s+)[\w-]+/g, "");
+  const runner = /\bnode\b[^\n]*?\s--test(?![\w-])/.exec(withoutIsolation);
   if (runner === null) {
     return null;
   }
 
   const flags = [
     "--experimental-test-coverage",
+    "--test-isolation=process",
     "--test-reporter=tap",
     "--test-reporter-destination=stdout",
     "--test-reporter=lcov",
     `--test-reporter-destination=${quote(artifactPath)}`,
   ].join(" ");
   const at = runner.index + runner[0].length;
-  return `${body.slice(0, at)} ${flags}${body.slice(at)}`;
+  return `${withoutIsolation.slice(0, at)} ${flags}${withoutIsolation.slice(at)}`;
 }
 
 function quote(path: string): string {

@@ -123,7 +123,7 @@ describe("assembling the default gate set", () => {
     );
 
     expect(commandOf(gates, "tests")).toBe(
-      "node --test --experimental-test-coverage --test-reporter=tap " +
+      "node --test --experimental-test-coverage --test-isolation=process --test-reporter=tap " +
         "--test-reporter-destination=stdout --test-reporter=lcov " +
         "--test-reporter-destination='/session/coverage/tests.lcov' ./test/*.mjs",
     );
