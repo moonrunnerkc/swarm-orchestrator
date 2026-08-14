@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RandomSource } from "../core/random-source.ts";
+import { buildRewardEntry } from "./reward.ts";
 import type { RewardEntry } from "./routing-log.ts";
 import { routingLogSchemaVersion } from "./routing-log.ts";
 import type { TaskClass } from "./task-class.ts";
@@ -27,6 +28,7 @@ function reward(model: string, value: number, taskClass: TaskClass = "edit"): Re
     attempts: 0,
     latencyMs: 0,
     costUsd: 0,
+    costSource: "local",
     reward: value,
     rewardReason: "test fixture",
   };
@@ -186,5 +188,52 @@ describe("routeModel and the epsilon of random assignment", () => {
     }
 
     expect([...chosen].sort()).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("the cost term in routing", () => {
+  const greenRatchet = {
+    settled: "green" as const,
+    attempts: 0,
+    rejected: 0,
+    erosions: 0,
+    testsCollected: 47,
+    testsDeclared: 9,
+    assertions: 21,
+    skipMarkers: 0,
+    changedLineCoverage: 0.9,
+  };
+
+  function priced(model: string, costUsd: number): RewardEntry {
+    return buildRewardEntry({
+      recordedAt: 0,
+      sessionId: "s",
+      taskClass: "edit",
+      model,
+      assignment: "ucb",
+      ratchet: greenRatchet,
+      latencyMs: 30_000,
+      costUsd,
+      costSource: "priced",
+    });
+  }
+
+  it("routes to the cheaper of two models that tie on every other dimension", () => {
+    // Both models go green with the same ratchet numerics, the same attempts, and the same
+    // latency; the rewards in the log differ only through the cost term. If this test
+    // fails, cost has stopped influencing routing and costUsd is decoration again.
+    const entries = [
+      ...Array.from({ length: 12 }, () => priced("cheap", 0.01)),
+      ...Array.from({ length: 12 }, () => priced("dear", 0.5)),
+    ];
+
+    const decision = route({
+      candidates: ["cheap", "dear"],
+      calibrationPick: "dear",
+      entries,
+    });
+
+    expect(decision.assignment).toBe("ucb");
+    expect(decision.model).toBe("cheap");
   });
 });

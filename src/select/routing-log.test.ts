@@ -43,6 +43,7 @@ function entry(overrides: Partial<RewardEntry> = {}): RewardEntry {
     attempts: 0,
     latencyMs: 42_000,
     costUsd: 0,
+    costSource: "local",
     reward: 0.74,
     rewardReason: "green with 0 retries, 42s, and $0.0000",
     ...overrides,
@@ -95,6 +96,28 @@ describe("the routing log", () => {
 
     expect(contents.entries).toHaveLength(1);
     expect(contents.unreadable).toBe(2);
+  });
+
+  it("carries a run whose cost is unknown as null, never as zero", async () => {
+    const log = await openRoutingLog({ path });
+
+    await log.append(entry({ costUsd: null, costSource: "unknown" }));
+
+    expect((await log.read()).entries[0]).toMatchObject({ costUsd: null, costSource: "unknown" });
+  });
+
+  it("counts version-one lines as unreadable rather than misreading their invented cost", async () => {
+    // Every v1 line recorded costUsd 0 whatever the run cost, so reading them into a log
+    // whose cost term is now real would poison the router with fabricated free runs.
+    const versionOne = { ...entry(), schemaVersion: 1 } as Record<string, unknown>;
+    delete versionOne.costSource;
+    const log = await openRoutingLog({ path });
+    await appendFile(path, `${JSON.stringify(versionOne)}\n`);
+
+    const contents = await log.read();
+
+    expect(contents.entries).toHaveLength(0);
+    expect(contents.unreadable).toBe(1);
   });
 
   it("refuses an entry that does not match the schema, naming the field", async () => {

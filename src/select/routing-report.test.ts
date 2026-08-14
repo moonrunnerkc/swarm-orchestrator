@@ -37,6 +37,7 @@ function reward(overrides: RewardOverrides = {}): RewardEntry {
     attempts: 0,
     latencyMs: overrides.latencyMs ?? 40_000,
     costUsd: 0,
+    costSource: "local",
     reward: overrides.reward ?? 0.6,
     rewardReason: "test fixture",
   };

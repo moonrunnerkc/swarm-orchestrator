@@ -1,6 +1,7 @@
 import type { RatchetSummary } from "../gates/ratchet-summary.ts";
 import {
   type AssignmentKind,
+  type CostSource,
   type RewardEntry,
   rewardEntrySchema,
   routingLogSchemaVersion,
@@ -38,7 +39,12 @@ export interface RewardInput {
   readonly erosions: number;
   readonly attempts: number;
   readonly latencyMs: number;
-  readonly costUsd: number;
+  /**
+   * Null when the model has no known rate. Scored as a run at the reference cost: neutral,
+   * because scoring it as free would hand an unpriced frontier model a local model's
+   * advantage, and the router would learn to prefer whatever the table has not priced yet.
+   */
+  readonly costUsd: number | null;
 }
 
 export interface RewardScore {
@@ -66,13 +72,14 @@ export function scoreReward(
 
   const forAttempts = 1 / (1 + weights.attemptPenalty * input.attempts);
   const forLatency = weights.referenceLatencyMs / (weights.referenceLatencyMs + input.latencyMs);
-  const forCost = weights.referenceCostUsd / (weights.referenceCostUsd + input.costUsd);
+  const costUsd = input.costUsd ?? weights.referenceCostUsd;
+  const forCost = weights.referenceCostUsd / (weights.referenceCostUsd + costUsd);
 
   return {
     reward: forAttempts * forLatency * forCost,
     reason:
       `green with ${describeRetries(input.attempts)}, ${Math.round(input.latencyMs / 1000)}s, ` +
-      `and $${input.costUsd.toFixed(4)}`,
+      (input.costUsd === null ? "and an unknown cost" : `and $${input.costUsd.toFixed(4)}`),
   };
 }
 
@@ -88,7 +95,8 @@ export interface RewardEntryInput {
   readonly assignment: AssignmentKind;
   readonly ratchet: RatchetSummary;
   readonly latencyMs: number;
-  readonly costUsd: number;
+  readonly costUsd: number | null;
+  readonly costSource: CostSource;
 }
 
 /**
@@ -122,6 +130,7 @@ export function buildRewardEntry(
     attempts: input.ratchet.attempts,
     latencyMs: input.latencyMs,
     costUsd: input.costUsd,
+    costSource: input.costSource,
     reward: score.reward,
     rewardReason: score.reason,
   });

@@ -64,6 +64,18 @@ describe("scoreReward", () => {
     expect(dear).toBeLessThan(cheap);
   });
 
+  it("treats an unknown cost as a run at the reference cost: neutral, never free", () => {
+    // Free would hand an unpriced model the same advantage as a local one. Neutral means
+    // it is scored as if it cost the reference amount, and priced models compete around it.
+    const unknown = scoreReward(run({ costUsd: null })).reward;
+    const free = scoreReward(run({ costUsd: 0 })).reward;
+    const reference = scoreReward(run({ costUsd: defaultRewardWeights.referenceCostUsd })).reward;
+
+    expect(unknown).toBeLessThan(free);
+    expect(unknown).toBe(reference);
+    expect(scoreReward(run({ costUsd: null })).reason).toMatch(/unknown cost/);
+  });
+
   it("stays inside zero and one whatever it is handed", () => {
     for (const input of [
       run({ attempts: 99, latencyMs: 9_000_000, costUsd: 500 }),
@@ -113,6 +125,7 @@ describe("buildRewardEntry", () => {
       ratchet,
       latencyMs: 42_000,
       costUsd: 0,
+      costSource: "local",
       ...overrides,
     });
   }
@@ -134,5 +147,13 @@ describe("buildRewardEntry", () => {
 
   it("keeps the ratchet numerics in the entry, so the log shows why it scored that way", () => {
     expect(entry().ratchet).toEqual(ratchet);
+  });
+
+  it("carries an unknown cost as unknown, and the log still accepts the line", () => {
+    const unpriced = entry({ costUsd: null, costSource: "unknown" });
+
+    expect(unpriced.costUsd).toBeNull();
+    expect(unpriced.costSource).toBe("unknown");
+    expect(rewardEntrySchema.safeParse(unpriced).success).toBe(true);
   });
 });

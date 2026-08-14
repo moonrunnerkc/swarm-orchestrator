@@ -54,11 +54,13 @@ import { type ModelSpec, parseModelSpec } from "./providers/model-spec.ts";
 import { createProviderRegistry } from "./providers/registry.ts";
 import { runCalibration } from "./select/calibrate.ts";
 import { parseCalibrationCase } from "./select/calibration-case.ts";
+import { payloadsSince } from "./select/calibration-measures.ts";
 import { renderCalibrationReport } from "./select/calibration-report.ts";
 import { appendCalibrationCase, defaultGoldenSetPath, readGoldenSet } from "./select/golden-set.ts";
 import { probeHardware } from "./select/hardware-probe.ts";
 import { createOllamaMemoryProbe } from "./select/memory-probe.ts";
 import { defaultPickPath, readCalibrationPick, writeCalibrationPick } from "./select/pick-store.ts";
+import { loadPricing } from "./select/pricing-source.ts";
 import { calibrationCandidates, recommendModel } from "./select/recommendation.ts";
 import { buildRewardEntry } from "./select/reward.ts";
 import { defaultRoutingLogPath, openRoutingLog } from "./select/routing-log.ts";
@@ -67,6 +69,7 @@ import { renderSelectReport } from "./select/select-report.ts";
 import { loadShortlist } from "./select/shortlist-source.ts";
 import { systemProbeEnvironment } from "./select/system-probe.ts";
 import { classifyTask } from "./select/task-class.ts";
+import { costOfTask, type TaskCost } from "./select/task-cost.ts";
 import { routeModel } from "./select/ucb.ts";
 import type { ConfirmationRequest } from "./tools/chokepoint.ts";
 import { describeLoopEvent } from "./tui/plain-lines.ts";
@@ -311,6 +314,7 @@ async function run(options: RunCommand): Promise<number> {
       ratchet: summarizeRatchet(gates.outcome),
       latencyMs: clock.now() - startedAt,
       recordedAt: clock.now(),
+      cost: await priceTask(modelSpec, evidence),
     });
 
     const directory = await writeBundle(evidence, options.bundleDirectory, clock);
@@ -371,6 +375,29 @@ function reportGates(outcome: AutoResolveOutcome, evidence: EvidenceRecorder): v
   }
 }
 
+/**
+ * What this run cost, from its own ledger's token counts times the published rate. A table
+ * that cannot be read prices the run as unknown: the run still finishes, and the reward
+ * treats unknown as neutral rather than free (see src/select/reward.ts).
+ */
+async function priceTask(modelSpec: string, evidence: EvidenceRecorder): Promise<TaskCost> {
+  try {
+    const loaded = await loadPricing({
+      fetch: (url) => fetch(url, { signal: AbortSignal.timeout(shortlistFetchTimeoutMs) }),
+    });
+    return costOfTask({ modelSpec, entries: payloadsSince(evidence, 0), pricing: loaded.pricing });
+  } catch (cause) {
+    return {
+      costUsd: null,
+      source: "unknown",
+      inputTokens: 0,
+      outputTokens: 0,
+      modelCalls: 0,
+      detail: `no pricing table could be read: ${describeError(cause)}`,
+    };
+  }
+}
+
 interface RewardLogInput {
   readonly evidence: EvidenceRecorder;
   readonly home: string;
@@ -380,6 +407,7 @@ interface RewardLogInput {
   readonly ratchet: ReturnType<typeof summarizeRatchet>;
   readonly latencyMs: number;
   readonly recordedAt: number;
+  readonly cost: TaskCost;
 }
 
 /**
@@ -398,14 +426,21 @@ async function logReward(input: RewardLogInput): Promise<void> {
     assignment: input.assignment,
     ratchet: input.ratchet,
     latencyMs: input.latencyMs,
-    costUsd: 0,
+    costUsd: input.cost.costUsd,
+    costSource: input.cost.source,
   });
 
   await input.evidence.record({
     type: "reward",
     actor: "harness",
     provenance: ["tool-output"],
-    payload: { ...entry, taskClassRule: classification.rule },
+    payload: {
+      ...entry,
+      taskClassRule: classification.rule,
+      costDetail: input.cost.detail,
+      costInputTokens: input.cost.inputTokens,
+      costOutputTokens: input.cost.outputTokens,
+    },
   });
 
   try {

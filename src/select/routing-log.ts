@@ -3,12 +3,22 @@ import { dirname, join } from "node:path";
 import { z } from "zod";
 import { taskClasses } from "./task-class.ts";
 
-export const routingLogSchemaVersion = 1;
+/**
+ * Version two makes the cost term real: costUsd becomes nullable, with costSource saying
+ * where the number came from. Version-one lines hardcoded costUsd to zero whatever the run
+ * cost, so they are counted unreadable rather than read as fabricated free runs.
+ */
+export const routingLogSchemaVersion = 2;
 
 /** How the model was picked, so the log can be read without mistaking its own bias for signal. */
 export const assignmentKinds = ["calibration", "ucb", "epsilon", "pinned"] as const;
 
 export type AssignmentKind = (typeof assignmentKinds)[number];
+
+/** Priced from the table, zero because local, or unknown because no rate is known. */
+export const costSources = ["priced", "local", "unknown"] as const;
+
+export type CostSource = (typeof costSources)[number];
 
 export const rewardEntrySchema = z.object({
   schemaVersion: z.literal(routingLogSchemaVersion),
@@ -32,7 +42,9 @@ export const rewardEntrySchema = z.object({
   }),
   attempts: z.number().int().nonnegative(),
   latencyMs: z.number().nonnegative(),
-  costUsd: z.number().nonnegative(),
+  /** Null when the model has no known rate. The reward treats that as neutral, not free. */
+  costUsd: z.number().nonnegative().nullable(),
+  costSource: z.enum(costSources),
   reward: z.number().min(0).max(1),
   rewardReason: z.string(),
 });
