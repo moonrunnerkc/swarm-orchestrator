@@ -10,7 +10,7 @@ import type { EvidenceRecorder } from "../evidence/session.ts";
 import type { GateSetOptions } from "../gates/default-gates.ts";
 import { createFileSetRegistry } from "../gates/file-set.ts";
 import { type MergeQueueResult, runMergeQueue } from "./merge-queue.ts";
-import { addWorktree, headCommit, type Worktree } from "./worktree.ts";
+import { addWorktree, type Worktree } from "./worktree.ts";
 
 const runProcess = promisify(execFile);
 

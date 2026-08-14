@@ -233,6 +233,36 @@ describe("runMergeQueue when a merge breaks the gates", () => {
   });
 });
 
+/** suite.test.js with the beta test removed: still valid, still passes, but one test fewer. */
+const suiteWithoutBeta = [
+  "import { test } from 'node:test';",
+  "import assert from 'node:assert/strict';",
+  "import { alpha } from './alpha.js';",
+  "",
+  "test('alpha', () => { assert.equal(alpha(), 'alpha'); });",
+  "",
+].join("\n");
+
+describe("runMergeQueue when a merge is green but takes the tree backwards", () => {
+  it("refuses it on the ratchet, not the gates, and leaves the tree on the base commit", async () => {
+    // Merges cleanly (only the test file changes) and the remaining test still passes, so
+    // every gate goes green. The tree now runs one test fewer than the base did, which no
+    // boolean gate can see and only the ratchet catches. This is the one guard that stops
+    // two individually-green workers from jointly eroding the integrated suite.
+    const erodes = await worker("erodes", { "src/suite.test.js": suiteWithoutBeta });
+
+    const result = await queue([{ ...erodes, workerId: "erodes" }]);
+
+    expect(result.landings[0]).toMatchObject({ landed: false, reason: "ratchet" });
+    expect(result.landings[0]?.decision?.accepted).toBe(false);
+    expect(result.landings[0]?.decision?.violations.map((violation) => violation.kind)).toContain(
+      "tests-collected-decreased",
+    );
+    expect(result.landings[0]?.feedback).toMatch(/backwards/);
+    expect(result.headCommit).toBe(result.baseCommit);
+  });
+});
+
 describe("what the queue records", () => {
   it("writes a merge attempt to the coordinator's chain for every candidate", async () => {
     const one = await worker("one", {
