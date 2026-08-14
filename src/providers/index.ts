@@ -18,6 +18,7 @@ export {
   type FetchLike,
   type LocalEndpointCandidate,
   type LocalRuntimeName,
+  localRuntimeNames,
 } from "./local-discovery.ts";
 export { toModelMessages } from "./message-conversion.ts";
 export {

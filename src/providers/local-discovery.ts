@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-export type LocalRuntimeName = "ollama" | "rapid-mlx";
+/** The local runtimes this build knows how to start and talk to. */
+export const localRuntimeNames = ["ollama", "rapid-mlx"] as const;
+
+export type LocalRuntimeName = (typeof localRuntimeNames)[number];
 
 export interface LocalEndpointCandidate {
   readonly name: LocalRuntimeName;
