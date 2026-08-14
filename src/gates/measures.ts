@@ -1,7 +1,14 @@
+import { withoutComments } from "./comment-spans.ts";
+
 /**
  * The numbers invariant 7 ratchets on, counted from file text rather than inferred from a
- * pass or fail. Counting is per test file so an exemption can be applied to one file
- * without blinding the comparison for every other file.
+ * pass or fail. Counting is per test file so an exemption can be applied to one test without
+ * blinding the comparison for every other one.
+ *
+ * Counted over logical lines rather than physical ones, because an assertion is an expression
+ * and a formatter is free to break it across lines. Reading one physical line at a time made
+ * `expect(true)` on its own line an assertion and `.toBe(true)` on the next line nothing,
+ * which is the whole of what the tautology rule below is meant to see.
  */
 
 const testFileNames: readonly RegExp[] = [
@@ -151,8 +158,7 @@ export function measureTestFile(text: string | null): TestFileMeasures {
   const exactSubjects = new Set<string>();
   const assertionsBySubject: Record<string, number> = {};
 
-  for (const rawLine of text.split("\n")) {
-    const line = stripComment(rawLine);
+  for (const line of logicalLines(withoutComments(text))) {
     if (line.trim().length === 0) {
       continue;
     }
@@ -242,10 +248,41 @@ function assertionSubject(line: string): string | null {
 }
 
 /**
- * Line comments only. A block comment spanning lines is left alone rather than
- * half-parsed, and a `#` that opens a Rust attribute or a shebang is not a comment.
+ * Physical lines gathered into the expressions they spell. Two joins, both of them shapes a
+ * formatter produces rather than shapes a person chooses: a line beginning with `.` continues
+ * the chain above it, and a line ending in `(` or `,` has not finished its argument list.
+ *
+ * Deliberately not bracket balancing. `describe("x", () => {` is unbalanced on its own line,
+ * so balancing would swallow whole blocks into one logical line and stop counting the tests
+ * inside them. The cap is the same caution: a file that never settles joins at most this many
+ * lines and then moves on.
  */
-function stripComment(line: string): string {
-  const marker = /(^|\s)(\/\/|#(?![[!]))/.exec(line);
-  return marker === null ? line : line.slice(0, marker.index);
+const maxJoinedLines = 10;
+
+function logicalLines(text: string): readonly string[] {
+  const physical = text.split("\n");
+  const joined: string[] = [];
+  let current = "";
+  let held = 0;
+
+  physical.forEach((line, index) => {
+    current = current.length === 0 ? line : `${current} ${line.trim()}`;
+    held += 1;
+
+    const next = physical[index + 1];
+    const continues =
+      held < maxJoinedLines &&
+      next !== undefined &&
+      (/^\s*\./.test(next) || /[(,]\s*$/.test(current));
+    if (!continues) {
+      joined.push(current);
+      current = "";
+      held = 0;
+    }
+  });
+
+  if (current.length > 0) {
+    joined.push(current);
+  }
+  return joined;
 }

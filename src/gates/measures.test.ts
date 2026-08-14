@@ -71,6 +71,91 @@ describe("counting a test file", () => {
     expect(measures.tests).toBe(4);
   });
 
+  it("does not count a constant tautology with its matcher on the next line", () => {
+    // A formatter breaks a long chain this way, so a rule that reads one physical line at a
+    // time sees expect(true) as an assertion and .toBe(true) as nothing at all.
+    const gutted = [
+      "it('checks three fields', () => {",
+      "  expect(true)",
+      "    .toBe(true);",
+      "  expect(true)",
+      "    .toBe(true);",
+      "});",
+    ].join("\n");
+
+    expect(measureTestFile(gutted)).toMatchObject({ tests: 1, assertions: 0 });
+  });
+
+  it("does not count a constant tautology wearing an inline block comment", () => {
+    expect(
+      measureTestFile("it('x', () => {\n  expect(/*x*/true).toBe(/*x*/true);\n});").assertions,
+    ).toBe(0);
+  });
+
+  it("still counts an assertion whose subject is broken across lines", () => {
+    // The joining is not an excuse to stop counting: this asserts something, and it counts.
+    const real = ["it('adds', () => {", "  expect(", "    add(1, 2),", "  ).toBe(3);", "});"].join(
+      "\n",
+    );
+
+    expect(measureTestFile(real)).toMatchObject({ tests: 1, assertions: 1 });
+  });
+
+  it("does not swallow the tests inside a block into one logical line", () => {
+    // `describe("x", () => {` is unbalanced on its own line, which is why the joining rule is
+    // not bracket balancing: balancing would count one test here instead of two.
+    const suite = [
+      "describe('math', () => {",
+      "  it('adds', () => {",
+      "    expect(add(1, 2)).toBe(3);",
+      "  });",
+      "  it('subtracts', () => {",
+      "    expect(sub(3, 2)).toBe(1);",
+      "  });",
+      "});",
+    ].join("\n");
+
+    expect(measureTestFile(suite)).toMatchObject({ tests: 2, assertions: 2 });
+  });
+
+  it("does not read a comment marker inside a string as a comment", () => {
+    const line = "it('urls', () => {\n  expect(link).toBe('https://example.com/#top');\n});";
+
+    expect(measureTestFile(line)).toMatchObject({ tests: 1, assertions: 1 });
+  });
+
+  it("attributes assertions and skips to the test that declares them", () => {
+    const file = [
+      "it('adds', () => {",
+      "  expect(add(1, 2)).toBe(3);",
+      "  expect(add(2, 2)).toBe(4);",
+      "});",
+      "it.skip('subtracts', () => {",
+      "  expect(sub(3, 2)).toBe(1);",
+      "});",
+    ].join("\n");
+
+    expect(measureTestFile(file).perTest).toEqual({
+      adds: { assertions: 2, skips: 0 },
+      subtracts: { assertions: 1, skips: 1 },
+    });
+  });
+
+  it("counts two tests under one name as two tests", () => {
+    const file = [
+      "it('adds', () => { expect(add(1, 2)).toBe(3); });",
+      "it('adds', () => { expect(add(2, 2)).toBe(4); });",
+    ].join("\n");
+
+    expect(Object.keys(measureTestFile(file).perTest)).toEqual(["adds", "adds #2"]);
+  });
+
+  it("gives a test whose name is not written a positional one", () => {
+    const file = ["it(name, () => {", "  expect(add(1, 2)).toBe(3);", "});"].join("\n");
+
+    expect(Object.keys(measureTestFile(file).perTest)).toEqual(["test #1"]);
+  });
+
   it("measures a file that no longer exists as zero rather than as absent", () => {
     expect(measureTestFile(null)).toEqual({
       tests: 0,

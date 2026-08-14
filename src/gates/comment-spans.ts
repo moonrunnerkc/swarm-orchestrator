@@ -19,28 +19,48 @@ const blockComments: readonly BlockComment[] = [
   { open: "<!--", close: "-->" },
 ];
 
-const lineComments: readonly string[] = ["//", "--"];
+const lineComments: readonly string[] = ["//"];
 
 const quotes = new Set(['"', "'", "`"]);
 
-/**
- * The column each line's comment content starts at, or null where the line has none. Zero
- * means the whole line sits inside a comment that opened on an earlier one.
- */
-export function commentColumns(text: string): readonly (number | null)[] {
+interface CommentScan {
+  /**
+   * The column each line's comment content starts at, or null where the line has none. Zero
+   * means the whole line sits inside a comment that opened on an earlier one.
+   */
+  readonly columns: readonly (number | null)[];
+  /**
+   * The same text with every comment character replaced by a space. Length-preserving per
+   * line and newlines kept, so a caller reading the stripped text and a caller reading the
+   * original are looking at the same positions.
+   */
+  readonly stripped: string;
+}
+
+/** One pass, because where the comments are and what is left without them is one question. */
+export function scanComments(text: string): CommentScan {
   const lines = text.split("\n");
   const columns: (number | null)[] = lines.map(() => null);
+  const stripped: string[] = [];
   let block: BlockComment | null = null;
 
   lines.forEach((line, index) => {
+    const kept = [...line];
+    const blank = (from: number, to: number): void => {
+      for (let at = from; at < to && at < kept.length; at += 1) {
+        kept[at] = " ";
+      }
+    };
     if (block !== null) {
       columns[index] = 0;
+      blank(0, line.length);
     }
     // A line whose first character is a lone `*` is a doc-comment body, even where the block
     // it belongs to is not in view. Nothing else in these languages starts a line that way.
     const continuation = /^\s*\*(?!\/)/.exec(line);
     if (continuation !== null) {
       columns[index] ??= continuation[0].length - 1;
+      blank(continuation[0].length - 1, line.length);
     }
     let quote: string | null = null;
 
@@ -49,8 +69,11 @@ export function commentColumns(text: string): readonly (number | null)[] {
 
       if (block !== null) {
         if (line.startsWith(block.close, at)) {
+          blank(at, at + block.close.length);
           at += block.close.length - 1;
           block = null;
+        } else {
+          blank(at, at + 1);
         }
         continue;
       }
@@ -70,18 +93,31 @@ export function commentColumns(text: string): readonly (number | null)[] {
       const opened = blockComments.find((kind) => line.startsWith(kind.open, at));
       if (opened !== undefined) {
         columns[index] ??= at;
+        blank(at, at + opened.open.length);
         at += opened.open.length - 1;
         block = opened;
         continue;
       }
       if (lineComments.some((marker) => line.startsWith(marker, at)) || hashComment(line, at)) {
         columns[index] ??= at;
-        return;
+        blank(at, line.length);
+        break;
       }
     }
+
+    stripped.push(kept.join(""));
   });
 
-  return columns;
+  return { columns, stripped: stripped.join("\n") };
+}
+
+export function commentColumns(text: string): readonly (number | null)[] {
+  return scanComments(text).columns;
+}
+
+/** The text with its comments blanked out, for a check that is about the code and not the prose. */
+export function withoutComments(text: string): string {
+  return scanComments(text).stripped;
 }
 
 /** `#` opens a comment, but `#[` is a Rust attribute and `#!` is a shebang or an inner one. */
