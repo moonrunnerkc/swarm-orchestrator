@@ -61,6 +61,10 @@ describe("renderRoutingReport", () => {
     expect(text).toMatch(/no rewards have been logged yet/);
   });
 
+  it("says plainly that nothing has been assigned yet, rather than leaving a blank", () => {
+    expect(report([])).toContain("  assignments       none yet");
+  });
+
   it("shows the sample count per class and whether the bandit is awake", () => {
     const text = report([...repeat(24), ...repeat(6, { taskClass: "test-fix" })]);
 

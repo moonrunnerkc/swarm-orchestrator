@@ -76,6 +76,24 @@ export function recommendModel(profile: HardwareProfile, shortlist: Shortlist): 
   };
 }
 
+/**
+ * The models calibration should measure: everything in the matched tier this machine can
+ * actually serve, with the static pick first so the report's comparison has both sides. Capped
+ * because the micro-eval has minutes, and every extra model multiplies the runs.
+ */
+export function calibrationCandidates(
+  recommendation: RecommendedModel,
+  profile: HardwareProfile,
+  limit: number,
+): readonly string[] {
+  const servable = servableModels(recommendation.tier, profile);
+  const ordered = [
+    recommendation.model,
+    ...servable.filter((model) => model.id !== recommendation.model.id),
+  ];
+  return ordered.slice(0, Math.max(1, limit)).map((model) => `local:${model.id}`);
+}
+
 /** The largest VRAM any GPU reported, and which one reported it. */
 function measuredVram(profile: HardwareProfile): GpuReading | null {
   let best: GpuReading | null = null;

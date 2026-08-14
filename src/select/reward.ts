@@ -1,3 +1,12 @@
+import type { RatchetSummary } from "../gates/ratchet-summary.ts";
+import {
+  type AssignmentKind,
+  type RewardEntry,
+  rewardEntrySchema,
+  routingLogSchemaVersion,
+} from "./routing-log.ts";
+import type { TaskClass } from "./task-class.ts";
+
 /**
  * Section 3.8's reward, with its first correction built in: a gate pass that tripped the
  * ratchet scores as a failure. Without that, the signal the router learns from is gate pass
@@ -69,4 +78,51 @@ export function scoreReward(
 
 function describeRetries(attempts: number): string {
   return attempts === 1 ? "1 retry" : `${attempts} retries`;
+}
+
+export interface RewardEntryInput {
+  readonly recordedAt: number;
+  readonly sessionId: string;
+  readonly taskClass: TaskClass;
+  readonly model: string;
+  readonly assignment: AssignmentKind;
+  readonly ratchet: RatchetSummary;
+  readonly latencyMs: number;
+  readonly costUsd: number;
+}
+
+/**
+ * One finished run as the routing log holds it. The ratchet summary is the only source of the
+ * outcome and the attempts, so the score and the numbers it was computed from cannot drift
+ * apart in the record a reader is looking at.
+ */
+export function buildRewardEntry(
+  input: RewardEntryInput,
+  weights: RewardWeights = defaultRewardWeights,
+): RewardEntry {
+  const score = scoreReward(
+    {
+      settled: input.ratchet.settled,
+      erosions: input.ratchet.erosions,
+      attempts: input.ratchet.attempts,
+      latencyMs: input.latencyMs,
+      costUsd: input.costUsd,
+    },
+    weights,
+  );
+
+  return rewardEntrySchema.parse({
+    schemaVersion: routingLogSchemaVersion,
+    recordedAt: input.recordedAt,
+    sessionId: input.sessionId,
+    taskClass: input.taskClass,
+    model: input.model,
+    assignment: input.assignment,
+    ratchet: { ...input.ratchet },
+    attempts: input.ratchet.attempts,
+    latencyMs: input.latencyMs,
+    costUsd: input.costUsd,
+    reward: score.reward,
+    rewardReason: score.reason,
+  });
 }

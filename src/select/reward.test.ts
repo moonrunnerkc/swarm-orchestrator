@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { defaultRewardWeights, type RewardInput, scoreReward } from "./reward.ts";
+import { buildRewardEntry, defaultRewardWeights, type RewardInput, scoreReward } from "./reward.ts";
+import { rewardEntrySchema } from "./routing-log.ts";
 
 function run(overrides: Partial<RewardInput> = {}): RewardInput {
   return {
@@ -86,5 +87,52 @@ describe("scoreReward", () => {
 
   it("says what it weighed, so a routing table can be read without the formula", () => {
     expect(scoreReward(run({ attempts: 1, latencyMs: 60_000 })).reason).toMatch(/green.*1 retry/);
+  });
+});
+
+describe("buildRewardEntry", () => {
+  const ratchet = {
+    settled: "green" as const,
+    attempts: 1,
+    rejected: 0,
+    erosions: 0,
+    testsCollected: 47,
+    testsDeclared: 9,
+    assertions: 21,
+    skipMarkers: 0,
+    changedLineCoverage: 0.9,
+  };
+
+  function entry(overrides: Partial<Parameters<typeof buildRewardEntry>[0]> = {}) {
+    return buildRewardEntry({
+      recordedAt: 1_700_000_000_000,
+      sessionId: "20260813T190000-abc123",
+      taskClass: "edit",
+      model: "local:qwen2.5-coder:7b",
+      assignment: "ucb",
+      ratchet,
+      latencyMs: 42_000,
+      costUsd: 0,
+      ...overrides,
+    });
+  }
+
+  it("carries what happened and what it scored, in one line the log accepts", () => {
+    expect(rewardEntrySchema.safeParse(entry()).success).toBe(true);
+  });
+
+  it("takes the attempts from the ratchet summary rather than being told twice", () => {
+    expect(entry().attempts).toBe(1);
+  });
+
+  it("scores a run whose retry eroded a measure as a failure", () => {
+    const eroded = entry({ ratchet: { ...ratchet, erosions: 1, rejected: 1 } });
+
+    expect(eroded.reward).toBe(0);
+    expect(eroded.rewardReason).toMatch(/ratchet/);
+  });
+
+  it("keeps the ratchet numerics in the entry, so the log shows why it scored that way", () => {
+    expect(entry().ratchet).toEqual(ratchet);
   });
 });

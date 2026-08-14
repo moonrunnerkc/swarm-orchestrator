@@ -42,6 +42,7 @@ describe("parseCommandLine", () => {
       attempts: 3,
       task: "fix the build",
       modelSpec: "local:qwen3-coder:30b-a3b",
+      modelPinned: true,
       workspace: "/work/repo",
       maxSteps: 12,
       bundleDirectory: null,
@@ -55,10 +56,18 @@ describe("parseCommandLine", () => {
       attempts: 3,
       task: "do a thing",
       modelSpec: "anthropic:claude-opus-5",
+      modelPinned: false,
       workspace: "/work/repo",
       maxSteps: 40,
       bundleDirectory: null,
     });
+  });
+
+  it("says whether the model was chosen or merely defaulted, so routing knows to stay out", () => {
+    // A pinned model is a decision the router must not override; the default is not.
+    expect(parseRun(["t"]).modelPinned).toBe(false);
+    expect(parseRun(["--model", "local:a", "t"]).modelPinned).toBe(true);
+    expect(parseRun(["t"], { ...context, env: { SWARM_MODEL: "local:b" } }).modelPinned).toBe(true);
   });
 
   it("lets the environment set the model and a flag override it", () => {
@@ -186,5 +195,83 @@ describe("the auto-resolve budget", () => {
         InvalidCommandLineError,
       );
     }
+  });
+});
+
+describe("the calibrate command", () => {
+  it("takes the models, the repeats, and where to put the bundle", () => {
+    expect(
+      parseCommandLine(
+        ["calibrate", "--models", "local:a,local:b", "--repeats", "5", "--bundle", "out"],
+        context,
+      ),
+    ).toEqual({
+      command: "calibrate",
+      models: ["local:a", "local:b"],
+      repeats: 5,
+      shortlist: null,
+      bundleDirectory: "/work/repo/out",
+    });
+  });
+
+  it("takes its models from the shortlist when none are named", () => {
+    expect(parseCommandLine(["calibrate"], context)).toMatchObject({ models: null, repeats: 3 });
+  });
+
+  it("refuses fewer than three repeats, because two cannot show a spread", () => {
+    expect(() => parseCommandLine(["calibrate", "--repeats", "2"], context)).toThrow(/at least 3/);
+  });
+
+  it("still reads a task that merely mentions calibrate", () => {
+    expect(parseRun(["make calibrate faster"]).command).toBe("run");
+  });
+});
+
+describe("capturing a calibration case", () => {
+  it("takes the task, the files it starts from, and the command that judges it", () => {
+    expect(
+      parseCommandLine(
+        [
+          "calibrate",
+          "--add-case",
+          "raise the retry limit to five",
+          "--seed",
+          "config/limits.mjs, limits.test.mjs",
+          "--gate",
+          "node --test",
+          "--workspace",
+          "pkg",
+        ],
+        context,
+      ),
+    ).toEqual({
+      command: "add-case",
+      task: "raise the retry limit to five",
+      seed: ["config/limits.mjs", "limits.test.mjs"],
+      gateCommand: "node --test",
+      workspace: "/work/repo/pkg",
+    });
+  });
+
+  it("refuses a capture with no seed, because the case would start from nothing", () => {
+    expect(() =>
+      parseCommandLine(["calibrate", "--add-case", "do a thing", "--gate", "npm test"], context),
+    ).toThrow(/--seed/);
+  });
+
+  it("refuses a capture with no command to judge it by", () => {
+    expect(() =>
+      parseCommandLine(["calibrate", "--add-case", "do a thing", "--seed", "a.ts"], context),
+    ).toThrow(/--gate/);
+  });
+});
+
+describe("the routing command", () => {
+  it("takes nothing at all, because it only reports", () => {
+    expect(parseCommandLine(["routing"], context)).toEqual({ command: "routing" });
+  });
+
+  it("still reads a task that merely mentions routing", () => {
+    expect(parseRun(["improve the routing table"]).command).toBe("run");
   });
 });

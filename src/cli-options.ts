@@ -5,6 +5,11 @@ export interface RunCommand {
   readonly command: "run";
   readonly task: string;
   readonly modelSpec: string;
+  /**
+   * True when the caller named the model, by flag or by environment. A pinned model is a
+   * decision, so the router leaves it alone; a defaulted one is not.
+   */
+  readonly modelPinned: boolean;
   readonly workspace: string;
   readonly maxSteps: number;
   /** Null means the session's own directory, which is outside the workspace by design. */
@@ -28,6 +33,31 @@ export interface ReplayCommand {
   readonly bundleDirectory: string;
 }
 
+/** Measures candidate models against the golden set and reports the distributions. */
+export interface CalibrateCommand {
+  readonly command: "calibrate";
+  /** Named model specs, or null to take the tier the shortlist matched. */
+  readonly models: readonly string[] | null;
+  readonly repeats: number;
+  readonly shortlist: string | null;
+  readonly bundleDirectory: string | null;
+}
+
+/** Turns a real task that went wrong into a permanent calibration case. */
+export interface AddCaseCommand {
+  readonly command: "add-case";
+  readonly task: string;
+  /** Workspace-relative files the case starts from. */
+  readonly seed: readonly string[];
+  readonly gateCommand: string;
+  readonly workspace: string;
+}
+
+/** Prints the routing table the reward log adds up to. */
+export interface RoutingCommand {
+  readonly command: "routing";
+}
+
 /** Probes the machine and recommends a local model for it. */
 export interface SelectCommand {
   readonly command: "select";
@@ -35,14 +65,23 @@ export interface SelectCommand {
   readonly shortlist: string | null;
 }
 
-export type CommandLine = RunCommand | ReplayCommand | GatesCommand | SelectCommand;
+export type CommandLine =
+  | RunCommand
+  | ReplayCommand
+  | GatesCommand
+  | SelectCommand
+  | CalibrateCommand
+  | AddCaseCommand
+  | RoutingCommand;
 
 export class InvalidCommandLineError extends Error {
   constructor(problem: string) {
     super(
       `${problem}. Usage: swarm [--model <provider:id>] [--workspace <dir>] [--bundle <dir>] ` +
         `[--base <ref>] [--attempts <n>] "<task>", swarm gates [--workspace <dir>] [--base <ref>], ` +
-        "swarm select [--shortlist <file|url|bundled>], or swarm replay <bundle directory>",
+        "swarm select [--shortlist <file|url|bundled>], swarm calibrate [--models <a,b>] " +
+        '[--repeats <n>], swarm calibrate --add-case "<task>" --seed <a,b> --gate "<command>", ' +
+        "swarm routing, or swarm replay <bundle directory>",
     );
     this.name = "InvalidCommandLineError";
   }
@@ -52,6 +91,8 @@ const defaultModelSpec = "anthropic:claude-opus-5";
 const defaultMaxSteps = 40;
 const defaultBaseRef = "HEAD";
 const defaultAttempts = 3;
+/** Three is the floor: two repeats cannot show a spread, and a spread is the point. */
+const defaultRepeats = 3;
 
 export interface CommandLineContext {
   readonly env: Record<string, string | undefined>;
@@ -97,6 +138,25 @@ export function parseCommandLine(
   // --workspace lands where the caller says it does.
   const workspace = resolve(context.currentDirectory, flags.get("workspace") ?? ".");
 
+  if (words[0] === "routing") {
+    return { command: "routing" };
+  }
+
+  if (words[0] === "calibrate") {
+    const captured = flags.get("add-case");
+    if (captured !== undefined) {
+      return parseAddCase(captured, flags, workspace);
+    }
+    const models = flags.get("models");
+    return {
+      command: "calibrate",
+      models: models === undefined ? null : splitList(models),
+      repeats: parseRepeats(flags.get("repeats")),
+      shortlist: resolveShortlist(flags.get("shortlist"), context),
+      bundleDirectory,
+    };
+  }
+
   if (words[0] === "select") {
     return { command: "select", shortlist: resolveShortlist(flags.get("shortlist"), context) };
   }
@@ -115,16 +175,56 @@ export function parseCommandLine(
     throw new InvalidCommandLineError("nothing to do");
   }
 
+  const pinnedModel = flags.get("model") ?? context.env.SWARM_MODEL;
   return {
     command: "run",
     task,
-    modelSpec: flags.get("model") ?? context.env.SWARM_MODEL ?? defaultModelSpec,
+    modelSpec: pinnedModel ?? defaultModelSpec,
+    modelPinned: pinnedModel !== undefined,
     workspace,
     maxSteps: parseMaxSteps(flags.get("max-steps")),
     bundleDirectory,
     baseRef: flags.get("base") ?? defaultBaseRef,
     attempts: parseCount(flags.get("attempts"), "--attempts", defaultAttempts),
   };
+}
+
+function parseAddCase(
+  task: string,
+  flags: ReadonlyMap<string, string>,
+  workspace: string,
+): AddCaseCommand {
+  const seed = splitList(flags.get("seed") ?? "");
+  if (seed.length === 0) {
+    throw new InvalidCommandLineError(
+      "--add-case needs --seed <file,file> naming the files the case starts from",
+    );
+  }
+  const gateCommand = flags.get("gate");
+  if (gateCommand === undefined || gateCommand.trim().length === 0) {
+    throw new InvalidCommandLineError(
+      '--add-case needs --gate "<command>", the command that decides whether the case was solved',
+    );
+  }
+  return { command: "add-case", task, seed, gateCommand, workspace };
+}
+
+function splitList(raw: string): readonly string[] {
+  return raw
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function parseRepeats(raw: string | undefined): number {
+  const repeats = parseCount(raw, "--repeats", defaultRepeats);
+  if (repeats < defaultRepeats) {
+    throw new InvalidCommandLineError(
+      `--repeats must be at least ${defaultRepeats}: fewer cannot show a spread, and the ` +
+        "spread is what the report is for",
+    );
+  }
+  return repeats;
 }
 
 /**

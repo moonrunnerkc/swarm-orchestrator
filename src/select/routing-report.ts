@@ -111,7 +111,7 @@ function describeBonus(arm: Arm | undefined): string {
 }
 
 function describeAssignments(entries: readonly RewardEntry[]): string {
-  return assignmentKinds
+  const tallied = assignmentKinds
     .map((kind) => ({
       kind,
       count: entries.filter((entry) => entry.assignment === kind).length,
@@ -119,6 +119,7 @@ function describeAssignments(entries: readonly RewardEntry[]): string {
     .filter((tally) => tally.count > 0)
     .map((tally) => `${tally.kind} ${tally.count}`)
     .join(", ");
+  return tallied.length === 0 ? "none yet" : tallied;
 }
 
 function row(cells: readonly string[]): string {

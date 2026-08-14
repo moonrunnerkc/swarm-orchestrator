@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HardwareProfile } from "./hardware-probe.ts";
-import { recommendModel } from "./recommendation.ts";
+import { calibrationCandidates, recommendModel } from "./recommendation.ts";
 import { parseShortlist, type Shortlist } from "./shortlist.ts";
 
 function model(overrides: Record<string, unknown>): Record<string, unknown> {
@@ -386,5 +386,30 @@ describe("recommendModel when nothing in the tier fits", () => {
     expect(recommendation.caveats.join(" ")).toMatch(
       /nothing in tier "only" fits the 4.8 GB measured.*too-big.*40.0 GB/s,
     );
+  });
+});
+
+describe("calibrationCandidates", () => {
+  it("offers the tier's models for this machine, with the static pick first", () => {
+    const recommendation = recommended(appleSilicon);
+
+    expect(calibrationCandidates(recommendation, appleSilicon, 5)).toEqual([
+      "local:mlx-big",
+      "local:ollama-big",
+    ]);
+  });
+
+  it("leaves out a model this machine has no way to serve", () => {
+    const recommendation = recommended(consumerGpu);
+
+    // gpu-24 lists ollama models only, so nothing is dropped; the Apple tier proves the filter.
+    expect(calibrationCandidates(recommendation, consumerGpu, 5)).toEqual([
+      "local:big",
+      "local:mid",
+    ]);
+  });
+
+  it("stops at the limit, because calibration has minutes rather than hours", () => {
+    expect(calibrationCandidates(recommended(consumerGpu), consumerGpu, 1)).toEqual(["local:big"]);
   });
 });
