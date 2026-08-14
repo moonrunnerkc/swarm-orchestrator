@@ -412,13 +412,21 @@ describe("the ratchet against a retry that deletes the failing tests", () => {
 });
 
 describe("the escape hatch inside the loop", () => {
+  // A whole-file re-specification: both tests the base declared are gone and both tests here
+  // are new. Two fewer assertions than the base, so the ratchet has something to reject and
+  // the escape hatch has something to do.
   const respecifiedTests = [
     "import { it, expect } from 'vitest';",
     "import { add } from './math.ts';",
-    "it('adds small numbers', () => {",
-    "  expect(add(1, 2)).toBe(3);",
+    "it('adds negative numbers', () => {",
+    "  expect(add(-1, -2)).toBe(-3);",
+    "});",
+    "it('adds fractions', () => {",
+    "  expect(add(0.5, 0.25)).toBe(0.75);",
     "});",
   ].join("\n");
+
+  const bothNew = ["adds fractions", "adds negative numbers"];
 
   it("lets a genuinely new specification through without tripping the ratchet", async () => {
     const test = harness();
@@ -429,12 +437,57 @@ describe("the escape hatch inside the loop", () => {
         test.workspace.write(testPath, respecifiedTests);
         return Promise.resolve();
       },
-      createStubBaseControl(() => ({ onBase: "failed", onSubmitted: "passed" })),
+      createStubBaseControl(() => ({
+        onBase: "failed",
+        onSubmitted: "passed",
+        failedOnBase: bothNew,
+      })),
     );
 
     expect(outcome.settled).toBe("green");
     expect(outcome.attempts[0]?.decision.accepted).toBe(true);
-    expect(outcome.attempts[0]?.decision.exemptFiles).toEqual([testPath]);
+    expect(outcome.attempts[0]?.decision.newSpecifications).toEqual(
+      bothNew.map((name) => `${testPath}::${name}`),
+    );
+  });
+
+  it("catches a deletion sitting beside a single new specification", async () => {
+    // The hole granularity closes: one proven new specification used to exempt the whole
+    // file, so every deletion beside it travelled through unexamined. It pays for one.
+    const test = harness();
+
+    const outcome = await test.run(
+      () => {
+        test.workspace.write(sourcePath, fixedSource);
+        test.workspace.write(
+          testPath,
+          [
+            "import { it, expect } from 'vitest';",
+            "import { add } from './math.ts';",
+            "it('adds negative numbers', () => {",
+            "  expect(add(-1, -2)).toBe(-3);",
+            "});",
+          ].join("\n"),
+        );
+        return Promise.resolve();
+      },
+      createStubBaseControl(() => ({
+        onBase: "failed",
+        onSubmitted: "passed",
+        failedOnBase: ["adds negative numbers"],
+      })),
+    );
+
+    expect(outcome.settled).toBe("escalated");
+    expect(outcome.attempts[0]?.decision.accepted).toBe(false);
+    expect(outcome.attempts[0]?.decision.violations.map((violation) => violation.kind)).toContain(
+      "tests-declared-decreased",
+    );
+    // The new specification is still recognized as one; what it does not do is cover the
+    // second deletion as well.
+    expect(outcome.attempts[0]?.decision.newSpecifications).toEqual([
+      `${testPath}::adds negative numbers`,
+    ]);
   });
 
   it("rejects the same edit when the control shows the test also passed on the base source", async () => {
@@ -465,7 +518,11 @@ describe("the escape hatch inside the loop", () => {
         test.workspace.write(testPath, respecifiedTests);
         return Promise.resolve();
       },
-      createStubBaseControl(() => ({ onBase: "failed", onSubmitted: "passed" })),
+      createStubBaseControl(() => ({
+        onBase: "failed",
+        onSubmitted: "passed",
+        failedOnBase: bothNew,
+      })),
     );
 
     const decision = ledgerPayloads("ratchet-decision")[0];
@@ -473,6 +530,7 @@ describe("the escape hatch inside the loop", () => {
       {
         file: testPath,
         exempt: true,
+        newSpecifications: bothNew,
         reason: expect.stringContaining("new specification"),
         controls: {
           submittedTestOnBaseSource: "failed: stub control",

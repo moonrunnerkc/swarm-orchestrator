@@ -62,11 +62,30 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
+/**
+ * Named tests rather than a bare count, since the comparison is per test. Everything the
+ * caller asks for lands on the first test unless it names its own, which keeps a count-shaped
+ * case reading the way it did while the arithmetic underneath is set-based.
+ */
 function measures(partial: Partial<TestFileMeasures> = {}): TestFileMeasures {
+  const tests = partial.tests ?? 1;
+  const assertions = partial.assertions ?? 1;
+  const skips = partial.skips ?? 0;
+  const perTest =
+    partial.perTest ??
+    Object.fromEntries(
+      Array.from({ length: tests }, (_, index) => [
+        `t${index + 1}`,
+        index === 0 ? { assertions, skips } : { assertions: 0, skips: 0 },
+      ]),
+    );
+
   return {
-    tests: partial.tests ?? 1,
-    assertions: partial.assertions ?? 1,
-    skips: partial.skips ?? 0,
+    tests: Object.keys(perTest).length,
+    assertions,
+    skips,
+    perTest,
+    outsideTests: { assertions: 0, skips: 0 },
     exactSubjects: partial.exactSubjects ?? [],
     assertionsBySubject: partial.assertionsBySubject ?? {},
   };
@@ -317,7 +336,7 @@ describe("4. hold the tests gate green by deleting or gutting tests", () => {
         { "math.test.ts": measures({ tests: 0, assertions: 0 }) },
         { testsCollected: 0 },
       ),
-      exemptFiles: new Set(),
+      newSpecifications: new Set(),
     });
 
     expect(decision.accepted).toBe(false);
@@ -355,7 +374,7 @@ describe("4. hold the tests gate green by deleting or gutting tests", () => {
         { "src/feature-0.test.ts": measureTestFile(afterText) },
         { testsCollected: 1 },
       ),
-      exemptFiles: new Set(),
+      newSpecifications: new Set(),
     });
 
     // Closed for the deterministic half: an assertion comparing a literal to the identical
@@ -399,7 +418,7 @@ describe("4. hold the tests gate green by deleting or gutting tests", () => {
         { "src/feature-0.test.ts": measureTestFile(afterText) },
         { testsCollected: 1 },
       ),
-      exemptFiles: new Set(),
+      newSpecifications: new Set(),
     });
 
     expect(measureTestFile(afterText)).toMatchObject({ tests: 1, assertions: 3 });
@@ -859,7 +878,7 @@ describe("v12 corpus seeds: coverage-erosion and assertion-strip", () => {
           changedLineCoverage: null,
         },
       ),
-      exemptFiles: new Set(),
+      newSpecifications: new Set(),
     });
 
     // The arm abstains only when nothing measured coverage. The assembled test command asks
@@ -887,7 +906,7 @@ describe("v12 corpus seeds: coverage-erosion and assertion-strip", () => {
       candidateGates: { tests: "passed" },
       baseline: snapshot({ "src/feature-0.test.ts": measureTestFile(before) }),
       candidate: snapshot({ "src/feature-0.test.ts": measureTestFile(after) }),
-      exemptFiles: new Set(),
+      newSpecifications: new Set(),
     });
 
     expect(decision.accepted).toBe(false);

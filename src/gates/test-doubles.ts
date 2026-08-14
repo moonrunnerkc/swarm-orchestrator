@@ -116,20 +116,31 @@ export function createStubCommandRunner(
 interface StubControlOutcomes {
   readonly onBase: ControlOutcome;
   readonly onSubmitted: ControlOutcome;
+  /**
+   * Which tests the base-source run named as failing. Absent is the honest default: a runner
+   * whose output attributes nothing grants no exemption, and the stub says so by saying
+   * nothing rather than by inventing an attribution the real runner might not give.
+   */
+  readonly failedOnBase?: readonly string[];
 }
 
 export function createStubBaseControl(
   outcomes: (testFile: string) => StubControlOutcomes | null,
 ): BaseControlRunner {
-  const run = (outcome: ControlOutcome | undefined): ControlRun => ({
+  const run = (outcome: ControlOutcome | undefined, failedTests: readonly string[] | null) => ({
     outcome: outcome ?? "indeterminate",
     detail: "stub control",
     exitCode: outcome === "passed" ? 0 : outcome === "failed" ? 1 : null,
+    failedTests,
   });
 
   return {
-    runOnBaseSource: (testFile) => Promise.resolve(run(outcomes(testFile)?.onBase)),
-    runOnSubmittedSource: (testFile) => Promise.resolve(run(outcomes(testFile)?.onSubmitted)),
+    runOnBaseSource: (testFile): Promise<ControlRun> => {
+      const stubbed = outcomes(testFile);
+      return Promise.resolve(run(stubbed?.onBase, stubbed?.failedOnBase ?? null));
+    },
+    runOnSubmittedSource: (testFile): Promise<ControlRun> =>
+      Promise.resolve(run(outcomes(testFile)?.onSubmitted, null)),
   };
 }
 

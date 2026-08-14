@@ -76,6 +76,8 @@ describe("counting a test file", () => {
       tests: 0,
       assertions: 0,
       skips: 0,
+      perTest: {},
+      outsideTests: { assertions: 0, skips: 0 },
       exactSubjects: [],
       assertionsBySubject: {},
     });

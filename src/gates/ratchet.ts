@@ -38,7 +38,8 @@ export interface RatchetDecision {
   readonly accepted: boolean;
   readonly violations: readonly RatchetViolation[];
   readonly abstentions: readonly RatchetAbstention[];
-  readonly exemptFiles: readonly string[];
+  /** Tests the escape hatch cleared, as `file::test`. Reported so an exemption is visible. */
+  readonly newSpecifications: readonly string[];
   readonly detail: string;
 }
 
@@ -48,10 +49,12 @@ export interface RatchetInput {
   readonly baseline: MeasureSnapshot;
   readonly candidate: MeasureSnapshot;
   /**
-   * Test files the escape hatch cleared as new specifications rather than tampering. They
-   * drop out of the per-file comparisons on both sides.
+   * Tests the escape hatch cleared as new specifications rather than tampering, as
+   * `file::test`. Each one pays for exactly one deleted test in its own file; nothing here
+   * drops a whole file from the comparison, which is how a deletion used to travel beside a
+   * single new spec. Omitted means nothing was cleared, which is the stricter reading.
    */
-  readonly exemptFiles: ReadonlySet<string>;
+  readonly newSpecifications?: ReadonlySet<string>;
 }
 
 /**
@@ -76,7 +79,7 @@ const ratchetDecisionSchema = z.object({
     }),
   ),
   abstentions: z.array(z.object({ measure: z.string(), reason: z.string() })),
-  exemptFiles: z.array(z.string()),
+  newSpecifications: z.array(z.string()),
   /** Every escape-hatch assessment made this attempt, granted or not, with its controls. */
   respecification: z.array(respecificationSchema),
   measures: z.object({
@@ -111,6 +114,7 @@ type RatchetDecisionPayload = z.infer<typeof ratchetDecisionSchema>;
 export function judgeRatchet(input: RatchetInput): RatchetDecision {
   const violations: RatchetViolation[] = [];
   const abstentions: RatchetAbstention[] = [];
+  const newSpecifications = input.newSpecifications ?? new Set<string>();
 
   for (const [gateId, status] of Object.entries(input.baselineGates)) {
     if (status !== "passed") {
@@ -134,7 +138,7 @@ export function judgeRatchet(input: RatchetInput): RatchetDecision {
     }
   }
 
-  const { before, after } = comparableTotals(input.baseline, input.candidate, input.exemptFiles);
+  const { before, after } = comparableTotals(input.baseline, input.candidate, newSpecifications);
 
   if (after.tests < before.tests) {
     violations.push({
@@ -176,7 +180,7 @@ export function judgeRatchet(input: RatchetInput): RatchetDecision {
     "testsCollected",
     input.baseline.testsCollected,
     input.candidate.testsCollected,
-    input.exemptFiles.size > 0,
+    newSpecifications.size > 0,
     violations,
     abstentions,
     {
@@ -184,8 +188,8 @@ export function judgeRatchet(input: RatchetInput): RatchetDecision {
       describe: (from, to) =>
         `the runner collected ${from} test(s) before this attempt and ${to} after it`,
       exemptReason:
-        "an escape-hatch exemption was granted this attempt, and a suite-wide collected count " +
-        "cannot be attributed to the exempt file, so it is not compared",
+        "a new specification was cleared this attempt, and a suite-wide collected count " +
+        "cannot be attributed to one test, so it is not compared",
     },
   );
 
@@ -209,7 +213,7 @@ export function judgeRatchet(input: RatchetInput): RatchetDecision {
     accepted,
     violations,
     abstentions,
-    exemptFiles: [...input.exemptFiles].sort(),
+    newSpecifications: [...newSpecifications].sort(),
     detail: accepted
       ? "the ratchet accepted the attempt: no measure moved the wrong way" +
         // Named, not counted. An abstention that reads as a pass is the defect: a reviewer
@@ -235,9 +239,6 @@ function allowedAssertionDrop(input: RatchetInput): number {
 
   let allowance = 0;
   for (const path of paths) {
-    if (input.exemptFiles.has(path)) {
-      continue;
-    }
     allowance += respecificationAllowance(input.baseline, input.candidate, path);
   }
   return allowance;
@@ -293,7 +294,11 @@ export function ratchetPayload(
   decision: RatchetDecision,
   respecification: readonly RespecificationFinding[],
 ): RatchetDecisionPayload {
-  const { before, after } = comparableTotals(input.baseline, input.candidate, input.exemptFiles);
+  const { before, after } = comparableTotals(
+    input.baseline,
+    input.candidate,
+    input.newSpecifications ?? new Set<string>(),
+  );
 
   return ratchetDecisionSchema.parse({
     scope,
@@ -302,7 +307,7 @@ export function ratchetPayload(
     detail: decision.detail,
     violations: decision.violations.map((violation) => ({ ...violation })),
     abstentions: decision.abstentions.map((abstention) => ({ ...abstention })),
-    exemptFiles: decision.exemptFiles,
+    newSpecifications: decision.newSpecifications,
     respecification: respecification.map((finding) => finding.payload),
     measures: {
       before: {

@@ -4,7 +4,7 @@ import type { RatchetDecision } from "./ratchet.ts";
 import { summarizeRatchet } from "./ratchet-summary.ts";
 
 function accepted(): RatchetDecision {
-  return { accepted: true, violations: [], abstentions: [], exemptFiles: [], detail: "fine" };
+  return { accepted: true, violations: [], abstentions: [], newSpecifications: [], detail: "fine" };
 }
 
 function eroded(): RatchetDecision {
@@ -19,7 +19,7 @@ function eroded(): RatchetDecision {
       },
     ],
     abstentions: [],
-    exemptFiles: [],
+    newSpecifications: [],
     detail: "rejected",
   };
 }
@@ -29,7 +29,7 @@ function crashed(): RatchetDecision {
     accepted: false,
     violations: [],
     abstentions: [],
-    exemptFiles: [],
+    newSpecifications: [],
     detail: "the attempt produced nothing to judge: the model went away",
   };
 }
@@ -41,6 +41,13 @@ const measures: MeasureSnapshot = {
       tests: 9,
       assertions: 21,
       skips: 1,
+      perTest: Object.fromEntries(
+        Array.from({ length: 9 }, (_, index) => [
+          `t${index + 1}`,
+          index === 0 ? { assertions: 21, skips: 1 } : { assertions: 0, skips: 0 },
+        ]),
+      ),
+      outsideTests: { assertions: 0, skips: 0 },
       assertionsBySubject: {},
       exactSubjects: [],
     },

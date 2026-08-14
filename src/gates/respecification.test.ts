@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assessRespecification, findExemptFiles } from "./respecification.ts";
+import { assessRespecification, clearedTests, findNewSpecifications } from "./respecification.ts";
 import { createStubBaseControl } from "./test-doubles.ts";
 
 describe("the re-specification escape hatch", () => {
@@ -10,7 +10,9 @@ describe("the re-specification escape hatch", () => {
     );
 
     expect(finding.exempt).toBe(true);
-    expect(finding.reason).toContain("new specification");
+    // The file's controls came back clean, which is a precondition. Nothing is cleared until
+    // a test is named, and the stub named none.
+    expect(finding.newSpecifications).toEqual([]);
     expect(finding.payload.controls.submittedTestOnBaseSource).toContain("failed");
     expect(finding.payload.controls.submittedTestOnSubmittedSource).toContain("passed");
   });
@@ -59,15 +61,20 @@ describe("the re-specification escape hatch", () => {
   });
 
   it("grants nothing at all when no base control runner is available", async () => {
-    expect(await findExemptFiles(["spec.test.ts"], null)).toEqual([]);
+    expect(await findNewSpecifications([{ file: "spec.test.ts", newTests: ["a"] }], null)).toEqual(
+      [],
+    );
   });
 
   it("assesses each candidate file on its own", async () => {
-    const findings = await findExemptFiles(
-      ["new-spec.test.ts", "weakened.test.ts"],
+    const findings = await findNewSpecifications(
+      [
+        { file: "new-spec.test.ts", newTests: ["adds mul"] },
+        { file: "weakened.test.ts", newTests: ["adds mul"] },
+      ],
       createStubBaseControl((file) =>
         file === "new-spec.test.ts"
-          ? { onBase: "failed", onSubmitted: "passed" }
+          ? { onBase: "failed", onSubmitted: "passed", failedOnBase: ["adds mul"] }
           : { onBase: "passed", onSubmitted: "passed" },
       ),
     );
@@ -76,5 +83,76 @@ describe("the re-specification escape hatch", () => {
       ["new-spec.test.ts", true],
       ["weakened.test.ts", false],
     ]);
+    expect([...clearedTests(findings)]).toEqual(["new-spec.test.ts::adds mul"]);
+  });
+});
+
+describe("which tests a cleared file actually clears", () => {
+  it("clears only the tests that are new in the file and failed on the base source", async () => {
+    const finding = await assessRespecification(
+      "spec.test.ts",
+      createStubBaseControl(() => ({
+        onBase: "failed",
+        onSubmitted: "passed",
+        // The base run reports two failures: the run's own broken test, which existed at the
+        // base, and the genuinely new one.
+        failedOnBase: ["adds", "multiplies"],
+      })),
+      { newTests: ["multiplies"] },
+    );
+
+    expect(finding.newSpecifications).toEqual(["multiplies"]);
+  });
+
+  it("clears nothing when the base run named no failing test", async () => {
+    const finding = await assessRespecification(
+      "spec.test.ts",
+      createStubBaseControl(() => ({ onBase: "failed", onSubmitted: "passed" })),
+      { newTests: ["multiplies"] },
+    );
+
+    expect(finding.exempt).toBe(true);
+    expect(finding.newSpecifications).toEqual([]);
+    expect(finding.reason).toContain("named no failing test");
+  });
+
+  it("clears nothing when no new test is among the ones that failed on base", async () => {
+    const finding = await assessRespecification(
+      "spec.test.ts",
+      createStubBaseControl(() => ({
+        onBase: "failed",
+        onSubmitted: "passed",
+        failedOnBase: ["adds"],
+      })),
+      { newTests: ["multiplies"] },
+    );
+
+    expect(finding.newSpecifications).toEqual([]);
+  });
+
+  it("does not treat a base-only load failure as a specification failure", async () => {
+    // A test that imports a symbol the base does not export fails to load there. The file
+    // never ran, so it never failed as a specification, and this is every test written
+    // beside a new function: without this the exemption is free for the asking.
+    const finding = await assessRespecification("spec.test.ts", {
+      runOnBaseSource: () =>
+        Promise.resolve({
+          outcome: "failed" as const,
+          detail: "Cannot find module './mul.ts'",
+          exitCode: 1,
+          failedTests: null,
+        }),
+      runOnSubmittedSource: () =>
+        Promise.resolve({
+          outcome: "passed" as const,
+          detail: "exited 0",
+          exitCode: 0,
+          failedTests: null,
+        }),
+    });
+
+    expect(finding.exempt).toBe(false);
+    expect(finding.newSpecifications).toEqual([]);
+    expect(finding.reason).toContain("failed to load");
   });
 });

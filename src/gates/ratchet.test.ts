@@ -4,11 +4,30 @@ import { emptyMeasureSnapshot, type MeasureSnapshot } from "./measure-snapshot.t
 import type { TestFileMeasures } from "./measures.ts";
 import { judgeRatchet, type RatchetInput, ratchetPayload } from "./ratchet.ts";
 
+/**
+ * Named tests rather than a bare count, since the comparison is per test. Everything the
+ * caller asks for lands on the first test unless it names its own, which keeps a count-shaped
+ * case reading the way it did while the arithmetic underneath is set-based.
+ */
 function measures(partial: Partial<TestFileMeasures> = {}): TestFileMeasures {
+  const tests = partial.tests ?? 1;
+  const assertions = partial.assertions ?? 1;
+  const skips = partial.skips ?? 0;
+  const perTest =
+    partial.perTest ??
+    Object.fromEntries(
+      Array.from({ length: tests }, (_, index) => [
+        `t${index + 1}`,
+        index === 0 ? { assertions, skips } : { assertions: 0, skips: 0 },
+      ]),
+    );
+
   return {
-    tests: partial.tests ?? 1,
-    assertions: partial.assertions ?? 1,
-    skips: partial.skips ?? 0,
+    tests: Object.keys(perTest).length,
+    assertions,
+    skips,
+    perTest,
+    outsideTests: { assertions: 0, skips: 0 },
     exactSubjects: partial.exactSubjects ?? [],
     assertionsBySubject: partial.assertionsBySubject ?? {},
   };
@@ -28,7 +47,7 @@ function input(overrides: Partial<RatchetInput>): RatchetInput {
     candidateGates: gates,
     baseline: snapshot({}),
     candidate: snapshot({}),
-    exemptFiles: new Set(),
+    newSpecifications: new Set(),
     ...overrides,
   };
 }
@@ -201,36 +220,56 @@ describe("the numeric ratchet", () => {
   });
 });
 
-describe("the ratchet escape hatch", () => {
-  it("drops an exempt file out of both sides of the comparison", () => {
+describe("the ratchet escape hatch, per test rather than per file", () => {
+  const rewritten = (names: readonly [string, number][]) =>
+    measures({
+      tests: names.length,
+      assertions: names.reduce((sum, [, count]) => sum + count, 0),
+      perTest: Object.fromEntries(
+        names.map(([name, assertions]) => [name, { assertions, skips: 0 }]),
+      ),
+    });
+
+  it("clears a whole-file re-specification where every test is new", () => {
+    // Part C's case: refusing every file-level exemption rejects this, which is legitimate
+    // work. Two deletions, two proven new specifications, one for one.
     const judged = input({
       baseline: snapshot({
-        "spec.test.ts": measures({ tests: 2, assertions: 5 }),
-        "other.test.ts": measures({ tests: 1, assertions: 1 }),
+        "spec.test.ts": rewritten([
+          ["adds", 2],
+          ["subtracts", 3],
+        ]),
       }),
       candidate: snapshot({
-        "spec.test.ts": measures({ tests: 1, assertions: 1 }),
-        "other.test.ts": measures({ tests: 1, assertions: 1 }),
+        "spec.test.ts": rewritten([
+          ["adds negatives", 1],
+          ["subtracts negatives", 1],
+        ]),
       }),
-      exemptFiles: new Set(["spec.test.ts"]),
+      newSpecifications: new Set([
+        "spec.test.ts::adds negatives",
+        "spec.test.ts::subtracts negatives",
+      ]),
     });
 
     expect(judgeRatchet(judged).accepted).toBe(true);
-    expect(judgeRatchet({ ...judged, exemptFiles: new Set() }).accepted).toBe(false);
+    // Without the controls behind it the same edit is a four-assertion drop, and is rejected.
+    expect(judgeRatchet({ ...judged, newSpecifications: new Set() }).accepted).toBe(false);
   });
 
-  it("does not let an exemption hide a regression in a file that was not exempt", () => {
+  it("catches the test a file deleted beside the one new specification it added", () => {
+    // The hole this closes: one new spec used to exempt the file, so every deletion beside
+    // it went unexamined. It pays for one deletion, and the other is still compared.
     const decision = judgeRatchet(
       input({
         baseline: snapshot({
-          "spec.test.ts": measures({ tests: 2, assertions: 5 }),
-          "other.test.ts": measures({ tests: 3, assertions: 7 }),
+          "spec.test.ts": rewritten([
+            ["adds", 1],
+            ["subtracts", 1],
+          ]),
         }),
-        candidate: snapshot({
-          "spec.test.ts": measures({ tests: 1, assertions: 1 }),
-          "other.test.ts": measures({ tests: 0, assertions: 0 }),
-        }),
-        exemptFiles: new Set(["spec.test.ts"]),
+        candidate: snapshot({ "spec.test.ts": rewritten([["adds negatives", 1]]) }),
+        newSpecifications: new Set(["spec.test.ts::adds negatives"]),
       }),
     );
 
@@ -240,12 +279,55 @@ describe("the ratchet escape hatch", () => {
     );
   });
 
-  it("stops comparing the suite-wide collected count when an exemption was granted", () => {
+  it("clears nothing for a test that already existed at the base", () => {
+    // A cleared name has to be new here. The run's own failing test would otherwise buy a
+    // deletion just by failing on the base source, which every failing test does.
+    const decision = judgeRatchet(
+      input({
+        baseline: snapshot({
+          "spec.test.ts": rewritten([
+            ["adds", 2],
+            ["subtracts", 2],
+          ]),
+        }),
+        candidate: snapshot({ "spec.test.ts": rewritten([["adds", 2]]) }),
+        newSpecifications: new Set(["spec.test.ts::adds"]),
+      }),
+    );
+
+    expect(decision.accepted).toBe(false);
+    expect(decision.violations.map((violation) => violation.kind)).toContain(
+      "tests-declared-decreased",
+    );
+  });
+
+  it("does not let one file's cleared test pay for another file's deletion", () => {
+    const decision = judgeRatchet(
+      input({
+        baseline: snapshot({
+          "spec.test.ts": rewritten([["adds", 1]]),
+          "other.test.ts": rewritten([["parses", 1]]),
+        }),
+        candidate: snapshot({
+          "spec.test.ts": rewritten([["adds negatives", 1]]),
+          "other.test.ts": rewritten([]),
+        }),
+        newSpecifications: new Set(["spec.test.ts::adds negatives"]),
+      }),
+    );
+
+    expect(decision.accepted).toBe(false);
+    expect(decision.violations.map((violation) => violation.kind)).toContain(
+      "tests-declared-decreased",
+    );
+  });
+
+  it("stops comparing the suite-wide collected count when a new specification was cleared", () => {
     const decision = judgeRatchet(
       input({
         baseline: snapshot({ "spec.test.ts": measures() }, { testsCollected: 10 }),
         candidate: snapshot({ "spec.test.ts": measures() }, { testsCollected: 8 }),
-        exemptFiles: new Set(["spec.test.ts"]),
+        newSpecifications: new Set(["spec.test.ts::t1"]),
       }),
     );
 
@@ -253,8 +335,8 @@ describe("the ratchet escape hatch", () => {
     expect(decision.abstentions[0]).toEqual({
       measure: "testsCollected",
       reason:
-        "an escape-hatch exemption was granted this attempt, and a suite-wide collected count " +
-        "cannot be attributed to the exempt file, so it is not compared",
+        "a new specification was cleared this attempt, and a suite-wide collected count " +
+        "cannot be attributed to one test, so it is not compared",
     });
   });
 });

@@ -76,10 +76,25 @@ const skipMarkerPatterns: readonly RegExp[] = [
   /#\[\s*ignore\s*(\([^)]*\))?\s*\]/,
 ];
 
+/** What one declared test carries. Named because a count cannot tell a deletion plus an
+ *  addition from no change at all, and telling those apart is what the base ratchet needs. */
+export interface TestMeasures {
+  readonly assertions: number;
+  readonly skips: number;
+}
+
 export interface TestFileMeasures {
   readonly tests: number;
   readonly assertions: number;
   readonly skips: number;
+  /**
+   * Per declared test, by the name the file gives it. A test the file names nothing gets a
+   * positional name, so reordering unnamed tests reads as a deletion and an addition, which
+   * is the fail-closed direction.
+   */
+  readonly perTest: Readonly<Record<string, TestMeasures>>;
+  /** Assertions and skips outside any declared test: shared setup, and never exempt. */
+  readonly outsideTests: TestMeasures;
   /** Subjects that carry an exact-match assertion, for the re-specification allowance. */
   readonly exactSubjects: readonly string[];
   /**
@@ -94,6 +109,8 @@ export const emptyTestFileMeasures: TestFileMeasures = {
   tests: 0,
   assertions: 0,
   skips: 0,
+  perTest: {},
+  outsideTests: { assertions: 0, skips: 0 },
   exactSubjects: [],
   assertionsBySubject: {},
 };
@@ -126,9 +143,11 @@ export function measureTestFile(text: string | null): TestFileMeasures {
     return emptyTestFileMeasures;
   }
 
-  let tests = 0;
   let assertions = 0;
   let skips = 0;
+  const perTest: Record<string, { assertions: number; skips: number }> = {};
+  const outsideTests = { assertions: 0, skips: 0 };
+  let current = outsideTests;
   const exactSubjects = new Set<string>();
   const assertionsBySubject: Record<string, number> = {};
 
@@ -137,16 +156,20 @@ export function measureTestFile(text: string | null): TestFileMeasures {
     if (line.trim().length === 0) {
       continue;
     }
+    const declared = declaredTestName(line, Object.keys(perTest).length);
+    if (declared !== null) {
+      current = { assertions: 0, skips: 0 };
+      perTest[uniqueName(declared, perTest)] = current;
+    }
     if (skipMarkerPatterns.some((pattern) => pattern.test(line))) {
       skips += 1;
-    }
-    if (testDeclarationPatterns.some((pattern) => pattern.test(line))) {
-      tests += 1;
+      current.skips += 1;
     }
     if (!assertionPatterns.some((pattern) => pattern.test(line)) || assertsNothing(line)) {
       continue;
     }
     assertions += 1;
+    current.assertions += 1;
     const subject = assertionSubject(line);
     if (subject === null) {
       continue;
@@ -158,12 +181,53 @@ export function measureTestFile(text: string | null): TestFileMeasures {
   }
 
   return {
-    tests,
+    tests: Object.keys(perTest).length,
     assertions,
     skips,
+    perTest,
+    outsideTests,
     exactSubjects: [...exactSubjects].sort(),
     assertionsBySubject,
   };
+}
+
+/** The names a test declaration can carry, in the order the declaration patterns match. */
+const testNamePatterns: readonly RegExp[] = [
+  /(?:^|[^.\w])x?(?:it|test)\s*(?:\.[^(]*)?\(\s*(?:"([^"]*)"|'([^']*)'|`([^`]*)`)/,
+  /\bdef\s+(test_\w*)\s*\(/,
+  /\bfunc\s+(Test\w+)\s*\(/,
+];
+
+/**
+ * The name a line declares a test under, or null when it declares none. A declaration whose
+ * name is computed rather than written gets a positional one: the name is only ever used to
+ * match a test against itself across two revisions, and a positional name that moves is a
+ * deletion plus an addition, which the ratchet judges rather than waves through.
+ */
+function declaredTestName(line: string, ordinal: number): string | null {
+  if (!testDeclarationPatterns.some((pattern) => pattern.test(line))) {
+    return null;
+  }
+  for (const pattern of testNamePatterns) {
+    const found = pattern.exec(line);
+    const name = found?.slice(1).find((group) => group !== undefined);
+    if (name !== undefined && name.length > 0) {
+      return name;
+    }
+  }
+  return `test #${ordinal + 1}`;
+}
+
+/** Two tests under one name are two tests, so the second is counted beside the first. */
+function uniqueName(name: string, taken: Readonly<Record<string, unknown>>): string {
+  if (!(name in taken)) {
+    return name;
+  }
+  let suffix = 2;
+  while (`${name} #${suffix}` in taken) {
+    suffix += 1;
+  }
+  return `${name} #${suffix}`;
 }
 
 /**

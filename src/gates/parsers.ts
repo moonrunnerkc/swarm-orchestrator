@@ -345,3 +345,47 @@ function namesSameFile(reported: string, path: string): boolean {
   const right = path.replaceAll("\\", "/");
   return left === right || left.endsWith(`/${right}`) || right.endsWith(`/${left}`);
 }
+
+/**
+ * Which tests a run reported passing and failing, by name. The re-specification refuter needs
+ * this to judge one test rather than a whole file, and null is the honest answer wherever a
+ * runner's output names nothing: no attribution means no exemption, which is fail-closed.
+ */
+export interface TestOutcomes {
+  readonly passed: readonly string[];
+  readonly failed: readonly string[];
+}
+
+const tapResult = /^\s*(not ok|ok)\s+\d+\s+-\s+(.+?)\s*$/;
+const specResult = /^\s*([✔✖])\s+(.+?)(?:\s+\(\d+(?:\.\d+)?ms\))?\s*$/;
+const pytestResult = /^(FAILED|PASSED)\s+\S*?::([\w.]+)/;
+const goResult = /^\s*---\s+(FAIL|PASS):\s+(\w+)/;
+
+export function parseTestOutcomes(text: string): TestOutcomes | null {
+  const passed: string[] = [];
+  const failed: string[] = [];
+
+  for (const raw of text.split("\n")) {
+    for (const [pattern, failingMarker] of [
+      [tapResult, "not ok"],
+      [specResult, "✖"],
+      [pytestResult, "FAILED"],
+      [goResult, "FAIL"],
+    ] as const) {
+      const found = pattern.exec(raw);
+      const name = found?.[2];
+      if (found?.[1] === undefined || name === undefined) {
+        continue;
+      }
+      // A TAP directive rides on the end of the name, and a skipped test is neither.
+      const [subject, directive] = name.split(/\s+#\s+/, 2);
+      if (directive !== undefined && /^(skip|todo)\b/i.test(directive)) {
+        break;
+      }
+      (found[1] === failingMarker ? failed : passed).push(subject ?? name);
+      break;
+    }
+  }
+
+  return passed.length === 0 && failed.length === 0 ? null : { passed, failed };
+}

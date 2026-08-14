@@ -122,7 +122,7 @@ async function rejects(patch: string): Promise<boolean> {
     candidateGates: {},
     baseline: await takeMeasureSnapshot({ ...shared, probe: original }),
     candidate: await takeMeasureSnapshot({ ...shared, probe: submitted }),
-    exemptFiles: new Set(),
+    newSpecifications: new Set(),
   });
 
   return !decision.accepted;

@@ -19,7 +19,9 @@ import { isTestFile } from "./measures.ts";
 import { judgeRatchet, type RatchetDecision, ratchetPayload } from "./ratchet.ts";
 import {
   type BaseControlRunner,
-  findExemptFiles,
+  clearedTests,
+  findNewSpecifications,
+  type RespecificationCandidate,
   type RespecificationFinding,
 } from "./respecification.ts";
 import type { WorkspaceCheckpoint } from "./workspace-changes.ts";
@@ -137,12 +139,9 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     );
     const candidate = await snapshot(candidateContext, candidateCycle, trackedTestFiles);
 
-    const respecification = await findExemptFiles(
+    const respecification = await findNewSpecifications(
       regressedTestFiles(baseline, candidate),
       deps.baseControl,
-    );
-    const exemptFiles = new Set(
-      respecification.filter((finding) => finding.exempt).map((finding) => finding.file),
     );
 
     const input = {
@@ -150,7 +149,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       candidateGates: candidateCycle.statuses,
       baseline,
       candidate,
-      exemptFiles,
+      newSpecifications: clearedTests(respecification),
     };
     const decision = judgeRatchet(input);
     const recorded = await deps.evidence.record({
@@ -238,16 +237,17 @@ async function judgeAgainstBase(
   final: MeasureSnapshot,
 ): Promise<BaseComparison> {
   const base = measuresAtBase(final);
-  const respecification = await findExemptFiles(regressedTestFiles(base, final), deps.baseControl);
+  const respecification = await findNewSpecifications(
+    regressedTestFiles(base, final),
+    deps.baseControl,
+  );
   const input = {
     // Nothing is known to have passed at the base commit, so no gate result is compared here.
     baselineGates: {},
     candidateGates: cycle.statuses,
     baseline: base,
     candidate: final,
-    exemptFiles: new Set(
-      respecification.filter((finding) => finding.exempt).map((finding) => finding.file),
-    ),
+    newSpecifications: clearedTests(respecification),
   };
 
   const decision = judgeRatchet(input);
@@ -286,13 +286,13 @@ async function recordFailedAttempt(
     candidateGates: cycle.statuses,
     baseline,
     candidate: baseline,
-    exemptFiles: new Set<string>(),
+    newSpecifications: new Set<string>(),
   };
   const decision: RatchetDecision = {
     accepted: false,
     violations: [],
     abstentions: [],
-    exemptFiles: [],
+    newSpecifications: [],
     detail: `the attempt produced nothing to judge: ${failure}`,
   };
 
@@ -331,12 +331,15 @@ function trackTestFiles(context: GateContext, tracked: Set<string>): void {
 /**
  * Only files that moved a number the wrong way are worth a control run. Every control costs
  * a test execution, and an exemption changes nothing for a file that did not regress.
+ *
+ * Each one carries the tests that are new in it, since only a test the base did not have can
+ * be a new specification: the run's own failing test would otherwise buy a deletion.
  */
 function regressedTestFiles(
   baseline: MeasureSnapshot,
   candidate: MeasureSnapshot,
-): readonly string[] {
-  const regressed: string[] = [];
+): readonly RespecificationCandidate[] {
+  const regressed: RespecificationCandidate[] = [];
   for (const path of Object.keys(candidate.perTestFile)) {
     const before = measuresFor(baseline, candidate, path);
     const after = measuresFor(candidate, baseline, path);
@@ -345,10 +348,13 @@ function regressedTestFiles(
       after.assertions < before.assertions ||
       after.skips > before.skips
     ) {
-      regressed.push(path);
+      regressed.push({
+        file: path,
+        newTests: Object.keys(after.perTest).filter((name) => !(name in before.perTest)),
+      });
     }
   }
-  return regressed.sort();
+  return regressed.sort((left, right) => (left.file < right.file ? -1 : 1));
 }
 
 async function escalate(

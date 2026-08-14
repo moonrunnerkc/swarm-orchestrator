@@ -191,35 +191,103 @@ export function measuresFor(
 }
 
 /**
- * Both sides of the comparison over one universe of test files, with the exempt ones
- * dropped from each. Exemption applies to both sides or to neither, so an exempt file can
- * never make a regression elsewhere look like progress.
+ * Both sides of the comparison over one universe of test files, per test rather than per
+ * file. Granularity is the whole point: a file-level exemption dropped the file from the
+ * comparison, so one new specification anywhere in it hid every deletion beside it.
+ *
+ * Every test that existed at the base is still compared. A proven new specification pays for
+ * exactly one deleted test, which is what lets a legitimate re-specification of a whole file
+ * clear while a deletion beside one new spec does not: the file has to have replaced what it
+ * removed, one for one, not merely have added something.
  */
 export function comparableTotals(
   baseline: MeasureSnapshot,
   candidate: MeasureSnapshot,
-  exempt: ReadonlySet<string>,
+  newSpecifications: ReadonlySet<string>,
 ): ComparablePair {
   const files = [
     ...new Set([...Object.keys(baseline.perTestFile), ...Object.keys(candidate.perTestFile)]),
-  ]
-    .filter((path) => !exempt.has(path))
-    .sort();
+  ].sort();
 
-  const sum = (snapshot: MeasureSnapshot, other: MeasureSnapshot): ComparableTotals => {
-    let tests = 0;
-    let assertions = 0;
-    let skips = 0;
-    for (const path of files) {
-      const measures = measuresFor(snapshot, other, path);
-      tests += measures.tests;
-      assertions += measures.assertions;
-      skips += measures.skips;
-    }
-    return { tests, assertions, skips, files };
+  const before = { tests: 0, assertions: 0, skips: 0 };
+  const after = { tests: 0, assertions: 0, skips: 0 };
+
+  for (const path of files) {
+    const was = measuresFor(baseline, candidate, path);
+    const is = measuresFor(candidate, baseline, path);
+    const replaced = pairReplacements(path, was, is, newSpecifications);
+
+    before.tests += was.tests - replaced.before.tests;
+    before.assertions += was.assertions - replaced.before.assertions;
+    before.skips += was.skips - replaced.before.skips;
+    after.tests += is.tests - replaced.after.tests;
+    after.assertions += is.assertions - replaced.after.assertions;
+    after.skips += is.skips - replaced.after.skips;
+  }
+
+  return { before: { ...before, files }, after: { ...after, files } };
+}
+
+interface NamedTest {
+  readonly name: string;
+  readonly assertions: number;
+  readonly skips: number;
+}
+
+interface ReplacedTotals {
+  readonly before: { tests: number; assertions: number; skips: number };
+  readonly after: { tests: number; assertions: number; skips: number };
+}
+
+const nothingReplaced: ReplacedTotals = {
+  before: { tests: 0, assertions: 0, skips: 0 },
+  after: { tests: 0, assertions: 0, skips: 0 },
+};
+
+/**
+ * How much of a file's loss its proven new specifications account for. Deletions are matched
+ * to new specifications one for one, and only the matched pairs leave the comparison.
+ *
+ * The cheapest deletions are the ones forgiven and the richest new specifications are what
+ * pay for them, which is the strictest pairing: what stays in the comparison is the largest
+ * loss the file cannot account for, rather than whichever loss happened to sort first.
+ */
+function pairReplacements(
+  path: string,
+  before: TestFileMeasures,
+  after: TestFileMeasures,
+  newSpecifications: ReadonlySet<string>,
+): ReplacedTotals {
+  const deleted = namedTests(before).filter((test) => !(test.name in after.perTest));
+  const proven = namedTests(after).filter(
+    (test) => !(test.name in before.perTest) && newSpecifications.has(`${path}::${test.name}`),
+  );
+
+  const pairs = Math.min(deleted.length, proven.length);
+  if (pairs === 0) {
+    return nothingReplaced;
+  }
+
+  deleted.sort((left, right) => left.assertions - right.assertions || compareName(left, right));
+  proven.sort((left, right) => right.assertions - left.assertions || compareName(left, right));
+
+  return { before: total(deleted.slice(0, pairs)), after: total(proven.slice(0, pairs)) };
+}
+
+function namedTests(measures: TestFileMeasures): NamedTest[] {
+  return Object.entries(measures.perTest).map(([name, test]) => ({ name, ...test }));
+}
+
+function compareName(left: NamedTest, right: NamedTest): number {
+  return left.name < right.name ? -1 : left.name > right.name ? 1 : 0;
+}
+
+function total(tests: readonly NamedTest[]): { tests: number; assertions: number; skips: number } {
+  return {
+    tests: tests.length,
+    assertions: tests.reduce((sum, test) => sum + test.assertions, 0),
+    skips: tests.reduce((sum, test) => sum + test.skips, 0),
   };
-
-  return { before: sum(baseline, candidate), after: sum(candidate, baseline) };
 }
 
 /**

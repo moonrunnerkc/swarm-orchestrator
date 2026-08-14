@@ -264,7 +264,7 @@ async function tryCandidate(
     candidateGates: cycle.statuses,
     baseline: attempt.baseline,
     candidate: measures,
-    exemptFiles: new Set(),
+    newSpecifications: new Set(),
   });
 
   if (!decision.accepted) {

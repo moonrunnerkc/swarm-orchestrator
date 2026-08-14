@@ -61,6 +61,7 @@ const seededTests = [
   "",
   "test('classifies negatives', () => {",
   "  assert.equal(classify(-1), 'negative');",
+  "  assert.equal(classify(-5), 'negative');",
   "});",
   "",
 ].join("\n");
@@ -293,7 +294,8 @@ describe("acceptance 4: holding the tests gate green by deleting the failing tes
 describe("acceptance 5: a legitimate new specification passes through the escape hatch", () => {
   it("accepts a submitted test that fails on the base commit and passes on the new source", async () => {
     // The repository is green as committed. The task changes behaviour and re-specifies the
-    // test to match, which drops an assertion: without the escape hatch the ratchet blocks it.
+    // test for it, which deletes the test that asserted the old behaviour: without the escape
+    // hatch the ratchet blocks it.
     await seedRepository(correctSource);
     await fileSet.declare(["src/math.js", "src/math.test.js"], "model");
 
@@ -308,6 +310,7 @@ describe("acceptance 5: a legitimate new specification passes through the escape
       "",
       "test('adds', () => {",
       "  assert.equal(add(1, 2), 3);",
+      "  assert.equal(add(2, 2), 4);",
       "});",
       "",
       "test('classifies non-negatives', () => {",
@@ -323,12 +326,52 @@ describe("acceptance 5: a legitimate new specification passes through the escape
 
     expect(outcome.settled).toBe("green");
     expect(outcome.attempts[0]?.decision.accepted).toBe(true);
-    expect(outcome.attempts[0]?.decision.exemptFiles).toEqual(["src/math.test.js"]);
+    // Exactly the re-specified test, named. The exemption is what one test bought, not what
+    // the file was granted.
+    expect(outcome.attempts[0]?.decision.newSpecifications).toEqual([
+      "src/math.test.js::classifies non-negatives",
+    ]);
 
     const finding = outcome.attempts[0]?.respecification[0];
     expect(finding?.exempt).toBe(true);
+    expect(finding?.newSpecifications).toEqual(["classifies non-negatives"]);
     expect(finding?.payload.controls.submittedTestOnBaseSource).toContain("failed");
     expect(finding?.payload.controls.submittedTestOnSubmittedSource).toContain("passed");
+  }, 90_000);
+
+  it("still catches a test deleted beside the re-specified one", async () => {
+    // Granularity is the whole point: the same edit, plus the deletion of a test the
+    // re-specification says nothing about. One new specification pays for one deletion.
+    await seedRepository(correctSource);
+    await fileSet.declare(["src/math.js", "src/math.test.js"], "model");
+    await write("src/math.js", brokenSource);
+
+    const respecifiedSource = correctSource.replace("return 'other';", "return 'non-negative';");
+    const withDeletion = [
+      "import { test } from 'node:test';",
+      "import assert from 'node:assert/strict';",
+      "import { classify } from './math.js';",
+      "",
+      "test('classifies non-negatives', () => {",
+      "  assert.equal(classify(1), 'non-negative');",
+      "});",
+      "",
+    ].join("\n");
+
+    const { outcome } = await runGates(async () => {
+      await write("src/math.js", respecifiedSource);
+      await write("src/math.test.js", withDeletion);
+    }, 1);
+
+    expect(outcome.settled).toBe("escalated");
+    expect(outcome.attempts[0]?.decision.accepted).toBe(false);
+    expect(outcome.attempts[0]?.decision.violations.map((violation) => violation.kind)).toContain(
+      "tests-declared-decreased",
+    );
+    // The re-specification is still recognized; it just does not cover the deleted test too.
+    expect(outcome.attempts[0]?.decision.newSpecifications).toEqual([
+      "src/math.test.js::classifies non-negatives",
+    ]);
   }, 90_000);
 });
 
