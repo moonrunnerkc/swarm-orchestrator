@@ -38,6 +38,8 @@ describe("parseCommandLine", () => {
 
     expect(parsed).toEqual({
       command: "run",
+      baseRef: "HEAD",
+      attempts: 3,
       task: "fix the build",
       modelSpec: "local:qwen3-coder:30b-a3b",
       workspace: "/work/repo",
@@ -49,6 +51,8 @@ describe("parseCommandLine", () => {
   it("defaults the model, workspace, and step budget", () => {
     expect(parseRun(["do a thing"])).toEqual({
       command: "run",
+      baseRef: "HEAD",
+      attempts: 3,
       task: "do a thing",
       modelSpec: "anthropic:claude-opus-5",
       workspace: "/work/repo",
@@ -116,5 +120,39 @@ describe("the replay command", () => {
 
   it("still reads a task that merely mentions replay", () => {
     expect(parseRun(["make the replay command faster"]).command).toBe("run");
+  });
+});
+
+describe("the gates command", () => {
+  it("takes a workspace and a base ref, with no task and no model", () => {
+    expect(parseCommandLine(["gates", "--workspace", "pkg", "--base", "main"], context)).toEqual({
+      command: "gates",
+      workspace: "/work/repo/pkg",
+      baseRef: "main",
+      bundleDirectory: null,
+    });
+  });
+
+  it("measures against HEAD unless told otherwise", () => {
+    expect(parseCommandLine(["gates"], context)).toMatchObject({ baseRef: "HEAD" });
+  });
+
+  it("still reads a task that merely mentions gates", () => {
+    expect(parseRun(["make the gates faster"]).command).toBe("run");
+  });
+});
+
+describe("the auto-resolve budget", () => {
+  it("defaults the attempt cap to three and the base to HEAD", () => {
+    expect(parseRun(["t"])).toMatchObject({ attempts: 3, baseRef: "HEAD" });
+  });
+
+  it("takes an attempt cap, and refuses one that is not a positive whole number", () => {
+    expect(parseRun(["--attempts", "5", "t"]).attempts).toBe(5);
+    for (const raw of ["0", "-1", "two", "1.5"]) {
+      expect(() => parseCommandLine(["--attempts", raw, "t"], context)).toThrow(
+        InvalidCommandLineError,
+      );
+    }
   });
 });

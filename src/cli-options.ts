@@ -8,6 +8,18 @@ export interface RunCommand {
   readonly maxSteps: number;
   /** Null means the session's own directory, which is outside the workspace by design. */
   readonly bundleDirectory: string | null;
+  /** The commit the gates measure the change against. */
+  readonly baseRef: string;
+  /** How many auto-resolve retries a blocking gate failure gets. */
+  readonly attempts: number;
+}
+
+/** Runs the gates over a workspace and reports, with no model and no retries. */
+export interface GatesCommand {
+  readonly command: "gates";
+  readonly workspace: string;
+  readonly baseRef: string;
+  readonly bundleDirectory: string | null;
 }
 
 export interface ReplayCommand {
@@ -15,12 +27,13 @@ export interface ReplayCommand {
   readonly bundleDirectory: string;
 }
 
-export type CommandLine = RunCommand | ReplayCommand;
+export type CommandLine = RunCommand | ReplayCommand | GatesCommand;
 
 export class InvalidCommandLineError extends Error {
   constructor(problem: string) {
     super(
-      `${problem}. Usage: swarm [--model <provider:id>] [--workspace <dir>] [--bundle <dir>] "<task>", ` +
+      `${problem}. Usage: swarm [--model <provider:id>] [--workspace <dir>] [--bundle <dir>] ` +
+        `[--base <ref>] [--attempts <n>] "<task>", swarm gates [--workspace <dir>] [--base <ref>], ` +
         "or swarm replay <bundle directory>",
     );
     this.name = "InvalidCommandLineError";
@@ -29,6 +42,8 @@ export class InvalidCommandLineError extends Error {
 
 const defaultModelSpec = "anthropic:claude-opus-5";
 const defaultMaxSteps = 40;
+const defaultBaseRef = "HEAD";
+const defaultAttempts = 3;
 
 export interface CommandLineContext {
   readonly env: Record<string, string | undefined>;
@@ -67,21 +82,36 @@ export function parseCommandLine(
     };
   }
 
+  const bundleFlag = flags.get("bundle");
+  const bundleDirectory =
+    bundleFlag === undefined ? null : resolve(context.currentDirectory, bundleFlag);
+  // Resolved against the injected directory, not the ambient cwd, so a relative
+  // --workspace lands where the caller says it does.
+  const workspace = resolve(context.currentDirectory, flags.get("workspace") ?? ".");
+
+  if (words[0] === "gates") {
+    return {
+      command: "gates",
+      workspace,
+      baseRef: flags.get("base") ?? defaultBaseRef,
+      bundleDirectory,
+    };
+  }
+
   const task = words.join(" ").trim();
   if (task.length === 0) {
     throw new InvalidCommandLineError("nothing to do");
   }
 
-  const bundle = flags.get("bundle");
   return {
     command: "run",
     task,
     modelSpec: flags.get("model") ?? context.env.SWARM_MODEL ?? defaultModelSpec,
-    // Resolved against the injected directory, not the ambient cwd, so a relative
-    // --workspace lands where the caller says it does.
-    workspace: resolve(context.currentDirectory, flags.get("workspace") ?? "."),
+    workspace,
     maxSteps: parseMaxSteps(flags.get("max-steps")),
-    bundleDirectory: bundle === undefined ? null : resolve(context.currentDirectory, bundle),
+    bundleDirectory,
+    baseRef: flags.get("base") ?? defaultBaseRef,
+    attempts: parseCount(flags.get("attempts"), "--attempts", defaultAttempts),
   };
 }
 
@@ -90,12 +120,16 @@ export function parseCommandLine(
  * comparison is false, so the step limit silently stopped applying.
  */
 function parseMaxSteps(raw: string | undefined): number {
+  return parseCount(raw, "--max-steps", defaultMaxSteps);
+}
+
+function parseCount(raw: string | undefined, flag: string, fallback: number): number {
   if (raw === undefined) {
-    return defaultMaxSteps;
+    return fallback;
   }
   const parsed = Number(raw);
   if (!Number.isSafeInteger(parsed) || parsed < 1) {
-    throw new InvalidCommandLineError(`--max-steps must be a positive whole number, got "${raw}"`);
+    throw new InvalidCommandLineError(`${flag} must be a positive whole number, got "${raw}"`);
   }
   return parsed;
 }
