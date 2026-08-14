@@ -275,3 +275,37 @@ describe("the routing command", () => {
     expect(parseRun(["improve the routing table"]).command).toBe("run");
   });
 });
+
+describe("the parallel command", () => {
+  it("takes a file of tasks, one per line, and where to put the bundle", () => {
+    expect(
+      parseCommandLine(
+        ["parallel", "--tasks", "tasks.txt", "--workspace", "pkg", "--bundle", "out"],
+        context,
+      ),
+    ).toEqual({
+      command: "parallel",
+      tasksFile: "/work/repo/tasks.txt",
+      workspace: "/work/repo/pkg",
+      baseRef: "HEAD",
+      maxSteps: 40,
+      attempts: 3,
+      bundleDirectory: "/work/repo/out",
+      modelSpec: "anthropic:claude-opus-5",
+    });
+  });
+
+  it("needs a task file, because a worker per line is how the workers are named", () => {
+    expect(() => parseCommandLine(["parallel"], context)).toThrow(/--tasks/);
+  });
+
+  it("takes the base to branch every worker from", () => {
+    expect(
+      parseCommandLine(["parallel", "--tasks", "t.txt", "--base", "main"], context),
+    ).toMatchObject({ baseRef: "main" });
+  });
+
+  it("still reads a task that merely mentions parallel", () => {
+    expect(parseRun(["make the parallel run faster"]).command).toBe("run");
+  });
+});

@@ -15,12 +15,14 @@ Run `npm run gates` before claiming any task complete. Paste the real output. Ne
 
 ## Architecture Map
 
+- `src/agent-run.ts` : one task start to finish (sandbox, tools, chokepoint, loop, gates). The CLI and every parallel worker call this same function; a worker differs only in its directory and its chain.
 - `src/core` : agent loop. Plan, act, verify. All stochastic inputs (clock, random, model) injected via interfaces, never imported directly.
 - `src/tools` : read, write, edit, shell, search, list. Every call goes through the chokepoint in `src/tools/chokepoint.ts`: ledger record, provenance tag, sandbox enforcement. No tool may bypass it.
 - `src/evidence` : append-only JSONL ledger, hash chain, content-addressed blob store, evidence DAG, bundle export, embedded verifier, HTML review renderer.
 - `src/gates` : gate definitions as data, runner, auto-resolve loop with ratchet, escalation.
 - `src/providers` : the only module allowed to import the Vercel AI SDK. Frontier plus OpenAI-compatible local (Ollama, rapid-mlx). Local endpoint discovery.
 - `src/select` : hardware probe, static shortlist fit, calibration micro-eval, bandit reward log.
+- `src/workers` : phase 6 scale-out. Git worktree per worker, each running the ordinary loop from `src/agent-run.ts`, and a merge queue that lands them sequentially under the ratchet. Nothing here is imported by the single-agent path.
 - `src/tui` : Ink single-screen UI. Renders exclusively from ledger projections.
 - `src/config` : Zod-validated swarm.toml, zero-config defaults.
 

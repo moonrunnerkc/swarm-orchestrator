@@ -10,6 +10,7 @@ import {
   type CalibrateCommand,
   type CommandLine,
   type GatesCommand,
+  type ParallelCommand,
   parseCommandLine,
   type ReplayCommand,
   type RunCommand,
@@ -18,6 +19,7 @@ import {
 import type { Clock } from "./core/clock.ts";
 import type { RandomSource } from "./core/random-source.ts";
 import { bundleSourceFromRecorder, exportBundle } from "./evidence/bundle.ts";
+import { exportCombinedBundle } from "./evidence/combined-bundle.ts";
 import { createRecordingModelClient } from "./evidence/model-call-recording.ts";
 import { replayBundle } from "./evidence/replay.ts";
 import {
@@ -53,7 +55,10 @@ import { systemProbeEnvironment } from "./select/system-probe.ts";
 import { classifyTask } from "./select/task-class.ts";
 import { routeModel } from "./select/ucb.ts";
 import type { ConfirmationRequest } from "./tools/chokepoint.ts";
+import { describeLoopEvent } from "./tui/plain-lines.ts";
 import { startSessionInterface } from "./tui/session-interface.ts";
+import { renderParallelReport } from "./workers/parallel-report.ts";
+import { runInParallel } from "./workers/parallel-run.ts";
 
 /** The ambient clock lives at the composition root; src/core only ever sees the port. */
 function createSystemClock(): Clock {
@@ -532,6 +537,103 @@ async function addCase(options: AddCaseCommand): Promise<number> {
   return 0;
 }
 
+/**
+ * N workers over worktrees, then the queue. The composition root does what it always does:
+ * every ambient thing enters here, and the coordinator itself stays testable without one.
+ */
+async function parallel(options: ParallelCommand): Promise<number> {
+  const clock = createSystemClock();
+  const random = createSystemRandom();
+  const home = homedir();
+  const sessionRoot = defaultSessionRoot(home);
+  const runId = createSessionId(clock, random);
+
+  const tasks = (await readFile(options.tasksFile, "utf8"))
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith("#"));
+
+  if (tasks.length === 0) {
+    throw new Error(
+      `${options.tasksFile} names no tasks. Put one task per line; lines starting with # are ignored.`,
+    );
+  }
+
+  const spec = parseModelSpec(options.modelSpec);
+  const registry = createProviderRegistry({
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+    openaiApiKey: process.env.OPENAI_API_KEY,
+    googleApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+    localBaseUrl: process.env.SWARM_LOCAL_BASE_URL,
+  });
+
+  const coordinator = await openEvidenceSession({
+    root: sessionRoot,
+    sessionId: `${runId}-queue`,
+    clock,
+  });
+  // Worktrees live outside the repository and outside the session store, so a worker's tools
+  // can reach neither the tree the user is in nor anybody's evidence.
+  const scratchRoot = await mkdtemp(join(tmpdir(), "swarm-parallel-"));
+
+  process.stdout.write(`starting ${tasks.length} worker(s) from ${options.baseRef}\n`);
+
+  try {
+    const result = await runInParallel({
+      repositoryRoot: options.workspace,
+      baseRef: options.baseRef,
+      tasks,
+      runId,
+      scratchRoot,
+      coordinator,
+      createWorkerSession: (workerId) =>
+        openEvidenceSession({ root: sessionRoot, sessionId: `${runId}-${workerId}`, clock }),
+      createModel: (_workerId, evidence) =>
+        createRecordingModelClient(registry.create(spec), evidence),
+      clock,
+      random,
+      emit: (workerId, event) => {
+        const line = describeLoopEvent(event);
+        if (line !== null) {
+          process.stdout.write(`[${workerId}] ${line}\n`);
+        }
+      },
+      maxSteps: options.maxSteps,
+      attempts: options.attempts,
+      abortSignal: new AbortController().signal,
+    });
+
+    for (const line of renderParallelReport(result, {
+      repositoryRoot: options.workspace,
+      baseRef: options.baseRef,
+    })) {
+      process.stdout.write(`${line}\n`);
+    }
+
+    const signing = await resolveSigningKey(createKeychainSecretStore({ platform: platform() }));
+    if (signing.notice !== null) {
+      process.stderr.write(`[signing] ${signing.notice}\n`);
+    }
+    const directory = options.bundleDirectory ?? join(coordinator.directory, "bundle");
+    await exportCombinedBundle({
+      coordinator: bundleSourceFromRecorder(coordinator),
+      workers: result.workers.map((worker) => ({
+        workerId: worker.workerId,
+        source: bundleSourceFromRecorder(worker.evidence),
+      })),
+      destination: directory,
+      signingKey: signing.key,
+      clock,
+    });
+    announceBundle(directory);
+
+    const rejected = result.queue?.landings.filter((landing) => !landing.landed) ?? [];
+    return rejected.length === 0 && result.workers.every((worker) => worker.green) ? 0 : 1;
+  } finally {
+    await rm(scratchRoot, { recursive: true, force: true });
+  }
+}
+
 async function routing(): Promise<number> {
   const path = defaultRoutingLogPath(homedir());
   const log = await openRoutingLog({ path });
@@ -561,6 +663,9 @@ async function main(): Promise<number> {
   }
   if (options.command === "routing") {
     return routing();
+  }
+  if (options.command === "parallel") {
+    return parallel(options);
   }
   return options.command === "gates" ? gates(options) : run(options);
 }

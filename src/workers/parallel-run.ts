@@ -212,6 +212,15 @@ async function runOneWorker(
         : describeRed(result.gates.outcome.finalCycle.blockingFailures, result.loop.stopReason),
     };
   } catch (cause) {
+    const detail = `the worker did not finish: ${describeCause(cause)}`;
+    // On the worker's own chain as well as in the report: a worker that fell over before it
+    // recorded anything would otherwise ship an empty bundle that explains nothing.
+    await evidence.record({
+      type: "session-stopped",
+      actor: "harness",
+      provenance: ["tool-output"],
+      payload: { workerId, task, stopReason: "worker-failed", detail },
+    });
     return {
       workerId,
       task,
@@ -220,11 +229,15 @@ async function runOneWorker(
       green: false,
       commit: null,
       declaredFiles: [],
-      detail: `the worker did not finish: ${cause instanceof Error ? cause.message : String(cause)}`,
+      detail,
     };
   } finally {
     await worktree?.remove();
   }
+}
+
+function describeCause(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 function describeRed(blocking: readonly { readonly gateId: string }[], stopReason: string): string {

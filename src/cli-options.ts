@@ -53,6 +53,19 @@ export interface AddCaseCommand {
   readonly workspace: string;
 }
 
+/** N workers over git worktrees, then one merge queue that lands what they produced. */
+export interface ParallelCommand {
+  readonly command: "parallel";
+  /** One task per line. A file rather than repeated flags, so a run is reproducible. */
+  readonly tasksFile: string;
+  readonly workspace: string;
+  readonly baseRef: string;
+  readonly maxSteps: number;
+  readonly attempts: number;
+  readonly bundleDirectory: string | null;
+  readonly modelSpec: string;
+}
+
 /** Prints the routing table the reward log adds up to. */
 export interface RoutingCommand {
   readonly command: "routing";
@@ -72,7 +85,8 @@ export type CommandLine =
   | SelectCommand
   | CalibrateCommand
   | AddCaseCommand
-  | RoutingCommand;
+  | RoutingCommand
+  | ParallelCommand;
 
 export class InvalidCommandLineError extends Error {
   constructor(problem: string) {
@@ -81,7 +95,7 @@ export class InvalidCommandLineError extends Error {
         `[--base <ref>] [--attempts <n>] "<task>", swarm gates [--workspace <dir>] [--base <ref>], ` +
         "swarm select [--shortlist <file|url|bundled>], swarm calibrate [--models <a,b>] " +
         '[--repeats <n>], swarm calibrate --add-case "<task>" --seed <a,b> --gate "<command>", ' +
-        "swarm routing, or swarm replay <bundle directory>",
+        "swarm routing, swarm parallel --tasks <file>, or swarm replay <bundle directory>",
     );
     this.name = "InvalidCommandLineError";
   }
@@ -140,6 +154,26 @@ export function parseCommandLine(
 
   if (words[0] === "routing") {
     return { command: "routing" };
+  }
+
+  if (words[0] === "parallel") {
+    const tasksFile = flags.get("tasks");
+    if (tasksFile === undefined || tasksFile.trim().length === 0) {
+      throw new InvalidCommandLineError(
+        "parallel needs --tasks <file>, one task per line: a worker is started per line and " +
+          "named after its position",
+      );
+    }
+    return {
+      command: "parallel",
+      tasksFile: resolve(context.currentDirectory, tasksFile),
+      workspace,
+      baseRef: flags.get("base") ?? defaultBaseRef,
+      maxSteps: parseMaxSteps(flags.get("max-steps")),
+      attempts: parseCount(flags.get("attempts"), "--attempts", defaultAttempts),
+      bundleDirectory,
+      modelSpec: flags.get("model") ?? context.env.SWARM_MODEL ?? defaultModelSpec,
+    };
   }
 
   if (words[0] === "calibrate") {

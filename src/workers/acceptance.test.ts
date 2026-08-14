@@ -263,6 +263,46 @@ describe("two tasks that collide", () => {
   }, 120_000);
 });
 
+describe("a worker that cannot even start", () => {
+  it("says so on its own chain, so its bundle is not simply empty", async () => {
+    let workerEvidence: EvidenceRecorder | null = null;
+    const result = await runInParallel({
+      repositoryRoot: repository,
+      baseRef: "HEAD",
+      tasks: ["add a shout to alpha"],
+      runId: "run1",
+      scratchRoot: join(scratch, "worktrees"),
+      coordinator,
+      createWorkerSession: async (workerId) => {
+        workerEvidence = await openEvidenceSession({
+          root: join(scratch, "sessions"),
+          sessionId: workerId,
+          clock,
+        });
+        return workerEvidence;
+      },
+      createModel: () => {
+        throw new Error('provider "anthropic" is not configured');
+      },
+      clock,
+      random: createFixedRandom(),
+      emit: () => {},
+      maxSteps: 8,
+      attempts: 0,
+      gateOptions: { commandOverrides: gateOverrides },
+      abortSignal: new AbortController().signal,
+    });
+
+    expect(result.workers[0]?.green).toBe(false);
+    expect(result.workers[0]?.detail).toMatch(/not configured/);
+
+    const records = (workerEvidence as EvidenceRecorder | null)?.records() ?? [];
+    expect(records.length).toBeGreaterThan(0);
+    const payloads = (workerEvidence as EvidenceRecorder | null)?.payloads();
+    expect(JSON.stringify([...(payloads?.values() ?? [])])).toMatch(/not configured/);
+  }, 120_000);
+});
+
 describe("the bundle a parallel run produces", () => {
   it("carries every worker's chain beside the queue's, and verifies whole", async () => {
     const result = await parallel(separateModules);
