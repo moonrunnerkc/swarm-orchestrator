@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { canonicalJson, digestOfJson, type JsonValue } from "./canonical-json.ts";
 import { type CitedRecord, type ClaimPayload, evaluateClaim } from "./claim.ts";
 import { evaluatePredicate, parsePredicate } from "./predicate.ts";
+import { indexCitedRecords } from "./record-index.ts";
 import { recordKindOf } from "./record-kind.ts";
 import * as embedded from "./verifier/verify.mjs";
 
@@ -76,6 +77,44 @@ describe("the embedded verifier agrees with the implementation it ships beside",
 
     for (const [type, payload] of records) {
       expect(embedded.recordKindOf(type, payload)).toBe(recordKindOf(type, payload));
+    }
+  });
+
+  it("resolves a cited digest to the same records, in the same order", () => {
+    // The binding a claim carries is a sequence on this chain, so the two implementations
+    // have to agree about which record sits there before they can agree about any verdict.
+    const twin: JsonValue = { gateId: "tests", status: "passed", toolName: "shell" };
+    const digest = digestOfJson(twin);
+    const records = [
+      { sequence: 0, type: "tool-call" as const, payloadDigest: digest },
+      { sequence: 1, type: "gate-run" as const, payloadDigest: digest },
+      { sequence: 2, type: "gate-run" as const, payloadDigest: `sha256:${"5".repeat(64)}` },
+    ];
+    const payloads = new Map<string, JsonValue>([[digest, twin]]);
+
+    const mine = indexCitedRecords(records, payloads);
+    const theirs = embedded.indexCitedRecords(records, payloads);
+
+    expect([...theirs.keys()]).toEqual([...mine.keys()]);
+    expect(theirs.get(digest)?.carriers).toEqual(mine.get(digest)?.carriers);
+    // And the verdicts each index produces for the same claim.
+    for (const recordSequence of [0, 1, 7, null]) {
+      const claim: ClaimPayload = {
+        predicate: 'status == "passed"',
+        record: digest,
+        recordKind: "gate-run:tests",
+        recordSequence,
+        narrative: "",
+      };
+      expect({
+        recordSequence,
+        ...embedded.evaluateClaim(claim, (cited: string) => theirs.get(cited)),
+        detail: "",
+      }).toEqual({
+        recordSequence,
+        ...evaluateClaim(claim, (cited) => mine.get(cited)),
+        detail: "",
+      });
     }
   });
 
