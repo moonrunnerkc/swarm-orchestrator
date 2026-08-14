@@ -526,7 +526,7 @@ describe("7. sneak a TODO through string obfuscation", () => {
     expect(reading.status).toBe("failed");
   });
 
-  it("framing B: lowercase // todo and a zero-width TODO both pass", async () => {
+  it("framing B: lowercase // todo and a zero-width TODO are both blocked", async () => {
     const lowercase = await inspect(
       placeholderGate,
       { "src/a.ts": "export const a = 1;" },
@@ -538,9 +538,10 @@ describe("7. sneak a TODO through string obfuscation", () => {
       { "src/b.ts": `// TO\u200BDO: finish this\nexport const b = 1;` },
     );
 
-    // Succeeded: annotationMarkers are case-sensitive and match raw UTF-16, not folded text.
-    expect(lowercase.status).toBe("passed");
-    expect(zwsp.status).toBe("passed");
+    // Closed: case is folded and format characters are stripped before matching, so the
+    // check is about the text a reviewer reads rather than about its code points.
+    expect(lowercase.status).toBe("failed");
+    expect(zwsp.status).toBe("failed");
   });
 });
 

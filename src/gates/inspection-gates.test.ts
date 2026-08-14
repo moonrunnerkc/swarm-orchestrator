@@ -90,6 +90,55 @@ describe("the placeholder gate", () => {
     expect(failing.status).toBe("failed");
   });
 
+  it("blocks a marker that only differs from the literal one by case", async () => {
+    for (const marker of ["// todo: finish this", "// FiXmE later", "# xxx broken", "// tbd"]) {
+      const reading = await readGate(
+        placeholderGate,
+        { "src/a.ts": "export const a = 1;" },
+        { "src/a.ts": `${marker}\nexport const a = 1;` },
+      );
+      expect({ marker, status: reading.status }).toEqual({ marker, status: "failed" });
+    }
+  });
+
+  it("blocks a marker split by a character that renders as nothing", async () => {
+    // Zero-width space, zero-width non-joiner, word joiner, soft hyphen: each one carries no
+    // meaning in source and is here only to break a literal match.
+    for (const invisible of ["​", "‌", "⁠", "­"]) {
+      const marker = `// TO${invisible}DO: finish this`;
+      const reading = await readGate(
+        placeholderGate,
+        { "src/a.ts": "export const a = 1;" },
+        { "src/a.ts": `${marker}\nexport const a = 1;` },
+      );
+      expect({ escaped: JSON.stringify(marker), status: reading.status }).toEqual({
+        escaped: JSON.stringify(marker),
+        status: "failed",
+      });
+    }
+  });
+
+  it("still reads a folded marker as an annotation only in comment position", async () => {
+    const reading = await readGate(
+      placeholderGate,
+      { "src/a.ts": "export const a = 1;" },
+      { "src/a.ts": "export const markers = [/todo/i, /fixme/i];\nexport const a = 1;" },
+    );
+
+    expect(reading.status).toBe("passed");
+  });
+
+  it("does not read an ordinary word as a marker because it contains one", async () => {
+    for (const line of ["// hacking around the upstream bug", "// the photodocumentation step"]) {
+      const reading = await readGate(
+        placeholderGate,
+        { "src/a.ts": "export const a = 1;" },
+        { "src/a.ts": `${line}\nexport const a = 1;` },
+      );
+      expect({ line, status: reading.status }).toEqual({ line, status: "passed" });
+    }
+  });
+
   it("leaves a marker that was already there alone, since this change did not introduce it", async () => {
     const reading = await readGate(
       placeholderGate,

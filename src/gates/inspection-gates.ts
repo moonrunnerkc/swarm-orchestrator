@@ -24,23 +24,46 @@ import { countAddedLines } from "./workspace-changes.ts";
  * a sentence about annotations is prose, and flagging it teaches people to route around the
  * gate. A stub marker counts wherever it appears, because it is executable.
  */
-const annotationMarkers: readonly RegExp[] = [/TODO/, /FIXME/, /XXX/, /HACK/, /TBD/];
+const annotationMarkers: readonly RegExp[] = [
+  /\bTODO\b/i,
+  /\bFIXME\b/i,
+  /\bXXX\b/i,
+  /\bHACK\b/i,
+  /\bTBD\b/i,
+];
 
 const stubMarkers: readonly RegExp[] = [
-  /\braise\s+NotImplementedError\b/,
-  /\btodo!\s*\(/,
-  /\bunimplemented!\s*\(/,
+  /\braise\s+NotImplementedError\b/i,
+  /\btodo!\s*\(/i,
+  /\bunimplemented!\s*\(/i,
   /\b(panic|unimplemented)!\s*\(\s*["'`]\s*(not implemented|unimplemented|todo)/i,
   /\bthrow new Error\(\s*["'`]\s*(not implemented|unimplemented|todo|placeholder)/i,
-  /\bNotImplemented(Error)?\s*\(\s*\)/,
+  /\bNotImplemented(Error)?\s*\(\s*\)/i,
 ];
+
+/**
+ * Format characters (zero-width spaces and joiners, bidi controls, the soft hyphen) render as
+ * nothing, so a marker split by one reads to a human exactly like the marker. They appear in
+ * source for no other reason, and stripping them before matching is what makes the check about
+ * the text rather than about its code points. Case is folded by the patterns for the same
+ * reason: `// todo` is a TODO.
+ */
+const formatCharacters = /\p{Cf}/gu;
+
+function withoutFormatCharacters(line: string): string {
+  return line.replace(formatCharacters, "");
+}
 
 /** Where a line's comment begins, or -1. Blunt on purpose: this is a cheap check. */
 function commentStart(line: string): number {
   return /\/\/|\/\*|<!--|#(?![[!])|^\s*\*(?!\/)/.exec(line)?.index ?? -1;
 }
 
-function markerIn(line: string): string | null {
+function markerIn(rawLine: string): string | null {
+  // Both families read the normalized text, and so does the comment position, since stripping
+  // characters moves every index after them.
+  const line = withoutFormatCharacters(rawLine);
+
   for (const marker of stubMarkers) {
     if (marker.test(line)) {
       return marker.source;
