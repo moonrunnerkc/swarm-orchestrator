@@ -40,11 +40,7 @@ import { parseModelSpec } from "./providers/model-spec.ts";
 import { createProviderRegistry } from "./providers/registry.ts";
 import { runCalibration } from "./select/calibrate.ts";
 import { parseCalibrationCase } from "./select/calibration-case.ts";
-import {
-  compareWithShortlist,
-  pickFromCalibration,
-  renderCalibrationReport,
-} from "./select/calibration-report.ts";
+import { renderCalibrationReport } from "./select/calibration-report.ts";
 import { appendCalibrationCase, defaultGoldenSetPath, readGoldenSet } from "./select/golden-set.ts";
 import { probeHardware } from "./select/hardware-probe.ts";
 import { createOllamaMemoryProbe } from "./select/memory-probe.ts";
@@ -157,18 +153,18 @@ async function chooseModel(
 }
 
 async function run(options: RunCommand): Promise<number> {
+  if (!statSync(options.workspace, { throwIfNoEntry: false })?.isDirectory()) {
+    throw new Error(
+      `workspace ${options.workspace} is not a directory. Create it, or pass --workspace.`,
+    );
+  }
+
   const random = createSystemRandom();
   const routed = options.modelPinned
     ? { modelSpec: null as string | null, assignment: "pinned" as const }
     : await chooseModel(options.task, homedir(), random);
   const modelSpec = routed.modelSpec ?? options.modelSpec;
   const spec = parseModelSpec(modelSpec);
-
-  if (!statSync(options.workspace, { throwIfNoEntry: false })?.isDirectory()) {
-    throw new Error(
-      `workspace ${options.workspace} is not a directory. Create it, or pass --workspace.`,
-    );
-  }
 
   const clock = createSystemClock();
   const sessionRoot = defaultSessionRoot(homedir());
@@ -331,6 +327,7 @@ async function run(options: RunCommand): Promise<number> {
       assignment: routed.assignment,
       ratchet: summarizeRatchet(gates.outcome),
       latencyMs: clock.now() - startedAt,
+      recordedAt: clock.now(),
     });
 
     const directory = await writeBundle(evidence, options.bundleDirectory, clock);
@@ -425,6 +422,7 @@ interface RewardLogInput {
   readonly assignment: "calibration" | "ucb" | "epsilon" | "pinned";
   readonly ratchet: ReturnType<typeof summarizeRatchet>;
   readonly latencyMs: number;
+  readonly recordedAt: number;
 }
 
 /**
@@ -436,7 +434,7 @@ interface RewardLogInput {
 async function logReward(input: RewardLogInput): Promise<void> {
   const classification = classifyTask(input.task);
   const entry = buildRewardEntry({
-    recordedAt: Date.now(),
+    recordedAt: input.recordedAt,
     sessionId: input.evidence.sessionId,
     taskClass: classification.taskClass,
     model: input.modelSpec,
