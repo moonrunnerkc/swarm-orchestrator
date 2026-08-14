@@ -12,6 +12,11 @@ export const ledgerSchemaVersion = 1;
 /** The first record's previousHash. A sentinel rather than a digest, so it cannot collide. */
 export const genesisHash = "genesis";
 
+/**
+ * Widening this list is a compatible change and does not move the schema version: every
+ * record already written still validates, and readers switch on the type with a fallback.
+ * Changing a field is the incompatible case, and that is what the version bump is for.
+ */
 export const recordTypes = [
   "session-started",
   "model-call",
@@ -19,6 +24,11 @@ export const recordTypes = [
   "confirmation",
   "claim",
   "session-stopped",
+  "gate-run",
+  "ratchet-decision",
+  "file-set-declared",
+  "file-set-amended",
+  "escalation",
 ] as const;
 
 export type RecordType = (typeof recordTypes)[number];

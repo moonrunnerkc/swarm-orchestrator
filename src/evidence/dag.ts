@@ -143,6 +143,16 @@ function summarize(record: LedgerRecord, payload: JsonValue | null): string {
       return `task: ${stringField(fields, "task")}`;
     case "session-stopped":
       return `${stringField(fields, "stopReason")} after ${numberField(fields, "steps")} steps`;
+    case "gate-run":
+      return `gate ${stringField(fields, "gateId")}: ${stringField(fields, "status")} (${stringField(fields, "detail")})`;
+    case "ratchet-decision":
+      return `attempt ${numberField(fields, "attempt")} ${fields.accepted === true ? "accepted" : "rejected"}: ${stringField(fields, "detail")}`;
+    case "file-set-declared":
+      return `the planner declared ${numberField(fields, "fileCount")} intended file(s)`;
+    case "file-set-amended":
+      return `the file set was widened by ${numberField(fields, "addedCount")}: ${stringField(fields, "reason")}`;
+    case "escalation":
+      return `escalated at gate ${stringField(fields, "gateId")} after ${numberField(fields, "attemptsUsed")} attempt(s)`;
     default:
       return record.type;
   }
