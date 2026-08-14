@@ -20,6 +20,11 @@ export interface DimensionSpec {
   readonly unit: string;
   readonly better: "higher" | "lower";
   /**
+   * The statistic a pick is ranked on. A share over repeats is a rate, so its mean is the
+   * rate; a latency has a tail, so its median is what survives one slow run.
+   */
+  readonly summarizeWith: "mean" | "median";
+  /**
    * The floor a model has to clear on this dimension to be usable at all, or null when the
    * dimension only ranks. A guess to be tuned against real runs, not a measured constant.
    */
@@ -29,6 +34,7 @@ export interface DimensionSpec {
 export const dimensionSpecs: readonly DimensionSpec[] = [
   {
     id: "tool-call-validity",
+    summarizeWith: "mean",
     label: "tool calls the chokepoint could act on",
     unit: "share",
     better: "higher",
@@ -36,6 +42,7 @@ export const dimensionSpecs: readonly DimensionSpec[] = [
   },
   {
     id: "patch-apply",
+    summarizeWith: "mean",
     label: "writes that applied",
     unit: "share",
     better: "higher",
@@ -43,6 +50,7 @@ export const dimensionSpecs: readonly DimensionSpec[] = [
   },
   {
     id: "gate-pass",
+    summarizeWith: "mean",
     label: "cases whose gate went green",
     unit: "share",
     better: "higher",
@@ -50,6 +58,7 @@ export const dimensionSpecs: readonly DimensionSpec[] = [
   },
   {
     id: "tokens-per-second",
+    summarizeWith: "median",
     label: "output tokens per second",
     unit: "tokens/s",
     better: "higher",
@@ -57,6 +66,7 @@ export const dimensionSpecs: readonly DimensionSpec[] = [
   },
   {
     id: "time-to-first-token",
+    summarizeWith: "median",
     label: "time to first token",
     unit: "ms",
     better: "lower",
@@ -64,6 +74,7 @@ export const dimensionSpecs: readonly DimensionSpec[] = [
   },
   {
     id: "peak-memory",
+    summarizeWith: "median",
     label: "peak resident memory",
     unit: "bytes",
     better: "lower",
@@ -130,4 +141,9 @@ function medianOf(sorted: readonly number[]): number | null {
     return sorted[middle] ?? null;
   }
   return ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
+}
+
+/** The one number a pick compares this dimension on, or null when nothing measured it. */
+export function statisticOf(distribution: Distribution, spec: DimensionSpec): number | null {
+  return spec.summarizeWith === "mean" ? distribution.mean : distribution.median;
 }

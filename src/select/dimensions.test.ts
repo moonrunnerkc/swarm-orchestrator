@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { calibrationDimensions, dimensionSpecs, distributionOf } from "./dimensions.ts";
+import {
+  calibrationDimensions,
+  dimensionSpecs,
+  distributionOf,
+  statisticOf,
+} from "./dimensions.ts";
 
 describe("the calibration dimensions", () => {
   it("scores the six the design named, each on its own", () => {
@@ -20,6 +25,29 @@ describe("the calibration dimensions", () => {
     expect(better.get("tokens-per-second")).toBe("higher");
     expect(better.get("time-to-first-token")).toBe("lower");
     expect(better.get("peak-memory")).toBe("lower");
+  });
+
+  it("summarizes a share by its mean and a cost by its median", () => {
+    const statistic = new Map(dimensionSpecs.map((spec) => [spec.id, spec.summarizeWith]));
+
+    // A share over repeats is a rate, so the mean is the rate. A latency is a distribution
+    // with a tail, so the median is what survives one slow run.
+    expect(statistic.get("gate-pass")).toBe("mean");
+    expect(statistic.get("tool-call-validity")).toBe("mean");
+    expect(statistic.get("patch-apply")).toBe("mean");
+    expect(statistic.get("tokens-per-second")).toBe("median");
+    expect(statistic.get("time-to-first-token")).toBe("median");
+    expect(statistic.get("peak-memory")).toBe("median");
+  });
+
+  it("reads the ranking statistic off a distribution, and null when nothing measured it", () => {
+    const spec = dimensionSpecs.find((candidate) => candidate.id === "gate-pass");
+    if (spec === undefined) {
+      throw new Error("gate-pass has no spec");
+    }
+
+    expect(statisticOf(distributionOf([1, 0, 1]), spec)).toBeCloseTo(2 / 3, 10);
+    expect(statisticOf(distributionOf([null]), spec)).toBeNull();
   });
 
   it("has a spec for every dimension and no more", () => {
