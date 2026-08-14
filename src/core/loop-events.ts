@@ -1,6 +1,13 @@
 import type { StopReason } from "./termination.ts";
 
 /**
+ * What a gate run concluded. Declared here rather than in src/gates so the event channel
+ * stays free of a dependency on the engine that fills it. "not-applicable" is a real
+ * outcome and never a green one: a gate that could not run has proven nothing.
+ */
+export type GateStatus = "passed" | "failed" | "not-applicable";
+
+/**
  * What the loop reports as it runs. The TUI renders from these alone, never from a
  * side channel, so every displayed line traces to something the harness observed.
  */
@@ -33,4 +40,27 @@ export type LoopEvent =
       readonly reason: StopReason;
       readonly steps: number;
       readonly tokensUsed: number;
+    }
+  /** Emitted after the gate's ledger record is written, and carrying that record's digest. */
+  | {
+      readonly type: "gate";
+      readonly gateId: string;
+      readonly status: GateStatus;
+      readonly blocking: boolean;
+      readonly detail: string;
+      readonly record: string;
+    }
+  | { readonly type: "attempt"; readonly attempt: number; readonly cap: number }
+  | {
+      readonly type: "ratchet";
+      readonly attempt: number;
+      readonly accepted: boolean;
+      readonly detail: string;
+      readonly record: string;
+    }
+  | {
+      readonly type: "escalated";
+      readonly gateId: string;
+      readonly detail: string;
+      readonly attempts: number;
     };

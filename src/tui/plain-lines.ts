@@ -20,5 +20,16 @@ export function describeLoopEvent(event: LoopEvent): string | null {
       return `claim (unverified): ${event.text}`;
     case "stopped":
       return `stopped: ${event.reason} after ${event.steps} steps, ${event.tokensUsed} tokens`;
+    case "gate":
+      return (
+        `gate ${event.gateId} ${event.status}${event.blocking ? "" : " (advisory)"}: ` +
+        `${event.detail} [evidence record ${event.record}]`
+      );
+    case "attempt":
+      return `auto-resolve attempt ${event.attempt} of ${event.cap}`;
+    case "ratchet":
+      return `ratchet ${event.accepted ? "accepted" : "rejected"} attempt ${event.attempt}: ${event.detail} [evidence record ${event.record}]`;
+    case "escalated":
+      return `escalated after ${event.attempts} attempt(s) at gate ${event.gateId}: ${event.detail}`;
   }
 }
