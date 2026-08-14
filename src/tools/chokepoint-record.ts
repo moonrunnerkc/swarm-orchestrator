@@ -12,6 +12,21 @@ export type ChokepointDecision = "requested" | "allowed" | "denied" | "failed";
 
 export type ConfirmationReason = "shell-allowlist" | "derivation-heuristic";
 
+/**
+ * Why a call was refused, as a value rather than a sentence. A malformed call is the model
+ * getting the tool wrong; a sandbox refusal is the policy saying no to a call that was
+ * perfectly well formed. Calibration scores the first and not the second, so the two are
+ * kept apart here rather than pattern-matched out of prose later.
+ */
+export const denialReasons = [
+  "unknown-tool",
+  "invalid-input",
+  "sandbox",
+  "confirmation-declined",
+] as const;
+
+export type DenialReason = (typeof denialReasons)[number];
+
 export interface ChokepointRecord {
   readonly callId: string;
   readonly toolName: string;
@@ -19,6 +34,8 @@ export interface ChokepointRecord {
   /** Every tag that entered this call, including one added by a derivation match. */
   readonly provenance: readonly ProvenanceTag[];
   readonly decision: ChokepointDecision;
+  /** Set exactly when the decision is "denied". */
+  readonly denial: DenialReason | null;
   readonly detail: string;
   readonly input: JsonValue;
   readonly output: string;
@@ -59,6 +76,7 @@ export function createLedgerChokepointRecorder(evidence: EvidenceRecorder): Chok
           toolName: entry.toolName,
           kind: entry.kind,
           decision: entry.decision,
+          denial: entry.denial,
           detail: entry.detail,
           input: entry.input,
           output: entry.output,

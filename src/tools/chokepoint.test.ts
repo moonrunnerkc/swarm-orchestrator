@@ -493,3 +493,61 @@ describe("the chokepoint against a real ledger", () => {
     expect(calls).toEqual([]);
   });
 });
+
+describe("the chokepoint's denial reasons", () => {
+  it("names an unknown tool as one, so a score can count it without reading prose", async () => {
+    const recorder = createRecordingRecorder();
+    const invoker = createToolChokepoint({
+      definitions: [createSpyTool("list", [])],
+      sandbox: createSandbox(policy),
+      confirm: () => Promise.resolve(true),
+      recorder,
+    });
+
+    await invoker.invoke(invocation({ toolName: "nope" }));
+
+    expect(recorder.settled()[0]).toMatchObject({ decision: "denied", denial: "unknown-tool" });
+  });
+
+  it("names input the schema rejected as its own reason", async () => {
+    const recorder = createRecordingRecorder();
+    const invoker = createToolChokepoint({
+      definitions: [createSpyTool("list", [])],
+      sandbox: createSandbox(policy),
+      confirm: () => Promise.resolve(true),
+      recorder,
+    });
+
+    await invoker.invoke(invocation({ toolName: "list", input: { path: 42 } }));
+
+    expect(recorder.settled()[0]).toMatchObject({ decision: "denied", denial: "invalid-input" });
+  });
+
+  it("separates a sandbox refusal from a malformed call, because they blame different things", async () => {
+    const recorder = createRecordingRecorder();
+    const invoker = createToolChokepoint({
+      definitions: [createSpyTool("list", [])],
+      sandbox: createSandbox(policy),
+      confirm: () => Promise.resolve(true),
+      recorder,
+    });
+
+    await invoker.invoke(invocation({ toolName: "list", input: { path: "../../etc/passwd" } }));
+
+    expect(recorder.settled()[0]).toMatchObject({ decision: "denied", denial: "sandbox" });
+  });
+
+  it("leaves the reason null on a call that ran", async () => {
+    const recorder = createRecordingRecorder();
+    const invoker = createToolChokepoint({
+      definitions: [createSpyTool("list", [])],
+      sandbox: createSandbox(policy),
+      confirm: () => Promise.resolve(true),
+      recorder,
+    });
+
+    await invoker.invoke(invocation({ toolName: "list", input: { path: "src" } }));
+
+    expect(recorder.settled()[0]).toMatchObject({ decision: "allowed", denial: null });
+  });
+});

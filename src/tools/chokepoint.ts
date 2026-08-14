@@ -9,6 +9,7 @@ import type {
   ChokepointDecision,
   ChokepointRecorder,
   ConfirmationReason,
+  DenialReason,
 } from "./chokepoint-record.ts";
 import {
   createDerivationHeuristic,
@@ -75,6 +76,7 @@ export function createToolChokepoint(deps: ChokepointDependencies): ToolInvoker 
         detail: string,
         output: string,
         facts: Readonly<Record<string, JsonValue>>,
+        denial: DenialReason | null = null,
       ): Promise<ToolCallOutcome> => {
         const digest = await deps.recorder.recordCall({
           callId: invocation.callId,
@@ -82,6 +84,7 @@ export function createToolChokepoint(deps: ChokepointDependencies): ToolInvoker 
           kind,
           provenance,
           decision,
+          denial,
           detail,
           input,
           output,
@@ -104,6 +107,7 @@ export function createToolChokepoint(deps: ChokepointDependencies): ToolInvoker 
         kind,
         provenance,
         decision: "requested",
+        denial: null,
         detail: `${invocation.toolName} requested`,
         input,
         output: "",
@@ -117,18 +121,19 @@ export function createToolChokepoint(deps: ChokepointDependencies): ToolInvoker 
           `no such tool. Known tools: ${[...byName.keys()].join(", ")}`,
           "",
           {},
+          "unknown-tool",
         );
       }
 
       const parsed = definition.inputSchema.safeParse(invocation.input);
       if (!parsed.success) {
-        return settle("denied", `input rejected: ${parsed.error.message}`, "", {});
+        return settle("denied", `input rejected: ${parsed.error.message}`, "", {}, "invalid-input");
       }
 
       for (const path of definition.pathsFrom(parsed.data)) {
         const verdict = deps.sandbox.checkPath(path);
         if (!verdict.allowed) {
-          return settle("denied", verdict.reason, "", {});
+          return settle("denied", verdict.reason, "", {}, "sandbox");
         }
       }
 
@@ -145,7 +150,13 @@ export function createToolChokepoint(deps: ChokepointDependencies): ToolInvoker 
           derivation: assessment,
         });
         if (!approved) {
-          return settle("denied", `${gate.explanation} Confirmation was declined.`, "", {});
+          return settle(
+            "denied",
+            `${gate.explanation} Confirmation was declined.`,
+            "",
+            {},
+            "confirmation-declined",
+          );
         }
       }
 

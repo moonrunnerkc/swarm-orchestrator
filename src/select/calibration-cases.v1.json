@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "revision": "2026-08-13",
+  "cases": [
+    {
+      "id": "edit-loud-greeting",
+      "taskClass": "edit",
+      "prompt": "greet.mjs needs a second argument, loud. When it is true the greeting comes back in capitals, and when it is absent nothing changes. greet.test.mjs already says what is expected. Make the suite pass.",
+      "seed": {
+        "greet.mjs": "export function greet(who) {\n  return `hello ${who}`;\n}\n",
+        "greet.test.mjs": "import { strict as assert } from \"node:assert\";\nimport { test } from \"node:test\";\nimport { greet } from \"./greet.mjs\";\n\ntest(\"greets by name\", () => {\n  assert.equal(greet(\"world\"), \"hello world\");\n});\n\ntest(\"shouts when asked to\", () => {\n  assert.equal(greet(\"world\", true), \"HELLO WORLD\");\n});\n"
+      },
+      "gateCommand": "node --test",
+      "origin": "bundled",
+      "addedAt": "2026-08-13"
+    },
+    {
+      "id": "multi-file-shared-prefix",
+      "taskClass": "multi-file",
+      "prompt": "Every line this package prints should carry the prefix defined in prefix.mjs. format.mjs and report.mjs each build their own line and neither uses it. Make both use the shared prefix, so the suite passes.",
+      "seed": {
+        "prefix.mjs": "export const prefix = \"[swarm]\";\n",
+        "format.mjs": "export function format(message) {\n  return `${message}`;\n}\n",
+        "report.mjs": "export function report(count) {\n  return `${count} finding(s)`;\n}\n",
+        "output.test.mjs": "import { strict as assert } from \"node:assert\";\nimport { test } from \"node:test\";\nimport { format } from \"./format.mjs\";\nimport { prefix } from \"./prefix.mjs\";\nimport { report } from \"./report.mjs\";\n\ntest(\"format carries the shared prefix\", () => {\n  assert.equal(format(\"ready\"), `${prefix} ready`);\n});\n\ntest(\"report carries the shared prefix\", () => {\n  assert.equal(report(3), `${prefix} 3 finding(s)`);\n});\n"
+      },
+      "gateCommand": "node --test",
+      "origin": "bundled",
+      "addedAt": "2026-08-13"
+    },
+    {
+      "id": "test-fix-off-by-one-page",
+      "taskClass": "test-fix",
+      "prompt": "The paginate test is failing. Fix the cause in paginate.mjs. Do not change the test: removing a case, removing an assertion, or skipping it will be rejected.",
+      "seed": {
+        "paginate.mjs": "export function paginate(items, perPage) {\n  const pages = [];\n  for (let start = 0; start < items.length; start += perPage) {\n    pages.push(items.slice(start, start + perPage - 1));\n  }\n  return pages;\n}\n",
+        "paginate.test.mjs": "import { strict as assert } from \"node:assert\";\nimport { test } from \"node:test\";\nimport { paginate } from \"./paginate.mjs\";\n\ntest(\"fills each page before starting the next\", () => {\n  assert.deepEqual(paginate([1, 2, 3, 4, 5], 2), [[1, 2], [3, 4], [5]]);\n});\n\ntest(\"returns nothing for no items\", () => {\n  assert.deepEqual(paginate([], 3), []);\n});\n"
+      },
+      "gateCommand": "node --test",
+      "origin": "bundled",
+      "addedAt": "2026-08-13"
+    },
+    {
+      "id": "tool-heavy-find-the-limit",
+      "taskClass": "tool-heavy",
+      "prompt": "The retry limit is defined once somewhere in this package and read in several places. Find where it is defined and raise it to 5. Do not add a second definition. The suite says what is expected.",
+      "seed": {
+        "config/limits.mjs": "export const retryLimit = 3;\nexport const pageSize = 25;\n",
+        "client/fetcher.mjs": "import { retryLimit } from \"../config/limits.mjs\";\n\nexport function attemptsAllowed() {\n  return retryLimit;\n}\n",
+        "client/queue.mjs": "import { retryLimit } from \"../config/limits.mjs\";\n\nexport function backoffSchedule() {\n  return Array.from({ length: retryLimit }, (_unused, index) => 2 ** index);\n}\n",
+        "docs/notes.md": "The retry limit used to live in fetcher.mjs. It does not any more.\n",
+        "limits.test.mjs": "import { strict as assert } from \"node:assert\";\nimport { test } from \"node:test\";\nimport { attemptsAllowed } from \"./client/fetcher.mjs\";\nimport { backoffSchedule } from \"./client/queue.mjs\";\n\ntest(\"allows five attempts\", () => {\n  assert.equal(attemptsAllowed(), 5);\n});\n\ntest(\"schedules a backoff per attempt\", () => {\n  assert.deepEqual(backoffSchedule(), [1, 2, 4, 8, 16]);\n});\n"
+      },
+      "gateCommand": "node --test",
+      "origin": "bundled",
+      "addedAt": "2026-08-13"
+    }
+  ]
+}
