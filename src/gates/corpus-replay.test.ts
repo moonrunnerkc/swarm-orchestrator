@@ -144,9 +144,11 @@ async function tally(category: string): Promise<CategoryTally> {
 }
 
 describe("replaying the v12 falsification corpus against these gates", () => {
-  it("rejects every case in the categories the four numerics are meant to catch", async () => {
+  it("rejects every case in the categories the four numerics are meant to catch", async (context) => {
     if (corpusRoot === null) {
-      // The corpus lives in the repository's own history; a shallow clone will not have it.
+      // The corpus lives on main, which a shallow clone will not have. Skip visibly rather
+      // than return: a silent return renders green and reads as a corpus that was checked.
+      context.skip();
       return;
     }
 
@@ -162,8 +164,9 @@ describe("replaying the v12 falsification corpus against these gates", () => {
     }
   }, 60_000);
 
-  it("rejects no legitimate control in any category, which is the cost side of the ratchet", async () => {
+  it("rejects no legitimate control in any category, which is the cost side of the ratchet", async (context) => {
     if (corpusRoot === null) {
+      context.skip();
       return;
     }
 
@@ -183,8 +186,9 @@ describe("replaying the v12 falsification corpus against these gates", () => {
     expect(falsePositives).toEqual({});
   }, 120_000);
 
-  it("records which categories a static replay leaves undecided, rather than claiming them", async () => {
+  it("records which categories a static replay leaves undecided, rather than claiming them", async (context) => {
     if (corpusRoot === null) {
+      context.skip();
       return;
     }
 
