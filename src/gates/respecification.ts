@@ -73,6 +73,13 @@ export interface RespecificationFinding {
  * loaded at the base commit did not run there, so it did not fail there as a specification:
  * treating it as one hands the exemption to any submitted test that imports a symbol the
  * base does not export, which is every test written beside a new function.
+ *
+ * The last two entries are the same failure as the SyntaxError above them, spelled the way a
+ * CommonJS require spells it. An ESM import of a symbol the base does not export never runs
+ * the file; a require of the same symbol binds it to undefined and the file fails on first
+ * use, so the same "the base does not have this yet" arrives as a TypeError from the call
+ * rather than as a load error. Reading one as a specification and the other as an accident
+ * would make the exemption depend on the module system.
  */
 const loadFailures: readonly RegExp[] = [
   /Cannot find module/i,
@@ -86,6 +93,8 @@ const loadFailures: readonly RegExp[] = [
   /Failed to (?:load|resolve) (?:url|import)/i,
   /error TS2307/,
   /\bno such file or directory\b/i,
+  /\bTypeError\b[^\n]*\bis not a function\b/,
+  /\bTypeError\b[^\n]*\bis not a constructor\b/,
 ];
 
 function failedToLoad(run: ControlRun): boolean {

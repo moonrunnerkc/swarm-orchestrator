@@ -81,8 +81,15 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
     baseControl: createBaseControlRunner({
       workspace,
       commands,
-      singleFileCommand: (testFile) =>
-        options.singleFileTestCommand?.(testFile) ?? singleFileTestCommand(detection, testFile),
+      singleFileCommand: (testFile, outcomeArtifact) =>
+        options.singleFileTestCommand?.(testFile) ??
+        singleFileTestCommand(detection, testFile, outcomeArtifact),
+      // Beside the coverage reports, and outside the workspace for the same reason: a result
+      // the tests can reach is a result they can write.
+      outcomeArtifacts: {
+        directory: join(options.evidence.directory, "controls"),
+        store: createFileCoverageArtifactStore(),
+      },
     }),
     resolve: options.resolve,
     emit: options.emit,

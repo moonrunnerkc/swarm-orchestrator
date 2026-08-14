@@ -391,36 +391,120 @@ export interface TestOutcomes {
   readonly failed: readonly string[];
 }
 
-const tapResult = /^\s*(not ok|ok)\s+\d+\s+-\s+(.+?)\s*$/;
-const specResult = /^\s*([✔✖])\s+(.+?)(?:\s+\(\d+(?:\.\d+)?ms\))?\s*$/;
+/**
+ * TAP, read as the machine-readable format it is. This is what attribution should come from:
+ * node folds a test's own stdout into `#` comment lines, so nothing a test prints can become a
+ * result point, and the plan says how many points there were meant to be. A run whose
+ * top-level points do not match its own plan is not read at all.
+ *
+ * Null wherever the text is not a TAP run or does not agree with itself. Names come from every
+ * point, at any depth, because a suite reports its own subtests indented under it.
+ */
+export function parseTapOutcomes(text: string): TestOutcomes | null {
+  if (!/^TAP version \d+/m.test(text)) {
+    return null;
+  }
+
+  const passed: string[] = [];
+  const failed: string[] = [];
+  let plan: number | null = null;
+  let topLevelPoints = 0;
+
+  for (const raw of text.split("\n")) {
+    // Whatever a test wrote arrives here, and it arrives commented out.
+    if (/^\s*#/.test(raw)) {
+      continue;
+    }
+    const planned = /^1\.\.(\d+)\s*$/.exec(raw);
+    if (planned?.[1] !== undefined) {
+      plan = Number(planned[1]);
+      continue;
+    }
+    const point = /^(\s*)(not ok|ok)\s+\d+\s+-\s+(.+?)\s*$/.exec(raw);
+    if (point?.[2] === undefined || point[3] === undefined) {
+      continue;
+    }
+    if (point[1] === "") {
+      topLevelPoints += 1;
+    }
+    recordOutcome(point[3], point[2] === "not ok", passed, failed);
+  }
+
+  if (plan === null || plan !== topLevelPoints) {
+    return null;
+  }
+  return attributable(passed, failed);
+}
+
+/**
+ * Node's spec reporter, which is what a project's own test script prints when the harness was
+ * not able to ask for anything better. Every result line carries the duration node measured,
+ * and that is required here rather than optional: a line without one was written by something
+ * other than the reporter, which is how a test printing a fail marker for a sibling used to
+ * hand itself that sibling's failure.
+ *
+ * Reading it at all is a fallback. A test can still print a well-formed result line for
+ * another test, so the honest ranking is: the artifact first, this second, and a name reported
+ * two ways attributed to neither.
+ */
+const specResult = /^\s*([✔✖])\s+(.+?)\s+\(\d+(?:\.\d+)?ms\)\s*$/;
 const pytestResult = /^(FAILED|PASSED)\s+\S*?::([\w.]+)/;
 const goResult = /^\s*---\s+(FAIL|PASS):\s+(\w+)/;
 
+/**
+ * One run, one reporter. Reading every format out of one text let a TAP line printed into a
+ * spec run stand as a result beside the spec lines around it, so the format is decided once
+ * from the run as a whole and only that format's lines are read.
+ */
 export function parseTestOutcomes(text: string): TestOutcomes | null {
-  const passed: string[] = [];
-  const failed: string[] = [];
-
-  for (const raw of text.split("\n")) {
-    for (const [pattern, failingMarker] of [
-      [tapResult, "not ok"],
-      [specResult, "✖"],
-      [pytestResult, "FAILED"],
-      [goResult, "FAIL"],
-    ] as const) {
-      const found = pattern.exec(raw);
-      const name = found?.[2];
-      if (found?.[1] === undefined || name === undefined) {
-        continue;
-      }
-      // A TAP directive rides on the end of the name, and a skipped test is neither.
-      const [subject, directive] = name.split(/\s+#\s+/, 2);
-      if (directive !== undefined && /^(skip|todo)\b/i.test(directive)) {
-        break;
-      }
-      (found[1] === failingMarker ? failed : passed).push(subject ?? name);
-      break;
-    }
+  const asTap = parseTapOutcomes(text);
+  if (asTap !== null || /^TAP version \d+/m.test(text)) {
+    return asTap;
   }
 
-  return passed.length === 0 && failed.length === 0 ? null : { passed, failed };
+  const passed: string[] = [];
+  const failed: string[] = [];
+  const [pattern, failingMarker] = reporterOf(text);
+
+  for (const raw of text.split("\n")) {
+    const found = pattern.exec(raw);
+    const name = found?.[2];
+    if (found?.[1] === undefined || name === undefined) {
+      continue;
+    }
+    recordOutcome(name, found[1] === failingMarker, passed, failed);
+  }
+
+  return attributable(passed, failed);
+}
+
+function reporterOf(text: string): readonly [RegExp, string] {
+  if (/^\s*[✔✖]\s/m.test(text)) {
+    return [specResult, "✖"];
+  }
+  return /^\s*---\s+(?:FAIL|PASS):/m.test(text) ? [goResult, "FAIL"] : [pytestResult, "FAILED"];
+}
+
+function recordOutcome(name: string, isFailure: boolean, passed: string[], failed: string[]): void {
+  // A TAP directive rides on the end of the name, and a skipped test is neither.
+  const [subject, directive] = name.split(/\s+#\s+/, 2);
+  if (directive !== undefined && /^(skip|todo)\b/i.test(directive)) {
+    return;
+  }
+  (isFailure ? failed : passed).push(subject ?? name);
+}
+
+/**
+ * What the run actually attributed. A name reported both ways is dropped from both: one run
+ * cannot have a test that passed and failed, so the honest reading of the contradiction is
+ * that nothing about that name was measured, and the exemption it might have bought is
+ * withheld rather than guessed at.
+ */
+function attributable(passed: readonly string[], failed: readonly string[]): TestOutcomes | null {
+  const contested = new Set(passed.filter((name) => failed.includes(name)));
+  const kept = {
+    passed: passed.filter((name) => !contested.has(name)),
+    failed: failed.filter((name) => !contested.has(name)),
+  };
+  return kept.passed.length === 0 && kept.failed.length === 0 ? null : kept;
 }

@@ -155,4 +155,39 @@ describe("which tests a cleared file actually clears", () => {
     expect(finding.newSpecifications).toEqual([]);
     expect(finding.reason).toContain("failed to load");
   });
+
+  it("reads a require of a symbol the base lacks as a load failure, as it does an import", async () => {
+    // CommonJS binds the missing export to undefined rather than refusing the file, so the
+    // same "the base does not have this yet" arrives from the call site as a TypeError. The
+    // exemption must not depend on which module system the test file happens to use.
+    const detail = [
+      "✖ multiplies (0.7ms)",
+      "  TypeError: mul is not a function",
+      "not ok 1 - multiplies",
+    ].join("\n");
+    const finding = await assessRespecification(
+      "math.test.cjs",
+      {
+        runOnBaseSource: () =>
+          Promise.resolve({
+            outcome: "failed" as const,
+            detail,
+            exitCode: 1,
+            failedTests: ["multiplies"],
+          }),
+        runOnSubmittedSource: () =>
+          Promise.resolve({
+            outcome: "passed" as const,
+            detail: "exited 0",
+            exitCode: 0,
+            failedTests: [],
+          }),
+      },
+      { newTests: ["multiplies"] },
+    );
+
+    expect(finding.exempt).toBe(false);
+    expect(finding.newSpecifications).toEqual([]);
+    expect(finding.reason).toContain("failed to load");
+  });
 });
