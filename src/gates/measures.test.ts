@@ -94,6 +94,37 @@ describe("counting a test file", () => {
     expect(measures.assertions).toBe(1);
   });
 
+  it("does not count an assertion that compares a literal to the same literal", () => {
+    // It holds whatever the code under test does, so it asserts nothing and the ratchet must
+    // not read a file full of them as a file that still checks what it used to.
+    const stripped = [
+      "it('checks three fields', () => {",
+      "  expect(true).toBe(true);",
+      "  expect(0).toBe(0);",
+      "  expect('x').toEqual('x');",
+      "  assert.ok(true);",
+      "  assert(true);",
+      "});",
+    ].join("\n");
+
+    expect(measureTestFile(stripped)).toMatchObject({ tests: 1, assertions: 0 });
+  });
+
+  it("still counts a constant assertion that could fail", () => {
+    // The rule is a literal against the identical literal. Anything else is a real assertion,
+    // including a constant one, and widening past that would reject legitimate tests.
+    const real = [
+      "it('checks constants', () => {",
+      "  expect(add(1, 1)).toBe(2);",
+      "  expect(1).toBe(2);",
+      "  expect(flag).toBe(true);",
+      "  expect(typeof add).toBe('function');",
+      "});",
+    ].join("\n");
+
+    expect(measureTestFile(real)).toMatchObject({ tests: 1, assertions: 4 });
+  });
+
   it("counts go and python assertion styles", () => {
     expect(
       measureTestFile(

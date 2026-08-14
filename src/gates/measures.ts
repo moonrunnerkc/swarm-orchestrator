@@ -31,6 +31,33 @@ const assertionPatterns: readonly RegExp[] = [
 const exactMatcher =
   /\.\s*(toBe|toEqual|toStrictEqual|toMatchObject|toMatchInlineSnapshot|toMatchSnapshot)\s*\(/;
 
+const literal = String.raw`true|false|null|undefined|-?\d+(?:\.\d+)?|"[^"]*"|'[^']*'`;
+
+/**
+ * An assertion comparing a compile-time literal to the identical literal, which holds
+ * whatever the code under test does. It is not an assertion, so it does not count as one:
+ * otherwise replacing every assertion in a file with expect(true).toBe(true) preserves all
+ * four ratchet numbers while the file stops checking anything.
+ *
+ * Deliberately narrow. The rule is a literal against the same literal, and nothing else:
+ * expect(1).toBe(2) can fail, expect(flag).toBe(true) can fail, and a check aggressive
+ * enough to judge those would need to know what the expressions mean, which is a judge. The
+ * gutting rewrites that survive this are a stated residual, in build-guide section 7.1.
+ */
+const constantTautologies: readonly RegExp[] = [
+  new RegExp(
+    String.raw`\bexpect\s*\(\s*(${literal})\s*\)\s*\.\s*(?:toBe|toEqual|toStrictEqual)\s*\(\s*\1\s*\)`,
+  ),
+  new RegExp(
+    String.raw`\bassert\.(?:equal|strictEqual|deepEqual|deepStrictEqual)\s*\(\s*(${literal})\s*,\s*\1\s*\)`,
+  ),
+  /\bassert(?:\.ok)?\s*\(\s*true\s*\)/,
+];
+
+function assertsNothing(line: string): boolean {
+  return constantTautologies.some((pattern) => pattern.test(line));
+}
+
 const testDeclarationPatterns: readonly RegExp[] = [
   // A skipped test is still a declared test, so it stays in this count and shows up as a
   // skip marker instead. Both numbers then move, and either one rejects the retry.
@@ -116,7 +143,7 @@ export function measureTestFile(text: string | null): TestFileMeasures {
     if (testDeclarationPatterns.some((pattern) => pattern.test(line))) {
       tests += 1;
     }
-    if (!assertionPatterns.some((pattern) => pattern.test(line))) {
+    if (!assertionPatterns.some((pattern) => pattern.test(line)) || assertsNothing(line)) {
       continue;
     }
     assertions += 1;
