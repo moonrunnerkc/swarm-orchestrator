@@ -12,6 +12,25 @@ const credentialPatterns: readonly RegExp[] = [
   /(^|\/)\.git\/config$/,
 ];
 
+/**
+ * Executables a run may use without asking. One definition, because a second copy is how a
+ * command ends up allowed in one entry point and confirmed in another.
+ */
+export const defaultShellAllowlist: readonly string[] = [
+  "cat",
+  "git",
+  "grep",
+  "head",
+  "ls",
+  "node",
+  "npm",
+  "npx",
+  "pwd",
+  "sed",
+  "tail",
+  "wc",
+];
+
 export interface SandboxPolicy {
   readonly workspaceRoot: string;
   readonly homeDir: string;

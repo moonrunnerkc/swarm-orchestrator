@@ -1,0 +1,220 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import type { Clock } from "../core/clock.ts";
+import { runAgentLoop } from "../core/loop.ts";
+import type { ModelClient, ModelRequest, ModelResponse } from "../core/model-client.ts";
+import type { RandomSource } from "../core/random-source.ts";
+import type { StopReason } from "../core/termination.ts";
+import { createRecordingModelClient } from "../evidence/model-call-recording.ts";
+import type { EvidenceRecorder } from "../evidence/session.ts";
+import type { GateCommandRunner } from "../gates/gate-definition.ts";
+import { createToolChokepoint } from "../tools/chokepoint.ts";
+import { createLedgerChokepointRecorder } from "../tools/chokepoint-record.ts";
+import { createSandbox, defaultShellAllowlist } from "../tools/sandbox.ts";
+import { createWorkspaceTools } from "../tools/workspace-tools.ts";
+import type { CalibrationCase } from "./calibration-case.ts";
+import { caseDigest } from "./calibration-case.ts";
+import {
+  type ModelCallTally,
+  payloadsSince,
+  type ToolCallTally,
+  tallyModelCalls,
+  tallyToolCalls,
+} from "./calibration-measures.ts";
+
+/** Resident bytes of whatever is serving the model, or null when nothing reports it. */
+export type MemoryProbe = () => Promise<number | null>;
+
+export interface CalibrationRepeatObservation {
+  readonly caseId: string;
+  readonly caseDigest: string;
+  readonly taskClass: CalibrationCase["taskClass"];
+  readonly model: string;
+  readonly repeat: number;
+  /** Left in place for the caller to clear, so a failed repeat can be looked at. */
+  readonly workspace: string;
+  readonly stopReason: StopReason;
+  readonly steps: number;
+  readonly gateExitCode: number;
+  readonly gatePassed: boolean;
+  readonly toolCalls: ToolCallTally;
+  readonly modelCalls: ModelCallTally;
+  readonly peakMemoryBytes: number | null;
+  /** The record these numbers were written to, which the summary's claim cites. */
+  readonly record: string;
+}
+
+export interface CalibrationRunDependencies {
+  readonly evidence: EvidenceRecorder;
+  readonly clock: Clock;
+  readonly random: RandomSource;
+  /** A fresh client per repeat: a client that carries state across repeats is not repeating. */
+  readonly createModel: (modelSpec: string) => ModelClient;
+  readonly commands: GateCommandRunner;
+  readonly probeMemory: MemoryProbe;
+  /** Parent of the per-repeat scratch workspaces. */
+  readonly scratchRoot: string;
+  readonly maxSteps: number;
+  readonly abortSignal: AbortSignal;
+}
+
+export interface CalibrationRepeatRequest {
+  readonly case: CalibrationCase;
+  readonly modelSpec: string;
+  readonly repeat: number;
+}
+
+const calibrationSystemPrompt = [
+  "You are a coding agent working inside one small workspace directory.",
+  "Use the tools to read what is there and change it. Read before you edit.",
+  "Make the smallest change that satisfies the task, and do not weaken any test to do it.",
+  "When the work is done, reply with a short summary and no tool calls.",
+].join(" ");
+
+const gateTimeoutMs = 120_000;
+
+/**
+ * One case, one model, once. Everything it reports is counted off the records the run itself
+ * produced, so a reviewer holding the bundle can re-derive every number rather than taking
+ * the summary's word for it (section 3.9).
+ */
+export async function runCalibrationRepeat(
+  request: CalibrationRepeatRequest,
+  deps: CalibrationRunDependencies,
+): Promise<CalibrationRepeatObservation> {
+  const workspace = join(
+    deps.scratchRoot,
+    `${request.case.id}--${slug(request.modelSpec)}--${request.repeat}`,
+  );
+  await seedWorkspace(workspace, request.case);
+
+  const sandbox = createSandbox({
+    workspaceRoot: workspace,
+    homeDir: workspace,
+    shellAllowlist: defaultShellAllowlist,
+    deniedRoots: [],
+  });
+  const definitions = createWorkspaceTools(sandbox);
+  const peak = { bytes: null as number | null };
+
+  const model = createRecordingModelClient(
+    sampleMemoryAround(deps.createModel(request.modelSpec), deps.probeMemory, peak),
+    deps.evidence,
+  );
+
+  const fromIndex = deps.evidence.records().length;
+
+  const outcome = await runAgentLoop(request.case.prompt, {
+    model,
+    toolInvoker: createToolChokepoint({
+      definitions,
+      sandbox,
+      // Nothing to ask: calibration is unattended, so a call needing a human is refused and
+      // counted, which is itself a fact about the model.
+      confirm: () => Promise.resolve(false),
+      recorder: createLedgerChokepointRecorder(deps.evidence),
+    }),
+    toolSchemas: definitions,
+    clock: deps.clock,
+    random: deps.random,
+    emit: () => {},
+    budget: { maxSteps: deps.maxSteps, maxTokens: 250_000, maxWallTimeMs: 5 * 60 * 1000 },
+    abortSignal: deps.abortSignal,
+    systemPrompt: calibrationSystemPrompt,
+    maxOutputTokens: 4096,
+    retryPolicy: { attempts: 2, baseDelayMs: 250, maxJitterRatio: 0.5 },
+  });
+
+  const gate = await deps.commands.run(request.case.gateCommand, {
+    cwd: workspace,
+    timeoutMs: gateTimeoutMs,
+  });
+
+  const produced = payloadsSince(deps.evidence, fromIndex);
+  const toolCalls = tallyToolCalls(produced);
+  const modelCalls = tallyModelCalls(produced);
+
+  const recorded = await deps.evidence.record({
+    type: "calibration-run",
+    actor: "harness",
+    provenance: ["tool-output"],
+    payload: {
+      caseId: request.case.id,
+      caseDigest: caseDigest(request.case),
+      taskClass: request.case.taskClass,
+      model: request.modelSpec,
+      repeat: request.repeat,
+      stopReason: outcome.stopReason,
+      steps: outcome.steps,
+      gateCommand: request.case.gateCommand,
+      gateExitCode: gate.exitCode,
+      gatePassed: gate.exitCode === 0,
+      toolCallsAttempted: toolCalls.attempted,
+      toolCallsMalformed: toolCalls.malformed,
+      toolCallValidity: toolCalls.validityRate,
+      writesAttempted: toolCalls.writesAttempted,
+      writesApplied: toolCalls.writesApplied,
+      patchApply: toolCalls.applyRate,
+      modelCalls: modelCalls.calls,
+      outputTokens: modelCalls.outputTokens,
+      responseTimeMs: modelCalls.responseTimeMs,
+      tokensPerSecond: modelCalls.tokensPerSecond,
+      firstTokenMs: modelCalls.firstTokenMs,
+      peakMemoryBytes: peak.bytes,
+    },
+  });
+
+  return {
+    caseId: request.case.id,
+    caseDigest: caseDigest(request.case),
+    taskClass: request.case.taskClass,
+    model: request.modelSpec,
+    repeat: request.repeat,
+    workspace,
+    stopReason: outcome.stopReason,
+    steps: outcome.steps,
+    gateExitCode: gate.exitCode,
+    gatePassed: gate.exitCode === 0,
+    toolCalls,
+    modelCalls,
+    peakMemoryBytes: peak.bytes,
+    record: recorded.record.payloadDigest,
+  };
+}
+
+async function seedWorkspace(workspace: string, one: CalibrationCase): Promise<void> {
+  await mkdir(workspace, { recursive: true });
+  for (const [path, contents] of Object.entries(one.seed)) {
+    const absolute = resolve(workspace, path);
+    await mkdir(dirname(absolute), { recursive: true });
+    await writeFile(absolute, contents, "utf8");
+  }
+}
+
+/**
+ * Samples around every model call rather than on a timer: the runtime holds the model resident
+ * while it is generating, which is when the number is worth having, and a timer would need a
+ * second clock the rest of the run does not have.
+ */
+function sampleMemoryAround(
+  model: ModelClient,
+  probeMemory: MemoryProbe,
+  peak: { bytes: number | null },
+): ModelClient {
+  return {
+    modelId: model.modelId,
+    async generate(request: ModelRequest): Promise<ModelResponse> {
+      const response = await model.generate(request);
+      const reading = await probeMemory();
+      if (reading !== null && (peak.bytes === null || reading > peak.bytes)) {
+        peak.bytes = reading;
+      }
+      return response;
+    },
+  };
+}
+
+/** Model ids carry colons and slashes; a directory name may not. */
+function slug(modelSpec: string): string {
+  return modelSpec.replace(/[^A-Za-z0-9._-]+/g, "-");
+}

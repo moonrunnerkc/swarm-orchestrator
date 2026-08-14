@@ -29,6 +29,10 @@ export const recordTypes = [
   "file-set-declared",
   "file-set-amended",
   "escalation",
+  "calibration-run",
+  "calibration-summary",
+  "routing-decision",
+  "reward",
 ] as const;
 
 export type RecordType = (typeof recordTypes)[number];
