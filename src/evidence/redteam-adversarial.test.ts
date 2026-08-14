@@ -35,10 +35,13 @@ import { defineTool } from "../tools/tool-definition.ts";
 import { applyLoopEvent, emptySessionView } from "../tui/session-view.ts";
 import { bundleSourceFromRecorder, exportBundle, readBundle } from "./bundle.ts";
 import { digestOfJson, type JsonValue } from "./canonical-json.ts";
-import { evaluateClaim } from "./claim.ts";
+import { claimPayloadSchema, evaluateClaim } from "./claim.ts";
+import { buildEvidenceDag } from "./dag.ts";
+import { indexCitedRecords } from "./record-index.ts";
 import { findBlockingSecrets, findKnownSecrets, scrubJson, scrubText } from "./scrub.ts";
 import { type EvidenceRecorder, openEvidenceSession } from "./session.ts";
 import { createEphemeralSigningKey } from "./signing.ts";
+import * as embedded from "./verifier/verify.mjs";
 
 /**
  * Adversarial pass against v13's evidence guarantees, kept as a permanent regression suite.
@@ -290,7 +293,9 @@ describe("2. bind a plausible predicate to the wrong genuine record", () => {
         narrative: "the suite is green",
       },
       (cited) =>
-        cited === digest ? { kinds: ["tool-call:shell"], payload: failingRun } : undefined,
+        cited === digest
+          ? { carriers: [{ sequence: 0, kind: "tool-call:shell" }], payload: failingRun }
+          : undefined,
     );
 
     expect(evaluation).toMatchObject({ verdict: "unverified", reason: "predicate-false" });
@@ -1170,5 +1175,79 @@ describe("16. hand the coverage arm an artifact that is not a measurement", () =
     });
 
     expect(measured.changedLineCoverage).toBeCloseTo(5 / 9);
+  });
+});
+
+describe("17. un-verify an honest claim by colliding with its digest afterwards", () => {
+  it("leaves the earlier verdict standing when a later record reuses the digest", async () => {
+    const payload: JsonValue = { gateId: "tests", status: "passed", extra: "the honest run" };
+    const run = await evidence.record({
+      type: "gate-run",
+      actor: "harness",
+      provenance: ["tool-output"],
+      payload,
+    });
+    const claim = {
+      predicate: 'status == "passed"',
+      record: run.record.payloadDigest,
+      recordKind: "gate-run:tests",
+      narrative: "the tests gate passed",
+    };
+
+    const atSubmission = await evidence.submitClaim(claim, "harness");
+    expect(atSubmission.verdict).toBe("verified");
+
+    // The twin arrives afterwards, under another kind, and cannot reach back: the claim names
+    // the record it was bound to, and that record is still what it was.
+    await evidence.record({
+      type: "tool-call",
+      actor: "fixture:liar",
+      provenance: ["model"],
+      payload,
+    });
+
+    const index = indexCitedRecords(evidence.records(), evidence.payloads());
+    const lookup = (digest: string) => index.get(digest);
+    const dag = buildEvidenceDag(evidence.records(), evidence.payloads());
+    // The claim record itself, as a reviewer reading the bundle would find it.
+    const recorded = claimPayloadSchema.parse(
+      evidence
+        .payloads()
+        .get(evidence.records().find((entry) => entry.type === "claim")?.payloadDigest ?? ""),
+    );
+
+    expect(dag.claims[0]?.evaluation.verdict).toBe("verified");
+    expect(evaluateClaim(claim, lookup).verdict).toBe("verified");
+    // And offline, by the verifier a reviewer runs without installing any of this.
+    expect(embedded.evaluateClaim(recorded, lookup).verdict).toBe("verified");
+  });
+
+  it("still refuses the claim whose citation was already ambiguous when it was made", async () => {
+    const twin: JsonValue = { gateId: "tests", status: "passed", toolName: "shell" };
+    const first = await evidence.record({
+      type: "tool-call",
+      actor: "fixture",
+      provenance: ["model"],
+      payload: twin,
+    });
+    await evidence.record({
+      type: "gate-run",
+      actor: "harness",
+      provenance: ["tool-output"],
+      payload: twin,
+    });
+
+    const evaluation = await evidence.submitClaim(
+      {
+        predicate: 'status == "passed"',
+        record: first.record.payloadDigest,
+        recordKind: "gate-run:tests",
+        narrative: "the tests gate passed",
+      },
+      "fixture:liar",
+    );
+
+    expect(evaluation).toMatchObject({ verdict: "unverified", reason: "predicate-kind-mismatch" });
+    expect(evaluation.detail).toContain("2 kinds");
   });
 });

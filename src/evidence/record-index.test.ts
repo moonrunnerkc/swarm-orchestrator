@@ -32,36 +32,42 @@ afterEach(async () => {
 });
 
 describe("resolving a cited digest", () => {
-  it("keeps every kind a digest is carried under, in chain order", () => {
+  it("keeps every record carrying a digest, in chain order, with the sequence naming it", () => {
     const payloads = new Map<string, JsonValue>([["sha256:a", twin]]);
     const index = indexCitedRecords(
       [
-        { type: "tool-call", payloadDigest: "sha256:a" },
-        { type: "gate-run", payloadDigest: "sha256:a" },
-        { type: "gate-run", payloadDigest: "sha256:a" },
+        { sequence: 0, type: "tool-call", payloadDigest: "sha256:a" },
+        { sequence: 1, type: "gate-run", payloadDigest: "sha256:a" },
+        { sequence: 2, type: "gate-run", payloadDigest: "sha256:a" },
       ],
       payloads,
     );
 
-    expect(index.get("sha256:a")?.kinds).toEqual(["tool-call:shell", "gate-run:tests"]);
+    expect(index.get("sha256:a")?.carriers).toEqual([
+      { sequence: 0, kind: "tool-call:shell" },
+      { sequence: 1, kind: "gate-run:tests" },
+      { sequence: 2, kind: "gate-run:tests" },
+    ]);
   });
 
   it("names one kind when every record carrying the digest is that kind", () => {
     const payloads = new Map<string, JsonValue>([["sha256:a", twin]]);
     const index = indexCitedRecords(
       [
-        { type: "gate-run", payloadDigest: "sha256:a" },
-        { type: "gate-run", payloadDigest: "sha256:a" },
+        { sequence: 0, type: "gate-run", payloadDigest: "sha256:a" },
+        { sequence: 1, type: "gate-run", payloadDigest: "sha256:a" },
       ],
       payloads,
     );
 
-    expect(index.get("sha256:a")?.kinds).toEqual(["gate-run:tests"]);
+    expect(new Set(index.get("sha256:a")?.carriers.map((carrier) => carrier.kind))).toEqual(
+      new Set(["gate-run:tests"]),
+    );
   });
 
   it("skips a record whose payload the store does not hold", () => {
     const index = indexCitedRecords(
-      [{ type: "gate-run", payloadDigest: "sha256:missing" }],
+      [{ sequence: 0, type: "gate-run", payloadDigest: "sha256:missing" }],
       new Map(),
     );
 

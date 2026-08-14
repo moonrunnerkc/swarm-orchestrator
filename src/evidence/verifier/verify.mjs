@@ -34,20 +34,21 @@ export function recordKindOf(type, payload) {
 /**
  * What a cited payload digest resolves to. Identical content is one blob by design, so two
  * writers can share a digest; what must not follow is that the citation means whichever of
- * them wrote last. The payload cannot differ between them, the kind can, and a digest naming
- * more than one kind names no single record.
+ * them wrote last. The payload cannot differ between them, the kind can, so every record
+ * carrying the digest is kept with the sequence that names it, and the claim says which one
+ * it was bound to when it was submitted.
  */
 export function indexCitedRecords(records, payloads) {
   const index = new Map();
   for (const entry of records) {
     if (!payloads.has(entry.payloadDigest)) continue;
     const payload = payloads.get(entry.payloadDigest);
-    const kind = recordKindOf(entry.type, payload);
+    const carrier = { sequence: entry.sequence, kind: recordKindOf(entry.type, payload) };
     const found = index.get(entry.payloadDigest);
     if (found === undefined) {
-      index.set(entry.payloadDigest, { kinds: [kind], payload });
-    } else if (!found.kinds.includes(kind)) {
-      found.kinds.push(kind);
+      index.set(entry.payloadDigest, { carriers: [carrier], payload });
+    } else {
+      found.carriers.push(carrier);
     }
   }
   return index;
@@ -288,17 +289,37 @@ export function evaluateClaim(claim, lookup) {
     };
   }
   // Checked before the predicate: a predicate that is true of another kind of record is not
-  // an honest near miss, it is a claim bound to the wrong evidence. The digest has to name
-  // exactly one kind, since two records sharing a payload name neither.
-  const kinds = cited.kinds ?? [];
-  if (kinds.length !== 1 || kinds[0] !== claim.recordKind) {
+  // an honest near miss, it is a claim bound to the wrong evidence. The claim names the
+  // record it was bound to at submission, so a later record reusing the digest under another
+  // kind cannot reach back and withdraw a verdict that was honestly earned.
+  const carriers = cited.carriers ?? [];
+  const kinds = [...new Set(carriers.map((carrier) => carrier.kind))];
+  if (claim.recordSequence === null) {
     return {
       verdict: "unverified",
       reason: "predicate-kind-mismatch",
       detail:
         kinds.length > 1
           ? `the digest ${claim.record} is carried by records of ${kinds.length} kinds (${kinds.join(", ")})`
-          : `the claim asserts against ${claim.recordKind}, but the cited record is ${kinds[0]}`,
+          : "the harness bound this claim to no record when it was submitted",
+    };
+  }
+  const bound =
+    claim.recordSequence === undefined
+      ? carriers[0]
+      : carriers.find((carrier) => carrier.sequence === claim.recordSequence);
+  if (bound === undefined) {
+    return {
+      verdict: "unverified",
+      reason: "record-not-found",
+      detail: `no record at sequence ${claim.recordSequence} carries the payload digest ${claim.record}`,
+    };
+  }
+  if (bound.kind !== claim.recordKind) {
+    return {
+      verdict: "unverified",
+      reason: "predicate-kind-mismatch",
+      detail: `the claim asserts against ${claim.recordKind}, but the cited record is ${bound.kind}`,
     };
   }
   let node;

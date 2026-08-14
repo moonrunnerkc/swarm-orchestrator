@@ -82,9 +82,15 @@ describe("the embedded verifier agrees with the implementation it ships beside",
   it("reaches the same verdict on every way a claim can fail", () => {
     const digest = digestOfJson(subject);
     const kind = recordKindOf("gate-run", subject);
-    const cited: CitedRecord = { kinds: [kind], payload: subject };
+    const cited: CitedRecord = { carriers: [{ sequence: 4, kind }], payload: subject };
     const collidedDigest = `sha256:${"7".repeat(64)}`;
-    const collided: CitedRecord = { kinds: ["tool-call:shell", kind], payload: subject };
+    const collided: CitedRecord = {
+      carriers: [
+        { sequence: 1, kind: "tool-call:shell" },
+        { sequence: 2, kind },
+      ],
+      payload: subject,
+    };
     const lookup = (candidate: string): CitedRecord | undefined =>
       candidate === digest ? cited : candidate === collidedDigest ? collided : undefined;
 
@@ -107,11 +113,30 @@ describe("the embedded verifier agrees with the implementation it ships beside",
         narrative: "",
       },
       { predicate: "tests.failed == 0", record: digest, recordKind: "escalation", narrative: "" },
-      // A digest two writers share names neither of them, in both implementations.
+      // A digest two writers already shared when the claim was submitted names neither of
+      // them, so the harness bound the claim to nothing, in both implementations.
       {
         predicate: "tests.failed == 0",
         record: collidedDigest,
         recordKind: kind,
+        recordSequence: null,
+        narrative: "",
+      },
+      // The same digest, cited by a claim bound before the second writer existed. Both read
+      // the binding rather than the collision.
+      {
+        predicate: "tests.failed == 0",
+        record: collidedDigest,
+        recordKind: "tool-call:shell",
+        recordSequence: 1,
+        narrative: "",
+      },
+      // A binding naming a record no chain carries resolves to nothing at all.
+      {
+        predicate: "tests.failed == 0",
+        record: digest,
+        recordKind: kind,
+        recordSequence: 9,
         narrative: "",
       },
     ];

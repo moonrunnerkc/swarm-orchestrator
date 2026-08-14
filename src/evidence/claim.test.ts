@@ -33,10 +33,13 @@ const lintDigest = digestOfJson(lintGate);
 const stoppedDigest = digestOfJson(sessionStopped);
 
 const chain = new Map<string, CitedRecord>([
-  [failingDigest, { kinds: ["tool-call:shell"], payload: failingRun }],
-  [passingDigest, { kinds: ["tool-call:shell"], payload: passingRun }],
-  [lintDigest, { kinds: ["gate-run:lint"], payload: lintGate }],
-  [stoppedDigest, { kinds: ["session-stopped"], payload: sessionStopped }],
+  [failingDigest, { carriers: [{ sequence: 0, kind: "tool-call:shell" }], payload: failingRun }],
+  [passingDigest, { carriers: [{ sequence: 1, kind: "tool-call:shell" }], payload: passingRun }],
+  [lintDigest, { carriers: [{ sequence: 2, kind: "gate-run:lint" }], payload: lintGate }],
+  [
+    stoppedDigest,
+    { carriers: [{ sequence: 3, kind: "session-stopped" }], payload: sessionStopped },
+  ],
 ]);
 
 const lookup = (digest: string): CitedRecord | undefined => chain.get(digest);
@@ -186,5 +189,55 @@ describe("the kind a claim declares binds it to one kind of record", () => {
     );
 
     expect(evaluation.reason).toBe("predicate-kind-mismatch");
+  });
+});
+
+describe("which record a claim is checked against", () => {
+  const sharedDigest = digestOfJson({ shared: true });
+  const shared: CitedRecord = {
+    carriers: [
+      { sequence: 5, kind: "gate-run:tests" },
+      { sequence: 9, kind: "tool-call:shell" },
+    ],
+    payload: { tests: { failed: 0 } },
+  };
+  const withShared = (digest: string): CitedRecord | undefined =>
+    digest === sharedDigest ? shared : chain.get(digest);
+
+  it("is the record it was bound to, not whichever kind the digest later picked up", () => {
+    const evaluation = evaluateClaim(
+      claim({ record: sharedDigest, recordKind: "gate-run:tests", recordSequence: 5 }),
+      withShared,
+    );
+
+    expect(evaluation.verdict).toBe("verified");
+  });
+
+  it("is nothing at all when the harness refused to bind it, and says why", () => {
+    const evaluation = evaluateClaim(
+      claim({ record: sharedDigest, recordKind: "gate-run:tests", recordSequence: null }),
+      withShared,
+    );
+
+    expect(evaluation).toMatchObject({ verdict: "unverified", reason: "predicate-kind-mismatch" });
+    expect(evaluation.detail).toContain("2 kinds");
+  });
+
+  it("renders UNVERIFIED when the bound record is not on the chain", () => {
+    const evaluation = evaluateClaim(
+      claim({ record: sharedDigest, recordKind: "gate-run:tests", recordSequence: 7 }),
+      withShared,
+    );
+
+    expect(evaluation).toMatchObject({ verdict: "unverified", reason: "record-not-found" });
+  });
+
+  it("reads an unbound citation as the record the digest first entered the chain against", () => {
+    const evaluation = evaluateClaim(
+      claim({ record: sharedDigest, recordKind: "tool-call:shell" }),
+      withShared,
+    );
+
+    expect(evaluation).toMatchObject({ verdict: "unverified", reason: "predicate-kind-mismatch" });
   });
 });

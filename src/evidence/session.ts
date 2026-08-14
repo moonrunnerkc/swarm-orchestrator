@@ -66,6 +66,27 @@ function sessionDirectory(root: string, sessionId: string): string {
 }
 
 /**
+ * Which record a citation names, decided once, at submission. Null where the answer is not
+ * one record: no citation, a digest no record carries yet, or a digest already carried under
+ * more than one kind, which names none of them. A refusal here is what the verdict reports;
+ * it is never resolved into a winner.
+ */
+function bindCitation(
+  claim: ClaimPayload,
+  cited: ReturnType<typeof indexCitedRecords>,
+): number | null {
+  if (claim.record === null) {
+    return null;
+  }
+  const found = cited.get(claim.record);
+  if (found === undefined) {
+    return null;
+  }
+  const kinds = new Set(found.carriers.map((carrier) => carrier.kind));
+  return kinds.size === 1 ? (found.carriers[0]?.sequence ?? null) : null;
+}
+
+/**
  * Opens the ledger and blob store for one session. Payloads are scrubbed on the way in,
  * before anything reaches disk, because a blob directory that has been copied or backed up
  * cannot be un-leaked at export time (invariant 9).
@@ -109,21 +130,27 @@ export async function openEvidenceSession(
     record,
 
     async submitClaim(claim: ClaimPayload, actor: string): Promise<ClaimEvaluation> {
+      // Resolved against the chain as it stands, before the claim is written and while
+      // "the record it cites" still means one thing. The binding is the harness's, not the
+      // model's, and it is part of the recorded claim: without it every later writer holds a
+      // veto over every earlier verdict, since reusing a digest under another kind would
+      // un-verify honest work after the fact.
+      const bound = bindCitation(claim, indexCitedRecords(ledger.records(), payloads));
+      const submitted: ClaimPayload = { ...claim, recordSequence: bound };
       await record({
         type: "claim",
         actor,
         provenance: ["model"],
         payload: {
-          predicate: claim.predicate,
-          record: claim.record,
-          recordKind: claim.recordKind,
-          narrative: claim.narrative,
+          predicate: submitted.predicate,
+          record: submitted.record,
+          recordKind: submitted.recordKind,
+          recordSequence: bound,
+          narrative: submitted.narrative,
         },
       });
-      // Built over the whole chain rather than kept as a running map, so a digest two
-      // writers happened to share resolves to both kinds instead of to the later writer.
       const cited = indexCitedRecords(ledger.records(), payloads);
-      return evaluateClaim(claim, (digest) => cited.get(digest));
+      return evaluateClaim(submitted, (digest) => cited.get(digest));
     },
 
     head: () => ledger.head(),
