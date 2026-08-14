@@ -31,8 +31,12 @@ const knownSecretPatterns: readonly SecretPattern[] = [
   },
   {
     label: "credential-assignment",
+    // The value must not be a bare number: serialized JSON puts metric fields like
+    // outputTokensPerSecond":129.9041 in exactly this shape, and a numeric literal is a
+    // measurement, not a credential. A purely numeric secret slips this net; the sandbox
+    // denylist stays the primary defense, as the honesty note above says.
     source:
-      "(?<=(?:^|[\\s,{])[\"']?[A-Za-z0-9_]{0,32}(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL)[A-Za-z0-9_]{0,32}[\"']?\\s*[=:]\\s*[\"']?)[^\\s\"',}]{8,}",
+      "(?<=(?:^|[\\s,{])[\"']?[A-Za-z0-9_]{0,32}(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL)[A-Za-z0-9_]{0,32}[\"']?\\s*[=:]\\s*[\"']?)(?![\\d.]+(?:[\\s\"',}]|$))[^\\s\"',}]{8,}",
   },
 ];
 

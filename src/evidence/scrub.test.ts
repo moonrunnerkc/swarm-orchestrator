@@ -43,6 +43,22 @@ describe("write-time scrubbing", () => {
     expect(scrubText(once).value).toBe(once);
   });
 
+  it("leaves a numeric metric alone even when its name contains a credential word", () => {
+    // The export gate scans serialized JSON bytes, where a recorded throughput number
+    // lands as outputTokensPerSecond":129.90418363640293. A bare number is a metric,
+    // never a credential, and matching it blocked every live bundle export.
+    const serialized = '{"outputTokensPerSecond":129.90418363640293,"firstTokenMs":763.77}';
+
+    expect(findKnownSecrets(serialized)).toEqual([]);
+    expect(scrubText(serialized)).toEqual({ value: serialized, redactions: [] });
+  });
+
+  it("still redacts a credential assigned right after a numberish name", () => {
+    const outcome = scrubText("API_KEY=a1b2c3d4e5f6");
+
+    expect(outcome.value).toBe("API_KEY=[redacted:credential-assignment]");
+  });
+
   it("finds nothing in already scrubbed output, which is what the export gate checks", () => {
     const scrubbed = scrubJson({ note: "key: AIzaSyA1234567890abcdefghijklmnopqrstuvw" });
     expect(findKnownSecrets(JSON.stringify(scrubbed.value))).toEqual([]);
