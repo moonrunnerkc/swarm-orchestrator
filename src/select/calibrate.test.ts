@@ -20,7 +20,7 @@ import {
 } from "../providers/fixture-provider.ts";
 import { runCalibration } from "./calibrate.ts";
 import type { CalibrationCase } from "./calibration-case.ts";
-import { readGoldenSet } from "./golden-set.ts";
+import { type GoldenSet, goldenSetVersion } from "./golden-set.ts";
 
 const run = promisify(execFile);
 const clock = createTestClock(1_700_000_000_000);
@@ -41,24 +41,51 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-/** The real fixes for the bundled cases, so a scripted model can genuinely solve them. */
+/**
+ * Two real cases rather than the shipping golden set. What is under test here is the
+ * calibration engine, and the set it measures against grows permanently by design, so binding
+ * these tests to it would make every future capture slow them down and rewrite their counts.
+ * That the shipped cases themselves discriminate is proved in golden-set.test.ts.
+ */
+const fixtureCases: readonly CalibrationCase[] = [
+  {
+    id: "fixture-edit",
+    taskClass: "edit",
+    prompt: "greet.mjs should shout when its second argument is true. Make the suite pass.",
+    seed: {
+      "greet.mjs": "export function greet(who) {\n  return `hello ${who}`;\n}\n",
+      "greet.test.mjs":
+        'import { strict as assert } from "node:assert";\nimport { test } from "node:test";\nimport { greet } from "./greet.mjs";\n\ntest("greets by name", () => {\n  assert.equal(greet("world"), "hello world");\n});\n\ntest("shouts when asked to", () => {\n  assert.equal(greet("world", true), "HELLO WORLD");\n});\n',
+    },
+    gateCommand: "node --test",
+    origin: "bundled",
+    addedAt: "2026-08-14",
+  },
+  {
+    id: "fixture-test-fix",
+    taskClass: "test-fix",
+    prompt: "The paginate test is failing. Fix the cause in paginate.mjs.",
+    seed: {
+      "paginate.mjs":
+        "export function paginate(items, perPage) {\n  const pages = [];\n  for (let start = 0; start < items.length; start += perPage) {\n    pages.push(items.slice(start, start + perPage - 1));\n  }\n  return pages;\n}\n",
+      "paginate.test.mjs":
+        'import { strict as assert } from "node:assert";\nimport { test } from "node:test";\nimport { paginate } from "./paginate.mjs";\n\ntest("fills each page before starting the next", () => {\n  assert.deepEqual(paginate([1, 2, 3, 4, 5], 2), [[1, 2], [3, 4], [5]]);\n});\n',
+    },
+    gateCommand: "node --test",
+    origin: "bundled",
+    addedAt: "2026-08-14",
+  },
+];
+
+/** The real fixes for those cases, so a scripted model can genuinely solve them. */
 const solutions: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-  "edit-loud-greeting": {
+  "fixture-edit": {
     "greet.mjs":
       "export function greet(who, loud) {\n  const line = `hello ${who}`;\n  return loud ? line.toUpperCase() : line;\n}\n",
   },
-  "multi-file-shared-prefix": {
-    "format.mjs":
-      'import { prefix } from "./prefix.mjs";\n\nexport function format(message) {\n  return `${prefix} ${message}`;\n}\n',
-    "report.mjs":
-      'import { prefix } from "./prefix.mjs";\n\nexport function report(count) {\n  return `${prefix} ${count} finding(s)`;\n}\n',
-  },
-  "test-fix-off-by-one-page": {
+  "fixture-test-fix": {
     "paginate.mjs":
       "export function paginate(items, perPage) {\n  const pages = [];\n  for (let start = 0; start < items.length; start += perPage) {\n    pages.push(items.slice(start, start + perPage));\n  }\n  return pages;\n}\n",
-  },
-  "tool-heavy-find-the-limit": {
-    "config/limits.mjs": "export const retryLimit = 5;\nexport const pageSize = 25;\n",
   },
 };
 
@@ -128,8 +155,18 @@ function createScriptedModel(modelSpec: string, cases: readonly CalibrationCase[
   };
 }
 
-async function calibrate(models = ["local:capable", "local:quick-but-lost"]) {
-  const goldenSet = await readGoldenSet({ localPath: join(root, "cases.jsonl") });
+function fixtureGoldenSet(): GoldenSet {
+  return {
+    cases: fixtureCases,
+    version: goldenSetVersion(fixtureCases),
+    bundledCount: fixtureCases.length,
+    capturedCount: 0,
+    localPath: join(root, "cases.jsonl"),
+  };
+}
+
+function calibrate(models = ["local:capable", "local:quick-but-lost"]) {
+  const goldenSet = fixtureGoldenSet();
 
   return runCalibration({
     models,
@@ -154,7 +191,7 @@ describe("runCalibration against two local models", () => {
   it("runs every case against every model, the configured number of times", async () => {
     const result = await calibrate();
 
-    expect(result.observations).toHaveLength(4 * 2 * 3);
+    expect(result.observations).toHaveLength(2 * 2 * 3);
     expect(result.models.map((model) => model.model)).toEqual([
       "local:capable",
       "local:quick-but-lost",
@@ -174,7 +211,7 @@ describe("runCalibration against two local models", () => {
     const result = await calibrate();
     const capable = result.models.find((model) => model.model === "local:capable");
 
-    expect(capable?.dimensions["tokens-per-second"].samples).toBe(12);
+    expect(capable?.dimensions["tokens-per-second"].samples).toBe(6);
     expect(capable?.dimensions["time-to-first-token"].median).toBe(900);
     expect(capable?.dimensions["tool-call-validity"].samples).toBeGreaterThan(0);
   });
@@ -231,10 +268,9 @@ describe("runCalibration against two local models", () => {
   }, 60_000);
 
   it("names the golden set version it measured against", async () => {
-    const goldenSet = await readGoldenSet({ localPath: join(root, "cases.jsonl") });
     const result = await calibrate();
 
-    expect(result.goldenSetVersion).toBe(goldenSet.version);
-    expect(result.cases).toBe(4);
+    expect(result.goldenSetVersion).toBe(fixtureGoldenSet().version);
+    expect(result.cases).toBe(fixtureCases.length);
   });
 });

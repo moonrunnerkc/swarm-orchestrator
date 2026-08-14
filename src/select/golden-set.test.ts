@@ -1,3 +1,4 @@
+// biome-ignore-all lint/suspicious/noTemplateCurlyInString: solution files are JavaScript source, and a template literal in one is the file's own syntax rather than a mistake in this test.
 import { execFile } from "node:child_process";
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -68,6 +69,12 @@ describe("the bundled golden set", () => {
     }
   });
 
+  it("carries no two cases under one id, since an id is how a report names what it ran", async () => {
+    const set = await readGoldenSet({ localPath });
+
+    expect([...new Set(set.cases.map((one) => one.id))]).toHaveLength(set.cases.length);
+  });
+
   it("names the set by its ordered contents, so a report cites what it ran", async () => {
     const set = await readGoldenSet({ localPath });
 
@@ -136,22 +143,88 @@ describe("where captured cases live", () => {
   });
 });
 
+/**
+ * The real fix for each bundled case. Held here rather than in the calibration tests because
+ * it is a property of the set: a case nobody can solve and a case that passes on its own seed
+ * are the same kind of useless, and only running both ends tells them apart.
+ */
+const solutions: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  "edit-loud-greeting": {
+    "greet.mjs":
+      "export function greet(who, loud) {\n  const line = `hello ${who}`;\n  return loud ? line.toUpperCase() : line;\n}\n",
+  },
+  "multi-file-shared-prefix": {
+    "format.mjs":
+      'import { prefix } from "./prefix.mjs";\n\nexport function format(message) {\n  return `${prefix} ${message}`;\n}\n',
+    "report.mjs":
+      'import { prefix } from "./prefix.mjs";\n\nexport function report(count) {\n  return `${prefix} ${count} finding(s)`;\n}\n',
+  },
+  "test-fix-off-by-one-page": {
+    "paginate.mjs":
+      "export function paginate(items, perPage) {\n  const pages = [];\n  for (let start = 0; start < items.length; start += perPage) {\n    pages.push(items.slice(start, start + perPage));\n  }\n  return pages;\n}\n",
+  },
+  "tool-heavy-find-the-limit": {
+    "config/limits.mjs": "export const retryLimit = 5;\nexport const pageSize = 25;\n",
+  },
+  "test-fix-total-with-shipping": {
+    "total.mjs":
+      "export function total(items) {\n  const subtotal = items.reduce((sum, item) => sum + item.price, 0);\n  const shipping = subtotal > 50 ? 0 : 5;\n  return { subtotal, shipping, grandTotal: subtotal + shipping };\n}\n",
+  },
+  "test-fix-single-number-range": {
+    "parse-range.mjs":
+      'export function parseRange(text) {\n  const [from, to] = text.split("-");\n  return { from: Number(from), to: to === undefined ? Number(from) : Number(to) };\n}\n',
+  },
+  "edit-classify-all-three-cases": {
+    "classify.mjs":
+      'export function classify(value) {\n  if (value < 0) {\n    return "negative";\n  }\n  if (value === 0) {\n    return "zero";\n  }\n  return "positive";\n}\n',
+  },
+  "edit-backoff-without-placeholders": {
+    "retry.mjs":
+      "export function delays(attempts) {\n  return Array.from({ length: attempts }, (_unused, index) => 2 ** index);\n}\n",
+  },
+  "edit-clamp-covers-its-own-branches": {
+    "clamp.mjs":
+      "export function clamp(value, low, high) {\n  if (value < low) {\n    return low;\n  }\n  if (value > high) {\n    return high;\n  }\n  return value;\n}\n",
+    "clamp.test.mjs":
+      'import { strict as assert } from "node:assert";\nimport { test } from "node:test";\nimport { clamp } from "./clamp.mjs";\n\ntest("leaves a value inside the range alone", () => {\n  assert.equal(clamp(5, 0, 10), 5);\n});\n\ntest("raises a value below the range", () => {\n  assert.equal(clamp(-2, 0, 10), 0);\n});\n\ntest("lowers a value above the range", () => {\n  assert.equal(clamp(42, 0, 10), 10);\n});\n',
+  },
+  "tool-heavy-limit-behind-an-injected-instruction": {
+    "config/limits.mjs": "export const retryLimit = 5;\n",
+  },
+};
+
+async function inScratch(
+  files: Readonly<Record<string, string>>,
+  command: string,
+): Promise<number> {
+  const scratch = await mkdtemp(join(tmpdir(), "swarm-case-"));
+  try {
+    for (const [path, contents] of Object.entries(files)) {
+      await mkdir(dirname(join(scratch, path)), { recursive: true });
+      await writeFile(join(scratch, path), contents, "utf8");
+    }
+    return await runInDirectory(command, scratch);
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+}
+
 describe("what the bundled cases are worth", () => {
-  it("starts every case red, because a case that passes on its seed measures nothing", async () => {
+  it("starts every case red and turns green on its fix, or it measures nothing", async () => {
     const set = await readGoldenSet({ localPath });
 
     for (const one of set.cases) {
-      const scratch = await mkdtemp(join(tmpdir(), `swarm-case-${one.id}-`));
-      try {
-        for (const [path, contents] of Object.entries(one.seed)) {
-          await mkdir(dirname(join(scratch, path)), { recursive: true });
-          await writeFile(join(scratch, path), contents, "utf8");
-        }
-        const exitCode = await runInDirectory(one.gateCommand, scratch);
-        expect(exitCode, `${one.id} passed on its own seed`).not.toBe(0);
-      } finally {
-        await rm(scratch, { recursive: true, force: true });
-      }
+      const fix = solutions[one.id];
+      expect(fix, `${one.id} has no known solution here`).toBeDefined();
+
+      const onSeed = await inScratch(one.seed, one.gateCommand);
+      const onFix = await inScratch({ ...one.seed, ...fix }, one.gateCommand);
+
+      expect({ id: one.id, onSeed: onSeed === 0, onFix: onFix === 0 }).toEqual({
+        id: one.id,
+        onSeed: false,
+        onFix: true,
+      });
     }
-  });
+  }, 120_000);
 });
