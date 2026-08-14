@@ -269,23 +269,90 @@ interface ScrubOutcome<Value> {
   readonly redactions: readonly string[];
 }
 
+/**
+ * One thing the detector found, named for both of its audiences. A redaction marker names the
+ * field it replaced and a scan names the assignment it read, so the two spellings survive;
+ * what does not survive is the possibility of one site finding it and another not, since every
+ * site reaches this through the same traversal.
+ */
+interface SecretFinding {
+  /** What the marker left in the scrubbed value says. */
+  readonly redactedAs: string;
+  /** What a scan over the same content reports. */
+  readonly reportedAs: string;
+  /** False for a match too loose to block a change on, only to redact one. */
+  readonly blocking: boolean;
+}
+
+function spanFinding(span: SecretSpan): SecretFinding {
+  return { redactedAs: span.label, reportedAs: span.label, blocking: span.blocking };
+}
+
+function nameFinding(verdict: ValueVerdict): SecretFinding {
+  return {
+    redactedAs: fieldLabel,
+    reportedAs: assignmentLabel,
+    blocking: verdict === "credential-shaped",
+  };
+}
+
 export function scrubText(text: string): ScrubOutcome<string> {
+  const findings: SecretFinding[] = [];
+  const value = scrubTextInto(text, findings);
+  return { value, redactions: findings.map((finding) => finding.redactedAs) };
+}
+
+function scrubTextInto(text: string, findings: SecretFinding[]): string {
   const spans = secretSpans(text);
   if (spans.length === 0) {
-    return { value: text, redactions: [] };
+    return text;
   }
 
   const parts: string[] = [];
-  const redactions: string[] = [];
   let cursor = 0;
   for (const span of spans) {
     parts.push(text.slice(cursor, span.start), `[redacted:${span.label}]`);
-    redactions.push(span.label);
+    findings.push(spanFinding(span));
     cursor = span.end;
   }
   parts.push(text.slice(cursor));
 
-  return { value: parts.join(""), redactions };
+  return parts.join("");
+}
+
+/**
+ * What the two text-reading sites see. A payload this system stores is JSON, and a scan that
+ * reads JSON as lines cannot see what a walk over it sees: pretty-printing puts a
+ * credential-bearing name and the value it was given on different lines, and compacting buries
+ * the same pair inside a longer line where the scanner reads the enclosing object as the
+ * value. Neither is a spelling a name list can be extended to cover, because a parser and a
+ * line scanner genuinely disagree about where a value begins.
+ *
+ * So where the content parses, the structural walk governs and the line scan is not consulted
+ * at all. The line scan is what is left for content that is genuinely not JSON: a source file,
+ * a shell transcript, a dotenv line. Build-guide section 7.1 names that remainder rather than
+ * implying the walk covers it.
+ */
+function findingsIn(text: string): readonly SecretFinding[] {
+  const parsed = parseJsonPayload(text);
+  if (parsed === undefined) {
+    return secretSpans(text).map(spanFinding);
+  }
+  const findings: SecretFinding[] = [];
+  scrubValue(parsed, "plain", findings);
+  return findings;
+}
+
+/** An object or an array, which is what a payload is. Anything else reads as text. */
+function parseJsonPayload(text: string): JsonValue | undefined {
+  if (!/^\s*[[{]/.test(text)) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(text) as JsonValue;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -293,7 +360,7 @@ export function scrubText(text: string): ScrubOutcome<string> {
  * once a blob directory is copied or backed up, write-time alone is too late to fix.
  */
 export function findKnownSecrets(text: string): readonly string[] {
-  return [...new Set(secretSpans(text).map((span) => span.label))];
+  return [...new Set(findingsIn(text).map((finding) => finding.reportedAs))];
 }
 
 /**
@@ -303,9 +370,9 @@ export function findKnownSecrets(text: string): readonly string[] {
 export function findBlockingSecrets(text: string): readonly string[] {
   return [
     ...new Set(
-      secretSpans(text)
-        .filter((span) => span.blocking)
-        .map((span) => span.label),
+      findingsIn(text)
+        .filter((finding) => finding.blocking)
+        .map((finding) => finding.reportedAs),
     ),
   ];
 }
@@ -315,13 +382,15 @@ export function findBlockingSecrets(text: string): readonly string[] {
  * sitting under a credential-bearing name is redacted whatever its JSON type, which is what
  * a text scan over an already-parsed payload cannot see.
  *
- * One traversal, so this and the two text-reading sites cannot drift on the same input: the
- * name rule, the array rule, and the metric exemption are each written once and reached from
- * both directions.
+ * One traversal, and it is the traversal all three sites run: the write-time scrub here, and
+ * the export scan and the gate through `findingsIn`, which walks the parsed payload rather
+ * than reading it as lines. The name rule, the array rule, and the metric exemption are each
+ * written once, so the three cannot disagree about the same input.
  */
 export function scrubJson(value: JsonValue): ScrubOutcome<JsonValue> {
-  const redactions: string[] = [];
-  return { value: scrubValue(value, "plain", redactions), redactions };
+  const findings: SecretFinding[] = [];
+  const scrubbed = scrubValue(value, "plain", findings);
+  return { value: scrubbed, redactions: findings.map((finding) => finding.redactedAs) };
 }
 
 /**
@@ -332,22 +401,20 @@ export function scrubJson(value: JsonValue): ScrubOutcome<JsonValue> {
  */
 type NameContext = "plain" | "named" | "nested";
 
-function scrubValue(value: JsonValue, context: NameContext, redactions: string[]): JsonValue {
+function scrubValue(value: JsonValue, context: NameContext, findings: SecretFinding[]): JsonValue {
   if (typeof value === "string") {
-    return scrubString(value, context, redactions);
+    return scrubString(value, context, findings);
   }
   if (typeof value === "number" || typeof value === "boolean" || value === null) {
-    return redactsAsCredential(String(value), context) ? redacted(fieldLabel, redactions) : value;
+    return redactedWhereCredential(String(value), context, findings) ?? value;
   }
   if (Array.isArray(value)) {
-    return scrubArray(value, context, redactions);
+    return scrubArray(value, context, findings);
   }
 
   const scrubbed: Record<string, JsonValue> = {};
   for (const [key, item] of Object.entries(value as { readonly [key: string]: JsonValue })) {
-    const scrubbedKey = scrubText(key);
-    redactions.push(...scrubbedKey.redactions);
-    scrubbed[scrubbedKey.value] = scrubValue(item, contextUnder(key, context), redactions);
+    scrubbed[scrubTextInto(key, findings)] = scrubValue(item, contextUnder(key, context), findings);
   }
   return scrubbed;
 }
@@ -367,13 +434,13 @@ function contextUnder(key: string, context: NameContext): NameContext {
   return context === "plain" ? "plain" : "nested";
 }
 
-function scrubString(value: string, context: NameContext, redactions: string[]): JsonValue {
-  const outcome = scrubText(value);
-  if (outcome.redactions.length > 0) {
-    redactions.push(...outcome.redactions);
-    return outcome.value;
+function scrubString(value: string, context: NameContext, findings: SecretFinding[]): JsonValue {
+  const before = findings.length;
+  const scrubbed = scrubTextInto(value, findings);
+  if (findings.length > before) {
+    return scrubbed;
   }
-  return redactsAsCredential(value, context) ? redacted(fieldLabel, redactions) : value;
+  return redactedWhereCredential(value, context, findings) ?? value;
 }
 
 /**
@@ -386,17 +453,17 @@ function scrubString(value: string, context: NameContext, redactions: string[]):
 function scrubArray(
   items: readonly JsonValue[],
   context: NameContext,
-  redactions: string[],
+  findings: SecretFinding[],
 ): JsonValue {
   if (context === "named") {
     const joined = joinedPrimitives(items);
-    if (joined !== null && classifyValue(joined) !== "not-credential") {
-      return redacted(fieldLabel, redactions);
+    const verdict = joined === null ? "not-credential" : classifyValue(joined);
+    if (verdict !== "not-credential") {
+      findings.push(nameFinding(verdict));
+      return `[redacted:${fieldLabel}]`;
     }
   }
-  return items.map((item) =>
-    scrubValue(item, context === "plain" ? "plain" : "nested", redactions),
-  );
+  return items.map((item) => scrubValue(item, context === "plain" ? "plain" : "nested", findings));
 }
 
 /** Null when any element is a container, which is not one value written in pieces. */
@@ -411,15 +478,23 @@ function joinedPrimitives(items: readonly JsonValue[]): string | null {
   return parts.join("");
 }
 
-function redactsAsCredential(value: string, context: NameContext): boolean {
+/**
+ * The marker to put in a value's place, or null to leave it alone. Under a credential-bearing
+ * name anything but a measurement goes, since over-redacting costs nothing; deeper inside one
+ * only credential-shaped material does, because blanking every string under `secrets: { ... }`
+ * throws away evidence that is not the credential.
+ */
+function redactedWhereCredential(
+  value: string,
+  context: NameContext,
+  findings: SecretFinding[],
+): string | null {
   const verdict = classifyValue(value);
-  if (context === "named") {
-    return verdict !== "not-credential";
+  const redacts =
+    context === "named" ? verdict !== "not-credential" : verdict === "credential-shaped";
+  if (context === "plain" || !redacts) {
+    return null;
   }
-  return context === "nested" && verdict === "credential-shaped";
-}
-
-function redacted(label: string, redactions: string[]): string {
-  redactions.push(label);
-  return `[redacted:${label}]`;
+  findings.push(nameFinding(verdict));
+  return `[redacted:${fieldLabel}]`;
 }

@@ -1073,6 +1073,61 @@ describe("13. carry a credential past a name-keyed detector by changing its shap
     expect(JSON.stringify(written.value)).toContain("AKIAIOSFO");
     expect(written.redactions).toEqual([]);
   });
+
+  it("agrees at all three sites on a pretty-printed credential array", async () => {
+    // Pretty-printing is the spelling that separates the name from its value by a newline,
+    // which is exactly what a line-at-a-time reader cannot follow.
+    const value = { PIN: [4, 8, 2, 9, 1, 7] };
+    const pretty = `${JSON.stringify(value, null, 2)}\n`;
+    const gate = await inspect(secretScanGate, { "cfg.json": "{}\n" }, { "cfg.json": pretty });
+
+    expect(JSON.stringify(scrubJson(value).value)).not.toMatch(/4,\s*8,\s*2,\s*9,\s*1,\s*7/);
+    expect(findKnownSecrets(pretty)).toContain("credential-assignment");
+    expect(findBlockingSecrets(pretty)).toContain("credential-assignment");
+    expect(gate.status).toBe("failed");
+  });
+
+  it("agrees at all three sites on a credential nested inside compact JSON", () => {
+    // Compacting is the opposite spelling: the name and its value land on one line, inside a
+    // longer object that a scanner reads as the value.
+    const value = { secrets: { inner: { deeper: { PIN: 482917 } } } };
+    const compact = JSON.stringify(value);
+
+    expect(JSON.stringify(scrubJson(value).value)).not.toContain("482917");
+    expect(findKnownSecrets(compact)).toContain("credential-assignment");
+    expect(findBlockingSecrets(compact)).toContain("credential-assignment");
+  });
+
+  it("agrees at all three sites on a credential-named object with primitive children", () => {
+    const value = { PIN: { note: "ok", payload: "48291736" } };
+
+    expect(JSON.stringify(scrubJson(value).value)).not.toContain("48291736");
+    for (const rendering of [JSON.stringify(value), JSON.stringify(value, null, 2)]) {
+      expect({ rendering, found: findKnownSecrets(rendering) }).toEqual({
+        rendering,
+        found: ["credential-assignment"],
+      });
+      expect({ rendering, blocking: findBlockingSecrets(rendering) }).toEqual({
+        rendering,
+        blocking: ["credential-assignment"],
+      });
+    }
+  });
+
+  it("control: a metric is still exempt at every depth, and at every site", async () => {
+    const value = { secrets: { nested: { outputTokens: 1_482_917, tokensPerSecond: 129 } } };
+    const pretty = `${JSON.stringify(value, null, 2)}\n`;
+    const gate = await inspect(
+      secretScanGate,
+      { "metrics.json": "{}\n" },
+      { "metrics.json": pretty },
+    );
+
+    expect(JSON.stringify(scrubJson(value).value)).toContain("1482917");
+    expect(findKnownSecrets(pretty)).toEqual([]);
+    expect(findBlockingSecrets(JSON.stringify(value))).toEqual([]);
+    expect(gate.status).toBe("passed");
+  });
 });
 
 describe("14. clear a deletion with a new specification beside it", () => {

@@ -294,6 +294,13 @@ export const fileSetGate: GateDefinition = {
  * The asymmetry is safe in the direction that matters: a credential this gate lets through is
  * still scrubbed out of every record (invariant 9). What is lost is a warning, never the
  * redaction.
+ *
+ * Read twice, per line and then over the added block as one text. The line reading is what
+ * puts a finding on a line number, and the block reading is what sees a value written across
+ * several of them: a credential in pretty-printed JSON has its name on one line and its value
+ * on the next, so a line at a time is the one shape that hides it from a detector keyed on the
+ * name. Where the block parses as JSON the detector walks it structurally, which is the same
+ * traversal the write-time scrub runs.
  */
 export const secretScanGate: GateDefinition = {
   id: "secret-scan",
@@ -304,11 +311,25 @@ export const secretScanGate: GateDefinition = {
     inspect: async (context: GateContext): Promise<GateObservation> => {
       const hits: { path: string; line: number; labels: readonly string[] }[] = [];
       for (const file of context.changes.files) {
+        const attributed = new Set<string>();
         for (const added of file.addedLines) {
           const labels = findBlockingSecrets(added.text);
           if (labels.length > 0) {
             hits.push({ path: file.path, line: added.line, labels });
+            for (const label of labels) {
+              attributed.add(label);
+            }
           }
+        }
+        const acrossLines = findBlockingSecrets(
+          file.addedLines.map((added) => added.text).join("\n"),
+        ).filter((label) => !attributed.has(label));
+        if (acrossLines.length > 0) {
+          hits.push({
+            path: file.path,
+            line: file.addedLines[0]?.line ?? 0,
+            labels: acrossLines,
+          });
         }
       }
       return observationFromJson(
