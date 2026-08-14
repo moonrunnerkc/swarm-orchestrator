@@ -61,9 +61,17 @@ describe("provider registry", () => {
     expect(client.modelId).toBe("local:qwen3.6:35b-a3b");
   });
 
-  it("defaults the local endpoint to the Ollama port when none is configured", () => {
+  it("refuses a local model with no endpoint rather than guessing a port", () => {
+    // The silent Ollama fallback is gone on purpose: the composition root resolves an
+    // endpoint (pinned or discovered) and records it, so a guess here would bypass that.
     const registry = createProviderRegistry({ ...configured, localBaseUrl: undefined });
-    expect(registry.create(parseModelSpec("local:gemma4:e4b")).modelId).toBe("local:gemma4:e4b");
+
+    expect(() => registry.create(parseModelSpec("local:gemma4:e4b"))).toThrow(
+      ProviderNotConfiguredError,
+    );
+    expect(() => registry.create(parseModelSpec("local:gemma4:e4b"))).toThrow(
+      /no local endpoint was resolved/,
+    );
   });
 
   it("builds the fixture provider from its script", async () => {

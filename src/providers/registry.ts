@@ -5,7 +5,6 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { ModelClient } from "../core/model-client.ts";
 import { createAiSdkModelClient } from "./ai-sdk-model-client.ts";
 import { createFixtureModelClient, type FixtureScript } from "./fixture-provider.ts";
-import { defaultLocalEndpoints } from "./local-discovery.ts";
 import type { ModelSpec, ProviderId } from "./model-spec.ts";
 import { providerIds } from "./model-spec.ts";
 
@@ -32,8 +31,6 @@ export interface ProviderRegistry {
   readonly providerIds: readonly ProviderId[];
   create(spec: ModelSpec): ModelClient;
 }
-
-const ollamaBaseUrl = defaultLocalEndpoints[0]?.baseUrl ?? "http://127.0.0.1:11434/v1";
 
 /**
  * The one place the AI SDK is constructed. Settings arrive already resolved, so the
@@ -67,8 +64,17 @@ export function createProviderRegistry(settings: ProviderSettings): ProviderRegi
           return createAiSdkModelClient(label, createGoogleGenerativeAI({ apiKey })(spec.modelId));
         }
         case "local": {
-          const baseURL = settings.localBaseUrl ?? ollamaBaseUrl;
-          const local = createOpenAICompatible({ name: "local", baseURL });
+          if (settings.localBaseUrl === undefined) {
+            // Never guess a port here: the composition root resolves an endpoint, pinned
+            // or discovered, and records it, and a fallback would bypass that record.
+            throw new ProviderNotConfiguredError(
+              "local",
+              "no local endpoint was resolved. Pass --local-endpoint, set " +
+                "SWARM_LOCAL_BASE_URL, set [providers] local_endpoint in swarm.toml, or " +
+                "start Ollama or rapid-mlx so discovery can find one",
+            );
+          }
+          const local = createOpenAICompatible({ name: "local", baseURL: settings.localBaseUrl });
           return createAiSdkModelClient(label, local(spec.modelId));
         }
         case "fixture": {

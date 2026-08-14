@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { statSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { homedir, platform, tmpdir } from "node:os";
+import { arch, homedir, platform, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { runAgentTask } from "./agent-run.ts";
@@ -44,7 +44,13 @@ import type { DiffBudget } from "./gates/gate-definition.ts";
 import { citedRecords, type GateCycle, outstandingJustifications } from "./gates/gate-runner.ts";
 import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { summarizeRatchet } from "./gates/ratchet-summary.ts";
-import { parseModelSpec } from "./providers/model-spec.ts";
+import {
+  localEndpointRecord,
+  type ResolvedLocalEndpoint,
+  resolveLocalEndpoint,
+} from "./providers/endpoint-resolution.ts";
+import { discoverLocalEndpoints } from "./providers/local-discovery.ts";
+import { type ModelSpec, parseModelSpec } from "./providers/model-spec.ts";
 import { createProviderRegistry } from "./providers/registry.ts";
 import { runCalibration } from "./select/calibrate.ts";
 import { parseCalibrationCase } from "./select/calibration-case.ts";
@@ -114,7 +120,10 @@ function diffBudgetFrom(settings: ResolvedSettings): DiffBudget | undefined {
     : { ...defaultDiffBudget, ...settings.diffBudget };
 }
 
-function registrySettingsFrom(settings: ResolvedSettings): {
+function registrySettingsFrom(
+  settings: ResolvedSettings,
+  localBackend: ResolvedLocalEndpoint | null,
+): {
   anthropicApiKey: string | undefined;
   openaiApiKey: string | undefined;
   googleApiKey: string | undefined;
@@ -124,8 +133,32 @@ function registrySettingsFrom(settings: ResolvedSettings): {
     anthropicApiKey: settings.providerKeys.anthropic,
     openaiApiKey: settings.providerKeys.openai,
     googleApiKey: settings.providerKeys.google,
-    localBaseUrl: settings.localEndpoint?.url,
+    localBaseUrl: localBackend?.url,
   };
+}
+
+/** Probing two localhost ports; a runtime that takes longer than this is not running. */
+const discoveryTimeoutMs = 1_500;
+
+/**
+ * Null unless the spec asks for a local model: only then does an endpoint matter, and
+ * resolving one for a frontier run would probe ports the run will never talk to.
+ */
+async function resolveLocalBackend(
+  settings: ResolvedSettings,
+  specs: readonly ModelSpec[],
+): Promise<ResolvedLocalEndpoint | null> {
+  if (!specs.some((spec) => spec.provider === "local")) {
+    return null;
+  }
+  return resolveLocalEndpoint({
+    pinned: settings.localEndpoint,
+    discover: () =>
+      discoverLocalEndpoints({
+        fetch: (url) => fetch(url, { signal: AbortSignal.timeout(discoveryTimeoutMs) }),
+      }),
+    appleSilicon: platform() === "darwin" && arch() === "arm64",
+  });
 }
 
 async function replay(options: ReplayCommand): Promise<number> {
@@ -205,6 +238,9 @@ async function run(options: RunCommand): Promise<number> {
     : await chooseModel(options.task, homedir(), random);
   const modelSpec = routed.modelSpec ?? settings.modelSpec;
   const spec = parseModelSpec(modelSpec);
+  // Resolved before the session opens, so a machine with no local runtime fails here,
+  // with the remedy named, rather than after an empty ledger has been created.
+  const localBackend = await resolveLocalBackend(settings, [spec]);
 
   const clock = createSystemClock();
   const sessionRoot = defaultSessionRoot(homedir());
@@ -213,8 +249,11 @@ async function run(options: RunCommand): Promise<number> {
     sessionId: createSessionId(clock, random),
     clock,
   });
+  if (localBackend !== null) {
+    await evidence.record(localEndpointRecord(localBackend));
+  }
 
-  const registry = createProviderRegistry(registrySettingsFrom(settings));
+  const registry = createProviderRegistry(registrySettingsFrom(settings, localBackend));
   const model = createRecordingModelClient(registry.create(spec), evidence);
   const fileSet = createFileSetRegistry(evidence);
   const isTty = process.stdout.isTTY === true && process.stdin.isTTY === true;
@@ -504,7 +543,14 @@ async function calibrate(options: CalibrateCommand): Promise<number> {
     },
   });
 
-  const registry = createProviderRegistry(registrySettingsFrom(settings));
+  const localBackend = await resolveLocalBackend(
+    settings,
+    models.map((candidate) => parseModelSpec(candidate)),
+  );
+  if (localBackend !== null) {
+    await evidence.record(localEndpointRecord(localBackend));
+  }
+  const registry = createProviderRegistry(registrySettingsFrom(settings, localBackend));
   // Outside the session store, which tools may never write to, and outside any workspace.
   const scratchRoot = await mkdtemp(join(tmpdir(), "swarm-calibration-"));
 
@@ -526,7 +572,9 @@ async function calibrate(options: CalibrateCommand): Promise<number> {
         createModel: (modelSpec) => registry.create(parseModelSpec(modelSpec)),
         commands: createNodeCommandRunner(clock),
         probeMemory: createOllamaMemoryProbe({
-          baseUrl: settings.localEndpoint?.url ?? "http://127.0.0.1:11434/v1",
+          // With no local model among the candidates there is nothing to probe, and the
+          // probe against the default port simply reports nothing.
+          baseUrl: localBackend?.url ?? "http://127.0.0.1:11434/v1",
           fetch: (url) => fetch(url, { signal: AbortSignal.timeout(2_000) }),
         }),
         scratchRoot,
@@ -625,13 +673,17 @@ async function parallel(options: ParallelCommand): Promise<number> {
   }
 
   const spec = parseModelSpec(settings.modelSpec);
-  const registry = createProviderRegistry(registrySettingsFrom(settings));
+  const localBackend = await resolveLocalBackend(settings, [spec]);
+  const registry = createProviderRegistry(registrySettingsFrom(settings, localBackend));
 
   const coordinator = await openEvidenceSession({
     root: sessionRoot,
     sessionId: `${runId}-queue`,
     clock,
   });
+  if (localBackend !== null) {
+    await coordinator.record(localEndpointRecord(localBackend));
+  }
   // Worktrees live outside the repository and outside the session store, so a worker's tools
   // can reach neither the tree the user is in nor anybody's evidence.
   const scratchRoot = await mkdtemp(join(tmpdir(), "swarm-parallel-"));
