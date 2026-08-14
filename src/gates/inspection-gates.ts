@@ -1,4 +1,5 @@
 import { findBlockingSecrets } from "../evidence/scrub.ts";
+import { commentColumns, commentTextAt } from "./comment-spans.ts";
 import { checkFileSet } from "./file-set.ts";
 import {
   type GateContext,
@@ -50,19 +51,89 @@ const stubMarkers: readonly RegExp[] = [
  */
 const formatCharacters = /\p{Cf}/gu;
 
-function withoutFormatCharacters(line: string): string {
-  return line.replace(formatCharacters, "");
+/**
+ * Letters from other scripts that render as the Latin ones these markers are spelled with, so
+ * a marker built out of them reads to a human exactly like the marker. A named list of the
+ * Cyrillic, Greek, and fullwidth capitals that are indistinguishable in ordinary type, rather
+ * than a general confusables engine: every entry here is one code point mapping to one, so
+ * folding cannot change what any other check sees. A marker spelled in a script nobody listed
+ * still reads as a marker to a person and is not caught, which build-guide section 7.1 says
+ * rather than implying otherwise.
+ */
+const latinLookalikes: ReadonlyMap<string, string> = new Map(
+  Object.entries({
+    "\u0410": "A",
+    "\u0412": "B",
+    "\u0415": "E",
+    "\u041A": "K",
+    "\u041C": "M",
+    "\u041D": "H",
+    "\u041E": "O",
+    "\u0420": "P",
+    "\u0421": "C",
+    "\u0422": "T",
+    "\u0425": "X",
+    "\u0430": "a",
+    "\u0435": "e",
+    "\u043E": "o",
+    "\u0440": "p",
+    "\u0441": "c",
+    "\u0445": "x",
+    "\u0443": "y",
+    "\u0391": "A",
+    "\u0392": "B",
+    "\u0395": "E",
+    "\u0396": "Z",
+    "\u0397": "H",
+    "\u0399": "I",
+    "\u039A": "K",
+    "\u039C": "M",
+    "\u039D": "N",
+    "\u039F": "O",
+    "\u03A1": "P",
+    "\u03A4": "T",
+    "\u03A5": "Y",
+    "\u03A7": "X",
+    "\u03BF": "o",
+    "\u03B9": "i",
+    "\u03BA": "k",
+    "\u03BD": "v",
+    "\u03C1": "p",
+    "\u03C4": "t",
+    "\u03C7": "x",
+  }),
+);
+
+const fullwidthUpper = /[\uFF21-\uFF3A]/g;
+const fullwidthLower = /[\uFF41-\uFF5A]/g;
+
+/** The text as a reader sees it: no invisibles, and every lookalike letter as its Latin twin. */
+function asRead(text: string): string {
+  return (
+    text
+      .replace(formatCharacters, "")
+      .replace(fullwidthUpper, (character) =>
+        String.fromCharCode(character.charCodeAt(0) - 0xff21 + 0x41),
+      )
+      .replace(fullwidthLower, (character) =>
+        String.fromCharCode(character.charCodeAt(0) - 0xff41 + 0x61),
+      )
+      // Greek and Cyrillic, which is where every entry in the table lives.
+      .replaceAll(/[\u0370-\u04FF]/gu, (character) => latinLookalikes.get(character) ?? character)
+  );
 }
 
-/** Where a line's comment begins, or -1. Blunt on purpose: this is a cheap check. */
-function commentStart(line: string): number {
-  return /\/\/|\/\*|<!--|#(?![[!])|^\s*\*(?!\/)/.exec(line)?.index ?? -1;
-}
-
-function markerIn(rawLine: string): string | null {
-  // Both families read the normalized text, and so does the comment position, since stripping
-  // characters moves every index after them.
-  const line = withoutFormatCharacters(rawLine);
+/**
+ * The marker a line introduces, or null. A stub marker counts wherever it appears, because it
+ * is executable. An annotation counts only in comment position: a line carrying one of these
+ * words inside a regex, a table, or a sentence about annotations is prose, and flagging it
+ * teaches people to route around the gate.
+ *
+ * Comment position comes from the file rather than from the line, so a marker on its own line
+ * inside a block comment is seen for what a reader sees it as.
+ */
+function markerIn(rawLine: string, commentText: string | null): string | null {
+  const line = asRead(rawLine);
 
   for (const marker of stubMarkers) {
     if (marker.test(line)) {
@@ -70,17 +141,22 @@ function markerIn(rawLine: string): string | null {
     }
   }
 
-  const comment = commentStart(line);
-  if (comment === -1) {
+  if (commentText === null) {
     return null;
   }
+  const comment = asRead(commentText);
   for (const marker of annotationMarkers) {
-    const found = marker.exec(line);
-    if (found !== null && found.index > comment) {
+    if (marker.test(comment)) {
       return marker.source;
     }
   }
   return null;
+}
+
+/** The fallback when the file itself is not readable: one line, with no block-comment state. */
+function lineLocalComment(line: string): string | null {
+  const at = /\/\/|\/\*|<!--|#(?![[!])|^\s*\*(?!\/)/.exec(line)?.index;
+  return at === undefined ? null : line.slice(at);
 }
 
 interface PlaceholderFinding {
@@ -90,11 +166,20 @@ interface PlaceholderFinding {
   readonly text: string;
 }
 
-function findPlaceholders(context: GateContext): readonly PlaceholderFinding[] {
+async function findPlaceholders(context: GateContext): Promise<readonly PlaceholderFinding[]> {
   const findings: PlaceholderFinding[] = [];
   for (const file of context.changes.files) {
+    // The whole file, because a comment is a property of the file and not of a line. A file
+    // that cannot be read falls back to reading each added line on its own, which sees a
+    // marker beside code but not one alone inside a block comment.
+    const text = await context.probe.readCurrent(file.path);
+    const lines = text === null ? [] : text.split("\n");
+    const columns = text === null ? [] : commentColumns(text);
+
     for (const added of file.addedLines) {
-      const marker = markerIn(added.text);
+      const comment =
+        text === null ? lineLocalComment(added.text) : commentTextAt(columns, lines, added.line);
+      const marker = markerIn(added.text, comment);
       if (marker === null) {
         continue;
       }
@@ -117,7 +202,7 @@ export const placeholderGate: GateDefinition = {
   source: {
     kind: "inspection",
     inspect: async (context: GateContext): Promise<GateObservation> => {
-      const findings = findPlaceholders(context);
+      const findings = await findPlaceholders(context);
       return observationFromJson(
         {
           detail:

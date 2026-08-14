@@ -119,6 +119,49 @@ describe("the placeholder gate", () => {
     }
   });
 
+  it("blocks a marker spelled with a letter from another script that renders the same", async () => {
+    // Cyrillic Te, Cyrillic O, Greek Omicron, fullwidth D: each is a different code point and
+    // the same glyph, so the marker a reviewer sees is the marker the gate has to see.
+    for (const marker of [
+      "// ТODO: finish this",
+      "// TОDО: finish this",
+      "// TΟDO: finish this",
+      "// TOＤO: finish this",
+    ]) {
+      const reading = await readGate(
+        placeholderGate,
+        { "src/a.ts": "export const a = 1;" },
+        { "src/a.ts": `${marker}\nexport const a = 1;` },
+      );
+      expect({ escaped: JSON.stringify(marker), status: reading.status }).toEqual({
+        escaped: JSON.stringify(marker),
+        status: "failed",
+      });
+    }
+  });
+
+  it("blocks a marker on its own line inside a block comment", async () => {
+    // The line carries no comment opener of its own, and reading it alone finds prose.
+    const reading = await readGate(
+      placeholderGate,
+      { "src/a.ts": "export const a = 1;" },
+      { "src/a.ts": "/*\n   TODO: finish this\n*/\nexport const a = 1;" },
+    );
+
+    expect(reading.status).toBe("failed");
+    expect(reading.detail).toContain("src/a.ts:2");
+  });
+
+  it("does not read a marker inside a string as an annotation, block comment or not", async () => {
+    const reading = await readGate(
+      placeholderGate,
+      { "src/a.ts": "export const a = 1;" },
+      { "src/a.ts": 'export const label = "TODO list";\nexport const a = 1;' },
+    );
+
+    expect(reading.status).toBe("passed");
+  });
+
   it("still reads a folded marker as an annotation only in comment position", async () => {
     const reading = await readGate(
       placeholderGate,
