@@ -147,6 +147,86 @@ describe("detection keyed on the name rather than the shape of the value", () =>
     }
   });
 
+  it("redacts a credential under an HTTP auth header name at all three sites", () => {
+    for (const name of ["Authorization", "proxy-authorization", "WWW-Authenticate"]) {
+      const text = `${name}: 48291736`;
+
+      expect({ name, ...scrubText(text) }).toEqual({
+        name,
+        value: `${name}: [redacted:credential-assignment]`,
+        redactions: ["credential-assignment"],
+      });
+      expect({ name, found: findKnownSecrets(text) }).toEqual({
+        name,
+        found: ["credential-assignment"],
+      });
+      expect({ name, blocking: findBlockingSecrets(text) }).toEqual({
+        name,
+        blocking: ["credential-assignment"],
+      });
+      expect(JSON.stringify(scrubJson({ [name]: 48291736 }).value)).not.toContain("48291736");
+    }
+  });
+
+  it("reaches a numeric credential one object below the name that describes it", () => {
+    const outcome = scrubJson({ PIN: { value: 482917 }, apiKey: { current: "a1b2c3d4e5f6" } });
+    const serialized = JSON.stringify(outcome.value);
+
+    expect(serialized).not.toContain("482917");
+    expect(serialized).not.toContain("a1b2c3d4e5f6");
+    expect(outcome.redactions).toContain("credential-field");
+  });
+
+  it("does not blank a container's ordinary contents just for sitting under the name", () => {
+    // The nested rule is the shaped one: `secrets: { ... }` is a container, and redacting
+    // every string in it throws away evidence that is not the credential.
+    const outcome = scrubJson({ credentials: { provider: "anthropic", createdAt: "2026-08-14" } });
+
+    expect(outcome.value).toEqual({
+      credentials: { provider: "anthropic", createdAt: "2026-08-14" },
+    });
+    expect(outcome.redactions).toEqual([]);
+  });
+
+  it("judges a credential-named array as the one value it is written in pieces of", () => {
+    for (const items of [[48291736], [4, 8, 2, 9, 1, 7], ["4829", "1736"]]) {
+      const written = scrubJson({ PIN: items });
+      const blob = JSON.stringify(written.value);
+      const text = `{"PIN":[${items.map((item) => JSON.stringify(item)).join(",")}]}`;
+
+      expect({ items, blob }).toEqual({ items, blob: '{"PIN":"[redacted:credential-field]"}' });
+      expect({ items, again: findKnownSecrets(blob) }).toEqual({ items, again: [] });
+      // The text scan reaches the same verdict on the same bytes, which is what stops the
+      // export scan and the gate disagreeing with what was written.
+      expect({ items, found: findKnownSecrets(text) }).toEqual({
+        items,
+        found: ["credential-assignment"],
+      });
+      expect({ items, scrubbed: scrubText(text).value }).toEqual({
+        items,
+        scrubbed: '{"PIN":[redacted:credential-assignment]}',
+      });
+    }
+  });
+
+  it("leaves an array of ordinary short values under a credential name alone", () => {
+    const outcome = scrubJson({ keys: ["a", "b"], tokens: [1, 2, 3] });
+
+    expect(outcome.value).toEqual({ keys: ["a", "b"], tokens: [1, 2, 3] });
+    expect(outcome.redactions).toEqual([]);
+  });
+
+  it("keeps the metric exemption exact at all three sites, nested or not", () => {
+    const metrics = { outputTokensPerSecond: 129.9, maxTokens: 1000000, tokenCount: 48291736 };
+    const text = JSON.stringify({ credentials: metrics });
+
+    expect(scrubJson({ credentials: metrics }).redactions).toEqual([]);
+    expect(scrubJson({ credentials: metrics }).value).toEqual({ credentials: metrics });
+    expect(scrubText(text)).toEqual({ value: text, redactions: [] });
+    expect(findKnownSecrets(text)).toEqual([]);
+    expect(findBlockingSecrets(text)).toEqual([]);
+  });
+
   it("redacts an opaque value under a credential key without offering it to a gate", () => {
     // Scrubbing is fail-safe, so over-matching costs nothing. Blocking is not, so the gate
     // only sees matches whose value is shaped like credential material.

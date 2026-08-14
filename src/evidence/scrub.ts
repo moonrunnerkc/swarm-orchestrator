@@ -58,6 +58,10 @@ const credentialWords: ReadonlySet<string> = new Set([
   "pin",
   "otp",
   "account",
+  // The header that carries a credential on every authenticated request, and its relatives.
+  "authorization",
+  "authorisation",
+  "authenticate",
 ]);
 
 /** Spellings that carry no separator to split on, so word splitting alone would miss them. */
@@ -104,17 +108,28 @@ const metricNames: ReadonlySet<string> = new Set([
  * around within a day.
  */
 export function isCredentialName(name: string): boolean {
-  const words = name
+  if (isMetricName(name)) {
+    return false;
+  }
+  const words = wordsOf(name);
+  return credentialNames.has(words.join("")) || words.some((word) => credentialWords.has(word));
+}
+
+/**
+ * A measurement, exempt by key at every site. Separate from isCredentialName because the walk
+ * needs to know a name is a metric even where nothing else about it is credential-bearing: a
+ * metric under a credential-named container is still a metric.
+ */
+export function isMetricName(name: string): boolean {
+  return metricNames.has(wordsOf(name).join(""));
+}
+
+function wordsOf(name: string): readonly string[] {
+  return name
     .replaceAll(/([a-z0-9])([A-Z])/g, "$1 $2")
     .split(/[^A-Za-z0-9]+/)
     .filter((word) => word.length > 0)
     .map((word) => word.toLowerCase());
-  const compact = words.join("");
-
-  if (metricNames.has(compact)) {
-    return false;
-  }
-  return credentialNames.has(compact) || words.some((word) => credentialWords.has(word));
 }
 
 /**
@@ -159,10 +174,12 @@ function classifyValue(value: string): ValueVerdict {
 
 /**
  * `name = value` and `name: value`, quoted or not, which covers a shell export, a dotenv
- * line, a source literal, and a serialized JSON field with one reader.
+ * line, a source literal, and a serialized JSON field with one reader. The bracketed
+ * alternative comes first because a bare value would otherwise eat the opening bracket and
+ * stop at the first comma, which is how `PIN: [4, 8, 2]` read as the value `[4`.
  */
 const assignmentPattern =
-  /(?:^|[\s,{[])["']?([A-Za-z][A-Za-z0-9_-]{0,63})["']?\s*[=:]\s*(?:"([^"]*)"|'([^']*)'|([^\s"',;})]+))/dg;
+  /(?:^|[\s,{[])["']?([A-Za-z][A-Za-z0-9_-]{0,63})["']?\s*[=:]\s*(?:(\[[^\]\n]*\])|"([^"]*)"|'([^']*)'|([^\s"',;})]+))/dg;
 
 interface SecretSpan {
   readonly label: string;
@@ -194,13 +211,18 @@ function assignmentSpans(text: string): readonly SecretSpan[] {
     if (name === undefined || !isCredentialName(name)) {
       continue;
     }
-    const group = match[2] !== undefined ? 2 : match[3] !== undefined ? 3 : 4;
-    const value = match[group];
-    const at = match.indices?.[group];
+    const group = [2, 3, 4, 5].find((index) => match[index] !== undefined);
+    const value = group === undefined ? undefined : match[group];
+    const at = group === undefined ? undefined : match.indices?.[group];
     if (value === undefined || at === undefined) {
       continue;
     }
-    const verdict = classifyValue(value);
+    // An array under a credential name is that credential written in pieces, so the pieces
+    // are judged joined. The name is what says so; nothing here infers a secret from shape.
+    // A value that already carries a marker is judged as it stands, since joining would strip
+    // the brackets the marker is recognized by and the second pass would redact its own work.
+    const joinable = group === 2 && !carriesRedaction.test(value);
+    const verdict = classifyValue(joinable ? joinedElements(value) : value);
     if (verdict === "not-credential") {
       continue;
     }
@@ -212,6 +234,15 @@ function assignmentSpans(text: string): readonly SecretSpan[] {
     });
   }
   return spans;
+}
+
+/** `[4, 8, 2]` and `["ab", "cd"]` as the one value they stand for. */
+function joinedElements(bracketed: string): string {
+  return bracketed
+    .slice(1, -1)
+    .split(",")
+    .map((part) => part.trim().replace(/^["']/, "").replace(/["']$/, ""))
+    .join("");
 }
 
 /** Every span the detector claims, longest first at a tie, with overlaps dropped. */
@@ -283,57 +314,112 @@ export function findBlockingSecrets(text: string): readonly string[] {
  * The same pass over every string in a payload, keys included, plus the key rule: a value
  * sitting under a credential-bearing name is redacted whatever its JSON type, which is what
  * a text scan over an already-parsed payload cannot see.
+ *
+ * One traversal, so this and the two text-reading sites cannot drift on the same input: the
+ * name rule, the array rule, and the metric exemption are each written once and reached from
+ * both directions.
  */
 export function scrubJson(value: JsonValue): ScrubOutcome<JsonValue> {
   const redactions: string[] = [];
-  return { value: scrubValue(value, redactions), redactions };
+  return { value: scrubValue(value, "plain", redactions), redactions };
 }
 
-function scrubValue(value: JsonValue, redactions: string[]): JsonValue {
+/**
+ * How far a credential-bearing name reaches. `named` is the value that name was given, where
+ * over-redacting costs nothing and anything but a measurement goes. `nested` is deeper inside
+ * that value, where only credential-shaped material goes: `secrets: { ... }` is a container,
+ * and blanking every string in it throws away evidence that is not the credential.
+ */
+type NameContext = "plain" | "named" | "nested";
+
+function scrubValue(value: JsonValue, context: NameContext, redactions: string[]): JsonValue {
   if (typeof value === "string") {
-    const outcome = scrubText(value);
-    redactions.push(...outcome.redactions);
-    return outcome.value;
+    return scrubString(value, context, redactions);
   }
-  if (value === null || typeof value !== "object") {
-    return value;
+  if (typeof value === "number" || typeof value === "boolean" || value === null) {
+    return redactsAsCredential(String(value), context) ? redacted(fieldLabel, redactions) : value;
   }
   if (Array.isArray(value)) {
-    return value.map((item) => scrubValue(item, redactions));
+    return scrubArray(value, context, redactions);
   }
 
   const scrubbed: Record<string, JsonValue> = {};
   for (const [key, item] of Object.entries(value as { readonly [key: string]: JsonValue })) {
     const scrubbedKey = scrubText(key);
     redactions.push(...scrubbedKey.redactions);
-    scrubbed[scrubbedKey.value] = isCredentialName(key)
-      ? scrubUnderCredentialName(item, redactions)
-      : scrubValue(item, redactions);
+    scrubbed[scrubbedKey.value] = scrubValue(item, contextUnder(key, context), redactions);
   }
   return scrubbed;
 }
 
 /**
- * A primitive under a credential-bearing name. Objects and arrays keep being walked rather
- * than blanked whole: `secrets: { ... }` is a container, and redacting the container would
- * throw away evidence that is not the credential.
+ * A metric is exempt by key wherever it sits, so a throughput figure under a credential-named
+ * container is still a measurement. Otherwise a credential-bearing key opens the strict
+ * context and everything under it stays in the looser one.
  */
-function scrubUnderCredentialName(value: JsonValue, redactions: string[]): JsonValue {
-  if (typeof value === "string") {
-    const outcome = scrubText(value);
-    if (outcome.redactions.length > 0) {
-      redactions.push(...outcome.redactions);
-      return outcome.value;
-    }
-    if (classifyValue(value) === "not-credential") {
-      return value;
-    }
-    redactions.push(fieldLabel);
-    return `[redacted:${fieldLabel}]`;
+function contextUnder(key: string, context: NameContext): NameContext {
+  if (isMetricName(key)) {
+    return "plain";
   }
-  if (typeof value === "number" && classifyValue(String(value)) !== "not-credential") {
-    redactions.push(fieldLabel);
-    return `[redacted:${fieldLabel}]`;
+  if (isCredentialName(key)) {
+    return "named";
   }
-  return scrubValue(value, redactions);
+  return context === "plain" ? "plain" : "nested";
+}
+
+function scrubString(value: string, context: NameContext, redactions: string[]): JsonValue {
+  const outcome = scrubText(value);
+  if (outcome.redactions.length > 0) {
+    redactions.push(...outcome.redactions);
+    return outcome.value;
+  }
+  return redactsAsCredential(value, context) ? redacted(fieldLabel, redactions) : value;
+}
+
+/**
+ * An array directly under a credential-bearing name is that credential written in pieces, so
+ * its elements are judged joined and it is redacted whole. Deeper in, and under any other
+ * name, the elements are walked instead: a secret split across fields nobody named as a
+ * credential is outside a name-keyed detector by construction, and guessing at reassembly
+ * there is how a detector starts rejecting ordinary split data (build guide section 7.1).
+ */
+function scrubArray(
+  items: readonly JsonValue[],
+  context: NameContext,
+  redactions: string[],
+): JsonValue {
+  if (context === "named") {
+    const joined = joinedPrimitives(items);
+    if (joined !== null && classifyValue(joined) !== "not-credential") {
+      return redacted(fieldLabel, redactions);
+    }
+  }
+  return items.map((item) =>
+    scrubValue(item, context === "plain" ? "plain" : "nested", redactions),
+  );
+}
+
+/** Null when any element is a container, which is not one value written in pieces. */
+function joinedPrimitives(items: readonly JsonValue[]): string | null {
+  const parts: string[] = [];
+  for (const item of items) {
+    if (item !== null && typeof item === "object") {
+      return null;
+    }
+    parts.push(String(item));
+  }
+  return parts.join("");
+}
+
+function redactsAsCredential(value: string, context: NameContext): boolean {
+  const verdict = classifyValue(value);
+  if (context === "named") {
+    return verdict !== "not-credential";
+  }
+  return context === "nested" && verdict === "credential-shaped";
+}
+
+function redacted(label: string, redactions: string[]): string {
+  redactions.push(label);
+  return `[redacted:${label}]`;
 }
