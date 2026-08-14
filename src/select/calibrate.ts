@@ -81,6 +81,7 @@ export async function runCalibration(options: CalibrationOptions): Promise<Calib
         {
           predicate: `repeats == ${model.repeats} && gatePassed == ${greenRepeats(model)}`,
           record: recorded.record.payloadDigest,
+          recordKind: "calibration-summary",
           narrative:
             `${model.model} solved ${greenRepeats(model)} of ${model.repeats} calibration runs ` +
             `over ${options.goldenSet.cases.length} case(s).`,

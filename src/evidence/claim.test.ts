@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { digestOfJson, type JsonValue } from "./canonical-json.ts";
-import { type ClaimPayload, describeEvaluation, evaluateClaim } from "./claim.ts";
+import { type CitedRecord, type ClaimPayload, describeEvaluation, evaluateClaim } from "./claim.ts";
 
 /** A genuine harness-captured test run: exit code 1, four failures out of forty-seven. */
 const failingRun: JsonValue = {
@@ -17,20 +17,35 @@ const passingRun: JsonValue = {
   tests: { collected: 47, failed: 0 },
 };
 
+/** A genuine lint gate that genuinely passed. It says nothing at all about tests. */
+const lintGate: JsonValue = { gateId: "lint", status: "passed", detail: "the command exited 0" };
+
+/** Lifecycle, not outcome: the loop stopped, which is not a statement about any gate. */
+const sessionStopped: JsonValue = {
+  stopReason: "completed",
+  steps: 4,
+  completionNarrative: "tests and lint gates passed",
+};
+
 const failingDigest = digestOfJson(failingRun);
 const passingDigest = digestOfJson(passingRun);
+const lintDigest = digestOfJson(lintGate);
+const stoppedDigest = digestOfJson(sessionStopped);
 
-const chain = new Map<string, JsonValue>([
-  [failingDigest, failingRun],
-  [passingDigest, passingRun],
+const chain = new Map<string, CitedRecord>([
+  [failingDigest, { type: "tool-call", payload: failingRun }],
+  [passingDigest, { type: "tool-call", payload: passingRun }],
+  [lintDigest, { type: "gate-run", payload: lintGate }],
+  [stoppedDigest, { type: "session-stopped", payload: sessionStopped }],
 ]);
 
-const lookup = (digest: string): JsonValue | undefined => chain.get(digest);
+const lookup = (digest: string): CitedRecord | undefined => chain.get(digest);
 
 function claim(overrides: Partial<ClaimPayload>): ClaimPayload {
   return {
     predicate: "tests.failed == 0",
     record: passingDigest,
+    recordKind: "tool-call:shell",
     narrative: "",
     ...overrides,
   };
@@ -101,5 +116,75 @@ describe("claim evaluation", () => {
     });
 
     expect(evaluateClaim(insistent, lookup).verdict).toBe("unverified");
+  });
+});
+
+describe("the kind a claim declares binds it to one kind of record", () => {
+  it("renders UNVERIFIED when a weak predicate true of the lint gate backs a tests claim", () => {
+    const evaluation = evaluateClaim(
+      claim({
+        predicate: 'status == "passed"',
+        record: lintDigest,
+        recordKind: "gate-run:tests",
+        narrative: "the tests gate is green",
+      }),
+      lookup,
+    );
+
+    expect(evaluation).toMatchObject({
+      verdict: "unverified",
+      reason: "predicate-kind-mismatch",
+    });
+    expect(evaluation.detail).toContain("gate-run:lint");
+    expect(describeEvaluation(evaluation)).toBe("UNVERIFIED (predicate-kind-mismatch)");
+  });
+
+  it("verifies the same predicate once the claim names the gate it actually cites", () => {
+    const evaluation = evaluateClaim(
+      claim({
+        predicate: 'status == "passed"',
+        record: lintDigest,
+        recordKind: "gate-run:lint",
+        narrative: "the lint gate is green",
+      }),
+      lookup,
+    );
+
+    expect(evaluation.verdict).toBe("verified");
+  });
+
+  it("never lets a lifecycle record satisfy a gate-outcome claim", () => {
+    const evaluation = evaluateClaim(
+      claim({
+        predicate: 'stopReason == "completed"',
+        record: stoppedDigest,
+        recordKind: "gate-run:tests",
+        narrative: "tests and lint gates passed",
+      }),
+      lookup,
+    );
+
+    expect(evaluation).toMatchObject({
+      verdict: "unverified",
+      reason: "predicate-kind-mismatch",
+    });
+  });
+
+  it("rejects a bare record type when the cited record names a subject", () => {
+    const evaluation = evaluateClaim(
+      claim({ predicate: 'status == "passed"', record: lintDigest, recordKind: "gate-run" }),
+      lookup,
+    );
+
+    expect(evaluation.reason).toBe("predicate-kind-mismatch");
+  });
+
+  it("checks the kind before the predicate, so a mismatch is never reported as false", () => {
+    const evaluation = evaluateClaim(
+      claim({ predicate: "not a predicate", record: lintDigest, recordKind: "gate-run:tests" }),
+      lookup,
+    );
+
+    expect(evaluation.reason).toBe("predicate-kind-mismatch");
   });
 });

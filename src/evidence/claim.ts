@@ -1,16 +1,24 @@
 import { z } from "zod";
 import type { JsonValue } from "./canonical-json.ts";
 import { digestPattern } from "./canonical-json.ts";
+import type { RecordType } from "./ledger-record.ts";
 import { evaluatePredicate, PredicateParseError, parsePredicate } from "./predicate.ts";
+import { recordKindOf } from "./record-kind.ts";
 
 /**
- * What the model may assert. The predicate and the cited record are the model's choice;
- * the verdict is not. Narrative is free text and is displayed as unverified prose
- * regardless of what it says (invariant 1).
+ * What the model may assert. The predicate, the cited record, and the kind of record the
+ * claim is about are the model's choice; the verdict is not. Narrative is free text and is
+ * displayed as unverified prose regardless of what it says (invariant 1).
  */
 export const claimPayloadSchema = z.object({
   predicate: z.string().min(1),
   record: z.string().regex(digestPattern).nullable(),
+  /**
+   * The kind of record this claim asserts against, as `recordKindOf` computes it. Declaring
+   * it is what makes the binding checkable: without it a predicate that happens to be true of
+   * some other record renders green, and "the tests gate passed" is backed by the lint run.
+   */
+  recordKind: z.string().min(1),
   narrative: z.string(),
 });
 
@@ -21,6 +29,7 @@ type ClaimVerdict = "verified" | "unverified";
 type UnverifiedReason =
   | "no-evidence-edge"
   | "record-not-found"
+  | "predicate-kind-mismatch"
   | "predicate-unparseable"
   | "path-not-found"
   | "type-mismatch"
@@ -33,8 +42,14 @@ export interface ClaimEvaluation {
   readonly detail: string;
 }
 
-/** Resolves a cited digest to the payload of the ledger record that carries it. */
-type EvidenceLookup = (digest: string) => JsonValue | undefined;
+/** One ledger record as the harness reads it back: what kind of thing it is, and what it says. */
+export interface CitedRecord {
+  readonly type: RecordType;
+  readonly payload: JsonValue;
+}
+
+/** Resolves a cited digest to the ledger record that carries it. */
+export type EvidenceLookup = (digest: string) => CitedRecord | undefined;
 
 /**
  * The only place a green verdict is produced anywhere in the system. Every failure mode
@@ -50,12 +65,25 @@ export function evaluateClaim(claim: ClaimPayload, lookup: EvidenceLookup): Clai
     };
   }
 
-  const payload = lookup(claim.record);
-  if (payload === undefined) {
+  const cited = lookup(claim.record);
+  if (cited === undefined) {
     return {
       verdict: "unverified",
       reason: "record-not-found",
       detail: `no ledger record carries the payload digest ${claim.record}`,
+    };
+  }
+
+  // Before the predicate, because a predicate that is true of the wrong kind of record is
+  // exactly the case a verdict of "false" would misreport as an honest near miss.
+  const actualKind = recordKindOf(cited.type, cited.payload);
+  if (actualKind !== claim.recordKind) {
+    return {
+      verdict: "unverified",
+      reason: "predicate-kind-mismatch",
+      detail:
+        `the claim asserts against ${claim.recordKind}, but the cited record is ${actualKind}. ` +
+        "A predicate holding against a record of another kind is not evidence for this claim.",
     };
   }
 
@@ -71,7 +99,7 @@ export function evaluateClaim(claim: ClaimPayload, lookup: EvidenceLookup): Clai
     };
   }
 
-  const result = evaluatePredicate(node, payload);
+  const result = evaluatePredicate(node, cited.payload);
   if (!result.ok) {
     return { verdict: "unverified", reason: result.failure, detail: result.detail };
   }
@@ -86,7 +114,7 @@ export function evaluateClaim(claim: ClaimPayload, lookup: EvidenceLookup): Clai
   return {
     verdict: "verified",
     reason: null,
-    detail: "the harness evaluated the predicate against the cited record and it held",
+    detail: `the harness evaluated the predicate against the cited ${actualKind} record and it held`,
   };
 }
 

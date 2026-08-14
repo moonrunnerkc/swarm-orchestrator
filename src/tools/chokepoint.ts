@@ -5,6 +5,7 @@ import {
 } from "../core/model-client.ts";
 import type { ToolInvocation, ToolInvoker } from "../core/tool-invoker.ts";
 import { asJsonValue, digestOfBytes, type JsonValue } from "../evidence/canonical-json.ts";
+import { recordKindOf } from "../evidence/record-kind.ts";
 import type {
   ChokepointDecision,
   ChokepointRecorder,
@@ -95,8 +96,9 @@ export function createToolChokepoint(deps: ChokepointDependencies): ToolInvoker 
         return {
           callId: invocation.callId,
           toolName: invocation.toolName,
-          // The digest trailer is how the model learns which record it may cite in a claim.
-          output: `${body}\n[evidence record ${digest}]`,
+          // The digest trailer is how the model learns which record it may cite in a claim,
+          // and the kind is how it learns what that record is allowed to be evidence of.
+          output: `${body}\n[evidence record ${digest} kind ${recordKindOf("tool-call", { toolName: invocation.toolName })}]`,
           failed: decision !== "allowed",
         };
       };

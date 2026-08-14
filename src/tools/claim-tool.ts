@@ -18,7 +18,15 @@ const claimInput = z.object({
     .nullable()
     .describe(
       "The evidence record digest to check the predicate against, as reported in the " +
-        "[evidence record sha256:...] trailer of a tool result. Null if there is none.",
+        "[evidence record sha256:... kind ...] trailer of a tool result. Null if there is none.",
+    ),
+  recordKind: z
+    .string()
+    .min(1)
+    .describe(
+      "What kind of record this claim is about, exactly as the trailer reported it, such as " +
+        "tool-call:shell or gate-run:tests. A claim about the tests gate that cites the lint " +
+        "gate's record renders UNVERIFIED rather than green.",
     ),
   narrative: z.string().optional().describe("Optional prose. Always shown as unverified."),
 });
@@ -44,6 +52,7 @@ export function createClaimTool(evidence: EvidenceRecorder, actor: string): Tool
         {
           predicate: input.predicate,
           record: input.record,
+          recordKind: input.recordKind,
           narrative: input.narrative ?? "",
         },
         actor,
@@ -54,6 +63,7 @@ export function createClaimTool(evidence: EvidenceRecorder, actor: string): Tool
           verdict: evaluation.verdict,
           reason: evaluation.reason ?? "none",
           predicate: input.predicate,
+          recordKind: input.recordKind,
         },
       };
     },

@@ -42,6 +42,7 @@ async function workerSession(id: string, collected: number): Promise<EvidenceRec
     {
       predicate: `failed == 0 && collected == ${collected}`,
       record: gate.record.payloadDigest,
+      recordKind: "gate-run:tests",
       narrative: `${id} left the suite green`,
     },
     "harness",

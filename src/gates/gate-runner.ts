@@ -202,7 +202,7 @@ export function describeFailuresForModel(cycle: GateCycle): string {
   const sections = cycle.blockingFailures.map((run) =>
     [
       `gate ${run.gateId} (${run.title}) FAILED: ${run.detail}`,
-      `evidence record: ${run.record}`,
+      `evidence record: ${run.record} kind gate-run:${run.gateId}`,
       run.observation.stdout.trim().length === 0 ? "" : `stdout:\n${run.observation.stdout.trim()}`,
       run.observation.stderr.trim().length === 0 ? "" : `stderr:\n${run.observation.stderr.trim()}`,
     ]
@@ -213,7 +213,7 @@ export function describeFailuresForModel(cycle: GateCycle): string {
   const advisory = cycle.advisoryFailures.map(
     (run) =>
       `advisory gate ${run.gateId} (${run.title}) is over budget: ${run.detail}\n` +
-      `evidence record: ${run.record}\n` +
+      `evidence record: ${run.record} kind gate-run:${run.gateId}\n` +
       "This does not block. Submit a claim citing that record to justify the size.",
   );
 

@@ -18,6 +18,19 @@ import { pathToFileURL } from "node:url";
 const GENESIS = "genesis";
 const COMPARISONS = ["==", "!=", ">=", "<=", ">", "<"];
 
+// One record type covers many subjects: every gate writes a gate-run, every tool writes a
+// tool-call. A claim names the subject it asserts against, and this is how that name is
+// recomputed here rather than read out of the bundle.
+const SUBJECT_FIELD_BY_TYPE = { "gate-run": "gateId", "tool-call": "toolName" };
+
+export function recordKindOf(type, payload) {
+  const field = SUBJECT_FIELD_BY_TYPE[type];
+  if (field === undefined) return type;
+  if (payload === null || typeof payload !== "object") return type;
+  const subject = payload[field];
+  return typeof subject === "string" && subject.length > 0 ? `${type}:${subject}` : type;
+}
+
 export function canonicalJson(value) {
   if (value === null) return "null";
   if (typeof value === "string") return JSON.stringify(value);
@@ -244,12 +257,22 @@ export function evaluateClaim(claim, lookup) {
       detail: "the claim cites no record",
     };
   }
-  const payload = lookup(claim.record);
-  if (payload === undefined) {
+  const cited = lookup(claim.record);
+  if (cited === undefined) {
     return {
       verdict: "unverified",
       reason: "record-not-found",
       detail: `no ledger record carries the payload digest ${claim.record}`,
+    };
+  }
+  // Checked before the predicate: a predicate that is true of another kind of record is not
+  // an honest near miss, it is a claim bound to the wrong evidence.
+  const actualKind = recordKindOf(cited.type, cited.payload);
+  if (actualKind !== claim.recordKind) {
+    return {
+      verdict: "unverified",
+      reason: "predicate-kind-mismatch",
+      detail: `the claim asserts against ${claim.recordKind}, but the cited record is ${actualKind}`,
     };
   }
   let node;
@@ -258,7 +281,7 @@ export function evaluateClaim(claim, lookup) {
   } catch (cause) {
     return { verdict: "unverified", reason: "predicate-unparseable", detail: cause.message };
   }
-  const result = evaluatePredicate(node, payload);
+  const result = evaluatePredicate(node, cited.payload);
   if (!result.ok) return { verdict: "unverified", reason: result.failure, detail: result.detail };
   if (!result.value) {
     return {
@@ -408,8 +431,16 @@ function collectChecks(directory) {
       : `${missing.length} missing: ${missing.join(", ")}`,
   );
 
-  const citable = new Set(records.map((entry) => entry.payloadDigest));
-  const lookup = (digest) => (citable.has(digest) ? payloads.get(digest) : undefined);
+  const cited = new Map();
+  for (const entry of records) {
+    if (payloads.has(entry.payloadDigest)) {
+      cited.set(entry.payloadDigest, {
+        type: entry.type,
+        payload: payloads.get(entry.payloadDigest),
+      });
+    }
+  }
+  const lookup = (digest) => cited.get(digest);
   const verdicts = records
     .filter((entry) => entry.type === "claim")
     .map((entry) => {

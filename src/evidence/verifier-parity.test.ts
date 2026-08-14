@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { canonicalJson, digestOfJson, type JsonValue } from "./canonical-json.ts";
-import { type ClaimPayload, evaluateClaim } from "./claim.ts";
+import { type CitedRecord, type ClaimPayload, evaluateClaim } from "./claim.ts";
 import { evaluatePredicate, parsePredicate } from "./predicate.ts";
+import { recordKindOf } from "./record-kind.ts";
 import * as embedded from "./verifier/verify.mjs";
 
 /**
@@ -65,26 +66,52 @@ describe("the embedded verifier agrees with the implementation it ships beside",
     }
   });
 
+  it("computes the same record kind, including the subject a type does not name", () => {
+    const records: [Parameters<typeof recordKindOf>[0], JsonValue][] = [
+      ["gate-run", { gateId: "tests", status: "passed" }],
+      ["gate-run", { status: "passed" }],
+      ["tool-call", { toolName: "shell" }],
+      ["session-stopped", { stopReason: "completed" }],
+    ];
+
+    for (const [type, payload] of records) {
+      expect(embedded.recordKindOf(type, payload)).toBe(recordKindOf(type, payload));
+    }
+  });
+
   it("reaches the same verdict on every way a claim can fail", () => {
     const digest = digestOfJson(subject);
-    const lookup = (candidate: string): JsonValue | undefined =>
-      candidate === digest ? subject : undefined;
+    const cited: CitedRecord = { type: "gate-run", payload: subject };
+    const lookup = (candidate: string): CitedRecord | undefined =>
+      candidate === digest ? cited : undefined;
+    const kind = recordKindOf(cited.type, cited.payload);
 
     const claims: ClaimPayload[] = [
-      { predicate: "tests.failed == 0", record: digest, narrative: "" },
-      { predicate: "tests.failed == 9", record: digest, narrative: "" },
-      { predicate: "tests.failed == 0", record: null, narrative: "" },
-      { predicate: "tests.failed == 0", record: `sha256:${"3".repeat(64)}`, narrative: "" },
-      { predicate: "not a predicate", record: digest, narrative: "" },
-      { predicate: "coverage.lines >= 90", record: digest, narrative: "" },
+      { predicate: "tests.failed == 0", record: digest, recordKind: kind, narrative: "" },
+      { predicate: "tests.failed == 9", record: digest, recordKind: kind, narrative: "" },
+      { predicate: "tests.failed == 0", record: null, recordKind: kind, narrative: "" },
+      {
+        predicate: "tests.failed == 0",
+        record: `sha256:${"3".repeat(64)}`,
+        recordKind: kind,
+        narrative: "",
+      },
+      { predicate: "not a predicate", record: digest, recordKind: kind, narrative: "" },
+      { predicate: "coverage.lines >= 90", record: digest, recordKind: kind, narrative: "" },
+      {
+        predicate: "tests.failed == 0",
+        record: digest,
+        recordKind: "gate-run:tests",
+        narrative: "",
+      },
+      { predicate: "tests.failed == 0", record: digest, recordKind: "escalation", narrative: "" },
     ];
 
     for (const claim of claims) {
       const mine = evaluateClaim(claim, lookup);
       const theirs = embedded.evaluateClaim(claim, lookup);
 
-      expect(theirs.verdict).toBe(mine.verdict);
-      expect(theirs.reason).toBe(mine.reason);
+      expect({ ...claim, ...theirs, detail: "" }).toEqual({ ...claim, ...mine, detail: "" });
     }
   });
 });

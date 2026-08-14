@@ -4,7 +4,12 @@ import type { ProvenanceTag } from "../core/model-client.ts";
 import type { RandomSource } from "../core/random-source.ts";
 import { type BlobStore, openBlobStore } from "./blob-store.ts";
 import type { JsonValue } from "./canonical-json.ts";
-import { type ClaimEvaluation, type ClaimPayload, evaluateClaim } from "./claim.ts";
+import {
+  type CitedRecord,
+  type ClaimEvaluation,
+  type ClaimPayload,
+  evaluateClaim,
+} from "./claim.ts";
 import { type ChainHead, type Ledger, openLedger } from "./ledger.ts";
 import type { LedgerRecord, RecordType } from "./ledger-record.ts";
 import { scrubJson } from "./scrub.ts";
@@ -112,12 +117,21 @@ export async function openEvidenceSession(
         type: "claim",
         actor,
         provenance: ["model"],
-        payload: { predicate: claim.predicate, record: claim.record, narrative: claim.narrative },
+        payload: {
+          predicate: claim.predicate,
+          record: claim.record,
+          recordKind: claim.recordKind,
+          narrative: claim.narrative,
+        },
       });
-      const citable = new Set(ledger.records().map((entry) => entry.payloadDigest));
-      return evaluateClaim(claim, (digest) =>
-        citable.has(digest) ? payloads.get(digest) : undefined,
-      );
+      const cited = new Map<string, CitedRecord>();
+      for (const entry of ledger.records()) {
+        const payload = payloads.get(entry.payloadDigest);
+        if (payload !== undefined) {
+          cited.set(entry.payloadDigest, { type: entry.type, payload });
+        }
+      }
+      return evaluateClaim(claim, (digest) => cited.get(digest));
     },
 
     head: () => ledger.head(),

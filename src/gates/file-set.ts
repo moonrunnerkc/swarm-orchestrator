@@ -136,6 +136,7 @@ export function createFileSetRegistry(evidence: EvidenceRecorder): FileSetRegist
         {
           predicate: `amendment == true && addedCount == ${added.length} && fileCountAfter == ${allowed.size}`,
           record: recorded.record.payloadDigest,
+          recordKind: "file-set-amended",
           narrative:
             added.length === 0
               ? `An amendment was recorded that widened nothing: every named file was already declared. Stated reason: ${reason}`

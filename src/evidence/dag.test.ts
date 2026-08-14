@@ -51,23 +51,39 @@ async function sessionWithClaims(): Promise<{ evidence: EvidenceRecorder; runDig
   });
 
   await evidence.submitClaim(
-    { predicate: "tests.collected == 47", record: record.payloadDigest, narrative: "" },
+    {
+      predicate: "tests.collected == 47",
+      record: record.payloadDigest,
+      recordKind: "tool-call:shell",
+      narrative: "",
+    },
     "test-model",
   );
   await evidence.submitClaim(
-    { predicate: "tests.failed == 0", record: null, narrative: "everything passes now" },
+    {
+      predicate: "tests.failed == 0",
+      record: null,
+      recordKind: "tool-call:shell",
+      narrative: "everything passes now",
+    },
     "test-model",
   );
   await evidence.submitClaim(
     {
       predicate: "tests.failed == 0 && facts.exitCode == 0",
       record: record.payloadDigest,
+      recordKind: "tool-call:shell",
       narrative: "the suite is green",
     },
     "test-model",
   );
   await evidence.submitClaim(
-    { predicate: "tests.failed == 0", record: absentDigest, narrative: "" },
+    {
+      predicate: "tests.failed == 0",
+      record: absentDigest,
+      recordKind: "tool-call:shell",
+      narrative: "",
+    },
     "test-model",
   );
 

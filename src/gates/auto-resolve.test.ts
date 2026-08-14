@@ -461,6 +461,7 @@ describe("an advisory gate that demands a justification", () => {
       {
         predicate: "measures.changedFiles >= 1",
         record: budget?.record ?? null,
+        recordKind: "gate-run:diff-budget",
         narrative: "the fix touches one file and the budget was set to zero for this test",
       },
       "model",

@@ -344,6 +344,7 @@ async function escalate(
     {
       predicate: `attemptsUsed == ${payload.attemptsUsed} && cap == ${payload.cap}`,
       record: recorded.record.payloadDigest,
+      recordKind: "escalation",
       narrative: `Auto-resolve stopped at the ${payload.gateId} gate: ${payload.reason}`,
     },
     "harness",

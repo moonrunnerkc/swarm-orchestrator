@@ -41,11 +41,21 @@ beforeEach(async () => {
     },
   });
   await evidence.submitClaim(
-    { predicate: "facts.exitCode == 0", record: record.payloadDigest, narrative: "" },
+    {
+      predicate: "facts.exitCode == 0",
+      record: record.payloadDigest,
+      recordKind: "tool-call:shell",
+      narrative: "",
+    },
     "test-model",
   );
   await evidence.submitClaim(
-    { predicate: "facts.exitCode == 0", record: null, narrative: "it all works" },
+    {
+      predicate: "facts.exitCode == 0",
+      record: null,
+      recordKind: "tool-call:shell",
+      narrative: "it all works",
+    },
     "test-model",
   );
   await evidence.record({

@@ -81,6 +81,7 @@ function renderClaim(claim: ClaimNode, evidenceByDigest: Map<string, EvidenceNod
         ? "cites no record"
         : `cites ${escapeHtml(claim.record)}, which is in no record of this chain`
       : `cites <a href="#record-${cited.sequence}">record ${cited.sequence}, ${escapeHtml(cited.type)}</a>`,
+    claim.recordKind.length === 0 ? "" : `, asserted against ${escapeHtml(claim.recordKind)}`,
     "</p>",
     `<p class="detail">${escapeHtml(claim.evaluation.detail)}</p>`,
     claim.narrative.length === 0

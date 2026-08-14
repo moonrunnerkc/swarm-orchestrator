@@ -81,12 +81,18 @@ describe("evidence session", () => {
       {
         predicate: "tests.failed == 0 && tests.collected >= 47",
         record: record.payloadDigest,
+        recordKind: "tool-call",
         narrative: "the suite is green",
       },
       "test-model",
     );
     const overClaimed = await evidence.submitClaim(
-      { predicate: "tests.collected >= 100", record: record.payloadDigest, narrative: "" },
+      {
+        predicate: "tests.collected >= 100",
+        record: record.payloadDigest,
+        recordKind: "tool-call",
+        narrative: "",
+      },
       "test-model",
     );
 
@@ -101,7 +107,7 @@ describe("evidence session", () => {
     const orphan = await evidence.blobs.put({ tests: { failed: 0 } });
 
     const evaluation = await evidence.submitClaim(
-      { predicate: "tests.failed == 0", record: orphan, narrative: "" },
+      { predicate: "tests.failed == 0", record: orphan, recordKind: "tool-call", narrative: "" },
       "test-model",
     );
 

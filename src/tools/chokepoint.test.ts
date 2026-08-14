@@ -144,7 +144,9 @@ describe("tool chokepoint", () => {
 
     const outcome = await chokepoint.invoke(invocation());
 
-    expect(outcome.output).toContain(`[evidence record ${stubDigest}]`);
+    // The kind rides along, because a claim has to name what it is asserting against and
+    // the trailer is the only place the model learns it.
+    expect(outcome.output).toContain(`[evidence record ${stubDigest} kind tool-call:read]`);
     expect(stubDigest).toMatch(digestPattern);
   });
 

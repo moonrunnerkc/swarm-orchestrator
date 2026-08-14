@@ -1,6 +1,7 @@
 import type { ProvenanceTag } from "../core/model-client.ts";
 import type { JsonValue } from "./canonical-json.ts";
 import {
+  type CitedRecord,
   type ClaimEvaluation,
   type ClaimPayload,
   claimPayloadSchema,
@@ -25,6 +26,8 @@ export interface ClaimNode {
   readonly actor: string;
   readonly predicate: string;
   readonly record: string | null;
+  /** The kind of record the claim asserted against, which the verdict below checked. */
+  readonly recordKind: string;
   /** Free-text narrative. Always rendered as unverified prose, whatever the verdict is. */
   readonly narrative: string;
   readonly evaluation: ClaimEvaluation;
@@ -56,8 +59,14 @@ export function buildEvidenceDag(
 ): EvidenceDag {
   const claimRecords = records.filter((record) => record.type === "claim");
   const citable = new Set(records.map((record) => record.payloadDigest));
-  const lookup = (digest: string): JsonValue | undefined =>
-    citable.has(digest) ? payloads.get(digest) : undefined;
+  const cited = new Map<string, CitedRecord>();
+  for (const record of records) {
+    const payload = payloads.get(record.payloadDigest);
+    if (payload !== undefined) {
+      cited.set(record.payloadDigest, { type: record.type, payload });
+    }
+  }
+  const lookup = (digest: string): CitedRecord | undefined => cited.get(digest);
 
   const evidence: EvidenceNode[] = records
     .filter((record) => record.type !== "claim")
@@ -86,6 +95,7 @@ export function buildEvidenceDag(
         actor: record.actor,
         predicate: "",
         record: null,
+        recordKind: "",
         narrative: "",
         evaluation: {
           verdict: "unverified",
@@ -102,6 +112,7 @@ export function buildEvidenceDag(
       actor: record.actor,
       predicate: claim.predicate,
       record: claim.record,
+      recordKind: claim.recordKind,
       narrative: claim.narrative,
       evaluation: evaluateClaim(claim, lookup),
     };

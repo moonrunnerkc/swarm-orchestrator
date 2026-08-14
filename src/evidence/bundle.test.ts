@@ -61,12 +61,18 @@ async function recordedSession(): Promise<EvidenceRecorder> {
     {
       predicate: "tests.failed == 0 && tests.collected >= 47",
       record: record.payloadDigest,
+      recordKind: "tool-call:shell",
       narrative: "the suite is green",
     },
     "test-model",
   );
   await evidence.submitClaim(
-    { predicate: "tests.failed == 0", record: null, narrative: "trust me" },
+    {
+      predicate: "tests.failed == 0",
+      record: null,
+      recordKind: "tool-call:shell",
+      narrative: "trust me",
+    },
     "test-model",
   );
 
