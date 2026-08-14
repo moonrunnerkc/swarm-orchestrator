@@ -174,13 +174,13 @@ function valueAt(value: unknown, path: readonly string[]): unknown {
   return current;
 }
 
-export interface SwarmTomlReader {
+interface SwarmTomlReader {
   /** The workspace root, which is the one place the file is looked for. */
   readonly directory: string;
   readonly readFile: (path: string) => Promise<string>;
 }
 
-export interface FoundSwarmToml {
+interface FoundSwarmToml {
   readonly toml: SwarmToml;
   readonly path: string;
 }

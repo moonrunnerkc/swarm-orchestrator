@@ -47,7 +47,7 @@ export const calibrationCaseSchema = z.object({
 
 export type CalibrationCase = z.infer<typeof calibrationCaseSchema>;
 
-export class MalformedCalibrationCaseError extends Error {
+class MalformedCalibrationCaseError extends Error {
   constructor(source: string, problem: string) {
     super(
       `the calibration case from ${source} is not usable:\n${problem}\n` +

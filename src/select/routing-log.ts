@@ -16,7 +16,7 @@ export const assignmentKinds = ["calibration", "ucb", "epsilon", "pinned"] as co
 export type AssignmentKind = (typeof assignmentKinds)[number];
 
 /** Priced from the table, zero because local, or unknown because no rate is known. */
-export const costSources = ["priced", "local", "unknown"] as const;
+const costSources = ["priced", "local", "unknown"] as const;
 
 export type CostSource = (typeof costSources)[number];
 
@@ -57,7 +57,7 @@ export interface RoutingLogContents {
   readonly unreadable: number;
 }
 
-export interface RoutingLog {
+interface RoutingLog {
   readonly path: string;
   append(entry: RewardEntry): Promise<void>;
   read(): Promise<RoutingLogContents>;
@@ -68,7 +68,7 @@ export function defaultRoutingLogPath(homeDirectory: string): string {
   return join(homeDirectory, ".swarm", "routing", "rewards.jsonl");
 }
 
-export interface RoutingLogOptions {
+interface RoutingLogOptions {
   readonly path: string;
 }
 

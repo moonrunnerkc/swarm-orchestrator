@@ -144,7 +144,7 @@ export function measureTestFile(text: string | null): TestFileMeasures {
  * assertion and an added exact one on the same subject can be matched. Null for assertion
  * styles with no parenthesized subject, which then never count as re-specified.
  */
-export function assertionSubject(line: string): string | null {
+function assertionSubject(line: string): string | null {
   const match = /\bexpect\s*\(\s*([\s\S]+?)\s*\)\s*\./i.exec(line);
   const subject = match?.[1];
   return subject === undefined ? null : subject.replaceAll(/\s+/g, " ").trim();

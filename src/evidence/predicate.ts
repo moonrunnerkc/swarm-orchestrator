@@ -7,13 +7,13 @@ export class PredicateParseError extends Error {
   }
 }
 
-export type ComparisonOperator = "==" | "!=" | ">=" | "<=" | ">" | "<";
+type ComparisonOperator = "==" | "!=" | ">=" | "<=" | ">" | "<";
 
-export type PredicateOperand =
+type PredicateOperand =
   | { readonly kind: "path"; readonly path: readonly string[]; readonly source: string }
   | { readonly kind: "literal"; readonly value: string | number | boolean | null };
 
-export type PredicateNode =
+type PredicateNode =
   | {
       readonly kind: "compare";
       readonly operator: ComparisonOperator;
@@ -22,9 +22,9 @@ export type PredicateNode =
     }
   | { readonly kind: "and" | "or"; readonly left: PredicateNode; readonly right: PredicateNode };
 
-export type PredicateFailure = "path-not-found" | "type-mismatch";
+type PredicateFailure = "path-not-found" | "type-mismatch";
 
-export type PredicateResult =
+type PredicateResult =
   | { readonly ok: true; readonly value: boolean }
   | { readonly ok: false; readonly failure: PredicateFailure; readonly detail: string };
 
@@ -156,7 +156,7 @@ export function evaluatePredicate(node: PredicateNode, subject: JsonValue): Pred
   };
 }
 
-export function describeOperand(operand: PredicateOperand): string {
+function describeOperand(operand: PredicateOperand): string {
   return operand.kind === "path" ? operand.source : JSON.stringify(operand.value);
 }
 

@@ -60,14 +60,14 @@ function markerIn(line: string): string | null {
   return null;
 }
 
-export interface PlaceholderFinding {
+interface PlaceholderFinding {
   readonly path: string;
   readonly line: number;
   readonly marker: string;
   readonly text: string;
 }
 
-export function findPlaceholders(context: GateContext): readonly PlaceholderFinding[] {
+function findPlaceholders(context: GateContext): readonly PlaceholderFinding[] {
   const findings: PlaceholderFinding[] = [];
   for (const file of context.changes.files) {
     for (const added of file.addedLines) {
@@ -176,7 +176,7 @@ export const fileSetGate: GateDefinition = {
  */
 const credentialShapedToken = /[A-Za-z0-9+/_=-]{12,}/g;
 
-export function carriesCredentialShapedValue(line: string): boolean {
+function carriesCredentialShapedValue(line: string): boolean {
   for (const token of line.match(credentialShapedToken) ?? []) {
     // Letters and digits together, or base64 padding at length: an identifier is neither.
     if (/[0-9]/.test(token) && /[A-Za-z]/.test(token)) {

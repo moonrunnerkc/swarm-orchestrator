@@ -10,9 +10,9 @@ interface ProbeResponse {
   json(): Promise<unknown>;
 }
 
-export type MemoryFetch = (url: string) => Promise<ProbeResponse>;
+type MemoryFetch = (url: string) => Promise<ProbeResponse>;
 
-export interface OllamaMemoryProbeOptions {
+interface OllamaMemoryProbeOptions {
   /** The OpenAI-compatible base url the provider layer talks to. */
   readonly baseUrl: string;
   readonly fetch: MemoryFetch;

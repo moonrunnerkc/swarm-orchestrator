@@ -40,7 +40,7 @@ async function gitOrThrow(cwd: string, args: readonly string[]): Promise<string>
   return result.stdout;
 }
 
-export class WorktreeError extends Error {
+class WorktreeError extends Error {
   constructor(command: string, detail: string) {
     super(
       `${command} failed: ${detail}. A parallel run needs a git repository it can add ` +
@@ -50,7 +50,7 @@ export class WorktreeError extends Error {
   }
 }
 
-export interface WorktreeOptions {
+interface WorktreeOptions {
   readonly repositoryRoot: string;
   /** Where the working copy goes. Outside the repository, so it is never a change to it. */
   readonly path: string;
@@ -106,7 +106,7 @@ export async function addWorktree(options: WorktreeOptions): Promise<Worktree> {
   };
 }
 
-export interface MergeOutcome {
+interface MergeOutcome {
   readonly merged: boolean;
   /** The merge commit, or null when nothing was merged. */
   readonly commit: string | null;

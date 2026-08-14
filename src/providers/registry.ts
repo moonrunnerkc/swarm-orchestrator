@@ -27,7 +27,7 @@ export class ProviderNotConfiguredError extends Error {
   }
 }
 
-export interface ProviderRegistry {
+interface ProviderRegistry {
   readonly providerIds: readonly ProviderId[];
   create(spec: ModelSpec): ModelClient;
 }

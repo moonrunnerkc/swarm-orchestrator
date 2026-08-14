@@ -14,7 +14,7 @@ const unifiedMemoryShare = 0.75;
 /** Off the GPU the model shares memory with the OS and whatever else is open. */
 const systemMemoryShare = 0.6;
 
-export interface RecommendedModel {
+interface RecommendedModel {
   readonly outcome: "model";
   readonly tier: ShortlistTier;
   readonly model: ShortlistModel;
@@ -25,7 +25,7 @@ export interface RecommendedModel {
   readonly caveats: readonly string[];
 }
 
-export interface NoTierMatched {
+interface NoTierMatched {
   readonly outcome: "no-tier";
   readonly reasoning: readonly string[];
   readonly caveats: readonly string[];

@@ -28,7 +28,7 @@ export interface ToolDefinition extends ToolSchema {
 }
 
 /** A tool as its author writes it, with the input type its schema describes. */
-export interface TypedToolSpec<Input> {
+interface TypedToolSpec<Input> {
   readonly name: string;
   readonly description: string;
   readonly inputSchema: ZodType<Input>;

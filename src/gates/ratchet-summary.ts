@@ -23,7 +23,7 @@ export interface RatchetSummary {
 }
 
 /** Structurally satisfied by an AutoResolveOutcome, and by far less in a test. */
-export interface RatchetSummaryInput {
+interface RatchetSummaryInput {
   readonly settled: "green" | "escalated";
   readonly attempts: readonly { readonly decision: RatchetDecision }[];
   readonly finalMeasures: MeasureSnapshot;

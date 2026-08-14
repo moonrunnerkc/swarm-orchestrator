@@ -1,6 +1,6 @@
 import type { ShortlistBackend } from "./shortlist.ts";
 
-export interface BackendCommands {
+interface BackendCommands {
   /** Gets the weights onto the machine. */
   readonly install: string;
   /** Starts the server swarm will talk to. */

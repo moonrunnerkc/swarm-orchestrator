@@ -12,7 +12,7 @@ import {
  * is an error that says how to fix it, not a guess that fails later.
  */
 
-export interface PinnedLocalEndpoint {
+interface PinnedLocalEndpoint {
   readonly url: string;
   readonly origin: "flag" | "environment" | "config";
 }
@@ -46,7 +46,7 @@ export class NoLocalEndpointError extends Error {
   }
 }
 
-export interface EndpointResolution {
+interface EndpointResolution {
   /** Null when no layer named one, which is what turns discovery on. */
   readonly pinned: PinnedLocalEndpoint | null;
   readonly discover: () => Promise<readonly DiscoveredLocalEndpoint[]>;
@@ -99,7 +99,7 @@ function describePin(origin: PinnedLocalEndpoint["origin"]): string {
 }
 
 /** Type aliases rather than interfaces, so they stay assignable to the ledger's JSON type. */
-export type LocalEndpointEntry =
+type LocalEndpointEntry =
   | {
       type: "local-endpoint";
       actor: "harness";

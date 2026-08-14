@@ -10,7 +10,7 @@ export interface ProjectDetection {
   readonly pythonTools: readonly string[];
 }
 
-export const manifestsByType: Readonly<Record<ProjectType, string>> = {
+const manifestsByType: Readonly<Record<ProjectType, string>> = {
   node: "package.json",
   python: "pyproject.toml",
   rust: "Cargo.toml",

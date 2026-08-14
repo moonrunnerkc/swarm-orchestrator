@@ -21,9 +21,9 @@ import { judgeRatchet, type RatchetDecision } from "../gates/ratchet.ts";
 import { headCommit, mergeBranch, resetHard } from "./worktree.ts";
 
 /** Why a proposal did not land. Each one is handed back with the output that produced it. */
-export type RejectionReason = "merge-conflict" | "gates" | "ratchet";
+type RejectionReason = "merge-conflict" | "gates" | "ratchet";
 
-export interface QueueCandidate {
+interface QueueCandidate {
   readonly workerId: string;
   readonly branch: string;
   readonly task: string;
@@ -56,7 +56,7 @@ export interface MergeQueueResult {
   readonly baseCycle: GateCycle;
 }
 
-export interface MergeQueueOptions {
+interface MergeQueueOptions {
   readonly integrationPath: string;
   readonly baseCommit: string;
   /** Proposals in the order they will be tried. Order is the queue. */
@@ -68,7 +68,7 @@ export interface MergeQueueOptions {
   readonly gateOptions?: GateSetOptions;
 }
 
-export const mergeAttemptSchema = z.object({
+const mergeAttemptSchema = z.object({
   workerId: z.string().min(1),
   branch: z.string().min(1),
   position: z.number().int().positive(),
@@ -82,8 +82,6 @@ export const mergeAttemptSchema = z.object({
   ratchetAccepted: z.boolean().nullable(),
   ratchetDetail: z.string().nullable(),
 });
-
-export type MergeAttemptPayload = z.infer<typeof mergeAttemptSchema>;
 
 /**
  * Workers propose, gates arbitrate, one at a time. Sequential is the whole point: a merge is

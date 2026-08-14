@@ -6,7 +6,7 @@ import type { GateLine, SessionView } from "./session-view.ts";
 /** How much of the action stream stays on screen. Older lines scroll out of the pane. */
 const visibleActions = 12;
 
-export interface SessionScreenProps {
+interface SessionScreenProps {
   readonly store: SessionStore;
   readonly task: string;
 }

@@ -40,7 +40,7 @@ export const emptyMeasureSnapshot: MeasureSnapshot = {
   changedLinesMeasured: null,
 };
 
-export interface SnapshotInput {
+interface SnapshotInput {
   readonly changes: WorkspaceChanges;
   readonly probe: WorkspaceProbe;
   /** Test files seen earlier in the run, so a file that stops being touched still counts. */
@@ -136,14 +136,14 @@ function changedLineCoverage(input: SnapshotInput): CoverageResult | null {
   return measured === 0 ? null : { ratio: covered / measured, covered, measured };
 }
 
-export interface ComparableTotals {
+interface ComparableTotals {
   readonly tests: number;
   readonly assertions: number;
   readonly skips: number;
   readonly files: readonly string[];
 }
 
-export interface ComparablePair {
+interface ComparablePair {
   readonly before: ComparableTotals;
   readonly after: ComparableTotals;
 }

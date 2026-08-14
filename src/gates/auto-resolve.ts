@@ -30,7 +30,7 @@ export interface ResolveRequest {
 /** Hands the failure back to whatever is doing the fixing, and returns when it has tried. */
 export type ResolveAttempt = (request: ResolveRequest) => Promise<void>;
 
-export interface AutoResolveDependencies {
+interface AutoResolveDependencies {
   readonly gates: readonly GateDefinition[];
   /** Recomputed per attempt: the diff, the declared set, and the budgets all move. */
   readonly context: () => Promise<GateContext>;
@@ -44,7 +44,7 @@ export interface AutoResolveDependencies {
   readonly cap: number;
 }
 
-export interface AutoResolveAttempt {
+interface AutoResolveAttempt {
   readonly attempt: number;
   readonly cycle: GateCycle;
   readonly decision: RatchetDecision;

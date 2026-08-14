@@ -15,7 +15,7 @@ import {
 /** Big enough to hold a real failing suite, small enough that one gate cannot fill a disk. */
 const maxRecordedOutputChars = 256_000;
 
-export const gateRunSchema = z.object({
+const gateRunSchema = z.object({
   gateId: z.string().min(1),
   title: z.string(),
   severity: z.enum(["blocking", "advisory"]),
@@ -33,9 +33,7 @@ export const gateRunSchema = z.object({
   measures: z.record(z.string(), z.number()),
 });
 
-export type GateRunPayload = z.infer<typeof gateRunSchema>;
-
-export interface GateRun {
+interface GateRun {
   readonly gateId: string;
   readonly title: string;
   readonly severity: GateSeverity;

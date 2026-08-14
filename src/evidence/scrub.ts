@@ -1,6 +1,6 @@
 import type { JsonValue } from "./canonical-json.ts";
 
-export interface SecretPattern {
+interface SecretPattern {
   readonly label: string;
   /** Held as source rather than a RegExp so every use gets a fresh lastIndex. */
   readonly source: string;
@@ -12,7 +12,7 @@ export interface SecretPattern {
  * this is known-pattern scrubbing, not secret removal. A credential in a shape nobody
  * listed here survives, so the sandbox denylist stays the primary defense.
  */
-export const knownSecretPatterns: readonly SecretPattern[] = [
+const knownSecretPatterns: readonly SecretPattern[] = [
   {
     label: "private-key-block",
     source: "-----BEGIN[A-Z ]*PRIVATE KEY-----[\\s\\S]*?-----END[A-Z ]*PRIVATE KEY-----",
@@ -36,7 +36,7 @@ export const knownSecretPatterns: readonly SecretPattern[] = [
   },
 ];
 
-export interface ScrubOutcome<Value> {
+interface ScrubOutcome<Value> {
   readonly value: Value;
   /** Pattern labels that fired, in the order they were applied. Recorded, never the match. */
   readonly redactions: readonly string[];

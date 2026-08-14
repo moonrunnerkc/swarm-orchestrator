@@ -20,7 +20,7 @@ export interface FixtureScript {
   readonly turns: readonly FixtureTurn[];
 }
 
-export interface FixtureModelClient extends ModelClient {
+interface FixtureModelClient extends ModelClient {
   /** Every request the loop made, in order, for assertions about what was sent. */
   readonly requests: readonly ModelRequest[];
 }
@@ -45,7 +45,8 @@ export class FixtureFailureError extends Error {
 /**
  * Replays a canned turn sequence. This is a first-class provider, not test-only
  * scaffolding: it is the deterministic substrate the loop, termination, and sandbox
- * tests run against, and transcript replay builds on the same shape.
+ * tests run against. The replay command is a different thing: a record-to-text
+ * renderer over a bundle's ledger, with no provider involved at all.
  */
 export function createFixtureModelClient(script: FixtureScript): FixtureModelClient {
   const requests: ModelRequest[] = [];

@@ -7,7 +7,7 @@ import type { EvidenceRecorder } from "../evidence/session.ts";
  * the set is allowed and cheap; doing it silently is not.
  */
 
-export interface FileSetAmendment {
+interface FileSetAmendment {
   readonly added: readonly string[];
   readonly reason: string;
   /** The ledger record that carries the amendment, so a reviewer can go read it. */
@@ -29,12 +29,12 @@ export const emptyFileSet: FileSetState = {
   wasDeclared: false,
 };
 
-export const fileSetDeclarationSchema = z.object({
+const fileSetDeclarationSchema = z.object({
   files: z.array(z.string().min(1)).min(1),
   fileCount: z.number().int().positive(),
 });
 
-export const fileSetAmendmentSchema = z.object({
+const fileSetAmendmentSchema = z.object({
   /** Empty when every named file was already in the set, which is recorded as it happened. */
   added: z.array(z.string().min(1)),
   addedCount: z.number().int().nonnegative(),
@@ -64,7 +64,7 @@ export function normalizePath(path: string): string {
   return path.replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, "").trim();
 }
 
-export interface FileSetVerdict {
+interface FileSetVerdict {
   readonly outside: readonly string[];
   readonly declaredCount: number;
   readonly changedCount: number;

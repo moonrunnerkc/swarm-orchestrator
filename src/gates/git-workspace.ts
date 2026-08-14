@@ -13,7 +13,7 @@ import type {
 
 const runProcess = promisify(execFile);
 
-export class GitUnavailableError extends Error {
+class GitUnavailableError extends Error {
   constructor(workspaceRoot: string, cause: unknown) {
     super(
       `${workspaceRoot} is not a git working tree, or git could not read it: ` +
@@ -139,7 +139,7 @@ export function createGitCheckpoint(options: GitWorkspaceOptions): WorkspaceChec
  * rather than a fresh checkout keeps the installed dependencies, which is what makes a
  * failure on base mean something about the code instead of about the environment.
  */
-export interface BaseSourceSwap {
+interface BaseSourceSwap {
   restore(): Promise<void>;
 }
 

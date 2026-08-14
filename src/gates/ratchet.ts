@@ -13,7 +13,7 @@ import { type RespecificationFinding, respecificationSchema } from "./respecific
  * capped retry loop under gate-output pressure is tuned to produce.
  */
 
-export type RatchetViolationKind =
+type RatchetViolationKind =
   | "gate-regressed"
   | "tests-collected-decreased"
   | "tests-declared-decreased"
@@ -21,7 +21,7 @@ export type RatchetViolationKind =
   | "changed-line-coverage-decreased"
   | "skip-markers-increased";
 
-export interface RatchetViolation {
+interface RatchetViolation {
   readonly kind: RatchetViolationKind;
   readonly before: number;
   readonly after: number;
@@ -29,7 +29,7 @@ export interface RatchetViolation {
 }
 
 /** A measure that could not be compared, and why. Recorded so a gap never reads as a pass. */
-export interface RatchetAbstention {
+interface RatchetAbstention {
   readonly measure: string;
   readonly reason: string;
 }
@@ -54,7 +54,7 @@ export interface RatchetInput {
   readonly exemptFiles: ReadonlySet<string>;
 }
 
-export const ratchetDecisionSchema = z.object({
+const ratchetDecisionSchema = z.object({
   attempt: z.number().int().positive(),
   accepted: z.boolean(),
   detail: z.string(),
@@ -92,7 +92,7 @@ export const ratchetDecisionSchema = z.object({
   }),
 });
 
-export type RatchetDecisionPayload = z.infer<typeof ratchetDecisionSchema>;
+type RatchetDecisionPayload = z.infer<typeof ratchetDecisionSchema>;
 
 /**
  * Judges one retry. Every check is a comparison between two measured numbers, and any

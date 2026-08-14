@@ -14,7 +14,7 @@ import type { TaskClass } from "./task-class.ts";
  * rate, and gate pass rate rewards whichever model is best at weakening tests.
  */
 
-export interface RewardWeights {
+interface RewardWeights {
   /** How much of the reward each retry costs. Higher is stricter. */
   readonly attemptPenalty: number;
   /** The latency at which a run keeps half its reward. */
@@ -47,7 +47,7 @@ export interface RewardInput {
   readonly costUsd: number | null;
 }
 
-export interface RewardScore {
+interface RewardScore {
   /** Between zero and one, where zero is a run the router should learn to avoid. */
   readonly reward: number;
   /** One line naming what it weighed, so a routing table reads without the formula. */
@@ -87,7 +87,7 @@ function describeRetries(attempts: number): string {
   return attempts === 1 ? "1 retry" : `${attempts} retries`;
 }
 
-export interface RewardEntryInput {
+interface RewardEntryInput {
   readonly recordedAt: number;
   readonly sessionId: string;
   readonly taskClass: TaskClass;

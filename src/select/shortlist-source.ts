@@ -11,7 +11,7 @@ export const defaultShortlistUrl =
 /** What `--shortlist` takes to mean "do not go to the network at all". */
 export const bundledShortlistKeyword = "bundled";
 
-export type ShortlistOrigin = "published" | "bundled" | "file";
+type ShortlistOrigin = "published" | "bundled" | "file";
 
 export interface LoadedShortlist {
   readonly shortlist: Shortlist;

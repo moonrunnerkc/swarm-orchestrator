@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { canonicalJson, digestFileName, digestOfBytes, type JsonValue } from "./canonical-json.ts";
 
-export class BlobWriteFailedError extends Error {
+class BlobWriteFailedError extends Error {
   constructor(digest: string, cause: unknown) {
     super(
       `could not store evidence blob ${digest}: ${cause instanceof Error ? cause.message : String(cause)}. ` +

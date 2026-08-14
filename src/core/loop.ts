@@ -14,7 +14,7 @@ import type { RandomSource } from "./random-source.ts";
 import { findExhaustedLimit, type LoopBudget, type StopReason } from "./termination.ts";
 import type { ToolInvoker } from "./tool-invoker.ts";
 
-export interface ModelRetryPolicy {
+interface ModelRetryPolicy {
   /** Total attempts per step, including the first. */
   readonly attempts: number;
   readonly baseDelayMs: number;

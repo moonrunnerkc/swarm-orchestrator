@@ -6,7 +6,7 @@ import { z } from "zod";
  * the sentence that says where to look first.
  */
 
-export const attemptSummarySchema = z.object({
+const attemptSummarySchema = z.object({
   attempt: z.number().int().positive(),
   ratchetAccepted: z.boolean(),
   ratchetDetail: z.string(),

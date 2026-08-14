@@ -134,7 +134,7 @@ function prettyJson(value: Parameters<typeof canonicalJson>[0]): string {
   return JSON.stringify(JSON.parse(canonicalJson(value)), null, 2);
 }
 
-export function escapeHtml(text: string): string {
+function escapeHtml(text: string): string {
   return text
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")

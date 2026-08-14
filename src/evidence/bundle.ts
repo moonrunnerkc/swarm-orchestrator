@@ -28,7 +28,7 @@ export class BundleChainError extends Error {
   }
 }
 
-export class BundleIntegrityError extends Error {
+class BundleIntegrityError extends Error {
   constructor(digest: string) {
     super(
       `blob ${digest} does not hash to its own name, so the session store is corrupt or altered. ` +
@@ -54,7 +54,7 @@ export interface BundleSource {
   readonly blobBytes: (digest: string) => Promise<string | null>;
 }
 
-export interface ExportBundleOptions {
+interface ExportBundleOptions {
   readonly source: BundleSource;
   readonly destination: string;
   readonly signingKey: SigningKey;
@@ -63,7 +63,7 @@ export interface ExportBundleOptions {
   readonly workers?: readonly WorkerChain[];
 }
 
-export interface BundleExport {
+interface BundleExport {
   readonly directory: string;
   readonly manifest: BundleManifest;
   readonly dag: EvidenceDag;
@@ -162,7 +162,7 @@ export async function exportBundle(options: ExportBundleOptions): Promise<Bundle
   return { directory: options.destination, manifest, dag };
 }
 
-export interface BundleContents {
+interface BundleContents {
   readonly manifest: BundleManifest;
   readonly records: readonly LedgerRecord[];
   readonly payloads: ReadonlyMap<string, JsonValue>;

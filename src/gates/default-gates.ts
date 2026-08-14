@@ -22,7 +22,7 @@ interface GateSpec {
   readonly parse?: GateParser;
 }
 
-export function commandGate(spec: GateSpec): GateDefinition {
+function commandGate(spec: GateSpec): GateDefinition {
   return {
     id: spec.id,
     title: spec.title,
@@ -44,7 +44,7 @@ function parserFor(id: string): GateParser {
 }
 
 /** A gate the project declared no way to run. Recorded, never silently dropped. */
-export function unavailableGate(
+function unavailableGate(
   id: string,
   title: string,
   severity: GateSeverity,
@@ -60,7 +60,7 @@ export function unavailableGate(
 }
 
 /** gofmt and friends pass by printing nothing, so the exit code alone would call it green. */
-export const noOutputParser: GateParser = (observation) => {
+const noOutputParser: GateParser = (observation) => {
   const offenders = observation.stdout.trim();
   if (observation.exitCode !== 0) {
     return {

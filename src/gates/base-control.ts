@@ -11,7 +11,7 @@ import type { BaseControlRunner, ControlRun } from "./respecification.ts";
  * test failed on base" a statement about the code instead of about the environment.
  */
 
-export interface BaseControlOptions {
+interface BaseControlOptions {
   readonly workspace: GitWorkspaceOptions;
   readonly commands: GateCommandRunner;
   /** Null when the project has no way to run one test file, which withholds every exemption. */

@@ -48,9 +48,9 @@ export interface GateContext {
  * An inspection produces the same shape a command does, so the parser stays the only thing
  * that judges and the engine keeps one execution path for every gate.
  */
-export type GateInspection = (context: GateContext) => Promise<GateObservation>;
+type GateInspection = (context: GateContext) => Promise<GateObservation>;
 
-export type GateSource =
+type GateSource =
   | { readonly kind: "command"; readonly command: string; readonly timeoutMs?: number }
   | { readonly kind: "inspection"; readonly inspect: GateInspection };
 

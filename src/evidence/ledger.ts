@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile } from "node:fs/promises";
+import { appendFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Clock } from "../core/clock.ts";
 import type { ProvenanceTag } from "../core/model-client.ts";
@@ -34,7 +34,7 @@ export class LedgerSealedError extends Error {
   }
 }
 
-export interface LedgerAppend {
+interface LedgerAppend {
   readonly type: RecordType;
   readonly actor: string;
   readonly payloadDigest: string;
@@ -57,7 +57,7 @@ export interface Ledger {
   records(): readonly LedgerRecord[];
 }
 
-export interface LedgerOptions {
+interface LedgerOptions {
   readonly path: string;
   readonly clock: Clock;
   /** Injected so a test can drive the abort path without breaking a real filesystem. */
@@ -138,7 +138,7 @@ export interface ChainProblem {
   readonly detail: string;
 }
 
-export interface ChainVerification {
+interface ChainVerification {
   readonly ok: boolean;
   readonly head: string;
   readonly recordCount: number;
@@ -178,7 +178,7 @@ export function verifyChain(records: readonly LedgerRecord[]): ChainVerification
   };
 }
 
-export interface ParsedLedger {
+interface ParsedLedger {
   readonly records: readonly LedgerRecord[];
   readonly problems: readonly ChainProblem[];
 }
@@ -211,10 +211,6 @@ export function parseLedgerText(text: string): ParsedLedger {
   }
 
   return { records, problems };
-}
-
-export async function readLedgerFile(path: string): Promise<ParsedLedger> {
-  return parseLedgerText(await readFile(path, "utf8"));
 }
 
 async function appendLine(path: string, line: string): Promise<void> {

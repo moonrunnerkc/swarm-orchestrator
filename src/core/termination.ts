@@ -12,7 +12,7 @@ export interface LoopBudget {
   readonly maxWallTimeMs: number;
 }
 
-export interface LoopProgress {
+interface LoopProgress {
   readonly steps: number;
   readonly tokensUsed: number;
   readonly elapsedMs: number;

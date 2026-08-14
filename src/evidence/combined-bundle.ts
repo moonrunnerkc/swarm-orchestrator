@@ -4,13 +4,13 @@ import { type BundleSource, exportBundle } from "./bundle.ts";
 import { bundleFileNames, type WorkerChain } from "./bundle-manifest.ts";
 import type { SigningKey } from "./signing.ts";
 
-export interface WorkerBundleSource {
+interface WorkerBundleSource {
   /** Short name the coordinator knows this worker by, and the directory it lands in. */
   readonly workerId: string;
   readonly source: BundleSource;
 }
 
-export interface CombinedBundleOptions {
+interface CombinedBundleOptions {
   /** The chain that ran the queue. Its signature is what covers the run as a whole. */
   readonly coordinator: BundleSource;
   readonly workers: readonly WorkerBundleSource[];
@@ -19,7 +19,7 @@ export interface CombinedBundleOptions {
   readonly clock: Clock;
 }
 
-export interface CombinedBundleExport {
+interface CombinedBundleExport {
   readonly directory: string;
   readonly workers: readonly WorkerChain[];
 }

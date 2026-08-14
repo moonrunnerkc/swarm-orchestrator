@@ -17,7 +17,7 @@ export const genesisHash = "genesis";
  * record already written still validates, and readers switch on the type with a fallback.
  * Changing a field is the incompatible case, and that is what the version bump is for.
  */
-export const recordTypes = [
+const recordTypes = [
   "session-started",
   "local-endpoint",
   "model-call",
@@ -43,7 +43,7 @@ export type RecordType = (typeof recordTypes)[number];
 
 const digestSchema = z.string().regex(digestPattern, "expected a sha256:<hex> digest");
 
-export const provenanceTagSchema = z.enum(["user", "model", "tool-output", "file"]);
+const provenanceTagSchema = z.enum(["user", "model", "tool-output", "file"]);
 
 export const ledgerRecordSchema = z
   .object({
@@ -73,8 +73,6 @@ export const ledgerRecordSchema = z
   });
 
 export type LedgerRecord = z.infer<typeof ledgerRecordSchema>;
-
-export const harnessActor = "harness";
 
 /**
  * The record's own hash, over its canonical bytes. Not stored in the line: a stored hash

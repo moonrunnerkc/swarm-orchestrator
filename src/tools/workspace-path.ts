@@ -1,6 +1,6 @@
 import type { Sandbox } from "./sandbox.ts";
 
-export class SandboxViolationError extends Error {
+class SandboxViolationError extends Error {
   constructor(reason: string) {
     super(`sandbox refused the path: ${reason}`);
     this.name = "SandboxViolationError";

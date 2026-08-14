@@ -9,7 +9,7 @@ import { type ChainHead, type Ledger, openLedger } from "./ledger.ts";
 import type { LedgerRecord, RecordType } from "./ledger-record.ts";
 import { scrubJson } from "./scrub.ts";
 
-export interface EvidenceEntry {
+interface EvidenceEntry {
   readonly type: RecordType;
   readonly actor: string;
   readonly provenance: readonly ProvenanceTag[];
@@ -18,7 +18,7 @@ export interface EvidenceEntry {
   readonly responseDigest?: string;
 }
 
-export interface RecordedEvidence {
+interface RecordedEvidence {
   readonly record: LedgerRecord;
   /** Which known-pattern scrubs fired on the way in. Labels only, never the matched text. */
   readonly redactions: readonly string[];
@@ -40,7 +40,7 @@ export interface EvidenceRecorder {
   payloads(): ReadonlyMap<string, JsonValue>;
 }
 
-export interface EvidenceSessionOptions {
+interface EvidenceSessionOptions {
   /** The session store root, outside the workspace and denied to tools (invariant 11). */
   readonly root: string;
   readonly sessionId: string;
@@ -60,7 +60,7 @@ export function createSessionId(clock: Clock, random: RandomSource): string {
   return `${stamp}-${suffix}`;
 }
 
-export function sessionDirectory(root: string, sessionId: string): string {
+function sessionDirectory(root: string, sessionId: string): string {
   return join(root, sessionId);
 }
 

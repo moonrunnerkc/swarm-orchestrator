@@ -30,7 +30,7 @@ export interface ConfirmationRequest {
 /** Asked whenever a call needs a human before it runs. */
 export type ConfirmationPrompt = (request: ConfirmationRequest) => Promise<boolean>;
 
-export interface ChokepointDependencies {
+interface ChokepointDependencies {
   readonly definitions: readonly ToolDefinition[];
   readonly sandbox: Sandbox;
   readonly confirm: ConfirmationPrompt;

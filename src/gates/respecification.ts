@@ -48,7 +48,7 @@ export const respecificationSchema = z.object({
   }),
 });
 
-export type RespecificationPayload = z.infer<typeof respecificationSchema>;
+type RespecificationPayload = z.infer<typeof respecificationSchema>;
 
 export interface RespecificationFinding {
   readonly file: string;

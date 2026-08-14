@@ -7,7 +7,7 @@ export const taskClasses = ["edit", "multi-file", "test-fix", "tool-heavy"] as c
 
 export type TaskClass = (typeof taskClasses)[number];
 
-export interface TaskClassification {
+interface TaskClassification {
   readonly taskClass: TaskClass;
   /** The rule that fired, so a routing record explains which arm it reached for and why. */
   readonly rule: string;

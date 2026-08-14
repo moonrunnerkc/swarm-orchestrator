@@ -3,7 +3,7 @@ import { bundleSignatureSchema } from "./signing.ts";
 
 export const bundleFormatVersion = 1;
 
-export const workerChainSchema = z.object({
+const workerChainSchema = z.object({
   workerId: z.string().min(1),
   sessionId: z.string().min(1),
   /** Relative to the combined bundle's own directory. */

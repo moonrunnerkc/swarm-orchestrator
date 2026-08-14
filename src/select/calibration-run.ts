@@ -58,7 +58,7 @@ export interface CalibrationRunDependencies {
   readonly abortSignal: AbortSignal;
 }
 
-export interface CalibrationRepeatRequest {
+interface CalibrationRepeatRequest {
   readonly case: CalibrationCase;
   readonly modelSpec: string;
   readonly repeat: number;

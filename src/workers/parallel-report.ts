@@ -1,7 +1,7 @@
 import type { QueueLanding } from "./merge-queue.ts";
 import type { ParallelRunResult, WorkerResult } from "./parallel-run.ts";
 
-export interface ParallelReportContext {
+interface ParallelReportContext {
   readonly repositoryRoot: string;
   readonly baseRef: string;
 }

@@ -34,7 +34,7 @@ export interface CommandLineSettings {
   readonly localEndpoint: string | null;
 }
 
-export interface ConfiguredLocalEndpoint {
+interface ConfiguredLocalEndpoint {
   readonly url: string;
   /** Which layer named it, recorded with the endpoint so a bundle can say how it was chosen. */
   readonly origin: "flag" | "environment" | "config";
@@ -61,7 +61,7 @@ export interface ResolvedSettings {
   };
 }
 
-export interface SettingsInput {
+interface SettingsInput {
   readonly flags: CommandLineSettings;
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly toml: SwarmToml | null;

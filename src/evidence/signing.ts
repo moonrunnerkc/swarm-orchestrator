@@ -18,9 +18,9 @@ export const bundleSignatureSchema = z.object({
   keySource: z.enum(["keychain", "ephemeral"]),
 });
 
-export type BundleSignature = z.infer<typeof bundleSignatureSchema>;
+type BundleSignature = z.infer<typeof bundleSignatureSchema>;
 
-export type SigningKeySource = BundleSignature["keySource"];
+type SigningKeySource = BundleSignature["keySource"];
 
 export interface SigningKey {
   readonly source: SigningKeySource;
@@ -28,13 +28,13 @@ export interface SigningKey {
   sign(message: string): string;
 }
 
-export interface SecretStore {
+interface SecretStore {
   readonly description: string;
   load(): Promise<string | null>;
   save(secret: string): Promise<void>;
 }
 
-export interface CommandResult {
+interface CommandResult {
   readonly stdout: string;
   readonly stderr: string;
   readonly code: number;
@@ -46,8 +46,8 @@ export type CommandRunner = (
   input?: string,
 ) => Promise<CommandResult>;
 
-export const signingKeyService = "swarm-orchestrator";
-export const signingKeyAccount = "bundle-signing-key";
+const signingKeyService = "swarm-orchestrator";
+const signingKeyAccount = "bundle-signing-key";
 
 /**
  * The OS keychain, never the workspace (invariant 11). macOS uses security, Linux uses
@@ -114,7 +114,7 @@ export function createKeychainSecretStore(options: {
   return null;
 }
 
-export interface ResolvedSigningKey {
+interface ResolvedSigningKey {
   readonly key: SigningKey;
   /** Non-null when the keychain could not be used, so the CLI can say why in one line. */
   readonly notice: string | null;

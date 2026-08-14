@@ -30,7 +30,7 @@ export interface ClaimNode {
   readonly evaluation: ClaimEvaluation;
 }
 
-export interface EvidenceEdge {
+interface EvidenceEdge {
   readonly claimSequence: number;
   readonly record: string;
   /** False when the cited digest matches no record in the chain. */

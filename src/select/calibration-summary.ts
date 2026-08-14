@@ -7,7 +7,7 @@ import {
 } from "./dimensions.ts";
 import type { TaskClass } from "./task-class.ts";
 
-export interface CaseBreakdown {
+interface CaseBreakdown {
   readonly caseId: string;
   readonly taskClass: TaskClass;
   readonly repeats: number;

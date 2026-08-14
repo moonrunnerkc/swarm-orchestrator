@@ -6,7 +6,7 @@ import {
   statisticOf,
 } from "./dimensions.ts";
 
-export interface RejectedModel {
+interface RejectedModel {
   readonly model: string;
   readonly reason: string;
 }
@@ -228,7 +228,7 @@ function decidingDimension(chosen: ModelSummary, other: ModelSummary): Dimension
   return null;
 }
 
-export interface CalibrationReportInput {
+interface CalibrationReportInput {
   readonly goldenSetVersion: string;
   readonly cases: number;
   readonly repeats: number;

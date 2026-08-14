@@ -21,7 +21,7 @@ export interface MemoryWorkspace extends WorkspaceProbe {
   readonly files: ReadonlyMap<string, string>;
 }
 
-export interface MemoryWorkspaceOptions {
+interface MemoryWorkspaceOptions {
   readonly base?: Readonly<Record<string, string>>;
   readonly current?: Readonly<Record<string, string>>;
   readonly baseRef?: string;
@@ -89,7 +89,7 @@ export function createMemoryCheckpoint(workspace: MemoryWorkspace): WorkspaceChe
   };
 }
 
-export interface StubCommandRunner extends GateCommandRunner {
+interface StubCommandRunner extends GateCommandRunner {
   readonly commands: readonly string[];
 }
 
@@ -113,7 +113,7 @@ export function createStubCommandRunner(
   };
 }
 
-export interface StubControlOutcomes {
+interface StubControlOutcomes {
   readonly onBase: ControlOutcome;
   readonly onSubmitted: ControlOutcome;
 }

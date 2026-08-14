@@ -5,7 +5,7 @@ import { type Pricing, parsePricing } from "./pricing.ts";
 export const defaultPricingUrl =
   "https://raw.githubusercontent.com/moonrunnerkc/swarm-orchestrator/main/src/select/model-pricing.v1.json";
 
-export interface LoadedPricing {
+interface LoadedPricing {
   readonly pricing: Pricing;
   readonly origin: "published" | "bundled";
   readonly location: string;
@@ -19,7 +19,7 @@ interface PricingResponse {
   text(): Promise<string>;
 }
 
-export interface PricingSource {
+interface PricingSource {
   readonly fetch: (url: string) => Promise<PricingResponse>;
 }
 

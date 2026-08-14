@@ -47,7 +47,7 @@ export interface SandboxPolicy {
   readonly realpath?: ((path: string) => string) | undefined;
 }
 
-export type SandboxVerdict =
+type SandboxVerdict =
   | { readonly allowed: true; readonly absolutePath: string }
   | { readonly allowed: false; readonly reason: string };
 

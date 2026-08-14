@@ -17,7 +17,7 @@ export interface TaskCost {
   readonly detail: string;
 }
 
-export interface TaskCostInput {
+interface TaskCostInput {
   readonly modelSpec: string;
   /** The task's ledger entries; only model-call records carry tokens and only they count. */
   readonly entries: readonly RecordedPayload[];

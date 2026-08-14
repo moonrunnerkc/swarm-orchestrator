@@ -9,7 +9,7 @@ import {
   parseCalibrationCase,
 } from "./calibration-case.ts";
 
-export const goldenSetSchemaVersion = 1;
+const goldenSetSchemaVersion = 1;
 
 const bundledSetSchema = z.object({
   schemaVersion: z.literal(goldenSetSchemaVersion),
@@ -27,7 +27,7 @@ export interface GoldenSet {
   readonly localPath: string;
 }
 
-export interface GoldenSetOptions {
+interface GoldenSetOptions {
   readonly localPath: string;
 }
 

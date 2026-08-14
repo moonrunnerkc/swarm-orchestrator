@@ -6,7 +6,7 @@ import { z } from "zod";
  * without a release. Prices move faster than releases, which is the whole point.
  */
 
-export const pricingSchemaVersion = 1;
+const pricingSchemaVersion = 1;
 
 const modelRateSchema = z.object({
   /** The full spec the registry is asked for, such as "anthropic:claude-opus-5". */
@@ -22,7 +22,7 @@ const pricingSchema = z.object({
   rates: z.array(modelRateSchema).min(1),
 });
 
-export type ModelRate = z.infer<typeof modelRateSchema>;
+type ModelRate = z.infer<typeof modelRateSchema>;
 export type Pricing = z.infer<typeof pricingSchema>;
 
 export class MalformedPricingError extends Error {

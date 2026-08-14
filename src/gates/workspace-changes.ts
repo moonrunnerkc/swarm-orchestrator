@@ -22,8 +22,6 @@ export interface WorkspaceChanges {
   readonly files: readonly ChangedFile[];
 }
 
-export const noChanges: WorkspaceChanges = { baseRef: "unknown", files: [] };
-
 /** The workspace as it stood, so a rejected attempt can be undone rather than argued with. */
 export interface CapturedWorkspace {
   readonly label: string;
@@ -45,21 +43,6 @@ export interface WorkspaceProbe {
   readBase(path: string): Promise<string | null>;
 }
 
-export function changedPaths(changes: WorkspaceChanges): readonly string[] {
-  return changes.files.map((file) => file.path);
-}
-
-export function changedTestPaths(
-  changes: WorkspaceChanges,
-  isTest: (path: string) => boolean,
-): readonly string[] {
-  return changedPaths(changes).filter(isTest);
-}
-
 export function countAddedLines(changes: WorkspaceChanges): number {
   return changes.files.reduce((total, file) => total + file.addedLines.length, 0);
-}
-
-export function countRemovedLines(changes: WorkspaceChanges): number {
-  return changes.files.reduce((total, file) => total + file.removedLines.length, 0);
 }

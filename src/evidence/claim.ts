@@ -16,9 +16,9 @@ export const claimPayloadSchema = z.object({
 
 export type ClaimPayload = z.infer<typeof claimPayloadSchema>;
 
-export type ClaimVerdict = "verified" | "unverified";
+type ClaimVerdict = "verified" | "unverified";
 
-export type UnverifiedReason =
+type UnverifiedReason =
   | "no-evidence-edge"
   | "record-not-found"
   | "predicate-unparseable"
@@ -34,7 +34,7 @@ export interface ClaimEvaluation {
 }
 
 /** Resolves a cited digest to the payload of the ledger record that carries it. */
-export type EvidenceLookup = (digest: string) => JsonValue | undefined;
+type EvidenceLookup = (digest: string) => JsonValue | undefined;
 
 /**
  * The only place a green verdict is produced anywhere in the system. Every failure mode

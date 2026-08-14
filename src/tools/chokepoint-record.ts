@@ -18,7 +18,7 @@ export type ConfirmationReason = "shell-allowlist" | "derivation-heuristic";
  * perfectly well formed. Calibration scores the first and not the second, so the two are
  * kept apart here rather than pattern-matched out of prose later.
  */
-export const denialReasons = [
+const denialReasons = [
   "unknown-tool",
   "invalid-input",
   "sandbox",

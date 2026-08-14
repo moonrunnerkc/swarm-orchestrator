@@ -16,7 +16,7 @@ import { type ModelSummary, summarizeByModel } from "./calibration-summary.ts";
 import { calibrationDimensions, dimensionSpecs, statisticOf } from "./dimensions.ts";
 import type { GoldenSet } from "./golden-set.ts";
 
-export interface CalibrationOptions {
+interface CalibrationOptions {
   /** Model specs to compare, in the order they should be reported. */
   readonly models: readonly string[];
   /** Repeats per case per model. Three is the floor: two cannot show a spread. */
@@ -27,7 +27,7 @@ export interface CalibrationOptions {
   readonly deps: CalibrationRunDependencies;
 }
 
-export interface CalibrationResult {
+interface CalibrationResult {
   readonly goldenSetVersion: string;
   readonly cases: number;
   readonly repeats: number;
@@ -39,8 +39,6 @@ export interface CalibrationResult {
   readonly summaryRecords: Readonly<Record<string, string>>;
   readonly claims: readonly ClaimEvaluation[];
 }
-
-export const minimumRepeats = 3;
 
 /**
  * Section 3.9's micro-eval. Every case against every model, repeated, in a fresh workspace

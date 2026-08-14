@@ -3,7 +3,7 @@ import type { GpuReading, HardwareProfile } from "./hardware-probe.ts";
 import type { Recommendation } from "./recommendation.ts";
 import type { LoadedShortlist } from "./shortlist-source.ts";
 
-export interface SelectReport {
+interface SelectReport {
   readonly profile: HardwareProfile;
   readonly loaded: LoadedShortlist;
   readonly recommendation: Recommendation;

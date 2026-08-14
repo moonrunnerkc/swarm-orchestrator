@@ -13,7 +13,7 @@ export interface GateLine {
   readonly record: string;
 }
 
-export interface AttemptCounter {
+interface AttemptCounter {
   readonly current: number;
   readonly cap: number;
 }

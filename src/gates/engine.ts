@@ -18,7 +18,7 @@ import { detectProject, type ProjectDetection } from "./project-type.ts";
 /** Deliberately generous. The budget is advisory, and a budget nobody can meet is noise. */
 export const defaultDiffBudget: DiffBudget = { maxChangedFiles: 12, maxAddedLines: 600 };
 
-export interface GatesEngineOptions {
+interface GatesEngineOptions {
   readonly workspaceRoot: string;
   readonly baseRef: string;
   readonly evidence: EvidenceRecorder;

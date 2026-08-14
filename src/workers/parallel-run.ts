@@ -14,7 +14,7 @@ import { addWorktree, type Worktree } from "./worktree.ts";
 
 const runProcess = promisify(execFile);
 
-export interface ParallelRunOptions {
+interface ParallelRunOptions {
   readonly repositoryRoot: string;
   readonly baseRef: string;
   /** One task per worker, in the order they will be queued. */

@@ -59,7 +59,7 @@ export interface AgentTaskOptions {
   readonly singleFileTestCommand?: (testFile: string) => string | null;
 }
 
-export interface AgentTaskResult {
+interface AgentTaskResult {
   readonly loop: AgentLoopOutcome;
   readonly gates: GatesEngineRun;
   /** The model finished and the gates went green. Not the model's opinion of either. */

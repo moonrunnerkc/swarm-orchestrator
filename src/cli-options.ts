@@ -69,7 +69,7 @@ export interface ParallelCommand {
 }
 
 /** Prints the routing table the reward log adds up to. */
-export interface RoutingCommand {
+interface RoutingCommand {
   readonly command: "routing";
 }
 
@@ -108,7 +108,7 @@ const defaultBaseRef = "HEAD";
 /** Three is the floor: two repeats cannot show a spread, and a spread is the point. */
 const defaultRepeats = 3;
 
-export interface CommandLineContext {
+interface CommandLineContext {
   readonly currentDirectory: string;
 }
 

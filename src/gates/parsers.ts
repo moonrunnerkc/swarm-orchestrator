@@ -59,7 +59,7 @@ export const exitCodeParser: GateParser = (observation) =>
  * spec, so both are read here: a gate that only understood one of them would silently fall
  * back to the exit code and report no numbers for the ratchet to hold.
  */
-export const testCounterParser: GateParser = (observation) => {
+const testCounterParser: GateParser = (observation) => {
   const unavailable = notApplicable(observation);
   if (unavailable !== null) {
     return unavailable;

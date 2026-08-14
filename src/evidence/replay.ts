@@ -6,7 +6,7 @@ import { verifyChain } from "./ledger.ts";
 import type { LedgerRecord } from "./ledger-record.ts";
 import { verifyChainHeadSignature } from "./signing.ts";
 
-export interface ReplayInput {
+interface ReplayInput {
   readonly records: readonly LedgerRecord[];
   readonly payloads: ReadonlyMap<string, JsonValue>;
   readonly manifest?: BundleManifest;

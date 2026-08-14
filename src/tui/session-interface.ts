@@ -5,12 +5,12 @@ import { describeLoopEvent } from "./plain-lines.ts";
 import { SessionScreen } from "./screen.ts";
 import { createSessionStore } from "./session-store.ts";
 
-export interface SessionInterface {
+interface SessionInterface {
   emit(event: LoopEvent): void;
   stop(): Promise<void>;
 }
 
-export interface SessionInterfaceOptions {
+interface SessionInterfaceOptions {
   readonly task: string;
   readonly isTty: boolean;
   readonly writeLine: (line: string) => void;

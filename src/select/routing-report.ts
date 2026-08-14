@@ -2,7 +2,7 @@ import { assignmentKinds, type RewardEntry, type RoutingLogContents } from "./ro
 import { type TaskClass, taskClasses } from "./task-class.ts";
 import { type Arm, armsFor, defaultRouterSettings, type RouterSettings } from "./ucb.ts";
 
-export interface RoutingReportInput {
+interface RoutingReportInput {
   readonly path: string;
   readonly contents: RoutingLogContents;
   readonly settings?: RouterSettings;

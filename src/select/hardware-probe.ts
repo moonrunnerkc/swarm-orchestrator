@@ -1,4 +1,4 @@
-export type GpuVendor = "apple" | "nvidia" | "amd" | "intel" | "unknown";
+type GpuVendor = "apple" | "nvidia" | "amd" | "intel" | "unknown";
 
 export interface GpuReading {
   readonly vendor: GpuVendor;

@@ -8,7 +8,7 @@ export interface UntrustedSource {
   readonly digest: string;
 }
 
-export interface DerivationSettings {
+interface DerivationSettings {
   /** How many recent untrusted reads stay in the window. */
   readonly windowSize: number;
   readonly ngramSize: number;
@@ -18,7 +18,7 @@ export interface DerivationSettings {
   readonly minSubstringLength: number;
 }
 
-export const defaultDerivationSettings: DerivationSettings = {
+const defaultDerivationSettings: DerivationSettings = {
   windowSize: 8,
   ngramSize: 3,
   threshold: 0.6,

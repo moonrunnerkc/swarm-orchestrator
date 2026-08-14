@@ -11,7 +11,7 @@ const calibrationPickSchema = z.object({
   recordedAt: z.number().int(),
 });
 
-export type CalibrationPickRecord = z.infer<typeof calibrationPickSchema>;
+type CalibrationPickRecord = z.infer<typeof calibrationPickSchema>;
 
 /** Beside the routing log it feeds, outside every workspace. */
 export function defaultPickPath(homeDirectory: string): string {

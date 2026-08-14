@@ -5,7 +5,7 @@ export const localRuntimeNames = ["ollama", "rapid-mlx"] as const;
 
 export type LocalRuntimeName = (typeof localRuntimeNames)[number];
 
-export interface LocalEndpointCandidate {
+interface LocalEndpointCandidate {
   readonly name: LocalRuntimeName;
   readonly baseUrl: string;
 }
@@ -34,7 +34,7 @@ export type FetchLike = (
   init?: { readonly signal?: AbortSignal },
 ) => Promise<ProbeResponse>;
 
-export interface DiscoveryDependencies {
+interface DiscoveryDependencies {
   readonly fetch: FetchLike;
   readonly candidates?: readonly LocalEndpointCandidate[];
   readonly signal?: AbortSignal;
