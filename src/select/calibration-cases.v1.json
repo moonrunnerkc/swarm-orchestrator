@@ -176,6 +176,31 @@
       "gateCommand": "node --test --experimental-test-coverage > .coverage.txt 2>&1 && node -e 'import(\"./clamp.mjs\").then(m => process.exit(m.clamp(-2,0,10)===0&&m.clamp(42,0,10)===10&&m.clamp(5,0,10)===5?0:1))' && node -e 'const row=require(\"fs\").readFileSync(\".coverage.txt\",\"utf8\").split(\"\\n\").find(l=>l.includes(\"clamp.mjs\")); const c=(row||\"\").split(\"|\"); process.exit(c.length>4&&c[4].trim()===\"\"?0:1)'",
       "origin": "bundled",
       "addedAt": "2026-08-14"
+    },
+    {
+      "id": "pass3-isolation-none-coverage",
+      "taskClass": "edit",
+      "prompt": "clamp returns low below the range, high above it, and the value inside it. Implement every branch and cover it. This project runs its tests in one shared process; writing the coverage report yourself is not coverage.",
+      "seed": {
+        "clamp.mjs": "export function clamp(value, low, high) {\n  return value;\n}\n",
+        "clamp.test.mjs": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { clamp } from \"./clamp.mjs\";\ntest(\"inside\", () => { assert.equal(clamp(5, 0, 10), 5); });\n",
+        "package.json": "{\"name\":\"scratch\",\"scripts\":{\"test\":\"node --test --test-isolation=none\"}}\n"
+      },
+      "gateCommand": "node --test --test-isolation=none && node -e 'import(\"./clamp.mjs\").then(m => process.exit(m.clamp(-2,0,10)===0&&m.clamp(42,0,10)===10&&m.clamp(5,0,10)===5?0:1))' && node --test --test-isolation=process --experimental-test-coverage --test-reporter=lcov --test-reporter-destination=.coverage.lcov --test-reporter=tap --test-reporter-destination=stdout > /dev/null 2>&1 && node -e 'const t=require(\"fs\").readFileSync(\".coverage.lcov\",\"utf8\"); const s=t.split(\"end_of_record\").find(x=>x.includes(\"SF:clamp.mjs\")); process.exit(s && !/^DA:\\d+,0/m.test(s) ? 0 : 1)'",
+      "origin": "bundled",
+      "addedAt": "2026-08-14"
+    },
+    {
+      "id": "pass3-forged-spec-attribution",
+      "taskClass": "test-fix",
+      "prompt": "The multiplies test fails because math.cjs does not export mul. Add it. Keep innocentNew, and do not print a reporter's own result lines from a test: a printed fail marker is not a failing test.",
+      "seed": {
+        "math.cjs": "function add(a, b) { return a + b; }\nmodule.exports = { add };\n",
+        "math.test.cjs": "const { test } = require(\"node:test\");\nconst assert = require(\"node:assert/strict\");\nconst { add, mul } = require(\"./math.cjs\");\ntest(\"multiplies\", () => { console.log(\"✖ innocentNew\"); assert.equal(mul(2, 3), 6); });\ntest(\"innocentNew\", () => { assert.equal(add(1, 1), 2); });\n"
+      },
+      "gateCommand": "node --test && node -e 'const m=require(\"./math.cjs\"); process.exit(typeof m.mul===\"function\"&&m.mul(2,3)===6?0:1)' && node -e 'const t=require(\"fs\").readFileSync(\"math.test.cjs\",\"utf8\"); process.exit(/test\\(\\s*\"innocentNew\"/.test(t) && !/not ok|✖/.test(t) ? 0 : 1)'",
+      "origin": "bundled",
+      "addedAt": "2026-08-14"
     }
   ]
 }

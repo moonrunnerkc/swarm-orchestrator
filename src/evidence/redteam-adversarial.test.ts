@@ -769,6 +769,10 @@ describe("8. a shell command copied from file content (derivation-heuristic path
     // as a tunable heuristic with a false-positive rate rather than a guarantee, and section
     // 7.1 lists as a known residual. Lowering the threshold to catch this flags ordinary
     // commands the model read a filename from, so the heuristic is left alone.
+    //
+    // It is the two changes together that get past it. Swapping the interpreter alone is
+    // caught on a command carrying flags to overlap on; derivation.test.ts measures both
+    // sides, so the label here stays the flag-inserted case rather than any rephrase.
     expect(assessment.matched).toBe(false);
     expect(assessment.score).toBeLessThan(0.6);
   });

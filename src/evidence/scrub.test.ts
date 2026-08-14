@@ -216,6 +216,18 @@ describe("detection keyed on the name rather than the shape of the value", () =>
     expect(outcome.redactions).toEqual([]);
   });
 
+  it("leaves a version tuple alone at every site, whichever way it is rendered", () => {
+    // The control behind the residual: treating adjacent short values as one value is what a
+    // reassembling detector would have to do, and this is what it would cost. Nothing here is
+    // under a credential name, so nothing here is a credential.
+    const value = { version: [13, 0, 1], parts: ["ab", "cd", "ef"] };
+
+    expect(scrubJson(value)).toEqual({ value, redactions: [] });
+    for (const rendering of [JSON.stringify(value), JSON.stringify(value, null, 2)]) {
+      expect({ rendering, found: findKnownSecrets(rendering) }).toEqual({ rendering, found: [] });
+    }
+  });
+
   it("keeps the metric exemption exact at all three sites, nested or not", () => {
     const metrics = { outputTokensPerSecond: 129.9, maxTokens: 1000000, tokenCount: 48291736 };
     const text = JSON.stringify({ credentials: metrics });
