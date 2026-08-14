@@ -81,6 +81,7 @@ const declared: FileSetState = {
   amendments: [],
   allowed: new Set(["src/a.ts"]),
   wasDeclared: true,
+  editedBeforeAuthorized: [],
 };
 
 async function inspect(
@@ -394,6 +395,7 @@ describe("4. hold the tests gate green by deleting or gutting tests", () => {
           amendments: [],
           allowed: new Set([sourcePath, testPath]),
           wasDeclared: true,
+          editedBeforeAuthorized: [],
         },
         budgets: { maxChangedFiles: 12, maxAddedLines: 600 },
         probe: workspace,
@@ -489,7 +491,12 @@ describe("6. touch a file outside the declared set without an amendment", () => 
       type: "tool-call",
       actor: "fixture:liar",
       provenance: ["model"],
-      payload: { toolName: "write", decision: "allowed", facts: { path: "src/b.ts" } },
+      payload: {
+        toolName: "write",
+        kind: "write",
+        decision: "allowed",
+        facts: { path: "src/b.ts" },
+      },
     });
     const state = await registry.declare(["src/a.ts", "src/b.ts"], "fixture:liar");
     const reading = await inspect(
@@ -499,19 +506,47 @@ describe("6. touch a file outside the declared set without an amendment", () => 
       state,
     );
 
-    const sequences = evidence.records().map((record) => ({
-      sequence: record.sequence,
-      type: record.type,
-    }));
-
-    // Succeeded: the gate is set membership at judgement time, not "declared before edit".
+    // Closed: the gate reads ledger order, so a declaration written after the edit it names
+    // authorizes nothing. Membership on its own still says the change is inside the set,
+    // which is precisely why order is checked separately.
     expect(write.record.sequence).toBeLessThan(
       evidence.records().find((record) => record.type === "file-set-declared")?.sequence ?? 0,
     );
-    expect(reading.status).toBe("passed");
-    expect(state.amendments).toEqual([]);
     expect(checkFileSet(state, ["src/b.ts"]).outside).toEqual([]);
-    expect(sequences.some((entry) => entry.type === "file-set-amended")).toBe(false);
+    expect(checkFileSet(state, ["src/b.ts"]).editedBeforeAuthorized).toEqual(["src/b.ts"]);
+    expect(reading.status).toBe("failed");
+    expect(reading.detail).toContain("edited before anything declared them: src/b.ts");
+    expect(state.amendments).toEqual([]);
+  });
+
+  it("framing B, cured: the amendment the gate asks for clears it and lands in the bundle", async () => {
+    const registry = createFileSetRegistry(evidence);
+    await evidence.record({
+      type: "tool-call",
+      actor: "fixture:liar",
+      provenance: ["model"],
+      payload: {
+        toolName: "write",
+        kind: "write",
+        decision: "allowed",
+        facts: { path: "src/b.ts" },
+      },
+    });
+    await registry.declare(["src/a.ts", "src/b.ts"], "fixture:liar");
+    const amended = await registry.amend(
+      ["src/b.ts"],
+      "edited before declaring it",
+      "fixture:liar",
+    );
+    const reading = await inspect(
+      fileSetGate,
+      { "src/a.ts": "1", "src/b.ts": "1" },
+      { "src/a.ts": "1", "src/b.ts": "sneak" },
+      amended,
+    );
+
+    expect(reading.status).toBe("passed");
+    expect(evidence.records().some((record) => record.type === "file-set-amended")).toBe(true);
   });
 });
 

@@ -64,6 +64,7 @@ const declaredFileSet: FileSetState = {
   amendments: [],
   allowed: new Set([sourcePath, testPath]),
   wasDeclared: true,
+  editedBeforeAuthorized: [],
 };
 
 /**

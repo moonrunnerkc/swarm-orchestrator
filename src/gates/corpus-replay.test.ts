@@ -66,7 +66,13 @@ afterAll(async () => {
 
 function declaredFor(paths: Iterable<string>): FileSetState {
   const allowed = new Set(paths);
-  return { declared: [...allowed], amendments: [], allowed, wasDeclared: true };
+  return {
+    declared: [...allowed],
+    amendments: [],
+    allowed,
+    wasDeclared: true,
+    editedBeforeAuthorized: [],
+  };
 }
 
 async function inspect(gate: GateDefinition, context: GateContext): Promise<boolean> {

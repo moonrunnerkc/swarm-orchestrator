@@ -163,23 +163,38 @@ export const fileSetGate: GateDefinition = {
         );
       }
 
+      const late = verdict.editedBeforeAuthorized;
+      const failed = verdict.outside.length > 0 || late.length > 0;
+
       return observationFromJson(
         {
-          detail:
-            verdict.outside.length === 0
-              ? `all ${verdict.changedCount} changed file(s) are inside the declared set of ${verdict.declaredCount}`
-              : `${verdict.outside.length} file(s) outside the declared set: ${verdict.outside.join(", ")}. ` +
+          detail: !failed
+            ? `all ${verdict.changedCount} changed file(s) are inside the declared set of ${verdict.declaredCount}, ` +
+              "and every one of them was declared before it was edited"
+            : [
+                verdict.outside.length === 0
+                  ? ""
+                  : `${verdict.outside.length} file(s) outside the declared set: ${verdict.outside.join(", ")}.`,
+                late.length === 0
+                  ? ""
+                  : `${late.length} file(s) were edited before anything declared them: ${late.join(", ")}. ` +
+                    "A declaration written after the edit describes what was done, not what was intended.",
                 "Record an amendment to widen the set, which puts the widening in front of a reviewer.",
+              ]
+                .filter((part) => part.length > 0)
+                .join(" "),
           outside: verdict.outside,
+          editedBeforeAuthorized: late,
           declared: [...context.fileSet.allowed].sort(),
           amendments: context.fileSet.amendments.length,
           measures: {
             filesOutsideDeclaredSet: verdict.outside.length,
+            filesEditedBeforeDeclared: late.length,
             filesDeclared: verdict.declaredCount,
             fileSetAmendments: context.fileSet.amendments.length,
           },
         },
-        verdict.outside.length === 0 ? 0 : 1,
+        failed ? 1 : 0,
       );
     },
   },

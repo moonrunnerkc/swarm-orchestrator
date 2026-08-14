@@ -1,13 +1,22 @@
 import { z } from "zod";
+import type { JsonValue } from "../evidence/canonical-json.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 
 /**
  * Invariant 12. "Unrelated to the task" is a semantic judgement and judging is a non-goal,
  * so the planner names its intended files first and the check is set membership. Widening
  * the set is allowed and cheap; doing it silently is not.
+ *
+ * "First" is load-bearing and is checked against ledger order, not just against the set as it
+ * stands at the end. A declaration written after the edit it names is a declaration that
+ * describes what was done rather than what was intended, and it reaches the same verdict as
+ * an out-of-set edit: it needs a recorded amendment a reviewer sees.
  */
 
 interface FileSetAmendment {
+  /** Every file the amendment names, including ones the set already allowed. */
+  readonly files: readonly string[];
+  /** Of those, the ones the set did not already allow. */
   readonly added: readonly string[];
   readonly reason: string;
   /** The ledger record that carries the amendment, so a reviewer can go read it. */
@@ -20,6 +29,11 @@ export interface FileSetState {
   readonly allowed: ReadonlySet<string>;
   /** False until the planner has declared anything at all. */
   readonly wasDeclared: boolean;
+  /**
+   * Paths a recorded write reached before any declaration or amendment named them, read off
+   * the ledger's own ordering. Empty on the ordinary path, where the declaration comes first.
+   */
+  readonly editedBeforeAuthorized: readonly string[];
 }
 
 export const emptyFileSet: FileSetState = {
@@ -27,6 +41,7 @@ export const emptyFileSet: FileSetState = {
   amendments: [],
   allowed: new Set(),
   wasDeclared: false,
+  editedBeforeAuthorized: [],
 };
 
 const fileSetDeclarationSchema = z.object({
@@ -35,6 +50,12 @@ const fileSetDeclarationSchema = z.object({
 });
 
 const fileSetAmendmentSchema = z.object({
+  /**
+   * What the amendment is about, which is not the same as what it widened. A file declared
+   * only after it was edited is already in the set, so `added` is empty and this is the only
+   * field that says which file the reviewer is being asked to look at.
+   */
+  files: z.array(z.string().min(1)).min(1),
   /** Empty when every named file was already in the set, which is recorded as it happened. */
   added: z.array(z.string().min(1)),
   addedCount: z.number().int().nonnegative(),
@@ -66,6 +87,8 @@ export function normalizePath(path: string): string {
 
 interface FileSetVerdict {
   readonly outside: readonly string[];
+  /** Of the changed files, the ones whose edit the ledger records before its authorization. */
+  readonly editedBeforeAuthorized: readonly string[];
   readonly declaredCount: number;
   readonly changedCount: number;
   readonly wasDeclared: boolean;
@@ -73,8 +96,10 @@ interface FileSetVerdict {
 
 export function checkFileSet(state: FileSetState, changedFiles: readonly string[]): FileSetVerdict {
   const changed = changedFiles.map(normalizePath);
+  const touched = new Set(changed);
   return {
     outside: changed.filter((path) => !state.allowed.has(path)).sort(),
+    editedBeforeAuthorized: state.editedBeforeAuthorized.filter((path) => touched.has(path)),
     declaredCount: state.allowed.size,
     changedCount: changed.length,
     wasDeclared: state.wasDeclared,
@@ -88,6 +113,16 @@ export function checkFileSet(state: FileSetState, changedFiles: readonly string[
  */
 export function createFileSetRegistry(evidence: EvidenceRecorder): FileSetRegistry {
   let current: FileSetState = emptyFileSet;
+
+  /**
+   * Recomputed from the chain rather than tracked alongside it. The ledger is the record of
+   * what happened in what order, so reading the answer off anything else would be trusting a
+   * second account of the same events.
+   */
+  const withLedgerOrder = (state: FileSetState): FileSetState => ({
+    ...state,
+    editedBeforeAuthorized: writesBeforeAuthorization(evidence, state),
+  });
 
   return {
     state: () => current,
@@ -107,19 +142,22 @@ export function createFileSetRegistry(evidence: EvidenceRecorder): FileSetRegist
         provenance: ["model"],
         payload,
       });
-      current = {
+      current = withLedgerOrder({
         declared,
         amendments: [],
         allowed: new Set(declared),
         wasDeclared: true,
-      };
+        editedBeforeAuthorized: [],
+      });
       return current;
     },
 
     async amend(files: readonly string[], reason: string, actor: string): Promise<FileSetState> {
-      const added = unique(files).filter((path) => !current.allowed.has(path));
+      const named = unique(files);
+      const added = named.filter((path) => !current.allowed.has(path));
       const allowed = new Set([...current.allowed, ...added]);
       const payload = fileSetAmendmentSchema.parse({
+        files: named,
         added,
         addedCount: added.length,
         reason,
@@ -139,20 +177,21 @@ export function createFileSetRegistry(evidence: EvidenceRecorder): FileSetRegist
           recordKind: "file-set-amended",
           narrative:
             added.length === 0
-              ? `An amendment was recorded that widened nothing: every named file was already declared. Stated reason: ${reason}`
+              ? `An amendment was recorded for ${named.join(", ")}, which the set already allowed. Stated reason: ${reason}`
               : `The declared file set was widened to cover ${added.join(", ")}. Stated reason: ${reason}`,
         },
         actor,
       );
-      current = {
+      current = withLedgerOrder({
         declared: current.declared,
         amendments: [
           ...current.amendments,
-          { added, reason, record: recorded.record.payloadDigest },
+          { files: named, added, reason, record: recorded.record.payloadDigest },
         ],
         allowed,
         wasDeclared: current.wasDeclared,
-      };
+        editedBeforeAuthorized: [],
+      });
       return current;
     },
   };
@@ -160,4 +199,62 @@ export function createFileSetRegistry(evidence: EvidenceRecorder): FileSetRegist
 
 function unique(files: readonly string[]): readonly string[] {
   return [...new Set(files.map(normalizePath).filter((path) => path.length > 0))].sort();
+}
+
+/**
+ * Walks the chain once. A path is authorized from the record that first names it, so a write
+ * recorded earlier than that was never authorized by anything, whatever the set looks like by
+ * the end. An amendment naming the path settles it either way: an amendment is the reviewer-
+ * visible admission that the set moved, which is the whole remedy invariant 12 asks for.
+ */
+function writesBeforeAuthorization(
+  evidence: EvidenceRecorder,
+  state: FileSetState,
+): readonly string[] {
+  const amended = new Set(state.amendments.flatMap((amendment) => amendment.files));
+  const payloads = evidence.payloads();
+  const authorized = new Set<string>();
+  const unauthorized = new Set<string>();
+
+  for (const record of evidence.records()) {
+    const payload = payloads.get(record.payloadDigest);
+    if (payload === undefined || payload === null || typeof payload !== "object") {
+      continue;
+    }
+    const fields = payload as { readonly [key: string]: JsonValue };
+
+    if (record.type === "file-set-declared" || record.type === "file-set-amended") {
+      for (const file of namedFiles(fields)) {
+        authorized.add(file);
+      }
+      continue;
+    }
+    if (record.type !== "tool-call" || fields.kind !== "write" || fields.decision !== "allowed") {
+      continue;
+    }
+    const path = writtenPath(fields);
+    if (path !== null && !authorized.has(path) && !amended.has(path)) {
+      unauthorized.add(path);
+    }
+  }
+
+  return [...unauthorized].sort();
+}
+
+/** Both record types name their files in the same field, so one reader serves both. */
+function namedFiles(fields: { readonly [key: string]: JsonValue }): readonly string[] {
+  const named = fields.files;
+  if (!Array.isArray(named)) {
+    return [];
+  }
+  return named.filter((file): file is string => typeof file === "string").map(normalizePath);
+}
+
+function writtenPath(fields: { readonly [key: string]: JsonValue }): string | null {
+  const facts = fields.facts;
+  if (facts === null || typeof facts !== "object" || Array.isArray(facts)) {
+    return null;
+  }
+  const path = (facts as { readonly [key: string]: JsonValue }).path;
+  return typeof path === "string" ? normalizePath(path) : null;
 }

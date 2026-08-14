@@ -36,6 +36,7 @@ function declared(files: readonly string[]): FileSetState {
     amendments: [],
     allowed: new Set(files),
     wasDeclared: true,
+    editedBeforeAuthorized: [],
   };
 }
 
@@ -172,14 +173,32 @@ describe("the file-set gate", () => {
       { "src/a.ts": "2", "src/b.ts": "2" },
       {
         declared: ["src/a.ts"],
-        amendments: [{ added: ["src/b.ts"], reason: "shared helper", record: "sha256:x" }],
+        amendments: [
+          { files: ["src/b.ts"], added: ["src/b.ts"], reason: "shared helper", record: "sha256:x" },
+        ],
         allowed: new Set(["src/a.ts", "src/b.ts"]),
         wasDeclared: true,
+        editedBeforeAuthorized: [],
       },
     );
 
     expect(reading.status).toBe("passed");
     expect(reading.measures.fileSetAmendments).toBe(1);
+  });
+
+  it("blocks a file that was edited before anything declared it", async () => {
+    const reading = await readGate(
+      fileSetGate,
+      { "src/a.ts": "1", "src/b.ts": "1" },
+      { "src/a.ts": "2", "src/b.ts": "2" },
+      { ...declared(["src/a.ts", "src/b.ts"]), editedBeforeAuthorized: ["src/b.ts"] },
+    );
+
+    expect(reading.status).toBe("failed");
+    expect(reading.detail).toContain("edited before anything declared them: src/b.ts");
+    expect(reading.measures.filesEditedBeforeDeclared).toBe(1);
+    // Membership on its own is satisfied, which is exactly why order has to be checked.
+    expect(reading.measures.filesOutsideDeclaredSet).toBe(0);
   });
 
   it("blocks editing when nothing was declared at all", async () => {
