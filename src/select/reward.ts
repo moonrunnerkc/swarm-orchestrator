@@ -1,0 +1,72 @@
+/**
+ * Section 3.8's reward, with its first correction built in: a gate pass that tripped the
+ * ratchet scores as a failure. Without that, the signal the router learns from is gate pass
+ * rate, and gate pass rate rewards whichever model is best at weakening tests.
+ */
+
+export interface RewardWeights {
+  /** How much of the reward each retry costs. Higher is stricter. */
+  readonly attemptPenalty: number;
+  /** The latency at which a run keeps half its reward. */
+  readonly referenceLatencyMs: number;
+  /** The cost at which a run keeps half its reward. */
+  readonly referenceCostUsd: number;
+}
+
+/**
+ * Reference points, not measurements. They set where the curve bends, and the honest thing to
+ * say about the numbers is that they are a starting position to be tuned against real runs.
+ */
+export const defaultRewardWeights: RewardWeights = {
+  attemptPenalty: 0.5,
+  referenceLatencyMs: 120_000,
+  referenceCostUsd: 0.05,
+};
+
+export interface RewardInput {
+  readonly settled: "green" | "escalated";
+  /** Attempts the ratchet rejected for trading a measured number the wrong way. */
+  readonly erosions: number;
+  readonly attempts: number;
+  readonly latencyMs: number;
+  readonly costUsd: number;
+}
+
+export interface RewardScore {
+  /** Between zero and one, where zero is a run the router should learn to avoid. */
+  readonly reward: number;
+  /** One line naming what it weighed, so a routing table reads without the formula. */
+  readonly reason: string;
+}
+
+export function scoreReward(
+  input: RewardInput,
+  weights: RewardWeights = defaultRewardWeights,
+): RewardScore {
+  if (input.settled !== "green") {
+    return { reward: 0, reason: "the run escalated, so the gates never went green" };
+  }
+  if (input.erosions > 0) {
+    return {
+      reward: 0,
+      reason:
+        `the gates went green but the ratchet rejected ${input.erosions} attempt(s) for ` +
+        "trading a measured number away, which scores as a failure",
+    };
+  }
+
+  const forAttempts = 1 / (1 + weights.attemptPenalty * input.attempts);
+  const forLatency = weights.referenceLatencyMs / (weights.referenceLatencyMs + input.latencyMs);
+  const forCost = weights.referenceCostUsd / (weights.referenceCostUsd + input.costUsd);
+
+  return {
+    reward: forAttempts * forLatency * forCost,
+    reason:
+      `green with ${describeRetries(input.attempts)}, ${Math.round(input.latencyMs / 1000)}s, ` +
+      `and $${input.costUsd.toFixed(4)}`,
+  };
+}
+
+function describeRetries(attempts: number): string {
+  return attempts === 1 ? "1 retry" : `${attempts} retries`;
+}
