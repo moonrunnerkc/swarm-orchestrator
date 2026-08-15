@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTestClock } from "../core/test-doubles.ts";
-import { createBaseControlRunner, singleFileTestCommand } from "./base-control.ts";
+import {
+  controlOutcomePath,
+  createBaseControlRunner,
+  singleFileTestCommand,
+} from "./base-control.ts";
 import { createFileCoverageArtifactStore } from "./coverage-artifact.ts";
 import { createNodeCommandRunner } from "./node-command-runner.ts";
 import { detectProject } from "./project-type.ts";
@@ -56,6 +60,41 @@ describe("the command one test file is run with", () => {
 
     expect(singleFileTestCommand(detection, "a.test.mjs", "/session/controls/a.tap")).toBe(
       "npm test --silent -- 'a.test.mjs'",
+    );
+  });
+});
+
+describe("where a control run writes its result", () => {
+  it("gives two different test files two different destinations", () => {
+    const colliding: readonly (readonly [string, string])[] = [
+      ["foo/bar.test.ts", "foo-bar.test.ts"],
+      ["a/b/c.test.ts", "a-b-c.test.ts"],
+      ["src.foo.test.ts", "src/foo.test.ts"],
+      ["x/y.test.ts", "x_y.test.ts"],
+    ];
+
+    for (const [left, right] of colliding) {
+      // Sanitizing a path into a filename maps both of these to one name, and one file's
+      // control run then reads the other's result: a failure on base over here clears a
+      // deletion over there.
+      expect({
+        left,
+        same:
+          controlOutcomePath("/session/controls", left) ===
+          controlOutcomePath("/session/controls", right),
+      }).toEqual({ left, same: false });
+    }
+  });
+
+  it("keeps the file's own name in the path, so the session store stays readable", () => {
+    expect(controlOutcomePath("/session/controls", "src/math.test.ts")).toMatch(
+      /^\/session\/controls\/math\.test\.ts-[0-9a-f]{16}\.tap$/,
+    );
+  });
+
+  it("names one path for one file, run after run", () => {
+    expect(controlOutcomePath("/session/controls", "src/math.test.ts")).toBe(
+      controlOutcomePath("/session/controls", "src/math.test.ts"),
     );
   });
 });
