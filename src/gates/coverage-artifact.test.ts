@@ -204,6 +204,7 @@ describe("coverage of changed lines comes from the artifact, never from what ran
       measured: await takeMeasureSnapshot({
         changes: await probe.changes(),
         probe,
+        workspaceRoot: workspace,
         trackedTestFiles: [],
         gateMeasures: cycle.measures,
         coverageReports: cycle.coverageReports,

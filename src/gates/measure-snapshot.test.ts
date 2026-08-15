@@ -46,6 +46,7 @@ describe("changed-line coverage", () => {
     const measured = await takeMeasureSnapshot({
       changes: await probe.changes(),
       probe,
+      workspaceRoot: "/build",
       trackedTestFiles: [],
       gateMeasures: {},
       coverageReports: [
@@ -68,20 +69,43 @@ describe("changed-line coverage", () => {
     expect(measured.changedLineCoverage).toBe(0.5);
   });
 
+  it("counts a changed line the report never names as uncovered, not as covered", async () => {
+    const probe = workspace();
+
+    const measured = await takeMeasureSnapshot({
+      changes: await probe.changes(),
+      probe,
+      workspaceRoot: "/build",
+      trackedTestFiles: [],
+      gateMeasures: {},
+      // Structurally complete, and it lists only lines it can say were reached. Reading misses
+      // rather than hits made this 4/4: what a report leaves out, it did not measure.
+      coverageReports: [["SF:src/math.ts", "DA:2,1", "LF:1", "LH:1", "end_of_record"].join("\n")],
+    });
+
+    expect(measured.changedLinesMeasured).toBe(4);
+    expect(measured.changedLinesCovered).toBe(1);
+    expect(measured.changedLineCoverage).toBe(0.25);
+  });
+
   it("does not let an empty section for one path spelling hide misses under another", async () => {
     const probe = workspace();
 
     const measured = await takeMeasureSnapshot({
       changes: await probe.changes(),
       probe,
+      workspaceRoot: "/workspace",
       trackedTestFiles: [],
       gateMeasures: {},
       coverageReports: [
         [
           "SF:src/math.ts",
           "DA:2,1",
-          "LF:1",
-          "LH:1",
+          "DA:3,1",
+          "DA:4,1",
+          "DA:5,1",
+          "LF:4",
+          "LH:4",
           "end_of_record",
           "SF:/workspace/src/math.ts",
           "DA:3,0",
@@ -94,6 +118,40 @@ describe("changed-line coverage", () => {
     });
 
     expect(measured.changedLineCoverage).toBe(0.5);
+  });
+
+  it("says nothing about a file only a same-named section elsewhere mentions", async () => {
+    const probe = workspace();
+
+    const measured = await takeMeasureSnapshot({
+      changes: await probe.changes(),
+      probe,
+      workspaceRoot: "/workspace",
+      trackedTestFiles: [],
+      gateMeasures: {},
+      coverageReports: [
+        [
+          "SF:vendor/math.ts",
+          "DA:1,1",
+          "DA:2,1",
+          "DA:3,1",
+          "DA:4,1",
+          "DA:5,1",
+          "LF:5",
+          "LH:5",
+          "end_of_record",
+          "SF:/opt/other/math.ts",
+          "DA:1,1",
+          "LF:1",
+          "LH:1",
+          "end_of_record",
+        ].join("\n"),
+      ],
+    });
+
+    // Two complete, fully hit sections, neither of them about the file that changed.
+    expect(measured.changedLineCoverage).toBeNull();
+    expect(measured.changedLinesMeasured).toBeNull();
   });
 
   it("says nothing about a file no report mentions, rather than calling it uncovered", async () => {

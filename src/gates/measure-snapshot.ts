@@ -5,7 +5,7 @@ import {
   measureTestFile,
   type TestFileMeasures,
 } from "./measures.ts";
-import { matchCoverageFile, measureNames, parseUncoveredLines } from "./parsers.ts";
+import { fileLineHits, measureNames, parseLineHits } from "./parsers.ts";
 import type { WorkspaceChanges, WorkspaceProbe } from "./workspace-changes.ts";
 
 /**
@@ -43,6 +43,12 @@ export const emptyMeasureSnapshot: MeasureSnapshot = {
 interface SnapshotInput {
   readonly changes: WorkspaceChanges;
   readonly probe: WorkspaceProbe;
+  /**
+   * What a report's relative file names are relative to. Absent means the report and the change
+   * have to spell a path the same way to be about the same file, which is stricter than
+   * resolving them and never looser.
+   */
+  readonly workspaceRoot?: string;
   /** Test files seen earlier in the run, so a file that stops being touched still counts. */
   readonly trackedTestFiles: Iterable<string>;
   /** The measures the gates parsed this cycle, merged across gates. */
@@ -101,22 +107,27 @@ interface CoverageResult {
  * what a gate printed, since that is a number the code under measurement can author, and an
  * artifact that is not a complete lcov report parses as nothing, which lands here as the same
  * null a coverage-free project produces.
+ *
+ * A changed line counts as covered only where the report names it and says a run reached it.
+ * The reading this replaces asked the opposite question, whether the line was named as missed,
+ * so every line a report simply left out came back covered: a section listing two hit lines out
+ * of nine reported nine covered. What a report does not say is not a measurement.
  */
 function changedLineCoverage(input: SnapshotInput): CoverageResult | null {
-  const uncovered = new Map<string, Set<number>>();
+  const hits = new Map<string, Map<number, number>>();
   // Required in the type so every caller in this package has to decide, and tolerated when
   // absent so a caller that hands in no report abstains rather than aborting the run: an arm
   // with nothing to read is not measured, which is a verdict, not an error.
   for (const report of input.coverageReports ?? []) {
-    for (const [file, lines] of parseUncoveredLines(report)) {
-      const merged = uncovered.get(file) ?? new Set<number>();
-      for (const line of lines) {
-        merged.add(line);
+    for (const [file, lines] of parseLineHits(report)) {
+      const merged = hits.get(file) ?? new Map<number, number>();
+      for (const [at, count] of lines) {
+        merged.set(at, Math.min(merged.get(at) ?? count, count));
       }
-      uncovered.set(file, merged);
+      hits.set(file, merged);
     }
   }
-  if (uncovered.size === 0) {
+  if (hits.size === 0) {
     return null;
   }
 
@@ -128,13 +139,13 @@ function changedLineCoverage(input: SnapshotInput): CoverageResult | null {
     if (!isTestReachableSource(file.path)) {
       continue;
     }
-    const missed = matchCoverageFile(uncovered, file.path);
-    if (missed === null) {
+    const lineHits = fileLineHits(hits, file.path, input.workspaceRoot);
+    if (lineHits === null) {
       continue;
     }
     for (const added of file.addedLines) {
       measured += 1;
-      if (!missed.has(added.line)) {
+      if ((lineHits.get(added.line) ?? 0) > 0) {
         covered += 1;
       }
     }
