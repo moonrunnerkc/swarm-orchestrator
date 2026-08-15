@@ -20,8 +20,10 @@ interface GateSpec {
   readonly title: string;
   readonly severity: GateSeverity;
   readonly command: string;
+  /** Set where the harness built the invocation itself and spawns it with no shell. */
+  readonly argv?: readonly string[];
   readonly parse?: GateParser;
-  /** Where this command's runner was told to write its coverage report, when it was. */
+  /** Where this run's runner was told to write its coverage report, when it was. */
   readonly coverageArtifact?: string;
 }
 
@@ -33,6 +35,7 @@ function commandGate(spec: GateSpec): GateDefinition {
     source: {
       kind: "command",
       command: spec.command,
+      ...(spec.argv === undefined ? {} : { argv: spec.argv }),
       ...(spec.coverageArtifact === undefined ? {} : { coverageArtifact: spec.coverageArtifact }),
     },
     parse: spec.parse ?? parserFor(spec.id),
@@ -96,11 +99,15 @@ const nodeScriptCandidates: Readonly<Record<string, readonly string[]>> = {
 /**
  * The ratchet's changed-line-coverage arm can only compare what a run measured, so a test
  * command that leaves no report behind keeps that arm permanently abstaining, which reads as
- * a pass. Where the declared runner is node's own, the gate runs a rewritten command that
- * writes the runner's own report to a path under the session store, and the harness reads
- * that file rather than anything the command printed. Every other runner reports coverage in
- * a shape this harness does not read, and asking for it can fail outright, so those runs are
- * recorded as not measured instead of guessed at.
+ * a pass. Where the declared runner is node's own, the gate runs a vector the harness built
+ * itself, which writes the runner's own report to a path under the session store, and the
+ * harness reads that file rather than anything the run printed. Every other runner reports
+ * coverage in a shape this harness does not read, and asking for it can fail outright, so
+ * those runs are recorded as not measured instead of guessed at.
+ *
+ * The gate then carries both: the vector, which is what runs, and its rendering, which is what
+ * the ledger and the screen show. They are not the same thing and the difference matters, since
+ * nothing re-reads the rendering.
  *
  * One rule, applied to whatever command the gate ends up running: the script a manifest
  * declares here, and an override from swarm.toml where there is one.
@@ -114,10 +121,18 @@ function askedForCoverage(
     return spec;
   }
   const artifact = coverageArtifactPath(directory, spec.id);
-  const command = coverageReportingCommand(body, artifact);
-  return command === null
-    ? spec
-    : { ...spec, title: `${spec.id} (${command})`, command, coverageArtifact: artifact };
+  const argv = coverageReportingCommand(body, artifact);
+  if (argv === null) {
+    return spec;
+  }
+  const rendered = argv.join(" ");
+  return {
+    ...spec,
+    title: `${spec.id} (${rendered})`,
+    command: rendered,
+    argv,
+    coverageArtifact: artifact,
+  };
 }
 
 function nodeGates(

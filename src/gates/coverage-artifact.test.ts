@@ -13,6 +13,7 @@ import { assembleGates } from "./default-gates.ts";
 import { runGateCycle } from "./gate-runner.ts";
 import { takeMeasureSnapshot } from "./measure-snapshot.ts";
 import { createNodeCommandRunner } from "./node-command-runner.ts";
+import { processIsolation } from "./node-test-command.ts";
 import { detectProject } from "./project-type.ts";
 import { createMemoryWorkspace } from "./test-doubles.ts";
 
@@ -23,23 +24,25 @@ import { createMemoryWorkspace } from "./test-doubles.ts";
  * that never executes the test cannot demonstrate that it did not work.
  */
 
-describe("the command a runner is asked to write a report with", () => {
+describe("the invocation a runner is asked to write a report with", () => {
   it("asks node's runner for lcov beside the output it already prints", () => {
-    const command = coverageReportingCommand("node --test", "/session/coverage/tests.lcov");
+    const argv = coverageReportingCommand("node --test", "/session/coverage/tests.lcov");
 
-    expect(command).toContain("--experimental-test-coverage");
-    expect(command).toContain("--test-reporter=lcov");
-    expect(command).toContain("--test-reporter-destination='/session/coverage/tests.lcov'");
+    expect(argv).toContain("--experimental-test-coverage");
+    expect(argv).toContain("--test-reporter=lcov");
+    // The destination is one argument, spelled once, with nothing between here and the process
+    // that could read it as anything else.
+    expect(argv).toContain("--test-reporter-destination=/session/coverage/tests.lcov");
     // The counters the ratchet reads still have to arrive on stdout, and naming any reporter
     // replaces the default one.
-    expect(command).toContain("--test-reporter-destination=stdout");
+    expect(argv).toContain("--test-reporter-destination=stdout");
   });
 
   it("puts the flags in front of the file patterns, where node accepts them", () => {
-    const command = coverageReportingCommand("node --test 'src/**/*.test.mjs'", "/c/tests.lcov");
+    const argv = coverageReportingCommand("node --test 'src/**/*.test.mjs'", "/c/tests.lcov");
 
-    expect(command?.indexOf("--experimental-test-coverage")).toBeLessThan(
-      command?.indexOf("'src/**/*.test.mjs'") ?? -1,
+    expect(argv?.indexOf("--experimental-test-coverage")).toBeLessThan(
+      argv?.indexOf("src/**/*.test.mjs") ?? -1,
     );
   });
 
@@ -54,6 +57,15 @@ describe("the command a runner is asked to write a report with", () => {
     expect(
       coverageReportingCommand("node --test --experimental-test-coverage", "/c/tests.lcov"),
     ).toBeNull();
+    // A flag quoted into the position a file pattern goes: there is no shell to unquote it
+    // back, and the recognizer reads it as the flag it is rather than as a path.
+    expect(
+      coverageReportingCommand("node --test '--test-isolation=none'", "/c/tests.lcov"),
+    ).toBeNull();
+    expect(
+      coverageReportingCommand("node --test '--require=./hook.cjs'", "/c/tests.lcov"),
+    ).toBeNull();
+    expect(coverageReportingCommand("node --test '--env-file=.env'", "/c/tests.lcov")).toBeNull();
   });
 
   /**
@@ -65,7 +77,7 @@ describe("the command a runner is asked to write a report with", () => {
   it("abstains on a command that declares an isolation setting of its own", () => {
     const controlled = coverageReportingCommand("node --test", "/c/tests.lcov");
 
-    expect(controlled).toContain("--test-isolation=process");
+    expect(controlled).toContain(processIsolation);
     for (const body of [
       "node --test --test-isolation=none 'src/*.test.mjs'",
       'node --test --test-isolation="none"',
@@ -152,6 +164,8 @@ describe("coverage of changed lines comes from the artifact, never from what ran
     readonly sessionId: string;
     readonly testFile: string;
     readonly testScript: string;
+    /** Whatever else the workspace needs to try what it is trying: a hook, a dotenv file. */
+    readonly extraFiles?: Readonly<Record<string, string>>;
   }
 
   /** Runs the assembled tests gate for real and reads the arm the way the ratchet does. */
@@ -162,6 +176,9 @@ describe("coverage of changed lines comes from the artifact, never from what ran
       join(workspace, "package.json"),
       JSON.stringify({ name: "scratch", scripts: { test: scenario.testScript } }),
     );
+    for (const [name, contents] of Object.entries(scenario.extraFiles ?? {})) {
+      await writeFile(join(workspace, name), contents);
+    }
 
     const probe = createMemoryWorkspace({
       base: { "clamp.mjs": "export const nothing = 0;\n" },
@@ -290,6 +307,93 @@ describe("coverage of changed lines comes from the artifact, never from what ran
     expect(measured.changedLineCoverage).toBeNull();
     expect(measured.changedLinesMeasured).toBeNull();
   });
+
+  /**
+   * The forged report is the same one in every case below, and the honest number is 5 of 9.
+   * What varies is where the workspace put the thing that would write the forgery: quoted into
+   * the position a file pattern goes, in a dotenv file a flag would have read, or in the
+   * environment the gate runner was started with.
+   */
+  const forgedFull = [
+    "SF:clamp.mjs",
+    ...Array.from({ length: 9 }, (_unused, index) => `DA:${index + 1},1`),
+    "LF:9",
+    "LH:9",
+    "end_of_record",
+    "",
+  ].join("\n");
+
+  const honestTest = [
+    'import { test } from "node:test";',
+    'import assert from "node:assert/strict";',
+    'import { clamp } from "./clamp.mjs";',
+    'test("inside", () => { assert.equal(clamp(5, 0, 10), 5); });',
+    "",
+  ].join("\n");
+
+  /** Writes the forged report to whatever lcov destination it can find, from the parent. */
+  const hookCjs = [
+    'const { writeFileSync } = require("node:fs");',
+    `const forged = ${JSON.stringify(forgedFull)};`,
+    "process.on('exit', () => {",
+    "  for (const token of [...process.execArgv, ...process.argv]) {",
+    "    const found = String(token).match(/(\\/[^\\s']+\\.lcov)/);",
+    "    if (found) writeFileSync(found[1], forged);",
+    "  }",
+    "});",
+    "",
+  ].join("\n");
+
+  it("asks for no report where a flag was quoted into the position a pattern goes", async () => {
+    for (const [index, testScript] of [
+      "node --test '--test-isolation=none'",
+      "node --test '--require=./hook.cjs'",
+      "node --test '--env-file=.env'",
+    ].entries()) {
+      const { cycle, measured } = await measureThroughTheGate({
+        sessionId: `coverage-quoted-${index}`,
+        testScript,
+        testFile: honestTest,
+        extraFiles: { "hook.cjs": hookCjs, ".env": "NODE_OPTIONS=--require=./hook.cjs\n" },
+      });
+
+      expect({ testScript, reports: cycle.coverageReports.length }).toEqual({
+        testScript,
+        reports: 0,
+      });
+      expect({ testScript, coverage: measured.changedLineCoverage }).toEqual({
+        testScript,
+        coverage: null,
+      });
+    }
+  }, 60_000);
+
+  it("measures under its own environment rather than the one it was started with", async () => {
+    // NODE_OPTIONS names a hook that writes the forged report, and no scan of the command
+    // string can see it, because it is not in the command string. The vouched run is given an
+    // environment the harness built, so the hook is never loaded and the report is node's own.
+    const previous = process.env.NODE_OPTIONS;
+    process.env.NODE_OPTIONS = "--require=./hook.cjs";
+    try {
+      const { cycle, measured } = await measureThroughTheGate({
+        sessionId: "coverage-inherited-node-options",
+        testScript: "node --test",
+        testFile: honestTest,
+        extraFiles: { "hook.cjs": hookCjs },
+      });
+
+      expect(cycle.coverageReports).toHaveLength(1);
+      expect(cycle.coverageReports[0]).not.toBe(forgedFull);
+      expect(measured.changedLinesCovered).toBe(5);
+      expect(measured.changedLineCoverage).not.toBe(1);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.NODE_OPTIONS;
+      } else {
+        process.env.NODE_OPTIONS = previous;
+      }
+    }
+  }, 60_000);
 });
 
 async function readFileOrNull(root: string, path: string): Promise<string | null> {

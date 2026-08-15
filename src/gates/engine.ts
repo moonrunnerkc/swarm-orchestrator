@@ -8,7 +8,11 @@ import {
   type ResolveAttempt,
   runAutoResolve,
 } from "./auto-resolve.ts";
-import { createBaseControlRunner, singleFileTestCommand } from "./base-control.ts";
+import {
+  createBaseControlRunner,
+  type SingleFileCommand,
+  singleFileTestCommand,
+} from "./base-control.ts";
 import { createFileCoverageArtifactStore } from "./coverage-artifact.ts";
 import { assembleGates, type GateSetOptions } from "./default-gates.ts";
 import type { FileSetRegistry } from "./file-set.ts";
@@ -36,10 +40,7 @@ interface GatesEngineOptions {
    * argument is where this run is asked to write its own TAP result; an override that ignores
    * it gets no attribution, so its runs clear no individual test.
    */
-  readonly singleFileTestCommand?: (
-    testFile: string,
-    outcomeArtifact: string | null,
-  ) => string | null;
+  readonly singleFileTestCommand?: SingleFileCommand;
 }
 
 export interface GatesEngineRun {

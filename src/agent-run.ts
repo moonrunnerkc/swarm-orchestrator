@@ -6,6 +6,7 @@ import type { ModelClient } from "./core/model-client.ts";
 import type { RandomSource } from "./core/random-source.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
 import type { ResolveRequest } from "./gates/auto-resolve.ts";
+import type { SingleFileCommand } from "./gates/base-control.ts";
 import type { GateSetOptions } from "./gates/default-gates.ts";
 import { type GatesEngineRun, runGatesEngine } from "./gates/engine.ts";
 import type { FileSetRegistry } from "./gates/file-set.ts";
@@ -60,10 +61,7 @@ export interface AgentTaskOptions {
   readonly gateOptions?: GateSetOptions;
   /** Replaces the engine's built-in size budget, from swarm.toml. */
   readonly diffBudget?: DiffBudget;
-  readonly singleFileTestCommand?: (
-    testFile: string,
-    outcomeArtifact: string | null,
-  ) => string | null;
+  readonly singleFileTestCommand?: SingleFileCommand;
 }
 
 interface AgentTaskResult {

@@ -28,6 +28,12 @@ const gateRunSchema = z.object({
   exitCode: z.number().int(),
   durationMs: z.number().nonnegative(),
   unavailable: z.string().nullable(),
+  /**
+   * The vector the harness spawned, where it spawned one. `command` beside it is a rendering
+   * for a reader; this is what ran, argument by argument, and a reviewer comparing the two is
+   * comparing the run to its own description.
+   */
+  argv: z.array(z.string()).nullable(),
   stdout: z.string(),
   stderr: z.string(),
   outputTruncated: z.boolean(),
@@ -107,6 +113,7 @@ export async function runGateCycle(
       detail: reading.detail,
       attempt,
       command: gate.source.kind === "command" ? gate.source.command : null,
+      argv: gate.source.kind === "command" ? (gate.source.argv ?? null) : null,
       exitCode: observation.exitCode,
       durationMs: observation.durationMs,
       unavailable: observation.unavailable,
@@ -191,10 +198,16 @@ async function observe(
     await store.clear(artifact);
   }
 
-  const observation = await deps.commands.run(gate.source.command, {
+  // A vector the harness built is spawned as one; a command the project declared is read by a
+  // shell, because that is what it is. Only the first is ever asked for an artifact.
+  const options = {
     cwd: context.workspaceRoot,
     timeoutMs: gate.source.timeoutMs ?? defaultGateTimeoutMs,
-  });
+  };
+  const observation =
+    gate.source.argv === undefined
+      ? await deps.commands.run(gate.source.command, options)
+      : await deps.commands.runVouched(gate.source.argv, options);
 
   return {
     observation,
