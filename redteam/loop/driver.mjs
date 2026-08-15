@@ -9,13 +9,17 @@
  * Two things this driver deliberately cannot do, because the whole exercise depends on them:
  * it never merges a throwaway branch (there is no merge call anywhere in this file), and it never
  * applies the attacker's regression tests or fixes to the base branch. The attacker's work stays
- * on redteam/loop/lap-<n>; the only thing that crosses back to base is the JSONL report, which is
- * held in memory across the checkout and written to state afterwards. Attacker findings become
- * code only by going through a later fixer lap.
+ * on its own branch; the only thing that crosses back to base is the JSONL report, which is held
+ * in memory across the checkout and written to state afterwards. Attacker findings become code
+ * only by going through a later fixer lap.
+ *
+ * This driver cuts redteam/loop/lap-<n>, but it records the branch HEAD is actually on when the
+ * attacker finishes, which is where the commit lands and may be a branch the attacker cut under
+ * it. Every cited regression-test path is then resolved against that recorded branch, so a
+ * summary can never name a branch as holding artifacts it does not carry.
  *
  * Routing is not decided here. All exit/wake/continue logic lives in ./evaluate.mjs as pure
- * functions over the two reports, so the driver never makes a judgment a JSONL field does not
- * encode: severity and residual status are the agents' words, and this file only compares sets.
+ * functions over the two reports plus what this file resolved on disk.
  *
  * Plain Node, node: builtins only, no dependencies.
  *
@@ -32,6 +36,7 @@ import {
   evaluateLap,
   formatFindingsForPrompt,
   formatFocusFromFixerItems,
+  normalizeCitation,
   parseAgentReport,
   parseJsonl,
   parseVitestCounts,
@@ -269,6 +274,34 @@ async function commitAll(message) {
   return gitOrThrow(["rev-parse", "--short", "HEAD"]);
 }
 
+async function pathExistsOnBranch(branch, path) {
+  const outcome = await git(["cat-file", "-e", `${branch}:${path}`]);
+  return outcome.code === 0;
+}
+
+/**
+ * Which regression-test paths the succeeded rows cite that the recorded branch actually carries.
+ *
+ * The branch is the one the attacker left HEAD on, not the one this driver cut, because an
+ * attacker that branches again under the throwaway commits its work there. Resolving citations
+ * against the branch we assumed rather than the branch that took the commits would report every
+ * real artifact as missing, and would name an empty ref in the summary as though it held them.
+ */
+async function resolveCitedArtifacts(branch, attackerRows) {
+  const cited = [
+    ...new Set(
+      succeededFindings(attackerRows)
+        .map((row) => normalizeCitation(row.regression_test))
+        .filter((path) => path !== null),
+    ),
+  ];
+  const presentPaths = [];
+  for (const path of cited) {
+    if (await pathExistsOnBranch(branch, path)) presentPaths.push(path);
+  }
+  return { checked: true, branch, presentPaths, citedPaths: cited };
+}
+
 function statePath(options, name) {
   return join(options.stateDir, name);
 }
@@ -465,6 +498,7 @@ async function runAttackStep(options, lap, fixerRows, baseBranch) {
   }
 
   let outcome;
+  let attackerBranch = null;
   try {
     outcome = await runAgent(options, {
       command: options.attackerCmd,
@@ -474,9 +508,19 @@ async function runAttackStep(options, lap, fixerRows, baseBranch) {
     });
   } finally {
     if (!options.dryRun) {
-      // The attacker's regression tests and golden cases stay on the throwaway branch. Committing
-      // them here is what lets the checkout back to base leave every one of them behind.
-      await commitAll(`red-team loop lap ${lap}: attacker findings on ${throwaway}`);
+      // Read HEAD before committing: the commit lands wherever the attacker left it, and an
+      // attacker that cut its own branch under the throwaway leaves the throwaway empty. The
+      // branch recorded from here on is the one that holds the work, not the one we cut.
+      attackerBranch = await currentBranch();
+      if (attackerBranch === baseBranch) {
+        throw new DriverError(
+          `the attacker left HEAD on ${baseBranch}, so committing its work would put it on the base branch`,
+          `inspect the tree by hand: the attacker must stay on ${throwaway} or a branch under it`,
+        );
+      }
+      // The attacker's regression tests and golden cases stay on its branch. Committing them
+      // here is what lets the checkout back to base leave every one of them behind.
+      await commitAll(`red-team loop lap ${lap}: attacker findings on ${attackerBranch}`);
       await gitOrThrow(["checkout", baseBranch]);
       const landedOn = await currentBranch();
       if (landedOn !== baseBranch) {
@@ -506,7 +550,22 @@ async function runAttackStep(options, lap, fixerRows, baseBranch) {
   }
   writeState(statePath(options, `lap-${lap}-attacker.jsonl`), rowsToJsonl(report.rows));
   log(`lap ${lap}: attacker reported ${report.rows.length} row(s)`);
-  return { rows: report.rows, problems, throwaway };
+
+  const artifactBacking = options.dryRun
+    ? { checked: false, branch: null, presentPaths: [], citedPaths: [] }
+    : await resolveCitedArtifacts(attackerBranch, report.rows);
+  if (artifactBacking.checked) {
+    const missing = artifactBacking.citedPaths.filter(
+      (path) => !artifactBacking.presentPaths.includes(path),
+    );
+    log(
+      `lap ${lap}: ${artifactBacking.presentPaths.length} of ${artifactBacking.citedPaths.length} cited artifact path(s) present on ${attackerBranch}`,
+    );
+    for (const path of missing) {
+      log(`lap ${lap}: cited artifact ${path} is NOT on ${attackerBranch}`);
+    }
+  }
+  return { rows: report.rows, problems, throwaway, attackerBranch, artifactBacking };
 }
 
 function appendSummary(options, evaluation, itemsFixed) {
@@ -557,12 +616,14 @@ async function runLap(options, lap, baseBranch) {
     gates: { passed: gates.passed, testsPassed: gates.counts.testsPassed },
     priorTestCount,
     reportProblems: [...prior.errors.map((e) => `prior attacker jsonl line ${e.line}: ${e.message}`), ...fix.problems, ...attack.problems],
+    artifactBacking: attack.artifactBacking,
+    attackerBranch: attack.attackerBranch,
   });
 
   appendSummary(options, evaluation, itemsFixed);
   if (!options.dryRun) await commitAll(`red-team loop lap ${lap}: summary`);
 
-  return { evaluation, throwaway: attack.throwaway };
+  return { evaluation, attackerBranch: attack.attackerBranch };
 }
 
 async function main() {
@@ -596,12 +657,12 @@ async function main() {
 
   let final = null;
   for (let lap = firstLap; lap <= lastLap; lap += 1) {
-    const { evaluation, throwaway } = await runLap(options, lap, baseBranch);
+    const { evaluation, attackerBranch } = await runLap(options, lap, baseBranch);
     final = evaluation;
     banner(`lap ${lap}: ${evaluation.decision}`);
     log(renderSummary(evaluation));
-    if (throwaway && !options.dryRun) {
-      log(`\nattacker branch ${throwaway} is left unmerged, as it must be.`);
+    if (attackerBranch && !options.dryRun) {
+      log(`\nattacker branch ${attackerBranch} is left unmerged, as it must be.`);
     }
     if (evaluation.decision === DECISION.wake) {
       log("\nstopping for a human.");
