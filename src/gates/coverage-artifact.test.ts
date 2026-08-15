@@ -56,19 +56,27 @@ describe("the command a runner is asked to write a report with", () => {
     ).toBeNull();
   });
 
-  it("forces process isolation, replacing a shared-process setting rather than joining it", () => {
-    const forced = coverageReportingCommand("node --test", "/c/tests.lcov");
-    const shared = coverageReportingCommand(
-      "node --test --test-isolation=none 'src/*.test.mjs'",
-      "/c/tests.lcov",
-    );
+  /**
+   * This test used to assert the opposite: that a declared `--test-isolation=none` was stripped
+   * and replaced. That rewrite lost three times to spellings the strip did not recognize, so
+   * the arm no longer corrects a command it did not fully recognize. It abstains, and the
+   * ratchet renders the abstention as not measured. Same commit, same reason, every spelling.
+   */
+  it("abstains on a command that declares an isolation setting of its own", () => {
+    const controlled = coverageReportingCommand("node --test", "/c/tests.lcov");
 
-    expect(forced).toContain("--test-isolation=process");
-    // Node takes the last setting it is given, so the declared one has to go rather than be
-    // argued with: under a shared process the test can write the report the harness reads.
-    expect(shared).toContain("--test-isolation=process");
-    expect(shared).not.toContain("--test-isolation=none");
-    expect(shared).toContain("'src/*.test.mjs'");
+    expect(controlled).toContain("--test-isolation=process");
+    for (const body of [
+      "node --test --test-isolation=none 'src/*.test.mjs'",
+      'node --test --test-isolation="none"',
+      `node --test --test-isolation=\${MODE}`,
+      "node --test --test-isolation=process",
+    ]) {
+      expect({ body, command: coverageReportingCommand(body, "/c/tests.lcov") }).toEqual({
+        body,
+        command: null,
+      });
+    }
   });
 
   it("keeps one report per gate id, including when a gate id carries a language", () => {
@@ -225,17 +233,20 @@ describe("coverage of changed lines comes from the artifact, never from what ran
     expect(cycle.coverageReports).toHaveLength(1);
     expect(cycle.coverageReports[0]).toContain("SF:");
     // The forged table claims every line; the runner's own report does not, and the report is
-    // the only thing read.
-    expect(measured.changedLinesMeasured).toBeGreaterThan(0);
-    expect(measured.changedLineCoverage).toBeLessThan(1);
-    expect(measured.changedLineCoverage).toBeGreaterThan(0);
+    // the only thing read. Five of the nine changed lines are reached, and that is the number.
+    expect(measured.changedLinesMeasured).toBe(9);
+    expect(measured.changedLinesCovered).toBe(5);
+    expect(measured.changedLineCoverage).toBeCloseTo(5 / 9);
   });
 
-  it("does not hand the test the report path, even where the project asked for one process", async () => {
-    // The project asks for a shared process twice over, once in the script and once in the
-    // environment, which is what used to put the destination in the test's own argv. The test
-    // looks for it there and writes a complete, well-formed lcov claiming every line, at the
-    // end of the run as well as during it.
+  /**
+   * The project declares a shared process in the spelling that beat the rewrite: quoted, so the
+   * strip did not see it, and last, so node took it. The test is written to exploit exactly
+   * that, looking for the destination in its own argv and writing a complete lcov claiming
+   * every line. It is not defeated by a better strip. It is never run for coverage at all,
+   * because the harness does not recognize the command and says so as not measured.
+   */
+  it("asks a command it cannot vouch for for no report at all", async () => {
     const forged = [
       "SF:clamp.mjs",
       ...Array.from({ length: 9 }, (_unused, index) => `DA:${index + 1},1`),
@@ -246,7 +257,7 @@ describe("coverage of changed lines comes from the artifact, never from what ran
     ].join("\n");
     const { cycle, measured } = await measureThroughTheGate({
       sessionId: "coverage-isolation",
-      testScript: "NODE_OPTIONS=--test-isolation=none node --test --test-isolation=none",
+      testScript: 'NODE_OPTIONS=--test-isolation=none node --test --test-isolation="none"',
       testFile: [
         'import { test } from "node:test";',
         'import assert from "node:assert/strict";',
@@ -273,10 +284,10 @@ describe("coverage of changed lines comes from the artifact, never from what ran
       ].join("\n"),
     });
 
-    expect(measured.changedLineCoverage).not.toBeNull();
-    expect(measured.changedLineCoverage).toBeLessThan(1);
-    // The branches this test never takes are in the report, which a forged one would not say.
-    expect(cycle.coverageReports[0] ?? "").toMatch(/DA:\d+,0/);
+    // Nothing was asked for, so nothing is read, so there is no number to be wrong about.
+    expect(cycle.coverageReports).toEqual([]);
+    expect(measured.changedLineCoverage).toBeNull();
+    expect(measured.changedLinesMeasured).toBeNull();
   });
 });
 
