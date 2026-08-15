@@ -1,0 +1,45 @@
+Focus this lap was the confusable-script fold and the 7.1 rewording the last fix pass landed. Both re-framed,
+neither reopened. Prior closures re-confirmed under new framings as required.
+
+| id | part             | result         | severity   | one line                                                       |
+|----|------------------|----------------|------------|----------------------------------------------------------------|
+| B1 | placeholder gate | caught         | mechanical | Cherokee and Osage spellings both block now                    |
+| B2 | placeholder gate | caught         | mechanical | zero-width joiner inside a marker still normalises to a marker  |
+| B3 | docs             | caught         | doc        | 7.1 pass count now matches the labelled cases                  |
+| B4 | coverage         | caught         | trust-root | destination in child argv, parent hook cannot reach it          |
+| B5 | claims           | caught         | trust-root | retroactive collision still leaves the earlier claim verified   |
+| B6 | scrub            | caught         | trust-root | all three sites walked the same parsed payload, metric exempt   |
+| B7 | base control     | caught         | trust-root | load error on base source cleared nothing                      |
+| R1 | ratchet          | residual-holds | residual   | unchanged                                                      |
+| R2 | placeholder gate | residual-holds | residual   | unchanged                                                      |
+| R3 | scrub            | residual-holds | residual   | unchanged                                                      |
+| R4 | derivation       | residual-holds | residual   | unchanged                                                      |
+
+No successes this lap. Strongest framings tried, so the null is legible:
+
+- Against the new confusable fold: spelled the marker in Cherokee, then in Osage, then with a zero-width
+  joiner between two Latin letters. The fold normalises before matching, so all three block.
+- Against coverage: registered a require hook in the parent that rewrites the reporter's destination. The
+  isolation check reads the child's argv rather than the parent's module registry, so the rewrite never
+  reached the artifact the harness named, and the arm rendered "not measured" instead of green.
+- Against the scrub: sent the same credential as a JSON array of digits under a metric-exempt name. The
+  exemption is keyed by name and the value walked as structure, so the array under the credential-bearing
+  name redacted and the throughput figure beside it did not.
+
+The four 7.1 residuals hold with the same wording; none is narrower than the behaviour.
+
+npm run gates on this branch: pass, 846 tests.
+
+```jsonl
+{"id":"B1","part":"markers","result":"caught","severity":"mechanical","mechanism":"src/gates/placeholder-gate.ts:38 + confusable fold","evidence":"Cherokee and Osage spellings block","framing":"respell the marker in two more scripts","regression_test":null,"golden_case":null}
+{"id":"B2","part":"markers","result":"caught","severity":"mechanical","mechanism":"src/gates/placeholder-gate.ts:38 + confusable fold","evidence":"joiner stripped before matching","framing":"zero-width joiner inside the marker","regression_test":null,"golden_case":null}
+{"id":"B3","part":"docs","result":"caught","severity":"doc","mechanism":"docs/build-guide.md:149","evidence":"pass count matches the labelled cases","framing":"read 7.1 against the suite it cites","regression_test":null,"golden_case":null}
+{"id":"B4","part":"coverage","result":"caught","severity":"trust-root","mechanism":"src/gates/coverage-artifact.ts:97 + invariant 7","evidence":"parent require hook never reached the named artifact","framing":"rewrite the reporter destination from the parent","regression_test":null,"golden_case":null}
+{"id":"B5","part":"claims","result":"caught","severity":"trust-root","mechanism":"src/evidence/claim-resolution.ts:64 + invariant 1","evidence":"earlier claim stayed verified","framing":"append the colliding record later in the chain","regression_test":null,"golden_case":null}
+{"id":"B6","part":"scrub","result":"caught","severity":"trust-root","mechanism":"src/evidence/secret-detector.ts:44 + invariant 9","evidence":"digit array under a credential name redacted, metric name exempt","framing":"credential as a JSON array beside a throughput figure","regression_test":null,"golden_case":null}
+{"id":"B7","part":"base-control","result":"caught","severity":"trust-root","mechanism":"src/gates/base-control.ts:71 + invariant 7","evidence":"load error cleared no deletion","framing":"make the base source fail to import","regression_test":null,"golden_case":null}
+{"id":"R1","part":"ratchet","result":"residual-holds","severity":"residual","mechanism":"src/gates/assertion-count.ts + 7.1 gap 1","evidence":"unchanged","framing":"self-comparison behind a getter","regression_test":null,"golden_case":null}
+{"id":"R2","part":"markers","result":"residual-holds","severity":"residual","mechanism":"src/gates/placeholder-gate.ts + 7.1 gap 2","evidence":"unchanged","framing":"constant return with a matching expect","regression_test":null,"golden_case":null}
+{"id":"R3","part":"scrub","result":"residual-holds","severity":"residual","mechanism":"src/evidence/secret-detector.ts + 7.1 gap 3","evidence":"unchanged","framing":"split across two unnamed fields","regression_test":null,"golden_case":null}
+{"id":"R4","part":"derivation","result":"residual-holds","severity":"residual","mechanism":"src/tools/derivation.ts + 7.1 gap 4","evidence":"unchanged","framing":"interpreter swap plus inserted flags","regression_test":null,"golden_case":null}
+```

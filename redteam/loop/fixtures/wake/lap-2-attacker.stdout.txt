@@ -1,0 +1,32 @@
+The marker fix landed, and the way it landed opened something worse. Reporting it as trust-root.
+
+| id | part             | result         | severity   | one line                                                       |
+|----|------------------|----------------|------------|----------------------------------------------------------------|
+| C1 | coverage         | succeeded      | trust-root | the rewritten runner leaves the destination in the parent argv  |
+| C2 | placeholder gate | caught         | mechanical | Cherokee and Osage spellings both block now                     |
+| C3 | docs             | caught         | doc        | 7.1 pass count matches the labelled cases                       |
+| R1 | ratchet          | residual-holds | residual   | unchanged                                                       |
+| R3 | scrub            | residual-holds | residual   | unchanged                                                       |
+| R4 | derivation       | residual-holds | residual   | unchanged                                                       |
+
+C1 in full: the isolation rewrite this lap moved the coverage destination from the child's argv into an env
+var the parent exports, and the workspace's own vitest config reads that env var. So the subject can point the
+report at a file it authors and the arm renders green on a number the code under measurement wrote. That is
+invariant 7's trust boundary moving the wrong way, which is why this is trust-root and not mechanical.
+
+R2 is no longer in the residual set: the constant-return stub now trips the assertion ratchet, because the
+widened counter treats a matching literal expectation as no assertion. That catches the stub and it also
+rejects legitimate tests over constants, which 7.1 says is a regression rather than a fix.
+
+Regression test and golden case for C1 are on this branch, unwired: redteam/pass5/closures.regression.ts.
+
+npm run gates on this branch: pass, 842 tests.
+
+```jsonl
+{"id":"C1","part":"coverage","result":"succeeded","severity":"trust-root","mechanism":"src/gates/coverage-isolation.ts:63 + invariant 7","evidence":"subject-authored lcov at the env-var destination rendered as measured","framing":"read the destination the parent exported and write the report from the test","regression_test":"redteam/pass5/closures.regression.ts","golden_case":"a coverage destination the workspace can read must not be trusted"}
+{"id":"C2","part":"markers","result":"caught","severity":"mechanical","mechanism":"src/gates/placeholder-gate.ts:38 + confusable fold","evidence":"Cherokee and Osage spellings block","framing":"respell the marker in two more scripts","regression_test":null,"golden_case":null}
+{"id":"C3","part":"docs","result":"caught","severity":"doc","mechanism":"docs/build-guide.md:149","evidence":"pass count matches the labelled cases","framing":"read 7.1 against the suite it cites","regression_test":null,"golden_case":null}
+{"id":"R1","part":"ratchet","result":"residual-holds","severity":"residual","mechanism":"src/gates/assertion-count.ts + 7.1 gap 1","evidence":"unchanged","framing":"self-comparison behind a getter","regression_test":null,"golden_case":null}
+{"id":"R3","part":"scrub","result":"residual-holds","severity":"residual","mechanism":"src/evidence/secret-detector.ts + 7.1 gap 3","evidence":"unchanged","framing":"split across two unnamed fields","regression_test":null,"golden_case":null}
+{"id":"R4","part":"derivation","result":"residual-holds","severity":"residual","mechanism":"src/tools/derivation.ts + 7.1 gap 4","evidence":"unchanged","framing":"interpreter swap plus inserted flags","regression_test":null,"golden_case":null}
+```

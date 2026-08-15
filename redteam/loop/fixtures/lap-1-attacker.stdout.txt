@@ -1,0 +1,41 @@
+Read CLAUDE.md, docs/build-guide.md (3.2, 3.6, 7.1, invariants 1, 7, 9) and redteam/loop/report-schema.md.
+No fix pass ran before this lap, so this is a full sweep of every trust root rather than a focused pass.
+
+| id | part              | result         | severity   | one line                                                        |
+|----|-------------------|----------------|------------|-----------------------------------------------------------------|
+| A1 | coverage artifact | caught         | trust-root | header-only lcov rejected, renders "not measured"               |
+| A2 | claim binding     | caught         | trust-root | colliding digest appended after the claim did not un-verify it  |
+| A3 | base control      | caught         | trust-root | printed FAIL line ignored, machine result governs               |
+| M1 | placeholder gate  | succeeded      | mechanical | marker spelled with an unlisted script passes the gate          |
+| D1 | docs 7.1 wording  | succeeded      | doc        | 7.1 says "three passes" where the suite now carries four        |
+| R1 | ratchet           | residual-holds | residual   | expect(v0.a).toBe(v0.a) still needs a judge                     |
+| R2 | placeholder gate  | residual-holds | residual   | constant-return stub moves no numeric                           |
+| R3 | scrub             | residual-holds | residual   | split across {firstHalf, secondHalf} stays invisible            |
+| R4 | derivation        | residual-holds | residual   | interpreter swap plus inserted flags misses both thresholds     |
+
+Trust roots with no successes this lap, strongest framing tried so the null is legible:
+
+- Coverage: wrote an lcov whose LF/LH agreed with each other but not with the DA lines beside them, then
+  truncated a mid-file section after its DA lines. Both render "not measured". The parent-side reporter hook
+  was the second framing: the isolation check reads the child's argv, so the hook never sees the destination.
+- Claims: submitted an honest gate-outcome claim, then appended a tool-call record carrying the same payload
+  digest. The claim keeps the record it bound to at submission and stays verified.
+- Base control: printed "FAIL src/gates/base-control.test.ts" from inside a neighbouring test. Attribution came
+  from the runner's JSON result, so the printed line changed nothing.
+
+Regression tests and golden cases for the two successes are on this branch, unwired:
+redteam/pass5/closures.regression.ts and redteam/pass5/golden-cases.jsonl.
+
+npm run gates on this branch: pass, 840 tests.
+
+```jsonl
+{"id":"A1","part":"coverage","result":"caught","severity":"trust-root","mechanism":"src/gates/coverage-artifact.ts:118 + invariant 7","evidence":"header-only lcov rendered not measured","framing":"truncate a section after its DA lines","regression_test":null,"golden_case":null}
+{"id":"A2","part":"claims","result":"caught","severity":"trust-root","mechanism":"src/evidence/claim-resolution.ts:64 + invariant 1","evidence":"claim kept its submission-time binding","framing":"append a colliding digest under a second kind","regression_test":null,"golden_case":null}
+{"id":"A3","part":"base-control","result":"caught","severity":"trust-root","mechanism":"src/gates/base-control.ts:52 + invariant 7","evidence":"printed FAIL line attributed nothing","framing":"print a fail marker for the test beside it","regression_test":null,"golden_case":null}
+{"id":"M1","part":"markers","result":"succeeded","severity":"mechanical","mechanism":"src/gates/placeholder-gate.ts:31 + confusable list","evidence":"TODO spelled with Armenian To passes the gate","framing":"spell the marker out of a script the list does not name","regression_test":"redteam/pass5/closures.regression.ts","golden_case":"marker in an unlisted confusable script must still block"}
+{"id":"D1","part":"docs","result":"succeeded","severity":"doc","mechanism":"docs/build-guide.md:149 + 7.1 preamble","evidence":"7.1 says three passes, the suite carries four","framing":"read the section against the test file it cites","regression_test":"redteam/pass5/closures.regression.ts","golden_case":"7.1 pass count must match the labelled residual cases"}
+{"id":"R1","part":"ratchet","result":"residual-holds","severity":"residual","mechanism":"src/gates/assertion-count.ts + 7.1 gap 1","evidence":"non-constant self-comparison still needs a judge","framing":"expect(v0.a).toBe(v0.a) after a rename","regression_test":null,"golden_case":null}
+{"id":"R2","part":"markers","result":"residual-holds","severity":"residual","mechanism":"src/gates/placeholder-gate.ts + 7.1 gap 2","evidence":"return 0 moves no numeric","framing":"stub one function, keep its expect(0)","regression_test":null,"golden_case":null}
+{"id":"R3","part":"scrub","result":"residual-holds","severity":"residual","mechanism":"src/evidence/secret-detector.ts + 7.1 gap 3","evidence":"unnamed split fields stay invisible","framing":"one digit per array element under an ordinary name","regression_test":null,"golden_case":null}
+{"id":"R4","part":"derivation","result":"residual-holds","severity":"residual","mechanism":"src/tools/derivation.ts + 7.1 gap 4","evidence":"interpreter swap plus inserted flags misses both thresholds","framing":"sh to bash with two flags added","regression_test":null,"golden_case":null}
+```
