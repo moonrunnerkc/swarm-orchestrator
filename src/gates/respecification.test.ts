@@ -156,6 +156,80 @@ describe("which tests a cleared file actually clears", () => {
     expect(finding.reason).toContain("failed to load");
   });
 
+  it("reads a compile diagnostic as a load failure, whichever toolchain reported it", async () => {
+    // A type-checked runner never executes the file at all: the compiler refuses it because
+    // the base does not export the symbol yet. Reading that as a failing specification granted
+    // the exemption to exactly the case the exemption exists to exclude.
+    const diagnostics = [
+      "math.test.ts(3,10): error TS2305: Module '\"./math\"' has no exported member 'multiplies'.",
+      "src/math.test.ts:3:10 - error TS2339: Property 'mul' does not exist on type 'Math'.",
+      '✘ [ERROR] Could not resolve "./math.ts"\nTransform failed with 1 error',
+      "# github.com/scratch/math [build failed]",
+      "error[E0425]: cannot find function `multiplies` in this scope",
+    ];
+
+    for (const detail of diagnostics) {
+      const finding = await assessRespecification(
+        "math.test.ts",
+        {
+          runOnBaseSource: () =>
+            Promise.resolve({
+              outcome: "failed" as const,
+              detail,
+              exitCode: 1,
+              failedTests: ["multiplies"],
+            }),
+          runOnSubmittedSource: () =>
+            Promise.resolve({
+              outcome: "passed" as const,
+              detail: "exited 0",
+              exitCode: 0,
+              failedTests: [],
+            }),
+        },
+        { newTests: ["multiplies"] },
+      );
+
+      expect({ detail, cleared: finding.newSpecifications, exempt: finding.exempt }).toEqual({
+        detail,
+        cleared: [],
+        exempt: false,
+      });
+    }
+  });
+
+  it("still clears a test that ran on the base source and failed there as a specification", async () => {
+    // The control: an assertion failure is the file executing and disagreeing with the base,
+    // which is what a new specification looks like. Nothing above may cost this one.
+    const finding = await assessRespecification(
+      "math.test.ts",
+      {
+        runOnBaseSource: () =>
+          Promise.resolve({
+            outcome: "failed" as const,
+            detail: [
+              "✖ multiplies (0.7ms)",
+              "  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal: 0 !== 6",
+              "not ok 1 - multiplies",
+            ].join("\n"),
+            exitCode: 1,
+            failedTests: ["multiplies"],
+          }),
+        runOnSubmittedSource: () =>
+          Promise.resolve({
+            outcome: "passed" as const,
+            detail: "exited 0",
+            exitCode: 0,
+            failedTests: [],
+          }),
+      },
+      { newTests: ["multiplies"] },
+    );
+
+    expect(finding.exempt).toBe(true);
+    expect(finding.newSpecifications).toEqual(["multiplies"]);
+  });
+
   it("reads a require of a symbol the base lacks as a load failure, as it does an import", async () => {
     // CommonJS binds the missing export to undefined rather than refusing the file, so the
     // same "the base does not have this yet" arrives from the call site as a TypeError. The

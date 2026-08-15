@@ -74,12 +74,18 @@ export interface RespecificationFinding {
  * treating it as one hands the exemption to any submitted test that imports a symbol the
  * base does not export, which is every test written beside a new function.
  *
- * The last two entries are the same failure as the SyntaxError above them, spelled the way a
- * CommonJS require spells it. An ESM import of a symbol the base does not export never runs
- * the file; a require of the same symbol binds it to undefined and the file fails on first
- * use, so the same "the base does not have this yet" arrives as a TypeError from the call
- * rather than as a load error. Reading one as a specification and the other as an accident
- * would make the exemption depend on the module system.
+ * The module system decides how that arrives and must not decide the verdict. An ESM import of
+ * a symbol the base does not export refuses the file with a SyntaxError; a require of the same
+ * symbol binds it to undefined and the file fails at the first call with a TypeError; and a
+ * type-checked runner never gets that far, refusing the file with a compile diagnostic instead
+ * (TS2305 for a missing named export, TS2307 for a missing module, TS2339 for a missing member,
+ * and the rest of the same family). Every one of them is the base not having the symbol yet, so
+ * every one of them withholds the exemption rather than granting it. Whichever toolchain
+ * reports the compile failure is the same story: nothing ran, so nothing failed as a spec.
+ *
+ * The reading is deliberately broad, because it only ever withholds. A test that fails for real
+ * while printing something that looks like a compile diagnostic loses an exemption it might
+ * have earned, which costs an attempt; the other direction costs a deletion nobody sees.
  */
 const loadFailures: readonly RegExp[] = [
   /Cannot find module/i,
@@ -91,7 +97,13 @@ const loadFailures: readonly RegExp[] = [
   /\bSyntaxError\b/,
   /\bReferenceError\b/,
   /Failed to (?:load|resolve) (?:url|import)/i,
-  /error TS2307/,
+  // Any TypeScript diagnostic: the compiler refused the file, so the runner never had one.
+  /\berror TS\d+\b/,
+  // The transpiling runners a TypeScript project reaches for, and the compilers of the two
+  // other toolchains this harness knows how to run one test file under.
+  /\b(?:Transform|Build) failed with \d+ error/i,
+  /\[build failed\]/,
+  /^\s*error\[E\d{4}\]/m,
   /\bno such file or directory\b/i,
   /\bTypeError\b[^\n]*\bis not a function\b/,
   /\bTypeError\b[^\n]*\bis not a constructor\b/,
