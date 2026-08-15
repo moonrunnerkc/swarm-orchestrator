@@ -76,12 +76,18 @@ export interface RespecificationFinding {
  *
  * The module system decides how that arrives and must not decide the verdict. An ESM import of
  * a symbol the base does not export refuses the file with a SyntaxError; a require of the same
- * symbol binds it to undefined and the file fails at the first call with a TypeError; and a
+ * symbol binds it to undefined and the file fails at the first use with a TypeError; and a
  * type-checked runner never gets that far, refusing the file with a compile diagnostic instead
  * (TS2305 for a missing named export, TS2307 for a missing module, TS2339 for a missing member,
  * and the rest of the same family). Every one of them is the base not having the symbol yet, so
  * every one of them withholds the exemption rather than granting it. Whichever toolchain
  * reports the compile failure is the same story: nothing ran, so nothing failed as a spec.
+ *
+ * The syntax at the first use decides the wording the same way, and must not decide the verdict
+ * either. A binding that is undefined because the base does not export it is called through as
+ * a function or a constructor, read from as a property, taken apart by a destructure, or spread
+ * as an iterable, and each of those is a differently worded TypeError about the same absence.
+ * Matching only the first two granted the exemption to the other two.
  *
  * The reading is deliberately broad, because it only ever withholds. A test that fails for real
  * while printing something that looks like a compile diagnostic loses an exemption it might
@@ -105,8 +111,14 @@ const loadFailures: readonly RegExp[] = [
   /\[build failed\]/,
   /^\s*error\[E\d{4}\]/m,
   /\bno such file or directory\b/i,
+  // The missing-binding family: one absence, named by whatever the test did with it first.
   /\bTypeError\b[^\n]*\bis not a function\b/,
   /\bTypeError\b[^\n]*\bis not a constructor\b/,
+  // Both V8 wordings: the name sits inside the older one and after the newer one.
+  /\bCannot read propert(?:y|ies)\b[^\n]*\bof (?:undefined|null)\b/i,
+  /\bCannot destructure propert(?:y|ies)\b/i,
+  /\b(?:undefined|null) is not iterable\b/i,
+  /\bTypeError\b[^\n]*\bis not iterable\b/,
 ];
 
 function failedToLoad(run: ControlRun): boolean {

@@ -230,6 +230,51 @@ describe("which tests a cleared file actually clears", () => {
     expect(finding.newSpecifications).toEqual(["multiplies"]);
   });
 
+  it("reads the whole missing-binding family as the base not having the symbol", async () => {
+    // One absence, reached three ways. A require binds the missing export to undefined, and
+    // then a property read, a destructure, or a spread is the first thing that touches it. The
+    // module system and the syntax at the call site decide the message and must not decide the
+    // verdict: none of these is the file failing as a specification, because the base does not
+    // have the symbol yet.
+    const framings = [
+      "TypeError: Cannot read properties of undefined (reading 'mul')",
+      "TypeError: Cannot read property 'mul' of undefined",
+      "TypeError: Cannot destructure property 'mul' of 'undefined' as it is undefined.",
+      "TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+    ];
+
+    for (const detail of framings) {
+      const finding = await assessRespecification(
+        "math.test.cjs",
+        {
+          runOnBaseSource: () =>
+            Promise.resolve({
+              outcome: "failed" as const,
+              detail: ["\u2716 multiplies (0.7ms)", `  ${detail}`, "not ok 1 - multiplies"].join(
+                "\n",
+              ),
+              exitCode: 1,
+              failedTests: ["multiplies"],
+            }),
+          runOnSubmittedSource: () =>
+            Promise.resolve({
+              outcome: "passed" as const,
+              detail: "exited 0",
+              exitCode: 0,
+              failedTests: [],
+            }),
+        },
+        { newTests: ["multiplies"] },
+      );
+
+      expect({ detail, cleared: finding.newSpecifications, exempt: finding.exempt }).toEqual({
+        detail,
+        cleared: [],
+        exempt: false,
+      });
+    }
+  });
+
   it("reads a require of a symbol the base lacks as a load failure, as it does an import", async () => {
     // CommonJS binds the missing export to undefined rather than refusing the file, so the
     // same "the base does not have this yet" arrives from the call site as a TypeError. The
