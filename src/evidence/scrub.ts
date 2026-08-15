@@ -1,4 +1,5 @@
 import type { JsonValue } from "./canonical-json.ts";
+import { asLatinLetters } from "./latin-lookalikes.ts";
 
 /**
  * One detector, three callers: the write-time scrub, the export-time second scan, and the
@@ -124,8 +125,15 @@ export function isMetricName(name: string): boolean {
   return metricNames.has(wordsOf(name).join(""));
 }
 
+/**
+ * A name's words, read as a reader reads them. The fold matters because detection is keyed on
+ * the name: a field spelled password with one Cyrillic letter in it is a password to everyone
+ * who opens the record, and to nothing that compares code points. Folding first means the same
+ * name is one name however it was typed, and the table only maps letters that render as the
+ * Latin ones, so nothing else moves.
+ */
 function wordsOf(name: string): readonly string[] {
-  return name
+  return asLatinLetters(name)
     .replaceAll(/([a-z0-9])([A-Z])/g, "$1 $2")
     .split(/[^A-Za-z0-9]+/)
     .filter((word) => word.length > 0)
@@ -177,9 +185,12 @@ function classifyValue(value: string): ValueVerdict {
  * line, a source literal, and a serialized JSON field with one reader. The bracketed
  * alternative comes first because a bare value would otherwise eat the opening bracket and
  * stop at the first comma, which is how `PIN: [4, 8, 2]` read as the value `[4`.
+ *
+ * The name is any letter, not any Latin letter, so that a name a reader reads as a credential
+ * reaches the fold in `wordsOf` rather than failing to match here.
  */
 const assignmentPattern =
-  /(?:^|[\s,{[])["']?([A-Za-z][A-Za-z0-9_-]{0,63})["']?\s*[=:]\s*(?:(\[[^\]\n]*\])|"([^"]*)"|'([^']*)'|([^\s"',;})]+))/dg;
+  /(?:^|[\s,{[])["']?(\p{L}[\p{L}\p{N}_-]{0,63})["']?\s*[=:]\s*(?:(\[[^\]\n]*\])|"([^"]*)"|'([^']*)'|([^\s"',;})]+))/dgu;
 
 interface SecretSpan {
   readonly label: string;
@@ -456,7 +467,7 @@ function scrubArray(
   findings: SecretFinding[],
 ): JsonValue {
   if (context === "named") {
-    const joined = joinedPrimitives(items);
+    const joined = joinedLeaves(items);
     const verdict = joined === null ? "not-credential" : classifyValue(joined);
     if (verdict !== "not-credential") {
       findings.push(nameFinding(verdict));
@@ -466,16 +477,42 @@ function scrubArray(
   return items.map((item) => scrubValue(item, context === "plain" ? "plain" : "nested", findings));
 }
 
-/** Null when any element is a container, which is not one value written in pieces. */
-function joinedPrimitives(items: readonly JsonValue[]): string | null {
+/**
+ * Every primitive under a credential-named array, in document order, as the one value its
+ * pieces spell. Containers are walked into rather than refusing the join: one digit per element
+ * and one digit per single-field object are the same credential written down two ways, and a
+ * rule that reads the first and not the second is a rule about JSON style. The name is still
+ * what says any of this is a credential; nothing here infers one from shape.
+ *
+ * A metric keeps its exemption inside the walk, by key as everywhere else, so a list of token
+ * counts under a credential-word name stays a list of measurements. Null where there is nothing
+ * to join, which is not a credential either.
+ */
+function joinedLeaves(items: readonly JsonValue[]): string | null {
   const parts: string[] = [];
-  for (const item of items) {
-    if (item !== null && typeof item === "object") {
-      return null;
+
+  const collect = (value: JsonValue): void => {
+    if (value === null || typeof value !== "object") {
+      parts.push(String(value));
+      return;
     }
-    parts.push(String(item));
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        collect(item);
+      }
+      return;
+    }
+    for (const [key, item] of Object.entries(value as { readonly [key: string]: JsonValue })) {
+      if (!isMetricName(key)) {
+        collect(item);
+      }
+    }
+  };
+
+  for (const item of items) {
+    collect(item);
   }
-  return parts.join("");
+  return parts.length === 0 ? null : parts.join("");
 }
 
 /**

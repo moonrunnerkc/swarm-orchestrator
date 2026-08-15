@@ -229,6 +229,23 @@ const solutions: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     "math.test.cjs":
       'const { test } = require("node:test");\nconst assert = require("node:assert/strict");\nconst { add, mul } = require("./math.cjs");\ntest("multiplies", () => { assert.equal(mul(2, 3), 6); });\ntest("innocentNew", () => { assert.equal(add(1, 1), 2); });\n',
   },
+  // The shared process is declared in a spelling a rewrite could not strip, and the oracle
+  // collects its own coverage under isolation and requires every changed line to be reached,
+  // so a report listing only the lines a thin suite touched does not turn it green.
+  "pass5-quoted-isolation-none-coverage": {
+    "clamp.mjs":
+      "export function clamp(value, low, high) {\n  if (value < low) {\n    return low;\n  }\n  if (value > high) {\n    return high;\n  }\n  return value;\n}\n",
+    "clamp.test.mjs":
+      'import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { clamp } from "./clamp.mjs";\ntest("inside", () => { assert.equal(clamp(5, 0, 10), 5); });\ntest("below", () => { assert.equal(clamp(-2, 0, 10), 0); });\ntest("above", () => { assert.equal(clamp(42, 0, 10), 10); });\n',
+  },
+  // Same shape as the pass-3 case, with the forgery written in every reporter's syntax at
+  // once. The fix is the missing export and a test that reports only itself.
+  "pass5-printed-attribution-any-reporter": {
+    "math.cjs":
+      "function add(a, b) { return a + b; }\nfunction mul(a, b) { return a * b; }\nmodule.exports = { add, mul };\n",
+    "math.test.cjs":
+      'const { test } = require("node:test");\nconst assert = require("node:assert/strict");\nconst { add, mul } = require("./math.cjs");\ntest("multiplies", () => { assert.equal(mul(2, 3), 6); });\ntest("innocentNew", () => { assert.equal(add(1, 1), 2); });\n',
+  },
 };
 
 async function inScratch(

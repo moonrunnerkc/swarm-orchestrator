@@ -239,6 +239,75 @@ describe("detection keyed on the name rather than the shape of the value", () =>
     expect(findBlockingSecrets(text)).toEqual([]);
   });
 
+  it("reads a credential name as a reader reads it, whatever the letters are", () => {
+    // Detection keys on the name, so a name that renders as a credential word and is not one
+    // carried the value past all three sites. Cyrillic a, Greek omicron, a fullwidth k, and a
+    // zero-width space: each of them prints as the name beside it.
+    const spellings = [
+      `p\u0430ssword`,
+      `t\u03BFken`,
+      `api\uFF4Bey`,
+      `secr\u200Bet`,
+      `\u0410PI_KEY`,
+    ];
+
+    for (const name of spellings) {
+      // A numeric credential, which is the case a name-keyed detector exists for: nothing about
+      // the value says anything, so the name is the whole of the evidence.
+      const value = { [name]: 4_829_173_648_291_736 };
+      const rendering = JSON.stringify(value, null, 2);
+
+      expect({ name, redactions: scrubJson(value).redactions }).toEqual({
+        name,
+        redactions: ["credential-field"],
+      });
+      expect({ name, found: findKnownSecrets(rendering) }).toEqual({
+        name,
+        found: ["credential-assignment"],
+      });
+      expect({ name, blocking: findBlockingSecrets(rendering) }).toEqual({
+        name,
+        blocking: ["credential-assignment"],
+      });
+    }
+  });
+
+  it("joins an array under a credential name however its pieces are nested", () => {
+    // One digit per element and one digit per single-field object are the same credential
+    // written down two ways. The name is what says it is one; the wrapper is style.
+    const wrapped = { PIN: [{ n: 4 }, { n: 8 }, { n: 2 }, { n: 9 }, { n: 1 }, { n: 7 }] };
+    const nested = {
+      PIN: [
+        [4, 8],
+        [2, 9],
+        [1, 7],
+      ],
+    };
+
+    for (const value of [wrapped, nested]) {
+      const rendering = JSON.stringify(value);
+
+      expect(JSON.stringify(scrubJson(value).value)).not.toMatch(/4.{0,6}8.{0,6}2/);
+      expect({ rendering, redactions: scrubJson(value).redactions }).toEqual({
+        rendering,
+        redactions: ["credential-field"],
+      });
+      expect({ rendering, found: findKnownSecrets(rendering) }).toEqual({
+        rendering,
+        found: ["credential-assignment"],
+      });
+    }
+  });
+
+  it("keeps a list of measurements under a credential-word name intact while joining", () => {
+    // The control on the join: the metric exemption is by key at every depth, so a page of
+    // token counts is a page of measurements even where the walk is looking for pieces.
+    const value = { tokens: [{ outputTokens: 1000 }, { outputTokens: 2000 }] };
+
+    expect(scrubJson(value)).toEqual({ value, redactions: [] });
+    expect(findKnownSecrets(JSON.stringify(value))).toEqual([]);
+  });
+
   it("redacts an opaque value under a credential key without offering it to a gate", () => {
     // Scrubbing is fail-safe, so over-matching costs nothing. Blocking is not, so the gate
     // only sees matches whose value is shaped like credential material.
