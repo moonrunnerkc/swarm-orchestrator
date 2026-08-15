@@ -88,7 +88,13 @@ describe("changed-line coverage", () => {
     expect(measured.changedLineCoverage).toBe(0.25);
   });
 
-  it("does not let an empty section for one path spelling hide misses under another", async () => {
+  /**
+   * This used to read 0.5: the two sections were merged and the lower count won where they
+   * disagreed, so a section with nothing to say could not shadow one with misses. Merging is
+   * exactly what a forged second section needs, and the honest reading of a file two sections
+   * describe is that no single section measured it.
+   */
+  it("says nothing about a file more than one section describes", async () => {
     const probe = workspace();
 
     const measured = await takeMeasureSnapshot({
@@ -117,7 +123,43 @@ describe("changed-line coverage", () => {
       ],
     });
 
-    expect(measured.changedLineCoverage).toBe(0.5);
+    expect(measured.changedLineCoverage).toBeNull();
+    expect(measured.changedLinesMeasured).toBeNull();
+  });
+
+  it("does not read a line one section measured as coverage of the lines another names", async () => {
+    // Both sections are complete, both name exactly the changed file, and together their line
+    // numbers cover every changed line. The first measured one line; the second is a claim
+    // about the other eight, and unioning their keys read the pair as nine of nine.
+    const probe = createMemoryWorkspace({
+      base: { "clamp.mjs": "export const nothing = 0;\n" },
+      current: { "clamp.mjs": Array.from({ length: 9 }, (_unused, at) => `line ${at}`).join("\n") },
+    });
+
+    const measured = await takeMeasureSnapshot({
+      changes: await probe.changes(),
+      probe,
+      workspaceRoot: "/workspace",
+      trackedTestFiles: [],
+      gateMeasures: {},
+      coverageReports: [
+        [
+          "SF:clamp.mjs",
+          "DA:1,1",
+          "LF:1",
+          "LH:1",
+          "end_of_record",
+          "SF:clamp.mjs",
+          ...Array.from({ length: 8 }, (_unused, at) => `DA:${at + 2},1`),
+          "LF:8",
+          "LH:8",
+          "end_of_record",
+        ].join("\n"),
+      ],
+    });
+
+    expect(measured.changedLinesCovered).not.toBe(9);
+    expect(measured.changedLineCoverage).toBeNull();
   });
 
   it("says nothing about a file only a same-named section elsewhere mentions", async () => {

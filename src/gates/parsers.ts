@@ -243,9 +243,22 @@ function describeTestRun(counters: TestCounters, exitCode: number): string {
  * run measured. So the framing is checked before a single ratio is trusted, and an artifact
  * that fails the check yields nothing, exactly as a coverage-free project does. Not measured
  * is a verdict; 100% is a claim.
+ *
+ * Sections come back as the list they were written as, one entry per `SF:`, and are never
+ * folded together by file. Folding them was the last way a claim got in: two complete sections
+ * for one file, one naming line 1 and the other naming lines 2 through 9, unioned their line
+ * numbers and read as nine lines measured and nine reached. A section is what one run measured
+ * of one file, so which section a line's count comes from is part of what makes it a
+ * measurement, and a file that two sections describe is resolved by abstaining rather than by
+ * addition.
  */
-export function parseLineHits(text: string): ReadonlyMap<string, ReadonlyMap<number, number>> {
-  return parseCompleteLcov(text) ?? new Map();
+export interface LcovFileSection {
+  readonly file: string;
+  readonly hits: ReadonlyMap<number, number>;
+}
+
+export function parseLineHits(text: string): readonly LcovFileSection[] {
+  return parseCompleteLcov(text) ?? [];
 }
 
 /** The line kinds an lcov report is built from. Anything else in the file is not lcov. */
@@ -272,10 +285,9 @@ interface LcovSection {
  * not match the lines beside them, a line no lcov producer writes, or a report with no
  * complete section in it. Null is what the caller renders as not measured.
  */
-function parseCompleteLcov(text: string): ReadonlyMap<string, ReadonlyMap<number, number>> | null {
-  const hits = new Map<string, Map<number, number>>();
+function parseCompleteLcov(text: string): readonly LcovFileSection[] | null {
+  const sections: LcovFileSection[] = [];
   let section: LcovSection | null = null;
-  let complete = 0;
 
   for (const raw of text.split("\n")) {
     const line = raw.trim();
@@ -287,14 +299,7 @@ function parseCompleteLcov(text: string): ReadonlyMap<string, ReadonlyMap<number
       if (section === null || !sectionIsComplete(section)) {
         return null;
       }
-      const merged = hits.get(section.file) ?? new Map<number, number>();
-      for (const [at, count] of section.hits) {
-        // Two sections naming one file are one file's measurement, and a line one of them says
-        // was never reached was never reached: the lower count is the one the run supports.
-        merged.set(at, Math.min(merged.get(at) ?? count, count));
-      }
-      hits.set(section.file, merged);
-      complete += 1;
+      sections.push({ file: section.file, hits: section.hits });
       section = null;
       continue;
     }
@@ -347,7 +352,7 @@ function parseCompleteLcov(text: string): ReadonlyMap<string, ReadonlyMap<number
     }
   }
 
-  return section === null && complete > 0 ? hits : null;
+  return section === null && sections.length > 0 ? sections : null;
 }
 
 function sectionIsComplete(section: LcovSection): boolean {
@@ -357,41 +362,35 @@ function sectionIsComplete(section: LcovSection): boolean {
 }
 
 /**
- * What a report says about one file, per line, or null where no section names that file. Null
- * is not zero coverage: it is a file this run did not measure, which the caller leaves out of
- * the ratio rather than counting as missed.
+ * What one section says about one file, per line, or null where the sections do not settle it.
+ * Null is not zero coverage: it is a file these runs did not measure, which the caller leaves
+ * out of the ratio rather than counting as missed.
  *
  * The match is on the resolved path and nothing looser. A suffix match was a hole with two
  * framings in one pass: a complete, fully-hit section for `vendor/clamp.mjs` read as coverage
  * of the changed `clamp.mjs`, and so did one for `/opt/other/clamp.mjs`. A report names files
  * however the runner saw them, which is what the workspace root is for: a relative name
- * resolves against it, an absolute one is already resolved, and two spellings of one file still
- * merge because they resolve to one path. Two files that merely end alike do not, whatever
- * their basenames say.
+ * resolves against it, an absolute one is already resolved, and two spellings of one file
+ * resolve to one path. Two files that merely end alike do not, whatever their basenames say.
  *
- * Every matching section counts, not the first one found. Stopping at the first let a section
- * with nothing to say shadow one that had misses to report.
+ * One section is authoritative for one file, and more than one is nothing. Node's runner
+ * writes a file's coverage once, so a second section for it is either two runs disagreeing or
+ * an artifact somebody assembled, and the two are not distinguishable from here. Combining
+ * them was tried both ways and both ways read a claim as a measurement: taking every section
+ * unioned their line numbers, so one section measuring line 1 and another naming lines 2
+ * through 9 read as nine measured and nine reached, and taking the first let a section with
+ * nothing to say shadow one that had misses to report. Abstaining is stricter than either, and
+ * it is the same verdict this returns for a file no section names at all.
  */
 export function fileLineHits(
-  hits: ReadonlyMap<string, ReadonlyMap<number, number>>,
+  sections: readonly LcovFileSection[],
   path: string,
   workspaceRoot?: string,
 ): ReadonlyMap<number, number> | null {
-  const merged = new Map<number, number>();
   const wanted = resolvedPath(path, workspaceRoot);
-  let reported = false;
+  const naming = sections.filter((section) => resolvedPath(section.file, workspaceRoot) === wanted);
 
-  for (const [candidate, lines] of hits) {
-    if (resolvedPath(candidate, workspaceRoot) !== wanted) {
-      continue;
-    }
-    reported = true;
-    for (const [at, count] of lines) {
-      merged.set(at, Math.min(merged.get(at) ?? count, count));
-    }
-  }
-
-  return reported ? merged : null;
+  return naming.length === 1 ? (naming[0]?.hits ?? null) : null;
 }
 
 /**

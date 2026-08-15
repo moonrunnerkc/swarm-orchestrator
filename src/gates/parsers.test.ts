@@ -120,7 +120,7 @@ describe("reading a coverage report", () => {
   ];
 
   it("takes the hit count of every reported line out of an lcov report", () => {
-    const hits = parseLineHits(
+    const sections = parseLineHits(
       [...mathSection, "SF:/build/src/util.ts", "DA:1,1", "LF:1", "LH:1", "end_of_record"].join(
         "\n",
       ),
@@ -128,18 +128,22 @@ describe("reading a coverage report", () => {
 
     // Per line, hits and all: a line the report named as reached, a line it named as missed,
     // and a line it did not name are three different things, and only the first is coverage.
-    expect([...(hits.get("/build/src/math.ts") ?? [])]).toEqual([
+    expect(sections.map((section) => section.file)).toEqual([
+      "/build/src/math.ts",
+      "/build/src/util.ts",
+    ]);
+    expect([...(sections[0]?.hits ?? [])]).toEqual([
       [1, 1],
       [2, 0],
       [3, 0],
       [4, 2],
     ]);
-    expect(hits.get("/build/src/math.ts")?.get(9)).toBeUndefined();
-    expect([...(hits.get("/build/src/util.ts") ?? [])]).toEqual([[1, 1]]);
+    expect(sections[0]?.hits.get(9)).toBeUndefined();
+    expect([...(sections[1]?.hits ?? [])]).toEqual([[1, 1]]);
   });
 
   it("finds nothing in output that carries no coverage report", () => {
-    expect(parseLineHits(tapOutput).size).toBe(0);
+    expect(parseLineHits(tapOutput)).toEqual([]);
   });
 
   it("reads nothing out of an artifact that is not a complete lcov report", () => {
@@ -159,44 +163,77 @@ describe("reading a coverage report", () => {
       ].join("\n"),
       [...mathSection, "the runner also printed this"].join("\n"),
     ]) {
-      expect({ artifact, files: parseLineHits(artifact).size }).toEqual({
+      expect({ artifact, sections: parseLineHits(artifact).length }).toEqual({
         artifact,
-        files: 0,
+        sections: 0,
       });
     }
   });
 
-  it("merges every section that resolves to one file, so an empty one cannot shadow it", () => {
-    const hits = parseLineHits(
-      [
-        "SF:src/math.ts",
-        "DA:1,1",
-        "DA:2,1",
-        "LF:2",
-        "LH:2",
-        "end_of_record",
-        "SF:/workspace/src/math.ts",
-        "DA:2,0",
-        "DA:3,0",
-        "LF:2",
-        "LH:0",
-        "end_of_record",
-      ].join("\n"),
+  it("reads one file's coverage out of the one section that reported it", () => {
+    const sections = parseLineHits(
+      ["SF:src/math.ts", "DA:1,1", "DA:2,0", "DA:3,0", "LF:3", "LH:1", "end_of_record"].join("\n"),
     );
-    const merged = fileLineHits(hits, "src/math.ts", "/workspace");
 
-    // The relative spelling and the absolute one resolve to one file, and where they disagree
-    // about a line the lower count stands: one section saying it was never reached is enough.
-    expect([...(merged ?? [])]).toEqual([
+    expect([...(fileLineHits(sections, "src/math.ts", "/workspace") ?? [])]).toEqual([
       [1, 1],
       [2, 0],
       [3, 0],
     ]);
-    expect(fileLineHits(hits, "src/other.ts", "/workspace")).toBeNull();
+    expect(fileLineHits(sections, "src/other.ts", "/workspace")).toBeNull();
+  });
+
+  /**
+   * This assertion used to run the other way: sections naming one file were merged, taking the
+   * lower count where they disagreed, so that a section with nothing to say could not shadow
+   * one with misses to report. Merging is what a second section needs. Two complete sections
+   * for one file, the first naming line 1 and the second naming lines 2 through 9, unioned
+   * their line numbers and read as nine lines measured and nine reached, which is a
+   * measurement of one line and a claim about eight. Abstaining is stricter than either
+   * reading and it keeps what the merge was there for.
+   */
+  it("abstains where more than one section names one file, rather than combining them", () => {
+    const split = parseLineHits(
+      [
+        "SF:clamp.mjs",
+        "DA:1,1",
+        "LF:1",
+        "LH:1",
+        "end_of_record",
+        "SF:clamp.mjs",
+        ...Array.from({ length: 8 }, (_unused, index) => `DA:${index + 2},1`),
+        "LF:8",
+        "LH:8",
+        "end_of_record",
+      ].join("\n"),
+    );
+
+    expect(split).toHaveLength(2);
+    expect(fileLineHits(split, "clamp.mjs", "/workspace")).toBeNull();
+  });
+
+  it("abstains just the same where the second section spells the path another way", () => {
+    const spellings = parseLineHits(
+      [
+        "SF:src/math.ts",
+        "DA:1,1",
+        "LF:1",
+        "LH:1",
+        "end_of_record",
+        "SF:/workspace/src/math.ts",
+        "DA:2,1",
+        "DA:3,1",
+        "LF:2",
+        "LH:2",
+        "end_of_record",
+      ].join("\n"),
+    );
+
+    expect(fileLineHits(spellings, "src/math.ts", "/workspace")).toBeNull();
   });
 
   it("does not let a section for another file report itself as coverage of this one", () => {
-    const hits = parseLineHits(
+    const sections = parseLineHits(
       [
         "SF:vendor/math.ts",
         "DA:1,1",
@@ -212,10 +249,10 @@ describe("reading a coverage report", () => {
     );
 
     // Same basename, same suffix, different file. Nothing here measured src/math.ts.
-    expect(fileLineHits(hits, "src/math.ts", "/workspace")).toBeNull();
-    expect(fileLineHits(hits, "math.ts", "/workspace")).toBeNull();
+    expect(fileLineHits(sections, "src/math.ts", "/workspace")).toBeNull();
+    expect(fileLineHits(sections, "math.ts", "/workspace")).toBeNull();
     // And with no root to resolve against, the two spellings have to agree by themselves.
-    expect(fileLineHits(hits, "math.ts")).toBeNull();
-    expect(fileLineHits(hits, "vendor/math.ts")).not.toBeNull();
+    expect(fileLineHits(sections, "math.ts")).toBeNull();
+    expect(fileLineHits(sections, "vendor/math.ts")).not.toBeNull();
   });
 });
