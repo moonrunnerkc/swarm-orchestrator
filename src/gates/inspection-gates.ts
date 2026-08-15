@@ -1,3 +1,4 @@
+import { asLatinLetters } from "../evidence/latin-lookalikes.ts";
 import { findBlockingSecrets } from "../evidence/scrub.ts";
 import { commentColumns, commentTextAt } from "./comment-spans.ts";
 import { checkFileSet } from "./file-set.ts";
@@ -43,87 +44,6 @@ const stubMarkers: readonly RegExp[] = [
 ];
 
 /**
- * Format characters (zero-width spaces and joiners, bidi controls, the soft hyphen) render as
- * nothing, so a marker split by one reads to a human exactly like the marker. They appear in
- * source for no other reason, and stripping them before matching is what makes the check about
- * the text rather than about its code points. Case is folded by the patterns for the same
- * reason: `// todo` is a TODO.
- */
-const formatCharacters = /\p{Cf}/gu;
-
-/**
- * Letters from other scripts that render as the Latin ones these markers are spelled with, so
- * a marker built out of them reads to a human exactly like the marker. A named list of the
- * Cyrillic, Greek, and fullwidth capitals that are indistinguishable in ordinary type, rather
- * than a general confusables engine: every entry here is one code point mapping to one, so
- * folding cannot change what any other check sees. A marker spelled in a script nobody listed
- * still reads as a marker to a person and is not caught, which build-guide section 7.1 says
- * rather than implying otherwise.
- */
-const latinLookalikes: ReadonlyMap<string, string> = new Map(
-  Object.entries({
-    "\u0410": "A",
-    "\u0412": "B",
-    "\u0415": "E",
-    "\u041A": "K",
-    "\u041C": "M",
-    "\u041D": "H",
-    "\u041E": "O",
-    "\u0420": "P",
-    "\u0421": "C",
-    "\u0422": "T",
-    "\u0425": "X",
-    "\u0430": "a",
-    "\u0435": "e",
-    "\u043E": "o",
-    "\u0440": "p",
-    "\u0441": "c",
-    "\u0445": "x",
-    "\u0443": "y",
-    "\u0391": "A",
-    "\u0392": "B",
-    "\u0395": "E",
-    "\u0396": "Z",
-    "\u0397": "H",
-    "\u0399": "I",
-    "\u039A": "K",
-    "\u039C": "M",
-    "\u039D": "N",
-    "\u039F": "O",
-    "\u03A1": "P",
-    "\u03A4": "T",
-    "\u03A5": "Y",
-    "\u03A7": "X",
-    "\u03BF": "o",
-    "\u03B9": "i",
-    "\u03BA": "k",
-    "\u03BD": "v",
-    "\u03C1": "p",
-    "\u03C4": "t",
-    "\u03C7": "x",
-  }),
-);
-
-const fullwidthUpper = /[\uFF21-\uFF3A]/g;
-const fullwidthLower = /[\uFF41-\uFF5A]/g;
-
-/** The text as a reader sees it: no invisibles, and every lookalike letter as its Latin twin. */
-function asRead(text: string): string {
-  return (
-    text
-      .replace(formatCharacters, "")
-      .replace(fullwidthUpper, (character) =>
-        String.fromCharCode(character.charCodeAt(0) - 0xff21 + 0x41),
-      )
-      .replace(fullwidthLower, (character) =>
-        String.fromCharCode(character.charCodeAt(0) - 0xff41 + 0x61),
-      )
-      // Greek and Cyrillic, which is where every entry in the table lives.
-      .replaceAll(/[\u0370-\u04FF]/gu, (character) => latinLookalikes.get(character) ?? character)
-  );
-}
-
-/**
  * The marker a line introduces, or null. A stub marker counts wherever it appears, because it
  * is executable. An annotation counts only in comment position: a line carrying one of these
  * words inside a regex, a table, or a sentence about annotations is prose, and flagging it
@@ -133,7 +53,7 @@ function asRead(text: string): string {
  * inside a block comment is seen for what a reader sees it as.
  */
 function markerIn(rawLine: string, commentText: string | null): string | null {
-  const line = asRead(rawLine);
+  const line = asLatinLetters(rawLine);
 
   for (const marker of stubMarkers) {
     if (marker.test(line)) {
@@ -144,7 +64,7 @@ function markerIn(rawLine: string, commentText: string | null): string | null {
   if (commentText === null) {
     return null;
   }
-  const comment = asRead(commentText);
+  const comment = asLatinLetters(commentText);
   for (const marker of annotationMarkers) {
     if (marker.test(comment)) {
       return marker.source;
