@@ -2,7 +2,8 @@ import { dirname, join } from "node:path";
 import { defaultGateTimeoutMs, type GateCommandRunner } from "./gate-definition.ts";
 import { type GitWorkspaceOptions, revertSourceToBase } from "./git-workspace.ts";
 import { isTestFile } from "./measures.ts";
-import { parseTapOutcomes, parseTestOutcomes } from "./parsers.ts";
+import { harnessControlledNodeTest, processIsolation, shellQuoted } from "./node-test-command.ts";
+import { parseTapOutcomes } from "./parsers.ts";
 import type { ProjectDetection } from "./project-type.ts";
 import { type BaseControlRunner, type ControlRun, indeterminate } from "./respecification.ts";
 
@@ -11,12 +12,16 @@ import { type BaseControlRunner, type ControlRun, indeterminate } from "./respec
  * checking out a second tree keeps the installed dependencies, which is what makes "the
  * test failed on base" a statement about the code instead of about the environment.
  *
- * Which tests failed there is read from a result the runner wrote to a path the harness
- * named, not from the reporter output a person reads. The distinction is the same one the
- * coverage arm makes: a spec-reporter line is text a test can print, and a test that prints
- * one for a sibling used to hand itself that sibling's failure, which is what buys a
- * deletion. Nothing a test prints reaches a TAP result point, because the runner folds
- * captured output into comments.
+ * Which tests failed there is read from the TAP artifact this harness asked node's own runner
+ * to write, at a path this harness named, and from nothing else. Not from the output a person
+ * reads: a reporter line is text a test can print, and a test that printed one for a sibling
+ * used to hand that sibling a failure it never had, which is what buys a deletion. Nothing a
+ * test prints reaches a TAP result point, because the runner folds captured output into
+ * comments.
+ *
+ * And only where this harness asked for that artifact. The artifact is read when the command
+ * being run is the one the harness built to write it; a run that was never asked leaves the
+ * question unanswered rather than answered by whatever happens to sit at the path.
  */
 
 /** Reads back what a control run was told to write, and clears it first. */
@@ -32,8 +37,8 @@ interface BaseControlOptions {
   readonly singleFileCommand: (testFile: string, outcomeArtifact: string | null) => string | null;
   /**
    * Where a control run is asked to write its own machine-readable result, under the session
-   * store that invariant 11 keeps outside the workspace. Absent means no result is asked for
-   * and attribution falls back to reading what the run printed.
+   * store that invariant 11 keeps outside the workspace. Absent means no result is asked for,
+   * so no test is attributed a failure and no test is cleared.
    */
   readonly outcomeArtifacts?: {
     readonly directory: string;
@@ -72,13 +77,17 @@ export function createBaseControlRunner(options: BaseControlOptions): BaseContro
 
     // The output is carried into the detail, not summarized away: the refuter reads it to
     // tell a file that failed as a specification from one that never loaded at all, and a
-    // reviewer opening the record sees the same bytes that verdict was reached from.
+    // reviewer opening the record sees the same bytes that verdict was reached from. It is
+    // read to withhold an exemption, never to grant one, which is why a test printing into it
+    // can only cost itself.
     const output = `${observation.stdout}\n${observation.stderr}`.trim();
+    // Only a command that names the destination was asked to write it. Reading the path
+    // regardless would attribute from a file this run never produced.
     const reported =
-      artifacts === undefined || artifactPath === null
-        ? null
-        : await artifacts.store.read(artifactPath);
-    const outcomes = reported === null ? parseTestOutcomes(output) : parseTapOutcomes(reported);
+      artifacts !== undefined && artifactPath !== null && command.includes(artifactPath)
+        ? await artifacts.store.read(artifactPath)
+        : null;
+    const outcomes = reported === null ? null : parseTapOutcomes(reported);
     return {
       outcome: observation.exitCode === 0 ? "passed" : "failed",
       detail: `${command} exited ${observation.exitCode}${output.length === 0 ? "" : `\n${truncate(output)}`}`,
@@ -125,8 +134,17 @@ export function singleFileTestCommand(
     return null;
   }
   if (detection.types.includes("node") && detection.nodeScripts.includes("test")) {
-    const asked = outcomeFlags(detection.nodeScriptCommands.test, outcomeArtifact);
-    return `npm test --silent -- ${asked}${quote(testFile)}`;
+    const file = shellQuoted(testFile);
+    if (file === null) {
+      return null;
+    }
+    return (
+      askedForOutcomes(detection.nodeScriptCommands.test, outcomeArtifact, file) ??
+      // The run still happens without a result to read: whether the file passed or failed is
+      // the file-level precondition, and it is answered by the exit code. What is missing is
+      // which of its tests failed, so no test is cleared.
+      `npm test --silent -- ${file}`
+    );
   }
   if (detection.types.includes("python")) {
     return `pytest -q ${quote(testFile)}`;
@@ -139,28 +157,39 @@ export function singleFileTestCommand(
 }
 
 /**
- * The flags that make node's own runner write a machine-readable result beside the output it
- * prints. npm hands them to the script ahead of the file, which is where node accepts them:
- * after a file pattern they are ignored. The printed stream is kept as well, because the
- * refuter reads it to tell a file that failed as a specification from one that never loaded.
- * Process isolation goes with them for the same reason it does on the coverage cycle: a test
- * sharing the reporter's process can write the result the harness is about to read.
+ * The run that writes a machine-readable result, or null where this harness cannot vouch for
+ * the invocation that would write it. Null is the fail-closed answer: no result, no attribution,
+ * no test cleared.
  *
- * Empty for a test script that is not node's runner, or that already names a reporter of its
- * own. Empty means attribution falls back to reading what the run printed, which is weaker
- * and is what the fallback in parsers.ts is scoped to.
+ * The command is built here rather than handed to `npm test`, and that is the point. npm runs
+ * whatever `pretest` and `posttest` the workspace declares, in the process that surrounds the
+ * one writing the artifact, and it appends these flags after the script's own file patterns,
+ * where node ignores them. Both leave a path the harness named being written by something the
+ * harness did not start. So the runner is started directly, with the project's own recognized
+ * flags, this arm's reporters, and the one file under test in place of the project's patterns.
+ *
+ * The printed stream is kept beside the artifact because the refuter reads it to tell a file
+ * that failed as a specification from one that never loaded.
  */
-function outcomeFlags(body: string | undefined, artifact: string | null): string {
-  if (artifact === null || body === undefined || body.includes("--test-reporter")) {
-    return "";
+function askedForOutcomes(
+  body: string | undefined,
+  artifact: string | null,
+  quotedTestFile: string,
+): string | null {
+  const destination = artifact === null ? null : shellQuoted(artifact);
+  if (destination === null) {
+    return null;
   }
-  if (!/\bnode\b[^\n]*?\s--test(?![\w-])/.test(body)) {
-    return "";
-  }
-  return (
-    "--test-reporter=tap --test-reporter-destination=stdout " +
-    `--test-reporter=tap --test-reporter-destination=${quote(artifact)} ` +
-    "--test-isolation=process "
+  return harnessControlledNodeTest(
+    body,
+    [
+      "--test-reporter=tap",
+      "--test-reporter-destination=stdout",
+      "--test-reporter=tap",
+      `--test-reporter-destination=${destination}`,
+      processIsolation,
+    ],
+    [quotedTestFile],
   );
 }
 

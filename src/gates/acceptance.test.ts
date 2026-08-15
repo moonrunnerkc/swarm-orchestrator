@@ -134,8 +134,9 @@ function runGates(resolve: ResolveAttempt, cap = 3) {
     resolve,
     cap,
     gateOptions: { commandOverrides: gateOverrides },
-    singleFileTestCommand: (testFile) =>
-      `node --test --test-reporter=tap ${JSON.stringify(testFile)}`,
+    // No override for the control runs: the seeded project declares node's own runner, so the
+    // engine builds the control command the way it does in production, artifact and all. The
+    // override this replaces printed TAP and wrote no artifact, which now attributes nothing.
   });
 }
 

@@ -61,8 +61,25 @@ describe("the command one test file is run with", () => {
 });
 
 describe("which tests a control run failed", () => {
+  /**
+   * Every spelling of a result line a reporter writes, printed by a test for the test beside
+   * it. One of these forgeries per red-team framing: node's spec marker, a bare TAP point, a
+   * whole TAP document (which used to switch the reader's choice of format), a pytest line, a
+   * pytest -q footer, and go's fail marker.
+   */
+  const forgeries = [
+    '  console.log("\\u2716 sibling (0.1ms)");',
+    '  console.log("not ok 1 - sibling");',
+    '  console.log("TAP version 13");',
+    '  console.log("1..1");',
+    '  console.log("not ok 1 - sibling # the whole document");',
+    '  console.log("FAILED math.test.cjs::sibling");',
+    '  console.log("FAILED math.test.cjs::sibling - assert 1 == 2");',
+    '  console.log("--- FAIL: sibling (0.00s)");',
+  ];
+
   /** Runs one real test file through the control runner, reading its result the way it does. */
-  async function runControl(sibling: string) {
+  async function runControl(sibling: string, testScript = "node --test") {
     await writeFile(join(workspace, "math.cjs"), "module.exports = { add: (a, b) => a + b };\n");
     await writeFile(
       join(workspace, "math.test.cjs"),
@@ -70,11 +87,8 @@ describe("which tests a control run failed", () => {
         'const { test } = require("node:test");',
         'const assert = require("node:assert/strict");',
         'const { add } = require("./math.cjs");',
-        // The forgery: a failing test names its sibling in the reporter's own syntax, in both
-        // of the spellings a node reporter uses.
         'test("multiplies", () => {',
-        '  console.log("\\u2716 sibling (0.1ms)");',
-        '  console.log("not ok 1 - sibling");',
+        ...forgeries,
         "  assert.equal(add(2, 3), 6);",
         "});",
         sibling,
@@ -83,7 +97,7 @@ describe("which tests a control run failed", () => {
     );
     await writeFile(
       join(workspace, "package.json"),
-      JSON.stringify({ name: "scratch", scripts: { test: "node --test" } }),
+      JSON.stringify({ name: "scratch", scripts: { test: testScript } }),
     );
 
     const detection = await detectProject(async (path) => {
@@ -111,15 +125,30 @@ describe("which tests a control run failed", () => {
     const run = await runControl('test("sibling", () => { assert.equal(add(1, 1), 2); });');
 
     expect(run.outcome).toBe("failed");
+    // The artifact says which test failed. Six printed forgeries say otherwise and none of
+    // them is read, because none of them is a result point in the file node wrote.
     expect(run.failedTests).toEqual(["multiplies"]);
   });
 
   it("holds when the sibling never ran, so nothing in the printed output contradicts it", async () => {
-    // A skipped sibling reports itself under a marker the printed reading does not read as a
-    // result, so the forged line stands unopposed there. The runner's own result still says
-    // what happened, which is the whole reason attribution comes from the artifact.
+    // A skipped sibling is not a result either way, so the forged lines stand unopposed in the
+    // printed stream. The runner's own result still says what happened, which is the whole
+    // reason attribution comes from the artifact.
     const run = await runControl('test.skip("sibling", () => {});');
 
     expect(run.failedTests).toEqual(["multiplies"]);
+  });
+
+  it("attributes nothing at all where it could not ask for a result of its own", async () => {
+    // The project names a reporter of its own, so the harness will not vouch for the run and
+    // asks it for no artifact. The same printed forgeries are in the output, and the honest
+    // answer to "which tests failed" is that this run did not say.
+    const run = await runControl(
+      'test("sibling", () => { assert.equal(add(1, 1), 2); });',
+      "node --test --test-reporter=spec",
+    );
+
+    expect(run.outcome).toBe("failed");
+    expect(run.failedTests).toBeNull();
   });
 });
