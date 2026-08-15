@@ -2,9 +2,18 @@
  * Pure routing logic for the red-team fix/attack loop.
  *
  * Nothing here touches the filesystem, git, or a child process: the driver does the IO and
- * hands the parsed rows to these functions. The rule the whole module is built around is that
- * the driver makes no judgment a JSONL field does not encode. Severity, result, and residual
- * status are the agents' words; this module only parses, compares sets, and routes.
+ * hands the parsed rows, plus what it resolved on disk, to these functions.
+ *
+ * Result and residual status are the agents' words and this module takes them as given. Two
+ * things it does not take on trust, because the loop routes off them and an agent's own report
+ * is the one thing that cannot vouch for itself:
+ *
+ * - A succeeded row is worth nothing without the artifacts it cites. A row that names no
+ *   regression test or golden case, or names one the recorded branch does not carry, is
+ *   UNVERIFIED: it is not counted as a finding and it stops the lap for a human.
+ * - Severity is not re-derived in general, which would mean judging the finding, but where the
+ *   schema fixes it by part it is read from the part rather than the stated field. See
+ *   effectiveSeverity.
  *
  * Contracts for the two row shapes live in redteam/loop/report-schema.md.
  */
@@ -18,9 +27,111 @@ export const DECISION = {
   continue: "CONTINUE",
 };
 
+/**
+ * Parts the schema defines as trust-root: a success here can make a green bundle misrepresent
+ * reality, so the part decides the severity and the attacker's own label does not get a vote.
+ */
+export const TRUST_ROOT_PARTS = [
+  "claims",
+  "ledger",
+  "evidence",
+  "coverage",
+  "scrub",
+  "scrub-into-bundle",
+  "base-control",
+];
+
+/**
+ * Parts where "mechanical" is a claim the harness will honor, because a success there cannot
+ * forge a verdict. Anything outside both lists that still calls itself mechanical is escalated:
+ * the loop cannot check the claim, and an unbacked downgrade is the failure this guards.
+ */
+export const MECHANICAL_ELIGIBLE_PARTS = ["markers", "derivation"];
+
 export function severityRank(severity) {
   const index = SEVERITY_ORDER.indexOf(String(severity ?? ""));
   return index === -1 ? SEVERITY_ORDER.length : index;
+}
+
+function normalizeToken(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+/**
+ * A citation the harness can go looking for, or null.
+ *
+ * The JSON null, the empty string, and the words a model writes when it means "nothing here"
+ * are all absence. Treating "null" as a path would send the driver hunting for a file by that
+ * name and report it missing, which reads as a broken path rather than an uncited row.
+ */
+export function normalizeCitation(value) {
+  const trimmed = String(value ?? "").trim();
+  if (trimmed === "" || ["null", "none", "n/a", "undefined"].includes(trimmed.toLowerCase())) {
+    return null;
+  }
+  return trimmed;
+}
+
+/**
+ * The severity the loop routes on, which is the part's severity wherever the schema fixes it.
+ *
+ * Severity in general cannot be re-derived without judging the finding, so this does only the
+ * bounded part: a row's `part` already names the trust root it attacked, and the schema already
+ * says those parts are trust-root. Where the part decides, the stated field is ignored.
+ */
+export function effectiveSeverity(row) {
+  const part = normalizeToken(row?.part);
+  const stated = normalizeToken(row?.severity);
+  if (TRUST_ROOT_PARTS.includes(part)) return "trust-root";
+  if (stated === "mechanical" && !MECHANICAL_ELIGIBLE_PARTS.includes(part)) return "trust-root";
+  return stated === "" ? "unknown" : stated;
+}
+
+/** Rows whose stated severity the part overrode, so the summary can name the relabelling. */
+export function severityDiscrepancies(rows) {
+  const found = [];
+  for (const row of rows ?? []) {
+    const stated = normalizeToken(row?.severity) || "unstated";
+    const effective = effectiveSeverity(row);
+    if (stated === effective) continue;
+    const part = normalizeToken(row?.part) || "(no part)";
+    const reason = TRUST_ROOT_PARTS.includes(part)
+      ? `part ${part} is trust-root by the schema`
+      : `part ${part} is not one where mechanical can be honored`;
+    found.push({ id: String(row?.id ?? "?"), part, stated, effective, reason });
+  }
+  return found;
+}
+
+/**
+ * Whether one succeeded row is backed by the artifacts it cites.
+ *
+ * Two of the three checks are pure reads of the row, so they run everywhere, including a dry run
+ * with no git. Resolving the path against a branch needs IO the driver does, and when it has not
+ * been done the row is not called backed or unbacked on that clause: `pathChecked` says which.
+ */
+export function classifyRowBacking(row, backing = {}) {
+  const reasons = [];
+  const regressionTest = normalizeCitation(row?.regression_test);
+  const goldenCase = normalizeCitation(row?.golden_case);
+  if (regressionTest === null) reasons.push("regression_test is null");
+  if (goldenCase === null) reasons.push("golden_case is null");
+
+  const pathChecked = Boolean(backing.checked);
+  if (regressionTest !== null && pathChecked) {
+    const present = new Set(backing.presentPaths ?? []);
+    if (!present.has(regressionTest)) {
+      reasons.push(`regression_test ${regressionTest} is not on ${backing.branch ?? "the recorded branch"}`);
+    }
+  }
+  return {
+    id: String(row?.id ?? "?"),
+    regressionTest,
+    goldenCase,
+    pathChecked,
+    reasons,
+    verified: reasons.length === 0,
+  };
 }
 
 /**
@@ -150,9 +261,10 @@ export function residualHoldIds(attackerRows) {
   return [...new Set(ids)].sort();
 }
 
+/** Severity-first, on the routed severity: a mislabelled trust root sorts where it belongs. */
 export function sortFindingsBySeverity(rows) {
   return [...rows].sort((left, right) => {
-    const bySeverity = severityRank(left.severity) - severityRank(right.severity);
+    const bySeverity = severityRank(effectiveSeverity(left)) - severityRank(effectiveSeverity(right));
     if (bySeverity !== 0) return bySeverity;
     return String(left.id ?? "").localeCompare(String(right.id ?? ""));
   });
@@ -266,6 +378,10 @@ export function parseVitestCounts(gatesOutput) {
  * `reportProblems` carries IO-level failures the driver hit reading a report (no JSONL block, a
  * malformed line, an agent that timed out). They route here rather than in the driver so that a
  * report the driver could not read can never be scored as a quiet lap.
+ *
+ * `artifactBacking` is what the driver resolved on disk: which cited regression-test paths exist
+ * on `attackerBranch`, the branch that actually took the attacker's commits. `checked: false`
+ * means no branch was consulted (a dry run), which is reported as unchecked rather than passed.
  */
 export function evaluateLap({
   lap,
@@ -275,6 +391,8 @@ export function evaluateLap({
   gates = { passed: false, testsPassed: null },
   priorTestCount = null,
   reportProblems = [],
+  artifactBacking = { checked: false, branch: null, presentPaths: [] },
+  attackerBranch = null,
 }) {
   const succeeded = succeededFindings(attackerRows);
   const currentResidualIds = residualHoldIds(attackerRows);
@@ -283,7 +401,14 @@ export function evaluateLap({
       ? { added: [], removed: [], changed: false, baseline: true }
       : { ...diffIdSets(priorResidualIds, currentResidualIds), baseline: false };
 
-  const trustRootSuccesses = succeeded.filter((row) => row.severity === "trust-root");
+  // A claim of a finding with no artifact behind it is not a finding. Unbacked rows are held
+  // apart from the counts so they can never be scored as work the fixer could pick up.
+  const backings = succeeded.map((row) => ({ row, ...classifyRowBacking(row, artifactBacking) }));
+  const unbacked = backings.filter((entry) => !entry.verified);
+  const verifiedSucceeded = backings.filter((entry) => entry.verified).map((entry) => entry.row);
+
+  const discrepancies = severityDiscrepancies(succeeded);
+  const trustRootSuccesses = verifiedSucceeded.filter((row) => effectiveSeverity(row) === "trust-root");
   const reverts = revertedPriorFixes(fixerRows);
 
   const residualDeltas = fixerRows.map((row) => ({
@@ -304,6 +429,13 @@ export function evaluateLap({
   if (trustRootSuccesses.length > 0) {
     wakeReasons.push(
       `attacker succeeded at trust-root severity: ${trustRootSuccesses.map((row) => row.id).join(", ")}`,
+    );
+  }
+  if (unbacked.length > 0) {
+    wakeReasons.push(
+      `succeeded row(s) not backed by the artifacts they cite: ${unbacked
+        .map((entry) => `${entry.id} (${entry.reasons.join("; ")})`)
+        .join("; ")}`,
     );
   }
   if (reverts.length > 0) {
@@ -333,8 +465,13 @@ export function evaluateLap({
   for (const problem of reportProblems) {
     convergeBlockers.push(`report unreadable: ${problem}`);
   }
-  if (succeeded.length > 0) {
-    convergeBlockers.push(`attacker has ${succeeded.length} succeeded row(s)`);
+  if (verifiedSucceeded.length > 0) {
+    convergeBlockers.push(`attacker has ${verifiedSucceeded.length} succeeded row(s)`);
+  }
+  if (unbacked.length > 0) {
+    convergeBlockers.push(
+      `${unbacked.length} succeeded row(s) unverified: ${unbacked.map((entry) => entry.id).join(", ")}`,
+    );
   }
   if (residualDiff.changed) convergeBlockers.push("residual set changed");
   if (!gates?.passed) convergeBlockers.push("gates failed");
@@ -358,7 +495,13 @@ export function evaluateLap({
     wakeReasons,
     convergeBlockers,
     succeeded,
-    successesBySeverity: countBySeverity(succeeded),
+    verifiedSucceeded,
+    unbacked,
+    backings,
+    artifactBacking,
+    attackerBranch,
+    severityDiscrepancies: discrepancies,
+    successesBySeverity: countBySeverity(verifiedSucceeded),
     residualIds: currentResidualIds,
     residualDiff,
     residualDeltas,
@@ -373,7 +516,7 @@ export function evaluateLap({
 export function countBySeverity(rows) {
   const counts = {};
   for (const row of rows) {
-    const severity = String(row.severity ?? "unknown");
+    const severity = effectiveSeverity(row);
     counts[severity] = (counts[severity] ?? 0) + 1;
   }
   return counts;
@@ -394,14 +537,48 @@ export function renderSummary(evaluation) {
   lines.push(`lap ${evaluation.lap}: ${evaluation.decision}`);
   lines.push("");
 
+  const backingById = new Map((evaluation.backings ?? []).map((entry) => [entry.id, entry]));
   lines.push(`succeeded rows (${evaluation.succeeded.length}):`);
   if (evaluation.succeeded.length === 0) lines.push("  none");
   for (const row of sortFindingsBySeverity(evaluation.succeeded)) {
-    lines.push(`  [${row.severity ?? "?"}] ${row.id ?? "?"} ${row.part ?? ""}: ${row.mechanism ?? ""}`);
+    const routed = effectiveSeverity(row);
+    const stated = String(row.severity ?? "?");
+    const relabelled = routed === stated ? "" : ` (stated ${stated})`;
+    lines.push(`  [${routed}]${relabelled} ${row.id ?? "?"} ${row.part ?? ""}: ${row.mechanism ?? ""}`);
     lines.push(`      evidence: ${row.evidence ?? ""}`);
     lines.push(`      regression_test: ${row.regression_test ?? "null"}`);
+    const backing = backingById.get(String(row.id ?? "?"));
+    if (backing && !backing.verified) {
+      lines.push(`      <- UNVERIFIED: ${backing.reasons.join("; ")}`);
+    }
   }
   lines.push("");
+
+  const branch = evaluation.attackerBranch;
+  const checked = evaluation.artifactBacking?.checked;
+  if (branch) {
+    const present = (evaluation.artifactBacking?.presentPaths ?? []).length;
+    const cited = new Set(
+      (evaluation.backings ?? []).map((entry) => entry.regressionTest).filter((path) => path !== null),
+    ).size;
+    lines.push(
+      checked
+        ? `attacker branch: ${branch} (${present} of ${cited} cited artifact path(s) present)`
+        : `attacker branch: ${branch} (artifacts not checked)`,
+    );
+  } else {
+    lines.push("attacker branch: not recorded (artifacts not checked)");
+  }
+  lines.push("");
+
+  const discrepancies = evaluation.severityDiscrepancies ?? [];
+  if (discrepancies.length > 0) {
+    lines.push("labeling discrepancies (routed on part, not on the stated field):");
+    for (const entry of discrepancies) {
+      lines.push(`  ${entry.id}: stated ${entry.stated}, routed ${entry.effective}, ${entry.reason}`);
+    }
+    lines.push("");
+  }
 
   const diff = evaluation.residualDiff;
   if (diff.baseline) {
@@ -461,15 +638,41 @@ export function renderSummaryEntry(evaluation, { itemsFixed = [], timestamp = nu
     : diff.changed
       ? `changed (added: ${diff.added.join(", ") || "none"}; removed: ${diff.removed.join(", ") || "none"})`
       : "unchanged";
+  const backings = evaluation.backings ?? [];
+  const citedPaths = new Set(
+    backings.map((entry) => entry.regressionTest).filter((path) => path !== null),
+  ).size;
+  const presentPaths = (evaluation.artifactBacking?.presentPaths ?? []).length;
+  const branchLine = evaluation.attackerBranch
+    ? evaluation.artifactBacking?.checked
+      ? `${evaluation.attackerBranch} (${presentPaths} of ${citedPaths} cited artifact path(s) present)`
+      : `${evaluation.attackerBranch} (artifacts not checked)`
+    : "not recorded (artifacts not checked)";
+
   const lines = [
     `## lap ${evaluation.lap}${timestamp ? ` (${timestamp})` : ""}`,
     "",
     `- items fixed: ${items}`,
     `- successes by severity: ${formatSeverityCounts(evaluation.successesBySeverity)}`,
+    `- attacker branch: ${branchLine}`,
     `- residual set: ${residualLine}`,
     `- gates: ${evaluation.gates.passed ? "pass" : "fail"} (${evaluation.gates.testsPassed ?? "unknown"} tests passed)`,
     `- decision: ${evaluation.decision}`,
   ];
+  const unbacked = evaluation.unbacked ?? [];
+  if (unbacked.length > 0) {
+    lines.push(
+      `- unverified rows: ${unbacked.map((entry) => `${entry.id} (${entry.reasons.join("; ")})`).join("; ")}`,
+    );
+  }
+  const discrepancies = evaluation.severityDiscrepancies ?? [];
+  if (discrepancies.length > 0) {
+    lines.push(
+      `- labeling discrepancies: ${discrepancies
+        .map((entry) => `${entry.id} stated ${entry.stated}, routed ${entry.effective} (${entry.reason})`)
+        .join("; ")}`,
+    );
+  }
   const reasons = evaluation.wakeReasons.length > 0 ? evaluation.wakeReasons : evaluation.convergeBlockers;
   if (reasons.length > 0) {
     lines.push(`- because: ${reasons.join("; ")}`);

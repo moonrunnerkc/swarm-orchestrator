@@ -32,6 +32,27 @@ function attackerRow(overrides) {
   };
 }
 
+const BACKED_PATH = "redteam/pass5/closures.regression.ts";
+
+/**
+ * A succeeded row carrying the artifacts the schema requires of one. Defaults to part markers so
+ * a test that is not about severity routing gets the severity it asks for.
+ */
+function succeededRow(overrides) {
+  return attackerRow({
+    result: "succeeded",
+    part: "markers",
+    regression_test: BACKED_PATH,
+    golden_case: "one line",
+    ...overrides,
+  });
+}
+
+/** What the driver hands in after resolving cited paths against the recorded branch. */
+function backingFor(paths, branch = "redteam/loop/lap-2-attack") {
+  return { checked: true, branch, presentPaths: paths };
+}
+
 function fixerRow(overrides) {
   return {
     item: "1",
@@ -132,9 +153,9 @@ describe("parseAgentReport", () => {
 describe("prompt fill helpers", () => {
   it("sorts findings trust-root, mechanical, doc and formats id: mechanism (evidence)", () => {
     const rows = [
-      attackerRow({ id: "D1", severity: "doc", mechanism: "docs drift", evidence: "e-d1" }),
-      attackerRow({ id: "M1", severity: "mechanical", mechanism: "marker bypass", evidence: "e-m1" }),
-      attackerRow({ id: "T1", severity: "trust-root", mechanism: "claim binding", evidence: "e-t1" }),
+      attackerRow({ id: "D1", part: "docs", severity: "doc", mechanism: "docs drift", evidence: "e-d1" }),
+      attackerRow({ id: "M1", part: "markers", severity: "mechanical", mechanism: "marker bypass", evidence: "e-m1" }),
+      attackerRow({ id: "T1", part: "claims", severity: "trust-root", mechanism: "claim binding", evidence: "e-t1" }),
     ];
     expect(sortFindingsBySeverity(rows).map((row) => row.id)).toEqual(["T1", "M1", "D1"]);
     expect(formatFindingsForPrompt(rows)).toBe(
@@ -240,12 +261,11 @@ describe("evaluateLap routing", () => {
     const evaluation = evaluateLap({
       lap: 2,
       attackerRows: [
-        attackerRow({
+        succeededRow({
           id: "T1",
-          result: "succeeded",
+          part: "claims",
           severity: "trust-root",
           mechanism: "src/evidence/claim-resolution.ts:88 + invariant 1",
-          regression_test: "redteam/pass5/closures.regression.ts",
         }),
         attackerRow({ id: "R1", result: "residual-holds", severity: "residual" }),
       ],
@@ -253,6 +273,7 @@ describe("evaluateLap routing", () => {
       priorResidualIds: ["R1"],
       gates: greenGates,
       priorTestCount: 840,
+      artifactBacking: backingFor([BACKED_PATH]),
     });
     expect(evaluation.decision).toBe(DECISION.wake);
     expect(evaluation.wakeReasons.join(" ")).toContain("trust-root severity: T1");
@@ -263,7 +284,7 @@ describe("evaluateLap routing", () => {
     const evaluation = evaluateLap({
       lap: 3,
       attackerRows: [
-        attackerRow({ id: "M1", result: "succeeded", severity: "mechanical" }),
+        succeededRow({ id: "M1", severity: "mechanical" }),
         attackerRow({ id: "R1", result: "residual-holds", severity: "residual" }),
         attackerRow({ id: "R9", result: "residual-holds", severity: "residual" }),
       ],
@@ -271,6 +292,7 @@ describe("evaluateLap routing", () => {
       priorResidualIds: ["R1", "R2"],
       gates: greenGates,
       priorTestCount: 840,
+      artifactBacking: backingFor([BACKED_PATH]),
     });
     expect(evaluation.decision).toBe(DECISION.wake);
     expect(evaluation.wakeReasons.join(" ")).toContain("residual set changed: added R9; removed R2");
@@ -320,14 +342,15 @@ describe("evaluateLap routing", () => {
     const evaluation = evaluateLap({
       lap: 2,
       attackerRows: [
-        attackerRow({ id: "M1", result: "succeeded", severity: "mechanical" }),
-        attackerRow({ id: "D1", result: "succeeded", severity: "doc" }),
+        succeededRow({ id: "M1", severity: "mechanical" }),
+        succeededRow({ id: "D1", part: "docs", severity: "doc" }),
         attackerRow({ id: "R1", result: "residual-holds", severity: "residual" }),
       ],
       fixerRows: [fixerRow()],
       priorResidualIds: ["R1"],
       gates: greenGates,
       priorTestCount: 840,
+      artifactBacking: backingFor([BACKED_PATH]),
     });
     expect(evaluation.decision).toBe(DECISION.continue);
     expect(evaluation.wakeReasons).toEqual([]);
@@ -394,11 +417,13 @@ describe("renderSummaryEntry", () => {
   it("writes one summary.md section carrying the lap's route and why", () => {
     const evaluation = evaluateLap({
       lap: 2,
-      attackerRows: [attackerRow({ id: "M1", result: "succeeded", severity: "mechanical" })],
+      attackerRows: [succeededRow({ id: "M1", severity: "mechanical" })],
       fixerRows: [fixerRow({ item: "1" }), fixerRow({ item: "2" })],
       priorResidualIds: [],
       gates: greenGates,
       priorTestCount: 840,
+      artifactBacking: backingFor([BACKED_PATH]),
+      attackerBranch: "redteam/loop/lap-2-attack",
     });
     const entry = renderSummaryEntry(evaluation, { itemsFixed: ["1", "2"], timestamp: "2026-08-14T18:00:00Z" });
     expect(entry).toContain("## lap 2 (2026-08-14T18:00:00Z)");
@@ -408,5 +433,201 @@ describe("renderSummaryEntry", () => {
     expect(entry).toContain("- gates: pass (840 tests passed)");
     expect(entry).toContain("- decision: CONTINUE");
     expect(entry.endsWith("\n\n")).toBe(true);
+  });
+});
+
+describe("artifact backing of succeeded rows", () => {
+  const lapWith = (rows, extra = {}) =>
+    evaluateLap({
+      lap: 3,
+      attackerRows: rows,
+      fixerRows: [fixerRow()],
+      priorResidualIds: [],
+      gates: greenGates,
+      priorTestCount: 840,
+      attackerBranch: "redteam/loop/lap-3-attack",
+      ...extra,
+    });
+
+  it("routes a succeeded row normally when its cited regression test is on the branch", () => {
+    const evaluation = lapWith([succeededRow({ id: "M1", severity: "mechanical" })], {
+      artifactBacking: backingFor([BACKED_PATH], "redteam/loop/lap-3-attack"),
+    });
+    expect(evaluation.decision).toBe(DECISION.continue);
+    expect(evaluation.wakeReasons).toEqual([]);
+    expect(evaluation.unbacked).toEqual([]);
+    expect(evaluation.verifiedSucceeded.map((row) => row.id)).toEqual(["M1"]);
+  });
+
+  it("wakes a human when the cited regression test is not on the recorded branch", () => {
+    const evaluation = lapWith([succeededRow({ id: "M1", severity: "mechanical" })], {
+      artifactBacking: backingFor([], "redteam/loop/lap-3-attack"),
+    });
+    expect(evaluation.decision).toBe(DECISION.wake);
+    expect(evaluation.wakeReasons.join(" ")).toContain("not backed by the artifacts they cite");
+    expect(evaluation.wakeReasons.join(" ")).toContain("M1");
+    expect(evaluation.wakeReasons.join(" ")).toContain(
+      `regression_test ${BACKED_PATH} is not on redteam/loop/lap-3-attack`,
+    );
+  });
+
+  it("wakes a human when a succeeded row carries a null golden_case", () => {
+    const evaluation = lapWith([succeededRow({ id: "M1", severity: "mechanical", golden_case: null })], {
+      artifactBacking: backingFor([BACKED_PATH], "redteam/loop/lap-3-attack"),
+    });
+    expect(evaluation.decision).toBe(DECISION.wake);
+    expect(evaluation.wakeReasons.join(" ")).toContain("golden_case is null");
+  });
+
+  it("wakes a human when a succeeded row cites no regression test at all", () => {
+    const evaluation = lapWith([succeededRow({ id: "M1", severity: "mechanical", regression_test: "null" })], {
+      artifactBacking: backingFor([BACKED_PATH], "redteam/loop/lap-3-attack"),
+    });
+    expect(evaluation.decision).toBe(DECISION.wake);
+    expect(evaluation.wakeReasons.join(" ")).toContain("regression_test is null");
+  });
+
+  it("does not count an unbacked row as a finding, so it cannot drive CONTINUE on its own", () => {
+    const evaluation = lapWith([succeededRow({ id: "M1", severity: "mechanical" })], {
+      artifactBacking: backingFor([], "redteam/loop/lap-3-attack"),
+    });
+    expect(evaluation.verifiedSucceeded).toEqual([]);
+    expect(evaluation.successesBySeverity).toEqual({});
+    expect(evaluation.convergeBlockers.join(" ")).toContain("1 succeeded row(s) unverified: M1");
+    expect(renderSummary(evaluation)).toContain("<- UNVERIFIED");
+  });
+
+  it("reports unchecked rather than backed when no branch was consulted", () => {
+    const evaluation = lapWith([succeededRow({ id: "M1", severity: "mechanical" })], {
+      artifactBacking: { checked: false, branch: null, presentPaths: [] },
+      attackerBranch: null,
+    });
+    expect(evaluation.decision).toBe(DECISION.continue);
+    expect(renderSummary(evaluation)).toContain("attacker branch: not recorded (artifacts not checked)");
+  });
+});
+
+describe("recorded attacker branch", () => {
+  it("names the branch that holds the commits in the summary entry", () => {
+    const evaluation = evaluateLap({
+      lap: 3,
+      attackerRows: [succeededRow({ id: "M1", severity: "mechanical" })],
+      fixerRows: [],
+      priorResidualIds: [],
+      gates: greenGates,
+      priorTestCount: 840,
+      attackerBranch: "redteam/loop/lap-3-attack",
+      artifactBacking: backingFor([BACKED_PATH], "redteam/loop/lap-3-attack"),
+    });
+    const entry = renderSummaryEntry(evaluation, { itemsFixed: [] });
+    expect(entry).toContain("- attacker branch: redteam/loop/lap-3-attack (1 of 1 cited artifact path(s) present)");
+  });
+
+  it("fails a summary that names a branch without the cited artifacts", () => {
+    const evaluation = evaluateLap({
+      lap: 3,
+      attackerRows: [
+        succeededRow({ id: "M1", severity: "mechanical" }),
+        succeededRow({ id: "M2", severity: "mechanical" }),
+      ],
+      fixerRows: [],
+      priorResidualIds: [],
+      gates: greenGates,
+      priorTestCount: 840,
+      // The branch the driver cut, which an attacker that branched again leaves empty.
+      attackerBranch: "redteam/loop/lap-3",
+      artifactBacking: backingFor([], "redteam/loop/lap-3"),
+    });
+    expect(evaluation.decision).toBe(DECISION.wake);
+    const entry = renderSummaryEntry(evaluation, { itemsFixed: [] });
+    expect(entry).toContain("- attacker branch: redteam/loop/lap-3 (0 of 1 cited artifact path(s) present)");
+    expect(entry).toContain("- unverified rows: M1");
+    expect(entry).toContain("M2");
+    expect(entry).toContain("is not on redteam/loop/lap-3");
+  });
+});
+
+describe("severity routed on part, not on the stated field", () => {
+  const lapWithRow = (row) =>
+    evaluateLap({
+      lap: 4,
+      attackerRows: [row],
+      fixerRows: [],
+      priorResidualIds: [],
+      gates: greenGates,
+      priorTestCount: 840,
+      attackerBranch: "redteam/loop/lap-4-attack",
+      artifactBacking: backingFor([BACKED_PATH], "redteam/loop/lap-4-attack"),
+    });
+
+  it("wakes a human on a base-control row the attacker labelled mechanical, and flags it", () => {
+    const evaluation = lapWithRow(
+      succeededRow({
+        id: "E4",
+        part: "base-control",
+        severity: "mechanical",
+        mechanism: "src/gates/base-control.ts:47 + invariant 7",
+        evidence: "two test files share one TAP destination",
+      }),
+    );
+    expect(evaluation.decision).toBe(DECISION.wake);
+    expect(evaluation.wakeReasons.join(" ")).toContain("trust-root severity: E4");
+    expect(evaluation.successesBySeverity).toEqual({ "trust-root": 1 });
+    expect(evaluation.severityDiscrepancies).toEqual([
+      {
+        id: "E4",
+        part: "base-control",
+        stated: "mechanical",
+        effective: "trust-root",
+        reason: "part base-control is trust-root by the schema",
+      },
+    ]);
+    expect(renderSummary(evaluation)).toContain("labeling discrepancies");
+    expect(renderSummary(evaluation)).toContain("[trust-root] (stated mechanical) E4");
+    expect(renderSummaryEntry(evaluation, {})).toContain("- labeling discrepancies: E4 stated mechanical");
+  });
+
+  it("still routes a markers row labelled mechanical as mechanical", () => {
+    const evaluation = lapWithRow(succeededRow({ id: "M1", part: "markers", severity: "mechanical" }));
+    expect(evaluation.decision).toBe(DECISION.continue);
+    expect(evaluation.wakeReasons).toEqual([]);
+    expect(evaluation.successesBySeverity).toEqual({ mechanical: 1 });
+    expect(evaluation.severityDiscrepancies).toEqual([]);
+  });
+
+  it("honors mechanical on derivation, the other part that cannot forge a verdict", () => {
+    const evaluation = lapWithRow(succeededRow({ id: "V1", part: "derivation", severity: "mechanical" }));
+    expect(evaluation.decision).toBe(DECISION.continue);
+    expect(evaluation.successesBySeverity).toEqual({ mechanical: 1 });
+  });
+
+  it("escalates every trust-root part regardless of what the row claims", () => {
+    for (const part of ["claims", "ledger", "evidence", "coverage", "scrub", "base-control"]) {
+      const evaluation = lapWithRow(succeededRow({ id: "X1", part, severity: "doc" }));
+      expect(evaluation.decision, part).toBe(DECISION.wake);
+      expect(evaluation.successesBySeverity, part).toEqual({ "trust-root": 1 });
+    }
+  });
+
+  it("refuses to honor mechanical on a part that is on neither list", () => {
+    const evaluation = lapWithRow(succeededRow({ id: "Z1", part: "ratchet", severity: "mechanical" }));
+    expect(evaluation.decision).toBe(DECISION.wake);
+    expect(evaluation.severityDiscrepancies[0].reason).toContain(
+      "part ratchet is not one where mechanical can be honored",
+    );
+  });
+
+  it("leaves a docs row alone, since a doc mismatch cannot forge a verdict", () => {
+    const evaluation = lapWithRow(succeededRow({ id: "D2", part: "docs", severity: "doc" }));
+    expect(evaluation.decision).toBe(DECISION.continue);
+    expect(evaluation.severityDiscrepancies).toEqual([]);
+  });
+
+  it("sorts a mislabelled trust root ahead of an honest mechanical one for the fixer", () => {
+    const rows = [
+      attackerRow({ id: "M1", part: "markers", severity: "mechanical", mechanism: "marker", evidence: "e1" }),
+      attackerRow({ id: "E4", part: "base-control", severity: "mechanical", mechanism: "tap path", evidence: "e2" }),
+    ];
+    expect(sortFindingsBySeverity(rows).map((row) => row.id)).toEqual(["E4", "M1"]);
   });
 });
