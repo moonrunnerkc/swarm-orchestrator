@@ -20,9 +20,12 @@ import { type BaseControlRunner, type ControlRun, indeterminate } from "./respec
  * test prints reaches a TAP result point, because the runner folds captured output into
  * comments.
  *
- * And only where this harness asked for that artifact. The artifact is read when the command
- * being run is the one the harness built to write it; a run that was never asked leaves the
- * question unanswered rather than answered by whatever happens to sit at the path.
+ * And only where this harness asked for that artifact and ran the thing it asked. The vouched
+ * run is a vector spawned with no shell and under an environment built rather than inherited,
+ * so nothing re-reads its arguments and no name the workspace set loads a hook into the process
+ * writing the result. Where that cannot be built, the file is still run, by the fallback that
+ * hands the declared script to a shell, and that run is asked for no artifact at all: it
+ * answers whether the file passed and nothing about which of its tests did.
  */
 
 /** Reads back what a control run was told to write, and clears it first. */
@@ -31,11 +34,25 @@ interface ControlArtifactStore {
   read(path: string): Promise<string | null>;
 }
 
+/**
+ * How one test file gets run. The two arms are not interchangeable and the type says so: only
+ * a vector the harness built names an artifact, so only that arm can attribute a failure to a
+ * test. The shell arm runs the file and answers with an exit code.
+ */
+export type TestFileInvocation =
+  | { readonly kind: "argv"; readonly argv: readonly string[]; readonly outcomeArtifact: string }
+  | { readonly kind: "shell"; readonly command: string };
+
+export type SingleFileCommand = (
+  testFile: string,
+  outcomeArtifact: string | null,
+) => TestFileInvocation | null;
+
 interface BaseControlOptions {
   readonly workspace: GitWorkspaceOptions;
   readonly commands: GateCommandRunner;
   /** Null when the project has no way to run one test file, which withholds every exemption. */
-  readonly singleFileCommand: (testFile: string, outcomeArtifact: string | null) => string | null;
+  readonly singleFileCommand: SingleFileCommand;
   /**
    * Where a control run is asked to write its own machine-readable result, under the session
    * store that invariant 11 keeps outside the workspace. Absent means no result is asked for,
@@ -70,18 +87,19 @@ export function createBaseControlRunner(options: BaseControlOptions): BaseContro
   const runOne = async (testFile: string): Promise<ControlRun> => {
     const artifactPath =
       artifacts === undefined ? null : controlOutcomePath(artifacts.directory, testFile);
-    const command = options.singleFileCommand(testFile, artifactPath);
-    if (command === null) {
+    const invocation = options.singleFileCommand(testFile, artifactPath);
+    if (invocation === null) {
       return indeterminate("this project has no command that runs one test file on its own");
     }
     // Cleared first, so a result left by the run before cannot pass as this one's.
     if (artifacts !== undefined && artifactPath !== null) {
       await artifacts.store.clear(artifactPath);
     }
-    const observation = await options.commands.run(command, {
-      cwd: options.workspace.workspaceRoot,
-      timeoutMs,
-    });
+    const runOptions = { cwd: options.workspace.workspaceRoot, timeoutMs };
+    const observation =
+      invocation.kind === "argv"
+        ? await options.commands.runVouched(invocation.argv, runOptions)
+        : await options.commands.run(invocation.command, runOptions);
     if (observation.unavailable !== null) {
       return indeterminate(observation.unavailable);
     }
@@ -92,16 +110,19 @@ export function createBaseControlRunner(options: BaseControlOptions): BaseContro
     // read to withhold an exemption, never to grant one, which is why a test printing into it
     // can only cost itself.
     const output = `${observation.stdout}\n${observation.stderr}`.trim();
-    // Only a command that names the destination was asked to write it. Reading the path
+    // Only the arm that was built to write this destination was asked to. Reading the path
     // regardless would attribute from a file this run never produced.
     const reported =
-      artifacts !== undefined && artifactPath !== null && command.includes(artifactPath)
-        ? await artifacts.store.read(artifactPath)
+      artifacts !== undefined &&
+      invocation.kind === "argv" &&
+      invocation.outcomeArtifact === artifactPath
+        ? await artifacts.store.read(invocation.outcomeArtifact)
         : null;
     const outcomes = reported === null ? null : parseTapOutcomes(reported);
+    const ran = invocation.kind === "argv" ? invocation.argv.join(" ") : invocation.command;
     return {
       outcome: observation.exitCode === 0 ? "passed" : "failed",
-      detail: `${command} exited ${observation.exitCode}${output.length === 0 ? "" : `\n${truncate(output)}`}`,
+      detail: `${ran} exited ${observation.exitCode}${output.length === 0 ? "" : `\n${truncate(output)}`}`,
       exitCode: observation.exitCode,
       failedTests: outcomes === null ? null : outcomes.failed,
     };
@@ -140,28 +161,26 @@ export function singleFileTestCommand(
   detection: ProjectDetection,
   testFile: string,
   outcomeArtifact: string | null = null,
-): string | null {
+): TestFileInvocation | null {
   if (!isTestFile(testFile)) {
     return null;
   }
   if (detection.types.includes("node") && detection.nodeScripts.includes("test")) {
-    const file = shellQuoted(testFile);
-    if (file === null) {
-      return null;
+    const asked = askedForOutcomes(detection.nodeScriptCommands.test, outcomeArtifact, testFile);
+    if (asked !== null) {
+      return asked;
     }
-    return (
-      askedForOutcomes(detection.nodeScriptCommands.test, outcomeArtifact, file) ??
-      // The run still happens without a result to read: whether the file passed or failed is
-      // the file-level precondition, and it is answered by the exit code. What is missing is
-      // which of its tests failed, so no test is cleared.
-      `npm test --silent -- ${file}`
-    );
+    const file = shellQuoted(testFile);
+    // The run still happens without a result to read: whether the file passed or failed is
+    // the file-level precondition, and it is answered by the exit code. What is missing is
+    // which of its tests failed, so no test is cleared.
+    return file === null ? null : { kind: "shell", command: `npm test --silent -- ${file}` };
   }
   if (detection.types.includes("python")) {
-    return `pytest -q ${quote(testFile)}`;
+    return { kind: "shell", command: `pytest -q ${quote(testFile)}` };
   }
   if (detection.types.includes("go")) {
-    return `go test ./${quote(dirname(testFile))}/...`;
+    return { kind: "shell", command: `go test ./${quote(dirname(testFile))}/...` };
   }
   // Rust compiles a crate's tests together, so there is no single-file run to make.
   return null;
@@ -172,7 +191,7 @@ export function singleFileTestCommand(
  * the invocation that would write it. Null is the fail-closed answer: no result, no attribution,
  * no test cleared.
  *
- * The command is built here rather than handed to `npm test`, and that is the point. npm runs
+ * The vector is built here rather than handed to `npm test`, and that is the point. npm runs
  * whatever `pretest` and `posttest` the workspace declares, in the process that surrounds the
  * one writing the artifact, and it appends these flags after the script's own file patterns,
  * where node ignores them. Both leave a path the harness named being written by something the
@@ -185,23 +204,23 @@ export function singleFileTestCommand(
 function askedForOutcomes(
   body: string | undefined,
   artifact: string | null,
-  quotedTestFile: string,
-): string | null {
-  const destination = artifact === null ? null : shellQuoted(artifact);
-  if (destination === null) {
+  testFile: string,
+): TestFileInvocation | null {
+  if (artifact === null) {
     return null;
   }
-  return harnessControlledNodeTest(
+  const argv = harnessControlledNodeTest(
     body,
     [
       "--test-reporter=tap",
       "--test-reporter-destination=stdout",
       "--test-reporter=tap",
-      `--test-reporter-destination=${destination}`,
+      `--test-reporter-destination=${artifact}`,
       processIsolation,
     ],
-    [quotedTestFile],
+    [testFile],
   );
+  return argv === null ? null : { kind: "argv", argv, outcomeArtifact: artifact };
 }
 
 /** Enough to name every test and the reason a load failed, short enough for a ledger record. */

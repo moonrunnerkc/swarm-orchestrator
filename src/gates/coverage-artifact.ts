@@ -1,6 +1,10 @@
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { harnessControlledNodeTest, processIsolation, shellQuoted } from "./node-test-command.ts";
+import {
+  harnessControlledNodeTest,
+  processIsolation,
+  type VouchedArgv,
+} from "./node-test-command.ts";
 
 /**
  * Where changed-line coverage comes from. Reading it out of a gate's stdout put the
@@ -59,32 +63,32 @@ export function coverageArtifactPath(directory: string, gateId: string): string 
 }
 
 /**
- * The command that measures this gate, or null to abstain. Null is the honest answer wherever
+ * The vector that measures this gate, or null to abstain. Null is the honest answer wherever
  * the harness cannot vouch for the invocation in full: the arm then reports not measured by
  * name rather than reporting a number it cannot stand behind.
+ *
+ * The destination is one argument and stays one argument, because the harness spawns this
+ * itself. There is no quoting step, so there is nothing to be undone by a shell reading the
+ * result, which is where the last two rounds of this went wrong.
  *
  * The stdout reporter is restated because naming any reporter replaces the default one, and
  * the test counters the ratchet reads still have to arrive on stdout.
  *
  * What is deliberately absent is any attempt to talk a declared command into safety. A project
  * that asks for a shared process, a loader hook, or a reporter of its own is not corrected, it
- * is left unmeasured, because the correction would have to predict what the shell makes of the
+ * is left unmeasured, because the correction would have to predict what a shell makes of the
  * text it is correcting.
  */
 export function coverageReportingCommand(
   body: string | undefined,
   artifactPath: string,
-): string | null {
-  const destination = shellQuoted(artifactPath);
-  if (destination === null) {
-    return null;
-  }
+): VouchedArgv | null {
   return harnessControlledNodeTest(body, [
     "--experimental-test-coverage",
     processIsolation,
     "--test-reporter=tap",
     "--test-reporter-destination=stdout",
     "--test-reporter=lcov",
-    `--test-reporter-destination=${destination}`,
+    `--test-reporter-destination=${artifactPath}`,
   ]);
 }

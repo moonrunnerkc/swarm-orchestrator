@@ -32,35 +32,57 @@ afterEach(async () => {
   await rm(outside, { recursive: true, force: true });
 });
 
-describe("the command one test file is run with", () => {
-  it("asks node's runner for a result of its own, ahead of the file pattern", () => {
-    const detection = {
-      types: ["node"] as const,
-      manifests: ["package.json"],
-      nodeScripts: ["test"],
-      nodeScriptCommands: { test: "node --test" },
-      pythonTools: [] as string[],
-    };
-    const asked = singleFileTestCommand(detection, "a.test.mjs", "/session/controls/a.tap");
+describe("how one test file is run", () => {
+  const nodeDetection = (test: string) => ({
+    types: ["node"] as const,
+    manifests: ["package.json"],
+    nodeScripts: ["test"],
+    nodeScriptCommands: { test },
+    pythonTools: [] as string[],
+  });
 
-    expect(asked).toContain("--test-reporter-destination='/session/controls/a.tap'");
-    expect(asked).toContain("--test-isolation=process");
-    // Node ignores reporter flags that arrive after a file pattern, so they go before it.
-    expect(asked?.indexOf("--test-reporter=tap")).toBeLessThan(asked?.indexOf("a.test.mjs") ?? -1);
+  it("asks node's runner for a result of its own, ahead of the file pattern", () => {
+    const asked = singleFileTestCommand(
+      nodeDetection("node --test"),
+      "a.test.mjs",
+      "/session/controls/a.tap",
+    );
+
+    expect(asked).toEqual({
+      kind: "argv",
+      outcomeArtifact: "/session/controls/a.tap",
+      argv: [
+        "node",
+        "--test",
+        "--test-reporter=tap",
+        "--test-reporter-destination=stdout",
+        "--test-reporter=tap",
+        "--test-reporter-destination=/session/controls/a.tap",
+        "--test-isolation=process",
+        "a.test.mjs",
+      ],
+    });
   });
 
   it("asks for nothing where the declared runner is not node's, and says so by asking", () => {
-    const detection = {
-      types: ["node"] as const,
-      manifests: ["package.json"],
-      nodeScripts: ["test"],
-      nodeScriptCommands: { test: "vitest run" },
-      pythonTools: [] as string[],
-    };
+    // A shell arm names no artifact, and the type is what says so: nothing downstream can
+    // read a result from a run that was never asked for one.
+    expect(
+      singleFileTestCommand(nodeDetection("vitest run"), "a.test.mjs", "/session/controls/a.tap"),
+    ).toEqual({ kind: "shell", command: "npm test --silent -- 'a.test.mjs'" });
+  });
 
-    expect(singleFileTestCommand(detection, "a.test.mjs", "/session/controls/a.tap")).toBe(
-      "npm test --silent -- 'a.test.mjs'",
-    );
+  it("asks for nothing where a flag was quoted into the position a pattern goes", () => {
+    for (const declared of [
+      "node --test '--test-isolation=none'",
+      "node --test '--require=./hook.cjs'",
+      "node --test '--env-file=.env'",
+    ]) {
+      expect({
+        declared,
+        asked: singleFileTestCommand(nodeDetection(declared), "a.test.mjs", "/session/a.tap")?.kind,
+      }).toEqual({ declared, asked: "shell" });
+    }
   });
 });
 
@@ -176,6 +198,40 @@ describe("which tests a control run failed", () => {
     const run = await runControl('test.skip("sibling", () => {});');
 
     expect(run.failedTests).toEqual(["multiplies"]);
+  });
+
+  it("does not attribute from a result an inherited NODE_OPTIONS hook wrote", async () => {
+    // The hook is named nowhere in the command, so no reading of the command could have found
+    // it. The vouched run is given an environment the harness built, so the hook never loads
+    // and the result at the path is the one node wrote.
+    const previous = process.env.NODE_OPTIONS;
+    await writeFile(
+      join(workspace, "hook.cjs"),
+      [
+        'const { writeFileSync } = require("node:fs");',
+        "process.on('exit', () => {",
+        "  for (const token of [...process.execArgv, ...process.argv]) {",
+        "    const found = String(token).match(/(\\/[^\\s']+\\.tap)/);",
+        "    if (found) {",
+        "      writeFileSync(found[1], 'TAP version 13\\n1..2\\nnot ok 1 - sibling\\nok 2 - multiplies\\n');",
+        "    }",
+        "  }",
+        "});",
+        "",
+      ].join("\n"),
+    );
+    process.env.NODE_OPTIONS = "--require=./hook.cjs";
+    try {
+      const run = await runControl('test("sibling", () => { assert.equal(add(1, 1), 2); });');
+
+      expect(run.failedTests).toEqual(["multiplies"]);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.NODE_OPTIONS;
+      } else {
+        process.env.NODE_OPTIONS = previous;
+      }
+    }
   });
 
   it("attributes nothing at all where it could not ask for a result of its own", async () => {

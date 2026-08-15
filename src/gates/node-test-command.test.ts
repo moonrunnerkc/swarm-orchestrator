@@ -1,42 +1,122 @@
 import { describe, expect, it } from "vitest";
-import { harnessControlledNodeTest, processIsolation, shellQuoted } from "./node-test-command.ts";
+import {
+  harnessControlledEnvironment,
+  harnessControlledNodeTest,
+  processIsolation,
+  shellQuoted,
+} from "./node-test-command.ts";
 
 /**
  * The property under test is not "the isolation setting was removed". It is "the harness
  * recognized the whole invocation". The forms below are the ones that beat three rounds of
  * removal, and none of them is recognized: what closes them is that an unrecognized token
  * abstains rather than being argued with.
+ *
+ * What the recognizer produces is the argument vector the harness spawns, not text a shell
+ * reads. That is the load-bearing half: an argument is whatever it says it is, so there is no
+ * unquoting step between this function and the process for a smuggled flag to survive.
  */
 
-const reporting = [processIsolation, "--test-reporter=lcov", "--test-reporter-destination='/s/t'"];
+const reporting = [processIsolation, "--test-reporter=lcov", "--test-reporter-destination=/s/t"];
 
 describe("an invocation the harness can vouch for", () => {
   it("runs node's own runner with the flags this arm needs, ahead of the file patterns", () => {
-    const command = harnessControlledNodeTest("node --test 'src/**/*.test.mjs'", reporting);
+    const argv = harnessControlledNodeTest("node --test 'src/**/*.test.mjs'", reporting);
 
-    expect(command).toBe(
-      "node --test --test-isolation=process --test-reporter=lcov " +
-        "--test-reporter-destination='/s/t' 'src/**/*.test.mjs'",
-    );
+    expect(argv).toEqual(["node", "--test", ...reporting, "src/**/*.test.mjs"]);
   });
 
   it("keeps the project's own flags where every one of them is recognized", () => {
-    const command = harnessControlledNodeTest(
+    const argv = harnessControlledNodeTest(
       "node --experimental-strip-types --test --test-concurrency=2",
       reporting,
     );
 
-    expect(command).toContain("--experimental-strip-types");
-    expect(command).toContain("--test-concurrency=2");
+    expect(argv).toContain("--experimental-strip-types");
+    expect(argv).toContain("--test-concurrency=2");
   });
 
   it("runs one named file in place of the project's patterns where an arm asks for that", () => {
-    const command = harnessControlledNodeTest("node --test 'src/**/*.test.mjs'", reporting, [
-      "'src/one.test.mjs'",
+    const argv = harnessControlledNodeTest("node --test 'src/**/*.test.mjs'", reporting, [
+      "src/one.test.mjs",
     ]);
 
-    expect(command).toContain("'src/one.test.mjs'");
-    expect(command).not.toContain("**");
+    expect(argv).toContain("src/one.test.mjs");
+    expect(argv?.join(" ")).not.toContain("**");
+  });
+});
+
+describe("a flag smuggled through the place a file pattern goes", () => {
+  /**
+   * Each of these was classified as a file pattern by a scan that split on whitespace and
+   * called anything not starting with a dash a path, and each came back a real flag when the
+   * shell unquoted it. The argv the harness now builds has no unquoting step in it, and the
+   * recognizer reads the argument rather than the text: a quoted flag is a flag.
+   */
+  it("abstains rather than carrying a quoted flag through as a path", () => {
+    for (const body of [
+      "node --test '--test-isolation=none'",
+      "node --test '--require=./hook.cjs'",
+      "node --test '--import=./hook.mjs'",
+      "node --test '--env-file=.env'",
+      'node --test "--test-isolation=none"',
+      "node --test '--test-reporter=spec'",
+    ]) {
+      expect({ body, argv: harnessControlledNodeTest(body, reporting) }).toEqual({
+        body,
+        argv: null,
+      });
+    }
+  });
+
+  it("still reads a wholly quoted file pattern as the one argument it is", () => {
+    // The quotes were there to keep a shell from expanding the glob, and there is no shell
+    // here: node does its own matching, which is what the quoting was protecting.
+    expect(harnessControlledNodeTest("node --test 'test/**/*.test.js'", reporting)?.at(-1)).toBe(
+      "test/**/*.test.js",
+    );
+  });
+
+  it("abstains where the quoting does not settle what the argument is", () => {
+    for (const body of [
+      "node --test '--test-isolation=none",
+      "node --test --test-name-pattern='foo bar'",
+      "node --test 'src/a.mjs\"",
+      "node --test ''",
+    ]) {
+      expect({ body, argv: harnessControlledNodeTest(body, reporting) }).toEqual({
+        body,
+        argv: null,
+      });
+    }
+  });
+});
+
+describe("the environment a vouched run is given", () => {
+  /**
+   * A hook named in NODE_OPTIONS runs in the process that writes the artifact just as surely
+   * as one named on the command line, and neither the token scan nor the read-back could see
+   * it, because neither reads the environment. So the environment is built rather than
+   * inherited: every name that decides what a node process loads is dropped.
+   */
+  it("drops the names that decide what a node process loads", () => {
+    expect(
+      harnessControlledEnvironment({
+        PATH: "/usr/bin",
+        HOME: "/home/dev",
+        CI: "true",
+        NODE_OPTIONS: "--require=./hook.cjs",
+        NODE_V8_COVERAGE: "/tmp/coverage",
+        NODE_PATH: "/tmp/modules",
+        node_options: "--require=./hook.cjs",
+        LD_PRELOAD: "/tmp/hook.so",
+        DYLD_INSERT_LIBRARIES: "/tmp/hook.dylib",
+      }),
+    ).toEqual({ PATH: "/usr/bin", HOME: "/home/dev", CI: "true" });
+  });
+
+  it("carries no name the caller did not hand it", () => {
+    expect(harnessControlledEnvironment({ A: undefined, B: "b" })).toEqual({ B: "b" });
   });
 });
 
@@ -101,14 +181,17 @@ describe("everything else the harness cannot stand behind", () => {
     expect(harnessControlledNodeTest(undefined, reporting)).toBeNull();
   });
 
-  it("abstains where its own destination path could not be handed to a shell as a literal", () => {
+  it("abstains where a path the one remaining shell arm needs could not be a literal", () => {
+    // The vouched arms hand node an argv and quote nothing. What is left for this is the
+    // fallback that runs one file through the package manager, which no arm reads an artifact
+    // from, and a path it cannot spell as a literal is a path it does not run.
     expect(shellQuoted("/session/coverage/tests.lcov")).toBe("'/session/coverage/tests.lcov'");
     expect(shellQuoted("/session/it's/tests.lcov")).toBeNull();
     expect(shellQuoted("/session/$(id)/tests.lcov")).toBeNull();
   });
 
   it("abstains when the flags it was handed do not leave it holding the isolation setting", () => {
-    // The confirmation reads the command back rather than trusting that it was built right, so
+    // The confirmation reads the argv back rather than trusting that it was built right, so
     // an arm that forgot to ask for process isolation measures nothing instead of measuring
     // under whatever the project would have got.
     expect(harnessControlledNodeTest("node --test", ["--test-reporter=lcov"])).toBeNull();

@@ -12,6 +12,12 @@ function commandOf(gates: readonly GateDefinition[], id: string): string | null 
   return gate?.source.kind === "command" ? gate.source.command : null;
 }
 
+/** What the gate actually spawns, as opposed to how the ledger renders it for a reader. */
+function argvOf(gates: readonly GateDefinition[], id: string): readonly string[] | null {
+  const gate = gates.find((candidate) => candidate.id === id);
+  return gate?.source.kind === "command" ? (gate.source.argv ?? null) : null;
+}
+
 describe("project type detection", () => {
   it("detects a node project and the scripts its manifest declares", async () => {
     const detection = await detectProject(
@@ -122,11 +128,32 @@ describe("assembling the default gate set", () => {
       { coverageArtifactDirectory: "/session/coverage" },
     );
 
-    expect(commandOf(gates, "tests")).toBe(
-      "node --test --experimental-test-coverage --test-isolation=process --test-reporter=tap " +
-        "--test-reporter-destination=stdout --test-reporter=lcov " +
-        "--test-reporter-destination='/session/coverage/tests.lcov' ./test/*.mjs",
+    // What runs is the vector, spawned with no shell in between. The command string beside it
+    // is its rendering, which is what the ledger and the screen show and what nothing reads.
+    expect(argvOf(gates, "tests")).toEqual([
+      "node",
+      "--test",
+      "--experimental-test-coverage",
+      "--test-isolation=process",
+      "--test-reporter=tap",
+      "--test-reporter-destination=stdout",
+      "--test-reporter=lcov",
+      "--test-reporter-destination=/session/coverage/tests.lcov",
+      "./test/*.mjs",
+    ]);
+    expect(commandOf(gates, "tests")).toBe(argvOf(gates, "tests")?.join(" "));
+  });
+
+  it("spawns nothing of its own for a gate it only declared a command for", async () => {
+    const gates = assembleGates(
+      await detectProject(
+        reader({ "package.json": JSON.stringify({ scripts: { lint: "biome check" } }) }),
+      ),
+      { coverageArtifactDirectory: "/session/coverage" },
     );
+
+    expect(argvOf(gates, "lint")).toBeNull();
+    expect(commandOf(gates, "lint")).toBe("npm run --silent lint");
   });
 
   it("runs the declared script and measures nothing when no report path was given", async () => {

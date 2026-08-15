@@ -53,12 +53,19 @@ type GateInspection = (context: GateContext) => Promise<GateObservation>;
 type GateSource =
   | {
       readonly kind: "command";
+      /** How the run reads to a person and to the ledger. Never what a shell is handed. */
       readonly command: string;
+      /**
+       * The argument vector the harness built and spawns itself, with no shell between it and
+       * the process. Present only on a run the harness vouched for whole; absent means the
+       * project's own declared command, which a shell reads and no artifact is asked of.
+       */
+      readonly argv?: readonly string[];
       readonly timeoutMs?: number;
       /**
-       * Absolute path this command's runner was told to write its coverage report to. The
-       * harness reads that file and nothing the command printed, so the number it ends up
-       * with is one the runner authored rather than one the tests could have.
+       * Absolute path this run's runner was told to write its coverage report to. The harness
+       * reads that file and nothing the command printed, so the number it ends up with is one
+       * the runner authored rather than one the tests could have.
        */
       readonly coverageArtifact?: string;
     }
@@ -84,7 +91,14 @@ export interface CommandOptions {
 
 /** Injected so the engine's tests never depend on a real shell. */
 export interface GateCommandRunner {
+  /** A command the project declared, read by a shell, because that is what it is. */
   run(command: string, options: CommandOptions): Promise<GateObservation>;
+  /**
+   * A vector the harness built, spawned directly under an environment the harness built. No
+   * shell re-reads the arguments and no inherited name decides what the process loads, which
+   * is what makes an artifact this run writes worth reading.
+   */
+  runVouched(argv: readonly string[], options: CommandOptions): Promise<GateObservation>;
 }
 
 export const defaultGateTimeoutMs = 300_000;

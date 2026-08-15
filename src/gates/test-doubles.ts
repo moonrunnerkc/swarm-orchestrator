@@ -93,23 +93,32 @@ interface StubCommandRunner extends GateCommandRunner {
   readonly commands: readonly string[];
 }
 
+/**
+ * Both ways in answer from one table, keyed by the run as a reader would write it. A vouched
+ * vector is recorded joined, which is a rendering and not the vector: a test that cares which
+ * arguments were spawned should assert on the gate's own argv rather than on this.
+ */
 export function createStubCommandRunner(
   respond: (command: string) => Partial<GateObservation>,
 ): StubCommandRunner {
   const commands: string[] = [];
+  const answer = (command: string): Promise<GateObservation> => {
+    commands.push(command);
+    const response = respond(command);
+    return Promise.resolve({
+      exitCode: response.exitCode ?? 0,
+      stdout: response.stdout ?? "",
+      stderr: response.stderr ?? "",
+      durationMs: response.durationMs ?? 1,
+      unavailable: response.unavailable ?? null,
+    });
+  };
+
   return {
     commands,
-    run(command: string, _options: CommandOptions): Promise<GateObservation> {
-      commands.push(command);
-      const response = respond(command);
-      return Promise.resolve({
-        exitCode: response.exitCode ?? 0,
-        stdout: response.stdout ?? "",
-        stderr: response.stderr ?? "",
-        durationMs: response.durationMs ?? 1,
-        unavailable: response.unavailable ?? null,
-      });
-    },
+    run: (command: string, _options: CommandOptions): Promise<GateObservation> => answer(command),
+    runVouched: (argv: readonly string[], _options: CommandOptions): Promise<GateObservation> =>
+      answer(argv.join(" ")),
   };
 }
 
