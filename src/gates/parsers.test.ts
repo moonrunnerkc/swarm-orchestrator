@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { GateObservation } from "./gate-definition.ts";
 import {
   exitCodeParser,
+  fileLineHits,
   inspectionParser,
-  matchCoverageFile,
-  parseUncoveredLines,
+  parseLineHits,
   testOutputParser,
   vitestTestParser,
 } from "./parsers.ts";
@@ -119,21 +119,27 @@ describe("reading a coverage report", () => {
     "end_of_record",
   ];
 
-  it("takes the uncovered lines out of an lcov report, which is what the harness asks for", () => {
-    const uncovered = parseUncoveredLines(
+  it("takes the hit count of every reported line out of an lcov report", () => {
+    const hits = parseLineHits(
       [...mathSection, "SF:/build/src/util.ts", "DA:1,1", "LF:1", "LH:1", "end_of_record"].join(
         "\n",
       ),
     );
 
-    expect([...(uncovered.get("/build/src/math.ts") ?? [])]).toEqual([2, 3]);
-    // A file the report covers completely is present with nothing missed, which is a
-    // measurement. A file it never mentions is absent, which is not.
-    expect([...(uncovered.get("/build/src/util.ts") ?? [])]).toEqual([]);
+    // Per line, hits and all: a line the report named as reached, a line it named as missed,
+    // and a line it did not name are three different things, and only the first is coverage.
+    expect([...(hits.get("/build/src/math.ts") ?? [])]).toEqual([
+      [1, 1],
+      [2, 0],
+      [3, 0],
+      [4, 2],
+    ]);
+    expect(hits.get("/build/src/math.ts")?.get(9)).toBeUndefined();
+    expect([...(hits.get("/build/src/util.ts") ?? [])]).toEqual([[1, 1]]);
   });
 
   it("finds nothing in output that carries no coverage report", () => {
-    expect(parseUncoveredLines(tapOutput).size).toBe(0);
+    expect(parseLineHits(tapOutput).size).toBe(0);
   });
 
   it("reads nothing out of an artifact that is not a complete lcov report", () => {
@@ -153,20 +159,21 @@ describe("reading a coverage report", () => {
       ].join("\n"),
       [...mathSection, "the runner also printed this"].join("\n"),
     ]) {
-      expect({ artifact, files: parseUncoveredLines(artifact).size }).toEqual({
+      expect({ artifact, files: parseLineHits(artifact).size }).toEqual({
         artifact,
         files: 0,
       });
     }
   });
 
-  it("unions every section naming one file, so an empty one cannot shadow a populated one", () => {
-    const uncovered = parseUncoveredLines(
+  it("merges every section that resolves to one file, so an empty one cannot shadow it", () => {
+    const hits = parseLineHits(
       [
         "SF:src/math.ts",
         "DA:1,1",
-        "LF:1",
-        "LH:1",
+        "DA:2,1",
+        "LF:2",
+        "LH:2",
         "end_of_record",
         "SF:/workspace/src/math.ts",
         "DA:2,0",
@@ -176,8 +183,39 @@ describe("reading a coverage report", () => {
         "end_of_record",
       ].join("\n"),
     );
+    const merged = fileLineHits(hits, "src/math.ts", "/workspace");
 
-    expect([...(matchCoverageFile(uncovered, "src/math.ts") ?? [])]).toEqual([2, 3]);
-    expect(matchCoverageFile(uncovered, "src/other.ts")).toBeNull();
+    // The relative spelling and the absolute one resolve to one file, and where they disagree
+    // about a line the lower count stands: one section saying it was never reached is enough.
+    expect([...(merged ?? [])]).toEqual([
+      [1, 1],
+      [2, 0],
+      [3, 0],
+    ]);
+    expect(fileLineHits(hits, "src/other.ts", "/workspace")).toBeNull();
+  });
+
+  it("does not let a section for another file report itself as coverage of this one", () => {
+    const hits = parseLineHits(
+      [
+        "SF:vendor/math.ts",
+        "DA:1,1",
+        "LF:1",
+        "LH:1",
+        "end_of_record",
+        "SF:/opt/other/math.ts",
+        "DA:1,1",
+        "LF:1",
+        "LH:1",
+        "end_of_record",
+      ].join("\n"),
+    );
+
+    // Same basename, same suffix, different file. Nothing here measured src/math.ts.
+    expect(fileLineHits(hits, "src/math.ts", "/workspace")).toBeNull();
+    expect(fileLineHits(hits, "math.ts", "/workspace")).toBeNull();
+    // And with no root to resolve against, the two spellings have to agree by themselves.
+    expect(fileLineHits(hits, "math.ts")).toBeNull();
+    expect(fileLineHits(hits, "vendor/math.ts")).not.toBeNull();
   });
 });

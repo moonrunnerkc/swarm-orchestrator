@@ -1,3 +1,4 @@
+import { normalize, resolve } from "node:path";
 import type { GateObservation, GateParser, GateReading } from "./gate-definition.ts";
 
 /**
@@ -223,10 +224,17 @@ function describeTestRun(counters: TestCounters, exitCode: number): string {
 }
 
 /**
- * The lines an executed run did not reach, per file, read from a report the runner wrote to a
- * path the harness named. Intersecting that with the lines this change added is the only
+ * The lines an executed run reached, per file and per line, read from a report the runner wrote
+ * to a path the harness named. Intersecting that with the lines this change added is the only
  * honest way to say "coverage of changed lines": it is measured from a run, and it is absent
  * when no run measured it.
+ *
+ * Hits per line rather than a set of misses, because the two differ on the lines a report never
+ * mentions. Reading misses made an omission read as coverage: a section that listed two hit
+ * lines of a nine-line file and declared totals agreeing with those two lines was complete by
+ * every structural check and reported nothing missed, so all nine changed lines read as
+ * covered. A line the report does not name was not measured by that run, and the honest
+ * reading of an unmeasured line is uncovered, not covered.
  *
  * The artifact is a complete lcov report or it is nothing. There used to be a second shape
  * here, node's printed table, and carrying it made every artifact that is not lcov read like
@@ -236,7 +244,7 @@ function describeTestRun(counters: TestCounters, exitCode: number): string {
  * that fails the check yields nothing, exactly as a coverage-free project does. Not measured
  * is a verdict; 100% is a claim.
  */
-export function parseUncoveredLines(text: string): ReadonlyMap<string, ReadonlySet<number>> {
+export function parseLineHits(text: string): ReadonlyMap<string, ReadonlyMap<number, number>> {
   return parseCompleteLcov(text) ?? new Map();
 }
 
@@ -250,7 +258,7 @@ const lcovRecordLine = /^(?:TN|SF|VER|FN|FNDA|FNF|FNH|BRDA|BRF|BRH|DA|LF|LH):/;
  */
 interface LcovSection {
   readonly file: string;
-  readonly uncovered: Set<number>;
+  readonly hits: Map<number, number>;
   measured: number;
   reached: number;
   found: number | null;
@@ -264,8 +272,8 @@ interface LcovSection {
  * not match the lines beside them, a line no lcov producer writes, or a report with no
  * complete section in it. Null is what the caller renders as not measured.
  */
-function parseCompleteLcov(text: string): ReadonlyMap<string, ReadonlySet<number>> | null {
-  const uncovered = new Map<string, Set<number>>();
+function parseCompleteLcov(text: string): ReadonlyMap<string, ReadonlyMap<number, number>> | null {
+  const hits = new Map<string, Map<number, number>>();
   let section: LcovSection | null = null;
   let complete = 0;
 
@@ -279,11 +287,13 @@ function parseCompleteLcov(text: string): ReadonlyMap<string, ReadonlySet<number
       if (section === null || !sectionIsComplete(section)) {
         return null;
       }
-      const merged = uncovered.get(section.file) ?? new Set<number>();
-      for (const missed of section.uncovered) {
-        merged.add(missed);
+      const merged = hits.get(section.file) ?? new Map<number, number>();
+      for (const [at, count] of section.hits) {
+        // Two sections naming one file are one file's measurement, and a line one of them says
+        // was never reached was never reached: the lower count is the one the run supports.
+        merged.set(at, Math.min(merged.get(at) ?? count, count));
       }
-      uncovered.set(section.file, merged);
+      hits.set(section.file, merged);
       complete += 1;
       section = null;
       continue;
@@ -299,7 +309,7 @@ function parseCompleteLcov(text: string): ReadonlyMap<string, ReadonlySet<number
       }
       section = {
         file,
-        uncovered: new Set<number>(),
+        hits: new Map<number, number>(),
         measured: 0,
         reached: 0,
         found: null,
@@ -318,10 +328,10 @@ function parseCompleteLcov(text: string): ReadonlyMap<string, ReadonlySet<number
 
     const counts = /^DA:(\d+),(\d+)/.exec(line);
     if (counts?.[1] !== undefined && counts[2] !== undefined) {
+      const count = Number(counts[2]);
       section.measured += 1;
-      if (Number(counts[2]) === 0) {
-        section.uncovered.add(Number(counts[1]));
-      } else {
+      section.hits.set(Number(counts[1]), count);
+      if (count > 0) {
         section.reached += 1;
       }
       continue;
@@ -337,7 +347,7 @@ function parseCompleteLcov(text: string): ReadonlyMap<string, ReadonlySet<number
     }
   }
 
-  return section === null && complete > 0 ? uncovered : null;
+  return section === null && complete > 0 ? hits : null;
 }
 
 function sectionIsComplete(section: LcovSection): boolean {
@@ -347,38 +357,53 @@ function sectionIsComplete(section: LcovSection): boolean {
 }
 
 /**
- * A coverage report names files however the runner saw them, so match on a path suffix
- * rather than demanding the two spellings agree.
+ * What a report says about one file, per line, or null where no section names that file. Null
+ * is not zero coverage: it is a file this run did not measure, which the caller leaves out of
+ * the ratio rather than counting as missed.
  *
- * Every matching row counts, not the first one found. Stopping at an exact-path hit let an
- * empty row shadow a populated one under another spelling, and an empty row reads as "every
- * changed line was covered": the two spellings describe one file, so the honest reading of
- * them is the union of the lines they say were missed.
+ * The match is on the resolved path and nothing looser. A suffix match was a hole with two
+ * framings in one pass: a complete, fully-hit section for `vendor/clamp.mjs` read as coverage
+ * of the changed `clamp.mjs`, and so did one for `/opt/other/clamp.mjs`. A report names files
+ * however the runner saw them, which is what the workspace root is for: a relative name
+ * resolves against it, an absolute one is already resolved, and two spellings of one file still
+ * merge because they resolve to one path. Two files that merely end alike do not, whatever
+ * their basenames say.
+ *
+ * Every matching section counts, not the first one found. Stopping at the first let a section
+ * with nothing to say shadow one that had misses to report.
  */
-export function matchCoverageFile(
-  uncovered: ReadonlyMap<string, ReadonlySet<number>>,
+export function fileLineHits(
+  hits: ReadonlyMap<string, ReadonlyMap<number, number>>,
   path: string,
-): ReadonlySet<number> | null {
-  const missed = new Set<number>();
+  workspaceRoot?: string,
+): ReadonlyMap<number, number> | null {
+  const merged = new Map<number, number>();
+  const wanted = resolvedPath(path, workspaceRoot);
   let reported = false;
 
-  for (const [candidate, lines] of uncovered) {
-    if (!namesSameFile(candidate, path)) {
+  for (const [candidate, lines] of hits) {
+    if (resolvedPath(candidate, workspaceRoot) !== wanted) {
       continue;
     }
     reported = true;
-    for (const line of lines) {
-      missed.add(line);
+    for (const [at, count] of lines) {
+      merged.set(at, Math.min(merged.get(at) ?? count, count));
     }
   }
 
-  return reported ? missed : null;
+  return reported ? merged : null;
 }
 
-function namesSameFile(reported: string, path: string): boolean {
-  const left = reported.replaceAll("\\", "/");
-  const right = path.replaceAll("\\", "/");
-  return left === right || left.endsWith(`/${right}`) || right.endsWith(`/${left}`);
+/**
+ * One spelling of one path. Without a workspace root there is nothing to resolve a relative
+ * name against, so the two spellings have to agree by themselves: inventing a root to make
+ * them agree is the suffix match again, under another name.
+ */
+function resolvedPath(path: string, workspaceRoot?: string): string {
+  const slashed = path.replaceAll("\\", "/");
+  return workspaceRoot === undefined
+    ? normalize(slashed)
+    : resolve(workspaceRoot.replaceAll("\\", "/"), slashed);
 }
 
 /**

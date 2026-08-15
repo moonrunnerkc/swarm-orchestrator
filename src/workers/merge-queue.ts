@@ -134,6 +134,7 @@ export async function runMergeQueue(options: MergeQueueOptions): Promise<MergeQu
     return takeMeasureSnapshot({
       changes: forContext.changes,
       probe: forContext.probe,
+      workspaceRoot: forContext.workspaceRoot,
       trackedTestFiles,
       gateMeasures: cycle.measures,
       coverageReports: cycle.coverageReports,

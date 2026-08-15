@@ -1224,10 +1224,73 @@ describe("16. hand the coverage arm an artifact that is not a measurement", () =
     }
   });
 
+  it("reads a section that lists only its hit lines as covering only those lines", async () => {
+    // Complete by every structural check: the DA lines it carries agree with the LF and LH it
+    // declares, and the padding around them is what a real producer writes. What it leaves out
+    // is the seven changed lines the run never reached, and leaving a line out is not coverage
+    // of it.
+    const measured = await takeMeasureSnapshot({
+      changes: await changed.changes(),
+      probe: changed,
+      workspaceRoot: "/workspace",
+      trackedTestFiles: [],
+      gateMeasures: {},
+      coverageReports: [
+        [
+          "TN:padded",
+          "SF:clamp.mjs",
+          "FN:1,clamp",
+          "FNDA:1,clamp",
+          "FNF:1",
+          "FNH:1",
+          "BRDA:2,0,0,1",
+          "BRF:1",
+          "BRH:1",
+          "DA:1,1",
+          "DA:8,1",
+          "LF:2",
+          "LH:2",
+          "end_of_record",
+          "",
+        ].join("\n"),
+      ],
+    });
+
+    expect(measured.changedLinesMeasured).toBe(9);
+    expect(measured.changedLinesCovered).toBe(2);
+  });
+
+  it("reads a complete section for another file as no measurement of this one", async () => {
+    for (const named of ["vendor/clamp.mjs", "/opt/other/clamp.mjs", "src/vendor/clamp.mjs"]) {
+      const measured = await takeMeasureSnapshot({
+        changes: await changed.changes(),
+        probe: changed,
+        workspaceRoot: "/workspace",
+        trackedTestFiles: [],
+        gateMeasures: {},
+        // Every line hit, every total agreeing, and the wrong file. A shared basename is not a
+        // shared file, and neither is a shared suffix.
+        coverageReports: [
+          [
+            `SF:${named}`,
+            ...Array.from({ length: 9 }, (_unused, index) => `DA:${index + 1},1`),
+            "LF:9",
+            "LH:9",
+            "end_of_record",
+            "",
+          ].join("\n"),
+        ],
+      });
+
+      expect({ named, coverage: measured.changedLineCoverage }).toEqual({ named, coverage: null });
+    }
+  });
+
   it("still reads the real number out of a complete report", async () => {
     const measured = await takeMeasureSnapshot({
       changes: await changed.changes(),
       probe: changed,
+      workspaceRoot: "/workspace",
       trackedTestFiles: [],
       gateMeasures: {},
       coverageReports: [genuineLcov],
