@@ -462,53 +462,22 @@ export function parseTapOutcomes(text: string): TestOutcomes | null {
 }
 
 /**
- * Node's spec reporter, which is what a project's own test script prints when the harness was
- * not able to ask for anything better. Every result line carries the duration node measured,
- * and that is required here rather than optional: a line without one was written by something
- * other than the reporter, which is how a test printing a fail marker for a sibling used to
- * hand itself that sibling's failure.
+ * There is deliberately no reader for printed reporter output here any more.
  *
- * Reading it at all is a fallback. A test can still print a well-formed result line for
- * another test, so the honest ranking is: the artifact first, this second, and a name reported
- * two ways attributed to neither.
+ * There was one, scoped as a fallback for runners the harness could not ask for a machine
+ * result, and it attributed failures from lines in captured output: a pytest `FAILED` line, a
+ * pytest -q footer, a go `--- FAIL:` line, and a TAP document printed into a spec run, which
+ * also flipped the reader's choice of format. Each of those is a line a test can print for the
+ * test beside it, and each bought that sibling a base-source failure it never had, which is
+ * what buys a deletion past the ratchet. Tightening the patterns was tried; the next spelling
+ * arrived in the next pass.
+ *
+ * The rule instead: attribution comes from the TAP artifact the harness asked node's own runner
+ * to write, at a path the harness named, and from nothing else. Where no such artifact exists,
+ * nothing is attributed, no test is cleared, and the ratchet is stricter rather than looser.
+ * That costs the per-test exemption on projects whose runner this harness cannot ask, which
+ * build-guide section 7.1 names as a boundary rather than implying away.
  */
-const specResult = /^\s*([✔✖])\s+(.+?)\s+\(\d+(?:\.\d+)?ms\)\s*$/;
-const pytestResult = /^(FAILED|PASSED)\s+\S*?::([\w.]+)/;
-const goResult = /^\s*---\s+(FAIL|PASS):\s+(\w+)/;
-
-/**
- * One run, one reporter. Reading every format out of one text let a TAP line printed into a
- * spec run stand as a result beside the spec lines around it, so the format is decided once
- * from the run as a whole and only that format's lines are read.
- */
-export function parseTestOutcomes(text: string): TestOutcomes | null {
-  const asTap = parseTapOutcomes(text);
-  if (asTap !== null || /^TAP version \d+/m.test(text)) {
-    return asTap;
-  }
-
-  const passed: string[] = [];
-  const failed: string[] = [];
-  const [pattern, failingMarker] = reporterOf(text);
-
-  for (const raw of text.split("\n")) {
-    const found = pattern.exec(raw);
-    const name = found?.[2];
-    if (found?.[1] === undefined || name === undefined) {
-      continue;
-    }
-    recordOutcome(name, found[1] === failingMarker, passed, failed);
-  }
-
-  return attributable(passed, failed);
-}
-
-function reporterOf(text: string): readonly [RegExp, string] {
-  if (/^\s*[✔✖]\s/m.test(text)) {
-    return [specResult, "✖"];
-  }
-  return /^\s*---\s+(?:FAIL|PASS):/m.test(text) ? [goResult, "FAIL"] : [pytestResult, "FAILED"];
-}
 
 function recordOutcome(name: string, isFailure: boolean, passed: string[], failed: string[]): void {
   // A TAP directive rides on the end of the name, and a skipped test is neither.

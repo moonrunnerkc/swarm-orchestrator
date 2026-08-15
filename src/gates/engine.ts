@@ -31,8 +31,15 @@ interface GatesEngineOptions {
   readonly cap?: number;
   readonly budgets?: DiffBudget;
   readonly gateOptions?: GateSetOptions;
-  /** Overrides how one test file is run for the escape hatch's two controls. */
-  readonly singleFileTestCommand?: (testFile: string) => string | null;
+  /**
+   * Overrides how one test file is run for the escape hatch's two controls. The second
+   * argument is where this run is asked to write its own TAP result; an override that ignores
+   * it gets no attribution, so its runs clear no individual test.
+   */
+  readonly singleFileTestCommand?: (
+    testFile: string,
+    outcomeArtifact: string | null,
+  ) => string | null;
 }
 
 export interface GatesEngineRun {
@@ -82,7 +89,7 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
       workspace,
       commands,
       singleFileCommand: (testFile, outcomeArtifact) =>
-        options.singleFileTestCommand?.(testFile) ??
+        options.singleFileTestCommand?.(testFile, outcomeArtifact) ??
         singleFileTestCommand(detection, testFile, outcomeArtifact),
       // Beside the coverage reports, and outside the workspace for the same reason: a result
       // the tests can reach is a result they can write.

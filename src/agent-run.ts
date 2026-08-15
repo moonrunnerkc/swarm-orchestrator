@@ -60,7 +60,10 @@ export interface AgentTaskOptions {
   readonly gateOptions?: GateSetOptions;
   /** Replaces the engine's built-in size budget, from swarm.toml. */
   readonly diffBudget?: DiffBudget;
-  readonly singleFileTestCommand?: (testFile: string) => string | null;
+  readonly singleFileTestCommand?: (
+    testFile: string,
+    outcomeArtifact: string | null,
+  ) => string | null;
 }
 
 interface AgentTaskResult {
