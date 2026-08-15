@@ -234,6 +234,23 @@ describe("which tests a control run failed", () => {
     }
   });
 
+  it("does not read a failing subtest's name as the skipped sibling that shares it", async () => {
+    // Node writes `not ok 1 - innocentNew` for the subtest, indented under its suite. The
+    // top-level innocentNew is skipped, so it never ran, and a name a run did not settle
+    // cannot be the base-source failure that pays for a deleted test.
+    const run = await runControl(
+      [
+        'test.skip("sibling", () => {});',
+        'test("suite", async (t) => {',
+        '  await t.test("sibling", () => { assert.equal(add(1, 1), 3); });',
+        "});",
+      ].join("\n"),
+    );
+
+    expect(run.failedTests).not.toContain("sibling");
+    expect(run.failedTests).toContain("multiplies");
+  });
+
   it("attributes nothing at all where it could not ask for a result of its own", async () => {
     // The project names a reporter of its own, so the harness will not vouch for the run and
     // asks it for no artifact. The same printed forgeries are in the output, and the honest

@@ -422,7 +422,8 @@ export interface TestOutcomes {
  * top-level points do not match its own plan is not read at all.
  *
  * Null wherever the text is not a TAP run or does not agree with itself. Names come from every
- * point, at any depth, because a suite reports its own subtests indented under it.
+ * point, at any depth, because a suite reports its own subtests indented under it, and a name
+ * the run reported as skipped is taken back out of both lists at the end.
  */
 export function parseTapOutcomes(text: string): TestOutcomes | null {
   if (!/^TAP version \d+/m.test(text)) {
@@ -431,6 +432,7 @@ export function parseTapOutcomes(text: string): TestOutcomes | null {
 
   const passed: string[] = [];
   const failed: string[] = [];
+  const skipped = new Set<string>();
   let plan: number | null = null;
   let topLevelPoints = 0;
 
@@ -451,13 +453,13 @@ export function parseTapOutcomes(text: string): TestOutcomes | null {
     if (point[1] === "") {
       topLevelPoints += 1;
     }
-    recordOutcome(point[3], point[2] === "not ok", passed, failed);
+    recordOutcome(point[3], point[2] === "not ok", passed, failed, skipped);
   }
 
   if (plan === null || plan !== topLevelPoints) {
     return null;
   }
-  return attributable(passed, failed);
+  return attributable(passed, failed, skipped);
 }
 
 /**
@@ -478,10 +480,18 @@ export function parseTapOutcomes(text: string): TestOutcomes | null {
  * build-guide section 7.1 names as a boundary rather than implying away.
  */
 
-function recordOutcome(name: string, isFailure: boolean, passed: string[], failed: string[]): void {
-  // A TAP directive rides on the end of the name, and a skipped test is neither.
+function recordOutcome(
+  name: string,
+  isFailure: boolean,
+  passed: string[],
+  failed: string[],
+  skipped: Set<string>,
+): void {
+  // A TAP directive rides on the end of the name, and a skipped test is neither passed nor
+  // failed: it did not run, so the run has nothing to say about that name.
   const [subject, directive] = name.split(/\s+#\s+/, 2);
   if (directive !== undefined && /^(skip|todo)\b/i.test(directive)) {
+    skipped.add(subject ?? name);
     return;
   }
   (isFailure ? failed : passed).push(subject ?? name);
@@ -492,12 +502,23 @@ function recordOutcome(name: string, isFailure: boolean, passed: string[], faile
  * cannot have a test that passed and failed, so the honest reading of the contradiction is
  * that nothing about that name was measured, and the exemption it might have bought is
  * withheld rather than guessed at.
+ *
+ * A name the run skipped goes the same way, and that is not a refinement of the same idea.
+ * Dropping the skipped point on its own left the name uncontested, so a failing subtest
+ * reusing it supplied the only result point carrying that name and the escape hatch read it as
+ * the top-level test failing on the base source, which is what buys a deleted test. A test that
+ * did not run can be neither a base-source failure nor a cleared specification, in either
+ * direction, so the name leaves both lists.
  */
-function attributable(passed: readonly string[], failed: readonly string[]): TestOutcomes | null {
-  const contested = new Set(passed.filter((name) => failed.includes(name)));
+function attributable(
+  passed: readonly string[],
+  failed: readonly string[],
+  skipped: ReadonlySet<string>,
+): TestOutcomes | null {
+  const unattributable = new Set([...skipped, ...passed.filter((name) => failed.includes(name))]);
   const kept = {
-    passed: passed.filter((name) => !contested.has(name)),
-    failed: failed.filter((name) => !contested.has(name)),
+    passed: passed.filter((name) => !unattributable.has(name)),
+    failed: failed.filter((name) => !unattributable.has(name)),
   };
   return kept.passed.length === 0 && kept.failed.length === 0 ? null : kept;
 }

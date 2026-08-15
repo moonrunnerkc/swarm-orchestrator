@@ -5,6 +5,7 @@ import {
   fileLineHits,
   inspectionParser,
   parseLineHits,
+  parseTapOutcomes,
   testOutputParser,
   vitestTestParser,
 } from "./parsers.ts";
@@ -254,5 +255,70 @@ describe("reading a coverage report", () => {
     // And with no root to resolve against, the two spellings have to agree by themselves.
     expect(fileLineHits(sections, "math.ts")).toBeNull();
     expect(fileLineHits(sections, "vendor/math.ts")).not.toBeNull();
+  });
+});
+
+describe("which tests a run attributed", () => {
+  it("reads the run's own result points, at any depth a suite reports them", () => {
+    expect(
+      parseTapOutcomes(
+        [
+          "TAP version 13",
+          "1..2",
+          "ok 1 - adds",
+          "not ok 2 - suite",
+          "    not ok 1 - inner",
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual({ passed: ["adds"], failed: ["suite", "inner"] });
+  });
+
+  /**
+   * A test the runner marked skipped did not run, so the run says nothing about that name
+   * either way. Dropping the skipped point alone left the name uncontested, and a subtest
+   * reusing it supplied the only result point carrying it: node writes `not ok 1 - innocentNew`
+   * for the subtest, and the escape hatch read that as the top-level innocentNew failing on the
+   * base source, which is what pays for a deletion.
+   */
+  it("attributes nothing to a name the run reported as skipped", () => {
+    const stolen = parseTapOutcomes(
+      [
+        "TAP version 13",
+        "1..2",
+        "ok 1 - innocentNew # SKIP",
+        "ok 2 - attacker",
+        "    not ok 1 - innocentNew",
+        "",
+      ].join("\n"),
+    );
+
+    expect(stolen?.failed ?? []).not.toContain("innocentNew");
+    expect(stolen?.passed ?? []).not.toContain("innocentNew");
+    expect(stolen?.passed).toEqual(["attacker"]);
+  });
+
+  it("holds the same way round, so a passing subtest cannot claim a skipped name either", () => {
+    const outcomes = parseTapOutcomes(
+      [
+        "TAP version 13",
+        "1..2",
+        "ok 1 - innocentNew # SKIP",
+        "not ok 2 - attacker",
+        "    ok 1 - innocentNew",
+        "",
+      ].join("\n"),
+    );
+
+    expect(outcomes?.passed ?? []).not.toContain("innocentNew");
+    expect(outcomes?.failed).toEqual(["attacker"]);
+  });
+
+  it("still names a test that really failed beside a skipped one", () => {
+    expect(
+      parseTapOutcomes(
+        ["TAP version 13", "1..2", "ok 1 - later # SKIP", "not ok 2 - multiplies", ""].join("\n"),
+      ),
+    ).toEqual({ passed: [], failed: ["multiplies"] });
   });
 });
