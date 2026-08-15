@@ -1,4 +1,5 @@
-import { dirname, join } from "node:path";
+import { createHash } from "node:crypto";
+import { basename, dirname, join } from "node:path";
 import { defaultGateTimeoutMs, type GateCommandRunner } from "./gate-definition.ts";
 import { type GitWorkspaceOptions, revertSourceToBase } from "./git-workspace.ts";
 import { isTestFile } from "./measures.ts";
@@ -47,9 +48,19 @@ interface BaseControlOptions {
   readonly timeoutMs?: number;
 }
 
-/** One control run's result path, per test file, so two files cannot read each other's. */
+/**
+ * One control run's result path, per test file, so two files cannot read each other's.
+ *
+ * The name carries a digest of the whole path because sanitizing the path into a filename is
+ * not injective: `foo/bar.test.ts` and `foo-bar.test.ts` both sanitized to `foo-bar.test.ts`,
+ * so one file's control run read the other's result, and a test that failed on base in one file
+ * cleared a deletion in the other. The readable half is kept for whoever opens the session
+ * store; the digest is what makes two files two paths.
+ */
 export function controlOutcomePath(directory: string, testFile: string): string {
-  return join(directory, `${testFile.replaceAll(/[^A-Za-z0-9._-]+/g, "-")}.tap`);
+  const readable = basename(testFile).replaceAll(/[^A-Za-z0-9._-]+/g, "-");
+  const digest = createHash("sha256").update(testFile).digest("hex").slice(0, 16);
+  return join(directory, `${readable}-${digest}.tap`);
 }
 
 export function createBaseControlRunner(options: BaseControlOptions): BaseControlRunner {
