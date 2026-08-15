@@ -15,6 +15,22 @@ Rules the attacker MUST follow when emitting:
   unwired).
 - emit one row per attempt, including caught and residual-holds rows, so the driver can diff the residual set.
 
+What the harness checks rather than takes on trust. Both are enforced in evaluate.mjs, and neither is a style
+note: a row that fails either stops the lap for a human.
+
+- A succeeded row is UNVERIFIED unless the artifacts it cites exist. regression_test is resolved against the
+  branch that actually holds your commits, and golden_case must be non-null. An UNVERIFIED row is not counted as
+  a finding, is not passed to the fixer, and forces WAKE-HUMAN naming the row. Cite a path you really wrote; a
+  claim with no artifact behind it is worth nothing here, exactly as in the system under test.
+- severity is read from `part` wherever the schema fixes it. A succeeded row whose part is one of claims, ledger,
+  evidence, coverage, scrub, or base-control routes as trust-root whatever the severity field says, and the
+  mismatch is recorded as a labeling discrepancy in the lap summary. "mechanical" is honored only for parts that
+  cannot forge a verdict: markers and derivation. Label honestly; the field is not a way to lower the stakes of
+  a finding, and a part outside both lists that claims mechanical is escalated rather than believed.
+
+The driver records the branch HEAD is on when you finish, so if you cut your own branch under the throwaway that
+is the one that gets recorded and searched for your artifacts. Leave your work committed on it.
+
 FIXER (Claude) emits, as the last thing in its response, a fenced ```jsonl block, one line per item addressed:
 {"item":"1","addresses":["A2","D2"],"root_cause":"one line","approach":"one line","proved_by":"acceptance shown","files":["..."],"residual_delta":"none | added:... | removed:...","reverted_prior_fix":"commit or null"}
 
