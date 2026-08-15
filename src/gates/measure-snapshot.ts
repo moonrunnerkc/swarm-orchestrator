@@ -114,20 +114,15 @@ interface CoverageResult {
  * of nine reported nine covered. What a report does not say is not a measurement.
  */
 function changedLineCoverage(input: SnapshotInput): CoverageResult | null {
-  const hits = new Map<string, Map<number, number>>();
+  // Kept as the sections they were written as, never folded by file. Two sections describing
+  // one file are two accounts of it, and adding them together is how one line's measurement
+  // used to pay for eight lines nothing measured.
+  //
   // Required in the type so every caller in this package has to decide, and tolerated when
   // absent so a caller that hands in no report abstains rather than aborting the run: an arm
   // with nothing to read is not measured, which is a verdict, not an error.
-  for (const report of input.coverageReports ?? []) {
-    for (const [file, lines] of parseLineHits(report)) {
-      const merged = hits.get(file) ?? new Map<number, number>();
-      for (const [at, count] of lines) {
-        merged.set(at, Math.min(merged.get(at) ?? count, count));
-      }
-      hits.set(file, merged);
-    }
-  }
-  if (hits.size === 0) {
+  const sections = (input.coverageReports ?? []).flatMap((report) => parseLineHits(report));
+  if (sections.length === 0) {
     return null;
   }
 
@@ -139,7 +134,7 @@ function changedLineCoverage(input: SnapshotInput): CoverageResult | null {
     if (!isTestReachableSource(file.path)) {
       continue;
     }
-    const lineHits = fileLineHits(hits, file.path, input.workspaceRoot);
+    const lineHits = fileLineHits(sections, file.path, input.workspaceRoot);
     if (lineHits === null) {
       continue;
     }
