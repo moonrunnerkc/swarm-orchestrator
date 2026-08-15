@@ -251,6 +251,36 @@ describe("which tests a control run failed", () => {
     expect(run.failedTests).toContain("multiplies");
   });
 
+  it("attributes nothing where a quoted hook would have written the result", async () => {
+    // Declared as a file pattern, unquoted into a real --require by any shell that reads the
+    // string, and then loaded into the process holding the destination in its argv. There is
+    // no shell and there is no vouched vector either, so the file runs through the fallback,
+    // which is asked for no result, and the forgery has nothing to be read from.
+    await writeFile(
+      join(workspace, "hook.cjs"),
+      [
+        'const { writeFileSync } = require("node:fs");',
+        "process.on('exit', () => {",
+        "  for (const token of [...process.execArgv, ...process.argv]) {",
+        "    const found = String(token).match(/(\\/[^\\s']+\\.tap)/);",
+        "    if (found) {",
+        "      writeFileSync(found[1], 'TAP version 13\\n1..2\\nnot ok 1 - sibling\\nok 2 - multiplies\\n');",
+        "    }",
+        "  }",
+        "});",
+        "",
+      ].join("\n"),
+    );
+
+    const run = await runControl(
+      'test("sibling", () => { assert.equal(add(1, 1), 2); });',
+      "node --test '--require=./hook.cjs'",
+    );
+
+    expect(run.outcome).toBe("failed");
+    expect(run.failedTests).toBeNull();
+  });
+
   it("attributes nothing at all where it could not ask for a result of its own", async () => {
     // The project names a reporter of its own, so the harness will not vouch for the run and
     // asks it for no artifact. The same printed forgeries are in the output, and the honest
