@@ -1,5 +1,6 @@
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { harnessControlledNodeTest, processIsolation, shellQuoted } from "./node-test-command.ts";
 
 /**
  * Where changed-line coverage comes from. Reading it out of a gate's stdout put the
@@ -15,11 +16,12 @@ import { dirname, join } from "node:path";
  * does on the terminal. An lcov report carries coverage records and nothing else, so there
  * is no line in it for a test to write.
  *
- * That holds only while the tests are somewhere else. Under `--test-isolation=none` they run
- * in the process that hosts the reporter, so the destination path is in their own argv and a
- * test can simply write the file the harness is about to read. The rewritten command forces
- * process isolation for that reason, and a command that cannot be rewritten is not asked for
- * a report at all.
+ * That holds only while the harness controls the run that writes it. Under a shared process
+ * the destination path is in the tests' own argv and a test can write the file the harness is
+ * about to read; a loader hook in the parent can write it whatever the isolation setting says.
+ * Which of those a declared command would do is not decided here by rewriting the command into
+ * safety, it is decided by node-test-command.ts, which recognizes an invocation completely or
+ * not at all. Not at all means no report is asked for, and the arm is not measured.
  */
 
 /** Reads back what a gate command was told to write, and clears it first. */
@@ -57,55 +59,32 @@ export function coverageArtifactPath(directory: string, gateId: string): string 
 }
 
 /**
- * A node test command rewritten to write an lcov report where the harness can read it, or
- * null when this is not a command that can be asked for one. Null is the honest answer: the
- * arm then abstains by name rather than falling back to whatever the run printed.
+ * The command that measures this gate, or null to abstain. Null is the honest answer wherever
+ * the harness cannot vouch for the invocation in full: the arm then reports not measured by
+ * name rather than reporting a number it cannot stand behind.
  *
- * The flags go directly after `--test` because node rejects them once the file patterns have
- * started and refuses them in NODE_OPTIONS. The stdout reporter is restated because naming
- * any reporter replaces the default one, and the test counters the ratchet reads still have
- * to arrive on stdout.
+ * The stdout reporter is restated because naming any reporter replaces the default one, and
+ * the test counters the ratchet reads still have to arrive on stdout.
  *
- * Process isolation is forced, and that is a precondition rather than a preference. Under
- * `--test-isolation=none` the tests share the process that hosts the reporter, so the
- * destination path sits in the test's own argv and a test can write the report the harness
- * is about to read; under process isolation the tests run in children that never see the
- * path. Any isolation setting already in the command is replaced rather than appended to,
- * because node takes the last one it is given, and a command-line flag beats one carried in
- * NODE_OPTIONS, so this one setting covers every place the mode can be declared. Where the
- * mode cannot be forced (any command this function declines to rewrite), no report is asked
- * for and the arm is not measured.
+ * What is deliberately absent is any attempt to talk a declared command into safety. A project
+ * that asks for a shared process, a loader hook, or a reporter of its own is not corrected, it
+ * is left unmeasured, because the correction would have to predict what the shell makes of the
+ * text it is correcting.
  */
 export function coverageReportingCommand(
   body: string | undefined,
   artifactPath: string,
 ): string | null {
-  if (body === undefined || /[|&;]/.test(body)) {
+  const destination = shellQuoted(artifactPath);
+  if (destination === null) {
     return null;
   }
-  // A project that already configured coverage or a reporter is left alone: rewriting it
-  // would change what its own gate command means.
-  if (body.includes("--experimental-test-coverage") || body.includes("--test-reporter")) {
-    return null;
-  }
-  const withoutIsolation = body.replaceAll(/\s--test-isolation(?:=|\s+)[\w-]+/g, "");
-  const runner = /\bnode\b[^\n]*?\s--test(?![\w-])/.exec(withoutIsolation);
-  if (runner === null) {
-    return null;
-  }
-
-  const flags = [
+  return harnessControlledNodeTest(body, [
     "--experimental-test-coverage",
-    "--test-isolation=process",
+    processIsolation,
     "--test-reporter=tap",
     "--test-reporter-destination=stdout",
     "--test-reporter=lcov",
-    `--test-reporter-destination=${quote(artifactPath)}`,
-  ].join(" ");
-  const at = runner.index + runner[0].length;
-  return `${withoutIsolation.slice(0, at)} ${flags}${withoutIsolation.slice(at)}`;
-}
-
-function quote(path: string): string {
-  return `'${path.replaceAll("'", "'\\''")}'`;
+    `--test-reporter-destination=${destination}`,
+  ]);
 }
