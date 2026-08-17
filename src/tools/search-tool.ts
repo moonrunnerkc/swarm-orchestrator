@@ -1,12 +1,40 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { z } from "zod";
+import { type BacktrackingRisk, findBacktrackingRisk } from "./regex-safety.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { defineTool, type ToolDefinition } from "./tool-definition.ts";
 import { resolveInsideWorkspace } from "./workspace-path.ts";
 
 /** Directories a code search should never descend into, regardless of the pattern. */
 const skippedDirectories = new Set([".git", "node_modules", "dist", "coverage"]);
+
+/**
+ * How much of a line a pattern is run against. Refusing ambiguous patterns bounds the
+ * exponential case; what is left is the quadratic one every greedy quantifier has when the
+ * rest of the pattern fails, and that one is bounded by the length of the line rather than
+ * by its shape. Minified and generated files are single lines of any size, so the cap keeps
+ * one of them from stalling the scan.
+ */
+const maxScannedLineLength = 8_000;
+
+/**
+ * The pattern is model output, and it is about to run once per line of the workspace on the
+ * main thread. A match that has started cannot be interrupted, so a pattern that can
+ * backtrack super-linearly is refused before it runs rather than timed out afterwards.
+ */
+class UnsafeSearchPatternError extends Error {
+  constructor(pattern: string, risk: BacktrackingRisk) {
+    super(
+      `"${pattern}" was refused: it ${risk.reason} (in \`${risk.construct}\`). ` +
+        "Search runs the pattern against every line with no way to stop a match once it starts. " +
+        "Rewrite it without the ambiguity: fix the length of the repeated part, make the " +
+        "alternatives disjoint, or narrow the character classes so only one quantifier can " +
+        "match a given character.",
+    );
+    this.name = "UnsafeSearchPatternError";
+  }
+}
 
 const searchInput = z.object({
   pattern: z.string().min(1).describe("JavaScript regular expression to match per line."),
@@ -30,6 +58,11 @@ export function createSearchTool(sandbox: Sandbox): ToolDefinition {
         pattern = new RegExp(input.pattern);
       } catch (cause) {
         throw new Error(`"${input.pattern}" is not a valid regular expression: ${String(cause)}`);
+      }
+
+      const risk = findBacktrackingRisk(input.pattern);
+      if (risk !== null) {
+        throw new UnsafeSearchPatternError(input.pattern, risk);
       }
 
       const matches: string[] = [];
@@ -85,8 +118,10 @@ async function collectMatches(
     const workspacePath = relative(sandbox.workspaceRoot, childPath);
     const lines = content.split("\n");
     for (const [index, line] of lines.entries()) {
-      if (pattern.test(line)) {
-        matches.push(`${workspacePath}:${index + 1}: ${line.trim()}`);
+      const scanned =
+        line.length > maxScannedLineLength ? line.slice(0, maxScannedLineLength) : line;
+      if (pattern.test(scanned)) {
+        matches.push(`${workspacePath}:${index + 1}: ${scanned.trim()}`);
         if (matches.length >= limit) {
           return;
         }
