@@ -15,10 +15,13 @@
  *     alternatives under one quantifier: `\s*\s*$`, `(a|ab)+`, `(\w|\d)+`
  *
  * This is known-shape refusal, not a proof of linear time, and it is conservative in both
- * directions. It refuses patterns that would have run fast, and it does not see ambiguity
- * introduced by a backreference or buried several levels under a quantifier (`((a|ab)y)+`).
- * A pattern the parser below cannot read is refused rather than run, since an unread
- * pattern is one nothing bounds.
+ * directions: it refuses patterns that would have run fast. The gap it does have is a
+ * backreference, whose ambiguity only exists at match time and so cannot be read off the
+ * structure at all; the search tool's line-length cap is what bounds that one. Nesting is
+ * not a gap, at any depth: the walk carries the enclosing quantifier down through groups
+ * and sequences, so `((a|ab)y)+` is refused the same as `(a|ab)+`. A pattern the parser
+ * below cannot read is refused rather than run, since an unread pattern is one nothing
+ * bounds. `regex-safety.test.ts` pins both directions.
  */
 
 /** Why a pattern was refused, phrased so the caller can rewrite it. */
@@ -369,6 +372,11 @@ function probeMatches(atomSource: string): readonly string[] {
   }
   let matched: readonly string[];
   try {
+    // atomSource is one single-character atom the parser above produced, a literal, an
+    // escape or a character class, never a quantifier or a group. Anchored and matched
+    // against one character at a time, it has nothing to backtrack over, so this is the
+    // one non-literal RegExp in the module that cannot be what the module exists to stop.
+    // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
     const atom = new RegExp(`^(?:${atomSource})$`);
     matched = probeAlphabet.filter((probe) => atom.test(probe));
   } catch {

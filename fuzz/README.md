@@ -8,6 +8,13 @@ Run by crossfire through its Jazzer.js engine, and runnable on their own.
 | --- | --- | --- |
 | `adapter-output.fuzz.cjs` | a model's tool call arriving at the chokepoint | invariant 3: one execution path, nothing runs unrecorded, and no tool runs on input its schema rejected |
 | `ledger-chain.fuzz.cjs` | entries reaching the evidence ledger | invariant 2: append-only and self-verifying, and a refused entry leaves the chain where it was |
+| `swarm-toml.fuzz.cjs` | `swarm.toml` reaching the config parser | parsing settles as a config or a `MalformedSwarmTomlError`, and no input reaches `Object.prototype` |
+
+The TOML one earns its place differently from the other two: a scanner alleged prototype
+pollution in `valueAt`, and the refutation on record is a probe someone ran once.
+Jazzer.js's prototype-pollution detector is on by default, so every input re-runs that
+refutation. The detector was confirmed to fire here by injecting a real pollution into the
+build and watching the harness report it.
 
 ## Why there is a build step
 
