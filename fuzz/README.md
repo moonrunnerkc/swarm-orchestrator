@@ -31,11 +31,17 @@ crash still reports its location in the original `.ts`.
 
 ```sh
 npm run fuzz:build
-node_modules/.bin/jazzer fuzz/ledger-chain.fuzz.cjs fuzz/corpus/ledger-chain -- -max_total_time=60
+mkdir -p .swarm/corpus && cp fuzz/corpus/ledger-chain/* .swarm/corpus/
+node_modules/.bin/jazzer fuzz/ledger-chain.fuzz.cjs .swarm/corpus \
+  -- -max_total_time=60 -artifact_prefix=.swarm/
 ```
 
-Exit 77 is a crash, and the input that caused it is written to `crash-<sha1>` in the
-working directory. Add `-artifact_prefix=.swarm/` to keep those out of the repo root.
+Fuzz a copy, not `fuzz/corpus` itself: the fuzzer writes every interesting input it
+finds back into the directory it was given, so pointing it at the seeds buries them in
+a few hundred generated files. crossfire copies the corpus to a temp directory for the
+same reason. `-artifact_prefix` keeps crash files out of the repo root the same way.
+
+Exit 77 is a crash, and the input that caused it lands in `.swarm/crash-<sha1>`.
 
 ## The smoke check
 
