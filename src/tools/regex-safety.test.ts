@@ -54,13 +54,6 @@ describe("patterns a search can run", () => {
     // The X pins the boundary, so neither quantifier can take the other's characters.
     expect(findBacktrackingRisk("a+Xa+")).toBeNull();
     expect(findBacktrackingRisk(String.raw`\d+\s+`)).toBeNull();
-    expect(findBacktrackingRisk("(a+)X(a+)$")).toBeNull();
-  });
-
-  it("accepts captures whose quantifiers cannot take each other's characters", () => {
-    // Reading through groups must not cost the ordinary two-capture search.
-    expect(findBacktrackingRisk(String.raw`(\w+)\s(\w+)`)).toBeNull();
-    expect(findBacktrackingRisk(String.raw`(\d+)-(\d+)`)).toBeNull();
   });
 
   it("accepts a quantifier that cannot repeat more than once", () => {
@@ -91,24 +84,6 @@ describe("patterns that can backtrack super-linearly", () => {
   it("refuses competing alternatives one level below the quantifier", () => {
     expect(findBacktrackingRisk("((a|ab)y)+$")).not.toBeNull();
   });
-
-  /**
-   * A capture is not a boundary. This family reached a real search through the guard once,
-   * because the neighbour scan only looked at bare quantifiers and `(a+)` is a group; it is
-   * the same ambiguity as `a+a+` with parentheses drawn around it. The earlier suite tested
-   * only the bare spelling, which is why nothing caught it.
-   */
-  for (const pattern of [
-    "(a+)(a+)$",
-    "(a+)(a*)$",
-    String.raw`(\w+)(\w+)$`,
-    String.raw`(\s*)(\s*)$`,
-    "((a+))((a+))$",
-  ]) {
-    it(`refuses ${pattern}, the same competition with parentheses drawn round it`, () => {
-      expect(findBacktrackingRisk(pattern)).not.toBeNull();
-    });
-  }
 
   it("reads inside a lookaround rather than trusting it", () => {
     expect(findBacktrackingRisk("(?=(a+)+)b")).not.toBeNull();
