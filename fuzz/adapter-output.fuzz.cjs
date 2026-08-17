@@ -32,6 +32,9 @@ const workspace = mkdtempSync(join(tmpdir(), "swarm-fuzz-workspace-"));
 /** Set by a tool double when it actually runs, which only a valid input may cause. */
 let executed = null;
 
+/** The one path that makes a tool throw, so the chokepoint's failed branch is reachable. */
+const EXPLODING_PATH = "explode";
+
 const readFile = defineTool({
   name: "read_file",
   description: "reads a file from the workspace",
@@ -39,7 +42,10 @@ const readFile = defineTool({
   inputSchema: z.object({ path: z.string().min(1) }),
   pathsFrom: (input) => [input.path],
   execute: async (input) => {
-    executed = { toolName: "read_file", input };
+    executed = { toolName: "read_file", input, threw: input.path === EXPLODING_PATH };
+    if (input.path === EXPLODING_PATH) {
+      throw new Error("the tool threw while running");
+    }
     return { text: `read ${input.path}`, facts: { bytes: input.path.length } };
   },
 });
@@ -51,7 +57,7 @@ const runShell = defineTool({
   inputSchema: z.object({ command: z.string().min(1) }),
   pathsFrom: () => [],
   execute: async (input) => {
-    executed = { toolName: "run_shell", input };
+    executed = { toolName: "run_shell", input, threw: false };
     return { text: `ran ${input.command}` };
   },
 });
@@ -141,7 +147,11 @@ module.exports.fuzz = async function (data) {
   }
 
   if (executed !== null) {
-    assert.equal(settled.decision, "allowed", "a tool ran on a call that was not allowed");
+    assert.equal(
+      settled.decision,
+      executed.threw ? "failed" : "allowed",
+      "a tool that ran did not settle as what happened to it",
+    );
     assert.equal(executed.toolName, call.toolName, "a call ran the wrong tool");
     const definition = executed.toolName === "read_file" ? readFile : runShell;
     assert.ok(

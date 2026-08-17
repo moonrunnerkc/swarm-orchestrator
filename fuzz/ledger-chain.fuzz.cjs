@@ -101,9 +101,10 @@ module.exports.fuzz = async function (data) {
     try {
       record = await ledger.append(entry);
     } catch (error) {
-      // Our write never fails, so a seal or a write failure would be the ledger inventing
-      // one. Anything else here is the schema refusing an entry, which is it working.
-      if (error instanceof Error && error.name.startsWith("Ledger")) {
+      // The schema refusing an entry is the ledger working. Every other way out of append
+      // is a finding, including a seal or a write failure, which our write cannot cause.
+      // Named rather than excluded, so an unexpected error type is not read as a refusal.
+      if (!(error instanceof Error) || error.name !== "ZodError") {
         throw error;
       }
       const after = ledger.head();
