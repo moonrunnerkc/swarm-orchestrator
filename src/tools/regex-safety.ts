@@ -12,14 +12,16 @@
  *   - a variable-length quantifier inside another quantifier: `(a+)+`, `(\w+\s)*`
  *   - a repeated body that can also match nothing: `(a?)+`, `(a|)*`
  *   - two variable quantifiers competing for the same character, side by side or as
- *     alternatives under one quantifier: `\s*\s*$`, `(a|ab)+`, `(\w|\d)+`
+ *     alternatives under one quantifier: `\s*\s*$`, `(a+)(a+)$`, `(a|ab)+`, `(\w|\d)+`
  *
  * This is known-shape refusal, not a proof of linear time, and it is conservative in both
  * directions: it refuses patterns that would have run fast. The gap it does have is a
  * backreference, whose ambiguity only exists at match time and so cannot be read off the
- * structure at all; the search tool's line-length cap is what bounds that one. Nesting is
- * not a gap, at any depth: the walk carries the enclosing quantifier down through groups
- * and sequences, so `((a|ab)y)+` is refused the same as `(a|ab)+`. A pattern the parser
+ * structure at all; the search tool's line-length cap is what bounds that one. Grouping is
+ * not a gap, at any depth or in either direction: the walk carries the enclosing quantifier
+ * down through groups and sequences, so `((a|ab)y)+` is refused the same as `(a|ab)+`, and
+ * it reads back up through an unquantified group, so `(a+)(a+)$` is refused the same as
+ * `a+a+$`, parentheses being a capture rather than a boundary. A pattern the parser
  * below cannot read is refused rather than run, since an unread pattern is one nothing
  * bounds. `regex-safety.test.ts` pins both directions.
  */
@@ -176,29 +178,64 @@ function findCompetingNeighbours(
   terms: readonly PatternNode[],
   source: string,
 ): BacktrackingRisk | null {
-  for (const [index, left] of terms.entries()) {
-    if (left.kind !== "repeat" || !varyingLength(left) || !consumesCharacters(left.body)) {
+  const sequence = flattenTransparentGroups(terms);
+  for (const [index, left] of sequence.entries()) {
+    const leftRepeat = competingQuantifier(left.node);
+    if (leftRepeat === null) {
       continue;
     }
-    for (const right of terms.slice(index + 1)) {
+    for (const right of sequence.slice(index + 1)) {
+      const rightRepeat = competingQuantifier(right.node);
       if (
-        right.kind === "repeat" &&
-        varyingLength(right) &&
-        consumesCharacters(right.body) &&
-        charactersOverlap(leadingCharacters(left.body), leadingCharacters(right.body))
+        rightRepeat !== null &&
+        charactersOverlap(leadingCharacters(leftRepeat.body), leadingCharacters(rightRepeat.body))
       ) {
         return {
           reason:
             "puts two variable quantifiers over the same characters in sequence, so every split of a run between them is retried",
-          construct: `${quote(left, source)}${quote(right, source)}`,
+          construct: `${quote(left.span, source)}${quote(right.span, source)}`,
         };
       }
-      if (!matchesEmpty(right)) {
+      if (!matchesEmpty(right.node)) {
         break;
       }
     }
   }
   return null;
+}
+
+/** A quantifier that can take a variable number of characters from its neighbour. */
+function competingQuantifier(node: PatternNode): RepeatNode | null {
+  if (node.kind !== "repeat" || !varyingLength(node) || !consumesCharacters(node.body)) {
+    return null;
+  }
+  return node;
+}
+
+/** A term of a sequence, with the text a refusal should quote it as. */
+interface SequenceTerm {
+  readonly node: PatternNode;
+  readonly span: Span;
+}
+
+/**
+ * A group without a quantifier on it is transparent to matching: it captures, and nothing
+ * else, so `(a+)(a+)` splits a run of characters exactly as ambiguously as `a+a+` does. The
+ * neighbour scan therefore reads through such groups, at any nesting depth, rather than
+ * seeing one opaque term where two quantifiers stand side by side. A lookaround is not
+ * transparent and a quantified group is a repeat, so neither is spliced here.
+ */
+function flattenTransparentGroups(terms: readonly PatternNode[]): readonly SequenceTerm[] {
+  return terms.flatMap((term) =>
+    term.kind === "group" ? spliceGroup(term.body, term) : [{ node: term, span: term }],
+  );
+}
+
+function spliceGroup(body: PatternNode, group: Span): readonly SequenceTerm[] {
+  const inner = flattenTransparentGroups(body.kind === "sequence" ? body.terms : [body]);
+  const only = inner[0];
+  // A group holding one term stands for that term, so the parentheses are what to quote.
+  return inner.length === 1 && only !== undefined ? [{ node: only.node, span: group }] : inner;
 }
 
 function findCompetingAlternatives(branches: readonly PatternNode[]): string | null {
@@ -399,8 +436,8 @@ function firstRisk(
   return null;
 }
 
-function quote(node: PatternNode, source: string): string {
-  return source.slice(node.start, node.end);
+function quote(span: Span, source: string): string {
+  return source.slice(span.start, span.end);
 }
 
 // The parser: enough of the JavaScript pattern grammar to see quantifier nesting and
