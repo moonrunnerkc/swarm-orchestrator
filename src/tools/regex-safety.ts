@@ -12,7 +12,7 @@
  *   - a variable-length quantifier inside another quantifier: `(a+)+`, `(\w+\s)*`
  *   - a repeated body that can also match nothing: `(a?)+`, `(a|)*`
  *   - two variable quantifiers competing for the same character, side by side or as
- *     alternatives under one quantifier: `\s*\s*$`, `(a|ab)+`, `(\w|\d)+`
+ *     alternatives under one quantifier: `\s*\s*$`, `(a*)(a*)$`, `(a|ab)+`, `(\w|\d)+`
  *
  * This is known-shape refusal, not a proof of linear time, and it is conservative in both
  * directions: it refuses patterns that would have run fast. The gap it does have is a
@@ -171,34 +171,65 @@ function repeatedAlternativesRisk(
  * Two variable quantifiers reachable from one another over nullable terms both compete for
  * the run of characters between them: `\s*\s*$` retries every split of that run. The scan
  * stops at the first term that must consume something, since that term pins the boundary.
+ *
+ * Brackets are read through rather than stopped at. A group carrying no quantifier of its
+ * own only brackets the terms it holds, so `(a*)(a*)$` splits a run exactly as `a*a*$` does
+ * and is refused for the same reason. A lookaround is not a bracket, since it consumes
+ * nothing, and an alternation is not one either, since its branches are not in sequence.
  */
 function findCompetingNeighbours(
   terms: readonly PatternNode[],
   source: string,
 ): BacktrackingRisk | null {
-  for (const [index, left] of terms.entries()) {
-    if (left.kind !== "repeat" || !varyingLength(left) || !consumesCharacters(left.body)) {
+  const sequence = terms.flatMap((term) => unbracket(term, term));
+  for (const [index, left] of sequence.entries()) {
+    const leftQuantifier = left.node;
+    if (!competesForCharacters(leftQuantifier)) {
       continue;
     }
-    for (const right of terms.slice(index + 1)) {
+    for (const right of sequence.slice(index + 1)) {
+      const rightQuantifier = right.node;
       if (
-        right.kind === "repeat" &&
-        varyingLength(right) &&
-        consumesCharacters(right.body) &&
-        charactersOverlap(leadingCharacters(left.body), leadingCharacters(right.body))
+        competesForCharacters(rightQuantifier) &&
+        charactersOverlap(
+          leadingCharacters(leftQuantifier.body),
+          leadingCharacters(rightQuantifier.body),
+        )
       ) {
         return {
           reason:
             "puts two variable quantifiers over the same characters in sequence, so every split of a run between them is retried",
-          construct: `${quote(left, source)}${quote(right, source)}`,
+          construct: source.slice(left.origin.start, right.origin.end),
         };
       }
-      if (!matchesEmpty(right)) {
+      if (!matchesEmpty(rightQuantifier)) {
         break;
       }
     }
   }
   return null;
+}
+
+interface SequenceTerm {
+  readonly node: PatternNode;
+  /** The term as the sequence wrote it, so a refusal quotes the brackets it was written in. */
+  readonly origin: PatternNode;
+}
+
+function unbracket(node: PatternNode, origin: PatternNode): readonly SequenceTerm[] {
+  switch (node.kind) {
+    case "group":
+      return unbracket(node.body, origin);
+    case "sequence":
+      return node.terms.flatMap((term) => unbracket(term, origin));
+    default:
+      return [{ node, origin }];
+  }
+}
+
+/** A quantifier a neighbouring one can take characters from, whatever it was bracketed in. */
+function competesForCharacters(node: PatternNode): node is RepeatNode {
+  return node.kind === "repeat" && varyingLength(node) && consumesCharacters(node.body);
 }
 
 function findCompetingAlternatives(branches: readonly PatternNode[]): string | null {
