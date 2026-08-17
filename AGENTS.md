@@ -43,7 +43,7 @@ Run `npm run gates` before claiming any task complete. Paste the real output. Ne
 
 ## Code Style
 
-- TypeScript strict, ESM, Node 22+.
+- TypeScript strict, ESM, Node 24+. The floor is the coverage cycle: it spawns the runner with `--test-isolation=process`, which Node 22 rejects as a bad option, so the arm measures nothing there.
 - Never use em dashes anywhere: code, comments, strings, docs. Use commas, colons, parentheses, or separate sentences.
 - No comments that restate the line. Comment only intent, invariants, and non-obvious decisions.
 - Descriptive names, no `data`, `result`, `temp`, `helper`, `utils` grab-bags.

@@ -80,7 +80,7 @@ v12 solved a strictly harder version of the section 3.6 problem and the findings
 
 ### 4.1 Stack
 
-- TypeScript, Node 22+, strict mode, ESM.
+- TypeScript, Node 24+, strict mode, ESM. Section 3.6's coverage cycle sets the floor: it spawns the runner with `--test-isolation=process`, and Node 22 rejects that flag outright, so every arm that reads an artifact abstains there.
 - Vercel AI SDK as the provider abstraction: the 2026 default for TypeScript agents, model-agnostic, typed tool calling and agent loops in one surface. Covers Anthropic, OpenAI, and Google natively, and its OpenAI-compatible provider covers both Ollama and rapid-mlx with one adapter.
 - Ink for the TUI (the Claude Code and Gemini CLI lineage, mature ecosystem, React mental model).
 - Vitest for tests, Biome for lint and format (one tool, fast, fewer deps than ESLint plus Prettier).
