@@ -20,3 +20,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run gates
+      # The 8-harness smoke, cheap enough for every push. Without it a harness that
+      # stopped loading, or one built against a stale .swarm/fuzz-build, is only found
+      # when somebody runs fuzz:build locally, and it reports exactly what a clean run
+      # reports until then.
+      - run: npm run fuzz:build
