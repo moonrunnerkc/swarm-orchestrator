@@ -333,9 +333,18 @@ function parseCompleteLcov(text: string): readonly LcovFileSection[] | null {
 
     const counts = /^DA:(\d+),(\d+)/.exec(line);
     if (counts?.[1] !== undefined && counts[2] !== undefined) {
+      const at = Number(counts[1]);
       const count = Number(counts[2]);
+      // Files are numbered from one, so `DA:0,1` describes no line in any file. Keeping it
+      // meant a lookup for line 0 could succeed, and a patch can be made to claim an added
+      // line there: two artifacts that are each inert on their own would have combined into
+      // a line nothing wrote counting as covered. A report making that claim is malformed,
+      // so it is not a complete report and the arm abstains rather than reading part of it.
+      if (at < 1) {
+        return null;
+      }
       section.measured += 1;
-      section.hits.set(Number(counts[1]), count);
+      section.hits.set(at, count);
       if (count > 0) {
         section.reached += 1;
       }
