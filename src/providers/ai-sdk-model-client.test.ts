@@ -138,4 +138,29 @@ describe("createAiSdkModelClient", () => {
 
     await expect(model.generate(request())).rejects.toThrow(/dropped the connection/);
   });
+
+  it("raises a stream error without the SDK printing its internals over the run", async () => {
+    const model = createAiSdkModelClient(
+      "local:qwen",
+      streamingModel([
+        { type: "stream-start", warnings: [] },
+        { type: "error", error: new Error("the runtime dropped the connection") },
+      ]),
+    );
+    const written: unknown[] = [];
+    const wasError = console.error;
+    console.error = (...args: unknown[]) => {
+      written.push(args);
+    };
+
+    try {
+      await expect(model.generate(request())).rejects.toThrow(/dropped the connection/);
+    } finally {
+      console.error = wasError;
+    }
+
+    // The loop renders the failure as one line. The SDK's default handler prints the whole
+    // error object, headers and stack included, over whatever the run was showing.
+    expect(written).toEqual([]);
+  });
 });
