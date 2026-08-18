@@ -553,3 +553,120 @@ describe("the chokepoint's denial reasons", () => {
     expect(recorder.settled()[0]).toMatchObject({ decision: "allowed", denial: null });
   });
 });
+
+describe("the chokepoint against a model that stringifies its arguments", () => {
+  function createDeclareTool(declared: string[][]): ToolDefinition {
+    return defineTool({
+      name: "declare_file_set",
+      description: "declare the file set",
+      inputSchema: z.object({ files: z.array(z.string().min(1)).min(1) }),
+      kind: "evidence",
+      pathsFrom: () => [],
+      execute(input) {
+        declared.push([...input.files]);
+        return Promise.resolve({ text: `declared ${input.files.length} file(s)` });
+      },
+    });
+  }
+
+  it("runs a call whose array argument arrived as a JSON string", async () => {
+    const declared: string[][] = [];
+    const recorder = createRecordingRecorder();
+    const invoker = createToolChokepoint({
+      definitions: [createDeclareTool(declared)],
+      sandbox: createSandbox(policy),
+      confirm: () => Promise.resolve(true),
+      recorder,
+    });
+
+    const outcome = await invoker.invoke(
+      invocation({ toolName: "declare_file_set", input: { files: '["README.md"]' } }),
+    );
+
+    expect(outcome.failed).toBe(false);
+    expect(declared).toEqual([["README.md"]]);
+  });
+
+  it("records what the model sent and which fields the harness decoded", async () => {
+    const recorder = createRecordingRecorder();
+    const invoker = createToolChokepoint({
+      definitions: [createDeclareTool([])],
+      sandbox: createSandbox(policy),
+      confirm: () => Promise.resolve(true),
+      recorder,
+    });
+
+    await invoker.invoke(
+      invocation({ toolName: "declare_file_set", input: { files: '["README.md"]' } }),
+    );
+
+    // The encoding the model chose stays legible in the record; the reading is named beside it.
+    for (const entry of recorder.calls) {
+      expect(entry.input).toEqual({ files: '["README.md"]' });
+      expect(entry.decodedFields).toEqual(["files"]);
+    }
+  });
+
+  it("leaves a well-formed call with nothing decoded", async () => {
+    const recorder = createRecordingRecorder();
+    const invoker = createToolChokepoint({
+      definitions: [createDeclareTool([])],
+      sandbox: createSandbox(policy),
+      confirm: () => Promise.resolve(true),
+      recorder,
+    });
+
+    await invoker.invoke(
+      invocation({ toolName: "declare_file_set", input: { files: ["README.md"] } }),
+    );
+
+    expect(recorder.settled()[0]).toMatchObject({ decision: "allowed", decodedFields: [] });
+  });
+
+  it("still denies a call that decoding cannot make valid", async () => {
+    const recorder = createRecordingRecorder();
+    const invoker = createToolChokepoint({
+      definitions: [createDeclareTool([])],
+      sandbox: createSandbox(policy),
+      confirm: () => Promise.resolve(true),
+      recorder,
+    });
+
+    await invoker.invoke(
+      invocation({ toolName: "declare_file_set", input: { files: "README.md" } }),
+    );
+
+    expect(recorder.settled()[0]).toMatchObject({
+      decision: "denied",
+      denial: "invalid-input",
+      decodedFields: [],
+    });
+  });
+
+  it("never decodes into a field the schema declares as a string", async () => {
+    const commands: string[] = [];
+    const shell = defineTool({
+      name: "shell",
+      description: "run a command",
+      inputSchema: z.object({ command: z.string() }),
+      kind: "shell",
+      pathsFrom: () => [],
+      execute(input) {
+        commands.push(input.command);
+        return Promise.resolve({ text: "ran" });
+      },
+    });
+    const recorder = createRecordingRecorder();
+    const invoker = createToolChokepoint({
+      definitions: [shell],
+      sandbox: createSandbox(policy),
+      confirm: () => Promise.resolve(true),
+      recorder,
+    });
+
+    await invoker.invoke(invocation({ toolName: "shell", input: { command: '["git","status"]' } }));
+
+    expect(commands).toEqual(['["git","status"]']);
+    expect(recorder.settled()[0]).toMatchObject({ decodedFields: [] });
+  });
+});
