@@ -106,9 +106,36 @@ describe("summarizeByModel", () => {
     ])[0];
 
     expect(summary?.byCase).toEqual([
-      { caseId: "a", taskClass: "edit", repeats: 2, gatePassed: 1 },
-      { caseId: "b", taskClass: "test-fix", repeats: 1, gatePassed: 1 },
+      { caseId: "a", taskClass: "edit", repeats: 2, gatePassed: 1, didNotRun: 0 },
+      { caseId: "b", taskClass: "test-fix", repeats: 1, gatePassed: 1, didNotRun: 0 },
     ]);
+  });
+
+  /**
+   * Found while calibrating a frontier model whose credit ran out ten cases in. The last
+   * ten cases rendered "0 of 3 green", identical to a model that cannot do them, and the
+   * ten that had already run rendered "3 of 3". Reading the first as a measurement of the
+   * model would have been a claim about something that never executed, which is the
+   * distinction invariant 7 makes for coverage and this report was not making.
+   */
+  it("counts a repeat the model never answered apart from one whose gate failed", () => {
+    const summary = summarizeByModel([
+      observation({ caseId: "a", stopReason: "model-error", gatePassed: false, gateExitCode: 1 }),
+      observation({ caseId: "a", stopReason: "model-error", gatePassed: false, gateExitCode: 1 }),
+      observation({ caseId: "a", stopReason: "completed", gatePassed: false, gateExitCode: 1 }),
+    ])[0];
+
+    expect(summary?.byCase).toEqual([
+      { caseId: "a", taskClass: "edit", repeats: 3, gatePassed: 0, didNotRun: 2 },
+    ]);
+  });
+
+  it("does not count a run that finished and failed its gate as one that did not run", () => {
+    const summary = summarizeByModel([
+      observation({ caseId: "a", stopReason: "max-steps", gatePassed: false, gateExitCode: 1 }),
+    ])[0];
+
+    expect(summary?.byCase[0]?.didNotRun).toBe(0);
   });
 
   it("carries the record of every repeat it summarized, so each score has its runs", () => {
