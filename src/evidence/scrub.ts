@@ -76,9 +76,12 @@ const credentialNames: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Measurements whose names contain a credential word. Exempt by key and never by value: an
- * integer throughput number is still a measurement, and it was reading the value instead of
- * the key that opened the hole this table closes.
+ * Names that read as credential-bearing and are not. Mostly measurements, which is where the
+ * table started, plus the few identifiers this system gives itself that happen to spell a
+ * credential word: a public key is public, and a gate named secret-scan is a gate.
+ *
+ * Exempt by key and never by value: an integer throughput number is still a measurement, and
+ * it was reading the value instead of the key that opened the hole this table closes.
  */
 const metricNames: ReadonlySet<string> = new Set([
   "outputtokens",
@@ -98,6 +101,9 @@ const metricNames: ReadonlySet<string> = new Set([
   "costinputtokens",
   "costoutputtokens",
   "secretmatches",
+  // The gate that looks for secrets. Its result is "passed" or "escalated", and redacting
+  // that turned the record of a gate having run into evidence of nothing having run.
+  "secretscan",
   "publickey",
   "publickeyspki",
   "keysource",
@@ -133,11 +139,19 @@ export function isMetricName(name: string): boolean {
  * Latin ones, so nothing else moves.
  */
 function wordsOf(name: string): readonly string[] {
-  return asLatinLetters(name)
-    .replaceAll(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .split(/[^A-Za-z0-9]+/)
-    .filter((word) => word.length > 0)
-    .map((word) => word.toLowerCase());
+  return (
+    asLatinLetters(name)
+      // A marker this detector wrote is not part of the name it was written into. The marker
+      // spells "credential", so a name that carried a redacted span read as credential-bearing
+      // on the next pass and took its neighbouring value with it: scrubbing twice differed
+      // from scrubbing once, and an export scan could refuse a bundle for the redaction that
+      // protected it. Values already had this guard, in `carriesRedaction`; names did not.
+      .replaceAll(/\[redacted:[a-z-]+\]/g, " ")
+      .replaceAll(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .split(/[^A-Za-z0-9]+/)
+      .filter((word) => word.length > 0)
+      .map((word) => word.toLowerCase())
+  );
 }
 
 /**
@@ -149,6 +163,9 @@ function wordsOf(name: string): readonly string[] {
 const carriesRedaction = /\[redacted:[a-z-]+\]/;
 const jsonNumber = /^-?\d+(?:\.\d+)?$/;
 
+/** A four-digit PIN is the shortest credential anyone issues, so it is the floor for all of them. */
+const shortestCredential = 4;
+
 type ValueVerdict = "not-credential" | "opaque" | "credential-shaped";
 
 /**
@@ -159,25 +176,37 @@ type ValueVerdict = "not-credential" | "opaque" | "credential-shaped";
  * way. What the asymmetry loses is a warning, never the redaction.
  */
 function classifyValue(value: string): ValueVerdict {
-  if (carriesRedaction.test(value)) {
+  if (carriesRedaction.test(value) || value.length === 0) {
+    return "not-credential";
+  }
+  // Shorter than the shortest credential anyone issues. The numeric branch below already
+  // draws that line at four, for the PIN case, and drawing it anywhere else for text was
+  // the whole defect: at eight, `hunter2` under a field named password read as too short to
+  // be anything and travelled as plain text. Four is not a confidence threshold, it is the
+  // point below which a value cannot carry a secret to begin with.
+  if (value.length < shortestCredential) {
     return "not-credential";
   }
   if (jsonNumber.test(value)) {
     // A decimal or a negative is a measurement. A run of digits is a PIN, an OTP, or an
     // account number, and those are the credentials that carry no letters to be recognized by.
-    const digits = value.replace("-", "");
     if (value.includes(".") || value.startsWith("-")) {
       return "not-credential";
     }
-    return digits.length >= 4 && digits.length <= 19 ? "credential-shaped" : "not-credential";
-  }
-  if (value.length < 8) {
-    return "not-credential";
+    return value.length <= 19 ? "credential-shaped" : "opaque";
   }
   if (/[0-9]/.test(value) && /[A-Za-z]/.test(value) && value.length >= 12) {
     return "credential-shaped";
   }
-  return /[+/=]/.test(value) && value.length >= 20 ? "credential-shaped" : "opaque";
+  if (/[+/=]/.test(value) && value.length >= 20) {
+    return "credential-shaped";
+  }
+  // Everything else a credential-bearing name was given. The name already said what the
+  // value is, and nothing above it earned a stronger verdict, so it is redacted and the gate
+  // is not offered it. Length stops deciding here: what it still decides, above, is how
+  // confident the gate gets to be, where a false positive blocks a change rather than
+  // redacting a record.
+  return "opaque";
 }
 
 /**
@@ -188,9 +217,17 @@ function classifyValue(value: string): ValueVerdict {
  *
  * The name is any letter, not any Latin letter, so that a name a reader reads as a credential
  * reaches the fold in `wordsOf` rather than failing to match here.
+ *
+ * Two details keep one match from hiding the next, which is how a credential used to travel
+ * through the gate unreported. The opening delimiter is a lookbehind rather than something
+ * the match consumes: `{"b":{"client_secret":"..."}}` gave `b` the `{` that `client_secret`
+ * needed to be found by, and only that pair, so whether a secret was seen depended on what
+ * an unrelated name three characters earlier happened to eat. And a bare value stops before
+ * `{` and `[` as it already stops before `}` and `)`, because an opening brace begins a
+ * nested structure rather than being a scalar anybody assigned.
  */
 const assignmentPattern =
-  /(?:^|[\s,{[])["']?(\p{L}[\p{L}\p{N}_-]{0,63})["']?\s*[=:]\s*(?:(\[[^\]\n]*\])|"([^"]*)"|'([^']*)'|([^\s"',;})]+))/dgu;
+  /(?<=^|[\s,{[])["']?(\p{L}[\p{L}\p{N}_-]{0,63})["']?\s*[=:]\s*(?:(\[[^\]\n]*\])|"([^"]*)"|'([^']*)'|([^\s"',;{}[\])]+))/dgu;
 
 interface SecretSpan {
   readonly label: string;
@@ -307,13 +344,81 @@ function nameFinding(verdict: ValueVerdict): SecretFinding {
   };
 }
 
+/**
+ * Scrubs content whose type is not known in advance, dispatching exactly as `findingsIn`
+ * does: where it parses, the structural walk governs, and the line scan is what is left for
+ * content that is genuinely not JSON.
+ *
+ * The dispatch is the guarantee, not an optimization. These two sites used to answer the
+ * same question with two implementations, and a regex and a parser cannot be made to agree
+ * by adding spellings to the regex: `wordsOf` splits a name on any non-alphanumeric run, so
+ * `api/_key` is a credential to the walk, while the scan's name class stops at the slash and
+ * sees nothing. Widening that class buys the next spelling and not the one after it. Sharing
+ * the dispatch means there is one answer for JSON, which is what a payload is.
+ *
+ * The original bytes come back untouched when the walk finds nothing, so re-serialization is
+ * only ever visible on content that was going to be rewritten anyway.
+ */
 export function scrubText(text: string): ScrubOutcome<string> {
   const findings: SecretFinding[] = [];
-  const value = scrubTextInto(text, findings);
-  return { value, redactions: findings.map((finding) => finding.redactedAs) };
+  let current = text;
+
+  // The dispatch runs to a fixpoint, not just the line scan inside it. Scrubbing can change
+  // which arm the next reader takes: a payload carrying a control byte does not parse, so it
+  // goes to the line scan, and if that byte sits inside the span being replaced the result
+  // does parse. The export scan then walks what the write-time scrub had only scanned, and
+  // reports a name the scan's own name class could not see. Re-dispatching until nothing
+  // changes means the arm that reads the output last is the arm that wrote it.
+  for (let round = 0; round < scrubRounds; round += 1) {
+    const next = scrubDispatched(current, findings);
+    if (next === current) {
+      break;
+    }
+    current = next;
+  }
+
+  return { value: current, redactions: findings.map((finding) => finding.redactedAs) };
 }
 
+function scrubDispatched(text: string, findings: SecretFinding[]): string {
+  const parsed = parseJsonPayload(text);
+  if (parsed === undefined) {
+    return scrubTextInto(text, findings);
+  }
+  const before = findings.length;
+  const walked = scrubValue(parsed, "plain", findings);
+  // Untouched content comes back as the bytes it arrived as, so re-serialization is only
+  // ever visible on a payload that was going to be rewritten anyway.
+  return findings.length === before ? text : JSON.stringify(walked);
+}
+
+/**
+ * One pass is not a fixpoint, so this runs to one. Overlapping claims are resolved by
+ * keeping the earliest and dropping what it covers, which is right for the pass it is in and
+ * leaves the dropped region unexamined: replacing a span with a marker shortens the text
+ * around it, and an assignment the discarded span had swallowed becomes visible only once
+ * that happens. Scrubbing twice then differed from scrubbing once, which is the export scan
+ * refusing a bundle for the redaction that protected it.
+ *
+ * It converges because every round replaces credential material with a marker and a marker
+ * is not credential material, so the unredacted span count strictly decreases. The cap is a
+ * backstop against a pattern that could somehow reintroduce a match, not an expected path.
+ */
+const scrubRounds = 8;
+
 function scrubTextInto(text: string, findings: SecretFinding[]): string {
+  let current = text;
+  for (let round = 0; round < scrubRounds; round += 1) {
+    const next = scrubTextOnce(current, findings);
+    if (next === current) {
+      return current;
+    }
+    current = next;
+  }
+  return current;
+}
+
+function scrubTextOnce(text: string, findings: SecretFinding[]): string {
   const spans = secretSpans(text);
   if (spans.length === 0) {
     return text;
@@ -425,7 +530,13 @@ function scrubValue(value: JsonValue, context: NameContext, findings: SecretFind
 
   const scrubbed: Record<string, JsonValue> = {};
   for (const [key, item] of Object.entries(value as { readonly [key: string]: JsonValue })) {
-    scrubbed[scrubTextInto(key, findings)] = scrubValue(item, contextUnder(key, context), findings);
+    // The name a child is read under is the one that survives into the output, not the one
+    // that arrived. A key can itself carry credential material and be scrubbed, and reading
+    // the child under the original key meant the second pass, which only ever sees the
+    // scrubbed key, could classify it differently and redact something the first pass left.
+    // Scrubbing a string is idempotent, so classifying from the scrubbed key is a fixpoint.
+    const name = scrubTextInto(key, findings);
+    scrubbed[name] = scrubValue(item, contextUnder(name, context), findings);
   }
   return scrubbed;
 }
