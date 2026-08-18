@@ -258,3 +258,43 @@ npm notice total files: 234
 npm notice
 swarm-orchestrator-13.0.0.tgz
 ```
+
+## The tarball was installed and run, not just listed
+
+`npm pack` produces a listing; it does not show that the thing installs. Both checks were
+run against the packed tarball.
+
+**Installed into an empty directory and executed.** `npm init -y`, then
+`npm install <tarball>`, then the installed binary:
+
+```
+$ ./node_modules/.bin/swarm select
+hardware
+  platform          darwin arm64 (Apple Silicon)
+  system memory     64.0 GB
+  gpu               Apple M5 Max, 64.0 GB unified memory
+
+shortlist
+  source            the snapshot bundled with this release
+  revision          2026-08-13
+```
+
+That exercises the parts a listing cannot: `bin` resolving to `dist/cli.js`, the five
+copied assets being where `import.meta.url` looks for them, and the dependencies resolving.
+
+**The embedded verifier needs no dependencies at all.** Extracted from the tarball with no
+`npm install` anywhere, pointed at a committed bundle:
+
+```
+$ node package/dist/evidence/verifier/verify.mjs docs/evidence/2026-08-18/live-frontier
+  PASS  claim verdicts recomputed: 1 verified, 0 unverified; manifest says 1 verified
+
+bundle verified: every check passed
+```
+
+The CLI itself does need its dependencies, and an extracted-but-uninstalled tarball fails
+on `Cannot find package 'zod'`, as it should. The verifier is the half that has to stand
+alone, and it does.
+
+This is still not the clean-container check. It is the same machine, with the same Node.
+See `clean-container-verification.md`.
