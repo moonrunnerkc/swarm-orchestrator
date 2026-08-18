@@ -41,6 +41,8 @@ export const rewardEntrySchema = z.object({
     changedLineCoverage: z.number().nullable(),
   }),
   attempts: z.number().int().nonnegative(),
+  /** Null when no gate measured it. Zero is a run that produced nothing and scores zero. */
+  changedFiles: z.number().int().nonnegative().nullable(),
   latencyMs: z.number().nonnegative(),
   /** Null when the model has no known rate. The reward treats that as neutral, not free. */
   costUsd: z.number().nonnegative().nullable(),

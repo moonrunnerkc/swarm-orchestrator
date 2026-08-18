@@ -312,6 +312,9 @@ async function run(options: RunCommand): Promise<number> {
       modelSpec,
       assignment: routed.assignment,
       ratchet: summarizeRatchet(gates.outcome),
+      // The diff-budget gate's own measure, merged into the cycle. Read from there rather
+      // than recomputed, so the number the reward turns on is one a gate recorded.
+      changedFiles: gates.outcome.finalCycle.measures.changedFiles ?? null,
       latencyMs: clock.now() - startedAt,
       recordedAt: clock.now(),
       cost: await priceTask(modelSpec, evidence),
@@ -405,6 +408,7 @@ interface RewardLogInput {
   readonly modelSpec: string;
   readonly assignment: "calibration" | "ucb" | "epsilon" | "pinned";
   readonly ratchet: ReturnType<typeof summarizeRatchet>;
+  readonly changedFiles: number | null;
   readonly latencyMs: number;
   readonly recordedAt: number;
   readonly cost: TaskCost;
@@ -425,6 +429,7 @@ async function logReward(input: RewardLogInput): Promise<void> {
     model: input.modelSpec,
     assignment: input.assignment,
     ratchet: input.ratchet,
+    changedFiles: input.changedFiles,
     latencyMs: input.latencyMs,
     costUsd: input.cost.costUsd,
     costSource: input.cost.source,

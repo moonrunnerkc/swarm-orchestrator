@@ -35,6 +35,7 @@ function reward(overrides: RewardOverrides = {}): RewardEntry {
       changedLineCoverage: null,
     },
     attempts: 0,
+    changedFiles: 1,
     latencyMs: overrides.latencyMs ?? 40_000,
     costUsd: 0,
     costSource: "local",
