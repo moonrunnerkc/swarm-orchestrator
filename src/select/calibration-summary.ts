@@ -25,6 +25,8 @@ interface CaseBreakdown {
 export interface ModelSummary {
   readonly model: string;
   readonly repeats: number;
+  /** Of those repeats, the ones the model answered at all. Every dimension below is over these. */
+  readonly executedRepeats: number;
   readonly dimensions: Readonly<Record<CalibrationDimension, Distribution>>;
   /** Per case as well as pooled: a stratified set that only reports a pooled number is not one. */
   readonly byCase: readonly CaseBreakdown[];
@@ -57,6 +59,12 @@ function valueFor(
  * Observations in, one summary per model out, with every dimension kept apart. Nothing here
  * combines two dimensions: there is no measured exchange rate between tokens per second and
  * gate pass rate, and inventing one is how a calibration report stops being a measurement.
+ *
+ * Only the repeats that executed reach a dimension. A repeat the model never answered says
+ * nothing about the model, and it says it in every dimension at once: gate-pass would read
+ * it as a failure the model earned, which is how a backend that never served the model ends
+ * up scored as a model that solved nothing. Zero executed repeats therefore leaves every
+ * distribution empty, which renders as not measured rather than as 0.000.
  */
 export function summarizeByModel(
   observations: readonly CalibrationRepeatObservation[],
@@ -65,18 +73,21 @@ export function summarizeByModel(
 
   return models.map((model) => {
     const mine = observations.filter((observation) => observation.model === model);
+    const ran = mine.filter((observation) => observation.executed);
     const dimensions = Object.fromEntries(
       calibrationDimensions.map((dimension) => [
         dimension,
-        distributionOf(mine.map((observation) => valueFor(dimension, observation))),
+        distributionOf(ran.map((observation) => valueFor(dimension, observation))),
       ]),
     ) as Record<CalibrationDimension, Distribution>;
 
     return {
       model,
       repeats: mine.length,
+      executedRepeats: ran.length,
       dimensions,
       byCase: breakDownByCase(mine),
+      // Every repeat, executed or not: what did not run is part of what this run recorded.
       runRecords: mine.map((observation) => observation.record),
     };
   });
@@ -93,8 +104,9 @@ function breakDownByCase(
       caseId,
       taskClass: mine[0]?.taskClass ?? "edit",
       repeats: mine.length,
-      gatePassed: mine.filter((observation) => observation.gatePassed).length,
-      didNotRun: mine.filter((observation) => observation.stopReason === "model-error").length,
+      gatePassed: mine.filter((observation) => observation.executed && observation.gatePassed)
+        .length,
+      didNotRun: mine.filter((observation) => !observation.executed).length,
     };
   });
 }

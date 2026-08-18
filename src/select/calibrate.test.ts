@@ -18,9 +18,11 @@ import {
   respondWithText,
   respondWithToolCalls,
 } from "../providers/fixture-provider.ts";
+import type { ServedModelList } from "../providers/served-models.ts";
 import { runCalibration } from "./calibrate.ts";
 import type { CalibrationCase } from "./calibration-case.ts";
 import { type GoldenSet, goldenSetVersion } from "./golden-set.ts";
+import { preflightLocalModels, preflightRecord } from "./model-preflight.ts";
 
 const run = promisify(execFile);
 const clock = createTestClock(1_700_000_000_000);
@@ -93,6 +95,10 @@ interface ModelBehaviour {
   readonly solves: boolean;
   readonly tokensPerSecond: number;
   readonly firstTokenMs: number;
+  /** Every dispatch refused, the way a backend not holding this model refuses one. */
+  readonly dispatchFails?: boolean;
+  /** Calls the chokepoint cannot act on, which is what the validity floor is a floor on. */
+  readonly malformedCalls?: boolean;
 }
 
 /**
@@ -106,6 +112,17 @@ function scriptFor(caseId: string, behaviour: ModelBehaviour): readonly FixtureT
     responseTimeMs: 1_000,
   };
   const tokens = { input: 200, output: behaviour.tokensPerSecond };
+  if (behaviour.malformedCalls === true) {
+    const calls = [0, 1, 2].map((index) =>
+      respondWithToolCalls(
+        "trying something",
+        [{ callId: `m${index}`, toolName: "not-a-tool", input: { path: "greet.mjs" } }],
+        tokens,
+        timings,
+      ),
+    );
+    return [...calls, respondWithText("I give up.", tokens, timings)];
+  }
   if (!behaviour.solves) {
     return [respondWithText("I could not work out what to change.", tokens, timings)];
   }
@@ -124,6 +141,18 @@ function scriptFor(caseId: string, behaviour: ModelBehaviour): readonly FixtureT
 const behaviours: Readonly<Record<string, ModelBehaviour>> = {
   "local:capable": { solves: true, tokensPerSecond: 24, firstTokenMs: 900 },
   "local:quick-but-lost": { solves: false, tokensPerSecond: 96, firstTokenMs: 120 },
+  "local:never-served": {
+    solves: false,
+    tokensPerSecond: 0,
+    firstTokenMs: 0,
+    dispatchFails: true,
+  },
+  "local:sloppy": {
+    solves: false,
+    tokensPerSecond: 96,
+    firstTokenMs: 120,
+    malformedCalls: true,
+  },
 };
 
 /**
@@ -136,6 +165,12 @@ function createScriptedModel(modelSpec: string, cases: readonly CalibrationCase[
     tokensPerSecond: 1,
     firstTokenMs: 1,
   };
+  if (behaviour.dispatchFails === true) {
+    return {
+      modelId: modelSpec,
+      generate: () => Promise.reject(new Error(`model "${modelSpec}" is not loaded`)),
+    };
+  }
   let inner: ModelClient | null = null;
 
   return {
@@ -165,12 +200,15 @@ function fixtureGoldenSet(): GoldenSet {
   };
 }
 
-function calibrate(models = ["local:capable", "local:quick-but-lost"]) {
+function calibrate(
+  models: readonly string[] = ["local:capable", "local:quick-but-lost"],
+  repeats = 3,
+) {
   const goldenSet = fixtureGoldenSet();
 
   return runCalibration({
     models,
-    repeats: 3,
+    repeats,
     staticPick: "local:capable",
     goldenSet,
     deps: {
@@ -272,5 +310,124 @@ describe("runCalibration against two local models", () => {
 
     expect(result.goldenSetVersion).toBe(fixtureGoldenSet().version);
     expect(result.cases).toBe(fixtureCases.length);
+  });
+});
+
+/**
+ * The two halves of one failure, kept apart because they fail differently. rapid-mlx serves
+ * one model under a server-assigned alias; calibration was handed two local ids, every
+ * dispatch for the one it was not holding was refused, and those refusals were recorded as
+ * runs. The picker then read six "did not run" repeats as a 0.000 gate share, which is a
+ * number, and preferred it to a model with real runs that fell under the validity floor.
+ */
+describe("a model the backend does not serve", () => {
+  const served: ServedModelList = {
+    endpoint: "http://127.0.0.1:8000/v1/models",
+    enumerated: true,
+    models: [{ id: "capable", root: null, parent: null }],
+  };
+
+  function preflight() {
+    return preflightLocalModels({
+      requested: ["local:capable", "local:never-served"],
+      backendUrl: "http://127.0.0.1:8000/v1",
+      list: served,
+    });
+  }
+
+  it("is excluded from the run set before anything is dispatched", () => {
+    expect(preflight().runnable).toEqual(["local:capable"]);
+    expect(preflight().excluded).toEqual(["local:never-served"]);
+  });
+
+  it("leaves the exclusion in the ledger, and not one run record behind", async () => {
+    const checked = preflight();
+    await evidence.record(preflightRecord(checked));
+    const result = await calibrate(checked.runnable, 1);
+
+    const preflightRecords = evidence
+      .records()
+      .filter((record) => record.type === "calibration-preflight");
+    expect(preflightRecords).toHaveLength(1);
+    expect(evidence.payloads().get(preflightRecords[0]?.payloadDigest ?? "")).toMatchObject({
+      backend: "http://127.0.0.1:8000/v1",
+      served: ["capable"],
+      excluded: ["local:never-served"],
+    });
+
+    const runs = evidence
+      .records()
+      .filter((record) => record.type === "calibration-run")
+      .map((record) => evidence.payloads().get(record.payloadDigest));
+    expect(runs).toHaveLength(fixtureCases.length);
+    expect(runs.every((payload) => (payload as { model: string }).model === "local:capable")).toBe(
+      true,
+    );
+    expect(result.models.map((model) => model.model)).toEqual(["local:capable"]);
+  });
+});
+
+describe("a model whose every run failed to dispatch", () => {
+  it("measures nothing on it rather than scoring it zero", async () => {
+    const result = await calibrate(["local:never-served"], 1);
+    const summary = result.models[0];
+
+    expect(summary?.repeats).toBe(fixtureCases.length);
+    expect(summary?.executedRepeats).toBe(0);
+    expect(summary?.dimensions["gate-pass"]).toMatchObject({ samples: 0, mean: null });
+    expect(summary?.dimensions["tool-call-validity"]).toMatchObject({ samples: 0, mean: null });
+    expect(summary?.byCase.every((one) => one.didNotRun === one.repeats)).toBe(true);
+  });
+
+  it("is not a candidate, so it cannot win by being the last one standing", async () => {
+    const result = await calibrate(["local:sloppy", "local:never-served"], 1);
+
+    expect(result.pick.model).toBeNull();
+    expect(result.pick.reasoning.join(" ")).toMatch(/no usable model/);
+    expect(result.pick.rejected).toEqual([
+      { model: "local:sloppy", reason: expect.stringMatching(/under the 0\.800/) },
+      {
+        model: "local:never-served",
+        reason: expect.stringMatching(/0 of 2 run\(s\) executed/),
+      },
+    ]);
+  });
+
+  it("writes the abstain into the bundle as the verdict, not only into the report", async () => {
+    const result = await calibrate(["local:sloppy", "local:never-served"], 1);
+
+    expect(evidence.payloads().get(result.verdictRecord)).toMatchObject({
+      pick: null,
+      abstained: true,
+      models: [
+        { model: "local:sloppy", repeats: 2, executedRepeats: 2 },
+        { model: "local:never-served", repeats: 2, executedRepeats: 0 },
+      ],
+    });
+    expect(result.claims.at(-1)).toMatchObject({ verdict: "verified" });
+  });
+
+  it("does not report a divergence from a shortlist pick nothing measured", async () => {
+    const goldenSet = fixtureGoldenSet();
+    const result = await runCalibration({
+      models: ["local:capable", "local:never-served"],
+      repeats: 1,
+      staticPick: "local:never-served",
+      goldenSet,
+      deps: {
+        evidence,
+        clock,
+        random: createFixedRandom(),
+        createModel: (modelSpec: string) => createScriptedModel(modelSpec, goldenSet.cases),
+        commands: createNodeCommandRunner(clock),
+        probeMemory: () => Promise.resolve(null),
+        scratchRoot: join(root, "scratch"),
+        maxSteps: 6,
+        abortSignal: new AbortController().signal,
+      },
+    });
+
+    expect(result.pick.model).toBe("local:capable");
+    expect(result.comparison.statement).toMatch(/nothing measured to compare it against/);
   });
 });
