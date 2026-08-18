@@ -31,7 +31,7 @@ export interface Arm {
   readonly index: number | null;
 }
 
-interface RoutingDecision {
+export interface RoutingDecision {
   readonly taskClass: TaskClass;
   readonly model: string;
   readonly assignment: AssignmentKind;

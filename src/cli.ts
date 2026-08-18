@@ -64,13 +64,14 @@ import { loadPricing } from "./select/pricing-source.ts";
 import { calibrationCandidates, recommendModel } from "./select/recommendation.ts";
 import { buildRewardEntry } from "./select/reward.ts";
 import { defaultRoutingLogPath, openRoutingLog } from "./select/routing-log.ts";
+import { routingDecisionRecord } from "./select/routing-record.ts";
 import { renderRoutingReport } from "./select/routing-report.ts";
 import { renderSelectReport } from "./select/select-report.ts";
 import { loadShortlist } from "./select/shortlist-source.ts";
 import { systemProbeEnvironment } from "./select/system-probe.ts";
 import { classifyTask } from "./select/task-class.ts";
 import { costOfTask, type TaskCost } from "./select/task-cost.ts";
-import { routeModel } from "./select/ucb.ts";
+import { type RoutingDecision, routeModel } from "./select/ucb.ts";
 import type { ConfirmationRequest } from "./tools/chokepoint.ts";
 import { describeLoopEvent } from "./tui/plain-lines.ts";
 import { startSessionInterface } from "./tui/session-interface.ts";
@@ -201,10 +202,19 @@ async function chooseModel(
   task: string,
   home: string,
   random: RandomSource,
-): Promise<{ modelSpec: string | null; assignment: "calibration" | "ucb" | "epsilon" | "pinned" }> {
+): Promise<{
+  modelSpec: string | null;
+  assignment: "calibration" | "ucb" | "epsilon" | "pinned";
+  /**
+   * Null where there was nothing to route between. The decision travels back rather than
+   * being recorded here because the pick happens before the session opens: the model has
+   * to be resolved to build the client, and there is no ledger to write to yet.
+   */
+  decision: RoutingDecision | null;
+}> {
   const calibrated = await readCalibrationPick(defaultPickPath(home));
   if (calibrated?.model == null) {
-    return { modelSpec: null, assignment: "pinned" };
+    return { modelSpec: null, assignment: "pinned", decision: null };
   }
 
   const log = await openRoutingLog({ path: defaultRoutingLogPath(home) });
@@ -219,7 +229,7 @@ async function chooseModel(
   process.stdout.write(
     `routing: ${decision.model} (${decision.assignment}) - ${decision.reason}\n`,
   );
-  return { modelSpec: decision.model, assignment: decision.assignment };
+  return { modelSpec: decision.model, assignment: decision.assignment, decision };
 }
 
 async function run(options: RunCommand): Promise<number> {
@@ -237,7 +247,7 @@ async function run(options: RunCommand): Promise<number> {
   });
   const random = createSystemRandom();
   const routed = settings.modelPinned
-    ? { modelSpec: null as string | null, assignment: "pinned" as const }
+    ? { modelSpec: null as string | null, assignment: "pinned" as const, decision: null }
     : await chooseModel(options.task, homedir(), random);
   const modelSpec = routed.modelSpec ?? settings.modelSpec;
   const spec = parseModelSpec(modelSpec);
@@ -254,6 +264,11 @@ async function run(options: RunCommand): Promise<number> {
   });
   if (localBackend !== null) {
     await evidence.record(localEndpointRecord(localBackend));
+  }
+  if (routed.decision !== null) {
+    // Written here rather than where the choice was made, because the choice has to happen
+    // before the session exists. What it names is still the decision that ran this task.
+    await evidence.record(routingDecisionRecord(routed.decision));
   }
 
   const registry = createProviderRegistry(registrySettingsFrom(settings, localBackend));
