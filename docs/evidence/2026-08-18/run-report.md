@@ -150,6 +150,14 @@ no per-class number gets read off one case.
 **LICENSE needed no default.** Both `main` and `v12-final` carry ISC under moonrunnerkc, so
 the v13 tree carries ISC forward. The MIT fallback the item described was not reached.
 
+**One file was committed that this run did not set out to commit.**
+`docs/state-report-2026-08-17.md` was untracked at preflight and was swept into `7af44a21`
+by a `git add -A docs/`, which is broader than the change that commit describes. The file is
+the state report the work list derives from and belongs in the tree, so it stays and this
+records it rather than rewriting a published commit to hide it. The lesson is the narrower
+`git add` I should have used, and it is the same discipline invariant 12 puts on the agent:
+declare what you intend to touch, and when you touch something else, say so.
+
 **Pushes work under owner bypass.** The ruleset reports "Cannot update this protected ref"
 and then applies the bypass, so `v13-main` pushed twice during this run and CI ran on both.
 
