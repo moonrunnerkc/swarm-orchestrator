@@ -1,0 +1,1733 @@
+step 1: calling anthropic:claude-sonnet-5
+tool read <- {"path":"src/evidence/scrub.ts"}
+tool read ok: import type { JsonValue } from "./canonical-json.ts";
+import { asLatinLetters } from "./latin-lookalikes.ts";
+
+/**
+ * One detector, three callers: the write-time scrub, the export-time second scan, and the
+ * secret-scan gate (invariant 9). They shared a regex before and drifted anyway, because the
+ * relaxation that stopped a throughput metric being read as a credential also let every
+ * numeric-only credential through. Detection keys on the name now, so a PIN, an OTP, and an
+ * account number are caught whatever shape their value takes, and a metric stays exempt
+ * because of its key rather than because its value looked harmless.
+ *
+ * Name the guarantee honestly wherever it is described: this is known-pattern scrubbing, not
+ * secret removal. A credential under a name nobody listed here survives, so the sandbox
+ * denylist stays the primary defense.
+ */
+
+interface SecretPattern {
+  readonly label: string;
+  /** Held as source rather than a RegExp so every use gets a fresh lastIndex. */
+  readonly source: string;
+}
+
+/** Shapes that name themselves. A value like this is credential material wherever it sits. */
+const knownSecretPatterns: readonly SecretPattern[] = [
+  {
+    label: "private-key-block",
+    source: "-----BEGIN[A-Z ]*PRIVATE KEY-----[\\s\\S]*?-----END[A-Z ]*PRIVATE KEY-----",
+  },
+  { label: "openai-style-key", source: "sk-[A-Za-z0-9_-]{16,}" },
+  { label: "anthropic-key", source: "sk-ant-[A-Za-z0-9_-]{16,}" },
+  { label: "github-token", source: "gh[pousr]_[A-Za-z0-9]{20,}" },
+  { label: "github-fine-grained-token", source: "github_pat_[A-Za-z0-9_]{20,}" },
+  { label: "aws-access-key-id", source: "(?:AKIA|ASIA)[0-9A-Z]{16}" },
+  { label: "google-api-key", source: "AIza[0-9A-Za-z_-]{35}" },
+  { label: "slack-token", source: "xox[baprs]-[0-9A-Za-z-]{10,}" },
+  { label: "bearer-token", source: "[Bb]earer\\s+[A-Za-z0-9._~+/=-]{20,}" },
+  {
+    label: "json-web-token",
+    source: "eyJ[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}\\.[A-Za-z0-9_-]{10,}",
+  },
+];
+
+const assignmentLabel = "credential-assignment";
+const fieldLabel = "credential-field";
+
+/** A word in a name that says the value beside it is a credential. */
+const credentialWords: ReadonlySet<string> = new Set([
+  "key",
+  "keys",
+  "token",
+  "tokens",
+  "secret",
+  "secrets",
+  "password",
+  "passwd",
+  "passphrase",
+  "credential",
+  "credentials",
+  "pin",
+  "otp",
+  "account",
+  // The header that carries a credential on every authenticated request, and its relatives.
+  "authorization",
+  "authorisation",
+  "authenticate",
+]);
+
+/** Spellings that carry no separator to split on, so word splitting alone would miss them. */
+const credentialNames: ReadonlySet<string> = new Set([
+  "apikey",
+  "apitoken",
+  "accesskey",
+  "secretkey",
+  "privatekey",
+  "authtoken",
+]);
+
+/**
+ * Names that read as credential-bearing and are not. Mostly measurements, which is where the
+ * table started, plus the few identifiers this system gives itself that happen to spell a
+ * credential word: a public key is public, and a gate named secret-scan is a gate.
+ *
+ * Exempt by key and never by value: an integer throughput number is still a measurement, and
+ * it was reading the value instead of the key that opened the hole this table closes.
+ */
+const metricNames: ReadonlySet<string> = new Set([
+  "outputtokens",
+  "inputtokens",
+  "totaltokens",
+  "prompttokens",
+  "completiontokens",
+  "cachedinputtokens",
+  "reasoningtokens",
+  "tokencount",
+  "tokensused",
+  "maxtokens",
+  "maxoutputtokens",
+  "tokenspersecond",
+  "outputtokenspersecond",
+  "firsttokenms",
+  "costinputtokens",
+  "costoutputtokens",
+  "secretmatches",
+  // The gate that looks for secrets. Its result is "passed" or "escalated", and redacting
+  // that turned the record of a gate having run into evidence of nothing having run.
+  "secretscan",
+  "publickey",
+  "publickeyspki",
+  "keysource",
+]);
+
+/**
+ * A name is credential-bearing when one of its words says so. Words, not substrings: "pin"
+ * sits inside "mapping" and "spinCount", and a detector that redacted those would be routed
+ * around within a day.
+ */
+export function isCredentialName(name: string): boolean {
+  if (isMetricName(name)) {
+    return false;
+  }
+  const words = wordsOf(name);
+  return credentialNames.has(words.join("")) || words.some((word) => credentialWords.has(word));
+}
+
+/**
+ * A measurement, exempt by key at every site. Separate from isCredentialName because the walk
+ * needs to know a name is a metric even where nothing else about it is credential-bearing: a
+ * metric under a credential-named container is still a metric.
+ */
+export function isMetricName(name: string): boolean {
+  return metricNames.has(wordsOf(name).join(""));
+}
+
+/**
+ * A name's words, read as a reader reads them. The fold matters because detection is keyed on
+ * the name: a field spelled password with one Cyrillic letter in it is a password to everyone
+ * who opens the record, and to nothing that compares code points. Folding first means the same
+ * name is one name however it was typed, and the table only maps letters that render as the
+ * Latin ones, so nothing else moves.
+ */
+function wordsOf(name: string): readonly string[] {
+  return (
+    asLatinLetters(name)
+      // A marker this detector wrote is not part of the name it was written into. The marker
+      // spells "credential", so a name that carried a redacted span read as credential-bearing
+      // on the next pass and took its neighbouring value with it: scrubbing twice differed
+      // from scrubbing once, and an export scan could refuse a bundle for the redaction that
+      // protected it. Values already had this guard, in `carriesRedaction`; names did not.
+      .replaceAll(/\[redacted:[a-z-]+\]/g, " ")
+      .replaceAll(/([a-z0-9])([A-Z])/g, "$1 $2")
+      .split(/[^A-Za-z0-9]+/)
+      .filter((word) => word.length > 0)
+      .map((word) => word.toLowerCase())
+  );
+}
+
+/**
+ * A value that already carries a redaction is not a secret: the sensitive span is the one
+ * that was replaced. Matching anywhere rather than at the ends is what makes both passes
+ * idempotent and stops the export scan refusing a bundle precisely because write-time
+ * scrubbing worked.
+ */
+const carriesRedaction = /\[redacted:[a-z-]+\]/;
+const jsonNumber = /^-?\d+(?:\.\d+)?$/;
+
+/** A four-digit PIN is the shortest credential anyone issues, so it is the floor for all of them. */
+const shortestCredential = 4;
+
+type ValueVerdict = "not-credential" | "opaque" | "credential-shaped";
+
+/**
+ * What a value beside a credential-bearing name is worth doing about. Scrubbing acts on
+ * anything but a measurement, since over-redacting costs nothing. A gate blocks a change, so
+ * it only ever sees the shaped verdict: a gate that cries wolf on `key: gate.gateId` is a
+ * gate people learn to work around, and the credential is scrubbed out of every record either
+ * way. What the asymmetry loses is a warning, never the redaction.
+ */
+function classifyValue(value: string): ValueVerdict {
+  if (carriesRedaction.test(value) || value.length === 0) {
+    return "not-credential";
+  }
+  // Shorter than the shortest credential anyone issues. The numeric branch below already
+  // draws that line at four, for the PIN case, and drawing it anywhere else for text was
+  // the whole defect: at eight, `hunter2` under a field named password read as too short to
+  // be anything and travelled as plain text. Four is not a confidence threshold, it is the
+  // point below which a value cannot carry a secret to begin with.
+  if (value.length < shortestCredential) {
+    return "not-credential";
+  }
+  if (jsonNumber.test(value)) {
+    // A decimal or a negative is a measurement. A run of digits is a PIN, an OTP, or an
+    // account number, and those are the credentials that carry no letters to be recognized by.
+    if (value.includes(".") || value.startsWith("-")) {
+      return "not-credential";
+    }
+    return value.length <= 19 ? "credential-shaped" : "opaque";
+  }
+  if (/[0-9]/.test(value) && /[A-Za-z]/.test(value) && value.length >= 12) {
+    return "credential-shaped";
+  }
+  if (/[+/=]/.test(value) && value.length >= 20) {
+    return "credential-shaped";
+  }
+  // Everything else a credential-bearing name was given. The name already said what the
+  // value is, and nothing above it earned a stronger verdict, so it is redacted and the gate
+  // is not offered it. Length stops deciding here: what it still decides, above, is how
+  // confident the gate gets to be, where a false positive blocks a change rather than
+  // redacting a record.
+  return "opaque";
+}
+
+/**
+ * `name = value` and `name: value`, quoted or not, which covers a shell export, a dotenv
+ * line, a source literal, and a serialized JSON field with one reader. The bracketed
+ * alternative comes first because a bare value would otherwise eat the opening bracket and
+ * stop at the first comma, which is how `PIN: [4, 8, 2]` read as the value `[4`.
+ *
+ * The name is any letter, not any Latin letter, so that a name a reader reads as a credential
+ * reaches the fold in `wordsOf` rather than failing to match here.
+ *
+ * Two details keep one match from hiding the next, which is how a credential used to travel
+ * through the gate unreported. The opening delimiter is a lookbehind rather than something
+ * the match consumes: `{"b":{"client_secret":"..."}}` gave `b` the `{` that `client_secret`
+ * needed to be found by, and only that pair, so whether a secret was seen depended on what
+ * an unrelated name three characters earlier happened to eat. And a bare value stops before
+ * `{` and `[` as it already stops before `}` and `)`, because an opening brace begins a
+ * nested structure rather than being a scalar anybody assigned.
+ */
+const assignmentPattern =
+  /(?<=^|[\s,{[])["']?(\p{L}[\p{L}\p{N}_-]{0,63})["']?\s*[=:]\s*(?:(\[[^\]\n]*\])|"([^"]*)"|'([^']*)'|([^\s"',;{}[\])]+))/dgu;
+
+interface SecretSpan {
+  readonly label: string;
+  readonly start: number;
+  readonly end: number;
+  /** False for a match too loose to block a change on, only to redact one. */
+  readonly blocking: boolean;
+}
+
+function shapeSpans(text: string): readonly SecretSpan[] {
+  const spans: SecretSpan[] = [];
+  for (const { label, source } of knownSecretPatterns) {
+    for (const match of text.matchAll(new RegExp(source, "gi"))) {
+      spans.push({
+        label,
+        start: match.index,
+        end: match.index + match[0].length,
+        blocking: true,
+      });
+    }
+  }
+  return spans;
+}
+
+function assignmentSpans(text: string): readonly SecretSpan[] {
+  const spans: SecretSpan[] = [];
+  for (const match of text.matchAll(assignmentPattern)) {
+    const name = match[1];
+    if (name === undefined || !isCredentialName(name)) {
+      continue;
+    }
+    const group = [2, 3, 4, 5].find((index) => match[index] !== undefined);
+    const value = group === undefined ? undefined : match[group];
+    const at = group === undefined ? undefined : match.indices?.[group];
+    if (value === undefined || at === undefined) {
+      continue;
+    }
+    // An array under a credential name is that credential written in pieces, so the pieces
+    // are judged joined. The name is what says so; nothing here infers a secret from shape.
+    // A value that already carries a marker is judged as it stands, since joining would strip
+    // the brackets the marker is recognized by and the second pass would redact its own work.
+    const joinable = group === 2 && !carriesRedaction.test(value);
+    const verdict = classifyValue(joinable ? joinedElements(value) : value);
+    if (verdict === "not-credential") {
+      continue;
+    }
+    spans.push({
+      label: assignmentLabel,
+      start: at[0],
+      end: at[1],
+      blocking: verdict === "credential-shaped",
+    });
+  }
+  return spans;
+}
+
+/** `[4, 8, 2]` and `["ab", "cd"]` as the one value they stand for. */
+function joinedElements(bracketed: string): string {
+  return bracketed
+    .slice(1, -1)
+    .split(",")
+    .map((part) => part.trim().replace(/^["']/, "").replace(/["']$/, ""))
+    .join("");
+}
+
+/** Every span the detector claims, longest first at a tie, with overlaps dropped. */
+function secretSpans(text: string): readonly SecretSpan[] {
+  const all = [...shapeSpans(text), ...assignmentSpans(text)].sort(
+    (left, right) => left.start - right.start || right.end - left.end,
+  );
+
+  const kept: SecretSpan[] = [];
+  let reached = 0;
+  for (const span of all) {
+    if (span.start < reached) {
+      continue;
+    }
+    kept.push(span);
+    reached = span.end;
+  }
+  return kept;
+}
+
+interface ScrubOutcome<Value> {
+  readonly value: Value;
+  /** Pattern labels that fired, in the order they were applied. Recorded, never the match. */
+  readonly redactions: readonly string[];
+}
+
+/**
+ * One thing the detector found, named for both of its audiences. A redaction marker names the
+ * field it replaced and a scan names the assignment it read, so the two spellings survive;
+ * what does not survive is the possibility of one site finding it and another not, since every
+ * site reaches this through the same traversal.
+ */
+interface SecretFinding {
+  /** What the marker left in the scrubbed value says. */
+  readonly redactedAs: string;
+  /** What a scan over the same content reports. */
+  readonly reportedAs: string;
+  /** False for a match too loose to block a change on, only to redact one. */
+  readonly blocking: boolean;
+}
+
+function spanFinding(span: SecretSpan): SecretFinding {
+  return { redactedAs: span.label, reportedAs: span.label, blocking: span.blocking };
+}
+
+function nameFinding(verdict: ValueVerdict): SecretFinding {
+  return {
+    redactedAs: fieldLabel,
+    reportedAs: assignmentLabel,
+    blocking: verdict === "credential-shaped",
+  };
+}
+
+/**
+ * Scrubs content whose type is not known in advance, dispatching exactly as `findingsIn`
+ * does: where it parses, the structural walk governs, and the line scan is what is left for
+ * content that is genuinely not JSON.
+ *
+ * The dispatch is the guarantee, not an optimization. These two sites used to answer the
+ * same question with two implementations, and a regex and a parser cannot be made to agree
+ * by adding spellings to the regex: `wordsOf` splits a name on any non-alphanumeric run, so
+ * `api/_key` is a credential to the walk, while the scan's name class stops at the slash and
+ * sees nothing. Widening that class buys the next spelling and not the one after it. Sharing
+ * the dispatch means there is one answer for JSON, which is what a payload is.
+ *
+ * The original bytes come back untouched when the walk finds nothing, so re-serialization is
+ * only ever visible on content that was going to be rewritten anyway.
+ */
+export function scrubText(text: string): ScrubOutcome<string> {
+  const findings: SecretFinding[] = [];
+  let current = text;
+
+  // The dispatch runs to a fixpoint, not just the line scan inside it. Scrubbing can change
+  // which arm the next reader takes: a payload carrying a control byte does not parse, so it
+  // goes to the line scan, and if that byte sits inside the span being replaced the result
+  // does parse. The export scan then walks what the write-time scrub had only scanned, and
+  // reports a name the scan's own name class could not see. Re-dispatching until nothing
+  // changes means the arm that reads the output last is the arm that wrote it.
+  for (let round = 0; round < scrubRounds; round += 1) {
+    const next = scrubDispatched(current, findings);
+    if (next === current) {
+      break;
+    }
+    current = next;
+  }
+
+  return { value: current, redactions: findings.map((finding) => finding.redactedAs) };
+}
+
+function scrubDispatched(text: string, findings: SecretFinding[]): string {
+  const parsed = parseJsonPayload(text);
+  if (parsed === undefined) {
+    return scrubTextInto(text, findings);
+  }
+  const before = findings.length;
+  const walked = scrubValue(parsed, "plain", findings);
+  // Untouched content comes back as the bytes it arrived as, so re-serialization is only
+  // ever visible on a payload that was going to be rewritten anyway.
+  return findings.length === before ? text : JSON.stringify(walked);
+}
+
+/**
+ * One pass is not a fixpoint, so this runs to one. Overlapping claims are resolved by
+ * keeping the earliest and dropping what it covers, which is right for the pass it is in and
+ * leaves the dropped region unexamined: replacing a span with a marker shortens the text
+ * around it, and an assignment the discarded span had swallowed becomes visible only once
+ * that happens. Scrubbing twice then differed from scrubbing once, which is the export scan
+ * refusing a bundle for the redaction that protected it.
+ *
+ * It converges because every round replaces credential material with a marker and a marker
+ * is not credential material, so the unredacted span count strictly decreases. The cap is a
+ * backstop against a pattern that could somehow reintroduce a match, not an expected path.
+ */
+const scrubRounds = 8;
+
+function scrubTextInto(text: string, findings: SecretFinding[]): string {
+  let current = text;
+  for (let round = 0; round < scrubRounds; round += 1) {
+    const next = scrubTextOnce(current, findings);
+    if (next === current) {
+      return current;
+    }
+    current = next;
+  }
+  return current;
+}
+
+function scrubTextOnce(text: string, findings: SecretFinding[]): string {
+  const spans = secretSpans(text);
+  if (spans.length === 0) {
+    return text;
+  }
+
+  const parts: string[] = [];
+  let cursor = 0;
+  for (const span of spans) {
+    parts.push(text.slice(cursor, span.start), `[redacted:${span.label}]`);
+    findings.push(spanFinding(span));
+    cursor = span.end;
+  }
+  parts.push(text.slice(cursor));
+
+  return parts.join("");
+}
+
+/**
+ * What the two text-reading sites see. A payload this system stores is JSON, and a scan that
+ * reads JSON as lines cannot see what a walk over it sees: pretty-printing puts a
+ * credential-bearing name and the value it was given on different lines, and compacting buries
+ * the same pair inside a longer line where the scanner reads the enclosing object as the
+ * value. Neither is a spelling a name list can be extended to cover, because a parser and a
+ * line scanner genuinely disagree about where a value begins.
+ *
+ * So where the content parses, the structural walk governs and the line scan is not consulted
+ * at all. The line scan is what is left for content that is genuinely not JSON: a source file,
+ * a shell transcript, a dotenv line. Build-guide section 7.1 names that remainder rather than
+ * implying the walk covers it.
+ */
+function findingsIn(text: string): readonly SecretFinding[] {
+  const parsed = parseJsonPayload(text);
+  if (parsed === undefined) {
+    return secretSpans(text).map(spanFinding);
+  }
+  const findings: SecretFinding[] = [];
+  scrubValue(parsed, "plain", findings);
+  return findings;
+}
+
+/** An object or an array, which is what a payload is. Anything else reads as text. */
+function parseJsonPayload(text: string): JsonValue | undefined {
+  if (!/^\s*[[{]/.test(text)) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(text) as JsonValue;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The export-time second scan. Scrubbing already ran at write time; this exists because
+ * once a blob directory is copied or backed up, write-time alone is too late to fix.
+ */
+export function findKnownSecrets(text: string): readonly string[] {
+  return [...new Set(findingsIn(text).map((finding) => finding.reportedAs))];
+}
+
+/**
+ * What the secret-scan gate blocks on: the same detector, minus the matches whose value is
+ * too ordinary to stop a change over.
+ */
+export function findBlockingSecrets(text: string): readonly string[] {
+  return [
+    ...new Set(
+      findingsIn(text)
+        .filter((finding) => finding.blocking)
+        .map((finding) => finding.reportedAs),
+    ),
+  ];
+}
+
+/**
+ * The same pass over every string in a payload, keys included, plus the key rule: a value
+ * sitting under a credential-bearing name is redacted whatever its JSON type, which is what
+ * a text scan over an already-parsed payload cannot see.
+ *
+ * One traversal, and it is the traversal all three sites run: the write-time scrub here, and
+ * the export scan and the gate through `findingsIn`, which walks the parsed payload rather
+ * than reading it as lines. The name rule, the array rule, and the metric exemption are each
+ * written once, so the three cannot disagree about the same input.
+ */
+export function scrubJson(value: JsonValue): ScrubOutcome<JsonValue> {
+  const findings: SecretFinding[] = [];
+  const scrubbed = scrubValue(value, "plain", findings);
+  return { value: scrubbed, redactions: findings.map((finding) => finding.redactedAs) };
+}
+
+/**
+ * How far a credential-bearing name reaches. `named` is the value that name was given, where
+ * over-redacting costs nothing and anything but a measurement goes. `nested` is deeper inside
+ * that value, where only credential-shaped material goes: `secrets: { ... }` is a container,
+ * and blanking every string in it throws away evidence that is not the credential.
+ */
+type NameContext = "plain" | "named" | "nested";
+
+function scrubValue(value: JsonValue, context: NameContext, findings: SecretFinding[]): JsonValue {
+  if (typeof value === "string") {
+    return scrubString(value, context, findings);
+  }
+  if (typeof value === "number" || typeof value === "boolean" || value === null) {
+    return redactedWhereCredential(String(value), context, findings) ?? value;
+  }
+  if (Array.isArray(value)) {
+    return scrubArray(value, context, findings);
+  }
+
+  const scrubbed: Record<string, JsonValue> = {};
+  for (const [key, item] of Object.entries(value as { readonly [key: string]: JsonValue })) {
+    // The name a child is read under is the one that survives into the output, not the one
+    // that arrived. A key can itself carry credential material and be scrubbed, and reading
+    // the child under the original key meant the second pass, which only ever sees the
+    // scrubbed key, could classify it differently and redact something the first pass left.
+    // Scrubbing a string is idempotent, so classifying from the scrubbed key is a fixpoint.
+    const name = scrubTextInto(key, findings);
+    scrubbed[name] = scrubValue(item, contextUnder(name, context), findings);
+  }
+  return scrubbed;
+}
+
+/**
+ * A metric is exempt by key wherever it sits, so a throughput figure under a credential-named
+ * container is still a measurement. Otherwise a credential-bearing key opens the strict
+ * context and everything under it stays in the looser one.
+ */
+function contextUnder(key: string, context: NameContext): NameContext {
+  if (isMetricName(key)) {
+    return "plain";
+  }
+  if (isCredentialName(key)) {
+    return "named";
+  }
+  return context === "plain" ? "plain" : "nested";
+}
+
+function scrubString(value: string, context: NameContext, findings: SecretFinding[]): JsonValue {
+  const before = findings.length;
+  const scrubbed = scrubTextInto(value, findings);
+  if (findings.length > before) {
+    return scrubbed;
+  }
+  return redactedWhereCredential(value, context, findings) ?? value;
+}
+
+/**
+ * An array directly under a credential-bearing name is that credential written in pieces, so
+ * its elements are judged joined and it is redacted whole. Deeper in, and under any other
+ * name, the elements are walked instead: a secret split across fields nobody named as a
+ * credential is outside a name-keyed detector by construction, and guessing at reassembly
+ * there is how a detector starts rejecting ordinary split data (build guide section 7.1).
+ */
+function scrubArray(
+  items: readonly JsonValue[],
+  context: NameContext,
+  findings: SecretFinding[],
+): JsonValue {
+  if (context === "named") {
+    const joined = joinedLeaves(items);
+    const verdict = joined === null ? "not-credential" : classifyValue(joined);
+    if (verdict !== "not-credential") {
+      findings.push(nameFinding(verdict));
+      return `[redacted:${fieldLabel}]`;
+    }
+  }
+  return items.map((item) => scrubValue(item, context === "plain" ? "plain" : "nested", findings));
+}
+
+/**
+ * Every primitive under a credential-named array, in document order, as the one value its
+ * pieces spell. Containers are walked into rather than refusing the join: one digit per element
+ * and one digit per single-field object are the same credential written down two ways, and a
+ * rule that reads the first and not the second is a rule about JSON style. The name is still
+ * what says any of this is a credential; nothing here infers one from shape.
+ *
+ * A metric keeps its exemption inside the walk, by key as everywhere else, so a list of token
+ * counts under a credential-word name stays a list of measurements. Null where there is nothing
+ * to join, which is not a credential either.
+ */
+function joinedLeaves(items: readonly JsonValue[]): string | null {
+  const parts: string[] = [];
+
+  const collect = (value: JsonValue): void => {
+    if (value === null || typeof value !== "object") {
+      parts.push(String(value));
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        collect(item);
+      }
+      return;
+    }
+    for (const [key, item] of Object.entries(value as { readonly [key: string]: JsonValue })) {
+      if (!isMetricName(key)) {
+        collect(item);
+      }
+    }
+  };
+
+  for (const item of items) {
+    collect(item);
+  }
+  return parts.length === 0 ? null : parts.join("");
+}
+
+/**
+ * The marker to put in a value's place, or null to leave it alone. Under a credential-bearing
+ * name anything but a measurement goes, since over-redacting costs nothing; deeper inside one
+ * only credential-shaped material does, because blanking every string under `secrets: { ... }`
+ * throws away evidence that is not the credential.
+ */
+function redactedWhereCredential(
+  value: string,
+  context: NameContext,
+  findings: SecretFinding[],
+): string | null {
+  const verdict = classifyValue(value);
+  const redacts =
+    context === "named" ? verdict !== "not-credential" : verdict === "credential-shaped";
+  if (context === "plain" || !redacts) {
+    return null;
+  }
+  findings.push(nameFinding(verdict));
+  return `[redacted:${fieldLabel}]`;
+}
+
+[evidence record sha256:0a848726fb9bbe6f60b91288c30b8715066d8b0adcab947729b5cff325921059 kind tool-call:read]
+tool read <- {"path":"src/evidence/scrub.test.ts"}
+tool read ok: import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { findBlockingSecrets, findKnownSecrets, scrubJson, scrubText } from "./scrub.ts";
+
+describe("write-time scrubbing", () => {
+  it("redacts known credential shapes and names which pattern fired", () => {
+    const outcome = scrubText("export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE");
+
+    expect(outcome.value).not.toContain("AKIAIOSFODNN7EXAMPLE");
+    expect(outcome.value).toContain("[redacted:");
+    expect(outcome.redactions).toContain("aws-access-key-id");
+  });
+
+  it("redacts inside a nested payload, keys included", () => {
+    const outcome = scrubJson({
+      command: "curl -H 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz012345' https://api",
+      env: { OPENAI_API_KEY: "sk-proj-0123456789abcdefghij" },
+    });
+
+    expect(JSON.stringify(outcome.value)).not.toContain("abcdefghijklmnopqrstuvwxyz012345");
+    expect(JSON.stringify(outcome.value)).not.toContain("sk-proj-0123456789abcdefghij");
+    expect(outcome.redactions.length).toBeGreaterThan(0);
+  });
+
+  it("redacts a private key block whole rather than line by line", () => {
+    const pem = [
+      "-----BEGIN OPENSSH PRIVATE KEY-----",
+      "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAAB",
+      "-----END OPENSSH PRIVATE KEY-----",
+    ].join("\n");
+
+    const outcome = scrubText(`here it is:\n${pem}\ndone`);
+
+    expect(outcome.value).toBe("here it is:\n[redacted:private-key-block]\ndone");
+  });
+
+  it("leaves ordinary text alone", () => {
+    const text = "npm test failed: 3 of 47 tests did not pass in src/gates/runner.test.ts";
+    expect(scrubText(text)).toEqual({ value: text, redactions: [] });
+  });
+
+  it("is idempotent, so a digest taken after scrubbing survives a second pass", () => {
+    const once = scrubText("token=ghp_0123456789abcdefghijklmnopqrstuvwxyz").value;
+    expect(scrubText(once).value).toBe(once);
+  });
+
+  it("leaves a numeric metric alone even when its name contains a credential word", () => {
+    // The export gate scans serialized JSON bytes, where a recorded throughput number
+    // lands as outputTokensPerSecond":129.90418363640293. A bare number is a metric,
+    // never a credential, and matching it blocked every live bundle export.
+    const serialized = '{"outputTokensPerSecond":129.90418363640293,"firstTokenMs":763.77}';
+
+    expect(findKnownSecrets(serialized)).toEqual([]);
+    expect(scrubText(serialized)).toEqual({ value: serialized, redactions: [] });
+  });
+
+  it("still redacts a credential assigned right after a numberish name", () => {
+    const outcome = scrubText("API_KEY=a1b2c3d4e5f6");
+
+    expect(outcome.value).toBe("API_KEY=[redacted:credential-assignment]");
+  });
+
+  it("finds nothing in already scrubbed output, which is what the export gate checks", () => {
+    const scrubbed = scrubJson({ note: "key: AIzaSyA1234567890abcdefghijklmnopqrstuvw" });
+    expect(findKnownSecrets(JSON.stringify(scrubbed.value))).toEqual([]);
+    expect(findKnownSecrets("AIzaSyA1234567890abcdefghijklmnopqrstuvw")).toContain(
+      "google-api-key",
+    );
+  });
+
+  it("does not read its own redaction marker back as a credential", () => {
+    // Otherwise export refuses to ship a bundle precisely because write-time scrubbing
+    // worked, which is the one outcome the second scan must never produce.
+    const scrubbed = scrubText("token=ghp_0123456789abcdefghijklmnopqrstuvwxyz").value;
+
+    expect(scrubbed).toContain("[redacted:");
+    expect(findKnownSecrets(scrubbed)).toEqual([]);
+    expect(findBlockingSecrets(scrubbed)).toEqual([]);
+  });
+});
+
+describe("detection keyed on the name rather than the shape of the value", () => {
+  it("redacts a numeric credential at write time, whatever shape the value takes", () => {
+    for (const [text, expected] of [
+      ["API_KEY=48291736", "API_KEY=[redacted:credential-assignment]"],
+      ["PIN=482917", "PIN=[redacted:credential-assignment]"],
+      ["otp: 847291", "otp: [redacted:credential-assignment]"],
+      ["accountNumber=123456789012", "accountNumber=[redacted:credential-assignment]"],
+    ] as const) {
+      const outcome = scrubText(text);
+
+      expect({ text, value: outcome.value }).toEqual({ text, value: expected });
+      expect(findKnownSecrets(text)).toContain("credential-assignment");
+    }
+  });
+
+  it("redacts a numeric credential carried as a JSON field, not only as text", () => {
+    const outcome = scrubJson({
+      command: "echo done",
+      leaked: { API_KEY: 48291736, PIN: 482917, otp: "847291", accountNumber: "123456789012" },
+    });
+    const serialized = JSON.stringify(outcome.value);
+
+    for (const digits of ["48291736", "482917", "847291", "123456789012"]) {
+      expect({ digits, serialized }).toEqual({
+        digits,
+        serialized: expect.not.stringContaining(digits),
+      });
+    }
+    expect(outcome.redactions).toContain("credential-field");
+    expect(findKnownSecrets(serialized)).toEqual([]);
+  });
+
+  it("leaves a known metric key alone by name, whatever its value", () => {
+    // The exemption is by key, not by value: an integer throughput number is still a metric,
+    // and this is the case that made the previous detector let real PINs through.
+    const serialized =
+      '{"outputTokensPerSecond":129.90418363640293,"firstTokenMs":763.77,' +
+      '"outputTokens":1482917,"maxTokens":1000000,"secretMatches":4821}';
+
+    expect(scrubText(serialized)).toEqual({ value: serialized, redactions: [] });
+    expect(scrubJson(JSON.parse(serialized) as Record<string, number>).redactions).toEqual([]);
+    expect(findKnownSecrets(serialized)).toEqual([]);
+  });
+
+  it("leaves a bare numeric literal with no credential-shaped key alone", () => {
+    const serialized = '{"durationMs":482917,"outputBytes":123456789012,"exitCode":0}';
+
+    expect(scrubText(serialized)).toEqual({ value: serialized, redactions: [] });
+    expect(findKnownSecrets(serialized)).toEqual([]);
+  });
+
+  it("is idempotent over a payload, so a blob digest survives a second pass", () => {
+    const once = scrubJson({
+      account: "accountNumber=123456789012",
+      env: { API_KEY: 48291736 },
+    }).value;
+    const twice = scrubJson(once);
+
+    expect(twice.value).toEqual(once);
+    expect(twice.redactions).toEqual([]);
+    expect(findKnownSecrets(JSON.stringify(once))).toEqual([]);
+  });
+
+  it("does not read a credential word buried inside an ordinary word", () => {
+    for (const text of ['{"mapping":48291736}', '{"spinCount":123456}', '{"pinned":48291736}']) {
+      expect({ text, ...scrubText(text) }).toEqual({ text, value: text, redactions: [] });
+    }
+  });
+
+  it("redacts a credential under an HTTP auth header name at all three sites", () => {
+    for (const name of ["Authorization", "proxy-authorization", "WWW-Authenticate"]) {
+      const text = `${name}: 48291736`;
+
+      expect({ name, ...scrubText(text) }).toEqual({
+        name,
+        value: `${name}: [redacted:credential-assignment]`,
+        redactions: ["credential-assignment"],
+      });
+      expect({ name, found: findKnownSecrets(text) }).toEqual({
+        name,
+        found: ["credential-assignment"],
+      });
+      expect({ name, blocking: findBlockingSecrets(text) }).toEqual({
+        name,
+        blocking: ["credential-assignment"],
+      });
+      expect(JSON.stringify(scrubJson({ [name]: 48291736 }).value)).not.toContain("48291736");
+    }
+  });
+
+  it("reaches a numeric credential one object below the name that describes it", () => {
+    const outcome = scrubJson({ PIN: { value: 482917 }, apiKey: { current: "a1b2c3d4e5f6" } });
+    const serialized = JSON.stringify(outcome.value);
+
+    expect(serialized).not.toContain("482917");
+    expect(serialized).not.toContain("a1b2c3d4e5f6");
+    expect(outcome.redactions).toContain("credential-field");
+  });
+
+  it("does not blank a container's ordinary contents just for sitting under the name", () => {
+    // The nested rule is the shaped one: `secrets: { ... }` is a container, and redacting
+    // every string in it throws away evidence that is not the credential.
+    const outcome = scrubJson({ credentials: { provider: "anthropic", createdAt: "2026-08-14" } });
+
+    expect(outcome.value).toEqual({
+      credentials: { provider: "anthropic", createdAt: "2026-08-14" },
+    });
+    expect(outcome.redactions).toEqual([]);
+  });
+
+  it("judges a credential-named array as the one value it is written in pieces of", () => {
+    for (const items of [[48291736], [4, 8, 2, 9, 1, 7], ["4829", "1736"]]) {
+      const written = scrubJson({ PIN: items });
+      const blob = JSON.stringify(written.value);
+      const text = `{"PIN":[${items.map((item) => JSON.stringify(item)).join(",")}]}`;
+
+      expect({ items, blob }).toEqual({ items, blob: '{"PIN":"[redacted:credential-field]"}' });
+      expect({ items, again: findKnownSecrets(blob) }).toEqual({ items, again: [] });
+      // The text scan reaches the same verdict on the same bytes, which is what stops the
+      // export scan and the gate disagreeing with what was written.
+      expect({ items, found: findKnownSecrets(text) }).toEqual({
+        items,
+        found: ["credential-assignment"],
+      });
+      // scrubText walks JSON rather than scanning it as lines, so the marker lands as a
+      // value and the result still parses. Splicing it in as text gave back
+      // {"PIN":[redacted:...]}, which is not JSON: scrubbing a payload destroyed the thing
+      // that made it readable, and every reader downstream inherited that.
+      expect({ items, scrubbed: scrubText(text).value }).toEqual({
+        items,
+        scrubbed: '{"PIN":"[redacted:credential-field]"}',
+      });
+      expect(() => JSON.parse(scrubText(text).value) as unknown).not.toThrow();
+    }
+  });
+
+  it("leaves an array of ordinary short values under a credential name alone", () => {
+    const outcome = scrubJson({ keys: ["a", "b"], tokens: [1, 2, 3] });
+
+    expect(outcome.value).toEqual({ keys: ["a", "b"], tokens: [1, 2, 3] });
+    expect(outcome.redactions).toEqual([]);
+  });
+
+  it("leaves a version tuple alone at every site, whichever way it is rendered", () => {
+    // The control behind the residual: treating adjacent short values as one value is what a
+    // reassembling detector would have to do, and this is what it would cost. Nothing here is
+    // under a credential name, so nothing here is a credential.
+    const value = { version: [13, 0, 1], parts: ["ab", "cd", "ef"] };
+
+    expect(scrubJson(value)).toEqual({ value, redactions: [] });
+    for (const rendering of [JSON.stringify(value), JSON.stringify(value, null, 2)]) {
+      expect({ rendering, found: findKnownSecrets(rendering) }).toEqual({ rendering, found: [] });
+    }
+  });
+
+  it("keeps the metric exemption exact at all three sites, nested or not", () => {
+    const metrics = { outputTokensPerSecond: 129.9, maxTokens: 1000000, tokenCount: 48291736 };
+    const text = JSON.stringify({ credentials: metrics });
+
+    expect(scrubJson({ credentials: metrics }).redactions).toEqual([]);
+    expect(scrubJson({ credentials: metrics }).value).toEqual({ credentials: metrics });
+    expect(scrubText(text)).toEqual({ value: text, redactions: [] });
+    expect(findKnownSecrets(text)).toEqual([]);
+    expect(findBlockingSecrets(text)).toEqual([]);
+  });
+
+  it("reads a credential name as a reader reads it, whatever the letters are", () => {
+    // Detection keys on the name, so a name that renders as a credential word and is not one
+    // carried the value past all three sites. Cyrillic a, Greek omicron, a fullwidth k, and a
+    // zero-width space: each of them prints as the name beside it.
+    const spellings = [
+      `p\u0430ssword`,
+      `t\u03BFken`,
+      `api\uFF4Bey`,
+      `secr\u200Bet`,
+      `\u0410PI_KEY`,
+    ];
+
+    for (const name of spellings) {
+      // A numeric credential, which is the case a name-keyed detector exists for: nothing about
+      // the value says anything, so the name is the whole of the evidence.
+      const value = { [name]: 4_829_173_648_291_736 };
+      const rendering = JSON.stringify(value, null, 2);
+
+      expect({ name, redactions: scrubJson(value).redactions }).toEqual({
+        name,
+        redactions: ["credential-field"],
+      });
+      expect({ name, found: findKnownSecrets(rendering) }).toEqual({
+        name,
+        found: ["credential-assignment"],
+      });
+      expect({ name, blocking: findBlockingSecrets(rendering) }).toEqual({
+        name,
+        blocking: ["credential-assignment"],
+      });
+    }
+  });
+
+  it("joins an array under a credential name however its pieces are nested", () => {
+    // One digit per element and one digit per single-field object are the same credential
+    // written down two ways. The name is what says it is one; the wrapper is style.
+    const wrapped = { PIN: [{ n: 4 }, { n: 8 }, { n: 2 }, { n: 9 }, { n: 1 }, { n: 7 }] };
+    const nested = {
+      PIN: [
+        [4, 8],
+        [2, 9],
+        [1, 7],
+      ],
+    };
+
+    for (const value of [wrapped, nested]) {
+      const rendering = JSON.stringify(value);
+
+      expect(JSON.stringify(scrubJson(value).value)).not.toMatch(/4.{0,6}8.{0,6}2/);
+      expect({ rendering, redactions: scrubJson(value).redactions }).toEqual({
+        rendering,
+        redactions: ["credential-field"],
+      });
+      expect({ rendering, found: findKnownSecrets(rendering) }).toEqual({
+        rendering,
+        found: ["credential-assignment"],
+      });
+    }
+  });
+
+  it("keeps a list of measurements under a credential-word name intact while joining", () => {
+    // The control on the join: the metric exemption is by key at every depth, so a page of
+    // token counts is a page of measurements even where the walk is looking for pieces.
+    const value = { tokens: [{ outputTokens: 1000 }, { outputTokens: 2000 }] };
+
+    expect(scrubJson(value)).toEqual({ value, redactions: [] });
+    expect(findKnownSecrets(JSON.stringify(value))).toEqual([]);
+  });
+
+  it("redacts an opaque value under a credential key without offering it to a gate", () => {
+    // Scrubbing is fail-safe, so over-matching costs nothing. Blocking is not, so the gate
+    // only sees matches whose value is shaped like credential material.
+    const outcome = scrubText("createElement(Text, { key: gate.gateId }, label)");
+
+    expect(outcome.redactions).toEqual(["credential-assignment"]);
+    expect(findKnownSecrets("key: gate.gateId }")).toContain("credential-assignment");
+    expect(findBlockingSecrets("key: gate.gateId }")).toEqual([]);
+  });
+});
+
+/**
+ * Invariant 9 says one detector serves the write-time scrub, the export-time scan and the
+ * gate, "so the three cannot drift apart". They did. These pin the property rather than any
+ * one input, because every case below was found by the fuzz harness asserting the property
+ * and none of them was a shape anybody would have thought to write down.
+ */
+describe("the write-time scrub and the export scan agree", () => {
+  const artifacts = readdirSync(join(import.meta.dirname, "../../fuzz/findings"))
+    // Only this boundary's artifacts. Other harnesses keep theirs in the same directory, and
+    // a diff or an lcov report is not a scrub regression case.
+    .filter((entry) => entry.startsWith("scrub-") && entry.endsWith(".input"))
+    .sort();
+
+  it("has the artifacts that found the drift", () => {
+    expect(artifacts.length).toBeGreaterThanOrEqual(5);
+  });
+
+  for (const artifact of artifacts) {
+    it(`leaves nothing for the export scan to find in ${artifact}`, () => {
+      const text = readFileSync(join(import.meta.dirname, "../../fuzz/findings", artifact), "utf8");
+      const once = scrubText(text);
+
+      // The property, stated as the invariant states it: whatever write-time scrubbing
+      // leaves behind is exactly what the export scan is about to read, so the scan finding
+      // anything in scrubbed output is the two sites disagreeing about the same bytes.
+      expect({ artifact, residual: findKnownSecrets(once.value) }).toEqual({
+        artifact,
+        residual: [],
+      });
+      // And scrubbing settles, so an export scan cannot refuse a bundle for the redaction
+      // that protected it.
+      expect({ artifact, again: scrubText(once.value).value }).toEqual({
+        artifact,
+        again: once.value,
+      });
+    });
+  }
+
+  it("agrees on generated inputs too, not only the ones already found", () => {
+    const names = ["password", "api_key", "client_secret", "api/_key", "secret-scan", "count"];
+    const values = ["", "pw", "hunter2", "passed", "0123456789abcdefghij", "482917", "9911"];
+    const shapes = [
+      (n: string, v: string) => JSON.stringify({ [n]: v }),
+      (n: string, v: string) => JSON.stringify({ outer: { inner: { [n]: v } } }),
+      (n: string, v: string) => `${n} = "${v}"`,
+      (n: string, v: string) => `+ {"a":{"${n}":"${v}"}}`,
+    ];
+
+    for (const name of names) {
+      for (const value of values) {
+        for (const shape of shapes) {
+          const text = shape(name, value);
+          const once = scrubText(text);
+          expect({ text, residual: findKnownSecrets(once.value) }).toEqual({
+            text,
+            residual: [],
+          });
+          expect({ text, again: scrubText(once.value).value }).toEqual({ text, again: once.value });
+          // The gate is the scan minus the matches too loose to block on, never more.
+          for (const blocking of findBlockingSecrets(text)) {
+            expect({ text, blocking, known: findKnownSecrets(text) }).toEqual({
+              text,
+              blocking,
+              known: expect.arrayContaining([blocking]),
+            });
+          }
+        }
+      }
+    }
+  });
+});
+
+describe("a value under a credential name is judged by the name, not by its length", () => {
+  it("redacts a short password, which eight characters used to let through", () => {
+    for (const secret of ["pw12", "s3cr3t", "hunter2", "hunter22"]) {
+      expect({ secret, outcome: scrubJson({ password: secret }) }).toEqual({
+        secret,
+        outcome: {
+          value: { password: "[redacted:credential-field]" },
+          redactions: ["credential-field"],
+        },
+      });
+    }
+  });
+
+  it("still refuses to block a change over a value that is merely opaque", () => {
+    // Scrubbing is fail-safe and blocking is not, so shape decides the gate and nothing else.
+    expect(findBlockingSecrets(`password = "hunter2"`)).toEqual([]);
+    expect(findKnownSecrets(`password = "hunter2"`)).toEqual(["credential-assignment"]);
+  });
+
+  it("leaves a value too short to carry a credential alone", () => {
+    expect(scrubJson({ keys: ["a", "b"], password: "pw" })).toEqual({
+      value: { keys: ["a", "b"], password: "pw" },
+      redactions: [],
+    });
+  });
+
+  it("keeps a gate result readable, since a redacted gate result is evidence of nothing", () => {
+    const gates = { "secret-scan": "passed", tests: "escalated" };
+
+    expect(scrubJson({ gates })).toEqual({ value: { gates }, redactions: [] });
+  });
+});
+
+[evidence record sha256:69dc03f0fe38d185c583a296c4f14d5cf6225d95828b76de02c283edec6a1641 kind tool-call:read]
+step 2: calling anthropic:claude-sonnet-5
+tool search <- {"pattern":"\\b4\\b","path":"src/evidence/scrub.test.ts"}
+tool search failed: failed: ENOTDIR: not a directory, scandir '/private/tmp/shakedown-07-multi-scrub-floor/src/evidence/scrub.test.ts'
+[evidence record sha256:444544192e3c6f5bd2f6ec139421f7c13e6fe2d99f11d37f0ccedc4b881da0fe kind tool-call:search]
+step 3: calling anthropic:claude-sonnet-5
+tool search <- {"pattern":"shortestCredential|four-character|length < 4|length >= 4"}
+tool search ok: docs/evidence/2026-08-18/run-report.md:41: | 2.4 Invariant 9 floor | done | four-character floor and three open gaps stated in CLAUDE.md and AGENTS.md, identical text |
+docs/evidence/2026-08-18/shakedown/pass-criteria.md:27: | 7 | multi-file | Move the four-character floor constant in `scrub.ts` behind a named export and use it in the test |
+docs/state-report-2026-08-17.md:398: - Floor is `shortestCredential = 4` (`scrub.ts` lines 167-188). Comment at 182-186 states the previous eight-character floor let `hunter2` through. Tests at `scrub.test.ts` lines 401-425 redact `pw12`, `s3cr3t`, `hunter2`, `hunter22` under `password`, leave `"pw"` (length 2), and still do not *block* on opaque `hunter2`.
+src/evidence/scrub.ts:167: const shortestCredential = 4;
+src/evidence/scrub.ts:187: if (value.length < shortestCredential) {
+[evidence record sha256:2571d528b2c0cb8a85e22f561a528722c43ba0ffa086a7198d42edaece976abe kind tool-call:search]
+step 4: calling anthropic:claude-sonnet-5
+tool search <- {"pattern":"4","path":"docs/evidence/2026-08-18/shakedown/pass-criteria.md"}
+tool search failed: failed: ENOTDIR: not a directory, scandir '/private/tmp/shakedown-07-multi-scrub-floor/docs/evidence/2026-08-18/shakedown/pass-criteria.md'
+[evidence record sha256:84dd97db81292a89826131655ff04b83ad89aa2048f82efd587742dd9daf1ef7 kind tool-call:search]
+step 5: calling anthropic:claude-sonnet-5
+tool read <- {"path":"docs/evidence/2026-08-18/shakedown/pass-criteria.md"}
+tool read ok: # Shakedown pass criteria
+
+Written before any task was run, per the project's own evaluation-design-first rule. The
+point of writing it first is that a criterion invented after the numbers are in is a
+description of the numbers.
+
+## What is being tested
+
+Whether the agent, run against a real repository, produces work that the harness can hold
+to its own standard. Not whether the model is clever: whether the evidence path holds up
+over ten consecutive real tasks without being steered.
+
+## The corpus
+
+Ten tasks drawn from this repository's own small chores, spread across the four task
+classes the router already classifies. Every one is work somebody would actually ask for,
+not a puzzle constructed to be easy.
+
+| # | Class | Task |
+| --- | --- | --- |
+| 1 | edit | Name the fuzz corpus directory in the error `fuzz/smoke.mjs` prints when a corpus is missing |
+| 2 | edit | Give `PatternUnreadableError` a message naming the pattern it could not read |
+| 3 | edit | Report the seed count per harness in `fuzz/smoke.mjs` as a total at the end |
+| 4 | test-fix | Add a `scrubText` case for a credential name split by a digit |
+| 5 | test-fix | Add a `findBacktrackingRisk` case for a quantifier inside a lookbehind |
+| 6 | test-fix | Add a `parseLineHits` case for a section with `DA:` lines but no `LF:` |
+| 7 | multi-file | Move the four-character floor constant in `scrub.ts` behind a named export and use it in the test |
+| 8 | multi-file | Give `corpus-replay.test.ts` and `smoke.mjs` one shared list of harness names |
+| 9 | tool-heavy | Find every `.fuzz.cjs` harness with no entry in `fuzz/README.md` and list them |
+| 10 | tool-heavy | Report which `src/gates` files have no test file beside them |
+
+## Dimensions recorded per task
+
+Recorded whatever the outcome, from the run's own output and its bundle, never from the
+model's narration:
+
+- gate outcomes, per gate, including not-applicable
+- attempts the auto-resolve loop took
+- whether it escalated, and on what
+- diff size: files changed and lines added
+- invariant violations: any file-set breach, any placeholder introduced, any secret-scan
+  hit, any ratchet rejection
+- whether the exported bundle verifies under its own embedded verifier
+- claims made, and how many the harness rendered verified
+
+## What counts as failure
+
+The shakedown fails if any of these happens even once:
+
+1. A bundle does not verify under its own embedded verifier.
+2. The harness renders a claim verified that is not true of the cited record.
+3. A run reports green while a blocking gate failed.
+4. A file outside the declared set is changed with no recorded amendment.
+5. The ledger chain breaks, or a run continues after a failed ledger write.
+6. A credential written into the workspace reaches the ledger unredacted.
+
+## What is not failure
+
+Named in advance so it cannot be reinterpreted later:
+
+- **An escalation is a result.** The agent hitting the attempt cap and escalating with a
+  bundle is the designed behaviour. A shakedown where nothing escalates has tested less.
+- **A task the model does badly is not a harness failure.** A wrong or empty edit that the
+  gates catch and report is the system working.
+- **A ratchet rejection is a result**, and a wanted one: it is the numeric floor doing what
+  it is for.
+- **Not-applicable gates are not passes and are not failures.** The scratch clone is this
+  repository, so typecheck and lint apply here and will run.
+
+## How it is run
+
+Against a scratch clone of this repository at the current commit, one clean clone per task,
+so no task inherits another's tree. The frontier model, since the local one has already
+been measured separately and the question here is the harness rather than the model.
+
+[evidence record sha256:505d5f53e45a542cdeeb08894da7f72cd733fdee5f2947597790b4c160780e0a kind tool-call:read]
+step 6: calling anthropic:claude-sonnet-5
+tool declare_file_set <- {"files":["src/evidence/scrub.ts","src/evidence/scrub.test.ts"]}
+tool declare_file_set ok: declared 2 file(s): src/evidence/scrub.test.ts, src/evidence/scrub.ts
+[evidence record sha256:0709d8bc438416461abf648d7357dbe75e659695c9c4fd2c93a209271fc7e4f3 kind tool-call:declare_file_set]
+step 7: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"grep -n \"4\" src/evidence/scrub.test.ts | grep -v \"48291\\|482917\\|4829173\\|4-\\|44\\|400\\|24\\|34\\|14\\|54\\|64\\|74\\|84\\|94\\|401-425\\|2026\\|123456\\|193\\|763\\|129\\|1000000\\|20\\|19\""}
+tool shell ok: exit code: 0
+stdout:
+39:    const text = "npm test failed: 3 of 47 tests did not pass in src/gates/runner.test.ts";
+59:    const outcome = scrubText("API_KEY=a1b2c3d4e5f6");
+178:    expect(serialized).not.toContain("a1b2c3d4e5f6");
+256:      `api\uFF4Bey`,
+258:      `\u0410PI_KEY`,
+285:    const wrapped = { PIN: [{ n: 4 }, { n: 8 }, { n: 2 }, { n: 9 }, { n: 1 }, { n: 7 }] };
+288:        [4, 8],
+297:      expect(JSON.stringify(scrubJson(value).value)).not.toMatch(/4.{0,6}8.{0,6}2/);
+[evidence record sha256:51d7046977e14490360eee396212d4cce6d669b14f50a2e7721714dc994420cc kind tool-call:shell]
+step 8: calling anthropic:claude-sonnet-5
+tool search <- {"pattern":"length|too short|1234|pw\"","path":"src/evidence/scrub.test.ts"}
+tool search failed: failed: ENOTDIR: not a directory, scandir '/private/tmp/shakedown-07-multi-scrub-floor/src/evidence/scrub.test.ts'
+[evidence record sha256:212a434d0ce863da8d356a639248f7e8e5f1b196c2ec868589ad1a09e84a0260 kind tool-call:search]
+step 9: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"grep -n \"9911\\|length\\|too short\\|floor\" src/evidence/scrub.test.ts"}
+tool shell ok: exit code: 0
+stdout:
+23:    expect(outcome.redactions.length).toBeGreaterThan(0);
+343:    expect(artifacts.length).toBeGreaterThanOrEqual(5);
+369:    const values = ["", "pw", "hunter2", "passed", "0123456789abcdefghij", "482917", "9911"];
+401:describe("a value under a credential name is judged by the name, not by its length", () => {
+420:  it("leaves a value too short to carry a credential alone", () => {
+[evidence record sha256:bac508c2a37b083f36822addecf5b094b0e0ed96a9129d8faf9221e36835ec8d kind tool-call:shell]
+step 10: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"grep -n \"pw12\\|s3cr3t\\|hunter2\\b\" src/evidence/scrub.test.ts"}
+tool shell ok: exit code: 0
+stdout:
+369:    const values = ["", "pw", "hunter2", "passed", "0123456789abcdefghij", "482917", "9911"];
+403:    for (const secret of ["pw12", "s3cr3t", "hunter2", "hunter22"]) {
+416:    expect(findBlockingSecrets(`password = "hunter2"`)).toEqual([]);
+417:    expect(findKnownSecrets(`password = "hunter2"`)).toEqual(["credential-assignment"]);
+[evidence record sha256:a11fe0af6916deb795d19c0b849dcd18f545f2ffdaf543494a3a36a32bcf66b1 kind tool-call:shell]
+step 11: calling anthropic:claude-sonnet-5
+tool read <- {"path":"src/evidence/scrub.test.ts","maxBytes":2000}
+tool read ok: import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { findBlockingSecrets, findKnownSecrets, scrubJson, scrubText } from "./scrub.ts";
+
+describe("write-time scrubbing", () => {
+  it("redacts known credential shapes and names which pattern fired", () => {
+    const outcome = scrubText("export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE");
+
+    expect(outcome.value).not.toContain("AKIAIOSFODNN7EXAMPLE");
+    expect(outcome.value).toContain("[redacted:");
+    expect(outcome.redactions).toContain("aws-access-key-id");
+  });
+
+  it("redacts inside a nested payload, keys included", () => {
+    const outcome = scrubJson({
+      command: "curl -H 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz012345' https://api",
+      env: { OPENAI_API_KEY: "sk-proj-0123456789abcdefghij" },
+    });
+
+    expect(JSON.stringify(outcome.value)).not.toContain("abcdefghijklmnopqrstuvwxyz012345");
+    expect(JSON.stringify(outcome.value)).not.toContain("sk-proj-0123456789abcdefghij");
+    expect(outcome.redactions.length).toBeGreaterThan(0);
+  });
+
+  it("redacts a private key block whole rather than line by line", () => {
+    const pem = [
+      "-----BEGIN OPENSSH PRIVATE KEY-----",
+      "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAAB",
+      "-----END OPENSSH PRIVATE KEY-----",
+    ].join("\n");
+
+    const outcome = scrubText(`here it is:\n${pem}\ndone`);
+
+    expect(outcome.value).toBe("here it is:\n[redacted:private-key-block]\ndone");
+  });
+
+  it("leaves ordinary text alone", () => {
+    const text = "npm test failed: 3 of 47 tests did not pass in src/gates/runner.test.ts";
+    expect(scrubText(text)).toEqual({ value: text, redactions: [] });
+  });
+
+  it("is idempotent, so a digest taken after scrubbing survives a second pass", () => {
+    const once = scrubText("token=ghp_0123456789abcdefghijklmnopqrstuvwxyz").value;
+    expect(scrubText(once).value).toBe(once);
+  });
+
+  it("leaves a numeric metric 
+[truncated at 2000 of 19051 bytes]
+[evidence record sha256:d249e59c1f2d8d1363ab423bb30036f9dee6ae03216c4d2ff9ff6bf43e26f007 kind tool-call:read]
+step 12: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"grep -n \"\\b4\\b\" src/evidence/scrub.test.ts"}
+tool shell ok: exit code: 0
+stdout:
+194:    for (const items of [[48291736], [4, 8, 2, 9, 1, 7], ["4829", "1736"]]) {
+285:    const wrapped = { PIN: [{ n: 4 }, { n: 8 }, { n: 2 }, { n: 9 }, { n: 1 }, { n: 7 }] };
+288:        [4, 8],
+297:      expect(JSON.stringify(scrubJson(value).value)).not.toMatch(/4.{0,6}8.{0,6}2/);
+[evidence record sha256:29344346f6ebb9d6341299f8682cf4615e4c09adfee94472e5364a3c5bfccef4 kind tool-call:shell]
+step 13: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"grep -n \"length\\|floor\\|four\\|short\" src/evidence/scrub.test.ts"}
+tool shell ok: exit code: 0
+stdout:
+23:    expect(outcome.redactions.length).toBeGreaterThan(0);
+219:  it("leaves an array of ordinary short values under a credential name alone", () => {
+227:    // The control behind the residual: treating adjacent short values as one value is what a
+343:    expect(artifacts.length).toBeGreaterThanOrEqual(5);
+401:describe("a value under a credential name is judged by the name, not by its length", () => {
+402:  it("redacts a short password, which eight characters used to let through", () => {
+420:  it("leaves a value too short to carry a credential alone", () => {
+[evidence record sha256:e7146d6c924bd40f3905c758f0bf56e0f716051c484f91dfa44e81481be10d44 kind tool-call:shell]
+step 14: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"sed -n '360,400p' src/evidence/scrub.test.ts"}
+tool shell ok: exit code: 0
+stdout:
+      expect({ artifact, again: scrubText(once.value).value }).toEqual({
+        artifact,
+        again: once.value,
+      });
+    });
+  }
+
+  it("agrees on generated inputs too, not only the ones already found", () => {
+    const names = ["password", "api_key", "client_secret", "api/_key", "secret-scan", "count"];
+    const values = ["", "pw", "hunter2", "passed", "0123456789abcdefghij", "482917", "9911"];
+    const shapes = [
+      (n: string, v: string) => JSON.stringify({ [n]: v }),
+      (n: string, v: string) => JSON.stringify({ outer: { inner: { [n]: v } } }),
+      (n: string, v: string) => `${n} = "${v}"`,
+      (n: string, v: string) => `+ {"a":{"${n}":"${v}"}}`,
+    ];
+
+    for (const name of names) {
+      for (const value of values) {
+        for (const shape of shapes) {
+          const text = shape(name, value);
+          const once = scrubText(text);
+          expect({ text, residual: findKnownSecrets(once.value) }).toEqual({
+            text,
+            residual: [],
+          });
+          expect({ text, again: scrubText(once.value).value }).toEqual({ text, again: once.value });
+          // The gate is the scan minus the matches too loose to block on, never more.
+          for (const blocking of findBlockingSecrets(text)) {
+            expect({ text, blocking, known: findKnownSecrets(text) }).toEqual({
+              text,
+              blocking,
+              known: expect.arrayContaining([blocking]),
+            });
+          }
+        }
+      }
+    }
+  });
+});
+[evidence record sha256:99a35a052d75c716982fda98f8a696791fb7218ef5ba4fd37a35695b3a6968f3 kind tool-call:shell]
+step 15: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"sed -n '400,432p' src/evidence/scrub.test.ts"}
+tool shell ok: exit code: 0
+stdout:
+
+describe("a value under a credential name is judged by the name, not by its length", () => {
+  it("redacts a short password, which eight characters used to let through", () => {
+    for (const secret of ["pw12", "s3cr3t", "hunter2", "hunter22"]) {
+      expect({ secret, outcome: scrubJson({ password: secret }) }).toEqual({
+        secret,
+        outcome: {
+          value: { password: "[redacted:credential-field]" },
+          redactions: ["credential-field"],
+        },
+      });
+    }
+  });
+
+  it("still refuses to block a change over a value that is merely opaque", () => {
+    // Scrubbing is fail-safe and blocking is not, so shape decides the gate and nothing else.
+    expect(findBlockingSecrets(`password = "hunter2"`)).toEqual([]);
+    expect(findKnownSecrets(`password = "hunter2"`)).toEqual(["credential-assignment"]);
+  });
+
+  it("leaves a value too short to carry a credential alone", () => {
+    expect(scrubJson({ keys: ["a", "b"], password: "pw" })).toEqual({
+      value: { keys: ["a", "b"], password: "pw" },
+      redactions: [],
+    });
+  });
+
+  it("keeps a gate result readable, since a redacted gate result is evidence of nothing", () => {
+    const gates = { "secret-scan": "passed", tests: "escalated" };
+
+    expect(scrubJson({ gates })).toEqual({ value: { gates }, redactions: [] });
+  });
+});
+[evidence record sha256:81e01d7e72f580b3e8e712fe6db54ad0e8ad782406854c698123797917d74318 kind tool-call:shell]
+step 16: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"grep -rn \"shortestCredential\\|floor\" src/ fuzz/ 2>/dev/null"}
+tool shell ok: exit code: 0
+stdout:
+src/evidence/scrub.ts:166:/** A four-digit PIN is the shortest credential anyone issues, so it is the floor for all of them. */
+src/evidence/scrub.ts:167:const shortestCredential = 4;
+src/evidence/scrub.ts:187:  if (value.length < shortestCredential) {
+src/evidence/session.ts:58:  const suffix = Math.floor(random.next() * 0xff_ff_ff)
+src/cli-options.ts:108:/** Three is the floor: two repeats cannot show a spread, and a spread is the point. */
+src/select/ucb.ts:15: * Twenty is a floor, not a finding: below it the arms differ by noise. Ten percent random
+src/select/ucb.ts:94:    const drawn = input.candidates[Math.floor(input.random.next() * input.candidates.length)];
+src/select/calibrate.ts:22:  /** Repeats per case per model. Three is the floor: two cannot show a spread. */
+src/select/bundled-shortlist.ts:7: * The floor under the published list: the same JSON, read from beside this module, so a machine
+src/select/bundled-pricing.ts:7: * The floor under the published table: the same JSON, read from beside this module, through
+src/select/dimensions.ts:28:   * The floor a model has to clear on this dimension to be usable at all, or null when the
+src/select/dimensions.ts:139:  const middle = Math.floor(sorted.length / 2);
+src/select/calibration-report.ts:47:        "no model cleared the floors every dimension sets, so calibration recommends none of them.",
+src/select/calibration-report.ts:78:/** The first floor this model failed, or null when it cleared every one that was measured. */
+src/select/task-class.ts:3: * deliberate floor: a bandit splits its samples across arms, and finer classes would starve
+src/select/recommendation.test.ts:250:  it("does not reach a tier whose memory floor the probe did not clear", () => {
+src/select/recommendation.test.ts:251:    // 16 GB is well over the 8 GB class floor and well under the 32 GB one.
+fuzz/gate-parsers.fuzz.cjs:65:  const half = Math.floor(text.length / 2);
+[evidence record sha256:080306a6f0ce7ed909662f6364c215074292f6bf90301e7eef4b615842b57cfc kind tool-call:shell]
+step 17: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"grep -n \"repeat(4)\\|repeat(3)\\|length === 4\\|=== 4\\b\" src/evidence/scrub.test.ts"}
+tool shell ok: exit code: 1
+[evidence record sha256:0a7f280ce4113f06145110712aae578676f7b764566429c6d465316b1fabfaae kind tool-call:shell]
+step 18: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"grep -n \"four\\|shortest\\|floor\" src/evidence/scrub.test.ts"}
+tool shell ok: exit code: 1
+[evidence record sha256:3b002e4bc66af8e39389181f6bb32986f88afee58add15425ffa5dd306d78be7 kind tool-call:shell]
+step 19: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"grep -n '\"9911\"\\|\"482917\"\\|\"1234\"\\|abcd\\b' src/evidence/scrub.test.ts"}
+tool shell ok: exit code: 0
+stdout:
+105:    for (const digits of ["48291736", "482917", "847291", "123456789012"]) {
+177:    expect(serialized).not.toContain("482917");
+369:    const values = ["", "pw", "hunter2", "passed", "0123456789abcdefghij", "482917", "9911"];
+[evidence record sha256:ce65842779f8d69db877c9a2ed5a248d87b60d59a114269d1e2e7559f5cb8dbf kind tool-call:shell]
+step 20: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"grep -n \"eight\\|floor\\|threshold\" src/evidence/scrub.test.ts src/evidence/scrub.ts"}
+tool shell ok: exit code: 0
+stdout:
+src/evidence/scrub.test.ts:402:  it("redacts a short password, which eight characters used to let through", () => {
+src/evidence/scrub.ts:166:/** A four-digit PIN is the shortest credential anyone issues, so it is the floor for all of them. */
+src/evidence/scrub.ts:184:  // the whole defect: at eight, `hunter2` under a field named password read as too short to
+src/evidence/scrub.ts:185:  // be anything and travelled as plain text. Four is not a confidence threshold, it is the
+[evidence record sha256:7a1bd386231fcce232a96268505f1d33af21f0f4694d7fcfe4325395714317c2 kind tool-call:shell]
+step 21: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"grep -n \"toHaveLength(4)\\|\\.length === 4\\|repeat(4)\\|slice(0, 4)\\|\\[4\\]\\|, 4)\\|(4,\" src/evidence/scrub.test.ts"}
+tool shell ok: exit code: 1
+[evidence record sha256:187673f2c1ec97e7d3cfdad0672bd8e8f17a78953f8829ddf11a819aee6bda49 kind tool-call:shell]
+step 22: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"grep -n '\"paw\"\\|\"abc\"\\|length 3\\|\"pw1\"\\|\"a1b\"\\|three characters\\|\"abcd\"\\|\"1234\"' src/evidence/scrub.test.ts"}
+tool shell ok: exit code: 1
+[evidence record sha256:989a3d15aea04e1ef7d0f77699369a31125ef257a14787ea19ede30e18a32693 kind tool-call:shell]
+step 23: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"grep -n \"repeat(\\|padStart\\|Array(4)\\|new Array\\|slice(0,\" src/evidence/scrub.test.ts"}
+tool shell ok: exit code: 1
+[evidence record sha256:646e44c4a3dd195a88b4b6a9e5a196ee7e728e920702b8d4e3e2c4b575b50ecb kind tool-call:shell]
+step 24: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"grep -noE '[^0-9]4[^0-9]' src/evidence/scrub.test.ts"}
+tool shell ok: exit code: 0
+stdout:
+59:d4e
+174:d4e
+178:d4e
+194:[4,
+256:F4B
+264: 4_
+285: 4 
+288:[4,
+297:/4.
+[evidence record sha256:5dbe21ed4b1162f7c6b17d4c306e64de4108fe186f1c7066eb6c46821076c1a5 kind tool-call:shell]
+step 25: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"grep -n '\"pw12\"\\|\"pw1\"\\|\"pw\"\\|\"p\"\\|\"pw123\"' src/evidence/scrub.test.ts"}
+tool shell ok: exit code: 0
+stdout:
+369:    const values = ["", "pw", "hunter2", "passed", "0123456789abcdefghij", "482917", "9911"];
+403:    for (const secret of ["pw12", "s3cr3t", "hunter2", "hunter22"]) {
+421:    expect(scrubJson({ keys: ["a", "b"], password: "pw" })).toEqual({
+422:      value: { keys: ["a", "b"], password: "pw" },
+[evidence record sha256:0ec6c71ea176344ac796c61c02b39f2e6ac3bdaddfc751ec7c8df452134522b9 kind tool-call:shell]
+step 26: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"grep -n \"\\.length\" src/evidence/scrub.test.ts"}
+tool shell ok: exit code: 0
+stdout:
+23:    expect(outcome.redactions.length).toBeGreaterThan(0);
+343:    expect(artifacts.length).toBeGreaterThanOrEqual(5);
+[evidence record sha256:a0f688a320317ecf27fd6e6fa0a255c8e61bd3680d13ab7f8f7a7b62bc9dd854 kind tool-call:shell]
+step 27: calling anthropic:claude-sonnet-5
+APICallError [AI_APICallError]: Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.
+    at file://~/projects/swarm-orchestrator/node_modules/@ai-sdk/provider-utils/dist/index.js:3569:14
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async postToApi (file://~/projects/swarm-orchestrator/node_modules/@ai-sdk/provider-utils/dist/index.js:3257:28)
+    at async postJsonToApi (file://~/projects/swarm-orchestrator/node_modules/@ai-sdk/provider-utils/dist/index.js:3198:7)
+    at async _AnthropicMessagesBatchLanguageModel.doStream (file://~/projects/swarm-orchestrator/node_modules/@ai-sdk/anthropic/dist/index.js:4772:50)
+    at async execute (file://~/projects/swarm-orchestrator/node_modules/ai/dist/index.js:8380:26)
+    at async runWithTracingChannelSpan (file://~/projects/swarm-orchestrator/node_modules/ai/dist/index.js:4170:12)
+    at async executeLanguageModelCall (file://~/projects/swarm-orchestrator/node_modules/ai/dist/index.js:4378:14)
+    at async streamLanguageModelCall (file://~/projects/swarm-orchestrator/node_modules/ai/dist/index.js:8378:7)
+    at async retryWithExponentialBackoffInternal (file://~/projects/swarm-orchestrator/node_modules/@ai-sdk/provider-utils/dist/index.js:3476:12) {
+  cause: undefined,
+  url: 'https://api.anthropic.com/v1/messages',
+  requestBodyValues: {
+    model: 'claude-sonnet-5',
+    max_tokens: 8192,
+    temperature: undefined,
+    top_k: undefined,
+    top_p: undefined,
+    stop_sequences: undefined,
+    system: [ [Object] ],
+    messages: [
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object]
+    ],
+    tools: [
+      [Object], [Object],
+      [Object], [Object],
+      [Object], [Object],
+      [Object], [Object],
+      [Object]
+    ],
+    tool_choice: { type: 'auto', disable_parallel_tool_use: undefined },
+    stream: true
+  },
+  statusCode: 400,
+  responseHeaders: {
+    'anthropic-organization-id': 'a4bdf42b-a816-42be-a70b-3abe79c47cf5',
+    'anthropic-workspace-id': 'wrkspc_01Xg3LtEWfjHBnMoaUjQNmKt',
+    'cf-cache-status': 'DYNAMIC',
+    'cf-ray': 'a2d203f0a993ad49-DEN',
+    connection: 'keep-alive',
+    'content-encoding': 'br',
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+    'content-type': 'application/json',
+    date: 'Tue, 18 Aug 2026 15:40:09 GMT',
+    'request-id': 'req_011CeATz3KxBGipNeNW1bcmc',
+    server: 'cloudflare',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    traceresponse: '00-c681426bd7c80fc48cc918e57e232340-794850aff2a30d21-01',
+    'transfer-encoding': 'chunked',
+    vary: 'Accept-Encoding',
+    'x-robots-tag': 'none',
+    'x-should-retry': 'false'
+  },
+  responseBody: '{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CeATz3KxBGipNeNW1bcmc"}',
+  isRetryable: false,
+  data: {
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'
+    }
+  },
+  Symbol(vercel.ai.error): true,
+  Symbol(vercel.ai.error.AI_APICallError): true
+}
+model error (retrying): Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.
+APICallError [AI_APICallError]: Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.
+    at file://~/projects/swarm-orchestrator/node_modules/@ai-sdk/provider-utils/dist/index.js:3569:14
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async postToApi (file://~/projects/swarm-orchestrator/node_modules/@ai-sdk/provider-utils/dist/index.js:3257:28)
+    at async postJsonToApi (file://~/projects/swarm-orchestrator/node_modules/@ai-sdk/provider-utils/dist/index.js:3198:7)
+    at async _AnthropicMessagesBatchLanguageModel.doStream (file://~/projects/swarm-orchestrator/node_modules/@ai-sdk/anthropic/dist/index.js:4772:50)
+    at async execute (file://~/projects/swarm-orchestrator/node_modules/ai/dist/index.js:8380:26)
+    at async runWithTracingChannelSpan (file://~/projects/swarm-orchestrator/node_modules/ai/dist/index.js:4170:12)
+    at async executeLanguageModelCall (file://~/projects/swarm-orchestrator/node_modules/ai/dist/index.js:4378:14)
+    at async streamLanguageModelCall (file://~/projects/swarm-orchestrator/node_modules/ai/dist/index.js:8378:7)
+    at async retryWithExponentialBackoffInternal (file://~/projects/swarm-orchestrator/node_modules/@ai-sdk/provider-utils/dist/index.js:3476:12) {
+  cause: undefined,
+  url: 'https://api.anthropic.com/v1/messages',
+  requestBodyValues: {
+    model: 'claude-sonnet-5',
+    max_tokens: 8192,
+    temperature: undefined,
+    top_k: undefined,
+    top_p: undefined,
+    stop_sequences: undefined,
+    system: [ [Object] ],
+    messages: [
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object]
+    ],
+    tools: [
+      [Object], [Object],
+      [Object], [Object],
+      [Object], [Object],
+      [Object], [Object],
+      [Object]
+    ],
+    tool_choice: { type: 'auto', disable_parallel_tool_use: undefined },
+    stream: true
+  },
+  statusCode: 400,
+  responseHeaders: {
+    'anthropic-organization-id': 'a4bdf42b-a816-42be-a70b-3abe79c47cf5',
+    'anthropic-workspace-id': 'wrkspc_01Xg3LtEWfjHBnMoaUjQNmKt',
+    'cf-cache-status': 'DYNAMIC',
+    'cf-ray': 'a2d203f50880ad49-DEN',
+    connection: 'keep-alive',
+    'content-encoding': 'br',
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+    'content-type': 'application/json',
+    date: 'Tue, 18 Aug 2026 15:40:10 GMT',
+    'request-id': 'req_011CeATz6LmneEoawbNWWE7b',
+    server: 'cloudflare',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    traceresponse: '00-a17b38378c49c27cb5bb40b5d7ff37ae-802991821c786426-01',
+    'transfer-encoding': 'chunked',
+    vary: 'Accept-Encoding',
+    'x-robots-tag': 'none',
+    'x-should-retry': 'false'
+  },
+  responseBody: '{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CeATz6LmneEoawbNWWE7b"}',
+  isRetryable: false,
+  data: {
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'
+    }
+  },
+  Symbol(vercel.ai.error): true,
+  Symbol(vercel.ai.error.AI_APICallError): true
+}
+model error (retrying): Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.
+APICallError [AI_APICallError]: Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.
+    at file://~/projects/swarm-orchestrator/node_modules/@ai-sdk/provider-utils/dist/index.js:3569:14
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async postToApi (file://~/projects/swarm-orchestrator/node_modules/@ai-sdk/provider-utils/dist/index.js:3257:28)
+    at async postJsonToApi (file://~/projects/swarm-orchestrator/node_modules/@ai-sdk/provider-utils/dist/index.js:3198:7)
+    at async _AnthropicMessagesBatchLanguageModel.doStream (file://~/projects/swarm-orchestrator/node_modules/@ai-sdk/anthropic/dist/index.js:4772:50)
+    at async execute (file://~/projects/swarm-orchestrator/node_modules/ai/dist/index.js:8380:26)
+    at async runWithTracingChannelSpan (file://~/projects/swarm-orchestrator/node_modules/ai/dist/index.js:4170:12)
+    at async executeLanguageModelCall (file://~/projects/swarm-orchestrator/node_modules/ai/dist/index.js:4378:14)
+    at async streamLanguageModelCall (file://~/projects/swarm-orchestrator/node_modules/ai/dist/index.js:8378:7)
+    at async retryWithExponentialBackoffInternal (file://~/projects/swarm-orchestrator/node_modules/@ai-sdk/provider-utils/dist/index.js:3476:12) {
+  cause: undefined,
+  url: 'https://api.anthropic.com/v1/messages',
+  requestBodyValues: {
+    model: 'claude-sonnet-5',
+    max_tokens: 8192,
+    temperature: undefined,
+    top_k: undefined,
+    top_p: undefined,
+    stop_sequences: undefined,
+    system: [ [Object] ],
+    messages: [
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object], [Object], [Object], [Object],
+      [Object]
+    ],
+    tools: [
+      [Object], [Object],
+      [Object], [Object],
+      [Object], [Object],
+      [Object], [Object],
+      [Object]
+    ],
+    tool_choice: { type: 'auto', disable_parallel_tool_use: undefined },
+    stream: true
+  },
+  statusCode: 400,
+  responseHeaders: {
+    'anthropic-organization-id': 'a4bdf42b-a816-42be-a70b-3abe79c47cf5',
+    'anthropic-workspace-id': 'wrkspc_01Xg3LtEWfjHBnMoaUjQNmKt',
+    'cf-cache-status': 'DYNAMIC',
+    'cf-ray': 'a2d203fc4b13ad49-DEN',
+    connection: 'keep-alive',
+    'content-encoding': 'br',
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'",
+    'content-type': 'application/json',
+    date: 'Tue, 18 Aug 2026 15:40:11 GMT',
+    'request-id': 'req_011CeATzBED8X7Q6pUb6hLNw',
+    server: 'cloudflare',
+    'strict-transport-security': 'max-age=31536000; includeSubDomains; preload',
+    traceresponse: '00-7887f162971a09030f4c4d29a68412c2-70df889750d69e92-01',
+    'transfer-encoding': 'chunked',
+    vary: 'Accept-Encoding',
+    'x-robots-tag': 'none',
+    'x-should-retry': 'false'
+  },
+  responseBody: '{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CeATzBED8X7Q6pUb6hLNw"}',
+  isRetryable: false,
+  data: {
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.'
+    }
+  },
+  Symbol(vercel.ai.error): true,
+  Symbol(vercel.ai.error.AI_APICallError): true
+}
+model error: Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.
+stopped: model-error after 26 steps, 664614 tokens
+gate typecheck passed: the command exited 0 [evidence record sha256:2a9e3dc9204787eb2a9d0c0d9c5c7f517e532ed17a671d78e52214978417976c]
+gate lint passed: the command exited 0 [evidence record sha256:5c69c9c444a942117c3fe24a0c35863eb42914b17d7bbc55253875dfa6d05d9a]
+gate format not-applicable: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging [evidence record sha256:f52f338fc09ae92740c27b595a8a40571763e29217c54191c82b0fbaf466cbc5]
+gate tests passed: the runner reported: 1010 passed (1010) [evidence record sha256:ca2bd9088302f9baabf65e8565f8e39403889061cf6e99ecf439ce4b0762b783]
+gate file-set passed: all 0 changed file(s) are inside the declared set of 2, and every one of them was declared before it was edited [evidence record sha256:061f4849e129fc68d5152f5f33d90786b7ef94791bda1d2d5bb136e23716bb30]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:9131d983387de9eb7d4119e3372e9aaeac213d679f40fe6ce44d305ae201cbec]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:a7835a09b3b3084e5c8717793a57f87b6a2b53a47b0299f58c1506c7fb1d34ef]
+gate diff-budget passed (advisory): within budget: 0 file(s) and 0 added line(s) [evidence record sha256:3699df0d48edb126a18888677a5ccc0028999e21327f66a651d33357f82a8fa9]
+
+gates:
+  passed   typecheck: the command exited 0
+  passed   lint: the command exited 0
+  n/a      format: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging
+  passed   tests: the runner reported: 1010 passed (1010)
+  passed   file-set: all 0 changed file(s) are inside the declared set of 2, and every one of them was declared before it was edited
+  passed   placeholder: no placeholder marker was introduced by this change
+  passed   secret-scan: no known credential pattern appears in the added lines
+  passed   diff-budget (advisory): within budget: 0 file(s) and 0 added line(s)
+
+routing reward: 0.000 (the gates went green over a workspace the run never changed, so nothing was done and there is nothing to reward)
+
+evidence bundle: ~/scratch/shakedown-runs/07-multi-scrub-floor-bundle
+verify it anywhere: node ~/scratch/shakedown-runs/07-multi-scrub-floor-bundle/verify.mjs ~/scratch/shakedown-runs/07-multi-scrub-floor-bundle
+review it: open ~/scratch/shakedown-runs/07-multi-scrub-floor-bundle/review.html

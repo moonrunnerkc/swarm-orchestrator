@@ -1,0 +1,978 @@
+step 1: calling anthropic:claude-sonnet-5
+tool read <- {"path":"src/gates/parsers.test.ts"}
+tool read ok: import { describe, expect, it } from "vitest";
+import type { GateObservation } from "./gate-definition.ts";
+import {
+  exitCodeParser,
+  fileLineHits,
+  inspectionParser,
+  parseLineHits,
+  parseTapOutcomes,
+  testOutputParser,
+  vitestTestParser,
+} from "./parsers.ts";
+
+function observed(partial: Partial<GateObservation>): GateObservation {
+  return {
+    exitCode: partial.exitCode ?? 0,
+    stdout: partial.stdout ?? "",
+    stderr: partial.stderr ?? "",
+    durationMs: partial.durationMs ?? 1,
+    unavailable: partial.unavailable ?? null,
+  };
+}
+
+const tapOutput = [
+  "TAP version 13",
+  "# Subtest: adds",
+  "ok 1 - adds",
+  "# Subtest: skipped",
+  "ok 2 - skipped # SKIP",
+  "1..2",
+  "# tests 2",
+  "# pass 1",
+  "# fail 0",
+  "# skipped 1",
+].join("\n");
+
+describe("gate output parsers", () => {
+  it("reads the counters out of a TAP run", () => {
+    const reading = testOutputParser(observed({ stdout: tapOutput }));
+
+    expect(reading.status).toBe("passed");
+    expect(reading.measures).toEqual({
+      testsCollected: 2,
+      testsPassed: 1,
+      testsFailed: 0,
+      testsSkipped: 1,
+    });
+  });
+
+  it("calls a TAP run failed when it reports a failure, whatever the exit code was", () => {
+    const reading = testOutputParser(
+      observed({ exitCode: 0, stdout: tapOutput.replace("# fail 0", "# fail 1") }),
+    );
+
+    expect(reading.status).toBe("failed");
+    expect(reading.measures.testsFailed).toBe(1);
+  });
+
+  it("reads vitest's summary line", () => {
+    const reading = vitestTestParser(
+      observed({ exitCode: 1, stdout: " Tests  2 failed | 194 passed (196)\n" }),
+    );
+
+    expect(reading.status).toBe("failed");
+    expect(reading.measures).toEqual({ testsCollected: 196, testsPassed: 194, testsFailed: 2 });
+  });
+
+  it("falls back to the exit code rather than inventing a count", () => {
+    const reading = testOutputParser(observed({ exitCode: 1, stdout: "something else entirely" }));
+
+    expect(reading.status).toBe("failed");
+    expect(reading.measures).toEqual({});
+  });
+
+  it("reports a gate whose tool is missing as not applicable, never as a failure", () => {
+    const reading = exitCodeParser(
+      observed({ exitCode: 127, stderr: "/bin/sh: mypy: command not found" }),
+    );
+
+    expect(reading.status).toBe("not-applicable");
+    expect(reading.detail).toContain("not installed");
+  });
+
+  it("reports a gate that could not run at all as not applicable", () => {
+    const reading = exitCodeParser(
+      observed({ unavailable: "package.json declares no lint script" }),
+    );
+
+    expect(reading.status).toBe("not-applicable");
+    expect(reading.detail).toBe("package.json declares no lint script");
+  });
+
+  it("reads an inspection's own JSON, and fails it when that JSON is unreadable", () => {
+    const good = inspectionParser(
+      observed({
+        exitCode: 1,
+        stdout: JSON.stringify({ detail: "two markers", measures: { placeholdersIntroduced: 2 } }),
+      }),
+    );
+    expect(good).toEqual({
+      status: "failed",
+      detail: "two markers",
+      measures: { placeholdersIntroduced: 2 },
+    });
+
+    expect(inspectionParser(observed({ stdout: "not json" })).status).toBe("failed");
+  });
+});
+
+describe("reading a coverage report", () => {
+  const mathSection = [
+    "TN:",
+    "SF:/build/src/math.ts",
+    "FNF:1",
+    "DA:1,1",
+    "DA:2,0",
+    "DA:3,0",
+    "DA:4,2",
+    "LF:4",
+    "LH:2",
+    "end_of_record",
+  ];
+
+  it("takes the hit count of every reported line out of an lcov report", () => {
+    const sections = parseLineHits(
+      [...mathSection, "SF:/build/src/util.ts", "DA:1,1", "LF:1", "LH:1", "end_of_record"].join(
+        "\n",
+      ),
+    );
+
+    // Per line, hits and all: a line the report named as reached, a line it named as missed,
+    // and a line it did not name are three different things, and only the first is coverage.
+    expect(sections.map((section) => section.file)).toEqual([
+      "/build/src/math.ts",
+      "/build/src/util.ts",
+    ]);
+    expect([...(sections[0]?.hits ?? [])]).toEqual([
+      [1, 1],
+      [2, 0],
+      [3, 0],
+      [4, 2],
+    ]);
+    expect(sections[0]?.hits.get(9)).toBeUndefined();
+    expect([...(sections[1]?.hits ?? [])]).toEqual([[1, 1]]);
+  });
+
+  it("finds nothing in output that carries no coverage report", () => {
+    expect(parseLineHits(tapOutput)).toEqual([]);
+  });
+
+  it("reads nothing out of an artifact that is not a complete lcov report", () => {
+    for (const artifact of [
+      "",
+      "SF:/build/src/math.ts\n",
+      "SF:/build/src/math.ts\nend_of_record\n",
+      "SF:/build/src/math.ts\nDA:1,1\nend_of_record\n",
+      "SF:/build/src/math.ts\nDA:1,1\nLF:2\nLH:1\nend_of_record\n",
+      "SF:/build/src/math.ts\nDA:1,0\nLF:1\nLH:1\nend_of_record\n",
+      "DA:1,1\nLF:1\nLH:1\nend_of_record\n",
+      [
+        "start of coverage report",
+        "file | line % | branch % | funcs % | uncovered lines",
+        "math.js | 100.00 | 100.00 | 100.00 | ",
+        "end of coverage report",
+      ].join("\n"),
+      [...mathSection, "the runner also printed this"].join("\n"),
+    ]) {
+      expect({ artifact, sections: parseLineHits(artifact).length }).toEqual({
+        artifact,
+        sections: 0,
+      });
+    }
+  });
+
+  it("reads one file's coverage out of the one section that reported it", () => {
+    const sections = parseLineHits(
+      ["SF:src/math.ts", "DA:1,1", "DA:2,0", "DA:3,0", "LF:3", "LH:1", "end_of_record"].join("\n"),
+    );
+
+    expect([...(fileLineHits(sections, "src/math.ts", "/workspace") ?? [])]).toEqual([
+      [1, 1],
+      [2, 0],
+      [3, 0],
+    ]);
+    expect(fileLineHits(sections, "src/other.ts", "/workspace")).toBeNull();
+  });
+
+  /**
+   * This assertion used to run the other way: sections naming one file were merged, taking the
+   * lower count where they disagreed, so that a section with nothing to say could not shadow
+   * one with misses to report. Merging is what a second section needs. Two complete sections
+   * for one file, the first naming line 1 and the second naming lines 2 through 9, unioned
+   * their line numbers and read as nine lines measured and nine reached, which is a
+   * measurement of one line and a claim about eight. Abstaining is stricter than either
+   * reading and it keeps what the merge was there for.
+   */
+  it("abstains where more than one section names one file, rather than combining them", () => {
+    const split = parseLineHits(
+      [
+        "SF:clamp.mjs",
+        "DA:1,1",
+        "LF:1",
+        "LH:1",
+        "end_of_record",
+        "SF:clamp.mjs",
+        ...Array.from({ length: 8 }, (_unused, index) => `DA:${index + 2},1`),
+        "LF:8",
+        "LH:8",
+        "end_of_record",
+      ].join("\n"),
+    );
+
+    expect(split).toHaveLength(2);
+    expect(fileLineHits(split, "clamp.mjs", "/workspace")).toBeNull();
+  });
+
+  it("abstains just the same where the second section spells the path another way", () => {
+    const spellings = parseLineHits(
+      [
+        "SF:src/math.ts",
+        "DA:1,1",
+        "LF:1",
+        "LH:1",
+        "end_of_record",
+        "SF:/workspace/src/math.ts",
+        "DA:2,1",
+        "DA:3,1",
+        "LF:2",
+        "LH:2",
+        "end_of_record",
+      ].join("\n"),
+    );
+
+    expect(fileLineHits(spellings, "src/math.ts", "/workspace")).toBeNull();
+  });
+
+  it("does not let a section for another file report itself as coverage of this one", () => {
+    const sections = parseLineHits(
+      [
+        "SF:vendor/math.ts",
+        "DA:1,1",
+        "LF:1",
+        "LH:1",
+        "end_of_record",
+        "SF:/opt/other/math.ts",
+        "DA:1,1",
+        "LF:1",
+        "LH:1",
+        "end_of_record",
+      ].join("\n"),
+    );
+
+    // Same basename, same suffix, different file. Nothing here measured src/math.ts.
+    expect(fileLineHits(sections, "src/math.ts", "/workspace")).toBeNull();
+    expect(fileLineHits(sections, "math.ts", "/workspace")).toBeNull();
+    // And with no root to resolve against, the two spellings have to agree by themselves.
+    expect(fileLineHits(sections, "math.ts")).toBeNull();
+    expect(fileLineHits(sections, "vendor/math.ts")).not.toBeNull();
+  });
+});
+
+describe("which tests a run attributed", () => {
+  it("reads the run's own result points, at any depth a suite reports them", () => {
+    expect(
+      parseTapOutcomes(
+        [
+          "TAP version 13",
+          "1..2",
+          "ok 1 - adds",
+          "not ok 2 - suite",
+          "    not ok 1 - inner",
+          "",
+        ].join("\n"),
+      ),
+    ).toEqual({ passed: ["adds"], failed: ["suite", "inner"] });
+  });
+
+  /**
+   * A test the runner marked skipped did not run, so the run says nothing about that name
+   * either way. Dropping the skipped point alone left the name uncontested, and a subtest
+   * reusing it supplied the only result point carrying it: node writes `not ok 1 - innocentNew`
+   * for the subtest, and the escape hatch read that as the top-level innocentNew failing on the
+   * base source, which is what pays for a deletion.
+   */
+  it("attributes nothing to a name the run reported as skipped", () => {
+    const stolen = parseTapOutcomes(
+      [
+        "TAP version 13",
+        "1..2",
+        "ok 1 - innocentNew # SKIP",
+        "ok 2 - attacker",
+        "    not ok 1 - innocentNew",
+        "",
+      ].join("\n"),
+    );
+
+    expect(stolen?.failed ?? []).not.toContain("innocentNew");
+    expect(stolen?.passed ?? []).not.toContain("innocentNew");
+    expect(stolen?.passed).toEqual(["attacker"]);
+  });
+
+  it("holds the same way round, so a passing subtest cannot claim a skipped name either", () => {
+    const outcomes = parseTapOutcomes(
+      [
+        "TAP version 13",
+        "1..2",
+        "ok 1 - innocentNew # SKIP",
+        "not ok 2 - attacker",
+        "    ok 1 - innocentNew",
+        "",
+      ].join("\n"),
+    );
+
+    expect(outcomes?.passed ?? []).not.toContain("innocentNew");
+    expect(outcomes?.failed).toEqual(["attacker"]);
+  });
+
+  it("still names a test that really failed beside a skipped one", () => {
+    expect(
+      parseTapOutcomes(
+        ["TAP version 13", "1..2", "ok 1 - later # SKIP", "not ok 2 - multiplies", ""].join("\n"),
+      ),
+    ).toEqual({ passed: [], failed: ["multiplies"] });
+  });
+});
+
+[evidence record sha256:93571eafe1c86de7694ce204181d4d1fad31e69331970df5ed386b46477e3013 kind tool-call:read]
+tool list <- {"path":"src/gates"}
+tool list ok: acceptance.test.ts
+auto-resolve.test.ts
+auto-resolve.ts
+base-control.test.ts
+base-control.ts
+comment-spans.test.ts
+comment-spans.ts
+corpus-replay.test.ts
+coverage-artifact.test.ts
+coverage-artifact.ts
+default-gates.ts
+engine.ts
+escalation.ts
+file-set-tool.ts
+file-set.test.ts
+file-set.ts
+gate-definition.ts
+gate-runner.ts
+git-workspace.ts
+inspection-gates.test.ts
+inspection-gates.ts
+measure-snapshot.test.ts
+measure-snapshot.ts
+measures.test.ts
+measures.ts
+node-command-runner.ts
+node-test-command.test.ts
+node-test-command.ts
+parsers.test.ts
+parsers.ts
+project-type.test.ts
+project-type.ts
+ratchet-summary.test.ts
+ratchet-summary.ts
+ratchet.test.ts
+ratchet.ts
+respecification.test.ts
+respecification.ts
+test-doubles.ts
+unified-diff.test.ts
+unified-diff.ts
+workspace-changes.ts
+[evidence record sha256:cbf539f0c93c649afebb1eb70e0a81019c654a1c6c42cc65c98d70b0618b9036 kind tool-call:list]
+step 2: calling anthropic:claude-sonnet-5
+tool read <- {"path":"src/gates/parsers.ts"}
+tool read ok: import { normalize, resolve } from "node:path";
+import type { GateObservation, GateParser, GateReading } from "./gate-definition.ts";
+
+/**
+ * Parsers read the bytes a gate produced and nothing else. A measure that the output does
+ * not contain is absent rather than zero, because a fabricated zero is worse than a gap:
+ * the ratchet can decline to compare an absent measure, but it cannot un-believe a made-up
+ * one.
+ */
+
+export const measureNames = {
+  testsCollected: "testsCollected",
+  testsPassed: "testsPassed",
+  testsFailed: "testsFailed",
+  testsSkipped: "testsSkipped",
+  changedLineCoverage: "changedLineCoverage",
+  changedLinesCovered: "changedLinesCovered",
+  changedLinesMeasured: "changedLinesMeasured",
+} as const;
+
+const missingCommand = /command not found|:\s*not found|is not recognized as an internal/i;
+
+/**
+ * A gate whose tool is absent has proven nothing, and calling that a failure would send the
+ * model off fixing code that is fine. It is reported as not-applicable, which never renders
+ * green either.
+ */
+function notApplicable(observation: GateObservation): GateReading | null {
+  if (observation.unavailable !== null) {
+    return { status: "not-applicable", detail: observation.unavailable, measures: {} };
+  }
+  if (observation.exitCode === 127 || missingCommand.test(observation.stderr)) {
+    return {
+      status: "not-applicable",
+      detail: "the command is not installed on this machine, so this gate measured nothing",
+      measures: {},
+    };
+  }
+  return null;
+}
+
+function combinedOutput(observation: GateObservation): string {
+  return `${observation.stdout}\n${observation.stderr}`;
+}
+
+/** The default: the command's own exit code is the verdict, with no numbers claimed. */
+export const exitCodeParser: GateParser = (observation) =>
+  notApplicable(observation) ?? {
+    status: observation.exitCode === 0 ? "passed" : "failed",
+    detail:
+      observation.exitCode === 0
+        ? "the command exited 0"
+        : `the command exited ${observation.exitCode}`,
+    measures: {},
+  };
+
+/**
+ * The counter block a TAP 13 producer prints at the end of a run. Node's own runner prints
+ * the same counters under either of its reporters, marking them "#" under tap and "i" under
+ * spec, so both are read here: a gate that only understood one of them would silently fall
+ * back to the exit code and report no numbers for the ratchet to hold.
+ */
+const testCounterParser: GateParser = (observation) => {
+  const unavailable = notApplicable(observation);
+  if (unavailable !== null) {
+    return unavailable;
+  }
+
+  const text = combinedOutput(observation);
+  const counters = readTestCounters(text);
+  const measures: Record<string, number> = {};
+  if (counters.tests !== null) {
+    measures[measureNames.testsCollected] = counters.tests;
+  }
+  if (counters.pass !== null) {
+    measures[measureNames.testsPassed] = counters.pass;
+  }
+  if (counters.fail !== null) {
+    measures[measureNames.testsFailed] = counters.fail;
+  }
+  if (counters.skipped !== null) {
+    measures[measureNames.testsSkipped] = counters.skipped;
+  }
+
+  const failed = observation.exitCode !== 0 || (counters.fail ?? 0) > 0;
+  return {
+    status: failed ? "failed" : "passed",
+    detail: describeTestRun(counters, observation.exitCode),
+    measures,
+  };
+};
+
+/** Vitest's default reporter, whose summary line is the only stable thing in it. */
+export const vitestTestParser: GateParser = (observation) => {
+  const unavailable = notApplicable(observation);
+  if (unavailable !== null) {
+    return unavailable;
+  }
+
+  const text = combinedOutput(observation);
+  const summary = /^\s*Tests\s+(.+?)\s*$/m.exec(text)?.[1] ?? "";
+  const total = /\((\d+)\)/.exec(summary)?.[1];
+  const measures: Record<string, number> = {};
+  if (total !== undefined) {
+    measures[measureNames.testsCollected] = Number(total);
+  }
+  for (const [key, word] of [
+    [measureNames.testsPassed, "passed"],
+    [measureNames.testsFailed, "failed"],
+    [measureNames.testsSkipped, "skipped"],
+  ] as const) {
+    const count = new RegExp(`(\\d+)\\s+${word}`).exec(summary)?.[1];
+    if (count !== undefined) {
+      measures[key] = Number(count);
+    }
+  }
+  if (total !== undefined && measures[measureNames.testsFailed] === undefined) {
+    measures[measureNames.testsFailed] = 0;
+  }
+
+  const failed = observation.exitCode !== 0 || (measures[measureNames.testsFailed] ?? 0) > 0;
+  return {
+    status: failed ? "failed" : "passed",
+    detail:
+      summary.length > 0
+        ? `the runner reported: ${summary}`
+        : `the runner exited ${observation.exitCode} and printed no summary line`,
+    measures,
+  };
+};
+
+/**
+ * Tries the shapes a test command is likely to print, in order, and falls back to the exit
+ * code with no numbers rather than guessing at a count.
+ */
+export const testOutputParser: GateParser = (observation) => {
+  const unavailable = notApplicable(observation);
+  if (unavailable !== null) {
+    return unavailable;
+  }
+  const text = combinedOutput(observation);
+  if (/^TAP version \d+/m.test(text) || counterPattern("tests").test(text)) {
+    return testCounterParser(observation);
+  }
+  if (/^\s*Tests\s+.*\(\d+\)/m.test(text)) {
+    return vitestTestParser(observation);
+  }
+  return exitCodeParser(observation);
+};
+
+/**
+ * The inspection gates print their own findings as JSON, so the same rule holds for them as
+ * for a command: the recorded bytes decide the verdict, and re-reading them reproduces it.
+ */
+export const inspectionParser: GateParser = (observation) => {
+  const unavailable = notApplicable(observation);
+  if (unavailable !== null) {
+    return unavailable;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(observation.stdout);
+  } catch {
+    return {
+      status: "failed",
+      detail: "the inspection produced output that is not JSON, so its verdict cannot be read",
+      measures: {},
+    };
+  }
+
+  const fields = (parsed ?? {}) as { readonly [key: string]: unknown };
+  const detail = typeof fields.detail === "string" ? fields.detail : "";
+  const measures: Record<string, number> = {};
+  if (typeof fields.measures === "object" && fields.measures !== null) {
+    for (const [key, value] of Object.entries(fields.measures)) {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        measures[key] = value;
+      }
+    }
+  }
+
+  return {
+    status: observation.exitCode === 0 ? "passed" : "failed",
+    detail: detail.length > 0 ? detail : `the inspection exited ${observation.exitCode}`,
+    measures,
+  };
+};
+
+interface TestCounters {
+  readonly tests: number | null;
+  readonly pass: number | null;
+  readonly fail: number | null;
+  readonly skipped: number | null;
+}
+
+/** Both markers node uses for its end-of-run counters, plus plain TAP's. */
+function counterPattern(name: string): RegExp {
+  return new RegExp(`^[#\u2139]\\s+${name}\\s+(\\d+)\\s*$`, "m");
+}
+
+function readTestCounters(text: string): TestCounters {
+  const counter = (name: string): number | null => {
+    const found = counterPattern(name).exec(text)?.[1];
+    return found === undefined ? null : Number(found);
+  };
+  const plan = /^\s*1\.\.(\d+)\s*$/m.exec(text)?.[1];
+  return {
+    tests: counter("tests") ?? (plan === undefined ? null : Number(plan)),
+    pass: counter("pass"),
+    fail: counter("fail"),
+    skipped: counter("skipped"),
+  };
+}
+
+function describeTestRun(counters: TestCounters, exitCode: number): string {
+  if (counters.tests === null) {
+    return `the runner exited ${exitCode} and printed no TAP counters`;
+  }
+  return (
+    `${counters.tests} collected, ${counters.pass ?? 0} passed, ${counters.fail ?? 0} failed, ` +
+    `${counters.skipped ?? 0} skipped (exit ${exitCode})`
+  );
+}
+
+/**
+ * The lines an executed run reached, per file and per line, read from a report the runner wrote
+ * to a path the harness named. Intersecting that with the lines this change added is the only
+ * honest way to say "coverage of changed lines": it is measured from a run, and it is absent
+ * when no run measured it.
+ *
+ * Hits per line rather than a set of misses, because the two differ on the lines a report never
+ * mentions. Reading misses made an omission read as coverage: a section that listed two hit
+ * lines of a nine-line file and declared totals agreeing with those two lines was complete by
+ * every structural check and reported nothing missed, so all nine changed lines read as
+ * covered. A line the report does not name was not measured by that run, and the honest
+ * reading of an unmeasured line is uncovered, not covered.
+ *
+ * The artifact is a complete lcov report or it is nothing. There used to be a second shape
+ * here, node's printed table, and carrying it made every artifact that is not lcov read like
+ * one: a truncated file, a header-only file, and a table a test printed all reached the same
+ * "the file is mentioned and nothing is missed" reading, which is a ratio of 1 for lines no
+ * run measured. So the framing is checked before a single ratio is trusted, and an artifact
+ * that fails the check yields nothing, exactly as a coverage-free project does. Not measured
+ * is a verdict; 100% is a claim.
+ *
+ * Sections come back as the list they were written as, one entry per `SF:`, and are never
+ * folded together by file. Folding them was the last way a claim got in: two complete sections
+ * for one file, one naming line 1 and the other naming lines 2 through 9, unioned their line
+ * numbers and read as nine lines measured and nine reached. A section is what one run measured
+ * of one file, so which section a line's count comes from is part of what makes it a
+ * measurement, and a file that two sections describe is resolved by abstaining rather than by
+ * addition.
+ */
+export interface LcovFileSection {
+  readonly file: string;
+  readonly hits: ReadonlyMap<number, number>;
+}
+
+export function parseLineHits(text: string): readonly LcovFileSection[] {
+  return parseCompleteLcov(text) ?? [];
+}
+
+/** The line kinds an lcov report is built from. Anything else in the file is not lcov. */
+const lcovRecordLine = /^(?:TN|SF|VER|FN|FNDA|FNF|FNH|BRDA|BRF|BRH|DA|LF|LH):/;
+
+/**
+ * One `SF:` section under construction. `found` and `hit` are what the section declares about
+ * itself in `LF:` and `LH:`; `measured` and `reached` are what its own `DA:` lines add up to.
+ * A section whose declaration disagrees with its lines was cut short somewhere.
+ */
+interface LcovSection {
+  readonly file: string;
+  readonly hits: Map<number, number>;
+  measured: number;
+  reached: number;
+  found: number | null;
+  hit: number | null;
+}
+
+/**
+ * `TN:` opens, `SF:` names the file, `DA:<line>,<count>` reports one line, `LF:`/`LH:` declare
+ * the section's own totals, `end_of_record` closes it. Null for anything that is not all of
+ * that: a section left open, a section with no `DA:` line, a section whose declared totals do
+ * not match the lines beside them, a line no lcov producer writes, or a report with no
+ * complete section in it. Null is what the caller renders as not measured.
+ */
+function parseCompleteLcov(text: string): readonly LcovFileSection[] | null {
+  const sections: LcovFileSection[] = [];
+  let section: LcovSection | null = null;
+
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (line.length === 0) {
+      continue;
+    }
+
+    if (line === "end_of_record") {
+      if (section === null || !sectionIsComplete(section)) {
+        return null;
+      }
+      sections.push({ file: section.file, hits: section.hits });
+      section = null;
+      continue;
+    }
+
+    if (!lcovRecordLine.test(line)) {
+      return null;
+    }
+    if (line.startsWith("SF:")) {
+      const file = line.slice(3).trim();
+      if (section !== null || file.length === 0) {
+        return null;
+      }
+      section = {
+        file,
+        hits: new Map<number, number>(),
+        measured: 0,
+        reached: 0,
+        found: null,
+        hit: null,
+      };
+      continue;
+    }
+    // The test name precedes the file it belongs to, so it is the one line that may sit
+    // outside a section. Every other record line without one is a report cut in half.
+    if (section === null) {
+      if (line.startsWith("TN:")) {
+        continue;
+      }
+      return null;
+    }
+
+    const counts = /^DA:(\d+),(\d+)/.exec(line);
+    if (counts?.[1] !== undefined && counts[2] !== undefined) {
+      const at = Number(counts[1]);
+      const count = Number(counts[2]);
+      // Files are numbered from one, so `DA:0,1` describes no line in any file. Keeping it
+      // meant a lookup for line 0 could succeed, and a patch can be made to claim an added
+      // line there: two artifacts that are each inert on their own would have combined into
+      // a line nothing wrote counting as covered. A report making that claim is malformed,
+      // so it is not a complete report and the arm abstains rather than reading part of it.
+      if (at < 1) {
+        return null;
+      }
+      section.measured += 1;
+      section.hits.set(at, count);
+      if (count > 0) {
+        section.reached += 1;
+      }
+      continue;
+    }
+    const found = /^LF:(\d+)$/.exec(line)?.[1];
+    if (found !== undefined) {
+      section.found = Number(found);
+      continue;
+    }
+    const hit = /^LH:(\d+)$/.exec(line)?.[1];
+    if (hit !== undefined) {
+      section.hit = Number(hit);
+    }
+  }
+
+  return section === null && sections.length > 0 ? sections : null;
+}
+
+function sectionIsComplete(section: LcovSection): boolean {
+  return (
+    section.measured > 0 && section.found === section.measured && section.hit === section.reached
+  );
+}
+
+/**
+ * What one section says about one file, per line, or null where the sections do not settle it.
+ * Null is not zero coverage: it is a file these runs did not measure, which the caller leaves
+ * out of the ratio rather than counting as missed.
+ *
+ * The match is on the resolved path and nothing looser. A suffix match was a hole with two
+ * framings in one pass: a complete, fully-hit section for `vendor/clamp.mjs` read as coverage
+ * of the changed `clamp.mjs`, and so did one for `/opt/other/clamp.mjs`. A report names files
+ * however the runner saw them, which is what the workspace root is for: a relative name
+ * resolves against it, an absolute one is already resolved, and two spellings of one file
+ * resolve to one path. Two files that merely end alike do not, whatever their basenames say.
+ *
+ * One section is authoritative for one file, and more than one is nothing. Node's runner
+ * writes a file's coverage once, so a second section for it is either two runs disagreeing or
+ * an artifact somebody assembled, and the two are not distinguishable from here. Combining
+ * them was tried both ways and both ways read a claim as a measurement: taking every section
+ * unioned their line numbers, so one section measuring line 1 and another naming lines 2
+ * through 9 read as nine measured and nine reached, and taking the first let a section with
+ * nothing to say shadow one that had misses to report. Abstaining is stricter than either, and
+ * it is the same verdict this returns for a file no section names at all.
+ */
+export function fileLineHits(
+  sections: readonly LcovFileSection[],
+  path: string,
+  workspaceRoot?: string,
+): ReadonlyMap<number, number> | null {
+  const wanted = resolvedPath(path, workspaceRoot);
+  const naming = sections.filter((section) => resolvedPath(section.file, workspaceRoot) === wanted);
+
+  return naming.length === 1 ? (naming[0]?.hits ?? null) : null;
+}
+
+/**
+ * One spelling of one path. Without a workspace root there is nothing to resolve a relative
+ * name against, so the two spellings have to agree by themselves: inventing a root to make
+ * them agree is the suffix match again, under another name.
+ */
+function resolvedPath(path: string, workspaceRoot?: string): string {
+  const slashed = path.replaceAll("\\", "/");
+  return workspaceRoot === undefined
+    ? normalize(slashed)
+    : resolve(workspaceRoot.replaceAll("\\", "/"), slashed);
+}
+
+/**
+ * Which tests a run reported passing and failing, by name. The re-specification refuter needs
+ * this to judge one test rather than a whole file, and null is the honest answer wherever a
+ * runner's output names nothing: no attribution means no exemption, which is fail-closed.
+ */
+export interface TestOutcomes {
+  readonly passed: readonly string[];
+  readonly failed: readonly string[];
+}
+
+/**
+ * TAP, read as the machine-readable format it is. This is what attribution should come from:
+ * node folds a test's own stdout into `#` comment lines, so nothing a test prints can become a
+ * result point, and the plan says how many points there were meant to be. A run whose
+ * top-level points do not match its own plan is not read at all.
+ *
+ * Null wherever the text is not a TAP run or does not agree with itself. Names come from every
+ * point, at any depth, because a suite reports its own subtests indented under it, and a name
+ * the run reported as skipped is taken back out of both lists at the end.
+ */
+export function parseTapOutcomes(text: string): TestOutcomes | null {
+  if (!/^TAP version \d+/m.test(text)) {
+    return null;
+  }
+
+  const passed: string[] = [];
+  const failed: string[] = [];
+  const skipped = new Set<string>();
+  let plan: number | null = null;
+  let topLevelPoints = 0;
+
+  for (const raw of text.split("\n")) {
+    // Whatever a test wrote arrives here, and it arrives commented out.
+    if (/^\s*#/.test(raw)) {
+      continue;
+    }
+    const planned = /^1\.\.(\d+)\s*$/.exec(raw);
+    if (planned?.[1] !== undefined) {
+      plan = Number(planned[1]);
+      continue;
+    }
+    const point = /^(\s*)(not ok|ok)\s+\d+\s+-\s+(.+?)\s*$/.exec(raw);
+    if (point?.[2] === undefined || point[3] === undefined) {
+      continue;
+    }
+    if (point[1] === "") {
+      topLevelPoints += 1;
+    }
+    recordOutcome(point[3], point[2] === "not ok", passed, failed, skipped);
+  }
+
+  if (plan === null || plan !== topLevelPoints) {
+    return null;
+  }
+  return attributable(passed, failed, skipped);
+}
+
+/**
+ * There is deliberately no reader for printed reporter output here any more.
+ *
+ * There was one, scoped as a fallback for runners the harness could not ask for a machine
+ * result, and it attributed failures from lines in captured output: a pytest `FAILED` line, a
+ * pytest -q footer, a go `--- FAIL:` line, and a TAP document printed into a spec run, which
+ * also flipped the reader's choice of format. Each of those is a line a test can print for the
+ * test beside it, and each bought that sibling a base-source failure it never had, which is
+ * what buys a deletion past the ratchet. Tightening the patterns was tried; the next spelling
+ * arrived in the next pass.
+ *
+ * The rule instead: attribution comes from the TAP artifact the harness asked node's own runner
+ * to write, at a path the harness named, and from nothing else. Where no such artifact exists,
+ * nothing is attributed, no test is cleared, and the ratchet is stricter rather than looser.
+ * That costs the per-test exemption on projects whose runner this harness cannot ask, which
+ * build-guide section 7.1 names as a boundary rather than implying away.
+ */
+
+function recordOutcome(
+  name: string,
+  isFailure: boolean,
+  passed: string[],
+  failed: string[],
+  skipped: Set<string>,
+): void {
+  // A TAP directive rides on the end of the name, and a skipped test is neither passed nor
+  // failed: it did not run, so the run has nothing to say about that name.
+  const [subject, directive] = name.split(/\s+#\s+/, 2);
+  if (directive !== undefined && /^(skip|todo)\b/i.test(directive)) {
+    skipped.add(subject ?? name);
+    return;
+  }
+  (isFailure ? failed : passed).push(subject ?? name);
+}
+
+/**
+ * What the run actually attributed. A name reported both ways is dropped from both: one run
+ * cannot have a test that passed and failed, so the honest reading of the contradiction is
+ * that nothing about that name was measured, and the exemption it might have bought is
+ * withheld rather than guessed at.
+ *
+ * A name the run skipped goes the same way, and that is not a refinement of the same idea.
+ * Dropping the skipped point on its own left the name uncontested, so a failing subtest
+ * reusing it supplied the only result point carrying that name and the escape hatch read it as
+ * the top-level test failing on the base source, which is what buys a deleted test. A test that
+ * did not run can be neither a base-source failure nor a cleared specification, in either
+ * direction, so the name leaves both lists.
+ */
+function attributable(
+  passed: readonly string[],
+  failed: readonly string[],
+  skipped: ReadonlySet<string>,
+): TestOutcomes | null {
+  const unattributable = new Set([...skipped, ...passed.filter((name) => failed.includes(name))]);
+  const kept = {
+    passed: passed.filter((name) => !unattributable.has(name)),
+    failed: failed.filter((name) => !unattributable.has(name)),
+  };
+  return kept.passed.length === 0 && kept.failed.length === 0 ? null : kept;
+}
+
+[evidence record sha256:3dc4a3a4490f5c460a6a9e3155957e9e4079912c17a5c07aaf21301cddf2b2ec kind tool-call:read]
+step 3: calling anthropic:claude-sonnet-5
+tool declare_file_set <- {"files":["src/gates/parsers.test.ts"]}
+tool declare_file_set ok: declared 1 file(s): src/gates/parsers.test.ts
+[evidence record sha256:a8e6a5a66f40954098d9bd098f9baeabf4294f2078130c62101fbbeba9887e3b kind tool-call:declare_file_set]
+step 4: calling anthropic:claude-sonnet-5
+tool edit <- {"path":"src/gates/parsers.test.ts","find":"  it(\"reads one file's coverage out of the one section that reported it\", () => {","replace":"  it(\"abstains on a section that reports DA lines but never declares LF\", () => {\n    const sections = parseLineHits(\n      [\"SF:src/math.ts\", \"DA:1,1\", \"DA:2,0\", \"LH:1\", \"end_of_record\"].join(\"\\n\"),\n    );\n\n    expect(sections).toEqual([]);\n  });\n\n  it(\"reads one file's coverage out of the one section that reported it\", () => {"}
+tool edit ok: replaced 1 occurrence(s) in src/gates/parsers.test.ts
+[evidence record sha256:f83f1119cc077bcf18618396bd8fa1e30731605e331463e0ca697ecfbbb22093 kind tool-call:edit]
+step 5: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"cd /workspace 2>/dev/null || true; npx vitest run src/gates/parsers.test.ts 2>&1 | tail -60"}
+[chokepoint] refusing shell without a terminal to confirm on: "cd /workspace 2>/dev/null || true; npx vitest run src/gates/parsers.test.ts 2>&1 | tail -60" is not on the shell allowlist.
+tool shell failed: denied: "cd /workspace 2>/dev/null || true; npx vitest run src/gates/parsers.test.ts 2>&1 | tail -60" is not on the shell allowlist. Confirmation was declined.
+[evidence record sha256:9b6e93b9ca795793ae3b0ed70e7687648d54c47c27d3ffbbba8d5e638c43c354 kind tool-call:shell]
+step 6: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"npx vitest run src/gates/parsers.test.ts 2>&1 | tail -60"}
+tool shell ok: exit code: 0
+stdout:
+
+ RUN  v4.1.10 /private/tmp/shakedown-06-testfix-lcov-nolf
+
+
+ Test Files  1 passed (1)
+      Tests  19 passed (19)
+   Start at  09:37:50
+   Duration  71ms (transform 15ms, setup 0ms, import 20ms, tests 3ms, environment 0ms)
+[evidence record sha256:ded438488e379b5326e7c814ffe7a91e9394047c815811c0ad1fd6f2391fd9c7 kind tool-call:shell]
+step 7: calling anthropic:claude-sonnet-5
+tool claim <- {"predicate":"facts.exitCode == 0","record":"sha256:ded438488e379b5326e7c814ffe7a91e9394047c815811c0ad1fd6f2391fd9c7","recordKind":"tool-call:shell","narrative":"Added a test case for an lcov section with DA lines but no LF declaration, asserting parseLineHits returns an empty array (abstains) for it. Ran vitest for parsers.test.ts and all 19 tests pass."}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:15560cdf45c4b40156191e831cf4a6a70459efdf1697a8eeed10922415781956 kind tool-call:claim]
+step 8: calling anthropic:claude-sonnet-5
+claim (unverified): Added a new test case in `src/gates/parsers.test.ts` under the "reading a coverage report" describe block:
+
+```ts
+it("abstains on a section that reports DA lines but never declares LF", () => {
+  const sections = parseLineHits(
+    ["SF:src/math.ts", "DA:1,1", "DA:2,0", "LH:1", "end_of_record"].join("\n"),
+  );
+
+  expect(sections).toEqual([]);
+});
+```
+
+This asserts that `parseLineHits` treats a section missing its `LF:` declaration as incomplete — per `sectionIsComplete`'s check (`section.found === section.measured`), a `null` `found` never equals `measured`, so the whole report is deemed not a complete lcov artifact and `parseLineHits` returns an empty array rather than fabricating coverage from the `DA` lines alone. Ran vitest against `parsers.test.ts` and all 19 tests pass, verified via a claim against the recorded shell run.
+stopped: completed after 8 steps, 111170 tokens
+gate typecheck passed: the command exited 0 [evidence record sha256:431a0f1468f724acc28113af3dc93fd14f1f317a7fffd6155a6e0dcdc4bff848]
+gate lint passed: the command exited 0 [evidence record sha256:846c4e769e71a85d727f7f20b047967620afb59059b8e32cddf8aefedc44f662]
+gate format not-applicable: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging [evidence record sha256:f52f338fc09ae92740c27b595a8a40571763e29217c54191c82b0fbaf466cbc5]
+gate tests passed: the runner reported: 1011 passed (1011) [evidence record sha256:5f63ac841ad053612617d93c9471395077fb736e0a2f82eb110ef84aba124745]
+gate file-set passed: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited [evidence record sha256:cf1f594a96ca9c4c9e17cac1765f9947192fb8d9aea1606d9dcdf89138dc3e60]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:9131d983387de9eb7d4119e3372e9aaeac213d679f40fe6ce44d305ae201cbec]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:a7835a09b3b3084e5c8717793a57f87b6a2b53a47b0299f58c1506c7fb1d34ef]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 8 added line(s) [evidence record sha256:67a7ae726c8f991b26c595cbe3f1aec529e56f69bd668e3daa5b6e5d151d480e]
+
+gates:
+  passed   typecheck: the command exited 0
+  passed   lint: the command exited 0
+  n/a      format: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging
+  passed   tests: the runner reported: 1011 passed (1011)
+  passed   file-set: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited
+  passed   placeholder: no placeholder marker was introduced by this change
+  passed   secret-scan: no known credential pattern appears in the added lines
+  passed   diff-budget (advisory): within budget: 1 file(s) and 8 added line(s)
+
+routing reward: 0.093 (green with 0 retries, 39s, and $0.3553)
+
+evidence bundle: ~/scratch/shakedown-runs/06-testfix-lcov-nolf-bundle
+verify it anywhere: node ~/scratch/shakedown-runs/06-testfix-lcov-nolf-bundle/verify.mjs ~/scratch/shakedown-runs/06-testfix-lcov-nolf-bundle
+review it: open ~/scratch/shakedown-runs/06-testfix-lcov-nolf-bundle/review.html

@@ -1,0 +1,1540 @@
+step 1: calling anthropic:claude-sonnet-5
+tool search <- {"pattern":"PatternUnreadableError"}
+tool search ok: docs/evidence/2026-08-18/shakedown/pass-criteria.md:22: | 2 | edit | Give `PatternUnreadableError` a message naming the pattern it could not read |
+src/tools/regex-safety.ts:76: class PatternUnreadableError extends Error {
+src/tools/regex-safety.ts:79: this.name = "PatternUnreadableError";
+src/tools/regex-safety.ts:472: throw new PatternUnreadableError(`unexpected "${source[cursor.index] ?? ""}"`);
+src/tools/regex-safety.ts:606: throw new PatternUnreadableError("pattern ends where an expression was expected");
+src/tools/regex-safety.ts:619: throw new PatternUnreadableError("unbalanced parenthesis");
+src/tools/regex-safety.ts:646: throw new PatternUnreadableError("unterminated group name");
+src/tools/regex-safety.ts:651: throw new PatternUnreadableError(`unsupported group prefix "(?${marker ?? ""}"`);
+src/tools/regex-safety.ts:676: throw new PatternUnreadableError("unterminated character class");
+src/tools/regex-safety.ts:684: throw new PatternUnreadableError("pattern ends with a backslash");
+src/tools/regex-safety.ts:697: throw new PatternUnreadableError("unterminated backreference name");
+src/tools/regex-safety.ts:773: throw new PatternUnreadableError("unterminated escape");
+[evidence record sha256:cea735530e82560d52177935a1513d0fcb9c2fa97def79de6ea3f0634c9b17a7 kind tool-call:search]
+step 2: calling anthropic:claude-sonnet-5
+tool read <- {"path":"src/tools/regex-safety.ts"}
+tool read ok: /**
+ * Structural refusal of search patterns that can backtrack super-linearly.
+ *
+ * A search pattern is model output, and `RegExp.prototype.test` runs on the main thread
+ * with no step budget: `(a+)+$` against thirty characters already takes seconds, and V8
+ * offers no way to interrupt a match once it starts. The bound therefore has to be decided
+ * before the pattern runs, by reading its structure.
+ *
+ * What makes a failing match explode is ambiguity: more than one way for the pattern to
+ * carve up the same text, so a failure at the end has to be retried against every carving.
+ * Three shapes produce it, and each is refused here:
+ *   - a variable-length quantifier inside another quantifier: `(a+)+`, `(\w+\s)*`
+ *   - a repeated body that can also match nothing: `(a?)+`, `(a|)*`
+ *   - two variable quantifiers competing for the same character, side by side or as
+ *     alternatives under one quantifier: `\s*\s*$`, `(a+)(a+)$`, `(a|ab)+`, `(\w|\d)+`
+ *
+ * Each rule reads the character the engine will match, not the characters the pattern is
+ * spelled with, because the two differ: a digit escape is a backreference only when the
+ * pattern has that many capture groups, and is otherwise a legacy octal escape, so
+ * `\141+\141+\141+X` is `a+a+a+X` written another way and has to be refused as one.
+ *
+ * This is known-shape refusal, not a proof of linear time, and it is conservative in both
+ * directions: it refuses patterns that would have run fast. The gap it does have is a
+ * backreference, whose ambiguity only exists at match time and so cannot be read off the
+ * structure at all; the search tool's line-length cap is what bounds that one. Grouping is
+ * not a gap, at any depth or in either direction: the walk carries the enclosing quantifier
+ * down through groups and sequences, so `((a|ab)y)+` is refused the same as `(a|ab)+`, and
+ * it reads back up through an unquantified group, so `(a+)(a+)$` is refused the same as
+ * `a+a+$`, parentheses being a capture rather than a boundary. A pattern the parser
+ * below cannot read is refused rather than run, since an unread pattern is one nothing
+ * bounds. `regex-safety.test.ts` pins both directions.
+ */
+
+/** Why a pattern was refused, phrased so the caller can rewrite it. */
+export interface BacktrackingRisk {
+  readonly reason: string;
+  /** The sub-pattern carrying the risk, so the message points at something concrete. */
+  readonly construct: string;
+}
+
+export function findBacktrackingRisk(pattern: string): BacktrackingRisk | null {
+  let parsed: PatternNode;
+  try {
+    parsed = parsePattern(pattern);
+  } catch (cause) {
+    return {
+      reason: `could not be read structurally (${describeCause(cause)}), so nothing bounds how it backtracks`,
+      construct: pattern,
+    };
+  }
+  return inspect(parsed, null, pattern);
+}
+
+interface Span {
+  readonly start: number;
+  readonly end: number;
+}
+
+type PatternNode =
+  | (Span & { readonly kind: "alternation"; readonly branches: readonly PatternNode[] })
+  | (Span & { readonly kind: "sequence"; readonly terms: readonly PatternNode[] })
+  | RepeatNode
+  | (Span & { readonly kind: "group"; readonly body: PatternNode })
+  | (Span & { readonly kind: "lookaround"; readonly body: PatternNode })
+  | (Span & { readonly kind: "character"; readonly source: string })
+  | (Span & { readonly kind: "zeroWidth"; readonly source: string })
+  | (Span & { readonly kind: "backreference"; readonly source: string });
+
+interface RepeatNode extends Span {
+  readonly kind: "repeat";
+  readonly body: PatternNode;
+  readonly min: number;
+  readonly max: number;
+}
+
+class PatternUnreadableError extends Error {
+  constructor(detail: string) {
+    super(detail);
+    this.name = "PatternUnreadableError";
+  }
+}
+
+function describeCause(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
+// The walk: every rule below needs the enclosing repeat, not just a depth, so a refusal
+// can quote the whole construct rather than the fragment that tripped it.
+
+function inspect(
+  node: PatternNode,
+  enclosingRepeat: RepeatNode | null,
+  source: string,
+): BacktrackingRisk | null {
+  switch (node.kind) {
+    case "alternation": {
+      const competing = repeatedAlternativesRisk(node.branches, enclosingRepeat, source);
+      return (
+        competing ?? firstRisk(node.branches, (branch) => inspect(branch, enclosingRepeat, source))
+      );
+    }
+    case "sequence": {
+      const competing = findCompetingNeighbours(node.terms, source);
+      return competing ?? firstRisk(node.terms, (term) => inspect(term, enclosingRepeat, source));
+    }
+    case "repeat": {
+      if (!repeatsMoreThanOnce(node)) {
+        return inspect(node.body, enclosingRepeat, source);
+      }
+      const risk = repeatRisk(node, enclosingRepeat, source);
+      return risk ?? inspect(node.body, node, source);
+    }
+    case "group":
+      return inspect(node.body, enclosingRepeat, source);
+    case "lookaround":
+      // A lookaround consumes nothing, so no enclosing quantifier can pump what is inside
+      // it. Its own contents are still read on their own terms.
+      return inspect(node.body, null, source);
+    default:
+      return null;
+  }
+}
+
+function repeatRisk(
+  repeat: RepeatNode,
+  enclosingRepeat: RepeatNode | null,
+  source: string,
+): BacktrackingRisk | null {
+  // A body that consumes nothing cannot be pumped: the engine stops the loop on the first
+  // empty iteration, so no amount of repetition multiplies the work.
+  if (!consumesCharacters(repeat.body)) {
+    return null;
+  }
+
+  if (enclosingRepeat !== null && varyingLength(repeat)) {
+    return {
+      reason:
+        "repeats a variable-length quantifier inside another quantifier, so one input has exponentially many ways to be split between them",
+      construct: quote(enclosingRepeat, source),
+    };
+  }
+
+  if (matchesEmpty(repeat.body)) {
+    return {
+      reason:
+        "repeats a body that can also match nothing, so each iteration has two ways to cover the same position",
+      construct: quote(repeat, source),
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Alternatives that can both match at the same position are decided by trying one and
+ * coming back for the other, and a quantifier around them multiplies that choice by every
+ * iteration: `(a|ab)+` has to try every way to cut the input into `a` and `ab` pieces.
+ */
+function repeatedAlternativesRisk(
+  branches: readonly PatternNode[],
+  enclosingRepeat: RepeatNode | null,
+  source: string,
+): BacktrackingRisk | null {
+  if (enclosingRepeat === null) {
+    return null;
+  }
+  const competing = findCompetingAlternatives(branches);
+  if (competing === null) {
+    return null;
+  }
+  return {
+    reason: `repeats alternatives that can both match at the same position (${competing}), so the same text can be carved up more than one way`,
+    construct: quote(enclosingRepeat, source),
+  };
+}
+
+/**
+ * Two variable quantifiers reachable from one another over nullable terms both compete for
+ * the run of characters between them: `\s*\s*$` retries every split of that run. The scan
+ * stops at the first term that must consume something, since that term pins the boundary.
+ */
+function findCompetingNeighbours(
+  terms: readonly PatternNode[],
+  source: string,
+): BacktrackingRisk | null {
+  const sequence = flattenTransparentGroups(terms);
+  for (const [index, left] of sequence.entries()) {
+    const leftRepeat = competingQuantifier(left.node);
+    if (leftRepeat === null) {
+      continue;
+    }
+    for (const right of sequence.slice(index + 1)) {
+      const rightRepeat = competingQuantifier(right.node);
+      if (
+        rightRepeat !== null &&
+        charactersOverlap(leadingCharacters(leftRepeat.body), leadingCharacters(rightRepeat.body))
+      ) {
+        return {
+          reason:
+            "puts two variable quantifiers over the same characters in sequence, so every split of a run between them is retried",
+          construct: `${quote(left.span, source)}${quote(right.span, source)}`,
+        };
+      }
+      if (!matchesEmpty(right.node)) {
+        break;
+      }
+    }
+  }
+  return null;
+}
+
+/** A quantifier that can take a variable number of characters from its neighbour. */
+function competingQuantifier(node: PatternNode): RepeatNode | null {
+  if (node.kind !== "repeat" || !varyingLength(node) || !consumesCharacters(node.body)) {
+    return null;
+  }
+  return node;
+}
+
+/** A term of a sequence, with the text a refusal should quote it as. */
+interface SequenceTerm {
+  readonly node: PatternNode;
+  readonly span: Span;
+}
+
+/**
+ * A group without a quantifier on it is transparent to matching: it captures, and nothing
+ * else, so `(a+)(a+)` splits a run of characters exactly as ambiguously as `a+a+` does. The
+ * neighbour scan therefore reads through such groups, at any nesting depth, rather than
+ * seeing one opaque term where two quantifiers stand side by side. A lookaround is not
+ * transparent and a quantified group is a repeat, so neither is spliced here.
+ */
+function flattenTransparentGroups(terms: readonly PatternNode[]): readonly SequenceTerm[] {
+  return terms.flatMap((term) =>
+    term.kind === "group" ? spliceGroup(term.body, term) : [{ node: term, span: term }],
+  );
+}
+
+function spliceGroup(body: PatternNode, group: Span): readonly SequenceTerm[] {
+  const inner = flattenTransparentGroups(body.kind === "sequence" ? body.terms : [body]);
+  const only = inner[0];
+  // A group holding one term stands for that term, so the parentheses are what to quote.
+  return inner.length === 1 && only !== undefined ? [{ node: only.node, span: group }] : inner;
+}
+
+function findCompetingAlternatives(branches: readonly PatternNode[]): string | null {
+  for (const [index, left] of branches.entries()) {
+    for (const right of branches.slice(index + 1)) {
+      if (alternativesCompete(left, right)) {
+        return `${describeBranch(left)} and ${describeBranch(right)}`;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Distinct literals that are not prefixes of one another decide themselves on the first
+ * character that differs, so `(get|got)+` is unambiguous. Anything else falls back to
+ * asking whether the two branches can start on the same character.
+ */
+function alternativesCompete(left: PatternNode, right: PatternNode): boolean {
+  const leftLiteral = literalText(left);
+  const rightLiteral = literalText(right);
+  if (leftLiteral !== null && rightLiteral !== null) {
+    return leftLiteral.startsWith(rightLiteral) || rightLiteral.startsWith(leftLiteral);
+  }
+  return charactersOverlap(leadingCharacters(left), leadingCharacters(right));
+}
+
+function describeBranch(node: PatternNode): string {
+  const literal = literalText(node);
+  return literal === null ? leadingCharacters(node).join("") : literal;
+}
+
+// Shape questions the rules ask of a node.
+
+function repeatsMoreThanOnce(repeat: RepeatNode): boolean {
+  return repeat.max >= 2;
+}
+
+function varyingLength(repeat: RepeatNode): boolean {
+  return repeat.max > repeat.min || varyingBodyLength(repeat.body);
+}
+
+function varyingBodyLength(node: PatternNode): boolean {
+  switch (node.kind) {
+    case "alternation":
+      return node.branches.some(varyingBodyLength) || !allBranchesFixedWidth(node.branches);
+    case "sequence":
+      return node.terms.some(varyingBodyLength);
+    case "repeat":
+      return node.max > node.min || varyingBodyLength(node.body);
+    case "group":
+      return varyingBodyLength(node.body);
+    case "backreference":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function allBranchesFixedWidth(branches: readonly PatternNode[]): boolean {
+  const widths = new Set(branches.map((branch) => literalText(branch)?.length ?? -1));
+  return widths.size === 1 && !widths.has(-1);
+}
+
+function consumesCharacters(node: PatternNode): boolean {
+  switch (node.kind) {
+    case "alternation":
+      return node.branches.some(consumesCharacters);
+    case "sequence":
+      return node.terms.some(consumesCharacters);
+    case "repeat":
+      return node.max >= 1 && consumesCharacters(node.body);
+    case "group":
+      return consumesCharacters(node.body);
+    case "character":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function matchesEmpty(node: PatternNode): boolean {
+  switch (node.kind) {
+    case "alternation":
+      return node.branches.some(matchesEmpty);
+    case "sequence":
+      return node.terms.every(matchesEmpty);
+    case "repeat":
+      return node.min === 0 || matchesEmpty(node.body);
+    case "group":
+      return matchesEmpty(node.body);
+    case "character":
+      return false;
+    default:
+      // Anchors, lookarounds and backreferences can all cover a position without consuming it.
+      return true;
+  }
+}
+
+/** The exact text a node must match, when it is one, or null when it can vary. */
+function literalText(node: PatternNode): string | null {
+  switch (node.kind) {
+    case "character":
+      return node.source.length === 1 && node.source !== "." ? node.source : null;
+    case "sequence": {
+      const parts = node.terms.map(literalText);
+      return parts.every((part) => part !== null) ? parts.join("") : null;
+    }
+    case "group":
+      return literalText(node.body);
+    default:
+      return null;
+  }
+}
+
+/** Sources of the single-character atoms a match here can begin with. */
+function leadingCharacters(node: PatternNode): readonly string[] {
+  switch (node.kind) {
+    case "alternation":
+      return node.branches.flatMap(leadingCharacters);
+    case "sequence": {
+      const leading: string[] = [];
+      for (const term of node.terms) {
+        leading.push(...leadingCharacters(term));
+        if (!matchesEmpty(term)) {
+          break;
+        }
+      }
+      return leading;
+    }
+    case "repeat":
+      return node.max === 0 ? [] : leadingCharacters(node.body);
+    case "group":
+      return leadingCharacters(node.body);
+    case "character":
+      return [node.source];
+    default:
+      return [];
+  }
+}
+
+/**
+ * Whether two atoms can match one and the same character. Decided by probing, over an
+ * alphabet rather than by set algebra: each atom is a single character matcher, so
+ * compiling it costs nothing and can itself never backtrack.
+ *
+ * An atom no probe matches is undecided, not disjoint. Disjointness is the answer that lets
+ * a pattern run, so it is never the answer given by default: `\1+\1+\1+X` is `\x01` three
+ * times over and backtracks exactly as `a+a+a+X` does, and reading an unprobed atom as
+ * matching nothing would have cleared it.
+ */
+function charactersOverlap(left: readonly string[], right: readonly string[]): boolean {
+  return left.some((leftAtom) => {
+    const leftMatches = probeMatches(leftAtom);
+    return right.some((rightAtom) => {
+      const rightMatches = probeMatches(rightAtom);
+      return (
+        leftMatches.length === 0 ||
+        rightMatches.length === 0 ||
+        rightMatches.some((probe) => leftMatches.includes(probe))
+      );
+    });
+  });
+}
+
+/**
+ * Every code unit an escape can name directly, since a hex or octal escape reaches all of
+ * them, plus one character past the range so classes written over wider scripts still probe.
+ */
+const probeAlphabet: readonly string[] = [
+  ...Array.from({ length: 256 }, (_, code) => String.fromCharCode(code)),
+  "中",
+];
+
+const probeCache = new Map<string, readonly string[]>();
+
+function probeMatches(atomSource: string): readonly string[] {
+  const cached = probeCache.get(atomSource);
+  if (cached !== undefined) {
+    return cached;
+  }
+  let matched: readonly string[];
+  try {
+    // atomSource is one single-character atom the parser above produced, a literal, an
+    // escape or a character class, never a quantifier or a group. Anchored and matched
+    // against one character at a time, it has nothing to backtrack over, so this is the
+    // one non-literal RegExp in the module that cannot be what the module exists to stop.
+    // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
+    const atom = new RegExp(`^(?:${atomSource})$`);
+    matched = probeAlphabet.filter((probe) => atom.test(probe));
+  } catch {
+    matched = [];
+  }
+  probeCache.set(atomSource, matched);
+  return matched;
+}
+
+function firstRisk(
+  nodes: readonly PatternNode[],
+  check: (node: PatternNode) => BacktrackingRisk | null,
+): BacktrackingRisk | null {
+  for (const node of nodes) {
+    const risk = check(node);
+    if (risk !== null) {
+      return risk;
+    }
+  }
+  return null;
+}
+
+function quote(span: Span, source: string): string {
+  return source.slice(span.start, span.end);
+}
+
+// The parser: enough of the JavaScript pattern grammar to see quantifier nesting and
+// single-character atoms. Anything it does not recognise raises, and the caller refuses.
+
+interface Cursor {
+  readonly source: string;
+  /** Decides whether a digit escape is a backreference, so it must be known before the walk. */
+  readonly captureCount: number;
+  index: number;
+}
+
+function parsePattern(source: string): PatternNode {
+  const cursor: Cursor = { source, captureCount: countCaptureGroups(source), index: 0 };
+  const parsed = parseAlternation(cursor);
+  if (cursor.index !== source.length) {
+    throw new PatternUnreadableError(`unexpected "${source[cursor.index] ?? ""}"`);
+  }
+  return parsed;
+}
+
+/**
+ * The engine counts every capture group in the whole pattern, including ones written after
+ * the escape that cites them, so this is a pass over the source rather than a running total.
+ */
+function countCaptureGroups(source: string): number {
+  let count = 0;
+  let insideClass = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "\\") {
+      index += 1;
+      continue;
+    }
+    if (insideClass) {
+      insideClass = char !== "]";
+      continue;
+    }
+    if (char === "[") {
+      insideClass = true;
+      continue;
+    }
+    if (char !== "(") {
+      continue;
+    }
+    if (source[index + 1] !== "?") {
+      count += 1;
+      continue;
+    }
+    // A named group captures; `(?:`, `(?=`, `(?!`, `(?<=` and `(?<!` do not.
+    const afterAngle = source[index + 3];
+    if (source[index + 2] === "<" && afterAngle !== "=" && afterAngle !== "!") {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function parseAlternation(cursor: Cursor): PatternNode {
+  const start = cursor.index;
+  const branches = [parseSequence(cursor)];
+  while (cursor.source[cursor.index] === "|") {
+    cursor.index += 1;
+    branches.push(parseSequence(cursor));
+  }
+  const only = branches[0];
+  if (branches.length === 1 && only !== undefined) {
+    return only;
+  }
+  return { kind: "alternation", branches, start, end: cursor.index };
+}
+
+function parseSequence(cursor: Cursor): PatternNode {
+  const start = cursor.index;
+  const terms: PatternNode[] = [];
+  while (cursor.index < cursor.source.length) {
+    const char = cursor.source[cursor.index];
+    if (char === "|" || char === ")") {
+      break;
+    }
+    terms.push(parseTerm(cursor));
+  }
+  const only = terms[0];
+  if (terms.length === 1 && only !== undefined) {
+    return only;
+  }
+  return { kind: "sequence", terms, start, end: cursor.index };
+}
+
+function parseTerm(cursor: Cursor): PatternNode {
+  const start = cursor.index;
+  const body = parseAtom(cursor);
+  const bounds = parseQuantifier(cursor);
+  if (bounds === null) {
+    return body;
+  }
+  // A lazy quantifier backtracks over the same splits, just in the other order.
+  if (cursor.source[cursor.index] === "?") {
+    cursor.index += 1;
+  }
+  return { kind: "repeat", body, min: bounds.min, max: bounds.max, start, end: cursor.index };
+}
+
+const quantifierBounds = /^\{(\d+)(,(\d+)?)?\}/;
+
+function parseQuantifier(cursor: Cursor): { min: number; max: number } | null {
+  const char = cursor.source[cursor.index];
+  if (char === "*") {
+    cursor.index += 1;
+    return { min: 0, max: Number.POSITIVE_INFINITY };
+  }
+  if (char === "+") {
+    cursor.index += 1;
+    return { min: 1, max: Number.POSITIVE_INFINITY };
+  }
+  if (char === "?") {
+    cursor.index += 1;
+    return { min: 0, max: 1 };
+  }
+  if (char !== "{") {
+    return null;
+  }
+  const braced = quantifierBounds.exec(cursor.source.slice(cursor.index));
+  const lower = braced?.[1];
+  if (braced === null || lower === undefined) {
+    // Not a quantifier at all: an unmatched "{" is a literal brace.
+    return null;
+  }
+  cursor.index += braced[0].length;
+  const min = Number(lower);
+  if (braced[2] === undefined) {
+    return { min, max: min };
+  }
+  const upper = braced[3];
+  return { min, max: upper === undefined ? Number.POSITIVE_INFINITY : Number(upper) };
+}
+
+function parseAtom(cursor: Cursor): PatternNode {
+  const start = cursor.index;
+  const char = cursor.source[cursor.index];
+  if (char === "(") {
+    return parseGroup(cursor);
+  }
+  if (char === "[") {
+    return parseCharacterClass(cursor);
+  }
+  if (char === "\\") {
+    return parseEscape(cursor);
+  }
+  if (char === undefined) {
+    throw new PatternUnreadableError("pattern ends where an expression was expected");
+  }
+  cursor.index += 1;
+  const kind = char === "^" || char === "$" ? "zeroWidth" : "character";
+  return { kind, source: char, start, end: cursor.index };
+}
+
+function parseGroup(cursor: Cursor): PatternNode {
+  const start = cursor.index;
+  cursor.index += 1;
+  const kind = parseGroupPrefix(cursor);
+  const body = parseAlternation(cursor);
+  if (cursor.source[cursor.index] !== ")") {
+    throw new PatternUnreadableError("unbalanced parenthesis");
+  }
+  cursor.index += 1;
+  return { kind, body, start, end: cursor.index };
+}
+
+function parseGroupPrefix(cursor: Cursor): "group" | "lookaround" {
+  if (cursor.source[cursor.index] !== "?") {
+    return "group";
+  }
+  const marker = cursor.source[cursor.index + 1];
+  if (marker === ":") {
+    cursor.index += 2;
+    return "group";
+  }
+  if (marker === "=" || marker === "!") {
+    cursor.index += 2;
+    return "lookaround";
+  }
+  if (marker === "<") {
+    const behind = cursor.source[cursor.index + 2];
+    if (behind === "=" || behind === "!") {
+      cursor.index += 3;
+      return "lookaround";
+    }
+    const closed = cursor.source.indexOf(">", cursor.index + 2);
+    if (closed === -1) {
+      throw new PatternUnreadableError("unterminated group name");
+    }
+    cursor.index = closed + 1;
+    return "group";
+  }
+  throw new PatternUnreadableError(`unsupported group prefix "(?${marker ?? ""}"`);
+}
+
+function parseCharacterClass(cursor: Cursor): PatternNode {
+  const start = cursor.index;
+  cursor.index += 1;
+  if (cursor.source[cursor.index] === "^") {
+    cursor.index += 1;
+  }
+  while (cursor.index < cursor.source.length) {
+    const char = cursor.source[cursor.index];
+    if (char === "\\") {
+      cursor.index += 2;
+      continue;
+    }
+    cursor.index += 1;
+    if (char === "]") {
+      return {
+        kind: "character",
+        source: cursor.source.slice(start, cursor.index),
+        start,
+        end: cursor.index,
+      };
+    }
+  }
+  throw new PatternUnreadableError("unterminated character class");
+}
+
+function parseEscape(cursor: Cursor): PatternNode {
+  const start = cursor.index;
+  cursor.index += 1;
+  const marker = cursor.source[cursor.index];
+  if (marker === undefined) {
+    throw new PatternUnreadableError("pattern ends with a backslash");
+  }
+  cursor.index += 1;
+
+  if (marker === "b" || marker === "B") {
+    return { kind: "zeroWidth", source: `\\${marker}`, start, end: cursor.index };
+  }
+  if (isDigit(marker)) {
+    return parseDigitEscape(cursor, start);
+  }
+  if (marker === "k" && cursor.source[cursor.index] === "<") {
+    const closed = cursor.source.indexOf(">", cursor.index);
+    if (closed === -1) {
+      throw new PatternUnreadableError("unterminated backreference name");
+    }
+    cursor.index = closed + 1;
+    return backreferenceFrom(cursor, start);
+  }
+
+  consumeEscapeArgument(cursor, marker);
+  return {
+    kind: "character",
+    source: cursor.source.slice(start, cursor.index),
+    start,
+    end: cursor.index,
+  };
+}
+
+/**
+ * `\` followed by digits is a backreference only when the pattern has at least that many
+ * capture groups. Otherwise the engine reads the digits as a legacy octal escape (`\141` is
+ * `a`), or, for `8` and `9`, as the digit itself, and the rules above have to see the
+ * character that will actually be matched. Only the escape is consumed: any digits past it
+ * are ordinary characters that carry their own quantifier, so `\18+` repeats the `8`, and
+ * leaving them for the sequence loop is what binds the quantifier where the engine binds it.
+ */
+function parseDigitEscape(cursor: Cursor, start: number): PatternNode {
+  const digitsStart = start + 1;
+  let digitsEnd = digitsStart;
+  while (isDigit(cursor.source[digitsEnd])) {
+    digitsEnd += 1;
+  }
+  const digits = cursor.source.slice(digitsStart, digitsEnd);
+  const leading = digits[0] ?? "";
+  if (leading !== "0" && Number(digits) <= cursor.captureCount) {
+    cursor.index = digitsEnd;
+    return backreferenceFrom(cursor, start);
+  }
+
+  const consumed = legacyEscapeLength(digits);
+  cursor.index = digitsStart + consumed;
+  const code =
+    leading === "8" || leading === "9"
+      ? leading.charCodeAt(0)
+      : Number.parseInt(digits.slice(0, consumed), 8);
+  return {
+    // Written back as a hex escape rather than as the character: an octal escape can decode
+    // to a metacharacter, and `\x2b` is what the probe below can compile where `+` is not.
+    kind: "character",
+    source: `\\x${code.toString(16).padStart(2, "0")}`,
+    start,
+    end: cursor.index,
+  };
+}
+
+/** How many of the digits the engine folds into one escape, per the legacy octal grammar. */
+function legacyEscapeLength(digits: string): number {
+  const leading = digits[0] ?? "";
+  if (leading === "8" || leading === "9" || !isOctalDigit(digits[1])) {
+    return 1;
+  }
+  // Only a leading 0 to 3 can carry a third digit without overflowing a byte.
+  return leading <= "3" && isOctalDigit(digits[2]) ? 3 : 2;
+}
+
+function backreferenceFrom(cursor: Cursor, start: number): PatternNode {
+  return {
+    kind: "backreference",
+    source: cursor.source.slice(start, cursor.index),
+    start,
+    end: cursor.index,
+  };
+}
+
+function consumeEscapeArgument(cursor: Cursor, marker: string): void {
+  const braced = marker === "u" || marker === "p" || marker === "P";
+  if (braced && cursor.source[cursor.index] === "{") {
+    const closed = cursor.source.indexOf("}", cursor.index);
+    if (closed === -1) {
+      throw new PatternUnreadableError("unterminated escape");
+    }
+    cursor.index = closed + 1;
+    return;
+  }
+  const digits = marker === "u" ? 4 : marker === "x" ? 2 : marker === "c" ? 1 : 0;
+  cursor.index = Math.min(cursor.index + digits, cursor.source.length);
+}
+
+function isDigit(char: string | undefined): boolean {
+  return char !== undefined && char >= "0" && char <= "9";
+}
+
+function isOctalDigit(char: string | undefined): boolean {
+  return char !== undefined && char >= "0" && char <= "7";
+}
+
+[evidence record sha256:8fbeab172bc91344a71a9a7b2cff7e5f5a6e6ebd2d12a0b9dfc37c7876cd8c05 kind tool-call:read]
+step 3: calling anthropic:claude-sonnet-5
+tool declare_file_set <- {"files":["src/tools/regex-safety.ts"]}
+tool declare_file_set ok: declared 1 file(s): src/tools/regex-safety.ts
+[evidence record sha256:bb262b371c644dde91e64a0e1889b660fd249e4839d60ad5d374d50154f51cfa kind tool-call:declare_file_set]
+step 4: calling anthropic:claude-sonnet-5
+tool read <- {"path":"docs/evidence/2026-08-18/shakedown/pass-criteria.md"}
+tool read ok: # Shakedown pass criteria
+
+Written before any task was run, per the project's own evaluation-design-first rule. The
+point of writing it first is that a criterion invented after the numbers are in is a
+description of the numbers.
+
+## What is being tested
+
+Whether the agent, run against a real repository, produces work that the harness can hold
+to its own standard. Not whether the model is clever: whether the evidence path holds up
+over ten consecutive real tasks without being steered.
+
+## The corpus
+
+Ten tasks drawn from this repository's own small chores, spread across the four task
+classes the router already classifies. Every one is work somebody would actually ask for,
+not a puzzle constructed to be easy.
+
+| # | Class | Task |
+| --- | --- | --- |
+| 1 | edit | Name the fuzz corpus directory in the error `fuzz/smoke.mjs` prints when a corpus is missing |
+| 2 | edit | Give `PatternUnreadableError` a message naming the pattern it could not read |
+| 3 | edit | Report the seed count per harness in `fuzz/smoke.mjs` as a total at the end |
+| 4 | test-fix | Add a `scrubText` case for a credential name split by a digit |
+| 5 | test-fix | Add a `findBacktrackingRisk` case for a quantifier inside a lookbehind |
+| 6 | test-fix | Add a `parseLineHits` case for a section with `DA:` lines but no `LF:` |
+| 7 | multi-file | Move the four-character floor constant in `scrub.ts` behind a named export and use it in the test |
+| 8 | multi-file | Give `corpus-replay.test.ts` and `smoke.mjs` one shared list of harness names |
+| 9 | tool-heavy | Find every `.fuzz.cjs` harness with no entry in `fuzz/README.md` and list them |
+| 10 | tool-heavy | Report which `src/gates` files have no test file beside them |
+
+## Dimensions recorded per task
+
+Recorded whatever the outcome, from the run's own output and its bundle, never from the
+model's narration:
+
+- gate outcomes, per gate, including not-applicable
+- attempts the auto-resolve loop took
+- whether it escalated, and on what
+- diff size: files changed and lines added
+- invariant violations: any file-set breach, any placeholder introduced, any secret-scan
+  hit, any ratchet rejection
+- whether the exported bundle verifies under its own embedded verifier
+- claims made, and how many the harness rendered verified
+
+## What counts as failure
+
+The shakedown fails if any of these happens even once:
+
+1. A bundle does not verify under its own embedded verifier.
+2. The harness renders a claim verified that is not true of the cited record.
+3. A run reports green while a blocking gate failed.
+4. A file outside the declared set is changed with no recorded amendment.
+5. The ledger chain breaks, or a run continues after a failed ledger write.
+6. A credential written into the workspace reaches the ledger unredacted.
+
+## What is not failure
+
+Named in advance so it cannot be reinterpreted later:
+
+- **An escalation is a result.** The agent hitting the attempt cap and escalating with a
+  bundle is the designed behaviour. A shakedown where nothing escalates has tested less.
+- **A task the model does badly is not a harness failure.** A wrong or empty edit that the
+  gates catch and report is the system working.
+- **A ratchet rejection is a result**, and a wanted one: it is the numeric floor doing what
+  it is for.
+- **Not-applicable gates are not passes and are not failures.** The scratch clone is this
+  repository, so typecheck and lint apply here and will run.
+
+## How it is run
+
+Against a scratch clone of this repository at the current commit, one clean clone per task,
+so no task inherits another's tree. The frontier model, since the local one has already
+been measured separately and the question here is the harness rather than the model.
+
+[evidence record sha256:99a28e5f7db5bc9c198b33fcc4dbe48748efecf643d288dea100ee7530f5495b kind tool-call:read]
+step 5: calling anthropic:claude-sonnet-5
+tool edit <- {"path":"src/tools/regex-safety.ts","find":"class PatternUnreadableError extends Error {\n  constructor(detail: string) {\n    super(detail);\n    this.name = \"PatternUnreadableError\";\n  }\n}","replace":"class PatternUnreadableError extends Error {\n  /** The pattern that could not be read, so a catch site can name it in its own message. */\n  readonly pattern: string;\n\n  constructor(pattern: string, detail: string) {\n    super(`pattern ${JSON.stringify(pattern)} could not be read: ${detail}`);\n    this.name = \"PatternUnreadableError\";\n    this.pattern = pattern;\n  }\n}"}
+tool edit ok: replaced 1 occurrence(s) in src/tools/regex-safety.ts
+[evidence record sha256:dce63bada3284dcc56f49f04fcf972d6c3543a745c5faa7f7c0f66cca78be315 kind tool-call:edit]
+step 6: calling anthropic:claude-sonnet-5
+tool edit <- {"path":"src/tools/regex-safety.ts","find":"  const parsed = parseAlternation(cursor);\n  if (cursor.index !== source.length) {\n    throw new PatternUnreadableError(`unexpected \"${source[cursor.index] ?? \"\"}\"`);\n  }","replace":"  const parsed = parseAlternation(cursor);\n  if (cursor.index !== source.length) {\n    throw new PatternUnreadableError(source, `unexpected \"${source[cursor.index] ?? \"\"}\"`);\n  }"}
+tool edit ok: replaced 1 occurrence(s) in src/tools/regex-safety.ts
+[evidence record sha256:2b268c8c2197292d0141b6a8920ba630b241487e68e4cafab8e36bfd600b5c4b kind tool-call:edit]
+step 7: calling anthropic:claude-sonnet-5
+tool search <- {"pattern":"throw new PatternUnreadableError\\("}
+tool search ok: src/tools/regex-safety.ts:476: throw new PatternUnreadableError(source, `unexpected "${source[cursor.index] ?? ""}"`);
+src/tools/regex-safety.ts:610: throw new PatternUnreadableError("pattern ends where an expression was expected");
+src/tools/regex-safety.ts:623: throw new PatternUnreadableError("unbalanced parenthesis");
+src/tools/regex-safety.ts:650: throw new PatternUnreadableError("unterminated group name");
+src/tools/regex-safety.ts:655: throw new PatternUnreadableError(`unsupported group prefix "(?${marker ?? ""}"`);
+src/tools/regex-safety.ts:680: throw new PatternUnreadableError("unterminated character class");
+src/tools/regex-safety.ts:688: throw new PatternUnreadableError("pattern ends with a backslash");
+src/tools/regex-safety.ts:701: throw new PatternUnreadableError("unterminated backreference name");
+src/tools/regex-safety.ts:777: throw new PatternUnreadableError("unterminated escape");
+[evidence record sha256:b43f660d61509a4d6fd45699bd2b07367a3c013aec268f732bf9c42de73411a6 kind tool-call:search]
+step 8: calling anthropic:claude-sonnet-5
+tool edit <- {"path":"src/tools/regex-safety.ts","find":"    throw new PatternUnreadableError(\"pattern ends where an expression was expected\");","replace":"    throw new PatternUnreadableError(\n      cursor.source,\n      \"pattern ends where an expression was expected\",\n    );"}
+tool edit ok: replaced 1 occurrence(s) in src/tools/regex-safety.ts
+[evidence record sha256:9df9c9044428dc9cc71471de6689e8db088dae011792222fbe6e950a0203997c kind tool-call:edit]
+step 9: calling anthropic:claude-sonnet-5
+tool edit <- {"path":"src/tools/regex-safety.ts","find":"    throw new PatternUnreadableError(\"unbalanced parenthesis\");","replace":"    throw new PatternUnreadableError(cursor.source, \"unbalanced parenthesis\");"}
+tool edit ok: replaced 1 occurrence(s) in src/tools/regex-safety.ts
+[evidence record sha256:9e2ee4fdf91c6ac3c33213f9201e60536d3c9ba9e30a37447e410514131db3f6 kind tool-call:edit]
+step 10: calling anthropic:claude-sonnet-5
+tool edit <- {"path":"src/tools/regex-safety.ts","find":"      throw new PatternUnreadableError(\"unterminated group name\");","replace":"      throw new PatternUnreadableError(cursor.source, \"unterminated group name\");"}
+tool edit ok: replaced 1 occurrence(s) in src/tools/regex-safety.ts
+[evidence record sha256:9e38b2875b5387c61437078702e251690db243e5f059c6073876732f9a3de7a1 kind tool-call:edit]
+step 11: calling anthropic:claude-sonnet-5
+tool edit <- {"path":"src/tools/regex-safety.ts","find":"  throw new PatternUnreadableError(`unsupported group prefix \"(?${marker ?? \"\"}\"`);","replace":"  throw new PatternUnreadableError(cursor.source, `unsupported group prefix \"(?${marker ?? \"\"}\"`);"}
+tool edit ok: replaced 1 occurrence(s) in src/tools/regex-safety.ts
+[evidence record sha256:4c652d0de4dc6fc18d52bb70de61155f8e1e68408b75c1f9b6fa12b42db9d355 kind tool-call:edit]
+step 12: calling anthropic:claude-sonnet-5
+tool edit <- {"path":"src/tools/regex-safety.ts","find":"  throw new PatternUnreadableError(\"unterminated character class\");","replace":"  throw new PatternUnreadableError(cursor.source, \"unterminated character class\");"}
+tool edit ok: replaced 1 occurrence(s) in src/tools/regex-safety.ts
+[evidence record sha256:17ab92d4d558953ed48141415c0641c04e4a3f9d0f07e0a080bc17ba5fbe6f32 kind tool-call:edit]
+step 13: calling anthropic:claude-sonnet-5
+tool edit <- {"path":"src/tools/regex-safety.ts","find":"    throw new PatternUnreadableError(\"pattern ends with a backslash\");","replace":"    throw new PatternUnreadableError(cursor.source, \"pattern ends with a backslash\");"}
+tool edit ok: replaced 1 occurrence(s) in src/tools/regex-safety.ts
+[evidence record sha256:b7d006f9e6fdf896a2208c9051a015cf2bd9e6333abf028f06ace36508ada6ed kind tool-call:edit]
+step 14: calling anthropic:claude-sonnet-5
+tool edit <- {"path":"src/tools/regex-safety.ts","find":"      throw new PatternUnreadableError(\"unterminated backreference name\");","replace":"      throw new PatternUnreadableError(cursor.source, \"unterminated backreference name\");"}
+tool edit ok: replaced 1 occurrence(s) in src/tools/regex-safety.ts
+[evidence record sha256:b7c71fa7b30b6a47249522686d129c58692df1148f945374cbfd7bd1061edc26 kind tool-call:edit]
+step 15: calling anthropic:claude-sonnet-5
+tool edit <- {"path":"src/tools/regex-safety.ts","find":"      throw new PatternUnreadableError(\"unterminated escape\");","replace":"      throw new PatternUnreadableError(cursor.source, \"unterminated escape\");"}
+tool edit ok: replaced 1 occurrence(s) in src/tools/regex-safety.ts
+[evidence record sha256:9f7c58d17f60510d788c09d4536b049780ce99c8e8ce561bc11d6c6d480eebd5 kind tool-call:edit]
+step 16: calling anthropic:claude-sonnet-5
+tool read <- {"path":"src/tools/regex-safety.ts","maxBytes":3000}
+tool read ok: /**
+ * Structural refusal of search patterns that can backtrack super-linearly.
+ *
+ * A search pattern is model output, and `RegExp.prototype.test` runs on the main thread
+ * with no step budget: `(a+)+$` against thirty characters already takes seconds, and V8
+ * offers no way to interrupt a match once it starts. The bound therefore has to be decided
+ * before the pattern runs, by reading its structure.
+ *
+ * What makes a failing match explode is ambiguity: more than one way for the pattern to
+ * carve up the same text, so a failure at the end has to be retried against every carving.
+ * Three shapes produce it, and each is refused here:
+ *   - a variable-length quantifier inside another quantifier: `(a+)+`, `(\w+\s)*`
+ *   - a repeated body that can also match nothing: `(a?)+`, `(a|)*`
+ *   - two variable quantifiers competing for the same character, side by side or as
+ *     alternatives under one quantifier: `\s*\s*$`, `(a+)(a+)$`, `(a|ab)+`, `(\w|\d)+`
+ *
+ * Each rule reads the character the engine will match, not the characters the pattern is
+ * spelled with, because the two differ: a digit escape is a backreference only when the
+ * pattern has that many capture groups, and is otherwise a legacy octal escape, so
+ * `\141+\141+\141+X` is `a+a+a+X` written another way and has to be refused as one.
+ *
+ * This is known-shape refusal, not a proof of linear time, and it is conservative in both
+ * directions: it refuses patterns that would have run fast. The gap it does have is a
+ * backreference, whose ambiguity only exists at match time and so cannot be read off the
+ * structure at all; the search tool's line-length cap is what bounds that one. Grouping is
+ * not a gap, at any depth or in either direction: the walk carries the enclosing quantifier
+ * down through groups and sequences, so `((a|ab)y)+` is refused the same as `(a|ab)+`, and
+ * it reads back up through an unquantified group, so `(a+)(a+)$` is refused the same as
+ * `a+a+$`, parentheses being a capture rather than a boundary. A pattern the parser
+ * below cannot read is refused rather than run, since an unread pattern is one nothing
+ * bounds. `regex-safety.test.ts` pins both directions.
+ */
+
+/** Why a pattern was refused, phrased so the caller can rewrite it. */
+export interface BacktrackingRisk {
+  readonly reason: string;
+  /** The sub-pattern carrying the risk, so the message points at something concrete. */
+  readonly construct: string;
+}
+
+export function findBacktrackingRisk(pattern: string): BacktrackingRisk | null {
+  let parsed: PatternNode;
+  try {
+    parsed = parsePattern(pattern);
+  } catch (cause) {
+    return {
+      reason: `could not be read structurally (${describeCause(cause)}), so nothing bounds how it backtracks`,
+      construct: pattern,
+    };
+  }
+  return inspect(parsed, null, pattern);
+}
+
+interface Span {
+  readonly start: number;
+  readonly end: number;
+}
+
+type PatternNode =
+  | (Span & { readonly kind: "alternation"; readonly branches: readonly PatternNode[]
+[truncated at 3000 of 27303 bytes]
+[evidence record sha256:ba741876f445dd48995029b5ed15daa445a7f840e0b866cbadc1ed13e366b6d7 kind tool-call:read]
+step 17: calling anthropic:claude-sonnet-5
+tool search <- {"pattern":"could not be read structurally|PatternUnreadableError|describeCause","path":"src/tools"}
+tool search ok: src/tools/regex-safety.test.ts:123: expect(risk?.reason).toContain("could not be read structurally");
+src/tools/regex-safety.ts:47: reason: `could not be read structurally (${describeCause(cause)}), so nothing bounds how it backtracks`,
+src/tools/regex-safety.ts:76: class PatternUnreadableError extends Error {
+src/tools/regex-safety.ts:82: this.name = "PatternUnreadableError";
+src/tools/regex-safety.ts:87: function describeCause(cause: unknown): string {
+src/tools/regex-safety.ts:476: throw new PatternUnreadableError(source, `unexpected "${source[cursor.index] ?? ""}"`);
+src/tools/regex-safety.ts:610: throw new PatternUnreadableError(
+src/tools/regex-safety.ts:626: throw new PatternUnreadableError(cursor.source, "unbalanced parenthesis");
+src/tools/regex-safety.ts:653: throw new PatternUnreadableError(cursor.source, "unterminated group name");
+src/tools/regex-safety.ts:658: throw new PatternUnreadableError(cursor.source, `unsupported group prefix "(?${marker ?? ""}"`);
+src/tools/regex-safety.ts:683: throw new PatternUnreadableError(cursor.source, "unterminated character class");
+src/tools/regex-safety.ts:691: throw new PatternUnreadableError(cursor.source, "pattern ends with a backslash");
+src/tools/regex-safety.ts:704: throw new PatternUnreadableError(cursor.source, "unterminated backreference name");
+src/tools/regex-safety.ts:780: throw new PatternUnreadableError(cursor.source, "unterminated escape");
+[evidence record sha256:c395dbf587bddc66e01dfba329bd6a92c30fd762afe44f4a24d59c82258a9d86 kind tool-call:search]
+step 18: calling anthropic:claude-sonnet-5
+tool read <- {"path":"src/tools/regex-safety.test.ts","maxBytes":6000}
+tool read ok: import { describe, expect, it } from "vitest";
+import { findBacktrackingRisk } from "./regex-safety.ts";
+
+/**
+ * The refusal is a security boundary: the search tool runs a model-supplied pattern per
+ * line on the main thread, and a match already in flight cannot be interrupted. So both
+ * directions are pinned here. Loosening the reader lets a catastrophic pattern through;
+ * tightening it breaks ordinary search, which is the pressure that would loosen it again.
+ */
+
+/** Patterns a person would plausibly search a codebase with. */
+const ordinary = [
+  "TODO",
+  "TODO|FIXME|XXX",
+  String.raw`function \w+`,
+  "^import .* from",
+  String.raw`\bclass\s+[A-Z]\w*`,
+  "error|warning",
+  String.raw`\d{4}-\d{2}-\d{2}`,
+  "foo.*bar",
+  String.raw`[a-z]+@[a-z]+\.[a-z]+`,
+  String.raw`export (const|function) \w+`,
+  String.raw`\s*//.*$`,
+  String.raw`^\s*it\(`,
+];
+
+/** Shapes whose failing match is super-linear, one per rule the reader implements. */
+const catastrophic = [
+  "(a+)+$",
+  "(a*)*$",
+  "([a-z]+)*$",
+  String.raw`(\w+\s)*$`,
+  String.raw`^(\w+\s?)*$`,
+  "(a?)+$",
+  "(a|a)+$",
+  "(a|ab)+$",
+  String.raw`\s*\s*$`,
+  "a+a+$",
+];
+
+describe("patterns a search can run", () => {
+  for (const pattern of ordinary) {
+    it(`accepts ${pattern}`, () => {
+      expect(findBacktrackingRisk(pattern)).toBeNull();
+    });
+  }
+
+  it("accepts alternatives that decide themselves on the first character", () => {
+    expect(findBacktrackingRisk("(get|got)+")).toBeNull();
+    expect(findBacktrackingRisk("(ab|cd)+")).toBeNull();
+  });
+
+  it("accepts two quantifiers a mandatory character keeps apart", () => {
+    // The X pins the boundary, so neither quantifier can take the other's characters.
+    expect(findBacktrackingRisk("a+Xa+")).toBeNull();
+    expect(findBacktrackingRisk(String.raw`\d+\s+`)).toBeNull();
+    expect(findBacktrackingRisk("(a+)X(a+)$")).toBeNull();
+  });
+
+  it("accepts captures whose quantifiers cannot take each other's characters", () => {
+    // Reading through groups must not cost the ordinary two-capture search.
+    expect(findBacktrackingRisk(String.raw`(\w+)\s(\w+)`)).toBeNull();
+    expect(findBacktrackingRisk(String.raw`(\d+)-(\d+)`)).toBeNull();
+  });
+
+  it("accepts a quantifier that cannot repeat more than once", () => {
+    expect(findBacktrackingRisk("(a+){1}")).toBeNull();
+  });
+
+  it("accepts a lookahead over an atom, which consumes nothing to pump", () => {
+    expect(findBacktrackingRisk("(?=a)b")).toBeNull();
+  });
+});
+
+describe("patterns that can backtrack super-linearly", () => {
+  for (const pattern of catastrophic) {
+    it(`refuses ${pattern}`, () => {
+      expect(findBacktrackingRisk(pattern)).not.toBeNull();
+    });
+  }
+
+  it("refuses nesting however the inner group is spelled", () => {
+    expect(findBacktrackingRisk("(?:a+)+")).not.toBeNull();
+    expect(findBacktrackingRisk("(?<name>a+)+")).not.toBeNull();
+  });
+
+  it("refuses a counted outer quantifier, which repeats just as ambiguously", () => {
+    expect(findBacktrackingRisk("(a+){2}")).not.toBeNull();
+  });
+
+  it("refuses competing alternatives one level below the quantifier", () => {
+    expect(findBacktrackingRisk("((a|ab)y)+$")).not.toBeNull();
+  });
+
+  /**
+   * A capture is not a boundary. This family reached a real search through the guard once,
+   * because the neighbour scan only looked at bare quantifiers and `(a+)` is a group; it is
+   * the same ambiguity as `a+a+` with parentheses drawn around it. The earlier suite tested
+   * only the bare spelling, which is why nothing caught it.
+   */
+  for (const pattern of [
+    "(a+)(a+)$",
+    "(a+)(a*)$",
+    String.raw`(\w+)(\w+)$`,
+    String.raw`(\s*)(\s*)$`,
+    "((a+))((a+))$",
+  ]) {
+    it(`refuses ${pattern}, the same competition with parentheses drawn round it`, () => {
+      expect(findBacktrackingRisk(pattern)).not.toBeNull();
+    });
+  }
+
+  it("reads inside a lookaround rather than trusting it", () => {
+    expect(findBacktrackingRisk("(?=(a+)+)b")).not.toBeNull();
+  });
+});
+
+describe("patterns it cannot read", () => {
+  /** An unread pattern is one nothing bounds, so it is refused rather than run. */
+  for (const pattern of ["(", "a\\", "(?#comment)a", "[a-z"]) {
+    it(`refuses ${JSON.stringify(pattern)} rather than guessing`, () => {
+      const risk = findBacktrackingRisk(pattern);
+      expect(risk?.reason).toContain("could not be read structurally");
+    });
+  }
+});
+
+describe("what a refusal says", () => {
+  it("names the construct carrying the risk, quoted from the pattern", () => {
+    const risk = findBacktrackingRisk("^prefix (a+)+ suffix$");
+
+    expect(risk).not.toBeNull();
+    expect(risk?.construct).toBe("(a+)+");
+    expect(risk?.reason.length).toBeGreaterThan(0);
+  });
+
+  it("quotes both quantifiers when they compete in sequence", () => {
+    expect(findBacktrackingRisk(String.raw`\s*\s*$`)?.construct).toBe(String.raw`\s*\s*`);
+  });
+});
+
+/**
+ * The octal normalization, the 256-code-unit probe alphabet, and the fail-closed empty
+ * probe shipped together with no dedicated test. This is the lesson the grouped-spelling
+ * miss already taught, written down: an untested guard spelling is the live one, and every
+ * family below is a spelling of a rule the suite above already covers in ASCII.
+ */
+describe("competing quantifiers spelled as octal escapes", () => {
+  /**
+   * `\141` is `a`, so each of these is a pattern the suite above refuses, retyped. The
+   * engine decides `\` plus digits is an octal escape rather than a backreference by
+   * counting capture groups, so a reader that skipped the digits would see two atoms it
+   * could not compare and clear the pattern.
+   */
+  for (const [pattern, plain] of [
+    [String.raw`\141+\141+X`, "a+a+X"],
+    [String.raw`(\141+)+$`, "(a+)+$"],
+    [String.raw`(\141|\141)+$`, "(a|a)+$"],
+    [String.raw`(\141+)(\141+)$`, "(a+)(a+)$"],
+  ] as const) {
+    it(`refuses ${pattern}, which is ${plain}`, () => {
+      expect(findBacktrackingRisk(pattern)).not.toBeNull();
+    });
+  }
+
+  it("refus
+[truncated at 6000 of 10181 bytes]
+[evidence record sha256:3652c5106e9feb881a4786b5956d17fb03047d61e54fa5514933002cb7b200d1 kind tool-call:read]
+step 19: calling anthropic:claude-sonnet-5
+tool read <- {"path":"src/tools/regex-safety.ts","maxBytes":4000}
+tool read ok: /**
+ * Structural refusal of search patterns that can backtrack super-linearly.
+ *
+ * A search pattern is model output, and `RegExp.prototype.test` runs on the main thread
+ * with no step budget: `(a+)+$` against thirty characters already takes seconds, and V8
+ * offers no way to interrupt a match once it starts. The bound therefore has to be decided
+ * before the pattern runs, by reading its structure.
+ *
+ * What makes a failing match explode is ambiguity: more than one way for the pattern to
+ * carve up the same text, so a failure at the end has to be retried against every carving.
+ * Three shapes produce it, and each is refused here:
+ *   - a variable-length quantifier inside another quantifier: `(a+)+`, `(\w+\s)*`
+ *   - a repeated body that can also match nothing: `(a?)+`, `(a|)*`
+ *   - two variable quantifiers competing for the same character, side by side or as
+ *     alternatives under one quantifier: `\s*\s*$`, `(a+)(a+)$`, `(a|ab)+`, `(\w|\d)+`
+ *
+ * Each rule reads the character the engine will match, not the characters the pattern is
+ * spelled with, because the two differ: a digit escape is a backreference only when the
+ * pattern has that many capture groups, and is otherwise a legacy octal escape, so
+ * `\141+\141+\141+X` is `a+a+a+X` written another way and has to be refused as one.
+ *
+ * This is known-shape refusal, not a proof of linear time, and it is conservative in both
+ * directions: it refuses patterns that would have run fast. The gap it does have is a
+ * backreference, whose ambiguity only exists at match time and so cannot be read off the
+ * structure at all; the search tool's line-length cap is what bounds that one. Grouping is
+ * not a gap, at any depth or in either direction: the walk carries the enclosing quantifier
+ * down through groups and sequences, so `((a|ab)y)+` is refused the same as `(a|ab)+`, and
+ * it reads back up through an unquantified group, so `(a+)(a+)$` is refused the same as
+ * `a+a+$`, parentheses being a capture rather than a boundary. A pattern the parser
+ * below cannot read is refused rather than run, since an unread pattern is one nothing
+ * bounds. `regex-safety.test.ts` pins both directions.
+ */
+
+/** Why a pattern was refused, phrased so the caller can rewrite it. */
+export interface BacktrackingRisk {
+  readonly reason: string;
+  /** The sub-pattern carrying the risk, so the message points at something concrete. */
+  readonly construct: string;
+}
+
+export function findBacktrackingRisk(pattern: string): BacktrackingRisk | null {
+  let parsed: PatternNode;
+  try {
+    parsed = parsePattern(pattern);
+  } catch (cause) {
+    return {
+      reason: `could not be read structurally (${describeCause(cause)}), so nothing bounds how it backtracks`,
+      construct: pattern,
+    };
+  }
+  return inspect(parsed, null, pattern);
+}
+
+interface Span {
+  readonly start: number;
+  readonly end: number;
+}
+
+type PatternNode =
+  | (Span & { readonly kind: "alternation"; readonly branches: readonly PatternNode[] })
+  | (Span & { readonly kind: "sequence"; readonly terms: readonly PatternNode[] })
+  | RepeatNode
+  | (Span & { readonly kind: "group"; readonly body: PatternNode })
+  | (Span & { readonly kind: "lookaround"; readonly body: PatternNode })
+  | (Span & { readonly kind: "character"; readonly source: string })
+  | (Span & { readonly kind: "zeroWidth"; readonly source: string })
+  | (Span & { readonly kind: "backreference"; readonly source: string });
+
+interface RepeatNode extends Span {
+  readonly kind: "repeat";
+  readonly body: PatternNode;
+  readonly min: number;
+  readonly max: number;
+}
+
+class PatternUnreadableError extends Error {
+  /** The pattern that could not be read, so a catch site can name it in its own message. */
+  readonly pattern: string;
+
+  constructor(pattern: string, detail: string) {
+    super(`pattern ${JSON.stringify(pattern)} could not be read: ${detail}`);
+    this.name = "PatternUnreadableError";
+    this.pattern = pattern;
+  }
+}
+
+function describeCause(cause:
+[truncated at 4000 of 27303 bytes]
+[evidence record sha256:73a77caa7bc7d4985ccf5438eca180402a39fda4a821c043c0afba68bcd35063 kind tool-call:read]
+step 20: calling anthropic:claude-sonnet-5
+tool edit <- {"path":"src/tools/regex-safety.ts","find":"export function findBacktrackingRisk(pattern: string): BacktrackingRisk | null {\n  let parsed: PatternNode;\n  try {\n    parsed = parsePattern(pattern);\n  } catch (cause) {\n    return {\n      reason: `could not be read structurally (${describeCause(cause)}), so nothing bounds how it backtracks`,\n      construct: pattern,\n    };\n  }\n  return inspect(parsed, null, pattern);\n}","replace":"export function findBacktrackingRisk(pattern: string): BacktrackingRisk | null {\n  let parsed: PatternNode;\n  try {\n    parsed = parsePattern(pattern);\n  } catch (cause) {\n    return {\n      reason: `could not be read structurally (${describeCause(cause, pattern)}), so nothing bounds how it backtracks`,\n      construct: pattern,\n    };\n  }\n  return inspect(parsed, null, pattern);\n}"}
+tool edit ok: replaced 1 occurrence(s) in src/tools/regex-safety.ts
+[evidence record sha256:3a12d7c39b2a768927f5a16cbf15649d507ccd8d2a83d54cea175d2cb454013b kind tool-call:edit]
+step 21: calling anthropic:claude-sonnet-5
+tool read <- {"path":"src/tools/regex-safety.ts","maxBytes":4300}
+tool read ok: /**
+ * Structural refusal of search patterns that can backtrack super-linearly.
+ *
+ * A search pattern is model output, and `RegExp.prototype.test` runs on the main thread
+ * with no step budget: `(a+)+$` against thirty characters already takes seconds, and V8
+ * offers no way to interrupt a match once it starts. The bound therefore has to be decided
+ * before the pattern runs, by reading its structure.
+ *
+ * What makes a failing match explode is ambiguity: more than one way for the pattern to
+ * carve up the same text, so a failure at the end has to be retried against every carving.
+ * Three shapes produce it, and each is refused here:
+ *   - a variable-length quantifier inside another quantifier: `(a+)+`, `(\w+\s)*`
+ *   - a repeated body that can also match nothing: `(a?)+`, `(a|)*`
+ *   - two variable quantifiers competing for the same character, side by side or as
+ *     alternatives under one quantifier: `\s*\s*$`, `(a+)(a+)$`, `(a|ab)+`, `(\w|\d)+`
+ *
+ * Each rule reads the character the engine will match, not the characters the pattern is
+ * spelled with, because the two differ: a digit escape is a backreference only when the
+ * pattern has that many capture groups, and is otherwise a legacy octal escape, so
+ * `\141+\141+\141+X` is `a+a+a+X` written another way and has to be refused as one.
+ *
+ * This is known-shape refusal, not a proof of linear time, and it is conservative in both
+ * directions: it refuses patterns that would have run fast. The gap it does have is a
+ * backreference, whose ambiguity only exists at match time and so cannot be read off the
+ * structure at all; the search tool's line-length cap is what bounds that one. Grouping is
+ * not a gap, at any depth or in either direction: the walk carries the enclosing quantifier
+ * down through groups and sequences, so `((a|ab)y)+` is refused the same as `(a|ab)+`, and
+ * it reads back up through an unquantified group, so `(a+)(a+)$` is refused the same as
+ * `a+a+$`, parentheses being a capture rather than a boundary. A pattern the parser
+ * below cannot read is refused rather than run, since an unread pattern is one nothing
+ * bounds. `regex-safety.test.ts` pins both directions.
+ */
+
+/** Why a pattern was refused, phrased so the caller can rewrite it. */
+export interface BacktrackingRisk {
+  readonly reason: string;
+  /** The sub-pattern carrying the risk, so the message points at something concrete. */
+  readonly construct: string;
+}
+
+export function findBacktrackingRisk(pattern: string): BacktrackingRisk | null {
+  let parsed: PatternNode;
+  try {
+    parsed = parsePattern(pattern);
+  } catch (cause) {
+    return {
+      reason: `could not be read structurally (${describeCause(cause, pattern)}), so nothing bounds how it backtracks`,
+      construct: pattern,
+    };
+  }
+  return inspect(parsed, null, pattern);
+}
+
+interface Span {
+  readonly start: number;
+  readonly end: number;
+}
+
+type PatternNode =
+  | (Span & { readonly kind: "alternation"; readonly branches: readonly PatternNode[] })
+  | (Span & { readonly kind: "sequence"; readonly terms: readonly PatternNode[] })
+  | RepeatNode
+  | (Span & { readonly kind: "group"; readonly body: PatternNode })
+  | (Span & { readonly kind: "lookaround"; readonly body: PatternNode })
+  | (Span & { readonly kind: "character"; readonly source: string })
+  | (Span & { readonly kind: "zeroWidth"; readonly source: string })
+  | (Span & { readonly kind: "backreference"; readonly source: string });
+
+interface RepeatNode extends Span {
+  readonly kind: "repeat";
+  readonly body: PatternNode;
+  readonly min: number;
+  readonly max: number;
+}
+
+class PatternUnreadableError extends Error {
+  /** The pattern that could not be read, so a catch site can name it in its own message. */
+  readonly pattern: string;
+
+  constructor(pattern: string, detail: string) {
+    super(`pattern ${JSON.stringify(pattern)} could not be read: ${detail}`);
+    this.name = "PatternUnreadableError";
+    this.pattern = pattern;
+  }
+}
+
+function describeCause(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
+// The walk: every rule below needs the enclosing repeat, not just a depth, so a refusal
+// can quote the whole construct rather than the fragment that tripped it.
+
+function inspect(
+  node: PatternNode,
+[truncated at 4300 of 27312 bytes]
+[evidence record sha256:16377c9082a278f4556569f63a2fae802706872fa0ce1e209de1f01f392f330a kind tool-call:read]
+step 22: calling anthropic:claude-sonnet-5
+tool edit <- {"path":"src/tools/regex-safety.ts","find":"      reason: `could not be read structurally (${describeCause(cause, pattern)}), so nothing bounds how it backtracks`,","replace":"      reason: `could not be read structurally (${describeCause(cause)}), so nothing bounds how it backtracks`,"}
+tool edit ok: replaced 1 occurrence(s) in src/tools/regex-safety.ts
+[evidence record sha256:9abbe533257a866e970216acda537c078d2776c16530e7afdfd9e0d6ef5a2148 kind tool-call:edit]
+step 23: calling anthropic:claude-sonnet-5
+tool read <- {"path":"src/tools/regex-safety.ts","maxBytes":2000}
+tool read ok: /**
+ * Structural refusal of search patterns that can backtrack super-linearly.
+ *
+ * A search pattern is model output, and `RegExp.prototype.test` runs on the main thread
+ * with no step budget: `(a+)+$` against thirty characters already takes seconds, and V8
+ * offers no way to interrupt a match once it starts. The bound therefore has to be decided
+ * before the pattern runs, by reading its structure.
+ *
+ * What makes a failing match explode is ambiguity: more than one way for the pattern to
+ * carve up the same text, so a failure at the end has to be retried against every carving.
+ * Three shapes produce it, and each is refused here:
+ *   - a variable-length quantifier inside another quantifier: `(a+)+`, `(\w+\s)*`
+ *   - a repeated body that can also match nothing: `(a?)+`, `(a|)*`
+ *   - two variable quantifiers competing for the same character, side by side or as
+ *     alternatives under one quantifier: `\s*\s*$`, `(a+)(a+)$`, `(a|ab)+`, `(\w|\d)+`
+ *
+ * Each rule reads the character the engine will match, not the characters the pattern is
+ * spelled with, because the two differ: a digit escape is a backreference only when the
+ * pattern has that many capture groups, and is otherwise a legacy octal escape, so
+ * `\141+\141+\141+X` is `a+a+a+X` written another way and has to be refused as one.
+ *
+ * This is known-shape refusal, not a proof of linear time, and it is conservative in both
+ * directions: it refuses patterns that would have run fast. The gap it does have is a
+ * backreference, whose ambiguity only exists at match time and so cannot be read off the
+ * structure at all; the search tool's line-length cap is what bounds that one. Grouping is
+ * not a gap, at any depth or in either direction: the walk carries the enclosing quantifier
+ * down through groups and sequences, so `((a|ab)y)+` is refused the same as `(a|ab)+`, and
+ * it reads back up through an unquantified group, so `(a+)(a+)$` is refused the same as
+ * `a+a+$`, parentheses being a capture ra
+[truncated at 2000 of 27303 bytes]
+[evidence record sha256:b3c38cb4e2945c1cab1a5d107415cba608d49885c4ae83b70afe774f22bd9b5a kind tool-call:read]
+step 24: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"cd /workspace 2>/dev/null || cd .; npx tsc --noEmit -p . 2>&1 | head -50"}
+[chokepoint] refusing shell without a terminal to confirm on: "cd /workspace 2>/dev/null || cd .; npx tsc --noEmit -p . 2>&1 | head -50" is not on the shell allowlist.
+tool shell failed: denied: "cd /workspace 2>/dev/null || cd .; npx tsc --noEmit -p . 2>&1 | head -50" is not on the shell allowlist. Confirmation was declined.
+[evidence record sha256:977188afca93d38ef1bde4a508b2582c93e3a45c636a861576f858959071917d kind tool-call:shell]
+step 25: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"npx tsc --noEmit -p . 2>&1 | head -80"}
+tool shell ok: exit code: 0
+[evidence record sha256:f39370db488df0188ed7727b6797d782a9aaa398b6d3fd42275407be0790c9bd kind tool-call:shell]
+step 26: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"npx vitest run src/tools/regex-safety.test.ts 2>&1 | tail -60"}
+tool shell ok: exit code: 0
+stdout:
+
+ RUN  v4.1.10 /private/tmp/shakedown-02-edit-pattern-error
+
+
+ Test Files  1 passed (1)
+      Tests  57 passed (57)
+   Start at  09:31:10
+   Duration  84ms (transform 22ms, setup 0ms, import 29ms, tests 5ms, environment 0ms)
+[evidence record sha256:0090b142d9f64112a2986c89e7a52d0264cb52efef163d4f4ce46d85735c2c45 kind tool-call:shell]
+step 27: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"npx eslint src/tools/regex-safety.ts 2>&1 | tail -60"}
+tool shell ok: exit code: 0
+stdout:
+npm warn exec The following package was not found and will be installed: eslint@10.8.1
+
+Oops! Something went wrong! :(
+
+ESLint: 10.8.1
+
+ESLint couldn't find an eslint.config.(js|mjs|cjs) file.
+
+From ESLint v9.0.0, the default configuration file is now eslint.config.js.
+If you are using a .eslintrc.* file, please follow the migration guide
+to update your configuration file to the new format:
+
+https://eslint.org/docs/latest/use/configure/migration-guide
+
+If you still have problems after following the migration guide, please stop by
+https://eslint.org/chat/help to chat with the team.
+[evidence record sha256:e9e04e124518abc0d8960173535dfa5b8ba0519fde4cb3232174ec07fbd7ac4b kind tool-call:shell]
+step 28: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"cat package.json | grep -A2 '\"lint\"'"}
+tool shell ok: exit code: 0
+stdout:
+    "lint": "biome check",
+    "format": "biome format --write",
+    "test": "vitest run",
+[evidence record sha256:81c2384653b8c997ee35b0b16344b21efeef9d0de47d5bd86ab8835d858a2805 kind tool-call:shell]
+step 29: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"npx biome check src/tools/regex-safety.ts 2>&1 | tail -60"}
+tool shell ok: exit code: 0
+stdout:
+Checked 1 file in 7ms. No fixes applied.
+[evidence record sha256:20054484360af9150adcad4177335f4a7a00469211aef9c7709209f9db956e43 kind tool-call:shell]
+step 30: calling anthropic:claude-sonnet-5
+tool shell <- {"command":"npx vitest run 2>&1 | tail -40"}
+tool shell ok: exit code: 0
+stdout:
+
+ RUN  v4.1.10 /private/tmp/shakedown-02-edit-pattern-error
+
+
+ Test Files  82 passed (82)
+      Tests  1010 passed (1010)
+   Start at  09:31:19
+   Duration  8.12s (transform 2.16s, setup 0ms, import 4.87s, tests 41.18s, environment 4ms)
+[evidence record sha256:67a0dab010f931e0b3d31b8083e80dcc6ecdc705048ee40179c7f4fd051ea681 kind tool-call:shell]
+step 31: calling anthropic:claude-sonnet-5
+tool claim <- {"predicate":"facts.exitCode == 0","record":"sha256:67a0dab010f931e0b3d31b8083e80dcc6ecdc705048ee40179c7f4fd051ea681","recordKind":"tool-call:shell","narrative":"Full vitest run (1010 tests, 82 files) passes after adding the pattern to PatternUnreadableError and its message."}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:578abe069415994d4da24592b8e06af4e3451f82192d6308a8167673a7c96ddf kind tool-call:claim]
+step 32: calling anthropic:claude-sonnet-5
+tool claim <- {"predicate":"facts.exitCode == 0","record":"sha256:f39370db488df0188ed7727b6797d782a9aaa398b6d3fd42275407be0790c9bd","recordKind":"tool-call:shell","narrative":"tsc --noEmit passes with no type errors after the change."}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:cdde7a008aac4c72fc89bbcc7c8c768fde923887959d8ffdaa9b4810996be4a5 kind tool-call:claim]
+step 33: calling anthropic:claude-sonnet-5
+claim (unverified): ## Summary
+
+`PatternUnreadableError` (in `src/tools/regex-safety.ts`) previously took a bare `detail` string and produced a message with no indication of which pattern had failed to parse. I changed it to:
+
+- Take the offending `pattern` as well as the `detail`, store the pattern on a new readonly `pattern` field on the error instance, and build the message as `` pattern ${JSON.stringify(pattern)} could not be read: ${detail} ``, so the pattern is both carried on the error object (for programmatic access) and named in the thrown message.
+- Updated every throw site (10 in total: the top-level `parsePattern` mismatch check, and the parser's `parseAtom`, `parseGroup`, `parseGroupPrefix`, `parseCharacterClass`, `parseEscape`, and backreference-name paths) to pass `cursor.source` (the full pattern being parsed) alongside the existing detail string.
+
+The catch site in `findBacktrackingRisk` was left untouched apart from restoring it to its original form after a brief detour — `describeCause` already surfaces `cause.message`, which now itself names the pattern, so the existing `could not be read structurally (...)` wrapping message picks up the pattern name for free without duplicating it.
+
+Verified with:
+- `npx tsc --noEmit -p .` — clean, no type errors.
+- `npx biome check src/tools/regex-safety.ts` — clean.
+- `npx vitest run` — full suite, 1010 tests across 82 files, all passing, including the existing `regex-safety.test.ts` assertions that check for `"could not be read structurally"` in the reason string, which still hold since that phrasing is unchanged.
+stopped: completed after 33 steps, 729337 tokens
+gate typecheck passed: the command exited 0 [evidence record sha256:f3a6a26ff540b68f316a343cd4e4871eb83c1ae5aa99d62455d7ce93f10b09e8]
+gate lint passed: the command exited 0 [evidence record sha256:1a658e0dfa22db710c2e6945036a437781d6e7fce45b95c944be87758eb40621]
+gate format not-applicable: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging [evidence record sha256:f52f338fc09ae92740c27b595a8a40571763e29217c54191c82b0fbaf466cbc5]
+gate tests passed: the runner reported: 1010 passed (1010) [evidence record sha256:3e758ce625853de5b3f4b810f009095dd4514cc738b8881f3ecc3b41eec96f1b]
+gate file-set passed: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited [evidence record sha256:2a7a3fd67e57a063dc9fba4d20ebd5c0620ad4ae749cd5f76f32103d6b8fe9d0]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:9131d983387de9eb7d4119e3372e9aaeac213d679f40fe6ce44d305ae201cbec]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:a7835a09b3b3084e5c8717793a57f87b6a2b53a47b0299f58c1506c7fb1d34ef]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 18 added line(s) [evidence record sha256:0447ce6137556e87a16161cb354ffbaf24e5c1399c6e29e4d55c4ae2258f2e00]
+
+gates:
+  passed   typecheck: the command exited 0
+  passed   lint: the command exited 0
+  n/a      format: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging
+  passed   tests: the runner reported: 1010 passed (1010)
+  passed   file-set: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited
+  passed   placeholder: no placeholder marker was introduced by this change
+  passed   secret-scan: no known credential pattern appears in the added lines
+  passed   diff-budget (advisory): within budget: 1 file(s) and 18 added line(s)
+
+routing reward: 0.010 (green with 0 retries, 128s, and $2.2912)
+
+evidence bundle: ~/scratch/shakedown-runs/02-edit-pattern-error-bundle
+verify it anywhere: node ~/scratch/shakedown-runs/02-edit-pattern-error-bundle/verify.mjs ~/scratch/shakedown-runs/02-edit-pattern-error-bundle
+review it: open ~/scratch/shakedown-runs/02-edit-pattern-error-bundle/review.html
