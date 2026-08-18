@@ -94,38 +94,43 @@ reporting a clean run.
 
 Coverage measured on a temp copy of the corpus, so the committed seeds are never mutated:
 
-| harness | boundary | budget | cov | ft | corpus | crashes |
-|---|---|---|---|---|---|---|
-| `adapter-output` | model output arriving at the tool chokepoint | 600s | 181 | 554 | 778 | 0 |
-| `ledger-chain` | what reaches the evidence ledger | 600s | 108 | 549 | 874 | 0 |
-| `swarm-toml` | `parseSwarmToml` | 600s | 63 | 146 | 182 | 0 |
-| `predicate` | `parsePredicate` / `evaluatePredicate` | 600s | 139 | 872 | 1635 | 0 |
-| `scrub` | `scrubText` / `scrubJson` / `findKnownSecrets` | 45s | 119 | 285 | 21 | **1** |
+| harness | boundary | cov | ft | corpus | crashes |
+|---|---|---|---|---|---|
+| `adapter-output` | model output arriving at the tool chokepoint | 184 | 515 | 128 | 0 |
+| `bundle-read` | `readBundle`, a bundle from another machine | 39 | 89 | 26 | 0 |
+| `gate-parsers` | lcov and test-output parsing, the ratchet's measures | 155 | 445 | 167 | 0 |
+| `ledger-chain` | what reaches the evidence ledger | 107 | 516 | 146 | 0 |
+| `predicate` | `parsePredicate` / `evaluatePredicate` | 139 | 849 | 291 | 0 |
+| `scrub` | `scrubText` / `scrubJson` / `findKnownSecrets` | 136 | 791 | 251 | 0 |
+| `swarm-toml` | `parseSwarmToml` | 63 | 144 | 111 | 0 |
+| `unified-diff` | `parseUnifiedDiff` / `reconstructSides` | 112 | 826 | 344 | 0 |
 
-`scrub` is at a shorter budget because it fails on the finding recorded below, within about
-30 seconds. It cannot do a long run until that is fixed, and a longer budget would only
-re-find the same input.
+All eight at 300s each with accumulated corpora, all zero crashes. Every one is **proven
+non-blind**: coverage in the tens to hundreds, not single digits.
 
-All five are **proven non-blind**: coverage in the tens to hundreds, not single digits. The
-`scrub` harness additionally passed a two-sided negative control: prototype pollution injected
-into the build fired Jazzer's own detector, and fired the harness's independent assertion
-again with all bug detectors disabled.
+`bundle-read` at 39 is the weakest and the reason is worth stating. Its first version mutated
+manifest bytes directly, which put nearly every input on the far side of a schema parse that
+failed immediately: 12 edges and a corpus that did not grow, a harness measuring `JSON.parse`
+rather than the reader. Driving the field values from the input instead reaches 39. It stays
+lowest because each execution writes and removes a directory, so the fuzzer gets far fewer of
+them than the in-memory harnesses.
 
-Budgets actually run: 300s per harness inside CROSSFIRE rounds, repeated 45s passes during
-validation, and a 600s-per-harness pass with an accumulating corpus. **No harness has been
-run for hours, and the coverage curve says that would be waste rather than caution.**
+Three harnesses passed a two-sided negative control: a defect injected into the build fired
+Jazzer's own detector, and fired the harness's independent assertion again with all bug
+detectors disabled.
 
-Edge coverage was already flat between consecutive 45s passes (predicate 139/139/139,
-ledger-chain 107/107, swarm-toml 63/63, adapter-output 183/181). Going to 600s per harness,
-about thirteen times the point where the curve flattened, moved edge coverage by **one edge
-in total** across all four (ledger-chain 107 to 108). Over the same period the corpus grew
-from 15 seeds to 1,635 inputs on `predicate` alone and feature tuples rose about 10 percent.
+**The coverage curve does not support running these for hours.** Edge coverage was already
+flat between consecutive 45s passes (predicate 139/139/139, ledger-chain 107/107, swarm-toml
+63/63, adapter-output 183/181). Going to 600s per harness, about thirteen times the point
+where the curve flattened, moved edge coverage by **one edge in total** across four harnesses
+(ledger-chain 107 to 108), while the corpus grew from 15 seeds to 1,635 inputs on `predicate`
+alone and feature tuples rose about 10 percent.
 
 These are small, well-bounded parsers and their reachable edge set is exhausted inside a
 minute. What a longer run buys is input *diversity* within already-covered code, which is a
-real but much weaker argument than "coverage is still climbing". Note that the one bug
-fuzzing has found here came from exactly that kind of diversity, not from new coverage: the
-`scrub` failure is a specific byte pattern inside code the first seed already reached.
+real but much weaker argument than "coverage is still climbing". Note that both bugs fuzzing
+has found here came from exactly that kind of diversity rather than from new coverage: the
+`scrub` failures are specific byte patterns inside code the first seed already reached.
 
 Corpora accumulate between runs under `.swarm/fuzz-corpus`, kept separate from the committed
 seeds and from the temp workspace jazzer is pointed at.
@@ -172,53 +177,56 @@ test**, because `**/*.test.ts` was in the config's `excludedPaths`, which the pe
 policy reads, so the fixing agent was denied the file its own prompt told it to extend. The
 tooling side of that is fixed; the missing tests for (1) and (3) are **not yet written**.
 
+### Two secret-scrubbing defects, both found by the fuzz harness
+
+`src/evidence/scrub.ts` is where a bug is least recoverable: the ledger is append-only, so a
+credential that gets past it cannot be taken back out, and the blob directory it lands in is
+what a bundle export copies to another machine.
+
+1. **Values shorter than eight characters were never redacted.** `classifyValue` discarded
+   them before the name could matter, so `hunter2` under a field named `password` travelled as
+   plain text. The fix removes length from the redaction decision entirely and leaves it only
+   in the blocking decision, which is the asymmetry the module already documents: scrubbing is
+   fail-safe, blocking is not. A floor survives only where a value cannot carry a secret at
+   all, and that floor is four, the number the numeric branch beside it already used for a PIN.
+2. **The write-time scrub and the export scan disagreed about the same bytes**, which
+   invariant 9 says cannot happen. They were two implementations of one predicate: one walked
+   a payload that parsed and scanned everything else, the other only ever scanned. A regex and
+   a parser cannot be made to agree by adding spellings to the regex, because `wordsOf` splits
+   a name on any non-alphanumeric run, so `api/_key` is a credential to one and invisible to
+   the other. Both now dispatch the same way, and the dispatch runs to a fixpoint, because
+   scrubbing can change which arm the next reader takes.
+
+Three further faults surfaced while closing the second, each a way scrubbing twice differed
+from scrubbing once: the redaction marker spells "credential", so writing one into a key made
+that key credential-bearing on the next pass; a child was read under the key that arrived
+rather than the key that survives into the output; and overlapping spans leave what they cover
+unexamined until a replacement shortens the text around them.
+
+A separate live miss came out of the same work: the secret-scan **gate** returned nothing for
+`+ {"b":{"client_secret":"..."}}` in a diff, because one match consumed the delimiter the next
+name needed. The gate did not block.
+
+Verification: `scrub` survives 600s of fuzzing with zero crashes where every earlier attempt
+failed within three seconds, coverage 119 to 140. Five inputs are kept in `fuzz/findings` and
+pinned by tests, and 8 of those tests fail against the previous source.
+
+### Two ratchet-measurement defects
+
+Found by the `gate-parsers` and `unified-diff` harnesses, one each, and they compose.
+`parseUnifiedDiff` recorded an added line at line 0 for a deletion hunk, and `parseLineHits`
+accepted `DA:0,1`. Each is inert alone, since nothing looks up line 0. Together they are a
+line existing in no file counting as **covered**, because the coverage arm asks the report
+about exactly the line numbers the diff gave it. Both now refuse a line number below one.
+
+The diff reader also counted a file twice when a patch carried two headers for one path, and a
+line twice when two hunks both declared they started at line 1, which inflates the coverage
+denominator and the diff budget. And `stripPrefix` checked for emptiness before stripping the
+`a/` prefix, so a bare `a/` came back as a changed file naming nothing.
+
 ## What was found and not fixed
 
-These are open. None has a scheduled re-check.
-
-### `scrub.ts` drops credentials shorter than eight characters
-
-`classifyValue` returns `not-credential` for any value under 8 characters, so a value under a
-credential-bearing name is never redacted below that length. Measured boundary, identical on
-both the text and structural paths:
-
-| value | length | result |
-|---|---|---|
-| `"pw"` | 2 | leaks |
-| `"s3cr3t"` | 6 | leaks |
-| `"hunter2"` | 7 | leaks |
-| `"hunter22"` | 8 | redacted |
-
-`isCredentialName("password")` returns true, so the name is recognised and the value is
-discarded on length before the name can matter. This contradicts invariant 9 ("keys on the
-assignment name or the field name rather than on the shape of the value") and the comment
-above `classifyValue` ("the credential is scrubbed out of every record either way").
-
-Cost: a short credential under a field named `password` enters an **append-only** ledger, and
-the blob directory it lands in is what a bundle export copies to another machine.
-
-Unfixed because the obvious change, dropping the floor in the `named` context, is a
-false-positive tradeoff over what lands in every record, and the numeric branch beside it
-shows the author already reasoned about that tension.
-
-### `scrubText` and `findKnownSecrets` disagree on nested payloads with wide characters
-
-Found by the `scrub` harness within 30 seconds of fuzzing, on clean code. Input preserved at
-`fuzz/findings/scrub-nested-multibyte-key.input`.
-
-    {"a<U+FFFD>":{"b":{"client_secret":"0123456789abcdefghij"}}}
-
-`scrubText` redacts **nothing**, and `findKnownSecrets` run on that same unchanged output
-reports `credential-assignment`. The write-time scrub misses a credential the export scan
-catches, which is precisely what invariant 9 says cannot happen: "one detector serves the
-write-time scrub, the export-time scan, and the secret-scan gate, so the three cannot drift
-apart."
-
-Trigger characterised: a character outside the BMP (U+FFFD, an emoji) in an **outer** key,
-with the credential nested two levels below it. A BMP character in that position does not
-trigger it, one level of nesting does not, and the same character inside the value does not.
-`scrubJson` handles the payload correctly, so only the text path is wrong. An emoji in a key
-is ordinary model output, so this is reachable rather than theoretical.
+One item. The two scrub defects that were open here are now closed; see below.
 
 ### `@types/node` four majors behind
 
@@ -255,12 +263,10 @@ most of what would actually go wrong in this codebase.
 
 ## Boundaries considered and deliberately not harnessed
 
-Surveyed the whole tree for places external or model-controlled data enters. Harnessed: the
-ledger write path, the tool chokepoint, `parseSwarmToml`, `parsePredicate`, and `scrub`.
-Ranked next but **not built**: `parsers.ts` (`parseLineHits` and the TAP parsers, the
-ratchet's measurement layer), `unified-diff.ts` (`parseUnifiedDiff`), and `bundle.ts`
-(`readBundle`, the only genuinely third-party input in the system). Those three are worth
-building and are simply not done.
+Surveyed the whole tree for places external or model-controlled data enters. **All eight
+ranked boundaries are now harnessed**: the ledger write path, the tool chokepoint,
+`parseSwarmToml`, `parsePredicate`, `scrub`, `parsers.ts`, `unified-diff.ts`, and
+`readBundle`.
 
 Rejected, with reasons:
 
@@ -303,27 +309,31 @@ Open items. None of these has been done, and none can be done by the tooling des
 - **Scanner coverage is dominated by pack choice.** Sixteen packs found nothing and one found
   everything. The 7 findings are what `p/default`'s 213 rules happen to encode, not what is
   wrong with the code.
-- **A harness proven non-blind at one boundary says nothing about any other.** Five boundaries
-  are instrumented. The other several dozen entry points in `src` are not, and the strongest
-  statement available about them is that nobody has looked.
+- **A harness proven non-blind at one boundary says nothing about any other.** Eight
+  boundaries are instrumented. The other several dozen entry points in `src` are not, and the
+  strongest statement available about them is that nobody has looked.
 - **Fuzzing finds crashes and assertion failures, not wrongness.** Every property these
   harnesses check had to be written down by hand. The `scrub` finding surfaced only because
   the harness asserted that two sites agree; a harness that only checked "does not throw"
   would have run clean over the same input forever.
-- **Zero crashes at these budgets is evidence, not proof.** Four harnesses ran 600s each with
-  accumulated corpora and found nothing. On harnesses whose coverage is measured and
+- **Zero crashes at these budgets is evidence, not proof.** All eight harnesses ran 300s
+  each with accumulated corpora and found nothing, after the four defects the same harnesses
+  found were fixed. On harnesses whose coverage is measured and
   non-blind that is meaningful evidence rather than an untested surface reporting clean. It is
   still bounded by budgets measured in minutes, and by the properties each harness asserts.
-- **CROSSFIRE does not re-scan before declaring convergence.** See below. A run that ends
-  "clean" has verified that the findings it already knew about are closed, which is weaker
-  than a fresh detect pass finding nothing.
+- **CROSSFIRE's convergence check is only as good as its scanners.** A run now re-scans
+  after a fix and re-runs closed repros every round (see the appendix), so "clean" means a
+  detect-and-verify pass over the patched source found nothing. That is a real check and it
+  is still bounded by what `p/default` encodes and what the harnesses assert.
 
 ## Not yet in place
 
 - **No scheduled run.** Everything here was produced by runs launched by hand. Nothing
-  re-verifies on a schedule, so this document decays from the day it was written.
-- **No regression tests for ReDoS fixes (1) and (3).**
-- **Three ranked fuzz boundaries unbuilt**: `parsers.ts`, `unified-diff.ts`, `readBundle`.
+  re-verifies on a schedule, so this document decays from the day it was written. The
+  mechanism a schedule needs is now built (see the appendix) but nothing is scheduled.
+- **No regression tests for ReDoS fixes (1) and (3).** Still true. The tooling reason is
+  fixed, in that the fixing agent is no longer denied the test file its prompt names, but the
+  two missing tests were never written.
 - **The corpus-replay suite has never run in CI.** `src/gates/corpus-replay.test.ts` resolves
   the v12 falsification corpus via `git archive main`, which works locally because a local
   `main` branch exists and fails in CI where only `origin/main` does. It skips visibly by
@@ -332,13 +342,16 @@ Open items. None of these has been done, and none can be done by the tooling des
 
 ## Appendix: cross-round finding memory
 
-Recorded here because it is the prerequisite for a scheduled run, and because the termination
-gap above is one of its two symptoms.
+**Built.** Recorded here because it is the prerequisite for a scheduled run, and because the
+termination gap it closed is one of its two symptoms. What follows is what it does and what
+it still cannot promise.
 
-**Symptom 1, termination.** The loop ends when every confirmed finding is closed, where the
-open set is refreshed only by the fuzz cross-check. Semgrep and OSV are not re-run, so "clean"
-means "what we knew about is closed", not "a fresh detect pass found nothing". A residual in a
-different shape than the repro tests goes unseen.
+**Symptom 1, termination.** The loop ended when every confirmed finding was closed, with the
+open set refreshed only by the fuzz cross-check. The scanners were not re-run, so "clean"
+meant "what we knew about is closed", not "a detect pass over the patched source found
+nothing", and a residual in a different shape than the repro tests went unseen. A round now
+re-runs the scanners after a fix. Scanners only: the fuzzers already have a post-fix pass, and
+repeating them would put a full fuzz budget into every converging round.
 
 **Symptom 2, cost.** A full re-scan is the obvious fix and is currently unaffordable, because
 some constructs match forever. `detect-non-literal-regexp` still matches `search-tool.ts`
@@ -347,8 +360,9 @@ Re-scanning every round re-raises it and re-pays a confirmation turn (measured a
 768s) every round. The two standing dismissals were likewise re-derived across runs at 106s
 then 91s, and 31s then 23s.
 
-**Mechanism.** Memoize verdicts by finding id, and re-run the full detector suite before
-terminating. The id already does the work: it hashes rule, file, and the whitespace-normalized
+**Mechanism.** Verdicts are memoized by finding id and written into each round's ledger entry,
+so they chain like every other record and a resumed or scheduled run inherits them. The id
+already does the work: it hashes rule, file, and the whitespace-normalized
 flagged construct, with no line number, so id equality means the construct is unchanged and no
 stale verdict can transfer across an edit. Add one chained ledger record carrying the finding
 id, the verdict, and the repro for a closed one. Then each raised candidate either has no
