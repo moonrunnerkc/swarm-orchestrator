@@ -334,7 +334,9 @@ describe("detection keyed on the name rather than the shape of the value", () =>
  */
 describe("the write-time scrub and the export scan agree", () => {
   const artifacts = readdirSync(join(import.meta.dirname, "../../fuzz/findings"))
-    .filter((entry) => entry.endsWith(".input"))
+    // Only this boundary's artifacts. Other harnesses keep theirs in the same directory, and
+    // a diff or an lcov report is not a scrub regression case.
+    .filter((entry) => entry.startsWith("scrub-") && entry.endsWith(".input"))
     .sort();
 
   it("has the artifacts that found the drift", () => {
