@@ -1,14 +1,23 @@
 # fuzz
 
-Coverage-guided harnesses for the two boundaries where something outside the harness
-decides what the code sees: what a model returned, and what reaches the evidence ledger.
-Run by crossfire through its Jazzer.js engine, and runnable on their own.
+Coverage-guided harnesses for every boundary where something outside the code decides what
+it sees: what a model returned, what reaches the evidence ledger, what the ratchet measures,
+and what a bundle from elsewhere contains. Run by crossfire through its Jazzer.js engine,
+and runnable on their own.
+
+Eight harnesses, and the count is worth stating because the smoke check reports per harness
+and a missing one reads as a quiet run rather than an absence.
 
 | Harness | Boundary | Invariant under test |
 | --- | --- | --- |
 | `adapter-output.fuzz.cjs` | a model's tool call arriving at the chokepoint | invariant 3: one execution path, nothing runs unrecorded, and no tool runs on input its schema rejected |
 | `ledger-chain.fuzz.cjs` | entries reaching the evidence ledger | invariant 2: append-only and self-verifying, and a refused entry leaves the chain where it was |
 | `swarm-toml.fuzz.cjs` | `swarm.toml` reaching the config parser | parsing settles as a config or a `MalformedSwarmTomlError`, and no input reaches `Object.prototype` |
+| `scrub.fuzz.cjs` | any payload reaching the write-time scrub | invariant 9: one detector serves the scrub, the export scan and the gate, so whatever the scrub leaves behind is exactly what the scan finds nothing in. Scrubbing is idempotent, the gate blocks on a subset of what the scan reports, and the structural path leaves no residual either |
+| `predicate.fuzz.cjs` | a claim predicate, written by the model | invariant 1: an unparseable predicate renders UNVERIFIED and never aborts the run, and no predicate renders green without the harness evaluating it against a named record |
+| `gate-parsers.fuzz.cjs` | the ratchet's measurement layer | invariant 7: every number the ratchet compares comes through here, and a malformed, truncated or header-only lcov artifact reads as not measured rather than as coverage |
+| `unified-diff.fuzz.cjs` | git's output and stored patches reaching the diff reader | the reconstruction is of code a model wrote, so a diff that parses into the wrong sides feeds the ratchet and the file-set check a tree that never existed |
+| `bundle-read.fuzz.cjs` | a bundle from another machine | the one genuinely third-party input in the system, and the only one where the threat model is inverted: the question is not whether the producer is honest but whether the reader survives a producer that is not |
 
 The TOML one earns its place differently from the other two: a scanner alleged prototype
 pollution in `valueAt`, and the refutation on record is a probe someone ran once.
