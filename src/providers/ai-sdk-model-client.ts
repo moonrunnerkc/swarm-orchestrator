@@ -27,6 +27,10 @@ export function createAiSdkModelClient(modelId: string, model: LanguageModel): M
         tools: toToolSet(request.tools),
         maxOutputTokens: request.maxOutputTokens,
         abortSignal: request.abortSignal,
+        // The SDK's default handler prints the whole error object, stack and response headers
+        // included, straight over the running UI. Nothing is swallowed by replacing it: the
+        // same error is raised out of the stream below and the loop renders it as one line.
+        onError: () => {},
       });
 
       for await (const part of result.fullStream) {
