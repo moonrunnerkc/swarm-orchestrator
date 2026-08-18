@@ -29,6 +29,44 @@ import { reconstructSides } from "./unified-diff.ts";
 const run = promisify(execFile);
 const corpusPath = "benchmarks/falsification-corpus/v10-synthetic-corpus";
 
+/**
+ * Where the corpus branch can be named from, most local first. A working clone has `main`
+ * as a local branch, so a bare `git archive main` works there and hid the rest of this
+ * list. actions/checkout fetches `+refs/heads/*:refs/remotes/origin/*` and then creates
+ * exactly one local branch, the one being built, so on CI `main` names nothing and the
+ * corpus went unreplayed under a green run for as long as nobody read the log.
+ */
+const corpusRevisions = ["main", "origin/main", "refs/remotes/origin/main"] as const;
+
+/**
+ * The first candidate that names a commit here, or null if none does. Null is a real
+ * answer: a fork with no `main` has no corpus to replay, and guessing a revision would
+ * replay something else and call it the corpus.
+ */
+async function resolveCorpusRevision(
+  candidates: readonly string[],
+  names: (revision: string) => Promise<boolean>,
+): Promise<string | null> {
+  for (const candidate of candidates) {
+    if (await names(candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+async function revisionExists(revision: string): Promise<boolean> {
+  try {
+    await run("git", ["rev-parse", "--verify", "--quiet", `${revision}^{commit}`]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Which revision the corpus was read from, so a skip can say what it looked for. */
+let corpusRevision: string | null = null;
+
 /** Deterministic, and small enough that the sample runs with the ordinary suite. */
 const casesPerSide = 10;
 
@@ -46,9 +84,13 @@ beforeAll(async () => {
   try {
     // One archive rather than a thousand git invocations. The corpus lives on the branch
     // v13 replaced, which is exactly how section 3.10 says to reach it.
+    corpusRevision = await resolveCorpusRevision(corpusRevisions, revisionExists);
+    if (corpusRevision === null) {
+      throw new Error(`no revision among ${corpusRevisions.join(", ")} names the corpus branch`);
+    }
     await run("sh", [
       "-c",
-      `git archive main ${corpusPath} | tar -x -C ${JSON.stringify(extractTo)}`,
+      `git archive ${corpusRevision} ${corpusPath} | tar -x -C ${JSON.stringify(extractTo)}`,
     ]);
     corpusRoot = join(extractTo, corpusPath);
     await readdir(corpusRoot);
@@ -152,8 +194,9 @@ async function tally(category: string): Promise<CategoryTally> {
 describe("replaying the v12 falsification corpus against these gates", () => {
   it("rejects every case in the categories the four numerics are meant to catch", async (context) => {
     if (corpusRoot === null) {
-      // The corpus lives on main, which a shallow clone will not have. Skip visibly rather
-      // than return: a silent return renders green and reads as a corpus that was checked.
+      // The corpus lives on the v12 branch, which a fork or a shallow clone will not have.
+      // Skip visibly rather than return: a silent return renders green and reads as a
+      // corpus that was checked.
       context.skip();
       return;
     }
@@ -231,4 +274,41 @@ describe("replaying the v12 falsification corpus against these gates", () => {
       "mock-of-hallucination",
     ]);
   }, 120_000);
+});
+
+describe("naming the branch the corpus lives on", () => {
+  const names = (present: readonly string[]) => async (revision: string) =>
+    present.includes(revision);
+
+  it("prefers a local branch, which is what a working clone has", async () => {
+    expect(await resolveCorpusRevision(corpusRevisions, names(["main", "origin/main"]))).toBe(
+      "main",
+    );
+  });
+
+  /**
+   * The case that made this a fix rather than a tidy-up. On CI there is one local branch,
+   * the one being built, and every other branch arrives as a remote-tracking ref, so a
+   * bare `main` names nothing and the whole replay skipped under a green run.
+   */
+  it("falls back to the remote-tracking ref, which is all CI checks out", async () => {
+    expect(await resolveCorpusRevision(corpusRevisions, names(["origin/main"]))).toBe(
+      "origin/main",
+    );
+    expect(await resolveCorpusRevision(corpusRevisions, names(["refs/remotes/origin/main"]))).toBe(
+      "refs/remotes/origin/main",
+    );
+  });
+
+  it("answers null rather than guessing when nothing names it", async () => {
+    expect(await resolveCorpusRevision(corpusRevisions, names([]))).toBeNull();
+  });
+
+  it("resolves against this checkout, so the suite says whether it can reach the corpus", async () => {
+    // Not an assertion about which one: a clone has main, CI has origin/main, and a fork
+    // may have neither. What is pinned is that the answer comes from git rather than from
+    // a hardcoded name that only one of those three satisfies.
+    const resolved = await resolveCorpusRevision(corpusRevisions, revisionExists);
+    expect(resolved === null || corpusRevisions.includes(resolved as never)).toBe(true);
+  });
 });
