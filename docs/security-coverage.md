@@ -8,9 +8,10 @@ Scope of this document: the v13 lineage (`v13-main` and its descendants). The `m
 is a separate, unrelated history (swarm-orchestrator@12.1.1, a PR auditor) and nothing here
 applies to it.
 
-Last updated after the hardening pass described below. Findings are as of that pass; nothing
-here is continuously re-verified, because no scheduled run exists yet (see
-[Not yet in place](#not-yet-in-place)).
+Last updated 2026-08-18. Findings are as of the hardening pass described below, plus the
+production-readiness pass whose report is in `evidence/2026-08-18/`. A weekly scan now
+re-verifies part of this on a schedule; what it does and does not cover is in
+[Not yet in place](#not-yet-in-place).
 
 ## What was examined, and how
 
@@ -86,7 +87,7 @@ anything. It belongs in a periodic report.
 
 ### Fuzzing
 
-Five Jazzer.js harnesses. Each loads from `.swarm/fuzz-build`, never from `../src`, because a
+Eight Jazzer.js harnesses. Each loads from `.swarm/fuzz-build`, never from `../src`, because a
 harness that imports TypeScript directly loads fine, runs **uninstrumented**, and produces
 output identical to a clean codebase. `fuzz/smoke.mjs` replays every harness against its
 seeds on every `npm run fuzz:build`, so a stale or broken harness fails the build instead of
@@ -326,19 +327,106 @@ Open items. None of these has been done, and none can be done by the tooling des
   detect-and-verify pass over the patched source found nothing. That is a real check and it
   is still bounded by what `p/default` encodes and what the harnesses assert.
 
+## Closed on 2026-08-18
+
+Four things this document listed as open are now closed, and each is recorded with what
+shows it rather than with an assertion that it is done.
+
+### The ReDoS guard spellings now have tests
+
+`src/tools/regex-safety.test.ts` went from 34 cases to 57. The three that shipped untested
+are covered in both directions:
+
+- **Octal escapes.** Every catastrophic shape retyped as `\141`, plus a two-digit and a
+  one-digit octal, plus an octal atom compared against a literal one. The other direction
+  matters as much and is pinned: `\141+\142+X` stays accepted, which is what says the
+  reader decodes rather than refusing anything with a backslash in it, and `\18+\18+X`
+  stays accepted, which binds the quantifier to the digit past the escape where the engine
+  binds it.
+- **Non-printable atoms.** A control character and a control-character class under two
+  quantifiers, and `\1+\1+\1+X`, which is the case the disjointness comment names and
+  which needs the octal decode and the sub-0x20 probes together to be visible at all.
+- **The fail-closed empty probe.** An atom matching nothing, `[^\s\S]`, and one outside
+  the probed range, refused in both the sequence and the nesting shape. The false positive
+  this accepts is pinned too, an unprobed atom beside a disjoint probed one, because
+  refusing a safe search is the direction this is allowed to be wrong in.
+
+### All five preserved findings inputs are closed
+
+`fuzz/findings/` held five artifacts, four of them undocumented and one written up as an
+open scrub/export disagreement. All five replay clean against a fresh `fuzz:build`. The
+transcript is in `evidence/2026-08-18/fuzz-findings-replay.md`.
+
+| Input | What it found | Closed by |
+| --- | --- | --- |
+| `scrub-dispatch-flip` | scrubbing twice differed from once: a control byte made a payload unparseable, and removing it inside a redacted span made the result parse, so the next read took the other arm | `da7b9794` |
+| `scrub-marker-in-key` | a redaction marker spells "credential", so writing one into a key made that key credential-bearing on the next pass | `da7b9794` |
+| `scrub-name-separator` | `wordsOf` splits on any non-alphanumeric run, so `api/_key` was a credential to the parser and invisible to the regex | `da7b9794` |
+| `scrub-overlapping-spans` | overlapping spans resolve by keeping the earliest, leaving what the later covered unexamined until the replacement shortened the text | `da7b9794` |
+| `scrub-nested-multibyte-key` | `scrubText` redacted nothing while the export scan reported `credential-assignment` on that same output | `da7b9794` |
+
+`da7b9794` closed all five and introduced the first four itself, as artifacts of faults it
+found and fixed in the same change, which is why they were never written up.
+
+The fifth is a disagreement, so an absence of crashes proves nothing about it and it was
+checked by A/B across the closing commit instead. Building `da7b9794~1` in a detached
+worktree: the parent redacts nothing and the export scan reports `credential-assignment`;
+`v13-main` redacts `credential-field` and the scan reports nothing. The class is closed too,
+checked against an astral character in the outer key, the same at three levels of nesting, a
+BMP Cyrillic character in that position, and a single level.
+
+None of the five is unguarded now. `src/evidence/scrub.test.ts` reads every `scrub-*.input`
+in that directory and asserts the invariant 9 property against each, and its count assertion
+fails if one goes missing.
+
+### corpus-replay runs in CI, and did not before
+
+This document said the suite had never run in CI and named `git archive origin/main` as the
+fix. The diagnosis was right and the reason was not depth: `fetch-depth: 0` was already set.
+From the checkout step of run 32150734348:
+
+    [command] git -c protocol.version=2 fetch --prune --no-recurse-submodules origin \
+      +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/*
+     * [new branch]        main                      -> origin/main
+    Switched to a new branch 'v13-main'
+
+One local branch is created, the one being built. Everything else is a remote-tracking ref,
+so `git archive main` resolves in any working clone and names nothing on CI.
+
+The revision is now resolved against git rather than hardcoded, first of `main`,
+`origin/main`, `refs/remotes/origin/main` that names a commit, with null kept as a real
+answer for a fork that has no v12 branch. Before and after, from the CI logs:
+
+| Run | Commit | corpus-replay |
+| --- | --- | --- |
+| 32150734348 | `ace2bda7` | 3 tests, **3 skipped** |
+| 32151123787 | `84d2370a` | 7 tests, **0 skipped** |
+
+Full transcript in `evidence/2026-08-18/corpus-replay-ci.md`.
+
+### The scrub floor is stated where the guarantee is stated
+
+Invariant 9 promised known-pattern scrubbing and said nothing about a length floor, so `pw`
+under a `password` key passing through read as a defect against the stated guarantee rather
+than as the guarantee. Both `CLAUDE.md` and `AGENTS.md` now state the four-character floor,
+and `scripts/check-invariant-drift.mjs` fails CI if the two files stop agreeing. The floor
+was not lowered: four is where a value cannot carry a credential at all, and it is the
+number the numeric branch already used for a PIN.
+
 ## Not yet in place
 
-- **No scheduled run.** Everything here was produced by runs launched by hand. Nothing
-  re-verifies on a schedule, so this document decays from the day it was written. The
-  mechanism a schedule needs is now built (see the appendix) but nothing is scheduled.
-- **No regression tests for ReDoS fixes (1) and (3).** Still true. The tooling reason is
-  fixed, in that the fixing agent is no longer denied the test file its prompt names, but the
-  two missing tests were never written.
-- **The corpus-replay suite has never run in CI.** `src/gates/corpus-replay.test.ts` resolves
-  the v12 falsification corpus via `git archive main`, which works locally because a local
-  `main` branch exists and fails in CI where only `origin/main` does. It skips visibly by
-  design, so nothing is silently green, but **1,043 corpus cases calibrating the ratchet have
-  never been replayed by CI.** `git archive origin/main` works.
+- **The weekly scan is scheduled but has never fired.** `.github/workflows/weekly-scan.yml`
+  runs Semgrep `p/default` at WARNING and above, OSV-Scanner, and the fuzz smoke every
+  Monday, opens an issue on findings, and fails loudly if it cannot open one. It was added
+  on 2026-08-18 and no scheduled run has happened yet, so nothing in this document has been
+  re-verified by it. The mechanism exists; the evidence that it works on a schedule does not.
+- **Semgrep and OSV-Scanner in that workflow are unexercised.** Both steps were written and
+  neither has run, in CI or locally, in the pass that added them. The push workflow runs
+  gates, the invariant-drift check and `fuzz:build`, and those three are confirmed green
+  remotely.
+- **The four judge-shaped residuals are open**, and closing them is not planned for this
+  release. They are in build guide 7.1 and each is a permanent case in
+  `src/evidence/redteam-adversarial.test.ts` asserting the gap as it stands.
 
 ## Appendix: cross-round finding memory
 
