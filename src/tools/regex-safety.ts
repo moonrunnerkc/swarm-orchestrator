@@ -14,6 +14,11 @@
  *   - two variable quantifiers competing for the same character, side by side or as
  *     alternatives under one quantifier: `\s*\s*$`, `(a+)(a+)$`, `(a|ab)+`, `(\w|\d)+`
  *
+ * Each rule reads the character the engine will match, not the characters the pattern is
+ * spelled with, because the two differ: a digit escape is a backreference only when the
+ * pattern has that many capture groups, and is otherwise a legacy octal escape, so
+ * `\141+\141+\141+X` is `a+a+a+X` written another way and has to be refused as one.
+ *
  * This is known-shape refusal, not a proof of linear time, and it is conservative in both
  * directions: it refuses patterns that would have run fast. The gap it does have is a
  * backreference, whose ambiguity only exists at match time and so cannot be read off the
@@ -381,22 +386,32 @@ function leadingCharacters(node: PatternNode): readonly string[] {
  * Whether two atoms can match one and the same character. Decided by probing, over an
  * alphabet rather than by set algebra: each atom is a single character matcher, so
  * compiling it costs nothing and can itself never backtrack.
+ *
+ * An atom no probe matches is undecided, not disjoint. Disjointness is the answer that lets
+ * a pattern run, so it is never the answer given by default: `\1+\1+\1+X` is `\x01` three
+ * times over and backtracks exactly as `a+a+a+X` does, and reading an unprobed atom as
+ * matching nothing would have cleared it.
  */
 function charactersOverlap(left: readonly string[], right: readonly string[]): boolean {
-  return left.some((leftAtom) =>
-    right.some((rightAtom) => {
-      const leftMatches = probeMatches(leftAtom);
-      return probeMatches(rightAtom).some((probe) => leftMatches.includes(probe));
-    }),
-  );
+  return left.some((leftAtom) => {
+    const leftMatches = probeMatches(leftAtom);
+    return right.some((rightAtom) => {
+      const rightMatches = probeMatches(rightAtom);
+      return (
+        leftMatches.length === 0 ||
+        rightMatches.length === 0 ||
+        rightMatches.some((probe) => leftMatches.includes(probe))
+      );
+    });
+  });
 }
 
+/**
+ * Every code unit an escape can name directly, since a hex or octal escape reaches all of
+ * them, plus one character past the range so classes written over wider scripts still probe.
+ */
 const probeAlphabet: readonly string[] = [
-  ...Array.from({ length: 95 }, (_, offset) => String.fromCharCode(32 + offset)),
-  "\n",
-  "\r",
-  "\t",
-  "é",
+  ...Array.from({ length: 256 }, (_, code) => String.fromCharCode(code)),
   "中",
 ];
 
@@ -445,16 +460,55 @@ function quote(span: Span, source: string): string {
 
 interface Cursor {
   readonly source: string;
+  /** Decides whether a digit escape is a backreference, so it must be known before the walk. */
+  readonly captureCount: number;
   index: number;
 }
 
 function parsePattern(source: string): PatternNode {
-  const cursor: Cursor = { source, index: 0 };
+  const cursor: Cursor = { source, captureCount: countCaptureGroups(source), index: 0 };
   const parsed = parseAlternation(cursor);
   if (cursor.index !== source.length) {
     throw new PatternUnreadableError(`unexpected "${source[cursor.index] ?? ""}"`);
   }
   return parsed;
+}
+
+/**
+ * The engine counts every capture group in the whole pattern, including ones written after
+ * the escape that cites them, so this is a pass over the source rather than a running total.
+ */
+function countCaptureGroups(source: string): number {
+  let count = 0;
+  let insideClass = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "\\") {
+      index += 1;
+      continue;
+    }
+    if (insideClass) {
+      insideClass = char !== "]";
+      continue;
+    }
+    if (char === "[") {
+      insideClass = true;
+      continue;
+    }
+    if (char !== "(") {
+      continue;
+    }
+    if (source[index + 1] !== "?") {
+      count += 1;
+      continue;
+    }
+    // A named group captures; `(?:`, `(?=`, `(?!`, `(?<=` and `(?<!` do not.
+    const afterAngle = source[index + 3];
+    if (source[index + 2] === "<" && afterAngle !== "=" && afterAngle !== "!") {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 function parseAlternation(cursor: Cursor): PatternNode {
@@ -634,11 +688,8 @@ function parseEscape(cursor: Cursor): PatternNode {
   if (marker === "b" || marker === "B") {
     return { kind: "zeroWidth", source: `\\${marker}`, start, end: cursor.index };
   }
-  if (marker >= "1" && marker <= "9") {
-    while (isDigit(cursor.source[cursor.index])) {
-      cursor.index += 1;
-    }
-    return backreferenceFrom(cursor, start);
+  if (isDigit(marker)) {
+    return parseDigitEscape(cursor, start);
   }
   if (marker === "k" && cursor.source[cursor.index] === "<") {
     const closed = cursor.source.indexOf(">", cursor.index);
@@ -656,6 +707,53 @@ function parseEscape(cursor: Cursor): PatternNode {
     start,
     end: cursor.index,
   };
+}
+
+/**
+ * `\` followed by digits is a backreference only when the pattern has at least that many
+ * capture groups. Otherwise the engine reads the digits as a legacy octal escape (`\141` is
+ * `a`), or, for `8` and `9`, as the digit itself, and the rules above have to see the
+ * character that will actually be matched. Only the escape is consumed: any digits past it
+ * are ordinary characters that carry their own quantifier, so `\18+` repeats the `8`, and
+ * leaving them for the sequence loop is what binds the quantifier where the engine binds it.
+ */
+function parseDigitEscape(cursor: Cursor, start: number): PatternNode {
+  const digitsStart = start + 1;
+  let digitsEnd = digitsStart;
+  while (isDigit(cursor.source[digitsEnd])) {
+    digitsEnd += 1;
+  }
+  const digits = cursor.source.slice(digitsStart, digitsEnd);
+  const leading = digits[0] ?? "";
+  if (leading !== "0" && Number(digits) <= cursor.captureCount) {
+    cursor.index = digitsEnd;
+    return backreferenceFrom(cursor, start);
+  }
+
+  const consumed = legacyEscapeLength(digits);
+  cursor.index = digitsStart + consumed;
+  const code =
+    leading === "8" || leading === "9"
+      ? leading.charCodeAt(0)
+      : Number.parseInt(digits.slice(0, consumed), 8);
+  return {
+    // Written back as a hex escape rather than as the character: an octal escape can decode
+    // to a metacharacter, and `\x2b` is what the probe below can compile where `+` is not.
+    kind: "character",
+    source: `\\x${code.toString(16).padStart(2, "0")}`,
+    start,
+    end: cursor.index,
+  };
+}
+
+/** How many of the digits the engine folds into one escape, per the legacy octal grammar. */
+function legacyEscapeLength(digits: string): number {
+  const leading = digits[0] ?? "";
+  if (leading === "8" || leading === "9" || !isOctalDigit(digits[1])) {
+    return 1;
+  }
+  // Only a leading 0 to 3 can carry a third digit without overflowing a byte.
+  return leading <= "3" && isOctalDigit(digits[2]) ? 3 : 2;
 }
 
 function backreferenceFrom(cursor: Cursor, start: number): PatternNode {
@@ -683,4 +781,8 @@ function consumeEscapeArgument(cursor: Cursor, marker: string): void {
 
 function isDigit(char: string | undefined): boolean {
   return char !== undefined && char >= "0" && char <= "9";
+}
+
+function isOctalDigit(char: string | undefined): boolean {
+  return char !== undefined && char >= "0" && char <= "7";
 }
