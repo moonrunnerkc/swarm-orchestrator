@@ -275,3 +275,34 @@ The run started at 984 tests across 81 files and ends at 1021 across 84.
 The large counts are committed evidence rather than code. Source and scripts across the
 whole run are 20 files, 800 insertions and 13 deletions; the rest is bundles, ledgers,
 blobs and logs under `docs/evidence/`, which the npm allowlist excludes from the package.
+
+## Release state at the end of the run
+
+`v13.0.0` is tagged locally on `a4e9ff65`, annotated, and deliberately not pushed: pushing
+it is what triggers the publish workflow, and publishing stays a human decision.
+
+`v13-main` pushed to `origin` three times during this run, each under owner bypass, and CI
+ran green on each. The last one, run `32159764928` on `a4e9ff65`:
+
+```
+src/gates/corpus-replay.test.ts (7 tests) 391ms
+Test Files  84 passed (84)
+     Tests  1021 passed (1021)
+fuzz/smoke: unified-diff ran 12 seed(s)
+```
+
+corpus-replay runs remotely with no skips, which it did not do at the start of this run, and
+`fuzz:build` runs on every push, which it did not do either.
+
+## What this run did not do
+
+Stated here so the list is in one place rather than spread across the sections above.
+
+- No container-based verification, for want of a container runtime.
+- No second complete calibration arm, for want of Anthropic credit.
+- No publish, no default-branch repoint, no tag push, no remote tag deletion.
+- Nothing from the sealed-criteria, falsification-bond or re-derivation tier, which was out
+  of scope for this run entirely.
+- The four judge-shaped residuals are open, and this run did not attempt them.
+- The weekly scan is scheduled and has never fired, so Semgrep and OSV-Scanner in it remain
+  unexercised.
