@@ -313,7 +313,10 @@ function describeModel(model: ModelSummary): readonly string[] {
   });
 
   const cases = model.byCase.map(
-    (one) => `  ${one.caseId} (${one.taskClass}): ${one.gatePassed} of ${one.repeats} green`,
+    (one) =>
+      `  ${one.caseId} (${one.taskClass}): ${one.gatePassed} of ${one.repeats} green` +
+      // Said out loud rather than left to be inferred from a zero.
+      (one.didNotRun > 0 ? `, ${one.didNotRun} did not run` : ""),
   );
 
   return [header, ...rows, "", ...cases];

@@ -12,6 +12,14 @@ interface CaseBreakdown {
   readonly taskClass: TaskClass;
   readonly repeats: number;
   readonly gatePassed: number;
+  /**
+   * Repeats where the model never answered, so the gate judged a workspace no attempt was
+   * made on. Kept apart from gatePassed for the reason invariant 7 keeps "not measured"
+   * apart from zero: a provider outage and a model that cannot do the case both produce
+   * "0 of 3 green", and reading the first as the second is a measurement of nothing
+   * reported as a measurement of the model.
+   */
+  readonly didNotRun: number;
 }
 
 export interface ModelSummary {
@@ -86,6 +94,7 @@ function breakDownByCase(
       taskClass: mine[0]?.taskClass ?? "edit",
       repeats: mine.length,
       gatePassed: mine.filter((observation) => observation.gatePassed).length,
+      didNotRun: mine.filter((observation) => observation.stopReason === "model-error").length,
     };
   });
 }

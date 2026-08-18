@@ -17,6 +17,7 @@ interface Shape {
   readonly peakMemoryBytes?: number | null;
   readonly caseId?: string;
   readonly repeat?: number;
+  readonly stopReason?: CalibrationRepeatObservation["stopReason"];
 }
 
 function observation(shape: Shape): CalibrationRepeatObservation {
@@ -27,7 +28,7 @@ function observation(shape: Shape): CalibrationRepeatObservation {
     model: shape.model,
     repeat: shape.repeat ?? 1,
     workspace: "/scratch",
-    stopReason: "completed",
+    stopReason: shape.stopReason ?? "completed",
     steps: 2,
     gateExitCode: shape.gatePassed === false ? 1 : 0,
     gatePassed: shape.gatePassed !== false,
@@ -230,6 +231,44 @@ describe("renderCalibrationReport", () => {
 
   it("breaks each model down by case", () => {
     expect(report()).toMatch(/edit-loud-greeting/);
+  });
+
+  /**
+   * A repeat the model never answered has to say so on the line a reader looks at. Both
+   * halves are pinned: the case that ran and failed says nothing extra, and the case that
+   * did not run says how many, because "0 of 3 green" is what a provider outage and a model
+   * that cannot do the case both produce.
+   */
+  it("says on the case line when a repeat did not run, and not when one merely failed", () => {
+    const withOutage = summaries([
+      { model: "local:big", repeat: 1, caseId: "ran-and-failed", gatePassed: false },
+      {
+        model: "local:big",
+        repeat: 1,
+        caseId: "never-ran",
+        gatePassed: false,
+        stopReason: "model-error",
+      },
+      {
+        model: "local:big",
+        repeat: 2,
+        caseId: "never-ran",
+        gatePassed: false,
+        stopReason: "model-error",
+      },
+    ]);
+    const rendered = renderCalibrationReport({
+      goldenSetVersion: `sha256:${"cd".repeat(32)}`,
+      cases: 2,
+      repeats: 2,
+      models: withOutage,
+      pick: pickFromCalibration(withOutage),
+      comparison: compareWithShortlist(pickFromCalibration(withOutage), "local:big", withOutage),
+      bundleDirectory: "/home/dev/.swarm/sessions/x/bundle",
+    }).join("\n");
+
+    expect(rendered).toContain("never-ran (edit): 0 of 2 green, 2 did not run");
+    expect(rendered).toContain("ran-and-failed (edit): 0 of 1 green\n");
   });
 
   it("gives the pick with its reasoning and the shortlist comparison", () => {
