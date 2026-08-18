@@ -139,6 +139,111 @@ describe("what a refusal says", () => {
   });
 });
 
+/**
+ * The octal normalization, the 256-code-unit probe alphabet, and the fail-closed empty
+ * probe shipped together with no dedicated test. This is the lesson the grouped-spelling
+ * miss already taught, written down: an untested guard spelling is the live one, and every
+ * family below is a spelling of a rule the suite above already covers in ASCII.
+ */
+describe("competing quantifiers spelled as octal escapes", () => {
+  /**
+   * `\141` is `a`, so each of these is a pattern the suite above refuses, retyped. The
+   * engine decides `\` plus digits is an octal escape rather than a backreference by
+   * counting capture groups, so a reader that skipped the digits would see two atoms it
+   * could not compare and clear the pattern.
+   */
+  for (const [pattern, plain] of [
+    [String.raw`\141+\141+X`, "a+a+X"],
+    [String.raw`(\141+)+$`, "(a+)+$"],
+    [String.raw`(\141|\141)+$`, "(a|a)+$"],
+    [String.raw`(\141+)(\141+)$`, "(a+)(a+)$"],
+  ] as const) {
+    it(`refuses ${pattern}, which is ${plain}`, () => {
+      expect(findBacktrackingRisk(pattern)).not.toBeNull();
+    });
+  }
+
+  it("refuses a two-digit and a one-digit octal the same way", () => {
+    expect(findBacktrackingRisk(String.raw`\60+\60+X`)).not.toBeNull();
+    expect(findBacktrackingRisk(String.raw`\0+\0+X`)).not.toBeNull();
+  });
+
+  it("compares an octal atom against a literal one, not only against another octal", () => {
+    expect(findBacktrackingRisk(String.raw`\141+a+X`)).not.toBeNull();
+  });
+
+  /**
+   * The other direction, and the one that says the normalization decodes rather than
+   * refusing anything with a backslash in it: `\141` and `\142` are `a` and `b`, which
+   * cannot take each other's characters, so this is an ordinary search.
+   */
+  it("accepts two octal atoms that are genuinely disjoint", () => {
+    expect(findBacktrackingRisk(String.raw`\141+\142+X`)).toBeNull();
+  });
+
+  /**
+   * Only the escape is consumed. `\18` is `\x01` followed by a literal `8`, so the `+`
+   * binds to the `8` and the two `8+` runs are held apart by the `\x01` between them.
+   * Consuming the trailing digit into the escape would bind the quantifier somewhere the
+   * engine does not.
+   */
+  it("leaves a digit past the escape as its own quantified character", () => {
+    expect(findBacktrackingRisk(String.raw`\18+\18+X`)).toBeNull();
+  });
+});
+
+describe("atoms that only match non-printable code units", () => {
+  /**
+   * The probe alphabet runs the whole 256-code-unit range rather than the printable part
+   * of it, because a control character is a character a quantifier can pump over. An
+   * alphabet that started at 0x20 would read every atom here as matching nothing.
+   */
+  it("refuses two quantifiers over the same control character", () => {
+    expect(findBacktrackingRisk(String.raw`\x01+\x01+X`)).not.toBeNull();
+  });
+
+  it("refuses two quantifiers over the same control-character class", () => {
+    expect(findBacktrackingRisk(String.raw`[\x00-\x08]+[\x00-\x08]+X`)).not.toBeNull();
+  });
+
+  /**
+   * `\1` with no capture group to refer to is the octal escape `\x01`, so this is
+   * `\x01+\x01+\x01+X`: the case the disjointness comment names, and one that needs the
+   * octal decode and the non-printable probe together to be seen at all.
+   */
+  it("refuses a backreference-shaped octal repeated over itself", () => {
+    expect(findBacktrackingRisk(String.raw`\1+\1+\1+X`)).not.toBeNull();
+  });
+});
+
+describe("an atom no probe matches fails closed", () => {
+  /**
+   * Disjointness is the answer that lets a pattern run, so it is never the answer given by
+   * default. An atom the probe alphabet cannot decide is undecided, and undecided has to
+   * read as overlapping: reading it as matching nothing would clear the pattern on the
+   * strength of not having understood it.
+   */
+  it("refuses quantifiers over an atom that matches nothing at all", () => {
+    expect(findBacktrackingRisk(String.raw`[^\s\S]+[^\s\S]+X`)).not.toBeNull();
+    expect(findBacktrackingRisk(String.raw`([^\s\S]+)+$`)).not.toBeNull();
+  });
+
+  it("refuses quantifiers over an atom outside the probed range", () => {
+    // Fullwidth forms: no probe in the alphabet matches them, so nothing is decided.
+    expect(findBacktrackingRisk("[\uFF01-\uFF5E]+[\uFF01-\uFF5E]+X")).not.toBeNull();
+  });
+
+  /**
+   * The cost of failing closed, pinned so it stays a decision. These two atoms are
+   * genuinely disjoint and the pattern is safe, and it is refused anyway because one of
+   * them is unprobed. Refusing a safe search is the direction this is allowed to be wrong
+   * in; clearing an unsafe one is not.
+   */
+  it("refuses an unprobed atom beside a probed one, which is the false positive it accepts", () => {
+    expect(findBacktrackingRisk("[\uFF01-\uFF5E]+a+X")).not.toBeNull();
+  });
+});
+
 describe("limits this reader is known to have", () => {
   /**
    * Ambiguity a backreference introduces is invisible to a structural read, since what the
