@@ -38,6 +38,14 @@ export interface RewardInput {
   /** Attempts the ratchet rejected for trading a measured number the wrong way. */
   readonly erosions: number;
   readonly attempts: number;
+  /**
+   * How many files the run changed, or null where no gate measured it. Zero is the case
+   * this exists for: a run that edited nothing is fast and free, so every other term scores
+   * it near the top, and the router would learn that the model which does nothing is the
+   * best model available. Null is not zero and is scored normally, since punishing a run
+   * for a measurement nobody took is the same mistake pointed the other way.
+   */
+  readonly changedFiles: number | null;
   readonly latencyMs: number;
   /**
    * Null when the model has no known rate. Scored as a run at the reference cost: neutral,
@@ -69,6 +77,14 @@ export function scoreReward(
         "trading a measured number away, which scores as a failure",
     };
   }
+  if (input.changedFiles === 0) {
+    return {
+      reward: 0,
+      reason:
+        "the gates went green over a workspace the run never changed, so nothing was done " +
+        "and there is nothing to reward",
+    };
+  }
 
   const forAttempts = 1 / (1 + weights.attemptPenalty * input.attempts);
   const forLatency = weights.referenceLatencyMs / (weights.referenceLatencyMs + input.latencyMs);
@@ -94,6 +110,7 @@ interface RewardEntryInput {
   readonly model: string;
   readonly assignment: AssignmentKind;
   readonly ratchet: RatchetSummary;
+  readonly changedFiles: number | null;
   readonly latencyMs: number;
   readonly costUsd: number | null;
   readonly costSource: CostSource;
@@ -113,6 +130,7 @@ export function buildRewardEntry(
       settled: input.ratchet.settled,
       erosions: input.ratchet.erosions,
       attempts: input.ratchet.attempts,
+      changedFiles: input.changedFiles,
       latencyMs: input.latencyMs,
       costUsd: input.costUsd,
     },
@@ -128,6 +146,7 @@ export function buildRewardEntry(
     assignment: input.assignment,
     ratchet: { ...input.ratchet },
     attempts: input.ratchet.attempts,
+    changedFiles: input.changedFiles,
     latencyMs: input.latencyMs,
     costUsd: input.costUsd,
     costSource: input.costSource,

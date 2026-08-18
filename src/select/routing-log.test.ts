@@ -41,6 +41,7 @@ function entry(overrides: Partial<RewardEntry> = {}): RewardEntry {
       changedLineCoverage: 0.9,
     },
     attempts: 0,
+    changedFiles: 1,
     latencyMs: 42_000,
     costUsd: 0,
     costSource: "local",

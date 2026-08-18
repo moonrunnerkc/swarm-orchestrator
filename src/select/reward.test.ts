@@ -7,6 +7,7 @@ function run(overrides: Partial<RewardInput> = {}): RewardInput {
     settled: "green",
     erosions: 0,
     attempts: 0,
+    changedFiles: 1,
     latencyMs: 0,
     costUsd: 0,
     ...overrides,
@@ -33,6 +34,26 @@ describe("scoreReward", () => {
     expect(eroded.reward).toBe(0);
     expect(eroded.reason).toMatch(/ratchet/);
     expect(eroded.reward).toBe(scoreReward(run({ settled: "escalated" })).reward);
+  });
+
+  /**
+   * Found live, not reasoned about: a local model declared a file set, wrote nothing, and
+   * stopped. Every gate passed over the unchanged tree, the run took 22s and cost nothing,
+   * and it scored 0.846. Fast and free is what doing nothing looks like to every other term
+   * here, so without this the router learns to prefer whichever model does the least.
+   */
+  it("scores a run that changed no file zero, however cheap and fast it was", () => {
+    const score = scoreReward(run({ changedFiles: 0, latencyMs: 0, costUsd: 0 }));
+
+    expect(score.reward).toBe(0);
+    expect(score.reason).toContain("never changed");
+  });
+
+  it("does not punish a run for a change count nobody measured", () => {
+    // Null is not zero. Scoring an unmeasured run as a no-op is the same mistake pointed
+    // the other way, and invariant 7 abstains on a measure nothing took rather than
+    // assuming one.
+    expect(scoreReward(run({ changedFiles: null })).reward).toBe(1);
   });
 
   it("still pays a run whose retry crashed rather than eroded anything", () => {
@@ -123,12 +144,23 @@ describe("buildRewardEntry", () => {
       model: "local:qwen2.5-coder:7b",
       assignment: "ucb",
       ratchet,
+      changedFiles: 1,
       latencyMs: 42_000,
       costUsd: 0,
       costSource: "local",
       ...overrides,
     });
   }
+
+  it("carries the change count the score turned on, so the log shows why it was zero", () => {
+    const written = entry({ changedFiles: 0 });
+
+    expect({ changedFiles: written.changedFiles, reward: written.reward }).toEqual({
+      changedFiles: 0,
+      reward: 0,
+    });
+    expect(rewardEntrySchema.parse(written).rewardReason).toContain("never changed");
+  });
 
   it("carries what happened and what it scored, in one line the log accepts", () => {
     expect(rewardEntrySchema.safeParse(entry()).success).toBe(true);
