@@ -21,7 +21,28 @@ export function parseUnifiedDiff(text: string): readonly ChangedFile[] {
     if (path === null) {
       return;
     }
-    files.push({ path, kind: kindOf(oldPath, newPath), addedLines, removedLines });
+    // A path git only ever writes one header for, but a stored patch can carry two. Two
+    // entries for one file are counted twice by everything downstream: its added lines land
+    // in the coverage denominator twice, and the diff budget sees two changed files. Merging
+    // rather than dropping, because the opposite of the lcov rule applies here: an ambiguous
+    // coverage section can safely abstain, while a file dropped from the changed set is a
+    // file the file-set check never sees.
+    const at = files.findIndex((file) => file.path === path);
+    const existing = files[at];
+    if (existing === undefined) {
+      files.push({
+        path,
+        kind: kindOf(oldPath, newPath),
+        addedLines: numberedOnce([], addedLines),
+        removedLines,
+      });
+    } else {
+      files[at] = {
+        ...existing,
+        addedLines: numberedOnce(existing.addedLines, addedLines),
+        removedLines: [...existing.removedLines, ...removedLines],
+      };
+    }
     path = null;
     oldPath = null;
     newPath = null;
@@ -71,7 +92,14 @@ export function parseUnifiedDiff(text: string): readonly ChangedFile[] {
     }
 
     if (line.startsWith("+")) {
-      addedLines.push({ line: nextNewLine, text: line.slice(1) });
+      // A hunk whose new side starts at zero has no new side: `@@ -1,2 +0,0 @@` is what git
+      // writes for a deletion. An added line inside one is not a line anybody can point at,
+      // and carrying it as line 0 put a number into the coverage denominator that no report
+      // can ever name. Worse in the other direction, since an lcov `DA:0,1` parses: the two
+      // together would count a line that does not exist as covered.
+      if (nextNewLine >= 1) {
+        addedLines.push({ line: nextNewLine, text: line.slice(1) });
+      }
       nextNewLine += 1;
       continue;
     }
@@ -158,13 +186,36 @@ export function reconstructSides(
   );
 }
 
+/**
+ * One entry per line number, in order. A line can be claimed twice by a patch git would
+ * never write: two headers for one path, or two hunks in one file both declaring they start
+ * at line 1. Both reach the coverage arm as two entries for one line, which counts it twice
+ * in the denominator and lets a patch move a ratchet measure by repeating itself.
+ */
+function numberedOnce(
+  existing: readonly AddedLine[],
+  incoming: readonly AddedLine[],
+): readonly AddedLine[] {
+  const byLine = new Map<number, AddedLine>();
+  for (const added of [...existing, ...incoming]) {
+    if (!byLine.has(added.line)) {
+      byLine.set(added.line, added);
+    }
+  }
+  return [...byLine.values()].sort((left, right) => left.line - right.line);
+}
+
 function stripPrefix(raw: string): string | null {
   const path = raw.split("\t")[0]?.trim() ?? "";
   if (path === "/dev/null" || path.length === 0) {
     return null;
   }
   const unquoted = path.startsWith('"') && path.endsWith('"') ? path.slice(1, -1) : path;
-  return unquoted.replace(/^[ab]\//, "");
+  const stripped = unquoted.replace(/^[ab]\//, "");
+  // The emptiness check above runs before the prefix is stripped, so a bare `a/` survived it
+  // and came back as the empty path: a changed file naming nothing, which the file-set check
+  // can neither match nor report.
+  return stripped.length === 0 ? null : stripped;
 }
 
 function kindOf(oldPath: string | null, newPath: string | null): ChangeKind {
