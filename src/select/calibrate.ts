@@ -37,6 +37,8 @@ interface CalibrationResult {
   readonly comparison: ShortlistComparison;
   /** Model spec to the digest of its summary record, which the report's claim cites. */
   readonly summaryRecords: Readonly<Record<string, string>>;
+  /** The digest of the verdict record, so an abstain is in the bundle rather than only in print. */
+  readonly verdictRecord: string;
   readonly claims: readonly ClaimEvaluation[];
 }
 
@@ -79,17 +81,41 @@ export async function runCalibration(options: CalibrationOptions): Promise<Calib
     claims.push(
       await options.deps.evidence.submitClaim(
         {
-          predicate: `repeats == ${model.repeats} && gatePassed == ${greenRepeats(model)}`,
+          predicate:
+            `repeats == ${model.repeats} && executedRepeats == ${model.executedRepeats} && ` +
+            `gatePassed == ${greenRepeats(model)}`,
           record: recorded.record.payloadDigest,
           recordKind: "calibration-summary",
           narrative:
-            `${model.model} solved ${greenRepeats(model)} of ${model.repeats} calibration runs ` +
-            `over ${options.goldenSet.cases.length} case(s).`,
+            `${model.model} solved ${greenRepeats(model)} of ${model.executedRepeats} executed ` +
+            `calibration runs, out of ${model.repeats} attempted over ` +
+            `${options.goldenSet.cases.length} case(s).`,
         },
         "harness",
       ),
     );
   }
+
+  const verdict = await options.deps.evidence.record({
+    type: "calibration-verdict",
+    actor: "harness",
+    provenance: ["tool-output"],
+    payload: verdictPayload(pick, models, options),
+  });
+  claims.push(
+    await options.deps.evidence.submitClaim(
+      {
+        predicate: `abstained == ${pick.model === null}`,
+        record: verdict.record.payloadDigest,
+        recordKind: "calibration-verdict",
+        narrative:
+          pick.model === null
+            ? "calibration abstained: no model was both executed and usable."
+            : `calibration recommends ${pick.model}.`,
+      },
+      "harness",
+    ),
+  );
 
   return {
     goldenSetVersion: options.goldenSet.version,
@@ -100,6 +126,7 @@ export async function runCalibration(options: CalibrationOptions): Promise<Calib
     pick,
     comparison: compareWithShortlist(pick, options.staticPick, models),
     summaryRecords,
+    verdictRecord: verdict.record.payloadDigest,
     claims,
   };
 }
@@ -135,9 +162,35 @@ function summaryPayload(model: ModelSummary, options: CalibrationOptions): JsonV
     goldenSetVersion: options.goldenSet.version,
     cases: options.goldenSet.cases.length,
     repeats: model.repeats,
+    executedRepeats: model.executedRepeats,
     gatePassed: greenRepeats(model),
     dimensions,
     byCase: model.byCase.map((one) => ({ ...one })),
     runRecords: [...model.runRecords],
+  };
+}
+
+/**
+ * The pick itself as a record, abstain included. Without it the only place an abstain exists
+ * is the printed report, which is prose: a reviewer holding the bundle could see six summary
+ * records and no statement of what was decided from them.
+ */
+function verdictPayload(
+  pick: CalibrationPick,
+  models: readonly ModelSummary[],
+  options: CalibrationOptions,
+): JsonValue {
+  return {
+    goldenSetVersion: options.goldenSet.version,
+    staticPick: options.staticPick,
+    pick: pick.model,
+    abstained: pick.model === null,
+    reasoning: [...pick.reasoning],
+    rejected: pick.rejected.map((one) => ({ model: one.model, reason: one.reason })),
+    models: models.map((model) => ({
+      model: model.model,
+      repeats: model.repeats,
+      executedRepeats: model.executedRepeats,
+    })),
   };
 }

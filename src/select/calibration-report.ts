@@ -31,8 +31,8 @@ const rankingOrder: readonly CalibrationDimension[] = [
 
 export function pickFromCalibration(models: readonly ModelSummary[]): CalibrationPick {
   const rejected: RejectedModel[] = [];
-  const viable = models.filter((model) => {
-    const shortfall = viabilityShortfall(model);
+  const eligible = models.filter((model) => {
+    const shortfall = ineligibility(model);
     if (shortfall !== null) {
       rejected.push({ model: model.model, reason: shortfall });
       return false;
@@ -40,18 +40,19 @@ export function pickFromCalibration(models: readonly ModelSummary[]): Calibratio
     return true;
   });
 
-  if (viable.length === 0) {
+  if (eligible.length === 0) {
     return {
       model: null,
       reasoning: [
-        "no model cleared the floors every dimension sets, so calibration recommends none of them.",
+        `no usable model: of the ${models.length} model(s) compared, none has executed runs ` +
+          "that clear every floor, so calibration abstains rather than recommending one.",
       ],
       rejected,
     };
   }
 
   const reasoning: string[] = [];
-  let field: readonly ModelSummary[] = viable;
+  let field: readonly ModelSummary[] = eligible;
 
   for (const dimension of rankingOrder) {
     if (field.length === 1) {
@@ -73,6 +74,19 @@ export function pickFromCalibration(models: readonly ModelSummary[]): Calibratio
 
   reasoning.push(describePick(winner, models));
   return { model: winner.model, reasoning, rejected };
+}
+
+/**
+ * Why this model cannot be picked, or null when nothing rules it out. Evidence comes first:
+ * a model no repeat of which executed has cleared no floor, it has merely been measured by
+ * nothing, and letting it through as the last one standing is how a model the backend never
+ * served wins over one with real runs behind it.
+ */
+function ineligibility(model: ModelSummary): string | null {
+  if (model.executedRepeats === 0) {
+    return `0 of ${model.repeats} run(s) executed, so nothing about it was measured`;
+  }
+  return viabilityShortfall(model);
 }
 
 /** The first floor this model failed, or null when it cleared every one that was measured. */
@@ -152,7 +166,7 @@ function describeComparison(
 function describePick(winner: ModelSummary, models: readonly ModelSummary[]): string {
   return (
     `${winner.model} is the pick over ${models.length - 1} other model(s), measured on ` +
-    `${winner.repeats} run(s) of the golden set.`
+    `${winner.executedRepeats} executed run(s) of the golden set.`
   );
 }
 
@@ -185,6 +199,13 @@ export function compareWithShortlist(
       statement: `the measurements agree with the static pick, which corroborates the shortlist: ${staticPick} was recommended on hardware fit alone and is what calibration measured as best.`,
     };
   }
+  if (pick.model === null) {
+    return {
+      staticPick,
+      agrees: false,
+      statement: `calibration recommended no model, so it neither corroborates nor contradicts the static pick ${staticPick}.`,
+    };
+  }
 
   const measured = models.find((model) => model.model === staticPick);
   if (measured === undefined) {
@@ -192,6 +213,16 @@ export function compareWithShortlist(
       staticPick,
       agrees: false,
       statement: `the static pick ${staticPick} was not among the models calibrated, so nothing here corroborates or contradicts it.`,
+    };
+  }
+  // A divergence is a comparison of two numbers, so it needs two of them. Nothing executed
+  // is not a low score, and reporting it as one would make the shortlist look contradicted
+  // by a measurement that was never taken.
+  if (measured.executedRepeats === 0) {
+    return {
+      staticPick,
+      agrees: false,
+      statement: `none of the ${measured.repeats} run(s) of the static pick ${staticPick} executed, so there is nothing measured to compare it against.`,
     };
   }
 
@@ -252,7 +283,11 @@ export function renderCalibrationReport(input: CalibrationReportInput): readonly
   ];
 
   for (const model of input.models) {
-    lines.push("", `${model.model}: ${model.repeats} run(s)`, ...describeModel(model));
+    lines.push(
+      "",
+      `${model.model}: ${model.repeats} run(s), ${model.executedRepeats} executed`,
+      ...describeModel(model),
+    );
   }
 
   lines.push(

@@ -14,6 +14,7 @@ function observation(
     workspace: "/scratch/one",
     stopReason: "completed",
     steps: 2,
+    executed: true,
     gateExitCode: 0,
     gatePassed: true,
     toolCalls: {
@@ -120,8 +121,8 @@ describe("summarizeByModel", () => {
    */
   it("counts a repeat the model never answered apart from one whose gate failed", () => {
     const summary = summarizeByModel([
-      observation({ caseId: "a", stopReason: "model-error", gatePassed: false, gateExitCode: 1 }),
-      observation({ caseId: "a", stopReason: "model-error", gatePassed: false, gateExitCode: 1 }),
+      observation({ caseId: "a", executed: false, steps: 0, gatePassed: false, gateExitCode: 1 }),
+      observation({ caseId: "a", executed: false, steps: 0, gatePassed: false, gateExitCode: 1 }),
       observation({ caseId: "a", stopReason: "completed", gatePassed: false, gateExitCode: 1 }),
     ])[0];
 
@@ -136,6 +137,19 @@ describe("summarizeByModel", () => {
     ])[0];
 
     expect(summary?.byCase[0]?.didNotRun).toBe(0);
+  });
+
+  /**
+   * A repeat that died on its fourth step still answered three times, so what it measured of
+   * the model is a measurement. Only a repeat with no answer at all is absence of evidence.
+   */
+  it("counts a repeat that answered and then failed as one that ran", () => {
+    const summary = summarizeByModel([
+      observation({ caseId: "a", stopReason: "model-error", steps: 3, executed: true }),
+    ])[0];
+
+    expect(summary?.byCase[0]?.didNotRun).toBe(0);
+    expect(summary?.executedRepeats).toBe(1);
   });
 
   it("carries the record of every repeat it summarized, so each score has its runs", () => {

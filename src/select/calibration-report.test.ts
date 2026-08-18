@@ -18,6 +18,8 @@ interface Shape {
   readonly caseId?: string;
   readonly repeat?: number;
   readonly stopReason?: CalibrationRepeatObservation["stopReason"];
+  /** False for a repeat the model never answered, which is not a repeat it scored zero on. */
+  readonly executed?: boolean;
 }
 
 function observation(shape: Shape): CalibrationRepeatObservation {
@@ -29,7 +31,8 @@ function observation(shape: Shape): CalibrationRepeatObservation {
     repeat: shape.repeat ?? 1,
     workspace: "/scratch",
     stopReason: shape.stopReason ?? "completed",
-    steps: 2,
+    steps: shape.executed === false ? 0 : 2,
+    executed: shape.executed !== false,
     gateExitCode: shape.gatePassed === false ? 1 : 0,
     gatePassed: shape.gatePassed !== false,
     toolCalls: {
@@ -145,7 +148,7 @@ describe("pickFromCalibration", () => {
 
     expect(pick.model).toBeNull();
     expect(pick.rejected).toHaveLength(2);
-    expect(pick.reasoning[0]).toMatch(/no model cleared/);
+    expect(pick.reasoning[0]).toMatch(/no usable model/);
   });
 
   it("does not reject a model on a dimension nothing measured", () => {
@@ -248,6 +251,7 @@ describe("renderCalibrationReport", () => {
         caseId: "never-ran",
         gatePassed: false,
         stopReason: "model-error",
+        executed: false,
       },
       {
         model: "local:big",
@@ -255,6 +259,7 @@ describe("renderCalibrationReport", () => {
         caseId: "never-ran",
         gatePassed: false,
         stopReason: "model-error",
+        executed: false,
       },
     ]);
     const rendered = renderCalibrationReport({

@@ -35,6 +35,12 @@ export interface CalibrationRepeatObservation {
   readonly workspace: string;
   readonly stopReason: StopReason;
   readonly steps: number;
+  /**
+   * Whether the model ever answered. A repeat whose every dispatch failed produced no
+   * measurement of the model, only of the backend refusing it, so it is absence of evidence
+   * and is filtered out of every dimension rather than folded in as a zero.
+   */
+  readonly executed: boolean;
   readonly gateExitCode: number;
   readonly gatePassed: boolean;
   readonly toolCalls: ToolCallTally;
@@ -133,6 +139,8 @@ export async function runCalibrationRepeat(
   const produced = payloadsSince(deps.evidence, fromIndex);
   const toolCalls = tallyToolCalls(produced);
   const modelCalls = tallyModelCalls(produced);
+  // A step is counted only once a call has come back, so no steps is no answer from the model.
+  const executed = outcome.steps > 0;
 
   const recorded = await deps.evidence.record({
     type: "calibration-run",
@@ -146,6 +154,7 @@ export async function runCalibrationRepeat(
       repeat: request.repeat,
       stopReason: outcome.stopReason,
       steps: outcome.steps,
+      executed,
       gateCommand: request.case.gateCommand,
       gateExitCode: gate.exitCode,
       gatePassed: gate.exitCode === 0,
@@ -173,6 +182,7 @@ export async function runCalibrationRepeat(
     workspace,
     stopReason: outcome.stopReason,
     steps: outcome.steps,
+    executed,
     gateExitCode: gate.exitCode,
     gatePassed: gate.exitCode === 0,
     toolCalls,

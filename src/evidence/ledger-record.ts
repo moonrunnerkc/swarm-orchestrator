@@ -33,6 +33,7 @@ const recordTypes = [
   "calibration-preflight",
   "calibration-run",
   "calibration-summary",
+  "calibration-verdict",
   "routing-decision",
   "reward",
   "worker-started",
