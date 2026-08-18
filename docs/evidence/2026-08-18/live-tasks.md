@@ -155,9 +155,9 @@ above report `signature over the chain head verifies: ed25519, keychain key`.
 
 ## Why these bundles are not redacted
 
-Both hold six occurrences of an absolute home path, and every one is the same thing: the
-coverage destination the harness named for the test runner, `~/.swarm/sessions/<id>/
-coverage/tests.lcov`. Invariant 7 requires that path to be outside the workspace and named
+Both hold six occurrences of an absolute home path, three in one blob and three in the
+`review.html` that renders it, and every one is the same string: the coverage destination
+the harness named for the test runner, `~/.swarm/sessions/<id>/coverage/tests.lcov`. Invariant 7 requires that path to be outside the workspace and named
 by the harness, so it is evidence rather than an accident, and it carries no credential
 material. The export scrubber ran: the secret-scan gate passed on both runs and the ledger
 holds no credential pattern.
