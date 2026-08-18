@@ -19,6 +19,9 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      # CLAUDE.md and AGENTS.md carry one invariant block for two readers, and it has
+      # drifted before. Cheap, and it runs before the suite so the failure is legible.
+      - run: node scripts/check-invariant-drift.mjs
       - run: npm run gates
       # The 8-harness smoke, cheap enough for every push. Without it a harness that
       # stopped loading, or one built against a stale .swarm/fuzz-build, is only found
