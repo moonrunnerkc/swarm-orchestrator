@@ -216,3 +216,62 @@ credit ran out. With credit restored, or another provider:
 
 The first CI watch is **not** on this list: it happened, twice, and both runs are recorded in
 `corpus-replay-ci.md`.
+
+## 6. Final runs
+
+Both run at the end of the session, on the tree as it stands, tails pasted rather than
+summarized.
+
+`npm run gates`, exit 0:
+
+```
+
+ RUN  v4.1.10 /Users/brad/projects/swarm-orchestrator
+
+
+ Test Files  84 passed (84)
+      Tests  1021 passed (1021)
+   Start at  10:17:58
+   Duration  8.15s (transform 2.08s, setup 0ms, import 4.81s, tests 41.06s, environment 4ms)
+
+```
+
+`npm run fuzz:build`, exit 0:
+
+```
+> rm -rf .swarm/fuzz-build && tsc -p fuzz/tsconfig.build.json && node fuzz/smoke.mjs
+
+fuzz/smoke: adapter-output ran 9 seed(s)
+fuzz/smoke: bundle-read ran 6 seed(s)
+fuzz/smoke: gate-parsers ran 12 seed(s)
+fuzz/smoke: ledger-chain ran 7 seed(s)
+fuzz/smoke: predicate ran 15 seed(s)
+fuzz/smoke: scrub ran 14 seed(s)
+fuzz/smoke: swarm-toml ran 9 seed(s)
+fuzz/smoke: unified-diff ran 12 seed(s)
+```
+
+`node scripts/check-invariant-drift.mjs`, exit 0:
+
+```
+invariant block matches across CLAUDE.md and AGENTS.md: 12 invariants
+```
+
+The run started at 984 tests across 81 files and ends at 1021 across 84.
+
+## Diff stat per section
+
+| Section | Change |
+| --- | --- |
+| 0. Preflight | 1 file changed, 33 insertions(+) |
+| 1. Consolidate the tree | 15 files changed, 2169 insertions(+) |
+| 2. Close the security items | 12 files changed, 417 insertions(+), 26 deletions(-) |
+| 3. Produce the evidence | 128 files changed, 10611 insertions(+), 6 deletions(-) |
+| 3 continued, plus 4.3 | 1276 files changed, 94958 insertions(+), 4 deletions(-) |
+| 4. Documentation pass | 2 files changed, 115 insertions(+), 18 deletions(-) |
+| 5. Release readiness | 568 files changed, 78004 insertions(+), 15 deletions(-) |
+| **whole run** | 1995 files changed, 186304 insertions(+), 66 deletions(-) |
+
+The large counts are committed evidence rather than code. Source and scripts across the
+whole run are 20 files, 800 insertions and 13 deletions; the rest is bundles, ledgers,
+blobs and logs under `docs/evidence/`, which the npm allowlist excludes from the package.
