@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type AgentTaskOptions, runAgentTask } from "./agent-run.ts";
 import type { Clock } from "./core/clock.ts";
 import { createFixedRandom } from "./core/test-doubles.ts";
+import type { JsonValue } from "./evidence/canonical-json.ts";
 import { createRecordingModelClient } from "./evidence/model-call-recording.ts";
 import { type EvidenceRecorder, openEvidenceSession } from "./evidence/session.ts";
 import { createFileSetRegistry } from "./gates/file-set.ts";
@@ -161,6 +162,64 @@ describe("runAgentTask", () => {
     );
     expect(budget?.detail).toMatch(/over budget/);
     expect(budget?.detail).toMatch(/against 0/);
+  });
+
+  it("runs a declaration whose array argument the model encoded as a JSON string", async () => {
+    // What qwen3-coder emits intermittently through an OpenAI-compatible endpoint. Denying it
+    // costs the whole run: the declaration never lands, the edit happens anyway, and the
+    // file-set gate can no longer pass, because nothing declared the file before it changed.
+    const turns: readonly FixtureTurn[] = [
+      respondWithToolCalls("declaring", [
+        {
+          callId: "c0",
+          toolName: "declare_file_set",
+          input: { files: '["src/greet.js"]' },
+        },
+      ]),
+      respondWithToolCalls("writing", [
+        { callId: "c1", toolName: "write", input: { path: "src/greet.js", content: stillGreen } },
+      ]),
+      respondWithText("done"),
+    ];
+
+    const result = await task(turns);
+
+    const fileSet = result.gates.outcome.finalCycle.runs.find((gate) => gate.gateId === "file-set");
+    expect(fileSet?.status).toBe("passed");
+    expect(result.green).toBe(true);
+    expect(evidence.records().map((entry) => entry.type)).toContain("file-set-declared");
+  });
+
+  it("records the encoding the model sent beside the fields the harness decoded", async () => {
+    const turns: readonly FixtureTurn[] = [
+      respondWithToolCalls("declaring", [
+        { callId: "c0", toolName: "declare_file_set", input: { files: '["src/greet.js"]' } },
+      ]),
+      respondWithText("done"),
+    ];
+
+    await task(turns);
+
+    const payloads = evidence.payloads();
+    const declarations: Readonly<Record<string, JsonValue>>[] = [];
+    for (const entry of evidence.records()) {
+      if (entry.type !== "tool-call") {
+        continue;
+      }
+      // A tool-call payload is an object by construction, which is what the recorder writes.
+      const payload = payloads.get(entry.payloadDigest) as
+        | Readonly<Record<string, JsonValue>>
+        | undefined;
+      if (payload?.toolName === "declare_file_set") {
+        declarations.push(payload);
+      }
+    }
+
+    expect(declarations.length).toBeGreaterThan(0);
+    for (const payload of declarations) {
+      expect(payload.input).toEqual({ files: '["src/greet.js"]' });
+      expect(payload.decodedFields).toEqual(["files"]);
+    }
   });
 
   it("leaves the model's completion narrative recorded as narrative, never as a result", async () => {

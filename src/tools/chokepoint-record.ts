@@ -37,7 +37,14 @@ export interface ChokepointRecord {
   /** Set exactly when the decision is "denied". */
   readonly denial: DenialReason | null;
   readonly detail: string;
+  /** What the model sent, as it sent it, whatever the harness had to decode to read it. */
   readonly input: JsonValue;
+  /**
+   * Fields whose JSON-string encoding the harness decoded before validating, by dotted path.
+   * Empty for the calls that arrived well formed, which is almost all of them. Recorded so a
+   * reviewer reads the model's encoding and the harness's reading of it side by side.
+   */
+  readonly decodedFields: readonly string[];
   readonly output: string;
   readonly facts: Readonly<Record<string, JsonValue>>;
   readonly derivation: DerivationAssessment | null;
@@ -79,6 +86,7 @@ export function createLedgerChokepointRecorder(evidence: EvidenceRecorder): Chok
           denial: entry.denial,
           detail: entry.detail,
           input: entry.input,
+          decodedFields: [...entry.decodedFields],
           output: entry.output,
           outputBytes: entry.output.length,
           facts: asJsonValue(entry.facts),

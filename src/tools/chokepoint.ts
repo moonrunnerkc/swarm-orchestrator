@@ -18,6 +18,10 @@ import {
   type DerivationHeuristic,
 } from "./derivation.ts";
 import type { Sandbox } from "./sandbox.ts";
+import {
+  type DecodedToolArguments,
+  decodeStringifiedToolArguments,
+} from "./tool-argument-decoding.ts";
 import type { ToolDefinition, ToolKind, ToolOutput } from "./tool-definition.ts";
 
 export interface ConfirmationRequest {
@@ -69,6 +73,12 @@ export function createToolChokepoint(deps: ChokepointDependencies): ToolInvoker 
       const definition = byName.get(invocation.toolName);
       const kind: ToolKind | "unknown" = definition?.kind ?? "unknown";
       const input = asJsonValue(invocation.input);
+      // Decoded against the tool's own schema, before anything is recorded, so both records
+      // carry what the model sent and what the harness read it as.
+      const decoded =
+        definition === undefined
+          ? emptyDecoding(invocation.input)
+          : decodeStringifiedToolArguments(invocation.input, definition.inputSchema);
       const assessment = derivation.assess(collectStrings(invocation.input).join(" "));
       const provenance = tagsFor(invocation.provenance, assessment);
 
@@ -88,6 +98,7 @@ export function createToolChokepoint(deps: ChokepointDependencies): ToolInvoker 
           denial,
           detail,
           input,
+          decodedFields: decoded.decodedFields,
           output,
           facts,
           derivation: assessment,
@@ -112,6 +123,7 @@ export function createToolChokepoint(deps: ChokepointDependencies): ToolInvoker 
         denial: null,
         detail: `${invocation.toolName} requested`,
         input,
+        decodedFields: decoded.decodedFields,
         output: "",
         facts: {},
         derivation: assessment,
@@ -127,7 +139,7 @@ export function createToolChokepoint(deps: ChokepointDependencies): ToolInvoker 
         );
       }
 
-      const parsed = definition.inputSchema.safeParse(invocation.input);
+      const parsed = definition.inputSchema.safeParse(decoded.input);
       if (!parsed.success) {
         return settle("denied", `input rejected: ${parsed.error.message}`, "", {}, "invalid-input");
       }
@@ -178,6 +190,11 @@ export function createToolChokepoint(deps: ChokepointDependencies): ToolInvoker 
       );
     },
   };
+}
+
+/** An unknown tool has no schema to decode against, so nothing is decoded and nothing is claimed. */
+function emptyDecoding(input: unknown): DecodedToolArguments {
+  return { input, decodedFields: [] };
 }
 
 function confirmationNeeded(
