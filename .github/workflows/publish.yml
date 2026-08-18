@@ -1,0 +1,38 @@
+name: publish
+
+# Never on a push to a branch. A publish is triggered by tagging a release or by a person
+# choosing to, and prepublishOnly runs the gates again on the runner regardless.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Sigstore needs this to attest that the tarball came from this workflow on this commit.
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+
+      # What is about to be published, in the log, before it is published.
+      - run: npm pack --dry-run
+
+      # --provenance signs the tarball against this workflow and this commit, which is the
+      # one supply-chain claim a tool about verifiable evidence should not ship without.
+      # prepublishOnly runs the gates and the build; it is the interlock, not this step.
+      - run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
