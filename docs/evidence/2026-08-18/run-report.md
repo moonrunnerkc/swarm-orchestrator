@@ -43,6 +43,28 @@ Appended as the run proceeds.
 | 2.6 Weekly scan workflow | done, unfired | `.github/workflows/weekly-scan.yml`: Semgrep p/default at WARNING+, OSV-Scanner, fuzz smoke, issue on findings, hard fail if it cannot file one |
 | 2.7 `fuzz:build` on push | done, verified remotely | ran green in CI run 32150734348 |
 | 2.8 corpus-replay in CI | done, was broken, fixed | skipped 3/3 remotely before; runs 7/7 after `84d2370a` |
+| 3.1 Live end-to-end, frontier | done | `live-frontier/`, 42 records, verifier passes, `keySource: keychain` |
+| 3.1 Live end-to-end, local | done, third attempt | `live-local/`, 60 records. rapid-mlx failed inside its own streaming, mistral-small3.2 wrote nothing, qwen3.6:35b-mlx completed |
+| 3.1 Live keychain signing | done | both manifests say `keychain`, both verifiers confirm `ed25519, keychain key` |
+| 3.2 Clean-container verification | **NOT-RUN** | no container runtime on this machine: docker, podman, nerdctl, lima, colima, orbctl all absent. Command committed |
+| 3.3 Tamper demonstration | done | one byte, exit 0 and exit 1 side by side, reproducible from the committed bundle |
+| 3.4 Live hardware select | done, one machine | Apple M5 Max, 64 GB. Count stated as one; two more on the external-actions list |
+| 3.5 Live calibration | done | 60 runs, 1265-record bundle, verifier passes |
+| 3.6 Shakedown | done, split arms | criteria committed before running. 6 tasks frontier, 4 local after the credit ran out |
+| 3.7 Edit-quality battery | done, one arm | golden set already at 20. Local arm complete, frontier arm 30 of 60 then an outage |
+| 3.8 Routing-decision recorder | done | `src/select/routing-record.ts`, written at session open, 5 tests |
+| 3.9 Build guide 4.3 fallback | done | amended to match the code; batched into the section 4 pass so the file is written once |
+| 4.1 security-coverage.md | done | harness count, floor, ReDoS status, all five findings, corpus-replay CI answer |
+| 4.2 fuzz/README.md | done | all eight harnesses; both traps untouched |
+| 4.3 AGENTS.md sync + CI check | done | all twelve invariants identical; `scripts/check-invariant-drift.mjs` in CI |
+| 4.4 Build guide corrections | done | 4.3 fallback, the chokepoint stub line, the missing prompts file reference |
+| 5.1 Build to dist | done | `tsconfig.dist.json` plus asset copying; tsc alone shipped a broken CLI |
+| 5.2 Package hygiene | done | allowlist, `prepublishOnly`, `private: false`, all in one commit |
+| 5.3 Publish workflow | done, not triggered | `.github/workflows/publish.yml`, tag or dispatch only |
+| 5.4 LICENSE | done | ISC, carried forward from v12; no default needed |
+| 5.5 README | done | every capability claim links a committed artifact |
+| 5.6 CHANGELOG | done | the 12 to 13 break, v12 users pointed at `v12-final` |
+| 5.7 docs/claims.md | done | claim-to-artifact table plus the banned list verbatim |
 
 ## Decisions
 
@@ -78,3 +100,55 @@ by the CI run itself.
 
 **Push works.** The ruleset reports "Cannot update this protected ref" and then applies
 owner bypass, so `v13-main` pushes. Nothing went on the external-actions list for this.
+
+## Decisions in sections 3 to 5
+
+**Bundles are committed byte-exact rather than redacted.** Each task bundle holds six
+absolute home paths, all of them the coverage destination invariant 7 requires the harness to
+name outside the workspace. Editing those bytes changes a content address and breaks the
+chain the signature covers, so the bundle would stop verifying, and a bundle that does not
+verify is not evidence. The prose around them writes `~`. Re-running under a neutral `HOME`
+was tried first and blocks forever on a keychain prompt, so it is not a way out.
+
+**Two defects were found by doing section 3 and both were fixed at the root.**
+
+The first: a run that changed nothing scored 0.846. Every gate passes over an untouched tree,
+correctly, and the reward saw green, no retries, fast, free. The bandit was being taught that
+the model doing the least is the best available. Now zero, with the count taken from the
+diff-budget gate's own measure rather than recomputed. Found by a local model that declared
+two filenames that do not exist and stopped.
+
+The second: the calibration report cannot tell a repeat that failed from one that never ran.
+The frontier arm lost its credit ten cases in, and the ten cases that never executed rendered
+`0 of 3 green`, identical to a model that cannot do them. That is the distinction invariant 7
+spends its whole length on, missing one layer up. The stop reason was already in every
+record; the summary was not reading it.
+
+**The shakedown ran in two arms because the Anthropic balance ran out mid-run.** Six tasks
+completed on the frontier model. Task 7 died at step 26 with `credit balance is too low`, and
+tasks 8 to 10 died at step 0. The remaining four were re-run on the local model and are
+labelled as a separate arm. This is a forced deviation from the criteria file, which named
+the frontier model, and it is recorded rather than presented as the original plan. The
+criteria themselves were not touched after results were seen.
+
+**Task 1 of the shakedown was already done in the tree.** The chore it named, having
+`fuzz/smoke.mjs` print the corpus path it looked in, was already satisfied. It was not
+swapped out: replacing a task after seeing its result is the thing writing criteria first
+exists to prevent. It is recorded as what it is, and it produced a useful result anyway, a
+run that correctly changed nothing and scored zero.
+
+**The shakedown workspaces contain the criteria file.** The clone is of this repository at a
+commit that already had `pass-criteria.md`, so agents could and did read it. It describes the
+shakedown rather than the tasks, so it is not an answer key, but it is contamination and is
+named here rather than left to be discovered.
+
+**The golden set was not extended.** The item asks for twenty or more cases and it holds
+twenty. Extending it mid-measurement would have made the two arms incomparable. The class
+imbalance, edit 9, test-fix 8, tool-heavy 2, multi-file 1, is stated in the results file so
+no per-class number gets read off one case.
+
+**LICENSE needed no default.** Both `main` and `v12-final` carry ISC under moonrunnerkc, so
+the v13 tree carries ISC forward. The MIT fallback the item described was not reached.
+
+**Pushes work under owner bypass.** The ruleset reports "Cannot update this protected ref"
+and then applies the bypass, so `v13-main` pushed twice during this run and CI ran on both.
