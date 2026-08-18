@@ -1,22 +1,24 @@
 {
   "name": "swarm-orchestrator",
   "version": "13.0.0",
-  "private": true,
+  "private": false,
   "type": "module",
   "bin": {
-    "swarm": "src/cli.ts"
+    "swarm": "dist/cli.js"
   },
   "engines": {
     "node": ">=24.0.0"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "lint": "biome check",
-    "format": "biome format --write",
-    "test": "vitest run",
-    "gates": "npm run typecheck && npm run lint && npm test",
+    "build": "node scripts/build-dist.mjs",
     "dev": "mkdir -p .swarm/dev-workspace && node src/cli.ts --workspace .swarm/dev-workspace",
-    "fuzz:build": "rm -rf .swarm/fuzz-build && tsc -p fuzz/tsconfig.build.json && node fuzz/smoke.mjs"
+    "format": "biome format --write",
+    "fuzz:build": "rm -rf .swarm/fuzz-build && tsc -p fuzz/tsconfig.build.json && node fuzz/smoke.mjs",
+    "gates": "npm run typecheck && npm run lint && npm test",
+    "lint": "biome check",
+    "prepublishOnly": "npm run gates && npm run build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@ai-sdk/provider": "^4.0.7",
@@ -37,5 +39,15 @@
     "react": "^19.2.8",
     "smol-toml": "^1.8.0",
     "zod": "^4.4.3"
-  }
+  },
+  "license": "ISC",
+  "files": [
+    "dist/",
+    "docs/build-guide.md",
+    "docs/security-coverage.md",
+    "docs/claims.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md"
+  ]
 }
