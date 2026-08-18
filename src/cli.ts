@@ -52,6 +52,7 @@ import {
 import { discoverLocalEndpoints } from "./providers/local-discovery.ts";
 import { type ModelSpec, parseModelSpec } from "./providers/model-spec.ts";
 import { createProviderRegistry } from "./providers/registry.ts";
+import { fetchServedModels } from "./providers/served-models.ts";
 import { runCalibration } from "./select/calibrate.ts";
 import { parseCalibrationCase } from "./select/calibration-case.ts";
 import { payloadsSince } from "./select/calibration-measures.ts";
@@ -59,6 +60,11 @@ import { renderCalibrationReport } from "./select/calibration-report.ts";
 import { appendCalibrationCase, defaultGoldenSetPath, readGoldenSet } from "./select/golden-set.ts";
 import { probeHardware } from "./select/hardware-probe.ts";
 import { createOllamaMemoryProbe } from "./select/memory-probe.ts";
+import {
+  describePreflight,
+  preflightLocalModels,
+  preflightRecord,
+} from "./select/model-preflight.ts";
 import { defaultPickPath, readCalibrationPick, writeCalibrationPick } from "./select/pick-store.ts";
 import { loadPricing } from "./select/pricing-source.ts";
 import { calibrationCandidates, recommendModel } from "./select/recommendation.ts";
@@ -605,18 +611,33 @@ async function calibrate(options: CalibrateCommand): Promise<number> {
   if (localBackend !== null) {
     await evidence.record(localEndpointRecord(localBackend));
   }
+
+  // Before any run exists: a model the backend does not serve fails at dispatch, and repeats
+  // that never dispatched would be recorded as runs of a model nothing was measured about.
+  const runSet =
+    localBackend === null ? models : await preflight(evidence, localBackend.url, models);
+  if (runSet.length === 0) {
+    const empty = await writeBundle(evidence, options.bundleDirectory, clock);
+    process.stdout.write(
+      "no usable model: the backend serves none of the models asked for, so nothing was " +
+        "calibrated, no runs were created, and no pick was written.\n",
+    );
+    announceBundle(empty);
+    return 1;
+  }
+
   const registry = createProviderRegistry(registrySettingsFrom(settings, localBackend));
   // Outside the session store, which tools may never write to, and outside any workspace.
   const scratchRoot = await mkdtemp(join(tmpdir(), "swarm-calibration-"));
 
   process.stdout.write(
-    `calibrating ${models.length} model(s) over ${goldenSet.cases.length} case(s), ` +
+    `calibrating ${runSet.length} model(s) over ${goldenSet.cases.length} case(s), ` +
       `${options.repeats} repeat(s) each\n`,
   );
 
   try {
     const result = await runCalibration({
-      models,
+      models: runSet,
       repeats: options.repeats,
       goldenSet,
       staticPick,
@@ -654,7 +675,7 @@ async function calibrate(options: CalibrateCommand): Promise<number> {
 
     await writeCalibrationPick(defaultPickPath(home), {
       model: result.pick.model,
-      candidates: [...models],
+      candidates: [...runSet],
       goldenSetVersion: result.goldenSetVersion,
       recordedAt: clock.now(),
     });
@@ -662,6 +683,36 @@ async function calibrate(options: CalibrateCommand): Promise<number> {
   } finally {
     await rm(scratchRoot, { recursive: true, force: true });
   }
+}
+
+/** How long a local backend gets to say what it serves before the answer stops being worth waiting for. */
+const servedModelsTimeoutMs = 2_000;
+
+/**
+ * Which of the requested models the backend is actually serving, recorded and said out loud.
+ * A backend that cannot be asked excludes nothing: an unanswered probe is not a backend
+ * serving nothing, and treating it as one would drop every model on no evidence at all.
+ */
+async function preflight(
+  evidence: EvidenceRecorder,
+  backendUrl: string,
+  models: readonly string[],
+): Promise<readonly string[]> {
+  const checked = preflightLocalModels({
+    requested: models,
+    backendUrl,
+    list: await fetchServedModels({
+      baseUrl: backendUrl,
+      fetch: (url, init) => fetch(url, init),
+      signal: AbortSignal.timeout(servedModelsTimeoutMs),
+    }),
+  });
+
+  await evidence.record(preflightRecord(checked));
+  for (const line of describePreflight(checked)) {
+    process.stdout.write(`${line}\n`);
+  }
+  return checked.runnable;
 }
 
 /** Turns a task that went wrong into a case the golden set will measure against forever. */
