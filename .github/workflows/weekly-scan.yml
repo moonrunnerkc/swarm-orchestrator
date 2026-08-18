@@ -1,0 +1,74 @@
+name: weekly scan
+
+# Push CI answers "did this change break something". This answers "did the world change
+# under a tree nobody touched": a new advisory against a pinned dependency, a new Semgrep
+# rule, or a fuzz harness that stopped loading. None of those arrive on a push.
+on:
+  schedule:
+    # Monday 06:17 UTC. Off the hour, since the hour is when every scheduled job on the
+    # runner fleet queues at once.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+
+      # Not continue-on-error. The smoke check exists because a harness that stopped
+      # loading prints what a harness that found nothing prints, so harness rot has to be
+      # the loudest thing in the run rather than a line in an issue body.
+      - name: fuzz harness smoke
+        run: npm run fuzz:build
+
+      - name: semgrep p/default, warning and above
+        id: semgrep
+        continue-on-error: true
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src semgrep/semgrep:1.173.0 \
+            semgrep --config p/default \
+                    --severity WARNING --severity ERROR \
+                    --error --metrics off --oss-only
+
+      - name: osv-scanner
+        id: osv
+        continue-on-error: true
+        uses: google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
+        with:
+          scan-args: |-
+            --recursive
+            --skip-git
+            ./
+
+      - name: file an issue for whatever was found
+        if: steps.semgrep.outcome == 'failure' || steps.osv.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A scan whose findings go nowhere is a scan that did not run. If the token
+          # cannot open an issue, the job fails rather than passing quietly.
+          if ! gh auth status >/dev/null 2>&1; then
+            echo "::error::findings exist and gh is not authenticated, so nothing can be filed"
+            exit 1
+          fi
+          gh issue create \
+            --title "weekly scan findings, $(date -u +%Y-%m-%d)" \
+            --label security \
+            --body "$(printf '%s\n' \
+              "semgrep: ${{ steps.semgrep.outcome }}" \
+              "osv-scanner: ${{ steps.osv.outcome }}" \
+              "" \
+              "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              "" \
+              "Findings are in that run's logs. This issue is the notification, not the report.")" \
+            || { echo "::error::gh issue create failed, so findings would go unreported"; exit 1; }
