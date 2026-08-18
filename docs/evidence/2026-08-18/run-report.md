@@ -152,3 +152,59 @@ the v13 tree carries ISC forward. The MIT fallback the item described was not re
 
 **Pushes work under owner bypass.** The ruleset reports "Cannot update this protected ref"
 and then applies the bypass, so `v13-main` pushed twice during this run and CI ran on both.
+
+## External actions
+
+Everything this run prepared but did not execute, with the exact command. Each is here
+because it is irreversible, needs a credential this session does not have, or needs hardware
+this machine is not.
+
+**Push the v12 tag and every branch and tag.** The ruleset applies owner bypass on push, and
+`v13-main` pushed twice during this run, so this is a matter of doing it rather than a block.
+
+    git push origin v12-final
+    git push origin --all
+    git push origin --tags
+
+**Push the v13.0.0 tag.** Tagged locally in this run, deliberately not pushed, because
+pushing it is what triggers the publish workflow.
+
+    git push origin v13.0.0
+
+**Repoint the GitHub default branch to the v13 lineage.** The histories share no merge base,
+so this is a branch repoint rather than a merge. Doing it also fixes the shortlist 404 in
+`hardware-select.md`, since the URL the probe fetches points at `main`.
+
+    gh api -X PATCH repos/moonrunnerkc/swarm-orchestrator -f default_branch=v13-main
+
+**Publish, after a human reads the pack contents.** `prepublishOnly` runs the gates and the
+build; the tarball is in `npm-pack-dry-run.md`. `npm whoami` reported `ENEEDAUTH` in this
+session, so nothing could have been published from here even by accident.
+
+    npm login
+    npm publish --provenance --access public
+
+**Run the live select capture on each additional physical machine.** One machine was
+available and the report says one. The Phase 4 gate wants three.
+
+    swarm select > select-<machine>.txt
+
+**Verify a bundle in a clean container.** No container runtime exists here, recorded NOT-RUN
+in `clean-container-verification.md`.
+
+    docker run --rm -v "$PWD/docs/evidence/2026-08-18/live-frontier:/bundle:ro" \
+      node:24 node /bundle/verify.mjs /bundle
+
+**Watch the first weekly scan.** `weekly-scan.yml` fires Mondays and has never run, so
+Semgrep and OSV-Scanner in it are unexercised. Trigger it early rather than waiting:
+
+    gh workflow run weekly-scan.yml --ref v13-main
+    gh run watch "$(gh run list --workflow=weekly-scan.yml --limit 1 --json databaseId --jq '.[0].databaseId')"
+
+**Complete the second calibration arm.** The frontier arm ran 30 of 60 before the Anthropic
+credit ran out. With credit restored, or another provider:
+
+    swarm calibrate --models anthropic:claude-sonnet-5 --repeats 3
+
+The first CI watch is **not** on this list: it happened, twice, and both runs are recorded in
+`corpus-replay-ci.md`.
