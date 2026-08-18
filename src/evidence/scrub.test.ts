@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { findBlockingSecrets, findKnownSecrets, scrubJson, scrubText } from "./scrub.ts";
 
@@ -202,10 +204,15 @@ describe("detection keyed on the name rather than the shape of the value", () =>
         items,
         found: ["credential-assignment"],
       });
+      // scrubText walks JSON rather than scanning it as lines, so the marker lands as a
+      // value and the result still parses. Splicing it in as text gave back
+      // {"PIN":[redacted:...]}, which is not JSON: scrubbing a payload destroyed the thing
+      // that made it readable, and every reader downstream inherited that.
       expect({ items, scrubbed: scrubText(text).value }).toEqual({
         items,
-        scrubbed: '{"PIN":[redacted:credential-assignment]}',
+        scrubbed: '{"PIN":"[redacted:credential-field]"}',
       });
+      expect(() => JSON.parse(scrubText(text).value) as unknown).not.toThrow();
     }
   });
 
@@ -316,5 +323,108 @@ describe("detection keyed on the name rather than the shape of the value", () =>
     expect(outcome.redactions).toEqual(["credential-assignment"]);
     expect(findKnownSecrets("key: gate.gateId }")).toContain("credential-assignment");
     expect(findBlockingSecrets("key: gate.gateId }")).toEqual([]);
+  });
+});
+
+/**
+ * Invariant 9 says one detector serves the write-time scrub, the export-time scan and the
+ * gate, "so the three cannot drift apart". They did. These pin the property rather than any
+ * one input, because every case below was found by the fuzz harness asserting the property
+ * and none of them was a shape anybody would have thought to write down.
+ */
+describe("the write-time scrub and the export scan agree", () => {
+  const artifacts = readdirSync(join(import.meta.dirname, "../../fuzz/findings"))
+    .filter((entry) => entry.endsWith(".input"))
+    .sort();
+
+  it("has the artifacts that found the drift", () => {
+    expect(artifacts.length).toBeGreaterThanOrEqual(5);
+  });
+
+  for (const artifact of artifacts) {
+    it(`leaves nothing for the export scan to find in ${artifact}`, () => {
+      const text = readFileSync(join(import.meta.dirname, "../../fuzz/findings", artifact), "utf8");
+      const once = scrubText(text);
+
+      // The property, stated as the invariant states it: whatever write-time scrubbing
+      // leaves behind is exactly what the export scan is about to read, so the scan finding
+      // anything in scrubbed output is the two sites disagreeing about the same bytes.
+      expect({ artifact, residual: findKnownSecrets(once.value) }).toEqual({
+        artifact,
+        residual: [],
+      });
+      // And scrubbing settles, so an export scan cannot refuse a bundle for the redaction
+      // that protected it.
+      expect({ artifact, again: scrubText(once.value).value }).toEqual({
+        artifact,
+        again: once.value,
+      });
+    });
+  }
+
+  it("agrees on generated inputs too, not only the ones already found", () => {
+    const names = ["password", "api_key", "client_secret", "api/_key", "secret-scan", "count"];
+    const values = ["", "pw", "hunter2", "passed", "0123456789abcdefghij", "482917", "9911"];
+    const shapes = [
+      (n: string, v: string) => JSON.stringify({ [n]: v }),
+      (n: string, v: string) => JSON.stringify({ outer: { inner: { [n]: v } } }),
+      (n: string, v: string) => `${n} = "${v}"`,
+      (n: string, v: string) => `+ {"a":{"${n}":"${v}"}}`,
+    ];
+
+    for (const name of names) {
+      for (const value of values) {
+        for (const shape of shapes) {
+          const text = shape(name, value);
+          const once = scrubText(text);
+          expect({ text, residual: findKnownSecrets(once.value) }).toEqual({
+            text,
+            residual: [],
+          });
+          expect({ text, again: scrubText(once.value).value }).toEqual({ text, again: once.value });
+          // The gate is the scan minus the matches too loose to block on, never more.
+          for (const blocking of findBlockingSecrets(text)) {
+            expect({ text, blocking, known: findKnownSecrets(text) }).toEqual({
+              text,
+              blocking,
+              known: expect.arrayContaining([blocking]),
+            });
+          }
+        }
+      }
+    }
+  });
+});
+
+describe("a value under a credential name is judged by the name, not by its length", () => {
+  it("redacts a short password, which eight characters used to let through", () => {
+    for (const secret of ["pw12", "s3cr3t", "hunter2", "hunter22"]) {
+      expect({ secret, outcome: scrubJson({ password: secret }) }).toEqual({
+        secret,
+        outcome: {
+          value: { password: "[redacted:credential-field]" },
+          redactions: ["credential-field"],
+        },
+      });
+    }
+  });
+
+  it("still refuses to block a change over a value that is merely opaque", () => {
+    // Scrubbing is fail-safe and blocking is not, so shape decides the gate and nothing else.
+    expect(findBlockingSecrets(`password = "hunter2"`)).toEqual([]);
+    expect(findKnownSecrets(`password = "hunter2"`)).toEqual(["credential-assignment"]);
+  });
+
+  it("leaves a value too short to carry a credential alone", () => {
+    expect(scrubJson({ keys: ["a", "b"], password: "pw" })).toEqual({
+      value: { keys: ["a", "b"], password: "pw" },
+      redactions: [],
+    });
+  });
+
+  it("keeps a gate result readable, since a redacted gate result is evidence of nothing", () => {
+    const gates = { "secret-scan": "passed", tests: "escalated" };
+
+    expect(scrubJson({ gates })).toEqual({ value: { gates }, redactions: [] });
   });
 });
