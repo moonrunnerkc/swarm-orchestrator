@@ -1,6 +1,6 @@
 # Swarm Orchestrator v13: Build Guide
 
-Strategic build document. No implementation code here by design: code belongs in the phased build sessions (see the companion prompts file), where each component gets full context. This document defines what to build, why, in what order, and what to refuse to build.
+Strategic build document. No implementation code here by design: code belongs in the phased build sessions, where each component gets full context. This document defines what to build, why, in what order, and what to refuse to build.
 
 ---
 
@@ -109,7 +109,7 @@ v12 solved a strictly harder version of the section 3.6 problem and the findings
 
 Happy path: user task in, planner emits plan (recorded), loop executes tool calls (each recorded with provenance), model claims completion, gates engine runs (outputs recorded), evidence DAG assembled linking claims to records, all claims resolve, bundle exported, TUI shows verified summary.
 
-Failure paths: gate fails, raw output returns to the model, retry under ratchet, cap reached, escalate with bundle. Tool fails, error is evidence too, loop decides retry or replan. Provider fails, exponential backoff, then fallback model if configured, and the fallback is recorded because a model swap mid-task is exactly what a reviewer wants to know. Injection suspicion (derivation-heuristic match on a shell argument), block and require confirmation, confirmation recorded. Ledger write failure is fatal by design: no evidence, no execution.
+Failure paths: gate fails, raw output returns to the model, retry under ratchet, cap reached, escalate with bundle. Tool fails, error is evidence too, loop decides retry or replan. Provider fails, exponential backoff, then the run stops with the provider error as evidence. There is no configured mid-task fallback model and none is planned: the registry refuses to substitute a model the caller did not ask for, and refuses a local model with no resolved endpoint rather than guessing a port, because a silent swap would bypass the record of which model ran. A run that swapped models halfway and recorded it would be defensible; one that swapped silently is exactly what a reviewer cannot see, and the cheapest way to be sure the swap is recorded is not to have one. Injection suspicion (derivation-heuristic match on a shell argument), block and require confirmation, confirmation recorded. Ledger write failure is fatal by design: no evidence, no execution.
 
 ## 5. Operational Considerations
 
@@ -129,7 +129,7 @@ swarm-orchestrator@12.1.1 was published with three bins (swarm, swarm-audit, swa
 Each phase independently shippable, each with a decision gate. Rollback rule for every phase: the previous phase's test suite is the golden set and must stay green.
 
 - **Phase 0, scaffold.** Repo, strict TS, Biome, Vitest, CI, CLAUDE.md, empty module boundaries. Gate: all gates run green on empty project.
-- **Phase 1, an agent that codes.** Provider layer (frontier plus one local via OpenAI-compat, plus the fixture provider), tool layer with chokepoint stub, core loop, minimal TUI. Gate: loop, termination, and sandbox tests pass deterministically against the fixture provider in CI, and a real small task completes end to end in a scratch repo.
+- **Phase 1, an agent that codes.** Provider layer (frontier plus one local via OpenAI-compat, plus the fixture provider), tool layer with the recording chokepoint, core loop, minimal TUI. Gate: loop, termination, and sandbox tests pass deterministically against the fixture provider in CI, and a real small task completes end to end in a scratch repo.
 - **Phase 2, evidence.** Ledger, blobs, provenance tags, DAG, bundle export, embedded verifier, HTML review page, replay command. Gate: exported bundle verifies on a machine without v13 installed; a tampered record fails verification; a claim whose predicate is false against its genuine cited record, and a claim citing a record that does not exist, both render UNVERIFIED.
 - **Phase 3, gates and auto-resolve.** Gates engine, numeric ratchet loop, slop detectors, diff budget, escalation. Gate: an injected failing test gets auto-resolved within cap, with the full attempt history in the bundle; an injected oscillation escalates instead of looping; a retry that holds the tests gate green by deleting the failing tests is rejected by the numeric ratchet.
 - **Phase 4, hardware fit.** Probe, shortlist fetch, static recommendation with reasoning shown. Gate: sensible recommendations on at least three real hardware profiles.
