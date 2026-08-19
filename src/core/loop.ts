@@ -39,6 +39,8 @@ export interface AgentLoopDependencies {
 export interface AgentLoopOutcome {
   readonly stopReason: StopReason;
   readonly steps: number;
+  /** Steps whose response carried something: text, a tool call, or both. */
+  readonly answeredSteps: number;
   readonly tokensUsed: number;
   /** The plan the model stated on its first turn, as unverified prose. */
   readonly plan: string;
@@ -59,12 +61,13 @@ export async function runAgentLoop(
   const startedAt = deps.clock.now();
   const messages: ConversationMessage[] = [{ role: "user", text: task }];
   let steps = 0;
+  let answeredSteps = 0;
   let tokensUsed = 0;
   let plan = "";
 
   const finish = (stopReason: StopReason, completionClaim: string): AgentLoopOutcome => {
     deps.emit({ type: "stopped", reason: stopReason, steps, tokensUsed });
-    return { stopReason, steps, tokensUsed, plan, completionClaim, messages };
+    return { stopReason, steps, answeredSteps, tokensUsed, plan, completionClaim, messages };
   };
 
   for (;;) {
@@ -91,6 +94,10 @@ export async function runAgentLoop(
     }
 
     steps += 1;
+    const answered = response.text.trim().length > 0 || response.toolCalls.length > 0;
+    if (answered) {
+      answeredSteps += 1;
+    }
     tokensUsed += response.inputTokens + response.outputTokens;
     messages.push({
       role: "assistant",
@@ -101,6 +108,12 @@ export async function runAgentLoop(
     if (steps === 1) {
       plan = response.text;
       deps.emit({ type: "plan", text: response.text });
+    }
+
+    if (!answered) {
+      // No claim is emitted: there is no text to claim anything, and recording an empty
+      // string as the model's account of finishing would be the harness writing the claim.
+      return finish("empty-response", "");
     }
 
     if (response.toolCalls.length === 0) {
