@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { statSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { arch, homedir, platform, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -53,6 +53,12 @@ import { discoverLocalEndpoints } from "./providers/local-discovery.ts";
 import { type ModelSpec, parseModelSpec } from "./providers/model-spec.ts";
 import { createProviderRegistry } from "./providers/registry.ts";
 import { fetchServedModels } from "./providers/served-models.ts";
+import {
+  type BackendCanary,
+  canaryRecord,
+  describeCanary,
+  runBackendCanary,
+} from "./select/backend-canary.ts";
 import { runCalibration } from "./select/calibrate.ts";
 import { parseCalibrationCase } from "./select/calibration-case.ts";
 import { payloadsSince } from "./select/calibration-measures.ts";
@@ -79,6 +85,8 @@ import { classifyTask } from "./select/task-class.ts";
 import { costOfTask, type TaskCost } from "./select/task-cost.ts";
 import { type RoutingDecision, routeModel } from "./select/ucb.ts";
 import type { ConfirmationRequest } from "./tools/chokepoint.ts";
+import { createSandbox, defaultShellAllowlist } from "./tools/sandbox.ts";
+import { createWorkspaceTools } from "./tools/workspace-tools.ts";
 import { describeLoopEvent } from "./tui/plain-lines.ts";
 import { startSessionInterface } from "./tui/session-interface.ts";
 import { renderParallelReport } from "./workers/parallel-report.ts";
@@ -630,6 +638,20 @@ async function calibrate(options: CalibrateCommand): Promise<number> {
   // Outside the session store, which tools may never write to, and outside any workspace.
   const scratchRoot = await mkdtemp(join(tmpdir(), "swarm-calibration-"));
 
+  // One round trip before the golden set: a runtime that cannot form a single tool call will
+  // score every model at zero, and learning that from the report costs the whole run.
+  const canary = await canaryFor(evidence, registry, runSet, scratchRoot);
+  if (canary !== null && !canary.healthy) {
+    const sick = await writeBundle(evidence, options.bundleDirectory, clock);
+    process.stdout.write(
+      "no usable backend: calibration would measure the runtime rather than the model, " +
+        "so no runs were created and no pick was written.\n",
+    );
+    announceBundle(sick);
+    await rm(scratchRoot, { recursive: true, force: true });
+    return 1;
+  }
+
   process.stdout.write(
     `calibrating ${runSet.length} model(s) over ${goldenSet.cases.length} case(s), ` +
       `${options.repeats} repeat(s) each\n`,
@@ -683,6 +705,49 @@ async function calibrate(options: CalibrateCommand): Promise<number> {
   } finally {
     await rm(scratchRoot, { recursive: true, force: true });
   }
+}
+
+/** Enough attempts to tell a runtime that cannot form a call from one that merely stumbled. */
+const canaryAttempts = 3;
+
+/**
+ * The canary, against the first local model in the run set. Frontier models are not what this
+ * watches: it exists for a local runtime whose tool-call transport has stopped working, which
+ * is a property of the backend rather than of any one model it serves.
+ */
+async function canaryFor(
+  evidence: EvidenceRecorder,
+  registry: ReturnType<typeof createProviderRegistry>,
+  runSet: readonly string[],
+  scratchRoot: string,
+): Promise<BackendCanary | null> {
+  const local = runSet.find((spec) => parseModelSpec(spec).provider === "local");
+  if (local === undefined) {
+    return null;
+  }
+
+  const probeRoot = join(scratchRoot, "canary");
+  await mkdir(probeRoot, { recursive: true });
+  const sandbox = createSandbox({
+    workspaceRoot: probeRoot,
+    homeDir: probeRoot,
+    shellAllowlist: defaultShellAllowlist,
+    deniedRoots: [],
+  });
+
+  const canary = await runBackendCanary({
+    modelSpec: local,
+    model: registry.create(parseModelSpec(local)),
+    tools: createWorkspaceTools(sandbox),
+    attempts: canaryAttempts,
+    abortSignal: new AbortController().signal,
+  });
+
+  await evidence.record(canaryRecord(canary));
+  for (const line of describeCanary(canary)) {
+    process.stdout.write(`${line}\n`);
+  }
+  return canary;
 }
 
 /** How long a local backend gets to say what it serves before the answer stops being worth waiting for. */
