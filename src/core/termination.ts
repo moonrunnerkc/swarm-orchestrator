@@ -4,7 +4,14 @@ export type StopReason =
   | "max-tokens"
   | "max-wall-time"
   | "interrupted"
-  | "model-error";
+  | "model-error"
+  /**
+   * The runtime answered with neither text nor a tool call. Kept apart from "completed"
+   * because a turn carrying nothing is not the model reporting it is done: a local runtime
+   * that buffers a partial tool call and never flushes it returns exactly this, and reading
+   * it as a completion turns the runtime dropping output into the model giving up.
+   */
+  | "empty-response";
 
 export interface LoopBudget {
   readonly maxSteps: number;

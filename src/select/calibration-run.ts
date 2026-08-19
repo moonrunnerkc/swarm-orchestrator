@@ -139,8 +139,9 @@ export async function runCalibrationRepeat(
   const produced = payloadsSince(deps.evidence, fromIndex);
   const toolCalls = tallyToolCalls(produced);
   const modelCalls = tallyModelCalls(produced);
-  // A step is counted only once a call has come back, so no steps is no answer from the model.
-  const executed = outcome.steps > 0;
+  // Answered rather than dispatched: a runtime can return a turn carrying nothing, and a
+  // repeat made only of those measured the runtime, not the model.
+  const executed = outcome.answeredSteps > 0;
 
   const recorded = await deps.evidence.record({
     type: "calibration-run",
@@ -154,6 +155,7 @@ export async function runCalibrationRepeat(
       repeat: request.repeat,
       stopReason: outcome.stopReason,
       steps: outcome.steps,
+      answeredSteps: outcome.answeredSteps,
       executed,
       gateCommand: request.case.gateCommand,
       gateExitCode: gate.exitCode,

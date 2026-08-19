@@ -218,3 +218,48 @@ describe("runAgentLoop", () => {
     expect(model.requests[1]?.messages).toHaveLength(3);
   });
 });
+
+/**
+ * Found on a rapid-mlx backend whose streaming path buffers a partial tool call and never
+ * flushes it: the turn arrives with usage reporting output tokens and with neither text nor a
+ * tool call in it. Read as a completion, that is the runtime dropping output rendered as the
+ * model declaring itself finished, and calibration then scores the silence against the model.
+ */
+describe("a turn that carries nothing", () => {
+  it("stops as an empty response rather than as a completion", async () => {
+    const harness = createHarness([respondWithText("")]);
+    const outcome = await runAgentLoop("do the thing", harness.deps);
+
+    expect(outcome.stopReason).toBe("empty-response");
+    expect(outcome.steps).toBe(1);
+    expect(outcome.answeredSteps).toBe(0);
+  });
+
+  it("claims nothing, because there is nothing there to claim", async () => {
+    const harness = createHarness([respondWithText("   \n  ")]);
+    const outcome = await runAgentLoop("do the thing", harness.deps);
+
+    expect(outcome.completionClaim).toBe("");
+    expect(harness.events.filter((event) => event.type === "claim")).toHaveLength(0);
+  });
+
+  it("still reads a real summary with no tool calls as the completion it is", async () => {
+    const harness = createHarness([respondWithText("I changed greet.mjs and the suite passes.")]);
+    const outcome = await runAgentLoop("do the thing", harness.deps);
+
+    expect(outcome.stopReason).toBe("completed");
+    expect(outcome.answeredSteps).toBe(1);
+    expect(outcome.completionClaim).toMatch(/greet.mjs/);
+  });
+
+  it("counts a turn that carried only a tool call as answered", async () => {
+    const harness = createHarness([
+      respondWithToolCalls("", [{ callId: "c1", toolName: "read", input: { path: "a" } }]),
+      respondWithText("done"),
+    ]);
+    const outcome = await runAgentLoop("do the thing", harness.deps);
+
+    expect(outcome.stopReason).toBe("completed");
+    expect(outcome.answeredSteps).toBe(2);
+  });
+});
