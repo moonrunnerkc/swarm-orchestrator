@@ -131,6 +131,42 @@ describe("keychain key storage", () => {
     expect(resolved.notice).toContain("per-run key");
   });
 
+  /**
+   * Found on a real machine: the entry under this service and account held a nine-character
+   * string, so every run fell back to a per-run key and said only that an ASN.1 decoding
+   * routine did not have enough data. The entry is left alone, because overwriting one whose
+   * contents nobody recognizes is destroying something to fix a signature.
+   */
+  it("says what to look at when the keychain holds something that is not a key", async () => {
+    const { run, calls } = createRunner(() => ({ stdout: "kyQpFr98!\n" }));
+
+    const resolved = await resolveSigningKey(
+      createKeychainSecretStore({ platform: "darwin", run }),
+    );
+
+    expect(resolved.key.source).toBe("ephemeral");
+    expect(resolved.notice).toContain("swarm-orchestrator/bundle-signing-key");
+    expect(resolved.notice).toContain("is not an ed25519 private key");
+    expect(resolved.notice).toContain("Delete that entry");
+    // Read once and nothing written: the entry is the user's, and this is not the code that
+    // decides to replace it.
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.args[0]).toBe("find-generic-password");
+  });
+
+  it("says the storing failed when that is what failed, rather than blaming the read", async () => {
+    const { run } = createRunner((call) =>
+      call.args[0] === "find-generic-password" ? { code: 44 } : { code: 1, stderr: "locked" },
+    );
+
+    const resolved = await resolveSigningKey(
+      createKeychainSecretStore({ platform: "darwin", run }),
+    );
+
+    expect(resolved.notice).toContain("would not take a new key");
+    expect(resolved.notice).toContain("locked");
+  });
+
   it("falls back and explains itself when the keychain refuses", async () => {
     const { run } = createRunner((call) =>
       call.args[0] === "find-generic-password" ? { code: 44 } : { code: 1, stderr: "user denied" },
