@@ -22,6 +22,9 @@ jobs:
       # CLAUDE.md and AGENTS.md carry one invariant block for two readers, and it has
       # drifted before. Cheap, and it runs before the suite so the failure is legible.
       - run: node scripts/check-invariant-drift.mjs
+      # A document pointing at a file that is not there is the defect the 08-18 run found in
+      # redteam/pass5. A reader following the pointer discovers it; nothing else does.
+      - run: node scripts/check-doc-paths.mjs
       - run: npm run gates
       # The 8-harness smoke, cheap enough for every push. Without it a harness that
       # stopped loading, or one built against a stale .swarm/fuzz-build, is only found
