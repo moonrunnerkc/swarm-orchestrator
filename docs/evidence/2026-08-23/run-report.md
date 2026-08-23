@@ -53,6 +53,29 @@ Appended as the run proceeds.
 | 2.2 Repoint default branch | done | `gh api -X PATCH ... -f default_branch=v13-main`, confirmed by `git ls-remote --symref origin HEAD` reporting `ref: refs/heads/v13-main` |
 | 2.3 Branch-naming audit | done, one real defect fixed | README gates badge already names `v13-main`. The two curated-JSON URLs named `main` and answered 404; fixed in `4ca7aa0a` |
 | 2.4 v12 reachable, changelog correct | done, one correction | tag reachable from a fresh clone. The changelog told v12 users to install `@12.1.1`, which the registry does not carry; corrected in `3f158e21` |
+| 3.1 Non-TTY output frozen first | done | `src/tui/fixtures/plain-lines.txt`, captured before any interface work, asserted byte for byte by `src/tui/plain-lines.test.ts` |
+| 3.2 The stdin collision | done, fixed at the root | one owner of stdin per process: the confirmation is a component inside the running screen, answered by the same key dispatcher; readline is left to the path where Ink is not running. `src/tui/confirmation-path.test.ts` drives a keystroke through the dispatcher into `createToolChokepoint`, both directions |
+| 3.3 The screen | done | header, plan, action stream, expandable detail with the record digest, gate strip, status, hint bar. Keys for scroll, expand, focus, filter, pause, help, evidence, and two distinct exits |
+| 3.4 Honest progress | done | elapsed from the injected clock, step, token, attempt and ratchet counters, all from `LoopEvent`. No percentage anywhere, asserted in `screen-model.test.ts` |
+| 3.5 Resize, narrow, colourless | done | `SIGWINCH` handled, laid out and tested at 60, 80, 120 and 200 columns and every height from one row to sixty, `NO_COLOR` and `TERM=dumb` captured from real pty runs |
+| 3.6 Config and flags | done | `[interface]`, `[theme]` and `[keys]` in swarm.toml, five screen flags, precedence unchanged from `src/config/settings.ts` |
+| 3.7 Evidence panel | done | artifacts by purpose, record and claim counts, verified only where the embedded verifier ran here and exited 0, opened by argv on a harness-computed path. `swarm review <bundle>` reuses it |
+| 3.8 Recording | done | `interface.cast` (asciinema v2, parsed and converted by asciinema 3.2.1) and `interface-frames.txt`, nine frames from four real pty captures |
+| 3.9 `interface.md`, README, claims rows | done | keymap, config surface, degradation matrix; four claims rows, each naming an artifact |
+| 4. Clean-container verification | done | `clean-container-verification.md`: both arms in a `node:24` container with no network and no mount of this repository, exit 0 and exit 1 |
+| 6.1 Edit-quality battery, frontier arm | **NOT-DONE** | both keys authenticate and neither has a balance, checked live. `partial-arms.md` |
+| 6.2 Hardware select, two more machines | **NOT-DONE** | not reachable from this session. `partial-arms.md` |
+| 8.1 `schema-v1` | done, kept | the only reference to `79c9c856` anywhere; pushed and documented rather than deleted. `tag-and-branch-hygiene.md` |
+| 8.2 Local-only refs | done | three branches with unique commits pushed, two phase tags named as intentionally local |
+| 8.3 Branch cleanup | done | nine ancestors deleted with `-d`, hashes recorded first; four non-ancestors kept |
+| 9.1 Dependency currency | done | 7 patch bumps proposed, none taken mid-release; `@types/node` held at the runtime floor deliberately |
+| 9.2 `npm audit` | done | 0 vulnerabilities |
+| 9.3 Drift | done | 12 invariants identical; `fuzz/README.md` current at 8 harnesses; `security-coverage.md` corrected on two counts |
+| 9.4 Dangling doc pointers | done, now in CI | `scripts/check-doc-paths.mjs`: 212 references, zero misses, two named and known |
+| 9.5 Coverage | done | chokepoint 98.3%, core 98.8%, evidence 94.4%, gates 94.2%, tui 75.7%, tree 85.2% |
+| 9.6 Invariant 8 | done | zero in `src/core`, and the interface work added none |
+| 10.4 The four residuals | done, unchanged | build guide 7.1 untouched by this run, all four cases still assert their gaps, suite 49 green |
+| 10.5 Build guide 4.2 | done | the component list describes the interface that now exists |
 
 ## Decisions, phases 1 and 2
 
