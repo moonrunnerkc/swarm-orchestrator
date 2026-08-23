@@ -1,9 +1,9 @@
 import { bundledPricingLocation, readBundledPricing } from "./bundled-pricing.ts";
 import { type Pricing, parsePricing } from "./pricing.ts";
+import { publishedFileUrl } from "./published-source.ts";
 
 /** Served from the repository, like the shortlist: a price change needs no release. */
-export const defaultPricingUrl =
-  "https://raw.githubusercontent.com/moonrunnerkc/swarm-orchestrator/main/src/select/model-pricing.v1.json";
+export const defaultPricingUrl = publishedFileUrl("src/select/model-pricing.v1.json");
 
 interface LoadedPricing {
   readonly pricing: Pricing;

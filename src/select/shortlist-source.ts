@@ -1,12 +1,12 @@
 import { bundledShortlistLocation, readBundledShortlist } from "./bundled-shortlist.ts";
+import { publishedFileUrl } from "./published-source.ts";
 import { parseShortlist, type Shortlist } from "./shortlist.ts";
 
 /**
  * Served from the repository rather than a release, so a new model reaches users the day it is
  * curated instead of the day the next version ships.
  */
-export const defaultShortlistUrl =
-  "https://raw.githubusercontent.com/moonrunnerkc/swarm-orchestrator/main/src/select/coding-models.v1.json";
+export const defaultShortlistUrl = publishedFileUrl("src/select/coding-models.v1.json");
 
 /** What `--shortlist` takes to mean "do not go to the network at all". */
 export const bundledShortlistKeyword = "bundled";
