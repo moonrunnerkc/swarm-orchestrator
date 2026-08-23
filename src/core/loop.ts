@@ -7,6 +7,7 @@ import {
   type ModelClient,
   type ModelRequest,
   type ModelResponse,
+  type SamplingSettings,
   type ToolCallOutcome,
   type ToolSchema,
 } from "./model-client.ts";
@@ -33,6 +34,8 @@ export interface AgentLoopDependencies {
   readonly abortSignal: AbortSignal;
   readonly systemPrompt: string;
   readonly maxOutputTokens: number;
+  /** Absent leaves decoding to the backend, which is what an ordinary task run does. */
+  readonly sampling?: SamplingSettings;
   readonly retryPolicy: ModelRetryPolicy;
 }
 
@@ -153,6 +156,7 @@ function buildRequest(
     messages: [...messages],
     tools: deps.toolSchemas,
     maxOutputTokens: deps.maxOutputTokens,
+    ...(deps.sampling === undefined ? {} : { sampling: deps.sampling }),
     abortSignal: deps.abortSignal,
   };
 }

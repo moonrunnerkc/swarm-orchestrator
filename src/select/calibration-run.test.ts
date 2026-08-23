@@ -14,7 +14,12 @@ import {
 } from "../providers/fixture-provider.ts";
 import type { CalibrationCase } from "./calibration-case.ts";
 import { caseDigest } from "./calibration-case.ts";
-import { type CalibrationRunDependencies, runCalibrationRepeat } from "./calibration-run.ts";
+import {
+  type CalibrationRunDependencies,
+  calibrationSampling,
+  runCalibrationRepeat,
+  seedForRepeat,
+} from "./calibration-run.ts";
 
 let root = "";
 let evidence: EvidenceRecorder;
@@ -223,5 +228,34 @@ describe("runCalibrationRepeat", () => {
 
     expect(first.workspace).not.toBe(second.workspace);
     expect((await readdir(join(root, "scratch"))).sort()).toHaveLength(2);
+  });
+});
+
+describe("what the decoding was", () => {
+  it("gives each repeat its own seed, and the same one again for the same repeat", () => {
+    const first = seedForRepeat("edit-01", "local:qwen3-coder:30b-a3b", 1);
+    const second = seedForRepeat("edit-01", "local:qwen3-coder:30b-a3b", 2);
+
+    expect(first).not.toBe(second);
+    expect(seedForRepeat("edit-01", "local:qwen3-coder:30b-a3b", 1)).toBe(first);
+  });
+
+  it("gives two models and two cases different seeds for the same repeat", () => {
+    expect(seedForRepeat("edit-01", "local:a", 1)).not.toBe(seedForRepeat("edit-01", "local:b", 1));
+    expect(seedForRepeat("edit-01", "local:a", 1)).not.toBe(seedForRepeat("edit-02", "local:a", 1));
+  });
+
+  it("leaves decoding stochastic, because the report is about a spread", () => {
+    expect(calibrationSampling.temperature).toBeGreaterThan(0);
+    expect(calibrationSampling.topP).toBeGreaterThan(0);
+    expect(calibrationSampling.topP).toBeLessThanOrEqual(1);
+  });
+
+  it("produces a seed a backend will take, not a float and not a negative", () => {
+    for (let repeat = 1; repeat <= 20; repeat += 1) {
+      const seed = seedForRepeat("case", "local:model", repeat);
+      expect(Number.isSafeInteger(seed)).toBe(true);
+      expect(seed).toBeGreaterThanOrEqual(0);
+    }
   });
 });

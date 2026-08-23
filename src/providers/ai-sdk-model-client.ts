@@ -26,6 +26,15 @@ export function createAiSdkModelClient(modelId: string, model: LanguageModel): M
         messages: toModelMessages(request.messages),
         tools: toToolSet(request.tools),
         maxOutputTokens: request.maxOutputTokens,
+        // Spread rather than passed as undefined: the SDK sends a key it was given, and a
+        // temperature of undefined on the wire is not the same as no temperature at all.
+        ...(request.sampling === undefined
+          ? {}
+          : {
+              temperature: request.sampling.temperature,
+              topP: request.sampling.topP,
+              ...(request.sampling.seed === null ? {} : { seed: request.sampling.seed }),
+            }),
         abortSignal: request.abortSignal,
         // The SDK's default handler prints the whole error object, stack and response headers
         // included, straight over the running UI. Nothing is swallowed by replacing it: the
