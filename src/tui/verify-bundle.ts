@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { access } from "node:fs/promises";
 import { harnessControlledEnvironment } from "../gates/node-test-command.ts";
 import type { BundleVerification } from "./evidence-panel.ts";
 import { verifyCommandFor } from "./evidence-panel.ts";
@@ -10,13 +11,24 @@ import type { EvidenceLocation } from "./open-path.ts";
  * coverage arm does it that way, since a `NODE_OPTIONS` preload would decide what the
  * verifying process loads and no reading of a command string can see one.
  */
-export function runEmbeddedVerifier(input: {
+export async function runEmbeddedVerifier(input: {
   readonly location: EvidenceLocation;
   readonly nodeExecutable: string;
   readonly environment: Readonly<Record<string, string | undefined>>;
   readonly timeoutMs: number;
 }): Promise<BundleVerification> {
   const command = verifyCommandFor(input.location, input.nodeExecutable);
+  const verifier = command.args[0] ?? "";
+
+  // Asked before it is spawned, because node exits 1 on a module it cannot find and that is
+  // indistinguishable at the exit code from a verifier that ran and refused the bundle. One
+  // of those is a verdict and the other is the absence of one, which is the distinction the
+  // ratchet spends its whole length on. No verifier means not verified, never refused.
+  try {
+    await access(verifier);
+  } catch {
+    return { kind: "not-run", reason: `there is no verifier at ${verifier}` };
+  }
 
   return new Promise((settle) => {
     execFile(
