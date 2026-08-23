@@ -2,6 +2,17 @@ import { resolve } from "node:path";
 import { bundledShortlistKeyword } from "./select/shortlist-source.ts";
 
 /**
+ * What the command line said about the screen. Null wherever it said nothing, so swarm.toml
+ * and the defaults below it still get their turn (src/config/settings.ts).
+ */
+export interface InterfaceFlags {
+  /** False for --no-tui: plain lines even on a terminal. */
+  readonly tui: boolean | null;
+  readonly color: "always" | "never" | null;
+  readonly openEvidence: "always" | "never" | null;
+}
+
+/**
  * Flags only, left null wherever the caller said nothing: the environment and swarm.toml sit
  * between flags and defaults, and only the composition root sees all three layers, so
  * resolution lives in src/config/settings.ts rather than here.
@@ -19,6 +30,7 @@ export interface RunCommand {
   /** How many auto-resolve retries a blocking gate failure gets. */
   readonly attempts: number | null;
   readonly localEndpoint: string | null;
+  readonly interfaceFlags: InterfaceFlags;
 }
 
 /** Runs the gates over a workspace and reports, with no model and no retries. */
@@ -31,6 +43,12 @@ export interface GatesCommand {
 
 export interface ReplayCommand {
   readonly command: "replay";
+  readonly bundleDirectory: string;
+}
+
+/** Shows a past bundle through the same panel a finished run ends on. */
+export interface ReviewCommand {
+  readonly command: "review";
   readonly bundleDirectory: string;
 }
 
@@ -83,6 +101,7 @@ export interface SelectCommand {
 export type CommandLine =
   | RunCommand
   | ReplayCommand
+  | ReviewCommand
   | GatesCommand
   | SelectCommand
   | CalibrateCommand
@@ -98,11 +117,16 @@ export class InvalidCommandLineError extends Error {
         "swarm gates [--workspace <dir>] [--base <ref>], " +
         "swarm select [--shortlist <file|url|bundled>], swarm calibrate [--models <a,b>] " +
         '[--repeats <n>], swarm calibrate --add-case "<task>" --seed <a,b> --gate "<command>", ' +
-        "swarm routing, swarm parallel --tasks <file>, or swarm replay <bundle directory>",
+        "swarm routing, swarm parallel --tasks <file>, swarm replay <bundle directory>, " +
+        "or swarm review <bundle directory>. Screen flags: [--no-tui] [--color|--no-color] " +
+        "[--open-evidence|--no-open-evidence]",
     );
     this.name = "InvalidCommandLineError";
   }
 }
+
+/** The flags that are their own value. Everything else takes the word after it. */
+const switchFlags = new Set(["no-tui", "color", "no-color", "open-evidence", "no-open-evidence"]);
 
 const defaultBaseRef = "HEAD";
 /** Three is the floor: two repeats cannot show a spread, and a spread is the point. */
@@ -125,11 +149,18 @@ export function parseCommandLine(
       words.push(argument);
       continue;
     }
+    const name = argument.slice(2);
+    // A switch takes no value, so it must not eat the word after it: `--no-tui "fix the bug"`
+    // would otherwise consume the task and leave nothing to do.
+    if (switchFlags.has(name)) {
+      flags.set(name, "");
+      continue;
+    }
     const value = argv[index + 1];
     if (value === undefined || value.startsWith("--")) {
       throw new InvalidCommandLineError(`${argument} needs a value`);
     }
-    flags.set(argument.slice(2), value);
+    flags.set(name, value);
     index += 1;
   }
 
@@ -140,6 +171,17 @@ export function parseCommandLine(
     }
     return {
       command: "replay",
+      bundleDirectory: resolve(context.currentDirectory, target),
+    };
+  }
+
+  if (words[0] === "review") {
+    const target = words.slice(1).join(" ").trim();
+    if (target.length === 0) {
+      throw new InvalidCommandLineError("review needs a bundle directory");
+    }
+    return {
+      command: "review",
       bundleDirectory: resolve(context.currentDirectory, target),
     };
   }
@@ -219,6 +261,28 @@ export function parseCommandLine(
     baseRef: flags.get("base") ?? defaultBaseRef,
     attempts: parseFlagCount(flags.get("attempts"), "--attempts"),
     localEndpoint: parseLocalEndpoint(flags.get("local-endpoint")),
+    interfaceFlags: parseInterfaceFlags(flags),
+  };
+}
+
+/** Both halves of a pair named at once is a contradiction, so it is an error rather than an order. */
+function parseInterfaceFlags(flags: ReadonlyMap<string, string>): InterfaceFlags {
+  if (flags.has("color") && flags.has("no-color")) {
+    throw new InvalidCommandLineError("--color and --no-color contradict each other");
+  }
+  if (flags.has("open-evidence") && flags.has("no-open-evidence")) {
+    throw new InvalidCommandLineError(
+      "--open-evidence and --no-open-evidence contradict each other",
+    );
+  }
+  return {
+    tui: flags.has("no-tui") ? false : null,
+    color: flags.has("color") ? "always" : flags.has("no-color") ? "never" : null,
+    openEvidence: flags.has("open-evidence")
+      ? "always"
+      : flags.has("no-open-evidence")
+        ? "never"
+        : null,
   };
 }
 

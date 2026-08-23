@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { spawn } from "node:child_process";
 import { statSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { arch, homedir, platform, tmpdir } from "node:os";
@@ -13,6 +14,7 @@ import {
   type ParallelCommand,
   parseCommandLine,
   type ReplayCommand,
+  type ReviewCommand,
   type RunCommand,
   type SelectCommand,
 } from "./cli-options.ts";
@@ -24,8 +26,10 @@ import {
 import { readSwarmToml } from "./config/swarm-toml.ts";
 import type { Clock } from "./core/clock.ts";
 import type { RandomSource } from "./core/random-source.ts";
-import { bundleSourceFromRecorder, exportBundle } from "./evidence/bundle.ts";
+import { bundleSourceFromRecorder, exportBundle, readBundle } from "./evidence/bundle.ts";
+import type { BundleManifest } from "./evidence/bundle-manifest.ts";
 import { exportCombinedBundle } from "./evidence/combined-bundle.ts";
+import { buildEvidenceDag, type EvidenceDag } from "./evidence/dag.ts";
 import { createRecordingModelClient } from "./evidence/model-call-recording.ts";
 import { replayBundle } from "./evidence/replay.ts";
 import {
@@ -84,11 +88,15 @@ import { systemProbeEnvironment } from "./select/system-probe.ts";
 import { classifyTask } from "./select/task-class.ts";
 import { costOfTask, type TaskCost } from "./select/task-cost.ts";
 import { type RoutingDecision, routeModel } from "./select/ucb.ts";
-import type { ConfirmationRequest } from "./tools/chokepoint.ts";
 import { createSandbox, defaultShellAllowlist } from "./tools/sandbox.ts";
 import { createWorkspaceTools } from "./tools/workspace-tools.ts";
+import { describeEvidence, type EvidenceSummary } from "./tui/evidence-panel.ts";
+import { resolveKeyBindings } from "./tui/key-bindings.ts";
+import { evidenceLocation, type OpenCommand, openEnvironment } from "./tui/open-path.ts";
 import { describeLoopEvent } from "./tui/plain-lines.ts";
-import { startSessionInterface } from "./tui/session-interface.ts";
+import { type SessionInterface, startSessionInterface } from "./tui/session-interface.ts";
+import { resolveTheme } from "./tui/theme.ts";
+import { runEmbeddedVerifier } from "./tui/verify-bundle.ts";
 import { renderParallelReport } from "./workers/parallel-report.ts";
 import { runInParallel } from "./workers/parallel-run.ts";
 
@@ -246,6 +254,117 @@ async function chooseModel(
   return { modelSpec: decision.model, assignment: decision.assignment, decision };
 }
 
+/**
+ * Everything ambient the screen needs, gathered here so nothing below the composition root
+ * reads a terminal, an environment variable, or the clock (invariant 8).
+ */
+function startInterface(input: {
+  readonly task: string;
+  readonly workspace: string;
+  readonly settings: ResolvedSettings;
+  readonly clock: Clock;
+}): SessionInterface {
+  const isTty = process.stdout.isTTY === true && process.stdin.isTTY === true;
+  const ui = input.settings.interface;
+
+  return startSessionInterface({
+    task: input.task,
+    workspace: input.workspace,
+    isTty,
+    interactive: ui.tui,
+    writeLine: (line) => {
+      process.stdout.write(`${line}\n`);
+    },
+    writeError: (line) => {
+      process.stderr.write(`${line}\n`);
+    },
+    clock: input.clock,
+    theme: resolveTheme({
+      mode: ui.color,
+      term: process.env.TERM,
+      noColorSet: process.env.NO_COLOR !== undefined,
+      isTty,
+      palette: ui.theme,
+    }),
+    bindings: resolveKeyBindings(ui.keys),
+    ...(isTty ? { askOnTerminal } : {}),
+    openEvidence: ui.openEvidence,
+    spawnOpen: spawnOpener,
+    platform: platform(),
+  });
+}
+
+/** Readline, on the plain path only. Ink owns stdin whenever the screen is up. */
+async function askOnTerminal(question: string): Promise<string> {
+  const prompt = createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    return await prompt.question(question);
+  } finally {
+    prompt.close();
+  }
+}
+
+/**
+ * An argument vector, spawned with no shell in between and under an environment built rather
+ * than inherited. The path is one argument, so nothing in it is read as syntax by anything.
+ */
+function spawnOpener(command: OpenCommand): Promise<number | null> {
+  return new Promise((settle, fail) => {
+    const child = spawn(command.file, [...command.args], {
+      env: openEnvironment(process.env),
+      stdio: "ignore",
+      detached: false,
+    });
+    child.on("error", fail);
+    child.on("exit", (code) => {
+      settle(code);
+    });
+  });
+}
+
+/** How long the embedded verifier gets before the panel says it could not be asked. */
+const verifyTimeoutMs = 60_000;
+
+/**
+ * What the run produced, with the bundle checked by its own verifier here rather than taken
+ * on trust: the panel may say verified only where that ran in this session and exited zero.
+ */
+async function summarizeEvidence(written: {
+  readonly directory: string;
+  readonly manifest: BundleManifest;
+  readonly dag: EvidenceDag;
+}): Promise<EvidenceSummary> {
+  const location = evidenceLocation(written.directory, "harness");
+  return {
+    location,
+    recordCount: written.manifest.recordCount,
+    claimsVerified: written.dag.verifiedCount,
+    claimsRefused: written.dag.unverifiedCount,
+    verification: await runEmbeddedVerifier({
+      location,
+      nodeExecutable: process.execPath,
+      environment: process.env,
+      timeoutMs: verifyTimeoutMs,
+    }),
+  };
+}
+
+/** A past bundle, through the same panel a finished run ends on. Nothing is re-run. */
+async function review(options: ReviewCommand): Promise<number> {
+  const contents = await readBundle(options.bundleDirectory);
+  const dag = buildEvidenceDag(contents.records, contents.payloads);
+  const summary = await summarizeEvidence({
+    directory: options.bundleDirectory,
+    manifest: contents.manifest,
+    dag,
+  });
+
+  for (const line of describeEvidence(summary, process.stdout.columns ?? null)) {
+    process.stdout.write(`${line}\n`);
+  }
+  return summary.verification.kind === "verified" ? 0 : 1;
+}
+
 async function run(options: RunCommand): Promise<number> {
   if (!statSync(options.workspace, { throwIfNoEntry: false })?.isDirectory()) {
     throw new Error(
@@ -258,6 +377,7 @@ async function run(options: RunCommand): Promise<number> {
     maxSteps: options.maxSteps,
     attempts: options.attempts,
     localEndpoint: options.localEndpoint,
+    interfaceFlags: options.interfaceFlags,
   });
   const random = createSystemRandom();
   const routed = settings.modelPinned
@@ -288,14 +408,12 @@ async function run(options: RunCommand): Promise<number> {
   const registry = createProviderRegistry(registrySettingsFrom(settings, localBackend));
   const model = createRecordingModelClient(registry.create(spec), evidence);
   const fileSet = createFileSetRegistry(evidence);
-  const isTty = process.stdout.isTTY === true && process.stdin.isTTY === true;
 
-  const ui = startSessionInterface({
+  const ui = startInterface({
     task: options.task,
-    isTty,
-    writeLine: (line) => {
-      process.stdout.write(`${line}\n`);
-    },
+    workspace: options.workspace,
+    settings,
+    clock,
   });
 
   const interruption = new AbortController();
@@ -303,6 +421,9 @@ async function run(options: RunCommand): Promise<number> {
     interruption.abort();
   };
   process.on("SIGINT", onInterrupt);
+  // Ink holds stdin in raw mode, so Ctrl-C arrives as a keystroke rather than as a signal.
+  // Both routes reach the same abort, and neither is the one that leaves the view.
+  void ui.cancelled().then(onInterrupt);
   const startedAt = clock.now();
   const gateOptions = gateOptionsFrom(settings);
   const diffBudget = diffBudgetFrom(settings);
@@ -322,14 +443,13 @@ async function run(options: RunCommand): Promise<number> {
       emit: (event) => {
         ui.emit(event);
       },
-      confirm: (request) => confirmOnTerminal(request, isTty),
+      confirm: ui.confirm,
       abortSignal: interruption.signal,
       homeDir: homedir(),
       ...(gateOptions === undefined ? {} : { gateOptions }),
       ...(diffBudget === undefined ? {} : { diffBudget }),
     });
 
-    await ui.stop();
     reportGates(gates.outcome, evidence);
 
     // Every finished run is one more sample the router learns from, and the ratchet numerics
@@ -349,29 +469,13 @@ async function run(options: RunCommand): Promise<number> {
       cost: await priceTask(modelSpec, evidence),
     });
 
-    const directory = await writeBundle(evidence, options.bundleDirectory, clock);
-    announceBundle(directory);
+    const written = await writeBundle(evidence, options.bundleDirectory, clock);
+    announceBundle(written.directory);
+    await ui.presentEvidence(await summarizeEvidence(written));
     return loop.stopReason === "completed" && gates.outcome.settled === "green" ? 0 : 1;
   } finally {
+    await ui.stop();
     process.off("SIGINT", onInterrupt);
-  }
-}
-
-/** The only place a human is asked anything. A run with no terminal refuses and records it. */
-async function confirmOnTerminal(request: ConfirmationRequest, isTty: boolean): Promise<boolean> {
-  if (!isTty) {
-    process.stderr.write(
-      `[chokepoint] refusing ${request.toolName} without a terminal to confirm on: ${request.explanation}\n`,
-    );
-    return false;
-  }
-  const prompt = createInterface({ input: process.stdin, output: process.stderr });
-  try {
-    process.stderr.write(`${request.explanation}\n`);
-    const answer = await prompt.question(`Run "${request.detail}"? [y/N] `);
-    return answer.trim().toLowerCase() === "y";
-  } finally {
-    prompt.close();
   }
 }
 
@@ -540,7 +644,7 @@ async function gates(options: GatesCommand): Promise<number> {
   for (const gate of outstandingJustifications(run.outcome.firstCycle, citedRecords(evidence))) {
     process.stdout.write(`\nthe ${gate.gateId} gate asked for a justification: ${gate.detail}\n`);
   }
-  announceBundle(await writeBundle(evidence, options.bundleDirectory, clock));
+  announceBundle((await writeBundle(evidence, options.bundleDirectory, clock)).directory);
   return run.outcome.firstCycle.blockingFailures.length === 0 ? 0 : 1;
 }
 
@@ -548,19 +652,23 @@ async function writeBundle(
   evidence: EvidenceRecorder,
   destination: string | null,
   clock: Clock,
-): Promise<string> {
+): Promise<{
+  readonly directory: string;
+  readonly manifest: BundleManifest;
+  readonly dag: EvidenceDag;
+}> {
   const signing = await resolveSigningKey(createKeychainSecretStore({ platform: platform() }));
   if (signing.notice !== null) {
     process.stderr.write(`[signing] ${signing.notice}\n`);
   }
   const directory = destination ?? join(evidence.directory, "bundle");
-  await exportBundle({
+  const written = await exportBundle({
     source: bundleSourceFromRecorder(evidence),
     destination: directory,
     signingKey: signing.key,
     clock,
   });
-  return directory;
+  return { directory, manifest: written.manifest, dag: written.dag };
 }
 
 /** Roughly the build guide's five to ten minutes: four cases, three repeats, two models. */
@@ -625,7 +733,7 @@ async function calibrate(options: CalibrateCommand): Promise<number> {
   const runSet =
     localBackend === null ? models : await preflight(evidence, localBackend.url, models);
   if (runSet.length === 0) {
-    const empty = await writeBundle(evidence, options.bundleDirectory, clock);
+    const empty = (await writeBundle(evidence, options.bundleDirectory, clock)).directory;
     process.stdout.write(
       "no usable model: the backend serves none of the models asked for, so nothing was " +
         "calibrated, no runs were created, and no pick was written.\n",
@@ -642,7 +750,7 @@ async function calibrate(options: CalibrateCommand): Promise<number> {
   // score every model at zero, and learning that from the report costs the whole run.
   const canary = await canaryFor(evidence, registry, runSet, scratchRoot);
   if (canary !== null && !canary.healthy) {
-    const sick = await writeBundle(evidence, options.bundleDirectory, clock);
+    const sick = (await writeBundle(evidence, options.bundleDirectory, clock)).directory;
     process.stdout.write(
       "no usable backend: calibration would measure the runtime rather than the model, " +
         "so no runs were created and no pick was written.\n",
@@ -681,7 +789,7 @@ async function calibrate(options: CalibrateCommand): Promise<number> {
       },
     });
 
-    const directory = await writeBundle(evidence, options.bundleDirectory, clock);
+    const directory = (await writeBundle(evidence, options.bundleDirectory, clock)).directory;
     for (const line of renderCalibrationReport({
       goldenSetVersion: result.goldenSetVersion,
       cases: result.cases,
@@ -935,6 +1043,9 @@ async function main(): Promise<number> {
   });
   if (options.command === "replay") {
     return replay(options);
+  }
+  if (options.command === "review") {
+    return review(options);
   }
   if (options.command === "select") {
     return select(options);

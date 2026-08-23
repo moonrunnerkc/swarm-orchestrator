@@ -135,3 +135,55 @@ describe("resolveSettings on provider keys and gate overrides", () => {
     expect(settings.diffBudget).toEqual({});
   });
 });
+
+describe("what the screen resolves to", () => {
+  const screenToml = parseSwarmToml(
+    [
+      "[interface]",
+      "tui = false",
+      'color = "always"',
+      'open_evidence = "always"',
+      "[theme]",
+      'passed = "cyanBright"',
+      "[keys]",
+      'pause = "space"',
+    ].join("\n"),
+    "swarm.toml",
+  );
+
+  it("takes the shipped defaults when nothing names one", () => {
+    expect(resolveSettings({ flags: noFlags, env: {}, toml: null }).interface).toEqual({
+      tui: true,
+      color: "auto",
+      openEvidence: "ask",
+      theme: {},
+      keys: {},
+    });
+  });
+
+  it("takes the file when the command line says nothing", () => {
+    expect(resolveSettings({ flags: noFlags, env: {}, toml: screenToml }).interface).toEqual({
+      tui: false,
+      color: "always",
+      openEvidence: "always",
+      theme: { passed: "cyanBright" },
+      keys: { pause: "space" },
+    });
+  });
+
+  it("lets a flag beat the file, in the same order everything else uses", () => {
+    const settings = resolveSettings({
+      flags: {
+        ...noFlags,
+        interfaceFlags: { tui: null, color: "never", openEvidence: "never" },
+      },
+      env: {},
+      toml: screenToml,
+    });
+
+    expect(settings.interface.color).toBe("never");
+    expect(settings.interface.openEvidence).toBe("never");
+    // Unset by the flag, so the file still gets its turn on this one.
+    expect(settings.interface.tui).toBe(false);
+  });
+});
