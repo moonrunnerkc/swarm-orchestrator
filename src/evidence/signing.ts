@@ -134,11 +134,39 @@ export async function resolveSigningKey(store: SecretStore | null): Promise<Reso
     };
   }
 
+  let existing: string | null;
   try {
-    const existing = await store.load();
-    if (existing !== null && existing.length > 0) {
+    existing = await store.load();
+  } catch (cause) {
+    return {
+      key: createEphemeralSigningKey(),
+      notice:
+        `${store.description} could not be read (${describeCause(cause)}), ` +
+        "so the bundle is signed with a per-run key",
+    };
+  }
+
+  if (existing !== null && existing.length > 0) {
+    try {
       return { key: signingKeyFromPkcs8(existing, "keychain"), notice: null };
+    } catch (cause) {
+      // Reached, and worth its own message: the entry is there and holds something that is
+      // not a key. Left alone rather than replaced, because overwriting an entry whose
+      // contents nobody recognizes is destroying something to fix a signature. Every run
+      // downgrades to a per-run key until a person looks, so the notice has to say what to
+      // look at rather than repeat an ASN.1 decoding error.
+      return {
+        key: createEphemeralSigningKey(),
+        notice:
+          `${store.description} holds an entry under ${signingKeyService}/${signingKeyAccount} ` +
+          `that is not an ed25519 private key (${describeCause(cause)}), so the bundle is ` +
+          "signed with a per-run key. Delete that entry and the next run will store a new " +
+          "key; nothing else reads it",
+      };
     }
+  }
+
+  try {
     const created = generateKeyPairSync("ed25519");
     const pkcs8 = created.privateKey.export({ type: "pkcs8", format: "der" }).toString("base64");
     await store.save(pkcs8);
@@ -147,10 +175,14 @@ export async function resolveSigningKey(store: SecretStore | null): Promise<Reso
     return {
       key: createEphemeralSigningKey(),
       notice:
-        `${store.description} is unavailable (${cause instanceof Error ? cause.message : String(cause)}), ` +
+        `${store.description} would not take a new key (${describeCause(cause)}), ` +
         "so the bundle is signed with a per-run key",
     };
   }
+}
+
+function describeCause(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 export function createEphemeralSigningKey(): SigningKey {
