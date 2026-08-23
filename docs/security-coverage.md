@@ -229,9 +229,12 @@ denominator and the diff budget. And `stripPrefix` checked for emptiness before 
 
 One item. The two scrub defects that were open here are now closed; see below.
 
-### `@types/node` four majors behind
+### `@types/node` behind the published major
 
-22.20.1 against 26.2.0, on a Node 24 runtime.
+Was 22.20.1 against 26.2.0 when this was written, on a Node 24 runtime. The 08-18 run moved
+it to ^24.13.3, which matches the runtime floor; 26.2.0 is current upstream as of 2026-08-23,
+so it is two majors behind the latest and level with what it is compiled against. Left there
+deliberately: the types should track the Node the project supports, not the newest published.
 
 ## What CROSSFIRE structurally cannot find here
 
@@ -271,7 +274,18 @@ ranked boundaries are now harnessed**: the ledger write path, the tool chokepoin
 
 Rejected, with reasons:
 
-- **`src/tui/*`**: rendering. A crash is immediately visible and costs nothing.
+- **`src/tui/*`**: rendering, with one qualification added on 2026-08-23. A crash there is
+  immediately visible and costs nothing, which is still the reason it carries no fuzz
+  harness. What is not a crash is a tool output that carries terminal control: the action
+  stream shows what tools returned, and an escape sequence in one is not a malformed input to
+  a parser, it is a command the terminal obeys. Every string reaching a cell now goes through
+  `src/tui/terminal-text.ts` first, which replaces each C0, DEL and C1 character with one
+  visible cell, so the sequence is shown as text and the row keeps the width it was measured
+  at. `src/tui/terminal-text.test.ts` and `src/tui/screen-model.test.ts` both assert it, the
+  second by putting a screen-clearing sequence through a tool outcome and checking no escape
+  reaches any row. That is a property test about one function rather than a boundary worth
+  fuzzing, for the same reason `review-page.ts` is examined by hand: the assertion is about
+  escaping, and it is exact.
 - **`src/select/*`** (hardware probe, pricing, shortlist, calibration): a crash degrades
   model selection. No integrity or confidentiality consequence.
 - **`src/tools/derivation.ts`**: documented as a heuristic with a false-positive rate, so a
