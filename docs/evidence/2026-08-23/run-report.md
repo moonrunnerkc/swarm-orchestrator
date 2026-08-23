@@ -43,3 +43,40 @@ Appended as the run proceeds.
 | Item | Status | Note |
 | --- | --- | --- |
 | 0. Preflight | done | table above |
+| 1.1 Push `v13-main` | done | 10 commits, `2633f1c1..f16e7f70`, under owner bypass |
+| 1.2 Push `v13.0.0` and `v12-final` | done | both confirmed by `git ls-remote --tags origin` and from a fresh clone |
+| 1.3 v12 tag reachable from a clone | done | fresh clone in a temp directory; `git show v12-final:package.json` resolves and the v12 tree is intact |
+| 1.4 Gates workflow on the pushed branch | done | run `32668575341`, success, 88 files / 1082 tests, fuzz smoke and drift check both in it |
+| 1.5 Tag push fired the publish workflow | finding, recorded | run `32668579920` failed at `npm publish` with `E404 ... PUT https://registry.npmjs.org/swarm-orchestrator`. Nothing was published. The provenance statement reached the sigstore transparency log before the 404 (logIndex 2576965290) |
+| 1.6 Tag push fired the v12 CD workflow | finding, no effect | run `32668579948`, from the workflows in the v12-final tree, stopped at its own interlock: `tag v12-final does not match package.json 12.1.1; refusing to publish`. No image, no package |
+| 2.1 `main` holds nothing unique | done | `origin/main` and local `main` are both `b2b681ff`, which is exactly the commit `v12-final` points at. `git log origin/main..main` is empty |
+| 2.2 Repoint default branch | done | `gh api -X PATCH ... -f default_branch=v13-main`, confirmed by `git ls-remote --symref origin HEAD` reporting `ref: refs/heads/v13-main` |
+| 2.3 Branch-naming audit | done, one real defect fixed | README gates badge already names `v13-main`. The two curated-JSON URLs named `main` and answered 404; fixed in `4ca7aa0a` |
+| 2.4 v12 reachable, changelog correct | done, one correction | tag reachable from a fresh clone. The changelog told v12 users to install `@12.1.1`, which the registry does not carry; corrected in `3f158e21` |
+
+## Decisions, phases 1 and 2
+
+**The v13.0.0 tag push triggered a publish attempt, and that was not the plan.** The work list
+says to push both tags in phase 1 and to decide the published version in phase 7, after the
+interface work has landed. Those two instructions are in tension, because `publish.yml` fires
+on `v*`. The tag was pushed as instructed and the publish ran; it failed at the registry with
+`E404` on the `PUT`, so nothing was published and phase 7 still has a free choice of version.
+The failure is a credential, not a build: `npm pack` ran, `prepublishOnly` ran the gates, the
+tarball was assembled at 268.9 kB over 234 files, and provenance was signed and logged before
+the registry refused the write. The `NPM_TOKEN` repository secret exists and does not carry
+publish rights for this package.
+
+**Repointing the default branch stops six scheduled workflows.** GitHub fires `schedule`
+triggers only from the default branch, and the six on `main` (`agent-stream`, `backward-mine`,
+`codex-canary`, `complaint-mine`, `eg-viable-measure`, `pages`) belong to the v12 auditor
+lineage. They stop firing as of the repoint. The build guide treats the repoint as a release
+precondition, so this is a consequence taken knowingly rather than a surprise, and it is
+written here so nobody later reads the silence as breakage. `weekly-scan.yml` on `v13-main`
+becomes the scheduled workflow that does fire.
+
+**The curated-JSON 404 was not what the 08-18 report expected.** That report predicted the
+repoint would fix `hardware-select.md`'s shortlist 404, because the URL pointed at `main`. It
+does not: `raw.githubusercontent.com/<owner>/<repo>/main/...` names the branch `main`, not the
+repository's HEAD, so repointing HEAD leaves it resolving to the v12 tree, which carries
+neither file. Both URLs now build from one ref that carries them, checked live: 404 before,
+200 after.
