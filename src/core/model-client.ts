@@ -35,11 +35,28 @@ export type ConversationMessage =
     }
   | { readonly role: "tool"; readonly outcomes: readonly ToolCallOutcome[] };
 
+/**
+ * Decoding settings, sent on the wire rather than left to whatever the backend defaults to,
+ * so a measurement says what it was taken under. Absent means nothing is sent and the
+ * backend's own defaults stand, which is what the ordinary agent path does.
+ */
+export interface SamplingSettings {
+  readonly temperature: number;
+  readonly topP: number;
+  /**
+   * Recorded per call where the backend takes one, null where it does not. A seed makes a
+   * repeat re-derivable; it is deliberately different per repeat, because a calibration run
+   * is measuring a distribution rather than reproducing a point.
+   */
+  readonly seed: number | null;
+}
+
 export interface ModelRequest {
   readonly system: string;
   readonly messages: readonly ConversationMessage[];
   readonly tools: readonly ToolSchema[];
   readonly maxOutputTokens: number;
+  readonly sampling?: SamplingSettings;
   readonly abortSignal: AbortSignal;
 }
 

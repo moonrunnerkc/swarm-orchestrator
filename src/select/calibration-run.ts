@@ -80,6 +80,27 @@ const calibrationSystemPrompt = [
 const gateTimeoutMs = 120_000;
 
 /**
+ * Pinned on the wire rather than left to the backend, so the report can say what the
+ * distribution was drawn under. Decoding stays stochastic on purpose: calibration is
+ * measuring a spread, and a temperature of zero would measure one point and call it a model.
+ */
+export const calibrationSampling = { temperature: 0.7, topP: 0.95 } as const;
+
+/**
+ * A seed per repeat, derived from the case, the model and the repeat number, so the seeds a
+ * run used are re-derivable from the report rather than lost with the process. Distinct per
+ * repeat by construction: the same seed three times would be one sample recorded three ways.
+ */
+export function seedForRepeat(caseId: string, modelSpec: string, repeat: number): number {
+  let hash = 2_166_136_261;
+  for (const character of `${caseId}::${modelSpec}::${repeat}`) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return hash >>> 0;
+}
+
+/**
  * One case, one model, once. Everything it reports is counted off the records the run itself
  * produced, so a reviewer holding the bundle can re-derive every number rather than taking
  * the summary's word for it (section 3.9).
@@ -128,6 +149,10 @@ export async function runCalibrationRepeat(
     abortSignal: deps.abortSignal,
     systemPrompt: calibrationSystemPrompt,
     maxOutputTokens: 4096,
+    sampling: {
+      ...calibrationSampling,
+      seed: seedForRepeat(request.case.id, request.modelSpec, request.repeat),
+    },
     retryPolicy: { attempts: 2, baseDelayMs: 250, maxJitterRatio: 0.5 },
   });
 

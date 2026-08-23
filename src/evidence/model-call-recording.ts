@@ -81,5 +81,15 @@ function describeRequest(request: ModelRequest): JsonValue {
     messages: asJsonValue(request.messages),
     tools: request.tools.map((tool) => tool.name),
     maxOutputTokens: request.maxOutputTokens,
+    // What the decoding was, in the record, so a report of a distribution names the settings
+    // it was drawn under rather than leaving a reader to assume the backend's defaults.
+    sampling:
+      request.sampling === undefined
+        ? null
+        : {
+            temperature: request.sampling.temperature,
+            topP: request.sampling.topP,
+            seed: request.sampling.seed,
+          },
   };
 }
