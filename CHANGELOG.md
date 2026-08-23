@@ -32,7 +32,11 @@ migration path from one to the other, because there is nothing to migrate.
 
 Stay on it. It is tagged `v12-final` and that tag is not going away.
 
-    npm install swarm-orchestrator@12.1.1
+    npm install swarm-orchestrator@12.0.0
+
+That is the newest v12 the registry carries. The `v12-final` tag is at 12.1.1, which was
+tagged but never published, so `@12.1.1` does not resolve; install from the tag if you need
+exactly that tree.
 
 For the Action, pin the tag rather than a branch, since the default branch is moving to the
 v13 lineage:
