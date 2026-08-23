@@ -14,19 +14,30 @@
  */
 import { execFileSync } from "node:child_process";
 import { copyFile, mkdir, readdir, rm } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { argv, exit, stdout } from "node:process";
 
 const root = join(import.meta.dirname, "..");
 
-/** Every file under `directory` that tsc will not emit, as paths relative to it. */
+/**
+ * A directory whose contents a test reads and the runtime never does. It sits under src/
+ * because a fixture belongs beside the test that asserts against it, and it stays out of the
+ * package for the same reason the test file does.
+ */
+const fixtureDirectory = "fixtures";
+
+/** Every file under `directory` that tsc will not emit and the runtime does read. */
 export async function assetsUnder(directory) {
   const found = [];
   for (const entry of await readdir(directory, { withFileTypes: true, recursive: true })) {
     if (!entry.isFile() || entry.name.endsWith(".ts")) {
       continue;
     }
-    found.push(relative(directory, join(entry.parentPath, entry.name)));
+    const path = relative(directory, join(entry.parentPath, entry.name));
+    if (path.split(sep).includes(fixtureDirectory)) {
+      continue;
+    }
+    found.push(path);
   }
   return found.sort();
 }
