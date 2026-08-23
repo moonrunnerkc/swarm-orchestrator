@@ -101,9 +101,13 @@ could be evaluated:
 in a single byte of one record, exit 0 and exit 1 side by side, with a script to reproduce
 it: [tamper demo](docs/evidence/2026-08-18/tamper-demo).
 
-**The bundle carries its own verifier.** `node verify.mjs <bundle>` checks the manifest, the
-chain, the signature, every blob against its content address, and recomputes every claim
-verdict. Transcripts for two runs:
+**The bundle carries its own verifier, and it works on a machine that has never seen this
+repo.** `node verify.mjs <bundle>` checks the manifest, the chain, the signature, every blob
+against its content address, and recomputes every claim verdict. Run in a `node:24` container
+with no network and no mount of this repository: exit 0 on the committed bundle, exit 1 on the
+same bundle one byte later, with the image digest and both transcripts in
+[`clean-container-verification.md`](docs/evidence/2026-08-23/clean-container-verification.md).
+Transcripts from two earlier runs outside the repository:
 [`live-tasks.md`](docs/evidence/2026-08-18/live-tasks.md).
 
 **Bundles are signed from the OS keychain**, not from a key in the workspace. Both manifests
@@ -140,10 +144,8 @@ something.
 - **Four known gaps are open**, not closed, and they ship that way. They are in
   [build guide 7.1](docs/build-guide.md), and each is a permanent test case asserting the
   gap as it stands.
-- **The clean-container check has not run.** No container runtime on the machine this was
-  built on, recorded as
-  [NOT-RUN](docs/evidence/2026-08-18/clean-container-verification.md) with the command to
-  run rather than quietly skipped.
+- **A signature does not make the machine honest.** It proves the bundle was not altered
+  after it left the machine that produced it. The review page says that on its face.
 
 ## How it works
 
