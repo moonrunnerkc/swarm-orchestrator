@@ -334,7 +334,7 @@ export function filterActions(actions: readonly ActionRow[], filter: string): re
 }
 
 /** Which row the selection sits on, counted back from the newest. Null follows the tail. */
-export function selectedIndex(rowCount: number, state: ViewState): number | null {
+function selectedIndex(rowCount: number, state: ViewState): number | null {
   if (state.scrollBack === 0) {
     return rowCount === 0 ? null : rowCount - 1;
   }

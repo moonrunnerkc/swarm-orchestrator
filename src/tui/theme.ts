@@ -7,8 +7,6 @@
 
 export type ColorMode = "auto" | "always" | "never";
 
-export const colorModes: readonly ColorMode[] = ["auto", "always", "never"];
-
 /** The colour names Ink resolves, plus 24-bit hex. Anything else is a typed error at the boundary. */
 const namedColors: readonly string[] = [
   "black",
