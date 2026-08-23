@@ -101,9 +101,21 @@ v12 solved a strictly harder version of the section 3.6 problem and the findings
 
 **Model selection** (src/select). Stage one, static fit: probe RAM, VRAM, GPU, platform; map against a versioned shortlist JSON fetched from the project repo (curated coding models per hardware tier, so updates need no release). Stage two, calibration: the section 3.9 micro-eval, 5 to 10 minutes, optionally against the user's own repo. Stage three, online: bandit routing per section 3.8.
 
-**TUI** (src/tui). One screen: plan pane, live action stream, gate status strip, evidence counter, attempt counter during auto-resolve. Every displayed status derives from ledger records, never from model text. Non-TTY fallback: plain line output, machine-readable with a flag.
+**Interface** (src/tui). One screen on a terminal: a header naming the task, the model, the workspace and the elapsed time; the plan; a live action stream; a detail pane for an expanded row; the gate strip; a status line; and a hint bar. Every displayed status derives from ledger records, never from model text, and `session-view.ts` is the only projection it renders from. It is driven rather than watched: scroll the stream, expand a row to the whole tool input and output and the ledger record it came from, filter it, move focus between the stream and the gates, freeze the render without touching the run, and open a help overlay. Two exits, kept apart because conflating them loses work: detach leaves the view and lets the run finish, cancel stops the run.
 
-**Config** (src/config). Zero-config default. One optional swarm.toml: provider keys and endpoints, gate overrides, budgets, model pins. Zod-validated with actionable error messages.
+Interactive state (focus, scroll, filter, expansion, pause) is a second type with its own reducer, deliberately sharing no field with the projection, so a keystroke has no route to a verdict. That separation is the whole reason the screen can be interactive without weakening invariant 1, and it is asserted by a test across every action rather than left to review.
+
+The component is thin by construction: it subscribes, calls one pure function that returns the screen as a list of already-truncated rows, and maps each row to one Ink `Text`. Layout arithmetic, truncation on grapheme boundaries and terminal cells, control-character neutralisation, theme resolution and key dispatch are all pure functions beside it, which is what makes the screen testable at four widths, at every height from one row up, and with colour off, without a renderer dependency. It is written with `createElement` rather than JSX so the CLI runs from source with no build step.
+
+The chokepoint's confirmation is a component inside that screen, answered by the same key dispatcher, because Ink holds stdin in raw mode and a second reader on the same stream drops keystrokes: one owner of stdin per process, and the provenance-confirmation path of section 3.4 is the least acceptable place to lose one.
+
+When a run ends it presents what it produced: each artifact named by what it is for, the record count, how many claims the harness verified against how many it refused, and whether the bundle's own verifier ran here and exited zero. It says verified only in that case, and names the exit code either way, because opening a file is not verifying it. Opening is opt-in, never happens off a terminal, and goes through an argument vector spawned directly under an environment the harness built, on a path the harness computed. `swarm review <bundle>` shows the same panel for any bundle on disk.
+
+Non-TTY fallback: plain line output, unchanged by any of the above and held to a committed fixture, so a pipe and a CI job read exactly what they read before. `--no-tui` selects it on a terminal.
+
+Theme, keybindings, and whether either of the above happens are settings in the same swarm.toml as everything else, validated at the boundary with errors that name the key and the accepted set.
+
+**Config** (src/config). Zero-config default. One optional swarm.toml: provider keys and endpoints, gate overrides, budgets, model pins, and the three interface tables (`[interface]`, `[theme]`, `[keys]`). Zod-validated with actionable error messages. The interface settings live here rather than in a second config path because a second config path is the design question this file exists to have already answered.
 
 ### 4.3 Data Flow
 
