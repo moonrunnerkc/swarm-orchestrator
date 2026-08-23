@@ -86,6 +86,11 @@ export interface ParallelCommand {
   readonly localEndpoint: string | null;
 }
 
+/** Prints the usage text and exits without doing anything. */
+export interface HelpCommand {
+  readonly command: "help";
+}
+
 /** Prints the routing table the reward log adds up to. */
 interface RoutingCommand {
   readonly command: "routing";
@@ -99,6 +104,7 @@ export interface SelectCommand {
 }
 
 export type CommandLine =
+  | HelpCommand
   | RunCommand
   | ReplayCommand
   | ReviewCommand
@@ -108,6 +114,28 @@ export type CommandLine =
   | AddCaseCommand
   | RoutingCommand
   | ParallelCommand;
+
+export const usage = [
+  "swarm [--model <provider:id>] [--workspace <dir>] [--bundle <dir>] [--base <ref>]",
+  '  [--attempts <n>] [--max-steps <n>] [--local-endpoint <url>] "<task>"',
+  "",
+  "  swarm gates [--workspace <dir>] [--base <ref>]   run the gates, no model",
+  "  swarm select [--shortlist <file|url|bundled>]    probe this machine, recommend a model",
+  "  swarm calibrate [--models <a,b>] [--repeats <n>] measure models on the golden set",
+  '  swarm calibrate --add-case "<task>" --seed <a,b> --gate "<command>"',
+  "  swarm routing                                    what the reward log adds up to",
+  "  swarm parallel --tasks <file>                    one worker per line, then a merge queue",
+  "  swarm review <bundle directory>                  what a run produced, and open it",
+  "  swarm replay <bundle directory>                  read a bundle back",
+  "",
+  "the screen:",
+  "  --no-tui                     plain lines even on a terminal",
+  "  --color, --no-color          paint, or do not, whatever the terminal says",
+  "  --open-evidence              open the review page when the run finishes",
+  "  --no-open-evidence           never open it",
+  "",
+  "swarm.toml holds the same settings, plus [theme] and [keys]. Flags win over it.",
+].join("\n");
 
 export class InvalidCommandLineError extends Error {
   constructor(problem: string) {
@@ -126,7 +154,14 @@ export class InvalidCommandLineError extends Error {
 }
 
 /** The flags that are their own value. Everything else takes the word after it. */
-const switchFlags = new Set(["no-tui", "color", "no-color", "open-evidence", "no-open-evidence"]);
+const switchFlags = new Set([
+  "help",
+  "no-tui",
+  "color",
+  "no-color",
+  "open-evidence",
+  "no-open-evidence",
+]);
 
 const defaultBaseRef = "HEAD";
 /** Three is the floor: two repeats cannot show a spread, and a spread is the point. */
@@ -162,6 +197,12 @@ export function parseCommandLine(
     }
     flags.set(name, value);
     index += 1;
+  }
+
+  // Before anything else: asking for help must not be able to fail for the reason a person
+  // is asking for help.
+  if (flags.has("help") || words[0] === "help") {
+    return { command: "help" };
   }
 
   if (words[0] === "replay") {

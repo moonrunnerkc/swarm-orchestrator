@@ -17,6 +17,7 @@ import {
   type ReviewCommand,
   type RunCommand,
   type SelectCommand,
+  usage,
 } from "./cli-options.ts";
 import {
   type CommandLineSettings,
@@ -1041,6 +1042,10 @@ async function main(): Promise<number> {
   const options: CommandLine = parseCommandLine(process.argv.slice(2), {
     currentDirectory: process.cwd(),
   });
+  if (options.command === "help") {
+    process.stdout.write(`${usage}\n`);
+    return 0;
+  }
   if (options.command === "replay") {
     return replay(options);
   }
