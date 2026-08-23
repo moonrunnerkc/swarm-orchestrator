@@ -46,6 +46,7 @@ describe("parseCommandLine", () => {
       maxSteps: 12,
       bundleDirectory: null,
       localEndpoint: null,
+      interfaceFlags: { tui: null, color: null, openEvidence: null },
     });
   });
 
@@ -62,6 +63,7 @@ describe("parseCommandLine", () => {
       maxSteps: null,
       bundleDirectory: null,
       localEndpoint: null,
+      interfaceFlags: { tui: null, color: null, openEvidence: null },
     });
   });
 
@@ -304,5 +306,67 @@ describe("the parallel command", () => {
 
   it("still reads a task that merely mentions parallel", () => {
     expect(parseRun(["make the parallel run faster"]).command).toBe("run");
+  });
+});
+
+describe("the flags that decide what the screen does", () => {
+  it("leaves all three unset when none is named, so config still gets its turn", () => {
+    expect(parseRun(["t"]).interfaceFlags).toEqual({
+      tui: null,
+      color: null,
+      openEvidence: null,
+    });
+  });
+
+  it("reads a switch without swallowing the task after it", () => {
+    // The parser takes the word after a flag as its value, which would have eaten the task.
+    expect(parseRun(["--no-tui", "fix the build"])).toMatchObject({
+      task: "fix the build",
+      interfaceFlags: { tui: false, color: null, openEvidence: null },
+    });
+  });
+
+  it("reads the colour switches in both directions", () => {
+    expect(parseRun(["--color", "t"]).interfaceFlags.color).toBe("always");
+    expect(parseRun(["--no-color", "t"]).interfaceFlags.color).toBe("never");
+  });
+
+  it("reads the evidence switches in both directions", () => {
+    expect(parseRun(["--open-evidence", "t"]).interfaceFlags.openEvidence).toBe("always");
+    expect(parseRun(["--no-open-evidence", "t"]).interfaceFlags.openEvidence).toBe("never");
+  });
+
+  it("refuses both halves of a pair rather than picking one", () => {
+    expect(() => parseCommandLine(["--color", "--no-color", "t"], context)).toThrow(
+      /--color and --no-color contradict/,
+    );
+    expect(() => parseCommandLine(["--open-evidence", "--no-open-evidence", "t"], context)).toThrow(
+      /--open-evidence and --no-open-evidence contradict/,
+    );
+  });
+
+  it("mixes a switch with a flag that does take a value", () => {
+    expect(parseRun(["--no-tui", "--model", "local:a", "t"])).toMatchObject({
+      modelSpec: "local:a",
+      task: "t",
+      interfaceFlags: { tui: false },
+    });
+  });
+});
+
+describe("the review command", () => {
+  it("takes a bundle directory and resolves it against the current directory", () => {
+    expect(parseCommandLine(["review", "../bundles/one"], context)).toEqual({
+      command: "review",
+      bundleDirectory: "/work/bundles/one",
+    });
+  });
+
+  it("refuses a review with no bundle to read", () => {
+    expect(() => parseCommandLine(["review"], context)).toThrow(/needs a bundle directory/);
+  });
+
+  it("still reads a task that merely mentions review", () => {
+    expect(parseRun(["speed up the review page"]).command).toBe("run");
   });
 });

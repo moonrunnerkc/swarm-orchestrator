@@ -151,3 +151,50 @@ describe("readSwarmToml", () => {
     await expect(attempt).rejects.toThrow(MalformedSwarmTomlError);
   });
 });
+
+describe("the tables that decide what the screen does", () => {
+  it("reads the interface table, and leaves each key null when it says nothing", () => {
+    const parsed = parseSwarmToml(
+      ["[interface]", "tui = false", 'color = "never"', 'open_evidence = "always"'].join("\n"),
+      "swarm.toml",
+    );
+
+    expect(parsed.interface).toEqual({ tui: false, color: "never", openEvidence: "always" });
+    expect(parseSwarmToml("", "swarm.toml").interface).toEqual({
+      tui: null,
+      color: null,
+      openEvidence: null,
+    });
+  });
+
+  it("carries the theme and key tables through verbatim, for their own resolvers to judge", () => {
+    const parsed = parseSwarmToml(
+      ["[theme]", 'passed = "cyanBright"', "", "[keys]", 'pause = "space"'].join("\n"),
+      "swarm.toml",
+    );
+
+    expect(parsed.theme).toEqual({ passed: "cyanBright" });
+    expect(parsed.keys).toEqual({ pause: "space" });
+  });
+
+  it("names the key and the accepted set for an unknown interface key", () => {
+    expect(() => parseSwarmToml("[interface]\nfullscreen = true\n", "swarm.toml")).toThrow(
+      /\[interface\] fullscreen is not a key this build reads\. Accepted keys: tui, color, open_evidence\./,
+    );
+  });
+
+  it("names what each interface value must look like", () => {
+    expect(() => parseSwarmToml('[interface]\ncolor = "sometimes"\n', "swarm.toml")).toThrow(
+      /\[interface\] color: expected "auto", "always" or "never", found "sometimes"/,
+    );
+    expect(() => parseSwarmToml('[interface]\ntui = "yes"\n', "swarm.toml")).toThrow(
+      /\[interface\] tui: expected true or false, found "yes"/,
+    );
+  });
+
+  it("lists the new tables among the ones it reads", () => {
+    expect(() => parseSwarmToml("[screen]\nx = 1\n", "swarm.toml")).toThrow(
+      /Accepted tables: providers, gates, budgets, models, interface, theme, keys\./,
+    );
+  });
+});

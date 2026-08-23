@@ -4,8 +4,10 @@ import { z } from "zod";
 
 /**
  * The one optional configuration file (build guide 4.2): provider keys and endpoints, gate
- * overrides, budgets, and model pins. Nothing else belongs here; a new setting that does not
- * fit one of those four tables is a design question, not a schema addition.
+ * overrides, budgets, model pins, and what the screen looks like and answers to. Nothing else
+ * belongs here; a setting that does not fit one of these tables is a design question, not a
+ * schema addition. The three interface tables are here rather than in a second config path
+ * because a second config path is the design question already answered.
  */
 
 export const swarmTomlFileName = "swarm.toml";
@@ -37,6 +39,18 @@ const rawFileSchema = z.strictObject({
       pin: nonEmptyString.optional(),
     })
     .optional(),
+  interface: z
+    .strictObject({
+      tui: z.boolean().optional(),
+      color: z.enum(["auto", "always", "never"]).optional(),
+      open_evidence: z.enum(["ask", "always", "never"]).optional(),
+    })
+    .optional(),
+  // Validated for shape here and for meaning where they are used: an unknown colour slot or
+  // key action names itself in the error rather than in a schema dump (src/tui/theme.ts,
+  // src/tui/key-bindings.ts).
+  theme: z.record(nonEmptyString, nonEmptyString).optional(),
+  keys: z.record(nonEmptyString, nonEmptyString).optional(),
 });
 
 export interface SwarmToml {
@@ -57,6 +71,15 @@ export interface SwarmToml {
   readonly models: {
     readonly pin: string | null;
   };
+  readonly interface: {
+    readonly tui: boolean | null;
+    readonly color: "auto" | "always" | "never" | null;
+    readonly openEvidence: "ask" | "always" | "never" | null;
+  };
+  /** Colour per slot, handed to the theme resolver verbatim. */
+  readonly theme: Readonly<Record<string, string>>;
+  /** Key per action, handed to the binding resolver verbatim. */
+  readonly keys: Readonly<Record<string, string>>;
 }
 
 export class MalformedSwarmTomlError extends Error {
@@ -69,12 +92,13 @@ export class MalformedSwarmTomlError extends Error {
   }
 }
 
-const acceptedTables = "providers, gates, budgets, models";
+const acceptedTables = "providers, gates, budgets, models, interface, theme, keys";
 
 const acceptedKeysByTable: Readonly<Record<string, string>> = {
   providers: "anthropic_api_key, openai_api_key, google_api_key, local_endpoint",
   budgets: "max_steps, attempts, max_changed_files, max_added_lines",
   models: "pin",
+  interface: "tui, color, open_evidence",
 };
 
 /** What each value must look like, said in the error rather than left to a schema dump. */
@@ -88,6 +112,9 @@ const acceptedValueByKey: Readonly<Record<string, string>> = {
   "budgets.max_changed_files": "a positive whole number",
   "budgets.max_added_lines": "a positive whole number",
   "models.pin": 'a model spec such as "anthropic:claude-opus-5"',
+  "interface.tui": "true or false",
+  "interface.color": '"auto", "always" or "never"',
+  "interface.open_evidence": '"ask", "always" or "never"',
 };
 
 export function parseSwarmToml(text: string, source: string): SwarmToml {
@@ -125,6 +152,13 @@ export function parseSwarmToml(text: string, source: string): SwarmToml {
     models: {
       pin: raw.models?.pin ?? null,
     },
+    interface: {
+      tui: raw.interface?.tui ?? null,
+      color: raw.interface?.color ?? null,
+      openEvidence: raw.interface?.open_evidence ?? null,
+    },
+    theme: raw.theme ?? {},
+    keys: raw.keys ?? {},
   };
 }
 
@@ -159,7 +193,13 @@ function describeBadValue(issue: z.core.$ZodIssue, value: unknown): string {
   const label = path.length > 1 ? `[${path.slice(0, -1).join(".")}] ${path.at(-1)}` : path.join("");
   const accepted =
     acceptedValueByKey[path.join(".")] ??
-    (path[0] === "gates" ? "a command string" : issue.message);
+    (path[0] === "gates"
+      ? "a command string"
+      : path[0] === "theme"
+        ? "a colour name or a hex colour"
+        : path[0] === "keys"
+          ? 'a key such as "p", "ctrl+d" or "enter"'
+          : issue.message);
   return `${label}: expected ${accepted}, found ${JSON.stringify(valueAt(value, path))}`;
 }
 

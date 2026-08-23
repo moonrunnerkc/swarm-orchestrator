@@ -1,3 +1,6 @@
+import type { InterfaceFlags } from "../cli-options.ts";
+import type { OpenEvidencePolicy } from "../tui/session-interface.ts";
+import type { ColorMode } from "../tui/theme.ts";
 import type { SwarmToml } from "./swarm-toml.ts";
 
 /**
@@ -17,6 +20,14 @@ import type { SwarmToml } from "./swarm-toml.ts";
  * | google key       |                  | GOOGLE_GENERATIVE_AI_API_KEY | [providers] google_api_key  | unset                            |
  * | gate commands    |                  |                              | [gates] <gate id>           | assembled from the manifests     |
  * | diff budget      |                  |                              | [budgets] max_changed_files, max_added_lines | engine default  |
+ * | interactive view | --no-tui         |                              | [interface] tui             | on, wherever there is a terminal |
+ * | colour           | --color/--no-color | NO_COLOR and TERM, under "auto" | [interface] color        | auto                             |
+ * | open evidence    | --open-evidence/--no-open-evidence |            | [interface] open_evidence   | ask, and never off a terminal    |
+ * | colours by slot  |                  |                              | [theme] <slot>              | the one shipped theme            |
+ * | keys by action   |                  |                              | [keys] <action>             | the default keymap               |
+ *
+ * Colour under "auto" is the one setting the environment gets a say in, because NO_COLOR is
+ * a convention a user sets once for every tool rather than for this one.
  *
  * API keys deliberately have no flag: a key on a command line outlives the run in shell
  * history and process listings.
@@ -32,6 +43,16 @@ export interface CommandLineSettings {
   readonly maxSteps: number | null;
   readonly attempts: number | null;
   readonly localEndpoint: string | null;
+  readonly interfaceFlags?: InterfaceFlags;
+}
+
+/** Everything about the screen, resolved once. `auto` is decided against the real terminal. */
+export interface ResolvedInterface {
+  readonly tui: boolean;
+  readonly color: ColorMode;
+  readonly openEvidence: OpenEvidencePolicy;
+  readonly theme: Readonly<Record<string, string>>;
+  readonly keys: Readonly<Record<string, string>>;
 }
 
 interface ConfiguredLocalEndpoint {
@@ -59,6 +80,7 @@ export interface ResolvedSettings {
     readonly maxChangedFiles?: number;
     readonly maxAddedLines?: number;
   };
+  readonly interface: ResolvedInterface;
 }
 
 interface SettingsInput {
@@ -83,6 +105,7 @@ export function resolveSettings(input: SettingsInput): ResolvedSettings {
     },
     localEndpoint: resolveLocalEndpoint(input),
     gateCommandOverrides: input.toml?.gates ?? {},
+    interface: resolveInterface(input),
     diffBudget: {
       ...(input.toml?.budgets.maxChangedFiles == null
         ? {}
@@ -91,6 +114,17 @@ export function resolveSettings(input: SettingsInput): ResolvedSettings {
         ? {}
         : { maxAddedLines: input.toml.budgets.maxAddedLines }),
     },
+  };
+}
+
+function resolveInterface(input: SettingsInput): ResolvedInterface {
+  const flags = input.flags.interfaceFlags;
+  return {
+    tui: flags?.tui ?? input.toml?.interface.tui ?? true,
+    color: flags?.color ?? input.toml?.interface.color ?? "auto",
+    openEvidence: flags?.openEvidence ?? input.toml?.interface.openEvidence ?? "ask",
+    theme: input.toml?.theme ?? {},
+    keys: input.toml?.keys ?? {},
   };
 }
 
