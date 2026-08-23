@@ -11,7 +11,7 @@ verified, and it cannot change a record after the fact. Those are the harness's 
 and the run exports a signed, hash-chained bundle that anybody can check without installing
 this tool.
 
-[What it does](#what-it-does) | [Install](#install) | [Use](#use) | [What is claimed](#what-is-claimed) | [What is not claimed](#what-is-not-claimed) | [How it works](#how-it-works) | [Limits](#limits) | [Upgrading from v12](#upgrading-from-v12)
+[What it does](#what-it-does) | [Install](#install) | [Use](#use) | [Watching it work](#watching-it-work) | [What is claimed](#what-is-claimed) | [What is not claimed](#what-is-not-claimed) | [How it works](#how-it-works) | [Limits](#limits) | [Upgrading from v12](#upgrading-from-v12)
 
 ## What it does
 
@@ -38,10 +38,53 @@ option, so on anything older that measurement does not happen.
     swarm gates                      # run the gates over a workspace, no model
     swarm select                     # probe this machine, recommend a local model
     swarm calibrate                  # measure candidate models on the golden set
+    swarm review <bundle>            # what a past run produced, and open it
     swarm replay <bundle>            # read a bundle back
+
+    swarm --no-tui "..."             # plain lines even on a terminal
+    swarm --no-color "..."           # no colour, whatever the terminal says
+    swarm --open-evidence "..."      # open the review page when it finishes
 
 Set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` for a frontier
 model, or start Ollama or rapid-mlx and pass `--model local:<id>`.
+
+## Watching it work
+
+On a terminal, a run draws a single screen you can drive. Off one, it writes the same plain
+lines it always did, so pipes and CI are unchanged.
+
+```
+swarm  make the parser trim before it splits
+  local:qwen3-coder:30b-a3b  /Users/brad/projects/scratch-repo  20s  step 4  5812 tokens  attempt 1/3
+plan
+  read the failing test, fix the parser, run the gates
+actions
+  edit path=src/parse.ts find=text.split replace=text.trim().split
+  shell command=npm test
+  shell failed: 1 failing
+  ratchet accepted: tests collected 12 to 12, assertions 34 to 35, skips 0 to 0
+gates  attempt 1/3
+  PASS tests: 12 collected, 0 failed
+  PASS lint: no findings in 208 files
+  N/A  coverage: no lcov artifact was written to the path the harness named
+  WARN diff-budget (advisory): 1 file changed, 1 line added, budget 12 files and 400 lines
+DONE stopped: completed (4 steps, 5812 tokens)
+j scroll  enter expand  tab pane  / filter  e evidence  ? help  q detach  ctrl+c cancel run
+```
+
+`?` lists every key. `enter` expands a row to its whole payload and the ledger record it came
+from. `q` leaves the view and lets the run finish; `ctrl+c` cancels the run. There is no
+progress bar, because an agent run has no denominator.
+
+When the run ends, the screen lists what it produced, says how many claims the harness
+verified and how many it refused, and offers to open the review page. It says the bundle
+verified only if the bundle's own verifier ran here and exited 0. `swarm review <bundle>`
+shows the same panel for any bundle already on disk.
+
+The keymap, the `swarm.toml` surface, the degradation matrix, and a recording of a session
+are in [`interface.md`](docs/evidence/2026-08-23/interface.md), with the frames in
+[`interface-frames.txt`](docs/evidence/2026-08-23/interface-frames.txt) and a playable
+asciinema capture in [`interface.cast`](docs/evidence/2026-08-23/interface.cast).
 
 ## What is claimed
 
@@ -74,6 +117,11 @@ calibration runs with distributions rather than averages:
 **Eight untrusted boundaries are fuzzed**, and the harnesses are checked against a defect
 injected on purpose so a clean run cannot be a blind one: [`fuzz/`](fuzz/README.md) and
 [`security-coverage.md`](docs/security-coverage.md).
+
+**The screen renders from ledger projections, and a keystroke has no route to a verdict.**
+Interactive state is a separate type with a separate reducer, and a test asserts across every
+action that none of its fields can be mistaken for a gate result:
+[`interface.md`](docs/evidence/2026-08-23/interface.md).
 
 **Adversarial passes, with each closure locked as a regression test.** Six pass directories
 under [`redteam/`](redteam), 49 cases in `src/evidence/redteam-adversarial.test.ts`, and an
