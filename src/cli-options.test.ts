@@ -4,6 +4,7 @@ import {
   InvalidCommandLineError,
   parseCommandLine,
   type RunCommand,
+  usage,
 } from "./cli-options.ts";
 
 const context = { currentDirectory: "/work/repo" };
@@ -368,5 +369,38 @@ describe("the review command", () => {
 
   it("still reads a task that merely mentions review", () => {
     expect(parseRun(["speed up the review page"]).command).toBe("run");
+  });
+});
+
+describe("asking for help", () => {
+  // Asking for help must not fail for the reason a person is asking for help: the parser
+  // takes the word after a flag as its value, so --help used to report that it needed one.
+  it("takes --help as its own answer, with or without a task beside it", () => {
+    expect(parseCommandLine(["--help"], context)).toEqual({ command: "help" });
+    expect(parseCommandLine(["--help", "do a thing"], context)).toEqual({ command: "help" });
+    expect(parseCommandLine(["help"], context)).toEqual({ command: "help" });
+  });
+
+  it("outranks every other command, since a wrong command line is when it is asked for", () => {
+    expect(parseCommandLine(["gates", "--help"], context)).toEqual({ command: "help" });
+    expect(parseCommandLine(["replay", "--help"], context)).toEqual({ command: "help" });
+  });
+
+  it("names every command and every screen flag", () => {
+    for (const named of [
+      "swarm gates",
+      "swarm select",
+      "swarm calibrate",
+      "swarm routing",
+      "swarm parallel",
+      "swarm review",
+      "swarm replay",
+      "--no-tui",
+      "--no-color",
+      "--open-evidence",
+      "swarm.toml",
+    ]) {
+      expect(usage).toContain(named);
+    }
   });
 });
