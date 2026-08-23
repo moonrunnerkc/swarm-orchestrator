@@ -1,5 +1,12 @@
 # Clean-environment verification: NOT-RUN
 
+**Closed on 2026-08-23, elsewhere.** A container runtime was installed on this machine on
+2026-08-23 and both arms ran: `../2026-08-23/clean-container-verification.md` has the image
+digest, the exact invocations, and the two transcripts. What follows is what this run found,
+left as it was written, because a record of what was true then is not improved by editing it
+afterwards. The command below did not run in this session; the one that did is in that file,
+and it uses `docker cp` rather than the bind mount below, for a reason recorded there.
+
 ## Reason
 
 No container runtime exists on this machine. Checked by name and by application bundle:
