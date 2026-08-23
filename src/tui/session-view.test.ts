@@ -20,7 +20,7 @@ describe("session view projection", () => {
       { type: "tool-outcome", callId: "a", toolName: "read", failed: false, output: "body" },
     ]);
 
-    expect(view.actions).toEqual(["read path=x.ts", "read ok: body"]);
+    expect(view.actions.map((row) => row.summary)).toEqual(["read path=x.ts", "read ok: body"]);
   });
 
   it("marks a completion claim as unverified rather than done", () => {
@@ -108,7 +108,7 @@ describe("the gate strip", () => {
     ]);
 
     expect(view.attempt).toEqual({ current: 2, cap: 3 });
-    expect(view.actions).toContain("ratchet: assertions fell");
+    expect(view.actions.map((row) => row.summary)).toContain("ratchet rejected: assertions fell");
     expect(view.escalated).toBe(true);
     expect(view.finished).toBe(true);
     expect(view.status).toContain("escalated at the tests gate");
@@ -180,5 +180,76 @@ describe("plain line fallback", () => {
         record: "sha256:abc",
       }),
     ).toContain("(advisory)");
+  });
+});
+
+describe("what an expanded row can show", () => {
+  it("keeps the whole tool input beside the one-line summary", () => {
+    const view = project([
+      {
+        type: "tool-call",
+        callId: "a",
+        toolName: "edit",
+        input: { path: "src/parse.ts", find: "a", replace: "b" },
+      },
+    ]);
+
+    expect(view.actions[0]?.summary).toBe("edit path=src/parse.ts find=a replace=b");
+    expect(JSON.parse(view.actions[0]?.detail ?? "null")).toEqual({
+      path: "src/parse.ts",
+      find: "a",
+      replace: "b",
+    });
+  });
+
+  it("keeps every line of a tool's output, not only the first", () => {
+    const view = project([
+      {
+        type: "tool-outcome",
+        callId: "a",
+        toolName: "shell",
+        failed: true,
+        output: "1 failing\nAssertionError: expected 2 to be 3",
+      },
+    ]);
+
+    expect(view.actions[0]?.summary).toBe("shell failed: 1 failing");
+    expect(view.actions[0]?.detail).toBe("1 failing\nAssertionError: expected 2 to be 3");
+    expect(view.actions[0]?.failed).toBe(true);
+  });
+
+  it("carries the ledger record a ratchet row was written from", () => {
+    const view = project([
+      { type: "ratchet", attempt: 1, accepted: true, detail: "held", record: "sha256:r" },
+    ]);
+
+    expect(view.actions[0]?.record).toBe("sha256:r");
+  });
+});
+
+describe("the counters the header shows", () => {
+  it("counts steps, the model, and both ratchet outcomes from the events alone", () => {
+    const view = project([
+      { type: "model-call", step: 1, modelId: "local:qwen3-coder:30b-a3b" },
+      { type: "model-call", step: 2, modelId: "local:qwen3-coder:30b-a3b" },
+      { type: "ratchet", attempt: 1, accepted: false, detail: "fell", record: "sha256:a" },
+      { type: "ratchet", attempt: 2, accepted: true, detail: "held", record: "sha256:b" },
+    ]);
+
+    expect(view.modelId).toBe("local:qwen3-coder:30b-a3b");
+    expect(view.steps).toBe(2);
+    expect(view.ratchetRejected).toBe(1);
+    expect(view.ratchetAccepted).toBe(1);
+  });
+
+  it("has no token count until the harness reports one, and never invents one", () => {
+    const running = project([{ type: "model-call", step: 3, modelId: "fixture:a" }]);
+    expect(running.tokensUsed).toBe(0);
+
+    const stopped = project([
+      { type: "model-call", step: 3, modelId: "fixture:a" },
+      { type: "stopped", reason: "completed", steps: 3, tokensUsed: 902 },
+    ]);
+    expect(stopped.tokensUsed).toBe(902);
   });
 });
