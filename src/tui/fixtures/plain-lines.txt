@@ -1,0 +1,16 @@
+plan: read the failing test, then fix the parser
+step 1: calling local:qwen3-coder:30b-a3b
+tool read <- {"path":"src/parse.ts"}
+tool read ok: export function parse() {}
+tool shell <- {"command":"npm test","cwd":"."}
+tool shell failed: 1 failing
+AssertionError: expected 2 to be 3
+model error (retrying): the provider returned 429
+claim (unverified): the parser now handles the empty case
+gate tests failed: 12 collected, 1 failed [evidence record sha256:aaa]
+auto-resolve attempt 1 of 3
+ratchet rejected attempt 1: tests collected fell from 12 to 11 [evidence record sha256:bbb]
+gate lint passed (advisory): no findings [evidence record sha256:ccc]
+gate coverage not-applicable: no report was written [evidence record sha256:ddd]
+escalated after 3 attempt(s) at gate tests: the same failure three times
+stopped: completed after 7 steps, 4211 tokens

@@ -31,12 +31,18 @@ describe("what the dist build has to carry beyond compiled JavaScript", () => {
     const discovered = await assetsUnder(src);
     const byWalking = [];
     for (const entry of await readdir(src, { withFileTypes: true, recursive: true })) {
-      if (entry.isFile() && !entry.name.endsWith(".ts")) {
+      if (entry.isFile() && !entry.name.endsWith(".ts") && !entry.parentPath.includes("fixtures")) {
         byWalking.push(entry.name);
       }
     }
 
     expect(discovered.length).toBe(byWalking.length);
+  });
+
+  /** A test fixture is not a runtime asset, and shipping one would put a test in the package. */
+  it("leaves a test fixture out of the package", async () => {
+    const discovered = await assetsUnder(src);
+    expect(discovered.filter((asset) => asset.includes("fixtures"))).toEqual([]);
   });
 
   it("emits no TypeScript, since tsc is what turns those into the files beside them", async () => {
