@@ -20,8 +20,10 @@ The tag is the only reference to that commit anywhere in the repository. Deletin
 tidy a listing, it would make the commit unreachable and hand it to the next `git gc`.
 
 What it tags: `feat(v8): scaffold module skeleton (Phase 0)`, 2026-05-05, by Brad Kinnard. It
-introduced the v8 module skeleton and, with it, `src/contract/schema/v1.json`, the JSON Schema
-for the v8 contract format, plus its 199-line test. The tag message is "Schema v1 commit". The
+introduced the v8 module skeleton and, with it, `schema-v1:src/contract/schema/v1.json`, the
+JSON Schema for the v8 contract format, plus its 199-line test. That is git's own spelling of
+a path at a revision, and it is written that way because the file lives at that commit and
+nowhere in this tree. The tag message is "Schema v1 commit". The
 schema is the reason the tag exists: it names the version of a format rather than a release of
 a product, which is why it never sat on a branch.
 
