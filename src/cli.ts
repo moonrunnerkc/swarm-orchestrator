@@ -451,7 +451,7 @@ async function run(options: RunCommand): Promise<number> {
       ...(diffBudget === undefined ? {} : { diffBudget }),
     });
 
-    reportGates(gates.outcome, evidence);
+    reportGates(gates.outcome, evidence, ui.note);
 
     // Every finished run is one more sample the router learns from, and the ratchet numerics
     // ride along so a pass earned by erosion cannot look like a win (section 3.8).
@@ -468,10 +468,11 @@ async function run(options: RunCommand): Promise<number> {
       latencyMs: clock.now() - startedAt,
       recordedAt: clock.now(),
       cost: await priceTask(modelSpec, evidence),
+      note: ui.note,
     });
 
-    const written = await writeBundle(evidence, options.bundleDirectory, clock);
-    announceBundle(written.directory);
+    const written = await writeBundle(evidence, options.bundleDirectory, clock, ui.note);
+    announceBundle(written.directory, ui.note);
     await ui.presentEvidence(await summarizeEvidence(written));
     return loop.stopReason === "completed" && gates.outcome.settled === "green" ? 0 : 1;
   } finally {
@@ -490,25 +491,30 @@ function describeCycle(cycle: GateCycle): string {
     .join("\n");
 }
 
-function reportGates(outcome: AutoResolveOutcome, evidence: EvidenceRecorder): void {
-  process.stdout.write(`\ngates:\n${describeCycle(outcome.finalCycle)}\n`);
+/** Written through `note`, so an interactive screen holds them until it comes down. */
+function reportGates(
+  outcome: AutoResolveOutcome,
+  evidence: EvidenceRecorder,
+  note: (line: string) => void,
+): void {
+  note(`\ngates:\n${describeCycle(outcome.finalCycle)}`);
 
   for (const attempt of outcome.attempts) {
-    process.stdout.write(
+    note(
       `attempt ${attempt.attempt}: ${attempt.decision.accepted ? "accepted" : "REJECTED"} - ` +
-        `${attempt.decision.detail}\n`,
+        `${attempt.decision.detail}`,
     );
   }
 
   for (const run of outstandingJustifications(outcome.finalCycle, citedRecords(evidence))) {
-    process.stdout.write(
+    note(
       `\nthe ${run.gateId} gate asked for a justification and no claim cites its record ` +
-        `${run.record}. This does not block, and the bundle shows it unanswered.\n`,
+        `${run.record}. This does not block, and the bundle shows it unanswered.`,
     );
   }
 
   if (outcome.escalation !== null) {
-    process.stderr.write(`\n${describeEscalation(outcome.escalation)}\n`);
+    note(`\n${describeEscalation(outcome.escalation)}`);
   }
 }
 
@@ -546,6 +552,7 @@ interface RewardLogInput {
   readonly latencyMs: number;
   readonly recordedAt: number;
   readonly cost: TaskCost;
+  readonly note: (line: string) => void;
 }
 
 /**
@@ -585,11 +592,9 @@ async function logReward(input: RewardLogInput): Promise<void> {
   try {
     const log = await openRoutingLog({ path: defaultRoutingLogPath(input.home) });
     await log.append(entry);
-    process.stdout.write(`\nrouting reward: ${entry.reward.toFixed(3)} (${entry.rewardReason})\n`);
+    input.note(`\nrouting reward: ${entry.reward.toFixed(3)} (${entry.rewardReason})`);
   } catch (cause) {
-    process.stderr.write(
-      `[routing] the reward could not be appended to the log: ${describeError(cause)}\n`,
-    );
+    input.note(`[routing] the reward could not be appended to the log: ${describeError(cause)}`);
   }
 }
 
@@ -597,10 +602,14 @@ function describeError(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
 
-function announceBundle(directory: string): void {
-  process.stdout.write(`\nevidence bundle: ${directory}\n`);
-  process.stdout.write(`verify it anywhere: node ${join(directory, "verify.mjs")} ${directory}\n`);
-  process.stdout.write(`review it: open ${join(directory, "review.html")}\n`);
+function announceBundle(directory: string, note: (line: string) => void = writeOut): void {
+  note(`\nevidence bundle: ${directory}`);
+  note(`verify it anywhere: node ${join(directory, "verify.mjs")} ${directory}`);
+  note(`review it: open ${join(directory, "review.html")}`);
+}
+
+function writeOut(line: string): void {
+  process.stdout.write(`${line}\n`);
 }
 
 /** The gates on their own: no model, no retries, just what the workspace measures right now. */
@@ -653,6 +662,7 @@ async function writeBundle(
   evidence: EvidenceRecorder,
   destination: string | null,
   clock: Clock,
+  note: (line: string) => void = writeOut,
 ): Promise<{
   readonly directory: string;
   readonly manifest: BundleManifest;
@@ -660,7 +670,7 @@ async function writeBundle(
 }> {
   const signing = await resolveSigningKey(createKeychainSecretStore({ platform: platform() }));
   if (signing.notice !== null) {
-    process.stderr.write(`[signing] ${signing.notice}\n`);
+    note(`[signing] ${signing.notice}`);
   }
   const directory = destination ?? join(evidence.directory, "bundle");
   const written = await exportBundle({

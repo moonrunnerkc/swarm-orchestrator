@@ -21,6 +21,13 @@ import {
 export interface SessionInterface {
   emit(event: LoopEvent): void;
   /**
+   * A line for the person rather than for the screen: the gate summary, the routing reward,
+   * a signing notice, where the bundle went. On the plain path it is written straight out, in
+   * order, exactly as before. On the interactive path it is held until the screen comes down,
+   * because a raw write into a terminal Ink is drawing on lands in the middle of a frame.
+   */
+  note(line: string): void;
+  /**
    * The chokepoint's prompt. On the interactive path it is a component inside the running
    * screen, answered by the same key dispatcher; on every other path it is what it was.
    */
@@ -79,6 +86,7 @@ function streamInterface(options: SessionInterfaceOptions): SessionInterface {
         options.writeLine(line);
       }
     },
+    note: options.writeLine,
     confirm: (request) => confirmOnStream(request, options),
     cancelled: () => new Promise<void>(() => {}),
     async presentEvidence(summary: EvidenceSummary): Promise<void> {
@@ -128,6 +136,7 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
   let state: ViewState = initialViewState;
   let evidence: EvidenceSummary | null = null;
   let redraw = (): void => {};
+  const held: string[] = [];
   let onCancel = (): void => {};
   let onPanelClosed = (): void => {};
   let ticking = true;
@@ -214,6 +223,9 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
         dispatch({ type: "run-finished" });
       }
     },
+    note(line: string): void {
+      held.push(line);
+    },
     confirm: (request) => (state.detached ? Promise.resolve(false) : confirmations.ask(request)),
     cancelled: () =>
       new Promise<void>((resolve) => {
@@ -244,6 +256,12 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
       confirmations.refuseAll();
       instance.unmount();
       await instance.waitUntilExit();
+      // Written now the screen is gone, so they land in the scrollback in the order they
+      // happened rather than inside a frame that was being redrawn around them.
+      for (const line of held) {
+        options.writeLine(line);
+      }
+      held.length = 0;
     },
   };
 }
