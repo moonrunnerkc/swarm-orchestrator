@@ -165,3 +165,20 @@ describe("a terminal with the screen turned off", () => {
     expect(lines).toEqual(["step 2: calling fixture:a"]);
   });
 });
+
+describe("lines meant for the person rather than the screen", () => {
+  it("writes them straight out off a terminal, in the order they were noted", () => {
+    const { lines, ui } = start();
+    ui.note("gates: all green");
+    ui.note("routing reward: 0.628");
+
+    expect(lines).toEqual(["gates: all green", "routing reward: 0.628"]);
+  });
+
+  it("writes them straight out with the screen turned off too", () => {
+    const { lines, ui } = start({ isTty: true, interactive: false });
+    ui.note("evidence bundle: /tmp/b");
+
+    expect(lines).toEqual(["evidence bundle: /tmp/b"]);
+  });
+});
