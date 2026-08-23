@@ -13,6 +13,20 @@ export interface GateLine {
   readonly record: string;
 }
 
+/**
+ * One row of the action stream. `summary` is the row; `detail` is the whole of what the
+ * harness reported, which is what an expanded row shows. Both come off a loop event, so
+ * expanding a row shows more evidence rather than more prose.
+ */
+export interface ActionRow {
+  readonly kind: "tool-call" | "tool-outcome" | "model-error" | "ratchet";
+  readonly summary: string;
+  readonly detail: string;
+  /** The ledger record this row was written from, where the event carried one. */
+  readonly record: string | null;
+  readonly failed: boolean;
+}
+
 interface AttemptCounter {
   readonly current: number;
   readonly cap: number;
@@ -20,14 +34,21 @@ interface AttemptCounter {
 
 export interface SessionView {
   readonly plan: string;
-  /** Newest last. The screen shows a bounded tail of this. */
-  readonly actions: readonly string[];
+  /** Newest last. The screen shows a bounded window of this. */
+  readonly actions: readonly ActionRow[];
   readonly status: string;
   readonly finished: boolean;
   /** Latest result per gate, in the order the gates first ran. */
   readonly gates: readonly GateLine[];
   readonly attempt: AttemptCounter | null;
   readonly escalated: boolean;
+  /** The model the last call went to, as the harness named it. */
+  readonly modelId: string | null;
+  readonly steps: number;
+  /** Only the stop event carries a token count, so this is zero until the run ends. */
+  readonly tokensUsed: number;
+  readonly ratchetAccepted: number;
+  readonly ratchetRejected: number;
 }
 
 export const emptySessionView: SessionView = {
@@ -38,6 +59,11 @@ export const emptySessionView: SessionView = {
   gates: [],
   attempt: null,
   escalated: false,
+  modelId: null,
+  steps: 0,
+  tokensUsed: 0,
+  ratchetAccepted: 0,
+  ratchetRejected: 0,
 };
 
 /**
@@ -49,25 +75,54 @@ export function applyLoopEvent(view: SessionView, event: LoopEvent): SessionView
     case "plan":
       return { ...view, plan: event.text, status: "planning" };
     case "model-call":
-      return { ...view, status: `thinking (step ${event.step})` };
+      return {
+        ...view,
+        status: `thinking (step ${event.step})`,
+        modelId: event.modelId,
+        steps: Math.max(view.steps, event.step),
+      };
     case "model-error":
       return {
         ...view,
         status: event.willRetry ? "retrying after a model error" : "model error",
-        actions: [...view.actions, `model error: ${event.message}`],
+        actions: [
+          ...view.actions,
+          {
+            kind: "model-error",
+            summary: `model error: ${firstLine(event.message)}`,
+            detail: event.message,
+            record: null,
+            failed: true,
+          },
+        ],
       };
     case "tool-call":
       return {
         ...view,
         status: `running ${event.toolName}`,
-        actions: [...view.actions, `${event.toolName} ${summarizeInput(event.input)}`],
+        actions: [
+          ...view.actions,
+          {
+            kind: "tool-call",
+            summary: `${event.toolName} ${summarizeInput(event.input)}`,
+            detail: describeInput(event.input),
+            record: null,
+            failed: false,
+          },
+        ],
       };
     case "tool-outcome":
       return {
         ...view,
         actions: [
           ...view.actions,
-          `${event.toolName} ${event.failed ? "failed" : "ok"}: ${firstLine(event.output)}`,
+          {
+            kind: "tool-outcome",
+            summary: `${event.toolName} ${event.failed ? "failed" : "ok"}: ${firstLine(event.output)}`,
+            detail: event.output,
+            record: null,
+            failed: event.failed,
+          },
         ],
       };
     case "claim":
@@ -77,6 +132,8 @@ export function applyLoopEvent(view: SessionView, event: LoopEvent): SessionView
         ...view,
         status: `stopped: ${event.reason} (${event.steps} steps, ${event.tokensUsed} tokens)`,
         finished: true,
+        steps: event.steps,
+        tokensUsed: event.tokensUsed,
       };
     case "gate":
       return {
@@ -100,7 +157,18 @@ export function applyLoopEvent(view: SessionView, event: LoopEvent): SessionView
       return {
         ...view,
         status: `ratchet ${event.accepted ? "accepted" : "rejected"} attempt ${event.attempt}`,
-        actions: [...view.actions, `ratchet: ${event.detail}`],
+        ratchetAccepted: view.ratchetAccepted + (event.accepted ? 1 : 0),
+        ratchetRejected: view.ratchetRejected + (event.accepted ? 0 : 1),
+        actions: [
+          ...view.actions,
+          {
+            kind: "ratchet",
+            summary: `ratchet ${event.accepted ? "accepted" : "rejected"}: ${firstLine(event.detail)}`,
+            detail: event.detail,
+            record: event.record,
+            failed: !event.accepted,
+          },
+        ],
       };
     case "escalated":
       return {
@@ -133,4 +201,13 @@ function summarizeInput(input: unknown): string {
     .map(([key, value]) => `${key}=${firstLine(String(value))}`)
     .join(" ");
   return entries.length > 120 ? `${entries.slice(0, 117)}...` : entries;
+}
+
+/** The whole argument object, which is what an expanded row is for. */
+function describeInput(input: unknown): string {
+  try {
+    return JSON.stringify(input, null, 2) ?? String(input);
+  } catch {
+    return String(input);
+  }
 }
