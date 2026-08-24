@@ -103,3 +103,76 @@ does not: `raw.githubusercontent.com/<owner>/<repo>/main/...` names the branch `
 repository's HEAD, so repointing HEAD leaves it resolving to the v12 tree, which carries
 neither file. Both URLs now build from one ref that carries them, checked live: 404 before,
 200 after.
+
+## Decisions
+
+Every judgment call this run made, with the reasoning, so a reader can disagree with the
+decision rather than guess at it.
+
+**Pushing the v13.0.0 tag set off a publish, and the work list asked for both.** Phase 1 says
+push both tags; phase 1 also says hold the v13.0.0 tag until phase 7 decides what ships, and
+`publish.yml` fires on `v*`. The tag was pushed as instructed, the publish ran, and the registry
+refused it. Nothing was published and phase 7 kept a free choice. Recorded rather than tidied
+away, because the tension is in the instructions and the next person will hit it too.
+
+**The version is 13.1.0 rather than 13.0.0.** Everything phase 3 added is additive: no flag,
+command or output changed meaning, and the plain-line stream is byte-identical. That is a minor.
+13.0.0 was tagged and never reached the registry, so that tag stays where it is as the record of
+the tree it named rather than being moved onto a different one.
+
+**A container runtime was installed.** The clean-container check had two honest outcomes: run
+it, or leave the claim unmade. Simulating a container with a chroot or a second checkout would
+have answered a weaker question while looking like an answer to this one. Installing colima is a
+change to the machine and not to the tree, which is the objection the 08-18 run raised; that
+objection is about not doing it silently, and this run did it and wrote down what it installed.
+
+**`docker cp` rather than a bind mount, and the failure that led there.** The first attempt
+mounted the bundle read-only and the verifier reported a missing module: colima maps only part
+of the host filesystem into its VM, so the mount arrived empty. An empty directory failing to
+verify proves nothing. Both the failure and the switch are in the evidence file, because a
+recorded false start is worth more than a clean transcript that hides one.
+
+**`schema-v1` is kept rather than deleted.** The work list offered either. It is the only
+reference to `79c9c856` anywhere in the repository, checked against every tag and every branch,
+so deleting it would not have tidied a listing, it would have made a commit unreachable. Kept,
+pushed so the sole pointer no longer lives on one laptop, and documented by what it tags.
+
+**Nine branches deleted, four kept.** Ancestors of `v13-main` carry nothing `v13-main` does not,
+so they were deleted with `git branch -d`, which would have refused any that was not merged.
+Non-ancestors carry unique commits and were pushed instead, `redteam/loop/lap-1-attack` most of
+all: it is where the 08-18 run recovered the pass5 probe from, and deleting it would have
+removed the provenance of a restored artifact while leaving the artifact in place.
+
+**One dependency was added.** `@vitest/coverage-v8`, pinned exactly, dev only. The raw
+`NODE_V8_COVERAGE` route reports zero for every source file, because the test runner transforms
+modules in memory and nothing outside it can read their coverage. The alternative was to report
+coverage as not measured, which would have been honest and less useful than measuring it with
+the runner's own first-party provider.
+
+**The calibration was run twice, and only the second one is reported.** The first ran 180 runs
+over three models and reported "output tokens per second" as 0.0 for every run of every model.
+A dimension that prints the same number for everything is not measuring anything, and the work
+list is explicit that a dimension scored from less than it was given is a stop-and-diagnose
+rather than an aggregate to report. The cause was a request the harness never sent, the fix is
+one option on the local provider, and the second run is against the fixed path. The first run's
+numbers are not carried forward: the throughput row would be dishonest and the rest would be
+measurements of a different build.
+
+**The keychain entry was left alone.** It holds nine characters that are not an ed25519 key, so
+every run of this session signed with a per-run key. The code now says which of the three
+keychain failures happened and what to do about it. Overwriting the entry would have fixed the
+signature by destroying something nobody has identified, and that is the user's call.
+
+**Nothing was silenced to make a scan green.** Semgrep's 21 findings are dispositioned by class
+and none is suppressed; scoping the token rule off the scrubber's own fixtures is the right fix
+and is on the tech-debt list rather than done as a release-day footnote. An issue that arrives
+every Monday saying the same known thing is one people learn to close unread, which is the
+failure mode this project names about gates, so it is worth its own change with its own
+evidence.
+
+**Two red CI runs were the check working.** `scripts/check-doc-paths.mjs` resolved documentation
+pointers against the filesystem, so a path present on this machine and in no commit passed here
+and failed on a clean checkout. That is the same broken pointer to every reader, which is the
+whole point of the check, so the local pass was false on exactly the case it was written for.
+The second failure was the same mistake one level down, in the code written to remove it. It is
+verified now against a fresh clone with nothing built in it, which is what CI is.
