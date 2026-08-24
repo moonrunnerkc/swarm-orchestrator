@@ -22,6 +22,24 @@ describe("when the build has to run", () => {
     expect(manifest.scripts.prepare).toBe("npm run build");
     expect(manifest.files).toContain("dist/");
   });
+
+  /**
+   * The defect this covers, found by publishing rather than by reading: `npm publish
+   * --provenance` signs a statement naming the repository it was built from, and the registry
+   * refuses the tarball with E422 unless package.json's repository.url matches it. The field
+   * was absent, so the signed statement said one thing and the manifest said "", and the
+   * publish failed after the provenance had already reached the transparency log. There is no
+   * way to notice that from the source tree, which is why it is asserted here.
+   */
+  it("names the repository the provenance statement is checked against", async () => {
+    const manifest = JSON.parse(
+      await readFile(join(import.meta.dirname, "..", "package.json"), "utf8"),
+    );
+
+    expect(manifest.repository.url).toBe(
+      "git+https://github.com/moonrunnerkc/swarm-orchestrator.git",
+    );
+  });
 });
 
 describe("what the dist build has to carry beyond compiled JavaScript", () => {
