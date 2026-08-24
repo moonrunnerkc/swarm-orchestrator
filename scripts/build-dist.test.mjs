@@ -1,7 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { assetsUnder } from "./build-dist.mjs";
+import { assetsUnder, compilerPath } from "./build-dist.mjs";
 
 const src = join(import.meta.dirname, "..", "src");
 
@@ -31,6 +31,23 @@ describe("when the build has to run", () => {
    * publish failed after the provenance had already reached the transparency log. There is no
    * way to notice that from the source tree, which is why it is asserted here.
    */
+  /**
+   * The defect this covers, found by a person running the command the readme printed: npm
+   * inherits the global context into its git-dependency preparation, so `npm install -g <git
+   * ref>` places the clone as a root package, never installs the clone's devDependencies, and
+   * then runs `prepare`. The build spawned `node_modules/.bin/tsc` and the reader got ENOENT
+   * on a path they never typed. The command cannot be made to work from here, so the least
+   * this build owes them is a sentence saying which command does.
+   */
+  it("says which install to use when the compiler its build needs is absent", () => {
+    expect(() => compilerPath(join(import.meta.dirname, "..", "no-such-tree"))).toThrow(
+      /npm install -g swarm-orchestrator/,
+    );
+    expect(() => compilerPath(join(import.meta.dirname, "..", "no-such-tree"))).toThrow(
+      /without -g/,
+    );
+  });
+
   it("names the repository the provenance statement is checked against", async () => {
     const manifest = JSON.parse(
       await readFile(join(import.meta.dirname, "..", "package.json"), "utf8"),
