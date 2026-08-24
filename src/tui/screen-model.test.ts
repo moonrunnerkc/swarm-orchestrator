@@ -292,3 +292,56 @@ describe("the overlays", () => {
     expect(rendered).toContain("verified 3 claim(s) and refused 11");
   });
 });
+
+describe("what the screen says a run came to", () => {
+  /**
+   * The defect this covers, reported by a person who ran it: the model answered `Not Found`
+   * three times, the loop stopped at step 0 with `model-error`, nothing was written to the
+   * workspace, and the screen said `DONE gate diff-budget: passed` in the accent colour. The
+   * gates run after the loop and every gate event rewrites `status`, so the last gate to pass
+   * over an empty diff became the last word on a run that built nothing.
+   */
+  it("leads with the stop reason when the loop did not complete", () => {
+    const failed = [
+      { type: "model-call", step: 1, modelId: "local:gemma4:31b" },
+      { type: "stopped", reason: "model-error", steps: 0, tokensUsed: 0 },
+      {
+        type: "gate",
+        gateId: "diff-budget",
+        status: "passed",
+        blocking: false,
+        detail: "within budget: 0 file(s) and 0 added line(s)",
+        record: "sha256:1111111122222222333333334444444455555555666666667777777788888888",
+      },
+    ] satisfies readonly LoopEvent[];
+    const view = failed.reduce(applyLoopEvent, emptySessionView);
+
+    const rows = screen({ view });
+    const status = rows.map((row) => row.text).find((text) => text.includes("model-error"));
+
+    expect(status).toBeDefined();
+    expect(status).toContain("STOPPED");
+    expect(rows.map((row) => row.text).some((text) => text.startsWith("DONE "))).toBe(false);
+  });
+
+  it("still says DONE when the loop actually completed", () => {
+    const finished = [
+      { type: "stopped", reason: "completed", steps: 4, tokensUsed: 812 },
+      {
+        type: "gate",
+        gateId: "tests",
+        status: "passed",
+        blocking: true,
+        detail: "4 collected, 4 passed",
+        record: "sha256:1111111122222222333333334444444455555555666666667777777788888888",
+      },
+    ] satisfies readonly LoopEvent[];
+    const view = finished.reduce(applyLoopEvent, emptySessionView);
+
+    expect(
+      screen({ view })
+        .map((row) => row.text)
+        .some((text) => text.startsWith("DONE ")),
+    ).toBe(true);
+  });
+});

@@ -223,14 +223,27 @@ function describeGate(gate: GateLine, input: ScreenInput): string {
   );
 }
 
+/**
+ * The outcome, which is not the same thing as having finished.
+ *
+ * A run that stopped on `model-error` at step 0 used to render `DONE gate diff-budget: passed`
+ * in the accent colour: the gates run after the loop and each gate event rewrites `status`, so
+ * the last gate to pass became the last word on a run that changed nothing. Gates passing over
+ * an empty diff is not a result, and a person reading that reasonably concluded the tool had
+ * built something.
+ */
 function statusRow(input: ScreenInput): ScreenRow {
   const { view, theme } = input;
-  const color = view.escalated
-    ? theme.failed.color
-    : view.finished
-      ? theme.color("accent")
-      : theme.color("advisory");
-  const mark = view.escalated ? "ESCALATED " : view.finished ? "DONE " : "";
+  const stoppedBadly = view.stopReason !== null && view.stopReason !== "completed";
+
+  if (view.escalated) {
+    return { text: `ESCALATED ${view.status}`, color: theme.failed.color };
+  }
+  if (stoppedBadly) {
+    return { text: `STOPPED ${view.stopReason}: ${view.status}`, color: theme.failed.color };
+  }
+  const mark = view.finished ? "DONE " : "";
+  const color = view.finished ? theme.color("accent") : theme.color("advisory");
   return { text: `${mark}${view.status}`, color };
 }
 
