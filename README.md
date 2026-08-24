@@ -22,13 +22,24 @@ Then it exports the evidence.
 
 Here is a real run, committed: [`live-tasks.md`](docs/evidence/2026-08-18/live-tasks.md),
 with its bundle in [`live-frontier/`](docs/evidence/2026-08-18/live-frontier). And here is the
-published package doing it, installed from the tarball into a directory holding nothing else,
-against a workspace it had never seen, recorded in a real terminal:
+packaged tool doing it, installed from a tarball into a directory holding nothing else, against
+a workspace it had never seen, recorded in a real terminal:
 [`installed-package-run.md`](docs/evidence/2026-08-23/installed-package-run.md).
 
 ## Install
 
-    npm install -g swarm-orchestrator
+This is **13.1.1**, and it is not on the npm registry. `npm install -g swarm-orchestrator`
+installs **12.0.0** today, which is the pull-request auditor this package used to be and has
+nothing to do with what this file describes. What blocks publishing is one credential, written
+down in [the state report](docs/state-report-2026-08-23.md).
+
+Install from the tag instead:
+
+    npm install -g github:moonrunnerkc/swarm-orchestrator#v13.1.1
+
+That builds on install, so it needs no separate step, and it leaves you with `swarm` on your
+path. When the registry publish is unblocked this line becomes `npm install -g
+swarm-orchestrator@13` and this paragraph goes away.
 
 Node 24 or newer. That is a runtime floor rather than a preference: the coverage cycle
 spawns the test runner with `--test-isolation=process`, which Node 22 rejects as a bad
@@ -41,15 +52,25 @@ option, so on anything older that measurement does not happen.
     swarm gates                      # run the gates over a workspace, no model
     swarm select                     # probe this machine, recommend a local model
     swarm calibrate                  # measure candidate models on the golden set
+    swarm routing                    # what the reward log adds up to
+    swarm parallel --tasks <file>    # one worktree per task, then a merge queue
     swarm review <bundle>            # what a past run produced, and open it
     swarm replay <bundle>            # read a bundle back
 
     swarm --no-tui "..."             # plain lines even on a terminal
     swarm --no-color "..."           # no colour, whatever the terminal says
     swarm --open-evidence "..."      # open the review page when it finishes
+    swarm --model local:<id> "..."   # a specific model
+    swarm --workspace <dir> "..."    # a repository other than the current directory
+    swarm --attempts <n> "..."       # how many times the ratchet may retry a gate
 
 Set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` for a frontier
-model, or start Ollama or rapid-mlx and pass `--model local:<id>`.
+model, or start Ollama or rapid-mlx and pass `--model local:<id>`. With no model named, the
+router picks one from what the calibration measured on this machine, and `swarm routing` shows
+what it has learned.
+
+Settings live in one optional `swarm.toml`: providers and endpoints, gate definitions, budgets,
+model pins, and the `[interface]`, `[theme]` and `[keys]` tables. Flags win over the file.
 
 ## Watching it work
 
