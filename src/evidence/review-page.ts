@@ -123,7 +123,17 @@ function textOf(value: unknown): string | null {
  * ledger and none of them was on the page, whose header opened with the chain head.
  */
 function renderWhatHappened(dag: EvidenceDag): readonly string[] {
-  const started = payloadOf(dag, "session-started");
+  // A session records one of these per turn. Showing the first task beside the last turn's
+  // gates would describe two different pieces of work as though they were one.
+  const turns = dag.evidence
+    .filter((node) => node.type === "session-started")
+    .map((node) =>
+      node.payload !== null && typeof node.payload === "object" && !Array.isArray(node.payload)
+        ? (node.payload as Record<string, unknown>)
+        : null,
+    )
+    .filter((payload): payload is Record<string, unknown> => payload !== null);
+  const started = turns[turns.length - 1] ?? null;
   const stopped = lastPayloadOf(dag, "session-stopped");
   const reward = lastPayloadOf(dag, "reward");
 
@@ -138,8 +148,19 @@ function renderWhatHappened(dag: EvidenceDag): readonly string[] {
   }
 
   const rows: string[] = ['<dl class="what">'];
+  if (turns.length > 1) {
+    // Every task in order, because the gates and the diff below belong to the last one and a
+    // reader has to be able to see that this bundle covers more than a single piece of work.
+    rows.push(
+      field(
+        `${turns.length} turns`,
+        turns.map((turn, index) => `${index + 1}. ${textOf(turn.task) ?? "(no task)"}`).join("  "),
+      ),
+    );
+    rows.push(field("shown below", "the last turn"));
+  }
   if (task !== null) {
-    rows.push(field("task", task));
+    rows.push(field(turns.length > 1 ? "last task" : "task", task));
   }
   if (model !== null) {
     rows.push(field("model", model));
