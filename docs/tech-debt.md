@@ -187,6 +187,73 @@ Nothing checks this. A `files` entry whose content names a version or a registry
 shape to watch, and the cheap version of the fix is a test asserting no shipped document states
 a published version other than the one in `package.json`.
 
+## Debt: a session's ratchet is per turn, so a later turn can erase an earlier one's work
+
+The ratchet holds within a turn: tests collected, assertions, coverage and skips may not move
+the wrong way across the auto-resolve attempts of that turn, and the final state is compared to
+the base commit once more at the end.
+
+Nothing compares one turn to the turn before it. Seen while building the session: a turn was
+asked to add a divide function, rewrote `package.json` on its way there, and dropped the `test`
+script. The previous turn's `tests` gate had passed with three tests. This turn's reported
+not-applicable, honestly, because there was no test script any more. Both statements were true
+and nobody objected, because a gate that passed in turn 1 and reports not-applicable in turn 2
+is two separate cycles and the ratchet only ever sees one.
+
+That is a real hole and it is the shape of hole this project exists to close: a session that
+lets each turn quietly retire the last turn's verification is a session whose green means less
+the longer it runs. The fix is a floor carried across turns, so a gate that has passed in this
+session cannot later report not-applicable or failed without saying so. Not built, because
+deciding whether that floor blocks a turn or only reports it is a design call rather than a
+patch, and making it up while shipping something else is how a ratchet gets loosened.
+
+## Debt: one local pairing emits its tool calls as text, and the run reads that as a completion
+
+`rapid-mlx` serving `qwen3-coder:30b-a3b` answers a short tool-calling prompt correctly, and
+under this agent's system prompt with its nine tool schemas it repeatedly answered with
+pseudo-XML in the message body instead:
+
+    plan: <function>declare_file_set>
+    <parameter=files>
+    ["calculator.js", "calculator.test.js"]</function>
+
+The SDK parses no tool calls out of that, so the loop sees text with no calls, which is its
+definition of a completion claim, and stops with `completed` at step 1 having done nothing. The
+same three tasks against Ollama's `qwen3-coder-next` went green three times in a row, so this is
+a fact about that pairing rather than about the harness.
+
+What the harness now does about it is say that nothing changed, before the gate table rather
+than after it, because gates passing over an empty diff is the misleading part. What it does not
+do is recognise the pattern and tell the person their model is answering in text. That is worth
+doing and is not done: a run that ends `completed` at one step with no tool calls at all has a
+signature, and naming it would save the next person the half hour it cost to find.
+
+## Debt: the interactive session holds its notes until the screen comes down
+
+`note()` buffers on the interactive path, because a raw write into a terminal Ink is drawing on
+lands in the middle of a frame. That was right for a single run, where the screen comes down
+seconds later. In a session it means the gate summary, the routing reward and the signing notice
+for turn 1 appear after turn 3, all at once.
+
+Half of it is closed: each finished turn now leaves its task and what the gates decided on the
+screen, so the outcome is visible where it happened. The rest, the detail lines, still arrive at
+the end. Doing it properly means the transcript carrying them rather than the buffer, which is
+more of the same work rather than a different kind.
+
+## Debt: the evidence column is still an unindexed ledger dump
+
+The claims column is a product and the header, gates and diff above it are now readable. The
+evidence column underneath is every non-claim record as a card, in chain order, with a
+`sha256:` line under each. For this session that is 119 records; for the 2026-08-23 calibration
+it is 3,716 cards in an 11.6 MB file with no search box.
+
+Two things would fix most of it and neither is done: grouping by turn with the group collapsed
+by default, and moving the per-record digest into the expanded payload, where the person who
+wants it is already looking. A third is a question rather than a task: `model-call` payloads are
+the majority of the bytes, because the recorder writes the system prompt and the whole growing
+transcript on every step. Changing what is recorded touches the evidence contract, so it is
+named here rather than trimmed as a side effect of a page layout.
+
 ## Debt: the weekly scan files the same 21 semgrep findings every Monday
 
 Nineteen of them are `detected-github-token` inside the secret scrubber's own test corpus and

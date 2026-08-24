@@ -55,6 +55,7 @@ option, so on anything older that measurement does not happen.
 
     swarm "make slugify collapse whitespace and strip punctuation"
 
+    swarm                            # a session: type tasks, one after another
     swarm gates                      # run the gates over a workspace, no model
     swarm select                     # probe this machine, recommend a local model
     swarm calibrate                  # measure candidate models on the golden set
@@ -83,6 +84,25 @@ what it has learned.
 Settings live in one optional `swarm.toml`: providers and endpoints, gate definitions, budgets,
 model pins, and the `[interface]`, `[theme]` and `[keys]` tables. Flags win over the file.
 
+## A session, or a single task
+
+Run `swarm` with no task and it opens a session: one process, one ledger, and tasks typed one
+after another, each continuing the conversation the last one left.
+
+```
+› create calculator.js exporting add and multiply, and calculator.test.js covering both
+  8 gate(s) passed, 8 step(s)
+
+› add a divide function that throws on division by zero, and cover both cases
+```
+
+Each turn is measured on its own. A turn ends by recording where it left the tree, so the next
+one's gates see that turn's changes and not the ones before it. Three turns of this, with the
+bundle verified from outside and the page it produced, are in
+[`session.md`](docs/evidence/2026-08-24/session.md).
+
+`swarm "task"` still runs one task and exits, exactly as before.
+
 ## Watching it work
 
 On a terminal, a run draws a single screen you can drive. Off one, it writes the same plain
@@ -108,8 +128,9 @@ j scroll  enter expand  tab pane  / filter  e evidence  ? help  q detach  ctrl+c
 ```
 
 `?` lists every key. `enter` expands a row to its whole payload and the ledger record it came
-from. `q` leaves the view and lets the run finish; `ctrl+c` cancels the run. There is no
-progress bar, because an agent run has no denominator.
+from. `q` leaves the view: the screen comes down and the run keeps going, reporting the plain
+lines it writes off a terminal. `ctrl+c` cancels the run. There is no progress bar, because an
+agent run has no denominator.
 
 When the run ends, the screen lists what it produced, says how many claims the harness
 verified and how many it refused, and offers to open the review page. It says the bundle

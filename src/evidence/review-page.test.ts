@@ -197,3 +197,38 @@ describe("the change the run made", () => {
     expect(renderReviewPage(manifest, dagOf([]))).not.toContain("What changed");
   });
 });
+
+describe("a bundle that covers several turns of a session", () => {
+  /**
+   * A session records one `session-started` per turn, and the gates and diff on the page are
+   * the last turn's. Showing the first turn's task beside them would describe two different
+   * pieces of work as though they were one.
+   */
+  it("names every task and says which one the rest of the page is about", () => {
+    const html = renderReviewPage(
+      manifest,
+      dagOf([
+        node(0, "session-started", { task: "create the calculator", modelSpec: "local:m" }),
+        node(1, "session-stopped", { stopReason: "completed", steps: 7 }),
+        node(2, "session-started", { task: "make divide throw", modelSpec: "local:m" }),
+        node(3, "session-stopped", { stopReason: "completed", steps: 9 }),
+      ]),
+    );
+
+    expect(html).toContain("2 turns");
+    expect(html).toContain("create the calculator");
+    expect(html).toContain("make divide throw");
+    expect(html).toContain("the last turn");
+    expect(html).toContain("last task");
+  });
+
+  it("says task, not last task, when there was only one", () => {
+    const html = renderReviewPage(
+      manifest,
+      dagOf([node(0, "session-started", { task: "one thing", modelSpec: "local:m" })]),
+    );
+
+    expect(html).not.toContain("last task");
+    expect(html).not.toContain("turns");
+  });
+});
