@@ -154,6 +154,23 @@ Three ways to close it, and the choice is not a release-day one because a reader
 end of each: retire the site, replace it with a redirect to the README, or build a v13 page. The
 third is the most work and the only one that leaves something worth visiting.
 
+## Debt: three documents ship inside the package and can go stale between releases
+
+The `files` allowlist puts `build-guide.md`, `security-coverage.md` and `claims.md` in the
+tarball. That is deliberate, since a package about evidence should carry what it claims and what
+it admits, but it means a sentence corrected on the branch is still wrong in whatever is on the
+registry until the next publish.
+
+Live instance, found by publishing: the package identity section of `build-guide.md` said
+"swarm-orchestrator on the registry stops at 12.0.0" as a present fact, and 13.1.3 shipped with
+it. Corrected on the branch and left to ride along with the next release rather than spending a
+version on one sentence, which is the judgement worth writing down: the README got its own patch
+because it told readers the wrong install command, and a design-history note does not.
+
+Nothing checks this. A `files` entry whose content names a version or a registry state is the
+shape to watch, and the cheap version of the fix is a test asserting no shipped document states
+a published version other than the one in `package.json`.
+
 ## Debt: the weekly scan files the same 21 semgrep findings every Monday
 
 Nineteen of them are `detected-github-token` inside the secret scrubber's own test corpus and
