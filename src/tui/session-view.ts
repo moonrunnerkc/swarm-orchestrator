@@ -1,4 +1,5 @@
 import type { GateStatus, LoopEvent } from "../core/loop-events.ts";
+import type { StopReason } from "../core/termination.ts";
 
 /**
  * One line of the gate strip. Every field here came off a gate-run ledger record, and the
@@ -38,6 +39,12 @@ export interface SessionView {
   readonly actions: readonly ActionRow[];
   readonly status: string;
   readonly finished: boolean;
+  /**
+   * Why the loop stopped, kept apart from `status` because the gates run afterwards and every
+   * gate event rewrites `status`. Without this a run that died at step 0 ends up displaying the
+   * last gate that passed, which is how `model-error` came to render as `DONE`.
+   */
+  readonly stopReason: StopReason | null;
   /** Latest result per gate, in the order the gates first ran. */
   readonly gates: readonly GateLine[];
   readonly attempt: AttemptCounter | null;
@@ -56,6 +63,7 @@ export const emptySessionView: SessionView = {
   actions: [],
   status: "starting",
   finished: false,
+  stopReason: null,
   gates: [],
   attempt: null,
   escalated: false,
@@ -132,6 +140,7 @@ export function applyLoopEvent(view: SessionView, event: LoopEvent): SessionView
         ...view,
         status: `stopped: ${event.reason} (${event.steps} steps, ${event.tokensUsed} tokens)`,
         finished: true,
+        stopReason: event.reason,
         steps: event.steps,
         tokensUsed: event.tokensUsed,
       };
