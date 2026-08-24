@@ -1,5 +1,44 @@
 # Changelog
 
+## 13.1.6
+
+A session, and the evidence a person reads.
+
+### Added
+
+- **`swarm` with no task opens a session.** One process, one ledger, tasks typed one after
+  another, each continuing the conversation the last one left. The screen keeps what each
+  finished turn came to, so it does not forget between them. `swarm "task"` is unchanged.
+- **Each turn is measured on its own.** A turn ends by recording where it left the tree, so the
+  next turn's gates see that turn's changes and not the ones before it. Without it the second
+  turn is charged with the first's diff and the file-set check calls the first turn's files
+  out-of-set.
+- **The review page says what happened.** The header carries the tasks, the model, whether the
+  loop completed, how long it took and what it cost, above the identifiers it used to open with.
+- **The gate table is in the bundle.** It was printed to a terminal and never written into the
+  page, where the gates had been indistinguishable cards among the model calls.
+- **The change itself is recorded and shown.** Nothing recorded a patch, so the question the
+  page exists to answer, what did this do to my code, meant leaving the evidence and running git.
+
+### Fixed
+
+- **A run that changed nothing reported `DONE`.** The gates run after the loop and each gate
+  event rewrote the status, so the last gate to pass over an empty diff became the last word on
+  a run that built nothing. The stop reason is now its own field, and a cycle that measured no
+  changed files says so before the table.
+- **A second turn measured its own edits as deletions.** `git diff <base>` from the person's
+  index calls a file that is in the base and untracked here deleted. Changes are now measured
+  through a scratch index, which makes the comparison tree to tree and counts a file the agent
+  just wrote as added.
+- **`q` did not leave the view.** It set a flag that three things read after the fact; nothing
+  unmounted the screen, which kept painting. It now comes down and the run reports the way it
+  does off a terminal.
+- **A refused bundle named nothing.** The failing check was read off stderr and the verifier
+  reports through stdout, so every real refusal said "no detail given" at the one moment the
+  panel exists for.
+- Six record types rendered as their own bare name on the page, including the one holding what
+  the run cost.
+
 ## 13.1.5
 
 Three fixes, all found by running the tool rather than by reading it.
