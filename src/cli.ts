@@ -71,8 +71,10 @@ import { renderCalibrationReport } from "./select/calibration-report.ts";
 import { appendCalibrationCase, defaultGoldenSetPath, readGoldenSet } from "./select/golden-set.ts";
 import { probeHardware } from "./select/hardware-probe.ts";
 import { createOllamaMemoryProbe } from "./select/memory-probe.ts";
+import { chooseUsableModel } from "./select/model-fallback.ts";
 import {
   describePreflight,
+  type LocalModelPreflight,
   preflightLocalModels,
   preflightRecord,
 } from "./select/model-preflight.ts";
@@ -228,6 +230,8 @@ async function chooseModel(
 ): Promise<{
   modelSpec: string | null;
   assignment: "calibration" | "ucb" | "epsilon" | "pinned";
+  /** What else the calibration measured, so an unserved pick can be swapped for a known one. */
+  candidates: readonly string[];
   /**
    * Null where there was nothing to route between. The decision travels back rather than
    * being recorded here because the pick happens before the session opens: the model has
@@ -237,7 +241,7 @@ async function chooseModel(
 }> {
   const calibrated = await readCalibrationPick(defaultPickPath(home));
   if (calibrated?.model == null) {
-    return { modelSpec: null, assignment: "pinned", decision: null };
+    return { modelSpec: null, assignment: "pinned", decision: null, candidates: [] };
   }
 
   const log = await openRoutingLog({ path: defaultRoutingLogPath(home) });
@@ -252,7 +256,12 @@ async function chooseModel(
   process.stdout.write(
     `routing: ${decision.model} (${decision.assignment}) - ${decision.reason}\n`,
   );
-  return { modelSpec: decision.model, assignment: decision.assignment, decision };
+  return {
+    modelSpec: decision.model,
+    assignment: decision.assignment,
+    decision,
+    candidates: calibrated.candidates,
+  };
 }
 
 /**
@@ -382,7 +391,12 @@ async function run(options: RunCommand): Promise<number> {
   });
   const random = createSystemRandom();
   const routed = settings.modelPinned
-    ? { modelSpec: null as string | null, assignment: "pinned" as const, decision: null }
+    ? {
+        modelSpec: null as string | null,
+        assignment: "pinned" as const,
+        decision: null,
+        candidates: [] as readonly string[],
+      }
     : await chooseModel(options.task, homedir(), random);
   const modelSpec = routed.modelSpec ?? settings.modelSpec;
   const spec = parseModelSpec(modelSpec);
@@ -406,8 +420,27 @@ async function run(options: RunCommand): Promise<number> {
     await evidence.record(routingDecisionRecord(routed.decision));
   }
 
+  // What the backend is serving decides, rather than what a calibration measured on some
+  // earlier day. Without this a routed model the endpoint has never heard of reaches dispatch
+  // and answers Not Found, which names neither the endpoint nor the model that was missing.
+  const usable =
+    spec.provider === "local" && localBackend !== null
+      ? chooseUsableModel({
+          requested: modelSpec,
+          preflight: await preflightAll(evidence, localBackend.url, [modelSpec]),
+          keys: settings.providerKeys,
+          candidates: routed.candidates,
+        })
+      : ({ outcome: "as-requested", modelSpec, reason: "not a local model" } as const);
+  if (usable.outcome === "substituted") {
+    process.stdout.write(
+      `model: ${usable.modelSpec} instead of ${usable.requested}, ${usable.reason}\n`,
+    );
+  }
+  const runSpec = parseModelSpec(usable.modelSpec);
+
   const registry = createProviderRegistry(registrySettingsFrom(settings, localBackend));
-  const model = createRecordingModelClient(registry.create(spec), evidence);
+  const model = createRecordingModelClient(registry.create(runSpec), evidence);
   const fileSet = createFileSetRegistry(evidence);
 
   const ui = startInterface({
@@ -459,7 +492,7 @@ async function run(options: RunCommand): Promise<number> {
       evidence,
       home: homedir(),
       task: options.task,
-      modelSpec,
+      modelSpec: usable.modelSpec,
       assignment: routed.assignment,
       ratchet: summarizeRatchet(gates.outcome),
       // The diff-budget gate's own measure, merged into the cycle. Read from there rather
@@ -467,7 +500,7 @@ async function run(options: RunCommand): Promise<number> {
       changedFiles: gates.outcome.finalCycle.measures.changedFiles ?? null,
       latencyMs: clock.now() - startedAt,
       recordedAt: clock.now(),
-      cost: await priceTask(modelSpec, evidence),
+      cost: await priceTask(usable.modelSpec, evidence),
       note: ui.note,
     });
 
@@ -882,6 +915,22 @@ async function preflight(
   backendUrl: string,
   models: readonly string[],
 ): Promise<readonly string[]> {
+  const checked = await preflightAll(evidence, backendUrl, models);
+  // Calibration's own account of the probe: which models it will not create runs for, and
+  // how many of the ones asked for survive. A single run says something else, because it
+  // goes on to substitute one and needs to name the substitution rather than the shortfall.
+  for (const line of describePreflight(checked)) {
+    process.stdout.write(`${line}\n`);
+  }
+  return checked.runnable;
+}
+
+/** The whole answer rather than the runnable subset, for the caller that has to choose. */
+async function preflightAll(
+  evidence: EvidenceRecorder,
+  backendUrl: string,
+  models: readonly string[],
+): Promise<LocalModelPreflight> {
   const checked = preflightLocalModels({
     requested: models,
     backendUrl,
@@ -893,10 +942,7 @@ async function preflight(
   });
 
   await evidence.record(preflightRecord(checked));
-  for (const line of describePreflight(checked)) {
-    process.stdout.write(`${line}\n`);
-  }
-  return checked.runnable;
+  return checked;
 }
 
 /** Turns a task that went wrong into a case the golden set will measure against forever. */
