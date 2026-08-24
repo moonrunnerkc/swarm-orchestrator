@@ -766,6 +766,18 @@ function reportGates(
   evidence: EvidenceRecorder,
   note: (line: string) => void,
 ): void {
+  // Said before the gate table rather than after it, because a table of passes over a tree
+  // nothing touched is the most misleading thing this tool can print. A model that answered in
+  // prose, or emitted its tool calls as text the protocol never parsed, reaches here having
+  // done nothing, stops for the honest reason "completed", and every gate then passes over an
+  // empty diff. A task can legitimately change nothing, so this states the fact rather than
+  // calling it a failure.
+  if (outcome.finalCycle.measures.changedFiles === 0) {
+    note(
+      "\nno files were changed. The gates below measured an unchanged workspace, so they say " +
+        "nothing about work being done.",
+    );
+  }
   note(`\ngates:\n${describeCycle(outcome.finalCycle)}`);
 
   for (const attempt of outcome.attempts) {

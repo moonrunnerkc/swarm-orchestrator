@@ -9,7 +9,9 @@ import type { KeyBindings } from "./key-bindings.ts";
 import { type OpenTarget, openEvidenceTarget, type SpawnHandler } from "./open-path.ts";
 import { describeLoopEvent } from "./plain-lines.ts";
 import { SessionScreen } from "./screen.ts";
+import type { TranscriptLine } from "./screen-model.ts";
 import { createSessionStore } from "./session-store.ts";
+import type { SessionView } from "./session-view.ts";
 import type { Theme } from "./theme.ts";
 import {
   applyViewAction,
@@ -163,6 +165,23 @@ async function confirmOnStream(
   return answer.trim().toLowerCase() === "y";
 }
 
+/**
+ * One line for a finished turn: what the gates decided and what it cost in steps. Read off the
+ * projection, so it says what the harness reported and nothing the model claimed.
+ */
+function summarizeTurn(view: SessionView): string {
+  const failed = view.gates.filter((gate) => gate.status === "failed" && gate.blocking);
+  const passed = view.gates.filter((gate) => gate.status === "passed");
+  const verdict = view.escalated
+    ? `escalated at ${failed.map((gate) => gate.gateId).join(", ") || "a gate"}`
+    : view.stopReason !== null && view.stopReason !== "completed"
+      ? `stopped: ${view.stopReason}`
+      : failed.length > 0
+        ? `gates failed: ${failed.map((gate) => gate.gateId).join(", ")}`
+        : `${passed.length} gate(s) passed`;
+  return `${verdict}, ${view.steps} step(s)`;
+}
+
 function interactiveInterface(options: SessionInterfaceOptions): SessionInterface {
   const store = createSessionStore();
   const confirmations = createConfirmationQueue();
@@ -178,6 +197,7 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
   let mounted = true;
   let onTaskTyped: (task: string | null) => void = () => {};
   let currentTask = options.task;
+  const transcript: TranscriptLine[] = [];
 
   const submitTask = (task: string): void => {
     const settle = onTaskTyped;
@@ -251,6 +271,7 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
       confirmations,
       onOpen: open,
       onSubmitTask: submitTask,
+      transcript,
       theme: options.theme,
       bindings: options.bindings,
       task: currentTask,
@@ -269,6 +290,7 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
         confirmations,
         onOpen: open,
         onSubmitTask: submitTask,
+        transcript,
         theme: options.theme,
         bindings: options.bindings,
         task: currentTask,
@@ -347,8 +369,14 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
       });
     },
     beginTurn(task: string): void {
-      // The next turn starts from an empty stream rather than under the last one's rows, which
-      // is the difference between a session and one long run that keeps being added to.
+      // What the last turn came to, kept before the stream is cleared for this one. Clearing
+      // without keeping it is a screen that forgets, which is the opposite of what a person
+      // holds a session open for.
+      const finished = store.getView();
+      if (finished.stopReason !== null || finished.escalated) {
+        transcript.push({ text: currentTask, kind: "task" });
+        transcript.push({ text: summarizeTurn(finished), kind: "outcome" });
+      }
       store.reset();
       currentTask = task;
       dispatch({ type: "scroll-to-tail" });
