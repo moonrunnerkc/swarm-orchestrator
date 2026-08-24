@@ -1,5 +1,22 @@
 # Changelog
 
+## 13.1.9
+
+### Added
+
+- **A line that says the run is alive, and what it is doing.** A spinner that turns, the current
+  activity, how long it has been going, and while the model is talking, the tail of what it is
+  saying. Nothing on the screen moved before this: the status said `thinking (step 3)` and
+  stayed there, and the only thing that changed was a seconds counter the layout hides below 80
+  columns or 12 rows, so a run taking a minute looked exactly like one that had hung.
+- **The model's words as they arrive.** The stream was already being drained to time the first
+  token and every piece of text was discarded. It is handed on now. One line of it: the whole
+  response lands in the action stream when it arrives and in the ledger for ever, and repeating
+  it as it streams would be the same text three times.
+- **The tool that is running, named while it runs.** Between a tool starting and finishing
+  nothing was emitted, which for a shell command is a screen sitting still for a minute and a
+  half. A tool that finishes inside a frame still draws nothing, which is the right amount.
+
 ## 13.1.8
 
 ### Added
