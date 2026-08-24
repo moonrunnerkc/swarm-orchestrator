@@ -12,6 +12,10 @@ was written by the model.
     swarm --no-tui --max-steps 16 \
       --local-endpoint http://127.0.0.1:11434/v1 --model local:qwen3-coder-next:latest
 
+Run from the tree that became 13.1.6. The two changes after it, an enter key that submits
+whichever way the newline arrives and a screen that says a run changed nothing, are both about
+what a terminal shows and neither touches what the gates measured here.
+
 ## The three turns
 
 | | task | steps | changed | added | tests after |
