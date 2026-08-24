@@ -477,17 +477,33 @@ are scoped away from the scrubber's own fixtures. Scoping a secret rule off a di
 deliberate fake credentials is legitimate and is not a release-day change: it is on the tech
 debt list, so the next person does it with its own evidence rather than as a footnote here.
 
+## Closed on 2026-08-24: the first scheduled run
+
+The three defects above were found and fixed by dispatching the workflow by hand. That proves the
+workflow works when a person pushes the button, which is not the thing it was written to do. On
+2026-08-24 at 06:31 UTC it fired on its own schedule for the first time, run `32697714165`, and
+every part of it did what the hand-run had done:
+
+```
+Scanned /github/workspace/package-lock.json file and found 259 packages
+No issues found                                     # osv-scanner, actually scanning
+Ran 252 rules on 6102 files: 21 findings.           # semgrep, the same 21
+```
+
+It filed issue #68, labelled `security`, which is the label that did not exist a day earlier.
+
+Two things this settles and one it does not. It settles that the schedule fires and that a finding
+reaches a person. It settles that osv-scanner reads the lockfile rather than exiting 127 on an
+undefined flag, on a run nobody was watching. It does not settle the thing on the tech-debt list:
+issue #68 says exactly what issue #67 said, which is the pattern that teaches people to close
+these unread, and it will keep saying it every Monday until the token rule is scoped off the
+scrubber's own fixtures.
+
 ## Not yet in place
 
-- **The weekly scan is scheduled but has never fired.** `.github/workflows/weekly-scan.yml`
-  runs Semgrep `p/default` at WARNING and above, OSV-Scanner, and the fuzz smoke every
-  Monday, opens an issue on findings, and fails loudly if it cannot open one. It was added
-  on 2026-08-18 and no scheduled run has happened yet, so nothing in this document has been
-  re-verified by it. The mechanism exists; the evidence that it works on a schedule does not.
-- **Semgrep and OSV-Scanner in that workflow are unexercised.** Both steps were written and
-  neither has run, in CI or locally, in the pass that added them. The push workflow runs
-  gates, the invariant-drift check and `fuzz:build`, and those three are confirmed green
-  remotely.
+- Both of the bullets that stood here, that the weekly scan had never fired and that its
+  scanners were unexercised, are closed. See
+  [the first scheduled run](#closed-on-2026-08-24-the-first-scheduled-run) below.
 - **The four judge-shaped residuals are open**, and closing them is not planned for this
   release. They are in build guide 7.1 and each is a permanent case in
   `src/evidence/redteam-adversarial.test.ts` asserting the gap as it stands.
