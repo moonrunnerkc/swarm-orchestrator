@@ -90,6 +90,28 @@ describe("a file on the disk and in no commit", () => {
     expect(found.misses).toEqual([]);
     expect(found.generated.map((entry) => entry.raw)).toEqual(["dist/"]);
   });
+
+  /**
+   * The clean checkout, which is where the first two attempts at this went wrong. A
+   * directory-only ignore pattern matches `dist/` on any checkout and matches `dist` only
+   * where the directory happens to exist, so asking about the stripped name answered one way
+   * on the machine that had built the tree and another way in CI.
+   */
+  it("is generated on a checkout where nothing has built it yet", async () => {
+    const found = await doc("a.md", "the build lands in `dist/`\n");
+
+    expect(found.misses).toEqual([]);
+    expect(found.generated.map((entry) => entry.raw)).toEqual(["dist/"]);
+  });
+
+  it("is generated for a nested pattern nothing has created either", async () => {
+    await writeFile(join(root, ".gitignore"), "dist/\nredteam/loop/state-*/\n");
+    await track();
+    const found = await doc("a.md", "the driver writes `redteam/loop/state-wake/`\n");
+
+    expect(found.misses).toEqual([]);
+    expect(found.generated.map((entry) => entry.raw)).toEqual(["redteam/loop/state-wake/"]);
+  });
 });
 
 describe("what is not a pointer, and must not be reported as one", () => {

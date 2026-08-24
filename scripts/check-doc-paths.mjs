@@ -224,10 +224,10 @@ export async function checkDocumentationPaths(root) {
   // that broke, and asking per path would spawn git several hundred times.
   const ignored = await ignoredAmong(
     root,
-    unresolved.map((entry) => entry.raw.replace(/\/$/, "")),
+    unresolved.map((entry) => entry.raw),
   );
   for (const entry of unresolved) {
-    if (ignored.has(entry.raw.replace(/\/$/, ""))) {
+    if (ignored.has(entry.raw)) {
       generated.push(entry);
     } else {
       misses.push(entry);
