@@ -17,6 +17,7 @@ import {
   type ReviewCommand,
   type RunCommand,
   type SelectCommand,
+  type SessionCommand,
   usage,
 } from "./cli-options.ts";
 import {
@@ -26,6 +27,7 @@ import {
 } from "./config/settings.ts";
 import { readSwarmToml } from "./config/swarm-toml.ts";
 import type { Clock } from "./core/clock.ts";
+import type { ConversationMessage } from "./core/model-client.ts";
 import type { RandomSource } from "./core/random-source.ts";
 import { bundleSourceFromRecorder, exportBundle, readBundle } from "./evidence/bundle.ts";
 import type { BundleManifest } from "./evidence/bundle-manifest.ts";
@@ -49,6 +51,7 @@ import type { DiffBudget } from "./gates/gate-definition.ts";
 import { citedRecords, type GateCycle, outstandingJustifications } from "./gates/gate-runner.ts";
 import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { summarizeRatchet } from "./gates/ratchet-summary.ts";
+import { recordTurnBaseline } from "./gates/turn-baseline.ts";
 import {
   localEndpointRecord,
   type ResolvedLocalEndpoint,
@@ -265,6 +268,213 @@ async function chooseModel(
 }
 
 /**
+ * A session: one process, one ledger, many tasks, each typed rather than passed.
+ *
+ * Everything expensive is built once, which is the point of a session over repeated runs: the
+ * settings, the provider registry, the sandbox and its tool definitions, the evidence chain and
+ * the screen all outlive a turn. What is rebuilt per turn is what carries state that a second
+ * task must not inherit, and each of those is a decision rather than an oversight:
+ *
+ *   - the abort controller, because a signal is one-shot and a reused aborted one would make
+ *     the next turn stop before it started;
+ *   - the file-set registry, because declaring a set twice is an error and the check walks the
+ *     whole chain when it decides what was edited before it was authorised;
+ *   - the base commit, because the previous turn's edits are still uncommitted, and measuring
+ *     against the start of the session would charge this turn with the last one's diff;
+ *   - the routed model, because routing reads the task, and a different task may deserve a
+ *     different arm.
+ *
+ * The conversation is what carries across, so a follow-up can say "now make it throw" and mean
+ * the file the previous turn wrote.
+ */
+async function session(options: SessionCommand): Promise<number> {
+  if (!statSync(options.workspace).isDirectory()) {
+    throw new Error(`${options.workspace} is not a directory to work in`);
+  }
+  const settings = await settingsFor(options.workspace, {
+    model: options.modelSpec,
+    maxSteps: options.maxSteps,
+    attempts: options.attempts,
+    localEndpoint: options.localEndpoint,
+    interfaceFlags: options.interfaceFlags,
+  });
+
+  const clock = createSystemClock();
+  const random = createSystemRandom();
+  const evidence = await openEvidenceSession({
+    root: defaultSessionRoot(homedir()),
+    sessionId: createSessionId(clock, random),
+    clock,
+  });
+  const ui = startInterface({ task: "", workspace: options.workspace, settings, clock });
+
+  let baseRef = options.baseRef;
+  let history: readonly ConversationMessage[] = [];
+  let turns = 0;
+  let lastGreen = true;
+
+  try {
+    for (;;) {
+      const task = await ui.readTask();
+      if (task === null) {
+        break;
+      }
+      turns += 1;
+      ui.beginTurn(task);
+
+      const outcome = await runOneTurn({
+        task,
+        history,
+        baseRef,
+        options,
+        settings,
+        evidence,
+        ui,
+        clock,
+        random,
+      });
+      history = outcome.messages;
+      lastGreen = outcome.green;
+
+      // Where this turn ended is where the next one starts being measured from. A repository
+      // with no commit yet has nothing to hang one off, and the base stays where it was.
+      const recorded = await recordTurnBaseline({
+        workspaceRoot: options.workspace,
+        label: `turn ${turns}`,
+        previousBase: baseRef,
+      });
+      if (recorded !== null) {
+        baseRef = recorded;
+      }
+    }
+  } finally {
+    if (turns > 0) {
+      const written = await writeBundle(evidence, options.bundleDirectory, clock, ui.note);
+      announceBundle(written.directory, ui.note);
+    }
+    await ui.stop();
+    taskReader?.close();
+    taskReader = null;
+    taskLines = null;
+  }
+
+  if (turns === 0) {
+    process.stdout.write("nothing was asked for, so nothing ran.\n");
+    return 0;
+  }
+  return lastGreen ? 0 : 1;
+}
+
+/** One turn of a session, from a typed task to a settled set of gates. */
+async function runOneTurn(input: {
+  readonly task: string;
+  readonly history: readonly ConversationMessage[];
+  readonly baseRef: string;
+  readonly options: SessionCommand;
+  readonly settings: ResolvedSettings;
+  readonly evidence: EvidenceRecorder;
+  readonly ui: SessionInterface;
+  readonly clock: Clock;
+  readonly random: RandomSource;
+}): Promise<{ readonly messages: readonly ConversationMessage[]; readonly green: boolean }> {
+  const { task, options, settings, evidence, ui, clock, random } = input;
+
+  const routed = settings.modelPinned
+    ? {
+        modelSpec: null as string | null,
+        assignment: "pinned" as const,
+        decision: null,
+        candidates: [] as readonly string[],
+      }
+    : await chooseModel(task, homedir(), random);
+  const modelSpec = routed.modelSpec ?? settings.modelSpec;
+  const spec = parseModelSpec(modelSpec);
+  const localBackend = await resolveLocalBackend(settings, [spec]);
+  if (localBackend !== null) {
+    await evidence.record(localEndpointRecord(localBackend));
+  }
+  if (routed.decision !== null) {
+    await evidence.record(routingDecisionRecord(routed.decision));
+  }
+
+  const usable =
+    spec.provider === "local" && localBackend !== null
+      ? chooseUsableModel({
+          requested: modelSpec,
+          preflight: await preflightAll(evidence, localBackend.url, [modelSpec]),
+          keys: settings.providerKeys,
+          candidates: routed.candidates,
+        })
+      : ({ outcome: "as-requested", modelSpec, reason: "not a local model" } as const);
+  if (usable.outcome === "substituted") {
+    ui.note(`model: ${usable.modelSpec} instead of ${usable.requested}, ${usable.reason}`);
+  }
+
+  const registry = createProviderRegistry(registrySettingsFrom(settings, localBackend));
+  const model = createRecordingModelClient(
+    registry.create(parseModelSpec(usable.modelSpec)),
+    evidence,
+  );
+  const fileSet = createFileSetRegistry(evidence);
+
+  const interruption = new AbortController();
+  const onInterrupt = () => {
+    interruption.abort();
+  };
+  process.on("SIGINT", onInterrupt);
+  void ui.cancelled().then(onInterrupt);
+  const startedAt = clock.now();
+  const gateOptions = gateOptionsFrom(settings);
+  const diffBudget = diffBudgetFrom(settings);
+
+  try {
+    const { loop, gates } = await runAgentTask({
+      task,
+      workspace: options.workspace,
+      baseRef: input.baseRef,
+      maxSteps: settings.maxSteps,
+      attempts: settings.attempts,
+      model,
+      evidence,
+      fileSet,
+      clock,
+      random,
+      emit: (event) => {
+        ui.emit(event);
+      },
+      confirm: ui.confirm,
+      abortSignal: interruption.signal,
+      homeDir: homedir(),
+      history: input.history,
+      ...(gateOptions === undefined ? {} : { gateOptions }),
+      ...(diffBudget === undefined ? {} : { diffBudget }),
+    });
+
+    reportGates(gates.outcome, evidence, ui.note);
+    await logReward({
+      evidence,
+      home: homedir(),
+      task,
+      modelSpec: usable.modelSpec,
+      assignment: routed.assignment,
+      ratchet: summarizeRatchet(gates.outcome),
+      changedFiles: gates.outcome.finalCycle.measures.changedFiles ?? null,
+      latencyMs: clock.now() - startedAt,
+      recordedAt: clock.now(),
+      cost: await priceTask(usable.modelSpec, evidence),
+      note: ui.note,
+    });
+
+    return {
+      messages: loop.messages,
+      green: loop.stopReason === "completed" && gates.outcome.settled === "green",
+    };
+  } finally {
+    process.off("SIGINT", onInterrupt);
+  }
+}
+
+/**
  * Everything ambient the screen needs, gathered here so nothing below the composition root
  * reads a terminal, an environment variable, or the clock (invariant 8).
  */
@@ -298,10 +508,36 @@ function startInterface(input: {
     }),
     bindings: resolveKeyBindings(ui.keys),
     ...(isTty ? { askOnTerminal } : {}),
+    readLine: readTaskLine,
     openEvidence: ui.openEvidence,
     spawnOpen: spawnOpener,
     platform: platform(),
   });
+}
+
+/**
+ * One readline for the whole session, opened when the first task is asked for.
+ *
+ * Kept open rather than opened per question, because a fresh interface per line loses whatever
+ * is already buffered from a pipe, and a piped session is a list of tasks somebody wrote down.
+ * Null at end of input is what ends the session.
+ */
+let taskReader: ReturnType<typeof createInterface> | null = null;
+let taskLines: AsyncIterator<string> | null = null;
+
+async function readTaskLine(prompt: string): Promise<string | null> {
+  if (taskReader === null) {
+    taskReader = createInterface({ input: process.stdin, output: process.stderr });
+    taskLines = taskReader[Symbol.asyncIterator]();
+  }
+  if (process.stdin.isTTY === true) {
+    process.stderr.write(prompt);
+  }
+  const next = await taskLines?.next();
+  if (next === undefined || next.done === true) {
+    return null;
+  }
+  return next.value;
 }
 
 /** Readline, on the plain path only. Ink owns stdin whenever the screen is up. */
@@ -1122,6 +1358,9 @@ async function main(): Promise<number> {
   }
   if (options.command === "parallel") {
     return parallel(options);
+  }
+  if (options.command === "session") {
+    return session(options);
   }
   return options.command === "gates" ? gates(options) : run(options);
 }

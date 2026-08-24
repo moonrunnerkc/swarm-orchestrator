@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import type { Clock } from "./core/clock.ts";
 import { type AgentLoopOutcome, runAgentLoop } from "./core/loop.ts";
 import type { LoopEvent } from "./core/loop-events.ts";
-import type { ModelClient } from "./core/model-client.ts";
+import type { ConversationMessage, ModelClient } from "./core/model-client.ts";
 import type { RandomSource } from "./core/random-source.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
 import type { ResolveRequest } from "./gates/auto-resolve.ts";
@@ -58,13 +58,15 @@ export interface AgentTaskOptions {
   readonly abortSignal: AbortSignal;
   /** Denied to tools along with everything under it, since the session store lives there. */
   readonly homeDir: string;
+  /** Earlier turns of the same session, so a follow-up task knows what was already done. */
+  readonly history?: readonly ConversationMessage[];
   readonly gateOptions?: GateSetOptions;
   /** Replaces the engine's built-in size budget, from swarm.toml. */
   readonly diffBudget?: DiffBudget;
   readonly singleFileTestCommand?: SingleFileCommand;
 }
 
-interface AgentTaskResult {
+export interface AgentTaskResult {
   readonly loop: AgentLoopOutcome;
   readonly gates: GatesEngineRun;
   /** The model finished and the gates went green. Not the model's opinion of either. */
@@ -133,7 +135,10 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
     retryPolicy: { attempts: 3, baseDelayMs: 500, maxJitterRatio: 0.5 },
   };
 
-  const loop = await runAgentLoop(options.task, loopDependencies);
+  const loop = await runAgentLoop(options.task, {
+    ...loopDependencies,
+    ...(options.history === undefined ? {} : { history: options.history }),
+  });
 
   await options.evidence.record({
     type: "session-stopped",

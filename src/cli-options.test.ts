@@ -85,9 +85,35 @@ describe("parseCommandLine", () => {
     expect(parseRun(["--workspace", "/elsewhere/repo", "t"]).workspace).toBe("/elsewhere/repo");
   });
 
-  it("refuses an empty task", () => {
-    expect(() => parseCommandLine([], context)).toThrow(InvalidCommandLineError);
-    expect(() => parseCommandLine(["   "], context)).toThrow(/nothing to do/);
+  /**
+   * This used to be `InvalidCommandLineError("nothing to do")`. Naming no task now opens a
+   * session instead: a person who types `swarm` and nothing else wants to start working, and
+   * a bare word cannot be a verb here because bare words are the task.
+   */
+  it("opens a session when no task is named", () => {
+    expect(parseCommandLine([], context)).toMatchObject({ command: "session" });
+    expect(parseCommandLine(["   "], context)).toMatchObject({ command: "session" });
+  });
+
+  it("carries every run option into the session, since a turn is a run", () => {
+    const parsed = parseCommandLine(
+      ["--model", "local:m", "--workspace", "/w", "--attempts", "5", "--base", "abc123"],
+      context,
+    );
+
+    expect(parsed).toMatchObject({
+      command: "session",
+      modelSpec: "local:m",
+      attempts: 5,
+      baseRef: "abc123",
+    });
+  });
+
+  it("still reads a task as a run rather than as a session", () => {
+    expect(parseCommandLine(["fix", "the", "parser"], context)).toMatchObject({
+      command: "run",
+      task: "fix the parser",
+    });
   });
 
   it("refuses a flag with no value instead of eating the next flag", () => {

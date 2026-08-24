@@ -37,6 +37,13 @@ export interface AgentLoopDependencies {
   /** Absent leaves decoding to the backend, which is what an ordinary task run does. */
   readonly sampling?: SamplingSettings;
   readonly retryPolicy: ModelRetryPolicy;
+  /**
+   * What was already said, for a session where the person types a second task with the first
+   * still in mind. Absent is the ordinary case and starts clean, which is what a single run
+   * does and what the gate-resolve path deliberately keeps doing: a retry that inherited the
+   * reasoning which produced the failure is a retry that repeats it.
+   */
+  readonly history?: readonly ConversationMessage[];
 }
 
 export interface AgentLoopOutcome {
@@ -62,7 +69,7 @@ export async function runAgentLoop(
   deps: AgentLoopDependencies,
 ): Promise<AgentLoopOutcome> {
   const startedAt = deps.clock.now();
-  const messages: ConversationMessage[] = [{ role: "user", text: task }];
+  const messages: ConversationMessage[] = [...(deps.history ?? []), { role: "user", text: task }];
   let steps = 0;
   let answeredSteps = 0;
   let tokensUsed = 0;
@@ -108,7 +115,9 @@ export async function runAgentLoop(
       toolCalls: response.toolCalls,
     });
 
-    if (steps === 1) {
+    // Only a first turn states a plan. A later turn in a session is continuing one, and
+    // re-emitting would overwrite the plan pane with an answer to a follow-up.
+    if (steps === 1 && (deps.history ?? []).length === 0) {
       plan = response.text;
       deps.emit({ type: "plan", text: response.text });
     }
