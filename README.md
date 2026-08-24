@@ -31,10 +31,17 @@ a workspace it had never seen, recorded in a real terminal:
 
     npm install -g swarm-orchestrator
 
-That is **13.1.3**, and it leaves `swarm` on your path. Installing from the tag works too, and
-builds itself on install:
+That is **13.1.4**, and it leaves `swarm` on your path.
 
-    npm install -g github:moonrunnerkc/swarm-orchestrator#v13.1.3
+Installing from a tag works too, but only into a project rather than globally:
+
+    npm install github:moonrunnerkc/swarm-orchestrator#v13.1.4
+
+`dist/` is not committed, so a git ref builds itself on install and needs this package's
+devDependencies to do it. npm does not install those when a git ref is installed with `-g`: it
+carries the global context into its git-dependency preparation, places the clone as a root
+package, and runs the build without the compiler. The published package needs no build, which
+is why the line above it is the one to use.
 
 Anything below 13 is a different program. This package name carried a pull-request auditor
 through 12.x, and `npm install -g swarm-orchestrator@12` still installs it, so pin the major if

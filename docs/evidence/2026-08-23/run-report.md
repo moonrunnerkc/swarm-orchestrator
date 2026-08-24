@@ -289,8 +289,16 @@ runs `prepare` for a git install but never `prepublishOnly`. Only the latter was
 `npm install github:moonrunnerkc/swarm-orchestrator#v13.1.0` resolved, added 55 packages, printed
 no error, and left a directory with no `dist/` and no `swarm`. Found by running the command the
 README was about to recommend rather than by reading it. Fixed with a `prepare` script and a test
-that names why it exists, released as **13.1.1**, and verified from the tag itself: `swarm` on the
-path, `13.1.1` reported, `swarm --help` running.
+that names why it exists, released as **13.1.1**, and verified from the tag itself: the binary
+present, `13.1.1` reported, `swarm --help` running.
+
+Corrected on 2026-08-24, because that sentence read as more than it was. What the `prepare` hook
+fixes is installing a git ref **into a project**. Installing one with `-g` cannot work here at
+all: npm carries the global context into its git-dependency preparation, places the clone as a
+root package, never installs the clone's devDependencies, and then runs `prepare`, which needs
+the compiler that was not installed. The README printed the `-g` form anyway and a reader ran it
+and got `spawnSync .../node_modules/.bin/tsc ENOENT`. The README now prints the form that works,
+and the build says which command to use rather than failing on a path nobody typed.
 
 **The README told a reader to install the wrong product.** Its first instruction was
 `npm install -g swarm-orchestrator`, which the registry answers with 12.0.0, the pull-request
