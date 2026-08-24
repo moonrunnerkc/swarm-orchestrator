@@ -1,5 +1,23 @@
 # Changelog
 
+## 13.1.2
+
+The first 13.x on the npm registry. No code changed: this is 13.1.1 with install instructions
+that are true.
+
+### Fixed
+
+- **The package told its own readers it was not published.** The install section named a git ref
+  and said the registry served 12.0.0, because that is what was true while the credential was
+  missing. Those words ship inside the tarball, so publishing 13.1.1 as it stood would have put
+  a package on the registry whose first section denies being there. `npm install -g
+  swarm-orchestrator` is the first line again.
+
+### Added
+
+- Three flags the readme never listed, `--base`, `--max-steps` and `--local-endpoint`, and a
+  pointer to `swarm --help` for the calibration flags it still does not list.
+
 ## 13.1.1
 
 A packaging fix. Nothing about how the tool runs changed.
