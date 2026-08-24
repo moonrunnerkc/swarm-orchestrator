@@ -155,6 +155,16 @@ page at the `/docs/leaderboard/` address the previous site served, saying what u
 and that version 13 does not do that work, with a link to the new page. A redirect would have
 implied the two are about the same product.
 
+Deployed and checked from outside on 2026-08-24: the root answers 200 with the v13 page, 18
+claims and 5 struck-through phrases, no occurrence of the word leaderboard, and the retired
+address answers 200 rather than 404. The first attempt failed on the environment rather than on
+anything in the workflow, and `v13-main` had to be added to the allowed-branch list by hand.
+
+That deployment also took down what the old one had been serving, which was the whole of the v12
+`docs/` tree. Among it, at `/docs/eu-ai-act-mapping.md`, a public page naming a regulatory
+instrument `claims.md` forbids by name in any public text. It now answers 404. Nobody had listed
+that as a reason to replace the site, and it was the better one.
+
 Two things this did not close. The `github-pages` environment restricts which branches may
 deploy, and that list is repository configuration rather than anything in this tree, so it is
 not covered by any check here. And nothing verifies the deployed page against the branch: the
