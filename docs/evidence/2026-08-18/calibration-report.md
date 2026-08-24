@@ -1,5 +1,10 @@
 # Live calibration, 2026-08-18
 
+**Superseded on 2026-08-23** by `../2026-08-23/calibration-report.md`, which measures three
+models rather than one and runs against a path repaired five times since this one. Left as
+written: it is the record of what was true then, and it is the artifact that found the
+reporting defect its own section describes.
+
 `swarm calibrate` against a real local model on this machine: 20 golden-set cases,
 3 repeats each, 60 runs. The item this closes is the one the project has carried as
 unvalidated the longest.
