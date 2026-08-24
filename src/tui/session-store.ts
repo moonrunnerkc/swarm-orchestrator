@@ -4,6 +4,12 @@ import { applyLoopEvent, emptySessionView, type SessionView } from "./session-vi
 export interface SessionStore {
   getView(): SessionView;
   apply(event: LoopEvent): void;
+  /**
+   * Back to nothing, for the next turn of a session. The ledger keeps every turn; the screen
+   * does not, because a second task rendered under the first one's plan and gates reads as one
+   * long run rather than as two pieces of work.
+   */
+  reset(): void;
   subscribe(listener: (view: SessionView) => void): () => void;
 }
 
@@ -16,6 +22,12 @@ export function createSessionStore(): SessionStore {
     getView: () => view,
     apply(event: LoopEvent): void {
       view = applyLoopEvent(view, event);
+      for (const listener of listeners) {
+        listener(view);
+      }
+    },
+    reset(): void {
+      view = emptySessionView;
       for (const listener of listeners) {
         listener(view);
       }

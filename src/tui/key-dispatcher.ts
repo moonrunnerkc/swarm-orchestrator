@@ -34,6 +34,8 @@ export function keyToken(press: KeyPress): string {
  */
 export type Dispatch =
   | { readonly kind: "view"; readonly action: ViewAction }
+  /** The typed line is a task. What it says is read from the state, not carried on the key. */
+  | { readonly kind: "submit-task" }
   | { readonly kind: "answer-confirmation"; readonly approved: boolean }
   | { readonly kind: "open"; readonly target: "review" | "bundle" }
   | { readonly kind: "ignored" };
@@ -74,6 +76,12 @@ export function dispatchKey(press: KeyPress, context: DispatchContext): Dispatch
     return ignored;
   }
 
+  // The prompt outranks the ordinary map for the same reason the filter box does, and more
+  // so: every letter binding would otherwise eat a letter of the task being typed.
+  if (context.state.composing !== null) {
+    return dispatchWhileComposing(press, action);
+  }
+
   if (context.state.filtering) {
     return dispatchWhileFiltering(press, action);
   }
@@ -89,6 +97,39 @@ export function dispatchKey(press: KeyPress, context: DispatchContext): Dispatch
   }
 
   return dispatchOnScreen(action, context);
+}
+
+/**
+ * Typing a task. Enter submits, and everything printable is a character rather than a binding,
+ * so a task can contain a "q" without detaching and a "/" without opening the filter.
+ */
+function dispatchWhileComposing(press: KeyPress, action: string | undefined): Dispatch {
+  if (press.name === "enter") {
+    return { kind: "submit-task" };
+  }
+  if (press.name === "backspace") {
+    return { kind: "view", action: { type: "compose-backspace" } };
+  }
+  if (press.ctrl && press.input === "w") {
+    return { kind: "view", action: { type: "compose-delete-word" } };
+  }
+  if (press.name === "left") {
+    return { kind: "view", action: { type: "compose-move", by: -1 } };
+  }
+  if (press.name === "right") {
+    return { kind: "view", action: { type: "compose-move", by: 1 } };
+  }
+  if (press.name === "up") {
+    return { kind: "view", action: { type: "compose-recall", by: -1 } };
+  }
+  if (press.name === "down") {
+    return { kind: "view", action: { type: "compose-recall", by: 1 } };
+  }
+  if (press.name === null && !press.ctrl && press.input.length > 0) {
+    return { kind: "view", action: { type: "compose-input", text: press.input } };
+  }
+  // A binding still reachable while typing, because leaving is not a letter.
+  return action === "detach" ? { kind: "view", action: { type: "detach" } } : ignored;
 }
 
 function dispatchWhileFiltering(press: KeyPress, action: string | undefined): Dispatch {

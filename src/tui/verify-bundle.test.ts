@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { evidenceLocation } from "./open-path.ts";
-import { runEmbeddedVerifier } from "./verify-bundle.ts";
+import { refusalDetail, runEmbeddedVerifier } from "./verify-bundle.ts";
 
 /** A committed bundle, copied so nothing here can write to the one in the tree. */
 const committed = new URL("../../docs/evidence/2026-08-18/live-frontier/", import.meta.url);
@@ -48,6 +48,13 @@ describe("running a bundle's own verifier", () => {
     expect(verdict.kind).toBe("refused");
     if (verdict.kind === "refused") {
       expect(verdict.exitCode).toBe(1);
+      // The defect this covers: the detail was read off stderr, and the verifier reports
+      // through console.log, so every real refusal said "no detail given" at the one moment
+      // the panel exists for. This asserts against a bundle actually tampered with above,
+      // rather than against a hand-written string.
+      expect(verdict.detail).not.toBe("no detail given");
+      expect(verdict.detail).toContain("FAIL");
+      expect(verdict.detail.toLowerCase()).toContain("chain");
     }
   });
 
@@ -81,5 +88,41 @@ describe("running a bundle's own verifier", () => {
 
     // With NODE_OPTIONS inherited, node would refuse to start at all.
     expect(verdict).toEqual({ kind: "verified", exitCode: 0 });
+  });
+});
+
+describe("which line of a refusal a reader is given", () => {
+  it("prefers the named check over the tally under it", () => {
+    const stdout = [
+      "  PASS  ledger parses: 42 of 42 lines",
+      "  FAIL  hash chain intact: record 11 does not follow record 10",
+      "",
+      "bundle FAILED: 1 check(s) did not pass",
+    ].join("\n");
+
+    expect(refusalDetail(stdout, "")).toContain("hash chain intact");
+  });
+
+  it("counts the rest rather than showing one of several as if it were all", () => {
+    const stdout = ["  FAIL  a: one", "  FAIL  b: two", "  FAIL  c: three"].join("\n");
+
+    expect(refusalDetail(stdout, "")).toContain("(and 2 more)");
+  });
+
+  it("falls back to the verdict line when no check names itself", () => {
+    expect(refusalDetail("bundle FAILED: 3 check(s) did not pass", "")).toBe(
+      "bundle FAILED: 3 check(s) did not pass",
+    );
+  });
+
+  /** Node failing to start is not the bundle refusing, and stderr is where that shows up. */
+  it("still reads stderr, which is where node itself complains", () => {
+    expect(refusalDetail("", "SyntaxError: Unexpected token")).toBe(
+      "SyntaxError: Unexpected token",
+    );
+  });
+
+  it("says so plainly when neither stream said anything", () => {
+    expect(refusalDetail("", "")).toBe("no detail given");
   });
 });
