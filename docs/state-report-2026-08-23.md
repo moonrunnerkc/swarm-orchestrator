@@ -193,25 +193,25 @@ than gaps say why in `docs/tech-debt.md`.
 
 | | |
 | --- | --- |
-| Version | 13.1.0, minor because everything added is additive and nothing changed meaning |
-| Tag | `v13.1.0`, annotated, pushed |
-| GitHub release | `v13.1.0`, marked latest, so the repository sidebar names the v13 lineage rather than the v12 auditor it named before |
+| Version | 13.1.3. The run this report covers cut 13.1.0, minor because everything added was additive and nothing changed meaning. Three patches followed it, all packaging: `prepare` so a git install builds, install instructions that say where the package actually is, and the `repository` field a signed publish is checked against |
+| Tag | `v13.1.3`, annotated, pushed. `v13.1.0`, `v13.1.1` and `v13.1.2` are pushed and left where they are |
+| GitHub release | `v13.1.3`, marked latest, so the repository sidebar names the v13 lineage rather than the v12 auditor it named before |
 | `v13.0.0` | pushed, left where it is, the record of the tree it named. No release, never published |
 | Tarball | 268 files, 311.8 kB packed, matching the `files` allowlist exactly. Nothing from `.env`, `.swarm/`, `redteam/`, `fuzz/`, no tests, no fixtures, no `src/` |
 | Installed and run | yes: installed from the tarball into a clean directory, `swarm --help`, `swarm review`, and two real tasks end to end in a real pty, one green and one escalating at the file-set gate, both recorded in `evidence/2026-08-23/installed-package-run.md` |
-| Published to the registry | **no** |
+| Published to the registry | **yes**, on 2026-08-24, as 13.1.3. `npm install -g swarm-orchestrator` serves v13 rather than the v12 auditor, with a verified provenance attestation: `evidence/2026-08-24/registry-publish.md` |
 
-### What blocks publishing
+### What blocked publishing, and what closed it
 
-One credential. `npm whoami` returns `ENEEDAUTH` here, and the `NPM_TOKEN` in the repository
-`.env` is not a working token: `https://registry.npmjs.org/-/whoami` answers `{}` for it and the
+One credential, until 2026-08-24. On the day of the run `npm whoami` answered `ENEEDAUTH`
+here, and the `NPM_TOKEN` in the repository `.env` was not a working token: `https://registry.npmjs.org/-/whoami` answers `{}` for it and the
 package's collaborators endpoint answers 401. The same token is the repository secret the
 publish workflow uses, which is why CI run `32668579920` assembled the tarball, ran the gates
 through `prepublishOnly`, signed provenance into the sigstore transparency log, and was then
 refused by the registry with `E404` on the `PUT`.
 
-`npm login` needs a browser and an OTP, so it cannot be done from this session. Everything else
-in the publish path is done and verified, and the tag push proved it end to end. CI run
+`npm login` needs a browser and an OTP, so it could not be done from that session. Everything
+else in the publish path was done and verified, and the tag push proved it end to end. CI run
 `32685163550` on `v13.1.0` passed every step in order, the tag-matches-package.json check, the
 gates through `prepublishOnly`, and `npm pack` at 268 files, then failed on the last one:
 
@@ -222,11 +222,23 @@ npm error code E404
 npm error 404 Not Found - PUT https://registry.npmjs.org/swarm-orchestrator - Not found
 ```
 
-That is the registry refusing an unauthorized write, not a build problem. One command closes it,
-and re-running the workflow needs no new tag:
+That is the registry refusing an unauthorized write, not a build problem.
 
-    npm login                                    # a person, at a terminal, or a new repo secret
-    gh workflow run publish.yml --ref v13.1.0
+Closed on 2026-08-24, and it took two fixes rather than one. The `NPM_TOKEN` secret was replaced
+with a token checked for write access on the package before it was used, which turned the `E404`
+into an `E422`: `npm publish --provenance` signs a statement naming the repository the tarball
+was built from, and the registry compares it to `package.json`'s `repository.url`, which this
+manifest did not have. Adding the field, with a test asserting it, published 13.1.3 from CI run
+`32751820534`. Both defects and the install checked back from the registry are in
+`evidence/2026-08-24/registry-publish.md`.
+
+One thing that record is worth reading for on its own: the refused run wrote its provenance to
+the public sigstore transparency log before the registry rejected the tarball. A failed publish
+is not a publish that left no trace.
+
+A local `npm login` was not what closed this. It authenticates one workstation and never reaches
+the runner, and the publish path here is CI so that the tarball carries an attestation naming the
+commit it was built from.
 
 The publish workflow now refuses to publish a tag that disagrees with `package.json`. That
 check was missing and this run needed it: the version bump was very nearly tagged onto a tree
