@@ -86,14 +86,23 @@ wrapper around it is not.
 ## Documentation pointers
 
 `scripts/check-doc-paths.mjs` was written in this pass and now runs in CI beside the invariant
-drift check. It resolves 212 path references across 26 documentation files: markdown links
+drift check. It resolves 230 path references across 27 documentation files: markdown links
 against the file that holds them, and rooted backtick mentions against the repository root.
 
-**Zero misses**, plus two named and known: both `redteam/leep/`, in the 08-18 run report and
-the 08-17 state report, which name that directory in order to record that it was removed. A
-record of a removal is not a dangling pointer, and the two are indistinguishable without
-reading the sentence, so the exception is named in the script with its reason rather than the
-rule being widened until it stops showing up.
+It resolves against **what git tracks**, not against the filesystem, and that distinction cost
+two red CI runs to learn. The first spelling checked the disk, passed here, and failed on a
+clean checkout on three paths that exist on this machine and in no commit. A pointer that
+resolves only for the person who wrote it is the same broken pointer to everyone else, which is
+precisely what this check is for, so the working-tree version was giving a false pass.
+
+Three outcomes rather than two. **Zero misses.** Three mentions named and **known**, all of
+`redteam/leep/`, which three documents name in order to record that it was removed: a record of
+a removal is not a dangling pointer, and the two cannot be told apart without reading the
+sentence, so the exception is named in the script with its reason rather than the rule widened
+until it stops showing up. Six mentions of three **generated** paths, `dist/`,
+`redteam/loop/state-dryrun/` and `redteam/loop/state-wake/`, every one of them in `.gitignore`,
+so they name build and driver output that exists once something makes it. Counted and printed
+rather than passed over, because a silent third category is how a check stops meaning anything.
 
 ## Exports nothing else names
 
