@@ -13,6 +13,7 @@
  *   node scripts/build-dist.mjs
  */
 import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { copyFile, mkdir, readdir, rm } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import { argv, exit, stdout } from "node:process";
@@ -42,12 +43,35 @@ export async function assetsUnder(directory) {
   return found.sort();
 }
 
+/**
+ * The compiler this build needs, or an error saying why it is not there.
+ *
+ * `npm install -g <git ref>` cannot work for this package and the raw failure does not say so.
+ * npm inherits the global context into its git-dependency preparation, places the clone as a
+ * root package rather than building a tree inside it, and runs `prepare` without ever
+ * installing the clone's devDependencies. `tsc` is one of those, so the build spawns a path
+ * that does not exist and the reader gets `ENOENT` on a file they never named. Installing the
+ * same ref without `-g` builds normally, and the published package needs no build at all.
+ */
+export function compilerPath(root) {
+  const compiler = join(root, "node_modules", ".bin", "tsc");
+  if (existsSync(compiler)) return compiler;
+
+  throw new Error(
+    `no TypeScript compiler at ${compiler}. This package builds itself on install and needs ` +
+      "its devDependencies to do it. npm does not install them when a git ref is installed " +
+      "with -g, so that command cannot work here: install the published package with " +
+      "`npm install -g swarm-orchestrator`, or install the git ref without -g",
+  );
+}
+
 async function build() {
   const source = join(root, "src");
   const destination = join(root, "dist");
 
+  const compiler = compilerPath(root);
   await rm(destination, { recursive: true, force: true });
-  execFileSync(join(root, "node_modules", ".bin", "tsc"), ["-p", "tsconfig.dist.json"], {
+  execFileSync(compiler, ["-p", "tsconfig.dist.json"], {
     cwd: root,
     stdio: "inherit",
   });
