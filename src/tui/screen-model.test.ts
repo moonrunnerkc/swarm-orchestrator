@@ -345,3 +345,54 @@ describe("what the screen says a run came to", () => {
     ).toBe(true);
   });
 });
+
+describe("a session that remembers the turns before this one", () => {
+  /**
+   * A screen that cleared itself between turns would be a screen that forgets, which is the
+   * opposite of what a person holds a session open for. The task and what the gates decided
+   * stay above the live stream.
+   */
+  it("keeps each finished turn above the current one", () => {
+    const rows = screen({
+      transcript: [
+        { text: "create calculator.js", kind: "task" },
+        { text: "6 gate(s) passed, 4 step(s)", kind: "outcome" },
+      ],
+    });
+    const text = rows.map((row) => row.text);
+
+    expect(text.some((line) => line.includes("create calculator.js"))).toBe(true);
+    expect(text.some((line) => line.includes("6 gate(s) passed"))).toBe(true);
+  });
+
+  it("shows nothing extra when the session has no finished turn yet", () => {
+    const withNone = screen({ transcript: [] }).map((row) => row.text);
+    const withNoField = screen({}).map((row) => row.text);
+
+    expect(withNone).toEqual(withNoField);
+  });
+});
+
+describe("the prompt", () => {
+  it("draws what is typed, with the cursor where the next character lands", () => {
+    const composing = applyViewAction(
+      applyViewAction(initialViewState, { type: "compose-start" }),
+      { type: "compose-input", text: "fix the parser" },
+    );
+
+    const prompt = screen({ state: composing })
+      .map((row) => row.text)
+      .find((line) => line.startsWith("›"));
+
+    expect(prompt).toContain("fix the parser");
+    expect(prompt).toContain("█");
+  });
+
+  it("is absent while a turn is running, since there is nothing to type into", () => {
+    expect(
+      screen({})
+        .map((row) => row.text)
+        .some((line) => line.startsWith("›")),
+    ).toBe(false);
+  });
+});

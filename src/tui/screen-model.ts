@@ -33,10 +33,27 @@ export interface ScreenInput {
   readonly confirmation: ConfirmationRequest | null;
   /** Present once the run has finished and the bundle has been written. */
   readonly evidence: EvidenceSummary | null;
+  /**
+   * Turns already finished this session, oldest first, one line each. A session that cleared
+   * the screen between turns would be a screen that forgets, which is the opposite of what a
+   * person keeps a session open for.
+   */
+  readonly transcript?: readonly TranscriptLine[];
+}
+
+export interface TranscriptLine {
+  readonly text: string;
+  readonly kind: "task" | "outcome";
 }
 
 export function buildScreen(input: ScreenInput): readonly ScreenRow[] {
   const { layout } = input;
+
+  const transcript = (input.transcript ?? []).map((line) => ({
+    text: line.kind === "task" ? `\u203a ${line.text}` : `  ${line.text}`,
+    dim: line.kind === "outcome",
+    ...(line.kind === "task" ? { color: input.theme.color("accent") } : {}),
+  }));
 
   const body =
     input.confirmation !== null
@@ -50,6 +67,7 @@ export function buildScreen(input: ScreenInput): readonly ScreenRow[] {
   // Truncated once, here, so no row can exceed the width whatever built it.
   return [
     ...headerRows(input),
+    ...transcript,
     ...body,
     statusRow(input),
     ...(input.state.composing === null ? [] : [promptRow(input)]),

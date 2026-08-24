@@ -6,6 +6,7 @@ import type { EvidenceSummary } from "./evidence-panel.ts";
 import type { KeyBindings } from "./key-bindings.ts";
 import { dispatchKey, type KeyPress } from "./key-dispatcher.ts";
 import { computeLayout, pageRows } from "./layout.ts";
+import type { TranscriptLine } from "./screen-model.ts";
 import { buildScreen, filterActions, type ScreenRow } from "./screen-model.ts";
 import type { SessionStore } from "./session-store.ts";
 import type { SessionView } from "./session-view.ts";
@@ -34,6 +35,8 @@ interface SessionScreenProps {
   readonly task: string;
   readonly workspace: string;
   readonly evidence: EvidenceSummary | null;
+  /** Turns already finished this session, so the screen does not forget between them. */
+  readonly transcript?: readonly TranscriptLine[];
 }
 
 /** Two rows kept back so the shell prompt and a wrapped line never push the top off screen. */
@@ -133,6 +136,7 @@ export function SessionScreen(props: SessionScreenProps): ReactElement {
     workspace: props.workspace,
     confirmation: pending,
     evidence: props.evidence,
+    ...(props.transcript === undefined ? {} : { transcript: props.transcript }),
   });
 
   return createElement(
