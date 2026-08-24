@@ -86,7 +86,7 @@ wrapper around it is not.
 ## Documentation pointers
 
 `scripts/check-doc-paths.mjs` was written in this pass and now runs in CI beside the invariant
-drift check. It resolves 230 path references across 27 documentation files: markdown links
+drift check. It resolves 271 path references across 30 documentation files: markdown links
 against the file that holds them, and rooted backtick mentions against the repository root.
 
 It resolves against **what git tracks**, not against the filesystem, and that distinction cost
@@ -107,10 +107,25 @@ Three outcomes rather than two. **Zero misses.** Three mentions named and **know
 `redteam/leep/`, which three documents name in order to record that it was removed: a record of
 a removal is not a dangling pointer, and the two cannot be told apart without reading the
 sentence, so the exception is named in the script with its reason rather than the rule widened
-until it stops showing up. Six mentions of three **generated** paths, `dist/`,
+until it stops showing up. Seven mentions of three **generated** paths, `dist/`,
 `redteam/loop/state-dryrun/` and `redteam/loop/state-wake/`, every one of them in `.gitignore`,
 so they name build and driver output that exists once something makes it. Counted and printed
 rather than passed over, because a silent third category is how a check stops meaning anything.
+
+## Debt: `swarm calibrate` has no screen, and it is the run that most wants one
+
+The interactive screen is wired to one command, `swarm <task>`, through `startInterface` in
+`src/cli.ts`. `swarm calibrate` writes plain progress lines and nothing else, on a terminal or off
+one. A three-model sweep is 180 runs over roughly three hours, which is the longest thing this
+tool does and the workload a live screen would be worth the most on; the 08-23 calibration was
+watched through `tail -f` on a log.
+
+Not wired in this release, and not because it was overlooked. The screen renders one run: a task,
+a workspace, a plan, an action stream, one set of gates. A sweep has none of those as a single
+thing, so pointing the existing screen at it would mean deciding what the header names while
+sixty runs are in flight, what the action stream shows, and what a gate strip means across three
+models. That is a second view with its own layout and its own tests, not a call site. Worth doing,
+worth its own change, and worth saying plainly that this release did not do it.
 
 ## Debt: the weekly scan files the same 21 semgrep findings every Monday
 
