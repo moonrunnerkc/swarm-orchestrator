@@ -21,7 +21,10 @@ under a numeric ratchet that refuses a fix which trades away tests, assertions, 
 Then it exports the evidence.
 
 Here is a real run, committed: [`live-tasks.md`](docs/evidence/2026-08-18/live-tasks.md),
-with its bundle in [`live-frontier/`](docs/evidence/2026-08-18/live-frontier).
+with its bundle in [`live-frontier/`](docs/evidence/2026-08-18/live-frontier). And here is the
+published package doing it, installed from the tarball into a directory holding nothing else,
+against a workspace it had never seen, recorded in a real terminal:
+[`installed-package-run.md`](docs/evidence/2026-08-23/installed-package-run.md).
 
 ## Install
 
@@ -111,7 +114,11 @@ Transcripts from two earlier runs outside the repository:
 [`live-tasks.md`](docs/evidence/2026-08-18/live-tasks.md).
 
 **Bundles are signed from the OS keychain**, not from a key in the workspace. Both manifests
-say `"keySource": "keychain"` and both verifiers confirm it.
+in [`live-tasks.md`](docs/evidence/2026-08-18/live-tasks.md) say `"keySource": "keychain"` and
+both verifiers confirm it. Where the keychain holds no usable key the run signs with a per-run
+key and says which of the three keychain failures happened, rather than signing quietly with
+something else; the manifest then records `keySource: ephemeral`, which is what the bundles in
+[`installed-package-run.md`](docs/evidence/2026-08-23/installed-package-run.md) carry.
 
 **Local model choice is measured on your machine.** The probe output and recommendation from
 real hardware: [`hardware-select.md`](docs/evidence/2026-08-18/hardware-select.md). A hundred
