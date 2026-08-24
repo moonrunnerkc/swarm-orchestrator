@@ -34,8 +34,11 @@ export function keyToken(press: KeyPress): string {
  */
 export type Dispatch =
   | { readonly kind: "view"; readonly action: ViewAction }
-  /** The typed line is a task. What it says is read from the state, not carried on the key. */
-  | { readonly kind: "submit-task" }
+  /**
+   * The typed line is a task. What was already typed is read from the state; `typedFirst` is
+   * whatever arrived in the same chunk ahead of the newline, which is what a paste looks like.
+   */
+  | { readonly kind: "submit-task"; readonly typedFirst: string }
   | { readonly kind: "answer-confirmation"; readonly approved: boolean }
   | { readonly kind: "open"; readonly target: "review" | "bundle" }
   | { readonly kind: "ignored" };
@@ -105,7 +108,14 @@ export function dispatchKey(press: KeyPress, context: DispatchContext): Dispatch
  */
 function dispatchWhileComposing(press: KeyPress, action: string | undefined): Dispatch {
   if (press.name === "enter") {
-    return { kind: "submit-task" };
+    return { kind: "submit-task", typedFirst: "" };
+  }
+  // A newline inside a longer chunk rather than on its own: a paste, or a terminal that hands
+  // over what it buffered in one read. Everything before it was typed and the newline still
+  // means run it, so both happen rather than the whole chunk going in as characters.
+  const newline = press.input.search(/[\r\n]/);
+  if (newline >= 0 && !press.ctrl) {
+    return { kind: "submit-task", typedFirst: press.input.slice(0, newline) };
   }
   if (press.name === "backspace") {
     return { kind: "view", action: { type: "compose-backspace" } };
