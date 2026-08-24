@@ -4,7 +4,7 @@ import type { EvidenceSummary } from "./evidence-panel.ts";
 import { resolveKeyBindings } from "./key-bindings.ts";
 import { computeLayout } from "./layout.ts";
 import { evidenceLocation } from "./open-path.ts";
-import { buildScreen, type ScreenInput, type ScreenRow } from "./screen-model.ts";
+import { buildScreen, type ScreenInput, type ScreenRow, spinnerAt } from "./screen-model.ts";
 import { applyLoopEvent, emptySessionView } from "./session-view.ts";
 import { displayWidth } from "./terminal-text.ts";
 import { resolveTheme } from "./theme.ts";
@@ -436,5 +436,85 @@ describe("a run that finished having touched nothing", () => {
         .map((row) => row.text)
         .some((line) => line.startsWith("DONE ")),
     ).toBe(true);
+  });
+});
+
+describe("showing that the run is alive, and what it is doing", () => {
+  /**
+   * There was nothing moving on this screen while a model thought or a shell command ran. The
+   * status said "thinking (step 3)" and stayed there, and the one thing that changed was a
+   * seconds counter the layout hides below 80 columns or 12 rows. A run that takes a minute was
+   * indistinguishable from a run that had hung.
+   */
+  it("turns the spinner as time passes", () => {
+    expect(spinnerAt(0)).not.toBe(spinnerAt(120));
+    expect(spinnerAt(0)).toBe(spinnerAt(1200));
+    expect(spinnerAt(-50)).toBe(spinnerAt(0));
+  });
+
+  it("names the tool that is running, and how long it has been", () => {
+    const view = (
+      [
+        { type: "model-call", step: 1, modelId: "local:m" },
+        { type: "tool-call", callId: "a", toolName: "shell", input: { command: "npm test" } },
+        { type: "tool-started", toolName: "shell", detail: "npm test" },
+      ] satisfies readonly LoopEvent[]
+    ).reduce(applyLoopEvent, emptySessionView);
+
+    // Found by the spinner rather than by the command, because the action stream also carries
+    // a row mentioning it and that one comes first.
+    const line = screen({ view, activityElapsedMs: 12_000 })
+      .map((row) => row.text)
+      .find((text) => text.startsWith(spinnerAt(0)) || /^[\u2800-\u28ff] /.test(text));
+
+    expect(line).toBeDefined();
+    expect(line).toContain("shell npm test");
+    expect(line).toContain("12s");
+  });
+
+  it("shows what the model is saying while it says it", () => {
+    const view = (
+      [
+        { type: "model-call", step: 1, modelId: "local:m" },
+        { type: "model-text", step: 1, text: "I will read the failing test first" },
+      ] satisfies readonly LoopEvent[]
+    ).reduce(applyLoopEvent, emptySessionView);
+
+    const line = screen({ view })
+      .map((row) => row.text)
+      .find((text) => /^[\u2800-\u28ff] /.test(text));
+
+    expect(line).toContain("thinking, step 1");
+    expect(line).toContain("I will read the failing test");
+  });
+
+  /** One line of it. The whole response lands in the stream and the ledger; three copies is noise. */
+  it("keeps it to one line however much the model says", () => {
+    const long = Array.from({ length: 80 }, (_, index) => `word${index}`).join(" ");
+    const view = (
+      [
+        { type: "model-call", step: 1, modelId: "local:m" },
+        { type: "model-text", step: 1, text: long },
+      ] satisfies readonly LoopEvent[]
+    ).reduce(applyLoopEvent, emptySessionView);
+
+    const rows = screen({ view }, { columns: 100, rows: 30 });
+    expect(rows.every((row) => displayWidth(row.text) <= 100)).toBe(true);
+  });
+
+  it("shows nothing once the run has finished", () => {
+    const view = (
+      [
+        { type: "model-call", step: 1, modelId: "local:m" },
+        { type: "tool-started", toolName: "shell", detail: "npm test" },
+        { type: "stopped", reason: "completed", steps: 1, tokensUsed: 10 },
+      ] satisfies readonly LoopEvent[]
+    ).reduce(applyLoopEvent, emptySessionView);
+
+    expect(
+      screen({ view })
+        .map((row) => row.text)
+        .some((text) => /^[\u2800-\u28ff] /.test(text)),
+    ).toBe(false);
   });
 });

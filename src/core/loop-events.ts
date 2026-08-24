@@ -33,6 +33,14 @@ export type LoopEvent =
       readonly failed: boolean;
       readonly output: string;
     }
+  /**
+   * Text as it arrives from the model, for the screen only. Never recorded: what reaches the
+   * ledger is the whole response the call returned, and a partial one is not a smaller version
+   * of that, it is a different thing.
+   */
+  | { readonly type: "model-text"; readonly step: number; readonly text: string }
+  /** What tool is running right now, so a long one is not a screen with nothing on it. */
+  | { readonly type: "tool-started"; readonly toolName: string; readonly detail: string }
   /** The model's account of its own work. `verified` is a literal false: model text can never render green (invariant 1). */
   | { readonly type: "claim"; readonly text: string; readonly verified: false }
   | {

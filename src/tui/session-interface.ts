@@ -75,8 +75,13 @@ export interface SessionInterfaceOptions {
 /** What happens when a run finishes: ask, always open, or never open. Never opens off a TTY. */
 export type OpenEvidencePolicy = "ask" | "always" | "never";
 
-/** How often the elapsed counter moves. A second is what a person reads; anything faster is noise. */
-const tickMs = 1_000;
+/**
+ * How often the screen redraws. A second is what a person reads on a counter, and it is far too
+ * slow for anything to look alive, so the rate follows what the run is doing: fast enough to
+ * turn a spinner while something is happening, back to a second once nothing is.
+ */
+const workingTickMs = 120;
+const idleTickMs = 1_000;
 
 /**
  * Picks the interactive screen on a TTY and plain lines everywhere else, so piped output
@@ -198,6 +203,8 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
   let onTaskTyped: (task: string | null) => void = () => {};
   let currentTask = options.task;
   const transcript: TranscriptLine[] = [];
+  /** When the activity now showing began, so the line can say how long it has been going. */
+  let activityStartedAt: number | null = null;
 
   const submitTask = (task: string): void => {
     const settle = onTaskTyped;
@@ -272,6 +279,8 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
       onOpen: open,
       onSubmitTask: submitTask,
       transcript,
+      activityElapsedMs: () =>
+        activityStartedAt === null ? 0 : options.clock.now() - activityStartedAt,
       theme: options.theme,
       bindings: options.bindings,
       task: currentTask,
@@ -291,6 +300,8 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
         onOpen: open,
         onSubmitTask: submitTask,
         transcript,
+        activityElapsedMs: () =>
+          activityStartedAt === null ? 0 : options.clock.now() - activityStartedAt,
         theme: options.theme,
         bindings: options.bindings,
         task: currentTask,
@@ -304,7 +315,7 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
   // ambient thing the screen needs still enters at the composition root (invariant 8).
   void (async () => {
     while (ticking) {
-      await options.clock.sleep(tickMs);
+      await options.clock.sleep(store.getView().activity === null ? idleTickMs : workingTickMs);
       if (!ticking) {
         return;
       }
@@ -314,7 +325,12 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
 
   return {
     emit(event: LoopEvent): void {
+      const before = store.getView().activity;
       store.apply(event);
+      const after = store.getView().activity;
+      if (after !== before) {
+        activityStartedAt = after === null ? null : options.clock.now();
+      }
       if (!mounted) {
         // The screen is gone, so the run reports the way it does off a terminal. Without this
         // detaching would leave the person watching nothing at all.

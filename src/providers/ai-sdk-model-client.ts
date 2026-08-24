@@ -48,6 +48,12 @@ export function createAiSdkModelClient(modelId: string, model: LanguageModel): M
         if (part.type === "error") {
           throw part.error;
         }
+        // The stream was already being drained here to time the first token. Handing the text
+        // on as it arrives costs nothing and is the difference between a screen that says
+        // "thinking" for a minute and one that shows what is being thought.
+        if (part.type === "text-delta" && request.onText !== undefined) {
+          request.onText(part.text);
+        }
       }
 
       const usage = await result.usage;

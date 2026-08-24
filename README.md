@@ -134,6 +134,18 @@ DONE stopped: completed (4 steps, 5812 tokens)
 j scroll  enter expand  tab pane  / filter  e evidence  ? help  q detach  ctrl+c cancel run
 ```
 
+While it works there is a line that says so: a spinner that turns, what is happening, how long
+it has been happening, and, while the model is talking, the tail of what it is saying.
+
+```
+⠙ thinking, step 2  5s   I don't see calculator.js in the root directory
+⠹ shell npm test  12s
+```
+
+One line, deliberately. The whole response lands in the action stream when it arrives and in the
+ledger for ever, and repeating it as it streams would be the same text three times. A tool that
+finishes inside a frame never draws one.
+
 `?` lists every key. `enter` expands a row to its whole payload and the ledger record it came
 from. `q` leaves the view: the screen comes down and the run keeps going, reporting the plain
 lines it writes off a terminal. `ctrl+c` cancels the run. There is no progress bar, because an

@@ -4,7 +4,7 @@ import { describeEvidence, type EvidenceSummary } from "./evidence-panel.ts";
 import { type KeyAction, type KeyBindings, keyActionDescriptions } from "./key-bindings.ts";
 import { type Layout, visibleWindow } from "./layout.ts";
 import type { ActionRow, GateLine, SessionView } from "./session-view.ts";
-import { firstLineToWidth, padToWidth, truncateToWidth } from "./terminal-text.ts";
+import { displayWidth, firstLineToWidth, padToWidth, truncateToWidth } from "./terminal-text.ts";
 import type { Theme } from "./theme.ts";
 import type { ViewState } from "./view-state.ts";
 
@@ -33,6 +33,8 @@ export interface ScreenInput {
   readonly confirmation: ConfirmationRequest | null;
   /** Present once the run has finished and the bundle has been written. */
   readonly evidence: EvidenceSummary | null;
+  /** How long the current activity has been going, for the line that says the run is alive. */
+  readonly activityElapsedMs?: number;
   /**
    * Turns already finished this session, oldest first, one line each. A session that cleared
    * the screen between turns would be a screen that forgets, which is the opposite of what a
@@ -55,6 +57,8 @@ export function buildScreen(input: ScreenInput): readonly ScreenRow[] {
     ...(line.kind === "task" ? { color: input.theme.color("accent") } : {}),
   }));
 
+  const activity = activityRow(input);
+
   const body =
     input.confirmation !== null
       ? confirmationRows(input, input.confirmation)
@@ -69,6 +73,7 @@ export function buildScreen(input: ScreenInput): readonly ScreenRow[] {
     ...headerRows(input),
     ...transcript,
     ...body,
+    ...(activity === null ? [] : [activity]),
     statusRow(input),
     ...(input.state.composing === null ? [] : [promptRow(input)]),
     ...(layout.showHint ? [hintRow(input)] : []),
@@ -268,6 +273,61 @@ function describeGate(gate: GateLine, input: ScreenInput): string {
  * an empty diff is not a result, and a person reading that reasonably concluded the tool had
  * built something.
  */
+/**
+ * The frames of the working indicator, and how fast they turn.
+ *
+ * There was nothing moving on this screen while a model thought or a shell command ran: the
+ * status said "thinking (step 3)" and stayed there, and the only thing that changed was a
+ * seconds counter that the layout hides below 80 columns or 12 rows. A person watching a run
+ * that takes a minute could not tell it from a run that had hung.
+ *
+ * The frame is a pure function of the elapsed milliseconds the tick already provides, so
+ * nothing here keeps time of its own and the screen stays a function of its inputs.
+ */
+const spinnerFrames = [
+  "\u280b",
+  "\u2819",
+  "\u2839",
+  "\u2838",
+  "\u283c",
+  "\u2834",
+  "\u2826",
+  "\u2827",
+  "\u2807",
+  "\u280f",
+] as const;
+const spinnerFrameMs = 120;
+
+export function spinnerAt(elapsedMs: number): string {
+  const index = Math.floor(Math.max(0, elapsedMs) / spinnerFrameMs) % spinnerFrames.length;
+  return spinnerFrames[index] ?? spinnerFrames[0];
+}
+
+/**
+ * One line saying the run is alive and what it is doing: the spinner, the activity, how long
+ * that activity has been going, and, while the model is talking, the tail of what it is saying.
+ *
+ * Deliberately one line. The whole response is in the action stream when it lands and in the
+ * ledger for ever; repeating it here as it arrives would be the same text three times and would
+ * push everything else off a short screen.
+ */
+function activityRow(input: ScreenInput): ScreenRow | null {
+  const { view, layout, state } = input;
+  if (view.activity === null || view.finished) {
+    return null;
+  }
+
+  const seconds = Math.floor((input.activityElapsedMs ?? 0) / 1000);
+  const head = `${spinnerAt(state.elapsedMs)} ${view.activity}${seconds > 0 ? `  ${seconds}s` : ""}`;
+  if (view.speaking.length === 0) {
+    return { text: head, dim: true };
+  }
+
+  const room = layout.contentColumns - displayWidth(head) - 3;
+  const said = room > 12 ? truncateToWidth(view.speaking, room) : "";
+  return { text: said.length === 0 ? head : `${head}   ${said}`, dim: true };
+}
+
 function statusRow(input: ScreenInput): ScreenRow {
   const { view, theme } = input;
   const stoppedBadly = view.stopReason !== null && view.stopReason !== "completed";
