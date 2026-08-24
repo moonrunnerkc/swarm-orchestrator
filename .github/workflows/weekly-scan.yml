@@ -40,6 +40,10 @@ jobs:
                     --severity WARNING --severity ERROR \
                     --error --metrics off --oss-only
 
+      # `--skip-git` was passed here and osv-scanner 2.x does not define it, so every run of
+      # this step exited 127 on "flag provided but not defined" without scanning anything.
+      # It went unnoticed because the workflow had never run: it is scheduled weekly and was
+      # dispatched by hand for the first time on 2026-08-23.
       - name: osv-scanner
         id: osv
         continue-on-error: true
@@ -47,7 +51,6 @@ jobs:
         with:
           scan-args: |-
             --recursive
-            --skip-git
             ./
 
       - name: file an issue for whatever was found
