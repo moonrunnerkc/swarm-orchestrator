@@ -85,6 +85,7 @@ Appended as the run proceeds.
 | 7.7 Record the artifact | done | 13.1.0, shasum `84b47d1bccbed715034eb6b595ff08b9f525fc64`, 268 files, run `32685163550` |
 | 7.8 GitHub release | done | `v13.1.0` created and marked latest, so the repository sidebar names the v13 lineage rather than the v12 auditor it had named since 2026-07-06 |
 | 9.7 The weekly scan, never fired | done, three defects found | dispatched by hand: osv-scanner had never scanned anything, the issue it files could not be filed, semgrep had 21 unseen findings. All three closed or dispositioned |
+| 9.8 The schedule itself | done, confirmed the next morning | run `32697714165` fired on the Monday schedule at 06:31 UTC on 2026-08-24 with nobody watching: osv-scanner read the lockfile (259 packages, no issues) rather than exiting 127, semgrep ran its 252 rules over 6102 files, and the issue was filed and labelled. [security-coverage.md](../../security-coverage.md) |
 | 5.1 The fixes are in the binary | done | `npm run build`, then `node dist/cli.js calibrate`. Calibrated through the built CLI, not from source |
 | 5.2 Enumerate what each backend serves | done | Ollama on 11434 serves 30 models, recorded; rapid-mlx on 8000 serves one, `qwen3-coder:30b-a3b`, which is why a three-model comparison there is not possible |
 | 5.3 Three models, 20 cases, 3 repeats | done | 180 runs. Sampling pinned on the wire at temperature 0.7, top-p 0.95, recorded in every model-call record, seed per repeat derived from case, model and repeat number |
