@@ -263,13 +263,15 @@ tests. Nothing dropped: no test was deleted, skipped or renamed out of the count
 ## What this run did not finish
 
 Five things, each with the reason and the command that would unblock it, so nobody has to
-reconstruct them from the table:
+reconstruct them from the table. One of the five, the registry publish, was closed the next
+day; it is left in the table with its closure named, because a run report that quietly drops
+its own unfinished items is not a record of the run.
 
 | Not done | Why | What unblocks it |
 | --- | --- | --- |
 | The frontier arm of the edit-quality battery, 30 of 60 | both keys authenticate and neither has a balance, checked live during this run | funding either key, then the remaining 30 cases |
 | Hardware profiles for two of three machines | neither is reachable from this session | `swarm select` on each machine |
-| Publishing to the npm registry | one credential. `npm whoami` answers `ENEEDAUTH`, and the `NPM_TOKEN` in `.env` is not a working token: the registry's whoami answers `{}` and the collaborators endpoint answers 401 | `npm login` in a browser with an OTP, or a token with publish rights on this package as the `NPM_TOKEN` repository secret. The workflow is proved otherwise: run `32685163550` cleared the tag/version interlock, the gates and `npm pack`, and failed only at the `PUT` |
+| Publishing to the npm registry, **closed 2026-08-24** | one credential, on the day of the run. `npm whoami` answered `ENEEDAUTH`, and the `NPM_TOKEN` in `.env` was not a working token: the registry's whoami answered `{}` and the collaborators endpoint answered 401 | closed by replacing the `NPM_TOKEN` repository secret with a token checked for write access on the package first. That turned the `E404` into an `E422`, because `--provenance` is checked against a `repository.url` this manifest did not carry; adding the field published 13.1.3. Two defects, not the one this row predicted: `evidence/2026-08-24/registry-publish.md` |
 | A calibration watched through the interactive screen | the screen is wired to `swarm <task>`; `swarm calibrate` writes plain lines. A sweep is not one run, so this is a second view rather than a call site | a calibration view with its own layout and tests. On [tech-debt.md](../../tech-debt.md) |
 | The keychain signing key | the entry under `swarm-orchestrator/bundle-signing-key` holds nine characters that are not an ed25519 key, so every bundle this session signed carries `keySource: ephemeral` | deleting that entry, after identifying what it is, at which point the next run stores a real key. Not done here because overwriting an unidentified credential is destructive and is the user's call |
 
@@ -279,7 +281,7 @@ adversarial suite asserting the gap exactly as it stood.
 
 ## After the close
 
-Three things landed after the report above was closed, and they are here rather than folded into
+Four things landed after the report above was closed, and they are here rather than folded into
 it, because a report that keeps absorbing later work stops being a record of a run.
 
 **The git install produced no binary.** `dist/` is not committed and is built by a script, and npm
@@ -292,9 +294,10 @@ path, `13.1.1` reported, `swarm --help` running.
 
 **The README told a reader to install the wrong product.** Its first instruction was
 `npm install -g swarm-orchestrator`, which the registry answers with 12.0.0, the pull-request
-auditor. It now names the version, says the package is not on the registry, points at the git tag,
-and says what the line becomes when the publish is unblocked. The command list gained `routing`
-and `parallel`, which were only in `--help`, and the three flags a person reaches for first.
+auditor. For as long as the registry served 12.0.0 it named the version, said so, and pointed at
+the git tag instead; once 13.1.3 published, that line went back to being the plain registry
+install it had always claimed to be. The command list gained `routing` and `parallel`, which were
+only in `--help`, and six flags a person reaches for first.
 
 **The repository sidebar described v12.** The About text was the auditor's, and so were most of
 its twenty topics, one of which named a regulatory instrument that `claims.md` bans by name in
@@ -305,5 +308,15 @@ That last one turned up a fourth thing, which is not fixed and is named in
 auditor's leaderboard. Nothing links to it and it no longer updates, which limits it rather than
 closing it.
 
-Gates after all three: exit 0, 103 files, 1300 tests, one more than the closing count above and
-that one is the test asserting the package builds on `prepare`.
+**The registry publish went through, on the second defect rather than the first.** Replacing the
+`NPM_TOKEN` secret with a token checked for write access turned the `E404` into an `E422`: a
+signed publish is validated against `package.json`'s `repository.url`, and this manifest had no
+`repository` field at all, so the provenance statement named this repository and the manifest
+named nothing. That refused run had already written its provenance to the public transparency log
+before the registry rejected the tarball. Adding the field, with a test asserting it, published
+**13.1.3**, and `npm install -g swarm-orchestrator` now serves v13 with an attestation that
+verifies from a clean install: `evidence/2026-08-24/registry-publish.md`.
+
+Gates after all four: exit 0, 103 files, 1301 tests, two more than the closing count above. Both
+are packaging assertions no source-tree check could have made: one that the package builds on
+`prepare`, one that it names the repository a signed publish is checked against.
