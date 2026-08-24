@@ -1,5 +1,26 @@
 # Changelog
 
+## 13.1.5
+
+Three fixes, all found by running the tool rather than by reading it.
+
+### Fixed
+
+- **A routed model the backend does not serve reached dispatch.** The router picks from what a
+  calibration measured, and a calibration is a record of a machine at a moment; the backend
+  answering today is a separate fact, and the two drift. A model pulled into Ollama, discovery
+  preferring rapid-mlx, and the router handed over a name that endpoint had never heard of. It
+  answered `Not Found` three times and the run stopped at zero steps. The served list is now
+  asked before dispatch, and a served local model, then a frontier provider whose key is set,
+  answers instead. Substitutions are announced and recorded.
+- **A run that built nothing reported `DONE`.** The gates run after the loop and every gate
+  event rewrote the status line, so the last gate to pass became the last word on the run. A
+  loop that stopped at step zero displayed `DONE gate diff-budget: passed` in the success
+  colour, over an empty diff. The stop reason is now its own field and the outcome leads with it.
+- **`git diff` outside a repository printed its whole option list.** One line of diagnosis
+  followed by a hundred lines about `--dirstat`, with the sentence saying what to do at the
+  bottom. Now one line, and it says to run `git init`.
+
 ## 13.1.4
 
 ### Fixed
