@@ -112,6 +112,20 @@ until it stops showing up. Six mentions of three **generated** paths, `dist/`,
 so they name build and driver output that exists once something makes it. Counted and printed
 rather than passed over, because a silent third category is how a check stops meaning anything.
 
+## Debt: the weekly scan files the same 21 semgrep findings every Monday
+
+Nineteen of them are `detected-github-token` inside the secret scrubber's own test corpus and
+the shakedown logs, which is a secret scanner correctly finding the credential-shaped strings a
+scrubber is tested with. One is a non-literal `RegExp` in a fuzz harness's summary reader, and
+one is a prototype-pollution rule firing on a read-only walk that exists to quote a bad value
+back in a config error.
+
+Scoping the token rule off `fuzz/corpus/scrub/`, `src/evidence/*.test.ts` and
+`docs/evidence/**/logs/` is the right fix and is not a release-day change: an issue that arrives
+every week saying the same known thing is one people learn to close unread, which is the failure
+mode this project names about gates. Wants its own change, with the scoped run as its evidence.
+Dispositioned in `docs/security-coverage.md`.
+
 ## Exports nothing else names
 
 A name-grep across `src/**`, so it is a heuristic and not a type-aware analysis: a type used
