@@ -73,21 +73,21 @@ export function describeEvidence(
     ["the chain every record is on", join(directory, bundleFileNames.ledger)],
   ];
 
-  const fit = (line: string): string =>
+  const toWidth = (line: string): string =>
     columns === null ? line : truncateToWidth(line, Math.max(20, columns));
 
   return [
     "what this run produced",
     "",
-    ...rows.map(([label, value]) => fit(`  ${label}: ${value}`)),
+    ...rows.map(([label, value]) => toWidth(`  ${label}: ${value}`)),
     "",
-    fit(
+    toWidth(
       `  ${summary.recordCount} records. The harness verified ${summary.claimsVerified} ` +
         `claim(s) and refused ${summary.claimsRefused}.`,
     ),
-    fit(`  ${describeVerification(summary.verification)}`),
+    toWidth(`  ${describeVerification(summary.verification)}`),
     ...(summary.verification.kind === "verified"
       ? []
-      : [fit(`  check it yourself: ${verifyCommandText(summary.location)}`)]),
+      : [toWidth(`  check it yourself: ${verifyCommandText(summary.location)}`)]),
   ];
 }
