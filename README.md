@@ -114,9 +114,10 @@ Transcripts from two earlier runs outside the repository:
 say `"keySource": "keychain"` and both verifiers confirm it.
 
 **Local model choice is measured on your machine.** The probe output and recommendation from
-real hardware: [`hardware-select.md`](docs/evidence/2026-08-18/hardware-select.md). Sixty
-calibration runs with distributions rather than averages:
-[`calibration-report.md`](docs/evidence/2026-08-18/calibration-report.md).
+real hardware: [`hardware-select.md`](docs/evidence/2026-08-18/hardware-select.md). A hundred
+and eighty calibration runs across three models, distributions rather than averages, with the
+pick ranked against the other two:
+[`calibration-report.md`](docs/evidence/2026-08-23/calibration-report.md).
 
 **Eight untrusted boundaries are fuzzed**, and the harnesses are checked against a defect
 injected on purpose so a clean run cannot be a blind one: [`fuzz/`](fuzz/README.md) and
