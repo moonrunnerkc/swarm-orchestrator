@@ -47,7 +47,19 @@ const linkPattern = /\[[^\]]*\]\(([^)\s]+)\)/g;
 const backtickPattern = /`([^`\n]+)`/g;
 
 /** The directories a rooted reference can start with. A mention outside these is not a claim. */
-const rootedPrefixes = ["src/", "docs/", "fuzz/", "scripts/", "redteam/", ".github/", "dist/"];
+const rootedPrefixes = [
+  "src/",
+  "docs/",
+  "fuzz/",
+  "scripts/",
+  "redteam/",
+  ".github/",
+  "dist/",
+  // The documents under docs/ write this one rooted at their own directory rather than at the
+  // repository root. Both spellings are tried for every mention, so accepting it costs nothing,
+  // and without it a shelf of evidence pointers is read as prose and never resolved.
+  "evidence/",
+];
 
 const pathSuffixes = [
   ".md",

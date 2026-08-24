@@ -59,6 +59,22 @@ describe("what counts as a pointer", () => {
     expect(found.misses.map((miss) => miss.raw)).toEqual(["src/tools/gone.ts"]);
   });
 
+  /**
+   * The documents under docs/ point at their own evidence shelf this way, so a spelling that
+   * only the repository root recognized left thirty-odd pointers unread by the check that
+   * exists to read them.
+   */
+  it("resolves a mention rooted at the document's own directory", async () => {
+    const found = await doc("a.md", "the run is in `evidence/run.md`\n");
+    expect(found.misses).toEqual([]);
+    expect(found.checked).toBe(1);
+  });
+
+  it("reports one of those that resolves to nothing", async () => {
+    const found = await doc("a.md", "the run is in `evidence/gone.md`\n");
+    expect(found.misses.map((miss) => miss.raw)).toEqual(["evidence/gone.md"]);
+  });
+
   it("resolves a directory by the files tracked under it", async () => {
     const found = await doc("a.md", "the tools live in `src/tools/`\n");
     expect(found.misses).toEqual([]);

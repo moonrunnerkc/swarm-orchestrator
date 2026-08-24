@@ -86,7 +86,7 @@ wrapper around it is not.
 ## Documentation pointers
 
 `scripts/check-doc-paths.mjs` was written in this pass and now runs in CI beside the invariant
-drift check. It resolves 271 path references across 30 documentation files: markdown links
+drift check. It resolves 310 path references across 30 documentation files: markdown links
 against the file that holds them, and rooted backtick mentions against the repository root.
 
 It resolves against **what git tracks**, not against the filesystem, and that distinction cost
@@ -103,11 +103,21 @@ answer still depended on whether the tree had been built. Same filesystem depend
 down, in the code written to remove it. It is verified now against a fresh clone with nothing
 built in it, which is what CI is.
 
+A third correction, smaller and in the other direction. A backtick mention is only read as a
+pointer where it starts with a directory this repository has, and that list was written from the
+repository root: `src/`, `docs/`, `fuzz/`, `scripts/`, `redteam/`, `.github/`, `dist/`. The
+documents under `docs/` point at their own evidence shelf as `evidence/...`, rooted at the file
+rather than at the root, so thirty-one pointers were read as prose and never resolved. The check
+already tries both spellings for every mention, so accepting the prefix costs nothing. None of
+the thirty-one turned out to be a miss, which is the good outcome and not the point: they were
+unread, and a check that skips a shelf reports a clean number about a smaller tree than the one
+it names.
+
 Three outcomes rather than two. **Zero misses.** Three mentions named and **known**, all of
 `redteam/leep/`, which three documents name in order to record that it was removed: a record of
 a removal is not a dangling pointer, and the two cannot be told apart without reading the
 sentence, so the exception is named in the script with its reason rather than the rule widened
-until it stops showing up. Seven mentions of three **generated** paths, `dist/`,
+until it stops showing up. Eight mentions of three **generated** paths, `dist/`,
 `redteam/loop/state-dryrun/` and `redteam/loop/state-wake/`, every one of them in `.gitignore`,
 so they name build and driver output that exists once something makes it. Counted and printed
 rather than passed over, because a silent third category is how a check stops meaning anything.

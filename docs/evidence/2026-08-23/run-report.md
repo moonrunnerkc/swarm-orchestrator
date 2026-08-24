@@ -71,7 +71,7 @@ Appended as the run proceeds.
 | 9.1 Dependency currency | done | 7 patch bumps proposed, none taken mid-release; `@types/node` held at the runtime floor deliberately |
 | 9.2 `npm audit` | done | 0 vulnerabilities |
 | 9.3 Drift | done | 12 invariants identical; `fuzz/README.md` current at 8 harnesses; `security-coverage.md` corrected on two counts |
-| 9.4 Dangling doc pointers | done, now in CI | `scripts/check-doc-paths.mjs`, run again at the close of the run: 271 references across 30 documentation files, zero misses, 3 named and known, 7 generated |
+| 9.4 Dangling doc pointers | done, now in CI | `scripts/check-doc-paths.mjs`, run again at the close of the run: 310 references across 30 documentation files, zero misses, 3 named and known, 8 generated |
 | 9.5 Coverage | done | chokepoint 98.3%, core 98.8%, evidence 94.4%, gates 94.2%, tui 75.7%, tree 85.2% |
 | 9.6 Invariant 8 | done | zero in `src/core`, and the interface work added none |
 | 10.4 The four residuals | done, unchanged | build guide 7.1 untouched by this run, all four cases still assert their gaps, suite 49 green |
@@ -98,12 +98,12 @@ Appended as the run proceeds.
 | 10.1 `docs/claims.md` | done | rows added for the interface, the container run, the new calibration, and the installed-package run; the signing row now names both outcomes; banned list re-read and nothing in this run violates it |
 | 10.2 `README.md` | done | every capability claim resolves to a committed artifact, checked by `scripts/check-doc-paths.mjs` rather than by eye |
 | 10.3 `CHANGELOG.md` | done | the interface, five flags, three config tables, the version decision, and the local-usage fix |
-| 11.1 `npm run gates` | done | exit 0, 103 files, 1297 tests, against a baseline of 88 and 1082. No drop anywhere: the difference is 15 new test files from the interface, the doc-path check, the signing messages and the provider fix |
+| 11.1 `npm run gates` | done | exit 0, 103 files, 1299 tests, against a baseline of 88 and 1082. No drop anywhere: the difference is 15 new test files from the interface, the doc-path check, the signing messages and the provider fix |
 | 11.2 `npm run fuzz:build` | done | exit 0, 8 harnesses, all building |
 | 11.3 `check-invariant-drift.mjs` | done | exit 0, 12 invariants identical across CLAUDE.md and AGENTS.md |
 | 11.4 Verify every committed bundle | done | 7 bundles, each by its own embedded verifier, each run from `/tmp` rather than from the repository. 7 verified, 0 failed |
 | 11.5 A real task through the installed package | done | `installed-package-run.md`, with `live-task.cast` and `open-evidence.cast`. One run green, one escalated at the file-set gate citing its ledger record, both bundles verifying from outside, and the panel reporting `open exited 0` after a browser tab opened |
-| 11.6 Resolve every path under `docs/` | done | zero misses, 3 known and named, 7 generated |
+| 11.6 Resolve every path under `docs/` | done | zero misses, 3 known and named, 8 generated |
 | 11.7 `docs/state-report-2026-08-23.md` | done | supersedes the 08-17 report and says so |
 | 11.8 Close this report | done | the per-item log above, the decisions below, and the per-section diff stat |
 
@@ -242,7 +242,7 @@ pure model beside it, and the `cli.ts` lines the end-of-run deferral moved.
 Every one of these ran at the close of the session, on the tree as committed.
 
     $ npm run gates
-    ... exit 0, 103 files, 1297 tests passed
+    ... exit 0, 103 files, 1299 tests passed
 
     $ npm run fuzz:build
     ... exit 0, 8 harnesses
@@ -251,13 +251,13 @@ Every one of these ran at the close of the session, on the tree as committed.
     ... exit 0, 12 invariants identical
 
     $ node scripts/check-doc-paths.mjs
-    resolved 271 path reference(s) across 30 documentation file(s), against what git tracks
-    zero misses, 3 known and named, 7 generated
+    resolved 310 path reference(s) across 30 documentation file(s), against what git tracks
+    zero misses, 3 known and named, 8 generated
 
     $ for each of the 7 committed bundles: node <bundle>/verify.mjs <bundle>   # run from /tmp
     ... 7 verified, 0 failed
 
-Against the phase 0 baseline of 88 files and 1082 tests, that is 15 more test files and 215 more
+Against the phase 0 baseline of 88 files and 1082 tests, that is 15 more test files and 217 more
 tests. Nothing dropped: no test was deleted, skipped or renamed out of the count during this run.
 
 ## What this run did not finish
