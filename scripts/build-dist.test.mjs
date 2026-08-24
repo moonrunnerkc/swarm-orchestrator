@@ -1,9 +1,28 @@
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { assetsUnder } from "./build-dist.mjs";
 
 const src = join(import.meta.dirname, "..", "src");
+
+describe("when the build has to run", () => {
+  /**
+   * The defect this covers, found by installing rather than by reading: dist/ is not
+   * committed, and npm runs `prepare` for a git install but never `prepublishOnly`. With only
+   * the latter declared, `npm install github:owner/repo#tag` resolved, printed no error, and
+   * left a package with no dist/ and no swarm binary. A broken install that exits 0 is worse
+   * than one that fails, and the registry publish being blocked is exactly when someone
+   * reaches for the git ref.
+   */
+  it("builds on prepare, which is the hook a git install runs", async () => {
+    const manifest = JSON.parse(
+      await readFile(join(import.meta.dirname, "..", "package.json"), "utf8"),
+    );
+
+    expect(manifest.scripts.prepare).toBe("npm run build");
+    expect(manifest.files).toContain("dist/");
+  });
+});
 
 describe("what the dist build has to carry beyond compiled JavaScript", () => {
   /**
