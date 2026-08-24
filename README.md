@@ -1,6 +1,7 @@
 # swarm-orchestrator
 
 [![gates](https://img.shields.io/github/actions/workflow/status/moonrunnerkc/swarm-orchestrator/gates.yml?branch=v13-main&style=flat-square&label=gates)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/gates.yml)
+[![npm](https://img.shields.io/npm/v/swarm-orchestrator?style=flat-square&label=npm)](https://www.npmjs.com/package/swarm-orchestrator)
 [![node](https://img.shields.io/badge/node-%3E%3D24-blue?style=flat-square)](package.json)
 [![license](https://img.shields.io/github/license/moonrunnerkc/swarm-orchestrator?style=flat-square)](LICENSE)
 
@@ -28,18 +29,16 @@ a workspace it had never seen, recorded in a real terminal:
 
 ## Install
 
-This is **13.1.1**, and it is not on the npm registry. `npm install -g swarm-orchestrator`
-installs **12.0.0** today, which is the pull-request auditor this package used to be and has
-nothing to do with what this file describes. What blocks publishing is one credential, written
-down in [the state report](docs/state-report-2026-08-23.md).
+    npm install -g swarm-orchestrator
 
-Install from the tag instead:
+That is **13.1.2**, and it leaves `swarm` on your path. Installing from the tag works too, and
+builds itself on install:
 
-    npm install -g github:moonrunnerkc/swarm-orchestrator#v13.1.1
+    npm install -g github:moonrunnerkc/swarm-orchestrator#v13.1.2
 
-That builds on install, so it needs no separate step, and it leaves you with `swarm` on your
-path. When the registry publish is unblocked this line becomes `npm install -g
-swarm-orchestrator@13` and this paragraph goes away.
+Anything below 13 is a different program. This package name carried a pull-request auditor
+through 12.x, and `npm install -g swarm-orchestrator@12` still installs it, so pin the major if
+you depend on one or the other: [Upgrading from v12](#upgrading-from-v12).
 
 Node 24 or newer. That is a runtime floor rather than a preference: the coverage cycle
 spawns the test runner with `--test-isolation=process`, which Node 22 rejects as a bad
@@ -62,7 +61,12 @@ option, so on anything older that measurement does not happen.
     swarm --open-evidence "..."      # open the review page when it finishes
     swarm --model local:<id> "..."   # a specific model
     swarm --workspace <dir> "..."    # a repository other than the current directory
+    swarm --base <ref> "..."         # what the diff and the ratchet measure against
     swarm --attempts <n> "..."       # how many times the ratchet may retry a gate
+    swarm --max-steps <n> "..."      # how long the loop may run before it stops
+    swarm --local-endpoint <url>     # an OpenAI-compatible server other than the default
+
+`swarm --help` prints all of it, including the calibration flags.
 
 Set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` for a frontier
 model, or start Ollama or rapid-mlx and pass `--model local:<id>`. With no model named, the
