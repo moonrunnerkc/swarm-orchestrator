@@ -27,6 +27,8 @@ interface SessionScreenProps {
   readonly dispatch: (action: ViewAction) => void;
   readonly confirmations: ConfirmationQueue;
   readonly onOpen: (target: "review" | "bundle") => void;
+  /** Called with the typed line when the prompt is submitted. Absent outside a session. */
+  readonly onSubmitTask?: (task: string) => void;
   readonly theme: Theme;
   readonly bindings: KeyBindings;
   readonly task: string;
@@ -105,6 +107,19 @@ export function SessionScreen(props: SessionScreenProps): ReactElement {
     }
     if (decision.kind === "open") {
       props.onOpen(decision.target);
+      return;
+    }
+    if (decision.kind === "submit-task") {
+      // Read off the state rather than carried on the keypress: the dispatcher decides that
+      // this was a submission, and what was typed is the view's to know.
+      const typed = props.viewState.composing?.text.trim() ?? "";
+      // An empty line is someone pressing enter at a prompt, which should leave the prompt
+      // where it is rather than starting a turn with nothing in it.
+      if (typed.length === 0) {
+        return;
+      }
+      props.dispatch({ type: "compose-submitted" });
+      props.onSubmitTask?.(typed);
     }
   });
 

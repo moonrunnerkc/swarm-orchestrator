@@ -39,7 +39,7 @@ export async function runEmbeddedVerifier(input: {
         timeout: input.timeoutMs,
         maxBuffer: 8_000_000,
       },
-      (error, _stdout, stderr) => {
+      (error, stdout, stderr) => {
         if (error === null) {
           settle({ kind: "verified", exitCode: 0 });
           return;
@@ -49,12 +49,41 @@ export async function runEmbeddedVerifier(input: {
           settle({ kind: "not-run", reason: error.message.split("\n")[0] ?? "it could not start" });
           return;
         }
-        settle({
-          kind: "refused",
-          exitCode,
-          detail: stderr.split("\n").find((line) => line.trim().length > 0) ?? "no detail given",
-        });
+        settle({ kind: "refused", exitCode, detail: refusalDetail(stdout, stderr) });
       },
     );
   });
+}
+
+/**
+ * Which check refused the bundle, taken from the stream the verifier actually writes on.
+ *
+ * It reports through `console.log`, so every `FAIL` line is on stdout and there is nothing on
+ * stderr at all unless node itself failed. Reading stderr therefore turned every genuine
+ * refusal into "exit 1, no detail given": the one moment the panel exists for, and it named
+ * nothing. The named check is what a reader needs, so it is preferred over the tally line
+ * under it, and stderr is still consulted for the case where node rather than the bundle is
+ * what went wrong.
+ */
+export function refusalDetail(stdout: string, stderr: string): string {
+  const lines = (text: string) =>
+    text
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+  const failed = lines(stdout).filter((line) => line.startsWith("FAIL"));
+  if (failed.length > 0) {
+    const [first] = failed;
+    const rest = failed.length > 1 ? ` (and ${failed.length - 1} more)` : "";
+    return `${first ?? ""}${rest}`;
+  }
+
+  const verdict = lines(stdout).find((line) => line.startsWith("bundle FAILED"));
+  if (verdict !== undefined) {
+    return verdict;
+  }
+
+  const [fromStderr] = lines(stderr);
+  return fromStderr ?? "no detail given";
 }

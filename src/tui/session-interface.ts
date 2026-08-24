@@ -36,6 +36,13 @@ export interface SessionInterface {
   cancelled(): Promise<void>;
   /** Shows what the run produced, and offers to open it. Returns when the panel is done with. */
   presentEvidence(summary: EvidenceSummary): Promise<void>;
+  /**
+   * Waits for the next task the person types, or null when they are done. Only a session calls
+   * this; a run passed its task on argv and never asks.
+   */
+  readTask(): Promise<string | null>;
+  /** Clears the last turn off the screen so the next one is not read as a continuation of it. */
+  beginTurn(task: string): void;
   stop(): Promise<void>;
 }
 
@@ -52,6 +59,12 @@ export interface SessionInterfaceOptions {
   readonly bindings: KeyBindings;
   /** Reads a line off the terminal on the plain path. Absent where there is no terminal. */
   readonly askOnTerminal?: (question: string) => Promise<string>;
+  /**
+   * Reads the next task, or null at end of input. Separate from `askOnTerminal` because that
+   * one asks a yes-or-no question and this one waits for work, and because this accepts a pipe
+   * while a confirmation must not.
+   */
+  readonly readLine?: (prompt: string) => Promise<string | null>;
   readonly openEvidence: OpenEvidencePolicy;
   readonly spawnOpen: SpawnHandler;
   readonly platform: NodeJS.Platform;
@@ -104,6 +117,28 @@ function streamInterface(options: SessionInterfaceOptions): SessionInterface {
         options.writeLine(outcome.detail);
       }
     },
+    async readTask(): Promise<string | null> {
+      if (options.readLine === undefined) {
+        // Nowhere to read a task from. A session with nobody to ask is over, and saying so
+        // beats waiting on a stdin that will never carry one.
+        return null;
+      }
+      // A pipe is a terminal's equal here, which is why this does not ask for a TTY: a file of
+      // tasks fed in is a session someone wrote down in advance. Confirmation still refuses
+      // without a terminal, because answering a security prompt is not the same as typing work.
+      const line = await options.readLine("\u203a ");
+      if (line === null) {
+        return null;
+      }
+      const typed = line.trim();
+      if (typed.length === 0) {
+        return null;
+      }
+      return typed === "/exit" || typed === "/quit" ? null : typed;
+    },
+    beginTurn(task: string): void {
+      options.writeLine(`\u203a ${task}`);
+    },
     stop: () => Promise.resolve(),
   };
 }
@@ -140,6 +175,40 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
   let onCancel = (): void => {};
   let onPanelClosed = (): void => {};
   let ticking = true;
+  let mounted = true;
+  let onTaskTyped: (task: string | null) => void = () => {};
+  let currentTask = options.task;
+
+  const submitTask = (task: string): void => {
+    const settle = onTaskTyped;
+    onTaskTyped = () => {};
+    settle(task);
+  };
+
+  /**
+   * Detach means the screen goes away and the run carries on. It used to mean neither.
+   *
+   * `detached` was set and read by three things that all happen after the fact: confirmations
+   * auto-refuse, the evidence panel prints instead of drawing, and a waiting panel promise
+   * resolves. Nothing unmounted Ink and nothing rendered differently, so the screen kept
+   * painting over the terminal and the readme's "leaves the view and lets the run finish" was
+   * true of the second half only. Unmounting here is what makes the first half true, and the
+   * run continues because nothing about the loop is owned by the view.
+   */
+  const detach = (): void => {
+    if (!mounted) {
+      return;
+    }
+    mounted = false;
+    ticking = false;
+    onTaskTyped(null);
+    instance.unmount();
+    for (const line of held) {
+      options.writeLine(line);
+    }
+    held.length = 0;
+    options.writeLine("detached: the screen is gone and the run is still going.");
+  };
 
   const dispatch = (action: ViewAction): void => {
     const before = state;
@@ -152,8 +221,11 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
     }
     if (!before.detached && state.detached) {
       onPanelClosed();
+      detach();
     }
-    redraw();
+    if (mounted) {
+      redraw();
+    }
   };
 
   const open = (target: OpenTarget): void => {
@@ -178,9 +250,10 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
       dispatch,
       confirmations,
       onOpen: open,
+      onSubmitTask: submitTask,
       theme: options.theme,
       bindings: options.bindings,
-      task: options.task,
+      task: currentTask,
       workspace: options.workspace,
       evidence,
     }),
@@ -195,9 +268,10 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
         dispatch,
         confirmations,
         onOpen: open,
+        onSubmitTask: submitTask,
         theme: options.theme,
         bindings: options.bindings,
-        task: options.task,
+        task: currentTask,
         workspace: options.workspace,
         evidence,
       }),
@@ -219,11 +293,23 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
   return {
     emit(event: LoopEvent): void {
       store.apply(event);
+      if (!mounted) {
+        // The screen is gone, so the run reports the way it does off a terminal. Without this
+        // detaching would leave the person watching nothing at all.
+        const line = describeLoopEvent(event);
+        if (line !== null) {
+          options.writeLine(line);
+        }
+      }
       if (event.type === "stopped" || event.type === "escalated") {
         dispatch({ type: "run-finished" });
       }
     },
     note(line: string): void {
+      if (!mounted) {
+        options.writeLine(line);
+        return;
+      }
       held.push(line);
     },
     confirm: (request) => (state.detached ? Promise.resolve(false) : confirmations.ask(request)),
@@ -251,10 +337,30 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
         dispatch({ type: "open-evidence" });
       });
     },
+    readTask(): Promise<string | null> {
+      if (!mounted) {
+        return Promise.resolve(null);
+      }
+      dispatch({ type: "compose-start" });
+      return new Promise<string | null>((resolve) => {
+        onTaskTyped = resolve;
+      });
+    },
+    beginTurn(task: string): void {
+      // The next turn starts from an empty stream rather than under the last one's rows, which
+      // is the difference between a session and one long run that keeps being added to.
+      store.reset();
+      currentTask = task;
+      dispatch({ type: "scroll-to-tail" });
+    },
     async stop(): Promise<void> {
       ticking = false;
       confirmations.refuseAll();
-      instance.unmount();
+      onTaskTyped(null);
+      if (mounted) {
+        mounted = false;
+        instance.unmount();
+      }
       await instance.waitUntilExit();
       // Written now the screen is gone, so they land in the scrollback in the order they
       // happened rather than inside a frame that was being redrawn around them.

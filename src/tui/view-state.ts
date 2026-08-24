@@ -8,6 +8,22 @@
 
 export type Pane = "actions" | "gates";
 
+/**
+ * What is being typed at the prompt, and what has been typed before.
+ *
+ * A prompt is interactive state by the same argument as the filter box: it is what the person
+ * is doing to the view, and none of it can reach a verdict. The typed text becomes a task only
+ * when it is submitted, and it travels from here to the harness the way a task passed on argv
+ * does. Nothing in `SessionView` reads it.
+ */
+export interface Composition {
+  readonly text: string;
+  /** Characters from the start, so left and right move without rebuilding the string. */
+  readonly cursor: number;
+  /** How far back the person has walked, or null while they are typing something new. */
+  readonly recalled: number | null;
+}
+
 /** Where the run itself is, as far as the view is concerned. Set by the harness, not by keys. */
 export type RunPhase = "running" | "finished";
 
@@ -36,6 +52,13 @@ export interface ViewState {
   readonly evidenceOpen: boolean;
   /** What the last open attempt did, shown in the panel so a silent failure is not silent. */
   readonly openNotice: string | null;
+  /** The prompt, when the session is waiting for a task rather than running one. */
+  readonly composing: Composition | null;
+  /**
+   * Tasks already submitted this session, newest last, so the prompt can offer them back.
+   * Outside `composing` because it has to outlive the turn that typed it.
+   */
+  readonly taskHistory: readonly string[];
 }
 
 export const initialViewState: ViewState = {
@@ -53,6 +76,8 @@ export const initialViewState: ViewState = {
   cancelRequested: false,
   evidenceOpen: false,
   openNotice: null,
+  composing: null,
+  taskHistory: [],
 };
 
 export type ViewAction =
@@ -76,7 +101,14 @@ export type ViewAction =
   | { readonly type: "note-open"; readonly notice: string }
   | { readonly type: "tick"; readonly elapsedMs: number }
   | { readonly type: "run-finished" }
-  | { readonly type: "escape" };
+  | { readonly type: "escape" }
+  | { readonly type: "compose-start" }
+  | { readonly type: "compose-input"; readonly text: string }
+  | { readonly type: "compose-backspace" }
+  | { readonly type: "compose-delete-word" }
+  | { readonly type: "compose-move"; readonly by: number }
+  | { readonly type: "compose-recall"; readonly by: number }
+  | { readonly type: "compose-submitted" };
 
 /** The reducer. Pure, total, and the only way `ViewState` changes. */
 export function applyViewAction(state: ViewState, action: ViewAction): ViewState {
@@ -129,6 +161,102 @@ export function applyViewAction(state: ViewState, action: ViewAction): ViewState
       return { ...state, elapsedMs: action.elapsedMs };
     case "run-finished":
       return { ...state, runPhase: "finished" };
+    case "compose-start":
+      return {
+        ...state,
+        composing: { text: "", cursor: 0, recalled: null },
+        runPhase: "finished",
+        filtering: false,
+        helpOpen: false,
+        evidenceOpen: false,
+      };
+    case "compose-input": {
+      if (state.composing === null) {
+        return state;
+      }
+      const { text, cursor } = state.composing;
+      return {
+        ...state,
+        composing: {
+          ...state.composing,
+          text: text.slice(0, cursor) + action.text + text.slice(cursor),
+          cursor: cursor + action.text.length,
+          recalled: null,
+        },
+      };
+    }
+    case "compose-backspace": {
+      if (state.composing === null || state.composing.cursor === 0) {
+        return state;
+      }
+      const { text, cursor } = state.composing;
+      return {
+        ...state,
+        composing: {
+          ...state.composing,
+          text: text.slice(0, cursor - 1) + text.slice(cursor),
+          cursor: cursor - 1,
+        },
+      };
+    }
+    case "compose-delete-word": {
+      if (state.composing === null || state.composing.cursor === 0) {
+        return state;
+      }
+      const { text, cursor } = state.composing;
+      const before = text.slice(0, cursor);
+      // Trailing spaces go with the word, so one press after a word always removes a word.
+      const kept = before.replace(/\s*\S*$/, "");
+      return {
+        ...state,
+        composing: { ...state.composing, text: kept + text.slice(cursor), cursor: kept.length },
+      };
+    }
+    case "compose-move": {
+      if (state.composing === null) {
+        return state;
+      }
+      const cursor = Math.max(
+        0,
+        Math.min(state.composing.text.length, state.composing.cursor + action.by),
+      );
+      return { ...state, composing: { ...state.composing, cursor } };
+    }
+    case "compose-recall": {
+      if (state.composing === null || state.taskHistory.length === 0) {
+        return state;
+      }
+      const history = state.taskHistory;
+      const from = state.composing.recalled ?? history.length;
+      const next = Math.max(0, Math.min(history.length, from + action.by));
+      // Walking past the newest returns to the empty line rather than sticking on the last one.
+      const text = next === history.length ? "" : (history[next] ?? "");
+      return {
+        ...state,
+        composing: {
+          ...state.composing,
+          text,
+          cursor: text.length,
+          recalled: next === history.length ? null : next,
+        },
+      };
+    }
+    case "compose-submitted": {
+      if (state.composing === null) {
+        return state;
+      }
+      const typed = state.composing.text.trim();
+      return {
+        ...state,
+        composing: null,
+        // An empty line is not a task and is not worth offering back, so only real ones are kept.
+        taskHistory: typed.length === 0 ? state.taskHistory : [...state.taskHistory, typed],
+        runPhase: "running",
+        scrollBack: 0,
+        selected: null,
+        expanded: false,
+      };
+    }
     case "escape": {
       if (state.helpOpen) {
         return { ...state, helpOpen: false };

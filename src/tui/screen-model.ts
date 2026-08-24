@@ -52,8 +52,26 @@ export function buildScreen(input: ScreenInput): readonly ScreenRow[] {
     ...headerRows(input),
     ...body,
     statusRow(input),
+    ...(input.state.composing === null ? [] : [promptRow(input)]),
     ...(layout.showHint ? [hintRow(input)] : []),
   ].map((row) => ({ ...row, text: truncateToWidth(row.text, layout.columns) }));
+}
+
+/**
+ * The line being typed, with the cursor drawn where the next character lands.
+ *
+ * The cursor is a character in the string rather than a terminal escape, because every row on
+ * this screen is plain text truncated on grapheme boundaries by one function, and a real cursor
+ * would be the one thing on the screen that width arithmetic could not see.
+ */
+function promptRow(input: ScreenInput): ScreenRow {
+  const composing = input.state.composing;
+  if (composing === null) {
+    return { text: "" };
+  }
+  const { text, cursor } = composing;
+  const drawn = `${text.slice(0, cursor)}\u2588${text.slice(cursor)}`;
+  return { text: `\u203a ${drawn}`, color: input.theme.color("accent") };
 }
 
 function headerRows(input: ScreenInput): readonly ScreenRow[] {
@@ -249,6 +267,12 @@ function statusRow(input: ScreenInput): ScreenRow {
 
 function hintRow(input: ScreenInput): ScreenRow {
   const { state, bindings } = input;
+  if (state.composing !== null) {
+    return {
+      text: "enter to run it   up for an earlier task   /help for the rest   ctrl+c to leave",
+      dim: true,
+    };
+  }
   if (state.filtering) {
     return { text: `filter: ${state.filter}_   enter to apply, escape to clear`, dim: true };
   }
