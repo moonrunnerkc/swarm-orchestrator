@@ -58,6 +58,13 @@ export interface ModelRequest {
   readonly maxOutputTokens: number;
   readonly sampling?: SamplingSettings;
   readonly abortSignal: AbortSignal;
+  /**
+   * Called with each piece of text as it arrives, for a screen that would otherwise sit on
+   * "thinking" for a minute with nothing to show. Absent is the ordinary case: the stream was
+   * already being drained to time the first token, and this only stops discarding what it saw.
+   * Nothing downstream reads it, so what the loop records is still the whole response.
+   */
+  readonly onText?: (text: string) => void;
 }
 
 /**

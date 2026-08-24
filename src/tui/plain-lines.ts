@@ -35,5 +35,11 @@ export function describeLoopEvent(event: LoopEvent): string | null {
     // path already says it, in the sentence the gate report prints above its table.
     case "changes":
       return null;
+    // Neither reaches the plain stream, which the committed fixture holds byte for byte. Both
+    // exist so a terminal can show that something is happening; a pipe reads the whole
+    // response and the tool outcome regardless, which is what it was already reading.
+    case "model-text":
+    case "tool-started":
+      return null;
   }
 }

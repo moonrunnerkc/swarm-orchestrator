@@ -37,6 +37,8 @@ interface SessionScreenProps {
   readonly evidence: EvidenceSummary | null;
   /** Turns already finished this session, so the screen does not forget between them. */
   readonly transcript?: readonly TranscriptLine[];
+  /** How long the current activity has been going. A function, so each redraw reads it fresh. */
+  readonly activityElapsedMs?: () => number;
 }
 
 /** Two rows kept back so the shell prompt and a wrapped line never push the top off screen. */
@@ -139,6 +141,9 @@ export function SessionScreen(props: SessionScreenProps): ReactElement {
     confirmation: pending,
     evidence: props.evidence,
     ...(props.transcript === undefined ? {} : { transcript: props.transcript }),
+    ...(props.activityElapsedMs === undefined
+      ? {}
+      : { activityElapsedMs: props.activityElapsedMs() }),
   });
 
   return createElement(

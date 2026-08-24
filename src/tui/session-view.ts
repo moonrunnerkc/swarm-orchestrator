@@ -47,6 +47,16 @@ export interface SessionView {
   readonly stopReason: StopReason | null;
   /** Files the settled gate cycle measured, or null before it settles. */
   readonly changedFiles: number | null;
+  /**
+   * What is happening right now, or null when nothing is. One short phrase, because the point
+   * is to show the run is alive and what it is doing, not to narrate it.
+   */
+  readonly activity: string | null;
+  /**
+   * The tail of what the model is saying as it says it. Bounded, and never recorded: the ledger
+   * takes the whole response the call returned, and a partial one is a different thing.
+   */
+  readonly speaking: string;
   /** Latest result per gate, in the order the gates first ran. */
   readonly gates: readonly GateLine[];
   readonly attempt: AttemptCounter | null;
@@ -67,6 +77,8 @@ export const emptySessionView: SessionView = {
   finished: false,
   stopReason: null,
   changedFiles: null,
+  activity: null,
+  speaking: "",
   gates: [],
   attempt: null,
   escalated: false,
@@ -88,6 +100,8 @@ export function applyLoopEvent(view: SessionView, event: LoopEvent): SessionView
     case "model-call":
       return {
         ...view,
+        activity: `thinking, step ${event.step}`,
+        speaking: "",
         status: `thinking (step ${event.step})`,
         modelId: event.modelId,
         steps: Math.max(view.steps, event.step),
@@ -125,6 +139,7 @@ export function applyLoopEvent(view: SessionView, event: LoopEvent): SessionView
     case "tool-outcome":
       return {
         ...view,
+        activity: null,
         actions: [
           ...view.actions,
           {
@@ -141,6 +156,8 @@ export function applyLoopEvent(view: SessionView, event: LoopEvent): SessionView
     case "stopped":
       return {
         ...view,
+        activity: null,
+        speaking: "",
         status: `stopped: ${event.reason} (${event.steps} steps, ${event.tokensUsed} tokens)`,
         finished: true,
         stopReason: event.reason,
@@ -149,6 +166,14 @@ export function applyLoopEvent(view: SessionView, event: LoopEvent): SessionView
       };
     case "changes":
       return { ...view, changedFiles: event.changedFiles };
+    case "model-text":
+      return { ...view, speaking: tailOf(view.speaking + event.text) };
+    case "tool-started":
+      return {
+        ...view,
+        activity: event.detail.length === 0 ? event.toolName : `${event.toolName} ${event.detail}`,
+        speaking: "",
+      };
     case "gate":
       return {
         ...view,
@@ -224,4 +249,17 @@ function describeInput(input: unknown): string {
   } catch {
     return String(input);
   }
+}
+
+/**
+ * How much of what the model is saying is kept. A line's worth: the screen shows one line of it
+ * and holding a whole response here would be a second copy of what the ledger already has.
+ */
+const spokenTailCharacters = 240;
+
+function tailOf(text: string): string {
+  const flattened = text.replace(/\s+/g, " ");
+  return flattened.length <= spokenTailCharacters
+    ? flattened
+    : flattened.slice(flattened.length - spokenTailCharacters);
 }
