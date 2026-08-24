@@ -13,13 +13,38 @@ import type {
 
 const runProcess = promisify(execFile);
 
+/**
+ * What git said, without what git prints when it thinks you have mistyped a command.
+ *
+ * `git diff` outside a repository answers with one line of diagnosis followed by its entire
+ * option list, and execFile carries all of it on the error message. Reprinting that buries
+ * the sentence that says what to do under a hundred lines about `--dirstat` and `--pickaxe`.
+ * The reader mistyped nothing: they ran swarm in a directory that is not a repository.
+ */
+export function firstGitDiagnostic(cause: unknown): string {
+  const raw = cause instanceof Error ? cause.message : String(cause);
+  const lines = raw
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  const diagnosis = lines.find(
+    (line) => line.startsWith("fatal:") || line.startsWith("error:") || line.startsWith("warning:"),
+  );
+  if (diagnosis !== undefined) return diagnosis;
+
+  // No diagnosis line at all, so keep the first line and drop whatever usage followed it.
+  const [first] = lines;
+  return first ?? "git produced no output";
+}
+
 class GitUnavailableError extends Error {
   constructor(workspaceRoot: string, cause: unknown) {
     super(
       `${workspaceRoot} is not a git working tree, or git could not read it: ` +
-        `${cause instanceof Error ? cause.message : String(cause)}. ` +
-        "The gates measure a change against a base commit, so run swarm inside a repository, " +
-        "or pass a base ref that exists.",
+        `${firstGitDiagnostic(cause)}. ` +
+        "The gates measure a change against a base commit, so run swarm inside a repository " +
+        "(git init, then commit something), or pass a base ref that exists.",
     );
     this.name = "GitUnavailableError";
   }
