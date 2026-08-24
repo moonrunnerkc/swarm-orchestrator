@@ -71,7 +71,7 @@ Appended as the run proceeds.
 | 9.1 Dependency currency | done | 7 patch bumps proposed, none taken mid-release; `@types/node` held at the runtime floor deliberately |
 | 9.2 `npm audit` | done | 0 vulnerabilities |
 | 9.3 Drift | done | 12 invariants identical; `fuzz/README.md` current at 8 harnesses; `security-coverage.md` corrected on two counts |
-| 9.4 Dangling doc pointers | done, now in CI | `scripts/check-doc-paths.mjs`, run again at the close of the run: 310 references across 30 documentation files, zero misses, 3 named and known, 8 generated |
+| 9.4 Dangling doc pointers | done, now in CI | `scripts/check-doc-paths.mjs`, run again at the close of the run: 316 references across 30 documentation files, zero misses, 3 named and known, 12 generated |
 | 9.5 Coverage | done | chokepoint 98.3%, core 98.8%, evidence 94.4%, gates 94.2%, tui 75.7%, tree 85.2% |
 | 9.6 Invariant 8 | done | zero in `src/core`, and the interface work added none |
 | 10.4 The four residuals | done, unchanged | build guide 7.1 untouched by this run, all four cases still assert their gaps, suite 49 green |
@@ -103,7 +103,7 @@ Appended as the run proceeds.
 | 11.3 `check-invariant-drift.mjs` | done | exit 0, 12 invariants identical across CLAUDE.md and AGENTS.md |
 | 11.4 Verify every committed bundle | done | 7 bundles, each by its own embedded verifier, each run from `/tmp` rather than from the repository. 7 verified, 0 failed |
 | 11.5 A real task through the installed package | done | `installed-package-run.md`, with `live-task.cast` and `open-evidence.cast`. One run green, one escalated at the file-set gate citing its ledger record, both bundles verifying from outside, and the panel reporting `open exited 0` after a browser tab opened |
-| 11.6 Resolve every path under `docs/` | done | zero misses, 3 known and named, 8 generated |
+| 11.6 Resolve every path under `docs/` | done | zero misses, 3 known and named, 12 generated |
 | 11.7 `docs/state-report-2026-08-23.md` | done | supersedes the 08-17 report and says so |
 | 11.8 Close this report | done | the per-item log above, the decisions below, and the per-section diff stat |
 
@@ -251,8 +251,8 @@ Every one of these ran at the close of the session, on the tree as committed.
     ... exit 0, 12 invariants identical
 
     $ node scripts/check-doc-paths.mjs
-    resolved 310 path reference(s) across 30 documentation file(s), against what git tracks
-    zero misses, 3 known and named, 8 generated
+    resolved 316 path reference(s) across 30 documentation file(s), against what git tracks
+    zero misses, 3 known and named, 12 generated
 
     $ for each of the 7 committed bundles: node <bundle>/verify.mjs <bundle>   # run from /tmp
     ... 7 verified, 0 failed
@@ -276,3 +276,34 @@ reconstruct them from the table:
 The four accepted residuals in [build-guide.md](../../build-guide.md) 7.1 are not on that list. They are open by
 design, `build-guide.md` was not touched in 7.1 by this run, and each still has a case in the
 adversarial suite asserting the gap exactly as it stood.
+
+## After the close
+
+Three things landed after the report above was closed, and they are here rather than folded into
+it, because a report that keeps absorbing later work stops being a record of a run.
+
+**The git install produced no binary.** `dist/` is not committed and is built by a script, and npm
+runs `prepare` for a git install but never `prepublishOnly`. Only the latter was declared, so
+`npm install github:moonrunnerkc/swarm-orchestrator#v13.1.0` resolved, added 55 packages, printed
+no error, and left a directory with no `dist/` and no `swarm`. Found by running the command the
+README was about to recommend rather than by reading it. Fixed with a `prepare` script and a test
+that names why it exists, released as **13.1.1**, and verified from the tag itself: `swarm` on the
+path, `13.1.1` reported, `swarm --help` running.
+
+**The README told a reader to install the wrong product.** Its first instruction was
+`npm install -g swarm-orchestrator`, which the registry answers with 12.0.0, the pull-request
+auditor. It now names the version, says the package is not on the registry, points at the git tag,
+and says what the line becomes when the publish is unblocked. The command list gained `routing`
+and `parallel`, which were only in `--help`, and the three flags a person reaches for first.
+
+**The repository sidebar described v12.** The About text was the auditor's, and so were most of
+its twenty topics, one of which named a regulatory instrument that `claims.md` bans by name in
+any public text. Both replaced. `v13.1.1` is the release marked latest.
+
+That last one turned up a fourth thing, which is not fixed and is named in
+[tech-debt.md](../../tech-debt.md): the Pages site under this repository still serves the v12
+auditor's leaderboard. Nothing links to it and it no longer updates, which limits it rather than
+closing it.
+
+Gates after all three: exit 0, 103 files, 1300 tests, one more than the closing count above and
+that one is the test asserting the package builds on `prepare`.

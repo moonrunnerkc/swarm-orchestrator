@@ -38,6 +38,18 @@ only from the default branch. They stopped as of the repoint. Taken knowingly, r
 `evidence/2026-08-23/run-report.md` rather than left to read as breakage. `weekly-scan.yml` on
 `v13-main` becomes the scheduled workflow that does fire.
 
+One of the six leaves something behind. `pages` stopped firing, but the site it last built is
+still served: `https://moonrunnerkc.github.io/swarm-orchestrator/` redirects to a page titled
+"Swarm Audit, Real-Corpus Leaderboard", which is the v12 cheat-detector registry. It is public,
+it is under this repository's name, and it describes a product this repository no longer is. The
+sidebar homepage field points at the README rather than at it, so nothing here links to it, but
+that is not the same as it being gone.
+
+Not touched by this run, and named rather than quietly left. Taking a public page down and
+replacing a public page are both decisions with a reader on the other end, and neither is a
+release-day judgement call: whoever makes it should decide between retiring it, redirecting it to
+the README, and building a v13 page. `tech-debt.md` carries it.
+
 ### Package identity
 
 `package.json` is at `13.1.0`. The registry carries `swarm-orchestrator` up to `12.0.0` and no
@@ -149,7 +161,7 @@ suite runs 49 green. Nothing in this run touched a check adjacent to any of them
 | | 08-17 | 08-18 close | Now |
 | --- | --- | --- | --- |
 | Test files | 68 | 84 | 103 |
-| Tests | 785 | 1021 | 1299 |
+| Tests | 785 | 1021 | 1300 |
 
 `npm run gates` is typecheck, then Biome, then the full suite, and exits 0. CI runs it on every
 push together with the drift check, the documentation-pointer check, and the fuzz smoke.

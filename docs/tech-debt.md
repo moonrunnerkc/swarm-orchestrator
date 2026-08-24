@@ -86,7 +86,7 @@ wrapper around it is not.
 ## Documentation pointers
 
 `scripts/check-doc-paths.mjs` was written in this pass and now runs in CI beside the invariant
-drift check. It resolves 310 path references across 30 documentation files: markdown links
+drift check. It resolves 316 path references across 30 documentation files: markdown links
 against the file that holds them, and rooted backtick mentions against the repository root.
 
 It resolves against **what git tracks**, not against the filesystem, and that distinction cost
@@ -117,7 +117,7 @@ Three outcomes rather than two. **Zero misses.** Three mentions named and **know
 `redteam/leep/`, which three documents name in order to record that it was removed: a record of
 a removal is not a dangling pointer, and the two cannot be told apart without reading the
 sentence, so the exception is named in the script with its reason rather than the rule widened
-until it stops showing up. Eight mentions of three **generated** paths, `dist/`,
+until it stops showing up. Twelve mentions of three **generated** paths, `dist/`,
 `redteam/loop/state-dryrun/` and `redteam/loop/state-wake/`, every one of them in `.gitignore`,
 so they name build and driver output that exists once something makes it. Counted and printed
 rather than passed over, because a silent third category is how a check stops meaning anything.
@@ -136,6 +136,23 @@ thing, so pointing the existing screen at it would mean deciding what the header
 sixty runs are in flight, what the action stream shows, and what a gate strip means across three
 models. That is a second view with its own layout and its own tests, not a call site. Worth doing,
 worth its own change, and worth saying plainly that this release did not do it.
+
+## Debt: the Pages site still serves the v12 auditor
+
+`https://moonrunnerkc.github.io/swarm-orchestrator/` answers 200 and redirects to a page titled
+"Swarm Audit, Real-Corpus Leaderboard": the v12 cheat-detector registry, with precision and
+recall figures against a corpus this repository no longer builds. The workflow that produced it
+is scheduled on `main` and stopped firing when the default branch moved, so nothing updates it,
+and the last deployment stays up.
+
+Nothing in the repository links to it. The sidebar homepage field points at the README, and no
+document here names the URL except this one and the state report. That limits the damage and
+does not fix it: the page is public, under this repository's name, and describes a product this
+is not.
+
+Three ways to close it, and the choice is not a release-day one because a reader is on the other
+end of each: retire the site, replace it with a redirect to the README, or build a v13 page. The
+third is the most work and the only one that leaves something worth visiting.
 
 ## Debt: the weekly scan files the same 21 semgrep findings every Monday
 
