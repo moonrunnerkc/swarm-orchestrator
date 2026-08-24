@@ -1,5 +1,19 @@
 # Changelog
 
+## 13.1.4
+
+### Fixed
+
+- **The readme printed an install command that cannot work.** It offered
+  `npm install -g github:owner/repo#tag` beside the registry line. `dist/` is not committed, so a
+  git ref builds itself on install and needs this package's devDependencies to do it, and npm
+  does not install those under `-g`: it carries the global context into its git-dependency
+  preparation, places the clone as a root package rather than building a tree inside it, and runs
+  `prepare` without the compiler. The same ref installed without `-g` works and always did. Found
+  by a person running the line the readme printed.
+- **That failure surfaced as `ENOENT` on a path the reader never typed.** The build now names the
+  cause and the two commands that do work, rather than reporting a missing file.
+
 ## 13.1.3
 
 The first 13.x on the npm registry. No behaviour changed: this is 13.1.1 with a manifest the
