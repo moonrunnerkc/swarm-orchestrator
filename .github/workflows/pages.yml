@@ -1,0 +1,63 @@
+name: pages
+
+# Deploys the project page. It is generated from docs/claims.md by scripts/build-site.mjs, so
+# a claim reaches the page by being a row of that table and by no other route.
+#
+# The page this replaces was the v12 auditor's leaderboard, deployed by a workflow on `main`
+# that stopped firing when the default branch moved. Nothing had updated it since, and the
+# last deployment stayed up describing a product this is not.
+#
+# The github-pages environment restricts which branches may deploy. `v13-main` has to be in
+# that list or the deploy job fails on the environment rather than on anything in this file.
+
+on:
+  push:
+    branches: [v13-main]
+    paths:
+      - "docs/claims.md"
+      - "scripts/build-site.mjs"
+      - "package.json"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# A queued deploy waits rather than cancelling the one in flight: a half-replaced site is
+# worse than a slightly stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+
+      # No `npm ci`. The generator imports nothing outside node:, and a dependency tree is a
+      # supply chain the page does not need in order to render a table.
+      - run: node scripts/build-site.mjs _site
+
+      # What is about to be deployed, in the log, before it is deployed.
+      - run: find _site -type f | sort
+
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
