@@ -1,5 +1,28 @@
 # Changelog
 
+## 13.1.8
+
+### Added
+
+- **`swarm doctor`, and `swarm doctor --fix`.** What owns the `swarm` command, and repairing it
+  when the answer is wrong. The same failure has happened on two machines months apart and
+  presented as something else both times: an `ENOTDIR` during a global install on one, and on
+  the other a `swarm` with no `select` command. Both were a development checkout linked into the
+  global prefix with `npm link`, which owns the command until it is removed and which npm cannot
+  install over. Nothing here can intercept that at install time, because npm fails before any
+  script of ours would run, so this answers the question afterwards instead. It reports the link
+  and what it shadows, every `swarm` on PATH since the first one wins silently, an executable
+  whose package a failed install removed, and whether the registry is ahead of what is running.
+
+### Fixed
+
+- **A bare word that is nearly a subcommand is refused.** A bare word is the task, which is what
+  makes `swarm fix the parser` work. The cost is that a subcommand a build does not have becomes
+  a task: running `swarm doctor` against a version predating it started an agent on the
+  repository, declared its uncommitted files and wrote a bundle. Nothing was damaged and nothing
+  about it looked wrong. One word that is nearly a command is now refused with the nearest match
+  named, and a task of more than one word is untouched.
+
 ## 13.1.7
 
 Found by driving the session through a real terminal rather than a pipe.
