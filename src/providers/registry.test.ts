@@ -106,3 +106,44 @@ describe("provider registry", () => {
     expect(() => registry.create(parseModelSpec("fixture:x"))).toThrow(/fixture script/);
   });
 });
+
+describe("what a local backend is asked to report", () => {
+  /**
+   * The defect this covers, found by a calibration run whose throughput dimension read 0.0 for
+   * every run of every model: an OpenAI-compatible server streams no usage chunk unless the
+   * request carries `stream_options.include_usage`, and the SDK only sends that when the
+   * provider is built with `includeUsage`. Without it every token count arrives as zero, which
+   * zeroes the cost of every local run and the reward the router learns from, and leaves a
+   * calibration dimension printing a number it never measured.
+   */
+  it("asks for usage, so token counts are not silently zero", async () => {
+    const requests: { readonly url: string; readonly body: unknown }[] = [];
+    const registry = createProviderRegistry({
+      localBaseUrl: "http://127.0.0.1:11434/v1",
+      fetch: (async (url: string | URL | Request, init?: RequestInit) => {
+        requests.push({
+          url: String(url),
+          body: JSON.parse(String(init?.body ?? "{}")),
+        });
+        return new Response("data: [DONE]\n\n", {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }) as typeof fetch,
+    });
+
+    const model = registry.create(parseModelSpec("local:qwen3.6:35b-a3b"));
+    await model
+      .generate({
+        system: "s",
+        messages: [{ role: "user", text: "hi" }],
+        tools: [],
+        maxOutputTokens: 16,
+        abortSignal: new AbortController().signal,
+      })
+      .catch(() => undefined);
+
+    const body = requests[0]?.body as { stream_options?: { include_usage?: boolean } };
+    expect(body?.stream_options?.include_usage).toBe(true);
+  });
+});
