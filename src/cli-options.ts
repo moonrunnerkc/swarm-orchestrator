@@ -33,6 +33,25 @@ export interface RunCommand {
   readonly interfaceFlags: InterfaceFlags;
 }
 
+/**
+ * A session: the same run, asked for without a task, so the task is typed rather than passed.
+ *
+ * It is reached by naming no task at all, which used to be the error "nothing to do". A person
+ * who runs `swarm` with nothing after it wants to start working, not to be told they held it
+ * wrong, and a bare word cannot be a verb here because bare words are the task.
+ */
+export interface SessionCommand {
+  readonly command: "session";
+  readonly modelSpec: string | null;
+  readonly workspace: string;
+  readonly maxSteps: number | null;
+  readonly bundleDirectory: string | null;
+  readonly baseRef: string;
+  readonly attempts: number | null;
+  readonly localEndpoint: string | null;
+  readonly interfaceFlags: InterfaceFlags;
+}
+
 /** Runs the gates over a workspace and reports, with no model and no retries. */
 export interface GatesCommand {
   readonly command: "gates";
@@ -106,6 +125,7 @@ export interface SelectCommand {
 export type CommandLine =
   | HelpCommand
   | RunCommand
+  | SessionCommand
   | ReplayCommand
   | ReviewCommand
   | GatesCommand
@@ -117,7 +137,9 @@ export type CommandLine =
 
 export const usage = [
   "swarm [--model <provider:id>] [--workspace <dir>] [--bundle <dir>] [--base <ref>]",
-  '  [--attempts <n>] [--max-steps <n>] [--local-endpoint <url>] "<task>"',
+  '  [--attempts <n>] [--max-steps <n>] [--local-endpoint <url>] ["<task>"]',
+  "",
+  "  swarm                                            a session: type tasks, one after another",
   "",
   "  swarm gates [--workspace <dir>] [--base <ref>]   run the gates, no model",
   "  swarm select [--shortlist <file|url|bundled>]    probe this machine, recommend a model",
@@ -287,14 +309,7 @@ export function parseCommandLine(
     };
   }
 
-  const task = words.join(" ").trim();
-  if (task.length === 0) {
-    throw new InvalidCommandLineError("nothing to do");
-  }
-
-  return {
-    command: "run",
-    task,
+  const shared = {
     modelSpec: flags.get("model") ?? null,
     workspace,
     maxSteps: parseFlagCount(flags.get("max-steps"), "--max-steps"),
@@ -304,6 +319,13 @@ export function parseCommandLine(
     localEndpoint: parseLocalEndpoint(flags.get("local-endpoint")),
     interfaceFlags: parseInterfaceFlags(flags),
   };
+
+  const task = words.join(" ").trim();
+  if (task.length === 0) {
+    return { command: "session", ...shared };
+  }
+
+  return { command: "run", task, ...shared };
 }
 
 /** Both halves of a pair named at once is a contradiction, so it is an error rather than an order. */
