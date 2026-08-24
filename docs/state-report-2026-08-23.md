@@ -108,6 +108,11 @@ files could not be filed for want of a label; semgrep worked and had 21 findings
 seen. Fixed, label created, findings dispositioned by class in `security-coverage.md`. The
 first real OSV result: 259 packages, no advisories, agreeing with `npm audit`.
 
+It then fired on its own schedule the following morning, run `32697714165` at 06:31 UTC, with
+nobody watching: osv-scanner read the lockfile rather than exiting 127, semgrep ran its 252 rules
+over 6102 files, and the issue was filed under the label that had not existed a day before. That
+is the part a hand dispatch cannot prove.
+
 ---
 
 ## 4. Red-team loop state
@@ -144,7 +149,7 @@ suite runs 49 green. Nothing in this run touched a check adjacent to any of them
 | | 08-17 | 08-18 close | Now |
 | --- | --- | --- | --- |
 | Test files | 68 | 84 | 103 |
-| Tests | 785 | 1021 | 1297 |
+| Tests | 785 | 1021 | 1299 |
 
 `npm run gates` is typecheck, then Biome, then the full suite, and exits 0. CI runs it on every
 push together with the drift check, the documentation-pointer check, and the fuzz smoke.
@@ -167,6 +172,7 @@ than gaps say why in `docs/tech-debt.md`.
 | Below 80 columns | optional columns come off, nothing wraps |
 | Any height from one row up | the layout never paints more rows than the window has |
 | Config | `[interface]`, `[theme]`, `[keys]` in swarm.toml, validated at the boundary |
+| `swarm calibrate` | no screen. It writes plain lines on a terminal and off one, so a three-model sweep, the longest run this tool does, is watched through a log. A sweep is not one run, so this is a second view rather than a call site, and it is on `tech-debt.md` |
 | Flags | `--no-tui`, `--color`, `--no-color`, `--open-evidence`, `--no-open-evidence`, and `--help`, which used to be an error |
 
 ---
@@ -180,7 +186,7 @@ than gaps say why in `docs/tech-debt.md`.
 | GitHub release | `v13.1.0`, marked latest, so the repository sidebar names the v13 lineage rather than the v12 auditor it named before |
 | `v13.0.0` | pushed, left where it is, the record of the tree it named. No release, never published |
 | Tarball | 268 files, 311.8 kB packed, matching the `files` allowlist exactly. Nothing from `.env`, `.swarm/`, `redteam/`, `fuzz/`, no tests, no fixtures, no `src/` |
-| Installed and run | yes: installed from the tarball into a clean directory, `swarm --help`, `swarm review`, and a real task end to end, in a terminal and off one |
+| Installed and run | yes: installed from the tarball into a clean directory, `swarm --help`, `swarm review`, and two real tasks end to end in a real pty, one green and one escalating at the file-set gate, both recorded in `evidence/2026-08-23/installed-package-run.md` |
 | Published to the registry | **no** |
 
 ### What blocks publishing
