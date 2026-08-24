@@ -1,12 +1,18 @@
 # Changelog
 
-## 13.1.2
+## 13.1.3
 
-The first 13.x on the npm registry. No code changed: this is 13.1.1 with install instructions
-that are true.
+The first 13.x on the npm registry. No behaviour changed: this is 13.1.1 with a manifest the
+registry accepts and install instructions that are true.
 
 ### Fixed
 
+- **The manifest named no repository, so a signed publish was refused.** `npm publish
+  --provenance` signs a statement naming the repository the tarball was built from, and the
+  registry checks it against `repository.url` before it accepts the write. That field was
+  absent, so the statement said one thing and the manifest said `""`, and the registry answered
+  `E422` after the provenance had already been written to the transparency log. Nothing in the
+  source tree can show this, so a test now asserts the field.
 - **The package told its own readers it was not published.** The install section named a git ref
   and said the registry served 12.0.0, because that is what was true while the credential was
   missing. Those words ship inside the tarball, so publishing 13.1.1 as it stood would have put
@@ -15,8 +21,14 @@ that are true.
 
 ### Added
 
+- A description, keywords, a homepage and a bug-tracker link, which is what the registry page
+  renders around the readme and what a search on the registry matches against.
 - Three flags the readme never listed, `--base`, `--max-steps` and `--local-endpoint`, and a
   pointer to `swarm --help` for the calibration flags it still does not list.
+
+`13.1.2` was tagged and refused by the registry for the manifest reason above. The tag is left
+where it is rather than moved, because it names a real tree and the refusal is part of the
+record.
 
 ## 13.1.1
 

@@ -31,10 +31,10 @@ a workspace it had never seen, recorded in a real terminal:
 
     npm install -g swarm-orchestrator
 
-That is **13.1.2**, and it leaves `swarm` on your path. Installing from the tag works too, and
+That is **13.1.3**, and it leaves `swarm` on your path. Installing from the tag works too, and
 builds itself on install:
 
-    npm install -g github:moonrunnerkc/swarm-orchestrator#v13.1.2
+    npm install -g github:moonrunnerkc/swarm-orchestrator#v13.1.3
 
 Anything below 13 is a different program. This package name carried a pull-request auditor
 through 12.x, and `npm install -g swarm-orchestrator@12` still installs it, so pin the major if
