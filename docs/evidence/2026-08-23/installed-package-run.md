@@ -235,7 +235,7 @@ The verified claim is about the escalation itself: three attempts used against a
 
 ## What this is evidence of, and what it is not
 
-It is evidence that the published artifact installs, resolves its entry point, runs a task against
+It is evidence that the packaged artifact installs, resolves its entry point, runs a task against
 an unfamiliar workspace, draws the screen, runs the gates, blocks an undeclared edit, escalates
 with a citation, writes a bundle that verifies from outside, and opens the review page without a
 shell.
