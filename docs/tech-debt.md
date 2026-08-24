@@ -90,10 +90,18 @@ drift check. It resolves 230 path references across 27 documentation files: mark
 against the file that holds them, and rooted backtick mentions against the repository root.
 
 It resolves against **what git tracks**, not against the filesystem, and that distinction cost
-two red CI runs to learn. The first spelling checked the disk, passed here, and failed on a
-clean checkout on three paths that exist on this machine and in no commit. A pointer that
-resolves only for the person who wrote it is the same broken pointer to everyone else, which is
-precisely what this check is for, so the working-tree version was giving a false pass.
+three red CI runs to learn, in two rounds of the same mistake. The first spelling checked the
+disk, passed here, and failed on a clean checkout on three paths that exist on this machine and
+in no commit. A pointer that resolves only for the person who wrote it is the same broken
+pointer to everyone else, which is what the check is for, so checking the disk was a false pass
+on precisely the case it was written for.
+
+The second spelling asked git which of the leftovers it ignores, and asked about `dist` rather
+than `dist/`. A directory-only ignore pattern matches the spelling with the slash on any
+checkout and matches the one without it only where the directory happens to exist, so the
+answer still depended on whether the tree had been built. Same filesystem dependence, one level
+down, in the code written to remove it. It is verified now against a fresh clone with nothing
+built in it, which is what CI is.
 
 Three outcomes rather than two. **Zero misses.** Three mentions named and **known**, all of
 `redteam/leep/`, which three documents name in order to record that it was removed: a record of
