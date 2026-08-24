@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { statSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { arch, homedir, platform, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -10,6 +10,7 @@ import {
   type AddCaseCommand,
   type CalibrateCommand,
   type CommandLine,
+  type DoctorCommand,
   type GatesCommand,
   type ParallelCommand,
   parseCommandLine,
@@ -52,6 +53,9 @@ import { citedRecords, type GateCycle, outstandingJustifications } from "./gates
 import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { summarizeRatchet } from "./gates/ratchet-summary.ts";
 import { recordTurnBaseline } from "./gates/turn-baseline.ts";
+import { diagnose, remediesFor } from "./install/health.ts";
+import { inspectInstall } from "./install/inspect.ts";
+import { describeInstall } from "./install/report.ts";
 import {
   localEndpointRecord,
   type ResolvedLocalEndpoint,
@@ -471,6 +475,73 @@ async function runOneTurn(input: {
     };
   } finally {
     process.off("SIGINT", onInterrupt);
+  }
+}
+
+/**
+ * What owns the `swarm` command, and with `--fix`, making the right thing own it.
+ *
+ * A development checkout linked into the global prefix owns the command until it is removed,
+ * and npm cannot install over it: the install either fails renaming a symlinked directory aside
+ * or succeeds behind a stale executable that still points at the checkout. Neither presents as
+ * what it is. This asks the question directly and answers it.
+ */
+async function doctor(options: DoctorCommand): Promise<number> {
+  const here = resolve(import.meta.dirname, "..");
+  const snapshot = await inspectInstall({
+    runningVersion: await runningVersion(here),
+    runningFrom: await realpath(here).catch(() => here),
+    path: process.env.PATH ?? "",
+    askRegistry: options.askRegistry,
+  });
+
+  const findings = diagnose(snapshot);
+  const remedies = remediesFor(findings);
+  for (const line of describeInstall(findings, remedies.length > 0 && !options.fix)) {
+    process.stdout.write(`${line}\n`);
+  }
+
+  if (!options.fix || remedies.length === 0) {
+    return findings.some((finding) => finding.severity === "broken") ? 1 : 0;
+  }
+
+  for (const command of remedies) {
+    process.stdout.write(`running: ${command}\n`);
+    const [file, ...args] = command.split(" ");
+    if (file === undefined) {
+      continue;
+    }
+    // An argument vector, not a shell: these are commands this file wrote, and keeping a shell
+    // out of the one path that repairs an install keeps it that way.
+    const finished = await new Promise<number>((settle) => {
+      const child = spawn(file, args, { stdio: "inherit" });
+      child.on("error", () => {
+        settle(1);
+      });
+      child.on("close", (code) => {
+        settle(code ?? 1);
+      });
+    });
+    if (finished !== 0) {
+      process.stdout.write(`\n${command} exited ${finished}, so the rest was not run.\n`);
+      return 1;
+    }
+  }
+
+  process.stdout.write("\nfixed. Run swarm doctor again to see what owns the command now.\n");
+  return 0;
+}
+
+async function runningVersion(packageRoot: string): Promise<string> {
+  try {
+    const manifest: unknown = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8"));
+    const version =
+      manifest !== null && typeof manifest === "object"
+        ? (manifest as { readonly version?: unknown }).version
+        : undefined;
+    return typeof version === "string" ? version : "unknown";
+  } catch {
+    return "unknown";
   }
 }
 
@@ -1370,6 +1441,9 @@ async function main(): Promise<number> {
   }
   if (options.command === "parallel") {
     return parallel(options);
+  }
+  if (options.command === "doctor") {
+    return doctor(options);
   }
   if (options.command === "session") {
     return session(options);
