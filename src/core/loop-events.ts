@@ -58,6 +58,11 @@ export type LoopEvent =
       readonly detail: string;
       readonly record: string;
     }
+  /**
+   * How many files the settled cycle measured. Sent so the screen can say that a run changed
+   * nothing, which is otherwise indistinguishable on it from a run whose gates all passed.
+   */
+  | { readonly type: "changes"; readonly changedFiles: number }
   | {
       readonly type: "escalated";
       readonly gateId: string;

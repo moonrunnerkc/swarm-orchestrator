@@ -91,7 +91,7 @@ export function SessionScreen(props: SessionScreenProps): ReactElement {
   });
 
   useInput((input, key) => {
-    const press: KeyPress = { input, ctrl: key.ctrl, name: keyName(key) };
+    const press: KeyPress = { input, ctrl: key.ctrl, name: keyName(key, input) };
     const decision = dispatchKey(press, {
       bindings: props.bindings,
       state: props.viewState,
@@ -115,7 +115,9 @@ export function SessionScreen(props: SessionScreenProps): ReactElement {
     if (decision.kind === "submit-task") {
       // Read off the state rather than carried on the keypress: the dispatcher decides that
       // this was a submission, and what was typed is the view's to know.
-      const typed = props.viewState.composing?.text.trim() ?? "";
+      // Read off the state plus whatever arrived ahead of the newline in the same chunk,
+      // rather than waiting for a dispatch to land: a state update is not synchronous.
+      const typed = `${props.viewState.composing?.text ?? ""}${decision.typedFirst}`.trim();
       // An empty line is someone pressing enter at a prompt, which should leave the prompt
       // where it is rather than starting a turn with nothing in it.
       if (typed.length === 0) {
@@ -177,7 +179,16 @@ interface InkKey {
   readonly delete: boolean;
 }
 
-function keyName(key: InkKey): KeyPress["name"] {
+/**
+ * Ink's own classification, with the two control characters checked directly underneath it.
+ *
+ * A terminal sends carriage return for the enter key and some send line feed, and whether the
+ * reader classifies either depends on the terminal and on raw mode. When it does not, the
+ * character falls through to the printable branch and is typed into whatever is being composed,
+ * which is how enter came to insert a character at the prompt instead of submitting the task.
+ */
+function keyName(key: InkKey, input = ""): KeyPress["name"] {
+  if (input === "\r" || input === "\n") return "enter";
   if (key.upArrow) return "up";
   if (key.downArrow) return "down";
   if (key.leftArrow) return "left";

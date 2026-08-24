@@ -45,6 +45,8 @@ export interface SessionView {
    * last gate that passed, which is how `model-error` came to render as `DONE`.
    */
   readonly stopReason: StopReason | null;
+  /** Files the settled gate cycle measured, or null before it settles. */
+  readonly changedFiles: number | null;
   /** Latest result per gate, in the order the gates first ran. */
   readonly gates: readonly GateLine[];
   readonly attempt: AttemptCounter | null;
@@ -64,6 +66,7 @@ export const emptySessionView: SessionView = {
   status: "starting",
   finished: false,
   stopReason: null,
+  changedFiles: null,
   gates: [],
   attempt: null,
   escalated: false,
@@ -144,6 +147,8 @@ export function applyLoopEvent(view: SessionView, event: LoopEvent): SessionView
         steps: event.steps,
         tokensUsed: event.tokensUsed,
       };
+    case "changes":
+      return { ...view, changedFiles: event.changedFiles };
     case "gate":
       return {
         ...view,

@@ -396,3 +396,45 @@ describe("the prompt", () => {
     ).toBe(false);
   });
 });
+
+describe("a run that finished having touched nothing", () => {
+  /**
+   * The same defect as the stop-reason one, wearing a different hat. Here the loop stops for
+   * the honest reason `completed` having done nothing, which is what a model answering in prose
+   * looks like from the harness's side, and every gate then passes over an empty diff.
+   */
+  it("says so rather than showing DONE over an empty diff", () => {
+    const events = [
+      { type: "stopped", reason: "completed", steps: 1, tokensUsed: 400 },
+      { type: "changes", changedFiles: 0 },
+      {
+        type: "gate",
+        gateId: "diff-budget",
+        status: "passed",
+        blocking: false,
+        detail: "within budget: 0 file(s) and 0 added line(s)",
+        record: "sha256:1111111122222222333333334444444455555555666666667777777788888888",
+      },
+    ] satisfies readonly LoopEvent[];
+    const view = events.reduce(applyLoopEvent, emptySessionView);
+
+    const text = screen({ view }).map((row) => row.text);
+
+    expect(text.some((line) => line.includes("no files changed"))).toBe(true);
+    expect(text.some((line) => line.startsWith("DONE "))).toBe(false);
+  });
+
+  it("shows an ordinary DONE when the run did change something", () => {
+    const events = [
+      { type: "stopped", reason: "completed", steps: 4, tokensUsed: 900 },
+      { type: "changes", changedFiles: 2 },
+    ] satisfies readonly LoopEvent[];
+    const view = events.reduce(applyLoopEvent, emptySessionView);
+
+    expect(
+      screen({ view })
+        .map((row) => row.text)
+        .some((line) => line.startsWith("DONE ")),
+    ).toBe(true);
+  });
+});

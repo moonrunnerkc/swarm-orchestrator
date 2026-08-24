@@ -278,6 +278,16 @@ function statusRow(input: ScreenInput): ScreenRow {
   if (stoppedBadly) {
     return { text: `STOPPED ${view.stopReason}: ${view.status}`, color: theme.failed.color };
   }
+  // A run that touched nothing is not a run that succeeded, however many gates passed over the
+  // empty diff. This is the same defect as the one above wearing a different hat: there the
+  // loop stopped badly, here it stopped for the honest reason "completed" having done nothing,
+  // which is what a model answering in prose looks like from the harness's side.
+  if (view.finished && view.changedFiles === 0) {
+    return {
+      text: `DONE, but no files changed: ${view.status}`,
+      color: theme.color("advisory"),
+    };
+  }
   const mark = view.finished ? "DONE " : "";
   const color = view.finished ? theme.color("accent") : theme.color("advisory");
   return { text: `${mark}${view.status}`, color };

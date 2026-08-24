@@ -31,5 +31,9 @@ export function describeLoopEvent(event: LoopEvent): string | null {
       return `ratchet ${event.accepted ? "accepted" : "rejected"} attempt ${event.attempt}: ${event.detail} [evidence record ${event.record}]`;
     case "escalated":
       return `escalated after ${event.attempts} attempt(s) at gate ${event.gateId}: ${event.detail}`;
+    // Nothing on this stream, which the committed fixture holds to byte for byte. The plain
+    // path already says it, in the sentence the gate report prints above its table.
+    case "changes":
+      return null;
   }
 }

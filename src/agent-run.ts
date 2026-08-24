@@ -173,6 +173,13 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
       : { singleFileTestCommand: options.singleFileTestCommand }),
   });
 
+  // Said to the screen as well as written down, because a gate strip of passes over a tree
+  // nothing touched looks exactly like a gate strip of passes over work.
+  options.emit({
+    type: "changes",
+    changedFiles: gates.outcome.finalCycle.measures.changedFiles ?? 0,
+  });
+
   // What the task did to the tree, as a patch, recorded once the gates have settled so it is
   // the state that was judged. Nothing else in the ledger answers "what did it change to my
   // code?": the file-set record names files, the diff budget counts lines, and the tool calls
