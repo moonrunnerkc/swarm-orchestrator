@@ -47,6 +47,12 @@ Anything below 13 is a different program. This package name carried a pull-reque
 through 12.x, and `npm install -g swarm-orchestrator@12` still installs it, so pin the major if
 you depend on one or the other: [Upgrading from v12](#upgrading-from-v12).
 
+If `swarm` turns out to be an older version than you installed, something else owns the command.
+The usual cause is a development checkout linked into the global prefix with `npm link`, which
+owns it until it is removed and which npm cannot install over: the install either fails renaming
+a symlinked directory aside, or succeeds behind a stale executable still pointing at the
+checkout. `swarm doctor` says which of those happened and `swarm doctor --fix` repairs it.
+
 Node 24 or newer. That is a runtime floor rather than a preference: the coverage cycle
 spawns the test runner with `--test-isolation=process`, which Node 22 rejects as a bad
 option, so on anything older that measurement does not happen.
@@ -56,6 +62,7 @@ option, so on anything older that measurement does not happen.
     swarm "make slugify collapse whitespace and strip punctuation"
 
     swarm                            # a session: type tasks, one after another
+    swarm doctor                     # what owns the swarm command, and --fix to repair it
     swarm gates                      # run the gates over a workspace, no model
     swarm select                     # probe this machine, recommend a local model
     swarm calibrate                  # measure candidate models on the golden set

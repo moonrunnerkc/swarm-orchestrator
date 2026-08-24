@@ -430,3 +430,53 @@ describe("asking for help", () => {
     }
   });
 });
+
+describe("a bare word that is nearly a subcommand", () => {
+  /**
+   * The incident this covers: `swarm doctor` was run against a build predating that command.
+   * A bare word is the task, so it started an agent on the repository, declared its uncommitted
+   * files and wrote a bundle. Nothing was damaged and nothing about it looked wrong, which is
+   * the part worth guarding: a subcommand a build does not have, and a typo, look identical to
+   * a one-word task.
+   */
+  it("refuses it and names the nearest command", () => {
+    expect(() => parseCommandLine(["doctr"], context)).toThrow(/Did you mean "swarm doctor"/);
+    expect(() => parseCommandLine(["gate"], context)).toThrow(/swarm gates/);
+    expect(() => parseCommandLine(["selct"], context)).toThrow(/swarm select/);
+  });
+
+  it("says an agent run is what it stopped, so the refusal is not a mystery", () => {
+    expect(() => parseCommandLine(["revew"], context)).toThrow(/would have started an agent run/);
+  });
+
+  /**
+   * A real task is a sentence, and that is the escape hatch the message names. Only a word that
+   * is *near* a command ever reaches the guard: an exact one, `review` or `doctor`, is
+   * dispatched as that command before the task is assembled, which is unchanged behaviour.
+   */
+  it("leaves a task of more than one word alone", () => {
+    expect(parseCommandLine(["doctr", "this", "code"], context)).toMatchObject({
+      command: "run",
+      task: "doctr this code",
+    });
+    expect(parseCommandLine(["gate", "the", "parser"], context)).toMatchObject({
+      command: "run",
+      task: "gate the parser",
+    });
+  });
+
+  it("leaves a single word that is nothing like a command alone", () => {
+    expect(parseCommandLine(["refactor"], context)).toMatchObject({
+      command: "run",
+      task: "refactor",
+    });
+  });
+
+  it("still dispatches the commands themselves", () => {
+    expect(parseCommandLine(["doctor"], context)).toMatchObject({ command: "doctor", fix: false });
+    expect(parseCommandLine(["doctor", "--fix"], context)).toMatchObject({
+      command: "doctor",
+      fix: true,
+    });
+  });
+});

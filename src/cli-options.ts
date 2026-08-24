@@ -52,6 +52,20 @@ export interface SessionCommand {
   readonly interfaceFlags: InterfaceFlags;
 }
 
+/**
+ * Reports what owns the `swarm` command, and offers to fix it.
+ *
+ * `--fix` runs the remedies rather than printing them, which is the difference between a
+ * diagnosis and a resolution. It is a flag rather than the default because reinstalling a
+ * package is not something a report should do to somebody who asked a question.
+ */
+export interface DoctorCommand {
+  readonly command: "doctor";
+  readonly fix: boolean;
+  /** False skips the registry lookup, which is the only part that needs a network. */
+  readonly askRegistry: boolean;
+}
+
 /** Runs the gates over a workspace and reports, with no model and no retries. */
 export interface GatesCommand {
   readonly command: "gates";
@@ -126,6 +140,7 @@ export type CommandLine =
   | HelpCommand
   | RunCommand
   | SessionCommand
+  | DoctorCommand
   | ReplayCommand
   | ReviewCommand
   | GatesCommand
@@ -145,6 +160,7 @@ export const usage = [
   "  swarm select [--shortlist <file|url|bundled>]    probe this machine, recommend a model",
   "  swarm calibrate [--models <a,b>] [--repeats <n>] measure models on the golden set",
   '  swarm calibrate --add-case "<task>" --seed <a,b> --gate "<command>"',
+  "  swarm doctor [--fix] [--offline]                 what owns the swarm command, and fix it",
   "  swarm routing                                    what the reward log adds up to",
   "  swarm parallel --tasks <file>                    one worker per line, then a merge queue",
   "  swarm review <bundle directory>                  what a run produced, and open it",
@@ -163,7 +179,8 @@ export class InvalidCommandLineError extends Error {
   constructor(problem: string) {
     super(
       `${problem}. Usage: swarm [--model <provider:id>] [--workspace <dir>] [--bundle <dir>] ` +
-        `[--base <ref>] [--attempts <n>] [--local-endpoint <url>] "<task>", ` +
+        `[--base <ref>] [--attempts <n>] [--local-endpoint <url>] ["<task>"], ` +
+        "swarm with no task for a session, swarm doctor [--fix] [--offline], " +
         "swarm gates [--workspace <dir>] [--base <ref>], " +
         "swarm select [--shortlist <file|url|bundled>], swarm calibrate [--models <a,b>] " +
         '[--repeats <n>], swarm calibrate --add-case "<task>" --seed <a,b> --gate "<command>", ' +
@@ -178,6 +195,8 @@ export class InvalidCommandLineError extends Error {
 /** The flags that are their own value. Everything else takes the word after it. */
 const switchFlags = new Set([
   "help",
+  "fix",
+  "offline",
   "no-tui",
   "color",
   "no-color",
@@ -296,6 +315,14 @@ export function parseCommandLine(
     };
   }
 
+  if (words[0] === "doctor") {
+    return {
+      command: "doctor",
+      fix: flags.has("fix"),
+      askRegistry: !flags.has("offline"),
+    };
+  }
+
   if (words[0] === "select") {
     return { command: "select", shortlist: resolveShortlist(flags.get("shortlist"), context) };
   }
@@ -325,7 +352,65 @@ export function parseCommandLine(
     return { command: "session", ...shared };
   }
 
+  // A bare word is the task, which is what makes `swarm fix the parser` work and why no
+  // subcommand may be a bare word. The cost is that a subcommand this build does not have
+  // becomes a task: running `swarm doctor` against a version predating it started an agent on
+  // the repository, declared its uncommitted files, and wrote a bundle. Nothing was damaged and
+  // nothing about it looked wrong. One word that is nearly a command is a mistake far more
+  // often than it is a task, so it is refused with the nearest match named.
+  const nearest = nearestCommand(task);
+  if (nearest !== null) {
+    throw new InvalidCommandLineError(
+      `"${task}" is not a command in this build, and one word on its own is read as a task, ` +
+        `so this would have started an agent run. Did you mean "swarm ${nearest}"? ` +
+        "If it really is the task, give it more than one word",
+    );
+  }
+
   return { command: "run", task, ...shared };
+}
+
+/** Subcommands, for telling a typo from a task. Not the parser's source of truth, deliberately: this list going stale makes a suggestion worse, never a command unreachable. */
+const knownCommands = [
+  "gates",
+  "select",
+  "calibrate",
+  "routing",
+  "parallel",
+  "replay",
+  "review",
+  "doctor",
+  "help",
+] as const;
+
+/** The closest command within two edits, or null when the word is not close to any of them. */
+function nearestCommand(task: string): string | null {
+  if (task.includes(" ")) {
+    return null;
+  }
+  const word = task.toLowerCase();
+  let best: { command: string; distance: number } | null = null;
+  for (const command of knownCommands) {
+    const distance = editDistance(word, command);
+    if (distance <= 2 && (best === null || distance < best.distance)) {
+      best = { command, distance };
+    }
+  }
+  return best?.command ?? null;
+}
+
+/** Levenshtein, two rows rather than a matrix. The words compared here are never long. */
+function editDistance(left: string, right: string): number {
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= left.length; i += 1) {
+    const current = [i];
+    for (let j = 1; j <= right.length; j += 1) {
+      const substitution = (previous[j - 1] ?? 0) + (left[i - 1] === right[j - 1] ? 0 : 1);
+      current[j] = Math.min(substitution, (previous[j] ?? 0) + 1, (current[j - 1] ?? 0) + 1);
+    }
+    previous = current;
+  }
+  return previous[right.length] ?? 0;
 }
 
 /** Both halves of a pair named at once is a contradiction, so it is an error rather than an order. */
