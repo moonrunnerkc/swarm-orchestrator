@@ -427,6 +427,56 @@ and `scripts/check-invariant-drift.mjs` fails CI if the two files stop agreeing.
 was not lowered: four is where a value cannot carry a credential at all, and it is the
 number the numeric branch already used for a PIN.
 
+## Closed on 2026-08-23: the weekly scan, which had never run
+
+`weekly-scan.yml` was added on 2026-08-18, is scheduled for Mondays, and had never fired. It
+was dispatched by hand on 2026-08-23, and all three of its parts had something wrong with them.
+That is the whole argument for triggering a scheduled workflow rather than waiting for it.
+
+### osv-scanner had never scanned anything
+
+The step passed `--skip-git`, which osv-scanner 2.x does not define. Every run would have
+exited 127 on `flag provided but not defined: -skip-git` without reading a single lockfile, and
+`continue-on-error: true` meant the only trace was the word "failure" in an issue body.
+
+Fixed by dropping the flag. The first real run, `32678303298`:
+
+```
+Scanning dir ./
+Scanned /github/workspace/package-lock.json file and found 259 packages
+No issues found
+Exit code: 0
+```
+
+**259 packages, zero advisories.** That is the first OSV result this project has ever had, and
+it agrees with `npm audit`, which reports 0 vulnerabilities against the same lockfile.
+
+### The issue it files could not be filed
+
+`gh issue create --label security` against a repository with no `security` label fails, and the
+step's own guard turned the job red rather than letting findings go unreported. The label now
+exists. Working as designed, on a prerequisite nobody had created.
+
+### Semgrep is the part that worked, and it has 21 findings
+
+252 rules over 2378 files, `p/default` at WARNING and above. All 21 are blocking in semgrep's
+sense, which is why the step reports failure and files an issue; none of them blocks a release
+here, because this scan is advisory by design. Filed as issue #67.
+
+By class, with a disposition rather than a silencing:
+
+| Class | Count | Where | Disposition |
+| --- | --- | --- | --- |
+| `detected-github-token` | 19 | `fuzz/corpus/scrub/github-token`, `src/evidence/scrub.test.ts`, `src/evidence/session.test.ts`, and shakedown logs under `docs/evidence/2026-08-18/` | The secret detector's own test material. A scrubber is tested by feeding it credential-shaped strings, and a secret scanner reading that corpus finds credential-shaped strings, correctly. Not a leak: the shakedown logs it flags contain the scrubber's `***` output, which is the redaction working |
+| `detect-non-literal-regexp` | 1 | `fuzz/long-run.mjs:70` | `new RegExp` over a local `key` argument inside the fuzz harness's own summary reader. The input is a harness identifier, not a workspace value, and the harness runs nowhere near a user's tree |
+| `prototype-pollution-loop` | 1 | `src/config/swarm-toml.ts:212` | A read walk in `valueAt`, which exists only to quote the offending value back in a config error message. Pollution needs an assignment and this loop makes none; `fuzz/swarm-toml.fuzz.cjs` already asserts that no parsed input reaches `Object.prototype` |
+
+**Nothing was silenced to make this green.** No `.semgrepignore` was added, no rule was
+disabled, and the scan will keep filing the same issue every Monday until the token findings
+are scoped away from the scrubber's own fixtures. Scoping a secret rule off a directory of
+deliberate fake credentials is legitimate and is not a release-day change: it is on the tech
+debt list, so the next person does it with its own evidence rather than as a footnote here.
+
 ## Not yet in place
 
 - **The weekly scan is scheduled but has never fired.** `.github/workflows/weekly-scan.yml`
