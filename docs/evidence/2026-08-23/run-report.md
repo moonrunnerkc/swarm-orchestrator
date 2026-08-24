@@ -303,10 +303,11 @@ only in `--help`, and six flags a person reaches for first.
 its twenty topics, one of which named a regulatory instrument that `claims.md` bans by name in
 any public text. Both replaced. `v13.1.1` is the release marked latest.
 
-That last one turned up a fourth thing, which is not fixed and is named in
-[tech-debt.md](../../tech-debt.md): the Pages site under this repository still serves the v12
-auditor's leaderboard. Nothing links to it and it no longer updates, which limits it rather than
-closing it.
+That last one turned up a fourth thing, fixed the next day rather than during this run: the Pages
+site under this repository still served the v12 auditor's leaderboard, because the workflow that
+built it is on `main` and stopped firing when the default branch moved. It now serves a v13 page
+generated from `claims.md`, and the old leaderboard address answers with a page saying what used
+to be there. [tech-debt.md](../../tech-debt.md) carries the two things that did not close.
 
 **The registry publish went through, on the second defect rather than the first.** Replacing the
 `NPM_TOKEN` secret with a token checked for write access turned the `E404` into an `E422`: a

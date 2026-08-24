@@ -45,10 +45,12 @@ it is under this repository's name, and it describes a product this repository n
 sidebar homepage field points at the README rather than at it, so nothing here links to it, but
 that is not the same as it being gone.
 
-Not touched by this run, and named rather than quietly left. Taking a public page down and
-replacing a public page are both decisions with a reader on the other end, and neither is a
-release-day judgement call: whoever makes it should decide between retiring it, redirecting it to
-the README, and building a v13 page. `tech-debt.md` carries it.
+Not touched by this run, and named rather than quietly left, because taking a public page down
+and replacing a public page are both decisions with a reader on the other end. Settled on
+2026-08-24, on the third of the three options: a v13 page, generated from `claims.md` by
+`../scripts/build-site.mjs` and deployed by `pages.yml` on this branch. The old leaderboard
+address answers with a page saying what used to be there rather than a 404. `tech-debt.md`
+carries what that did not close.
 
 ### Package identity
 
