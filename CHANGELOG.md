@@ -1,5 +1,18 @@
 # Changelog
 
+## 13.1.1
+
+A packaging fix. Nothing about how the tool runs changed.
+
+### Fixed
+
+- **Installing from a git ref produced a package with no binary.** `dist/` is not committed and
+  is built by a script, and npm runs `prepare` for a git install but never `prepublishOnly`.
+  Only the latter was declared, so `npm install github:moonrunnerkc/swarm-orchestrator#v13.1.0`
+  resolved, reported no error, and left a directory with no `dist/` and no `swarm`. This is the
+  install path that matters while the registry publish is blocked, and it was the one that did
+  not work.
+
 ## 13.1.0
 
 A run you can watch and drive, and an end-of-run panel that shows you what it produced.
