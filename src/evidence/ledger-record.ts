@@ -30,6 +30,7 @@ const recordTypes = [
   "file-set-declared",
   "file-set-amended",
   "escalation",
+  "workspace-diff",
   "calibration-canary",
   "calibration-preflight",
   "calibration-run",

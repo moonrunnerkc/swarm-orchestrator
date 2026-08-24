@@ -165,6 +165,30 @@ function summarize(record: LedgerRecord, payload: JsonValue | null): string {
       return `the file set was widened by ${numberField(fields, "addedCount")}: ${stringField(fields, "reason")}`;
     case "escalation":
       return `escalated at gate ${stringField(fields, "gateId")} after ${numberField(fields, "attemptsUsed")} attempt(s)`;
+    // Below here: types that fell to the default and rendered as their own bare name. The
+    // reward record holds what the run cost, and read "reward"; a reader had to expand a
+    // payload to find a number the page could have told them.
+    case "reward": {
+      const cost = fields.costUsd;
+      const priced = typeof cost === "number" && cost > 0 ? `$${cost.toFixed(4)}` : "nothing";
+      return `scored ${numberField(fields, "reward")} after ${Math.round(numberField(fields, "latencyMs") / 1000)}s, costing ${priced}`;
+    }
+    case "routing-decision":
+      return `routed to ${stringField(fields, "model")} by ${stringField(fields, "assignment")}: ${stringField(fields, "reason")}`;
+    case "local-endpoint":
+      return `local models served from ${stringField(fields, "url")}, ${stringField(fields, "reason")}`;
+    case "workspace-diff": {
+      const characters = numberField(fields, "characters");
+      return characters === 0
+        ? "the workspace was not changed"
+        : `the change this task made, ${characters} characters of patch against ${stringField(fields, "baseRef")}`;
+    }
+    case "worker-started":
+      return `worker ${stringField(fields, "workerId")} started on ${stringField(fields, "task")}`;
+    case "worker-finished":
+      return `worker ${stringField(fields, "workerId")} finished: ${stringField(fields, "outcome")}`;
+    case "merge-attempt":
+      return `merge of ${stringField(fields, "workerId")}: ${stringField(fields, "outcome")}`;
     default:
       return record.type;
   }

@@ -12,6 +12,7 @@ import { type GatesEngineRun, runGatesEngine } from "./gates/engine.ts";
 import type { FileSetRegistry } from "./gates/file-set.ts";
 import { createAmendFileSetTool, createDeclareFileSetTool } from "./gates/file-set-tool.ts";
 import type { DiffBudget } from "./gates/gate-definition.ts";
+import { diffAgainstBase } from "./gates/scratch-index.ts";
 import { type ConfirmationPrompt, createToolChokepoint } from "./tools/chokepoint.ts";
 import { createLedgerChokepointRecorder } from "./tools/chokepoint-record.ts";
 import { createClaimTool } from "./tools/claim-tool.ts";
@@ -172,11 +173,48 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
       : { singleFileTestCommand: options.singleFileTestCommand }),
   });
 
+  // What the task did to the tree, as a patch, recorded once the gates have settled so it is
+  // the state that was judged. Nothing else in the ledger answers "what did it change to my
+  // code?": the file-set record names files, the diff budget counts lines, and the tool calls
+  // hold fragments, so a reviewer had to leave the evidence and run git themselves.
+  await recordWorkspaceDiff(options);
+
   return {
     loop,
     gates,
     green: loop.stopReason === "completed" && gates.outcome.settled === "green",
   };
+}
+
+/** A patch is only worth reading up to a point, past which it is a file to open, not a page to read. */
+const diffCharacterCap = 200_000;
+
+async function recordWorkspaceDiff(options: AgentTaskOptions): Promise<void> {
+  let patch: string;
+  try {
+    patch = await diffAgainstBase({
+      workspaceRoot: options.workspace,
+      baseRef: options.baseRef,
+    });
+  } catch {
+    // A tree the diff cannot be taken from is a fact about the workspace, and one the gates
+    // have already reported on. It is not a reason to lose the run's evidence.
+    return;
+  }
+
+  const truncated = patch.length > diffCharacterCap;
+  await options.evidence.record({
+    type: "workspace-diff",
+    actor: "harness",
+    // The patch is the harness's reading of the tree, and the tree is what the model wrote.
+    provenance: ["model"],
+    payload: {
+      baseRef: options.baseRef,
+      truncated,
+      characters: patch.length,
+      patch: truncated ? `${patch.slice(0, diffCharacterCap)}\n... truncated` : patch,
+    },
+  });
 }
 
 /**
