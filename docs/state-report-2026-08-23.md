@@ -176,8 +176,9 @@ than gaps say why in `docs/tech-debt.md`.
 | | |
 | --- | --- |
 | Version | 13.1.0, minor because everything added is additive and nothing changed meaning |
-| Tag | `v13.1.0` exists locally, annotated, **not pushed**: pushing it is what triggers the publish workflow |
-| `v13.0.0` | pushed, left where it is, the record of the tree it named. Never published |
+| Tag | `v13.1.0`, annotated, pushed |
+| GitHub release | `v13.1.0`, marked latest, so the repository sidebar names the v13 lineage rather than the v12 auditor it named before |
+| `v13.0.0` | pushed, left where it is, the record of the tree it named. No release, never published |
 | Tarball | 268 files, 311.8 kB packed, matching the `files` allowlist exactly. Nothing from `.env`, `.swarm/`, `redteam/`, `fuzz/`, no tests, no fixtures, no `src/` |
 | Installed and run | yes: installed from the tarball into a clean directory, `swarm --help`, `swarm review`, and a real task end to end, in a terminal and off one |
 | Published to the registry | **no** |
@@ -192,10 +193,22 @@ through `prepublishOnly`, signed provenance into the sigstore transparency log, 
 refused by the registry with `E404` on the `PUT`.
 
 `npm login` needs a browser and an OTP, so it cannot be done from this session. Everything else
-in the publish path is done and verified.
+in the publish path is done and verified, and the tag push proved it end to end. CI run
+`32685163550` on `v13.1.0` passed every step in order, the tag-matches-package.json check, the
+gates through `prepublishOnly`, and `npm pack` at 268 files, then failed on the last one:
 
-    npm login                       # a person, at a terminal
-    git push origin v13.1.0         # this is what triggers publish.yml
+```
+npm notice version: 13.1.0
+npm notice total files: 268
+npm error code E404
+npm error 404 Not Found - PUT https://registry.npmjs.org/swarm-orchestrator - Not found
+```
+
+That is the registry refusing an unauthorized write, not a build problem. One command closes it,
+and re-running the workflow needs no new tag:
+
+    npm login                                    # a person, at a terminal, or a new repo secret
+    gh workflow run publish.yml --ref v13.1.0
 
 The publish workflow now refuses to publish a tag that disagrees with `package.json`. That
 check was missing and this run needed it: the version bump was very nearly tagged onto a tree

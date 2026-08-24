@@ -76,6 +76,15 @@ Appended as the run proceeds.
 | 9.6 Invariant 8 | done | zero in `src/core`, and the interface work added none |
 | 10.4 The four residuals | done, unchanged | build guide 7.1 untouched by this run, all four cases still assert their gaps, suite 49 green |
 | 10.5 Build guide 4.2 | done | the component list describes the interface that now exists |
+| 7.1 Version decision | done | 13.1.0, minor: everything added is additive and nothing changed meaning. `v13.0.0` stays where it is |
+| 7.2 `npm whoami` | **NOT-DONE** | `ENEEDAUTH`, and the `NPM_TOKEN` in `.env` is not a working token: the registry's whoami answers `{}` for it and the collaborators endpoint answers 401. `npm login` needs a browser and an OTP |
+| 7.3 Pack against the allowlist | done | 268 files, 311.8 kB, matching `files` exactly. Nothing from `.env`, `.swarm/`, `redteam/`, `fuzz/`, no tests, no fixtures, no `src/` |
+| 7.4 Install and run the tarball | done | installed into a clean directory, `dist/cli.js` resolves as the entry, `swarm --help`, `swarm review` against a committed bundle, and a real task end to end, in a terminal and off one |
+| 7.5 Publish from the workflow | **NOT-DONE**, and proved to be the credential | run `32685163550` on the `v13.1.0` tag passed the tag/version check, the gates through `prepublishOnly`, and `npm pack`, then failed at `npm publish` with `E404` on the `PUT` |
+| 7.6 Verify from the registry | **NOT-DONE** | blocked by 7.5 |
+| 7.7 Record the artifact | done | 13.1.0, shasum `84b47d1bccbed715034eb6b595ff08b9f525fc64`, 268 files, run `32685163550` |
+| 7.8 GitHub release | done | `v13.1.0` created and marked latest, so the repository sidebar names the v13 lineage rather than the v12 auditor it had named since 2026-07-06 |
+| 9.7 The weekly scan, never fired | done, three defects found | dispatched by hand: osv-scanner had never scanned anything, the issue it files could not be filed, semgrep had 21 unseen findings. All three closed or dispositioned |
 
 ## Decisions, phases 1 and 2
 
