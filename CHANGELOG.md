@@ -1,5 +1,20 @@
 # Changelog
 
+## 13.1.7
+
+Found by driving the session through a real terminal rather than a pipe.
+
+### Fixed
+
+- **Enter did not submit at the prompt.** A terminal hands over what it buffered in one read, so
+  the newline arrived inside a longer chunk with no key flag set, and the whole chunk including
+  the control character was typed into the task being composed. A pasted task arrives the same
+  way, so everything before the newline is now typed and the newline still means run it.
+- **The screen still showed a plain `DONE` for a run that changed nothing.** The gate strip
+  cannot tell passes over work from passes over an empty diff, and a model answering in prose
+  stops for the honest reason `completed` having done nothing. It now reads `DONE, but no files
+  changed`. The plain path already said this above its gate table.
+
 ## 13.1.6
 
 A session, and the evidence a person reads.
