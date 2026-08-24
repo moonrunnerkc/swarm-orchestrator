@@ -1,5 +1,51 @@
 # Changelog
 
+## 13.1.0
+
+A run you can watch and drive, and an end-of-run panel that shows you what it produced.
+Everything below is additive: no flag, command or output changed meaning, and the plain-line
+stream a pipe or a CI job reads is byte-for-byte what it was.
+
+### Added
+
+- **An interactive terminal interface.** On a TTY, a run draws a single screen: the task and
+  the model in a header, the plan, the action stream, the gate strip, and a status line.
+  Scroll it, expand a row to the whole tool input and output and the ledger record it came
+  from, filter it, freeze the render without touching the run, and press `?` for the keymap.
+  Two exits that are not the same thing: `q` leaves the view and lets the run finish, `ctrl+c`
+  cancels the run.
+- **An end-of-run evidence panel.** What the run produced, named by what each artifact is for,
+  with the record count and how many claims the harness verified against how many it refused.
+  One keystroke opens the review page, another the bundle directory. It says the bundle
+  verified only if the bundle's own verifier ran in that session and exited 0, and it names the
+  exit code; otherwise it says "not verified in this run" and prints the command.
+- **`swarm review <bundle directory>`**, which shows that same panel for any bundle already on
+  disk, running the same verifier. Nothing is re-run.
+- **`swarm --help`**, which used to report that `--help` needs a value.
+- **Screen flags**: `--no-tui` for plain lines even on a terminal, `--color` and `--no-color`,
+  `--open-evidence` and `--no-open-evidence`. Opening is opt-in and never happens off a
+  terminal.
+- **Three `swarm.toml` tables**: `[interface]` (`tui`, `color`, `open_evidence`), `[theme]`
+  (a colour per slot), and `[keys]` (a key per action). Flags win over the file, as everything
+  else does. An unknown key, colour or action is a typed error naming what was wrong and what
+  would have been accepted.
+- **Sampling settings on the wire for a calibration run**: temperature and top-p pinned and
+  recorded in every model-call record, with a seed per repeat. An ordinary task run sends
+  nothing and is unchanged.
+
+### Fixed
+
+- **Two consumers of one stdin.** The CLI built a readline interface on `process.stdin` while
+  Ink held the same stdin in raw mode. A confirmation firing mid-run raced them, which is the
+  least acceptable place to drop a keystroke. Confirmation is now a component inside the
+  running screen, answered by the same key dispatcher.
+- **The curated model shortlist and pricing table answered 404.** Both URLs named the branch
+  `main`, which is the v12 lineage and carries neither file, so `swarm select` fell back to the
+  bundled snapshot on every machine.
+- **A missing verifier read as a refused bundle.** Node exits 1 on a module it cannot find,
+  which at the exit code is the same as a verifier that ran and said no. One is the absence of
+  a verdict.
+
 ## 13.0.0
 
 Same package name, different product. If you installed `swarm-orchestrator` before this
