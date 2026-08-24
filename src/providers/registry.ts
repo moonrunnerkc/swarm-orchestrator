@@ -14,6 +14,12 @@ export interface ProviderSettings {
   readonly googleApiKey?: string | undefined;
   /** OpenAI-compatible base url. Serves both Ollama and rapid-mlx through one adapter. */
   readonly localBaseUrl?: string | undefined;
+  /**
+   * What the local adapter sends requests with. Present so the one module allowed to talk to
+   * a network can be asked what it puts on the wire, which is how the missing usage request
+   * below is held to: absent, it is the global.
+   */
+  readonly fetch?: typeof globalThis.fetch | undefined;
   readonly fixtureScript?: FixtureScript | undefined;
 }
 
@@ -74,7 +80,17 @@ export function createProviderRegistry(settings: ProviderSettings): ProviderRegi
                 "start Ollama or rapid-mlx so discovery can find one",
             );
           }
-          const local = createOpenAICompatible({ name: "local", baseURL: settings.localBaseUrl });
+          // includeUsage sends stream_options.include_usage, without which an
+          // OpenAI-compatible server streams no usage chunk at all and every token count
+          // arrives as zero. That is not cosmetic: it zeroes the cost of every local run,
+          // zeroes the reward the router learns from, and makes the calibration's throughput
+          // dimension report 0.0 for every run of every model, which reads as a measurement.
+          const local = createOpenAICompatible({
+            name: "local",
+            baseURL: settings.localBaseUrl,
+            includeUsage: true,
+            ...(settings.fetch === undefined ? {} : { fetch: settings.fetch }),
+          });
           return createAiSdkModelClient(label, local(spec.modelId));
         }
         case "fixture": {
