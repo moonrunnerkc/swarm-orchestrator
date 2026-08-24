@@ -45,6 +45,15 @@ stream a pipe or a CI job reads is byte-for-byte what it was.
 - **A missing verifier read as a refused bundle.** Node exits 1 on a module it cannot find,
   which at the exit code is the same as a verifier that ran and said no. One is the absence of
   a verdict.
+- **Local models reported no tokens, and so cost nothing.** An OpenAI-compatible server streams
+  a usage chunk only when the request carries `stream_options.include_usage`, and the local
+  provider was not built to send it. Every local run recorded `outputTokens: 0`, so throughput
+  was unmeasurable and every run priced at `$0.0000`, which the routing reward is built from.
+  The router had been learning that local models are free.
+- **One keychain message for three different failures.** A key that could not be read, an entry
+  holding something that is not a key, and a keychain that would not accept a new one now say
+  which happened and what to do about it. The middle one names the service and the account, and
+  says the entry can be deleted.
 
 ## 13.0.0
 
