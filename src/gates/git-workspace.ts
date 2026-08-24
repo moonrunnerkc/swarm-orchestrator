@@ -2,10 +2,10 @@ import { execFile } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
+import { diffAgainstBase } from "./scratch-index.ts";
 import { parseUnifiedDiff } from "./unified-diff.ts";
 import type {
   CapturedWorkspace,
-  ChangedFile,
   WorkspaceChanges,
   WorkspaceCheckpoint,
   WorkspaceProbe,
@@ -71,28 +71,18 @@ export function createGitWorkspaceProbe(options: GitWorkspaceOptions): Workspace
 
   return {
     async changes(): Promise<WorkspaceChanges> {
-      let tracked: readonly ChangedFile[];
+      // Measured through an index of our own rather than the person's, which is what makes a
+      // file git does not track yet read as added instead of as absent. From the real index a
+      // path present in the base and untracked here reads as *deleted*, so a session's second
+      // turn reported its own edits as deletions with nothing added.
       try {
-        tracked = parseUnifiedDiff(
-          await git(workspaceRoot, [
-            "diff",
-            "--no-color",
-            "--no-ext-diff",
-            "--unified=0",
-            baseRef,
-            "--",
-          ]),
-        );
+        return {
+          baseRef,
+          files: parseUnifiedDiff(await diffAgainstBase({ workspaceRoot, baseRef })),
+        };
       } catch (cause) {
         throw new GitUnavailableError(workspaceRoot, cause);
       }
-
-      const untracked = await untrackedChanges(workspaceRoot);
-      const seen = new Set(tracked.map((file) => file.path));
-      return {
-        baseRef,
-        files: [...tracked, ...untracked.filter((file) => !seen.has(file.path))],
-      };
     },
 
     readCurrent: (path) => readIfPresent(join(workspaceRoot, path)),
@@ -204,31 +194,6 @@ export async function revertSourceToBase(
       }
     },
   };
-}
-
-async function untrackedChanges(root: string): Promise<readonly ChangedFile[]> {
-  let listing: string;
-  try {
-    listing = await git(root, ["ls-files", "--others", "--exclude-standard"]);
-  } catch {
-    return [];
-  }
-
-  const files: ChangedFile[] = [];
-  for (const path of listing.split("\n").filter((entry) => entry.trim().length > 0)) {
-    const text = await readIfPresent(join(root, path));
-    if (text === null) {
-      continue;
-    }
-    const lines = text.split("\n");
-    files.push({
-      path,
-      kind: "added",
-      addedLines: lines.map((line, index) => ({ line: index + 1, text: line })),
-      removedLines: [],
-    });
-  }
-  return files;
 }
 
 async function readIfPresent(absolute: string): Promise<string | null> {
