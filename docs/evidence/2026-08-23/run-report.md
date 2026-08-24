@@ -71,7 +71,7 @@ Appended as the run proceeds.
 | 9.1 Dependency currency | done | 7 patch bumps proposed, none taken mid-release; `@types/node` held at the runtime floor deliberately |
 | 9.2 `npm audit` | done | 0 vulnerabilities |
 | 9.3 Drift | done | 12 invariants identical; `fuzz/README.md` current at 8 harnesses; `security-coverage.md` corrected on two counts |
-| 9.4 Dangling doc pointers | done, now in CI | `scripts/check-doc-paths.mjs`: 212 references, zero misses, two named and known |
+| 9.4 Dangling doc pointers | done, now in CI | `scripts/check-doc-paths.mjs`, run again at the close of the run: 271 references across 30 documentation files, zero misses, 3 named and known, 7 generated |
 | 9.5 Coverage | done | chokepoint 98.3%, core 98.8%, evidence 94.4%, gates 94.2%, tui 75.7%, tree 85.2% |
 | 9.6 Invariant 8 | done | zero in `src/core`, and the interface work added none |
 | 10.4 The four residuals | done, unchanged | build guide 7.1 untouched by this run, all four cases still assert their gaps, suite 49 green |
@@ -85,6 +85,26 @@ Appended as the run proceeds.
 | 7.7 Record the artifact | done | 13.1.0, shasum `84b47d1bccbed715034eb6b595ff08b9f525fc64`, 268 files, run `32685163550` |
 | 7.8 GitHub release | done | `v13.1.0` created and marked latest, so the repository sidebar names the v13 lineage rather than the v12 auditor it had named since 2026-07-06 |
 | 9.7 The weekly scan, never fired | done, three defects found | dispatched by hand: osv-scanner had never scanned anything, the issue it files could not be filed, semgrep had 21 unseen findings. All three closed or dispositioned |
+| 5.1 The fixes are in the binary | done | `npm run build`, then `node dist/cli.js calibrate`. Calibrated through the built CLI, not from source |
+| 5.2 Enumerate what each backend serves | done | Ollama on 11434 serves 30 models, recorded; rapid-mlx on 8000 serves one, `qwen3-coder:30b-a3b`, which is why a three-model comparison there is not possible |
+| 5.3 Three models, 20 cases, 3 repeats | done | 180 runs. Sampling pinned on the wire at temperature 0.7, top-p 0.95, recorded in every model-call record, seed per repeat derived from case, model and repeat number |
+| 5.4 Stop and diagnose rather than aggregate | done, and it fired | throughput read 0.0 for all 180 runs of all three models. Root cause: the local provider was built without `includeUsage`, so no `stream_options.include_usage` reached the server and no usage chunk came back. Confirmed against Ollama directly, fixed, and the whole calibration re-run. One repeat genuinely did not execute and is reported as not executed rather than as a zero |
+| 5.5 A calibration through the interface | **NOT-DONE** | the screen is wired to `swarm <task>` only. `swarm calibrate` writes plain lines on a terminal and off one, so there is nothing to run it through. A sweep is not one run and the existing screen renders one run, so this is a second view rather than a call site. On `docs/tech-debt.md` with the reasoning |
+| 5.6 Verify the bundle from outside the repo | done | `calibration/`, 3720 records, verified from `/tmp` by its own embedded verifier, exit 0 |
+| 5.7 `calibration-report.md` | done | distributions rather than averages, supersedes the 08-18 report and says why, which is left in place |
+| 5.8 The static pick was not calibrated | done, said so | the shortlist recommends an mlx build rapid-mlx does not serve here; nothing in the run corroborates or contradicts it, exactly as the 08-18 report said |
+| 6.3 Update evidence with the arms that completed | done | `partial-arms.md` carries both NOT-DONE arms with the remaining counts and the machines named |
+| 10.1 `docs/claims.md` | done | rows added for the interface, the container run, the new calibration, and the installed-package run; the signing row now names both outcomes; banned list re-read and nothing in this run violates it |
+| 10.2 `README.md` | done | every capability claim resolves to a committed artifact, checked by `scripts/check-doc-paths.mjs` rather than by eye |
+| 10.3 `CHANGELOG.md` | done | the interface, five flags, three config tables, the version decision, and the local-usage fix |
+| 11.1 `npm run gates` | done | exit 0, 103 files, 1297 tests, against a baseline of 88 and 1082. No drop anywhere: the difference is 15 new test files from the interface, the doc-path check, the signing messages and the provider fix |
+| 11.2 `npm run fuzz:build` | done | exit 0, 8 harnesses, all building |
+| 11.3 `check-invariant-drift.mjs` | done | exit 0, 12 invariants identical across CLAUDE.md and AGENTS.md |
+| 11.4 Verify every committed bundle | done | 7 bundles, each by its own embedded verifier, each run from `/tmp` rather than from the repository. 7 verified, 0 failed |
+| 11.5 A real task through the installed package | done | `installed-package-run.md`, with `live-task.cast` and `open-evidence.cast`. One run green, one escalated at the file-set gate citing its ledger record, both bundles verifying from outside, and the panel reporting `open exited 0` after a browser tab opened |
+| 11.6 Resolve every path under `docs/` | done | zero misses, 3 known and named, 7 generated |
+| 11.7 `docs/state-report-2026-08-23.md` | done | supersedes the 08-17 report and says so |
+| 11.8 Close this report | done | the per-item log above, the decisions below, and the per-section diff stat |
 
 ## Decisions, phases 1 and 2
 
@@ -185,3 +205,73 @@ and failed on a clean checkout. That is the same broken pointer to every reader,
 whole point of the check, so the local pass was false on exactly the case it was written for.
 The second failure was the same mistake one level down, in the code written to remove it. It is
 verified now against a fresh clone with nothing built in it, which is what CI is.
+
+## Per-section diff stat
+
+Measured against `a5ce696b`, the commit this run started on, and grouped by the phase whose
+commits made each change. Files counted once per group.
+
+| Section | Files | Lines |
+| --- | --- | --- |
+| 0. Preflight | 1 | +45 / -0 |
+| 1 and 2. Remote state, default branch, curated JSON | 7 | +91 / -6 |
+| 3. The interface | 44 | +5282 / -172 |
+| 4. Clean-container verification | 4 | +139 / -8 |
+| 5. Calibration, code and reports | 12 | +351 / -6 |
+| 5. Calibration, the bundle | 3725 | +292248 / -0 |
+| 6 and 8. Partial arms, tag and branch hygiene | 2 | +184 / -0 |
+| 7. Publish, version, release | 5 | +89 / -7 |
+| 9. Tech debt, doc paths, scans, signing | 11 | +898 / -87 |
+| 10. Claims surface, build guide | 1 | +14 / -2 |
+| 11. Reports | 2 | +337 / -0 |
+
+Whole run: **3802 files, +299581 / -191**. Take the bundle row out and it is **77 files,
++7333 / -191**, which is the number worth reading. The 3725-file row is one calibration bundle:
+3720 ledger records and their blobs, written by the runs rather than by anyone, and committed
+because a report whose numbers cannot be recomputed is a report nobody can check.
+
+The interface is the bulk of the rest, and roughly half of its 5282 lines are tests. The 191
+deletions across the whole run are the only lines this release removed, and none of them is a
+test: they are the two dead exports named in [tech-debt.md](../../tech-debt.md), the rewrites inside
+`scripts/check-doc-paths.mjs` across its two corrections, the `screen.ts` body replaced by the
+pure model beside it, and the `cli.ts` lines the end-of-run deferral moved.
+
+## Closing runs
+
+Every one of these ran at the close of the session, on the tree as committed.
+
+    $ npm run gates
+    ... exit 0, 103 files, 1297 tests passed
+
+    $ npm run fuzz:build
+    ... exit 0, 8 harnesses
+
+    $ node scripts/check-invariant-drift.mjs
+    ... exit 0, 12 invariants identical
+
+    $ node scripts/check-doc-paths.mjs
+    resolved 271 path reference(s) across 30 documentation file(s), against what git tracks
+    zero misses, 3 known and named, 7 generated
+
+    $ for each of the 7 committed bundles: node <bundle>/verify.mjs <bundle>   # run from /tmp
+    ... 7 verified, 0 failed
+
+Against the phase 0 baseline of 88 files and 1082 tests, that is 15 more test files and 215 more
+tests. Nothing dropped: no test was deleted, skipped or renamed out of the count during this run.
+
+## What this run did not finish
+
+Five things, each with the reason and the command that would unblock it, so nobody has to
+reconstruct them from the table:
+
+| Not done | Why | What unblocks it |
+| --- | --- | --- |
+| The frontier arm of the edit-quality battery, 30 of 60 | both keys authenticate and neither has a balance, checked live during this run | funding either key, then the remaining 30 cases |
+| Hardware profiles for two of three machines | neither is reachable from this session | `swarm select` on each machine |
+| Publishing to the npm registry | one credential. `npm whoami` answers `ENEEDAUTH`, and the `NPM_TOKEN` in `.env` is not a working token: the registry's whoami answers `{}` and the collaborators endpoint answers 401 | `npm login` in a browser with an OTP, or a token with publish rights on this package as the `NPM_TOKEN` repository secret. The workflow is proved otherwise: run `32685163550` cleared the tag/version interlock, the gates and `npm pack`, and failed only at the `PUT` |
+| A calibration watched through the interactive screen | the screen is wired to `swarm <task>`; `swarm calibrate` writes plain lines. A sweep is not one run, so this is a second view rather than a call site | a calibration view with its own layout and tests. On [tech-debt.md](../../tech-debt.md) |
+| The keychain signing key | the entry under `swarm-orchestrator/bundle-signing-key` holds nine characters that are not an ed25519 key, so every bundle this session signed carries `keySource: ephemeral` | deleting that entry, after identifying what it is, at which point the next run stores a real key. Not done here because overwriting an unidentified credential is destructive and is the user's call |
+
+The four accepted residuals in [build-guide.md](../../build-guide.md) 7.1 are not on that list. They are open by
+design, `build-guide.md` was not touched in 7.1 by this run, and each still has a case in the
+adversarial suite asserting the gap exactly as it stood.
