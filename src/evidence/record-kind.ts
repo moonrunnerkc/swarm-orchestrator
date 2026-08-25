@@ -14,6 +14,7 @@ import type { RecordType } from "./ledger-record.ts";
 const subjectFieldByType: Partial<Record<RecordType, string>> = {
   "gate-run": "gateId",
   "tool-call": "toolName",
+  "attempt-selection": "taskId",
 };
 
 /**
