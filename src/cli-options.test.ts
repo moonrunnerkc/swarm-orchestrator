@@ -320,6 +320,7 @@ describe("the parallel command", () => {
       localEndpoint: null,
       redundancy: null,
       concurrency: null,
+      goal: null,
     });
   });
 
@@ -344,8 +345,20 @@ describe("the parallel command", () => {
     ).toThrow(/--concurrency/);
   });
 
-  it("needs a task file, because a worker per line is how the workers are named", () => {
-    expect(() => parseCommandLine(["parallel"], context)).toThrow(/--tasks/);
+  it("needs either a file of tasks or a goal to break into them", () => {
+    expect(() => parseCommandLine(["parallel"], context)).toThrow(/--tasks|--goal/);
+  });
+
+  it("takes a goal to decompose instead of a file of tasks", () => {
+    expect(
+      parseCommandLine(["parallel", "--goal", "make both modules shout"], context),
+    ).toMatchObject({ goal: "make both modules shout", tasksFile: null });
+  });
+
+  it("refuses both at once, because only one of them can be the decomposition", () => {
+    expect(() =>
+      parseCommandLine(["parallel", "--tasks", "t.txt", "--goal", "do the thing"], context),
+    ).toThrow(/--tasks|--goal/);
   });
 
   it("takes the base to branch every worker from", () => {
