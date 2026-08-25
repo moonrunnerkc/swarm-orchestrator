@@ -1,5 +1,46 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Workers that read what the others have already tried.** They ran side by side and saw
+  nothing of each other, so two could declare the same file and one could spend its whole
+  attempt cap on a gate that had already refused the same fix on the chain next door. They
+  coordinate now through the thing they were already writing: a `read_trail` tool projects
+  typed signals off the peers' ledgers, which files are claimed, which gates failed and how
+  often, which attempts the ratchet rejected, which approaches are spent. No daemon, no bus,
+  nothing anyone writes through, and no read of a chain but the peers' own. Nothing it returns
+  can render green: every signal comes from a record rather than from model text, every line
+  names the peer it is about, and no signal kind reports a success. A run that is not parallel
+  is offered none of it and sends the same tools and the same prompt, byte for byte.
+- **`--redundancy <n>`: try each task several ways and land the best of them.** Attempts
+  diverge because each carries a seed derived from the task, the model and the attempt number,
+  so a report can re-derive them. The winner is chosen by a comparator over harness-measured
+  numbers with the precedence written down, never by asking a model which answer it likes: four
+  earn-it dimensions above every do-less one, a dimension nothing measured abstained on by
+  name, and a dimension only one side measured won by the side that measured it. Counting
+  happens over a file universe fixed across the attempts first, so opening a large test file
+  gains the opener nothing. The whole ranking goes on the chain, losers and their reasons
+  included. A refused winner falls to the next attempt only where the integrated gates were
+  what refused it.
+- **`--goal <text>`: the tool breaks the goal into tasks itself.** A planner run reads the
+  workspace with read-only tools and declares a task graph, which is checked before anything
+  runs for unique ids, resolving dependencies, no cycle, and files that two unordered nodes
+  do not share. The graph is a ledger record written before the first worker starts. Nodes
+  land layer by layer, each layer branching from the tree the one before it left, and a node
+  whose parent did not land is recorded as blocked rather than run against a tree that lacks
+  it. `--tasks` also reads a JSON graph now, so a hand-written one and a declared one are the
+  same artifact. The claim says every declared node ran and landed and says nothing about
+  whether they satisfy the goal, which this tool does not check and says so.
+- **`--concurrency <n>`,** capping how many workers hold a worktree at once.
+
+### Fixed
+
+- **Two review-page summaries that trailed off after the colon.** `worker-finished` and
+  `merge-attempt` both asked for a field neither writer emits, so they rendered as
+  `worker-1 finished:` with nothing after it. They read what is actually recorded now.
+
 ## 13.1.9
 
 ### Added

@@ -73,6 +73,8 @@ describe("the embedded verifier agrees with the implementation it ships beside",
       ["gate-run", { status: "passed" }],
       ["tool-call", { toolName: "shell" }],
       ["session-stopped", { stopReason: "completed" }],
+      ["attempt-selection", { taskId: "task-1", winner: "task-1-attempt-2" }],
+      ["attempt-selection", { winner: "task-1-attempt-2" }],
     ];
 
     for (const [type, payload] of records) {

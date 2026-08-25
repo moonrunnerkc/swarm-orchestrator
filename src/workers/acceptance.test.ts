@@ -9,6 +9,7 @@ import type { ModelClient, ModelRequest } from "../core/model-client.ts";
 import { createFixedRandom } from "../core/test-doubles.ts";
 import { bundleSourceFromRecorder } from "../evidence/bundle.ts";
 import { exportCombinedBundle } from "../evidence/combined-bundle.ts";
+import { buildEvidenceDag } from "../evidence/dag.ts";
 import { createRecordingModelClient } from "../evidence/model-call-recording.ts";
 import { type EvidenceRecorder, openEvidenceSession } from "../evidence/session.ts";
 import { createEphemeralSigningKey } from "../evidence/signing.ts";
@@ -19,6 +20,7 @@ import {
   respondWithToolCalls,
 } from "../providers/fixture-provider.ts";
 import { runInParallel } from "./parallel-run.ts";
+import { readTaskGraph, type TaskGraph } from "./task-graph.ts";
 
 /**
  * The phase acceptance run, against a real git repository with real worktrees, real test
@@ -145,7 +147,17 @@ function modelFor(
   return createRecordingModelClient(client, evidence);
 }
 
-async function parallel(scripts: Readonly<Record<string, readonly FixtureTurn[]>>) {
+interface ParallelOverrides {
+  readonly redundancy?: number;
+  readonly graph?: TaskGraph;
+  /** Scripts keyed by worker id, for a run whose attempts at one task must differ. */
+  readonly byWorker?: Readonly<Record<string, readonly FixtureTurn[]>>;
+}
+
+async function parallel(
+  scripts: Readonly<Record<string, readonly FixtureTurn[]>>,
+  overrides: ParallelOverrides = {},
+) {
   return runInParallel({
     repositoryRoot: repository,
     baseRef: "HEAD",
@@ -155,13 +167,25 @@ async function parallel(scripts: Readonly<Record<string, readonly FixtureTurn[]>
     coordinator,
     createWorkerSession: (workerId) =>
       openEvidenceSession({ root: join(scratch, "sessions"), sessionId: workerId, clock }),
-    createModel: (_workerId, evidence) => modelFor(scripts, evidence),
+    createModel: (workerId, evidence) => {
+      const only = overrides.byWorker?.[workerId];
+      return only === undefined
+        ? modelFor(scripts, evidence)
+        : createRecordingModelClient(
+            createFixtureModelClient({ modelId: "fixture:worker", turns: only }),
+            evidence,
+          );
+    },
     clock,
     random: createFixedRandom(),
     emit: () => {},
     maxSteps: 8,
     attempts: 0,
     gateOptions: { commandOverrides: gateOverrides },
+    redundancy: overrides.redundancy ?? 1,
+    ...(overrides.graph === undefined ? {} : { graph: overrides.graph, graphSource: "file" }),
+    concurrency: 0,
+    modelSpec: "fixture:worker",
     abortSignal: new AbortController().signal,
   });
 }
@@ -290,6 +314,9 @@ describe("a worker that cannot even start", () => {
       maxSteps: 8,
       attempts: 0,
       gateOptions: { commandOverrides: gateOverrides },
+      redundancy: 1,
+      concurrency: 0,
+      modelSpec: "fixture:worker",
       abortSignal: new AbortController().signal,
     });
 
@@ -326,4 +353,270 @@ describe("the bundle a parallel run produces", () => {
     expect(stdout).toMatch(/worker worker-1/);
     expect(stdout).toMatch(/worker worker-2/);
   }, 120_000);
+});
+
+describe("trying each task several ways", () => {
+  /** One test with `count` assertions, so two attempts differ by a number the ratchet reads. */
+  function shoutTestWith(count: number): string {
+    const checks = Array.from(
+      { length: count },
+      () => "  assert.equal(shoutAlpha(), 'ALPHA');",
+    ).join("\n");
+    return [
+      "import { test } from 'node:test';",
+      "import assert from 'node:assert/strict';",
+      "import { shoutAlpha } from './alpha.js';",
+      "",
+      "test('shoutAlpha', () => {",
+      checks,
+      "});",
+      "",
+    ].join("\n");
+  }
+
+  function attemptWriting(count: number): readonly FixtureTurn[] {
+    return scriptFor({
+      "src/alpha.js": withShout(alpha, "Alpha", "alpha"),
+      "src/alpha-shout.test.js": shoutTestWith(count),
+    });
+  }
+
+  const oneTask = { "add a shout to alpha": attemptWriting(1) };
+
+  it("writes exactly the record types it always did when each task is tried once", async () => {
+    await parallel(oneTask);
+
+    // Pinned deliberately. A run that tries each task once must reach the ledger exactly as
+    // it did before any of the selection work existed, so a new record type showing up here
+    // is a regression rather than a detail.
+    const types = [...new Set(coordinator.records().map((record) => record.type))].sort();
+    expect(types).toEqual([
+      "file-set-declared",
+      "gate-run",
+      "merge-attempt",
+      "worker-finished",
+      "worker-started",
+    ]);
+  });
+
+  it("names no selection when each task is tried once, because nothing was chosen", async () => {
+    const result = await parallel(oneTask);
+
+    expect(result.selections).toEqual([]);
+    expect(result.workers.map((worker) => worker.workerId)).toEqual(["worker-1"]);
+  });
+
+  it("runs a task as many ways as it was asked, each on its own branch", async () => {
+    const result = await parallel(oneTask, {
+      redundancy: 3,
+      byWorker: {
+        "worker-1": attemptWriting(1),
+        "worker-2": attemptWriting(2),
+        "worker-3": attemptWriting(3),
+      },
+    });
+
+    expect(result.workers).toHaveLength(3);
+    expect(new Set(result.workers.map((worker) => worker.branch)).size).toBe(3);
+    expect(result.workers.every((worker) => worker.taskId === "task-1")).toBe(true);
+  });
+
+  it("lands the attempt with more assertions, and records why", async () => {
+    const result = await parallel(oneTask, {
+      redundancy: 3,
+      byWorker: {
+        "worker-1": attemptWriting(1),
+        "worker-2": attemptWriting(5),
+        "worker-3": attemptWriting(2),
+      },
+    });
+
+    const selection = result.selections[0];
+    expect(selection?.winner).toBe("worker-2");
+    expect(selection?.decidedBy).toBe("assertions");
+    expect(result.queue?.landings.map((landing) => landing.workerId)).toEqual(["worker-2"]);
+    expect(result.queue?.landings.every((landing) => landing.landed)).toBe(true);
+  });
+
+  it("puts the whole ranking on the coordinator's chain, losers included", async () => {
+    await parallel(oneTask, {
+      redundancy: 2,
+      byWorker: { "worker-1": attemptWriting(1), "worker-2": attemptWriting(4) },
+    });
+
+    const written = coordinator.records().find((record) => record.type === "attempt-selection");
+    const payload = coordinator.payloads().get(written?.payloadDigest ?? "") as {
+      ranked: number;
+      eligible: number;
+      winner: string;
+      attempts: { workerId: string }[];
+    };
+
+    expect(payload.ranked).toBe(2);
+    expect(payload.eligible).toBe(2);
+    expect(payload.winner).toBe("worker-2");
+    expect(payload.attempts.map((one) => one.workerId).sort()).toEqual(["worker-1", "worker-2"]);
+  });
+
+  it("claims the attempt it chose is the one that landed, and the harness checks it", async () => {
+    await parallel(oneTask, {
+      redundancy: 2,
+      byWorker: { "worker-1": attemptWriting(1), "worker-2": attemptWriting(4) },
+    });
+
+    const claims = coordinator
+      .records()
+      .filter((record) => record.type === "claim")
+      .map((record) => coordinator.payloads().get(record.payloadDigest));
+
+    expect(claims).toHaveLength(1);
+    expect(claims[0]).toMatchObject({
+      predicate: 'landed == true && workerId == "worker-2"',
+      recordKind: "merge-attempt",
+    });
+  });
+
+  it("renders that claim verified when the chosen attempt did land", async () => {
+    await parallel(oneTask, {
+      redundancy: 2,
+      byWorker: { "worker-1": attemptWriting(1), "worker-2": attemptWriting(4) },
+    });
+
+    const dag = buildEvidenceDag(coordinator.records(), coordinator.payloads());
+    expect(dag.claims.map((claim) => claim.evaluation.verdict)).toEqual(["verified"]);
+  });
+
+  it("renders it unverified when the chosen attempt was refused, naming what was chosen", async () => {
+    const collide = {
+      "add a shout to alpha": attemptWriting(1),
+      "add a shout to alpha again": attemptWriting(1),
+    };
+    await parallel(collide, {
+      redundancy: 2,
+      byWorker: {
+        "worker-1": attemptWriting(1),
+        "worker-2": attemptWriting(4),
+        "worker-3": attemptWriting(2),
+        // The winner of the second task writes the same file as the winner of the first,
+        // with different content, so the queue has a real conflict to refuse.
+        "worker-4": attemptWriting(6),
+      },
+    });
+
+    const dag = buildEvidenceDag(coordinator.records(), coordinator.payloads());
+    expect(dag.claims.map((claim) => claim.evaluation.verdict).sort()).toEqual([
+      "unverified",
+      "verified",
+    ]);
+    const refused = dag.claims.find((claim) => claim.evaluation.verdict === "unverified");
+    expect(refused?.evaluation.reason).toBe("predicate-false");
+    expect(refused?.narrative).toMatch(/chose worker-4/);
+  });
+
+  it("offers only the winner to the queue, so the losers never conflict with it", async () => {
+    const result = await parallel(oneTask, {
+      redundancy: 3,
+      byWorker: {
+        "worker-1": attemptWriting(1),
+        "worker-2": attemptWriting(5),
+        "worker-3": attemptWriting(2),
+      },
+    });
+
+    expect(result.queue?.landings).toHaveLength(1);
+    expect(result.queue?.landings.some((landing) => landing.reason === "merge-conflict")).toBe(
+      false,
+    );
+  });
+});
+
+describe("running a declared task graph", () => {
+  const shoutAlpha = "add a shout to alpha";
+  const shoutBeta = "add a shout to beta, now that alpha shouts";
+
+  const scripts = {
+    [shoutAlpha]: scriptFor({
+      "src/alpha.js": withShout(alpha, "Alpha", "alpha"),
+      "src/alpha-shout.test.js": shoutTest("Alpha", "alpha"),
+    }),
+    [shoutBeta]: scriptFor({
+      "src/beta.js": withShout(beta, "Beta", "beta"),
+      "src/beta-shout.test.js": shoutTest("Beta", "beta"),
+    }),
+  };
+
+  const graph = readTaskGraph({
+    goal: "make both modules shout",
+    nodes: [
+      {
+        id: "alpha",
+        title: "alpha shouts",
+        instruction: shoutAlpha,
+        files: ["src/alpha.js", "src/alpha-shout.test.js"],
+      },
+      {
+        id: "beta",
+        title: "beta shouts",
+        instruction: shoutBeta,
+        files: ["src/beta.js", "src/beta-shout.test.js"],
+        dependsOn: ["alpha"],
+      },
+    ],
+  });
+
+  it("declares the graph before it starts a single worker", async () => {
+    await parallel(scripts, { graph });
+
+    const types = coordinator.records().map((record) => record.type);
+    expect(types.indexOf("task-graph")).toBeGreaterThanOrEqual(0);
+    expect(types.indexOf("task-graph")).toBeLessThan(types.indexOf("worker-started"));
+  });
+
+  it("runs a dependent node against the tree its parent landed", async () => {
+    const result = await parallel(scripts, { graph });
+
+    expect(result.workers.map((worker) => worker.task)).toEqual([shoutAlpha, shoutBeta]);
+    expect(result.queue?.landings.map((landing) => landing.landed)).toEqual([true, true]);
+    expect(result.headCommit).not.toBe(result.baseCommit);
+  });
+
+  it("claims every declared node landed, and the harness agrees when they did", async () => {
+    await parallel(scripts, { graph });
+
+    const dag = buildEvidenceDag(coordinator.records(), coordinator.payloads());
+    const outcome = dag.claims.find((claim) => claim.recordKind === "task-graph-outcome");
+    expect(outcome?.predicate).toBe("nodes == 2 && landed == 2");
+    expect(outcome?.evaluation.verdict).toBe("verified");
+  });
+
+  it("says out loud that it does not check the nodes add up to the goal", async () => {
+    await parallel(scripts, { graph });
+
+    const dag = buildEvidenceDag(coordinator.records(), coordinator.payloads());
+    const outcome = dag.claims.find((claim) => claim.recordKind === "task-graph-outcome");
+    expect(outcome?.narrative).toMatch(/not check|not checkable/i);
+  });
+
+  it("blocks a node whose parent never landed, and refuses the claim", async () => {
+    const failing = {
+      ...scripts,
+      [shoutAlpha]: scriptFor({
+        "src/alpha.js": "export function alpha() {\n  return 'wrong';\n}\n",
+      }),
+    };
+
+    const result = await parallel(failing, { graph });
+
+    expect(result.workers.map((worker) => worker.task)).toEqual([shoutAlpha]);
+
+    const dag = buildEvidenceDag(coordinator.records(), coordinator.payloads());
+    const outcome = dag.claims.find((claim) => claim.recordKind === "task-graph-outcome");
+    expect(outcome?.evaluation.verdict).toBe("unverified");
+
+    const written = coordinator.records().find((record) => record.type === "task-graph-outcome");
+    expect(coordinator.payloads().get(written?.payloadDigest ?? "")).toMatchObject({
+      landed: 0,
+      blocked: ["beta"],
+    });
+  });
 });

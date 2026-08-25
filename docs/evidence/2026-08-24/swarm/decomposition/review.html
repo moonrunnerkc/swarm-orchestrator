@@ -1,0 +1,798 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>swarm evidence bundle 20260825T025529-6d62fc-queue</title>
+<style>
+.what { margin: 0 0 1.2rem; }
+.what dt { color: var(--muted); }
+.what dd { font-weight: 600; }
+section.gates, section.diff { margin: 0 0 1.5rem; }
+section.gates table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+section.gates td { padding: .35rem .6rem; border-top: 1px solid var(--line); vertical-align: top; }
+.gate-status { font-weight: 600; text-transform: uppercase; font-size: .72rem; white-space: nowrap; }
+.gate-passed .gate-status { color: var(--green); }
+.gate-failed .gate-status { color: var(--red); }
+.gate-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
+.advisory { color: var(--muted); font-weight: 400; }
+.gate-detail { color: var(--muted); }
+.patch { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem;
+  line-height: 1.45; overflow-x: auto; border: 1px solid var(--line); border-radius: 6px;
+  padding: .8rem; white-space: pre; }
+.patch-add { color: var(--green); }
+.patch-remove { color: var(--red); }
+.patch-file { font-weight: 600; }
+.patch-hunk { color: var(--muted); }
+:root { color-scheme: light dark; --ink: #16181d; --paper: #fbfbfa; --line: #d8d8d4;
+  --green: #17683a; --red: #b3261e; --muted: #5f6368; }
+@media (prefers-color-scheme: dark) { :root { --ink: #e8e8e6; --paper: #16181d; --line: #33363d;
+  --green: #6fd08c; --red: #ff8a80; --muted: #a0a4ab; } }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 2rem; background: var(--paper); color: var(--ink);
+  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+h1 { font-size: 1.4rem; margin: 0 0 .75rem; }
+h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+  margin: 0 0 .75rem; }
+header { border-bottom: 1px solid var(--line); padding-bottom: 1rem; margin-bottom: 1.5rem; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: .15rem 1rem; margin: 0 0 .75rem; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem;
+  overflow-wrap: anywhere; }
+.note { max-width: 78ch; color: var(--muted); margin: 0; }
+.columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2rem; align-items: start; }
+@media (max-width: 900px) { .columns { grid-template-columns: 1fr; } }
+article { border: 1px solid var(--line); border-radius: 6px; padding: .8rem 1rem; margin-bottom: .75rem;
+  background: color-mix(in srgb, var(--paper) 92%, var(--ink) 8%); }
+.claim.unverified { border-left: 4px solid var(--red); }
+.claim.verified { border-left: 4px solid var(--green); }
+.verdict { font-weight: 700; letter-spacing: .04em; margin: 0 0 .5rem; }
+.claim.unverified .verdict { color: var(--red); }
+.claim.verified .verdict { color: var(--green); }
+.reason { font-weight: 400; color: var(--muted); margin-left: .5rem; font-size: .85rem; }
+.predicate, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem;
+  white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 .5rem; }
+.citation, .detail, .summary, .tags, .digest { margin: 0 0 .4rem; font-size: .85rem; }
+.digest { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: .72rem; overflow-wrap: anywhere; }
+.detail { color: var(--muted); }
+.prose { margin: .5rem 0 0; padding: .5rem .75rem; border-left: 3px dashed var(--line);
+  color: var(--muted); font-style: italic; }
+.prose-label { display: block; font-style: normal; font-size: .68rem; text-transform: uppercase;
+  letter-spacing: .08em; }
+.record-head { margin: 0 0 .4rem; display: flex; gap: .6rem; align-items: baseline; flex-wrap: wrap; }
+.sequence { font-weight: 700; }
+.type { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; }
+.actor, .time { color: var(--muted); font-size: .78rem; }
+.tag { border: 1px solid var(--line); border-radius: 999px; padding: 0 .5rem; font-size: .72rem; }
+a { color: inherit; }
+footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted);
+  font-size: .85rem; }
+.empty { color: var(--muted); }
+</style>
+</head>
+<body>
+<header><h1>swarm evidence bundle</h1><dl class="facts"><dt>session</dt><dd>20260825T025529-6d62fc-queue</dd><dt>exported</dt><dd>2026-08-25T03:04:21.516Z</dd><dt>records</dt><dd>37</dd><dt>chain head</dt><dd>sha256:9f5ce92fea3f7fb2226b68547150e9569bf620974ddcd6ae305dd92b9f38a431</dd><dt>claims verified</dt><dd>0 of 1</dd><dt>coverage of changed lines</dt><dd>not measured</dd></dl><p class="note">Green is computed by the harness: it means a machine-checkable predicate was evaluated against the cited record and held. Model prose is never green. The signing key was generated for this run only, so it links nothing to a durable identity. A signature proves the bundle was not altered after it left that machine; it does not prove the machine was honest while producing it.</p></header>
+<section class="gates"><h2>Gates</h2><p class="note">A gate with nothing to run reports that it had nothing to run. It does not report a pass.</p><table><tr class="gate-not-applicable"><td class="gate-status">not-applicable</td><td class="gate-id">typecheck</td><td class="gate-detail">package.json declares no typecheck script</td></tr><tr class="gate-not-applicable"><td class="gate-status">not-applicable</td><td class="gate-id">lint</td><td class="gate-detail">package.json declares no lint script</td></tr><tr class="gate-not-applicable"><td class="gate-status">not-applicable</td><td class="gate-id">format</td><td class="gate-detail">package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging</td></tr><tr class="gate-passed"><td class="gate-status">passed</td><td class="gate-id">tests</td><td class="gate-detail">1 collected, 1 passed, 0 failed, 0 skipped (exit 0)</td></tr><tr class="gate-passed"><td class="gate-status">passed</td><td class="gate-id">file-set</td><td class="gate-detail">all 2 changed file(s) are inside the declared set of 2, and every one of them was declared before it was edited</td></tr><tr class="gate-passed"><td class="gate-status">passed</td><td class="gate-id">placeholder</td><td class="gate-detail">no placeholder marker was introduced by this change</td></tr><tr class="gate-passed"><td class="gate-status">passed</td><td class="gate-id">secret-scan</td><td class="gate-detail">no known credential pattern appears in the added lines</td></tr><tr class="gate-passed"><td class="gate-status">passed</td><td class="gate-id">diff-budget <span class="advisory">advisory</span></td><td class="gate-detail">within budget: 2 file(s) and 7 added line(s)</td></tr></table></section>
+
+<main class="columns">
+<section class="claims"><h2>Claims</h2>
+<article class="claim unverified"><p class="verdict">UNVERIFIED<span class="reason">predicate-false</span></p><pre class="predicate">nodes == 3 &amp;&amp; landed == 3</pre><p class="citation">cites <a href="#record-32">record 32, task-graph-outcome</a>, asserted against task-graph-outcome</p><p class="detail">the cited record does not support the predicate</p><blockquote class="prose"><span class="prose-label">unverified prose</span>The goal was decomposed into 3 node(s). Whether they add up to the goal is not checked here and is not checkable by this harness.</blockquote></article>
+</section>
+<section class="evidence"><h2>Evidence</h2>
+<article class="record" id="record-0"><p class="record-head"><span class="sequence">0</span><span class="type">local-endpoint</span><span class="actor">harness</span><span class="time">2026-08-25T02:55:29.542Z</span></p><p class="summary">local models served from http://localhost:11434/v1, pinned by flag</p><p class="tags">provenance: <span class="tag">user</span></p><p class="digest">sha256:9aa444f264542bdb40ddefbecdf6285f233be36bd7037b32f44a2763f5bdd052</p><details><summary>payload</summary><pre>{
+  &quot;chosen&quot;: &quot;pinned&quot;,
+  &quot;origin&quot;: &quot;flag&quot;,
+  &quot;reason&quot;: &quot;pinned by flag&quot;,
+  &quot;url&quot;: &quot;http://localhost:11434/v1&quot;
+}</pre></details></article>
+<article class="record" id="record-1"><p class="record-head"><span class="sequence">1</span><span class="type">task-graph</span><span class="actor">harness</span><span class="time">2026-08-25T02:56:04.952Z</span></p><p class="summary">task-graph</p><p class="tags">provenance: <span class="tag">model</span></p><p class="digest">sha256:cb2567dc5c33de5be479d0036a95190e5c88fd31bafbabdb661a0c7600eeb278</p><details><summary>payload</summary><pre>{
+  &quot;goal&quot;: &quot;Add a shouting variant to the alpha module and create a beta module with its own test file&quot;,
+  &quot;nodeCount&quot;: 3,
+  &quot;nodes&quot;: [
+    {
+      &quot;acceptance&quot;: [],
+      &quot;dependsOn&quot;: [],
+      &quot;files&quot;: [
+        &quot;src/alpha.js&quot;
+      ],
+      &quot;id&quot;: &quot;shouting-alpha&quot;,
+      &quot;instruction&quot;: &quot;Modify src/alpha.js to add a shouting variant of the alpha function that returns &#39;ALPHA!&#39; (in uppercase with exclamation mark), while keeping the original alpha function unchanged.&quot;,
+      &quot;title&quot;: &quot;Add shouting variant to alpha&quot;
+    },
+    {
+      &quot;acceptance&quot;: [],
+      &quot;dependsOn&quot;: [],
+      &quot;files&quot;: [
+        &quot;src/beta.js&quot;
+      ],
+      &quot;id&quot;: &quot;create-beta&quot;,
+      &quot;instruction&quot;: &quot;Create src/beta.js with a simple function that returns &#39;beta&#39;.&quot;,
+      &quot;title&quot;: &quot;Create beta module&quot;
+    },
+    {
+      &quot;acceptance&quot;: [],
+      &quot;dependsOn&quot;: [],
+      &quot;files&quot;: [
+        &quot;src/beta.test.js&quot;
+      ],
+      &quot;id&quot;: &quot;beta-test&quot;,
+      &quot;instruction&quot;: &quot;Create src/beta.test.js with a test for the beta function asserting it returns &#39;beta&#39;.&quot;,
+      &quot;title&quot;: &quot;Add test for beta&quot;
+    }
+  ],
+  &quot;overlaps&quot;: [],
+  &quot;parallelSafe&quot;: true,
+  &quot;source&quot;: &quot;goal&quot;
+}</pre></details></article>
+<article class="record" id="record-2"><p class="record-head"><span class="sequence">2</span><span class="type">worker-started</span><span class="actor">harness</span><span class="time">2026-08-25T02:56:04.982Z</span></p><p class="summary">worker worker-2 started on Create src/beta.js with a simple function that returns &#39;beta&#39;.</p><p class="tags">provenance: <span class="tag">user</span></p><p class="digest">sha256:51531446dac66700074f215f2e3ca7737434f5684c2cd63d59343f893827c5af</p><details><summary>payload</summary><pre>{
+  &quot;baseCommit&quot;: &quot;b8ea0e0d56a74d821a601342e2d2e6413208fd15&quot;,
+  &quot;branch&quot;: &quot;swarm/20260825T025529-6d62fc/worker-2&quot;,
+  &quot;sessionId&quot;: &quot;20260825T025529-6d62fc-worker-2&quot;,
+  &quot;task&quot;: &quot;Create src/beta.js with a simple function that returns &#39;beta&#39;.&quot;,
+  &quot;workerId&quot;: &quot;worker-2&quot;
+}</pre></details></article>
+<article class="record" id="record-3"><p class="record-head"><span class="sequence">3</span><span class="type">worker-started</span><span class="actor">harness</span><span class="time">2026-08-25T02:56:04.983Z</span></p><p class="summary">worker worker-3 started on Modify src/alpha.js to add a shouting variant of the alpha function that returns &#39;ALPHA!&#39; (in uppercase with exclamation mark), while keeping the original alpha function unchanged.</p><p class="tags">provenance: <span class="tag">user</span></p><p class="digest">sha256:d53bb9fed23072fb850331d6e2154897ea6d1029dd9c33165f26bbb3c49bf114</p><details><summary>payload</summary><pre>{
+  &quot;baseCommit&quot;: &quot;b8ea0e0d56a74d821a601342e2d2e6413208fd15&quot;,
+  &quot;branch&quot;: &quot;swarm/20260825T025529-6d62fc/worker-3&quot;,
+  &quot;sessionId&quot;: &quot;20260825T025529-6d62fc-worker-3&quot;,
+  &quot;task&quot;: &quot;Modify src/alpha.js to add a shouting variant of the alpha function that returns &#39;ALPHA!&#39; (in uppercase with exclamation mark), while keeping the original alpha function unchanged.&quot;,
+  &quot;workerId&quot;: &quot;worker-3&quot;
+}</pre></details></article>
+<article class="record" id="record-4"><p class="record-head"><span class="sequence">4</span><span class="type">worker-started</span><span class="actor">harness</span><span class="time">2026-08-25T02:56:04.983Z</span></p><p class="summary">worker worker-1 started on Create src/beta.test.js with a test for the beta function asserting it returns &#39;beta&#39;.</p><p class="tags">provenance: <span class="tag">user</span></p><p class="digest">sha256:42530f944a181e591189be3a3f597be8d6cea5f1775a0c2563cfd7faa912ab9b</p><details><summary>payload</summary><pre>{
+  &quot;baseCommit&quot;: &quot;b8ea0e0d56a74d821a601342e2d2e6413208fd15&quot;,
+  &quot;branch&quot;: &quot;swarm/20260825T025529-6d62fc/worker-1&quot;,
+  &quot;sessionId&quot;: &quot;20260825T025529-6d62fc-worker-1&quot;,
+  &quot;task&quot;: &quot;Create src/beta.test.js with a test for the beta function asserting it returns &#39;beta&#39;.&quot;,
+  &quot;workerId&quot;: &quot;worker-1&quot;
+}</pre></details></article>
+<article class="record" id="record-5"><p class="record-head"><span class="sequence">5</span><span class="type">file-set-declared</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:20.980Z</span></p><p class="summary">the planner declared 2 intended file(s)</p><p class="tags">provenance: <span class="tag">model</span></p><p class="digest">sha256:57145dbb763df43ce48e3b6622aef413f3272e0d76e66f0b15bb918f2a65cf6a</p><details><summary>payload</summary><pre>{
+  &quot;fileCount&quot;: 2,
+  &quot;files&quot;: [
+    &quot;src/alpha.js&quot;,
+    &quot;src/beta.js&quot;
+  ]
+}</pre></details></article>
+<article class="record" id="record-6"><p class="record-head"><span class="sequence">6</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.009Z</span></p><p class="summary">gate typecheck: not-applicable (package.json declares no typecheck script)</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:21692aba9a951310bb897c1a9cf74c4292b2a5a7f24442160c35e32fe3c20cdd</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: null,
+  &quot;attempt&quot;: 0,
+  &quot;blocking&quot;: true,
+  &quot;command&quot;: null,
+  &quot;detail&quot;: &quot;package.json declares no typecheck script&quot;,
+  &quot;durationMs&quot;: 0,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;typecheck&quot;,
+  &quot;measures&quot;: {},
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;blocking&quot;,
+  &quot;status&quot;: &quot;not-applicable&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;&quot;,
+  &quot;title&quot;: &quot;typecheck (node)&quot;,
+  &quot;unavailable&quot;: &quot;package.json declares no typecheck script&quot;
+}</pre></details></article>
+<article class="record" id="record-7"><p class="record-head"><span class="sequence">7</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.009Z</span></p><p class="summary">gate lint: not-applicable (package.json declares no lint script)</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:ce59b3ecfeeff95ea0c7d0e8997163d3cbcce677eeca530f1d75e8b5349954c1</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: null,
+  &quot;attempt&quot;: 0,
+  &quot;blocking&quot;: true,
+  &quot;command&quot;: null,
+  &quot;detail&quot;: &quot;package.json declares no lint script&quot;,
+  &quot;durationMs&quot;: 0,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;lint&quot;,
+  &quot;measures&quot;: {},
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;blocking&quot;,
+  &quot;status&quot;: &quot;not-applicable&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;&quot;,
+  &quot;title&quot;: &quot;lint (node)&quot;,
+  &quot;unavailable&quot;: &quot;package.json declares no lint script&quot;
+}</pre></details></article>
+<article class="record" id="record-8"><p class="record-head"><span class="sequence">8</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.010Z</span></p><p class="summary">gate format: not-applicable (package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging)</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:f52f338fc09ae92740c27b595a8a40571763e29217c54191c82b0fbaf466cbc5</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: null,
+  &quot;attempt&quot;: 0,
+  &quot;blocking&quot;: true,
+  &quot;command&quot;: null,
+  &quot;detail&quot;: &quot;package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging&quot;,
+  &quot;durationMs&quot;: 0,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;format&quot;,
+  &quot;measures&quot;: {},
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;blocking&quot;,
+  &quot;status&quot;: &quot;not-applicable&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;&quot;,
+  &quot;title&quot;: &quot;format (node)&quot;,
+  &quot;unavailable&quot;: &quot;package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging&quot;
+}</pre></details></article>
+<article class="record" id="record-9"><p class="record-head"><span class="sequence">9</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.081Z</span></p><p class="summary">gate tests: passed (1 collected, 1 passed, 0 failed, 0 skipped (exit 0))</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:190f20ff7278321b69dc4a155924930f6a7c37e5af28e9a66a1e52385f91368e</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: [
+    &quot;node&quot;,
+    &quot;--test&quot;,
+    &quot;--experimental-test-coverage&quot;,
+    &quot;--test-isolation=process&quot;,
+    &quot;--test-reporter=tap&quot;,
+    &quot;--test-reporter-destination=stdout&quot;,
+    &quot;--test-reporter=lcov&quot;,
+    &quot;--test-reporter-destination=/Users/brad/.swarm/sessions/20260825T025529-6d62fc-queue/coverage/tests.lcov&quot;
+  ],
+  &quot;attempt&quot;: 0,
+  &quot;blocking&quot;: true,
+  &quot;command&quot;: &quot;node --test --experimental-test-coverage --test-isolation=process --test-reporter=tap --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=/Users/brad/.swarm/sessions/20260825T025529-6d62fc-queue/coverage/tests.lcov&quot;,
+  &quot;detail&quot;: &quot;1 collected, 1 passed, 0 failed, 0 skipped (exit 0)&quot;,
+  &quot;durationMs&quot;: 70,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;tests&quot;,
+  &quot;measures&quot;: {
+    &quot;testsCollected&quot;: 1,
+    &quot;testsFailed&quot;: 0,
+    &quot;testsPassed&quot;: 1,
+    &quot;testsSkipped&quot;: 0
+  },
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;blocking&quot;,
+  &quot;status&quot;: &quot;passed&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;TAP version 13\n# Subtest: alpha\nok 1 - alpha\n  ---\n  duration_ms: 0.318666\n  type: &#39;test&#39;\n  ...\n1..1\n# tests 1\n# suites 0\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 40.529709\n# start of coverage report\n# ----------------------------------------------------------\n# file      | line % | branch % | funcs % | uncovered lines\n# ----------------------------------------------------------\n# src       |        |          |         | \n#  alpha.js | 100.00 |   100.00 |  100.00 | \n# ----------------------------------------------------------\n# all files | 100.00 |   100.00 |  100.00 | \n# ----------------------------------------------------------\n# end of coverage report\n&quot;,
+  &quot;title&quot;: &quot;tests (node --test --experimental-test-coverage --test-isolation=process --test-reporter=tap --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=/Users/brad/.swarm/sessions/20260825T025529-6d62fc-queue/coverage/tests.lcov)&quot;,
+  &quot;unavailable&quot;: null
+}</pre></details></article>
+<article class="record" id="record-10"><p class="record-head"><span class="sequence">10</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.082Z</span></p><p class="summary">gate file-set: passed (all 0 changed file(s) are inside the declared set of 2, and every one of them was declared before it was edited)</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:a0dfa006114c6e99221505a3ac302a54781362a4c368342fe29e4c16c30038ab</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: null,
+  &quot;attempt&quot;: 0,
+  &quot;blocking&quot;: true,
+  &quot;command&quot;: null,
+  &quot;detail&quot;: &quot;all 0 changed file(s) are inside the declared set of 2, and every one of them was declared before it was edited&quot;,
+  &quot;durationMs&quot;: 0,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;file-set&quot;,
+  &quot;measures&quot;: {
+    &quot;fileSetAmendments&quot;: 0,
+    &quot;filesDeclared&quot;: 2,
+    &quot;filesEditedBeforeDeclared&quot;: 0,
+    &quot;filesOutsideDeclaredSet&quot;: 0
+  },
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;blocking&quot;,
+  &quot;status&quot;: &quot;passed&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;{\n  \&quot;detail\&quot;: \&quot;all 0 changed file(s) are inside the declared set of 2, and every one of them was declared before it was edited\&quot;,\n  \&quot;outside\&quot;: [],\n  \&quot;editedBeforeAuthorized\&quot;: [],\n  \&quot;declared\&quot;: [\n    \&quot;src/alpha.js\&quot;,\n    \&quot;src/beta.js\&quot;\n  ],\n  \&quot;amendments\&quot;: 0,\n  \&quot;measures\&quot;: {\n    \&quot;filesOutsideDeclaredSet\&quot;: 0,\n    \&quot;filesEditedBeforeDeclared\&quot;: 0,\n    \&quot;filesDeclared\&quot;: 2,\n    \&quot;fileSetAmendments\&quot;: 0\n  }\n}&quot;,
+  &quot;title&quot;: &quot;changes stay inside the declared file set&quot;,
+  &quot;unavailable&quot;: null
+}</pre></details></article>
+<article class="record" id="record-11"><p class="record-head"><span class="sequence">11</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.082Z</span></p><p class="summary">gate placeholder: passed (no placeholder marker was introduced by this change)</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:9131d983387de9eb7d4119e3372e9aaeac213d679f40fe6ce44d305ae201cbec</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: null,
+  &quot;attempt&quot;: 0,
+  &quot;blocking&quot;: true,
+  &quot;command&quot;: null,
+  &quot;detail&quot;: &quot;no placeholder marker was introduced by this change&quot;,
+  &quot;durationMs&quot;: 0,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;placeholder&quot;,
+  &quot;measures&quot;: {
+    &quot;placeholdersIntroduced&quot;: 0
+  },
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;blocking&quot;,
+  &quot;status&quot;: &quot;passed&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;{\n  \&quot;detail\&quot;: \&quot;no placeholder marker was introduced by this change\&quot;,\n  \&quot;findings\&quot;: [],\n  \&quot;measures\&quot;: {\n    \&quot;placeholdersIntroduced\&quot;: 0\n  }\n}&quot;,
+  &quot;title&quot;: &quot;no placeholder markers introduced&quot;,
+  &quot;unavailable&quot;: null
+}</pre></details></article>
+<article class="record" id="record-12"><p class="record-head"><span class="sequence">12</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.082Z</span></p><p class="summary">gate secret-scan: passed (no known credential pattern appears in the added lines)</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:a7835a09b3b3084e5c8717793a57f87b6a2b53a47b0299f58c1506c7fb1d34ef</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: null,
+  &quot;attempt&quot;: 0,
+  &quot;blocking&quot;: true,
+  &quot;command&quot;: null,
+  &quot;detail&quot;: &quot;no known credential pattern appears in the added lines&quot;,
+  &quot;durationMs&quot;: 0,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;secret-scan&quot;,
+  &quot;measures&quot;: {
+    &quot;secretMatches&quot;: 0
+  },
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;blocking&quot;,
+  &quot;status&quot;: &quot;passed&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;{\n  \&quot;detail\&quot;: \&quot;no known credential pattern appears in the added lines\&quot;,\n  \&quot;hits\&quot;: [],\n  \&quot;measures\&quot;: {\n    \&quot;secretMatches\&quot;: 0\n  }\n}&quot;,
+  &quot;title&quot;: &quot;no credential material in the change&quot;,
+  &quot;unavailable&quot;: null
+}</pre></details></article>
+<article class="record" id="record-13"><p class="record-head"><span class="sequence">13</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.083Z</span></p><p class="summary">gate diff-budget: passed (within budget: 0 file(s) and 0 added line(s))</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:3699df0d48edb126a18888677a5ccc0028999e21327f66a651d33357f82a8fa9</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: null,
+  &quot;attempt&quot;: 0,
+  &quot;blocking&quot;: false,
+  &quot;command&quot;: null,
+  &quot;detail&quot;: &quot;within budget: 0 file(s) and 0 added line(s)&quot;,
+  &quot;durationMs&quot;: 0,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;diff-budget&quot;,
+  &quot;measures&quot;: {
+    &quot;addedLines&quot;: 0,
+    &quot;changedFiles&quot;: 0,
+    &quot;maxAddedLines&quot;: 600,
+    &quot;maxChangedFiles&quot;: 12
+  },
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;advisory&quot;,
+  &quot;status&quot;: &quot;passed&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;{\n  \&quot;detail\&quot;: \&quot;within budget: 0 file(s) and 0 added line(s)\&quot;,\n  \&quot;overBudget\&quot;: false,\n  \&quot;justificationRequired\&quot;: false,\n  \&quot;measures\&quot;: {\n    \&quot;changedFiles\&quot;: 0,\n    \&quot;addedLines\&quot;: 0,\n    \&quot;maxChangedFiles\&quot;: 12,\n    \&quot;maxAddedLines\&quot;: 600\n  }\n}&quot;,
+  &quot;title&quot;: &quot;change stays inside its size budget&quot;,
+  &quot;unavailable&quot;: null
+}</pre></details></article>
+<article class="record" id="record-14"><p class="record-head"><span class="sequence">14</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.143Z</span></p><p class="summary">gate typecheck: not-applicable (package.json declares no typecheck script)</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:73ce6fa08b3214965a2dce06ab6e5b217ce21637d7a2f3d3b62445c051405f7f</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: null,
+  &quot;attempt&quot;: 1,
+  &quot;blocking&quot;: true,
+  &quot;command&quot;: null,
+  &quot;detail&quot;: &quot;package.json declares no typecheck script&quot;,
+  &quot;durationMs&quot;: 0,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;typecheck&quot;,
+  &quot;measures&quot;: {},
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;blocking&quot;,
+  &quot;status&quot;: &quot;not-applicable&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;&quot;,
+  &quot;title&quot;: &quot;typecheck (node)&quot;,
+  &quot;unavailable&quot;: &quot;package.json declares no typecheck script&quot;
+}</pre></details></article>
+<article class="record" id="record-15"><p class="record-head"><span class="sequence">15</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.143Z</span></p><p class="summary">gate lint: not-applicable (package.json declares no lint script)</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:5028eccee18bc77126e9c6316c54688e5e2cc76ad040c4a00621aa39e4832391</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: null,
+  &quot;attempt&quot;: 1,
+  &quot;blocking&quot;: true,
+  &quot;command&quot;: null,
+  &quot;detail&quot;: &quot;package.json declares no lint script&quot;,
+  &quot;durationMs&quot;: 0,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;lint&quot;,
+  &quot;measures&quot;: {},
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;blocking&quot;,
+  &quot;status&quot;: &quot;not-applicable&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;&quot;,
+  &quot;title&quot;: &quot;lint (node)&quot;,
+  &quot;unavailable&quot;: &quot;package.json declares no lint script&quot;
+}</pre></details></article>
+<article class="record" id="record-16"><p class="record-head"><span class="sequence">16</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.144Z</span></p><p class="summary">gate format: not-applicable (package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging)</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:59be044ed78e9204ae1a9688d106bcc7cfb1787f8638e48fa80b66bc736cbb8e</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: null,
+  &quot;attempt&quot;: 1,
+  &quot;blocking&quot;: true,
+  &quot;command&quot;: null,
+  &quot;detail&quot;: &quot;package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging&quot;,
+  &quot;durationMs&quot;: 0,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;format&quot;,
+  &quot;measures&quot;: {},
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;blocking&quot;,
+  &quot;status&quot;: &quot;not-applicable&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;&quot;,
+  &quot;title&quot;: &quot;format (node)&quot;,
+  &quot;unavailable&quot;: &quot;package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging&quot;
+}</pre></details></article>
+<article class="record" id="record-17"><p class="record-head"><span class="sequence">17</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.211Z</span></p><p class="summary">gate tests: passed (1 collected, 1 passed, 0 failed, 0 skipped (exit 0))</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:18b91ed379f79aff9f0c198a2a2f3b50ba370feb01c28fa830fd12682ffc89b3</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: [
+    &quot;node&quot;,
+    &quot;--test&quot;,
+    &quot;--experimental-test-coverage&quot;,
+    &quot;--test-isolation=process&quot;,
+    &quot;--test-reporter=tap&quot;,
+    &quot;--test-reporter-destination=stdout&quot;,
+    &quot;--test-reporter=lcov&quot;,
+    &quot;--test-reporter-destination=/Users/brad/.swarm/sessions/20260825T025529-6d62fc-queue/coverage/tests.lcov&quot;
+  ],
+  &quot;attempt&quot;: 1,
+  &quot;blocking&quot;: true,
+  &quot;command&quot;: &quot;node --test --experimental-test-coverage --test-isolation=process --test-reporter=tap --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=/Users/brad/.swarm/sessions/20260825T025529-6d62fc-queue/coverage/tests.lcov&quot;,
+  &quot;detail&quot;: &quot;1 collected, 1 passed, 0 failed, 0 skipped (exit 0)&quot;,
+  &quot;durationMs&quot;: 66,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;tests&quot;,
+  &quot;measures&quot;: {
+    &quot;testsCollected&quot;: 1,
+    &quot;testsFailed&quot;: 0,
+    &quot;testsPassed&quot;: 1,
+    &quot;testsSkipped&quot;: 0
+  },
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;blocking&quot;,
+  &quot;status&quot;: &quot;passed&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;TAP version 13\n# Subtest: alpha\nok 1 - alpha\n  ---\n  duration_ms: 0.295709\n  type: &#39;test&#39;\n  ...\n1..1\n# tests 1\n# suites 0\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 35.25275\n# start of coverage report\n# ----------------------------------------------------------\n# file      | line % | branch % | funcs % | uncovered lines\n# ----------------------------------------------------------\n# src       |        |          |         | \n#  alpha.js | 100.00 |   100.00 |  100.00 | \n# ----------------------------------------------------------\n# all files | 100.00 |   100.00 |  100.00 | \n# ----------------------------------------------------------\n# end of coverage report\n&quot;,
+  &quot;title&quot;: &quot;tests (node --test --experimental-test-coverage --test-isolation=process --test-reporter=tap --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=/Users/brad/.swarm/sessions/20260825T025529-6d62fc-queue/coverage/tests.lcov)&quot;,
+  &quot;unavailable&quot;: null
+}</pre></details></article>
+<article class="record" id="record-18"><p class="record-head"><span class="sequence">18</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.211Z</span></p><p class="summary">gate file-set: passed (all 1 changed file(s) are inside the declared set of 2, and every one of them was declared before it was edited)</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:39999c2bc5935f773ae4075eed7115e36fa15e4b9688d213cd10b647dfa1b62a</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: null,
+  &quot;attempt&quot;: 1,
+  &quot;blocking&quot;: true,
+  &quot;command&quot;: null,
+  &quot;detail&quot;: &quot;all 1 changed file(s) are inside the declared set of 2, and every one of them was declared before it was edited&quot;,
+  &quot;durationMs&quot;: 0,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;file-set&quot;,
+  &quot;measures&quot;: {
+    &quot;fileSetAmendments&quot;: 0,
+    &quot;filesDeclared&quot;: 2,
+    &quot;filesEditedBeforeDeclared&quot;: 0,
+    &quot;filesOutsideDeclaredSet&quot;: 0
+  },
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;blocking&quot;,
+  &quot;status&quot;: &quot;passed&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;{\n  \&quot;detail\&quot;: \&quot;all 1 changed file(s) are inside the declared set of 2, and every one of them was declared before it was edited\&quot;,\n  \&quot;outside\&quot;: [],\n  \&quot;editedBeforeAuthorized\&quot;: [],\n  \&quot;declared\&quot;: [\n    \&quot;src/alpha.js\&quot;,\n    \&quot;src/beta.js\&quot;\n  ],\n  \&quot;amendments\&quot;: 0,\n  \&quot;measures\&quot;: {\n    \&quot;filesOutsideDeclaredSet\&quot;: 0,\n    \&quot;filesEditedBeforeDeclared\&quot;: 0,\n    \&quot;filesDeclared\&quot;: 2,\n    \&quot;fileSetAmendments\&quot;: 0\n  }\n}&quot;,
+  &quot;title&quot;: &quot;changes stay inside the declared file set&quot;,
+  &quot;unavailable&quot;: null
+}</pre></details></article>
+<article class="record" id="record-19"><p class="record-head"><span class="sequence">19</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.212Z</span></p><p class="summary">gate placeholder: passed (no placeholder marker was introduced by this change)</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:b4ac25c8430cdea688bb18d9328de164eb4897d2a3d8c46c622eb6b3d1e80131</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: null,
+  &quot;attempt&quot;: 1,
+  &quot;blocking&quot;: true,
+  &quot;command&quot;: null,
+  &quot;detail&quot;: &quot;no placeholder marker was introduced by this change&quot;,
+  &quot;durationMs&quot;: 0,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;placeholder&quot;,
+  &quot;measures&quot;: {
+    &quot;placeholdersIntroduced&quot;: 0
+  },
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;blocking&quot;,
+  &quot;status&quot;: &quot;passed&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;{\n  \&quot;detail\&quot;: \&quot;no placeholder marker was introduced by this change\&quot;,\n  \&quot;findings\&quot;: [],\n  \&quot;measures\&quot;: {\n    \&quot;placeholdersIntroduced\&quot;: 0\n  }\n}&quot;,
+  &quot;title&quot;: &quot;no placeholder markers introduced&quot;,
+  &quot;unavailable&quot;: null
+}</pre></details></article>
+<article class="record" id="record-20"><p class="record-head"><span class="sequence">20</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.212Z</span></p><p class="summary">gate secret-scan: passed (no known credential pattern appears in the added lines)</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:612a534c139d3fbdc899c74f5c29f24802beee529c5bb3b0d3e536e75bef8fb9</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: null,
+  &quot;attempt&quot;: 1,
+  &quot;blocking&quot;: true,
+  &quot;command&quot;: null,
+  &quot;detail&quot;: &quot;no known credential pattern appears in the added lines&quot;,
+  &quot;durationMs&quot;: 0,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;secret-scan&quot;,
+  &quot;measures&quot;: {
+    &quot;secretMatches&quot;: 0
+  },
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;blocking&quot;,
+  &quot;status&quot;: &quot;passed&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;{\n  \&quot;detail\&quot;: \&quot;no known credential pattern appears in the added lines\&quot;,\n  \&quot;hits\&quot;: [],\n  \&quot;measures\&quot;: {\n    \&quot;secretMatches\&quot;: 0\n  }\n}&quot;,
+  &quot;title&quot;: &quot;no credential material in the change&quot;,
+  &quot;unavailable&quot;: null
+}</pre></details></article>
+<article class="record" id="record-21"><p class="record-head"><span class="sequence">21</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.213Z</span></p><p class="summary">gate diff-budget: passed (within budget: 1 file(s) and 3 added line(s))</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:e806215b977e3064680abc6c1c3c533540bddeafbe4892c7114d2c0085c5a5d2</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: null,
+  &quot;attempt&quot;: 1,
+  &quot;blocking&quot;: false,
+  &quot;command&quot;: null,
+  &quot;detail&quot;: &quot;within budget: 1 file(s) and 3 added line(s)&quot;,
+  &quot;durationMs&quot;: 0,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;diff-budget&quot;,
+  &quot;measures&quot;: {
+    &quot;addedLines&quot;: 3,
+    &quot;changedFiles&quot;: 1,
+    &quot;maxAddedLines&quot;: 600,
+    &quot;maxChangedFiles&quot;: 12
+  },
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;advisory&quot;,
+  &quot;status&quot;: &quot;passed&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;{\n  \&quot;detail\&quot;: \&quot;within budget: 1 file(s) and 3 added line(s)\&quot;,\n  \&quot;overBudget\&quot;: false,\n  \&quot;justificationRequired\&quot;: false,\n  \&quot;measures\&quot;: {\n    \&quot;changedFiles\&quot;: 1,\n    \&quot;addedLines\&quot;: 3,\n    \&quot;maxChangedFiles\&quot;: 12,\n    \&quot;maxAddedLines\&quot;: 600\n  }\n}&quot;,
+  &quot;title&quot;: &quot;change stays inside its size budget&quot;,
+  &quot;unavailable&quot;: null
+}</pre></details></article>
+<article class="record" id="record-22"><p class="record-head"><span class="sequence">22</span><span class="type">merge-attempt</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.214Z</span></p><p class="summary">merge of worker-2 landed at 072dcb45be552afd96e492ecb7e5cc4f780bab1b</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:335dc348ada0fabd38dc6380f8cb3039c7ceb14e243b5f3079937a3425282105</p><details><summary>payload</summary><pre>{
+  &quot;blockingFailures&quot;: [],
+  &quot;branch&quot;: &quot;swarm/20260825T025529-6d62fc/worker-2&quot;,
+  &quot;commit&quot;: &quot;072dcb45be552afd96e492ecb7e5cc4f780bab1b&quot;,
+  &quot;conflictingPaths&quot;: [],
+  &quot;detail&quot;: &quot;worker-2 landed at 072dcb45be552afd96e492ecb7e5cc4f780bab1b&quot;,
+  &quot;gateRecords&quot;: [
+    &quot;sha256:73ce6fa08b3214965a2dce06ab6e5b217ce21637d7a2f3d3b62445c051405f7f&quot;,
+    &quot;sha256:5028eccee18bc77126e9c6316c54688e5e2cc76ad040c4a00621aa39e4832391&quot;,
+    &quot;sha256:59be044ed78e9204ae1a9688d106bcc7cfb1787f8638e48fa80b66bc736cbb8e&quot;,
+    &quot;sha256:18b91ed379f79aff9f0c198a2a2f3b50ba370feb01c28fa830fd12682ffc89b3&quot;,
+    &quot;sha256:39999c2bc5935f773ae4075eed7115e36fa15e4b9688d213cd10b647dfa1b62a&quot;,
+    &quot;sha256:b4ac25c8430cdea688bb18d9328de164eb4897d2a3d8c46c622eb6b3d1e80131&quot;,
+    &quot;sha256:612a534c139d3fbdc899c74f5c29f24802beee529c5bb3b0d3e536e75bef8fb9&quot;,
+    &quot;sha256:e806215b977e3064680abc6c1c3c533540bddeafbe4892c7114d2c0085c5a5d2&quot;
+  ],
+  &quot;landed&quot;: true,
+  &quot;position&quot;: 1,
+  &quot;rank&quot;: 1,
+  &quot;ratchetAccepted&quot;: true,
+  &quot;ratchetDetail&quot;: &quot;the ratchet accepted the attempt: no measure moved the wrong way (not compared: changedLineCoverage)&quot;,
+  &quot;reason&quot;: null,
+  &quot;role&quot;: &quot;winner&quot;,
+  &quot;workerId&quot;: &quot;worker-2&quot;
+}</pre></details></article>
+<article class="record" id="record-23"><p class="record-head"><span class="sequence">23</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.273Z</span></p><p class="summary">gate typecheck: not-applicable (package.json declares no typecheck script)</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:0b23a8a73cf4718ea6786200d3287914e6db076fa6f71fd99166d4ddf63e0705</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: null,
+  &quot;attempt&quot;: 2,
+  &quot;blocking&quot;: true,
+  &quot;command&quot;: null,
+  &quot;detail&quot;: &quot;package.json declares no typecheck script&quot;,
+  &quot;durationMs&quot;: 0,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;typecheck&quot;,
+  &quot;measures&quot;: {},
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;blocking&quot;,
+  &quot;status&quot;: &quot;not-applicable&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;&quot;,
+  &quot;title&quot;: &quot;typecheck (node)&quot;,
+  &quot;unavailable&quot;: &quot;package.json declares no typecheck script&quot;
+}</pre></details></article>
+<article class="record" id="record-24"><p class="record-head"><span class="sequence">24</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.274Z</span></p><p class="summary">gate lint: not-applicable (package.json declares no lint script)</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:a422d02c6eb58e8949a5864761cfe24a02265a96fd00d7576fc6c01797570050</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: null,
+  &quot;attempt&quot;: 2,
+  &quot;blocking&quot;: true,
+  &quot;command&quot;: null,
+  &quot;detail&quot;: &quot;package.json declares no lint script&quot;,
+  &quot;durationMs&quot;: 0,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;lint&quot;,
+  &quot;measures&quot;: {},
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;blocking&quot;,
+  &quot;status&quot;: &quot;not-applicable&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;&quot;,
+  &quot;title&quot;: &quot;lint (node)&quot;,
+  &quot;unavailable&quot;: &quot;package.json declares no lint script&quot;
+}</pre></details></article>
+<article class="record" id="record-25"><p class="record-head"><span class="sequence">25</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.274Z</span></p><p class="summary">gate format: not-applicable (package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging)</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:f3b82ad78630f46a1e9d2df82793bd6a444676634bc38a753f7a080c70a4517b</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: null,
+  &quot;attempt&quot;: 2,
+  &quot;blocking&quot;: true,
+  &quot;command&quot;: null,
+  &quot;detail&quot;: &quot;package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging&quot;,
+  &quot;durationMs&quot;: 0,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;format&quot;,
+  &quot;measures&quot;: {},
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;blocking&quot;,
+  &quot;status&quot;: &quot;not-applicable&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;&quot;,
+  &quot;title&quot;: &quot;format (node)&quot;,
+  &quot;unavailable&quot;: &quot;package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging&quot;
+}</pre></details></article>
+<article class="record" id="record-26"><p class="record-head"><span class="sequence">26</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.340Z</span></p><p class="summary">gate tests: passed (1 collected, 1 passed, 0 failed, 0 skipped (exit 0))</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:f5f41f89c9c64cfd9f29e3b80d0a55c3e3df0d3afe647da21a5d880b30a351de</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: [
+    &quot;node&quot;,
+    &quot;--test&quot;,
+    &quot;--experimental-test-coverage&quot;,
+    &quot;--test-isolation=process&quot;,
+    &quot;--test-reporter=tap&quot;,
+    &quot;--test-reporter-destination=stdout&quot;,
+    &quot;--test-reporter=lcov&quot;,
+    &quot;--test-reporter-destination=/Users/brad/.swarm/sessions/20260825T025529-6d62fc-queue/coverage/tests.lcov&quot;
+  ],
+  &quot;attempt&quot;: 2,
+  &quot;blocking&quot;: true,
+  &quot;command&quot;: &quot;node --test --experimental-test-coverage --test-isolation=process --test-reporter=tap --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=/Users/brad/.swarm/sessions/20260825T025529-6d62fc-queue/coverage/tests.lcov&quot;,
+  &quot;detail&quot;: &quot;1 collected, 1 passed, 0 failed, 0 skipped (exit 0)&quot;,
+  &quot;durationMs&quot;: 66,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;tests&quot;,
+  &quot;measures&quot;: {
+    &quot;testsCollected&quot;: 1,
+    &quot;testsFailed&quot;: 0,
+    &quot;testsPassed&quot;: 1,
+    &quot;testsSkipped&quot;: 0
+  },
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;blocking&quot;,
+  &quot;status&quot;: &quot;passed&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;TAP version 13\n# Subtest: alpha\nok 1 - alpha\n  ---\n  duration_ms: 0.291208\n  type: &#39;test&#39;\n  ...\n1..1\n# tests 1\n# suites 0\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 36.188125\n# start of coverage report\n# ----------------------------------------------------------\n# file      | line % | branch % | funcs % | uncovered lines\n# ----------------------------------------------------------\n# src       |        |          |         | \n#  alpha.js |  71.43 |   100.00 |   50.00 | 6-7\n# ----------------------------------------------------------\n# all files |  71.43 |   100.00 |   50.00 | \n# ----------------------------------------------------------\n# end of coverage report\n&quot;,
+  &quot;title&quot;: &quot;tests (node --test --experimental-test-coverage --test-isolation=process --test-reporter=tap --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=/Users/brad/.swarm/sessions/20260825T025529-6d62fc-queue/coverage/tests.lcov)&quot;,
+  &quot;unavailable&quot;: null
+}</pre></details></article>
+<article class="record" id="record-27"><p class="record-head"><span class="sequence">27</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.341Z</span></p><p class="summary">gate file-set: passed (all 2 changed file(s) are inside the declared set of 2, and every one of them was declared before it was edited)</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:e952e18fefca43c6bfaa4ed4a8945ee6e913b04bf19c054600ff49239dae0aab</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: null,
+  &quot;attempt&quot;: 2,
+  &quot;blocking&quot;: true,
+  &quot;command&quot;: null,
+  &quot;detail&quot;: &quot;all 2 changed file(s) are inside the declared set of 2, and every one of them was declared before it was edited&quot;,
+  &quot;durationMs&quot;: 0,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;file-set&quot;,
+  &quot;measures&quot;: {
+    &quot;fileSetAmendments&quot;: 0,
+    &quot;filesDeclared&quot;: 2,
+    &quot;filesEditedBeforeDeclared&quot;: 0,
+    &quot;filesOutsideDeclaredSet&quot;: 0
+  },
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;blocking&quot;,
+  &quot;status&quot;: &quot;passed&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;{\n  \&quot;detail\&quot;: \&quot;all 2 changed file(s) are inside the declared set of 2, and every one of them was declared before it was edited\&quot;,\n  \&quot;outside\&quot;: [],\n  \&quot;editedBeforeAuthorized\&quot;: [],\n  \&quot;declared\&quot;: [\n    \&quot;src/alpha.js\&quot;,\n    \&quot;src/beta.js\&quot;\n  ],\n  \&quot;amendments\&quot;: 0,\n  \&quot;measures\&quot;: {\n    \&quot;filesOutsideDeclaredSet\&quot;: 0,\n    \&quot;filesEditedBeforeDeclared\&quot;: 0,\n    \&quot;filesDeclared\&quot;: 2,\n    \&quot;fileSetAmendments\&quot;: 0\n  }\n}&quot;,
+  &quot;title&quot;: &quot;changes stay inside the declared file set&quot;,
+  &quot;unavailable&quot;: null
+}</pre></details></article>
+<article class="record" id="record-28"><p class="record-head"><span class="sequence">28</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.342Z</span></p><p class="summary">gate placeholder: passed (no placeholder marker was introduced by this change)</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:82220ff1c2ab0c235425c623ed5f752c66901f4c1b0f352e47ddfaded706fd5e</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: null,
+  &quot;attempt&quot;: 2,
+  &quot;blocking&quot;: true,
+  &quot;command&quot;: null,
+  &quot;detail&quot;: &quot;no placeholder marker was introduced by this change&quot;,
+  &quot;durationMs&quot;: 0,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;placeholder&quot;,
+  &quot;measures&quot;: {
+    &quot;placeholdersIntroduced&quot;: 0
+  },
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;blocking&quot;,
+  &quot;status&quot;: &quot;passed&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;{\n  \&quot;detail\&quot;: \&quot;no placeholder marker was introduced by this change\&quot;,\n  \&quot;findings\&quot;: [],\n  \&quot;measures\&quot;: {\n    \&quot;placeholdersIntroduced\&quot;: 0\n  }\n}&quot;,
+  &quot;title&quot;: &quot;no placeholder markers introduced&quot;,
+  &quot;unavailable&quot;: null
+}</pre></details></article>
+<article class="record" id="record-29"><p class="record-head"><span class="sequence">29</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.342Z</span></p><p class="summary">gate secret-scan: passed (no known credential pattern appears in the added lines)</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:5883dd3c84a8f02c013e3d482595e2725170279df909446d7296839180b577ed</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: null,
+  &quot;attempt&quot;: 2,
+  &quot;blocking&quot;: true,
+  &quot;command&quot;: null,
+  &quot;detail&quot;: &quot;no known credential pattern appears in the added lines&quot;,
+  &quot;durationMs&quot;: 0,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;secret-scan&quot;,
+  &quot;measures&quot;: {
+    &quot;secretMatches&quot;: 0
+  },
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;blocking&quot;,
+  &quot;status&quot;: &quot;passed&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;{\n  \&quot;detail\&quot;: \&quot;no known credential pattern appears in the added lines\&quot;,\n  \&quot;hits\&quot;: [],\n  \&quot;measures\&quot;: {\n    \&quot;secretMatches\&quot;: 0\n  }\n}&quot;,
+  &quot;title&quot;: &quot;no credential material in the change&quot;,
+  &quot;unavailable&quot;: null
+}</pre></details></article>
+<article class="record" id="record-30"><p class="record-head"><span class="sequence">30</span><span class="type">gate-run</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.343Z</span></p><p class="summary">gate diff-budget: passed (within budget: 2 file(s) and 7 added line(s))</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:be59751788a49224747470554ac49efe73c9dbed76741e1e697b7107f9fd7e21</p><details><summary>payload</summary><pre>{
+  &quot;argv&quot;: null,
+  &quot;attempt&quot;: 2,
+  &quot;blocking&quot;: false,
+  &quot;command&quot;: null,
+  &quot;detail&quot;: &quot;within budget: 2 file(s) and 7 added line(s)&quot;,
+  &quot;durationMs&quot;: 0,
+  &quot;exitCode&quot;: 0,
+  &quot;gateId&quot;: &quot;diff-budget&quot;,
+  &quot;measures&quot;: {
+    &quot;addedLines&quot;: 7,
+    &quot;changedFiles&quot;: 2,
+    &quot;maxAddedLines&quot;: 600,
+    &quot;maxChangedFiles&quot;: 12
+  },
+  &quot;outputTruncated&quot;: false,
+  &quot;severity&quot;: &quot;advisory&quot;,
+  &quot;status&quot;: &quot;passed&quot;,
+  &quot;stderr&quot;: &quot;&quot;,
+  &quot;stdout&quot;: &quot;{\n  \&quot;detail\&quot;: \&quot;within budget: 2 file(s) and 7 added line(s)\&quot;,\n  \&quot;overBudget\&quot;: false,\n  \&quot;justificationRequired\&quot;: false,\n  \&quot;measures\&quot;: {\n    \&quot;changedFiles\&quot;: 2,\n    \&quot;addedLines\&quot;: 7,\n    \&quot;maxChangedFiles\&quot;: 12,\n    \&quot;maxAddedLines\&quot;: 600\n  }\n}&quot;,
+  &quot;title&quot;: &quot;change stays inside its size budget&quot;,
+  &quot;unavailable&quot;: null
+}</pre></details></article>
+<article class="record" id="record-31"><p class="record-head"><span class="sequence">31</span><span class="type">merge-attempt</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.343Z</span></p><p class="summary">merge of worker-3 landed at 6893bd08bc0fc00cf5efc8a469231674807a87ad</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:a7489810c82ca9502e4f1495265266edc2438830d3024c6eb5997aefe2d8a594</p><details><summary>payload</summary><pre>{
+  &quot;blockingFailures&quot;: [],
+  &quot;branch&quot;: &quot;swarm/20260825T025529-6d62fc/worker-3&quot;,
+  &quot;commit&quot;: &quot;6893bd08bc0fc00cf5efc8a469231674807a87ad&quot;,
+  &quot;conflictingPaths&quot;: [],
+  &quot;detail&quot;: &quot;worker-3 landed at 6893bd08bc0fc00cf5efc8a469231674807a87ad&quot;,
+  &quot;gateRecords&quot;: [
+    &quot;sha256:0b23a8a73cf4718ea6786200d3287914e6db076fa6f71fd99166d4ddf63e0705&quot;,
+    &quot;sha256:a422d02c6eb58e8949a5864761cfe24a02265a96fd00d7576fc6c01797570050&quot;,
+    &quot;sha256:f3b82ad78630f46a1e9d2df82793bd6a444676634bc38a753f7a080c70a4517b&quot;,
+    &quot;sha256:f5f41f89c9c64cfd9f29e3b80d0a55c3e3df0d3afe647da21a5d880b30a351de&quot;,
+    &quot;sha256:e952e18fefca43c6bfaa4ed4a8945ee6e913b04bf19c054600ff49239dae0aab&quot;,
+    &quot;sha256:82220ff1c2ab0c235425c623ed5f752c66901f4c1b0f352e47ddfaded706fd5e&quot;,
+    &quot;sha256:5883dd3c84a8f02c013e3d482595e2725170279df909446d7296839180b577ed&quot;,
+    &quot;sha256:be59751788a49224747470554ac49efe73c9dbed76741e1e697b7107f9fd7e21&quot;
+  ],
+  &quot;landed&quot;: true,
+  &quot;position&quot;: 2,
+  &quot;rank&quot;: 1,
+  &quot;ratchetAccepted&quot;: true,
+  &quot;ratchetDetail&quot;: &quot;the ratchet accepted the attempt: no measure moved the wrong way (not compared: changedLineCoverage)&quot;,
+  &quot;reason&quot;: null,
+  &quot;role&quot;: &quot;winner&quot;,
+  &quot;workerId&quot;: &quot;worker-3&quot;
+}</pre></details></article>
+<article class="record" id="record-32"><p class="record-head"><span class="sequence">32</span><span class="type">task-graph-outcome</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.373Z</span></p><p class="summary">task-graph-outcome</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:9bdbc38a68e49dc715dcc81e72f5531975eb31a55a14dae6ddd2ff9f4c2d640c</p><details><summary>payload</summary><pre>{
+  &quot;blocked&quot;: [],
+  &quot;goal&quot;: &quot;Add a shouting variant to the alpha module and create a beta module with its own test file&quot;,
+  &quot;landed&quot;: 2,
+  &quot;nodes&quot;: 3,
+  &quot;perNode&quot;: [
+    {
+      &quot;blocked&quot;: false,
+      &quot;commit&quot;: &quot;6893bd08bc0fc00cf5efc8a469231674807a87ad&quot;,
+      &quot;id&quot;: &quot;shouting-alpha&quot;,
+      &quot;landed&quot;: true,
+      &quot;workerId&quot;: &quot;worker-3&quot;
+    },
+    {
+      &quot;blocked&quot;: false,
+      &quot;commit&quot;: &quot;072dcb45be552afd96e492ecb7e5cc4f780bab1b&quot;,
+      &quot;id&quot;: &quot;create-beta&quot;,
+      &quot;landed&quot;: true,
+      &quot;workerId&quot;: &quot;worker-2&quot;
+    },
+    {
+      &quot;blocked&quot;: false,
+      &quot;commit&quot;: null,
+      &quot;id&quot;: &quot;beta-test&quot;,
+      &quot;landed&quot;: false,
+      &quot;workerId&quot;: &quot;worker-1&quot;
+    }
+  ]
+}</pre></details></article>
+<article class="record" id="record-34"><p class="record-head"><span class="sequence">34</span><span class="type">worker-finished</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.373Z</span></p><p class="summary">worker worker-1 finished: the loop stopped with max-steps</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:f6bcd40bf7acf4ae5477e250907856f9360bb48d98bd0d602a57cf4f90dffe34</p><details><summary>payload</summary><pre>{
+  &quot;branch&quot;: &quot;swarm/20260825T025529-6d62fc/worker-1&quot;,
+  &quot;chainHead&quot;: &quot;sha256:0baa8d587486553eb4032e152d844b40ae598bf63f945b846ebf0b867832e1db&quot;,
+  &quot;commit&quot;: null,
+  &quot;declaredFiles&quot;: [
+    &quot;src/beta.js&quot;,
+    &quot;src/beta.test.js&quot;
+  ],
+  &quot;detail&quot;: &quot;the loop stopped with max-steps&quot;,
+  &quot;green&quot;: false,
+  &quot;recordCount&quot;: 63,
+  &quot;sessionId&quot;: &quot;20260825T025529-6d62fc-worker-1&quot;,
+  &quot;task&quot;: &quot;Create src/beta.test.js with a test for the beta function asserting it returns &#39;beta&#39;.&quot;,
+  &quot;workerId&quot;: &quot;worker-1&quot;
+}</pre></details></article>
+<article class="record" id="record-35"><p class="record-head"><span class="sequence">35</span><span class="type">worker-finished</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.374Z</span></p><p class="summary">worker worker-2 finished: gates green after 9 step(s)</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:3c1f69ade6f1ccbbba7cb459bd22744b132ff75cce552eeafe156220061c82a5</p><details><summary>payload</summary><pre>{
+  &quot;branch&quot;: &quot;swarm/20260825T025529-6d62fc/worker-2&quot;,
+  &quot;chainHead&quot;: &quot;sha256:63a84ea286bc94fa5af8a06558c632a1563bc28dedbac98feadaadc38fd237aa&quot;,
+  &quot;commit&quot;: &quot;d6a64d83b4e66d524ca4c163ac34224715fc60ea&quot;,
+  &quot;declaredFiles&quot;: [
+    &quot;src/beta.js&quot;
+  ],
+  &quot;detail&quot;: &quot;gates green after 9 step(s)&quot;,
+  &quot;green&quot;: true,
+  &quot;recordCount&quot;: 39,
+  &quot;sessionId&quot;: &quot;20260825T025529-6d62fc-worker-2&quot;,
+  &quot;task&quot;: &quot;Create src/beta.js with a simple function that returns &#39;beta&#39;.&quot;,
+  &quot;workerId&quot;: &quot;worker-2&quot;
+}</pre></details></article>
+<article class="record" id="record-36"><p class="record-head"><span class="sequence">36</span><span class="type">worker-finished</span><span class="actor">harness</span><span class="time">2026-08-25T03:04:21.374Z</span></p><p class="summary">worker worker-3 finished: gates green after 4 step(s)</p><p class="tags">provenance: <span class="tag">tool-output</span></p><p class="digest">sha256:da26b5737bde947d73e3f95643d714198fa3662c54c207a2a9198b5befe92ad3</p><details><summary>payload</summary><pre>{
+  &quot;branch&quot;: &quot;swarm/20260825T025529-6d62fc/worker-3&quot;,
+  &quot;chainHead&quot;: &quot;sha256:fb99a6f687931358795acc533235ff9d3b5b2f0a84686bed642b2c8024ec0d66&quot;,
+  &quot;commit&quot;: &quot;279a0699856dd96405385c364fc8380adfa47752&quot;,
+  &quot;declaredFiles&quot;: [
+    &quot;src/alpha.js&quot;
+  ],
+  &quot;detail&quot;: &quot;gates green after 4 step(s)&quot;,
+  &quot;green&quot;: true,
+  &quot;recordCount&quot;: 107,
+  &quot;sessionId&quot;: &quot;20260825T025529-6d62fc-worker-3&quot;,
+  &quot;task&quot;: &quot;Modify src/alpha.js to add a shouting variant of the alpha function that returns &#39;ALPHA!&#39; (in uppercase with exclamation mark), while keeping the original alpha function unchanged.&quot;,
+  &quot;workerId&quot;: &quot;worker-3&quot;
+}</pre></details></article>
+</section>
+</main>
+<footer><p>Each tool-call record carries a derivation score: how much its arguments overlapped content the model had recently read. That is a text-overlap heuristic with a false-positive rate, not an information-flow guarantee, and a flagged call means plausible influence rather than proven influence.</p><p>36 evidence records. Verify this bundle without installing anything: <code>node verify.mjs .</code> from this directory.</p><p class="digest">signature ed25519 over the chain head, public key MCowBQYDK2VwAyEAj4fWSripWGWAVm7hJxUJV1YSjQaiAOe69eFhkKY/cNY=</p></footer>
+</body>
+</html>
