@@ -75,9 +75,38 @@ this tool makes none.
 `node verify.mjs .` exits 0 on this bundle too, including the check that each worker chain
 head is named by a coordinator record.
 
+## What a cap on the fan-out is for
+
+The first default for `--concurrency` was `availableParallelism() - 1`, which on the machine
+these runs were made on is seventeen. Three concurrent agent loops against a locally served
+27b model aborted the model server outright, and a separate run left a 61 GB model resident on
+a 64 GB machine, taking system free memory to 8%. Cores measure none of what a worker costs: a
+worktree, a full run of the project's test suite, and a share of one model server.
+
+The default is now one where the model is served locally, and four otherwise. Sampling free
+memory every five seconds through a redundancy run under that default, on the same machine and
+the same server:
+
+| elapsed | free | rapid-mlx resident |
+| --- | --- | --- |
+| 5s | 93% | 27.0 GB |
+| 65s | 37% | 27.1 GB |
+| 165s | 34% | 27.1 GB |
+| 285s | 32% | 27.1 GB |
+| 295s | run finished, exit 0 | |
+
+Free memory held between 31% and 38% for the whole run and the server did not grow or fall
+over. The same shape held across a planner run of 525 seconds. The run prints the cap it chose
+(`starting 1 task(s) 3 ways from HEAD, 1 of 3 worker(s) at a time`) so the number is visible
+rather than inferred.
+
+This is one machine and one server. What it establishes is that the previous default was wrong
+by a wide margin, not that the new one is right everywhere, which is why `--concurrency`
+overrides it.
+
 ## What neither run shows
 
-Two runs on one model on one machine. No throughput figure, no comparison against anything,
+Two runs on one model on one machine, and a memory trace from one more. No throughput figure, no comparison against anything,
 and nothing about how often a redundant attempt is worth its tokens. Both signed with a
 per-run key, because this machine's keychain entry is not a usable one, and both manifests
 say `keySource: ephemeral` rather than implying otherwise.

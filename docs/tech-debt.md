@@ -254,6 +254,37 @@ the majority of the bytes, because the recorder writes the system prompt and the
 transcript on every step. Changing what is recorded touches the evidence contract, so it is
 named here rather than trimmed as a side effect of a page layout.
 
+## Debt: every parallel run leaves its branches in the repository
+
+A run creates `swarm/<runId>/<workerId>` per worker plus an integration branch. The worktrees
+are removed in a `finally`, but the branches are left on purpose: the merge queue needs them
+after their worktree is gone. Nothing removes them afterwards, so a repository accumulates
+`tasks x redundancy + 1` branches per run, forever. Three verification runs on a scratch repo
+left seven behind, and a run killed part-way leaves its worktrees registered too, which makes
+the next run fail on `git worktree add` at a path that already exists.
+
+The fix is a sweep at the end of a run that deletes the branches nothing landed from, and a
+line in the report saying what it removed. It is not done because it lands in the run path
+that was just verified end to end, and re-verifying that is a live-model run per change. It is
+a wart rather than a hazard: `git branch -D` on the `swarm/` prefix clears it, and a killed run
+needs `git worktree prune` beside it.
+
+## Debt: a broad goal makes the planner return nothing, and the run only says it declared nothing
+
+`--goal` asks a model to read the workspace and declare a task graph. On a two-part goal
+("give the a module a shouting variant, and add a b module beside it with its own test") the
+planner listed the workspace, read two files, and returned a response with neither text nor
+tool calls, which the loop correctly stops on as `empty-response`. The same model on the same
+server handled a one-part goal ("add a b module with its own test") without trouble: three
+reads, then a graph. So this is breadth, not the pairing, and the worker path on that pairing
+is fine, since three redundant attempts all went green on it.
+
+What the person sees is "the planner did not declare a task graph", which names the session to
+read and suggests a narrower goal, and that is most of what is useful. What it does not say is
+that the loop stopped on an empty response rather than on a refusal or a budget, which is the
+detail that tells a broad goal apart from a model that cannot use the tool at all. The stop
+reason is on the planner's chain; it is not in the message.
+
 ## Debt: the weekly scan files the same 21 semgrep findings every Monday
 
 Nineteen of them are `detected-github-token` inside the secret scrubber's own test corpus and
