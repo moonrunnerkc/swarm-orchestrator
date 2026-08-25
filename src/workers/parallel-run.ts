@@ -13,9 +13,17 @@ import { emptyMeasureSnapshot, type MeasureSnapshot } from "../gates/measure-sna
 import { summarizeRatchet } from "../gates/ratchet-summary.ts";
 import { type Attempt, type AttemptSelection, selectAttempt } from "./attempt-selector.ts";
 import { type PlannedAttempt, planAttempts } from "./fan-out.ts";
-import { type MergeQueueResult, type QueueCandidate, runMergeQueue } from "./merge-queue.ts";
+import { claimGraphOutcome, declareTaskGraph, type NodeOutcome } from "./graph-record.ts";
+import {
+  type MergeQueueResult,
+  type QueueCandidate,
+  type QueueLanding,
+  runMergeQueue,
+} from "./merge-queue.ts";
 import { createWorkPool } from "./pool.ts";
+import { blockedBy, scheduleLayers } from "./schedule.ts";
 import { recordSelection } from "./selection-record.ts";
+import type { TaskGraph } from "./task-graph.ts";
 import { peersFor, type TrailPeer } from "./trail.ts";
 import { createReadTrailTool } from "./trail-tool.ts";
 import { addWorktree, type Worktree } from "./worktree.ts";
@@ -45,6 +53,12 @@ interface ParallelRunOptions {
   readonly concurrency: number;
   /** Names the seeds that make attempts at one task diverge, so a report can re-derive them. */
   readonly modelSpec: string;
+  /**
+   * The declared decomposition, where there is one. Its nodes replace the flat task list and
+   * are landed layer by layer, each layer branching from the tree the one before it left.
+   */
+  readonly graph?: TaskGraph;
+  readonly graphSource?: "goal" | "file";
   readonly gateOptions?: GateSetOptions;
   readonly abortSignal: AbortSignal;
 }
@@ -97,18 +111,21 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
   // the whole coordination medium: no bus, no shared state a worker can write through, just
   // the ledgers they were each already writing (invariant 11 untouched, these are reads).
   const registered: TrailPeer[] = [];
-  const planned = planAttempts(options.tasks, options.redundancy, options.modelSpec);
   // The slot covers the whole worktree lifetime rather than the agent loop alone: several
   // attempts per task multiplies the concurrent `git worktree add` calls against one
   // repository, which is the contention the cap exists for.
   const pool = createWorkPool(options.concurrency);
-  const workers = await Promise.all(
-    planned.map((attempt) =>
-      pool.run(() => runOneWorker(attempt, baseCommit, options, registered)),
-    ),
-  );
 
-  const { proposals, selections } = await chooseProposals(workers, baseCommit, options);
+  const graph = options.graph ?? null;
+  if (graph !== null) {
+    await declareTaskGraph(options.coordinator, graph, options.graphSource ?? "file");
+  }
+  // A run without a graph is a run with one layer holding every task, so both paths are the
+  // same loop and the ordinary run reaches the queue exactly once, as it always did. A graph's
+  // layers carry their node ids, which is what a blocked node is named by.
+  const layers: readonly { ids: readonly string[]; tasks: readonly string[] }[] =
+    graph === null ? [{ ids: [], tasks: options.tasks }] : layersOf(graph);
+
   const integration = await addWorktree({
     repositoryRoot: options.repositoryRoot,
     path: join(options.scratchRoot, "integration"),
@@ -116,30 +133,108 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
     baseRef: baseCommit,
   });
 
+  const workers: WorkerResult[] = [];
+  const selections: AttemptSelection[] = [];
+  const landings: QueueLanding[] = [];
+  const landedTasks = new Set<string>();
   let queue: MergeQueueResult | null = null;
+  let head = baseCommit;
+  let tasksPlanned = 0;
+  const notLanded = new Set<string>();
+  const nodeOfTask = new Map<string, string>();
+  // One registry across every layer: the first declares, the rest amend, because the union
+  // of what the workers touched is not known until the last layer has run.
+  const fileSet = createFileSetRegistry(options.coordinator);
+
+  async function landLayer(proposals: readonly RankedProposal[]): Promise<void> {
+    const landed = await runMergeQueue({
+      integrationPath: integration.path,
+      // Each layer is ratcheted against the tree the layer before it left, which is also
+      // the tree its workers branched from. A dependent node has to see its parent's work.
+      baseCommit: head,
+      candidates: proposals.map((proposal) => ({
+        ...asCandidate(proposal.winner),
+        alternates: proposal.alternates.map(asCandidate),
+      })),
+      evidence: options.coordinator,
+      fileSet,
+      clock: options.clock,
+      emit: (event) => {
+        options.emit("queue", event);
+      },
+      ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
+    });
+
+    landings.push(...landed.landings);
+    head = landed.headCommit;
+    queue = { ...landed, baseCommit, headCommit: head, landings };
+    for (const landing of landed.landings.filter((one) => one.landed)) {
+      const worker = workers.find((one) => one.workerId === landing.workerId);
+      if (worker !== undefined) {
+        landedTasks.add(worker.taskId);
+      }
+    }
+  }
+
   try {
-    if (proposals.length > 0) {
-      queue = await runMergeQueue({
-        integrationPath: integration.path,
-        baseCommit,
-        candidates: proposals.map((proposal) => ({
-          ...asCandidate(proposal.winner),
-          alternates: proposal.alternates.map(asCandidate),
-        })),
-        evidence: options.coordinator,
-        fileSet: createFileSetRegistry(options.coordinator),
-        clock: options.clock,
-        emit: (event) => {
-          options.emit("queue", event);
-        },
-        ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
+    for (const layer of layers) {
+      const blocked = graph === null ? new Set<string>() : new Set(blockedBy(graph, notLanded));
+      const runnable = layer.ids
+        .map((id, index) => ({ id, task: layer.tasks[index] ?? "" }))
+        .filter((one) => !blocked.has(one.id));
+      const tasks = graph === null ? layer.tasks : runnable.map((one) => one.task);
+      if (tasks.length === 0) {
+        continue;
+      }
+      const planned = planAttempts(tasks, options.redundancy, options.modelSpec, {
+        tasks: tasksPlanned,
+        workers: workers.length,
       });
+      tasksPlanned += tasks.length;
+      const ran = await Promise.all(
+        planned.map((attempt) => pool.run(() => runOneWorker(attempt, head, options, registered))),
+      );
+      workers.push(...ran);
+      // taskIds come out of the planner in task order, so zipping them with the layer's
+      // runnable node ids is exact rather than a match on the brief text, which two nodes
+      // could legitimately share.
+      const taskIds = [...new Set(planned.map((one) => one.taskId))];
+      for (const [index, taskId] of taskIds.entries()) {
+        const nodeId = runnable[index]?.id;
+        if (nodeId !== undefined) {
+          nodeOfTask.set(taskId, nodeId);
+        }
+      }
+
+      const chosen = await chooseProposals(ran, head, options);
+      selections.push(...chosen.selections);
+
+      if (chosen.proposals.length > 0) {
+        await landLayer(chosen.proposals);
+      }
+
+      // Always, including where the layer proposed nothing at all: a node whose attempts all
+      // finished red did not land either, and its dependents must not run against a tree
+      // that lacks it. Skipping this on the empty path is what let a blocked node run.
+      for (const taskId of taskIds) {
+        const nodeId = nodeOfTask.get(taskId);
+        if (nodeId !== undefined && !landedTasks.has(taskId)) {
+          notLanded.add(nodeId);
+        }
+      }
     }
   } finally {
     await integration.remove();
   }
 
   await claimTheChosenLanded(selections, queue, options.coordinator);
+  if (graph !== null) {
+    await claimGraphOutcome(
+      options.coordinator,
+      graph,
+      nodeOutcomes(graph, workers, landings, nodeOfTask),
+    );
+  }
 
   // Recorded last, after the queue has had its say, because a rejection is appended to the
   // worker's own chain and that moves its head. The bundle's linkage has to name the head as
@@ -170,18 +265,10 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
     queue,
     integrationBranch: integration.branch,
     baseCommit,
-    headCommit: queue?.headCommit ?? baseCommit,
+    headCommit: head,
   };
 }
 
-/**
- * The one thing about a selection worth asserting, because it is the one thing that can be
- * false. The winner's id is fixed by the selection record written before the queue ran, and
- * whether that attempt landed is decided afterwards by gates and a ratchet that answer to
- * nobody here. A winner the integrated tree refused renders UNVERIFIED, naming the attempt
- * that was chosen beside the record of it not landing, which is exactly the case a reviewer
- * needs to see. A predicate over the selection's own arithmetic could never do that.
- */
 async function claimTheChosenLanded(
   selections: readonly AttemptSelection[],
   queue: MergeQueueResult | null,
@@ -417,4 +504,51 @@ function describeRed(blocking: readonly { readonly gateId: string }[], stopReaso
     return `blocking gate(s) failed: ${blocking.map((gate) => gate.gateId).join(", ")}`;
   }
   return `the loop stopped with ${stopReason}`;
+}
+
+/** Each layer as its node ids and the briefs those nodes hand their workers. */
+function layersOf(
+  graph: TaskGraph,
+): readonly { ids: readonly string[]; tasks: readonly string[] }[] {
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+  return scheduleLayers(graph).map((ids) => ({
+    ids,
+    tasks: ids.map((id) => byId.get(id)?.instruction ?? ""),
+  }));
+}
+
+/**
+ * What became of each declared node. A node whose layer never ran, because a parent did not
+ * land, is blocked rather than failed: it was never attempted, and reporting it as an
+ * attempt that produced nothing would be a different and untrue statement.
+ */
+function nodeOutcomes(
+  graph: TaskGraph,
+  workers: readonly WorkerResult[],
+  landings: readonly QueueLanding[],
+  nodeOfTask: ReadonlyMap<string, string>,
+): readonly NodeOutcome[] {
+  const landedWorkers = new Map(
+    landings.filter((one) => one.landed).map((one) => [one.workerId, one]),
+  );
+  const workersByNode = new Map<string, WorkerResult[]>();
+  for (const worker of workers) {
+    const nodeId = nodeOfTask.get(worker.taskId);
+    if (nodeId === undefined) {
+      continue;
+    }
+    workersByNode.set(nodeId, [...(workersByNode.get(nodeId) ?? []), worker]);
+  }
+
+  return graph.nodes.map((node) => {
+    const attempts = workersByNode.get(node.id) ?? [];
+    const landed = attempts.find((worker) => landedWorkers.has(worker.workerId));
+    return {
+      id: node.id,
+      workerId: landed?.workerId ?? attempts[0]?.workerId ?? null,
+      landed: landed !== undefined,
+      commit: landed === undefined ? null : (landedWorkers.get(landed.workerId)?.commit ?? null),
+      blocked: attempts.length === 0,
+    };
+  });
 }

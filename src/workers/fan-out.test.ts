@@ -65,3 +65,27 @@ describe("planning the fan-out", () => {
     expect(planAttempts([], 3, "ollama:qwen")).toEqual([]);
   });
 });
+
+describe("planning a later layer of a graph", () => {
+  it("continues the worker numbering, so two layers never share a branch name", () => {
+    const first = planAttempts(tasks, 2, "ollama:qwen");
+    const second = planAttempts(["a third"], 2, "ollama:qwen", {
+      tasks: tasks.length,
+      workers: first.length,
+    });
+
+    expect(second.map((one) => one.workerId)).toEqual(["worker-5", "worker-6"]);
+  });
+
+  it("continues the task numbering, so a later layer's task is not the first layer's", () => {
+    const second = planAttempts(["a third"], 1, "ollama:qwen", { tasks: 2, workers: 2 });
+
+    expect(second[0]?.taskId).toBe("task-3");
+  });
+
+  it("numbers from the start when nothing has been planned yet", () => {
+    expect(planAttempts(tasks, 1, "ollama:qwen", { tasks: 0, workers: 0 })).toEqual(
+      planAttempts(tasks, 1, "ollama:qwen"),
+    );
+  });
+});
