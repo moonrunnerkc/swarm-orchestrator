@@ -33,7 +33,13 @@
   it. `--tasks` also reads a JSON graph now, so a hand-written one and a declared one are the
   same artifact. The claim says every declared node ran and landed and says nothing about
   whether they satisfy the goal, which this tool does not check and says so.
-- **`--concurrency <n>`,** capping how many workers hold a worktree at once.
+- **`--concurrency <n>`,** capping how many workers hold a worktree at once. It defaults to
+  one against a local model server, because every worker in the run is asking one resident
+  model for tokens, so the parallelism buys nothing and costs the memory the model lives in.
+  Against a model served elsewhere it defaults to four and deliberately does not grow with the
+  hardware: what the machine is being asked for is N copies of the project's test suite, and a
+  bigger machine does not make those cheaper. The fan-out was unbounded before this, at any
+  redundancy.
 
 ### Fixed
 

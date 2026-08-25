@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createWorkPool } from "./pool.ts";
+import { createWorkPool, defaultWorkerConcurrency } from "./pool.ts";
 
 /** A task that reports when it started and finishes only when told to. */
 function held() {
@@ -92,5 +92,34 @@ describe("the work pool", () => {
     );
 
     expect(peak).toBe(4);
+  });
+});
+
+describe("how many workers a run should start at once by default", () => {
+  it("starts one at a time against a local model server", () => {
+    expect(defaultWorkerConcurrency({ servedLocally: true, cores: 18 })).toBe(1);
+  });
+
+  it("ignores the core count entirely when the model is served locally", () => {
+    expect(defaultWorkerConcurrency({ servedLocally: true, cores: 128 })).toBe(1);
+  });
+
+  it("does not scale with cores when the model is served elsewhere", () => {
+    const onManyCores = defaultWorkerConcurrency({ servedLocally: false, cores: 128 });
+    const onFew = defaultWorkerConcurrency({ servedLocally: false, cores: 8 });
+
+    expect(onManyCores).toBe(onFew);
+    expect(onManyCores).toBeLessThanOrEqual(4);
+  });
+
+  it("leaves a core free on a small machine, because each worker runs the test suite", () => {
+    expect(defaultWorkerConcurrency({ servedLocally: false, cores: 2 })).toBe(1);
+  });
+
+  it("never returns zero, which would mean no cap rather than no workers", () => {
+    for (const cores of [0, 1, 2, 4, 18]) {
+      expect(defaultWorkerConcurrency({ servedLocally: false, cores })).toBeGreaterThan(0);
+      expect(defaultWorkerConcurrency({ servedLocally: true, cores })).toBeGreaterThan(0);
+    }
   });
 });
