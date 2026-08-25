@@ -318,7 +318,30 @@ describe("the parallel command", () => {
       bundleDirectory: "/work/repo/out",
       modelSpec: null,
       localEndpoint: null,
+      redundancy: null,
+      concurrency: null,
     });
+  });
+
+  it("takes how many ways to try each task, and how many may run at once", () => {
+    expect(
+      parseCommandLine(
+        ["parallel", "--tasks", "t.txt", "--redundancy", "3", "--concurrency", "4"],
+        context,
+      ),
+    ).toMatchObject({ redundancy: 3, concurrency: 4 });
+  });
+
+  it("refuses a redundancy that is not a whole number of attempts", () => {
+    expect(() =>
+      parseCommandLine(["parallel", "--tasks", "t.txt", "--redundancy", "half"], context),
+    ).toThrow(/--redundancy/);
+  });
+
+  it("refuses a concurrency below one, because zero workers finish nothing", () => {
+    expect(() =>
+      parseCommandLine(["parallel", "--tasks", "t.txt", "--concurrency", "0"], context),
+    ).toThrow(/--concurrency/);
   });
 
   it("needs a task file, because a worker per line is how the workers are named", () => {

@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import type { Clock } from "./core/clock.ts";
 import { type AgentLoopOutcome, runAgentLoop } from "./core/loop.ts";
 import type { LoopEvent } from "./core/loop-events.ts";
-import type { ConversationMessage, ModelClient } from "./core/model-client.ts";
+import type { ConversationMessage, ModelClient, SamplingSettings } from "./core/model-client.ts";
 import type { RandomSource } from "./core/random-source.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
 import type { ResolveRequest } from "./gates/auto-resolve.ts";
@@ -84,6 +84,11 @@ export interface AgentTaskOptions {
    * offered nothing, so the single-agent tool set is unchanged (phase 6 stays phase 6).
    */
   readonly trail?: ToolDefinition;
+  /**
+   * Set only where a task is being tried several ways at once, so the attempts can diverge
+   * rather than being one answer written down N times. Absent is the ordinary run.
+   */
+  readonly sampling?: SamplingSettings;
 }
 
 export interface AgentTaskResult {
@@ -154,6 +159,7 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
     systemPrompt: options.trail === undefined ? systemPrompt : systemPrompt + trailInstruction,
     maxOutputTokens: 8192,
     retryPolicy: { attempts: 3, baseDelayMs: 500, maxJitterRatio: 0.5 },
+    ...(options.sampling === undefined ? {} : { sampling: options.sampling }),
   };
 
   const loop = await runAgentLoop(options.task, {

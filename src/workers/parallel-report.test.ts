@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EvidenceRecorder } from "../evidence/session.ts";
+import { emptyMeasureSnapshot } from "../gates/measure-snapshot.ts";
 import type { QueueLanding } from "./merge-queue.ts";
 import { renderParallelReport } from "./parallel-report.ts";
 import type { ParallelRunResult, WorkerResult } from "./parallel-run.ts";
@@ -9,6 +10,8 @@ const evidence = { sessionId: "s" } as EvidenceRecorder;
 function worker(overrides: Partial<WorkerResult> = {}): WorkerResult {
   return {
     workerId: "worker-1",
+    taskId: "task-1",
+    attemptIndex: 0,
     task: "add a shout to alpha",
     branch: "swarm/run1/worker-1",
     evidence,
@@ -16,6 +19,10 @@ function worker(overrides: Partial<WorkerResult> = {}): WorkerResult {
     commit: "a".repeat(40),
     declaredFiles: ["src/alpha.js"],
     detail: "gates green after 3 step(s)",
+    measures: emptyMeasureSnapshot,
+    erosions: 0,
+    changedFiles: 1,
+    addedLines: 4,
     ...overrides,
   };
 }
@@ -38,6 +45,7 @@ function landing(overrides: Partial<QueueLanding> = {}): QueueLanding {
 function report(overrides: Partial<ParallelRunResult> = {}): string {
   const result: ParallelRunResult = {
     workers: [worker()],
+    selections: [],
     queue: {
       baseCommit: "c".repeat(40),
       headCommit: "b".repeat(40),

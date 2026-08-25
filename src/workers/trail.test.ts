@@ -12,7 +12,7 @@ interface Entry {
  * A peer chain as the trail reads one: records paired with payloads. Digests are real so
  * the pairing is the same one a live recorder hands over.
  */
-function peer(workerId: string, entries: readonly Entry[]): TrailPeer {
+function peer(workerId: string, entries: readonly Entry[], taskId = workerId): TrailPeer {
   const payloads = new Map<string, JsonValue>();
   const records: LedgerRecord[] = entries.map((entry, index) => {
     const payloadDigest = digestOfJson(entry.payload);
@@ -30,6 +30,7 @@ function peer(workerId: string, entries: readonly Entry[]): TrailPeer {
   });
   return {
     workerId,
+    taskId,
     chain: {
       sessionId: `run-${workerId}`,
       records: () => records,
@@ -305,8 +306,8 @@ describe("the trail rendering", () => {
     });
 
     const trail = projectTrail([
-      { workerId: "worker-2", chain: chainCarrying({ files: ["src/alpha.ts"] }) },
-      { workerId: "worker-3", chain: chainCarrying({ files: ["src/beta.ts"] }) },
+      { workerId: "worker-2", taskId: "task-1", chain: chainCarrying({ files: ["src/alpha.ts"] }) },
+      { workerId: "worker-3", taskId: "task-2", chain: chainCarrying({ files: ["src/beta.ts"] }) },
     ]);
 
     expect(trail.signals).toEqual([
@@ -317,15 +318,23 @@ describe("the trail rendering", () => {
 });
 
 describe("choosing which peers a worker reads", () => {
-  const alpha = peer("worker-1", []);
-  const beta = peer("worker-2", []);
-  const gamma = peer("worker-3", []);
+  const alpha = peer("worker-1", [], "task-1");
+  const beta = peer("worker-2", [], "task-2");
+  const gamma = peer("worker-3", [], "task-3");
 
   it("hands a worker every peer but itself", () => {
-    expect(peersFor("worker-2", [alpha, beta, gamma])).toEqual([alpha, gamma]);
+    expect(peersFor("worker-2", "task-2", [alpha, beta, gamma])).toEqual([alpha, gamma]);
   });
 
   it("hands the only worker in a run nothing", () => {
-    expect(peersFor("worker-1", [alpha])).toEqual([]);
+    expect(peersFor("worker-1", "task-1", [alpha])).toEqual([]);
+  });
+
+  it("hides the other attempts at a worker's own task, so they stay separate samples", () => {
+    const first = peer("worker-1", [], "task-1");
+    const second = peer("worker-2", [], "task-1");
+    const elsewhere = peer("worker-3", [], "task-2");
+
+    expect(peersFor("worker-1", "task-1", [first, second, elsewhere])).toEqual([elsewhere]);
   });
 });

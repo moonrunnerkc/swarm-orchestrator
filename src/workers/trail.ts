@@ -35,6 +35,8 @@ export type TrailSignal =
 /** A peer's chain, read-only. A live recorder satisfies this without adapting. */
 export interface TrailPeer {
   readonly workerId: string;
+  /** Which task this worker is an attempt at, which decides who may read it. */
+  readonly taskId: string;
   readonly chain: Pick<EvidenceRecorder, "sessionId" | "records" | "payloads">;
 }
 
@@ -62,11 +64,19 @@ export function projectTrail(peers: readonly TrailPeer[]): Trail {
 }
 
 /**
- * A worker reads the others and not itself: its own chain is what it just did, and feeding
- * it back would be the run telling itself what it already knows.
+ * A worker reads other tasks, and neither itself nor the other attempts at its own task.
+ *
+ * Itself, because its own chain is what it just did. The others at its task, because
+ * redundancy only buys anything from independent samples: an attempt that reads what its
+ * rival declared converges on it, and two attempts that agree are one attempt run twice at
+ * twice the cost. Between tasks the opposite holds, which is what the trail is for.
  */
-export function peersFor(readerId: string, all: readonly TrailPeer[]): readonly TrailPeer[] {
-  return all.filter((candidate) => candidate.workerId !== readerId);
+export function peersFor(
+  readerId: string,
+  taskId: string,
+  all: readonly TrailPeer[],
+): readonly TrailPeer[] {
+  return all.filter((candidate) => candidate.workerId !== readerId && candidate.taskId !== taskId);
 }
 
 /**

@@ -285,6 +285,23 @@ describe("the trail tool a worker is given and the single-agent path is not", ()
     expect(names).toHaveLength(10);
   });
 
+  it("sends no sampling settings when none are asked for", async () => {
+    const spy = spyOn(stopAtOnce);
+
+    await task(stopAtOnce, { model: spy.model });
+
+    expect(spy.requests[0]?.sampling).toBeUndefined();
+  });
+
+  it("carries the sampling settings an attempt was given through to the model", async () => {
+    const spy = spyOn(stopAtOnce);
+    const sampling = { temperature: 0.7, topP: 0.95, seed: 12345 };
+
+    await task(stopAtOnce, { model: spy.model, sampling });
+
+    expect(spy.requests[0]?.sampling).toEqual(sampling);
+  });
+
   it("says the trail is a peer's account rather than a result, and quotes no peer", async () => {
     const spy = spyOn(stopAtOnce);
     const trail = createReadTrailTool({ peers: () => [] });
