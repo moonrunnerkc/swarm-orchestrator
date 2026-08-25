@@ -10,6 +10,8 @@ import type { EvidenceRecorder } from "../evidence/session.ts";
 import type { GateSetOptions } from "../gates/default-gates.ts";
 import { createFileSetRegistry } from "../gates/file-set.ts";
 import { type MergeQueueResult, runMergeQueue } from "./merge-queue.ts";
+import { peersFor, type TrailPeer } from "./trail.ts";
+import { createReadTrailTool } from "./trail-tool.ts";
 import { addWorktree, type Worktree } from "./worktree.ts";
 
 const runProcess = promisify(execFile);
@@ -69,9 +71,13 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
     await runProcess("git", ["rev-parse", options.baseRef], { cwd: options.repositoryRoot })
   ).stdout.trim();
 
+  // Every worker registers its chain here as it starts, and reads the others live. This is
+  // the whole coordination medium: no bus, no shared state a worker can write through, just
+  // the ledgers they were each already writing (invariant 11 untouched, these are reads).
+  const registered: TrailPeer[] = [];
   const workers = await Promise.all(
     options.tasks.map((task, index) =>
-      runOneWorker(task, `worker-${index + 1}`, baseCommit, options),
+      runOneWorker(task, `worker-${index + 1}`, baseCommit, options, registered),
     ),
   );
 
@@ -146,8 +152,10 @@ async function runOneWorker(
   workerId: string,
   baseCommit: string,
   options: ParallelRunOptions,
+  registered: TrailPeer[],
 ): Promise<WorkerResult> {
   const evidence = await options.createWorkerSession(workerId);
+  registered.push({ workerId, chain: evidence });
   const branch = `swarm/${options.runId}/${workerId}`;
   let worktree: Worktree | null = null;
 
@@ -191,6 +199,7 @@ async function runOneWorker(
       confirm: () => Promise.resolve(false),
       abortSignal: options.abortSignal,
       homeDir: options.scratchRoot,
+      trail: createReadTrailTool({ peers: () => peersFor(workerId, registered) }),
       ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
     });
 

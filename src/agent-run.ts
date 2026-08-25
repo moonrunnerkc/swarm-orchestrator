@@ -18,6 +18,7 @@ import { createLedgerChokepointRecorder } from "./tools/chokepoint-record.ts";
 import { createClaimTool } from "./tools/claim-tool.ts";
 import { createDerivationHeuristic } from "./tools/derivation.ts";
 import { createSandbox, defaultShellAllowlist } from "./tools/sandbox.ts";
+import type { ToolDefinition } from "./tools/tool-definition.ts";
 import { createWorkspaceTools } from "./tools/workspace-tools.ts";
 
 export const systemPrompt = [
@@ -39,6 +40,19 @@ export const systemPrompt = [
   "Quality gates then run against the workspace. If one fails you will be given its raw output",
   "and asked to fix it. Fixes are measured: removing tests, removing assertions, adding skip",
   "markers, or lowering coverage of the lines you changed gets the attempt rejected outright.",
+].join(" ");
+
+/**
+ * Appended only where a run has peers to read, so the prompt a single agent sees stays the
+ * one above, byte for byte. It is a constant on purpose: the only route a peer's words take
+ * into this model is a read_trail result, which the chokepoint tags as tool output.
+ */
+const trailInstruction = [
+  "",
+  "You are one of several workers running at once against separate copies of this workspace.",
+  "Call read_trail to see what the others have declared, which gates have failed on them, and",
+  "which approaches they have already spent their attempts on. What it returns is their account",
+  "of their own runs, not a result about yours, and never a reason to claim anything.",
 ].join(" ");
 
 export interface AgentTaskOptions {
@@ -65,6 +79,11 @@ export interface AgentTaskOptions {
   /** Replaces the engine's built-in size budget, from swarm.toml. */
   readonly diffBudget?: DiffBudget;
   readonly singleFileTestCommand?: SingleFileCommand;
+  /**
+   * The peer-trail tool, present only on the parallel path. A worker with no peers is
+   * offered nothing, so the single-agent tool set is unchanged (phase 6 stays phase 6).
+   */
+  readonly trail?: ToolDefinition;
 }
 
 export interface AgentTaskResult {
@@ -94,6 +113,7 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
     createClaimTool(options.evidence, options.model.modelId),
     createDeclareFileSetTool(options.fileSet, options.model.modelId),
     createAmendFileSetTool(options.fileSet, options.model.modelId),
+    ...(options.trail === undefined ? [] : [options.trail]),
   ];
 
   const toolInvoker = createToolChokepoint({
@@ -131,7 +151,7 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
       maxWallTimeMs: 30 * 60 * 1000,
     },
     abortSignal: options.abortSignal,
-    systemPrompt,
+    systemPrompt: options.trail === undefined ? systemPrompt : systemPrompt + trailInstruction,
     maxOutputTokens: 8192,
     retryPolicy: { attempts: 3, baseDelayMs: 500, maxJitterRatio: 0.5 },
   };
