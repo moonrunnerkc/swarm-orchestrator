@@ -40,3 +40,32 @@ export function createWorkPool(limit: number): WorkPool {
     },
   };
 }
+
+/**
+ * How many workers to start at once when nobody said.
+ *
+ * Not a core count. A core count was the first answer here and it was wrong in a way that
+ * took a local model server down: eighteen cores meant seventeen workers, each holding a
+ * worktree, each running the project's real test suite, and each driving its own agent loop
+ * against one model. Cores measure none of those three things.
+ *
+ * Where the model is served locally the answer is one. A local server holds one model
+ * resident and every worker in the run is asking that same process for tokens, so the
+ * parallelism buys nothing and costs the memory the model is living in. Continuous batching
+ * does not save it: three concurrent loops against a 27b on this machine aborted the server.
+ *
+ * Where the model is served elsewhere the bound is the machine rather than the backend, and
+ * what the machine is actually being asked for is N copies of the project's test suite. Four
+ * is a modest answer to that and deliberately does not grow with the hardware, because a
+ * bigger machine does not make a project's suite cheaper to run four more times. Anyone who
+ * knows their own situation better passes `--concurrency`.
+ */
+export function defaultWorkerConcurrency(machine: {
+  readonly servedLocally: boolean;
+  readonly cores: number;
+}): number {
+  if (machine.servedLocally) {
+    return 1;
+  }
+  return Math.max(1, Math.min(4, machine.cores - 1));
+}

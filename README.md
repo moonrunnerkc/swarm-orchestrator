@@ -12,7 +12,7 @@ verified, and it cannot change a record after the fact. Those are the harness's 
 and the run exports a signed, hash-chained bundle that anybody can check without installing
 this tool.
 
-[What it does](#what-it-does) | [Install](#install) | [Use](#use) | [Watching it work](#watching-it-work) | [What is claimed](#what-is-claimed) | [What is not claimed](#what-is-not-claimed) | [How it works](#how-it-works) | [Limits](#limits) | [Upgrading from v12](#upgrading-from-v12)
+[What it does](#what-it-does) | [Install](#install) | [Use](#use) | [Several workers](#several-workers-at-once) | [Watching it work](#watching-it-work) | [What is claimed](#what-is-claimed) | [What is not claimed](#what-is-not-claimed) | [How it works](#how-it-works) | [Limits](#limits) | [Upgrading from v12](#upgrading-from-v12)
 
 ## What it does
 
@@ -67,8 +67,10 @@ option, so on anything older that measurement does not happen.
     swarm select                     # probe this machine, recommend a local model
     swarm calibrate                  # measure candidate models on the golden set
     swarm routing                    # what the reward log adds up to
-    swarm parallel --tasks <file>    # one worktree per task, then a merge queue
+    swarm parallel --tasks <file>    # a worker per task, then a merge queue
     swarm parallel --goal <text>     # break the goal into tasks, then run them
+      --redundancy <n>               # try each task n ways, land the best of them
+      --concurrency <n>              # how many workers may hold a worktree at once
     swarm review <bundle>            # what a past run produced, and open it
     swarm replay <bundle>            # read a bundle back
 
@@ -79,9 +81,6 @@ option, so on anything older that measurement does not happen.
     swarm --workspace <dir> "..."    # a repository other than the current directory
     swarm --base <ref> "..."         # what the diff and the ratchet measure against
     swarm --attempts <n> "..."       # how many times the ratchet may retry a gate
-
-    swarm parallel --tasks <file> --redundancy 3
-                                     # try each task three ways, land the best of them
     swarm --max-steps <n> "..."      # how long the loop may run before it stops
     swarm --local-endpoint <url>     # an OpenAI-compatible server other than the default
 
@@ -113,6 +112,38 @@ bundle verified from outside and the page it produced, are in
 [`session.md`](docs/evidence/2026-08-24/session.md).
 
 `swarm "task"` still runs one task and exits, exactly as before.
+
+## Several workers at once
+
+`swarm parallel` gives each task a git worktree of its own and a merge queue that lands them
+one at a time under the same ratchet a single run answers to. Nothing is merged into the
+branch you are sitting on; the result waits on an integration branch and the report tells you
+how to take it.
+
+Three things sit on top of that, each optional and each off unless asked for.
+
+**Workers read each other's ledgers.** They coordinate through the record they were already
+writing, not through a bus or a daemon: which files a peer has declared, which gates have
+failed on it and how often, which approaches it has already spent its attempts on. Nothing a
+worker reads there can render green. Every signal comes from a ledger record rather than from
+model text, every line names the peer it is about, and no signal reports a success, so there
+is nothing in it to mistake for a gate result.
+
+**`--redundancy <n>` tries each task several ways and lands the best of them.** The winner is
+chosen by reading which attempt moved the measured numbers, never by asking a model which
+answer it likes. The whole ranking goes on the chain, losers and the reason each was left out
+included, so you re-read the choice instead of taking it.
+
+**`--goal <text>` breaks the goal into tasks itself.** A planner reads the workspace with
+read-only tools and declares a task graph, which is checked for unique ids, resolving
+dependencies, no cycle, and files that two unordered tasks do not share, and recorded before
+the first worker starts. Nodes land layer by layer.
+
+Two runs of this, committed with their bundles, are in
+[`swarm.md`](docs/evidence/2026-08-24/swarm.md). The second one is the more useful: every
+structural check passed on a decomposition that could not work, because the planner left out
+a dependency. Whether a set of tasks adds up to a goal is a judgement about meaning, and this
+tool makes none.
 
 ## Watching it work
 
@@ -211,6 +242,12 @@ Interactive state is a separate type with a separate reducer, and a test asserts
 action that none of its fields can be mistaken for a gate result:
 [`interface.md`](docs/evidence/2026-08-23/interface.md).
 
+**A choice between competing attempts is made from measured numbers.** One task tried three
+ways: three green attempts, coverage measured rather than abstained on, the third ranked last
+on the dimension that saw it wrote one test fewer, and the top two identical on everything so
+the tie broke on the earliest, which the report says in those words rather than inventing a
+reason it did not have: [`swarm.md`](docs/evidence/2026-08-24/swarm.md).
+
 **Adversarial passes, with each closure locked as a regression test.** Six pass directories
 under [`redteam/`](redteam), 49 cases in `src/evidence/redteam-adversarial.test.ts`, and an
 accounting record mapping each pass to what it actually was, because the driver ledger
@@ -225,9 +262,12 @@ something.
   removal, with a four-character floor. Zero crashes at a fuzz budget is evidence, not proof.
 - **No benchmark numbers.** Nothing here is measured against another tool. The calibration
   results are self-run, on one machine, and labelled directional in the file itself.
-- **Four known gaps are open**, not closed, and they ship that way. They are in
-  [build guide 7.1](docs/build-guide.md), and each is a permanent test case asserting the
-  gap as it stands.
+- **Six known gaps are open**, not closed, and they ship that way. They are in
+  [build guide 7.1](docs/build-guide.md). Four came out of the adversarial passes and each is
+  a permanent test case asserting the gap as it stands; two came with the scale-out work and
+  are the same boundary in a new place, since a decomposition that is well formed can still
+  be unrunnable and a comparator built from gate measures reads discipline rather than
+  completeness.
 - **A signature does not make the machine honest.** It proves the bundle was not altered
   after it left the machine that produced it. The review page says that on its face.
 

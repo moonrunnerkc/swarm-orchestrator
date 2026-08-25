@@ -110,6 +110,7 @@ import { runEmbeddedVerifier } from "./tui/verify-bundle.ts";
 import { renderParallelReport } from "./workers/parallel-report.ts";
 import { type ParallelRunResult, runInParallel } from "./workers/parallel-run.ts";
 import { runPlanner } from "./workers/planner-run.ts";
+import { defaultWorkerConcurrency } from "./workers/pool.ts";
 import { readTaskGraph, type TaskGraph } from "./workers/task-graph.ts";
 
 /** The ambient clock lives at the composition root; src/core only ever sees the port. */
@@ -1451,17 +1452,23 @@ async function parallel(options: ParallelCommand): Promise<number> {
     graph === null ? (fromFile?.tasks ?? []) : graph.nodes.map((node) => node.instruction);
 
   const redundancy = options.redundancy ?? 1;
-  // Uncapped where each task is tried once, which is the run this has always been. Trying a
-  // task several ways multiplies the concurrent worktree adds and the concurrent test suites
-  // on one machine, so that run gets a cap it can still override.
+  // Capped whether or not a task is tried several ways. Twenty tasks against one local model
+  // server is the same failure as one task tried twenty ways, and the fan-out was unbounded
+  // here long before redundancy existed.
   const concurrency =
-    options.concurrency ?? (redundancy > 1 ? Math.max(1, availableParallelism() - 1) : 0);
+    options.concurrency ??
+    defaultWorkerConcurrency({
+      servedLocally: spec.provider === "local",
+      cores: availableParallelism(),
+    });
 
+  const workerCount = tasks.length * redundancy;
   process.stdout.write(
     redundancy > 1
       ? `starting ${tasks.length} task(s) ${redundancy} ways from ${options.baseRef}, ` +
-          `${concurrency} at a time\n`
-      : `starting ${tasks.length} worker(s) from ${options.baseRef}\n`,
+          `${concurrency} of ${workerCount} worker(s) at a time\n`
+      : `starting ${workerCount} worker(s) from ${options.baseRef}, ` +
+          `${concurrency} at a time\n`,
   );
   const gateOptions = gateOptionsFrom(settings);
 
