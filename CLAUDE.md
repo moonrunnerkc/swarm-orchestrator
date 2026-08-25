@@ -15,7 +15,7 @@ Run `npm run gates` before claiming any task complete. Paste the real output. Ne
 
 ## Architecture Map
 
-- `src/agent-run.ts` : one task start to finish (sandbox, tools, chokepoint, loop, gates). The CLI and every parallel worker call this same function; a worker differs only in its directory and its chain.
+- `src/agent-run.ts` : one task start to finish (sandbox, tools, chokepoint, loop, gates). The CLI and every parallel worker call this same function; a worker differs in its directory, its chain, and one optional tool, the peer trail, which the single-agent path is never offered and which leaves its prompt byte-identical.
 - `src/core` : agent loop. Plan, act, verify. All stochastic inputs (clock, random, model) injected via interfaces, never imported directly.
 - `src/tools` : read, write, edit, shell, search, list. Every call goes through the chokepoint in `src/tools/chokepoint.ts`: ledger record, provenance tag, sandbox enforcement. No tool may bypass it.
 - `src/evidence` : append-only JSONL ledger, hash chain, content-addressed blob store, evidence DAG, bundle export, embedded verifier, HTML review renderer.
@@ -41,6 +41,8 @@ Run `npm run gates` before claiming any task complete. Paste the real output. Ne
 11. The session ledger and blob store live outside the workspace (~/.swarm/sessions/\<id\>/). The sandbox denies tool writes to that path. The signing key lives in the OS keychain, never in the workspace.
 12. The planner declares its intended file set as a ledger record before editing, and "before" is checked against ledger order rather than assumed. The file check is set membership plus that ordering: an edit the chain records earlier than the declaration naming it is treated exactly as an out-of-set edit, since a declaration written afterwards describes what was done rather than what was intended. Both are cleared the same way, by an explicit recorded amendment that surfaces in the bundle as a reviewer-visible claim, and an amendment records every file it names rather than only the ones it widened the set by.
 
+13. A peer's chain is read and never written. A worker coordinates by projecting typed signals off the ledgers its peers were already writing, which is why the medium needs no daemon, no bus, and no shared mutable state, and why invariant 11 is untouched: reading another chain is not writing to your own. Every signal is derived from a ledger record rather than from model text, is attributed to the peer it is about, and reports only what went wrong there: no signal kind reports a success, so a trail has no positive verdict to give and can never stand in for a gate result or a claim. A gate detail travels because the harness's own parser wrote it, and it travels named rather than bare, because it can carry any word that parser used; a peer's raw runner output does not travel at all. What a trail read returns is tool output, tagged as such by the chokepoint the call went through, so a peer's words reach the model under the derivation heuristic rather than beside it, and no peer-derived text ever reaches a system prompt.
+
 ## Code Style
 
 - TypeScript strict, ESM, Node 24+. The floor is the coverage cycle: it spawns the runner with `--test-isolation=process`, which Node 22 rejects as a bad option, so the arm measures nothing there.
@@ -54,7 +56,7 @@ Run `npm run gates` before claiming any task complete. Paste the real output. Ne
 
 ## Non-Goals (do not build these, even if they seem helpful)
 
-No plugin system. No database. No daemon or web server. No multi-agent core (worktree workers are phase 6 only). No blocking LLM-as-judge gates. No custom inference engines. If a task seems to require one of these, stop and flag it instead of building it.
+No plugin system. No database. No daemon or web server. No multi-agent core: coordination between workers lives in `src/workers` alone, which `src/core`, `src/tools`, `src/gates`, and the single-agent path never import, and it coordinates by reading peer ledgers rather than by messaging. No blocking LLM-as-judge gates, which is why a choice between competing attempts is a comparator over measured numbers and never a model's opinion. No custom inference engines. If a task seems to require one of these, stop and flag it instead of building it.
 
 ## Definition of Done
 
