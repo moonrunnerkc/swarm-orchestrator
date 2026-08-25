@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Clock } from "../core/clock.ts";
 import { type EvidenceRecorder, openEvidenceSession } from "../evidence/session.ts";
 import { createFileSetRegistry } from "../gates/file-set.ts";
-import { runMergeQueue } from "./merge-queue.ts";
+import { type QueueCandidate, runMergeQueue } from "./merge-queue.ts";
 import { addWorktree, headCommit } from "./worktree.ts";
 
 const run = promisify(execFile);
@@ -93,9 +93,14 @@ const gateOverrides = {
   format: "node --check src/suite.test.js",
 };
 
-async function queue(
-  candidates: readonly { branch: string; files: readonly string[]; workerId: string }[],
-) {
+interface QueueFixture {
+  readonly branch: string;
+  readonly files: readonly string[];
+  readonly workerId: string;
+  readonly alternates?: readonly QueueFixture[];
+}
+
+async function queue(candidates: readonly QueueFixture[]) {
   const integration = await addWorktree({
     repositoryRoot: repository,
     path: join(scratch, "integration"),
@@ -106,13 +111,16 @@ async function queue(
   return runMergeQueue({
     integrationPath: integration.path,
     baseCommit: await headCommit(integration.path),
-    candidates: candidates.map((candidate) => ({
-      workerId: candidate.workerId,
-      branch: candidate.branch,
-      task: `task for ${candidate.workerId}`,
-      declaredFiles: candidate.files,
-      evidence,
-    })),
+    candidates: candidates.map(function asCandidate(candidate): QueueCandidate {
+      return {
+        workerId: candidate.workerId,
+        branch: candidate.branch,
+        task: `task for ${candidate.workerId}`,
+        declaredFiles: candidate.files,
+        evidence,
+        alternates: (candidate.alternates ?? []).map(asCandidate),
+      };
+    }),
     evidence,
     fileSet: createFileSetRegistry(evidence),
     clock,
@@ -315,5 +323,69 @@ describe("what the queue records", () => {
       .map((entry) => workerEvidence.payloads().get(entry.payloadDigest));
     expect(returned).toHaveLength(1);
     expect(JSON.stringify(returned[0])).toMatch(/merge-conflict/);
+  });
+});
+
+describe("a candidate that carries the attempts ranked behind it", () => {
+  it("says which role and rank landed, so a reviewer knows it was the chosen one", async () => {
+    const one = await worker("one", { "src/alpha.js": alphaWith("export const one = 1;") });
+
+    await queue([{ ...one, workerId: "one" }]);
+
+    const written = evidence
+      .records()
+      .filter((entry) => entry.type === "merge-attempt")
+      .map((entry) => evidence.payloads().get(entry.payloadDigest));
+    expect(written[0]).toMatchObject({ role: "winner", rank: 1 });
+  });
+
+  it("falls to the next attempt when the integrated gates refuse the chosen one", async () => {
+    // Merges cleanly and passes on its own, but the integrated tree fails the tests gate,
+    // which is the one rejection a structurally different patch at the same task can survive.
+    const breaks = await worker("breaks", {
+      "src/alpha.js": "export function alpha() {\n  return 'broken';\n}\n",
+    });
+    const works = await worker("works", { "src/alpha.js": alphaWith("export const works = 1;") });
+
+    const result = await queue([
+      { ...breaks, workerId: "breaks", alternates: [{ ...works, workerId: "works" }] },
+    ]);
+
+    expect(result.landings.map((landing) => [landing.workerId, landing.landed])).toEqual([
+      ["breaks", false],
+      ["works", true],
+    ]);
+  });
+
+  it("marks the attempt that stepped in as a fallback at its own rank", async () => {
+    const breaks = await worker("breaks", {
+      "src/alpha.js": "export function alpha() {\n  return 'broken';\n}\n",
+    });
+    const works = await worker("works", { "src/alpha.js": alphaWith("export const works = 1;") });
+
+    await queue([{ ...breaks, workerId: "breaks", alternates: [{ ...works, workerId: "works" }] }]);
+
+    const written = evidence
+      .records()
+      .filter((entry) => entry.type === "merge-attempt")
+      .map((entry) => evidence.payloads().get(entry.payloadDigest));
+    expect(written).toMatchObject([
+      { workerId: "breaks", role: "winner", rank: 1 },
+      { workerId: "works", role: "fallback", rank: 2 },
+    ]);
+  });
+
+  it("does not fall back over a conflict, which the next attempt at one task shares", async () => {
+    const first = await worker("first", { "src/alpha.js": alphaWith("export const first = 1;") });
+    const one = await worker("one", { "src/alpha.js": alphaWith("export const one = 1;") });
+    const two = await worker("two", { "src/alpha.js": alphaWith("export const two = 2;") });
+
+    const result = await queue([
+      { ...first, workerId: "first" },
+      { ...one, workerId: "one", alternates: [{ ...two, workerId: "two" }] },
+    ]);
+
+    expect(result.landings.map((landing) => landing.workerId)).toEqual(["first", "one"]);
+    expect(result.landings[1]).toMatchObject({ landed: false, reason: "merge-conflict" });
   });
 });

@@ -167,6 +167,8 @@ export const usage = [
   "  swarm doctor [--fix] [--offline]                 what owns the swarm command, and fix it",
   "  swarm routing                                    what the reward log adds up to",
   "  swarm parallel --tasks <file>                    one worker per line, then a merge queue",
+  "    --redundancy <n>                               try each task n ways, land the best",
+  "    --concurrency <n>                              how many may hold a worktree at once",
   "  swarm review <bundle directory>                  what a run produced, and open it",
   "  swarm replay <bundle directory>                  read a bundle back",
   "",
