@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTestClock } from "../core/test-doubles.ts";
+import type { JsonValue } from "./canonical-json.ts";
 import { buildEvidenceDag } from "./dag.ts";
 import { type EvidenceRecorder, openEvidenceSession } from "./session.ts";
 
@@ -145,5 +146,66 @@ describe("evidence DAG", () => {
     expect(withoutPayloads.claims.every((claim) => claim.evaluation.verdict === "unverified")).toBe(
       true,
     );
+  });
+});
+
+describe("the one-line summary of a worker record", () => {
+  async function summaryOf(
+    type: "worker-finished" | "merge-attempt" | "attempt-selection",
+    payload: JsonValue,
+  ) {
+    const evidence = await openEvidenceSession({
+      root,
+      sessionId: `summary-${type}`,
+      clock: createTestClock(1_700_000_000_000),
+    });
+    await evidence.record({ type, actor: "harness", provenance: ["tool-output"], payload });
+    const dag = buildEvidenceDag(evidence.records(), evidence.payloads());
+    return dag.evidence.at(-1)?.summary ?? "";
+  }
+
+  it("says how a worker finished, rather than trailing off after the colon", async () => {
+    const summary = await summaryOf("worker-finished", {
+      workerId: "worker-1",
+      green: true,
+      detail: "gates green after 3 step(s)",
+    });
+
+    expect(summary).toContain("worker-1");
+    expect(summary).toContain("gates green after 3 step(s)");
+    expect(summary).not.toMatch(/:\s*$/);
+  });
+
+  it("says whether a merge landed and why it did not", async () => {
+    const landed = await summaryOf("merge-attempt", {
+      workerId: "worker-1",
+      landed: true,
+      reason: null,
+      commit: "abc1234",
+      detail: "worker-1 landed at abc1234",
+    });
+    const rejected = await summaryOf("merge-attempt", {
+      workerId: "worker-2",
+      landed: false,
+      reason: "ratchet",
+      commit: null,
+      detail: "assertions fell from 9 to 4",
+    });
+
+    expect(landed).toContain("abc1234");
+    expect(rejected).toContain("ratchet");
+    expect(rejected).not.toMatch(/:\s*$/);
+  });
+
+  it("says which attempt a selection took and out of how many", async () => {
+    const summary = await summaryOf("attempt-selection", {
+      taskId: "task-1",
+      winner: "task-1-attempt-2",
+      ranked: 3,
+      decidedBy: "changedLinesCovered",
+    });
+
+    expect(summary).toContain("task-1-attempt-2");
+    expect(summary).toContain("changedLinesCovered");
   });
 });

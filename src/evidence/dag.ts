@@ -186,9 +186,18 @@ function summarize(record: LedgerRecord, payload: JsonValue | null): string {
     case "worker-started":
       return `worker ${stringField(fields, "workerId")} started on ${stringField(fields, "task")}`;
     case "worker-finished":
-      return `worker ${stringField(fields, "workerId")} finished: ${stringField(fields, "outcome")}`;
-    case "merge-attempt":
-      return `merge of ${stringField(fields, "workerId")}: ${stringField(fields, "outcome")}`;
+      return `worker ${stringField(fields, "workerId")} finished: ${stringField(fields, "detail")}`;
+    case "merge-attempt": {
+      const worker = stringField(fields, "workerId");
+      return fields.landed === true
+        ? `merge of ${worker} landed at ${stringField(fields, "commit")}`
+        : `merge of ${worker} was not landed, ${stringField(fields, "reason")}: ${stringField(fields, "detail")}`;
+    }
+    case "attempt-selection": {
+      const decided = stringField(fields, "decidedBy");
+      const on = decided === "" ? "nothing that separated them" : decided;
+      return `${stringField(fields, "taskId")} took ${stringField(fields, "winner")} of ${numberField(fields, "ranked")} attempt(s), on ${on}`;
+    }
     default:
       return record.type;
   }

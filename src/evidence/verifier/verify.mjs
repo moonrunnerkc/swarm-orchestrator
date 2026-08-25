@@ -21,7 +21,11 @@ const COMPARISONS = ["==", "!=", ">=", "<=", ">", "<"];
 // One record type covers many subjects: every gate writes a gate-run, every tool writes a
 // tool-call. A claim names the subject it asserts against, and this is how that name is
 // recomputed here rather than read out of the bundle.
-const SUBJECT_FIELD_BY_TYPE = { "gate-run": "gateId", "tool-call": "toolName" };
+const SUBJECT_FIELD_BY_TYPE = {
+  "gate-run": "gateId",
+  "tool-call": "toolName",
+  "attempt-selection": "taskId",
+};
 
 export function recordKindOf(type, payload) {
   const field = SUBJECT_FIELD_BY_TYPE[type];
