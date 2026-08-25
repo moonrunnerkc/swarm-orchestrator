@@ -117,6 +117,10 @@ export interface ParallelCommand {
   readonly bundleDirectory: string | null;
   readonly modelSpec: string | null;
   readonly localEndpoint: string | null;
+  /** How many ways to try each task. Null is once, which is the run this always was. */
+  readonly redundancy: number | null;
+  /** How many workers may hold a worktree at once. Null lets the composition root decide. */
+  readonly concurrency: number | null;
 }
 
 /** Prints the usage text and exits without doing anything. */
@@ -297,6 +301,8 @@ export function parseCommandLine(
       bundleDirectory,
       modelSpec: flags.get("model") ?? null,
       localEndpoint: parseLocalEndpoint(flags.get("local-endpoint")),
+      redundancy: parseFlagCount(flags.get("redundancy"), "--redundancy"),
+      concurrency: parseFlagCount(flags.get("concurrency"), "--concurrency"),
     };
   }
 

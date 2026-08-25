@@ -2,7 +2,7 @@
 import { spawn } from "node:child_process";
 import { statSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
-import { arch, homedir, platform, tmpdir } from "node:os";
+import { arch, availableParallelism, homedir, platform, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { runAgentTask } from "./agent-run.ts";
@@ -108,7 +108,7 @@ import { type SessionInterface, startSessionInterface } from "./tui/session-inte
 import { resolveTheme } from "./tui/theme.ts";
 import { runEmbeddedVerifier } from "./tui/verify-bundle.ts";
 import { renderParallelReport } from "./workers/parallel-report.ts";
-import { runInParallel } from "./workers/parallel-run.ts";
+import { type ParallelRunResult, runInParallel } from "./workers/parallel-run.ts";
 
 /** The ambient clock lives at the composition root; src/core only ever sees the port. */
 function createSystemClock(): Clock {
@@ -1300,6 +1300,22 @@ async function addCase(options: AddCaseCommand): Promise<number> {
 }
 
 /**
+ * Every task landed something. Which attempt it was is the selection's business; what the
+ * exit code answers is whether the run produced a change for each task it was given.
+ */
+function landedEveryTask(result: ParallelRunResult): number {
+  const landed = new Set(
+    (result.queue?.landings ?? [])
+      .filter((landing) => landing.landed)
+      .map((landing) => result.workers.find((worker) => worker.workerId === landing.workerId))
+      .map((worker) => worker?.taskId)
+      .filter((taskId): taskId is string => taskId !== undefined),
+  );
+  const asked = new Set(result.workers.map((worker) => worker.taskId));
+  return landed.size === asked.size ? 0 : 1;
+}
+
+/**
  * N workers over worktrees, then the queue. The composition root does what it always does:
  * every ambient thing enters here, and the coordinator itself stays testable without one.
  */
@@ -1343,7 +1359,19 @@ async function parallel(options: ParallelCommand): Promise<number> {
   // can reach neither the tree the user is in nor anybody's evidence.
   const scratchRoot = await mkdtemp(join(tmpdir(), "swarm-parallel-"));
 
-  process.stdout.write(`starting ${tasks.length} worker(s) from ${options.baseRef}\n`);
+  const redundancy = options.redundancy ?? 1;
+  // Uncapped where each task is tried once, which is the run this has always been. Trying a
+  // task several ways multiplies the concurrent worktree adds and the concurrent test suites
+  // on one machine, so that run gets a cap it can still override.
+  const concurrency =
+    options.concurrency ?? (redundancy > 1 ? Math.max(1, availableParallelism() - 1) : 0);
+
+  process.stdout.write(
+    redundancy > 1
+      ? `starting ${tasks.length} task(s) ${redundancy} ways from ${options.baseRef}, ` +
+          `${concurrency} at a time\n`
+      : `starting ${tasks.length} worker(s) from ${options.baseRef}\n`,
+  );
   const gateOptions = gateOptionsFrom(settings);
 
   try {
@@ -1358,6 +1386,9 @@ async function parallel(options: ParallelCommand): Promise<number> {
         openEvidenceSession({ root: sessionRoot, sessionId: `${runId}-${workerId}`, clock }),
       createModel: (_workerId, evidence) =>
         createRecordingModelClient(registry.create(spec), evidence),
+      redundancy,
+      concurrency,
+      modelSpec: settings.modelSpec,
       clock,
       random,
       emit: (workerId, event) => {
@@ -1397,7 +1428,16 @@ async function parallel(options: ParallelCommand): Promise<number> {
     announceBundle(directory);
 
     const rejected = result.queue?.landings.filter((landing) => !landing.landed) ?? [];
-    return rejected.length === 0 && result.workers.every((worker) => worker.green) ? 0 : 1;
+    if (rejected.length > 0) {
+      return 1;
+    }
+    // Where a task is tried several ways, the attempts that lost are the mechanism working.
+    // What has to hold is that every task landed something, not that every worker was green.
+    return redundancy > 1
+      ? landedEveryTask(result)
+      : result.workers.every((worker) => worker.green)
+        ? 0
+        : 1;
   } finally {
     await rm(scratchRoot, { recursive: true, force: true });
   }

@@ -9,7 +9,13 @@ import type { RandomSource } from "../core/random-source.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import type { GateSetOptions } from "../gates/default-gates.ts";
 import { createFileSetRegistry } from "../gates/file-set.ts";
+import { emptyMeasureSnapshot, type MeasureSnapshot } from "../gates/measure-snapshot.ts";
+import { summarizeRatchet } from "../gates/ratchet-summary.ts";
+import { type Attempt, type AttemptSelection, selectAttempt } from "./attempt-selector.ts";
+import { type PlannedAttempt, planAttempts } from "./fan-out.ts";
 import { type MergeQueueResult, runMergeQueue } from "./merge-queue.ts";
+import { createWorkPool } from "./pool.ts";
+import { recordSelection } from "./selection-record.ts";
 import { peersFor, type TrailPeer } from "./trail.ts";
 import { createReadTrailTool } from "./trail-tool.ts";
 import { addWorktree, type Worktree } from "./worktree.ts";
@@ -33,12 +39,21 @@ interface ParallelRunOptions {
   readonly emit: (workerId: string, event: LoopEvent) => void;
   readonly maxSteps: number;
   readonly attempts: number;
+  /** How many ways each task is tried. One is the run this had before any of it. */
+  readonly redundancy: number;
+  /** How many workers may hold a worktree at once. Zero or less is no cap. */
+  readonly concurrency: number;
+  /** Names the seeds that make attempts at one task diverge, so a report can re-derive them. */
+  readonly modelSpec: string;
   readonly gateOptions?: GateSetOptions;
   readonly abortSignal: AbortSignal;
 }
 
 export interface WorkerResult {
   readonly workerId: string;
+  /** Which task this worker was one attempt at, and which attempt it was. */
+  readonly taskId: string;
+  readonly attemptIndex: number;
   readonly task: string;
   readonly branch: string;
   readonly evidence: EvidenceRecorder;
@@ -47,10 +62,17 @@ export interface WorkerResult {
   readonly commit: string | null;
   readonly declaredFiles: readonly string[];
   readonly detail: string;
+  /** The numbers as they stood in this worktree, which is what a selection reads. */
+  readonly measures: MeasureSnapshot;
+  readonly erosions: number;
+  readonly changedFiles: number;
+  readonly addedLines: number;
 }
 
 export interface ParallelRunResult {
   readonly workers: readonly WorkerResult[];
+  /** One per task, empty where each task was tried once and there was nothing to choose. */
+  readonly selections: readonly AttemptSelection[];
   /** Null when no worker produced anything for the queue to arbitrate. */
   readonly queue: MergeQueueResult | null;
   readonly integrationBranch: string;
@@ -75,13 +97,18 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
   // the whole coordination medium: no bus, no shared state a worker can write through, just
   // the ledgers they were each already writing (invariant 11 untouched, these are reads).
   const registered: TrailPeer[] = [];
+  const planned = planAttempts(options.tasks, options.redundancy, options.modelSpec);
+  // The slot covers the whole worktree lifetime rather than the agent loop alone: several
+  // attempts per task multiplies the concurrent `git worktree add` calls against one
+  // repository, which is the contention the cap exists for.
+  const pool = createWorkPool(options.concurrency);
   const workers = await Promise.all(
-    options.tasks.map((task, index) =>
-      runOneWorker(task, `worker-${index + 1}`, baseCommit, options, registered),
+    planned.map((attempt) =>
+      pool.run(() => runOneWorker(attempt, baseCommit, options, registered)),
     ),
   );
 
-  const proposals = workers.filter((worker) => worker.commit !== null);
+  const { proposals, selections } = await chooseProposals(workers, baseCommit, options);
   const integration = await addWorktree({
     repositoryRoot: options.repositoryRoot,
     path: join(options.scratchRoot, "integration"),
@@ -140,6 +167,7 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
 
   return {
     workers,
+    selections,
     queue,
     integrationBranch: integration.branch,
     baseCommit,
@@ -147,15 +175,75 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
   };
 }
 
+/**
+ * One proposal per task, and the record of why it was that one.
+ *
+ * Where a task was tried once there is nothing to choose, so nothing is chosen and nothing
+ * is written: that run reaches the queue exactly as it did before any of this existed. Where
+ * it was tried several ways, the comparator reads the numbers each attempt left in its own
+ * worktree and the working goes on the coordinator's chain, losers included, with the reason
+ * each one was left out.
+ */
+async function chooseProposals(
+  workers: readonly WorkerResult[],
+  baseCommit: string,
+  options: ParallelRunOptions,
+): Promise<{ proposals: readonly WorkerResult[]; selections: readonly AttemptSelection[] }> {
+  if (options.redundancy <= 1) {
+    return { proposals: workers.filter((worker) => worker.commit !== null), selections: [] };
+  }
+
+  const byTask = new Map<string, WorkerResult[]>();
+  for (const worker of workers) {
+    const attempts = byTask.get(worker.taskId) ?? [];
+    attempts.push(worker);
+    byTask.set(worker.taskId, attempts);
+  }
+
+  const proposals: WorkerResult[] = [];
+  const selections: AttemptSelection[] = [];
+
+  for (const [taskId, attempts] of byTask) {
+    const selection = selectAttempt(
+      taskId,
+      attempts.map((attempt) => asAttempt(attempt, baseCommit)),
+    );
+    await recordSelection(options.coordinator, selection);
+    selections.push(selection);
+
+    const winner = attempts.find((attempt) => attempt.workerId === selection.winner);
+    if (winner !== undefined) {
+      proposals.push(winner);
+    }
+  }
+
+  return { proposals, selections };
+}
+
+function asAttempt(worker: WorkerResult, baseCommit: string): Attempt {
+  return {
+    workerId: worker.workerId,
+    taskId: worker.taskId,
+    attemptIndex: worker.attemptIndex,
+    green: worker.green,
+    commit: worker.commit,
+    baseCommit,
+    measures: worker.measures,
+    erosions: worker.erosions,
+    changedFiles: worker.changedFiles,
+    addedLines: worker.addedLines,
+  };
+}
+
 async function runOneWorker(
-  task: string,
-  workerId: string,
+  planned: PlannedAttempt,
   baseCommit: string,
   options: ParallelRunOptions,
   registered: TrailPeer[],
 ): Promise<WorkerResult> {
+  const { workerId, task, taskId, attemptIndex } = planned;
   const evidence = await options.createWorkerSession(workerId);
-  registered.push({ workerId, chain: evidence });
+  registered.push({ workerId, taskId, chain: evidence });
   const branch = `swarm/${options.runId}/${workerId}`;
   let worktree: Worktree | null = null;
 
@@ -199,7 +287,10 @@ async function runOneWorker(
       confirm: () => Promise.resolve(false),
       abortSignal: options.abortSignal,
       homeDir: options.scratchRoot,
-      trail: createReadTrailTool({ peers: () => peersFor(workerId, registered) }),
+      trail: createReadTrailTool({
+        peers: () => peersFor(workerId, taskId, registered),
+      }),
+      ...(planned.sampling === null ? {} : { sampling: planned.sampling }),
       ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
     });
 
@@ -208,8 +299,13 @@ async function runOneWorker(
     // discovering what its own gates already said.
     const commit = result.green ? await worktree.commitAll(`${workerId}: ${task}`) : null;
 
+    const measures = result.gates.outcome.finalMeasures;
+    const cycle = result.gates.outcome.finalCycle;
+
     return {
       workerId,
+      taskId,
+      attemptIndex,
       task,
       branch,
       evidence,
@@ -218,7 +314,11 @@ async function runOneWorker(
       declaredFiles: fileSet.state().declared,
       detail: result.green
         ? `gates green after ${result.loop.steps} step(s)`
-        : describeRed(result.gates.outcome.finalCycle.blockingFailures, result.loop.stopReason),
+        : describeRed(cycle.blockingFailures, result.loop.stopReason),
+      measures,
+      erosions: summarizeRatchet(result.gates.outcome).erosions,
+      changedFiles: cycle.measures.changedFiles ?? 0,
+      addedLines: cycle.measures.addedLines ?? 0,
     };
   } catch (cause) {
     const detail = `the worker did not finish: ${describeCause(cause)}`;
@@ -232,6 +332,8 @@ async function runOneWorker(
     });
     return {
       workerId,
+      taskId,
+      attemptIndex,
       task,
       branch,
       evidence,
@@ -239,6 +341,10 @@ async function runOneWorker(
       commit: null,
       declaredFiles: [],
       detail,
+      measures: emptyMeasureSnapshot,
+      erosions: 0,
+      changedFiles: 0,
+      addedLines: 0,
     };
   } finally {
     await worktree?.remove();

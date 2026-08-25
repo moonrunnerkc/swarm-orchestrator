@@ -145,7 +145,16 @@ function modelFor(
   return createRecordingModelClient(client, evidence);
 }
 
-async function parallel(scripts: Readonly<Record<string, readonly FixtureTurn[]>>) {
+interface ParallelOverrides {
+  readonly redundancy?: number;
+  /** Scripts keyed by worker id, for a run whose attempts at one task must differ. */
+  readonly byWorker?: Readonly<Record<string, readonly FixtureTurn[]>>;
+}
+
+async function parallel(
+  scripts: Readonly<Record<string, readonly FixtureTurn[]>>,
+  overrides: ParallelOverrides = {},
+) {
   return runInParallel({
     repositoryRoot: repository,
     baseRef: "HEAD",
@@ -155,13 +164,24 @@ async function parallel(scripts: Readonly<Record<string, readonly FixtureTurn[]>
     coordinator,
     createWorkerSession: (workerId) =>
       openEvidenceSession({ root: join(scratch, "sessions"), sessionId: workerId, clock }),
-    createModel: (_workerId, evidence) => modelFor(scripts, evidence),
+    createModel: (workerId, evidence) => {
+      const only = overrides.byWorker?.[workerId];
+      return only === undefined
+        ? modelFor(scripts, evidence)
+        : createRecordingModelClient(
+            createFixtureModelClient({ modelId: "fixture:worker", turns: only }),
+            evidence,
+          );
+    },
     clock,
     random: createFixedRandom(),
     emit: () => {},
     maxSteps: 8,
     attempts: 0,
     gateOptions: { commandOverrides: gateOverrides },
+    redundancy: overrides.redundancy ?? 1,
+    concurrency: 0,
+    modelSpec: "fixture:worker",
     abortSignal: new AbortController().signal,
   });
 }
@@ -290,6 +310,9 @@ describe("a worker that cannot even start", () => {
       maxSteps: 8,
       attempts: 0,
       gateOptions: { commandOverrides: gateOverrides },
+      redundancy: 1,
+      concurrency: 0,
+      modelSpec: "fixture:worker",
       abortSignal: new AbortController().signal,
     });
 
@@ -326,4 +349,124 @@ describe("the bundle a parallel run produces", () => {
     expect(stdout).toMatch(/worker worker-1/);
     expect(stdout).toMatch(/worker worker-2/);
   }, 120_000);
+});
+
+describe("trying each task several ways", () => {
+  /** One test with `count` assertions, so two attempts differ by a number the ratchet reads. */
+  function shoutTestWith(count: number): string {
+    const checks = Array.from(
+      { length: count },
+      () => "  assert.equal(shoutAlpha(), 'ALPHA');",
+    ).join("\n");
+    return [
+      "import { test } from 'node:test';",
+      "import assert from 'node:assert/strict';",
+      "import { shoutAlpha } from './alpha.js';",
+      "",
+      "test('shoutAlpha', () => {",
+      checks,
+      "});",
+      "",
+    ].join("\n");
+  }
+
+  function attemptWriting(count: number): readonly FixtureTurn[] {
+    return scriptFor({
+      "src/alpha.js": withShout(alpha, "Alpha", "alpha"),
+      "src/alpha-shout.test.js": shoutTestWith(count),
+    });
+  }
+
+  const oneTask = { "add a shout to alpha": attemptWriting(1) };
+
+  it("writes exactly the record types it always did when each task is tried once", async () => {
+    await parallel(oneTask);
+
+    // Pinned deliberately. A run that tries each task once must reach the ledger exactly as
+    // it did before any of the selection work existed, so a new record type showing up here
+    // is a regression rather than a detail.
+    const types = [...new Set(coordinator.records().map((record) => record.type))].sort();
+    expect(types).toEqual([
+      "file-set-declared",
+      "gate-run",
+      "merge-attempt",
+      "worker-finished",
+      "worker-started",
+    ]);
+  });
+
+  it("names no selection when each task is tried once, because nothing was chosen", async () => {
+    const result = await parallel(oneTask);
+
+    expect(result.selections).toEqual([]);
+    expect(result.workers.map((worker) => worker.workerId)).toEqual(["worker-1"]);
+  });
+
+  it("runs a task as many ways as it was asked, each on its own branch", async () => {
+    const result = await parallel(oneTask, {
+      redundancy: 3,
+      byWorker: {
+        "worker-1": attemptWriting(1),
+        "worker-2": attemptWriting(2),
+        "worker-3": attemptWriting(3),
+      },
+    });
+
+    expect(result.workers).toHaveLength(3);
+    expect(new Set(result.workers.map((worker) => worker.branch)).size).toBe(3);
+    expect(result.workers.every((worker) => worker.taskId === "task-1")).toBe(true);
+  });
+
+  it("lands the attempt with more assertions, and records why", async () => {
+    const result = await parallel(oneTask, {
+      redundancy: 3,
+      byWorker: {
+        "worker-1": attemptWriting(1),
+        "worker-2": attemptWriting(5),
+        "worker-3": attemptWriting(2),
+      },
+    });
+
+    const selection = result.selections[0];
+    expect(selection?.winner).toBe("worker-2");
+    expect(selection?.decidedBy).toBe("assertions");
+    expect(result.queue?.landings.map((landing) => landing.workerId)).toEqual(["worker-2"]);
+    expect(result.queue?.landings.every((landing) => landing.landed)).toBe(true);
+  });
+
+  it("puts the whole ranking on the coordinator's chain, losers included", async () => {
+    await parallel(oneTask, {
+      redundancy: 2,
+      byWorker: { "worker-1": attemptWriting(1), "worker-2": attemptWriting(4) },
+    });
+
+    const written = coordinator.records().find((record) => record.type === "attempt-selection");
+    const payload = coordinator.payloads().get(written?.payloadDigest ?? "") as {
+      ranked: number;
+      eligible: number;
+      winner: string;
+      attempts: { workerId: string }[];
+    };
+
+    expect(payload.ranked).toBe(2);
+    expect(payload.eligible).toBe(2);
+    expect(payload.winner).toBe("worker-2");
+    expect(payload.attempts.map((one) => one.workerId).sort()).toEqual(["worker-1", "worker-2"]);
+  });
+
+  it("offers only the winner to the queue, so the losers never conflict with it", async () => {
+    const result = await parallel(oneTask, {
+      redundancy: 3,
+      byWorker: {
+        "worker-1": attemptWriting(1),
+        "worker-2": attemptWriting(5),
+        "worker-3": attemptWriting(2),
+      },
+    });
+
+    expect(result.queue?.landings).toHaveLength(1);
+    expect(result.queue?.landings.some((landing) => landing.reason === "merge-conflict")).toBe(
+      false,
+    );
+  });
 });

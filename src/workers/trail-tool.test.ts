@@ -4,7 +4,7 @@ import type { LedgerRecord } from "../evidence/ledger-record.ts";
 import type { TrailPeer } from "./trail.ts";
 import { createReadTrailTool } from "./trail-tool.ts";
 
-function peerClaiming(workerId: string, path: string): TrailPeer {
+function peerClaiming(workerId: string, path: string, taskId = workerId): TrailPeer {
   const payload: JsonValue = { files: [path], fileCount: 1 };
   const payloadDigest = digestOfJson(payload);
   const record: LedgerRecord = {
@@ -19,6 +19,7 @@ function peerClaiming(workerId: string, path: string): TrailPeer {
   };
   return {
     workerId,
+    taskId,
     chain: {
       sessionId: `run-${workerId}`,
       records: () => [record],
