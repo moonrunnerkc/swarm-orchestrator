@@ -41,6 +41,9 @@ const recordTypes = [
   "worker-started",
   "worker-finished",
   "merge-attempt",
+  "attempt-selection",
+  "task-graph",
+  "task-graph-outcome",
 ] as const;
 
 export type RecordType = (typeof recordTypes)[number];

@@ -68,6 +68,7 @@ option, so on anything older that measurement does not happen.
     swarm calibrate                  # measure candidate models on the golden set
     swarm routing                    # what the reward log adds up to
     swarm parallel --tasks <file>    # one worktree per task, then a merge queue
+    swarm parallel --goal <text>     # break the goal into tasks, then run them
     swarm review <bundle>            # what a past run produced, and open it
     swarm replay <bundle>            # read a bundle back
 
@@ -78,6 +79,9 @@ option, so on anything older that measurement does not happen.
     swarm --workspace <dir> "..."    # a repository other than the current directory
     swarm --base <ref> "..."         # what the diff and the ratchet measure against
     swarm --attempts <n> "..."       # how many times the ratchet may retry a gate
+
+    swarm parallel --tasks <file> --redundancy 3
+                                     # try each task three ways, land the best of them
     swarm --max-steps <n> "..."      # how long the loop may run before it stops
     swarm --local-endpoint <url>     # an OpenAI-compatible server other than the default
 

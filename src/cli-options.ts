@@ -108,8 +108,13 @@ export interface AddCaseCommand {
 /** N workers over git worktrees, then one merge queue that lands what they produced. */
 export interface ParallelCommand {
   readonly command: "parallel";
-  /** One task per line. A file rather than repeated flags, so a run is reproducible. */
-  readonly tasksFile: string;
+  /**
+   * One task per line, or a JSON task graph. A file rather than repeated flags, so a run is
+   * reproducible. Null where a goal was given for the run to decompose instead.
+   */
+  readonly tasksFile: string | null;
+  /** A goal for the run to break into tasks itself. Null where a file named them. */
+  readonly goal: string | null;
   readonly workspace: string;
   readonly baseRef: string;
   readonly maxSteps: number | null;
@@ -117,6 +122,10 @@ export interface ParallelCommand {
   readonly bundleDirectory: string | null;
   readonly modelSpec: string | null;
   readonly localEndpoint: string | null;
+  /** How many ways to try each task. Null is once, which is the run this always was. */
+  readonly redundancy: number | null;
+  /** How many workers may hold a worktree at once. Null lets the composition root decide. */
+  readonly concurrency: number | null;
 }
 
 /** Prints the usage text and exits without doing anything. */
@@ -163,6 +172,9 @@ export const usage = [
   "  swarm doctor [--fix] [--offline]                 what owns the swarm command, and fix it",
   "  swarm routing                                    what the reward log adds up to",
   "  swarm parallel --tasks <file>                    one worker per line, then a merge queue",
+  "  swarm parallel --goal <text>                     break the goal into tasks, then run them",
+  "    --redundancy <n>                               try each task n ways, land the best",
+  "    --concurrency <n>                              how many may hold a worktree at once",
   "  swarm review <bundle directory>                  what a run produced, and open it",
   "  swarm replay <bundle directory>                  read a bundle back",
   "",
@@ -184,7 +196,8 @@ export class InvalidCommandLineError extends Error {
         "swarm gates [--workspace <dir>] [--base <ref>], " +
         "swarm select [--shortlist <file|url|bundled>], swarm calibrate [--models <a,b>] " +
         '[--repeats <n>], swarm calibrate --add-case "<task>" --seed <a,b> --gate "<command>", ' +
-        "swarm routing, swarm parallel --tasks <file>, swarm replay <bundle directory>, " +
+        "swarm routing, swarm parallel --tasks <file>, swarm parallel --goal <text>, " +
+        "swarm replay <bundle directory>, " +
         "or swarm review <bundle directory>. Screen flags: [--no-tui] [--color|--no-color] " +
         "[--open-evidence|--no-open-evidence]",
     );
@@ -281,15 +294,22 @@ export function parseCommandLine(
 
   if (words[0] === "parallel") {
     const tasksFile = flags.get("tasks");
-    if (tasksFile === undefined || tasksFile.trim().length === 0) {
+    const goal = flags.get("goal");
+    const named = tasksFile !== undefined && tasksFile.trim().length > 0;
+    const asked = goal !== undefined && goal.trim().length > 0;
+    if (named === asked) {
       throw new InvalidCommandLineError(
-        "parallel needs --tasks <file>, one task per line: a worker is started per line and " +
-          "named after its position",
+        named
+          ? "parallel takes --tasks <file> or --goal <text>, not both: one of them is the " +
+              "decomposition and two would disagree"
+          : "parallel needs --tasks <file>, one task per line or a JSON task graph, or " +
+              "--goal <text> for the run to break into tasks itself",
       );
     }
     return {
       command: "parallel",
-      tasksFile: resolve(context.currentDirectory, tasksFile),
+      tasksFile: named ? resolve(context.currentDirectory, tasksFile) : null,
+      goal: asked ? goal.trim() : null,
       workspace,
       baseRef: flags.get("base") ?? defaultBaseRef,
       maxSteps: parseFlagCount(flags.get("max-steps"), "--max-steps"),
@@ -297,6 +317,8 @@ export function parseCommandLine(
       bundleDirectory,
       modelSpec: flags.get("model") ?? null,
       localEndpoint: parseLocalEndpoint(flags.get("local-endpoint")),
+      redundancy: parseFlagCount(flags.get("redundancy"), "--redundancy"),
+      concurrency: parseFlagCount(flags.get("concurrency"), "--concurrency"),
     };
   }
 

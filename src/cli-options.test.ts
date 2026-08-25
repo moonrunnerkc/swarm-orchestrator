@@ -318,11 +318,47 @@ describe("the parallel command", () => {
       bundleDirectory: "/work/repo/out",
       modelSpec: null,
       localEndpoint: null,
+      redundancy: null,
+      concurrency: null,
+      goal: null,
     });
   });
 
-  it("needs a task file, because a worker per line is how the workers are named", () => {
-    expect(() => parseCommandLine(["parallel"], context)).toThrow(/--tasks/);
+  it("takes how many ways to try each task, and how many may run at once", () => {
+    expect(
+      parseCommandLine(
+        ["parallel", "--tasks", "t.txt", "--redundancy", "3", "--concurrency", "4"],
+        context,
+      ),
+    ).toMatchObject({ redundancy: 3, concurrency: 4 });
+  });
+
+  it("refuses a redundancy that is not a whole number of attempts", () => {
+    expect(() =>
+      parseCommandLine(["parallel", "--tasks", "t.txt", "--redundancy", "half"], context),
+    ).toThrow(/--redundancy/);
+  });
+
+  it("refuses a concurrency below one, because zero workers finish nothing", () => {
+    expect(() =>
+      parseCommandLine(["parallel", "--tasks", "t.txt", "--concurrency", "0"], context),
+    ).toThrow(/--concurrency/);
+  });
+
+  it("needs either a file of tasks or a goal to break into them", () => {
+    expect(() => parseCommandLine(["parallel"], context)).toThrow(/--tasks|--goal/);
+  });
+
+  it("takes a goal to decompose instead of a file of tasks", () => {
+    expect(
+      parseCommandLine(["parallel", "--goal", "make both modules shout"], context),
+    ).toMatchObject({ goal: "make both modules shout", tasksFile: null });
+  });
+
+  it("refuses both at once, because only one of them can be the decomposition", () => {
+    expect(() =>
+      parseCommandLine(["parallel", "--tasks", "t.txt", "--goal", "do the thing"], context),
+    ).toThrow(/--tasks|--goal/);
   });
 
   it("takes the base to branch every worker from", () => {

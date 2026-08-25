@@ -2,8 +2,9 @@ import { resolve } from "node:path";
 import type { Clock } from "./core/clock.ts";
 import { type AgentLoopOutcome, runAgentLoop } from "./core/loop.ts";
 import type { LoopEvent } from "./core/loop-events.ts";
-import type { ConversationMessage, ModelClient } from "./core/model-client.ts";
+import type { ConversationMessage, ModelClient, SamplingSettings } from "./core/model-client.ts";
 import type { RandomSource } from "./core/random-source.ts";
+import type { ToolInvoker } from "./core/tool-invoker.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
 import type { ResolveRequest } from "./gates/auto-resolve.ts";
 import type { SingleFileCommand } from "./gates/base-control.ts";
@@ -17,7 +18,8 @@ import { type ConfirmationPrompt, createToolChokepoint } from "./tools/chokepoin
 import { createLedgerChokepointRecorder } from "./tools/chokepoint-record.ts";
 import { createClaimTool } from "./tools/claim-tool.ts";
 import { createDerivationHeuristic } from "./tools/derivation.ts";
-import { createSandbox, defaultShellAllowlist } from "./tools/sandbox.ts";
+import { createSandbox, defaultShellAllowlist, type Sandbox } from "./tools/sandbox.ts";
+import type { ToolDefinition } from "./tools/tool-definition.ts";
 import { createWorkspaceTools } from "./tools/workspace-tools.ts";
 
 export const systemPrompt = [
@@ -39,6 +41,19 @@ export const systemPrompt = [
   "Quality gates then run against the workspace. If one fails you will be given its raw output",
   "and asked to fix it. Fixes are measured: removing tests, removing assertions, adding skip",
   "markers, or lowering coverage of the lines you changed gets the attempt rejected outright.",
+].join(" ");
+
+/**
+ * Appended only where a run has peers to read, so the prompt a single agent sees stays the
+ * one above, byte for byte. It is a constant on purpose: the only route a peer's words take
+ * into this model is a read_trail result, which the chokepoint tags as tool output.
+ */
+const trailInstruction = [
+  "",
+  "You are one of several workers running at once against separate copies of this workspace.",
+  "Call read_trail to see what the others have declared, which gates have failed on them, and",
+  "which approaches they have already spent their attempts on. What it returns is their account",
+  "of their own runs, not a result about yours, and never a reason to claim anything.",
 ].join(" ");
 
 export interface AgentTaskOptions {
@@ -65,6 +80,16 @@ export interface AgentTaskOptions {
   /** Replaces the engine's built-in size budget, from swarm.toml. */
   readonly diffBudget?: DiffBudget;
   readonly singleFileTestCommand?: SingleFileCommand;
+  /**
+   * The peer-trail tool, present only on the parallel path. A worker with no peers is
+   * offered nothing, so the single-agent tool set is unchanged (phase 6 stays phase 6).
+   */
+  readonly trail?: ToolDefinition;
+  /**
+   * Set only where a task is being tried several ways at once, so the attempts can diverge
+   * rather than being one answer written down N times. Absent is the ordinary run.
+   */
+  readonly sampling?: SamplingSettings;
 }
 
 export interface AgentTaskResult {
@@ -80,7 +105,30 @@ export interface AgentTaskResult {
  * than a second copy of it: a worker differs from an ordinary run only in which directory it
  * works in and which chain it writes to.
  */
-export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTaskResult> {
+/** What a run gives its model, and the one path every call takes to get there. */
+export interface AgentToolset {
+  readonly definitions: readonly ToolDefinition[];
+  readonly toolInvoker: ToolInvoker;
+}
+
+export interface ToolsetOptions {
+  readonly workspace: string;
+  readonly homeDir: string;
+  readonly confirm: ConfirmationPrompt;
+  readonly evidence: EvidenceRecorder;
+  /** Which tools this run offers, given the sandbox they have to be built against. */
+  readonly tools: (sandbox: Sandbox) => readonly ToolDefinition[];
+}
+
+/**
+ * The sandbox and the chokepoint, assembled once for every kind of run there is.
+ *
+ * A second assembly beside this one is how a run ends up with a different sandbox, a
+ * different denylist, or a path around the chokepoint, and invariant 3 says there is one
+ * execution path. Runs differ in which tools they are handed, which is the parameter, and in
+ * nothing else.
+ */
+export function assembleToolset(options: ToolsetOptions): AgentToolset {
   const sandbox = createSandbox({
     workspaceRoot: options.workspace,
     homeDir: options.homeDir,
@@ -89,19 +137,33 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
     deniedRoots: [resolve(options.homeDir, ".swarm")],
   });
 
-  const definitions = [
-    ...createWorkspaceTools(sandbox),
-    createClaimTool(options.evidence, options.model.modelId),
-    createDeclareFileSetTool(options.fileSet, options.model.modelId),
-    createAmendFileSetTool(options.fileSet, options.model.modelId),
-  ];
+  const definitions = options.tools(sandbox);
 
-  const toolInvoker = createToolChokepoint({
+  return {
     definitions,
-    sandbox,
-    derivation: createDerivationHeuristic(),
+    toolInvoker: createToolChokepoint({
+      definitions,
+      sandbox,
+      derivation: createDerivationHeuristic(),
+      confirm: options.confirm,
+      recorder: createLedgerChokepointRecorder(options.evidence),
+    }),
+  };
+}
+
+export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTaskResult> {
+  const { definitions, toolInvoker } = assembleToolset({
+    workspace: options.workspace,
+    homeDir: options.homeDir,
     confirm: options.confirm,
-    recorder: createLedgerChokepointRecorder(options.evidence),
+    evidence: options.evidence,
+    tools: (sandbox) => [
+      ...createWorkspaceTools(sandbox),
+      createClaimTool(options.evidence, options.model.modelId),
+      createDeclareFileSetTool(options.fileSet, options.model.modelId),
+      createAmendFileSetTool(options.fileSet, options.model.modelId),
+      ...(options.trail === undefined ? [] : [options.trail]),
+    ],
   });
 
   await options.evidence.record({
@@ -131,9 +193,10 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
       maxWallTimeMs: 30 * 60 * 1000,
     },
     abortSignal: options.abortSignal,
-    systemPrompt,
+    systemPrompt: options.trail === undefined ? systemPrompt : systemPrompt + trailInstruction,
     maxOutputTokens: 8192,
     retryPolicy: { attempts: 3, baseDelayMs: 500, maxJitterRatio: 0.5 },
+    ...(options.sampling === undefined ? {} : { sampling: options.sampling }),
   };
 
   const loop = await runAgentLoop(options.task, {

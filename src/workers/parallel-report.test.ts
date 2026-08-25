@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { EvidenceRecorder } from "../evidence/session.ts";
+import { emptyMeasureSnapshot } from "../gates/measure-snapshot.ts";
+import type { AttemptSelection } from "./attempt-selector.ts";
 import type { QueueLanding } from "./merge-queue.ts";
 import { renderParallelReport } from "./parallel-report.ts";
 import type { ParallelRunResult, WorkerResult } from "./parallel-run.ts";
@@ -9,6 +11,8 @@ const evidence = { sessionId: "s" } as EvidenceRecorder;
 function worker(overrides: Partial<WorkerResult> = {}): WorkerResult {
   return {
     workerId: "worker-1",
+    taskId: "task-1",
+    attemptIndex: 0,
     task: "add a shout to alpha",
     branch: "swarm/run1/worker-1",
     evidence,
@@ -16,6 +20,10 @@ function worker(overrides: Partial<WorkerResult> = {}): WorkerResult {
     commit: "a".repeat(40),
     declaredFiles: ["src/alpha.js"],
     detail: "gates green after 3 step(s)",
+    measures: emptyMeasureSnapshot,
+    erosions: 0,
+    changedFiles: 1,
+    addedLines: 4,
     ...overrides,
   };
 }
@@ -38,6 +46,7 @@ function landing(overrides: Partial<QueueLanding> = {}): QueueLanding {
 function report(overrides: Partial<ParallelRunResult> = {}): string {
   const result: ParallelRunResult = {
     workers: [worker()],
+    selections: [],
     queue: {
       baseCommit: "c".repeat(40),
       headCommit: "b".repeat(40),
@@ -137,5 +146,53 @@ describe("renderParallelReport", () => {
 
     expect(text).toMatch(/no worker produced anything for the queue/);
     expect(text).not.toContain("git merge");
+  });
+});
+
+describe("the report of a run that tried each task several ways", () => {
+  function selection(overrides: Partial<AttemptSelection> = {}): AttemptSelection {
+    return {
+      taskId: "task-1",
+      baseCommit: "b".repeat(40),
+      attempts: [],
+      order: ["worker-2", "worker-1"],
+      winner: "worker-2",
+      decidedBy: "assertions",
+      abstentions: [],
+      ...overrides,
+    };
+  }
+
+  it("says nothing about selections when each task was tried once", () => {
+    expect(report({ selections: [] })).not.toMatch(/chosen|ranked/i);
+  });
+
+  it("says which attempt each task chose and on what", () => {
+    const rendered = report({ selections: [selection()] });
+
+    expect(rendered).toContain("task-1");
+    expect(rendered).toContain("worker-2");
+    expect(rendered).toContain("assertions");
+  });
+
+  it("says a task chose nothing rather than leaving the line blank", () => {
+    const rendered = report({
+      selections: [selection({ winner: null, decidedBy: null, order: [] })],
+    });
+
+    expect(rendered).toMatch(/nothing/i);
+  });
+
+  it("names a dimension nothing measured, so an abstention is not silent", () => {
+    const rendered = report({
+      selections: [
+        selection({
+          abstentions: [{ dimension: "changedLinesCovered", reason: "no attempt measured it" }],
+        }),
+      ],
+    });
+
+    expect(rendered).toContain("changedLinesCovered");
+    expect(rendered).toMatch(/not measured|no attempt measured/i);
   });
 });

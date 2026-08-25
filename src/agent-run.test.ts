@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type AgentTaskOptions, runAgentTask } from "./agent-run.ts";
+import { type AgentTaskOptions, runAgentTask, systemPrompt } from "./agent-run.ts";
 import type { Clock } from "./core/clock.ts";
+import type { ModelClient, ModelRequest } from "./core/model-client.ts";
 import { createFixedRandom } from "./core/test-doubles.ts";
 import type { JsonValue } from "./evidence/canonical-json.ts";
 import { createRecordingModelClient } from "./evidence/model-call-recording.ts";
@@ -17,6 +18,7 @@ import {
   respondWithText,
   respondWithToolCalls,
 } from "./providers/fixture-provider.ts";
+import { createReadTrailTool } from "./workers/trail-tool.ts";
 
 const run = promisify(execFile);
 const clock: Clock = { now: () => 1_700_000_000_000, sleep: () => Promise.resolve() };
@@ -227,5 +229,87 @@ describe("runAgentTask", () => {
 
     expect(result.loop.completionClaim).toBe("done");
     expect(result.green).toBe(false);
+  });
+});
+
+describe("the trail tool a worker is given and the single-agent path is not", () => {
+  function spyOn(turns: readonly FixtureTurn[]) {
+    const requests: ModelRequest[] = [];
+    const fixture = createFixtureModelClient({ modelId: "fixture:worker", turns });
+    const model: ModelClient = {
+      modelId: fixture.modelId,
+      generate: (request) => {
+        requests.push(request);
+        return fixture.generate(request);
+      },
+    };
+    return { requests, model };
+  }
+
+  const stopAtOnce = [respondWithText("nothing to do")];
+
+  it("offers exactly today's tools when no trail is passed", async () => {
+    const spy = spyOn(stopAtOnce);
+
+    await task(stopAtOnce, { model: spy.model });
+
+    expect(spy.requests[0]?.tools.map((tool) => tool.name)).toEqual([
+      "read",
+      "write",
+      "edit",
+      "list",
+      "search",
+      "shell",
+      "claim",
+      "declare_file_set",
+      "amend_file_set",
+    ]);
+  });
+
+  it("sends the system prompt byte for byte when no trail is passed", async () => {
+    const spy = spyOn(stopAtOnce);
+
+    await task(stopAtOnce, { model: spy.model });
+
+    expect(spy.requests[0]?.system).toBe(systemPrompt);
+  });
+
+  it("adds the trail tool and nothing else when one is passed", async () => {
+    const spy = spyOn(stopAtOnce);
+    const trail = createReadTrailTool({ peers: () => [] });
+
+    await task(stopAtOnce, { model: spy.model, trail });
+
+    const names = spy.requests[0]?.tools.map((tool) => tool.name) ?? [];
+    expect(names).toContain("read_trail");
+    expect(names).toHaveLength(10);
+  });
+
+  it("sends no sampling settings when none are asked for", async () => {
+    const spy = spyOn(stopAtOnce);
+
+    await task(stopAtOnce, { model: spy.model });
+
+    expect(spy.requests[0]?.sampling).toBeUndefined();
+  });
+
+  it("carries the sampling settings an attempt was given through to the model", async () => {
+    const spy = spyOn(stopAtOnce);
+    const sampling = { temperature: 0.7, topP: 0.95, seed: 12345 };
+
+    await task(stopAtOnce, { model: spy.model, sampling });
+
+    expect(spy.requests[0]?.sampling).toEqual(sampling);
+  });
+
+  it("says the trail is a peer's account rather than a result, and quotes no peer", async () => {
+    const spy = spyOn(stopAtOnce);
+    const trail = createReadTrailTool({ peers: () => [] });
+
+    await task(stopAtOnce, { model: spy.model, trail });
+
+    const added = (spy.requests[0]?.system ?? "").slice(systemPrompt.length);
+    expect(added).toContain("read_trail");
+    expect(added).not.toMatch(/verified|green|\bpassed\b/i);
   });
 });
