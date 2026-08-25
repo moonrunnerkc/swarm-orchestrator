@@ -125,7 +125,16 @@ export async function runMergeQueue(options: MergeQueueOptions): Promise<MergeQu
   // own set already failed its own file-set gate and never reached here.
   const declared = [...new Set(options.candidates.flatMap((one) => one.declaredFiles))];
   if (declared.length > 0) {
-    await options.fileSet.declare(declared, "harness");
+    // A graph lands layer by layer, so the queue runs more than once over one chain and the
+    // union is not known until the last pass. The second pass amends rather than declaring
+    // again: a replaced declaration would hide the widening, and the amendment claim is the
+    // reviewer-visible remedy invariant 12 asks for. Still the workers' own declared files,
+    // each of which already passed that worker's own file-set gate, never a planner's guess.
+    if (options.fileSet.state().wasDeclared) {
+      await options.fileSet.amend(declared, "a later layer of the graph proposed these", "harness");
+    } else {
+      await options.fileSet.declare(declared, "harness");
+    }
   }
 
   const trackedTestFiles = new Set<string>();

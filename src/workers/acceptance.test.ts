@@ -20,6 +20,7 @@ import {
   respondWithToolCalls,
 } from "../providers/fixture-provider.ts";
 import { runInParallel } from "./parallel-run.ts";
+import { readTaskGraph, type TaskGraph } from "./task-graph.ts";
 
 /**
  * The phase acceptance run, against a real git repository with real worktrees, real test
@@ -148,6 +149,7 @@ function modelFor(
 
 interface ParallelOverrides {
   readonly redundancy?: number;
+  readonly graph?: TaskGraph;
   /** Scripts keyed by worker id, for a run whose attempts at one task must differ. */
   readonly byWorker?: Readonly<Record<string, readonly FixtureTurn[]>>;
 }
@@ -181,6 +183,7 @@ async function parallel(
     attempts: 0,
     gateOptions: { commandOverrides: gateOverrides },
     redundancy: overrides.redundancy ?? 1,
+    ...(overrides.graph === undefined ? {} : { graph: overrides.graph, graphSource: "file" }),
     concurrency: 0,
     modelSpec: "fixture:worker",
     abortSignal: new AbortController().signal,
@@ -524,5 +527,96 @@ describe("trying each task several ways", () => {
     expect(result.queue?.landings.some((landing) => landing.reason === "merge-conflict")).toBe(
       false,
     );
+  });
+});
+
+describe("running a declared task graph", () => {
+  const shoutAlpha = "add a shout to alpha";
+  const shoutBeta = "add a shout to beta, now that alpha shouts";
+
+  const scripts = {
+    [shoutAlpha]: scriptFor({
+      "src/alpha.js": withShout(alpha, "Alpha", "alpha"),
+      "src/alpha-shout.test.js": shoutTest("Alpha", "alpha"),
+    }),
+    [shoutBeta]: scriptFor({
+      "src/beta.js": withShout(beta, "Beta", "beta"),
+      "src/beta-shout.test.js": shoutTest("Beta", "beta"),
+    }),
+  };
+
+  const graph = readTaskGraph({
+    goal: "make both modules shout",
+    nodes: [
+      {
+        id: "alpha",
+        title: "alpha shouts",
+        instruction: shoutAlpha,
+        files: ["src/alpha.js", "src/alpha-shout.test.js"],
+      },
+      {
+        id: "beta",
+        title: "beta shouts",
+        instruction: shoutBeta,
+        files: ["src/beta.js", "src/beta-shout.test.js"],
+        dependsOn: ["alpha"],
+      },
+    ],
+  });
+
+  it("declares the graph before it starts a single worker", async () => {
+    await parallel(scripts, { graph });
+
+    const types = coordinator.records().map((record) => record.type);
+    expect(types.indexOf("task-graph")).toBeGreaterThanOrEqual(0);
+    expect(types.indexOf("task-graph")).toBeLessThan(types.indexOf("worker-started"));
+  });
+
+  it("runs a dependent node against the tree its parent landed", async () => {
+    const result = await parallel(scripts, { graph });
+
+    expect(result.workers.map((worker) => worker.task)).toEqual([shoutAlpha, shoutBeta]);
+    expect(result.queue?.landings.map((landing) => landing.landed)).toEqual([true, true]);
+    expect(result.headCommit).not.toBe(result.baseCommit);
+  });
+
+  it("claims every declared node landed, and the harness agrees when they did", async () => {
+    await parallel(scripts, { graph });
+
+    const dag = buildEvidenceDag(coordinator.records(), coordinator.payloads());
+    const outcome = dag.claims.find((claim) => claim.recordKind === "task-graph-outcome");
+    expect(outcome?.predicate).toBe("nodes == 2 && landed == 2");
+    expect(outcome?.evaluation.verdict).toBe("verified");
+  });
+
+  it("says out loud that it does not check the nodes add up to the goal", async () => {
+    await parallel(scripts, { graph });
+
+    const dag = buildEvidenceDag(coordinator.records(), coordinator.payloads());
+    const outcome = dag.claims.find((claim) => claim.recordKind === "task-graph-outcome");
+    expect(outcome?.narrative).toMatch(/not check|not checkable/i);
+  });
+
+  it("blocks a node whose parent never landed, and refuses the claim", async () => {
+    const failing = {
+      ...scripts,
+      [shoutAlpha]: scriptFor({
+        "src/alpha.js": "export function alpha() {\n  return 'wrong';\n}\n",
+      }),
+    };
+
+    const result = await parallel(failing, { graph });
+
+    expect(result.workers.map((worker) => worker.task)).toEqual([shoutAlpha]);
+
+    const dag = buildEvidenceDag(coordinator.records(), coordinator.payloads());
+    const outcome = dag.claims.find((claim) => claim.recordKind === "task-graph-outcome");
+    expect(outcome?.evaluation.verdict).toBe("unverified");
+
+    const written = coordinator.records().find((record) => record.type === "task-graph-outcome");
+    expect(coordinator.payloads().get(written?.payloadDigest ?? "")).toMatchObject({
+      landed: 0,
+      blocked: ["beta"],
+    });
   });
 });

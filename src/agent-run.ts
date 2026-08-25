@@ -4,6 +4,7 @@ import { type AgentLoopOutcome, runAgentLoop } from "./core/loop.ts";
 import type { LoopEvent } from "./core/loop-events.ts";
 import type { ConversationMessage, ModelClient, SamplingSettings } from "./core/model-client.ts";
 import type { RandomSource } from "./core/random-source.ts";
+import type { ToolInvoker } from "./core/tool-invoker.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
 import type { ResolveRequest } from "./gates/auto-resolve.ts";
 import type { SingleFileCommand } from "./gates/base-control.ts";
@@ -17,7 +18,7 @@ import { type ConfirmationPrompt, createToolChokepoint } from "./tools/chokepoin
 import { createLedgerChokepointRecorder } from "./tools/chokepoint-record.ts";
 import { createClaimTool } from "./tools/claim-tool.ts";
 import { createDerivationHeuristic } from "./tools/derivation.ts";
-import { createSandbox, defaultShellAllowlist } from "./tools/sandbox.ts";
+import { createSandbox, defaultShellAllowlist, type Sandbox } from "./tools/sandbox.ts";
 import type { ToolDefinition } from "./tools/tool-definition.ts";
 import { createWorkspaceTools } from "./tools/workspace-tools.ts";
 
@@ -104,7 +105,30 @@ export interface AgentTaskResult {
  * than a second copy of it: a worker differs from an ordinary run only in which directory it
  * works in and which chain it writes to.
  */
-export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTaskResult> {
+/** What a run gives its model, and the one path every call takes to get there. */
+export interface AgentToolset {
+  readonly definitions: readonly ToolDefinition[];
+  readonly toolInvoker: ToolInvoker;
+}
+
+export interface ToolsetOptions {
+  readonly workspace: string;
+  readonly homeDir: string;
+  readonly confirm: ConfirmationPrompt;
+  readonly evidence: EvidenceRecorder;
+  /** Which tools this run offers, given the sandbox they have to be built against. */
+  readonly tools: (sandbox: Sandbox) => readonly ToolDefinition[];
+}
+
+/**
+ * The sandbox and the chokepoint, assembled once for every kind of run there is.
+ *
+ * A second assembly beside this one is how a run ends up with a different sandbox, a
+ * different denylist, or a path around the chokepoint, and invariant 3 says there is one
+ * execution path. Runs differ in which tools they are handed, which is the parameter, and in
+ * nothing else.
+ */
+export function assembleToolset(options: ToolsetOptions): AgentToolset {
   const sandbox = createSandbox({
     workspaceRoot: options.workspace,
     homeDir: options.homeDir,
@@ -113,20 +137,33 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
     deniedRoots: [resolve(options.homeDir, ".swarm")],
   });
 
-  const definitions = [
-    ...createWorkspaceTools(sandbox),
-    createClaimTool(options.evidence, options.model.modelId),
-    createDeclareFileSetTool(options.fileSet, options.model.modelId),
-    createAmendFileSetTool(options.fileSet, options.model.modelId),
-    ...(options.trail === undefined ? [] : [options.trail]),
-  ];
+  const definitions = options.tools(sandbox);
 
-  const toolInvoker = createToolChokepoint({
+  return {
     definitions,
-    sandbox,
-    derivation: createDerivationHeuristic(),
+    toolInvoker: createToolChokepoint({
+      definitions,
+      sandbox,
+      derivation: createDerivationHeuristic(),
+      confirm: options.confirm,
+      recorder: createLedgerChokepointRecorder(options.evidence),
+    }),
+  };
+}
+
+export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTaskResult> {
+  const { definitions, toolInvoker } = assembleToolset({
+    workspace: options.workspace,
+    homeDir: options.homeDir,
     confirm: options.confirm,
-    recorder: createLedgerChokepointRecorder(options.evidence),
+    evidence: options.evidence,
+    tools: (sandbox) => [
+      ...createWorkspaceTools(sandbox),
+      createClaimTool(options.evidence, options.model.modelId),
+      createDeclareFileSetTool(options.fileSet, options.model.modelId),
+      createAmendFileSetTool(options.fileSet, options.model.modelId),
+      ...(options.trail === undefined ? [] : [options.trail]),
+    ],
   });
 
   await options.evidence.record({

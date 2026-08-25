@@ -10,6 +10,12 @@ export interface PlannedAttempt {
   readonly sampling: SamplingSettings | null;
 }
 
+/** What a run has already planned, so a later layer numbers on from it rather than over it. */
+export interface AlreadyPlanned {
+  readonly tasks: number;
+  readonly workers: number;
+}
+
 /**
  * Which workers a run starts, and what makes them differ.
  *
@@ -28,15 +34,16 @@ export function planAttempts(
   tasks: readonly string[],
   redundancy: number,
   modelSpec: string,
+  alreadyPlanned: AlreadyPlanned = { tasks: 0, workers: 0 },
 ): readonly PlannedAttempt[] {
   const tries = Math.max(1, Math.trunc(redundancy));
   const planned: PlannedAttempt[] = [];
 
   for (const [taskIndex, task] of tasks.entries()) {
-    const taskId = `task-${taskIndex + 1}`;
+    const taskId = `task-${alreadyPlanned.tasks + taskIndex + 1}`;
     for (let attemptIndex = 0; attemptIndex < tries; attemptIndex += 1) {
       planned.push({
-        workerId: `worker-${planned.length + 1}`,
+        workerId: `worker-${alreadyPlanned.workers + planned.length + 1}`,
         taskId,
         task,
         attemptIndex,

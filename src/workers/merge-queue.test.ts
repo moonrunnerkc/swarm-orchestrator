@@ -389,3 +389,39 @@ describe("a candidate that carries the attempts ranked behind it", () => {
     expect(result.landings[1]).toMatchObject({ landed: false, reason: "merge-conflict" });
   });
 });
+
+describe("a queue that runs again over the same chain", () => {
+  it("amends the declared set on a later pass rather than declaring twice", async () => {
+    const fileSet = createFileSetRegistry(evidence);
+    const one = await worker("one", { "src/alpha.js": alphaWith("export const one = 1;") });
+    const integration = await addWorktree({
+      repositoryRoot: repository,
+      path: join(scratch, "integration"),
+      branch: "swarm/integration",
+      baseRef: "HEAD",
+    });
+
+    async function pass(branch: string, files: readonly string[]) {
+      return runMergeQueue({
+        integrationPath: integration.path,
+        baseCommit: await headCommit(integration.path),
+        candidates: [
+          { workerId: "one", branch, task: "one", declaredFiles: files, evidence, alternates: [] },
+        ],
+        evidence,
+        fileSet,
+        clock,
+        emit: () => {},
+        gateOptions: { commandOverrides: gateOverrides },
+      });
+    }
+
+    await pass(one.branch, one.files);
+    await expect(pass(one.branch, ["src/beta.js"])).resolves.toBeDefined();
+
+    const types = evidence.records().map((record) => record.type);
+    expect(types.filter((type) => type === "file-set-declared")).toHaveLength(1);
+    expect(types.filter((type) => type === "file-set-amended")).toHaveLength(1);
+    expect(fileSet.state().allowed.has("src/beta.js")).toBe(true);
+  });
+});
