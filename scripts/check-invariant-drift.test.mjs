@@ -89,6 +89,6 @@ describe("the invariant drift check", () => {
     );
 
     expect({ code: outcome.code, stderr: outcome.stderr }).toEqual({ code: 0, stderr: "" });
-    expect(outcome.stdout).toContain("14 invariants");
+    expect(outcome.stdout).toContain("15 invariants");
   });
 });
