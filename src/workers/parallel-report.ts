@@ -1,3 +1,4 @@
+import type { AttemptSelection } from "./attempt-selector.ts";
 import type { QueueLanding } from "./merge-queue.ts";
 import type { ParallelRunResult, WorkerResult } from "./parallel-run.ts";
 
@@ -29,6 +30,10 @@ export function renderParallelReport(
     ...result.workers.map(describeWorker),
   ];
 
+  if (result.selections.length > 0) {
+    lines.push("", "chosen", ...result.selections.map(describeSelection));
+  }
+
   if (result.queue === null) {
     lines.push(
       "",
@@ -51,6 +56,28 @@ export function renderParallelReport(
     `  git merge ${result.integrationBranch}`,
   );
   return lines;
+}
+
+/**
+ * Why each task proposed what it did. The abstentions are on the line for the same reason
+ * the ratchet names its own: a dimension nothing measured has to say so, or a ranking made
+ * without it reads as a ranking that considered it.
+ */
+function describeSelection(selection: AttemptSelection): string {
+  const head = `  ${selection.taskId.padEnd(10)}`;
+  if (selection.winner === null) {
+    return `${head}chose nothing: no attempt was eligible`;
+  }
+  const on =
+    selection.decidedBy === null
+      ? "on nothing that separated them, so the earliest"
+      : `on ${selection.decidedBy}`;
+  const line = `${head}${selection.winner} of ${selection.attempts.length}, ${on}`;
+  if (selection.abstentions.length === 0) {
+    return line;
+  }
+  const named = selection.abstentions.map((one) => one.dimension).join(", ");
+  return `${line}\n${" ".repeat(12)}not measured by any attempt: ${named}`;
 }
 
 function describeWorker(worker: WorkerResult): string {

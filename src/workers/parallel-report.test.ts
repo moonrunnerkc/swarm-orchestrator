@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { emptyMeasureSnapshot } from "../gates/measure-snapshot.ts";
+import type { AttemptSelection } from "./attempt-selector.ts";
 import type { QueueLanding } from "./merge-queue.ts";
 import { renderParallelReport } from "./parallel-report.ts";
 import type { ParallelRunResult, WorkerResult } from "./parallel-run.ts";
@@ -145,5 +146,53 @@ describe("renderParallelReport", () => {
 
     expect(text).toMatch(/no worker produced anything for the queue/);
     expect(text).not.toContain("git merge");
+  });
+});
+
+describe("the report of a run that tried each task several ways", () => {
+  function selection(overrides: Partial<AttemptSelection> = {}): AttemptSelection {
+    return {
+      taskId: "task-1",
+      baseCommit: "b".repeat(40),
+      attempts: [],
+      order: ["worker-2", "worker-1"],
+      winner: "worker-2",
+      decidedBy: "assertions",
+      abstentions: [],
+      ...overrides,
+    };
+  }
+
+  it("says nothing about selections when each task was tried once", () => {
+    expect(report({ selections: [] })).not.toMatch(/chosen|ranked/i);
+  });
+
+  it("says which attempt each task chose and on what", () => {
+    const rendered = report({ selections: [selection()] });
+
+    expect(rendered).toContain("task-1");
+    expect(rendered).toContain("worker-2");
+    expect(rendered).toContain("assertions");
+  });
+
+  it("says a task chose nothing rather than leaving the line blank", () => {
+    const rendered = report({
+      selections: [selection({ winner: null, decidedBy: null, order: [] })],
+    });
+
+    expect(rendered).toMatch(/nothing/i);
+  });
+
+  it("names a dimension nothing measured, so an abstention is not silent", () => {
+    const rendered = report({
+      selections: [
+        selection({
+          abstentions: [{ dimension: "changedLinesCovered", reason: "no attempt measured it" }],
+        }),
+      ],
+    });
+
+    expect(rendered).toContain("changedLinesCovered");
+    expect(rendered).toMatch(/not measured|no attempt measured/i);
   });
 });

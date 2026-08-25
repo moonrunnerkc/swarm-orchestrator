@@ -28,7 +28,7 @@ import { headCommit, mergeBranch, resetHard } from "./worktree.ts";
 /** Why a proposal did not land. Each one is handed back with the output that produced it. */
 type RejectionReason = "merge-conflict" | "gates" | "ratchet";
 
-interface QueueCandidate {
+export interface QueueCandidate {
   readonly workerId: string;
   readonly branch: string;
   readonly task: string;
@@ -36,6 +36,14 @@ interface QueueCandidate {
   readonly declaredFiles: readonly string[];
   /** The worker's own chain, so a rejection is returned to it and not only reported. */
   readonly evidence: EvidenceRecorder;
+  /**
+   * The attempts ranked behind this one at the same task, best first. Tried only where the
+   * integrated gates refuse this one: a conflict is over the same declared files and the
+   * next attempt shares it, and a ratchet rejection is over the very measures the next
+   * attempt ranked lower on. Only integration-specific breakage gives a structurally
+   * different patch a real chance, and every attempt costs a full gate cycle.
+   */
+  readonly alternates?: readonly QueueCandidate[];
 }
 
 export interface QueueLanding {
@@ -79,6 +87,10 @@ const mergeAttemptSchema = z.object({
   position: z.number().int().positive(),
   landed: z.boolean(),
   reason: z.enum(["merge-conflict", "gates", "ratchet"]).nullable(),
+  /** Whether this was the attempt the selection chose, or one that stepped in for it. */
+  role: z.enum(["winner", "fallback"]),
+  /** Where it ranked among the attempts at its task. One is the chosen one. */
+  rank: z.number().int().positive(),
   detail: z.string(),
   commit: z.string().nullable(),
   conflictingPaths: z.array(z.string()),
@@ -155,25 +167,38 @@ export async function runMergeQueue(options: MergeQueueOptions): Promise<MergeQu
   const landings: QueueLanding[] = [];
 
   for (const [index, candidate] of options.candidates.entries()) {
-    const landing = await tryCandidate({
-      candidate,
-      position: index + 1,
-      gates,
-      commands,
-      coverageArtifacts,
-      context,
-      snapshot,
-      baseline,
-      baselineGates,
-      accepted,
-      options,
-    });
-    landings.push(landing.landing);
+    const ranked = [candidate, ...(candidate.alternates ?? [])];
 
-    if (landing.landing.landed) {
-      baseline = landing.measures ?? baseline;
-      baselineGates = landing.landing.cycle?.statuses ?? baselineGates;
-      accepted = landing.landing.commit ?? accepted;
+    for (const [rank, attempt] of ranked.entries()) {
+      const landing = await tryCandidate({
+        candidate: attempt,
+        position: index + 1,
+        rank: rank + 1,
+        gates,
+        commands,
+        coverageArtifacts,
+        context,
+        snapshot,
+        baseline,
+        baselineGates,
+        accepted,
+        options,
+      });
+      landings.push(landing.landing);
+
+      if (landing.landing.landed) {
+        baseline = landing.measures ?? baseline;
+        baselineGates = landing.landing.cycle?.statuses ?? baselineGates;
+        accepted = landing.landing.commit ?? accepted;
+        break;
+      }
+      // Only integration-specific breakage is worth another attempt at the same task. A
+      // conflict is over the declared files the next attempt also touches, and a ratchet
+      // rejection is over the measures it ranked lower on, so falling back there buys a
+      // second failure at the price of a full gate cycle on the integrated tree.
+      if (landing.landing.reason !== "gates") {
+        break;
+      }
     }
   }
 
@@ -188,6 +213,8 @@ export async function runMergeQueue(options: MergeQueueOptions): Promise<MergeQu
 interface CandidateAttempt {
   readonly candidate: QueueCandidate;
   readonly position: number;
+  /** Where this attempt ranked at its task. One is the attempt the selection chose. */
+  readonly rank: number;
   readonly gates: readonly GateDefinition[];
   readonly commands: ReturnType<typeof createNodeCommandRunner>;
   readonly coverageArtifacts: CoverageArtifactStore;
@@ -324,6 +351,8 @@ async function recordAttempt(
     workerId: attempt.candidate.workerId,
     branch: attempt.candidate.branch,
     position: attempt.position,
+    role: attempt.rank === 1 ? "winner" : "fallback",
+    rank: attempt.rank,
     landed: outcome.landed,
     reason: outcome.reason,
     detail: outcome.landed

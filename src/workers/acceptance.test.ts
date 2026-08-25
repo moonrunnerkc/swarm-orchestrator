@@ -9,6 +9,7 @@ import type { ModelClient, ModelRequest } from "../core/model-client.ts";
 import { createFixedRandom } from "../core/test-doubles.ts";
 import { bundleSourceFromRecorder } from "../evidence/bundle.ts";
 import { exportCombinedBundle } from "../evidence/combined-bundle.ts";
+import { buildEvidenceDag } from "../evidence/dag.ts";
 import { createRecordingModelClient } from "../evidence/model-call-recording.ts";
 import { type EvidenceRecorder, openEvidenceSession } from "../evidence/session.ts";
 import { createEphemeralSigningKey } from "../evidence/signing.ts";
@@ -452,6 +453,61 @@ describe("trying each task several ways", () => {
     expect(payload.eligible).toBe(2);
     expect(payload.winner).toBe("worker-2");
     expect(payload.attempts.map((one) => one.workerId).sort()).toEqual(["worker-1", "worker-2"]);
+  });
+
+  it("claims the attempt it chose is the one that landed, and the harness checks it", async () => {
+    await parallel(oneTask, {
+      redundancy: 2,
+      byWorker: { "worker-1": attemptWriting(1), "worker-2": attemptWriting(4) },
+    });
+
+    const claims = coordinator
+      .records()
+      .filter((record) => record.type === "claim")
+      .map((record) => coordinator.payloads().get(record.payloadDigest));
+
+    expect(claims).toHaveLength(1);
+    expect(claims[0]).toMatchObject({
+      predicate: 'landed == true && workerId == "worker-2"',
+      recordKind: "merge-attempt",
+    });
+  });
+
+  it("renders that claim verified when the chosen attempt did land", async () => {
+    await parallel(oneTask, {
+      redundancy: 2,
+      byWorker: { "worker-1": attemptWriting(1), "worker-2": attemptWriting(4) },
+    });
+
+    const dag = buildEvidenceDag(coordinator.records(), coordinator.payloads());
+    expect(dag.claims.map((claim) => claim.evaluation.verdict)).toEqual(["verified"]);
+  });
+
+  it("renders it unverified when the chosen attempt was refused, naming what was chosen", async () => {
+    const collide = {
+      "add a shout to alpha": attemptWriting(1),
+      "add a shout to alpha again": attemptWriting(1),
+    };
+    await parallel(collide, {
+      redundancy: 2,
+      byWorker: {
+        "worker-1": attemptWriting(1),
+        "worker-2": attemptWriting(4),
+        "worker-3": attemptWriting(2),
+        // The winner of the second task writes the same file as the winner of the first,
+        // with different content, so the queue has a real conflict to refuse.
+        "worker-4": attemptWriting(6),
+      },
+    });
+
+    const dag = buildEvidenceDag(coordinator.records(), coordinator.payloads());
+    expect(dag.claims.map((claim) => claim.evaluation.verdict).sort()).toEqual([
+      "unverified",
+      "verified",
+    ]);
+    const refused = dag.claims.find((claim) => claim.evaluation.verdict === "unverified");
+    expect(refused?.evaluation.reason).toBe("predicate-false");
+    expect(refused?.narrative).toMatch(/chose worker-4/);
   });
 
   it("offers only the winner to the queue, so the losers never conflict with it", async () => {

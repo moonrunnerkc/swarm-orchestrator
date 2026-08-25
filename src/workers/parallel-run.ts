@@ -13,7 +13,7 @@ import { emptyMeasureSnapshot, type MeasureSnapshot } from "../gates/measure-sna
 import { summarizeRatchet } from "../gates/ratchet-summary.ts";
 import { type Attempt, type AttemptSelection, selectAttempt } from "./attempt-selector.ts";
 import { type PlannedAttempt, planAttempts } from "./fan-out.ts";
-import { type MergeQueueResult, runMergeQueue } from "./merge-queue.ts";
+import { type MergeQueueResult, type QueueCandidate, runMergeQueue } from "./merge-queue.ts";
 import { createWorkPool } from "./pool.ts";
 import { recordSelection } from "./selection-record.ts";
 import { peersFor, type TrailPeer } from "./trail.ts";
@@ -122,12 +122,9 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
       queue = await runMergeQueue({
         integrationPath: integration.path,
         baseCommit,
-        candidates: proposals.map((worker) => ({
-          workerId: worker.workerId,
-          branch: worker.branch,
-          task: worker.task,
-          declaredFiles: worker.declaredFiles,
-          evidence: worker.evidence,
+        candidates: proposals.map((proposal) => ({
+          ...asCandidate(proposal.winner),
+          alternates: proposal.alternates.map(asCandidate),
         })),
         evidence: options.coordinator,
         fileSet: createFileSetRegistry(options.coordinator),
@@ -141,6 +138,8 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
   } finally {
     await integration.remove();
   }
+
+  await claimTheChosenLanded(selections, queue, options.coordinator);
 
   // Recorded last, after the queue has had its say, because a rejection is appended to the
   // worker's own chain and that moves its head. The bundle's linkage has to name the head as
@@ -176,6 +175,49 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
 }
 
 /**
+ * The one thing about a selection worth asserting, because it is the one thing that can be
+ * false. The winner's id is fixed by the selection record written before the queue ran, and
+ * whether that attempt landed is decided afterwards by gates and a ratchet that answer to
+ * nobody here. A winner the integrated tree refused renders UNVERIFIED, naming the attempt
+ * that was chosen beside the record of it not landing, which is exactly the case a reviewer
+ * needs to see. A predicate over the selection's own arithmetic could never do that.
+ */
+async function claimTheChosenLanded(
+  selections: readonly AttemptSelection[],
+  queue: MergeQueueResult | null,
+  coordinator: EvidenceRecorder,
+): Promise<void> {
+  for (const selection of selections) {
+    const winner = selection.winner;
+    const landing = queue?.landings.find((one) => one.workerId === winner);
+    if (winner === null || landing === undefined) {
+      continue;
+    }
+    await coordinator.submitClaim(
+      {
+        predicate: `landed == true && workerId == "${winner}"`,
+        record: landing.record,
+        recordKind: "merge-attempt",
+        narrative:
+          `${selection.taskId} ranked ${selection.attempts.length} attempt(s) and chose ` +
+          `${winner}${selection.decidedBy === null ? "" : ` on ${selection.decidedBy}`}.`,
+      },
+      "harness",
+    );
+  }
+}
+
+function asCandidate(worker: WorkerResult): QueueCandidate {
+  return {
+    workerId: worker.workerId,
+    branch: worker.branch,
+    task: worker.task,
+    declaredFiles: worker.declaredFiles,
+    evidence: worker.evidence,
+  };
+}
+
+/**
  * One proposal per task, and the record of why it was that one.
  *
  * Where a task was tried once there is nothing to choose, so nothing is chosen and nothing
@@ -188,9 +230,14 @@ async function chooseProposals(
   workers: readonly WorkerResult[],
   baseCommit: string,
   options: ParallelRunOptions,
-): Promise<{ proposals: readonly WorkerResult[]; selections: readonly AttemptSelection[] }> {
+): Promise<{ proposals: readonly RankedProposal[]; selections: readonly AttemptSelection[] }> {
   if (options.redundancy <= 1) {
-    return { proposals: workers.filter((worker) => worker.commit !== null), selections: [] };
+    return {
+      proposals: workers
+        .filter((worker) => worker.commit !== null)
+        .map((winner) => ({ winner, alternates: [] })),
+      selections: [],
+    };
   }
 
   const byTask = new Map<string, WorkerResult[]>();
@@ -200,7 +247,7 @@ async function chooseProposals(
     byTask.set(worker.taskId, attempts);
   }
 
-  const proposals: WorkerResult[] = [];
+  const proposals: RankedProposal[] = [];
   const selections: AttemptSelection[] = [];
 
   for (const [taskId, attempts] of byTask) {
@@ -211,13 +258,23 @@ async function chooseProposals(
     await recordSelection(options.coordinator, selection);
     selections.push(selection);
 
-    const winner = attempts.find((attempt) => attempt.workerId === selection.winner);
+    // In rank order, so the queue's fallback is the attempt the comparator put next.
+    const ranked = selection.order
+      .map((workerId) => attempts.find((attempt) => attempt.workerId === workerId))
+      .filter((attempt): attempt is WorkerResult => attempt !== undefined);
+    const [winner, ...alternates] = ranked;
     if (winner !== undefined) {
-      proposals.push(winner);
+      proposals.push({ winner, alternates });
     }
   }
 
   return { proposals, selections };
+}
+
+/** The attempt a task is proposing, with the ones the comparator ranked behind it. */
+interface RankedProposal {
+  readonly winner: WorkerResult;
+  readonly alternates: readonly WorkerResult[];
 }
 
 function asAttempt(worker: WorkerResult, baseCommit: string): Attempt {
