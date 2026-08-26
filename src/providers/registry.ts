@@ -2,6 +2,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import type { JSONValue } from "ai";
 import type { ModelClient } from "../core/model-client.ts";
 import { createAiSdkModelClient } from "./ai-sdk-model-client.ts";
 import { createFixtureModelClient, type FixtureScript } from "./fixture-provider.ts";
@@ -14,6 +15,11 @@ export interface ProviderSettings {
   readonly googleApiKey?: string | undefined;
   /** OpenAI-compatible base url. Serves both Ollama and rapid-mlx through one adapter. */
   readonly localBaseUrl?: string | undefined;
+  /**
+   * Whether the model behind the local endpoint should reason before it answers. Undefined
+   * sends nothing and leaves the server's own default alone.
+   */
+  readonly localThinking?: boolean | null | undefined;
   /**
    * What the local adapter sends requests with. Present so the one module allowed to talk to
    * a network can be asked what it puts on the wire, which is how the missing usage request
@@ -91,7 +97,7 @@ export function createProviderRegistry(settings: ProviderSettings): ProviderRegi
             includeUsage: true,
             ...(settings.fetch === undefined ? {} : { fetch: settings.fetch }),
           });
-          return createAiSdkModelClient(label, local(spec.modelId));
+          return createAiSdkModelClient(label, local(spec.modelId), thinkingOptions(settings));
         }
         case "fixture": {
           if (settings.fixtureScript === undefined) {
@@ -104,6 +110,28 @@ export function createProviderRegistry(settings: ProviderSettings): ProviderRegi
         }
       }
     },
+  };
+}
+
+/**
+ * Whether the model behind the local endpoint should reason before it answers, in the two
+ * spellings the servers that accept it use: rapid-mlx and vLLM read the top-level field, and
+ * the templated form is what a server that passes the flag to its chat template wants. Nothing
+ * is sent unless a setting asked for it, because the field is a vendor extension and a server
+ * that rejects what it does not recognise would fail every call rather than one.
+ *
+ * Ollama's OpenAI-compatible route ignores both. That is the server's own limit, not this one:
+ * its `/api/chat` carries the switch instead, and nothing here reaches that route.
+ */
+function thinkingOptions(
+  settings: ProviderSettings,
+): Record<string, Record<string, JSONValue>> | undefined {
+  if (settings.localThinking === undefined || settings.localThinking === null) {
+    return undefined;
+  }
+  const enabled = settings.localThinking;
+  return {
+    local: { enable_thinking: enabled, chat_template_kwargs: { enable_thinking: enabled } },
   };
 }
 

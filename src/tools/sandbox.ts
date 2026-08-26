@@ -111,9 +111,7 @@ export function createSandbox(policy: SandboxPolicy): Sandbox {
       // Every command in the string, not the first one: the whole string reaches `/bin/sh -c`.
       // A string this cannot read is not allowed either, which asks rather than assumes.
       const read = readShellCommand(command);
-      return (
-        read !== null && read.executables.every((name) => policy.shellAllowlist.includes(name))
-      );
+      return read?.executables.every((name) => policy.shellAllowlist.includes(name)) ?? false;
     },
   };
 }

@@ -31,6 +31,8 @@ export interface ScreenInput {
   readonly task: string;
   readonly workspace: string;
   readonly confirmation: ConfirmationRequest | null;
+  /** How long that question waits before refusing itself, so the panel can say so. */
+  readonly confirmTimeoutMs?: number;
   /** Present once the run has finished and the bundle has been written. */
   readonly evidence: EvidenceSummary | null;
   /** How long the current activity has been going, for the line that says the run is alive. */
@@ -439,7 +441,21 @@ function confirmationRows(input: ScreenInput, request: ConfirmationRequest): rea
     { text: `  ${request.toolName}: ${truncateToWidth(request.detail, layout.contentColumns)}` },
     { text: "" },
     { text: `  ${yes} to run it, ${no} or escape to refuse. Refusing is recorded either way.` },
+    ...(input.confirmTimeoutMs === undefined || input.confirmTimeoutMs <= 0
+      ? []
+      : [
+          {
+            text: `  Unanswered, it refuses itself after ${describeMinutes(input.confirmTimeoutMs)}.`,
+            dim: true,
+          },
+        ]),
   ];
+}
+
+/** Whole minutes, because the deadline is set in them and a second count would read as a timer. */
+function describeMinutes(milliseconds: number): string {
+  const minutes = Math.max(1, Math.round(milliseconds / 60_000));
+  return minutes === 1 ? "1 minute" : `${minutes} minutes`;
 }
 
 function label(text: string, input: ScreenInput): ScreenRow {

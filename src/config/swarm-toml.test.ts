@@ -36,6 +36,7 @@ describe("parseSwarmToml on a well-formed file", () => {
       openaiApiKey: "sk-oai-test",
       googleApiKey: "g-test",
       localEndpoint: "http://127.0.0.1:8000/v1",
+      localThinking: null,
     });
     expect(toml.gates).toEqual({ tests: "npm run test:fast" });
     expect(toml.budgets).toEqual({
@@ -159,11 +160,17 @@ describe("the tables that decide what the screen does", () => {
       "swarm.toml",
     );
 
-    expect(parsed.interface).toEqual({ tui: false, color: "never", openEvidence: "always" });
+    expect(parsed.interface).toEqual({
+      tui: false,
+      color: "never",
+      openEvidence: "always",
+      confirmTimeoutMinutes: null,
+    });
     expect(parseSwarmToml("", "swarm.toml").interface).toEqual({
       tui: null,
       color: null,
       openEvidence: null,
+      confirmTimeoutMinutes: null,
     });
   });
 
@@ -179,7 +186,7 @@ describe("the tables that decide what the screen does", () => {
 
   it("names the key and the accepted set for an unknown interface key", () => {
     expect(() => parseSwarmToml("[interface]\nfullscreen = true\n", "swarm.toml")).toThrow(
-      /\[interface\] fullscreen is not a key this build reads\. Accepted keys: tui, color, open_evidence\./,
+      /\[interface\] fullscreen is not a key this build reads\. Accepted keys: tui, color, open_evidence, confirm_timeout_minutes\./,
     );
   });
 
@@ -196,5 +203,34 @@ describe("the tables that decide what the screen does", () => {
     expect(() => parseSwarmToml("[screen]\nx = 1\n", "swarm.toml")).toThrow(
       /Accepted tables: providers, gates, budgets, models, interface, theme, keys\./,
     );
+  });
+});
+
+describe("the settings added for local reasoning and unanswered questions", () => {
+  it("reads both, and leaves them null when the file says nothing", () => {
+    const set = parseSwarmToml(
+      "[providers]\nlocal_thinking = false\n[interface]\nconfirm_timeout_minutes = 5\n",
+      "swarm.toml",
+    );
+    expect(set.providers.localThinking).toBe(false);
+    expect(set.interface.confirmTimeoutMinutes).toBe(5);
+
+    const silent = parseSwarmToml("", "swarm.toml");
+    expect(silent.providers.localThinking).toBeNull();
+    expect(silent.interface.confirmTimeoutMinutes).toBeNull();
+  });
+
+  it("takes 0 minutes, which is the way back to waiting for ever", () => {
+    const set = parseSwarmToml("[interface]\nconfirm_timeout_minutes = 0\n", "swarm.toml");
+    expect(set.interface.confirmTimeoutMinutes).toBe(0);
+  });
+
+  it("says what each wants when it is given something else", () => {
+    expect(() => parseSwarmToml('[providers]\nlocal_thinking = "yes"\n', "swarm.toml")).toThrow(
+      /true or false/,
+    );
+    expect(() =>
+      parseSwarmToml("[interface]\nconfirm_timeout_minutes = -1\n", "swarm.toml"),
+    ).toThrow(/whole number of minutes/);
   });
 });

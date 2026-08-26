@@ -1,4 +1,4 @@
-import { type LanguageModel, streamText, type ToolSet, tool } from "ai";
+import { type JSONValue, type LanguageModel, streamText, type ToolSet, tool } from "ai";
 import type {
   ModelClient,
   ModelPerformance,
@@ -16,7 +16,16 @@ import { toModelMessages } from "./message-conversion.ts";
  * calibration dimension, and a complete-response call cannot observe it. The stream is drained
  * here, so the loop still sees a whole response and nothing downstream changes.
  */
-export function createAiSdkModelClient(modelId: string, model: LanguageModel): ModelClient {
+export function createAiSdkModelClient(
+  modelId: string,
+  model: LanguageModel,
+  /**
+   * Extra fields for the provider's own request body, by provider name. Vendor knobs live
+   * here rather than in ModelRequest: the loop asks for a completion and has no business
+   * knowing which servers call reasoning what.
+   */
+  providerOptions?: Record<string, Record<string, JSONValue>>,
+): ModelClient {
   return {
     modelId,
     async generate(request: ModelRequest): Promise<ModelResponse> {
@@ -36,6 +45,7 @@ export function createAiSdkModelClient(modelId: string, model: LanguageModel): M
               ...(request.sampling.seed === null ? {} : { seed: request.sampling.seed }),
             }),
         abortSignal: request.abortSignal,
+        ...(providerOptions === undefined ? {} : { providerOptions }),
         // The SDK's default handler prints the whole error object, stack and response headers
         // included, straight over the running UI. Nothing is swallowed by replacing it: the
         // same error is raised out of the stream below and the loop renders it as one line.
