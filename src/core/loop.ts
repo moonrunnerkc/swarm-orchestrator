@@ -181,6 +181,20 @@ function buildRequest(
   };
 }
 
+/**
+ * A turn cut off at the output cap having emitted neither text nor a tool call. A reasoning
+ * model that spirals inside its own thinking produces exactly this, and it is the call failing
+ * rather than the model answering: the surrounding steps of the same run cost a few hundred
+ * tokens each, so the next sample of the same request usually lands.
+ */
+function spentTheCapOnNothing(response: ModelResponse): boolean {
+  return (
+    response.finishReason === "length" &&
+    response.text.trim().length === 0 &&
+    response.toolCalls.length === 0
+  );
+}
+
 async function callModelWithRetry(
   deps: AgentLoopDependencies,
   request: ModelRequest,
@@ -190,11 +204,22 @@ async function callModelWithRetry(
   let lastCause: unknown;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const willRetry = attempt < attempts - 1 && !deps.abortSignal.aborted;
     try {
-      return await deps.model.generate(request);
+      const response = await deps.model.generate(request);
+      // The last attempt's truncation is returned rather than thrown, so the loop stops as
+      // output-cap and names the cap. A call-failed error there would say less about more.
+      if (!spentTheCapOnNothing(response) || !willRetry) {
+        return response;
+      }
+      deps.emit({
+        type: "model-error",
+        step,
+        message: `the model spent all ${response.outputTokens} output tokens without emitting text or a tool call`,
+        willRetry: true,
+      });
     } catch (cause) {
       lastCause = cause;
-      const willRetry = attempt < attempts - 1 && !deps.abortSignal.aborted;
       deps.emit({
         type: "model-error",
         step,
@@ -202,11 +227,11 @@ async function callModelWithRetry(
         willRetry,
       });
       if (!willRetry) {
-        break;
+        throw new ModelCallFailedError(deps.model.modelId, lastCause);
       }
-      const backoffMs = baseDelayMs * 2 ** attempt;
-      await deps.clock.sleep(Math.round(backoffMs * (1 + deps.random.next() * maxJitterRatio)));
     }
+    const backoffMs = baseDelayMs * 2 ** attempt;
+    await deps.clock.sleep(Math.round(backoffMs * (1 + deps.random.next() * maxJitterRatio)));
   }
 
   throw new ModelCallFailedError(deps.model.modelId, lastCause);
