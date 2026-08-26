@@ -1,6 +1,6 @@
 import type { RandomSource } from "../core/random-source.ts";
 import type { AssignmentKind, RewardEntry } from "./routing-log.ts";
-import type { TaskClass } from "./task-class.ts";
+import { articleFor, type TaskClass } from "./task-class.ts";
 
 export interface RouterSettings {
   /** Rewards for a task class before the bandit takes over from the calibration pick. */
@@ -108,8 +108,8 @@ export function routeModel(input: RoutingInput): RoutingDecision {
     return decide(
       untried.model,
       "ucb",
-      `${untried.model} has never been tried on a ${input.taskClass} task, and an arm with no ` +
-        "samples has no upper bound to compare",
+      `${untried.model} has never been tried on ${articleFor(input.taskClass)} ` +
+        `${input.taskClass} task, and an arm with no samples has no upper bound to compare`,
       scored,
     );
   }

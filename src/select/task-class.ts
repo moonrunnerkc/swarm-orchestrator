@@ -7,6 +7,15 @@ export const taskClasses = ["edit", "multi-file", "test-fix", "tool-heavy"] as c
 
 export type TaskClass = (typeof taskClasses)[number];
 
+/**
+ * The article a sentence needs in front of a class name: "an edit task", "a multi-file task".
+ * Read off the word rather than off the fact that exactly one class in the set opens with a
+ * vowel, so adding a class later cannot quietly reintroduce "a edit task".
+ */
+export function articleFor(taskClass: TaskClass): "a" | "an" {
+  return /^[aeiou]/.test(taskClass) ? "an" : "a";
+}
+
 interface TaskClassification {
   readonly taskClass: TaskClass;
   /** The rule that fired, so a routing record explains which arm it reached for and why. */
