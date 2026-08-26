@@ -15,6 +15,7 @@ import { createFileSetRegistry } from "./gates/file-set.ts";
 import {
   createFixtureModelClient,
   type FixtureTurn,
+  respondTruncated,
   respondWithText,
   respondWithToolCalls,
 } from "./providers/fixture-provider.ts";
@@ -127,6 +128,30 @@ describe("runAgentTask", () => {
     expect(result.loop.stopReason).toBe("completed");
     expect(result.gates.outcome.settled).toBe("green");
     expect(result.green).toBe(true);
+  });
+
+  it("is green when the gates are, even where the model stopped short of saying so", async () => {
+    // The auto-resolve exists to carry a run to green that the model did not finish itself.
+    // Reading its stop reason as a second condition let the model's account of itself overrule
+    // what every gate measured, so a tree that passed every gate reported failure to CI.
+    const turns = goodTurns(stillGreen).slice(0, -1);
+    const result = await task([
+      ...turns,
+      respondTruncated(),
+      respondTruncated(),
+      respondTruncated(),
+    ]);
+
+    expect(result.loop.stopReason).toBe("output-cap");
+    expect(result.gates.outcome.settled).toBe("green");
+    expect(result.green).toBe(true);
+  });
+
+  it("is not green when somebody cancelled it, whatever the gates last saw", async () => {
+    const result = await task(goodTurns(stillGreen), { abortSignal: AbortSignal.abort() });
+
+    expect(result.loop.stopReason).toBe("interrupted");
+    expect(result.green).toBe(false);
   });
 
   it("is not green when the change the model made fails a gate", async () => {

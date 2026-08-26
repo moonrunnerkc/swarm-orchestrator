@@ -252,7 +252,13 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
   return {
     loop,
     gates,
-    green: loop.stopReason === "completed" && gates.outcome.settled === "green",
+    // The gates decide this, because deciding the outcome is what the gates are for. A run the
+    // model stopped short of and the auto-resolve carried to green leaves a tree every gate
+    // measured and passed, and reading the model's own stop reason as a second condition let
+    // its account of itself overrule that measurement, which is invariant 1 the wrong way
+    // round. The one thing the gates cannot speak for is a run somebody cancelled: that is not
+    // a verdict on the tree, so it is not green whatever the gates last saw.
+    green: gates.outcome.settled === "green" && loop.stopReason !== "interrupted",
   };
 }
 
