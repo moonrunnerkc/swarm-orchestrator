@@ -1,5 +1,6 @@
 import { realpathSync } from "node:fs";
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { readShellCommand } from "./shell-command.ts";
 
 /**
  * Credential paths denied by default. A workspace .env holding live keys is the
@@ -62,6 +63,7 @@ export interface Sandbox {
 export function createSandbox(policy: SandboxPolicy): Sandbox {
   const realpath = policy.realpath ?? defaultRealpath;
   const workspaceRoot = realpath(resolve(policy.workspaceRoot));
+  const homeDirectory = resolve(policy.homeDir);
   const deniedRoots = [
     resolve(policy.homeDir, ".aws"),
     resolve(policy.homeDir, ".ssh"),
@@ -76,9 +78,8 @@ export function createSandbox(policy: SandboxPolicy): Sandbox {
         return { allowed: false, reason: "the path is empty" };
       }
 
-      const requested = isAbsolute(candidate)
-        ? resolve(candidate)
-        : resolve(workspaceRoot, candidate);
+      const named = expandHome(candidate.trim(), homeDirectory);
+      const requested = isAbsolute(named) ? resolve(named) : resolve(workspaceRoot, named);
       // Resolve symlinks first: a link inside the workspace pointing outside it is an escape.
       const absolutePath = resolveThroughLinks(requested, realpath);
 
@@ -107,10 +108,26 @@ export function createSandbox(policy: SandboxPolicy): Sandbox {
     },
 
     isCommandAllowed(command: string): boolean {
-      const executable = command.trim().split(/\s+/)[0];
-      return executable !== undefined && policy.shellAllowlist.includes(executable);
+      // Every command in the string, not the first one: the whole string reaches `/bin/sh -c`.
+      // A string this cannot read is not allowed either, which asks rather than assumes.
+      const read = readShellCommand(command);
+      return (
+        read !== null && read.executables.every((name) => policy.shellAllowlist.includes(name))
+      );
     },
   };
+}
+
+/**
+ * `/bin/sh` expands a leading tilde before the command it runs ever opens anything, so a check
+ * that reads `~/.ssh/id_rsa` as a relative name is ruling on a path nothing will touch. The
+ * tildes this cannot expand are refused before they reach here.
+ */
+function expandHome(candidate: string, homeDirectory: string): string {
+  if (candidate === "~") {
+    return homeDirectory;
+  }
+  return candidate.startsWith("~/") ? join(homeDirectory, candidate.slice(2)) : candidate;
 }
 
 function defaultRealpath(path: string): string {
