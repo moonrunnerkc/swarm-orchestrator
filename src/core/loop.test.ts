@@ -240,11 +240,26 @@ describe("a turn that carries nothing", () => {
     // A live run against a local reasoning model stopped here twice, at the same step both
     // times, reported as an empty response. It had spent all 8192 output tokens thinking and
     // been cut off, which is the one fact "empty-response" does not carry.
-    const harness = createHarness([respondTruncated()]);
+    // Three, because a spiral is retried before it is believed: the retry policy is what
+    // decides how many samples of the same request it takes before the cap is the answer.
+    const harness = createHarness([respondTruncated(), respondTruncated(), respondTruncated()]);
     const outcome = await runAgentLoop("do the thing", harness.deps);
 
     expect(outcome.stopReason).toBe("output-cap");
     expect(outcome.answeredSteps).toBe(0);
+  });
+
+  it("samples again when a turn spirals, rather than ending the run on one of them", async () => {
+    // What this costs when it is missing: two live runs died at the same step, on a model whose
+    // every other step that run cost between 64 and 518 output tokens.
+    const harness = createHarness([respondTruncated(), respondWithText("done")]);
+    const outcome = await runAgentLoop("do the thing", harness.deps);
+
+    expect(outcome.stopReason).toBe("completed");
+    expect(outcome.completionClaim).toBe("done");
+    expect(harness.events.filter((event) => event.type === "model-error")).toMatchObject([
+      { willRetry: true, message: expect.stringContaining("without emitting text or a tool call") },
+    ]);
   });
 
   it("claims nothing, because there is nothing there to claim", async () => {
