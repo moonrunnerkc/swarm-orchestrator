@@ -134,7 +134,9 @@ export async function runAgentLoop(
     if (!answered) {
       // No claim is emitted: there is no text to claim anything, and recording an empty
       // string as the model's account of finishing would be the harness writing the claim.
-      return finish("empty-response", "");
+      // Which of the two it was comes off the finish reason rather than a guess: a turn cut
+      // off at the cap and a turn that arrived empty look identical from the content alone.
+      return finish(response.finishReason === "length" ? "output-cap" : "empty-response", "");
     }
 
     if (response.toolCalls.length === 0) {
