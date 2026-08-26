@@ -3,7 +3,7 @@ import { createElement } from "react";
 import type { Clock } from "../core/clock.ts";
 import type { LoopEvent } from "../core/loop-events.ts";
 import type { ConfirmationPrompt, ConfirmationRequest } from "../tools/chokepoint.ts";
-import { createConfirmationQueue } from "./confirmation-queue.ts";
+import { type ConfirmationQueue, createConfirmationQueue } from "./confirmation-queue.ts";
 import { describeEvidence, type EvidenceSummary } from "./evidence-panel.ts";
 import type { KeyBindings } from "./key-bindings.ts";
 import { type OpenTarget, openEvidenceTarget, type SpawnHandler } from "./open-path.ts";
@@ -69,6 +69,11 @@ export interface SessionInterfaceOptions {
    */
   readonly readLine?: (prompt: string) => Promise<string | null>;
   readonly openEvidence: OpenEvidencePolicy;
+  /**
+   * Milliseconds an unanswered confirmation waits before it refuses itself. Absent or 0 waits
+   * for ever, which is what every caller did before there was a deadline.
+   */
+  readonly confirmTimeoutMs?: number;
   readonly spawnOpen: SpawnHandler;
   readonly platform: NodeJS.Platform;
 }
@@ -190,7 +195,10 @@ function summarizeTurn(view: SessionView): string {
 
 function interactiveInterface(options: SessionInterfaceOptions): SessionInterface {
   const store = createSessionStore();
-  const confirmations = createConfirmationQueue();
+  const confirmations: ConfirmationQueue = createConfirmationQueue({
+    timeoutMs: options.confirmTimeoutMs ?? 0,
+    sleep: (milliseconds) => options.clock.sleep(milliseconds),
+  });
   const startedAt = options.clock.now();
 
   let state: ViewState = initialViewState;
@@ -277,6 +285,9 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
       viewState: state,
       dispatch,
       confirmations,
+      ...(options.confirmTimeoutMs === undefined
+        ? {}
+        : { confirmTimeoutMs: options.confirmTimeoutMs }),
       onOpen: open,
       onSubmitTask: submitTask,
       transcript,
@@ -301,6 +312,9 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
         viewState: state,
         dispatch,
         confirmations,
+        ...(options.confirmTimeoutMs === undefined
+          ? {}
+          : { confirmTimeoutMs: options.confirmTimeoutMs }),
         onOpen: open,
         onSubmitTask: submitTask,
         transcript,

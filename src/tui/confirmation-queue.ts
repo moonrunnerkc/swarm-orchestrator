@@ -5,6 +5,12 @@ import type { ConfirmationRequest } from "../tools/chokepoint.ts";
  * stdin in raw mode, so a second reader on the same stream drops keystrokes, and the one
  * place that must never drop one is the provenance-confirmation path (invariant 5). The
  * request becomes state the screen renders and the key dispatcher answers.
+ *
+ * A question nobody answers refuses itself. It used to wait for ever, and a run held on one
+ * overnight had done nothing by morning: the model had asked at step two and there was no one
+ * at the keyboard. Refusing is what the chokepoint records for a declined question either way,
+ * so the deadline costs that tool call rather than the run, and the model is told and can take
+ * another route.
  */
 
 export interface PendingConfirmation {
@@ -22,27 +28,22 @@ export interface ConfirmationQueue {
   refuseAll(): void;
 }
 
-export function createConfirmationQueue(): ConfirmationQueue {
-  const waiting: { request: ConfirmationRequest; settle: (approved: boolean) => void }[] = [];
-  const listeners = new Set<(pending: PendingConfirmation | null) => void>();
+export interface ConfirmationDeadline {
+  /** Milliseconds before an unanswered question refuses itself. 0 waits for ever. */
+  readonly timeoutMs: number;
+  /** The run's own clock, so this is not a second source of time (invariant 8). */
+  readonly sleep: (milliseconds: number) => Promise<void>;
+}
 
-  const head = (): PendingConfirmation | null => {
-    const first = waiting[0];
-    if (first === undefined) {
-      return null;
-    }
-    return {
-      request: first.request,
-      answer(approved: boolean): void {
-        if (waiting[0] !== first) {
-          return;
-        }
-        waiting.shift();
-        first.settle(approved);
-        announce();
-      },
-    };
-  };
+interface Waiting {
+  readonly request: ConfirmationRequest;
+  readonly settle: (approved: boolean) => void;
+  answered: boolean;
+}
+
+export function createConfirmationQueue(deadline?: ConfirmationDeadline): ConfirmationQueue {
+  const waiting: Waiting[] = [];
+  const listeners = new Set<(pending: PendingConfirmation | null) => void>();
 
   function announce(): void {
     const pending = head();
@@ -51,11 +52,44 @@ export function createConfirmationQueue(): ConfirmationQueue {
     }
   }
 
+  /** The one place a question is settled, so an answer and a deadline cannot both land. */
+  function resolve(entry: Waiting, approved: boolean): void {
+    if (entry.answered) {
+      return;
+    }
+    entry.answered = true;
+    const at = waiting.indexOf(entry);
+    if (at !== -1) {
+      waiting.splice(at, 1);
+    }
+    entry.settle(approved);
+    announce();
+  }
+
+  function head(): PendingConfirmation | null {
+    const first = waiting[0];
+    if (first === undefined) {
+      return null;
+    }
+    return {
+      request: first.request,
+      answer(approved: boolean): void {
+        resolve(first, approved);
+      },
+    };
+  }
+
   return {
     ask(request: ConfirmationRequest): Promise<boolean> {
       return new Promise<boolean>((settle) => {
-        waiting.push({ request, settle });
+        const entry: Waiting = { request, settle, answered: false };
+        waiting.push(entry);
         announce();
+        if (deadline !== undefined && deadline.timeoutMs > 0) {
+          void deadline.sleep(deadline.timeoutMs).then(() => {
+            resolve(entry, false);
+          });
+        }
       });
     },
     current: head,
@@ -66,10 +100,9 @@ export function createConfirmationQueue(): ConfirmationQueue {
       };
     },
     refuseAll(): void {
-      while (waiting.length > 0) {
-        waiting.shift()?.settle(false);
+      for (const entry of [...waiting]) {
+        resolve(entry, false);
       }
-      announce();
     },
   };
 }

@@ -27,6 +27,8 @@ interface SessionScreenProps {
   readonly viewState: ViewState;
   readonly dispatch: (action: ViewAction) => void;
   readonly confirmations: ConfirmationQueue;
+  /** Passed through so the question can say how long it waits before refusing itself. */
+  readonly confirmTimeoutMs?: number;
   readonly onOpen: (target: "review" | "bundle") => void;
   /** Called with the typed line when the prompt is submitted. Absent outside a session. */
   readonly onSubmitTask?: (task: string) => void;
@@ -139,6 +141,7 @@ export function SessionScreen(props: SessionScreenProps): ReactElement {
     task: props.task,
     workspace: props.workspace,
     confirmation: pending,
+    ...(props.confirmTimeoutMs === undefined ? {} : { confirmTimeoutMs: props.confirmTimeoutMs }),
     evidence: props.evidence,
     ...(props.transcript === undefined ? {} : { transcript: props.transcript }),
     ...(props.activityElapsedMs === undefined

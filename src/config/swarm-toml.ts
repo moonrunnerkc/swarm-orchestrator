@@ -23,6 +23,7 @@ const rawFileSchema = z.strictObject({
       openai_api_key: nonEmptyString.optional(),
       google_api_key: nonEmptyString.optional(),
       local_endpoint: httpUrl.optional(),
+      local_thinking: z.boolean().optional(),
     })
     .optional(),
   gates: z.record(nonEmptyString, nonEmptyString).optional(),
@@ -44,6 +45,7 @@ const rawFileSchema = z.strictObject({
       tui: z.boolean().optional(),
       color: z.enum(["auto", "always", "never"]).optional(),
       open_evidence: z.enum(["ask", "always", "never"]).optional(),
+      confirm_timeout_minutes: z.number().int().min(0).optional(),
     })
     .optional(),
   // Validated for shape here and for meaning where they are used: an unknown colour slot or
@@ -59,6 +61,13 @@ export interface SwarmToml {
     readonly openaiApiKey: string | null;
     readonly googleApiKey: string | null;
     readonly localEndpoint: string | null;
+    /**
+     * Whether the model behind the local endpoint should reason before it answers. Absent
+     * sends nothing and leaves the server's own default alone, which is the only safe
+     * default: the field is a vendor extension, and a server that rejects what it does not
+     * recognise would fail every call.
+     */
+    readonly localThinking: boolean | null;
   };
   /** Command overrides by gate id, handed to the gate assembler verbatim. */
   readonly gates: Readonly<Record<string, string>>;
@@ -75,6 +84,8 @@ export interface SwarmToml {
     readonly tui: boolean | null;
     readonly color: "auto" | "always" | "never" | null;
     readonly openEvidence: "ask" | "always" | "never" | null;
+    /** How long a confirmation waits for an answer before refusing it. 0 waits for ever. */
+    readonly confirmTimeoutMinutes: number | null;
   };
   /** Colour per slot, handed to the theme resolver verbatim. */
   readonly theme: Readonly<Record<string, string>>;
@@ -95,10 +106,10 @@ export class MalformedSwarmTomlError extends Error {
 const acceptedTables = "providers, gates, budgets, models, interface, theme, keys";
 
 const acceptedKeysByTable: Readonly<Record<string, string>> = {
-  providers: "anthropic_api_key, openai_api_key, google_api_key, local_endpoint",
+  providers: "anthropic_api_key, openai_api_key, google_api_key, local_endpoint, local_thinking",
   budgets: "max_steps, attempts, max_changed_files, max_added_lines",
   models: "pin",
-  interface: "tui, color, open_evidence",
+  interface: "tui, color, open_evidence, confirm_timeout_minutes",
 };
 
 /** What each value must look like, said in the error rather than left to a schema dump. */
@@ -107,6 +118,8 @@ const acceptedValueByKey: Readonly<Record<string, string>> = {
   "providers.openai_api_key": "a non-empty string",
   "providers.google_api_key": "a non-empty string",
   "providers.local_endpoint": 'an http(s) URL such as "http://127.0.0.1:11434/v1"',
+  "providers.local_thinking": "true or false",
+  "interface.confirm_timeout_minutes": "a whole number of minutes, or 0 to wait for ever",
   "budgets.max_steps": "a positive whole number",
   "budgets.attempts": "a positive whole number",
   "budgets.max_changed_files": "a positive whole number",
@@ -141,6 +154,7 @@ export function parseSwarmToml(text: string, source: string): SwarmToml {
       openaiApiKey: raw.providers?.openai_api_key ?? null,
       googleApiKey: raw.providers?.google_api_key ?? null,
       localEndpoint: raw.providers?.local_endpoint ?? null,
+      localThinking: raw.providers?.local_thinking ?? null,
     },
     gates: raw.gates ?? {},
     budgets: {
@@ -156,6 +170,7 @@ export function parseSwarmToml(text: string, source: string): SwarmToml {
       tui: raw.interface?.tui ?? null,
       color: raw.interface?.color ?? null,
       openEvidence: raw.interface?.open_evidence ?? null,
+      confirmTimeoutMinutes: raw.interface?.confirm_timeout_minutes ?? null,
     },
     theme: raw.theme ?? {},
     keys: raw.keys ?? {},

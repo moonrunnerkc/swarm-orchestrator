@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { ToolInvocation } from "../core/tool-invoker.ts";
-import { createToolChokepoint } from "../tools/chokepoint.ts";
+import { type ConfirmationRequest, createToolChokepoint } from "../tools/chokepoint.ts";
 import type { ChokepointRecord, ConfirmationRecord } from "../tools/chokepoint-record.ts";
 import { createDerivationHeuristic } from "../tools/derivation.ts";
 import { createSandbox, type SandboxPolicy } from "../tools/sandbox.ts";
@@ -220,6 +220,69 @@ describe("the confirmation queue", () => {
 });
 
 /** The chokepoint records the request before it asks, so the question arrives a tick later. */
+describe("a question nobody answers", () => {
+  const request: ConfirmationRequest = {
+    toolName: "shell",
+    detail: "python3 --version",
+    reason: "shell-allowlist",
+    explanation: '"python3 --version" is not on the shell allowlist.',
+  };
+
+  it("refuses itself once the deadline passes, rather than holding the run", async () => {
+    // What waiting for ever cost: a run sat on one of these overnight and had done nothing by
+    // morning. Refusing is what the chokepoint records for a declined question either way.
+    let slept: number | null = null;
+    const queue = createConfirmationQueue({
+      timeoutMs: 1_800_000,
+      sleep: (milliseconds) => {
+        slept = milliseconds;
+        return Promise.resolve();
+      },
+    });
+
+    await expect(queue.ask(request)).resolves.toBe(false);
+    expect(slept).toBe(1_800_000);
+    expect(queue.current()).toBeNull();
+  });
+
+  it("takes the answer that arrives first and ignores the deadline behind it", async () => {
+    let expire = (): void => {};
+    const queue = createConfirmationQueue({
+      timeoutMs: 1_800_000,
+      sleep: () =>
+        new Promise<void>((resolve) => {
+          expire = resolve;
+        }),
+    });
+
+    const asked = queue.ask(request);
+    await waitForQuestion(queue);
+    queue.current()?.answer(true);
+    expire();
+
+    await expect(asked).resolves.toBe(true);
+  });
+
+  it("waits for ever at zero, which is what it did before there was a deadline", async () => {
+    let sleepCalls = 0;
+    const queue = createConfirmationQueue({
+      timeoutMs: 0,
+      sleep: () => {
+        sleepCalls += 1;
+        return Promise.resolve();
+      },
+    });
+
+    const asked = queue.ask(request);
+    await waitForQuestion(queue);
+
+    expect(sleepCalls).toBe(0);
+    expect(queue.current()).not.toBeNull();
+    queue.current()?.answer(true);
+    await expect(asked).resolves.toBe(true);
+  });
+});
+
 async function waitForQuestion(queue: ReturnType<typeof createConfirmationQueue>): Promise<void> {
   for (let attempt = 0; attempt < 50 && queue.current() === null; attempt += 1) {
     await new Promise((settle) => setImmediate(settle));

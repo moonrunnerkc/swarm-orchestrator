@@ -23,6 +23,8 @@ import type { SwarmToml } from "./swarm-toml.ts";
  * | interactive view | --no-tui         |                              | [interface] tui             | on, wherever there is a terminal |
  * | colour           | --color/--no-color | NO_COLOR and TERM, under "auto" | [interface] color        | auto                             |
  * | open evidence    | --open-evidence/--no-open-evidence |            | [interface] open_evidence   | ask, and never off a terminal    |
+ * | confirm timeout  |                  |                              | [interface] confirm_timeout_minutes | 30 minutes, then refused |
+ * | local thinking   |                  |                              | [providers] local_thinking  | unset: the server's own default  |
  * | colours by slot  |                  |                              | [theme] <slot>              | the one shipped theme            |
  * | keys by action   |                  |                              | [keys] <action>             | the default keymap               |
  *
@@ -36,6 +38,13 @@ import type { SwarmToml } from "./swarm-toml.ts";
 const defaultModelSpec = "anthropic:claude-opus-5";
 const defaultMaxSteps = 40;
 const defaultAttempts = 3;
+/**
+ * How long a confirmation waits before it refuses itself. A run held on a question nobody is
+ * there to answer used to wait for ever: one sat overnight and had done nothing by morning.
+ * Refusing is what the chokepoint records either way, so timing out costs a tool call rather
+ * than the run, and half an hour is longer than anyone watching a run steps away for.
+ */
+const defaultConfirmTimeoutMinutes = 30;
 
 /** What the command line contributed: null wherever the caller left a flag unset. */
 export interface CommandLineSettings {
@@ -51,6 +60,8 @@ export interface ResolvedInterface {
   readonly tui: boolean;
   readonly color: ColorMode;
   readonly openEvidence: OpenEvidencePolicy;
+  /** Milliseconds a confirmation waits for an answer before refusing it. 0 waits for ever. */
+  readonly confirmTimeoutMs: number;
   readonly theme: Readonly<Record<string, string>>;
   readonly keys: Readonly<Record<string, string>>;
 }
@@ -74,6 +85,8 @@ export interface ResolvedSettings {
   };
   /** Null means no layer named one, and endpoint discovery is what answers that. */
   readonly localEndpoint: ConfiguredLocalEndpoint | null;
+  /** Null leaves the local server's own default alone, which is what sending nothing does. */
+  readonly localThinking: boolean | null;
   readonly gateCommandOverrides: Readonly<Record<string, string>>;
   /** Only the keys the file set; the engine's defaults fill the rest at the call site. */
   readonly diffBudget: {
@@ -104,6 +117,7 @@ export function resolveSettings(input: SettingsInput): ResolvedSettings {
         input.env.GOOGLE_GENERATIVE_AI_API_KEY ?? input.toml?.providers.googleApiKey ?? undefined,
     },
     localEndpoint: resolveLocalEndpoint(input),
+    localThinking: input.toml?.providers.localThinking ?? null,
     gateCommandOverrides: input.toml?.gates ?? {},
     interface: resolveInterface(input),
     diffBudget: {
@@ -123,6 +137,8 @@ function resolveInterface(input: SettingsInput): ResolvedInterface {
     tui: flags?.tui ?? input.toml?.interface.tui ?? true,
     color: flags?.color ?? input.toml?.interface.color ?? "auto",
     openEvidence: flags?.openEvidence ?? input.toml?.interface.openEvidence ?? "ask",
+    confirmTimeoutMs:
+      (input.toml?.interface.confirmTimeoutMinutes ?? defaultConfirmTimeoutMinutes) * 60_000,
     theme: input.toml?.theme ?? {},
     keys: input.toml?.keys ?? {},
   };

@@ -156,6 +156,7 @@ describe("what the screen resolves to", () => {
       tui: true,
       color: "auto",
       openEvidence: "ask",
+      confirmTimeoutMs: 1_800_000,
       theme: {},
       keys: {},
     });
@@ -166,6 +167,7 @@ describe("what the screen resolves to", () => {
       tui: false,
       color: "always",
       openEvidence: "always",
+      confirmTimeoutMs: 1_800_000,
       theme: { passed: "cyanBright" },
       keys: { pause: "space" },
     });
@@ -185,5 +187,25 @@ describe("what the screen resolves to", () => {
     expect(settings.interface.openEvidence).toBe("never");
     // Unset by the flag, so the file still gets its turn on this one.
     expect(settings.interface.tui).toBe(false);
+  });
+});
+
+describe("how long a confirmation waits", () => {
+  it("defaults to half an hour, so a question nobody answers cannot hold a run for ever", () => {
+    expect(
+      resolveSettings({ flags: noFlags, env: {}, toml: null }).interface.confirmTimeoutMs,
+    ).toBe(30 * 60_000);
+  });
+
+  it("takes the file's minutes, 0 included", () => {
+    const withFile = (minutes: number) =>
+      resolveSettings({
+        flags: noFlags,
+        env: {},
+        toml: parseSwarmToml(`[interface]\nconfirm_timeout_minutes = ${minutes}\n`, "swarm.toml"),
+      }).interface.confirmTimeoutMs;
+
+    expect(withFile(5)).toBe(300_000);
+    expect(withFile(0)).toBe(0);
   });
 });
