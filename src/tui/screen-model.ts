@@ -317,9 +317,15 @@ function activityRow(input: ScreenInput): ScreenRow | null {
     return null;
   }
 
+  // A pending confirmation is the run blocked on the reader, not the model still working. The
+  // activity underneath it is whatever was dispatched last, and leaving that up reads as
+  // progress: a run held on this question overnight still said "thinking, step 2" with the
+  // counter climbing past twelve hours, which is indistinguishable from a hang. Name the block.
+  const doing = input.confirmation === null ? view.activity : "waiting for you";
+
   const seconds = Math.floor((input.activityElapsedMs ?? 0) / 1000);
-  const head = `${spinnerAt(state.elapsedMs)} ${view.activity}${seconds > 0 ? `  ${seconds}s` : ""}`;
-  if (view.speaking.length === 0) {
+  const head = `${spinnerAt(state.elapsedMs)} ${doing}${seconds > 0 ? `  ${seconds}s` : ""}`;
+  if (input.confirmation !== null || view.speaking.length === 0) {
     return { text: head, dim: true };
   }
 
