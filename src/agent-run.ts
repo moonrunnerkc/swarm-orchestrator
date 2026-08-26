@@ -302,7 +302,25 @@ function wasGreen(loop: AgentLoopOutcome, gates: GatesEngineRun): boolean {
     return false;
   }
   const changed = gates.outcome.finalCycle.measures.changedFiles ?? 0;
-  return changed > 0 || loop.stopReason === "completed";
+  if (changed === 0) {
+    return loop.stopReason === "completed";
+  }
+
+  // Something has to have run over the code. A workspace with no manifest assembles no
+  // language gate, so typecheck, lint, format and tests all come back not-applicable, and a
+  // change nothing executed passed the way an empty diff has no bugs: a run wrote 142 lines of
+  // Python that could not even be imported and reported green, because nothing had tried. The
+  // gate set already says this out loud rather than shrinking quietly, on the grounds that
+  // four gates which never ran must not look like four that passed; the outcome read them as
+  // satisfied anyway. Not measured is not a pass.
+  //
+  // Read off what a gate is rather than which gate it is (invariant 6): a gate that runs a
+  // command executed something, and one that inspects the diff can do that over any workspace
+  // and so cannot vouch for code on its own.
+  const statuses = gates.outcome.finalCycle.statuses;
+  return gates.gates.some(
+    (gate) => gate.source.kind === "command" && statuses[gate.id] !== "not-applicable",
+  );
 }
 
 async function captureInherited(options: AgentTaskOptions): Promise<InheritedChanges> {

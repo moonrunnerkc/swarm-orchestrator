@@ -158,6 +158,25 @@ describe("runAgentTask", () => {
     expect(result.green).toBe(false);
   });
 
+  it("is not green when nothing ran over the code it changed", async () => {
+    // A run wrote 142 lines of Python into a directory with no manifest, so typecheck, lint,
+    // format and tests were all not-applicable, and it reported green over a file that could
+    // not even be imported. Nothing had tried. Not measured is not a pass.
+    const result = await task(goodTurns(stillGreen), {
+      gateOptions: { commandOverrides: {} },
+    });
+
+    const ranACommand = result.gates.gates.some(
+      (gate) =>
+        gate.source.kind === "command" &&
+        result.gates.outcome.finalCycle.statuses[gate.id] !== "not-applicable",
+    );
+
+    expect(ranACommand).toBe(false);
+    expect(result.gates.outcome.finalCycle.measures.changedFiles ?? 0).toBeGreaterThan(0);
+    expect(result.green).toBe(false);
+  });
+
   it("is not green when somebody cancelled it, whatever the gates last saw", async () => {
     const result = await task(goodTurns(stillGreen), { abortSignal: AbortSignal.abort() });
 
