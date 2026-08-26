@@ -159,3 +159,39 @@ export async function resetHard(worktreePath: string, ref: string): Promise<void
   await gitOrThrow(worktreePath, ["reset", "--hard", "--quiet", ref]);
   await gitOrThrow(worktreePath, ["clean", "-fd", "--quiet"]);
 }
+
+/**
+ * Removes the branches a run created, once the queue has finished with them.
+ *
+ * A worker's branch outlives its worktree on purpose: the queue merges from it after the
+ * working copy is gone. Nothing removed them afterwards, so a repository gained
+ * `tasks x redundancy + 1` branches per run and kept them. The integration branch is not
+ * swept, because that is the run's result and the report tells the person to merge it.
+ *
+ * A branch git still considers checked out is left alone rather than forced. That means a
+ * worktree this process did not manage to remove, and deleting the branch under it would
+ * leave the repository in a state neither of them agrees about. Pruning first is what makes
+ * that rare: a run killed part-way leaves registrations pointing at directories that are
+ * already gone, and the next run fails adding a worktree at a path git still believes in.
+ */
+export async function sweepRunBranches(
+  repositoryRoot: string,
+  runId: string,
+): Promise<readonly string[]> {
+  await git(repositoryRoot, ["worktree", "prune"]);
+
+  const listed = await git(repositoryRoot, ["branch", "--format=%(refname:short)"]);
+  const mine = listed.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((name) => name.startsWith(`swarm/${runId}/`) && !name.endsWith("/integration"));
+
+  const removed: string[] = [];
+  for (const branch of mine) {
+    const outcome = await git(repositoryRoot, ["branch", "-D", branch]);
+    if (outcome.code === 0) {
+      removed.push(branch);
+    }
+  }
+  return removed;
+}

@@ -109,7 +109,7 @@ import { resolveTheme } from "./tui/theme.ts";
 import { runEmbeddedVerifier } from "./tui/verify-bundle.ts";
 import { renderParallelReport } from "./workers/parallel-report.ts";
 import { type ParallelRunResult, runInParallel } from "./workers/parallel-run.ts";
-import { runPlanner } from "./workers/planner-run.ts";
+import { type PlannerOutcome, runPlanner } from "./workers/planner-run.ts";
 import { defaultWorkerConcurrency } from "./workers/pool.ts";
 import { readTaskGraph, type TaskGraph } from "./workers/task-graph.ts";
 
@@ -1349,7 +1349,32 @@ interface DecomposeContext {
 }
 
 /** The planner, on a chain of its own, so what it read before deciding is on the record. */
-async function decompose(goal: string, context: DecomposeContext): Promise<TaskGraph | null> {
+/**
+ * What to try next, per way the planner can end without a graph. Each of these wants a
+ * different thing done about it, which is the whole reason the stop reason travels.
+ */
+function describePlannerStop(stopReason: string): string {
+  switch (stopReason) {
+    case "empty-response":
+      return (
+        "The model answered with neither text nor a tool call, which a broad goal tends to " +
+        "produce: try one that names a single piece of work."
+      );
+    case "max-steps":
+      return "It ran out of steps before it declared anything: raise --max-steps.";
+    case "completed":
+      return (
+        "It finished without calling declare_task_graph, so it either answered in prose or " +
+        "could not drive the tool: check its session, and try a narrower goal."
+      );
+    case "model-error":
+      return "The model could not be reached; the error is on its chain.";
+    default:
+      return "Its chain records what happened.";
+  }
+}
+
+async function decompose(goal: string, context: DecomposeContext): Promise<PlannerOutcome> {
   const evidence = await openEvidenceSession({
     root: context.sessionRoot,
     sessionId: `${context.runId}-plan`,
@@ -1357,7 +1382,7 @@ async function decompose(goal: string, context: DecomposeContext): Promise<TaskG
   });
   process.stdout.write(`planning: ${goal}\n`);
 
-  const graph = await runPlanner({
+  const outcome = await runPlanner({
     goal,
     workspace: context.workspace,
     homeDir: context.home,
@@ -1370,12 +1395,11 @@ async function decompose(goal: string, context: DecomposeContext): Promise<TaskG
     abortSignal: new AbortController().signal,
   });
 
-  if (graph !== null) {
-    process.stdout.write(
-      `planned ${graph.nodes.length} task(s): ${graph.nodes.map((node) => node.id).join(", ")}\n`,
-    );
+  if (outcome.graph !== null) {
+    const named = outcome.graph.nodes.map((node) => node.id).join(", ");
+    process.stdout.write(`planned ${outcome.graph.nodes.length} task(s): ${named}\n`);
   }
-  return graph;
+  return outcome;
 }
 
 /**
@@ -1428,9 +1452,9 @@ async function parallel(options: ParallelCommand): Promise<number> {
   // can reach neither the tree the user is in nor anybody's evidence.
   const scratchRoot = await mkdtemp(join(tmpdir(), "swarm-parallel-"));
 
-  const graph =
+  const planned =
     options.goal === null
-      ? (fromFile?.graph ?? null)
+      ? null
       : await decompose(options.goal, {
           workspace: options.workspace,
           sessionRoot,
@@ -1441,11 +1465,16 @@ async function parallel(options: ParallelCommand): Promise<number> {
           model: () => registry.create(spec),
           maxSteps: settings.maxSteps,
         });
-  if (options.goal !== null && graph === null) {
+  const graph = planned === null ? (fromFile?.graph ?? null) : planned.graph;
+  if (planned !== null && planned.graph === null) {
+    // How it stopped, not just that nothing arrived: a loop that ran out of steps wants a
+    // different answer from one whose model returned nothing at all, and a person told only
+    // "no graph" cannot tell those apart.
     throw new Error(
-      "the planner did not declare a task graph, so there is nothing to run. Its session " +
-        "records what it read and what it said; try a narrower goal, or write the graph " +
-        "yourself and pass it with --tasks.",
+      `the planner declared no task graph. It stopped with "${planned.stopReason}" after ` +
+        `${planned.steps} step(s), and its session records what it read and what it said. ` +
+        `${describePlannerStop(planned.stopReason)} Or write the graph yourself and pass it ` +
+        "with --tasks: a file beginning with { is read as one.",
     );
   }
   const tasks =

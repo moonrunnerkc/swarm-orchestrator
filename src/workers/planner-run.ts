@@ -4,6 +4,7 @@ import { runAgentLoop } from "../core/loop.ts";
 import type { LoopEvent } from "../core/loop-events.ts";
 import type { ModelClient } from "../core/model-client.ts";
 import type { RandomSource } from "../core/random-source.ts";
+import type { StopReason } from "../core/termination.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { createWorkspaceTools } from "../tools/workspace-tools.ts";
 import { createDeclareTaskGraphTool, type DeclaredGraph } from "./graph-tool.ts";
@@ -36,6 +37,18 @@ const plannerPrompt = [
   "measured, and whether these tasks add up to the goal is a judgement no gate here makes.",
 ].join(" ");
 
+export interface PlannerOutcome {
+  /** Null where the model never declared one. That is not the same as an empty graph. */
+  readonly graph: TaskGraph | null;
+  /**
+   * How the loop ended. A person told only that no graph arrived cannot tell a goal too broad
+   * to answer in one from a model that cannot drive the tool at all, and those want different
+   * things done about them.
+   */
+  readonly stopReason: StopReason;
+  readonly steps: number;
+}
+
 /**
  * Decomposition as an ordinary agent loop with a smaller tool set, not a path of its own.
  *
@@ -47,7 +60,7 @@ const plannerPrompt = [
  * Null where the model never declared a graph. That is a run that produced nothing, not a
  * run that produced an empty graph, and the caller has to tell those apart.
  */
-export async function runPlanner(options: PlannerOptions): Promise<TaskGraph | null> {
+export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcome> {
   const declared: DeclaredGraph = { graph: null };
 
   const { definitions, toolInvoker } = assembleToolset({
@@ -101,5 +114,5 @@ export async function runPlanner(options: PlannerOptions): Promise<TaskGraph | n
     },
   });
 
-  return declared.graph;
+  return { graph: declared.graph, stopReason: loop.stopReason, steps: loop.steps };
 }

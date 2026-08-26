@@ -43,6 +43,16 @@
 
 ### Fixed
 
+- **A parallel run now sweeps up the branches it created.** Worker branches outlive their
+  worktrees on purpose, because the merge queue merges from them after the working copy is
+  gone, and nothing outlived the queue: a repository gained a branch per worker per run, for
+  ever. The integration branch is never swept, since that is the result. It prunes worktrees
+  first, which is what stops a run killed part-way from making the next one fail on a path git
+  still believes in.
+- **`--goal` says how the planner stopped, not just that it declared nothing.** Running out of
+  steps, answering in prose, and returning nothing at all want three different responses, and
+  the message treated them as one. It now names the stop reason and the step count and says
+  what to try for each.
 - **Two review-page summaries that trailed off after the colon.** `worker-finished` and
   `merge-attempt` both asked for a field neither writer emits, so they rendered as
   `worker-1 finished:` with nothing after it. They read what is actually recorded now.
