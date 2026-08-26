@@ -147,6 +147,17 @@ describe("runAgentTask", () => {
     expect(result.green).toBe(true);
   });
 
+  it("is not green when it died before it changed anything", async () => {
+    // Gates over a tree nothing touched pass the way an empty diff has no bugs. A run that
+    // failed at step 17 having written nothing reported success, while the reward log beside
+    // it said "nothing was done and there is nothing to reward" about the same run.
+    const result = await task([]);
+
+    expect(result.loop.stopReason).not.toBe("completed");
+    expect(result.gates.outcome.finalCycle.measures.changedFiles ?? 0).toBe(0);
+    expect(result.green).toBe(false);
+  });
+
   it("is not green when somebody cancelled it, whatever the gates last saw", async () => {
     const result = await task(goodTurns(stillGreen), { abortSignal: AbortSignal.abort() });
 

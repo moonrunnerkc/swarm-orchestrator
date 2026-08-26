@@ -104,11 +104,33 @@ export interface ModelClient {
   generate(request: ModelRequest): Promise<ModelResponse>;
 }
 
+/**
+ * What went wrong, including what it was caused by.
+ *
+ * Reading only the top message threw away the sentence that says what to do: a local endpoint
+ * that closes a connection surfaces through fetch as an Error whose whole message is
+ * "terminated", and everything distinguishing a timeout from a dropped socket from a refused
+ * connection sits in `cause`. A person reading "terminated" cannot act on it, and neither
+ * could the run that recorded it.
+ */
 export function describeUnknownError(cause: unknown): string {
-  if (cause instanceof Error) {
-    return cause.message;
+  const parts: string[] = [];
+  let current: unknown = cause;
+
+  // Bounded: a cycle in a cause chain would otherwise spin here rather than fail.
+  for (let depth = 0; depth < 5 && current !== undefined && current !== null; depth += 1) {
+    const message = current instanceof Error ? current.message : String(current);
+    if (message.length > 0 && !parts.includes(message)) {
+      parts.push(message);
+    }
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string" && !parts.includes(code)) {
+      parts.push(code);
+    }
+    current = current instanceof Error ? current.cause : undefined;
   }
-  return String(cause);
+
+  return parts.length === 0 ? String(cause) : parts.join(", caused by ");
 }
 
 export class ModelCallFailedError extends Error {

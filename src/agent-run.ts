@@ -279,8 +279,30 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
     // its account of itself overrule that measurement, which is invariant 1 the wrong way
     // round. The one thing the gates cannot speak for is a run somebody cancelled: that is not
     // a verdict on the tree, so it is not green whatever the gates last saw.
-    green: gates.outcome.settled === "green" && loop.stopReason !== "interrupted",
+    green: wasGreen(loop, gates),
   };
+}
+
+/**
+ * Whether this run is a result anybody should act on.
+ *
+ * The gates decide it, because deciding an outcome is what the gates are for: a run the model
+ * stopped short of and the auto-resolve carried to green leaves a tree every gate measured and
+ * passed, and reading the model's own account of itself as a second condition let it overrule
+ * that measurement, which is invariant 1 the wrong way round.
+ *
+ * Two things the gates cannot speak for. A run somebody cancelled is not a verdict on the tree.
+ * And gates over a tree nothing touched pass for the same reason an empty diff has no bugs: a
+ * run that died before it wrote anything left every gate trivially satisfied and reported
+ * success, which is the reward log's "nothing was done and there is nothing to reward" being
+ * told to a person as green. Changing nothing is only a result where the model meant to.
+ */
+function wasGreen(loop: AgentLoopOutcome, gates: GatesEngineRun): boolean {
+  if (gates.outcome.settled !== "green" || loop.stopReason === "interrupted") {
+    return false;
+  }
+  const changed = gates.outcome.finalCycle.measures.changedFiles ?? 0;
+  return changed > 0 || loop.stopReason === "completed";
 }
 
 async function captureInherited(options: AgentTaskOptions): Promise<InheritedChanges> {
