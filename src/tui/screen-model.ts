@@ -424,10 +424,21 @@ function helpRows(input: ScreenInput): readonly ScreenRow[] {
 }
 
 function evidenceRows(input: ScreenInput, evidence: EvidenceSummary): readonly ScreenRow[] {
-  return describeEvidence(evidence, input.layout.columns).map((text, index) => ({
-    text,
-    bold: index === 0,
-  }));
+  const close = input.bindings.labelOf.get("back") ?? "escape";
+  return [
+    ...describeEvidence(evidence, input.layout.columns).map((text, index) => ({
+      text,
+      bold: index === 0,
+    })),
+    { text: "" },
+    // The panel is the last thing a finished run puts up, and it waits here until somebody
+    // closes it. Saying neither that the run is over nor which key ends it left a person
+    // watching a screen they had no reason to think was still theirs to answer.
+    {
+      text: `  the run has finished. ${close} or ${input.bindings.labelOf.get("cancel") ?? "ctrl+c"} closes this and exits.`,
+      dim: true,
+    },
+  ];
 }
 
 function confirmationRows(input: ScreenInput, request: ConfirmationRequest): readonly ScreenRow[] {

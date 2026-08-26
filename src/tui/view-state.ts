@@ -146,8 +146,16 @@ export function applyViewAction(state: ViewState, action: ViewAction): ViewState
     case "detach":
       return { ...state, detached: true };
     case "cancel-run":
-      // A second one is a person asking again because the first did not visibly do anything,
-      // which happens while the panel is up after the run has already been told to stop.
+      // With the panel up the run is already over, so there is nothing left to cancel and the
+      // key closes it. This used to set a cancellation nobody was waiting on: the only thing
+      // still holding the process was the panel's own promise, so the screen sat there
+      // answering nothing. A person pressed it, watched nothing happen, and killed the
+      // terminal. A second press was the way out and nothing said so.
+      if (state.evidenceOpen) {
+        return { ...state, evidenceOpen: false, openNotice: null };
+      }
+      // Otherwise a second one is a person asking again because the first did not visibly do
+      // anything, and the run has already been told to stop.
       return state.cancelRequested
         ? { ...state, detached: true }
         : { ...state, cancelRequested: true };

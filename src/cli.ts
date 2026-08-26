@@ -94,6 +94,7 @@ import { defaultRoutingLogPath, openRoutingLog } from "./select/routing-log.ts";
 import { routingDecisionRecord } from "./select/routing-record.ts";
 import { renderRoutingReport } from "./select/routing-report.ts";
 import { renderSelectReport } from "./select/select-report.ts";
+import { servableCandidates } from "./select/servable-candidates.ts";
 import { loadShortlist } from "./select/shortlist-source.ts";
 import { systemProbeEnvironment } from "./select/system-probe.ts";
 import { classifyTask } from "./select/task-class.ts";
@@ -240,6 +241,7 @@ async function chooseModel(
   task: string,
   home: string,
   random: RandomSource,
+  settings: ResolvedSettings,
 ): Promise<{
   modelSpec: string | null;
   assignment: "calibration" | "ucb" | "epsilon" | "pinned";
@@ -257,11 +259,21 @@ async function chooseModel(
     return { modelSpec: null, assignment: "pinned", decision: null, candidates: [] };
   }
 
+  // Route between models that can actually answer. A calibration outlives the machine it was
+  // measured on: a local arm whose model is no longer served can never be tried, and an arm
+  // with no samples is exactly the one UCB reaches for first, so it won a routing every time
+  // and was swapped out again every time. The reader saw a model named that no longer exists
+  // here, and the arm never got a sample to stop it being picked again.
+  const usable = await servedCandidates(calibrated.candidates, settings);
+  const candidates = usable.length > 0 ? usable : calibrated.candidates;
+
   const log = await openRoutingLog({ path: defaultRoutingLogPath(home) });
   const decision = routeModel({
     taskClass: classifyTask(task).taskClass,
-    candidates: calibrated.candidates,
-    calibrationPick: calibrated.model,
+    candidates,
+    calibrationPick: candidates.includes(calibrated.model)
+      ? calibrated.model
+      : (candidates[0] ?? calibrated.model),
     entries: (await log.read()).entries,
     random,
   });
@@ -273,8 +285,38 @@ async function chooseModel(
     modelSpec: decision.model,
     assignment: decision.assignment,
     decision,
-    candidates: calibrated.candidates,
+    candidates,
   };
+}
+
+/**
+ * The candidates a run could actually reach: every non-local arm, plus the local ones the
+ * endpoint says it serves. An endpoint that cannot be reached filters nothing, because a
+ * discovery that failed is not evidence that a model is absent.
+ */
+async function servedCandidates(
+  candidates: readonly string[],
+  settings: ResolvedSettings,
+): Promise<readonly string[]> {
+  const local = candidates.filter((candidate) => candidate.startsWith("local:"));
+  if (local.length === 0) {
+    return candidates;
+  }
+
+  const backend = await resolveLocalBackend(settings, [parseModelSpec(local[0] ?? "local:x")]);
+  if (backend === null) {
+    return candidates;
+  }
+  const served = await fetchServedModels({
+    baseUrl: backend.url,
+    fetch: (url) => fetch(url, { signal: AbortSignal.timeout(servedModelsTimeoutMs) }),
+  });
+  // An endpoint that would not say what it serves filters nothing: not knowing is not the
+  // same as knowing a model is absent.
+  if (!served.enumerated) {
+    return candidates;
+  }
+  return servableCandidates(candidates, new Set(served.models.map((model) => model.id)));
 }
 
 /**
@@ -396,7 +438,7 @@ async function runOneTurn(input: {
         decision: null,
         candidates: [] as readonly string[],
       }
-    : await chooseModel(task, homedir(), random);
+    : await chooseModel(task, homedir(), random, settings);
   const modelSpec = routed.modelSpec ?? settings.modelSpec;
   const spec = parseModelSpec(modelSpec);
   const localBackend = await resolveLocalBackend(settings, [spec]);
@@ -711,7 +753,7 @@ async function run(options: RunCommand): Promise<number> {
         decision: null,
         candidates: [] as readonly string[],
       }
-    : await chooseModel(options.task, homedir(), random);
+    : await chooseModel(options.task, homedir(), random, settings);
   const modelSpec = routed.modelSpec ?? settings.modelSpec;
   const spec = parseModelSpec(modelSpec);
   // Resolved before the session opens, so a machine with no local runtime fails here,
