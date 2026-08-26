@@ -111,8 +111,16 @@ describe("keychain key storage", () => {
     expect(resolved.key.source).toBe("keychain");
     const save = calls[1];
     expect(save?.args[0]).toBe("add-generic-password");
-    expect(save?.input).toMatch(/^[A-Za-z0-9+/=]+$/);
-    expect(save?.args.join(" ")).not.toContain(save?.input ?? "");
+
+    // `-w` with no value asks for the data and then asks again to retype it, and reads both
+    // from stdin. Sending the key once answered the first ask and gave the second end of
+    // input, so `security` printed "password data for new item:" at a person who had nothing
+    // to type: this key is generated here and was never theirs to know. Both asks are answered.
+    const [first, second, ...rest] = (save?.input ?? "").split("\n");
+    expect(first).toMatch(/^[A-Za-z0-9+/=]+$/);
+    expect(second).toBe(first);
+    expect(rest).toEqual([""]);
+    expect(save?.args.join(" ")).not.toContain(first ?? "");
   });
 
   it("uses the Secret Service on Linux", async () => {

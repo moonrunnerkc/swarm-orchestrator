@@ -36,13 +36,14 @@ async function bodyOfOneCall(localThinking: boolean | null): Promise<Record<stri
 }
 
 describe("whether the local model reasons before it answers", () => {
-  it("sends nothing at all when no setting asked for it", async () => {
+  it("turns it off when no setting asked either way, so no swarm.toml is needed", async () => {
     const body = await bodyOfOneCall(null);
 
-    // The field is a vendor extension: a server that rejects what it does not recognise would
-    // fail every call, so silence is the only safe default.
-    expect(body).not.toHaveProperty("enable_thinking");
-    expect(body).not.toHaveProperty("chat_template_kwargs");
+    // Chosen from a measurement rather than a preference: with reasoning on, the same task
+    // truncated at the output cap on four runs out of four, and finished in seven steps with
+    // it off. A setup that wants reasoning back says so; nobody has to write a file to work.
+    expect(body.enable_thinking).toBe(false);
+    expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
   });
 
   it("turns it off in both spellings the servers that accept it use", async () => {

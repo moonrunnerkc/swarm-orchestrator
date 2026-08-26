@@ -78,11 +78,16 @@ export function createKeychainSecretStore(options: {
         return result.code === 0 ? result.stdout.trim() : null;
       },
       async save(secret: string): Promise<void> {
-        // The secret goes over stdin rather than argv, which would expose it to ps.
+        // The secret goes over stdin rather than argv, which would expose it to ps. `-w` with
+        // no value asks twice, for the value and then to retype it, and reads both from stdin:
+        // sending it once satisfied the first ask, gave the second end-of-input, and left
+        // `security` printing "password data for new item:" at a person who had nothing to
+        // type, because this key is generated here and was never theirs to know. Both asks are
+        // answered, so nothing is ever waited on. The prompts go to stderr, which is captured.
         const result = await run(
           "security",
           ["add-generic-password", "-U", "-a", account, "-s", service, "-w"],
-          secret,
+          `${secret}\n${secret}\n`,
         );
         if (result.code !== 0) {
           throw new Error(`security add-generic-password failed: ${result.stderr.trim()}`);

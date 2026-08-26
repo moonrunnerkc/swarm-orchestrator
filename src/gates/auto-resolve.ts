@@ -49,6 +49,13 @@ interface AutoResolveDependencies {
   readonly resolve: ResolveAttempt;
   readonly emit: (event: LoopEvent) => void;
   readonly cap: number;
+  /**
+   * Stops the loop where a run was cancelled. Without it every remaining attempt still ran,
+   * each one resolving instantly to "interrupted after 0 steps" against a signal that was
+   * already aborted, and the run then escalated at a gate nobody had been given a chance to
+   * fix. Three attempts were spent saying the same thing about a run that was already over.
+   */
+  readonly abortSignal?: AbortSignal;
 }
 
 interface AutoResolveAttempt {
@@ -108,7 +115,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
 
   const attempts: AutoResolveAttempt[] = [];
 
-  while (!isGreen(cycle) && attempts.length < deps.cap) {
+  while (!isGreen(cycle) && attempts.length < deps.cap && deps.abortSignal?.aborted !== true) {
     const attempt = attempts.length + 1;
     deps.emit({ type: "attempt", attempt, cap: deps.cap });
 
