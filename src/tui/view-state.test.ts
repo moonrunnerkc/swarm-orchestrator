@@ -149,3 +149,29 @@ describe("the view-state reducer", () => {
     expect(paused.detached).toBe(false);
   });
 });
+
+describe("cancelling while the finished run's panel is up", () => {
+  it("closes the panel on the first press, because there is no run left to cancel", () => {
+    // The panel's own promise was the only thing still holding the process, and cancel set a
+    // cancellation nobody was waiting on. A person pressed it, saw nothing happen, and killed
+    // the terminal.
+    const open = applyViewAction(initialViewState, { type: "open-evidence" });
+
+    const after = applyViewAction(open, { type: "cancel-run" });
+
+    expect(after.evidenceOpen).toBe(false);
+  });
+
+  it("still asks the run to stop when no panel is up", () => {
+    const after = applyViewAction(initialViewState, { type: "cancel-run" });
+
+    expect(after.cancelRequested).toBe(true);
+    expect(after.detached).toBe(false);
+  });
+
+  it("detaches on a second press with no panel, which is the old way out", () => {
+    const once = applyViewAction(initialViewState, { type: "cancel-run" });
+
+    expect(applyViewAction(once, { type: "cancel-run" }).detached).toBe(true);
+  });
+});
