@@ -1,6 +1,8 @@
 import { coverageArtifactPath, coverageReportingCommand } from "./coverage-artifact.ts";
 import {
+  type GateContext,
   type GateDefinition,
+  type GateObservation,
   type GateParser,
   type GateSeverity,
   unavailableObservation,
@@ -294,20 +296,50 @@ const commandGatesByType: Readonly<
   go: () => goGates,
 };
 
+const noManifestReason =
+  "no package.json, pyproject.toml, Cargo.toml, or go.mod was found in the workspace root";
+
 /**
  * No manifest means no language gates can be assembled, and the set says so rather than
  * shrinking quietly: four gates that never ran must not look like four gates that passed.
+ *
+ * Over a change, saying so is not enough. Not-applicable was read as satisfied, so a run that
+ * wrote 142 lines of Python into a directory with no manifest went green over a file that
+ * could not even be imported, because nothing had tried to. A change nothing can measure is a
+ * failure with an action attached rather than a gate quietly standing down, and the action is
+ * the one thing that fixes it: write the manifest for the language being written. Over an
+ * unchanged tree it stays not-applicable, because there is nothing there to measure either way.
  */
 const undetectedGates: readonly GateDefinition[] = (
   ["typecheck", "lint", "format", "tests"] as const
-).map((id) =>
-  unavailableGate(
-    id,
-    id,
-    "blocking",
-    "no package.json, pyproject.toml, Cargo.toml, or go.mod was found in the workspace root",
-  ),
-);
+).map((id) => ({
+  id,
+  title: id,
+  severity: "blocking" as const,
+  source: {
+    kind: "inspection" as const,
+    inspect: async (context: GateContext): Promise<GateObservation> =>
+      context.changes.files.length === 0
+        ? unavailableObservation(noManifestReason)
+        : {
+            exitCode: 1,
+            stdout: "",
+            unavailable: null,
+            stderr:
+              `${noManifestReason}, so nothing ran over the ` +
+              `${context.changes.files.length} file(s) this change touched. Add the manifest ` +
+              "for the language being written, so the gates can measure it.",
+            durationMs: 0,
+          },
+  },
+  // Its own parser rather than the shared one: the shared parsers read a command's output,
+  // and what this gate has to say is not a command's output but the reason there was no
+  // command. Through `exitCodeParser` the reader got "the command exited 1".
+  parse: (observation) =>
+    observation.unavailable === null
+      ? { status: "failed" as const, detail: observation.stderr, measures: {} }
+      : { status: "not-applicable" as const, detail: observation.unavailable, measures: {} },
+}));
 
 export interface GateSetOptions {
   /** Replaces the assembled command for one gate id, from swarm.toml or a flag. */
@@ -355,7 +387,11 @@ export function assembleGates(
           title: gate.title,
           severity: gate.severity,
           command: override,
-          parse: gate.parse,
+          // The id's own parser, not whatever the gate being replaced was carrying. An
+          // overridden gate runs a command, and where the replaced one was a stub standing in
+          // for a language nothing detected, its parser answers about the absence of a command
+          // rather than about the output of one.
+          parse: parserFor(gate.id),
         },
         override,
         options.coverageArtifactDirectory,
