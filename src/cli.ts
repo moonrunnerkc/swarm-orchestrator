@@ -30,6 +30,7 @@ import { readSwarmToml } from "./config/swarm-toml.ts";
 import type { Clock } from "./core/clock.ts";
 import type { ConversationMessage, ModelClient } from "./core/model-client.ts";
 import type { RandomSource } from "./core/random-source.ts";
+import type { StopReason } from "./core/termination.ts";
 import { bundleSourceFromRecorder, exportBundle, readBundle } from "./evidence/bundle.ts";
 import type { BundleManifest } from "./evidence/bundle-manifest.ts";
 import { exportCombinedBundle } from "./evidence/combined-bundle.ts";
@@ -167,12 +168,14 @@ function registrySettingsFrom(
   openaiApiKey: string | undefined;
   googleApiKey: string | undefined;
   localBaseUrl: string | undefined;
+  localThinking: boolean | null;
 } {
   return {
     anthropicApiKey: settings.providerKeys.anthropic,
     openaiApiKey: settings.providerKeys.openai,
     googleApiKey: settings.providerKeys.google,
     localBaseUrl: localBackend?.url,
+    localThinking: settings.localThinking,
   };
 }
 
@@ -584,6 +587,7 @@ function startInterface(input: {
     ...(isTty ? { askOnTerminal } : {}),
     readLine: readTaskLine,
     openEvidence: ui.openEvidence,
+    confirmTimeoutMs: ui.confirmTimeoutMs,
     spawnOpen: spawnOpener,
     platform: platform(),
   });
@@ -817,7 +821,7 @@ async function run(options: RunCommand): Promise<number> {
     const written = await writeBundle(evidence, options.bundleDirectory, clock, ui.note);
     announceBundle(written.directory, ui.note);
     await ui.presentEvidence(await summarizeEvidence(written));
-    return loop.stopReason === "completed" && gates.outcome.settled === "green" ? 0 : 1;
+    return exitCodeFor(loop.stopReason, gates.outcome.settled);
   } finally {
     await ui.stop();
     process.off("SIGINT", onInterrupt);
@@ -1346,6 +1350,17 @@ interface DecomposeContext {
   readonly home: string;
   readonly model: () => ModelClient;
   readonly maxSteps: number;
+}
+
+/**
+ * What the shell is told. Green is the gates' verdict on the tree, so that is the exit code,
+ * and a run someone cancelled reports the code a shell reports for that rather than borrowing
+ * the one that means the work was measured and found wanting.
+ */
+function exitCodeFor(stopReason: StopReason, settled: "green" | "escalated"): number {
+  // 128 + SIGINT, which is what every shell reports for a process a person stopped.
+  const cancelled = 130;
+  return stopReason === "interrupted" ? cancelled : settled === "green" ? 0 : 1;
 }
 
 /** The planner, on a chain of its own, so what it read before deciding is on the record. */
