@@ -13,6 +13,8 @@ import { type GatesEngineRun, runGatesEngine } from "./gates/engine.ts";
 import type { FileSetRegistry } from "./gates/file-set.ts";
 import { createAmendFileSetTool, createDeclareFileSetTool } from "./gates/file-set-tool.ts";
 import type { DiffBudget } from "./gates/gate-definition.ts";
+import { createGitWorkspaceProbe } from "./gates/git-workspace.ts";
+import { captureInheritedChanges, type InheritedChanges } from "./gates/inherited-changes.ts";
 import { diffAgainstBase } from "./gates/scratch-index.ts";
 import { type ConfirmationPrompt, createToolChokepoint } from "./tools/chokepoint.ts";
 import { createLedgerChokepointRecorder } from "./tools/chokepoint-record.ts";
@@ -180,6 +182,23 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
     },
   });
 
+  // Before the loop, because after it there is no telling the run's work from what it found.
+  // A git failure is not raised here: the gates raise it properly, with the sentence that says
+  // to run inside a repository, and swallowing it there to throw a worse one here helps nobody.
+  const inherited = await captureInherited(options);
+  if (inherited.size > 0) {
+    await options.evidence.record({
+      type: "inherited-changes",
+      actor: "harness",
+      provenance: ["tool-output"],
+      payload: {
+        baseRef: options.baseRef,
+        files: [...inherited.keys()].sort(),
+        note: "already different from the base when the run started, so not attributed to it",
+      },
+    });
+  }
+
   const loopDependencies = {
     model: options.model,
     toolInvoker,
@@ -228,6 +247,8 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
     clock: options.clock,
     emit: options.emit,
     cap: options.attempts,
+    abortSignal: options.abortSignal,
+    inherited,
     resolve: (request) => resolveWithModel(request, options, loopDependencies),
     ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
     ...(options.diffBudget === undefined ? {} : { budgets: options.diffBudget }),
@@ -260,6 +281,16 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
     // a verdict on the tree, so it is not green whatever the gates last saw.
     green: gates.outcome.settled === "green" && loop.stopReason !== "interrupted",
   };
+}
+
+async function captureInherited(options: AgentTaskOptions): Promise<InheritedChanges> {
+  try {
+    return await captureInheritedChanges(
+      createGitWorkspaceProbe({ workspaceRoot: options.workspace, baseRef: options.baseRef }),
+    );
+  } catch {
+    return new Map();
+  }
 }
 
 /** A patch is only worth reading up to a point, past which it is a file to open, not a page to read. */

@@ -31,6 +31,7 @@ const recordTypes = [
   "file-set-amended",
   "escalation",
   "workspace-diff",
+  "inherited-changes",
   "calibration-canary",
   "calibration-preflight",
   "calibration-run",

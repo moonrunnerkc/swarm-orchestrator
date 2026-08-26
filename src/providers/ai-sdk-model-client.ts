@@ -29,57 +29,83 @@ export function createAiSdkModelClient(
   return {
     modelId,
     async generate(request: ModelRequest): Promise<ModelResponse> {
-      const result = streamText({
-        model,
-        system: request.system,
-        messages: toModelMessages(request.messages),
-        tools: toToolSet(request.tools),
-        maxOutputTokens: request.maxOutputTokens,
-        // Spread rather than passed as undefined: the SDK sends a key it was given, and a
-        // temperature of undefined on the wire is not the same as no temperature at all.
-        ...(request.sampling === undefined
-          ? {}
-          : {
-              temperature: request.sampling.temperature,
-              topP: request.sampling.topP,
-              ...(request.sampling.seed === null ? {} : { seed: request.sampling.seed }),
-            }),
-        abortSignal: request.abortSignal,
-        ...(providerOptions === undefined ? {} : { providerOptions }),
-        // The SDK's default handler prints the whole error object, stack and response headers
-        // included, straight over the running UI. Nothing is swallowed by replacing it: the
-        // same error is raised out of the stream below and the loop renders it as one line.
-        onError: () => {},
-      });
-
-      for await (const part of result.fullStream) {
-        // A stream error is the call failing, so it is raised rather than left to surface as
-        // an empty response the loop would read as a completion claim.
-        if (part.type === "error") {
-          throw part.error;
+      try {
+        return await streamOnce(model, request, providerOptions);
+      } catch (cause) {
+        // The extra body fields are vendor extensions, so a server that does not recognise
+        // them rejects the request itself rather than answering it badly, and every call would
+        // fail the same way. Dropping them and asking again costs one request rather than the
+        // run. Only a rejection is retried: a network failure is not the fields' fault, and a
+        // cancelled call was not rejected at all.
+        if (providerOptions === undefined || request.abortSignal.aborted || !wasRejected(cause)) {
+          throw cause;
         }
-        // The stream was already being drained here to time the first token. Handing the text
-        // on as it arrives costs nothing and is the difference between a screen that says
-        // "thinking" for a minute and one that shows what is being thought.
-        if (part.type === "text-delta" && request.onText !== undefined) {
-          request.onText(part.text);
-        }
+        return await streamOnce(model, request, undefined);
       }
-
-      const usage = await result.usage;
-      return {
-        text: await result.text,
-        toolCalls: (await result.toolCalls).map((call) => ({
-          callId: call.toolCallId,
-          toolName: call.toolName,
-          input: call.input,
-        })),
-        inputTokens: usage.inputTokens ?? 0,
-        outputTokens: usage.outputTokens ?? 0,
-        finishReason: await result.finishReason,
-        performance: performanceOf(await result.steps),
-      };
     },
+  };
+}
+
+/** A 4xx from the server: it read the request and would not take it. */
+function wasRejected(cause: unknown): boolean {
+  const status = (cause as { statusCode?: unknown })?.statusCode;
+  return typeof status === "number" && status >= 400 && status < 500;
+}
+
+async function streamOnce(
+  model: LanguageModel,
+  request: ModelRequest,
+  providerOptions: Record<string, Record<string, JSONValue>> | undefined,
+): Promise<ModelResponse> {
+  const result = streamText({
+    model,
+    system: request.system,
+    messages: toModelMessages(request.messages),
+    tools: toToolSet(request.tools),
+    maxOutputTokens: request.maxOutputTokens,
+    // Spread rather than passed as undefined: the SDK sends a key it was given, and a
+    // temperature of undefined on the wire is not the same as no temperature at all.
+    ...(request.sampling === undefined
+      ? {}
+      : {
+          temperature: request.sampling.temperature,
+          topP: request.sampling.topP,
+          ...(request.sampling.seed === null ? {} : { seed: request.sampling.seed }),
+        }),
+    abortSignal: request.abortSignal,
+    ...(providerOptions === undefined ? {} : { providerOptions }),
+    // The SDK's default handler prints the whole error object, stack and response headers
+    // included, straight over the running UI. Nothing is swallowed by replacing it: the
+    // same error is raised out of the stream below and the loop renders it as one line.
+    onError: () => {},
+  });
+
+  for await (const part of result.fullStream) {
+    // A stream error is the call failing, so it is raised rather than left to surface as
+    // an empty response the loop would read as a completion claim.
+    if (part.type === "error") {
+      throw part.error;
+    }
+    // The stream was already being drained here to time the first token. Handing the text
+    // on as it arrives costs nothing and is the difference between a screen that says
+    // "thinking" for a minute and one that shows what is being thought.
+    if (part.type === "text-delta" && request.onText !== undefined) {
+      request.onText(part.text);
+    }
+  }
+
+  const usage = await result.usage;
+  return {
+    text: await result.text,
+    toolCalls: (await result.toolCalls).map((call) => ({
+      callId: call.toolCallId,
+      toolName: call.toolName,
+      input: call.input,
+    })),
+    inputTokens: usage.inputTokens ?? 0,
+    outputTokens: usage.outputTokens ?? 0,
+    finishReason: await result.finishReason,
+    performance: performanceOf(await result.steps),
   };
 }
 

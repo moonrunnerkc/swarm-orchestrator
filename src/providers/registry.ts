@@ -116,20 +116,23 @@ export function createProviderRegistry(settings: ProviderSettings): ProviderRegi
 /**
  * Whether the model behind the local endpoint should reason before it answers, in the two
  * spellings the servers that accept it use: rapid-mlx and vLLM read the top-level field, and
- * the templated form is what a server that passes the flag to its chat template wants. Nothing
- * is sent unless a setting asked for it, because the field is a vendor extension and a server
- * that rejects what it does not recognise would fail every call rather than one.
+ * the templated form is what a server that passes the flag to its chat template wants.
  *
- * Ollama's OpenAI-compatible route ignores both. That is the server's own limit, not this one:
- * its `/api/chat` carries the switch instead, and nothing here reaches that route.
+ * Off unless a setup asks for it on, which is a default chosen from a measurement rather than
+ * a preference. A reasoning model given tools spends its output budget thinking about the edit
+ * instead of making it: against rapid-mlx serving qwen3.8:27b the same task truncated at the
+ * 8192-token cap on four runs out of four with reasoning on, and finished in seven steps and
+ * thirty-four seconds with it off. `[providers] local_thinking = true` puts it back for a setup
+ * that wants it, and nothing here reaches a frontier provider.
+ *
+ * A server that rejects the field is handled where the call is made rather than guessed at
+ * here: the client retries once without it, so an unrecognised extension costs one request
+ * rather than every request.
  */
 function thinkingOptions(
   settings: ProviderSettings,
 ): Record<string, Record<string, JSONValue>> | undefined {
-  if (settings.localThinking === undefined || settings.localThinking === null) {
-    return undefined;
-  }
-  const enabled = settings.localThinking;
+  const enabled = settings.localThinking ?? false;
   return {
     local: { enable_thinking: enabled, chat_template_kwargs: { enable_thinking: enabled } },
   };

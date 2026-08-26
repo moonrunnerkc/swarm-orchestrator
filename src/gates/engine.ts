@@ -18,6 +18,7 @@ import { assembleGates, type GateSetOptions } from "./default-gates.ts";
 import type { FileSetRegistry } from "./file-set.ts";
 import type { DiffBudget, GateContext, GateDefinition } from "./gate-definition.ts";
 import { createGitCheckpoint, createGitWorkspaceProbe } from "./git-workspace.ts";
+import { changesTheRunMade, type InheritedChanges } from "./inherited-changes.ts";
 import { createNodeCommandRunner } from "./node-command-runner.ts";
 import { detectProject, type ProjectDetection } from "./project-type.ts";
 
@@ -41,6 +42,13 @@ interface GatesEngineOptions {
    * it gets no attribution, so its runs clear no individual test.
    */
   readonly singleFileTestCommand?: SingleFileCommand;
+  /** Stops the resolve loop where the run was cancelled, rather than spending its attempts. */
+  readonly abortSignal?: AbortSignal;
+  /**
+   * What already differed from the base when the run began. Those files are not attributed to
+   * the run unless it went on to edit them, so a dirty workspace is not read as its work.
+   */
+  readonly inherited?: InheritedChanges;
 }
 
 export interface GatesEngineRun {
@@ -69,7 +77,10 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
 
   const context = async (): Promise<GateContext> => ({
     workspaceRoot: options.workspaceRoot,
-    changes: await probe.changes(),
+    changes:
+      options.inherited === undefined
+        ? await probe.changes()
+        : await changesTheRunMade(await probe.changes(), probe, options.inherited),
     fileSet: options.fileSet.state(),
     budgets,
     probe,
@@ -78,6 +89,7 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
   const outcome = await runAutoResolve({
     gates,
     context,
+    ...(options.abortSignal === undefined ? {} : { abortSignal: options.abortSignal }),
     cycleDeps: {
       commands,
       evidence: options.evidence,
