@@ -94,6 +94,27 @@ what it has learned.
 Settings live in one optional `swarm.toml`: providers and endpoints, gate definitions, budgets,
 model pins, and the `[interface]`, `[theme]` and `[keys]` tables. Flags win over the file.
 
+Two of those are worth knowing about before you need them.
+
+    [providers]
+    local_thinking = false      # the model behind the local endpoint answers without reasoning first
+
+    [interface]
+    confirm_timeout_minutes = 30   # an unanswered confirmation refuses itself; 0 waits for ever
+
+`local_thinking` matters on a reasoning model served locally. Left unset, nothing is sent and
+the server's own default stands, which is the only safe default: the field is a vendor
+extension and a server that rejects what it does not recognise would fail every call rather
+than one. Set it, and a model that would otherwise spend its whole output budget thinking
+answers instead. Against rapid-mlx serving qwen3.8:27b, one request cost 37 completion tokens
+with reasoning on and 2 with it off. Ollama's OpenAI-compatible route ignores the field; that
+is the server's limit rather than this one's.
+
+`confirm_timeout_minutes` is why a run left alone no longer waits for ever. The chokepoint asks
+before it runs a command that is not on the allowlist, and a question nobody answers used to
+hold the run until somebody came back to it. Refusing is what a declined question records
+either way, so the deadline costs that one tool call and the run carries on.
+
 ## A session, or a single task
 
 Run `swarm` with no task and it opens a session: one process, one ledger, and tasks typed one
