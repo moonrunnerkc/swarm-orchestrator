@@ -42,15 +42,20 @@ const searchInput = z.object({
   maxResults: z.number().int().positive().optional(),
 });
 
+/** Absent and empty both mean the workspace root, as they do for a listing. */
+function searchRootOf(path: string | undefined): string {
+  return path === undefined || path.trim().length === 0 ? "." : path;
+}
+
 export function createSearchTool(sandbox: Sandbox): ToolDefinition {
   return defineTool({
     name: "search",
     description: "Search workspace files line by line with a regular expression.",
     inputSchema: searchInput,
     kind: "read",
-    pathsFrom: (input) => [input.path ?? "."],
+    pathsFrom: (input) => [searchRootOf(input.path)],
     async execute(input) {
-      const root = resolveInsideWorkspace(sandbox, input.path ?? ".");
+      const root = resolveInsideWorkspace(sandbox, searchRootOf(input.path));
       const limit = input.maxResults ?? 100;
 
       let pattern: RegExp;

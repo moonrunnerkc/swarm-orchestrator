@@ -106,22 +106,31 @@ export function createEditTool(sandbox: Sandbox): ToolDefinition {
   });
 }
 
+/**
+ * The directory a listing means. Absent and empty are the same request, the workspace root: a
+ * model that sends `""` is saying "here" as plainly as one that sends nothing, and answering
+ * that with "the path is empty" spends a step teaching it a distinction that means nothing.
+ */
+function directoryOf(path: string | undefined): string {
+  return path === undefined || path.trim().length === 0 ? "." : path;
+}
+
 export function createListTool(sandbox: Sandbox): ToolDefinition {
   return defineTool({
     name: "list",
     description: "List the entries of a workspace directory.",
     inputSchema: listInput,
     kind: "read",
-    pathsFrom: (input) => [input.path ?? "."],
+    pathsFrom: (input) => [directoryOf(input.path)],
     async execute(input) {
-      const absolutePath = resolveInsideWorkspace(sandbox, input.path ?? ".");
+      const absolutePath = resolveInsideWorkspace(sandbox, directoryOf(input.path));
       const entries = await readdir(absolutePath, { withFileTypes: true });
       const names = entries
         .map((entry) => (entry.isDirectory() ? `${entry.name}/` : entry.name))
         .sort();
       return {
         text: names.length === 0 ? "(empty directory)" : names.join("\n"),
-        facts: { path: input.path ?? ".", entries: names.length },
+        facts: { path: directoryOf(input.path), entries: names.length },
       };
     },
   });

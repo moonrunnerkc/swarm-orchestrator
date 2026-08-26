@@ -16,6 +16,7 @@ import {
   createLedgerChokepointRecorder,
 } from "./chokepoint-record.ts";
 import { createDerivationHeuristic } from "./derivation.ts";
+import { createListTool } from "./file-tools.ts";
 import { createSandbox, type SandboxPolicy } from "./sandbox.ts";
 import { defineTool, type ToolDefinition } from "./tool-definition.ts";
 
@@ -108,6 +109,19 @@ function invocation(overrides: Partial<ToolInvocation> = {}): ToolInvocation {
     ...overrides,
   };
 }
+
+describe("a directory said two ways", () => {
+  it("reads an empty path as the workspace root, the way an absent one is read", async () => {
+    // A live run spent a step on `list {"path": ""}` being told "the path is empty". Absent
+    // and empty are the same request; the distinction taught the model nothing worth a step.
+    const listing = createListTool(createSandbox(policy));
+
+    expect(listing.pathsFrom({ path: "" })).toEqual(["."]);
+    expect(listing.pathsFrom({ path: "   " })).toEqual(["."]);
+    expect(listing.pathsFrom({})).toEqual(["."]);
+    expect(listing.pathsFrom({ path: "src" })).toEqual(["src"]);
+  });
+});
 
 describe("tool chokepoint", () => {
   it("runs an allowed call and records the request and the outcome", async () => {
