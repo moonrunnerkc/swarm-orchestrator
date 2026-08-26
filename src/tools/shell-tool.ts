@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
 import type { Sandbox } from "./sandbox.ts";
+import { readShellCommand } from "./shell-command.ts";
 import { defineTool, type ToolDefinition, type ToolOutput } from "./tool-definition.ts";
 
 const runCommand = promisify(execFile);
@@ -30,7 +31,10 @@ export function createShellTool(sandbox: Sandbox): ToolDefinition {
     description: "Run a shell command from the workspace root and return its combined output.",
     inputSchema: shellInput,
     kind: "shell",
-    pathsFrom: () => [],
+    // The words that could name a file, so the chokepoint rules on them with the same sandbox
+    // the read and write tools answer to. Without this a shell call reached any path on the
+    // machine, and `cat ~/.ssh/id_rsa` was a credential read the denylist never saw.
+    pathsFrom: (input) => readShellCommand(input.command)?.operands ?? [],
     async execute(input) {
       const timeout = input.timeoutMs ?? defaultTimeoutMs;
       try {
