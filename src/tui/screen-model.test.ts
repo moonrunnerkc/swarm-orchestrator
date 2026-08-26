@@ -282,6 +282,38 @@ describe("the overlays", () => {
     expect(rendered).toContain("y to run it, n or escape to refuse");
   });
 
+  it("says it is waiting on the person while the chokepoint holds the run", () => {
+    // What a stale activity row cost: a run sat on this question overnight and the line above
+    // it still read "thinking, step 2" with a counter climbing past twelve hours. The screen
+    // has to name the thing the run is actually blocked on, which is the person reading it.
+    const view = (
+      [
+        { type: "model-call", step: 2, modelId: "local:m" },
+        { type: "tool-call", callId: "a", toolName: "shell", input: { command: "python3 -V" } },
+      ] satisfies readonly LoopEvent[]
+    ).reduce(applyLoopEvent, emptySessionView);
+
+    const line = screen(
+      {
+        view,
+        activityElapsedMs: 45_071_000,
+        confirmation: {
+          toolName: "shell",
+          detail: "python3 -V",
+          reason: "shell-allowlist",
+          explanation: '"python3 -V" is not on the shell allowlist.',
+        },
+      },
+      { columns: 120, rows: 30 },
+    )
+      .map((row) => row.text)
+      .find((text) => /^[\u2800-\u28ff] /.test(text));
+
+    expect(line).toBeDefined();
+    expect(line).toContain("waiting for you");
+    expect(line).not.toContain("thinking");
+  });
+
   it("lists the artifacts by what they are for, and both claim counts", () => {
     const rendered = text(
       screen({ evidence: summary }, { columns: 140, rows: 40 }, [{ type: "open-evidence" }]),
