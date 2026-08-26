@@ -24,5 +24,14 @@ export function servableCandidates(
     (candidate) =>
       !candidate.startsWith(localPrefix) || served.has(candidate.slice(localPrefix.length)),
   );
-  return reachable.length > 0 ? reachable : candidates;
+  if (reachable.length > 0) {
+    return reachable;
+  }
+
+  // Nothing the calibration measured is on this machine any more, which is the ordinary end of
+  // a calibration that has outlived its models: keeping the stale list would route between arms
+  // that cannot answer and then swap the winner out, which is the round trip this exists to
+  // stop. What the endpoint does serve becomes the arms instead. They carry no measurements,
+  // and an untried arm is a thing the router already knows how to reach for.
+  return [...served].sort().map((id) => `${localPrefix}${id}`);
 }
