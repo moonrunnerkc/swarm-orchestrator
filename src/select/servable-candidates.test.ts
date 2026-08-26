@@ -19,10 +19,10 @@ describe("the arms a run can actually reach", () => {
     expect(servableCandidates(candidates, new Set())).toEqual(candidates);
   });
 
-  it("keeps them all rather than leaving nothing to route between", () => {
-    expect(servableCandidates(["local:a", "local:b"], new Set(["c"]))).toEqual([
-      "local:a",
-      "local:b",
-    ]);
+  it("routes over what is served when nothing the calibration measured is left", () => {
+    // The real shape of a calibration that outlived its models: it measured qwen3.6, qwen3.5
+    // and gemma4:31b, and the endpoint serves none of them. Keeping the stale list routed
+    // between arms that could not answer and swapped the winner out afterwards, every run.
+    expect(servableCandidates(["local:a", "local:b"], new Set(["c"]))).toEqual(["local:c"]);
   });
 });
