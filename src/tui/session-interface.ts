@@ -8,6 +8,7 @@ import { describeEvidence, type EvidenceSummary } from "./evidence-panel.ts";
 import type { KeyBindings } from "./key-bindings.ts";
 import { type OpenTarget, openEvidenceTarget, type SpawnHandler } from "./open-path.ts";
 import { describeLoopEvent } from "./plain-lines.ts";
+import { drainRenderTimings } from "./render-timings.ts";
 import { SessionScreen } from "./screen.ts";
 import type { TranscriptLine } from "./screen-model.ts";
 import { createSessionStore } from "./session-store.ts";
@@ -291,6 +292,9 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
   );
 
   redraw = (): void => {
+    // Before the frame rather than after it, so the entries the last one wrote are gone
+    // whether or not React had finished flushing them when it returned.
+    drainRenderTimings();
     instance.rerender(
       createElement(SessionScreen, {
         store,
