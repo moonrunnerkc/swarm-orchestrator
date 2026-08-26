@@ -49,6 +49,14 @@ export function renderParallelReport(
     lines.push("", `returned to ${rejected.workerId}`, ...indent(rejected.feedback));
   }
 
+  if (result.sweptBranches.length > 0) {
+    lines.push(
+      "",
+      `removed ${result.sweptBranches.length} worker branch(es) the queue was finished with. ` +
+        `${result.integrationBranch} is not one of them.`,
+    );
+  }
+
   lines.push(
     "",
     `nothing was merged into the branch you are on. The result is on ${result.integrationBranch},`,

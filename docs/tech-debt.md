@@ -254,36 +254,35 @@ the majority of the bytes, because the recorder writes the system prompt and the
 transcript on every step. Changing what is recorded touches the evidence contract, so it is
 named here rather than trimmed as a side effect of a page layout.
 
-## Debt: every parallel run leaves its branches in the repository
+## Closed on 2026-08-25: a parallel run swept up the branches it created
 
-A run creates `swarm/<runId>/<workerId>` per worker plus an integration branch. The worktrees
-are removed in a `finally`, but the branches are left on purpose: the merge queue needs them
-after their worktree is gone. Nothing removes them afterwards, so a repository accumulates
-`tasks x redundancy + 1` branches per run, forever. Three verification runs on a scratch repo
-left seven behind, and a run killed part-way leaves its worktrees registered too, which makes
-the next run fail on `git worktree add` at a path that already exists.
+A run created `swarm/<runId>/<workerId>` per worker plus an integration branch, removed the
+worktrees in a `finally`, and left every branch behind for ever, because the merge queue needs
+them after their worktree is gone and nothing outlived the queue. A repository gained
+`tasks x redundancy + 1` branches per run; three verification runs left seven.
 
-The fix is a sweep at the end of a run that deletes the branches nothing landed from, and a
-line in the report saying what it removed. It is not done because it lands in the run path
-that was just verified end to end, and re-verifying that is a live-model run per change. It is
-a wart rather than a hazard: `git branch -D` on the `swarm/` prefix clears it, and a killed run
-needs `git worktree prune` beside it.
+`sweepRunBranches` runs once the queue is finished and the report says what it removed. The
+integration branch is never swept, since that is the result and the report tells the person to
+merge it. A branch git still considers checked out is left rather than forced, because that
+means a worktree this process could not remove and deleting under it would leave the two
+disagreeing. It prunes first, which is the part that matters for a run killed part-way: those
+leave registrations pointing at directories that are already gone, and the next run fails
+adding a worktree at a path git still believes in. Verified on a live run: three worker
+branches removed, the integration branch and `main` untouched, no worktrees left registered.
 
-## Debt: a broad goal makes the planner return nothing, and the run only says it declared nothing
+## Closed on 2026-08-25: the planner says how it stopped, not just that it declared nothing
 
-`--goal` asks a model to read the workspace and declare a task graph. On a two-part goal
-("give the a module a shouting variant, and add a b module beside it with its own test") the
-planner listed the workspace, read two files, and returned a response with neither text nor
-tool calls, which the loop correctly stops on as `empty-response`. The same model on the same
-server handled a one-part goal ("add a b module with its own test") without trouble: three
-reads, then a graph. So this is breadth, not the pairing, and the worker path on that pairing
-is fine, since three redundant attempts all went green on it.
+`--goal` reported "the planner did not declare a task graph" and named the session to read.
+That is most of what is useful and it is missing the one fact that decides what to do next: a
+loop that ran out of steps, a model that answered in prose, and a model that returned nothing
+at all want three different responses, and the message treated them as one.
 
-What the person sees is "the planner did not declare a task graph", which names the session to
-read and suggests a narrower goal, and that is most of what is useful. What it does not say is
-that the loop stopped on an empty response rather than on a refusal or a budget, which is the
-detail that tells a broad goal apart from a model that cannot use the tool at all. The stop
-reason is on the planner's chain; it is not in the message.
+`runPlanner` returns the stop reason and the step count with the graph, and the message names
+both and says what to try for each. Seen on a live run with a deliberately tight budget: `It
+stopped with "max-steps" after 2 step(s) ... It ran out of steps before it declared anything:
+raise --max-steps.` The observation that produced this stands: a broad two-part goal made the
+model return an empty response where a one-part goal declared a graph in three reads, so
+breadth rather than the pairing, and `empty-response` now says so in those words.
 
 ## Debt: the weekly scan files the same 21 semgrep findings every Monday
 

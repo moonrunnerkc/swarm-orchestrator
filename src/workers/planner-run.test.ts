@@ -88,7 +88,7 @@ function planner(turns: readonly FixtureTurn[], captured?: ModelRequest[]) {
 
 describe("the planner run", () => {
   it("returns the graph the model declared", async () => {
-    const graph = await planner(declaring(twoNodes));
+    const { graph } = await planner(declaring(twoNodes));
 
     expect(graph?.nodes.map((node) => node.id)).toEqual(["parser", "printer"]);
   });
@@ -107,7 +107,7 @@ describe("the planner run", () => {
   });
 
   it("hands a bad graph back to the model rather than ending the run", async () => {
-    const graph = await planner([
+    const { graph } = await planner([
       respondWithToolCalls("first try", [
         {
           callId: "g0",
@@ -125,11 +125,25 @@ describe("the planner run", () => {
   });
 
   it("returns nothing when the model never declared a graph", async () => {
-    expect(await planner([respondWithText("I would rather not")])).toBeNull();
+    expect((await planner([respondWithText("I would rather not")])).graph).toBeNull();
+  });
+
+  it("says how the loop stopped, which is what tells one kind of nothing from another", async () => {
+    const gaveUp = await planner([respondWithText("I would rather not")]);
+
+    expect(gaveUp.stopReason).toBe("completed");
+    expect(gaveUp.steps).toBeGreaterThan(0);
+  });
+
+  it("reports an empty response as itself, not as a refusal", async () => {
+    const empty = await planner([respondWithText("")]);
+
+    expect(empty.stopReason).toBe("empty-response");
+    expect(empty.graph).toBeNull();
   });
 
   it("keeps the last graph the model declared, so a correction stands", async () => {
-    const graph = await planner([
+    const { graph } = await planner([
       respondWithToolCalls("here is the graph", [
         { callId: "g0", toolName: "declare_task_graph", input: twoNodes },
       ]),

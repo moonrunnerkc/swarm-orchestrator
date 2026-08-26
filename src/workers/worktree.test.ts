@@ -4,7 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { addWorktree, headCommit, mergeBranch, resetHard, type Worktree } from "./worktree.ts";
+import {
+  addWorktree,
+  headCommit,
+  mergeBranch,
+  resetHard,
+  sweepRunBranches,
+  type Worktree,
+} from "./worktree.ts";
 
 const run = promisify(execFile);
 
@@ -177,5 +184,71 @@ describe("resetHard", () => {
 
     expect(await headCommit(integration.path)).toBe(before);
     expect((await git(integration.path, "status", "--porcelain")).trim()).toBe("");
+  });
+});
+
+describe("sweeping up after a run", () => {
+  async function branchesIn(root: string): Promise<readonly string[]> {
+    const out = await git(root, "branch", "--format=%(refname:short)");
+    return out
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+
+  it("removes the run's branches and leaves everything else alone", async () => {
+    const one = await addWorktree({
+      repositoryRoot: repository,
+      path: join(scratch, "w1"),
+      branch: "swarm/run1/worker-1",
+      baseRef: "HEAD",
+    });
+    await addWorktree({
+      repositoryRoot: repository,
+      path: join(scratch, "w2"),
+      branch: "swarm/run2/worker-1",
+      baseRef: "HEAD",
+    });
+    await one.remove();
+
+    const removed = await sweepRunBranches(repository, "run1");
+
+    expect(removed).toEqual(["swarm/run1/worker-1"]);
+    const left = await branchesIn(repository);
+    expect(left).toContain("swarm/run2/worker-1");
+    expect(left).not.toContain("swarm/run1/worker-1");
+  });
+
+  it("keeps a branch whose worktree is still checked out, rather than failing", async () => {
+    await addWorktree({
+      repositoryRoot: repository,
+      path: join(scratch, "held"),
+      branch: "swarm/run1/worker-1",
+      baseRef: "HEAD",
+    });
+
+    const removed = await sweepRunBranches(repository, "run1");
+
+    expect(removed).toEqual([]);
+    expect(await branchesIn(repository)).toContain("swarm/run1/worker-1");
+  });
+
+  it("prunes worktree registrations a killed run left behind", async () => {
+    const abandoned = await addWorktree({
+      repositoryRoot: repository,
+      path: join(scratch, "gone"),
+      branch: "swarm/run1/worker-1",
+      baseRef: "HEAD",
+    });
+    // What a killed run leaves: the directory gone, the registration still there.
+    await rm(abandoned.path, { recursive: true, force: true });
+
+    await sweepRunBranches(repository, "run1");
+
+    expect(await git(repository, "worktree", "list")).not.toContain("gone");
+  });
+
+  it("sweeps nothing when the run created nothing", async () => {
+    expect(await sweepRunBranches(repository, "run-that-never-ran")).toEqual([]);
   });
 });

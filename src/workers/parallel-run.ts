@@ -26,7 +26,7 @@ import { recordSelection } from "./selection-record.ts";
 import type { TaskGraph } from "./task-graph.ts";
 import { peersFor, type TrailPeer } from "./trail.ts";
 import { createReadTrailTool } from "./trail-tool.ts";
-import { addWorktree, type Worktree } from "./worktree.ts";
+import { addWorktree, sweepRunBranches, type Worktree } from "./worktree.ts";
 
 const runProcess = promisify(execFile);
 
@@ -90,6 +90,8 @@ export interface ParallelRunResult {
   /** Null when no worker produced anything for the queue to arbitrate. */
   readonly queue: MergeQueueResult | null;
   readonly integrationBranch: string;
+  /** Worker branches removed once the queue was done with them. */
+  readonly sweptBranches: readonly string[];
   readonly baseCommit: string;
   readonly headCommit: string;
 }
@@ -227,6 +229,10 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
     await integration.remove();
   }
 
+  // The queue is finished with the worker branches now, so they go. They outlive their
+  // worktrees on purpose, and nothing used to outlive them.
+  const sweptBranches = await sweepRunBranches(options.repositoryRoot, options.runId);
+
   await claimTheChosenLanded(selections, queue, options.coordinator);
   if (graph !== null) {
     await claimGraphOutcome(
@@ -264,6 +270,7 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
     selections,
     queue,
     integrationBranch: integration.branch,
+    sweptBranches,
     baseCommit,
     headCommit: head,
   };

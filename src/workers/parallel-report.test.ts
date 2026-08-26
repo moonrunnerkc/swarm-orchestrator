@@ -47,6 +47,7 @@ function report(overrides: Partial<ParallelRunResult> = {}): string {
   const result: ParallelRunResult = {
     workers: [worker()],
     selections: [],
+    sweptBranches: [],
     queue: {
       baseCommit: "c".repeat(40),
       headCommit: "b".repeat(40),
@@ -194,5 +195,23 @@ describe("the report of a run that tried each task several ways", () => {
 
     expect(rendered).toContain("changedLinesCovered");
     expect(rendered).toMatch(/not measured|no attempt measured/i);
+  });
+});
+
+describe("what the report says about the branches a run leaves", () => {
+  it("says which worker branches it removed", () => {
+    const rendered = report({ sweptBranches: ["swarm/run1/worker-1", "swarm/run1/worker-2"] });
+
+    expect(rendered).toMatch(/removed 2 worker branch/i);
+  });
+
+  it("says nothing about sweeping when there was nothing to sweep", () => {
+    expect(report({ sweptBranches: [] })).not.toMatch(/removed .* branch/i);
+  });
+
+  it("still points at the integration branch, which is never swept", () => {
+    const rendered = report({ sweptBranches: ["swarm/run1/worker-1"] });
+
+    expect(rendered).toContain("git merge");
   });
 });
