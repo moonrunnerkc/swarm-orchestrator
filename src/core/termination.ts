@@ -11,7 +11,15 @@ export type StopReason =
    * that buffers a partial tool call and never flushes it returns exactly this, and reading
    * it as a completion turns the runtime dropping output into the model giving up.
    */
-  | "empty-response";
+  | "empty-response"
+  /**
+   * The runtime was cut off at the output-token cap having emitted neither text nor a tool
+   * call, which is what a reasoning model does when it spends the whole budget thinking. Kept
+   * apart from "empty-response" because the two want different things done about them: an
+   * empty turn is a runtime dropping output, and this is the model being given less room than
+   * it needed. Reading a truncation as an empty response hides the one number that explains it.
+   */
+  | "output-cap";
 
 export interface LoopBudget {
   readonly maxSteps: number;

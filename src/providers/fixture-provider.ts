@@ -70,6 +70,24 @@ export function createFixtureModelClient(script: FixtureScript): FixtureModelCli
   };
 }
 
+/** A turn the runtime cut off at the output cap: no text, no tool call, and nothing to read. */
+export function respondTruncated(
+  tokens = { input: 10, output: 8192 },
+  performance: ModelPerformance = unobservedPerformance,
+): FixtureTurn {
+  return {
+    kind: "response",
+    response: {
+      text: "",
+      toolCalls: [],
+      inputTokens: tokens.input,
+      outputTokens: tokens.output,
+      finishReason: "length",
+      performance,
+    },
+  };
+}
+
 export function respondWithText(
   text: string,
   tokens = { input: 10, output: 5 },

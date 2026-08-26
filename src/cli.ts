@@ -1360,6 +1360,12 @@ function describePlannerStop(stopReason: string): string {
         "The model answered with neither text nor a tool call, which a broad goal tends to " +
         "produce: try one that names a single piece of work."
       );
+    case "output-cap":
+      return (
+        "It was cut off at the output-token cap before it said anything, which is what a " +
+        "reasoning model does when it spends the whole budget thinking: try a model that " +
+        "reasons less, or a goal that needs less of it."
+      );
     case "max-steps":
       return "It ran out of steps before it declared anything: raise --max-steps.";
     case "completed":

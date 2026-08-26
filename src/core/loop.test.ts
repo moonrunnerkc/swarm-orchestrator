@@ -3,6 +3,7 @@ import {
   createFixtureModelClient,
   type FixtureTurn,
   failWith,
+  respondTruncated,
   respondWithText,
   respondWithToolCalls,
 } from "../providers/fixture-provider.ts";
@@ -232,6 +233,17 @@ describe("a turn that carries nothing", () => {
 
     expect(outcome.stopReason).toBe("empty-response");
     expect(outcome.steps).toBe(1);
+    expect(outcome.answeredSteps).toBe(0);
+  });
+
+  it("says the cap was hit when that is what happened, not that the turn was empty", async () => {
+    // A live run against a local reasoning model stopped here twice, at the same step both
+    // times, reported as an empty response. It had spent all 8192 output tokens thinking and
+    // been cut off, which is the one fact "empty-response" does not carry.
+    const harness = createHarness([respondTruncated()]);
+    const outcome = await runAgentLoop("do the thing", harness.deps);
+
+    expect(outcome.stopReason).toBe("output-cap");
     expect(outcome.answeredSteps).toBe(0);
   });
 
