@@ -83,6 +83,18 @@ const testCounterParser: GateParser = (observation) => {
   }
 
   const failed = observation.exitCode !== 0 || (counters.fail ?? 0) > 0;
+  if (!failed && counters.tests === 0) {
+    // A runner that collected nothing measured nothing, whatever it exited. A run wrote five
+    // Python files into a workspace whose package.json declares `node --test`, so the command
+    // found no test of its own to run, exited 0, and was read as the tests passing. Abstaining
+    // by name is what invariant 7 does with a measure nobody took, and the outcome then treats
+    // a change nothing ran over as ungreen rather than as measured and fine.
+    return {
+      status: "not-applicable",
+      detail: `${describeTestRun(counters, observation.exitCode)}: the command found no tests to run, so nothing here measured this change`,
+      measures,
+    };
+  }
   return {
     status: failed ? "failed" : "passed",
     detail: describeTestRun(counters, observation.exitCode),

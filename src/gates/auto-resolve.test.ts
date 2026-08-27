@@ -377,7 +377,9 @@ describe("the ratchet against a retry that deletes the failing tests", () => {
     const test = harness();
 
     const outcome = await test.run(() => {
-      // The tests gate goes green because there is nothing left to fail.
+      // Nothing is left to fail, so the gate stops objecting: it now abstains rather than
+      // passing, because a runner that collected nothing measured nothing. Either way the
+      // ratchet is what has to catch this, and the numbers it reads are unchanged.
       test.workspace.write(testPath, "import { it, expect } from 'vitest';\n");
       return Promise.resolve();
     });
@@ -386,7 +388,7 @@ describe("the ratchet against a retry that deletes the failing tests", () => {
     expect(outcome.attempts).toHaveLength(3);
 
     const first = outcome.attempts[0];
-    expect(first?.cycle.statuses.tests).toBe("passed");
+    expect(first?.cycle.statuses.tests).toBe("not-applicable");
     expect(first?.decision.accepted).toBe(false);
     expect(first?.decision.violations.map((violation) => violation.kind)).toEqual([
       "tests-declared-decreased",
