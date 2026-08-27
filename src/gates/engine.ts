@@ -66,7 +66,17 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
   const workspace = { workspaceRoot: options.workspaceRoot, baseRef: options.baseRef };
   const probe = createGitWorkspaceProbe(workspace);
   const commands = createNodeCommandRunner(options.clock);
-  const detection = await detectProject(probe.readCurrent);
+  // Read from the base commit, falling back to the tree only where the base had no manifest at
+  // all. A run must not author the command that measures it: one rewrote package.json's test
+  // script from `node --test` to a python runner that is not installed on the machine, and the
+  // tests gate then measured nothing while reporting only that the command was missing. That is
+  // invariant 7's rule about the code under measurement authoring its own number, one level up:
+  // here it authored the instrument. A workspace whose base declares no manifest is a run
+  // establishing measurement rather than escaping it, and what it declares is itself measured
+  // by whether the tests it wrote are collected.
+  const detection = await detectProject(
+    async (manifest) => (await probe.readBase(manifest)) ?? (await probe.readCurrent(manifest)),
+  );
   const gates = assembleGates(detection, {
     ...(options.gateOptions ?? {}),
     // Under the session store, which invariant 11 puts outside the workspace and denies to
