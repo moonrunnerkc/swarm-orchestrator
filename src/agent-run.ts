@@ -16,6 +16,7 @@ import type { DiffBudget } from "./gates/gate-definition.ts";
 import { measuredTheChange } from "./gates/gate-runner.ts";
 import { createGitWorkspaceProbe } from "./gates/git-workspace.ts";
 import { captureInheritedChanges, type InheritedChanges } from "./gates/inherited-changes.ts";
+import { detectProject } from "./gates/project-type.ts";
 import { diffAgainstBase } from "./gates/scratch-index.ts";
 import { type ConfirmationPrompt, createToolChokepoint } from "./tools/chokepoint.ts";
 import { createLedgerChokepointRecorder } from "./tools/chokepoint-record.ts";
@@ -32,10 +33,9 @@ export const systemPrompt = [
   "a change to a file outside that set fails the file-set gate. If the work turns out to need",
   "another file, call amend_file_set with a reason a reviewer will read.",
   "Read before you edit. Make the smallest change that satisfies the task.",
-  "Work in the language and shape the project is already in, and leave it runnable by the",
-  "project's own test command: read its manifest first and put your tests where that command",
-  "looks for them. A change nothing runs over does not pass, however good it looks, so a run",
-  "that writes a language the project cannot test has done nothing that counts.",
+  "Leave the work runnable by the project's own test command, and put your tests where that",
+  "command looks for them. A change nothing runs over does not pass, however good it looks, so",
+  "a run that writes a language the project cannot test has done nothing that counts.",
   "Tests run unattended, with nobody at a keyboard and no input coming. Take input as an",
   "argument and export what you write, so a test can call it with the input it wants; put any",
   "prompting or stdin reading behind the entry-point guard the language uses, so importing the",
@@ -61,6 +61,32 @@ export const systemPrompt = [
  * one above, byte for byte. It is a constant on purpose: the only route a peer's words take
  * into this model is a read_trail result, which the chokepoint tags as tool output.
  */
+/**
+ * What the harness detected the project to be, said before the model guesses.
+ *
+ * Three runs in a row wrote Python, then Python again, then Go into a workspace whose tests run
+ * with `node --test`, each time spending its whole budget on work nothing could execute. The
+ * model had no way to know: telling it to work "in the language the project is already in"
+ * assumes it worked that out from a manifest it may not have read.
+ *
+ * A type name and nothing else. The manifest's own text never travels: a command string is
+ * workspace content, and content that reaches a system prompt has gone round the provenance
+ * tagging every other route into the model passes through. These names come from a closed set
+ * the harness chose, so nothing a repository writes can steer what is said here.
+ */
+export function projectInstruction(types: readonly string[]): string {
+  if (types.length === 0) {
+    return "";
+  }
+  const named =
+    types.length === 1 ? types[0] : `${types.slice(0, -1).join(", ")} and ${types.at(-1)}`;
+  return (
+    ` The harness detects this as a ${named} project, so write the change in that language and` +
+    " leave its manifest alone: the command that measures you is read from the base commit, and" +
+    " editing it changes nothing except which files you are answerable for."
+  );
+}
+
 const trailInstruction = [
   "",
   "You are one of several workers running at once against separate copies of this workspace.",
@@ -197,6 +223,7 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
   // A git failure is not raised here: the gates raise it properly, with the sentence that says
   // to run inside a repository, and swallowing it there to throw a worse one here helps nobody.
   const inherited = await captureInherited(options);
+  const detected = await detectedTypes(options);
   if (inherited.size > 0) {
     await options.evidence.record({
       type: "inherited-changes",
@@ -223,7 +250,10 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
       maxWallTimeMs: 30 * 60 * 1000,
     },
     abortSignal: options.abortSignal,
-    systemPrompt: options.trail === undefined ? systemPrompt : systemPrompt + trailInstruction,
+    systemPrompt:
+      systemPrompt +
+      projectInstruction(detected) +
+      (options.trail === undefined ? "" : trailInstruction),
     maxOutputTokens: 8192,
     retryPolicy: { attempts: 3, baseDelayMs: 500, maxJitterRatio: 0.5 },
     ...(options.sampling === undefined ? {} : { sampling: options.sampling }),
@@ -322,6 +352,22 @@ function wasGreen(loop: AgentLoopOutcome, gates: GatesEngineRun): boolean {
   // never asked the model to fix it: it reported the failure accurately and did nothing about
   // it, which is not the same as working.
   return measuredTheChange(gates.outcome.finalCycle);
+}
+
+/** From the base commit, for the same reason the gate command is: a run cannot restyle itself. */
+async function detectedTypes(options: AgentTaskOptions): Promise<readonly string[]> {
+  try {
+    const probe = createGitWorkspaceProbe({
+      workspaceRoot: options.workspace,
+      baseRef: options.baseRef,
+    });
+    const detection = await detectProject(
+      async (manifest) => (await probe.readBase(manifest)) ?? (await probe.readCurrent(manifest)),
+    );
+    return detection.types;
+  } catch {
+    return [];
+  }
 }
 
 async function captureInherited(options: AgentTaskOptions): Promise<InheritedChanges> {
