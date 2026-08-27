@@ -6,6 +6,7 @@ import type { JSONValue } from "ai";
 import type { ModelClient } from "../core/model-client.ts";
 import { createAiSdkModelClient } from "./ai-sdk-model-client.ts";
 import { createFixtureModelClient, type FixtureScript } from "./fixture-provider.ts";
+import { createLocalFetch } from "./local-fetch.ts";
 import type { ModelSpec, ProviderId } from "./model-spec.ts";
 import { providerIds } from "./model-spec.ts";
 
@@ -95,7 +96,9 @@ export function createProviderRegistry(settings: ProviderSettings): ProviderRegi
             name: "local",
             baseURL: settings.localBaseUrl,
             includeUsage: true,
-            ...(settings.fetch === undefined ? {} : { fetch: settings.fetch }),
+            // A caller's fetch wins, which is what the tests inject. Otherwise the one that
+            // waits: a local endpoint goes quiet for as long as it takes to write the file.
+            fetch: settings.fetch ?? createLocalFetch(),
           });
           return createAiSdkModelClient(label, local(spec.modelId), thinkingOptions(settings));
         }
