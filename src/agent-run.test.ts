@@ -177,6 +177,22 @@ describe("runAgentTask", () => {
     expect(result.green).toBe(false);
   });
 
+  it("is not green when the only command gate found nothing to run", async () => {
+    // The gate strip showed no failure, so a second reading of it said green while the run's
+    // own verdict said otherwise, and the exit code followed the wrong one. A run wrote three
+    // files into a workspace whose test command collected nothing and exited 0.
+    const result = await task(goodTurns(stillGreen), {
+      gateOptions: {
+        commandOverrides: {
+          tests: "node -e \"console.log('TAP version 13'); console.log('# tests 0')\"",
+        },
+      },
+    });
+
+    expect(result.gates.outcome.finalCycle.statuses.tests).toBe("not-applicable");
+    expect(result.green).toBe(false);
+  });
+
   it("is not green when somebody cancelled it, whatever the gates last saw", async () => {
     const result = await task(goodTurns(stillGreen), { abortSignal: AbortSignal.abort() });
 

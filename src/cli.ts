@@ -480,7 +480,7 @@ async function runOneTurn(input: {
   const diffBudget = diffBudgetFrom(settings);
 
   try {
-    const { loop, gates } = await runAgentTask({
+    const { loop, gates, green } = await runAgentTask({
       task,
       workspace: options.workspace,
       baseRef: input.baseRef,
@@ -519,7 +519,9 @@ async function runOneTurn(input: {
 
     return {
       messages: loop.messages,
-      green: loop.stopReason === "completed" && gates.outcome.settled === "green",
+      // The run's own verdict. This had a third copy of the rule and it was the stale one, so
+      // a session turn could call green what a single run would not.
+      green,
     };
   } finally {
     process.off("SIGINT", onInterrupt);
@@ -819,7 +821,7 @@ async function run(options: RunCommand): Promise<number> {
   const diffBudget = diffBudgetFrom(settings);
 
   try {
-    const { loop, gates } = await runAgentTask({
+    const { loop, gates, green } = await runAgentTask({
       task: options.task,
       workspace: options.workspace,
       baseRef: options.baseRef,
@@ -863,7 +865,11 @@ async function run(options: RunCommand): Promise<number> {
     const written = await writeBundle(evidence, options.bundleDirectory, clock, ui.note);
     announceBundle(written.directory, ui.note);
     await ui.presentEvidence(await summarizeEvidence(written));
-    return exitCodeFor(loop.stopReason, gates.outcome.settled);
+    // The run's own verdict rather than a second reading of the gate strip: recomputing it
+    // here from `settled` alone let the two disagree, and they did. A run wrote three files
+    // into a workspace whose only command gate found no tests to run, so nothing measured the
+    // change, `green` said so, and the exit code said 0 because no gate had actually failed.
+    return exitCodeFor(loop.stopReason, green);
   } finally {
     await ui.stop();
     process.off("SIGINT", onInterrupt);
@@ -1399,10 +1405,10 @@ interface DecomposeContext {
  * and a run someone cancelled reports the code a shell reports for that rather than borrowing
  * the one that means the work was measured and found wanting.
  */
-function exitCodeFor(stopReason: StopReason, settled: "green" | "escalated"): number {
+function exitCodeFor(stopReason: StopReason, green: boolean): number {
   // 128 + SIGINT, which is what every shell reports for a process a person stopped.
   const cancelled = 130;
-  return stopReason === "interrupted" ? cancelled : settled === "green" ? 0 : 1;
+  return stopReason === "interrupted" ? cancelled : green ? 0 : 1;
 }
 
 /** The planner, on a chain of its own, so what it read before deciding is on the record. */
