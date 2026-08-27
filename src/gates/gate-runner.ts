@@ -304,10 +304,11 @@ export function describeFailuresForModel(cycle: GateCycle): string {
             .join(", ")}. ` +
           `The ${cycle.measures.changedFiles ?? 0} file(s) this change touched were never ` +
           "executed by anything, so passing the other gates says nothing about whether the " +
-          "code works. Add a test that the project's declared test command actually collects, " +
-          "covering what this change did, and put it where that command looks. If the files " +
-          "are in a language the declared command cannot run, write them in the language the " +
-          "project is in, or add the manifest and test script for the one you used.",
+          "code works. Write the change in the language the project's declared test command " +
+          "runs, and add a test that command actually collects, in the place it looks for " +
+          "one. Declare any file you have not already declared before you write it: widening " +
+          "the set without recording an amendment fails a different gate, and rewriting the " +
+          "work in another language fails this one again.",
       ];
 
   return [...unmeasured, ...sections, ...advisory].join("\n\n");

@@ -78,6 +78,20 @@ export function createSandbox(policy: SandboxPolicy): Sandbox {
         return { allowed: false, reason: "the path is empty" };
       }
 
+      // A path is one line. A model that runs its filename into the content beside it asked for
+      // a file called "test.mjs\n<", and the workspace got one: it is not the file anything
+      // else refers to, it counts against the declared file set, and the gate that caught it
+      // named a path no reader could type back. Refusing says which character did it.
+      const control = firstControlCharacter(candidate);
+      if (control !== null) {
+        return {
+          allowed: false,
+          reason:
+            `the path holds a control character (0x${control.code.toString(16).padStart(2, "0")}) ` +
+            `at position ${control.at}, so it is not one name. Pass the path on its own.`,
+        };
+      }
+
       const named = expandHome(candidate.trim(), homeDirectory);
       const requested = isAbsolute(named) ? resolve(named) : resolve(workspaceRoot, named);
       // Resolve symlinks first: a link inside the workspace pointing outside it is an escape.
@@ -126,6 +140,19 @@ function expandHome(candidate: string, homeDirectory: string): string {
     return homeDirectory;
   }
   return candidate.startsWith("~/") ? join(homeDirectory, candidate.slice(2)) : candidate;
+}
+
+/** Scanned by code point rather than matched by a pattern, which cannot hold these literally. */
+function firstControlCharacter(
+  candidate: string,
+): { readonly code: number; readonly at: number } | null {
+  for (let at = 0; at < candidate.length; at += 1) {
+    const code = candidate.charCodeAt(at);
+    if (code < 0x20 || code === 0x7f) {
+      return { code, at };
+    }
+  }
+  return null;
 }
 
 function defaultRealpath(path: string): string {
