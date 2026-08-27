@@ -42,6 +42,8 @@ const gateRunSchema = z.object({
 
 interface GateRun {
   readonly gateId: string;
+  /** Whether this gate ran a command or read the diff, which is what "measured" turns on. */
+  readonly kind: "command" | "inspection";
   readonly title: string;
   readonly severity: GateSeverity;
   readonly status: GateStatus;
@@ -80,8 +82,26 @@ export interface GateCycleDependencies {
   readonly coverageArtifacts?: CoverageArtifactStore;
 }
 
+/**
+ * Whether anything actually ran over the change.
+ *
+ * A gate that runs a command executed the code; one that reads the diff can do that over any
+ * workspace and cannot vouch for code on its own. So a change every command gate stood down
+ * on was never executed by anything: a run wrote three files into a workspace whose declared
+ * test command collected no tests, no gate failed, and the strip read green over code nothing
+ * had tried. Read off what a gate is rather than which gate it is (invariant 6).
+ *
+ * A tree nothing touched is measured by definition: there is nothing there to run over.
+ */
+export function measuredTheChange(cycle: GateCycle): boolean {
+  if ((cycle.measures.changedFiles ?? 0) === 0) {
+    return true;
+  }
+  return cycle.runs.some((run) => run.kind === "command" && run.status !== "not-applicable");
+}
+
 export function isGreen(cycle: GateCycle): boolean {
-  return cycle.blockingFailures.length === 0;
+  return cycle.blockingFailures.length === 0 && measuredTheChange(cycle);
 }
 
 /**
@@ -134,6 +154,7 @@ export async function runGateCycle(
 
     const run: GateRun = {
       gateId: gate.id,
+      kind: gate.source.kind,
       title: gate.title,
       severity: gate.severity,
       status: reading.status,
@@ -270,5 +291,24 @@ export function describeFailuresForModel(cycle: GateCycle): string {
       "This does not block. Submit a claim citing that record to justify the size.",
   );
 
-  return [...sections, ...advisory].join("\n\n");
+  // Not a gate's own bytes, because no gate objected: every one of them that runs a command
+  // stood down, so there is nothing to quote and nothing yet to fix. Saying so is the only way
+  // the loop that reads this can act on it.
+  const unmeasured = measuredTheChange(cycle)
+    ? []
+    : [
+        "Nothing ran over this change. Every gate that runs a command stood down: " +
+          `${cycle.runs
+            .filter((run) => run.kind === "command")
+            .map((run) => `${run.gateId} (${run.detail})`)
+            .join(", ")}. ` +
+          `The ${cycle.measures.changedFiles ?? 0} file(s) this change touched were never ` +
+          "executed by anything, so passing the other gates says nothing about whether the " +
+          "code works. Add a test that the project's declared test command actually collects, " +
+          "covering what this change did, and put it where that command looks. If the files " +
+          "are in a language the declared command cannot run, write them in the language the " +
+          "project is in, or add the manifest and test script for the one you used.",
+      ];
+
+  return [...unmeasured, ...sections, ...advisory].join("\n\n");
 }
