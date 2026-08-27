@@ -207,6 +207,7 @@ describe("the cost term in routing", () => {
 
   function priced(model: string, costUsd: number): RewardEntry {
     return buildRewardEntry({
+      green: true,
       recordedAt: 0,
       sessionId: "s",
       taskClass: "edit",
