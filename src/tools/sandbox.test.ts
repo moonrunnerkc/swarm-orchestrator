@@ -37,6 +37,23 @@ describe("sandbox path containment", () => {
     expect(sandbox.checkPath("/etc/passwd").allowed).toBe(false);
   });
 
+  it("refuses a path with a newline in it, which is a filename run into its content", () => {
+    // A run asked for "test.mjs\n<" and the workspace got one: not the file anything else
+    // referred to, counted against the declared file set, and named in a gate failure as a
+    // path no reader could type back.
+    const verdict = sandbox.checkPath("test.mjs\n<");
+
+    expect(verdict.allowed).toBe(false);
+    expect(verdict.allowed === false && verdict.reason).toContain("control character");
+    expect(verdict.allowed === false && verdict.reason).toContain("0x0a");
+  });
+
+  it("refuses the other control characters for the same reason", () => {
+    for (const bad of ["src/a\r.ts", "src/\tb.ts", "src/c\u0000.ts"]) {
+      expect(sandbox.checkPath(bad).allowed, bad).toBe(false);
+    }
+  });
+
   it("expands a leading tilde, which is the home directory by the time a shell reads it", () => {
     // Left unexpanded, `~/.ssh/id_rsa` reads as a relative name and lands inside the workspace,
     // so the check passed on a path that is not the one the command opens.
