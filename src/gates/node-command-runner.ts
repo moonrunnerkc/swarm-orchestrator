@@ -62,7 +62,14 @@ export function createNodeCommandRunner(clock: Clock): GateCommandRunner {
         durationMs: clock.now() - startedAt,
         unavailable:
           failure.killed === true
-            ? `the command was killed after ${options.timeoutMs}ms, so it measured nothing`
+            ? `the command was killed after ${options.timeoutMs}ms, so it measured nothing. ` +
+              "A command that runs this long without finishing is usually waiting for " +
+              "something that is never coming: standard input nobody is typing, a prompt, or " +
+              "a server that does not exit. Node's test runner gives each test file its own " +
+              "standard input with no writer and never closes it, so a test that reads input " +
+              "waits for ever rather than reaching the end of it. Take the input as an " +
+              "argument and have the test pass it in, and keep any prompting behind the " +
+              "entry-point guard so importing the file does not start it."
             : null,
       };
     }
