@@ -510,6 +510,7 @@ async function runOneTurn(input: {
       modelSpec: usable.modelSpec,
       assignment: routed.assignment,
       ratchet: summarizeRatchet(gates.outcome),
+      green,
       changedFiles: gates.outcome.finalCycle.measures.changedFiles ?? null,
       latencyMs: clock.now() - startedAt,
       recordedAt: clock.now(),
@@ -848,6 +849,7 @@ async function run(options: RunCommand): Promise<number> {
     // ride along so a pass earned by erosion cannot look like a win (section 3.8).
     await logReward({
       evidence,
+      green,
       home: homedir(),
       task: options.task,
       modelSpec: usable.modelSpec,
@@ -955,6 +957,8 @@ interface RewardLogInput {
   readonly modelSpec: string;
   readonly assignment: "calibration" | "ucb" | "epsilon" | "pinned";
   readonly ratchet: ReturnType<typeof summarizeRatchet>;
+  /** The run's own verdict, so the router is not taught by the gate strip alone. */
+  readonly green: boolean;
   readonly changedFiles: number | null;
   readonly latencyMs: number;
   readonly recordedAt: number;
@@ -977,6 +981,7 @@ async function logReward(input: RewardLogInput): Promise<void> {
     model: input.modelSpec,
     assignment: input.assignment,
     ratchet: input.ratchet,
+    green: input.green,
     changedFiles: input.changedFiles,
     latencyMs: input.latencyMs,
     costUsd: input.cost.costUsd,

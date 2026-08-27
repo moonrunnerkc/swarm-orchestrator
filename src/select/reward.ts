@@ -35,6 +35,8 @@ export const defaultRewardWeights: RewardWeights = {
 
 export interface RewardInput {
   readonly settled: "green" | "escalated";
+  /** The run's own verdict, which the gate strip alone cannot give: see agent-run's wasGreen. */
+  readonly green: boolean;
   /** Attempts the ratchet rejected for trading a measured number the wrong way. */
   readonly erosions: number;
   readonly attempts: number;
@@ -85,6 +87,17 @@ export function scoreReward(
         "and there is nothing to reward",
     };
   }
+  if (!input.green) {
+    // The gate strip is not the verdict. A run wrote three files into a workspace whose only
+    // command gate found no tests to run, so nothing executed the change: no gate failed, the
+    // strip read green, and the router was being taught that the model had done well.
+    return {
+      reward: 0,
+      reason:
+        "the gates went green but nothing ran over the change, so there is nothing measured " +
+        "to reward",
+    };
+  }
 
   const forAttempts = 1 / (1 + weights.attemptPenalty * input.attempts);
   const forLatency = weights.referenceLatencyMs / (weights.referenceLatencyMs + input.latencyMs);
@@ -104,6 +117,8 @@ function describeRetries(attempts: number): string {
 }
 
 interface RewardEntryInput {
+  /** The run's own verdict, which the gate strip alone cannot give: see agent-run's wasGreen. */
+  readonly green: boolean;
   readonly recordedAt: number;
   readonly sessionId: string;
   readonly taskClass: TaskClass;
@@ -128,6 +143,7 @@ export function buildRewardEntry(
   const score = scoreReward(
     {
       settled: input.ratchet.settled,
+      green: input.green,
       erosions: input.ratchet.erosions,
       attempts: input.ratchet.attempts,
       changedFiles: input.changedFiles,

@@ -5,6 +5,7 @@ import { rewardEntrySchema } from "./routing-log.ts";
 function run(overrides: Partial<RewardInput> = {}): RewardInput {
   return {
     settled: "green",
+    green: true,
     erosions: 0,
     attempts: 0,
     changedFiles: 1,
@@ -136,8 +137,19 @@ describe("buildRewardEntry", () => {
     changedLineCoverage: 0.9,
   };
 
+  it("rewards nothing when nothing ran over the change, whatever the gate strip said", () => {
+    // A run wrote three files into a workspace whose only command gate found no tests to run.
+    // No gate failed, so the strip read green, and the router was being taught that the model
+    // had done well by a run nothing had measured.
+    const score = scoreReward(run({ green: false }));
+
+    expect(score.reward).toBe(0);
+    expect(score.reason).toContain("nothing ran over the change");
+  });
+
   function entry(overrides: Partial<Parameters<typeof buildRewardEntry>[0]> = {}) {
     return buildRewardEntry({
+      green: true,
       recordedAt: 1_700_000_000_000,
       sessionId: "20260813T190000-abc123",
       taskClass: "edit",
