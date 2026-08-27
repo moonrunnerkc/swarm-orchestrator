@@ -7,6 +7,7 @@ import {
   type GateCycle,
   type GateCycleDependencies,
   isGreen,
+  measuredTheChange,
   runGateCycle,
 } from "./gate-runner.ts";
 import {
@@ -387,14 +388,29 @@ async function escalate(
     gateRecords: attempt.cycle.runs.map((run) => run.record),
   }));
 
+  // A run can now end ungreen with no gate objecting: every gate that runs a command stood
+  // down, so nothing executed the change. Naming that is the difference between an escalation
+  // a reader can act on and one that says "gate unknown (unknown)" with an empty record.
+  const unmeasured = !measuredTheChange(cycle);
   const payload = escalationSchema.parse({
-    gateId: blocking?.gateId ?? (eroded === null ? "unknown" : "ratchet"),
-    title: blocking?.title ?? (eroded === null ? "unknown" : "the ratchet against the base commit"),
+    gateId:
+      blocking?.gateId ?? (unmeasured ? "unmeasured" : eroded === null ? "unknown" : "ratchet"),
+    title:
+      blocking?.title ??
+      (unmeasured
+        ? "nothing ran over this change"
+        : eroded === null
+          ? "unknown"
+          : "the ratchet against the base commit"),
     reason:
       blocking?.detail ??
-      (eroded === null
-        ? "the run stopped with a blocking failure that is no longer in the final cycle"
-        : eroded.decision.detail),
+      (unmeasured
+        ? `${cycle.measures.changedFiles ?? 0} file(s) changed and every gate that runs a ` +
+          "command stood down, so nothing executed them. The work is not in a shape this " +
+          "project's own test command can run."
+        : eroded === null
+          ? "the run stopped with a blocking failure that is no longer in the final cycle"
+          : eroded.decision.detail),
     attemptsUsed: attempts.length,
     cap: deps.cap,
     attemptsRejectedByRatchet: rejected.length + (eroded === null ? 0 : 1),
