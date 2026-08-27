@@ -13,6 +13,7 @@ import { type GatesEngineRun, runGatesEngine } from "./gates/engine.ts";
 import type { FileSetRegistry } from "./gates/file-set.ts";
 import { createAmendFileSetTool, createDeclareFileSetTool } from "./gates/file-set-tool.ts";
 import type { DiffBudget } from "./gates/gate-definition.ts";
+import { measuredTheChange } from "./gates/gate-runner.ts";
 import { createGitWorkspaceProbe } from "./gates/git-workspace.ts";
 import { captureInheritedChanges, type InheritedChanges } from "./gates/inherited-changes.ts";
 import { diffAgainstBase } from "./gates/scratch-index.ts";
@@ -306,21 +307,11 @@ function wasGreen(loop: AgentLoopOutcome, gates: GatesEngineRun): boolean {
     return loop.stopReason === "completed";
   }
 
-  // Something has to have run over the code. A workspace with no manifest assembles no
-  // language gate, so typecheck, lint, format and tests all come back not-applicable, and a
-  // change nothing executed passed the way an empty diff has no bugs: a run wrote 142 lines of
-  // Python that could not even be imported and reported green, because nothing had tried. The
-  // gate set already says this out loud rather than shrinking quietly, on the grounds that
-  // four gates which never ran must not look like four that passed; the outcome read them as
-  // satisfied anyway. Not measured is not a pass.
-  //
-  // Read off what a gate is rather than which gate it is (invariant 6): a gate that runs a
-  // command executed something, and one that inspects the diff can do that over any workspace
-  // and so cannot vouch for code on its own.
-  const statuses = gates.outcome.finalCycle.statuses;
-  return gates.gates.some(
-    (gate) => gate.source.kind === "command" && statuses[gate.id] !== "not-applicable",
-  );
+  // One definition, in the cycle that measured it. This rule lived here and in the resolve
+  // loop's own green, and the loop's copy did not have it, so a run that knew it was unmeasured
+  // never asked the model to fix it: it reported the failure accurately and did nothing about
+  // it, which is not the same as working.
+  return measuredTheChange(gates.outcome.finalCycle);
 }
 
 async function captureInherited(options: AgentTaskOptions): Promise<InheritedChanges> {
