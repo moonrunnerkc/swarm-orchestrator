@@ -163,6 +163,7 @@ function summaryPayload(model: ModelSummary, options: CalibrationOptions): JsonV
     cases: options.goldenSet.cases.length,
     repeats: model.repeats,
     executedRepeats: model.executedRepeats,
+    abstentions: { ...model.abstentions },
     gatePassed: greenRepeats(model),
     dimensions,
     byCase: model.byCase.map((one) => ({ ...one })),

@@ -15,6 +15,7 @@ function observation(
     stopReason: "completed",
     steps: 2,
     executed: true,
+    abstentionReason: null,
     gateExitCode: 0,
     gatePassed: true,
     toolCalls: {
@@ -27,6 +28,9 @@ function observation(
     },
     modelCalls: {
       calls: 2,
+      validTurns: 2,
+      emptyTurns: 0,
+      emptyTurnReasons: {},
       outputTokens: 100,
       responseTimeMs: 2_000,
       firstTokenMs: 200,

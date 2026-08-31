@@ -7,6 +7,7 @@ import type { RandomSource } from "../core/random-source.ts";
 import type { StopReason } from "../core/termination.ts";
 import { createRecordingModelClient } from "../evidence/model-call-recording.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
+import type { EmptyTurnReason } from "../evidence/turn-content.ts";
 import type { GateCommandRunner } from "../gates/gate-definition.ts";
 import { createToolChokepoint } from "../tools/chokepoint.ts";
 import { createLedgerChokepointRecorder } from "../tools/chokepoint-record.ts";
@@ -17,6 +18,7 @@ import { caseDigest } from "./calibration-case.ts";
 import {
   type ModelCallTally,
   payloadsSince,
+  type RecordedPayload,
   type ToolCallTally,
   tallyModelCalls,
   tallyToolCalls,
@@ -24,6 +26,13 @@ import {
 
 /** Resident bytes of whatever is serving the model, or null when nothing reports it. */
 export type MemoryProbe = () => Promise<number | null>;
+
+/**
+ * Why a repeat measured nothing. The turn-level reasons are carried up unchanged from the
+ * content verdict the recorder stamped, so a report never has to restate them in its own
+ * words; the last one is the reason, because that is the turn the repeat ended on.
+ */
+export type RepeatAbstentionReason = EmptyTurnReason | "no-model-turn-recorded";
 
 export interface CalibrationRepeatObservation {
   readonly caseId: string;
@@ -41,6 +50,8 @@ export interface CalibrationRepeatObservation {
    * and is filtered out of every dimension rather than folded in as a zero.
    */
   readonly executed: boolean;
+  /** Why nothing was measured, or null where something was. Never a sentence. */
+  readonly abstentionReason: RepeatAbstentionReason | null;
   readonly gateExitCode: number;
   readonly gatePassed: boolean;
   readonly toolCalls: ToolCallTally;
@@ -164,9 +175,11 @@ export async function runCalibrationRepeat(
   const produced = payloadsSince(deps.evidence, fromIndex);
   const toolCalls = tallyToolCalls(produced);
   const modelCalls = tallyModelCalls(produced);
-  // Answered rather than dispatched: a runtime can return a turn carrying nothing, and a
-  // repeat made only of those measured the runtime, not the model.
-  const executed = outcome.answeredSteps > 0;
+  // Read off the records rather than off the loop's own counter. Both count the same thing,
+  // and only one of them is in the bundle: a reviewer re-deriving this number has the records
+  // and not the loop, so the records are what it has to come from.
+  const executed = modelCalls.validTurns > 0;
+  const abstentionReason = executed ? null : abstentionOf(produced);
 
   const recorded = await deps.evidence.record({
     type: "calibration-run",
@@ -181,7 +194,12 @@ export async function runCalibrationRepeat(
       stopReason: outcome.stopReason,
       steps: outcome.steps,
       answeredSteps: outcome.answeredSteps,
+      validTurns: modelCalls.validTurns,
+      emptyTurns: modelCalls.emptyTurns,
+      emptyTurnReasons: modelCalls.emptyTurnReasons,
       executed,
+      abstained: !executed,
+      abstentionReason,
       gateCommand: request.case.gateCommand,
       gateExitCode: gate.exitCode,
       gatePassed: gate.exitCode === 0,
@@ -210,6 +228,7 @@ export async function runCalibrationRepeat(
     stopReason: outcome.stopReason,
     steps: outcome.steps,
     executed,
+    abstentionReason,
     gateExitCode: gate.exitCode,
     gatePassed: gate.exitCode === 0,
     toolCalls,
@@ -217,6 +236,33 @@ export async function runCalibrationRepeat(
     peakMemoryBytes: peak.bytes,
     record: recorded.record.payloadDigest,
   };
+}
+
+/**
+ * The reason the last empty turn carried, or the absence of any turn at all. A repeat that
+ * dispatched nothing and a repeat every turn of which arrived empty are both unmeasured, and
+ * they want different responses, so they are named apart.
+ */
+function abstentionOf(produced: readonly RecordedPayload[]): RepeatAbstentionReason {
+  let reason: RepeatAbstentionReason = "no-model-turn-recorded";
+  for (const entry of produced) {
+    if (entry.type !== "model-call") {
+      continue;
+    }
+    const content = entry.payload;
+    const named =
+      content !== null && typeof content === "object" && !Array.isArray(content)
+        ? (content as { readonly content?: unknown }).content
+        : undefined;
+    const value =
+      named !== null && typeof named === "object" && !Array.isArray(named)
+        ? (named as { readonly reason?: unknown }).reason
+        : undefined;
+    if (typeof value === "string") {
+      reason = value as RepeatAbstentionReason;
+    }
+  }
+  return reason;
 }
 
 async function seedWorkspace(workspace: string, one: CalibrationCase): Promise<void> {

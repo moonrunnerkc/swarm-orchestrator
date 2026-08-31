@@ -285,7 +285,7 @@ export function renderCalibrationReport(input: CalibrationReportInput): readonly
   for (const model of input.models) {
     lines.push(
       "",
-      `${model.model}: ${model.repeats} run(s), ${model.executedRepeats} executed`,
+      `${model.model}: ${model.repeats} run(s), ${model.executedRepeats} executed${describeAbstentions(model)}`,
       ...describeModel(model),
     );
   }
@@ -315,6 +315,19 @@ export function renderCalibrationReport(input: CalibrationReportInput): readonly
     );
   }
   return lines;
+}
+
+/**
+ * What the unexecuted repeats were, by reason code. A run that says "59 of 60 executed" and
+ * nothing else leaves the reader unable to tell a backend that dropped a stream from a model
+ * that spent its whole budget, and those are two different things to go and fix.
+ */
+function describeAbstentions(model: ModelSummary): string {
+  const reasons = Object.entries(model.abstentions);
+  if (reasons.length === 0) {
+    return "";
+  }
+  return ` (${reasons.map(([reason, count]) => `${count} ${reason}`).join(", ")})`;
 }
 
 function describeModel(model: ModelSummary): readonly string[] {

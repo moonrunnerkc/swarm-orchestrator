@@ -33,6 +33,7 @@ function observation(shape: Shape): CalibrationRepeatObservation {
     stopReason: shape.stopReason ?? "completed",
     steps: shape.executed === false ? 0 : 2,
     executed: shape.executed !== false,
+    abstentionReason: shape.executed === false ? "no-content" : null,
     gateExitCode: shape.gatePassed === false ? 1 : 0,
     gatePassed: shape.gatePassed !== false,
     toolCalls: {
@@ -45,6 +46,9 @@ function observation(shape: Shape): CalibrationRepeatObservation {
     },
     modelCalls: {
       calls: 2,
+      validTurns: 2,
+      emptyTurns: 0,
+      emptyTurnReasons: {},
       outputTokens: 100,
       responseTimeMs: 2_000,
       firstTokenMs: shape.firstTokenMs === undefined ? 200 : shape.firstTokenMs,
