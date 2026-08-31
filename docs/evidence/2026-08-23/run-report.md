@@ -15,7 +15,7 @@ of what was true then.
 | `node -v` | v24.15.0 (floor is 24; run proceeds) |
 | `npm -v` | 11.12.1 (npm notices 12.0.2 is available; not taken mid-release) |
 | Branch | `v13-main` at a5ce696b |
-| Working tree | clean apart from untracked `RELEASE-COMPLETION-PROMPT.md` (the work list itself, not committed) |
+| Working tree | clean apart from untracked `RELEASE-COMPLETION-PROMPT.md` (the work list itself, not committed; it is tracked at `docs/RELEASE-COMPLETION-PROMPT.md` now) |
 | Baseline `npm run gates` | exit 0, 88 files, 1082 tests passed |
 | Baseline `npm run fuzz:build` | exit 0, 8 harnesses, 84 seeds |
 | `node scripts/check-invariant-drift.mjs` | exit 0, 12 invariants identical across CLAUDE.md and AGENTS.md |

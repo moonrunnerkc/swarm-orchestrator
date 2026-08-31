@@ -2,6 +2,9 @@
 
 Paste everything below the line into Claude Code from the repo root on `v13-main`.
 
+This lived at the repository root until 2026-08-31 and now sits under `docs/`, where the rest
+of the project's prose does. It stays public and its content is unchanged by the move.
+
 ---
 
 You are a principal release engineer and evidence-systems specialist, and you have shipped
