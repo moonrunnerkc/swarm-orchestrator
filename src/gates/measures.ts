@@ -1,4 +1,5 @@
 import { withoutComments } from "./comment-spans.ts";
+import { bindingsIn, substituted, type ValueBindings } from "./value-flow.ts";
 
 /**
  * The numbers invariant 7 ratchets on, counted from file text rather than inferred from a
@@ -61,8 +62,66 @@ const constantTautologies: readonly RegExp[] = [
   /\bassert(?:\.ok)?\s*\(\s*true\s*\)/,
 ];
 
-function assertsNothing(line: string): boolean {
-  return constantTautologies.some((pattern) => pattern.test(line));
+/**
+ * The two sides of an equality assertion, or null where the line is not one. Only the matchers
+ * that compare a subject to an expected value: a matcher taking one argument has no two sides
+ * to be identical, and one taking a callback is not a comparison at all.
+ */
+const equalityAssertion =
+  /\bexpect\s*\((.+)\)\s*\.\s*(?:toBe|toEqual|toStrictEqual)\s*\((.+)\)\s*;?\s*$/;
+
+const nodeEqualityAssertion =
+  /\bassert\.(?:equal|strictEqual|deepEqual|deepStrictEqual)\s*\(\s*(.+?)\s*,\s*(.+?)\s*\)\s*;?\s*$/;
+
+/**
+ * An assertion that reduces to comparing one value with itself once the file's own bindings are
+ * substituted in. It holds whatever the code under test does, so it is not an assertion, and
+ * counting it as one is what let a file keep all four ratchet numbers while it stopped checking
+ * anything.
+ *
+ * This is arithmetic rather than judgement: two expressions are the same expression or they are
+ * not, and substituting a name for what it was bound to introduces no opinion about meaning.
+ * What it deliberately does not do is decide whether two *different* expressions mean the same
+ * thing, which is the judge build-guide section 7.1 refuses.
+ */
+function comparesAValueWithItself(line: string, bindings: ValueBindings): boolean {
+  const match = equalityAssertion.exec(line) ?? nodeEqualityAssertion.exec(line);
+  const left = match?.[1];
+  const right = match?.[2];
+  if (left === undefined || right === undefined) {
+    return false;
+  }
+  const subject = substituted(balanced(left), bindings);
+  const expected = substituted(balanced(right), bindings);
+  return subject.length > 0 && subject === expected;
+}
+
+/**
+ * The longest prefix of a captured side whose brackets balance. A greedy capture over
+ * `expect(a).toBe(b)` hands back more than one argument's worth wherever the expression itself
+ * carries a parenthesis, and comparing unbalanced fragments compares nothing reliable.
+ */
+function balanced(side: string): string {
+  let depth = 0;
+  for (let index = 0; index < side.length; index += 1) {
+    const character = side[index];
+    if (character === "(" || character === "[" || character === "{") {
+      depth += 1;
+    } else if (character === ")" || character === "]" || character === "}") {
+      if (depth === 0) {
+        return side.slice(0, index);
+      }
+      depth -= 1;
+    }
+  }
+  return depth === 0 ? side : "";
+}
+
+function assertsNothing(line: string, bindings: ValueBindings): boolean {
+  return (
+    constantTautologies.some((pattern) => pattern.test(line)) ||
+    comparesAValueWithItself(line, bindings)
+  );
 }
 
 const testDeclarationPatterns: readonly RegExp[] = [
@@ -158,7 +217,12 @@ export function measureTestFile(text: string | null): TestFileMeasures {
   const exactSubjects = new Set<string>();
   const assertionsBySubject: Record<string, number> = {};
 
-  for (const line of logicalLines(withoutComments(text))) {
+  const withoutCommentText = withoutComments(text);
+  // Read once over the whole file: a comparison and the binding it resolves through are two
+  // lines, and which one comes first is a fact about the file rather than about the check.
+  const bindings = bindingsIn(withoutCommentText);
+
+  for (const line of logicalLines(withoutCommentText)) {
     if (line.trim().length === 0) {
       continue;
     }
@@ -171,7 +235,10 @@ export function measureTestFile(text: string | null): TestFileMeasures {
       skips += 1;
       current.skips += 1;
     }
-    if (!assertionPatterns.some((pattern) => pattern.test(line)) || assertsNothing(line)) {
+    if (
+      !assertionPatterns.some((pattern) => pattern.test(line)) ||
+      assertsNothing(line, bindings)
+    ) {
       continue;
     }
     assertions += 1;

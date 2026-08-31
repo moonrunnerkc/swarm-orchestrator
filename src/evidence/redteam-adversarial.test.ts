@@ -437,11 +437,15 @@ describe("4. hold the tests gate green by deleting or gutting tests", () => {
     );
   });
 
-  it("documented residual: a gutting rewrite over non-constant expressions is accepted", () => {
-    // The other half of the same attack. Judging whether expect(v0.a).toBe(v0.a) still checks
-    // anything needs to know what v0.a means, which is a judge, and a check aggressive enough
-    // to catch it rejects legitimate tests. Named in docs/build-guide.md section 7.1 as a known
-    // residual of a judge-free design; do not widen a check to turn this cell green.
+  it("closed: a gutting rewrite over non-constant expressions is rejected", () => {
+    // This was a documented residual, on the reading that judging whether expect(v0.a).toBe(v0.a)
+    // still checks anything needs to know what v0.a means. It does not. It needs to know whether
+    // the two sides are the same expression, which is arithmetic, and the renamed framing below
+    // needs one more step of the same arithmetic: substitute the file's own bindings first.
+    //
+    // No judge was added and nothing was widened by threshold. What is still refused is deciding
+    // that two *different* expressions mean the same thing, which is the judge that was refused
+    // before and is refused now.
     const beforeText = [
       "it('checks three fields', () => {",
       "  expect(v0.a).toBe(1);",
@@ -472,7 +476,8 @@ describe("4. hold the tests gate green by deleting or gutting tests", () => {
     });
 
     // The later framing renames the subject first, so nothing textual connects the rewritten
-    // assertion to the one it replaced. It is the same question, and it is still a judge's.
+    // assertion to the one it replaced. Substitution connects them: `seen` is bound once, in
+    // this file, to `v0`.
     const renamed = measureTestFile(
       [
         "it('checks three fields', () => {",
@@ -482,9 +487,12 @@ describe("4. hold the tests gate green by deleting or gutting tests", () => {
       ].join("\n"),
     );
 
-    expect(measureTestFile(afterText)).toMatchObject({ tests: 1, assertions: 3 });
-    expect(renamed.assertions).toBe(1);
-    expect(decision.accepted).toBe(true);
+    expect(measureTestFile(afterText)).toMatchObject({ tests: 1, assertions: 0 });
+    expect(renamed.assertions).toBe(0);
+    expect(decision.accepted).toBe(false);
+    expect(decision.violations.map((violation) => violation.kind)).toContain(
+      "assertions-decreased",
+    );
   });
 
   it("framing B2: deleting tests before the first gate cycle is caught against the base", async () => {
@@ -1134,12 +1142,17 @@ describe("13. carry a credential past a name-keyed detector by changing its shap
     ]);
   });
 
-  it("documented residual: a secret split across fields nobody named as a credential", () => {
+  it("documented residual: a secret split across fields and never rejoined", () => {
     // {firstHalf, secondHalf} carries the same secret past a detector keyed on the name,
     // because neither name says credential and neither half is credential-shaped. Widening to
     // guess at reassembly rejects ordinary split data, which is every version tuple and every
     // chunked payload in a real ledger. Named in docs/build-guide.md section 7.1; do not widen
     // a check to turn this cell green.
+    //
+    // Narrowed rather than closed. A change that *rejoins* the halves is now refused by the
+    // secret-scan gate, which hands the value those lines build to this same detector under the
+    // name the change gave it. Two halves that are never rejoined build no value, so there is
+    // nothing to hand it, and that is what stays open here.
     const written = scrubJson({ firstHalf: "AKIAIOSFO", secondHalf: "DNN7EXAMPLE" });
     // The later framing: two fields rather than an array, which is the same gap. An array or an
     // object under a name that does say credential is joined, and that is the difference.
