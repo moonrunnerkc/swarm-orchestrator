@@ -1,3 +1,4 @@
+// biome-ignore-all lint/suspicious/noTemplateCurlyInString: the probe script below is source text this module writes out, and a template literal in it is that script's own syntax.
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { defaultGateTimeoutMs, type GateCommandRunner } from "./gate-definition.ts";
