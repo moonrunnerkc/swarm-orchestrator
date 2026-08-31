@@ -87,7 +87,9 @@ function alphaWith(extra: string): string {
 }
 
 const gateOverrides = {
-  tests: "node --test --test-reporter=tap",
+  // No reporter of its own: the harness adds the ones it reads, and a declared reporter is a
+  // command the harness cannot vouch for, which leaves the run measuring nothing.
+  tests: "node --test",
   lint: "node --check src/alpha.js",
   typecheck: "node --check src/beta.js",
   format: "node --check src/suite.test.js",

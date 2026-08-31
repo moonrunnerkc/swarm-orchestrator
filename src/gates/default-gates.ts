@@ -10,6 +10,7 @@ import {
 import { inspectionGates } from "./inspection-gates.ts";
 import { exitCodeParser, testOutputParser } from "./parsers.ts";
 import type { ProjectDetection, ProjectType } from "./project-type.ts";
+import { testCountArtifactPath } from "./test-count-artifact.ts";
 
 /**
  * The default gate set, assembled from what the manifests declare. Everything here is a
@@ -27,6 +28,8 @@ interface GateSpec {
   readonly parse?: GateParser;
   /** Where this run's runner was told to write its coverage report, when it was. */
   readonly coverageArtifact?: string;
+  /** Where it was told to write its own result, which is where the test count is read from. */
+  readonly testCountArtifact?: string;
 }
 
 function commandGate(spec: GateSpec): GateDefinition {
@@ -39,6 +42,9 @@ function commandGate(spec: GateSpec): GateDefinition {
       command: spec.command,
       ...(spec.argv === undefined ? {} : { argv: spec.argv }),
       ...(spec.coverageArtifact === undefined ? {} : { coverageArtifact: spec.coverageArtifact }),
+      ...(spec.testCountArtifact === undefined
+        ? {}
+        : { testCountArtifact: spec.testCountArtifact }),
     },
     parse: spec.parse ?? parserFor(spec.id),
   };
@@ -99,9 +105,9 @@ const nodeScriptCandidates: Readonly<Record<string, readonly string[]>> = {
 };
 
 /**
- * The ratchet's changed-line-coverage arm can only compare what a run measured, so a test
- * command that leaves no report behind keeps that arm permanently abstaining, which reads as
- * a pass. Where the declared runner is node's own, the gate runs a vector the harness built
+ * The ratchet's changed-line-coverage arm and its collected-tests arm can only compare what a
+ * run measured, so a test command that leaves nothing behind keeps both permanently abstaining,
+ * which reads as a pass. Where the declared runner is node's own, the gate runs a vector the harness built
  * itself, which writes the runner's own report to a path under the session store, and the
  * harness reads that file rather than anything the run printed. Every other runner reports
  * coverage in a shape this harness does not read, and asking for it can fail outright, so
@@ -123,7 +129,8 @@ function askedForCoverage(
     return spec;
   }
   const artifact = coverageArtifactPath(directory, spec.id);
-  const argv = coverageReportingCommand(body, artifact);
+  const counts = testCountArtifactPath(directory, spec.id);
+  const argv = coverageReportingCommand(body, artifact, counts);
   if (argv === null) {
     return spec;
   }
@@ -134,6 +141,7 @@ function askedForCoverage(
     command: rendered,
     argv,
     coverageArtifact: artifact,
+    testCountArtifact: counts,
   };
 }
 

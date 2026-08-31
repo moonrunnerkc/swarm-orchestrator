@@ -5,7 +5,8 @@ import {
   measureTestFile,
   type TestFileMeasures,
 } from "./measures.ts";
-import { fileLineHits, measureNames, parseLineHits } from "./parsers.ts";
+import { fileLineHits, parseLineHits } from "./parsers.ts";
+import { countsForCycle } from "./test-count-artifact.ts";
 import type { WorkspaceChanges, WorkspaceProbe } from "./workspace-changes.ts";
 
 /**
@@ -51,13 +52,16 @@ interface SnapshotInput {
   readonly workspaceRoot?: string;
   /** Test files seen earlier in the run, so a file that stops being touched still counts. */
   readonly trackedTestFiles: Iterable<string>;
-  /** The measures the gates parsed this cycle, merged across gates. */
-  readonly gateMeasures: Readonly<Record<string, number>>;
   /**
    * Coverage reports the runners wrote to paths the harness named. Never a gate's stdout: a
    * number printed by the code under measurement is not a measurement of it.
    */
   readonly coverageReports: readonly string[];
+  /**
+   * The runners' own results, at paths the harness named. The count of collected tests comes
+   * from here for the same reason coverage does, and abstains where nothing wrote one.
+   */
+  readonly testCountReports: readonly string[];
 }
 
 /**
@@ -81,12 +85,15 @@ export async function takeMeasureSnapshot(input: SnapshotInput): Promise<Measure
   }
 
   const coverage = changedLineCoverage(input);
+  // Off the artifact, never off `gateMeasures`, which is what a parser read out of a gate's
+  // printed output. The tests are the code under measurement and their output is their own.
+  const counts = countsForCycle(input.testCountReports ?? []);
 
   return {
     perTestFile,
     perTestFileAtBase,
-    testsCollected: input.gateMeasures[measureNames.testsCollected] ?? null,
-    testsSkippedByRunner: input.gateMeasures[measureNames.testsSkipped] ?? null,
+    testsCollected: counts?.collected ?? null,
+    testsSkippedByRunner: counts?.skipped ?? null,
     changedLineCoverage: coverage?.ratio ?? null,
     changedLinesCovered: coverage?.covered ?? null,
     changedLinesMeasured: coverage?.measured ?? null,

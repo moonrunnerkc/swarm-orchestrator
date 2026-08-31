@@ -68,6 +68,12 @@ type GateSource =
        * the runner authored rather than one the tests could have.
        */
       readonly coverageArtifact?: string;
+      /**
+       * Absolute path this run's runner was told to write its own machine-readable result to.
+       * Present for the same reason `coverageArtifact` is: the count of tests a run collected
+       * is a number the tests themselves can print, and the ratchet compares it.
+       */
+      readonly testCountArtifact?: string;
     }
   | { readonly kind: "inspection"; readonly inspect: GateInspection };
 

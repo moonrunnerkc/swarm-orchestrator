@@ -139,6 +139,8 @@ describe("assembling the default gate set", () => {
       "--test-reporter-destination=stdout",
       "--test-reporter=lcov",
       "--test-reporter-destination=/session/coverage/tests.lcov",
+      "--test-reporter=tap",
+      "--test-reporter-destination=/session/coverage/tests.tap",
       "./test/*.mjs",
     ]);
     expect(commandOf(gates, "tests")).toBe(argvOf(gates, "tests")?.join(" "));

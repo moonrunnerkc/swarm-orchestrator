@@ -52,6 +52,8 @@ interface GateRun {
   readonly observation: GateObservation;
   /** What this gate's runner wrote to the report path it was given, or null for neither. */
   readonly coverageReport: string | null;
+  /** What it wrote to the result path it was given, which is where the test count comes from. */
+  readonly testCountReport: string | null;
   /** The payload digest of this run's ledger record, which a claim may cite. */
   readonly record: string;
 }
@@ -69,6 +71,11 @@ export interface GateCycle {
    * Empty means nothing measured it, which the ratchet abstains on by name.
    */
   readonly coverageReports: readonly string[];
+  /**
+   * The machine-readable results the runners wrote this cycle, which is the only place the
+   * count of collected tests is read from. Empty means nothing measured it.
+   */
+  readonly testCountReports: readonly string[];
 }
 
 export interface GateCycleDependencies {
@@ -76,8 +83,10 @@ export interface GateCycleDependencies {
   readonly evidence: EvidenceRecorder;
   readonly emit: (event: LoopEvent) => void;
   /**
-   * Reads back the reports gate commands were told to write. Absent means no report is
-   * collected and coverage of changed lines goes unmeasured, which is the honest reading.
+   * Reads back the files gate commands were told to write, both the coverage report and the
+   * runner's own result. A file store, not a coverage store: what makes either trustworthy is
+   * that the harness named the path and reads it, which is the same property for both. Absent
+   * means neither is collected, and both arms go unmeasured, which is the honest reading.
    */
   readonly coverageArtifacts?: CoverageArtifactStore;
 }
@@ -120,7 +129,7 @@ export async function runGateCycle(
   const measures: Record<string, number> = {};
 
   for (const gate of gates) {
-    const { observation, coverageReport } = await observe(gate, context, deps);
+    const { observation, coverageReport, testCountReport } = await observe(gate, context, deps);
     const reading = gate.parse(observation);
     const blocking = gate.severity === "blocking";
 
@@ -162,6 +171,7 @@ export async function runGateCycle(
       measures: reading.measures,
       observation,
       coverageReport,
+      testCountReport,
       record: recorded.record.payloadDigest,
     };
     runs.push(run);
@@ -190,12 +200,16 @@ export async function runGateCycle(
     coverageReports: runs
       .map((run) => run.coverageReport)
       .filter((report): report is string => report !== null),
+    testCountReports: runs
+      .map((run) => run.testCountReport)
+      .filter((report): report is string => report !== null),
   };
 }
 
 interface GateOutput {
   readonly observation: GateObservation;
   readonly coverageReport: string | null;
+  readonly testCountReport: string | null;
 }
 
 /**
@@ -209,14 +223,23 @@ async function observe(
   deps: GateCycleDependencies,
 ): Promise<GateOutput> {
   if (gate.source.kind === "inspection") {
-    return { observation: await gate.source.inspect(context), coverageReport: null };
+    return {
+      observation: await gate.source.inspect(context),
+      coverageReport: null,
+      testCountReport: null,
+    };
   }
 
   const artifact = gate.source.coverageArtifact;
+  const countArtifact = gate.source.testCountArtifact;
   const store = deps.coverageArtifacts;
   const collecting = artifact !== undefined && store !== undefined;
+  const counting = countArtifact !== undefined && store !== undefined;
   if (collecting) {
     await store.clear(artifact);
+  }
+  if (counting) {
+    await store.clear(countArtifact);
   }
 
   // A vector the harness built is spawned as one; a command the project declared is read by a
@@ -233,6 +256,7 @@ async function observe(
   return {
     observation,
     coverageReport: collecting ? await store.read(artifact) : null,
+    testCountReport: counting ? await store.read(countArtifact) : null,
   };
 }
 

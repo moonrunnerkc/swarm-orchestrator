@@ -71,8 +71,10 @@ export function coverageArtifactPath(directory: string, gateId: string): string 
  * itself. There is no quoting step, so there is nothing to be undone by a shell reading the
  * result, which is where the last two rounds of this went wrong.
  *
- * The stdout reporter is restated because naming any reporter replaces the default one, and
- * the test counters the ratchet reads still have to arrive on stdout.
+ * The stdout reporter is restated because naming any reporter replaces the default one, and a
+ * failing gate has to have output to show. The counters the ratchet reads no longer come from
+ * there: a second tap reporter writes the same run to a file beside the lcov report, for the
+ * reason the lcov report exists at all.
  *
  * What is deliberately absent is any attempt to talk a declared command into safety. A project
  * that asks for a shared process, a loader hook, or a reporter of its own is not corrected, it
@@ -82,6 +84,7 @@ export function coverageArtifactPath(directory: string, gateId: string): string 
 export function coverageReportingCommand(
   body: string | undefined,
   artifactPath: string,
+  testCountArtifactPath?: string,
 ): VouchedArgv | null {
   return harnessControlledNodeTest(body, [
     "--experimental-test-coverage",
@@ -90,5 +93,11 @@ export function coverageReportingCommand(
     "--test-reporter-destination=stdout",
     "--test-reporter=lcov",
     `--test-reporter-destination=${artifactPath}`,
+    // A second tap reporter, writing the same run to a file the harness named. stdout keeps
+    // its copy because that is what a failing gate shows the model; the file is what the
+    // ratchet reads, and the difference is that nothing the tests print reaches it.
+    ...(testCountArtifactPath === undefined
+      ? []
+      : ["--test-reporter=tap", `--test-reporter-destination=${testCountArtifactPath}`]),
   ]);
 }

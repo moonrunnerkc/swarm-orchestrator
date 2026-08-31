@@ -81,6 +81,15 @@ const testsGate: GateDefinition = {
   parse: testOutputParser,
 };
 
+/** Where a run that writes its own result is told to put it, outside the workspace. */
+const countArtifactPath = "/session/tests.tap";
+
+/** The same gate, declaring the result path a harness-built vector would have named. */
+const measuringTestsGate: GateDefinition = {
+  ...testsGate,
+  source: { kind: "command", command: "run-tests", testCountArtifact: countArtifactPath },
+};
+
 const lintGate: GateDefinition = {
   id: "lint",
   title: "lint",
@@ -89,7 +98,12 @@ const lintGate: GateDefinition = {
   parse: exitCodeParser,
 };
 
-function stubCommands(workspace: MemoryWorkspace) {
+/** What the last run wrote to the result path it was given, as a real runner would have. */
+interface RunnerResult {
+  tap: string | null;
+}
+
+function stubCommands(workspace: MemoryWorkspace, result: RunnerResult, forgedTests?: number) {
   return createStubCommandRunner((command) => {
     const source = workspace.files.get(sourcePath) ?? "";
     const measures = measureTestFile(workspace.files.get(testPath) ?? null);
@@ -101,16 +115,23 @@ function stubCommands(workspace: MemoryWorkspace) {
     }
 
     const failing = source.includes("a + b") ? 0 : measures.tests;
+    const tap = [
+      "TAP version 13",
+      `1..${measures.tests}`,
+      `# tests ${measures.tests}`,
+      `# pass ${measures.tests - failing}`,
+      `# fail ${failing}`,
+      `# skipped ${measures.skips}`,
+    ].join("\n");
+    result.tap = tap;
     return {
       exitCode: failing === 0 ? 0 : 1,
-      stdout: [
-        "TAP version 13",
-        `1..${measures.tests}`,
-        `# tests ${measures.tests}`,
-        `# pass ${measures.tests - failing}`,
-        `# fail ${failing}`,
-        `# skipped ${measures.skips}`,
-      ].join("\n"),
+      // A counter block ahead of the runner's own, which is what a test printing one produces
+      // and what the stdout reader takes: it returns the first match it finds.
+      stdout:
+        forgedTests === undefined
+          ? tap
+          : ["TAP version 13", `# tests ${forgedTests}`, `# fail 0`, tap].join("\n"),
     };
   });
 }
@@ -126,13 +147,18 @@ function harness(
     fileSet?: FileSetState;
     budgets?: DiffBudget;
     gates?: readonly GateDefinition[];
+    /** Collects the result the run wrote, which is where the collected count comes from. */
+    collectResult?: boolean;
+    /** Prints a counter block the runner never produced, as a test in the suite would. */
+    forgedTests?: number;
   } = {},
 ): Harness {
   const workspace = createMemoryWorkspace({
     base: { [sourcePath]: fixedSource, [testPath]: originalTests },
     current: { [sourcePath]: brokenSource, [testPath]: originalTests },
   });
-  const commands = stubCommands(workspace);
+  const result: RunnerResult = { tap: null };
+  const commands = stubCommands(workspace, result, options.forgedTests);
 
   const context = async (): Promise<GateContext> => ({
     workspaceRoot: "/workspace",
@@ -154,6 +180,16 @@ function harness(
           emit: (event) => {
             events.push(event);
           },
+          ...(options.collectResult === true
+            ? {
+                coverageArtifacts: {
+                  clear: async () => {
+                    result.tap = null;
+                  },
+                  read: async (path: string) => (path === countArtifactPath ? result.tap : null),
+                },
+              }
+            : {}),
         },
         evidence,
         checkpoint: createMemoryCheckpoint(workspace),
@@ -279,7 +315,11 @@ describe("the ratchet against the base commit", () => {
         budgets: { maxChangedFiles: 12, maxAddedLines: 600 },
         probe: workspace,
       }),
-      cycleDeps: { commands: stubCommands(workspace), evidence, emit: () => undefined },
+      cycleDeps: {
+        commands: stubCommands(workspace, { tap: null }),
+        evidence,
+        emit: () => undefined,
+      },
       evidence,
       checkpoint: createMemoryCheckpoint(workspace),
       baseControl: null,
@@ -373,14 +413,16 @@ describe("the ratchet under an oscillation", () => {
 });
 
 describe("the ratchet against a retry that deletes the failing tests", () => {
+  const gutted = "import { it, expect } from 'vitest';\n";
+
   it("rejects the deletion even though the tests gate turned green, and counts the attempt", async () => {
-    const test = harness();
+    const test = harness({ gates: [measuringTestsGate, lintGate], collectResult: true });
 
     const outcome = await test.run(() => {
       // Nothing is left to fail, so the gate stops objecting: it now abstains rather than
       // passing, because a runner that collected nothing measured nothing. Either way the
       // ratchet is what has to catch this, and the numbers it reads are unchanged.
-      test.workspace.write(testPath, "import { it, expect } from 'vitest';\n");
+      test.workspace.write(testPath, gutted);
       return Promise.resolve();
     });
 
@@ -396,6 +438,50 @@ describe("the ratchet against a retry that deletes the failing tests", () => {
       "tests-collected-decreased",
     ]);
     expect(test.workspace.files.get(testPath)).toBe(originalTests);
+  });
+
+  it("still rejects it with no result to read, and names the arm that measured nothing", async () => {
+    // The two source-counted arms do not depend on a runner, so the deletion is still caught.
+    // What changes is that the suite-wide count abstains by name rather than being taken off
+    // output the deleted tests could have written.
+    const test = harness();
+
+    const outcome = await test.run(() => {
+      test.workspace.write(testPath, gutted);
+      return Promise.resolve();
+    });
+
+    const first = outcome.attempts[0];
+    expect(first?.decision.violations.map((violation) => violation.kind)).toEqual([
+      "tests-declared-decreased",
+      "assertions-decreased",
+    ]);
+    expect(first?.decision.abstentions).toContainEqual({
+      measure: "testsCollected",
+      reason: "nothing measured this on either side of the attempt",
+    });
+  });
+
+  it("reads the runner's own result rather than a counter block printed ahead of it", async () => {
+    // The evasion this closes: a test in the suite writes `# tests 9999` to stdout, the stdout
+    // reader takes the first counter block it finds, and the ratchet then sees a collected
+    // count that rose while the real one fell. Nothing a test prints reaches the result file.
+    const test = harness({
+      gates: [measuringTestsGate, lintGate],
+      collectResult: true,
+      forgedTests: 9_999,
+    });
+
+    const outcome = await test.run(() => {
+      test.workspace.write(testPath, gutted);
+      return Promise.resolve();
+    });
+
+    const first = outcome.attempts[0];
+    const collected = first?.decision.violations.find(
+      (violation) => violation.kind === "tests-collected-decreased",
+    );
+    expect(collected).toMatchObject({ before: 2, after: 0 });
   });
 
   it("rejects a retry that silences the failing tests by skipping them", async () => {

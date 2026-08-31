@@ -223,8 +223,8 @@ describe("coverage of changed lines comes from the artifact, never from what ran
         probe,
         workspaceRoot: workspace,
         trackedTestFiles: [],
-        gateMeasures: cycle.measures,
         coverageReports: cycle.coverageReports,
+        testCountReports: cycle.testCountReports,
       }),
     };
   }
