@@ -589,12 +589,16 @@ describe("5. introduce a stub behind a passing test", () => {
     expect(reading.measures.placeholdersIntroduced).toBe(1);
   });
 
-  it("documented residual: a constant-return stub with a passing test is not a placeholder", async () => {
-    // `return 0` is a stub here and a correct implementation three functions away, and only
-    // knowing what the function is supposed to do tells them apart. That is a judge, which is
-    // a stated non-goal, and every check aggressive enough to flag this also flags legitimate
-    // constant returns. Named in docs/build-guide.md section 7.1 as a known residual; the
-    // honest division of labour is that a human reads the diff for this one.
+  it("a constant-return stub is still not a placeholder, and is now measured instead", async () => {
+    // `return 0` is a stub here and a correct implementation three functions away, and no
+    // reading of the source tells them apart: that part is unchanged and the assertions below
+    // are the ones this case was committed with. What changed is that the question is answered
+    // by a measurement rather than left open. The behavioral probe runs both versions over the
+    // same inputs and reports a function that varied before the change and does not after,
+    // which separates the stub from a function that was always constant without knowing what
+    // either is for. It reports and does not block, because what a measured loss of variance
+    // means is still a person's to read. Section 7.1 is not updated until an attack pass has
+    // run; src/gates/behavioral-probe.test.ts holds the measurement.
     const reading = await inspect(
       placeholderGate,
       { "src/a.ts": "export function add(a: number, b: number) { return a + b; }" },

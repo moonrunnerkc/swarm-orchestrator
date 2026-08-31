@@ -13,6 +13,7 @@ import {
   type SingleFileCommand,
   singleFileTestCommand,
 } from "./base-control.ts";
+import { createFileConstantReturnProbe } from "./constant-return-gate.ts";
 import { createFileCoverageArtifactStore } from "./coverage-artifact.ts";
 import { assembleGates, type GateSetOptions } from "./default-gates.ts";
 import type { FileSetRegistry } from "./file-set.ts";
@@ -82,6 +83,12 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
     // Under the session store, which invariant 11 puts outside the workspace and denies to
     // tools: a coverage report the workspace can reach is a coverage report it can write.
     coverageArtifactDirectory: join(options.evidence.directory, "coverage"),
+    // The probe's own script lives there too, for the same reason: a script the workspace can
+    // reach is a script it can rewrite before the harness spawns it.
+    constantReturnProbe: createFileConstantReturnProbe({
+      commands,
+      scriptDirectory: join(options.evidence.directory, "probe"),
+    }),
   });
   const budgets = options.budgets ?? defaultDiffBudget;
 

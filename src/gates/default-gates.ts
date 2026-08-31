@@ -1,3 +1,4 @@
+import { type ConstantReturnProbe, createConstantReturnGate } from "./constant-return-gate.ts";
 import { coverageArtifactPath, coverageReportingCommand } from "./coverage-artifact.ts";
 import {
   type GateContext,
@@ -358,6 +359,11 @@ export interface GateSetOptions {
    * absent means no report is asked for and the coverage arm abstains.
    */
   readonly coverageArtifactDirectory?: string;
+  /**
+   * Runs the behavioral probe. Absent leaves the constant-return gate reporting that nothing
+   * was configured to execute a function, which is not-applicable rather than a pass.
+   */
+  readonly constantReturnProbe?: ConstantReturnProbe;
 }
 
 /**
@@ -381,7 +387,11 @@ export function assembleGates(
           ),
         );
 
-  const assembled = [...language, ...inspectionGates];
+  const assembled = [
+    ...language,
+    ...inspectionGates,
+    createConstantReturnGate(options.constantReturnProbe ?? null),
+  ];
 
   return assembled.map((gate) => {
     const override = overrides[gate.id];

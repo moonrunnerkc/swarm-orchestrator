@@ -75,7 +75,7 @@ describe("project type detection", () => {
 });
 
 describe("assembling the default gate set", () => {
-  it("always carries the four gates that hold whatever the language is", async () => {
+  it("always carries the gates that hold whatever the language is", async () => {
     const gates = assembleGates(await detectProject(reader({})));
 
     expect(gates.map((gate) => gate.id)).toEqual([
@@ -87,14 +87,17 @@ describe("assembling the default gate set", () => {
       "placeholder",
       "secret-scan",
       "diff-budget",
+      "constant-return",
     ]);
   });
 
-  it("marks the diff budget advisory and everything else blocking", async () => {
+  it("marks the two reporting gates advisory and everything else blocking", async () => {
     const gates = assembleGates(await detectProject(reader({ "go.mod": "module x" })));
     const advisory = gates.filter((gate) => gate.severity === "advisory");
 
-    expect(advisory.map((gate) => gate.id)).toEqual(["diff-budget"]);
+    // Both of these measure something real and neither decides what it means, so both report
+    // and a person reads the diff.
+    expect(advisory.map((gate) => gate.id)).toEqual(["diff-budget", "constant-return"]);
   });
 
   it("maps node gates onto the scripts package.json actually declares", async () => {
