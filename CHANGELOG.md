@@ -4,6 +4,34 @@
 
 ### Added
 
+- **A screen for `swarm calibrate`.** A three-model sweep is 180 runs over roughly three hours,
+  the longest thing this tool does, and it had none: the 08-23 sweep was watched through
+  `tail -f`. It is a second view rather than a second use of the run screen, because a sweep
+  has no plan and no gate strip and does have a denominator. One row per model with what it was
+  asked to run, what it answered, what it solved, and the reason code for anything that
+  measured nothing. No keys; a sweep is watched rather than steered. Off a terminal it is
+  silent and the piped output is byte for byte what it was.
+- **A raw wire trace for local backends, behind `SWARM_LOCAL_TRANSPORT_TRACE`.** Two
+  calibration bundles came back holding assistant turns with nothing in them, and the three
+  things that produce that cannot be told apart once the bytes are gone: the backend emitted no
+  content, the client lost it assembling the stream, or the chat template answered into a
+  channel the assembly does not read. The trace writes the raw request and response bodies
+  before anything parses either, copying the response through as it arrives rather than
+  buffering it, and both go through the ledger's own scrub. Off unless a path is named.
+  `docs/empty-turn-diagnosis.md` says how to read one, and records that the root cause is not
+  diagnosed: it needs the live backends.
+- **An advisory `constant-return` gate.** It runs the base version and the submitted version of
+  a changed module over one fixed ladder of inputs and reports a function that varied with its
+  input before the change and does not after. That separates a stub from a function whose
+  correct implementation is a constant without knowing what either is for. Advisory and staying
+  advisory: a function can legitimately become constant, and what a measured loss of variance
+  means is a person's to read.
+- **The evidence column of the review page is indexed.** How many records, how many groups, one
+  line per turn with its task and count, one line per record kind with a link to the first. A
+  record is collapsed to its head line rather than a fully expanded card, and its digest moved
+  inside. Rendering only: nothing about what is recorded moved, and a bundle written before
+  this still verifies.
+
 - **Workers that read what the others have already tried.** They ran side by side and saw
   nothing of each other, so two could declare the same file and one could spend its whole
   attempt cap on a gate that had already refused the same fix on the chain next door. They
@@ -42,6 +70,33 @@
   redundancy.
 
 ### Fixed
+
+- **An empty assistant turn can no longer be recorded as an executed run.** The harness reads
+  every turn at the record that carries it into the ledger and writes what it read beside it:
+  characters of text after trimming, tool calls, whether that amounts to nothing, and which
+  nothing it was. A calibration repeat takes "the model answered" off those records rather than
+  off a counter the loop kept in memory, so what makes a repeat executed is what a reviewer
+  holding the bundle can recount, and a repeat with no answered turn carries an abstention
+  naming its reason. A record with no harness reading counts as unread and never as answered.
+- **The ratchet no longer compares a number the code under measurement can write.** The count
+  of tests a run collected came from a parser reading a gate's stdout, and two of the three
+  readers take the first match in that text, so a test printing `Tests  9999 passed (9999)`
+  supplied the reader its summary line before the runner's own existed. A raised count is what
+  hides a deletion in a file the test-file recognizer does not recognize. It now comes from a
+  result the runner wrote to a path the harness named, exactly as coverage does, and abstains
+  by name wherever the harness cannot vouch for the invocation. `docs/ratchet-inputs.md` is the
+  inventory of all eleven inputs, each cited to where it originates and each with its
+  resolution.
+- **A seed is recorded only where the backend carries one.** Anthropic and Google drop the
+  field rather than reject it, so a seed written to the ledger for those was a number that
+  re-derives a repeat nothing can replay.
+- **Two of the judge-shaped residuals are narrowed, and neither is closed.** A comparison that
+  reduces to itself once the assignments above it are substituted no longer counts as an
+  assertion, and a credential a `+` chain reassembles is caught however its pieces are named.
+  Both come from one analysis, and inertness is what keeps a memoization test counting. A
+  command copied out of content the model read is now also matched after canonicalizing it, so
+  inserting flags and swapping `sh` for `bash` stops working; the overlap threshold is
+  untouched. What remains open is written into the tests beside each.
 
 - **A parallel run now sweeps up the branches it created.** Worker branches outlive their
   worktrees on purpose, because the merge queue merges from them after the working copy is

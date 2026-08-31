@@ -205,12 +205,19 @@ finishes inside a frame never draws one.
 `?` lists every key. `enter` expands a row to its whole payload and the ledger record it came
 from. `q` leaves the view: the screen comes down and the run keeps going, reporting the plain
 lines it writes off a terminal. `ctrl+c` cancels the run. There is no progress bar, because an
-agent run has no denominator.
+agent run has no denominator: what it shows instead is how long it has been going.
 
 When the run ends, the screen lists what it produced, says how many claims the harness
 verified and how many it refused, and offers to open the review page. It says the bundle
 verified only if the bundle's own verifier ran here and exited 0. `swarm review <bundle>`
 shows the same panel for any bundle already on disk.
+
+`swarm calibrate` draws a different screen, because it is a different shape of run: a sweep
+has no plan and no gate strip, and unlike a task it does have a denominator. It shows how many
+repeats of how many it has finished, and one row per model with what it was asked to run, what
+it answered, what it solved, and the reason code for anything that measured nothing. There are
+no keys on it; a sweep is watched rather than steered. Off a terminal it prints what it always
+printed.
 
 The keymap, the `swarm.toml` surface, the degradation matrix, and a recording of a session
 are in [`interface.md`](docs/evidence/2026-08-23/interface.md), with the frames in
@@ -305,9 +312,11 @@ something.
 - **Gates are data.** A gate declares a command, a parser, and whether it blocks. The engine
   never special-cases one.
 - **The ratchet is numeric.** Tests collected, assertions in touched test files, coverage of
-  changed lines, skip markers. Coverage comes from a report the runner wrote where the
-  harness told it to, never from what a gate printed, and an unobtainable measure is
-  reported as "not measured" rather than as a pass.
+  changed lines, skip markers. The two the runner reports, coverage and the collected count,
+  come from files the runner wrote where the harness told it to, never from what a gate
+  printed: a test that prints `Tests  9999 passed (9999)` supplies a stdout reader its summary
+  line before the real one exists. Where the harness cannot vouch for the invocation it asks
+  for no file, and the measure is reported as "not measured" rather than as a pass.
 
 The full design, including what it refuses to build and why, is in
 [`docs/build-guide.md`](docs/build-guide.md).

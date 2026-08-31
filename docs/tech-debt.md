@@ -69,19 +69,22 @@ Two of those numbers are shapes rather than gaps:
   mean adding a renderer dependency to assert on pixels.
 - **`src/tools` at 78%** is dominated by `search-tool.ts` at 8.3% and `shell-tool.ts` at 21.1%.
 
-### Debt: `src/tools/search-tool.ts` and `shell-tool.ts` are thinly covered
+### Closed on 2026-08-31: the three thinly covered tool files
 
-8.3% and 21.1%. Both are tool implementations behind the chokepoint, which is at 98.3%, so what
-is untested is the tool bodies rather than the path that records and gates them. `search-tool`
-carries the ReDoS guard, and `src/tools/regex-safety.ts` (the guard itself) is separately
-tested at length, so the untested part is the search around it. Worth its own change, not this
-one.
+`search-tool.ts` 8.3% to 89.8%, `shell-tool.ts` 21.1% to 100%, `file-set-tool.ts` 57.1% to
+85.7%, measured with the v8 provider over every source file rather than only the imported ones.
 
-### Debt: `src/gates/file-set-tool.ts` at 57.1%
+Behaviour rather than lines. What is asserted is what each file decides that something
+downstream rests on: the facts a claim predicate addresses rather than the prose the model was
+shown, the search patterns refused before they run once, the files the scan declines to open,
+the exit code and the timeout kept apart as different findings, and the second file-set
+declaration that answers the model rather than throwing at it.
 
-The tool the planner declares its file set through. Invariant 12 depends on the declaration
-reaching the ledger before the edits, and that ordering is tested at the gate level; the tool
-wrapper around it is not.
+One case is worth recording because of how it was wrong first. The binary-file test asserted
+that a `.bin` file is skipped, and a literal NUL byte had landed in the test source where a
+space was meant, so it passed for a reason its own text did not give. The tool reads a `.bin`
+file happily and skips a file carrying a NUL, whatever it is called. It now writes the byte as
+an escape and asserts both halves.
 
 ## Documentation pointers
 
@@ -122,7 +125,20 @@ until it stops showing up. Twelve mentions of three **generated** paths, `dist/`
 so they name build and driver output that exists once something makes it. Counted and printed
 rather than passed over, because a silent third category is how a check stops meaning anything.
 
-## Debt: `swarm calibrate` has no screen, and it is the run that most wants one
+## Closed on 2026-08-31: `swarm calibrate` has a screen
+
+Built as the second view this entry said it would have to be, with its own layout and its own
+tests: `calibrate-view.ts`, `calibrate-store.ts`, `calibrate-screen-model.ts` and
+`calibrate-screen.ts` under `src/tui/`, tested over the pure builder at four widths and with
+colour off. It shows the denominator a sweep has and a task does not, one row per model with
+attempted, executed, green and the abstention reason codes, and the repeat in flight. No keys:
+a sweep is watched rather than steered. Off a terminal it is silent and the piped output is
+what it always was.
+
+The entry below is what it was written as, kept because it is the reasoning the second view
+was built from.
+
+## Debt as it stood: `swarm calibrate` has no screen, and it is the run that most wants one
 
 The interactive screen is wired to one command, `swarm <task>`, through `startInterface` in
 `src/cli.ts`. `swarm calibrate` writes plain progress lines and nothing else, on a terminal or off
@@ -240,7 +256,27 @@ screen, so the outcome is visible where it happened. The rest, the detail lines,
 the end. Doing it properly means the transcript carrying them rather than the buffer, which is
 more of the same work rather than a different kind.
 
-## Debt: the evidence column is still an unindexed ledger dump
+## Closed on 2026-08-31: the evidence column is indexed
+
+Both fixes this entry named are in, and nothing about what is recorded moved, so it is additive
+over every bundle already written. The column opens with an index: how many records, how many
+groups, one line per turn with its task and its count, and one line per record kind with its
+count and a link to the first. A record is now a `details` collapsed to its head line rather
+than a fully expanded card, and the digest moved inside it.
+
+The turn group is deliberately not the collapsing unit. A link from a claim into a collapsed
+group is a link into nothing on any browser that does not open a closed ancestor for a
+fragment, so the collapsing unit is the record, whose summary is rendered either way. There is
+still no search box, and that is now a decision rather than a gap: it would need a script, and a
+review page that needs one to show its evidence is a review page that can stop working.
+
+The third thing this entry raised is unchanged and is still a question rather than a task:
+`model-call` payloads are the majority of the bytes, and changing what is recorded touches the
+evidence contract.
+
+The entry below is what it was written as.
+
+## Debt as it stood: the evidence column is still an unindexed ledger dump
 
 The claims column is a product and the header, gates and diff above it are now readable. The
 evidence column underneath is every non-claim record as a card, in chain order, with a
@@ -284,7 +320,19 @@ raise --max-steps.` The observation that produced this stands: a broad two-part 
 model return an empty response where a one-part goal declared a graph in three reads, so
 breadth rather than the pairing, and `empty-response` now says so in those words.
 
-## Debt: the weekly scan files the same 21 semgrep findings every Monday
+## Closed on 2026-08-31: the weekly scan no longer files the same findings every Monday
+
+Two fixes, because there were two halves. The token rule is scoped off the three places
+credential-shaped strings are written on purpose, by splitting the scan into two runs by path
+rather than by rule, so nothing is silenced anywhere else. And the repeat itself is closed: the
+finding set carries a fingerprint, the issue body carries it, and a run whose set matches an
+open issue files nothing. Measured against a local rule rather than the registry, which is not
+reachable from where this was done; `docs/security-coverage.md` records what that does and does
+not establish, including the one thing that could not be checked offline.
+
+The entry below is what it was written as.
+
+## Debt as it stood: the weekly scan files the same 21 semgrep findings every Monday
 
 Nineteen of them are `detected-github-token` inside the secret scrubber's own test corpus and
 the shakedown logs, which is a secret scanner correctly finding the credential-shaped strings a
@@ -297,6 +345,29 @@ Scoping the token rule off `fuzz/corpus/scrub/`, `src/evidence/*.test.ts` and
 every week saying the same known thing is one people learn to close unread, which is the failure
 mode this project names about gates. Wants its own change, with the scoped run as its evidence.
 Dispositioned in `docs/security-coverage.md`.
+
+## NOT-DONE on 2026-08-31: the dead v12 scheduled workflows are still on `main`
+
+Four scheduled workflows on the `main` branch fire against a codebase this repository no longer
+builds, and have been since the default branch moved:
+
+Under `.github/workflows/` on that branch, named here by filename because a rooted path to a
+file on another branch is a pointer that does not resolve from this one:
+
+| workflow | schedule |
+| --- | --- |
+| backward-mine.yml | `0 4 * * *`, nightly |
+| complaint-mine.yml | `30 4 * * *`, nightly |
+| agent-stream.yml | `0 5 * * *`, nightly |
+| codex-canary.yml | `0 9 * * 1`, Mondays |
+
+They are not on this branch and there is nothing here to delete: `v13-main` carries four
+workflows, all of them v13, and the only scheduled one is `weekly-scan.yml`, which is live and
+wanted. Deleting the four above means a commit on `main`, and the pass that found them was
+authorized to push to one branch and not that one.
+
+Left as a one-line job for whoever has that permission: remove those four files from `main`.
+Nothing else on `main` is touched by doing so, and nothing on this branch depends on them.
 
 ## Exports nothing else names
 

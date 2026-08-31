@@ -471,11 +471,41 @@ By class, with a disposition rather than a silencing:
 | `detect-non-literal-regexp` | 1 | `fuzz/long-run.mjs:70` | `new RegExp` over a local `key` argument inside the fuzz harness's own summary reader. The input is a harness identifier, not a workspace value, and the harness runs nowhere near a user's tree |
 | `prototype-pollution-loop` | 1 | `src/config/swarm-toml.ts:212` | A read walk in `valueAt`, which exists only to quote the offending value back in a config error message. Pollution needs an assignment and this loop makes none; `fuzz/swarm-toml.fuzz.cjs` already asserts that no parsed input reaches `Object.prototype` |
 
-**Nothing was silenced to make this green.** No `.semgrepignore` was added, no rule was
-disabled, and the scan will keep filing the same issue every Monday until the token findings
-are scoped away from the scrubber's own fixtures. Scoping a secret rule off a directory of
-deliberate fake credentials is legitimate and is not a release-day change: it is on the tech
-debt list, so the next person does it with its own evidence rather than as a footnote here.
+**Nothing was silenced to make this green.** No `.semgrepignore` was added and no rule was
+disabled. Scoping a secret rule off a directory of deliberate fake credentials is legitimate,
+and it was not a release-day change: it is on the tech debt list so the next person does it
+with its own evidence rather than as a footnote here.
+
+### Closed on 2026-08-31: the token findings are scoped, and the issue no longer repeats
+
+The scan runs twice now, split by path rather than by rule. The first run is every rule over
+everything except the three places credential-shaped strings are written on purpose,
+`fuzz/corpus/scrub`, `*.test.ts`, and `docs/evidence/*/shakedown/logs`. The second is every
+rule except `detected-github-token` over exactly those places. The union is every rule
+everywhere, minus that one rule on the fixtures, which is what a `.semgrepignore` would not
+have been: that would have taken every other rule off those paths too.
+
+The registry is not reachable from the environment this was written in, so the split was
+measured against a local rule matching the same token shape rather than against `p/default`.
+It finds the same twenty-one, the excluding run finds none of them, and the including run
+finds exactly those twenty-one, which is what says the two path sets are complements. The
+three paths are read out of the workflow by a test, because the split only holds while both
+invocations name the same set.
+
+One thing could not be checked offline and is named rather than assumed: the registry rule id
+passed to `--exclude-rule`. A renamed rule would exclude nothing silently, so
+`scripts/semgrep-findings.mjs` fails the job with the ids it actually saw whenever a token
+finding survives the scoping. A stale id reports itself instead of reappearing as the issue
+that was already being ignored.
+
+The repeat itself is closed separately, because scoping the token rule leaves two findings and
+those two would still file an issue every week. The finding set now carries a fingerprint, the
+issue body carries it, and a run whose set matches an open issue says so in its own log and
+files nothing. A set that changed still gets its own issue.
+
+The other two findings are unchanged and stay dispositioned above rather than silenced: the
+non-literal `RegExp` in the fuzz harness and the read-only walk in `swarm-toml.ts` are both
+accepted, and accepting a finding is not the same as hiding it.
 
 ## Closed on 2026-08-24: the first scheduled run
 
