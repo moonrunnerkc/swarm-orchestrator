@@ -1,4 +1,5 @@
 import type { ProvenanceTag } from "../core/model-client.ts";
+import { canonicalCommandsIn, canonicalShellCommand } from "./shell-canonical.ts";
 
 export interface UntrustedSource {
   /** How the content reached the model: file contents read, or another tool's output. */
@@ -28,7 +29,7 @@ const defaultDerivationSettings: DerivationSettings = {
 export interface DerivationAssessment {
   readonly matched: boolean;
   readonly score: number;
-  readonly method: "substring" | "ngram" | "none";
+  readonly method: "substring" | "canonical-shell" | "ngram" | "none";
   readonly source: UntrustedSource | null;
   readonly settings: DerivationSettings;
 }
@@ -43,6 +44,8 @@ interface WindowEntry {
   readonly source: UntrustedSource;
   readonly normalized: string;
   readonly grams: ReadonlySet<string>;
+  /** Every line of the content that reads as a command, reduced to what it does. */
+  readonly commands: ReadonlySet<string>;
 }
 
 /**
@@ -58,6 +61,12 @@ interface WindowEntry {
  * running a command the README documents) fires it, and rephrased injected instructions
  * slip past it. Window size, n-gram size, and threshold are all meant to be tuned against
  * observed rates rather than trusted at their defaults.
+ *
+ * Beside the overlap sits one exact channel, for the rephrase overlap cannot reach: a command
+ * reduced to what it does, matched against the commands the observed content reduced to. The
+ * whole command has to agree, so it is far narrower than partial overlap, and it is what makes
+ * flags inserted and one interpreter swapped for another stop being a way past this. It adds
+ * no tuning knob, because there is nothing to tune about an equality.
  */
 export function createDerivationHeuristic(
   overrides: Partial<DerivationSettings> = {},
@@ -73,7 +82,12 @@ export function createDerivationHeuristic(
       if (normalized.length === 0) {
         return;
       }
-      window.unshift({ source, normalized, grams: gramsOf(normalized, settings.ngramSize) });
+      window.unshift({
+        source,
+        normalized,
+        grams: gramsOf(normalized, settings.ngramSize),
+        commands: canonicalCommandsIn(content),
+      });
       window.length = Math.min(window.length, settings.windowSize);
     },
 
@@ -91,6 +105,7 @@ export function createDerivationHeuristic(
       }
 
       const argumentGrams = gramsOf(normalized, settings.ngramSize);
+      const canonical = canonicalShellCommand(argument);
 
       for (const entry of window) {
         if (
@@ -98,6 +113,16 @@ export function createDerivationHeuristic(
           entry.normalized.includes(normalized)
         ) {
           return { matched: true, score: 1, method: "substring", source: entry.source, settings };
+        }
+
+        if (canonical !== null && entry.commands.has(canonical)) {
+          return {
+            matched: true,
+            score: 1,
+            method: "canonical-shell",
+            source: entry.source,
+            settings,
+          };
         }
 
         if (argumentGrams.size === 0) {
