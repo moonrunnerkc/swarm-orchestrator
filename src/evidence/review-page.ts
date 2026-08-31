@@ -33,7 +33,8 @@ export function renderReviewPage(manifest: BundleManifest, dag: EvidenceDag): st
       : dag.claims.map((claim) => renderClaim(claim, evidenceByDigest)).join("\n"),
     "</section>",
     '<section class="evidence"><h2>Evidence</h2>',
-    dag.evidence.map((node) => renderEvidence(node)).join("\n"),
+    renderEvidenceIndex(dag),
+    renderEvidenceColumn(dag),
     "</section>",
     "</main>",
     renderFooter(manifest, evidenceBySequence.size),
@@ -316,20 +317,136 @@ function renderClaim(claim: ClaimNode, evidenceByDigest: Map<string, EvidenceNod
   ].join("");
 }
 
+/**
+ * Where a turn's records begin, by the `session-started` that opens it. A session records one
+ * of these per turn, so the boundaries come off the chain rather than off a guess about time.
+ */
+interface TurnGroup {
+  readonly index: number;
+  readonly task: string;
+  readonly records: readonly EvidenceNode[];
+}
+
+function groupByTurn(dag: EvidenceDag): readonly TurnGroup[] {
+  const groups: TurnGroup[] = [];
+  let current: EvidenceNode[] = [];
+  let task = "before the first turn";
+  let index = 0;
+
+  const close = (): void => {
+    if (current.length > 0) {
+      groups.push({ index, task, records: current });
+    }
+  };
+
+  for (const node of dag.evidence) {
+    if (node.type === "session-started") {
+      close();
+      current = [];
+      index += 1;
+      task = textOf(objectPayload(node)?.task) ?? "(no task recorded)";
+    }
+    current.push(node);
+  }
+  close();
+  return groups;
+}
+
+/** One record's payload as an object, or null where it is not one. */
+function objectPayload(node: EvidenceNode): Record<string, unknown> | null {
+  return node.payload !== null && typeof node.payload === "object" && !Array.isArray(node.payload)
+    ? (node.payload as Record<string, unknown>)
+    : null;
+}
+
+/**
+ * What the evidence column opens with, and the whole of what "indexed" means here: how many
+ * records there are, which turn each belongs to, and how many of each kind.
+ *
+ * The 08-23 calibration bundle is 3,716 records in an 11.6 MB page, and until now the only way
+ * to find anything in it was to scroll. There is no search box because there is no script: a
+ * review page that needs one to show its evidence is a review page that can stop working.
+ * What is here instead is a list a reader can read and click.
+ */
+function renderEvidenceIndex(dag: EvidenceDag): string {
+  const groups = groupByTurn(dag);
+  const counts = new Map<string, number>();
+  const firstOfType = new Map<string, number>();
+  for (const node of dag.evidence) {
+    counts.set(node.type, (counts.get(node.type) ?? 0) + 1);
+    if (!firstOfType.has(node.type)) {
+      firstOfType.set(node.type, node.sequence);
+    }
+  }
+
+  const byType = [...counts.entries()]
+    .sort((left, right) => right[1] - left[1] || (left[0] < right[0] ? -1 : 1))
+    .map(
+      ([type, count]) =>
+        `<li><a href="#record-${firstOfType.get(type) ?? 0}">${escapeHtml(type)}</a>` +
+        `<span class="index-count">${count}</span></li>`,
+    );
+
+  const byTurn = groups.map(
+    (group) =>
+      `<li><a href="#turn-${group.index}">` +
+      (group.index === 0 ? "before the first turn" : `turn ${group.index}`) +
+      `</a><span class="index-count">${group.records.length}</span>` +
+      `<span class="index-task">${escapeHtml(group.task)}</span></li>`,
+  );
+
+  return [
+    '<nav class="evidence-index">',
+    `<p class="index-total">${dag.evidence.length} record(s), in ${groups.length} group(s).</p>`,
+    groups.length < 2 ? "" : `<ul class="index-list">${byTurn.join("")}</ul>`,
+    `<ul class="index-list">${byType.join("")}</ul>`,
+    "</nav>",
+  ].join("");
+}
+
+function renderEvidenceColumn(dag: EvidenceDag): string {
+  const groups = groupByTurn(dag);
+  const heading = (group: TurnGroup): string =>
+    groups.length < 2
+      ? ""
+      : `<h3 class="turn" id="turn-${group.index}">` +
+        (group.index === 0 ? "before the first turn" : `turn ${group.index}: `) +
+        `${escapeHtml(group.index === 0 ? "" : group.task)}` +
+        `<span class="index-count">${group.records.length}</span></h3>`;
+
+  return groups
+    .map((group) => heading(group) + group.records.map((node) => renderEvidence(node)).join(""))
+    .join("\n");
+}
+
+/**
+ * One record, collapsed to its head line.
+ *
+ * A `details` rather than an `article`, and the record itself rather than only its payload: the
+ * column was every record fully expanded, which is what made a calibration bundle unreadable
+ * rather than merely long. The head line stays visible either way, so a claim's link into a
+ * record still lands somewhere a reader can see, with no script and no reliance on a browser
+ * expanding a collapsed ancestor for a fragment.
+ *
+ * The digest moved inside for the same reason it was noise outside: a `sha256:` line under
+ * every card, wanted by the person who is already opening the payload.
+ */
 function renderEvidence(node: EvidenceNode): string {
   return [
-    `<article class="record" id="record-${node.sequence}">`,
-    `<p class="record-head"><span class="sequence">${node.sequence}</span>`,
+    `<details class="record" id="record-${node.sequence}">`,
+    '<summary class="record-head">',
+    `<span class="sequence">${node.sequence}</span>`,
     `<span class="type">${escapeHtml(node.type)}</span>`,
     `<span class="actor">${escapeHtml(node.actor)}</span>`,
-    `<span class="time">${isoTime(node.timestamp)}</span></p>`,
-    `<p class="summary">${escapeHtml(node.summary)}</p>`,
+    `<span class="time">${isoTime(node.timestamp)}</span>`,
+    `<span class="summary">${escapeHtml(node.summary)}</span>`,
+    "</summary>",
     `<p class="tags">provenance: ${node.provenance.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join(" ") || "none"}</p>`,
     `<p class="digest">${escapeHtml(node.digest)}</p>`,
     node.payload === null
       ? '<p class="detail">the payload blob is absent from this bundle</p>'
-      : `<details><summary>payload</summary><pre>${escapeHtml(prettyJson(node.payload))}</pre></details>`,
-    "</article>",
+      : `<pre>${escapeHtml(prettyJson(node.payload))}</pre>`,
+    "</details>",
   ].join("");
 }
 
@@ -425,7 +542,21 @@ article { border: 1px solid var(--line); border-radius: 6px; padding: .8rem 1rem
   color: var(--muted); font-style: italic; }
 .prose-label { display: block; font-style: normal; font-size: .68rem; text-transform: uppercase;
   letter-spacing: .08em; }
-.record-head { margin: 0 0 .4rem; display: flex; gap: .6rem; align-items: baseline; flex-wrap: wrap; }
+details.record { border: 1px solid var(--line); border-radius: 6px; padding: .5rem .8rem;
+  margin-bottom: .4rem; background: color-mix(in srgb, var(--paper) 92%, var(--ink) 8%); }
+details.record > pre, details.record > .tags, details.record > .digest { margin-top: .5rem; }
+h3.turn { font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+  margin: 1.2rem 0 .5rem; border-top: 1px solid var(--line); padding-top: .6rem; }
+.evidence-index { margin: 0 0 1rem; font-size: .82rem; }
+.index-total { margin: 0 0 .4rem; color: var(--muted); }
+.index-list { list-style: none; margin: 0 0 .6rem; padding: 0; display: grid;
+  grid-template-columns: max-content max-content 1fr; gap: .1rem .6rem; }
+.index-list li { display: contents; }
+.index-count { color: var(--muted); font-variant-numeric: tabular-nums; }
+.index-task { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.record-head { margin: 0; display: flex; gap: .6rem; align-items: baseline; flex-wrap: wrap;
+  cursor: pointer; }
+.record-head .summary { flex: 1 1 12rem; }
 .sequence { font-weight: 700; }
 .type { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; }
 .actor, .time { color: var(--muted); font-size: .78rem; }
