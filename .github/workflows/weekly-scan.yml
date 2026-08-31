@@ -31,14 +31,58 @@ jobs:
       - name: fuzz harness smoke
         run: npm run fuzz:build
 
-      - name: semgrep p/default, warning and above
+      # Two runs rather than one, and the split is by path so nothing is silenced by rule.
+      #
+      # Nineteen of this scan's twenty-one findings were `detected-github-token` inside the
+      # secret scrubber's own corpus, its tests, and the shakedown logs: a secret scanner
+      # reading a directory of deliberate fake credentials finds fake credentials, correctly.
+      # An issue that says the same thing every Monday is one people learn to close unread,
+      # which is the failure mode this project names about gates.
+      #
+      # So the first run is every rule over everything except the places credential-shaped
+      # strings are written on purpose, and the second is every rule except the token one over
+      # exactly those places. The union is every rule everywhere, minus that one rule on the
+      # fixtures. A `.semgrepignore` would have been the blunt version of this: it would have
+      # taken every other rule off those paths too.
+      - name: semgrep, everything outside the scrubber's own fixtures
         id: semgrep
         continue-on-error: true
         run: |
           docker run --rm -v "$PWD:/src" -w /src semgrep/semgrep:1.173.0 \
             semgrep --config p/default \
                     --severity WARNING --severity ERROR \
-                    --error --metrics off --oss-only
+                    --error --metrics off --oss-only \
+                    --json-output=/src/semgrep-outside.json \
+                    --exclude 'fuzz/corpus/scrub' \
+                    --exclude '*.test.ts' \
+                    --exclude 'docs/evidence/*/shakedown/logs'
+
+      # The rule id is the one thing here that can go stale without saying so: a registry rule
+      # that is renamed stops being excluded and the nineteen come back. scripts/semgrep-findings.mjs
+      # fails the job with the ids it actually saw when that happens, so a stale id reports
+      # itself rather than reappearing as the issue that was already being ignored.
+      - name: semgrep over the fixtures, minus the rule they are fixtures for
+        id: semgrep-fixtures
+        continue-on-error: true
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src semgrep/semgrep:1.173.0 \
+            semgrep --config p/default \
+                    --severity WARNING --severity ERROR \
+                    --error --metrics off --oss-only \
+                    --json-output=/src/semgrep-fixtures.json \
+                    --exclude-rule generic.secrets.security.detected-github-token.detected-github-token \
+                    --include 'fuzz/corpus/scrub' \
+                    --include '*.test.ts' \
+                    --include 'docs/evidence/*/shakedown/logs'
+
+      - name: read what semgrep found
+        id: findings
+        run: |
+          node scripts/semgrep-findings.mjs \
+            semgrep-outside.json semgrep-fixtures.json | tee findings.txt
+          {
+            grep -E '^(count|fingerprint)=' findings.txt
+          } >> "$GITHUB_OUTPUT"
 
       # `--skip-git` was passed here and osv-scanner 2.x does not define it, so every run of
       # this step exited 127 on "flag provided but not defined" without scanning anything.
@@ -54,9 +98,13 @@ jobs:
             ./
 
       - name: file an issue for whatever was found
-        if: steps.semgrep.outcome == 'failure' || steps.osv.outcome == 'failure'
+        if: >-
+          steps.semgrep.outcome == 'failure'
+          || steps.semgrep-fixtures.outcome == 'failure'
+          || steps.osv.outcome == 'failure'
         env:
           GH_TOKEN: ${{ github.token }}
+          FINGERPRINT: ${{ steps.findings.outputs.fingerprint }}
         run: |
           # A scan whose findings go nowhere is a scan that did not run. If the token
           # cannot open an issue, the job fails rather than passing quietly.
@@ -64,14 +112,30 @@ jobs:
             echo "::error::findings exist and gh is not authenticated, so nothing can be filed"
             exit 1
           fi
+
+          # The same finding set as an issue already open is not news. Filing it again is how
+          # people learn to close these unread, so the run says so in its own log and files
+          # nothing. A set that changed gets its own issue, which is the thing worth reading.
+          if gh issue list --label security --state open --limit 50 --json body \
+               --jq '.[].body' | grep -qF "fingerprint: ${FINGERPRINT}"; then
+            echo "findings unchanged (fingerprint ${FINGERPRINT}); an open issue already says so"
+            exit 0
+          fi
+
           gh issue create \
             --title "weekly scan findings, $(date -u +%Y-%m-%d)" \
             --label security \
             --body "$(printf '%s\n' \
-              "semgrep: ${{ steps.semgrep.outcome }}" \
+              "semgrep (outside the fixtures): ${{ steps.semgrep.outcome }}" \
+              "semgrep (fixtures, token rule scoped off): ${{ steps.semgrep-fixtures.outcome }}" \
               "osv-scanner: ${{ steps.osv.outcome }}" \
+              "" \
+              "fingerprint: ${FINGERPRINT}" \
+              "count: ${{ steps.findings.outputs.count }}" \
               "" \
               "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
               "" \
-              "Findings are in that run's logs. This issue is the notification, not the report.")" \
+              "Findings are in that run's logs. This issue is the notification, not the report." \
+              "A later run finding the same set again will not file a second issue while this" \
+              "one is open.")" \
             || { echo "::error::gh issue create failed, so findings would go unreported"; exit 1; }
