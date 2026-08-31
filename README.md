@@ -283,12 +283,13 @@ something.
   removal, with a four-character floor. Zero crashes at a fuzz budget is evidence, not proof.
 - **No benchmark numbers.** Nothing here is measured against another tool. The calibration
   results are self-run, on one machine, and labelled directional in the file itself.
-- **Six known gaps are open**, not closed, and they ship that way. They are in
-  [build guide 7.1](docs/build-guide.md). Four came out of the adversarial passes and each is
-  a permanent test case asserting the gap as it stands; two came with the scale-out work and
-  are the same boundary in a new place, since a decomposition that is well formed can still
-  be unrunnable and a comparator built from gate measures reads discipline rather than
-  completeness.
+- **Six known gaps ship open**, and none of them is claimed closed. They are in
+  [build guide 7.1](docs/build-guide.md), which says for each what now catches it and what
+  still gets past. Four of them have detections built against them and have not yet been
+  attacked, so what is claimed is a detection and not a closure: a check nobody has tried to
+  get past is a check nobody has measured. The other two came with the scale-out work and are
+  unchanged, since a decomposition that is well formed can still be unrunnable and a
+  comparator built from gate measures reads discipline rather than completeness.
 - **A signature does not make the machine honest.** It proves the bundle was not altered
   after it left the machine that produced it. The review page says that on its face.
 
@@ -305,9 +306,13 @@ something.
 - **Gates are data.** A gate declares a command, a parser, and whether it blocks. The engine
   never special-cases one.
 - **The ratchet is numeric.** Tests collected, assertions in touched test files, coverage of
-  changed lines, skip markers. Coverage comes from a report the runner wrote where the
-  harness told it to, never from what a gate printed, and an unobtainable measure is
-  reported as "not measured" rather than as a pass.
+  changed lines, skip markers. The two the runner reports, tests collected and coverage of
+  changed lines, come from reports the runner wrote where the harness told it to, never from
+  what a gate printed: a test file that prints its own counter line is the code under
+  measurement authoring the measurement. Where the harness cannot vouch for the run that would
+  write those reports it asks for none, and an unobtainable measure is reported as "not
+  measured" rather than as a pass. Assertions and skip markers need no runner: the harness
+  counts them out of the text of every test file the run touched.
 
 The full design, including what it refuses to build and why, is in
 [`docs/build-guide.md`](docs/build-guide.md).

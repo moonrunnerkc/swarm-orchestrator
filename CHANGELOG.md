@@ -4,6 +4,36 @@
 
 ### Added
 
+- **A debug copy of what a local backend was actually sent and actually said.**
+  `SWARM_TRANSPORT_TRACE=<path>` writes the raw request body and every raw response frame of
+  every local call to a JSONL artifact, before anything parses them. Off with no path, which is
+  the default: the artifact holds whole prompts and whole completions unscrubbed, so it is not
+  the ledger and not a thing to leave running. It exists for one question the assembled response
+  cannot answer, which is whether a turn that arrived empty was empty on the wire, dropped
+  during stream assembly, or genuinely empty from the model. The response body is teed rather
+  than buffered, so streaming timing is unchanged and the first-token measurement stays real.
+- **A screen for `swarm calibrate`.** A three-model sweep is 180 runs over roughly three hours,
+  the longest thing this tool does, and it wrote plain progress lines and nothing else. It has a
+  view of its own now, because a sweep has none of the things the run screen is built around: it
+  has a grid. Runs finished out of runs planned, the run in flight, a row per model in plan
+  order with green counted over executed runs rather than attempted ones, abstentions named by
+  the reason code the harness recorded, and the last few outcomes. No estimate of time
+  remaining, which would be a prediction people plan around, and no keys, because a sweep has
+  nothing to scroll. Off a terminal it writes one line per finished run in the same words, so
+  the log and the screen stay one account of the run.
+- **An index over the evidence column of the review page.** Records are grouped by turn and
+  folded by default, the per-record digest moved into the expanded payload where the reviewer
+  resolving a claim through it is already looking, and the column opens with how many records
+  there are, how many of each type, a button per type and a search box. The 08-23 calibration
+  bundle is 3,716 records; before this there was no way to find anything in it. A rendering
+  change and nothing else: no record changed, and four existing bundles verify unaltered.
+- **A behaviour probe over changed functions.** A function that answered several ways at the
+  base commit and answers one way now is reported by a blocking gate. Reading the text will
+  never tell a stub from a correct constant, and running it does not have to: the comparison is
+  between two measured variances rather than a judgement about what a function is for. Quiet on
+  a function that was always constant, one that takes no arguments, and one that now refuses
+  every input, which is a tighter signature rather than a missing body.
+
 - **Workers that read what the others have already tried.** They ran side by side and saw
   nothing of each other, so two could declare the same file and one could spend its whole
   attempt cap on a gate that had already refused the same fix on the chain next door. They
@@ -41,6 +71,43 @@
   bigger machine does not make those cheaper. The fan-out was unbounded before this, at any
   redundancy.
 
+### Changed
+
+- **The ratchet's collected and skipped test counts come from a report the runner wrote, not
+  from what it printed.** Node's default reporter passes a test's own `console.log("# tests
+  999")` through ahead of its own counters and the counter reader took the first match, so four
+  print statements in one test file reported 999 collected for a suite of one. That number fed a
+  blocking arm. Where the harness can vouch for the invocation it now asks node for TAP at a
+  path of its own and counts result points there, which a test cannot print into existence.
+  Where it cannot vouch for the invocation both measures are null and the ratchet abstains on
+  them by name, which is stricter than the reading it replaces.
+- **An empty assistant turn is recorded as an abstention rather than as a run of the model.**
+  The harness classifies every turn as it crosses into the ledger and stamps the verdict on the
+  record, so a repeat whose only turn arrived empty reports `abstained` with a machine-readable
+  reason instead of being scored against the model as a wrong answer. Two calibration bundles
+  had been scored with those folded in. Calibration now reads `executed` off the records rather
+  than off the loop's own counter, because a reviewer re-deriving that number has the records
+  and not the loop.
+- **A seed is recorded with whether the backend took it.** Ollama and rapid-mlx both accept a
+  seed field and neither promises to sample from it, and the SDK reports a refused setting as a
+  warning. Those warnings now reach the record, so a seed in a bundle is never read as a seed
+  that made the run re-derivable.
+- **The derivation heuristic reads a shell command as a command.** Its threshold is unchanged,
+  because lowering it flags ordinary commands that mention a filename someone read. What changed
+  is that where an argument parses as a shell command it is also compared as one, with flags
+  dropped and interpreters folded together, so inserting `-fsSL` and swapping `sh` for `bash`
+  no longer rewrites it past the match.
+- **An assertion comparing a value with itself stops counting as an assertion.** The rule was a
+  literal against the identical literal; it now substitutes the file's own bindings first, so
+  `expect(v0.a).toBe(v0.a)` and the spelling that binds one side to a name are both seen. This
+  is arithmetic over expressions and not a judgement about meaning: deciding that two
+  *different* expressions mean the same thing is still refused.
+- **The secret-scan gate reads a credential written in pieces.** Where a change rejoins them,
+  by concatenation or by a template literal, the gate rebuilds the value those lines make and
+  hands it to the detector that already decides about credentials, under the name the change
+  gave it. No second detector and no new threshold. Halves that are never rejoined build no
+  value and are still not caught, which build guide 7.1 says in those words.
+
 ### Fixed
 
 - **A parallel run now sweeps up the branches it created.** Worker branches outlive their
@@ -56,6 +123,11 @@
 - **Two review-page summaries that trailed off after the colon.** `worker-finished` and
   `merge-attempt` both asked for a field neither writer emits, so they rendered as
   `worker-1 finished:` with nothing after it. They read what is actually recorded now.
+- **The weekly scan stopped filing the same 21 findings every Monday.** Data is excluded by
+  path, meaning the secret scrubber's own fuzz corpus and the captured shakedown logs and
+  nothing else; the nine findings in real source carry a suppression naming the one rule and the
+  reason, at the line that carries the finding. Under the workflow's own command it now reports
+  zero and exits 0, so the weekly issue means something arrived that nobody has looked at.
 
 ## 13.1.9
 

@@ -206,9 +206,15 @@ it. Corrected on the branch and left to ride along with the next release rather 
 version on one sentence, which is the judgement worth writing down: the README got its own patch
 because it told readers the wrong install command, and a design-history note does not.
 
+Second instance, found the same way on 2026-08-31: the correction itself had gone stale. It read
+"the registry now serves 13.1.3 as latest" while `npm view swarm-orchestrator version` answered
+13.1.9. The sentence no longer names a version at all, which is the only spelling of it that
+cannot rot, and it says why.
+
 Nothing checks this. A `files` entry whose content names a version or a registry state is the
 shape to watch, and the cheap version of the fix is a test asserting no shipped document states
-a published version other than the one in `package.json`.
+a published version other than the one in `package.json`. Still not built, and now with two
+instances behind it rather than one.
 
 ## Debt: a session's ratchet is per turn, so a later turn can erase an earlier one's work
 
