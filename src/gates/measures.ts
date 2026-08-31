@@ -1,3 +1,4 @@
+import { assertsIdentity, type Bindings, bindingsIn } from "../evidence/value-flow.ts";
 import { withoutComments } from "./comment-spans.ts";
 
 /**
@@ -61,8 +62,23 @@ const constantTautologies: readonly RegExp[] = [
   /\bassert(?:\.ok)?\s*\(\s*true\s*\)/,
 ];
 
-function assertsNothing(line: string): boolean {
-  return constantTautologies.some((pattern) => pattern.test(line));
+/**
+ * Whether a line that looks like an assertion states anything.
+ *
+ * Two rules, and the second is what the first could not reach. A literal against the identical
+ * literal is decided by reading the line. A comparison that reduces to itself once the
+ * assignments above it are substituted needs the file, which is what `assertsIdentity`
+ * carries: `expect(seen.total).toBe(seen.total)` under `const seen = subject` holds whatever
+ * the code under test does, and counting it let a gutting rewrite keep all four numerics.
+ *
+ * What neither reaches is a comparison between two expressions that happen to be equal at run
+ * time, `expect(v0.a).toBe(v0.b)` where the two alias. That needs to know what the names mean,
+ * which is a judge, and it stays a residual.
+ */
+function assertsNothing(line: string, bindings: Bindings): boolean {
+  return (
+    constantTautologies.some((pattern) => pattern.test(line)) || assertsIdentity(line, bindings)
+  );
 }
 
 const testDeclarationPatterns: readonly RegExp[] = [
@@ -150,6 +166,9 @@ export function measureTestFile(text: string | null): TestFileMeasures {
     return emptyTestFileMeasures;
   }
 
+  // Once for the file rather than once per line: what a name was bound to is a fact about the
+  // file, and re-deriving it per line is the reading that missed this in the first place.
+  const bindings = bindingsIn(text);
   let assertions = 0;
   let skips = 0;
   const perTest: Record<string, { assertions: number; skips: number }> = {};
@@ -171,7 +190,10 @@ export function measureTestFile(text: string | null): TestFileMeasures {
       skips += 1;
       current.skips += 1;
     }
-    if (!assertionPatterns.some((pattern) => pattern.test(line)) || assertsNothing(line)) {
+    if (
+      !assertionPatterns.some((pattern) => pattern.test(line)) ||
+      assertsNothing(line, bindings)
+    ) {
       continue;
     }
     assertions += 1;

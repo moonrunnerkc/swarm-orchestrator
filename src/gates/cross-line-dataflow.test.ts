@@ -10,8 +10,10 @@ import { measureTestFile } from "./measures.ts";
  * is spread over more than one line, and each line on its own is ordinary. Both are named in
  * docs/build-guide.md section 7.1.
  *
- * These assertions describe what the tree does today. They are meant to be inverted by the
- * change that closes them, and a diff that inverts them is the proof.
+ * These assertions were committed describing what the tree did before the analysis existed,
+ * and are inverted here by the change that closed them. The diff between the two commits is
+ * the proof; the false-positive cases below were written at the same time and are unchanged,
+ * which is what says the closure did not come from widening.
  */
 
 const identityAcrossLines = [
@@ -33,15 +35,15 @@ const memoized = [
   "});",
 ].join("\n");
 
-describe("gap: a comparison that reduces to identity", () => {
-  it("counts as an assertion today, so gutting a test moves no ratchet numeric", () => {
-    // expect(x).toBe(x) over a plain property read cannot fail whatever the code does. The
-    // tautology rule only knows literal against identical literal, so this counts.
-    expect(measureTestFile(identityInOneLine)).toMatchObject({ tests: 1, assertions: 1 });
+describe("a comparison that reduces to identity", () => {
+  it("states nothing, so gutting a test moves the assertion numeric", () => {
+    // expect(x).toBe(x) over a plain property read cannot fail whatever the code does, so it
+    // is not an assertion and the ratchet sees the drop.
+    expect(measureTestFile(identityInOneLine)).toMatchObject({ tests: 1, assertions: 0 });
   });
 
-  it("counts as one across an assignment too, which is the shape a rename produces", () => {
-    expect(measureTestFile(identityAcrossLines)).toMatchObject({ tests: 1, assertions: 1 });
+  it("states nothing across an assignment either, which is the shape a rename produces", () => {
+    expect(measureTestFile(identityAcrossLines)).toMatchObject({ tests: 1, assertions: 0 });
   });
 
   it("is not the same shape as a memoization test, which has to keep counting", () => {
@@ -61,26 +63,45 @@ const reassembledInSource = [
 
 const wholeInSource = "export const upload = 'AKIAIOSFODNN7EXAMPLE';";
 
-describe("gap: a credential reassembled from fragments", () => {
+describe("a credential reassembled from fragments", () => {
   it("is caught when it is written whole", () => {
     expect(findKnownSecrets(wholeInSource)).toContain("aws-access-key-id");
     expect(findBlockingSecrets(wholeInSource)).toContain("aws-access-key-id");
   });
 
-  it("is not caught today when the same value is concatenated from two bindings", () => {
-    // Neither fragment is credential-shaped and neither binding name says credential, so the
-    // name-keyed detector and the shape patterns both pass over it.
-    expect(findKnownSecrets(reassembledInSource)).toEqual([]);
-    expect(findBlockingSecrets(reassembledInSource)).toEqual([]);
+  it("is caught when the same value is concatenated from two bindings", () => {
+    // Neither fragment is credential-shaped and neither binding name says credential. What is
+    // read instead is that the text itself performs the join, and what it joins to.
+    expect(findKnownSecrets(reassembledInSource)).toContain("aws-access-key-id");
+    expect(findBlockingSecrets(reassembledInSource)).toContain("aws-access-key-id");
   });
 
-  it("is not caught when the fragments sit under names that say nothing", () => {
+  it("is caught when the fragments sit under names that say nothing", () => {
     const parts = [
       "const left = 'ghp_';",
       "const right = 'A1b2C3d4E5f6G7h8I9j0KL';",
       "const t = left + right;",
     ].join("\n");
 
-    expect(findKnownSecrets(parts)).toEqual([]);
+    expect(findKnownSecrets(parts)).toContain("github-token");
+  });
+
+  it("says nothing about a join that reassembles something ordinary", () => {
+    // The false positive the closure has to avoid, and the reason this is keyed on the joined
+    // shape rather than on adjacency: two short pieces beside each other are every version
+    // tuple and every chunked payload in a real tree.
+    const version = [
+      "const major = '1';",
+      "const minor = '4';",
+      "const label = major + minor;",
+    ].join("\n");
+
+    expect(findKnownSecrets(version)).toEqual([]);
+  });
+
+  it("says nothing where one piece is not a literal, rather than guessing at it", () => {
+    const runtime = ["const head = 'AKIAIOSFO';", "const upload = head + suffix;"].join("\n");
+
+    expect(findKnownSecrets(runtime)).toEqual([]);
   });
 });

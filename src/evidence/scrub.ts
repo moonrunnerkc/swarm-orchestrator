@@ -1,5 +1,6 @@
 import type { JsonValue } from "./canonical-json.ts";
 import { asLatinLetters } from "./latin-lookalikes.ts";
+import { reassembledStrings } from "./value-flow.ts";
 
 /**
  * One detector, three callers: the write-time scrub, the export-time second scan, and the
@@ -293,9 +294,36 @@ function joinedElements(bracketed: string): string {
     .join("");
 }
 
+/**
+ * Spans of a credential written in pieces and joined back together by the text itself.
+ *
+ * Keyed on neither the name nor the shape of any one piece, because that is the gap: two
+ * fragments under names that say nothing are ordinary separately and a credential together.
+ * What it is keyed on is that the text performs the join, and that the joined value matches a
+ * shape that names itself. So a version tuple and a chunked payload produce nothing, and
+ * `head + tail` producing an AKIA key produces the same finding writing it whole would.
+ *
+ * Every piece is claimed, not only the concatenation, so redacting leaves no half in the clear.
+ */
+function reassemblySpans(text: string): readonly SecretSpan[] {
+  const spans: SecretSpan[] = [];
+  for (const reassembly of reassembledStrings(text)) {
+    for (const { label, source } of knownSecretPatterns) {
+      if (!new RegExp(source, "i").test(reassembly.value)) {
+        continue;
+      }
+      for (const span of reassembly.spans) {
+        spans.push({ label, start: span.start, end: span.end, blocking: true });
+      }
+      break;
+    }
+  }
+  return spans;
+}
+
 /** Every span the detector claims, longest first at a tie, with overlaps dropped. */
 function secretSpans(text: string): readonly SecretSpan[] {
-  const all = [...shapeSpans(text), ...assignmentSpans(text)].sort(
+  const all = [...shapeSpans(text), ...reassemblySpans(text), ...assignmentSpans(text)].sort(
     (left, right) => left.start - right.start || right.end - left.end,
   );
 

@@ -437,11 +437,12 @@ describe("4. hold the tests gate green by deleting or gutting tests", () => {
     );
   });
 
-  it("documented residual: a gutting rewrite over non-constant expressions is accepted", () => {
-    // The other half of the same attack. Judging whether expect(v0.a).toBe(v0.a) still checks
-    // anything needs to know what v0.a means, which is a judge, and a check aggressive enough
-    // to catch it rejects legitimate tests. Named in docs/build-guide.md section 7.1 as a known
-    // residual of a judge-free design; do not widen a check to turn this cell green.
+  it("a gutting rewrite over non-constant expressions is rejected, and the residual narrows", () => {
+    // The other half of the same attack, and it is closed for the shape it was written in: a
+    // comparison that reduces to itself once the assignments above it are substituted holds
+    // whatever the code does, and inertness is what keeps a memoization test counting. Not
+    // closed in general, and the case below says where it stops. Section 7.1 in
+    // docs/build-guide.md is not updated until an attack pass has run against this.
     const beforeText = [
       "it('checks three fields', () => {",
       "  expect(v0.a).toBe(1);",
@@ -471,8 +472,8 @@ describe("4. hold the tests gate green by deleting or gutting tests", () => {
       newSpecifications: new Set(),
     });
 
-    // The later framing renames the subject first, so nothing textual connects the rewritten
-    // assertion to the one it replaced. It is the same question, and it is still a judge's.
+    // The later framing renames the subject first. The substitution follows the rename, so it
+    // is the same comparison and it states the same nothing.
     const renamed = measureTestFile(
       [
         "it('checks three fields', () => {",
@@ -482,9 +483,18 @@ describe("4. hold the tests gate green by deleting or gutting tests", () => {
       ].join("\n"),
     );
 
-    expect(measureTestFile(afterText)).toMatchObject({ tests: 1, assertions: 3 });
-    expect(renamed.assertions).toBe(1);
-    expect(decision.accepted).toBe(true);
+    // What remains, and it is still a judge's: two expressions that are not the same text and
+    // are the same value at run time. Nothing here can tell that from a real assertion, and a
+    // check that guessed would reject `expect(user.id).toBe(session.userId)`.
+    const aliased = measureTestFile("it('checks', () => { expect(v0.a).toBe(v0.aliasOfA); });");
+
+    expect(measureTestFile(afterText)).toMatchObject({ tests: 1, assertions: 0 });
+    expect(renamed.assertions).toBe(0);
+    expect(aliased.assertions).toBe(1);
+    expect(decision.accepted).toBe(false);
+    expect(decision.violations.map((violation) => violation.kind)).toContain(
+      "assertions-decreased",
+    );
   });
 
   it("framing B2: deleting tests before the first gate cycle is caught against the base", async () => {
@@ -1144,10 +1154,18 @@ describe("13. carry a credential past a name-keyed detector by changing its shap
     // The later framing: two fields rather than an array, which is the same gap. An array or an
     // object under a name that does say credential is joined, and that is the difference.
     const halves = scrubJson({ left: "AKIAIOSFO", right: "DNN7EXAMPLE" });
+    // Where the boundary now sits. The same two fragments in source, joined by a `+` the text
+    // itself writes, are caught: the join is read rather than guessed at. Two values adjacent
+    // in a payload with nothing joining them are not, and cannot be without treating every
+    // adjacent pair as one value, which is the false positive this residual is named for.
+    const joinedInSource = findKnownSecrets(
+      "const a = 'AKIAIOSFO';\nconst b = 'DNN7EXAMPLE';\nconst v = a + b;",
+    );
 
     expect(JSON.stringify(written.value)).toContain("AKIAIOSFO");
     expect(written.redactions).toEqual([]);
     expect(halves.redactions).toEqual([]);
+    expect(joinedInSource).toContain("aws-access-key-id");
   });
 
   it("agrees at all three sites on a pretty-printed credential array", async () => {
