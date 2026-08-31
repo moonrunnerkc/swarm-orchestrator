@@ -89,6 +89,16 @@ export interface ModelResponse {
   readonly outputTokens: number;
   readonly finishReason: string;
   readonly performance: ModelPerformance;
+  /**
+   * What the provider reported it could not apply, by the name the provider used. Empty is
+   * the ordinary case and means everything the request asked for was taken.
+   *
+   * Here for the seed above. A seed recorded as though it made a run re-derivable, against a
+   * backend that dropped it, is a claim about replay that nothing checked: two calibration
+   * runs over the same golden set with the same per-repeat seeds picked two different models,
+   * and neither ledger said whether the seed had reached the sampler at all.
+   */
+  readonly unsupportedFeatures: readonly string[];
 }
 
 /** For providers and doubles that have no timings to report. */

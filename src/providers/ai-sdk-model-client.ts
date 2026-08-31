@@ -106,7 +106,21 @@ async function streamOnce(
     outputTokens: usage.outputTokens ?? 0,
     finishReason: await result.finishReason,
     performance: performanceOf(await result.steps),
+    unsupportedFeatures: refusedFeatures(await result.warnings),
   };
+}
+
+/**
+ * What the provider reported it could not apply. Read from the SDK's own warnings rather than
+ * guessed at from the provider name: whether a given local runtime honours a seed is a property
+ * of that runtime and its version, not of the adapter in front of it.
+ */
+function refusedFeatures(
+  warnings: Awaited<ReturnType<typeof streamText>["warnings"]>,
+): readonly string[] {
+  return (warnings ?? [])
+    .filter((warning) => warning.type === "unsupported")
+    .map((warning) => warning.feature);
 }
 
 /**

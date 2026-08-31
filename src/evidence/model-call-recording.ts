@@ -74,6 +74,9 @@ export function createRecordingModelClient(
           // Harness-computed, over the assembled response the model cannot reach. An empty
           // turn recorded without this is a turn that later reads as a run of the model.
           content: { ...classifyTurnContent(response) },
+          // What the backend would not take. Recorded beside the settings that were sent, so
+          // a seed in the prompt record is never read as a seed the sampler used.
+          unsupportedFeatures: [...response.unsupportedFeatures],
           // Flat and named, so a calibration score is a predicate over this record rather
           // than a number someone reports about it.
           performance: {

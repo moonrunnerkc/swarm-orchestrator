@@ -26,6 +26,7 @@ function answering(responses: readonly Partial<ModelResponse>[]): ModelClient {
         outputTokens: 5,
         finishReason: "stop",
         performance: unobservedPerformance,
+        unsupportedFeatures: [],
         ...one,
       });
     },
@@ -114,6 +115,7 @@ describe("runBackendCanary", () => {
           outputTokens: 5,
           finishReason: "stop",
           performance: unobservedPerformance,
+          unsupportedFeatures: [],
         });
       },
     });

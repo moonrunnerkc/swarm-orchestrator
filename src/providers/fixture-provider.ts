@@ -84,6 +84,7 @@ export function respondTruncated(
       outputTokens: tokens.output,
       finishReason: "length",
       performance,
+      unsupportedFeatures: [],
     },
   };
 }
@@ -102,6 +103,7 @@ export function respondWithText(
       outputTokens: tokens.output,
       finishReason: "stop",
       performance,
+      unsupportedFeatures: [],
     },
   };
 }
@@ -121,6 +123,7 @@ export function respondWithToolCalls(
       outputTokens: tokens.output,
       finishReason: "tool-calls",
       performance,
+      unsupportedFeatures: [],
     },
   };
 }
