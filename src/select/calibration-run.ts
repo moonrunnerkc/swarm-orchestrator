@@ -8,6 +8,7 @@ import type { StopReason } from "../core/termination.ts";
 import { createRecordingModelClient } from "../evidence/model-call-recording.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import type { GateCommandRunner } from "../gates/gate-definition.ts";
+import { type ProviderId, parseModelSpec } from "../providers/model-spec.ts";
 import { createToolChokepoint } from "../tools/chokepoint.ts";
 import { createLedgerChokepointRecorder } from "../tools/chokepoint-record.ts";
 import { createSandbox, defaultShellAllowlist } from "../tools/sandbox.ts";
@@ -105,6 +106,17 @@ const gateTimeoutMs = 120_000;
 export const calibrationSampling = { temperature: 0.7, topP: 0.95 } as const;
 
 /**
+ * The providers whose request body carries a seed. A seed sent to one of the others is not
+ * rejected, it is dropped, so recording one there would put a number in the ledger that
+ * re-derives a repeat nothing can replay. Absent evidence of replay, no seed is recorded.
+ */
+const seedBearingProviders: ReadonlySet<ProviderId> = new Set(["openai", "local", "fixture"]);
+
+export function backendTakesSeed(modelSpec: string): boolean {
+  return seedBearingProviders.has(parseModelSpec(modelSpec).provider);
+}
+
+/**
  * A seed per repeat, derived from the case, the model and the repeat number, so the seeds a
  * run used are re-derivable from the report rather than lost with the process. Distinct per
  * repeat by construction: the same seed three times would be one sample recorded three ways.
@@ -169,7 +181,12 @@ export async function runCalibrationRepeat(
     maxOutputTokens: 4096,
     sampling: {
       ...calibrationSampling,
-      seed: seedForRepeat(request.case.id, request.modelSpec, request.repeat),
+      // Null where the backend would drop it. The client omits a null seed from the body and
+      // the recorder writes the same settings object, so what the ledger says was pinned is
+      // the same value the wire carried rather than a second account of it.
+      seed: backendTakesSeed(request.modelSpec)
+        ? seedForRepeat(request.case.id, request.modelSpec, request.repeat)
+        : null,
     },
     retryPolicy: { attempts: 2, baseDelayMs: 250, maxJitterRatio: 0.5 },
   });

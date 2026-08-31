@@ -148,6 +148,72 @@ describe("what a local backend is asked to report", () => {
   });
 });
 
+describe("what the decoding settings reach on the wire", () => {
+  /**
+   * The other half of the same guarantee the calibration run asserts against its ledger: a
+   * report that names the distribution its numbers were drawn under is only true if the
+   * settings were on the request. Nothing here reaches inside the SDK; it reads the body.
+   */
+  it("carries temperature, top_p and the seed in the request body", async () => {
+    let body: Record<string, unknown> = {};
+    const registry = createProviderRegistry({
+      localBaseUrl: "http://127.0.0.1:8000/v1",
+      fetch: (async (_url: string | URL | Request, init?: RequestInit) => {
+        body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        return new Response("data: [DONE]\n\n", {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }) as typeof globalThis.fetch,
+    });
+
+    await registry
+      .create(parseModelSpec("local:qwen3-coder:30b-a3b"))
+      .generate({
+        system: "s",
+        messages: [{ role: "user", text: "hi" }],
+        tools: [],
+        maxOutputTokens: 16,
+        sampling: { temperature: 0.7, topP: 0.95, seed: 4_242 },
+        abortSignal: new AbortController().signal,
+      })
+      .catch(() => undefined);
+
+    expect(body).toMatchObject({ temperature: 0.7, top_p: 0.95, seed: 4_242 });
+  });
+
+  it("sends no seed field at all when there is no seed to send", async () => {
+    let body: Record<string, unknown> = {};
+    const registry = createProviderRegistry({
+      localBaseUrl: "http://127.0.0.1:8000/v1",
+      fetch: (async (_url: string | URL | Request, init?: RequestInit) => {
+        body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        return new Response("data: [DONE]\n\n", {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        });
+      }) as typeof globalThis.fetch,
+    });
+
+    await registry
+      .create(parseModelSpec("local:qwen3-coder:30b-a3b"))
+      .generate({
+        system: "s",
+        messages: [{ role: "user", text: "hi" }],
+        tools: [],
+        maxOutputTokens: 16,
+        sampling: { temperature: 0.7, topP: 0.95, seed: null },
+        abortSignal: new AbortController().signal,
+      })
+      .catch(() => undefined);
+
+    // Absent rather than null: a seed of null on the wire is a value, and a server reading it
+    // as one is a different run from a server that was given no seed.
+    expect("seed" in body).toBe(false);
+    expect(body).toMatchObject({ temperature: 0.7, top_p: 0.95 });
+  });
+});
+
 describe("the raw wire trace for a local backend", () => {
   function localRegistrySettings(): {
     localBaseUrl: string;

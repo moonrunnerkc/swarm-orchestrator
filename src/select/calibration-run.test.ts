@@ -3,6 +3,7 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { ModelRequest } from "../core/model-client.ts";
 import { createFixedRandom, createTestClock } from "../core/test-doubles.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { createSessionId, openEvidenceSession } from "../evidence/session.ts";
@@ -15,6 +16,7 @@ import {
 import type { CalibrationCase } from "./calibration-case.ts";
 import { caseDigest } from "./calibration-case.ts";
 import {
+  backendTakesSeed,
   type CalibrationRunDependencies,
   calibrationSampling,
   runCalibrationRepeat,
@@ -257,5 +259,88 @@ describe("what the decoding was", () => {
       expect(Number.isSafeInteger(seed)).toBe(true);
       expect(seed).toBeGreaterThanOrEqual(0);
     }
+  });
+});
+
+describe("what the pinned decoding reaches", () => {
+  /**
+   * A production run must be able to say what distribution its numbers were drawn under, and
+   * the two places that has to hold are the request the provider was handed and the record a
+   * reviewer reads. They are asserted together on purpose: either one alone can be right while
+   * the run was decoded under the backend's own defaults.
+   */
+  it("pins temperature, top_p and the seed on the request the provider is handed", async () => {
+    const requests: ModelRequest[] = [];
+    await runCalibrationRepeat(
+      { case: one, modelSpec: "fixture:good", repeat: 3 },
+      dependencies({
+        createModel: () => {
+          const inner = fixingModel();
+          return {
+            modelId: inner.modelId,
+            generate: (request: ModelRequest) => {
+              requests.push(request);
+              return inner.generate(request);
+            },
+          };
+        },
+      }),
+    );
+
+    expect(requests.length).toBeGreaterThan(0);
+    for (const request of requests) {
+      expect(request.sampling).toEqual({
+        temperature: calibrationSampling.temperature,
+        topP: calibrationSampling.topP,
+        seed: seedForRepeat(one.id, "fixture:good", 3),
+      });
+    }
+  });
+
+  it("records the same settings in the ledger, so the report can name what it drew under", async () => {
+    await runCalibrationRepeat({ case: one, modelSpec: "fixture:good", repeat: 3 }, dependencies());
+
+    const payloads = evidence.payloads();
+    const modelCalls = evidence
+      .records()
+      .filter((record) => record.type === "model-call")
+      .map((record) => payloads.get(record.payloadDigest) as { prompt: { sampling: unknown } });
+
+    expect(modelCalls.length).toBeGreaterThan(0);
+    for (const call of modelCalls) {
+      expect(call.prompt.sampling).toEqual({
+        temperature: calibrationSampling.temperature,
+        topP: calibrationSampling.topP,
+        seed: seedForRepeat(one.id, "fixture:good", 3),
+      });
+    }
+  });
+
+  it("records no seed where the backend would drop it, rather than one that replays nothing", async () => {
+    expect(backendTakesSeed("local:qwen3-coder:30b-a3b")).toBe(true);
+    expect(backendTakesSeed("openai:gpt-5")).toBe(true);
+    expect(backendTakesSeed("anthropic:claude-opus-5")).toBe(false);
+    expect(backendTakesSeed("google:gemini-3-pro")).toBe(false);
+  });
+
+  it("leaves the seed out of the settings for a backend that takes none", async () => {
+    const requests: ModelRequest[] = [];
+    await runCalibrationRepeat(
+      { case: one, modelSpec: "anthropic:claude-opus-5", repeat: 1 },
+      dependencies({
+        createModel: () => {
+          const inner = fixingModel();
+          return {
+            modelId: "anthropic:claude-opus-5",
+            generate: (request: ModelRequest) => {
+              requests.push(request);
+              return inner.generate(request);
+            },
+          };
+        },
+      }),
+    );
+
+    expect(requests[0]?.sampling?.seed).toBeNull();
   });
 });
