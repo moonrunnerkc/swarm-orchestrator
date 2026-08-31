@@ -140,6 +140,9 @@ function valueAt(root: unknown, path: readonly PathStep[]): unknown {
     if (typeof current !== "object" || current === null) {
       return undefined;
     }
+    // A read, never a write: the walk reaches a declared field to decode it, and assigns
+    // nothing into the object it walks.
+    // nosemgrep: javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.prototype-pollution-loop
     current = (current as Record<PathStep, unknown>)[step];
   }
   return current;

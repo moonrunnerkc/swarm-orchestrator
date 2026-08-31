@@ -224,6 +224,9 @@ function valueAt(value: unknown, path: readonly string[]): unknown {
     if (current === null || typeof current !== "object") {
       return current;
     }
+    // A read, never a write: this walk exists to quote a bad value back in a config error,
+    // and nothing is assigned into the object it walks.
+    // nosemgrep: javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.prototype-pollution-loop
     current = (current as Record<string, unknown>)[step];
   }
   return current;

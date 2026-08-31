@@ -41,6 +41,7 @@ describe("write-time scrubbing", () => {
   });
 
   it("is idempotent, so a digest taken after scrubbing survives a second pass", () => {
+    // nosemgrep: generic.secrets.security.detected-github-token.detected-github-token - a fixture for the scrubber, which is what it is scrubbing.
     const once = scrubText("token=ghp_0123456789abcdefghijklmnopqrstuvwxyz").value;
     expect(scrubText(once).value).toBe(once);
   });
@@ -72,6 +73,7 @@ describe("write-time scrubbing", () => {
   it("does not read its own redaction marker back as a credential", () => {
     // Otherwise export refuses to ship a bundle precisely because write-time scrubbing
     // worked, which is the one outcome the second scan must never produce.
+    // nosemgrep: generic.secrets.security.detected-github-token.detected-github-token - a fixture for the scrubber, which is what it is scrubbing.
     const scrubbed = scrubText("token=ghp_0123456789abcdefghijklmnopqrstuvwxyz").value;
 
     expect(scrubbed).toContain("[redacted:");

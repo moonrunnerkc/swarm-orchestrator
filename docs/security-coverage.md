@@ -477,6 +477,34 @@ are scoped away from the scrubber's own fixtures. Scoping a secret rule off a di
 deliberate fake credentials is legitimate and is not a release-day change: it is on the tech
 debt list, so the next person does it with its own evidence rather than as a footnote here.
 
+## Closed on 2026-08-31: the 21 findings are dispositioned in the tree, not in a document
+
+Measured before anything moved, with the workflow's own command: `Ran 252 rules on 6782 files:
+21 findings.` The tally by class differs from the table above, which was written from the first
+run and had drifted: 16 `detected-github-token`, 3 `detect-non-literal-regexp`, and 2
+`prototype-pollution-loop`. The dispositions themselves all still hold.
+
+Two mechanisms, chosen by what the path is rather than by what is convenient.
+
+**Data is excluded by path.** `.semgrepignore` names `fuzz/corpus/scrub/` and
+`docs/evidence/*/shakedown/logs/`, and nothing else of this tree. Both are data: a fuzz corpus
+for the secret scrubber, every file of which is a credential-shaped string by construction, and
+captured output of runs that demonstrated the scrub. Rewriting a captured log to quiet a scanner
+would falsify the record the log exists to be. That accounts for 12 of the 21.
+
+Semgrep replaces its own default ignores as soon as that file exists, so the file restates them
+and includes `.gitignore`. Verified rather than assumed: the scanned file count moved from 6782
+to 6755, which is the excluded data and nothing else.
+
+**Source is dispositioned at the line.** The remaining 9 carry a `nosemgrep` naming the one rule
+and the reason, at the line that carries the finding. Per rule and per line on purpose: a
+different rule firing on the same line is still a finding, and a reader of the code sees the
+disposition where the code is rather than in a table somewhere else.
+
+The result, under the workflow's exact command including `--error`: **zero findings, exit 0.**
+The weekly issue now means something arrived that nobody has looked at, which is what it was
+written to mean.
+
 ## Closed on 2026-08-24: the first scheduled run
 
 The three defects above were found and fixed by dispatching the workflow by hand. That proves the

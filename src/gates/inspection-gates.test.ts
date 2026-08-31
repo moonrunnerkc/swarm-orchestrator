@@ -304,6 +304,7 @@ describe("the secret scan gate", () => {
   it("still blocks the credential shapes a real key takes", async () => {
     for (const line of [
       "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY",
+      // nosemgrep: generic.secrets.security.detected-github-token.detected-github-token - the credential shapes the secret-scan gate is asserted to catch.
       "API_TOKEN: ghp_16C7e42F292c6912E7710c838347Ae178B4a",
       "password = 8f14e45fceea167a5a36dedd4bea2543",
     ]) {
