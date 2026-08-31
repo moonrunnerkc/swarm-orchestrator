@@ -46,7 +46,10 @@ async function corruptTurns(): Promise<readonly RecordedTurn[]> {
 }
 
 function replay(turn: RecordedTurn): FixtureTurn {
-  return { kind: "response", response: { ...turn.response, toolCalls: [] } };
+  return {
+    kind: "response",
+    response: { ...turn.response, toolCalls: [], unsupportedFeatures: [] },
+  };
 }
 
 const one: CalibrationCase = {

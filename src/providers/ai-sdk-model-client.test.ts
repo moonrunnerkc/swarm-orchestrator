@@ -164,3 +164,46 @@ describe("createAiSdkModelClient", () => {
     expect(written).toEqual([]);
   });
 });
+
+describe("what the backend would not take", () => {
+  /**
+   * Ollama and rapid-mlx both accept a seed field and neither promises to sample from it, and
+   * the SDK says so through a warning rather than an error. Reading that warning is the
+   * difference between a ledger that records a seed and a ledger that records a replayable
+   * run: two calibration runs with identical per-repeat seeds picked two different models,
+   * and nothing in either bundle said whether the seed had reached the sampler.
+   */
+  it("reports a decoding setting the provider refused", async () => {
+    const model = createAiSdkModelClient(
+      "local:qwen",
+      streamingModel([
+        { type: "stream-start", warnings: [{ type: "unsupported", feature: "seed" }] },
+        { type: "text-start", id: "1" },
+        { type: "text-delta", id: "1", delta: "ok" },
+        { type: "text-end", id: "1" },
+        { type: "finish", finishReason: { unified: "stop" as const, raw: "stop" }, usage },
+      ]),
+    );
+
+    const response = await model.generate(request());
+
+    expect(response.unsupportedFeatures).toEqual(["seed"]);
+  });
+
+  it("reports nothing where the provider took everything it was sent", async () => {
+    const model = createAiSdkModelClient(
+      "local:qwen",
+      streamingModel([
+        { type: "stream-start", warnings: [] },
+        { type: "text-start", id: "1" },
+        { type: "text-delta", id: "1", delta: "ok" },
+        { type: "text-end", id: "1" },
+        { type: "finish", finishReason: { unified: "stop" as const, raw: "stop" }, usage },
+      ]),
+    );
+
+    const response = await model.generate(request());
+
+    expect(response.unsupportedFeatures).toEqual([]);
+  });
+});
