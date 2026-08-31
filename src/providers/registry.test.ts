@@ -6,6 +6,7 @@ import {
   ProviderNotConfiguredError,
   type ProviderSettings,
 } from "./registry.ts";
+import type { TransportTraceEntry } from "./transport-trace.ts";
 
 const configured: ProviderSettings = {
   anthropicApiKey: "test-anthropic-key",
@@ -145,5 +146,67 @@ describe("what a local backend is asked to report", () => {
 
     const body = requests[0]?.body as { stream_options?: { include_usage?: boolean } };
     expect(body?.stream_options?.include_usage).toBe(true);
+  });
+});
+
+describe("the transport trace", () => {
+  /**
+   * Wired here rather than tested only in isolation, because the question it exists to answer
+   * is about the bodies this registry's adapter actually puts on the wire. A tracer that works
+   * on a hand-built fetch and is never reached from the local case answers nothing.
+   */
+  async function traceOneLocalCall(
+    frames: readonly string[],
+    trace: TransportTraceEntry[] | undefined,
+  ): Promise<void> {
+    const registry = createProviderRegistry({
+      localBaseUrl: "http://127.0.0.1:11434/v1",
+      ...(trace === undefined
+        ? {}
+        : {
+            transportTrace: {
+              write(entry) {
+                trace.push(entry);
+                return Promise.resolve();
+              },
+            },
+          }),
+      fetch: (async () =>
+        new Response(frames.join(""), {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        })) as typeof fetch,
+    });
+
+    await registry
+      .create(parseModelSpec("local:qwen3.6:35b-a3b"))
+      .generate({
+        system: "s",
+        messages: [{ role: "user", text: "hi" }],
+        tools: [],
+        maxOutputTokens: 16,
+        abortSignal: new AbortController().signal,
+      })
+      .catch(() => undefined);
+  }
+
+  it("copies the raw request body and the raw response frames of a local call", async () => {
+    const trace: TransportTraceEntry[] = [];
+    await traceOneLocalCall(["data: [DONE]\n\n"], trace);
+    await new Promise((resume) => setTimeout(resume, 0));
+
+    const request = trace.find((entry) => entry.event === "request");
+    expect(request?.event === "request" && JSON.parse(request.body ?? "{}")).toMatchObject({
+      model: "qwen3.6:35b-a3b",
+    });
+    const chunks = trace.filter((entry) => entry.event === "response-chunk");
+    expect(chunks.map((chunk) => (chunk.event === "response-chunk" ? chunk.text : ""))).toEqual([
+      "data: [DONE]\n\n",
+    ]);
+  });
+
+  it("writes nothing at all when no sink was asked for", async () => {
+    // The default. A debug artifact holding whole prompts is not a thing to leave running.
+    await expect(traceOneLocalCall(["data: [DONE]\n\n"], undefined)).resolves.toBeUndefined();
   });
 });

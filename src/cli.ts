@@ -66,6 +66,8 @@ import { discoverLocalEndpoints } from "./providers/local-discovery.ts";
 import { type ModelSpec, parseModelSpec } from "./providers/model-spec.ts";
 import { createProviderRegistry } from "./providers/registry.ts";
 import { fetchServedModels } from "./providers/served-models.ts";
+import type { TransportTraceSink } from "./providers/transport-trace.ts";
+import { createFileTraceSink } from "./providers/transport-trace-file.ts";
 import {
   type BackendCanary,
   canaryRecord,
@@ -170,6 +172,7 @@ function registrySettingsFrom(
   googleApiKey: string | undefined;
   localBaseUrl: string | undefined;
   localThinking: boolean | null;
+  transportTrace: TransportTraceSink | undefined;
 } {
   return {
     anthropicApiKey: settings.providerKeys.anthropic,
@@ -177,6 +180,12 @@ function registrySettingsFrom(
     googleApiKey: settings.providerKeys.google,
     localBaseUrl: localBackend?.url,
     localThinking: settings.localThinking,
+    // Built here rather than in the registry, so the one module that talks to a network still
+    // does no file IO of its own. Nothing is opened until a call is actually traced.
+    transportTrace:
+      settings.transportTracePath === null
+        ? undefined
+        : createFileTraceSink(settings.transportTracePath),
   };
 }
 
