@@ -130,7 +130,7 @@ until it stops showing up. Twelve mentions of three **generated** paths, `dist/`
 so they name build and driver output that exists once something makes it. Counted and printed
 rather than passed over, because a silent third category is how a check stops meaning anything.
 
-## Debt: `swarm calibrate` has no screen, and it is the run that most wants one
+## Closed on 2026-08-31: `swarm calibrate` has a screen
 
 The interactive screen is wired to one command, `swarm <task>`, through `startInterface` in
 `src/cli.ts`. `swarm calibrate` writes plain progress lines and nothing else, on a terminal or off
@@ -138,12 +138,27 @@ one. A three-model sweep is 180 runs over roughly three hours, which is the long
 tool does and the workload a live screen would be worth the most on; the 08-23 calibration was
 watched through `tail -f` on a log.
 
-Not wired in this release, and not because it was overlooked. The screen renders one run: a task,
-a workspace, a plan, an action stream, one set of gates. A sweep has none of those as a single
-thing, so pointing the existing screen at it would mean deciding what the header names while
-sixty runs are in flight, what the action stream shows, and what a gate strip means across three
-models. That is a second view with its own layout and its own tests, not a call site. Worth doing,
-worth its own change, and worth saying plainly that this release did not do it.
+It is a second view with its own layout and its own tests, which is what the paragraph above
+said it would have to be, and that is what was built. `src/tui/calibrate-view.ts` projects the
+sweep, `src/tui/calibrate-screen-model.ts` turns that into rows, and the Ink component maps a
+row to one `Text` and stops, exactly as the run screen does. Forty tests, including the row
+shape at five widths and five heights and with colour off.
+
+What it shows is what a sweep has and a run does not: a denominator. Runs finished out of runs
+planned, the run in flight, a row per model in plan order, and the last few outcomes. Green is
+counted over executed runs rather than attempted ones, which is the denominator the report uses
+and for the same reason. Abstentions are named beside the count, by the reason code the harness
+recorded, because an unmeasured run that shows as nothing is the thing worth stopping a sweep
+over.
+
+Two things it deliberately does not do. There is no estimate of time remaining: that would be
+arithmetic over run times that vary by model and by case, and a number presented as a prediction
+is one people plan around. And there is no key handling, because a sweep has nothing to scroll
+or expand, and an interaction that exists on no other screen would be a new pattern rather than
+the existing one applied somewhere else.
+
+Off a terminal it writes one line per finished run, in the same words the screen uses, so the
+`tail -f` the 08-23 calibration was watched through still reads as one account of the run.
 
 ## Closed on 2026-08-24: the Pages site serves v13
 

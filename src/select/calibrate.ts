@@ -25,7 +25,23 @@ interface CalibrationOptions {
   /** The static shortlist's pick, so the report can corroborate or contradict it. */
   readonly staticPick: string | null;
   readonly deps: CalibrationRunDependencies;
+  /**
+   * Told which run is about to start and how each one finished, for a screen that would
+   * otherwise show nothing for three hours. Absent is the ordinary case and changes nothing:
+   * every number the sweep reports still comes off the records, and this only stops the loop
+   * being silent while it produces them.
+   */
+  readonly onProgress?: (event: CalibrationProgress) => void;
 }
+
+export type CalibrationProgress =
+  | {
+      readonly type: "run-started";
+      readonly model: string;
+      readonly caseId: string;
+      readonly repeat: number;
+    }
+  | { readonly type: "run-finished"; readonly observation: CalibrationRepeatObservation };
 
 interface CalibrationResult {
   readonly goldenSetVersion: string;
@@ -53,10 +69,12 @@ export async function runCalibration(options: CalibrationOptions): Promise<Calib
   for (const modelSpec of options.models) {
     for (const one of options.goldenSet.cases) {
       for (let repeat = 1; repeat <= options.repeats; repeat += 1) {
+        options.onProgress?.({ type: "run-started", model: modelSpec, caseId: one.id, repeat });
         const observation = await runCalibrationRepeat(
           { case: one, modelSpec, repeat },
           options.deps,
         );
+        options.onProgress?.({ type: "run-finished", observation });
         observations.push(observation);
         // The numbers are in the ledger by now, so the tree itself is no longer evidence.
         await rm(observation.workspace, { recursive: true, force: true });

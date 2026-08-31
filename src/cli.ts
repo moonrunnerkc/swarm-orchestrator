@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { arch, availableParallelism, homedir, platform, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
+import { render as inkRender } from "ink";
 import { runAgentTask } from "./agent-run.ts";
 import {
   type AddCaseCommand,
@@ -104,6 +105,7 @@ import { costOfTask, type TaskCost } from "./select/task-cost.ts";
 import { type RoutingDecision, routeModel } from "./select/ucb.ts";
 import { createSandbox, defaultShellAllowlist } from "./tools/sandbox.ts";
 import { createWorkspaceTools } from "./tools/workspace-tools.ts";
+import { startCalibrateInterface } from "./tui/calibrate-interface.ts";
 import { describeEvidence, type EvidenceSummary } from "./tui/evidence-panel.ts";
 import { resolveKeyBindings } from "./tui/key-bindings.ts";
 import { evidenceLocation, type OpenCommand, openEnvironment } from "./tui/open-path.ts";
@@ -1192,10 +1194,33 @@ async function calibrate(options: CalibrateCommand): Promise<number> {
     return 1;
   }
 
-  process.stdout.write(
-    `calibrating ${runSet.length} model(s) over ${goldenSet.cases.length} case(s), ` +
-      `${options.repeats} repeat(s) each\n`,
-  );
+  const isTty = process.stdout.isTTY === true && process.stdin.isTTY === true;
+  const screen = startCalibrateInterface({
+    isTty,
+    interactive: settings.interface.tui,
+    theme: resolveTheme({
+      mode: settings.interface.color,
+      term: process.env.TERM,
+      noColorSet: process.env.NO_COLOR !== undefined,
+      isTty,
+      palette: settings.interface.theme,
+    }),
+    clock,
+    bundleDirectory: options.bundleDirectory ?? defaultSessionRoot(home),
+    writeLine: (line) => {
+      process.stdout.write(`${line}\n`);
+    },
+    ...(isTty && settings.interface.tui ? { render: inkRender } : {}),
+  });
+  screen.apply({
+    type: "plan",
+    plan: {
+      models: [...runSet],
+      cases: goldenSet.cases.length,
+      repeats: options.repeats,
+      goldenSetVersion: goldenSet.version,
+    },
+  });
 
   try {
     const result = await runCalibration({
@@ -1203,6 +1228,26 @@ async function calibrate(options: CalibrateCommand): Promise<number> {
       repeats: options.repeats,
       goldenSet,
       staticPick,
+      onProgress: (event) => {
+        screen.apply(
+          event.type === "run-started"
+            ? {
+                type: "run-started",
+                current: { model: event.model, caseId: event.caseId, repeat: event.repeat },
+              }
+            : {
+                type: "run-finished",
+                outcome: {
+                  model: event.observation.model,
+                  caseId: event.observation.caseId,
+                  repeat: event.observation.repeat,
+                  executed: event.observation.executed,
+                  gatePassed: event.observation.gatePassed,
+                  abstentionReason: event.observation.abstentionReason,
+                },
+              },
+        );
+      },
       deps: {
         evidence,
         clock,
@@ -1243,6 +1288,8 @@ async function calibrate(options: CalibrateCommand): Promise<number> {
     });
     return result.pick.model === null ? 1 : 0;
   } finally {
+    // Before the report is read, so the screen is down and the terminal is the shell's again.
+    await screen.stop();
     await rm(scratchRoot, { recursive: true, force: true });
   }
 }
