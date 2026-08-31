@@ -25,39 +25,62 @@ type Token =
   | { readonly kind: "separator" }
   | { readonly kind: "redirect" };
 
-export function readShellCommand(command: string): ShellCommand | null {
+/** One simple command of a string: its program, and the words it was given, in order. */
+export interface SimpleShellCommand {
+  readonly executable: string;
+  /** Everything after the program, flags and paths alike, in the order it was written. */
+  readonly arguments: readonly string[];
+}
+
+/**
+ * Every simple command the string would run, kept apart rather than flattened. The allowlist
+ * only needs to know which programs start and which words could name a file, which is what
+ * `readShellCommand` folds this into; anything that has to compare two commands needs to know
+ * which words belonged to which of them.
+ */
+export function readShellPipeline(command: string): readonly SimpleShellCommand[] | null {
   const tokens = tokenize(command);
   if (tokens === null) {
     return null;
   }
 
-  const executables: string[] = [];
-  const operands: string[] = [];
-  let startingCommand = true;
+  const commands: { executable: string; arguments: string[] }[] = [];
+  let current: { executable: string; arguments: string[] } | null = null;
   let awaitingTarget = false;
 
   for (const token of tokens) {
     if (token.kind === "separator") {
-      startingCommand = true;
+      current = null;
     } else if (token.kind === "redirect") {
       awaitingTarget = true;
     } else if (awaitingTarget) {
       awaitingTarget = false;
-      operands.push(token.text);
-    } else if (startingCommand) {
-      startingCommand = false;
-      executables.push(token.text);
+      current?.arguments.push(token.text);
+    } else if (current === null) {
+      current = { executable: token.text, arguments: [] };
+      commands.push(current);
     } else {
-      operands.push(token.text);
+      current.arguments.push(token.text);
     }
   }
 
   // A redirect with nothing after it, or a string with no command in it at all, is an
   // unfinished line rather than something to rule on.
-  if (awaitingTarget || executables.length === 0) {
+  if (awaitingTarget || commands.length === 0) {
     return null;
   }
-  return { executables, operands };
+  return commands;
+}
+
+export function readShellCommand(command: string): ShellCommand | null {
+  const pipeline = readShellPipeline(command);
+  if (pipeline === null) {
+    return null;
+  }
+  return {
+    executables: pipeline.map((one) => one.executable),
+    operands: pipeline.flatMap((one) => [...one.arguments]),
+  };
 }
 
 function tokenize(command: string): Token[] | null {
