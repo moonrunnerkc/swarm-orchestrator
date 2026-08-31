@@ -436,6 +436,63 @@ export interface TestOutcomes {
   readonly failed: readonly string[];
 }
 
+/** How many result points a run reported, and how many of them did not run. */
+export interface TapTotals {
+  readonly collected: number;
+  readonly skipped: number;
+}
+
+/**
+ * The size of a run, counted off the result points of a TAP artifact rather than off the
+ * counter line the runner prints.
+ *
+ * The counter line is the one a test can forge. Node's default reporter passes a test's own
+ * `console.log("# tests 999")` through to stdout unaltered and ahead of its own counters, and
+ * the counter reader takes the first match, so four print statements reported 999 collected for
+ * a suite of one. A result point cannot be printed into existence: the runner folds captured
+ * output into comments, which this skips, and a document whose plan disagrees with its own
+ * top-level point count is not read at all.
+ *
+ * Points at every depth, because a subtest is a test and deleting one is exactly the move the
+ * ratchet is holding against. The plan check is over top-level points, which is what a plan
+ * counts.
+ */
+export function parseTapTotals(text: string): TapTotals | null {
+  if (!/^TAP version \d+/m.test(text)) {
+    return null;
+  }
+
+  let plan: number | null = null;
+  let topLevelPoints = 0;
+  let collected = 0;
+  let skipped = 0;
+
+  for (const raw of text.split("\n")) {
+    if (/^\s*#/.test(raw)) {
+      continue;
+    }
+    const planned = /^1\.\.(\d+)\s*$/.exec(raw);
+    if (planned?.[1] !== undefined) {
+      plan = Number(planned[1]);
+      continue;
+    }
+    const point = /^(\s*)(not ok|ok)\s+\d+\s+-\s+(.+?)\s*$/.exec(raw);
+    if (point?.[3] === undefined) {
+      continue;
+    }
+    if (point[1] === "") {
+      topLevelPoints += 1;
+    }
+    collected += 1;
+    const [, directive] = point[3].split(/\s+#\s+/, 2);
+    if (directive !== undefined && /^skip\b/i.test(directive)) {
+      skipped += 1;
+    }
+  }
+
+  return plan === null || plan !== topLevelPoints ? null : { collected, skipped };
+}
+
 /**
  * TAP, read as the machine-readable format it is. This is what attribution should come from:
  * node folds a test's own stdout into `#` comment lines, so nothing a test prints can become a

@@ -77,7 +77,13 @@ const testsGate: GateDefinition = {
   id: "tests",
   title: "tests",
   severity: "blocking",
-  source: { kind: "command", command: "run-tests" },
+  source: {
+    kind: "command",
+    command: "run-tests",
+    // As production does: the collected count comes from the TAP the runner was told to
+    // write, never from what the run printed.
+    testOutcomeArtifact: "/session/coverage/tests.tap",
+  },
   parse: testOutputParser,
 };
 
@@ -89,7 +95,23 @@ const lintGate: GateDefinition = {
   parse: exitCodeParser,
 };
 
-function stubCommands(workspace: MemoryWorkspace) {
+/**
+ * The TAP a stub run "wrote", by the path the gate named. A map rather than a file, so the
+ * harness reads its artifact the way production does without touching a disk.
+ */
+function stubArtifacts(written: Map<string, string>) {
+  return {
+    clear(path: string): Promise<void> {
+      written.delete(path);
+      return Promise.resolve();
+    },
+    read(path: string): Promise<string | null> {
+      return Promise.resolve(written.get(path) ?? null);
+    },
+  };
+}
+
+function stubCommands(workspace: MemoryWorkspace, written: Map<string, string>) {
   return createStubCommandRunner((command) => {
     const source = workspace.files.get(sourcePath) ?? "";
     const measures = measureTestFile(workspace.files.get(testPath) ?? null);
@@ -101,6 +123,14 @@ function stubCommands(workspace: MemoryWorkspace) {
     }
 
     const failing = source.includes("a + b") ? 0 : measures.tests;
+    const names = Object.keys(measures.perTest);
+    const tap = [
+      "TAP version 13",
+      ...names.map((name, index) => `${index < failing ? "not ok" : "ok"} ${index + 1} - ${name}`),
+      `1..${measures.tests}`,
+    ].join("\n");
+    written.set("/session/coverage/tests.tap", tap);
+
     return {
       exitCode: failing === 0 ? 0 : 1,
       stdout: [
@@ -132,7 +162,8 @@ function harness(
     base: { [sourcePath]: fixedSource, [testPath]: originalTests },
     current: { [sourcePath]: brokenSource, [testPath]: originalTests },
   });
-  const commands = stubCommands(workspace);
+  const written = new Map<string, string>();
+  const commands = stubCommands(workspace, written);
 
   const context = async (): Promise<GateContext> => ({
     workspaceRoot: "/workspace",
@@ -154,6 +185,7 @@ function harness(
           emit: (event) => {
             events.push(event);
           },
+          coverageArtifacts: stubArtifacts(written),
         },
         evidence,
         checkpoint: createMemoryCheckpoint(workspace),
@@ -279,7 +311,11 @@ describe("the ratchet against the base commit", () => {
         budgets: { maxChangedFiles: 12, maxAddedLines: 600 },
         probe: workspace,
       }),
-      cycleDeps: { commands: stubCommands(workspace), evidence, emit: () => undefined },
+      cycleDeps: {
+        commands: stubCommands(workspace, new Map()),
+        evidence,
+        emit: () => undefined,
+      },
       evidence,
       checkpoint: createMemoryCheckpoint(workspace),
       baseControl: null,

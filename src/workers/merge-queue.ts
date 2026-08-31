@@ -157,8 +157,8 @@ export async function runMergeQueue(options: MergeQueueOptions): Promise<MergeQu
       probe: forContext.probe,
       workspaceRoot: forContext.workspaceRoot,
       trackedTestFiles,
-      gateMeasures: cycle.measures,
       coverageReports: cycle.coverageReports,
+      testReports: cycle.testReports,
     });
   };
 

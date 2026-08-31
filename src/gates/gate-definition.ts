@@ -68,6 +68,12 @@ type GateSource =
        * the runner authored rather than one the tests could have.
        */
       readonly coverageArtifact?: string;
+      /**
+       * Absolute path this run's runner was told to write its TAP result to. The collected
+       * count comes from that file rather than from the counters the run printed, which a test
+       * can print for itself.
+       */
+      readonly testOutcomeArtifact?: string;
     }
   | { readonly kind: "inspection"; readonly inspect: GateInspection };
 

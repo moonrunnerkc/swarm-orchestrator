@@ -5,7 +5,7 @@ import {
   measureTestFile,
   type TestFileMeasures,
 } from "./measures.ts";
-import { fileLineHits, measureNames, parseLineHits } from "./parsers.ts";
+import { fileLineHits, parseLineHits, parseTapTotals } from "./parsers.ts";
 import type { WorkspaceChanges, WorkspaceProbe } from "./workspace-changes.ts";
 
 /**
@@ -51,13 +51,19 @@ interface SnapshotInput {
   readonly workspaceRoot?: string;
   /** Test files seen earlier in the run, so a file that stops being touched still counts. */
   readonly trackedTestFiles: Iterable<string>;
-  /** The measures the gates parsed this cycle, merged across gates. */
-  readonly gateMeasures: Readonly<Record<string, number>>;
   /**
    * Coverage reports the runners wrote to paths the harness named. Never a gate's stdout: a
    * number printed by the code under measurement is not a measurement of it.
    */
   readonly coverageReports: readonly string[];
+  /**
+   * TAP the runners wrote to paths the harness named, which is where the collected count comes
+   * from. Never the counters a run printed: node's default reporter passes a test's own
+   * `console.log("# tests 999")` through ahead of its own counters, and the counter reader
+   * takes the first match, so four print statements reported 999 collected for a suite of one.
+   * Empty here means the count is not measured, which the ratchet abstains on by name.
+   */
+  readonly testReports: readonly string[];
 }
 
 /**
@@ -81,16 +87,43 @@ export async function takeMeasureSnapshot(input: SnapshotInput): Promise<Measure
   }
 
   const coverage = changedLineCoverage(input);
+  const runner = runnerTotals(input);
 
   return {
     perTestFile,
     perTestFileAtBase,
-    testsCollected: input.gateMeasures[measureNames.testsCollected] ?? null,
-    testsSkippedByRunner: input.gateMeasures[measureNames.testsSkipped] ?? null,
+    testsCollected: runner?.collected ?? null,
+    testsSkippedByRunner: runner?.skipped ?? null,
     changedLineCoverage: coverage?.ratio ?? null,
     changedLinesCovered: coverage?.covered ?? null,
     changedLinesMeasured: coverage?.measured ?? null,
   };
+}
+
+/**
+ * What the runners reported, summed over the artifacts they were asked to write. Null wherever
+ * no artifact was readable, or wherever one of them does not agree with itself: a TAP document
+ * whose plan disagrees with its own top-level point count is not read at all, and one unreadable
+ * report makes the cycle's total a partial sum rather than a total, which is not a measurement
+ * of the suite.
+ */
+function runnerTotals(input: SnapshotInput): { collected: number; skipped: number } | null {
+  const reports = input.testReports ?? [];
+  if (reports.length === 0) {
+    return null;
+  }
+
+  let collected = 0;
+  let skipped = 0;
+  for (const report of reports) {
+    const totals = parseTapTotals(report);
+    if (totals === null) {
+      return null;
+    }
+    collected += totals.collected;
+    skipped += totals.skipped;
+  }
+  return { collected, skipped };
 }
 
 interface CoverageResult {

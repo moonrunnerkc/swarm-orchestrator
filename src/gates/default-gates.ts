@@ -1,4 +1,8 @@
-import { coverageArtifactPath, coverageReportingCommand } from "./coverage-artifact.ts";
+import {
+  coverageArtifactPath,
+  harnessReportingCommand,
+  testOutcomeArtifactPath,
+} from "./coverage-artifact.ts";
 import {
   type GateContext,
   type GateDefinition,
@@ -27,6 +31,7 @@ interface GateSpec {
   readonly parse?: GateParser;
   /** Where this run's runner was told to write its coverage report, when it was. */
   readonly coverageArtifact?: string;
+  readonly testOutcomeArtifact?: string;
 }
 
 function commandGate(spec: GateSpec): GateDefinition {
@@ -39,6 +44,9 @@ function commandGate(spec: GateSpec): GateDefinition {
       command: spec.command,
       ...(spec.argv === undefined ? {} : { argv: spec.argv }),
       ...(spec.coverageArtifact === undefined ? {} : { coverageArtifact: spec.coverageArtifact }),
+      ...(spec.testOutcomeArtifact === undefined
+        ? {}
+        : { testOutcomeArtifact: spec.testOutcomeArtifact }),
     },
     parse: spec.parse ?? parserFor(spec.id),
   };
@@ -114,7 +122,7 @@ const nodeScriptCandidates: Readonly<Record<string, readonly string[]>> = {
  * One rule, applied to whatever command the gate ends up running: the script a manifest
  * declares here, and an override from swarm.toml where there is one.
  */
-function askedForCoverage(
+function askedForHarnessReports(
   spec: GateSpec,
   body: string | undefined,
   directory: string | undefined,
@@ -122,8 +130,11 @@ function askedForCoverage(
   if (directory === undefined) {
     return spec;
   }
-  const artifact = coverageArtifactPath(directory, spec.id);
-  const argv = coverageReportingCommand(body, artifact);
+  const reports = {
+    coverage: coverageArtifactPath(directory, spec.id),
+    testOutcomes: testOutcomeArtifactPath(directory, spec.id),
+  };
+  const argv = harnessReportingCommand(body, reports);
   if (argv === null) {
     return spec;
   }
@@ -133,7 +144,8 @@ function askedForCoverage(
     title: `${spec.id} (${rendered})`,
     command: rendered,
     argv,
-    coverageArtifact: artifact,
+    coverageArtifact: reports.coverage,
+    testOutcomeArtifact: reports.testOutcomes,
   };
 }
 
@@ -159,7 +171,7 @@ function nodeGates(
       );
     }
     return commandGate(
-      askedForCoverage(
+      askedForHarnessReports(
         {
           id,
           title: `${id} (npm run ${script})`,
@@ -381,7 +393,7 @@ export function assembleGates(
       return gate;
     }
     return commandGate(
-      askedForCoverage(
+      askedForHarnessReports(
         {
           id: gate.id,
           title: gate.title,

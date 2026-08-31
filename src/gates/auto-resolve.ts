@@ -230,8 +230,8 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       // path and the change's spelling of it resolve to one file or to none.
       workspaceRoot: forContext.workspaceRoot,
       trackedTestFiles: tracked,
-      gateMeasures: forCycle.measures,
       coverageReports: forCycle.coverageReports,
+      testReports: forCycle.testReports,
     });
   }
 }

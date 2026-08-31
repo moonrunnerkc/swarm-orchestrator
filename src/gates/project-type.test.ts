@@ -137,6 +137,8 @@ describe("assembling the default gate set", () => {
       "--test-isolation=process",
       "--test-reporter=tap",
       "--test-reporter-destination=stdout",
+      "--test-reporter=tap",
+      "--test-reporter-destination=/session/coverage/tests.tap",
       "--test-reporter=lcov",
       "--test-reporter-destination=/session/coverage/tests.lcov",
       "./test/*.mjs",
