@@ -209,3 +209,29 @@ describe("how long a confirmation waits", () => {
     expect(withFile(0)).toBe(0);
   });
 });
+
+describe("the transport trace path", () => {
+  it("is off unless the environment names a file", () => {
+    expect(resolveSettings({ flags: noFlags, env: {}, toml: null }).transportTracePath).toBeNull();
+  });
+
+  it("is the path the environment named", () => {
+    const settings = resolveSettings({
+      flags: noFlags,
+      env: { SWARM_TRANSPORT_TRACE: "/tmp/swarm-trace.jsonl" },
+      toml: null,
+    });
+
+    expect(settings.transportTracePath).toBe("/tmp/swarm-trace.jsonl");
+  });
+
+  it("reads a variable set to nothing as a variable nobody set", () => {
+    const settings = resolveSettings({
+      flags: noFlags,
+      env: { SWARM_TRANSPORT_TRACE: "" },
+      toml: null,
+    });
+
+    expect(settings.transportTracePath).toBeNull();
+  });
+});

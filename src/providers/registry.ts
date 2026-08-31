@@ -9,6 +9,7 @@ import { createFixtureModelClient, type FixtureScript } from "./fixture-provider
 import { createLocalFetch } from "./local-fetch.ts";
 import type { ModelSpec, ProviderId } from "./model-spec.ts";
 import { providerIds } from "./model-spec.ts";
+import { createTracingFetch, type TransportTraceSink } from "./transport-trace.ts";
 
 export interface ProviderSettings {
   readonly anthropicApiKey?: string | undefined;
@@ -27,6 +28,12 @@ export interface ProviderSettings {
    * below is held to: absent, it is the global.
    */
   readonly fetch?: typeof globalThis.fetch | undefined;
+  /**
+   * Where the raw bodies of local calls are copied, before anything parses them. Absent is
+   * the default and writes nothing. Local only: the question it answers is about a local
+   * runtime's stream, and a frontier provider's traffic is not this project's to record.
+   */
+  readonly transportTrace?: TransportTraceSink | undefined;
   readonly fixtureScript?: FixtureScript | undefined;
 }
 
@@ -96,9 +103,7 @@ export function createProviderRegistry(settings: ProviderSettings): ProviderRegi
             name: "local",
             baseURL: settings.localBaseUrl,
             includeUsage: true,
-            // A caller's fetch wins, which is what the tests inject. Otherwise the one that
-            // waits: a local endpoint goes quiet for as long as it takes to write the file.
-            fetch: settings.fetch ?? createLocalFetch(),
+            fetch: tracedFetch(settings),
           });
           return createAiSdkModelClient(label, local(spec.modelId), thinkingOptions(settings));
         }
@@ -114,6 +119,24 @@ export function createProviderRegistry(settings: ProviderSettings): ProviderRegi
       }
     },
   };
+}
+
+/**
+ * The fetch local calls go out through. A caller's own wins, which is what the tests inject;
+ * otherwise the one that waits, because a local endpoint goes quiet for as long as it takes to
+ * write the file. Either is wrapped in the tracer when an operator asked for one, outermost on
+ * purpose, so what the trace records is what the transport was handed rather than what this
+ * module meant to send.
+ */
+function tracedFetch(settings: ProviderSettings): typeof globalThis.fetch {
+  const base = settings.fetch ?? createLocalFetch();
+  return settings.transportTrace === undefined
+    ? base
+    : createTracingFetch({
+        inner: base,
+        sink: settings.transportTrace,
+        now: () => Date.now(),
+      });
 }
 
 /**
