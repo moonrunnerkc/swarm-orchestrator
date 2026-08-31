@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { JsonValue } from "../evidence/canonical-json.ts";
 import type { RecordType } from "../evidence/ledger-record.ts";
-import { type RecordedPayload, tallyModelCalls, tallyToolCalls } from "./calibration-measures.ts";
+import {
+  type RecordedPayload,
+  tallyModelCalls,
+  tallyToolCalls,
+  tallyTurnContent,
+} from "./calibration-measures.ts";
 
 function toolCall(overrides: Record<string, JsonValue> = {}): RecordedPayload {
   return {
@@ -146,5 +151,47 @@ describe("tallyModelCalls", () => {
       outputTokens: 0,
       firstTokenMs: null,
     });
+  });
+});
+
+describe("what the model-call records say about their own turns", () => {
+  function turn(content: JsonValue): RecordedPayload {
+    return { type: "model-call", payload: { step: 1, content } };
+  }
+
+  it("counts a turn the harness read as carrying something", () => {
+    const tally = tallyTurnContent([
+      turn({ textCharacters: 4, toolCalls: 0, empty: false, emptyReason: null }),
+    ]);
+
+    expect(tally).toMatchObject({ turns: 1, answered: 1, empty: 0, unread: 0 });
+  });
+
+  it("keeps the reason codes apart, so an abstention can name which emptiness it was", () => {
+    const tally = tallyTurnContent([
+      turn({ textCharacters: 0, toolCalls: 0, empty: true, emptyReason: "no-content" }),
+      turn({ textCharacters: 0, toolCalls: 0, empty: true, emptyReason: "whitespace-only-text" }),
+      turn({ textCharacters: 0, toolCalls: 0, empty: true, emptyReason: "no-content" }),
+    ]);
+
+    expect(tally.empty).toBe(3);
+    expect(tally.emptyReasons).toEqual({ "no-content": 2, "whitespace-only-text": 1 });
+  });
+
+  it("never reads a record with no harness reading as an answered turn", () => {
+    // The direction matters: a record that does not say whether the turn held anything is
+    // absence of evidence, and counting it as answered is how an unmeasured run reads green.
+    const tally = tallyTurnContent([
+      { type: "model-call", payload: { step: 1 } },
+      turn({ empty: "yes" }),
+    ]);
+
+    expect(tally).toMatchObject({ turns: 2, answered: 0, empty: 0, unread: 2 });
+  });
+
+  it("counts nothing off records that are not model calls", () => {
+    expect(
+      tallyTurnContent([{ type: "gate-run", payload: { content: { empty: false } } }]),
+    ).toEqual({ turns: 0, answered: 0, empty: 0, unread: 0, emptyReasons: {} });
   });
 });

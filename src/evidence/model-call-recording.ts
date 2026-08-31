@@ -7,12 +7,19 @@ import {
 import { asJsonValue, digestOfJson, type JsonValue } from "./canonical-json.ts";
 import { scrubJson } from "./scrub.ts";
 import type { EvidenceRecorder } from "./session.ts";
+import { classifyTurn, failedTurnContent, turnContentPayload } from "./turn-content.ts";
 
 /**
  * Records every model call as evidence: model id, the parameters it was called with, the
  * full prompt and response, and a digest of each. The digests are what an optional rerun
  * compares against later; divergence is the reportable outcome, never a claim that the
  * model reproduced itself.
+ *
+ * Every record also carries the harness's own reading of whether the turn held anything. That
+ * is computed here rather than inferred downstream because this is the boundary a turn crosses
+ * into the ledger, and past it the response object is gone: a consumer holding the bundle can
+ * see that a turn was empty without reparsing the response blob, and cannot be handed an
+ * empty turn dressed as content.
  */
 export function createRecordingModelClient(
   model: ModelClient,
@@ -38,7 +45,14 @@ export function createRecordingModelClient(
           type: "model-call",
           actor: model.modelId,
           provenance: ["model"],
-          payload: { step, prompt, response: failure, inputTokens: 0, outputTokens: 0 },
+          payload: {
+            step,
+            prompt,
+            response: failure,
+            inputTokens: 0,
+            outputTokens: 0,
+            content: turnContentPayload(failedTurnContent),
+          },
           promptDigest,
           responseDigest: digestOfJson(failure),
         });
@@ -58,6 +72,9 @@ export function createRecordingModelClient(
           outputTokens: response.outputTokens,
           finishReason: response.finishReason,
           toolCallCount: response.toolCalls.length,
+          // The harness's reading of the turn, beside the turn. A report that says a model
+          // answered has to resolve to this rather than to the presence of a record.
+          content: turnContentPayload(classifyTurn(response)),
           // Flat and named, so a calibration score is a predicate over this record rather
           // than a number someone reports about it.
           performance: {

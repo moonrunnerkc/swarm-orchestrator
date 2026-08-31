@@ -15,6 +15,7 @@ function observation(
     stopReason: "completed",
     steps: 2,
     executed: true,
+    abstention: null,
     gateExitCode: 0,
     gatePassed: true,
     toolCalls: {

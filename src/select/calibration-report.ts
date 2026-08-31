@@ -285,7 +285,8 @@ export function renderCalibrationReport(input: CalibrationReportInput): readonly
   for (const model of input.models) {
     lines.push(
       "",
-      `${model.model}: ${model.repeats} run(s), ${model.executedRepeats} executed`,
+      `${model.model}: ${model.repeats} run(s), ${model.executedRepeats} executed` +
+        describeAbstentions(model.abstentions),
       ...describeModel(model),
     );
   }
@@ -359,6 +360,12 @@ function describeModel(model: ModelSummary): readonly string[] {
 
 function bullets(lines: readonly string[]): readonly string[] {
   return lines.map((line) => `  - ${line}`);
+}
+
+/** The reason codes behind the repeats that measured nothing, in the line that counts them. */
+function describeAbstentions(abstentions: Readonly<Record<string, number>>): string {
+  const named = Object.entries(abstentions).map(([reason, count]) => `${count} ${reason}`);
+  return named.length === 0 ? "" : ` (${named.join(", ")})`;
 }
 
 function field(label: string, value: string): string {

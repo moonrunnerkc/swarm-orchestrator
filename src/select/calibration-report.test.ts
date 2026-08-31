@@ -33,6 +33,16 @@ function observation(shape: Shape): CalibrationRepeatObservation {
     stopReason: shape.stopReason ?? "completed",
     steps: shape.executed === false ? 0 : 2,
     executed: shape.executed !== false,
+    abstention:
+      shape.executed === false
+        ? {
+            reason: "every-turn-empty",
+            turns: 1,
+            emptyTurns: 1,
+            unreadTurns: 0,
+            emptyReasons: { "no-content": 1 },
+          }
+        : null,
     gateExitCode: shape.gatePassed === false ? 1 : 0,
     gatePassed: shape.gatePassed !== false,
     toolCalls: {

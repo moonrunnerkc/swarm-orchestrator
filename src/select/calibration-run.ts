@@ -18,8 +18,10 @@ import {
   type ModelCallTally,
   payloadsSince,
   type ToolCallTally,
+  type TurnContentTally,
   tallyModelCalls,
   tallyToolCalls,
+  tallyTurnContent,
 } from "./calibration-measures.ts";
 
 /** Resident bytes of whatever is serving the model, or null when nothing reports it. */
@@ -41,6 +43,8 @@ export interface CalibrationRepeatObservation {
    * and is filtered out of every dimension rather than folded in as a zero.
    */
   readonly executed: boolean;
+  /** Why the repeat measured nothing, or null when it measured something. */
+  readonly abstention: RepeatAbstention | null;
   readonly gateExitCode: number;
   readonly gatePassed: boolean;
   readonly toolCalls: ToolCallTally;
@@ -48,6 +52,20 @@ export interface CalibrationRepeatObservation {
   readonly peakMemoryBytes: number | null;
   /** The record these numbers were written to, which the summary's claim cites. */
   readonly record: string;
+}
+
+/**
+ * A repeat that is not evidence about the model, and which of the two ways it got there. A
+ * reason code rather than a sentence, because the summary and the report both branch on it and
+ * a reader downstream should never have to parse prose to know a run measured nothing.
+ */
+export interface RepeatAbstention {
+  readonly reason: "no-turn-recorded" | "every-turn-empty";
+  readonly turns: number;
+  readonly emptyTurns: number;
+  /** Turns whose record carried no harness reading, which are not evidence of an answer. */
+  readonly unreadTurns: number;
+  readonly emptyReasons: Readonly<Record<string, number>>;
 }
 
 export interface CalibrationRunDependencies {
@@ -165,8 +183,12 @@ export async function runCalibrationRepeat(
   const toolCalls = tallyToolCalls(produced);
   const modelCalls = tallyModelCalls(produced);
   // Answered rather than dispatched: a runtime can return a turn carrying nothing, and a
-  // repeat made only of those measured the runtime, not the model.
-  const executed = outcome.answeredSteps > 0;
+  // repeat made only of those measured the runtime, not the model. Counted off the turn
+  // readings in the records rather than off the loop's own tally, so what makes a repeat
+  // executed is the same thing a reviewer holding the bundle can recount.
+  const turns = tallyTurnContent(produced);
+  const executed = turns.answered > 0;
+  const abstention = executed ? null : abstentionFor(turns);
 
   const recorded = await deps.evidence.record({
     type: "calibration-run",
@@ -181,7 +203,23 @@ export async function runCalibrationRepeat(
       stopReason: outcome.stopReason,
       steps: outcome.steps,
       answeredSteps: outcome.answeredSteps,
+      turnsRecorded: turns.turns,
+      turnsAnswered: turns.answered,
+      turnsEmpty: turns.empty,
+      turnsUnread: turns.unread,
       executed,
+      // Null when the repeat measured something. Present, with a code, when it did not, so
+      // an abstention is in the bundle rather than only in the shape of a missing number.
+      abstention:
+        abstention === null
+          ? null
+          : {
+              reason: abstention.reason,
+              turns: abstention.turns,
+              emptyTurns: abstention.emptyTurns,
+              unreadTurns: abstention.unreadTurns,
+              emptyReasons: { ...abstention.emptyReasons },
+            },
       gateCommand: request.case.gateCommand,
       gateExitCode: gate.exitCode,
       gatePassed: gate.exitCode === 0,
@@ -210,12 +248,28 @@ export async function runCalibrationRepeat(
     stopReason: outcome.stopReason,
     steps: outcome.steps,
     executed,
+    abstention,
     gateExitCode: gate.exitCode,
     gatePassed: gate.exitCode === 0,
     toolCalls,
     modelCalls,
     peakMemoryBytes: peak.bytes,
     record: recorded.record.payloadDigest,
+  };
+}
+
+/**
+ * No turn at all and every turn empty are different failures with different owners: the first
+ * is a dispatch that never happened, and the second is a backend or a pairing answering with
+ * nothing. Both are abstentions, and saying which is the point of the code.
+ */
+function abstentionFor(turns: TurnContentTally): RepeatAbstention {
+  return {
+    reason: turns.turns === 0 ? "no-turn-recorded" : "every-turn-empty",
+    turns: turns.turns,
+    emptyTurns: turns.empty,
+    unreadTurns: turns.unread,
+    emptyReasons: turns.emptyReasons,
   };
 }
 

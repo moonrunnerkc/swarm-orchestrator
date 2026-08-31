@@ -120,6 +120,55 @@ export function tallyModelCalls(entries: readonly RecordedPayload[]): ModelCallT
   };
 }
 
+export interface TurnContentTally {
+  readonly turns: number;
+  /** Turns the harness read as carrying text or a tool call. */
+  readonly answered: number;
+  readonly empty: number;
+  /**
+   * Turns carrying no harness reading at all. Counted apart from empty and never as answered:
+   * a record that does not say whether the turn held anything is not evidence that it did.
+   */
+  readonly unread: number;
+  /** How many turns fell to each reason code, so an abstention names which emptiness it was. */
+  readonly emptyReasons: Readonly<Record<string, number>>;
+}
+
+/**
+ * What the model-call records say about their own turns. Read off the `content` block the
+ * recorder computed rather than off the response blob beside it: the blob is what the model
+ * sent, and whether it amounts to a turn is the harness's reading of it.
+ */
+export function tallyTurnContent(entries: readonly RecordedPayload[]): TurnContentTally {
+  let turns = 0;
+  let answered = 0;
+  let empty = 0;
+  let unread = 0;
+  const emptyReasons: Record<string, number> = {};
+
+  for (const entry of entries) {
+    if (entry.type !== "model-call") {
+      continue;
+    }
+    turns += 1;
+    const content = valueAt(entry.payload, "content");
+    const isEmpty = valueAt(content, "empty");
+    if (typeof isEmpty !== "boolean") {
+      unread += 1;
+      continue;
+    }
+    if (!isEmpty) {
+      answered += 1;
+      continue;
+    }
+    empty += 1;
+    const reason = stringAt(content, "emptyReason") ?? "unnamed";
+    emptyReasons[reason] = (emptyReasons[reason] ?? 0) + 1;
+  }
+
+  return { turns, answered, empty, unread, emptyReasons };
+}
+
 function valueAt(payload: JsonValue, key: string): JsonValue {
   if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
     return null;
