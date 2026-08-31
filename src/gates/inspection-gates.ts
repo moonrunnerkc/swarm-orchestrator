@@ -1,5 +1,7 @@
+import { join } from "node:path";
 import { asLatinLetters } from "../evidence/latin-lookalikes.ts";
 import { findBlockingSecrets } from "../evidence/scrub.ts";
+import { probeChangedBehaviour } from "./behaviour-probe.ts";
 import { commentColumns, commentTextAt } from "./comment-spans.ts";
 import { checkFileSet } from "./file-set.ts";
 import {
@@ -251,6 +253,79 @@ function rejoinedValues(block: string): readonly string[] {
   return rebuilt;
 }
 
+/**
+ * A function that answered several ways at the base commit and answers one way now.
+ *
+ * The residual build-guide section 7.1 named is that `return 0` is a stub in one function and
+ * the right answer three functions away, and that only knowing what the function is for tells
+ * them apart. That is true of the text and false of the behaviour, so this measures the
+ * behaviour: both versions over the same fixed inputs, counting distinct answers.
+ *
+ * Blocking, because what it reports is a measured number that moved the wrong way, which is the
+ * same shape as every other blocking arm here and not a judgement about meaning. It stays quiet
+ * on a function that was always constant, on one that takes no arguments and so has nothing to
+ * vary, and on one that now refuses every input, which is a signature getting tighter rather
+ * than an implementation going away.
+ *
+ * Not-applicable where the harness cannot run a probe of its own, and where it can, the files
+ * it could not load are named in the detail. Not measured is a verdict; silence would be a
+ * claim.
+ */
+export const behaviourProbeGate: GateDefinition = {
+  id: "behaviour-probe",
+  title: "a changed function still answers to its inputs",
+  severity: "blocking",
+  source: {
+    kind: "inspection",
+    inspect: async (context: GateContext): Promise<GateObservation> => {
+      if (context.harnessRun === undefined) {
+        return observationFromJson(
+          {
+            detail:
+              "the harness has no way to spawn a probe here, so nothing about behaviour was measured",
+            unavailable: true,
+            measures: { functionsFlattened: 0, functionsProbed: 0 },
+          },
+          0,
+        );
+      }
+
+      const result = await probeChangedBehaviour({
+        changes: context.changes,
+        probe: context.probe,
+        commands: context.harnessRun.commands,
+        scratchDirectory: join(context.harnessRun.scratchDirectory, "behaviour-probe"),
+      });
+
+      const unprobed =
+        result.unprobed.length === 0
+          ? ""
+          : ` Not measured: ${result.unprobed.map((one) => `${one.file} (${one.reason})`).join("; ")}.`;
+
+      return observationFromJson(
+        {
+          detail:
+            result.flattened.length === 0
+              ? `${result.probed.length} changed function(s) still answer to their inputs.${unprobed}`
+              : `${result.flattened.length} changed function(s) answered several ways at the base ` +
+                `and answer one way now: ${result.flattened
+                  .map((one) => `${one.file}:${one.name} (${one.baseOutcomes} to 1)`)
+                  .join("; ")}.${unprobed}`,
+          flattened: result.flattened.map((one) => ({ ...one })),
+          unprobed: result.unprobed.map((one) => ({ ...one })),
+          measures: {
+            functionsFlattened: result.flattened.length,
+            functionsProbed: result.probed.length,
+            functionsUnprobed: result.unprobed.length,
+          },
+        },
+        result.flattened.length === 0 ? 0 : 1,
+      );
+    },
+  },
+  parse: inspectionParser,
+};
+
 export const secretScanGate: GateDefinition = {
   id: "secret-scan",
   title: "no credential material in the change",
@@ -352,5 +427,6 @@ export const inspectionGates: readonly GateDefinition[] = [
   fileSetGate,
   placeholderGate,
   secretScanGate,
+  behaviourProbeGate,
   diffBudgetGate,
 ];

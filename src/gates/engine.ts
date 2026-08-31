@@ -94,6 +94,9 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
     fileSet: options.fileSet.state(),
     budgets,
     probe,
+    // Under the session store, beside the coverage reports and for the same reason: a probe
+    // that wrote into the workspace would be visible to the gates measuring the workspace.
+    harnessRun: { commands, scratchDirectory: join(options.evidence.directory, "probe") },
   });
 
   const outcome = await runAutoResolve({

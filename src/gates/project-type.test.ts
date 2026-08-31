@@ -75,7 +75,7 @@ describe("project type detection", () => {
 });
 
 describe("assembling the default gate set", () => {
-  it("always carries the four gates that hold whatever the language is", async () => {
+  it("always carries the inspections that hold whatever the language is", async () => {
     const gates = assembleGates(await detectProject(reader({})));
 
     expect(gates.map((gate) => gate.id)).toEqual([
@@ -86,6 +86,7 @@ describe("assembling the default gate set", () => {
       "file-set",
       "placeholder",
       "secret-scan",
+      "behaviour-probe",
       "diff-budget",
     ]);
   });
