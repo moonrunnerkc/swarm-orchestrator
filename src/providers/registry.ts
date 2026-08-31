@@ -9,6 +9,7 @@ import { createFixtureModelClient, type FixtureScript } from "./fixture-provider
 import { createLocalFetch } from "./local-fetch.ts";
 import type { ModelSpec, ProviderId } from "./model-spec.ts";
 import { providerIds } from "./model-spec.ts";
+import { createTracingFetch, type TransportTraceWriter } from "./transport-trace.ts";
 
 export interface ProviderSettings {
   readonly anthropicApiKey?: string | undefined;
@@ -27,6 +28,12 @@ export interface ProviderSettings {
    * below is held to: absent, it is the global.
    */
   readonly fetch?: typeof globalThis.fetch | undefined;
+  /**
+   * Where the raw bytes of every local exchange go, when a person has asked for them. Absent
+   * is the ordinary case and wraps nothing, so a run that did not ask for a trace has the
+   * same transport it had before this existed.
+   */
+  readonly localTransportTrace?: TransportTraceWriter | undefined;
   readonly fixtureScript?: FixtureScript | undefined;
 }
 
@@ -98,7 +105,7 @@ export function createProviderRegistry(settings: ProviderSettings): ProviderRegi
             includeUsage: true,
             // A caller's fetch wins, which is what the tests inject. Otherwise the one that
             // waits: a local endpoint goes quiet for as long as it takes to write the file.
-            fetch: settings.fetch ?? createLocalFetch(),
+            fetch: traced(settings.fetch ?? createLocalFetch(), settings.localTransportTrace),
           });
           return createAiSdkModelClient(label, local(spec.modelId), thinkingOptions(settings));
         }
@@ -114,6 +121,13 @@ export function createProviderRegistry(settings: ProviderSettings): ProviderRegi
       }
     },
   };
+}
+
+function traced(
+  fetch: typeof globalThis.fetch,
+  write: TransportTraceWriter | undefined,
+): typeof globalThis.fetch {
+  return write === undefined ? fetch : createTracingFetch(fetch, write);
 }
 
 /**

@@ -25,6 +25,7 @@ import type { SwarmToml } from "./swarm-toml.ts";
  * | open evidence    | --open-evidence/--no-open-evidence |            | [interface] open_evidence   | ask, and never off a terminal    |
  * | confirm timeout  |                  |                              | [interface] confirm_timeout_minutes | 30 minutes, then refused |
  * | local thinking   |                  |                              | [providers] local_thinking  | unset: the server's own default  |
+ * | local wire trace |                  | SWARM_LOCAL_TRANSPORT_TRACE  |                             | off: nothing is written          |
  * | colours by slot  |                  |                              | [theme] <slot>              | the one shipped theme            |
  * | keys by action   |                  |                              | [keys] <action>             | the default keymap               |
  *
@@ -87,6 +88,12 @@ export interface ResolvedSettings {
   readonly localEndpoint: ConfiguredLocalEndpoint | null;
   /** Null leaves the local server's own default alone, which is what sending nothing does. */
   readonly localThinking: boolean | null;
+  /**
+   * Where to write the raw bytes of every local exchange, or null for the ordinary case of
+   * writing none. Environment only and no config key: a trace is something a person turns on
+   * for one run they are watching, not a setting a project carries.
+   */
+  readonly localTransportTrace: string | null;
   readonly gateCommandOverrides: Readonly<Record<string, string>>;
   /** Only the keys the file set; the engine's defaults fill the rest at the call site. */
   readonly diffBudget: {
@@ -118,6 +125,7 @@ export function resolveSettings(input: SettingsInput): ResolvedSettings {
     },
     localEndpoint: resolveLocalEndpoint(input),
     localThinking: input.toml?.providers.localThinking ?? null,
+    localTransportTrace: nonEmpty(input.env.SWARM_LOCAL_TRANSPORT_TRACE),
     gateCommandOverrides: input.toml?.gates ?? {},
     interface: resolveInterface(input),
     diffBudget: {
@@ -129,6 +137,11 @@ export function resolveSettings(input: SettingsInput): ResolvedSettings {
         : { maxAddedLines: input.toml.budgets.maxAddedLines }),
     },
   };
+}
+
+/** An environment variable set to nothing is the same as one nobody set. */
+function nonEmpty(value: string | undefined): string | null {
+  return value === undefined || value.length === 0 ? null : value;
 }
 
 function resolveInterface(input: SettingsInput): ResolvedInterface {

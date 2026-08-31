@@ -102,6 +102,26 @@ describe("resolveSettings on the local endpoint", () => {
   });
 });
 
+describe("the raw wire trace for local backends", () => {
+  it("is off unless the environment names a path, which is what off by default means here", () => {
+    expect(resolveSettings({ flags: noFlags, env: {}, toml }).localTransportTrace).toBeNull();
+    expect(
+      resolveSettings({ flags: noFlags, env: { SWARM_LOCAL_TRANSPORT_TRACE: "" }, toml })
+        .localTransportTrace,
+    ).toBeNull();
+  });
+
+  it("takes the path the environment named", () => {
+    const settings = resolveSettings({
+      flags: noFlags,
+      env: { SWARM_LOCAL_TRANSPORT_TRACE: "/tmp/wire.jsonl" },
+      toml,
+    });
+
+    expect(settings.localTransportTrace).toBe("/tmp/wire.jsonl");
+  });
+});
+
 describe("resolveSettings on provider keys and gate overrides", () => {
   it("prefers a key from the environment over one from the file", () => {
     const settings = resolveSettings({

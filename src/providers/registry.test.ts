@@ -147,3 +147,46 @@ describe("what a local backend is asked to report", () => {
     expect(body?.stream_options?.include_usage).toBe(true);
   });
 });
+
+describe("the raw wire trace for a local backend", () => {
+  function localRegistrySettings(): {
+    localBaseUrl: string;
+    fetch: typeof globalThis.fetch;
+  } {
+    return {
+      localBaseUrl: "http://127.0.0.1:8000/v1",
+      fetch: (async () =>
+        new Response('data: {"choices":[{"delta":{"content":"hi"}}]}\n\ndata: [DONE]\n\n', {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        })) as typeof globalThis.fetch,
+    };
+  }
+
+  async function generateOnce(registry: ReturnType<typeof createProviderRegistry>): Promise<void> {
+    await registry
+      .create(parseModelSpec("local:qwen3.6:35b-a3b"))
+      .generate({
+        system: "s",
+        messages: [{ role: "user", text: "hi" }],
+        tools: [],
+        maxOutputTokens: 16,
+        abortSignal: new AbortController().signal,
+      })
+      .catch(() => undefined);
+  }
+
+  it("writes both directions when a writer is supplied", async () => {
+    const written: { phase?: unknown }[] = [];
+    const registry = createProviderRegistry({
+      ...localRegistrySettings(),
+      localTransportTrace: (entry) => {
+        written.push(entry as { phase?: unknown });
+      },
+    });
+
+    await generateOnce(registry);
+
+    expect(written.map((entry) => entry.phase)).toEqual(["request", "response"]);
+  });
+});

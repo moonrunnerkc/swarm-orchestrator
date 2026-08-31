@@ -67,6 +67,10 @@ import { type ModelSpec, parseModelSpec } from "./providers/model-spec.ts";
 import { createProviderRegistry } from "./providers/registry.ts";
 import { fetchServedModels } from "./providers/served-models.ts";
 import {
+  createTransportTraceFile,
+  type TransportTraceWriter,
+} from "./providers/transport-trace.ts";
+import {
   type BackendCanary,
   canaryRecord,
   describeCanary,
@@ -170,6 +174,7 @@ function registrySettingsFrom(
   googleApiKey: string | undefined;
   localBaseUrl: string | undefined;
   localThinking: boolean | null;
+  localTransportTrace: TransportTraceWriter | undefined;
 } {
   return {
     anthropicApiKey: settings.providerKeys.anthropic,
@@ -177,6 +182,10 @@ function registrySettingsFrom(
     googleApiKey: settings.providerKeys.google,
     localBaseUrl: localBackend?.url,
     localThinking: settings.localThinking,
+    localTransportTrace:
+      settings.localTransportTrace === null
+        ? undefined
+        : createTransportTraceFile(settings.localTransportTrace),
   };
 }
 
