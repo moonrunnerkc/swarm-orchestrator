@@ -16,6 +16,15 @@ import { type ModelSummary, summarizeByModel } from "./calibration-summary.ts";
 import { calibrationDimensions, dimensionSpecs, statisticOf } from "./dimensions.ts";
 import type { GoldenSet } from "./golden-set.ts";
 
+/**
+ * What a watcher is told as the sweep runs. Absent for an unwatched run, which is what the
+ * non-interactive path is: the sweep is the same either way, and nothing here decides anything.
+ */
+export interface CalibrationProgress {
+  repeatStarted(run: { model: string; caseId: string; repeat: number }): void;
+  repeatFinished(observation: CalibrationRepeatObservation): void;
+}
+
 interface CalibrationOptions {
   /** Model specs to compare, in the order they should be reported. */
   readonly models: readonly string[];
@@ -25,6 +34,7 @@ interface CalibrationOptions {
   /** The static shortlist's pick, so the report can corroborate or contradict it. */
   readonly staticPick: string | null;
   readonly deps: CalibrationRunDependencies;
+  readonly progress?: CalibrationProgress;
 }
 
 interface CalibrationResult {
@@ -53,11 +63,13 @@ export async function runCalibration(options: CalibrationOptions): Promise<Calib
   for (const modelSpec of options.models) {
     for (const one of options.goldenSet.cases) {
       for (let repeat = 1; repeat <= options.repeats; repeat += 1) {
+        options.progress?.repeatStarted({ model: modelSpec, caseId: one.id, repeat });
         const observation = await runCalibrationRepeat(
           { case: one, modelSpec, repeat },
           options.deps,
         );
         observations.push(observation);
+        options.progress?.repeatFinished(observation);
         // The numbers are in the ledger by now, so the tree itself is no longer evidence.
         await rm(observation.workspace, { recursive: true, force: true });
       }

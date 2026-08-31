@@ -106,6 +106,7 @@ import { costOfTask, type TaskCost } from "./select/task-cost.ts";
 import { type RoutingDecision, routeModel } from "./select/ucb.ts";
 import { createSandbox, defaultShellAllowlist } from "./tools/sandbox.ts";
 import { createWorkspaceTools } from "./tools/workspace-tools.ts";
+import { startCalibrateInterface } from "./tui/calibrate-interface.ts";
 import { describeEvidence, type EvidenceSummary } from "./tui/evidence-panel.ts";
 import { resolveKeyBindings } from "./tui/key-bindings.ts";
 import { evidenceLocation, type OpenCommand, openEnvironment } from "./tui/open-path.ts";
@@ -1197,12 +1198,43 @@ async function calibrate(options: CalibrateCommand): Promise<number> {
       `${options.repeats} repeat(s) each\n`,
   );
 
+  // A sweep is the longest thing this tool does and had no screen at all: the 08-23 run was
+  // three hours watched through tail -f on a log. Off a terminal this is silent and the piped
+  // output is what it always was.
+  const screen = startCalibrateInterface({
+    isTty: process.stdout.isTTY === true && process.stdin.isTTY === true,
+    interactive: settings.interface.tui,
+    clock,
+    theme: resolveTheme({
+      mode: settings.interface.color,
+      term: process.env.TERM,
+      noColorSet: process.env.NO_COLOR !== undefined,
+      isTty: process.stdout.isTTY === true,
+      palette: settings.interface.theme,
+    }),
+  });
+  screen.planned({
+    models: runSet,
+    cases: goldenSet.cases.length,
+    repeats: options.repeats,
+    goldenSetVersion: goldenSet.version,
+    backend: localBackend?.url ?? null,
+  });
+
   try {
     const result = await runCalibration({
       models: runSet,
       repeats: options.repeats,
       goldenSet,
       staticPick,
+      progress: {
+        repeatStarted: (run) => {
+          screen.repeatStarted(run);
+        },
+        repeatFinished: (observation) => {
+          screen.repeatFinished(observation);
+        },
+      },
       deps: {
         evidence,
         clock,
@@ -1220,6 +1252,11 @@ async function calibrate(options: CalibrateCommand): Promise<number> {
         abortSignal: new AbortController().signal,
       },
     });
+
+    // The screen comes down before the report is written, so the report lands in the
+    // scrollback rather than inside a frame being redrawn around it.
+    screen.settled(result.pick.model);
+    await screen.stop();
 
     const directory = (await writeBundle(evidence, options.bundleDirectory, clock)).directory;
     for (const line of renderCalibrationReport({
@@ -1243,6 +1280,7 @@ async function calibrate(options: CalibrateCommand): Promise<number> {
     });
     return result.pick.model === null ? 1 : 0;
   } finally {
+    await screen.stop();
     await rm(scratchRoot, { recursive: true, force: true });
   }
 }
