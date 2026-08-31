@@ -69,19 +69,27 @@ Two of those numbers are shapes rather than gaps:
   mean adding a renderer dependency to assert on pixels.
 - **`src/tools` at 78%** is dominated by `search-tool.ts` at 8.3% and `shell-tool.ts` at 21.1%.
 
-### Debt: `src/tools/search-tool.ts` and `shell-tool.ts` are thinly covered
+### Closed on 2026-08-31: the three thinly covered tool files
 
-8.3% and 21.1%. Both are tool implementations behind the chokepoint, which is at 98.3%, so what
-is untested is the tool bodies rather than the path that records and gates them. `search-tool`
-carries the ReDoS guard, and `src/tools/regex-safety.ts` (the guard itself) is separately
-tested at length, so the untested part is the search around it. Worth its own change, not this
-one.
+`search-tool.ts` 8.2 to 89.8, `shell-tool.ts` 78.9 to 100, `file-set-tool.ts` 57.1 to 85.7.
+`shell-tool.ts` had already moved off the 21.1% recorded above before this pass; the other two
+had not.
 
-### Debt: `src/gates/file-set-tool.ts` at 57.1%
+What the tests exercise is the tool bodies, since the chokepoint in front of them was already
+at 98.3%. For `search-tool` that is the walk: which directories it descends into, the NUL-byte
+rule that tells a binary file from a text one, the sandbox being asked about every descendant so
+a denied file is never opened, where it stops on the result limit, the 8000-character line cap,
+and the three ways a pattern can be refused. For `shell-tool` it is what a run reports and
+carries as a fact: the exit code the command chose, each stream kept separately, and a killed
+run named as killed rather than left to read as an ordinary failure. For `file-set-tool` it is
+the wrapper rather than the ordering: what a caller is told, what reaches the chain, and the
+second declaration, which is the case a planner actually hits.
 
-The tool the planner declares its file set through. Invariant 12 depends on the declaration
-reaching the ledger before the edits, and that ordering is tested at the gate level; the tool
-wrapper around it is not.
+One of those tests was wrong on the way in and is worth recording. The binary-file fixture
+carried a literal NUL byte pasted invisibly into the source, so the test passed for a reason its
+own text did not show, and `grep` had been treating the whole file as binary. It writes the NUL
+from its code point now, with a companion case asserting that a text file is read whatever its
+extension, since the rule is the byte and not the name.
 
 ## Documentation pointers
 
