@@ -59,6 +59,7 @@ describe("evidence session", () => {
       type: "tool-call",
       actor: "harness",
       provenance: ["model"],
+      // nosemgrep: generic.secrets.security.detected-github-token.detected-github-token - the input the write-time scrub is demonstrated on.
       payload: { output: "GITHUB_TOKEN=ghp_0123456789abcdefghijklmnopqrstuvwxyz" },
     });
 

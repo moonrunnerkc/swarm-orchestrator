@@ -1,0 +1,25 @@
+# What the weekly scan is told not to read, and why.
+#
+# The scan exists to answer "did the world change under a tree nobody touched". It stopped
+# answering that: it filed the same 21 findings every Monday, and an issue that arrives every
+# week saying the same known thing is one people learn to close unread. That is the failure
+# mode this project names about gates, arriving in its own security process.
+#
+# Only two kinds of path are here, and both are data rather than source. Everything in real
+# source is handled at the line that carries it, with a `nosemgrep` naming the one rule and the
+# reason, so a different rule firing on the same line is still a finding.
+
+# Semgrep replaces its own defaults as soon as this file exists, so the defaults are restated.
+:include .gitignore
+node_modules/
+.git/
+
+# A fuzz corpus for the secret scrubber. Every file in it is a credential-shaped string by
+# construction: that is what a scrubber's corpus is. A secret scanner finding them is the
+# scanner working, and the finding says nothing about this repository.
+fuzz/corpus/scrub/
+
+# Captured output of runs that exercised the scrubber, kept as evidence of what those runs
+# showed. The credential-shaped strings in them are the inputs the scrub was demonstrated on,
+# and rewriting a captured log to quiet a scanner would falsify the record it exists to be.
+docs/evidence/*/shakedown/logs/

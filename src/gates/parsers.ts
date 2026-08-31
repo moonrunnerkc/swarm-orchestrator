@@ -208,6 +208,7 @@ interface TestCounters {
 
 /** Both markers node uses for its end-of-run counters, plus plain TAP's. */
 function counterPattern(name: string): RegExp {
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp - name is one of the counter names declared above, never input.
   return new RegExp(`^[#\u2139]\\s+${name}\\s+(\\d+)\\s*$`, "m");
 }
 

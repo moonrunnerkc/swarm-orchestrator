@@ -60,6 +60,9 @@ export function createSearchTool(sandbox: Sandbox): ToolDefinition {
 
       let pattern: RegExp;
       try {
+        // Deliberately a caller pattern, and the reason src/tools/regex-safety.ts exists: one
+        // that can backtrack is refused before it reaches here, which is what this rule points at.
+        // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
         pattern = new RegExp(input.pattern);
       } catch (cause) {
         throw new Error(`"${input.pattern}" is not a valid regular expression: ${String(cause)}`);

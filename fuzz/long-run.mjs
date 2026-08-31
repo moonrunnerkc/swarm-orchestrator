@@ -67,6 +67,7 @@ function readTotals(output) {
   const lines = output.split("\n").filter((line) => /^#\d+\s+(NEW|REDUCE|DONE|pulse)/.test(line));
   const last = lines.at(-1) ?? "";
   const grab = (key) => {
+    // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp - key comes from this file, over a summary line this file wrote.
     const match = last.match(new RegExp(`${key}: (\\d+)`));
     return match === null ? null : Number(match[1]);
   };

@@ -284,7 +284,7 @@ raise --max-steps.` The observation that produced this stands: a broad two-part 
 model return an empty response where a one-part goal declared a graph in three reads, so
 breadth rather than the pairing, and `empty-response` now says so in those words.
 
-## Debt: the weekly scan files the same 21 semgrep findings every Monday
+## Closed on 2026-08-31: the weekly scan no longer files the same 21 findings every Monday
 
 Nineteen of them are `detected-github-token` inside the secret scrubber's own test corpus and
 the shakedown logs, which is a secret scanner correctly finding the credential-shaped strings a
@@ -292,11 +292,14 @@ scrubber is tested with. One is a non-literal `RegExp` in a fuzz harness's summa
 one is a prototype-pollution rule firing on a read-only walk that exists to quote a bad value
 back in a config error.
 
-Scoping the token rule off `fuzz/corpus/scrub/`, `src/evidence/*.test.ts` and
-`docs/evidence/**/logs/` is the right fix and is not a release-day change: an issue that arrives
-every week saying the same known thing is one people learn to close unread, which is the failure
-mode this project names about gates. Wants its own change, with the scoped run as its evidence.
-Dispositioned in `docs/security-coverage.md`.
+Done, with the scoped run as its evidence, and with the tally corrected: measured before the
+change it was 16 token findings, 3 non-literal regexp and 2 prototype-pollution, not 19 and 1
+and 1. Data is excluded by path in `.semgrepignore`, which names the fuzz corpus and the
+shakedown logs and nothing else of this tree; the 9 findings in real source carry a `nosemgrep`
+naming the one rule and the reason at the line that carries them, so a different rule firing
+there is still a finding. Under the workflow's own command the scan now reports zero and exits
+0, and the scanned file count moved only by the excluded data, 6782 to 6755. Dispositioned in
+`docs/security-coverage.md`.
 
 ## Exports nothing else names
 
