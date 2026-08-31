@@ -248,19 +248,36 @@ screen, so the outcome is visible where it happened. The rest, the detail lines,
 the end. Doing it properly means the transcript carrying them rather than the buffer, which is
 more of the same work rather than a different kind.
 
-## Debt: the evidence column is still an unindexed ledger dump
+## Closed on 2026-08-31: the evidence column has an index
 
 The claims column is a product and the header, gates and diff above it are now readable. The
 evidence column underneath is every non-claim record as a card, in chain order, with a
 `sha256:` line under each. For this session that is 119 records; for the 2026-08-23 calibration
 it is 3,716 cards in an 11.6 MB file with no search box.
 
-Two things would fix most of it and neither is done: grouping by turn with the group collapsed
-by default, and moving the per-record digest into the expanded payload, where the person who
-wants it is already looking. A third is a question rather than a task: `model-call` payloads are
-the majority of the bytes, because the recorder writes the system prompt and the whole growing
-transcript on every step. Changing what is recorded touches the evidence contract, so it is
-named here rather than trimmed as a side effect of a page layout.
+Both of the two things named here are done, and a third was added. Records are grouped by turn
+and every group is folded by default, with anything that predates the first turn in a group of
+its own rather than filed under a heading it came before. The per-record digest has moved into
+the expanded payload, where the reviewer resolving a claim through it is already looking. And
+the column now opens with an index: how many records there are, how many of each type, a button
+per type, and a search box over type, actor, digest and summary.
+
+It is a rendering change and nothing else. No record changed, nothing was added to the ledger,
+and the four bundles in `docs/evidence/` plus a session bundle from `~/.swarm` were verified
+after it with their own shipped verifier: every check passed on all four. Re-rendering the
+08-23 calibration bundle through the new column produced 3,716 records under one folded group
+with ten type buttons.
+
+One cost, stated rather than buried: the page grew from 11.59 MB to 12.19 MB on that bundle,
+because each record now carries what the filter matches on as an attribute. That is deliberate.
+What the filter matches on is decided where the record is rendered rather than reconstructed in
+the browser, since a script that decided what a record said would be a second account of the
+ledger.
+
+The third item is still a question rather than a task, and is unchanged: `model-call` payloads
+are the majority of the bytes, because the recorder writes the system prompt and the whole
+growing transcript on every step. Changing what is recorded touches the evidence contract, so it
+is named here rather than trimmed as a side effect of a page layout.
 
 ## Closed on 2026-08-25: a parallel run swept up the branches it created
 

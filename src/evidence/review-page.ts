@@ -33,10 +33,12 @@ export function renderReviewPage(manifest: BundleManifest, dag: EvidenceDag): st
       : dag.claims.map((claim) => renderClaim(claim, evidenceByDigest)).join("\n"),
     "</section>",
     '<section class="evidence"><h2>Evidence</h2>',
-    dag.evidence.map((node) => renderEvidence(node)).join("\n"),
+    renderEvidenceIndex(dag),
+    renderEvidenceGroups(dag),
     "</section>",
     "</main>",
     renderFooter(manifest, evidenceBySequence.size),
+    `<script>${evidenceFilterScript}</script>`,
     "</body>",
     "</html>",
   ].join("\n");
@@ -316,19 +318,108 @@ function renderClaim(claim: ClaimNode, evidenceByDigest: Map<string, EvidenceNod
   ].join("");
 }
 
-function renderEvidence(node: EvidenceNode): string {
+/**
+ * One turn's worth of records, in chain order. A session writes a `session-started` per turn, so
+ * that record is the boundary, and anything before the first one is a group of its own rather
+ * than folded into the first turn, which would put records under a heading they predate.
+ */
+interface EvidenceGroup {
+  readonly label: string;
+  readonly nodes: readonly EvidenceNode[];
+}
+
+function groupByTurn(dag: EvidenceDag): readonly EvidenceGroup[] {
+  const groups: { label: string; nodes: EvidenceNode[] }[] = [];
+  let turn = 0;
+
+  for (const node of dag.evidence) {
+    if (node.type === "session-started" || groups.length === 0) {
+      turn += node.type === "session-started" ? 1 : 0;
+      groups.push({
+        label: turn === 0 ? "before the first turn" : `turn ${turn}`,
+        nodes: [],
+      });
+    }
+    groups[groups.length - 1]?.nodes.push(node);
+  }
+  return groups;
+}
+
+/**
+ * What is in the column, before the column. A bundle of a calibration sweep is 3,716 cards in
+ * one file, and a reader who wants the gate runs among them had no way to find out how many
+ * there were, let alone reach them. The counts are the index; the buttons filter what is shown.
+ */
+function renderEvidenceIndex(dag: EvidenceDag): string {
+  const counts = new Map<string, number>();
+  for (const node of dag.evidence) {
+    counts.set(node.type, (counts.get(node.type) ?? 0) + 1);
+  }
+  const byCount = [...counts.entries()].sort(
+    (left, right) => right[1] - left[1] || (left[0] < right[0] ? -1 : 1),
+  );
+
   return [
-    `<article class="record" id="record-${node.sequence}">`,
+    '<div class="evidence-index">',
+    `<p class="index-total">${dag.evidence.length} record(s), by type:</p>`,
+    '<p class="index-types">',
+    `<button type="button" class="type-filter is-on" data-type="">all</button>`,
+    ...byCount.map(
+      ([type, count]) =>
+        `<button type="button" class="type-filter" data-type="${escapeHtml(type)}">` +
+        `${escapeHtml(type)} <span class="count">${count}</span></button>`,
+    ),
+    "</p>",
+    '<p class="index-search">',
+    '<label for="evidence-search">find</label>',
+    '<input id="evidence-search" type="search" placeholder="type, actor, digest, or summary text">',
+    '<span id="evidence-shown"></span>',
+    "</p>",
+    "</div>",
+  ].join("");
+}
+
+/**
+ * Groups collapsed by default. A reader opening a bundle wants the claims and the gates; the
+ * chain is what they come to second, and 3,716 cards expanded is a page nobody scrolls.
+ */
+function renderEvidenceGroups(dag: EvidenceDag): string {
+  return groupByTurn(dag)
+    .map((group, index) =>
+      [
+        `<details class="turn-group" data-group="${index}">`,
+        `<summary>${escapeHtml(group.label)} <span class="count">${group.nodes.length} record(s)</span></summary>`,
+        group.nodes.map((node) => renderEvidence(node)).join("\n"),
+        "</details>",
+      ].join(""),
+    )
+    .join("\n");
+}
+
+/**
+ * The digest moves inside the payload disclosure. It is the thing a reviewer resolves a claim
+ * through, and the reviewer doing that is already opening the payload; on the card it was a
+ * 71-character line under every one of thousands of records, which is most of what made the
+ * column unreadable.
+ *
+ * The searchable text is put in one attribute rather than reconstructed by the script, so what
+ * the filter matches on is decided here, where the record is, rather than in the browser.
+ */
+function renderEvidence(node: EvidenceNode): string {
+  const searchable = [node.type, node.actor, node.digest, node.summary].join(" ").toLowerCase();
+  return [
+    `<article class="record" id="record-${node.sequence}" data-type="${escapeHtml(node.type)}"`,
+    ` data-find="${escapeHtml(searchable)}">`,
     `<p class="record-head"><span class="sequence">${node.sequence}</span>`,
     `<span class="type">${escapeHtml(node.type)}</span>`,
     `<span class="actor">${escapeHtml(node.actor)}</span>`,
     `<span class="time">${isoTime(node.timestamp)}</span></p>`,
     `<p class="summary">${escapeHtml(node.summary)}</p>`,
     `<p class="tags">provenance: ${node.provenance.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join(" ") || "none"}</p>`,
-    `<p class="digest">${escapeHtml(node.digest)}</p>`,
     node.payload === null
-      ? '<p class="detail">the payload blob is absent from this bundle</p>'
-      : `<details><summary>payload</summary><pre>${escapeHtml(prettyJson(node.payload))}</pre></details>`,
+      ? `<p class="detail">the payload blob is absent from this bundle</p><p class="digest">${escapeHtml(node.digest)}</p>`
+      : `<details><summary>payload</summary><p class="digest">${escapeHtml(node.digest)}</p>` +
+        `<pre>${escapeHtml(prettyJson(node.payload))}</pre></details>`,
     "</article>",
   ].join("");
 }
@@ -368,6 +459,59 @@ function escapeHtml(text: string): string {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
+
+/**
+ * The index made to work, in the page rather than in a server. Everything it needs was rendered
+ * into attributes above, so it filters what is already there and computes nothing about the
+ * records: a script that decided what a record said would be a second account of the ledger.
+ *
+ * Plain DOM and no dependency, for the same reason the page is one file: a review page that
+ * needs something fetched is a review page that stops working the day it is archived.
+ */
+const evidenceFilterScript = `
+(function () {
+  var records = Array.prototype.slice.call(document.querySelectorAll(".record"));
+  var groups = Array.prototype.slice.call(document.querySelectorAll(".turn-group"));
+  var buttons = Array.prototype.slice.call(document.querySelectorAll(".type-filter"));
+  var search = document.getElementById("evidence-search");
+  var shown = document.getElementById("evidence-shown");
+  var type = "";
+
+  function apply() {
+    var text = (search && search.value ? search.value : "").toLowerCase().trim();
+    var visible = 0;
+    records.forEach(function (record) {
+      var matchesType = type === "" || record.getAttribute("data-type") === type;
+      var matchesText = text === "" || (record.getAttribute("data-find") || "").indexOf(text) !== -1;
+      var on = matchesType && matchesText;
+      record.hidden = !on;
+      if (on) visible += 1;
+    });
+    groups.forEach(function (group) {
+      var any = group.querySelector(".record:not([hidden])") !== null;
+      group.hidden = !any;
+      // Opened only while something is being looked for: a filter whose results stay folded
+      // away is a filter that reports a number and shows nothing.
+      if (type !== "" || text !== "") group.open = any;
+    });
+    if (shown) {
+      shown.textContent =
+        type === "" && text === "" ? "" : visible + " of " + records.length + " shown";
+    }
+  }
+
+  buttons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      type = button.getAttribute("data-type") || "";
+      buttons.forEach(function (other) {
+        other.classList.toggle("is-on", other === button);
+      });
+      apply();
+    });
+  });
+  if (search) search.addEventListener("input", apply);
+})();
+`;
 
 const styles = `
 .what { margin: 0 0 1.2rem; }

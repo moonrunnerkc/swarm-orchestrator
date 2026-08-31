@@ -232,3 +232,74 @@ describe("a bundle that covers several turns of a session", () => {
     expect(html).not.toContain("turns");
   });
 });
+
+describe("the evidence column's index", () => {
+  it("counts the records by type, most common first", () => {
+    const page = renderReviewPage(
+      manifest,
+      dagOf([node(1, "tool-call", null), node(2, "tool-call", null), node(3, "gate-run", null)]),
+    );
+
+    expect(page).toContain("3 record(s), by type:");
+    expect(page.indexOf('data-type="tool-call"')).toBeLessThan(
+      page.indexOf('data-type="gate-run"'),
+    );
+  });
+
+  it("groups records by turn, and folds every group by default", () => {
+    // A calibration bundle is 3,716 cards in one file. Expanded, that is a page nobody scrolls.
+    const page = renderReviewPage(
+      manifest,
+      dagOf([
+        node(1, "session-started", null),
+        node(2, "tool-call", null),
+        node(3, "session-started", null),
+        node(4, "tool-call", null),
+      ]),
+    );
+
+    expect(page).toContain("turn 1");
+    expect(page).toContain("turn 2");
+    expect(page).not.toContain('<details class="turn-group" data-group="0" open');
+  });
+
+  it("puts records that predate the first turn in a group of their own", () => {
+    const page = renderReviewPage(
+      manifest,
+      dagOf([node(1, "local-endpoint", null), node(2, "session-started", null)]),
+    );
+
+    expect(page).toContain("before the first turn");
+    expect(page).toContain("turn 1");
+  });
+
+  it("moves the digest inside the payload, where the reviewer resolving it is already looking", () => {
+    const page = renderReviewPage(manifest, dagOf([node(1, "gate-run", { a: 1 })]));
+
+    expect(page.indexOf('class="digest">sha256:')).toBeGreaterThan(
+      page.indexOf("<summary>payload</summary>"),
+    );
+  });
+
+  it("keeps the digest visible where there is no payload to put it in", () => {
+    const page = renderReviewPage(manifest, dagOf([node(1, "gate-run", null)]));
+
+    expect(page).toContain("the payload blob is absent from this bundle");
+    expect(page).toContain('class="digest">sha256:');
+  });
+
+  it("carries what the filter matches on, decided here rather than in the browser", () => {
+    const page = renderReviewPage(manifest, dagOf([node(1, "gate-run", null)]));
+
+    expect(page).toMatch(/data-find="[^"]*gate-run[^"]*harness[^"]*"/);
+  });
+
+  it("ships the filter as part of the page, since a bundle has no server behind it", () => {
+    const page = renderReviewPage(manifest, dagOf([node(1, "gate-run", null)]));
+
+    expect(page).toContain("<script>");
+    expect(page).toContain("evidence-search");
+    // Self-contained: nothing fetched, so the page still works the day it is archived.
+    expect(page).not.toContain("<script src=");
+  });
+});
