@@ -9,6 +9,7 @@ import {
   observationFromJson,
 } from "./gate-definition.ts";
 import { inspectionParser } from "./parsers.ts";
+import { assignmentsIn, bindingsIn, concatenatedLiteral } from "./value-flow.ts";
 import { countAddedLines } from "./workspace-changes.ts";
 
 /**
@@ -222,6 +223,34 @@ export const fileSetGate: GateDefinition = {
  * name. Where the block parses as JSON the detector walks it structurally, which is the same
  * traversal the write-time scrub runs.
  */
+/**
+ * The added lines as the values they build, for the case where a credential is written in
+ * pieces. A detector reading text sees two short strings and a plus sign; substituting the
+ * pieces back in produces the value the change actually creates, and that value is handed to
+ * the same detector, under the name the change gave it.
+ *
+ * No second detector and no new threshold: what decides is the one that already decides, asked
+ * about a value it would have seen had the credential been written whole. So the names it
+ * knows, the value shapes it knows, and the metric exemptions it honours all carry over
+ * unchanged, and a rejoin of two ordinary numbers under an ordinary name stays as quiet here
+ * as it does anywhere else (invariant 9).
+ *
+ * What this does not reach is a secret split and never rejoined. There is no concatenation to
+ * read there, and guessing that two adjacent short values are one value is the false positive
+ * build-guide section 7.1 declines. That half stays a residual and stays named.
+ */
+function rejoinedValues(block: string): readonly string[] {
+  const bindings = bindingsIn(block);
+  const rebuilt: string[] = [];
+  for (const assignment of assignmentsIn(block)) {
+    const joined = concatenatedLiteral(assignment.expression, bindings);
+    if (joined !== null) {
+      rebuilt.push(`${assignment.name} = ${JSON.stringify(joined)}`);
+    }
+  }
+  return rebuilt;
+}
+
 export const secretScanGate: GateDefinition = {
   id: "secret-scan",
   title: "no credential material in the change",
@@ -241,15 +270,23 @@ export const secretScanGate: GateDefinition = {
             }
           }
         }
-        const acrossLines = findBlockingSecrets(
-          file.addedLines.map((added) => added.text).join("\n"),
-        ).filter((label) => !attributed.has(label));
+        const block = file.addedLines.map((added) => added.text).join("\n");
+        const acrossLines = findBlockingSecrets(block).filter((label) => !attributed.has(label));
         if (acrossLines.length > 0) {
           hits.push({
             path: file.path,
             line: file.addedLines[0]?.line ?? 0,
             labels: acrossLines,
           });
+        }
+        for (const rejoined of rejoinedValues(block)) {
+          const labels = findBlockingSecrets(rejoined).filter((label) => !attributed.has(label));
+          if (labels.length > 0) {
+            hits.push({ path: file.path, line: file.addedLines[0]?.line ?? 0, labels });
+            for (const label of labels) {
+              attributed.add(label);
+            }
+          }
         }
       }
       return observationFromJson(
