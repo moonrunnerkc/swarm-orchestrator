@@ -52,6 +52,8 @@ interface GateRun {
   readonly observation: GateObservation;
   /** What this gate's runner wrote to the report path it was given, or null for neither. */
   readonly coverageReport: string | null;
+  /** The TAP this gate's runner was told to write, or null where none was asked for. */
+  readonly testReport: string | null;
   /** The payload digest of this run's ledger record, which a claim may cite. */
   readonly record: string;
 }
@@ -69,6 +71,11 @@ export interface GateCycle {
    * Empty means nothing measured it, which the ratchet abstains on by name.
    */
   readonly coverageReports: readonly string[];
+  /**
+   * The TAP the runners wrote this cycle, which is the only place the collected count is read
+   * from. Empty abstains, for the same reason and by the same route.
+   */
+  readonly testReports: readonly string[];
 }
 
 export interface GateCycleDependencies {
@@ -120,7 +127,7 @@ export async function runGateCycle(
   const measures: Record<string, number> = {};
 
   for (const gate of gates) {
-    const { observation, coverageReport } = await observe(gate, context, deps);
+    const { observation, coverageReport, testReport } = await observe(gate, context, deps);
     const reading = gate.parse(observation);
     const blocking = gate.severity === "blocking";
 
@@ -162,6 +169,7 @@ export async function runGateCycle(
       measures: reading.measures,
       observation,
       coverageReport,
+      testReport,
       record: recorded.record.payloadDigest,
     };
     runs.push(run);
@@ -190,12 +198,16 @@ export async function runGateCycle(
     coverageReports: runs
       .map((run) => run.coverageReport)
       .filter((report): report is string => report !== null),
+    testReports: runs
+      .map((run) => run.testReport)
+      .filter((report): report is string => report !== null),
   };
 }
 
 interface GateOutput {
   readonly observation: GateObservation;
   readonly coverageReport: string | null;
+  readonly testReport: string | null;
 }
 
 /**
@@ -209,14 +221,23 @@ async function observe(
   deps: GateCycleDependencies,
 ): Promise<GateOutput> {
   if (gate.source.kind === "inspection") {
-    return { observation: await gate.source.inspect(context), coverageReport: null };
+    return {
+      observation: await gate.source.inspect(context),
+      coverageReport: null,
+      testReport: null,
+    };
   }
 
-  const artifact = gate.source.coverageArtifact;
   const store = deps.coverageArtifacts;
+  const artifact = gate.source.coverageArtifact;
+  const outcomes = gate.source.testOutcomeArtifact;
   const collecting = artifact !== undefined && store !== undefined;
+  const counting = outcomes !== undefined && store !== undefined;
   if (collecting) {
     await store.clear(artifact);
+  }
+  if (counting) {
+    await store.clear(outcomes);
   }
 
   // A vector the harness built is spawned as one; a command the project declared is read by a
@@ -233,6 +254,7 @@ async function observe(
   return {
     observation,
     coverageReport: collecting ? await store.read(artifact) : null,
+    testReport: counting ? await store.read(outcomes) : null,
   };
 }
 

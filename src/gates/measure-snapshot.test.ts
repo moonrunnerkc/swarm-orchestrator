@@ -32,7 +32,7 @@ describe("changed-line coverage", () => {
       changes: await probe.changes(),
       probe,
       trackedTestFiles: [],
-      gateMeasures: {},
+      testReports: [],
       coverageReports: [],
     });
 
@@ -48,7 +48,7 @@ describe("changed-line coverage", () => {
       probe,
       workspaceRoot: "/build",
       trackedTestFiles: [],
-      gateMeasures: {},
+      testReports: [],
       coverageReports: [
         [
           "SF:/build/src/math.ts",
@@ -77,7 +77,7 @@ describe("changed-line coverage", () => {
       probe,
       workspaceRoot: "/build",
       trackedTestFiles: [],
-      gateMeasures: {},
+      testReports: [],
       // Structurally complete, and it lists only lines it can say were reached. Reading misses
       // rather than hits made this 4/4: what a report leaves out, it did not measure.
       coverageReports: [["SF:src/math.ts", "DA:2,1", "LF:1", "LH:1", "end_of_record"].join("\n")],
@@ -102,7 +102,7 @@ describe("changed-line coverage", () => {
       probe,
       workspaceRoot: "/workspace",
       trackedTestFiles: [],
-      gateMeasures: {},
+      testReports: [],
       coverageReports: [
         [
           "SF:src/math.ts",
@@ -141,7 +141,7 @@ describe("changed-line coverage", () => {
       probe,
       workspaceRoot: "/workspace",
       trackedTestFiles: [],
-      gateMeasures: {},
+      testReports: [],
       coverageReports: [
         [
           "SF:clamp.mjs",
@@ -170,7 +170,7 @@ describe("changed-line coverage", () => {
       probe,
       workspaceRoot: "/workspace",
       trackedTestFiles: [],
-      gateMeasures: {},
+      testReports: [],
       coverageReports: [
         [
           "SF:vendor/math.ts",
@@ -203,7 +203,7 @@ describe("changed-line coverage", () => {
       changes: await probe.changes(),
       probe,
       trackedTestFiles: [],
-      gateMeasures: {},
+      testReports: [],
       coverageReports: ["SF:src/elsewhere.ts\nDA:1,0\nLF:1\nLH:0\nend_of_record"],
     });
 

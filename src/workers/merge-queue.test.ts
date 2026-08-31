@@ -87,7 +87,10 @@ function alphaWith(extra: string): string {
 }
 
 const gateOverrides = {
-  tests: "node --test --test-reporter=tap",
+  // No reporter of its own: the harness adds the ones it needs, and the collected count comes
+  // from the TAP that run writes to a path under the session store. A command carrying a
+  // reporter flag is one the harness cannot vouch for, so it would be asked for no artifact.
+  tests: "node --test",
   lint: "node --check src/alpha.js",
   typecheck: "node --check src/beta.js",
   format: "node --check src/suite.test.js",

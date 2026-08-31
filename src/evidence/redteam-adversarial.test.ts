@@ -1055,7 +1055,7 @@ describe("11. mint a coverage number the harness never measured", () => {
       changes: await workspace.changes(),
       probe: workspace,
       trackedTestFiles: [],
-      gateMeasures: {},
+      testReports: [],
       // A complete, well-formed report claiming everything is covered. It is not a report the
       // runner wrote, so it is not a report: the arm abstains and says so by name.
       coverageReports: [],
@@ -1285,7 +1285,7 @@ describe("16. hand the coverage arm an artifact that is not a measurement", () =
         changes: await changed.changes(),
         probe: changed,
         trackedTestFiles: [],
-        gateMeasures: {},
+        testReports: [],
         coverageReports: [report],
       });
 
@@ -1306,7 +1306,7 @@ describe("16. hand the coverage arm an artifact that is not a measurement", () =
       probe: changed,
       workspaceRoot: "/workspace",
       trackedTestFiles: [],
-      gateMeasures: {},
+      testReports: [],
       coverageReports: [
         [
           "TN:padded",
@@ -1339,7 +1339,7 @@ describe("16. hand the coverage arm an artifact that is not a measurement", () =
         probe: changed,
         workspaceRoot: "/workspace",
         trackedTestFiles: [],
-        gateMeasures: {},
+        testReports: [],
         // Every line hit, every total agreeing, and the wrong file. A shared basename is not a
         // shared file, and neither is a shared suffix.
         coverageReports: [
@@ -1364,7 +1364,7 @@ describe("16. hand the coverage arm an artifact that is not a measurement", () =
       probe: changed,
       workspaceRoot: "/workspace",
       trackedTestFiles: [],
-      gateMeasures: {},
+      testReports: [],
       coverageReports: [genuineLcov],
     });
 

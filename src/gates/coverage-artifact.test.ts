@@ -6,8 +6,8 @@ import { createTestClock } from "../core/test-doubles.ts";
 import { openEvidenceSession } from "../evidence/session.ts";
 import {
   coverageArtifactPath,
-  coverageReportingCommand,
   createFileCoverageArtifactStore,
+  harnessReportingCommand,
 } from "./coverage-artifact.ts";
 import { assembleGates } from "./default-gates.ts";
 import { runGateCycle } from "./gate-runner.ts";
@@ -26,20 +26,38 @@ import { createMemoryWorkspace } from "./test-doubles.ts";
 
 describe("the invocation a runner is asked to write a report with", () => {
   it("asks node's runner for lcov beside the output it already prints", () => {
-    const argv = coverageReportingCommand("node --test", "/session/coverage/tests.lcov");
+    const argv = harnessReportingCommand("node --test", {
+      coverage: "/session/coverage/tests.lcov",
+      testOutcomes: "/session/coverage/tests.tap",
+    });
 
     expect(argv).toContain("--experimental-test-coverage");
     expect(argv).toContain("--test-reporter=lcov");
     // The destination is one argument, spelled once, with nothing between here and the process
     // that could read it as anything else.
     expect(argv).toContain("--test-reporter-destination=/session/coverage/tests.lcov");
-    // The counters the ratchet reads still have to arrive on stdout, and naming any reporter
-    // replaces the default one.
+    // A person reading the gate detail still needs the run to have printed something, and
+    // naming any reporter replaces the default one.
     expect(argv).toContain("--test-reporter-destination=stdout");
   });
 
+  it("asks for the TAP the collected count is read from, at a path of its own", () => {
+    // Not stdout. A test printing its own counter lines reported 999 collected for a suite of
+    // one, because the counter reader takes the first match in a stream the tests share.
+    const argv = harnessReportingCommand("node --test", {
+      coverage: "/session/coverage/tests.lcov",
+      testOutcomes: "/session/coverage/tests.tap",
+    });
+
+    expect(argv).toContain("--test-reporter-destination=/session/coverage/tests.tap");
+    expect(argv?.filter((argument) => argument === "--test-reporter=tap")).toHaveLength(2);
+  });
+
   it("puts the flags in front of the file patterns, where node accepts them", () => {
-    const argv = coverageReportingCommand("node --test 'src/**/*.test.mjs'", "/c/tests.lcov");
+    const argv = harnessReportingCommand("node --test 'src/**/*.test.mjs'", {
+      coverage: "/c/tests.lcov",
+      testOutcomes: "/session/coverage/tests.tap",
+    });
 
     expect(argv?.indexOf("--experimental-test-coverage")).toBeLessThan(
       argv?.indexOf("src/**/*.test.mjs") ?? -1,
@@ -48,24 +66,56 @@ describe("the invocation a runner is asked to write a report with", () => {
 
   it("declines every command it cannot ask for a report, rather than guessing", () => {
     // Null leaves the arm abstaining by name. A guess would leave it reporting a number.
-    expect(coverageReportingCommand("vitest run", "/c/tests.lcov")).toBeNull();
-    expect(coverageReportingCommand(undefined, "/c/tests.lcov")).toBeNull();
-    expect(coverageReportingCommand("node --test && node other.mjs", "/c/tests.lcov")).toBeNull();
     expect(
-      coverageReportingCommand("node --test --test-reporter=spec", "/c/tests.lcov"),
+      harnessReportingCommand("vitest run", {
+        coverage: "/c/tests.lcov",
+        testOutcomes: "/session/coverage/tests.tap",
+      }),
     ).toBeNull();
     expect(
-      coverageReportingCommand("node --test --experimental-test-coverage", "/c/tests.lcov"),
+      harnessReportingCommand(undefined, {
+        coverage: "/c/tests.lcov",
+        testOutcomes: "/session/coverage/tests.tap",
+      }),
+    ).toBeNull();
+    expect(
+      harnessReportingCommand("node --test && node other.mjs", {
+        coverage: "/c/tests.lcov",
+        testOutcomes: "/session/coverage/tests.tap",
+      }),
+    ).toBeNull();
+    expect(
+      harnessReportingCommand("node --test --test-reporter=spec", {
+        coverage: "/c/tests.lcov",
+        testOutcomes: "/session/coverage/tests.tap",
+      }),
+    ).toBeNull();
+    expect(
+      harnessReportingCommand("node --test --experimental-test-coverage", {
+        coverage: "/c/tests.lcov",
+        testOutcomes: "/session/coverage/tests.tap",
+      }),
     ).toBeNull();
     // A flag quoted into the position a file pattern goes: there is no shell to unquote it
     // back, and the recognizer reads it as the flag it is rather than as a path.
     expect(
-      coverageReportingCommand("node --test '--test-isolation=none'", "/c/tests.lcov"),
+      harnessReportingCommand("node --test '--test-isolation=none'", {
+        coverage: "/c/tests.lcov",
+        testOutcomes: "/session/coverage/tests.tap",
+      }),
     ).toBeNull();
     expect(
-      coverageReportingCommand("node --test '--require=./hook.cjs'", "/c/tests.lcov"),
+      harnessReportingCommand("node --test '--require=./hook.cjs'", {
+        coverage: "/c/tests.lcov",
+        testOutcomes: "/session/coverage/tests.tap",
+      }),
     ).toBeNull();
-    expect(coverageReportingCommand("node --test '--env-file=.env'", "/c/tests.lcov")).toBeNull();
+    expect(
+      harnessReportingCommand("node --test '--env-file=.env'", {
+        coverage: "/c/tests.lcov",
+        testOutcomes: "/session/coverage/tests.tap",
+      }),
+    ).toBeNull();
   });
 
   /**
@@ -75,7 +125,10 @@ describe("the invocation a runner is asked to write a report with", () => {
    * ratchet renders the abstention as not measured. Same commit, same reason, every spelling.
    */
   it("abstains on a command that declares an isolation setting of its own", () => {
-    const controlled = coverageReportingCommand("node --test", "/c/tests.lcov");
+    const controlled = harnessReportingCommand("node --test", {
+      coverage: "/c/tests.lcov",
+      testOutcomes: "/session/coverage/tests.tap",
+    });
 
     expect(controlled).toContain(processIsolation);
     for (const body of [
@@ -84,7 +137,13 @@ describe("the invocation a runner is asked to write a report with", () => {
       `node --test --test-isolation=\${MODE}`,
       "node --test --test-isolation=process",
     ]) {
-      expect({ body, command: coverageReportingCommand(body, "/c/tests.lcov") }).toEqual({
+      expect({
+        body,
+        command: harnessReportingCommand(body, {
+          coverage: "/c/tests.lcov",
+          testOutcomes: "/session/coverage/tests.tap",
+        }),
+      }).toEqual({
         body,
         command: null,
       });
@@ -223,8 +282,8 @@ describe("coverage of changed lines comes from the artifact, never from what ran
         probe,
         workspaceRoot: workspace,
         trackedTestFiles: [],
-        gateMeasures: cycle.measures,
         coverageReports: cycle.coverageReports,
+        testReports: cycle.testReports,
       }),
     };
   }

@@ -6,6 +6,7 @@ import {
   inspectionParser,
   parseLineHits,
   parseTapOutcomes,
+  parseTapTotals,
   testOutputParser,
   vitestTestParser,
 } from "./parsers.ts";
@@ -320,5 +321,57 @@ describe("which tests a run attributed", () => {
         ["TAP version 13", "1..2", "ok 1 - later # SKIP", "not ok 2 - multiplies", ""].join("\n"),
       ),
     ).toEqual({ passed: [], failed: ["multiplies"] });
+  });
+});
+
+describe("parseTapTotals", () => {
+  const run = (points: readonly string[], plan: number) =>
+    ["TAP version 13", ...points, `1..${plan}`].join("\n");
+
+  it("counts the result points a run reported", () => {
+    expect(parseTapTotals(run(["ok 1 - a", "not ok 2 - b"], 2))).toEqual({
+      collected: 2,
+      skipped: 0,
+    });
+  });
+
+  it("counts a subtest, because deleting one is the move being held against", () => {
+    const text = run(["ok 1 - suite", "  ok 1 - inner", "  ok 2 - other"], 1);
+
+    expect(parseTapTotals(text)?.collected).toBe(3);
+  });
+
+  it("counts a skipped point as skipped", () => {
+    expect(parseTapTotals(run(["ok 1 - a", "ok 2 - b # SKIP nope"], 2))).toEqual({
+      collected: 2,
+      skipped: 1,
+    });
+  });
+
+  it("ignores what a test printed, which arrives as a comment", () => {
+    const text = [
+      "TAP version 13",
+      "# \\# tests 999",
+      "# ok 500 - a test that never ran",
+      "ok 1 - the only real one",
+      "1..1",
+      "# tests 1",
+    ].join("\n");
+
+    expect(parseTapTotals(text)).toEqual({ collected: 1, skipped: 0 });
+  });
+
+  it("refuses a document whose plan disagrees with its own top-level points", () => {
+    // Fail closed: a run that cannot account for itself measures nothing, and the ratchet
+    // abstains on a null rather than comparing a number nobody can stand behind.
+    expect(parseTapTotals(run(["ok 1 - a"], 7))).toBeNull();
+  });
+
+  it("refuses a document with no plan at all", () => {
+    expect(parseTapTotals("TAP version 13\nok 1 - a\n")).toBeNull();
+  });
+
+  it("refuses text that is not a TAP run", () => {
+    expect(parseTapTotals("Tests  4 passed (4)\n")).toBeNull();
   });
 });

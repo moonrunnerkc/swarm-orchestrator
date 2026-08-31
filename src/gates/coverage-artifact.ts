@@ -7,12 +7,15 @@ import {
 } from "./node-test-command.ts";
 
 /**
- * Where changed-line coverage comes from. Reading it out of a gate's stdout put the
+ * The reports the harness asks the runner to write for itself, and reads back itself.
+ *
+ * Both are here for one reason. Reading a measurement out of a gate's stdout puts the
  * measurement inside the surface being measured: a test that prints a coverage table, or a
- * stray console.log, minted a number nothing measured. So the runner writes a report of its
- * own to a path this harness named, under the session store that invariant 11 keeps outside
- * the workspace, and the harness reads that file. Nothing printed to stdout is read, and a
- * run that leaves no report is not measured rather than measured from prose.
+ * stray console.log, minted a number nothing measured, and a test printing four counter lines
+ * reported 999 tests collected for a suite of one. So the runner writes reports of its own to
+ * paths this harness named, under the session store that invariant 11 keeps outside the
+ * workspace, and the harness reads those files. Nothing printed to stdout is read, and a run
+ * that leaves no report is not measured rather than measured from prose.
  *
  * lcov rather than the runner's own printed table, because the table shares a stream with
  * whatever the tests wrote: node folds captured stdout into every reporter's output, so a
@@ -59,7 +62,20 @@ export function createFileCoverageArtifactStore(): CoverageArtifactStore {
  * one language in the tree.
  */
 export function coverageArtifactPath(directory: string, gateId: string): string {
-  return join(directory, `${gateId.replaceAll(/[^A-Za-z0-9._-]+/g, "-")}.lcov`);
+  return join(directory, `${artifactName(gateId)}.lcov`);
+}
+
+/**
+ * Where this gate's run writes the TAP the collected count is read from. Beside the lcov and
+ * keyed the same way, for the same reason: two test gates in a polyglot tree must not read
+ * each other's numbers.
+ */
+export function testOutcomeArtifactPath(directory: string, gateId: string): string {
+  return join(directory, `${artifactName(gateId)}.tap`);
+}
+
+function artifactName(gateId: string): string {
+  return gateId.replaceAll(/[^A-Za-z0-9._-]+/g, "-");
 }
 
 /**
@@ -71,24 +87,28 @@ export function coverageArtifactPath(directory: string, gateId: string): string 
  * itself. There is no quoting step, so there is nothing to be undone by a shell reading the
  * result, which is where the last two rounds of this went wrong.
  *
- * The stdout reporter is restated because naming any reporter replaces the default one, and
- * the test counters the ratchet reads still have to arrive on stdout.
+ * The stdout reporter is restated because naming any reporter replaces the default one, and a
+ * person reading the gate's detail line still needs the run to have printed something. The
+ * ratchet no longer reads its counts from there: the same TAP goes to a second destination
+ * this harness named, and that file is what the collected count comes from.
  *
  * What is deliberately absent is any attempt to talk a declared command into safety. A project
  * that asks for a shared process, a loader hook, or a reporter of its own is not corrected, it
  * is left unmeasured, because the correction would have to predict what a shell makes of the
  * text it is correcting.
  */
-export function coverageReportingCommand(
+export function harnessReportingCommand(
   body: string | undefined,
-  artifactPath: string,
+  reports: { readonly coverage: string; readonly testOutcomes: string },
 ): VouchedArgv | null {
   return harnessControlledNodeTest(body, [
     "--experimental-test-coverage",
     processIsolation,
     "--test-reporter=tap",
     "--test-reporter-destination=stdout",
+    "--test-reporter=tap",
+    `--test-reporter-destination=${reports.testOutcomes}`,
     "--test-reporter=lcov",
-    `--test-reporter-destination=${artifactPath}`,
+    `--test-reporter-destination=${reports.coverage}`,
   ]);
 }
