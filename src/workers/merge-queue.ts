@@ -144,6 +144,7 @@ export async function runMergeQueue(options: MergeQueueOptions): Promise<MergeQu
     fileSet: options.fileSet.state(),
     budgets: defaultDiffBudget,
     probe,
+    harnessRun: { commands, scratchDirectory: join(options.evidence.directory, "probe") },
   });
 
   const snapshot = async (forContext: GateContext, cycle: GateCycle): Promise<MeasureSnapshot> => {

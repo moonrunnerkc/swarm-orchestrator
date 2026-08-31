@@ -42,6 +42,19 @@ export interface GateContext {
   readonly fileSet: FileSetState;
   readonly budgets: DiffBudget;
   readonly probe: WorkspaceProbe;
+  /**
+   * What an inspection needs to measure by running something rather than by reading. Absent
+   * means it cannot, and a gate that needs it then reports not-applicable: an inspection that
+   * measured nothing says so, rather than passing because it had nothing to look at.
+   *
+   * The scratch directory sits under the session store, which invariant 11 keeps outside the
+   * workspace and denies to tools, so nothing a probe writes is reachable from the tree it is
+   * measuring.
+   */
+  readonly harnessRun?: {
+    readonly commands: GateCommandRunner;
+    readonly scratchDirectory: string;
+  };
 }
 
 /**

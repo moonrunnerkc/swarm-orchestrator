@@ -587,12 +587,13 @@ describe("5. introduce a stub behind a passing test", () => {
     expect(reading.measures.placeholdersIntroduced).toBe(1);
   });
 
-  it("documented residual: a constant-return stub with a passing test is not a placeholder", async () => {
-    // `return 0` is a stub here and a correct implementation three functions away, and only
-    // knowing what the function is supposed to do tells them apart. That is a judge, which is
-    // a stated non-goal, and every check aggressive enough to flag this also flags legitimate
-    // constant returns. Named in docs/build-guide.md section 7.1 as a known residual; the
-    // honest division of labour is that a human reads the diff for this one.
+  it("narrowed: a constant-return stub carries no marker, and is caught by running it", async () => {
+    // `return 0` is a stub here and a correct implementation three functions away, and the two
+    // are the same characters, so the placeholder gate reads them the same way and always will.
+    // What is not the same is what the two do: the stub answered several ways at the base and
+    // answers one way now, which src/gates/behaviour-probe.ts measures rather than judges.
+    // Covered there and in constant-return-gap.test.ts; what stays open is a stub whose base
+    // version was already constant over the probed inputs, which has lost nothing to measure.
     const reading = await inspect(
       placeholderGate,
       { "src/a.ts": "export function add(a: number, b: number) { return a + b; }" },
