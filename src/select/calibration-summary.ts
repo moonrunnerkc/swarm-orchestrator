@@ -30,6 +30,12 @@ export interface ModelSummary {
   readonly dimensions: Readonly<Record<CalibrationDimension, Distribution>>;
   /** Per case as well as pooled: a stratified set that only reports a pooled number is not one. */
   readonly byCase: readonly CaseBreakdown[];
+  /**
+   * The repeats that measured nothing, counted by the reason code the run recorded. Carried
+   * here so a report saying "59 of 60 executed" can say what the sixtieth was, rather than
+   * leaving a reader to open the ledger to find out whether a model or a backend was at fault.
+   */
+  readonly abstentions: Readonly<Record<string, number>>;
   /** Every repeat record behind these numbers, so a score resolves to the runs that made it. */
   readonly runRecords: readonly string[];
 }
@@ -87,10 +93,25 @@ export function summarizeByModel(
       executedRepeats: ran.length,
       dimensions,
       byCase: breakDownByCase(mine),
+      abstentions: countAbstentions(mine),
       // Every repeat, executed or not: what did not run is part of what this run recorded.
       runRecords: mine.map((observation) => observation.record),
     };
   });
+}
+
+function countAbstentions(
+  observations: readonly CalibrationRepeatObservation[],
+): Readonly<Record<string, number>> {
+  const counted: Record<string, number> = {};
+  for (const observation of observations) {
+    if (observation.executed) {
+      continue;
+    }
+    const reason = observation.abstentionReason ?? "unrecorded";
+    counted[reason] = (counted[reason] ?? 0) + 1;
+  }
+  return counted;
 }
 
 function breakDownByCase(

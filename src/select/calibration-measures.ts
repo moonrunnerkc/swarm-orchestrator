@@ -79,6 +79,11 @@ export function tallyToolCalls(entries: readonly RecordedPayload[]): ToolCallTal
 
 export interface ModelCallTally {
   readonly calls: number;
+  /** Turns the harness recorded as carrying text or a tool call. */
+  readonly validTurns: number;
+  /** Turns it recorded as carrying neither, by the reason it recorded. */
+  readonly emptyTurns: number;
+  readonly emptyTurnReasons: Readonly<Record<string, number>>;
   readonly outputTokens: number;
   readonly responseTimeMs: number;
   /** Mean over the calls that observed one, null when none did. */
@@ -87,8 +92,16 @@ export interface ModelCallTally {
   readonly tokensPerSecond: number | null;
 }
 
+/**
+ * Counted off the `content` verdict the recorder stamped on each turn rather than recomputed
+ * here. Two readings of one response are two chances to disagree, and the reading that governs
+ * has to be the one that is in the bundle.
+ */
 export function tallyModelCalls(entries: readonly RecordedPayload[]): ModelCallTally {
   let calls = 0;
+  let validTurns = 0;
+  let emptyTurns = 0;
+  const emptyTurnReasons: Record<string, number> = {};
   let outputTokens = 0;
   let responseTimeMs = 0;
   const firstTokens: number[] = [];
@@ -98,6 +111,16 @@ export function tallyModelCalls(entries: readonly RecordedPayload[]): ModelCallT
       continue;
     }
     calls += 1;
+    const content = valueAt(entry.payload, "content");
+    if (booleanAt(content, "valid") === true) {
+      validTurns += 1;
+    } else {
+      emptyTurns += 1;
+      // A record written before this field existed says nothing about its turn, and saying so
+      // is the honest reading: it is not a claim that the turn was fine.
+      const reason = stringAt(content, "reason") ?? "unrecorded";
+      emptyTurnReasons[reason] = (emptyTurnReasons[reason] ?? 0) + 1;
+    }
     outputTokens += numberAt(entry.payload, "outputTokens") ?? 0;
 
     const performance = valueAt(entry.payload, "performance");
@@ -110,6 +133,9 @@ export function tallyModelCalls(entries: readonly RecordedPayload[]): ModelCallT
 
   return {
     calls,
+    validTurns,
+    emptyTurns,
+    emptyTurnReasons,
     outputTokens,
     responseTimeMs,
     firstTokenMs:
@@ -135,4 +161,9 @@ function stringAt(payload: JsonValue, key: string): string | null {
 function numberAt(payload: JsonValue, key: string): number | null {
   const value = valueAt(payload, key);
   return typeof value === "number" ? value : null;
+}
+
+function booleanAt(payload: JsonValue, key: string): boolean | null {
+  const value = valueAt(payload, key);
+  return typeof value === "boolean" ? value : null;
 }

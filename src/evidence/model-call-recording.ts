@@ -7,12 +7,18 @@ import {
 import { asJsonValue, digestOfJson, type JsonValue } from "./canonical-json.ts";
 import { scrubJson } from "./scrub.ts";
 import type { EvidenceRecorder } from "./session.ts";
+import { callFailedTurn, classifyTurnContent } from "./turn-content.ts";
 
 /**
  * Records every model call as evidence: model id, the parameters it was called with, the
  * full prompt and response, and a digest of each. The digests are what an optional rerun
  * compares against later; divergence is the reportable outcome, never a claim that the
  * model reproduced itself.
+ *
+ * This is the boundary a turn crosses to become part of a bundle, so it is where the harness
+ * says whether the turn carried anything. The verdict travels with the record rather than
+ * being recomputed downstream: a reviewer holding the bundle can see that a turn was empty
+ * without reassembling the response, and no later reader has to decide it again.
  */
 export function createRecordingModelClient(
   model: ModelClient,
@@ -38,7 +44,14 @@ export function createRecordingModelClient(
           type: "model-call",
           actor: model.modelId,
           provenance: ["model"],
-          payload: { step, prompt, response: failure, inputTokens: 0, outputTokens: 0 },
+          payload: {
+            step,
+            prompt,
+            response: failure,
+            inputTokens: 0,
+            outputTokens: 0,
+            content: { ...callFailedTurn },
+          },
           promptDigest,
           responseDigest: digestOfJson(failure),
         });
@@ -58,6 +71,9 @@ export function createRecordingModelClient(
           outputTokens: response.outputTokens,
           finishReason: response.finishReason,
           toolCallCount: response.toolCalls.length,
+          // Harness-computed, over the assembled response the model cannot reach. An empty
+          // turn recorded without this is a turn that later reads as a run of the model.
+          content: { ...classifyTurnContent(response) },
           // Flat and named, so a calibration score is a predicate over this record rather
           // than a number someone reports about it.
           performance: {
