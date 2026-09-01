@@ -62,6 +62,14 @@ export function assignmentsIn(text: string): readonly NamedValue[] {
 }
 
 /**
+ * `const { a, b } = source;`, which binds each named field to that field of the source. Only the
+ * shorthand form: a rename, a default, a nested pattern and a rest element each mean something
+ * this would have to decide about, and deciding wrongly is a false positive.
+ */
+const destructuringBinding =
+  /^\s*(?:export\s+)?(?:const|let|var)\s*\{\s*([^{}=.]+?)\s*\}\s*=\s*(.+?)\s*;?\s*$/;
+
+/**
  * Names bound exactly once in the text, to the expressions they were bound to. A name bound
  * more than once is absent: two bindings mean the value at a use depends on which one reached
  * it, and this reads text rather than following control flow.
@@ -70,18 +78,32 @@ export function bindingsIn(text: string): ValueBindings {
   const seen = new Map<string, string>();
   const rebound = new Set<string>();
 
-  for (const line of text.split("\n")) {
-    const match = simpleBinding.exec(line);
-    const name = match?.[1];
-    const value = match?.[2];
-    if (name === undefined || value === undefined) {
-      continue;
-    }
+  const bind = (name: string, value: string): void => {
     if (seen.has(name)) {
       rebound.add(name);
-      continue;
+      return;
     }
     seen.set(name, value);
+  };
+
+  for (const line of text.split("\n")) {
+    const simple = simpleBinding.exec(line);
+    if (simple?.[1] !== undefined && simple[2] !== undefined) {
+      bind(simple[1], simple[2]);
+      continue;
+    }
+    const pattern = destructuringBinding.exec(line);
+    const fields = pattern?.[1];
+    const source = pattern?.[2];
+    if (fields === undefined || source === undefined) {
+      continue;
+    }
+    for (const field of fields.split(",")) {
+      const name = field.trim();
+      if (name.length > 0 && /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name)) {
+        bind(name, `${source}.${name}`);
+      }
+    }
   }
 
   for (const name of rebound) {
@@ -123,7 +145,7 @@ export function substituted(expression: string, bindings: ValueBindings): string
  * the expression was written, and folding it would report a string nobody wrote.
  */
 function normalizeSpacing(expression: string): string {
-  let folded = stripSpacingOutsideQuotes(expression);
+  let folded = dotNotation(stripSpacingOutsideQuotes(expression));
   for (;;) {
     const unwrapped = unwrapOuterParentheses(folded);
     if (unwrapped === folded) {
@@ -131,6 +153,18 @@ function normalizeSpacing(expression: string): string {
     }
     folded = unwrapped;
   }
+}
+
+/**
+ * `thing['a']` written as `thing.a`, for a key that is a plain identifier. The two are one
+ * property access and JavaScript treats them as one; leaving them as two spellings let a
+ * rewrite compare a value with itself and still be counted, by changing only the brackets.
+ *
+ * A key that is not an identifier is left alone, because `thing['a-b']` has no dot spelling and
+ * inventing one would produce an expression the file does not contain.
+ */
+function dotNotation(expression: string): string {
+  return expression.replaceAll(/\[(["'])([A-Za-z_$][A-Za-z0-9_$]*)\1\]/g, ".$2");
 }
 
 function stripSpacingOutsideQuotes(expression: string): string {
@@ -194,7 +228,48 @@ export function concatenatedLiteral(expression: string, bindings: ValueBindings)
   if (template?.[1] !== undefined) {
     return joinTemplate(template[1]);
   }
-  return joinAddition(resolved);
+  return joinAddition(resolved) ?? joinedArray(resolved) ?? joinedConcat(resolved);
+}
+
+/**
+ * `[a, b].join("")`, which is the same reassembly written as a list. An empty separator only:
+ * a join on anything else produces a value carrying that separator, and a credential written
+ * with a separator through it is not the credential.
+ */
+function joinedArray(expression: string): string | null {
+  const called = /^\[(.*)\]\.join\((["'`])\2\)$/s.exec(expression);
+  const inside = called?.[1];
+  if (inside === undefined) {
+    return null;
+  }
+  return joinPieces(splitTopLevel(inside, ","));
+}
+
+/** `a.concat(b, c)`, the method spelling of the same thing. */
+function joinedConcat(expression: string): string | null {
+  const called = /^(.+?)\.concat\((.*)\)$/s.exec(expression);
+  const head = called?.[1];
+  const rest = called?.[2];
+  if (head === undefined || rest === undefined) {
+    return null;
+  }
+  return joinPieces([head, ...splitTopLevel(rest, ",")]);
+}
+
+/** Every piece as a string literal, or null the moment one of them is not. */
+function joinPieces(pieces: readonly string[]): string | null {
+  if (pieces.length < 2) {
+    return null;
+  }
+  const joined: string[] = [];
+  for (const piece of pieces) {
+    const literal = stringLiteral(piece);
+    if (literal === null) {
+      return null;
+    }
+    joined.push(literal);
+  }
+  return joined.join("");
 }
 
 /** `${(...)}` holes and literal text, where every hole resolved to a string literal. */
@@ -239,22 +314,10 @@ function matchingBrace(text: string, open: number): number {
 
 /** `"a" + "b" + "c"`, split at the plus signs that sit outside every quote and bracket. */
 function joinAddition(expression: string): string | null {
-  const pieces = splitTopLevelPlus(expression);
-  if (pieces.length < 2) {
-    return null;
-  }
-  const joined: string[] = [];
-  for (const piece of pieces) {
-    const literal = stringLiteral(piece);
-    if (literal === null) {
-      return null;
-    }
-    joined.push(literal);
-  }
-  return joined.join("");
+  return joinPieces(splitTopLevel(expression, "+"));
 }
 
-function splitTopLevelPlus(expression: string): readonly string[] {
+function splitTopLevel(expression: string, separator: string): readonly string[] {
   const pieces: string[] = [];
   let depth = 0;
   let quote: string | null = null;
@@ -276,7 +339,7 @@ function splitTopLevelPlus(expression: string): readonly string[] {
       depth += 1;
     } else if (character === ")" || character === "]" || character === "}") {
       depth -= 1;
-    } else if (character === "+" && depth === 0) {
+    } else if (character === separator && depth === 0) {
       pieces.push(expression.slice(start, index));
       start = index + 1;
     }
