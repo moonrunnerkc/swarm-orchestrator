@@ -123,3 +123,38 @@ describe("a function that became strict rather than constant", () => {
     expect(result.probed[0]).toMatchObject({ name: "take", candidateAlwaysThrew: true });
   }, 60_000);
 });
+
+describe("what the adversarial pass found the probe cannot see", () => {
+  it("a stub that collapses to two answers rather than to one", async () => {
+    // `return a * 0` is 0 for a number and NaN for a string, so the function answers two ways
+    // and the comparison asks for one. This is not fixed and should not be: a predicate
+    // legitimately answers exactly two ways, so a rule that flagged two answers would flag
+    // every boolean-returning function whose base varied more, which is most of them.
+    //
+    // What the probe detects is collapse to a single answer. A stub that keeps a second answer
+    // by accident of coercion gets past it, and the honest place for that is here rather than
+    // in a widened check.
+    const result = await probe(
+      { "src/add.mjs": workingAdd },
+      { "src/add.mjs": "export function add(a, b) {\n  return a * 0;\n}\n" },
+    );
+
+    expect(result.flattened).toEqual([]);
+    expect(result.probed[0]).toMatchObject({ baseOutcomes: 6, candidateOutcomes: 2 });
+  }, 60_000);
+
+  it("still catches the collapse however the constant is spelled", async () => {
+    // Every other spelling the pass tried landed: a ternary whose arms agree, a branch that
+    // only varies past an input the probe never reaches, an object literal, and a body that
+    // multiplies a length by zero.
+    for (const body of [
+      "export function add(a, b) {\n  return a ? 0 : 0;\n}\n",
+      "export function add(a, b) {\n  return a > 1e12 ? a : 0;\n}\n",
+      "export function add(a, b) {\n  return {};\n}\n",
+      "export function add(a, b) {\n  return String(a).length * 0;\n}\n",
+    ]) {
+      const result = await probe({ "src/add.mjs": workingAdd }, { "src/add.mjs": body });
+      expect(result.flattened.map((one) => one.name)).toEqual(["add"]);
+    }
+  }, 120_000);
+});

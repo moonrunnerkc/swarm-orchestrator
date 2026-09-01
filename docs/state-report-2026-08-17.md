@@ -180,7 +180,7 @@ Phase-gate items about tamper and UNVERIFIED claims are exercised in `bundle.tes
 | Gate definitions as data | `src/gates/gate-definition.ts`, `default-gates.ts` | `project-type.test.ts` (19) |
 | Engine / runner | `src/gates/engine.ts`, `gate-runner.ts` | `auto-resolve.test.ts` (20) |
 | Numeric ratchet | `src/gates/ratchet.ts`, `measures.ts`, `measure-snapshot.ts` | `ratchet.test.ts` (16), `measures.test.ts` (18) |
-| Coverage artifact (lcov, harness-built argv) | `src/gates/coverage-artifact.ts`, `node-test-command.ts` | `coverage-artifact.test.ts` (11), `node-test-command.test.ts` (12) |
+| Coverage report (lcov, harness-built argv) | `src/gates/harness-reporting.ts` (named `coverage-artifact.ts` when this was written), `node-test-command.ts` | `harness-reporting.test.ts` (11), `node-test-command.test.ts` (12) |
 | File-set + placeholders + secret scan | `src/gates/file-set.ts`, `inspection-gates.ts` | `file-set.test.ts` (13), `inspection-gates.test.ts` (24) |
 | Escalation (to a human) | `src/gates/escalation.ts` | `acceptance.test.ts` line 208 |
 | Corpus replay of v12 diffs | `src/gates/corpus-replay.test.ts` | 3 tests, ran this session (not skipped) |
@@ -456,7 +456,7 @@ Exit 0. Typecheck produced no output. Lint applied no fixes.
 
 `npm test` is `vitest run`. There is no root `vitest.config.*`. After the run: no `coverage/`, no `.nyc_output/`, no `*.lcov` in the repo root.
 
-The harness writes lcov for **subject** workspaces it measures (`src/gates/coverage-artifact.ts`), outside those workspaces, under the session store. That path is not this repo's own test run. `src/gates/coverage-artifact.test.ts` (11 tests, including a live node-runner case) passed.
+The harness asks for lcov on **subject** workspaces it measures (`src/gates/harness-reporting.ts`, named `coverage-artifact.ts` when this was written; it wrote to the session store then and reads a stream now). That path is not this repo's own test run. `src/gates/harness-reporting.test.ts` (11 tests, including a live node-runner case) passed.
 
 ### Gate / ratchet state files
 
@@ -544,7 +544,7 @@ They are different files (different inodes and sizes: 14480 vs 11907 bytes). `di
 | 4 SHA-256 blobs | Implemented (`blob-store.ts`). |
 | 5 Provenance + heuristic derivation | Implemented (`derivation.ts`). Residual R4 is the documented miss. |
 | 6 Gates as data | Implemented (`default-gates.ts` comment lines 13-16, `gate-definition.ts`). |
-| 7 Numeric ratchet + coverage/control arms | Implemented (`ratchet.ts`, `coverage-artifact.ts`, `base-control.ts`, `node-test-command.ts`) with tests named in section 3. |
+| 7 Numeric ratchet + coverage/control arms | Implemented (`ratchet.ts`, `harness-reporting.ts`, `base-control.ts`, `node-test-command.ts`) with tests named in section 3. |
 | 8 No ambient nondeterminism in `src/core` | Holds (`rg` found only the explanatory comment). Clock/random live at `src/cli.ts` lines 80-93. |
 | 9 Known-pattern scrubbing, one detector | Mostly holds. Floor is 4 characters, not "any length." `"pw"` under `password` is still not redacted (`scrub.test.ts:420-424`). Nested multibyte-key disagreement is still an open finding (`fuzz/findings/README.md`). Invariant text does not mention the length floor. |
 | 10 Zod at boundaries | Present on config, ledger, bundle, escalation (`swarm-toml.ts`, `ledger-record.ts`, `bundle-manifest.ts`, `escalation.ts`). Completeness of every provider-response path is not independently re-audited here. |

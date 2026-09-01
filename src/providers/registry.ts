@@ -57,6 +57,12 @@ interface ProviderRegistry {
  * registry itself reads no environment and stays testable without a network.
  */
 export function createProviderRegistry(settings: ProviderSettings): ProviderRegistry {
+  // Built once per registry rather than once per model. A calibration sweep asks for a fresh
+  // client per repeat, and a fetch per client is a call counter per client: the first trace of
+  // a real sweep held 23 requests sharing 8 call numbers, so no request could be matched to
+  // the response it got, which is the one thing the artifact exists to let a reader do.
+  const localFetch = tracedFetch(settings);
+
   return {
     providerIds,
     create(spec: ModelSpec): ModelClient {
@@ -103,7 +109,7 @@ export function createProviderRegistry(settings: ProviderSettings): ProviderRegi
             name: "local",
             baseURL: settings.localBaseUrl,
             includeUsage: true,
-            fetch: tracedFetch(settings),
+            fetch: localFetch,
           });
           return createAiSdkModelClient(label, local(spec.modelId), thinkingOptions(settings));
         }

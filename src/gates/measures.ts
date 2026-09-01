@@ -93,7 +93,25 @@ function comparesAValueWithItself(line: string, bindings: ValueBindings): boolea
   }
   const subject = substituted(balanced(left), bindings);
   const expected = substituted(balanced(right), bindings);
-  return subject.length > 0 && subject === expected;
+  if (subject.length === 0 || subject !== expected) {
+    return false;
+  }
+  // A call compared with itself is not the same finding. `expect(v0.a).toBe(v0.a)` cannot fail
+  // whatever the code does, so it asserts nothing; `expect(add(1, 2)).toBe(add(1, 2))` fails the
+  // moment add stops being deterministic, which is a weak assertion and still an assertion.
+  // Dropping it would count a legitimate test as nothing and make the ratchet reject the change
+  // that added it, which is the direction that costs honest work.
+  return !callsSomething(subject);
+}
+
+/**
+ * An opening parenthesis that is a call rather than a grouping: one that follows a name or a
+ * closing bracket. The distinction is load-bearing here because substitution wraps what it
+ * replaced in parentheses of its own, so `const seen = v0; expect(seen.a).toBe(seen.a)` resolves
+ * to `(v0).a` and reading any parenthesis as a call would let that spelling back through.
+ */
+function callsSomething(expression: string): boolean {
+  return /[A-Za-z0-9_$\])]\s*\(/.test(expression);
 }
 
 /**

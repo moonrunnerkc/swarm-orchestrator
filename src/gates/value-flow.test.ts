@@ -19,8 +19,29 @@ describe("what the analysis reads as a binding", () => {
     expect(bindings.has("a")).toBe(false);
   });
 
-  it("reads nothing out of a destructuring pattern", () => {
-    expect(bindingsIn("const { a, b } = source;").size).toBe(0);
+  it("reads a shorthand destructuring pattern as one binding per field", () => {
+    const bindings = bindingsIn("const { a, b } = source;");
+
+    expect([...bindings]).toEqual([
+      ["a", "source.a"],
+      ["b", "source.b"],
+    ]);
+  });
+
+  it("reads nothing out of a pattern that means more than one thing", () => {
+    // A rename, a default, a nested pattern and a rest element each need a decision, and a
+    // wrong decision here is a false positive rather than a miss.
+    expect(bindingsIn("const { a: renamed } = source;").size).toBe(0);
+    expect(bindingsIn("const { a = 1 } = source;").size).toBe(0);
+    expect(bindingsIn("const { a: { b } } = source;").size).toBe(0);
+  });
+
+  it("reads bracket notation and dot notation as one property access", () => {
+    // Changing only the brackets used to turn a value compared with itself back into an
+    // assertion that counted.
+    expect(substituted("v0['a']", new Map())).toBe(substituted("v0.a", new Map()));
+    // A key with no dot spelling is left as written rather than invented into one.
+    expect(substituted("v0['a-b']", new Map())).toBe("v0['a-b']");
   });
 
   it("reads nothing out of an assignment with no declaration", () => {

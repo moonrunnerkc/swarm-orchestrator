@@ -41,6 +41,36 @@ function programName(executable: string): string {
   return shellAliases.has(name) ? "sh" : name;
 }
 
+/**
+ * A URL written the one way it means. Two spellings of one address defeated the comparison by
+ * changing nothing about what the command fetches: a host in a different case, and a path
+ * character written as its percent escape. Both are the same URL by RFC 3986, which is why
+ * normalising them is reading the operand rather than guessing at it.
+ *
+ * Scheme and host are lowered, because those are case-insensitive. The path is not: on most
+ * filesystems and many servers `/A` and `/a` are two paths, and folding them would report two
+ * commands as one. Only unreserved characters are decoded, which are exactly the ones whose
+ * escape has no meaning of its own; `%2F` stays written as it was, because a slash decoded into
+ * a path changes what the path is.
+ */
+function canonicalUrl(operand: string): string {
+  const split = /^([A-Za-z][A-Za-z0-9+.-]*):\/\/([^/?#]*)(.*)$/s.exec(operand);
+  const scheme = split?.[1];
+  const authority = split?.[2];
+  const rest = split?.[3];
+  if (scheme === undefined || authority === undefined || rest === undefined) {
+    return operand;
+  }
+  return `${scheme.toLowerCase()}://${authority.toLowerCase()}${decodeUnreserved(rest)}`;
+}
+
+function decodeUnreserved(text: string): string {
+  return text.replaceAll(/%([0-9A-Fa-f]{2})/g, (whole, hex: string) => {
+    const character = String.fromCharCode(Number.parseInt(hex, 16));
+    return /[A-Za-z0-9\-._~]/.test(character) ? character : whole;
+  });
+}
+
 export interface CanonicalCommand {
   readonly program: string;
   /** Everything that is not a flag, in the order it was written. */
@@ -59,7 +89,7 @@ export function canonicalCommands(command: string): readonly CanonicalCommand[] 
   }
   return pipeline.map((one) => ({
     program: programName(one.executable),
-    operands: one.arguments.filter((argument) => !isFlag(argument)),
+    operands: one.arguments.filter((argument) => !isFlag(argument)).map(canonicalUrl),
   }));
 }
 

@@ -210,3 +210,42 @@ describe("the transport trace", () => {
     await expect(traceOneLocalCall(["data: [DONE]\n\n"], undefined)).resolves.toBeUndefined();
   });
 });
+
+describe("correlating a trace to the calls in it", () => {
+  it("numbers calls across every model the registry makes, not per model", async () => {
+    // A sweep asks for a fresh client per repeat. A counter per client made the call number
+    // ambiguous: the first trace of a real sweep held 23 requests sharing 8 numbers, so no
+    // request could be matched to the response it got.
+    const trace: TransportTraceEntry[] = [];
+    const registry = createProviderRegistry({
+      localBaseUrl: "http://127.0.0.1:11434/v1",
+      transportTrace: {
+        write(entry) {
+          trace.push(entry);
+          return Promise.resolve();
+        },
+      },
+      fetch: (async () =>
+        new Response("data: [DONE]\n\n", {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        })) as typeof fetch,
+    });
+
+    for (const spec of ["local:a", "local:b", "local:a"]) {
+      await registry
+        .create(parseModelSpec(spec))
+        .generate({
+          system: "s",
+          messages: [{ role: "user", text: "hi" }],
+          tools: [],
+          maxOutputTokens: 16,
+          abortSignal: new AbortController().signal,
+        })
+        .catch(() => undefined);
+    }
+
+    const numbers = trace.filter((entry) => entry.event === "request").map((entry) => entry.call);
+    expect(numbers).toEqual([1, 2, 3]);
+  });
+});
