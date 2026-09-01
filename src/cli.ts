@@ -52,6 +52,7 @@ import { describeEscalation } from "./gates/escalation.ts";
 import { createFileSetRegistry } from "./gates/file-set.ts";
 import type { DiffBudget } from "./gates/gate-definition.ts";
 import { citedRecords, type GateCycle, outstandingJustifications } from "./gates/gate-runner.ts";
+import { resolveBaseCommit } from "./gates/git-workspace.ts";
 import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { summarizeRatchet } from "./gates/ratchet-summary.ts";
 import { recordTurnBaseline } from "./gates/turn-baseline.ts";
@@ -371,7 +372,9 @@ async function session(options: SessionCommand): Promise<number> {
   });
   const ui = startInterface({ task: "", workspace: options.workspace, settings, clock });
 
-  let baseRef = options.baseRef;
+  // Resolved once, here, before any gate reads it. A symbolic ref is spent at the moment each
+  // base-side question is asked, and `git` is on the shell allowlist.
+  let baseRef = await resolveBaseCommit(options.workspace, options.baseRef);
   let history: readonly ConversationMessage[] = [];
   let turns = 0;
   let lastGreen = true;
@@ -836,7 +839,7 @@ async function run(options: RunCommand): Promise<number> {
     const { loop, gates, green } = await runAgentTask({
       task: options.task,
       workspace: options.workspace,
-      baseRef: options.baseRef,
+      baseRef: await resolveBaseCommit(options.workspace, options.baseRef),
       maxSteps: settings.maxSteps,
       attempts: settings.attempts,
       model,
@@ -1046,19 +1049,22 @@ async function gates(options: GatesCommand): Promise<number> {
     clock,
   });
   const fileSet = createFileSetRegistry(evidence);
+  const baseRef = await resolveBaseCommit(options.workspace, options.baseRef);
 
   await evidence.record({
     type: "session-started",
     actor: "harness",
     provenance: ["user"],
-    payload: { task: "gates", workspace: options.workspace, baseRef: options.baseRef },
+    // The commit that was measured, not the name it was asked for: a bundle saying HEAD
+    // names whatever HEAD points at when someone reads the bundle.
+    payload: { task: "gates", workspace: options.workspace, baseRef },
   });
 
   const gateOptions = gateOptionsFrom(settings);
   const diffBudget = diffBudgetFrom(settings);
   const run = await runGatesEngine({
     workspaceRoot: options.workspace,
-    baseRef: options.baseRef,
+    baseRef,
     evidence,
     fileSet,
     clock,
