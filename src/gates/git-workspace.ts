@@ -52,8 +52,42 @@ class GitUnavailableError extends Error {
 
 export interface GitWorkspaceOptions {
   readonly workspaceRoot: string;
-  /** What the change is measured against. HEAD is the ordinary case. */
+  /**
+   * What the change is measured against. A commit object, resolved once by
+   * `resolveBaseCommit` before a run starts, rather than the name it was asked for.
+   */
   readonly baseRef: string;
+}
+
+/**
+ * The base as a commit object, resolved once at the start of a run.
+ *
+ * `HEAD` is a symbolic ref, and every base-side question spends it at the moment it is asked:
+ * `git show HEAD:<path>` for the content a test file had, and the diff for the change set. A
+ * run that carried the name rather than the commit is measured against whatever HEAD points at
+ * when each gate happens to read it, and `git` is on the default shell allowlist, so moving it
+ * is one unconfirmed tool call. Measured on a scratch repository with two of three tests
+ * deleted in the tree: before a `git commit -am` the base declared 3 tests and the change set
+ * held 1 file; after it, 1 test and 0 files. The deletion the ratchet exists to catch stops
+ * being a deletion, and the diff budget, the file-set check and changed-line coverage all have
+ * nothing left to look at.
+ *
+ * Resolving pins what the run always meant and changes no verdict for an honest one. The
+ * parallel path already did exactly this before handing a base to its workers; this is the
+ * single-run path being held to the same thing.
+ *
+ * The name is returned unchanged where it does not resolve, which is a repository with no
+ * commits yet or no repository at all. Those already have their own errors, raised where the
+ * gates find them, and a message about `rev-parse` here would replace a good one with a worse.
+ */
+export async function resolveBaseCommit(workspaceRoot: string, baseRef: string): Promise<string> {
+  try {
+    const resolved = await git(workspaceRoot, ["rev-parse", "--verify", `${baseRef}^{commit}`]);
+    const commit = resolved.trim();
+    return commit.length > 0 ? commit : baseRef;
+  } catch {
+    return baseRef;
+  }
 }
 
 async function git(root: string, args: readonly string[]): Promise<string> {

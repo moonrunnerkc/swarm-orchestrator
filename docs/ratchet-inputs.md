@@ -101,11 +101,10 @@ the boolean one precisely because the boolean one is authorable.
 
 Named here rather than implied away.
 
-## Escalated: the base ref is a symbolic ref, and the workspace can move it
+## Resolved: the base ref is a symbolic ref, and the workspace can move it
 
-**Not fixed in this pass.** This is a trust-root finding: it changes what every gate, the
-file-set check and the diff budget are measured against, so it is written up and held for review
-rather than patched unattended.
+Escalated as a trust-root finding when it was found, since it changes what every gate, the
+file-set check and the diff budget are measured against, and fixed after review.
 
 `defaultBaseRef` is the literal string `"HEAD"` (`src/cli-options.ts:220`). It is carried
 unresolved into `createGitWorkspaceProbe` (`src/gates/git-workspace.ts:70`), which spends it at
@@ -127,8 +126,22 @@ The turn baseline already avoids this for a session's second turn onward: `recor
 returns a resolved commit object and `src/cli.ts:408` replaces `baseRef` with it. The first turn
 of every session, every single-run invocation and every worker still carry the string.
 
-**The fix, for review rather than applied.** Resolve the base ref to a commit object once at the
-composition root, where the run starts, and carry the resolved sha everywhere `baseRef` is
-carried now. It pins what the run always meant, changes no verdict for any honest run, and is
-about one line plus the plumbing. It is held only because the rule for this pass is that findings
-touching verdict computation stop and wait.
+**What was done.** `resolveBaseCommit` in `src/gates/git-workspace.ts` turns the name into a
+commit object, and the three entry points that carried the name now resolve it before anything
+reads it: the session loop, the single run, and `swarm gates`. The gates command records the
+resolved commit rather than the name it was asked for, because a bundle that says `HEAD` names
+whatever HEAD points at when someone later reads the bundle.
+
+This is the single-run path being held to what the parallel path already did.
+`src/workers/parallel-run.ts` resolved its base with `rev-parse` before handing it to any worker
+and always had, which is why workers were never exposed to this and why the fix needed no new
+idea.
+
+Resolving pins what a run always meant, so it changes no verdict for an honest one. A name that
+does not resolve, in a repository with no commits or no repository at all, is handed back
+unchanged: those cases already raise their own errors where the gates find them, and a message
+about `rev-parse` here would replace a good one with a worse.
+
+`src/gates/base-commit.test.ts` holds both halves. The demonstration stays as a test, so the
+unresolved reading is still shown moving the base from 3 tests to 1 and the change set from 1
+file to 0; beside it the resolved reading holds at 3 and 1 across one commit and across several.
