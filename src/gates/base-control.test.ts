@@ -8,7 +8,6 @@ import {
   createBaseControlRunner,
   singleFileTestCommand,
 } from "./base-control.ts";
-import { createFileCoverageArtifactStore } from "./coverage-artifact.ts";
 import { createNodeCommandRunner } from "./node-command-runner.ts";
 import { detectProject } from "./project-type.ts";
 
@@ -41,23 +40,16 @@ describe("how one test file is run", () => {
     pythonTools: [] as string[],
   });
 
-  it("asks node's runner for a result of its own, ahead of the file pattern", () => {
-    const asked = singleFileTestCommand(
-      nodeDetection("node --test"),
-      "a.test.mjs",
-      "/session/controls/a.tap",
-    );
+  it("asks node's runner for a result on stdout, ahead of the file pattern", () => {
+    const asked = singleFileTestCommand(nodeDetection("node --test"), "a.test.mjs");
 
     expect(asked).toEqual({
       kind: "argv",
-      outcomeArtifact: "/session/controls/a.tap",
       argv: [
         "node",
         "--test",
         "--test-reporter=tap",
         "--test-reporter-destination=stdout",
-        "--test-reporter=tap",
-        "--test-reporter-destination=/session/controls/a.tap",
         "--test-isolation=process",
         "a.test.mjs",
       ],
@@ -65,11 +57,12 @@ describe("how one test file is run", () => {
   });
 
   it("asks for nothing where the declared runner is not node's, and says so by asking", () => {
-    // A shell arm names no artifact, and the type is what says so: nothing downstream can
-    // read a result from a run that was never asked for one.
-    expect(
-      singleFileTestCommand(nodeDetection("vitest run"), "a.test.mjs", "/session/controls/a.tap"),
-    ).toEqual({ kind: "shell", command: "npm test --silent -- 'a.test.mjs'" });
+    // A shell arm did not choose the reporter, and the type is what says so: nothing
+    // downstream attributes a failure from a stream the project's own command wrote.
+    expect(singleFileTestCommand(nodeDetection("vitest run"), "a.test.mjs")).toEqual({
+      kind: "shell",
+      command: "npm test --silent -- 'a.test.mjs'",
+    });
   });
 
   it("asks for nothing where a flag was quoted into the position a pattern goes", () => {
@@ -80,7 +73,7 @@ describe("how one test file is run", () => {
     ]) {
       expect({
         declared,
-        asked: singleFileTestCommand(nodeDetection(declared), "a.test.mjs", "/session/a.tap")?.kind,
+        asked: singleFileTestCommand(nodeDetection(declared), "a.test.mjs")?.kind,
       }).toEqual({ declared, asked: "shell" });
     }
   });
@@ -171,12 +164,7 @@ describe("which tests a control run failed", () => {
     const runner = createBaseControlRunner({
       workspace: { workspaceRoot: workspace, baseRef: "HEAD" },
       commands: createNodeCommandRunner(createTestClock(1)),
-      singleFileCommand: (testFile, artifact) =>
-        singleFileTestCommand(detection, testFile, artifact),
-      outcomeArtifacts: {
-        directory: join(outside, "controls"),
-        store: createFileCoverageArtifactStore(),
-      },
+      singleFileCommand: (testFile) => singleFileTestCommand(detection, testFile),
     });
 
     return runner.runOnSubmittedSource("math.test.cjs");

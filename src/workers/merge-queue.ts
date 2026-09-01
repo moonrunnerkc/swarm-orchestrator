@@ -3,10 +3,6 @@ import { z } from "zod";
 import type { Clock } from "../core/clock.ts";
 import type { GateStatus, LoopEvent } from "../core/loop-events.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
-import {
-  type CoverageArtifactStore,
-  createFileCoverageArtifactStore,
-} from "../gates/coverage-artifact.ts";
 import { assembleGates, type GateSetOptions } from "../gates/default-gates.ts";
 import { defaultDiffBudget } from "../gates/engine.ts";
 import type { FileSetRegistry } from "../gates/file-set.ts";
@@ -115,10 +111,8 @@ export async function runMergeQueue(options: MergeQueueOptions): Promise<MergeQu
     baseRef: options.baseCommit,
   });
   const commands = createNodeCommandRunner(options.clock);
-  const coverageArtifacts = createFileCoverageArtifactStore();
   const gates = assembleGates(await detectProject(probe.readCurrent), {
     ...(options.gateOptions ?? {}),
-    coverageArtifactDirectory: join(options.evidence.directory, "coverage"),
   });
 
   // The queue's declared set is the union of the workers'. A worker that strayed outside its
@@ -168,7 +162,6 @@ export async function runMergeQueue(options: MergeQueueOptions): Promise<MergeQu
     commands,
     evidence: options.evidence,
     emit: options.emit,
-    coverageArtifacts,
   });
   let baseline = await snapshot(baseContext, baseCycle);
   let baselineGates = baseCycle.statuses;
@@ -186,7 +179,6 @@ export async function runMergeQueue(options: MergeQueueOptions): Promise<MergeQu
         rank: rank + 1,
         gates,
         commands,
-        coverageArtifacts,
         context,
         snapshot,
         baseline,
@@ -227,7 +219,6 @@ interface CandidateAttempt {
   readonly rank: number;
   readonly gates: readonly GateDefinition[];
   readonly commands: ReturnType<typeof createNodeCommandRunner>;
-  readonly coverageArtifacts: CoverageArtifactStore;
   readonly context: () => Promise<GateContext>;
   readonly snapshot: (context: GateContext, cycle: GateCycle) => Promise<MeasureSnapshot>;
   readonly baseline: MeasureSnapshot;
@@ -272,7 +263,6 @@ async function tryCandidate(
     commands: attempt.commands,
     evidence: options.evidence,
     emit: options.emit,
-    coverageArtifacts: attempt.coverageArtifacts,
   });
   const measures = await attempt.snapshot(candidateContext, cycle);
 

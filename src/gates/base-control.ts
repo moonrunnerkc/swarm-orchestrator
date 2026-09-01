@@ -28,40 +28,22 @@ import { type BaseControlRunner, type ControlRun, indeterminate } from "./respec
  * answers whether the file passed and nothing about which of its tests did.
  */
 
-/** Reads back what a control run was told to write, and clears it first. */
-interface ControlArtifactStore {
-  clear(path: string): Promise<void>;
-  read(path: string): Promise<string | null>;
-}
-
 /**
- * How one test file gets run. The two arms are not interchangeable and the type says so: only
- * a vector the harness built names an artifact, so only that arm can attribute a failure to a
- * test. The shell arm runs the file and answers with an exit code.
+ * How one test file gets run. The two arms are not interchangeable and the type says so: only a
+ * vector the harness built chose the reporter, so only that arm's stdout is a result to
+ * attribute a failure from. The shell arm runs the file and answers with an exit code.
  */
 export type TestFileInvocation =
-  | { readonly kind: "argv"; readonly argv: readonly string[]; readonly outcomeArtifact: string }
+  | { readonly kind: "argv"; readonly argv: readonly string[] }
   | { readonly kind: "shell"; readonly command: string };
 
-export type SingleFileCommand = (
-  testFile: string,
-  outcomeArtifact: string | null,
-) => TestFileInvocation | null;
+export type SingleFileCommand = (testFile: string) => TestFileInvocation | null;
 
 interface BaseControlOptions {
   readonly workspace: GitWorkspaceOptions;
   readonly commands: GateCommandRunner;
   /** Null when the project has no way to run one test file, which withholds every exemption. */
   readonly singleFileCommand: SingleFileCommand;
-  /**
-   * Where a control run is asked to write its own machine-readable result, under the session
-   * store that invariant 11 keeps outside the workspace. Absent means no result is asked for,
-   * so no test is attributed a failure and no test is cleared.
-   */
-  readonly outcomeArtifacts?: {
-    readonly directory: string;
-    readonly store: ControlArtifactStore;
-  };
   readonly timeoutMs?: number;
 }
 
@@ -82,18 +64,11 @@ export function controlOutcomePath(directory: string, testFile: string): string 
 
 export function createBaseControlRunner(options: BaseControlOptions): BaseControlRunner {
   const timeoutMs = options.timeoutMs ?? defaultGateTimeoutMs;
-  const artifacts = options.outcomeArtifacts;
 
   const runOne = async (testFile: string): Promise<ControlRun> => {
-    const artifactPath =
-      artifacts === undefined ? null : controlOutcomePath(artifacts.directory, testFile);
-    const invocation = options.singleFileCommand(testFile, artifactPath);
+    const invocation = options.singleFileCommand(testFile);
     if (invocation === null) {
       return indeterminate("this project has no command that runs one test file on its own");
-    }
-    // Cleared first, so a result left by the run before cannot pass as this one's.
-    if (artifacts !== undefined && artifactPath !== null) {
-      await artifacts.store.clear(artifactPath);
     }
     const runOptions = { cwd: options.workspace.workspaceRoot, timeoutMs };
     const observation =
@@ -110,15 +85,10 @@ export function createBaseControlRunner(options: BaseControlOptions): BaseContro
     // read to withhold an exemption, never to grant one, which is why a test printing into it
     // can only cost itself.
     const output = `${observation.stdout}\n${observation.stderr}`.trim();
-    // Only the arm that was built to write this destination was asked to. Reading the path
-    // regardless would attribute from a file this run never produced.
-    const reported =
-      artifacts !== undefined &&
-      invocation.kind === "argv" &&
-      invocation.outcomeArtifact === artifactPath
-        ? await artifacts.store.read(invocation.outcomeArtifact)
-        : null;
-    const outcomes = reported === null ? null : parseTapOutcomes(reported);
+    // Only the arm whose reporter the harness chose. The shell arm's stdout is whatever the
+    // project's own command prints, and attributing a failure from that is reading a line a
+    // test can write for the test beside it.
+    const outcomes = invocation.kind === "argv" ? parseTapOutcomes(observation.stdout) : null;
     const ran = invocation.kind === "argv" ? invocation.argv.join(" ") : invocation.command;
     return {
       outcome: observation.exitCode === 0 ? "passed" : "failed",
@@ -160,13 +130,12 @@ export function createBaseControlRunner(options: BaseControlOptions): BaseContro
 export function singleFileTestCommand(
   detection: ProjectDetection,
   testFile: string,
-  outcomeArtifact: string | null = null,
 ): TestFileInvocation | null {
   if (!isTestFile(testFile)) {
     return null;
   }
   if (detection.types.includes("node") && detection.nodeScripts.includes("test")) {
-    const asked = askedForOutcomes(detection.nodeScriptCommands.test, outcomeArtifact, testFile);
+    const asked = askedForOutcomes(detection.nodeScriptCommands.test, testFile);
     if (asked !== null) {
       return asked;
     }
@@ -187,40 +156,30 @@ export function singleFileTestCommand(
 }
 
 /**
- * The run that writes a machine-readable result, or null where this harness cannot vouch for
- * the invocation that would write it. Null is the fail-closed answer: no result, no attribution,
- * no test cleared.
+ * The run whose result can be attributed, or null where this harness cannot vouch for the
+ * invocation. Null is the fail-closed answer: no result, no attribution, no test cleared.
  *
  * The vector is built here rather than handed to `npm test`, and that is the point. npm runs
- * whatever `pretest` and `posttest` the workspace declares, in the process that surrounds the
- * one writing the artifact, and it appends these flags after the script's own file patterns,
- * where node ignores them. Both leave a path the harness named being written by something the
- * harness did not start. So the runner is started directly, with the project's own recognized
- * flags, this arm's reporters, and the one file under test in place of the project's patterns.
+ * whatever `pretest` and `posttest` the workspace declares in the process surrounding the one
+ * being read, and it appends these flags after the script's own file patterns, where node
+ * ignores them. So the runner is started directly, with the project's own recognized flags,
+ * this arm's reporter, and the one file under test in place of the project's patterns.
  *
- * The printed stream is kept beside the artifact because the refuter reads it to tell a file
- * that failed as a specification from one that never loaded.
+ * The TAP goes to stdout, which the harness reads off the pipe it owns, and not to a file. A
+ * destination path is an argument of the spawned process, `ps` hands it to any test that asks
+ * for it, and the file is writable by anything running as the same user: a test that hammered
+ * such a path left a torn result that attributed nothing, which withholds every exemption in
+ * this file at the tests' own choosing. Under process isolation a test's own output is captured
+ * by the parent and folded into the reporter's stream as escaped comments, so nothing a test
+ * prints reaches column zero, which is the only place a result point is read from.
  */
-function askedForOutcomes(
-  body: string | undefined,
-  artifact: string | null,
-  testFile: string,
-): TestFileInvocation | null {
-  if (artifact === null) {
-    return null;
-  }
+function askedForOutcomes(body: string | undefined, testFile: string): TestFileInvocation | null {
   const argv = harnessControlledNodeTest(
     body,
-    [
-      "--test-reporter=tap",
-      "--test-reporter-destination=stdout",
-      "--test-reporter=tap",
-      `--test-reporter-destination=${artifact}`,
-      processIsolation,
-    ],
+    ["--test-reporter=tap", "--test-reporter-destination=stdout", processIsolation],
     [testFile],
   );
-  return argv === null ? null : { kind: "argv", argv, outcomeArtifact: artifact };
+  return argv === null ? null : { kind: "argv", argv };
 }
 
 /** Enough to name every test and the reason a load failed, short enough for a ledger record. */

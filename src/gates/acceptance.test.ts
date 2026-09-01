@@ -474,10 +474,12 @@ describe("the gates measure coverage of changed lines from an executed run", () 
     });
 
     const testsGate = gates.find((gate) => gate.id === "tests");
-    expect(testsGate?.source).toMatchObject({
-      command: expect.stringContaining("--test-reporter=lcov"),
-      coverageArtifact: expect.stringContaining("tests.lcov"),
-    });
+    const rendered = JSON.stringify(testsGate?.source);
+    expect(rendered).toContain("--test-reporter=lcov");
+    // On a stream the harness owns, and no path anywhere: a destination path is an argument of
+    // the spawned process, and any test can read it off the parent and overwrite it.
+    expect(rendered).toContain("--test-reporter-destination=stderr");
+    expect(rendered).not.toContain(".lcov");
     expect(outcome.finalMeasures.changedLinesMeasured).toBeGreaterThan(0);
     expect(outcome.finalMeasures.changedLineCoverage).toBeLessThan(1);
   }, 60_000);
