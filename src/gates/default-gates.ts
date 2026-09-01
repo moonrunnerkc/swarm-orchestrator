@@ -1,9 +1,4 @@
 import {
-  coverageArtifactPath,
-  harnessReportingCommand,
-  testOutcomeArtifactPath,
-} from "./coverage-artifact.ts";
-import {
   type GateContext,
   type GateDefinition,
   type GateObservation,
@@ -11,6 +6,7 @@ import {
   type GateSeverity,
   unavailableObservation,
 } from "./gate-definition.ts";
+import { harnessReportingCommand } from "./harness-reporting.ts";
 import { inspectionGates } from "./inspection-gates.ts";
 import { exitCodeParser, testOutputParser } from "./parsers.ts";
 import type { ProjectDetection, ProjectType } from "./project-type.ts";
@@ -30,8 +26,6 @@ interface GateSpec {
   readonly argv?: readonly string[];
   readonly parse?: GateParser;
   /** Where this run's runner was told to write its coverage report, when it was. */
-  readonly coverageArtifact?: string;
-  readonly testOutcomeArtifact?: string;
 }
 
 function commandGate(spec: GateSpec): GateDefinition {
@@ -43,10 +37,6 @@ function commandGate(spec: GateSpec): GateDefinition {
       kind: "command",
       command: spec.command,
       ...(spec.argv === undefined ? {} : { argv: spec.argv }),
-      ...(spec.coverageArtifact === undefined ? {} : { coverageArtifact: spec.coverageArtifact }),
-      ...(spec.testOutcomeArtifact === undefined
-        ? {}
-        : { testOutcomeArtifact: spec.testOutcomeArtifact }),
     },
     parse: spec.parse ?? parserFor(spec.id),
   };
@@ -122,19 +112,8 @@ const nodeScriptCandidates: Readonly<Record<string, readonly string[]>> = {
  * One rule, applied to whatever command the gate ends up running: the script a manifest
  * declares here, and an override from swarm.toml where there is one.
  */
-function askedForHarnessReports(
-  spec: GateSpec,
-  body: string | undefined,
-  directory: string | undefined,
-): GateSpec {
-  if (directory === undefined) {
-    return spec;
-  }
-  const reports = {
-    coverage: coverageArtifactPath(directory, spec.id),
-    testOutcomes: testOutcomeArtifactPath(directory, spec.id),
-  };
-  const argv = harnessReportingCommand(body, reports);
+function askedForHarnessReports(spec: GateSpec, body: string | undefined): GateSpec {
+  const argv = harnessReportingCommand(body);
   if (argv === null) {
     return spec;
   }
@@ -144,15 +123,10 @@ function askedForHarnessReports(
     title: `${spec.id} (${rendered})`,
     command: rendered,
     argv,
-    coverageArtifact: reports.coverage,
-    testOutcomeArtifact: reports.testOutcomes,
   };
 }
 
-function nodeGates(
-  detection: ProjectDetection,
-  options: GateSetOptions,
-): readonly GateDefinition[] {
+function nodeGates(detection: ProjectDetection): readonly GateDefinition[] {
   const scripts = new Set(detection.nodeScripts);
   const pick = (id: string): string | null =>
     (nodeScriptCandidates[id] ?? []).find((name) => scripts.has(name)) ?? null;
@@ -179,7 +153,6 @@ function nodeGates(
           command: `npm run --silent ${script}`,
         },
         detection.nodeScriptCommands[script],
-        options.coverageArtifactDirectory,
       ),
     );
   });
@@ -302,7 +275,7 @@ const commandGatesByType: Readonly<
     (detection: ProjectDetection, options: GateSetOptions) => readonly GateDefinition[]
   >
 > = {
-  node: nodeGates,
+  node: (detection) => nodeGates(detection),
   python: pythonGates,
   rust: () => rustGates,
   go: () => goGates,
@@ -356,12 +329,6 @@ const undetectedGates: readonly GateDefinition[] = (
 export interface GateSetOptions {
   /** Replaces the assembled command for one gate id, from swarm.toml or a flag. */
   readonly commandOverrides?: Readonly<Record<string, string>>;
-  /**
-   * Where a test runner is asked to write its coverage report. It belongs outside the
-   * workspace, which is what stops the code being measured from authoring the measurement;
-   * absent means no report is asked for and the coverage arm abstains.
-   */
-  readonly coverageArtifactDirectory?: string;
 }
 
 /**
@@ -406,7 +373,6 @@ export function assembleGates(
           parse: parserFor(gate.id),
         },
         override,
-        options.coverageArtifactDirectory,
       ),
     );
   });

@@ -75,18 +75,6 @@ type GateSource =
        */
       readonly argv?: readonly string[];
       readonly timeoutMs?: number;
-      /**
-       * Absolute path this run's runner was told to write its coverage report to. The harness
-       * reads that file and nothing the command printed, so the number it ends up with is one
-       * the runner authored rather than one the tests could have.
-       */
-      readonly coverageArtifact?: string;
-      /**
-       * Absolute path this run's runner was told to write its TAP result to. The collected
-       * count comes from that file rather than from the counters the run printed, which a test
-       * can print for itself.
-       */
-      readonly testOutcomeArtifact?: string;
     }
   | { readonly kind: "inspection"; readonly inspect: GateInspection };
 

@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTestClock } from "../core/test-doubles.ts";
 import { openEvidenceSession } from "../evidence/session.ts";
-import { createFileCoverageArtifactStore } from "./coverage-artifact.ts";
 import { assembleGates } from "./default-gates.ts";
 import { runGateCycle } from "./gate-runner.ts";
 import { takeMeasureSnapshot } from "./measure-snapshot.ts";
@@ -86,7 +85,6 @@ async function measureThroughTheGate(sessionId: string, testFile: string): Promi
         ? JSON.stringify({ name: "scratch", scripts: { test: "node --test" } })
         : null,
     ),
-    { coverageArtifactDirectory: join(outside, "coverage") },
   );
 
   const cycle = await runGateCycle(
@@ -113,7 +111,6 @@ async function measureThroughTheGate(sessionId: string, testFile: string): Promi
         clock: createTestClock(1),
       }),
       emit: () => undefined,
-      coverageArtifacts: createFileCoverageArtifactStore(),
     },
   );
 

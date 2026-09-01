@@ -2,7 +2,6 @@ import { z } from "zod";
 import type { GateStatus, LoopEvent } from "../core/loop-events.ts";
 import { claimPayloadSchema } from "../evidence/claim.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
-import type { CoverageArtifactStore } from "./coverage-artifact.ts";
 import {
   defaultGateTimeoutMs,
   type GateCommandRunner,
@@ -82,11 +81,6 @@ export interface GateCycleDependencies {
   readonly commands: GateCommandRunner;
   readonly evidence: EvidenceRecorder;
   readonly emit: (event: LoopEvent) => void;
-  /**
-   * Reads back the reports gate commands were told to write. Absent means no report is
-   * collected and coverage of changed lines goes unmeasured, which is the honest reading.
-   */
-  readonly coverageArtifacts?: CoverageArtifactStore;
 }
 
 /**
@@ -228,33 +222,30 @@ async function observe(
     };
   }
 
-  const store = deps.coverageArtifacts;
-  const artifact = gate.source.coverageArtifact;
-  const outcomes = gate.source.testOutcomeArtifact;
-  const collecting = artifact !== undefined && store !== undefined;
-  const counting = outcomes !== undefined && store !== undefined;
-  if (collecting) {
-    await store.clear(artifact);
-  }
-  if (counting) {
-    await store.clear(outcomes);
-  }
-
-  // A vector the harness built is spawned as one; a command the project declared is read by a
-  // shell, because that is what it is. Only the first is ever asked for an artifact.
   const options = {
     cwd: context.workspaceRoot,
     timeoutMs: gate.source.timeoutMs ?? defaultGateTimeoutMs,
   };
-  const observation =
-    gate.source.argv === undefined
-      ? await deps.commands.run(gate.source.command, options)
-      : await deps.commands.runVouched(gate.source.argv, options);
 
+  // A command the project declared is read by a shell, because that is what it is. Its streams
+  // are whatever it chose to print, so nothing is read off them as a measurement.
+  if (gate.source.argv === undefined) {
+    return {
+      observation: await deps.commands.run(gate.source.command, options),
+      coverageReport: null,
+      testReport: null,
+    };
+  }
+
+  // A vector the harness built, spawned as one. The harness picked the reporters, so it knows
+  // which stream carries which report, and both arrive down pipes it owns: under process
+  // isolation a test's own output is captured by the parent and folded into the reporters'
+  // streams as escaped comments, so nothing a test prints reaches either at column zero.
+  const observation = await deps.commands.runVouched(gate.source.argv, options);
   return {
     observation,
-    coverageReport: collecting ? await store.read(artifact) : null,
-    testReport: counting ? await store.read(outcomes) : null,
+    coverageReport: observation.stderr,
+    testReport: observation.stdout,
   };
 }
 

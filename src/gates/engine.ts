@@ -13,7 +13,6 @@ import {
   type SingleFileCommand,
   singleFileTestCommand,
 } from "./base-control.ts";
-import { createFileCoverageArtifactStore } from "./coverage-artifact.ts";
 import { assembleGates, type GateSetOptions } from "./default-gates.ts";
 import type { FileSetRegistry } from "./file-set.ts";
 import type { DiffBudget, GateContext, GateDefinition } from "./gate-definition.ts";
@@ -79,9 +78,6 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
   );
   const gates = assembleGates(detection, {
     ...(options.gateOptions ?? {}),
-    // Under the session store, which invariant 11 puts outside the workspace and denies to
-    // tools: a coverage report the workspace can reach is a coverage report it can write.
-    coverageArtifactDirectory: join(options.evidence.directory, "coverage"),
   });
   const budgets = options.budgets ?? defaultDiffBudget;
 
@@ -107,22 +103,14 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
       commands,
       evidence: options.evidence,
       emit: options.emit,
-      coverageArtifacts: createFileCoverageArtifactStore(),
     },
     evidence: options.evidence,
     checkpoint: createGitCheckpoint(workspace),
     baseControl: createBaseControlRunner({
       workspace,
       commands,
-      singleFileCommand: (testFile, outcomeArtifact) =>
-        options.singleFileTestCommand?.(testFile, outcomeArtifact) ??
-        singleFileTestCommand(detection, testFile, outcomeArtifact),
-      // Beside the coverage reports, and outside the workspace for the same reason: a result
-      // the tests can reach is a result they can write.
-      outcomeArtifacts: {
-        directory: join(options.evidence.directory, "controls"),
-        store: createFileCoverageArtifactStore(),
-      },
+      singleFileCommand: (testFile) =>
+        options.singleFileTestCommand?.(testFile) ?? singleFileTestCommand(detection, testFile),
     }),
     resolve: options.resolve,
     emit: options.emit,

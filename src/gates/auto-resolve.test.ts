@@ -80,9 +80,9 @@ const testsGate: GateDefinition = {
   source: {
     kind: "command",
     command: "run-tests",
-    // As production does: the collected count comes from the TAP the runner was told to
-    // write, never from what the run printed.
-    testOutcomeArtifact: "/session/coverage/tests.tap",
+    // As production does: a vector the harness built, which is what makes its stdout a stream
+    // the harness picked the reporter for and therefore a result it can count.
+    argv: ["node", "--test", "--test-reporter=tap", "--test-reporter-destination=stdout"],
   },
   parse: testOutputParser,
 };
@@ -95,28 +95,12 @@ const lintGate: GateDefinition = {
   parse: exitCodeParser,
 };
 
-/**
- * The TAP a stub run "wrote", by the path the gate named. A map rather than a file, so the
- * harness reads its artifact the way production does without touching a disk.
- */
-function stubArtifacts(written: Map<string, string>) {
-  return {
-    clear(path: string): Promise<void> {
-      written.delete(path);
-      return Promise.resolve();
-    },
-    read(path: string): Promise<string | null> {
-      return Promise.resolve(written.get(path) ?? null);
-    },
-  };
-}
-
-function stubCommands(workspace: MemoryWorkspace, written: Map<string, string>) {
+function stubCommands(workspace: MemoryWorkspace) {
   return createStubCommandRunner((command) => {
     const source = workspace.files.get(sourcePath) ?? "";
     const measures = measureTestFile(workspace.files.get(testPath) ?? null);
 
-    if (command === "run-lint") {
+    if (command.startsWith("run-lint")) {
       return source.includes("var ")
         ? { exitCode: 1, stdout: `${sourcePath}: "var" is not allowed` }
         : { exitCode: 0, stdout: "" };
@@ -124,17 +108,16 @@ function stubCommands(workspace: MemoryWorkspace, written: Map<string, string>) 
 
     const failing = source.includes("a + b") ? 0 : measures.tests;
     const names = Object.keys(measures.perTest);
-    const tap = [
-      "TAP version 13",
-      ...names.map((name, index) => `${index < failing ? "not ok" : "ok"} ${index + 1} - ${name}`),
-      `1..${measures.tests}`,
-    ].join("\n");
-    written.set("/session/coverage/tests.tap", tap);
 
+    // The result points and the counters on one stream, which is what node's TAP reporter
+    // writes and what the harness now counts off.
     return {
       exitCode: failing === 0 ? 0 : 1,
       stdout: [
         "TAP version 13",
+        ...names.map(
+          (name, index) => `${index < failing ? "not ok" : "ok"} ${index + 1} - ${name}`,
+        ),
         `1..${measures.tests}`,
         `# tests ${measures.tests}`,
         `# pass ${measures.tests - failing}`,
@@ -162,8 +145,7 @@ function harness(
     base: { [sourcePath]: fixedSource, [testPath]: originalTests },
     current: { [sourcePath]: brokenSource, [testPath]: originalTests },
   });
-  const written = new Map<string, string>();
-  const commands = stubCommands(workspace, written);
+  const commands = stubCommands(workspace);
 
   const context = async (): Promise<GateContext> => ({
     workspaceRoot: "/workspace",
@@ -185,7 +167,6 @@ function harness(
           emit: (event) => {
             events.push(event);
           },
-          coverageArtifacts: stubArtifacts(written),
         },
         evidence,
         checkpoint: createMemoryCheckpoint(workspace),
@@ -312,7 +293,7 @@ describe("the ratchet against the base commit", () => {
         probe: workspace,
       }),
       cycleDeps: {
-        commands: stubCommands(workspace, new Map()),
+        commands: stubCommands(workspace),
         evidence,
         emit: () => undefined,
       },

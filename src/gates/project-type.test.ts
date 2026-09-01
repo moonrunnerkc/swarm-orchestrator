@@ -116,17 +116,17 @@ describe("assembling the default gate set", () => {
     expect(commandOf(gates, "typecheck")).toBeNull();
   });
 
-  it("asks node's own runner to write the coverage report the ratchet needs", async () => {
-    // The changed-line-coverage arm can only compare what a run measured, and it measures
-    // from a file the runner wrote rather than from what the run printed. Node rejects the
-    // flags after the file patterns, so the assembled command carries them in front.
+  it("asks node's own runner for the reports the ratchet needs, on streams", async () => {
+    // Both arms can only compare what a run measured, and they measure from streams the
+    // harness owns rather than from files at paths anything on the machine can write. Node
+    // rejects the flags after the file patterns, so the assembled command carries them in
+    // front.
     const gates = assembleGates(
       await detectProject(
         reader({
           "package.json": JSON.stringify({ scripts: { test: "node --test ./test/*.mjs" } }),
         }),
       ),
-      { coverageArtifactDirectory: "/session/coverage" },
     );
 
     // What runs is the vector, spawned with no shell in between. The command string beside it
@@ -138,10 +138,8 @@ describe("assembling the default gate set", () => {
       "--test-isolation=process",
       "--test-reporter=tap",
       "--test-reporter-destination=stdout",
-      "--test-reporter=tap",
-      "--test-reporter-destination=/session/coverage/tests.tap",
       "--test-reporter=lcov",
-      "--test-reporter-destination=/session/coverage/tests.lcov",
+      "--test-reporter-destination=stderr",
       "./test/*.mjs",
     ]);
     expect(commandOf(gates, "tests")).toBe(argvOf(gates, "tests")?.join(" "));
@@ -152,23 +150,23 @@ describe("assembling the default gate set", () => {
       await detectProject(
         reader({ "package.json": JSON.stringify({ scripts: { lint: "biome check" } }) }),
       ),
-      { coverageArtifactDirectory: "/session/coverage" },
     );
 
     expect(argvOf(gates, "lint")).toBeNull();
     expect(commandOf(gates, "lint")).toBe("npm run --silent lint");
   });
 
-  it("runs the declared script and measures nothing when no report path was given", async () => {
+  it("runs the declared script where the harness cannot build a vector for it", async () => {
+    // No path to configure any more, so what decides is whether the declared command is one
+    // node-test-command.ts recognizes completely. Vitest is not.
     const gates = assembleGates(
       await detectProject(
-        reader({
-          "package.json": JSON.stringify({ scripts: { test: "node --test ./test/*.mjs" } }),
-        }),
+        reader({ "package.json": JSON.stringify({ scripts: { test: "vitest run" } }) }),
       ),
     );
 
     expect(commandOf(gates, "tests")).toBe("npm run --silent test");
+    expect(argvOf(gates, "tests")).toBeNull();
   });
 
   it("leaves a runner it cannot ask for a readable report alone", async () => {
