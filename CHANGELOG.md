@@ -73,6 +73,24 @@
 
 ### Changed
 
+- **The reports the ratchet reads come off streams the harness owns, not files.** The first fix
+  for the counter forgery below had the runner write reports to paths the harness named under
+  the session store. An adversarial pass took that apart: a destination is an argument of the
+  spawned process, so `ps -p $PPID -o command=` hands it to any test that asks, and the file is
+  writable by anything running as the same user, since the writer is the same uid. Getting the
+  harness to read a forgery did not work, because it reads as soon as the runner exits and won
+  that race every time; what did work, four times out of four, was destroying both measures, and
+  an abstention is not a violation. So there is no file: tap goes to stdout and lcov to stderr,
+  and under process isolation a test's own output is captured by the parent and folded into the
+  reporters' streams as escaped comments. The base-control result had the identical hole and
+  gets the identical fix.
+- **The base a run is measured against is resolved to a commit before anything reads it.** HEAD
+  is a symbolic ref spent at the moment each base-side question is asked, and `git` is on the
+  default shell allowlist, so one unconfirmed tool call moved it. Measured on a scratch
+  repository with two of three tests deleted in the tree: after a `git commit -am` the base
+  declared 1 test instead of 3 and the change set held 0 files instead of 1, so the deletion the
+  ratchet exists to catch stopped being a deletion. The parallel path already resolved its base
+  before handing it to any worker; this is the single-run path held to the same thing.
 - **The ratchet's collected and skipped test counts come from a report the runner wrote, not
   from what it printed.** Node's default reporter passes a test's own `console.log("# tests
   999")` through ahead of its own counters and the counter reader took the first match, so four

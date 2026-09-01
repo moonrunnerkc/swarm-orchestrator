@@ -55,22 +55,47 @@ a deterministic client-side parse failure over a deterministic response would lo
 - `src/providers/ai-sdk-model-client.ts` records what the backend said it could not apply, so a
   seed in a bundle is never read as a seed that made the run re-derivable.
 
-## NOT-DONE: the root cause of shape two
+## Still not diagnosed, and now for a better-supported reason
 
-Not diagnosed, and not guessed at.
+Eight live runs later, on two backends and two models, with the trace on throughout: not one
+empty turn.
 
-The pairing that produced it was Ollama at `127.0.0.1:11434/v1` serving `qwen3.6:35b-a3b`.
-On this machine on 2026-08-31 Ollama is not answering on that port and that model is not
-served, so the instrumented path cannot be pointed at the thing that failed.
+| backend | model | case | repeats | empty turns |
+| --- | --- | --- | --- | --- |
+| Ollama `127.0.0.1:11434/v1` | `gemma4:31b` | `pass2-tautology-line-split` | 3 | 0 |
+| Ollama `127.0.0.1:11434/v1` | `gemma4:31b` | `pass3-isolation-none-coverage` | 2 | 0 |
+| rapid-mlx `127.0.0.1:8000` | `qwen3.8:27b` | `pass2-tautology-line-split` | 3 | 0 |
 
-The instrumentation was exercised against the one local backend that is up, rapid-mlx at
-`127.0.0.1:8000` serving `qwen3.8:27b`, and it works: the artifact holds the request body with
-the pinned `temperature`, `top_p`, `seed` and `stream_options.include_usage`, then all seven
-raw SSE frames of the reply, then the totals. The exact failing request was replayed against
-that pairing three times with the same seed and answered with a well formed tool call all three
-times, in 13 output tokens each time. That neither reproduces the failure nor clears anything:
-it is a different runtime and a different model, and the only thing it establishes is that this
-particular pairing is not the one that breaks.
+The first row is the one that matters. `gemma4:31b` is one of the three models in the corrupt
+bundles, `pass2-tautology-line-split` is the case it produced an empty turn on, and the seed is
+derived from the case, the model and the repeat number, so repeat 3 sent the same request the
+08-24 sweep sent. It answered in eight steps, all of them carrying something.
+
+The two models that produced the other empty turns, `qwen3.6:35b-a3b` and `qwen3.5:27b`, are no
+longer on this machine. Ollama holds sixteen models and neither is among them, so the pairing
+that produced shape two cannot be pointed at from here at all.
+
+What that does and does not support. It does not reproduce the failure, so the cause is still
+undiagnosed and is still not guessed at here. It does make one reading better supported than it
+was: whatever it was appears to have been true of those model builds, or of that Ollama version,
+rather than of this harness, since the harness has not changed in the ways that would matter and
+the same case and seed now runs clean. That is an inference from an absence, and it is written
+down as one.
+
+The instrumentation itself is verified against both live backends. The Ollama run captured 23
+calls and 16,597 raw response frames, 3.7 MB, with the pinned `temperature`, `top_p`, `seed` and
+`stream_options.include_usage` visible in the request body and no response carrying zero frames.
+
+Reading that trace found one defect, in the instrumentation rather than in the backend. The
+tracing fetch was built once per model rather than once per registry, so its call counter
+restarted with every client a sweep asked for: 23 requests shared 8 call numbers, and no request
+could be matched to the response it got, which is the one thing the artifact exists to let a
+reader do. Fixed, with a test.
+
+The abstention from task 1.2 is what makes the open question survivable rather than urgent. An
+empty turn is now recorded as an abstention with a reason code and never scored against a model,
+so the next occurrence costs a named unmeasured repeat instead of quietly costing a model the
+case.
 
 ### Running the instrumented path against the pairing that failed
 
