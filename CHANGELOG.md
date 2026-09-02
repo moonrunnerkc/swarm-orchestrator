@@ -26,6 +26,16 @@
   measures, every bond from its observation, every claim from its predicate, and the gate runs
   from the seal. What it cannot re-derive from the bundle alone, it names rather than agrees
   with. Dependency-free, like the verifier, and parity-tested against the parsers it mirrors.
+- **Routing by a competency table, class by class, and never by interpolation.** `swarm
+  calibrate` now writes, beside its pick, what each model was measured to do on each class of
+  task: executed repeats and the ones whose gate passed, per sweep, read off the sweep's own
+  `calibration-run` records and folded across sweeps of the same golden set. A task's router
+  asks the table for its class before the reward log has enough samples to say anything, and
+  where a candidate has at least six executed runs on that class the best gate share stands
+  as the default, recorded as a `competency` assignment with the counts it was chosen on. Where
+  no candidate clears the floor, or none has an entry for the class at all, the table abstains
+  by name and the calibration pick stands as before; a model's showing on one class is never
+  read as evidence about another.
 - **A fifty-repository campaign harness, with its criteria sealed before anything was
   selected.** `campaign/criteria.md` was committed before the first GitHub query, the method in
   `campaign/methodology.md` before the first run, and `campaign/harness/` sequences the rest:
