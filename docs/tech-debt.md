@@ -193,6 +193,26 @@ deploy, and that list is repository configuration rather than anything in this t
 not covered by any check here. And nothing verifies the deployed page against the branch: the
 tests assert what the generator renders, not what the site is serving.
 
+## Closed on 2026-09-02: the dead v12 scheduled workflows
+
+The v12 tree carried four scheduled workflows under `.github/workflows/`, `backward-mine.yml`
+at 04:00 UTC nightly, `complaint-mine.yml` at 04:30, `agent-stream.yml` at 05:00 and
+`codex-canary.yml` on Mondays, plus a weekly leaderboard refresh inside that tree's `pages.yml`,
+every one of them against a codebase this repository no longer builds. GitHub fires a schedule
+only from the default branch, so they stopped firing when the default branch moved to
+`v13-main` on 2026-08-23, and what was left was the files themselves on `main`, which a parallel
+pass on 08-31 recorded as a deletion it was not authorized to push.
+
+The deletion happened by the branch moving rather than by a commit: origin's `main` now points
+at this lineage (`78d5c8c9` on 2026-09-01, with the gates workflow run on it as `main`), and the
+v12 tree with those files in it stays reachable at the `v12-final` tag, which is what section
+3.10 of the build guide needs and all it needs. Checked from outside the tree: `gh workflow
+list --all` reports five workflows, `gates`, `pages`, `publish`, `weekly scan` and GitHub's own
+Dependabot updates, and none of the four. Of the remote branches, only `dogfood/tamper-demo`, a
+v12-era branch kept on 08-23 as a non-ancestor, still holds one of the files, and a schedule on
+a branch that is not the default never fires. The one remnant was a stale local `main` on the
+build machine, reset to `origin/main`.
+
 ## Debt: three documents ship inside the package and can go stale between releases
 
 The `files` allowlist puts `build-guide.md`, `security-coverage.md` and `claims.md` in the
