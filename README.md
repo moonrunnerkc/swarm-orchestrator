@@ -1,6 +1,8 @@
 # swarm-orchestrator
 
 [![gates](https://img.shields.io/github/actions/workflow/status/moonrunnerkc/swarm-orchestrator/gates.yml?branch=v13-main&style=flat-square&label=gates)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/gates.yml)
+[![nightly proof](https://img.shields.io/github/actions/workflow/status/moonrunnerkc/swarm-orchestrator/nightly-proof.yml?branch=v13-main&style=flat-square&label=nightly%20proof)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/nightly-proof.yml)
+[![weekly evidence](https://img.shields.io/github/actions/workflow/status/moonrunnerkc/swarm-orchestrator/weekly-evidence.yml?branch=v13-main&style=flat-square&label=weekly%20evidence)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/weekly-evidence.yml)
 [![npm](https://img.shields.io/npm/v/swarm-orchestrator?style=flat-square&label=npm)](https://www.npmjs.com/package/swarm-orchestrator)
 [![node](https://img.shields.io/badge/node-%3E%3D24-blue?style=flat-square)](package.json)
 [![license](https://img.shields.io/github/license/moonrunnerkc/swarm-orchestrator?style=flat-square)](LICENSE)
