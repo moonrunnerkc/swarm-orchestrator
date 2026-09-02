@@ -1,0 +1,79 @@
+name: nightly proof
+
+# Push CI answers whether a change broke something. This answers a different question, on a
+# schedule and from a clean clone, so that anyone reading the repository can see the audit
+# chain proven rather than described: the suite and the fuzz smoke pass, a committed bundle
+# verifies with the verifier embedded in it, and a copy of that bundle with one byte changed
+# is refused by the same verifier, naming the broken link. A verifier that only ever says yes
+# has shown nothing, which is why the second arm is not optional.
+#
+# Nothing here continues on error and nothing retries. A run that fails on the schedule opens
+# an issue carrying the log link, because a schedule that is quietly red is worse than none.
+on:
+  schedule:
+    # 07:41 UTC nightly. Off the hour, since the hour is when every scheduled job on the
+    # runner fleet queues at once.
+    - cron: "41 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          # Full history so the corpus-replay suite can reach the falsification corpus, as in
+          # gates.yml; a depth-1 checkout leaves it unreachable and those tests self-skip.
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run gates
+      - run: npm run fuzz:build
+
+      # Both arms, transcript kept. The prover exits 1 if the reference bundle does not
+      # verify, if the tampered copy verifies, or if the copy is refused for any reason other
+      # than the hash chain.
+      - name: verify the reference bundle, then refuse a one-byte tamper of it
+        run: |
+          set -o pipefail
+          node scripts/prove-bundle.mjs docs/evidence/2026-08-18/live-frontier \
+            | tee "$RUNNER_TEMP/verification-transcript.txt"
+
+      # Kept whether or not the proof held: a failed transcript is the one worth reading.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: verification-transcript
+          path: ${{ runner.temp }}/verification-transcript.txt
+          if-no-files-found: warn
+
+      - name: file an issue for a failed scheduled run
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # A failure nobody is told about is a schedule that has stopped meaning anything.
+          # If the token cannot open an issue, the step fails rather than passing quietly.
+          if ! gh auth status >/dev/null 2>&1; then
+            echo "::error::the run failed and gh is not authenticated, so nothing can be filed"
+            exit 1
+          fi
+          gh issue create \
+            --title "nightly proof failed, $(date -u +%Y-%m-%d)" \
+            --label ci \
+            --body "$(printf '%s\n' \
+              "The scheduled verification proof did not pass." \
+              "" \
+              "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              "" \
+              "The transcript, where the run got as far as producing one, is that run's verification-transcript artifact. This issue is the notification, not the report.")" \
+            || { echo "::error::gh issue create failed, so the failure would go unreported"; exit 1; }

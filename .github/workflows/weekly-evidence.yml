@@ -1,0 +1,135 @@
+name: weekly evidence run
+
+# One real task through the whole pipeline, on a runner, against a small model served by an
+# Ollama the job installs: seeded workspace, agent loop, chokepoint, gates, ratchet, bundle
+# export. Then the bundle is verified in the same job with the verifier it carries.
+#
+# What passes is bundle validity and ledger integrity, never the task outcome. A weak model
+# that fails the task while producing a fully verifiable record of failing it is a passing
+# run, because that is the thesis: the model can say what it likes, and the evidence of what
+# happened is the harness's to write and anyone's to check.
+#
+# Separate from the nightly proof on purpose, so that model variance and a pull over the
+# network never block the deterministic arm. Nothing here continues on error and nothing
+# retries. A run that fails on the schedule opens an issue carrying the log link.
+on:
+  schedule:
+    # Tuesday 08:23 UTC, off the hour.
+    - cron: "23 8 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  # Pinned by release and by the digest that release published for this tarball, so the
+  # runtime under the run is the one this file names and not whatever install.sh serves.
+  OLLAMA_VERSION: v0.33.2
+  OLLAMA_SHA256: 9785247dea264d9072f09f6c9c0eb4b8e666892826a3d8388eba3e8fb9ed1db9
+  # Small enough to pull and serve on a hosted runner's CPU. It is not expected to solve the
+  # task; it is expected to produce a run the bundle can carry.
+  MODEL: qwen3:0.6b
+  ENDPOINT: http://127.0.0.1:11434/v1
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - name: install ollama, pinned by release and digest
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/ollama.tar.zst" \
+            "https://github.com/ollama/ollama/releases/download/$OLLAMA_VERSION/ollama-linux-amd64.tar.zst"
+          echo "$OLLAMA_SHA256  $RUNNER_TEMP/ollama.tar.zst" | sha256sum --check --strict -
+          mkdir -p "$RUNNER_TEMP/ollama"
+          tar --zstd -xf "$RUNNER_TEMP/ollama.tar.zst" -C "$RUNNER_TEMP/ollama"
+          "$RUNNER_TEMP/ollama/bin/ollama" --version
+
+      - name: serve the model, and confirm it is served under exactly that id
+        run: |
+          OLLAMA_MODELS="$RUNNER_TEMP/models" nohup "$RUNNER_TEMP/ollama/bin/ollama" serve \
+            > "$RUNNER_TEMP/ollama-serve.log" 2>&1 &
+          for attempt in $(seq 1 60); do
+            curl -fsS "$ENDPOINT/models" >/dev/null 2>&1 && break
+            sleep 1
+          done
+          "$RUNNER_TEMP/ollama/bin/ollama" pull "$MODEL"
+          # The same preflight the CLI runs before dispatch, made visible in the log: a
+          # served id that merely resembles the requested one is not the requested model.
+          curl -fsS "$ENDPOINT/models" | tee "$RUNNER_TEMP/served-models.json"
+          node -e '
+            const served = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8"));
+            const ids = served.data.map((entry) => entry.id);
+            if (!ids.includes(process.argv[2])) {
+              console.error(`${process.argv[2]} is not among the served ids: ${ids.join(", ")}`);
+              process.exit(1);
+            }
+          ' "$RUNNER_TEMP/served-models.json" "$MODEL"
+
+      - name: seed the workspace
+        run: node scripts/seed-proof-workspace.mjs "$RUNNER_TEMP/workspace" > "$RUNNER_TEMP/task.txt"
+
+      # The exit code says whether the task went green, and that is not the criterion. It is
+      # recorded here and the next step judges the bundle. A run that produces no bundle at
+      # all fails there, which is the failure this workflow exists to notice.
+      - name: run the task through the whole pipeline
+        run: |
+          set +e
+          node dist/cli.js \
+            --workspace "$RUNNER_TEMP/workspace" \
+            --model "local:$MODEL" \
+            --local-endpoint "$ENDPOINT" \
+            --bundle "$RUNNER_TEMP/bundle" \
+            --max-steps 12 \
+            --attempts 1 \
+            --no-tui --no-open-evidence \
+            "$(cat "$RUNNER_TEMP/task.txt")" 2>&1 | tee "$RUNNER_TEMP/run-transcript.txt"
+          echo "run exited ${PIPESTATUS[0]}: recorded, not judged" | tee -a "$RUNNER_TEMP/run-transcript.txt"
+
+      - name: verify the fresh bundle with the verifier it carries
+        run: |
+          set -o pipefail
+          node "$RUNNER_TEMP/bundle/verify.mjs" "$RUNNER_TEMP/bundle" \
+            | tee "$RUNNER_TEMP/verify-transcript.txt"
+
+      # The bundle and both transcripts, kept whether or not verification passed.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: weekly-evidence-bundle
+          path: |
+            ${{ runner.temp }}/bundle
+            ${{ runner.temp }}/run-transcript.txt
+            ${{ runner.temp }}/verify-transcript.txt
+            ${{ runner.temp }}/served-models.json
+            ${{ runner.temp }}/ollama-serve.log
+          if-no-files-found: warn
+
+      - name: file an issue for a failed scheduled run
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh auth status >/dev/null 2>&1; then
+            echo "::error::the run failed and gh is not authenticated, so nothing can be filed"
+            exit 1
+          fi
+          gh issue create \
+            --title "weekly evidence run failed, $(date -u +%Y-%m-%d)" \
+            --label ci \
+            --body "$(printf '%s\n' \
+              "The scheduled end-to-end evidence run did not produce a bundle that verifies." \
+              "" \
+              "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              "" \
+              "Whatever the run produced is that run's weekly-evidence-bundle artifact. This issue is the notification, not the report.")" \
+            || { echo "::error::gh issue create failed, so the failure would go unreported"; exit 1; }
