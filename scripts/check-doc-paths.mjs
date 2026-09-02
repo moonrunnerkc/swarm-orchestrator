@@ -141,31 +141,55 @@ function ignoredAmong(root, candidates) {
   return new Promise((settle) => {
     const child = spawn("git", ["check-ignore", "--stdin", "-z"], { cwd: root });
     let stdout = "";
+    let stderr = "";
     child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
       stdout += chunk;
     });
-    // Exit 1 means nothing matched, which is an answer; an error means git could not be asked,
-    // and then nothing is called generated rather than everything being.
-    child.on("close", () => {
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    // Exit 1 means nothing matched, which is an answer; exit 128 means git refused a path and
+    // stopped reading, which is said rather than crashed on; an error means git could not be
+    // asked, and then nothing is called generated rather than everything being.
+    child.on("close", (code) => {
+      if (code === 128) {
+        console.error(`git check-ignore refused the candidate list: ${stderr.trim()}`);
+      }
       settle(new Set(stdout.split("\0").filter((path) => path.length > 0)));
     });
     child.on("error", () => {
       settle(new Set());
     });
+    // git stops reading once it has refused a path, and the write that follows is not a defect
+    // of this script: the refusal is reported above.
+    child.stdin.on("error", () => {});
     child.stdin.end(`${candidates.join("\0")}\0`);
   });
 }
 
-/** Every markdown file under docs/, plus the ones at the root that carry the same pointers. */
+/**
+ * Every markdown file under docs/ and campaign/, plus the ones at the root that carry the
+ * same pointers.
+ */
 async function documentationFiles(root, tracked) {
   const files = [];
-  for (const entry of await readdir(join(root, "docs"), {
-    withFileTypes: true,
-    recursive: true,
-  })) {
-    if (entry.isFile() && entry.name.endsWith(".md")) {
-      files.push(join(entry.parentPath, entry.name));
+  for (const shelf of ["docs", "campaign"]) {
+    if (!tracked.has(`${shelf}/`)) {
+      continue;
+    }
+    for (const entry of await readdir(join(root, shelf), {
+      withFileTypes: true,
+      recursive: true,
+    })) {
+      const path = join(entry.parentPath, entry.name);
+      // Tracked documents only. The campaign shelf holds cloned repositories under work/ and
+      // run bundles under corpus/, thousands of markdown files that are not this project's
+      // documents and point at trees this repository does not hold.
+      if (entry.isFile() && entry.name.endsWith(".md") && tracked.has(relative(root, path))) {
+        files.push(path);
+      }
     }
   }
   for (const name of ["README.md", "CHANGELOG.md", "CLAUDE.md", "AGENTS.md", "fuzz/README.md"]) {
