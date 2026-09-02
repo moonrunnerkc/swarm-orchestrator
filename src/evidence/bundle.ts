@@ -154,6 +154,11 @@ export async function exportBundle(options: ExportBundleOptions): Promise<Bundle
     "utf8",
   );
   await writeFile(
+    join(options.destination, bundleFileNames.rederiver),
+    await readRederiverScript(),
+    "utf8",
+  );
+  await writeFile(
     join(options.destination, bundleFileNames.review),
     `${renderReviewPage(manifest, dag)}\n`,
     "utf8",
@@ -205,4 +210,9 @@ function stripPayloads(dag: EvidenceDag): unknown {
 
 function readVerifierScript(): Promise<string> {
   return readFile(new URL("./verifier/verify.mjs", import.meta.url), "utf8");
+}
+
+/** Beside the verifier and importing it, so the two ship together and share one predicate reader. */
+function readRederiverScript(): Promise<string> {
+  return readFile(new URL("./verifier/rederive.mjs", import.meta.url), "utf8");
 }

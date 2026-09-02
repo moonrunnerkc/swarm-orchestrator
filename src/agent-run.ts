@@ -9,11 +9,18 @@ import type { EvidenceRecorder } from "./evidence/session.ts";
 import type { ResolveRequest } from "./gates/auto-resolve.ts";
 import type { SingleFileCommand } from "./gates/base-control.ts";
 import type { GateSetOptions } from "./gates/default-gates.ts";
-import { type GatesEngineRun, runGatesEngine } from "./gates/engine.ts";
+import {
+  assembleGateSet,
+  defaultDiffBudget,
+  type GatesEngineRun,
+  runGatesEngine,
+  vacuousBlockingBonds,
+} from "./gates/engine.ts";
 import type { FileSetRegistry } from "./gates/file-set.ts";
 import { createAmendFileSetTool, createDeclareFileSetTool } from "./gates/file-set-tool.ts";
 import type { DiffBudget } from "./gates/gate-definition.ts";
 import { measuredTheChange } from "./gates/gate-runner.ts";
+import { describeGateSet, sealGateSet } from "./gates/gate-set-seal.ts";
 import { createGitWorkspaceProbe } from "./gates/git-workspace.ts";
 import { captureInheritedChanges, type InheritedChanges } from "./gates/inherited-changes.ts";
 import { detectProject } from "./gates/project-type.ts";
@@ -224,6 +231,7 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
   // to run inside a repository, and swallowing it there to throw a worse one here helps nobody.
   const inherited = await captureInherited(options);
   const detected = await detectedTypes(options);
+  const criteriaSealed = await sealCriteria(options);
   if (inherited.size > 0) {
     await options.evidence.record({
       type: "inherited-changes",
@@ -290,6 +298,7 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
     cap: options.attempts,
     abortSignal: options.abortSignal,
     inherited,
+    criteriaSealed,
     resolve: (request) => resolveWithModel(request, options, loopDependencies),
     ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
     ...(options.diffBudget === undefined ? {} : { budgets: options.diffBudget }),
@@ -342,6 +351,11 @@ function wasGreen(loop: AgentLoopOutcome, gates: GatesEngineRun): boolean {
   if (gates.outcome.settled !== "green" || loop.stopReason === "interrupted") {
     return false;
   }
+  // A blocking pass that could not be made to fail is not a pass. The gates said green over
+  // a check that would have said green over anything, and green means the check held.
+  if (vacuousBlockingBonds(gates.bonds).length > 0) {
+    return false;
+  }
   const changed = gates.outcome.finalCycle.measures.changedFiles ?? 0;
   if (changed === 0) {
     return loop.stopReason === "completed";
@@ -352,6 +366,33 @@ function wasGreen(loop: AgentLoopOutcome, gates: GatesEngineRun): boolean {
   // never asked the model to fix it: it reported the failure accurately and did nothing about
   // it, which is not the same as working.
   return measuredTheChange(gates.outcome.finalCycle);
+}
+
+/**
+ * The criteria, on the chain before the model is asked for anything. Not raised on a
+ * workspace the gates cannot read: those raise their own error when they run, with the remedy.
+ */
+async function sealCriteria(options: AgentTaskOptions): Promise<boolean> {
+  let assembled: Awaited<ReturnType<typeof assembleGateSet>>;
+  try {
+    assembled = await assembleGateSet({
+      workspaceRoot: options.workspace,
+      baseRef: options.baseRef,
+      ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
+    });
+  } catch {
+    return false;
+  }
+  await sealGateSet(
+    options.evidence,
+    describeGateSet({
+      detection: assembled.detection,
+      gates: assembled.gates,
+      budgets: options.diffBudget ?? defaultDiffBudget,
+      attemptCap: options.attempts,
+    }),
+  );
+  return true;
 }
 
 /** From the base commit, for the same reason the gate command is: a run cannot restyle itself. */

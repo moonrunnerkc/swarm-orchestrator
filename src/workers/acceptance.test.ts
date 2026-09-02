@@ -393,6 +393,7 @@ describe("trying each task several ways", () => {
     expect(types).toEqual([
       "file-set-declared",
       "gate-run",
+      "gate-set-sealed",
       "merge-attempt",
       "worker-finished",
       "worker-started",

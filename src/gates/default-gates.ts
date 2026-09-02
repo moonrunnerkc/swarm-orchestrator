@@ -4,6 +4,7 @@ import {
   type GateObservation,
   type GateParser,
   type GateSeverity,
+  type ParserName,
   unavailableObservation,
 } from "./gate-definition.ts";
 import { harnessReportingCommand } from "./harness-reporting.ts";
@@ -25,7 +26,8 @@ interface GateSpec {
   /** Set where the harness built the invocation itself and spawns it with no shell. */
   readonly argv?: readonly string[];
   readonly parse?: GateParser;
-  /** Where this run's runner was told to write its coverage report, when it was. */
+  /** Named beside `parse` where a parser is supplied, so the record says which rule read it. */
+  readonly parserName?: ParserName;
 }
 
 function commandGate(spec: GateSpec): GateDefinition {
@@ -39,6 +41,7 @@ function commandGate(spec: GateSpec): GateDefinition {
       ...(spec.argv === undefined ? {} : { argv: spec.argv }),
     },
     parse: spec.parse ?? parserFor(spec.id),
+    parserName: spec.parserName ?? parserNameFor(spec.id),
   };
 }
 
@@ -48,9 +51,14 @@ function commandGate(spec: GateSpec): GateDefinition {
  * unavailable gate and an overridden command both keep the right reader.
  */
 const parsersById: Readonly<Record<string, GateParser>> = { tests: testOutputParser };
+const parserNamesById: Readonly<Record<string, ParserName>> = { tests: "test-output" };
 
 function parserFor(id: string): GateParser {
   return parsersById[id] ?? exitCodeParser;
+}
+
+function parserNameFor(id: string): ParserName {
+  return parserNamesById[id] ?? "exit-code";
 }
 
 /** A gate the project declared no way to run. Recorded, never silently dropped. */
@@ -66,6 +74,7 @@ function unavailableGate(
     severity,
     source: { kind: "inspection", inspect: async () => unavailableObservation(reason) },
     parse: parserFor(id),
+    parserName: parserNameFor(id),
   };
 }
 
@@ -260,6 +269,7 @@ const goGates: readonly GateDefinition[] = [
     severity: "blocking",
     command: "gofmt -l .",
     parse: noOutputParser,
+    parserName: "no-output",
   }),
   commandGate({
     id: "tests",

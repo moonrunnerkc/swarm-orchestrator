@@ -68,6 +68,8 @@ describe("what the dist build has to carry beyond compiled JavaScript", () => {
    */
   it("finds every non-TypeScript file the runtime reads from beside its module", async () => {
     expect(await assetsUnder(src)).toEqual([
+      "evidence/verifier/rederive.d.mts",
+      "evidence/verifier/rederive.mjs",
       "evidence/verifier/verify.d.mts",
       "evidence/verifier/verify.mjs",
       "select/calibration-cases.v1.json",

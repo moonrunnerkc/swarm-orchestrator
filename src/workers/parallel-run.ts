@@ -164,6 +164,8 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
       emit: (event) => {
         options.emit("queue", event);
       },
+      // The first layer seals the chain's criteria; every later layer runs under that seal.
+      criteriaSealed: queue !== null,
       ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
     });
 

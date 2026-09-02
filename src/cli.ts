@@ -46,12 +46,19 @@ import {
 } from "./evidence/session.ts";
 import { createKeychainSecretStore, resolveSigningKey } from "./evidence/signing.ts";
 import type { AutoResolveOutcome } from "./gates/auto-resolve.ts";
+import type { BondOutcome } from "./gates/bond-runner.ts";
 import type { GateSetOptions } from "./gates/default-gates.ts";
-import { defaultDiffBudget, runGatesEngine } from "./gates/engine.ts";
+import {
+  assembleGateSet,
+  defaultDiffBudget,
+  runGatesEngine,
+  vacuousBlockingBonds,
+} from "./gates/engine.ts";
 import { describeEscalation } from "./gates/escalation.ts";
 import { createFileSetRegistry } from "./gates/file-set.ts";
 import type { DiffBudget } from "./gates/gate-definition.ts";
 import { citedRecords, type GateCycle, outstandingJustifications } from "./gates/gate-runner.ts";
+import { describeGateSet, sealGateSet } from "./gates/gate-set-seal.ts";
 import { resolveBaseCommit } from "./gates/git-workspace.ts";
 import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { summarizeRatchet } from "./gates/ratchet-summary.ts";
@@ -517,6 +524,7 @@ async function runOneTurn(input: {
     });
 
     reportGates(gates.outcome, evidence, ui.note);
+    reportBonds(gates.bonds, ui.note);
     await logReward({
       evidence,
       home: homedir(),
@@ -1062,6 +1070,22 @@ async function gates(options: GatesCommand): Promise<number> {
 
   const gateOptions = gateOptionsFrom(settings);
   const diffBudget = diffBudgetFrom(settings);
+  // Sealed before anything runs, exactly as a task run seals its criteria before the loop, so
+  // a gates-only bundle is held to the same conformance check by the verifier.
+  const assembled = await assembleGateSet({
+    workspaceRoot: options.workspace,
+    baseRef,
+    ...(gateOptions === undefined ? {} : { gateOptions }),
+  });
+  await sealGateSet(
+    evidence,
+    describeGateSet({
+      detection: assembled.detection,
+      gates: assembled.gates,
+      budgets: diffBudget ?? defaultDiffBudget,
+      attemptCap: 0,
+    }),
+  );
   const run = await runGatesEngine({
     workspaceRoot: options.workspace,
     baseRef,
@@ -1071,6 +1095,7 @@ async function gates(options: GatesCommand): Promise<number> {
     emit: () => {},
     // No retries are offered, so none are spent: this command measures and reports.
     cap: 0,
+    criteriaSealed: true,
     resolve: () => Promise.reject(new Error("swarm gates reports; it does not fix")),
     ...(gateOptions === undefined ? {} : { gateOptions }),
     ...(diffBudget === undefined ? {} : { budgets: diffBudget }),
@@ -1083,8 +1108,39 @@ async function gates(options: GatesCommand): Promise<number> {
   for (const gate of outstandingJustifications(run.outcome.firstCycle, citedRecords(evidence))) {
     process.stdout.write(`\nthe ${gate.gateId} gate asked for a justification: ${gate.detail}\n`);
   }
+  reportBonds(run.bonds, writeOut);
   announceBundle((await writeBundle(evidence, options.bundleDirectory, clock)).directory);
-  return run.outcome.firstCycle.blockingFailures.length === 0 ? 0 : 1;
+  const vacuous = vacuousBlockingBonds(run.bonds).length > 0;
+  return run.outcome.firstCycle.blockingFailures.length === 0 && !vacuous ? 0 : 1;
+}
+
+/**
+ * What each pass was shown to be worth. Said after the table, since the table is what the
+ * gates decided and this is whether that decision could have gone the other way.
+ */
+function reportBonds(bonds: readonly BondOutcome[], note: (line: string) => void): void {
+  if (bonds.length === 0) {
+    return;
+  }
+  note("\nbonds, one per gate that passed:");
+  for (const bond of bonds) {
+    const mark =
+      bond.verdict === "held"
+        ? "held"
+        : bond.verdict === "vacuous"
+          ? "VACUOUS"
+          : bond.verdict === "not-bonded"
+            ? "not bonded"
+            : bond.verdict;
+    note(`  ${bond.gateId}: ${mark}. ${bond.detail}`);
+  }
+  const vacuous = vacuousBlockingBonds(bonds);
+  if (vacuous.length > 0) {
+    note(
+      `\n${vacuous.map((bond) => bond.gateId).join(", ")}: a blocking gate passed over a change it ` +
+        "had to refuse, so its pass has not been shown capable of failing and this run is not green.",
+    );
+  }
 }
 
 async function writeBundle(

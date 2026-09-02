@@ -26,6 +26,8 @@ const recordTypes = [
   "claim",
   "session-stopped",
   "gate-run",
+  "gate-set-sealed",
+  "gate-bond",
   "ratchet-decision",
   "file-set-declared",
   "file-set-amended",

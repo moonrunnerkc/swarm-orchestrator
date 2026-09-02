@@ -20,3 +20,21 @@ export declare function indexCitedRecords(
 export declare function evaluateClaim(claim: ClaimPayload, lookup: EvidenceLookup): ClaimEvaluation;
 /** Returns the process exit code: 0 when every check passed. */
 export declare function verifyBundle(directory: string): number;
+
+export type BondVerdict = "held" | "vacuous" | "unshown" | "not-measured";
+export declare function bondVerdict(input: {
+  readonly observed: "passed" | "failed" | "not-applicable";
+  readonly provable: boolean;
+  readonly collectedBefore: number | null;
+  readonly collectedAfter: number | null;
+}): BondVerdict;
+export declare function recomputeBondVerdict(
+  payload: JsonValue | undefined,
+): BondVerdict | "not-bonded";
+export declare function sealConformance(
+  records: readonly Pick<LedgerRecord, "type" | "sequence" | "payloadDigest">[],
+  payloads: ReadonlyMap<string, JsonValue>,
+): {
+  readonly sealed: { readonly sequence: number; readonly gates: number } | null;
+  readonly problems: readonly string[];
+};

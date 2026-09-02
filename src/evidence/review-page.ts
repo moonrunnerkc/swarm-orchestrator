@@ -196,8 +196,9 @@ function renderWhatHappened(dag: EvidenceDag): readonly string[] {
  */
 function renderGates(dag: EvidenceDag): string {
   const latest = new Map<string, Record<string, unknown>>();
+  const bonds = new Map<string, Record<string, unknown>>();
   for (const node of dag.evidence) {
-    if (node.type !== "gate-run") {
+    if (node.type !== "gate-run" && node.type !== "gate-bond") {
       continue;
     }
     const payload = node.payload;
@@ -207,7 +208,7 @@ function renderGates(dag: EvidenceDag): string {
     const record = payload as Record<string, unknown>;
     const id = textOf(record.gateId);
     if (id !== null) {
-      latest.set(id, record);
+      (node.type === "gate-run" ? latest : bonds).set(id, record);
     }
   }
   if (latest.size === 0) {
@@ -217,11 +218,15 @@ function renderGates(dag: EvidenceDag): string {
   const rows = [...latest.entries()].map(([id, record]) => {
     const status = textOf(record.status) ?? "unknown";
     const blocking = record.blocking === true;
+    const bond = bonds.get(id);
+    const verdict = bond === undefined ? null : (textOf(bond.verdict) ?? null);
+    const vacuous = verdict === "vacuous";
     return [
-      `<tr class="gate-${escapeHtml(status)}">`,
-      `<td class="gate-status">${escapeHtml(status)}</td>`,
+      `<tr class="gate-${escapeHtml(vacuous ? "vacuous" : status)}">`,
+      `<td class="gate-status">${escapeHtml(status)}${vacuous ? " <strong>vacuous</strong>" : ""}</td>`,
       `<td class="gate-id">${escapeHtml(id)}${blocking ? "" : ' <span class="advisory">advisory</span>'}</td>`,
       `<td class="gate-detail">${escapeHtml(textOf(record.detail) ?? "")}</td>`,
+      `<td class="gate-bond">${escapeHtml(describeBond(status, verdict, bond))}</td>`,
       "</tr>",
     ].join("");
   });
@@ -229,12 +234,40 @@ function renderGates(dag: EvidenceDag): string {
   return [
     '<section class="gates">',
     "<h2>Gates</h2>",
-    '<p class="note">A gate with nothing to run reports that it had nothing to run. It does not report a pass.</p>',
+    '<p class="note">A gate with nothing to run reports that it had nothing to run. It does not report a pass. A pass is bonded: the harness hands the gate a change it has to refuse, and a pass that survives its bond is vacuous rather than green.</p>',
     "<table>",
+    "<tr><th>status</th><th>gate</th><th>detail</th><th>bond</th></tr>",
     ...rows,
     "</table>",
     "</section>",
   ].join("");
+}
+
+/** The bond column, in words a reviewer can act on. */
+function describeBond(
+  status: string,
+  verdict: string | null,
+  bond: Record<string, unknown> | undefined,
+): string {
+  if (status !== "passed") {
+    return "not bonded: the gate did not pass";
+  }
+  if (verdict === null || bond === undefined) {
+    return "not bonded: no bond ran";
+  }
+  const description = textOf((bond.bond as Record<string, unknown> | null)?.description) ?? "";
+  switch (verdict) {
+    case "held":
+      return `held: the gate refused the bond (${description})`;
+    case "vacuous":
+      return `VACUOUS: the gate passed over the bond it was handed (${description}), so this pass cannot fail`;
+    case "unshown":
+      return `unshown: the gate passed with the bond in place, and nothing shows it read the bond (${description})`;
+    case "not-measured":
+      return "not measured: the gate could not run over the bond";
+    default:
+      return `not bonded: ${textOf(bond.detail) ?? verdict}`;
+  }
 }
 
 /**
@@ -523,6 +556,7 @@ section.gates td { padding: .35rem .6rem; border-top: 1px solid var(--line); ver
 .gate-status { font-weight: 600; text-transform: uppercase; font-size: .72rem; white-space: nowrap; }
 .gate-passed .gate-status { color: var(--green); }
 .gate-failed .gate-status { color: var(--red); }
+.gate-vacuous .gate-status { color: var(--red); }
 .gate-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
 .advisory { color: var(--muted); font-weight: 400; }
 .gate-detail { color: var(--muted); }

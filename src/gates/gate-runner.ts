@@ -33,6 +33,8 @@ const gateRunSchema = z.object({
    * comparing the run to its own description.
    */
   argv: z.array(z.string()).nullable(),
+  /** The rule that read the bytes below into the status above, by name, so a reader can apply it. */
+  parser: z.enum(["exit-code", "no-output", "test-output", "inspection"]),
   stdout: z.string(),
   stderr: z.string(),
   outputTruncated: z.boolean(),
@@ -135,6 +137,7 @@ export async function runGateCycle(
       attempt,
       command: gate.source.kind === "command" ? gate.source.command : null,
       argv: gate.source.kind === "command" ? (gate.source.argv ?? null) : null,
+      parser: gate.parserName ?? "exit-code",
       exitCode: observation.exitCode,
       durationMs: observation.durationMs,
       unavailable: observation.unavailable,
@@ -198,7 +201,7 @@ export async function runGateCycle(
   };
 }
 
-interface GateOutput {
+export interface GateOutput {
   readonly observation: GateObservation;
   readonly coverageReport: string | null;
   readonly testReport: string | null;
@@ -209,7 +212,7 @@ interface GateOutput {
  * cleared first: a file left behind by an earlier attempt would otherwise be read as this
  * attempt's measurement, which is the same defect as reading stdout, one run later.
  */
-async function observe(
+export async function observe(
   gate: GateDefinition,
   context: GateContext,
   deps: GateCycleDependencies,
