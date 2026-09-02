@@ -240,3 +240,50 @@ describe("the cost term in routing", () => {
     expect(decision.model).toBe("cheap");
   });
 });
+
+describe("routeModel and the competency table", () => {
+  const picked = {
+    taskClass: "edit" as const,
+    floor: 6,
+    pick: "slow",
+    abstained: false,
+    reason: "slow passed the gate on 6 of 6 executed edit run(s) across 1 sweep(s)",
+    considered: [],
+  };
+  const abstained = {
+    ...picked,
+    pick: null,
+    abstained: true,
+    reason: "no candidate has an executed run on this class in the table, and 6 are needed",
+  };
+
+  it("lets the table's pick for the class stand below the reward threshold", () => {
+    const decision = route({ competency: picked });
+
+    expect(decision).toMatchObject({ model: "slow", assignment: "competency" });
+    expect(decision.reason).toContain("the competency table's pick for this class stands");
+    expect(decision.competency).toEqual(picked);
+  });
+
+  it("falls back to the calibration pick where the table abstained, and says the table was asked", () => {
+    const decision = route({ competency: abstained });
+
+    expect(decision).toMatchObject({ model: "fast", assignment: "calibration" });
+    expect(decision.reason).toContain("the competency table abstained");
+    expect(decision.competency).toEqual(abstained);
+  });
+
+  it("gives way to the rewards once the class has enough of them", () => {
+    const decision = route({
+      competency: picked,
+      entries: [...repeat("fast", 0.9, 20), ...repeat("slow", 0.2, 20)],
+    });
+
+    expect(decision.assignment).toBe("ucb");
+    expect(decision.model).toBe("fast");
+  });
+
+  it("records no competency where no table was consulted", () => {
+    expect(route().competency).toBeNull();
+  });
+});

@@ -11,7 +11,7 @@ import { taskClasses } from "./task-class.ts";
 export const routingLogSchemaVersion = 2;
 
 /** How the model was picked, so the log can be read without mistaking its own bias for signal. */
-export const assignmentKinds = ["calibration", "ucb", "epsilon", "pinned"] as const;
+export const assignmentKinds = ["calibration", "competency", "ucb", "epsilon", "pinned"] as const;
 
 export type AssignmentKind = (typeof assignmentKinds)[number];
 

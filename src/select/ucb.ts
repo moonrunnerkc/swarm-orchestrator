@@ -1,4 +1,5 @@
 import type { RandomSource } from "../core/random-source.ts";
+import type { CompetencyLookup } from "./competency-table.ts";
 import type { AssignmentKind, RewardEntry } from "./routing-log.ts";
 import { articleFor, type TaskClass } from "./task-class.ts";
 
@@ -35,6 +36,8 @@ export interface RoutingDecision {
   readonly taskClass: TaskClass;
   readonly model: string;
   readonly assignment: AssignmentKind;
+  /** What the competency table said for this class, or null where the caller had none. */
+  readonly competency: CompetencyLookup | null;
   /** Rewards on record for this task class, which is what the threshold is measured against. */
   readonly samples: number;
   readonly threshold: number;
@@ -51,6 +54,13 @@ export interface RoutingInput {
   readonly entries: readonly RewardEntry[];
   readonly random: RandomSource;
   readonly settings?: RouterSettings;
+  /**
+   * The competency table's answer for this class. Where it picked, that pick is the default
+   * that stands below the reward threshold, in place of the one calibration pick for every
+   * class; where it abstained, the calibration pick stands and the abstention travels with
+   * the decision so a reader can see it was asked.
+   */
+  readonly competency?: CompetencyLookup;
 }
 
 /**
@@ -72,6 +82,7 @@ export function routeModel(input: RoutingInput): RoutingDecision {
     taskClass: input.taskClass,
     model,
     assignment,
+    competency: input.competency ?? null,
     samples: forClass.length,
     threshold: settings.minSamples,
     arms: withIndices,
@@ -79,11 +90,23 @@ export function routeModel(input: RoutingInput): RoutingDecision {
   });
 
   if (forClass.length < settings.minSamples) {
+    const short =
+      `the ${input.taskClass} class has ${forClass.length} of the ${settings.minSamples} rewards ` +
+      "the router needs";
+    const competency = input.competency;
+    if (competency !== undefined && competency.pick !== null) {
+      return decide(
+        competency.pick,
+        "competency",
+        `${short}, so the competency table's pick for this class stands: ${competency.reason}`,
+        arms,
+      );
+    }
     return decide(
       input.calibrationPick,
       "calibration",
-      `the ${input.taskClass} class has ${forClass.length} of the ${settings.minSamples} rewards ` +
-        "the router needs, so the calibration pick stands",
+      `${short}, so the calibration pick stands` +
+        (competency === undefined ? "" : `; the competency table abstained: ${competency.reason}`),
       arms,
     );
   }
