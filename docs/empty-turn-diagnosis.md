@@ -141,3 +141,46 @@ case.
 
 Until those frames exist for the failing pairing, this stays open. Shape one is already
 handled, shape two is instrumented and abstained on, and neither is fixed at its cause.
+
+## 2026-09-02: the failing request, replayed by digest against the live backend
+
+`qwen3.6:35b-a3b` was pulled back onto this machine (Ollama reports it as `096fdbd02fe6`, 22 GB,
+Q4_K_M) and the runbook above was run as written: one single-model sweep, 20 cases, three
+repeats, `SWARM_TRANSPORT_TRACE` on throughout. 60 of 60 repeats executed, none abstained, no
+turn in any of the 349 model calls was empty, and the trace holds 352 requests, every one of
+them answered 200 with at least one chunk.
+
+What makes this a replay rather than another rerun is the prompt digest. The 08-23 bundle's
+shape-two record is sequence 830, a step-1 call carrying `promptDigest`
+`sha256:9f26135e63be44a5f3a490b51b27abb0593532e4b710f5b82f2d386e5838ffb7`, and the run record
+after it names `pass3-isolation-none-coverage` repeat 2, `executed: false`, `empty-response`.
+The step-1 call of the same case and repeat in the 09-02 sweep carries the same digest, byte
+for byte: same 297-character calibration system prompt, same one user message, same six tool
+schemas, same `seed: 522856934`, `temperature: 0.7`, `topP: 0.95`, same 4096-token cap. The
+earlier note that the 08-31 rerun had "sent the same request" was right about the seed and had
+not checked the rest; this one has.
+
+That request came back as eight steps of text and tool calls, and the repeat went green.
+
+What that separates. The request is the same. The drain loop in
+`src/providers/ai-sdk-model-client.ts` is the same as on 08-23: it raised on a stream error part
+then and raises now, so an error frame would have surfaced as a failed call rather than as a
+zero-token turn on either day. The SDK under it is the same, `ai` 7.0.65 and
+`@ai-sdk/openai-compatible` 3.0.30 on both dates. What is not the same is the backend: Ollama is
+0.32.14 today and its August version was not recorded, and the model tag has a build digest today
+that the August bundles did not record either. So the variable is the backend as served on
+those two days, and the three-way split in the runbook resolves to its first branch, the
+backend sent nothing, by elimination rather than by frames: the frames from August do not exist
+and cannot be produced, because that backend cannot be re-served.
+
+What that does and does not support, stated plainly. It locates the cause outside this tree.
+It does not name the defect inside that backend, and nothing here should read as if it did. It
+is stronger than the 08-31 inference from absence, because the absence is now of a failure on
+the identical request rather than on a similar one. And it leaves the harness where task 1.2
+put it: a recurrence records an abstention with its reason and costs a named unmeasured repeat.
+
+Two things this run changed on the machine, named so the next reader is not surprised by them.
+The model is back on disk, and `swarm calibrate` wrote its pick to
+`~/.swarm/routing/calibration-pick.json` as it does after every sweep, which is the tool
+behaving as designed rather than a side effect: the latest measurement of this machine is the
+one it routes on.
