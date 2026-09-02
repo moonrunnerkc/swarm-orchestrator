@@ -87,6 +87,14 @@ import { runCalibration } from "./select/calibrate.ts";
 import { parseCalibrationCase } from "./select/calibration-case.ts";
 import { payloadsSince } from "./select/calibration-measures.ts";
 import { renderCalibrationReport } from "./select/calibration-report.ts";
+import {
+  defaultCompetencyTablePath,
+  lookupCompetency,
+  readCompetencyTable,
+  sweepFromRuns,
+  withSweep,
+  writeCompetencyTable,
+} from "./select/competency-table.ts";
 import { appendCalibrationCase, defaultGoldenSetPath, readGoldenSet } from "./select/golden-set.ts";
 import { probeHardware } from "./select/hardware-probe.ts";
 import { createOllamaMemoryProbe } from "./select/memory-probe.ts";
@@ -263,7 +271,7 @@ async function chooseModel(
   settings: ResolvedSettings,
 ): Promise<{
   modelSpec: string | null;
-  assignment: "calibration" | "ucb" | "epsilon" | "pinned";
+  assignment: "calibration" | "competency" | "ucb" | "epsilon" | "pinned";
   /** What else the calibration measured, so an unserved pick can be swapped for a known one. */
   candidates: readonly string[];
   /**
@@ -287,14 +295,25 @@ async function chooseModel(
   const candidates = usable.length > 0 ? usable : calibrated.candidates;
 
   const log = await openRoutingLog({ path: defaultRoutingLogPath(home) });
+  const taskClass = classifyTask(task).taskClass;
+  const calibrationPick = candidates.includes(calibrated.model)
+    ? calibrated.model
+    : (candidates[0] ?? calibrated.model);
+  // The table is asked with the calibration pick listed first, so a tie falls to it rather
+  // than to whichever model the sweep happened to run first.
+  const competency = lookupCompetency({
+    table: await readCompetencyTable(defaultCompetencyTablePath(home)),
+    taskClass,
+    goldenSetVersion: calibrated.goldenSetVersion,
+    candidates: [calibrationPick, ...candidates.filter((model) => model !== calibrationPick)],
+  });
   const decision = routeModel({
-    taskClass: classifyTask(task).taskClass,
+    taskClass,
     candidates,
-    calibrationPick: candidates.includes(calibrated.model)
-      ? calibrated.model
-      : (candidates[0] ?? calibrated.model),
+    calibrationPick,
     entries: (await log.read()).entries,
     random,
+    competency,
   });
 
   process.stdout.write(
@@ -977,7 +996,7 @@ interface RewardLogInput {
   readonly home: string;
   readonly task: string;
   readonly modelSpec: string;
-  readonly assignment: "calibration" | "ucb" | "epsilon" | "pinned";
+  readonly assignment: "calibration" | "competency" | "ucb" | "epsilon" | "pinned";
   readonly ratchet: ReturnType<typeof summarizeRatchet>;
   /** The run's own verdict, so the router is not taught by the gate strip alone. */
   readonly green: boolean;
@@ -1348,6 +1367,23 @@ async function calibrate(options: CalibrateCommand): Promise<number> {
       goldenSetVersion: result.goldenSetVersion,
       recordedAt: clock.now(),
     });
+    // The class-by-class counts beside the pick, from this sweep's own run records, added to
+    // whatever earlier sweeps of the same golden set already measured.
+    const tablePath = defaultCompetencyTablePath(home);
+    await writeCompetencyTable(
+      tablePath,
+      withSweep(
+        await readCompetencyTable(tablePath),
+        sweepFromRuns(
+          {
+            sessionId: evidence.sessionId,
+            goldenSetVersion: result.goldenSetVersion,
+            recordedAt: clock.now(),
+          },
+          result.observations,
+        ),
+      ),
+    );
     return result.pick.model === null ? 1 : 0;
   } finally {
     // Before the report is read, so the screen is down and the terminal is the shell's again.

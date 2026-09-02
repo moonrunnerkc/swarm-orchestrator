@@ -37,6 +37,24 @@ type RoutingDecisionEntry = {
       bonus: number | null;
       index: number | null;
     }[];
+    /**
+     * The competency table's answer for this class, counts included, so the pick or the
+     * abstention can be recomputed from the record. Null where no table was consulted.
+     */
+    competency: {
+      taskClass: string;
+      floor: number;
+      pick: string | null;
+      abstained: boolean;
+      reason: string;
+      considered: {
+        model: string;
+        executed: number;
+        gatePassed: number;
+        gateShare: number | null;
+        sweeps: number;
+      }[];
+    } | null;
   };
 };
 
@@ -59,6 +77,23 @@ export function routingDecisionRecord(decision: RoutingDecision): RoutingDecisio
         bonus: arm.bonus,
         index: arm.index,
       })),
+      competency:
+        decision.competency === null
+          ? null
+          : {
+              taskClass: decision.competency.taskClass,
+              floor: decision.competency.floor,
+              pick: decision.competency.pick,
+              abstained: decision.competency.abstained,
+              reason: decision.competency.reason,
+              considered: decision.competency.considered.map((entry) => ({
+                model: entry.model,
+                executed: entry.executed,
+                gatePassed: entry.gatePassed,
+                gateShare: entry.gateShare,
+                sweeps: entry.sweeps,
+              })),
+            },
     },
   };
 }

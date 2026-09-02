@@ -117,3 +117,58 @@ describe("the routing decision as a ledger record", () => {
     ]);
   });
 });
+
+describe("the competency table in the routing record", () => {
+  it("carries the lookup, counts included, and null where no table was consulted", () => {
+    const lookup = {
+      taskClass: "edit" as const,
+      floor: 6,
+      pick: "local:b",
+      abstained: false,
+      reason: "local:b passed the gate on 5 of 6 executed edit run(s) across 1 sweep(s)",
+      considered: [
+        {
+          model: "local:a",
+          taskClass: "edit" as const,
+          executed: 6,
+          gatePassed: 3,
+          gateShare: 0.5,
+          sweeps: 1,
+        },
+        {
+          model: "local:b",
+          taskClass: "edit" as const,
+          executed: 6,
+          gatePassed: 5,
+          gateShare: 5 / 6,
+          sweeps: 1,
+        },
+      ],
+    };
+    const withTable = routeModel({
+      taskClass: "edit",
+      candidates: ["local:a", "local:b"],
+      calibrationPick: "local:a",
+      entries: [],
+      random: { next: () => 0.99 },
+      competency: lookup,
+    });
+
+    const record = routingDecisionRecord(withTable);
+
+    expect(record.payload.model).toBe("local:b");
+    expect(record.payload.assignment).toBe("competency");
+    expect(record.payload.competency).toEqual({
+      taskClass: "edit",
+      floor: 6,
+      pick: "local:b",
+      abstained: false,
+      reason: lookup.reason,
+      considered: [
+        { model: "local:a", executed: 6, gatePassed: 3, gateShare: 0.5, sweeps: 1 },
+        { model: "local:b", executed: 6, gatePassed: 5, gateShare: 5 / 6, sweeps: 1 },
+      ],
+    });
+    expect(routingDecisionRecord(decisionOver([])).payload.competency).toBeNull();
+  });
+});
