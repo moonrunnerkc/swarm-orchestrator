@@ -4,6 +4,44 @@
 
 ### Added
 
+- **The criteria a run is measured by are sealed on the chain before the model is asked for
+  anything.** Every gate with its severity and the rule that reads it, the budgets, the attempt
+  cap and the ratchet arms, as one record written before the loop, and the embedded verifier
+  holds every gate run to it: a gate the seal does not name, a severity or rule it did not
+  declare, or a sealed gate missing from the final attempt fails verification. A bundle of the
+  new format that carries gate runs and no seal is refused, since that is the one way to dodge
+  the check; a bundle that ran no gates has nothing to be held to.
+- **Every passing gate is bonded.** After the fixed point, each gate that passed is handed one
+  added file it has to refuse, a failing test, a TODO, a credential-shaped token, a file outside
+  the declared set, a change over the budget, and the result is a `gate-bond` record carrying
+  the observation. A check that refused it held. A check that passed over a bond it demonstrably
+  saw is vacuous, which makes a blocking gate's run not green whatever the cycle said, and the
+  exit code says so. A command that passed where nothing shows it read the bond is unshown,
+  named as such and never promoted to held. A gate with no bond is recorded as not bonded. The
+  review page carries the bond beside every gate and paints a vacuous pass red.
+- **A bundle carries `rederive.mjs` beside `verify.mjs`.** Where the verifier asks whether a
+  bundle is what it says it is, the re-deriver asks whether a third party applying this tool's
+  rules would reach the verdicts it records: every gate status from the recorded exit code and
+  output under the rule the record now names, every ratchet decision from its recorded
+  measures, every bond from its observation, every claim from its predicate, and the gate runs
+  from the seal. What it cannot re-derive from the bundle alone, it names rather than agrees
+  with. Dependency-free, like the verifier, and parity-tested against the parsers it mirrors.
+- **A fifty-repository campaign harness, with its criteria sealed before anything was
+  selected.** `campaign/criteria.md` was committed before the first GitHub query, the method in
+  `campaign/methodology.md` before the first run, and `campaign/harness/` sequences the rest:
+  the search saved raw, the candidate walk judged by rules that name the first one failed, one
+  seeded defect per repository accepted only where the repository's own suite passes before and
+  fails after, and one run per arm inside a pinned container on an internal network whose only
+  other member is a forwarder to the model backend. Results are read off the bundle and the
+  tree, never off the run's exit code.
+- **Two scheduled proofs on GitHub Actions.** A nightly one runs the suite and the fuzz smoke
+  from a clean clone, then verifies the committed reference bundle with its own verifier and
+  refuses a one-byte copy of it, uploading the transcript. A weekly one installs a pinned
+  Ollama on the runner, seeds a workspace whose test fails on a real defect, runs one task
+  through the built CLI, and verifies the fresh bundle in the same job; the task outcome is
+  recorded and never judged. Neither continues on error, and a scheduled failure of either
+  opens an issue with the run link.
+
 - **A debug copy of what a local backend was actually sent and actually said.**
   `SWARM_TRANSPORT_TRACE=<path>` writes the raw request body and every raw response frame of
   every local call to a JSONL artifact, before anything parses them. Off with no path, which is
@@ -73,6 +111,16 @@
 
 ### Changed
 
+- **Bundle format 2.** A format 2 bundle carries the sealed criteria, a bond per passing gate,
+  and the re-derivation script; every gate-run record names the rule that read it. Format 1
+  bundles are still read, replayed and verified, and the four committed ones verify unchanged
+  under the new verifier, which reports their lack of a seal as predating sealing rather than
+  as a defect.
+- **The corpus replay reads the v12 falsification corpus from the `v12-final` tag.** It named
+  `main`, which held the v12 tree until `main` was moved onto this lineage; from then on the
+  three replay tests skipped under a green run, on CI and on any clone that had moved its
+  `main`. A tag is the one name that does not move, and the checkout test now pins that the
+  corpus was reached rather than allowing a skip.
 - **The reports the ratchet reads come off streams the harness owns, not files.** The first fix
   for the counter forgery below had the runner write reports to paths the harness named under
   the session store. An adversarial pass took that apart: a destination is an argument of the

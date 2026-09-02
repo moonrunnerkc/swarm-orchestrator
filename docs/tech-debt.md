@@ -213,6 +213,29 @@ v12-era branch kept on 08-23 as a non-ancestor, still holds one of the files, an
 a branch that is not the default never fires. The one remnant was a stale local `main` on the
 build machine, reset to `origin/main`.
 
+## Debt: bonds that cannot tell an ignored file from a check that cannot fail
+
+A bond is an added file the check has to refuse. For the inspections that is conclusive, since
+the change set is the harness's own; for the tests gate it is conclusive where the runner
+reports a collected count, because a count that rose says the bond was collected. Everywhere
+else a pass over the bond is `unshown`: the linter may have refused the file or may never have
+opened it, and the harness does not know what a project's runner discovers. Unshown is never
+promoted to held, which is right, and it means the bond says nothing on exactly the checks a
+project configures most freely.
+
+Three gates have no bond at all and are recorded as not bonded: the behaviour probe, whose
+input is a changed function rather than a file; the node typecheck, lint and format gates,
+because which files their scripts read is decided by the project's own configuration and a
+bond under a name it does not include would be unshown every time; and the rust typecheck,
+lint and format gates, whose crate tree is declared in source and does not pick up a file
+dropped beside it. A bond for any of these needs to know the project's configuration, which is
+the kind of reading the harness has refused elsewhere.
+
+Each bond also costs one more run of the check it bonds, and for the tests gate that is the
+suite once more after the fixed point. Not measured here: the 60-run calibration sweeps and
+the campaign runs pay it, and the campaign records the duration, so the cost is in the data
+rather than estimated.
+
 ## Debt: three documents ship inside the package and can go stale between releases
 
 The `files` allowlist puts `build-guide.md`, `security-coverage.md` and `claims.md` in the
