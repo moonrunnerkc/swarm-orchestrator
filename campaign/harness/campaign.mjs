@@ -29,6 +29,7 @@ import {
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
 
 import { armNamed, armNames } from "./arms.mjs";
 import { candidateFrom, orderCandidates, walkCandidates } from "./candidates.mjs";
@@ -77,7 +78,7 @@ const directories = {
 };
 
 const files = {
-  searchResults: join(directories.selection, "search-results.jsonl"),
+  searchResults: join(directories.selection, "search-results.jsonl.gz"),
   candidates: join(directories.selection, "candidates.json"),
   decisions: join(directories.selection, "decisions.jsonl"),
   repos: join(directories.selection, "repos.json"),
@@ -259,7 +260,8 @@ async function search() {
   };
   log("querying GitHub, one request every 2.2 seconds");
   const fetched = await fetchCandidates(runGh, nowIso);
-  writeFileSync(files.searchResults, `${fetched.map((item) => JSON.stringify(item)).join("\n")}\n`);
+  // Gzipped: the raw items run to tens of megabytes and are kept for reproduction, not reading.
+  writeFileSync(files.searchResults, gzipSync(`${fetched.map((item) => JSON.stringify(item)).join("\n")}\n`));
 
   const byLanguage = {};
   for (const language of Object.keys(quotas)) {
