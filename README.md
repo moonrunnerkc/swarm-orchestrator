@@ -241,7 +241,12 @@ with no network and no mount of this repository: exit 0 on the committed bundle,
 same bundle one byte later, with the image digest and both transcripts in
 [`clean-container-verification.md`](docs/evidence/2026-08-23/clean-container-verification.md).
 Transcripts from two earlier runs outside the repository:
-[`live-tasks.md`](docs/evidence/2026-08-18/live-tasks.md).
+[`live-tasks.md`](docs/evidence/2026-08-18/live-tasks.md). Beside the verifier, every bundle
+now carries `rederive.mjs`, which recomputes every gate status from the recorded exit code and
+output under the rule the record names, every ratchet decision from its recorded measures,
+every bond verdict and every claim, and names what it cannot re-derive rather than agreeing
+with it: [`gates-bonded/`](docs/evidence/2026-09-02/gates-bonded) is a run with nine gates
+sealed, four bonds held, and all seventeen verdicts re-derived.
 
 **Bundles are signed from the OS keychain**, not from a key in the workspace. Both manifests
 in [`live-tasks.md`](docs/evidence/2026-08-18/live-tasks.md) say `"keySource": "keychain"` and
@@ -307,6 +312,14 @@ something.
   recorded.
 - **Gates are data.** A gate declares a command, a parser, and whether it blocks. The engine
   never special-cases one.
+- **A pass is bonded, and the criteria are sealed first.** Before the model is asked for
+  anything, the gates it will be measured by, with their severities, the rule that reads each,
+  the budgets and the attempt cap, are one record on the chain, and the verifier holds every
+  gate run to it. After the fixed point, every gate that passed is handed one file it has to
+  refuse: a test that throws, a TODO, a credential-shaped token, a file outside the declared
+  set, a change over the budget. A check that refuses it held. A check that passes over a
+  bond it demonstrably saw is vacuous, and a vacuous blocking gate makes the run not green.
+  A pass nothing shows can fail is not a pass.
 - **The ratchet is numeric.** Tests collected, assertions in touched test files, coverage of
   changed lines, skip markers. The two the runner reports, tests collected and coverage of
   changed lines, come from reports the runner wrote where the harness told it to, never from

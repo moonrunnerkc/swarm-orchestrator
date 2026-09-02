@@ -61,6 +61,8 @@ lacked, the 4.6 record, is answered below.
 | 5.5 Execution | in progress | search done (5025 candidates over five languages), the walk running in the background; arms run after the walk, and after this tree's CLI is repacked into the images so the corpus carries the sealed criteria and the bonds |
 | 6.2 Sealed criteria, falsification bonds, re-derivation | done | gate set sealed before the loop and held by the verifier; a bond per passing gate with vacuous, unshown and not-bonded named apart; `rederive.mjs` in every bundle; shown on `gates-bonded/` beside this report, all seventeen verdicts re-derived |
 | 6.3 Competency-table routing | done, awaiting the sweeps for its data | `src/select/competency-table.ts` and its test; the table is written by `swarm calibrate` from the sweep's own run records, the router consults it per class below the reward threshold, abstains under six executed runs, and records the lookup with its counts. Populated by the sweeps below rather than by hand |
+| Discovered: the doc-path checker crashed on the campaign shelf | fixed at the root | it walked every markdown file under `campaign/`, cloned repositories included, 9518 misses and one path outside the repository that made git stop reading its input; it now reads only tracked documents and reports git's refusal by name |
+| 6.1 Calibration sweeps | in progress | `qwen3.6:35b-a3b` 60 of 60 executed; `gemma4:31b` with `mistral-small3.2:24b` running, restarted once so the process carries the competency-table code; then `qwen3.8:27b` on rapid-mlx, then `qwen3.6:35b-a3b` again, one after another so no two share the machine. `../../../scripts/compare-calibrations.mjs` reads each bundle's run records as distributions |
 | Discovered: third-party tests collected | fixed at the root | vitest's default include reached the campaign's cloned repositories, 280 of their test files; `vitest.config.ts` excludes `campaign/work` and `campaign/corpus` |
 | 1.4 revisited: the failing pairing replayed | done, cause located outside the tree | `qwen3.6:35b-a3b` pulled back, the runbook run as written, and the shape-two request replayed by prompt digest: same digest, same sampling, answered in full. Client, drain loop and SDK unchanged since August; backend build and Ollama version changed and were unrecorded. `../../empty-turn-diagnosis.md` |
 | Discovered: corpus replay skipping in CI | fixed at the root | the v12 corpus was named by `main`, which moved onto this lineage on 09-01; three replay tests then skipped under green, on CI and here. Named by the `v12-final` tag now, and the checkout test pins that the corpus was reached |
@@ -75,6 +77,11 @@ Appended as the run proceeds.
 - **The calibration pick written by the diagnostic sweep stays.** It is what the tool does
   after every sweep, and a 60-run measurement of this machine is a better basis for routing
   than the absence of one. It is named in the diagnosis note rather than quietly reverted.
+- **The pair sweep was restarted rather than folded in by hand.** It had started before the
+  competency-table code existed, so its process would never have written the table. Ten of
+  its one hundred and twenty runs were discarded and it was started again under the committed
+  code, because a table the tool writes from its own records is the claim, and one assembled
+  afterwards by a script is a different thing with the same numbers in it.
 - **The calibration-trust condition.** Gate 1 asked for the empty-turn cause confirmed fixed
   against live backends. What this run can show is narrower and is stated as such: the exact
   request that produced the empty turn, identified by digest, no longer does against the
