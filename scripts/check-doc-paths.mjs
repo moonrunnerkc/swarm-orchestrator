@@ -55,6 +55,7 @@ const rootedPrefixes = [
   "redteam/",
   ".github/",
   "dist/",
+  "campaign/",
   // The documents under docs/ write this one rooted at their own directory rather than at the
   // repository root. Both spellings are tried for every mention, so accepting it costs nothing,
   // and without it a shelf of evidence pointers is read as prose and never resolved.
