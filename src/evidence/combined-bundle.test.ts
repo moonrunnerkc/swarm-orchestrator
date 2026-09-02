@@ -29,14 +29,35 @@ async function session(id: string): Promise<EvidenceRecorder> {
   return openEvidenceSession({ root: join(root, "sessions"), sessionId: id, clock });
 }
 
-/** A worker session with a gate record and a claim that holds against it. */
+/** A worker session with its criteria sealed, a gate record, and a claim that holds against it. */
 async function workerSession(id: string, collected: number): Promise<EvidenceRecorder> {
   const evidence = await session(id);
+  await evidence.record({
+    type: "gate-set-sealed",
+    actor: "harness",
+    provenance: ["user"],
+    payload: {
+      detectedTypes: ["node"],
+      gates: [
+        {
+          id: "tests",
+          title: "tests",
+          severity: "blocking",
+          source: "command",
+          command: "npm test",
+          parser: "test-output",
+        },
+      ],
+      budgets: { maxChangedFiles: 12, maxAddedLines: 600 },
+      attemptCap: 3,
+      ratchetArms: [],
+    },
+  });
   const gate = await evidence.record({
     type: "gate-run",
     actor: "harness",
     provenance: ["tool-output"],
-    payload: { gateId: "tests", collected, failed: 0 },
+    payload: { gateId: "tests", severity: "blocking", attempt: 0, collected, failed: 0 },
   });
   await evidence.submitClaim(
     {
@@ -125,14 +146,14 @@ describe("exportCombinedBundle", () => {
         sessionId: "worker-one",
         directory: "workers/one",
         chainHead: one.head().hash,
-        recordCount: 2,
+        recordCount: 3,
       },
       {
         workerId: "two",
         sessionId: "worker-two",
         directory: "workers/two",
         chainHead: two.head().hash,
-        recordCount: 2,
+        recordCount: 3,
       },
     ]);
   });

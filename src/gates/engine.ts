@@ -13,9 +13,11 @@ import {
   type SingleFileCommand,
   singleFileTestCommand,
 } from "./base-control.ts";
+import { type BondOutcome, runBonds } from "./bond-runner.ts";
 import { assembleGates, type GateSetOptions } from "./default-gates.ts";
 import type { FileSetRegistry } from "./file-set.ts";
 import type { DiffBudget, GateContext, GateDefinition } from "./gate-definition.ts";
+import { describeGateSet, sealGateSet } from "./gate-set-seal.ts";
 import { createGitCheckpoint, createGitWorkspaceProbe } from "./git-workspace.ts";
 import { changesTheRunMade, type InheritedChanges } from "./inherited-changes.ts";
 import { createNodeCommandRunner } from "./node-command-runner.ts";
@@ -48,12 +50,41 @@ interface GatesEngineOptions {
    * the run unless it went on to edit them, so a dirty workspace is not read as its work.
    */
   readonly inherited?: InheritedChanges;
+  /**
+   * Whether the caller already sealed the criteria on the chain, which a task run does before
+   * its loop. A caller that has not gets the seal written here, before the first gate runs,
+   * so no bundle in which gates ran is without the record the verifier holds them to.
+   */
+  readonly criteriaSealed?: boolean;
 }
 
 export interface GatesEngineRun {
   readonly detection: ProjectDetection;
   readonly gates: readonly GateDefinition[];
   readonly outcome: AutoResolveOutcome;
+  /** One per gate that passed in the final cycle: whether that pass was shown able to fail. */
+  readonly bonds: readonly BondOutcome[];
+}
+
+/**
+ * Detection and assembly, in one place, so the set sealed before the loop and the set the
+ * engine runs after it are built by the same function from the same inputs. Read from the
+ * base commit, falling back to the tree only where the base had no manifest at all: a run
+ * must not author the command that measures it (see below).
+ */
+export async function assembleGateSet(input: {
+  readonly workspaceRoot: string;
+  readonly baseRef: string;
+  readonly gateOptions?: GateSetOptions;
+}): Promise<{ readonly detection: ProjectDetection; readonly gates: readonly GateDefinition[] }> {
+  const probe = createGitWorkspaceProbe({
+    workspaceRoot: input.workspaceRoot,
+    baseRef: input.baseRef,
+  });
+  const detection = await detectProject(
+    async (manifest) => (await probe.readBase(manifest)) ?? (await probe.readCurrent(manifest)),
+  );
+  return { detection, gates: assembleGates(detection, { ...(input.gateOptions ?? {}) }) };
 }
 
 /**
@@ -73,13 +104,18 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
   // here it authored the instrument. A workspace whose base declares no manifest is a run
   // establishing measurement rather than escaping it, and what it declares is itself measured
   // by whether the tests it wrote are collected.
-  const detection = await detectProject(
-    async (manifest) => (await probe.readBase(manifest)) ?? (await probe.readCurrent(manifest)),
-  );
-  const gates = assembleGates(detection, {
-    ...(options.gateOptions ?? {}),
+  const { detection, gates } = await assembleGateSet({
+    workspaceRoot: options.workspaceRoot,
+    baseRef: options.baseRef,
+    ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
   });
   const budgets = options.budgets ?? defaultDiffBudget;
+  if (options.criteriaSealed !== true) {
+    await sealGateSet(
+      options.evidence,
+      describeGateSet({ detection, gates, budgets, attemptCap: options.cap ?? defaultAttemptCap }),
+    );
+  }
 
   const context = async (): Promise<GateContext> => ({
     workspaceRoot: options.workspaceRoot,
@@ -117,5 +153,23 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
     cap: options.cap ?? defaultAttemptCap,
   });
 
-  return { detection, gates, outcome };
+  // After the fixed point, over the tree the run is judged on: each pass in the final cycle
+  // is handed a change it has to refuse. A pass that survives its bond is recorded as
+  // vacuous rather than as a pass, whatever the cycle above said.
+  const bonds = await runBonds({
+    gates,
+    finalCycle: outcome.finalCycle,
+    context,
+    deps: { commands, evidence: options.evidence, emit: options.emit },
+    evidence: options.evidence,
+    workspaceRoot: options.workspaceRoot,
+    detectedTypes: detection.types,
+  });
+
+  return { detection, gates, outcome, bonds };
+}
+
+/** A blocking gate whose pass could not be made to fail has not passed (section 3.6). */
+export function vacuousBlockingBonds(bonds: readonly BondOutcome[]): readonly BondOutcome[] {
+  return bonds.filter((bond) => bond.severity === "blocking" && bond.verdict === "vacuous");
 }

@@ -1,7 +1,13 @@
 import { z } from "zod";
 import { bundleSignatureSchema } from "./signing.ts";
 
-export const bundleFormatVersion = 1;
+/**
+ * Format 2 adds the criteria sealed before the loop, a bond per passing gate, and the
+ * re-derivation script. A format 1 bundle is still read and still verifies; the verifier
+ * holds a format 2 bundle to the seal it promises.
+ */
+export const bundleFormatVersion = 2;
+export const readableBundleFormats = [1, 2] as const;
 
 const workerChainSchema = z.object({
   workerId: z.string().min(1),
@@ -15,7 +21,7 @@ const workerChainSchema = z.object({
 export type WorkerChain = z.infer<typeof workerChainSchema>;
 
 export const bundleManifestSchema = z.object({
-  bundleFormat: z.literal(bundleFormatVersion),
+  bundleFormat: z.union([z.literal(1), z.literal(2)]),
   ledgerSchemaVersion: z.number().int().positive(),
   sessionId: z.string().min(1),
   exportedAt: z.number().int(),
@@ -46,6 +52,7 @@ export const bundleFileNames = {
   ledger: "ledger.jsonl",
   dag: "dag.json",
   verifier: "verify.mjs",
+  rederiver: "rederive.mjs",
   review: "review.html",
   blobs: "blobs",
   workers: "workers",

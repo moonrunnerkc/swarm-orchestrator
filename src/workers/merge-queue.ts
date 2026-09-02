@@ -13,6 +13,7 @@ import {
   isGreen,
   runGateCycle,
 } from "../gates/gate-runner.ts";
+import { describeGateSet, sealGateSet } from "../gates/gate-set-seal.ts";
 import { createGitWorkspaceProbe } from "../gates/git-workspace.ts";
 import { type MeasureSnapshot, takeMeasureSnapshot } from "../gates/measure-snapshot.ts";
 import { isTestFile } from "../gates/measures.ts";
@@ -75,6 +76,12 @@ interface MergeQueueOptions {
   readonly clock: Clock;
   readonly emit: (event: LoopEvent) => void;
   readonly gateOptions?: GateSetOptions;
+  /**
+   * Whether this chain's criteria are already sealed. A graph lands layer by layer, so the
+   * queue runs more than once over one chain; the first pass seals and the rest are told so,
+   * since a second seal would be a second set of criteria.
+   */
+  readonly criteriaSealed?: boolean;
 }
 
 const mergeAttemptSchema = z.object({
@@ -111,9 +118,16 @@ export async function runMergeQueue(options: MergeQueueOptions): Promise<MergeQu
     baseRef: options.baseCommit,
   });
   const commands = createNodeCommandRunner(options.clock);
-  const gates = assembleGates(await detectProject(probe.readCurrent), {
+  const detection = await detectProject(probe.readCurrent);
+  const gates = assembleGates(detection, {
     ...(options.gateOptions ?? {}),
   });
+  if (options.criteriaSealed !== true) {
+    await sealGateSet(
+      options.evidence,
+      describeGateSet({ detection, gates, budgets: defaultDiffBudget, attemptCap: 0 }),
+    );
+  }
 
   // The queue's declared set is the union of the workers'. A worker that strayed outside its
   // own set already failed its own file-set gate and never reached here.

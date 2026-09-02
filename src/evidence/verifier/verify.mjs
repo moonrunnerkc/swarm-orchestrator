@@ -349,6 +349,98 @@ export function evaluateClaim(claim, lookup) {
 }
 
 /**
+ * What a bond showed, from its recorded observation alone. Held: the check refused the bond.
+ * Vacuous: the check passed over a bond it demonstrably saw. Unshown: the check passed and
+ * nothing shows whether it saw the bond. Not measured: the check could not run. The same
+ * rule as src/gates/bonds.ts, reimplemented here so a bundle's own verdicts can be recomputed
+ * without this package.
+ */
+export function bondVerdict({ observed, provable, collectedBefore, collectedAfter }) {
+  if (observed === "not-applicable") return "not-measured";
+  if (observed === "failed") return "held";
+  if (provable) return "vacuous";
+  if (collectedBefore !== null && collectedAfter !== null && collectedAfter > collectedBefore) {
+    return "vacuous";
+  }
+  return "unshown";
+}
+
+export function recomputeBondVerdict(payload) {
+  if (payload === null || typeof payload !== "object") return "not-bonded";
+  if (payload.bond === null || payload.bond === undefined || payload.observed === null) {
+    return "not-bonded";
+  }
+  return bondVerdict({
+    observed: payload.observed,
+    provable: payload.bond.provable === true,
+    collectedBefore: payload.collectedBefore ?? null,
+    collectedAfter: payload.measures?.testsCollected ?? null,
+  });
+}
+
+/**
+ * Holds every gate-run to the criteria sealed before the loop. The seal has to come before
+ * the first model call, tool call and gate run; every gate that ran has to be one the seal
+ * names, at the severity and under the parser it declared; and every sealed gate has to have
+ * run in the final attempt. A run that met all of that was measured by what it promised.
+ */
+export function sealConformance(records, payloads) {
+  const seals = records.filter((entry) => entry.type === "gate-set-sealed");
+  if (seals.length === 0) return { sealed: null, problems: [] };
+  const problems = [];
+  if (seals.length > 1) {
+    problems.push(
+      `criteria sealed ${seals.length} times; a second seal is a second set of criteria`,
+    );
+  }
+  const seal = seals[0];
+  const sealed = payloads.get(seal.payloadDigest);
+  if (sealed === undefined || !Array.isArray(sealed.gates)) {
+    return { sealed: null, problems: [`record ${seal.sequence} carries no readable gate set`] };
+  }
+  const first = records.find((entry) =>
+    ["model-call", "tool-call", "gate-run"].includes(entry.type),
+  );
+  if (first !== undefined && first.sequence < seal.sequence) {
+    problems.push(
+      `criteria sealed at record ${seal.sequence}, after the first ${first.type} at record ${first.sequence}`,
+    );
+  }
+  const byId = new Map(sealed.gates.map((gate) => [gate.id, gate]));
+  const runs = records
+    .filter((entry) => entry.type === "gate-run")
+    .map((entry) => ({ sequence: entry.sequence, payload: payloads.get(entry.payloadDigest) }))
+    .filter((entry) => entry.payload !== undefined);
+  for (const { sequence, payload } of runs) {
+    const declared = byId.get(payload.gateId);
+    if (declared === undefined) {
+      problems.push(`record ${sequence} ran gate ${payload.gateId}, which the seal does not name`);
+      continue;
+    }
+    if (declared.severity !== payload.severity) {
+      problems.push(
+        `record ${sequence} ran ${payload.gateId} as ${payload.severity}; the seal declared ${declared.severity}`,
+      );
+    }
+    if (payload.parser !== undefined && declared.parser !== payload.parser) {
+      problems.push(
+        `record ${sequence} read ${payload.gateId} with the ${payload.parser} rule; the seal declared ${declared.parser}`,
+      );
+    }
+  }
+  const finalAttempt = Math.max(-1, ...runs.map((entry) => entry.payload.attempt ?? 0));
+  for (const gate of sealed.gates) {
+    const ranFinally = runs.some(
+      (entry) => entry.payload.gateId === gate.id && (entry.payload.attempt ?? 0) === finalAttempt,
+    );
+    if (!ranFinally) {
+      problems.push(`sealed gate ${gate.id} did not run in the final attempt`);
+    }
+  }
+  return { sealed: { sequence: seal.sequence, gates: sealed.gates.length }, problems };
+}
+
+/**
  * Every check for one bundle directory, without printing any of them. Split out so a combined
  * bundle can fold in its workers' checks: a worker chain is verified by exactly the same code
  * as the coordinator's, rather than by a second, looser reading of the same format.
@@ -369,7 +461,7 @@ function collectChecks(directory) {
     );
   } catch (cause) {
     record("manifest reads", false, cause.message);
-    return { checks, verdicts: [], payloads: new Map(), manifest: null };
+    return { checks, verdicts: [], payloads: new Map(), manifest: null, vacuous: [] };
   }
 
   let lines = [];
@@ -379,7 +471,7 @@ function collectChecks(directory) {
       .filter((line) => line.trim().length > 0);
   } catch (cause) {
     record("ledger reads", false, cause.message);
-    return { checks, verdicts: [], payloads: new Map(), manifest };
+    return { checks, verdicts: [], payloads: new Map(), manifest, vacuous: [] };
   }
 
   const records = [];
@@ -498,7 +590,61 @@ function collectChecks(directory) {
     `${verified} verified, ${verdicts.length - verified} unverified; manifest says ${manifest.claims.verified} verified`,
   );
 
-  return { checks, verdicts, payloads, manifest };
+  // Format 2 promises criteria sealed before the loop and a bond per passing gate. A bundle
+  // of that format with no seal in it dodged the check, and is refused as such; an earlier
+  // format predates sealing and has nothing to be held to.
+  const conformance = sealConformance(records, payloads);
+  const gateRan = records.some((entry) => entry.type === "gate-run");
+  if (conformance.sealed === null) {
+    const dodged = (manifest.bundleFormat ?? 1) >= 2 && gateRan;
+    record(
+      "gate runs conform to the sealed criteria",
+      !dodged,
+      dodged
+        ? "bundle format 2 promises criteria sealed before the gates ran, and none is recorded"
+        : gateRan
+          ? "no criteria sealed: this bundle format predates sealing"
+          : "no gate ran in this bundle, so there is nothing to hold to a seal",
+    );
+  } else {
+    record(
+      "gate runs conform to the sealed criteria",
+      conformance.problems.length === 0,
+      conformance.problems.join("; ") ||
+        `${conformance.sealed.gates} gate(s) sealed at record ${conformance.sealed.sequence}, before the first model call`,
+    );
+  }
+
+  const bonds = records
+    .filter((entry) => entry.type === "gate-bond")
+    .map((entry) => ({ sequence: entry.sequence, payload: payloads.get(entry.payloadDigest) }))
+    .filter((entry) => entry.payload !== undefined);
+  const bondDisagreements = [];
+  const tally = {};
+  for (const { sequence, payload } of bonds) {
+    const recomputed = recomputeBondVerdict(payload);
+    if (recomputed !== payload.verdict) {
+      bondDisagreements.push(
+        `record ${sequence} says ${payload.verdict}, its observation says ${recomputed}`,
+      );
+    }
+    tally[payload.verdict] = (tally[payload.verdict] ?? 0) + 1;
+  }
+  if (bonds.length > 0 || (manifest.bundleFormat ?? 1) >= 2) {
+    record(
+      "bond verdicts recomputed",
+      bondDisagreements.length === 0,
+      bondDisagreements.join("; ") ||
+        (bonds.length === 0
+          ? "no gate passed, so nothing was bonded"
+          : `${bonds.length} bond(s): ${Object.entries(tally)
+              .map(([verdict, count]) => `${count} ${verdict}`)
+              .join(", ")}`),
+    );
+  }
+  const vacuous = bonds.filter((entry) => entry.payload.verdict === "vacuous");
+
+  return { checks, verdicts, payloads, manifest, vacuous };
 }
 
 /** Does any payload in this bundle name that chain head? That is the coordinator's linkage. */
@@ -535,6 +681,14 @@ export function verifyBundle(directory) {
         : "no coordinator record carries this chain head, so the signature says nothing about it",
     });
     sections.push({ title: label, verdicts: nested.verdicts });
+  }
+
+  for (const entry of top.vacuous ?? []) {
+    console.log("");
+    console.log(
+      `  VACUOUS    record ${entry.sequence}: the ${entry.payload.gateId} gate passed over its bond` +
+        ` (${entry.payload.bond?.description ?? "no description"}), so that pass cannot fail`,
+    );
   }
 
   for (const section of sections) {

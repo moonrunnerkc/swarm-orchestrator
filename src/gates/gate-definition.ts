@@ -83,12 +83,20 @@ type GateSource =
  * never looks at an id to decide anything, so adding a gate is adding one of these
  * (invariant 6).
  */
+/**
+ * Which rule the parser applies, by name, so a reader of the record can apply the same rule
+ * to the recorded bytes without this package. Every parser in the tree is one of these.
+ */
+export type ParserName = "exit-code" | "no-output" | "test-output" | "inspection";
+
 export interface GateDefinition {
   readonly id: string;
   readonly title: string;
   readonly severity: GateSeverity;
   readonly source: GateSource;
   readonly parse: GateParser;
+  /** Absent means the exit-code rule, which is what an unnamed parser has always been. */
+  readonly parserName?: ParserName;
 }
 
 export interface CommandOptions {

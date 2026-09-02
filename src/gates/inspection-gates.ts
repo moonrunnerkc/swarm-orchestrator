@@ -144,6 +144,7 @@ export const placeholderGate: GateDefinition = {
     },
   },
   parse: inspectionParser,
+  parserName: "inspection",
 };
 
 export const fileSetGate: GateDefinition = {
@@ -207,6 +208,7 @@ export const fileSetGate: GateDefinition = {
     },
   },
   parse: inspectionParser,
+  parserName: "inspection",
 };
 
 /**
@@ -324,6 +326,7 @@ export const behaviourProbeGate: GateDefinition = {
     },
   },
   parse: inspectionParser,
+  parserName: "inspection",
 };
 
 export const secretScanGate: GateDefinition = {
@@ -381,6 +384,7 @@ export const secretScanGate: GateDefinition = {
     },
   },
   parse: inspectionParser,
+  parserName: "inspection",
 };
 
 /**
@@ -421,6 +425,7 @@ export const diffBudgetGate: GateDefinition = {
     },
   },
   parse: inspectionParser,
+  parserName: "inspection",
 };
 
 export const inspectionGates: readonly GateDefinition[] = [
