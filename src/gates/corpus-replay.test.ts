@@ -30,17 +30,18 @@ const run = promisify(execFile);
 const corpusPath = "benchmarks/falsification-corpus/v10-synthetic-corpus";
 
 /**
- * Where the corpus branch can be named from, most local first. A working clone has `main`
- * as a local branch, so a bare `git archive main` works there and hid the rest of this
- * list. actions/checkout fetches `+refs/heads/*:refs/remotes/origin/*` and then creates
- * exactly one local branch, the one being built, so on CI `main` names nothing and the
- * corpus went unreplayed under a green run for as long as nobody read the log.
+ * Where the corpus can be named from. It lives in the v12 tree, and section 3.10 of the
+ * build guide says to reach that tree by the `v12-final` tag rather than by a branch,
+ * because v13 replaced the default branch. This list named `main` instead, which held the
+ * v12 tree right up until `main` was moved onto this lineage on 2026-09-01; from then on
+ * the archive found no corpus there and the replay skipped under a green run, on CI and
+ * on any clone that had moved its `main`. A tag is the one name that does not move.
  */
-const corpusRevisions = ["main", "origin/main", "refs/remotes/origin/main"] as const;
+const corpusRevisions = ["v12-final", "refs/tags/v12-final"] as const;
 
 /**
  * The first candidate that names a commit here, or null if none does. Null is a real
- * answer: a fork with no `main` has no corpus to replay, and guessing a revision would
+ * answer: a clone without the tag has no corpus to replay, and guessing a revision would
  * replay something else and call it the corpus.
  */
 async function resolveCorpusRevision(
@@ -82,8 +83,8 @@ interface CategoryTally {
 beforeAll(async () => {
   const extractTo = await mkdtemp(join(tmpdir(), "swarm-corpus-"));
   try {
-    // One archive rather than a thousand git invocations. The corpus lives on the branch
-    // v13 replaced, which is exactly how section 3.10 says to reach it.
+    // One archive rather than a thousand git invocations. The corpus lives in the tree
+    // v13 replaced, reached by its tag, which is exactly how section 3.10 says to reach it.
     corpusRevision = await resolveCorpusRevision(corpusRevisions, revisionExists);
     if (corpusRevision === null) {
       throw new Error(`no revision among ${corpusRevisions.join(", ")} names the corpus branch`);
@@ -276,39 +277,41 @@ describe("replaying the v12 falsification corpus against these gates", () => {
   }, 120_000);
 });
 
-describe("naming the branch the corpus lives on", () => {
+describe("naming the revision the corpus lives at", () => {
   const names = (present: readonly string[]) => async (revision: string) =>
     present.includes(revision);
 
-  it("prefers a local branch, which is what a working clone has", async () => {
-    expect(await resolveCorpusRevision(corpusRevisions, names(["main", "origin/main"]))).toBe(
-      "main",
+  it("names the tag, which is the one name for the v12 tree that does not move", async () => {
+    expect(
+      await resolveCorpusRevision(corpusRevisions, names(["main", "v12-final", "origin/main"])),
+    ).toBe("v12-final");
+    expect(await resolveCorpusRevision(corpusRevisions, names(["refs/tags/v12-final"]))).toBe(
+      "refs/tags/v12-final",
     );
   });
 
   /**
-   * The case that made this a fix rather than a tidy-up. On CI there is one local branch,
-   * the one being built, and every other branch arrives as a remote-tracking ref, so a
-   * bare `main` names nothing and the whole replay skipped under a green run.
+   * The case that made this a fix rather than a tidy-up. `main` held the v12 tree until it
+   * was moved onto this lineage, after which naming it resolved fine and archived nothing,
+   * so the whole replay skipped under a green run. A branch is not where the corpus is.
    */
-  it("falls back to the remote-tracking ref, which is all CI checks out", async () => {
-    expect(await resolveCorpusRevision(corpusRevisions, names(["origin/main"]))).toBe(
-      "origin/main",
-    );
-    expect(await resolveCorpusRevision(corpusRevisions, names(["refs/remotes/origin/main"]))).toBe(
-      "refs/remotes/origin/main",
-    );
+  it("never names a branch, whichever ones the checkout has", async () => {
+    expect(
+      await resolveCorpusRevision(
+        corpusRevisions,
+        names(["main", "origin/main", "refs/remotes/origin/main"]),
+      ),
+    ).toBeNull();
   });
 
   it("answers null rather than guessing when nothing names it", async () => {
     expect(await resolveCorpusRevision(corpusRevisions, names([]))).toBeNull();
   });
 
-  it("resolves against this checkout, so the suite says whether it can reach the corpus", async () => {
-    // Not an assertion about which one: a clone has main, CI has origin/main, and a fork
-    // may have neither. What is pinned is that the answer comes from git rather than from
-    // a hardcoded name that only one of those three satisfies.
-    const resolved = await resolveCorpusRevision(corpusRevisions, revisionExists);
-    expect(resolved === null || corpusRevisions.includes(resolved as never)).toBe(true);
+  it("reaches the corpus from this checkout, so the replay above ran rather than skipped", async () => {
+    // A fork without the tag skips honestly and says so; this repository carries the tag,
+    // which is what section 3.10 relies on, so here the answer is pinned rather than allowed.
+    expect(await resolveCorpusRevision(corpusRevisions, revisionExists)).not.toBeNull();
+    expect(corpusRoot).not.toBeNull();
   });
 });
