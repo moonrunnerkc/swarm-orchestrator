@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { candidateFrom, orderCandidates, walkCandidates } from "./candidates.mjs";
+import { candidateFrom, orderCandidates, supersedable, walkCandidates } from "./candidates.mjs";
 
 function candidate(fullName, stars, language = "Go") {
   return { fullName, stars, language };
@@ -115,5 +115,19 @@ describe("walking the candidates", () => {
 
     expect(walk.accepted).toHaveLength(4);
     expect(walk.shortfalls).toEqual({ Go: 2 });
+  });
+});
+
+describe("which decisions a later judgement may supersede", () => {
+  it("names the standing rejections with the reason, in the order recorded, and nothing accepted", () => {
+    const decisions = [
+      { fullName: "a/1", accepted: false, reason: "install failed: go mod download (exit 1)" },
+      { fullName: "a/2", accepted: true },
+      { fullName: "a/3", accepted: false, reason: "lines: 40000" },
+      { fullName: "a/4", accepted: false, reason: "install failed: go mod download (exit 1)" },
+      { fullName: "a/1", accepted: true },
+    ];
+
+    expect(supersedable(decisions, "install failed: go mod download").map((entry) => entry.fullName)).toEqual(["a/4"]);
   });
 });

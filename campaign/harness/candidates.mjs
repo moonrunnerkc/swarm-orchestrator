@@ -78,3 +78,19 @@ export async function walkCandidates(candidatesByLanguage, judge, options = {}) 
 
   return { accepted, decisions, shortfalls };
 }
+
+/**
+ * The recorded decisions a later judgement may supersede: rejections whose reason starts
+ * with `reasonPrefix`, in the order they were recorded. A superseding decision is appended,
+ * never written over the first, so the record shows both the rule as it stood and the rule
+ * as amended; the walk reads the last decision for a repository as the one that stands.
+ */
+export function supersedable(decisions, reasonPrefix) {
+  const latest = new Map();
+  for (const decision of decisions) {
+    latest.set(decision.fullName, decision);
+  }
+  return [...latest.values()].filter(
+    (decision) => decision.accepted !== true && typeof decision.reason === "string" && decision.reason.startsWith(reasonPrefix),
+  );
+}

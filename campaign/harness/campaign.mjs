@@ -16,7 +16,7 @@
  *
  * Plain node, node: builtins only, no dependencies.
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   appendFileSync,
   cpSync,
@@ -32,7 +32,7 @@ import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 
 import { armNamed, armNames } from "./arms.mjs";
-import { candidateFrom, orderCandidates, walkCandidates } from "./candidates.mjs";
+import { candidateFrom, orderCandidates, supersedable, walkCandidates } from "./candidates.mjs";
 import {
   armRunArgv,
   buildImageArgv,
@@ -535,6 +535,65 @@ async function walk(options) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// rejudge: judge again, under an amended harness, the rejections one reason accounts for
+
+/**
+ * A rejection that was the harness's doing rather than the repository's, a toolchain pinned
+ * too old for the pool, is judged again once the harness is amended. The earlier decision
+ * stays in the record and the new one is appended after it, naming what it supersedes; the
+ * walk reads the last decision for a repository, so the amended judgement is the one that
+ * stands. Quotas are not consulted here: a repository this accepts is one the walk then
+ * counts when it resumes, exactly as if it had been accepted in its place in the order.
+ */
+async function rejudge(options) {
+  if (options.reason === undefined) {
+    throw new DriverError("rejudge needs the reason to supersede", '--reason "install failed: go mod download"');
+  }
+  if (pgrepWalk()) {
+    throw new DriverError("the walk is running, and two writers on one record disagree", "stop the walk first");
+  }
+  const decisions = existsSync(files.decisions)
+    ? readFileSync(files.decisions, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line))
+    : [];
+  const pool = readJson(files.candidates, null);
+  if (pool === null) {
+    throw new DriverError("no candidate list", "node campaign/harness/campaign.mjs search");
+  }
+  const repos = readJson(files.repos, []);
+  const standing = supersedable(decisions, options.reason);
+  log(`${standing.length} standing rejection(s) begin with "${options.reason}"`);
+  for (const earlier of standing) {
+    const candidate = (pool.byLanguage[earlier.language] ?? []).find((entry) => entry.fullName === earlier.fullName);
+    if (candidate === undefined) {
+      log(`${earlier.fullName}: not in the candidate list, left as it stands`);
+      continue;
+    }
+    const verdict = await judgeCandidate(candidate);
+    const { attempts, installTail, suiteTail, ...compact } = verdict;
+    appendFileSync(
+      files.decisions,
+      `${JSON.stringify({ fullName: candidate.fullName, language: candidate.language, ...compact, supersedes: earlier.judgedAt ?? null, supersededReason: earlier.reason })}\n`,
+    );
+    if (attempts !== undefined || installTail !== undefined || suiteTail !== undefined) {
+      writeJson(join(directories.selection, "rejections", `${slugOf(candidate.fullName)}.json`), { fullName: candidate.fullName, ...verdict });
+    }
+    if (verdict.accepted) {
+      repos.push({ ...candidate, ...verdict });
+      writeJson(files.repos, repos);
+      writeJson(files.manifest, { sealedCriteria: "../criteria.md", writtenAt: nowIso(), seeds: repos.map((repo) => repo.seed) });
+      log(`accepted ${candidate.fullName} at ${verdict.commit}: ${verdict.seed.operator} at ${verdict.seed.file}:${verdict.seed.line}`);
+    } else {
+      log(`rejected ${candidate.fullName} again: ${verdict.reason}`);
+    }
+  }
+}
+
+function pgrepWalk() {
+  const found = spawnSync("pgrep", ["-f", "campaign.mjs walk"], { encoding: "utf8" });
+  return found.status === 0 && found.stdout.trim().length > 0;
+}
+
+// ---------------------------------------------------------------------------------------------
 // run: one arm over every accepted repository
 
 async function backendReachable(arm) {
@@ -728,6 +787,7 @@ const HELP = `campaign driver
   node campaign/harness/campaign.mjs setup [--tarball <path>]
   node campaign/harness/campaign.mjs search
   node campaign/harness/campaign.mjs walk [--limit <n>]
+  node campaign/harness/campaign.mjs rejudge --reason "<prefix of the rejection reason>"
   node campaign/harness/campaign.mjs run --arm <${armNames.join("|")}> [--limit <n>] [--max-steps <n>] [--attempts <n>] [--timeout-minutes <n>]
   node campaign/harness/campaign.mjs report
 `;
@@ -741,6 +801,8 @@ async function main() {
       return search();
     case "walk":
       return walk(options);
+    case "rejudge":
+      return rejudge(options);
     case "run":
       return runArm(options);
     case "report":

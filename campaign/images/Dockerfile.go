@@ -1,5 +1,5 @@
-# The go arm image: go 1.23, node 24 for the CLI, the CLI from this tree's tarball.
-FROM golang@sha256:167053a2bb901972bf2c1611f8f52c44d5fe7e762e5cab213708d82c421614db
+# The go arm image: go 1.27, node 24 for the CLI, the CLI from this tree's tarball.
+FROM golang@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b
 ARG SWARM_TARBALL
 COPY node-toolchain.sh /tmp/node-toolchain.sh
 RUN sh /tmp/node-toolchain.sh && rm /tmp/node-toolchain.sh

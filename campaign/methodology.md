@@ -144,3 +144,19 @@ bundles under `corpus/<arm>/<repository>/`, each with its own verifier and its t
   is a budget, not a property of the model.
 - The frontier arm's key had no balance when the harness was built. If that is still so when
   the campaign runs, the arm is NOT-DONE and the report says so in that word.
+
+## Amendment, 2026-09-03 01:35 UTC: the Go and Rust toolchains in the images
+
+Appended, as the rule above requires. The Go image pinned go 1.23 and the Rust image rust 1.82,
+versions chosen from memory when the harness was built rather than from what the candidate
+pool needs. By the time the walk reached the Go pool, eight of its first sixty-eight Go
+candidates had been rejected as `install failed: go mod download` with `go.mod requires go >=
+1.24` or `>= 1.25` under `GOTOOLCHAIN=local`, a fact about the pin and not about the
+repositories. Both images move to the newest release their base image serves at the time of
+this note, named by digest in `harness/container.mjs`, and the Go rejections that reason
+accounts for are judged again under the new image with `rejudge`, which appends a superseding
+decision after the earlier one rather than rewriting it; both stand in
+`selection/decisions.jsonl`, and the walk reads the later. No Rust candidate had been judged
+when this was written. The criteria are unchanged: the recipe is the same command under a
+newer toolchain, and a repository whose module requires a Go the new image does not have is
+still rejected by the same rule.
