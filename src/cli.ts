@@ -139,9 +139,21 @@ import { readTaskGraph, type TaskGraph } from "./workers/task-graph.ts";
 function createSystemClock(): Clock {
   return {
     now: () => Date.now(),
-    sleep: (milliseconds) =>
+    sleep: (milliseconds, cancel) =>
       new Promise((resolveSleep) => {
-        setTimeout(resolveSleep, milliseconds);
+        if (cancel?.aborted) {
+          resolveSleep();
+          return;
+        }
+        const timer = setTimeout(() => {
+          cancel?.removeEventListener("abort", onCancel);
+          resolveSleep();
+        }, milliseconds);
+        function onCancel(): void {
+          clearTimeout(timer);
+          resolveSleep();
+        }
+        cancel?.addEventListener("abort", onCancel, { once: true });
       }),
   };
 }

@@ -12,16 +12,45 @@ export interface TestClock extends Clock {
 export function createTestClock(start = 0): TestClock {
   let current = start;
   const sleeps: number[] = [];
+  // A sleep armed with a cancel signal is a deadline, and a deadline is not something a test
+  // clock should wait through on its own: it settles when the test advances past it, or when
+  // whatever armed it lets go. A plain sleep is a wait the caller means to take, and moves
+  // the clock as before.
+  const deadlines: { at: number; settle: () => void }[] = [];
+  const settleDue = () => {
+    for (const deadline of deadlines.splice(0)) {
+      if (deadline.at <= current) {
+        deadline.settle();
+      } else {
+        deadlines.push(deadline);
+      }
+    }
+  };
 
   return {
     now: () => current,
-    sleep(milliseconds: number): Promise<void> {
-      sleeps.push(milliseconds);
-      current += milliseconds;
-      return Promise.resolve();
+    sleep(milliseconds: number, cancel?: AbortSignal): Promise<void> {
+      if (cancel === undefined) {
+        sleeps.push(milliseconds);
+        current += milliseconds;
+        return Promise.resolve();
+      }
+      return new Promise((settle) => {
+        const deadline = { at: current + milliseconds, settle };
+        deadlines.push(deadline);
+        cancel.addEventListener(
+          "abort",
+          () => {
+            deadlines.splice(deadlines.indexOf(deadline), 1);
+            settle();
+          },
+          { once: true },
+        );
+      });
     },
     advance(milliseconds: number): void {
       current += milliseconds;
+      settleDue();
     },
     sleeps,
   };

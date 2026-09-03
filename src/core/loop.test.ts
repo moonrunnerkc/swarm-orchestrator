@@ -9,6 +9,7 @@ import {
 } from "../providers/fixture-provider.ts";
 import { type AgentLoopDependencies, runAgentLoop } from "./loop.ts";
 import type { LoopEvent } from "./loop-events.ts";
+import type { ModelClient, ModelRequest } from "./model-client.ts";
 import type { LoopBudget } from "./termination.ts";
 import {
   createFixedRandom,
@@ -154,6 +155,40 @@ describe("runAgentLoop", () => {
     const outcome = await runAgentLoop("take too long", harness.deps);
 
     expect(outcome.stopReason).toBe("max-wall-time");
+  });
+
+  /**
+   * The wall budget was checked between steps only, so a call that never returned held a run
+   * until something outside killed it, with no gates run and no bundle written. A campaign run
+   * showed exactly that: seven steps, then forty minutes of nothing.
+   */
+  it("ends a model call that never returns at the wall budget, as a wall-time stop", async () => {
+    let aborted = false;
+    let clock: TestClock | null = null;
+    const hung: ModelClient = {
+      modelId: "fixture:hung",
+      generate: (request: ModelRequest) =>
+        new Promise((_, reject) => {
+          request.abortSignal.addEventListener("abort", () => {
+            aborted = true;
+            reject(new Error("the call was aborted"));
+          });
+          // The backend goes quiet; the test clock reaches the budget while it is.
+          clock?.advance(5_000);
+        }),
+    };
+    const harness = createHarness([], {
+      budget: { ...generousBudget, maxWallTimeMs: 5_000 },
+      model: hung,
+    });
+    clock = harness.clock;
+
+    const outcome = await runAgentLoop("wait for a backend that never answers", harness.deps);
+
+    expect(aborted).toBe(true);
+    expect(outcome.stopReason).toBe("max-wall-time");
+    expect(outcome.steps).toBe(0);
+    expect(harness.events.filter((event) => event.type === "model-error")).toHaveLength(1);
   });
 
   it("stops as interrupted when the abort signal fires", async () => {

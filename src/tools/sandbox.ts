@@ -19,9 +19,18 @@ const credentialPatterns: readonly RegExp[] = [
  * Executables a run may use without asking. One definition, because a second copy is how a
  * command ends up allowed in one entry point and confirmed in another.
  */
+/**
+ * The toolchains here are the ones the gates themselves run: node's, and python's, go's and
+ * rust's, which project detection assembles a tests gate from. A list that let the harness
+ * run `pytest -q` as a gate and refused the model the same command left every Python task
+ * unfinishable through the shell, which a campaign of fifty repositories showed. Each is an
+ * interpreter, which is the residual the build guide names for node and npm already.
+ */
 export const defaultShellAllowlist: readonly string[] = [
+  "cargo",
   "cat",
   "git",
+  "go",
   "grep",
   "head",
   "ls",
@@ -29,6 +38,9 @@ export const defaultShellAllowlist: readonly string[] = [
   "npm",
   "npx",
   "pwd",
+  "pytest",
+  "python",
+  "python3",
   "sed",
   "tail",
   "wc",
