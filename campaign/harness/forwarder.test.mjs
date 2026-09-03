@@ -58,6 +58,41 @@ describe("the relay", () => {
     expect(seen).toEqual([{ host: `127.0.0.1:${upstreamPort}`, method: "POST", url: "/v1/chat/completions", body: '{"model":"x"}' }]);
   });
 
+  it("ends the backend request when the caller goes away mid-stream", async () => {
+    const upstreamSeen = { closedEarly: false, chunksWritten: 0 };
+    let stopStreaming = () => {};
+    const upstreamPort = await listen(
+      createServer((incoming, outgoing) => {
+        outgoing.writeHead(200, { "content-type": "text/event-stream" });
+        const ticker = setInterval(() => {
+          upstreamSeen.chunksWritten += 1;
+          outgoing.write(`data: ${upstreamSeen.chunksWritten}\n\n`);
+        }, 5);
+        stopStreaming = () => clearInterval(ticker);
+        incoming.on("close", () => {
+          upstreamSeen.closedEarly = !outgoing.writableFinished;
+          stopStreaming();
+        });
+      }),
+    );
+    const forwarder = await startForwarder({ port: upstreamPort, upstreamHost: "127.0.0.1", listenPort: 0 });
+    servers.push(forwarder);
+
+    const caller = new AbortController();
+    const answer = await fetch(`http://127.0.0.1:${forwarder.address().port}/v1/chat/completions`, {
+      method: "POST",
+      body: "{}",
+      signal: caller.signal,
+    });
+    const reader = answer.body.getReader();
+    await reader.read();
+    caller.abort();
+
+    await new Promise((settle) => setTimeout(settle, 100));
+    stopStreaming();
+    expect(upstreamSeen.closedEarly).toBe(true);
+  });
+
   it("answers 502 and says so where the backend is not there", async () => {
     const forwarder = await startForwarder({ port: 1, upstreamHost: "127.0.0.1", listenPort: 0 });
     servers.push(forwarder);

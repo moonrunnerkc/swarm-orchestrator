@@ -250,3 +250,32 @@ pools the model could not run the suite itself and worked from the test files an
 output alone, and a run whose backend hung is a timeout rather than a recorded model-error.
 The node pool is unaffected by the first and affected by the second alike. A later campaign
 under the fixed CLI is a different campaign, with this note as the reason for it.
+
+### Finding, 2026-09-03 21:40 UTC: the backend was aborting under two resident contexts
+
+The rapid-mlx backend serving `local-mlx` aborted twice during the arm, at 12:16 and 15:47
+UTC, and launchd brought it back each time. Its crash reports and log give the cause: an
+uncaught Metal error, `Command buffer execution failed: Insufficient Memory`, with two
+requests running at once and active GPU memory at 45 and 55 GB on a 64 GB machine. The
+second request was the campaign's own leak. A run is killed at its budget, and the HTTP
+relay between the container and the backend kept the upstream request open after its caller
+was gone, so the backend went on generating for nobody while the next run's first request
+arrived beside it. Both aborts came within ninety seconds of a budget kill, and the runs in
+flight when the backend went down, `ahujasid/blender-mcp` and `KittenML/KittenTTS`, timed out
+without a bundle, as did `cool-RR/PySnooper` whose kill triggered the second abort. The same
+abort took the backend down at 22:38 UTC the day before, under the calibration sweeps, with
+an Ollama model resident beside it; that sweep abstained on a refused connection and was
+rerun.
+
+Two changes, neither to the sealed criteria. The relay now ends the upstream request the
+moment its caller closes, with a test that shows the backend seeing the disconnect, and the
+Ollama relay was recreated on the fixed script before the `local-ollama` arm started; the
+`local-mlx` relay was left as it was, since its arm was on its last run and the fix cannot
+reach a process that has already loaded the old file. And one backend is resident per arm:
+rapid-mlx is taken down for the `local-ollama` arm and brought back when the arms are done,
+because a 27B model's context beside a 35B model's on 64 GB is the condition that aborted
+it before. The timeouts named above are recorded as timeouts and stay in the arm's counts;
+the report names them here rather than reattributing them, because a run the backend
+abandoned and a run the model exhausted look the same from the harness and are not told
+apart after the fact.
+

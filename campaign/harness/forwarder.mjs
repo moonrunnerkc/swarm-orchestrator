@@ -6,7 +6,11 @@
  * loopback it listens on, and a TCP relay carries the container's name in that header, so
  * the relay names the loopback instead; rapid-mlx does not check and is unaffected. Nothing
  * else about the request or the response is read or changed, and bodies are streamed both
- * ways, since the backend's answer is a stream the client times.
+ * ways, since the backend's answer is a stream the client times. A caller that goes away
+ * takes its backend request with it: the container a run lives in is killed at the budget,
+ * and a relay that kept the upstream stream open after that left the backend generating for
+ * nobody while the next run's request arrived beside it, which is two contexts resident at
+ * once and, on this box, a Metal out-of-memory abort of the backend.
  *
  *   node forwarder.mjs <port> <upstream host>
  *
@@ -35,11 +39,20 @@ export function startForwarder({ port, upstreamHost, listenPort = port, log = ()
       },
     );
     relayed.on("error", (cause) => {
+      if (relayed.destroyed && outgoing.destroyed) {
+        return;
+      }
       log(`relay to ${upstreamHost}:${port} failed: ${cause.message}`);
       if (!outgoing.headersSent) {
         outgoing.writeHead(502, { "content-type": "text/plain" });
       }
       outgoing.end(`the forwarder could not reach ${upstreamHost}:${port}: ${cause.message}\n`);
+    });
+    outgoing.on("close", () => {
+      if (!outgoing.writableFinished) {
+        log(`caller left ${incoming.method} ${incoming.url} before the answer ended; ending it upstream`);
+        relayed.destroy(new Error("the caller went away"));
+      }
     });
     incoming.pipe(relayed);
   });
