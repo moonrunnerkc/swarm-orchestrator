@@ -200,3 +200,18 @@ want of a seed are judged again with `rejudge --reason "no seed within" --langua
 narrowed to the one pool whose runner the defect could touch, and the walk resumes from there.
 A Rust candidate rejected because its suite failed at base is not affected: it is rejected
 under either reading.
+
+## Amendment, 2026-09-03 04:05 UTC: the memory an arm run holds
+
+Appended, as above. The fourth arm run on `local-mlx` ended after 224 seconds with exit 137,
+which is a kill, and the result file called it a timeout because the harness read every 137
+as one. It was the container's memory cap: 4 GB, the sealed budget for the suite check at
+selection, applied unchanged to a run that holds the CLI, the suite it runs, the behaviour
+probes and the coverage cycle at once, and node's own runner starts a process per test file.
+An arm run now gets 8 GB, the VM 10 GB, and a kill is recorded apart from a timeout: a 137 at
+the budget is the timeout, a 137 well before it is `killedBeforeBudget`, and the report counts
+the two separately. The transcript of a run that left no bundle is kept beside its result,
+since it is the only account of what happened. The one killed run is run again under the new
+cap; the four runs that finished under the old one stand, since a cap that was not reached
+changed nothing about them. The selection is unchanged: 4 GB is still what a suite has to pass
+under to be chosen.

@@ -40,6 +40,7 @@ export function summarizeArm(results) {
     runs: results.length,
     noBundle: results.filter((entry) => entry.bundle === null).length,
     timedOut: results.filter((entry) => entry.timedOut).length,
+    killedBeforeBudget: results.filter((entry) => entry.killedBeforeBudget === true).length,
     notExecuted: withBundle.filter((entry) => !entry.executed).length,
     executed: executed.length,
     bundlesVerified: withBundle.filter((entry) => entry.bundle.verified).length,
@@ -80,6 +81,7 @@ export function renderReport(summaries, { generatedAt, notes = [] }) {
     lines.push(row("runs recorded", summary.runs));
     lines.push(row("no bundle produced", summary.noBundle));
     lines.push(row("timed out", summary.timedOut));
+    lines.push(row("killed before the budget", summary.killedBeforeBudget));
     lines.push(row("bundle but the model never answered (not executed)", summary.notExecuted));
     lines.push(row("executed", summary.executed));
     lines.push(row("bundles verified by their own verifier", `${summary.bundlesVerified} of ${summary.bundlesVerified + summary.bundlesRefused}`));

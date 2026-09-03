@@ -100,7 +100,14 @@ export function typeEnvironment(type) {
   }
 }
 
-function runArgv({ type, workspace, network, argv, mounts = [], environment = [], hosts = [], timeoutSeconds }) {
+/**
+ * An arm run holds the CLI, the suite it runs, and the probes and coverage cycle the gates
+ * spawn beside it, which is more than the suite alone that selection measured under the
+ * sealed 4 GB. Sized separately, and named in the methodology's amendment of 2026-09-03.
+ */
+export const armMemoryGigabytes = 8;
+
+function runArgv({ type, workspace, network, argv, mounts = [], environment = [], hosts = [], timeoutSeconds, memoryGigabytes = budgets.containerMemoryGigabytes }) {
   return [
     "docker",
     "run",
@@ -110,7 +117,7 @@ function runArgv({ type, workspace, network, argv, mounts = [], environment = []
     "--cpus",
     String(budgets.containerCpus),
     "--memory",
-    `${budgets.containerMemoryGigabytes}g`,
+    `${memoryGigabytes}g`,
     "--volume",
     `${workspace}:/work`,
     ...mounts.flatMap((mount) => ["--volume", `${mount.host}:${mount.container}`]),
@@ -185,6 +192,7 @@ export function armRunArgv({ type, workspace, outputDirectory, arm, task, maxSte
     environment: arm.frontier ? [`${arm.keyVariable}=${key}`] : [],
     hosts: arm.frontier ? [`${arm.host}:${forwarderAddress}`] : [],
     timeoutSeconds,
+    memoryGigabytes: armMemoryGigabytes,
   });
 }
 

@@ -98,6 +98,7 @@ describe("an arm run", () => {
     const argv = armRunArgv({ ...common, arm: armNamed("local-mlx") });
 
     expect(flag(argv, "--network")).toBe(internalNetwork);
+    expect(flag(argv, "--memory")).toBe("8g");
     expect(flags(argv, "--volume")).toEqual(["/w/repo:/work", "/o/repo:/out"]);
     expect(flags(argv, "--env")).toEqual([
       "HOME=/home/campaign",

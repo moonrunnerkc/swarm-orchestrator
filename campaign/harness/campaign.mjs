@@ -40,6 +40,7 @@ import {
   walkCandidates,
 } from "./candidates.mjs";
 import {
+  armMemoryGigabytes,
   armRunArgv,
   buildImageArgv,
   createNetworkArgv,
@@ -773,13 +774,21 @@ async function runOne({ arm, armName, repo, maxSteps, attempts, timeoutMinutes, 
   const seedLineRestored = readFileSync(seedPath, "utf8").split("\n")[repo.seed.line - 1] === repo.seed.before;
   const fix = judgeFix({ suiteOutcome: after.outcome, testFilesChanged, seedLineRestored });
 
+  // A kill at the budget is the timeout; a kill well before it is the kernel's, which under
+  // a memory cap means the cap, and the two are recorded apart because they mean different
+  // things about the run.
+  const budgetMs = timeoutMinutes * 60 * 1000;
+  const killed = ran.exitCode === 137;
+  const timedOut = killed && durationMs >= budgetMs - 15_000;
   const result = {
     ...base,
     seededCommit,
     startedAt,
     durationMs,
     containerExitCode: ran.exitCode,
-    timedOut: ran.exitCode === 137,
+    timedOut,
+    killedBeforeBudget: killed && !timedOut,
+    memoryGigabytes: armMemoryGigabytes,
     executed: facts?.executed ?? false,
     outcome: bundle === null ? "no-bundle" : facts.executed ? fix : "not-executed",
     bundle:
@@ -795,6 +804,12 @@ async function runOne({ arm, armName, repo, maxSteps, attempts, timeoutMinutes, 
     corpus: bundle === null ? null : `corpus/${armName}/${slug}`,
   };
   writeJson(resultPath, result);
+  // The transcript is kept for every run, and for a run that left no bundle it is the only
+  // account of what happened, so it sits beside the result rather than in a corpus entry
+  // that does not exist.
+  if (bundle === null) {
+    cpSync(join(outputDirectory, "run-transcript.txt"), resultPath.replace(/\.json$/, ".transcript.txt"));
+  }
   if (bundle !== null) {
     const destination = join(directories.corpus, armName, slug);
     rmSync(destination, { recursive: true, force: true });
