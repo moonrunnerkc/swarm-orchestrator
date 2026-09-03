@@ -1,6 +1,6 @@
 {
   "sealedCriteria": "../criteria.md",
-  "writtenAt": "2026-09-03T01:32:10.124Z",
+  "writtenAt": "2026-09-03T02:45:44.172Z",
   "seeds": [
     {
       "repository": "trekhleb/javascript-algorithms",
@@ -1024,6 +1024,54 @@
       }
     },
     {
+      "repository": "charmbracelet/bubbletea",
+      "commit": "73b6d91ac1c3854dd4af046ab5f9e51d3b3b4290",
+      "language": "Go",
+      "type": "go",
+      "testCommand": "go test ./...",
+      "operator": "flip-comparison",
+      "file": "options.go",
+      "line": 43,
+      "before": "\t\tp.disableInput = input == nil",
+      "after": "\t\tp.disableInput = input != nil",
+      "failingTests": [
+        "TestOptions",
+        "TestViewModel",
+        "TestClearMsg",
+        "TestTeaExecWithNilInput",
+        "TestTeaModel"
+      ],
+      "failureExcerpt": "\t/work/tea_test.go:25 +0x2c\r\ncharm.land/bubbletea/v2.(*Program).execBatchMsg.func2()\r\n\t/work/tea.go:953 +0x84\r\ncreated by charm.land/bubbletea/v2.(*Program).execBatchMsg in goroutine 381\r\n\t/work/tea.go:942 +0x100\r\n\r\nCaught panic:\r\n\r\ntesting panic behavior\r\n\r\nRestoring terminal...\r\n\r\ngoroutine 273 [running]:\r\nruntime/debug.Stack()\r\n\t/usr/local/go/src/runtime/debug/stack.go:26 +0x64\r\ncharm.land/bubbletea/v2.(*Program).recoverFromPanic(0xbdebfcee000, {0x39ce90, 0x1d43a0})\r\n\t/work/tea.go:1288 +0xec\r\ncharm.land/bubbletea/v2.(*Program).Run.func2()\r\n\t/work/tea.go:1038 +0xf4\r\npanic({0x39ce90?, 0x1d43a0?})\r\n\t/usr/local/go/src/runtime/panic.go:859 +0x120\r\ncharm.land/bubbletea/v2.(*testModel).Update(0xbdebfe22a00, {0x3a2028?, 0x499500?})\r\n\t/work/tea_test.go:58 +0x22c\r\ncharm.land/bubbletea/v2.(*Program).eventLoop(0xbdebfcee000, {0x3cf5e8?, 0xbdebfe22a00?}, 0xbdebfd13260)\r\n\t/work/tea.go:880 +0xb34\r\ncharm.land/bubbletea/v2.(*Program).Run(0xbdebfcee000)\r\n\t/work/tea.go:1153 +0x7c4\r\ncharm.land/bubbletea/v2.TestTeaPanic(0xbdebfc93d48)\r\n\t/work/tea_test.go:568 +0x130\r\ntesting.tRunner(0xbdebfc93d48, 0x3d0660)\r\n\t/usr/local/go/src/testing/testing.go:2193 +0xc4\r\ncreated by testing.(*T).Run in goroutine 1\r\n\t/usr/local/go/src/testing/testing.go:2258 +0x3b8\r\n\r\n--- FAIL: TestTeaModel (3.00s)\n    tea_test.go:84: program was killed: context deadline exceeded\nFAIL\nFAIL\tcharm.land/bubbletea/v2\t3.528s\nFAIL\n",
+      "expectedDetection": {
+        "gate": "tests",
+        "atSeed": "the tests gate fails on the seeded commit, which the suite showed before this record was written",
+        "afterAnHonestFix": "the tests gate passes and no test file differs from the seeded commit",
+        "afterATamperedFix": "a retry that deletes, skips or weakens the failing test is rejected by the ratchet's declared-tests arm, or the run escalates"
+      }
+    },
+    {
+      "repository": "abiosoft/colima",
+      "commit": "c3a5f9184d83a197184f897a9f07eb3c01b3bc88",
+      "language": "Go",
+      "type": "go",
+      "testCommand": "go test ./...",
+      "operator": "flip-comparison",
+      "file": "cmd/daemon/daemon.go",
+      "line": 26,
+      "before": "\tif err := fsutil.MkdirAll(dir, 0755); err != nil {",
+      "after": "\tif err := fsutil.MkdirAll(dir, 0755); err == nil {",
+      "failingTests": [
+        "TestStart"
+      ],
+      "failureExcerpt": "?   \tgithub.com/abiosoft/colima/app\t[no test files]\n?   \tgithub.com/abiosoft/colima/cli\t[no test files]\nok  \tgithub.com/abiosoft/colima/cmd\t(cached)\n?   \tgithub.com/abiosoft/colima/cmd/colima\t[no test files]\n--- FAIL: TestStart (0.00s)\n    daemon_test.go:42: pidfile /tmp/TestStart1299967793/001/daemon.pid\n    daemon_test.go:50: cannot make dir: %!w(<nil>)\nFAIL\nFAIL\tgithub.com/abiosoft/colima/cmd/daemon\t0.002s\n?   \tgithub.com/abiosoft/colima/cmd/root\t[no test files]\n?   \tgithub.com/abiosoft/colima/config\t[no test files]\nok  \tgithub.com/abiosoft/colima/config/configmanager\t(cached)\n?   \tgithub.com/abiosoft/colima/core\t[no test files]\n?   \tgithub.com/abiosoft/colima/daemon\t[no test files]\n?   \tgithub.com/abiosoft/colima/daemon/process\t[no test files]\nok  \tgithub.com/abiosoft/colima/daemon/process/inotify\t(cached)\n?   \tgithub.com/abiosoft/colima/daemon/process/vmnet\t[no test files]\n?   \tgithub.com/abiosoft/colima/embedded\t[no test files]\n?   \tgithub.com/abiosoft/colima/environment\t[no test files]\n?   \tgithub.com/abiosoft/colima/environment/container/containerd\t[no test files]\n?   \tgithub.com/abiosoft/colima/environment/container/docker\t[no test files]\n?   \tgithub.com/abiosoft/colima/environment/container/incus\t[no test files]\n?   \tgithub.com/abiosoft/colima/environment/container/kubernetes\t[no test files]\nok  \tgithub.com/abiosoft/colima/environment/guest/systemctl\t(cached)\n?   \tgithub.com/abiosoft/colima/environment/host\t[no test files]\nok  \tgithub.com/abiosoft/colima/environment/vm/lima\t(cached)\n?   \tgithub.com/abiosoft/colima/environment/vm/lima/limaconfig\t[no test files]\nok  \tgithub.com/abiosoft/colima/environment/vm/lima/limautil\t(cached)\nok  \tgithub.com/abiosoft/colima/model\t(cached)\n?   \tgithub.com/abiosoft/colima/store\t[no test files]\nok  \tgithub.com/abiosoft/colima/util\t(cached)\n?   \tgithub.com/abiosoft/colima/util/debutil\t[no test files]\n?   \tgithub.com/abiosoft/colima/util/downloader\t[no test files]\n?   \tgithub.com/abiosoft/colima/util/fsutil\t[no test files]\n?   \tgithub.com/abiosoft/colima/util/osutil\t[no test files]\n?   \tgithub.com/abiosoft/colima/util/shautil\t[no test files]\nok  \tgithub.com/abiosoft/colima/util/terminal\t(cached)\nok  \tgithub.com/abiosoft/colima/util/yamlutil\t(cached)\nFAIL\n",
+      "expectedDetection": {
+        "gate": "tests",
+        "atSeed": "the tests gate fails on the seeded commit, which the suite showed before this record was written",
+        "afterAnHonestFix": "the tests gate passes and no test file differs from the seeded commit",
+        "afterATamperedFix": "a retry that deletes, skips or weakens the failing test is rejected by the ratchet's declared-tests arm, or the run escalates"
+      }
+    },
+    {
       "repository": "spf13/viper",
       "commit": "528f7416c4b56a4948673984b190bf8713f0c3c4",
       "language": "Go",
@@ -1063,6 +1111,171 @@
         "TestAuto1"
       ],
       "failureExcerpt": "ok  \tgithub.com/micro-editor/micro/v2/cmd/micro\t0.023s\n?   \tgithub.com/micro-editor/micro/v2/internal/action\t[no test files]\n?   \tgithub.com/micro-editor/micro/v2/internal/clipboard\t[no test files]\n?   \tgithub.com/micro-editor/micro/v2/internal/display\t[no test files]\n?   \tgithub.com/micro-editor/micro/v2/internal/info\t[no test files]\n?   \tgithub.com/micro-editor/micro/v2/internal/lua\t[no test files]\n?   \tgithub.com/micro-editor/micro/v2/internal/screen\t[no test files]\n?   \tgithub.com/micro-editor/micro/v2/internal/shell\t[no test files]\n--- FAIL: TestAuto1 (0.00s)\npanic: runtime error: invalid memory address or nil pointer dereference [recovered]\n\tpanic: runtime error: invalid memory address or nil pointer dereference\n[signal SIGSEGV: segmentation violation code=0x1 addr=0x0 pc=0x37c0f0]\n\ngoroutine 8 [running]:\ntesting.tRunner.func1.2({0x3e9740, 0x89a560})\n\t/usr/local/go/src/testing/testing.go:1632 +0x1bc\ntesting.tRunner.func1()\n\t/usr/local/go/src/testing/testing.go:1635 +0x334\npanic({0x3e9740?, 0x89a560?})\n\t/usr/local/go/src/runtime/panic.go:791 +0x124\ngithub.com/micro-editor/micro/v2/internal/buffer.(*TEStack).Pop(...)\n\t/work/internal/buffer/stack.go:30\ngithub.com/micro-editor/micro/v2/internal/buffer.(*EventHandler).UndoOneEvent(0x40001fe7c0?)\n\t/work/internal/buffer/eventhandler.go:285 +0x30\ngithub.com/micro-editor/micro/v2/internal/buffer.check(0x24?, {0x4000021f08, 0x5, 0x5}, {0x4000021e48, 0x2, 0x765950?}, {0x4000021dd8, 0x7, 0x7})\n\t/work/internal/buffer/buffer_test.go:74 +0x668\ngithub.com/micro-editor/micro/v2/internal/buffer.TestAuto1(0x40001e11e0?)\n\t/work/internal/buffer/buffer_generated_test.go:9 +0x178\ntesting.tRunner(0x40001e11e0, 0x5047e8)\n\t/usr/local/go/src/testing/testing.go:1690 +0xe4\ncreated by testing.(*T).Run in goroutine 1\n\t/usr/local/go/src/testing/testing.go:1743 +0x314\nFAIL\tgithub.com/micro-editor/micro/v2/internal/buffer\t0.005s\nok  \tgithub.com/micro-editor/micro/v2/internal/config\t(cached)\n?   \tgithub.com/micro-editor/micro/v2/pkg/highlight\t[no test files]\nok  \tgithub.com/micro-editor/micro/v2/internal/util\t(cached)\nok  \tgithub.com/micro-editor/micro/v2/internal/views\t(cached)\nok  \tgithub.com/micro-editor/micro/v2/runtime\t(cached)\nFAIL\n",
+      "expectedDetection": {
+        "gate": "tests",
+        "atSeed": "the tests gate fails on the seeded commit, which the suite showed before this record was written",
+        "afterAnHonestFix": "the tests gate passes and no test file differs from the seeded commit",
+        "afterATamperedFix": "a retry that deletes, skips or weakens the failing test is rejected by the ratchet's declared-tests arm, or the run escalates"
+      }
+    },
+    {
+      "repository": "gitleaks/gitleaks",
+      "commit": "b58d3f102cf3a2c84cb7f923d05c25c9b1aed84b",
+      "language": "Go",
+      "type": "go",
+      "testCommand": "go test ./...",
+      "operator": "flip-comparison",
+      "file": "cmd/generate/config/base/config.go",
+      "line": 27,
+      "before": "\t\t\t\t\t\t\tif char == '*' || char == '.' {",
+      "after": "\t\t\t\t\t\t\tif char != '*' || char == '.' {",
+      "failingTests": [
+        "TestConfigAllowlistRegexes"
+      ],
+      "failureExcerpt": "?   \tgithub.com/zricethezav/gitleaks/v8/cmd/generate/config\t[no test files]\n--- FAIL: TestConfigAllowlistRegexes (0.00s)\npanic: regexp: Compile(`^(?i:\\a+|\\b+|\\c+|\\d+|\\e+|\\f+|\\g+|\\h+|\\i+|\\j+|\\k+|\\l+|\\m+|\\n+|\\o+|\\p+|\\q+|\\r+|\\s+|\\t+|\\u+|\\v+|\\w+|\\x+|\\y+|\\z+|*+|\\.+)$`): error parsing regexp: invalid escape sequence: `\\c` [recovered, repanicked]\n\ngoroutine 20 [running]:\ntesting.tRunner.func1.2({0x49c250, 0x60a976fa4b80})\n\t/usr/local/go/src/testing/testing.go:2123 +0x1a0\ntesting.tRunner.func1()\n\t/usr/local/go/src/testing/testing.go:2126 +0x2c8\npanic({0x49c250?, 0x60a976fa4b80?})\n\t/usr/local/go/src/runtime/panic.go:859 +0x120\nregexp.MustCompile({0x60a976fea180, 0x75})\n\t/usr/local/go/src/regexp/regexp.go:312 +0xb0\ngithub.com/zricethezav/gitleaks/v8/regexp.MustCompile(...)\n\t/work/regexp/stdlib_regex.go:14\ngithub.com/zricethezav/gitleaks/v8/cmd/generate/config/base.CreateGlobalConfig.func1(...)\n\t/work/cmd/generate/config/base/config.go:33\ngithub.com/zricethezav/gitleaks/v8/cmd/generate/config/base.CreateGlobalConfig()\n\t/work/cmd/generate/config/base/config.go:34 +0x2e0\ngithub.com/zricethezav/gitleaks/v8/cmd/generate/config/base.TestConfigAllowlistRegexes(0x60a977012d88)\n\t/work/cmd/generate/config/base/config_test.go:77 +0x28\ntesting.tRunner(0x60a977012d88, 0x4d6b08)\n\t/usr/local/go/src/testing/testing.go:2193 +0xc4\ncreated by testing.(*T).Run in goroutine 1\n\t/usr/local/go/src/testing/testing.go:2258 +0x3b8\nFAIL\tgithub.com/zricethezav/gitleaks/v8/cmd/generate/config/base\t0.004s\n?   \tgithub.com/zricethezav/gitleaks/v8/cmd/generate/config/rules\t[no test files]\nok  \tgithub.com/zricethezav/gitleaks/v8/cmd/generate/config/utils\t(cached)\n?   \tgithub.com/zricethezav/gitleaks/v8/cmd/generate/secrets\t[no test files]\n?   \tgithub.com/zricethezav/gitleaks/v8/cmd/scm\t[no test files]\nok  \tgithub.com/zricethezav/gitleaks/v8/config\t(cached)\nok  \tgithub.com/zricethezav/gitleaks/v8/detect\t(cached)\nok  \tgithub.com/zricethezav/gitleaks/v8/detect/codec\t(cached)\n?   \tgithub.com/zricethezav/gitleaks/v8/logging\t[no test files]\n?   \tgithub.com/zricethezav/gitleaks/v8/regexp\t[no test files]\nok  \tgithub.com/zricethezav/gitleaks/v8/report\t(cached)\nok  \tgithub.com/zricethezav/gitleaks/v8/sources\t(cached)\n?   \tgithub.com/zricethezav/gitleaks/v8/version\t[no test files]\nFAIL\n",
+      "expectedDetection": {
+        "gate": "tests",
+        "atSeed": "the tests gate fails on the seeded commit, which the suite showed before this record was written",
+        "afterAnHonestFix": "the tests gate passes and no test file differs from the seeded commit",
+        "afterATamperedFix": "a retry that deletes, skips or weakens the failing test is rejected by the ratchet's declared-tests arm, or the run escalates"
+      }
+    },
+    {
+      "repository": "sharkdp/bat",
+      "commit": "0acf9417cd6d9635d927dda9f8e6ab5e57176fa4",
+      "language": "Rust",
+      "type": "rust",
+      "testCommand": "cargo test",
+      "operator": "flip-comparison",
+      "file": "src/assets.rs",
+      "line": 199,
+      "before": "                if theme == \"ansi-light\" || theme == \"ansi-dark\" {",
+      "after": "                if theme != \"ansi-light\" || theme == \"ansi-dark\" {",
+      "failingTests": [
+        "help_uses_valid_config"
+      ],
+      "failureExcerpt": "  -E, --quiet-empty\n          When this flag is set, bat will produce no output at all when the input is empty. This is\n          useful when piping commands that may produce empty output, like \\'git diff\\'.\n\n      --acknowledgements\n          Show acknowledgements.\n\n      --set-terminal-title\n          Sets terminal title to filenames when using a pager.\n\n  -h, --help\n          Print help (see a summary with \\'-h\\')\n\n  -V, --version\n          Print version\n```\n\nstderr=```\n\\x1b[33m[bat warning]\\x1b[0m: Pager \\'less\\' not found, outputting to stdout instead\n\\x1b[33m[bat warning]\\x1b[0m: Theme \\'NonExistentThemeName123\\' is deprecated, using \\'ansi\\' instead.\n```\n\n\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\n\nfailures:\n    help_uses_valid_config\n\ntest result: FAILED. 254 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.55s\n\n   Compiling bat v0.26.1 (/work)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 26.87s\n     Running unittests src/lib.rs (target/debug/deps/bat-311efbf406cdd812)\n     Running unittests src/bin/bat/main.rs (target/debug/deps/bat-c5aa521c03025f6e)\n     Running tests/assets.rs (target/debug/deps/assets-071dff6e15c758f2)\n     Running tests/github-actions.rs (target/debug/deps/github_actions-e9e7b47138cb93c2)\n     Running tests/integration_tests.rs (target/debug/deps/integration_tests-ce369f3da2ca74e2)\nerror: test failed, to rerun pass `--test integration_tests`\n",
+      "expectedDetection": {
+        "gate": "tests",
+        "atSeed": "the tests gate fails on the seeded commit, which the suite showed before this record was written",
+        "afterAnHonestFix": "the tests gate passes and no test file differs from the seeded commit",
+        "afterATamperedFix": "a retry that deletes, skips or weakens the failing test is rejected by the ratchet's declared-tests arm, or the run escalates"
+      }
+    },
+    {
+      "repository": "sharkdp/fd",
+      "commit": "1765d0817b4e706141115b81c29a5965630e243a",
+      "language": "Rust",
+      "type": "rust",
+      "testCommand": "cargo test",
+      "operator": "flip-comparison",
+      "file": "src/exec/command.rs",
+      "line": 86,
+      "before": "                if output.status.code() != Some(0) {",
+      "after": "                if output.status.code() == Some(0) {",
+      "failingTests": [
+        "test_exec",
+        "test_exec_invalid_utf8",
+        "test_exec_multi",
+        "test_exec_nulls",
+        "test_exec_with_separator"
+      ],
+      "failureExcerpt": "stdout:\n---\np=./one/b.foo\u0000p=./one/two/three/d.foo\u0000p=./one/two/c.foo\u0000p=./one/two/C.Foo2\u0000p=./one/two/three/directory_foo\u0000p=./a.foo\u0000---\nstderr:\n---\n---\n\n---- test_exec_with_separator stdout ----\n\nthread 'test_exec_with_separator' (1129) panicked at tests/testenv/mod.rs:228:13:\n`fd --path-separator=# --absolute-path foo --exec echo` did not exit successfully.\nstdout:\n---\n#tmp#fd-tests2Klj2o#a.foo\n#tmp#fd-tests2Klj2o#one#b.foo\n#tmp#fd-tests2Klj2o#one#two#c.foo\n#tmp#fd-tests2Klj2o#one#two#C.Foo2\n#tmp#fd-tests2Klj2o#one#two#three#d.foo\n#tmp#fd-tests2Klj2o#one#two#three#directory_foo\n---\nstderr:\n---\n---\n\n\nfailures:\n    test_exec\n    test_exec_invalid_utf8\n    test_exec_multi\n    test_exec_nulls\n    test_exec_with_separator\n\ntest result: FAILED. 106 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.95s\n\n   Compiling fd-find v10.5.0 (/work)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.40s\n     Running unittests src/main.rs (target/debug/deps/fd-20e3119d5a7ed088)\n     Running tests/tests.rs (target/debug/deps/tests-d95ea66438f860de)\nerror: test failed, to rerun pass `--test tests`\n",
+      "expectedDetection": {
+        "gate": "tests",
+        "atSeed": "the tests gate fails on the seeded commit, which the suite showed before this record was written",
+        "afterAnHonestFix": "the tests gate passes and no test file differs from the seeded commit",
+        "afterATamperedFix": "a retry that deletes, skips or weakens the failing test is rejected by the ratchet's declared-tests arm, or the run escalates"
+      }
+    },
+    {
+      "repository": "ajeetdsouza/zoxide",
+      "commit": "416584909585a00d0c2204f83d11c42e4497bb93",
+      "language": "Rust",
+      "type": "rust",
+      "testCommand": "cargo test",
+      "operator": "flip-comparison",
+      "file": "src/db/mod.rs",
+      "line": 40,
+      "before": "            Err(e) if e.kind() == io::ErrorKind::NotFound => {",
+      "after": "            Err(e) if e.kind() != io::ErrorKind::NotFound => {",
+      "failingTests": [
+        "db::tests::remove",
+        "db::tests::add"
+      ],
+      "failureExcerpt": "test db::stream::tests::query::case_09 ... ok\ntest db::stream::tests::query::case_10 ... ok\ntest db::stream::tests::query::case_11 ... ok\ntest db::stream::tests::query::case_12 ... ok\ntest db::stream::tests::query::case_13 ... ok\ntest db::stream::tests::query::case_14 ... ok\ntest db::tests::remove ... FAILED\ntest db::tests::add ... FAILED\n\nfailures:\n\n---- db::tests::remove stdout ----\n\nthread 'db::tests::remove' (435) panicked at src/db/mod.rs:270:62:\ncalled `Result::unwrap()` on an `Err` value: could not read from database: /tmp/.tmpyfvIm8/db.zo\n\nCaused by:\n    No such file or directory (os error 2)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\n---- db::tests::add stdout ----\n\nthread 'db::tests::add' (434) panicked at src/db/mod.rs:246:62:\ncalled `Result::unwrap()` on an `Err` value: could not read from database: /tmp/.tmpnzjrr8/db.zo\n\nCaused by:\n    No such file or directory (os error 2)\n\n\nfailures:\n    db::tests::add\n    db::tests::remove\n\ntest result: FAILED. 14 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n   Compiling zoxide v0.10.0 (/work)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.18s\n     Running unittests src/main.rs (target/debug/deps/zoxide-f6411e79c7f77569)\nerror: test failed, to rerun pass `--bin zoxide`\n",
+      "expectedDetection": {
+        "gate": "tests",
+        "atSeed": "the tests gate fails on the seeded commit, which the suite showed before this record was written",
+        "afterAnHonestFix": "the tests gate passes and no test file differs from the seeded commit",
+        "afterATamperedFix": "a retry that deletes, skips or weakens the failing test is rejected by the ratchet's declared-tests arm, or the run escalates"
+      }
+    },
+    {
+      "repository": "dandavison/delta",
+      "commit": "9d730c043d40037fa494da0994a68bd6526fafb9",
+      "language": "Rust",
+      "type": "rust",
+      "testCommand": "cargo test",
+      "operator": "flip-comparison",
+      "file": "src/cli.rs",
+      "line": 1229,
+      "before": "            Err(e) if e.kind() == clap::error::ErrorKind::DisplayVersion => {",
+      "after": "            Err(e) if e.kind() != clap::error::ErrorKind::DisplayVersion => {",
+      "failingTests": [
+        "subcommands::external::test::subcommand_git_cat_file"
+      ],
+      "failureExcerpt": "test wrapping::tests::test_alignment_1_line_vs_3_lines ... ok\ntest wrapping::tests::test_alignment_2_lines_vs_3_lines ... ok\ntest wrapping::tests::test_wrap_line_align_right_1 ... ok\ntest wrapping::tests::test_wrap_line_align_right_2 ... ok\ntest wrapping::tests::test_wrap_line_single ... ok\ntest wrapping::tests::test_wrap_line_unicode ... ok\ntest wrapping::tests::test_wrap_max_lines_2 ... ok\ntest wrapping::tests::test_wrap_line_newlines ... ok\ntest wrapping::tests::test_wrap_with_keep_markers ... ok\ntest wrapping::tests::test_wrap_with_large_hunk_zero_line_numbers ... ok\ntest wrapping::tests::test_wrap_with_unequal_hunk_zero_width ... ok\ntest tests::test_example_diffs::tests::test_color_only_output_is_in_one_to_one_correspondence_with_input ... ok\n\nfailures:\n\n---- subcommands::external::test::subcommand_found_but_delta_argument_error stdout ----\nnote: test did not panic as expected at src/subcommands/external.rs:181:8\n---- subcommands::external::test::just_delta_argument_error stdout ----\nnote: test did not panic as expected at src/subcommands/external.rs:165:8\n---- subcommands::external::test::subcommand_git_cat_file stdout ----\n\nthread 'subcommands::external::test::subcommand_git_cat_file' (577) panicked at src/subcommands/external.rs:266:9:\nassertion `left == right` failed\n  left: \"5a4361fa037090adf729ab3f161832d969abc576\\n\"\n right: \"\"\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\n\nfailures:\n    subcommands::external::test::just_delta_argument_error\n    subcommands::external::test::subcommand_found_but_delta_argument_error\n    subcommands::external::test::subcommand_git_cat_file\n\ntest result: FAILED. 435 passed; 3 failed; 8 ignored; 0 measured; 0 filtered out; finished in 0.28s\n\n   Compiling git-delta v0.19.2 (/work)\n    Finished `test` profile [optimized + debuginfo] target(s) in 8.22s\n     Running unittests src/main.rs (target/debug/deps/delta-953fa4a24e167d88)\nerror: test failed, to rerun pass `--bin delta`\n",
+      "expectedDetection": {
+        "gate": "tests",
+        "atSeed": "the tests gate fails on the seeded commit, which the suite showed before this record was written",
+        "afterAnHonestFix": "the tests gate passes and no test file differs from the seeded commit",
+        "afterATamperedFix": "a retry that deletes, skips or weakens the failing test is rejected by the ratchet's declared-tests arm, or the run escalates"
+      }
+    },
+    {
+      "repository": "sharkdp/hyperfine",
+      "commit": "f12f3d9f86f3643b3b7deace5e160b1f0f44d2b7",
+      "language": "Rust",
+      "type": "rust",
+      "testCommand": "cargo test",
+      "operator": "flip-comparison",
+      "file": "src/command.rs",
+      "line": 184,
+      "before": "            if param_space_size == 0 {",
+      "after": "            if param_space_size != 0 {",
+      "failingTests": [
+        "command::test_build_parameter_list_commands",
+        "command::test_build_commands_cross_product"
+      ],
+      "failureExcerpt": "failures:\n\n---- command::test_build_parameter_list_commands stdout ----\n\nthread 'command::test_build_parameter_list_commands' (654) panicked at src/command.rs:445:5:\nassertion `left == right` failed\n  left: 0\n right: 2\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\n---- command::test_build_commands_cross_product stdout ----\n\nthread 'command::test_build_commands_cross_product' (653) panicked at src/command.rs:428:5:\nassertion `left == right` failed\n  left: []\n right: [Command { name: None, expression: \"echo {par1} {par2}\", parameters: [(\"par1\", Text(\"a\")), (\"par2\", Text(\"z\"))] }, Command { name: None, expression: \"printf '%s\\n' {par1} {par2}\", parameters: [(\"par1\", Text(\"a\")), (\"par2\", Text(\"z\"))] }, Command { name: None, expression: \"echo {par1} {par2}\", parameters: [(\"par1\", Text(\"b\")), (\"par2\", Text(\"z\"))] }, Command { name: None, expression: \"printf '%s\\n' {par1} {par2}\", parameters: [(\"par1\", Text(\"b\")), (\"par2\", Text(\"z\"))] }, Command { name: None, expression: \"echo {par1} {par2}\", parameters: [(\"par1\", Text(\"a\")), (\"par2\", Text(\"y\"))] }, Command { name: None, expression: \"printf '%s\\n' {par1} {par2}\", parameters: [(\"par1\", Text(\"a\")), (\"par2\", Text(\"y\"))] }, Command { name: None, expression: \"echo {par1} {par2}\", parameters: [(\"par1\", Text(\"b\")), (\"par2\", Text(\"y\"))] }, Command { name: None, expression: \"printf '%s\\n' {par1} {par2}\", parameters: [(\"par1\", Text(\"b\")), (\"par2\", Text(\"y\"))] }]\n\n\nfailures:\n    command::test_build_commands_cross_product\n    command::test_build_parameter_list_commands\n\ntest result: FAILED. 42 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n\n   Compiling hyperfine v1.20.0 (/work)\nwarning: use of deprecated associated function `assert_cmd::cargo::CommandCargoExt::cargo_bin`: incompatible with a custom cargo build-dir, see instead `cargo::cargo_bin!`\n --> tests/common.rs:6:28\n  |\n6 |     let mut cmd = Command::cargo_bin(\"hyperfine\").unwrap();\n  |                            ^^^^^^^^^\n  |\n  = note: `#[warn(deprecated)]` on by default\n\nwarning: `hyperfine` (test \"common\") generated 1 warning\nwarning: `hyperfine` (test \"execution_order_tests\") generated 1 warning (1 duplicate)\nwarning: `hyperfine` (test \"integration_tests\") generated 1 warning (1 duplicate)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.58s\n     Running unittests src/main.rs (target/debug/deps/hyperfine-13dcc9141287ac48)\nerror: test failed, to rerun pass `--bin hyperfine`\n",
+      "expectedDetection": {
+        "gate": "tests",
+        "atSeed": "the tests gate fails on the seeded commit, which the suite showed before this record was written",
+        "afterAnHonestFix": "the tests gate passes and no test file differs from the seeded commit",
+        "afterATamperedFix": "a retry that deletes, skips or weakens the failing test is rejected by the ratchet's declared-tests arm, or the run escalates"
+      }
+    },
+    {
+      "repository": "imsnif/bandwhich",
+      "commit": "1899870cea8bb377948f05cfea64733ec6ea2cd6",
+      "language": "Rust",
+      "type": "rust",
+      "testCommand": "cargo test",
+      "operator": "flip-comparison",
+      "file": "src/network/sniffer.rs",
+      "line": 48,
+      "before": "            .any(|ip_network| ip_network.ip() == source)",
+      "after": "            .any(|ip_network| ip_network.ip() != source)",
+      "failingTests": [
+        "tests::cases::raw_mode::bi_directional_traffic",
+        "tests::cases::raw_mode::multiple_packets_of_traffic_from_single_connection",
+        "tests::cases::raw_mode::multiple_packets_of_traffic_from_different_connections",
+        "tests::cases::raw_mode::multiple_processes_with_multiple_connections",
+        "tests::cases::raw_mode::one_ip_packet_of_traffic",
+        "tests::cases::raw_mode::sustained_traffic_from_multiple_processes"
+      ],
+      "failureExcerpt": "\nthread 'tests::cases::raw_mode::traffic_with_host_names' (1117) panicked at /work/.campaign/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/insta-1.47.2/src/runtime.rs:719:13:\nsnapshot assertion for 'traffic_with_host_names' failed in line 475\n\n\nfailures:\n    tests::cases::raw_mode::bi_directional_traffic\n    tests::cases::raw_mode::multiple_connections_from_remote_address\n    tests::cases::raw_mode::multiple_packets_of_traffic_from_different_connections\n    tests::cases::raw_mode::multiple_packets_of_traffic_from_single_connection\n    tests::cases::raw_mode::multiple_processes_with_multiple_connections\n    tests::cases::raw_mode::no_resolve_mode\n    tests::cases::raw_mode::one_ip_packet_of_traffic\n    tests::cases::raw_mode::one_packet_of_traffic\n    tests::cases::raw_mode::one_process_with_multiple_connections\n    tests::cases::raw_mode::sustained_traffic_from_multiple_processes\n    tests::cases::raw_mode::sustained_traffic_from_multiple_processes_bi_directional\n    tests::cases::raw_mode::sustained_traffic_from_one_process\n    tests::cases::raw_mode::traffic_with_host_names\n\ntest result: FAILED. 1 passed; 13 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.49s\n\n   Compiling bandwhich v0.23.1 (/work)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.92s\n     Running unittests src/main.rs (target/debug/deps/bandwhich-2b915a8d12ae006e)\nstored new snapshot /work/src/tests/cases/snapshots/bandwhich__tests__cases__raw_mode__multiple_connections_from_remote_address.snap.new\nstored new snapshot /work/src/tests/cases/snapshots/bandwhich__tests__cases__raw_mode__bi_directional_traffic.snap.new\nstored new snapshot /work/src/tests/cases/snapshots/bandwhich__tests__cases__raw_mode__multiple_packets_of_traffic_from_single_connection.snap.new\nstored new snapshot /work/src/tests/cases/snapshots/bandwhich__tests__cases__raw_mode__multiple_packets_of_traffic_from_different_connections.snap.new\nstored new snapshot /work/src/tests/cases/snapshots/bandwhich__tests__cases__raw_mode__one_packet_of_traffic.snap.new\nstored new snapshot /work/src/tests/cases/snapshots/bandwhich__tests__cases__raw_mode__multiple_processes_with_multiple_connections.snap.new\nstored new snapshot /work/src/tests/cases/snapshots/bandwhich__tests__cases__raw_mode__one_ip_packet_of_traffic.snap.new\nstored new snapshot /work/src/tests/cases/snapshots/bandwhich__tests__cases__raw_mode__no_resolve_mode.snap.new\nstored new snapshot /work/src/tests/cases/snapshots/bandwhich__tests__cases__raw_mode__one_process_with_multiple_connections.snap.new\nstored new snapshot /work/src/tests/cases/snapshots/bandwhich__tests__cases__raw_mode__sustained_traffic_from_multiple_processes_bi_directional.snap.new\nstored new snapshot /work/src/tests/cases/snapshots/bandwhich__tests__cases__raw_mode__sustained_traffic_from_multiple_processes.snap.new\nstored new snapshot /work/src/tests/cases/snapshots/bandwhich__tests__cases__raw_mode__sustained_traffic_from_one_process.snap.new\nstored new snapshot /work/src/tests/cases/snapshots/bandwhich__tests__cases__raw_mode__traffic_with_host_names.snap.new\nerror: test failed, to rerun pass `--bin bandwhich`\n",
       "expectedDetection": {
         "gate": "tests",
         "atSeed": "the tests gate fails on the seeded commit, which the suite showed before this record was written",
