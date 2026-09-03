@@ -5,8 +5,11 @@
  * an internal network whose only other member is the forwarder for its arm's backend, so
  * "no network beyond the model backend" is a property of the network rather than a request.
  */
-import { basename } from "node:path";
+import { basename, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { budgets } from "./criteria.mjs";
+
+const HARNESS_DIRECTORY = dirname(fileURLToPath(import.meta.url));
 
 export const imageDigests = Object.freeze({
   node: "node@sha256:be23f54a88d34e8824c741b19b91064094f92c1c97b194144bfc8b50d67258e2",
@@ -52,25 +55,45 @@ export function buildImageArgv({ type, imagesDirectory, tarball }) {
 /**
  * Two commands: start the forwarder on the internal network, then attach it to the bridge
  * so it can reach the host. Its listener is the one address a run can reach.
+ *
+ * A local arm's forwarder is an HTTP relay, `forwarder.mjs` run from the node image, because
+ * Ollama refuses a request whose Host header names anything but its own loopback and a TCP
+ * relay carries the container's name there. A frontier arm's forwarder stays a TCP relay,
+ * since TLS has to pass through it untouched.
  */
-export function forwarderArgv(arm) {
-  const upstream = arm.frontier ? arm.host : hostGateway;
-  return [
-    [
-      "docker",
-      "run",
-      "--detach",
-      "--rm",
-      "--name",
-      forwarderName(arm),
-      "--network",
-      internalNetwork,
-      imageDigests.forwarder,
-      `TCP-LISTEN:${arm.port},fork,reuseaddr`,
-      `TCP:${upstream}:${arm.port}`,
-    ],
-    ["docker", "network", "connect", "bridge", forwarderName(arm)],
-  ];
+export function forwarderArgv(arm, harnessDirectory = HARNESS_DIRECTORY) {
+  const start = arm.frontier
+    ? [
+        "docker",
+        "run",
+        "--detach",
+        "--rm",
+        "--name",
+        forwarderName(arm),
+        "--network",
+        internalNetwork,
+        imageDigests.forwarder,
+        `TCP-LISTEN:${arm.port},fork,reuseaddr`,
+        `TCP:${arm.host}:${arm.port}`,
+      ]
+    : [
+        "docker",
+        "run",
+        "--detach",
+        "--rm",
+        "--name",
+        forwarderName(arm),
+        "--network",
+        internalNetwork,
+        "--volume",
+        `${harnessDirectory}/forwarder.mjs:/forwarder.mjs:ro`,
+        imageTags.node,
+        "node",
+        "/forwarder.mjs",
+        String(arm.port),
+        hostGateway,
+      ];
+  return [start, ["docker", "network", "connect", "bridge", forwarderName(arm)]];
 }
 
 export function stopForwarderArgv(arm) {

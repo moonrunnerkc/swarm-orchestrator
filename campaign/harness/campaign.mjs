@@ -698,7 +698,33 @@ async function runArm(options) {
     if (done >= limit) break;
     const resultPath = join(directories.results, armName, `${slugOf(repo.fullName)}.json`);
     if (existsSync(resultPath)) continue;
-    await runOne({ arm, armName, repo, maxSteps, attempts, timeoutMinutes, forwarderAddress, key, resultPath });
+    try {
+      await runOne({ arm, armName, repo, maxSteps, attempts, timeoutMinutes, forwarderAddress, key, resultPath });
+    } catch (cause) {
+      // The harness failing to start or finish one run is recorded against that run, by
+      // name and with the error, and the arm goes on: one repository's git, mount or copy
+      // failing is not a reason to leave forty-nine unmeasured, and a record that says
+      // "the harness could not run this" is not a record that says the model failed.
+      const message = cause instanceof Error ? cause.message : String(cause);
+      writeJson(resultPath, {
+        repository: repo.fullName,
+        language: repo.language,
+        type: repo.type,
+        commit: repo.commit,
+        arm: armName,
+        backend: arm.backend,
+        model: arm.model,
+        startedAt: nowIso(),
+        outcome: "not-run",
+        reason: `the harness could not run this repository: ${message.slice(0, 600)}`,
+        executed: false,
+        timedOut: false,
+        killedBeforeBudget: false,
+        bundle: null,
+      });
+      rmSync(join(directories.work, `${slugOf(repo.fullName)}.arms`, armName), { recursive: true, force: true });
+      log(`${repo.fullName} on ${armName}: not run, ${message.split("\n")[0].slice(0, 160)}`);
+    }
     done += 1;
   }
   log(`${armName}: ${done} run(s) this session`);
@@ -745,7 +771,19 @@ async function runOne({ arm, armName, repo, maxSteps, attempts, timeoutMinutes, 
     seedPath,
     applySite(readFileSync(seedPath, "utf8"), { line: repo.seed.line, before: repo.seed.before, after: repo.seed.after }),
   );
-  const identity = ["-c", "user.name=campaign", "-c", "user.email=campaign@example.invalid", "-c", "commit.gpgsign=false"];
+  // No hooks: the seed commit is the harness's, and a repository's own hooks, installed into
+  // .git/hooks by its dependency install inside the container, would run on this host with
+  // binaries built for the container. hooksPath pointed at nowhere disables every one.
+  const identity = [
+    "-c",
+    "user.name=campaign",
+    "-c",
+    "user.email=campaign@example.invalid",
+    "-c",
+    "commit.gpgsign=false",
+    "-c",
+    "core.hooksPath=/dev/null",
+  ];
   await must("git", [...identity, "commit", "--quiet", "--all", "--message", "campaign: seeded defect"], { cwd: workspace });
   const seededCommit = (await must("git", ["rev-parse", "HEAD"], { cwd: workspace })).stdout.trim();
 

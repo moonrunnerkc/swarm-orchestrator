@@ -215,3 +215,18 @@ since it is the only account of what happened. The one killed run is run again u
 cap; the four runs that finished under the old one stand, since a cap that was not reached
 changed nothing about them. The selection is unchanged: 4 GB is still what a suite has to pass
 under to be chosen.
+
+## Amendment, 2026-09-03 08:00 UTC: a hook on the seed commit, and what `not-run` covers
+
+Appended, as above. The harness commits the seed on the host, and a repository whose
+dependency install had put its own git hooks into `.git/hooks` ran that hook on the commit:
+uuidjs/uuid's lefthook, installed for linux inside the container, failed to load on this
+machine, the commit failed, and the driver let that exception end the whole `local-mlx` arm
+after fourteen repositories. The chain then started the `local-ollama` arm, which could not
+reach its backend and stopped before any run, and the report ran over the partial results;
+that report is discarded. Two changes. The seed commit runs with `core.hooksPath` pointed at
+nowhere, so no repository's hook runs on the harness's commit. And a run the harness cannot
+start or finish is recorded against that repository as `not-run`, with the error, and the arm
+goes on to the next: `not-run` now covers every case in which the harness rather than the
+model could not produce a run, the missing workspace the table above names and this. A
+`not-run` result contributes to no rate, exactly as before.

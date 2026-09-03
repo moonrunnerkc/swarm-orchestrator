@@ -38,13 +38,13 @@ describe("images", () => {
 });
 
 describe("the forwarder", () => {
-  it("relays one port from the internal network to the host, and is the only bridge to it", () => {
-    const [start, attach] = forwarderArgv(armNamed("local-ollama"));
+  it("relays a local arm's port over HTTP from the internal network to the host, and is the only bridge to it", () => {
+    const [start, attach] = forwarderArgv(armNamed("local-ollama"), "/h");
 
     expect(flag(start, "--network")).toBe(internalNetwork);
-    expect(start).toContain(imageDigests.forwarder);
-    expect(start.at(-2)).toBe("TCP-LISTEN:11434,fork,reuseaddr");
-    expect(start.at(-1)).toBe("TCP:host.docker.internal:11434");
+    expect(flag(start, "--volume")).toBe("/h/forwarder.mjs:/forwarder.mjs:ro");
+    expect(start.slice(-4)).toEqual(["node", "/forwarder.mjs", "11434", "host.docker.internal"]);
+    expect(start).not.toContain(imageDigests.forwarder);
     expect(attach).toEqual(["docker", "network", "connect", "bridge", "campaign-backend-11434"]);
   });
 
