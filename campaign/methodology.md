@@ -160,3 +160,18 @@ decision after the earlier one rather than rewriting it; both stand in
 when this was written. The criteria are unchanged: the recipe is the same command under a
 newer toolchain, and a repository whose module requires a Go the new image does not have is
 still rejected by the same rule.
+
+## Amendment, 2026-09-03 01:50 UTC: the container disk filled, and what that corrupted
+
+Appended, as above. The docker data disk of the container VM was 20 GB, and by about 01:10 UTC
+it was full: from then on installs and suites inside the containers failed with "No space left
+on device", which the harness read as the rejections its rules name, an install that exited 1
+or a suite that could not build. Sixteen standing rejections carry that text in their tails,
+the eight Go candidates judged again under the new toolchain among them, and the Rust image
+rebuild failed the same way. The disk was enlarged to 120 GB, the Rust image rebuilt, and those
+sixteen are judged again with `rejudge --marker "No space left on device"`, which selects by
+what the rejected run printed rather than by the rule, and appends a superseding decision
+naming the marker. The earlier decisions stand in the record beside the later ones. Nothing
+else was judged between the disk filling and the walk being stopped that does not carry the
+marker, and every decision made while the disk was full is one of those sixteen or a rejection
+on a rule that needs no container, size or lines or a manifest.

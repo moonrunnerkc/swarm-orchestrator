@@ -546,8 +546,11 @@ async function walk(options) {
  * counts when it resumes, exactly as if it had been accepted in its place in the order.
  */
 async function rejudge(options) {
-  if (options.reason === undefined) {
-    throw new DriverError("rejudge needs the reason to supersede", '--reason "install failed: go mod download"');
+  if (options.reason === undefined && options.marker === undefined) {
+    throw new DriverError(
+      "rejudge needs the reason to supersede, or a marker to find in the rejection tails",
+      '--reason "install failed: go mod download" or --marker "No space left on device"',
+    );
   }
   if (pgrepWalk()) {
     throw new DriverError("the walk is running, and two writers on one record disagree", "stop the walk first");
@@ -560,8 +563,16 @@ async function rejudge(options) {
     throw new DriverError("no candidate list", "node campaign/harness/campaign.mjs search");
   }
   const repos = readJson(files.repos, []);
-  const standing = supersedable(decisions, options.reason);
-  log(`${standing.length} standing rejection(s) begin with "${options.reason}"`);
+  // A marker selects by what the rejected run printed rather than by the rule that rejected
+  // it: a disk that filled mid-walk fails installs and suites alike, and the tails say so.
+  const standing =
+    options.marker === undefined
+      ? supersedable(decisions, options.reason)
+      : supersedable(decisions, "").filter((decision) => {
+          const detail = readJson(join(directories.selection, "rejections", `${slugOf(decision.fullName)}.json`), null);
+          return detail !== null && `${detail.installTail ?? ""}\n${detail.suiteTail ?? ""}`.includes(options.marker);
+        });
+  log(`${standing.length} standing rejection(s) ${options.marker === undefined ? `begin with "${options.reason}"` : `printed "${options.marker}"`}`);
   for (const earlier of standing) {
     const candidate = (pool.byLanguage[earlier.language] ?? []).find((entry) => entry.fullName === earlier.fullName);
     if (candidate === undefined) {
@@ -572,7 +583,7 @@ async function rejudge(options) {
     const { attempts, installTail, suiteTail, ...compact } = verdict;
     appendFileSync(
       files.decisions,
-      `${JSON.stringify({ fullName: candidate.fullName, language: candidate.language, ...compact, supersedes: earlier.judgedAt ?? null, supersededReason: earlier.reason })}\n`,
+      `${JSON.stringify({ fullName: candidate.fullName, language: candidate.language, ...compact, supersedes: earlier.judgedAt ?? null, supersededReason: earlier.reason, supersededBecause: options.marker ?? options.reason })}\n`,
     );
     if (attempts !== undefined || installTail !== undefined || suiteTail !== undefined) {
       writeJson(join(directories.selection, "rejections", `${slugOf(candidate.fullName)}.json`), { fullName: candidate.fullName, ...verdict });
@@ -787,7 +798,7 @@ const HELP = `campaign driver
   node campaign/harness/campaign.mjs setup [--tarball <path>]
   node campaign/harness/campaign.mjs search
   node campaign/harness/campaign.mjs walk [--limit <n>]
-  node campaign/harness/campaign.mjs rejudge --reason "<prefix of the rejection reason>"
+  node campaign/harness/campaign.mjs rejudge --reason "<prefix of the rejection reason>" | --marker "<text in the rejected run's output>"
   node campaign/harness/campaign.mjs run --arm <${armNames.join("|")}> [--limit <n>] [--max-steps <n>] [--attempts <n>] [--timeout-minutes <n>]
   node campaign/harness/campaign.mjs report
 `;
