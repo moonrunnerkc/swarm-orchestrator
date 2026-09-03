@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createSandbox, type SandboxPolicy } from "./sandbox.ts";
+import { createSandbox, defaultShellAllowlist, type SandboxPolicy } from "./sandbox.ts";
 
 const policy: SandboxPolicy = {
   workspaceRoot: "/work/repo",
@@ -166,6 +166,25 @@ describe("sandbox shell allowlist", () => {
   it("allows a chain whose every command is listed", () => {
     expect(sandbox.isCommandAllowed("npm run lint && npm test")).toBe(true);
     expect(sandbox.isCommandAllowed("git status; git diff")).toBe(true);
+  });
+
+  /**
+   * The gates run these on a project's behalf, so a model told to run its tests has to be
+   * allowed the same command. The default list refused `pytest -q` while the harness ran it
+   * as a gate, which left every Python task unfinishable through the shell.
+   */
+  it("allows every test command the gates assemble, on the default list", () => {
+    const byDefault = createSandbox({ ...policy, shellAllowlist: defaultShellAllowlist });
+    for (const command of [
+      "npm run --silent test",
+      "pytest -q",
+      "python -m pytest -q",
+      "python3 -m pytest",
+      "go test ./...",
+      "cargo test",
+    ]) {
+      expect(byDefault.isCommandAllowed(command), command).toBe(true);
+    }
   });
 
   it("asks rather than guesses when a shell would decide what runs", () => {

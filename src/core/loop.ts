@@ -107,8 +107,12 @@ export async function runAgentLoop(
           },
         },
         steps + 1,
+        deps.budget.maxWallTimeMs - (deps.clock.now() - startedAt),
       );
-    } catch {
+    } catch (cause) {
+      if (cause instanceof ModelCallDeadlineError) {
+        return finish("max-wall-time", "");
+      }
       return finish(deps.abortSignal.aborted ? "interrupted" : "model-error", "");
     }
 
@@ -195,10 +199,55 @@ function spentTheCapOnNothing(response: ModelResponse): boolean {
   );
 }
 
+/**
+ * The wall budget ran out inside a call. Distinct from a failed call because it is not
+ * retried and the loop stops for the budget's reason rather than the model's.
+ */
+class ModelCallDeadlineError extends Error {
+  constructor(remainingMs: number) {
+    super(`the model call did not return within the ${remainingMs} ms left of the wall budget`);
+    this.name = "ModelCallDeadlineError";
+  }
+}
+
+/**
+ * One call, bounded by what is left of the wall budget. The budget was checked between
+ * steps only, so a call that never returned held a run until something outside killed it,
+ * with no gates, no bundle and no reason recorded. The deadline is armed on the injected
+ * clock and let go of the moment the call returns, so it costs nothing on the calls that do.
+ */
+async function callWithinBudget(
+  deps: AgentLoopDependencies,
+  request: ModelRequest,
+  remainingMs: number,
+): Promise<ModelResponse> {
+  const controller = new AbortController();
+  const forward = () => controller.abort();
+  deps.abortSignal.addEventListener("abort", forward, { once: true });
+  const armed = deps.clock.now();
+  const release = new AbortController();
+  let expired = false;
+  void deps.clock.sleep(remainingMs, release.signal).then(() => {
+    if (!release.signal.aborted && deps.clock.now() - armed >= remainingMs) {
+      expired = true;
+      controller.abort();
+    }
+  });
+  try {
+    return await deps.model.generate({ ...request, abortSignal: controller.signal });
+  } catch (cause) {
+    throw expired ? new ModelCallDeadlineError(remainingMs) : cause;
+  } finally {
+    release.abort();
+    deps.abortSignal.removeEventListener("abort", forward);
+  }
+}
+
 async function callModelWithRetry(
   deps: AgentLoopDependencies,
   request: ModelRequest,
   step: number,
+  remainingMs: number,
 ): Promise<ModelResponse> {
   const { attempts, baseDelayMs, maxJitterRatio } = deps.retryPolicy;
   let lastCause: unknown;
@@ -206,7 +255,7 @@ async function callModelWithRetry(
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const willRetry = attempt < attempts - 1 && !deps.abortSignal.aborted;
     try {
-      const response = await deps.model.generate(request);
+      const response = await callWithinBudget(deps, request, remainingMs);
       // The last attempt's truncation is returned rather than thrown, so the loop stops as
       // output-cap and names the cap. A call-failed error there would say less about more.
       if (!spentTheCapOnNothing(response) || !willRetry) {
@@ -219,6 +268,11 @@ async function callModelWithRetry(
         willRetry: true,
       });
     } catch (cause) {
+      // The budget's expiry is not the model's failure, and there is nothing left to retry in.
+      if (cause instanceof ModelCallDeadlineError) {
+        deps.emit({ type: "model-error", step, message: cause.message, willRetry: false });
+        throw cause;
+      }
       lastCause = cause;
       deps.emit({
         type: "model-error",

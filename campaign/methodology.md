@@ -230,3 +230,23 @@ start or finish is recorded against that repository as `not-run`, with the error
 goes on to the next: `not-run` now covers every case in which the harness rather than the
 model could not produce a run, the missing workspace the table above names and this. A
 `not-run` result contributes to no rate, exactly as before.
+
+## Finding, 2026-09-03 13:10 UTC: two defects in the CLI under test, and why the corpus keeps it
+
+The `local-mlx` arm's fourth Python repository ended as a timeout with seven steps: the
+transcript shows the shell refusing `pytest -q`, `python -m pytest -q` and every spelling
+between, because the default allowlist carried node's toolchain and none of the others the
+gates themselves run, and then a model call that never returned, which nothing bounded because
+the loop's wall budget was checked between steps only. Both are defects in the tool under
+test and both are fixed in this tree after this note, with tests: the allowlist names every
+toolchain the gates assemble a tests gate from, and a model call is bounded by what is left of
+the wall budget, on the injected clock, so a hung backend ends a run as a wall-time stop with
+its gates run and its bundle written rather than as a container kill with nothing.
+
+The campaign does not move to the fixed CLI. Every arm runs the tarball packed from the
+commit that started the campaign, because a corpus measured under two CLIs is not one
+measurement, and the report says what the two defects cost: in the Python, Go and Rust
+pools the model could not run the suite itself and worked from the test files and the gate
+output alone, and a run whose backend hung is a timeout rather than a recorded model-error.
+The node pool is unaffected by the first and affected by the second alike. A later campaign
+under the fixed CLI is a different campaign, with this note as the reason for it.
