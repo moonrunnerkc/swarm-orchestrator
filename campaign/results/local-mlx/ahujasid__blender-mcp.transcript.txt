@@ -1,0 +1,64 @@
+step 1: calling local:qwen3.8:27b
+tool shell <- {"command":"pytest -q 2>&1 | tail -30"}
+tool shell failed: denied: "pytest -q 2>&1 | tail -30" is not on the shell allowlist. Confirmation was declined.
+[evidence record sha256:67c45efc697aae2dd134464e897d1ef6b8c0b442674d1800468d9043eaadd657 kind tool-call:shell]
+tool list <- {}
+tool list ok: .campaign/
+.git/
+.gitignore
+.pytest_cache/
+.python-version
+LICENSE
+README.md
+TERMS_AND_CONDITIONS.md
+__pycache__/
+addon.py
+assets/
+main.py
+pyproject.toml
+src/
+tests/
+uv.lock
+[evidence record sha256:9b00fe541f7ec764640cf690a5abb71fa996f3cfee56947bc103867b0f53fca9 kind tool-call:list]
+step 2: calling local:qwen3.8:27b
+tool shell <- {"command":"pytest -q"}
+tool shell failed: denied: "pytest -q" is not on the shell allowlist. Confirmation was declined.
+[evidence record sha256:5df589d6051bb3cbfcdc1f4227525912b7c12417f789a62658663e8302285558 kind tool-call:shell]
+step 3: calling local:qwen3.8:27b
+tool shell <- {"command":"uv run pytest -q"}
+tool shell failed: denied: "uv run pytest -q" is not on the shell allowlist. Confirmation was declined.
+[evidence record sha256:d21db75e4ee5459243f6bcc8c1379b571e0ea844b90baa15b4c3f2842d30f888 kind tool-call:shell]
+step 4: calling local:qwen3.8:27b
+tool shell <- {"command":"which pytest; python -m pytest -q"}
+tool shell failed: denied: "which pytest; python -m pytest -q" is not on the shell allowlist. Confirmation was declined.
+[evidence record sha256:2eda8886e06dccb412d07c21fec09d0efeeb33bda6874e422e7215ee5ecf0654 kind tool-call:shell]
+step 5: calling local:qwen3.8:27b
+tool shell <- {"command":"python -m pytest -q"}
+tool shell failed: denied: "python -m pytest -q" is not on the shell allowlist. Confirmation was declined.
+[evidence record sha256:c598bee345fca0a6c1c58ac82d41fb7b50e9d9e921db5aea80a931792271b11f kind tool-call:shell]
+step 6: calling local:qwen3.8:27b
+tool read <- {"path":".pytest_cache"}
+tool read failed: failed: EISDIR: illegal operation on a directory, read, caused by EISDIR
+[evidence record sha256:496520a3215f18d94025544086c96cc84168d03725539de230c6a5822d8d131a kind tool-call:read]
+tool list <- {"path":"src"}
+tool list ok: blender_mcp.egg-info/
+blender_mcp/
+[evidence record sha256:b8d10a3fa444da0188ce74a340eb702ba0e717cd68ab331865514f6527a732c7 kind tool-call:list]
+tool list <- {"path":"tests"}
+tool list ok: __pycache__/
+conftest.py
+test_addon_manager.py
+test_hunyuan_import_security.py
+test_polypizza.py
+test_process_bbox_validation.py
+test_safe_mode.py
+test_server_threading.py
+test_sketchfab_status.py
+test_socket_unicode.py
+[evidence record sha256:c846cf85fbd390d82c2d07568a4d3680925be657c62f6de5cb230dacd8ba7205 kind tool-call:list]
+step 7: calling local:qwen3.8:27b
+[chokepoint] refusing shell without a terminal to confirm on: "pytest -q 2>&1 | tail -30" is not on the shell allowlist.
+[chokepoint] refusing shell without a terminal to confirm on: "pytest -q" is not on the shell allowlist.
+[chokepoint] refusing shell without a terminal to confirm on: "uv run pytest -q" is not on the shell allowlist.
+[chokepoint] refusing shell without a terminal to confirm on: "which pytest; python -m pytest -q" is not on the shell allowlist.
+[chokepoint] refusing shell without a terminal to confirm on: "python -m pytest -q" is not on the shell allowlist.

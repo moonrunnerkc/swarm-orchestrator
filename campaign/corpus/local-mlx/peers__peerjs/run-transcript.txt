@@ -1,0 +1,303 @@
+step 1: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test 2>&1 | tail -50"}
+tool shell ok: exit code: 0
+stdout:
+FAIL __test__/logger.spec.ts
+  ● Logger › should accept new log function
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 0
+
+      Array [
+    -   3,
+        2,
+        1,
+      ]
+
+      47 | 		Logger.error(testMessage);
+      48 |
+    > 49 | 		expect(checkedLevels).toEqual([
+         | 		                      ^
+      50 | 			LogLevel.All,
+      51 | 			LogLevel.Warnings,
+      52 | 			LogLevel.Errors,
+
+      at Object.toEqual (__test__/logger.spec.ts:49:25)
+
+PASS __test__/util.spec.ts
+PASS __test__/peer.spec.ts
+
+Test Suites: 1 failed, 2 passed, 3 total
+Tests:       1 failed, 1 skipped, 8 passed, 10 total
+Snapshots:   0 total
+Time:        0.88 s
+Ran all test suites.
+[evidence record sha256:3defec9f0defea701bb390e91ae0b965b96e6291b5ec4d7c4c99ea7557057106 kind tool-call:shell]
+tool list <- {}
+tool list ok: .deepsource.toml
+.git/
+.github/
+.gitignore
+.prettierignore
+.prettierrc.toml
+.releaserc.json
+CHANGELOG.md
+LICENSE
+README.md
+__test__/
+e2e/
+jest.config.cjs
+lib/
+node_modules/
+package-lock.json
+package.json
+renovate.json
+tsconfig.json
+[evidence record sha256:ed4374017fe68f9e7b6052fe197f377bef8be1a693b9a350d45d6578bbf79158 kind tool-call:list]
+step 2: calling local:qwen3.8:27b
+tool read <- {"path":"__test__/logger.spec.ts"}
+tool read ok: import Logger, { LogLevel } from "../lib/logger";
+import { expect, beforeAll, afterAll, describe, it } from "@jest/globals";
+
+describe("Logger", () => {
+	let oldLoggerPrint;
+	beforeAll(() => {
+		//@ts-ignore
+		oldLoggerPrint = Logger._print;
+	});
+
+	it("should be disabled by default", () => {
+		expect(Logger.logLevel).toBe(LogLevel.Disabled);
+	});
+
+	it("should be accept new log level", () => {
+		const checkedLevels = [];
+
+		Logger.setLogFunction((logLevel) => {
+			checkedLevels.push(logLevel);
+		});
+
+		Logger.logLevel = LogLevel.Warnings;
+
+		expect(Logger.logLevel).toBe(LogLevel.Warnings);
+
+		Logger.log("");
+		Logger.warn("");
+		Logger.error("");
+
+		expect(checkedLevels).toEqual([LogLevel.Warnings, LogLevel.Errors]);
+	});
+
+	it("should accept new log function", () => {
+		Logger.logLevel = LogLevel.All;
+
+		const checkedLevels = [];
+		const testMessage = "test it";
+
+		Logger.setLogFunction((logLevel, ...args) => {
+			checkedLevels.push(logLevel);
+
+			expect(args[0]).toBe(testMessage);
+		});
+
+		Logger.log(testMessage);
+		Logger.warn(testMessage);
+		Logger.error(testMessage);
+
+		expect(checkedLevels).toEqual([
+			LogLevel.All,
+			LogLevel.Warnings,
+			LogLevel.Errors,
+		]);
+	});
+
+	afterAll(() => {
+		Logger.setLogFunction(oldLoggerPrint);
+	});
+});
+
+[evidence record sha256:24c5912a6a80d36aaa95918d4530b263bc4d0593b167dfbb48dd311c1985906a kind tool-call:read]
+tool list <- {"path":"lib"}
+tool list ok: api.ts
+baseconnection.ts
+dataconnection/
+encodingQueue.ts
+enums.ts
+exports.ts
+global.ts
+logger.ts
+mediaconnection.ts
+msgPackPeer.ts
+negotiator.ts
+optionInterfaces.ts
+peer.ts
+peerError.ts
+servermessage.ts
+socket.ts
+supports.ts
+util.ts
+utils/
+version.ts
+[evidence record sha256:30dbf65f2a28c0a78f4459d17f830315f835d5e077577eb4e9191ec6333225ab kind tool-call:list]
+step 3: calling local:qwen3.8:27b
+tool read <- {"path":"lib/logger.ts"}
+tool read ok: const LOG_PREFIX = "PeerJS: ";
+
+/*
+Prints log messages depending on the debug level passed in. Defaults to 0.
+0  Prints no logs.
+1  Prints only errors.
+2  Prints errors and warnings.
+3  Prints all logs.
+*/
+export enum LogLevel {
+	/**
+	 * Prints no logs.
+	 */
+	Disabled,
+	/**
+	 * Prints only errors.
+	 */
+	Errors,
+	/**
+	 * Prints errors and warnings.
+	 */
+	Warnings,
+	/**
+	 * Prints all logs.
+	 */
+	All,
+}
+
+class Logger {
+	private _logLevel = LogLevel.Disabled;
+
+	get logLevel(): LogLevel {
+		return this._logLevel;
+	}
+
+	set logLevel(logLevel: LogLevel) {
+		this._logLevel = logLevel;
+	}
+
+	log(...args: any[]) {
+		if (this._logLevel > LogLevel.All) {
+			this._print(LogLevel.All, ...args);
+		}
+	}
+
+	warn(...args: any[]) {
+		if (this._logLevel >= LogLevel.Warnings) {
+			this._print(LogLevel.Warnings, ...args);
+		}
+	}
+
+	error(...args: any[]) {
+		if (this._logLevel >= LogLevel.Errors) {
+			this._print(LogLevel.Errors, ...args);
+		}
+	}
+
+	setLogFunction(fn: (logLevel: LogLevel, ..._: any[]) => void): void {
+		this._print = fn;
+	}
+
+	private _print(logLevel: LogLevel, ...rest: any[]): void {
+		const copy = [LOG_PREFIX, ...rest];
+
+		for (const i in copy) {
+			if (copy[i] instanceof Error) {
+				copy[i] = "(" + copy[i].name + ") " + copy[i].message;
+			}
+		}
+
+		if (logLevel >= LogLevel.All) {
+			console.log(...copy);
+		} else if (logLevel >= LogLevel.Warnings) {
+			console.warn("WARNING", ...copy);
+		} else if (logLevel >= LogLevel.Errors) {
+			console.error("ERROR", ...copy);
+		}
+	}
+}
+
+export default new Logger();
+
+[evidence record sha256:6e085239cb3a6d12263948eb3e3ae59441f52ca1040eb961ae4c0663ed5ce850 kind tool-call:read]
+step 4: calling local:qwen3.8:27b
+tool declare_file_set <- {"files":"[\"lib/logger.ts\"]"}
+tool declare_file_set ok: declared 1 file(s): lib/logger.ts
+[evidence record sha256:676b3e23595349d390e2ff663a66dd0233dd864b1d8b9d3d6fe172d53baa49b4 kind tool-call:declare_file_set]
+step 5: calling local:qwen3.8:27b
+tool edit <- {"path":"lib/logger.ts","find":"if (this._logLevel > LogLevel.All) {","replace":"if (this._logLevel >= LogLevel.All) {"}
+tool edit ok: replaced 1 occurrence(s) in lib/logger.ts
+[evidence record sha256:8b2bb7c614ac1a9a60a6c09d5f39c892645c0ccf0df08d463376038890cef57c kind tool-call:edit]
+step 6: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test 2>&1 | tail -10"}
+tool shell ok: exit code: 0
+stdout:
+PASS __test__/logger.spec.ts
+PASS __test__/peer.spec.ts
+PASS __test__/util.spec.ts
+
+Test Suites: 3 passed, 3 total
+Tests:       1 skipped, 9 passed, 10 total
+Snapshots:   0 total
+Time:        0.534 s, estimated 1 s
+Ran all test suites.
+[evidence record sha256:61c77b279426411cb47e8b664e51999f57b92b52587aa4a3c23ab9d7c2f8879e kind tool-call:shell]
+step 7: calling local:qwen3.8:27b
+tool claim <- {"predicate":"facts.exitCode == 0 && facts.stdout.includes(\"3 passed, 3 total\")","record":"sha256:61c77b279426411cb47e8b664e51999f57b92b52587aa4a3c23ab9d7c2f8879e","recordKind":"tool-call:shell"}
+tool claim ok: UNVERIFIED (predicate-unparseable): expected one of == != >= <= > < after "facts.stdout.includes"
+[evidence record sha256:f00999453b887f2cd752c4d25f8becb3319c6b946c21d739ba8cfc1d003f0255 kind tool-call:claim]
+step 8: calling local:qwen3.8:27b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"sha256:61c77b279426411cb47e8b664e51999f57b92b52587aa4a3c23ab9d7c2f8879e","recordKind":"tool-call:shell"}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:22bbc949dae66d7f8e86ebcb8d4e561545f654109db314c9334f9fbc7e925f96 kind tool-call:claim]
+step 9: calling local:qwen3.8:27b
+claim (unverified): Done.
+
+**Defect:** `Logger.log()` in `lib/logger.ts` used `if (this._logLevel > LogLevel.All)` — since `All` is the maximum enum value, `log()` never printed, so the "should accept new log function" test's expected `LogLevel.All` entry was missing.
+
+**Fix:** changed `>` to `>=`, so `log()` prints when the level is `All`, matching `warn()`/`error()` semantics and the spec in the file's comment.
+
+`npm run --silent test` now passes: 3 suites, 9 passed, 1 pre-existing skip, 0 failures — verified against the shell evidence record. No tests were touched.
+stopped: completed after 9 steps, 37163 tokens
+gate typecheck not-applicable: package.json declares no typecheck script [evidence record sha256:2937696362f6458fe282589c221bc4c8fee1e95f3a2fcdf7bdda33a9c257023a]
+gate lint not-applicable: package.json declares no lint script [evidence record sha256:80f9d94a737526e9c5c413a32d943f4febe0196f251ff0d5ebdfb62b7df46ec0]
+gate format passed: the command exited 0 [evidence record sha256:ad03996a9ba8838e74c96715b7c3ba40ee3f1e8f8438362b788f1ee06208020d]
+gate tests passed: the command exited 0 [evidence record sha256:7a9f6735b37ea7d48dbfcc7ccae5eccc9013b8d0d74705916f7795b574556fd0]
+gate file-set passed: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited [evidence record sha256:b60e89717b19d308aac6f154d281ce0ffa16b048bf9bb6879f672eee1b15f18e]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:04cbfbf05767e77d5767fb5772e9a7e62cec4ae74d421e013fe257c5eccb892c]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:1205c218e3298f2b2a033cfedf23b7ee3ea0c6b62794e4df970e745e5f7a0cb4]
+gate behaviour-probe passed: 0 changed function(s) still answer to their inputs. [evidence record sha256:6c58dc822ecce8f4da2f5c78e5027adb86eef9574d10c896a93cc27d285aa5df]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 1 added line(s) [evidence record sha256:ede4b1a546ba6f4583c33140cd1c857444d0095fb5d2eff66db7030505370e36]
+
+gates:
+  n/a      typecheck: package.json declares no typecheck script
+  n/a      lint: package.json declares no lint script
+  passed   format: the command exited 0
+  passed   tests: the command exited 0
+  passed   file-set: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited
+  passed   placeholder: no placeholder marker was introduced by this change
+  passed   secret-scan: no known credential pattern appears in the added lines
+  passed   behaviour-probe: 0 changed function(s) still answer to their inputs.
+  passed   diff-budget (advisory): within budget: 1 file(s) and 1 added line(s)
+
+routing reward: 0.680 (green with 0 retries, 56s, and $0.0000)
+[signing] the Secret Service keyring would not take a new key (secret-tool store failed: ), so the bundle is signed with a per-run key
+
+evidence bundle: /out/bundle
+verify it anywhere: node /out/bundle/verify.mjs /out/bundle
+review it: open /out/bundle/review.html
+what this run produced
+
+  the page a person reads: /out/bundle/review.html
+  the bundle a stranger verifies: /out/bundle
+  its own verifier, needing nothing installed: node /out/bundle/verify.mjs /out/bundle
+  the chain every record is on: /out/bundle/ledger.jsonl
+
+  56 records. The harness verified 1 claim(s) and refused 1.
+  bundle verified in this run: verify.mjs exited 0

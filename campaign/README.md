@@ -14,7 +14,7 @@ anything was selected (`criteria.md`), the method was written before anything ra
 | `selection/` | the raw search results, the ordered candidates, every decision, the accepted repositories |
 | `seeds/manifest.json` | one seeded defect per repository with its provenance and expected detection |
 | `results/<arm>/` | one record per run, and `results/report.md` |
-| `corpus/<arm>/<repository>/` | the bundle each run exported, with its verifier and transcript |
+| `corpus/<arm>/<repository>/` | the bundle each run exported, with its verifier and transcript; the rendered review page is left out, since it is drawn from the ledger and the verifier never reads it |
 | `work/` | clones and per-run workspaces; never committed |
 
 ## Running it

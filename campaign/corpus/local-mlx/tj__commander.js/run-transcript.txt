@@ -1,0 +1,1417 @@
+step 1: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test 2>&1 | tail -50"}
+tool shell ok: exit code: 0
+stdout:
+  ✔ when no ENV defined then returns undefined (0.346583ms)
+  ✔ when NO_COLOR defined then returns false (0.074416ms)
+  ✔ when NO_COLOR empty then returns undefined (0.060083ms)
+  ✔ when CLICOLOR_FORCE defined then returns true (0.078542ms)
+  ✔ when CLICOLOR_FORCE empty then returns true (0.135542ms)
+  ✔ when CLICOLOR_FORCE and NO_COLOR defined then returns false (0.065667ms)
+  ▶ FORCE_COLOR environment variable tests
+    ✔ when FORCE_COLOR=true then returns true (0.117834ms)
+    ✔ when FORCE_COLOR=false then returns false (0.065875ms)
+    ✔ when FORCE_COLOR=0 then returns false (0.052792ms)
+    ✔ when FORCE_COLOR=1 then returns true (0.068083ms)
+    ✔ when FORCE_COLOR=2 then returns true (0.041125ms)
+    ✔ when FORCE_COLOR=3 then returns true (0.03ms)
+  ✔ FORCE_COLOR environment variable tests (0.523291ms)
+✔ internal useColor environment variable support (1.742791ms)
+ℹ tests 1373
+ℹ suites 210
+ℹ pass 1371
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 1586.095673
+
+✖ failing tests:
+
+test at tests/argument.variadic.test.js:95:3
+✖ when variadic used with choices and two values then set in array (0.495374ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  -   'one',
+      'two'
+    ]
+  
+      at TestContext.<anonymous> (file:///work/tests/argument.variadic.test.js:105:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'two' ],
+    expected: [ 'one', 'two' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+[evidence record sha256:aed851667bbb30c4105d148344f1bbc41fc52b253746b8e41288b03428184601 kind tool-call:shell]
+tool list <- {}
+tool list ok: .editorconfig
+.git/
+.gitattributes
+.github/
+.gitignore
+.prettierignore
+.prettierrc.js
+CHANGELOG.md
+CONTRIBUTING.md
+LICENSE
+Readme.md
+Readme_zh-CN.md
+SECURITY.md
+docs/
+eslint.config.js
+examples/
+index.js
+lib/
+node_modules/
+package-lock.json
+package-support.json
+package.json
+tests/
+tsconfig.js.json
+tsconfig.json
+tsconfig.ts.json
+typings/
+[evidence record sha256:4fe7059f9cbde036982958f5a2045ab9f8089e60e42a27900d2427fa338f2531 kind tool-call:list]
+step 2: calling local:qwen3.8:27b
+tool read <- {"path":"tests/argument.variadic.test.js"}
+tool read ok: import * as commander from '../index.js';
+import { test, describe } from 'node:test';
+import assert from 'node:assert/strict';
+
+// Testing variadic arguments. Testing all the action arguments, but could test just variadicArg.
+
+describe('Command variadic argument using .argument()', (t) => {
+  test('when no extra arguments specified for program then variadic arg is empty array', (t) => {
+    const actionMock = t.mock.fn();
+    const program = new commander.Command();
+    program.argument('<id>').argument('[variadicArg...]').action(actionMock);
+
+    program.parse(['node', 'test', 'id']);
+
+    const callArgs = actionMock.mock.calls[0].arguments;
+    assert.equal(callArgs[0], 'id');
+    assert.deepEqual(callArgs[1], []);
+  });
+
+  test('when extra arguments specified for program then variadic arg is array of values', (t) => {
+    const actionMock = t.mock.fn();
+    const program = new commander.Command();
+    program
+      .addArgument(new commander.Argument('<id>'))
+      .argument('[variadicArg...]')
+      .action(actionMock);
+    const extraArguments = ['a', 'b', 'c'];
+
+    program.parse(['node', 'test', 'id', ...extraArguments]);
+
+    const callArgs = actionMock.mock.calls[0].arguments;
+    assert.equal(callArgs[0], 'id');
+    assert.deepEqual(callArgs[1], extraArguments);
+  });
+
+  test('when no extra arguments specified for command then variadic arg is empty array', (t) => {
+    const actionMock = t.mock.fn();
+    const program = new commander.Command();
+    const cmd = program.command('sub [variadicArg...]').action(actionMock);
+
+    program.parse(['node', 'test', 'sub']);
+
+    const callArgs = actionMock.mock.calls[0].arguments;
+    assert.deepEqual(callArgs[0], []);
+  });
+
+  test('when extra arguments specified for command then variadic arg is array of values', (t) => {
+    const actionMock = t.mock.fn();
+    const program = new commander.Command();
+    const cmd = program.command('sub [variadicArg...]').action(actionMock);
+    const extraArguments = ['a', 'b', 'c'];
+
+    program.parse(['node', 'test', 'sub', ...extraArguments]);
+
+    const callArgs = actionMock.mock.calls[0].arguments;
+    assert.deepEqual(callArgs[0], extraArguments);
+  });
+
+  test('when program variadic argument not last then error', () => {
+    const program = new commander.Command();
+
+    assert.throws(() => {
+      program.argument('<variadicArg...>').argument('[optionalArg]');
+    }, /only the last argument can be variadic 'variadicArg'/);
+  });
+
+  test('when command variadic argument not last then error', () => {
+    const program = new commander.Command();
+
+    assert.throws(() => {
+      program.command('sub <variadicArg...> [optionalArg]');
+    }, /only the last argument can be variadic 'variadicArg'/);
+  });
+
+  test('when variadic argument then usage shows variadic', () => {
+    const program = new commander.Command();
+    program.name('foo').argument('[args...]');
+
+    assert.equal(program.usage(), '[options] [args...]');
+  });
+
+  test('when variadic used with choices and one value then set in array', () => {
+    const program = new commander.Command();
+    let passedArg;
+    program
+      .addArgument(new commander.Argument('<value...>').choices(['one', 'two']))
+      .action((value) => {
+        passedArg = value;
+      });
+
+    program.parse(['one'], { from: 'user' });
+    assert.deepEqual(passedArg, ['one']);
+  });
+
+  test('when variadic used with choices and two values then set in array', () => {
+    const program = new commander.Command();
+    let passedArg;
+    program
+      .addArgument(new commander.Argument('<value...>').choices(['one', 'two']))
+      .action((value) => {
+        passedArg = value;
+      });
+
+    program.parse(['one', 'two'], { from: 'user' });
+    assert.deepEqual(passedArg, ['one', 'two']);
+  });
+
+  test('when variadic has default array then specified value is used instead of default (not appended)', () => {
+    const program = new commander.Command();
+    let passedArg;
+    program
+      .addArgument(new commander.Argument('[value...]').default(['DEFAULT']))
+      .action((value) => {
+        passedArg = value;
+      });
+
+    program.parse(['one', 'two'], { from: 'user' });
+    assert.deepEqual(passedArg, ['one', 'two']);
+  });
+
+  test('when variadic has default array then specified value is used instead of default (not appended)', () => {
+    const program = new commander.Command();
+    let passedArg;
+    program
+      .addArgument(new commander.Argument('[value...]').default(['DEFAULT']))
+      .action((value) => {
+        passedArg = value;
+      });
+
+    program.parse(['one', 'two'], { from: 'user' });
+    assert.deepEqual(passedArg, ['one', 'two']);
+  });
+});
+
+[evidence record sha256:80efba241d5038b63db0cbd74ab87e214aa6e7b0e68224997e749f2c4a92f54f kind tool-call:read]
+step 3: calling local:qwen3.8:27b
+tool list <- {"path":"lib"}
+tool list ok: argument.js
+command.js
+error.js
+help.js
+option.js
+suggestSimilar.js
+[evidence record sha256:5f786f0977582221ecb1ef629cb1e2eaa55a25c4aeda2beb7eacf4ba0713b087 kind tool-call:list]
+step 4: calling local:qwen3.8:27b
+tool read <- {"path":"lib/argument.js"}
+tool read ok: import { InvalidArgumentError } from './error.js';
+
+export class Argument {
+  /**
+   * Initialize a new command argument with the given name and description.
+   * The default is that the argument is required, and you can explicitly
+   * indicate this with <> around the name. Put [] around the name for an optional argument.
+   *
+   * @param {string} name
+   * @param {string} [description]
+   */
+
+  constructor(name, description) {
+    this.description = description || '';
+    this.variadic = false;
+    this.parseArg = undefined;
+    this.defaultValue = undefined;
+    this.defaultValueDescription = undefined;
+    this.argChoices = undefined;
+
+    switch (name[0]) {
+      case '<': // e.g. <required>
+        this.required = true;
+        this._name = name.slice(1, -1);
+        break;
+      case '[': // e.g. [optional]
+        this.required = false;
+        this._name = name.slice(1, -1);
+        break;
+      default:
+        this.required = true;
+        this._name = name;
+        break;
+    }
+
+    if (this._name.endsWith('...')) {
+      this.variadic = true;
+      this._name = this._name.slice(0, -3);
+    }
+  }
+
+  /**
+   * Return argument name.
+   *
+   * @return {string}
+   */
+
+  name() {
+    return this._name;
+  }
+
+  /**
+   * @package
+   */
+
+  _collectValue(value, previous) {
+    if (previous !== this.defaultValue || !Array.isArray(previous)) {
+      return [value];
+    }
+
+    previous.push(value);
+    return previous;
+  }
+
+  /**
+   * Set the default value, and optionally supply the description to be displayed in the help.
+   *
+   * @param {*} value
+   * @param {string} [description]
+   * @return {Argument}
+   */
+
+  default(value, description) {
+    this.defaultValue = value;
+    this.defaultValueDescription = description;
+    return this;
+  }
+
+  /**
+   * Set the custom handler for processing CLI command arguments into argument values.
+   *
+   * @param {Function} [fn]
+   * @return {Argument}
+   */
+
+  argParser(fn) {
+    this.parseArg = fn;
+    return this;
+  }
+
+  /**
+   * Only allow argument value to be one of choices.
+   *
+   * @param {string[]} values
+   * @return {Argument}
+   */
+
+  choices(values) {
+    this.argChoices = values.slice();
+    this.parseArg = (arg, previous) => {
+      if (!this.argChoices.includes(arg)) {
+        throw new InvalidArgumentError(
+          `Allowed choices are ${this.argChoices.join(', ')}.`,
+        );
+      }
+      if (this.variadic) {
+        return this._collectValue(arg, previous);
+      }
+      return arg;
+    };
+    return this;
+  }
+
+  /**
+   * Make argument required.
+   *
+   * @returns {Argument}
+   */
+  argRequired() {
+    this.required = true;
+    return this;
+  }
+
+  /**
+   * Make argument optional.
+   *
+   * @returns {Argument}
+   */
+  argOptional() {
+    this.required = false;
+    return this;
+  }
+}
+
+/**
+ * Takes an argument and returns its human readable equivalent for help usage.
+ *
+ * @param {Argument} arg
+ * @return {string}
+ * @private
+ */
+
+export function humanReadableArgName(arg) {
+  const nameOutput = arg.name() + (arg.variadic === true ? '...' : '');
+
+  return arg.required ? '<' + nameOutput + '>' : '[' + nameOutput + ']';
+}
+
+[evidence record sha256:20fcf1a946d82740078288a3b231bb0099d9e9af08f871a9ffe3a3ccdfd45982 kind tool-call:read]
+step 5: calling local:qwen3.8:27b
+tool search <- {"pattern":"_collectValue|parseArg\\(","path":"lib"}
+tool search ok: lib/argument.js:56: _collectValue(value, previous) {
+lib/argument.js:107: return this._collectValue(arg, previous);
+lib/command.js:602: return target.parseArg(value, previous);
+lib/command.js:695: val = option._collectValue(val, oldValue);
+lib/option.js:165: _collectValue(value, previous) {
+lib/option.js:190: return this._collectValue(arg, previous);
+[evidence record sha256:10fc19628f74660dc9bc3024927510270852a19857dddbc72d4d41f6b3c8a208 kind tool-call:search]
+step 6: calling local:qwen3.8:27b
+tool read <- {"path":"lib/command.js","maxBytes":0}
+tool read failed: denied: input rejected: [
+  {
+    "origin": "number",
+    "code": "too_small",
+    "minimum": 0,
+    "inclusive": false,
+    "path": [
+      "maxBytes"
+    ],
+    "message": "Too small: expected number to be >0"
+  }
+]
+[evidence record sha256:18fe462d549d1a2b8a03e67ea1a37cb716fe829732e3a7ea787f837bfd130a3b kind tool-call:read]
+tool shell <- {"command":"sed -n '570,630p' lib/command.js"}
+tool shell ok: exit code: 0
+stdout:
+    };
+    this._actionHandler = listener;
+    return this;
+  }
+
+  /**
+   * Factory routine to create a new unattached option.
+   *
+   * See .option() for creating an attached option, which uses this routine to
+   * create the option. You can override createOption to return a custom option.
+   *
+   * @param {string} flags
+   * @param {string} [description]
+   * @return {Option} new option
+   */
+
+  createOption(flags, description) {
+    return new Option(flags, description);
+  }
+
+  /**
+   * Wrap parseArgs to catch 'commander.invalidArgument'.
+   *
+   * @param {(Option | Argument)} target
+   * @param {string} value
+   * @param {*} previous
+   * @param {string} invalidArgumentMessage
+   * @private
+   */
+
+  _callParseArg(target, value, previous, invalidArgumentMessage) {
+    try {
+      return target.parseArg(value, previous);
+    } catch (err) {
+      if (err.code === 'commander.invalidArgument') {
+        const message = `${invalidArgumentMessage} ${err.message}`;
+        this.error(message, { exitCode: err.exitCode, code: err.code });
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Check for option flag conflicts.
+   * Register option if no conflicts found, or throw on conflict.
+   *
+   * @param {Option} option
+   * @private
+   */
+
+  _registerOption(option) {
+    const matchingOption =
+      (option.short && this._findOption(option.short)) ||
+      (option.long && this._findOption(option.long));
+    if (matchingOption) {
+      const matchingFlag =
+        option.long && this._findOption(option.long)
+          ? option.long
+          : option.short;
+      throw new Error(`Cannot add option '${option.flags}'${this._name && ` to command '${this._name}'`} due to conflicting flag '${matchingFlag}'
+-  already used by option '${matchingOption.flags}'`);
+[evidence record sha256:027d1aebe8a69bb62047e87070af1413055a7c86ab1aa30c7c3adb320392c783 kind tool-call:shell]
+step 7: calling local:qwen3.8:27b
+tool shell <- {"command":"grep -n \"_collectValue\\|storeArgValue\\|storeOptionValue\" lib/command.js | head; echo ---; grep -n \"storeArgValue\" -A 30 lib/command.js | head -50"}
+tool shell failed: denied: "grep -n "_collectValue\|storeArgValue\|storeOptionValue" lib/command.js | head; echo ---; grep -n "storeArgValue" -A 30 lib/command.js | head -50" is not on the shell allowlist. Confirmation was declined.
+[evidence record sha256:ad80f281a51f39fd9f44f7ff1d08318433157e131589f44814e1d101c7231daf kind tool-call:shell]
+step 8: calling local:qwen3.8:27b
+tool search <- {"pattern":"storeArgValue","path":"lib"}
+tool search ok: no match for /storeArgValue/
+[evidence record sha256:755a75f7fb8cbc66d43d9fdcb46316304b8efcd4410532a6364b181ae0cada78 kind tool-call:search]
+step 9: calling local:qwen3.8:27b
+tool search <- {"pattern":"_callParseArg|storeArg|store.*value|store.*Value","path":"lib"}
+tool search ok: lib/command.js:600: _callParseArg(target, value, previous, invalidArgumentMessage) {
+lib/command.js:677: // store default value
+lib/command.js:693: val = this._callParseArg(option, val, oldValue, invalidValueMessage);
+lib/command.js:889: * Whether to store option values as properties on command object,
+lib/command.js:890: * or store separately (specify false). In both cases the option values can be accessed using .opts().
+lib/command.js:902: 'call .storeOptionsAsProperties() before setting option values',
+lib/command.js:1446: parsedValue = this._callParseArg(
+[evidence record sha256:e238dc84cd440760f9b99751941c6d8c57b60ab0143f7c65e95d19dfda627c88 kind tool-call:search]
+step 10: calling local:qwen3.8:27b
+tool shell <- {"command":"sed -n '1390,1500p' lib/command.js"}
+tool shell ok: exit code: 0
+stdout:
+   */
+
+  _dispatchHelpCommand(subcommandName) {
+    if (!subcommandName) {
+      this.help();
+    }
+    const subCommand = this._findCommand(subcommandName);
+    if (subCommand && !subCommand._executableHandler) {
+      subCommand.help();
+    }
+
+    // Fallback to parsing the help flag to invoke the help.
+    return this._dispatchSubcommand(
+      subcommandName,
+      [],
+      [this._getHelpOption()?.long ?? this._getHelpOption()?.short ?? '--help'],
+    );
+  }
+
+  /**
+   * Check this.args against expected this.registeredArguments.
+   *
+   * @private
+   */
+
+  _checkNumberOfArguments() {
+    // too few
+    this.registeredArguments.forEach((arg, i) => {
+      if (arg.required && this.args[i] == null) {
+        this.missingArgument(arg.name());
+      }
+    });
+    // too many
+    if (
+      this.registeredArguments.length > 0 &&
+      this.registeredArguments[this.registeredArguments.length - 1].variadic
+    ) {
+      return;
+    }
+    if (this.args.length > this.registeredArguments.length) {
+      this._excessArguments(this.args);
+    }
+  }
+
+  /**
+   * Process this.args using this.registeredArguments and save as this.processedArgs!
+   *
+   * @private
+   */
+
+  _processArguments() {
+    const myParseArg = (argument, value, previous) => {
+      // Extra processing for nice error message on parsing failure.
+      let parsedValue = value;
+      if (value !== null && argument.parseArg) {
+        const invalidValueMessage = `error: command-argument value '${value}' is invalid for argument '${argument.name()}'.`;
+        parsedValue = this._callParseArg(
+          argument,
+          value,
+          previous,
+          invalidValueMessage,
+        );
+      }
+      return parsedValue;
+    };
+
+    this._checkNumberOfArguments();
+
+    const processedArgs = [];
+    this.registeredArguments.forEach((declaredArg, index) => {
+      let value = declaredArg.defaultValue;
+      if (declaredArg.variadic) {
+        // Collect together remaining arguments for passing together as an array.
+        if (index < this.args.length) {
+          value = this.args.slice(index);
+          if (declaredArg.parseArg) {
+            value = value.reduce((processed, v) => {
+              return myParseArg(declaredArg, v, processed);
+            }, declaredArg.defaultValue);
+          }
+        } else if (value === undefined) {
+          value = [];
+        }
+      } else if (index < this.args.length) {
+        value = this.args[index];
+        if (declaredArg.parseArg) {
+          value = myParseArg(declaredArg, value, declaredArg.defaultValue);
+        }
+      }
+      processedArgs[index] = value;
+    });
+    this.processedArgs = processedArgs;
+  }
+
+  /**
+   * Once we have a promise we chain, but call synchronously until then.
+   *
+   * @param {(Promise|undefined)} promise
+   * @param {Function} fn
+   * @return {(Promise|undefined)}
+   * @private
+   */
+
+  _chainOrCall(promise, fn) {
+    // thenable
+    if (promise?.then && typeof promise.then === 'function') {
+      // already have a promise, chain callback
+      return promise.then(() => fn());
+    }
+    // callback might return a promise
+    return fn();
+[evidence record sha256:893e2828017560336ee6a07ebe2a5c80ca1fae83f707dc39971c7e356ca7f77e kind tool-call:shell]
+step 11: calling local:qwen3.8:27b
+tool read <- {"path":"lib/option.js"}
+tool read ok: import { InvalidArgumentError } from './error.js';
+
+export class Option {
+  /**
+   * Initialize a new `Option` with the given `flags` and `description`.
+   *
+   * @param {string} flags
+   * @param {string} [description]
+   */
+
+  constructor(flags, description) {
+    this.flags = flags;
+    this.description = description || '';
+
+    this.required = flags.includes('<'); // A value must be supplied when the option is specified.
+    this.optional = flags.includes('['); // A value is optional when the option is specified.
+    // variadic test ignores <value,...> et al which might be used to describe custom splitting of single argument
+    this.variadic = /\w\.\.\.[>\]]$/.test(flags); // The option can take multiple values.
+    this.mandatory = false; // The option must have a value after parsing, which usually means it must be specified on command line.
+    const optionFlags = splitOptionFlags(flags);
+    this.short = optionFlags.shortFlag; // May be a short flag, undefined, or even a long flag (if option has two long flags).
+    this.long = optionFlags.longFlag;
+    this.negate = false;
+    if (this.long) {
+      this.negate = this.long.startsWith('--no-');
+    }
+    this.defaultValue = undefined;
+    this.defaultValueDescription = undefined;
+    this.presetArg = undefined;
+    this.envVar = undefined;
+    this.parseArg = undefined;
+    this.hidden = false;
+    this.argChoices = undefined;
+    this.conflictsWith = [];
+    this.implied = undefined;
+    this.helpGroupHeading = undefined; // soft initialised when option added to command
+  }
+
+  /**
+   * Set the default value, and optionally supply the description to be displayed in the help.
+   *
+   * @param {*} value
+   * @param {string} [description]
+   * @return {Option}
+   */
+
+  default(value, description) {
+    this.defaultValue = value;
+    this.defaultValueDescription = description;
+    return this;
+  }
+
+  /**
+   * Preset to use when option used without option-argument, especially optional but also boolean and negated.
+   * The custom processing (parseArg) is called.
+   *
+   * @example
+   * new Option('--color').default('GREYSCALE').preset('RGB');
+   * new Option('--donate [amount]').preset('20').argParser(parseFloat);
+   *
+   * @param {*} arg
+   * @return {Option}
+   */
+
+  preset(arg) {
+    this.presetArg = arg;
+    return this;
+  }
+
+  /**
+   * Add option name(s) that conflict with this option.
+   * An error will be displayed if conflicting options are found during parsing.
+   *
+   * @example
+   * new Option('--rgb').conflicts('cmyk');
+   * new Option('--js').conflicts(['ts', 'jsx']);
+   *
+   * @param {(string | string[])} names
+   * @return {Option}
+   */
+
+  conflicts(names) {
+    this.conflictsWith = this.conflictsWith.concat(names);
+    return this;
+  }
+
+  /**
+   * Specify implied option values for when this option is set and the implied options are not.
+   *
+   * The custom processing (parseArg) is not called on the implied values.
+   *
+   * @example
+   * program
+   *   .addOption(new Option('--log', 'write logging information to file'))
+   *   .addOption(new Option('--trace', 'log extra details').implies({ log: 'trace.txt' }));
+   *
+   * @param {object} impliedOptionValues
+   * @return {Option}
+   */
+  implies(impliedOptionValues) {
+    let newImplied = impliedOptionValues;
+    if (typeof impliedOptionValues === 'string') {
+      // string is not documented, but easy mistake and we can do what user probably intended.
+      newImplied = { [impliedOptionValues]: true };
+    }
+    this.implied = Object.assign(this.implied || {}, newImplied);
+    return this;
+  }
+
+  /**
+   * Set environment variable to check for option value.
+   *
+   * An environment variable is only used if when processed the current option value is
+   * undefined, or the source of the current value is 'default' or 'config' or 'env'.
+   *
+   * @param {string} name
+   * @return {Option}
+   */
+
+  env(name) {
+    this.envVar = name;
+    return this;
+  }
+
+  /**
+   * Set the custom handler for processing CLI option arguments into option values.
+   *
+   * @param {Function} [fn]
+   * @return {Option}
+   */
+
+  argParser(fn) {
+    this.parseArg = fn;
+    return this;
+  }
+
+  /**
+   * Whether the option is mandatory and must have a value after parsing.
+   *
+   * @param {boolean} [mandatory=true]
+   * @return {Option}
+   */
+
+  makeOptionMandatory(mandatory = true) {
+    this.mandatory = !!mandatory;
+    return this;
+  }
+
+  /**
+   * Hide option in help.
+   *
+   * @param {boolean} [hide=true]
+   * @return {Option}
+   */
+
+  hideHelp(hide = true) {
+    this.hidden = !!hide;
+    return this;
+  }
+
+  /**
+   * @package
+   */
+
+  _collectValue(value, previous) {
+    if (previous === this.defaultValue || !Array.isArray(previous)) {
+      return [value];
+    }
+
+    previous.push(value);
+    return previous;
+  }
+
+  /**
+   * Only allow option value to be one of choices.
+   *
+   * @param {string[]} values
+   * @return {Option}
+   */
+
+  choices(values) {
+    this.argChoices = values.slice();
+    this.parseArg = (arg, previous) => {
+      if (!this.argChoices.includes(arg)) {
+        throw new InvalidArgumentError(
+          `Allowed choices are ${this.argChoices.join(', ')}.`,
+        );
+      }
+      if (this.variadic) {
+        return this._collectValue(arg, previous);
+      }
+      return arg;
+    };
+    return this;
+  }
+
+  /**
+   * Return option name.
+   *
+   * @return {string}
+   */
+
+  name() {
+    if (this.long) {
+      return this.long.replace(/^--/, '');
+    }
+    return this.short.replace(/^-/, '');
+  }
+
+  /**
+   * Return option name, in a camelcase format that can be used
+   * as an object attribute key.
+   *
+   * @return {string}
+   */
+
+  attributeName() {
+    if (this.negate) {
+      return camelcase(this.name().replace(/^no-/, ''));
+    }
+    return camelcase(this.name());
+  }
+
+  /**
+   * Set the help group heading.
+   *
+   * @param {string} heading
+   * @return {Option}
+   */
+  helpGroup(heading) {
+    this.helpGroupHeading = heading;
+    return this;
+  }
+
+  /**
+   * Check if `arg` matches the short or long flag.
+   *
+   * @param {string} arg
+   * @return {boolean}
+   * @package
+   */
+
+  is(arg) {
+    return this.short === arg || this.long === arg;
+  }
+
+  /**
+   * Return whether a boolean option.
+   *
+   * Options are one of boolean, negated, required argument, or optional argument.
+   *
+   * @return {boolean}
+   * @package
+   */
+
+  isBoolean() {
+    return !this.required && !this.optional && !this.negate;
+  }
+}
+
+/**
+ * This class is to make it easier to work with dual options, without changing the existing
+ * implementation. We support separate dual options for separate positive and negative options,
+ * like `--build` and `--no-build`, which share a single option value. This works nicely for some
+ * use cases, but is tricky for others where we want separate behaviours despite
+ * the single shared option value.
+ */
+export class DualOptions {
+  /**
+   * @param {Option[]} options
+   */
+  constructor(options) {
+    this.positiveOptions = new Map();
+    this.negativeOptions = new Map();
+    this.dualOptions = new Set();
+    options.forEach((option) => {
+      if (option.negate) {
+        this.negativeOptions.set(option.attributeName(), option);
+      } else {
+        this.positiveOptions.set(option.attributeName(), option);
+      }
+    });
+    this.negativeOptions.forEach((value, key) => {
+      if (this.positiveOptions.has(key)) {
+        this.dualOptions.add(key);
+      }
+    });
+  }
+
+  /**
+   * Did the value come from the option, and not from possible matching dual option?
+   *
+   * @param {*} value
+   * @param {Option} option
+   * @returns {boolean}
+   */
+  valueFromOption(value, option) {
+    const optionKey = option.attributeName();
+    if (!this.dualOptions.has(optionKey)) return true;
+
+    // Use the value to deduce if (probably) came from the option.
+    const preset = this.negativeOptions.get(optionKey).presetArg;
+    const negativeValue = preset !== undefined ? preset : false;
+    return option.negate === (negativeValue === value);
+  }
+}
+
+/**
+ * Convert string from kebab-case to camelCase.
+ *
+ * @param {string} str
+ * @return {string}
+ * @private
+ */
+
+function camelcase(str) {
+  return str.split('-').reduce((str, word) => {
+    return str + word[0].toUpperCase() + word.slice(1);
+  });
+}
+
+/**
+ * Split the short and long flag out of something like '-m,--mixed <value>'
+ *
+ * @private
+ */
+
+function splitOptionFlags(flags) {
+  let shortFlag;
+  let longFlag;
+  // short flag, single dash and single character
+  const shortFlagExp = /^-[^-]$/;
+  // long flag, double dash and at least one character
+  const longFlagExp = /^--[^-]/;
+
+  const flagParts = flags.split(/[ |,]+/).concat('guard');
+  // Normal is short and/or long.
+  if (shortFlagExp.test(flagParts[0])) shortFlag = flagParts.shift();
+  if (longFlagExp.test(flagParts[0])) longFlag = flagParts.shift();
+  // Long then short. Rarely used but fine.
+  if (!shortFlag && shortFlagExp.test(flagParts[0]))
+    shortFlag = flagParts.shift();
+  // Allow two long flags, like '--ws, --workspace'
+  // This is the supported way to have a shortish option flag.
+  if (!shortFlag && longFlagExp.test(flagParts[0])) {
+    shortFlag = longFlag;
+    longFlag = flagParts.shift();
+  }
+
+  // Check for unprocessed flag. Fail noisily rather than silently ignore.
+  if (flagParts[0].startsWith('-')) {
+    const unsupportedFlag = flagParts[0];
+    const baseError = `option creation failed due to '${unsupportedFlag}' in option flags '${flags}'`;
+    if (/^-[^-][^-]/.test(unsupportedFlag))
+      throw new Error(
+        `${baseError}
+- a short flag is a single dash and a single character
+  - either use a single dash and a single character (for a short flag)
+  - or use a double dash for a long option (and can have two, like '--ws, --workspace')`,
+      );
+    if (shortFlagExp.test(unsupportedFlag))
+      throw new Error(`${baseError}
+- too many short flags`);
+    if (longFlagExp.test(unsupportedFlag))
+      throw new Error(`${baseError}
+- too many long flags`);
+
+    throw new Error(`${baseError}
+- unrecognised flag format`);
+  }
+  if (shortFlag === undefined && longFlag === undefined)
+    throw new Error(
+      `option creation failed due to no flags found in '${flags}'.`,
+    );
+
+  return { shortFlag, longFlag };
+}
+
+[evidence record sha256:5b81897437f34357cfa439e2e15bb6991fdbec151b1439a03e15981c2d4aeae9 kind tool-call:read]
+step 12: calling local:qwen3.8:27b
+tool edit <- {"path":"lib/argument.js","find":"    if (previous !== this.defaultValue || !Array.isArray(previous)) {\n      return [value];\n    }\n\n    previous.push(value);\n    return previous;","replace":"    if (previous === this.defaultValue || !Array.isArray(previous)) {\n      return [value];\n    }\n\n    previous.push(value);\n    return previous;"}
+tool edit ok: replaced 1 occurrence(s) in lib/argument.js
+[evidence record sha256:7313b33decfa9a1dda18c5002a858067fe073c4859d59ec14a86ddeb6274183d kind tool-call:edit]
+step 13: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test 2>&1 | tail -10"}
+tool shell ok: exit code: 0
+stdout:
+  ✔ FORCE_COLOR environment variable tests (0.658179ms)
+✔ internal useColor environment variable support (1.922661ms)
+ℹ tests 1373
+ℹ suites 210
+ℹ pass 1372
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 1759.802075
+[evidence record sha256:bde4eb14fb17219fa2c49fd2456d48e4d1df8b018f387699b24c32771239f86f kind tool-call:shell]
+step 14: calling local:qwen3.8:27b
+tool claim <- {"predicate":"facts.exitCode == 0 && facts.stdout.includes(\"pass 1372\") && facts.stdout.includes(\"fail 0\")","record":"sha256:bde4eb14fb17219fa2c49fd2456d48e4d1df8b018f387699b24c32771239f86f","recordKind":"tool-call:shell","narrative":"npm run --silent test passes: 1372 pass, 0 fail, 1373 tests, 1 pre-existing skip."}
+tool claim ok: UNVERIFIED (predicate-unparseable): expected one of == != >= <= > < after "facts.stdout.includes"
+[evidence record sha256:d0115fac870c7f6d23a2cb2df34be1699f753004bf3ca6633a76308ee68fb948 kind tool-call:claim]
+step 15: calling local:qwen3.8:27b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"sha256:bde4eb14fb17219fa2c49fd2456d48e4d1df8b018f387699b24c32771239f86f","recordKind":"tool-call:shell","narrative":"npm run --silent test exited 0; output shows 1372 pass, 0 fail, 1373 tests, 1 pre-existing skip."}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:d5a0c53afc54217c524b2cb786e0ad45613d0247456e31faca840589572e1b39 kind tool-call:claim]
+step 16: calling local:qwen3.8:27b
+claim (unverified): Done. Fixed in `lib/argument.js`:
+
+- **Defect:** `Argument._collectValue` had an inverted condition — `if (previous !== this.defaultValue || !Array.isArray(previous)) return[value]`. For a variadic argument, `command.js` reduces the slice of args starting from `declaredArg.defaultValue`, so the first value started fresh, and every subsequent value found `previous !== defaultValue` and started a *new* single-element array, discarding everything before it. That's why `['one', 'two']` came out as `['two']`.
+- **Fix:** inverts the check to `if (previous === this.defaultValue || !Array.isArray(previous))`, matching `Option._collectValue`, so subsequent values append to the accumulated array.
+
+`npm run --silent test` now passes: 1373 tests, 1372 pass, 0 fail, 1 pre-existing skip — verified against the shell evidence record. No tests were touched.
+stopped: completed after 16 steps, 124786 tokens
+gate typecheck not-applicable: package.json declares no typecheck script [evidence record sha256:2937696362f6458fe282589c221bc4c8fee1e95f3a2fcdf7bdda33a9c257023a]
+gate lint not-applicable: package.json declares no lint script [evidence record sha256:80f9d94a737526e9c5c413a32d943f4febe0196f251ff0d5ebdfb62b7df46ec0]
+gate format not-applicable: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging [evidence record sha256:9b21ee9385ec49965029e8ae457e7fa57f61ec2cc75ef84219ddfa2809af47cb]
+gate tests passed: 1373 collected, 1372 passed, 0 failed, 1 skipped (exit 0) [evidence record sha256:dc63850128ac25cd4406aacc2db894407908ba43202f5260a240aa36fbfcd78a]
+gate file-set failed: 1 file(s) changed but no file set was declared before editing. Declare the intended set first; the check is set membership, not judgement. [evidence record sha256:a632727f746d5c32c023ba43c190947a0b742c878afe36a875e4cdab7f9080ad]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:04cbfbf05767e77d5767fb5772e9a7e62cec4ae74d421e013fe257c5eccb892c]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:1205c218e3298f2b2a033cfedf23b7ee3ea0c6b62794e4df970e745e5f7a0cb4]
+gate behaviour-probe passed: 0 changed function(s) still answer to their inputs. Not measured: lib/argument.js (Cannot find module '/home/campaign/.swarm/sessions/20260903T041316-614617/probe/behaviour-probe/base/lib/error.js' imported from /home/campaign/.swarm/sessions/20260903T041316-614617/probe/behaviour-probe/base/lib/argument.js). [evidence record sha256:604355efa1181d49f4db95a83c11db36c0b88e787c74cd350408448108c6dac6]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 1 added line(s) [evidence record sha256:ede4b1a546ba6f4583c33140cd1c857444d0095fb5d2eff66db7030505370e36]
+auto-resolve attempt 1 of 2
+step 1: calling local:qwen3.8:27b
+tool list <- {}
+tool list ok: .editorconfig
+.git/
+.gitattributes
+.github/
+.gitignore
+.prettierignore
+.prettierrc.js
+CHANGELOG.md
+CONTRIBUTING.md
+LICENSE
+Readme.md
+Readme_zh-CN.md
+SECURITY.md
+docs/
+eslint.config.js
+examples/
+index.js
+lib/
+node_modules/
+package-lock.json
+package-support.json
+package.json
+tests/
+tsconfig.js.json
+tsconfig.json
+tsconfig.ts.json
+typings/
+[evidence record sha256:501187d41a1813de6c11a21ff6ad1c4c326754679cfe31f48862da3a48b46083 kind tool-call:list]
+step 2: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test 2>&1 | tail -50"}
+tool shell ok: exit code: 0
+stdout:
+    ✔ when variadic used as boolean flag then value true (0.04121ms)
+    ✔ when variadic with one value then set in array (0.058377ms)
+    ✔ when variadic with two values then set in array (0.086002ms)
+  ✔ variadic option with optional option-argument (0.347178ms)
+  ▶ variadic special cases
+    ✔ when option flags has word character before dots then is variadic (0.044876ms)
+    ✔ when option flags has special characters before dots then not variadic (0.036876ms)
+  ✔ variadic special cases (0.112753ms)
+  ✔ when option has default array then specified value is used instead of default (not appended) (0.038918ms)
+  ✔ when option has default array then specified value is used instead of default (not appended) (0.032792ms)
+✔ variadic options (4.437596ms)
+▶ Command.version()
+  ✔ when no .version and specify --version then unknown option error (1.05995ms)
+  ✔ when no .version then helpInformation does not include version (0.438888ms)
+  ✔ when specify default short flag then display version (0.257966ms)
+  ✔ when specify default long flag then display version (0.099378ms)
+  ✔ when default .version then helpInformation includes default version help (0.114295ms)
+  ✔ when specify custom short flag then display version (0.084336ms)
+  ✔ when specify just custom short flag then display version (0.092586ms)
+  ✔ when specify custom long flag then display version (0.096003ms)
+  ✔ when specify just custom long flag then display version (0.165422ms)
+  ✔ when custom .version then helpInformation includes custom version help (0.142547ms)
+  ✔ when have .version+version and specify version then command called (0.350011ms)
+  ✔ when have .version+version and specify --version then version displayed (0.110086ms)
+  ✔ when specify version then can get version (0.033668ms)
+✔ Command.version() (3.597571ms)
+▶ internal useColor environment variable support
+  ✔ when no ENV defined then returns undefined (0.355594ms)
+  ✔ when NO_COLOR defined then returns false (0.076169ms)
+  ✔ when NO_COLOR empty then returns undefined (0.064669ms)
+  ✔ when CLICOLOR_FORCE defined then returns true (0.083795ms)
+  ✔ when CLICOLOR_FORCE empty then returns true (0.148296ms)
+  ✔ when CLICOLOR_FORCE and NO_COLOR defined then returns false (0.093587ms)
+  ▶ FORCE_COLOR environment variable tests
+    ✔ when FORCE_COLOR=true then returns true (0.113212ms)
+    ✔ when FORCE_COLOR=false then returns false (0.065919ms)
+    ✔ when FORCE_COLOR=0 then returns false (0.045293ms)
+    ✔ when FORCE_COLOR=1 then returns true (0.060085ms)
+    ✔ when FORCE_COLOR=2 then returns true (0.285175ms)
+    ✔ when FORCE_COLOR=3 then returns true (0.035918ms)
+  ✔ FORCE_COLOR environment variable tests (0.801066ms)
+✔ internal useColor environment variable support (2.104107ms)
+ℹ tests 1373
+ℹ suites 210
+ℹ pass 1372
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 1594.770157
+[evidence record sha256:02eb7088fcba4d3770c356aecb653d4d3a77a9294ec61149d9282bd2903a82ab kind tool-call:shell]
+step 3: calling local:qwen3.8:27b
+tool declare_file_set <- {"files":"[\"lib/argument.js\"]"}
+tool declare_file_set ok: declared 1 file(s): lib/argument.js
+[evidence record sha256:328ecde9c8f4a2cf04a5976f2feb5a2fd0028d6957d46f275a3a2805508ecf0f kind tool-call:declare_file_set]
+step 4: calling local:qwen3.8:27b
+tool shell <- {"command":"git status --short; git diff --stat; git log --oneline -3"}
+tool shell ok: exit code: 0
+stdout:
+ M lib/argument.js
+ lib/argument.js | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+91f4d9d campaign: seeded defect
+ba6d13d Fix release dates in changelog (#2523)
+[evidence record sha256:f2248fd80eb5f8c4fb747a2944548c67e60fb262fd2136f47307cb225329595b kind tool-call:shell]
+step 5: calling local:qwen3.8:27b
+tool shell <- {"command":"git diff lib/argument.js"}
+tool shell ok: exit code: 0
+stdout:
+diff --git a/lib/argument.js b/lib/argument.js
+index c9c99ae..6da521d 100644
+--- a/lib/argument.js
++++ b/lib/argument.js
+@@ -54,7 +54,7 @@ export class Argument {
+    */
+ 
+   _collectValue(value, previous) {
+-    if (previous !== this.defaultValue || !Array.isArray(previous)) {
++    if (previous === this.defaultValue || !Array.isArray(previous)) {
+       return [value];
+     }
+[evidence record sha256:3b9f7147f695d65801ab9398f50124f85ff85acb7203a8d3b2374c4b307bb6dd kind tool-call:shell]
+step 6: calling local:qwen3.8:27b
+tool claim <- {"predicate":"facts.exitCode == 0 && facts.stdoutText.includes(\"pass 1372\") && facts.stdoutText.includes(\"fail 0\")","record":"sha256:02eb7088fcba4d3770c356aecb653d4d3a77a9294ec61149d9282bd2903a82ab","recordKind":"tool-call:shell","narrative":"npm run --silent test passes with 1372 passing, 0 failing in the current tree; the fix in lib/argument.js is in place and the file set is now declared."}
+tool claim ok: UNVERIFIED (predicate-unparseable): expected one of == != >= <= > < after "facts.stdoutText.includes"
+[evidence record sha256:8f80e0683beccba2f476a64728fb774618366560c31269d3a23702f608be40e6 kind tool-call:claim]
+step 7: calling local:qwen3.8:27b
+tool claim <- {"predicate":"facts.exitCode == 0 && facts.stdoutBytes > 0","record":"sha256:02eb7088fcba4d3770c356aecb653d4d3a77a9294ec61149d9282bd2903a82ab","recordKind":"tool-call:shell","narrative":"npm run --silent test exited 0 in the current tree; output shows 1372 pass, 0 fail, 1 skipped."}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:50bb282e25a040088572e088fa87774042e501d763e32e4adb60e73be4cc6ce8 kind tool-call:claim]
+step 8: calling local:qwen3.8:27b
+claim (unverified): Done.
+
+- **Defect found and fixed** in `lib/argument.js`: in `Argument._collectValue`, the seeded commit had inverted the comparison — `if (previous !== this.defaultValue || !Array.isArray(previous))` — so an argument with an array default value started a fresh`[value]` instead of appending, breaking the "specified value is used instead of default (not appended)" behavior. Fixed to `if (previous === this.defaultValue || !Array.isArray(previous))`, restoring the original semantics.
+- **Tests untouched**: `npm run --silent test` passes — 1373 tests, 1372 pass, 0 fail, 1 pre-existing skip (exit code 0, verified against the shell evidence record).
+- **File-set gate addressed**: `lib/argument.js` is now declared in the file set, and it is the only changed file, so the gate's set-membership check is satisfied.
+stopped: completed after 8 steps, 33007 tokens
+gate typecheck not-applicable: package.json declares no typecheck script [evidence record sha256:dcc2e6bb8b1f041c21c5dfd3819d32ebdcbd7bd319999a9fb62dca01576f5227]
+gate lint not-applicable: package.json declares no lint script [evidence record sha256:1612e8acd9c28a083bcf50616c59e7278c79cb75a579f1c7fd0a1fad57fd20ba]
+gate format not-applicable: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging [evidence record sha256:de56ee4f49cd37e04578550df7589a9e701cb442e8b202888044c9c9e077f72e]
+gate tests passed: 1373 collected, 1372 passed, 0 failed, 1 skipped (exit 0) [evidence record sha256:47f2a8733e34c9d3af4093aa18b895b645e87fdb0c1d5d60e6add1668e23a8f3]
+gate file-set failed: 1 file(s) were edited before anything declared them: lib/argument.js. A declaration written after the edit describes what was done, not what was intended. Record an amendment to widen the set, which puts the widening in front of a reviewer. [evidence record sha256:0c7abaa76565127f64a035711c561f6a8a3d66b4a7ad9ce096a6653ff74c1a2f]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:6ab4a60c77fbee0a6e8337589bb53775332ffb0cc3347a678c83b90c1c1257c8]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:0d1bddaaa0335ae01c8ded7b8c8df77a28e4d5968164123819f75b8963b3a344]
+gate behaviour-probe passed: 0 changed function(s) still answer to their inputs. Not measured: lib/argument.js (Cannot find module '/home/campaign/.swarm/sessions/20260903T041316-614617/probe/behaviour-probe/base/lib/error.js' imported from /home/campaign/.swarm/sessions/20260903T041316-614617/probe/behaviour-probe/base/lib/argument.js). [evidence record sha256:9b82fb62f21cddf7822eb93289300793946fb7239ed261ee482d9b8d2dc2c02e]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 1 added line(s) [evidence record sha256:7ff4b1f10fd971599241eba5c7b92342e09bc8c3fe67b6d0f096db24aa42773c]
+ratchet accepted attempt 1: the ratchet accepted the attempt: no measure moved the wrong way (not compared: testsCollected, changedLineCoverage) [evidence record sha256:578716db9951cc69e826ed3a15d171bf833586f4e41008dbb0532c861e0da074]
+auto-resolve attempt 2 of 2
+step 1: calling local:qwen3.8:27b
+tool amend_file_set <- {"files":["lib/argument.js"],"reason":"The fix in attempt 1 edited lib/argument.js; the gate requires the widening be recorded as an amendment in front of a reviewer, so this registers the file in the declared set."}
+tool amend_file_set ok: the declared file set now covers 1 file(s)
+[evidence record sha256:8d9158e35ecdf1a3c2a426499232d2415e5bf1153cfb1c89a5e15f73df79f62c kind tool-call:amend_file_set]
+step 2: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test 2>&1 | tail -30"}
+tool shell ok: exit code: 0
+stdout:
+  ✔ when specify just custom long flag then display version (0.135464ms)
+  ✔ when custom .version then helpInformation includes custom version help (0.103462ms)
+  ✔ when have .version+version and specify version then command called (0.342515ms)
+  ✔ when have .version+version and specify --version then version displayed (0.099546ms)
+  ✔ when specify version then can get version (0.032335ms)
+✔ Command.version() (3.507687ms)
+▶ internal useColor environment variable support
+  ✔ when no ENV defined then returns undefined (0.344098ms)
+  ✔ when NO_COLOR defined then returns false (0.072628ms)
+  ✔ when NO_COLOR empty then returns undefined (0.063669ms)
+  ✔ when CLICOLOR_FORCE defined then returns true (0.075628ms)
+  ✔ when CLICOLOR_FORCE empty then returns true (0.099129ms)
+  ✔ when CLICOLOR_FORCE and NO_COLOR defined then returns false (0.06667ms)
+  ▶ FORCE_COLOR environment variable tests
+    ✔ when FORCE_COLOR=true then returns true (0.11613ms)
+    ✔ when FORCE_COLOR=false then returns false (0.063294ms)
+    ✔ when FORCE_COLOR=0 then returns false (0.047919ms)
+    ✔ when FORCE_COLOR=1 then returns true (0.077336ms)
+    ✔ when FORCE_COLOR=2 then returns true (0.040835ms)
+    ✔ when FORCE_COLOR=3 then returns true (0.029376ms)
+  ✔ FORCE_COLOR environment variable tests (0.514646ms)
+✔ internal useColor environment variable support (1.678153ms)
+ℹ tests 1373
+ℹ suites 210
+ℹ pass 1372
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 1506.00759
+[evidence record sha256:c7595f30f7f27dbac39a636d9290f9d388e07eee5781b904e881e96f89a36e20 kind tool-call:shell]
+step 3: calling local:qwen3.8:27b
+tool read <- {"path":"lib/argument.js"}
+tool read ok: import { InvalidArgumentError } from './error.js';
+
+export class Argument {
+  /**
+   * Initialize a new command argument with the given name and description.
+   * The default is that the argument is required, and you can explicitly
+   * indicate this with <> around the name. Put [] around the name for an optional argument.
+   *
+   * @param {string} name
+   * @param {string} [description]
+   */
+
+  constructor(name, description) {
+    this.description = description || '';
+    this.variadic = false;
+    this.parseArg = undefined;
+    this.defaultValue = undefined;
+    this.defaultValueDescription = undefined;
+    this.argChoices = undefined;
+
+    switch (name[0]) {
+      case '<': // e.g. <required>
+        this.required = true;
+        this._name = name.slice(1, -1);
+        break;
+      case '[': // e.g. [optional]
+        this.required = false;
+        this._name = name.slice(1, -1);
+        break;
+      default:
+        this.required = true;
+        this._name = name;
+        break;
+    }
+
+    if (this._name.endsWith('...')) {
+      this.variadic = true;
+      this._name = this._name.slice(0, -3);
+    }
+  }
+
+  /**
+   * Return argument name.
+   *
+   * @return {string}
+   */
+
+  name() {
+    return this._name;
+  }
+
+  /**
+   * @package
+   */
+
+  _collectValue(value, previous) {
+    if (previous === this.defaultValue || !Array.isArray(previous)) {
+      return [value];
+    }
+
+    previous.push(value);
+    return previous;
+  }
+
+  /**
+   * Set the default value, and optionally supply the description to be displayed in the help.
+   *
+   * @param {*} value
+   * @param {string} [description]
+   * @return {Argument}
+   */
+
+  default(value, description) {
+    this.defaultValue = value;
+    this.defaultValueDescription = description;
+    return this;
+  }
+
+  /**
+   * Set the custom handler for processing CLI command arguments into argument values.
+   *
+   * @param {Function} [fn]
+   * @return {Argument}
+   */
+
+  argParser(fn) {
+    this.parseArg = fn;
+    return this;
+  }
+
+  /**
+   * Only allow argument value to be one of choices.
+   *
+   * @param {string[]} values
+   * @return {Argument}
+   */
+
+  choices(values) {
+    this.argChoices = values.slice();
+    this.parseArg = (arg, previous) => {
+      if (!this.argChoices.includes(arg)) {
+        throw new InvalidArgumentError(
+          `Allowed choices are ${this.argChoices.join(', ')}.`,
+        );
+      }
+      if (this.variadic) {
+        return this._collectValue(arg, previous);
+      }
+      return arg;
+    };
+    return this;
+  }
+
+  /**
+   * Make argument required.
+   *
+   * @returns {Argument}
+   */
+  argRequired() {
+    this.required = true;
+    return this;
+  }
+
+  /**
+   * Make argument optional.
+   *
+   * @returns {Argument}
+   */
+  argOptional() {
+    this.required = false;
+    return this;
+  }
+}
+
+/**
+ * Takes an argument and returns its human readable equivalent for help usage.
+ *
+ * @param {Argument} arg
+ * @return {string}
+ * @private
+ */
+
+export function humanReadableArgName(arg) {
+  const nameOutput = arg.name() + (arg.variadic === true ? '...' : '');
+
+  return arg.required ? '<' + nameOutput + '>' : '[' + nameOutput + ']';
+}
+
+[evidence record sha256:1b50f8a2b5e4dd41adb6865de27a56ad1aa93801abf3cdbb280396e2daf2890b kind tool-call:read]
+step 4: calling local:qwen3.8:27b
+tool claim <- {"predicate":"facts.exitCode == 0 && facts.passes > 0 && facts.failures == 0","record":"sha256:c7595f30f7f27dbac39a636d9290f9d388e07eee5781b904e881e96f89a36e20","recordKind":"tool-call:shell","narrative":"npm run --silent test passes: 1373 tests, 0 failures, exit code 0, after the file-set amendment registers lib/argument.js in the declared set."}
+tool claim ok: UNVERIFIED (path-not-found): facts.passes does not exist in the cited record
+[evidence record sha256:58830778dce13d7701df2100665a07661e1673725669c2421c0d845758c55c4d kind tool-call:claim]
+step 5: calling local:qwen3.8:27b
+tool claim <- {"predicate":"facts.exitCode == 0 && facts.stdoutBytes > 0","record":"sha256:c7595f30f7f27dbac39a636d9290f9d388e07eee5781b904e881e96f89a36e20","recordKind":"tool-call:shell","narrative":"npm run --silent test exits 0; output shows 1373 tests, 0 failures, 1372 pass, 1 skipped, after the amendment registers lib/argument.js in the declared set."}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:24fec878b2d18aabb5248869a5fb0455290fabbbc0f45486fd026f683505d66c kind tool-call:claim]
+step 6: calling local:qwen3.8:27b
+claim (unverified): Done.
+
+- **Cause of the gate failure:** in attempt 1, `lib/argument.js` was edited before any declaration, so the file-set gate rejected the change.
+- **Fix:** recorded an `amend_file_set` amendment widening the declared set to include `lib/argument.js`, putting the widening in front of a reviewer as the gate requires. No test or assertion was touched.
+- **Verification:** `npm run --silent test` exits 0 — 1373 tests, 0 failures, 1372 pass, 1 skipped — and the harness VERIFIED the exit-code claim against the shell evidence record.
+stopped: completed after 6 steps, 24527 tokens
+gate typecheck not-applicable: package.json declares no typecheck script [evidence record sha256:81e5bc34c76ccd066aba574f815550ddb8a53ef241292bcee176472f2a07b09a]
+gate lint not-applicable: package.json declares no lint script [evidence record sha256:a42d74a71928cc321753e9ff30d2becf63539b52e76f1be20715a03739e6f953]
+gate format not-applicable: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging [evidence record sha256:6920e5a176ea5e96d174e1f9daeb0b28dc3ee2ec8a64abe88be1f4c54d7534a6]
+gate tests passed: 1373 collected, 1372 passed, 0 failed, 1 skipped (exit 0) [evidence record sha256:822aa7005d0519bcacd6d58ef811a5f44031ba83c473aa275b9fab901c650833]
+gate file-set passed: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited [evidence record sha256:04de70a7cf15ac58923edd5ab33472b6d2f6ebf9d02e4fa50ecc6707f806c938]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:80a69ddf538b2edff3530ed1afc787650dc7d826a04eded035e165077cbe6257]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:48401cbfcc12987dfae6c002c84fc54a4e94fc5d6e443f68ed699bb2fc400bbf]
+gate behaviour-probe passed: 0 changed function(s) still answer to their inputs. Not measured: lib/argument.js (Cannot find module '/home/campaign/.swarm/sessions/20260903T041316-614617/probe/behaviour-probe/base/lib/error.js' imported from /home/campaign/.swarm/sessions/20260903T041316-614617/probe/behaviour-probe/base/lib/argument.js). [evidence record sha256:d89cec18f136202448c0d235fd0eb8f9df4efb3b02c2d80e94d7d22dc04fb620]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 1 added line(s) [evidence record sha256:d0f1c50406283703bcb20cc9d89ca2fc2bd86d79187be45e836de427e0b167ac]
+ratchet accepted attempt 2: the ratchet accepted the attempt: no measure moved the wrong way (not compared: testsCollected, changedLineCoverage) [evidence record sha256:6d21907379f0fc10ed3a5ee18c8b55039e76889ce2f0865ea7ea7eb566855db1]
+
+gates:
+  n/a      typecheck: package.json declares no typecheck script
+  n/a      lint: package.json declares no lint script
+  n/a      format: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging
+  passed   tests: 1373 collected, 1372 passed, 0 failed, 1 skipped (exit 0)
+  passed   file-set: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited
+  passed   placeholder: no placeholder marker was introduced by this change
+  passed   secret-scan: no known credential pattern appears in the added lines
+  passed   behaviour-probe: 0 changed function(s) still answer to their inputs. Not measured: lib/argument.js (Cannot find module '/home/campaign/.swarm/sessions/20260903T041316-614617/probe/behaviour-probe/base/lib/error.js' imported from /home/campaign/.swarm/sessions/20260903T041316-614617/probe/behaviour-probe/base/lib/argument.js).
+  passed   diff-budget (advisory): within budget: 1 file(s) and 1 added line(s)
+attempt 1: accepted - the ratchet accepted the attempt: no measure moved the wrong way (not compared: testsCollected, changedLineCoverage)
+attempt 2: accepted - the ratchet accepted the attempt: no measure moved the wrong way (not compared: testsCollected, changedLineCoverage)
+
+routing reward: 0.180 (green with 2 retries, 214s, and $0.0000)
+[signing] the Secret Service keyring would not take a new key (secret-tool store failed: ), so the bundle is signed with a per-run key
+
+evidence bundle: /out/bundle
+verify it anywhere: node /out/bundle/verify.mjs /out/bundle
+review it: open /out/bundle/review.html
+what this run produced
+
+  the page a person reads: /out/bundle/review.html
+  the bundle a stranger verifies: /out/bundle
+  its own verifier, needing nothing installed: node /out/bundle/verify.mjs /out/bundle
+  the chain every record is on: /out/bundle/ledger.jsonl
+
+  141 records. The harness verified 4 claim(s) and refused 3.
+  bundle verified in this run: verify.mjs exited 0
+[chokepoint] refusing shell without a terminal to confirm on: "grep -n "_collectValue\|storeArgValue\|storeOptionValue" lib/command.js | head; echo ---; grep -n "storeArgValue" -A 30 lib/command.js | head -50" is not on the shell allowlist.

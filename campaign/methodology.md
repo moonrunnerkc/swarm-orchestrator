@@ -124,7 +124,7 @@ non-measurements, the executed count, bundles verified against bundles refused, 
 and escalated over executed runs, ratchet rejections, claims verified against refused, the
 outcome tally, duration and record-count quantiles, and the outcome tally per language. An arm
 with no executed run reports its distributions as not measured. The corpus itself is the
-bundles under `corpus/<arm>/<repository>/`, each with its own verifier and its transcript.
+bundles under `corpus/<arm>/<repository>/`, each with its own verifier and its transcript. The rendered review page is not committed: it is ten megabytes a bundle, it is drawn from the ledger the bundle carries, and the verifier never reads it.
 
 ## Limits, named before the numbers
 

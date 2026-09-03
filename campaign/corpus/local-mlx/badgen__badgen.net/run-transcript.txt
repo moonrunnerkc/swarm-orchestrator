@@ -1,0 +1,431 @@
+step 1: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test 2>&1 | tail -50"}
+tool shell ok: exit code: 0
+stdout:
+✖ serveBadgeNext applies cache query to the response cache-control header (1.975535ms)
+✔ serveBadgeNext preserves a preconfigured cache-control header (1.115205ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 2
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 211.019174
+
+✖ failing tests:
+
+test at test/badge-cache-control.test.ts:2:1097
+✖ resolveBadgeCacheMaxAge clamps low values and invalid input (1.067746ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  3600 !== 300
+  
+      at TestContext.<anonymous> (/work/test/badge-cache-control.test.ts:10:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Test.start (node:internal/test_runner/test:1257:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 3600,
+    expected: 300,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/badge-cache-control.test.ts:2:1771
+✖ serveBadgeNext applies cache query to the response cache-control header (1.975535ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400'
+  - 'public, max-age=600, s-maxage=600, stale-while-revalidate=86400'
+  
+      at TestContext.<anonymous> (/work/test/badge-cache-control.test.ts:40:10)
+      at async Test.run (node:internal/test_runner/test:1404:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400',
+    expected: 'public, max-age=600, s-maxage=600, stale-while-revalidate=86400',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+[evidence record sha256:865ae2290af3dfbec2d850baf4cec222cc38b9ccb3a3d9ceb5026e46e09c623d kind tool-call:shell]
+tool list <- {}
+tool list ok: .babelrc
+.codeclimate.yml
+.dockerignore
+.editorconfig
+.firebaserc
+.git/
+.github/
+.gitignore
+.hintrc
+.npmrc
+.nvmrc
+.oxlintrc.json
+.vercelignore
+.vscode/
+Dockerfile
+LICENSE.md
+README.md
+cloudbuild.yaml
+components/
+firebase.json
+libs/
+next-env.d.ts
+next.config.js
+node_modules/
+package-lock.json
+package.json
+pages/
+public/
+sentry.client.config.ts
+sentry.edge.config.ts
+sentry.properties
+sentry.server.config.ts
+styles/
+test/
+tools/
+tsconfig.json
+vercel.json
+[evidence record sha256:ab56a1b8d4de5b551d016f438c78a0a7242c467442406a76fb108e691ef4acc2 kind tool-call:list]
+step 2: calling local:qwen3.8:27b
+tool read <- {"path":"test/badge-cache-control.test.ts"}
+tool read ok: import assert from 'node:assert/strict'
+import test from 'node:test'
+
+import type { NextApiRequest, NextApiResponse } from 'next'
+
+import { createBadgeCacheControlHeader, resolveBadgeCacheMaxAge } from '../libs/badge-cache-control'
+import { serveBadgeNext } from '../libs/serve-badge-next'
+
+test('resolveBadgeCacheMaxAge clamps low values and invalid input', () => {
+  assert.equal(resolveBadgeCacheMaxAge('60', 3600), 300)
+  assert.equal(resolveBadgeCacheMaxAge('abc', 3600), 300)
+  assert.equal(resolveBadgeCacheMaxAge(undefined, 3600), 3600)
+})
+
+test('createBadgeCacheControlHeader uses the same value for client and CDN caches', () => {
+  assert.equal(
+    createBadgeCacheControlHeader(600),
+    'public, max-age=600, s-maxage=600, stale-while-revalidate=86400'
+  )
+})
+
+test('serveBadgeNext applies cache query to the response cache-control header', async () => {
+  const req = {
+    method: 'GET',
+    query: { cache: '600' },
+    headers: { host: 'badgen.net' },
+  } as unknown as NextApiRequest
+
+  const res = createMockNextApiResponse()
+
+  await serveBadgeNext(req, res, {
+    sMaxAge: 3600,
+    params: {
+      subject: 'build',
+      status: 'passing',
+      color: 'green',
+    }
+  })
+
+  assert.equal(
+    res.getHeader('cache-control'),
+    'public, max-age=600, s-maxage=600, stale-while-revalidate=86400'
+  )
+})
+
+test('serveBadgeNext preserves a preconfigured cache-control header', async () => {
+  const req = {
+    method: 'GET',
+    query: { cache: '600' },
+    headers: { host: 'badgen.net' },
+  } as unknown as NextApiRequest
+
+  const res = createMockNextApiResponse()
+  res.setHeader('cache-control', 'public, max-age=42')
+
+  await serveBadgeNext(req, res, {
+    params: {
+      subject: 'memo',
+      status: 'ready',
+      color: 'blue',
+    }
+  })
+
+  assert.equal(res.getHeader('cache-control'), 'public, max-age=42')
+})
+
+function createMockNextApiResponse (): NextApiResponse {
+  const headers = new Map<string, string>()
+
+  return {
+    statusCode: 200,
+    getHeader (name: string) {
+      return headers.get(name.toLowerCase())
+    },
+    setHeader (name: string, value: string) {
+      headers.set(name.toLowerCase(), value)
+      return this
+    },
+    send () {
+      return this
+    },
+    status (code: number) {
+      this.statusCode = code
+      return this
+    },
+    end () {
+      return this
+    }
+  } as unknown as NextApiResponse
+}
+
+[evidence record sha256:c439ef3b2847d9c593c0a60efd57c07edbebc054a1c94f45d2f4fbb9f261bded kind tool-call:read]
+step 3: calling local:qwen3.8:27b
+tool read <- {"path":"libs/badge-cache-control.ts"}
+tool read ok: const MIN_BADGE_CACHE_SECONDS = 300
+
+export function resolveBadgeCacheMaxAge (
+  cache: string | string[] | undefined,
+  fallbackSeconds: number
+): number {
+  const cacheValue = Array.isArray(cache) ? cache[0] : cache
+
+  if (cacheValue !== undefined) {
+    return fallbackSeconds
+  }
+
+  const parsedCacheSeconds = parseInt(String(cacheValue), 10)
+  if (Number.isNaN(parsedCacheSeconds)) {
+    return MIN_BADGE_CACHE_SECONDS
+  }
+
+  return Math.max(parsedCacheSeconds, MIN_BADGE_CACHE_SECONDS)
+}
+
+export function createBadgeCacheControlHeader (cacheSeconds: number): string {
+  return `public, max-age=${cacheSeconds}, s-maxage=${cacheSeconds}, stale-while-revalidate=86400`
+}
+
+[evidence record sha256:993f3269d2233c32cb469415fb01a79f2540d9625fa6b26647411b14a0780515 kind tool-call:read]
+step 4: calling local:qwen3.8:27b
+tool read <- {"path":"libs/serve-badge-next.ts"}
+tool read ok: import { badgen } from 'badgen'
+import icons from 'badgen-icons'
+import originalUrl from 'original-url'
+
+import { BadgenParams } from './types'
+import { createBadgeCacheControlHeader, resolveBadgeCacheMaxAge } from './badge-cache-control'
+
+import type { NextApiRequest, NextApiResponse } from 'next'
+
+type ServeBadgeOptions = {
+  code?: number
+  sMaxAge?: number,
+  params: BadgenParams
+}
+
+export async function serveBadgeNext (req: NextApiRequest, res: NextApiResponse, options: ServeBadgeOptions) {
+  const { code = 200, sMaxAge = 3600, params } = options
+  const { subject, status, color } = params
+
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    return res.status(204).end()
+  }
+
+  const query = req.query
+  const { list, scale, cache } = req.query
+  const iconMeta = await resolveIcon(query.icon, query.iconWidth)
+
+  const badgeParams = {
+    labelColor: resolveColor(query.labelColor, '555'),
+    subject: formatSVGText(typeof query.label === 'string' ? query.label : subject),
+    status: formatSVGText(transformStatus(status, { list })),
+    color: resolveColor(query.color || color, 'blue'),
+    style: resolveBadgeStyle(req),
+    icon: iconMeta.src,
+    iconWidth: iconMeta.width,
+    scale: parseFloat(String(scale)) || 1,
+  }
+
+  const badgeSVGString = badgen(badgeParams)
+
+  // Minimum s-maxage is set to 300s(5m)
+  if (res.getHeader('cache-control') === undefined) {
+    const cacheMaxAge = resolveBadgeCacheMaxAge(cache, sMaxAge)
+    res.setHeader('cache-control', createBadgeCacheControlHeader(cacheMaxAge))
+  }
+
+  res.setHeader('Content-Type', 'image/svg+xml;charset=utf-8')
+  res.setHeader('Access-Control-Allow-Origin', '*')
+
+  res.statusCode = code
+  res.send(badgeSVGString)
+}
+
+function resolveBadgeStyle (req: NextApiRequest, style?: string | string[]): 'flat' | 'classic' {
+  if (style === 'flat') {
+    return 'flat'
+  }
+
+  if (process.env.BADGE_STYLE === 'flat') {
+    return 'flat'
+  }
+
+  if (originalUrl(req).hostname.includes('flat')) {
+    return 'flat'
+  }
+
+  return 'classic'
+}
+
+function formatSVGText (text: string): string {
+  return text
+    .replace(/%2F/g, '/') // simple decode
+}
+
+function transformStatus (status: any, { list }): string {
+  status = String(status)
+
+  if (list !== undefined) {
+    if (list === '1' || list === '') list = '|' // compatible
+    status = status.replace(/,/g, ` ${list} `)
+  }
+
+  return status
+}
+
+function resolveColor (color: string | string[] | undefined, defaultColor: string): string {
+
+  if (color !== undefined) {
+    return String(color)
+  }
+
+  return defaultColor
+}
+
+type ResolvedIcon = {
+  src?: string
+  width?: number
+}
+
+async function resolveIcon (icon?: string | string[], width?: string | string[]): Promise<ResolvedIcon> {
+  if (typeof icon !== 'string' || !icon) {
+    return {}
+  }
+
+  const iconArg = icon
+
+  const widthNum = parseInt(String(width)) || 13
+
+  const builtinIcon = icons[iconArg]
+  if (builtinIcon) {
+    return {
+      src: builtinIcon.base64,
+      width: widthNum || builtinIcon.width
+    }
+  }
+
+  const { getSiIcon } = await import('./simple-icons')
+  const siIcon = await getSiIcon(iconArg)
+  if (siIcon) {
+    const svg = siIcon.svg.replace('<svg', '<svg fill="white"')
+    return {
+      src: `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`,
+      width: widthNum || 13
+    }
+  }
+
+  if (iconArg.startsWith('data:image/')) {
+    return { src: iconArg, width: widthNum }
+  }
+
+  return {}
+}
+
+[evidence record sha256:02c06df7427bf6c93db6900e14b165732b06512f728bea64ac86d2f6a476cbc3 kind tool-call:read]
+step 5: calling local:qwen3.8:27b
+tool declare_file_set <- {"files":"[\"libs/badge-cache-control.ts\"]"}
+tool declare_file_set ok: declared 1 file(s): libs/badge-cache-control.ts
+[evidence record sha256:67ef42f2cb545a3ab890850145beb99ccd0ee66ba61304b3b8951a00f35f42cf kind tool-call:declare_file_set]
+step 6: calling local:qwen3.8:27b
+tool edit <- {"path":"libs/badge-cache-control.ts","find":"  if (cacheValue !== undefined) {\n    return fallbackSeconds\n  }\n\n  const parsedCacheSeconds = parseInt(String(cacheValue), 10)\n  if (Number.isNaN(parsedCacheSeconds)) {\n    return MIN_BADGE_CACHE_SECONDS\n  }\n\n  return Math.max(parsedCacheSeconds, MIN_BADGE_CACHE_SECONDS)","replace":"  if (cacheValue === undefined) {\n    return fallbackSeconds\n  }\n\n  const parsedCacheSeconds = parseInt(String(cacheValue), 10)\n  if (Number.isNaN(parsedCacheSeconds)) {\n    return MIN_BADGE_CACHE_SECONDS\n  }\n\n  return Math.max(parsedCacheSeconds, MIN_BADGE_CACHE_SECONDS)"}
+tool edit ok: replaced 1 occurrence(s) in libs/badge-cache-control.ts
+[evidence record sha256:e4287c02b329dac4229ab9fe91395adfa76a332071d2b8efe9746aec85b837f8 kind tool-call:edit]
+step 7: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test 2>&1 | tail -15"}
+tool shell ok: exit code: 0
+stdout:
+✔ resolveBadgeCacheMaxAge clamps low values and invalid input (0.304583ms)
+✔ createBadgeCacheControlHeader uses the same value for client and CDN caches (0.051417ms)
+✔ serveBadgeNext applies cache query to the response cache-control header (1.985915ms)
+✔ serveBadgeNext preserves a preconfigured cache-control header (1.178291ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 204.850377
+[evidence record sha256:164accaa0b75baa27a2bf6dae9f7d68521c05441655ba6f949c0e4dcf639c73c kind tool-call:shell]
+step 8: calling local:qwen3.8:27b
+tool claim <- {"predicate":"facts.exitCode == 0 && facts.stdout.includes(\"pass 4\") && facts.stdout.includes(\"fail 0\")","record":"sha256:164accaa0b75baa27a2bf6dae9f7d68521c05441655ba6f949c0e4dcf639c73c","recordKind":"tool-call:shell","narrative":"npm run --silent test passes 4/4 after the fix"}
+tool claim ok: UNVERIFIED (predicate-unparseable): expected one of == != >= <= > < after "facts.stdout.includes"
+[evidence record sha256:bd468fcaabccb1358978134eeecf1245ccb51e78a0b696341adf56c50c930a7a kind tool-call:claim]
+step 9: calling local:qwen3.8:27b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"sha256:164accaa0b75baa27a2bf6dae9f7d68521c05441655ba6f949c0e4dcf639c73c","recordKind":"tool-call:shell","narrative":"npm run --silent test exited 0; output shows pass 4, fail 0"}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:4f2a571b85fbdee2531de1633ddb26ebc5fbb6b537aae32acb72b310dacb1fa1 kind tool-call:claim]
+step 10: calling local:qwen3.8:27b
+claim (unverified): Done. Fixed in `libs/badge-cache-control.ts`:
+
+**Defect:** `resolveBadgeCacheMaxAge` had an inverted early-return — `if (cacheValue !== undefined) return fallbackSeconds`. So any `cache` query value (e.g. `cache=600`) returned the 3600s fallback, and an *absent* value fell through to `parseInt("undefined")`, which is NaN, returning the 300s minimum.
+
+**Fix:** flipped the condition to `if (cacheValue === undefined)`, so an absent `cache` uses the fallback, and a present value is parsed and clamped to the 300s minimum — matching the spec in `test/badge-cache-control.test.ts`.
+
+`npm run --silent test` now passes 4/4, and no tests were touched.
+stopped: completed after 10 steps, 52890 tokens
+gate typecheck not-applicable: package.json declares no typecheck script [evidence record sha256:2937696362f6458fe282589c221bc4c8fee1e95f3a2fcdf7bdda33a9c257023a]
+gate lint passed: the command exited 0 [evidence record sha256:c2e69d4443312bc1f774fce588404fde782048ce3ad9f11ee78401148662450c]
+gate format not-applicable: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging [evidence record sha256:9b21ee9385ec49965029e8ae457e7fa57f61ec2cc75ef84219ddfa2809af47cb]
+gate tests passed: 4 collected, 4 passed, 0 failed, 0 skipped (exit 0) [evidence record sha256:c787248257e8649f1d3c1254595f9947ad88166fe30a9945b872ded25d52eb19]
+gate file-set passed: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited [evidence record sha256:8ae0fe53833b5343b4e4e6fef888c8b220844fd9bac2835c180d3f5a38716482]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:04cbfbf05767e77d5767fb5772e9a7e62cec4ae74d421e013fe257c5eccb892c]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:1205c218e3298f2b2a033cfedf23b7ee3ea0c6b62794e4df970e745e5f7a0cb4]
+gate behaviour-probe passed: 0 changed function(s) still answer to their inputs. [evidence record sha256:6c58dc822ecce8f4da2f5c78e5027adb86eef9574d10c896a93cc27d285aa5df]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 1 added line(s) [evidence record sha256:ede4b1a546ba6f4583c33140cd1c857444d0095fb5d2eff66db7030505370e36]
+
+gates:
+  n/a      typecheck: package.json declares no typecheck script
+  passed   lint: the command exited 0
+  n/a      format: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging
+  passed   tests: 4 collected, 4 passed, 0 failed, 0 skipped (exit 0)
+  passed   file-set: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited
+  passed   placeholder: no placeholder marker was introduced by this change
+  passed   secret-scan: no known credential pattern appears in the added lines
+  passed   behaviour-probe: 0 changed function(s) still answer to their inputs.
+  passed   diff-budget (advisory): within budget: 1 file(s) and 1 added line(s)
+
+routing reward: 0.634 (green with 0 retries, 69s, and $0.0000)
+[signing] the Secret Service keyring would not take a new key (secret-tool store failed: ), so the bundle is signed with a per-run key
+
+evidence bundle: /out/bundle
+verify it anywhere: node /out/bundle/verify.mjs /out/bundle
+review it: open /out/bundle/review.html
+what this run produced
+
+  the page a person reads: /out/bundle/review.html
+  the bundle a stranger verifies: /out/bundle
+  its own verifier, needing nothing installed: node /out/bundle/verify.mjs /out/bundle
+  the chain every record is on: /out/bundle/ledger.jsonl
+
+  57 records. The harness verified 1 claim(s) and refused 1.
+  bundle verified in this run: verify.mjs exited 0
