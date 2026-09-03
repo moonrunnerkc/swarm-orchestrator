@@ -1,0 +1,9 @@
+{
+  "fullName": "pallets/flask",
+  "accepted": false,
+  "reason": "suite at base: build-failure (exit 1)",
+  "judgedAt": "2026-09-02T23:29:39.587Z",
+  "commit": "d318b683471101618febed18996405ad26462110",
+  "lines": 14085,
+  "suiteTail": "nc(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nsrc/flask/app.py:1078: in ensure_sync\n    return self.async_to_sync(func)\n           ^^^^^^^^^^^^^^^^^^^^^^^^\n_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ \n\nself = <Flask 'flask_test'>\nfunc = <function TestStreaming.test_async_view.<locals>.index at 0xed6ea33bd1c0>\n\n    def async_to_sync(\n        self, func: t.Callable[..., t.Coroutine[t.Any, t.Any, t.Any]]\n    ) -> t.Callable[..., t.Any]:\n        \"\"\"Return a sync function that will run the coroutine function.\n    \n        .. code-block:: python\n    \n            result = app.async_to_sync(func)(*args, **kwargs)\n    \n        Override this method to change how the app converts async code\n        to be synchronously callable.\n    \n        .. versionadded:: 2.0\n        \"\"\"\n        try:\n            from asgiref.sync import async_to_sync as asgiref_async_to_sync\n        except ImportError:\n>           raise RuntimeError(\n                \"Install Flask with the 'async' extra in order to use async views.\"\n            ) from None\nE           RuntimeError: Install Flask with the 'async' extra in order to use async views.\n\nsrc/flask/app.py:1099: RuntimeError\n=========================== short test summary info ============================\nFAILED tests/test_helpers.py::TestStreaming::test_async_view - RuntimeError: ...\n1 failed, 482 passed, 4 skipped in 0.79s\n"
+}
