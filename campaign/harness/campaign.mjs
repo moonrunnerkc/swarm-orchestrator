@@ -570,7 +570,11 @@ async function rejudge(options) {
       ? supersedable(decisions, options.reason)
       : supersedable(decisions, "").filter((decision) => {
           const detail = readJson(join(directories.selection, "rejections", `${slugOf(decision.fullName)}.json`), null);
-          return detail !== null && `${detail.installTail ?? ""}\n${detail.suiteTail ?? ""}`.includes(options.marker);
+          // Case-folded: go and pip print "no space left on device", tar prints "No space".
+          return (
+            detail !== null &&
+            `${detail.installTail ?? ""}\n${detail.suiteTail ?? ""}`.toLowerCase().includes(options.marker.toLowerCase())
+          );
         });
   log(`${standing.length} standing rejection(s) ${options.marker === undefined ? `begin with "${options.reason}"` : `printed "${options.marker}"`}`);
   for (const earlier of standing) {
