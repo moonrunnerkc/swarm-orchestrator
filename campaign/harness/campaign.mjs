@@ -527,6 +527,17 @@ async function walk(options) {
 
   try {
     const outcome = await walkCandidates(pool.byLanguage, judge);
+    // The settled selection is the walk's own answer: accepted decisions taken in the sealed
+    // order until each quota is met. A re-judgement appends acceptances without consulting
+    // the quotas, so a language can hold more accepted decisions than its quota and the ones
+    // past it, later in the order, are not in the corpus. Written whole here so the manifest
+    // is the quota applied to the record, and not the record as it accumulated.
+    writeJson(files.repos, outcome.accepted);
+    writeJson(files.manifest, {
+      sealedCriteria: "../criteria.md",
+      writtenAt: nowIso(),
+      seeds: outcome.accepted.map((repo) => repo.seed),
+    });
     log(`walk complete: ${outcome.accepted.length} accepted, ${outcome.decisions.length} decisions`);
     for (const [language, short] of Object.entries(outcome.shortfalls)) {
       log(`  ${language} is short by ${short}: the candidate pool ran out`);
