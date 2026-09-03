@@ -32,7 +32,13 @@ import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 
 import { armNamed, armNames } from "./arms.mjs";
-import { candidateFrom, orderCandidates, supersedable, walkCandidates } from "./candidates.mjs";
+import {
+  candidateFrom,
+  orderCandidates,
+  supersedable,
+  supersedableBetween,
+  walkCandidates,
+} from "./candidates.mjs";
 import {
   armRunArgv,
   buildImageArgv,
@@ -546,10 +552,10 @@ async function walk(options) {
  * counts when it resumes, exactly as if it had been accepted in its place in the order.
  */
 async function rejudge(options) {
-  if (options.reason === undefined && options.marker === undefined) {
+  if (options.reason === undefined && options.marker === undefined && options.between === undefined) {
     throw new DriverError(
-      "rejudge needs the reason to supersede, or a marker to find in the rejection tails",
-      '--reason "install failed: go mod download" or --marker "No space left on device"',
+      "rejudge needs the reason to supersede, a marker to find in the rejection tails, or a window",
+      '--reason "install failed: go mod download", --marker "no space left on device", or --between <from>,<to>',
     );
   }
   if (pgrepWalk()) {
@@ -565,8 +571,11 @@ async function rejudge(options) {
   const repos = readJson(files.repos, []);
   // A marker selects by what the rejected run printed rather than by the rule that rejected
   // it: a disk that filled mid-walk fails installs and suites alike, and the tails say so.
+  const window = options.between === undefined ? null : options.between.split(",");
   const standing =
-    options.marker === undefined
+    window !== null
+      ? supersedableBetween(decisions, window[0], window[1])
+      : options.marker === undefined
       ? supersedable(decisions, options.reason)
       : supersedable(decisions, "").filter((decision) => {
           const detail = readJson(join(directories.selection, "rejections", `${slugOf(decision.fullName)}.json`), null);
@@ -576,7 +585,15 @@ async function rejudge(options) {
             `${detail.installTail ?? ""}\n${detail.suiteTail ?? ""}`.toLowerCase().includes(options.marker.toLowerCase())
           );
         });
-  log(`${standing.length} standing rejection(s) ${options.marker === undefined ? `begin with "${options.reason}"` : `printed "${options.marker}"`}`);
+  log(
+    `${standing.length} standing rejection(s) ${
+      window !== null
+        ? `were judged in a container between ${window[0]} and ${window[1]}`
+        : options.marker === undefined
+          ? `begin with "${options.reason}"`
+          : `printed "${options.marker}"`
+    }`,
+  );
   for (const earlier of standing) {
     const candidate = (pool.byLanguage[earlier.language] ?? []).find((entry) => entry.fullName === earlier.fullName);
     if (candidate === undefined) {
@@ -587,7 +604,7 @@ async function rejudge(options) {
     const { attempts, installTail, suiteTail, ...compact } = verdict;
     appendFileSync(
       files.decisions,
-      `${JSON.stringify({ fullName: candidate.fullName, language: candidate.language, ...compact, supersedes: earlier.judgedAt ?? null, supersededReason: earlier.reason, supersededBecause: options.marker ?? options.reason })}\n`,
+      `${JSON.stringify({ fullName: candidate.fullName, language: candidate.language, ...compact, supersedes: earlier.judgedAt ?? null, supersededReason: earlier.reason, supersededBecause: options.between ?? options.marker ?? options.reason })}\n`,
     );
     if (attempts !== undefined || installTail !== undefined || suiteTail !== undefined) {
       writeJson(join(directories.selection, "rejections", `${slugOf(candidate.fullName)}.json`), { fullName: candidate.fullName, ...verdict });
@@ -802,7 +819,7 @@ const HELP = `campaign driver
   node campaign/harness/campaign.mjs setup [--tarball <path>]
   node campaign/harness/campaign.mjs search
   node campaign/harness/campaign.mjs walk [--limit <n>]
-  node campaign/harness/campaign.mjs rejudge --reason "<prefix of the rejection reason>" | --marker "<text in the rejected run's output>"
+  node campaign/harness/campaign.mjs rejudge --reason "<prefix>" | --marker "<text in the run's output>" | --between <from>,<to>
   node campaign/harness/campaign.mjs run --arm <${armNames.join("|")}> [--limit <n>] [--max-steps <n>] [--attempts <n>] [--timeout-minutes <n>]
   node campaign/harness/campaign.mjs report
 `;

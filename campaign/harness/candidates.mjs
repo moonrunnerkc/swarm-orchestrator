@@ -94,3 +94,23 @@ export function supersedable(decisions, reasonPrefix) {
     (decision) => decision.accepted !== true && typeof decision.reason === "string" && decision.reason.startsWith(reasonPrefix),
   );
 }
+
+/** The rules whose verdict depends on a container run, and so on the machine's state. */
+const containerDependent = /^(install failed|suite at base|no seed within|clone failed)/;
+
+/**
+ * The standing rejections a container could have caused between two instants, whatever
+ * they printed. A machine fault that does not always announce itself, a disk that filled,
+ * is bounded by when it held rather than by the text it left, so every container-dependent
+ * rejection in the window is judged again, and one that was genuine is rejected again with
+ * a later decision saying so.
+ */
+export function supersedableBetween(decisions, from, to) {
+  return supersedable(decisions, "").filter(
+    (decision) =>
+      typeof decision.judgedAt === "string" &&
+      decision.judgedAt >= from &&
+      decision.judgedAt <= to &&
+      containerDependent.test(decision.reason),
+  );
+}

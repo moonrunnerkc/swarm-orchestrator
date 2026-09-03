@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { candidateFrom, orderCandidates, supersedable, walkCandidates } from "./candidates.mjs";
+import {
+  candidateFrom,
+  orderCandidates,
+  supersedable,
+  supersedableBetween,
+  walkCandidates,
+} from "./candidates.mjs";
 
 function candidate(fullName, stars, language = "Go") {
   return { fullName, stars, language };
@@ -129,5 +135,22 @@ describe("which decisions a later judgement may supersede", () => {
     ];
 
     expect(supersedable(decisions, "install failed: go mod download").map((entry) => entry.fullName)).toEqual(["a/4"]);
+  });
+});
+
+describe("which decisions a machine fault in a window may have caused", () => {
+  it("names the standing container-dependent rejections judged inside the window, and no other", () => {
+    const decisions = [
+      { fullName: "a/1", accepted: false, reason: "install failed: pip (exit 1)", judgedAt: "2026-09-03T00:50:00Z" },
+      { fullName: "a/2", accepted: false, reason: "lines: 40000", judgedAt: "2026-09-03T00:51:00Z" },
+      { fullName: "a/3", accepted: false, reason: "suite at base: build-failure (exit 2)", judgedAt: "2026-09-03T00:30:00Z" },
+      { fullName: "a/4", accepted: false, reason: "no seed within 12 attempts (12 tried)", judgedAt: "2026-09-03T01:00:00Z" },
+      { fullName: "a/5", accepted: true, judgedAt: "2026-09-03T00:55:00Z" },
+      { fullName: "a/1", accepted: false, reason: "install failed: pip (exit 1)", judgedAt: "2026-09-03T01:45:00Z" },
+    ];
+
+    expect(
+      supersedableBetween(decisions, "2026-09-03T00:40:00Z", "2026-09-03T01:33:00Z").map((entry) => entry.fullName),
+    ).toEqual(["a/4"]);
   });
 });

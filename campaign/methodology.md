@@ -175,3 +175,15 @@ naming the marker. The earlier decisions stand in the record beside the later on
 else was judged between the disk filling and the walk being stopped that does not carry the
 marker, and every decision made while the disk was full is one of those sixteen or a rejection
 on a rule that needs no container, size or lines or a manifest.
+
+## Correction, 2026-09-03 01:50 UTC: the window, not the marker
+
+The note above said every decision made while the disk was full either carried the marker or
+needed no container. That was wrong: thirty-one container-dependent rejections were judged
+between 00:40 and 01:33 UTC, and only sixteen printed the text, because a tail keeps the last
+lines of a run and a disk that fills early in an install leaves other words at the end. A
+fault bounded by time is re-judged by time. Every container-dependent rejection judged in
+that window, install, suite, seed and clone failures, is judged again with
+`rejudge --between`, and one that was genuine is rejected again with a later decision saying
+so. The sixteen judged again by marker before this note are not judged a third time: their
+standing decision is the later one.
