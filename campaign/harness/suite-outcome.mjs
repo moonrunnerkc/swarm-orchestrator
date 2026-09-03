@@ -10,7 +10,9 @@ const buildFailureMarkers = {
   node: [/SyntaxError/, /Cannot find module/, /ReferenceError/, /error TS\d+/, /TS\d{4}:/],
   python: [/ImportError/, /ModuleNotFoundError/, /SyntaxError/, /IndentationError/, /INTERNALERROR/],
   go: [/\[build failed\]/, /cannot find package/, /^# .+\n.+: (undefined|syntax error)/m, /: undefined:/],
-  rust: [/^error(\[E\d+\])?:/m, /could not compile/],
+  // cargo ends a genuine test failure with "error: test failed, to rerun pass ...", so a
+  // bare "error:" is not a build marker here: only a compiler diagnostic or a failed build is.
+  rust: [/^error\[E\d+\]/m, /could not compile/, /^error: could not/m, /^error: failed to/m],
 };
 
 const testFailureMarkers = {

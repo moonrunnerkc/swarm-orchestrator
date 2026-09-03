@@ -14,6 +14,14 @@ describe("classifying a suite run", () => {
     expect(classifySuiteRun("rust", 101, "test result: FAILED. 1 passed; 1 failed\n")).toBe(
       "test-failure",
     );
+    // What cargo prints after a failing test target, which is not a build failure.
+    expect(
+      classifySuiteRun(
+        "rust",
+        101,
+        "test clamp::above ... FAILED\n\ntest result: FAILED. 3 passed; 1 failed\n\nerror: test failed, to rerun pass `--lib`\n",
+      ),
+    ).toBe("test-failure");
   });
 
   it("reads a tree the tests could not run over as a build failure, ahead of any test marker", () => {

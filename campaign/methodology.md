@@ -187,3 +187,16 @@ that window, install, suite, seed and clone failures, is judged again with
 `rejudge --between`, and one that was genuine is rejected again with a later decision saying
 so. The sixteen judged again by marker before this note are not judged a third time: their
 standing decision is the later one.
+
+## Amendment, 2026-09-03 02:35 UTC: cargo's closing line is not a build failure
+
+Appended, as above. `cargo test` ends a genuine test failure with `error: test failed, to
+rerun pass ...`, and the classifier's Rust build marker matched any line beginning `error:`,
+so every Rust seed that made a test fail was read as a build failure and refused, and no Rust
+candidate could be accepted at all: 109 judged, none accepted, five of them refused as finding
+no seed in twelve attempts. The marker now names a compiler diagnostic or a failed build and
+not cargo's closing line, with a test carrying that line. The five Rust candidates refused for
+want of a seed are judged again with `rejudge --reason "no seed within" --language Rust`,
+narrowed to the one pool whose runner the defect could touch, and the walk resumes from there.
+A Rust candidate rejected because its suite failed at base is not affected: it is rejected
+under either reading.

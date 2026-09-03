@@ -583,7 +583,7 @@ async function rejudge(options) {
   // A marker selects by what the rejected run printed rather than by the rule that rejected
   // it: a disk that filled mid-walk fails installs and suites alike, and the tails say so.
   const window = options.between === undefined ? null : options.between.split(",");
-  const standing =
+  const selected =
     window !== null
       ? supersedableBetween(decisions, window[0], window[1])
       : options.marker === undefined
@@ -596,8 +596,15 @@ async function rejudge(options) {
             `${detail.installTail ?? ""}\n${detail.suiteTail ?? ""}`.toLowerCase().includes(options.marker.toLowerCase())
           );
         });
+  // `--language` narrows any selector to one pool, for a defect that only that pool's runner
+  // could show: what a classifier read wrongly in cargo's output is not worth re-running the
+  // node and python pools for.
+  const standing =
+    options.language === undefined
+      ? selected
+      : selected.filter((decision) => decision.language === options.language);
   log(
-    `${standing.length} standing rejection(s) ${
+    `${standing.length} standing rejection(s)${options.language === undefined ? "" : ` in ${options.language}`} ${
       window !== null
         ? `were judged in a container between ${window[0]} and ${window[1]}`
         : options.marker === undefined
@@ -830,7 +837,7 @@ const HELP = `campaign driver
   node campaign/harness/campaign.mjs setup [--tarball <path>]
   node campaign/harness/campaign.mjs search
   node campaign/harness/campaign.mjs walk [--limit <n>]
-  node campaign/harness/campaign.mjs rejudge --reason "<prefix>" | --marker "<text in the run's output>" | --between <from>,<to>
+  node campaign/harness/campaign.mjs rejudge --reason "<prefix>" | --marker "<text in the run's output>" | --between <from>,<to> [--language <name>]
   node campaign/harness/campaign.mjs run --arm <${armNames.join("|")}> [--limit <n>] [--max-steps <n>] [--attempts <n>] [--timeout-minutes <n>]
   node campaign/harness/campaign.mjs report
 `;
