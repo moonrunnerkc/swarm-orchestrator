@@ -344,6 +344,21 @@ the rule above it means a new tarball, a new setup, and both preflights again; t
 results under the superseded tarball were removed rather than kept beside runs of a
 different CLI. The digest below is the one the arms ran under.
 
+**Preflight, 2026-09-04 14:01 to 14:35 UTC, under the tarball of commit `2ba91651`.** The
+same seed on `local-mlx`, and this time the run ended not fixed after exactly 33.0 minutes
+with a verified bundle of 76 records: the wall budget, demonstrated. Its ledger tells the
+shape. Nine steps in the first minute, then three model calls in a row that each streamed for
+eight minutes and ended without a finish reason, which the retry policy retried twice, so the
+loop stopped as a model error at 24.7 minutes; the gates ran, the tests gate failed, one
+resolve attempt began, and its third call was aborted at 33.0 minutes by the budget, after
+which the gates ran once more, the ratchet decided, the escalation was recorded and the
+bundle written. Under the first campaign's CLI this run was killed at 45 minutes with
+nothing. The eight-minute failing streams are the backend's, not the tree's; what the tree
+now does with them is bound them and write down what happened. That the retry policy counts
+attempts rather than minutes, and so spent sixteen more minutes retrying a call that had just
+spent eight failing, is recorded as debt rather than changed mid-campaign. All four preflight
+checks held.
+
 **What is expected, stated so it can fail.** No bundle-less run on either arm, because a
 run that exhausts its wall budget on the fixed CLI ends as a wall-time stop with its gates
 run and its bundle written; any such run is a defect to root-cause, not a number. The
