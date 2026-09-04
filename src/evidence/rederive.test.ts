@@ -224,12 +224,13 @@ describe("re-deriving a bundle the real engine produced", () => {
     const baseRef = (await run("git", ["rev-parse", "HEAD"], { cwd: workspace })).stdout.trim();
     const fileSet = createFileSetRegistry(evidence);
     await fileSet.declare(["clamp.mjs"], "test");
-    const assembled = await assembleGateSet({ workspaceRoot: workspace, baseRef });
+    const assembled = await assembleGateSet({ workspaceRoot: workspace, criteriaRef: baseRef });
     await sealGateSet(
       evidence,
       describeGateSet({
         detection: assembled.detection,
         gates: assembled.gates,
+        criteriaRef: baseRef,
         budgets: defaultDiffBudget,
         attemptCap: 0,
       }),

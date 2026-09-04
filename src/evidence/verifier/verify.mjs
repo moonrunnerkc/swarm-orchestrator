@@ -427,13 +427,35 @@ export function sealConformance(records, payloads) {
         `record ${sequence} read ${payload.gateId} with the ${payload.parser} rule; the seal declared ${declared.parser}`,
       );
     }
+    // The command is what was run, and a seal that names one is a promise about it: a gate
+    // assembled from a manifest the run rewrote would carry the same id and a different command.
+    if (
+      declared.command !== undefined &&
+      payload.command !== undefined &&
+      declared.command !== payload.command
+    ) {
+      problems.push(
+        `record ${sequence} ran ${payload.gateId} as \`${payload.command}\`; the seal declared \`${declared.command}\``,
+      );
+    }
   }
-  const finalAttempt = Math.max(-1, ...runs.map((entry) => entry.payload.attempt ?? 0));
+  // The final cycle is the run of gate-run records at the end of the chain sharing one attempt
+  // number, which is the last cycle whatever came before it: a session's last turn, or a
+  // single run's fixed point. Reading the highest attempt number instead would let an earlier
+  // turn's retry stand in for a later turn that dropped a gate.
+  const finalCycle = [];
+  for (let index = runs.length - 1; index >= 0; index -= 1) {
+    const entry = runs[index];
+    if (
+      finalCycle.length > 0 &&
+      (entry.payload.attempt ?? 0) !== (finalCycle[0].payload.attempt ?? 0)
+    ) {
+      break;
+    }
+    finalCycle.unshift(entry);
+  }
   for (const gate of sealed.gates) {
-    const ranFinally = runs.some(
-      (entry) => entry.payload.gateId === gate.id && (entry.payload.attempt ?? 0) === finalAttempt,
-    );
-    if (!ranFinally) {
+    if (!finalCycle.some((entry) => entry.payload.gateId === gate.id)) {
       problems.push(`sealed gate ${gate.id} did not run in the final attempt`);
     }
   }

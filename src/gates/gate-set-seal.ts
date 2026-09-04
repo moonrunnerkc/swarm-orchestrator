@@ -14,6 +14,8 @@ import type { ProjectDetection } from "./project-type.ts";
  * what it promised.
  */
 export const gateSetSealSchema = z.object({
+  /** The commit whose manifests these gates were assembled from, so a reader can re-derive them. */
+  criteriaRef: z.string().min(1),
   detectedTypes: z.array(z.string()),
   gates: z.array(
     z.object({
@@ -46,10 +48,12 @@ export const ratchetArmNames = [
 export function describeGateSet(input: {
   readonly detection: ProjectDetection;
   readonly gates: readonly GateDefinition[];
+  readonly criteriaRef: string;
   readonly budgets: DiffBudget;
   readonly attemptCap: number;
 }): GateSetSeal {
   return gateSetSealSchema.parse({
+    criteriaRef: input.criteriaRef,
     detectedTypes: [...input.detection.types],
     gates: input.gates.map((gate) => ({
       id: gate.id,

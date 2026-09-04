@@ -49,16 +49,15 @@ import type { AutoResolveOutcome } from "./gates/auto-resolve.ts";
 import type { BondOutcome } from "./gates/bond-runner.ts";
 import type { GateSetOptions } from "./gates/default-gates.ts";
 import {
-  assembleGateSet,
   defaultDiffBudget,
   runGatesEngine,
+  sealAssembledCriteria,
   vacuousBlockingBonds,
 } from "./gates/engine.ts";
 import { describeEscalation } from "./gates/escalation.ts";
 import { createFileSetRegistry } from "./gates/file-set.ts";
 import type { DiffBudget } from "./gates/gate-definition.ts";
 import { citedRecords, type GateCycle, outstandingJustifications } from "./gates/gate-runner.ts";
-import { describeGateSet, sealGateSet } from "./gates/gate-set-seal.ts";
 import { resolveBaseCommit } from "./gates/git-workspace.ts";
 import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { summarizeRatchet } from "./gates/ratchet-summary.ts";
@@ -415,6 +414,20 @@ async function session(options: SessionCommand): Promise<number> {
   // Resolved once, here, before any gate reads it. A symbolic ref is spent at the moment each
   // base-side question is asked, and `git` is on the shell allowlist.
   let baseRef = await resolveBaseCommit(options.workspace, options.baseRef);
+  // The commit the session started on is what every turn is measured by, and it is sealed
+  // once, before the first turn. The base moves to the end of each turn so the next is not
+  // charged with the last one's diff, and a turn that read its gate commands from there would
+  // run whatever the previous turn's model wrote into the manifest.
+  const criteriaRef = baseRef;
+  const sessionGateOptions = gateOptionsFrom(settings);
+  const criteriaSealed = await sealAssembledCriteria({
+    workspaceRoot: options.workspace,
+    criteriaRef,
+    ...(sessionGateOptions === undefined ? {} : { gateOptions: sessionGateOptions }),
+    evidence,
+    budgets: diffBudgetFrom(settings) ?? defaultDiffBudget,
+    attemptCap: settings.attempts,
+  });
   let history: readonly ConversationMessage[] = [];
   let turns = 0;
   let lastGreen = true;
@@ -432,6 +445,8 @@ async function session(options: SessionCommand): Promise<number> {
         task,
         history,
         baseRef,
+        criteriaRef,
+        criteriaSealed,
         options,
         settings,
         evidence,
@@ -476,6 +491,8 @@ async function runOneTurn(input: {
   readonly task: string;
   readonly history: readonly ConversationMessage[];
   readonly baseRef: string;
+  readonly criteriaRef: string;
+  readonly criteriaSealed: boolean;
   readonly options: SessionCommand;
   readonly settings: ResolvedSettings;
   readonly evidence: EvidenceRecorder;
@@ -538,6 +555,8 @@ async function runOneTurn(input: {
       task,
       workspace: options.workspace,
       baseRef: input.baseRef,
+      criteriaRef: input.criteriaRef,
+      criteriaSealed: input.criteriaSealed,
       maxSteps: settings.maxSteps,
       attempts: settings.attempts,
       ...(settings.maxWallMinutes === null
@@ -1112,20 +1131,14 @@ async function gates(options: GatesCommand): Promise<number> {
   const diffBudget = diffBudgetFrom(settings);
   // Sealed before anything runs, exactly as a task run seals its criteria before the loop, so
   // a gates-only bundle is held to the same conformance check by the verifier.
-  const assembled = await assembleGateSet({
+  const criteriaSealed = await sealAssembledCriteria({
     workspaceRoot: options.workspace,
-    baseRef,
+    criteriaRef: baseRef,
     ...(gateOptions === undefined ? {} : { gateOptions }),
-  });
-  await sealGateSet(
     evidence,
-    describeGateSet({
-      detection: assembled.detection,
-      gates: assembled.gates,
-      budgets: diffBudget ?? defaultDiffBudget,
-      attemptCap: 0,
-    }),
-  );
+    budgets: diffBudget ?? defaultDiffBudget,
+    attemptCap: 0,
+  });
   const run = await runGatesEngine({
     workspaceRoot: options.workspace,
     baseRef,
@@ -1135,7 +1148,7 @@ async function gates(options: GatesCommand): Promise<number> {
     emit: () => {},
     // No retries are offered, so none are spent: this command measures and reports.
     cap: 0,
-    criteriaSealed: true,
+    criteriaSealed,
     resolve: () => Promise.reject(new Error("swarm gates reports; it does not fix")),
     ...(gateOptions === undefined ? {} : { gateOptions }),
     ...(diffBudget === undefined ? {} : { budgets: diffBudget }),
