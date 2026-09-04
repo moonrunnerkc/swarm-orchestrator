@@ -1,0 +1,2664 @@
+{
+  "claims": [
+    {
+      "sequence": 212,
+      "timestamp": 1788487183222,
+      "actor": "local:qwen3.6:35b-a3b",
+      "predicate": "\"View3D >= Sidebar > MCP for Blender\" in open(\"src/blender_mcp/bundled/addon.py\").read() and \"View3D > Sidebar > MCP for Blender\" not in open(\"src/blender_mcp/bundled/addon.py\").read()",
+      "record": "sha256:315c012d1319ac7a4ba07cac80e16a376ea4b6e20e3e39f2fff42522edaa236d",
+      "recordKind": "tool-call:edit",
+      "narrative": "Edited bundled/addon.py to match root addon.py bl_info location field, fixing the divergence that caused test_root_and_bundled_addon_in_sync to fail.",
+      "evaluation": {
+        "verdict": "unverified",
+        "reason": "predicate-unparseable",
+        "detail": "\".\" is not valid in a predicate"
+      }
+    },
+    {
+      "sequence": 216,
+      "timestamp": 1788487186638,
+      "actor": "local:qwen3.6:35b-a3b",
+      "predicate": "facts.exitCode == 0",
+      "record": "sha256:a153f4dbd8c1cb3e3033b3c252c6f217db5d37ced3d1caab289ba68a6d07171e",
+      "recordKind": "gate-run:tests",
+      "narrative": "I edited src/blender_mcp/bundled/addon.py to synchronize it with the root addon.py. The bl_info['location'] field differs: root had 'View3D >= Sidebar > MCP for Blender' while bundled had 'View3D > Sidebar > MCP for Blender'. The fix is the edit above. Waiting for quality gate re-run.",
+      "evaluation": {
+        "verdict": "unverified",
+        "reason": "path-not-found",
+        "detail": "facts.exitCode does not exist in the cited record"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "claimSequence": 212,
+      "record": "sha256:315c012d1319ac7a4ba07cac80e16a376ea4b6e20e3e39f2fff42522edaa236d",
+      "resolved": true
+    },
+    {
+      "claimSequence": 216,
+      "record": "sha256:a153f4dbd8c1cb3e3033b3c252c6f217db5d37ced3d1caab289ba68a6d07171e",
+      "resolved": true
+    }
+  ],
+  "evidence": [
+    {
+      "digest": "sha256:ed8d0dd343c328a5beb144d93b253f0b26a9bc3b9398286d4f5f7afa6277bec3",
+      "sequence": 0,
+      "type": "local-endpoint",
+      "actor": "harness",
+      "timestamp": 1788485878847,
+      "provenance": [
+        "user"
+      ],
+      "summary": "local models served from http://campaign-backend-11434:11434/v1, pinned by flag"
+    },
+    {
+      "digest": "sha256:2a301fa185aafab9881ac22219521b8cb1eae35ecae8cbfaa6424394c27674d4",
+      "sequence": 1,
+      "type": "calibration-preflight",
+      "actor": "harness",
+      "timestamp": 1788485878866,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "calibration-preflight"
+    },
+    {
+      "digest": "sha256:2cb779a423f61142fead0b35d76c58dea997a37cc463fe6577633b8c35f22f6e",
+      "sequence": 2,
+      "type": "session-started",
+      "actor": "harness",
+      "timestamp": 1788485878872,
+      "provenance": [
+        "user"
+      ],
+      "summary": "task: The test suite of this repository fails. Run `pytest -q` to see which tests fail and why. Find the defect in the source that makes them fail and fix it, so that the same command passes. Do not edit, delete, skip or weaken any test: the tests are the specification, and a change to them is not a fix. If you cannot find the defect, leave the tree as it is and reply NOT-DONE with what you checked and what you ruled out."
+    },
+    {
+      "digest": "sha256:5f738e4e666ecc35ffeb86910b82ea736bc224ffa9573cd0e2d4312f87ea5a75",
+      "sequence": 3,
+      "type": "gate-set-sealed",
+      "actor": "harness",
+      "timestamp": 1788485878918,
+      "provenance": [
+        "user"
+      ],
+      "summary": "gate-set-sealed"
+    },
+    {
+      "digest": "sha256:c49228406eb1253db10b8fa0d666eaac071916b3ffc030f232d931e36a4fe651",
+      "sequence": 4,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788485880239,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 1 of local:qwen3.6:35b-a3b, 137 output tokens"
+    },
+    {
+      "digest": "sha256:e4d54d46a576ac7b42a3652d7c2942e10980aa2a8fbc33af81ad8f753c898499",
+      "sequence": 5,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485880241,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested list: list requested"
+    },
+    {
+      "digest": "sha256:254982a7909a8ae1b7c108faafef9ed91b9de5a4510508c1b29416cbdebfce46",
+      "sequence": 6,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485880244,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed list: 173 bytes returned"
+    },
+    {
+      "digest": "sha256:af4ee7d756f84fb269686afcc068e6a546526b74af31ca9ef3a53c33f0947714",
+      "sequence": 7,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485880246,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested shell: shell requested"
+    },
+    {
+      "digest": "sha256:ccce5f6abed26a938a4e1c9d0c162d68783d05d8ce46c20e64f3d14956a0bf7a",
+      "sequence": 8,
+      "type": "confirmation",
+      "actor": "harness",
+      "timestamp": 1788485880248,
+      "provenance": [
+        "user"
+      ],
+      "summary": "declined shell: pytest -q 2>&1"
+    },
+    {
+      "digest": "sha256:8a611c9de47fb812abe88d685d118a09a3a998f41fcf6bbdaf756f3a402005fe",
+      "sequence": 9,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485880249,
+      "provenance": [
+        "model"
+      ],
+      "summary": "denied shell: \"pytest -q 2>&1\" is not on the shell allowlist. Confirmation was declined."
+    },
+    {
+      "digest": "sha256:dafe1db847078aca92fe72e5c7dcc8a28ed37a1bd0362c22b6b9b8fb341812c5",
+      "sequence": 10,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788485881451,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 2 of local:qwen3.6:35b-a3b, 130 output tokens"
+    },
+    {
+      "digest": "sha256:86223493acefa9efbea78318dccbcf6b5599cdfba12db5d7140f28f34cedceb2",
+      "sequence": 11,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485881453,
+      "provenance": [
+        "model",
+        "file"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:ed83886e84bb3145cd171ebbbdc03065dcd321ab30f13f26fe1a3c7b0e1a5853",
+      "sequence": 12,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485881457,
+      "provenance": [
+        "model",
+        "file"
+      ],
+      "summary": "allowed read: 906 bytes returned"
+    },
+    {
+      "digest": "sha256:fdd8456b61a4033b5e663bb76a5f7a476d0099628ef219983bcea61b53986a5e",
+      "sequence": 13,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485881459,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested list: list requested"
+    },
+    {
+      "digest": "sha256:a3c88cfffcd3582b7899ced53f5196ba5813cb04e8b57a4f9a52f8c3a17b7ca5",
+      "sequence": 14,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485881462,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed list: 219 bytes returned"
+    },
+    {
+      "digest": "sha256:1e28c4b576c232f52c241e9acf61cc8ce4bb5adaa481b8ce3795106f19f2ef40",
+      "sequence": 15,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485881463,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:12b64eeac7b4cf675b2a17aab120aa97192695dcdc737ac9115a1193107136ed",
+      "sequence": 16,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485881464,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed read: 171 bytes returned"
+    },
+    {
+      "digest": "sha256:556e363b1afbef56c8b0dbe68fd67e51faab2305cc6766447c21ed80eb798451",
+      "sequence": 17,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485881465,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:2885534a6bef414737b7c58eee99de228c3a401f40da14bd09a7f6146a41bea0",
+      "sequence": 18,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485881480,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed read: 64037 bytes returned"
+    },
+    {
+      "digest": "sha256:22f95c1e3d523e90633d1ade98a26eac475443dddceff25dc00055ca3e256b8e",
+      "sequence": 19,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788485891829,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 3 of local:qwen3.6:35b-a3b, 119 output tokens"
+    },
+    {
+      "digest": "sha256:3950a17408148241468e10dbc33e1d4e52423fd754471df6a6458be91190ef36",
+      "sequence": 20,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485891831,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested list: list requested"
+    },
+    {
+      "digest": "sha256:f38043a54a2ddc83d7361b5badc51687f75d9885c98e52ea373d16bd68e9223a",
+      "sequence": 21,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485891833,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed list: 34 bytes returned"
+    },
+    {
+      "digest": "sha256:cc85ac71629fa518c2e85f2290d6fd88a37fb77d49a875ed48b6643786209c78",
+      "sequence": 22,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485891834,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:3794fa9b109dbeff944335817c48ab440000592ab98bea402cc9be2651bbaaa3",
+      "sequence": 23,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485891840,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed read: 18196 bytes returned"
+    },
+    {
+      "digest": "sha256:7bcd2f9b557006fc0fa5f2229800aea2e4c9cd1c9a36f87b9a9d3f77ae4a3073",
+      "sequence": 24,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485891841,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:99ff7d1092d35946994589b63334d73ab895fed52b4f7674b2fc2514509fa63e",
+      "sequence": 25,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485891842,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed read: 339 bytes returned"
+    },
+    {
+      "digest": "sha256:467d978e7956111d6178007e2581984f23e625f14e5fb41bf00db3e83c2fcb50",
+      "sequence": 26,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788485898682,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 4 of local:qwen3.6:35b-a3b, 193 output tokens"
+    },
+    {
+      "digest": "sha256:36d69adae3605635fa5e622afc025b871ad1b69421da5594bcbb970492079b6b",
+      "sequence": 27,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485898683,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested list: list requested"
+    },
+    {
+      "digest": "sha256:9b9f33549d2fa093254f71a43706512c189fda33363d8a479b1e0b0a448dbee2",
+      "sequence": 28,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485898685,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed list: 141 bytes returned"
+    },
+    {
+      "digest": "sha256:fdef05f8913b9ef17dd105d662f6ab686044f10568aff86cddcb5e380ffde0cd",
+      "sequence": 29,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485898686,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:6e63facafd22237ffbb8ac0c9f96597a3a3b1e54f4a9ed932eaa89c9c572b61d",
+      "sequence": 30,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485898689,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed read: 8330 bytes returned"
+    },
+    {
+      "digest": "sha256:1d671452385d43caad35025e50f4b25591b60209995e69026d8231602c0f943a",
+      "sequence": 31,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485898690,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:d59eab04dfe1c43897fb543a4640acd3705232ba0e0a84340f3016c74f28937a",
+      "sequence": 32,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485898692,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed read: 4831 bytes returned"
+    },
+    {
+      "digest": "sha256:b5b7ace696f50aa2e8de8b4c8a2f326168132a47c742c935d8e04bcf74cbbfd2",
+      "sequence": 33,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485898692,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:f9638376894cefd2c87f251f19e2ac8672d14aa6e45efa78e085b78e3662eee9",
+      "sequence": 34,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485898694,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed read: 281 bytes returned"
+    },
+    {
+      "digest": "sha256:22f6014f437e9da140e9086b714903ebff3e5fe2e33870355bc513069868579f",
+      "sequence": 35,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788485904568,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 5 of local:qwen3.6:35b-a3b, 160 output tokens"
+    },
+    {
+      "digest": "sha256:b3bb94c0e289a029c2ed74d729a3dc1931206cf53ff7cc36d9d281b5c15a65fd",
+      "sequence": 36,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485904570,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:a02000fdf23d50fa9fed49559f66cbdaa9d60658cf15280e5feccad26f26efda",
+      "sequence": 37,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485904574,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed read: 10524 bytes returned"
+    },
+    {
+      "digest": "sha256:95e3d789aaad74ddc9c3d86155d07200591f7169e56b7093421ec89f8eefbe20",
+      "sequence": 38,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485904575,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:0aed0c2fad78fb2b52bc45bb647861d6247cc2950d18ae83248bc1c44c397ea0",
+      "sequence": 39,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485904578,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed read: 7791 bytes returned"
+    },
+    {
+      "digest": "sha256:a6f92c490bb4bf01ce2a832e31637f188348abdc1bb6ca378d9dc2e40928f783",
+      "sequence": 40,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485904578,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:00c2aa696c66a17956a2b20ede6f53963a90771b91200c37470bfd3820d1080c",
+      "sequence": 41,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485904580,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed read: 3717 bytes returned"
+    },
+    {
+      "digest": "sha256:6fcbb4b2b27358edb1b00f2bc96b4f487cd1e64664179996528b15f74bf55046",
+      "sequence": 42,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485904581,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:bd36c1b890db2e68e9151ee55d4ca5c4eae51cf44658f69197808f4ed6cead2c",
+      "sequence": 43,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485904583,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed read: 4146 bytes returned"
+    },
+    {
+      "digest": "sha256:313396fdf5ef7d7b1851ae37605aca597d6b69fb00c0c071be6b4052a37e926e",
+      "sequence": 44,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788485915540,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 6 of local:qwen3.6:35b-a3b, 203 output tokens"
+    },
+    {
+      "digest": "sha256:6a481b6623d21cd108fffed266063d5ff0f05cef6c013a772f120805a67677cd",
+      "sequence": 45,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485915541,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:303083f49c2c5c2eafdcf555f550b4b8457fda38bdbf06c779dc15f6a37abf54",
+      "sequence": 46,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485915556,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed read: 64036 bytes returned"
+    },
+    {
+      "digest": "sha256:06f6a1934a98fda48bb3313f5b6e74734bda1f751086538e0ad2162069cfd019",
+      "sequence": 47,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485915558,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:d08c0c161ec161fe00e7da98804664305010e8e458833a3f3b0ad10aba48b16d",
+      "sequence": 48,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485915564,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed read: 43953 bytes returned"
+    },
+    {
+      "digest": "sha256:d26a3c5744ce9fd2e1416ce984f19c2b92094c17eb0dc5fe36160e38ef993da0",
+      "sequence": 49,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788485958744,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 7 of local:qwen3.6:35b-a3b, 154 output tokens"
+    },
+    {
+      "digest": "sha256:33415ee9b0b3b5f03a4b93189989fabaab1431f874dfed0543b8454bef05e293",
+      "sequence": 50,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485958745,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested shell: shell requested"
+    },
+    {
+      "digest": "sha256:0629e525c59e57bfec1fb778ddcf3c669822897f81ea67691e4b7d88c75d80c7",
+      "sequence": 51,
+      "type": "confirmation",
+      "actor": "harness",
+      "timestamp": 1788485958747,
+      "provenance": [
+        "user"
+      ],
+      "summary": "declined shell: python -m pytest -q 2>&1 | head -100"
+    },
+    {
+      "digest": "sha256:2d6fe6aacf99833acddd79536d024bcf7419ee65149411699788b8b3ea7d466d",
+      "sequence": 52,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788485958747,
+      "provenance": [
+        "model"
+      ],
+      "summary": "denied shell: \"python -m pytest -q 2>&1 | head -100\" is not on the shell allowlist. Confirmation was declined."
+    },
+    {
+      "digest": "sha256:6c79a4fd4e9284ec70e4f39b7890c19325dac325b72339a688d65c179e5b9d2a",
+      "sequence": 53,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486036325,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 8 of local:qwen3.6:35b-a3b, 4492 output tokens"
+    },
+    {
+      "digest": "sha256:0da41a2234aee0b0314fbc8f865370c8a81decec6b9220e2adb7b52973ed0ebb",
+      "sequence": 54,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486036329,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:262f0072f466d6af6f8eb1df98268e098bba7024b6297295310deba6d7c6365a",
+      "sequence": 55,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486036337,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed read: 64037 bytes returned"
+    },
+    {
+      "digest": "sha256:c2cf4cfcc76f8a54eda97b9e5a3b7bc928e35a6d53d51c90e970aa9a526840f6",
+      "sequence": 56,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486096061,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 9 of local:qwen3.6:35b-a3b, 1544 output tokens"
+    },
+    {
+      "digest": "sha256:7f0f5ed026575d8d56bbe25be6653032d7de459828c723c67341c5f8e94b8d6f",
+      "sequence": 57,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486096062,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested search: search requested"
+    },
+    {
+      "digest": "sha256:98632b55deede102a848260a0ff1e2cc9105ecc5a97c521f4a3ed1e122dec6ba",
+      "sequence": 58,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486096066,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed search: 113 bytes returned"
+    },
+    {
+      "digest": "sha256:a84811e8ec12d96100c69bf539e7bb6cd1eb48c71da95e44597229d7a767c131",
+      "sequence": 59,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486096066,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested search: search requested"
+    },
+    {
+      "digest": "sha256:4abbe8290487bdc6a01a3ce520f36dbb64e839646dff4ee46de275ccebed0c17",
+      "sequence": 60,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486097475,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed search: 270 bytes returned"
+    },
+    {
+      "digest": "sha256:23c6c752572489e89d992305821ec944e4574bacb38f87b794d62dc73e62cc5f",
+      "sequence": 61,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486099759,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 10 of local:qwen3.6:35b-a3b, 71 output tokens"
+    },
+    {
+      "digest": "sha256:c122be9f27595e0467b41126ecbae3e9dde5ceb024272f533c6976a04ffcfafd",
+      "sequence": 62,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486099759,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:3980e25e14438e9d6e043604761e3a6ab1cf1b75989c8d917248f7d828b808d8",
+      "sequence": 63,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486099762,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed read: 1036 bytes returned"
+    },
+    {
+      "digest": "sha256:a558164a9b6b8ee15bb128d8b33aae45b3b85ae2d4a8c2d4ffa4d1a78ba6766c",
+      "sequence": 64,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486118267,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 11 of local:qwen3.6:35b-a3b, 961 output tokens"
+    },
+    {
+      "digest": "sha256:b3ee60e44e460a066351d60c21366787025c17b3eccfd16f475b3df893060cda",
+      "sequence": 65,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486118268,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:94fa61a7ea9915be8e32f407445fa32ffff4c242e9e87de1021851dd16a94623",
+      "sequence": 66,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486118269,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed read: 235 bytes returned"
+    },
+    {
+      "digest": "sha256:3550e0790fd0660ff0ed3afcc41050ecc0e827d1c557da5ccb59e8f5ad9dd599",
+      "sequence": 67,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486134350,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 12 of local:qwen3.6:35b-a3b, 855 output tokens"
+    },
+    {
+      "digest": "sha256:e62279a7751cc62cf19a621905426d70f9c76e2ab8a60e5b1adb4fa3e3aee8e6",
+      "sequence": 68,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486134351,
+      "provenance": [
+        "model",
+        "file"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:77cfbe7be65956eb5721e16b8a903563679a31696d38fcc51ad865f01d11388e",
+      "sequence": 69,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486134360,
+      "provenance": [
+        "model",
+        "file"
+      ],
+      "summary": "allowed read: 64037 bytes returned"
+    },
+    {
+      "digest": "sha256:b070e0ba3190acda75d64a72bbea9733afd22ad89b082b9e60cc516010610786",
+      "sequence": 70,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486305466,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 13 of local:qwen3.6:35b-a3b, 6555 output tokens"
+    },
+    {
+      "digest": "sha256:577486b2d3fc437ae61e90580c4c70efeea059932fd3a0d2ac15ad975b9abb05",
+      "sequence": 71,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486305468,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested claim: claim requested"
+    },
+    {
+      "digest": "sha256:7466281780967a6c97eb42da355c88a1a7ae69b8dfe67f096f40c7d52935f06c",
+      "sequence": 72,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486305469,
+      "provenance": [
+        "model"
+      ],
+      "summary": "denied claim: input rejected: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"invalid_format\",\n    \"format\": \"regex\",\n    \"pattern\": \"/^sha256:[0-9a-f]{64}$/\",\n    \"path\": [\n      \"record\"\n    ],\n    \"message\": \"Invalid string: must match pattern /^sha256:[0-9a-f]{64}$/\"\n  }\n]"
+    },
+    {
+      "digest": "sha256:13fd50e719bd4899e9c0ee535265e3dc6bdff08887bc97851a4e49fb6db5f40b",
+      "sequence": 73,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486324189,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 14 of local:qwen3.6:35b-a3b, 916 output tokens"
+    },
+    {
+      "digest": "sha256:d783d73e3748d70845176adad72122c757f1657c5ad35cdebe8c383a2cbb4de0",
+      "sequence": 74,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486324194,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:7ea0c8d26bdafa7f9784b29018a9d78ca0c7ab1cc877f8fa05574b1b899751eb",
+      "sequence": 75,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486324199,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed read: 17101 bytes returned"
+    },
+    {
+      "digest": "sha256:c9b2db14bb2d6cc8afa02c7fc7dab5220d1cde2ef9ec73ef3832dbd7020fc130",
+      "sequence": 76,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486506882,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 15 of local:qwen3.6:35b-a3b, 8192 output tokens"
+    },
+    {
+      "digest": "sha256:91aba075bea3fa05960f517965d8d1d695650f03dd118f5d5423cb3280452bdc",
+      "sequence": 77,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486661571,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 16 of local:qwen3.6:35b-a3b, 7157 output tokens"
+    },
+    {
+      "digest": "sha256:3550d1cc204b5a6009d996c6ffeb747f2098a778259c955fbd4b9fd7d25664cb",
+      "sequence": 78,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486661572,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested search: search requested"
+    },
+    {
+      "digest": "sha256:89ac21204a7d3448e1f4bdffa7c1906bfc7ce1a98d9715ead48cd640e3775d0d",
+      "sequence": 79,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486661573,
+      "provenance": [
+        "model"
+      ],
+      "summary": "failed search: ENOTDIR: not a directory, scandir '/work/addon.py', caused by ENOTDIR"
+    },
+    {
+      "digest": "sha256:bc7831fe203704db6e2fdda6e06d78ac0fcf89d6fbfc2f6626addfe1d4a74c0c",
+      "sequence": 80,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486701547,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 17 of local:qwen3.6:35b-a3b, 1943 output tokens"
+    },
+    {
+      "digest": "sha256:d014eb25a8848bb2476881f7173a79ab57066c03c81571611dfca9052e7ce4bd",
+      "sequence": 81,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486701548,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested shell: shell requested"
+    },
+    {
+      "digest": "sha256:9117d90c4c2d1a0a42991af5111c9971d092f71d3a423ff7d4f0ece74482d5a1",
+      "sequence": 82,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486701549,
+      "provenance": [
+        "model"
+      ],
+      "summary": "denied shell: /dev/null resolves outside the workspace /work"
+    },
+    {
+      "digest": "sha256:05e154913b725a89f25b9dc7203f7c94110c0ca79bc4114e4cdc2865f629137c",
+      "sequence": 83,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486718116,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 18 of local:qwen3.6:35b-a3b, 737 output tokens"
+    },
+    {
+      "digest": "sha256:78a4c5afa95a16a1bee02f31fbed24652c338bc4da9cb1c127dc69d0e1172982",
+      "sequence": 84,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486718122,
+      "provenance": [
+        "model",
+        "file"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:2fbeb2f2749a7f70284c58cb6559af8a1ad1bfccd30d398cbf060f909ab14d3e",
+      "sequence": 85,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486718124,
+      "provenance": [
+        "model",
+        "file"
+      ],
+      "summary": "allowed read: 2084 bytes returned"
+    },
+    {
+      "digest": "sha256:7f63abc36ee6629c708dc136b1f88d3d2048daef8a973682df6085707b71cd5b",
+      "sequence": 86,
+      "type": "session-stopped",
+      "actor": "harness",
+      "timestamp": 1788486718125,
+      "provenance": [
+        "model"
+      ],
+      "summary": "max-tokens after 17 steps"
+    },
+    {
+      "digest": "sha256:c8db015d740304711729902613eb6347dc57e53284e0430f1060e86e196d9701",
+      "sequence": 87,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788486718166,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate typecheck: not-applicable (pyproject.toml configures no type checker)"
+    },
+    {
+      "digest": "sha256:4eabfa72ececb7dfe74aacebab7d8dc4e80fe4fe33f986563e0427fcf2e601cb",
+      "sequence": 88,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788486718166,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate lint: not-applicable (pyproject.toml configures no linter)"
+    },
+    {
+      "digest": "sha256:2d283a0533a85ae071a93257f89c680e3ccd058f10a186de18a7a2ffed84668e",
+      "sequence": 89,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788486718167,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate format: not-applicable (pyproject.toml configures no formatter)"
+    },
+    {
+      "digest": "sha256:a153f4dbd8c1cb3e3033b3c252c6f217db5d37ced3d1caab289ba68a6d07171e",
+      "sequence": 90,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788486723836,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate tests: failed (the command exited 1)"
+    },
+    {
+      "digest": "sha256:da941441683d2a932e3656d29e47bf1d3dd8e8827a4fa28340e9192147fc0140",
+      "sequence": 91,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788486723837,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate file-set: passed (nothing changed and no file set was declared, so there is nothing to check)"
+    },
+    {
+      "digest": "sha256:04cbfbf05767e77d5767fb5772e9a7e62cec4ae74d421e013fe257c5eccb892c",
+      "sequence": 92,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788486723837,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate placeholder: passed (no placeholder marker was introduced by this change)"
+    },
+    {
+      "digest": "sha256:1205c218e3298f2b2a033cfedf23b7ee3ea0c6b62794e4df970e745e5f7a0cb4",
+      "sequence": 93,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788486723838,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate secret-scan: passed (no known credential pattern appears in the added lines)"
+    },
+    {
+      "digest": "sha256:6c58dc822ecce8f4da2f5c78e5027adb86eef9574d10c896a93cc27d285aa5df",
+      "sequence": 94,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788486723838,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate behaviour-probe: passed (0 changed function(s) still answer to their inputs.)"
+    },
+    {
+      "digest": "sha256:e3dbe12b4205d31760f1fad23748c5ea393fa58eb135b7d0aec249a7ae178e24",
+      "sequence": 95,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788486723839,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate diff-budget: passed (within budget: 0 file(s) and 0 added line(s))"
+    },
+    {
+      "digest": "sha256:4ad1767519abc16aecf45df79086c4b7a0e63dd9f696fbc65c2909eedb3634b9",
+      "sequence": 96,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486727358,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 19 of local:qwen3.6:35b-a3b, 210 output tokens"
+    },
+    {
+      "digest": "sha256:c755648865049f04dbb60683cc9c1cfdac459b4378cde0ef9de49df493dde996",
+      "sequence": 97,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486727361,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested shell: shell requested"
+    },
+    {
+      "digest": "sha256:6c1c0b70474f6e63781357159b41a1c77cf60d1136622a1208379abd30b0cad1",
+      "sequence": 98,
+      "type": "confirmation",
+      "actor": "harness",
+      "timestamp": 1788486727362,
+      "provenance": [
+        "user"
+      ],
+      "summary": "declined shell: diff <(grep -n \"Sidebar\" /root/addon.py) <(grep -n \"Sidebar\" /root/src/blender_mcp/bundled/addon.py) | head -30"
+    },
+    {
+      "digest": "sha256:98141110e2360d0189036293c651772a88f7ead9f4cb7f5d6e25afbfaf1460c7",
+      "sequence": 99,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486727363,
+      "provenance": [
+        "model"
+      ],
+      "summary": "denied shell: \"diff <(grep -n \"Sidebar\" /root/addon.py) <(grep -n \"Sidebar\" /root/src/blender_mcp/bundled/addon.py) | head -30\" is not on the shell allowlist. Confirmation was declined."
+    },
+    {
+      "digest": "sha256:6cd5d22983f17481ab71228eb5f0c486c963b2c35752549838eccfc64b6b9bb4",
+      "sequence": 100,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486728169,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 20 of local:qwen3.6:35b-a3b, 49 output tokens"
+    },
+    {
+      "digest": "sha256:cd18c56a6ac844471d54a7161bb442d3cd41be440bd1ecabe2b0019b3797f4c9",
+      "sequence": 101,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486728172,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested search: search requested"
+    },
+    {
+      "digest": "sha256:89bc39f04f4fda176f7aa531d2b3ed85c35944c10d508e865570f41685b42df4",
+      "sequence": 102,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486729630,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed search: 150 bytes returned"
+    },
+    {
+      "digest": "sha256:8fb48ff527f86f8032fe64cc198412a6b87e091342767fa8ce9a92685308cd27",
+      "sequence": 103,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486734461,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 21 of local:qwen3.6:35b-a3b, 528 output tokens"
+    },
+    {
+      "digest": "sha256:bdd28a90b9365cac0c08fecc75222788d4dec0f018ee74231be90b2a0992efc7",
+      "sequence": 104,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486734463,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested shell: shell requested"
+    },
+    {
+      "digest": "sha256:0de3b1fd88ff1f3c3a52e9a7c536480b0dd1a3370a4451edf045e6f24b41d0cd",
+      "sequence": 105,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486734477,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed shell: 177 bytes returned"
+    },
+    {
+      "digest": "sha256:4512b3dde4d0895801c5fcac3793e51ea9100b8a560409ca6037540ca6f8742a",
+      "sequence": 106,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486736067,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 22 of local:qwen3.6:35b-a3b, 175 output tokens"
+    },
+    {
+      "digest": "sha256:3ec4bbec16717eb7c3aab3ee2b22e27d4a419384094ab28333932861430acae0",
+      "sequence": 107,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486736070,
+      "provenance": [
+        "model",
+        "tool-output"
+      ],
+      "summary": "requested declare_file_set: declare_file_set requested"
+    },
+    {
+      "digest": "sha256:a8b8a7371846373a02b7292cca73d19e53845aac44667b56e8fd575225dae326",
+      "sequence": 108,
+      "type": "file-set-declared",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486736072,
+      "provenance": [
+        "model"
+      ],
+      "summary": "the planner declared 1 intended file(s)"
+    },
+    {
+      "digest": "sha256:009d70f49f1887a0d66de301ac1b95ccd2e8a96cfd6ef69b5f6801b20f0a6c32",
+      "sequence": 109,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486736073,
+      "provenance": [
+        "model",
+        "tool-output"
+      ],
+      "summary": "allowed declare_file_set: 52 bytes returned"
+    },
+    {
+      "digest": "sha256:1709df2bff95bb4ba34dae8a68eb93b1a2369f458f17ba51353948790c056d63",
+      "sequence": 110,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486737186,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 23 of local:qwen3.6:35b-a3b, 113 output tokens"
+    },
+    {
+      "digest": "sha256:f7cbcb45d87abc8e48f6affd7d1bc3b4cdad914f284438d860dc6dc469e0384b",
+      "sequence": 111,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486737188,
+      "provenance": [
+        "model",
+        "tool-output"
+      ],
+      "summary": "requested edit: edit requested"
+    },
+    {
+      "digest": "sha256:16b4bb83f5e8f5f8dbce58c76355b1e78dd789fb4bd308e62f4a29774547c130",
+      "sequence": 112,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486737192,
+      "provenance": [
+        "model",
+        "tool-output"
+      ],
+      "summary": "allowed edit: 60 bytes returned"
+    },
+    {
+      "digest": "sha256:840e77724555b2193d777a342f211868a344aaced1a578c70d78b2e81b8d9488",
+      "sequence": 113,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486738874,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 24 of local:qwen3.6:35b-a3b, 149 output tokens"
+    },
+    {
+      "digest": "sha256:510b28eaf40b1306d3b875b268b914a690fbe8f6dda76106232b88ed1c77d883",
+      "sequence": 114,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486738876,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested shell: shell requested"
+    },
+    {
+      "digest": "sha256:9279b80f9e63c8c5aac929a7c2d0fa9f929449efa9394840eb6a75fd49f7961c",
+      "sequence": 115,
+      "type": "confirmation",
+      "actor": "harness",
+      "timestamp": 1788486738878,
+      "provenance": [
+        "user"
+      ],
+      "summary": "declined shell: cp addon.py src/blender_mcp/bundled/addon.py"
+    },
+    {
+      "digest": "sha256:282624a9fceecf6f3c2e53207f355d95e67a0209b97cf5697c8080bbf4f65004",
+      "sequence": 116,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486738879,
+      "provenance": [
+        "model"
+      ],
+      "summary": "denied shell: \"cp addon.py src/blender_mcp/bundled/addon.py\" is not on the shell allowlist. Confirmation was declined."
+    },
+    {
+      "digest": "sha256:37977cce883a978c000769781788db07689370f516185819317be9c93f656431",
+      "sequence": 117,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486739683,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 25 of local:qwen3.6:35b-a3b, 55 output tokens"
+    },
+    {
+      "digest": "sha256:458f71c9a2a44698eeac8a68753101b6f078aef2871c5b298ea40de81810dd58",
+      "sequence": 118,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486739685,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:8eef9cf3a17600b95a721961dd1d53f65330f5758f6d8d48bc562ccbe1b49431",
+      "sequence": 119,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486739702,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed read: 64037 bytes returned"
+    },
+    {
+      "digest": "sha256:e8fe896eee3c13fdbbd0fd8dc0c3c540d7d986b5b8ca6d097e526a8fb3dd0185",
+      "sequence": 120,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486751211,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 26 of local:qwen3.6:35b-a3b, 127 output tokens"
+    },
+    {
+      "digest": "sha256:4d435a78c34b68539ddf85da65184dc3cd05feb3451c0ff685de1681d019f371",
+      "sequence": 121,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486751212,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:143ad6bc137ab02327fbf1f2eca37ff93fe75d6002397c52d0d0aee13a05a086",
+      "sequence": 122,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486751246,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed read: 175186 bytes returned"
+    },
+    {
+      "digest": "sha256:78aacbd11a921cef1ad306cebcd37f405f7696e4c511e00d476d32429af4e02a",
+      "sequence": 123,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486805704,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 27 of local:qwen3.6:35b-a3b, 205 output tokens"
+    },
+    {
+      "digest": "sha256:46dfbc2278c51fc5d13f727de7a9f8d9802e9c83019512f5df28b30d78d25ca9",
+      "sequence": 124,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486805705,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested shell: shell requested"
+    },
+    {
+      "digest": "sha256:87519c50a69bacc57432259edcac9821546e97d492b0ff0ae31c8444dcea5dad",
+      "sequence": 125,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486805706,
+      "provenance": [
+        "model"
+      ],
+      "summary": "denied shell: the path holds a control character (0x0a) at position 0, so it is not one name. Pass the path on its own."
+    },
+    {
+      "digest": "sha256:020e5da854f0fc34bb698fe7a3fda5fcc326674e4ad6a0bd870ad7d49b55b07c",
+      "sequence": 126,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486809999,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 28 of local:qwen3.6:35b-a3b, 234 output tokens"
+    },
+    {
+      "digest": "sha256:4f3842623882c68cabc92553af402381e340a7e30573be7e092627be9f950b84",
+      "sequence": 127,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486810000,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested shell: shell requested"
+    },
+    {
+      "digest": "sha256:5ef36eceabea14759a2ec631b34d351f25eb96dbf98d5dffec4d56585df6207c",
+      "sequence": 128,
+      "type": "confirmation",
+      "actor": "harness",
+      "timestamp": 1788486810002,
+      "provenance": [
+        "user"
+      ],
+      "summary": "declined shell: python3 -c \"a=open('addon.py');b=open('src/blender_mcp/bundled/addon.py');aa=a.read();bb=b.read();print(f'root: {len(aa)} bytes, bundled: {len(bb)} bytes');print(f'Equal: {aa==bb}')\""
+    },
+    {
+      "digest": "sha256:3f68441bea2a20de3648ab0795b45630cbcf1d74d02d5331a501d63d6d156210",
+      "sequence": 129,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486810003,
+      "provenance": [
+        "model"
+      ],
+      "summary": "denied shell: \"python3 -c \"a=open('addon.py');b=open('src/blender_mcp/bundled/addon.py');aa=a.read();bb=b.read();print(f'root: {len(aa)} bytes, bundled: {len(bb)} bytes');print(f'Equal: {aa==bb}')\"\" is not on the shell allowlist. Confirmation was declined."
+    },
+    {
+      "digest": "sha256:cf862a4b0b11f131d5a958b7e76e0384a88f27e13467d9110400255d84317a75",
+      "sequence": 130,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486814602,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 29 of local:qwen3.6:35b-a3b, 202 output tokens"
+    },
+    {
+      "digest": "sha256:a3f55666b021eab03edb37b0d478ea2c574ecc0d71195f9ce3471360faa09d58",
+      "sequence": 131,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486814603,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested shell: shell requested"
+    },
+    {
+      "digest": "sha256:c0a3736218b067e696929440667b09e355ffb36e2d5d8b35edae0d7e27dd2db8",
+      "sequence": 132,
+      "type": "confirmation",
+      "actor": "harness",
+      "timestamp": 1788486814605,
+      "provenance": [
+        "user"
+      ],
+      "summary": "declined shell: python3 -c 'import pathlib; p=pathlib.Path(\"src/blender_mcp/bundled/addon.py\"); p.write_text(pathlib.Path(\"addon.py\").read_text()); print(\"copied\")'"
+    },
+    {
+      "digest": "sha256:1207ccbce938bf09016dbfc2a47994bb396f78482c90e5a338452e06bf90019f",
+      "sequence": 133,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486814606,
+      "provenance": [
+        "model"
+      ],
+      "summary": "denied shell: \"python3 -c 'import pathlib; p=pathlib.Path(\"src/blender_mcp/bundled/addon.py\"); p.write_text(pathlib.Path(\"addon.py\").read_text()); print(\"copied\")'\" is not on the shell allowlist. Confirmation was declined."
+    },
+    {
+      "digest": "sha256:fa494bf0cd81246a51a229bd412ce5ac4e85775290cf4db4873dfcdeac323459",
+      "sequence": 134,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486818426,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 30 of local:qwen3.6:35b-a3b, 195 output tokens"
+    },
+    {
+      "digest": "sha256:8df90de7f27cfd34e90ab31eb632b48da1abee92549ffb0097d7e7dd49c0bdac",
+      "sequence": 135,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486818427,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested shell: shell requested"
+    },
+    {
+      "digest": "sha256:36efe8571d81ca0d13fe4c74c6dee5da06dc0389ea97f90ad37f9eee227eb0dc",
+      "sequence": 136,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486818428,
+      "provenance": [
+        "model"
+      ],
+      "summary": "denied shell: /root resolves outside the workspace /work"
+    },
+    {
+      "digest": "sha256:52670d55da39458523ddc9d103f997f20e136108e89ee0cdaf334df8d4af2f79",
+      "sequence": 137,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486820082,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 31 of local:qwen3.6:35b-a3b, 66 output tokens"
+    },
+    {
+      "digest": "sha256:73ee87244156ead62f421335b57e478dfa8eeef07f064cf8f51f1749e8dc7e18",
+      "sequence": 138,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486820083,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested grep: grep requested"
+    },
+    {
+      "digest": "sha256:83ab440e23b8d00f8da83d2e4e2fc8d46685c679ea9d3f9bc68fd5f85cbb27f1",
+      "sequence": 139,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486820084,
+      "provenance": [
+        "model"
+      ],
+      "summary": "denied grep: no such tool. Known tools: read, write, edit, list, search, shell, claim, declare_file_set, amend_file_set"
+    },
+    {
+      "digest": "sha256:ca00ce37912068a509dc0b919c3a70e0b0cf54a3ee640accd5ad1118ccdaa278",
+      "sequence": 140,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486823307,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 32 of local:qwen3.6:35b-a3b, 161 output tokens"
+    },
+    {
+      "digest": "sha256:622fe2c7edb53b830224d035da2a3c504fd2dc28344c1f0894e4aa5a8ac752a1",
+      "sequence": 141,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486823309,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested shell: shell requested"
+    },
+    {
+      "digest": "sha256:9be14f9f564d4e5b7e6b287feb296d27ad5dfef51f96ee9997cd33eae41fcd0d",
+      "sequence": 142,
+      "type": "confirmation",
+      "actor": "harness",
+      "timestamp": 1788486823310,
+      "provenance": [
+        "user"
+      ],
+      "summary": "declined shell: pytest -q tests/test_addon_manager.py::test_root_and_bundled_addon_in_sync 2>&1 || true"
+    },
+    {
+      "digest": "sha256:9e527362ca3a6acde82fd736be11f24af0c60ab5da38e851b2dae134e7d97c2a",
+      "sequence": 143,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486823311,
+      "provenance": [
+        "model"
+      ],
+      "summary": "denied shell: \"pytest -q tests/test_addon_manager.py::test_root_and_bundled_addon_in_sync 2>&1 || true\" is not on the shell allowlist. Confirmation was declined."
+    },
+    {
+      "digest": "sha256:39909860a6ada43019e25c30117dc3735a4b6bde858fdd8c16d0b1e34a18910e",
+      "sequence": 144,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486825987,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 33 of local:qwen3.6:35b-a3b, 129 output tokens"
+    },
+    {
+      "digest": "sha256:5d531103dee84dc5b447380b26a4871a12423c39adaa15c0b0808818e0e0c527",
+      "sequence": 145,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486825988,
+      "provenance": [
+        "model",
+        "tool-output"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:c93625824b0e830ec4068c68b3ff6103ac33c2f72ec22acd7239f5eb10aac40a",
+      "sequence": 146,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486825991,
+      "provenance": [
+        "model",
+        "tool-output"
+      ],
+      "summary": "allowed read: 135 bytes returned"
+    },
+    {
+      "digest": "sha256:d085237a1baaabfa6f98c6d77aef446e72ecf4d9b06e07ea0d70af50d5b703d4",
+      "sequence": 147,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486830714,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 34 of local:qwen3.6:35b-a3b, 251 output tokens"
+    },
+    {
+      "digest": "sha256:a3a98812d31f39acc0ce3953a186648cb2a8ee73b17041e1ceb3f333a184ffaa",
+      "sequence": 148,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486830716,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested write: write requested"
+    },
+    {
+      "digest": "sha256:4079525510475a39ae963bdddf1336419d5fae070ebb31dc40f07c99de4535f9",
+      "sequence": 149,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486830717,
+      "provenance": [
+        "model"
+      ],
+      "summary": "denied write: /tmp/copy_addon.py resolves outside the workspace /work"
+    },
+    {
+      "digest": "sha256:3c7a548970d65a2f89ab96e15a3bd74883c51cde1fd978256986052c9a345185",
+      "sequence": 150,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486833846,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 35 of local:qwen3.6:35b-a3b, 154 output tokens"
+    },
+    {
+      "digest": "sha256:a4621a54ade6febe798af987a87067fd09332f36b4eecd2bc7c7715b0eb86adb",
+      "sequence": 151,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486833847,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested write: write requested"
+    },
+    {
+      "digest": "sha256:876938d1e6a00e48af733b81a92a02db10659db2cf274f25a1fc823381c8345f",
+      "sequence": 152,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486833850,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed write: 37 bytes returned"
+    },
+    {
+      "digest": "sha256:8150f3cf1593c4e957d7539985ad9112ce6e36746135435ea75fecb55de8271e",
+      "sequence": 153,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486835613,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 36 of local:qwen3.6:35b-a3b, 60 output tokens"
+    },
+    {
+      "digest": "sha256:630af33c100b34f39971a297dcd2db9d9c4c20af2a0b767088f5d6952c4d437b",
+      "sequence": 154,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486835614,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested shell: shell requested"
+    },
+    {
+      "digest": "sha256:2f70c0c512370e16398719afcd119c78d15a4c86abb3e9a140427be3c79be730",
+      "sequence": 155,
+      "type": "confirmation",
+      "actor": "harness",
+      "timestamp": 1788486835615,
+      "provenance": [
+        "user"
+      ],
+      "summary": "declined shell: python3 work/copy_addon.py"
+    },
+    {
+      "digest": "sha256:e36110d2eb4b9192de4d48ba950ef89f400036c07583aca88d75d22e17c1dc14",
+      "sequence": 156,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486835616,
+      "provenance": [
+        "model"
+      ],
+      "summary": "denied shell: \"python3 work/copy_addon.py\" is not on the shell allowlist. Confirmation was declined."
+    },
+    {
+      "digest": "sha256:6975eb9e05673f0e0582d702c5585230267b28f7287328276cc520aded987626",
+      "sequence": 157,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486842334,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 37 of local:qwen3.6:35b-a3b, 370 output tokens"
+    },
+    {
+      "digest": "sha256:eb1ca43afb43c0ae198cd3d88a4cc6c1745f7a49dbfee2fc49f9a807030d75da",
+      "sequence": 158,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486842335,
+      "provenance": [
+        "model",
+        "tool-output"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:3e9aec62d96fe58e9f8d8144ebeba0b556eea9279646b97391da016430538e7c",
+      "sequence": 159,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486842338,
+      "provenance": [
+        "model",
+        "tool-output"
+      ],
+      "summary": "allowed read: 2036 bytes returned"
+    },
+    {
+      "digest": "sha256:5ed2cb758b9c5b4772a51423dc3f1d723391d8d9d859c560d724f5da16e1d17c",
+      "sequence": 160,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486853377,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 38 of local:qwen3.6:35b-a3b, 602 output tokens"
+    },
+    {
+      "digest": "sha256:ee43a78b7024f61bec32e1e024f4b659e9ecd0ddbdcbdcf776088ff93a1331cf",
+      "sequence": 161,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486853378,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested write: write requested"
+    },
+    {
+      "digest": "sha256:550120001ee4e819b0f1ebd6545ddb2de275d237e1cc71a7d10809eef5d90160",
+      "sequence": 162,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486853380,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed write: 41 bytes returned"
+    },
+    {
+      "digest": "sha256:81202f6c15d38191d040931971ba1bacb171fefa6a83b8d18fa33ef48f9f272c",
+      "sequence": 163,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486870850,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 39 of local:qwen3.6:35b-a3b, 1024 output tokens"
+    },
+    {
+      "digest": "sha256:47288f8c7b3f0c22a05f687574972f1459c16ae28244adad9d96b553332d9b2b",
+      "sequence": 164,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486870851,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested write: write requested"
+    },
+    {
+      "digest": "sha256:a78ba6d81cd25f2b1e93eb6a53b4927f98771baef15f49db7d2db672f45053b6",
+      "sequence": 165,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486870854,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed write: 41 bytes returned"
+    },
+    {
+      "digest": "sha256:3b7c7468f88a7a002240802fcb3eb3ddab4982cb05e917006026d276335fca8d",
+      "sequence": 166,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486874047,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 40 of local:qwen3.6:35b-a3b, 65 output tokens"
+    },
+    {
+      "digest": "sha256:443045cc6ebd00e062388e64158cf44c86a5f1ebe4a9b568af6e97e3a61935ef",
+      "sequence": 167,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486874048,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested shell: shell requested"
+    },
+    {
+      "digest": "sha256:d131fb8241a16e43989c3360366708b65fa9d962279d1727642d20d127fec329",
+      "sequence": 168,
+      "type": "confirmation",
+      "actor": "harness",
+      "timestamp": 1788486874049,
+      "provenance": [
+        "user"
+      ],
+      "summary": "declined shell: python3 _check_differences.py 2>&1 || true"
+    },
+    {
+      "digest": "sha256:885beb8e2d2f94402e02d28fcd58d7b6c0ffe12b32cf2fc621811425451f2cbc",
+      "sequence": 169,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486874050,
+      "provenance": [
+        "model"
+      ],
+      "summary": "denied shell: \"python3 _check_differences.py 2>&1 || true\" is not on the shell allowlist. Confirmation was declined."
+    },
+    {
+      "digest": "sha256:ac69a5a5c2e04a140ba0d2452980f7e68c3add785b6552560dd424ad2c4a23ab",
+      "sequence": 170,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788486887160,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 41 of local:qwen3.6:35b-a3b, 738 output tokens"
+    },
+    {
+      "digest": "sha256:32feea9463793d1afe63d0244189f25d5a9c9b2167f9c772c06b8afb1d0c6821",
+      "sequence": 171,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486887161,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:1b161b8c6d7fa6ea7b591821d36dd81d4e5ec4178de07561c69c4c2a31b3c0b5",
+      "sequence": 172,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788486887182,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed read: 175186 bytes returned"
+    },
+    {
+      "digest": "sha256:4376f67f7b8208648a3c1f0ef77c851410ac70c371c4cfb13666c2a944da5b76",
+      "sequence": 173,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788487121819,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 42 of local:qwen3.6:35b-a3b, 8192 output tokens"
+    },
+    {
+      "digest": "sha256:d9bc43b59651d673be45242bb35242c4071487b46ad99823e58e548f421ed681",
+      "sequence": 174,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788487121858,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate typecheck: not-applicable (pyproject.toml configures no type checker)"
+    },
+    {
+      "digest": "sha256:d8e883c5ae548bd090d5616ce57ec33e89c6eb4e8b6d3564ef5c162fe09cf9df",
+      "sequence": 175,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788487121858,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate lint: not-applicable (pyproject.toml configures no linter)"
+    },
+    {
+      "digest": "sha256:5ac57603013bfe27bb537d236557152812aefbca407177f4b70aa6a99090be46",
+      "sequence": 176,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788487121859,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate format: not-applicable (pyproject.toml configures no formatter)"
+    },
+    {
+      "digest": "sha256:961058c5ff4edd0d64c643aa1a016049fd6276f3591f56624db0fb1073ba87d7",
+      "sequence": 177,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788487126471,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate tests: passed (the command exited 0)"
+    },
+    {
+      "digest": "sha256:35031653df31fc953707bbba3275b3010199a13c7c15e8becb559378145f5bb5",
+      "sequence": 178,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788487126472,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate file-set: failed (2 file(s) outside the declared set: _check_differences.py, work/copy_addon.py. Record an amendment to widen the set, which puts the widening in front of a reviewer.)"
+    },
+    {
+      "digest": "sha256:6ab4a60c77fbee0a6e8337589bb53775332ffb0cc3347a678c83b90c1c1257c8",
+      "sequence": 179,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788487126485,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate placeholder: passed (no placeholder marker was introduced by this change)"
+    },
+    {
+      "digest": "sha256:0d1bddaaa0335ae01c8ded7b8c8df77a28e4d5968164123819f75b8963b3a344",
+      "sequence": 180,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788487126487,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate secret-scan: passed (no known credential pattern appears in the added lines)"
+    },
+    {
+      "digest": "sha256:e4544917a11298f6a754745d2738fe0f6523c4e67aad3f27582878f46f5e3ebd",
+      "sequence": 181,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788487126487,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate behaviour-probe: passed (0 changed function(s) still answer to their inputs.)"
+    },
+    {
+      "digest": "sha256:a341b9b3a2b98c32f4f26aaea4a987837bc47616eaa44f5f7289c9157613793f",
+      "sequence": 182,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788487126488,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate diff-budget: passed (within budget: 3 file(s) and 77 added line(s))"
+    },
+    {
+      "digest": "sha256:81dc52e70f2adff99d6d1d57fe1f85d056fc361370aa8f910df7ccd5ea730b47",
+      "sequence": 183,
+      "type": "ratchet-decision",
+      "actor": "harness",
+      "timestamp": 1788487126490,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "attempt 1 rejected: the ratchet rejected the attempt: the file-set gate passed before this attempt and now reports failed"
+    },
+    {
+      "digest": "sha256:b4521f3e2f488998df88c822ca87a9225d0c372a95d0070dfa6e7c5f02b76078",
+      "sequence": 184,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788487129054,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 43 of local:qwen3.6:35b-a3b, 209 output tokens"
+    },
+    {
+      "digest": "sha256:a5fa15dc7c45a001844bbc4c59f36e31b5c326a006be803863aaecbd65b7fa62",
+      "sequence": 185,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788487129055,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:6d8d8fcc9d3b6a42d7d104181d7ab70f0376dcc5902e0314cd3554c5d62d6ea1",
+      "sequence": 186,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788487129072,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed read: 64037 bytes returned"
+    },
+    {
+      "digest": "sha256:1e9c6dcadcf67765bf58efd828c4d289138f40e9716bca919df185761e656ece",
+      "sequence": 187,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788487129074,
+      "provenance": [
+        "model",
+        "tool-output"
+      ],
+      "summary": "requested read: read requested"
+    },
+    {
+      "digest": "sha256:bae38cde35f87fcb85ecdc66365ae3f5a678d69706821400ea2cd4f44467db62",
+      "sequence": 188,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788487129089,
+      "provenance": [
+        "model",
+        "tool-output"
+      ],
+      "summary": "allowed read: 64037 bytes returned"
+    },
+    {
+      "digest": "sha256:2f608bd9f78398eab161933bb87c47edf5de02a04f3f4810a63351c7daf9df44",
+      "sequence": 189,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788487154785,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 44 of local:qwen3.6:35b-a3b, 292 output tokens"
+    },
+    {
+      "digest": "sha256:dcc112ad7358a0064b418a1f72e37ecb05d6c695bf6e8eb4268f0f4d24767577",
+      "sequence": 190,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788487154786,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested shell: shell requested"
+    },
+    {
+      "digest": "sha256:a1d8ac4aad78f1eacd04b32e7f07938faff51457f0ab147b53c942c5f7122c8b",
+      "sequence": 191,
+      "type": "confirmation",
+      "actor": "harness",
+      "timestamp": 1788487154789,
+      "provenance": [
+        "user"
+      ],
+      "summary": "declined shell: cp addon.py src/blender_mcp/bundled/addon.py"
+    },
+    {
+      "digest": "sha256:5d14b4e4597b6b182248da00c6423cd82c4f706627e9c41097ebf38b1e85cea9",
+      "sequence": 192,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788487154789,
+      "provenance": [
+        "model"
+      ],
+      "summary": "denied shell: \"cp addon.py src/blender_mcp/bundled/addon.py\" is not on the shell allowlist. Confirmation was declined."
+    },
+    {
+      "digest": "sha256:d76452cbc720537cd306d5a3f8ec8b0290c370a0967e1aacec8847a117a91526",
+      "sequence": 193,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788487158100,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 45 of local:qwen3.6:35b-a3b, 194 output tokens"
+    },
+    {
+      "digest": "sha256:67818ec49553adff8fbb9bde2b28c6073c48f17bc7f27c2c142e1f96fb7ef35c",
+      "sequence": 194,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788487158101,
+      "provenance": [
+        "model",
+        "tool-output"
+      ],
+      "summary": "requested declare_file_set: declare_file_set requested"
+    },
+    {
+      "digest": "sha256:1c86c629dfd153134399c5343c52c1c2337e9a2e5dfa6692962f9566acc63d80",
+      "sequence": 195,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788487158102,
+      "provenance": [
+        "model",
+        "tool-output"
+      ],
+      "summary": "allowed declare_file_set: 168 bytes returned"
+    },
+    {
+      "digest": "sha256:94e37f37e9e9d90d2b301858b4d8adb96f2d510a3a87932da237f346e2ddf003",
+      "sequence": 196,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788487165457,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 46 of local:qwen3.6:35b-a3b, 463 output tokens"
+    },
+    {
+      "digest": "sha256:ee646da7ea7b054f1d1d8d643781ec8f34472709025eb730d5817bd4e22174eb",
+      "sequence": 197,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788487165458,
+      "provenance": [
+        "model",
+        "tool-output"
+      ],
+      "summary": "requested edit: edit requested"
+    },
+    {
+      "digest": "sha256:315c012d1319ac7a4ba07cac80e16a376ea4b6e20e3e39f2fff42522edaa236d",
+      "sequence": 198,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788487165462,
+      "provenance": [
+        "model",
+        "tool-output"
+      ],
+      "summary": "allowed edit: 60 bytes returned"
+    },
+    {
+      "digest": "sha256:dae8b1555f0b2fddeaf712952c6d1b03b4b893436aedda4f1cf37eecc8dd06a3",
+      "sequence": 199,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788487167114,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 47 of local:qwen3.6:35b-a3b, 90 output tokens"
+    },
+    {
+      "digest": "sha256:8ab7028ab853527855bbff695096e1dc09e883d41e4823e5a1d3ca37efb9f4d0",
+      "sequence": 200,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788487167115,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested shell: shell requested"
+    },
+    {
+      "digest": "sha256:7537bdbfba42b334c29dcf7920a71476bf4628d9a6ccf1d010a2f635a65d1f06",
+      "sequence": 201,
+      "type": "confirmation",
+      "actor": "harness",
+      "timestamp": 1788487167117,
+      "provenance": [
+        "user"
+      ],
+      "summary": "declined shell: python -m pytest -q 2>&1"
+    },
+    {
+      "digest": "sha256:ea2fce22d53b6c7b6bf271fd572423c2845b4262d52d72967769e61c1faf0c52",
+      "sequence": 202,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788487167118,
+      "provenance": [
+        "model"
+      ],
+      "summary": "denied shell: \"python -m pytest -q 2>&1\" is not on the shell allowlist. Confirmation was declined."
+    },
+    {
+      "digest": "sha256:29a39788210ef50dec9359936305921d9c84d7bc9527a4e013e8ceb68cd98de8",
+      "sequence": 203,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788487169715,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 48 of local:qwen3.6:35b-a3b, 145 output tokens"
+    },
+    {
+      "digest": "sha256:c22feac912275e37802eef3649f0eab00a3010ca445289bc4c9db8d5caadcd53",
+      "sequence": 204,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788487169717,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested shell: shell requested"
+    },
+    {
+      "digest": "sha256:1c00471d904635a619b6e0a8575de8798bd3f0ca73faae954f06be71bec83443",
+      "sequence": 205,
+      "type": "confirmation",
+      "actor": "harness",
+      "timestamp": 1788487169718,
+      "provenance": [
+        "user"
+      ],
+      "summary": "declined shell: pytest -q 2>&1"
+    },
+    {
+      "digest": "sha256:47aa82ceaa629a97257b51ede090671d9f63b39b5083dcad337c0ff80f984ce2",
+      "sequence": 206,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788487169719,
+      "provenance": [
+        "model"
+      ],
+      "summary": "denied shell: \"pytest -q 2>&1\" is not on the shell allowlist. Confirmation was declined."
+    },
+    {
+      "digest": "sha256:0485b4492363016a5ac47d5e2eff07b4ab0373ccfa4d86d2284d4e7c866508ae",
+      "sequence": 207,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788487177581,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 49 of local:qwen3.6:35b-a3b, 548 output tokens"
+    },
+    {
+      "digest": "sha256:2435242a44a5d5ed3ba8731123a5dcd552e9fe406337fb4b2a1277f65af32c21",
+      "sequence": 208,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788487177590,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested claim: claim requested"
+    },
+    {
+      "digest": "sha256:b54f42bb1b7adb5926d21e1db6f4a2a5eb7dd8624dc0ace86d6cb5b511cc982c",
+      "sequence": 209,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788487177591,
+      "provenance": [
+        "model"
+      ],
+      "summary": "denied claim: input rejected: [\n  {\n    \"origin\": \"string\",\n    \"code\": \"invalid_format\",\n    \"format\": \"regex\",\n    \"pattern\": \"/^sha256:[0-9a-f]{64}$/\",\n    \"path\": [\n      \"record\"\n    ],\n    \"message\": \"Invalid string: must match pattern /^sha256:[0-9a-f]{64}$/\"\n  }\n]"
+    },
+    {
+      "digest": "sha256:c590c49954adb9c0080e523e4e2edc0a701931c6e5e4daededfad1bad2c32d59",
+      "sequence": 210,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788487183219,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 50 of local:qwen3.6:35b-a3b, 383 output tokens"
+    },
+    {
+      "digest": "sha256:9e9a348aa0356b20b1b1ba595d1d526e5f6fa7bef1a358201486bab389d6e338",
+      "sequence": 211,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788487183220,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested claim: claim requested"
+    },
+    {
+      "digest": "sha256:d914dd6ec399050f70cb2d670dd812f4294e7cb44e38a86590a28f7469b38eca",
+      "sequence": 213,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788487183224,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed claim: 67 bytes returned"
+    },
+    {
+      "digest": "sha256:52780318c1434a3e1c98a070d65ba36a30aa592b83e048bc904156e3a67fdd5d",
+      "sequence": 214,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788487186635,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 51 of local:qwen3.6:35b-a3b, 225 output tokens"
+    },
+    {
+      "digest": "sha256:210c2e702ae2ec0eb19cb8fc20ff965aee985f4e62f6c96576ea4fca298eb569",
+      "sequence": 215,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788487186637,
+      "provenance": [
+        "model"
+      ],
+      "summary": "requested claim: claim requested"
+    },
+    {
+      "digest": "sha256:fb96569b374cab395274d66fb67a0d4d2574434fcb9aeb52ca3a0f2360cfd560",
+      "sequence": 217,
+      "type": "tool-call",
+      "actor": "harness",
+      "timestamp": 1788487186640,
+      "provenance": [
+        "model"
+      ],
+      "summary": "allowed claim: 78 bytes returned"
+    },
+    {
+      "digest": "sha256:79d9eb96a577a5697e6a8d02d7a0c40ebdc5e65a9186d775ef70c472dd09b09d",
+      "sequence": 218,
+      "type": "model-call",
+      "actor": "local:qwen3.6:35b-a3b",
+      "timestamp": 1788487192043,
+      "provenance": [
+        "model"
+      ],
+      "summary": "step 52 of local:qwen3.6:35b-a3b, 338 output tokens"
+    },
+    {
+      "digest": "sha256:233ba46e8ddd4ca31f2db863dd70d33639e4d630a1d64409037b673971b54acb",
+      "sequence": 219,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788487192074,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate typecheck: not-applicable (pyproject.toml configures no type checker)"
+    },
+    {
+      "digest": "sha256:c4f71766b758a75da31cb82f9dc9e472b0f0bca8b1187a0cb483b6a5780f7d9a",
+      "sequence": 220,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788487192075,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate lint: not-applicable (pyproject.toml configures no linter)"
+    },
+    {
+      "digest": "sha256:d34042a91c48b0fe5d9c08a7eabd2e94dfb7eccc53d438afa13e3d40a6e16292",
+      "sequence": 221,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788487192075,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate format: not-applicable (pyproject.toml configures no formatter)"
+    },
+    {
+      "digest": "sha256:9dc9e6d5fe518a26d0e93df647d90394ae4837b4b4f839cd2763c44d31ab57bd",
+      "sequence": 222,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788487196699,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate tests: passed (the command exited 0)"
+    },
+    {
+      "digest": "sha256:0552b41c3cc33e11f9980854753547fefaa4ce5e778e72d1bd6c65dfe5eb269f",
+      "sequence": 223,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788487196700,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate file-set: passed (all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited)"
+    },
+    {
+      "digest": "sha256:80a69ddf538b2edff3530ed1afc787650dc7d826a04eded035e165077cbe6257",
+      "sequence": 224,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788487196710,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate placeholder: passed (no placeholder marker was introduced by this change)"
+    },
+    {
+      "digest": "sha256:48401cbfcc12987dfae6c002c84fc54a4e94fc5d6e443f68ed699bb2fc400bbf",
+      "sequence": 225,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788487196710,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate secret-scan: passed (no known credential pattern appears in the added lines)"
+    },
+    {
+      "digest": "sha256:d10ec5b4c8a1d40b28d094707e71408003a41b576e152d86d5eeb98612fa9caa",
+      "sequence": 226,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788487196711,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate behaviour-probe: passed (0 changed function(s) still answer to their inputs.)"
+    },
+    {
+      "digest": "sha256:d0f1c50406283703bcb20cc9d89ca2fc2bd86d79187be45e836de427e0b167ac",
+      "sequence": 227,
+      "type": "gate-run",
+      "actor": "harness",
+      "timestamp": 1788487196711,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate diff-budget: passed (within budget: 1 file(s) and 1 added line(s))"
+    },
+    {
+      "digest": "sha256:8994662a3ef379c2843d5edbcba2e4147d00d26f1d12cda67806654001180c3c",
+      "sequence": 228,
+      "type": "ratchet-decision",
+      "actor": "harness",
+      "timestamp": 1788487196712,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "attempt 2 accepted: the ratchet accepted the attempt: no measure moved the wrong way (not compared: testsCollected, changedLineCoverage)"
+    },
+    {
+      "digest": "sha256:a5209e59f346b700168c86d3a455cac6c897ab200592a60da66e0fde5a333f03",
+      "sequence": 229,
+      "type": "ratchet-decision",
+      "actor": "harness",
+      "timestamp": 1788487196713,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "the final state against the base commit accepted: the ratchet accepted the attempt: no measure moved the wrong way (not compared: testsCollected, changedLineCoverage)"
+    },
+    {
+      "digest": "sha256:6b55e44de0497ec804efdbdd0962a370ada16c130885cf566a0f247f66316884",
+      "sequence": 230,
+      "type": "gate-bond",
+      "actor": "harness",
+      "timestamp": 1788487201341,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate-bond"
+    },
+    {
+      "digest": "sha256:49e19e6607bc8230c7db75657910f20016e42750866d803f35ec8441819b7ad6",
+      "sequence": 231,
+      "type": "gate-bond",
+      "actor": "harness",
+      "timestamp": 1788487201382,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate-bond"
+    },
+    {
+      "digest": "sha256:5058cc983237b44cd19b40a58c9aac02026b5d5dd2c48ae06ad4b4528cb1ee3b",
+      "sequence": 232,
+      "type": "gate-bond",
+      "actor": "harness",
+      "timestamp": 1788487201427,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate-bond"
+    },
+    {
+      "digest": "sha256:2e88695b3991960d0277714f9db8a765c106c98d1e729a3cb51b03e97c28ee9a",
+      "sequence": 233,
+      "type": "gate-bond",
+      "actor": "harness",
+      "timestamp": 1788487201463,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate-bond"
+    },
+    {
+      "digest": "sha256:2d02bb010ca32e70a5392f7ffaa841f8a8f6c332b6ef3d4fdaa26762dd98f33f",
+      "sequence": 234,
+      "type": "gate-bond",
+      "actor": "harness",
+      "timestamp": 1788487201481,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate-bond"
+    },
+    {
+      "digest": "sha256:27ac3515b25825643f10377e0a14198c5884cad09d5bd62e5154fa7c9b227638",
+      "sequence": 235,
+      "type": "gate-bond",
+      "actor": "harness",
+      "timestamp": 1788487201520,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "gate-bond"
+    },
+    {
+      "digest": "sha256:21d33d3241d87e3c132910c69711152d1b7ac35184891fea4b86b7a700dde692",
+      "sequence": 236,
+      "type": "workspace-diff",
+      "actor": "harness",
+      "timestamp": 1788487201539,
+      "provenance": [
+        "model"
+      ],
+      "summary": "the change this task made, 326 characters of patch against 87935c9e5e7d55914e1509c23941fb8d707ff7b9"
+    },
+    {
+      "digest": "sha256:0741c8ccb3e525e4a0738fb1b339d0e20e190ed6a34c4d9604fea35eb27f28fa",
+      "sequence": 237,
+      "type": "reward",
+      "actor": "harness",
+      "timestamp": 1788487201547,
+      "provenance": [
+        "tool-output"
+      ],
+      "summary": "scored 0 after 1323s, costing nothing"
+    }
+  ],
+  "verifiedCount": 0,
+  "unverifiedCount": 2
+}
