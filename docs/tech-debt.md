@@ -256,10 +256,11 @@ The campaign's third arm, a frontier model over the Anthropic API, was not run, 
 key in the repository's environment authenticates and has no balance. Every other part of the
 arm exists and was exercised in tests: the forwarder that carries TLS to the API untouched, the
 arm definition, the prompt, and the result reader. The report carries the arm with zero runs
-recorded. Paying this is funding the key and running `node campaign/harness/campaign.mjs run
---arm frontier` over the committed manifest, which skips nothing since nothing is recorded, and
-then `report`; the run must be sequenced after any local arm, never beside one, since the
-duration is a measure.
+recorded. On 2026-09-04 the decision was taken not to fund it: at the token volume the local
+arms recorded, fifty frontier runs cost a few hundred dollars, and this project does not spend
+that. The arm stays unmeasured by decision rather than by accident. If that changes, paying
+this is funding the key and running `node campaign/harness/campaign.mjs run --arm frontier`
+over a campaign's manifest, after any local arm and never beside one, then `report`.
 
 ## Debt: the router chooses among the last sweep's candidates, while the table folds every sweep
 
