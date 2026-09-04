@@ -20,6 +20,12 @@ interface CaseBreakdown {
    * reported as a measurement of the model.
    */
   readonly didNotRun: number;
+  /**
+   * Repeats the model answered whose run the runtime then ended, an empty turn or a failed
+   * call, so the gate was never measured. Kept apart from gatePassed for the same reason as
+   * didNotRun: a run cut short by the backend is not a case the model failed.
+   */
+  readonly gateNotMeasured: number;
 }
 
 export interface ModelSummary {
@@ -51,7 +57,7 @@ function valueFor(
     case "patch-apply":
       return observation.toolCalls.applyRate;
     case "gate-pass":
-      return observation.gatePassed ? 1 : 0;
+      return observation.gatePassed === null ? null : observation.gatePassed ? 1 : 0;
     case "tokens-per-second":
       return observation.modelCalls.tokensPerSecond;
     case "time-to-first-token":
@@ -125,9 +131,13 @@ function breakDownByCase(
       caseId,
       taskClass: mine[0]?.taskClass ?? "edit",
       repeats: mine.length,
-      gatePassed: mine.filter((observation) => observation.executed && observation.gatePassed)
-        .length,
+      gatePassed: mine.filter(
+        (observation) => observation.executed && observation.gatePassed === true,
+      ).length,
       didNotRun: mine.filter((observation) => !observation.executed).length,
+      gateNotMeasured: mine.filter(
+        (observation) => observation.executed && observation.gatePassed === null,
+      ).length,
     };
   });
 }

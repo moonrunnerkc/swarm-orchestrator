@@ -43,8 +43,20 @@ export interface CalibrationOutcome {
   readonly caseId: string;
   readonly repeat: number;
   readonly executed: boolean;
-  readonly gatePassed: boolean;
+  /** Null where the run was cut short before its gate was measured. */
+  readonly gatePassed: boolean | null;
   readonly abstentionReason: string | null;
+}
+
+/** The one word the screen and the plain stream both print for a finished run. */
+export function describeVerdict(outcome: CalibrationOutcome): string {
+  if (!outcome.executed) {
+    return `not measured: ${outcome.abstentionReason ?? "unrecorded"}`;
+  }
+  if (outcome.gatePassed === null) {
+    return "cut short before the gate";
+  }
+  return outcome.gatePassed ? "green" : "red";
 }
 
 export type CalibrateEvent =
@@ -136,7 +148,7 @@ function countInto(
       executed: tally.executed + (outcome.executed ? 1 : 0),
       // Green only where the run also measured the model: a gate that passed over a workspace
       // no attempt was made on is not the model solving the case.
-      green: tally.green + (outcome.executed && outcome.gatePassed ? 1 : 0),
+      green: tally.green + (outcome.executed && outcome.gatePassed === true ? 1 : 0),
       abstentions,
     };
   });

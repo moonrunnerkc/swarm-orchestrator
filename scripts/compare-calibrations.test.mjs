@@ -47,8 +47,17 @@ describe("summarizing runs", () => {
     expect(summaries["local:a"].executed).toBe(2);
     expect(summaries["local:a"].dimensions.tokensPerSecond).toMatchObject({ count: 2, minimum: 50, maximum: 70 });
     expect(summaries["local:a"].dimensions.gatePassed.median).toBe(1);
-    expect(summaries["local:a"].cases["case-1"]).toEqual({ taskClass: "edit", green: 1, executed: 2 });
+    expect(summaries["local:a"].cases["case-1"]).toEqual({ taskClass: "edit", green: 1, executed: 2, cutShort: 0 });
     expect(summaries["local:b"].executed).toBe(1);
+  });
+
+  it("counts a repeat cut short before its gate apart, and never as a red gate", () => {
+    const summaries = summarize([run({}), run({ gatePassed: null })]);
+
+    expect(summaries["local:a"].executed).toBe(2);
+    expect(summaries["local:a"].dimensions.gatePassed).toMatchObject({ count: 1, median: 1 });
+    expect(summaries["local:a"].cases["case-1"]).toEqual({ taskClass: "edit", green: 1, executed: 2, cutShort: 1 });
+    expect(render([{ label: "one", summaries }])).toContain("| case-1 | edit | 1 of 1, 1 cut short |");
   });
 });
 

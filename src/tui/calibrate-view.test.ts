@@ -3,6 +3,8 @@ import {
   applyCalibrateEvent,
   type CalibrateEvent,
   type CalibrateView,
+  type CalibrationOutcome,
+  describeVerdict,
   emptyCalibrateView,
   plannedRuns,
 } from "./calibrate-view.ts";
@@ -35,7 +37,7 @@ function outcomeOf(outcome: {
   caseId: string;
   repeat: number;
   executed: boolean;
-  gatePassed: boolean;
+  gatePassed: boolean | null;
   abstentionReason: string | null;
 }): CalibrateEvent {
   return { type: "run-finished", outcome };
@@ -127,6 +129,22 @@ describe("what the projection counts", () => {
     ]);
 
     expect(view.finished).toBe(3);
+  });
+
+  it("counts a run cut short before its gate as executed and never as green", () => {
+    const view = fold([{ type: "plan", plan }, finished(), finished({ gatePassed: null })]);
+
+    expect(view.tallies[0]).toMatchObject({ finished: 2, executed: 2, green: 1 });
+  });
+
+  it("names the three verdicts apart, so a screen cannot paint a cut-short run red", () => {
+    const outcome = (finished() as { outcome: CalibrationOutcome }).outcome;
+    expect(describeVerdict(outcome)).toBe("green");
+    expect(describeVerdict({ ...outcome, gatePassed: false })).toBe("red");
+    expect(describeVerdict({ ...outcome, gatePassed: null })).toBe("cut short before the gate");
+    expect(describeVerdict({ ...outcome, executed: false, abstentionReason: "no-content" })).toBe(
+      "not measured: no-content",
+    );
   });
 });
 

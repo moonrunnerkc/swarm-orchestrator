@@ -2,7 +2,7 @@ import { createElement } from "react";
 import type { Clock } from "../core/clock.ts";
 import { CalibrateScreen } from "./calibrate-screen.ts";
 import { type CalibrateStore, createCalibrateStore } from "./calibrate-store.ts";
-import type { CalibrateEvent } from "./calibrate-view.ts";
+import { type CalibrateEvent, describeVerdict } from "./calibrate-view.ts";
 import type { Theme } from "./theme.ts";
 
 /**
@@ -94,10 +94,7 @@ function plainLine(event: CalibrateEvent, writeLine: (line: string) => void): vo
     return;
   }
   const { outcome } = event;
-  const verdict = !outcome.executed
-    ? `not measured: ${outcome.abstentionReason ?? "unrecorded"}`
-    : outcome.gatePassed
-      ? "green"
-      : "red";
-  writeLine(`  ${outcome.model}  ${outcome.caseId} #${outcome.repeat}  ${verdict}`);
+  writeLine(
+    `  ${outcome.model}  ${outcome.caseId} #${outcome.repeat}  ${describeVerdict(outcome)}`,
+  );
 }

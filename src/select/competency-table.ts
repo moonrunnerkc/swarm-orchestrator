@@ -6,8 +6,9 @@ import { type TaskClass, taskClasses } from "./task-class.ts";
 /**
  * What each calibrated model was measured to do on each class of task, kept as counts of
  * executed repeats and of the ones whose gate passed, per sweep. Every number here is read
- * off `calibration-run` ledger records, executed ones only: a repeat the model never answered
- * is not evidence about the model. Sweeps are kept apart rather than folded, so a reader can
+ * off `calibration-run` ledger records, executed ones whose gate was measured only: a repeat
+ * the model never answered is not evidence about the model, and neither is one the runtime
+ * cut short before the gate. Sweeps are kept apart rather than folded, so a reader can
  * see which measurement each count came from and a later sweep of the same golden set adds
  * samples rather than replacing them.
  */
@@ -37,7 +38,8 @@ export interface CalibrationRunFacts {
   readonly model: string;
   readonly taskClass: TaskClass;
   readonly executed: boolean;
-  readonly gatePassed: boolean;
+  /** Null where the gate was not measured, which counts for nothing here. */
+  readonly gatePassed: boolean | null;
 }
 
 /** Beside the pick and the reward log, outside every workspace. */
@@ -49,7 +51,7 @@ export function emptyCompetencyTable(): CompetencyTable {
   return { schemaVersion: 1, sweeps: [] };
 }
 
-/** One sweep's counts, from its own run records. Unexecuted repeats count for nothing. */
+/** One sweep's counts, from its own run records. A repeat with no gate verdict counts for nothing. */
 export function sweepFromRuns(
   input: {
     readonly sessionId: string;
@@ -63,7 +65,7 @@ export function sweepFromRuns(
     { model: string; taskClass: TaskClass; executed: number; gatePassed: number }
   >();
   for (const run of runs) {
-    if (!run.executed) {
+    if (!run.executed || run.gatePassed === null) {
       continue;
     }
     const key = `${run.model}\n${run.taskClass}`;

@@ -111,8 +111,22 @@ describe("summarizeByModel", () => {
     ])[0];
 
     expect(summary?.byCase).toEqual([
-      { caseId: "a", taskClass: "edit", repeats: 2, gatePassed: 1, didNotRun: 0 },
-      { caseId: "b", taskClass: "test-fix", repeats: 1, gatePassed: 1, didNotRun: 0 },
+      {
+        caseId: "a",
+        taskClass: "edit",
+        repeats: 2,
+        gatePassed: 1,
+        didNotRun: 0,
+        gateNotMeasured: 0,
+      },
+      {
+        caseId: "b",
+        taskClass: "test-fix",
+        repeats: 1,
+        gatePassed: 1,
+        didNotRun: 0,
+        gateNotMeasured: 0,
+      },
     ]);
   });
 
@@ -131,7 +145,47 @@ describe("summarizeByModel", () => {
     ])[0];
 
     expect(summary?.byCase).toEqual([
-      { caseId: "a", taskClass: "edit", repeats: 3, gatePassed: 0, didNotRun: 2 },
+      {
+        caseId: "a",
+        taskClass: "edit",
+        repeats: 3,
+        gatePassed: 0,
+        didNotRun: 2,
+        gateNotMeasured: 0,
+      },
+    ]);
+  });
+
+  /**
+   * The same distinction one level down. A repeat that answered and was then cut short by the
+   * runtime carries no gate verdict at all, and it reaches neither the gate-pass distribution
+   * nor the green count: reading its missing verdict as a failure would score the runtime's
+   * empty turn against the model, which is what the abstention above exists to stop.
+   */
+  it("keeps a repeat cut short before its gate out of the gate-pass distribution, by name", () => {
+    const summary = summarizeByModel([
+      observation({ caseId: "a", gatePassed: true }),
+      observation({
+        caseId: "a",
+        repeat: 2,
+        stopReason: "empty-response",
+        gatePassed: null,
+        gateExitCode: null,
+      }),
+    ])[0];
+
+    expect(summary?.executedRepeats).toBe(2);
+    expect(summary?.dimensions["gate-pass"]).toMatchObject({ samples: 1, unmeasured: 1, mean: 1 });
+    expect(summary?.dimensions["tool-call-validity"]?.samples).toBe(2);
+    expect(summary?.byCase).toEqual([
+      {
+        caseId: "a",
+        taskClass: "edit",
+        repeats: 2,
+        gatePassed: 1,
+        didNotRun: 0,
+        gateNotMeasured: 1,
+      },
     ]);
   });
 

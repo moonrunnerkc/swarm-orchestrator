@@ -19,13 +19,13 @@ const golden = "sha256:golden";
 function runs(
   model: string,
   taskClass: "edit" | "test-fix",
-  outcomes: readonly ("pass" | "fail" | "skip")[],
+  outcomes: readonly ("pass" | "fail" | "skip" | "cut-short")[],
 ): CalibrationRunFacts[] {
   return outcomes.map((outcome) => ({
     model,
     taskClass,
     executed: outcome !== "skip",
-    gatePassed: outcome === "pass",
+    gatePassed: outcome === "cut-short" ? null : outcome === "pass",
   }));
 }
 
@@ -53,6 +53,14 @@ describe("building a sweep from its run records", () => {
 
     expect(built.entries).toEqual([
       { model: "local:a", taskClass: "edit", executed: 1, gatePassed: 1 },
+    ]);
+  });
+
+  it("counts a repeat cut short before its gate for nothing either, in both columns", () => {
+    const built = sweep("s1", runs("local:a", "edit", ["cut-short", "pass", "fail"]));
+
+    expect(built.entries).toEqual([
+      { model: "local:a", taskClass: "edit", executed: 2, gatePassed: 1 },
     ]);
   });
 });
