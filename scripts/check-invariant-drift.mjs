@@ -6,6 +6,12 @@
  *
  * Compares the block line by line and names the first invariant that differs.
  *
+ * Run over this repository with no arguments, it also holds the predicate catalogue the
+ * system prompt carries to the ledger's record types and to the verifier a bundle ships: a
+ * record type the catalogue does not name, or an example the verifier does not read as true
+ * of its sample, is the same drift one layer down, a prompt describing a language the
+ * verifier does not evaluate.
+ *
  *   node scripts/check-invariant-drift.mjs
  */
 import { readFileSync } from "node:fs";
@@ -64,3 +70,23 @@ if (problems.length > 0) {
 }
 
 stdout.write(`invariant block matches across ${first} and ${second}: ${left.length} invariants\n`);
+
+if (files.length === 0) {
+  const { catalogueDrift, predicateCatalogue } = await import(
+    "../src/evidence/predicate-catalogue.ts"
+  );
+  const drift = catalogueDrift();
+  if (drift.length > 0) {
+    for (const problem of drift) {
+      process.stderr.write(`catalogue drift: ${problem}\n`);
+    }
+    process.stderr.write(
+      "\nThe prompt's predicate catalogue is rendered from src/evidence/predicate-catalogue.ts, " +
+        "and every entry is held to the ledger's record types and the shipped verifier.\n",
+    );
+    exit(1);
+  }
+  stdout.write(
+    `predicate catalogue matches the ledger and the verifier: ${predicateCatalogue.length} record kinds\n`,
+  );
+}
