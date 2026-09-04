@@ -91,3 +91,72 @@ with the design question named: whether a floor carried across turns blocks or r
 
 That last row decides Phase 4's shape: the baseline arm runs Claude Code headless against the
 local backend, on the same model the swarm arm uses, and Cursor is NOT-DONE.
+
+## Phase 1: empty-turn corruption
+
+### Reproduction
+
+Deterministic and already in the tree: `src/evidence/fixtures/empty-assistant-turns.json` is
+the two model-call payloads copied out of the 08-23 and 08-24 ledgers, and
+`src/select/empty-turn-regression.test.ts` replays them through the real
+`runCalibrationRepeat`. The replay helper now lives beside the fixture, in
+`src/evidence/fixtures/empty-assistant-turns.ts`, so the regression test and the adversarial
+suite read one copy.
+
+### The path, and the wrong assumption
+
+1. The backend answers a streamed chat completion with no content delta and no tool call. For
+   the shape that mattered, `finish_reason: other`, zero input tokens and zero output tokens,
+   so no usage chunk arrived either: the stream ended before it said anything.
+2. `src/providers/ai-sdk-model-client.ts` drains the stream and assembles a `ModelResponse`
+   with empty text and no tool calls. It raises on an error part, and there was none.
+3. `src/evidence/model-call-recording.ts` writes the `model-call` record. Before commit
+   `643a91e6` that record carried no verdict on whether the turn held anything.
+4. `src/core/loop.ts` reads a turn with no text and no tool call as `empty-response` (or
+   `output-cap` where the finish reason was `length`) and ends the loop.
+5. `src/select/calibration-run.ts` ran the case's gate over the workspace, and wrote the
+   `calibration-run` record with `gatePassed` from that exit code.
+6. `src/select/calibration-summary.ts` folded that gate verdict into the model's gate-pass
+   distribution and its per-case green count.
+
+The wrong assumption sat between steps 4 and 6: that a loop that stopped is a run the model
+made, so whatever the gate found afterwards is a fact about the model. Commit `643a91e6`
+corrected it for the whole repeat: the recorder stamps a content verdict on every turn, the
+run reads `executed` off those records, and a repeat with no valid turn is `abstained` with a
+reason code that every reader filters on. This pass found the same assumption one level down
+and closed it in `1d7fac84`: a repeat that answered, and was then cut short by the runtime
+(`empty-response`, `model-error`, `interrupted`), had its gate run and scored. That is the
+empty turn skipped and the score computed from the rest. Now the gate is not run for such a
+repeat, `gatePassed` and `gateExitCode` are null on the record, the summary counts it as
+`gateNotMeasured` beside `didNotRun`, the competency table counts it for nothing, the
+comparison script prints it as cut short, and the screen has a third verdict word for it.
+
+The cause itself is outside the tree, and stays there: the replay of 2026-09-02 sent the
+byte-identical request, by prompt digest, to the same model on the current backend build and
+got eight full turns. What this tree controls was unchanged between the two days.
+
+### The STOP condition
+
+Not met. The harness accepted nothing it should not have: no model text authored a verdict,
+and no record was trusted from the wrong source. It misread an absence as a measurement,
+which is a harness-side scoring defect and not a trust-boundary breach.
+
+### Regression tests
+
+- `src/evidence/redteam-adversarial.test.ts`, case 18, two forms: the empty turn as the whole
+  repeat, and the empty turn ending a repeat that had answered. Run against the previous
+  commit `e47202f7` in a throwaway worktree, both fail (`gatePassed` was `false` there and
+  the gate command ran); on `1d7fac84` both pass.
+- `src/select/empty-turn-regression.test.ts` gained the mid-run case with the record
+  assertions, and asserts that an output-capped end still measures the gate, since spending
+  the budget on nothing is the model's own end to its run.
+
+### Stale
+
+`docs/evidence/2026-08-18/calibration-report.md` and
+`docs/evidence/2026-08-23/calibration-report.md` carry a dated header naming both commits and
+saying their numbers are not to be cited; the `claims.md` row that names them says the same.
+No campaign record predates the fix. The 08-24 bundle the fixture also came from was never
+committed and needs no header.
+
+Commits: `1d7fac84`, `710e63b4`.
