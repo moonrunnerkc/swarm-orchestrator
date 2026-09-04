@@ -1,0 +1,3097 @@
+step 1: calling local:qwen3.6:35b-a3b
+tool list <- {"path":"."}
+tool list ok: .git/
+.github/
+.gitignore
+.gitmodules
+.nvmrc
+CLAUDE.md
+CODE_OF_CONDUCT.md
+DEVELOPMENT.md
+LICENSE
+README.md
+SECURITY.md
+build/
+dependency-diagram.png
+doc/
+drawio/
+electron-builder-appx.json
+electron-builder-linux-mac.json
+electron-builder-snap.json
+electron-builder-win-arm64.json
+electron-builder-win.json
+node_modules/
+package-lock.json
+package.json
+preload.js
+screenshot.png
+src/
+sync.cjs
+[evidence record sha256:d26f24d14ca7c8017ee190939e07696e33fe6ff9c9d78ab1df25032b8a5bcb55 kind tool-call:list]
+step 2: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"package.json"}
+tool read ok: {
+  "name": "draw.io",
+  "version": "31.4.2",
+  "description": "draw.io desktop",
+  "exports": "./src/main/electron.js",
+  "type": "module",
+  "main": "src/main/electron.js",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "start": "electron .",
+    "sync": "node ./sync.cjs",
+    "test": "node --test src/test/cli-args.test.js src/test/msi-project-created.test.js src/test/window-bounds.test.js",
+    "release-win": "electron-builder --config electron-builder-win.json --publish always",
+    "release-win-arm64": "electron-builder --config electron-builder-win-arm64.json --publish always",
+    "release-appx": "electron-builder --config electron-builder-appx.json --publish always",
+    "release-linux": "electron-builder --config electron-builder-linux-mac.json --publish always",
+    "release-snap": "electron-builder --config electron-builder-snap.json --publish never"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:jgraph/drawio-desktop.git"
+  },
+  "keywords": [
+    "draw.io",
+    "diagram",
+    "flowchart",
+    "UML"
+  ],
+  "author": "JGraph <support@draw.io>",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/jgraph/drawio-desktop/issues"
+  },
+  "homepage": "https://github.com/jgraph/drawio",
+  "dependencies": {
+    "@cantoo/pdf-lib": "^2.7.3",
+    "buffer": "^6.0.3",
+    "compression": "^1.8.1",
+    "crc": "^4.3.2",
+    "electron-context-menu": "^5.0.0",
+    "electron-log": "^5.4.4",
+    "electron-store": "^11.0.2",
+    "electron-updater": "^6.8.9",
+    "tslib": "^2.8.1"
+  },
+  "devDependencies": {
+    "@electron/fuses": "^2.1.3",
+    "@electron/notarize": "^3.1.1",
+    "dotenv": "^17.4.2",
+    "electron": "^44.1.1",
+    "electron-builder": "^26.15.7",
+    "quicklookjs": "^1.0.1",
+    "sumchecker": "^3.0.1"
+  }
+}
+
+[evidence record sha256:eb77c8bf488cadd319277a55048be0c0596ca1e9b33e62ee28c6c9afc04b3476 kind tool-call:read]
+step 3: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"npm run --silent test 2>&1","timeoutMs":60000}
+tool shell ok: exit code: 1
+stdout:
+▶ parseBool
+  ✖ returns true for "true" (0.891009ms)
+  ✖ returns false for "false" (0.11732ms)
+  ✖ returns false for empty string (0.217053ms)
+  ✖ returns false for any other string (0.072184ms)
+✖ parseBool (1.78135ms)
+▶ argsRange
+  ✔ converts 1-based page range to 0-based indexes (0.413476ms)
+  ✔ single page range (0.046844ms)
+  ✔ large range (0.094774ms)
+✔ argsRange (0.906054ms)
+▶ defaults
+  ✔ format defaults to pdf (0.17125ms)
+  ✔ embed-svg-fonts defaults to true (0.049303ms)
+  ✔ svg-theme defaults to auto (0.07852ms)
+  ✔ svg-links-target defaults to auto (0.045553ms)
+  ✔ html-theme defaults to auto (0.033842ms)
+  ✔ html-zoom defaults to true (0.032258ms)
+  ✔ html-lightbox defaults to true (0.039301ms)
+  ✔ html-layers defaults to true (0.044636ms)
+  ✔ html-tags defaults to true (0.033716ms)
+  ✔ html-fit defaults to true (0.444191ms)
+  ✔ html-link-target defaults to auto (0.045553ms)
+  ✔ boolean flags default to undefined (not false) (0.033967ms)
+✔ defaults (1.262099ms)
+▶ boolean flags
+  ✔ -c / --create sets create to true (0.100567ms)
+  ✔ -k / --check sets check to true (0.044428ms)
+  ✔ -x / --export sets export to true (0.047095ms)
+  ✔ -r / --recursive sets recursive to true (0.048095ms)
+  ✔ -t / --transparent sets transparent to true (0.040635ms)
+  ✔ -e / --embed-diagram sets embedDiagram to true (0.032175ms)
+  ✔ --embed-svg-images sets embedSvgImages to true (0.28807ms)
+  ✔ --crop sets crop to true (0.096024ms)
+  ✔ -a / --all-pages sets allPages to true (0.092065ms)
+  ✔ -u / --uncompressed sets uncompressed to true (0.039676ms)
+  ✔ removed --enable-plugins flag is ignored (0.04647ms)
+✔ boolean flags (1.010205ms)
+▶ --format / -f
+  ✔ accepts valid format: pdf (0.156163ms)
+  ✔ accepts valid format: svg (0.029382ms)
+  ✔ accepts valid format: png (0.021464ms)
+  ✔ accepts valid format: jpeg (0.039551ms)
+  ✔ accepts valid format: jpg (0.100024ms)
+  ✔ accepts valid format: xml (0.027298ms)
+  ✔ accepts valid format: html (0.243392ms)
+  ✔ invalid format falls back to default (pdf) (0.035259ms)
+  ✔ invalid format (txt) falls back to default (pdf) (0.027257ms)
+✔ --format / -f (0.796111ms)
+▶ --layout
+  ✔ accepts layout name: verticalFlow (0.081186ms)
+  ✔ accepts layout name: horizontalFlow (0.022547ms)
+  ✔ accepts layout name: verticalTree (0.024965ms)
+  ✔ accepts layout name: horizontalTree (0.017546ms)
+  ✔ accepts layout name: radialTree (0.020588ms)
+  ✔ accepts layout name: organic (0.017171ms)
+  ✔ defaults to undefined when not passed (0.029049ms)
+  ✔ passes unknown names through (validated at runtime) (0.029882ms)
+  ✔ does not consume a following positional (0.084937ms)
+  ✔ passes a custom-layout JSON array through verbatim (0.106609ms)
+  ✔ accepts JSON via inline --layout=<json> form (0.036592ms)
+✔ --layout (0.596145ms)
+▶ --mermaid-image
+  ✔ defaults to undefined when not passed (0.043886ms)
+  ✔ parses 1 / true as true (0.032966ms)
+  ✔ parses 0 / false as false (0.135992ms)
+  ✔ consumes its value and keeps the positional file (0.02559ms)
+  ✔ accepts inline --mermaid-image=1 form (0.031508ms)
+✔ --mermaid-image (0.325412ms)
+▶ numeric options
+  ✔ -q / --quality parses integer (0.048386ms)
+  ✔ -b / --border parses integer (0.021797ms)
+  ✔ -s / --scale parses float (0.023548ms)
+  ✔ --width parses integer (0.018004ms)
+  ✔ --height parses integer (0.017546ms)
+  ✔ -z / --zoom parses float (0.020797ms)
+✔ numeric options (0.199632ms)
+▶ -p / --page-index
+  ✔ converts 1-based CLI input to 0-based index (0.25202ms)
+  ✔ 0 (first page in the pre-v27.0.2 0-based scheme) maps below 0 (0.036467ms)
+  ✔ non-numeric input maps to NaN (0.058806ms)
+✔ -p / --page-index (0.424729ms)
+▶ -g / --page-range
+  ✔ parses 1-based range into 0-based array (0.061182ms)
+  ✔ single-page range (0.022338ms)
+  ✔ value without ".." yields a single-element array (0.020088ms)
+  ✔ 0-based range values map below 0 (0.019338ms)
+✔ -g / --page-range (0.177126ms)
+▶ -l / --layers
+  ✔ stores the raw comma-separated string (0.027507ms)
+✔ -l / --layers (0.043927ms)
+▶ -o / --output
+  ✔ stores the output path (0.033009ms)
+✔ -o / --output (0.056763ms)
+▶ positional argument
+  ✔ captures the input file path (0.048012ms)
+  ✔ no positional arg when not provided (0.023339ms)
+  ✔ captures multiple input paths in order (0.031341ms)
+  ✔ multiple inputs mixed with flags (0.037593ms)
+✔ positional argument (0.19038ms)
+▶ --theme
+  ✔ accepts dark (0.084187ms)
+  ✔ accepts light (0.054721ms)
+  ✔ accepts auto (0.023131ms)
+  ✔ has no default so absence is distinguishable from auto (falls back to --svg-theme) (0.027298ms)
+  ✔ invalid value falls back to undefined (0.03059ms)
+✔ --theme (0.291112ms)
+▶ --svg-theme
+  ✔ accepts dark (0.04822ms)
+  ✔ accepts light (0.055014ms)
+  ✔ "auto" is not in the regex so falls back to default "auto" (0.022798ms)
+  ✔ invalid theme falls back to default "auto" (0.166707ms)
+✔ --svg-theme (0.571306ms)
+▶ --svg-links-target
+  ✔ accepts auto (0.084562ms)
+  ✔ accepts new-win (0.034634ms)
+  ✔ accepts same-win (0.031508ms)
+  ✔ invalid value falls back to default "auto" (0.031466ms)
+✔ --svg-links-target (0.225222ms)
+▶ --size
+  ✔ defaults to diagram (0.063682ms)
+  ✔ accepts diagram (0.043886ms)
+  ✔ accepts page (0.030591ms)
+  ✔ accepts inline --size=page form (0.026298ms)
+  ✔ invalid value falls back to default "diagram" (0.027715ms)
+  ✔ does not consume a following positional (0.028048ms)
+✔ --size (0.280026ms)
+▶ html-theme
+  ✔ accepts dark (0.056514ms)
+  ✔ accepts light (0.028757ms)
+  ✔ accepts auto (0.028341ms)
+  ✔ invalid value falls back to default "auto" (0.031674ms)
+✔ html-theme (0.19138ms)
+▶ html-link-target
+  ✔ accepts auto (0.048429ms)
+  ✔ accepts blank (0.042802ms)
+  ✔ accepts self (0.038718ms)
+  ✔ invalid value falls back to default "auto" (0.019797ms)
+✔ html-link-target (0.187295ms)
+▶ html bool options via --html-* flags
+  ✖ --html-zoom false disables the option (0.161581ms)
+  ✖ --html-zoom true keeps the option enabled (0.089105ms)
+  ✖ --html-lightbox false disables the option (0.045845ms)
+  ✖ --html-lightbox true keeps the option enabled (0.07531ms)
+  ✖ --html-layers false disables the option (0.413017ms)
+  ✖ --html-layers true keeps the option enabled (0.053514ms)
+  ✖ --html-tags false disables the option (0.042219ms)
+  ✖ --html-tags true keeps the option enabled (0.038426ms)
+  ✖ --html-fit false disables the option (0.036926ms)
+  ✖ --html-fit true keeps the option enabled (0.0348ms)
+✖ html bool options via --html-* flags (1.084889ms)
+▶ --embed-svg-fonts
+  ✖ false disables font embedding (0.049012ms)
+  ✖ true enables font embedding (0.040594ms)
+✖ --embed-svg-fonts (0.10911ms)
+▶ --html-link-color and --html-edit-link
+  ✔ stores html-link-color as string (0.08598ms)
+  ✔ stores html-edit-link as string (0.025965ms)
+✔ --html-link-color and --html-edit-link (0.1337ms)
+▶ combined short flags
+  ✔ -xa expands to -x -a (stacked booleans) (0.04972ms)
+  ✔ -xa --crop -o file matches the Makefile scenario from issue #2426 (0.023964ms)
+  ✔ -cke expands three booleans (0.01938ms)
+  ✔ -fpng treats trailing chars as value (0.018171ms)
+  ✔ -xfpng combines boolean -x with value-bearing -f (0.017255ms)
+  ✔ -q85 treats 85 as the quality value (0.024381ms)
+  ✔ recognized prefix is applied, unknown trailing letters ignored (0.016796ms)
+  ✔ clustered short does not consume the next positional (0.017754ms)
+✔ combined short flags (0.234348ms)
+▶ combined export scenario
+  ✔ typical PNG export with all relevant flags (0.034466ms)
+  ✔ typical PDF export with page range (0.026881ms)
+  ✖ HTML export with custom viewer settings (0.050221ms)
+✖ combined export scenario (0.133865ms)
+▶ removeShortcutIcons
+  ✔ removes Icon attribute from all Shortcut elements (0.426979ms)
+  ✔ start menu shortcut keeps its other attributes and child element (0.092814ms)
+  ✔ desktop shortcut stays self-closing (0.070892ms)
+  ✔ keeps the Icon table entry and Add/Remove Programs icon (0.066433ms)
+  ✔ keeps file association (ProgId) icons (0.051846ms)
+  ✔ only the Shortcut Icon attributes are removed (0.071267ms)
+  ✔ is idempotent (0.054846ms)
+✔ removeShortcutIcons (2.457224ms)
+▶ parseLastWinSize
+  ✔ parses width, height, position and flags (0.735346ms)
+  ✔ parses the fullScreen flag (0.07506ms)
+  ✔ parses negative positions (0.065015ms)
+  ✔ falls back to defaults for a corrupt value (0.062932ms)
+  ✔ falls back to defaults for null (0.100024ms)
+  ✔ has no position when the value omits it (0.048303ms)
+  ✔ enforces the minimum window size (0.110485ms)
+✔ parseLastWinSize (2.085508ms)
+▶ placeWindowOnDisplays
+  ✔ keeps a fully visible window unchanged (0.608398ms)
+  ✔ centers on the primary display when there is no saved position (0.108026ms)
+  ✔ resets a window saved on a removed display and shrinks it to fit (0.084062ms)
+  ✔ resets a window that is only visible as a thin sliver (0.189088ms)
+  ✔ keeps a window with just enough visible width (0.058681ms)
+  ✔ resets a window whose title bar is above the top of the screen (0.27165ms)
+  ✔ resets a window whose title bar is below the bottom of the screen (0.048387ms)
+  ✔ keeps the small negative offset of a window maximized on Windows (0.052721ms)
+  ✔ resets the position saved for a window closed while minimized on Windows (0.135075ms)
+  ✔ keeps a window spanning two displays at full size (0.049179ms)
+  ✔ keeps a window on a display left of the primary (0.768812ms)
+  ✔ keeps an oversized window as long as its title bar is visible (0.035842ms)
+  ✔ centers within the work area of an offset primary display (0.034217ms)
+✔ placeWindowOnDisplays (2.702283ms)
+ℹ tests 153
+ℹ suites 27
+ℹ pass 136
+ℹ fail 17
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 62.889607
+
+✖ failing tests:
+
+test at src/test/cli-args.test.js:16:2
+✖ returns true for "true" (0.891009ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///work/src/test/cli-args.test.js:16:47)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Test.start (node:internal/test_runner/test:1257:17)
+      at node:internal/test_runner/test:1887:71
+      at node:internal/per_context/primordials:504:82
+      at new Promise (<anonymous>)
+      at new SafePromise (node:internal/per_context/primordials:478:3)
+      at node:internal/per_context/primordials:504:9
+      at Array.map (<anonymous>) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at src/test/cli-args.test.js:17:2
+✖ returns false for "false" (0.11732ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  true !== false
+  
+      at TestContext.<anonymous> (file:///work/src/test/cli-args.test.js:17:49)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1889:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at src/test/cli-args.test.js:18:2
+✖ returns false for empty string (0.217053ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  true !== false
+  
+      at TestContext.<anonymous> (file:///work/src/test/cli-args.test.js:18:54)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at src/test/cli-args.test.js:19:2
+✖ returns false for any other string (0.072184ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  true !== false
+  
+      at TestContext.<anonymous> (file:///work/src/test/cli-args.test.js:19:58)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at src/test/cli-args.test.js:574:3
+✖ --html-zoom false disables the option (0.161581ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  true !== false
+  
+      at TestContext.<anonymous> (file:///work/src/test/cli-args.test.js:576:11)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Test.start (node:internal/test_runner/test:1257:17)
+      at node:internal/test_runner/test:1887:71
+      at node:internal/per_context/primordials:504:82
+      at new Promise (<anonymous>)
+      at new SafePromise (node:internal/per_context/primordials:478:3)
+      at node:internal/per_context/primordials:504:9
+      at Array.map (<anonymous>) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at src/test/cli-args.test.js:579:3
+✖ --html-zoom true keeps the option enabled (0.089105ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///work/src/test/cli-args.test.js:581:11)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1889:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at src/test/cli-args.test.js:574:3
+✖ --html-lightbox false disables the option (0.045845ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  true !== false
+  
+      at TestContext.<anonymous> (file:///work/src/test/cli-args.test.js:576:11)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at src/test/cli-args.test.js:579:3
+✖ --html-lightbox true keeps the option enabled (0.07531ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///work/src/test/cli-args.test.js:581:11)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at src/test/cli-args.test.js:574:3
+✖ --html-layers false disables the option (0.413017ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  true !== false
+  
+      at TestContext.<anonymous> (file:///work/src/test/cli-args.test.js:576:11)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at src/test/cli-args.test.js:579:3
+✖ --html-layers true keeps the option enabled (0.053514ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///work/src/test/cli-args.test.js:581:11)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at src/test/cli-args.test.js:574:3
+✖ --html-tags false disables the option (0.042219ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  true !== false
+  
+      at TestContext.<anonymous> (file:///work/src/test/cli-args.test.js:576:11)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at src/test/cli-args.test.js:579:3
+✖ --html-tags true keeps the option enabled (0.038426ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///work/src/test/cli-args.test.js:581:11)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at src/test/cli-args.test.js:574:3
+✖ --html-fit false disables the option (0.036926ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  true !== false
+  
+      at TestContext.<anonymous> (file:///work/src/test/cli-args.test.js:576:11)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at src/test/cli-args.test.js:579:3
+✖ --html-fit true keeps the option enabled (0.0348ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///work/src/test/cli-args.test.js:581:11)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at src/test/cli-args.test.js:588:2
+✖ false disables font embedding (0.049012ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  true !== false
+  
+      at TestContext.<anonymous> (file:///work/src/test/cli-args.test.js:590:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Test.start (node:internal/test_runner/test:1257:17)
+      at node:internal/test_runner/test:1887:71
+      at node:internal/per_context/primordials:504:82
+      at new Promise (<anonymous>)
+      at new SafePromise (node:internal/per_context/primordials:478:3)
+      at node:internal/per_context/primordials:504:9
+      at Array.map (<anonymous>) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at src/test/cli-args.test.js:593:2
+✖ true enables font embedding (0.040594ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///work/src/test/cli-args.test.js:595:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1889:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at src/test/cli-args.test.js:724:2
+✖ HTML export with custom viewer settings (0.050221ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  true !== false
+  
+      at TestContext.<anonymous> (file:///work/src/test/cli-args.test.js:738:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: true,
+    expected: false,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+[evidence record sha256:4b6e4970cf70f08c7aab43549a6acce95b9836a07e499bb9748cc645219f9e67 kind tool-call:shell]
+step 4: calling local:qwen3.6:35b-a3b
+tool list <- {"path":"src"}
+tool list ok: main/
+test/
+[evidence record sha256:b7fbc33993b562466f750c038ec3882060b3a31b9e49163478db0617efba100a kind tool-call:list]
+tool read <- {"path":"src/test/cli-args.test.js"}
+tool read ok: // Unit tests for CLI argument parsing — exercises src/main/args.js directly
+// Run with: npm test
+import { test, describe } from 'node:test';
+import assert from 'node:assert/strict';
+import { parseDrawioArgs, parseBool, argsRange } from '../main/args.js';
+
+function parse(args)
+{
+	return parseDrawioArgs(['node', 'drawio', ...args]);
+}
+
+// ─── Helper functions ────────────────────────────────────────────────────────
+
+describe('parseBool', () =>
+{
+	test('returns true for "true"', () => assert.equal(parseBool('true'), true));
+	test('returns false for "false"', () => assert.equal(parseBool('false'), false));
+	test('returns false for empty string', () => assert.equal(parseBool(''), false));
+	test('returns false for any other string', () => assert.equal(parseBool('yes'), false));
+});
+
+describe('argsRange', () =>
+{
+	test('converts 1-based page range to 0-based indexes', () =>
+	{
+		assert.deepEqual(argsRange('1..3'), [0, 2]);
+	});
+
+	test('single page range', () =>
+	{
+		assert.deepEqual(argsRange('2..2'), [1, 1]);
+	});
+
+	test('large range', () =>
+	{
+		assert.deepEqual(argsRange('5..10'), [4, 9]);
+	});
+});
+
+// ─── Default values ──────────────────────────────────────────────────────────
+
+describe('defaults', () =>
+{
+	test('format defaults to pdf', () =>
+	{
+		const { opts } = parse([]);
+		assert.equal(opts.format, 'pdf');
+	});
+
+	test('embed-svg-fonts defaults to true', () =>
+	{
+		const { opts } = parse([]);
+		assert.equal(opts.embedSvgFonts, true);
+	});
+
+	test('svg-theme defaults to auto', () =>
+	{
+		const { opts } = parse([]);
+		assert.equal(opts.svgTheme, 'auto');
+	});
+
+	test('svg-links-target defaults to auto', () =>
+	{
+		const { opts } = parse([]);
+		assert.equal(opts.svgLinksTarget, 'auto');
+	});
+
+	test('html-theme defaults to auto', () =>
+	{
+		const { opts } = parse([]);
+		assert.equal(opts.htmlTheme, 'auto');
+	});
+
+	test('html-zoom defaults to true', () =>
+	{
+		const { opts } = parse([]);
+		assert.equal(opts.htmlZoom, true);
+	});
+
+	test('html-lightbox defaults to true', () =>
+	{
+		const { opts } = parse([]);
+		assert.equal(opts.htmlLightbox, true);
+	});
+
+	test('html-layers defaults to true', () =>
+	{
+		const { opts } = parse([]);
+		assert.equal(opts.htmlLayers, true);
+	});
+
+	test('html-tags defaults to true', () =>
+	{
+		const { opts } = parse([]);
+		assert.equal(opts.htmlTags, true);
+	});
+
+	test('html-fit defaults to true', () =>
+	{
+		const { opts } = parse([]);
+		assert.equal(opts.htmlFit, true);
+	});
+
+	test('html-link-target defaults to auto', () =>
+	{
+		const { opts } = parse([]);
+		assert.equal(opts.htmlLinkTarget, 'auto');
+	});
+
+	test('boolean flags default to undefined (not false)', () =>
+	{
+		const { opts } = parse([]);
+		assert.equal(opts.create, undefined);
+		assert.equal(opts.export, undefined);
+		assert.equal(opts.recursive, undefined);
+		assert.equal(opts.transparent, undefined);
+		assert.equal(opts.allPages, undefined);
+		assert.equal(opts.crop, undefined);
+	});
+});
+
+// ─── Boolean flags ───────────────────────────────────────────────────────────
+
+describe('boolean flags', () =>
+{
+	test('-c / --create sets create to true', () =>
+	{
+		assert.equal(parse(['-c']).opts.create, true);
+		assert.equal(parse(['--create']).opts.create, true);
+	});
+
+	test('-k / --check sets check to true', () =>
+	{
+		assert.equal(parse(['-k']).opts.check, true);
+		assert.equal(parse(['--check']).opts.check, true);
+	});
+
+	test('-x / --export sets export to true', () =>
+	{
+		assert.equal(parse(['-x']).opts.export, true);
+		assert.equal(parse(['--export']).opts.export, true);
+	});
+
+	test('-r / --recursive sets recursive to true', () =>
+	{
+		assert.equal(parse(['-r']).opts.recursive, true);
+		assert.equal(parse(['--recursive']).opts.recursive, true);
+	});
+
+	test('-t / --transparent sets transparent to true', () =>
+	{
+		assert.equal(parse(['-t']).opts.transparent, true);
+		assert.equal(parse(['--transparent']).opts.transparent, true);
+	});
+
+	test('-e / --embed-diagram sets embedDiagram to true', () =>
+	{
+		assert.equal(parse(['-e']).opts.embedDiagram, true);
+		assert.equal(parse(['--embed-diagram']).opts.embedDiagram, true);
+	});
+
+	test('--embed-svg-images sets embedSvgImages to true', () =>
+	{
+		assert.equal(parse(['--embed-svg-images']).opts.embedSvgImages, true);
+	});
+
+	test('--crop sets crop to true', () =>
+	{
+		assert.equal(parse(['--crop']).opts.crop, true);
+	});
+
+	test('-a / --all-pages sets allPages to true', () =>
+	{
+		assert.equal(parse(['-a']).opts.allPages, true);
+		assert.equal(parse(['--all-pages']).opts.allPages, true);
+	});
+
+	test('-u / --uncompressed sets uncompressed to true', () =>
+	{
+		assert.equal(parse(['-u']).opts.uncompressed, true);
+		assert.equal(parse(['--uncompressed']).opts.uncompressed, true);
+	});
+
+	test('removed --enable-plugins flag is ignored', () =>
+	{
+		// External plugin support was removed; the flag may linger in old
+		// shortcuts and must be dropped, not parsed or read as a file name
+		const { opts, args } = parse(['--enable-plugins', 'diagram.drawio']);
+		assert.equal(opts.enablePlugins, undefined);
+		assert.deepEqual(args, ['diagram.drawio']);
+	});
+});
+
+// ─── Format validation ───────────────────────────────────────────────────────
+// Note: commander v14 with a RegExp parseArg silently falls back to the default
+// value when the input does not match — it does NOT throw an error.
+
+describe('--format / -f', () =>
+{
+	const validFormats = ['pdf', 'svg', 'png', 'jpeg', 'jpg', 'xml', 'html'];
+
+	for (const fmt of validFormats)
+	{
+		test(`accepts valid format: ${fmt}`, () =>
+		{
+			assert.equal(parse(['-f', fmt]).opts.format, fmt);
+			assert.equal(parse(['--format', fmt]).opts.format, fmt);
+		});
+	}
+
+	test('invalid format falls back to default (pdf)', () =>
+	{
+		assert.equal(parse(['-f', 'gif']).opts.format, 'pdf');
+	});
+
+	test('invalid format (txt) falls back to default (pdf)', () =>
+	{
+		assert.equal(parse(['-f', 'txt']).opts.format, 'pdf');
+	});
+});
+
+// ─── --layout ────────────────────────────────────────────────────────────────
+
+describe('--layout', () =>
+{
+	const presets = ['verticalFlow', 'horizontalFlow', 'verticalTree',
+		'horizontalTree', 'radialTree', 'organic'];
+
+	for (const name of presets)
+	{
+		test(`accepts layout name: ${name}`, () =>
+		{
+			assert.equal(parse(['--layout', name]).opts.layout, name);
+		});
+	}
+
+	test('defaults to undefined when not passed', () =>
+	{
+		assert.equal(parse([]).opts.layout, undefined);
+	});
+
+	test('passes unknown names through (validated at runtime)', () =>
+	{
+		assert.equal(parse(['--layout', 'bogus']).opts.layout, 'bogus');
+	});
+
+	test('does not consume a following positional', () =>
+	{
+		const { opts, args } = parse(['--layout', 'organic', 'in.drawio']);
+		assert.equal(opts.layout, 'organic');
+		assert.deepEqual(args, ['in.drawio']);
+	});
+
+	test('passes a custom-layout JSON array through verbatim', () =>
+	{
+		const json = '[{"layout":"elkLayered","config":{"elk.direction":"RIGHT"}}]';
+		const { opts, args } = parse(['--layout', json, 'in.drawio']);
+		assert.equal(opts.layout, json);
+		assert.deepEqual(JSON.parse(opts.layout), [{layout: 'elkLayered', config: {'elk.direction': 'RIGHT'}}]);
+		assert.deepEqual(args, ['in.drawio']);
+	});
+
+	test('accepts JSON via inline --layout=<json> form', () =>
+	{
+		const json = '[{"layout":"elkTree","config":{}}]';
+		assert.equal(parse(['--layout=' + json]).opts.layout, json);
+	});
+});
+
+// ─── --mermaid-image ─────────────────────────────────────────────────────────
+
+describe('--mermaid-image', () =>
+{
+	test('defaults to undefined when not passed', () =>
+	{
+		assert.equal(parse([]).opts.mermaidImage, undefined);
+	});
+
+	test('parses 1 / true as true', () =>
+	{
+		assert.equal(parse(['--mermaid-image', '1']).opts.mermaidImage, true);
+		assert.equal(parse(['--mermaid-image', 'true']).opts.mermaidImage, true);
+	});
+
+	test('parses 0 / false as false', () =>
+	{
+		assert.equal(parse(['--mermaid-image', '0']).opts.mermaidImage, false);
+		assert.equal(parse(['--mermaid-image', 'false']).opts.mermaidImage, false);
+	});
+
+	test('consumes its value and keeps the positional file', () =>
+	{
+		const { opts, args } = parse(['in.mmd', '--mermaid-image', '1']);
+		assert.equal(opts.mermaidImage, true);
+		assert.deepEqual(args, ['in.mmd']);
+	});
+
+	test('accepts inline --mermaid-image=1 form', () =>
+	{
+		assert.equal(parse(['--mermaid-image=1']).opts.mermaidImage, true);
+		assert.equal(parse(['--mermaid-image=false']).opts.mermaidImage, false);
+	});
+});
+
+// ─── Numeric options ─────────────────────────────────────────────────────────
+
+describe('numeric options', () =>
+{
+	test('-q / --quality parses integer', () =>
+	{
+		assert.equal(parse(['-q', '85']).opts.quality, 85);
+		assert.equal(parse(['--quality', '100']).opts.quality, 100);
+	});
+
+	test('-b / --border parses integer', () =>
+	{
+		assert.equal(parse(['-b', '10']).opts.border, 10);
+		assert.equal(parse(['--border', '0']).opts.border, 0);
+	});
+
+	test('-s / --scale parses float', () =>
+	{
+		assert.equal(parse(['-s', '1.5']).opts.scale, 1.5);
+		assert.equal(parse(['--scale', '2.0']).opts.scale, 2.0);
+	});
+
+	test('--width parses integer', () =>
+	{
+		assert.equal(parse(['--width', '800']).opts.width, 800);
+	});
+
+	test('--height parses integer', () =>
+	{
+		assert.equal(parse(['--height', '600']).opts.height, 600);
+	});
+
+	test('-z / --zoom parses float', () =>
+	{
+		assert.equal(parse(['-z', '1.25']).opts.zoom, 1.25);
+		assert.equal(parse(['--zoom', '0.75']).opts.zoom, 0.75);
+	});
+});
+
+// ─── Page index ──────────────────────────────────────────────────────────────
+
+describe('-p / --page-index', () =>
+{
+	test('converts 1-based CLI input to 0-based index', () =>
+	{
+		assert.equal(parse(['-p', '1']).opts.pageIndex, 0);
+		assert.equal(parse(['-p', '2']).opts.pageIndex, 1);
+		assert.equal(parse(['--page-index', '5']).opts.pageIndex, 4);
+	});
+
+	// The export path rejects any pageIndex below 0 with an error instead of
+	// silently exporting the first page [jgraph/drawio-desktop#2319]
+	test('0 (first page in the pre-v27.0.2 0-based scheme) maps below 0', () =>
+	{
+		assert.equal(parse(['-p', '0']).opts.pageIndex, -1);
+	});
+
+	test('non-numeric input maps to NaN', () =>
+	{
+		assert.ok(Number.isNaN(parse(['-p', 'abc']).opts.pageIndex));
+	});
+});
+
+// ─── Page range ──────────────────────────────────────────────────────────────
+
+describe('-g / --page-range', () =>
+{
+	test('parses 1-based range into 0-based array', () =>
+	{
+		assert.deepEqual(parse(['-g', '1..3']).opts.pageRange, [0, 2]);
+		assert.deepEqual(parse(['--page-range', '2..5']).opts.pageRange, [1, 4]);
+	});
+
+	test('single-page range', () =>
+	{
+		assert.deepEqual(parse(['-g', '3..3']).opts.pageRange, [2, 2]);
+	});
+
+	// The export path rejects these malformed shapes with an error instead of
+	// silently exporting the first page [jgraph/drawio-desktop#2319]
+	test('value without ".." yields a single-element array', () =>
+	{
+		assert.deepEqual(parse(['-g', '3']).opts.pageRange, [2]);
+	});
+
+	test('0-based range values map below 0', () =>
+	{
+		assert.deepEqual(parse(['-g', '0..2']).opts.pageRange, [-1, 1]);
+	});
+});
+
+// ─── Layers ──────────────────────────────────────────────────────────────────
+
+describe('-l / --layers', () =>
+{
+	test('stores the raw comma-separated string', () =>
+	{
+		assert.equal(parse(['-l', '0,1,2']).opts.layers, '0,1,2');
+		assert.equal(parse(['--layers', '3']).opts.layers, '3');
+	});
+});
+
+// ─── Output / paths ──────────────────────────────────────────────────────────
+
+describe('-o / --output', () =>
+{
+	test('stores the output path', () =>
+	{
+		assert.equal(parse(['-o', '/tmp/out.pdf']).opts.output, '/tmp/out.pdf');
+		assert.equal(parse(['--output', 'diagram.svg']).opts.output, 'diagram.svg');
+	});
+});
+
+describe('positional argument', () =>
+{
+	test('captures the input file path', () =>
+	{
+		const { args } = parse(['/path/to/diagram.drawio']);
+		assert.equal(args[0], '/path/to/diagram.drawio');
+	});
+
+	test('no positional arg when not provided', () =>
+	{
+		const { args } = parse([]);
+		assert.equal(args.length, 0);
+	});
+
+	// Multiple input files/folders are exported in one run
+	// [jgraph/drawio-desktop#2433]
+	test('captures multiple input paths in order', () =>
+	{
+		const { args } = parse(['a.drawio', 'b.drawio', 'some/folder']);
+		assert.deepEqual(args, ['a.drawio', 'b.drawio', 'some/folder']);
+	});
+
+	test('multiple inputs mixed with flags', () =>
+	{
+		const { opts, args } = parse(['-x', 'a.drawio', '-f', 'png', 'b.drawio', '-t', 'c.drawio']);
+		assert.equal(opts.export, true);
+		assert.equal(opts.format, 'png');
+		assert.equal(opts.transparent, true);
+		assert.deepEqual(args, ['a.drawio', 'b.drawio', 'c.drawio']);
+	});
+});
+
+// ─── Theme (all formats) ─────────────────────────────────────────────────────
+
+describe('--theme', () =>
+{
+	test('accepts dark',  () => assert.equal(parse(['--theme', 'dark']).opts.theme, 'dark'));
+	test('accepts light', () => assert.equal(parse(['--theme', 'light']).opts.theme, 'light'));
+	test('accepts auto',  () => assert.equal(parse(['--theme', 'auto']).opts.theme, 'auto'));
+
+	test('has no default so absence is distinguishable from auto (falls back to --svg-theme)', () =>
+	{
+		assert.equal(parse([]).opts.theme, undefined);
+	});
+
+	test('invalid value falls back to undefined', () =>
+	{
+		assert.equal(parse(['--theme', 'blue']).opts.theme, undefined);
+	});
+});
+
+// ─── SVG theme ───────────────────────────────────────────────────────────────
+// themeRegExp = /^(dark|light)$/ — 'auto' is NOT in the pattern.
+// Commander v14 silently falls back to the option default when the regex doesn't match,
+// so passing --svg-theme auto on the CLI silently yields 'auto' (the default) rather
+// than accepting 'auto' as a matched value.  This means 'auto' cannot be distinguished
+// from "user didn't pass the flag at all", which is a subtle limitation of this setup.
+
+describe('--svg-theme', () =>
+{
+	test('accepts dark', () => assert.equal(parse(['--svg-theme', 'dark']).opts.svgTheme, 'dark'));
+	test('accepts light', () => assert.equal(parse(['--svg-theme', 'light']).opts.svgTheme, 'light'));
+
+	test('"auto" is not in the regex so falls back to default "auto"', () =>
+	{
+		assert.equal(parse(['--svg-theme', 'auto']).opts.svgTheme, 'auto');
+	});
+
+	test('invalid theme falls back to default "auto"', () =>
+	{
+		assert.equal(parse(['--svg-theme', 'blue']).opts.svgTheme, 'auto');
+	});
+});
+
+// ─── SVG links target ────────────────────────────────────────────────────────
+
+describe('--svg-links-target', () =>
+{
+	test('accepts auto',     () => assert.equal(parse(['--svg-links-target', 'auto']).opts.svgLinksTarget, 'auto'));
+	test('accepts new-win', () => assert.equal(parse(['--svg-links-target', 'new-win']).opts.svgLinksTarget, 'new-win'));
+	test('accepts same-win', () => assert.equal(parse(['--svg-links-target', 'same-win']).opts.svgLinksTarget, 'same-win'));
+	test('invalid value falls back to default "auto"', () =>
+	{
+		assert.equal(parse(['--svg-links-target', 'blank']).opts.svgLinksTarget, 'auto');
+	});
+});
+
+// ─── Export size mode ────────────────────────────────────────────────────────
+// --size page exports images at the full page size instead of cropping to the
+// diagram content, matching the export dialog's Size option
+// [jgraph/drawio-desktop#2481]
+
+describe('--size', () =>
+{
+	test('defaults to diagram', () =>
+	{
+		assert.equal(parse([]).opts.size, 'diagram');
+	});
+
+	test('accepts diagram', () => assert.equal(parse(['--size', 'diagram']).opts.size, 'diagram'));
+	test('accepts page',    () => assert.equal(parse(['--size', 'page']).opts.size, 'page'));
+
+	test('accepts inline --size=page form', () =>
+	{
+		assert.equal(parse(['--size=page']).opts.size, 'page');
+	});
+
+	test('invalid value falls back to default "diagram"', () =>
+	{
+		assert.equal(parse(['--size', 'selectionOnly']).opts.size, 'diagram');
+	});
+
+	test('does not consume a following positional', () =>
+	{
+		const { opts, args } = parse(['--size', 'page', 'in.drawio']);
+		assert.equal(opts.size, 'page');
+		assert.deepEqual(args, ['in.drawio']);
+	});
+});
+
+// ─── HTML options ────────────────────────────────────────────────────────────
+
+describe('html-theme', () =>
+{
+	test('accepts dark',  () => assert.equal(parse(['--html-theme', 'dark']).opts.htmlTheme, 'dark'));
+	test('accepts light', () => assert.equal(parse(['--html-theme', 'light']).opts.htmlTheme, 'light'));
+	test('accepts auto',  () => assert.equal(parse(['--html-theme', 'auto']).opts.htmlTheme, 'auto'));
+	test('invalid value falls back to default "auto"', () =>
+	{
+		assert.equal(parse(['--html-theme', 'system']).opts.htmlTheme, 'auto');
+	});
+});
+
+describe('html-link-target', () =>
+{
+	test('accepts auto',  () => assert.equal(parse(['--html-link-target', 'auto']).opts.htmlLinkTarget, 'auto'));
+	test('accepts blank', () => assert.equal(parse(['--html-link-target', 'blank']).opts.htmlLinkTarget, 'blank'));
+	test('accepts self',  () => assert.equal(parse(['--html-link-target', 'self']).opts.htmlLinkTarget, 'self'));
+	test('invalid value falls back to default "auto"', () =>
+	{
+		assert.equal(parse(['--html-link-target', 'new-win']).opts.htmlLinkTarget, 'auto');
+	});
+});
+
+describe('html bool options via --html-* flags', () =>
+{
+	const htmlBoolOpts = [
+		['--html-zoom',      'htmlZoom'],
+		['--html-lightbox',  'htmlLightbox'],
+		['--html-layers',    'htmlLayers'],
+		['--html-tags',      'htmlTags'],
+		['--html-fit',       'htmlFit'],
+	];
+
+	for (const [flag, key] of htmlBoolOpts)
+	{
+		test(`${flag} false disables the option`, () =>
+		{
+			assert.equal(parse([flag, 'false']).opts[key], false);
+		});
+
+		test(`${flag} true keeps the option enabled`, () =>
+		{
+			assert.equal(parse([flag, 'true']).opts[key], true);
+		});
+	}
+});
+
+describe('--embed-svg-fonts', () =>
+{
+	test('false disables font embedding', () =>
+	{
+		assert.equal(parse(['--embed-svg-fonts', 'false']).opts.embedSvgFonts, false);
+	});
+
+	test('true enables font embedding', () =>
+	{
+		assert.equal(parse(['--embed-svg-fonts', 'true']).opts.embedSvgFonts, true);
+	});
+});
+
+describe('--html-link-color and --html-edit-link', () =>
+{
+	test('stores html-link-color as string', () =>
+	{
+		assert.equal(parse(['--html-link-color', '#ff0000']).opts.htmlLinkColor, '#ff0000');
+	});
+
+	test('stores html-edit-link as string', () =>
+	{
+		assert.equal(parse(['--html-edit-link', 'https://example.com/edit']).opts.htmlEditLink, 'https://example.com/edit');
+	});
+});
+
+// ─── Combined short flags (commander.js compat) ──────────────────────────────
+// Pre-30.0.0, drawio used commander.js, which expands stacked short booleans
+// (`-xa` → `-x -a`) and attached short-flag values (`-fpng` → `-f png`).
+// Real-world Makefiles (e.g. jgraph/drawio-desktop#2426) depend on this.
+
+describe('combined short flags', () =>
+{
+	test('-xa expands to -x -a (stacked booleans)', () =>
+	{
+		const { opts } = parse(['-xa']);
+		assert.equal(opts.export, true);
+		assert.equal(opts.allPages, true);
+	});
+
+	test('-xa --crop -o file matches the Makefile scenario from issue #2426', () =>
+	{
+		const { opts, args } = parse(['schematy.drawio', '-xa', '--crop', '-o', 'out.pdf']);
+		assert.equal(opts.export, true);
+		assert.equal(opts.allPages, true);
+		assert.equal(opts.crop, true);
+		assert.equal(opts.output, 'out.pdf');
+		assert.equal(args[0], 'schematy.drawio');
+	});
+
+	test('-cke expands three booleans', () =>
+	{
+		const { opts } = parse(['-cke']);
+		assert.equal(opts.create, true);
+		assert.equal(opts.check, true);
+		assert.equal(opts.embedDiagram, true);
+	});
+
+	test('-fpng treats trailing chars as value', () =>
+	{
+		const { opts } = parse(['-fpng']);
+		assert.equal(opts.format, 'png');
+	});
+
+	test('-xfpng combines boolean -x with value-bearing -f', () =>
+	{
+		const { opts } = parse(['-xfpng']);
+		assert.equal(opts.export, true);
+		assert.equal(opts.format, 'png');
+	});
+
+	test('-q85 treats 85 as the quality value', () =>
+	{
+		const { opts } = parse(['-q85']);
+		assert.equal(opts.quality, 85);
+	});
+
+	test('recognized prefix is applied, unknown trailing letters ignored', () =>
+	{
+		// Pre-30.0.0 drawio used commander with .allowUnknownOption(); unknown
+		// letters in a cluster were silently skipped, not treated as a fatal error.
+		const { opts } = parse(['-xZ']);
+		assert.equal(opts.export, true);
+	});
+
+	test('clustered short does not consume the next positional', () =>
+	{
+		const { opts, args } = parse(['-xa', 'input.drawio']);
+		assert.equal(opts.export, true);
+		assert.equal(opts.allPages, true);
+		assert.equal(args[0], 'input.drawio');
+	});
+});
+
+// ─── Combined options ────────────────────────────────────────────────────────
+
+describe('combined export scenario', () =>
+{
+	test('typical PNG export with all relevant flags', () =>
+	{
+		const { opts, args } = parse([
+			'-x',
+			'-f', 'png',
+			'-o', '/tmp/diagram.png',
+			'-b', '5',
+			'-s', '2.0',
+			'-t',
+			'-e',
+			'input.drawio',
+		]);
+
+		assert.equal(opts.export, true);
+		assert.equal(opts.format, 'png');
+		assert.equal(opts.output, '/tmp/diagram.png');
+		assert.equal(opts.border, 5);
+		assert.equal(opts.scale, 2.0);
+		assert.equal(opts.transparent, true);
+		assert.equal(opts.embedDiagram, true);
+		assert.equal(args[0], 'input.drawio');
+	});
+
+	test('typical PDF export with page range', () =>
+	{
+		const { opts } = parse([
+			'-x',
+			'-f', 'pdf',
+			'-a',
+			'--crop',
+			'-g', '2..4',
+		]);
+
+		assert.equal(opts.export, true);
+		assert.equal(opts.format, 'pdf');
+		assert.equal(opts.allPages, true);
+		assert.equal(opts.crop, true);
+		assert.deepEqual(opts.pageRange, [1, 3]);
+	});
+
+	test('HTML export with custom viewer settings', () =>
+	{
+		const { opts } = parse([
+			'-x',
+			'-f', 'html',
+			'--html-theme', 'dark',
+			'--html-zoom', 'false',
+			'--html-lightbox', 'false',
+			'--html-link-target', 'blank',
+			'--html-link-color', '#00ff00',
+		]);
+
+		assert.equal(opts.format, 'html');
+		assert.equal(opts.htmlTheme, 'dark');
+		assert.equal(opts.htmlZoom, false);
+		assert.equal(opts.htmlLightbox, false);
+		assert.equal(opts.htmlLinkTarget, 'blank');
+		assert.equal(opts.htmlLinkColor, '#00ff00');
+	});
+});
+
+[evidence record sha256:bff0e10a0f1017ed43fd8e5901a9217c4506914b9ae50e0c77bda5239f85170a kind tool-call:read]
+step 5: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/main/args.js"}
+tool read ok: export const validFormatRegExp = /^(pdf|svg|png|jpeg|jpg|xml|html)$/;
+
+export function parseBool(val) { return val !== 'true'; }
+
+export function argsRange(val) { return val.split('..').map(n => parseInt(n, 10) - 1); }
+
+// Each entry: { short?, long, key, valueLabel?, takesValue?, parse?, default?, desc }
+// parse(rawString) must return null/undefined to signal "use default" (e.g. regex mismatch).
+const OPTION_DEFS = [
+	{ short: '-c', long: '--create',           key: 'create',
+	  desc: 'creates a new empty file if no file is passed' },
+	{ short: '-k', long: '--check',            key: 'check',
+	  desc: 'does not overwrite existing files' },
+	{ short: '-x', long: '--export',           key: 'export',
+	  desc: 'export the input files/folders based on the given options. Besides draw.io files, vsdx, csv and Mermaid (.mmd/.mermaid) inputs are also supported' },
+	{ short: '-r', long: '--recursive',        key: 'recursive',
+	  desc: 'for a folder input, recursively convert all files in sub-folders also' },
+	{ short: '-o', long: '--output',           key: 'output',         takesValue: true,
+	  valueLabel: '<output file/folder>',
+	  desc: 'specify the output file/folder. If omitted, the input file name is used for output with the specified format as extension' },
+	{ short: '-f', long: '--format',           key: 'format',         takesValue: true,
+	  valueLabel: '<format>',
+	  parse: v => validFormatRegExp.test(v) ? v : null,               default: 'pdf',
+	  desc: 'if output file name extension is specified, this option is ignored (file type is determined from output extension, possible export formats are pdf, png, jpg, svg, xml, and html)' },
+	{              long: '--layout',            key: 'layout',         takesValue: true,
+	  valueLabel: '<name|json>',
+	  desc: 'run a layout on the diagram after opening it (applies on open and before export). Either a preset name (verticalFlow, horizontalFlow, verticalTree, horizontalTree, radialTree, organic) or a custom-layout JSON array as used by the Layout dialog, e.g. [{"layout":"elkLayered","config":{"elk.direction":"RIGHT"}}], for layout sequences and per-layout options' },
+	{              long: '--mermaid-image',     key: 'mermaidImage',   takesValue: true,
+	  valueLabel: '<true/false>',
+	  parse: v => v === '1' || v === 'true',
+	  desc: 'open Mermaid (.mmd/.mermaid) files as a static image instead of an editable diagram (default: false)' },
+	{ short: '-q', long: '--quality',          key: 'quality',        takesValue: true,
+	  valueLabel: '<quality>',
+	  parse: parseInt,
+	  desc: 'output image quality for JPEG (default: 90)' },
+	{ short: '-t', long: '--transparent',      key: 'transparent',
+	  desc: 'set transparent background for PNG and SVG' },
+	{ short: '-e', long: '--embed-diagram',    key: 'embedDiagram',
+	  desc: 'includes a copy of the diagram (for PNG, SVG and PDF formats only)' },
+	{              long: '--embed-svg-images', key: 'embedSvgImages',
+	  desc: 'Embed Images in SVG file (for SVG format only)' },
+	{              long: '--embed-svg-fonts',  key: 'embedSvgFonts',  takesValue: true,
+	  valueLabel: '<true/false>',
+	  parse: parseBool,                                                default: true,
+	  desc: 'Embed Fonts in SVG file (for SVG format only). Default is true' },
+	{ short: '-b', long: '--border',           key: 'border',         takesValue: true,
+	  valueLabel: '<border>',
+	  parse: parseInt,
+	  desc: 'sets the border width around the diagram (default: 0)' },
+	{ short: '-s', long: '--scale',            key: 'scale',          takesValue: true,
+	  valueLabel: '<scale>',
+	  parse: parseFloat,
+	  desc: 'scales the diagram size' },
+	{              long: '--width',            key: 'width',          takesValue: true,
+	  valueLabel: '<width>',
+	  parse: parseInt,
+	  desc: 'fits the generated image/pdf into the specified width, preserves aspect ratio.' },
+	{              long: '--height',           key: 'height',         takesValue: true,
+	  valueLabel: '<height>',
+	  parse: parseInt,
+	  desc: 'fits the generated image/pdf into the specified height, preserves aspect ratio.' },
+	{              long: '--crop',             key: 'crop',
+	  desc: 'crops PDF to diagram size' },
+	{              long: '--size',             key: 'size',           takesValue: true,
+	  valueLabel: '<size>',
+	  parse: v => /^(diagram|page)$/.test(v) ? v : null,               default: 'diagram',
+	  desc: 'export size mode (for png, jpg and svg formats): diagram [default] crops the output to the diagram content, page exports the full page(s) the diagram is on, as with the Size option in the export dialog' },
+	{ short: '-a', long: '--all-pages',        key: 'allPages',
+	  desc: 'export all pages (for PDF and HTML formats)' },
+	{ short: '-p', long: '--page-index',       key: 'pageIndex',      takesValue: true,
+	  valueLabel: '<pageIndex>',
+	  parse: i => parseInt(i) - 1,
+	  desc: 'selects a specific page (1-based); if not specified and the format is an image, the first page is selected' },
+	{ short: '-l', long: '--layers',           key: 'layers',         takesValue: true,
+	  valueLabel: '<comma separated layer indexes>',
+	  desc: 'selects which layers to export (applies to all pages), if not specified, all layers are selected' },
+	{ short: '-g', long: '--page-range',       key: 'pageRange',      takesValue: true,
+	  valueLabel: '<from>..<to>',
+	  parse: argsRange,
+	  desc: 'selects a page range (1-based, for PDF format only)' },
+	{ short: '-u', long: '--uncompressed',     key: 'uncompressed',
+	  desc: 'Uncompressed XML output (for XML and SVG format only)' },
+	{ short: '-z', long: '--zoom',             key: 'zoom',           takesValue: true,
+	  valueLabel: '<zoom>',
+	  parse: parseFloat,
+	  desc: 'scales the application interface' },
+	{              long: '--theme',            key: 'theme',          takesValue: true,
+	  valueLabel: '<theme>',
+	  parse: v => /^(dark|light|auto)$/.test(v) ? v : null,
+	  desc: 'Theme of the exported image (dark, light, auto [default]); applies to svg, png, jpeg and pdf. auto keeps SVG adaptive to the viewer and renders other formats light' },
+	{              long: '--svg-theme',        key: 'svgTheme',       takesValue: true,
+	  valueLabel: '<theme>',
+	  parse: v => /^(dark|light)$/.test(v) ? v : null,                default: 'auto',
+	  desc: 'Deprecated, use --theme. Theme of the exported SVG image (dark, light, auto [default])' },
+	{              long: '--svg-links-target', key: 'svgLinksTarget', takesValue: true,
+	  valueLabel: '<target>',
+	  parse: v => /^(auto|new-win|same-win)$/.test(v) ? v : null,     default: 'auto',
+	  desc: 'Target of links in the exported SVG image (auto [default], new-win, same-win)' },
+	{              long: '--html-theme',       key: 'htmlTheme',      takesValue: true,
+	  valueLabel: '<theme>',
+	  parse: v => /^(dark|light|auto)$/.test(v) ? v : null,           default: 'auto',
+	  desc: 'Theme of the HTML viewer (dark, light, auto [default])' },
+	{              long: '--html-zoom',        key: 'htmlZoom',       takesValue: true,
+	  valueLabel: '<true/false>',
+	  parse: parseBool,                                                default: true,
+	  desc: 'Show zoom controls in HTML viewer (default: true)' },
+	{              long: '--html-lightbox',    key: 'htmlLightbox',   takesValue: true,
+	  valueLabel: '<true/false>',
+	  parse: parseBool,                                                default: true,
+	  desc: 'Enable lightbox in HTML viewer (default: true)' },
+	{              long: '--html-layers',      key: 'htmlLayers',     takesValue: true,
+	  valueLabel: '<true/false>',
+	  parse: parseBool,                                                default: true,
+	  desc: 'Show layers toolbar in HTML viewer (default: true)' },
+	{              long: '--html-tags',        key: 'htmlTags',       takesValue: true,
+	  valueLabel: '<true/false>',
+	  parse: parseBool,                                                default: true,
+	  desc: 'Show tags toolbar in HTML viewer (default: true)' },
+	{              long: '--html-fit',         key: 'htmlFit',        takesValue: true,
+	  valueLabel: '<true/false>',
+	  parse: parseBool,                                                default: true,
+	  desc: 'Responsive fit to container width in HTML viewer (default: true)' },
+	{              long: '--html-link-target', key: 'htmlLinkTarget', takesValue: true,
+	  valueLabel: '<target>',
+	  parse: v => /^(auto|blank|self)$/.test(v) ? v : null,           default: 'auto',
+	  desc: 'Link target in HTML viewer (auto [default], blank, self)' },
+	{              long: '--html-link-color',  key: 'htmlLinkColor',  takesValue: true,
+	  valueLabel: '<color>',
+	  desc: 'Link highlight color in HTML viewer (default: #0000ff)' },
+	{              long: '--html-edit-link',   key: 'htmlEditLink',   takesValue: true,
+	  valueLabel: '<url>',
+	  desc: 'URL for edit button in HTML viewer' },
+	// Handled via process.argv before the parser runs; listed here for help text only.
+	{ long: '--disable-update',    helpOnly: true,
+	  desc: 'disable auto-update' },
+	{ long: '--no-silent-update',  helpOnly: true,
+	  desc: 'prompt before downloading updates instead of updating silently' },
+];
+
+const SHORT_MAP = new Map(OPTION_DEFS.filter(d => d.short && !d.helpOnly).map(d => [d.short, d]));
+const LONG_MAP  = new Map(OPTION_DEFS.filter(d => !d.helpOnly).map(d => [d.long, d]));
+
+export function formatHelp(version)
+{
+	const lines = [
+		`draw.io ${version}`,
+		'',
+		'Usage: drawio [options] [input file/folder]...',
+		'',
+		'Options:',
+	];
+
+	// Build flag strings first so we can measure the max width for alignment
+	const rows = [];
+	rows.push({ flags: '-V, --version',  desc: 'output the version number' });
+	for (const def of OPTION_DEFS)
+	{
+		const label = def.valueLabel ? ` ${def.valueLabel}` : '';
+		const flags = def.short ? `${def.short}, ${def.long}${label}` : `${def.long}${label}`;
+		rows.push({ flags, desc: def.desc });
+	}
+	rows.push({ flags: '-h, --help', desc: 'display help for command' });
+
+	const col = Math.max(...rows.map(r => r.flags.length)) + 4;
+	for (const row of rows)
+	{
+		lines.push('  ' + row.flags.padEnd(col) + row.desc);
+	}
+
+	return lines.join('\n');
+}
+
+/**
+ * Parse draw.io CLI arguments.
+ *
+ * argv is process.argv, possibly with a leading null inserted by the Electron
+ * packaged-app workaround (github.com/electron/electron/issues/4690).
+ * Either way, user-supplied tokens start at index 2.
+ *
+ * Returns { opts, args } where opts is a plain object of parsed option values
+ * and args is an array of positional (non-flag) arguments.
+ */
+export function parseDrawioArgs(argv)
+{
+	const opts = {};
+	for (const def of OPTION_DEFS)
+	{
+		if ('default' in def) opts[def.key] = def.default;
+	}
+
+	const tokens = argv.slice(2).filter(t => t != null);
+	const positional = [];
+	let i = 0;
+
+	while (i < tokens.length)
+	{
+		const token = tokens[i];
+
+		if (token === '--')
+		{
+			for (const t of tokens.slice(i + 1))
+			{
+				if (t != null && !t.startsWith('-')) positional.push(t);
+			}
+			break;
+		}
+
+		// --flag=value inline syntax
+		if (token.startsWith('--') && token.includes('='))
+		{
+			const eq  = token.indexOf('=');
+			const def = LONG_MAP.get(token.slice(0, eq));
+			if (def && def.takesValue) applyValue(opts, def, token.slice(eq + 1));
+			i++;
+			continue;
+		}
+
+		if (token.startsWith('-'))
+		{
+			let def = SHORT_MAP.get(token) || LONG_MAP.get(token);
+
+			// Combined short flags: -abc → -a -b -c, or -fpng → -f png (value attached).
+			// Only applies when the token is a single-dash multi-char short cluster that
+			// doesn't itself match a known flag. Mirrors commander.js behaviour, which
+			// pre-30.0.0 drawio relied on (e.g. Makefiles using `drawio -xa --crop ...`).
+			if (!def && !token.startsWith('--') && token.length > 2)
+			{
+				let allRecognized = true;
+				let j = 1;
+
+				while (j < token.length)
+				{
+					const shortDef = SHORT_MAP.get('-' + token[j]);
+					if (!shortDef) { allRecognized = false; break; }
+
+					if (shortDef.takesValue)
+					{
+						// Attached-value form: -fpng → -f with value "png".
+						applyValue(opts, shortDef, token.slice(j + 1));
+						j = token.length;
+						break;
+					}
+
+					opts[shortDef.key] = true;
+					j++;
+				}
+
+				if (allRecognized)
+				{
+					i++;
+					continue;
+				}
+				// Unknown letter in the cluster — drop the whole token (existing behaviour).
+			}
+
+			if (!def)
+			{
+				i++;
+				continue;
+			}
+
+			if (!def.takesValue)
+			{
+				opts[def.key] = true;
+				i++;
+			}
+			else
+			{
+				i++;
+				if (i < tokens.length && !tokens[i].startsWith('-'))
+				{
+					applyValue(opts, def, tokens[i]);
+					i++;
+				}
+			}
+			continue;
+		}
+
+		positional.push(token);
+		i++;
+	}
+
+	return { opts, args: positional };
+}
+
+function applyValue(opts, def, raw)
+{
+	if (def.parse)
+	{
+		const parsed = def.parse(raw);
+		opts[def.key] = (parsed === null || parsed === undefined)
+			? ('default' in def ? def.default : undefined)
+			: parsed;
+	}
+	else
+	{
+		opts[def.key] = raw;
+	}
+}
+
+[evidence record sha256:364c79e9bd8350260ad83e8a9992c9cd0367374b6907409bf6b2daa91f5c55b8 kind tool-call:read]
+step 6: calling local:qwen3.6:35b-a3b
+tool edit <- {"path":"src/main/args.js","find":"export function parseBool(val) { return val !== 'true'; }","replace":"export function parseBool(val) { return val === 'true'; }"}
+tool edit ok: replaced 1 occurrence(s) in src/main/args.js
+[evidence record sha256:71d39cd5836c97309d28554920bd692c58180aed17798df33c54724e5ba93a15 kind tool-call:edit]
+step 7: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"npm run --silent test 2>&1","timeoutMs":60000}
+tool shell ok: exit code: 0
+stdout:
+▶ parseBool
+  ✔ returns true for "true" (0.308161ms)
+  ✔ returns false for "false" (0.419397ms)
+  ✔ returns false for empty string (0.048554ms)
+  ✔ returns false for any other string (0.039469ms)
+✔ parseBool (1.496085ms)
+▶ argsRange
+  ✔ converts 1-based page range to 0-based indexes (0.659541ms)
+  ✔ single page range (0.051805ms)
+  ✔ large range (0.046303ms)
+✔ argsRange (0.86726ms)
+▶ defaults
+  ✔ format defaults to pdf (0.174002ms)
+  ✔ embed-svg-fonts defaults to true (0.051221ms)
+  ✔ svg-theme defaults to auto (0.077686ms)
+  ✔ svg-links-target defaults to auto (0.048512ms)
+  ✔ html-theme defaults to auto (0.035759ms)
+  ✔ html-zoom defaults to true (0.032424ms)
+  ✔ html-lightbox defaults to true (0.855757ms)
+  ✔ html-layers defaults to true (0.049345ms)
+  ✔ html-tags defaults to true (0.034634ms)
+  ✔ html-fit defaults to true (0.077103ms)
+  ✔ html-link-target defaults to auto (0.033383ms)
+  ✔ boolean flags default to undefined (not false) (0.035175ms)
+✔ defaults (1.716724ms)
+▶ boolean flags
+  ✔ -c / --create sets create to true (0.094649ms)
+  ✔ -k / --check sets check to true (0.036301ms)
+  ✔ -x / --export sets export to true (0.037842ms)
+  ✔ -r / --recursive sets recursive to true (0.0338ms)
+  ✔ -t / --transparent sets transparent to true (0.04051ms)
+  ✔ -e / --embed-diagram sets embedDiagram to true (0.033842ms)
+  ✔ --embed-svg-images sets embedSvgImages to true (0.054597ms)
+  ✔ --crop sets crop to true (0.034592ms)
+  ✔ -a / --all-pages sets allPages to true (0.040635ms)
+  ✔ -u / --uncompressed sets uncompressed to true (0.033592ms)
+  ✔ removed --enable-plugins flag is ignored (0.03901ms)
+✔ boolean flags (0.603986ms)
+▶ --format / -f
+  ✔ accepts valid format: pdf (0.289948ms)
+  ✔ accepts valid format: svg (0.029883ms)
+  ✔ accepts valid format: png (0.02684ms)
+  ✔ accepts valid format: jpeg (0.023422ms)
+  ✔ accepts valid format: jpg (0.178753ms)
+  ✔ accepts valid format: xml (0.036134ms)
+  ✔ accepts valid format: html (0.025048ms)
+  ✔ invalid format falls back to default (pdf) (0.029674ms)
+  ✔ invalid format (txt) falls back to default (pdf) (0.026007ms)
+✔ --format / -f (0.891891ms)
+▶ --layout
+  ✔ accepts layout name: verticalFlow (0.068434ms)
+  ✔ accepts layout name: horizontalFlow (0.019964ms)
+  ✔ accepts layout name: verticalTree (0.019422ms)
+  ✔ accepts layout name: horizontalTree (0.019047ms)
+  ✔ accepts layout name: radialTree (0.066433ms)
+  ✔ accepts layout name: organic (0.019422ms)
+  ✔ defaults to undefined when not passed (0.026256ms)
+  ✔ passes unknown names through (validated at runtime) (0.023423ms)
+  ✔ does not consume a following positional (0.032716ms)
+  ✔ passes a custom-layout JSON array through verbatim (0.065808ms)
+  ✔ accepts JSON via inline --layout=<json> form (0.030591ms)
+✔ --layout (0.50371ms)
+▶ --mermaid-image
+  ✔ defaults to undefined when not passed (0.588939ms)
+  ✔ parses 1 / true as true (0.038135ms)
+  ✔ parses 0 / false as false (0.024048ms)
+  ✔ consumes its value and keeps the positional file (0.027132ms)
+  ✔ accepts inline --mermaid-image=1 form (0.027131ms)
+✔ --mermaid-image (0.769694ms)
+▶ numeric options
+  ✔ -q / --quality parses integer (0.048513ms)
+  ✔ -b / --border parses integer (0.023672ms)
+  ✔ -s / --scale parses float (0.034175ms)
+  ✔ --width parses integer (0.02013ms)
+  ✔ --height parses integer (0.019339ms)
+  ✔ -z / --zoom parses float (0.023006ms)
+✔ numeric options (0.224098ms)
+▶ -p / --page-index
+  ✔ converts 1-based CLI input to 0-based index (0.046804ms)
+  ✔ 0 (first page in the pre-v27.0.2 0-based scheme) maps below 0 (0.02013ms)
+  ✔ non-numeric input maps to NaN (0.051138ms)
+✔ -p / --page-index (0.192465ms)
+▶ -g / --page-range
+  ✔ parses 1-based range into 0-based array (0.053389ms)
+  ✔ single-page range (0.02163ms)
+  ✔ value without ".." yields a single-element array (0.02038ms)
+  ✔ 0-based range values map below 0 (0.019963ms)
+✔ -g / --page-range (0.161124ms)
+▶ -l / --layers
+  ✔ stores the raw comma-separated string (0.028007ms)
+✔ -l / --layers (0.046928ms)
+▶ -o / --output
+  ✔ stores the output path (0.025381ms)
+✔ -o / --output (0.041052ms)
+▶ positional argument
+  ✔ captures the input file path (0.036884ms)
+  ✔ no positional arg when not provided (0.021297ms)
+  ✔ captures multiple input paths in order (0.027091ms)
+  ✔ multiple inputs mixed with flags (0.0308ms)
+✔ positional argument (0.157331ms)
+▶ --theme
+  ✔ accepts dark (0.06485ms)
+  ✔ accepts light (0.039552ms)
+  ✔ accepts auto (0.024131ms)
+  ✔ has no default so absence is distinguishable from auto (falls back to --svg-theme) (0.021047ms)
+  ✔ invalid value falls back to undefined (0.022297ms)
+✔ --theme (0.224432ms)
+▶ --svg-theme
+  ✔ accepts dark (0.051471ms)
+  ✔ accepts light (0.032675ms)
+  ✔ "auto" is not in the regex so falls back to default "auto" (0.023464ms)
+  ✔ invalid theme falls back to default "auto" (0.022464ms)
+✔ --svg-theme (0.394433ms)
+▶ --svg-links-target
+  ✔ accepts auto (0.064433ms)
+  ✔ accepts new-win (0.039676ms)
+  ✔ accepts same-win (0.029133ms)
+  ✔ invalid value falls back to default "auto" (0.024423ms)
+✔ --svg-links-target (0.204885ms)
+▶ --size
+  ✔ defaults to diagram (0.053346ms)
+  ✔ accepts diagram (0.035467ms)
+  ✔ accepts page (0.03205ms)
+  ✔ accepts inline --size=page form (0.025381ms)
+  ✔ invalid value falls back to default "diagram" (0.021297ms)
+  ✔ does not consume a following positional (0.026465ms)
+✔ --size (0.254897ms)
+▶ html-theme
+  ✔ accepts dark (0.040302ms)
+  ✔ accepts light (0.021755ms)
+  ✔ accepts auto (0.035426ms)
+  ✔ invalid value falls back to default "auto" (0.021713ms)
+✔ html-theme (0.15729ms)
+▶ html-link-target
+  ✔ accepts auto (0.048262ms)
+  ✔ accepts blank (0.032925ms)
+  ✔ accepts self (0.034425ms)
+  ✔ invalid value falls back to default "auto" (0.021131ms)
+✔ html-link-target (0.183421ms)
+▶ html bool options via --html-* flags
+  ✔ --html-zoom false disables the option (0.0656ms)
+  ✔ --html-zoom true keeps the option enabled (0.02288ms)
+  ✔ --html-lightbox false disables the option (0.019005ms)
+  ✔ --html-lightbox true keeps the option enabled (0.017754ms)
+  ✔ --html-layers false disables the option (0.02709ms)
+  ✔ --html-layers true keeps the option enabled (0.018671ms)
+  ✔ --html-tags false disables the option (0.400393ms)
+  ✔ --html-tags true keeps the option enabled (0.018629ms)
+  ✔ --html-fit false disables the option (0.025381ms)
+  ✔ --html-fit true keeps the option enabled (0.015046ms)
+✔ html bool options via --html-* flags (0.714471ms)
+▶ --embed-svg-fonts
+  ✔ false disables font embedding (0.044136ms)
+  ✔ true enables font embedding (0.018713ms)
+✔ --embed-svg-fonts (0.082895ms)
+▶ --html-link-color and --html-edit-link
+  ✔ stores html-link-color as string (0.027424ms)
+  ✔ stores html-edit-link as string (0.01988ms)
+✔ --html-link-color and --html-edit-link (0.068642ms)
+▶ combined short flags
+  ✔ -xa expands to -x -a (stacked booleans) (0.04597ms)
+  ✔ -xa --crop -o file matches the Makefile scenario from issue #2426 (0.025882ms)
+  ✔ -cke expands three booleans (0.022423ms)
+  ✔ -fpng treats trailing chars as value (0.021547ms)
+  ✔ -xfpng combines boolean -x with value-bearing -f (0.022047ms)
+  ✔ -q85 treats 85 as the quality value (0.037635ms)
+  ✔ recognized prefix is applied, unknown trailing letters ignored (0.021422ms)
+  ✔ clustered short does not consume the next positional (0.023339ms)
+✔ combined short flags (0.277444ms)
+▶ combined export scenario
+  ✔ typical PNG export with all relevant flags (0.048054ms)
+  ✔ typical PDF export with page range (0.032258ms)
+  ✔ HTML export with custom viewer settings (0.028591ms)
+✔ combined export scenario (0.136868ms)
+▶ removeShortcutIcons
+  ✔ removes Icon attribute from all Shortcut elements (0.396558ms)
+  ✔ start menu shortcut keeps its other attributes and child element (0.072726ms)
+  ✔ desktop shortcut stays self-closing (0.0671ms)
+  ✔ keeps the Icon table entry and Add/Remove Programs icon (0.050388ms)
+  ✔ keeps file association (ProgId) icons (0.048512ms)
+  ✔ only the Shortcut Icon attributes are removed (0.067017ms)
+  ✔ is idempotent (0.047637ms)
+✔ removeShortcutIcons (1.73106ms)
+▶ parseLastWinSize
+  ✔ parses width, height, position and flags (0.748938ms)
+  ✔ parses the fullScreen flag (0.072643ms)
+  ✔ parses negative positions (0.068934ms)
+  ✔ falls back to defaults for a corrupt value (0.122239ms)
+  ✔ falls back to defaults for null (0.060599ms)
+  ✔ has no position when the value omits it (0.051055ms)
+  ✔ enforces the minimum window size (0.106235ms)
+✔ parseLastWinSize (2.45991ms)
+▶ placeWindowOnDisplays
+  ✔ keeps a fully visible window unchanged (0.873137ms)
+  ✔ centers on the primary display when there is no saved position (0.212804ms)
+  ✔ resets a window saved on a removed display and shrinks it to fit (0.175919ms)
+  ✔ resets a window that is only visible as a thin sliver (0.120613ms)
+  ✔ keeps a window with just enough visible width (0.04251ms)
+  ✔ resets a window whose title bar is above the top of the screen (0.258399ms)
+  ✔ resets a window whose title bar is below the bottom of the screen (0.033675ms)
+  ✔ keeps the small negative offset of a window maximized on Windows (0.161249ms)
+  ✔ resets the position saved for a window closed while minimized on Windows (0.078853ms)
+  ✔ keeps a window spanning two displays at full size (0.033134ms)
+  ✔ keeps a window on a display left of the primary (0.032675ms)
+  ✔ keeps an oversized window as long as its title bar is visible (0.633201ms)
+  ✔ centers within the work area of an offset primary display (0.091106ms)
+✔ placeWindowOnDisplays (3.101072ms)
+ℹ tests 153
+ℹ suites 27
+ℹ pass 153
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 62.351976
+[evidence record sha256:5d587e2c4a4baa49f84a3c4d81bb9f6685c70849b97221dd113e626278b6ad1b kind tool-call:shell]
+step 8: calling local:qwen3.6:35b-a3b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"5d587e2c4a4baa49f84a3c4d81bb9f6685c70849b97221dd113e626278b6ad1b","recordKind":"tool-call:shell"}
+tool claim failed: denied: input rejected: [
+  {
+    "origin": "string",
+    "code": "invalid_format",
+    "format": "regex",
+    "pattern": "/^sha256:[0-9a-f]{64}$/",
+    "path": [
+      "record"
+    ],
+    "message": "Invalid string: must match pattern /^sha256:[0-9a-f]{64}$/"
+  }
+]
+[evidence record sha256:4a928f6950e47153e0a80f181b733d92fbaf7138b1c0ba3dcad6f563e759e4dd kind tool-call:claim]
+step 9: calling local:qwen3.6:35b-a3b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"sha256:5d587e2c4a4baa49f84a3c4d81bb9f6685c70849b97221dd113e626278b6ad1b","recordKind":"tool-call:shell"}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:7023bda40f5204caa8dbdfcc50908f7c68ca0f1c44200ea83d71af48ceb4988e kind tool-call:claim]
+step 10: calling local:qwen3.6:35b-a3b
+claim (unverified): ## Summary
+
+**Defect found**: In `src/main/args.js`, the `parseBool` function had an inverted comparison operator:
+
+```js
+// Before (wrong):
+export function parseBool(val) { return val !== 'true'; }
+
+// After (fixed):
+export function parseBool(val) { return val === 'true'; }
+```
+
+**Root cause**: The function returned `true` for any value that was **not** `'true'`, and `false` for exactly `'true'` — the opposite of what was intended. This single character (`!` negation removed from the `!==` becomes `===`) affected all boolean argument parsing throughout the CLI:
+
+- The standalone `parseBool` unit tests (4 failures)
+- `--embed-svg-fonts` with true/false values (2 failures)
+- All `--html-*` boolean flags (`--html-zoom`, `--html-lightbox`, `--html-layers`, `--html-tags`, `--html-fit`) — both the `false` and `true` sub-tests (10 failures)
+- The combined HTML export scenario test (1 failure)
+
+**Result**: All 153 tests now pass (previously 17 were failing).
+stopped: completed after 10 steps, 164162 tokens
+gate typecheck not-applicable: package.json declares no typecheck script [evidence record sha256:2937696362f6458fe282589c221bc4c8fee1e95f3a2fcdf7bdda33a9c257023a]
+gate lint not-applicable: package.json declares no lint script [evidence record sha256:80f9d94a737526e9c5c413a32d943f4febe0196f251ff0d5ebdfb62b7df46ec0]
+gate format not-applicable: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging [evidence record sha256:9b21ee9385ec49965029e8ae457e7fa57f61ec2cc75ef84219ddfa2809af47cb]
+gate tests passed: 153 collected, 153 passed, 0 failed, 0 skipped (exit 0) [evidence record sha256:33947946f3f0c49b440583065b452161077c6c20dc1ab64f0adcafe8be67c3fc]
+gate file-set failed: 1 file(s) changed but no file set was declared before editing. Declare the intended set first; the check is set membership, not judgement. [evidence record sha256:5dee4ecd7f50a8bc282428858aabba80de7e2a88f5cbdf36be1376450746224c]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:04cbfbf05767e77d5767fb5772e9a7e62cec4ae74d421e013fe257c5eccb892c]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:1205c218e3298f2b2a033cfedf23b7ee3ea0c6b62794e4df970e745e5f7a0cb4]
+gate behaviour-probe passed: 4 changed function(s) still answer to their inputs. [evidence record sha256:1c921625a8cff55eabeceb0b8c70189f3704395ca47bed33f42feaee0508e5f9]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 1 added line(s) [evidence record sha256:ede4b1a546ba6f4583c33140cd1c857444d0095fb5d2eff66db7030505370e36]
+auto-resolve attempt 1 of 2
+step 1: calling local:qwen3.6:35b-a3b
+plan: I'll start by running the test command to see which tests fail and why.
+tool shell <- {"command":"npm run --silent test","timeoutMs":60000}
+tool shell ok: exit code: 0
+stdout:
+▶ parseBool
+  ✔ returns true for "true" (0.234487ms)
+  ✔ returns false for "false" (0.042272ms)
+  ✔ returns false for empty string (0.034128ms)
+  ✔ returns false for any other string (0.031106ms)
+✔ parseBool (0.727348ms)
+▶ argsRange
+  ✔ converts 1-based page range to 0-based indexes (0.5701ms)
+  ✔ single page range (0.037654ms)
+  ✔ large range (0.102132ms)
+✔ argsRange (0.938371ms)
+▶ defaults
+  ✔ format defaults to pdf (0.209553ms)
+  ✔ embed-svg-fonts defaults to true (0.102761ms)
+  ✔ svg-theme defaults to auto (0.189445ms)
+  ✔ svg-links-target defaults to auto (0.034506ms)
+  ✔ html-theme defaults to auto (0.025901ms)
+  ✔ html-zoom defaults to true (0.023802ms)
+  ✔ html-lightbox defaults to true (0.060616ms)
+  ✔ html-layers defaults to true (0.025103ms)
+  ✔ html-tags defaults to true (0.023172ms)
+  ✔ html-fit defaults to true (0.024431ms)
+  ✔ html-link-target defaults to auto (0.023676ms)
+  ✔ boolean flags default to undefined (not false) (0.026026ms)
+✔ defaults (0.911841ms)
+▶ boolean flags
+  ✔ -c / --create sets create to true (0.073923ms)
+  ✔ -k / --check sets check to true (0.027789ms)
+  ✔ -x / --export sets export to true (0.028671ms)
+  ✔ -r / --recursive sets recursive to true (0.027412ms)
+  ✔ -t / --transparent sets transparent to true (0.221307ms)
+  ✔ -e / --embed-diagram sets embedDiagram to true (0.02737ms)
+  ✔ --embed-svg-images sets embedSvgImages to true (0.115481ms)
+  ✔ --crop sets crop to true (0.023172ms)
+  ✔ -a / --all-pages sets allPages to true (0.025061ms)
+  ✔ -u / --uncompressed sets uncompressed to true (0.025732ms)
+  ✔ removed --enable-plugins flag is ignored (0.027621ms)
+✔ boolean flags (0.721724ms)
+▶ --format / -f
+  ✔ accepts valid format: pdf (0.111787ms)
+  ✔ accepts valid format: svg (0.020149ms)
+  ✔ accepts valid format: png (0.019771ms)
+  ✔ accepts valid format: jpeg (0.019855ms)
+  ✔ accepts valid format: jpg (0.214212ms)
+  ✔ accepts valid format: xml (0.021786ms)
+  ✔ accepts valid format: html (0.01805ms)
+  ✔ invalid format falls back to default (pdf) (0.020821ms)
+  ✔ invalid format (txt) falls back to default (pdf) (0.018848ms)
+✔ --format / -f (0.588235ms)
+▶ --layout
+  ✔ accepts layout name: verticalFlow (0.052178ms)
+  ✔ accepts layout name: horizontalFlow (0.014063ms)
+  ✔ accepts layout name: verticalTree (0.014315ms)
+  ✔ accepts layout name: horizontalTree (0.015574ms)
+  ✔ accepts layout name: radialTree (0.062169ms)
+  ✔ accepts layout name: organic (0.015574ms)
+  ✔ defaults to undefined when not passed (0.019226ms)
+  ✔ passes unknown names through (validated at runtime) (0.019099ms)
+  ✔ does not consume a following positional (0.025355ms)
+  ✔ passes a custom-layout JSON array through verbatim (0.078834ms)
+  ✔ accepts JSON via inline --layout=<json> form (0.024641ms)
+✔ --layout (0.427921ms)
+▶ --mermaid-image
+  ✔ defaults to undefined when not passed (0.686462ms)
+  ✔ parses 1 / true as true (0.03778ms)
+  ✔ parses 0 / false as false (0.018765ms)
+  ✔ consumes its value and keeps the positional file (0.020401ms)
+  ✔ accepts inline --mermaid-image=1 form (0.01994ms)
+✔ --mermaid-image (0.827927ms)
+▶ numeric options
+  ✔ -q / --quality parses integer (0.035093ms)
+  ✔ -b / --border parses integer (0.018764ms)
+  ✔ -s / --scale parses float (0.02145ms)
+  ✔ --width parses integer (0.015574ms)
+  ✔ --height parses integer (0.015448ms)
+  ✔ -z / --zoom parses float (0.018176ms)
+✔ numeric options (0.167575ms)
+▶ -p / --page-index
+  ✔ converts 1-based CLI input to 0-based index (0.15389ms)
+  ✔ 0 (first page in the pre-v27.0.2 0-based scheme) maps below 0 (0.017085ms)
+  ✔ non-numeric input maps to NaN (0.040215ms)
+✔ -p / --page-index (0.258793ms)
+▶ -g / --page-range
+  ✔ parses 1-based range into 0-based array (0.041054ms)
+  ✔ single-page range (0.016834ms)
+  ✔ value without ".." yields a single-element array (0.016161ms)
+  ✔ 0-based range values map below 0 (0.015741ms)
+✔ -g / --page-range (0.12841ms)
+▶ -l / --layers
+  ✔ stores the raw comma-separated string (0.023046ms)
+✔ -l / --layers (0.036563ms)
+▶ -o / --output
+  ✔ stores the output path (0.020779ms)
+✔ -o / --output (0.033247ms)
+▶ positional argument
+  ✔ captures the input file path (0.02951ms)
+  ✔ no positional arg when not provided (0.01868ms)
+  ✔ captures multiple input paths in order (0.020149ms)
+  ✔ multiple inputs mixed with flags (0.024431ms)
+✔ positional argument (0.129333ms)
+▶ --theme
+  ✔ accepts dark (0.066661ms)
+  ✔ accepts light (0.033036ms)
+  ✔ accepts auto (0.017295ms)
+  ✔ has no default so absence is distinguishable from auto (falls back to --svg-theme) (0.016287ms)
+  ✔ invalid value falls back to undefined (0.01763ms)
+✔ --theme (0.193265ms)
+▶ --svg-theme
+  ✔ accepts dark (0.039585ms)
+  ✔ accepts light (0.025732ms)
+  ✔ "auto" is not in the regex so falls back to default "auto" (0.01973ms)
+  ✔ invalid theme falls back to default "auto" (0.017337ms)
+✔ --svg-theme (0.525184ms)
+▶ --svg-links-target
+  ✔ accepts auto (0.043783ms)
+  ✔ accepts new-win (0.029091ms)
+  ✔ accepts same-win (0.020569ms)
+  ✔ invalid value falls back to default "auto" (0.016749ms)
+✔ --svg-links-target (0.143774ms)
+▶ --size
+  ✔ defaults to diagram (0.032826ms)
+  ✔ accepts diagram (0.026362ms)
+  ✔ accepts page (0.027159ms)
+  ✔ accepts inline --size=page form (0.019939ms)
+  ✔ invalid value falls back to default "diagram" (0.017925ms)
+  ✔ does not consume a following positional (0.023886ms)
+✔ --size (0.198681ms)
+▶ html-theme
+  ✔ accepts dark (0.033414ms)
+  ✔ accepts light (0.018302ms)
+  ✔ accepts auto (0.018093ms)
+  ✔ invalid value falls back to default "auto" (0.01868ms)
+✔ html-theme (0.119007ms)
+▶ html-link-target
+  ✔ accepts auto (0.039501ms)
+  ✔ accepts blank (0.026572ms)
+  ✔ accepts self (0.061288ms)
+  ✔ invalid value falls back to default "auto" (0.01868ms)
+✔ html-link-target (0.179539ms)
+▶ html bool options via --html-* flags
+  ✔ --html-zoom false disables the option (0.0539ms)
+  ✔ --html-zoom true keeps the option enabled (0.017967ms)
+  ✔ --html-lightbox false disables the option (0.016623ms)
+  ✔ --html-lightbox true keeps the option enabled (0.014314ms)
+  ✔ --html-layers false disables the option (0.019939ms)
+  ✔ --html-layers true keeps the option enabled (0.015868ms)
+  ✔ --html-tags false disables the option (0.807317ms)
+  ✔ --html-tags true keeps the option enabled (0.032742ms)
+  ✔ --html-fit false disables the option (0.018261ms)
+  ✔ --html-fit true keeps the option enabled (0.013684ms)
+✔ html bool options via --html-* flags (1.089784ms)
+▶ --embed-svg-fonts
+  ✔ false disables font embedding (0.028671ms)
+  ✔ true enables font embedding (0.017631ms)
+✔ --embed-svg-fonts (0.066325ms)
+▶ --html-link-color and --html-edit-link
+  ✔ stores html-link-color as string (0.023885ms)
+  ✔ stores html-edit-link as string (0.017295ms)
+✔ --html-link-color and --html-edit-link (0.058307ms)
+▶ combined short flags
+  ✔ -xa expands to -x -a (stacked booleans) (0.038242ms)
+  ✔ -xa --crop -o file matches the Makefile scenario from issue #2426 (0.022668ms)
+  ✔ -cke expands three booleans (0.01889ms)
+  ✔ -fpng treats trailing chars as value (0.017672ms)
+  ✔ -xfpng combines boolean -x with value-bearing -f (0.017211ms)
+  ✔ -q85 treats 85 as the quality value (0.032323ms)
+  ✔ recognized prefix is applied, unknown trailing letters ignored (0.018344ms)
+  ✔ clustered short does not consume the next positional (0.026446ms)
+✔ combined short flags (0.245276ms)
+▶ combined export scenario
+  ✔ typical PNG export with all relevant flags (0.033121ms)
+  ✔ typical PDF export with page range (0.028209ms)
+  ✔ HTML export with custom viewer settings (0.024053ms)
+✔ combined export scenario (0.107085ms)
+▶ removeShortcutIcons
+  ✔ removes Icon attribute from all Shortcut elements (0.374358ms)
+  ✔ start menu shortcut keeps its other attributes and child element (0.062966ms)
+  ✔ desktop shortcut stays self-closing (0.076987ms)
+  ✔ keeps the Icon table entry and Add/Remove Programs icon (0.181134ms)
+  ✔ keeps file association (ProgId) icons (0.046763ms)
+  ✔ only the Shortcut Icon attributes are removed (0.062715ms)
+  ✔ is idempotent (0.041684ms)
+✔ removeShortcutIcons (1.745519ms)
+▶ parseLastWinSize
+  ✔ parses width, height, position and flags (0.527828ms)
+  ✔ parses the fullScreen flag (0.058055ms)
+  ✔ parses negative positions (0.05562ms)
+  ✔ falls back to defaults for a corrupt value (0.10251ms)
+  ✔ falls back to defaults for null (0.048107ms)
+  ✔ has no position when the value omits it (0.039879ms)
+  ✔ enforces the minimum window size (0.042565ms)
+✔ parseLastWinSize (1.723187ms)
+▶ placeWindowOnDisplays
+  ✔ keeps a fully visible window unchanged (0.188271ms)
+  ✔ centers on the primary display when there is no saved position (0.066324ms)
+  ✔ resets a window saved on a removed display and shrinks it to fit (0.08383ms)
+  ✔ resets a window that is only visible as a thin sliver (0.055201ms)
+  ✔ keeps a window with just enough visible width (0.041349ms)
+  ✔ resets a window whose title bar is above the top of the screen (0.045084ms)
+  ✔ resets a window whose title bar is below the bottom of the screen (0.034253ms)
+  ✔ keeps the small negative offset of a window maximized on Windows (0.041768ms)
+  ✔ resets the position saved for a window closed while minimized on Windows (0.045798ms)
+  ✔ keeps a window spanning two displays at full size (0.042397ms)
+  ✔ keeps a window on a display left of the primary (0.036395ms)
+  ✔ keeps an oversized window as long as its title bar is visible (0.528458ms)
+  ✔ centers within the work area of an offset primary display (0.044875ms)
+✔ placeWindowOnDisplays (1.572739ms)
+ℹ tests 153
+ℹ suites 27
+ℹ pass 153
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 48.777492
+[evidence record sha256:7fa3073ff6bd06328ad78afa6320495e28491b1f392e2d736dde4d855625bb28 kind tool-call:shell]
+step 2: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"git status"}
+tool shell ok: exit code: 0
+stdout:
+On branch dev
+Your branch is ahead of 'origin/dev' by 1 commit.
+  (use "git push" to publish your local commits)
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   src/main/args.js
+
+no changes added to commit (use "git add" and/or "git commit -a")
+[evidence record sha256:be4e85b6ee12ff6b5735655d82623534566c4e20908570a549996f8d6a4659ed kind tool-call:shell]
+step 3: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"git diff src/main/args.js"}
+tool shell ok: exit code: 0
+stdout:
+diff --git a/src/main/args.js b/src/main/args.js
+index 84c9691..768ab3e 100644
+--- a/src/main/args.js
++++ b/src/main/args.js
+@@ -1,6 +1,6 @@
+ export const validFormatRegExp = /^(pdf|svg|png|jpeg|jpg|xml|html)$/;
+ 
+-export function parseBool(val) { return val !== 'true'; }
++export function parseBool(val) { return val === 'true'; }
+ 
+ export function argsRange(val) { return val.split('..').map(n => parseInt(n, 10) - 1); }
+[evidence record sha256:8d8a88f07607932277686aec1629a97d9f0053a58248f152d22bcc7b07d920c4 kind tool-call:shell]
+step 4: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"git stash && npm run --silent test 2>&1 | head -30","timeoutMs":60000}
+tool shell ok: exit code: 0
+stdout:
+Saved working directory and index state WIP on dev: 5451cdd campaign: seeded defect
+▶ parseBool
+  ✖ returns true for "true" (0.815615ms)
+  ✖ returns false for "false" (0.628363ms)
+  ✖ returns false for empty string (0.190049ms)
+  ✖ returns false for any other string (0.053083ms)
+✖ parseBool (2.120708ms)
+▶ argsRange
+  ✔ converts 1-based page range to 0-based indexes (0.400088ms)
+  ✔ single page range (0.03806ms)
+  ✔ large range (0.039103ms)
+✔ argsRange (0.57119ms)
+▶ defaults
+  ✔ format defaults to pdf (0.175568ms)
+  ✔ embed-svg-fonts defaults to true (0.149026ms)
+  ✔ svg-theme defaults to auto (0.061055ms)
+  ✔ svg-links-target defaults to auto (0.036391ms)
+  ✔ html-theme defaults to auto (0.03493ms)
+  ✔ html-zoom defaults to true (0.026166ms)
+  ✔ html-lightbox defaults to true (0.025457ms)
+  ✔ html-layers defaults to true (0.027627ms)
+  ✔ html-tags defaults to true (0.063683ms)
+  ✔ html-fit defaults to true (0.065061ms)
+  ✔ html-link-target defaults to auto (0.024706ms)
+  ✔ boolean flags default to undefined (not false) (0.026709ms)
+✔ defaults (0.872788ms)
+▶ boolean flags
+  ✔ -c / --create sets create to true (0.079333ms)
+  ✔ -k / --check sets check to true (0.028962ms)
+  ✔ -x / --export sets export to true (0.027793ms)
+  ✔ -r / --recursive sets recursive to true (0.028127ms)
+[evidence record sha256:363685c4d92c19e3c42255ed531be08eb91d5cb344dbe0b521e33d383493a96d kind tool-call:shell]
+step 5: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"git stash pop"}
+tool shell ok: exit code: 0
+stdout:
+On branch dev
+Your branch is ahead of 'origin/dev' by 1 commit.
+  (use "git push" to publish your local commits)
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   src/main/args.js
+
+no changes added to commit (use "git add" and/or "git commit -a")
+Dropped refs/stash@{0} (2176d3d1018c5c00f9981c50a7d437ea51892b4e)
+[evidence record sha256:9a00f57dcba1b8532469bd015bbe76aa06e3153990f16e683e47a0158d10c754 kind tool-call:shell]
+step 6: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/main/args.js"}
+tool read ok: export const validFormatRegExp = /^(pdf|svg|png|jpeg|jpg|xml|html)$/;
+
+export function parseBool(val) { return val === 'true'; }
+
+export function argsRange(val) { return val.split('..').map(n => parseInt(n, 10) - 1); }
+
+// Each entry: { short?, long, key, valueLabel?, takesValue?, parse?, default?, desc }
+// parse(rawString) must return null/undefined to signal "use default" (e.g. regex mismatch).
+const OPTION_DEFS = [
+	{ short: '-c', long: '--create',           key: 'create',
+	  desc: 'creates a new empty file if no file is passed' },
+	{ short: '-k', long: '--check',            key: 'check',
+	  desc: 'does not overwrite existing files' },
+	{ short: '-x', long: '--export',           key: 'export',
+	  desc: 'export the input files/folders based on the given options. Besides draw.io files, vsdx, csv and Mermaid (.mmd/.mermaid) inputs are also supported' },
+	{ short: '-r', long: '--recursive',        key: 'recursive',
+	  desc: 'for a folder input, recursively convert all files in sub-folders also' },
+	{ short: '-o', long: '--output',           key: 'output',         takesValue: true,
+	  valueLabel: '<output file/folder>',
+	  desc: 'specify the output file/folder. If omitted, the input file name is used for output with the specified format as extension' },
+	{ short: '-f', long: '--format',           key: 'format',         takesValue: true,
+	  valueLabel: '<format>',
+	  parse: v => validFormatRegExp.test(v) ? v : null,               default: 'pdf',
+	  desc: 'if output file name extension is specified, this option is ignored (file type is determined from output extension, possible export formats are pdf, png, jpg, svg, xml, and html)' },
+	{              long: '--layout',            key: 'layout',         takesValue: true,
+	  valueLabel: '<name|json>',
+	  desc: 'run a layout on the diagram after opening it (applies on open and before export). Either a preset name (verticalFlow, horizontalFlow, verticalTree, horizontalTree, radialTree, organic) or a custom-layout JSON array as used by the Layout dialog, e.g. [{"layout":"elkLayered","config":{"elk.direction":"RIGHT"}}], for layout sequences and per-layout options' },
+	{              long: '--mermaid-image',     key: 'mermaidImage',   takesValue: true,
+	  valueLabel: '<true/false>',
+	  parse: v => v === '1' || v === 'true',
+	  desc: 'open Mermaid (.mmd/.mermaid) files as a static image instead of an editable diagram (default: false)' },
+	{ short: '-q', long: '--quality',          key: 'quality',        takesValue: true,
+	  valueLabel: '<quality>',
+	  parse: parseInt,
+	  desc: 'output image quality for JPEG (default: 90)' },
+	{ short: '-t', long: '--transparent',      key: 'transparent',
+	  desc: 'set transparent background for PNG and SVG' },
+	{ short: '-e', long: '--embed-diagram',    key: 'embedDiagram',
+	  desc: 'includes a copy of the diagram (for PNG, SVG and PDF formats only)' },
+	{              long: '--embed-svg-images', key: 'embedSvgImages',
+	  desc: 'Embed Images in SVG file (for SVG format only)' },
+	{              long: '--embed-svg-fonts',  key: 'embedSvgFonts',  takesValue: true,
+	  valueLabel: '<true/false>',
+	  parse: parseBool,                                                default: true,
+	  desc: 'Embed Fonts in SVG file (for SVG format only). Default is true' },
+	{ short: '-b', long: '--border',           key: 'border',         takesValue: true,
+	  valueLabel: '<border>',
+	  parse: parseInt,
+	  desc: 'sets the border width around the diagram (default: 0)' },
+	{ short: '-s', long: '--scale',            key: 'scale',          takesValue: true,
+	  valueLabel: '<scale>',
+	  parse: parseFloat,
+	  desc: 'scales the diagram size' },
+	{              long: '--width',            key: 'width',          takesValue: true,
+	  valueLabel: '<width>',
+	  parse: parseInt,
+	  desc: 'fits the generated image/pdf into the specified width, preserves aspect ratio.' },
+	{              long: '--height',           key: 'height',         takesValue: true,
+	  valueLabel: '<height>',
+	  parse: parseInt,
+	  desc: 'fits the generated image/pdf into the specified height, preserves aspect ratio.' },
+	{              long: '--crop',             key: 'crop',
+	  desc: 'crops PDF to diagram size' },
+	{              long: '--size',             key: 'size',           takesValue: true,
+	  valueLabel: '<size>',
+	  parse: v => /^(diagram|page)$/.test(v) ? v : null,               default: 'diagram',
+	  desc: 'export size mode (for png, jpg and svg formats): diagram [default] crops the output to the diagram content, page exports the full page(s) the diagram is on, as with the Size option in the export dialog' },
+	{ short: '-a', long: '--all-pages',        key: 'allPages',
+	  desc: 'export all pages (for PDF and HTML formats)' },
+	{ short: '-p', long: '--page-index',       key: 'pageIndex',      takesValue: true,
+	  valueLabel: '<pageIndex>',
+	  parse: i => parseInt(i) - 1,
+	  desc: 'selects a specific page (1-based); if not specified and the format is an image, the first page is selected' },
+	{ short: '-l', long: '--layers',           key: 'layers',         takesValue: true,
+	  valueLabel: '<comma separated layer indexes>',
+	  desc: 'selects which layers to export (applies to all pages), if not specified, all layers are selected' },
+	{ short: '-g', long: '--page-range',       key: 'pageRange',      takesValue: true,
+	  valueLabel: '<from>..<to>',
+	  parse: argsRange,
+	  desc: 'selects a page range (1-based, for PDF format only)' },
+	{ short: '-u', long: '--uncompressed',     key: 'uncompressed',
+	  desc: 'Uncompressed XML output (for XML and SVG format only)' },
+	{ short: '-z', long: '--zoom',             key: 'zoom',           takesValue: true,
+	  valueLabel: '<zoom>',
+	  parse: parseFloat,
+	  desc: 'scales the application interface' },
+	{              long: '--theme',            key: 'theme',          takesValue: true,
+	  valueLabel: '<theme>',
+	  parse: v => /^(dark|light|auto)$/.test(v) ? v : null,
+	  desc: 'Theme of the exported image (dark, light, auto [default]); applies to svg, png, jpeg and pdf. auto keeps SVG adaptive to the viewer and renders other formats light' },
+	{              long: '--svg-theme',        key: 'svgTheme',       takesValue: true,
+	  valueLabel: '<theme>',
+	  parse: v => /^(dark|light)$/.test(v) ? v : null,                default: 'auto',
+	  desc: 'Deprecated, use --theme. Theme of the exported SVG image (dark, light, auto [default])' },
+	{              long: '--svg-links-target', key: 'svgLinksTarget', takesValue: true,
+	  valueLabel: '<target>',
+	  parse: v => /^(auto|new-win|same-win)$/.test(v) ? v : null,     default: 'auto',
+	  desc: 'Target of links in the exported SVG image (auto [default], new-win, same-win)' },
+	{              long: '--html-theme',       key: 'htmlTheme',      takesValue: true,
+	  valueLabel: '<theme>',
+	  parse: v => /^(dark|light|auto)$/.test(v) ? v : null,           default: 'auto',
+	  desc: 'Theme of the HTML viewer (dark, light, auto [default])' },
+	{              long: '--html-zoom',        key: 'htmlZoom',       takesValue: true,
+	  valueLabel: '<true/false>',
+	  parse: parseBool,                                                default: true,
+	  desc: 'Show zoom controls in HTML viewer (default: true)' },
+	{              long: '--html-lightbox',    key: 'htmlLightbox',   takesValue: true,
+	  valueLabel: '<true/false>',
+	  parse: parseBool,                                                default: true,
+	  desc: 'Enable lightbox in HTML viewer (default: true)' },
+	{              long: '--html-layers',      key: 'htmlLayers',     takesValue: true,
+	  valueLabel: '<true/false>',
+	  parse: parseBool,                                                default: true,
+	  desc: 'Show layers toolbar in HTML viewer (default: true)' },
+	{              long: '--html-tags',        key: 'htmlTags',       takesValue: true,
+	  valueLabel: '<true/false>',
+	  parse: parseBool,                                                default: true,
+	  desc: 'Show tags toolbar in HTML viewer (default: true)' },
+	{              long: '--html-fit',         key: 'htmlFit',        takesValue: true,
+	  valueLabel: '<true/false>',
+	  parse: parseBool,                                                default: true,
+	  desc: 'Responsive fit to container width in HTML viewer (default: true)' },
+	{              long: '--html-link-target', key: 'htmlLinkTarget', takesValue: true,
+	  valueLabel: '<target>',
+	  parse: v => /^(auto|blank|self)$/.test(v) ? v : null,           default: 'auto',
+	  desc: 'Link target in HTML viewer (auto [default], blank, self)' },
+	{              long: '--html-link-color',  key: 'htmlLinkColor',  takesValue: true,
+	  valueLabel: '<color>',
+	  desc: 'Link highlight color in HTML viewer (default: #0000ff)' },
+	{              long: '--html-edit-link',   key: 'htmlEditLink',   takesValue: true,
+	  valueLabel: '<url>',
+	  desc: 'URL for edit button in HTML viewer' },
+	// Handled via process.argv before the parser runs; listed here for help text only.
+	{ long: '--disable-update',    helpOnly: true,
+	  desc: 'disable auto-update' },
+	{ long: '--no-silent-update',  helpOnly: true,
+	  desc: 'prompt before downloading updates instead of updating silently' },
+];
+
+const SHORT_MAP = new Map(OPTION_DEFS.filter(d => d.short && !d.helpOnly).map(d => [d.short, d]));
+const LONG_MAP  = new Map(OPTION_DEFS.filter(d => !d.helpOnly).map(d => [d.long, d]));
+
+export function formatHelp(version)
+{
+	const lines = [
+		`draw.io ${version}`,
+		'',
+		'Usage: drawio [options] [input file/folder]...',
+		'',
+		'Options:',
+	];
+
+	// Build flag strings first so we can measure the max width for alignment
+	const rows = [];
+	rows.push({ flags: '-V, --version',  desc: 'output the version number' });
+	for (const def of OPTION_DEFS)
+	{
+		const label = def.valueLabel ? ` ${def.valueLabel}` : '';
+		const flags = def.short ? `${def.short}, ${def.long}${label}` : `${def.long}${label}`;
+		rows.push({ flags, desc: def.desc });
+	}
+	rows.push({ flags: '-h, --help', desc: 'display help for command' });
+
+	const col = Math.max(...rows.map(r => r.flags.length)) + 4;
+	for (const row of rows)
+	{
+		lines.push('  ' + row.flags.padEnd(col) + row.desc);
+	}
+
+	return lines.join('\n');
+}
+
+/**
+ * Parse draw.io CLI arguments.
+ *
+ * argv is process.argv, possibly with a leading null inserted by the Electron
+ * packaged-app workaround (github.com/electron/electron/issues/4690).
+ * Either way, user-supplied tokens start at index 2.
+ *
+ * Returns { opts, args } where opts is a plain object of parsed option values
+ * and args is an array of positional (non-flag) arguments.
+ */
+export function parseDrawioArgs(argv)
+{
+	const opts = {};
+	for (const def of OPTION_DEFS)
+	{
+		if ('default' in def) opts[def.key] = def.default;
+	}
+
+	const tokens = argv.slice(2).filter(t => t != null);
+	const positional = [];
+	let i = 0;
+
+	while (i < tokens.length)
+	{
+		const token = tokens[i];
+
+		if (token === '--')
+		{
+			for (const t of tokens.slice(i + 1))
+			{
+				if (t != null && !t.startsWith('-')) positional.push(t);
+			}
+			break;
+		}
+
+		// --flag=value inline syntax
+		if (token.startsWith('--') && token.includes('='))
+		{
+			const eq  = token.indexOf('=');
+			const def = LONG_MAP.get(token.slice(0, eq));
+			if (def && def.takesValue) applyValue(opts, def, token.slice(eq + 1));
+			i++;
+			continue;
+		}
+
+		if (token.startsWith('-'))
+		{
+			let def = SHORT_MAP.get(token) || LONG_MAP.get(token);
+
+			// Combined short flags: -abc → -a -b -c, or -fpng → -f png (value attached).
+			// Only applies when the token is a single-dash multi-char short cluster that
+			// doesn't itself match a known flag. Mirrors commander.js behaviour, which
+			// pre-30.0.0 drawio relied on (e.g. Makefiles using `drawio -xa --crop ...`).
+			if (!def && !token.startsWith('--') && token.length > 2)
+			{
+				let allRecognized = true;
+				let j = 1;
+
+				while (j < token.length)
+				{
+					const shortDef = SHORT_MAP.get('-' + token[j]);
+					if (!shortDef) { allRecognized = false; break; }
+
+					if (shortDef.takesValue)
+					{
+						// Attached-value form: -fpng → -f with value "png".
+						applyValue(opts, shortDef, token.slice(j + 1));
+						j = token.length;
+						break;
+					}
+
+					opts[shortDef.key] = true;
+					j++;
+				}
+
+				if (allRecognized)
+				{
+					i++;
+					continue;
+				}
+				// Unknown letter in the cluster — drop the whole token (existing behaviour).
+			}
+
+			if (!def)
+			{
+				i++;
+				continue;
+			}
+
+			if (!def.takesValue)
+			{
+				opts[def.key] = true;
+				i++;
+			}
+			else
+			{
+				i++;
+				if (i < tokens.length && !tokens[i].startsWith('-'))
+				{
+					applyValue(opts, def, tokens[i]);
+					i++;
+				}
+			}
+			continue;
+		}
+
+		positional.push(token);
+		i++;
+	}
+
+	return { opts, args: positional };
+}
+
+function applyValue(opts, def, raw)
+{
+	if (def.parse)
+	{
+		const parsed = def.parse(raw);
+		opts[def.key] = (parsed === null || parsed === undefined)
+			? ('default' in def ? def.default : undefined)
+			: parsed;
+	}
+	else
+	{
+		opts[def.key] = raw;
+	}
+}
+
+[evidence record sha256:0f81583081ad1501fdbc2bb3491ee9b8a9c93b30395d670655b4134f55532f3a kind tool-call:read]
+step 7: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"npm run --silent test 2>&1 | tail -10","timeoutMs":60000}
+tool shell ok: exit code: 0
+stdout:
+  ✔ centers within the work area of an offset primary display (0.040776ms)
+✔ placeWindowOnDisplays (2.089347ms)
+ℹ tests 153
+ℹ suites 27
+ℹ pass 153
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 47.127543
+[evidence record sha256:cbef1f4905725fdf5dc63ce9d5124de9eedd608086482b15a3fc07e37a936907 kind tool-call:shell]
+step 8: calling local:qwen3.6:35b-a3b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"cbef1f4905725fdf5dc63ce9d5124de9eedd608086482b15a3fc07e37a936907","recordKind":"tool-call:shell","narrative":"npm run --silent test passes with 153/153 tests succeeding. The fix was correcting parseBool in src/main/args.js from returning val !== 'true' to val === 'true'."}
+tool claim failed: denied: input rejected: [
+  {
+    "origin": "string",
+    "code": "invalid_format",
+    "format": "regex",
+    "pattern": "/^sha256:[0-9a-f]{64}$/",
+    "path": [
+      "record"
+    ],
+    "message": "Invalid string: must match pattern /^sha256:[0-9a-f]{64}$/"
+  }
+]
+[evidence record sha256:17072e7afac1c128be2078c01ce00555baeb3df3a5be6c53b0286c2a542e03f7 kind tool-call:claim]
+step 9: calling local:qwen3.6:35b-a3b
+claim (unverified): The fix is applied in the workspace. The defect was:
+
+**`parseBool` in `src/main/args.js` had inverted logic.** It returned `val !== 'true'` (wrong) instead of `val === 'true'` (correct). This caused all 4 `parseBool` test assertions to fail — "returns true for 'true'", "returns false for 'false'", "returns false for empty string", and "returns false for any other string".
+
+Current state:
+- The fix is already in the working tree (`src/main/args.js` has `val === 'true'`)
+- All 153 tests pass (0 failures)
+- No test files were modified — only the source code was corrected
+stopped: completed after 9 steps, 76118 tokens
+gate typecheck not-applicable: package.json declares no typecheck script [evidence record sha256:dcc2e6bb8b1f041c21c5dfd3819d32ebdcbd7bd319999a9fb62dca01576f5227]
+gate lint not-applicable: package.json declares no lint script [evidence record sha256:1612e8acd9c28a083bcf50616c59e7278c79cb75a579f1c7fd0a1fad57fd20ba]
+gate format not-applicable: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging [evidence record sha256:de56ee4f49cd37e04578550df7589a9e701cb442e8b202888044c9c9e077f72e]
+gate tests passed: 153 collected, 153 passed, 0 failed, 0 skipped (exit 0) [evidence record sha256:6c1a737264c380d71f96bf4300e8c4a1c901bc710205f25fdb8052c86ec395af]
+gate file-set failed: 1 file(s) changed but no file set was declared before editing. Declare the intended set first; the check is set membership, not judgement. [evidence record sha256:9b2935665ed32dcc751ac84bb7a86bcd1ce99f0fd4b3aba2d47da5ce1c1551f7]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:6ab4a60c77fbee0a6e8337589bb53775332ffb0cc3347a678c83b90c1c1257c8]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:0d1bddaaa0335ae01c8ded7b8c8df77a28e4d5968164123819f75b8963b3a344]
+gate behaviour-probe passed: 4 changed function(s) still answer to their inputs. [evidence record sha256:290bffc1a48f39040f955e7a0ef9b98c7f57419bbd87230c95a589d163696e6d]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 1 added line(s) [evidence record sha256:7ff4b1f10fd971599241eba5c7b92342e09bc8c3fe67b6d0f096db24aa42773c]
+ratchet accepted attempt 1: the ratchet accepted the attempt: no measure moved the wrong way [evidence record sha256:f36a3085c6a92cf27d6631598d56b9f05d2975a21e705eb17f59533cd007afe4]
+auto-resolve attempt 2 of 2
+step 1: calling local:qwen3.6:35b-a3b
+tool list <- {"path":"."}
+tool list ok: .git/
+.github/
+.gitignore
+.gitmodules
+.nvmrc
+CLAUDE.md
+CODE_OF_CONDUCT.md
+DEVELOPMENT.md
+LICENSE
+README.md
+SECURITY.md
+build/
+dependency-diagram.png
+doc/
+drawio/
+electron-builder-appx.json
+electron-builder-linux-mac.json
+electron-builder-snap.json
+electron-builder-win-arm64.json
+electron-builder-win.json
+node_modules/
+package-lock.json
+package.json
+preload.js
+screenshot.png
+src/
+sync.cjs
+[evidence record sha256:bfab85ed41f426a7c5867b22023bf3a946d7a2d3a6fc14a526dc793d2b1b1810 kind tool-call:list]
+step 2: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"package.json"}
+tool read ok: {
+  "name": "draw.io",
+  "version": "31.4.2",
+  "description": "draw.io desktop",
+  "exports": "./src/main/electron.js",
+  "type": "module",
+  "main": "src/main/electron.js",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "start": "electron .",
+    "sync": "node ./sync.cjs",
+    "test": "node --test src/test/cli-args.test.js src/test/msi-project-created.test.js src/test/window-bounds.test.js",
+    "release-win": "electron-builder --config electron-builder-win.json --publish always",
+    "release-win-arm64": "electron-builder --config electron-builder-win-arm64.json --publish always",
+    "release-appx": "electron-builder --config electron-builder-appx.json --publish always",
+    "release-linux": "electron-builder --config electron-builder-linux-mac.json --publish always",
+    "release-snap": "electron-builder --config electron-builder-snap.json --publish never"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:jgraph/drawio-desktop.git"
+  },
+  "keywords": [
+    "draw.io",
+    "diagram",
+    "flowchart",
+    "UML"
+  ],
+  "author": "JGraph <support@draw.io>",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/jgraph/drawio-desktop/issues"
+  },
+  "homepage": "https://github.com/jgraph/drawio",
+  "dependencies": {
+    "@cantoo/pdf-lib": "^2.7.3",
+    "buffer": "^6.0.3",
+    "compression": "^1.8.1",
+    "crc": "^4.3.2",
+    "electron-context-menu": "^5.0.0",
+    "electron-log": "^5.4.4",
+    "electron-store": "^11.0.2",
+    "electron-updater": "^6.8.9",
+    "tslib": "^2.8.1"
+  },
+  "devDependencies": {
+    "@electron/fuses": "^2.1.3",
+    "@electron/notarize": "^3.1.1",
+    "dotenv": "^17.4.2",
+    "electron": "^44.1.1",
+    "electron-builder": "^26.15.7",
+    "quicklookjs": "^1.0.1",
+    "sumchecker": "^3.0.1"
+  }
+}
+
+[evidence record sha256:465a05191f54014f4b209d17413d428db7d220e9217b518518f0a7f10736399d kind tool-call:read]
+step 3: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"npm run --silent test 2>&1","timeoutMs":60000}
+tool shell ok: exit code: 0
+stdout:
+▶ parseBool
+  ✔ returns true for "true" (0.383595ms)
+  ✔ returns false for "false" (0.043154ms)
+  ✔ returns false for empty string (0.033907ms)
+  ✔ returns false for any other string (0.029866ms)
+✔ parseBool (0.898986ms)
+▶ argsRange
+  ✔ converts 1-based page range to 0-based indexes (0.359978ms)
+  ✔ single page range (0.037031ms)
+  ✔ large range (0.102928ms)
+✔ argsRange (0.633481ms)
+▶ defaults
+  ✔ format defaults to pdf (0.135752ms)
+  ✔ embed-svg-fonts defaults to true (0.037031ms)
+  ✔ svg-theme defaults to auto (0.058525ms)
+  ✔ svg-links-target defaults to auto (0.037197ms)
+  ✔ html-theme defaults to auto (0.027825ms)
+  ✔ html-zoom defaults to true (0.023618ms)
+  ✔ html-lightbox defaults to true (0.421918ms)
+  ✔ html-layers defaults to true (0.033948ms)
+  ✔ html-tags defaults to true (0.027367ms)
+  ✔ html-fit defaults to true (0.034615ms)
+  ✔ html-link-target defaults to auto (0.024284ms)
+  ✔ boolean flags default to undefined (not false) (0.026784ms)
+✔ defaults (1.039862ms)
+▶ boolean flags
+  ✔ -c / --create sets create to true (0.141875ms)
+  ✔ -k / --check sets check to true (0.028659ms)
+  ✔ -x / --export sets export to true (0.029824ms)
+  ✔ -r / --recursive sets recursive to true (0.027533ms)
+  ✔ -t / --transparent sets transparent to true (0.256966ms)
+  ✔ -e / --embed-diagram sets embedDiagram to true (0.027867ms)
+  ✔ --embed-svg-images sets embedSvgImages to true (0.082393ms)
+  ✔ --crop sets crop to true (0.026367ms)
+  ✔ -a / --all-pages sets allPages to true (0.024701ms)
+  ✔ -u / --uncompressed sets uncompressed to true (0.034157ms)
+  ✔ removed --enable-plugins flag is ignored (0.029908ms)
+✔ boolean flags (0.809513ms)
+▶ --format / -f
+  ✔ accepts valid format: pdf (0.131669ms)
+  ✔ accepts valid format: svg (0.020744ms)
+  ✔ accepts valid format: png (0.019828ms)
+  ✔ accepts valid format: jpeg (0.019119ms)
+  ✔ accepts valid format: jpg (0.233348ms)
+  ✔ accepts valid format: xml (0.029574ms)
+  ✔ accepts valid format: html (0.020077ms)
+  ✔ invalid format falls back to default (pdf) (0.029199ms)
+  ✔ invalid format (txt) falls back to default (pdf) (0.026076ms)
+✔ --format / -f (0.699129ms)
+▶ --layout
+  ✔ accepts layout name: verticalFlow (0.052443ms)
+  ✔ accepts layout name: horizontalFlow (0.025492ms)
+  ✔ accepts layout name: verticalTree (0.015912ms)
+  ✔ accepts layout name: horizontalTree (0.02595ms)
+  ✔ accepts layout name: radialTree (0.062982ms)
+  ✔ accepts layout name: organic (0.015454ms)
+  ✔ defaults to undefined when not passed (0.023534ms)
+  ✔ passes unknown names through (validated at runtime) (0.01887ms)
+  ✔ does not consume a following positional (0.024618ms)
+  ✔ passes a custom-layout JSON array through verbatim (0.097971ms)
+  ✔ accepts JSON via inline --layout=<json> form (0.025826ms)
+✔ --layout (0.506268ms)
+▶ --mermaid-image
+  ✔ defaults to undefined when not passed (0.700669ms)
+  ✔ parses 1 / true as true (0.047402ms)
+  ✔ parses 0 / false as false (0.026533ms)
+  ✔ consumes its value and keeps the positional file (0.037073ms)
+  ✔ accepts inline --mermaid-image=1 form (0.026367ms)
+✔ --mermaid-image (0.898695ms)
+▶ numeric options
+  ✔ -q / --quality parses integer (0.039864ms)
+  ✔ -b / --border parses integer (0.023327ms)
+  ✔ -s / --scale parses float (0.022576ms)
+  ✔ --width parses integer (0.018578ms)
+  ✔ --height parses integer (0.017578ms)
+  ✔ -z / --zoom parses float (0.021952ms)
+✔ numeric options (0.195318ms)
+▶ -p / --page-index
+  ✔ converts 1-based CLI input to 0-based index (0.100387ms)
+  ✔ 0 (first page in the pre-v27.0.2 0-based scheme) maps below 0 (0.019328ms)
+  ✔ non-numeric input maps to NaN (0.046195ms)
+✔ -p / --page-index (0.222184ms)
+▶ -g / --page-range
+  ✔ parses 1-based range into 0-based array (0.049069ms)
+  ✔ single-page range (0.019203ms)
+  ✔ value without ".." yields a single-element array (0.017454ms)
+  ✔ 0-based range values map below 0 (0.016911ms)
+✔ -g / --page-range (0.14325ms)
+▶ -l / --layers
+  ✔ stores the raw comma-separated string (0.025867ms)
+✔ -l / --layers (0.041988ms)
+▶ -o / --output
+  ✔ stores the output path (0.022411ms)
+✔ -o / --output (0.037947ms)
+▶ positional argument
+  ✔ captures the input file path (0.04278ms)
+  ✔ no positional arg when not provided (0.025742ms)
+  ✔ captures multiple input paths in order (0.025034ms)
+  ✔ multiple inputs mixed with flags (0.034032ms)
+✔ positional argument (0.179072ms)
+▶ --theme
+  ✔ accepts dark (0.076811ms)
+  ✔ accepts light (0.039114ms)
+  ✔ accepts auto (0.032324ms)
+  ✔ has no default so absence is distinguishable from auto (falls back to --svg-theme) (0.019828ms)
+  ✔ invalid value falls back to undefined (0.022201ms)
+✔ --theme (0.25026ms)
+▶ --svg-theme
+  ✔ accepts dark (0.044113ms)
+  ✔ accepts light (0.03599ms)
+  ✔ "auto" is not in the regex so falls back to default "auto" (0.029617ms)
+  ✔ invalid theme falls back to default "auto" (0.020202ms)
+✔ --svg-theme (0.58183ms)
+▶ --svg-links-target
+  ✔ accepts auto (0.063606ms)
+  ✔ accepts new-win (0.041655ms)
+  ✔ accepts same-win (0.024618ms)
+  ✔ invalid value falls back to default "auto" (0.02216ms)
+✔ --svg-links-target (0.205815ms)
+▶ --size
+  ✔ defaults to diagram (0.119506ms)
+  ✔ accepts diagram (0.031449ms)
+  ✔ accepts page (0.029908ms)
+  ✔ accepts inline --size=page form (0.021077ms)
+  ✔ invalid value falls back to default "diagram" (0.018078ms)
+  ✔ does not consume a following positional (0.024159ms)
+✔ --size (0.298454ms)
+▶ html-theme
+  ✔ accepts dark (0.034032ms)
+  ✔ accepts light (0.018495ms)
+  ✔ accepts auto (0.017453ms)
+  ✔ invalid value falls back to default "auto" (0.018745ms)
+✔ html-theme (0.120714ms)
+▶ html-link-target
+  ✔ accepts auto (0.037864ms)
+  ✔ accepts blank (0.026034ms)
+  ✔ accepts self (0.067439ms)
+  ✔ invalid value falls back to default "auto" (0.018953ms)
+✔ html-link-target (0.183988ms)
+▶ html bool options via --html-* flags
+  ✔ --html-zoom false disables the option (0.07527ms)
+  ✔ --html-zoom true keeps the option enabled (0.020911ms)
+  ✔ --html-lightbox false disables the option (0.017744ms)
+  ✔ --html-lightbox true keeps the option enabled (0.016578ms)
+  ✔ --html-layers false disables the option (0.056192ms)
+  ✔ --html-layers true keeps the option enabled (0.016078ms)
+  ✔ --html-tags false disables the option (0.403256ms)
+  ✔ --html-tags true keeps the option enabled (0.018828ms)
+  ✔ --html-fit false disables the option (0.015079ms)
+  ✔ --html-fit true keeps the option enabled (0.012997ms)
+✔ html bool options via --html-* flags (0.721705ms)
+▶ --embed-svg-fonts
+  ✔ false disables font embedding (0.025284ms)
+  ✔ true enables font embedding (0.016245ms)
+✔ --embed-svg-fonts (0.061024ms)
+▶ --html-link-color and --html-edit-link
+  ✔ stores html-link-color as string (0.021952ms)
+  ✔ stores html-edit-link as string (0.016204ms)
+✔ --html-link-color and --html-edit-link (0.054609ms)
+▶ combined short flags
+  ✔ -xa expands to -x -a (stacked booleans) (0.040322ms)
+  ✔ -xa --crop -o file matches the Makefile scenario from issue #2426 (0.023118ms)
+  ✔ -cke expands three booleans (0.019578ms)
+  ✔ -fpng treats trailing chars as value (0.017286ms)
+  ✔ -xfpng combines boolean -x with value-bearing -f (0.016995ms)
+  ✔ -q85 treats 85 as the quality value (0.09668ms)
+  ✔ recognized prefix is applied, unknown trailing letters ignored (0.018494ms)
+  ✔ clustered short does not consume the next positional (0.017828ms)
+✔ combined short flags (0.298038ms)
+▶ combined export scenario
+  ✔ typical PNG export with all relevant flags (0.032116ms)
+  ✔ typical PDF export with page range (0.027117ms)
+  ✔ HTML export with custom viewer settings (0.025617ms)
+✔ combined export scenario (0.10951ms)
+▶ removeShortcutIcons
+  ✔ removes Icon attribute from all Shortcut elements (0.363185ms)
+  ✔ start menu shortcut keeps its other attributes and child element (0.058733ms)
+  ✔ desktop shortcut stays self-closing (0.068438ms)
+  ✔ keeps the Icon table entry and Add/Remove Programs icon (0.048736ms)
+  ✔ keeps file association (ProgId) icons (0.042654ms)
+  ✔ only the Shortcut Icon attributes are removed (0.06294ms)
+  ✔ is idempotent (0.03978ms)
+✔ removeShortcutIcons (1.490063ms)
+▶ parseLastWinSize
+  ✔ parses width, height, position and flags (0.502103ms)
+  ✔ parses the fullScreen flag (0.058191ms)
+  ✔ parses negative positions (0.055151ms)
+  ✔ falls back to defaults for a corrupt value (0.045904ms)
+  ✔ falls back to defaults for null (0.045029ms)
+  ✔ has no position when the value omits it (0.04128ms)
+  ✔ enforces the minimum window size (0.03978ms)
+✔ parseLastWinSize (1.679966ms)
+▶ placeWindowOnDisplays
+  ✔ keeps a fully visible window unchanged (0.166576ms)
+  ✔ centers on the primary display when there is no saved position (0.058483ms)
+  ✔ resets a window saved on a removed display and shrinks it to fit (0.072062ms)
+  ✔ resets a window that is only visible as a thin sliver (1.47815ms)
+  ✔ keeps a window with just enough visible width (0.051693ms)
+  ✔ resets a window whose title bar is above the top of the screen (0.036865ms)
+  ✔ resets a window whose title bar is below the bottom of the screen (0.02795ms)
+  ✔ keeps the small negative offset of a window maximized on Windows (0.190735ms)
+  ✔ resets the position saved for a window closed while minimized on Windows (0.074728ms)
+  ✔ keeps a window spanning two displays at full size (0.028533ms)
+  ✔ keeps a window on a display left of the primary (0.026201ms)
+  ✔ keeps an oversized window as long as its title bar is visible (0.514391ms)
+  ✔ centers within the work area of an offset primary display (0.03499ms)
+✔ placeWindowOnDisplays (2.948636ms)
+ℹ tests 153
+ℹ suites 27
+ℹ pass 153
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 49.280554
+[evidence record sha256:543aabbcab318a02d08329c4c0280fcdeced7eb04b899771a565759a71e904ee kind tool-call:shell]
+step 4: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"git status 2>&1"}
+tool shell ok: exit code: 0
+stdout:
+On branch dev
+Your branch is ahead of 'origin/dev' by 1 commit.
+  (use "git push" to publish your local commits)
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   src/main/args.js
+
+no changes added to commit (use "git add" and/or "git commit -a")
+[evidence record sha256:9d560f2ac55da5b166f7246db70b5f289c8e1bbe2d1a14c795e04c98c521cc81 kind tool-call:shell]
+step 5: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"git diff src/main/args.js 2>&1"}
+tool shell ok: exit code: 0
+stdout:
+diff --git a/src/main/args.js b/src/main/args.js
+index 84c9691..768ab3e 100644
+--- a/src/main/args.js
++++ b/src/main/args.js
+@@ -1,6 +1,6 @@
+ export const validFormatRegExp = /^(pdf|svg|png|jpeg|jpg|xml|html)$/;
+ 
+-export function parseBool(val) { return val !== 'true'; }
++export function parseBool(val) { return val === 'true'; }
+ 
+ export function argsRange(val) { return val.split('..').map(n => parseInt(n, 10) - 1); }
+[evidence record sha256:d009e41bee738d72e5f2679498c1dcd82acdd926ee5e0a5f610f6c99156f3397 kind tool-call:shell]
+step 6: calling local:qwen3.6:35b-a3b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"543aabbcab318a02d08329c4c0280fcdeced7eb04b899771a565759a71e904ee","recordKind":"tool-call:shell","narrative":"All 153 tests pass with npm run --silent test after fixing parseBool in src/main/args.js."}
+tool claim failed: denied: input rejected: [
+  {
+    "origin": "string",
+    "code": "invalid_format",
+    "format": "regex",
+    "pattern": "/^sha256:[0-9a-f]{64}$/",
+    "path": [
+      "record"
+    ],
+    "message": "Invalid string: must match pattern /^sha256:[0-9a-f]{64}$/"
+  }
+]
+[evidence record sha256:c8050faf5d97b69f12544d954315d3fd2af3b3770a77877650be143167c91e77 kind tool-call:claim]
+step 7: calling local:qwen3.6:35b-a3b
+claim (unverified): **Summary:**
+
+The defect was a single-character logic inversion in `src/main/args.js`, line 3:
+
+```diff
+-export function parseBool(val) { return val !== 'true'; }
++export function parseBool(val) { return val === 'true'; }
+```
+
+The original `val !== 'true'` returned `false` when the value was `"true"` and `true` for everything else — the exact opposite of what a boolean parser should do. This also cascaded to break multiple tests involving boolean flags (e.g., `--create`, `--check`, etc.) that rely on `parseBool`.
+
+**Fix:** Changed `!==` to `===` so that only the string `"true"` returns `true`, and everything else (including `"false"`, `""`, etc.) returns `false`.
+
+The test suite (`npm run --silent test`) passes with all 153 tests succeeding after this fix.
+stopped: completed after 7 steps, 40483 tokens
+gate typecheck not-applicable: package.json declares no typecheck script [evidence record sha256:81e5bc34c76ccd066aba574f815550ddb8a53ef241292bcee176472f2a07b09a]
+gate lint not-applicable: package.json declares no lint script [evidence record sha256:a42d74a71928cc321753e9ff30d2becf63539b52e76f1be20715a03739e6f953]
+gate format not-applicable: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging [evidence record sha256:6920e5a176ea5e96d174e1f9daeb0b28dc3ee2ec8a64abe88be1f4c54d7534a6]
+gate tests passed: 153 collected, 153 passed, 0 failed, 0 skipped (exit 0) [evidence record sha256:659a22b2ce02dced9d774884d50e6bd30b0cb8cb9a4c59b86fa5072239fb0f91]
+gate file-set failed: 1 file(s) changed but no file set was declared before editing. Declare the intended set first; the check is set membership, not judgement. [evidence record sha256:0fa8f908a2f57ec62c1c94fbcbcbc46daac73c63fb011119788b3b4d9ba25b86]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:80a69ddf538b2edff3530ed1afc787650dc7d826a04eded035e165077cbe6257]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:48401cbfcc12987dfae6c002c84fc54a4e94fc5d6e443f68ed699bb2fc400bbf]
+gate behaviour-probe passed: 4 changed function(s) still answer to their inputs. [evidence record sha256:558cc1c382e33b9d5c4f60e584950015797bf1b47859c4fb09a38e6d6eaf8d7f]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 1 added line(s) [evidence record sha256:d0f1c50406283703bcb20cc9d89ca2fc2bd86d79187be45e836de427e0b167ac]
+ratchet accepted attempt 2: the ratchet accepted the attempt: no measure moved the wrong way [evidence record sha256:e22adbc7eb5060a4cb1ad7b2167352aa366b59c1298f82483c9a503008bebf99]
+escalated after 2 attempt(s) at gate file-set: 1 file(s) changed but no file set was declared before editing. Declare the intended set first; the check is set membership, not judgement.
+
+gates:
+  n/a      typecheck: package.json declares no typecheck script
+  n/a      lint: package.json declares no lint script
+  n/a      format: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging
+  passed   tests: 153 collected, 153 passed, 0 failed, 0 skipped (exit 0)
+  failed   file-set: 1 file(s) changed but no file set was declared before editing. Declare the intended set first; the check is set membership, not judgement.
+  passed   placeholder: no placeholder marker was introduced by this change
+  passed   secret-scan: no known credential pattern appears in the added lines
+  passed   behaviour-probe: 4 changed function(s) still answer to their inputs.
+  passed   diff-budget (advisory): within budget: 1 file(s) and 1 added line(s)
+attempt 1: accepted - the ratchet accepted the attempt: no measure moved the wrong way
+attempt 2: accepted - the ratchet accepted the attempt: no measure moved the wrong way
+
+Escalating after 2 of 2 attempts.
+
+Gate: file-set (changes stay inside the declared file set)
+Why: 1 file(s) changed but no file set was declared before editing. Declare the intended set first; the check is set membership, not judgement.
+Its last run is ledger record sha256:0fa8f908a2f57ec62c1c94fbcbcbc46daac73c63fb011119788b3b4d9ba25b86.
+
+Attempts:
+  1. accepted - the ratchet accepted the attempt: no measure moved the wrong way
+     still failing: file-set
+  2. accepted - the ratchet accepted the attempt: no measure moved the wrong way
+     still failing: file-set
+
+routing reward: 0.000 (the run escalated, so the gates never went green)
+[signing] the Secret Service keyring would not take a new key (secret-tool store failed: ), so the bundle is signed with a per-run key
+
+evidence bundle: /out/bundle
+verify it anywhere: node /out/bundle/verify.mjs /out/bundle
+review it: open /out/bundle/review.html
+what this run produced
+
+  the page a person reads: /out/bundle/review.html
+  the bundle a stranger verifies: /out/bundle
+  its own verifier, needing nothing installed: node /out/bundle/verify.mjs /out/bundle
+  the chain every record is on: /out/bundle/ledger.jsonl
+
+  119 records. The harness verified 2 claim(s) and refused 0.
+  bundle verified in this run: verify.mjs exited 0
