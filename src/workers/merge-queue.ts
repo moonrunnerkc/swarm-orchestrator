@@ -3,8 +3,8 @@ import { z } from "zod";
 import type { Clock } from "../core/clock.ts";
 import type { GateStatus, LoopEvent } from "../core/loop-events.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
-import { assembleGates, type GateSetOptions } from "../gates/default-gates.ts";
-import { defaultDiffBudget } from "../gates/engine.ts";
+import type { GateSetOptions } from "../gates/default-gates.ts";
+import { assembleGateSet, defaultDiffBudget } from "../gates/engine.ts";
 import type { FileSetRegistry } from "../gates/file-set.ts";
 import type { GateContext, GateDefinition } from "../gates/gate-definition.ts";
 import {
@@ -18,7 +18,6 @@ import { createGitWorkspaceProbe } from "../gates/git-workspace.ts";
 import { type MeasureSnapshot, takeMeasureSnapshot } from "../gates/measure-snapshot.ts";
 import { isTestFile } from "../gates/measures.ts";
 import { createNodeCommandRunner } from "../gates/node-command-runner.ts";
-import { detectProject } from "../gates/project-type.ts";
 import { judgeRatchet, type RatchetDecision } from "../gates/ratchet.ts";
 import { headCommit, mergeBranch, resetHard } from "./worktree.ts";
 
@@ -82,6 +81,12 @@ interface MergeQueueOptions {
    * since a second seal would be a second set of criteria.
    */
   readonly criteriaSealed?: boolean;
+  /**
+   * The commit the gate commands are read from: the one the whole run branched from, so a
+   * later layer is never measured by a manifest an earlier layer's worker landed. Defaults to
+   * the base, which is the same commit for a queue that runs once.
+   */
+  readonly criteriaRef?: string;
 }
 
 const mergeAttemptSchema = z.object({
@@ -118,14 +123,22 @@ export async function runMergeQueue(options: MergeQueueOptions): Promise<MergeQu
     baseRef: options.baseCommit,
   });
   const commands = createNodeCommandRunner(options.clock);
-  const detection = await detectProject(probe.readCurrent);
-  const gates = assembleGates(detection, {
-    ...(options.gateOptions ?? {}),
+  const criteriaRef = options.criteriaRef ?? options.baseCommit;
+  const { detection, gates } = await assembleGateSet({
+    workspaceRoot: options.integrationPath,
+    criteriaRef,
+    ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
   });
   if (options.criteriaSealed !== true) {
     await sealGateSet(
       options.evidence,
-      describeGateSet({ detection, gates, budgets: defaultDiffBudget, attemptCap: 0 }),
+      describeGateSet({
+        detection,
+        gates,
+        criteriaRef,
+        budgets: defaultDiffBudget,
+        attemptCap: 0,
+      }),
     );
   }
 

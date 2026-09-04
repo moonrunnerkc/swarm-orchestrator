@@ -56,6 +56,13 @@ interface GatesEngineOptions {
    * so no bundle in which gates ran is without the record the verifier holds them to.
    */
   readonly criteriaSealed?: boolean;
+  /**
+   * The commit the gate commands are read from. Defaults to the base, which is right for one
+   * run. A session moves its base to the end of each turn, and a run that read its criteria
+   * from there would run the commands the previous turn's model wrote into the manifest; the
+   * session names the commit it started from here instead, and every turn is measured by it.
+   */
+  readonly criteriaRef?: string;
 }
 
 export interface GatesEngineRun {
@@ -66,25 +73,62 @@ export interface GatesEngineRun {
   readonly bonds: readonly BondOutcome[];
 }
 
+export interface CriteriaInput {
+  readonly workspaceRoot: string;
+  /** The commit whose manifests decide the gates: the base of a run, the start of a session. */
+  readonly criteriaRef: string;
+  readonly gateOptions?: GateSetOptions;
+}
+
 /**
  * Detection and assembly, in one place, so the set sealed before the loop and the set the
  * engine runs after it are built by the same function from the same inputs. Read from the
- * base commit, falling back to the tree only where the base had no manifest at all: a run
- * must not author the command that measures it (see below).
+ * criteria commit, falling back to the tree only where that commit had no manifest at all: a
+ * run must not author the command that measures it (see below), and neither may the turn or
+ * the worker before it.
  */
-export async function assembleGateSet(input: {
-  readonly workspaceRoot: string;
-  readonly baseRef: string;
-  readonly gateOptions?: GateSetOptions;
-}): Promise<{ readonly detection: ProjectDetection; readonly gates: readonly GateDefinition[] }> {
+export async function assembleGateSet(
+  input: CriteriaInput,
+): Promise<{ readonly detection: ProjectDetection; readonly gates: readonly GateDefinition[] }> {
   const probe = createGitWorkspaceProbe({
     workspaceRoot: input.workspaceRoot,
-    baseRef: input.baseRef,
+    baseRef: input.criteriaRef,
   });
   const detection = await detectProject(
     async (manifest) => (await probe.readBase(manifest)) ?? (await probe.readCurrent(manifest)),
   );
   return { detection, gates: assembleGates(detection, { ...(input.gateOptions ?? {}) }) };
+}
+
+/**
+ * The criteria, on the chain before anything they govern runs. Returns false where the
+ * workspace cannot be read for them, and raises nothing: the gates raise their own error when
+ * they run, with the remedy, and a worse one here would replace it.
+ */
+export async function sealAssembledCriteria(
+  input: CriteriaInput & {
+    readonly evidence: EvidenceRecorder;
+    readonly budgets: DiffBudget;
+    readonly attemptCap: number;
+  },
+): Promise<boolean> {
+  let assembled: Awaited<ReturnType<typeof assembleGateSet>>;
+  try {
+    assembled = await assembleGateSet(input);
+  } catch {
+    return false;
+  }
+  await sealGateSet(
+    input.evidence,
+    describeGateSet({
+      detection: assembled.detection,
+      gates: assembled.gates,
+      criteriaRef: input.criteriaRef,
+      budgets: input.budgets,
+      attemptCap: input.attemptCap,
+    }),
+  );
+  return true;
 }
 
 /**
@@ -104,16 +148,23 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
   // here it authored the instrument. A workspace whose base declares no manifest is a run
   // establishing measurement rather than escaping it, and what it declares is itself measured
   // by whether the tests it wrote are collected.
+  const criteriaRef = options.criteriaRef ?? options.baseRef;
   const { detection, gates } = await assembleGateSet({
     workspaceRoot: options.workspaceRoot,
-    baseRef: options.baseRef,
+    criteriaRef,
     ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
   });
   const budgets = options.budgets ?? defaultDiffBudget;
   if (options.criteriaSealed !== true) {
     await sealGateSet(
       options.evidence,
-      describeGateSet({ detection, gates, budgets, attemptCap: options.cap ?? defaultAttemptCap }),
+      describeGateSet({
+        detection,
+        gates,
+        criteriaRef,
+        budgets,
+        attemptCap: options.cap ?? defaultAttemptCap,
+      }),
     );
   }
 

@@ -10,17 +10,16 @@ import type { ResolveRequest } from "./gates/auto-resolve.ts";
 import type { SingleFileCommand } from "./gates/base-control.ts";
 import type { GateSetOptions } from "./gates/default-gates.ts";
 import {
-  assembleGateSet,
   defaultDiffBudget,
   type GatesEngineRun,
   runGatesEngine,
+  sealAssembledCriteria,
   vacuousBlockingBonds,
 } from "./gates/engine.ts";
 import type { FileSetRegistry } from "./gates/file-set.ts";
 import { createAmendFileSetTool, createDeclareFileSetTool } from "./gates/file-set-tool.ts";
 import type { DiffBudget } from "./gates/gate-definition.ts";
 import { measuredTheChange } from "./gates/gate-runner.ts";
-import { describeGateSet, sealGateSet } from "./gates/gate-set-seal.ts";
 import { createGitWorkspaceProbe } from "./gates/git-workspace.ts";
 import { captureInheritedChanges, type InheritedChanges } from "./gates/inherited-changes.ts";
 import { detectProject } from "./gates/project-type.ts";
@@ -132,6 +131,14 @@ export interface AgentTaskOptions {
   readonly gateOptions?: GateSetOptions;
   /** Replaces the engine's built-in size budget, from swarm.toml. */
   readonly diffBudget?: DiffBudget;
+  /**
+   * The commit the gate commands are read from, where it is not the base. A session names the
+   * commit it started from, so a turn is never measured by a manifest the turn before it wrote;
+   * a parallel run names the commit its workers branched from, for the same reason one layer up.
+   */
+  readonly criteriaRef?: string;
+  /** Whether the caller sealed the criteria on this chain already, as a session does once. */
+  readonly criteriaSealed?: boolean;
   readonly singleFileTestCommand?: SingleFileCommand;
   /**
    * The peer-trail tool, present only on the parallel path. A worker with no peers is
@@ -238,7 +245,7 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
   // to run inside a repository, and swallowing it there to throw a worse one here helps nobody.
   const inherited = await captureInherited(options);
   const detected = await detectedTypes(options);
-  const criteriaSealed = await sealCriteria(options);
+  const criteriaSealed = options.criteriaSealed === true || (await sealCriteria(options));
   if (inherited.size > 0) {
     await options.evidence.record({
       type: "inherited-changes",
@@ -321,6 +328,7 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
     abortSignal: wall.stopAttemptsSignal(options.abortSignal),
     inherited,
     criteriaSealed,
+    criteriaRef: criteriaRefOf(options),
     resolve: (request) =>
       resolveWithModel(request, options, {
         ...loopDependencies,
@@ -396,39 +404,28 @@ function wasGreen(loop: AgentLoopOutcome, gates: GatesEngineRun): boolean {
   return measuredTheChange(gates.outcome.finalCycle);
 }
 
-/**
- * The criteria, on the chain before the model is asked for anything. Not raised on a
- * workspace the gates cannot read: those raise their own error when they run, with the remedy.
- */
-async function sealCriteria(options: AgentTaskOptions): Promise<boolean> {
-  let assembled: Awaited<ReturnType<typeof assembleGateSet>>;
-  try {
-    assembled = await assembleGateSet({
-      workspaceRoot: options.workspace,
-      baseRef: options.baseRef,
-      ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
-    });
-  } catch {
-    return false;
-  }
-  await sealGateSet(
-    options.evidence,
-    describeGateSet({
-      detection: assembled.detection,
-      gates: assembled.gates,
-      budgets: options.diffBudget ?? defaultDiffBudget,
-      attemptCap: options.attempts,
-    }),
-  );
-  return true;
+function criteriaRefOf(options: AgentTaskOptions): string {
+  return options.criteriaRef ?? options.baseRef;
 }
 
-/** From the base commit, for the same reason the gate command is: a run cannot restyle itself. */
+/** The criteria, on the chain before the model is asked for anything. */
+function sealCriteria(options: AgentTaskOptions): Promise<boolean> {
+  return sealAssembledCriteria({
+    workspaceRoot: options.workspace,
+    criteriaRef: criteriaRefOf(options),
+    ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
+    evidence: options.evidence,
+    budgets: options.diffBudget ?? defaultDiffBudget,
+    attemptCap: options.attempts,
+  });
+}
+
+/** From the criteria commit, for the same reason the gate command is: a run cannot restyle itself. */
 async function detectedTypes(options: AgentTaskOptions): Promise<readonly string[]> {
   try {
     const probe = createGitWorkspaceProbe({
       workspaceRoot: options.workspace,
-      baseRef: options.baseRef,
+      baseRef: criteriaRefOf(options),
     });
     const detection = await detectProject(
       async (manifest) => (await probe.readBase(manifest)) ?? (await probe.readCurrent(manifest)),

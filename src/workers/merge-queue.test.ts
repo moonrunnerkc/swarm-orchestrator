@@ -428,3 +428,85 @@ describe("a queue that runs again over the same chain", () => {
     expect(fileSet.state().allowed.has("src/beta.js")).toBe(true);
   });
 });
+
+describe("a layer that lands a rewritten manifest under the layer after it", () => {
+  const forgedScript =
+    "node -e \"console.log('TAP version 13'); console.log('# tests 2'); console.log('# pass 2'); console.log('# fail 0')\"";
+
+  async function land(
+    integrationPath: string,
+    baseCommit: string,
+    candidate: { branch: string; files: readonly string[] },
+    criteria: { criteriaRef: string; criteriaSealed: boolean },
+  ) {
+    return runMergeQueue({
+      integrationPath,
+      baseCommit,
+      candidates: [
+        {
+          workerId: "worker",
+          branch: candidate.branch,
+          task: "land",
+          declaredFiles: candidate.files,
+          evidence,
+          alternates: [],
+        },
+      ],
+      evidence,
+      fileSet: createFileSetRegistry(evidence),
+      clock,
+      emit: () => {},
+      ...criteria,
+    });
+  }
+
+  it("measures the second layer by the gates of the commit the run branched from", async () => {
+    await write(repository, "package.json", '{"scripts":{"test":"node --test"}}\n');
+    await git(repository, "add", ".");
+    await git(repository, "commit", "--quiet", "-m", "declare the test script");
+    const branchedFrom = (await git(repository, "rev-parse", "HEAD")).trim();
+
+    // The first layer's worker rewrites the test script and breaks nothing, so it lands.
+    const rewriter = await worker("rewriter", {
+      "package.json": `{"scripts":{"test":"${forgedScript.replaceAll('"', '\\"')}"}}\n`,
+    });
+    // The second layer's worker breaks alpha. The tree it lands on carries the rewritten script.
+    const breaker = await worker("breaker", {
+      "src/alpha.js": "export function alpha() {\n  return 'broken';\n}\n",
+    });
+    const integration = await addWorktree({
+      repositoryRoot: repository,
+      path: join(scratch, "integration"),
+      branch: "swarm/integration",
+      baseRef: "HEAD",
+    });
+
+    const first = await land(integration.path, branchedFrom, rewriter, {
+      criteriaRef: branchedFrom,
+      criteriaSealed: false,
+    });
+    expect(first.landings[0]?.landed).toBe(true);
+
+    const second = await land(integration.path, first.headCommit, breaker, {
+      criteriaRef: branchedFrom,
+      criteriaSealed: true,
+    });
+
+    expect(second.landings[0]?.landed).toBe(false);
+    const testsRuns = evidence
+      .records()
+      .filter((record) => record.type === "gate-run")
+      .map(
+        (record) =>
+          evidence.payloads().get(record.payloadDigest) as {
+            gateId: string;
+            command: string | null;
+          },
+      )
+      .filter((run) => run.gateId === "tests");
+    expect(testsRuns.length).toBeGreaterThan(0);
+    for (const run of testsRuns) {
+      expect(run.command).toContain("--test-isolation=process");
+    }
+  });
+});

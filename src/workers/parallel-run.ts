@@ -164,8 +164,10 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
       emit: (event) => {
         options.emit("queue", event);
       },
-      // The first layer seals the chain's criteria; every later layer runs under that seal.
+      // The first layer seals the chain's criteria; every later layer runs under that seal,
+      // and every layer reads its gate commands from the commit the run branched from.
       criteriaSealed: queue !== null,
+      criteriaRef: baseCommit,
       ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
     });
 
@@ -196,7 +198,9 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
       });
       tasksPlanned += tasks.length;
       const ran = await Promise.all(
-        planned.map((attempt) => pool.run(() => runOneWorker(attempt, head, options, registered))),
+        planned.map((attempt) =>
+          pool.run(() => runOneWorker(attempt, head, baseCommit, options, registered)),
+        ),
       );
       workers.push(...ran);
       // taskIds come out of the planner in task order, so zipping them with the layer's
@@ -391,6 +395,8 @@ function asAttempt(worker: WorkerResult, baseCommit: string): Attempt {
 async function runOneWorker(
   planned: PlannedAttempt,
   baseCommit: string,
+  /** The commit the whole run branched from, which every worker's gates are read from. */
+  criteriaRef: string,
   options: ParallelRunOptions,
   registered: TrailPeer[],
 ): Promise<WorkerResult> {
@@ -426,6 +432,7 @@ async function runOneWorker(
       task,
       workspace: worktree.path,
       baseRef: baseCommit,
+      criteriaRef,
       maxSteps: options.maxSteps,
       attempts: options.attempts,
       model: options.createModel(workerId, evidence),
