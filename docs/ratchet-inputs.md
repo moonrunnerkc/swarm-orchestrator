@@ -99,7 +99,54 @@ refuses to read green over a change no command gate ran on, the counter parser r
 collected nothing as not-applicable rather than as passed, and every numeric arm above sits under
 the boolean one precisely because the boolean one is authorable.
 
-Named here rather than implied away.
+Named here rather than implied away. One edge of it moved on 2026-09-04 and is written up
+below: which command runs is no longer something the code under measurement can author, and
+neither a printed line nor a hang can turn a failure into not-applicable. What remains is the
+exit code itself: a test that exits 127 on purpose makes its gate not applicable, which never
+renders green on its own and is one visible line in a diff.
+
+## Resolved on 2026-09-04: the manifest the next turn's command is read from
+
+**What it was.** A single run reads its gate commands from the base commit, so the run cannot
+author the instrument that measures it. A session moves its base to the end of each turn, so
+the next turn is not charged with the last one's diff, and the gate commands were read from
+there: turn two's tests gate was assembled from the `package.json` turn one's model wrote. The
+same one level up on the parallel path, where a later layer's merge queue assembled its gates
+from the integration tree the earlier layer had landed on.
+
+**Demonstrated.** `src/evidence/redteam-adversarial.test.ts`, case 19: turn one rewrites the
+test script to a `node -e` that prints `# pass 1` and keeps the greeting working, so it is
+green under the real runner; turn two breaks the greeting and was green under the printed
+counters. `src/workers/merge-queue.test.ts`, the two-layer case: the first layer lands the
+rewritten script, the second lands a broken function under it. Both pass on the previous
+commit.
+
+**What was chosen.** The commit the criteria are read from is named apart from the base a
+turn is measured against. A session names the commit it started on, seals the criteria once
+before its first turn, and every turn runs under that seal; a parallel run names the commit
+its workers branched from, for its workers and for every layer of its queue. The seal
+records that commit as `criteriaRef`. And the verifier holds every gate run to the sealed
+command as well as to the sealed id, severity and rule, and reads the final cycle as the last
+run of gate records under one attempt number rather than the highest attempt number on the
+chain, so a later turn that dropped a gate is not covered by an earlier turn's retry
+(`src/evidence/seal-conformance.test.ts`).
+
+## Resolved on 2026-09-04: not-applicable decided by text, and by a timeout
+
+**What it was.** Whether a gate's tool was installed was read from its exit code and from a
+pattern over its stderr, so a suite that printed `rg: not found` about a helper and exited 0
+was not applicable rather than passed, and a suite that failed and printed the same line was
+not applicable rather than failed. `campaign/corpus/local-ollama/refined-github__refined-github/`
+holds the first shape as it happened. And a gate killed at its timeout was recorded as not
+applicable, the verdict for a tool that is not installed, so a change whose suite hung was
+green on the gates beside it: not applicable never blocks, and hanging a suite is one line.
+
+**What was chosen.** The rule reads the exit code and nothing the run printed: 127 is the
+shell's own answer for a program it could not find, and a vector the harness spawned itself
+reports a program it could not start through `unavailable` from the spawn error. A kill is a
+failure of the gate that ran, with the reason in its output where the model and the reviewer
+read failures. The re-derivation script the bundle carries reads the same rule.
+`src/evidence/redteam-adversarial.test.ts`, cases 20 and 21; `src/gates/killed-command.test.ts`.
 
 ## Resolved: the base ref is a symbolic ref, and the workspace can move it
 

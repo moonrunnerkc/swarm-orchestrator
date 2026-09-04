@@ -308,7 +308,7 @@ shape to watch, and the cheap version of the fix is a test asserting no shipped 
 a published version other than the one in `package.json`. Still not built, and now with two
 instances behind it rather than one.
 
-## Debt: a session's ratchet is per turn, so a later turn can erase an earlier one's work
+## Closed on 2026-09-04: a session's ratchet is per turn, so a later turn can erase an earlier one's work
 
 The ratchet holds within a turn: tests collected, assertions, coverage and skips may not move
 the wrong way across the auto-resolve attempts of that turn, and the final state is compared to
@@ -327,6 +327,20 @@ the longer it runs. The fix is a floor carried across turns, so a gate that has 
 session cannot later report not-applicable or failed without saying so. Not built, because
 deciding whether that floor blocks a turn or only reports it is a design call rather than a
 patch, and making it up while shipping something else is how a ratchet gets loosened.
+
+Closed at the cause rather than by the floor. The instance above was the manifest: turn two's
+gate commands were read from the `package.json` turn one had written, and dropping the script
+was one way of writing it. The commands are now read from the commit the session started on
+and sealed once for the whole session, so no turn is measured by an instrument the turn before
+it authored, and a turn that drops the test script fails the sealed tests gate rather than
+standing it down (`src/evidence/redteam-adversarial.test.ts`, case 19, and
+`ratchet-inputs.md`). What the floor would have added beyond that is a gate that passed in one
+turn and reports failed in the next, and that turn is not green already: a blocking failure
+escalates, and the per-turn ratchet against the turn's own baseline rejects the deletions that
+would hide it. A gate that reports not-applicable in a later turn can no longer be made to by
+the tree, since the two ways of doing it, a printed line and a hang, are closed in the same
+pass; what is left is a test that exits 127 on purpose, which is named as a boundary in the
+build guide.
 
 ## Debt: one local pairing emits its tool calls as text, and the run reads that as a completion
 
