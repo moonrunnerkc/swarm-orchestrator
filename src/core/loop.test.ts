@@ -263,12 +263,28 @@ describe("runAgentLoop", () => {
  */
 describe("a turn that carries nothing", () => {
   it("stops as an empty response rather than as a completion", async () => {
-    const harness = createHarness([respondWithText("")]);
+    // Three, for the same reason the capped turn below takes three: an empty turn is sampled
+    // again before it is believed, and the policy decides how many samples that is.
+    const harness = createHarness([respondWithText(""), respondWithText(""), respondWithText("")]);
     const outcome = await runAgentLoop("do the thing", harness.deps);
 
     expect(outcome.stopReason).toBe("empty-response");
     expect(outcome.steps).toBe(1);
     expect(outcome.answeredSteps).toBe(0);
+  });
+
+  it("samples an empty turn again rather than ending the run on the runtime's silence", async () => {
+    // Two campaign runs ended this way with their work half done: one dropped stream, read as
+    // the loop's last word. A refused connection is retried; a stream that said nothing is
+    // the same failure in a response's shape.
+    const harness = createHarness([respondWithText(""), respondWithText("done")]);
+    const outcome = await runAgentLoop("do the thing", harness.deps);
+
+    expect(outcome.stopReason).toBe("completed");
+    expect(outcome.completionClaim).toBe("done");
+    expect(harness.events.filter((event) => event.type === "model-error")).toMatchObject([
+      { willRetry: true, message: expect.stringContaining("neither text nor a tool call") },
+    ]);
   });
 
   it("says the cap was hit when that is what happened, not that the turn was empty", async () => {

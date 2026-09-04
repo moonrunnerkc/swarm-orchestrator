@@ -86,18 +86,20 @@ describe("the turns that corrupted the 2026-08-23 and 2026-08-24 calibration bun
       throw new Error("fixture is empty");
     }
 
+    // Twice, because an empty turn is sampled again before it is believed, and the repeat's
+    // retry policy takes two samples. Both reach the ledger, and both are empty.
     const observation = await runCalibrationRepeat(
       { case: one, modelSpec: "local:qwen3.6:35b-a3b", repeat: 2 },
-      dependencies([replay(first)]),
+      dependencies([replay(first), replay(first)]),
     );
 
     expect(observation.executed).toBe(false);
     expect(observation.abstentionReason).toBe("no-content");
     expect(observation.modelCalls).toMatchObject({
-      calls: 1,
+      calls: 2,
       validTurns: 0,
-      emptyTurns: 1,
-      emptyTurnReasons: { "no-content": 1 },
+      emptyTurns: 2,
+      emptyTurnReasons: { "no-content": 2 },
     });
   });
 
@@ -109,7 +111,7 @@ describe("the turns that corrupted the 2026-08-23 and 2026-08-24 calibration bun
 
     await runCalibrationRepeat(
       { case: one, modelSpec: "local:qwen3.6:35b-a3b", repeat: 2 },
-      dependencies([replay(first)]),
+      dependencies([replay(first), replay(first)]),
     );
 
     const payloads = evidence.payloads();
@@ -124,7 +126,7 @@ describe("the turns that corrupted the 2026-08-23 and 2026-08-24 calibration bun
       abstained: true,
       abstentionReason: "no-content",
       validTurns: 0,
-      emptyTurns: 1,
+      emptyTurns: 2,
     });
   });
 
@@ -188,6 +190,7 @@ describe("the turns that corrupted the 2026-08-23 and 2026-08-24 calibration bun
             { callId: "c2", toolName: "read", input: { path: "clamp.mjs" } },
           ]),
           replay(first),
+          replay(first),
         ]),
         commands,
       },
@@ -210,7 +213,7 @@ describe("the turns that corrupted the 2026-08-23 and 2026-08-24 calibration bun
       gatePassed: null,
       gateExitCode: null,
       validTurns: 2,
-      emptyTurns: 1,
+      emptyTurns: 2,
     });
   });
 
@@ -222,7 +225,7 @@ describe("the turns that corrupted the 2026-08-23 and 2026-08-24 calibration bun
 
     await runCalibrationRepeat(
       { case: one, modelSpec: "local:qwen3.6:35b-a3b", repeat: 2 },
-      dependencies([replay(first)]),
+      dependencies([replay(first), replay(first)]),
     );
 
     const payloads = evidence.payloads();
@@ -231,7 +234,7 @@ describe("the turns that corrupted the 2026-08-23 and 2026-08-24 calibration bun
       .filter((record) => record.type === "model-call")
       .map((record) => payloads.get(record.payloadDigest));
 
-    expect(calls).toHaveLength(1);
+    expect(calls).toHaveLength(2);
     expect(calls[0]).toMatchObject({ content: { valid: false, reason: "no-content" } });
   });
 });
