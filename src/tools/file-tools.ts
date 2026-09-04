@@ -28,6 +28,19 @@ const listInput = z.object({
   path: z.string().optional().describe("Workspace-relative directory. Defaults to the root."),
 });
 
+/**
+ * Asked before a write or an edit touches a path: the sentence to refuse it with, or null.
+ * Absent, nothing is refused, which is what a workspace with no declared file set is.
+ */
+export type WriteRefusal = (path: string) => string | null;
+
+function refuseIfNotAuthorized(refuse: WriteRefusal | undefined, path: string): void {
+  const refusal = refuse?.(path) ?? null;
+  if (refusal !== null) {
+    throw new Error(refusal);
+  }
+}
+
 export function createReadTool(sandbox: Sandbox): ToolDefinition {
   return defineTool({
     name: "read",
@@ -50,7 +63,7 @@ export function createReadTool(sandbox: Sandbox): ToolDefinition {
   });
 }
 
-export function createWriteTool(sandbox: Sandbox): ToolDefinition {
+export function createWriteTool(sandbox: Sandbox, refuse?: WriteRefusal): ToolDefinition {
   return defineTool({
     name: "write",
     description: "Create or overwrite a workspace file with UTF-8 content.",
@@ -58,6 +71,7 @@ export function createWriteTool(sandbox: Sandbox): ToolDefinition {
     kind: "write",
     pathsFrom: (input) => [input.path],
     async execute(input) {
+      refuseIfNotAuthorized(refuse, input.path);
       const absolutePath = resolveInsideWorkspace(sandbox, input.path);
       await mkdir(dirname(absolutePath), { recursive: true });
       await writeFile(absolutePath, input.content, "utf8");
@@ -69,7 +83,7 @@ export function createWriteTool(sandbox: Sandbox): ToolDefinition {
   });
 }
 
-export function createEditTool(sandbox: Sandbox): ToolDefinition {
+export function createEditTool(sandbox: Sandbox, refuse?: WriteRefusal): ToolDefinition {
   return defineTool({
     name: "edit",
     description: "Replace exact text in a workspace file.",
@@ -77,6 +91,7 @@ export function createEditTool(sandbox: Sandbox): ToolDefinition {
     kind: "write",
     pathsFrom: (input) => [input.path],
     async execute(input) {
+      refuseIfNotAuthorized(refuse, input.path);
       const absolutePath = resolveInsideWorkspace(sandbox, input.path);
       const before = await readFile(absolutePath, "utf8");
       const occurrences = before.split(input.find).length - 1;
