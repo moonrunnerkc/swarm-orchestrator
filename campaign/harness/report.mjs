@@ -33,11 +33,17 @@ function tally(values) {
   return counts;
 }
 
+/** The CLI digests the arm's records name, read from the images their runs used: one is the expectation, none is "not recorded", more than one is a mixed arm. */
+export function cliDigestsOf(results) {
+  return [...new Set(results.map((entry) => entry.cli?.tarballSha256 ?? null).filter((digest) => digest !== null))].sort();
+}
+
 export function summarizeArm(results) {
   const executed = results.filter((entry) => entry.executed);
   const withBundle = results.filter((entry) => entry.bundle !== null);
   return {
     runs: results.length,
+    cliTarballDigests: cliDigestsOf(results),
     noBundle: results.filter((entry) => entry.bundle === null).length,
     timedOut: results.filter((entry) => entry.timedOut).length,
     killedBeforeBudget: results.filter((entry) => entry.killedBeforeBudget === true).length,
@@ -74,11 +80,33 @@ function renderDistribution(name, dist, unit) {
   );
 }
 
-export function renderReport(summaries, { generatedAt, notes = [] }) {
-  const lines = ["# Campaign results", "", `Generated ${generatedAt} from the records in \`results/\`. Every number is over the runs recorded there; a run that produced no bundle or whose model never answered is counted where it says and nowhere else.`, ""];
+function renderCliDigests(summary) {
+  const digests = summary.cliTarballDigests;
+  if (summary.runs === 0) {
+    return "no run recorded";
+  }
+  if (digests.length === 0) {
+    return "not recorded: the images these runs used carried no CLI tarball label";
+  }
+  if (digests.length === 1) {
+    return `sha256:${digests[0]}`;
+  }
+  return `MIXED, ${digests.length} digests: ${digests.map((digest) => `sha256:${digest}`).join(", ")}`;
+}
+
+export function renderReport(summaries, { generatedAt, notes = [], campaign = null, cli = null }) {
+  const title = campaign === null ? "# Campaign results" : `# Campaign results: \`${campaign}\``;
+  const lines = [title, "", `Generated ${generatedAt} from the records in \`results/\`. Every number is over the runs recorded there; a run that produced no bundle or whose model never answered is counted where it says and nowhere else.`, ""];
+  if (cli !== null) {
+    lines.push(
+      `The CLI under test: tarball \`${cli.tarball}\`, sha256 \`${cli.tarballSha256}\`, packed from commit \`${cli.packedFromCommit}\` at ${cli.packedAt}. Every result below records the digest its image carried, and the arm rows say whether they agree.`,
+      "",
+    );
+  }
   for (const [arm, summary] of Object.entries(summaries)) {
     lines.push(`## ${arm}`, "", "| Measure | Value |", "| --- | --- |");
     lines.push(row("runs recorded", summary.runs));
+    lines.push(row("CLI tarball the runs' images carried", renderCliDigests(summary)));
     lines.push(row("no bundle produced", summary.noBundle));
     lines.push(row("timed out", summary.timedOut));
     lines.push(row("killed before the budget", summary.killedBeforeBudget));

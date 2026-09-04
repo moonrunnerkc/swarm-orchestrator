@@ -279,3 +279,52 @@ the report names them here rather than reattributing them, because a run the bac
 abandoned and a run the model exhausted look the same from the harness and are not told
 apart after the fact.
 
+## Second campaign, 2026-09-04: `fixed-cli`
+
+Written before its first run, as the first campaign's method was.
+
+**What it measures.** The same fifty seeds, under the same sealed criteria and budgets, run
+by the CLI as this tree ships it after two defects the first campaign exposed were fixed in
+commit `d1200afb`: the default shell allowlist, which carried node's toolchain and none of
+the others project detection assembles a tests gate from, and the model call, which had no
+deadline. The first campaign's arms stayed on the tarball packed on 2026-09-02, so its
+non-node numbers describe a tool in which no Python, Go or Rust run could execute its own
+suite through the shell, and its bundle-less runs describe a call the container had to kill.
+This campaign measures the fixed tool against the same seeds, and the comparison between the
+two is a measurement of the two fixes and of nothing else that changed.
+
+**What is held fixed.** The manifest in `seeds/manifest.json`, the repositories in
+`selection/repos.json`, the criteria, the base images by digest, the toolchain installs, the
+forwarders, the budgets of forty steps, two attempts and forty-five minutes, the memory an arm
+run holds, and the order of the arms: `local-mlx` first, `local-ollama` second, one at a time
+with one backend resident on the box, as the first campaign ended up running.
+
+**What varies.** The CLI tarball inside the four images, and nothing else in them. The
+harness itself changed in one way to make this possible: a campaign has a name, its results
+and corpus live under `campaigns/<name>/`, and every result record carries the sha256 of the
+CLI tarball read from the label of the image the run used, so a bundle says which tool made
+it without reference to the tree. The first campaign's records carry no such field, and the
+report says so for them rather than filling it in.
+
+**Where it is written.** `campaigns/fixed-cli/results/cli.json` records the tarball, its
+digest, the commit it was packed from and the images built with it, written by setup and
+read back from the images. Results go to `campaigns/fixed-cli/results/<arm>/`, bundles to
+`campaigns/fixed-cli/corpus/<arm>/<repository>/` without their rendered review page, and the
+report to `campaigns/fixed-cli/results/report.md`. The first campaign's directories are not
+written to again.
+
+**Preflight, before any arm.** One Python seed per arm under `--limit 1`, judged on its
+bundle and not on its log: the tool-call records show the suite command allowed through the
+shell, and a run that reaches the wall budget ends with a bundle. Either failing is a defect
+to fix at the root before the arms run, and the fix is a new tarball, a new setup, and this
+section amended with the new digest.
+
+**What is expected, stated so it can fail.** No bundle-less run on either arm, because a
+run that exhausts its wall budget on the fixed CLI ends as a wall-time stop with its gates
+run and its bundle written; any such run is a defect to root-cause, not a number. The
+Python, Go and Rust runs executing their own suites through the shell. Fixed-of-executed for
+those three pools at or above the first campaign's, which is not guaranteed and is reported
+as it comes out.
+
+**What stays out.** The frontier arm, by decision: the report carries it at zero runs.
+

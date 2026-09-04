@@ -7,6 +7,6 @@ import { configDefaults, defineConfig } from "vitest/config";
  */
 export default defineConfig({
   test: {
-    exclude: [...configDefaults.exclude, "campaign/work/**", "campaign/corpus/**"],
+    exclude: [...configDefaults.exclude, "campaign/work/**", "campaign/corpus/**", "campaign/campaigns/**"],
   },
 });

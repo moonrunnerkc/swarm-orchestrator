@@ -13,7 +13,8 @@ anything was selected (`criteria.md`), the method was written before anything ra
 | `images/` | one Dockerfile per language, base images named by digest |
 | `selection/` | the raw search results, the ordered candidates, every decision, the accepted repositories |
 | `seeds/manifest.json` | one seeded defect per repository with its provenance and expected detection |
-| `results/<arm>/` | one record per run, and `results/report.md` |
+| `results/<arm>/` | one record per run, and `results/report.md`; this is the campaign of 2026-09-02 |
+| `campaigns/<name>/` | a later campaign's `results/` and `corpus/`, same layout, sharing the selection, seeds, criteria and images; `results/cli.json` records the CLI its images were built from |
 | `corpus/<arm>/<repository>/` | the bundle each run exported, with its verifier and transcript; the rendered review page is left out, since it is drawn from the ledger and the verifier never reads it |
 | `work/` | clones and per-run workspaces; never committed |
 
@@ -26,6 +27,11 @@ under `colima` on Apple silicon; `docker info` has to answer), `gh` authenticate
 status`), and for each local arm its backend answering on the host, `curl
 http://127.0.0.1:8000/v1/models` for rapid-mlx and `curl http://127.0.0.1:11434/v1/models` for
 Ollama, serving the model the arm names in `harness/arms.mjs`.
+
+Every step below takes `--campaign <name>` to work under `campaigns/<name>/` instead of
+`results/` and `corpus/`. A second campaign against the same seeds is how a change to the
+tool is measured: same manifest, same images apart from the CLI installed in them, and every
+result records the CLI tarball digest its image carried, read from the image at run time.
 
 1. **Setup.** Packs the CLI from this tree, builds the four images, creates the internal
    network, starts a forwarder per arm whose backend can be reached.
@@ -87,6 +93,6 @@ Each step fails with what is missing and what to do, and none of them fakes a re
 
 ## What is committed and what is not
 
-`selection/`, `seeds/`, `results/` and `corpus/` are committed: they are the campaign. `work/`
+`selection/`, `seeds/`, `results/`, `corpus/` and `campaigns/` are committed: they are the campaigns. `work/`
 and the packed tarball under `images/` are not: they are reproducible from the commit that ran
 the campaign, and the tarball's digest is what `npm pack` prints.

@@ -2,11 +2,17 @@
 /**
  * The campaign driver: search, walk, run, report, in that order, each resumable.
  *
- *   node campaign/harness/campaign.mjs setup [--tarball <path>]
+ *   node campaign/harness/campaign.mjs setup [--tarball <path>] [--campaign <name>]
  *   node campaign/harness/campaign.mjs search
  *   node campaign/harness/campaign.mjs walk [--limit <n>]
- *   node campaign/harness/campaign.mjs run --arm <name> [--limit <n>] [--max-steps <n>] [--attempts <n>] [--timeout-minutes <n>]
- *   node campaign/harness/campaign.mjs report
+ *   node campaign/harness/campaign.mjs run --arm <name> [--campaign <name>] [--limit <n>] [--max-steps <n>] [--attempts <n>] [--timeout-minutes <n>]
+ *   node campaign/harness/campaign.mjs report [--campaign <name>]
+ *
+ * A campaign name selects where results and the corpus go, under campaigns/<name>/; without
+ * one they go to results/ and corpus/, which hold the campaign of 2026-09-02. The selection,
+ * the seeds, the criteria, the images and the work directory are shared, since a second
+ * campaign measures a different CLI against the same seeds. Which CLI is read from the image
+ * a run used, never from the tree.
  *
  * Everything the driver decides is a pure function in the modules beside it; this file is
  * the sequencing and the processes. Every process is an argument vector spawned directly,
@@ -17,6 +23,7 @@
  * Plain node, node: builtins only, no dependencies.
  */
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   appendFileSync,
   cpSync,
@@ -27,11 +34,12 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 
 import { armNamed, armNames } from "./arms.mjs";
+import { campaignDirectories } from "./campaign-layout.mjs";
 import {
   candidateFrom,
   orderCandidates,
@@ -43,10 +51,13 @@ import {
   armMemoryGigabytes,
   armRunArgv,
   buildImageArgv,
+  cliRecordFromLabel,
   createNetworkArgv,
   forwarderAddressArgv,
   forwarderArgv,
   forwarderName,
+  imageIdArgv,
+  imageLabelArgv,
   imageTags,
   offlineArgv,
   prepareArgv,
@@ -78,8 +89,6 @@ const ROOT = resolve(CAMPAIGN, "..");
 const directories = {
   selection: join(CAMPAIGN, "selection"),
   seeds: join(CAMPAIGN, "seeds"),
-  results: join(CAMPAIGN, "results"),
-  corpus: join(CAMPAIGN, "corpus"),
   work: join(CAMPAIGN, "work"),
   images: join(CAMPAIGN, "images"),
 };
@@ -90,8 +99,16 @@ const files = {
   decisions: join(directories.selection, "decisions.jsonl"),
   repos: join(directories.selection, "repos.json"),
   manifest: join(directories.seeds, "manifest.json"),
-  report: join(directories.results, "report.md"),
 };
+
+/** The results and corpus directories of the campaign the options name, or of the unnamed one. */
+function layoutFor(options) {
+  try {
+    return campaignDirectories(CAMPAIGN, options.campaign ?? null);
+  } catch (cause) {
+    throw new DriverError(cause.message, "--campaign <lower-case-name>");
+  }
+}
 
 class DriverError extends Error {
   constructor(what, remedy) {
@@ -201,6 +218,7 @@ function parseArgs(argv) {
 // setup: the images, the network, the forwarders
 
 async function setup(options) {
+  const layout = layoutFor(options);
   mkdirSync(directories.images, { recursive: true });
   let tarball = options.tarball === undefined ? null : resolve(options.tarball);
   if (tarball === null) {
@@ -210,14 +228,34 @@ async function setup(options) {
   } else {
     cpSync(tarball, join(directories.images, basename(tarball)));
   }
-  log(`tarball ${tarball}`);
+  const tarballSha256 = createHash("sha256").update(readFileSync(tarball)).digest("hex");
+  const packedFromCommit = (await must("git", ["rev-parse", "HEAD"])).stdout.trim();
+  const treeClean = (await must("git", ["status", "--porcelain", "--untracked-files=no"])).stdout.trim() === "";
+  log(`tarball ${tarball} sha256 ${tarballSha256}, packed from ${packedFromCommit}${treeClean ? "" : " with uncommitted changes in the tree"}`);
 
+  const images = {};
   for (const type of Object.keys(imageTags)) {
     log(`building ${imageTags[type]}`);
-    await must("docker", buildImageArgv({ type, imagesDirectory: directories.images, tarball }).slice(1), {
+    await must("docker", buildImageArgv({ type, imagesDirectory: directories.images, tarball, tarballSha256 }).slice(1), {
       timeoutMs: 30 * 60 * 1000,
     });
+    // Read back from the image, so the record says what the image carries and not what was asked for.
+    const label = cliRecordFromLabel((await must("docker", imageLabelArgv(type).slice(1))).stdout);
+    if (label.tarballSha256 !== tarballSha256) {
+      throw new Error(`${imageTags[type]} was built but carries ${label.tarballSha256 ?? "no"} CLI label where ${tarballSha256} was expected`);
+    }
+    images[type] = { tag: imageTags[type], id: (await must("docker", imageIdArgv(type).slice(1))).stdout.trim(), cliTarballSha256: label.tarballSha256 };
   }
+  writeJson(layout.cliRecord, {
+    campaign: layout.name,
+    tarball: basename(tarball),
+    tarballSha256,
+    packedFromCommit,
+    packedFromCleanTree: treeClean,
+    packedAt: nowIso(),
+    images,
+  });
+  log(`CLI record ${relative(ROOT, layout.cliRecord)}`);
 
   const network = await docker(createNetworkArgv());
   if (network.exitCode !== 0 && !/already exists/.test(network.stderr)) {
@@ -670,6 +708,7 @@ async function runArm(options) {
   }
   const armName = options.arm;
   const arm = armNamed(armName);
+  const layout = layoutFor(options);
   const limit = options.limit === undefined ? Number.POSITIVE_INFINITY : Number(options.limit);
   const maxSteps = Number(options["max-steps"] ?? 40);
   const attempts = Number(options.attempts ?? 2);
@@ -696,10 +735,10 @@ async function runArm(options) {
   let done = 0;
   for (const repo of repos) {
     if (done >= limit) break;
-    const resultPath = join(directories.results, armName, `${slugOf(repo.fullName)}.json`);
+    const resultPath = join(layout.results, armName, `${slugOf(repo.fullName)}.json`);
     if (existsSync(resultPath)) continue;
     try {
-      await runOne({ arm, armName, repo, maxSteps, attempts, timeoutMinutes, forwarderAddress, key, resultPath });
+      await runOne({ arm, armName, layout, repo, maxSteps, attempts, timeoutMinutes, forwarderAddress, key, resultPath });
     } catch (cause) {
       // The harness failing to start or finish one run is recorded against that run, by
       // name and with the error, and the arm goes on: one repository's git, mount or copy
@@ -727,24 +766,28 @@ async function runArm(options) {
     }
     done += 1;
   }
-  log(`${armName}: ${done} run(s) this session`);
+  log(`${armName}${layout.name === null ? "" : ` (campaign ${layout.name})`}: ${done} run(s) this session`);
 }
 
-async function runOne({ arm, armName, repo, maxSteps, attempts, timeoutMinutes, forwarderAddress, key, resultPath }) {
+async function runOne({ arm, armName, layout, repo, maxSteps, attempts, timeoutMinutes, forwarderAddress, key, resultPath }) {
   const slug = slugOf(repo.fullName);
   const prepared = join(directories.work, slug);
   const armRoot = join(directories.work, `${slug}.arms`, armName);
   rmSync(armRoot, { recursive: true, force: true });
   mkdirSync(armRoot, { recursive: true });
 
+  // Which CLI this run measures is read from the image it is about to run in.
+  const cli = cliRecordFromLabel((await run("docker", imageLabelArgv(repo.type).slice(1))).stdout);
   const base = {
     repository: repo.fullName,
     language: repo.language,
     type: repo.type,
     commit: repo.commit,
     arm: armName,
+    campaign: layout.name,
     backend: arm.backend,
     model: arm.model,
+    cli,
     maxSteps,
     attempts,
     timeoutMinutes,
@@ -839,7 +882,7 @@ async function runOne({ arm, armName, repo, maxSteps, attempts, timeoutMinutes, 
     untrackedFiles: untracked,
     testFilesChanged,
     seedLineRestored,
-    corpus: bundle === null ? null : `corpus/${armName}/${slug}`,
+    corpus: bundle === null ? null : relative(CAMPAIGN, join(layout.corpus, armName, slug)),
   };
   writeJson(resultPath, result);
   // The transcript is kept for every run, and for a run that left no bundle it is the only
@@ -849,7 +892,7 @@ async function runOne({ arm, armName, repo, maxSteps, attempts, timeoutMinutes, 
     cpSync(join(outputDirectory, "run-transcript.txt"), resultPath.replace(/\.json$/, ".transcript.txt"));
   }
   if (bundle !== null) {
-    const destination = join(directories.corpus, armName, slug);
+    const destination = join(layout.corpus, armName, slug);
     rmSync(destination, { recursive: true, force: true });
     cpSync(bundleDirectory, destination, { recursive: true });
     cpSync(join(outputDirectory, "run-transcript.txt"), join(destination, "run-transcript.txt"));
@@ -861,11 +904,12 @@ async function runOne({ arm, armName, repo, maxSteps, attempts, timeoutMinutes, 
 // ---------------------------------------------------------------------------------------------
 // report
 
-function report() {
+function report(options) {
+  const layout = layoutFor(options);
   const summaries = {};
   const notes = [];
   for (const name of armNames) {
-    const directory = join(directories.results, name);
+    const directory = join(layout.results, name);
     const results = existsSync(directory)
       ? readdirSync(directory)
           .filter((entry) => entry.endsWith(".json"))
@@ -877,9 +921,10 @@ function report() {
       notes.push(`${name}: no run recorded`);
     }
   }
-  const page = renderReport(summaries, { generatedAt: nowIso(), notes });
-  mkdirSync(directories.results, { recursive: true });
-  writeFileSync(files.report, page);
+  const cli = readJson(layout.cliRecord, null);
+  const page = renderReport(summaries, { generatedAt: nowIso(), notes, campaign: layout.name, cli });
+  mkdirSync(layout.results, { recursive: true });
+  writeFileSync(layout.report, page);
   process.stdout.write(page);
 }
 
@@ -887,12 +932,15 @@ function report() {
 
 const HELP = `campaign driver
 
-  node campaign/harness/campaign.mjs setup [--tarball <path>]
+  node campaign/harness/campaign.mjs setup [--tarball <path>] [--campaign <name>]
   node campaign/harness/campaign.mjs search
   node campaign/harness/campaign.mjs walk [--limit <n>]
   node campaign/harness/campaign.mjs rejudge --reason "<prefix>" | --marker "<text in the run's output>" | --between <from>,<to> [--language <name>]
-  node campaign/harness/campaign.mjs run --arm <${armNames.join("|")}> [--limit <n>] [--max-steps <n>] [--attempts <n>] [--timeout-minutes <n>]
-  node campaign/harness/campaign.mjs report
+  node campaign/harness/campaign.mjs run --arm <${armNames.join("|")}> [--campaign <name>] [--limit <n>] [--max-steps <n>] [--attempts <n>] [--timeout-minutes <n>]
+  node campaign/harness/campaign.mjs report [--campaign <name>]
+
+  --campaign <name> keeps a campaign's results and corpus under campaigns/<name>/; without it
+  they are results/ and corpus/, the campaign of 2026-09-02.
 `;
 
 async function main() {
@@ -909,7 +957,7 @@ async function main() {
     case "run":
       return runArm(options);
     case "report":
-      return report();
+      return report(options);
     case "--help":
     case "-h":
     case undefined:

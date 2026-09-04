@@ -37,8 +37,20 @@ export function createNetworkArgv() {
   return ["docker", "network", "create", "--internal", internalNetwork];
 }
 
+/**
+ * The label every campaign image carries naming the CLI tarball it installed, by digest. A
+ * result record reads it back from the image the run used, so which CLI a bundle measures is
+ * a fact about the image rather than a note about the tree.
+ */
+export const cliTarballLabel = "org.swarm-orchestrator.cli.tarball-sha256";
+
+const sha256Hex = /^[0-9a-f]{64}$/;
+
 /** The tarball has to sit inside the build context, so the driver copies it there first. */
-export function buildImageArgv({ type, imagesDirectory, tarball }) {
+export function buildImageArgv({ type, imagesDirectory, tarball, tarballSha256 }) {
+  if (!sha256Hex.test(tarballSha256 ?? "")) {
+    throw new Error(`an image build needs the tarball's sha256 to label it with, got ${JSON.stringify(tarballSha256)}`);
+  }
   return [
     "docker",
     "build",
@@ -46,10 +58,33 @@ export function buildImageArgv({ type, imagesDirectory, tarball }) {
     `${imagesDirectory}/Dockerfile.${type}`,
     "--build-arg",
     `SWARM_TARBALL=${basename(tarball)}`,
+    "--build-arg",
+    `SWARM_TARBALL_SHA256=${tarballSha256}`,
     "--tag",
     imageTags[type],
     imagesDirectory,
   ];
+}
+
+export function imageLabelArgv(type) {
+  return ["docker", "image", "inspect", "--format", `{{index .Config.Labels "${cliTarballLabel}"}}`, imageTags[type]];
+}
+
+export function imageIdArgv(type) {
+  return ["docker", "image", "inspect", "--format", "{{.Id}}", imageTags[type]];
+}
+
+/**
+ * What a result records about the CLI, from what the image said. An image built before the
+ * label existed answers with nothing, and that is recorded as not known rather than guessed
+ * from the tree, since the tree is not what ran.
+ */
+export function cliRecordFromLabel(inspectOutput) {
+  const value = (inspectOutput ?? "").trim();
+  if (sha256Hex.test(value)) {
+    return { tarballSha256: value };
+  }
+  return { tarballSha256: null, reason: "the image carries no CLI tarball label, so which CLI it holds is not known from the image" };
 }
 
 /**

@@ -67,3 +67,32 @@ describe("rendering the report", () => {
     expect(page).toContain("- frontier: NOT-DONE, the key has no balance");
   });
 });
+
+describe("which CLI an arm measured", () => {
+  const digest = "b".repeat(64);
+
+  it("is read from the records, one digest expected, none reported as not recorded, several as mixed", () => {
+    expect(summarizeArm([result({ cli: { tarballSha256: digest } }), result({ cli: { tarballSha256: digest } })]).cliTarballDigests).toEqual([digest]);
+    expect(summarizeArm([result({})]).cliTarballDigests).toEqual([]);
+    expect(summarizeArm([result({ cli: { tarballSha256: null, reason: "no label" } })]).cliTarballDigests).toEqual([]);
+
+    const mixed = renderReport({ arm: summarizeArm([result({ cli: { tarballSha256: digest } }), result({ cli: { tarballSha256: "c".repeat(64) } })]) }, { generatedAt: "t" });
+    expect(mixed).toContain("MIXED, 2 digests");
+    const unlabelled = renderReport({ arm: summarizeArm([result({})]) }, { generatedAt: "t" });
+    expect(unlabelled).toContain("not recorded: the images these runs used carried no CLI tarball label");
+    expect(renderReport({ frontier: summarizeArm([]) }, { generatedAt: "t" })).toContain("| CLI tarball the runs' images carried | no run recorded |");
+  });
+
+  it("names the campaign and the CLI it was packed from at the top, where the campaign is named", () => {
+    const page = renderReport(
+      { arm: summarizeArm([result({ cli: { tarballSha256: digest } })]) },
+      { generatedAt: "t", campaign: "fixed-cli", cli: { tarball: "swarm-orchestrator-13.1.9.tgz", tarballSha256: digest, packedFromCommit: "abc1234", packedAt: "2026-09-04T10:00:00Z" } },
+    );
+
+    expect(page.startsWith("# Campaign results: `fixed-cli`")).toBe(true);
+    expect(page).toContain("packed from commit `abc1234` at 2026-09-04T10:00:00Z");
+    expect(page).toContain(`| CLI tarball the runs' images carried | sha256:${digest} |`);
+    expect(renderReport({}, { generatedAt: "t" }).startsWith("# Campaign results\n")).toBe(true);
+  });
+});
+

@@ -1,12 +1,13 @@
 # Campaign results
 
-Generated 2026-09-04T08:23:49.633Z from the records in `results/`. Every number is over the runs recorded there; a run that produced no bundle or whose model never answered is counted where it says and nowhere else.
+Generated 2026-09-04T13:39:06.341Z from the records in `results/`. Every number is over the runs recorded there; a run that produced no bundle or whose model never answered is counted where it says and nowhere else.
 
 ## local-mlx
 
 | Measure | Value |
 | --- | --- |
 | runs recorded | 50 |
+| CLI tarball the runs' images carried | not recorded: the images these runs used carried no CLI tarball label |
 | no bundle produced | 7 |
 | timed out | 7 |
 | killed before the budget | 0 |
@@ -41,6 +42,7 @@ Generated 2026-09-04T08:23:49.633Z from the records in `results/`. Every number 
 | Measure | Value |
 | --- | --- |
 | runs recorded | 50 |
+| CLI tarball the runs' images carried | not recorded: the images these runs used carried no CLI tarball label |
 | no bundle produced | 0 |
 | timed out | 0 |
 | killed before the budget | 0 |
@@ -77,6 +79,7 @@ Generated 2026-09-04T08:23:49.633Z from the records in `results/`. Every number 
 | Measure | Value |
 | --- | --- |
 | runs recorded | 0 |
+| CLI tarball the runs' images carried | no run recorded |
 | no bundle produced | 0 |
 | timed out | 0 |
 | killed before the budget | 0 |

@@ -3,13 +3,18 @@ import { armNamed } from "./arms.mjs";
 import {
   armRunArgv,
   buildImageArgv,
+  cliRecordFromLabel,
+  cliTarballLabel,
   forwarderArgv,
+  imageLabelArgv,
   imageDigests,
   internalNetwork,
   offlineArgv,
   prepareArgv,
   typeEnvironment,
 } from "./container.mjs";
+
+const digest = "a".repeat(64);
 
 function flag(argv, name) {
   const at = argv.indexOf(name);
@@ -28,12 +33,38 @@ describe("images", () => {
   });
 
   it("builds from the pinned Dockerfile with the tarball named relative to the context", () => {
-    const argv = buildImageArgv({ type: "go", imagesDirectory: "/c/images", tarball: "/c/images/swarm-13.1.9.tgz" });
+    const argv = buildImageArgv({ type: "go", imagesDirectory: "/c/images", tarball: "/c/images/swarm-13.1.9.tgz", tarballSha256: digest });
 
     expect(argv.slice(0, 2)).toEqual(["docker", "build"]);
     expect(flag(argv, "--file")).toBe("/c/images/Dockerfile.go");
-    expect(flag(argv, "--build-arg")).toBe("SWARM_TARBALL=swarm-13.1.9.tgz");
+    expect(flags(argv, "--build-arg")).toEqual(["SWARM_TARBALL=swarm-13.1.9.tgz", `SWARM_TARBALL_SHA256=${digest}`]);
     expect(argv.at(-1)).toBe("/c/images");
+  });
+
+  it("refuses to build an image it cannot label with the tarball's digest", () => {
+    expect(() => buildImageArgv({ type: "go", imagesDirectory: "/c/images", tarball: "/c/images/swarm.tgz" })).toThrow(
+      "needs the tarball's sha256",
+    );
+    expect(() => buildImageArgv({ type: "go", imagesDirectory: "/c/images", tarball: "/c/images/swarm.tgz", tarballSha256: "abc" })).toThrow(
+      "needs the tarball's sha256",
+    );
+  });
+
+  it("asks the image which tarball it holds, and records what it says or that it said nothing", () => {
+    expect(imageLabelArgv("python")).toEqual([
+      "docker",
+      "image",
+      "inspect",
+      "--format",
+      `{{index .Config.Labels "${cliTarballLabel}"}}`,
+      "campaign-python",
+    ]);
+    expect(cliRecordFromLabel(`${digest}\n`)).toEqual({ tarballSha256: digest });
+    expect(cliRecordFromLabel("")).toEqual({
+      tarballSha256: null,
+      reason: "the image carries no CLI tarball label, so which CLI it holds is not known from the image",
+    });
+    expect(cliRecordFromLabel("<no value>\n").tarballSha256).toBeNull();
   });
 });
 

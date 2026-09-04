@@ -1,6 +1,9 @@
 # The node arm image: node 24 with the packaged CLI installed from the tarball this tree built.
 FROM node@sha256:be23f54a88d34e8824c741b19b91064094f92c1c97b194144bfc8b50d67258e2
 ARG SWARM_TARBALL
+# The digest of the tarball installed below, so a run can read from the image which CLI it measured.
+ARG SWARM_TARBALL_SHA256
+LABEL org.swarm-orchestrator.cli.tarball-sha256=$SWARM_TARBALL_SHA256
 # The workspace is a bind mount owned by another uid; git refuses it without this.
 RUN git config --system safe.directory '*' && mkdir -p /home/campaign
 COPY ${SWARM_TARBALL} /tmp/swarm.tgz
