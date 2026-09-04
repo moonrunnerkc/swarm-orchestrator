@@ -89,6 +89,23 @@ type GateSource =
  */
 export type ParserName = "exit-code" | "no-output" | "test-output" | "inspection";
 
+/** The rules an override may name: every one the tree has apart from the inspection gates' own. */
+export type OverrideParserName = Exclude<ParserName, "inspection">;
+
+/**
+ * One gate's replacement from swarm.toml: a command alone, or a command with the severity it
+ * blocks at and the rule that reads it. A rule is named where the harness has one for the
+ * runner's output; where it has none the gate reads the exit code, and `swarm init` writes it
+ * advisory and says why.
+ */
+export type GateOverride =
+  | string
+  | {
+      readonly command: string;
+      readonly severity?: GateSeverity;
+      readonly parser?: OverrideParserName;
+    };
+
 export interface GateDefinition {
   readonly id: string;
   readonly title: string;

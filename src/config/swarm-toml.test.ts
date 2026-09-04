@@ -27,6 +27,28 @@ const fullFile = [
   "",
 ].join("\n");
 
+describe("a gate override written as a table", () => {
+  it("carries the command with its severity and rule", () => {
+    const toml = parseSwarmToml(
+      '[gates]\ntests = { command = "npm run --silent test", severity = "advisory", parser = "exit-code" }\nlint = { command = "npm run lint" }\n',
+      "swarm.toml",
+    );
+
+    expect(toml.gates).toEqual({
+      tests: { command: "npm run --silent test", severity: "advisory", parser: "exit-code" },
+      lint: { command: "npm run lint" },
+    });
+  });
+
+  it("names the accepted shape when the table carries a key this build does not read", () => {
+    const attempt = () =>
+      parseSwarmToml('[gates]\ntests = { command = "x", timeout = 3 }\n', "swarm.toml");
+
+    expect(attempt).toThrow(/\[gates\] tests/);
+    expect(attempt).toThrow(/severity/);
+  });
+});
+
 describe("parseSwarmToml on a well-formed file", () => {
   it("reads every section the build guide names", () => {
     const toml = parseSwarmToml(fullFile, "swarm.toml");

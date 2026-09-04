@@ -2,8 +2,10 @@ import {
   type GateContext,
   type GateDefinition,
   type GateObservation,
+  type GateOverride,
   type GateParser,
   type GateSeverity,
+  type OverrideParserName,
   type ParserName,
   unavailableObservation,
 } from "./gate-definition.ts";
@@ -51,13 +53,13 @@ function commandGate(spec: GateSpec): GateDefinition {
  * unavailable gate and an overridden command both keep the right reader.
  */
 const parsersById: Readonly<Record<string, GateParser>> = { tests: testOutputParser };
-const parserNamesById: Readonly<Record<string, ParserName>> = { tests: "test-output" };
+const parserNamesById: Readonly<Record<string, OverrideParserName>> = { tests: "test-output" };
 
 function parserFor(id: string): GateParser {
   return parsersById[id] ?? exitCodeParser;
 }
 
-function parserNameFor(id: string): ParserName {
+function parserNameFor(id: string): OverrideParserName {
   return parserNamesById[id] ?? "exit-code";
 }
 
@@ -97,7 +99,7 @@ const noOutputParser: GateParser = (observation) => {
       };
 };
 
-const nodeScriptCandidates: Readonly<Record<string, readonly string[]>> = {
+export const nodeScriptCandidates: Readonly<Record<string, readonly string[]>> = {
   typecheck: ["typecheck", "type-check", "tsc"],
   lint: ["lint", "lint:check"],
   // A formatter gate must check, never write: a gate that edits the tree is not a gate.
@@ -337,8 +339,58 @@ const undetectedGates: readonly GateDefinition[] = (
 }));
 
 export interface GateSetOptions {
-  /** Replaces the assembled command for one gate id, from swarm.toml or a flag. */
-  readonly commandOverrides?: Readonly<Record<string, string>>;
+  /**
+   * Replaces the assembled gate for one id, from swarm.toml or a flag, or adds a gate under an
+   * id the assembled set has no slot for, such as `build`.
+   */
+  readonly commandOverrides?: Readonly<Record<string, GateOverride>>;
+}
+
+const parserByName: Readonly<Record<OverrideParserName, GateParser>> = {
+  "exit-code": exitCodeParser,
+  "test-output": testOutputParser,
+  "no-output": noOutputParser,
+};
+
+/**
+ * The script body an npm invocation names, or null where the command is anything else. An
+ * override written as `npm run --silent test` runs the manifest's script, so the question of
+ * whether the harness can vouch for the invocation is a question about that script's body,
+ * exactly as it is for the gate the assembler builds from the same script.
+ */
+export function scriptBodyBehind(command: string, detection: ProjectDetection): string | null {
+  const trimmed = command.trim();
+  const named =
+    /^npm\s+(?:run|run-script)\s+(?:--silent\s+|-s\s+)?([A-Za-z0-9:._-]+)$/.exec(trimmed)?.[1] ??
+    (/^npm\s+(?:test|t)$/.test(trimmed) ? "test" : null);
+  return named === null ? null : (detection.nodeScriptCommands[named] ?? null);
+}
+
+function overriddenGate(
+  id: string,
+  title: string,
+  severity: GateSeverity,
+  override: GateOverride,
+  detection: ProjectDetection,
+): GateDefinition {
+  const settled = typeof override === "string" ? { command: override } : override;
+  const parserName = settled.parser ?? parserNameFor(id);
+  return commandGate(
+    askedForHarnessReports(
+      {
+        id,
+        title,
+        severity: settled.severity ?? severity,
+        command: settled.command,
+        // The named rule, or the id's own: an overridden gate runs a command, and where the
+        // replaced one was a stub standing in for a language nothing detected, its parser
+        // answers about the absence of a command rather than about the output of one.
+        parse: parserByName[parserName],
+        parserName,
+      },
+      scriptBodyBehind(settled.command, detection) ?? settled.command,
+    ),
+  );
 }
 
 /**
@@ -364,26 +416,15 @@ export function assembleGates(
 
   const assembled = [...language, ...inspectionGates];
 
-  return assembled.map((gate) => {
+  const replaced = assembled.map((gate) => {
     const override = overrides[gate.id];
-    if (override === undefined) {
-      return gate;
-    }
-    return commandGate(
-      askedForHarnessReports(
-        {
-          id: gate.id,
-          title: gate.title,
-          severity: gate.severity,
-          command: override,
-          // The id's own parser, not whatever the gate being replaced was carrying. An
-          // overridden gate runs a command, and where the replaced one was a stub standing in
-          // for a language nothing detected, its parser answers about the absence of a command
-          // rather than about the output of one.
-          parse: parserFor(gate.id),
-        },
-        override,
-      ),
-    );
+    return override === undefined
+      ? gate
+      : overriddenGate(gate.id, gate.title, gate.severity, override, detection);
   });
+  const added = Object.entries(overrides)
+    .filter(([id]) => !assembled.some((gate) => gate.id === id))
+    .sort(([left], [right]) => (left < right ? -1 : 1))
+    .map(([id, override]) => overriddenGate(id, id, "blocking", override, detection));
+  return [...replaced, ...added];
 }

@@ -1,4 +1,5 @@
 import type { InterfaceFlags } from "../cli-options.ts";
+import type { GateOverride } from "../gates/gate-definition.ts";
 import type { OpenEvidencePolicy } from "../tui/session-interface.ts";
 import type { ColorMode } from "../tui/theme.ts";
 import type { SwarmToml } from "./swarm-toml.ts";
@@ -99,7 +100,7 @@ export interface ResolvedSettings {
    * turns on for one run while diagnosing, not a thing a project configures for everyone.
    */
   readonly transportTracePath: string | null;
-  readonly gateCommandOverrides: Readonly<Record<string, string>>;
+  readonly gateCommandOverrides: Readonly<Record<string, GateOverride>>;
   /** Only the keys the file set; the engine's defaults fill the rest at the call site. */
   readonly diffBudget: {
     readonly maxChangedFiles?: number;
