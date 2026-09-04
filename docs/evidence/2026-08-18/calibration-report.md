@@ -1,5 +1,12 @@
 # Live calibration, 2026-08-18
 
+**Stale as of 2026-09-04: this report predates the empty-turn fix, and its numbers are not to
+be cited.** It was scored before the harness stamped a content verdict on every assistant turn
+(commit `643a91e6`, 2026-08-31) and before a repeat the runtime cut short had its gate left
+unmeasured (commit `1d7fac84`, 2026-09-04), so nothing in it separates a turn the model gave
+from one the runtime dropped. The current measurement of this machine is
+`../2026-09-02/calibration-report.md`.
+
 **Superseded on 2026-08-23** by `../2026-08-23/calibration-report.md`, which measures three
 models rather than one and runs against a path repaired five times since this one. Left as
 written: it is the record of what was true then, and it is the artifact that found the

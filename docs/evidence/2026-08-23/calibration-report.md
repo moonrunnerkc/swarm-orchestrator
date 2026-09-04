@@ -1,5 +1,15 @@
 # Calibration, 2026-08-23
 
+**Stale as of 2026-09-04: this report predates the empty-turn fix, and its numbers are not to
+be cited.** It was scored before the harness stamped a content verdict on every assistant turn
+(commit `643a91e6`, 2026-08-31) and before a repeat the runtime cut short had its gate left
+unmeasured (commit `1d7fac84`, 2026-09-04). The one repeat it excludes was excluded by the
+loop's own answered-step counter rather than by a verdict a reader can re-derive from the
+records, and the output-capped turn inside another repeat was folded into that repeat's score.
+The bundle beside it stays as the record of what ran; the current measurement of this machine is
+`../2026-09-02/calibration-report.md`, which re-reads this sweep's records under the current
+rules for its comparison rather than citing the figures below.
+
 **Supersedes `../2026-08-18/calibration-report.md`**, which is left in place as the record of
 what was true then. Two reasons it is superseded rather than extended:
 
