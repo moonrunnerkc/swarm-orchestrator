@@ -29,6 +29,7 @@ const credentialPatterns: readonly RegExp[] = [
 export const defaultShellAllowlist: readonly string[] = [
   "cargo",
   "cat",
+  "cd",
   "git",
   "go",
   "grep",

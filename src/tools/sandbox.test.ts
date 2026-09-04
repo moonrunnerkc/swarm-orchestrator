@@ -182,6 +182,9 @@ describe("sandbox shell allowlist", () => {
       "python3 -m pytest",
       "go test ./...",
       "cargo test",
+      // A change of directory ahead of the command is what a model writes most; cd opens
+      // nothing itself, and the directory it names is a path word the sandbox rules on.
+      "cd /work && pytest -q",
     ]) {
       expect(byDefault.isCommandAllowed(command), command).toBe(true);
     }
