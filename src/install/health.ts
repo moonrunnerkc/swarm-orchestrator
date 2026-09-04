@@ -59,7 +59,7 @@ export function diagnose(snapshot: InstallSnapshot): readonly Finding[] {
   const findings: Finding[] = [];
   const entry = snapshot.globalEntry;
 
-  if (entry !== null && entry.isLink) {
+  if (entry?.isLink) {
     findings.push({
       severity: "broken",
       summary: "the global swarm is a development link, not an install",

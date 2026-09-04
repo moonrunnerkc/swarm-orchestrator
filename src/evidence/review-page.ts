@@ -93,20 +93,6 @@ function describeChangedLineCoverage(dag: EvidenceDag): string {
   return typeof after === "number" ? `${(after * 100).toFixed(1)}%` : "not measured";
 }
 
-/** Payload of the first record of a type, or null. Payloads are plain JSON by the time they get here. */
-function payloadOf(dag: EvidenceDag, type: string): Record<string, unknown> | null {
-  for (const node of dag.evidence) {
-    if (node.type !== type) {
-      continue;
-    }
-    const payload = node.payload;
-    if (payload !== null && typeof payload === "object" && !Array.isArray(payload)) {
-      return payload as Record<string, unknown>;
-    }
-  }
-  return null;
-}
-
 function lastPayloadOf(dag: EvidenceDag, type: string): Record<string, unknown> | null {
   const matches = dag.evidence.filter((node) => node.type === type);
   const payload = matches[matches.length - 1]?.payload;
