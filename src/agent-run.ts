@@ -17,7 +17,7 @@ import {
   sealAssembledCriteria,
   vacuousBlockingBonds,
 } from "./gates/engine.ts";
-import type { FileSetRegistry } from "./gates/file-set.ts";
+import { type FileSetRegistry, writeRefusal } from "./gates/file-set.ts";
 import { createAmendFileSetTool, createDeclareFileSetTool } from "./gates/file-set-tool.ts";
 import type { DiffBudget } from "./gates/gate-definition.ts";
 import { measuredTheChange } from "./gates/gate-runner.ts";
@@ -220,7 +220,7 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
     confirm: options.confirm,
     evidence: options.evidence,
     tools: (sandbox) => [
-      ...createWorkspaceTools(sandbox),
+      ...createWorkspaceTools(sandbox, (path) => writeRefusal(options.fileSet.state(), path)),
       createClaimTool(options.evidence, options.model.modelId),
       createDeclareFileSetTool(options.fileSet, options.model.modelId),
       createAmendFileSetTool(options.fileSet, options.model.modelId),

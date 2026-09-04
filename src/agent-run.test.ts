@@ -386,11 +386,14 @@ describe("the trail tool a worker is given and the single-agent path is not", ()
 });
 
 describe("the run's wall budget", () => {
-  /** Writes the broken change on its first turn, then never answers again until aborted. */
+  /** Declares, writes the broken change, then never answers again until aborted. */
   function writesThenHangs(onHang: () => void): ModelClient {
-    const first = createFixtureModelClient({
+    const scripted = createFixtureModelClient({
       modelId: "fixture:hangs",
       turns: [
+        respondWithToolCalls("declaring", [
+          { callId: "c0", toolName: "declare_file_set", input: { files: ["src/greet.js"] } },
+        ]),
         respondWithToolCalls("writing", [
           { callId: "c1", toolName: "write", input: { path: "src/greet.js", content: broken } },
         ]),
@@ -401,8 +404,8 @@ describe("the run's wall budget", () => {
       modelId: "fixture:hangs",
       generate(request: ModelRequest) {
         calls += 1;
-        if (calls === 1) {
-          return first.generate(request);
+        if (calls <= 2) {
+          return scripted.generate(request);
         }
         return new Promise((_, reject) => {
           request.abortSignal.addEventListener(

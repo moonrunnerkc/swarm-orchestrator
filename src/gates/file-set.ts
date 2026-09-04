@@ -85,6 +85,33 @@ export function normalizePath(path: string): string {
   return path.replaceAll("\\", "/").replace(/^\.\//, "").replace(/^\/+/, "").trim();
 }
 
+/**
+ * Why a write to this path is refused before it happens, or null where it may go ahead. The
+ * gate still checks every changed file against the ledger's order afterwards (invariant 12);
+ * this is the same rule asked at the tool, so the model hears it before the edit rather than
+ * after the loop. An edit the chain records before any declaration names its file can never
+ * be cleared by a later declaration, only by an amendment, and a run that fixed the defect in
+ * its first turn was escalated for exactly that, twice over, in the campaign.
+ */
+export function writeRefusal(state: FileSetState, path: string): string | null {
+  const normalized = normalizePath(path);
+  if (!state.wasDeclared) {
+    return (
+      `no file set is declared yet, so ${normalized} cannot be written. Call declare_file_set ` +
+      `first with every file you intend to touch, ${normalized} among them; an edit recorded ` +
+      "before its declaration fails the file-set gate and no later declaration clears it."
+    );
+  }
+  if (state.allowed.has(normalized)) {
+    return null;
+  }
+  return (
+    `${normalized} is outside the declared file set (${[...state.allowed].sort().join(", ")}). ` +
+    `Call amend_file_set with a reason a reviewer will read, naming ${normalized}, before ` +
+    "writing it."
+  );
+}
+
 interface FileSetVerdict {
   readonly outside: readonly string[];
   /** Of the changed files, the ones whose edit the ledger records before its authorization. */
