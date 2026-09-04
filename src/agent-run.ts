@@ -47,7 +47,7 @@ export const systemPrompt = [
   "prompting or stdin reading behind the entry-point guard the language uses, so importing the",
   "file runs none of it. A test that reads standard input, waits on a prompt, or starts",
   "something that does not exit cannot finish: nothing will ever answer it, and the runner will",
-  "be killed still waiting rather than reporting a failure you can fix.",
+  "be killed still waiting, which fails the gate with that as its whole output.",
   "Every tool result ends with an [evidence record sha256:... kind ...] trailer naming the ledger",
   "record it produced and what kind of record it is.",
   "To assert that work is done, call the claim tool with a predicate over such a record, the record",

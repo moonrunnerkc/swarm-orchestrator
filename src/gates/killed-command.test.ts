@@ -12,9 +12,20 @@ describe("a command that never finishes", () => {
 
     const observation = await runner.run("sleep 5", { cwd: process.cwd(), timeoutMs: 150 });
 
-    expect(observation.unavailable).toContain("waiting for something that is never coming");
-    expect(observation.unavailable).toContain("standard input");
-    expect(observation.unavailable).toContain("pass it in");
+    expect(observation.stderr).toContain("waiting for something that is never coming");
+    expect(observation.stderr).toContain("standard input");
+    expect(observation.stderr).toContain("pass it in");
+  });
+
+  it("is a failure of the gate that ran it, not a gate that could not run", async () => {
+    // Reported as not applicable, a hung suite stood down and the run was green on the gates
+    // beside it. The process ran and did not pass, which is what a failure is.
+    const runner = createNodeCommandRunner(createTestClock());
+
+    const observation = await runner.run("sleep 5", { cwd: process.cwd(), timeoutMs: 150 });
+
+    expect(observation.unavailable).toBeNull();
+    expect(observation.exitCode).not.toBe(0);
   });
 
   it("reports a program it could not start as unavailable, by the spawn and not by a parser", async () => {
