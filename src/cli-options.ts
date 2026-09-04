@@ -69,6 +69,12 @@ export interface DoctorCommand {
   readonly askRegistry: boolean;
 }
 
+/** Writes a swarm.toml with the gates read off package.json, where there is none yet. */
+export interface InitCommand {
+  readonly command: "init";
+  readonly workspace: string;
+}
+
 /** Runs the gates over a workspace and reports, with no model and no retries. */
 export interface GatesCommand {
   readonly command: "gates";
@@ -161,6 +167,7 @@ export type CommandLine =
   | CalibrateCommand
   | AddCaseCommand
   | RoutingCommand
+  | InitCommand
   | ParallelCommand;
 
 export const usage = [
@@ -169,6 +176,7 @@ export const usage = [
   "",
   "  swarm                                            a session: type tasks, one after another",
   "",
+  "  swarm init [--workspace <dir>]                   write swarm.toml from package.json's scripts",
   "  swarm gates [--workspace <dir>] [--base <ref>]   run the gates, no model",
   "  swarm select [--shortlist <file|url|bundled>]    probe this machine, recommend a model",
   "  swarm calibrate [--models <a,b>] [--repeats <n>] measure models on the golden set",
@@ -352,6 +360,10 @@ export function parseCommandLine(
 
   if (words[0] === "select") {
     return { command: "select", shortlist: resolveShortlist(flags.get("shortlist"), context) };
+  }
+
+  if (words[0] === "init") {
+    return { command: "init", workspace };
   }
 
   if (words[0] === "gates") {

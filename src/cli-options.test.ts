@@ -92,6 +92,17 @@ describe("parseCommandLine", () => {
    * session instead: a person who types `swarm` and nothing else wants to start working, and
    * a bare word cannot be a verb here because bare words are the task.
    */
+  it("reads init as a command over the workspace, not as a task", () => {
+    expect(parseCommandLine(["init"], context)).toEqual({
+      command: "init",
+      workspace: context.currentDirectory,
+    });
+    expect(parseCommandLine(["init", "--workspace", "/elsewhere"], context)).toMatchObject({
+      command: "init",
+      workspace: "/elsewhere",
+    });
+  });
+
   it("opens a session when no task is named", () => {
     expect(parseCommandLine([], context)).toMatchObject({ command: "session" });
     expect(parseCommandLine(["   "], context)).toMatchObject({ command: "session" });
