@@ -1,0 +1,4598 @@
+step 1: calling local:qwen3.6:35b-a3b
+plan: I'll start by exploring the project structure and running the tests to understand what's failing.
+tool list <- {"path":"."}
+tool list ok: .build/
+.git/
+.github/
+.gitignore
+.npmrc
+.vscode/
+AUTHORS
+CHANGELOG.md
+CONTRIBUTING.md
+LICENSE.md
+README.md
+README_js.md
+biome.jsonc
+bundlewatch.config.json
+dist-node/
+dist/
+examples/
+lefthook.yml
+node_modules/
+package-lock.json
+package.json
+prettier.config.js
+scripts/
+src/
+test/
+tsconfig.json
+wdio.conf.js
+[evidence record sha256:3545c5167ee69de519568c0b8abb28e1854142c4dbd0452ffdbcfd88f93ac0e0 kind tool-call:list]
+tool shell <- {"command":"npm run --silent test 2>&1","timeoutMs":60000}
+tool shell ok: exit code: 1
+stdout:
+Building in /work/dist and /work/dist-node
+Compiling TypeScript files to /work/dist-node
+Packing tarball
+-- fin --
+▶ parse
+  ✔ String -> bytes parsing (0.502879ms)
+  ✖ String -> bytes -> string symmetry for assorted uuids (0.124022ms)
+  ✔ Case neutrality (0.093152ms)
+  ✔ Null UUID case (0.04845ms)
+  ✔ UUID validation (0.090985ms)
+✖ parse (1.365451ms)
+▶ rng
+  ✔ Node.js RNG (2.164865ms)
+✔ rng (2.489773ms)
+▶ stringify
+  ✔ Stringify Array (unsafe) (0.711804ms)
+  ✔ Stringify w/ offset (unsafe) (0.092527ms)
+  ✔ Stringify Array (safe) (0.124897ms)
+  ✔ Throws on not enough values (safe) (0.143519ms)
+✔ stringify (1.531799ms)
+✔ dist-node/test/test_constants.js (12.165365ms)
+▶ v1
+  ✔ v1 sort order (default) (2.091586ms)
+  ✔ v1 sort order (time option) (0.143311ms)
+  ✔ v1 timestamp carries nsecs into time_mid (0.124272ms)
+  ✔ v1 sort order (time_low overflow) (0.076113ms)
+  ✔ v1(options) (0.056699ms)
+  ✔ v1(options) equality (0.059907ms)
+  ✔ fills one UUID into a buffer as expected (0.062782ms)
+  ✔ fills two UUIDs into a buffer as expected (0.061157ms)
+  ✔ v1() state transitions (0.13527ms)
+  ✔ random node has multicast bit set (0.955557ms)
+  ✔ throws when option.random is too short (0.134395ms)
+  ✔ throws when options.rng() is too short (0.047076ms)
+  ✔ throws RangeError for out-of-range indexes (0.119815ms)
+✔ v1 (4.619143ms)
+▶ v35
+  ✔ sha1(node) HASH_SAMPLES[0] (0.735842ms)
+  ✔ sha1(node) HASH_SAMPLES[1] (0.200135ms)
+  ✔ sha1(node) HASH_SAMPLES[2] (0.042118ms)
+  ✔ md5(node) HASH_SAMPLES[0] (0.054658ms)
+  ✔ md5(node) HASH_SAMPLES[1] (0.035411ms)
+  ✔ md5(node) HASH_SAMPLES[2] (0.078613ms)
+  ✔ v3 (0.330572ms)
+  ✔ v3 namespace.toUpperCase (0.172306ms)
+  ✔ v3 namespace string validation (0.436223ms)
+  ✔ v3 namespace buffer validation (0.089736ms)
+  ✔ v3 fill buffer (0.594947ms)
+  ✔ v3 undefined/null (0.064989ms)
+  ✔ v3 throws RangeError for out-of-range indexes (0.216466ms)
+  ✔ v5 (0.056491ms)
+  ✔ v5 namespace.toUpperCase (0.221424ms)
+  ✔ v5 namespace string validation (0.043659ms)
+  ✔ v5 namespace buffer validation (0.041202ms)
+  ✔ v5 fill buffer (0.052034ms)
+  ✔ v5 undefined/null (0.050825ms)
+  ✔ v5 throws RangeError for out-of-range indexes (0.057491ms)
+  ✔ v3/v5 constants (0.028412ms)
+✔ v35 (4.552362ms)
+▶ v4
+  ✔ subsequent UUIDs are different (1.855082ms)
+  ✔ should use native randomUUID() if no option is passed (0.183305ms)
+  ✖ should not use native randomUUID() if an option is passed (0.261708ms)
+  ✖ explicit options.random produces expected result (0.050242ms)
+  ✖ explicit options.rng produces expected result (0.039535ms)
+  ✖ fills one UUID into a buffer as expected (0.035619ms)
+  ✖ fills two UUIDs into a buffer as expected (0.034286ms)
+  ✔ throws when option.random is too short (0.087653ms)
+  ✔ throws when options.rng() is too short (0.052367ms)
+  ✖ throws RangeError for out-of-range indexes (0.347945ms)
+✖ v4 (3.847057ms)
+▶ v6
+  ✔ default behavior (1.967605ms)
+  ✔ default behavior (binary type) (0.270748ms)
+  ✔ all options (0.057282ms)
+  ✔ sort by creation time (0.132021ms)
+  ✔ sort by creation time (time_low overflow) (0.095318ms)
+  ✔ creating at array offset (0.056825ms)
+  ✔ throws RangeError for out-of-range indexes (0.165932ms)
+  ✔ random node has multicast bit set (0.826453ms)
+  ✔ v1 -> v6 conversion (0.059324ms)
+  ✔ v6 -> v1 conversion (0.101692ms)
+✔ v6 (4.241203ms)
+▶ v7
+  ✔ subsequent UUIDs are different (1.590332ms)
+  ✔ explicit options.random and options.msecs produces expected result (0.07453ms)
+  ✔ explicit options.rng produces expected result (0.050659ms)
+  ✔ explicit options.msecs produces expected result (0.051325ms)
+  ✔ fills one UUID into a buffer as expected (0.299077ms)
+  ✔ fills two UUIDs into a buffer as expected (0.053116ms)
+  ✔ lexicographical sorting is preserved (26.997516ms)
+  ✔ can supply seq (0.077738ms)
+  ✔ internal seq is reset upon timestamp change (0.077196ms)
+  ✔ v7() state transitions (0.155892ms)
+  ✔ flipping bits changes the result (0.722261ms)
+  ✔ throws when option.random is too short (0.107941ms)
+  ✔ throws when options.rng() is too short (0.043535ms)
+  ✔ throws RangeError for out-of-range indexes (0.118356ms)
+  ✔ default seq (no explicit seq option) is consistent with updateV7State formula (0.050242ms)
+✔ v7 (31.626701ms)
+▶ validate()
+  ✔ TESTS cases (0.5827ms)
+✔ validate() (0.896816ms)
+▶ version()
+  ✔ TESTS cases (0.803789ms)
+✔ version() (1.232597ms)
+ℹ tests 82
+ℹ suites 10
+ℹ pass 75
+ℹ fail 7
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 123.21299
+
+✖ failing tests:
+
+test at dist-node/test/parse.test.js:31:5
+✖ String -> bytes -> string symmetry for assorted uuids (0.124022ms)
+  Error: Random bytes length must be >= 16
+      at _v4 (file:///work/dist-node/v4.js:13:15)
+      at v4 (file:///work/dist-node/v4.js:7:12)
+      at TestContext.<anonymous> (file:///work/dist-node/test/parse.test.js:33:26)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1889:7)
+
+test at dist-node/test/v4.test.js:19:5
+✖ should not use native randomUUID() if an option is passed (0.261708ms)
+  Error: Random bytes length must be >= 16
+      at _v4 (file:///work/dist-node/v4.js:13:15)
+      at v4 (file:///work/dist-node/v4.js:7:12)
+      at TestContext.<anonymous> (file:///work/dist-node/test/v4.test.js:22:9)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7)
+
+test at dist-node/test/v4.test.js:26:5
+✖ explicit options.random produces expected result (0.050242ms)
+  Error: Random bytes length must be >= 16
+      at _v4 (file:///work/dist-node/v4.js:13:15)
+      at v4 (file:///work/dist-node/v4.js:7:12)
+      at TestContext.<anonymous> (file:///work/dist-node/test/v4.test.js:27:20)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7)
+
+test at dist-node/test/v4.test.js:30:5
+✖ explicit options.rng produces expected result (0.039535ms)
+  Error: Random bytes length must be >= 16
+      at _v4 (file:///work/dist-node/v4.js:13:15)
+      at v4 (file:///work/dist-node/v4.js:7:12)
+      at TestContext.<anonymous> (file:///work/dist-node/test/v4.test.js:31:20)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7)
+
+test at dist-node/test/v4.test.js:34:5
+✖ fills one UUID into a buffer as expected (0.035619ms)
+  Error: Random bytes length must be >= 16
+      at _v4 (file:///work/dist-node/v4.js:13:15)
+      at v4 (file:///work/dist-node/v4.js:7:12)
+      at TestContext.<anonymous> (file:///work/dist-node/test/v4.test.js:36:24)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7)
+
+test at dist-node/test/v4.test.js:40:5
+✖ fills two UUIDs into a buffer as expected (0.034286ms)
+  Error: Random bytes length must be >= 16
+      at _v4 (file:///work/dist-node/v4.js:13:15)
+      at v4 (file:///work/dist-node/v4.js:7:12)
+      at TestContext.<anonymous> (file:///work/dist-node/test/v4.test.js:42:9)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7)
+
+test at dist-node/test/v4.test.js:63:5
+✖ throws RangeError for out-of-range indexes (0.347945ms)
+  AssertionError [ERR_ASSERTION]: The error is expected to be an instance of "RangeError". Received "Error"
+  
+  Error message:
+  
+  Random bytes length must be >= 16
+      at TestContext.<anonymous> (file:///work/dist-node/test/v4.test.js:66:16)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: Error: Random bytes length must be >= 16
+        at _v4 (file:///work/dist-node/v4.js:13:15)
+        at v4 (file:///work/dist-node/v4.js:7:12)
+        at file:///work/dist-node/test/v4.test.js:66:29
+        at getActual (node:assert:611:5)
+        at Module.throws (node:assert:759:24)
+        at TestContext.<anonymous> (file:///work/dist-node/test/v4.test.js:66:16)
+        at Test.runInAsyncScope (node:async_hooks:227:14)
+        at Test.run (node:internal/test_runner/test:1397:25)
+        at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+        at Test.postRun (node:internal/test_runner/test:1537:19),
+    operator: 'throws',
+    diff: 'simple'
+  }
+[evidence record sha256:fa2f0670d562e9d704041417373bb5bf1e855e5b455c56d741ac997ff6694dd9 kind tool-call:shell]
+step 2: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/v4.js"}
+tool read failed: failed: ENOENT: no such file or directory, open '/work/src/v4.js', caused by ENOENT
+[evidence record sha256:ea110e366490f0a5350d164e22583b9817c0f0249cbf31730650668b65acc58b kind tool-call:read]
+tool read <- {"path":"dist-node/v4.js"}
+tool read ok: import rng from './rng.js';
+import { unsafeStringify } from './stringify.js';
+function v4(options, buf, offset) {
+    if (!buf && !options && crypto.randomUUID) {
+        return crypto.randomUUID();
+    }
+    return _v4(options, buf, offset);
+}
+function _v4(options, buf, offset) {
+    options = options || {};
+    const rnds = options.random ?? options.rng?.() ?? rng();
+    if (rnds.length <= 16) {
+        throw new Error('Random bytes length must be >= 16');
+    }
+    rnds[6] = (rnds[6] & 0x0f) | 0x40;
+    rnds[8] = (rnds[8] & 0x3f) | 0x80;
+    if (buf) {
+        offset = offset || 0;
+        if (offset < 0 || offset + 16 > buf.length) {
+            throw new RangeError(`UUID byte range ${offset}:${offset + 15} is out of buffer bounds`);
+        }
+        for (let i = 0; i < 16; ++i) {
+            buf[offset + i] = rnds[i];
+        }
+        return buf;
+    }
+    return unsafeStringify(rnds);
+}
+export default v4;
+
+[evidence record sha256:851749e5446a414fa837c3c95ecd539a4cb26d31d1b423da3a81ff81ae1cb333 kind tool-call:read]
+step 3: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/rng.js"}
+tool read failed: failed: ENOENT: no such file or directory, open '/work/src/rng.js', caused by ENOENT
+[evidence record sha256:e3f2f68e498002a28609222da267ea0c622099421e3e23b83f21b495f6f676a0 kind tool-call:read]
+tool list <- {"path":"test"}
+tool list ok: browser/
+[evidence record sha256:45685ab4724d17cdda3c6216d2da9e7c7292beaeb9dfcfb058aadb26eaf02465 kind tool-call:list]
+step 4: calling local:qwen3.6:35b-a3b
+tool list <- {"path":"src"}
+tool list ok: bin/
+index.ts
+max.ts
+md5-browser.ts
+md5.ts
+nil.ts
+parse.ts
+regex.ts
+rng.ts
+sha1-browser.ts
+sha1.ts
+stringify.ts
+test/
+types.ts
+uuid-bin.ts
+v1.ts
+v1ToV6.ts
+v3.ts
+v35.ts
+v4.ts
+v5.ts
+v6.ts
+v6ToV1.ts
+v7.ts
+validate.ts
+version.ts
+[evidence record sha256:9dde20bae86d0e691d57d61e9255670f4fc791177498af282efa5588a94c5dd7 kind tool-call:list]
+step 5: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"dist-node/v4.js"}
+tool read ok: import rng from './rng.js';
+import { unsafeStringify } from './stringify.js';
+function v4(options, buf, offset) {
+    if (!buf && !options && crypto.randomUUID) {
+        return crypto.randomUUID();
+    }
+    return _v4(options, buf, offset);
+}
+function _v4(options, buf, offset) {
+    options = options || {};
+    const rnds = options.random ?? options.rng?.() ?? rng();
+    if (rnds.length <= 16) {
+        throw new Error('Random bytes length must be >= 16');
+    }
+    rnds[6] = (rnds[6] & 0x0f) | 0x40;
+    rnds[8] = (rnds[8] & 0x3f) | 0x80;
+    if (buf) {
+        offset = offset || 0;
+        if (offset < 0 || offset + 16 > buf.length) {
+            throw new RangeError(`UUID byte range ${offset}:${offset + 15} is out of buffer bounds`);
+        }
+        for (let i = 0; i < 16; ++i) {
+            buf[offset + i] = rnds[i];
+        }
+        return buf;
+    }
+    return unsafeStringify(rnds);
+}
+export default v4;
+
+[evidence record sha256:b2b4cd6c4a76ac5bb1765c73ddfa2ea99f9875feef909e58a2fed55e64791212 kind tool-call:read]
+tool read <- {"path":"test/v4.test.js"}
+tool read failed: failed: ENOENT: no such file or directory, open '/work/test/v4.test.js', caused by ENOENT
+[evidence record sha256:4c0ac5230ccfcc742c0ab5af8459ad979839c356ed41c56189b388b98acef5c1 kind tool-call:read]
+step 6: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/v4.ts"}
+tool read ok: import rng from './rng.js';
+import { unsafeStringify } from './stringify.js';
+import type { UUIDTypes, Version4Options } from './types.js';
+
+function v4(
+  options?: Version4Options,
+  buf?: undefined,
+  offset?: number,
+): string;
+function v4<TBuf extends Uint8Array = Uint8Array>(
+  options: Version4Options | undefined,
+  buf: TBuf,
+  offset?: number,
+): TBuf;
+function v4<TBuf extends Uint8Array = Uint8Array>(
+  options?: Version4Options,
+  buf?: TBuf,
+  offset?: number,
+): UUIDTypes<TBuf> {
+  if (!buf && !options && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+
+  // Putting tail-code that could just go inline here in a separate function to
+  // enable compiler optimizations that dramatically improve performance.
+  //
+  // REF: https://github.com/uuidjs/uuid/issues/892
+  return _v4(options, buf, offset);
+}
+
+function _v4<TBuf extends Uint8Array = Uint8Array>(
+  options?: Version4Options,
+  buf?: TBuf,
+  offset?: number,
+): UUIDTypes<TBuf> {
+  options = options || {};
+
+  const rnds = options.random ?? options.rng?.() ?? rng();
+  if (rnds.length <= 16) {
+    throw new Error('Random bytes length must be >= 16');
+  }
+
+  // Per 4.4, set bits for version and `clock_seq_hi_and_reserved`
+  rnds[6] = (rnds[6] & 0x0f) | 0x40;
+  rnds[8] = (rnds[8] & 0x3f) | 0x80;
+
+  // Copy bytes to buffer, if provided
+  if (buf) {
+    offset = offset || 0;
+    if (offset < 0 || offset + 16 > buf.length) {
+      throw new RangeError(
+        `UUID byte range ${offset}:${offset + 15} is out of buffer bounds`,
+      );
+    }
+
+    for (let i = 0; i < 16; ++i) {
+      buf[offset + i] = rnds[i];
+    }
+
+    return buf;
+  }
+
+  return unsafeStringify(rnds);
+}
+export default v4;
+
+[evidence record sha256:37ccac977a3a1d11341f7bd4456d053e994be07a8f4211d9b3fbba05bfb80fdd kind tool-call:read]
+tool list <- {"path":"dist-node/test"}
+tool list ok: parse.test.js
+rng.test.js
+stringify.test.js
+test_constants.js
+v1.test.js
+v35.test.js
+v4.test.js
+v6.test.js
+v7.test.js
+validate.test.js
+version.test.js
+[evidence record sha256:d207dc269b6fcbf3de12aaac853700db7f245377e5e37d2feb7c9ae502c91c17 kind tool-call:list]
+step 7: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"cat package.json | head -30"}
+tool shell ok: exit code: 0
+stdout:
+{
+  "name": "uuid",
+  "version": "14.0.2",
+  "description": "RFC9562 UUIDs",
+  "type": "module",
+  "funding": [
+    "https://github.com/sponsors/broofa",
+    "https://github.com/sponsors/ctavan"
+  ],
+  "commitlint": {
+    "extends": [
+      "@commitlint/config-conventional"
+    ]
+  },
+  "keywords": [
+    "uuid",
+    "guid",
+    "rfc4122",
+    "rfc9562"
+  ],
+  "license": "MIT",
+  "bin": {
+    "uuid": "./dist-node/bin/uuid"
+  },
+  "sideEffects": false,
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "node": {
+        "types": "./dist/index.d.ts",
+[evidence record sha256:71d9f8cf2077e61da5ba4ecb60761355aacce696f839209658cd116a7057fcf8 kind tool-call:shell]
+step 8: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"dist-node/test/v4.test.js"}
+tool read ok: import * as assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
+import v4 from '../v4.js';
+const randomBytesFixture = Uint8Array.of(0x10, 0x91, 0x56, 0xbe, 0xc4, 0xfb, 0xc1, 0xea, 0x71, 0xb4, 0xef, 0xe1, 0x67, 0x1c, 0x58, 0x36);
+const expectedBytes = Uint8Array.of(16, 145, 86, 190, 196, 251, 65, 234, 177, 180, 239, 225, 103, 28, 88, 54);
+describe('v4', () => {
+    test('subsequent UUIDs are different', () => {
+        const id1 = v4();
+        const id2 = v4();
+        assert.ok(id1 !== id2);
+    });
+    test('should use native randomUUID() if no option is passed', async (t) => {
+        const mocked = t.mock.method(crypto, 'randomUUID', () => 'mocked-uuid');
+        assert.equal(mocked.mock.callCount(), 0);
+        v4();
+        assert.equal(mocked.mock.callCount(), 1);
+        t.mock.reset();
+    });
+    test('should not use native randomUUID() if an option is passed', async (t) => {
+        const mocked = t.mock.method(crypto, 'randomUUID', () => 'mocked-uuid');
+        assert.equal(mocked.mock.callCount(), 0);
+        v4({});
+        assert.equal(mocked.mock.callCount(), 0);
+        t.mock.reset();
+    });
+    test('explicit options.random produces expected result', () => {
+        const id = v4({ random: randomBytesFixture });
+        assert.strictEqual(id, '109156be-c4fb-41ea-b1b4-efe1671c5836');
+    });
+    test('explicit options.rng produces expected result', () => {
+        const id = v4({ rng: () => randomBytesFixture });
+        assert.strictEqual(id, '109156be-c4fb-41ea-b1b4-efe1671c5836');
+    });
+    test('fills one UUID into a buffer as expected', () => {
+        const buffer = new Uint8Array(16);
+        const result = v4({ random: randomBytesFixture }, buffer);
+        assert.deepEqual(buffer, expectedBytes);
+        assert.strictEqual(buffer, result);
+    });
+    test('fills two UUIDs into a buffer as expected', () => {
+        const buffer = new Uint8Array(32);
+        v4({ random: randomBytesFixture }, buffer, 0);
+        v4({ random: randomBytesFixture }, buffer, 16);
+        const expectedBuf = new Uint8Array(32);
+        expectedBuf.set(expectedBytes);
+        expectedBuf.set(expectedBytes, 16);
+        assert.deepEqual(buffer, expectedBuf);
+    });
+    test('throws when option.random is too short', () => {
+        const random = Uint8Array.of(16);
+        const buffer = new Uint8Array(16).fill(0);
+        assert.throws(() => {
+            v4({ random }, buffer);
+        });
+    });
+    test('throws when options.rng() is too short', () => {
+        const buffer = new Uint8Array(16);
+        const rng = () => Uint8Array.of(0);
+        assert.throws(() => {
+            v4({ rng }, buffer);
+        });
+    });
+    test('throws RangeError for out-of-range indexes', () => {
+        const buf15 = new Uint8Array(15);
+        const buf30 = new Uint8Array(30);
+        assert.throws(() => v4({}, buf15), RangeError);
+        assert.throws(() => v4({}, buf30, -1), RangeError);
+        assert.throws(() => v4({}, buf30, 15), RangeError);
+    });
+});
+
+[evidence record sha256:8dbbeea54d67897bdd9ceb302358251768a15abb0ab39387edf76cfa264d1648 kind tool-call:read]
+step 9: calling local:qwen3.6:35b-a3b
+tool declare_file_set <- {"files":["src/v4.ts","dist-node/v4.js"]}
+tool declare_file_set ok: declared 2 file(s): dist-node/v4.js, src/v4.ts
+[evidence record sha256:3b3e199da035c0a70ec4318f3181549179cff19631bb451494f7a6d205e9f2a6 kind tool-call:declare_file_set]
+step 10: calling local:qwen3.6:35b-a3b
+tool edit <- {"path":"src/v4.ts","find":"if (rnds.length <= 16) {\n    throw new Error('Random bytes length must be >= 16');\n  }","replace":"if (rnds.length < 16) {\n    throw new Error('Random bytes length must be >= 16');\n  }"}
+tool edit ok: replaced 1 occurrence(s) in src/v4.ts
+[evidence record sha256:97755ed3b3c61363bbb2f9ebda2c0fff329b757316c52d215bb93b85942ca220 kind tool-call:edit]
+step 11: calling local:qwen3.6:35b-a3b
+tool edit <- {"path":"dist-node/v4.js","find":"    if (rnds.length <= 16) {\n        throw new Error('Random bytes length must be >= 16');\n    }","replace":"    if (rnds.length < 16) {\n        throw new Error('Random bytes length must be >= 16');\n    }"}
+tool edit ok: replaced 1 occurrence(s) in dist-node/v4.js
+[evidence record sha256:eb380ae6fe7fa692ce0356847532ce14e8b191ca7cdf6803ba8c019d3a4b929c kind tool-call:edit]
+step 12: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"npm run --silent test 2>&1","timeoutMs":60000}
+tool shell ok: exit code: 0
+stdout:
+Building in /work/dist and /work/dist-node
+Compiling TypeScript files to /work/dist-node
+Packing tarball
+-- fin --
+▶ parse
+  ✔ String -> bytes parsing (0.505898ms)
+  ✔ String -> bytes -> string symmetry for assorted uuids (4.543955ms)
+  ✔ Case neutrality (0.063451ms)
+  ✔ Null UUID case (0.047577ms)
+  ✔ UUID validation (0.112861ms)
+✔ parse (5.835676ms)
+▶ rng
+  ✔ Node.js RNG (2.052212ms)
+✔ rng (2.407253ms)
+▶ stringify
+  ✔ Stringify Array (unsafe) (0.576348ms)
+  ✔ Stringify w/ offset (unsafe) (0.060951ms)
+  ✔ Stringify Array (safe) (0.09728ms)
+  ✔ Throws on not enough values (safe) (0.133234ms)
+✔ stringify (1.320425ms)
+✔ dist-node/test/test_constants.js (10.803205ms)
+▶ v1
+  ✔ v1 sort order (default) (1.86236ms)
+  ✔ v1 sort order (time option) (0.764326ms)
+  ✔ v1 timestamp carries nsecs into time_mid (0.115695ms)
+  ✔ v1 sort order (time_low overflow) (0.067616ms)
+  ✔ v1(options) (0.051119ms)
+  ✔ v1(options) equality (0.057076ms)
+  ✔ fills one UUID into a buffer as expected (0.061576ms)
+  ✔ fills two UUIDs into a buffer as expected (0.222515ms)
+  ✔ v1() state transitions (0.22314ms)
+  ✔ random node has multicast bit set (0.954677ms)
+  ✔ throws when option.random is too short (0.10732ms)
+  ✔ throws when options.rng() is too short (0.045203ms)
+  ✔ throws RangeError for out-of-range indexes (0.122568ms)
+✔ v1 (5.178254ms)
+▶ v35
+  ✔ sha1(node) HASH_SAMPLES[0] (0.596137ms)
+  ✔ sha1(node) HASH_SAMPLES[1] (0.052619ms)
+  ✔ sha1(node) HASH_SAMPLES[2] (0.038496ms)
+  ✔ md5(node) HASH_SAMPLES[0] (0.050786ms)
+  ✔ md5(node) HASH_SAMPLES[1] (0.036162ms)
+  ✔ md5(node) HASH_SAMPLES[2] (0.419533ms)
+  ✔ v3 (0.30413ms)
+  ✔ v3 namespace.toUpperCase (0.076324ms)
+  ✔ v3 namespace string validation (0.463028ms)
+  ✔ v3 namespace buffer validation (0.091156ms)
+  ✔ v3 fill buffer (0.286966ms)
+  ✔ v3 undefined/null (0.048035ms)
+  ✔ v3 throws RangeError for out-of-range indexes (0.121028ms)
+  ✔ v5 (0.054869ms)
+  ✔ v5 namespace.toUpperCase (0.049994ms)
+  ✔ v5 namespace string validation (0.045078ms)
+  ✔ v5 namespace buffer validation (0.036287ms)
+  ✔ v5 fill buffer (0.049328ms)
+  ✔ v5 undefined/null (0.043161ms)
+  ✔ v5 throws RangeError for out-of-range indexes (0.048327ms)
+  ✔ v3/v5 constants (0.027872ms)
+✔ v35 (3.517495ms)
+▶ v4
+  ✔ subsequent UUIDs are different (1.591018ms)
+  ✔ should use native randomUUID() if no option is passed (0.220599ms)
+  ✔ should not use native randomUUID() if an option is passed (0.247137ms)
+  ✔ explicit options.random produces expected result (0.597845ms)
+  ✔ explicit options.rng produces expected result (0.065992ms)
+  ✔ fills one UUID into a buffer as expected (0.259636ms)
+  ✔ fills two UUIDs into a buffer as expected (0.049245ms)
+  ✔ throws when option.random is too short (0.085657ms)
+  ✔ throws when options.rng() is too short (0.073241ms)
+  ✔ throws RangeError for out-of-range indexes (0.174437ms)
+✔ v4 (4.653442ms)
+▶ v6
+  ✔ default behavior (1.957599ms)
+  ✔ default behavior (binary type) (0.271134ms)
+  ✔ all options (0.055576ms)
+  ✔ sort by creation time (0.126401ms)
+  ✔ sort by creation time (time_low overflow) (0.140941ms)
+  ✔ creating at array offset (0.057951ms)
+  ✔ throws RangeError for out-of-range indexes (0.167563ms)
+  ✔ random node has multicast bit set (1.002755ms)
+  ✔ v1 -> v6 conversion (0.070742ms)
+  ✔ v6 -> v1 conversion (0.087823ms)
+✔ v6 (4.446384ms)
+▶ v7
+  ✔ subsequent UUIDs are different (2.143035ms)
+  ✔ explicit options.random and options.msecs produces expected result (0.075991ms)
+  ✔ explicit options.rng produces expected result (0.050411ms)
+  ✔ explicit options.msecs produces expected result (0.052244ms)
+  ✔ fills one UUID into a buffer as expected (0.308463ms)
+  ✔ fills two UUIDs into a buffer as expected (0.05641ms)
+  ✔ lexicographical sorting is preserved (24.876728ms)
+  ✔ can supply seq (0.090072ms)
+  ✔ internal seq is reset upon timestamp change (0.078866ms)
+  ✔ v7() state transitions (0.151773ms)
+  ✔ flipping bits changes the result (0.509397ms)
+  ✔ throws when option.random is too short (0.094488ms)
+  ✔ throws when options.rng() is too short (0.040287ms)
+  ✔ throws RangeError for out-of-range indexes (0.116236ms)
+  ✔ default seq (no explicit seq option) is consistent with updateV7State formula (0.048536ms)
+✔ v7 (29.776849ms)
+▶ validate()
+  ✔ TESTS cases (0.715998ms)
+✔ validate() (1.042292ms)
+▶ version()
+  ✔ TESTS cases (0.892476ms)
+✔ version() (1.204147ms)
+ℹ tests 82
+ℹ suites 10
+ℹ pass 82
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 124.025349
+[evidence record sha256:44b022744164401e519f21494eaecf2972d0ff6ac9d53f095c102708180809b2 kind tool-call:shell]
+step 13: calling local:qwen3.6:35b-a3b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"44b022744164401e519f21494eaecf2972d0ff6ac9d53f095c102708180809b2","recordKind":"tool-call:shell","narrative":"npm test passes with all 82 tests passing after fixing the off-by-one error in v4.js where rnds.length <= 16 was changed to rnds.length < 16."}
+tool claim failed: denied: input rejected: [
+  {
+    "origin": "string",
+    "code": "invalid_format",
+    "format": "regex",
+    "pattern": "/^sha256:[0-9a-f]{64}$/",
+    "path": [
+      "record"
+    ],
+    "message": "Invalid string: must match pattern /^sha256:[0-9a-f]{64}$/"
+  }
+]
+[evidence record sha256:00ae986a39fc92260e9b862095853ff4aee34442625a3dc8945bd99df3db6e8c kind tool-call:claim]
+step 14: calling local:qwen3.6:35b-a3b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"sha256:44b022744164401e519f21494eaecf2972d0ff6ac9d53f095c102708180809b2","recordKind":"tool-call:shell","narrative":"npm test passes with all 82 tests passing after fixing the off-by-one error in v4.js where rnds.length <= 16 was changed to rnds.length < 16."}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:1e320ea08d2d81c912fe9dcb24e10913fb8b39bf16ada2f977ba9f91d909fd3c kind tool-call:claim]
+step 15: calling local:qwen3.6:35b-a3b
+claim (unverified): The defect has been identified and fixed. Here's a summary:
+
+**Root cause:** In `src/v4.ts`, an off-by-one error in the validation check caused valid 16-byte random arrays to be rejected:
+
+```js
+before: if (rnds.length <= 16) {  // incorrectly rejects exactly 16 bytes
+after:  if (rnds.length < 16) {   // correctly allows 16+ bytes
+```
+
+**Why this broke tests:** v4 UUIDs require exactly 16 bytes of randomness. The `<= 16` check threw an error when the input had exactly 16 bytes, which cascaded into 7 failing tests (all in the v4 test suite and one in the parse test suite that depended on generating random UUIDs).
+
+**Fixes applied:**
+- `src/v4.ts`: Changed `<= 16` to `< 16`
+- `dist-node/v4.js`: Same change in compiled output
+
+All 82 tests now pass.
+stopped: completed after 15 steps, 143948 tokens
+gate typecheck not-applicable: package.json declares no typecheck script [evidence record sha256:2937696362f6458fe282589c221bc4c8fee1e95f3a2fcdf7bdda33a9c257023a]
+gate lint passed: the command exited 0 [evidence record sha256:e89f7a8131b5f61f8d13f8ca79a76f11e2276c887e02ef00bedc335915e495ee]
+gate format failed: the command exited 1 [evidence record sha256:35eefe91b547212e1b4c1ff484a59af5594e5f1bf427af5f275f1755d072b106]
+gate tests passed: 82 collected, 82 passed, 0 failed, 0 skipped (exit 0) [evidence record sha256:0cbb16e26f470035e323f94fe57ced3c0e2a898ae41033b6497e8c590ab093f9]
+gate file-set passed: all 1 changed file(s) are inside the declared set of 2, and every one of them was declared before it was edited [evidence record sha256:53215bef056db8a265b9aa79e264ec36944c693a741de04880f3d19544b257d2]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:04cbfbf05767e77d5767fb5772e9a7e62cec4ae74d421e013fe257c5eccb892c]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:1205c218e3298f2b2a033cfedf23b7ee3ea0c6b62794e4df970e745e5f7a0cb4]
+gate behaviour-probe passed: 0 changed function(s) still answer to their inputs. [evidence record sha256:6c58dc822ecce8f4da2f5c78e5027adb86eef9574d10c896a93cc27d285aa5df]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 1 added line(s) [evidence record sha256:ede4b1a546ba6f4583c33140cd1c857444d0095fb5d2eff66db7030505370e36]
+auto-resolve attempt 1 of 2
+step 1: calling local:qwen3.6:35b-a3b
+tool list <- {"path":"."}
+tool list ok: .build/
+.git/
+.github/
+.gitignore
+.npmrc
+.vscode/
+AUTHORS
+CHANGELOG.md
+CONTRIBUTING.md
+LICENSE.md
+README.md
+README_js.md
+biome.jsonc
+bundlewatch.config.json
+dist-node/
+dist/
+examples/
+lefthook.yml
+node_modules/
+package-lock.json
+package.json
+prettier.config.js
+scripts/
+src/
+test/
+tsconfig.json
+wdio.conf.js
+[evidence record sha256:1f6da0b738651160c8161153dd31ce7f6d6440de250fd15270e7f74fc6f76c44 kind tool-call:list]
+tool read <- {"path":"package.json"}
+tool read ok: {
+  "name": "uuid",
+  "version": "14.0.2",
+  "description": "RFC9562 UUIDs",
+  "type": "module",
+  "funding": [
+    "https://github.com/sponsors/broofa",
+    "https://github.com/sponsors/ctavan"
+  ],
+  "commitlint": {
+    "extends": [
+      "@commitlint/config-conventional"
+    ]
+  },
+  "keywords": [
+    "uuid",
+    "guid",
+    "rfc4122",
+    "rfc9562"
+  ],
+  "license": "MIT",
+  "bin": {
+    "uuid": "./dist-node/bin/uuid"
+  },
+  "sideEffects": false,
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "node": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist-node/index.js"
+      },
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "dist-node",
+    "!**/test"
+  ],
+  "devDependencies": {
+    "@biomejs/biome": "2.4.10",
+    "@commitlint/cli": "20.5.0",
+    "@commitlint/config-conventional": "20.5.0",
+    "bundlewatch": "0.4.1",
+    "commander": "14.0.3",
+    "globals": "17.4.0",
+    "jest": "30.3.0",
+    "lefthook": "1.11.13",
+    "lint-staged": "16.4.0",
+    "neostandard": "0.13.0",
+    "npm-run-all2": "8.0.4",
+    "prettier": "3.8.3",
+    "publint": "0.3.21",
+    "release-please": "17.3.0",
+    "runmd": "2.1.1",
+    "standard-version": "9.5.0",
+    "typescript": "5.4.3"
+  },
+  "optionalDevDependencies": {
+    "@wdio/browserstack-service": "9.27.0",
+    "@wdio/cli": "9.27.0",
+    "@wdio/jasmine-framework": "9.27.0",
+    "@wdio/local-runner": "9.27.0",
+    "@wdio/spec-reporter": "9.27.0",
+    "@wdio/static-server-service": "9.27.0"
+  },
+  "scripts": {
+    "build": "./scripts/build.sh",
+    "build:watch": "tsc --watch -p tsconfig.json",
+    "bundlewatch": "npm run pretest:browser && bundlewatch --config bundlewatch.config.json",
+    "docs:diff": "npm run docs && git diff README.md",
+    "docs": "npm run build && npx runmd --output=README.md README_js.md",
+    "biome:check": "biome check .",
+    "biome:fix": "biome check --write .",
+    "examples:browser:rollup:build": "cd examples/browser-rollup && npm run build",
+    "examples:browser:webpack:build": "cd examples/browser-webpack && npm run build",
+    "examples:node:esmodules:test": "cd examples/node-esmodules && npm test",
+    "examples:node:jest:test": "cd examples/node-jest && npm test",
+    "examples:node:typescript:test": "cd examples/typescript && npm test",
+    "format": "biome format --write .",
+    "format:check": "biome format --check .",
+    "lint": "npm run biome:check",
+    "md": "runmd --watch --output=README.md README_js.md",
+    "prepack": "npm run build -- --no-pack",
+    "prepare": "lefthook install",
+    "prepublishOnly": "npm run build",
+    "pretest:benchmark": "npm run build",
+    "pretest:browser": "./scripts/iodd && npm run build && npm-run-all --parallel examples:browser:**",
+    "pretest:node": "npm run build",
+    "pretest": "npm run build",
+    "release": "standard-version --no-verify",
+    "test:benchmark": "cd examples/benchmark && npm test",
+    "test:browser": "wdio run ./wdio.conf.js",
+    "test:node": "npm-run-all --parallel examples:node:**",
+    "test:watch": "node --test --enable-source-maps --watch dist-node/test/*.js",
+    "test": "node --test --enable-source-maps dist-node/test/*.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/uuidjs/uuid.git"
+  },
+  "lint-staged": {
+    "*": [
+      "biome check --write --no-errors-on-unmatched"
+    ]
+  },
+  "standard-version": {
+    "scripts": {
+      "postchangelog": "biome format --write CHANGELOG.md"
+    }
+  },
+  "packageManager": "npm@11.12.1"
+}
+
+[evidence record sha256:f1770c743b3d094938de8cffc64fa3da04639d2366876f330b01edbf9499b0ae kind tool-call:read]
+step 2: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"biome.jsonc"}
+tool read ok: {
+  "$schema": "https://biomejs.dev/schemas/2.4.10/schema.json",
+  "formatter": {
+    "indentStyle": "space",
+    "indentWidth": 2
+  },
+  "files": {
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/dist-node",
+
+      // We have to ignore this file because node 18 requires the "assert { type:
+      // 'json' }" syntax which is not supported by Biome's parser yet.
+      "!examples/node-esmodules/package.mjs"
+    ]
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "trailingCommas": "all"
+    }
+  },
+  "linter": {
+    "rules": {
+      "a11y": { "useHtmlLang": "off" },
+      "complexity": { "useArrowFunction": "off" },
+      "suspicious": { "noAssignInExpressions": "off" }
+    }
+  }
+}
+
+[evidence record sha256:b45b8981aceabfbb59606a2d8ea1db5985014a0d7b08a85aa3097e4e990af0a4 kind tool-call:read]
+tool shell <- {"command":"npm run --silent test 2>&1 | head -80","timeoutMs":60000}
+tool shell ok: exit code: 0
+stdout:
+Building in /work/dist and /work/dist-node
+Compiling TypeScript files to /work/dist-node
+Packing tarball
+-- fin --
+▶ parse
+  ✔ String -> bytes parsing (0.486531ms)
+  ✔ String -> bytes -> string symmetry for assorted uuids (5.039834ms)
+  ✔ Case neutrality (0.066826ms)
+  ✔ Null UUID case (0.049078ms)
+  ✔ UUID validation (0.113487ms)
+✔ parse (6.307574ms)
+▶ rng
+  ✔ Node.js RNG (2.024908ms)
+✔ rng (2.362039ms)
+▶ stringify
+  ✔ Stringify Array (unsafe) (0.674719ms)
+  ✔ Stringify w/ offset (unsafe) (0.061577ms)
+  ✔ Stringify Array (safe) (0.093407ms)
+  ✔ Throws on not enough values (safe) (0.130278ms)
+✔ stringify (1.351855ms)
+✔ dist-node/test/test_constants.js (11.472645ms)
+▶ v1
+  ✔ v1 sort order (default) (2.573182ms)
+  ✔ v1 sort order (time option) (0.139152ms)
+  ✔ v1 timestamp carries nsecs into time_mid (0.113613ms)
+  ✔ v1 sort order (time_low overflow) (0.100448ms)
+  ✔ v1(options) (0.072326ms)
+  ✔ v1(options) equality (0.066451ms)
+  ✔ fills one UUID into a buffer as expected (0.053077ms)
+  ✔ fills two UUIDs into a buffer as expected (0.1559ms)
+  ✔ v1() state transitions (0.128986ms)
+  ✔ random node has multicast bit set (0.757044ms)
+  ✔ throws when option.random is too short (0.099948ms)
+  ✔ throws when options.rng() is too short (0.045578ms)
+  ✔ throws RangeError for out-of-range indexes (0.119862ms)
+✔ v1 (4.958926ms)
+▶ v35
+  ✔ sha1(node) HASH_SAMPLES[0] (0.637848ms)
+  ✔ sha1(node) HASH_SAMPLES[1] (0.055285ms)
+  ✔ sha1(node) HASH_SAMPLES[2] (0.038621ms)
+  ✔ md5(node) HASH_SAMPLES[0] (0.050703ms)
+  ✔ md5(node) HASH_SAMPLES[1] (0.034704ms)
+  ✔ md5(node) HASH_SAMPLES[2] (0.134569ms)
+  ✔ v3 (0.209186ms)
+  ✔ v3 namespace.toUpperCase (0.069034ms)
+  ✔ v3 namespace string validation (0.889072ms)
+  ✔ v3 namespace buffer validation (0.09749ms)
+  ✔ v3 fill buffer (0.379626ms)
+  ✔ v3 undefined/null (0.06091ms)
+  ✔ v3 throws RangeError for out-of-range indexes (0.191563ms)
+  ✔ v5 (0.057869ms)
+  ✔ v5 namespace.toUpperCase (0.118737ms)
+  ✔ v5 namespace string validation (0.04812ms)
+  ✔ v5 namespace buffer validation (0.041704ms)
+  ✔ v5 fill buffer (0.050536ms)
+  ✔ v5 undefined/null (0.054036ms)
+  ✔ v5 throws RangeError for out-of-range indexes (0.061327ms)
+  ✔ v3/v5 constants (0.026747ms)
+✔ v35 (3.870669ms)
+▶ v4
+  ✔ subsequent UUIDs are different (1.285695ms)
+  ✔ should use native randomUUID() if no option is passed (0.189522ms)
+  ✔ should not use native randomUUID() if an option is passed (0.677386ms)
+  ✔ explicit options.random produces expected result (0.059202ms)
+  ✔ explicit options.rng produces expected result (0.046037ms)
+  ✔ fills one UUID into a buffer as expected (0.286095ms)
+  ✔ fills two UUIDs into a buffer as expected (0.071159ms)
+  ✔ throws when option.random is too short (0.11453ms)
+  ✔ throws when options.rng() is too short (0.089699ms)
+  ✔ throws RangeError for out-of-range indexes (0.206894ms)
+✔ v4 (3.563034ms)
+▶ v6
+  ✔ default behavior (2.033573ms)
+  ✔ default behavior (binary type) (0.262013ms)
+  ✔ all options (0.056203ms)
+  ✔ sort by creation time (0.207852ms)
+  ✔ sort by creation time (time_low overflow) (0.091824ms)
+  ✔ creating at array offset (0.056619ms)
+  ✔ throws RangeError for out-of-range indexes (0.164524ms)
+  ✔ random node has multicast bit set (1.215911ms)
+[evidence record sha256:3a60ee766b72efef41c6015a0ec267d4c0aa5db8abd267113b1f83a13b943658 kind tool-call:shell]
+step 3: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"npx biome format --help 2>&1 | head -30","timeoutMs":30000}
+tool shell ok: exit code: 0
+stdout:
+npm warn Unknown env config "store-dir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+Run the formatter on a set of files.
+
+Usage: biome format [--write] [--staged] [--changed] [--since=REF] [PATH]...
+
+Generic options applied to all files
+        --format-with-errors=<true|false>  Whether formatting should be allowed to proceed if a
+                              given file has syntax errors
+        --indent-style=<tab|space>  The indent style.
+        --indent-width=NUMBER  The size of the indentation, 2 by default
+        --line-ending=<lf|crlf|cr|auto>  The type of line ending.
+        --line-width=NUMBER   What's the max width of a line. Defaults to 80.
+        --attribute-position=<multiline|auto>  The attribute position style in HTML-ish languages.
+                              Defaults to auto.
+        --bracket-same-line=<true|false>  Put the `>` of a multi-line HTML or JSX element at the end
+                              of the last line instead of being alone on the next line (does not
+                              apply to self closing elements).
+        --bracket-spacing=<true|false>  Whether to insert spaces around brackets in object literals.
+                              Defaults to true.
+        --expand=<auto|always|never>  Whether to expand arrays and objects on multiple lines. When
+                              set to `auto`, object literals are formatted on multiple lines if the
+                              first property has a newline, and array literals are formatted on a
+                              single line if it fits in the line. When set to `always`, these
+                              literals are formatted on multiple lines, regardless of length of the
+                              list. When set to `never`, these literals are formatted on a single
+                              line if it fits in the line. When formatting `package.json`, Biome
+                              will use `always` unless configured otherwise. Defaults to "auto".
+        --trailing-newline=<true|false>  Whether to add a trailing newline at the end of the file.
+        --use-editorconfig=<true|false>  Use any `.editorconfig` files to configure the formatter.
+                              Configuration in `biome.json` will override `.editorconfig`
+[evidence record sha256:feb0ec5ada97ee6ad287fec7441825277fc0e022af25b65170acddce8ba7740c kind tool-call:shell]
+step 4: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"npx biome format --help 2>&1 | grep -A2 \"\\[-w\"","timeoutMs":30000}
+tool shell failed: denied: "npx biome format --help 2>&1 | grep -A2 "\[-w"" is not on the shell allowlist. Confirmation was declined.
+[evidence record sha256:da84f8896a03bc6b3fc4c8d35ed9de2cb4fb497b3085635c74fea28be1b12d67 kind tool-call:shell]
+step 5: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"npx biome format --help 2>&1 | tail -30","timeoutMs":30000}
+tool shell ok: exit code: 0
+stdout:
+        --json-formatter-line-width=NUMBER  What's the max width of a line applied to JSON (and its
+                              super languages) files. Defaults to 80.
+        --json-formatter-trailing-commas=<none|all>  Print trailing commas wherever possible in
+                              multi-line comma-separated syntactic structures. Defaults to "none".
+        --json-formatter-expand=<auto|always|never>  Whether to expand arrays and objects on
+                              multiple lines. When set to `auto`, object literals are formatted on
+                              multiple lines if the first property has a newline, and array literals
+                              are formatted on a single line if it fits in the line. When set to
+                              `always`, these literals are formatted on multiple lines, regardless
+                              of length of the list. When set to `never`, these literals are
+                              formatted on a single line if it fits in the line. When formatting
+                              `package.json`, Biome will use `always` unless configured otherwise.
+                              Defaults to "auto".
+        --json-formatter-bracket-spacing=<true|false>  Whether to insert spaces around brackets in
+                              object literals. Defaults to true.
+        --json-formatter-trailing-newline=<true|false>  Whether to add a trailing newline at the end
+                              of the file.
+        --stdin-file-path=PATH  Use this option when you want to format code piped from `stdin`, and
+                              print the output to `stdout`.
+        --write               Writes formatted files to a file system.
+        --fix                 Alias of `--write`, writes formatted files to a file system.
+        --staged              When set to true, only the files that have been staged (the ones
+                              prepared to be committed) will be linted.
+        --changed             When set to true, only the files that have been changed compared to
+                              your `defaultBranch` configuration will be linted.
+        --since=REF           Use this to specify the base branch to compare against when you're
+                              using the --changed flag, and the `defaultBranch` is not set in your
+                              biome.json
+    -h, --help                Prints help information
+[evidence record sha256:987e173f02e7b00f0846450971238f6f8880c870bda04ed9031251b76b559ded kind tool-call:shell]
+step 6: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"npx biome format . 2>&1 | head -20","timeoutMs":30000}
+tool shell ok: exit code: 0
+stdout:
+npm warn Unknown env config "store-dir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+Checked 91 files in 17ms. No fixes applied.
+[evidence record sha256:a9c2b35f505bfb93863741229e4719ce37c14565ed3ea9be6e259fafca63ec6e kind tool-call:shell]
+step 7: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"npx biome format --write . 2>&1 | head -5","timeoutMs":30000}
+tool shell ok: exit code: 0
+stdout:
+npm warn Unknown env config "store-dir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+Formatted 91 files in 16ms. No fixes applied.
+[evidence record sha256:1d074fc9f50417fe56c2cbb8265dae455e7d1530560a9a530c543a4a5094b30f kind tool-call:shell]
+step 8: calling local:qwen3.6:35b-a3b
+tool edit <- {"path":"package.json","find":"\"format:check\": \"biome format --check .\"","replace":"\"format:check\": \"biome format .\""}
+tool edit ok: replaced 1 occurrence(s) in package.json
+[evidence record sha256:86eeee5a24b063d917a81ffc8272a172b7ece71e77a03272a81a5f493ffcfca0 kind tool-call:edit]
+step 9: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"npm run --silent test 2>&1 | tail -5","timeoutMs":60000}
+tool shell ok: exit code: 0
+stdout:
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 122.348051
+[evidence record sha256:757e96ae86f7e43e7313239a3356ff827363ac64f159b444966b7de96f7146f0 kind tool-call:shell]
+tool shell <- {"command":"npm run format:check 2>&1","timeoutMs":60000}
+tool shell ok: exit code: 0
+stdout:
+npm warn Unknown env config "store-dir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+> uuid@14.0.2 format:check
+> biome format .
+
+Checked 91 files in 17ms. No fixes applied.
+[evidence record sha256:9e46ce6efcfbda5fb6e0bb66b4ba7bb258945b12cf17bb3d3e4510798428f46e kind tool-call:shell]
+step 10: calling local:qwen3.6:35b-a3b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"9e46ce6efcfbda5fb6e0bb66b4ba7bb258945b12cf17bb3d3e4510798428f46e","recordKind":"tool-call:shell","narrative":"format:check now passes after removing the deprecated --check flag from biome format in package.json"}
+tool claim failed: denied: input rejected: [
+  {
+    "origin": "string",
+    "code": "invalid_format",
+    "format": "regex",
+    "pattern": "/^sha256:[0-9a-f]{64}$/",
+    "path": [
+      "record"
+    ],
+    "message": "Invalid string: must match pattern /^sha256:[0-9a-f]{64}$/"
+  }
+]
+[evidence record sha256:3776931f7cea289b9e4cdf1fdc62ce80987302edcb615bd43de74268a59fc9e0 kind tool-call:claim]
+step 11: calling local:qwen3.6:35b-a3b
+claim (unverified): Both gates are now passing:
+
+1. **Tests** (`npm run --silent test`): exit code 0, all tests pass.
+2. **Format check** (`npm run format:check`): exit code 0, all 91 files checked with no fixes needed.
+
+**Summary of the fix:** In Biome v2, the `--check` flag was removed from the `format` subcommand. The old `"format:check": "biome format --check ."` script failed because `--check` is no longer a valid option in this context. I updated it to `"format:check": "biome format ."` which correctly checks formatting in Biome v2 (without `--write`, it exits non-zero if files are unformatted).
+stopped: completed after 11 steps, 73461 tokens
+gate typecheck not-applicable: package.json declares no typecheck script [evidence record sha256:dcc2e6bb8b1f041c21c5dfd3819d32ebdcbd7bd319999a9fb62dca01576f5227]
+gate lint passed: the command exited 0 [evidence record sha256:2aedd73f628adb65e23ba229adb45fd7ddf373268a5993a024a639eec1ea9300]
+gate format passed: the command exited 0 [evidence record sha256:b11d9e7704e039a5933b25373efdf009cb153a0b515e7f7ed85d277f110ac968]
+gate tests passed: 82 collected, 82 passed, 0 failed, 0 skipped (exit 0) [evidence record sha256:6bc63453a986e5a0d7f1918f298f955c4f27aa20e631b67fe03332a94927d19e]
+gate file-set failed: 1 file(s) outside the declared set: package.json. Record an amendment to widen the set, which puts the widening in front of a reviewer. [evidence record sha256:5ee4b0fb0c3f85d344aa4b2a13945fc1a5f101e937b21577ab9cbea469c92b59]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:6ab4a60c77fbee0a6e8337589bb53775332ffb0cc3347a678c83b90c1c1257c8]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:0d1bddaaa0335ae01c8ded7b8c8df77a28e4d5968164123819f75b8963b3a344]
+gate behaviour-probe passed: 0 changed function(s) still answer to their inputs. [evidence record sha256:e4544917a11298f6a754745d2738fe0f6523c4e67aad3f27582878f46f5e3ebd]
+gate diff-budget passed (advisory): within budget: 2 file(s) and 2 added line(s) [evidence record sha256:4ae674b8be886456045ac9dffeb58c0a0753242dddb1f1433466020c830affc5]
+ratchet rejected attempt 1: the ratchet rejected the attempt: the file-set gate passed before this attempt and now reports failed [evidence record sha256:0cb664d948585550ac925baac1d451192e4ca044629e64d13c7d0c3b9ecfb47a]
+auto-resolve attempt 2 of 2
+step 1: calling local:qwen3.6:35b-a3b
+tool list <- {"path":""}
+tool list ok: .build/
+.git/
+.github/
+.gitignore
+.npmrc
+.vscode/
+AUTHORS
+CHANGELOG.md
+CONTRIBUTING.md
+LICENSE.md
+README.md
+README_js.md
+biome.jsonc
+bundlewatch.config.json
+dist-node/
+dist/
+examples/
+lefthook.yml
+node_modules/
+package-lock.json
+package.json
+prettier.config.js
+scripts/
+src/
+test/
+tsconfig.json
+wdio.conf.js
+[evidence record sha256:11bde6dcbf95c3ff977ce98a066a87ce6150b862611a7eb6d4e7a4bb45c746ad kind tool-call:list]
+step 2: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"package.json"}
+tool read ok: {
+  "name": "uuid",
+  "version": "14.0.2",
+  "description": "RFC9562 UUIDs",
+  "type": "module",
+  "funding": [
+    "https://github.com/sponsors/broofa",
+    "https://github.com/sponsors/ctavan"
+  ],
+  "commitlint": {
+    "extends": [
+      "@commitlint/config-conventional"
+    ]
+  },
+  "keywords": [
+    "uuid",
+    "guid",
+    "rfc4122",
+    "rfc9562"
+  ],
+  "license": "MIT",
+  "bin": {
+    "uuid": "./dist-node/bin/uuid"
+  },
+  "sideEffects": false,
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "node": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist-node/index.js"
+      },
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "dist-node",
+    "!**/test"
+  ],
+  "devDependencies": {
+    "@biomejs/biome": "2.4.10",
+    "@commitlint/cli": "20.5.0",
+    "@commitlint/config-conventional": "20.5.0",
+    "bundlewatch": "0.4.1",
+    "commander": "14.0.3",
+    "globals": "17.4.0",
+    "jest": "30.3.0",
+    "lefthook": "1.11.13",
+    "lint-staged": "16.4.0",
+    "neostandard": "0.13.0",
+    "npm-run-all2": "8.0.4",
+    "prettier": "3.8.3",
+    "publint": "0.3.21",
+    "release-please": "17.3.0",
+    "runmd": "2.1.1",
+    "standard-version": "9.5.0",
+    "typescript": "5.4.3"
+  },
+  "optionalDevDependencies": {
+    "@wdio/browserstack-service": "9.27.0",
+    "@wdio/cli": "9.27.0",
+    "@wdio/jasmine-framework": "9.27.0",
+    "@wdio/local-runner": "9.27.0",
+    "@wdio/spec-reporter": "9.27.0",
+    "@wdio/static-server-service": "9.27.0"
+  },
+  "scripts": {
+    "build": "./scripts/build.sh",
+    "build:watch": "tsc --watch -p tsconfig.json",
+    "bundlewatch": "npm run pretest:browser && bundlewatch --config bundlewatch.config.json",
+    "docs:diff": "npm run docs && git diff README.md",
+    "docs": "npm run build && npx runmd --output=README.md README_js.md",
+    "biome:check": "biome check .",
+    "biome:fix": "biome check --write .",
+    "examples:browser:rollup:build": "cd examples/browser-rollup && npm run build",
+    "examples:browser:webpack:build": "cd examples/browser-webpack && npm run build",
+    "examples:node:esmodules:test": "cd examples/node-esmodules && npm test",
+    "examples:node:jest:test": "cd examples/node-jest && npm test",
+    "examples:node:typescript:test": "cd examples/typescript && npm test",
+    "format": "biome format --write .",
+    "format:check": "biome format --check .",
+    "lint": "npm run biome:check",
+    "md": "runmd --watch --output=README.md README_js.md",
+    "prepack": "npm run build -- --no-pack",
+    "prepare": "lefthook install",
+    "prepublishOnly": "npm run build",
+    "pretest:benchmark": "npm run build",
+    "pretest:browser": "./scripts/iodd && npm run build && npm-run-all --parallel examples:browser:**",
+    "pretest:node": "npm run build",
+    "pretest": "npm run build",
+    "release": "standard-version --no-verify",
+    "test:benchmark": "cd examples/benchmark && npm test",
+    "test:browser": "wdio run ./wdio.conf.js",
+    "test:node": "npm-run-all --parallel examples:node:**",
+    "test:watch": "node --test --enable-source-maps --watch dist-node/test/*.js",
+    "test": "node --test --enable-source-maps dist-node/test/*.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/uuidjs/uuid.git"
+  },
+  "lint-staged": {
+    "*": [
+      "biome check --write --no-errors-on-unmatched"
+    ]
+  },
+  "standard-version": {
+    "scripts": {
+      "postchangelog": "biome format --write CHANGELOG.md"
+    }
+  },
+  "packageManager": "npm@11.12.1"
+}
+
+[evidence record sha256:8f6c13a02a6cad7980985a89beb74e9481b2fadf7ba05168b463c336408bacfc kind tool-call:read]
+tool read <- {"path":"biome.jsonc"}
+tool read ok: {
+  "$schema": "https://biomejs.dev/schemas/2.4.10/schema.json",
+  "formatter": {
+    "indentStyle": "space",
+    "indentWidth": 2
+  },
+  "files": {
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/dist-node",
+
+      // We have to ignore this file because node 18 requires the "assert { type:
+      // 'json' }" syntax which is not supported by Biome's parser yet.
+      "!examples/node-esmodules/package.mjs"
+    ]
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "trailingCommas": "all"
+    }
+  },
+  "linter": {
+    "rules": {
+      "a11y": { "useHtmlLang": "off" },
+      "complexity": { "useArrowFunction": "off" },
+      "suspicious": { "noAssignInExpressions": "off" }
+    }
+  }
+}
+
+[evidence record sha256:d3db43877871caff0a7a00594a711bdc0fc5c5accb5174dc0ec00692e1fd0134 kind tool-call:read]
+tool read <- {"path":"prettier.config.js"}
+tool read ok: export default {
+  arrowParens: 'always',
+  printWidth: 100,
+  proseWrap: 'never',
+  singleQuote: true,
+  trailingComma: 'es5',
+};
+
+[evidence record sha256:a036d54dfd6d39016377371f705fa04efe661ce7def79ca41527d42d9fc5a5a5 kind tool-call:read]
+step 3: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"cd /workspace && npm run --silent format:check 2>&1 || true"}
+tool shell failed: denied: /workspace resolves outside the workspace /work
+[evidence record sha256:632f47f7270d318b7790ab85df2285114a05169098edba8c4aaff90a8e3995d6 kind tool-call:shell]
+step 4: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"npm run --silent format:check 2>&1 || true"}
+tool shell failed: denied: "npm run --silent format:check 2>&1 || true" is not on the shell allowlist. Confirmation was declined.
+[evidence record sha256:89468ec9b654b793fabb081ab9d2a22d5ab96462f6b720525e2b78761f4377e3 kind tool-call:shell]
+step 5: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"npx biome --version 2>&1 || true"}
+tool shell failed: denied: "npx biome --version 2>&1 || true" is not on the shell allowlist. Confirmation was declined.
+[evidence record sha256:775789f3192b742dcbd4b835d123f35146d19b8708b0b79283aa74da2b28b7c2 kind tool-call:shell]
+step 6: calling local:qwen3.6:35b-a3b
+tool list <- {"path":"src"}
+tool list ok: bin/
+index.ts
+max.ts
+md5-browser.ts
+md5.ts
+nil.ts
+parse.ts
+regex.ts
+rng.ts
+sha1-browser.ts
+sha1.ts
+stringify.ts
+test/
+types.ts
+uuid-bin.ts
+v1.ts
+v1ToV6.ts
+v3.ts
+v35.ts
+v4.ts
+v5.ts
+v6.ts
+v6ToV1.ts
+v7.ts
+validate.ts
+version.ts
+[evidence record sha256:07f8d2ba84e2105a3bcfb7b8711c39721edf16e09987e64d679b2415c0abe452 kind tool-call:list]
+tool list <- {"path":"test"}
+tool list ok: browser/
+[evidence record sha256:1769faba7331d3118b823b0324c7d4f51221b8fc8566af1153b6f50818cb6231 kind tool-call:list]
+tool read <- {"path":"scripts/build.sh"}
+tool read ok: #!/bin/bash -eu
+
+# This script generates 4 builds, as follows:
+# - dist: ESM build for the Browser
+# - dist-node: ESM build for Node.js
+#
+# Note: that the "preferred" build for testing (local and CI) is the ESM build,
+# except where we specifically test the other builds
+
+set -euo pipefail
+
+# Change to project root
+ROOT=$(builtin cd $(pwd)/$(dirname "$0")/..; pwd)
+
+# Prep TS output dir
+DIST_DIR="$ROOT/dist"
+NODE_DIST_DIR="$ROOT/dist-node"
+echo "Building in $DIST_DIR and $NODE_DIST_DIR"
+
+cd "$ROOT" || exit 1
+
+# Remove old builds
+rm -rf $DIST_DIR*
+
+# Make default dist dir
+mkdir -p "$DIST_DIR"
+
+# Compile typescript
+echo "Compiling TypeScript files to $NODE_DIST_DIR"
+tsc -p tsconfig.json
+
+# Clone files for node builds
+cp -pr "$DIST_DIR" "$NODE_DIST_DIR"
+
+# Remove browser files in node build
+for FILE in ${NODE_DIST_DIR}/*-browser*; do
+  rm -f $FILE
+done
+
+# Move browser files into place for default build
+(
+  cd "$DIST_DIR"
+
+  for FILE in *-browser*;do
+    mv "$FILE" "${FILE/-browser/}"
+  done
+)
+
+# Remove type definition files where they're not needed
+(
+  cd "$NODE_DIST_DIR"
+  find . -name '*.d.ts' -exec rm -f {} \;
+)
+
+# Copy bin files into place
+cp -pr "$ROOT/src/bin" "$NODE_DIST_DIR"
+
+if [ "${1-}" != "--no-pack" ]; then
+  # Prep tarball dir
+  BUILD_DIR="$ROOT/.build"
+  rm -rf "$BUILD_DIR"
+  mkdir -p "$BUILD_DIR"
+
+  # Create tarball for local installation (in tests and examples)
+  echo "Packing tarball"
+  npm pack --pack-destination "$BUILD_DIR" > /dev/null 2>&1
+  mv $BUILD_DIR/uuid-*.tgz $BUILD_DIR/uuid.tgz
+fi
+
+echo "-- fin --"
+[evidence record sha256:df2aab4bc15b167275df146bf621696a5de0e1ad60b4d2a6def0b8569915c97b kind tool-call:read]
+step 7: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"cat package.json | jq .scripts.format 2>&1 || grep '\"format\"' package.json"}
+tool shell failed: denied: "cat package.json | jq .scripts.format 2>&1 || grep '"format"' package.json" is not on the shell allowlist. Confirmation was declined.
+[evidence record sha256:75731a5d7425756be9a875f87b8230575519a7721883be45eef6ee15b3c3241b kind tool-call:shell]
+step 8: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/v7.ts"}
+tool read ok: import rng from './rng.js';
+import { unsafeStringify } from './stringify.js';
+import type { UUIDTypes, Version7Options } from './types.js';
+
+type V7State = {
+  msecs?: number; // time, milliseconds
+  seq?: number; // sequence number (32-bits)
+};
+
+const _state: V7State = {};
+
+function v7(
+  options?: Version7Options,
+  buf?: undefined,
+  offset?: number,
+): string;
+function v7<TBuf extends Uint8Array = Uint8Array>(
+  options: Version7Options | undefined,
+  buf: TBuf,
+  offset?: number,
+): TBuf;
+function v7<TBuf extends Uint8Array = Uint8Array>(
+  options?: Version7Options,
+  buf?: TBuf,
+  offset?: number,
+): UUIDTypes<TBuf> {
+  let bytes: Uint8Array;
+
+  if (options) {
+    // With options: Make UUID independent of internal state
+    bytes = v7Bytes(
+      options.random ?? options.rng?.() ?? rng(),
+      options.msecs,
+      options.seq,
+      buf,
+      offset,
+    );
+  } else {
+    // No options: Use internal state
+    const now = Date.now();
+    const rnds = rng();
+
+    updateV7State(_state, now, rnds);
+
+    bytes = v7Bytes(rnds, _state.msecs, _state.seq, buf, offset);
+  }
+
+  return buf ?? unsafeStringify(bytes);
+}
+
+// (Private!)  Do not use.  This method is only exported for testing purposes
+// and may change without notice.
+export function updateV7State(state: V7State, now: number, rnds: Uint8Array) {
+  state.msecs ??= -Infinity;
+  state.seq ??= 0;
+
+  if (now > state.msecs) {
+    // Time has moved on! Pick a new random sequence number
+    state.seq = v7Sequence(rnds);
+    state.msecs = now;
+  } else {
+    // Bump sequence counter w/ 32-bit rollover
+    state.seq = (state.seq + 1) | 0;
+
+    // In case of rollover, bump timestamp to preserve monotonicity. This is
+    // allowed by the RFC and should self-correct as the system clock catches
+    // up. See https://www.rfc-editor.org/rfc/rfc9562.html#section-6.2-9.4
+    if (state.seq === 0) {
+      state.msecs++;
+    }
+  }
+
+  return state;
+}
+
+function v7Bytes(
+  rnds: Uint8Array,
+  msecs?: number,
+  seq?: number,
+  buf?: Uint8Array,
+  offset = 0,
+) {
+  if (rnds.length < 16) {
+    throw new Error('Random bytes length must be >= 16');
+  }
+
+  if (!buf) {
+    buf = new Uint8Array(16);
+    offset = 0;
+  } else {
+    if (offset < 0 || offset + 16 > buf.length) {
+      throw new RangeError(
+        `UUID byte range ${offset}:${offset + 15} is out of buffer bounds`,
+      );
+    }
+  }
+
+  // Defaults
+  msecs ??= Date.now();
+  seq ??= v7Sequence(rnds);
+
+  // byte 0-5: timestamp (48 bits)
+  buf[offset++] = (msecs / 0x10000000000) & 0xff;
+  buf[offset++] = (msecs / 0x100000000) & 0xff;
+  buf[offset++] = (msecs / 0x1000000) & 0xff;
+  buf[offset++] = (msecs / 0x10000) & 0xff;
+  buf[offset++] = (msecs / 0x100) & 0xff;
+  buf[offset++] = msecs & 0xff;
+
+  // byte 6: `version` (4 bits) | sequence bits 28-31 (4 bits)
+  buf[offset++] = 0x70 | ((seq >>> 28) & 0x0f);
+
+  // byte 7: sequence bits 20-27 (8 bits)
+  buf[offset++] = (seq >>> 20) & 0xff;
+
+  // byte 8: `variant` (2 bits) | sequence bits 14-19 (6 bits)
+  buf[offset++] = 0x80 | ((seq >>> 14) & 0x3f);
+
+  // byte 9: sequence bits 6-13 (8 bits)
+  buf[offset++] = (seq >>> 6) & 0xff;
+
+  // byte 10: sequence bits 0-5 (6 bits) | random (2 bits)
+  buf[offset++] = ((seq << 2) & 0xff) | (rnds[10] & 0x03);
+
+  // bytes 11-15: random (40 bits)
+  buf[offset++] = rnds[11];
+  buf[offset++] = rnds[12];
+  buf[offset++] = rnds[13];
+  buf[offset++] = rnds[14];
+  buf[offset++] = rnds[15];
+
+  return buf;
+}
+
+function v7Sequence(rnds: Uint8Array) {
+  return ((rnds[6] & 0x7f) << 24) | (rnds[7] << 16) | (rnds[8] << 8) | rnds[9];
+}
+
+export default v7;
+
+[evidence record sha256:c85881b674e360e25ae2d5cd085bdb28beca3711a4200b461eae86831f2a3889 kind tool-call:read]
+tool read <- {"path":"src/test"}
+tool read failed: failed: EISDIR: illegal operation on a directory, read, caused by EISDIR
+[evidence record sha256:cc15ba78a40503a9de76e52ddb8757e390bdc01d2fc9275e8b5841c9bab01d7f kind tool-call:read]
+step 9: calling local:qwen3.6:35b-a3b
+tool list <- {"path":"src/bin"}
+tool list ok: uuid
+[evidence record sha256:bdd50a662ffd2e4cfb368d27bf72fe5fab9d4be36a5befb036a39a4575dd7207 kind tool-call:list]
+step 10: calling local:qwen3.6:35b-a3b
+tool list <- {"path":"test/browser"}
+tool list ok: browser.spec.js
+[evidence record sha256:795fd24bc18c9ece998293a93f8febddc3d1dc954134f441b48680c94001f412 kind tool-call:list]
+step 11: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"tsconfig.json"}
+tool read ok: {
+  "compilerOptions": {
+    "declaration": true,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "./dist",
+    "removeComments": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "ES2022"
+  },
+  "exclude": ["dist", "examples"]
+}
+
+[evidence record sha256:a6e2c9b5f47ef35ddf084cb5a5ca7c40643e4a4d798ef827e771e56d07c8457e kind tool-call:read]
+tool shell <- {"command":"node -e \"const b=require('biome/package.json');console.log(b.version)\" 2>&1 || true"}
+tool shell failed: denied: "node -e "const b=require('biome/package.json');console.log(b.version)" 2>&1 || true" is not on the shell allowlist. Confirmation was declined.
+[evidence record sha256:f83eb71310de660e5047b8b0f35c22faa264cfaf2cdb17a647df1761e3eb907d kind tool-call:shell]
+step 12: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/v7.ts"}
+tool read ok: import rng from './rng.js';
+import { unsafeStringify } from './stringify.js';
+import type { UUIDTypes, Version7Options } from './types.js';
+
+type V7State = {
+  msecs?: number; // time, milliseconds
+  seq?: number; // sequence number (32-bits)
+};
+
+const _state: V7State = {};
+
+function v7(
+  options?: Version7Options,
+  buf?: undefined,
+  offset?: number,
+): string;
+function v7<TBuf extends Uint8Array = Uint8Array>(
+  options: Version7Options | undefined,
+  buf: TBuf,
+  offset?: number,
+): TBuf;
+function v7<TBuf extends Uint8Array = Uint8Array>(
+  options?: Version7Options,
+  buf?: TBuf,
+  offset?: number,
+): UUIDTypes<TBuf> {
+  let bytes: Uint8Array;
+
+  if (options) {
+    // With options: Make UUID independent of internal state
+    bytes = v7Bytes(
+      options.random ?? options.rng?.() ?? rng(),
+      options.msecs,
+      options.seq,
+      buf,
+      offset,
+    );
+  } else {
+    // No options: Use internal state
+    const now = Date.now();
+    const rnds = rng();
+
+    updateV7State(_state, now, rnds);
+
+    bytes = v7Bytes(rnds, _state.msecs, _state.seq, buf, offset);
+  }
+
+  return buf ?? unsafeStringify(bytes);
+}
+
+// (Private!)  Do not use.  This method is only exported for testing purposes
+// and may change without notice.
+export function updateV7State(state: V7State, now: number, rnds: Uint8Array) {
+  state.msecs ??= -Infinity;
+  state.seq ??= 0;
+
+  if (now > state.msecs) {
+    // Time has moved on! Pick a new random sequence number
+    state.seq = v7Sequence(rnds);
+    state.msecs = now;
+  } else {
+    // Bump sequence counter w/ 32-bit rollover
+    state.seq = (state.seq + 1) | 0;
+
+    // In case of rollover, bump timestamp to preserve monotonicity. This is
+    // allowed by the RFC and should self-correct as the system clock catches
+    // up. See https://www.rfc-editor.org/rfc/rfc9562.html#section-6.2-9.4
+    if (state.seq === 0) {
+      state.msecs++;
+    }
+  }
+
+  return state;
+}
+
+function v7Bytes(
+  rnds: Uint8Array,
+  msecs?: number,
+  seq?: number,
+  buf?: Uint8Array,
+  offset = 0,
+) {
+  if (rnds.length < 16) {
+    throw new Error('Random bytes length must be >= 16');
+  }
+
+  if (!buf) {
+    buf = new Uint8Array(16);
+    offset = 0;
+  } else {
+    if (offset < 0 || offset + 16 > buf.length) {
+      throw new RangeError(
+        `UUID byte range ${offset}:${offset + 15} is out of buffer bounds`,
+      );
+    }
+  }
+
+  // Defaults
+  msecs ??= Date.now();
+  seq ??= v7Sequence(rnds);
+
+  // byte 0-5: timestamp (48 bits)
+  buf[offset++] = (msecs / 0x10000000000) & 0xff;
+  buf[offset++] = (msecs / 0x100000000) & 0xff;
+  buf[offset++] = (msecs / 0x1000000) & 0xff;
+  buf[offset++] = (msecs / 0x10000) & 0xff;
+  buf[offset++] = (msecs / 0x100) & 0xff;
+  buf[offset++] = msecs & 0xff;
+
+  // byte 6: `version` (4 bits) | sequence bits 28-31 (4 bits)
+  buf[offset++] = 0x70 | ((seq >>> 28) & 0x0f);
+
+  // byte 7: sequence bits 20-27 (8 bits)
+  buf[offset++] = (seq >>> 20) & 0xff;
+
+  // byte 8: `variant` (2 bits) | sequence bits 14-19 (6 bits)
+  buf[offset++] = 0x80 | ((seq >>> 14) & 0x3f);
+
+  // byte 9: sequence bits 6-13 (8 bits)
+  buf[offset++] = (seq >>> 6) & 0xff;
+
+  // byte 10: sequence bits 0-5 (6 bits) | random (2 bits)
+  buf[offset++] = ((seq << 2) & 0xff) | (rnds[10] & 0x03);
+
+  // bytes 11-15: random (40 bits)
+  buf[offset++] = rnds[11];
+  buf[offset++] = rnds[12];
+  buf[offset++] = rnds[13];
+  buf[offset++] = rnds[14];
+  buf[offset++] = rnds[15];
+
+  return buf;
+}
+
+function v7Sequence(rnds: Uint8Array) {
+  return ((rnds[6] & 0x7f) << 24) | (rnds[7] << 16) | (rnds[8] << 8) | rnds[9];
+}
+
+export default v7;
+
+[evidence record sha256:b445ca2b07f6b9e87bab0d876aafe60dc8ab7cf5accec6cbc83e4f5dbe5ed913 kind tool-call:read]
+tool list <- {"path":"src/test"}
+tool list ok: parse.test.ts
+rng.test.ts
+stringify.test.ts
+test_constants.ts
+v1.test.ts
+v35.test.ts
+v4.test.ts
+v6.test.ts
+v7.test.ts
+validate.test.ts
+version.test.ts
+[evidence record sha256:4e420f4a1696633a176da4535b553edf3ac18f5ec2604d0bd797f934961222d1 kind tool-call:list]
+step 13: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/test/v7.test.ts"}
+tool read ok: import * as assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
+import parse from '../parse.js';
+import stringify from '../stringify.js';
+import type { Version7Options } from '../types.js';
+import v7, { updateV7State } from '../v7.js';
+
+// Fixture values for testing with the rfc v7 UUID example:
+// https://www.rfc-editor.org/rfc/rfc9562.html#name-example-of-a-uuidv7-value
+const RFC_V7 = '017f22e2-79b0-7cc3-98c4-dc0c0c07398f';
+const RFC_V7_BYTES = parse('017f22e2-79b0-7cc3-98c4-dc0c0c07398f');
+const RFC_MSECS = 0x17f22e279b0;
+
+// `option.seq` for the above RFC uuid
+const RFC_SEQ = (0x0cc3 << 20) | (0x98c4dc >> 2);
+
+// `option,random` for the above RFC uuid
+const RFC_RANDOM = Uint8Array.of(
+  0x10,
+  0x91,
+  0x56,
+  0xbe,
+  0xc4,
+  0xfb,
+  0x0c,
+  0xc3,
+  0x18,
+  0xc4,
+  0x6c,
+  0x0c,
+  0x0c,
+  0x07,
+  0x39,
+  0x8f,
+);
+
+describe('v7', () => {
+  test('subsequent UUIDs are different', () => {
+    const id1 = v7();
+    const id2 = v7();
+    assert.ok(id1 !== id2);
+  });
+
+  test('explicit options.random and options.msecs produces expected result', () => {
+    const id = v7({
+      random: RFC_RANDOM,
+      msecs: RFC_MSECS,
+      seq: RFC_SEQ,
+    });
+    assert.strictEqual(id, RFC_V7);
+  });
+
+  test('explicit options.rng produces expected result', () => {
+    const id = v7({
+      rng: () => RFC_RANDOM,
+      msecs: RFC_MSECS,
+      seq: RFC_SEQ,
+    });
+    assert.strictEqual(id, RFC_V7);
+  });
+
+  test('explicit options.msecs produces expected result', () => {
+    const id = v7({
+      msecs: RFC_MSECS,
+    });
+    assert.strictEqual(id.indexOf('017f22e2'), 0);
+  });
+
+  test('fills one UUID into a buffer as expected', () => {
+    const buffer = new Uint8Array(16);
+    const result = v7(
+      {
+        random: RFC_RANDOM,
+        msecs: RFC_MSECS,
+        seq: RFC_SEQ,
+      },
+      buffer,
+    );
+    stringify(buffer);
+
+    assert.deepEqual(buffer, RFC_V7_BYTES);
+    assert.strictEqual(buffer, result);
+  });
+
+  test('fills two UUIDs into a buffer as expected', () => {
+    const buffer = new Uint8Array(32);
+
+    v7(
+      {
+        random: RFC_RANDOM,
+        msecs: RFC_MSECS,
+        seq: RFC_SEQ,
+      },
+      buffer,
+      0,
+    );
+    v7(
+      {
+        random: RFC_RANDOM,
+        msecs: RFC_MSECS,
+        seq: RFC_SEQ,
+      },
+      buffer,
+      16,
+    );
+    const expected = new Uint8Array(32);
+    expected.set(RFC_V7_BYTES);
+    expected.set(RFC_V7_BYTES, 16);
+    assert.deepEqual(buffer, expected);
+  });
+
+  //
+  // monotonic and lexicographical sorting tests
+  //
+
+  test('lexicographical sorting is preserved', () => {
+    let id: string;
+    let prior: string | undefined;
+    let msecs = RFC_MSECS;
+    for (let i = 0; i < 20000; ++i) {
+      if (i % 1500 === 0) {
+        // every 1500 runs increment msecs so seq is
+        // reinitialized, simulating passage of time
+        msecs += 1;
+      }
+
+      id = v7({ msecs, seq: i });
+
+      if (prior !== undefined) {
+        assert.ok(prior < id, `${prior} < ${id}`);
+      }
+
+      prior = id;
+    }
+  });
+
+  test('can supply seq', () => {
+    let seq = 0x12345;
+    let uuid = v7({
+      msecs: RFC_MSECS,
+      seq,
+    });
+
+    assert.strictEqual(uuid.substr(0, 25), '017f22e2-79b0-7000-848d-1');
+
+    seq = 0x6fffffff;
+    uuid = v7({
+      msecs: RFC_MSECS,
+      seq,
+    });
+
+    assert.strictEqual(uuid.substring(0, 25), '017f22e2-79b0-76ff-bfff-f');
+  });
+
+  test('internal seq is reset upon timestamp change', () => {
+    v7({
+      msecs: RFC_MSECS,
+      seq: 0x6fffffff,
+    });
+
+    const uuid = v7({
+      msecs: RFC_MSECS + 1,
+    });
+
+    assert.ok(uuid.indexOf('fff') !== 15);
+  });
+
+  test('v7() state transitions', () => {
+    const tests = [
+      {
+        title: 'new time interval',
+        state: { msecs: 1, seq: 123 },
+        now: 2,
+        expected: {
+          msecs: 2, // time interval should update
+          seq: 0xcc318c4, // sequence should be randomized
+        },
+      },
+      {
+        title: 'same time interval',
+        state: { msecs: 1, seq: 123 },
+        now: 1,
+        expected: {
+          msecs: 1, // timestamp unchanged
+          seq: 124, // sequence increments
+        },
+      },
+      {
+        title: 'same time interval (sequence rollover)',
+        state: { msecs: 1, seq: 0xffffffff },
+        now: 1,
+        expected: {
+          msecs: 2, // timestamp increments
+          seq: 0, // sequence rolls over
+        },
+      },
+      {
+        title: 'time regression',
+        state: { msecs: 2, seq: 123 },
+        now: 1,
+        expected: {
+          msecs: 2, // timestamp unchanged
+          seq: 124, // sequence increments
+        },
+      },
+      {
+        title: 'time regression (sequence rollover)',
+        state: { msecs: 2, seq: 0xffffffff },
+        now: 1,
+        expected: {
+          // timestamp increments (crazy, right? The system clock goes backwards
+          // but the UUID timestamp moves forward?  Weird, but it's what's
+          // required to maintain monotonicity... and this is why we have unit
+          // tests!)
+          msecs: 3,
+          seq: 0, // sequence rolls over
+        },
+      },
+    ];
+    for (const { title, state, now, expected } of tests) {
+      assert.deepStrictEqual(
+        updateV7State(state, now, RFC_RANDOM),
+        expected,
+        `Failed: ${title}`,
+      );
+    }
+  });
+
+  test('flipping bits changes the result', () => {
+    // convert uint8array to BigInt (BE)
+    const asBigInt = (buf: Uint8Array) =>
+      buf.reduce((acc, v) => (acc << 8n) | BigInt(v), 0n);
+
+    // convert the given number of bits (LE) to number
+    const asNumber = (bits: number, data: bigint) =>
+      Number(BigInt.asUintN(bits, data));
+
+    // flip the nth bit (BE) in a BigInt
+    const flip = (data: bigint, n: number) => data ^ (1n << BigInt(127 - n));
+
+    // Extract v7 `options` from a (BigInt) UUID
+    const optionsFrom = (data: bigint): Version7Options => {
+      const ms = asNumber(48, data >> 80n);
+      const hi = asNumber(12, data >> 64n);
+      const lo = asNumber(20, data >> 42n);
+      const r = BigInt.asUintN(42, data);
+      return {
+        msecs: ms,
+        seq: (hi << 20) | lo,
+        random: Uint8Array.from([
+          ...Array(10).fill(0),
+          ...Array(6)
+            .fill(0)
+            .map((_, i) => asNumber(8, r >> (BigInt(i) * 8n)))
+            .reverse(),
+        ]),
+      };
+    };
+    const buf = new Uint8Array(16);
+    const data = asBigInt(v7({}, buf));
+    const id = stringify(buf);
+    const reserved = [48, 49, 50, 51, 64, 65];
+    for (let i = 0; i < 128; ++i) {
+      if (reserved.includes(i)) {
+        continue; // skip bits used for version and variant
+      }
+      const flipped = flip(data, i);
+      assert.strictEqual(
+        asBigInt(v7(optionsFrom(flipped), buf)).toString(16),
+        flipped.toString(16),
+        `Unequal uuids at bit ${i}`,
+      );
+      assert.notStrictEqual(stringify(buf), id);
+    }
+  });
+
+  test('throws when option.random is too short', () => {
+    const random = Uint8Array.of(16);
+    const buffer = new Uint8Array(16).fill(0);
+    assert.throws(() => {
+      v7({ random }, buffer);
+    });
+  });
+
+  test('throws when options.rng() is too short', () => {
+    const buffer = new Uint8Array(16);
+    const rng = () => Uint8Array.of(0); // length = 1
+    assert.throws(() => {
+      v7({ rng }, buffer);
+    });
+  });
+
+  test('throws RangeError for out-of-range indexes', () => {
+    const buf15 = new Uint8Array(15);
+    const buf30 = new Uint8Array(30);
+    assert.throws(() => v7({}, buf15), RangeError);
+    assert.throws(() => v7({}, buf30, -1), RangeError);
+    assert.throws(() => v7({}, buf30, 15), RangeError);
+  });
+
+  test('default seq (no explicit seq option) is consistent with updateV7State formula', () => {
+    // When v7() is called with random bytes and msecs but no explicit seq, the
+    // default seq should use the same formula as updateV7State() –
+    // ((rnds[6] & 0x7f) << 24) | (rnds[7] << 16) | (rnds[8] << 8) | rnds[9].
+    //
+    // Regression: the formula was `(rnds[6] * 0x7f) << 24`, which should have
+    // been `(rnds[6] & 0x7f) << 24`, producing a seq inconsistent with
+    // updateV7State.
+    const rnds = Uint8Array.of(
+      0x02,
+      0x91,
+      0x56,
+      0xbe,
+      0xc4,
+      0xfb,
+      0x02,
+      0xc3,
+      0x18,
+      0xc4,
+      0x6c,
+      0x0c,
+      0x0c,
+      0x07,
+      0x39,
+      0x8f,
+    );
+    const state = updateV7State({}, RFC_MSECS, rnds);
+    const uuidWithExplicitSeq = v7({
+      random: rnds,
+      msecs: RFC_MSECS,
+      seq: state.seq,
+    });
+    const uuidWithDefaultSeq = v7({ random: rnds, msecs: RFC_MSECS });
+    assert.strictEqual(uuidWithDefaultSeq, uuidWithExplicitSeq);
+  });
+});
+
+[evidence record sha256:33bba04b6747c2f49090be5d0071ba3d67e9813766b45c0e1543d1ffa2585bb4 kind tool-call:read]
+tool read <- {"path":"src/rng.ts"}
+tool read ok: // RNG values for use in UUID generation. This *must* use a high-quality source
+// of entropy, such as `crypto.getRandomValues()`.  And we reuse an array for
+// performance.
+const rnds8 = new Uint8Array(16);
+export default function rng() {
+  return crypto.getRandomValues(rnds8);
+}
+
+[evidence record sha256:9f44c031256f609c10ab21e0f872c6895b379afd493f41d54b538a0be88a0a1c kind tool-call:read]
+tool read <- {"path":"types:"}
+tool read failed: failed: ENOENT: no such file or directory, open '/work/types:', caused by ENOENT
+[evidence record sha256:3b26379693d66feb5299d857477823d7963c782059ece79a87f63d1c5ff6dd72 kind tool-call:read]
+step 14: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/v4.ts"}
+tool read ok: import rng from './rng.js';
+import { unsafeStringify } from './stringify.js';
+import type { UUIDTypes, Version4Options } from './types.js';
+
+function v4(
+  options?: Version4Options,
+  buf?: undefined,
+  offset?: number,
+): string;
+function v4<TBuf extends Uint8Array = Uint8Array>(
+  options: Version4Options | undefined,
+  buf: TBuf,
+  offset?: number,
+): TBuf;
+function v4<TBuf extends Uint8Array = Uint8Array>(
+  options?: Version4Options,
+  buf?: TBuf,
+  offset?: number,
+): UUIDTypes<TBuf> {
+  if (!buf && !options && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+
+  // Putting tail-code that could just go inline here in a separate function to
+  // enable compiler optimizations that dramatically improve performance.
+  //
+  // REF: https://github.com/uuidjs/uuid/issues/892
+  return _v4(options, buf, offset);
+}
+
+function _v4<TBuf extends Uint8Array = Uint8Array>(
+  options?: Version4Options,
+  buf?: TBuf,
+  offset?: number,
+): UUIDTypes<TBuf> {
+  options = options || {};
+
+  const rnds = options.random ?? options.rng?.() ?? rng();
+  if (rnds.length < 16) {
+    throw new Error('Random bytes length must be >= 16');
+  }
+
+  // Per 4.4, set bits for version and `clock_seq_hi_and_reserved`
+  rnds[6] = (rnds[6] & 0x0f) | 0x40;
+  rnds[8] = (rnds[8] & 0x3f) | 0x80;
+
+  // Copy bytes to buffer, if provided
+  if (buf) {
+    offset = offset || 0;
+    if (offset < 0 || offset + 16 > buf.length) {
+      throw new RangeError(
+        `UUID byte range ${offset}:${offset + 15} is out of buffer bounds`,
+      );
+    }
+
+    for (let i = 0; i < 16; ++i) {
+      buf[offset + i] = rnds[i];
+    }
+
+    return buf;
+  }
+
+  return unsafeStringify(rnds);
+}
+export default v4;
+
+[evidence record sha256:4ac6506b830557a466ba9a3f3226ca4e00bcd8c1f05c3e308ecdd970ad25187f kind tool-call:read]
+step 15: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/types.ts"}
+tool read ok: export type UUIDTypes<TBuf extends Uint8Array = Uint8Array> = string | TBuf;
+
+export type Version1Options = {
+  node?: Uint8Array;
+  clockseq?: number;
+  random?: Uint8Array;
+  rng?: () => Uint8Array;
+  msecs?: number;
+  nsecs?: number;
+  _v6?: boolean; // Internal use only!
+};
+
+export type Version4Options = {
+  random?: Uint8Array;
+  rng?: () => Uint8Array;
+};
+
+export type Version6Options = Version1Options;
+
+export type Version7Options = {
+  random?: Uint8Array;
+  msecs?: number;
+  seq?: number;
+  rng?: () => Uint8Array;
+};
+
+// Workaround for different versions of TypeScript definitions
+export type NonSharedArrayBuffer = ReturnType<typeof Uint8Array.of>;
+
+[evidence record sha256:1162e80e7d933424e10a5e319bcc70cc45900f49e5de98821dd35a34ba8458e2 kind tool-call:read]
+step 16: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"bash scripts/build.sh 2>&1"}
+tool shell failed: denied: "bash scripts/build.sh 2>&1" is not on the shell allowlist. Confirmation was declined.
+[evidence record sha256:db2687571927bd04757ce13f4e39fec2d1f7258640b43be2d9ee4e1406caf56e kind tool-call:shell]
+step 17: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/v1.ts"}
+tool read ok: import rng from './rng.js';
+import { unsafeStringify } from './stringify.js';
+import type { UUIDTypes, Version1Options } from './types.js';
+
+// **`v1()` - Generate time-based UUID**
+//
+// Inspired by https://github.com/LiosK/UUID.js
+// and http://docs.python.org/library/uuid.html
+
+type V1State = {
+  node?: Uint8Array; // node id (47-bit random)
+  clockseq?: number; // sequence number (14-bit)
+
+  // v1 & v6 timestamps are a pain to deal with.  They specify time from the
+  // Gregorian epoch in 100ns intervals, which requires values with 57+ bits of
+  // precision.  But that's outside the precision of IEEE754 floats (i.e. JS
+  // numbers).  To work around this, we represent them internally using 'msecs'
+  // (milliseconds since unix epoch) and 'nsecs' (100-nanoseconds offset from
+  // `msecs`).
+
+  msecs?: number; // timestamp (milliseconds, unix epoch)
+  nsecs?: number; // timestamp (100-nanoseconds offset from 'msecs')
+};
+
+const _state: V1State = {};
+
+function v1(
+  options?: Version1Options,
+  buf?: undefined,
+  offset?: number,
+): string;
+function v1<Buf extends Uint8Array = Uint8Array>(
+  options: Version1Options | undefined,
+  buf: Buf,
+  offset?: number,
+): Buf;
+function v1<TBuf extends Uint8Array = Uint8Array>(
+  options?: Version1Options,
+  buf?: TBuf,
+  offset?: number,
+): UUIDTypes<TBuf> {
+  let bytes: Uint8Array;
+
+  // Extract _v6 flag from options, clearing options if appropriate
+  const isV6 = options?._v6 ?? false;
+  if (options) {
+    const optionsKeys = Object.keys(options);
+    if (optionsKeys.length === 1 && optionsKeys[0] === '_v6') {
+      options = undefined;
+    }
+  }
+
+  if (options) {
+    // With options: Make UUID independent of internal state
+    bytes = v1Bytes(
+      options.random ?? options.rng?.() ?? rng(),
+      options.msecs,
+      options.nsecs,
+      options.clockseq,
+      options.node,
+      buf,
+      offset,
+    );
+  } else {
+    // Without options: Make UUID from internal state
+    const now = Date.now();
+    const rnds = rng();
+
+    updateV1State(_state, now, rnds);
+
+    // Geenerate UUID.  Note that v6 uses random values for `clockseq` and
+    // `node`.
+    //
+    // https://www.rfc-editor.org/rfc/rfc9562.html#section-5.6-4
+    bytes = v1Bytes(
+      rnds,
+      _state.msecs,
+      _state.nsecs,
+      // v6 UUIDs get random `clockseq` and `node` for every UUID
+      // https://www.rfc-editor.org/rfc/rfc9562.html#section-5.6-4
+      isV6 ? undefined : _state.clockseq,
+      isV6 ? undefined : _state.node,
+      buf,
+      offset,
+    );
+  }
+
+  return buf ?? unsafeStringify(bytes);
+}
+
+// (Private!)  Do not use.  This method is only exported for testing purposes
+// and may change without notice.
+export function updateV1State(state: V1State, now: number, rnds: Uint8Array) {
+  state.msecs ??= -Infinity;
+  state.nsecs ??= 0;
+
+  // Update timestamp
+  if (now === state.msecs) {
+    // Same msec-interval = simulate higher clock resolution by bumping `nsecs`
+    // https://www.rfc-editor.org/rfc/rfc9562.html#section-6.1-2.6
+    state.nsecs++;
+
+    // Check for `nsecs` overflow (nsecs is capped at 10K intervals / msec)
+    if (state.nsecs >= 10000) {
+      // Prior to uuid@11 this would throw an error, however the RFCs allow for
+      // changing the node in this case.  This slightly breaks monotonicity at
+      // msec granularity, but that's not a significant concern.
+      // https://www.rfc-editor.org/rfc/rfc9562.html#section-6.1-2.16
+      state.node = undefined;
+      state.nsecs = 0;
+    }
+  } else if (now > state.msecs) {
+    // Reset nsec counter when clock advances to a new msec interval
+    state.nsecs = 0;
+  } else if (now < state.msecs) {
+    // Handle clock regression
+    // https://www.rfc-editor.org/rfc/rfc9562.html#section-6.1-2.7
+    //
+    // Note: Unsetting node here causes both it and clockseq to be randomized,
+    // below.
+    state.node = undefined;
+  }
+
+  // Init node and clock sequence (do this after timestamp update which may
+  // reset the node) https://www.rfc-editor.org/rfc/rfc9562.html#section-5.1-7
+  //
+  // Note:
+  if (!state.node) {
+    state.node = rnds.slice(10, 16);
+
+    // Set multicast bit
+    // https://www.rfc-editor.org/rfc/rfc9562.html#section-6.10-3
+    state.node[0] |= 0x01; // Set multicast bit
+
+    // Clock sequence must be randomized
+    // https://www.rfc-editor.org/rfc/rfc9562.html#section-5.1-8
+    state.clockseq = ((rnds[8] << 8) | rnds[9]) & 0x3fff;
+  }
+
+  state.msecs = now;
+
+  return state;
+}
+
+function v1Bytes(
+  rnds: Uint8Array,
+  msecs?: number,
+  nsecs?: number,
+  clockseq?: number,
+  node?: Uint8Array,
+  buf?: Uint8Array,
+  offset = 0,
+) {
+  if (rnds.length < 16) {
+    throw new Error('Random bytes length must be >= 16');
+  }
+
+  // Defaults
+  if (!buf) {
+    buf = new Uint8Array(16);
+    offset = 0;
+  } else {
+    if (offset < 0 || offset + 16 > buf.length) {
+      throw new RangeError(
+        `UUID byte range ${offset}:${offset + 15} is out of buffer bounds`,
+      );
+    }
+  }
+
+  msecs ??= Date.now();
+  nsecs ??= 0;
+  clockseq ??= ((rnds[8] << 8) | rnds[9]) & 0x3fff;
+  if (node == null) {
+    node = rnds.slice(10, 16);
+
+    // Set multicast bit
+    // https://www.rfc-editor.org/rfc/rfc9562.html#section-6.10-3
+    node[0] |= 0x01;
+  }
+
+  // Offset to Gregorian epoch
+  // https://www.rfc-editor.org/rfc/rfc9562.html#section-5.1-1
+  msecs += 12219292800000;
+
+  // The timestamp is `msecs * 10000 + nsecs`, which needs more precision than a
+  // JS number has, so it is computed as a 32-bit low half and a 28-bit high
+  // half.  `msecs` is split at bit 28, because `0x10000000 * 10000` is exactly
+  // `625 * 0x100000000`: its high bits then contribute only to the high half of
+  // the timestamp, and its low bits only to the low half.
+  const t = (msecs & 0xfffffff) * 10000 + nsecs;
+
+  // `time_low`
+  const tl = t >>> 0;
+  buf[offset++] = (tl >>> 24) & 0xff;
+  buf[offset++] = (tl >>> 16) & 0xff;
+  buf[offset++] = (tl >>> 8) & 0xff;
+  buf[offset++] = tl & 0xff;
+
+  // `time_mid`.  Note that adding `nsecs`, above, may have carried out of
+  // `time_low`, so `t`'s own high bits have to be folded in here.
+  const tmh =
+    (((msecs / 0x10000000) | 0) * 625 + ((t / 0x100000000) | 0)) & 0xfffffff;
+  buf[offset++] = (tmh >>> 8) & 0xff;
+  buf[offset++] = tmh & 0xff;
+
+  // `time_high_and_version`
+  buf[offset++] = ((tmh >>> 24) & 0xf) | 0x10; // include version
+  buf[offset++] = (tmh >>> 16) & 0xff;
+
+  // `clock_seq_hi_and_reserved` | variant
+  buf[offset++] = (clockseq >>> 8) | 0x80;
+
+  // `clock_seq_low`
+  buf[offset++] = clockseq & 0xff;
+
+  // `node`
+  for (let n = 0; n < 6; ++n) {
+    buf[offset++] = node[n];
+  }
+
+  return buf;
+}
+
+export default v1;
+
+[evidence record sha256:a05455ef5ae16ef1e9fbd72c45d2b1d7962209f9062c2c3288000953421e8a02 kind tool-call:read]
+step 18: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/v6.ts"}
+tool read ok: import { unsafeStringify } from './stringify.js';
+import type { UUIDTypes, Version6Options } from './types.js';
+import v1 from './v1.js';
+import v1ToV6 from './v1ToV6.js';
+
+function v6(
+  options?: Version6Options,
+  buf?: undefined,
+  offset?: number,
+): string;
+function v6<TBuf extends Uint8Array = Uint8Array>(
+  options: Version6Options | undefined,
+  buf: TBuf,
+  offset?: number,
+): TBuf;
+function v6<TBuf extends Uint8Array = Uint8Array>(
+  options?: Version6Options,
+  buf?: TBuf,
+  offset?: number,
+): UUIDTypes<TBuf> {
+  options ??= {};
+  offset ??= 0;
+
+  // v6 is v1 with different field layout, so we start with a v1 UUID, albeit
+  // with slightly different behavior around how the clock_seq and node fields
+  // are randomized, which is why we call v1 with _v6: true.
+  let bytes = v1({ ...options, _v6: true }, new Uint8Array(16));
+
+  // Reorder the fields to v6 layout.
+  bytes = v1ToV6(bytes);
+
+  // Return as a byte array if requested
+  if (buf) {
+    if (offset < 0 || offset + 16 > buf.length) {
+      throw new RangeError(
+        `UUID byte range ${offset}:${offset + 15} is out of buffer bounds`,
+      );
+    }
+
+    for (let i = 0; i < 16; i++) {
+      buf[offset + i] = bytes[i];
+    }
+    return buf;
+  }
+
+  return unsafeStringify(bytes);
+}
+
+export default v6;
+
+[evidence record sha256:c2a4fdd2deb396200851cb42a4ab150a2a44bd3fb29f26907980731e2f079136 kind tool-call:read]
+step 19: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/v35.ts"}
+tool read ok: import parse from './parse.js';
+import { unsafeStringify } from './stringify.js';
+import type { UUIDTypes } from './types.js';
+
+export function stringToBytes(str: string) {
+  // TODO: Use TextEncoder (see https://stackoverflow.com/a/48762658/109538)
+  str = unescape(encodeURIComponent(str));
+
+  const bytes = new Uint8Array(str.length);
+
+  for (let i = 0; i < str.length; ++i) {
+    bytes[i] = str.charCodeAt(i);
+  }
+
+  return bytes;
+}
+
+export const DNS = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
+export const URL = '6ba7b811-9dad-11d1-80b4-00c04fd430c8';
+
+type HashFunction = (bytes: Uint8Array) => Uint8Array;
+
+export default function v35<TBuf extends Uint8Array = Uint8Array>(
+  version: 0x30 | 0x50,
+  hash: HashFunction,
+  value: string | Uint8Array,
+  namespace: UUIDTypes,
+  buf?: TBuf,
+  offset?: number,
+): UUIDTypes<TBuf> {
+  const valueBytes: Uint8Array =
+    typeof value === 'string' ? stringToBytes(value) : value;
+  const namespaceBytes: Uint8Array =
+    typeof namespace === 'string' ? parse(namespace) : namespace;
+
+  if (typeof namespace === 'string') {
+    namespace = parse(namespace);
+  }
+
+  if (namespace?.length !== 16) {
+    throw TypeError(
+      'Namespace must be array-like (16 iterable integer values, 0-255)',
+    );
+  }
+
+  // Compute hash of namespace and value, Per 4.3
+  // Future: Use spread syntax when supported on all platforms, e.g. `bytes =
+  // hashfunc([...namespace, ... value])`
+  let bytes = new Uint8Array(16 + valueBytes.length);
+  bytes.set(namespaceBytes);
+  bytes.set(valueBytes, namespaceBytes.length);
+  bytes = hash(bytes);
+
+  bytes[6] = (bytes[6] & 0x0f) | version;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+  if (buf) {
+    offset ??= 0;
+    if (offset < 0 || offset + 16 > buf.length) {
+      throw new RangeError(
+        `UUID byte range ${offset}:${offset + 15} is out of buffer bounds`,
+      );
+    }
+
+    for (let i = 0; i < 16; ++i) {
+      buf[offset + i] = bytes[i];
+    }
+
+    return buf;
+  }
+
+  return unsafeStringify(bytes);
+}
+
+[evidence record sha256:a94a4471af0093f2504b5aac62dbbb39e6eab94f49f3f8374a32b9949bda969c kind tool-call:read]
+tool read <- {"path":"src/v3.ts"}
+tool read ok: import md5 from './md5.js';
+import type { UUIDTypes } from './types.js';
+import v35, { DNS, URL } from './v35.js';
+
+export { DNS, URL } from './v35.js';
+
+function v3(
+  value: string | Uint8Array,
+  namespace: UUIDTypes,
+  buf?: undefined,
+  offset?: number,
+): string;
+function v3<TBuf extends Uint8Array = Uint8Array>(
+  value: string | Uint8Array,
+  namespace: UUIDTypes,
+  buf: TBuf,
+  offset?: number,
+): TBuf;
+function v3<TBuf extends Uint8Array = Uint8Array>(
+  value: string | Uint8Array,
+  namespace: UUIDTypes,
+  buf?: TBuf,
+  offset?: number,
+): UUIDTypes<TBuf> {
+  return v35(0x30, md5, value, namespace, buf, offset);
+}
+
+v3.DNS = DNS;
+v3.URL = URL;
+
+export default v3;
+
+[evidence record sha256:ba47ba8ae343133d7568cb312ae7ef14aa091ccc512a390cafc4a4715db1529f kind tool-call:read]
+tool read <- {"path":"src/v5.ts"}
+tool read ok: import sha1 from './sha1.js';
+import type { UUIDTypes } from './types.js';
+import v35, { DNS, URL } from './v35.js';
+
+export { DNS, URL } from './v35.js';
+
+function v5(
+  value: string | Uint8Array,
+  namespace: UUIDTypes,
+  buf?: undefined,
+  offset?: number,
+): string;
+function v5<TBuf extends Uint8Array = Uint8Array>(
+  value: string | Uint8Array,
+  namespace: UUIDTypes,
+  buf: TBuf,
+  offset?: number,
+): TBuf;
+function v5<TBuf extends Uint8Array = Uint8Array>(
+  value: string | Uint8Array,
+  namespace: UUIDTypes,
+  buf?: TBuf,
+  offset?: number,
+): UUIDTypes<TBuf> {
+  return v35(0x50, sha1, value, namespace, buf, offset);
+}
+
+v5.DNS = DNS;
+v5.URL = URL;
+
+export default v5;
+
+[evidence record sha256:2ac13c0810c315031485a748236a75b4dfded50a8c50379e91831191f476f734 kind tool-call:read]
+step 20: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/test/v6.test.ts"}
+tool read ok: import * as assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
+import parse from '../parse.js';
+import v1ToV6 from '../v1ToV6.js';
+import v6 from '../v6.js';
+import v6ToV1 from '../v6ToV1.js';
+
+describe('v6', () => {
+  const V1_ID = 'f1207660-21d2-11ef-8c4f-419efbd44d48';
+  const V6_ID = '1ef21d2f-1207-6660-8c4f-419efbd44d48';
+
+  const fullOptions = {
+    msecs: 0x133b891f705,
+    nsecs: 0x1538,
+    clockseq: 0x385c,
+    node: Uint8Array.of(0x61, 0xcd, 0x3c, 0xbb, 0x32, 0x10),
+  };
+
+  const EXPECTED_BYTES = Uint8Array.of(
+    0x1e,
+    0x11,
+    0x22,
+    0xbd,
+    0x94,
+    0x28,
+    0x68,
+    0x88,
+    0xb8,
+    0x5c,
+    0x61,
+    0xcd,
+    0x3c,
+    0xbb,
+    0x32,
+    0x10,
+  );
+
+  test('default behavior', () => {
+    // Verify explicit options produce expected id
+    const id = v6();
+    assert.ok(
+      /[0-9a-f]{8}-[0-9a-f]{4}-6[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/.test(
+        id,
+      ),
+
+      'id is valid v6 UUID',
+    );
+  });
+
+  test('default behavior (binary type)', () => {
+    const buffer = new Uint8Array(16);
+    const result = v6(fullOptions, buffer);
+    assert.deepEqual(buffer, EXPECTED_BYTES);
+    assert.strictEqual(buffer, result);
+  });
+
+  test('all options', () => {
+    // Verify explicit options produce expected id
+    const id = v6(fullOptions);
+    assert.equal(id, '1e1122bd-9428-6888-b85c-61cd3cbb3210');
+  });
+
+  test('sort by creation time', () => {
+    // Verify ids sort by creation time
+    const ids = [];
+    for (let i = 0; i < 5; i++) {
+      ids.push(v6({ msecs: i * 1000 }));
+    }
+    assert.deepEqual(ids, ids.slice().sort());
+  });
+
+  test('sort by creation time (time_low overflow)', () => {
+    // The timestamp is assembled from a low and a high half, and `nsecs` can
+    // carry from one into the other.  See "v1 sort order (time_low overflow)".
+    const msecs = 1321645585614;
+    const ids = [4382, 4383, 4384, 4385].map((nsecs) => v6({ msecs, nsecs }));
+    assert.deepEqual(ids, ids.slice().sort());
+  });
+
+  test('creating at array offset', () => {
+    const buffer = new Uint8Array(32);
+    v6(fullOptions, buffer, 0);
+    v6(fullOptions, buffer, 16);
+
+    const expectedBuf = new Uint8Array(32);
+    expectedBuf.set(EXPECTED_BYTES, 0);
+    expectedBuf.set(EXPECTED_BYTES, 16);
+
+    assert.deepEqual(buffer, expectedBuf);
+  });
+
+  test('throws RangeError for out-of-range indexes', () => {
+    const buf15 = new Uint8Array(15);
+    const buf30 = new Uint8Array(30);
+    assert.throws(() => v6({}, buf15), RangeError);
+    assert.throws(() => v6({}, buf30, -1), RangeError);
+    assert.throws(() => v6({}, buf30, 15), RangeError);
+  });
+
+  test('random node has multicast bit set', () => {
+    // https://www.rfc-editor.org/rfc/rfc9562.html#section-6.10-3
+    for (let i = 0; i < 100; i++) {
+      assert.ok(parse(v6())[10] & 0x01, 'v6() node multicast bit');
+      assert.ok(
+        parse(v6({ msecs: fullOptions.msecs }))[10] & 0x01,
+        'v6({msecs}) node multicast bit',
+      );
+    }
+  });
+
+  test('v1 -> v6 conversion', () => {
+    const id = v1ToV6(V1_ID);
+    assert.equal(id, V6_ID);
+  });
+
+  test('v6 -> v1 conversion', () => {
+    const id = v6ToV1(V6_ID);
+    assert.equal(id, V1_ID);
+  });
+});
+
+[evidence record sha256:4a91becca71c071e0b42aec043766048ad70dcd59fe46c4d19c317eb9d58848a kind tool-call:read]
+step 21: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/v1ToV6.ts"}
+tool read ok: import parse from './parse.js';
+import { unsafeStringify } from './stringify.js';
+import type { NonSharedArrayBuffer, UUIDTypes } from './types.js';
+
+/**
+ * Convert a v1 UUID to a v6 UUID
+ *
+ * @param {string|Uint8Array} uuid - The v1 UUID to convert to v6
+ * @returns {string|Uint8Array} The v6 UUID as the same type as the `uuid` arg
+ * (string or Uint8Array)
+ */
+export default function v1ToV6(uuid: string): string;
+export default function v1ToV6(uuid: Uint8Array): NonSharedArrayBuffer;
+export default function v1ToV6(
+  uuid: string | Uint8Array,
+): UUIDTypes<NonSharedArrayBuffer> {
+  const v1Bytes = typeof uuid === 'string' ? parse(uuid) : uuid;
+
+  const v6Bytes = _v1ToV6(v1Bytes);
+
+  return typeof uuid === 'string' ? unsafeStringify(v6Bytes) : v6Bytes;
+}
+
+// Do the field transformation needed for v1 -> v6
+function _v1ToV6(v1Bytes: Uint8Array): NonSharedArrayBuffer {
+  return Uint8Array.of(
+    ((v1Bytes[6] & 0x0f) << 4) | ((v1Bytes[7] >> 4) & 0x0f),
+    ((v1Bytes[7] & 0x0f) << 4) | ((v1Bytes[4] & 0xf0) >> 4),
+    ((v1Bytes[4] & 0x0f) << 4) | ((v1Bytes[5] & 0xf0) >> 4),
+    ((v1Bytes[5] & 0x0f) << 4) | ((v1Bytes[0] & 0xf0) >> 4),
+
+    ((v1Bytes[0] & 0x0f) << 4) | ((v1Bytes[1] & 0xf0) >> 4),
+    ((v1Bytes[1] & 0x0f) << 4) | ((v1Bytes[2] & 0xf0) >> 4),
+
+    0x60 | (v1Bytes[2] & 0x0f),
+    v1Bytes[3],
+
+    v1Bytes[8],
+    v1Bytes[9],
+    v1Bytes[10],
+    v1Bytes[11],
+    v1Bytes[12],
+    v1Bytes[13],
+    v1Bytes[14],
+    v1Bytes[15],
+  );
+}
+
+[evidence record sha256:bc7fbcb3ea09b6dc0f4c29943f20a6655cd6b9fb22c30d16015e8bedcdc4ac59 kind tool-call:read]
+tool read <- {"path":"src/v6ToV1.ts"}
+tool read ok: import parse from './parse.js';
+import { unsafeStringify } from './stringify.js';
+import type { UUIDTypes } from './types.js';
+
+/**
+ * Convert a v6 UUID to a v1 UUID
+ *
+ * @param {string|Uint8Array} uuid - The v6 UUID to convert to v6
+ * @returns {string|Uint8Array} The v1 UUID as the same type as the `uuid` arg
+ * (string or Uint8Array)
+ */
+export default function v6ToV1(uuid: string): string;
+export default function v6ToV1(uuid: Uint8Array): Uint8Array;
+export default function v6ToV1(uuid: UUIDTypes): UUIDTypes {
+  const v6Bytes = typeof uuid === 'string' ? parse(uuid) : uuid;
+
+  const v1Bytes = _v6ToV1(v6Bytes);
+
+  return typeof uuid === 'string' ? unsafeStringify(v1Bytes) : v1Bytes;
+}
+
+// Do the field transformation needed for v6 -> v1
+function _v6ToV1(v6Bytes: Uint8Array) {
+  return Uint8Array.of(
+    ((v6Bytes[3] & 0x0f) << 4) | ((v6Bytes[4] >> 4) & 0x0f),
+    ((v6Bytes[4] & 0x0f) << 4) | ((v6Bytes[5] & 0xf0) >> 4),
+    ((v6Bytes[5] & 0x0f) << 4) | (v6Bytes[6] & 0x0f),
+    v6Bytes[7],
+
+    ((v6Bytes[1] & 0x0f) << 4) | ((v6Bytes[2] & 0xf0) >> 4),
+    ((v6Bytes[2] & 0x0f) << 4) | ((v6Bytes[3] & 0xf0) >> 4),
+
+    0x10 | ((v6Bytes[0] & 0xf0) >> 4),
+    ((v6Bytes[0] & 0x0f) << 4) | ((v6Bytes[1] & 0xf0) >> 4),
+
+    v6Bytes[8],
+    v6Bytes[9],
+    v6Bytes[10],
+    v6Bytes[11],
+    v6Bytes[12],
+    v6Bytes[13],
+    v6Bytes[14],
+    v6Bytes[15],
+  );
+}
+
+[evidence record sha256:3f3d63931cba94e885b6bc30d61b633533db72d66579604537cdeebef11e6e1e kind tool-call:read]
+step 22: calling local:qwen3.6:35b-a3b
+model error (retrying): the model spent all 8192 output tokens without emitting text or a tool call
+tool read <- {"path":"src/index.ts"}
+tool read ok: export { default as MAX } from './max.js';
+export { default as NIL } from './nil.js';
+export { default as parse } from './parse.js';
+export { default as stringify } from './stringify.js';
+export type * from './types.js';
+export { default as v1 } from './v1.js';
+export { default as v1ToV6 } from './v1ToV6.js';
+export { default as v3 } from './v3.js';
+export { default as v4 } from './v4.js';
+export { default as v5 } from './v5.js';
+export { default as v6 } from './v6.js';
+export { default as v6ToV1 } from './v6ToV1.js';
+export { default as v7 } from './v7.js';
+export { default as validate } from './validate.js';
+export { default as version } from './version.js';
+
+[evidence record sha256:be723e058e0b82f790a5a486b55be2214cf205d4bf2be1e3704a70f14a938442 kind tool-call:read]
+tool read <- {"path":"src/v7.ts"}
+tool read ok: import rng from './rng.js';
+import { unsafeStringify } from './stringify.js';
+import type { UUIDTypes, Version7Options } from './types.js';
+
+type V7State = {
+  msecs?: number; // time, milliseconds
+  seq?: number; // sequence number (32-bits)
+};
+
+const _state: V7State = {};
+
+function v7(
+  options?: Version7Options,
+  buf?: undefined,
+  offset?: number,
+): string;
+function v7<TBuf extends Uint8Array = Uint8Array>(
+  options: Version7Options | undefined,
+  buf: TBuf,
+  offset?: number,
+): TBuf;
+function v7<TBuf extends Uint8Array = Uint8Array>(
+  options?: Version7Options,
+  buf?: TBuf,
+  offset?: number,
+): UUIDTypes<TBuf> {
+  let bytes: Uint8Array;
+
+  if (options) {
+    // With options: Make UUID independent of internal state
+    bytes = v7Bytes(
+      options.random ?? options.rng?.() ?? rng(),
+      options.msecs,
+      options.seq,
+      buf,
+      offset,
+    );
+  } else {
+    // No options: Use internal state
+    const now = Date.now();
+    const rnds = rng();
+
+    updateV7State(_state, now, rnds);
+
+    bytes = v7Bytes(rnds, _state.msecs, _state.seq, buf, offset);
+  }
+
+  return buf ?? unsafeStringify(bytes);
+}
+
+// (Private!)  Do not use.  This method is only exported for testing purposes
+// and may change without notice.
+export function updateV7State(state: V7State, now: number, rnds: Uint8Array) {
+  state.msecs ??= -Infinity;
+  state.seq ??= 0;
+
+  if (now > state.msecs) {
+    // Time has moved on! Pick a new random sequence number
+    state.seq = v7Sequence(rnds);
+    state.msecs = now;
+  } else {
+    // Bump sequence counter w/ 32-bit rollover
+    state.seq = (state.seq + 1) | 0;
+
+    // In case of rollover, bump timestamp to preserve monotonicity. This is
+    // allowed by the RFC and should self-correct as the system clock catches
+    // up. See https://www.rfc-editor.org/rfc/rfc9562.html#section-6.2-9.4
+    if (state.seq === 0) {
+      state.msecs++;
+    }
+  }
+
+  return state;
+}
+
+function v7Bytes(
+  rnds: Uint8Array,
+  msecs?: number,
+  seq?: number,
+  buf?: Uint8Array,
+  offset = 0,
+) {
+  if (rnds.length < 16) {
+    throw new Error('Random bytes length must be >= 16');
+  }
+
+  if (!buf) {
+    buf = new Uint8Array(16);
+    offset = 0;
+  } else {
+    if (offset < 0 || offset + 16 > buf.length) {
+      throw new RangeError(
+        `UUID byte range ${offset}:${offset + 15} is out of buffer bounds`,
+      );
+    }
+  }
+
+  // Defaults
+  msecs ??= Date.now();
+  seq ??= v7Sequence(rnds);
+
+  // byte 0-5: timestamp (48 bits)
+  buf[offset++] = (msecs / 0x10000000000) & 0xff;
+  buf[offset++] = (msecs / 0x100000000) & 0xff;
+  buf[offset++] = (msecs / 0x1000000) & 0xff;
+  buf[offset++] = (msecs / 0x10000) & 0xff;
+  buf[offset++] = (msecs / 0x100) & 0xff;
+  buf[offset++] = msecs & 0xff;
+
+  // byte 6: `version` (4 bits) | sequence bits 28-31 (4 bits)
+  buf[offset++] = 0x70 | ((seq >>> 28) & 0x0f);
+
+  // byte 7: sequence bits 20-27 (8 bits)
+  buf[offset++] = (seq >>> 20) & 0xff;
+
+  // byte 8: `variant` (2 bits) | sequence bits 14-19 (6 bits)
+  buf[offset++] = 0x80 | ((seq >>> 14) & 0x3f);
+
+  // byte 9: sequence bits 6-13 (8 bits)
+  buf[offset++] = (seq >>> 6) & 0xff;
+
+  // byte 10: sequence bits 0-5 (6 bits) | random (2 bits)
+  buf[offset++] = ((seq << 2) & 0xff) | (rnds[10] & 0x03);
+
+  // bytes 11-15: random (40 bits)
+  buf[offset++] = rnds[11];
+  buf[offset++] = rnds[12];
+  buf[offset++] = rnds[13];
+  buf[offset++] = rnds[14];
+  buf[offset++] = rnds[15];
+
+  return buf;
+}
+
+function v7Sequence(rnds: Uint8Array) {
+  return ((rnds[6] & 0x7f) << 24) | (rnds[7] << 16) | (rnds[8] << 8) | rnds[9];
+}
+
+export default v7;
+
+[evidence record sha256:a16ca19ba8db51c9be7a5345133e28806df48d4428eccc505f7755785bea8ead kind tool-call:read]
+step 23: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/stringify.ts"}
+tool read ok: import validate from './validate.js';
+
+/**
+ * Convert array of 16 byte values to UUID string format of the form:
+ * XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
+ */
+const byteToHex: string[] = [];
+
+for (let i = 0; i < 256; ++i) {
+  byteToHex.push((i + 0x100).toString(16).slice(1));
+}
+
+export function unsafeStringify(arr: Uint8Array, offset = 0): string {
+  // Note: Be careful editing this code!  It's been tuned for performance
+  // and works in ways you may not expect. See https://github.com/uuidjs/uuid/pull/434
+  //
+  // Note to future-self: No, you can't remove the `toLowerCase()` call.
+  // REF: https://github.com/uuidjs/uuid/pull/677#issuecomment-1757351351
+  return (
+    byteToHex[arr[offset + 0]] +
+    byteToHex[arr[offset + 1]] +
+    byteToHex[arr[offset + 2]] +
+    byteToHex[arr[offset + 3]] +
+    '-' +
+    byteToHex[arr[offset + 4]] +
+    byteToHex[arr[offset + 5]] +
+    '-' +
+    byteToHex[arr[offset + 6]] +
+    byteToHex[arr[offset + 7]] +
+    '-' +
+    byteToHex[arr[offset + 8]] +
+    byteToHex[arr[offset + 9]] +
+    '-' +
+    byteToHex[arr[offset + 10]] +
+    byteToHex[arr[offset + 11]] +
+    byteToHex[arr[offset + 12]] +
+    byteToHex[arr[offset + 13]] +
+    byteToHex[arr[offset + 14]] +
+    byteToHex[arr[offset + 15]]
+  ).toLowerCase();
+}
+
+function stringify(arr: Uint8Array, offset = 0) {
+  const uuid = unsafeStringify(arr, offset);
+
+  // Consistency check for valid UUID.  If this throws, it's likely due to one
+  // of the following:
+  // - One or more input array values don't map to a hex octet (leading to
+  // "undefined" in the uuid)
+  // - Invalid input values for the RFC `version` or `variant` fields
+  if (!validate(uuid)) {
+    throw TypeError('Stringified UUID is invalid');
+  }
+
+  return uuid;
+}
+
+export default stringify;
+
+[evidence record sha256:ccab2a67ac629abfb5f7804edaa399ad734d978c086b91c2d8b9c835f2d79ba4 kind tool-call:read]
+step 24: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/test/v1.test.ts"}
+tool read ok: import * as assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
+import parse from '../parse.js';
+import v1, { updateV1State } from '../v1.js';
+
+// Verify ordering of v1 ids created with explicit times
+const TIME = 1321644961388; // 2011-11-18 11:36:01.388-08:00
+
+// Fixture values for testing with the rfc v1 UUID example:
+// https://www.rfc-editor.org/rfc/rfc9562.html#name-example-of-a-uuidv1-value
+const RFC_V1 = 'c232ab00-9414-11ec-b3c8-9f68deced846';
+const RFC_V1_BYTES = parse(RFC_V1);
+
+// `options` for producing the above RFC UUID
+const RFC_OPTIONS = {
+  msecs: 0x17f22e279b0,
+  nsecs: 0,
+  clockseq: 0x33c8,
+  node: Uint8Array.of(0x9f, 0x68, 0xde, 0xce, 0xd8, 0x46),
+};
+
+// random bytes for producing the above RFC UUID
+const RFC_RANDOM = Uint8Array.of(
+  // unused
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+
+  // clock seq
+  RFC_OPTIONS.clockseq >> 8,
+  RFC_OPTIONS.clockseq & 0xff,
+
+  // node
+  ...RFC_OPTIONS.node,
+);
+
+// Compare v1 timestamp fields chronologically
+function compareV1TimeField(a: string, b: string) {
+  a = a.split('-').slice(0, 3).reverse().join('');
+  b = b.split('-').slice(0, 3).reverse().join('');
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+// A `msecs` value for which `msecs * 10000` lands within 10000 (100-nanosecond
+// intervals) of a `time_low` overflow, so that `nsecs` values >= CARRY_NSECS
+// carry out of `time_low` and into `time_mid`.  Such a `msecs` occurs roughly
+// every 430 seconds.
+const CARRY_TIME = 1321645585614; // 2011-11-18 11:46:25.614-08:00
+const CARRY_NSECS = 4384;
+
+// Extract the 60-bit RFC 9562 timestamp from a v1 UUID
+// https://www.rfc-editor.org/rfc/rfc9562.html#section-5.1
+function v1Timestamp(uuid: string) {
+  const [timeLow, timeMid, timeHighAndVersion] = uuid.split('-');
+  return (
+    ((BigInt(`0x${timeHighAndVersion}`) & 0x0fffn) << 48n) |
+    (BigInt(`0x${timeMid}`) << 32n) |
+    BigInt(`0x${timeLow}`)
+  );
+}
+
+// The timestamp `v1Timestamp()` should find: 100-nanosecond intervals since the
+// Gregorian epoch
+function expectedTimestamp(msecs: number, nsecs: number) {
+  return (BigInt(msecs) + 12219292800000n) * 10000n + BigInt(nsecs);
+}
+
+describe('v1', () => {
+  test('v1 sort order (default)', () => {
+    const ids = [v1(), v1(), v1(), v1(), v1()];
+
+    const sorted = [...ids].sort(compareV1TimeField);
+    assert.deepEqual(ids, sorted);
+  });
+
+  // Verify ordering of v1 ids created with explicit times
+  test('v1 sort order (time option)', () => {
+    const ids = [
+      v1({ msecs: TIME - 10 * 3600 * 1000 }),
+      v1({ msecs: TIME - 1 }),
+      v1({ msecs: TIME }),
+      v1({ msecs: TIME + 1 }),
+      v1({ msecs: TIME + 28 * 24 * 3600 * 1000 }),
+    ];
+
+    const sorted = [...ids].sort(compareV1TimeField);
+    assert.deepEqual(ids, sorted);
+  });
+
+  // `nsecs` is added to the low 32 bits of the timestamp, so it can carry into
+  // the high 28 bits.
+  test('v1 timestamp carries nsecs into time_mid', () => {
+    for (const nsecs of [0, CARRY_NSECS - 1, CARRY_NSECS, 9999]) {
+      assert.equal(
+        v1Timestamp(v1({ msecs: CARRY_TIME, nsecs })),
+        expectedTimestamp(CARRY_TIME, nsecs),
+        `msecs = ${CARRY_TIME}, nsecs = ${nsecs}`,
+      );
+    }
+  });
+
+  // Verify ordering of v1 ids that straddle a `time_low` overflow
+  test('v1 sort order (time_low overflow)', () => {
+    const ids = [
+      v1({ msecs: CARRY_TIME, nsecs: CARRY_NSECS - 2 }),
+      v1({ msecs: CARRY_TIME, nsecs: CARRY_NSECS - 1 }),
+      v1({ msecs: CARRY_TIME, nsecs: CARRY_NSECS }),
+      v1({ msecs: CARRY_TIME, nsecs: CARRY_NSECS + 1 }),
+    ];
+
+    const sorted = [...ids].sort(compareV1TimeField);
+    assert.deepEqual(ids, sorted);
+  });
+
+  test('v1(options)', () => {
+    assert.equal(
+      v1({ msecs: RFC_OPTIONS.msecs, random: RFC_RANDOM }),
+      RFC_V1,
+      'minimal options',
+    );
+    assert.equal(v1(RFC_OPTIONS), RFC_V1, 'full options');
+  });
+
+  test('v1(options) equality', () => {
+    assert.notEqual(
+      v1({ msecs: TIME }),
+      v1({ msecs: TIME }),
+      'UUIDs with minimal options differ',
+    );
+    assert.equal(
+      v1(RFC_OPTIONS),
+      v1(RFC_OPTIONS),
+      'UUIDs with full options are identical',
+    );
+  });
+
+  test('fills one UUID into a buffer as expected', () => {
+    const buffer = new Uint8Array(16);
+    const result = v1(RFC_OPTIONS, buffer);
+    assert.deepEqual(buffer, RFC_V1_BYTES);
+    assert.strictEqual(buffer, result);
+  });
+
+  test('fills two UUIDs into a buffer as expected', () => {
+    const buffer = new Uint8Array(32);
+    v1(RFC_OPTIONS, buffer, 0);
+    v1(RFC_OPTIONS, buffer, 16);
+
+    const expectedBuf = new Uint8Array(32);
+    expectedBuf.set(RFC_V1_BYTES);
+    expectedBuf.set(RFC_V1_BYTES, 16);
+
+    assert.deepEqual(buffer, expectedBuf);
+  });
+
+  test('v1() state transitions', () => {
+    // Test fixture for internal state passed into updateV1State function
+    const PRE_STATE = {
+      msecs: 10,
+      nsecs: 20,
+      clockseq: 0x1234,
+      node: Uint8Array.of(0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc),
+    };
+
+    // Note: The test code, below, passes RFC_RANDOM as the `rnds` argument for
+    // convenience.  This allows us to test that fields have been initialized from
+    // the rnds argument by testing for RFC_OPTIONS values in the output state.
+
+    const tests = [
+      {
+        title: 'initial state',
+        state: {},
+        now: 10,
+        expected: {
+          msecs: 10, // -> now
+          nsecs: 0, // -> init
+          clockseq: RFC_OPTIONS.clockseq, // -> random
+          node: RFC_OPTIONS.node, // -> random
+        },
+      },
+      {
+        title: 'same time interval',
+        state: { ...PRE_STATE },
+        now: PRE_STATE.msecs,
+        expected: {
+          ...PRE_STATE,
+          nsecs: 21, // -> +1
+        },
+      },
+      {
+        title: 'new time interval',
+        state: { ...PRE_STATE },
+        now: PRE_STATE.msecs + 1,
+        expected: {
+          ...PRE_STATE,
+          msecs: PRE_STATE.msecs + 1, // -> +1
+          nsecs: 0, // -> init
+        },
+      },
+      {
+        title: 'same time interval (nsecs overflow)',
+        state: { ...PRE_STATE, nsecs: 9999 },
+        now: PRE_STATE.msecs,
+        expected: {
+          ...PRE_STATE,
+          nsecs: 0, // -> init
+          clockseq: RFC_OPTIONS.clockseq, // -> init
+          node: RFC_OPTIONS.node, // -> init
+        },
+      },
+      {
+        title: 'time regression',
+        state: { ...PRE_STATE },
+        now: PRE_STATE.msecs - 1,
+        expected: {
+          ...PRE_STATE,
+          msecs: PRE_STATE.msecs - 1, // -> now
+          clockseq: RFC_OPTIONS.clockseq, // -> init
+          node: RFC_OPTIONS.node, // -> init
+        },
+      },
+    ];
+    for (const { title, state, now, expected } of tests) {
+      assert.deepStrictEqual(
+        updateV1State(state, now, RFC_RANDOM),
+        expected,
+        `Failed: ${title}`,
+      );
+    }
+  });
+
+  test('random node has multicast bit set', () => {
+    // https://www.rfc-editor.org/rfc/rfc9562.html#section-6.10-3
+    for (let i = 0; i < 100; i++) {
+      assert.ok(parse(v1())[10] & 0x01, 'v1() node multicast bit');
+      assert.ok(
+        parse(v1({ msecs: TIME }))[10] & 0x01,
+        'v1(options) node multicast bit',
+      );
+    }
+  });
+
+  test('throws when option.random is too short', () => {
+    const random = Uint8Array.of(16);
+    const buffer = new Uint8Array(16).fill(0);
+    assert.throws(() => {
+      v1({ random }, buffer);
+    });
+  });
+
+  test('throws when options.rng() is too short', () => {
+    const buffer = new Uint8Array(16);
+    const rng = () => Uint8Array.of(0); // length = 1
+    assert.throws(() => {
+      v1({ rng }, buffer);
+    });
+  });
+
+  test('throws RangeError for out-of-range indexes', () => {
+    const buf15 = new Uint8Array(15);
+    const buf30 = new Uint8Array(30);
+    assert.throws(() => v1({}, buf15), RangeError);
+    assert.throws(() => v1({}, buf30, -1), RangeError);
+    assert.throws(() => v1({}, buf30, 15), RangeError);
+  });
+});
+
+[evidence record sha256:20c82e98d8bc80ab423ce53c91d39ad0a07348327cb1cd4e9d1797068bb16c80 kind tool-call:read]
+step 25: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/test/v4.test.ts"}
+tool read ok: import * as assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
+import v4 from '../v4.js';
+
+const randomBytesFixture = Uint8Array.of(
+  0x10,
+  0x91,
+  0x56,
+  0xbe,
+  0xc4,
+  0xfb,
+  0xc1,
+  0xea,
+  0x71,
+  0xb4,
+  0xef,
+  0xe1,
+  0x67,
+  0x1c,
+  0x58,
+  0x36,
+);
+
+const expectedBytes = Uint8Array.of(
+  16,
+  145,
+  86,
+  190,
+  196,
+  251,
+  65,
+  234,
+  177,
+  180,
+  239,
+  225,
+  103,
+  28,
+  88,
+  54,
+);
+
+describe('v4', () => {
+  test('subsequent UUIDs are different', () => {
+    const id1 = v4();
+    const id2 = v4();
+
+    assert.ok(id1 !== id2);
+  });
+
+  test('should use native randomUUID() if no option is passed', async (t) => {
+    const mocked = t.mock.method(crypto, 'randomUUID', () => 'mocked-uuid');
+
+    assert.equal(mocked.mock.callCount(), 0);
+    v4();
+    assert.equal(mocked.mock.callCount(), 1);
+
+    t.mock.reset();
+  });
+
+  test('should not use native randomUUID() if an option is passed', async (t) => {
+    const mocked = t.mock.method(crypto, 'randomUUID', () => 'mocked-uuid');
+
+    assert.equal(mocked.mock.callCount(), 0);
+    v4({});
+    assert.equal(mocked.mock.callCount(), 0);
+
+    t.mock.reset();
+  });
+
+  test('explicit options.random produces expected result', () => {
+    const id = v4({ random: randomBytesFixture });
+    assert.strictEqual(id, '109156be-c4fb-41ea-b1b4-efe1671c5836');
+  });
+
+  test('explicit options.rng produces expected result', () => {
+    const id = v4({ rng: () => randomBytesFixture });
+    assert.strictEqual(id, '109156be-c4fb-41ea-b1b4-efe1671c5836');
+  });
+
+  test('fills one UUID into a buffer as expected', () => {
+    const buffer = new Uint8Array(16);
+    const result = v4({ random: randomBytesFixture }, buffer);
+
+    assert.deepEqual(buffer, expectedBytes);
+    assert.strictEqual(buffer, result);
+  });
+
+  test('fills two UUIDs into a buffer as expected', () => {
+    const buffer = new Uint8Array(32);
+    v4({ random: randomBytesFixture }, buffer, 0);
+    v4({ random: randomBytesFixture }, buffer, 16);
+
+    const expectedBuf = new Uint8Array(32);
+    expectedBuf.set(expectedBytes);
+    expectedBuf.set(expectedBytes, 16);
+
+    assert.deepEqual(buffer, expectedBuf);
+  });
+
+  test('throws when option.random is too short', () => {
+    const random = Uint8Array.of(16);
+    const buffer = new Uint8Array(16).fill(0);
+    assert.throws(() => {
+      v4({ random }, buffer);
+    });
+  });
+
+  test('throws when options.rng() is too short', () => {
+    const buffer = new Uint8Array(16);
+    const rng = () => Uint8Array.of(0); // length = 1
+    assert.throws(() => {
+      v4({ rng }, buffer);
+    });
+  });
+
+  test('throws RangeError for out-of-range indexes', () => {
+    const buf15 = new Uint8Array(15);
+    const buf30 = new Uint8Array(30);
+    assert.throws(() => v4({}, buf15), RangeError);
+    assert.throws(() => v4({}, buf30, -1), RangeError);
+    assert.throws(() => v4({}, buf30, 15), RangeError);
+  });
+});
+
+[evidence record sha256:70d18525b93082e9d64b3147c0186a7ba713f310cb1cdb59023ac7753adf6810 kind tool-call:read]
+step 26: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"node -e \"console.log('017f22e2-79b0-7cc3-98c4-dc0c0c07398f'[8])\" 2>&1 || true"}
+tool shell failed: denied: "node -e "console.log('017f22e2-79b0-7cc3-98c4-dc0c0c07398f'[8])" 2>&1 || true" is not on the shell allowlist. Confirmation was declined.
+[evidence record sha256:a70b520a66e6dce63fff20eea9c4a9e444198cfca8abf38313931c2324368051 kind tool-call:shell]
+step 27: calling local:qwen3.6:35b-a3b
+model error (retrying): the model spent all 8192 output tokens without emitting text or a tool call
+tool read <- {"path":"src/version.ts"}
+tool read ok: import validate from './validate.js';
+
+function version(uuid: string) {
+  if (!validate(uuid)) {
+    throw TypeError('Invalid UUID');
+  }
+
+  return parseInt(uuid.slice(14, 15), 16);
+}
+
+export default version;
+
+[evidence record sha256:1a1b1ccee7df530cd3a1f85eb7b1be61dfe4bc846fb4c36fc1687c0784cda325 kind tool-call:read]
+step 28: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/test/validate.test.ts"}
+tool read ok: import * as assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
+import validate from '../validate.js';
+import { TESTS } from './test_constants.js';
+
+describe('validate()', () => {
+  test('TESTS cases', () => {
+    for (const { value, expectedValidate } of TESTS) {
+      assert.strictEqual(
+        validate(value),
+        expectedValidate,
+        `validate(${value}) should be ${expectedValidate}`,
+      );
+    }
+  });
+});
+
+[evidence record sha256:66763c67f91793e425c79e05e0ea18400600ea5b3b3839618d028abc94b8b637 kind tool-call:read]
+step 29: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"tsc --version"}
+tool shell failed: denied: "tsc --version" is not on the shell allowlist. Confirmation was declined.
+[evidence record sha256:a8f544b1d4582126555c1be10d734d157a864cf285701b506619d99c2fc165cd kind tool-call:shell]
+step 30: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/test/version.test.ts"}
+tool read ok: import * as assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
+import version from '../version.js';
+import { TESTS } from './test_constants.js';
+
+describe('version()', () => {
+  test('TESTS cases', () => {
+    for (const { value, expectedValidate, expectedVersion } of TESTS) {
+      try {
+        // @ts-expect-error testing invalid input
+        const actualVersion = version(value);
+
+        assert.ok(expectedValidate, `version(${value}) should throw`);
+        assert.strictEqual(actualVersion, expectedVersion);
+      } catch {
+        assert.ok(!expectedValidate, `version(${value}) threw unexpectedly`);
+      }
+    }
+  });
+});
+
+[evidence record sha256:5424dcea9bca43681625aacc36f34ed4183ebe3e907feecfc8c46d5331571e18 kind tool-call:read]
+step 31: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/test/stringify.test.ts"}
+tool read ok: import * as assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
+import stringify, { unsafeStringify } from '../stringify.js';
+
+const BYTES = Uint8Array.of(
+  0x0f,
+  0x5a,
+  0xbc,
+  0xd1,
+  0xc1,
+  0x94,
+  0x47,
+  0xf3,
+  0x90,
+  0x5b,
+  0x2d,
+  0xf7,
+  0x26,
+  0x3a,
+  0x08,
+  0x4b,
+);
+
+describe('stringify', () => {
+  test('Stringify Array (unsafe)', () => {
+    assert.equal(
+      unsafeStringify(BYTES),
+      '0f5abcd1-c194-47f3-905b-2df7263a084b',
+    );
+  });
+
+  test('Stringify w/ offset (unsafe)', () => {
+    const bytes = new Uint8Array(19).fill(0);
+    bytes.set(BYTES, 3);
+    assert.equal(
+      unsafeStringify(bytes, 3),
+      '0f5abcd1-c194-47f3-905b-2df7263a084b',
+    );
+  });
+
+  test('Stringify Array (safe)', () => {
+    assert.equal(stringify(BYTES), '0f5abcd1-c194-47f3-905b-2df7263a084b');
+  });
+
+  test('Throws on not enough values (safe)', () => {
+    const bytes = BYTES.slice(0, 15);
+    assert.throws(() => stringify(bytes));
+  });
+});
+
+[evidence record sha256:52342015d1b4fde79b354197529dd8fd6d47151614dad99794657cc26cd80ae9 kind tool-call:read]
+tool read <- {"path":"src/test/parse.test.ts"}
+tool read ok: import * as assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
+import parse from '../parse.js';
+import stringify from '../stringify.js';
+import uuidv4 from '../v4.js';
+
+// Deterministic PRNG for reproducible tests
+// See https://stackoverflow.com/a/47593316/109538
+function splitmix32(a: number) {
+  return function () {
+    a |= 0;
+    a = (a + 0x9e3779b9) | 0;
+    let t = a ^ (a >>> 16);
+    t = Math.imul(t, 0x21f0aaad);
+    t = t ^ (t >>> 15);
+    t = Math.imul(t, 0x735a2d97);
+    return ((t = t ^ (t >>> 15)) >>> 0) / 4294967296;
+  };
+}
+const rand = splitmix32(0x12345678);
+
+function rng(bytes = new Uint8Array(16)) {
+  for (let i = 0; i < 16; i++) {
+    bytes[i] = rand() * 256;
+  }
+
+  return bytes;
+}
+
+describe('parse', () => {
+  test('String -> bytes parsing', () => {
+    assert.deepStrictEqual(
+      parse('0f5abcd1-c194-47f3-905b-2df7263a084b'),
+      Uint8Array.from([
+        0x0f, 0x5a, 0xbc, 0xd1, 0xc1, 0x94, 0x47, 0xf3, 0x90, 0x5b, 0x2d, 0xf7,
+        0x26, 0x3a, 0x08, 0x4b,
+      ]),
+    );
+  });
+
+  test('String -> bytes -> string symmetry for assorted uuids', () => {
+    for (let i = 0; i < 1000; i++) {
+      const uuid = uuidv4({ rng });
+      assert.equal(stringify(parse(uuid)), uuid);
+    }
+  });
+
+  test('Case neutrality', () => {
+    // Verify upper/lower case neutrality
+    assert.deepStrictEqual(
+      parse('0f5abcd1-c194-47f3-905b-2df7263a084b'),
+      parse('0f5abcd1-c194-47f3-905b-2df7263a084b'.toUpperCase()),
+    );
+  });
+
+  test('Null UUID case', () => {
+    assert.deepStrictEqual(
+      parse('00000000-0000-0000-0000-000000000000'),
+      Uint8Array.from(new Array(16).fill(0)),
+    );
+  });
+
+  test('UUID validation', () => {
+    // @ts-expect-error testing invalid input
+    assert.throws(() => parse());
+
+    assert.throws(() => parse('invalid uuid'));
+    assert.throws(() => parse('zyxwvuts-rqpo-nmlk-jihg-fedcba000000'));
+  });
+});
+
+[evidence record sha256:138359dfd7fcd94dcfab8eb3aea71b2a91b0dea8e42739959816a824a6bb2fe4 kind tool-call:read]
+step 32: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/parse.ts"}
+tool read ok: import type { NonSharedArrayBuffer } from './types.js';
+import validate from './validate.js';
+
+function parse(uuid: string): NonSharedArrayBuffer {
+  if (!validate(uuid)) {
+    throw TypeError('Invalid UUID');
+  }
+
+  let v: number;
+  return Uint8Array.of(
+    (v = parseInt(uuid.slice(0, 8), 16)) >>> 24,
+    (v >>> 16) & 0xff,
+    (v >>> 8) & 0xff,
+    v & 0xff,
+
+    // Parse ........-####-....-....-............
+    (v = parseInt(uuid.slice(9, 13), 16)) >>> 8,
+    v & 0xff,
+
+    // Parse ........-....-####-....-............
+    (v = parseInt(uuid.slice(14, 18), 16)) >>> 8,
+    v & 0xff,
+
+    // Parse ........-....-....-####-............
+    (v = parseInt(uuid.slice(19, 23), 16)) >>> 8,
+    v & 0xff,
+
+    // Parse ........-....-....-....-############
+    // (Use "/" to avoid 32-bit truncation when bit-shifting high-order bytes)
+    ((v = parseInt(uuid.slice(24, 36), 16)) / 0x10000000000) & 0xff,
+    (v / 0x100000000) & 0xff,
+    (v >>> 24) & 0xff,
+    (v >>> 16) & 0xff,
+    (v >>> 8) & 0xff,
+    v & 0xff,
+  );
+}
+
+export default parse;
+
+[evidence record sha256:4f08caad0506566006da5cae6d735c2987ef755cb0ffdedd061ea30146758a84 kind tool-call:read]
+step 33: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/validate.ts"}
+tool read ok: import REGEX from './regex.js';
+
+function validate(uuid: unknown) {
+  return typeof uuid === 'string' && REGEX.test(uuid);
+}
+
+export default validate;
+
+[evidence record sha256:eb27e0f0dabe415ac4bb6bc27ec2c221a1bebdeed49c73239384375a0849f036 kind tool-call:read]
+step 34: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/regex.ts"}
+tool read ok: export default /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/i;
+
+[evidence record sha256:2b80d8a4a90fa7a32113cd461e7ae7820363da7d3c8da82f7d40ebaa1e07fc91 kind tool-call:read]
+step 35: calling local:qwen3.6:35b-a3b
+model error (retrying): the model spent all 8192 output tokens without emitting text or a tool call
+tool read <- {"path":"src/md5-browser.ts"}
+tool read ok: /*
+ * Browser-compatible JavaScript MD5
+ *
+ * Modification of JavaScript MD5
+ * https://github.com/blueimp/JavaScript-MD5
+ *
+ * Copyright 2011, Sebastian Tschan
+ * https://blueimp.net
+ *
+ * Licensed under the MIT license:
+ * https://opensource.org/licenses/MIT
+ *
+ * Based on
+ * A JavaScript implementation of the RSA Data Security, Inc. MD5 Message
+ * Digest Algorithm, as defined in RFC 1321.
+ * Version 2.2 Copyright (C) Paul Johnston 1999 - 2009
+ * Other contributors: Greg Holt, Andrew Kepert, Ydnar, Lostinet
+ * Distributed under the BSD License
+ * See http://pajhome.org.uk/crypt/md5 for more info.
+ */
+function md5(bytes: Uint8Array) {
+  const words = uint8ToUint32(bytes);
+
+  const md5Bytes = wordsToMd5(words, bytes.length * 8);
+  return uint32ToUint8(md5Bytes);
+}
+
+/*
+ * Convert an array of little-endian words to an array of bytes
+ */
+function uint32ToUint8(input: Uint32Array) {
+  // Note: On little endian platforms we could simply return `new
+  // Uint8Array(input.buffer)` here, but that that won't work on big-endian
+  // systems.  (That said, there's code below that appears to already assume
+  // little-endian, so maybe this is a moot point?  Either way, keeping the
+  // existing code for now to be safe.)
+  const bytes = new Uint8Array(input.length * 4);
+  for (let i = 0; i < input.length * 4; i++) {
+    bytes[i] = (input[i >> 2] >>> ((i % 4) * 8)) & 0xff;
+  }
+  return bytes;
+}
+
+/**
+ * Calculate output length with padding and bit length
+ */
+function getOutputLength(inputLength8: number) {
+  return (((inputLength8 + 64) >>> 9) << 4) + 14 + 1;
+}
+
+/*
+ * Calculate the MD5 of an array of little-endian words, and a bit length.
+ */
+function wordsToMd5(x: Uint32Array, len: number) {
+  /* append padding */
+  const xpad = new Uint32Array(getOutputLength(len)).fill(0);
+  xpad.set(x);
+  xpad[len >> 5] |= 0x80 << (len % 32);
+  xpad[xpad.length - 1] = len;
+  x = xpad;
+
+  let a = 1732584193;
+  let b = -271733879;
+  let c = -1732584194;
+  let d = 271733878;
+
+  for (let i = 0; i < x.length; i += 16) {
+    const olda = a;
+    const oldb = b;
+    const oldc = c;
+    const oldd = d;
+
+    a = md5ff(a, b, c, d, x[i], 7, -680876936);
+    d = md5ff(d, a, b, c, x[i + 1], 12, -389564586);
+    c = md5ff(c, d, a, b, x[i + 2], 17, 606105819);
+    b = md5ff(b, c, d, a, x[i + 3], 22, -1044525330);
+    a = md5ff(a, b, c, d, x[i + 4], 7, -176418897);
+    d = md5ff(d, a, b, c, x[i + 5], 12, 1200080426);
+    c = md5ff(c, d, a, b, x[i + 6], 17, -1473231341);
+    b = md5ff(b, c, d, a, x[i + 7], 22, -45705983);
+    a = md5ff(a, b, c, d, x[i + 8], 7, 1770035416);
+    d = md5ff(d, a, b, c, x[i + 9], 12, -1958414417);
+    c = md5ff(c, d, a, b, x[i + 10], 17, -42063);
+    b = md5ff(b, c, d, a, x[i + 11], 22, -1990404162);
+    a = md5ff(a, b, c, d, x[i + 12], 7, 1804603682);
+    d = md5ff(d, a, b, c, x[i + 13], 12, -40341101);
+    c = md5ff(c, d, a, b, x[i + 14], 17, -1502002290);
+    b = md5ff(b, c, d, a, x[i + 15], 22, 1236535329);
+
+    a = md5gg(a, b, c, d, x[i + 1], 5, -165796510);
+    d = md5gg(d, a, b, c, x[i + 6], 9, -1069501632);
+    c = md5gg(c, d, a, b, x[i + 11], 14, 643717713);
+    b = md5gg(b, c, d, a, x[i], 20, -373897302);
+    a = md5gg(a, b, c, d, x[i + 5], 5, -701558691);
+    d = md5gg(d, a, b, c, x[i + 10], 9, 38016083);
+    c = md5gg(c, d, a, b, x[i + 15], 14, -660478335);
+    b = md5gg(b, c, d, a, x[i + 4], 20, -405537848);
+    a = md5gg(a, b, c, d, x[i + 9], 5, 568446438);
+    d = md5gg(d, a, b, c, x[i + 14], 9, -1019803690);
+    c = md5gg(c, d, a, b, x[i + 3], 14, -187363961);
+    b = md5gg(b, c, d, a, x[i + 8], 20, 1163531501);
+    a = md5gg(a, b, c, d, x[i + 13], 5, -1444681467);
+    d = md5gg(d, a, b, c, x[i + 2], 9, -51403784);
+    c = md5gg(c, d, a, b, x[i + 7], 14, 1735328473);
+    b = md5gg(b, c, d, a, x[i + 12], 20, -1926607734);
+
+    a = md5hh(a, b, c, d, x[i + 5], 4, -378558);
+    d = md5hh(d, a, b, c, x[i + 8], 11, -2022574463);
+    c = md5hh(c, d, a, b, x[i + 11], 16, 1839030562);
+    b = md5hh(b, c, d, a, x[i + 14], 23, -35309556);
+    a = md5hh(a, b, c, d, x[i + 1], 4, -1530992060);
+    d = md5hh(d, a, b, c, x[i + 4], 11, 1272893353);
+    c = md5hh(c, d, a, b, x[i + 7], 16, -155497632);
+    b = md5hh(b, c, d, a, x[i + 10], 23, -1094730640);
+    a = md5hh(a, b, c, d, x[i + 13], 4, 681279174);
+    d = md5hh(d, a, b, c, x[i], 11, -358537222);
+    c = md5hh(c, d, a, b, x[i + 3], 16, -722521979);
+    b = md5hh(b, c, d, a, x[i + 6], 23, 76029189);
+    a = md5hh(a, b, c, d, x[i + 9], 4, -640364487);
+    d = md5hh(d, a, b, c, x[i + 12], 11, -421815835);
+    c = md5hh(c, d, a, b, x[i + 15], 16, 530742520);
+    b = md5hh(b, c, d, a, x[i + 2], 23, -995338651);
+
+    a = md5ii(a, b, c, d, x[i], 6, -198630844);
+    d = md5ii(d, a, b, c, x[i + 7], 10, 1126891415);
+    c = md5ii(c, d, a, b, x[i + 14], 15, -1416354905);
+    b = md5ii(b, c, d, a, x[i + 5], 21, -57434055);
+    a = md5ii(a, b, c, d, x[i + 12], 6, 1700485571);
+    d = md5ii(d, a, b, c, x[i + 3], 10, -1894986606);
+    c = md5ii(c, d, a, b, x[i + 10], 15, -1051523);
+    b = md5ii(b, c, d, a, x[i + 1], 21, -2054922799);
+    a = md5ii(a, b, c, d, x[i + 8], 6, 1873313359);
+    d = md5ii(d, a, b, c, x[i + 15], 10, -30611744);
+    c = md5ii(c, d, a, b, x[i + 6], 15, -1560198380);
+    b = md5ii(b, c, d, a, x[i + 13], 21, 1309151649);
+    a = md5ii(a, b, c, d, x[i + 4], 6, -145523070);
+    d = md5ii(d, a, b, c, x[i + 11], 10, -1120210379);
+    c = md5ii(c, d, a, b, x[i + 2], 15, 718787259);
+    b = md5ii(b, c, d, a, x[i + 9], 21, -343485551);
+
+    a = safeAdd(a, olda);
+    b = safeAdd(b, oldb);
+    c = safeAdd(c, oldc);
+    d = safeAdd(d, oldd);
+  }
+
+  return Uint32Array.of(a, b, c, d);
+}
+
+/*
+ * Convert Uint8Array to Uint32 array (little-endian)
+ */
+function uint8ToUint32(input: Uint8Array) {
+  if (input.length === 0) {
+    return new Uint32Array();
+  }
+
+  const output = new Uint32Array(getOutputLength(input.length * 8)).fill(0);
+  for (let i = 0; i < input.length; i++) {
+    output[i >> 2] |= (input[i] & 0xff) << ((i % 4) * 8);
+  }
+  return output;
+}
+
+/*
+ * Add integers, wrapping at 2^32. This uses 16-bit operations internally
+ * to work around bugs in some JS interpreters.
+ */
+function safeAdd(x: number, y: number) {
+  const lsw = (x & 0xffff) + (y & 0xffff);
+  const msw = (x >> 16) + (y >> 16) + (lsw >> 16);
+  return (msw << 16) | (lsw & 0xffff);
+}
+
+/*
+ * Bitwise rotate a 32-bit number to the left.
+ */
+function bitRotateLeft(num: number, cnt: number) {
+  return (num << cnt) | (num >>> (32 - cnt));
+}
+
+/*
+ * These functions implement the four basic operations the algorithm uses.
+ */
+function md5cmn(
+  q: number,
+  a: number,
+  b: number,
+  x: number,
+  s: number,
+  t: number,
+) {
+  return safeAdd(bitRotateLeft(safeAdd(safeAdd(a, q), safeAdd(x, t)), s), b);
+}
+
+function md5ff(
+  a: number,
+  b: number,
+  c: number,
+  d: number,
+  x: number,
+  s: number,
+  t: number,
+) {
+  return md5cmn((b & c) | (~b & d), a, b, x, s, t);
+}
+
+function md5gg(
+  a: number,
+  b: number,
+  c: number,
+  d: number,
+  x: number,
+  s: number,
+  t: number,
+) {
+  return md5cmn((b & d) | (c & ~d), a, b, x, s, t);
+}
+
+function md5hh(
+  a: number,
+  b: number,
+  c: number,
+  d: number,
+  x: number,
+  s: number,
+  t: number,
+) {
+  return md5cmn(b ^ c ^ d, a, b, x, s, t);
+}
+
+function md5ii(
+  a: number,
+  b: number,
+  c: number,
+  d: number,
+  x: number,
+  s: number,
+  t: number,
+) {
+  return md5cmn(c ^ (b | ~d), a, b, x, s, t);
+}
+
+export default md5;
+
+[evidence record sha256:cc19628875593d3345e07b5c99aadbd8e6a8cd315410e069adeda19c462e8da9 kind tool-call:read]
+tool read <- {"path":"src/md5.ts"}
+tool read ok: import { createHash } from 'node:crypto';
+
+function md5(bytes: Uint8Array) {
+  if (Array.isArray(bytes)) {
+    bytes = Buffer.from(bytes);
+  } else if (typeof bytes === 'string') {
+    bytes = Buffer.from(bytes, 'utf8');
+  }
+
+  return createHash('md5').update(bytes).digest();
+}
+
+export default md5;
+
+[evidence record sha256:4b5f3e076a6434c9071f228395754b1a7562b1fa61d5cd5f4a856bb4853a0b19 kind tool-call:read]
+tool read <- {"path":"src/test/v35.test.ts"}
+tool read ok: import * as assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
+import md5 from '../md5.js';
+import sha1 from '../sha1.js';
+import v3 from '../v3.js';
+import v5 from '../v5.js';
+import { stringToBytes } from '../v35.js';
+
+describe('v35', () => {
+  const HASH_SAMPLES = [
+    {
+      input: stringToBytes(''),
+      sha1: 'da39a3ee5e6b4b0d3255bfef95601890afd80709',
+      md5: 'd41d8cd98f00b204e9800998ecf8427e',
+    },
+
+    // Extended ascii chars
+    {
+      input: stringToBytes(
+        '\t\b\f  !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\u00A1\u00A2\u00A3\u00A4\u00A5\u00A6\u00A7\u00A8\u00A9\u00AA\u00AB\u00AC\u00AE\u00AF\u00B0\u00B1\u00B2\u00B3\u00B4\u00B5\u00B6\u00B7\u00B8\u00B9\u00BA\u00BB\u00BC\u00BD\u00BE\u00BF\u00C0\u00C1\u00C2\u00C3\u00C4\u00C5\u00C6\u00C7\u00C8\u00C9\u00CA\u00CB\u00CC\u00CD\u00CE\u00CF\u00D0\u00D1\u00D2\u00D3\u00D4\u00D5\u00D6\u00D7\u00D8\u00D9\u00DA\u00DB\u00DC\u00DD\u00DE\u00DF\u00E0\u00E1\u00E2\u00E3\u00E4\u00E5\u00E6\u00E7\u00E8\u00E9\u00EA\u00EB\u00EC\u00ED\u00EE\u00EF\u00F0\u00F1\u00F2\u00F3\u00F4\u00F5\u00F6\u00F7\u00F8\u00F9\u00FA\u00FB\u00FC\u00FD\u00FE\u00FF',
+      ),
+      sha1: 'ca4a426a3d536f14cfd79011e79e10d64de950a0',
+      md5: 'e8098ec21950f841731d28749129d3ee',
+    },
+
+    // A sampling from the Unicode BMP
+    {
+      input: stringToBytes(
+        '\u00A5\u0104\u018F\u0256\u02B1o\u0315\u038E\u0409\u0500\u0531\u05E1\u05B6\u0920\u0903\u09A4\u0983\u0A20\u0A02\u0AA0\u0A83\u0B06\u0C05\u0C03\u1401\u16A0',
+      ),
+      sha1: 'f2753ebc390e5f637e333c2a4179644a93ae9f65',
+      md5: '231b309e277b6be8bb3d6c688b7f098b',
+    },
+  ];
+
+  function hashToHex(hash: Uint8Array) {
+    const chars = new Array(hash.length);
+    for (let i = 0; i < hash.length; i++) {
+      chars[i] = hash[i].toString(16).padStart(2, '0');
+    }
+    return chars.join('');
+  }
+
+  HASH_SAMPLES.forEach(function (sample, i) {
+    test(`sha1(node) HASH_SAMPLES[${i}]`, () => {
+      assert.equal(hashToHex(sha1(sample.input)), sample.sha1);
+    });
+  });
+
+  HASH_SAMPLES.forEach(function (sample, i) {
+    test(`md5(node) HASH_SAMPLES[${i}]`, () => {
+      assert.equal(hashToHex(md5(sample.input)), sample.md5);
+    });
+  });
+
+  test('v3', () => {
+    // Expect to get the same results as http://tools.adjet.org/uuid-v3
+    assert.strictEqual(
+      v3('hello.example.com', v3.DNS),
+      '9125a8dc-52ee-365b-a5aa-81b0b3681cf6',
+    );
+
+    assert.strictEqual(
+      v3('http://example.com/hello', v3.URL),
+      'c6235813-3ba4-3801-ae84-e0a6ebb7d138',
+    );
+
+    assert.strictEqual(
+      v3('hello', '0f5abcd1-c194-47f3-905b-2df7263a084b'),
+      'a981a0c2-68b1-35dc-bcfc-296e52ab01ec',
+    );
+  });
+
+  test('v3 namespace.toUpperCase', () => {
+    assert.strictEqual(
+      v3('hello.example.com', v3.DNS.toUpperCase()),
+      '9125a8dc-52ee-365b-a5aa-81b0b3681cf6',
+    );
+
+    assert.strictEqual(
+      v3('http://example.com/hello', v3.URL.toUpperCase()),
+      'c6235813-3ba4-3801-ae84-e0a6ebb7d138',
+    );
+
+    assert.strictEqual(
+      v3('hello', '0f5abcd1-c194-47f3-905b-2df7263a084b'.toUpperCase()),
+      'a981a0c2-68b1-35dc-bcfc-296e52ab01ec',
+    );
+  });
+
+  test('v3 namespace string validation', () => {
+    assert.throws(() => {
+      v3('hello.example.com', 'zyxwvuts-rqpo-nmlk-jihg-fedcba000000');
+    });
+
+    assert.throws(() => {
+      v3('hello.example.com', 'invalid uuid value');
+    });
+
+    assert.ok(v3('hello.example.com', '00000000-0000-0000-0000-000000000000'));
+  });
+
+  test('v3 namespace buffer validation', () => {
+    assert.throws(() => {
+      v3('hello.example.com', new Uint8Array(15));
+    });
+
+    assert.throws(() => {
+      v3('hello.example.com', new Uint8Array(17));
+    });
+
+    assert.ok(v3('hello.example.com', new Uint8Array(16).fill(0)));
+  });
+
+  test('v3 fill buffer', () => {
+    let buf = new Uint8Array(16);
+
+    const expectedUuid = Uint8Array.of(
+      0x91,
+      0x25,
+      0xa8,
+      0xdc,
+      0x52,
+      0xee,
+      0x36,
+      0x5b,
+      0xa5,
+      0xaa,
+      0x81,
+      0xb0,
+      0xb3,
+      0x68,
+      0x1c,
+      0xf6,
+    );
+
+    const result = v3('hello.example.com', v3.DNS, buf);
+
+    assert.deepEqual(buf, expectedUuid);
+    assert.strictEqual(result, buf);
+
+    // test offsets as well
+    buf = new Uint8Array(19).fill(0xaa);
+
+    const expectedBuf = new Uint8Array(19).fill(0xaa);
+    expectedBuf.set(expectedUuid, 3);
+
+    v3('hello.example.com', v3.DNS, buf, 3);
+
+    assert.deepEqual(buf, expectedBuf);
+  });
+
+  test('v3 undefined/null', () => {
+    // @ts-expect-error testing invalid input
+    assert.throws(() => v3());
+    // @ts-expect-error testing invalid input
+    assert.throws(() => v3('hello'));
+    // @ts-expect-error testing invalid input
+    assert.throws(() => v3('hello.example.com', undefined));
+    // @ts-expect-error testing invalid input
+    assert.throws(() => v3('hello.example.com', null, new Uint8Array(16)));
+  });
+
+  test('v3 throws RangeError for out-of-range indexes', () => {
+    const buf15 = new Uint8Array(15);
+    const buf30 = new Uint8Array(30);
+    assert.throws(() => v3('hello.example.com', v3.DNS, buf15), RangeError);
+    assert.throws(() => v3('hello.example.com', v3.DNS, buf30, -1), RangeError);
+    assert.throws(() => v3('hello.example.com', v3.DNS, buf30, 15), RangeError);
+  });
+
+  test('v5', () => {
+    // Expect to get the same results as http://tools.adjet.org/uuid-v5
+    assert.strictEqual(
+      v5('hello.example.com', v5.DNS),
+      'fdda765f-fc57-5604-a269-52a7df8164ec',
+    );
+
+    assert.strictEqual(
+      v5('http://example.com/hello', v5.URL),
+      '3bbcee75-cecc-5b56-8031-b6641c1ed1f1',
+    );
+
+    assert.strictEqual(
+      v5('hello', '0f5abcd1-c194-47f3-905b-2df7263a084b'),
+      '90123e1c-7512-523e-bb28-76fab9f2f73d',
+    );
+  });
+
+  test('v5 namespace.toUpperCase', () => {
+    // Expect to get the same results as http://tools.adjet.org/uuid-v5
+    assert.strictEqual(
+      v5('hello.example.com', v5.DNS.toUpperCase()),
+      'fdda765f-fc57-5604-a269-52a7df8164ec',
+    );
+
+    assert.strictEqual(
+      v5('http://example.com/hello', v5.URL.toUpperCase()),
+      '3bbcee75-cecc-5b56-8031-b6641c1ed1f1',
+    );
+
+    assert.strictEqual(
+      v5('hello', '0f5abcd1-c194-47f3-905b-2df7263a084b'.toUpperCase()),
+      '90123e1c-7512-523e-bb28-76fab9f2f73d',
+    );
+  });
+
+  test('v5 namespace string validation', () => {
+    assert.throws(() => {
+      v5('hello.example.com', 'zyxwvuts-rqpo-nmlk-jihg-fedcba000000');
+    });
+
+    assert.throws(() => {
+      v5('hello.example.com', 'invalid uuid value');
+    });
+
+    assert.ok(v5('hello.example.com', '00000000-0000-0000-0000-000000000000'));
+  });
+
+  test('v5 namespace buffer validation', () => {
+    assert.throws(() => {
+      v5('hello.example.com', new Uint8Array(15));
+    });
+
+    assert.throws(() => {
+      v5('hello.example.com', new Uint8Array(17));
+    });
+
+    assert.ok(v5('hello.example.com', new Uint8Array(16).fill(0)));
+  });
+
+  test('v5 fill buffer', () => {
+    let buf = new Uint8Array(16);
+
+    const expectedUuid = Uint8Array.of(
+      0xfd,
+      0xda,
+      0x76,
+      0x5f,
+      0xfc,
+      0x57,
+      0x56,
+      0x04,
+      0xa2,
+      0x69,
+      0x52,
+      0xa7,
+      0xdf,
+      0x81,
+      0x64,
+      0xec,
+    );
+
+    const result = v5('hello.example.com', v5.DNS, buf);
+    assert.deepEqual(buf, expectedUuid);
+    assert.strictEqual(result, buf);
+
+    // test offsets as well
+    buf = new Uint8Array(19).fill(0xaa);
+
+    const expectedBuf = new Uint8Array(19).fill(0xaa);
+    expectedBuf.set(expectedUuid, 3);
+
+    v5('hello.example.com', v5.DNS, buf, 3);
+
+    assert.deepEqual(buf, expectedBuf);
+  });
+
+  test('v5 undefined/null', () => {
+    // @ts-expect-error testing invalid input
+    assert.throws(() => v5());
+    // @ts-expect-error testing invalid input
+    assert.throws(() => v5('hello'));
+    // @ts-expect-error testing invalid input
+    assert.throws(() => v5('hello.example.com', undefined));
+    // @ts-expect-error testing invalid input
+    assert.throws(() => v5('hello.example.com', null, new Uint8Array(16)));
+  });
+
+  test('v5 throws RangeError for out-of-range indexes', () => {
+    const buf15 = new Uint8Array(15);
+    const buf30 = new Uint8Array(30);
+    assert.throws(() => v5('hello.example.com', v5.DNS, buf15), RangeError);
+    assert.throws(() => v5('hello.example.com', v5.DNS, buf30, -1), RangeError);
+    assert.throws(() => v5('hello.example.com', v5.DNS, buf30, 15), RangeError);
+  });
+
+  test('v3/v5 constants', () => {
+    assert.strictEqual(v3.DNS, '6ba7b810-9dad-11d1-80b4-00c04fd430c8');
+    assert.strictEqual(v3.URL, '6ba7b811-9dad-11d1-80b4-00c04fd430c8');
+    assert.strictEqual(v5.DNS, '6ba7b810-9dad-11d1-80b4-00c04fd430c8');
+    assert.strictEqual(v5.URL, '6ba7b811-9dad-11d1-80b4-00c04fd430c8');
+  });
+});
+
+[evidence record sha256:d7f4c553af0376cf6b65208a325070e25932ddaf7f8160e01bf564f0b117ad99 kind tool-call:read]
+step 36: calling local:qwen3.6:35b-a3b
+model error (retrying): the model spent all 8192 output tokens without emitting text or a tool call
+model error (retrying): the model spent all 8192 output tokens without emitting text or a tool call
+tool read <- {"path":"src/sha1-browser.ts"}
+tool read ok: // Adapted from Chris Veness' SHA1 code at
+// http://www.movable-type.co.uk/scripts/sha1.html
+function f(s: 0 | 1 | 2 | 3, x: number, y: number, z: number) {
+  switch (s) {
+    case 0:
+      return (x & y) ^ (~x & z);
+    case 1:
+      return x ^ y ^ z;
+    case 2:
+      return (x & y) ^ (x & z) ^ (y & z);
+    case 3:
+      return x ^ y ^ z;
+  }
+}
+
+function ROTL(x: number, n: number) {
+  return (x << n) | (x >>> (32 - n));
+}
+
+function sha1(bytes: Uint8Array): Uint8Array {
+  const K = [0x5a827999, 0x6ed9eba1, 0x8f1bbcdc, 0xca62c1d6];
+  const H = [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0];
+
+  const newBytes = new Uint8Array(bytes.length + 1);
+  newBytes.set(bytes);
+  newBytes[bytes.length] = 0x80;
+  bytes = newBytes;
+
+  const l = bytes.length / 4 + 2;
+  const N = Math.ceil(l / 16);
+  const M: Uint32Array[] = new Array(N);
+
+  for (let i = 0; i < N; ++i) {
+    const arr = new Uint32Array(16);
+
+    for (let j = 0; j < 16; ++j) {
+      arr[j] =
+        (bytes[i * 64 + j * 4] << 24) |
+        (bytes[i * 64 + j * 4 + 1] << 16) |
+        (bytes[i * 64 + j * 4 + 2] << 8) |
+        bytes[i * 64 + j * 4 + 3];
+    }
+
+    M[i] = arr;
+  }
+
+  M[N - 1][14] = ((bytes.length - 1) * 8) / 2 ** 32;
+  M[N - 1][14] = Math.floor(M[N - 1][14]);
+  M[N - 1][15] = ((bytes.length - 1) * 8) & 0xffffffff;
+
+  for (let i = 0; i < N; ++i) {
+    const W = new Uint32Array(80);
+
+    for (let t = 0; t < 16; ++t) {
+      W[t] = M[i][t];
+    }
+
+    for (let t = 16; t < 80; ++t) {
+      W[t] = ROTL(W[t - 3] ^ W[t - 8] ^ W[t - 14] ^ W[t - 16], 1);
+    }
+
+    let a = H[0];
+    let b = H[1];
+    let c = H[2];
+    let d = H[3];
+    let e = H[4];
+
+    for (let t = 0; t < 80; ++t) {
+      const s = Math.floor(t / 20) as 0 | 1 | 2 | 3;
+      const T = (ROTL(a, 5) + f(s, b, c, d) + e + K[s] + W[t]) >>> 0;
+      e = d;
+      d = c;
+      c = ROTL(b, 30) >>> 0;
+      b = a;
+      a = T;
+    }
+
+    H[0] = (H[0] + a) >>> 0;
+    H[1] = (H[1] + b) >>> 0;
+    H[2] = (H[2] + c) >>> 0;
+    H[3] = (H[3] + d) >>> 0;
+    H[4] = (H[4] + e) >>> 0;
+  }
+
+  // Note: Uint8Array.of() does `& 0xff` for each value
+  return Uint8Array.of(
+    H[0] >> 24,
+    H[0] >> 16,
+    H[0] >> 8,
+    H[0],
+    H[1] >> 24,
+    H[1] >> 16,
+    H[1] >> 8,
+    H[1],
+    H[2] >> 24,
+    H[2] >> 16,
+    H[2] >> 8,
+    H[2],
+    H[3] >> 24,
+    H[3] >> 16,
+    H[3] >> 8,
+    H[3],
+    H[4] >> 24,
+    H[4] >> 16,
+    H[4] >> 8,
+    H[4],
+  );
+}
+
+export default sha1;
+
+[evidence record sha256:3bb107156c7ee3e5475428590ebb1f5410bb07f4c6a000f71b97e10a8044e426 kind tool-call:read]
+tool read <- {"path":"src/sha1.ts"}
+tool read ok: import { createHash } from 'node:crypto';
+
+function sha1(bytes: Uint8Array) {
+  if (Array.isArray(bytes)) {
+    bytes = Buffer.from(bytes);
+  } else if (typeof bytes === 'string') {
+    bytes = Buffer.from(bytes, 'utf8');
+  }
+
+  return createHash('sha1').update(bytes).digest();
+}
+
+export default sha1;
+
+[evidence record sha256:99d37a5884d989f69b1eaf1d9874e8cb45db1dfbabc23a07257282b09215da91 kind tool-call:read]
+tool read <- {"path":"src/max.ts"}
+tool read ok: export default 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+
+[evidence record sha256:5ffb8dfef45682a80d9637d576d634e17764d76e6351f26925f8af9690724cd1 kind tool-call:read]
+step 37: calling local:qwen3.6:35b-a3b
+model error (retrying): the model spent all 8192 output tokens without emitting text or a tool call
+tool read <- {"path":"src/v6.ts"}
+tool read ok: import { unsafeStringify } from './stringify.js';
+import type { UUIDTypes, Version6Options } from './types.js';
+import v1 from './v1.js';
+import v1ToV6 from './v1ToV6.js';
+
+function v6(
+  options?: Version6Options,
+  buf?: undefined,
+  offset?: number,
+): string;
+function v6<TBuf extends Uint8Array = Uint8Array>(
+  options: Version6Options | undefined,
+  buf: TBuf,
+  offset?: number,
+): TBuf;
+function v6<TBuf extends Uint8Array = Uint8Array>(
+  options?: Version6Options,
+  buf?: TBuf,
+  offset?: number,
+): UUIDTypes<TBuf> {
+  options ??= {};
+  offset ??= 0;
+
+  // v6 is v1 with different field layout, so we start with a v1 UUID, albeit
+  // with slightly different behavior around how the clock_seq and node fields
+  // are randomized, which is why we call v1 with _v6: true.
+  let bytes = v1({ ...options, _v6: true }, new Uint8Array(16));
+
+  // Reorder the fields to v6 layout.
+  bytes = v1ToV6(bytes);
+
+  // Return as a byte array if requested
+  if (buf) {
+    if (offset < 0 || offset + 16 > buf.length) {
+      throw new RangeError(
+        `UUID byte range ${offset}:${offset + 15} is out of buffer bounds`,
+      );
+    }
+
+    for (let i = 0; i < 16; i++) {
+      buf[offset + i] = bytes[i];
+    }
+    return buf;
+  }
+
+  return unsafeStringify(bytes);
+}
+
+export default v6;
+
+[evidence record sha256:0a691e873ebe2c768b647e60ada067f0f530052d78c8f0b0c1907b0e4bcf2204 kind tool-call:read]
+step 38: calling local:qwen3.6:35b-a3b
+model error (retrying): the model spent all 8192 output tokens without emitting text or a tool call
+model error (retrying): the model spent all 8192 output tokens without emitting text or a tool call
+stopped: output-cap after 38 steps, 813801 tokens
+gate typecheck not-applicable: package.json declares no typecheck script [evidence record sha256:81e5bc34c76ccd066aba574f815550ddb8a53ef241292bcee176472f2a07b09a]
+gate lint passed: the command exited 0 [evidence record sha256:fdf80b7906f845e876bd19ed7dda116b3970ce2f21e7ae4aa5084989b79ee831]
+gate format failed: the command exited 1 [evidence record sha256:c73191a960467fb899f8ad16c0e32d06857bc8e43d2c3257871c813f50c5b396]
+gate tests passed: 82 collected, 82 passed, 0 failed, 0 skipped (exit 0) [evidence record sha256:74b2a736161045aa25c83db9e4370057d16079cbf5cf356da8915cbd1bfeabb4]
+gate file-set passed: all 1 changed file(s) are inside the declared set of 2, and every one of them was declared before it was edited [evidence record sha256:c0c6bdf7ea944896dff3cb3e22df58766ad3ac77de68fe27a8394be42da257fc]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:80a69ddf538b2edff3530ed1afc787650dc7d826a04eded035e165077cbe6257]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:48401cbfcc12987dfae6c002c84fc54a4e94fc5d6e443f68ed699bb2fc400bbf]
+gate behaviour-probe passed: 0 changed function(s) still answer to their inputs. [evidence record sha256:d10ec5b4c8a1d40b28d094707e71408003a41b576e152d86d5eeb98612fa9caa]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 1 added line(s) [evidence record sha256:d0f1c50406283703bcb20cc9d89ca2fc2bd86d79187be45e836de427e0b167ac]
+ratchet accepted attempt 2: the ratchet accepted the attempt: no measure moved the wrong way (not compared: testsCollected, changedLineCoverage) [evidence record sha256:faf856b981daea172e6f9a0a11bc41b87c83e2daa7550293df3b0d8c38a7c660]
+escalated after 2 attempt(s) at gate format: the command exited 1
+
+gates:
+  n/a      typecheck: package.json declares no typecheck script
+  passed   lint: the command exited 0
+  failed   format: the command exited 1
+  passed   tests: 82 collected, 82 passed, 0 failed, 0 skipped (exit 0)
+  passed   file-set: all 1 changed file(s) are inside the declared set of 2, and every one of them was declared before it was edited
+  passed   placeholder: no placeholder marker was introduced by this change
+  passed   secret-scan: no known credential pattern appears in the added lines
+  passed   behaviour-probe: 0 changed function(s) still answer to their inputs.
+  passed   diff-budget (advisory): within budget: 1 file(s) and 1 added line(s)
+attempt 1: REJECTED - the ratchet rejected the attempt: the file-set gate passed before this attempt and now reports failed
+attempt 2: accepted - the ratchet accepted the attempt: no measure moved the wrong way (not compared: testsCollected, changedLineCoverage)
+
+Escalating after 2 of 2 attempts.
+
+Gate: format (format (npm run format:check))
+Why: the command exited 1
+Its last run is ledger record sha256:c73191a960467fb899f8ad16c0e32d06857bc8e43d2c3257871c813f50c5b396.
+
+1 of those attempts were rejected by the ratchet rather than failing outright: they traded a measured number the wrong way, so the workspace was returned to the last accepted state instead of walking further.
+
+Attempts:
+  1. REJECTED - the ratchet rejected the attempt: the file-set gate passed before this attempt and now reports failed
+     still failing: file-set
+  2. accepted - the ratchet accepted the attempt: no measure moved the wrong way (not compared: testsCollected, changedLineCoverage)
+     still failing: format
+
+routing reward: 0.000 (the run escalated, so the gates never went green)
+[signing] the Secret Service keyring would not take a new key (secret-tool store failed: ), so the bundle is signed with a per-run key
+
+evidence bundle: /out/bundle
+verify it anywhere: node /out/bundle/verify.mjs /out/bundle
+review it: open /out/bundle/review.html
+what this run produced
+
+  the page a person reads: /out/bundle/review.html
+  the bundle a stranger verifies: /out/bundle
+  its own verifier, needing nothing installed: node /out/bundle/verify.mjs /out/bundle
+  the chain every record is on: /out/bundle/ledger.jsonl
+
+  302 records. The harness verified 2 claim(s) and refused 0.
+  bundle verified in this run: verify.mjs exited 0
+[chokepoint] refusing shell without a terminal to confirm on: "npx biome format --help 2>&1 | grep -A2 "\[-w"" is not on the shell allowlist.
+[chokepoint] refusing shell without a terminal to confirm on: "npm run --silent format:check 2>&1 || true" is not on the shell allowlist.
+[chokepoint] refusing shell without a terminal to confirm on: "npx biome --version 2>&1 || true" is not on the shell allowlist.
+[chokepoint] refusing shell without a terminal to confirm on: "cat package.json | jq .scripts.format 2>&1 || grep '"format"' package.json" is not on the shell allowlist.
+[chokepoint] refusing shell without a terminal to confirm on: "node -e "const b=require('biome/package.json');console.log(b.version)" 2>&1 || true" is not on the shell allowlist.
+[chokepoint] refusing shell without a terminal to confirm on: "bash scripts/build.sh 2>&1" is not on the shell allowlist.
+[chokepoint] refusing shell without a terminal to confirm on: "node -e "console.log('017f22e2-79b0-7cc3-98c4-dc0c0c07398f'[8])" 2>&1 || true" is not on the shell allowlist.
+[chokepoint] refusing shell without a terminal to confirm on: "tsc --version" is not on the shell allowlist.
