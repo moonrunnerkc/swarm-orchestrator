@@ -202,3 +202,60 @@ session bundle since sealing landed on 2026-09-02 failed verification. Case 19 a
 seal and a clean conformance over a two-turn chain.
 
 Commits: `bd7ab8fc`, `98dbdf9d`, `7c6c8f91`, and the write-up above.
+
+## Phase 6: adoption friction
+
+Done, each on a green tree, apart from the quickstart transcript, which needs the local
+backend the calibration sweep is holding and is recorded under Phase 3's completion.
+
+- **`swarm init`** (`2e975615`, `f6391317`, `499f7a4e`). Writes `swarm.toml` from the
+  `test`, `lint`, `typecheck` and `build` scripts package.json declares, one line per gate with
+  the script it came from in the comment above it, the rule that reads it named, and a test
+  script whose runner the harness has no parser for written advisory with the reason. Refuses
+  to touch a file that exists. The `[gates]` table now takes a command alone or a table with
+  `command`, `severity` and `parser`, an override under an id the assembled set has no slot for
+  adds that gate, and an override written as `npm run --silent test` is vouched for by the
+  script's body, so node's runner still gets the harness's own reporters through it. Tests:
+  `src/config/init.test.ts` for the four script names, the no-parser case, the rendered file
+  parsing back, and the refusal; `src/gates/gate-overrides.test.ts`; `src/config/swarm-toml.test.ts`.
+- **First run offers it** (`499f7a4e`). A run or session on a terminal in a workspace with a
+  manifest and no `swarm.toml` asks one `[y/N]` question in the chokepoint's plain-path shape,
+  writes the file on yes, and continues. Off a terminal nothing is asked.
+- **Node floor** (`2e975615`). `src/node-floor.ts` is the first import of the CLI and prints
+  one line naming the version found, the version required and `--test-isolation=process`,
+  before anything else runs.
+- **Predicate catalogue** (`81c3b628`). `src/evidence/predicate-catalogue.ts` holds one
+  example per record kind, thirty in all; the system prompt renders it, the kind names come
+  through the shipped verifier's own `recordKindOf`, every example is evaluated by that
+  verifier against its sample in the test, and `check-invariant-drift` now fails on a record
+  type the catalogue does not name, a kind the verifier would name differently, or an example
+  the verifier does not read as true. `UNVERIFIED (predicate-unparseable)` is untouched.
+- **Quickstart**: NOT-DONE here; see Phase 3.
+
+## Phase 7: repo landing page and package identity
+
+Most of this phase's premises were already true of the repository and are recorded as such.
+
+| Item | State | Action |
+| --- | --- | --- |
+| Default branch | `v13-main` already | none |
+| `main` banner | `main` is `78d5c8c9`, an ancestor of `v13-main` carrying the v13 README; it was fast-forwarded onto this lineage on 2026-09-01 and the v12 auditor lives at the tag `v12-final`. A banner saying `main` is the frozen v12 auditor would be false | none on `main`. Human step: fast-forward `main` to this pass when it is accepted, `git push origin v13-main:main` |
+| npm deprecation | not run, needs a publish token | human step below |
+| Description | already the v13 sentence | none |
+| Topics | none of `pr-audit`, `merge-gate`, `cheat-detector`, `github-action`, `aibom`, `eu-ai-act` is set; the twenty set are v13's | none |
+| Dead v12 scheduled workflows on `v13-main` | none: the three schedules are `nightly-proof` (daily), `weekly-evidence` (Tuesday) and `weekly-scan` (Monday), all v13's own | none |
+| `docs/RELEASE-COMPLETION-PROMPT.md` | 455 lines, public | recommendation below |
+
+The npm step, as a human runs it with a publish token:
+
+```
+npm deprecate "swarm-orchestrator@<13" "swarm-orchestrator 13 is a different program: a coding agent whose claims resolve to machine-captured evidence. 11.x and 12.x were a pull-request auditor. To keep the auditor, pin swarm-orchestrator@12, tagged v12-final at https://github.com/moonrunnerkc/swarm-orchestrator/tree/v12-final"
+```
+
+`RELEASE-COMPLETION-PROMPT.md`: keep it public. For: it is the plan the tree was built to, and
+a reader who wants to know why the tree looks the way it does gets the answer from the
+document rather than from a guess, which is the same reason the campaign's methodology is
+committed before its runs. Against: it is written to an agent rather than to a reader, it
+names phases and tasks the public documents deliberately do not, and a first-time visitor who
+opens `docs/` finds a 455-line prompt beside the build guide. If it moves, the docs index Phase 8 writes
+is where the pointer goes; nothing else in the tree links it.
