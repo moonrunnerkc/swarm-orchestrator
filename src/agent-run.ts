@@ -109,6 +109,13 @@ export interface AgentTaskOptions {
   readonly maxSteps: number;
   /** Auto-resolve retries a blocking gate failure gets. Zero measures and reports. */
   readonly attempts: number;
+  /**
+   * The whole run's wall budget: the first loop and every resolve attempt draw from it, and
+   * when it is spent the attempts stop and the run goes on to its final gates and its bundle.
+   * Absent, each loop has its own half hour and the run as a whole has no bound, which is
+   * what let a run outlast the container it was measured in.
+   */
+  readonly maxWallTimeMs?: number;
   /** Already wrapped in whatever recording the caller wants around it. */
   readonly model: ModelClient;
   readonly evidence: EvidenceRecorder;
@@ -245,6 +252,7 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
     });
   }
 
+  const wall = createWallBudget(options);
   const loopDependencies = {
     model: options.model,
     toolInvoker,
@@ -255,7 +263,7 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
     budget: {
       maxSteps: options.maxSteps,
       maxTokens: 1_000_000,
-      maxWallTimeMs: 30 * 60 * 1000,
+      maxWallTimeMs: wall.loopBudgetMs(),
     },
     abortSignal: options.abortSignal,
     systemPrompt:
@@ -288,6 +296,18 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
 
   // The model has said it is done. Nothing about that is a result yet: the gates run now,
   // and what they measure is what decides the outcome.
+  if (wall.deadlineMs !== null) {
+    await options.evidence.record({
+      type: "session-budget",
+      actor: "harness",
+      provenance: ["user"],
+      payload: {
+        maxWallTimeMs: options.maxWallTimeMs ?? null,
+        loopWallTimeMs,
+        note: "the first loop and every resolve attempt draw from one wall budget; when it is spent the attempts stop and the final gates run",
+      },
+    });
+  }
   const gates = await runGatesEngine({
     workspaceRoot: options.workspace,
     baseRef: options.baseRef,
@@ -296,16 +316,24 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
     clock: options.clock,
     emit: options.emit,
     cap: options.attempts,
-    abortSignal: options.abortSignal,
+    // The resolve loop stops at the wall deadline as it stops at a cancellation; the run's
+    // own cancellation is still the only thing that makes the outcome not green.
+    abortSignal: wall.stopAttemptsSignal(options.abortSignal),
     inherited,
     criteriaSealed,
-    resolve: (request) => resolveWithModel(request, options, loopDependencies),
+    resolve: (request) =>
+      resolveWithModel(request, options, {
+        ...loopDependencies,
+        budget: { ...loopDependencies.budget, maxWallTimeMs: wall.loopBudgetMs() },
+      }),
     ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
     ...(options.diffBudget === undefined ? {} : { budgets: options.diffBudget }),
     ...(options.singleFileTestCommand === undefined
       ? {}
       : { singleFileTestCommand: options.singleFileTestCommand }),
   });
+
+  wall.release();
 
   // Said to the screen as well as written down, because a gate strip of passes over a tree
   // nothing touched looks exactly like a gate strip of passes over work.
@@ -450,6 +478,47 @@ async function recordWorkspaceDiff(options: AgentTaskOptions): Promise<void> {
       patch: truncated ? `${patch.slice(0, diffCharacterCap)}\n... truncated` : patch,
     },
   });
+}
+
+/** What one loop may spend on its own, whatever the run's budget: the figure every loop had before a run had one. */
+const loopWallTimeMs = 30 * 60 * 1000;
+
+interface WallBudget {
+  readonly deadlineMs: number | null;
+  /** What the next loop may spend: its own half hour, or what is left of the run, whichever is less. */
+  loopBudgetMs(): number;
+  /** Aborts when the run's budget is spent, and whenever the run itself is cancelled. */
+  stopAttemptsSignal(cancel: AbortSignal): AbortSignal;
+  /** Lets the deadline timer go once the gates have settled, so nothing waits on it. */
+  release(): void;
+}
+
+function createWallBudget(options: AgentTaskOptions): WallBudget {
+  if (options.maxWallTimeMs === undefined) {
+    return {
+      deadlineMs: null,
+      loopBudgetMs: () => loopWallTimeMs,
+      stopAttemptsSignal: (cancel) => cancel,
+      release: () => {},
+    };
+  }
+  const deadlineMs = options.clock.now() + options.maxWallTimeMs;
+  const spent = new AbortController();
+  const released = new AbortController();
+  options.clock.sleep(Math.max(0, deadlineMs - options.clock.now()), released.signal).then(
+    () => {
+      if (!released.signal.aborted) {
+        spent.abort();
+      }
+    },
+    () => {},
+  );
+  return {
+    deadlineMs,
+    loopBudgetMs: () => Math.max(0, Math.min(loopWallTimeMs, deadlineMs - options.clock.now())),
+    stopAttemptsSignal: (cancel) => AbortSignal.any([cancel, spent.signal]),
+    release: () => released.abort(),
+  };
 }
 
 /**

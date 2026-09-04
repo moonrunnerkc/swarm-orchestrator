@@ -4,6 +4,14 @@
 
 ### Added
 
+- **A run has a wall budget of its own.** `--max-wall-minutes <n>`, or `max_wall_minutes`
+  under `[budgets]` in swarm.toml, bounds the whole run: the first loop and every auto-resolve
+  attempt draw from it, the attempts stop when it is spent, and the run goes on to its final
+  gates and its bundle with the budget recorded on the chain as a `session-budget` record.
+  Before this each loop had its own half hour and the run as a whole had no bound, which is how
+  a run measured inside a forty-five minute container could outlast it and leave nothing: the
+  campaign's first arm lost seven runs that way. Unset, nothing changes: each loop keeps its
+  half hour.
 - **The criteria a run is measured by are sealed on the chain before the model is asked for
   anything.** Every gate with its severity and the rule that reads it, the budgets, the attempt
   cap and the ratchet arms, as one record written before the loop, and the embedded verifier

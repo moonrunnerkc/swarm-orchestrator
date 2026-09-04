@@ -29,6 +29,8 @@ export interface RunCommand {
   readonly baseRef: string;
   /** How many auto-resolve retries a blocking gate failure gets. */
   readonly attempts: number | null;
+  /** The whole run's wall budget in minutes, or null for none over the run as a whole. */
+  readonly maxWallMinutes: number | null;
   readonly localEndpoint: string | null;
   readonly interfaceFlags: InterfaceFlags;
 }
@@ -48,6 +50,7 @@ export interface SessionCommand {
   readonly bundleDirectory: string | null;
   readonly baseRef: string;
   readonly attempts: number | null;
+  readonly maxWallMinutes: number | null;
   readonly localEndpoint: string | null;
   readonly interfaceFlags: InterfaceFlags;
 }
@@ -119,6 +122,7 @@ export interface ParallelCommand {
   readonly baseRef: string;
   readonly maxSteps: number | null;
   readonly attempts: number | null;
+  readonly maxWallMinutes: number | null;
   readonly bundleDirectory: string | null;
   readonly modelSpec: string | null;
   readonly localEndpoint: string | null;
@@ -161,7 +165,7 @@ export type CommandLine =
 
 export const usage = [
   "swarm [--model <provider:id>] [--workspace <dir>] [--bundle <dir>] [--base <ref>]",
-  '  [--attempts <n>] [--max-steps <n>] [--local-endpoint <url>] ["<task>"]',
+  '  [--attempts <n>] [--max-steps <n>] [--max-wall-minutes <n>] [--local-endpoint <url>] ["<task>"]',
   "",
   "  swarm                                            a session: type tasks, one after another",
   "",
@@ -191,7 +195,7 @@ export class InvalidCommandLineError extends Error {
   constructor(problem: string) {
     super(
       `${problem}. Usage: swarm [--model <provider:id>] [--workspace <dir>] [--bundle <dir>] ` +
-        `[--base <ref>] [--attempts <n>] [--local-endpoint <url>] ["<task>"], ` +
+        `[--base <ref>] [--attempts <n>] [--max-wall-minutes <n>] [--local-endpoint <url>] ["<task>"], ` +
         "swarm with no task for a session, swarm doctor [--fix] [--offline], " +
         "swarm gates [--workspace <dir>] [--base <ref>], " +
         "swarm select [--shortlist <file|url|bundled>], swarm calibrate [--models <a,b>] " +
@@ -314,6 +318,7 @@ export function parseCommandLine(
       baseRef: flags.get("base") ?? defaultBaseRef,
       maxSteps: parseFlagCount(flags.get("max-steps"), "--max-steps"),
       attempts: parseFlagCount(flags.get("attempts"), "--attempts"),
+      maxWallMinutes: parseFlagCount(flags.get("max-wall-minutes"), "--max-wall-minutes"),
       bundleDirectory,
       modelSpec: flags.get("model") ?? null,
       localEndpoint: parseLocalEndpoint(flags.get("local-endpoint")),
@@ -365,6 +370,7 @@ export function parseCommandLine(
     bundleDirectory,
     baseRef: flags.get("base") ?? defaultBaseRef,
     attempts: parseFlagCount(flags.get("attempts"), "--attempts"),
+    maxWallMinutes: parseFlagCount(flags.get("max-wall-minutes"), "--max-wall-minutes"),
     localEndpoint: parseLocalEndpoint(flags.get("local-endpoint")),
     interfaceFlags: parseInterfaceFlags(flags),
   };

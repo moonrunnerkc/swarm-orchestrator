@@ -84,6 +84,7 @@ option, so on anything older that measurement does not happen.
     swarm --base <ref> "..."         # what the diff and the ratchet measure against
     swarm --attempts <n> "..."       # how many times the ratchet may retry a gate
     swarm --max-steps <n> "..."      # how long the loop may run before it stops
+    swarm --max-wall-minutes <n> "..." # the whole run's clock: the loop and every retry together
     swarm --local-endpoint <url>     # an OpenAI-compatible server other than the default
 
 `swarm --help` prints all of it, including the calibration flags.
