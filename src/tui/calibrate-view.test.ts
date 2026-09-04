@@ -189,3 +189,81 @@ describe("the recent list", () => {
     expect(view.recent).toHaveLength(8);
   });
 });
+
+/**
+ * Invariant 1 as a test, as `view-state.test.ts` holds it for the run screen. The sweep's
+ * screen is a projection of harness events and nothing else: it has no key state at all, no
+ * field of what it holds shares a name with a gate-run record, and no string it holds reads
+ * as a gate verdict. The one word it prints for a repeat comes from `gatePassed`, which the
+ * calibration-run record carries and the harness computed.
+ */
+describe("what the calibrate screen holds cannot be mistaken for a gate result", () => {
+  const gateRunFields = [
+    "gateId",
+    "title",
+    "severity",
+    "status",
+    "blocking",
+    "detail",
+    "attempt",
+    "command",
+    "exitCode",
+    "durationMs",
+    "unavailable",
+    "argv",
+    "parser",
+    "stdout",
+    "stderr",
+    "outputTruncated",
+    "measures",
+  ];
+
+  it("exposes nothing a keystroke could reach: the store applies harness events and nothing else", async () => {
+    const { createCalibrateStore } = await import("./calibrate-store.ts");
+    expect(Object.keys(createCalibrateStore()).sort()).toEqual(["apply", "getView", "subscribe"]);
+  });
+
+  it("shares no field name with a gate-run record, at any depth of the projection", () => {
+    const view = fold([
+      { type: "plan", plan },
+      { type: "run-started", current: { model: "local:a", caseId: "edit-one", repeat: 1 } },
+      finished(),
+      finished({ executed: false, gatePassed: null, abstentionReason: "no-content" }),
+    ]);
+    const fields = new Set<string>();
+    const walk = (value: unknown): void => {
+      if (Array.isArray(value)) {
+        for (const entry of value) walk(entry);
+        return;
+      }
+      if (value !== null && typeof value === "object") {
+        for (const [key, entry] of Object.entries(value)) {
+          fields.add(key);
+          walk(entry);
+        }
+      }
+    };
+    walk(view);
+
+    for (const field of gateRunFields) {
+      expect([...fields]).not.toContain(field);
+    }
+  });
+
+  it("holds no string that reads as a gate verdict", () => {
+    const view = fold([{ type: "plan", plan }, finished(), finished({ gatePassed: false })]);
+    const strings: string[] = [];
+    const walk = (value: unknown): void => {
+      if (typeof value === "string") strings.push(value);
+      else if (Array.isArray(value)) for (const entry of value) walk(entry);
+      else if (value !== null && typeof value === "object")
+        for (const entry of Object.values(value)) walk(entry);
+    };
+    walk(view);
+
+    expect(strings.length).toBeGreaterThan(0);
+    for (const value of strings) {
+      expect(value).not.toMatch(/passed|failed|verified/i);
+    }
+  });
+});
