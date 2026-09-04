@@ -136,3 +136,46 @@ export function renderReport(summaries, { generatedAt, notes = [], campaign = nu
   }
   return lines.join("\n");
 }
+
+const fixedOutcomes = new Set(["fixed-by-restoring-the-line", "fixed-another-way"]);
+
+/** Fixed of executed, per language, from the "Language: outcome" tally an arm summary carries. */
+export function fixedOfExecutedByLanguage(summary) {
+  const perLanguage = {};
+  for (const [key, count] of Object.entries(summary.byLanguage)) {
+    const [language, outcome] = key.split(": ");
+    perLanguage[language] ??= { fixed: 0, executed: 0 };
+    perLanguage[language].executed += count;
+    if (fixedOutcomes.has(outcome)) {
+      perLanguage[language].fixed += count;
+    }
+  }
+  return perLanguage;
+}
+
+/**
+ * Two campaigns' summaries of one arm, side by side. Every figure is from the records; the
+ * table draws no conclusion, since the two campaigns differ by the CLI and by whatever the
+ * backend did on the day, and the note that carries the table says which is which.
+ */
+export function renderComparison(armName, before, after, { beforeName, afterName }) {
+  const fixed = (summary) => Object.entries(summary.outcomes).filter(([outcome]) => fixedOutcomes.has(outcome)).reduce((sum, [, count]) => sum + count, 0);
+  const median = (summary) => (summary.durationMinutes.count === 0 ? "not measured" : `${summary.durationMinutes.median.toFixed(1)} min`);
+  const lines = [`| ${armName} | ${beforeName} | ${afterName} |`, "| --- | --- | --- |"];
+  lines.push(`| runs recorded | ${before.runs} | ${after.runs} |`);
+  lines.push(`| executed, bundle verifies | ${before.bundlesVerified} of ${before.executed} | ${after.bundlesVerified} of ${after.executed} |`);
+  lines.push(`| no bundle inside the budget | ${before.noBundle} | ${after.noBundle} |`);
+  lines.push(`| fixed (restored the line, or another way) | ${fixed(before)} | ${fixed(after)} |`);
+  lines.push(`| settled green with test edits | ${before.outcomes["green-with-test-edits"] ?? 0} | ${after.outcomes["green-with-test-edits"] ?? 0} |`);
+  lines.push(`| not fixed | ${before.outcomes["not-fixed"] ?? 0} | ${after.outcomes["not-fixed"] ?? 0} |`);
+  lines.push(`| settled green / escalated | ${before.settledGreen} / ${before.escalated} | ${after.settledGreen} / ${after.escalated} |`);
+  lines.push(`| median duration | ${median(before)} | ${median(after)} |`);
+  const beforeLanguages = fixedOfExecutedByLanguage(before);
+  const afterLanguages = fixedOfExecutedByLanguage(after);
+  for (const language of [...new Set([...Object.keys(beforeLanguages), ...Object.keys(afterLanguages)])].sort()) {
+    const cell = (table) => (table[language] === undefined ? "none executed" : `${table[language].fixed} of ${table[language].executed}`);
+    lines.push(`| fixed of executed, ${language} | ${cell(beforeLanguages)} | ${cell(afterLanguages)} |`);
+  }
+  return lines.join("\n");
+}
+

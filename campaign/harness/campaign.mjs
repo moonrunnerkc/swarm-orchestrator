@@ -8,6 +8,7 @@
  *   node campaign/harness/campaign.mjs run --arm <name> [--campaign <name>] [--only <owner/name>] [--limit <n>] [--max-steps <n>] [--attempts <n>] [--timeout-minutes <n>]
  *   node campaign/harness/campaign.mjs preflight --arm <name> --only <owner/name> [--campaign <name>]
   node campaign/harness/campaign.mjs report [--campaign <name>]
+  node campaign/harness/campaign.mjs compare --campaign <name> --against <name|unnamed>
  *
  * A campaign name selects where results and the corpus go, under campaigns/<name>/; without
  * one they go to results/ and corpus/, which hold the campaign of 2026-09-02. The selection,
@@ -79,7 +80,7 @@ import { readManifestFacts } from "./manifest-facts.mjs";
 import { applySite, sitesFor } from "./mutations.mjs";
 import { judgePreflight, renderPreflight } from "./preflight.mjs";
 import { taskPrompt } from "./prompt.mjs";
-import { renderReport, summarizeArm } from "./report.mjs";
+import { renderComparison, renderReport, summarizeArm } from "./report.mjs";
 import { judgeFix, readBundle, runFacts, verifyBundle } from "./results.mjs";
 import { projectTypeByLanguage, rejectionFromCheckout, rejectionFromSearch } from "./rules.mjs";
 import { attemptSchedule, failingTestNames, isSourcePath, isTestPath, rankSourceFiles, seedRecord } from "./seed.mjs";
@@ -960,6 +961,37 @@ function bundlePayloads(bundleDirectory) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// compare: two campaigns' arms side by side, from their records
+
+function armResults(layout, name) {
+  const directory = join(layout.results, name);
+  return existsSync(directory)
+    ? readdirSync(directory)
+        .filter((entry) => entry.endsWith(".json"))
+        .sort()
+        .map((entry) => readJson(join(directory, entry)))
+    : [];
+}
+
+function compare(options) {
+  if (options.against === undefined) {
+    throw new DriverError("compare needs the campaign to compare against", "--against <name|unnamed> [--campaign <name>]");
+  }
+  const after = layoutFor(options);
+  const before = layoutFor({ campaign: options.against === "unnamed" ? undefined : options.against });
+  const beforeName = before.name ?? "the campaign of 2026-09-02";
+  const afterName = after.name ?? "the campaign of 2026-09-02";
+  const sections = [];
+  for (const name of armNames) {
+    const beforeResults = armResults(before, name);
+    const afterResults = armResults(after, name);
+    if (beforeResults.length === 0 && afterResults.length === 0) continue;
+    sections.push(renderComparison(name, summarizeArm(beforeResults), summarizeArm(afterResults), { beforeName, afterName }));
+  }
+  process.stdout.write(`${sections.join("\n\n")}\n`);
+}
+
+// ---------------------------------------------------------------------------------------------
 // report
 
 function report(options) {
@@ -1016,6 +1048,8 @@ async function main() {
       return runArm(options);
     case "preflight":
       return preflight(options);
+    case "compare":
+      return compare(options);
     case "report":
       return report(options);
     case "--help":

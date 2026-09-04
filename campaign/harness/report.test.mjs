@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { distribution, renderReport, summarizeArm } from "./report.mjs";
+import { distribution, fixedOfExecutedByLanguage, renderComparison, renderReport, summarizeArm } from "./report.mjs";
 
 function result(overrides) {
   return {
@@ -93,6 +93,27 @@ describe("which CLI an arm measured", () => {
     expect(page).toContain("packed from commit `abc1234` at 2026-09-04T10:00:00Z");
     expect(page).toContain(`| CLI tarball the runs' images carried | sha256:${digest} |`);
     expect(renderReport({}, { generatedAt: "t" }).startsWith("# Campaign results\n")).toBe(true);
+  });
+});
+
+describe("two campaigns side by side", () => {
+  it("counts fixed of executed per language from the tally, and nothing from a language nobody ran", () => {
+    const summary = summarizeArm([result({ language: "Go" }), result({ language: "Go", outcome: "not-fixed" }), result({ language: "Rust", outcome: "fixed-another-way" })]);
+
+    expect(fixedOfExecutedByLanguage(summary)).toEqual({ Go: { fixed: 1, executed: 2 }, Rust: { fixed: 1, executed: 1 } });
+  });
+
+  it("renders one table per arm with both campaigns named, drawing no conclusion", () => {
+    const before = summarizeArm([result({ language: "Go" }), result({ language: "Python", executed: false, timedOut: true, bundle: null, outcome: "no-bundle" })]);
+    const after = summarizeArm([result({ language: "Go" }), result({ language: "Python", outcome: "not-fixed" })]);
+
+    const table = renderComparison("local-mlx", before, after, { beforeName: "2026-09-02", afterName: "fixed-cli" });
+
+    expect(table.split("\n")[0]).toBe("| local-mlx | 2026-09-02 | fixed-cli |");
+    expect(table).toContain("| no bundle inside the budget | 1 | 0 |");
+    expect(table).toContain("| fixed (restored the line, or another way) | 1 | 1 |");
+    expect(table).toContain("| fixed of executed, Python | none executed | 0 of 1 |");
+    expect(table).toContain("| median duration | 2.0 min | 2.0 min |");
   });
 });
 

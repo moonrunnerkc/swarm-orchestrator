@@ -316,10 +316,11 @@ report says so for them rather than filling it in.
 **Where it is written.** `campaigns/fixed-cli/results/cli.json` records the tarball, its
 digest, the commit it was packed from and the images built with it, written by setup and
 read back from the images. The CLI this campaign measures is the tarball with sha256
-`b0ec36eeaad1a3ddce08996840a94133ad0fde170373845dcc852186bd610dbf`, packed from commit
-`e3c2c5c6` with a clean tree at 13:50 UTC on 2026-09-04; an earlier setup at 13:41 UTC packed
-commit `332d2ff7` and was superseded before any run, because the wall budget above was not in
-it yet. Results go to `campaigns/fixed-cli/results/<arm>/`, bundles to
+`fbf417913b74945ed85bca3b2941e2e9e623c540a0be8057037fc9dc8d9a63b8`, packed from commit
+`2ba91651` with a clean tree at 14:02 UTC on 2026-09-04. Two earlier setups were superseded
+before any arm ran: 13:41 UTC packed commit `332d2ff7` without the wall budget above, and
+13:50 UTC packed commit `e3c2c5c6` without `cd` on the shell allowlist, which the preflight
+below found. Results go to `campaigns/fixed-cli/results/<arm>/`, bundles to
 `campaigns/fixed-cli/corpus/<arm>/<repository>/` without their rendered review page, and the
 report to `campaigns/fixed-cli/results/report.md`. The first campaign's directories are not
 written to again.
