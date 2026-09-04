@@ -1682,7 +1682,9 @@ describe("19. author the next turn's gate command by rewriting the manifest in t
     expect(sealed.gates.find((gate) => gate.id === "tests")?.command).toContain(
       "--test-isolation=process",
     );
-  });
+    // Two real runs, each spawning node's runner under process isolation and bonding every
+    // pass: well over the default budget on a machine that is doing anything else.
+  }, 60_000);
 });
 
 /**
