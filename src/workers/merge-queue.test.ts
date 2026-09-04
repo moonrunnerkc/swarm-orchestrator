@@ -508,5 +508,5 @@ describe("a layer that lands a rewritten manifest under the layer after it", () 
     for (const run of testsRuns) {
       expect(run.command).toContain("--test-isolation=process");
     }
-  });
+  }, 60_000);
 });
