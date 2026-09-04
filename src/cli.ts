@@ -3,7 +3,7 @@
 import "./node-floor.ts";
 import { spawn } from "node:child_process";
 import { statSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { arch, availableParallelism, homedir, platform, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -15,6 +15,7 @@ import {
   type CommandLine,
   type DoctorCommand,
   type GatesCommand,
+  type InitCommand,
   type ParallelCommand,
   parseCommandLine,
   type ReplayCommand,
@@ -24,6 +25,7 @@ import {
   type SessionCommand,
   usage,
 } from "./cli-options.ts";
+import { initializeSwarmToml, initWouldHelp, type PlannedGate } from "./config/init.ts";
 import {
   type CommandLineSettings,
   type ResolvedSettings,
@@ -395,6 +397,7 @@ async function session(options: SessionCommand): Promise<number> {
   if (!statSync(options.workspace).isDirectory()) {
     throw new Error(`${options.workspace} is not a directory to work in`);
   }
+  await offerInit(options.workspace);
   const settings = await settingsFor(options.workspace, {
     model: options.modelSpec,
     maxSteps: options.maxSteps,
@@ -605,6 +608,75 @@ async function runOneTurn(input: {
     };
   } finally {
     process.off("SIGINT", onInterrupt);
+  }
+}
+
+const initOnDisk = (workspace: string) => ({
+  workspace,
+  exists: (path: string) =>
+    access(path).then(
+      () => true,
+      () => false,
+    ),
+  readFile: (path: string) =>
+    readFile(path, "utf8").catch((cause: NodeJS.ErrnoException) => {
+      if (cause.code === "ENOENT") {
+        return null;
+      }
+      throw cause;
+    }),
+  writeFile: (path: string, text: string) => writeFile(path, text, "utf8"),
+});
+
+function describePlannedGate(gate: PlannedGate): string {
+  return (
+    `  ${gate.id}: ${gate.command} (${gate.parser}, ${gate.severity}) from scripts.${gate.script}` +
+    (gate.reason === null ? "" : `\n    ${gate.reason}`)
+  );
+}
+
+/** `swarm init`: the file a first run can work from, from what package.json declares. */
+async function init(options: InitCommand): Promise<number> {
+  if (!statSync(options.workspace, { throwIfNoEntry: false })?.isDirectory()) {
+    throw new Error(
+      `workspace ${options.workspace} is not a directory. Create it, or pass --workspace.`,
+    );
+  }
+  const outcome = await initializeSwarmToml(initOnDisk(options.workspace));
+  writeOut(`wrote ${outcome.path}`);
+  for (const gate of outcome.gates) {
+    writeOut(describePlannedGate(gate));
+  }
+  if (outcome.gates.length === 0) {
+    writeOut("  no gate written: package.json declares none of test, lint, typecheck or build");
+  }
+  return 0;
+}
+
+/**
+ * The first run in a workspace with a manifest and no swarm.toml offers to write one, in the
+ * one question the chokepoint's plain path asks and with the same answer key. Off a terminal
+ * nothing is asked and nothing is written: the run works from what the harness detects, as
+ * it always did.
+ */
+async function offerInit(workspace: string): Promise<void> {
+  const onDisk = initOnDisk(workspace);
+  const isTty = process.stdout.isTTY === true && process.stdin.isTTY === true;
+  if (!isTty || !(await initWouldHelp(onDisk))) {
+    return;
+  }
+  process.stderr.write(
+    "no swarm.toml here, and package.json declares scripts: swarm init would write one with " +
+      "the gates read off them, each naming the rule that reads it.\n",
+  );
+  const answer = await askOnTerminal('Run "swarm init" first? [y/N] ');
+  if (answer.trim().toLowerCase() !== "y") {
+    return;
+  }
+  const outcome = await initializeSwarmToml(onDisk);
+  process.stderr.write(`wrote ${outcome.path}\n`);
+  for (const gate of outcome.gates) {
+    process.stderr.write(`${describePlannedGate(gate)}\n`);
   }
 }
 
@@ -820,6 +892,7 @@ async function run(options: RunCommand): Promise<number> {
     );
   }
 
+  await offerInit(options.workspace);
   const settings = await settingsFor(options.workspace, {
     model: options.modelSpec,
     maxSteps: options.maxSteps,
@@ -1887,6 +1960,9 @@ async function main(): Promise<number> {
   }
   if (options.command === "session") {
     return session(options);
+  }
+  if (options.command === "init") {
+    return init(options);
   }
   return options.command === "gates" ? gates(options) : run(options);
 }
