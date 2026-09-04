@@ -236,6 +236,31 @@ suite once more after the fixed point. Not measured here: the 60-run calibration
 the campaign runs pay it, and the campaign records the duration, so the cost is in the data
 rather than estimated.
 
+## Debt: the campaign corpus measures the CLI of 2026-09-02, not the tree
+
+The campaign's hundred runs were made by the CLI tarball packed when the campaign started,
+and two defects that its own transcripts exposed were fixed in the tree while the arms ran:
+the default shell allowlist carried node's toolchain and none of the others project detection
+assembles a tests gate from, so no Python, Go or Rust run could execute its own suite through
+the shell, and a model call had no deadline, so a backend that went quiet held a run until the
+container killed it with nothing recorded. The arms stayed on the old tarball because a corpus
+measured under two CLIs is not one measurement. So `campaign/results/report.md` describes a
+tool that no longer ships: its non-node numbers are a floor, and its seven bundle-less runs
+are a shape the fixed CLI ends as a wall-time stop with a bundle. Paying this means running
+the campaign again on the current CLI, as a second campaign beside this one with its own
+results directory, never by re-running seeds into this one.
+
+## Debt: the frontier arm has no measurement
+
+The campaign's third arm, a frontier model over the Anthropic API, was not run, because the
+key in the repository's environment authenticates and has no balance. Every other part of the
+arm exists and was exercised in tests: the forwarder that carries TLS to the API untouched, the
+arm definition, the prompt, and the result reader. The report carries the arm with zero runs
+recorded. Paying this is funding the key and running `node campaign/harness/campaign.mjs run
+--arm frontier` over the committed manifest, which skips nothing since nothing is recorded, and
+then `report`; the run must be sequenced after any local arm, never beside one, since the
+duration is a measure.
+
 ## Debt: the router chooses among the last sweep's candidates, while the table folds every sweep
 
 The competency table keeps every sweep of a golden set and folds them per class, so after the

@@ -67,6 +67,7 @@ lacked, the 4.6 record, is answered below.
 | 5.5 Execution, the walk | done | 50 accepted from 1428 decisions, exactly the sealed quotas, committed as `3e7b5d51` and `0de9f803` before any arm ran. Four harness faults found and fixed on the way, each a dated amendment in `../../../campaign/methodology.md`: Go and Rust images pinned to toolchains older than the pool, a 20 GB container disk that filled, cargo's closing line read as a build failure, and a 4 GB cap sized for the suite check applied to a whole arm run |
 | 5.5 Execution, the `local-mlx` arm | done | 50 of 50 recorded between 02:46 and 22:02 UTC on 2026-09-03, with the manifest committed first. 43 runs executed and every one of their bundles verifies under its own verifier; 7 produced no bundle inside the 45-minute budget, three of them on the backend restarts named below. Outcomes over the 43: 23 fixed by restoring the line, 3 fixed another way, 17 not fixed; 18 settled green, 25 escalated, 14 ratchet rejections in total, 69 claims verified against 97 refused. Duration over the 43: median 16.1 min, quartiles 9.6 and 31.9, longest 42.6. By language, fixed of executed: JavaScript 9 of 12, TypeScript 7 of 12, Python 6 of 8, Go 2 of 6, Rust 2 of 5. Results in `../../../campaign/results/local-mlx/`, bundles in `../../../campaign/corpus/local-mlx/`. Three more harness faults fixed on the way: a TCP relay Ollama refused on its Host header, a repository hook running on the seed commit, and one failure ending the whole arm |
 | 5.5 Execution, the `local-ollama` arm | done | 50 of 50 recorded between 22:02 UTC on 2026-09-03 and 08:24 UTC on 2026-09-04, with rapid-mlx taken down for its duration. Every run executed and every bundle verifies under its own verifier; no timeouts. Outcomes: 33 fixed by restoring the line, 5 fixed another way, 1 settled green with test edits, 11 not fixed; 18 settled green, 32 escalated, 22 ratchet rejections in total, 76 claims verified against 19 refused. Duration: median 9.0 min, quartiles 3.5 and 18.8, longest 38.5. By language, fixed of executed: JavaScript 13 of 13, TypeScript 11 of 13, Python 5 of 12, Go 5 of 6, Rust 4 of 6. Results in `../../../campaign/results/local-ollama/`, bundles in `../../../campaign/corpus/local-ollama/` |
+| 5.5 Execution, the `frontier` arm | NOT-DONE | the Anthropic key in the repo-root `.env` authenticates and has no balance, checked live at the preflight and again at 21:40 UTC on 2026-09-03. Everything else the arm needs exists and is tested: the TLS pass-through forwarder, the arm definition, the prompt, the result reader. Runbook: fund the key, then `node campaign/harness/campaign.mjs run --arm frontier` over the committed manifest, after the local arms and never beside one, then `report` |
 | 5.5 Execution, the report | done | `../../../campaign/results/report.md`, generated 08:23 UTC on 2026-09-04 from the result records alone; the frontier arm appears in it with zero runs recorded |
 | Discovered: the shell allowlist refused the toolchains the gates run | fixed at the root | the default list carried node's toolchain only, so in a Python repository the model could not run `pytest -q` while the harness ran it as a gate. `python`, `python3`, `pytest`, `go` and `cargo` are on the list now, with a test over every command the gates assemble |
 | Discovered: a model call with no deadline | fixed at the root | the wall budget was checked between steps, so a backend that went quiet held a run until the container killed it with nothing recorded. A call is bounded by what is left of the budget on the injected clock, the test clock gained deadline semantics, and a hung call ends the loop as a wall-time stop with its gates run and its bundle written |
@@ -103,3 +104,137 @@ Appended as the run proceeds.
   tree because nothing in this tree was the cause. Phase 6.1 is treated as unblocked on that
   basis, with the abstention from 1.2 as the running check: a sweep with any abstained repeat
   is not trusted data, whatever this note says.
+
+## The campaign, both arms side by side
+
+Fifty seeds, one run per arm, the same manifest, the same container images, the same CLI
+tarball, the same budgets. Every number below is from `../../../campaign/results/report.md`,
+which is generated from the result records alone.
+
+| Measure | `local-mlx` (qwen3.8:27b, rapid-mlx) | `local-ollama` (qwen3.6:35b-a3b, Ollama) |
+| --- | --- | --- |
+| runs recorded | 50 | 50 |
+| executed, with a bundle that verifies | 43 of 43 | 50 of 50 |
+| no bundle inside the budget | 7 | 0 |
+| fixed by restoring the line | 23 | 33 |
+| fixed another way | 3 | 5 |
+| settled green with test edits | 0 | 1 |
+| not fixed | 17 | 11 |
+| settled green / escalated | 18 / 25 | 18 / 32 |
+| ratchet rejections | 14 | 22 |
+| claims verified / refused | 69 / 97 | 76 / 19 |
+| duration, median and quartiles | 16.1 min (9.6, 31.9) | 9.0 min (3.5, 18.8) |
+| fixed of executed, JavaScript | 9 of 12 | 13 of 13 |
+| fixed of executed, TypeScript | 7 of 12 | 11 of 13 |
+| fixed of executed, Python | 6 of 8 | 5 of 12 |
+| fixed of executed, Go | 2 of 6 | 5 of 6 |
+| fixed of executed, Rust | 2 of 5 | 4 of 6 |
+
+What the table can say: both arms produced a corpus every bundle of which verifies under the
+verifier it carries, the second arm finished every seed inside the budget, and the seven seeds
+the first arm ran out of budget on all produced a bundle on the second. What it cannot say:
+which model is better at the task. The outcome is a judge over the tree, and "fixed" means
+the seeded line was restored or the suite passes again; it is not a measure of the change's
+quality, and the two arms ran under different backends with different failure shapes, three
+of the first arm's seven timeouts falling on backend restarts the methodology records. The
+"green with test edits" outcome names a run that reached green by editing tests, which the
+ratchet allowed because the edits added assertions; it is recorded as its own outcome so it
+is never counted as a fix.
+
+The corpus measures the CLI packed on 2026-09-02. Two defects found by the campaign's own
+transcripts were fixed in the tree while it ran, the shell allowlist and the unbounded model
+call, and the arms stayed on the old tarball. So the non-node numbers above are a floor for
+the fixed tool, not a measure of it, and the seven bundle-less runs are a shape the fixed CLI
+ends with a bundle. Both are debt items in `../../tech-debt.md`.
+
+The frontier arm was not run. The key authenticates and has no balance; the report carries
+the arm with zero runs recorded. The runbook is the debt item of the same name: fund the key,
+run the arm over the committed manifest after the local arms and never beside one, then
+regenerate the report.
+
+## Run completion
+
+The run began at 2026-09-02 and closed at 08:45 UTC on 2026-09-04 with `npm run gates` green
+on the final tree:
+
+```
+> swarm-orchestrator@13.1.9 gates
+> npm run typecheck && npm run lint && npm test
+> tsc --noEmit
+> biome check
+Checked 333 files in 91ms. No fixes applied.
+> vitest run
+ Test Files  177 passed (177)
+      Tests  1983 passed (1983)
+EXIT=0
+```
+
+Every commit of the run, in order, on `v13-main` and fast-forwarded to `main`:
+
+| Commit | Task | What it is |
+| --- | --- | --- |
+| `e4b57b39` | discovered | corpus replay reads the tag that holds the v12 corpus, not the branch that moved |
+| `8e03b042` | 4.6 | the v12 schedules died with the branch move; checked from outside |
+| `54236682` | 4.8 | nightly proof and weekly evidence workflows, in public, both directions |
+| `896f0644` | 1.4 | the empty-turn request replayed by digest against the backend that returned it |
+| `8830e8f3` | phase 4 note | both scheduled proofs observed passing, claimed only on that basis |
+| `885c2cc6` | 5.1 | repository selection criteria sealed before any repository was looked at |
+| `4dfcf84a` | 5.2 to 5.4 | container harness, seeding protocol, run prompt |
+| `5ac428cf` | 5.6 | the method written before anything it could be shaped by existed |
+| `2fc02966` | 6.2 | criteria sealed before the loop, every pass bonded, bundles re-derive their verdicts |
+| `516b4622` | discovered | doc-path check reads only tracked documents and says when git refuses a path |
+| `2c178961` | 6.2 evidence | a gates run with its criteria sealed and every pass bonded |
+| `e86be3f5` | 6.2 | the sixteenth invariant, and what the bonds cannot show |
+| `1f63199c` | 5.5 | the candidate pool, queried once and saved raw |
+| `d41b4295` | 6.3 | routing by a competency table, class by class, abstaining under the floor |
+| `f3d091dd` | 6.3 | what the competency table is and what it refuses to guess |
+| `ac84e121` | 6.1 | calibration sweeps compared as distributions from their own run records |
+| `fe4dfde9` | docs | README says what a bonded pass is; run report kept current |
+| `015e3772` | 6.1 evidence | three calibration sweeps of 2026-09-02, verified |
+| `8c7f16cc` | 6.1 evidence | the rapid-mlx calibration sweep, verified |
+| `14834f95` | 6.1 | four sweeps on two backends against August, as distributions |
+| `a6bd7652` | 5.5 harness | Go and Rust images on current toolchains; the old pin's refusals re-judged |
+| `3e7b5d51` | 5.3 | the seeds manifest as the walk stood, before any arm ran |
+| `349d8369` | 5.5 harness | re-judgement by what a rejected run printed; the disk that filled recorded |
+| `88883829` | 5.5 harness | the re-judgement marker case-folded |
+| `fded353b` | 5.5 harness | re-judgement by the window a machine fault held |
+| `cafd2cf5` | 5.5 harness | the manifest written from the settled walk in the sealed order |
+| `b322422e` | 5.5 harness | cargo's closing line read as the test failure it reports |
+| `0de9f803` | 5.3 | the sealed manifest, fifty seeds, before any arm ran |
+| `f2dc2a2a` | 5.5 harness | an arm run given the memory it holds; a kill told from a timeout |
+| `f63a9718` | 5.5 harness | local arms relayed over HTTP with the loopback as Host; no hook on the seed commit; one repository contained |
+| `d1200afb` | discovered | the shell allows the toolchains the gates run; every model call bounded by the wall budget |
+| `2dbfe5d3` | discovered | the relay ends the backend request when the run that made it is killed |
+| `4bb64451` | 5.5 | the `local-mlx` arm, fifty runs recorded, forty-three bundles that verify |
+| `2d256c12` to `7dae465f` | 5.5 | the `local-ollama` arm in five parts, and the campaign report |
+
+NOT-DONE, each with its runbook where named:
+
+- **The frontier arm of the campaign.** The key has no balance. Runbook in `../../tech-debt.md`
+  under the debt of the same name, and above.
+- **A campaign under the fixed CLI.** The corpus measures the tarball of 2026-09-02. Runbook
+  in `../../tech-debt.md` under "the campaign corpus measures the CLI of 2026-09-02".
+- **6.1, the frontier calibration arm.** Same key, same reason; the four sweeps that ran are
+  two local backends only, and the calibration report says so.
+
+PENDING-EXTERNAL: none. Both attack passes, 2.4 and 3.4, were run in this tree with the
+red-team driver and their findings are recorded in the per-item log above.
+
+Discovered on the way and fixed at the root, each named in the per-item log with its commit:
+the corpus replay tests skipping under green, third-party tests collected from cloned
+repositories, the doc-path check walking those clones, the stale Go and Rust toolchains, the
+container disk that filled, cargo's closing line misread, the memory cap sized for the wrong
+check, Ollama refusing the relay's Host header, the repository hook running on the seed
+commit, one failure ending an arm, the shell allowlist, the unbounded model call, and the
+relay leaking a killed run's backend request. Two of those, the allowlist and the model call,
+are defects in the product rather than the harness.
+
+Debt items opened by this run, all in `../../tech-debt.md`: the campaign corpus and the
+CLI it measures, the frontier arm, the bonds that some gates cannot be given, and the router's
+candidate set against the table's fold.
+
+Gate states at close: typecheck clean, lint clean with no warnings after the five it reported were fixed at their sites,
+1983 tests passing across 177 files, the nightly proof and weekly evidence workflows each
+observed passing on a dispatched run, and the gates workflow on `main` passing on the last
+commit pushed to it before the campaign results.
+

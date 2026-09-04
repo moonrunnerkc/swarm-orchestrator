@@ -44,6 +44,19 @@
   fails after, and one run per arm inside a pinned container on an internal network whose only
   other member is a forwarder to the model backend. Results are read off the bundle and the
   tree, never off the run's exit code.
+- **The campaign was run: two local arms over fifty repositories, one hundred runs, ninety-three
+  bundles that verify.** Fifty seeds in five languages, each a repository whose own suite passed
+  before the seeded line and failed after it, run once per arm under a forty-five minute
+  budget. On qwen3.8:27b over rapid-mlx, forty-three runs executed and every bundle verifies,
+  twenty-six of them fixing the seed; seven ran out of budget without a bundle. On
+  qwen3.6:35b-a3b over Ollama, all fifty executed and verify, thirty-nine fixing the seed, at a
+  median of nine minutes against sixteen. The frontier arm was not run, because the key it
+  needs has no balance, and the report carries it with zero runs rather than leaving it out.
+  `campaign/results/report.md` is generated from the result records alone, the bundles are
+  under `campaign/corpus/`, and the method with its dated amendments is in
+  `campaign/methodology.md`. The campaign measured the CLI packed on 2026-09-02 and stayed on
+  it while two defects it exposed were fixed in the tree: a shell allowlist that refused every
+  toolchain but node's, and a model call with no deadline.
 - **Two scheduled proofs on GitHub Actions.** A nightly one runs the suite and the fuzz smoke
   from a clean clone, then verifies the committed reference bundle with its own verifier and
   refuses a one-byte copy of it, uploading the transcript. A weekly one installs a pinned

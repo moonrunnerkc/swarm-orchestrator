@@ -290,18 +290,3 @@ async function callModelWithRetry(
 
   throw new ModelCallFailedError(deps.model.modelId, lastCause);
 }
-
-/** One short phrase naming what a tool call is about, for the activity line while it runs. */
-function describeToolInput(input: unknown): string {
-  if (input === null || typeof input !== "object") {
-    return "";
-  }
-  const fields = input as Record<string, unknown>;
-  for (const key of ["command", "path", "pattern", "query"]) {
-    const value = fields[key];
-    if (typeof value === "string" && value.length > 0) {
-      return value;
-    }
-  }
-  return "";
-}
