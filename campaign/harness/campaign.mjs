@@ -5,8 +5,9 @@
  *   node campaign/harness/campaign.mjs setup [--tarball <path>] [--campaign <name>]
  *   node campaign/harness/campaign.mjs search
  *   node campaign/harness/campaign.mjs walk [--limit <n>]
- *   node campaign/harness/campaign.mjs run --arm <name> [--campaign <name>] [--limit <n>] [--max-steps <n>] [--attempts <n>] [--timeout-minutes <n>]
- *   node campaign/harness/campaign.mjs report [--campaign <name>]
+ *   node campaign/harness/campaign.mjs run --arm <name> [--campaign <name>] [--only <owner/name>] [--limit <n>] [--max-steps <n>] [--attempts <n>] [--timeout-minutes <n>]
+ *   node campaign/harness/campaign.mjs preflight --arm <name> --only <owner/name> [--campaign <name>]
+  node campaign/harness/campaign.mjs report [--campaign <name>]
  *
  * A campaign name selects where results and the corpus go, under campaigns/<name>/; without
  * one they go to results/ and corpus/, which hold the campaign of 2026-09-02. The selection,
@@ -76,6 +77,7 @@ import { fetchCandidates } from "./github-search.mjs";
 import { countLines, countsAs } from "./line-count.mjs";
 import { readManifestFacts } from "./manifest-facts.mjs";
 import { applySite, sitesFor } from "./mutations.mjs";
+import { judgePreflight, renderPreflight } from "./preflight.mjs";
 import { taskPrompt } from "./prompt.mjs";
 import { renderReport, summarizeArm } from "./report.mjs";
 import { judgeFix, readBundle, runFacts, verifyBundle } from "./results.mjs";
@@ -733,9 +735,14 @@ async function runArm(options) {
   if (repos.length === 0) {
     throw new DriverError("no accepted repositories to run", "node campaign/harness/campaign.mjs walk");
   }
+  const only = options.only === undefined ? null : options.only;
+  if (only !== null && !repos.some((repo) => repo.fullName === only)) {
+    throw new DriverError(`${only} is not among the accepted repositories`, `--only <owner/name> from selection/repos.json`);
+  }
   let done = 0;
   for (const repo of repos) {
     if (done >= limit) break;
+    if (only !== null && repo.fullName !== only) continue;
     const resultPath = join(layout.results, armName, `${slugOf(repo.fullName)}.json`);
     if (existsSync(resultPath)) continue;
     try {
@@ -904,6 +911,55 @@ async function runOne({ arm, armName, layout, repo, maxSteps, attempts, timeoutM
 }
 
 // ---------------------------------------------------------------------------------------------
+// preflight: one run judged on its result and its bundle, never on its log
+
+function preflight(options) {
+  if (options.arm === undefined || options.only === undefined) {
+    throw new DriverError("preflight needs an arm and a repository", "--arm <name> --only <owner/name> [--campaign <name>]");
+  }
+  const layout = layoutFor(options);
+  const slug = slugOf(options.only);
+  const resultPath = join(layout.results, options.arm, `${slug}.json`);
+  if (!existsSync(resultPath)) {
+    throw new DriverError(`no result for ${options.only} on ${options.arm}`, `node campaign/harness/campaign.mjs run --arm ${options.arm} --only ${options.only}${layout.name === null ? "" : ` --campaign ${layout.name}`}`);
+  }
+  const cliRecord = readJson(layout.cliRecord, null);
+  if (cliRecord === null) {
+    throw new DriverError(`no CLI record at ${relative(ROOT, layout.cliRecord)}`, "node campaign/harness/campaign.mjs setup first");
+  }
+  const result = readJson(resultPath);
+  const repo = readJson(files.repos, []).find((entry) => entry.fullName === options.only);
+  const payloads = result.bundle === null ? [] : bundlePayloads(join(CAMPAIGN, result.corpus));
+  const judgement = judgePreflight({
+    result,
+    cliRecord,
+    payloads,
+    suiteCommand: repo?.testCommand ?? "",
+    expectedWallMinutes: wallBudgetMinutes(result.timeoutMinutes),
+  });
+  process.stdout.write(`${renderPreflight(`${options.arm} ${options.only}`, judgement)}\n`);
+  return judgement.held ? 0 : 1;
+}
+
+/** Every record's type with its payload, read from the bundle's ledger and blobs. */
+function bundlePayloads(bundleDirectory) {
+  const ledger = readFileSync(join(bundleDirectory, "ledger.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+  return ledger.map((record) => {
+    const digest = (record.payloadDigest ?? "").replace(/^sha256:/, "");
+    const blob = join(bundleDirectory, "blobs", `${digest}.json`);
+    let payload = null;
+    if (existsSync(blob)) {
+      try {
+        payload = JSON.parse(readFileSync(blob, "utf8"));
+      } catch {
+        payload = null;
+      }
+    }
+    return { type: record.type, payload };
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
 // report
 
 function report(options) {
@@ -938,7 +994,7 @@ const HELP = `campaign driver
   node campaign/harness/campaign.mjs search
   node campaign/harness/campaign.mjs walk [--limit <n>]
   node campaign/harness/campaign.mjs rejudge --reason "<prefix>" | --marker "<text in the run's output>" | --between <from>,<to> [--language <name>]
-  node campaign/harness/campaign.mjs run --arm <${armNames.join("|")}> [--campaign <name>] [--limit <n>] [--max-steps <n>] [--attempts <n>] [--timeout-minutes <n>]
+  node campaign/harness/campaign.mjs run --arm <${armNames.join("|")}> [--campaign <name>] [--only <owner/name>] [--limit <n>] [--max-steps <n>] [--attempts <n>] [--timeout-minutes <n>]
   node campaign/harness/campaign.mjs report [--campaign <name>]
 
   --campaign <name> keeps a campaign's results and corpus under campaigns/<name>/; without it
@@ -958,6 +1014,8 @@ async function main() {
       return rejudge(options);
     case "run":
       return runArm(options);
+    case "preflight":
+      return preflight(options);
     case "report":
       return report(options);
     case "--help":
@@ -970,7 +1028,11 @@ async function main() {
   }
 }
 
-main().catch((cause) => {
-  process.stderr.write(`${cause instanceof Error ? cause.message : String(cause)}\n`);
-  process.exit(1);
-});
+main()
+  .then((code) => {
+    process.exitCode = code ?? 0;
+  })
+  .catch((cause) => {
+    process.stderr.write(`${cause instanceof Error ? cause.message : String(cause)}\n`);
+    process.exit(1);
+  });

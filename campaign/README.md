@@ -68,11 +68,24 @@ result records the CLI tarball digest its image carried, read from the image at 
    `--max-steps`, `--attempts` and `--timeout-minutes` change them for a session and the
    methodology says what the campaign used.
 
-5. **Report.**
+   `--only <owner/name>` runs one named repository, which is how a preflight is run.
+
+5. **Preflight.** Before an arm runs under a rebuilt CLI, one seed is run and judged on its
+   result and its bundle, never on its log: the result names the CLI tarball digest setup
+   built, the bundle is present and verifies, the wall budget the harness handed the CLI is
+   recorded on the chain, and the suite command the task named reached the shell rather than
+   being refused by its allowlist. A failed check exits 1 and is a defect to fix before the arm
+   runs.
+
+       node campaign/harness/campaign.mjs run --arm local-mlx --campaign fixed-cli --only cool-RR/PySnooper
+       node campaign/harness/campaign.mjs preflight --arm local-mlx --campaign fixed-cli --only cool-RR/PySnooper
+
+6. **Report.**
 
        node campaign/harness/campaign.mjs report
 
-   Writes `results/report.md` from the records and prints it.
+   Writes `results/report.md` from the records and prints it, naming which CLI tarball each
+   arm's images carried, or that the records do not say.
 
 ## When something cannot run
 

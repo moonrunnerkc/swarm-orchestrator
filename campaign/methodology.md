@@ -315,7 +315,11 @@ report says so for them rather than filling it in.
 
 **Where it is written.** `campaigns/fixed-cli/results/cli.json` records the tarball, its
 digest, the commit it was packed from and the images built with it, written by setup and
-read back from the images. Results go to `campaigns/fixed-cli/results/<arm>/`, bundles to
+read back from the images. The CLI this campaign measures is the tarball with sha256
+`b0ec36eeaad1a3ddce08996840a94133ad0fde170373845dcc852186bd610dbf`, packed from commit
+`e3c2c5c6` with a clean tree at 13:50 UTC on 2026-09-04; an earlier setup at 13:41 UTC packed
+commit `332d2ff7` and was superseded before any run, because the wall budget above was not in
+it yet. Results go to `campaigns/fixed-cli/results/<arm>/`, bundles to
 `campaigns/fixed-cli/corpus/<arm>/<repository>/` without their rendered review page, and the
 report to `campaigns/fixed-cli/results/report.md`. The first campaign's directories are not
 written to again.
@@ -325,6 +329,19 @@ bundle and not on its log: the tool-call records show the suite command allowed 
 shell, and a run that reaches the wall budget ends with a bundle. Either failing is a defect
 to fix at the root before the arms run, and the fix is a new tarball, a new setup, and this
 section amended with the new digest.
+
+**Preflight, 2026-09-04 13:50 to 13:57 UTC, under the tarball of commit `e3c2c5c6`.** One
+seed, `cool-RR/PySnooper`, on each arm. On `local-mlx`: fixed by restoring the line in 54
+seconds, bundle verified, the 33-minute budget on the chain, two `pytest -q` calls through
+the shell and none refused; held. On `local-ollama`: fixed another way in four minutes,
+bundle verified, budget on the chain, seven `pytest -q` calls through the shell and two
+refused, both `cd /work && pytest -q ...`, refused for the `cd`: a builtin that opens nothing
+and whose directory the sandbox already rules on as a path word, which the same run's
+`cd /home/user/repos && pytest -q` shows, refused for resolving outside the workspace. That
+is a defect in the tool, fixed by putting `cd` on the default allowlist with a test, and by
+the rule above it means a new tarball, a new setup, and both preflights again; the two
+results under the superseded tarball were removed rather than kept beside runs of a
+different CLI. The digest below is the one the arms ran under.
 
 **What is expected, stated so it can fail.** No bundle-less run on either arm, because a
 run that exhausts its wall budget on the fixed CLI ends as a wall-time stop with its gates
