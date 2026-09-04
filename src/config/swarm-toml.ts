@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { parse as parseToml, TomlError } from "smol-toml";
 import { z } from "zod";
+import type { GateOverride } from "../gates/gate-definition.ts";
 
 /**
  * The one optional configuration file (build guide 4.2): provider keys and endpoints, gate
@@ -26,7 +27,19 @@ const rawFileSchema = z.strictObject({
       local_thinking: z.boolean().optional(),
     })
     .optional(),
-  gates: z.record(nonEmptyString, nonEmptyString).optional(),
+  gates: z
+    .record(
+      nonEmptyString,
+      z.union([
+        nonEmptyString,
+        z.strictObject({
+          command: nonEmptyString,
+          severity: z.enum(["blocking", "advisory"]).optional(),
+          parser: z.enum(["exit-code", "test-output", "no-output"]).optional(),
+        }),
+      ]),
+    )
+    .optional(),
   budgets: z
     .strictObject({
       max_steps: positiveWholeNumber.optional(),
@@ -70,8 +83,8 @@ export interface SwarmToml {
      */
     readonly localThinking: boolean | null;
   };
-  /** Command overrides by gate id, handed to the gate assembler verbatim. */
-  readonly gates: Readonly<Record<string, string>>;
+  /** Overrides by gate id, handed to the gate assembler verbatim. */
+  readonly gates: Readonly<Record<string, GateOverride>>;
   readonly budgets: {
     readonly maxSteps: number | null;
     readonly attempts: number | null;
@@ -159,7 +172,18 @@ export function parseSwarmToml(text: string, source: string): SwarmToml {
       localEndpoint: raw.providers?.local_endpoint ?? null,
       localThinking: raw.providers?.local_thinking ?? null,
     },
-    gates: raw.gates ?? {},
+    gates: Object.fromEntries(
+      Object.entries(raw.gates ?? {}).map(([id, override]) => [
+        id,
+        typeof override === "string"
+          ? override
+          : {
+              command: override.command,
+              ...(override.severity === undefined ? {} : { severity: override.severity }),
+              ...(override.parser === undefined ? {} : { parser: override.parser }),
+            },
+      ]),
+    ),
     budgets: {
       maxSteps: raw.budgets?.max_steps ?? null,
       maxWallMinutes: raw.budgets?.max_wall_minutes ?? null,
@@ -213,7 +237,7 @@ function describeBadValue(issue: z.core.$ZodIssue, value: unknown): string {
   const accepted =
     acceptedValueByKey[path.join(".")] ??
     (path[0] === "gates"
-      ? "a command string"
+      ? 'a command string, or a table with command and optionally severity ("blocking" or "advisory") and parser ("exit-code", "test-output" or "no-output")'
       : path[0] === "theme"
         ? "a colour name or a hex colour"
         : path[0] === "keys"
