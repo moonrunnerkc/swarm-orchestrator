@@ -68,22 +68,27 @@ export function createNodeCommandRunner(clock: Clock): GateCommandRunner {
           unavailable: `${file} could not be started (${failure.code}), so this gate measured nothing`,
         };
       }
+      // A command that was killed at its timeout ran, and did not pass: it is a failure of the
+      // gate, with the reason in its output where the model and the reviewer read failures.
+      // It used to be reported as not applicable, and a change whose suite hung read green on
+      // the strength of the gates beside it.
+      const killed =
+        failure.killed === true
+          ? `\nthe command was killed after ${options.timeoutMs}ms without finishing. ` +
+            "A command that runs this long without finishing is usually waiting for " +
+            "something that is never coming: standard input nobody is typing, a prompt, or " +
+            "a server that does not exit. Node's test runner gives each test file its own " +
+            "standard input with no writer and never closes it, so a test that reads input " +
+            "waits for ever rather than reaching the end of it. Take the input as an " +
+            "argument and have the test pass it in, and keep any prompting behind the " +
+            "entry-point guard so importing the file does not start it."
+          : "";
       return {
         exitCode: failure.code ?? 1,
         stdout: failure.stdout ?? "",
-        stderr: failure.stderr ?? failure.message ?? "",
+        stderr: `${failure.stderr ?? failure.message ?? ""}${killed}`,
         durationMs: clock.now() - startedAt,
-        unavailable:
-          failure.killed === true
-            ? `the command was killed after ${options.timeoutMs}ms, so it measured nothing. ` +
-              "A command that runs this long without finishing is usually waiting for " +
-              "something that is never coming: standard input nobody is typing, a prompt, or " +
-              "a server that does not exit. Node's test runner gives each test file its own " +
-              "standard input with no writer and never closes it, so a test that reads input " +
-              "waits for ever rather than reaching the end of it. Take the input as an " +
-              "argument and have the test pass it in, and keep any prompting behind the " +
-              "entry-point guard so importing the file does not start it."
-            : null,
+        unavailable: null,
       };
     }
   };

@@ -12,6 +12,7 @@ import { createFixedRandom, createTestClock } from "../core/test-doubles.ts";
 import { runAutoResolve } from "../gates/auto-resolve.ts";
 import { checkFileSet, createFileSetRegistry, type FileSetState } from "../gates/file-set.ts";
 import type { GateContext, GateDefinition, GateObservation } from "../gates/gate-definition.ts";
+import { isGreen, runGateCycle } from "../gates/gate-runner.ts";
 import { fileSetGate, placeholderGate, secretScanGate } from "../gates/inspection-gates.ts";
 import {
   emptyMeasureSnapshot,
@@ -19,6 +20,7 @@ import {
   takeMeasureSnapshot,
 } from "../gates/measure-snapshot.ts";
 import { measureTestFile, type TestFileMeasures } from "../gates/measures.ts";
+import { createNodeCommandRunner } from "../gates/node-command-runner.ts";
 import { exitCodeParser, testOutputParser } from "../gates/parsers.ts";
 import { judgeRatchet } from "../gates/ratchet.ts";
 import {
@@ -1709,5 +1711,59 @@ describe("20. stand a failing gate down by printing that a tool is missing", () 
     // change every command gate stood down on is not measured.
     const missing: GateObservation = { ...failingWithExcuse, exitCode: 127, stdout: "" };
     expect(testOutputParser(missing).status).toBe("not-applicable");
+  });
+});
+
+/**
+ * A gate killed at its timeout was recorded as not applicable, the verdict for a tool that is
+ * not installed, and not applicable never blocks. So a change whose suite hung was green on
+ * the gates beside it, and hanging a suite is one line. The kill is a failure of the gate
+ * that ran, with the reason in its output.
+ */
+describe("21. stand the tests gate down by hanging it", () => {
+  it("fails the run rather than reading the hang as a gate that could not run", async () => {
+    const commands = createNodeCommandRunner(createTestClock());
+    const gates: GateDefinition[] = [
+      {
+        id: "lint",
+        title: "lint",
+        severity: "blocking",
+        source: { kind: "command", command: "node -e 0", timeoutMs: 10_000 },
+        parse: exitCodeParser,
+        parserName: "exit-code",
+      },
+      {
+        id: "tests",
+        title: "tests",
+        severity: "blocking",
+        source: {
+          kind: "command",
+          command: 'node -e "setInterval(() => {}, 1000)"',
+          timeoutMs: 300,
+        },
+        parse: testOutputParser,
+        parserName: "test-output",
+      },
+    ];
+    const probe = createMemoryWorkspace({ base: {}, current: { "src/a.ts": "hang();\n" } });
+    const context: GateContext = {
+      workspaceRoot: root,
+      changes: await probe.changes(),
+      fileSet: declared,
+      budgets: { maxChangedFiles: 12, maxAddedLines: 600 },
+      probe,
+    };
+
+    const cycle = await runGateCycle(gates, context, 0, {
+      commands,
+      evidence,
+      emit: () => {},
+    });
+
+    expect(cycle.statuses.lint).toBe("passed");
+    expect(cycle.statuses.tests).toBe("failed");
+    expect(isGreen(cycle)).toBe(false);
+    const testsRun = cycle.runs.find((run) => run.gateId === "tests");
+    expect(testsRun?.observation.stderr).toContain("killed after 300ms");
   });
 });
