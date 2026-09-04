@@ -299,11 +299,18 @@ forwarders, the budgets of forty steps, two attempts and forty-five minutes, the
 run holds, and the order of the arms: `local-mlx` first, `local-ollama` second, one at a time
 with one backend resident on the box, as the first campaign ended up running.
 
-**What varies.** The CLI tarball inside the four images, and nothing else in them. The
-harness itself changed in one way to make this possible: a campaign has a name, its results
+**What varies.** The CLI tarball inside the four images, and nothing else in them, plus one
+flag the harness now hands the CLI: `--max-wall-minutes 33`, the container's forty-five less
+the suite's ten-minute timeout and two minutes to export. The first campaign's CLI had a
+half-hour budget per loop and none over the run, so a run's first loop, its gates and its
+resolve attempts could together outlast the container, and seven runs on the first arm did.
+Under the fixed CLI the first loop and every resolve attempt draw from one budget, the
+attempts stop when it is spent, and the run goes on to its final gates and its bundle. The
+container budget itself is unchanged at forty-five minutes; what changed is that the CLI now
+knows about it. The harness changed in two ways to make the campaign possible: a campaign has a name, its results
 and corpus live under `campaigns/<name>/`, and every result record carries the sha256 of the
 CLI tarball read from the label of the image the run used, so a bundle says which tool made
-it without reference to the tree. The first campaign's records carry no such field, and the
+it without reference to the tree; and every result records the wall budget its CLI was given. The first campaign's records carry no such field, and the
 report says so for them rather than filling it in.
 
 **Where it is written.** `campaigns/fixed-cli/results/cli.json` records the tarball, its

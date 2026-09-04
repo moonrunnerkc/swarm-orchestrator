@@ -223,6 +223,21 @@ export function offlineArgv({ type, workspace, argv, mounts, timeoutSeconds }) {
  * an environment variable the harness read from its own environment, never from a file in
  * the workspace, and the container resolves the provider's host to the forwarder.
  */
+/**
+ * What the CLI may spend on its loops inside a run's container budget: the budget less the
+ * suite's own timeout and two minutes, so the final gates and the bundle export have room
+ * to finish before the container is killed. A run that reaches this ends as a wall-time stop
+ * with its gates run and its bundle written; under the first campaign's CLI the same run
+ * ended as a kill with nothing.
+ */
+export function wallBudgetMinutes(timeoutMinutes) {
+  const minutes = timeoutMinutes - budgets.suiteTimeoutMinutes - 2;
+  if (!Number.isInteger(minutes) || minutes < 1) {
+    throw new Error(`a ${timeoutMinutes} minute container budget leaves no wall budget after the ${budgets.suiteTimeoutMinutes} minute suite timeout and two minutes to export`);
+  }
+  return minutes;
+}
+
 export function armRunArgv({ type, workspace, outputDirectory, arm, task, maxSteps, attempts, timeoutSeconds, forwarderAddress, key }) {
   const swarm = [
     "swarm",
@@ -237,6 +252,8 @@ export function armRunArgv({ type, workspace, outputDirectory, arm, task, maxSte
     String(maxSteps),
     "--attempts",
     String(attempts),
+    "--max-wall-minutes",
+    String(wallBudgetMinutes(timeoutSeconds / 60)),
     "--no-tui",
     "--no-open-evidence",
     task,

@@ -166,6 +166,7 @@ const noFlagSettings: CommandLineSettings = {
   model: null,
   maxSteps: null,
   attempts: null,
+  maxWallMinutes: null,
   localEndpoint: null,
 };
 
@@ -397,6 +398,7 @@ async function session(options: SessionCommand): Promise<number> {
     model: options.modelSpec,
     maxSteps: options.maxSteps,
     attempts: options.attempts,
+    maxWallMinutes: options.maxWallMinutes,
     localEndpoint: options.localEndpoint,
     interfaceFlags: options.interfaceFlags,
   });
@@ -538,6 +540,9 @@ async function runOneTurn(input: {
       baseRef: input.baseRef,
       maxSteps: settings.maxSteps,
       attempts: settings.attempts,
+      ...(settings.maxWallMinutes === null
+        ? {}
+        : { maxWallTimeMs: settings.maxWallMinutes * 60_000 }),
       model,
       evidence,
       fileSet,
@@ -798,6 +803,7 @@ async function run(options: RunCommand): Promise<number> {
     model: options.modelSpec,
     maxSteps: options.maxSteps,
     attempts: options.attempts,
+    maxWallMinutes: options.maxWallMinutes,
     localEndpoint: options.localEndpoint,
     interfaceFlags: options.interfaceFlags,
   });
@@ -881,6 +887,9 @@ async function run(options: RunCommand): Promise<number> {
       baseRef: await resolveBaseCommit(options.workspace, options.baseRef),
       maxSteps: settings.maxSteps,
       attempts: settings.attempts,
+      ...(settings.maxWallMinutes === null
+        ? {}
+        : { maxWallTimeMs: settings.maxWallMinutes * 60_000 }),
       model,
       evidence,
       fileSet,
@@ -1602,6 +1611,8 @@ function describePlannerStop(stopReason: string): string {
       );
     case "max-steps":
       return "It ran out of steps before it declared anything: raise --max-steps.";
+    case "max-wall-time":
+      return "It ran out of wall time before it declared anything: raise --max-wall-minutes.";
     case "completed":
       return (
         "It finished without calling declare_task_graph, so it either answered in prose or " +
@@ -1667,6 +1678,7 @@ async function parallel(options: ParallelCommand): Promise<number> {
     model: options.modelSpec,
     maxSteps: options.maxSteps,
     attempts: options.attempts,
+    maxWallMinutes: options.maxWallMinutes,
     localEndpoint: options.localEndpoint,
   });
   const clock = createSystemClock();
@@ -1769,6 +1781,9 @@ async function parallel(options: ParallelCommand): Promise<number> {
       },
       maxSteps: settings.maxSteps,
       attempts: settings.attempts,
+      ...(settings.maxWallMinutes === null
+        ? {}
+        : { maxWallTimeMs: settings.maxWallMinutes * 60_000 }),
       ...(gateOptions === undefined ? {} : { gateOptions }),
       abortSignal: new AbortController().signal,
     });

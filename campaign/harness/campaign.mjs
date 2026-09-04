@@ -61,6 +61,7 @@ import {
   imageTags,
   offlineArgv,
   prepareArgv,
+  wallBudgetMinutes,
   workspaceCacheDirectory,
 } from "./container.mjs";
 import {
@@ -791,6 +792,7 @@ async function runOne({ arm, armName, layout, repo, maxSteps, attempts, timeoutM
     maxSteps,
     attempts,
     timeoutMinutes,
+    maxWallMinutes: wallBudgetMinutes(timeoutMinutes),
   };
 
   if (!existsSync(prepared)) {

@@ -15,6 +15,7 @@ import type { SwarmToml } from "./swarm-toml.ts";
  * | local endpoint   | --local-endpoint | SWARM_LOCAL_BASE_URL         | [providers] local_endpoint  | none: discovery decides          |
  * | max steps        | --max-steps      |                              | [budgets] max_steps         | 40                               |
  * | attempts         | --attempts      |                              | [budgets] attempts          | 3                                |
+ * | max wall minutes | --max-wall-minutes |                           | [budgets] max_wall_minutes  | none: each loop has its own half hour |
  * | anthropic key    |                  | ANTHROPIC_API_KEY            | [providers] anthropic_api_key | unset                          |
  * | openai key       |                  | OPENAI_API_KEY               | [providers] openai_api_key  | unset                            |
  * | google key       |                  | GOOGLE_GENERATIVE_AI_API_KEY | [providers] google_api_key  | unset                            |
@@ -52,6 +53,8 @@ export interface CommandLineSettings {
   readonly model: string | null;
   readonly maxSteps: number | null;
   readonly attempts: number | null;
+  /** The whole run's wall budget, the first loop and every resolve attempt together. */
+  readonly maxWallMinutes?: number | null;
   readonly localEndpoint: string | null;
   readonly interfaceFlags?: InterfaceFlags;
 }
@@ -79,6 +82,8 @@ export interface ResolvedSettings {
   readonly modelPinned: boolean;
   readonly maxSteps: number;
   readonly attempts: number;
+  /** Null is no budget over the run as a whole; each loop still has its own half hour. */
+  readonly maxWallMinutes: number | null;
   readonly providerKeys: {
     readonly anthropic: string | undefined;
     readonly openai: string | undefined;
@@ -117,6 +122,7 @@ export function resolveSettings(input: SettingsInput): ResolvedSettings {
     modelPinned: pinnedModel !== null,
     maxSteps: input.flags.maxSteps ?? input.toml?.budgets.maxSteps ?? defaultMaxSteps,
     attempts: input.flags.attempts ?? input.toml?.budgets.attempts ?? defaultAttempts,
+    maxWallMinutes: input.flags.maxWallMinutes ?? input.toml?.budgets.maxWallMinutes ?? null,
     providerKeys: {
       anthropic: input.env.ANTHROPIC_API_KEY ?? input.toml?.providers.anthropicApiKey ?? undefined,
       openai: input.env.OPENAI_API_KEY ?? input.toml?.providers.openaiApiKey ?? undefined,

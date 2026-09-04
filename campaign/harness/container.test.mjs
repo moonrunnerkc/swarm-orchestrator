@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { armNamed } from "./arms.mjs";
+import { budgets } from "./criteria.mjs";
 import {
   armRunArgv,
   buildImageArgv,
@@ -12,6 +13,7 @@ import {
   offlineArgv,
   prepareArgv,
   typeEnvironment,
+  wallBudgetMinutes,
 } from "./container.mjs";
 
 const digest = "a".repeat(64);
@@ -65,6 +67,13 @@ describe("images", () => {
       reason: "the image carries no CLI tarball label, so which CLI it holds is not known from the image",
     });
     expect(cliRecordFromLabel("<no value>\n").tarballSha256).toBeNull();
+  });
+});
+
+describe("the wall budget a run's CLI is given", () => {
+  it("is the container budget less the suite timeout and two minutes, so the closing gates and the export fit", () => {
+    expect(wallBudgetMinutes(45)).toBe(45 - budgets.suiteTimeoutMinutes - 2);
+    expect(() => wallBudgetMinutes(budgets.suiteTimeoutMinutes + 2)).toThrow("leaves no wall budget");
   });
 });
 
@@ -141,6 +150,7 @@ describe("an arm run", () => {
     expect(flag(swarm, "--local-endpoint")).toBe("http://campaign-backend-8000:8000/v1");
     expect(flag(swarm, "--bundle")).toBe("/out/bundle");
     expect(flag(swarm, "--max-steps")).toBe("40");
+    expect(flag(swarm, "--max-wall-minutes")).toBe(String(wallBudgetMinutes(30)));
     expect(flag(swarm, "--attempts")).toBe("3");
     expect(swarm).toContain("--no-tui");
     expect(swarm).toContain("--no-open-evidence");

@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { type AgentTaskOptions, runAgentTask, systemPrompt } from "./agent-run.ts";
 import type { Clock } from "./core/clock.ts";
 import type { ModelClient, ModelRequest } from "./core/model-client.ts";
-import { createFixedRandom } from "./core/test-doubles.ts";
+import { createFixedRandom, createTestClock } from "./core/test-doubles.ts";
 import type { JsonValue } from "./evidence/canonical-json.ts";
 import { createRecordingModelClient } from "./evidence/model-call-recording.ts";
 import { type EvidenceRecorder, openEvidenceSession } from "./evidence/session.ts";
@@ -382,5 +382,69 @@ describe("the trail tool a worker is given and the single-agent path is not", ()
     const added = (spy.requests[0]?.system ?? "").slice(systemPrompt.length);
     expect(added).toContain("read_trail");
     expect(added).not.toMatch(/verified|green|\bpassed\b/i);
+  });
+});
+
+describe("the run's wall budget", () => {
+  /** Writes the broken change on its first turn, then never answers again until aborted. */
+  function writesThenHangs(onHang: () => void): ModelClient {
+    const first = createFixtureModelClient({
+      modelId: "fixture:hangs",
+      turns: [
+        respondWithToolCalls("writing", [
+          { callId: "c1", toolName: "write", input: { path: "src/greet.js", content: broken } },
+        ]),
+      ],
+    });
+    let calls = 0;
+    return {
+      modelId: "fixture:hangs",
+      generate(request: ModelRequest) {
+        calls += 1;
+        if (calls === 1) {
+          return first.generate(request);
+        }
+        return new Promise((_, reject) => {
+          request.abortSignal.addEventListener(
+            "abort",
+            () => reject(new Error("aborted at the wall")),
+            {
+              once: true,
+            },
+          );
+          onHang();
+        });
+      },
+    };
+  }
+
+  it("ends a hung loop at the budget, runs the gates, spends no attempt, and still writes the bundle's records", async () => {
+    const ticking = createTestClock(1_700_000_000_000);
+    const budgetMs = 5 * 60_000;
+    const model = createRecordingModelClient(
+      writesThenHangs(() => ticking.advance(budgetMs)),
+      evidence,
+    );
+
+    const outcome = await task([], { model, clock: ticking, attempts: 2, maxWallTimeMs: budgetMs });
+
+    expect(outcome.loop.stopReason).toBe("max-wall-time");
+    expect(outcome.green).toBe(false);
+    expect(outcome.gates.outcome.settled).not.toBe("green");
+    expect(outcome.gates.outcome.attempts).toHaveLength(0);
+    const records = evidence.records();
+    const budget = records.find((record) => record.type === "session-budget");
+    expect(evidence.payloads().get(budget?.payloadDigest ?? "")).toMatchObject({
+      maxWallTimeMs: budgetMs,
+    });
+    expect(records.some((record) => record.type === "escalation")).toBe(true);
+  });
+
+  it("leaves a run without one exactly as it was: each loop its own half hour, no bound over the whole", async () => {
+    const outcome = await task(goodTurns(stillGreen));
+
+    expect(outcome.green).toBe(true);
+    const records = evidence.records();
+    expect(records.some((record) => record.type === "session-budget")).toBe(false);
   });
 });

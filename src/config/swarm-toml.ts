@@ -31,6 +31,7 @@ const rawFileSchema = z.strictObject({
     .strictObject({
       max_steps: positiveWholeNumber.optional(),
       attempts: positiveWholeNumber.optional(),
+      max_wall_minutes: positiveWholeNumber.optional(),
       max_changed_files: positiveWholeNumber.optional(),
       max_added_lines: positiveWholeNumber.optional(),
     })
@@ -74,6 +75,7 @@ export interface SwarmToml {
   readonly budgets: {
     readonly maxSteps: number | null;
     readonly attempts: number | null;
+    readonly maxWallMinutes: number | null;
     readonly maxChangedFiles: number | null;
     readonly maxAddedLines: number | null;
   };
@@ -107,7 +109,7 @@ const acceptedTables = "providers, gates, budgets, models, interface, theme, key
 
 const acceptedKeysByTable: Readonly<Record<string, string>> = {
   providers: "anthropic_api_key, openai_api_key, google_api_key, local_endpoint, local_thinking",
-  budgets: "max_steps, attempts, max_changed_files, max_added_lines",
+  budgets: "max_steps, attempts, max_wall_minutes, max_changed_files, max_added_lines",
   models: "pin",
   interface: "tui, color, open_evidence, confirm_timeout_minutes",
 };
@@ -122,6 +124,7 @@ const acceptedValueByKey: Readonly<Record<string, string>> = {
   "interface.confirm_timeout_minutes": "a whole number of minutes, or 0 to wait for ever",
   "budgets.max_steps": "a positive whole number",
   "budgets.attempts": "a positive whole number",
+  "budgets.max_wall_minutes": "a positive whole number of minutes",
   "budgets.max_changed_files": "a positive whole number",
   "budgets.max_added_lines": "a positive whole number",
   "models.pin": 'a model spec such as "anthropic:claude-opus-5"',
@@ -159,6 +162,7 @@ export function parseSwarmToml(text: string, source: string): SwarmToml {
     gates: raw.gates ?? {},
     budgets: {
       maxSteps: raw.budgets?.max_steps ?? null,
+      maxWallMinutes: raw.budgets?.max_wall_minutes ?? null,
       attempts: raw.budgets?.attempts ?? null,
       maxChangedFiles: raw.budgets?.max_changed_files ?? null,
       maxAddedLines: raw.budgets?.max_added_lines ?? null,

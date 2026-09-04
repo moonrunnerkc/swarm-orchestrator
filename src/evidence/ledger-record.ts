@@ -25,6 +25,7 @@ const recordTypes = [
   "confirmation",
   "claim",
   "session-stopped",
+  "session-budget",
   "gate-run",
   "gate-set-sealed",
   "gate-bond",

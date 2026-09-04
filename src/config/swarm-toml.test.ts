@@ -42,6 +42,7 @@ describe("parseSwarmToml on a well-formed file", () => {
     expect(toml.budgets).toEqual({
       maxSteps: 25,
       attempts: 2,
+      maxWallMinutes: null,
       maxChangedFiles: 6,
       maxAddedLines: 200,
     });
@@ -73,7 +74,9 @@ describe("parseSwarmToml on a file this build cannot honour", () => {
 
     expect(attempt).toThrow(MalformedSwarmTomlError);
     expect(attempt).toThrow(/\[budgets\] max_step is not a key this build reads/);
-    expect(attempt).toThrow(/max_steps, attempts, max_changed_files, max_added_lines/);
+    expect(attempt).toThrow(
+      /max_steps, attempts, max_wall_minutes, max_changed_files, max_added_lines/,
+    );
   });
 
   it("says what was found and what is accepted when a value has the wrong shape", () => {
