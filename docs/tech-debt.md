@@ -236,6 +236,18 @@ suite once more after the fixed point. Not measured here: the 60-run calibration
 the campaign runs pay it, and the campaign records the duration, so the cost is in the data
 rather than estimated.
 
+## Debt: a model call is retried by count, however long the failed call took
+
+The retry policy gives a failed model call three attempts with a short backoff, which is
+right for a refused connection and wrong for a stream that ran eight minutes and then ended
+without a finish reason: the second campaign's preflight on the rapid-mlx arm spent
+twenty-four of its thirty-three minutes on three such calls in a row before the loop gave up.
+The wall budget bounds the damage and the run still ends with a bundle, so this is a cost
+rather than a hole. Paying it means a policy that also reads the clock: a call that failed
+after consuming more than some share of what is left is not retried, and the loop reports the
+model error then. Not changed during the campaign, because the CLI under test is fixed for its
+duration.
+
 ## Debt: the campaign corpus measures the CLI of 2026-09-02, not the tree
 
 The campaign's hundred runs were made by the CLI tarball packed when the campaign started,
