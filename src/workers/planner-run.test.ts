@@ -136,7 +136,8 @@ describe("the planner run", () => {
   });
 
   it("reports an empty response as itself, not as a refusal", async () => {
-    const empty = await planner([respondWithText("")]);
+    // Every sample the retry policy takes comes back empty, so the silence is the answer.
+    const empty = await planner([respondWithText(""), respondWithText(""), respondWithText("")]);
 
     expect(empty.stopReason).toBe("empty-response");
     expect(empty.graph).toBeNull();

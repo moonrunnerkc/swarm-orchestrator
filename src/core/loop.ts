@@ -191,12 +191,22 @@ function buildRequest(
  * rather than the model answering: the surrounding steps of the same run cost a few hundred
  * tokens each, so the next sample of the same request usually lands.
  */
+function carriesNothing(response: ModelResponse): boolean {
+  return response.text.trim().length === 0 && response.toolCalls.length === 0;
+}
+
 function spentTheCapOnNothing(response: ModelResponse): boolean {
-  return (
-    response.finishReason === "length" &&
-    response.text.trim().length === 0 &&
-    response.toolCalls.length === 0
-  );
+  return response.finishReason === "length" && carriesNothing(response);
+}
+
+/**
+ * A turn with neither text nor a tool call and a finish reason other than the cap is the
+ * runtime dropping output, which is a transport failure wearing a response's shape. It is
+ * sampled again the way a refused connection is, because one such turn used to end a
+ * forty-step run on the spot: two campaign runs stopped that way with their work half done.
+ */
+function arrivedEmpty(response: ModelResponse): boolean {
+  return response.finishReason !== "length" && carriesNothing(response);
 }
 
 /**
@@ -256,15 +266,18 @@ async function callModelWithRetry(
     const willRetry = attempt < attempts - 1 && !deps.abortSignal.aborted;
     try {
       const response = await callWithinBudget(deps, request, remainingMs);
-      // The last attempt's truncation is returned rather than thrown, so the loop stops as
-      // output-cap and names the cap. A call-failed error there would say less about more.
-      if (!spentTheCapOnNothing(response) || !willRetry) {
+      // The last attempt's truncation or silence is returned rather than thrown, so the loop
+      // stops as output-cap or empty-response and names which. A call-failed error there would
+      // say less about more.
+      if (!(spentTheCapOnNothing(response) || arrivedEmpty(response)) || !willRetry) {
         return response;
       }
       deps.emit({
         type: "model-error",
         step,
-        message: `the model spent all ${response.outputTokens} output tokens without emitting text or a tool call`,
+        message: spentTheCapOnNothing(response)
+          ? `the model spent all ${response.outputTokens} output tokens without emitting text or a tool call`
+          : `the runtime answered with neither text nor a tool call (finish reason ${response.finishReason})`,
         willRetry: true,
       });
     } catch (cause) {

@@ -1510,7 +1510,11 @@ describe("18. score the runtime's empty turn as the model failing the case", () 
       throw new Error("fixture is empty");
     }
 
-    const { observation, commands } = await repeatAfter([replayEmptyTurn(emptyTurn)]);
+    // Twice: the loop samples an empty turn again before it believes it.
+    const { observation, commands } = await repeatAfter([
+      replayEmptyTurn(emptyTurn),
+      replayEmptyTurn(emptyTurn),
+    ]);
 
     expect(observation).toMatchObject({
       executed: false,
@@ -1535,6 +1539,7 @@ describe("18. score the runtime's empty turn as the model failing the case", () 
       respondWithToolCalls("reading", [
         { callId: "c1", toolName: "read", input: { path: "clamp.mjs" } },
       ]),
+      replayEmptyTurn(emptyTurn),
       replayEmptyTurn(emptyTurn),
     ]);
 
