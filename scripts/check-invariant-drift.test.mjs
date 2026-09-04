@@ -82,6 +82,12 @@ describe("the invariant drift check", () => {
     expect(outcome.stderr).toContain("no \"## Invariants\" heading");
   });
 
+  it("holds the prompt's predicate catalogue to the ledger and the verifier when run over this repository", async () => {
+    const { stdout } = await run("node", [script]);
+
+    expect(stdout).toContain("predicate catalogue matches the ledger and the verifier");
+  });
+
   it("agrees with the two files in this repository, which is what CI runs", async () => {
     const outcome = await check(
       join(import.meta.dirname, "..", "CLAUDE.md"),

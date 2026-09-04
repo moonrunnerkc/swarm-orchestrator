@@ -5,6 +5,7 @@ import type { LoopEvent } from "./core/loop-events.ts";
 import type { ConversationMessage, ModelClient, SamplingSettings } from "./core/model-client.ts";
 import type { RandomSource } from "./core/random-source.ts";
 import type { ToolInvoker } from "./core/tool-invoker.ts";
+import { renderPredicateCatalogue } from "./evidence/predicate-catalogue.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
 import type { ResolveRequest } from "./gates/auto-resolve.ts";
 import type { SingleFileCommand } from "./gates/base-control.ts";
@@ -55,6 +56,7 @@ export const systemPrompt = [
   '"tool-call:shell", citing the record of the test command you ran.',
   "A claim whose kind does not match the record it cites renders UNVERIFIED, so a predicate that",
   "happens to hold against some other record never stands in for the one you are claiming about.",
+  renderPredicateCatalogue(),
   "The harness evaluates the predicate and decides the verdict; your prose never counts as a result.",
   "When the work is done, reply with a summary and no tool calls.",
   "Quality gates then run against the workspace. If one fails you will be given its raw output",
