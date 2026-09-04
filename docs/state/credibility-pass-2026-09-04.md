@@ -160,3 +160,45 @@ No campaign record predates the fix. The 08-24 bundle the fixture also came from
 committed and needs no header.
 
 Commits: `1d7fac84`, `710e63b4`.
+
+## Phase 2: session ratchet trust-boundary gaps
+
+Each gap as one line: what the code under measurement could author that the harness then
+trusted. The full write-up of each is in `../ratchet-inputs.md`.
+
+| Gap | What the tree could author | Moved to | Attack test | Fails on the commit before |
+| --- | --- | --- | --- | --- |
+| A session's next turn reads its gate commands from the manifest this turn wrote | the tests command, and whether the harness's own reporting vector is used at all | the commit the session started on, sealed once before the first turn, every turn under that seal | `src/evidence/redteam-adversarial.test.ts` case 19 | `6aca0bb9`: turn two green under `# pass 1` printed by a `node -e` the first turn wrote into `package.json` |
+| A parallel run's later layer reads its gate commands from the integration tree the earlier layer landed | the same, one level up, for the merge queue and for every worker branched from a later head | the commit the run branched from, for every layer and every worker | `src/workers/merge-queue.test.ts`, the two-layer case | `6aca0bb9`: the second layer's broken function landed under the first layer's rewritten script |
+| The verifier held a gate run to the sealed id, severity and rule, and not to its command; and read the final cycle as the highest attempt number on the chain | a run under another command than sealed still conformed; an earlier turn's retry stood in for a later turn that dropped a gate | the sealed command is held too, and the final cycle is the last run of gate records under one attempt | `src/evidence/seal-conformance.test.ts` | `6aca0bb9`: both cases |
+| Not-applicable was decided by a pattern over stderr as well as by the exit code | a failing suite stood down by printing `x: not found` | the exit code alone, with a program the harness could not start reported by the spawn error | case 20; `src/gates/killed-command.test.ts` | `6aca0bb9`: read as not applicable |
+| A gate killed at its timeout was not applicable, which never blocks | a hung suite stood down, and the run green on the gates beside it | a kill is a failure of the gate that ran, with the reason in its output | case 21 | `6aca0bb9`: `isGreen` true with lint passed and tests hung |
+
+The refined-github run of the first campaign's Ollama arm is the fourth gap as it happened in
+the wild: its test script ran a missing `rg`, exited 0, and the gate was recorded not
+applicable on the printed line. The corpus stands as recorded, and the bundle re-derives
+under the `rederive.mjs` it carries, which is the rule it was written under.
+
+Not moved, and named as a boundary rather than a gap, in both `../ratchet-inputs.md` and
+`../build-guide.md` 7.1:
+
+- **A gate's pass or fail is the exit code of a command that runs workspace code.** Closing
+  it means the harness trusting nothing the project's runner says, which means not running
+  the project's tests at all. What bounds it stays: no green over a change no command gate
+  ran on, the numeric arms under the boolean one, and the boolean one now authored by nothing
+  but the exit code.
+- **A test that exits 127 on purpose stands its gate down.** 127 is the shell's word for a
+  program it could not find and the harness cannot tell the shell's from a child's. That
+  never renders green on its own and is one visible line in a diff. Reading anything but the
+  exit code to tell them apart was the defect closed above.
+
+The STOP condition, that closing a gap would require trusting something new, was not met:
+every move reads less than before, not more. The tech-debt entry for the per-turn session
+ratchet is closed at the cause, with the reasoning recorded there.
+
+A defect found on the way, in the same commit: a session of more than one turn sealed its
+criteria once per turn, and the verifier refuses a bundle with two seals, so every multi-turn
+session bundle since sealing landed on 2026-09-02 failed verification. Case 19 asserts one
+seal and a clean conformance over a two-turn chain.
+
+Commits: `bd7ab8fc`, `98dbdf9d`, `7c6c8f91`, and the write-up above.
