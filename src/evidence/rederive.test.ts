@@ -34,6 +34,14 @@ describe("the re-derivation script agrees with the parsers it ships beside", () 
       unavailable: null,
     },
     { exitCode: 0, stdout: "", stderr: "", durationMs: 1, unavailable: "no script" },
+    // A failure that printed a missing-tool line: the exit code is what both rules read.
+    {
+      exitCode: 1,
+      stdout: "# tests 1\n# pass 0\n# fail 1\n",
+      stderr: "/bin/sh: rg: not found",
+      durationMs: 1,
+      unavailable: null,
+    },
     {
       exitCode: 0,
       stdout: "TAP version 13\n# tests 3\n# pass 3\n# fail 0\n",

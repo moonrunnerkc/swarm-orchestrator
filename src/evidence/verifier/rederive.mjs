@@ -29,13 +29,10 @@ import {
   sha256,
 } from "./verify.mjs";
 
-const missingCommand = /command not found|:\s*not found|is not recognized as an internal/i;
-
 function notApplicable(observation) {
   if (observation.unavailable !== null && observation.unavailable !== undefined)
     return "not-applicable";
-  if (observation.exitCode === 127 || missingCommand.test(observation.stderr ?? ""))
-    return "not-applicable";
+  if (observation.exitCode === 127) return "not-applicable";
   return null;
 }
 

@@ -18,18 +18,24 @@ export const measureNames = {
   changedLinesMeasured: "changedLinesMeasured",
 } as const;
 
-const missingCommand = /command not found|:\s*not found|is not recognized as an internal/i;
-
 /**
  * A gate whose tool is absent has proven nothing, and calling that a failure would send the
  * model off fixing code that is fine. It is reported as not-applicable, which never renders
  * green either.
+ *
+ * Decided by the exit code and by nothing the command printed. 127 is the shell's own answer
+ * for a program it could not find, and a vector the harness spawned itself reports the same
+ * absence through `unavailable`. The text on stderr used to count as well, and a suite that
+ * ran a missing helper tool and still exited 0 was read as not applicable on the strength of
+ * `rg: not found`, so what the run's own exit code said was set aside for a sentence any test
+ * can print. What a process exits with is still the process's to choose, and a test that exits
+ * 127 on purpose makes its gate not applicable, which never renders green.
  */
 function notApplicable(observation: GateObservation): GateReading | null {
   if (observation.unavailable !== null) {
     return { status: "not-applicable", detail: observation.unavailable, measures: {} };
   }
-  if (observation.exitCode === 127 || missingCommand.test(observation.stderr)) {
+  if (observation.exitCode === 127) {
     return {
       status: "not-applicable",
       detail: "the command is not installed on this machine, so this gate measured nothing",

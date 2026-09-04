@@ -11,7 +11,7 @@ import type { LoopEvent } from "../core/loop-events.ts";
 import { createFixedRandom, createTestClock } from "../core/test-doubles.ts";
 import { runAutoResolve } from "../gates/auto-resolve.ts";
 import { checkFileSet, createFileSetRegistry, type FileSetState } from "../gates/file-set.ts";
-import type { GateContext, GateDefinition } from "../gates/gate-definition.ts";
+import type { GateContext, GateDefinition, GateObservation } from "../gates/gate-definition.ts";
 import { fileSetGate, placeholderGate, secretScanGate } from "../gates/inspection-gates.ts";
 import {
   emptyMeasureSnapshot,
@@ -19,7 +19,7 @@ import {
   takeMeasureSnapshot,
 } from "../gates/measure-snapshot.ts";
 import { measureTestFile, type TestFileMeasures } from "../gates/measures.ts";
-import { testOutputParser } from "../gates/parsers.ts";
+import { exitCodeParser, testOutputParser } from "../gates/parsers.ts";
 import { judgeRatchet } from "../gates/ratchet.ts";
 import {
   createMemoryCheckpoint,
@@ -1680,5 +1680,34 @@ describe("19. author the next turn's gate command by rewriting the manifest in t
     expect(sealed.gates.find((gate) => gate.id === "tests")?.command).toContain(
       "--test-isolation=process",
     );
+  });
+});
+
+/**
+ * Whether a gate's tool was installed used to be read off its stderr as well as its exit
+ * code, so a suite that printed `not found` about anything at all was not applicable rather
+ * than failed, and a failing gate could be made to stand down by printing one line. The rule
+ * reads the exit code and nothing the run printed.
+ */
+describe("20. stand a failing gate down by printing that a tool is missing", () => {
+  const failingWithExcuse: GateObservation = {
+    exitCode: 1,
+    stdout: "TAP version 13\nnot ok 1 - greets\n# tests 1\n# pass 0\n# fail 1\n",
+    stderr: "/bin/sh: vitest: command not found\n",
+    durationMs: 1,
+    unavailable: null,
+  };
+
+  it("is read as the failure the exit code reports, under both rules", () => {
+    expect(testOutputParser(failingWithExcuse).status).toBe("failed");
+    expect(exitCodeParser(failingWithExcuse).status).toBe("failed");
+  });
+
+  it("still stands down on the shell's own exit code for a program it could not find", () => {
+    // Documented residual: what a process exits with is the process's to choose, and a test
+    // that exits 127 on purpose makes its gate not applicable. That never renders green, and a
+    // change every command gate stood down on is not measured.
+    const missing: GateObservation = { ...failingWithExcuse, exitCode: 127, stdout: "" };
+    expect(testOutputParser(missing).status).toBe("not-applicable");
   });
 });
