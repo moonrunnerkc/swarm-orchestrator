@@ -14,10 +14,14 @@ const runProcess = promisify(execFile);
 interface ProcessFailure {
   readonly stdout?: string;
   readonly stderr?: string;
-  readonly code?: number;
+  /** The exit code, or the errno name where the process never started (`ENOENT`, `EACCES`). */
+  readonly code?: number | string;
   readonly killed?: boolean;
   readonly message?: string;
 }
+
+/** The shell's own answer for a program it could not find, used for a spawn that found none. */
+const notFoundExitCode = 127;
 
 /**
  * Gate commands run outside the tool chokepoint on purpose: they are the harness measuring
@@ -55,6 +59,15 @@ export function createNodeCommandRunner(clock: Clock): GateCommandRunner {
       };
     } catch (cause) {
       const failure = cause as ProcessFailure;
+      if (typeof failure.code === "string") {
+        return {
+          exitCode: notFoundExitCode,
+          stdout: "",
+          stderr: failure.message ?? "",
+          durationMs: clock.now() - startedAt,
+          unavailable: `${file} could not be started (${failure.code}), so this gate measured nothing`,
+        };
+      }
       return {
         exitCode: failure.code ?? 1,
         stdout: failure.stdout ?? "",

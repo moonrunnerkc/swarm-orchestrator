@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createTestClock } from "../core/test-doubles.ts";
 import { createNodeCommandRunner } from "./node-command-runner.ts";
@@ -14,6 +15,18 @@ describe("a command that never finishes", () => {
     expect(observation.unavailable).toContain("waiting for something that is never coming");
     expect(observation.unavailable).toContain("standard input");
     expect(observation.unavailable).toContain("pass it in");
+  });
+
+  it("reports a program it could not start as unavailable, by the spawn and not by a parser", async () => {
+    const runner = createNodeCommandRunner(createTestClock());
+
+    const observation = await runner.runVouched([join(process.cwd(), "no-such-program")], {
+      cwd: process.cwd(),
+      timeoutMs: 10_000,
+    });
+
+    expect(observation.unavailable).toContain("could not be started (ENOENT)");
+    expect(observation.exitCode).toBe(127);
   });
 
   it("leaves a command that simply failed alone", async () => {
