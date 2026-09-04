@@ -139,6 +139,8 @@ function harness(
     fileSet?: FileSetState;
     budgets?: DiffBudget;
     gates?: readonly GateDefinition[];
+    /** What the base tree prints for a gate, or null where nothing can measure it. */
+    atBase?: (gate: GateDefinition) => { exitCode: number; stdout: string } | null;
   } = {},
 ): Harness {
   const workspace = createMemoryWorkspace({
@@ -176,6 +178,18 @@ function harness(
           events.push(event);
         },
         cap: options.cap ?? 3,
+        ...(options.atBase === undefined
+          ? {}
+          : {
+              measureAtBase: (gate: GateDefinition) => {
+                const observed = options.atBase?.(gate) ?? null;
+                return Promise.resolve(
+                  observed === null
+                    ? null
+                    : { ...observed, stderr: "", durationMs: 1, unavailable: null },
+                );
+              },
+            }),
       }),
   };
 }
@@ -624,5 +638,75 @@ describe("an advisory gate that demands a justification", () => {
     );
 
     expect(outstandingJustifications(outcome.finalCycle, citedRecords(evidence))).toEqual([]);
+  });
+});
+
+/**
+ * Twenty-eight campaign runs escalated at a lint, format or typecheck gate that failed on the
+ * base tree exactly as it failed after the run: clippy missing from an image, mypy over four
+ * hundred untyped files, gofmt over a module cache. The model was told the gate failed and
+ * spent its attempts on it. The base is measured now, and a failure it already has is named.
+ */
+describe("a gate that fails at the base commit too", () => {
+  const preexistingLint = 'src/math.ts: "var" is not allowed';
+
+  it("is named to the model and in the escalation, and recorded as a gate-baseline run", async () => {
+    const requests: string[] = [];
+    const subject = harness({
+      cap: 1,
+      atBase: (gate) =>
+        gate.id === "lint" ? { exitCode: 1, stdout: preexistingLint } : { exitCode: 0, stdout: "" },
+    });
+    subject.workspace.write(sourcePath, lintOffendingSource);
+
+    const outcome = await subject.run((request) => {
+      requests.push(request.gateOutput);
+      subject.workspace.write(sourcePath, lintOffendingSource);
+      return Promise.resolve();
+    });
+
+    expect(outcome.settled).toBe("escalated");
+    expect(requests[0]).toContain("gate lint (lint) FAILED");
+    expect(requests[0]).toContain("fails the same way at the base commit");
+    expect(requests[0]).not.toContain("gate tests (tests) FAILED: fails the same way");
+    expect(outcome.escalation?.failingAtBase).toEqual(["lint"]);
+    // Only the gate that failed is measured at the base: the tests pass here and are not.
+    const baselines = evidence.records().filter((record) => record.type === "gate-baseline");
+    expect(baselines).toHaveLength(1);
+    expect(evidence.payloads().get(baselines[0]?.payloadDigest ?? "")).toMatchObject({
+      gateId: "lint",
+      status: "failed",
+      stdout: preexistingLint,
+    });
+  });
+
+  it("is not named where the base failed differently, or passed", async () => {
+    const requests: string[] = [];
+    const subject = harness({
+      cap: 1,
+      atBase: (gate) =>
+        gate.id === "lint"
+          ? { exitCode: 1, stdout: "src/other.ts: unused import" }
+          : { exitCode: 0, stdout: "" },
+    });
+    subject.workspace.write(sourcePath, lintOffendingSource);
+
+    const outcome = await subject.run((request) => {
+      requests.push(request.gateOutput);
+      return Promise.resolve();
+    });
+
+    expect(requests[0]).not.toContain("fails the same way at the base commit");
+    expect(outcome.escalation?.failingAtBase).toEqual([]);
+  });
+
+  it("names nothing where nothing can measure the base", async () => {
+    const subject = harness({ cap: 1 });
+    subject.workspace.write(sourcePath, lintOffendingSource);
+
+    const outcome = await subject.run(() => Promise.resolve());
+
+    expect(outcome.escalation?.failingAtBase).toEqual([]);
+    expect(evidence.records().some((record) => record.type === "gate-baseline")).toBe(false);
   });
 });

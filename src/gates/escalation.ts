@@ -26,6 +26,11 @@ export const escalationSchema = z.object({
   attemptsRejectedByRatchet: z.number().int().nonnegative(),
   lastGateRecord: z.string(),
   history: z.array(attemptSummarySchema),
+  /**
+   * Gates whose first-cycle failure the base tree already had, unchanged, measured by running
+   * them over the base. Empty where nothing was measured or nothing matched.
+   */
+  failingAtBase: z.array(z.string()).default([]),
 });
 
 export type EscalationPayload = z.infer<typeof escalationSchema>;
@@ -38,6 +43,14 @@ export function describeEscalation(escalation: EscalationPayload): string {
     `Why: ${escalation.reason}`,
     `Its last run is ledger record ${escalation.lastGateRecord}.`,
   ];
+
+  if (escalation.failingAtBase.length > 0) {
+    lines.push(
+      "",
+      `Fails at the base commit too, unchanged by this run: ${escalation.failingAtBase.join(", ")}. ` +
+        "The gate-baseline records hold what the base tree printed.",
+    );
+  }
 
   if (escalation.attemptsRejectedByRatchet > 0) {
     lines.push(

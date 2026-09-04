@@ -68,6 +68,44 @@ describe("holding a gate run to the sealed command", () => {
   });
 });
 
+describe("a gate run over the base tree", () => {
+  it("has to be a sealed gate, and is not part of any cycle", () => {
+    const { records, payloads } = chain([
+      seal,
+      { ...gateRun("tests", 0), type: "gate-baseline" as const },
+      { ...gateRun("lint", 0), type: "gate-baseline" as const },
+      gateRun("tests", 0),
+      gateRun("lint", 0),
+      {
+        type: "gate-baseline" as const,
+        payload: {
+          gateId: "spelling",
+          severity: "blocking",
+          parser: "exit-code",
+          command: "x",
+          attempt: 0,
+        },
+      },
+    ]);
+
+    const { problems } = sealConformance(records, payloads);
+
+    expect(problems).toEqual(["record 6 ran gate spelling, which the seal does not name"]);
+  });
+
+  it("does not stand in for a sealed gate missing from the final cycle", () => {
+    const { records, payloads } = chain([
+      seal,
+      gateRun("lint", 0),
+      { ...gateRun("tests", 0), type: "gate-baseline" as const },
+    ]);
+
+    expect(sealConformance(records, payloads).problems).toEqual([
+      "sealed gate tests did not run in the final attempt",
+    ]);
+  });
+});
+
 describe("the final cycle of a chain that holds more than one", () => {
   it("is the last run of gate records under one attempt, so a later turn cannot drop a gate", () => {
     // Turn one retried once and ran every gate; turn two ran only lint. The highest attempt

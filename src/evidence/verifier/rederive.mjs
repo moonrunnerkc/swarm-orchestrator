@@ -178,11 +178,13 @@ export function rederiveBundle(directory, log = console.log) {
   };
 
   const parserByGate = new Map();
+  // A gate-baseline record is a gate run over the base tree, in the same shape, read by the
+  // same rule.
   for (const entry of records) {
-    if (entry.type !== "gate-run") continue;
+    if (entry.type !== "gate-run" && entry.type !== "gate-baseline") continue;
     const payload = payloads.get(entry.payloadDigest);
     if (payload === undefined) {
-      cannot(`gate-run ${entry.sequence}: payload missing`);
+      cannot(`${entry.type} ${entry.sequence}: payload missing`);
       continue;
     }
     const parser = payload.parser ?? "exit-code";
@@ -191,22 +193,22 @@ export function rederiveBundle(directory, log = console.log) {
     parserByGate.set(payload.gateId, parser);
     if (payload.outputTruncated === true) {
       cannot(
-        `gate-run ${entry.sequence} ${payload.gateId}: the record truncated the output the rule reads`,
+        `${entry.type} ${entry.sequence} ${payload.gateId}: the record truncated the output the rule reads`,
       );
       continue;
     }
     const status = readStatus(parser, payload);
     if (status === null) {
-      cannot(`gate-run ${entry.sequence} ${payload.gateId}: no rule named ${parser}`);
+      cannot(`${entry.type} ${entry.sequence} ${payload.gateId}: no rule named ${parser}`);
       continue;
     }
     if (status === payload.status) {
       agree(
-        `gate-run ${entry.sequence} ${payload.gateId}: ${status} under the ${parser} rule${ruleNote}`,
+        `${entry.type} ${entry.sequence} ${payload.gateId}: ${status} under the ${parser} rule${ruleNote}`,
       );
     } else {
       disagree(
-        `gate-run ${entry.sequence} ${payload.gateId}: recorded ${payload.status}, the ${parser} rule reads ${status}`,
+        `${entry.type} ${entry.sequence} ${payload.gateId}: recorded ${payload.status}, the ${parser} rule reads ${status}`,
       );
     }
   }

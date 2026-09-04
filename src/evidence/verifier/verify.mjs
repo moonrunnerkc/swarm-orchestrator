@@ -399,7 +399,7 @@ export function sealConformance(records, payloads) {
     return { sealed: null, problems: [`record ${seal.sequence} carries no readable gate set`] };
   }
   const first = records.find((entry) =>
-    ["model-call", "tool-call", "gate-run"].includes(entry.type),
+    ["model-call", "tool-call", "gate-run", "gate-baseline"].includes(entry.type),
   );
   if (first !== undefined && first.sequence < seal.sequence) {
     problems.push(
@@ -407,11 +407,18 @@ export function sealConformance(records, payloads) {
     );
   }
   const byId = new Map(sealed.gates.map((gate) => [gate.id, gate]));
-  const runs = records
-    .filter((entry) => entry.type === "gate-run")
-    .map((entry) => ({ sequence: entry.sequence, payload: payloads.get(entry.payloadDigest) }))
+  // Every run of a gate, over the tree the loop left or over the base, has to be a sealed gate
+  // run as sealed; only the runs over the tree the loop left make up a cycle.
+  const everyRun = records
+    .filter((entry) => entry.type === "gate-run" || entry.type === "gate-baseline")
+    .map((entry) => ({
+      sequence: entry.sequence,
+      type: entry.type,
+      payload: payloads.get(entry.payloadDigest),
+    }))
     .filter((entry) => entry.payload !== undefined);
-  for (const { sequence, payload } of runs) {
+  const runs = everyRun.filter((entry) => entry.type === "gate-run");
+  for (const { sequence, payload } of everyRun) {
     const declared = byId.get(payload.gateId);
     if (declared === undefined) {
       problems.push(`record ${sequence} ran gate ${payload.gateId}, which the seal does not name`);
