@@ -364,7 +364,8 @@ function describeModel(model: ModelSummary): readonly string[] {
     (one) =>
       `  ${one.caseId} (${one.taskClass}): ${one.gatePassed} of ${one.repeats} green` +
       // Said out loud rather than left to be inferred from a zero.
-      (one.didNotRun > 0 ? `, ${one.didNotRun} did not run` : ""),
+      (one.didNotRun > 0 ? `, ${one.didNotRun} did not run` : "") +
+      (one.gateNotMeasured > 0 ? `, ${one.gateNotMeasured} cut short before the gate` : ""),
   );
 
   return [header, ...rows, "", ...cases];

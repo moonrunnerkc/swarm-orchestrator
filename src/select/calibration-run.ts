@@ -52,8 +52,14 @@ export interface CalibrationRepeatObservation {
   readonly executed: boolean;
   /** Why nothing was measured, or null where something was. Never a sentence. */
   readonly abstentionReason: RepeatAbstentionReason | null;
-  readonly gateExitCode: number;
-  readonly gatePassed: boolean;
+  /**
+   * Null where the gate was not run: the repeat never executed, or the loop ended for a reason
+   * that was the runtime's rather than the model's (`gateMeasuredAfter`). A gate over a
+   * workspace the backend abandoned mid-run measures the backend, and reading it as the
+   * model failing the case is the empty turn scored a second way.
+   */
+  readonly gateExitCode: number | null;
+  readonly gatePassed: boolean | null;
   readonly toolCalls: ToolCallTally;
   readonly modelCalls: ModelCallTally;
   readonly peakMemoryBytes: number | null;
@@ -89,6 +95,18 @@ const calibrationSystemPrompt = [
 ].join(" ");
 
 const gateTimeoutMs = 120_000;
+
+/**
+ * Whether the case's gate says anything about the model after the loop stopped this way. The
+ * model ends its own run by finishing or by spending a budget, and the gate then measures
+ * what it left. A runtime that answered nothing, a call that failed, or a person interrupting
+ * ends the run for the model, and the gate would measure the interruption.
+ */
+export function gateMeasuredAfter(stopReason: StopReason): boolean {
+  return (
+    stopReason !== "empty-response" && stopReason !== "model-error" && stopReason !== "interrupted"
+  );
+}
 
 /**
  * Pinned on the wire rather than left to the backend, so the report can say what the
@@ -167,11 +185,6 @@ export async function runCalibrationRepeat(
     retryPolicy: { attempts: 2, baseDelayMs: 250, maxJitterRatio: 0.5 },
   });
 
-  const gate = await deps.commands.run(request.case.gateCommand, {
-    cwd: workspace,
-    timeoutMs: gateTimeoutMs,
-  });
-
   const produced = payloadsSince(deps.evidence, fromIndex);
   const toolCalls = tallyToolCalls(produced);
   const modelCalls = tallyModelCalls(produced);
@@ -180,6 +193,19 @@ export async function runCalibrationRepeat(
   // and not the loop, so the records are what it has to come from.
   const executed = modelCalls.validTurns > 0;
   const abstentionReason = executed ? null : abstentionOf(produced);
+
+  // Not run at all where it would measure nothing about the model, so the record carries no
+  // exit code a reader could re-derive a verdict from.
+  const gateExitCode =
+    executed && gateMeasuredAfter(outcome.stopReason)
+      ? (
+          await deps.commands.run(request.case.gateCommand, {
+            cwd: workspace,
+            timeoutMs: gateTimeoutMs,
+          })
+        ).exitCode
+      : null;
+  const gatePassed = gateExitCode === null ? null : gateExitCode === 0;
 
   const recorded = await deps.evidence.record({
     type: "calibration-run",
@@ -201,8 +227,8 @@ export async function runCalibrationRepeat(
       abstained: !executed,
       abstentionReason,
       gateCommand: request.case.gateCommand,
-      gateExitCode: gate.exitCode,
-      gatePassed: gate.exitCode === 0,
+      gateExitCode,
+      gatePassed,
       toolCallsAttempted: toolCalls.attempted,
       toolCallsMalformed: toolCalls.malformed,
       toolCallValidity: toolCalls.validityRate,
@@ -229,8 +255,8 @@ export async function runCalibrationRepeat(
     steps: outcome.steps,
     executed,
     abstentionReason,
-    gateExitCode: gate.exitCode,
-    gatePassed: gate.exitCode === 0,
+    gateExitCode,
+    gatePassed,
     toolCalls,
     modelCalls,
     peakMemoryBytes: peak.bytes,

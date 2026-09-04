@@ -1,9 +1,12 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { ModelResponse } from "../core/model-client.ts";
 import { createFixedRandom, createTestClock } from "../core/test-doubles.ts";
+import {
+  recordedEmptyTurns as corruptTurns,
+  replayEmptyTurn as replay,
+} from "../evidence/fixtures/empty-assistant-turns.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { createSessionId, openEvidenceSession } from "../evidence/session.ts";
 import { createStubCommandRunner } from "../gates/test-doubles.ts";
@@ -21,36 +24,6 @@ import { type CalibrationRunDependencies, runCalibrationRepeat } from "./calibra
  * existed both reached a summary as ordinary runs of the model: one was scored as a case the
  * model failed, and the other as a repeat that simply did not go green.
  */
-interface RecordedTurn {
-  readonly session: string;
-  readonly sequence: number;
-  readonly actor: string;
-  readonly why: string;
-  readonly finishReason: string;
-  readonly response: {
-    readonly text: string;
-    readonly toolCalls: readonly [];
-    readonly inputTokens: number;
-    readonly outputTokens: number;
-    readonly finishReason: string;
-    readonly performance: ModelResponse["performance"];
-  };
-}
-
-async function corruptTurns(): Promise<readonly RecordedTurn[]> {
-  const text = await readFile(
-    new URL("../evidence/fixtures/empty-assistant-turns.json", import.meta.url),
-    "utf8",
-  );
-  return (JSON.parse(text) as { turns: RecordedTurn[] }).turns;
-}
-
-function replay(turn: RecordedTurn): FixtureTurn {
-  return {
-    kind: "response",
-    response: { ...turn.response, toolCalls: [], unsupportedFeatures: [] },
-  };
-}
 
 const one: CalibrationCase = {
   id: "pass3-isolation-none-coverage",
@@ -185,6 +158,59 @@ describe("the turns that corrupted the 2026-08-23 and 2026-08-24 calibration bun
       validTurns: 2,
       emptyTurns: 2,
       emptyTurnReasons: { "output-cap-without-content": 2 },
+    });
+    // Spending the whole budget on nothing is the model's own end to its run, so the gate over
+    // what it left is a measurement of it.
+    expect(observation.stopReason).toBe("output-cap");
+    expect(observation.gatePassed).toBe(true);
+  });
+
+  it("does not score the gate of a repeat the runtime cut short after it had answered", async () => {
+    // The first fixture turn again, this time arriving after two turns that carried work. The
+    // repeat executed, so its tool-call measures stand; the gate never ran, because the loop
+    // ended on the runtime's empty turn and not on anything the model decided, and a gate over
+    // that workspace would measure the runtime. Before this the gate ran, failed, and the case
+    // was scored against the model.
+    const [first] = await corruptTurns();
+    if (first === undefined) {
+      throw new Error("fixture is empty");
+    }
+    const commands = createStubCommandRunner(() => ({ exitCode: 1 }));
+
+    const observation = await runCalibrationRepeat(
+      { case: one, modelSpec: "local:qwen3.6:35b-a3b", repeat: 2 },
+      {
+        ...dependencies([
+          respondWithToolCalls("reading", [
+            { callId: "c1", toolName: "list", input: { path: "." } },
+          ]),
+          respondWithToolCalls("reading again", [
+            { callId: "c2", toolName: "read", input: { path: "clamp.mjs" } },
+          ]),
+          replay(first),
+        ]),
+        commands,
+      },
+    );
+
+    expect(observation.stopReason).toBe("empty-response");
+    expect(observation.executed).toBe(true);
+    expect(observation.gatePassed).toBeNull();
+    expect(observation.gateExitCode).toBeNull();
+    expect(commands.commands).toEqual([]);
+
+    const payloads = evidence.payloads();
+    const run = evidence
+      .records()
+      .filter((record) => record.type === "calibration-run")
+      .map((record) => payloads.get(record.payloadDigest));
+    expect(run[0]).toMatchObject({
+      executed: true,
+      stopReason: "empty-response",
+      gatePassed: null,
+      gateExitCode: null,
+      validTurns: 2,
+      emptyTurns: 1,
     });
   });
 

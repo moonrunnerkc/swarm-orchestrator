@@ -28,6 +28,8 @@ import {
   respondWithText,
   respondWithToolCalls,
 } from "../providers/fixture-provider.ts";
+import { runCalibrationRepeat } from "../select/calibration-run.ts";
+import { summarizeByModel } from "../select/calibration-summary.ts";
 import { createToolChokepoint } from "../tools/chokepoint.ts";
 import { createDerivationHeuristic } from "../tools/derivation.ts";
 import { createSandbox } from "../tools/sandbox.ts";
@@ -37,6 +39,7 @@ import { bundleSourceFromRecorder, exportBundle, readBundle } from "./bundle.ts"
 import { digestOfJson, type JsonValue } from "./canonical-json.ts";
 import { claimPayloadSchema, evaluateClaim } from "./claim.ts";
 import { buildEvidenceDag } from "./dag.ts";
+import { recordedEmptyTurns, replayEmptyTurn } from "./fixtures/empty-assistant-turns.ts";
 import { indexCitedRecords } from "./record-index.ts";
 import { findBlockingSecrets, findKnownSecrets, scrubJson, scrubText } from "./scrub.ts";
 import { type EvidenceRecorder, openEvidenceSession } from "./session.ts";
@@ -1455,5 +1458,91 @@ describe("17. un-verify an honest claim by colliding with its digest afterwards"
 
     expect(evaluation).toMatchObject({ verdict: "unverified", reason: "predicate-kind-mismatch" });
     expect(evaluation.detail).toContain("2 kinds");
+  });
+});
+
+/**
+ * The runtime answering nothing is not a model answer, and the calibration bundles of
+ * 2026-08-23 and 2026-08-24 were scored as if it were: a repeat whose only turn was empty was
+ * a case the model failed. The turn is replayed here from the fixture copied out of those
+ * ledgers, in both places it can land, and neither may reach a score.
+ */
+describe("18. score the runtime's empty turn as the model failing the case", () => {
+  const clampCase = {
+    id: "pass3-isolation-none-coverage",
+    taskClass: "edit" as const,
+    prompt: "clamp returns low below the range, high above it, and the value inside it.",
+    seed: { "clamp.mjs": "export const clamp = (v, lo, hi) => v;\n" },
+    gateCommand: "node --test",
+    origin: "bundled" as const,
+    addedAt: "2026-08-13",
+  };
+
+  async function repeatAfter(turns: Parameters<typeof createFixtureModelClient>[0]["turns"]) {
+    // A gate that would fail, so scoring it at all is what the test would catch.
+    const commands = createStubCommandRunner(() => ({ exitCode: 1 }));
+    const observation = await runCalibrationRepeat(
+      { case: clampCase, modelSpec: "local:qwen3.6:35b-a3b", repeat: 2 },
+      {
+        evidence,
+        clock: createTestClock(),
+        random: createFixedRandom(),
+        createModel: () => createFixtureModelClient({ modelId: "local:qwen3.6:35b-a3b", turns }),
+        commands,
+        probeMemory: () => Promise.resolve(null),
+        scratchRoot: join(root, "scratch"),
+        maxSteps: 8,
+        abortSignal: new AbortController().signal,
+      },
+    );
+    return { observation, commands };
+  }
+
+  it("as the whole repeat: the repeat abstains and the gate is never run", async () => {
+    const [emptyTurn] = await recordedEmptyTurns();
+    if (emptyTurn === undefined) {
+      throw new Error("fixture is empty");
+    }
+
+    const { observation, commands } = await repeatAfter([replayEmptyTurn(emptyTurn)]);
+
+    expect(observation).toMatchObject({
+      executed: false,
+      abstentionReason: "no-content",
+      gatePassed: null,
+    });
+    expect(commands.commands).toEqual([]);
+    const [summary] = summarizeByModel([observation]);
+    // Not in any distribution, measured or unmeasured: the repeat is counted as an abstention.
+    expect(summary?.executedRepeats).toBe(0);
+    expect(summary?.dimensions["gate-pass"]).toMatchObject({ samples: 0, unmeasured: 0 });
+    expect(summary?.abstentions).toEqual({ "no-content": 1 });
+  });
+
+  it("as the turn that ended a repeat: the work stands and the gate is not measured", async () => {
+    const [emptyTurn] = await recordedEmptyTurns();
+    if (emptyTurn === undefined) {
+      throw new Error("fixture is empty");
+    }
+
+    const { observation, commands } = await repeatAfter([
+      respondWithToolCalls("reading", [
+        { callId: "c1", toolName: "read", input: { path: "clamp.mjs" } },
+      ]),
+      replayEmptyTurn(emptyTurn),
+    ]);
+
+    expect(observation).toMatchObject({
+      executed: true,
+      stopReason: "empty-response",
+      gatePassed: null,
+      gateExitCode: null,
+    });
+    expect(commands.commands).toEqual([]);
+    const [summary] = summarizeByModel([observation]);
+    // What the model did is measured; what the runtime did to it is not scored against it.
+    expect(summary?.dimensions["tool-call-validity"]).toMatchObject({ samples: 1 });
+    expect(summary?.dimensions["gate-pass"]).toMatchObject({ samples: 0, unmeasured: 1 });
+    expect(summary?.byCase[0]).toMatchObject({ gatePassed: 0, didNotRun: 0, gateNotMeasured: 1 });
   });
 });

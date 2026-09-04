@@ -2,6 +2,7 @@ import {
   type CalibrateView,
   type CalibrationOutcome,
   type CalibrationTally,
+  describeVerdict,
   plannedRuns,
 } from "./calibrate-view.ts";
 import { formatElapsed } from "./elapsed.ts";
@@ -157,12 +158,7 @@ function recentRows(input: CalibrateScreenInput, narrow: boolean): readonly Scre
 }
 
 function describeOutcome(outcome: CalibrationOutcome): string {
-  const verdict = !outcome.executed
-    ? `not measured: ${outcome.abstentionReason ?? "unrecorded"}`
-    : outcome.gatePassed
-      ? "green"
-      : "red";
-  return `${outcome.model}  ${outcome.caseId} #${outcome.repeat}  ${verdict}`;
+  return `${outcome.model}  ${outcome.caseId} #${outcome.repeat}  ${describeVerdict(outcome)}`;
 }
 
 function statusRow(input: CalibrateScreenInput): ScreenRow {

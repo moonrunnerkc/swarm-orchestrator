@@ -4,7 +4,8 @@
  * executed runs as quantiles, side by side across bundles, so two sweeps of one model are
  * compared as distribution against distribution and never as one number against another.
  * Every value comes from a `calibration-run` record; a repeat that did not execute is not a
- * measurement and is counted only as such.
+ * measurement and is counted only as such, and a repeat the runtime cut short before its gate
+ * carries no gate verdict and is counted apart.
  *
  *   node scripts/compare-calibrations.mjs [label=]<bundle directory> [[label=]<bundle directory> ...]
  */
@@ -12,7 +13,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
 export const dimensions = [
-  { key: "gatePassed", label: "gate green (1 or 0)", read: (run) => (run.gatePassed ? 1 : 0), digits: 2 },
+  { key: "gatePassed", label: "gate green (1 or 0)", read: (run) => (run.gatePassed === null ? null : run.gatePassed ? 1 : 0), digits: 2 },
   { key: "tokensPerSecond", label: "output tokens per second", read: (run) => run.tokensPerSecond, digits: 1 },
   { key: "firstTokenMs", label: "time to first token (ms)", read: (run) => run.firstTokenMs, digits: 0 },
   { key: "steps", label: "steps per run", read: (run) => run.steps, digits: 1 },
@@ -61,9 +62,10 @@ export function summarize(runs) {
     if (run.executed) {
       entry.executed += 1;
       entry.runs.push(run);
-      const perCase = entry.cases.get(run.caseId) ?? { taskClass: run.taskClass, green: 0, executed: 0 };
+      const perCase = entry.cases.get(run.caseId) ?? { taskClass: run.taskClass, green: 0, executed: 0, cutShort: 0 };
       perCase.executed += 1;
-      if (run.gatePassed) perCase.green += 1;
+      if (run.gatePassed === null) perCase.cutShort += 1;
+      else if (run.gatePassed) perCase.green += 1;
       entry.cases.set(run.caseId, perCase);
     }
     byModel.set(run.model, entry);
@@ -113,7 +115,9 @@ export function render(labelled) {
     for (const caseId of caseIds) {
       const cells = labelled.map(({ summaries }) => {
         const perCase = summaries[model]?.cases[caseId];
-        return perCase === undefined ? "not run" : `${perCase.green} of ${perCase.executed}`;
+        if (perCase === undefined) return "not run";
+        const measured = perCase.executed - perCase.cutShort;
+        return perCase.cutShort === 0 ? `${perCase.green} of ${measured}` : `${perCase.green} of ${measured}, ${perCase.cutShort} cut short`;
       });
       const taskClass = labelled.map(({ summaries }) => summaries[model]?.cases[caseId]?.taskClass).find((value) => value !== undefined);
       lines.push(`| ${caseId} | ${taskClass} | ${cells.join(" | ")} |`);
