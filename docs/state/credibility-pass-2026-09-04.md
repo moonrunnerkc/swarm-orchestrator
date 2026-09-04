@@ -259,3 +259,70 @@ committed before its runs. Against: it is written to an agent rather than to a r
 names phases and tasks the public documents deliberately do not, and a first-time visitor who
 opens `docs/` finds a 455-line prompt beside the build guide. If it moves, the docs index Phase 8 writes
 is where the pointer goes; nothing else in the tree links it.
+
+## Phase 5: agent quality
+
+### 5.1 The classification
+
+Read from the ledgers of every executed non-green run of both campaigns, 73 in all, by
+`scripts/terminal-causes.mjs`, one cause per run by the first of five rules that fires. The
+per-run table with every signal each rule read is `../evidence/2026-09-04/terminal-causes.md`.
+
+| Cause as the rule fires | Runs | What the bundles hold |
+| --- | --- | --- |
+| retry, the same failure every attempt, on lint, format or typecheck | 26 | pre-existing at the base tree: `cargo-clippy is not installed` on every Rust repository on both arms (10), `go vet` on files the run never touched (3), mypy over the repository's own untyped files or a package name it refuses (6), ruff and eslint over files the run never touched (5), and one `format:check` script that rejects the flag it is given (2 runs). No change could have made these pass |
+| planner, the first edit preceded any declaration | 13 | the run fixed the defect in its first turn without declaring, the gate refused it, and no later declaration can clear an edit the chain records first; `gigobyte/purify` on the Ollama arm is the shape, escalated twice for it with the seeded line restored |
+| environment, a format gate over the campaign's dependency directory | 11 | `gofmt -l .` walking the module cache the campaign kept under the workspace, on every Go repository |
+| retry, the same failure every attempt, on tests | 6 | the seeded tests still failing after every attempt |
+| model | 12 | the budget spent (`max-tokens`, `output-cap`, `max-steps`) or the backend failing (`model-error`), with tests or lint still failing |
+| editor | 4 | one run with two refused edits, three with 3 to 39 consecutive identical calls |
+| retry, one empty response ended the loop | 1 | `spf13/viper` on the Ollama arm, with the seeded line restored |
+
+The top three causes that are not the model, by count: a blocking gate failing at the base
+tree (26 and 11, one product cause and one harness cause), the first edit before any
+declaration (13), and the loop ended by one empty response (1, small in count and the
+cheapest to close).
+
+### 5.2 Fixed at the cause, each with a test built from the failing shape
+
+- **Edits before the declaration** (`66b5eab5`). The write and edit tools refuse a path no
+  declaration names, naming `declare_file_set` or `amend_file_set` and the path, before
+  anything is written, so the first edit never precedes its declaration and the model hears
+  the rule where it can act on it. The gate still reads every changed file afterwards, so
+  the shell path is unchanged. `src/tools/declared-writes.test.ts` replays purify's shape.
+- **One empty response ending the run** (`96df15dc`). The retry policy samples an empty turn
+  again, as it already did for a turn that spent its cap on nothing and as it does for a
+  refused connection; the last sample's silence still ends the loop as `empty-response`.
+  `src/core/loop.test.ts`; the calibration fixtures replay the recorded turn twice.
+- **A gate that fails at the base tree** (`5a3987ea`, product side). After the first cycle,
+  each blocking command gate that failed is run once over the base tree, the working tree
+  swapped and restored as the base-source control already does, and recorded as a
+  `gate-baseline` record. A failure with the same signature at the base is named to the model
+  in the gate output it is handed, and in the escalation's reason and its new `failingAtBase`
+  field. Nothing is softened: the run is not green, and the attempts are still offered; what
+  changed is that the model is told not to chase it and the reader is told whose failure it
+  is. The verifier holds baseline runs to the seal; the re-derivation script reads them under
+  the same rule; the catalogue names the kind. `src/gates/auto-resolve.test.ts` and
+  `src/gates/base-failure.test.ts`, the latter over a real repository.
+- **The same cause, harness side** (`54d5175f`). Go's caches mount at `/cache`, outside the
+  tree `gofmt` walks; clippy is installed in the Rust image; an arm run no longer copies the
+  cache into its workspace. `campaign/methodology.md` carries the dated amendment.
+
+### 5.3 Tests
+
+One per fix, above. `scripts/terminal-causes.test.mjs` holds the classifier's rules, and it
+reads the same `failureSignature` the harness compares base failures with.
+
+### 5.4 Reruns
+
+NOT-DONE at the time of writing: the backend is held by the calibration sweep and then by the
+real-repository runs and the second campaign's Ollama arm. The reruns are a third campaign
+under the fixed CLI and images, `--only` the repositories that exhibited each cause, three
+times each; recorded below when they have run.
+
+### 5.5 The calibrate screen
+
+Already built (`docs/tech-debt.md` records its closing on 2026-08-31, 37 tests). What it
+lacked was the test the run screen has: `src/tui/calibrate-view.test.ts` now asserts the
+store exposes nothing a keystroke could reach, that no field of the projection at any depth
+shares a name with a gate-run record, and that no string it holds reads as a gate verdict.
