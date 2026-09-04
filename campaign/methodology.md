@@ -353,7 +353,9 @@ loop stopped as a model error at 24.7 minutes; the gates ran, the tests gate fai
 resolve attempt began, and its third call was aborted at 33.0 minutes by the budget, after
 which the gates ran once more, the ratchet decided, the escalation was recorded and the
 bundle written. Under the first campaign's CLI this run was killed at 45 minutes with
-nothing. The eight-minute failing streams are the backend's, not the tree's; what the tree
+nothing. On `local-ollama` the same seed was fixed by restoring the line in two minutes, four
+`pytest -q` calls through the shell and none refused, so both arms' preflights held and the
+arms started at 14:37 UTC. The eight-minute failing streams are the backend's, not the tree's; what the tree
 now does with them is bound them and write down what happened. That the retry policy counts
 attempts rather than minutes, and so spent sixteen more minutes retrying a call that had just
 spent eight failing, is recorded as debt rather than changed mid-campaign. All four preflight
