@@ -27,6 +27,7 @@ export const recordTypes = [
   "session-stopped",
   "session-budget",
   "gate-run",
+  "gate-baseline",
   "gate-set-sealed",
   "gate-bond",
   "ratchet-decision",

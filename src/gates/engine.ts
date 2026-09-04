@@ -17,8 +17,13 @@ import { type BondOutcome, runBonds } from "./bond-runner.ts";
 import { assembleGates, type GateSetOptions } from "./default-gates.ts";
 import type { FileSetRegistry } from "./file-set.ts";
 import type { DiffBudget, GateContext, GateDefinition } from "./gate-definition.ts";
+import { observe } from "./gate-runner.ts";
 import { describeGateSet, sealGateSet } from "./gate-set-seal.ts";
-import { createGitCheckpoint, createGitWorkspaceProbe } from "./git-workspace.ts";
+import {
+  createGitCheckpoint,
+  createGitWorkspaceProbe,
+  revertSourceToBase,
+} from "./git-workspace.ts";
 import { changesTheRunMade, type InheritedChanges } from "./inherited-changes.ts";
 import { createNodeCommandRunner } from "./node-command-runner.ts";
 import { detectProject, type ProjectDetection } from "./project-type.ts";
@@ -202,6 +207,25 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
     resolve: options.resolve,
     emit: options.emit,
     cap: options.cap ?? defaultAttemptCap,
+    // The base tree, in the working tree rather than a fresh checkout, so the installed
+    // dependencies stay and a failure there is about the code rather than the environment.
+    measureAtBase: async (gate) => {
+      if (gate.source.kind !== "command") {
+        return null;
+      }
+      const swap = await revertSourceToBase(workspace, () => false);
+      try {
+        return (
+          await observe(gate, await context(), {
+            commands,
+            evidence: options.evidence,
+            emit: options.emit,
+          })
+        ).observation;
+      } finally {
+        await swap.restore();
+      }
+    },
   });
 
   // After the fixed point, over the tree the run is judged on: each pass in the final cycle

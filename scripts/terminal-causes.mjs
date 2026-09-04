@@ -20,6 +20,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { failureSignature } from "../src/gates/failure-signature.ts";
 
 export const causes = Object.freeze(["environment", "planner", "retry", "editor", "model"]);
 
@@ -43,14 +44,6 @@ function pathsInDiff(records) {
   return [...patch.matchAll(/^diff --git a\/(\S+)/gm)].map((match) => match[1]);
 }
 
-function failureSignature(gateRun) {
-  const lines = `${gateRun.stdout}\n${gateRun.stderr}`
-    .split("\n")
-    .filter((line) => /not ok|fail|error|✗|×/i.test(line))
-    .map((line) => line.replace(/\d+(\.\d+)?/g, "#").trim());
-  return `${gateRun.detail.replace(/\d+(\.\d+)?/g, "#")}\n${[...new Set(lines)].sort().join("\n")}`;
-}
-
 /** The signals every rule reads, computed once per bundle. */
 export function signalsOf(records) {
   const stopped = records.find((record) => record.type === "session-stopped");
@@ -70,6 +63,9 @@ export function signalsOf(records) {
   }
 
   const escalatedRuns = escalation === null ? [] : gateRuns.filter((record) => record.payload.gateId === escalation.gateId);
+  // Where the harness measured the base itself, that record decides, and the heuristics
+  // below are for bundles from before it did.
+  const recordedAtBase = (escalation?.failingAtBase ?? []).includes(escalation?.gateId);
   // The failure as the runner named it, with numbers dropped so a timing or a line count does
   // not make two identical failures read as progress. Two attempts that leave the same failing
   // tests failing changed nothing the gate could see.
@@ -88,6 +84,7 @@ export function signalsOf(records) {
     attemptsUsed: escalation?.attemptsUsed ?? null,
     cap: escalation?.cap ?? null,
     sameFailureEveryAttempt: escalatedRuns.length > 1 && signatures.size === 1,
+    recordedAtBase,
     editBeforeDeclaration: firstEdit !== undefined && (firstDeclaration === undefined || firstEdit.sequence < firstDeclaration.sequence),
     editDenials,
     repeatedCalls,
@@ -102,6 +99,9 @@ export function signalsOf(records) {
 
 /** The first rule that fires, with the sentence that says why. */
 export function classify(signals) {
+  if (signals.recordedAtBase) {
+    return { cause: "environment", why: `the ${signals.escalatedGate} gate fails the same way at the base commit, measured by the harness` };
+  }
   if (
     ["format", "lint", "typecheck"].some((gate) => signals.escalatedGate === gate || signals.escalatedGate?.startsWith(`${gate}:`)) &&
     signals.offendersInDependencies > 0 &&

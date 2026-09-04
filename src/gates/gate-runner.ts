@@ -287,12 +287,80 @@ export function citedRecords(evidence: EvidenceRecorder): ReadonlySet<string> {
   return cited;
 }
 
-/** What the model is shown after a failure: the gate's own bytes, not a summary of them. */
-export function describeFailuresForModel(cycle: GateCycle): string {
+export interface BaselineRun {
+  readonly gateId: string;
+  readonly status: GateStatus;
+  readonly detail: string;
+  readonly observation: GateObservation;
+  readonly record: string;
+}
+
+/**
+ * One gate's run over the base tree, recorded as its own kind of record: what already failed
+ * here before the run changed anything. Read by nothing that renders green; what it decides
+ * is whether a failure after the loop is the run's to fix or one it inherited, which the model
+ * is told and the escalation names.
+ */
+export async function recordBaselineRun(
+  gate: GateDefinition,
+  observation: GateObservation,
+  deps: GateCycleDependencies,
+): Promise<BaselineRun> {
+  const reading = gate.parse(observation);
+  const payload = gateRunSchema.parse({
+    gateId: gate.id,
+    title: gate.title,
+    severity: gate.severity,
+    status: reading.status,
+    blocking: gate.severity === "blocking",
+    detail: reading.detail,
+    attempt: 0,
+    command: gate.source.kind === "command" ? gate.source.command : null,
+    argv: gate.source.kind === "command" ? (gate.source.argv ?? null) : null,
+    parser: gate.parserName ?? "exit-code",
+    exitCode: observation.exitCode,
+    durationMs: observation.durationMs,
+    unavailable: observation.unavailable,
+    stdout: truncate(observation.stdout),
+    stderr: truncate(observation.stderr),
+    outputTruncated:
+      observation.stdout.length > maxRecordedOutputChars ||
+      observation.stderr.length > maxRecordedOutputChars,
+    measures: reading.measures,
+  });
+  const recorded = await deps.evidence.record({
+    type: "gate-baseline",
+    actor: "harness",
+    provenance: ["tool-output"],
+    payload,
+  });
+  return {
+    gateId: gate.id,
+    status: reading.status,
+    detail: reading.detail,
+    observation,
+    record: recorded.record.payloadDigest,
+  };
+}
+
+/**
+ * What the model is shown after a failure: the gate's own bytes, not a summary of them. A
+ * failure the base tree already has, unchanged, is said to be one, so the model is not sent
+ * off fixing four hundred type errors it did not write and widening its diff to do it.
+ */
+export function describeFailuresForModel(
+  cycle: GateCycle,
+  failingAtBase: ReadonlySet<string> = new Set(),
+): string {
   const sections = cycle.blockingFailures.map((run) =>
     [
       `gate ${run.gateId} (${run.title}) FAILED: ${run.detail}`,
       `evidence record: ${run.record} kind gate-run:${run.gateId}`,
+      failingAtBase.has(run.gateId)
+        ? "This gate fails the same way at the base commit, before this change: the failure is " +
+          "not caused by it. Do not edit unrelated files to make it pass; if it is outside the " +
+          "task, say so and leave it."
+        : "",
       run.observation.stdout.trim().length === 0 ? "" : `stdout:\n${run.observation.stdout.trim()}`,
       run.observation.stderr.trim().length === 0 ? "" : `stderr:\n${run.observation.stderr.trim()}`,
     ]

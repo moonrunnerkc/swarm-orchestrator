@@ -136,6 +136,22 @@ export const predicateCatalogue: readonly CatalogueEntry[] = [
     says: "one gate's verdict in one attempt; cite the gate you mean",
   },
   {
+    type: "gate-baseline",
+    subjectField: null,
+    example: 'status == "failed"',
+    sample: {
+      gateId: "lint",
+      status: "failed",
+      severity: "blocking",
+      blocking: true,
+      attempt: 0,
+      exitCode: 1,
+      parser: "exit-code",
+      measures: {},
+    },
+    says: "one gate run over the base tree, so a failure the run inherited is told from one it caused",
+  },
+  {
     type: "gate-set-sealed",
     subjectField: null,
     example: "attemptCap >= 0",

@@ -1,13 +1,15 @@
 import type { LoopEvent } from "../core/loop-events.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { type AttemptSummary, type EscalationPayload, escalationSchema } from "./escalation.ts";
-import type { GateContext, GateDefinition } from "./gate-definition.ts";
+import { failureSignature } from "./failure-signature.ts";
+import type { GateContext, GateDefinition, GateObservation } from "./gate-definition.ts";
 import {
   describeFailuresForModel,
   type GateCycle,
   type GateCycleDependencies,
   isGreen,
   measuredTheChange,
+  recordBaselineRun,
   runGateCycle,
 } from "./gate-runner.ts";
 import {
@@ -50,6 +52,14 @@ interface AutoResolveDependencies {
   readonly resolve: ResolveAttempt;
   readonly emit: (event: LoopEvent) => void;
   readonly cap: number;
+  /**
+   * Runs one command gate over the base tree and hands back what it observed, or null where
+   * that cannot be done. Asked once per blocking failure of the first cycle: a failure the
+   * base already has, unchanged, is not the run's to fix, and saying so is the difference
+   * between an escalation that names the run's regression and one that blames it for a lint
+   * error four hundred files away. Absent, nothing is measured and nothing is named.
+   */
+  readonly measureAtBase?: (gate: GateDefinition) => Promise<GateObservation | null>;
   /**
    * Stops the loop where a run was cancelled. Without it every remaining attempt still ran,
    * each one resolving instantly to "interrupted after 0 steps" against a signal that was
@@ -113,6 +123,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
   let cycle = await runGateCycle(deps.gates, context, 0, deps.cycleDeps);
   const firstCycle = cycle;
   let baseline = await snapshot(context, cycle, trackedTestFiles);
+  const failingAtBase = await failuresTheBaseHas(deps, cycle);
 
   const attempts: AutoResolveAttempt[] = [];
 
@@ -124,7 +135,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     const failure = await tryResolve(deps, {
       attempt,
       cap: deps.cap,
-      gateOutput: describeFailuresForModel(cycle),
+      gateOutput: describeFailuresForModel(cycle, failingAtBase),
       cycle,
     });
 
@@ -207,7 +218,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
     };
   }
 
-  const escalation = await escalate(deps, cycle, attempts, baseComparison);
+  const escalation = await escalate(deps, cycle, attempts, baseComparison, failingAtBase);
   return {
     settled: "escalated",
     firstCycle,
@@ -368,11 +379,46 @@ function regressedTestFiles(
   return regressed.sort((left, right) => (left.file < right.file ? -1 : 1));
 }
 
+/**
+ * Which of the first cycle's blocking failures the base tree already has, unchanged. Each is
+ * measured once, by running the gate over the base and comparing the failure's signature,
+ * and recorded as a gate-baseline record whether or not it matched.
+ */
+async function failuresTheBaseHas(
+  deps: AutoResolveDependencies,
+  cycle: GateCycle,
+): Promise<ReadonlySet<string>> {
+  const failing = new Set<string>();
+  if (deps.measureAtBase === undefined) {
+    return failing;
+  }
+  for (const run of cycle.blockingFailures) {
+    const gate = deps.gates.find((candidate) => candidate.id === run.gateId);
+    if (gate === undefined || gate.source.kind !== "command") {
+      continue;
+    }
+    const observation = await deps.measureAtBase(gate);
+    if (observation === null) {
+      continue;
+    }
+    const atBase = await recordBaselineRun(gate, observation, deps.cycleDeps);
+    if (
+      atBase.status === "failed" &&
+      failureSignature({ detail: atBase.detail, ...atBase.observation }) ===
+        failureSignature({ detail: run.detail, ...run.observation })
+    ) {
+      failing.add(run.gateId);
+    }
+  }
+  return failing;
+}
+
 async function escalate(
   deps: AutoResolveDependencies,
   cycle: GateCycle,
   attempts: readonly AutoResolveAttempt[],
   base: BaseComparison,
+  failingAtBase: ReadonlySet<string>,
 ): Promise<EscalationPayload> {
   const blocking = cycle.blockingFailures[0];
   const rejected = attempts.filter((attempt) => !attempt.decision.accepted);
@@ -403,7 +449,11 @@ async function escalate(
           ? "unknown"
           : "the ratchet against the base commit"),
     reason:
-      blocking?.detail ??
+      (blocking === undefined
+        ? undefined
+        : failingAtBase.has(blocking.gateId)
+          ? `fails the same way at the base commit, before this change: ${blocking.detail}`
+          : blocking.detail) ??
       (unmeasured
         ? `${cycle.measures.changedFiles ?? 0} file(s) changed and every gate that runs a ` +
           "command stood down, so nothing executed them. The work is not in a shape this " +
@@ -416,6 +466,7 @@ async function escalate(
     attemptsRejectedByRatchet: rejected.length + (eroded === null ? 0 : 1),
     lastGateRecord: blocking?.record ?? eroded?.ratchetRecord ?? "",
     history,
+    failingAtBase: [...failingAtBase].sort(),
   });
 
   const recorded = await deps.evidence.record({
