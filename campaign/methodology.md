@@ -370,3 +370,29 @@ as it comes out.
 
 **What stays out.** The frontier arm, by decision: the report carries it at zero runs.
 
+
+## Amendment, 2026-09-04 23:00 UTC: the Go cache was in the tree the gates walk, and clippy was not in the image
+
+Appended, as the rule above requires, and after the second campaign's `local-mlx` arm had
+run forty-four of its fifty seeds. Two findings from reading the non-green bundles of both
+campaigns, classified by `scripts/terminal-causes.mjs`.
+
+The dependency caches lived under the workspace at `/work/.campaign`, ignored by the clone's
+git and walked by nothing the criteria measured. `gofmt -l .` walks the whole tree, so every
+Go repository's format gate listed the module cache's files as unformatted, on every attempt,
+and no run on a Go repository could be green whatever it changed: eleven runs across the two
+campaigns escalated at `format` on that alone, with the seeded line restored. Go's caches
+are relocatable, so they now mount at `/cache`, outside the tree; a Python venv names the
+path it was created at in every script it installs, and ruff and mypy skip an ignored
+directory, so the other toolchains keep the path they were prepared under. An arm run no
+longer copies the cache into its workspace at all: the prepared clone's cache is mounted into
+the run, which is the same bytes without the copy.
+
+The Rust image was built from a base that ships the toolchain without clippy, and the lint
+gate is `cargo clippy`. Every Rust repository's lint gate failed on the missing component, on
+both arms, before it read a line of the repository. The image installs it now.
+
+Neither changes the criteria or the seeds. Both change the images and the harness, so a
+campaign that runs under them is a third campaign, named and set up as the second was, and
+the results of the first two stand as recorded: their Go format and Rust lint failures are
+the harness's, and `campaign/results/report.md` says so where it counts them.

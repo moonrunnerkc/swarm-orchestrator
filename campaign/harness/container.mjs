@@ -5,7 +5,7 @@
  * an internal network whose only other member is the forwarder for its arm's backend, so
  * "no network beyond the model backend" is a property of the network rather than a request.
  */
-import { basename, dirname } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { budgets } from "./criteria.mjs";
 
@@ -137,13 +137,26 @@ export function stopForwarderArgv(arm) {
 
 /**
  * Where each toolchain keeps what preparation fetched. A container is gone when its run
- * ends, so every cache lives under the mounted workspace, in a directory the workspace's
- * git is told to ignore; the offline runs then find what the one networked run installed.
+ * ends, so every cache lives on the host beside the prepared clone, under a directory the
+ * clone's git is told to ignore, and is mounted into every container that runs over it; the
+ * offline runs then find what the one networked run installed.
+ *
+ * Where it is mounted differs by toolchain, and the difference is a finding. Go's module cache
+ * used to sit under the workspace at `/work/.campaign`, and `gofmt -l .` walks the whole tree,
+ * so every Go repository's format gate listed the cache's files as unformatted and no run on
+ * one could be green whatever it changed. Go's caches are relocatable, so they mount at
+ * `/cache`, outside the tree the gates measure. A Python venv is not relocatable, its scripts
+ * name the path they were created at, and neither ruff nor mypy walk an ignored directory,
+ * so the others keep the path they were prepared under.
  */
 export const workspaceCacheDirectory = ".campaign";
 
+export function cacheMountPath(type) {
+  return type === "go" ? "/cache" : `/work/${workspaceCacheDirectory}`;
+}
+
 export function typeEnvironment(type) {
-  const cache = `/work/${workspaceCacheDirectory}`;
+  const cache = cacheMountPath(type);
   switch (type) {
     case "node":
       return [`COREPACK_HOME=${cache}/corepack`, `npm_config_store_dir=${cache}/pnpm-store`];
@@ -165,7 +178,7 @@ export function typeEnvironment(type) {
  */
 export const armMemoryGigabytes = 8;
 
-function runArgv({ type, workspace, network, argv, mounts = [], environment = [], hosts = [], timeoutSeconds, memoryGigabytes = budgets.containerMemoryGigabytes }) {
+function runArgv({ type, workspace, cacheHost = join(workspace, workspaceCacheDirectory), network, argv, mounts = [], environment = [], hosts = [], timeoutSeconds, memoryGigabytes = budgets.containerMemoryGigabytes }) {
   return [
     "docker",
     "run",
@@ -178,6 +191,8 @@ function runArgv({ type, workspace, network, argv, mounts = [], environment = []
     `${memoryGigabytes}g`,
     "--volume",
     `${workspace}:/work`,
+    "--volume",
+    `${cacheHost}:${cacheMountPath(type)}`,
     ...mounts.flatMap((mount) => ["--volume", `${mount.host}:${mount.container}`]),
     ...environment.flatMap((entry) => ["--env", entry]),
     ...hosts.flatMap((entry) => ["--add-host", entry]),
@@ -238,7 +253,7 @@ export function wallBudgetMinutes(timeoutMinutes) {
   return minutes;
 }
 
-export function armRunArgv({ type, workspace, outputDirectory, arm, task, maxSteps, attempts, timeoutSeconds, forwarderAddress, key }) {
+export function armRunArgv({ type, workspace, cacheHost, outputDirectory, arm, task, maxSteps, attempts, timeoutSeconds, forwarderAddress, key }) {
   const swarm = [
     "swarm",
     "--workspace",
@@ -261,6 +276,7 @@ export function armRunArgv({ type, workspace, outputDirectory, arm, task, maxSte
   return runArgv({
     type,
     workspace,
+    ...(cacheHost === undefined ? {} : { cacheHost }),
     network: internalNetwork,
     argv: swarm,
     mounts: [{ host: outputDirectory, container: "/out" }],

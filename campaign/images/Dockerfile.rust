@@ -6,6 +6,9 @@ ARG SWARM_TARBALL_SHA256
 LABEL org.swarm-orchestrator.cli.tarball-sha256=$SWARM_TARBALL_SHA256
 COPY node-toolchain.sh /tmp/node-toolchain.sh
 RUN sh /tmp/node-toolchain.sh && rm /tmp/node-toolchain.sh
+# The lint gate is clippy, and the base image ships the toolchain without it: every Rust
+# repository's lint gate failed on that line alone, on both arms of the first campaign.
+RUN rustup component add clippy
 RUN git config --system safe.directory '*' && mkdir -p /home/campaign
 COPY ${SWARM_TARBALL} /tmp/swarm.tgz
 RUN npm install --global /tmp/swarm.tgz && rm /tmp/swarm.tgz

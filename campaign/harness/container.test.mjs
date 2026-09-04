@@ -12,6 +12,7 @@ import {
   internalNetwork,
   offlineArgv,
   prepareArgv,
+  cacheMountPath,
   typeEnvironment,
   wallBudgetMinutes,
 } from "./container.mjs";
@@ -96,16 +97,30 @@ describe("the forwarder", () => {
 });
 
 describe("the toolchain environment", () => {
-  it("keeps every cache under the mounted workspace, so an ephemeral container loses nothing", () => {
+  it("keeps every cache on a mount, so an ephemeral container loses nothing", () => {
     for (const type of ["node", "python", "go", "rust"]) {
       const paths = typeEnvironment(type).filter((entry) => entry.includes("/"));
       expect(paths.length).toBeGreaterThan(0);
       for (const entry of paths) {
-        expect(entry.split("=")[1]).toContain("/work/.campaign");
+        expect(entry.split("=")[1]).toContain(cacheMountPath(type));
       }
     }
     expect(typeEnvironment("python")[0]).toMatch(/^PATH=\/work\/\.campaign\/venv\/bin:/);
     expect(() => typeEnvironment("haskell")).toThrow("no toolchain environment");
+  });
+
+  it("keeps Go's caches outside the tree the gates walk, and the others where they were prepared", () => {
+    expect(cacheMountPath("go")).toBe("/cache");
+    expect(typeEnvironment("go")).toEqual(["GOMODCACHE=/cache/gomod", "GOCACHE=/cache/gocache", "GOFLAGS=-modcacherw"]);
+    expect(cacheMountPath("python")).toBe("/work/.campaign");
+  });
+
+  it("mounts the prepared clone's cache into a run, at the toolchain's path", () => {
+    const argv = prepareArgv({ type: "go", workspace: "/w/repo", argv: ["go", "mod", "download"] });
+    expect(flags(argv, "--volume")).toEqual(["/w/repo:/work", "/w/repo/.campaign:/cache"]);
+
+    const arm = armRunArgv({ type: "go", workspace: "/w/repo.arms/local-mlx/workspace", cacheHost: "/w/repo/.campaign", outputDirectory: "/o/repo", arm: armNamed("local-mlx"), task: "t", maxSteps: 1, attempts: 1, timeoutSeconds: 1800 });
+    expect(flags(arm, "--volume")).toEqual(["/w/repo.arms/local-mlx/workspace:/work", "/w/repo/.campaign:/cache", "/o/repo:/out"]);
   });
 });
 
@@ -114,7 +129,7 @@ describe("a preparation run", () => {
     const argv = prepareArgv({ type: "python", workspace: "/w/repo", argv: ["python", "-m", "pip", "install", "-e", "."] });
 
     expect(flag(argv, "--network")).toBe("bridge");
-    expect(flags(argv, "--volume")).toEqual(["/w/repo:/work"]);
+    expect(flags(argv, "--volume")).toEqual(["/w/repo:/work", "/w/repo/.campaign:/work/.campaign"]);
     expect(argv.slice(argv.indexOf("timeout"))).toEqual(["timeout", "--signal=KILL", "900", "python", "-m", "pip", "install", "-e", "."]);
   });
 });
@@ -139,7 +154,7 @@ describe("an arm run", () => {
 
     expect(flag(argv, "--network")).toBe(internalNetwork);
     expect(flag(argv, "--memory")).toBe("8g");
-    expect(flags(argv, "--volume")).toEqual(["/w/repo:/work", "/o/repo:/out"]);
+    expect(flags(argv, "--volume")).toEqual(["/w/repo:/work", "/w/repo/.campaign:/work/.campaign", "/o/repo:/out"]);
     expect(flags(argv, "--env")).toEqual([
       "HOME=/home/campaign",
       "COREPACK_HOME=/work/.campaign/corepack",

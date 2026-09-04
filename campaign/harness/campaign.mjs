@@ -457,6 +457,8 @@ async function judgeCandidate(candidate) {
   }
   const type = projectTypeByLanguage[candidate.language];
   appendFileSync(join(workspace, ".git", "info", "exclude"), `/${workspaceCacheDirectory}/\n`);
+  // Created here rather than by docker, which would make it root's on the host.
+  mkdirSync(join(workspace, workspaceCacheDirectory), { recursive: true });
 
   for (const step of installSteps(type, facts, workspace)) {
     log(`  install: ${step.join(" ")}`);
@@ -818,7 +820,14 @@ async function runOne({ arm, armName, layout, repo, maxSteps, attempts, timeoutM
   }
 
   const workspace = join(armRoot, "workspace");
-  cpSync(prepared, workspace, { recursive: true, verbatimSymlinks: true });
+  // The clone without its cache: the cache is mounted from the prepared tree instead, which
+  // is what keeps a Go module cache out of the tree the gates walk and spares the copy.
+  const cacheHost = join(prepared, workspaceCacheDirectory);
+  cpSync(prepared, workspace, {
+    recursive: true,
+    verbatimSymlinks: true,
+    filter: (source) => source !== cacheHost && !source.startsWith(`${cacheHost}/`),
+  });
   const seedPath = join(workspace, repo.seed.file);
   writeFileSync(
     seedPath,
@@ -847,7 +856,7 @@ async function runOne({ arm, armName, layout, repo, maxSteps, attempts, timeoutM
   const started = Date.now();
   log(`${repo.fullName} on ${armName}: running`);
   const ran = await docker(
-    armRunArgv({ type: repo.type, workspace, outputDirectory, arm, task, maxSteps, attempts, timeoutSeconds: timeoutMinutes * 60, forwarderAddress, key }),
+    armRunArgv({ type: repo.type, workspace, cacheHost, outputDirectory, arm, task, maxSteps, attempts, timeoutSeconds: timeoutMinutes * 60, forwarderAddress, key }),
     { timeoutMs: (timeoutMinutes + 5) * 60 * 1000 },
   );
   const durationMs = Date.now() - started;
