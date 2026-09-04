@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// First, so its check runs before any other module's top-level code.
+import "./node-floor.ts";
 import { spawn } from "node:child_process";
 import { statSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
