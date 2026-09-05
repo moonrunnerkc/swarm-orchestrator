@@ -1,4 +1,5 @@
 import type { Clock } from "./clock.ts";
+import { compactConversation } from "./compaction.ts";
 import type { LoopEvent } from "./loop-events.ts";
 import {
   type ConversationMessage,
@@ -23,6 +24,12 @@ interface ModelRetryPolicy {
   readonly maxJitterRatio: number;
 }
 
+/**
+ * How much of the conversation is resent. Well under a small local model's window, because the
+ * budget that matters is the one the smallest backend a run might route to actually has.
+ */
+export const defaultContextTokens = 60_000;
+
 export interface AgentLoopDependencies {
   readonly model: ModelClient;
   readonly toolInvoker: ToolInvoker;
@@ -44,6 +51,8 @@ export interface AgentLoopDependencies {
    * reasoning which produced the failure is a retry that repeats it.
    */
   readonly history?: readonly ConversationMessage[];
+  /** How much conversation is resent per call. Defaults to `defaultContextTokens`. */
+  readonly contextTokens?: number;
 }
 
 export interface AgentLoopOutcome {
@@ -70,6 +79,7 @@ export async function runAgentLoop(
 ): Promise<AgentLoopOutcome> {
   const startedAt = deps.clock.now();
   const messages: ConversationMessage[] = [...(deps.history ?? []), { role: "user", text: task }];
+  let lastCompactedAt = 0;
   let steps = 0;
   let answeredSteps = 0;
   let tokensUsed = 0;
@@ -92,6 +102,20 @@ export async function runAgentLoop(
     );
     if (exhausted !== null) {
       return finish(exhausted, "");
+    }
+
+    // Said once per compaction rather than per call, so a long run reports that its memory was
+    // shortened without saying so forty times.
+    const context = compactConversation(messages, {
+      maxTokens: deps.contextTokens ?? defaultContextTokens,
+    });
+    if (context.compacted && context.droppedMessages > lastCompactedAt) {
+      lastCompactedAt = context.droppedMessages;
+      deps.emit({
+        type: "compacted",
+        droppedMessages: context.droppedMessages,
+        droppedTokens: context.droppedTokens,
+      });
     }
 
     deps.emit({ type: "model-call", step: steps + 1, modelId: deps.model.modelId });
@@ -174,10 +198,17 @@ function buildRequest(
   deps: AgentLoopDependencies,
   messages: readonly ConversationMessage[],
 ): ModelRequest {
+  // Compacted here rather than in the loop's own list, so the ledger and the screen keep the
+  // whole conversation and only what is resent is shortened. What falls out is chosen: the
+  // task and the recent turns are kept, and the model is told how much went rather than
+  // quietly having a hole in its memory.
+  const held = compactConversation(messages, {
+    maxTokens: deps.contextTokens ?? defaultContextTokens,
+  });
   return {
     system: deps.systemPrompt,
     // Snapshot: the loop keeps appending, and a provider must see the turn it was given.
-    messages: [...messages],
+    messages: [...held.messages],
     tools: deps.toolSchemas,
     maxOutputTokens: deps.maxOutputTokens,
     ...(deps.sampling === undefined ? {} : { sampling: deps.sampling }),

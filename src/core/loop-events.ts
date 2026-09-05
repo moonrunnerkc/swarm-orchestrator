@@ -23,6 +23,12 @@ export type LoopEvent =
       readonly mode: string;
       readonly lines: readonly string[];
     }
+  /** The conversation was shortened to fit its budget, and by how much. */
+  | {
+      readonly type: "compacted";
+      readonly droppedMessages: number;
+      readonly droppedTokens: number;
+    }
   | { readonly type: "model-call"; readonly step: number; readonly modelId: string }
   | {
       readonly type: "model-error";

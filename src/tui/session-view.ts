@@ -20,7 +20,7 @@ export interface GateLine {
  * expanding a row shows more evidence rather than more prose.
  */
 export interface ActionRow {
-  readonly kind: "tool-call" | "tool-outcome" | "model-error" | "ratchet";
+  readonly kind: "tool-call" | "tool-outcome" | "model-error" | "ratchet" | "compacted";
   readonly summary: string;
   readonly detail: string;
   /** The ledger record this row was written from, where the event carried one. */
@@ -108,6 +108,22 @@ export function applyLoopEvent(view: SessionView, event: LoopEvent): SessionView
       return { ...view, plan: event.text, status: "planning" };
     case "execution-envelope":
       return { ...view, executionMode: event.mode, executionEnvelopeLines: event.lines };
+    case "compacted":
+      return {
+        ...view,
+        actions: [
+          ...view.actions,
+          {
+            kind: "compacted",
+            summary: `context compacted: ${event.droppedMessages} message(s) no longer resent`,
+            detail:
+              `${event.droppedMessages} message(s) and about ${event.droppedTokens} tokens ` +
+              "are no longer resent to the model. The ledger still holds all of it.",
+            record: null,
+            failed: false,
+          },
+        ],
+      };
     case "model-call":
       return {
         ...view,
