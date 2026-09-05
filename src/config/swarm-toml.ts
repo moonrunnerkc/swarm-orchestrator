@@ -20,9 +20,6 @@ const httpUrl = z.url({ protocol: /^https?$/ });
 const rawFileSchema = z.strictObject({
   providers: z
     .strictObject({
-      anthropic_api_key: nonEmptyString.optional(),
-      openai_api_key: nonEmptyString.optional(),
-      google_api_key: nonEmptyString.optional(),
       local_endpoint: httpUrl.optional(),
       local_thinking: z.boolean().optional(),
     })
@@ -71,9 +68,6 @@ const rawFileSchema = z.strictObject({
 
 export interface SwarmToml {
   readonly providers: {
-    readonly anthropicApiKey: string | null;
-    readonly openaiApiKey: string | null;
-    readonly googleApiKey: string | null;
     readonly localEndpoint: string | null;
     /**
      * Whether the model behind the local endpoint should reason before it answers. Absent
@@ -121,7 +115,7 @@ export class MalformedSwarmTomlError extends Error {
 const acceptedTables = "providers, gates, budgets, models, interface, theme, keys";
 
 const acceptedKeysByTable: Readonly<Record<string, string>> = {
-  providers: "anthropic_api_key, openai_api_key, google_api_key, local_endpoint, local_thinking",
+  providers: "local_endpoint, local_thinking",
   budgets: "max_steps, attempts, max_wall_minutes, max_changed_files, max_added_lines",
   models: "pin",
   interface: "tui, color, open_evidence, confirm_timeout_minutes",
@@ -129,9 +123,6 @@ const acceptedKeysByTable: Readonly<Record<string, string>> = {
 
 /** What each value must look like, said in the error rather than left to a schema dump. */
 const acceptedValueByKey: Readonly<Record<string, string>> = {
-  "providers.anthropic_api_key": "a non-empty string",
-  "providers.openai_api_key": "a non-empty string",
-  "providers.google_api_key": "a non-empty string",
   "providers.local_endpoint": 'an http(s) URL such as "http://127.0.0.1:11434/v1"',
   "providers.local_thinking": "true or false",
   "interface.confirm_timeout_minutes": "a whole number of minutes, or 0 to wait for ever",
@@ -146,6 +137,38 @@ const acceptedValueByKey: Readonly<Record<string, string>> = {
   "interface.open_evidence": '"ask", "always" or "never"',
 };
 
+/**
+ * swarm.toml is repository-controlled: it is committed, cloned and diffed, and a run against a
+ * repository somebody else wrote reads whatever that repository put there. A provider key does
+ * not belong in a file with those properties. Refused rather than warned about, because a
+ * warning that leaves the key working preserves exactly the assurance it breaks: the key is
+ * already in a file by the time anyone reads the warning.
+ */
+const repositoryCredentialKeys: readonly string[] = [
+  "anthropic_api_key",
+  "openai_api_key",
+  "google_api_key",
+];
+
+function refuseRepositoryCredentials(value: unknown, source: string): void {
+  const providers = (value as { providers?: Record<string, unknown> } | null)?.providers;
+  if (providers === undefined || providers === null) {
+    return;
+  }
+  const named = repositoryCredentialKeys.filter((key) => key in providers);
+  if (named.length === 0) {
+    return;
+  }
+  throw new MalformedSwarmTomlError(
+    source,
+    `it carries a provider credential (${named.join(", ")}). ` +
+      "swarm.toml is committed and cloned, so a key in it has been shared with everyone who " +
+      "has the repository. Rotate the key now, delete the setting, and pass the new key " +
+      "through the environment (ANTHROPIC_API_KEY, OPENAI_API_KEY, " +
+      "GOOGLE_GENERATIVE_AI_API_KEY) or your OS keychain instead",
+  );
+}
+
 export function parseSwarmToml(text: string, source: string): SwarmToml {
   let value: unknown;
   try {
@@ -158,6 +181,8 @@ export function parseSwarmToml(text: string, source: string): SwarmToml {
     throw new MalformedSwarmTomlError(source, detail);
   }
 
+  refuseRepositoryCredentials(value, source);
+
   const parsed = rawFileSchema.safeParse(value);
   if (!parsed.success) {
     throw new MalformedSwarmTomlError(source, describeIssues(parsed.error, value));
@@ -166,9 +191,6 @@ export function parseSwarmToml(text: string, source: string): SwarmToml {
   const raw = parsed.data;
   return {
     providers: {
-      anthropicApiKey: raw.providers?.anthropic_api_key ?? null,
-      openaiApiKey: raw.providers?.openai_api_key ?? null,
-      googleApiKey: raw.providers?.google_api_key ?? null,
       localEndpoint: raw.providers?.local_endpoint ?? null,
       localThinking: raw.providers?.local_thinking ?? null,
     },
