@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { nearestName } from "./edit-distance.ts";
 import { bundledShortlistKeyword } from "./select/shortlist-source.ts";
 
 /**
@@ -466,34 +467,10 @@ const knownCommands = [
 
 /** The closest command within two edits, or null when the word is not close to any of them. */
 function nearestCommand(task: string): string | null {
-  if (task.includes(" ")) {
-    return null;
-  }
-  const word = task.toLowerCase();
-  let best: { command: string; distance: number } | null = null;
-  for (const command of knownCommands) {
-    const distance = editDistance(word, command);
-    if (distance <= 2 && (best === null || distance < best.distance)) {
-      best = { command, distance };
-    }
-  }
-  return best?.command ?? null;
+  return task.includes(" ") ? null : nearestName(task, [...knownCommands]);
 }
 
 /** Levenshtein, two rows rather than a matrix. The words compared here are never long. */
-function editDistance(left: string, right: string): number {
-  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
-  for (let i = 1; i <= left.length; i += 1) {
-    const current = [i];
-    for (let j = 1; j <= right.length; j += 1) {
-      const substitution = (previous[j - 1] ?? 0) + (left[i - 1] === right[j - 1] ? 0 : 1);
-      current[j] = Math.min(substitution, (previous[j] ?? 0) + 1, (current[j - 1] ?? 0) + 1);
-    }
-    previous = current;
-  }
-  return previous[right.length] ?? 0;
-}
-
 /** Both halves of a pair named at once is a contradiction, so it is an error rather than an order. */
 function parseInterfaceFlags(flags: ReadonlyMap<string, string>): InterfaceFlags {
   if (flags.has("color") && flags.has("no-color")) {
