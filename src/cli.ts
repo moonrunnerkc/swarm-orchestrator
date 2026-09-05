@@ -8,6 +8,7 @@ import { arch, availableParallelism, homedir, platform, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { render as inkRender } from "ink";
+import { eventsFromClaudeCodeStream, eventsFromGenericJsonl } from "./adapters/external-agent.ts";
 import { runAgentTask } from "./agent-run.ts";
 import { buildVersion } from "./build-version.ts";
 import {
@@ -315,6 +316,19 @@ async function collectGarbage(options: GcCommand): Promise<number> {
 async function verifyPatch(options: CiCommand): Promise<number> {
   const clock = createSystemClock();
   const baseCommit = await resolveBaseCommit(options.workspace, options.baseRef);
+  // What the producer said it did, where it said anything. Read strictly: a line this build
+  // does not recognize refuses the whole stream rather than being skipped, because a skipped
+  // line is evidence that quietly went unread.
+  const replayed =
+    options.agentStream === null
+      ? []
+      : readAgentStream(
+          await readFile(options.agentStream.path, "utf8"),
+          options.agentStream.format,
+        );
+  if (replayed.length > 0) {
+    process.stdout.write(`agent stream: ${replayed.length} event(s) read\n`);
+  }
   const result = await verifyIndependently({
     repositoryRoot: options.workspace,
     baseCommit,
@@ -375,6 +389,10 @@ function createRunTelemetry(runId: string): Telemetry {
       }
     }),
   });
+}
+
+function readAgentStream(text: string, format: "generic" | "claude-code") {
+  return format === "claude-code" ? eventsFromClaudeCodeStream(text) : eventsFromGenericJsonl(text);
 }
 
 /** Where the durable state lives: beside the sessions, outside every workspace. */

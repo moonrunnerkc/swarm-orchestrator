@@ -144,6 +144,14 @@ export interface GcCommand {
 export interface CiCommand {
   readonly command: "ci";
   readonly patchFile: string;
+  /**
+   * A stream some other agent emitted, replayed onto the chain beside the patch. Null verifies
+   * the patch alone, which is the minimum an external producer has to hand over.
+   */
+  readonly agentStream: {
+    readonly path: string;
+    readonly format: "generic" | "claude-code";
+  } | null;
   readonly workspace: string;
   readonly baseRef: string;
   readonly immutablePaths: readonly string[];
@@ -306,6 +314,8 @@ export const usage = [
   "",
   "  swarm ci --patch <file> [--base <ref>]           verify a patch in a fresh checkout of",
   "    [--immutable <a,b>] [--json]                   the base, trusting nothing that made it",
+  "    [--agent-stream <file>]                        replay another agent's own event stream",
+  "    [--agent-format generic|claude-code]           beside it, so the record is not a guess",
   "",
   "  swarm list-runs                                  runs this machine has state for",
   "  swarm inspect <run-id> [--json]                  what a run did, and what it still owes",
@@ -402,8 +412,20 @@ export function parseCommandLine(
         "ci needs --patch <file>: the change to verify against a fresh checkout of the base",
       );
     }
+    const streamPath = flags.get("agent-stream");
+    const streamFormat = flags.get("agent-format") ?? "generic";
+    if (streamFormat !== "generic" && streamFormat !== "claude-code") {
+      throw new InvalidCommandLineError(
+        `--agent-format "${streamFormat}" is not a format this build reads. ` +
+          "Use generic or claude-code",
+      );
+    }
     return {
       command: "ci",
+      agentStream:
+        streamPath === undefined || streamPath.trim().length === 0
+          ? null
+          : { path: resolve(context.currentDirectory, streamPath.trim()), format: streamFormat },
       patchFile: resolve(context.currentDirectory, patchFile.trim()),
       workspace: resolve(context.currentDirectory, flags.get("workspace") ?? "."),
       baseRef: flags.get("base") ?? defaultBaseRef,
