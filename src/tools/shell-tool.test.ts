@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -29,7 +30,7 @@ afterEach(async () => {
   await rm(home, { recursive: true, force: true });
 });
 
-function run(command: string) {
+function run(command: string, timeoutMs?: number) {
   const settled: ChokepointRecord[] = [];
   const recorder: ChokepointRecorder = {
     recordCall(entry) {
@@ -55,7 +56,7 @@ function run(command: string) {
   const invocation: ToolInvocation = {
     callId: "call-1",
     toolName: "shell",
-    input: { command },
+    input: timeoutMs === undefined ? { command } : { command, timeoutMs },
     provenance: "model",
   };
   return chokepoint.invoke(invocation).then((call) => ({
@@ -144,4 +145,33 @@ describe("what a shell command inherits from the process that started the run", 
     expect(output).toContain("exit code: 0");
     expect(output).toContain("ran");
   });
+});
+
+describe("what is left running after a command is stopped", () => {
+  /**
+   * The timeout kills the process the harness started. Anything that process started is in the
+   * same session but out of reach, so a command whose child outlives it leaves that child
+   * writing to the workspace after the run has moved on. Nothing measures what it writes, and
+   * what it writes lands in the diff a gate reads.
+   */
+  it("kills what the command started, not only the command", async () => {
+    await writeFile(
+      join(workspace, "child.mjs"),
+      "import { writeFileSync } from 'node:fs';\n" +
+        "setTimeout(() => writeFileSync('orphan.txt', 'written'), 900);\n",
+    );
+    await writeFile(
+      join(workspace, "parent.mjs"),
+      "import { spawn } from 'node:child_process';\n" +
+        "spawn(process.execPath, ['child.mjs'], { stdio: 'ignore' });\n" +
+        "setTimeout(() => {}, 20000);\n",
+    );
+
+    const { output } = await run("node parent.mjs", 300);
+    expect(output).toContain("timeout");
+
+    await new Promise((settle) => setTimeout(settle, 2_500));
+
+    expect(existsSync(join(workspace, "orphan.txt"))).toBe(false);
+  }, 20_000);
 });

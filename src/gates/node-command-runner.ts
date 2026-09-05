@@ -1,24 +1,12 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import type { Clock } from "../core/clock.ts";
 import type { ChildEnvironment } from "../exec/child-environment.ts";
+import { runProcessGroup } from "../exec/run-process.ts";
 import {
   type CommandOptions,
   type GateCommandRunner,
   type GateObservation,
   unavailableObservation,
 } from "./gate-definition.ts";
-
-const runProcess = promisify(execFile);
-
-interface ProcessFailure {
-  readonly stdout?: string;
-  readonly stderr?: string;
-  /** The exit code, or the errno name where the process never started (`ENOENT`, `EACCES`). */
-  readonly code?: number | string;
-  readonly killed?: boolean;
-  readonly message?: string;
-}
 
 /** The shell's own answer for a program it could not find, used for a spawn that found none. */
 const notFoundExitCode = 127;
@@ -49,54 +37,46 @@ export function createNodeCommandRunner(
     options: CommandOptions,
   ): Promise<GateObservation> => {
     const startedAt = clock.now();
-    try {
-      const { stdout, stderr } = await runProcess(file, [...args], {
-        cwd: options.cwd,
-        timeout: options.timeoutMs,
-        maxBuffer: 16_000_000,
-        env: environment.variables,
-      });
+    const ran = await runProcessGroup(file, args, {
+      cwd: options.cwd,
+      timeoutMs: options.timeoutMs,
+      maxOutputBytes: 16_000_000,
+      env: environment.variables,
+    });
+    const durationMs = clock.now() - startedAt;
+
+    if (ran.startFailure !== null) {
       return {
-        exitCode: 0,
-        stdout,
-        stderr,
-        durationMs: clock.now() - startedAt,
-        unavailable: null,
-      };
-    } catch (cause) {
-      const failure = cause as ProcessFailure;
-      if (typeof failure.code === "string") {
-        return {
-          exitCode: notFoundExitCode,
-          stdout: "",
-          stderr: failure.message ?? "",
-          durationMs: clock.now() - startedAt,
-          unavailable: `${file} could not be started (${failure.code}), so this gate measured nothing`,
-        };
-      }
-      // A command that was killed at its timeout ran, and did not pass: it is a failure of the
-      // gate, with the reason in its output where the model and the reviewer read failures.
-      // It used to be reported as not applicable, and a change whose suite hung read green on
-      // the strength of the gates beside it.
-      const killed =
-        failure.killed === true
-          ? `\nthe command was killed after ${options.timeoutMs}ms without finishing. ` +
-            "A command that runs this long without finishing is usually waiting for " +
-            "something that is never coming: standard input nobody is typing, a prompt, or " +
-            "a server that does not exit. Node's test runner gives each test file its own " +
-            "standard input with no writer and never closes it, so a test that reads input " +
-            "waits for ever rather than reaching the end of it. Take the input as an " +
-            "argument and have the test pass it in, and keep any prompting behind the " +
-            "entry-point guard so importing the file does not start it."
-          : "";
-      return {
-        exitCode: failure.code ?? 1,
-        stdout: failure.stdout ?? "",
-        stderr: `${failure.stderr ?? failure.message ?? ""}${killed}`,
-        durationMs: clock.now() - startedAt,
-        unavailable: null,
+        exitCode: notFoundExitCode,
+        stdout: "",
+        stderr: ran.startFailure,
+        durationMs,
+        unavailable: `${ran.startFailure}, so this gate measured nothing`,
       };
     }
+
+    // A command killed at its timeout ran, and did not pass: it is a failure of the gate, with
+    // the reason in its output where the model and the reviewer read failures. It used to be
+    // reported as not applicable, and a change whose suite hung read green on the strength of
+    // the gates beside it.
+    const killed = ran.timedOut
+      ? `\nthe command was killed after ${options.timeoutMs}ms without finishing. ` +
+        "A command that runs this long without finishing is usually waiting for " +
+        "something that is never coming: standard input nobody is typing, a prompt, or " +
+        "a server that does not exit. Node's test runner gives each test file its own " +
+        "standard input with no writer and never closes it, so a test that reads input " +
+        "waits for ever rather than reaching the end of it. Take the input as an " +
+        "argument and have the test pass it in, and keep any prompting behind the " +
+        "entry-point guard so importing the file does not start it."
+      : "";
+
+    return {
+      exitCode: ran.exitCode,
+      stdout: ran.stdout,
+      stderr: `${ran.stderr}${killed}`,
+      durationMs,
+      unavailable: null,
+    };
   };
 
   return {

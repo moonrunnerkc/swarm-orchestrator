@@ -1,4 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -67,4 +68,28 @@ describe("what a repository-declared gate command inherits", () => {
       delete process.env.OPENAI_API_KEY;
     }
   });
+});
+
+describe("what a gate leaves running after it is stopped", () => {
+  /**
+   * A tests gate that hangs is killed at its timeout. The runner it started forks workers, and
+   * those workers were not in the harness's reach: they kept running against the workspace the
+   * next gate was about to measure.
+   */
+  it("kills the whole tree at the timeout, not only the command", async () => {
+    await writeFile(
+      join(workspace, "child.mjs"),
+      "import { writeFileSync } from 'node:fs';\nsetTimeout(() => writeFileSync('orphan.txt', 'written'), 900);\n",
+    );
+    await writeFile(
+      join(workspace, "parent.mjs"),
+      "import { spawn } from 'node:child_process';\nspawn(process.execPath, ['child.mjs'], { stdio: 'ignore' });\nsetTimeout(() => {}, 20000);\n",
+    );
+
+    const observed = await runner().run("node parent.mjs", { cwd: workspace, timeoutMs: 300 });
+    expect(observed.exitCode).not.toBe(0);
+
+    await new Promise((settle) => setTimeout(settle, 2_500));
+    expect(existsSync(join(workspace, "orphan.txt"))).toBe(false);
+  }, 20_000);
 });
