@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTestClock } from "../core/test-doubles.ts";
+import { harnessChildEnvironment } from "../exec/child-environment.ts";
 import {
   controlOutcomePath,
   createBaseControlRunner,
@@ -163,7 +164,7 @@ describe("which tests a control run failed", () => {
     });
     const runner = createBaseControlRunner({
       workspace: { workspaceRoot: workspace, baseRef: "HEAD" },
-      commands: createNodeCommandRunner(createTestClock(1)),
+      commands: createNodeCommandRunner(createTestClock(1), harnessChildEnvironment()),
       singleFileCommand: (testFile) => singleFileTestCommand(detection, testFile),
     });
 

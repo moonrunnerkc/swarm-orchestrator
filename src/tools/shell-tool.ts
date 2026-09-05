@@ -42,6 +42,10 @@ export function createShellTool(sandbox: Sandbox): ToolDefinition {
           cwd: sandbox.workspaceRoot,
           timeout,
           maxBuffer: 4_000_000,
+          // Built rather than inherited. A path check cannot see `process.env.OPENAI_API_KEY`,
+          // so the only thing between a command the model wrote and the operator's own keys is
+          // what the child is handed.
+          env: sandbox.childEnvironment.variables,
         });
         return describeRun(input.command, stdout, stderr, 0, false);
       } catch (cause) {

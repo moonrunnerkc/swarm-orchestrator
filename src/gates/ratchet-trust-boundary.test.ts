@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTestClock } from "../core/test-doubles.ts";
 import { openEvidenceSession } from "../evidence/session.ts";
+import { harnessChildEnvironment } from "../exec/child-environment.ts";
 import { assembleGates } from "./default-gates.ts";
 import { runGateCycle } from "./gate-runner.ts";
 import { takeMeasureSnapshot } from "./measure-snapshot.ts";
@@ -104,7 +105,7 @@ async function measureThroughTheGate(sessionId: string, testFile: string): Promi
     },
     0,
     {
-      commands: createNodeCommandRunner(createTestClock(1)),
+      commands: createNodeCommandRunner(createTestClock(1), harnessChildEnvironment()),
       evidence: await openEvidenceSession({
         root: join(outside, "sessions"),
         sessionId,

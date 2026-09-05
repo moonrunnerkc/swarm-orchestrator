@@ -1,5 +1,10 @@
 import { realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import {
+  type ChildEnvironment,
+  childEnvironment,
+  defaultChildHome,
+} from "../exec/child-environment.ts";
 import { readShellCommand } from "./shell-command.ts";
 
 /**
@@ -59,6 +64,18 @@ export interface SandboxPolicy {
    * real filesystem; defaults to the node implementation.
    */
   readonly realpath?: ((path: string) => string) | undefined;
+  /**
+   * The environment the harness itself was started with. Injected rather than read here so a
+   * test can state what a run inherited; defaults to this process's own.
+   */
+  readonly inheritedEnvironment?: Readonly<Record<string, string | undefined>> | undefined;
+  /**
+   * HOME for a child process the run spawns. Never the operator's own: a command whose effect
+   * a shell decides can reach `$HOME/.ssh` without naming a path anything here could rule on.
+   */
+  readonly childHomeDir?: string | undefined;
+  /** Task variables this run authorized by name, passed to child processes. */
+  readonly authorizedEnvironmentNames?: readonly string[] | undefined;
 }
 
 type SandboxVerdict =
@@ -67,6 +84,8 @@ type SandboxVerdict =
 
 export interface Sandbox {
   readonly workspaceRoot: string;
+  /** What a child process this run spawns is given, built rather than inherited. */
+  readonly childEnvironment: ChildEnvironment;
   /** Resolves a path against the workspace, refusing anything that escapes or is denied. */
   checkPath(candidate: string): SandboxVerdict;
   /** Whether the command's executable is on the allowlist. */
@@ -83,8 +102,17 @@ export function createSandbox(policy: SandboxPolicy): Sandbox {
     ...policy.deniedRoots.map((path) => resolve(path)),
   ];
 
+  const childHome = resolve(policy.childHomeDir ?? defaultChildHome());
+
   return {
     workspaceRoot,
+
+    childEnvironment: childEnvironment(policy.inheritedEnvironment ?? process.env, {
+      homeDir: childHome,
+      ...(policy.authorizedEnvironmentNames === undefined
+        ? {}
+        : { passThrough: policy.authorizedEnvironmentNames }),
+    }),
 
     checkPath(candidate: string): SandboxVerdict {
       if (candidate.trim().length === 0) {

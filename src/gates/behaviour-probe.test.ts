@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTestClock } from "../core/test-doubles.ts";
+import { harnessChildEnvironment } from "../exec/child-environment.ts";
 import { probeChangedBehaviour } from "./behaviour-probe.ts";
 import { createNodeCommandRunner } from "./node-command-runner.ts";
 import { createMemoryWorkspace } from "./test-doubles.ts";
@@ -22,7 +23,7 @@ async function probe(base: Record<string, string>, current: Record<string, strin
   return await probeChangedBehaviour({
     changes: await workspace.changes(),
     probe: workspace,
-    commands: createNodeCommandRunner(createTestClock(1)),
+    commands: createNodeCommandRunner(createTestClock(1), harnessChildEnvironment()),
     scratchDirectory: join(outside, "probe"),
     timeoutMs: 30_000,
   });

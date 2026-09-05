@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Clock } from "../core/clock.ts";
 import type { GateStatus, LoopEvent } from "../core/loop-events.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
+import { harnessChildEnvironment } from "../exec/child-environment.ts";
 import type { GateSetOptions } from "../gates/default-gates.ts";
 import { assembleGateSet, defaultDiffBudget } from "../gates/engine.ts";
 import type { FileSetRegistry } from "../gates/file-set.ts";
@@ -122,7 +123,7 @@ export async function runMergeQueue(options: MergeQueueOptions): Promise<MergeQu
     workspaceRoot: options.integrationPath,
     baseRef: options.baseCommit,
   });
-  const commands = createNodeCommandRunner(options.clock);
+  const commands = createNodeCommandRunner(options.clock, harnessChildEnvironment());
   const criteriaRef = options.criteriaRef ?? options.baseCommit;
   const { detection, gates } = await assembleGateSet({
     workspaceRoot: options.integrationPath,

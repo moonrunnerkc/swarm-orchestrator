@@ -49,6 +49,7 @@ import {
   openEvidenceSession,
 } from "./evidence/session.ts";
 import { createKeychainSecretStore, resolveSigningKey } from "./evidence/signing.ts";
+import { harnessChildEnvironment } from "./exec/child-environment.ts";
 import type { AutoResolveOutcome } from "./gates/auto-resolve.ts";
 import type { BondOutcome } from "./gates/bond-runner.ts";
 import type { GateSetOptions } from "./gates/default-gates.ts";
@@ -1443,7 +1444,7 @@ async function calibrate(options: CalibrateCommand): Promise<number> {
         clock,
         random,
         createModel: (modelSpec) => registry.create(parseModelSpec(modelSpec)),
-        commands: createNodeCommandRunner(clock),
+        commands: createNodeCommandRunner(clock, harnessChildEnvironment()),
         probeMemory: createOllamaMemoryProbe({
           // With no local model among the candidates there is nothing to probe, and the
           // probe against the default port simply reports nothing.
