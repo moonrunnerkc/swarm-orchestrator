@@ -61,6 +61,12 @@ interface ParallelRunOptions {
   readonly graphSource?: "goal" | "file";
   readonly gateOptions?: GateSetOptions;
   readonly abortSignal: AbortSignal;
+  /**
+   * What is left of the whole run's wall budget, asked each time a worker starts. A budget each
+   * worker applies to itself is not a budget for the run: ten workers with half an hour each is
+   * five hours. Null where the run was given no budget.
+   */
+  readonly remainingWallMs?: () => number | null;
 }
 
 export interface WorkerResult {
@@ -428,6 +434,7 @@ async function runOneWorker(
     });
 
     const fileSet = createFileSetRegistry(evidence);
+    const remainingWall = options.remainingWallMs?.() ?? null;
     const result = await runAgentTask({
       task,
       workspace: worktree.path,
@@ -446,6 +453,8 @@ async function runOneWorker(
       // A worker is unattended, so a call that needs a human is refused and recorded.
       confirm: () => Promise.resolve(false),
       abortSignal: options.abortSignal,
+      // The remainder rather than a fresh budget: a worker starting late gets what is left.
+      ...(remainingWall === null ? {} : { maxWallTimeMs: remainingWall }),
       homeDir: options.scratchRoot,
       trail: createReadTrailTool({
         peers: () => peersFor(workerId, taskId, registered),
