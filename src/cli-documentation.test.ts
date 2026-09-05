@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseCommandLine, usage } from "./cli-options.ts";
 
@@ -46,6 +47,46 @@ describe("the commands the help text promises", () => {
       expect({ name, command: parsed.command }).not.toEqual({ name, command: "run" });
     });
   }
+});
+
+describe("the commands the README promises", () => {
+  /**
+   * The help text and the README are two lists of what this build has, and they drift in both
+   * directions: a command added without a README line is undiscoverable, and a README line left
+   * behind after a rename is a promise the build does not keep. The help text is already held
+   * to the parser above; this holds the README to the help text.
+   */
+  const readmeCommands = [
+    ...new Set(
+      readFileSync(new URL("../README.md", import.meta.url), "utf8")
+        .split("\n")
+        .flatMap((line) => [...line.matchAll(/\bswarm ([a-z][a-z-]+)\b/g)])
+        .map((match) => match[1])
+        .filter((name): name is string => name !== undefined),
+    ),
+  ];
+
+  const documented = new Set(
+    usage
+      .split("\n")
+      .map((line) => /^ {2}swarm ([a-z][a-z-]*)/.exec(line)?.[1])
+      .filter((name): name is string => name !== undefined),
+  );
+
+  /** Words that follow "swarm" in prose rather than naming a command. */
+  const prose = new Set(["command", "with", "run"]);
+
+  it("finds some, so a formatting change cannot make this test vacuous", () => {
+    expect(readmeCommands.length).toBeGreaterThan(5);
+  });
+
+  it("names no command the build does not have", () => {
+    const missing = readmeCommands.filter(
+      (name) => !documented.has(name) && !prose.has(name) && !name.startsWith("--"),
+    );
+
+    expect(missing).toEqual([]);
+  });
 });
 
 describe("switches that take no value", () => {
