@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  harnessControlledEnvironment,
-  harnessControlledNodeTest,
-  processIsolation,
-  shellQuoted,
-} from "./node-test-command.ts";
+import { harnessControlledNodeTest, processIsolation, shellQuoted } from "./node-test-command.ts";
 
 /**
  * The property under test is not "the isolation setting was removed". It is "the harness
@@ -89,34 +84,6 @@ describe("a flag smuggled through the place a file pattern goes", () => {
         argv: null,
       });
     }
-  });
-});
-
-describe("the environment a vouched run is given", () => {
-  /**
-   * A hook named in NODE_OPTIONS runs in the process that writes the artifact just as surely
-   * as one named on the command line, and neither the token scan nor the read-back could see
-   * it, because neither reads the environment. So the environment is built rather than
-   * inherited: every name that decides what a node process loads is dropped.
-   */
-  it("drops the names that decide what a node process loads", () => {
-    expect(
-      harnessControlledEnvironment({
-        PATH: "/usr/bin",
-        HOME: "/home/dev",
-        CI: "true",
-        NODE_OPTIONS: "--require=./hook.cjs",
-        NODE_V8_COVERAGE: "/tmp/coverage",
-        NODE_PATH: "/tmp/modules",
-        node_options: "--require=./hook.cjs",
-        LD_PRELOAD: "/tmp/hook.so",
-        DYLD_INSERT_LIBRARIES: "/tmp/hook.dylib",
-      }),
-    ).toEqual({ PATH: "/usr/bin", HOME: "/home/dev", CI: "true" });
-  });
-
-  it("carries no name the caller did not hand it", () => {
-    expect(harnessControlledEnvironment({ A: undefined, B: "b" })).toEqual({ B: "b" });
   });
 });
 

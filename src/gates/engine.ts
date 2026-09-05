@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type { Clock } from "../core/clock.ts";
 import type { LoopEvent } from "../core/loop-events.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
+import { harnessChildEnvironment } from "../exec/child-environment.ts";
 import {
   type AutoResolveOutcome,
   defaultAttemptCap,
@@ -144,7 +145,7 @@ export async function sealAssembledCriteria(
 export async function runGatesEngine(options: GatesEngineOptions): Promise<GatesEngineRun> {
   const workspace = { workspaceRoot: options.workspaceRoot, baseRef: options.baseRef };
   const probe = createGitWorkspaceProbe(workspace);
-  const commands = createNodeCommandRunner(options.clock);
+  const commands = createNodeCommandRunner(options.clock, harnessChildEnvironment());
   // Read from the base commit, falling back to the tree only where the base had no manifest at
   // all. A run must not author the command that measures it: one rewrote package.json's test
   // script from `node --test` to a python runner that is not installed on the machine, and the

@@ -105,3 +105,43 @@ describe("what a shell command is allowed to touch", () => {
     expect(output).toContain('"name":"x"');
   });
 });
+
+describe("what a shell command inherits from the process that started the run", () => {
+  it("does not hand the model's command the provider key the harness was started with", async () => {
+    // No path check can see this read: `process.env.ANTHROPIC_API_KEY` names no file. The only
+    // thing standing between a command the model wrote and the operator's own key is the
+    // environment the child is given.
+    process.env.ANTHROPIC_API_KEY = "sk-ant-decoy-value-for-this-test";
+    try {
+      const { output } = await run(
+        "node -e \"process.stdout.write(process.env.ANTHROPIC_API_KEY ?? 'absent')\"",
+      );
+
+      expect(output).not.toContain("sk-ant-decoy-value-for-this-test");
+      expect(output).toContain("absent");
+    } finally {
+      delete process.env.ANTHROPIC_API_KEY;
+    }
+  });
+
+  it("does not hand it an unrecognized name from the operator's shell either", async () => {
+    process.env.SWARM_TEST_INTERNAL_ENDPOINT = "https://internal.example";
+    try {
+      const { output } = await run(
+        "node -e \"process.stdout.write(process.env.SWARM_TEST_INTERNAL_ENDPOINT ?? 'absent')\"",
+      );
+
+      expect(output).not.toContain("internal.example");
+      expect(output).toContain("absent");
+    } finally {
+      delete process.env.SWARM_TEST_INTERNAL_ENDPOINT;
+    }
+  });
+
+  it("still gives the command a PATH, so an ordinary toolchain runs", async () => {
+    const { output } = await run("node -e \"process.stdout.write('ran')\"");
+
+    expect(output).toContain("exit code: 0");
+    expect(output).toContain("ran");
+  });
+});

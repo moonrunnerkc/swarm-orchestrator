@@ -9,6 +9,7 @@ import { runAgentTask } from "../agent-run.ts";
 import { runAgentLoop } from "../core/loop.ts";
 import type { LoopEvent } from "../core/loop-events.ts";
 import { createFixedRandom, createTestClock } from "../core/test-doubles.ts";
+import { harnessChildEnvironment } from "../exec/child-environment.ts";
 import { runAutoResolve } from "../gates/auto-resolve.ts";
 import { checkFileSet, createFileSetRegistry, type FileSetState } from "../gates/file-set.ts";
 import type { GateContext, GateDefinition, GateObservation } from "../gates/gate-definition.ts";
@@ -1729,7 +1730,7 @@ describe("20. stand a failing gate down by printing that a tool is missing", () 
  */
 describe("21. stand the tests gate down by hanging it", () => {
   it("fails the run rather than reading the hang as a gate that could not run", async () => {
-    const commands = createNodeCommandRunner(createTestClock());
+    const commands = createNodeCommandRunner(createTestClock(), harnessChildEnvironment());
     const gates: GateDefinition[] = [
       {
         id: "lint",

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createTestClock } from "../core/test-doubles.ts";
+import { harnessChildEnvironment } from "../exec/child-environment.ts";
 import type { GateContext, GateDefinition } from "./gate-definition.ts";
 import { behaviourProbeGate, placeholderGate } from "./inspection-gates.ts";
 import { createNodeCommandRunner } from "./node-command-runner.ts";
@@ -47,7 +48,7 @@ async function inspect(
     budgets: { maxChangedFiles: 12, maxAddedLines: 600 },
     probe,
     harnessRun: {
-      commands: createNodeCommandRunner(createTestClock(1)),
+      commands: createNodeCommandRunner(createTestClock(1), harnessChildEnvironment()),
       scratchDirectory: join(outside, "probe"),
     },
   };

@@ -96,44 +96,6 @@ export function shellQuoted(path: string): string | null {
   return quoteCharacter.test(path) || shellControl.test(path) ? null : `'${path}'`;
 }
 
-/**
- * Names whose values decide what a process loads before it reaches its own entry point. Node's
- * own family is taken whole rather than listed member by member, since listing is the shape
- * that keeps losing to the next spelling, and the two dynamic-linker names are here because
- * they put native code in any process at all.
- */
-const preloadNames: ReadonlySet<string> = new Set([
-  "LD_PRELOAD",
-  "LD_LIBRARY_PATH",
-  "LD_AUDIT",
-  "DYLD_INSERT_LIBRARIES",
-  "DYLD_LIBRARY_PATH",
-  "DYLD_FRAMEWORK_PATH",
-]);
-
-/**
- * The environment a vouched run is given: whatever it was handed, minus every name that could
- * decide what the process loads. Built rather than inherited, and pure so the decision is
- * testable without spawning anything.
- *
- * Folded to upper case before the decision, because the name a process reads is not always the
- * name the parent spelled, and a check that misses `node_options` is a check the workspace
- * chooses the spelling for.
- */
-export function harnessControlledEnvironment(
-  inherited: Readonly<Record<string, string | undefined>>,
-): Record<string, string> {
-  const environment: Record<string, string> = {};
-  for (const [name, value] of Object.entries(inherited)) {
-    const folded = name.toUpperCase();
-    if (value === undefined || folded.startsWith("NODE_") || preloadNames.has(folded)) {
-      continue;
-    }
-    environment[name] = value;
-  }
-  return environment;
-}
-
 interface VouchedInvocation {
   /** The flags the project declared, every one of them recognized. */
   readonly flags: readonly string[];

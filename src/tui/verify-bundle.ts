@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { access } from "node:fs/promises";
-import { harnessControlledEnvironment } from "../gates/node-test-command.ts";
+import { childEnvironment, defaultChildHome } from "../exec/child-environment.ts";
 import type { BundleVerification } from "./evidence-panel.ts";
 import { verifyCommandFor } from "./evidence-panel.ts";
 import type { EvidenceLocation } from "./open-path.ts";
@@ -35,7 +35,7 @@ export async function runEmbeddedVerifier(input: {
       command.file,
       [...command.args],
       {
-        env: harnessControlledEnvironment(input.environment),
+        env: childEnvironment(input.environment, { homeDir: defaultChildHome() }).variables,
         timeout: input.timeoutMs,
         maxBuffer: 8_000_000,
       },

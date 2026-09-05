@@ -1,4 +1,5 @@
 // biome-ignore-all lint/suspicious/noTemplateCurlyInString: seed files are JavaScript source, and a template literal in one is the file's own syntax rather than a mistake in this test.
+
 import { execFile } from "node:child_process";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -11,6 +12,7 @@ import { bundleSourceFromRecorder, exportBundle } from "../evidence/bundle.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { createSessionId, openEvidenceSession } from "../evidence/session.ts";
 import { createEphemeralSigningKey } from "../evidence/signing.ts";
+import { harnessChildEnvironment } from "../exec/child-environment.ts";
 import { createNodeCommandRunner } from "../gates/node-command-runner.ts";
 import {
   createFixtureModelClient,
@@ -216,7 +218,7 @@ function calibrate(
       clock,
       random: createFixedRandom(),
       createModel: (modelSpec: string) => createScriptedModel(modelSpec, goldenSet.cases),
-      commands: createNodeCommandRunner(clock),
+      commands: createNodeCommandRunner(clock, harnessChildEnvironment()),
       probeMemory: () => Promise.resolve(null),
       scratchRoot: join(root, "scratch"),
       maxSteps: 6,
@@ -419,7 +421,7 @@ describe("a model whose every run failed to dispatch", () => {
         clock,
         random: createFixedRandom(),
         createModel: (modelSpec: string) => createScriptedModel(modelSpec, goldenSet.cases),
-        commands: createNodeCommandRunner(clock),
+        commands: createNodeCommandRunner(clock, harnessChildEnvironment()),
         probeMemory: () => Promise.resolve(null),
         scratchRoot: join(root, "scratch"),
         maxSteps: 6,

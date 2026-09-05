@@ -1,13 +1,13 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { Clock } from "../core/clock.ts";
+import type { ChildEnvironment } from "../exec/child-environment.ts";
 import {
   type CommandOptions,
   type GateCommandRunner,
   type GateObservation,
   unavailableObservation,
 } from "./gate-definition.ts";
-import { harnessControlledEnvironment } from "./node-test-command.ts";
 
 const runProcess = promisify(execFile);
 
@@ -31,16 +31,22 @@ const notFoundExitCode = 127;
  * Two ways in, and the difference between them is the whole of invariant 7's "an invocation the
  * harness recognizes in full". A declared command is text the project wrote, so a shell reads
  * it and no artifact is asked of it. A vouched vector is one the harness built argument by
- * argument, so it is spawned with no shell in between and under an environment built here
- * rather than inherited: nothing re-reads the arguments on the way to the process, and no name
- * the workspace set decides what that process loads.
+ * argument, so it is spawned with no shell in between: nothing re-reads the arguments on the
+ * way to the process.
+ *
+ * Both arms run under the same built environment. A gate command is text the repository wrote,
+ * so it is as untrusted as anything else the repository wrote, and it used to be handed every
+ * name the operator's shell held. Stripping only the names that decide what node loads answered
+ * a different question: it kept the measurement honest and left the credentials in place.
  */
-export function createNodeCommandRunner(clock: Clock): GateCommandRunner {
+export function createNodeCommandRunner(
+  clock: Clock,
+  environment: ChildEnvironment,
+): GateCommandRunner {
   const observe = async (
     file: string,
     args: readonly string[],
     options: CommandOptions,
-    environment?: Record<string, string>,
   ): Promise<GateObservation> => {
     const startedAt = clock.now();
     try {
@@ -48,7 +54,7 @@ export function createNodeCommandRunner(clock: Clock): GateCommandRunner {
         cwd: options.cwd,
         timeout: options.timeoutMs,
         maxBuffer: 16_000_000,
-        ...(environment === undefined ? {} : { env: environment }),
+        env: environment.variables,
       });
       return {
         exitCode: 0,
@@ -104,7 +110,7 @@ export function createNodeCommandRunner(clock: Clock): GateCommandRunner {
           unavailableObservation("the harness was handed an empty vector, so nothing was run"),
         );
       }
-      return observe(program, args, options, harnessControlledEnvironment(process.env));
+      return observe(program, args, options);
     },
   };
 }
