@@ -7,6 +7,7 @@ import type { LoopEvent } from "../core/loop-events.ts";
 import type { ModelClient } from "../core/model-client.ts";
 import type { RandomSource } from "../core/random-source.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
+import type { IsolationBackend } from "../exec/execution-mode.ts";
 import type { GateSetOptions } from "../gates/default-gates.ts";
 import { createFileSetRegistry } from "../gates/file-set.ts";
 import { emptyMeasureSnapshot, type MeasureSnapshot } from "../gates/measure-snapshot.ts";
@@ -71,6 +72,12 @@ interface ParallelRunOptions {
    * five hours. Null where the run was given no budget.
    */
   readonly remainingWallMs?: () => number | null;
+  /**
+   * Where a worker's commands run, given its worktree. One backend per worktree rather than one
+   * shared over the repository: a shared mount would let every worker reach every other
+   * worker's tree, which is what worktrees exist to prevent.
+   */
+  readonly isolation?: (worktreePath: string) => IsolationBackend;
 }
 
 export interface WorkerResult {
@@ -468,6 +475,7 @@ async function runOneWorker(
       // A worker is unattended, so a call that needs a human is refused and recorded.
       confirm: () => Promise.resolve(false),
       abortSignal: options.abortSignal,
+      ...(options.isolation === undefined ? {} : { isolation: options.isolation(worktree.path) }),
       // The remainder rather than a fresh budget: a worker starting late gets what is left.
       ...(remainingWall === null ? {} : { maxWallTimeMs: remainingWall }),
       homeDir: options.scratchRoot,
