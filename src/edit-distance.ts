@@ -18,7 +18,14 @@ export function editDistance(left: string, right: string): number {
   return previous[right.length] ?? 0;
 }
 
-/** The closest candidate within `maxDistance`, or null where the word is close to none of them. */
+/**
+ * The closest candidate, or null where the word is close to none of them.
+ *
+ * The bound scales with the shorter word, because a fixed two edits means different things at
+ * different lengths: two edits between a one-letter word and a two-letter command is the whole
+ * of both words, and a fixed bound made every one-letter task read as a typo for the two-letter
+ * command beside it. Half the shorter length, capped at `maxDistance`.
+ */
 export function nearestName(
   word: string,
   candidates: readonly string[],
@@ -27,7 +34,8 @@ export function nearestName(
   let best: { name: string; distance: number } | null = null;
   for (const candidate of candidates) {
     const distance = editDistance(word.toLowerCase(), candidate.toLowerCase());
-    if (distance > 0 && distance <= maxDistance && (best === null || distance < best.distance)) {
+    const bound = Math.min(maxDistance, Math.floor(Math.min(word.length, candidate.length) / 2));
+    if (distance > 0 && distance <= bound && (best === null || distance < best.distance)) {
       best = { name: candidate, distance };
     }
   }

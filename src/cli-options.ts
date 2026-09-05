@@ -123,6 +123,16 @@ export interface ReplayCommand {
  * from here, which is to say from outside the bundle, which is the only place they can come
  * from and mean anything.
  */
+/**
+ * Removes stored sessions older than a window. Deleting evidence is not a default, so the
+ * sweep reports what it would remove and does nothing until told.
+ */
+export interface GcCommand {
+  readonly command: "gc";
+  readonly olderThan: string;
+  readonly remove: boolean;
+}
+
 export interface VerifyCommand {
   readonly command: "verify";
   readonly bundleDirectory: string;
@@ -206,6 +216,7 @@ export type CommandLine =
   | DoctorCommand
   | ReplayCommand
   | VerifyCommand
+  | GcCommand
   | ReviewCommand
   | GatesCommand
   | SelectCommand
@@ -236,6 +247,7 @@ export const usage = [
   "    --concurrency <n>                              how many may hold a worktree at once",
   "  swarm review <bundle directory>                  what a run produced, and open it",
   "  swarm verify <bundle directory> [--signer <fp>]  check the bundle, and who signed it",
+  "  swarm gc [--older-than 30d] [--remove]           what stored evidence would be removed",
   "  swarm replay <bundle directory>                  read a bundle back",
   "",
   "  --json                         line-delimited JSON on stdout: one line per event, one",
@@ -266,6 +278,7 @@ export class InvalidCommandLineError extends Error {
 const switchFlags = new Set([
   "help",
   "json",
+  "remove",
   "fix",
   "offline",
   "no-tui",
@@ -315,6 +328,14 @@ export function parseCommandLine(
   // is asking for help.
   if (flags.has("help") || words[0] === "help") {
     return { command: "help" };
+  }
+
+  if (words[0] === "gc") {
+    return {
+      command: "gc",
+      olderThan: flags.get("older-than") ?? "30d",
+      remove: flags.has("remove"),
+    };
   }
 
   if (words[0] === "verify") {
@@ -487,6 +508,7 @@ export function parseCommandLine(
 const knownCommands = [
   "gates",
   "verify",
+  "gc",
   "select",
   "calibrate",
   "routing",
