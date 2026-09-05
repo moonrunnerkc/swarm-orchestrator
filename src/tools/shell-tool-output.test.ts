@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createSandbox } from "./sandbox.ts";
+import { createPolicyGuard } from "./policy-guard.ts";
 import { createShellTool } from "./shell-tool.ts";
 
 /**
@@ -31,7 +31,7 @@ afterEach(async () => {
 /** Straight to the tool: what the chokepoint would refuse is not what is being measured here. */
 function shell() {
   return createShellTool(
-    createSandbox({
+    createPolicyGuard({
       workspaceRoot: workspace,
       homeDir: home,
       shellAllowlist: [],

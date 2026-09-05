@@ -11,7 +11,7 @@ import type { EmptyTurnReason } from "../evidence/turn-content.ts";
 import type { GateCommandRunner } from "../gates/gate-definition.ts";
 import { createToolChokepoint } from "../tools/chokepoint.ts";
 import { createLedgerChokepointRecorder } from "../tools/chokepoint-record.ts";
-import { createSandbox, defaultShellAllowlist } from "../tools/sandbox.ts";
+import { createPolicyGuard, defaultShellAllowlist } from "../tools/policy-guard.ts";
 import { createWorkspaceTools } from "../tools/workspace-tools.ts";
 import type { CalibrationCase } from "./calibration-case.ts";
 import { caseDigest } from "./calibration-case.ts";
@@ -144,13 +144,13 @@ export async function runCalibrationRepeat(
   );
   await seedWorkspace(workspace, request.case);
 
-  const sandbox = createSandbox({
+  const guard = createPolicyGuard({
     workspaceRoot: workspace,
     homeDir: workspace,
     shellAllowlist: defaultShellAllowlist,
     deniedRoots: [],
   });
-  const definitions = createWorkspaceTools(sandbox);
+  const definitions = createWorkspaceTools(guard);
   const peak = { bytes: null as number | null };
 
   const model = createRecordingModelClient(
@@ -164,7 +164,7 @@ export async function runCalibrationRepeat(
     model,
     toolInvoker: createToolChokepoint({
       definitions,
-      sandbox,
+      guard,
       // Nothing to ask: calibration is unattended, so a call needing a human is refused and
       // counted, which is itself a fact about the model.
       confirm: () => Promise.resolve(false),

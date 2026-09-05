@@ -7,6 +7,7 @@ import type { RandomSource } from "./core/random-source.ts";
 import type { ToolInvoker } from "./core/tool-invoker.ts";
 import { renderPredicateCatalogue } from "./evidence/predicate-catalogue.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
+import { describeEnvelopeForReader, establishExecutionEnvelope } from "./exec/run-envelope.ts";
 import type { ResolveRequest } from "./gates/auto-resolve.ts";
 import type { SingleFileCommand } from "./gates/base-control.ts";
 import type { GateSetOptions } from "./gates/default-gates.ts";
@@ -29,7 +30,11 @@ import { type ConfirmationPrompt, createToolChokepoint } from "./tools/chokepoin
 import { createLedgerChokepointRecorder } from "./tools/chokepoint-record.ts";
 import { createClaimTool } from "./tools/claim-tool.ts";
 import { createDerivationHeuristic } from "./tools/derivation.ts";
-import { createSandbox, defaultShellAllowlist, type Sandbox } from "./tools/sandbox.ts";
+import {
+  createPolicyGuard,
+  defaultShellAllowlist,
+  type PolicyGuard,
+} from "./tools/policy-guard.ts";
 import type { ToolDefinition } from "./tools/tool-definition.ts";
 import { createWorkspaceTools } from "./tools/workspace-tools.ts";
 
@@ -105,6 +110,12 @@ const trailInstruction = [
 
 export interface AgentTaskOptions {
   readonly task: string;
+  /**
+   * Whether configuration the repository controls was allowed to decide anything this run.
+   * Recorded in the envelope, because "the project declared its own gate commands" is part of
+   * what a reader needs to know to weigh the result.
+   */
+  readonly repositoryConfigTrusted?: boolean | undefined;
   readonly workspace: string;
   readonly baseRef: string;
   readonly maxSteps: number;
@@ -162,7 +173,7 @@ export interface AgentTaskResult {
 }
 
 /**
- * One task, start to finish: sandbox, tools, chokepoint, loop, then the gates over what it
+ * One task, start to finish: guard, tools, chokepoint, loop, then the gates over what it
  * left behind. Extracted from the CLI so that a parallel worker is this exact path rather
  * than a second copy of it: a worker differs from an ordinary run only in which directory it
  * works in and which chain it writes to.
@@ -171,6 +182,12 @@ export interface AgentTaskResult {
 export interface AgentToolset {
   readonly definitions: readonly ToolDefinition[];
   readonly toolInvoker: ToolInvoker;
+  /**
+   * The guard these tools were built against. Exposed so the execution envelope is measured
+   * against the guard the run actually got, rather than against a second one built to describe
+   * it, which is how a description ends up describing something else.
+   */
+  readonly guard: PolicyGuard;
 }
 
 export interface ToolsetOptions {
@@ -178,20 +195,26 @@ export interface ToolsetOptions {
   readonly homeDir: string;
   readonly confirm: ConfirmationPrompt;
   readonly evidence: EvidenceRecorder;
-  /** Which tools this run offers, given the sandbox they have to be built against. */
-  readonly tools: (sandbox: Sandbox) => readonly ToolDefinition[];
+  /** Which tools this run offers, given the guard they have to be built against. */
+  readonly tools: (guard: PolicyGuard) => readonly ToolDefinition[];
 }
 
 /**
- * The sandbox and the chokepoint, assembled once for every kind of run there is.
+ * The policy guard and the chokepoint, assembled once for every kind of run there is.
  *
- * A second assembly beside this one is how a run ends up with a different sandbox, a
+ * The guard is a lexical path and program policy, not a sandbox: it reads a command into the
+ * programs it would run and the words that could name a file, and rules on those. That bounds
+ * which programs start and never what they do once started, because an allowlisted interpreter
+ * runs whatever a workspace script says. What a run actually executes under is measured by the
+ * containment self-test and recorded as an execution-envelope record.
+ *
+ * A second assembly beside this one is how a run ends up with a different guard, a
  * different denylist, or a path around the chokepoint, and invariant 3 says there is one
  * execution path. Runs differ in which tools they are handed, which is the parameter, and in
  * nothing else.
  */
 export function assembleToolset(options: ToolsetOptions): AgentToolset {
-  const sandbox = createSandbox({
+  const guard = createPolicyGuard({
     workspaceRoot: options.workspace,
     homeDir: options.homeDir,
     shellAllowlist: defaultShellAllowlist,
@@ -199,13 +222,14 @@ export function assembleToolset(options: ToolsetOptions): AgentToolset {
     deniedRoots: [resolve(options.homeDir, ".swarm")],
   });
 
-  const definitions = options.tools(sandbox);
+  const definitions = options.tools(guard);
 
   return {
     definitions,
+    guard,
     toolInvoker: createToolChokepoint({
       definitions,
-      sandbox,
+      guard,
       derivation: createDerivationHeuristic(),
       confirm: options.confirm,
       recorder: createLedgerChokepointRecorder(options.evidence),
@@ -214,13 +238,13 @@ export function assembleToolset(options: ToolsetOptions): AgentToolset {
 }
 
 export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTaskResult> {
-  const { definitions, toolInvoker } = assembleToolset({
+  const { definitions, toolInvoker, guard } = assembleToolset({
     workspace: options.workspace,
     homeDir: options.homeDir,
     confirm: options.confirm,
     evidence: options.evidence,
-    tools: (sandbox) => [
-      ...createWorkspaceTools(sandbox, (path) => writeRefusal(options.fileSet.state(), path)),
+    tools: (guard) => [
+      ...createWorkspaceTools(guard, (path) => writeRefusal(options.fileSet.state(), path)),
       createClaimTool(options.evidence, options.model.modelId),
       createDeclareFileSetTool(options.fileSet, options.model.modelId),
       createAmendFileSetTool(options.fileSet, options.model.modelId),
@@ -240,6 +264,20 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
       baseRef: options.baseRef,
       attemptCap: options.attempts,
     },
+  });
+
+  // After the record that opens the turn and before the first tool call: what a run executed
+  // under is measured rather than assumed, and the measurement is a record. A reader should
+  // never have to infer from the absence of a warning that there was no boundary.
+  const envelope = await establishExecutionEnvelope({
+    evidence: options.evidence,
+    guard,
+    repositoryConfigTrusted: options.repositoryConfigTrusted ?? false,
+  });
+  options.emit?.({
+    type: "execution-envelope",
+    mode: envelope.mode,
+    lines: describeEnvelopeForReader(envelope),
   });
 
   // Before the loop, because after it there is no telling the run's work from what it found.

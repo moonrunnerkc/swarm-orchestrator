@@ -7,7 +7,7 @@ import type { ToolInvocation } from "../core/tool-invoker.ts";
 import { createToolChokepoint } from "./chokepoint.ts";
 import type { ChokepointRecord, ChokepointRecorder } from "./chokepoint-record.ts";
 import { createDerivationHeuristic } from "./derivation.ts";
-import { createSandbox, defaultShellAllowlist } from "./sandbox.ts";
+import { createPolicyGuard, defaultShellAllowlist } from "./policy-guard.ts";
 import { createShellTool } from "./shell-tool.ts";
 
 /**
@@ -39,17 +39,17 @@ function run(command: string, timeoutMs?: number) {
     },
     recordConfirmation: () => Promise.resolve(),
   };
-  const sandbox = createSandbox({
+  const guard = createPolicyGuard({
     workspaceRoot: workspace,
     homeDir: home,
     shellAllowlist: defaultShellAllowlist,
     deniedRoots: [],
   });
   const chokepoint = createToolChokepoint({
-    definitions: [createShellTool(sandbox)],
-    sandbox,
+    definitions: [createShellTool(guard)],
+    guard,
     derivation: createDerivationHeuristic(),
-    // Nothing here may be rescued by a person saying yes: the sandbox rules before the ask.
+    // Nothing here may be rescued by a person saying yes: the guard rules before the ask.
     confirm: () => Promise.resolve(true),
     recorder,
   });
@@ -68,11 +68,11 @@ function run(command: string, timeoutMs?: number) {
 describe("what a shell command is allowed to touch", () => {
   it("denies a credential read the command would have made", async () => {
     // `cat` is on the allowlist, so before the command declared its paths this ran and returned
-    // the file. The denial has to come from the sandbox rather than from the allowlist.
+    // the file. The denial has to come from the guard rather than from the allowlist.
     const { outcome } = await run("cat ~/decoy-private-key");
 
     expect(outcome?.decision).toBe("denied");
-    expect(outcome?.denial).toBe("sandbox");
+    expect(outcome?.denial).toBe("guard");
     expect(outcome?.detail).toContain("outside the workspace");
   });
 
@@ -80,7 +80,7 @@ describe("what a shell command is allowed to touch", () => {
     const { outcome } = await run("cat .env");
 
     expect(outcome?.decision).toBe("denied");
-    expect(outcome?.denial).toBe("sandbox");
+    expect(outcome?.denial).toBe("guard");
     expect(outcome?.detail).toContain("credential denylist");
   });
 
@@ -88,14 +88,14 @@ describe("what a shell command is allowed to touch", () => {
     const { outcome } = await run("cat ../../etc/passwd");
 
     expect(outcome?.decision).toBe("denied");
-    expect(outcome?.denial).toBe("sandbox");
+    expect(outcome?.denial).toBe("guard");
   });
 
   it("denies a redirect that would write outside the workspace", async () => {
     const { outcome } = await run("cat package.json > ~/decoy-private-key");
 
     expect(outcome?.decision).toBe("denied");
-    expect(outcome?.denial).toBe("sandbox");
+    expect(outcome?.denial).toBe("guard");
   });
 
   it("still runs an ordinary command against a workspace file", async () => {

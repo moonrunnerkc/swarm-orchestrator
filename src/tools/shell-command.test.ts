@@ -7,7 +7,7 @@ describe("reading a shell command without a shell", () => {
     expect(readShellCommand("cat a | head -2 ; ls")?.executables).toEqual(["cat", "head", "ls"]);
   });
 
-  it("names the words that could be a path, so the sandbox can rule on them", () => {
+  it("names the words that could be a path, so the guard can rule on them", () => {
     expect(readShellCommand("cat ~/.ssh/id_rsa")?.operands).toContain("~/.ssh/id_rsa");
     expect(readShellCommand("cat package.json")?.operands).toEqual(["package.json"]);
   });

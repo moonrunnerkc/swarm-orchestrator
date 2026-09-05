@@ -123,7 +123,7 @@ import { systemProbeEnvironment } from "./select/system-probe.ts";
 import { classifyTask } from "./select/task-class.ts";
 import { costOfTask, type TaskCost } from "./select/task-cost.ts";
 import { type RoutingDecision, routeModel } from "./select/ucb.ts";
-import { createSandbox, defaultShellAllowlist } from "./tools/sandbox.ts";
+import { createPolicyGuard, defaultShellAllowlist } from "./tools/policy-guard.ts";
 import { createWorkspaceTools } from "./tools/workspace-tools.ts";
 import { startCalibrateInterface } from "./tui/calibrate-interface.ts";
 import { describeEvidence, type EvidenceSummary } from "./tui/evidence-panel.ts";
@@ -378,7 +378,7 @@ async function servedCandidates(
  * A session: one process, one ledger, many tasks, each typed rather than passed.
  *
  * Everything expensive is built once, which is the point of a session over repeated runs: the
- * settings, the provider registry, the sandbox and its tool definitions, the evidence chain and
+ * settings, the provider registry, the guard and its tool definitions, the evidence chain and
  * the screen all outlive a turn. What is rebuilt per turn is what carries state that a second
  * task must not inherit, and each of those is a decision rather than an oversight:
  *
@@ -1523,7 +1523,7 @@ async function canaryFor(
 
   const probeRoot = join(scratchRoot, "canary");
   await mkdir(probeRoot, { recursive: true });
-  const sandbox = createSandbox({
+  const guard = createPolicyGuard({
     workspaceRoot: probeRoot,
     homeDir: probeRoot,
     shellAllowlist: defaultShellAllowlist,
@@ -1533,7 +1533,7 @@ async function canaryFor(
   const canary = await runBackendCanary({
     modelSpec: local,
     model: registry.create(parseModelSpec(local)),
-    tools: createWorkspaceTools(sandbox),
+    tools: createWorkspaceTools(guard),
     attempts: canaryAttempts,
     abortSignal: new AbortController().signal,
   });

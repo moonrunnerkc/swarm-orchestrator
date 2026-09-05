@@ -53,7 +53,7 @@ export interface PlannerOutcome {
  * Decomposition as an ordinary agent loop with a smaller tool set, not a path of its own.
  *
  * It reads the workspace and cannot change it: only the read-kind tools are offered, so
- * there is no write, no edit, and no shell, and the sandbox and chokepoint are the same
+ * there is no write, no edit, and no shell, and the guard and chokepoint are the same
  * assembly every run uses rather than a second one built here. Its chain is its own, so what
  * it read before deciding is on the record beside what it decided.
  *
@@ -69,8 +69,8 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
     // A planner is unattended and touches nothing, so a call that wants a human is refused.
     confirm: () => Promise.resolve(false),
     evidence: options.evidence,
-    tools: (sandbox) => [
-      ...createWorkspaceTools(sandbox).filter((tool) => tool.kind === "read"),
+    tools: (guard) => [
+      ...createWorkspaceTools(guard).filter((tool) => tool.kind === "read"),
       createDeclareTaskGraphTool(declared),
     ],
   });

@@ -35,6 +35,13 @@ interface AttemptCounter {
 
 export interface SessionView {
   readonly plan: string;
+  /**
+   * What actually stands between a command and the machine, and its one-line summary. Held on
+   * the view rather than shown once and lost, because a person scrolling back needs to be able
+   * to see what the run they are reading executed under.
+   */
+  readonly executionMode: string | null;
+  readonly executionEnvelopeLines: readonly string[];
   /** Newest last. The screen shows a bounded window of this. */
   readonly actions: readonly ActionRow[];
   readonly status: string;
@@ -72,6 +79,8 @@ export interface SessionView {
 
 export const emptySessionView: SessionView = {
   plan: "",
+  executionMode: null,
+  executionEnvelopeLines: [],
   actions: [],
   status: "starting",
   finished: false,
@@ -97,6 +106,8 @@ export function applyLoopEvent(view: SessionView, event: LoopEvent): SessionView
   switch (event.type) {
     case "plan":
       return { ...view, plan: event.text, status: "planning" };
+    case "execution-envelope":
+      return { ...view, executionMode: event.mode, executionEnvelopeLines: event.lines };
     case "model-call":
       return {
         ...view,

@@ -1,8 +1,8 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { z } from "zod";
+import type { PolicyGuard } from "./policy-guard.ts";
 import { type BacktrackingRisk, findBacktrackingRisk } from "./regex-safety.ts";
-import type { Sandbox } from "./sandbox.ts";
 import { defineTool, type ToolDefinition } from "./tool-definition.ts";
 import { resolveInsideWorkspace } from "./workspace-path.ts";
 
@@ -47,7 +47,7 @@ function searchRootOf(path: string | undefined): string {
   return path === undefined || path.trim().length === 0 ? "." : path;
 }
 
-export function createSearchTool(sandbox: Sandbox): ToolDefinition {
+export function createSearchTool(guard: PolicyGuard): ToolDefinition {
   return defineTool({
     name: "search",
     description: "Search workspace files line by line with a regular expression.",
@@ -55,7 +55,7 @@ export function createSearchTool(sandbox: Sandbox): ToolDefinition {
     kind: "read",
     pathsFrom: (input) => [searchRootOf(input.path)],
     async execute(input) {
-      const root = resolveInsideWorkspace(sandbox, searchRootOf(input.path));
+      const root = resolveInsideWorkspace(guard, searchRootOf(input.path));
       const limit = input.maxResults ?? 100;
 
       let pattern: RegExp;
@@ -74,7 +74,7 @@ export function createSearchTool(sandbox: Sandbox): ToolDefinition {
       }
 
       const matches: string[] = [];
-      await collectMatches(root, sandbox, pattern, limit, matches);
+      await collectMatches(root, guard, pattern, limit, matches);
       return {
         text: matches.length === 0 ? `no match for /${input.pattern}/` : matches.join("\n"),
         facts: {
@@ -89,7 +89,7 @@ export function createSearchTool(sandbox: Sandbox): ToolDefinition {
 
 async function collectMatches(
   directory: string,
-  sandbox: Sandbox,
+  guard: PolicyGuard,
   pattern: RegExp,
   limit: number,
   matches: string[],
@@ -104,14 +104,14 @@ async function collectMatches(
       return;
     }
     const childPath = join(directory, entry.name);
-    // The sandbox is asked about every descendant, so a denied file is never read here.
-    if (!sandbox.checkPath(childPath).allowed) {
+    // The guard is asked about every descendant, so a denied file is never read here.
+    if (!guard.checkPath(childPath).allowed) {
       continue;
     }
 
     if (entry.isDirectory()) {
       if (!skippedDirectories.has(entry.name)) {
-        await collectMatches(childPath, sandbox, pattern, limit, matches);
+        await collectMatches(childPath, guard, pattern, limit, matches);
       }
       continue;
     }
@@ -123,7 +123,7 @@ async function collectMatches(
     if (content === null) {
       continue;
     }
-    const workspacePath = relative(sandbox.workspaceRoot, childPath);
+    const workspacePath = relative(guard.workspaceRoot, childPath);
     const lines = content.split("\n");
     for (const [index, line] of lines.entries()) {
       const scanned =

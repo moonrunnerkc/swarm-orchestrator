@@ -37,6 +37,20 @@ export const predicateCatalogue: readonly CatalogueEntry[] = [
     says: "the task, workspace and budgets the run opened with",
   },
   {
+    type: "execution-envelope",
+    subjectField: null,
+    example: 'mode == "restricted"',
+    sample: {
+      mode: "restricted",
+      backend: "host",
+      network: "unrestricted",
+      environmentPolicy: "built",
+      credentialNamesWithheld: 12,
+      repositoryConfigTrusted: false,
+    },
+    says: "what actually stood between a command and the machine, and which escapes got through",
+  },
+  {
     type: "local-endpoint",
     subjectField: null,
     example: 'origin == "flag"',

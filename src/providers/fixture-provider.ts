@@ -44,7 +44,7 @@ export class FixtureFailureError extends Error {
 
 /**
  * Replays a canned turn sequence. This is a first-class provider, not test-only
- * scaffolding: it is the deterministic substrate the loop, termination, and sandbox
+ * scaffolding: it is the deterministic substrate the loop, termination, and guard
  * tests run against. The replay command is a different thing: a record-to-text
  * renderer over a bundle's ledger, with no provider involved at all.
  */

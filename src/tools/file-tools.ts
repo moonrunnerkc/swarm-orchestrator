@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { z } from "zod";
-import type { Sandbox } from "./sandbox.ts";
+import type { PolicyGuard } from "./policy-guard.ts";
 import { defineTool, type ToolDefinition } from "./tool-definition.ts";
 import { resolveInsideWorkspace } from "./workspace-path.ts";
 
@@ -41,7 +41,7 @@ function refuseIfNotAuthorized(refuse: WriteRefusal | undefined, path: string): 
   }
 }
 
-export function createReadTool(sandbox: Sandbox): ToolDefinition {
+export function createReadTool(guard: PolicyGuard): ToolDefinition {
   return defineTool({
     name: "read",
     description: "Read a UTF-8 file from the workspace.",
@@ -49,7 +49,7 @@ export function createReadTool(sandbox: Sandbox): ToolDefinition {
     kind: "read",
     pathsFrom: (input) => [input.path],
     async execute(input) {
-      const absolutePath = resolveInsideWorkspace(sandbox, input.path);
+      const absolutePath = resolveInsideWorkspace(guard, input.path);
       const limit = input.maxBytes ?? defaultReadLimit;
       const content = await readFile(absolutePath, "utf8");
       const truncated = content.length > limit;
@@ -63,7 +63,7 @@ export function createReadTool(sandbox: Sandbox): ToolDefinition {
   });
 }
 
-export function createWriteTool(sandbox: Sandbox, refuse?: WriteRefusal): ToolDefinition {
+export function createWriteTool(guard: PolicyGuard, refuse?: WriteRefusal): ToolDefinition {
   return defineTool({
     name: "write",
     description: "Create or overwrite a workspace file with UTF-8 content.",
@@ -72,7 +72,7 @@ export function createWriteTool(sandbox: Sandbox, refuse?: WriteRefusal): ToolDe
     pathsFrom: (input) => [input.path],
     async execute(input) {
       refuseIfNotAuthorized(refuse, input.path);
-      const absolutePath = resolveInsideWorkspace(sandbox, input.path);
+      const absolutePath = resolveInsideWorkspace(guard, input.path);
       await mkdir(dirname(absolutePath), { recursive: true });
       await writeFile(absolutePath, input.content, "utf8");
       return {
@@ -83,7 +83,7 @@ export function createWriteTool(sandbox: Sandbox, refuse?: WriteRefusal): ToolDe
   });
 }
 
-export function createEditTool(sandbox: Sandbox, refuse?: WriteRefusal): ToolDefinition {
+export function createEditTool(guard: PolicyGuard, refuse?: WriteRefusal): ToolDefinition {
   return defineTool({
     name: "edit",
     description: "Replace exact text in a workspace file.",
@@ -92,7 +92,7 @@ export function createEditTool(sandbox: Sandbox, refuse?: WriteRefusal): ToolDef
     pathsFrom: (input) => [input.path],
     async execute(input) {
       refuseIfNotAuthorized(refuse, input.path);
-      const absolutePath = resolveInsideWorkspace(sandbox, input.path);
+      const absolutePath = resolveInsideWorkspace(guard, input.path);
       const before = await readFile(absolutePath, "utf8");
       const occurrences = before.split(input.find).length - 1;
 
@@ -130,7 +130,7 @@ function directoryOf(path: string | undefined): string {
   return path === undefined || path.trim().length === 0 ? "." : path;
 }
 
-export function createListTool(sandbox: Sandbox): ToolDefinition {
+export function createListTool(guard: PolicyGuard): ToolDefinition {
   return defineTool({
     name: "list",
     description: "List the entries of a workspace directory.",
@@ -138,7 +138,7 @@ export function createListTool(sandbox: Sandbox): ToolDefinition {
     kind: "read",
     pathsFrom: (input) => [directoryOf(input.path)],
     async execute(input) {
-      const absolutePath = resolveInsideWorkspace(sandbox, directoryOf(input.path));
+      const absolutePath = resolveInsideWorkspace(guard, directoryOf(input.path));
       const entries = await readdir(absolutePath, { withFileTypes: true });
       const names = entries
         .map((entry) => (entry.isDirectory() ? `${entry.name}/` : entry.name))

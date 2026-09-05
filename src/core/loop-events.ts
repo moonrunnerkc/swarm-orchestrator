@@ -13,6 +13,16 @@ export type GateStatus = "passed" | "failed" | "not-applicable";
  */
 export type LoopEvent =
   | { readonly type: "plan"; readonly text: string }
+  /**
+   * What actually stands between a command and the machine, measured before the first tool
+   * call. Carried as lines rather than as the envelope itself so this channel keeps no
+   * dependency on the module that measures it.
+   */
+  | {
+      readonly type: "execution-envelope";
+      readonly mode: string;
+      readonly lines: readonly string[];
+    }
   | { readonly type: "model-call"; readonly step: number; readonly modelId: string }
   | {
       readonly type: "model-error";

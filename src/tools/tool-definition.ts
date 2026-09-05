@@ -22,7 +22,7 @@ export interface ToolOutput {
 /** A tool as the chokepoint sees it: input already erased to unknown. */
 export interface ToolDefinition extends ToolSchema {
   readonly kind: ToolKind;
-  /** Workspace paths this call would touch, so the sandbox can rule before anything runs. */
+  /** Workspace paths this call would touch, so the guard can rule before anything runs. */
   readonly pathsFrom: (input: unknown) => readonly string[];
   execute(input: unknown): Promise<ToolOutput>;
 }

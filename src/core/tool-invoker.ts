@@ -5,7 +5,7 @@ export interface ToolInvocation extends ModelToolCall {
 }
 
 /**
- * The chokepoint port. The loop knows one way to run a tool, so sandbox enforcement
+ * The chokepoint port. The loop knows one way to run a tool, so guard enforcement
  * and (from the evidence phase on) ledger recording cannot be bypassed (invariant 3).
  */
 export interface ToolInvoker {

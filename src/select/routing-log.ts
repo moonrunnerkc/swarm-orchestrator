@@ -65,7 +65,7 @@ interface RoutingLog {
   read(): Promise<RoutingLogContents>;
 }
 
-/** Outside every workspace, beside the session store the sandbox already denies (invariant 11). */
+/** Outside every workspace, beside the session store the guard already denies (invariant 11). */
 export function defaultRoutingLogPath(homeDirectory: string): string {
   return join(homeDirectory, ".swarm", "routing", "rewards.jsonl");
 }

@@ -19,6 +19,7 @@ export const genesisHash = "genesis";
  */
 export const recordTypes = [
   "session-started",
+  "execution-envelope",
   "local-endpoint",
   "model-call",
   "tool-call",

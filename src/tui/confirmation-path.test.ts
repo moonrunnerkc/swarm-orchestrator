@@ -4,7 +4,7 @@ import type { ToolInvocation } from "../core/tool-invoker.ts";
 import { type ConfirmationRequest, createToolChokepoint } from "../tools/chokepoint.ts";
 import type { ChokepointRecord, ConfirmationRecord } from "../tools/chokepoint-record.ts";
 import { createDerivationHeuristic } from "../tools/derivation.ts";
-import { createSandbox, type SandboxPolicy } from "../tools/sandbox.ts";
+import { createPolicyGuard, type PolicyGuardRules } from "../tools/policy-guard.ts";
 import { defineTool } from "../tools/tool-definition.ts";
 import { createConfirmationQueue } from "./confirmation-queue.ts";
 import { resolveKeyBindings } from "./key-bindings.ts";
@@ -18,7 +18,7 @@ import { initialViewState } from "./view-state.ts";
  * and out of the chokepoint's own prompt, which is what this drives end to end.
  */
 
-const policy: SandboxPolicy = {
+const policy: PolicyGuardRules = {
   workspaceRoot: "/work/repo",
   homeDir: "/home/dev",
   shellAllowlist: ["bash"],
@@ -50,7 +50,7 @@ function createChokepoint(confirm: (request: never) => Promise<boolean>, ran: st
   const derivation = createDerivationHeuristic();
   const chokepoint = createToolChokepoint({
     definitions: [shell],
-    sandbox: createSandbox(policy),
+    guard: createPolicyGuard(policy),
     confirm: confirm as never,
     recorder: {
       recordCall(entry) {
