@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { capabilityOf } from "./gate-capability.ts";
 import { describeFailuresForModel, type GateCycle, isGreen } from "./gate-runner.ts";
 
 function cycleWith(options: {
@@ -11,6 +12,7 @@ function cycleWith(options: {
       kind,
       title: gateId,
       severity: "blocking" as const,
+      capability: capabilityOf(gateId),
       status,
       detail: gateId === "tests" ? "0 collected: the command found no tests to run" : "fine",
       measures: {},

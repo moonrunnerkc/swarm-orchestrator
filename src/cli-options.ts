@@ -81,6 +81,13 @@ export interface GatesCommand {
   readonly workspace: string;
   readonly baseRef: string;
   readonly bundleDirectory: string | null;
+  /**
+   * Files the caller authorised, or null for none. With none the file-set gate reports the
+   * observed scope and abstains, because nothing authorised anything: this command has no
+   * planner, and failing for a declaration nobody was there to make rejects every changed
+   * repository the command exists to check.
+   */
+  readonly allowedFiles: readonly string[] | null;
 }
 
 export interface ReplayCommand {
@@ -193,6 +200,8 @@ export const usage = [
   "",
   "  swarm init [--workspace <dir>]                   write swarm.toml from package.json's scripts",
   "  swarm gates [--workspace <dir>] [--base <ref>]   run the gates, no model",
+  "    --allowed-files <a,b>                          the scope you authorise; without it the",
+  "                                                   file-set gate reports observed scope only",
   "  swarm select [--shortlist <file|url|bundled>]    probe this machine, recommend a model",
   "  swarm calibrate [--models <a,b>] [--repeats <n>] measure models on the golden set",
   '  swarm calibrate --add-case "<task>" --seed <a,b> --gate "<command>"',
@@ -398,11 +407,19 @@ export function parseCommandLine(
   }
 
   if (words[0] === "gates") {
+    const allowed = flags.get("allowed-files");
     return {
       command: "gates",
       workspace,
       baseRef: flags.get("base") ?? defaultBaseRef,
       bundleDirectory,
+      allowedFiles:
+        allowed === undefined
+          ? null
+          : allowed
+              .split(",")
+              .map((entry) => entry.trim())
+              .filter((entry) => entry.length > 0),
     };
   }
 

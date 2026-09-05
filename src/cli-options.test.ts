@@ -177,7 +177,14 @@ describe("the gates command", () => {
       workspace: "/work/repo/pkg",
       baseRef: "main",
       bundleDirectory: null,
+      allowedFiles: null,
     });
+  });
+
+  it("takes the scope the caller authorises, which the file-set gate then checks membership in", () => {
+    expect(
+      parseCommandLine(["gates", "--allowed-files", "src/a.ts, src/b.ts"], context),
+    ).toMatchObject({ allowedFiles: ["src/a.ts", "src/b.ts"] });
   });
 
   it("measures against HEAD unless told otherwise", () => {

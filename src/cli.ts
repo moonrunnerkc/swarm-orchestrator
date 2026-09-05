@@ -50,6 +50,7 @@ import {
   openEvidenceSession,
 } from "./evidence/session.ts";
 import { createKeychainSecretStore, resolveSigningKey } from "./evidence/signing.ts";
+import { describeVerdict, runVerdict } from "./evidence/verdict.ts";
 import { verifyBundleAt } from "./evidence/verify-report.ts";
 import { harnessChildEnvironment } from "./exec/child-environment.ts";
 import type { AutoResolveOutcome } from "./gates/auto-resolve.ts";
@@ -1241,6 +1242,13 @@ async function gates(options: GatesCommand): Promise<number> {
     baseRef,
     evidence,
     fileSet,
+    // This command has no planner, so nothing declared an intended set. Without a scope the
+    // caller authorised, the file-set gate reports what it observed and abstains rather than
+    // failing every changed repository for a declaration nobody was there to make.
+    authorizedScope:
+      options.allowedFiles === null
+        ? { kind: "observed" }
+        : { kind: "allowed-files", files: options.allowedFiles },
     clock,
     emit: () => {},
     // No retries are offered, so none are spent: this command measures and reports.
@@ -1259,9 +1267,21 @@ async function gates(options: GatesCommand): Promise<number> {
     process.stdout.write(`\nthe ${gate.gateId} gate asked for a justification: ${gate.detail}\n`);
   }
   reportBonds(run.bonds, writeOut);
+
+  // The verdict rather than a boolean: a change nothing executed used to exit 0 here, because
+  // "no blocking gate failed" is true of a run where the only thing that passed was a linter.
+  // Each dimension is reported with its reason, and unmeasured is never coerced into a pass.
+  const verdict = runVerdict({
+    cycle: run.outcome.firstCycle,
+    integrity: "valid",
+    signer: "untrusted",
+    executionTrust: "restricted",
+  });
+  process.stdout.write(`\n${describeVerdict(verdict).join("\n")}\n`);
+
   announceBundle((await writeBundle(evidence, options.bundleDirectory, clock)).directory);
   const vacuous = vacuousBlockingBonds(run.bonds).length > 0;
-  return run.outcome.firstCycle.blockingFailures.length === 0 && !vacuous ? 0 : 1;
+  return verdict.acceptable && !vacuous ? 0 : 1;
 }
 
 /**

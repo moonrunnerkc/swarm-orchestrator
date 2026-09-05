@@ -9,6 +9,7 @@ import {
   type GateDefinition,
   type GateObservation,
   observationFromJson,
+  unavailableObservation,
 } from "./gate-definition.ts";
 import { inspectionParser } from "./parsers.ts";
 import { assignmentsIn, bindingsIn, concatenatedLiteral } from "./value-flow.ts";
@@ -155,6 +156,42 @@ export const fileSetGate: GateDefinition = {
     kind: "inspection",
     inspect: async (context: GateContext): Promise<GateObservation> => {
       const changed = context.changes.files.map((file) => file.path);
+      const scope = context.authorizedScope ?? { kind: "agent-declared" };
+
+      if (scope.kind === "observed") {
+        // Nothing authorised anything, and saying so is the honest report. Naming the files is
+        // the point: a reader gets the scope that was observed and is told plainly that
+        // observed scope is not authorised scope, so it backs no claim about intent. Not
+        // applicable rather than passed: a gate that checked nothing must never read as one
+        // that checked and was satisfied.
+        return unavailableObservation(
+          changed.length === 0
+            ? "nothing changed, and no scope was authorised because no agent ran"
+            : "no scope was authorised: this run had no planner to declare one. " +
+                `${changed.length} file(s) were observed as changed: ${changed.join(", ")}. ` +
+                "Observed scope is not authorised scope, so this gate checked nothing about " +
+                "intent. Pass --allowed-files to have it check membership.",
+        );
+      }
+
+      if (scope.kind === "allowed-files") {
+        const allowed = new Set(scope.files);
+        const outside = changed.filter((path) => !allowed.has(path));
+        return observationFromJson(
+          {
+            detail:
+              outside.length === 0
+                ? `all ${changed.length} changed file(s) are inside the ${scope.files.length} the caller authorised`
+                : `${outside.length} file(s) outside the authorised set: ${outside.join(", ")}. ` +
+                  `The caller authorised: ${[...allowed].sort().join(", ")}.`,
+            outside,
+            declared: [...allowed].sort(),
+            measures: { filesOutsideDeclaredSet: outside.length, filesDeclared: allowed.size },
+          },
+          outside.length === 0 ? 0 : 1,
+        );
+      }
+
       const verdict = checkFileSet(context.fileSet, changed);
 
       if (!verdict.wasDeclared) {
@@ -281,14 +318,12 @@ export const behaviourProbeGate: GateDefinition = {
     kind: "inspection",
     inspect: async (context: GateContext): Promise<GateObservation> => {
       if (context.harnessRun === undefined) {
-        return observationFromJson(
-          {
-            detail:
-              "the harness has no way to spawn a probe here, so nothing about behaviour was measured",
-            unavailable: true,
-            measures: { functionsFlattened: 0, functionsProbed: 0 },
-          },
-          0,
+        // Not applicable, never passed. The prose here always said "not measured is a verdict",
+        // and the code returned exit 0 with an `unavailable` field the parser does not read, so
+        // the gate reported a pass. Once a passing dynamic gate is what establishes that the
+        // change was executed, that pass was the whole of the evidence that anything ran.
+        return unavailableObservation(
+          "the harness has no way to spawn a probe here, so nothing about behaviour was measured",
         );
       }
 
@@ -303,6 +338,14 @@ export const behaviourProbeGate: GateDefinition = {
         result.unprobed.length === 0
           ? ""
           : ` Not measured: ${result.unprobed.map((one) => `${one.file} (${one.reason})`).join("; ")}.`;
+
+      if (result.probed.length === 0) {
+        // A probe that probed nothing measured nothing. Reporting a pass here let a change with
+        // no probeable function read as executed on the strength of a gate that opened no file.
+        return unavailableObservation(
+          `no changed function could be probed, so nothing about behaviour was measured.${unprobed}`,
+        );
+      }
 
       return observationFromJson(
         {
