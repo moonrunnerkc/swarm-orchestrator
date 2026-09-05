@@ -17,9 +17,9 @@ import type { SwarmToml } from "./swarm-toml.ts";
  * | max steps        | --max-steps      |                              | [budgets] max_steps         | 40                               |
  * | attempts         | --attempts      |                              | [budgets] attempts          | 3                                |
  * | max wall minutes | --max-wall-minutes |                           | [budgets] max_wall_minutes  | none: each loop has its own half hour |
- * | anthropic key    |                  | ANTHROPIC_API_KEY            | [providers] anthropic_api_key | unset                          |
- * | openai key       |                  | OPENAI_API_KEY               | [providers] openai_api_key  | unset                            |
- * | google key       |                  | GOOGLE_GENERATIVE_AI_API_KEY | [providers] google_api_key  | unset                            |
+ * | anthropic key    |                  | ANTHROPIC_API_KEY            | refused: see below          | unset                            |
+ * | openai key       |                  | OPENAI_API_KEY               | refused: see below          | unset                            |
+ * | google key       |                  | GOOGLE_GENERATIVE_AI_API_KEY | refused: see below          | unset                            |
  * | gate commands    |                  |                              | [gates] <gate id>           | assembled from the manifests     |
  * | diff budget      |                  |                              | [budgets] max_changed_files, max_added_lines | engine default  |
  * | interactive view | --no-tui         |                              | [interface] tui             | on, wherever there is a terminal |
@@ -35,7 +35,9 @@ import type { SwarmToml } from "./swarm-toml.ts";
  * a convention a user sets once for every tool rather than for this one.
  *
  * API keys deliberately have no flag: a key on a command line outlives the run in shell
- * history and process listings.
+ * history and process listings. They have no swarm.toml setting either, and a file that names
+ * one is refused: swarm.toml is committed and cloned, so a key in it has already been shared
+ * with everyone holding the repository.
  */
 
 const defaultModelSpec = "anthropic:claude-opus-5";
@@ -125,10 +127,9 @@ export function resolveSettings(input: SettingsInput): ResolvedSettings {
     attempts: input.flags.attempts ?? input.toml?.budgets.attempts ?? defaultAttempts,
     maxWallMinutes: input.flags.maxWallMinutes ?? input.toml?.budgets.maxWallMinutes ?? null,
     providerKeys: {
-      anthropic: input.env.ANTHROPIC_API_KEY ?? input.toml?.providers.anthropicApiKey ?? undefined,
-      openai: input.env.OPENAI_API_KEY ?? input.toml?.providers.openaiApiKey ?? undefined,
-      google:
-        input.env.GOOGLE_GENERATIVE_AI_API_KEY ?? input.toml?.providers.googleApiKey ?? undefined,
+      anthropic: input.env.ANTHROPIC_API_KEY,
+      openai: input.env.OPENAI_API_KEY,
+      google: input.env.GOOGLE_GENERATIVE_AI_API_KEY,
     },
     localEndpoint: resolveLocalEndpoint(input),
     localThinking: input.toml?.providers.localThinking ?? null,

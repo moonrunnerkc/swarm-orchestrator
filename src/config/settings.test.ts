@@ -7,7 +7,6 @@ const noFlags = { model: null, maxSteps: null, attempts: null, localEndpoint: nu
 const toml = parseSwarmToml(
   [
     "[providers]",
-    'anthropic_api_key = "toml-anthropic"',
     'local_endpoint = "http://127.0.0.1:9999/v1"',
     "[gates]",
     'tests = "npm run test:fast"',
@@ -103,7 +102,7 @@ describe("resolveSettings on the local endpoint", () => {
 });
 
 describe("resolveSettings on provider keys and gate overrides", () => {
-  it("prefers a key from the environment over one from the file", () => {
+  it("takes a key from the environment, which is the only place one comes from", () => {
     const settings = resolveSettings({
       flags: noFlags,
       env: { ANTHROPIC_API_KEY: "env-anthropic", OPENAI_API_KEY: "env-openai" },
@@ -115,10 +114,12 @@ describe("resolveSettings on provider keys and gate overrides", () => {
     expect(settings.providerKeys.google).toBeUndefined();
   });
 
-  it("takes a key from the file when the environment has none", () => {
+  it("has no key at all where the environment holds none", () => {
+    // The file cannot supply one: swarm.toml is committed and cloned, so parsing refuses a
+    // credential in it outright rather than reading it here.
     const settings = resolveSettings({ flags: noFlags, env: {}, toml });
 
-    expect(settings.providerKeys.anthropic).toBe("toml-anthropic");
+    expect(settings.providerKeys.anthropic).toBeUndefined();
   });
 
   it("passes gate command overrides and the diff budget through from the file", () => {

@@ -8,9 +8,6 @@ import {
 
 const fullFile = [
   "[providers]",
-  'anthropic_api_key = "sk-ant-test"',
-  'openai_api_key = "sk-oai-test"',
-  'google_api_key = "g-test"',
   'local_endpoint = "http://127.0.0.1:8000/v1"',
   "",
   "[gates]",
@@ -54,9 +51,6 @@ describe("parseSwarmToml on a well-formed file", () => {
     const toml = parseSwarmToml(fullFile, "swarm.toml");
 
     expect(toml.providers).toEqual({
-      anthropicApiKey: "sk-ant-test",
-      openaiApiKey: "sk-oai-test",
-      googleApiKey: "g-test",
       localEndpoint: "http://127.0.0.1:8000/v1",
       localThinking: null,
     });
@@ -74,7 +68,6 @@ describe("parseSwarmToml on a well-formed file", () => {
   it("treats every section and every key as optional", () => {
     const toml = parseSwarmToml("", "swarm.toml");
 
-    expect(toml.providers.anthropicApiKey).toBeNull();
     expect(toml.providers.localEndpoint).toBeNull();
     expect(toml.gates).toEqual({});
     expect(toml.budgets.maxSteps).toBeNull();
