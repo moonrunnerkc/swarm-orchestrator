@@ -1,11 +1,8 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { z } from "zod";
+import { runProcessGroup } from "../exec/run-process.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { readShellCommand } from "./shell-command.ts";
 import { defineTool, type ToolDefinition, type ToolOutput } from "./tool-definition.ts";
-
-const runCommand = promisify(execFile);
 
 const defaultTimeoutMs = 120_000;
 
@@ -13,13 +10,6 @@ const shellInput = z.object({
   command: z.string().min(1).describe("Command to run from the workspace root."),
   timeoutMs: z.number().int().positive().optional(),
 });
-
-interface CommandFailure {
-  readonly stdout?: string;
-  readonly stderr?: string;
-  readonly code?: number;
-  readonly killed?: boolean;
-}
 
 /**
  * Runs a command from the workspace root. The allowlist and the confirmation fallback
@@ -36,28 +26,16 @@ export function createShellTool(sandbox: Sandbox): ToolDefinition {
     // machine, and `cat ~/.ssh/id_rsa` was a credential read the denylist never saw.
     pathsFrom: (input) => readShellCommand(input.command)?.operands ?? [],
     async execute(input) {
-      const timeout = input.timeoutMs ?? defaultTimeoutMs;
-      try {
-        const { stdout, stderr } = await runCommand("/bin/sh", ["-c", input.command], {
-          cwd: sandbox.workspaceRoot,
-          timeout,
-          maxBuffer: 4_000_000,
-          // Built rather than inherited. A path check cannot see `process.env.OPENAI_API_KEY`,
-          // so the only thing between a command the model wrote and the operator's own keys is
-          // what the child is handed.
-          env: sandbox.childEnvironment.variables,
-        });
-        return describeRun(input.command, stdout, stderr, 0, false);
-      } catch (cause) {
-        const failure = cause as CommandFailure;
-        return describeRun(
-          input.command,
-          failure.stdout ?? "",
-          failure.stderr ?? "",
-          failure.code ?? 1,
-          failure.killed === true,
-        );
-      }
+      const ran = await runProcessGroup("/bin/sh", ["-c", input.command], {
+        cwd: sandbox.workspaceRoot,
+        timeoutMs: input.timeoutMs ?? defaultTimeoutMs,
+        maxOutputBytes: 4_000_000,
+        // Built rather than inherited. A path check cannot see `process.env.OPENAI_API_KEY`,
+        // so the only thing between a command the model wrote and the operator's own keys is
+        // what the child is handed.
+        env: sandbox.childEnvironment.variables,
+      });
+      return describeRun(input.command, ran.stdout, ran.stderr, ran.exitCode, ran.timedOut);
     },
   });
 }
