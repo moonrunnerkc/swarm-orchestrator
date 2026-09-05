@@ -53,6 +53,7 @@ import { createKeychainSecretStore, resolveSigningKey } from "./evidence/signing
 import { describeVerdict, runVerdict } from "./evidence/verdict.ts";
 import { verifyBundleAt } from "./evidence/verify-report.ts";
 import { harnessChildEnvironment } from "./exec/child-environment.ts";
+import { createRunCancellation } from "./exec/run-cancellation.ts";
 import type { AutoResolveOutcome } from "./gates/auto-resolve.ts";
 import type { BondOutcome } from "./gates/bond-runner.ts";
 import type { GateSetOptions } from "./gates/default-gates.ts";
@@ -572,7 +573,10 @@ async function runOneTurn(input: {
   const onInterrupt = () => {
     interruption.abort();
   };
+  // SIGTERM as well as SIGINT: a run stopped by a supervisor, a container stop or a CI
+  // cancellation arrives as SIGTERM, and a run that ignores it is killed with work in flight.
   process.on("SIGINT", onInterrupt);
+  process.on("SIGTERM", onInterrupt);
   void ui.cancelled().then(onInterrupt);
   const startedAt = clock.now();
   const gateOptions = gateOptionsFrom(settings);
@@ -631,6 +635,7 @@ async function runOneTurn(input: {
     };
   } finally {
     process.off("SIGINT", onInterrupt);
+    process.off("SIGTERM", onInterrupt);
   }
 }
 
@@ -990,6 +995,7 @@ async function run(options: RunCommand): Promise<number> {
     interruption.abort();
   };
   process.on("SIGINT", onInterrupt);
+  process.on("SIGTERM", onInterrupt);
   // Ink holds stdin in raw mode, so Ctrl-C arrives as a keystroke rather than as a signal.
   // Both routes reach the same abort, and neither is the one that leaves the view.
   void ui.cancelled().then(onInterrupt);
@@ -1054,6 +1060,7 @@ async function run(options: RunCommand): Promise<number> {
   } finally {
     await ui.stop();
     process.off("SIGINT", onInterrupt);
+    process.off("SIGTERM", onInterrupt);
   }
 }
 
@@ -1873,6 +1880,23 @@ async function parallel(options: ParallelCommand): Promise<number> {
       cores: availableParallelism(),
     });
 
+  // One place this run is stopped from: the wall budget, a Ctrl-C, and a supervisor's SIGTERM
+  // all reach the same signal, and every worker is handed that signal rather than a fresh
+  // controller nobody aborts. Before this, `--max-wall-minutes` reached `runInParallel` through
+  // a spread into an options object with no such field, so it did nothing at all.
+  const cancellation = createRunCancellation({
+    clock,
+    wallBudgetMs: settings.maxWallMinutes === null ? null : settings.maxWallMinutes * 60_000,
+  });
+  const onInterrupt = () => {
+    cancellation.cancel("interrupted");
+  };
+  const onTerminate = () => {
+    cancellation.cancel("terminated");
+  };
+  process.on("SIGINT", onInterrupt);
+  process.on("SIGTERM", onTerminate);
+
   const workerCount = tasks.length * redundancy;
   process.stdout.write(
     redundancy > 1
@@ -1911,11 +1935,9 @@ async function parallel(options: ParallelCommand): Promise<number> {
       },
       maxSteps: settings.maxSteps,
       attempts: settings.attempts,
-      ...(settings.maxWallMinutes === null
-        ? {}
-        : { maxWallTimeMs: settings.maxWallMinutes * 60_000 }),
+      remainingWallMs: () => cancellation.remainingMs(),
       ...(gateOptions === undefined ? {} : { gateOptions }),
-      abortSignal: new AbortController().signal,
+      abortSignal: cancellation.signal,
     });
 
     for (const line of renderParallelReport(result, {
@@ -1954,6 +1976,9 @@ async function parallel(options: ParallelCommand): Promise<number> {
         ? 0
         : 1;
   } finally {
+    process.off("SIGINT", onInterrupt);
+    process.off("SIGTERM", onTerminate);
+    cancellation.dispose();
     await rm(scratchRoot, { recursive: true, force: true });
   }
 }
