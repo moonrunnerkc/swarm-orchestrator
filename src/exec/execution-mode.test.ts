@@ -23,19 +23,37 @@ afterEach(async () => {
   await rm(workspace, { recursive: true, force: true });
 });
 
-/** A backend that refuses every probe, standing in for a kernel-enforced boundary. */
+const refused = {
+  stdout: "",
+  stderr: "Operation not permitted",
+  exitCode: 1,
+  timedOut: false,
+  cancelled: false,
+  truncated: false,
+  startFailure: null,
+};
+
+/**
+ * A kernel-enforced boundary refuses the escapes and still lets the command work in its
+ * workspace. Both halves, because a backend that refuses everything is not contained, it is
+ * broken, and the mode has to tell those apart.
+ */
 const containingBackend = {
   name: "fake-contained",
-  run: () =>
-    Promise.resolve({
-      stdout: "",
-      stderr: "Operation not permitted",
-      exitCode: 1,
-      timedOut: false,
-      cancelled: false,
-      truncated: false,
-      startFailure: null,
-    }),
+  nodeProgram: "node",
+  run: (argv: readonly string[]) =>
+    Promise.resolve(
+      argv.join(" ").includes("swarm-reachability-probe")
+        ? { ...refused, stdout: "reached", stderr: "", exitCode: 0 }
+        : refused,
+    ),
+};
+
+/** A mount that is silently empty: every escape refused, and the work refused with it. */
+const backendThatHidesEverything = {
+  name: "fake-empty-mount",
+  nodeProgram: "node",
+  run: () => Promise.resolve(refused),
 };
 
 describe("what the harness may claim about how a command is contained", () => {
@@ -67,7 +85,22 @@ describe("what the harness may claim about how a command is contained", () => {
     });
 
     expect(result.mode).toBe("isolated");
+    expect(result.workspaceReachable).toBe(true);
     expect(result.probes.every((probe) => probe.contained)).toBe(true);
+  });
+
+  it("is unknown where the boundary hid the workspace too, not isolated", async () => {
+    // Every escape refused, and the work refused with it. A command that can see nothing is
+    // contained and cannot do anything, so this is a broken mount rather than containment, and
+    // reading it as isolation would be a pass earned by the work being impossible.
+    const result = await selfTestContainment(backendThatHidesEverything, {
+      workspaceRoot: workspace,
+      hostFileOutsideWorkspace: hostSecret,
+    });
+
+    expect(result.workspaceReachable).toBe(false);
+    expect(result.mode).toBe("unknown");
+    expect(result.summary).toMatch(/could not reach the workspace/i);
   });
 
   it("describes the envelope a run executes under rather than leaving it to be inferred", async () => {
