@@ -15,6 +15,7 @@ import {
   type CommandLine,
   type DoctorCommand,
   type GatesCommand,
+  type GcCommand,
   type InitCommand,
   type ParallelCommand,
   parseCommandLine,
@@ -43,6 +44,7 @@ import { exportCombinedBundle } from "./evidence/combined-bundle.ts";
 import { buildEvidenceDag, type EvidenceDag } from "./evidence/dag.ts";
 import { createRecordingModelClient } from "./evidence/model-call-recording.ts";
 import { replayBundle } from "./evidence/replay.ts";
+import { collectSessions, describeCollection, olderThanMs } from "./evidence/retention.ts";
 import {
   createSessionId,
   defaultSessionRoot,
@@ -272,6 +274,24 @@ async function verifyBundle(options: VerifyCommand): Promise<number> {
     );
   }
   return verification.exitCode;
+}
+
+/**
+ * What stored evidence would be removed, and only then removing it. A session holds every
+ * prompt and the content of every file its run read, so a machine that ran the tool for a month
+ * holds a month of those under a directory nobody looks in. Deleting them is a decision
+ * somebody makes, which is why this reports first and needs --remove to act.
+ */
+async function collectGarbage(options: GcCommand): Promise<number> {
+  const root = defaultSessionRoot(homedir());
+  const collection = await collectSessions({
+    root,
+    olderThan: olderThanMs(options.olderThan),
+    now: Date.now(),
+    remove: options.remove,
+  });
+  process.stdout.write(`${root}\n${describeCollection(collection, options.remove)}\n`);
+  return exitCodes.acceptable;
 }
 
 async function replay(options: ReplayCommand): Promise<number> {
@@ -2041,6 +2061,9 @@ async function main(): Promise<number> {
   }
   if (options.command === "verify") {
     return verifyBundle(options);
+  }
+  if (options.command === "gc") {
+    return collectGarbage(options);
   }
   if (options.command === "replay") {
     return replay(options);
