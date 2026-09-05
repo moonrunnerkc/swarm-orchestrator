@@ -2,7 +2,7 @@
 // First, so its check runs before any other module's top-level code.
 import "./node-floor.ts";
 import { spawn } from "node:child_process";
-import { statSync } from "node:fs";
+import { appendFileSync, statSync } from "node:fs";
 import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { arch, availableParallelism, homedir, platform, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -142,6 +142,7 @@ import { systemProbeEnvironment } from "./select/system-probe.ts";
 import { classifyTask } from "./select/task-class.ts";
 import { costOfTask, type TaskCost } from "./select/task-cost.ts";
 import { type RoutingDecision, routeModel } from "./select/ucb.ts";
+import { createTelemetry, jsonLinesSink, type Telemetry } from "./telemetry/otel.ts";
 import { createPolicyGuard, defaultShellAllowlist } from "./tools/policy-guard.ts";
 import { createWorkspaceTools } from "./tools/workspace-tools.ts";
 import { startCalibrateInterface } from "./tui/calibrate-interface.ts";
@@ -350,6 +351,30 @@ async function verifyPatch(options: CiCommand): Promise<number> {
       : "\nnot verified: see the checks above. Nothing the producing tree said was read.\n",
   );
   return result.verified ? exitCodes.acceptable : exitCodes.notAcceptable;
+}
+
+/**
+ * Spans go where SWARM_OTEL_FILE names, and nowhere otherwise. Payload capture is a second
+ * decision on top of that, because tool arguments are where the credentials are and a telemetry
+ * pipeline is exactly the place one ends up somewhere nobody scrubs.
+ */
+function createRunTelemetry(runId: string): Telemetry {
+  const destination = process.env.SWARM_OTEL_FILE;
+  if (destination === undefined || destination.length === 0) {
+    return { observe: () => {} };
+  }
+  return createTelemetry({
+    enabled: true,
+    runId,
+    capturePayloads: process.env.SWARM_OTEL_PAYLOADS === "1",
+    sink: jsonLinesSink((line) => {
+      try {
+        appendFileSync(destination, line, { mode: 0o600 });
+      } catch {
+        // A collector that cannot be written to is not a reason to stop the run.
+      }
+    }),
+  });
 }
 
 /** Where the durable state lives: beside the sessions, outside every workspace. */
@@ -1265,6 +1290,9 @@ async function run(options: RunCommand): Promise<number> {
   const startedAt = clock.now();
   const gateOptions = gateOptionsFrom(settings);
   const diffBudget = diffBudgetFrom(settings);
+  // Off unless a destination is named. A telemetry pipeline that is on by default is a place
+  // secrets end up somewhere nobody scrubs, and payload capture stays a second decision on top.
+  const telemetry = createRunTelemetry(evidence.sessionId);
 
   try {
     const { loop, gates, green } = await runAgentTask({
@@ -1285,6 +1313,7 @@ async function run(options: RunCommand): Promise<number> {
       random,
       emit: (event) => {
         ui.emit(event);
+        telemetry.observe(event);
         if (options.json) {
           process.stdout.write(`${jsonEventLine(event, { runId: evidence.sessionId })}\n`);
         }
