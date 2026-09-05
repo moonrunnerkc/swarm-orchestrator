@@ -7,6 +7,7 @@ import type { RandomSource } from "./core/random-source.ts";
 import type { ToolInvoker } from "./core/tool-invoker.ts";
 import { renderPredicateCatalogue } from "./evidence/predicate-catalogue.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
+import type { IsolationBackend } from "./exec/execution-mode.ts";
 import { describeEnvelopeForReader, establishExecutionEnvelope } from "./exec/run-envelope.ts";
 import type { ResolveRequest } from "./gates/auto-resolve.ts";
 import type { SingleFileCommand } from "./gates/base-control.ts";
@@ -110,6 +111,8 @@ const trailInstruction = [
 
 export interface AgentTaskOptions {
   readonly task: string;
+  /** Where commands run. Absent is the host, and the envelope says so rather than implying it. */
+  readonly isolation?: IsolationBackend | undefined;
   /**
    * Whether configuration the repository controls was allowed to decide anything this run.
    * Recorded in the envelope, because "the project declared its own gate commands" is part of
@@ -188,10 +191,18 @@ export interface AgentToolset {
    * it, which is how a description ends up describing something else.
    */
   readonly guard: PolicyGuard;
+  /** The backend the tools were built against, so the envelope measures what actually runs. */
+  readonly isolation?: IsolationBackend | undefined;
 }
 
 export interface ToolsetOptions {
   readonly workspace: string;
+  /**
+   * Where commands actually run. Absent is the host, which is `restricted`: the policy guard
+   * has ruled on the paths it could read out of the command, and that bounds which programs
+   * start rather than what they reach once started.
+   */
+  readonly isolation?: IsolationBackend | undefined;
   readonly homeDir: string;
   readonly confirm: ConfirmationPrompt;
   readonly evidence: EvidenceRecorder;
@@ -227,6 +238,7 @@ export function assembleToolset(options: ToolsetOptions): AgentToolset {
   return {
     definitions,
     guard,
+    ...(options.isolation === undefined ? {} : { isolation: options.isolation }),
     toolInvoker: createToolChokepoint({
       definitions,
       guard,
@@ -243,8 +255,13 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
     homeDir: options.homeDir,
     confirm: options.confirm,
     evidence: options.evidence,
+    ...(options.isolation === undefined ? {} : { isolation: options.isolation }),
     tools: (guard) => [
-      ...createWorkspaceTools(guard, (path) => writeRefusal(options.fileSet.state(), path)),
+      ...createWorkspaceTools(
+        guard,
+        (path) => writeRefusal(options.fileSet.state(), path),
+        options.isolation === undefined ? undefined : { backend: options.isolation },
+      ),
       createClaimTool(options.evidence, options.model.modelId),
       createDeclareFileSetTool(options.fileSet, options.model.modelId),
       createAmendFileSetTool(options.fileSet, options.model.modelId),
@@ -272,6 +289,7 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
   const envelope = await establishExecutionEnvelope({
     evidence: options.evidence,
     guard,
+    ...(options.isolation === undefined ? {} : { backend: options.isolation }),
     repositoryConfigTrusted: options.repositoryConfigTrusted ?? false,
   });
   options.emit?.({

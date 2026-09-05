@@ -22,6 +22,11 @@ export interface RunCommand {
   readonly command: "run";
   readonly task: string;
   readonly modelSpec: string | null;
+  /**
+   * Where commands run: a container runtime, optionally with an image, or null for the host.
+   * Null is `restricted` mode, and the execution envelope says so rather than implying it.
+   */
+  readonly isolation: string | null;
   readonly workspace: string;
   readonly maxSteps: number | null;
   /** Null means the session's own directory, which is outside the workspace by design. */
@@ -46,6 +51,11 @@ export interface RunCommand {
 export interface SessionCommand {
   readonly command: "session";
   readonly modelSpec: string | null;
+  /**
+   * Where commands run: a container runtime, optionally with an image, or null for the host.
+   * Null is `restricted` mode, and the execution envelope says so rather than implying it.
+   */
+  readonly isolation: string | null;
   readonly workspace: string;
   readonly maxSteps: number | null;
   readonly bundleDirectory: string | null;
@@ -153,6 +163,7 @@ export interface ParallelCommand {
   readonly maxWallMinutes: number | null;
   readonly bundleDirectory: string | null;
   readonly modelSpec: string | null;
+  readonly isolation: string | null;
   readonly localEndpoint: string | null;
   /** How many ways to try each task. Null is once, which is the run this always was. */
   readonly redundancy: number | null;
@@ -215,6 +226,9 @@ export const usage = [
   "  swarm review <bundle directory>                  what a run produced, and open it",
   "  swarm verify <bundle directory> [--signer <fp>]  check the bundle, and who signed it",
   "  swarm replay <bundle directory>                  read a bundle back",
+  "",
+  "  --isolation <runtime[:image]>  run commands behind a kernel-enforced boundary",
+  "                                 (docker, podman, nerdctl); default none, which is the host",
   "",
   "the screen:",
   "  --no-tui                     plain lines even on a terminal",
@@ -355,6 +369,7 @@ export function parseCommandLine(
       command: "parallel",
       tasksFile: named ? resolve(context.currentDirectory, tasksFile) : null,
       goal: asked ? goal.trim() : null,
+      isolation: flags.get("isolation") ?? null,
       workspace,
       baseRef: flags.get("base") ?? defaultBaseRef,
       maxSteps: parseFlagCount(flags.get("max-steps"), "--max-steps"),
@@ -418,6 +433,7 @@ export function parseCommandLine(
 
   const shared = {
     modelSpec: flags.get("model") ?? null,
+    isolation: flags.get("isolation") ?? null,
     workspace,
     maxSteps: parseFlagCount(flags.get("max-steps"), "--max-steps"),
     bundleDirectory,

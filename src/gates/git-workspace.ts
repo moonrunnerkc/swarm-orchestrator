@@ -38,14 +38,38 @@ export function firstGitDiagnostic(cause: unknown): string {
   return first ?? "git produced no output";
 }
 
+/**
+ * What went wrong, told apart. A repository whose status output is larger than the read buffer
+ * used to be reported as "not a git working tree", which is false and sends the reader to
+ * `git init` in a directory that is already a repository. Git ran fine; the harness could not
+ * hold what it said, and those are different problems with different remedies.
+ */
+export function describeGitFailure(workspaceRoot: string, cause: unknown): string {
+  const failure = cause as { readonly code?: string; readonly message?: string };
+  const outOfRoom =
+    failure.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" ||
+    (failure.message ?? "").includes("maxBuffer length exceeded");
+
+  if (outOfRoom) {
+    return (
+      `git ran in ${workspaceRoot} and produced more output than the harness can hold. ` +
+      "This is a repository; the problem is its size. It is usually a large untracked " +
+      "directory showing up in the status: add it to .gitignore, or point --workspace at " +
+      "the subdirectory the change is in."
+    );
+  }
+
+  return (
+    `${workspaceRoot} is not a git working tree, or git could not read it: ` +
+    `${firstGitDiagnostic(cause)}. ` +
+    "The gates measure a change against a base commit, so run swarm inside a repository " +
+    "(git init, then commit something), or pass a base ref that exists."
+  );
+}
+
 class GitUnavailableError extends Error {
   constructor(workspaceRoot: string, cause: unknown) {
-    super(
-      `${workspaceRoot} is not a git working tree, or git could not read it: ` +
-        `${firstGitDiagnostic(cause)}. ` +
-        "The gates measure a change against a base commit, so run swarm inside a repository " +
-        "(git init, then commit something), or pass a base ref that exists.",
-    );
+    super(describeGitFailure(workspaceRoot, cause));
     this.name = "GitUnavailableError";
   }
 }

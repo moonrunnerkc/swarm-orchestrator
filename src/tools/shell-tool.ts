@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { IsolationBackend } from "../exec/execution-mode.ts";
 import { runProcessGroup } from "../exec/run-process.ts";
 import type { PolicyGuard } from "./policy-guard.ts";
 import { readShellCommand } from "./shell-command.ts";
@@ -11,11 +12,22 @@ const shellInput = z.object({
   timeoutMs: z.number().int().positive().optional(),
 });
 
+export interface ShellToolOptions {
+  /**
+   * Where the command runs. Absent means the host, which is what `restricted` mode is: the
+   * lexical policy has already ruled on the paths it could read out of the command, and that
+   * bounds which programs start rather than what they reach once started. A backend here is
+   * the layer under that one, and it is the only thing that holds for a command whose effect a
+   * shell decides: a substitution names no path for any reader to rule on.
+   */
+  readonly backend?: IsolationBackend | undefined;
+}
+
 /**
  * Runs a command from the workspace root. The allowlist and the confirmation fallback
  * live in the chokepoint, so this tool is only reached once the command is permitted.
  */
-export function createShellTool(guard: PolicyGuard): ToolDefinition {
+export function createShellTool(guard: PolicyGuard, options?: ShellToolOptions): ToolDefinition {
   return defineTool({
     name: "shell",
     description: "Run a shell command from the workspace root and return its combined output.",
@@ -26,15 +38,22 @@ export function createShellTool(guard: PolicyGuard): ToolDefinition {
     // machine, and `cat ~/.ssh/id_rsa` was a credential read the denylist never saw.
     pathsFrom: (input) => readShellCommand(input.command)?.operands ?? [],
     async execute(input) {
-      const ran = await runProcessGroup("/bin/sh", ["-c", input.command], {
-        cwd: guard.workspaceRoot,
-        timeoutMs: input.timeoutMs ?? defaultTimeoutMs,
-        maxOutputBytes: 4_000_000,
-        // Built rather than inherited. A path check cannot see `process.env.OPENAI_API_KEY`,
-        // so the only thing between a command the model wrote and the operator's own keys is
-        // what the child is handed.
-        env: guard.childEnvironment.variables,
-      });
+      const timeoutMs = input.timeoutMs ?? defaultTimeoutMs;
+      const ran =
+        options?.backend === undefined
+          ? await runProcessGroup("/bin/sh", ["-c", input.command], {
+              cwd: guard.workspaceRoot,
+              timeoutMs,
+              maxOutputBytes: 4_000_000,
+              // Built rather than inherited. A path check cannot see
+              // `process.env.OPENAI_API_KEY`, so the only thing between a command the model
+              // wrote and the operator's own keys is what the child is handed.
+              env: guard.childEnvironment.variables,
+            })
+          : await options.backend.run(["/bin/sh", "-c", input.command], {
+              cwd: guard.workspaceRoot,
+              timeoutMs,
+            });
       return describeRun(input.command, ran.stdout, ran.stderr, ran.exitCode, ran.timedOut);
     },
   });

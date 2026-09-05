@@ -53,6 +53,8 @@ import { createKeychainSecretStore, resolveSigningKey } from "./evidence/signing
 import { describeVerdict, runVerdict } from "./evidence/verdict.ts";
 import { verifyBundleAt } from "./evidence/verify-report.ts";
 import { harnessChildEnvironment } from "./exec/child-environment.ts";
+import { createContainerBackend } from "./exec/container-backend.ts";
+import { parseIsolationOption } from "./exec/isolation-option.ts";
 import { createRunCancellation } from "./exec/run-cancellation.ts";
 import type { AutoResolveOutcome } from "./gates/auto-resolve.ts";
 import type { BondOutcome } from "./gates/bond-runner.ts";
@@ -530,6 +532,10 @@ async function runOneTurn(input: {
   readonly random: RandomSource;
 }): Promise<{ readonly messages: readonly ConversationMessage[]; readonly green: boolean }> {
   const { task, options, settings, evidence, ui, clock, random } = input;
+  // Refused here, before the model is asked for anything: a run that discovers its runtime is
+  // missing after the model has edited files has spent the interesting part of its budget
+  // finding out.
+  const isolation = parseIsolationOption(options.isolation, options.workspace);
 
   const routed = settings.modelPinned
     ? {
@@ -586,6 +592,7 @@ async function runOneTurn(input: {
     const { loop, gates, green } = await runAgentTask({
       task,
       workspace: options.workspace,
+      ...(isolation === null ? {} : { isolation: createContainerBackend(isolation) }),
       baseRef: input.baseRef,
       criteriaRef: input.criteriaRef,
       criteriaSealed: input.criteriaSealed,
@@ -930,6 +937,10 @@ async function run(options: RunCommand): Promise<number> {
     interfaceFlags: options.interfaceFlags,
   });
   const random = createSystemRandom();
+  // Before the session opens and before the model is asked for anything: a run that discovers
+  // its runtime is missing after the model has edited files has spent the interesting part of
+  // its budget finding out.
+  const isolation = parseIsolationOption(options.isolation, options.workspace);
   const routed = settings.modelPinned
     ? {
         modelSpec: null as string | null,
@@ -1007,6 +1018,7 @@ async function run(options: RunCommand): Promise<number> {
     const { loop, gates, green } = await runAgentTask({
       task: options.task,
       workspace: options.workspace,
+      ...(isolation === null ? {} : { isolation: createContainerBackend(isolation) }),
       baseRef: await resolveBaseCommit(options.workspace, options.baseRef),
       maxSteps: settings.maxSteps,
       attempts: settings.attempts,
