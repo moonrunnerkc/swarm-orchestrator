@@ -1,13 +1,24 @@
 name: gates
 
-on: push
+# Pull requests as well as pushes. A branch protected by a check that never runs on the pull
+# request is protected by nothing: the review happens on the pull request, and that is where
+# the result has to be.
+on:
+  push:
+  pull_request:
 
 permissions:
   contents: read
 
 jobs:
   gates:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Every arm runs, so one platform failing still reports the others. A defect that only
+      # shows on macOS is worth seeing on the same run as the one that does not.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -31,3 +42,17 @@ jobs:
       # when somebody runs fuzz:build locally, and it reports exactly what a clean run
       # reports until then.
       - run: npm run fuzz:build
+
+  packaged:
+    # What a user installs, rather than what the working tree holds. A file left out of `files`
+    # in package.json is present here and missing everywhere else, so the command that reads it
+    # works in the repository and fails on the machine that installed the package.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: node scripts/check-packed-cli.mjs

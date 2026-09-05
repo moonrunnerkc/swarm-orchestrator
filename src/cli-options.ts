@@ -226,18 +226,10 @@ export const usage = [
 
 export class InvalidCommandLineError extends Error {
   constructor(problem: string) {
-    super(
-      `${problem}. Usage: swarm [--model <provider:id>] [--workspace <dir>] [--bundle <dir>] ` +
-        `[--base <ref>] [--attempts <n>] [--max-wall-minutes <n>] [--local-endpoint <url>] ["<task>"], ` +
-        "swarm with no task for a session, swarm doctor [--fix] [--offline], " +
-        "swarm gates [--workspace <dir>] [--base <ref>], " +
-        "swarm select [--shortlist <file|url|bundled>], swarm calibrate [--models <a,b>] " +
-        '[--repeats <n>], swarm calibrate --add-case "<task>" --seed <a,b> --gate "<command>", ' +
-        "swarm routing, swarm parallel --tasks <file>, swarm parallel --goal <text>, " +
-        "swarm replay <bundle directory>, " +
-        "or swarm review <bundle directory>. Screen flags: [--no-tui] [--color|--no-color] " +
-        "[--open-evidence|--no-open-evidence]",
-    );
+    // The usage text rather than a second copy of it. A hand-maintained list here went stale
+    // twice over: it never learned about `init` or `verify`, so the one thing a reader sees
+    // when they get a command wrong was the list least likely to be right.
+    super(`${problem}.\n\n${usage}`);
     this.name = "InvalidCommandLineError";
   }
 }

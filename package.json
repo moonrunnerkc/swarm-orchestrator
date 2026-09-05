@@ -37,6 +37,7 @@
   },
   "scripts": {
     "build": "node scripts/build-dist.mjs",
+    "check:packaged": "node scripts/check-packed-cli.mjs",
     "dev": "mkdir -p .swarm/dev-workspace && node src/cli.ts --workspace .swarm/dev-workspace",
     "format": "biome format --write",
     "fuzz:build": "rm -rf .swarm/fuzz-build && tsc -p fuzz/tsconfig.build.json && node fuzz/smoke.mjs",
@@ -45,6 +46,8 @@
     "prepare": "npm run build",
     "prepublishOnly": "npm run gates && npm run build",
     "test": "vitest run",
+    "test:integration": "SWARM_TEST_PROFILE=integration vitest run",
+    "test:unit": "SWARM_TEST_PROFILE=unit vitest run",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
