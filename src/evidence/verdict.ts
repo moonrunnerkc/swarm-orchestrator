@@ -45,6 +45,11 @@ export interface RunVerdict {
 
 interface VerdictInput {
   readonly cycle: GateCycle;
+  /** Approvals the run's spec said it would need, and whether they were given. */
+  readonly approvals?: {
+    readonly required: readonly string[];
+    readonly granted: readonly string[];
+  };
   readonly integrity: RunVerdict["integrity"];
   readonly signer: SignerVerdict;
   readonly executionTrust: RunVerdict["executionTrust"];
@@ -83,7 +88,7 @@ export function runVerdict(input: VerdictInput): RunVerdict {
     // its own tests, so this abstains by construction rather than by accident.
     semantic: "unmeasured",
     task: input.task ?? "unjudged",
-    humanApproval: input.humanApproval ?? "not-required",
+    humanApproval: input.humanApproval ?? approvalStateOf(input.approvals),
     reasons: {
       mechanical: mechanical.reason,
       policy: policy.reason,
@@ -96,6 +101,7 @@ export function runVerdict(input: VerdictInput): RunVerdict {
         input.executionTrust === "isolated"
           ? "a containment self-test refused every escape it tried"
           : "commands ran under a lexical path and program policy, which is not containment",
+      humanApproval: describeApprovals(input.approvals),
       signer:
         input.signer === "trusted"
           ? "the bundle was signed by a key the trust policy names"
@@ -104,6 +110,29 @@ export function runVerdict(input: VerdictInput): RunVerdict {
     },
     acceptable: !blockingFailed && policy.answer !== "fail" && executed,
   };
+}
+
+/**
+ * Outstanding is `required`, not `rejected`: nobody said no, nobody has said yes yet, and
+ * flattening the two would let a run that never asked read as one that was refused.
+ */
+function approvalStateOf(approvals: VerdictInput["approvals"]): RunVerdict["humanApproval"] {
+  if (approvals === undefined || approvals.required.length === 0) {
+    return "not-required";
+  }
+  return approvals.required.every((subject) => approvals.granted.includes(subject))
+    ? "approved"
+    : "required";
+}
+
+function describeApprovals(approvals: VerdictInput["approvals"]): string {
+  if (approvals === undefined || approvals.required.length === 0) {
+    return "this run did nothing that needs a person's decision";
+  }
+  const outstanding = approvals.required.filter((subject) => !approvals.granted.includes(subject));
+  return outstanding.length === 0
+    ? `every approval this run needed was given: ${approvals.required.join(", ")}`
+    : `still waiting on: ${outstanding.join(", ")}`;
 }
 
 function judge(
