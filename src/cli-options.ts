@@ -137,6 +137,19 @@ export interface GcCommand {
  * The durable-state commands. A run leaves state that outlives its process, and without a way
  * to read and act on it a killed run is a directory nobody can do anything with.
  */
+/**
+ * Verifies a patch somebody else produced, without trusting the tree it came from: a fresh
+ * checkout of the base, the patch applied there, and the checks run in that checkout.
+ */
+export interface CiCommand {
+  readonly command: "ci";
+  readonly patchFile: string;
+  readonly workspace: string;
+  readonly baseRef: string;
+  readonly immutablePaths: readonly string[];
+  readonly json: boolean;
+}
+
 export interface RunsCommand {
   readonly command: "list-runs";
 }
@@ -252,6 +265,7 @@ export type CommandLine =
   | ReplayCommand
   | VerifyCommand
   | GcCommand
+  | CiCommand
   | RunsCommand
   | InspectCommand
   | ResumeCommand
@@ -289,6 +303,9 @@ export const usage = [
   "  swarm review <bundle directory>                  what a run produced, and open it",
   "  swarm verify <bundle directory> [--signer <fp>]  check the bundle, and who signed it",
   "  swarm gc [--older-than 30d] [--remove]           what stored evidence would be removed",
+  "",
+  "  swarm ci --patch <file> [--base <ref>]           verify a patch in a fresh checkout of",
+  "    [--immutable <a,b>] [--json]                   the base, trusting nothing that made it",
   "",
   "  swarm list-runs                                  runs this machine has state for",
   "  swarm inspect <run-id> [--json]                  what a run did, and what it still owes",
@@ -376,6 +393,26 @@ export function parseCommandLine(
   // is asking for help.
   if (flags.has("help") || words[0] === "help") {
     return { command: "help" };
+  }
+
+  if (words[0] === "ci") {
+    const patchFile = flags.get("patch");
+    if (patchFile === undefined || patchFile.trim().length === 0) {
+      throw new InvalidCommandLineError(
+        "ci needs --patch <file>: the change to verify against a fresh checkout of the base",
+      );
+    }
+    return {
+      command: "ci",
+      patchFile: resolve(context.currentDirectory, patchFile.trim()),
+      workspace: resolve(context.currentDirectory, flags.get("workspace") ?? "."),
+      baseRef: flags.get("base") ?? defaultBaseRef,
+      immutablePaths: (flags.get("immutable") ?? "")
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0),
+      json: flags.has("json"),
+    };
   }
 
   if (words[0] === "list-runs") {
@@ -584,6 +621,7 @@ const knownCommands = [
   "gates",
   "verify",
   "gc",
+  "ci",
   "list-runs",
   "inspect",
   "resume",

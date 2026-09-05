@@ -13,6 +13,7 @@ import {
   type AbortCommand,
   type AddCaseCommand,
   type CalibrateCommand,
+  type CiCommand,
   type CommandLine,
   type DoctorCommand,
   type GatesCommand,
@@ -78,6 +79,7 @@ import { createFileSetRegistry } from "./gates/file-set.ts";
 import type { DiffBudget } from "./gates/gate-definition.ts";
 import { citedRecords, type GateCycle, outstandingJustifications } from "./gates/gate-runner.ts";
 import { resolveBaseCommit } from "./gates/git-workspace.ts";
+import { verifyIndependently } from "./gates/independent-verification.ts";
 import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { summarizeRatchet } from "./gates/ratchet-summary.ts";
 import { recordTurnBaseline } from "./gates/turn-baseline.ts";
@@ -298,6 +300,54 @@ async function collectGarbage(options: GcCommand): Promise<number> {
   });
   process.stdout.write(`${root}\n${describeCollection(collection, options.remove)}\n`);
   return exitCodes.acceptable;
+}
+
+/**
+ * A patch, verified where nothing that produced it can reach. Every gate a run executes runs in
+ * the workspace the run was editing, with the tests the run may have changed, reading reports
+ * the run's own processes wrote. This is the separate opinion: a fresh checkout of the base, the
+ * patch applied there, the checks run there, and nothing from the producer travelling except the
+ * patch itself.
+ */
+async function verifyPatch(options: CiCommand): Promise<number> {
+  const clock = createSystemClock();
+  const baseCommit = await resolveBaseCommit(options.workspace, options.baseRef);
+  const result = await verifyIndependently({
+    repositoryRoot: options.workspace,
+    baseCommit,
+    patch: await readFile(options.patchFile, "utf8"),
+    immutablePaths: options.immutablePaths,
+    commands: createNodeCommandRunner(clock, harnessChildEnvironment()),
+    clock,
+  });
+
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify({ schema: "swarm.ci.v1", baseCommit, ...result })}\n`);
+    return result.verified ? exitCodes.acceptable : exitCodes.notAcceptable;
+  }
+
+  process.stdout.write(`base: ${baseCommit}\n`);
+  if (result.refusal !== null) {
+    process.stdout.write(`refused: ${result.refusal}\n`);
+    return exitCodes.notAcceptable;
+  }
+  if (!result.applied) {
+    process.stdout.write(
+      "the patch did not apply to a fresh checkout of the base, so nothing was measured. " +
+        "That is not a failing check, it is no check at all.\n",
+    );
+    return exitCodes.notAcceptable;
+  }
+  for (const check of result.checks) {
+    const label = check.status === "not-applicable" ? "n/a" : check.status;
+    process.stdout.write(`  ${label.padEnd(8)} ${check.id}: ${check.detail}\n`);
+  }
+  process.stdout.write(
+    result.verified
+      ? "\nverified: the patch applied to a fresh base and the checks passed there.\n"
+      : "\nnot verified: see the checks above. Nothing the producing tree said was read.\n",
+  );
+  return result.verified ? exitCodes.acceptable : exitCodes.notAcceptable;
 }
 
 /** Where the durable state lives: beside the sessions, outside every workspace. */
@@ -2244,6 +2294,9 @@ async function main(): Promise<number> {
   }
   if (options.command === "gc") {
     return collectGarbage(options);
+  }
+  if (options.command === "ci") {
+    return verifyPatch(options);
   }
   if (options.command === "list-runs") {
     return listRuns();

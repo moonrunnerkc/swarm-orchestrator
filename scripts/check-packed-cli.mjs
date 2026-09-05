@@ -71,6 +71,7 @@ try {
     verify: [join(scratch, "absent-bundle")],
     parallel: ["--tasks", join(scratch, "absent-tasks.txt")],
     select: ["--shortlist", "bundled"],
+    ci: ["--patch", "/nonexistent.diff"],
     inspect: ["no-such-run"],
     resume: ["no-such-run"],
     abort: ["no-such-run"],
