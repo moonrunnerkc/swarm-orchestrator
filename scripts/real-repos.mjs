@@ -14,7 +14,7 @@
  * they left, with no model involved, and by the hidden test the task names.
  */
 import { spawn } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, appendFileSync, readdirSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { distribution } from "./compare-calibrations.mjs";
 
@@ -133,12 +133,18 @@ async function git(cwd, ...args) {
   return done.stdout;
 }
 
-/** A fresh clone at the pinned commit, with the prepared clone's installed dependencies beside it. */
+/**
+ * A fresh clone at the pinned commit with its dependencies installed from the lockfile. Not
+ * copied from the campaign's prepared clone: those were installed inside a linux container,
+ * and the first jest run on this machine spent its time fetching the darwin binding it lacked
+ * and exited 1 while it did, which scored a passing suite as a failing gate.
+ */
 async function prepareWorkspace(source, commit, destination) {
   rmSync(destination, { recursive: true, force: true });
   await git(root, "clone", "--quiet", source, destination);
   await git(destination, "checkout", "--quiet", commit);
-  cpSync(join(source, "node_modules"), join(destination, "node_modules"), { recursive: true });
+  const installed = await run("npm", ["ci", "--no-audit", "--no-fund", "--loglevel=error"], { cwd: destination });
+  if (installed.code !== 0) throw new Error(`npm ci in ${destination} exited ${installed.code}: ${installed.stderr.slice(-800)}`);
 }
 
 /** The whole tree against the pinned commit, untracked files included, without moving the index for good. */
