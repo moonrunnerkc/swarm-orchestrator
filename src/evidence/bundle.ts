@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Clock } from "../core/clock.ts";
+import type { DsseEnvelope } from "./attestation.ts";
 import {
   type BundleManifest,
   bundleFileNames,
@@ -62,6 +63,11 @@ interface ExportBundleOptions {
   readonly clock: Clock;
   /** Worker bundles already written under this destination. Empty for an ordinary run. */
   readonly workers?: readonly WorkerChain[];
+  /**
+   * The DSSE envelope over what this run produced, where the caller built one. Absent writes no
+   * attestation file, which a reader reads as not attested rather than as failed.
+   */
+  readonly attestation?: DsseEnvelope;
 }
 
 interface BundleExport {
@@ -161,6 +167,13 @@ export async function exportBundle(options: ExportBundleOptions): Promise<Bundle
     await readRederiverScript(),
     { encoding: "utf8", mode: ownerOnlyFile },
   );
+  if (options.attestation !== undefined) {
+    await writeFile(
+      join(options.destination, bundleFileNames.attestation),
+      `${JSON.stringify(options.attestation, null, 2)}\n`,
+      { encoding: "utf8", mode: ownerOnlyFile },
+    );
+  }
   await writeFile(
     join(options.destination, bundleFileNames.review),
     `${renderReviewPage(manifest, dag)}\n`,

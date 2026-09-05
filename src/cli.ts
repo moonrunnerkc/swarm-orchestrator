@@ -9,6 +9,7 @@ import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { render as inkRender } from "ink";
 import { runAgentTask } from "./agent-run.ts";
+import { buildVersion } from "./build-version.ts";
 import {
   type AbortCommand,
   type AddCaseCommand,
@@ -45,6 +46,7 @@ import type { ConversationMessage, ModelClient } from "./core/model-client.ts";
 import type { RandomSource } from "./core/random-source.ts";
 import type { StopReason } from "./core/termination.ts";
 import { openRunStore } from "./durable/run-store.ts";
+import { buildAttestation, signAttestation } from "./evidence/attestation.ts";
 import { bundleSourceFromRecorder, exportBundle, readBundle } from "./evidence/bundle.ts";
 import type { BundleManifest } from "./evidence/bundle-manifest.ts";
 import { exportCombinedBundle } from "./evidence/combined-bundle.ts";
@@ -1315,9 +1317,6 @@ async function run(options: RunCommand): Promise<number> {
       note: ui.note,
     });
 
-    const written = await writeBundle(evidence, options.bundleDirectory, clock, ui.note);
-    announceBundle(written.directory, ui.note);
-    await ui.presentEvidence(await summarizeEvidence(written));
     // The run's own verdict rather than a second reading of the gate strip: recomputing it
     // here from `settled` alone let the two disagree, and they did. A run wrote three files
     // into a workspace whose only command gate found no tests to run, so nothing measured the
@@ -1328,6 +1327,12 @@ async function run(options: RunCommand): Promise<number> {
       signer: "untrusted",
       executionTrust: isolation === null ? "restricted" : "isolated",
     });
+    const written = await writeBundle(evidence, options.bundleDirectory, clock, ui.note, {
+      verdict: { ...verdict },
+      executionMode: isolation === null ? "restricted" : "isolated",
+    });
+    announceBundle(written.directory, ui.note);
+    await ui.presentEvidence(await summarizeEvidence(written));
     const code = exitCodeFor(loop.stopReason, green);
     if (options.json) {
       process.stdout.write(
@@ -1608,6 +1613,10 @@ async function writeBundle(
   destination: string | null,
   clock: Clock,
   note: (line: string) => void = writeOut,
+  attested?: {
+    readonly verdict: Readonly<Record<string, unknown>>;
+    readonly executionMode: string;
+  },
 ): Promise<{
   readonly directory: string;
   readonly manifest: BundleManifest;
@@ -1618,13 +1627,42 @@ async function writeBundle(
     note(`[signing] ${signing.notice}`);
   }
   const directory = destination ?? join(evidence.directory, "bundle");
+  const attestation =
+    attested === undefined
+      ? undefined
+      : signAttestation(
+          buildAttestation({
+            runId: evidence.sessionId,
+            specDigest: recordedDigest(evidence, "run-spec-sealed") ?? "sha256:unsealed",
+            sourceCommit: recordedField(evidence, "session-started", "baseRef") ?? "unknown",
+            patchDigest: recordedDigest(evidence, "workspace-diff") ?? "sha256:none",
+            chainHead: evidence.head().hash,
+            toolVersion: buildVersion,
+            executionMode: attested.executionMode,
+            verdict: attested.verdict,
+          }),
+          signing.key,
+        );
   const written = await exportBundle({
     source: bundleSourceFromRecorder(evidence),
     destination: directory,
     signingKey: signing.key,
     clock,
+    ...(attestation === undefined ? {} : { attestation }),
   });
   return { directory, manifest: written.manifest, dag: written.dag };
+}
+
+/** The payload digest of the first record of a kind, which is the thing an attestation binds. */
+function recordedDigest(evidence: EvidenceRecorder, type: string): string | null {
+  return evidence.records().find((record) => record.type === type)?.payloadDigest ?? null;
+}
+
+function recordedField(evidence: EvidenceRecorder, type: string, field: string): string | null {
+  const record = evidence.records().find((entry) => entry.type === type);
+  const payload = record === undefined ? undefined : evidence.payloads().get(record.payloadDigest);
+  const value = (payload as Record<string, unknown> | undefined)?.[field];
+  return typeof value === "string" ? value : null;
 }
 
 /** Roughly the build guide's five to ten minutes: four cases, three repeats, two models. */
