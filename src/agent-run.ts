@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { buildVersion } from "./build-version.ts";
 import type { Clock } from "./core/clock.ts";
 import { type AgentLoopOutcome, runAgentLoop } from "./core/loop.ts";
 import type { LoopEvent } from "./core/loop-events.ts";
@@ -6,8 +7,9 @@ import type { ConversationMessage, ModelClient, SamplingSettings } from "./core/
 import type { RandomSource } from "./core/random-source.ts";
 import type { ToolInvoker } from "./core/tool-invoker.ts";
 import { renderPredicateCatalogue } from "./evidence/predicate-catalogue.ts";
+import { sealRunSpec } from "./evidence/run-spec.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
-import type { IsolationBackend } from "./exec/execution-mode.ts";
+import type { ExecutionEnvelope, IsolationBackend } from "./exec/execution-mode.ts";
 import { describeEnvelopeForReader, establishExecutionEnvelope } from "./exec/run-envelope.ts";
 import type { ResolveRequest } from "./gates/auto-resolve.ts";
 import type { SingleFileCommand } from "./gates/base-control.ts";
@@ -21,6 +23,7 @@ import {
 } from "./gates/engine.ts";
 import { type FileSetRegistry, writeRefusal } from "./gates/file-set.ts";
 import { createAmendFileSetTool, createDeclareFileSetTool } from "./gates/file-set-tool.ts";
+import { capabilityOf } from "./gates/gate-capability.ts";
 import type { DiffBudget } from "./gates/gate-definition.ts";
 import { executedTheChange } from "./gates/gate-runner.ts";
 import { createGitWorkspaceProbe } from "./gates/git-workspace.ts";
@@ -304,6 +307,10 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
   const inherited = await captureInherited(options);
   const detected = await detectedTypes(options);
   const criteriaSealed = options.criteriaSealed === true || (await sealCriteria(options));
+  // The whole envelope a result depends on, not the gates alone. The gate-set seal fixes what
+  // will be measured; this fixes what the run was allowed to do while being measured, and a
+  // result read without that is a result read without its question.
+  await sealSpecForRun(options, envelope, detected);
   if (inherited.size > 0) {
     await options.evidence.record({
       type: "inherited-changes",
@@ -467,6 +474,84 @@ function criteriaRefOf(options: AgentTaskOptions): string {
 }
 
 /** The criteria, on the chain before the model is asked for anything. */
+/** What the spec records where a run named no wall budget of its own. */
+const defaultRunWallMs = 30 * 60 * 1000;
+const defaultRunTokens = 1_000_000;
+
+/**
+ * Sealed after the gate set, because the spec names the gates the set assembled, and before the
+ * loop, because that is what makes it a declaration rather than an account of what happened.
+ * Failing to seal never stops a run: the spec is what a reader is owed, and refusing to do the
+ * work because the record of the question could not be written helps nobody.
+ */
+async function sealSpecForRun(
+  options: AgentTaskOptions,
+  envelope: ExecutionEnvelope,
+  detected: readonly string[],
+): Promise<void> {
+  try {
+    await sealRunSpec(options.evidence, {
+      version: 1,
+      repository: { root: options.workspace, baseCommit: options.baseRef },
+      task: options.task,
+      architecture: "single-agent",
+      model: { spec: options.model.modelId, pinned: true },
+      tools: ["read", "write", "edit", "list", "search", "shell"],
+      network: envelope.network === "denied" ? "denied" : "unrestricted",
+      paths: { writable: ["**"], immutable: [] },
+      taskOracle: null,
+      // The gates the set actually sealed, read back off the chain. Deriving a plausible list
+      // here would put a second account of the criteria beside the sealed one, and a spec that
+      // names gates the run will not run is a spec describing a different run.
+      gates: sealedGates(options.evidence),
+      budgets: {
+        maxSteps: options.maxSteps,
+        attempts: options.attempts,
+        maxWallMs: options.maxWallTimeMs ?? defaultRunWallMs,
+        maxTokens: defaultRunTokens,
+      },
+      retention: { sessionsOlderThan: "30d" },
+      signer: { policy: "any-key", signers: [] },
+      isolation: { mode: envelope.mode, backend: envelope.backend },
+      humanApproval: { required: [] },
+      versions: { tool: buildVersion, schema: 1, node: process.versions.node },
+    });
+  } catch (cause) {
+    // Recorded on the chain rather than thrown, so a reader learns the spec is missing and why,
+    // instead of finding a run with no spec and no explanation. A run whose question could not
+    // be written down is still a run worth doing.
+    await options.evidence.record({
+      type: "session-budget",
+      actor: "harness",
+      provenance: ["tool-output"],
+      payload: {
+        note: "the run spec could not be sealed",
+        reason: cause instanceof Error ? cause.message : String(cause),
+      },
+    });
+  }
+}
+
+/**
+ * The gates the criteria seal named, off the chain. Empty where nothing sealed, which is the
+ * case the spec schema refuses, so a run with no sealed criteria records no spec and says why.
+ */
+function sealedGates(evidence: EvidenceRecorder): readonly {
+  readonly id: string;
+  readonly severity: "blocking" | "advisory";
+  readonly capability: "static" | "dynamic" | "policy" | "task-oracle";
+}[] {
+  const record = evidence.records().find((entry) => entry.type === "gate-set-sealed");
+  const payload = record === undefined ? undefined : evidence.payloads().get(record.payloadDigest);
+  const gates = (payload as { gates?: readonly { id?: unknown; severity?: unknown }[] } | undefined)
+    ?.gates;
+  return (gates ?? []).flatMap((gate) =>
+    typeof gate.id === "string" && (gate.severity === "blocking" || gate.severity === "advisory")
+      ? [{ id: gate.id, severity: gate.severity, capability: capabilityOf(gate.id) }]
+      : [],
+  );
+}
+
 function sealCriteria(options: AgentTaskOptions): Promise<boolean> {
   return sealAssembledCriteria({
     workspaceRoot: options.workspace,

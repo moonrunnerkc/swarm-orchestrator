@@ -37,6 +37,33 @@ export const predicateCatalogue: readonly CatalogueEntry[] = [
     says: "the task, workspace and budgets the run opened with",
   },
   {
+    type: "run-spec-sealed",
+    subjectField: null,
+    example: 'network == "denied"',
+    sample: {
+      digest: `sha256:${"ab".repeat(32)}`,
+      task: "fix the parser",
+      architecture: "single-agent",
+      network: "denied",
+      baseCommit: "a".repeat(40),
+    },
+    says: "everything the run is measured by, fixed before the model was asked for anything",
+  },
+  {
+    type: "task-contract",
+    subjectField: null,
+    example: 'riskTier == "low"',
+    sample: {
+      taskId: "parser",
+      objective: "make the parser handle an empty input",
+      allowedPaths: ["src/parser.ts"],
+      immutablePaths: [".github/**"],
+      riskTier: "low",
+      idempotencyKey: `sha256:${"cd".repeat(32)}`,
+    },
+    says: "what one node of a decomposition was allowed to do, and what it was for",
+  },
+  {
     type: "execution-envelope",
     subjectField: null,
     example: 'mode == "restricted"',
