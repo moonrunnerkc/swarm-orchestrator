@@ -6,6 +6,7 @@ import type { LoopEvent } from "./core/loop-events.ts";
 import type { ConversationMessage, ModelClient, SamplingSettings } from "./core/model-client.ts";
 import type { RandomSource } from "./core/random-source.ts";
 import type { ToolInvoker } from "./core/tool-invoker.ts";
+import { openRunStore } from "./durable/run-store.ts";
 import { renderPredicateCatalogue } from "./evidence/predicate-catalogue.ts";
 import { sealRunSpec } from "./evidence/run-spec.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
@@ -114,6 +115,8 @@ const trailInstruction = [
 
 export interface AgentTaskOptions {
   readonly task: string;
+  /** Where durable run state goes. Absent means this run leaves none, which a test wants. */
+  readonly runStorePath?: string | undefined;
   /** Where commands run. Absent is the host, and the envelope says so rather than implying it. */
   readonly isolation?: IsolationBackend | undefined;
   /**
@@ -310,7 +313,11 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
   // The whole envelope a result depends on, not the gates alone. The gate-set seal fixes what
   // will be measured; this fixes what the run was allowed to do while being measured, and a
   // result read without that is a result read without its question.
-  await sealSpecForRun(options, envelope, detected);
+  const sealed = await sealSpecForRun(options, envelope, detected);
+  // Durable state beside the ledger. The ledger says what happened and is append-only, which
+  // makes it the wrong thing to ask "what is still owed": that needs mutable state a killed
+  // process leaves behind, which is what `swarm list-runs` and `swarm resume` read.
+  recordRunStart(options, sealed);
   if (inherited.size > 0) {
     await options.evidence.record({
       type: "inherited-changes",
@@ -420,6 +427,7 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
   // code?": the file-set record names files, the diff budget counts lines, and the tool calls
   // hold fragments, so a reviewer had to leave the evidence and run git themselves.
   await recordWorkspaceDiff(options);
+  recordRunEnd(options);
 
   return {
     loop,
@@ -488,9 +496,9 @@ async function sealSpecForRun(
   options: AgentTaskOptions,
   envelope: ExecutionEnvelope,
   detected: readonly string[],
-): Promise<void> {
+): Promise<string | null> {
   try {
-    await sealRunSpec(options.evidence, {
+    const sealed = await sealRunSpec(options.evidence, {
       version: 1,
       repository: { root: options.workspace, baseCommit: options.baseRef },
       task: options.task,
@@ -516,6 +524,7 @@ async function sealSpecForRun(
       humanApproval: { required: [] },
       versions: { tool: buildVersion, schema: 1, node: process.versions.node },
     });
+    return sealed.digest;
   } catch (cause) {
     // Recorded on the chain rather than thrown, so a reader learns the spec is missing and why,
     // instead of finding a run with no spec and no explanation. A run whose question could not
@@ -529,6 +538,50 @@ async function sealSpecForRun(
         reason: cause instanceof Error ? cause.message : String(cause),
       },
     });
+    return null;
+  }
+}
+
+/**
+ * Never fatal. Durable state is what makes a killed run recoverable; a machine that cannot open
+ * the store is a machine where recovery will not be available, and refusing to do the work over
+ * that would trade a whole run for a convenience.
+ */
+function recordRunStart(options: AgentTaskOptions, specDigest: string | null): void {
+  if (options.runStorePath === undefined) {
+    return;
+  }
+  try {
+    const store = openRunStore(options.runStorePath);
+    try {
+      store.startRun({
+        runId: options.evidence.sessionId,
+        specDigest: specDigest ?? "sha256:unsealed",
+        task: options.task,
+        startedAt: options.clock.now(),
+      });
+    } finally {
+      store.close();
+    }
+  } catch {
+    // Recovery will not be available for this run. The run itself is unaffected.
+  }
+}
+
+/** The run reached its end under its own power, so nothing about it is owed. */
+function recordRunEnd(options: AgentTaskOptions): void {
+  if (options.runStorePath === undefined) {
+    return;
+  }
+  try {
+    const store = openRunStore(options.runStorePath);
+    try {
+      store.finishRun(options.evidence.sessionId, options.clock.now());
+    } finally {
+      store.close();
+    }
+  } catch {
+    // As above: durable state is a convenience for the next process, not this one.
   }
 }
 

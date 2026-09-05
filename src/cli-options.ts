@@ -133,6 +133,41 @@ export interface GcCommand {
   readonly remove: boolean;
 }
 
+/**
+ * The durable-state commands. A run leaves state that outlives its process, and without a way
+ * to read and act on it a killed run is a directory nobody can do anything with.
+ */
+export interface RunsCommand {
+  readonly command: "list-runs";
+}
+
+export interface InspectCommand {
+  readonly command: "inspect";
+  readonly runId: string;
+  readonly json: boolean;
+}
+
+export interface ResumeCommand {
+  readonly command: "resume";
+  readonly runId: string;
+}
+
+export interface RetryStepCommand {
+  readonly command: "retry-step";
+  readonly runId: string;
+  readonly stepId: string;
+}
+
+export interface AbortCommand {
+  readonly command: "abort";
+  readonly runId: string;
+}
+
+export interface RepairCommand {
+  readonly command: "repair";
+  readonly runId: string;
+}
+
 export interface VerifyCommand {
   readonly command: "verify";
   readonly bundleDirectory: string;
@@ -217,6 +252,12 @@ export type CommandLine =
   | ReplayCommand
   | VerifyCommand
   | GcCommand
+  | RunsCommand
+  | InspectCommand
+  | ResumeCommand
+  | RetryStepCommand
+  | AbortCommand
+  | RepairCommand
   | ReviewCommand
   | GatesCommand
   | SelectCommand
@@ -248,6 +289,13 @@ export const usage = [
   "  swarm review <bundle directory>                  what a run produced, and open it",
   "  swarm verify <bundle directory> [--signer <fp>]  check the bundle, and who signed it",
   "  swarm gc [--older-than 30d] [--remove]           what stored evidence would be removed",
+  "",
+  "  swarm list-runs                                  runs this machine has state for",
+  "  swarm inspect <run-id> [--json]                  what a run did, and what it still owes",
+  "  swarm resume <run-id>                            take up a run that was interrupted",
+  "  swarm retry-step <run-id> <step-id>              run one step again",
+  "  swarm abort <run-id>                             stop a run and refuse it new work",
+  "  swarm repair <run-id>                            release what a dead run left held",
   "  swarm replay <bundle directory>                  read a bundle back",
   "",
   "  --json                         line-delimited JSON on stdout: one line per event, one",
@@ -328,6 +376,33 @@ export function parseCommandLine(
   // is asking for help.
   if (flags.has("help") || words[0] === "help") {
     return { command: "help" };
+  }
+
+  if (words[0] === "list-runs") {
+    return { command: "list-runs" };
+  }
+
+  for (const name of ["inspect", "resume", "abort", "repair"] as const) {
+    if (words[0] === name) {
+      const runId = words[1]?.trim() ?? "";
+      if (runId.length === 0) {
+        throw new InvalidCommandLineError(`${name} needs a run id. Try swarm list-runs`);
+      }
+      return name === "inspect"
+        ? { command: "inspect", runId, json: flags.has("json") }
+        : { command: name, runId };
+    }
+  }
+
+  if (words[0] === "retry-step") {
+    const runId = words[1]?.trim() ?? "";
+    const stepId = words[2]?.trim() ?? "";
+    if (runId.length === 0 || stepId.length === 0) {
+      throw new InvalidCommandLineError(
+        "retry-step needs a run id and a step id. Try swarm inspect <run-id>",
+      );
+    }
+    return { command: "retry-step", runId, stepId };
   }
 
   if (words[0] === "gc") {
@@ -509,6 +584,12 @@ const knownCommands = [
   "gates",
   "verify",
   "gc",
+  "list-runs",
+  "inspect",
+  "resume",
+  "retry-step",
+  "abort",
+  "repair",
   "select",
   "calibrate",
   "routing",

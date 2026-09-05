@@ -71,6 +71,11 @@ try {
     verify: [join(scratch, "absent-bundle")],
     parallel: ["--tasks", join(scratch, "absent-tasks.txt")],
     select: ["--shortlist", "bundled"],
+    inspect: ["no-such-run"],
+    resume: ["no-such-run"],
+    abort: ["no-such-run"],
+    repair: ["no-such-run"],
+    "retry-step": ["no-such-run", "no-such-step"],
   };
 
   for (const name of documented) {
