@@ -7,21 +7,36 @@
 [![node](https://img.shields.io/badge/node-%3E%3D24-blue?style=flat-square)](package.json)
 [![license](https://img.shields.io/github/license/moonrunnerkc/swarm-orchestrator?style=flat-square)](LICENSE)
 
-A coding agent whose claims about its own work resolve to machine-captured evidence.
+A proof-carrying runner and verifier for bounded code changes.
+
+Give it a task and a git repository and it will make the change. Give it somebody else's patch
+and it will tell you what that patch actually establishes. Either way what comes back is a
+signed, hash-chained record of what ran, what passed, and what nobody measured, which anybody
+can check without installing this tool.
 
 The model can say whatever it likes. It cannot make a gate pass, it cannot mark a claim
-verified, and it cannot change a record after the fact. Those are the harness's to decide,
-and the run exports a signed, hash-chained bundle that anybody can check without installing
-this tool.
+verified, and it cannot change a record after the fact.
 
-[What it does](#what-it-does) | [Install](#install) | [Use](#use) | [Several workers](#several-workers-at-once) | [Watching it work](#watching-it-work) | [What is claimed](#what-is-claimed) | [What is not claimed](#what-is-not-claimed) | [How it works](#how-it-works) | [Limits](#limits) | [Upgrading from v12](#upgrading-from-v12)
+[What it does](#what-it-does) | [Install](#install) | [Use](#use) | [Verifying somebody else's work](#verifying-somebody-elses-work) | [What a run reports](#what-a-run-reports) | [Several workers](#several-workers-at-once) | [Watching it work](#watching-it-work) | [What is claimed](#what-is-claimed) | [What is not claimed](#what-is-not-claimed) | [How it works](#how-it-works) | [Limits](#limits) | [Upgrading from v12](#upgrading-from-v12)
 
 ## What it does
 
-Give it a task and a git workspace. It plans, declares the files it intends to touch, edits
-through a chokepoint that records every tool call, runs your gates, and retries failures
-under a numeric ratchet that refuses a fix which trades away tests, assertions, or coverage.
-Then it exports the evidence.
+Three jobs, and the second and third do not need this tool's own agent.
+
+**Make a bounded change.** Give it a task and a git workspace. It plans, declares the files it
+intends to touch, edits through a chokepoint that records every tool call, runs your gates, and
+retries failures under a numeric ratchet that refuses a fix which trades away tests, assertions
+or coverage. Then it exports the evidence.
+
+**Verify a patch anybody produced.** `swarm ci --patch <file>` clones the base commit somewhere
+the producing tree cannot reach, applies the patch there, and runs the checks in that checkout.
+Nothing the producer said travels except the patch. It reads another agent's own event stream
+beside it if you have one.
+
+**Say what a result does and does not establish.** A run reports nine separate answers rather
+than a boolean, and `unmeasured` is one of the values. "Nobody checked" and "checked and
+failed" are different findings that call for different things, and flattening them is how a
+change nothing executed comes to read green.
 
 Here is a real run, committed: [`live-tasks.md`](docs/evidence/2026-08-18/live-tasks.md),
 with its bundle in [`live-frontier/`](docs/evidence/2026-08-18/live-frontier). And here is the
@@ -65,7 +80,9 @@ option, so on anything older that measurement does not happen.
 
     swarm                            # a session: type tasks, one after another
     swarm doctor                     # what owns the swarm command, and --fix to repair it
+    swarm init                       # write swarm.toml from package.json's scripts
     swarm gates                      # run the gates over a workspace, no model
+      --allowed-files <a,b>          # the scope you authorise, for the file-set check
     swarm select                     # probe this machine, recommend a local model
     swarm calibrate                  # measure candidate models on the golden set
     swarm routing                    # what the reward log adds up to
@@ -73,9 +90,26 @@ option, so on anything older that measurement does not happen.
     swarm parallel --goal <text>     # break the goal into tasks, then run them
       --redundancy <n>               # try each task n ways, land the best of them
       --concurrency <n>              # how many workers may hold a worktree at once
+
+    swarm ci --patch <file>          # verify a patch in a fresh checkout of the base
+      --immutable <a,b>              # paths the patch may not touch
+      --agent-stream <file>          # another agent's event stream, read beside it
+      --agent-format claude-code     # or generic
+    swarm verify <bundle>            # check a bundle, and who signed it
+      --signer <fingerprint>         # the identity you expect, from outside the bundle
     swarm review <bundle>            # what a past run produced, and open it
     swarm replay <bundle>            # read a bundle back
 
+    swarm list-runs                  # runs this machine has state for
+    swarm inspect <run-id>           # what a run did, and what it still owes
+    swarm resume <run-id>            # take up a run that was interrupted
+    swarm retry-step <run-id> <step> # run one step again
+    swarm abort <run-id>             # stop a run and refuse it new work
+    swarm repair <run-id>            # release what a dead run left held
+    swarm gc [--older-than 30d]      # what stored evidence would be removed, --remove to do it
+
+    swarm --isolation docker "..."   # run commands behind a kernel-enforced boundary
+    swarm --json "..."               # line-delimited JSON: one line per event, one result
     swarm --no-tui "..."             # plain lines even on a terminal
     swarm --no-color "..."           # no colour, whatever the terminal says
     swarm --open-evidence "..."      # open the review page when it finishes
@@ -92,7 +126,9 @@ option, so on anything older that measurement does not happen.
 Set `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` for a frontier
 model, or start Ollama or rapid-mlx and pass `--model local:<id>`. With no model named, the
 router picks one from what the calibration measured on this machine, and `swarm routing` shows
-what it has learned.
+what it has learned. Keys come from the environment or your OS keychain and have no
+`swarm.toml` setting: that file is committed and cloned, so a key in it has already been shared
+with everyone holding the repository, and a file naming one is refused with rotation guidance.
 
 Settings live in one optional `swarm.toml`: providers and endpoints, gate definitions, budgets,
 model pins, and the `[interface]`, `[theme]` and `[keys]` tables. Flags win over the file.
@@ -117,6 +153,80 @@ is the server's limit rather than this one's.
 before it runs a command that is not on the allowlist, and a question nobody answers used to
 hold the run until somebody came back to it. Refusing is what a declined question records
 either way, so the deadline costs that one tool call and the run carries on.
+
+## Verifying somebody else's work
+
+Every gate a run executes runs in the workspace that run was editing, with the tests that run
+may have changed, reading reports that run's own processes wrote. The sealed criteria and the
+ratchet close most of that. What they cannot close is the shape of it: a subject grading its
+own paper.
+
+`swarm ci` is the separate opinion.
+
+    swarm ci --patch candidate.diff --immutable ".github/**"
+
+It clones the base commit into a fresh checkout, applies the patch there, and runs the checks in
+that checkout, with the gates assembled from the base commit's manifests rather than the patched
+tree's, so a patch that rewrites the test script does not get to choose the instrument that
+measures it. A patch touching a path you declared immutable is refused before anything runs. A
+patch that will not apply reports that no check happened rather than passing on an unchanged
+tree.
+
+It does not need this tool's agent to have produced the patch. Pass `--agent-stream` with
+`--agent-format claude-code` or `generic` and another agent's own event stream is read beside
+it; a line the adapter does not recognise refuses the whole stream by line number rather than
+being skipped, because a skipped line is evidence that quietly went unread.
+
+## What a run reports
+
+Nine answers, not one:
+
+```
+verdict:
+  integrity       valid
+  signer          untrusted
+                  no expected signer was matched, so the signature shows the bundle is
+                  unchanged since it was written and not who wrote it
+  executionTrust  restricted
+                  commands ran under a lexical path and program policy, which is not containment
+  policy          pass
+  mechanical      pass
+                  lint passed
+  behavioral      unmeasured
+                  no dynamic gate ran, so nothing executed the change (tests stood down)
+  semantic        unmeasured
+  task            unjudged
+  humanApproval   not-required
+
+acceptable: no
+```
+
+`unmeasured` is a value, not a missing one. A change whose only passing gate was a linter is
+not a change anything ran: linting proves the source parses and establishes nothing about
+whether any of it was executed. `semantic` abstains by construction, because judging whether a
+change means what the task asked for is a judgement about meaning and nothing here is allowed
+to make one.
+
+`--json` gives the same thing as one line of JSON per event and one result at the end, each
+naming its schema. Exit codes are a taxonomy rather than zero-or-not: acceptable, not
+acceptable, invalid request, cancelled, unavailable, internal error.
+
+## Running behind a boundary
+
+`--isolation docker` runs every shell command, every gate command and every worker inside a
+container with only the workspace mounted, a read-only image filesystem, no network, no
+capabilities and bounded memory and process count. The default is the host, because turning
+containment on is a decision somebody makes rather than one that happens to them.
+
+The difference is the layer under the policy guard. `cat $(echo /host/secret)` names no path for
+any reader to rule on, which is exactly the case the build guide lists as a residual: on the
+host it reads the file, and behind the backend it does not.
+
+A run that is interrupted leaves state you can act on: `swarm list-runs`, `swarm inspect`,
+`swarm resume`, `swarm retry-step`, `swarm abort`, `swarm repair`. Intent is written before
+every effect, so a crash between the two is visible rather than invisible, and idempotency is
+keyed on the work rather than a clock, so resuming does not repeat an effect that already
+committed.
 
 ## A session, or a single task
 
@@ -249,6 +359,17 @@ every bond verdict and every claim, and names what it cannot re-derive rather th
 with it: [`gates-bonded/`](docs/evidence/2026-09-02/gates-bonded) is a run with nine gates
 sealed, four bonds held, and all seventeen verdicts re-derived.
 
+**A signature is checked against an identity from outside the bundle.** A bundle carries the
+public key its own signature verifies against, so checking it against itself can only say
+"unchanged since written". Anyone can edit a bundle, rehash it, sign it with a key of their own
+and ship that key in the manifest. `swarm verify <bundle> --signer <fingerprint>` is the check
+that catches it: named and matching is trusted, named and not matching is untrusted with both
+fingerprints in the message, no signer named is untrusted rather than trusted, and an ephemeral
+key is never trusted whatever the policy says because the run generated it for itself. Beside
+the bundle signature every run now writes a DSSE envelope binding the patch, the spec digest,
+the source commit, the chain head and the verdict under one signature, so a diff and a bundle
+can be shown to be about each other.
+
 **Bundles are signed from the OS keychain**, not from a key in the workspace. Both manifests
 in [`live-tasks.md`](docs/evidence/2026-08-18/live-tasks.md) say `"keySource": "keychain"` and
 both verifiers confirm it. Where the keychain holds no usable key the run signs with a per-run
@@ -289,8 +410,20 @@ something.
 
 - **Not "fully secure".** The secret detector does known-pattern scrubbing, not secret
   removal, with a four-character floor. Zero crashes at a fuzz budget is evidence, not proof.
-- **No benchmark numbers.** Nothing here is measured against another tool. The calibration
-  results are self-run, on one machine, and labelled directional in the file itself.
+- **The default execution mode is `restricted`, not `isolated`.** A run gets a lexical path and
+  program policy in front of interpreters unless you pass `--isolation`. That is reported before
+  the run starts and recorded on the chain rather than quietly assumed, but it is not
+  containment. The container backend has not been audited against a determined escape, and a
+  container is not a virtual machine.
+- **No benchmark numbers.** Nothing here is measured against another tool. The evaluation
+  harness exists, is tested and is a command away, and it has not been run at scale: what
+  would make it worth reading is five seeds across matched arms with frozen environments, and
+  the frontier arms of that cost real money nobody has spent. The calibration results that do
+  exist are self-run, on one machine, and labelled directional in the file itself.
+- **Learned routing is not on by default**, and there is a bar under turning it on: held-out
+  success non-inferior within five points judged by the whole interval, at least thirty tasks
+  per arm, and cheaper or faster. Nothing has cleared it yet, so routing follows the
+  calibration and the competency table.
 - **Six known gaps ship open**, and none of them is claimed closed. They are in
   [build guide 7.1](docs/build-guide.md), which says for each what now catches it and what
   still gets past. Four of them have detections built against them and have not yet been
@@ -325,8 +458,22 @@ something.
   commands run under an allowlist: PATH, the locale names, TERM, a harness-owned HOME, and
   whatever the run authorized by name. Provider keys have no `swarm.toml` setting, and a file
   that names one is refused with rotation guidance.
-- **Gates are data.** A gate declares a command, a parser, and whether it blocks. The engine
-  never special-cases one.
+- **Gates are data, and each declares what a pass establishes.** A gate declares a command, a
+  parser, whether it blocks, and its capability: `static` reads the source, `dynamic` executes
+  the code under change, `policy` rules on the change without doing either. "Did anything run
+  over this change" is answered by a passing `dynamic` gate, which is why a lint-only pass no
+  longer reads as one. The engine never special-cases a gate; the capability is read off its id.
+- **A run's state outlives its process.** Which activities were dispatched and never came back,
+  which files are held, what budget is spent, what a person approved: SQLite in WAL mode beside
+  the ledger, with intent written before every effect. A hundred injected kills, three committed
+  effects each, three hundred effects and no duplicates.
+- **Killing a run kills what it started.** Every child leads a process group and the signal goes
+  to the group. A wall budget, a Ctrl-C and a supervisor's SIGTERM all reach the same signal,
+  and in a parallel run a worker starting late is handed what is left of the budget rather than
+  a fresh one.
+- **Evidence has a lifetime.** `swarm gc` says what it would remove and removes nothing until
+  told. The store is created 0700 and 0600, and a directory made before that rule is narrowed
+  rather than assumed.
 - **A pass is bonded, and the criteria are sealed first.** Before the model is asked for
   anything, the gates it will be measured by, with their severities, the rule that reads each,
   the budgets and the attempt cap, are one record on the chain, and the verifier holds every
@@ -352,6 +499,12 @@ The full design, including what it refuses to build and why, is in
 Gates prove mechanical quality. They do not prove design quality, and nothing here pretends
 a passing run means the change is good. What the bundle buys you is that reviewing the
 change is fast and that its claims are checkable, not that review is unnecessary.
+
+The verdict says so in its own vocabulary: `semantic` is `unmeasured` on every run and always
+will be, because whether a change means what was asked is a judgement about meaning, and this
+tool makes none. `acceptable` means no blocking gate failed, no policy gate failed, and
+something executed the change. It does not mean the change is right, and no number here could
+tell doing the whole task from doing the minimum that passes its own tests.
 
 ## Upgrading from v12
 

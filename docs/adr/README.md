@@ -12,3 +12,5 @@ limits reads later as a guarantee.
 | [0004](0004-signer-trust.md) | Bundle consistency and bundle authenticity are separate claims | accepted |
 | [0005](0005-gate-capabilities.md) | A gate declares what a pass establishes | accepted |
 | [0006](0006-one-cancellation-tree.md) | One place a run is stopped from | accepted |
+| [0007](0007-durable-run-state.md) | A run's state outlives its process | accepted |
+| [0008](0008-independent-verification.md) | The final word is a separate run | accepted |
