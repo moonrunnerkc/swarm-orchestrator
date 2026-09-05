@@ -76,6 +76,7 @@ import { recordTurnBaseline } from "./gates/turn-baseline.ts";
 import { diagnose, remediesFor } from "./install/health.ts";
 import { inspectInstall } from "./install/inspect.ts";
 import { describeInstall } from "./install/report.ts";
+import { exitCodes, jsonEventLine, jsonResultLine } from "./machine-output.ts";
 import {
   localEndpointRecord,
   type ResolvedLocalEndpoint,
@@ -1032,6 +1033,9 @@ async function run(options: RunCommand): Promise<number> {
       random,
       emit: (event) => {
         ui.emit(event);
+        if (options.json) {
+          process.stdout.write(`${jsonEventLine(event, { runId: evidence.sessionId })}\n`);
+        }
       },
       confirm: ui.confirm,
       abortSignal: interruption.signal,
@@ -1068,7 +1072,24 @@ async function run(options: RunCommand): Promise<number> {
     // here from `settled` alone let the two disagree, and they did. A run wrote three files
     // into a workspace whose only command gate found no tests to run, so nothing measured the
     // change, `green` said so, and the exit code said 0 because no gate had actually failed.
-    return exitCodeFor(loop.stopReason, green);
+    const verdict = runVerdict({
+      cycle: gates.outcome.finalCycle,
+      integrity: "valid",
+      signer: "untrusted",
+      executionTrust: isolation === null ? "restricted" : "isolated",
+    });
+    const code = exitCodeFor(loop.stopReason, green);
+    if (options.json) {
+      process.stdout.write(
+        `${jsonResultLine({
+          runId: evidence.sessionId,
+          verdict,
+          bundleDirectory: written.directory,
+          exitCode: code,
+        })}\n`,
+      );
+    }
+    return code;
   } finally {
     await ui.stop();
     process.off("SIGINT", onInterrupt);
@@ -1735,9 +1756,14 @@ interface DecomposeContext {
  * the one that means the work was measured and found wanting.
  */
 function exitCodeFor(stopReason: StopReason, green: boolean): number {
-  // 128 + SIGINT, which is what every shell reports for a process a person stopped.
-  const cancelled = 130;
-  return stopReason === "interrupted" ? cancelled : green ? 0 : 1;
+  // 128 + SIGINT, which is what every shell reports for a process a person stopped, and which
+  // a shell will report for this process anyway. The taxonomy in machine-output.ts covers the
+  // codes a caller branches on; this one is the convention.
+  const cancelledBySignal = 130;
+  if (stopReason === "interrupted") {
+    return cancelledBySignal;
+  }
+  return green ? exitCodes.acceptable : exitCodes.notAcceptable;
 }
 
 /** The planner, on a chain of its own, so what it read before deciding is on the record. */
