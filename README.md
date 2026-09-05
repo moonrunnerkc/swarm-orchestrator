@@ -420,6 +420,10 @@ something.
   would make it worth reading is five seeds across matched arms with frozen environments, and
   the frontier arms of that cost real money nobody has spent. The calibration results that do
   exist are self-run, on one machine, and labelled directional in the file itself.
+- **A full clone is still heavy.** Blob payloads, 409 MB of the tracked tree, now live outside
+  the repository with their digests committed beside them, and a shallow clone packs to about
+  19 MB. A full clone still carries the history those blobs were committed into, and shrinking
+  that means rewriting history, which is a worse trade than the download it saves.
 - **Learned routing is not on by default**, and there is a bar under turning it on: held-out
   success non-inferior within five points judged by the whole interval, at least thirty tasks
   per arm, and cheaper or faster. Nothing has cleared it yet, so routing follows the
