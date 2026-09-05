@@ -1,0 +1,68 @@
+diff --git a/src/List.test.ts b/src/List.test.ts
+index 2f99193..96d74dd 100644
+--- a/src/List.test.ts
++++ b/src/List.test.ts
+@@ -58,6 +58,15 @@ describe('List', () => {
+     expect(List.findIndex((x) => x == 0, [1, 2, 3, 5])).toEqual(Nothing)
+   })
+ 
++  test('partition', () => {
++    expect(List.partition((x) => x > 1, [1, 2, 3])).toEqual(Tuple([2, 3], [1]))
++    expect(List.partition((x) => x > 1)([1, 2, 3])).toEqual(Tuple([2, 3], [1]))
++    expect(List.partition((x) => x > 1, [])).toEqual(Tuple([], []))
++    expect(List.partition((x) => x > 0, [])).toEqual(Tuple([], []))
++    expect(List.partition((x) => x < 0, [1, 2, 3])).toEqual(Tuple([], [1, 2, 3]))
++    expect(List.partition((x) => true, [1])).toEqual(Tuple([1], []))
++  })
++
+   test('sort', () => {
+     const arr = [4, 3, 1000, 0]
+ 
+diff --git a/src/List.ts b/src/List.ts
+index 806888c..4dcbda2 100644
+--- a/src/List.ts
++++ b/src/List.ts
+@@ -78,6 +78,35 @@ function at<T>(index: number, list?: readonly T[]): any {
+   }
+ }
+ 
++/** Returns a tuple of elements that pass and fail a predicate, in their original order */
++function partition<T>(
++  f: (x: T, index: number, arr: T[]) => boolean,
++  list: T[]
++): Tuple<T[], T[]>
++function partition<T>(
++  f: (x: T, index: number, arr: T[]) => boolean
++): (list: T[]) => Tuple<T[], T[]>
++function partition<T>(
++  f: (x: T, index: number, arr: T[]) => boolean,
++  list?: T[]
++): any {
++  switch (arguments.length) {
++    case 1:
++      return (list: T[]) => partition(f, list)
++    default:
++      const accepted: T[] = []
++      const rejected: T[] = []
++      for (let i = 0; i < list!.length; i++) {
++        if (f(list![i]!, i, list!)) {
++          accepted.push(list![i]!)
++        } else {
++          rejected.push(list![i]!)
++        }
++      }
++      return Tuple(accepted, rejected)
++  }
++}
++
+ /** Sorts an array with the given comparison function */
+ function sort<T>(compare: (a: T, b: T) => Order, list: readonly T[]): T[]
+ function sort<T>(compare: (a: T, b: T) => Order): (list: readonly T[]) => T[]
+@@ -99,6 +128,7 @@ export const List = {
+   tail,
+   find,
+   findIndex,
++  partition,
+   sum,
+   sort
+ }

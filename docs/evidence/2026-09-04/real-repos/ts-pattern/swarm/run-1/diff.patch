@@ -1,0 +1,68 @@
+diff --git a/src/types/Pattern.ts b/src/types/Pattern.ts
+index 9145857..4607d52 100644
+--- a/src/types/Pattern.ts
++++ b/src/types/Pattern.ts
+@@ -15,7 +15,8 @@ export type MatcherType =
+   | 'set'
+   | 'select'
+   | 'default'
+-  | 'custom';
++  | 'custom'
++  | 'empty-object';
+ 
+ // We use a separate MatcherProtocol type to preserves
+ // the type level information (selections and excluded) used
+@@ -200,6 +201,53 @@ export type NullishPattern = Chainable<
+ 
+ export type NonNullablePattern = Chainable<GuardP<unknown, {}>, never>;
+ 
++/**
++ * `ObjectChainable` adds an `.empty` property to any pattern that matches objects.
++ */
++export type ObjectChainable<p> = Chainable<p, 'empty'> & {
++  /**
++   * `P.object.empty` is a pattern matching **plain empty objects** —
++   * values whose `typeof` is `"object"`, are not an array, Map or Set,
++   * and have no own enumerable property keys. Only `{}` and `Object.create(null)` match it.
++   */
++  empty: PlainObjectEmptyPattern<p>;
++};
++
++/**
++ * A chainable pattern for matching plain empty objects (non-null, non-array,
++ * non-Map, non-Set, with no own enumerable keys).
++ */
++export type PlainObjectEmptyChainable<pattern> = Chainable<pattern>;
++
++/**
++ * `ObjectChainable` provides `.optional()`, `.and()`, `.or()` and `.select()` support
++ * for any pattern that matches objects (i.e. anything with typeof "object" excluding null).
++ */
++export type ObjectChainable<p> = Chainable<p, 'empty'> & {
++  /**
++   * `P.object.empty` is a pattern matching **plain empty objects** —
++   * values whose `typeof` is `"object"`, are not an array, Map or Set,
++   * and have no own enumerable property keys. Only `{}` and `Object.create(null)` match it.
++   */
++  empty: PlainObjectEmptyPattern;
++};
++
++/**
++ * A plain object (non-null, non-array, non-Map, non-Set, no own enumerable keys)
++ * pattern type alias that supports `.optional()`, `.and()`, `.or()` and `.select()`.
++ */
++export type PlainObjectEmptyChainable<p> = Chainable<p>;
++
++/**
++ * `ObjectPattern` is the chainable pattern for matching objects (typeof "object" excluding null).
++ */
++export type ObjectPattern = ObjectChainable<GuardP<unknown, object>>;
++
++/**
++ * `PlainObjectEmptyPattern` is the chainable pattern for matching plain empty objects.
++ */
++export type PlainObjectEmptyPattern = Chainable<GuardP<unknown, object>, 'empty'>;
++
+ type MergeGuards<input, guard1, guard2> = [guard1, guard2] extends [
+   GuardExcludeP<any, infer narrowed1, infer excluded1>,
+   GuardExcludeP<any, infer narrowed2, infer excluded2>

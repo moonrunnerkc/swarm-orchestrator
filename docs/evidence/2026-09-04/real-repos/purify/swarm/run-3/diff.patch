@@ -1,0 +1,59 @@
+diff --git a/src/List.test.ts b/src/List.test.ts
+index 2f99193..0fe8252 100644
+--- a/src/List.test.ts
++++ b/src/List.test.ts
+@@ -66,4 +66,11 @@ describe('List', () => {
+     // immutability check
+     expect(List.sort(compare, arr)).not.toBe(arr)
+   })
++
++  test('partition', () => {
++    expect(List.partition((x) => x > 1, [1, 2, 3])).toEqual(Tuple([2, 3], [1]))
++    expect(List.partition((x) => x > 1)([1, 2, 3])).toEqual(Tuple([2, 3], [1]))
++    expect(List.partition((x) => x > 1, [])).toEqual(Tuple([], []))
++    expect(List.partition((x) => x > 1)([])).toEqual(Tuple([], []))
++  })
+ })
+diff --git a/src/List.ts b/src/List.ts
+index 806888c..a8f8d33 100644
+--- a/src/List.ts
++++ b/src/List.ts
+@@ -90,6 +90,30 @@ function sort<T>(compare: (a: T, b: T) => Order, list?: readonly T[]): any {
+   }
+ }
+ 
++/** Returns a tuple of arrays where the first contains elements the predicate accepted and the second contains rejected elements, both in original order */
++function partition<T>(
++  f: (x: T, index: number, arr: T[]) => boolean,
++  list: readonly T[]
++): Tuple<T[], T[]>
++function partition<T>(
++  f: (x: T, index: number, arr: T[]) => boolean
++): (list: readonly T[]) => Tuple<T[], T[]>
++function partition<T>(
++  f: (x: T, index: number, arr: T[]) => boolean,
++  list?: readonly T[]
++): any {
++  switch (arguments.length) {
++    case 1:
++      return (list: readonly T[]) => partition(f, list)
++    default:
++      const acc: [T[], T[]] = [[], []]
++      list!.forEach((x: T, i: number) => {
++        f(x, i, list!) ? acc[0]!.push(x) : acc[1]!.push(x)
++      })
++      return Tuple(acc[0], acc[1])
++  }
++}
++
+ export const List = {
+   init,
+   uncons,
+@@ -100,5 +124,6 @@ export const List = {
+   find,
+   findIndex,
+   sum,
+-  sort
++  sort,
++  partition
+ }

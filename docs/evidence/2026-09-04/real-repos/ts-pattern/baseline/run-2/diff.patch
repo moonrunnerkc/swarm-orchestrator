@@ -1,0 +1,303 @@
+diff --git a/src/patterns.ts b/src/patterns.ts
+index 1920974..d0868b7 100644
+--- a/src/patterns.ts
++++ b/src/patterns.ts
+@@ -43,6 +43,7 @@ import {
+   Variadic,
+   NonNullablePattern,
+   RecordP,
++  ObjectChainable,
+ } from './types/Pattern';
+ 
+ export type {
+@@ -763,6 +764,45 @@ function isNonNullable(x: unknown): x is {} {
+   return x !== null && x !== undefined;
+ }
+ 
++function isObject<T>(x: T | object): x is object {
++  return typeof x === 'object' && x !== null;
++}
++
++/**
++ * `P.object.empty` matches any value that `P.object` matches, but is not an array, Map, or Set,
++ * and has no own enumerable property keys. `{}` and `Object.create(null)` both match it,
++ * while `{ a: 1 }`, `[]`, `new Map()`, `new Set()`, `null`, and `undefined` do not.
++ *
++ * [Read the documentation for `P.object.empty` on GitHub](https://github.com/gvergnaud/ts-pattern#pobjectempty)
++ *
++ * @example
++ *  match(value)
++ *   .with(P.object.empty, () => 'a plain empty object')
++ */
++export const object_empty: ObjectChainable<GuardExcludeP<object, object, never>, never> = chainable(
++  when((value): value is object => {
++    if (typeof value !== 'object' || value === null) return false;
++    if (Array.isArray(value)) return false;
++    if (value instanceof Map) return false;
++    if (value instanceof Set) return false;
++    if (Object.keys(value).length > 0) return false;
++    return true;
++  })
++);
++
++/**
++ * `P.object` is a wildcard pattern matching any value whose `typeof` is `"object"` and which is not `null`,
++ * including arrays, Maps, Sets, and plain objects.
++ *
++ * [Read the documentation for `P.object` on GitHub](https://github.com/gvergnaud/ts-pattern#pobject-wildcard)
++ *
++ * @example
++ *  match(value)
++ *   .with(P.object, () => 'a non-null object (including arrays, Maps, Sets)')
++ */
++export const object: ObjectChainable<GuardP<object, object>, never> & { empty: typeof object_empty } = chainable(when(isObject)) as any;
++object.empty = object_empty;
++
+ type AnyConstructor = abstract new (...args: any[]) => any;
+ 
+ function isInstanceOf<T extends AnyConstructor>(classConstructor: T) {
+diff --git a/src/types/Pattern.ts b/src/types/Pattern.ts
+index 9145857..ae16795 100644
+--- a/src/types/Pattern.ts
++++ b/src/types/Pattern.ts
+@@ -681,3 +681,12 @@ export type ArrayChainable<
+     },
+     omitted
+   >;
++
++/**
++ * `ObjectChainable` is a chainable pattern for matching objects.
++ */
++export type ObjectChainable<p, omitted extends string = never> = Chainable<
++  p,
++  omitted
++>;
++
+diff --git a/tests/objects.test.ts b/tests/objects.test.ts
+index 9501427..a9dccef 100644
+--- a/tests/objects.test.ts
++++ b/tests/objects.test.ts
+@@ -126,3 +126,223 @@ describe('Records ({})', () => {
+     ).toEqual('vector1');
+   });
+ });
++
++describe('P.object', () => {
++  it('should match plain objects, arrays, Maps and Sets via isMatching', () => {
++    const o1: unknown = {};
++    expect(isMatching(P.object, o1)).toBe(true);
++    const o2: unknown = { a: 1 };
++    expect(isMatching(P.object, o2)).toBe(true);
++    const o3: unknown = [] as unknown[];
++    expect(isMatching(P.object, o3)).toBe(true);
++    const o4: unknown = [1, 2];
++    expect(isMatching(P.object, o4)).toBe(true);
++    const m1: unknown = new Map();
++    expect(isMatching(P.object, m1)).toBe(true);
++    const m2: unknown = new Map([['a', 1]]);
++    expect(isMatching(P.object, m2)).toBe(true);
++    const s1: unknown = new Set();
++    expect(isMatching(P.object, s1)).toBe(true);
++    const s2: unknown = new Set([1]);
++    expect(isMatching(P.object, s2)).toBe(true);
++    const oc: unknown = Object.create(null);
++    expect(isMatching(P.object, oc)).toBe(true);
++  });
++
++  it('should not match null, undefined or primitives via isMatching', () => {
++    expect(isMatching(P.object, null as unknown)).toBe(false);
++    expect(isMatching(P.object, undefined as unknown)).toBe(false);
++    expect(isMatching(P.object, 'str' as unknown)).toBe(false);
++    expect(isMatching(P.object, 42 as unknown)).toBe(false);
++    expect(isMatching(P.object, true as unknown)).toBe(false);
++    expect(isMatching(P.object, Symbol('s') as unknown)).toBe(false);
++  });
++
++  it('should narrow type to object in match().with()', () => {
++    const result = match<unknown | string>([1, 2, 3])
++      .with(P.object, (val) => {
++        return 'matched' as const;
++      })
++      .otherwise(() => 'nope' as const);
++    expect(result).toBe('matched');
++  });
++
++  it('should match objects with unknown input', () => {
++    type Input = unknown;
++    const fn = (input: Input) =>
++      match<Input, string>(input)
++        .with(P.object, () => 'object')
++        .otherwise(() => 'other');
++
++    expect(fn({} as object)).toBe('object');
++    expect(fn([] as unknown)).toBe('object');
++    expect(fn(new Map() as unknown)).toBe('object');
++    expect(fn(null)).toBe('other');
++    expect(fn(undefined)).toBe('other');
++  });
++
++  it('should support .optional()', () => {
++    const result1 = match<{ x?: object }>({})
++      .with({ x: P.object.optional() }, () => 'present or missing')
++      .otherwise(() => 'unexpected' as const);
++    expect(result1).toBe('present or missing');
++
++    const result2 = match<{ x: object | undefined }>({ x: undefined })
++      .with({ x: P.object.optional() }, () => 'present or missing')
++      .otherwise(() => 'unexpected' as const);
++    expect(result2).toBe('present or missing');
++
++    const result3 = match<{ x: object }>({ x: [1, 2] })
++      .with({ x: P.object.optional() }, () => 'present')
++      .otherwise(() => 'unexpected' as const);
++    expect(result3).toBe('present');
++  });
++
++  it('should support .and()', () => {
++    const result = match<unknown>([1, 2])
++      .with(P.object.and(P.array()), () => {
++        return 'matched' as const;
++      })
++      .otherwise(() => 'nope' as const);
++    expect(result).toBe('matched');
++
++    const result2 = match<unknown>('hello')
++      .with(P.object.and(P.array()), () => 'unexpected' as const)
++      .otherwise(() => 'nope' as const);
++    expect(result2).toBe('nope');
++  });
++
++  it('should support .or()', () => {
++    const result = match<unknown>(42)
++      .with(P.object.or(P.number), () => {
++        return 'matched' as const;
++      })
++      .otherwise(() => 'nope' as const);
++    expect(result).toBe('matched');
++
++    const result2 = match<unknown>({} as object)
++      .with(P.object.or(P.number), () => {
++        return 'matched' as const;
++      })
++      .otherwise(() => 'nope' as const);
++    expect(result2).toBe('matched');
++  });
++
++  it('should support .select()', () => {
++    // Anonymous select test - just verify it doesn't throw
++    const result = match([1, 2, 3])
++      .with(P.object.select(), () => 'matched' as const)
++      .otherwise(() => 'nope' as const);
++    expect(result).toBe('matched');
++  });
++
++  it('should be chainable with P.object.empty', () => {
++    type Input = unknown;
++    const fn = (input: Input) =>
++      match<Input, string>(input)
++        .with(P.object.empty, () => 'empty object')
++        .otherwise(() => 'other');
++
++    expect(fn({} as object)).toBe('empty object');
++    expect(fn(Object.create(null))).toBe('empty object');
++    expect(fn([])).toBe('other');
++    expect(fn(new Map())).toBe('other');
++    expect(fn(new Set())).toBe('other');
++    expect(fn(null)).toBe('other');
++    expect(fn(undefined)).toBe('other');
++    expect(fn({ a: 1 } as object)).toBe('other');
++    expect(fn([1])).toBe('other');
++    expect(fn(new Map([['k', 'v']]))).toBe('other');
++  });
++
++  it('should support isMatching with P.object.empty', () => {
++    expect(isMatching(P.object.empty, {} as unknown)).toBe(true);
++    expect(isMatching(P.object.empty, Object.create(null))).toBe(true);
++    expect(isMatching(P.object.empty, [] as unknown)).toBe(false);
++    expect(isMatching(P.object.empty, [1] as unknown)).toBe(false);
++    expect(isMatching(P.object.empty, new Map() as unknown)).toBe(false);
++    expect(isMatching(P.object.empty, new Set() as unknown)).toBe(false);
++    expect(isMatching(P.object.empty, { a: 1 } as unknown)).toBe(false);
++    expect(isMatching(P.object.empty, null as unknown)).toBe(false);
++    expect(isMatching(P.object.empty, undefined as unknown)).toBe(false);
++  });
++
++  it('should support .optional() on P.object.empty', () => {
++    const result1 = match<{ x?: object }>({})
++      .with({ x: P.object.empty.optional() }, () => 'present or missing')
++      .otherwise(() => 'unexpected' as const);
++    expect(result1).toBe('present or missing');
++
++    const result2 = match<{ x: object | undefined }>({ x: undefined })
++      .with({ x: P.object.empty.optional() }, () => 'present or missing')
++      .otherwise(() => 'unexpected' as const);
++    expect(result2).toBe('present or missing');
++
++    const result3 = match<{ x: object }>({ x: {} as object })
++      .with({ x: P.object.empty.optional() }, () => 'empty')
++      .otherwise(() => 'not empty' as const);
++    expect(result3).toBe('empty');
++
++    const result4 = match<{ x: object }>({ x: { a: 1 } as object })
++      .with({ x: P.object.empty.optional() }, () => 'unexpected' as const)
++      .otherwise(() => 'not empty' as const);
++    expect(result4).toBe('not empty');
++  });
++
++  it('should support .and() on P.object.empty', () => {
++    const result = match<unknown>({} as object)
++      .with(P.object.empty.and(P.when((v): v is object => typeof v === 'object' && v !== null)), () => 'matched')
++      .otherwise(() => 'nope' as const);
++    expect(result).toBe('matched');
++  });
++
++  it('should support .or() on P.object.empty', () => {
++    const result1 = match<unknown>({} as object)
++      .with(P.object.empty.or(P.number), () => 'matched')
++      .otherwise(() => 'nope' as const);
++    expect(result1).toBe('matched');
++
++    const result2 = match<unknown>(42)
++      .with(P.object.empty.or(P.number), () => 'matched')
++      .otherwise(() => 'nope' as const);
++    expect(result2).toBe('matched');
++  });
++
++  it('should support .select() on P.object.empty', () => {
++    // Just verify it compiles and matches
++    const result = match<unknown>({} as object)
++      .with(P.object.empty.select(), () => 'matched' as const)
++      .otherwise(() => 'nope' as const);
++    expect(result).toBe('matched');
++  });
++
++  it('should match empty objects with Symbol keys only', () => {
++    const sym = Symbol('k');
++    const obj: Record<symbol, number> = {};
++    obj[sym] = 1;
++    // Object.keys() only returns enumerable string-keyed properties
++    expect(Object.keys(obj).length).toBe(0);
++    expect(isMatching(P.object.empty, obj as unknown)).toBe(true);
++  });
++
++  it('P.object and P.object.empty should be accessible via the P namespace', () => {
++    // Verify they are exported on the P namespace as matchable patterns
++    expect(P.object).toBeDefined();
++    expect(typeof (P.object as any)[Symbol.for('@ts-pattern/matcher')]).toBe('function');
++    expect((P.object as any).empty).toBeDefined();
++    expect(typeof (P.object as any).empty).toBe('object');
++    expect((P.object.empty as any)).toEqual(P.object.empty);
++  });
++
++  it('P.object.empty should be independently usable', () => {
++    // Verify P.object.empty works on its own without going through P.object
++    type Input = unknown;
++    const fn = (input: Input) =>
++      match<Input, string>(input)
++        .with(P.object.empty, () => 'matched' as const)
++        .otherwise(() => 'nope' as const);
++
++    expect(fn({} as object)).toBe('matched');
++    expect(fn([] as unknown)).toBe('nope');
++  });
++});

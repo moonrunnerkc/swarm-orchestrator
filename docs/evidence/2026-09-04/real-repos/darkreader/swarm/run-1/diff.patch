@@ -1,0 +1,73 @@
+diff --git a/src/utils/array.ts b/src/utils/array.ts
+index d00b30c..1fe9d31 100644
+--- a/src/utils/array.ts
++++ b/src/utils/array.ts
+@@ -32,3 +32,18 @@ export function toArray<T>(items: ArrayLike<T>): T[] {
+     }
+     return results;
+ }
++
++/**
++ * Splits `items` into consecutive groups of at most `size` elements.
++ * @throws RangeError if `size` is not a positive integer.
++ */
++export function chunk<T>(items: readonly T[], size: number): T[][] {
++    if (size <= 0 || !Number.isInteger(size)) {
++        throw new RangeError(`Invalid size: ${size}`);
++    }
++    const results: T[][] = [];
++    for (let i = 0; i < items.length; i += size) {
++        results.push(Array.from(items.slice(i, i + size)));
++    }
++    return results;
++}
+diff --git a/tests/unit/utils/array.tests.ts b/tests/unit/utils/array.tests.ts
+new file mode 100644
+index 0000000..557a7de
+--- /dev/null
++++ b/tests/unit/utils/array.tests.ts
+@@ -0,0 +1,44 @@
++import {chunk} from '../../../src/utils/array';
++
++describe('chunk', () => {
++    it('splits an array in half when size = 2 and length = 4', () => {
++        const input = [1, 2, 3, 4];
++        expect(chunk(input, 2)).toEqual([[1, 2], [3, 4]]);
++    });
++
++    it('puts remainder in last group when size does not divide length evenly', () => {
++        expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
++    });
++
++    it('returns empty array for empty input', () => {
++        expect(chunk([], 3)).toEqual([]);
++    });
++
++    it.each([0, -1, -5, NaN, Infinity, -Infinity])(
++        'throws RangeError for size = %p',
++        (size) => {
++            expect(() => chunk([1, 2], size as unknown as number))
++                .toThrow(RangeError);
++        },
++    );
++
++    it('throws RangeError for non-integer decimal size 1.5', () => {
++        expect(() => chunk([1, 2], 1.5)).toThrow(RangeError);
++    });
++
++    it('does not mutate the input array', () => {
++        const original = [1, 2, 3];
++        const copy = [...original];
++        chunk(original, 2);
++        expect(original).toEqual(copy);
++    });
++
++    it('handles size >= length', () => {
++        expect(chunk([1, 2, 3], 5)).toEqual([[1, 2, 3]]);
++        expect(chunk([1, 2, 3], 3)).toEqual([[1, 2, 3]]);
++    });
++
++    it('handles size = 1', () => {
++        expect(chunk([1, 2, 3], 1)).toEqual([[1], [2], [3]]);
++    });
++});

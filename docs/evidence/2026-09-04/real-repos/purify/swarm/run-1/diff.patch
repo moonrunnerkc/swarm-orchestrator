@@ -1,0 +1,66 @@
+diff --git a/src/List.test.ts b/src/List.test.ts
+index 2f99193..84325d7 100644
+--- a/src/List.test.ts
++++ b/src/List.test.ts
+@@ -58,6 +58,16 @@ describe('List', () => {
+     expect(List.findIndex((x) => x == 0, [1, 2, 3, 5])).toEqual(Nothing)
+   })
+ 
++  test('partition', () => {
++    expect(List.partition((x) => x > 1, [1, 2, 3])).toEqual(Tuple([2, 3], [1]))
++    expect(List.partition((x) => x > 1, [])).toEqual(Tuple([], []))
++    expect(List.partition((x) => x > 1)([1, 2, 3])).toEqual(Tuple([2, 3], [1]))
++    expect(List.partition((x) => x > 1)([])).toEqual(Tuple([], []))
++    expect(
++      List.partition((x: number) => x < 0, [-1, 0, 1])
++    ).toEqual(Tuple([-1], [0, 1]))
++  })
++
+   test('sort', () => {
+     const arr = [4, 3, 1000, 0]
+ 
+diff --git a/src/List.ts b/src/List.ts
+index 806888c..be9e75c 100644
+--- a/src/List.ts
++++ b/src/List.ts
+@@ -90,6 +90,32 @@ function sort<T>(compare: (a: T, b: T) => Order, list?: readonly T[]): any {
+   }
+ }
+ 
++/** Splits an array into two arrays based on a predicate. The first array contains elements the predicate accepted, the second contains rejected elements, both in their original order */
++function partition<T>(
++  f: (x: T, index: number, arr: T[]) => boolean,
++  list: readonly T[]
++): Tuple<T[], T[]>
++function partition<T>(
++  f: (x: T, index: number, arr: T[]) => boolean
++): (list: readonly T[]) => Tuple<T[], T[]>
++function partition<T>(
++  f: (x: T, index: number, arr: T[]) => boolean,
++  list?: readonly T[]
++): any {
++  switch (arguments.length) {
++    case 1:
++      return (list: readonly T[]) => partition(f, list)
++    default:
++      const res = [[], []] as [T[], T[]]
++      for (let i = 0; i < list!.length; i++) {
++        f(list![i], i, list!)
++          ? res[0].push(list![i])
++          : res[1].push(list![i])
++      }
++      return Tuple(res[0], res[1])
++  }
++}
++
+ export const List = {
+   init,
+   uncons,
+@@ -99,6 +125,7 @@ export const List = {
+   tail,
+   find,
+   findIndex,
++  partition,
+   sum,
+   sort
+ }

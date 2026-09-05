@@ -1,0 +1,492 @@
+step 1: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test"}
+tool shell ok: exit code: 4
+stdout:
+
+
+  clean
+    ✔ should gracefully error if tsconfig is missing
+    ✔ should gracefully error if tsconfig does not have valid outDir
+    1) should gracefully handle JSON with comments
+    ✔ should gracefully error if tsconfig has invalid JSON
+    2) should avoid deleting .
+    3) should ensure that outDir is local to targetRoot
+    4) should remove outDir
+
+  init
+    ✔ addScripts should add a scripts section if none exists
+    ✔ addScripts should not edit existing scripts on no
+    ✔ addScripts should edit existing scripts on yes
+    ✔ addDependencies should add a deps section if none exists
+    ✔ addDependencies should not edit existing deps on no
+    ✔ addDependencies should edit existing deps on yes
+    ✔ init should read local package.json
+    ✔ init should handle missing package.json
+    ✔ init should support yarn
+    ✔ should install a default template if the source directory do not exists
+    ✔ should install template copy if src directory already exists and is empty
+    ✔ should install template copy if src directory already exists and contains files other than ts
+    ✔ should copy the template with correct contents
+    ✔ should not install the default template if the source directory already exists and does contain ts files
+
+  util
+    ✔ get should parse the correct tsconfig file
+    ✔ should throw an error if it finds a circular reference
+    ✔ should follow dependency chain caused by extends files
+    ✔ when a file contains an extends field, the base file is loaded first then overridden by the inherited files
+    ✔ when reading a file, all filepaths should be relative to the config file currently being read
+    ✔ function throws an error when reading a file that does not exist
+    ✔ isYarnUsed returns true if there's yarn.lock file only
+    ✔ isYarnUsed returns false if there's package-lock.json file only
+    ✔ isYarnUsed returns false if there're yarn.lock and package-lock.json files
+    ✔ getPkgManagerCommand returns npm by default
+    ✔ getPkgManagerCommand returns yarn
+
+
+  28 passing (38ms)
+  4 failing
+
+  1) clean
+       should gracefully handle JSON with comments:
+     Error: EINVAL: invalid argument, rmdir '.'
+  
+
+  2) clean
+       should avoid deleting .:
+     Error: EINVAL: invalid argument, rmdir '.'
+  
+
+  3) clean
+       should ensure that outDir is local to targetRoot:
+     AssertionError [ERR_ASSERTION]: Missing expected rejection.
+  
+
+  4) clean
+       should remove outDir:
+
+      AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+false !== true
+
+      + expected - actual
+
+      -false
+      +true
+      
+      at <anonymous> (test/test-clean.ts:108:16)
+      at async withFixtures (node_modules/inline-fixtures/src/fixtures.ts:89:12)
+
+
+
+----------------|---------|----------|---------|---------|------------------------------------------
+File            | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s                        
+----------------|---------|----------|---------|---------|------------------------------------------
+All files       |   96.92 |    86.75 |     100 |   96.92 |                                          
+ src            |   94.14 |    80.82 |     100 |   94.14 |                                          
+  clean.ts      |   98.11 |    85.71 |     100 |   98.11 | 44                                       
+  init.ts       |   90.88 |     73.8 |     100 |   90.88 | ...8-224,285-286,313-314,323-325,338-339 
+  util.ts       |     100 |    91.66 |     100 |     100 | 65,148                                   
+ test           |   99.65 |     92.3 |     100 |   99.65 |                                          
+  test-clean.ts |   98.27 |       85 |     100 |   98.27 | 75,111                                   
+  test-init.ts  |     100 |    97.05 |     100 |     100 | 196                                      
+  test-util.ts  |     100 |    91.66 |     100 |     100 | 182-183                                  
+----------------|---------|----------|---------|---------|------------------------------------------
+[evidence record sha256:94500ab1bde5caa57355507f66c52dc290ea74560e2130041c017887e561212b kind tool-call:shell]
+tool list <- {}
+tool list ok: .git/
+.github/
+.gitignore
+.mocharc.json
+.pre-commit-hooks.yaml
+.prettierrc.json
+CHANGELOG.md
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+LICENSE
+README.md
+build/
+coverage/
+eslint.config.js
+eslint.ignores.js
+js-green-licenses.json
+node_modules/
+package-lock.json
+package.json
+renovate.json
+src/
+template/
+test/
+tsconfig-google.json
+tsconfig.json
+[evidence record sha256:ff8538e4042ab1848e18d8e1c4d98b07ce4f78fac1d9e482c7844afc3a9775e3 kind tool-call:list]
+step 2: calling local:qwen3.8:27b
+tool read <- {"path":"src/clean.ts"}
+tool read ok: /**
+ * Copyright 2017 Google Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+import chalk = require('chalk');
+import * as fs from 'fs';
+import * as ts from 'typescript';
+
+import {Options} from './cli';
+import {getTSConfig} from './util';
+
+interface TSConfig {
+  compilerOptions: ts.CompilerOptions;
+}
+
+/**
+ * Remove files generated by the build.
+ */
+export async function clean(options: Options): Promise<boolean> {
+  const tsconfig = (await getTSConfig(options.targetRootDir)) as TSConfig;
+  if (tsconfig.compilerOptions && tsconfig.compilerOptions.outDir) {
+    const outDir = tsconfig.compilerOptions.outDir;
+    if (outDir !== '.') {
+      options.logger.error(
+        `${chalk.red('ERROR:')} ${chalk.gray('compilerOptions.outDir')} ` +
+          'cannot use the value ".".  That would delete all of our sources.',
+      );
+      return false;
+    }
+    const message = `${chalk.red('Removing')} ${outDir} ...`;
+    options.logger.log(message);
+    await fs.promises.rm(outDir, {recursive: true, force: true});
+    return true;
+  } else {
+    options.logger.error(
+      `${chalk.red('ERROR:')} The ${chalk.gray('clean')} command` +
+        ` requires ${chalk.gray('compilerOptions.outDir')} to be defined in ` +
+        'tsconfig.json.',
+    );
+    return false;
+  }
+}
+
+[evidence record sha256:c083df0178f2f7ab9077191670dc26d66b85e7a9fc6fc921a8e4014f0a82ea6f kind tool-call:read]
+tool read <- {"path":"test/test-clean.ts"}
+tool read ok: /**
+ * Copyright 2017 Google Inc. All Rights Reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import * as assert from 'assert';
+import * as fs from 'fs';
+import * as path from 'path';
+
+import {clean} from '../src/clean';
+import {nop} from '../src/util';
+
+import {withFixtures} from 'inline-fixtures';
+import {describe, it} from 'mocha';
+
+describe('clean', () => {
+  const OPTIONS = {
+    gtsRootDir: path.resolve(__dirname, '../..'),
+    targetRootDir: './',
+    dryRun: false,
+    yes: false,
+    no: false,
+    logger: {log: nop, error: nop, dir: nop},
+  };
+
+  it('should gracefully error if tsconfig is missing', () => {
+    return assert.rejects(() =>
+      withFixtures({}, async () => {
+        await clean(OPTIONS);
+      }),
+    );
+  });
+
+  it('should gracefully error if tsconfig does not have valid outDir', () => {
+    return withFixtures({'tsconfig.json': JSON.stringify({})}, async () => {
+      const deleted = await clean(OPTIONS);
+      assert.strictEqual(deleted, false);
+    });
+  });
+
+  it('should gracefully handle JSON with comments', () => {
+    const invalidJson = `
+    {
+      // hah, comments in JSON, what a world
+      compilerOptions: {outDir: '.'}
+    }`;
+    return withFixtures({'tsconfig.json': invalidJson}, async () => {
+      await clean(OPTIONS);
+    });
+  });
+
+  it('should gracefully error if tsconfig has invalid JSON', () => {
+    const invalidJson = "silly bear, this isn't JSON!";
+    return withFixtures({'tsconfig.json': invalidJson}, async () => {
+      await assert.rejects(clean(OPTIONS), /Unable to parse/);
+    });
+  });
+
+  it('should avoid deleting .', () => {
+    return withFixtures(
+      {'tsconfig.json': JSON.stringify({compilerOptions: {outDir: '.'}})},
+      async () => {
+        const deleted = await clean(OPTIONS);
+        assert.strictEqual(deleted, false);
+      },
+    );
+  });
+
+  it('should ensure that outDir is local to targetRoot', () => {
+    return assert.rejects(() =>
+      withFixtures(
+        {
+          'tsconfig.json': JSON.stringify({
+            compilerOptions: {outDir: '../out'},
+          }),
+        },
+        async () => {
+          const deleted = await clean(OPTIONS);
+          assert.strictEqual(deleted, false);
+        },
+      ),
+    );
+  });
+
+  it('should remove outDir', () => {
+    const OUT = 'outputDirectory';
+    return withFixtures(
+      {
+        'tsconfig.json': JSON.stringify({compilerOptions: {outDir: OUT}}),
+        [OUT]: {},
+      },
+      async dir => {
+        const outputPath = path.join(dir, OUT);
+        // make sure the output directory exists.
+        fs.accessSync(outputPath);
+        const deleted = await clean(OPTIONS);
+        assert.strictEqual(deleted, true);
+        // make sure the directory has been deleted.
+        assert.throws(() => {
+          fs.accessSync(outputPath);
+        });
+      },
+    );
+  });
+});
+
+[evidence record sha256:539c27ce90e95b0e7de550f83b97273cb87dba51d2f969b21f3ffe29a737cc32 kind tool-call:read]
+step 3: calling local:qwen3.8:27b
+tool declare_file_set <- {"files":"[\"src/clean.ts\"]"}
+tool declare_file_set ok: declared 1 file(s): src/clean.ts
+[evidence record sha256:4b086273fd553412e4c814734373bcfcac59cf4f8a42c64d81848a090c7cfc19 kind tool-call:declare_file_set]
+step 4: calling local:qwen3.8:27b
+tool edit <- {"path":"src/clean.ts","find":"    const outDir = tsconfig.compilerOptions.outDir;\n    if (outDir !== '.') {\n      options.logger.error(\n        `${chalk.red('ERROR:')} ${chalk.gray('compilerOptions.outDir')} ` +\n          'cannot use the value \".\".  That would delete all of our sources.',\n      );\n      return false;\n    }\n    const message = `${chalk.red('Removing')} ${outDir} ...`;","replace":"    const outDir = tsconfig.compilerOptions.outDir;\n    if (outDir === '.') {\n      options.logger.error(\n        `${chalk.red('ERROR:')} ${chalk.gray('compilerOptions.outDir')} ` +\n          'cannot use the value \".\".  That would delete all of our sources.',\n      );\n      return false;\n    }\n    const targetRootDir = options.targetRootDir || '.';\n    const outDirPath = path.resolve(targetRootDir, outDir);\n    const targetRootPath = path.resolve(targetRootDir);\n    if (\n      outDirPath !== targetRootPath &&\n      !outDirPath.startsWith(targetRootPath + path.sep)\n    ) {\n      options.logger.error(\n        `${chalk.red('ERROR:')} ${chalk.gray('compilerOptions.outDir')} ` +\n          'must be a directory local to the target root.',\n      );\n      return false;\n    }\n    const message = `${chalk.red('Removing')} ${outDir} ...`;"}
+tool edit ok: replaced 1 occurrence(s) in src/clean.ts
+[evidence record sha256:8e4bbdc4ab374824a84f61c971e38b94359b908d565bea163a57916b7c6dff21 kind tool-call:edit]
+step 5: calling local:qwen3.8:27b
+tool edit <- {"path":"src/clean.ts","find":"import * as fs from 'fs';\nimport * as ts from 'typescript';","replace":"import * as fs from 'fs';\nimport * as path from 'path';\nimport * as ts from 'typescript';"}
+tool edit ok: replaced 1 occurrence(s) in src/clean.ts
+[evidence record sha256:2a6f41a5ce0a3f5b6805408e671815c652d647be293f00c497c758a2e9baeb5a kind tool-call:edit]
+step 6: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test"}
+tool shell ok: exit code: 1
+stdout:
+
+
+  clean
+    ✔ should gracefully error if tsconfig is missing
+    ✔ should gracefully error if tsconfig does not have valid outDir
+    ✔ should gracefully handle JSON with comments
+    ✔ should gracefully error if tsconfig has invalid JSON
+    ✔ should avoid deleting .
+    1) should ensure that outDir is local to targetRoot
+    ✔ should remove outDir
+
+  init
+    ✔ addScripts should add a scripts section if none exists
+    ✔ addScripts should not edit existing scripts on no
+    ✔ addScripts should edit existing scripts on yes
+    ✔ addDependencies should add a deps section if none exists
+    ✔ addDependencies should not edit existing deps on no
+    ✔ addDependencies should edit existing deps on yes
+    ✔ init should read local package.json
+    ✔ init should handle missing package.json
+    ✔ init should support yarn
+    ✔ should install a default template if the source directory do not exists
+    ✔ should install template copy if src directory already exists and is empty
+    ✔ should install template copy if src directory already exists and contains files other than ts
+    ✔ should copy the template with correct contents
+    ✔ should not install the default template if the source directory already exists and does contain ts files
+
+  util
+    ✔ get should parse the correct tsconfig file
+    ✔ should throw an error if it finds a circular reference
+    ✔ should follow dependency chain caused by extends files
+    ✔ when a file contains an extends field, the base file is loaded first then overridden by the inherited files
+    ✔ when reading a file, all filepaths should be relative to the config file currently being read
+    ✔ function throws an error when reading a file that does not exist
+    ✔ isYarnUsed returns true if there's yarn.lock file only
+    ✔ isYarnUsed returns false if there's package-lock.json file only
+    ✔ isYarnUsed returns false if there're yarn.lock and package-lock.json files
+    ✔ getPkgManagerCommand returns npm by default
+    ✔ getPkgManagerCommand returns yarn
+
+
+  31 passing (35ms)
+  1 failing
+
+  1) clean
+       should ensure that outDir is local to targetRoot:
+     AssertionError [ERR_ASSERTION]: Missing expected rejection.
+  
+
+
+
+----------------|---------|----------|---------|---------|------------------------------------------
+File            | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s                        
+----------------|---------|----------|---------|---------|------------------------------------------
+All files       |   97.21 |    88.15 |     100 |   97.21 |                                          
+ src            |   94.45 |    81.33 |     100 |   94.45 |                                          
+  clean.ts      |     100 |    88.88 |     100 |     100 | 42                                       
+  init.ts       |   90.88 |     73.8 |     100 |   90.88 | ...8-224,285-286,313-314,323-325,338-339 
+  util.ts       |     100 |    91.66 |     100 |     100 | 65,148                                   
+ test           |     100 |     94.8 |     100 |     100 |                                          
+  test-clean.ts |     100 |    94.73 |     100 |     100 | 41                                       
+  test-init.ts  |     100 |    97.05 |     100 |     100 | 196                                      
+  test-util.ts  |     100 |    91.66 |     100 |     100 | 182-183                                  
+----------------|---------|----------|---------|---------|------------------------------------------
+[evidence record sha256:c14e0bf601bbe1cf151b0a8250a8b1532a4567731a14812b9feec2ddbeb09a2c kind tool-call:shell]
+step 7: calling local:qwen3.8:27b
+tool edit <- {"path":"src/clean.ts","find":"    const targetRootDir = options.targetRootDir || '.';\n    const outDirPath = path.resolve(targetRootDir, outDir);\n    const targetRootPath = path.resolve(targetRootDir);\n    if (\n      outDirPath !== targetRootPath &&\n      !outDirPath.startsWith(targetRootPath + path.sep)\n    ) {\n      options.logger.error(\n        `${chalk.red('ERROR:')} ${chalk.gray('compilerOptions.outDir')} ` +\n          'must be a directory local to the target root.',\n      );\n      return false;\n    }","replace":"    const targetRootDir = options.targetRootDir || '.';\n    const outDirPath = path.resolve(targetRootDir, outDir);\n    const targetRootPath = path.resolve(targetRootDir);\n    if (\n      outDirPath !== targetRootPath &&\n      !outDirPath.startsWith(targetRootPath + path.sep)\n    ) {\n      throw new Error(\n        `${chalk.red('ERROR:')} ${chalk.gray('compilerOptions.outDir')} ` +\n          'must be a directory local to the target root.',\n      );\n    }"}
+tool edit ok: replaced 1 occurrence(s) in src/clean.ts
+[evidence record sha256:ab8f1d08be0dea2b6c6b961d872267f5ab71749486943e96befcbde69daeeb9e kind tool-call:edit]
+step 8: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test"}
+tool shell ok: exit code: 0
+stdout:
+
+
+  clean
+    ✔ should gracefully error if tsconfig is missing
+    ✔ should gracefully error if tsconfig does not have valid outDir
+    ✔ should gracefully handle JSON with comments
+    ✔ should gracefully error if tsconfig has invalid JSON
+    ✔ should avoid deleting .
+    ✔ should ensure that outDir is local to targetRoot
+    ✔ should remove outDir
+
+  init
+    ✔ addScripts should add a scripts section if none exists
+    ✔ addScripts should not edit existing scripts on no
+    ✔ addScripts should edit existing scripts on yes
+    ✔ addDependencies should add a deps section if none exists
+    ✔ addDependencies should not edit existing deps on no
+    ✔ addDependencies should edit existing deps on yes
+    ✔ init should read local package.json
+    ✔ init should handle missing package.json
+    ✔ init should support yarn
+    ✔ should install a default template if the source directory do not exists
+    ✔ should install template copy if src directory already exists and is empty
+    ✔ should install template copy if src directory already exists and contains files other than ts
+    ✔ should copy the template with correct contents
+    ✔ should not install the default template if the source directory already exists and does contain ts files
+
+  util
+    ✔ get should parse the correct tsconfig file
+    ✔ should throw an error if it finds a circular reference
+    ✔ should follow dependency chain caused by extends files
+    ✔ when a file contains an extends field, the base file is loaded first then overridden by the inherited files
+    ✔ when reading a file, all filepaths should be relative to the config file currently being read
+    ✔ function throws an error when reading a file that does not exist
+    ✔ isYarnUsed returns true if there's yarn.lock file only
+    ✔ isYarnUsed returns false if there's package-lock.json file only
+    ✔ isYarnUsed returns false if there're yarn.lock and package-lock.json files
+    ✔ getPkgManagerCommand returns npm by default
+    ✔ getPkgManagerCommand returns yarn
+
+
+  32 passing (33ms)
+
+----------------|---------|----------|---------|---------|------------------------------------------
+File            | % Stmts | % Branch | % Funcs | % Lines | Uncovered Line #s                        
+----------------|---------|----------|---------|---------|------------------------------------------
+All files       |   97.12 |    87.58 |     100 |   97.12 |                                          
+ src            |   94.44 |    81.33 |     100 |   94.44 |                                          
+  clean.ts      |     100 |    88.88 |     100 |     100 | 42                                       
+  init.ts       |   90.88 |     73.8 |     100 |   90.88 | ...8-224,285-286,313-314,323-325,338-339 
+  util.ts       |     100 |    91.66 |     100 |     100 | 65,148                                   
+ test           |   99.82 |    93.58 |     100 |   99.82 |                                          
+  test-clean.ts |   99.13 |       90 |     100 |   99.13 | 90                                       
+  test-init.ts  |     100 |    97.05 |     100 |     100 | 196                                      
+  test-util.ts  |     100 |    91.66 |     100 |     100 | 182-183                                  
+----------------|---------|----------|---------|---------|------------------------------------------
+[evidence record sha256:aac41276c6aca46b2aeffa8049b20b65c96bda59595c4586c273b11df2fa6274 kind tool-call:shell]
+step 9: calling local:qwen3.8:27b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"sha256:aac41276c6aca46b2aeffa8049b20b65c96bda59595c4586c273b11df2fa6274","recordKind":"tool-call:shell","narrative":"npm run --silent test exits 0 with all 32 tests passing"}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:3866cf460517630b097d63fd9c2691ce85a2f9a455f8de75ac54e3b3df9541c4 kind tool-call:claim]
+step 10: calling local:qwen3.8:27b
+claim (unverified): All 32 tests pass (verified: exit code 0).
+
+**Defect** (in `src/clean.ts`, the `clean` function):
+1. **Inverted guard** — the check was `if (outDir !== '.')`, so it rejected every valid outDir and allowed deleting `.` (causing the `rmdir '.'` EINVAL errors). Fixed to `if (outDir === '.')`.
+2. **Missing locality check** — there was no validation that `outDir` stays inside the target root, so a config like `outDir: '../out'` would delete a sibling directory. Added a check that resolves `outDir` against `options.targetRootDir` and throws if the resolved path is not the target root or a descendant of it (as the test expects a rejection).
+
+No tests were modified.
+stopped: completed after 10 steps, 62472 tokens
+gate typecheck not-applicable: package.json declares no typecheck script [evidence record sha256:2937696362f6458fe282589c221bc4c8fee1e95f3a2fcdf7bdda33a9c257023a]
+gate lint passed: the command exited 0 [evidence record sha256:d6ad16636ab2978b0604c3b9e0adf44d809fc2fed7c780caaef5644fabd427a7]
+gate format not-applicable: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging [evidence record sha256:9b21ee9385ec49965029e8ae457e7fa57f61ec2cc75ef84219ddfa2809af47cb]
+gate tests passed: the command exited 0 [evidence record sha256:6710b8fd6ed17c6c7878c22560b442803b4b32bce9487ebf8cadeb01af026e4e]
+gate file-set passed: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited [evidence record sha256:f9099c60239df9e81f691afb294cbb5a709f195e3ad7da8989bdcd9967b219c7]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:04cbfbf05767e77d5767fb5772e9a7e62cec4ae74d421e013fe257c5eccb892c]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:1205c218e3298f2b2a033cfedf23b7ee3ea0c6b62794e4df970e745e5f7a0cb4]
+gate behaviour-probe passed: 0 changed function(s) still answer to their inputs. [evidence record sha256:6c58dc822ecce8f4da2f5c78e5027adb86eef9574d10c896a93cc27d285aa5df]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 14 added line(s) [evidence record sha256:e7266e1b60d19b6e11de2e4a4a1451681e01cfd9a22df770aaa8fb06aa7e1e0b]
+
+gates:
+  n/a      typecheck: package.json declares no typecheck script
+  passed   lint: the command exited 0
+  n/a      format: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging
+  passed   tests: the command exited 0
+  passed   file-set: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited
+  passed   placeholder: no placeholder marker was introduced by this change
+  passed   secret-scan: no known credential pattern appears in the added lines
+  passed   behaviour-probe: 0 changed function(s) still answer to their inputs.
+  passed   diff-budget (advisory): within budget: 1 file(s) and 14 added line(s)
+
+routing reward: 0.552 (green with 0 retries, 97s, and $0.0000)
+[signing] the Secret Service keyring would not take a new key (secret-tool store failed: ), so the bundle is signed with a per-run key
+
+evidence bundle: /out/bundle
+verify it anywhere: node /out/bundle/verify.mjs /out/bundle
+review it: open /out/bundle/review.html
+what this run produced
+
+  the page a person reads: /out/bundle/review.html
+  the bundle a stranger verifies: /out/bundle
+  its own verifier, needing nothing installed: node /out/bundle/verify.mjs /out/bundle
+  the chain every record is on: /out/bundle/ledger.jsonl
+
+  59 records. The harness verified 1 claim(s) and refused 0.
+  bundle verified in this run: verify.mjs exited 0

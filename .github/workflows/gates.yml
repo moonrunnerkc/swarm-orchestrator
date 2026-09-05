@@ -36,6 +36,9 @@ jobs:
       # A document pointing at a file that is not there is the defect the 08-18 run found in
       # redteam/pass5. A reader following the pointer discovers it; nothing else does.
       - run: node scripts/check-doc-paths.mjs
+      # Bulk evidence blobs were the whole of this repository's weight. Removing them once fixed
+      # a number; a check that fails when they come back fixes the cause.
+      - run: node scripts/check-repo-weight.mjs
       - run: npm run gates
       # The 8-harness smoke, cheap enough for every push. Without it a harness that
       # stopped loading, or one built against a stale .swarm/fuzz-build, is only found

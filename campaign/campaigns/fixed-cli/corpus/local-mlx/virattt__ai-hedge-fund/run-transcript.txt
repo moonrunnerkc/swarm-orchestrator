@@ -1,0 +1,797 @@
+step 1: calling local:qwen3.8:27b
+tool shell <- {"command":"pytest -q 2>&1 | tail -50"}
+tool shell ok: exit code: 1
+the command was killed for exceeding its timeout
+[evidence record sha256:b0c8e198e93a0e05a752cef3f9ebf754307815cf366c4acb929ee2af5849160c kind tool-call:shell]
+tool list <- {}
+tool list ok: .campaign/
+.env.example
+.git/
+.github/
+.gitignore
+.pytest_cache/
+LICENSE
+README.md
+ROADMAP.md
+VISION.md
+hedge_fund/
+poetry.lock
+pyproject.toml
+[evidence record sha256:96dea0f6fbf1b06fcf332c166eb528e4468a17fbc50aa1fd598be2a0ac4311aa kind tool-call:list]
+step 2: calling local:qwen3.8:27b
+tool shell <- {"command":"ls hedge_fund/ && timeout 300 pytest -q -x --timeout=30 2>&1 | tail -30","timeoutMs":330000}
+tool shell failed: denied: "ls hedge_fund/ && timeout 300 pytest -q -x --timeout=30 2>&1 | tail -30" is not on the shell allowlist. Confirmation was declined.
+[evidence record sha256:b65e609e3f6a73f6f93769eed8b9dfa540df7b4f5c95a2a79bb6147aec847e87 kind tool-call:shell]
+step 3: calling local:qwen3.8:27b
+tool list <- {"path":"hedge_fund"}
+tool list ok: README.md
+__init__.py
+__pycache__/
+backtesting/
+brokers/
+conftest.py
+data/
+event_study/
+features/
+fund/
+llm/
+models.py
+paths.py
+pipeline/
+portfolio/
+risk/
+run.py
+signals/
+strategies/
+tui/
+validation/
+[evidence record sha256:96715d134d8ef33f834e2cbe617538ae9ec2f511ea94f4389722b6eb15e9e7a9 kind tool-call:list]
+tool read <- {"path":"pyproject.toml"}
+tool read ok: [tool.poetry]
+name = "aihf"
+version = "2.2.0"
+description = "An AI-powered hedge fund: LLM investor agents and quant alpha models you can build, backtest, and run from your terminal"
+authors = ["Virat Singh <virat.dot@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/virattt/ai-hedge-fund"
+repository = "https://github.com/virattt/ai-hedge-fund"
+keywords = ["ai", "hedge-fund", "trading", "llm", "backtesting", "agents"]
+packages = [
+    { include = "hedge_fund", from = "." }
+]
+exclude = [
+    "hedge_fund/**/test_*.py",
+    "hedge_fund/conftest.py",
+]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+langchain-anthropic = "0.3.5"
+langchain-openai = "^0.3.5"
+langchain-deepseek = "^0.1.2"
+langchain-google-genai = "^2.0.11"
+langchain-xai = "^0.2.5"
+pandas = "^2.1.0"
+numpy = "^1.24.0"
+python-dotenv = "1.0.0"
+matplotlib = "^3.9.2"
+requests = "^2.32.0"
+rich = "^14.2.0"
+pydantic = "^2.4.2"
+scipy = "^1.11.0"
+pyyaml = "^6.0.3"
+textual = "^8.2.8"
+
+[tool.poetry.scripts]
+aihf = "hedge_fund.run:main"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+black = "^23.7.0"
+isort = "^5.12.0"
+flake8 = "^6.1.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 420
+target-version = ['py311']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+force_alphabetical_sort_within_sections = true
+
+[evidence record sha256:c4534555e549d352d3ac461744b77691ad38be8a8c430cb848423cc45a565b5a kind tool-call:read]
+step 4: calling local:qwen3.8:27b
+tool search <- {"pattern":"^def test_|^class Test","path":"hedge_fund","maxResults":100}
+tool search ok: hedge_fund/backtesting/test_backtest.py:72: class TestRunAlpha:
+hedge_fund/backtesting/test_backtest.py:167: class TestMetrics:
+hedge_fund/backtesting/test_backtest.py:204: def test_pead_alpha_live(fd):
+hedge_fund/backtesting/test_fund.py:87: def test_grid_daily_is_identity():
+hedge_fund/backtesting/test_fund.py:91: def test_grid_weekly_takes_last_trading_day_of_each_iso_week():
+hedge_fund/backtesting/test_fund.py:98: def test_grid_monthly_splits_where_weekly_does_not():
+hedge_fund/backtesting/test_fund.py:105: def test_grid_unknown_cadence_raises():
+hedge_fund/backtesting/test_fund.py:114: def test_happy_path_hand_computed():
+hedge_fund/backtesting/test_fund.py:136: def test_positions_carry_across_cycles_not_restart():
+hedge_fund/backtesting/test_fund.py:144: def test_deterministic_json_round_trip():
+hedge_fund/backtesting/test_fund.py:151: def test_on_cycle_fires_per_tick_in_order():
+hedge_fund/backtesting/test_fund.py:161: def test_universe_round_trips_onto_the_result():
+hedge_fund/backtesting/test_fund.py:168: def test_missing_benchmark_raises():
+hedge_fund/backtesting/test_fund.py:174: def test_grid_follows_mandate_cadence():
+hedge_fund/brokers/test_sim.py:9: def test_buy_updates_cash_and_position():
+hedge_fund/brokers/test_sim.py:18: def test_sell_updates_cash_and_position():
+hedge_fund/brokers/test_sim.py:26: def test_position_removed_at_zero():
+hedge_fund/brokers/test_sim.py:33: def test_sell_past_zero_creates_short():
+hedge_fund/brokers/test_sim.py:40: def test_nonpositive_price_raises():
+hedge_fund/brokers/test_sim.py:46: def test_positions_returns_a_copy():
+hedge_fund/data/test_cached.py:28: def test_cache_hit_skips_wrapped_client(tmp_path):
+hedge_fund/data/test_cached.py:40: def test_different_params_different_entries(tmp_path):
+hedge_fund/data/test_cached.py:50: def test_refresh_busts_cache(tmp_path):
+hedge_fund/data/test_cached.py:59: def test_none_item_is_cached(tmp_path):
+hedge_fund/data/test_cached.py:69: def test_item_rehydrates(tmp_path):
+hedge_fund/data/test_cached.py:81: def test_scalar_cached(tmp_path):
+hedge_fund/data/test_client.py:25: def test_prices(fd: FDClient, ticker: str) -> None:
+hedge_fund/data/test_client.py:33: def test_financial_metrics(fd: FDClient, ticker: str) -> None:
+hedge_fund/data/test_client.py:48: def test_earnings(fd: FDClient, ticker: str) -> None:
+hedge_fund/data/test_client.py:58: def test_news(fd: FDClient, ticker: str) -> None:
+hedge_fund/data/test_client.py:66: def test_insider_trades(fd: FDClient, ticker: str) -> None:
+hedge_fund/data/test_client.py:74: def test_company_facts(fd: FDClient, ticker: str) -> None:
+hedge_fund/data/test_client.py:82: def test_earnings_history(fd: FDClient, ticker: str) -> None:
+hedge_fund/data/test_client_contract.py:58: def test_http_500_raises(client):
+hedge_fund/data/test_client_contract.py:65: def test_http_401_raises(client):
+hedge_fund/data/test_client_contract.py:72: def test_network_error_raises(client):
+hedge_fund/data/test_client_contract.py:78: def test_404_means_no_data_not_failure(client):
+hedge_fund/data/test_client_contract.py:84: def test_429_retries_then_raises_when_exhausted(client, monkeypatch):
+hedge_fund/data/test_client_contract.py:92: def test_429_then_success_recovers(client, monkeypatch):
+hedge_fund/data/test_client_contract.py:109: def test_financial_metrics_filters_on_filing_date(client):
+hedge_fund/data/test_client_contract.py:132: def test_follows_next_page_url_to_the_end(client):
+hedge_fund/data/test_client_contract.py:156: def test_no_next_page_url_means_single_request(client):
+hedge_fund/data/test_client_contract.py:163: def test_mid_walk_404_keeps_accumulated_rows(client):
+hedge_fund/data/test_client_contract.py:176: def test_mid_walk_500_still_fails_loud(client):
+hedge_fund/data/test_client_contract.py:190: def test_financial_metrics_parses_filing_metadata(client):
+hedge_fund/event_study/test_event_study.py:25: class TestFitMarketModel:
+hedge_fund/event_study/test_event_study.py:52: class TestComputeAbnormalReturns:
+hedge_fund/event_study/test_event_study.py:62: class TestSumCar:
+hedge_fund/event_study/test_event_study.py:73: class TestTtestCars:
+hedge_fund/event_study/test_event_study.py:86: class TestBootstrapCI:
+hedge_fund/event_study/test_event_study.py:107: class TestRetrospectiveFilter:
+hedge_fund/event_study/test_event_study.py:130: class TestPlots:
+hedge_fund/event_study/test_event_study.py:193: def test_compute_car_live(fd):
+hedge_fund/event_study/test_event_study.py:206: def test_compute_car_multi_ticker(fd):
+hedge_fund/features/test_snapshot.py:50: def test_as_of_passes_through_to_data_client():
+hedge_fund/features/test_snapshot.py:58: def test_insufficient_data_raises():
+hedge_fund/features/test_snapshot.py:64: def test_aggregates():
+hedge_fund/features/test_snapshot.py:81: def test_market_cap_comes_from_pit_metrics_not_facts():
+hedge_fund/features/test_snapshot.py:93: def test_content_hash_stable_and_sensitive():
+hedge_fund/features/test_snapshot.py:106: def test_same_data_different_as_of_same_render_and_hash():
+hedge_fund/features/test_snapshot.py:117: def test_render_contains_the_facts():
+hedge_fund/fund/test_spec.py:22: def test_yaml_load_happy_path(tmp_path):
+hedge_fund/fund/test_spec.py:44: def test_load_strategy(tmp_path):
+hedge_fund/fund/test_spec.py:58: def test_defaults_applied():
+hedge_fund/fund/test_spec.py:68: def test_rebalance_cadence_validated():
+hedge_fund/fund/test_spec.py:74: def test_benchmark_uppercased():
+hedge_fund/fund/test_spec.py:78: def test_typo_key_rejected():
+hedge_fund/fund/test_spec.py:83: def test_mandate_carries_no_tickers():
+hedge_fund/fund/test_spec.py:90: def test_legacy_universe_key_is_dropped_on_load(tmp_path):
+hedge_fund/fund/test_spec.py:109: def test_normalize_universe():
+hedge_fund/fund/test_spec.py:117: def test_duplicate_strategy_name_rejected():
+hedge_fund/fund/test_spec.py:126: def test_strategy_needs_models():
+hedge_fund/fund/test_spec.py:131: def test_unknown_analyst_names_valid_keys():
+hedge_fund/fund/test_spec.py:138: def test_fund_staffs_each_strategy_once():
+hedge_fund/fund/test_strategy_library.py:9: def test_shipped_strategy_library_is_valid():
+hedge_fund/llm/test_client.py:32: def test_every_supported_provider_constructs(provider, keyed):
+hedge_fund/llm/test_client.py:41: def test_registry_and_clients_agree():
+hedge_fund/llm/test_client.py:49: def test_missing_key_names_the_variable(monkeypatch):
+hedge_fund/llm/test_client.py:59: def test_unlisted_model_falls_back_to_anthropic(keyed):
+hedge_fund/llm/test_client.py:66: def test_kimi_accepts_moonshot_key(monkeypatch):
+hedge_fund/llm/test_client.py:74: def test_provider_for_reads_the_registry():
+hedge_fund/llm/test_client.py:103: class TestStreaming:
+hedge_fund/llm/test_client.py:146: class TestFlatten:
+hedge_fund/llm/test_watch.py:27: class TestOrder:
+hedge_fund/llm/test_watch.py:58: class TestChunking:
+hedge_fund/llm/test_watch.py:79: class TestEscapes:
+hedge_fund/llm/test_watch.py:109: class TestOtherShapes:
+hedge_fund/pipeline/test_execution.py:11: def test_floor_sizing_never_overshoots():
+hedge_fund/pipeline/test_execution.py:18: def test_delta_against_existing_position():
+hedge_fund/pipeline/test_execution.py:27: def test_held_name_missing_from_targets_is_closed():
+hedge_fund/pipeline/test_execution.py:34: def test_subshare_delta_emits_nothing():
+hedge_fund/pipeline/test_execution.py:39: def test_sells_before_buys_alphabetical():
+hedge_fund/pipeline/test_execution.py:52: def test_short_target_sells_past_zero():
+hedge_fund/pipeline/test_run_cycle.py:75: def test_full_cycle_record_is_consistent():
+hedge_fund/pipeline/test_run_cycle.py:105: def test_netting_math_two_strategies_unequal_slices():
+hedge_fund/pipeline/test_run_cycle.py:132: def test_slices_normalize():
+hedge_fund/pipeline/test_run_cycle.py:149: def test_deterministic_and_json_round_trips():
+hedge_fund/pipeline/test_run_cycle.py:163: def test_second_cycle_rebalances_not_restarts():
+hedge_fund/pipeline/test_run_cycle.py:181: def test_all_abstain_closes_the_book_to_flat():
+hedge_fund/pipeline/test_run_cycle.py:200: def test_unpriced_unowned_ticker_skipped_and_analysts_never_called():
+[evidence record sha256:0d433df50a232592802560581f05d6138e0248cbc1518379af87e6894bb1580b kind tool-call:search]
+tool read <- {"path":"hedge_fund/conftest.py"}
+tool read ok: """Load .env for v2 tests so FINANCIAL_DATASETS_API_KEY is available."""
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+[evidence record sha256:c37f7689f2c16bb834a545e9010aac20d71b68f13ce7e698ecef585b2726d2eb kind tool-call:read]
+step 5: calling local:qwen3.8:27b
+tool search <- {"pattern":"^def test_|^class Test","path":"hedge_fund","maxResults":300}
+tool search ok: hedge_fund/backtesting/test_backtest.py:72: class TestRunAlpha:
+hedge_fund/backtesting/test_backtest.py:167: class TestMetrics:
+hedge_fund/backtesting/test_backtest.py:204: def test_pead_alpha_live(fd):
+hedge_fund/backtesting/test_fund.py:87: def test_grid_daily_is_identity():
+hedge_fund/backtesting/test_fund.py:91: def test_grid_weekly_takes_last_trading_day_of_each_iso_week():
+hedge_fund/backtesting/test_fund.py:98: def test_grid_monthly_splits_where_weekly_does_not():
+hedge_fund/backtesting/test_fund.py:105: def test_grid_unknown_cadence_raises():
+hedge_fund/backtesting/test_fund.py:114: def test_happy_path_hand_computed():
+hedge_fund/backtesting/test_fund.py:136: def test_positions_carry_across_cycles_not_restart():
+hedge_fund/backtesting/test_fund.py:144: def test_deterministic_json_round_trip():
+hedge_fund/backtesting/test_fund.py:151: def test_on_cycle_fires_per_tick_in_order():
+hedge_fund/backtesting/test_fund.py:161: def test_universe_round_trips_onto_the_result():
+hedge_fund/backtesting/test_fund.py:168: def test_missing_benchmark_raises():
+hedge_fund/backtesting/test_fund.py:174: def test_grid_follows_mandate_cadence():
+hedge_fund/brokers/test_sim.py:9: def test_buy_updates_cash_and_position():
+hedge_fund/brokers/test_sim.py:18: def test_sell_updates_cash_and_position():
+hedge_fund/brokers/test_sim.py:26: def test_position_removed_at_zero():
+hedge_fund/brokers/test_sim.py:33: def test_sell_past_zero_creates_short():
+hedge_fund/brokers/test_sim.py:40: def test_nonpositive_price_raises():
+hedge_fund/brokers/test_sim.py:46: def test_positions_returns_a_copy():
+hedge_fund/data/test_cached.py:28: def test_cache_hit_skips_wrapped_client(tmp_path):
+hedge_fund/data/test_cached.py:40: def test_different_params_different_entries(tmp_path):
+hedge_fund/data/test_cached.py:50: def test_refresh_busts_cache(tmp_path):
+hedge_fund/data/test_cached.py:59: def test_none_item_is_cached(tmp_path):
+hedge_fund/data/test_cached.py:69: def test_item_rehydrates(tmp_path):
+hedge_fund/data/test_cached.py:81: def test_scalar_cached(tmp_path):
+hedge_fund/data/test_client.py:25: def test_prices(fd: FDClient, ticker: str) -> None:
+hedge_fund/data/test_client.py:33: def test_financial_metrics(fd: FDClient, ticker: str) -> None:
+hedge_fund/data/test_client.py:48: def test_earnings(fd: FDClient, ticker: str) -> None:
+hedge_fund/data/test_client.py:58: def test_news(fd: FDClient, ticker: str) -> None:
+hedge_fund/data/test_client.py:66: def test_insider_trades(fd: FDClient, ticker: str) -> None:
+hedge_fund/data/test_client.py:74: def test_company_facts(fd: FDClient, ticker: str) -> None:
+hedge_fund/data/test_client.py:82: def test_earnings_history(fd: FDClient, ticker: str) -> None:
+hedge_fund/data/test_client_contract.py:58: def test_http_500_raises(client):
+hedge_fund/data/test_client_contract.py:65: def test_http_401_raises(client):
+hedge_fund/data/test_client_contract.py:72: def test_network_error_raises(client):
+hedge_fund/data/test_client_contract.py:78: def test_404_means_no_data_not_failure(client):
+hedge_fund/data/test_client_contract.py:84: def test_429_retries_then_raises_when_exhausted(client, monkeypatch):
+hedge_fund/data/test_client_contract.py:92: def test_429_then_success_recovers(client, monkeypatch):
+hedge_fund/data/test_client_contract.py:109: def test_financial_metrics_filters_on_filing_date(client):
+hedge_fund/data/test_client_contract.py:132: def test_follows_next_page_url_to_the_end(client):
+hedge_fund/data/test_client_contract.py:156: def test_no_next_page_url_means_single_request(client):
+hedge_fund/data/test_client_contract.py:163: def test_mid_walk_404_keeps_accumulated_rows(client):
+hedge_fund/data/test_client_contract.py:176: def test_mid_walk_500_still_fails_loud(client):
+hedge_fund/data/test_client_contract.py:190: def test_financial_metrics_parses_filing_metadata(client):
+hedge_fund/event_study/test_event_study.py:25: class TestFitMarketModel:
+hedge_fund/event_study/test_event_study.py:52: class TestComputeAbnormalReturns:
+hedge_fund/event_study/test_event_study.py:62: class TestSumCar:
+hedge_fund/event_study/test_event_study.py:73: class TestTtestCars:
+hedge_fund/event_study/test_event_study.py:86: class TestBootstrapCI:
+hedge_fund/event_study/test_event_study.py:107: class TestRetrospectiveFilter:
+hedge_fund/event_study/test_event_study.py:130: class TestPlots:
+hedge_fund/event_study/test_event_study.py:193: def test_compute_car_live(fd):
+hedge_fund/event_study/test_event_study.py:206: def test_compute_car_multi_ticker(fd):
+hedge_fund/features/test_snapshot.py:50: def test_as_of_passes_through_to_data_client():
+hedge_fund/features/test_snapshot.py:58: def test_insufficient_data_raises():
+hedge_fund/features/test_snapshot.py:64: def test_aggregates():
+hedge_fund/features/test_snapshot.py:81: def test_market_cap_comes_from_pit_metrics_not_facts():
+hedge_fund/features/test_snapshot.py:93: def test_content_hash_stable_and_sensitive():
+hedge_fund/features/test_snapshot.py:106: def test_same_data_different_as_of_same_render_and_hash():
+hedge_fund/features/test_snapshot.py:117: def test_render_contains_the_facts():
+hedge_fund/fund/test_spec.py:22: def test_yaml_load_happy_path(tmp_path):
+hedge_fund/fund/test_spec.py:44: def test_load_strategy(tmp_path):
+hedge_fund/fund/test_spec.py:58: def test_defaults_applied():
+hedge_fund/fund/test_spec.py:68: def test_rebalance_cadence_validated():
+hedge_fund/fund/test_spec.py:74: def test_benchmark_uppercased():
+hedge_fund/fund/test_spec.py:78: def test_typo_key_rejected():
+hedge_fund/fund/test_spec.py:83: def test_mandate_carries_no_tickers():
+hedge_fund/fund/test_spec.py:90: def test_legacy_universe_key_is_dropped_on_load(tmp_path):
+hedge_fund/fund/test_spec.py:109: def test_normalize_universe():
+hedge_fund/fund/test_spec.py:117: def test_duplicate_strategy_name_rejected():
+hedge_fund/fund/test_spec.py:126: def test_strategy_needs_models():
+hedge_fund/fund/test_spec.py:131: def test_unknown_analyst_names_valid_keys():
+hedge_fund/fund/test_spec.py:138: def test_fund_staffs_each_strategy_once():
+hedge_fund/fund/test_strategy_library.py:9: def test_shipped_strategy_library_is_valid():
+hedge_fund/llm/test_client.py:32: def test_every_supported_provider_constructs(provider, keyed):
+hedge_fund/llm/test_client.py:41: def test_registry_and_clients_agree():
+hedge_fund/llm/test_client.py:49: def test_missing_key_names_the_variable(monkeypatch):
+hedge_fund/llm/test_client.py:59: def test_unlisted_model_falls_back_to_anthropic(keyed):
+hedge_fund/llm/test_client.py:66: def test_kimi_accepts_moonshot_key(monkeypatch):
+hedge_fund/llm/test_client.py:74: def test_provider_for_reads_the_registry():
+hedge_fund/llm/test_client.py:103: class TestStreaming:
+hedge_fund/llm/test_client.py:146: class TestFlatten:
+hedge_fund/llm/test_watch.py:27: class TestOrder:
+hedge_fund/llm/test_watch.py:58: class TestChunking:
+hedge_fund/llm/test_watch.py:79: class TestEscapes:
+hedge_fund/llm/test_watch.py:109: class TestOtherShapes:
+hedge_fund/pipeline/test_execution.py:11: def test_floor_sizing_never_overshoots():
+hedge_fund/pipeline/test_execution.py:18: def test_delta_against_existing_position():
+hedge_fund/pipeline/test_execution.py:27: def test_held_name_missing_from_targets_is_closed():
+hedge_fund/pipeline/test_execution.py:34: def test_subshare_delta_emits_nothing():
+hedge_fund/pipeline/test_execution.py:39: def test_sells_before_buys_alphabetical():
+hedge_fund/pipeline/test_execution.py:52: def test_short_target_sells_past_zero():
+hedge_fund/pipeline/test_run_cycle.py:75: def test_full_cycle_record_is_consistent():
+hedge_fund/pipeline/test_run_cycle.py:105: def test_netting_math_two_strategies_unequal_slices():
+hedge_fund/pipeline/test_run_cycle.py:132: def test_slices_normalize():
+hedge_fund/pipeline/test_run_cycle.py:149: def test_deterministic_and_json_round_trips():
+hedge_fund/pipeline/test_run_cycle.py:163: def test_second_cycle_rebalances_not_restarts():
+hedge_fund/pipeline/test_run_cycle.py:181: def test_all_abstain_closes_the_book_to_flat():
+hedge_fund/pipeline/test_run_cycle.py:200: def test_unpriced_unowned_ticker_skipped_and_analysts_never_called():
+hedge_fund/pipeline/test_run_cycle.py:214: def test_unpriced_held_ticker_raises():
+hedge_fund/pipeline/test_run_cycle.py:225: def test_universe_is_a_run_time_argument():
+hedge_fund/pipeline/test_run_cycle.py:239: def test_empty_universe_raises():
+hedge_fund/pipeline/test_run_cycle.py:246: def test_analyst_error_propagates():
+hedge_fund/portfolio/test_construction.py:15: def test_weighted_mean_with_unequal_weights():
+hedge_fund/portfolio/test_construction.py:21: def test_abstain_excluded_from_denominator():
+hedge_fund/portfolio/test_construction.py:28: def test_non_abstained_zero_dilutes():
+hedge_fund/portfolio/test_construction.py:35: def test_weights_sum_to_gross_target():
+hedge_fund/portfolio/test_construction.py:47: def test_market_neutral_sleeve_sums_to_zero():
+hedge_fund/portfolio/test_construction.py:62: def test_market_neutral_uniform_views_go_flat():
+hedge_fund/portfolio/test_construction.py:69: def test_all_abstain_yields_flat_book():
+hedge_fund/risk/test_limits.py:10: def test_position_clamp_records_event():
+hedge_fund/risk/test_limits.py:22: def test_gross_clamp_scales_all_and_records_one_event():
+hedge_fund/risk/test_limits.py:33: def test_position_then_gross_never_reviolates():
+hedge_fund/risk/test_limits.py:46: def test_within_limits_passes_through_untouched():
+hedge_fund/risk/test_limits.py:53: def test_shorts_clamped_by_absolute_value():
+hedge_fund/risk/test_limits.py:58: def test_clamped_exposure_not_redistributed():
+hedge_fund/signals/test_llm_agents.py:79: def test_value_folding(tmp_path, signal, confidence, expected):
+hedge_fund/signals/test_llm_agents.py:95: def test_malformed_json_abstains(tmp_path):
+hedge_fund/signals/test_llm_agents.py:102: def test_llm_error_abstains(tmp_path):
+hedge_fund/signals/test_llm_agents.py:110: def test_insufficient_data_abstains(tmp_path):
+hedge_fund/signals/test_llm_agents.py:117: def test_data_layer_error_propagates(tmp_path):
+hedge_fund/signals/test_llm_agents.py:129: def test_cache_hit_skips_llm_call(tmp_path):
+hedge_fund/signals/test_llm_agents.py:143: def test_new_as_of_same_data_hits_cache(tmp_path):
+hedge_fund/signals/test_llm_agents.py:159: def test_new_filing_forces_new_llm_call(tmp_path):
+hedge_fund/signals/test_llm_agents.py:171: def test_prompt_and_response_persisted(tmp_path):
+hedge_fund/signals/test_llm_agents.py:185: def test_failed_parse_still_persists_response(tmp_path):
+hedge_fund/signals/test_llm_agents.py:200: def test_registry_names_match_keys(tmp_path):
+hedge_fund/signals/test_llm_agents.py:212: def test_llm_personas_share_the_contract(tmp_path):
+hedge_fund/signals/test_llm_agents.py:228: def test_extract_json_fenced():
+hedge_fund/signals/test_llm_agents.py:232: def test_extract_json_bare():
+hedge_fund/signals/test_llm_agents.py:236: def test_extract_json_embedded():
+hedge_fund/signals/test_llm_agents.py:240: def test_extract_json_raises_on_garbage():
+hedge_fund/signals/test_signals.py:33: class TestInterface:
+hedge_fund/signals/test_signals.py:52: class TestPEADPredict:
+[evidence record sha256:04ca8ee690dfaa609d0ded552a14fd764af785b7ebddd88dceb7798d8a0076ac kind tool-call:search]
+tool shell <- {"command":"git -c core.pager=cat log --oneline -5"}
+tool shell ok: exit code: 0
+stdout:
+58992a8 campaign: seeded defect
+eff8a73 Bump version to 2.2.0
+[evidence record sha256:278d83ccec17a09b935c85f1de3bd7fcc3dae1f594162157f2739bbb76421b95 kind tool-call:shell]
+step 6: calling local:qwen3.8:27b
+tool shell <- {"command":"git -c core.pager=cat show --stat HEAD"}
+tool shell ok: exit code: 0
+stdout:
+commit 58992a8166b83fa38d25791ccff8d2568a95ab6c
+Author: campaign <campaign@example.invalid>
+Date:   Fri Sep 4 11:50:39 2026 -0600
+
+    campaign: seeded defect
+
+ hedge_fund/data/client.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+[evidence record sha256:e667fb11665258108cdeeeb4a8cbbb27bf0e6669e197a92a863cd04a792b3e7c kind tool-call:shell]
+step 7: calling local:qwen3.8:27b
+tool shell <- {"command":"git -c core.pager=cat show HEAD"}
+tool shell ok: exit code: 0
+stdout:
+commit 58992a8166b83fa38d25791ccff8d2568a95ab6c
+Author: campaign <campaign@example.invalid>
+Date:   Fri Sep 4 11:50:39 2026 -0600
+
+    campaign: seeded defect
+
+diff --git a/hedge_fund/data/client.py b/hedge_fund/data/client.py
+index db9505a..2299120 100644
+--- a/hedge_fund/data/client.py
++++ b/hedge_fund/data/client.py
+@@ -278,7 +278,7 @@ class FDClient:
+                     f"{method} {path} failed: {exc}", path=path,
+                 ) from exc
+ 
+-            if resp.status_code == 429 and delay is not None:
++            if resp.status_code != 429 and delay is not None:
+                 logger.info(
+                     "Rate limited (429), retrying in %ds (attempt %d/%d)",
+                     delay, attempt + 1, len(self._RETRY_DELAYS),
+[evidence record sha256:bc7349cda619afcaea2673103825a37e7b66f69a5658a528d85b704f338942b7 kind tool-call:shell]
+step 8: calling local:qwen3.8:27b
+tool read <- {"path":"hedge_fund/data/client.py"}
+tool read ok: """Financial Datasets API client."""
+
+from __future__ import annotations
+
+import logging
+import os
+import time
+
+import requests
+
+from hedge_fund.data.models import (
+    CompanyFacts,
+    CompanyNews,
+    Earnings,
+    EarningsRecord,
+    FinancialMetrics,
+    InsiderTrade,
+    Price,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class FDClientError(Exception):
+    """An API request failed for infrastructure reasons (auth, rate limit,
+    server error, network). Distinct from "no data exists" — that returns
+    empty. A backtest must crash on this, not treat it as no-data.
+    """
+
+    def __init__(self, message: str, *, status_code: int | None = None, path: str | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.path = path
+
+
+class FDClient:
+    """Financial Datasets API client.
+
+    Usage::
+
+        with FDClient() as fd:
+            prices = fd.get_prices("AAPL", "2024-01-01", "2024-12-31")
+    """
+
+    BASE_URL = "https://api.financialdatasets.ai"
+    _RETRY_DELAYS = (5, 15, 30)
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        timeout: float = 30.0,
+    ) -> None:
+        self._api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY", "")
+        self._timeout = timeout
+        self._session = requests.Session()
+        self._session.headers["X-API-Key"] = self._api_key
+
+    # ------------------------------------------------------------------
+    # Context manager
+    # ------------------------------------------------------------------
+
+    def __enter__(self) -> FDClient:
+        return self
+
+    def __exit__(self, *args) -> None:
+        self.close()
+
+    def close(self) -> None:
+        """Close the HTTP session."""
+        self._session.close()
+
+    # ------------------------------------------------------------------
+    # Prices
+    # ------------------------------------------------------------------
+
+    def get_prices(
+        self,
+        ticker: str,
+        start_date: str,
+        end_date: str,
+        interval: str = "day",
+        interval_multiplier: int = 1,
+    ) -> list[Price]:
+        """Fetch OHLC price bars."""
+        data = self._get("/prices/", {
+            "ticker": ticker,
+            "interval": interval,
+            "interval_multiplier": interval_multiplier,
+            "start_date": start_date,
+            "end_date": end_date,
+        }, response_key="prices")
+        return [Price(**row) for row in data] if data else []
+
+    # ------------------------------------------------------------------
+    # Financial Metrics
+    # ------------------------------------------------------------------
+
+    def get_financial_metrics(
+        self,
+        ticker: str,
+        end_date: str,
+        period: str = "ttm",
+        limit: int = 10,
+    ) -> list[FinancialMetrics]:
+        """Fetch financial metrics that were PUBLIC as of *end_date*.
+
+        Point-in-time: filters on ``filing_date`` (when the SEC filing was
+        accepted, ET) — not ``report_period`` (the fiscal period end, which
+        precedes public availability by 3-6 weeks and would leak the future
+        into a backtest). Rows without a known filing_date are excluded
+        server-side, so everything returned was provably knowable on
+        *end_date*.
+        """
+        data = self._get("/financial-metrics/", {
+            "ticker": ticker,
+            "filing_date_lte": end_date,
+            "period": period,
+            "limit": limit,
+        }, response_key="financial_metrics")
+        return [FinancialMetrics(**row) for row in data] if data else []
+
+    # ------------------------------------------------------------------
+    # News
+    # ------------------------------------------------------------------
+
+    def get_news(
+        self,
+        ticker: str,
+        end_date: str,
+        start_date: str | None = None,
+        limit: int = 1000,
+    ) -> list[CompanyNews]:
+        """Fetch company news."""
+        params: dict = {"ticker": ticker, "end_date": end_date, "limit": limit}
+        if start_date is not None:
+            params["start_date"] = start_date
+        data = self._get("/news/", params, response_key="news")
+        return [CompanyNews(**row) for row in data] if data else []
+
+    # ------------------------------------------------------------------
+    # Insider Trades
+    # ------------------------------------------------------------------
+
+    def get_insider_trades(
+        self,
+        ticker: str,
+        end_date: str,
+        start_date: str | None = None,
+        limit: int = 1000,
+    ) -> list[InsiderTrade]:
+        """Fetch insider trades."""
+        params: dict = {"ticker": ticker, "filing_date_lte": end_date, "limit": limit}
+        if start_date is not None:
+            params["filing_date_gte"] = start_date
+        data = self._get("/insider-trades/", params, response_key="insider_trades")
+        return [InsiderTrade(**row) for row in data] if data else []
+
+    # ------------------------------------------------------------------
+    # Company Facts
+    # ------------------------------------------------------------------
+
+    def get_company_facts(self, ticker: str) -> CompanyFacts | None:
+        """Fetch company metadata (single record)."""
+        resp = self._request("GET", "/company/facts/", params={"ticker": ticker})
+        if resp is None:
+            return None
+        facts_data = resp.json().get("company_facts")
+        return CompanyFacts(**facts_data) if facts_data else None
+
+    # ------------------------------------------------------------------
+    # Earnings
+    # ------------------------------------------------------------------
+
+    def get_earnings(self, ticker: str) -> Earnings | None:
+        """Fetch latest earnings for a single ticker.
+
+        limit=1 (one report period) — only [0] is used, and without a limit
+        the pagination loop in _get would walk the ticker's entire feed.
+        """
+        data = self._get("/earnings/", {"ticker": ticker, "limit": 1}, response_key="earnings")
+        if not data:
+            return None
+        row = data[0] if isinstance(data, list) else data
+        return Earnings(**row)
+
+    def get_earnings_history(
+        self,
+        ticker: str,
+        limit: int = 12,
+    ) -> list[EarningsRecord]:
+        """Fetch historical earnings filings as a flat list.
+
+        Returns one record per SEC filing (8-K, 10-Q, 10-K, 20-F).
+        The same ``report_period`` may appear multiple times with
+        different ``source_type`` values.
+        """
+        data = self._get("/earnings/", {
+            "ticker": ticker,
+            "limit": limit,
+        }, response_key="earnings")
+        return [EarningsRecord(**row) for row in data] if data else []
+
+    # ------------------------------------------------------------------
+    # Convenience
+    # ------------------------------------------------------------------
+
+    def get_market_cap(self, ticker: str, end_date: str) -> float | None:
+        """Return market cap from company facts or financial metrics."""
+        facts = self.get_company_facts(ticker)
+        if facts is not None and facts.market_cap is not None:
+            return facts.market_cap
+        metrics = self.get_financial_metrics(ticker, end_date, limit=1)
+        if metrics and metrics[0].market_cap is not None:
+            return metrics[0].market_cap
+        return None
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _get(
+        self,
+        path: str,
+        params: dict,
+        response_key: str,
+    ) -> list[dict] | None:
+        """GET and extract *response_key*, following pagination to the end.
+
+        The API caps every list response at a fixed page size and links the
+        remainder via ``next_page_url`` (absolute, self-contained — request
+        it verbatim, no params). This loop reassembles the full result the
+        caller asked for, so everything above it — including the disk cache,
+        which memoizes the *merged* list — never sees a truncated page.
+
+        A mid-walk 404 ends the stream and keeps the rows accumulated so
+        far; any other failure raises via _request's fail-loud contract.
+        """
+        resp = self._request("GET", path, params=params)
+        if resp is None:
+            return None
+        body = resp.json()
+        rows = body.get(response_key)
+        next_page_url = body.get("next_page_url")
+        while next_page_url and isinstance(rows, list):
+            resp = self._request("GET", next_page_url)
+            if resp is None:
+                break
+            body = resp.json()
+            rows.extend(body.get(response_key) or [])
+            next_page_url = body.get("next_page_url")
+        return rows
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        **kwargs,
+    ) -> requests.Response | None:
+        """HTTP request with retry on 429.
+
+        Fail-loud contract: raises FDClientError on network errors, HTTP
+        errors, and exhausted rate-limit retries. Returns None ONLY for
+        404 — "this data doesn't exist" is a data fact, not a failure.
+        Silently returning empty on real failures poisons backtests
+        (missing data reads as "no signal").
+
+        *path* may be an absolute URL (a ``next_page_url`` from a previous
+        response), which is requested verbatim.
+        """
+        url = path if path.startswith("http") else self.BASE_URL + path
+        for attempt, delay in enumerate((*self._RETRY_DELAYS, None)):
+            try:
+                resp = self._session.request(
+                    method, url, timeout=self._timeout, **kwargs,
+                )
+            except requests.RequestException as exc:
+                raise FDClientError(
+                    f"{method} {path} failed: {exc}", path=path,
+                ) from exc
+
+            if resp.status_code != 429 and delay is not None:
+                logger.info(
+                    "Rate limited (429), retrying in %ds (attempt %d/%d)",
+                    delay, attempt + 1, len(self._RETRY_DELAYS),
+                )
+                time.sleep(delay)
+                continue
+
+            if resp.status_code == 404:
+                return None
+
+            if resp.status_code >= 400:
+                raise FDClientError(
+                    f"{method} {path} returned {resp.status_code}: {resp.text[:200]}",
+                    status_code=resp.status_code, path=path,
+                )
+
+            return resp
+
+        raise FDClientError(
+            f"{method} {path} rate limited (429) after {len(self._RETRY_DELAYS)} retries",
+            status_code=429, path=path,
+        )
+
+[evidence record sha256:09810b921acd08edde33a0d4c5f2155cb62b506e3156647c8120eb700ca57a15 kind tool-call:read]
+step 9: calling local:qwen3.8:27b
+tool declare_file_set <- {"files":"[\"hedge_fund/data/client.py\"]"}
+tool declare_file_set ok: declared 1 file(s): hedge_fund/data/client.py
+[evidence record sha256:52e4e3765470e6b1f44cc67db466f142e9627c9dfd680464a4d21c5d5838e126 kind tool-call:declare_file_set]
+step 10: calling local:qwen3.8:27b
+tool edit <- {"path":"hedge_fund/data/client.py","find":"if resp.status_code != 429 and delay is not None:","replace":"if resp.status_code == 429 and delay is not None:"}
+tool edit ok: replaced 1 occurrence(s) in hedge_fund/data/client.py
+[evidence record sha256:c7154726c274afdcaeaa4ad9cabe0c7cb7b4fc9a58adf3878b258d1a518ab640 kind tool-call:edit]
+step 11: calling local:qwen3.8:27b
+tool shell <- {"command":"pytest -q","timeoutMs":"900000"}
+tool shell failed: denied: input rejected: [
+  {
+    "expected": "number",
+    "code": "invalid_type",
+    "path": [
+      "timeoutMs"
+    ],
+    "message": "Invalid input: expected number, received string"
+  }
+]
+[evidence record sha256:099ed21c684324e7828e2a5b92a9cff3fa66f57b7dbe51501f5332d215c4f1f8 kind tool-call:shell]
+step 12: calling local:qwen3.8:27b
+tool shell <- {"command":"pytest -q","timeoutMs":900000}
+tool shell ok: exit code: 0
+stdout:
+.........s.......................sssssssssssssssssssssssssssssssssss.... [ 33%]
+......................ss................................................ [ 67%]
+.....................................................................    [100%]
+175 passed, 38 skipped in 2.66s
+[evidence record sha256:6fa41707129cf3dd4444504b77f62afb4d32709b055fb882979b09fbd0155b3d kind tool-call:shell]
+step 13: calling local:qwen3.8:27b
+tool claim <- {"predicate":"facts.exitCode == 0 && facts.stdoutBytes > 0","record":"sha256:6fa41707129cf3dd4444504b77f62afb4d32709b055fb882979b09fbd0155b3d","recordKind":"tool-call:shell","narrative":"pytest -q passes: 175 passed, 38 skipped (live-API tests), no failures."}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:b77bba0b3cbe2f67c350654b3f17c0b2906e6cb87b4dabfecf9eed91373794f8 kind tool-call:claim]
+step 14: calling local:qwen3.8:27b
+claim (unverified): Fixed. Summary:
+
+**Defect:** In `hedge_fund/data/client.py`, the rate-limit retry condition in `FDClient._request` was inverted:
+
+```python
+if resp.status_code != 429 and delay is not None:   # seeded defect
+```
+
+Instead of retrying on a genuine 429, the client retried (with a sleep) on every *non*-429 response — including successes and real errors like 500/401/404 — and on a true 429 it fell through and raised a bogus "rate limited" error immediately. The initial full `pytest -q` run hung on these retries/sleeps (killed by timeout), which is why the suite appeared to fail.
+
+**Fix:** Restored the correct condition:
+
+```python
+if resp.status_code == 429 and delay is not None:
+```
+
+**Verification:** `pytest -q` now exits 0: **175 passed, 38 skipped** (skips are the live-API tests), no changes to any test file. The change is a single character-class fix in the source, matching the inverted line introduced by the "campaign: seeded defect" commit.
+stopped: completed after 14 steps, 132987 tokens
+gate typecheck not-applicable: pyproject.toml configures no type checker [evidence record sha256:c8db015d740304711729902613eb6347dc57e53284e0430f1060e86e196d9701]
+gate lint not-applicable: pyproject.toml configures no linter [evidence record sha256:4eabfa72ececb7dfe74aacebab7d8dc4e80fe4fe33f986563e0427fcf2e601cb]
+gate format not-applicable: pyproject.toml configures no formatter [evidence record sha256:2d283a0533a85ae071a93257f89c680e3ccd058f10a186de18a7a2ffed84668e]
+gate tests passed: the command exited 0 [evidence record sha256:38eddaafc6d14d400a6437dbd8987a204ffda979a8512490a3dd95ded98b233c]
+gate file-set passed: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited [evidence record sha256:5660695a9b7a91cbc946d63537269a975ea6b52a275b48f655aabfb7377e6ead]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:04cbfbf05767e77d5767fb5772e9a7e62cec4ae74d421e013fe257c5eccb892c]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:1205c218e3298f2b2a033cfedf23b7ee3ea0c6b62794e4df970e745e5f7a0cb4]
+gate behaviour-probe passed: 0 changed function(s) still answer to their inputs. [evidence record sha256:6c58dc822ecce8f4da2f5c78e5027adb86eef9574d10c896a93cc27d285aa5df]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 1 added line(s) [evidence record sha256:ede4b1a546ba6f4583c33140cd1c857444d0095fb5d2eff66db7030505370e36]
+
+gates:
+  n/a      typecheck: pyproject.toml configures no type checker
+  n/a      lint: pyproject.toml configures no linter
+  n/a      format: pyproject.toml configures no formatter
+  passed   tests: the command exited 0
+  passed   file-set: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited
+  passed   placeholder: no placeholder marker was introduced by this change
+  passed   secret-scan: no known credential pattern appears in the added lines
+  passed   behaviour-probe: 0 changed function(s) still answer to their inputs.
+  passed   diff-budget (advisory): within budget: 1 file(s) and 1 added line(s)
+
+routing reward: 0.000 (the gates went green but nothing ran over the change, so there is nothing measured to reward)
+[signing] the Secret Service keyring would not take a new key (secret-tool store failed: ), so the bundle is signed with a per-run key
+
+evidence bundle: /out/bundle
+verify it anywhere: node /out/bundle/verify.mjs /out/bundle
+review it: open /out/bundle/review.html
+what this run produced
+
+  the page a person reads: /out/bundle/review.html
+  the bundle a stranger verifies: /out/bundle
+  its own verifier, needing nothing installed: node /out/bundle/verify.mjs /out/bundle
+  the chain every record is on: /out/bundle/ledger.jsonl
+
+  75 records. The harness verified 1 claim(s) and refused 0.
+  bundle verified in this run: verify.mjs exited 0
+[chokepoint] refusing shell without a terminal to confirm on: "ls hedge_fund/ && timeout 300 pytest -q -x --timeout=30 2>&1 | tail -30" is not on the shell allowlist.

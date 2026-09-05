@@ -1,0 +1,965 @@
+step 1: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test 2>&1 | tail -50"}
+tool shell ok: exit code: 0
+stdout:
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7)
+
+test at dist-node/test/v4.test.js:40:5
+✖ fills two UUIDs into a buffer as expected (0.039126ms)
+  Error: Random bytes length must be >= 16
+      at _v4 (file:///work/dist-node/v4.js:13:15)
+      at v4 (file:///work/dist-node/v4.js:7:12)
+      at TestContext.<anonymous> (file:///work/dist-node/test/v4.test.js:42:9)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7)
+
+test at dist-node/test/v4.test.js:63:5
+✖ throws RangeError for out-of-range indexes (0.33297ms)
+  AssertionError [ERR_ASSERTION]: The error is expected to be an instance of "RangeError". Received "Error"
+  
+  Error message:
+  
+  Random bytes length must be >= 16
+      at TestContext.<anonymous> (file:///work/dist-node/test/v4.test.js:66:16)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: Error: Random bytes length must be >= 16
+        at _v4 (file:///work/dist-node/v4.js:13:15)
+        at v4 (file:///work/dist-node/v4.js:7:12)
+        at file:///work/dist-node/test/v4.test.js:66:29
+        at getActual (node:assert:611:5)
+        at Module.throws (node:assert:759:24)
+        at TestContext.<anonymous> (file:///work/dist-node/test/v4.test.js:66:16)
+        at Test.runInAsyncScope (node:async_hooks:227:14)
+        at Test.run (node:internal/test_runner/test:1397:25)
+        at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+        at Test.postRun (node:internal/test_runner/test:1537:19),
+    operator: 'throws',
+    diff: 'simple'
+  }
+[evidence record sha256:5b8a9210aa8230e21524e62979e579c8b867e5a48450b5ad6b3c058974d91b9f kind tool-call:shell]
+tool list <- {}
+tool list ok: .build/
+.git/
+.github/
+.gitignore
+.npmrc
+.vscode/
+AUTHORS
+CHANGELOG.md
+CONTRIBUTING.md
+LICENSE.md
+README.md
+README_js.md
+biome.jsonc
+bundlewatch.config.json
+dist-node/
+dist/
+examples/
+lefthook.yml
+node_modules/
+package-lock.json
+package.json
+prettier.config.js
+scripts/
+src/
+test/
+tsconfig.json
+wdio.conf.js
+[evidence record sha256:31d0066f64e11cad2347479370f42a70472a83283675c0fedfc0d79a9302e819 kind tool-call:list]
+step 2: calling local:qwen3.8:27b
+tool read <- {"path":"src/v4.js"}
+tool read failed: failed: ENOENT: no such file or directory, open '/work/src/v4.js', caused by ENOENT
+[evidence record sha256:97c9441d758d95c3f8b6cc011cbab245094d8d35dce5ef74186a43d64670d736 kind tool-call:read]
+tool read <- {"path":"test/v4.test.js"}
+tool read failed: failed: ENOENT: no such file or directory, open '/work/test/v4.test.js', caused by ENOENT
+[evidence record sha256:a813a795192f5d969c6082bc3f3d19d7d9a8a1388e0b914b060d0d27c3f22e4e kind tool-call:read]
+step 3: calling local:qwen3.8:27b
+tool list <- {"path":"src"}
+tool list ok: bin/
+index.ts
+max.ts
+md5-browser.ts
+md5.ts
+nil.ts
+parse.ts
+regex.ts
+rng.ts
+sha1-browser.ts
+sha1.ts
+stringify.ts
+test/
+types.ts
+uuid-bin.ts
+v1.ts
+v1ToV6.ts
+v3.ts
+v35.ts
+v4.ts
+v5.ts
+v6.ts
+v6ToV1.ts
+v7.ts
+validate.ts
+version.ts
+[evidence record sha256:69e1da824adbd099b4fa67ceb4ea8d8bf0b0f5c97343cb6432cd9356669ed518 kind tool-call:list]
+tool list <- {"path":"test"}
+tool list ok: browser/
+[evidence record sha256:ef9e347ff119edc2064749f5d293d27712c7e55f1d089d695fedcf1bbd79e0e2 kind tool-call:list]
+step 4: calling local:qwen3.8:27b
+tool read <- {"path":"src/v4.ts"}
+tool read ok: import rng from './rng.js';
+import { unsafeStringify } from './stringify.js';
+import type { UUIDTypes, Version4Options } from './types.js';
+
+function v4(
+  options?: Version4Options,
+  buf?: undefined,
+  offset?: number,
+): string;
+function v4<TBuf extends Uint8Array = Uint8Array>(
+  options: Version4Options | undefined,
+  buf: TBuf,
+  offset?: number,
+): TBuf;
+function v4<TBuf extends Uint8Array = Uint8Array>(
+  options?: Version4Options,
+  buf?: TBuf,
+  offset?: number,
+): UUIDTypes<TBuf> {
+  if (!buf && !options && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+
+  // Putting tail-code that could just go inline here in a separate function to
+  // enable compiler optimizations that dramatically improve performance.
+  //
+  // REF: https://github.com/uuidjs/uuid/issues/892
+  return _v4(options, buf, offset);
+}
+
+function _v4<TBuf extends Uint8Array = Uint8Array>(
+  options?: Version4Options,
+  buf?: TBuf,
+  offset?: number,
+): UUIDTypes<TBuf> {
+  options = options || {};
+
+  const rnds = options.random ?? options.rng?.() ?? rng();
+  if (rnds.length <= 16) {
+    throw new Error('Random bytes length must be >= 16');
+  }
+
+  // Per 4.4, set bits for version and `clock_seq_hi_and_reserved`
+  rnds[6] = (rnds[6] & 0x0f) | 0x40;
+  rnds[8] = (rnds[8] & 0x3f) | 0x80;
+
+  // Copy bytes to buffer, if provided
+  if (buf) {
+    offset = offset || 0;
+    if (offset < 0 || offset + 16 > buf.length) {
+      throw new RangeError(
+        `UUID byte range ${offset}:${offset + 15} is out of buffer bounds`,
+      );
+    }
+
+    for (let i = 0; i < 16; ++i) {
+      buf[offset + i] = rnds[i];
+    }
+
+    return buf;
+  }
+
+  return unsafeStringify(rnds);
+}
+export default v4;
+
+[evidence record sha256:e09016cec2c102102b078813dbea6d516175dd54916bdff38065e9d7aecaa3fe kind tool-call:read]
+tool read <- {"path":"src/rng.ts"}
+tool read ok: // RNG values for use in UUID generation. This *must* use a high-quality source
+// of entropy, such as `crypto.getRandomValues()`.  And we reuse an array for
+// performance.
+const rnds8 = new Uint8Array(16);
+export default function rng() {
+  return crypto.getRandomValues(rnds8);
+}
+
+[evidence record sha256:971e4df1c726a20e0600e14972a8a9ace624b456322bc9b6f4b36f259e324fa0 kind tool-call:read]
+tool read <- {"path":"package.json"}
+tool read ok: {
+  "name": "uuid",
+  "version": "14.0.2",
+  "description": "RFC9562 UUIDs",
+  "type": "module",
+  "funding": [
+    "https://github.com/sponsors/broofa",
+    "https://github.com/sponsors/ctavan"
+  ],
+  "commitlint": {
+    "extends": [
+      "@commitlint/config-conventional"
+    ]
+  },
+  "keywords": [
+    "uuid",
+    "guid",
+    "rfc4122",
+    "rfc9562"
+  ],
+  "license": "MIT",
+  "bin": {
+    "uuid": "./dist-node/bin/uuid"
+  },
+  "sideEffects": false,
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "node": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist-node/index.js"
+      },
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "dist-node",
+    "!**/test"
+  ],
+  "devDependencies": {
+    "@biomejs/biome": "2.4.10",
+    "@commitlint/cli": "20.5.0",
+    "@commitlint/config-conventional": "20.5.0",
+    "bundlewatch": "0.4.1",
+    "commander": "14.0.3",
+    "globals": "17.4.0",
+    "jest": "30.3.0",
+    "lefthook": "1.11.13",
+    "lint-staged": "16.4.0",
+    "neostandard": "0.13.0",
+    "npm-run-all2": "8.0.4",
+    "prettier": "3.8.3",
+    "publint": "0.3.21",
+    "release-please": "17.3.0",
+    "runmd": "2.1.1",
+    "standard-version": "9.5.0",
+    "typescript": "5.4.3"
+  },
+  "optionalDevDependencies": {
+    "@wdio/browserstack-service": "9.27.0",
+    "@wdio/cli": "9.27.0",
+    "@wdio/jasmine-framework": "9.27.0",
+    "@wdio/local-runner": "9.27.0",
+    "@wdio/spec-reporter": "9.27.0",
+    "@wdio/static-server-service": "9.27.0"
+  },
+  "scripts": {
+    "build": "./scripts/build.sh",
+    "build:watch": "tsc --watch -p tsconfig.json",
+    "bundlewatch": "npm run pretest:browser && bundlewatch --config bundlewatch.config.json",
+    "docs:diff": "npm run docs && git diff README.md",
+    "docs": "npm run build && npx runmd --output=README.md README_js.md",
+    "biome:check": "biome check .",
+    "biome:fix": "biome check --write .",
+    "examples:browser:rollup:build": "cd examples/browser-rollup && npm run build",
+    "examples:browser:webpack:build": "cd examples/browser-webpack && npm run build",
+    "examples:node:esmodules:test": "cd examples/node-esmodules && npm test",
+    "examples:node:jest:test": "cd examples/node-jest && npm test",
+    "examples:node:typescript:test": "cd examples/typescript && npm test",
+    "format": "biome format --write .",
+    "format:check": "biome format --check .",
+    "lint": "npm run biome:check",
+    "md": "runmd --watch --output=README.md README_js.md",
+    "prepack": "npm run build -- --no-pack",
+    "prepare": "lefthook install",
+    "prepublishOnly": "npm run build",
+    "pretest:benchmark": "npm run build",
+    "pretest:browser": "./scripts/iodd && npm run build && npm-run-all --parallel examples:browser:**",
+    "pretest:node": "npm run build",
+    "pretest": "npm run build",
+    "release": "standard-version --no-verify",
+    "test:benchmark": "cd examples/benchmark && npm test",
+    "test:browser": "wdio run ./wdio.conf.js",
+    "test:node": "npm-run-all --parallel examples:node:**",
+    "test:watch": "node --test --enable-source-maps --watch dist-node/test/*.js",
+    "test": "node --test --enable-source-maps dist-node/test/*.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/uuidjs/uuid.git"
+  },
+  "lint-staged": {
+    "*": [
+      "biome check --write --no-errors-on-unmatched"
+    ]
+  },
+  "standard-version": {
+    "scripts": {
+      "postchangelog": "biome format --write CHANGELOG.md"
+    }
+  },
+  "packageManager": "npm@11.12.1"
+}
+
+[evidence record sha256:d77e55bc1c7d3d4376f2da89cddb1c4d84b9f026d079aed35904ca8ea5768a61 kind tool-call:read]
+step 5: calling local:qwen3.8:27b
+tool read <- {"path":"src/test/v4.test.js"}
+tool read failed: failed: ENOENT: no such file or directory, open '/work/src/test/v4.test.js', caused by ENOENT
+[evidence record sha256:364a5519385ee3f66b4c758a8b1da0b6da4b87ace53267784304f2cbae38b036 kind tool-call:read]
+step 6: calling local:qwen3.8:27b
+tool list <- {"path":"src/test"}
+tool list ok: parse.test.ts
+rng.test.ts
+stringify.test.ts
+test_constants.ts
+v1.test.ts
+v35.test.ts
+v4.test.ts
+v6.test.ts
+v7.test.ts
+validate.test.ts
+version.test.ts
+[evidence record sha256:c5d05999f9ddee4dc3c822447353dc836423548afc302135669f89e70147149b kind tool-call:list]
+step 7: calling local:qwen3.8:27b
+tool read <- {"path":"src/test/v4.test.ts"}
+tool read ok: import * as assert from 'node:assert/strict';
+import { describe, test } from 'node:test';
+import v4 from '../v4.js';
+
+const randomBytesFixture = Uint8Array.of(
+  0x10,
+  0x91,
+  0x56,
+  0xbe,
+  0xc4,
+  0xfb,
+  0xc1,
+  0xea,
+  0x71,
+  0xb4,
+  0xef,
+  0xe1,
+  0x67,
+  0x1c,
+  0x58,
+  0x36,
+);
+
+const expectedBytes = Uint8Array.of(
+  16,
+  145,
+  86,
+  190,
+  196,
+  251,
+  65,
+  234,
+  177,
+  180,
+  239,
+  225,
+  103,
+  28,
+  88,
+  54,
+);
+
+describe('v4', () => {
+  test('subsequent UUIDs are different', () => {
+    const id1 = v4();
+    const id2 = v4();
+
+    assert.ok(id1 !== id2);
+  });
+
+  test('should use native randomUUID() if no option is passed', async (t) => {
+    const mocked = t.mock.method(crypto, 'randomUUID', () => 'mocked-uuid');
+
+    assert.equal(mocked.mock.callCount(), 0);
+    v4();
+    assert.equal(mocked.mock.callCount(), 1);
+
+    t.mock.reset();
+  });
+
+  test('should not use native randomUUID() if an option is passed', async (t) => {
+    const mocked = t.mock.method(crypto, 'randomUUID', () => 'mocked-uuid');
+
+    assert.equal(mocked.mock.callCount(), 0);
+    v4({});
+    assert.equal(mocked.mock.callCount(), 0);
+
+    t.mock.reset();
+  });
+
+  test('explicit options.random produces expected result', () => {
+    const id = v4({ random: randomBytesFixture });
+    assert.strictEqual(id, '109156be-c4fb-41ea-b1b4-efe1671c5836');
+  });
+
+  test('explicit options.rng produces expected result', () => {
+    const id = v4({ rng: () => randomBytesFixture });
+    assert.strictEqual(id, '109156be-c4fb-41ea-b1b4-efe1671c5836');
+  });
+
+  test('fills one UUID into a buffer as expected', () => {
+    const buffer = new Uint8Array(16);
+    const result = v4({ random: randomBytesFixture }, buffer);
+
+    assert.deepEqual(buffer, expectedBytes);
+    assert.strictEqual(buffer, result);
+  });
+
+  test('fills two UUIDs into a buffer as expected', () => {
+    const buffer = new Uint8Array(32);
+    v4({ random: randomBytesFixture }, buffer, 0);
+    v4({ random: randomBytesFixture }, buffer, 16);
+
+    const expectedBuf = new Uint8Array(32);
+    expectedBuf.set(expectedBytes);
+    expectedBuf.set(expectedBytes, 16);
+
+    assert.deepEqual(buffer, expectedBuf);
+  });
+
+  test('throws when option.random is too short', () => {
+    const random = Uint8Array.of(16);
+    const buffer = new Uint8Array(16).fill(0);
+    assert.throws(() => {
+      v4({ random }, buffer);
+    });
+  });
+
+  test('throws when options.rng() is too short', () => {
+    const buffer = new Uint8Array(16);
+    const rng = () => Uint8Array.of(0); // length = 1
+    assert.throws(() => {
+      v4({ rng }, buffer);
+    });
+  });
+
+  test('throws RangeError for out-of-range indexes', () => {
+    const buf15 = new Uint8Array(15);
+    const buf30 = new Uint8Array(30);
+    assert.throws(() => v4({}, buf15), RangeError);
+    assert.throws(() => v4({}, buf30, -1), RangeError);
+    assert.throws(() => v4({}, buf30, 15), RangeError);
+  });
+});
+
+[evidence record sha256:e46e1861636d52e61a8806aeb3d5883458d922b0e52a8cc1a5f340a4055972b6 kind tool-call:read]
+step 8: calling local:qwen3.8:27b
+tool declare_file_set <- {"files":"[\"src/v4.ts\"]"}
+tool declare_file_set ok: declared 1 file(s): src/v4.ts
+[evidence record sha256:878d209153df160e9a1f93b8712e951199e21a3cbf3aee8fe22fe10ecb1399e1 kind tool-call:declare_file_set]
+step 9: calling local:qwen3.8:27b
+tool edit <- {"path":"src/v4.ts","find":"if (rnds.length <= 16) {","replace":"if (rnds.length < 16) {"}
+tool edit ok: replaced 1 occurrence(s) in src/v4.ts
+[evidence record sha256:698646035bb89d7a9f3c0034433e6201c8e3cdcb2ac0ae4b9f6dbd6680afa55a kind tool-call:edit]
+step 10: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test 2>&1 | tail -15"}
+tool shell ok: exit code: 0
+stdout:
+✔ v7 (29.665607ms)
+▶ validate()
+  ✔ TESTS cases (0.486307ms)
+✔ validate() (0.806984ms)
+▶ version()
+  ✔ TESTS cases (0.749691ms)
+✔ version() (1.051617ms)
+ℹ tests 82
+ℹ suites 10
+ℹ pass 82
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 119.846798
+[evidence record sha256:ce9921e4654cd3efd2f3e1f62248e94759b1b71e05ef4db512ebf95aaac97508 kind tool-call:shell]
+step 11: calling local:qwen3.8:27b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"sha256:ce9921e4654cd3efd2f3e1f62248e94759b1b71e05ef4db512ebf95aaac97508","recordKind":"tool-call:shell","narrative":"npm run --silent test exits 0 with 82/82 tests passing after the fix"}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:d06781eece8dabf7159e38b7d056c0c140a391c2072d57684b3738130d5c07ce kind tool-call:claim]
+step 12: calling local:qwen3.8:27b
+claim (unverified): Fixed. The defect was in `src/v4.ts`: the random-bytes length check was inverted — `if (rnds.length<= 16) throw ...` rejected every valid 16-byte random source (including the default `rng()`), which is why the v4 tests failed with "Random bytes length must be >= 16" and the out-of-range test got a plain `Error` instead of a `RangeError`.
+
+**Change:** one character — `<=` →`<`, so only genuinely short arrays(< 16 bytes) throw.
+
+**Verification:** `npm run --silent test` exits 0 with 82/82 tests passing (0 fail/skipped), confirmed by a verified claim on the test-run record. No tests were touched.
+stopped: completed after 12 steps, 75866 tokens
+gate typecheck not-applicable: package.json declares no typecheck script [evidence record sha256:2937696362f6458fe282589c221bc4c8fee1e95f3a2fcdf7bdda33a9c257023a]
+gate lint passed: the command exited 0 [evidence record sha256:135ba49447eac8ee507972bedb6b86bd8dbbc465c0ba624ab420355da078135a]
+gate format failed: the command exited 1 [evidence record sha256:db6f5cdd213fcddd9dbad99c015e13e0859a38cb707194218033c885fc458ae9]
+gate tests passed: 82 collected, 82 passed, 0 failed, 0 skipped (exit 0) [evidence record sha256:97c58bd615452bbf4e12e7029968c93e6e4fbc00bc4d823c792a873df0b51edb]
+gate file-set passed: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited [evidence record sha256:7ef6fd57b7277ad5d6698c8255cb58ea00ebb065fa82c48c31b4993ea0a2470a]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:04cbfbf05767e77d5767fb5772e9a7e62cec4ae74d421e013fe257c5eccb892c]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:1205c218e3298f2b2a033cfedf23b7ee3ea0c6b62794e4df970e745e5f7a0cb4]
+gate behaviour-probe passed: 0 changed function(s) still answer to their inputs. [evidence record sha256:6c58dc822ecce8f4da2f5c78e5027adb86eef9574d10c896a93cc27d285aa5df]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 1 added line(s) [evidence record sha256:ede4b1a546ba6f4583c33140cd1c857444d0095fb5d2eff66db7030505370e36]
+auto-resolve attempt 1 of 2
+step 1: calling local:qwen3.8:27b
+tool read <- {"path":"package.json"}
+tool read ok: {
+  "name": "uuid",
+  "version": "14.0.2",
+  "description": "RFC9562 UUIDs",
+  "type": "module",
+  "funding": [
+    "https://github.com/sponsors/broofa",
+    "https://github.com/sponsors/ctavan"
+  ],
+  "commitlint": {
+    "extends": [
+      "@commitlint/config-conventional"
+    ]
+  },
+  "keywords": [
+    "uuid",
+    "guid",
+    "rfc4122",
+    "rfc9562"
+  ],
+  "license": "MIT",
+  "bin": {
+    "uuid": "./dist-node/bin/uuid"
+  },
+  "sideEffects": false,
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "node": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist-node/index.js"
+      },
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "dist-node",
+    "!**/test"
+  ],
+  "devDependencies": {
+    "@biomejs/biome": "2.4.10",
+    "@commitlint/cli": "20.5.0",
+    "@commitlint/config-conventional": "20.5.0",
+    "bundlewatch": "0.4.1",
+    "commander": "14.0.3",
+    "globals": "17.4.0",
+    "jest": "30.3.0",
+    "lefthook": "1.11.13",
+    "lint-staged": "16.4.0",
+    "neostandard": "0.13.0",
+    "npm-run-all2": "8.0.4",
+    "prettier": "3.8.3",
+    "publint": "0.3.21",
+    "release-please": "17.3.0",
+    "runmd": "2.1.1",
+    "standard-version": "9.5.0",
+    "typescript": "5.4.3"
+  },
+  "optionalDevDependencies": {
+    "@wdio/browserstack-service": "9.27.0",
+    "@wdio/cli": "9.27.0",
+    "@wdio/jasmine-framework": "9.27.0",
+    "@wdio/local-runner": "9.27.0",
+    "@wdio/spec-reporter": "9.27.0",
+    "@wdio/static-server-service": "9.27.0"
+  },
+  "scripts": {
+    "build": "./scripts/build.sh",
+    "build:watch": "tsc --watch -p tsconfig.json",
+    "bundlewatch": "npm run pretest:browser && bundlewatch --config bundlewatch.config.json",
+    "docs:diff": "npm run docs && git diff README.md",
+    "docs": "npm run build && npx runmd --output=README.md README_js.md",
+    "biome:check": "biome check .",
+    "biome:fix": "biome check --write .",
+    "examples:browser:rollup:build": "cd examples/browser-rollup && npm run build",
+    "examples:browser:webpack:build": "cd examples/browser-webpack && npm run build",
+    "examples:node:esmodules:test": "cd examples/node-esmodules && npm test",
+    "examples:node:jest:test": "cd examples/node-jest && npm test",
+    "examples:node:typescript:test": "cd examples/typescript && npm test",
+    "format": "biome format --write .",
+    "format:check": "biome format --check .",
+    "lint": "npm run biome:check",
+    "md": "runmd --watch --output=README.md README_js.md",
+    "prepack": "npm run build -- --no-pack",
+    "prepare": "lefthook install",
+    "prepublishOnly": "npm run build",
+    "pretest:benchmark": "npm run build",
+    "pretest:browser": "./scripts/iodd && npm run build && npm-run-all --parallel examples:browser:**",
+    "pretest:node": "npm run build",
+    "pretest": "npm run build",
+    "release": "standard-version --no-verify",
+    "test:benchmark": "cd examples/benchmark && npm test",
+    "test:browser": "wdio run ./wdio.conf.js",
+    "test:node": "npm-run-all --parallel examples:node:**",
+    "test:watch": "node --test --enable-source-maps --watch dist-node/test/*.js",
+    "test": "node --test --enable-source-maps dist-node/test/*.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/uuidjs/uuid.git"
+  },
+  "lint-staged": {
+    "*": [
+      "biome check --write --no-errors-on-unmatched"
+    ]
+  },
+  "standard-version": {
+    "scripts": {
+      "postchangelog": "biome format --write CHANGELOG.md"
+    }
+  },
+  "packageManager": "npm@11.12.1"
+}
+
+[evidence record sha256:227f48330cf33e5c4b76f7a3b6c9610468a379f6e562bd5938e9464cfbfc2d83 kind tool-call:read]
+tool list <- {}
+tool list ok: .build/
+.git/
+.github/
+.gitignore
+.npmrc
+.vscode/
+AUTHORS
+CHANGELOG.md
+CONTRIBUTING.md
+LICENSE.md
+README.md
+README_js.md
+biome.jsonc
+bundlewatch.config.json
+dist-node/
+dist/
+examples/
+lefthook.yml
+node_modules/
+package-lock.json
+package.json
+prettier.config.js
+scripts/
+src/
+test/
+tsconfig.json
+wdio.conf.js
+[evidence record sha256:420d11e7b6105bbf21ebeaeb285034d77f2c5613214336e5d3b53313b405b784 kind tool-call:list]
+step 2: calling local:qwen3.8:27b
+tool read <- {"path":"biome.jsonc"}
+tool read ok: {
+  "$schema": "https://biomejs.dev/schemas/2.4.10/schema.json",
+  "formatter": {
+    "indentStyle": "space",
+    "indentWidth": 2
+  },
+  "files": {
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/dist-node",
+
+      // We have to ignore this file because node 18 requires the "assert { type:
+      // 'json' }" syntax which is not supported by Biome's parser yet.
+      "!examples/node-esmodules/package.mjs"
+    ]
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "trailingCommas": "all"
+    }
+  },
+  "linter": {
+    "rules": {
+      "a11y": { "useHtmlLang": "off" },
+      "complexity": { "useArrowFunction": "off" },
+      "suspicious": { "noAssignInExpressions": "off" }
+    }
+  }
+}
+
+[evidence record sha256:4b19fc6fd24b653dc960a04defe732e70f7e7e5ef1b28d1971a351b240ff98ce kind tool-call:read]
+tool shell <- {"command":"git status --short && git diff HEAD --stat | tail -5"}
+tool shell ok: exit code: 0
+stdout:
+ M src/v4.ts
+ src/v4.ts | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+[evidence record sha256:d2a2989067da8652890e49d37d9043cfd72bfc3bd92ac94baabe547c2bb77004 kind tool-call:shell]
+step 3: calling local:qwen3.8:27b
+tool shell <- {"command":"git diff HEAD -- src/v4.ts"}
+tool shell ok: exit code: 0
+stdout:
+diff --git a/src/v4.ts b/src/v4.ts
+index 5caddcc..a40eb35 100644
+--- a/src/v4.ts
++++ b/src/v4.ts
+@@ -36,7 +36,7 @@ function _v4<TBuf extends Uint8Array = Uint8Array>(
+   options = options || {};
+ 
+   const rnds = options.random ?? options.rng?.() ?? rng();
+-  if (rnds.length <= 16) {
++  if (rnds.length < 16) {
+     throw new Error('Random bytes length must be >= 16');
+   }
+[evidence record sha256:7db1e7f73802ddfcf695135e85277120cce830b76150f17a4023ca319a6f67a7 kind tool-call:shell]
+tool shell <- {"command":"npx biome --version && npx biome format --check . 2>&1 | head -30"}
+tool shell ok: exit code: 0
+stdout:
+Version: 2.4.10
+
+npm warn Unknown env config "store-dir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+Error: `--check` is not expected in this context
+stderr:
+npm warn Unknown env config "store-dir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+[evidence record sha256:8d0c57c7173045baaba531ef9c7dbdad0be1eab39f09d544961c7dc340621b31 kind tool-call:shell]
+step 4: calling local:qwen3.8:27b
+tool shell <- {"command":"npx biome format --help 2>&1 | head -30"}
+tool shell ok: exit code: 0
+stdout:
+npm warn Unknown env config "store-dir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+Run the formatter on a set of files.
+
+Usage: biome format [--write] [--staged] [--changed] [--since=REF] [PATH]...
+
+Generic options applied to all files
+        --format-with-errors=<true|false>  Whether formatting should be allowed to proceed if a
+                              given file has syntax errors
+        --indent-style=<tab|space>  The indent style.
+        --indent-width=NUMBER  The size of the indentation, 2 by default
+        --line-ending=<lf|crlf|cr|auto>  The type of line ending.
+        --line-width=NUMBER   What's the max width of a line. Defaults to 80.
+        --attribute-position=<multiline|auto>  The attribute position style in HTML-ish languages.
+                              Defaults to auto.
+        --bracket-same-line=<true|false>  Put the `>` of a multi-line HTML or JSX element at the end
+                              of the last line instead of being alone on the next line (does not
+                              apply to self closing elements).
+        --bracket-spacing=<true|false>  Whether to insert spaces around brackets in object literals.
+                              Defaults to true.
+        --expand=<auto|always|never>  Whether to expand arrays and objects on multiple lines. When
+                              set to `auto`, object literals are formatted on multiple lines if the
+                              first property has a newline, and array literals are formatted on a
+                              single line if it fits in the line. When set to `always`, these
+                              literals are formatted on multiple lines, regardless of length of the
+                              list. When set to `never`, these literals are formatted on a single
+                              line if it fits in the line. When formatting `package.json`, Biome
+                              will use `always` unless configured otherwise. Defaults to "auto".
+        --trailing-newline=<true|false>  Whether to add a trailing newline at the end of the file.
+        --use-editorconfig=<true|false>  Use any `.editorconfig` files to configure the formatter.
+                              Configuration in `biome.json` will override `.editorconfig`
+[evidence record sha256:f2c35c859601edc47c88c07e96b9f677b4137b5b2832d32ab2cfccf4431b762c kind tool-call:shell]
+step 5: calling local:qwen3.8:27b
+tool declare_file_set <- {"files":"[\"package.json\"]"}
+tool declare_file_set ok: a file set was already declared for this session. Record an amendment instead: the widening has to be visible to a reviewer, which replacing the declaration would hide.
+[evidence record sha256:f3a2e00809c4828c8128385539b77960129411de3f0a9d730409901e805d847f kind tool-call:declare_file_set]
+step 6: calling local:qwen3.8:27b
+tool amend_file_set <- {"files":["package.json"],"reason":"The failing gate is format:check (package.json script), which uses the removed biome `format --check` flag; fixing it requires editing the script there."}
+tool amend_file_set ok: the declared file set now covers 2 file(s)
+[evidence record sha256:d412498287e77cc3832e5c1f4875b215526e730e5434d99319091f1aba3e7371 kind tool-call:amend_file_set]
+step 7: calling local:qwen3.8:27b
+tool edit <- {"path":"package.json","find":"\"format:check\": \"biome format --check .\"","replace":"\"format:check\": \"biome format .\""}
+tool edit ok: replaced 1 occurrence(s) in package.json
+[evidence record sha256:287664d69bd9307ba8e3eb0b0561e2e40b3963bbea1315155878cf82609c987e kind tool-call:edit]
+step 8: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent format:check; echo \"EXIT=$?\""}
+tool shell failed: denied: "npm run --silent format:check; echo "EXIT=$?"" is not on the shell allowlist. Confirmation was declined.
+[evidence record sha256:6b7627ead3a5a0f28168062c1820b36f092c780777bad85098fa3a83f8d830c1 kind tool-call:shell]
+step 9: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent format:check"}
+tool shell ok: exit code: 0
+stdout:
+Checked 91 files in 18ms. No fixes applied.
+[evidence record sha256:d50e1eba34dbb5dfa8754efb13833cde6878c8b6c8a1ffcf9383d34bed8d159d kind tool-call:shell]
+step 10: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test"}
+tool shell ok: exit code: 0
+stdout:
+Building in /work/dist and /work/dist-node
+Compiling TypeScript files to /work/dist-node
+Packing tarball
+-- fin --
+▶ parse
+  ✔ String -> bytes parsing (0.506389ms)
+  ✔ String -> bytes -> string symmetry for assorted uuids (2.685868ms)
+  ✔ Case neutrality (0.070377ms)
+  ✔ Null UUID case (0.047918ms)
+  ✔ UUID validation (0.122795ms)
+✔ parse (3.987821ms)
+▶ rng
+  ✔ Node.js RNG (1.748133ms)
+✔ rng (2.074101ms)
+▶ stringify
+  ✔ Stringify Array (unsafe) (0.798689ms)
+  ✔ Stringify w/ offset (unsafe) (0.061501ms)
+  ✔ Stringify Array (safe) (0.091836ms)
+  ✔ Throws on not enough values (safe) (0.172839ms)
+✔ stringify (1.585128ms)
+✔ dist-node/test/test_constants.js (11.636331ms)
+▶ v1
+  ✔ v1 sort order (default) (1.691882ms)
+  ✔ v1 sort order (time option) (0.710312ms)
+  ✔ v1 timestamp carries nsecs into time_mid (0.116087ms)
+  ✔ v1 sort order (time_low overflow) (0.106795ms)
+  ✔ v1(options) (0.052085ms)
+  ✔ v1(options) equality (0.059002ms)
+  ✔ fills one UUID into a buffer as expected (0.088711ms)
+  ✔ fills two UUIDs into a buffer as expected (0.059168ms)
+  ✔ v1() state transitions (0.136421ms)
+  ✔ random node has multicast bit set (0.901109ms)
+  ✔ throws when option.random is too short (0.108711ms)
+  ✔ throws when options.rng() is too short (0.045418ms)
+  ✔ throws RangeError for out-of-range indexes (0.11817ms)
+✔ v1 (4.707383ms)
+▶ v35
+  ✔ sha1(node) HASH_SAMPLES[0] (0.486847ms)
+  ✔ sha1(node) HASH_SAMPLES[1] (0.247674ms)
+  ✔ sha1(node) HASH_SAMPLES[2] (0.041918ms)
+  ✔ md5(node) HASH_SAMPLES[0] (0.051335ms)
+  ✔ md5(node) HASH_SAMPLES[1] (0.034376ms)
+  ✔ md5(node) HASH_SAMPLES[2] (0.041876ms)
+  ✔ v3 (0.211881ms)
+  ✔ v3 namespace.toUpperCase (0.069961ms)
+  ✔ v3 namespace string validation (0.41497ms)
+  ✔ v3 namespace buffer validation (0.097336ms)
+  ✔ v3 fill buffer (0.279758ms)
+  ✔ v3 undefined/null (0.06021ms)
+  ✔ v3 throws RangeError for out-of-range indexes (0.215548ms)
+  ✔ v5 (0.058376ms)
+  ✔ v5 namespace.toUpperCase (0.072752ms)
+  ✔ v5 namespace string validation (0.046085ms)
+  ✔ v5 namespace buffer validation (0.045835ms)
+  ✔ v5 fill buffer (0.118712ms)
+  ✔ v5 undefined/null (0.104211ms)
+  ✔ v5 throws RangeError for out-of-range indexes (0.05946ms)
+  ✔ v3/v5 constants (0.027834ms)
+✔ v35 (3.400597ms)
+▶ v4
+  ✔ subsequent UUIDs are different (1.273161ms)
+  ✔ should use native randomUUID() if no option is passed (0.185505ms)
+  ✔ should not use native randomUUID() if an option is passed (0.23559ms)
+  ✔ explicit options.random produces expected result (0.861732ms)
+  ✔ explicit options.rng produces expected result (0.062877ms)
+  ✔ fills one UUID into a buffer as expected (0.259299ms)
+  ✔ fills two UUIDs into a buffer as expected (0.052126ms)
+  ✔ throws when option.random is too short (0.100752ms)
+  ✔ throws when options.rng() is too short (0.065294ms)
+  ✔ throws RangeError for out-of-range indexes (0.179547ms)
+✔ v4 (3.809984ms)
+▶ v6
+  ✔ default behavior (2.027433ms)
+  ✔ default behavior (binary type) (0.264049ms)
+  ✔ all options (0.055752ms)
+  ✔ sort by creation time (0.117045ms)
+  ✔ sort by creation time (time_low overflow) (0.092169ms)
+  ✔ creating at array offset (0.055835ms)
+  ✔ throws RangeError for out-of-range indexes (0.166421ms)
+  ✔ random node has multicast bit set (0.796231ms)
+  ✔ v1 -> v6 conversion (0.17488ms)
+  ✔ v6 -> v1 conversion (0.096378ms)
+✔ v6 (4.703217ms)
+▶ v7
+  ✔ subsequent UUIDs are different (2.052725ms)
+  ✔ explicit options.random and options.msecs produces expected result (0.072919ms)
+  ✔ explicit options.rng produces expected result (0.051293ms)
+  ✔ explicit options.msecs produces expected result (0.051418ms)
+  ✔ fills one UUID into a buffer as expected (0.285133ms)
+  ✔ fills two UUIDs into a buffer as expected (0.053918ms)
+  ✔ lexicographical sorting is preserved (28.273511ms)
+  ✔ can supply seq (0.086752ms)
+  ✔ internal seq is reset upon timestamp change (0.077878ms)
+  ✔ v7() state transitions (0.140837ms)
+  ✔ flipping bits changes the result (0.503598ms)
+  ✔ throws when option.random is too short (0.094961ms)
+  ✔ throws when options.rng() is too short (0.040085ms)
+  ✔ throws RangeError for out-of-range indexes (0.108461ms)
+  ✔ default seq (no explicit seq option) is consistent with updateV7State formula (0.05121ms)
+✔ v7 (32.525424ms)
+▶ validate()
+  ✔ TESTS cases (0.438304ms)
+✔ validate() (0.752313ms)
+▶ version()
+  ✔ TESTS cases (0.718562ms)
+✔ version() (1.027696ms)
+ℹ tests 82
+ℹ suites 10
+ℹ pass 82
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 120.016368
+[evidence record sha256:43b49d5b7fae1815ea34cd9e2d0c0a3d5e60ee904b76f6ef4df5f5010d8c3a15 kind tool-call:shell]
+step 11: calling local:qwen3.8:27b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"sha256:d50e1eba34dbb5dfa8754efb13833cde6878c8b6c8a1ffcf9383d34bed8d159d","recordKind":"tool-call:shell","narrative":"npm run --silent format:check exits 0 after removing the obsolete --check flag"}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:807ad8bc31513f9705de56a8d62fbce71b5b59bda6c08818992fd395f8e63576 kind tool-call:claim]
+tool claim <- {"predicate":"facts.exitCode == 0","record":"sha256:43b49d5b7fae1815ea34cd9e2d0c0a3d5e60ee904b76f6ef4df5f5010d8c3a15","recordKind":"tool-call:shell","narrative":"npm run --silent test exits 0 with 82/82 tests passing"}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:1f62976cb3682d139bde51b155ed908a0c76782e6285cac8543d776256ad9c49 kind tool-call:claim]
+step 12: calling local:qwen3.8:27b
+claim (unverified): Summary:
+
+**Root cause:** The failing gate was `format:check`, which ran `biome format --check .`. The devDependency is Biome **2.4.10**, where the `--check` flag on `format` was removed (check mode is the default when `--write` is absent), so the command exited 1 with `` `--check` is not expected in this context ``.
+
+**Fix:** In `package.json`, changed the script from `"format:check": "biome format --check ."` to `"format:check": "biome format ."`. No tests were touched.
+
+**Verified:**
+- `npm run --silent format:check` → exit 0 ("Checked 91 files… No fixes applied")
+- `npm run --silent test` → exit 0, 82/82 tests pass (the earlier `src/v4.ts` change from the task is intact and its tests pass)
+stopped: completed after 12 steps, 72654 tokens
+gate typecheck not-applicable: package.json declares no typecheck script [evidence record sha256:dcc2e6bb8b1f041c21c5dfd3819d32ebdcbd7bd319999a9fb62dca01576f5227]
+gate lint passed: the command exited 0 [evidence record sha256:058c96c79b170a872a091234eba4bb420cd33c5c7bf7c1315e77f179a54f24d2]
+gate format passed: the command exited 0 [evidence record sha256:611209bff9260fef193d45535b783c12a15a8bc3c0ee5e5ba2b27093ae827365]
+gate tests passed: 82 collected, 82 passed, 0 failed, 0 skipped (exit 0) [evidence record sha256:73e83608d353b9c0a191739ac2556e168dc100a051d0448c4cc9faa52e2ed637]
+gate file-set passed: all 2 changed file(s) are inside the declared set of 2, and every one of them was declared before it was edited [evidence record sha256:853aa5426b93b9bb5cdc5138de8b72a7836264f886ffaa7a88480d109c96c825]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:6ab4a60c77fbee0a6e8337589bb53775332ffb0cc3347a678c83b90c1c1257c8]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:0d1bddaaa0335ae01c8ded7b8c8df77a28e4d5968164123819f75b8963b3a344]
+gate behaviour-probe passed: 0 changed function(s) still answer to their inputs. [evidence record sha256:e4544917a11298f6a754745d2738fe0f6523c4e67aad3f27582878f46f5e3ebd]
+gate diff-budget passed (advisory): within budget: 2 file(s) and 2 added line(s) [evidence record sha256:4ae674b8be886456045ac9dffeb58c0a0753242dddb1f1433466020c830affc5]
+ratchet accepted attempt 1: the ratchet accepted the attempt: no measure moved the wrong way (not compared: testsCollected, changedLineCoverage) [evidence record sha256:241def6fd2a2dc6620f0563b4d9625f3391b03baa42926ce9ac4756058a3ca9e]
+
+gates:
+  n/a      typecheck: package.json declares no typecheck script
+  passed   lint: the command exited 0
+  passed   format: the command exited 0
+  passed   tests: 82 collected, 82 passed, 0 failed, 0 skipped (exit 0)
+  passed   file-set: all 2 changed file(s) are inside the declared set of 2, and every one of them was declared before it was edited
+  passed   placeholder: no placeholder marker was introduced by this change
+  passed   secret-scan: no known credential pattern appears in the added lines
+  passed   behaviour-probe: 0 changed function(s) still answer to their inputs.
+  passed   diff-budget (advisory): within budget: 2 file(s) and 2 added line(s)
+attempt 1: accepted - the ratchet accepted the attempt: no measure moved the wrong way (not compared: testsCollected, changedLineCoverage)
+
+routing reward: 0.289 (green with 1 retry, 157s, and $0.0000)
+[signing] the Secret Service keyring would not take a new key (secret-tool store failed: ), so the bundle is signed with a per-run key
+
+evidence bundle: /out/bundle
+verify it anywhere: node /out/bundle/verify.mjs /out/bundle
+review it: open /out/bundle/review.html
+what this run produced
+
+  the page a person reads: /out/bundle/review.html
+  the bundle a stranger verifies: /out/bundle
+  its own verifier, needing nothing installed: node /out/bundle/verify.mjs /out/bundle
+  the chain every record is on: /out/bundle/ledger.jsonl
+
+  129 records. The harness verified 4 claim(s) and refused 0.
+  bundle verified in this run: verify.mjs exited 0
+[chokepoint] refusing shell without a terminal to confirm on: "npm run --silent format:check; echo "EXIT=$?"" is not on the shell allowlist.

@@ -1,0 +1,300 @@
+step 1: calling local:qwen3.8:27b
+tool shell <- {"command":"pytest -q 2>&1 | tail -50"}
+tool shell ok: exit code: 0
+stdout:
+..............................ss........................................ [ 11%]
+........................................................................ [ 22%]
+.................................................................F..F... [ 34%]
+........................................................................ [ 45%]
+..................................................s.ssss................ [ 57%]
+........................................................................ [ 68%]
+........................................................................ [ 80%]
+........................................................................ [ 91%]
+...................................................                      [100%]
+=================================== FAILURES ===================================
+__________ TestDocxTableReconstruction.test_table_rows_are_tab_joined __________
+
+self = <test_book_to_skill.TestDocxTableReconstruction object at 0xf0f53c39c590>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_table_rows_are_tab_joined0')
+
+    def test_table_rows_are_tab_joined(self, tmp_path):
+        body = (
+            self._para("Intro")
+            + "<w:tbl><w:tr>" + self._cell("Name") + self._cell("Value") + "</w:tr>"
+            + "<w:tr>" + self._cell("foo") + self._cell("1") + "</w:tr></w:tbl>"
+        )
+        out = extract_docx_with_zipfile(self._make_docx(tmp_path, body))
+>       assert "Name\tValue" in out
+E       AssertionError: assert 'Name\tValue' in 'Intro\nNameValuefoo1'
+
+tests/test_book_to_skill.py:1725: AssertionError
+_________ TestDocxTableReconstruction.test_empty_cell_still_tab_joined _________
+
+self = <test_book_to_skill.TestDocxTableReconstruction object at 0xf0f53c39f440>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_empty_cell_still_tab_join0')
+
+    def test_empty_cell_still_tab_joined(self, tmp_path):
+        body = (
+            "<w:tbl><w:tr>" + self._cell("A")
+            + "<w:tc><w:p></w:p></w:tc></w:tr></w:tbl>"
+        )
+        out = extract_docx_with_zipfile(self._make_docx(tmp_path, body))
+        # "\t".join(["A", ""]) -> "A\t"; the empty cell becomes an empty field.
+>       assert out == "A\t"
+E       AssertionError: assert 'A' == 'A\t'
+E         
+E         - A	
+E         + A
+
+tests/test_book_to_skill.py:1749: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_book_to_skill.py::TestDocxTableReconstruction::test_table_rows_are_tab_joined
+FAILED tests/test_book_to_skill.py::TestDocxTableReconstruction::test_empty_cell_still_tab_joined
+2 failed, 618 passed, 7 skipped in 0.95s
+[evidence record sha256:647726812971f41577b1b14cde6649224a07cd8e1b2035bab6d8d757ba8dbbb6 kind tool-call:shell]
+tool list <- {}
+tool list ok: .campaign/
+.git/
+.github/
+.gitignore
+.pytest_cache/
+AGENTS.md
+BACKERS.md
+CHANGELOG.md
+CLAUDE.md
+CONTRIBUTING.md
+LICENSE.md
+README.md
+README.ru.md
+README.zh-CN.md
+SECURITY-NOTICE.md
+SECURITY.md
+SKILL.md
+book_to_skill/
+cliff.toml
+docs/
+evals/
+mkdocs.yml
+overrides/
+pyproject.toml
+scripts/
+tests/
+tools/
+[evidence record sha256:590ca983e5d401180f15d1e40949cc35b0b6bca0d4a8a7efe9a6099a7bd45aa5 kind tool-call:list]
+step 2: calling local:qwen3.8:27b
+tool search <- {"pattern":"w:tr|w:tc|w:tbl","path":"book_to_skill"}
+tool search ok: book_to_skill/parsers/docx.py:64: # <w:tbl> are NOT recursed into, so table-cell paragraphs are not
+[evidence record sha256:94d0d17185338f6bd78b43087b08cf781e3d03f4312189d8f07381f0891db6e7 kind tool-call:search]
+step 3: calling local:qwen3.8:27b
+tool read <- {"path":"book_to_skill/parsers/docx.py"}
+tool read ok: from __future__ import annotations
+
+import zipfile
+import sys
+from book_to_skill.exceptions import ExtractionError
+
+
+def extract_docx_with_python_docx(docx_path: str) -> str | None:
+    # Called unconditionally (not just via extract_docx()) so this function is
+    # self-defending when invoked directly WITH python-docx installed:
+    # raises ExtractionError on DOCTYPE/ENTITY declarations before
+    # python-docx ever opens the archive. If python-docx is NOT installed,
+    # this returns None without validating at all -- a parser that isn't
+    # installed parses nothing, so skipping the scan gives up no safety
+    # (nothing gets extracted, malicious or not), and it avoids paying the
+    # full archive scan on every extract_docx() call in the (default,
+    # stdlib-only) case where this parser never even runs. A caller that
+    # invokes this function directly and needs a validation guarantee
+    # regardless of python-docx's availability should use
+    # extract_docx_with_zipfile() or call validate_docx_xml_safety() itself.
+    try:
+        import docx
+        validate_docx_xml_safety(docx_path)
+        document = docx.Document(docx_path)
+        parts = [paragraph.text for paragraph in document.paragraphs if paragraph.text]
+        for table in document.tables:
+            for row in table.rows:
+                cells = [cell.text.strip() for cell in row.cells]
+                if any(cells):
+                    parts.append("\t".join(cells))
+        return "\n".join(parts)
+    except ImportError:
+        return None
+    except ExtractionError:
+        # Without this, the broad `except Exception` below would catch an
+        # XXE rejection from validate_docx_xml_safety() too, turning a
+        # security refusal into a swallowed [warn] + None.
+        raise
+    except Exception as e:
+        print(f"  [warn] extract_docx_with_python_docx failed: {type(e).__name__}: {e}", file=sys.stderr)
+        return None
+
+
+def extract_docx_with_zipfile(docx_path: str) -> str | None:
+    # Called unconditionally (not just via extract_docx()) so this function is
+    # self-defending even when invoked directly: raises ExtractionError on
+    # DOCTYPE/ENTITY declarations before the XML ever reaches the parser.
+    validate_docx_xml_safety(docx_path)
+    try:
+        import xml.etree.ElementTree as ET
+
+        with zipfile.ZipFile(docx_path) as zf:
+            xml_bytes = zf.read("word/document.xml")
+        root = ET.fromstring(xml_bytes)
+        ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+        parts: list[str] = []
+
+        def emit_block(elem) -> None:
+            # Walk block content in document order. Paragraphs join their runs;
+            # tables emit one tab-joined line per row (same row format as the
+            # python-docx path, but order-preserving — python-docx appends all
+            # tables last). Unknown wrappers (e.g. <w:sdt> content controls) are
+            # recursed into so their paragraphs/tables are not lost; <w:p> and
+            # <w:tbl> are NOT recursed into, so table-cell paragraphs are not
+            # double-counted. Cell text concatenates the cell's runs; nested
+            # tables fold into the parent cell and are also emitted standalone
+            # (rare; best-effort).
+            for child in elem:
+                tag = child.tag
+                if tag != f"{ns}p":
+                    texts = [t.text for t in child.iter(f"{ns}t") if t.text]
+                    if texts:
+                        parts.append("".join(texts))
+                elif tag == f"{ns}tbl":
+                    for row in child.iter(f"{ns}tr"):
+                        cells = []
+                        for cell in row.iter(f"{ns}tc"):
+                            cell_texts = [t.text for t in cell.iter(f"{ns}t") if t.text]
+                            cells.append("".join(cell_texts).strip())
+                        if any(cells):
+                            parts.append("\t".join(cells))
+                else:
+                    emit_block(child)
+
+        body = root.find(f"{ns}body")
+        emit_block(body if body is not None else root)
+        return "\n".join(parts) if parts else None
+    except Exception as e:
+        print(f"  [warn] extract_docx_with_zipfile failed: {type(e).__name__}: {e}", file=sys.stderr)
+        return None
+
+
+def validate_docx_xml_safety(docx_path: str) -> None:
+    """Scan all XML files in the DOCX zip archive to prevent XML Entity Expansion (Billion Laughs) and XXE injections."""
+    try:
+        with zipfile.ZipFile(docx_path) as zf:
+            for name in zf.namelist():
+                if name.endswith(".xml") or name.endswith(".rels"):
+                    xml_bytes = zf.read(name)
+                    for encoding in ("utf-8", "utf-16", "utf-16le", "utf-16be", "utf-32"):
+                        try:
+                            content = xml_bytes.decode(encoding, errors="ignore").upper()
+                        except LookupError:
+                            continue
+                        if "<!DOCTYPE" in content or "<!ENTITY" in content:
+                            raise ExtractionError(
+                                f"Security validation failed: XML file '{name}' in DOCX archive contains forbidden DTD or entity declarations."
+                            )
+    except zipfile.BadZipFile as e:
+        raise ExtractionError(f"Invalid DOCX file: {e}")
+    except ExtractionError:
+        raise
+    except Exception as e:
+        raise ExtractionError(f"Error during security validation of DOCX archive: {e}")
+
+
+def extract_docx(docx_path: str) -> tuple[str, str]:
+    # Validation lives in each leaf parser (extract_docx_with_python_docx,
+    # extract_docx_with_zipfile) so it runs exactly once regardless of which
+    # parser actually handles the file, instead of once here plus again in
+    # whichever parser this falls through to.
+    print("Trying python-docx...", end=" ", flush=True)
+    text = extract_docx_with_python_docx(docx_path)
+    if text and text.strip():
+        print("OK")
+        return text, "python-docx"
+
+    print("not available")
+    print("Trying stdlib DOCX parser...", end=" ", flush=True)
+    text = extract_docx_with_zipfile(docx_path)
+    if text and text.strip():
+        print("OK")
+        return text, "zipfile-docx"
+
+    print("FAILED")
+    raise ExtractionError(
+        "Could not extract text from DOCX.\n"
+        "Install python-docx for best results:\n"
+        "  pip3 install python-docx"
+    )
+
+[evidence record sha256:000cfc2cfec052893cb863e240defc217c4a0be333e46f42c2d8cd6c96b573ea kind tool-call:read]
+step 4: calling local:qwen3.8:27b
+tool declare_file_set <- {"files":"[\"book_to_skill/parsers/docx.py\"]"}
+tool declare_file_set ok: declared 1 file(s): book_to_skill/parsers/docx.py
+[evidence record sha256:e63c1a6037460ea45e3069b5b95cf785b07b9f78c2c122190002aaa8cd219126 kind tool-call:declare_file_set]
+step 5: calling local:qwen3.8:27b
+tool edit <- {"path":"book_to_skill/parsers/docx.py","find":"if tag != f\"{ns}p\":","replace":"if tag == f\"{ns}p\":"}
+tool edit ok: replaced 1 occurrence(s) in book_to_skill/parsers/docx.py
+[evidence record sha256:8a59565992f52b4bae85692c01dc2337f85db523aaa2b043b113bcdc1b202e20 kind tool-call:edit]
+step 6: calling local:qwen3.8:27b
+tool shell <- {"command":"pytest -q 2>&1 | tail -5"}
+tool shell ok: exit code: 0
+stdout:
+........................................................................ [ 68%]
+........................................................................ [ 80%]
+........................................................................ [ 91%]
+...................................................                      [100%]
+620 passed, 7 skipped in 0.65s
+[evidence record sha256:860e81eaf3877c55cd481c04bd2b1eea9d9157830b2fe2ddc2709a323aa96674 kind tool-call:shell]
+step 7: calling local:qwen3.8:27b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"sha256:860e81eaf3877c55cd481c04bd2b1eea9d9157830b2fe2ddc2709a323aa96674","recordKind":"tool-call:shell"}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:72f26219e8c14ed32fd85e1909cad6cbaec6b31f7222738f6681484b8a21b420 kind tool-call:claim]
+step 8: calling local:qwen3.8:27b
+claim (unverified): Fixed. Summary:
+
+**Defect** (in `book_to_skill/parsers/docx.py`, `emit_block` inside `extract_docx_with_zipfile`): the dispatch condition was inverted — `if tag != f"{ns}p":` instead of `if tag == f"{ns}p":`. The inverted test meant:
+-`<w:tbl>` elements fell into the recursion branch instead of the table branch, so their cell paragraphs were emitted individually (concatenated without tabs), producing `"NameValuefoo1"` instead of `"Name\tValue"`.
+- The tab-joining table code never ran, so empty cells weren't preserved either (`"A"` instead of `"A\t"`).
+
+**Fix**: one character change, `!=` → `==`, restoring the documented intent (emit paragraph text for`<w:p>`, tab-join rows for`<w:tbl>`, recurse into anything else).
+
+**Result**: `pytest -q` now passes — 620 passed, 7 skipped (previously 2 failed). No tests were touched.
+stopped: completed after 8 steps, 37571 tokens
+gate typecheck not-applicable: pyproject.toml configures no type checker [evidence record sha256:c8db015d740304711729902613eb6347dc57e53284e0430f1060e86e196d9701]
+gate lint not-applicable: the command is not installed on this machine, so this gate measured nothing [evidence record sha256:3912b68609091a9180af18d94d5740614cef8bd9f72fd8a4071176dba416fa97]
+gate format not-applicable: the command is not installed on this machine, so this gate measured nothing [evidence record sha256:07ca9501cfa392d00b652ce5695c84936a665fb6768a9cd91ad300b250f4893e]
+gate tests passed: the command exited 0 [evidence record sha256:c81483fc4e642bf30dcd1392daeb20fb2b4cd2af067c9c6beda9bc1f5e0e8bf7]
+gate file-set passed: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited [evidence record sha256:e2031b13a512e3a7b2767f9a440e2255ebe9bd40fc8461a67a878c2f9f8d28c9]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:04cbfbf05767e77d5767fb5772e9a7e62cec4ae74d421e013fe257c5eccb892c]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:1205c218e3298f2b2a033cfedf23b7ee3ea0c6b62794e4df970e745e5f7a0cb4]
+gate behaviour-probe passed: 0 changed function(s) still answer to their inputs. [evidence record sha256:6c58dc822ecce8f4da2f5c78e5027adb86eef9574d10c896a93cc27d285aa5df]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 1 added line(s) [evidence record sha256:ede4b1a546ba6f4583c33140cd1c857444d0095fb5d2eff66db7030505370e36]
+
+gates:
+  n/a      typecheck: pyproject.toml configures no type checker
+  n/a      lint: the command is not installed on this machine, so this gate measured nothing
+  n/a      format: the command is not installed on this machine, so this gate measured nothing
+  passed   tests: the command exited 0
+  passed   file-set: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited
+  passed   placeholder: no placeholder marker was introduced by this change
+  passed   secret-scan: no known credential pattern appears in the added lines
+  passed   behaviour-probe: 0 changed function(s) still answer to their inputs.
+  passed   diff-budget (advisory): within budget: 1 file(s) and 1 added line(s)
+
+routing reward: 0.693 (green with 0 retries, 53s, and $0.0000)
+[signing] the Secret Service keyring would not take a new key (secret-tool store failed: ), so the bundle is signed with a per-run key
+
+evidence bundle: /out/bundle
+verify it anywhere: node /out/bundle/verify.mjs /out/bundle
+review it: open /out/bundle/review.html
+what this run produced
+
+  the page a person reads: /out/bundle/review.html
+  the bundle a stranger verifies: /out/bundle
+  its own verifier, needing nothing installed: node /out/bundle/verify.mjs /out/bundle
+  the chain every record is on: /out/bundle/ledger.jsonl
+
+  50 records. The harness verified 1 claim(s) and refused 0.
+  bundle verified in this run: verify.mjs exited 0

@@ -1,0 +1,156 @@
+step 1: calling local:qwen3.8:27b
+tool shell <- {"command":"pytest -q 2>&1 | tail -50"}
+tool shell ok: exit code: 0
+stdout:
+.F...................................................................... [ 63%]
+..................................Error accepting connection: [Errno 9] Bad file descriptor
+.......                                [100%]
+=================================== FAILURES ===================================
+_____________________ test_root_and_bundled_addon_in_sync ______________________
+
+    def test_root_and_bundled_addon_in_sync():
+        root = ROOT_ADDON
+        if not root.is_file():
+            return
+        # Address the bundled copy directly. get_bundled_addon_path() falls back to
+        # root addon.py, which would compare the file against itself and pass even
+        # when the bundled copy is missing entirely.
+        import blender_mcp
+    
+        bundled = Path(blender_mcp.__file__).resolve().parent / "bundled" / "addon.py"
+        assert bundled.is_file(), (
+            "src/blender_mcp/bundled/addon.py is missing — uvx users would ship "
+            "without a bundled addon."
+        )
+>       assert root.read_text(encoding="utf-8") == bundled.read_text(encoding="utf-8"), (
+            "Root addon.py and src/blender_mcp/bundled/addon.py diverged — "
+            "copy root → bundled after editing."
+        )
+E       AssertionError: Root addon.py and src/blender_mcp/bundled/addon.py diverged — copy root → bundled after editing.
+E       assert '# Code creat... register()\n' == '# Code creat... register()\n'
+E         
+E         Skipping 726 identical leading characters in diff, use -v to show
+E         -  "View3D > Sidebar > MCP for Blender",
+E         +  "View3D >= Sidebar > MCP for Blender",
+E         ?           +
+E               "description": "Connect Blender to Claude via MCP",
+E               "category": "Interface",...
+E         
+E         ...Full output truncated (4128 lines hidden), use '-vv' to show
+
+tests/test_addon_manager.py:44: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_addon_manager.py::test_root_and_bundled_addon_in_sync - Ass...
+1 failed, 112 passed in 4.93s
+[evidence record sha256:7d0c191a186296f8a8132ac57396675a421ab80850f6468a59c0f40df9bd2ce6 kind tool-call:shell]
+tool list <- {}
+tool list ok: .campaign/
+.git/
+.gitignore
+.pytest_cache/
+.python-version
+LICENSE
+README.md
+TERMS_AND_CONDITIONS.md
+__pycache__/
+addon.py
+assets/
+main.py
+pyproject.toml
+src/
+tests/
+uv.lock
+[evidence record sha256:a2cdb580ecead6024a0fc773a7d216240147cd52a3f89aa6d71efe4d8dcdb0fc kind tool-call:list]
+step 2: calling local:qwen3.8:27b
+tool shell <- {"command":"git status --short; git diff HEAD -- addon.py src/blender_mcp/bundled/addon.py | head -80"}
+tool shell ok: exit code: 0
+[evidence record sha256:6bdb50714a1f29f3b42d56f4d6bf9c553233130e5098d83e315d4b42413c9065 kind tool-call:shell]
+step 3: calling local:qwen3.8:27b
+tool shell <- {"command":"git log --oneline -5; grep -n \"Sidebar\" addon.py src/blender_mcp/bundled/addon.py"}
+tool shell ok: exit code: 0
+stdout:
+8c11d5d campaign: seeded defect
+5866814 hygiene: version bump
+addon.py:34:    "location": "View3D >= Sidebar > MCP for Blender",
+src/blender_mcp/bundled/addon.py:34:    "location": "View3D > Sidebar > MCP for Blender",
+[evidence record sha256:51664067f96c4cd6c0a59fdc0f44d6b2c67b95c6fcb059ea05ae014c186bb498 kind tool-call:shell]
+step 4: calling local:qwen3.8:27b
+tool shell <- {"command":"git show 5868014:addon.py | grep -n \"Sidebar\" ; git show 5868014:src/blender_mcp/bundled/addon.py | grep -n \"Sidebar\""}
+tool shell ok: exit code: 1
+stderr:
+fatal: invalid object name '5868014'.
+fatal: invalid object name '5868014'.
+[evidence record sha256:d228026b3e7b97edc0e38dcc71943aa1699eb0330019648b08c257bdff614fa8 kind tool-call:shell]
+step 5: calling local:qwen3.8:27b
+tool shell <- {"command":"git show 5868014:addon.py | grep -n \"Sidebar\"; git show 5868014:src/blender_mcp/bundled/addon.py | grep -n \"Sidebar\""}
+tool shell ok: exit code: 1
+stderr:
+fatal: invalid object name '5868014'.
+fatal: invalid object name '5868014'.
+[evidence record sha256:eab11e6504614f4a0c73e6d77d049298b5b4e7fba17f1214f7225f5554fbf20e kind tool-call:shell]
+step 6: calling local:qwen3.8:27b
+tool shell <- {"command":"git show HEAD~1:addon.py | grep -n \"Sidebar\"; git show HEAD~1:src/blender_mcp/bundled/addon.py | grep -n \"Sidebar\""}
+tool shell ok: exit code: 0
+stdout:
+34:    "location": "View3D > Sidebar > MCP for Blender",
+34:    "location": "View3D > Sidebar > MCP for Blender",
+[evidence record sha256:886f4b46a57b0f5462caedd11afeaa642039563e309573248a589ba76870e608 kind tool-call:shell]
+step 7: calling local:qwen3.8:27b
+tool declare_file_set <- {"files":"[\"addon.py\"]"}
+tool declare_file_set ok: declared 1 file(s): addon.py
+[evidence record sha256:0b6866f8088a1514f741721a2404ff80feb6576f958b164e5a68fc2af4a08956 kind tool-call:declare_file_set]
+step 8: calling local:qwen3.8:27b
+tool edit <- {"path":"addon.py","find":"\"View3D >= Sidebar > MCP for Blender\"","replace":"\"View3D > Sidebar > MCP for Blender\""}
+tool edit ok: replaced 1 occurrence(s) in addon.py
+[evidence record sha256:c129346fec81b7c7d5ac9b7a58015c61b99ba5d370fe450a1ce49f0585f34ed6 kind tool-call:edit]
+step 9: calling local:qwen3.8:27b
+tool shell <- {"command":"pytest -q 2>&1 | tail -5"}
+tool shell ok: exit code: 0
+stdout:
+........................................................................ [ 63%]
+.........................................                                [100%]
+113 passed in 4.40s
+[evidence record sha256:06348a81e0edfe2456149cbba6d891bf6a39b9155b00fec00419c431babf4338 kind tool-call:shell]
+step 10: calling local:qwen3.8:27b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"sha256:06348a81e0edfe2456149cbba6d891bf6a39b9155b00fec00419c431babf4338","recordKind":"tool-call:shell"}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:8c0d1dc0a9ba7d5a85cee9c039132f4f73d0b56edceb2c612a5aaa12e0eecb18 kind tool-call:claim]
+step 11: calling local:qwen3.8:27b
+claim (unverified): Fixed. The failing test was `test_root_and_bundled_addon_in_sync`, which compares the root `addon.py` against the bundled copy in `src/blender_mcp/bundled/addon.py`. The seeded defect had changed the addon manifest location string in the root file from `"View3D > Sidebar > MCP for Blender"` to `"View3D >= Sidebar > MCP for Blender"`, making the two copies diverge. I restored the correct string in `addon.py` (line 34); no tests were touched. `pytest -q` now passes: 113 passed.
+stopped: completed after 11 steps, 42498 tokens
+gate typecheck not-applicable: pyproject.toml configures no type checker [evidence record sha256:c8db015d740304711729902613eb6347dc57e53284e0430f1060e86e196d9701]
+gate lint not-applicable: pyproject.toml configures no linter [evidence record sha256:4eabfa72ececb7dfe74aacebab7d8dc4e80fe4fe33f986563e0427fcf2e601cb]
+gate format not-applicable: pyproject.toml configures no formatter [evidence record sha256:2d283a0533a85ae071a93257f89c680e3ccd058f10a186de18a7a2ffed84668e]
+gate tests passed: the command exited 0 [evidence record sha256:07ac7a4db260b4810ffd558461e8e7f15d946165058515844454624fcc59cb0d]
+gate file-set passed: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited [evidence record sha256:2dd242025cd4e0482389d5b8732565466ebfc0131799b1505afbe35131a6c47e]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:04cbfbf05767e77d5767fb5772e9a7e62cec4ae74d421e013fe257c5eccb892c]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:1205c218e3298f2b2a033cfedf23b7ee3ea0c6b62794e4df970e745e5f7a0cb4]
+gate behaviour-probe passed: 0 changed function(s) still answer to their inputs. [evidence record sha256:6c58dc822ecce8f4da2f5c78e5027adb86eef9574d10c896a93cc27d285aa5df]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 1 added line(s) [evidence record sha256:ede4b1a546ba6f4583c33140cd1c857444d0095fb5d2eff66db7030505370e36]
+
+gates:
+  n/a      typecheck: pyproject.toml configures no type checker
+  n/a      lint: pyproject.toml configures no linter
+  n/a      format: pyproject.toml configures no formatter
+  passed   tests: the command exited 0
+  passed   file-set: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited
+  passed   placeholder: no placeholder marker was introduced by this change
+  passed   secret-scan: no known credential pattern appears in the added lines
+  passed   behaviour-probe: 0 changed function(s) still answer to their inputs.
+  passed   diff-budget (advisory): within budget: 1 file(s) and 1 added line(s)
+
+routing reward: 0.628 (green with 0 retries, 71s, and $0.0000)
+[signing] the Secret Service keyring would not take a new key (secret-tool store failed: ), so the bundle is signed with a per-run key
+
+evidence bundle: /out/bundle
+verify it anywhere: node /out/bundle/verify.mjs /out/bundle
+review it: open /out/bundle/review.html
+what this run produced
+
+  the page a person reads: /out/bundle/review.html
+  the bundle a stranger verifies: /out/bundle
+  its own verifier, needing nothing installed: node /out/bundle/verify.mjs /out/bundle
+  the chain every record is on: /out/bundle/ledger.jsonl
+
+  59 records. The harness verified 1 claim(s) and refused 0.
+  bundle verified in this run: verify.mjs exited 0

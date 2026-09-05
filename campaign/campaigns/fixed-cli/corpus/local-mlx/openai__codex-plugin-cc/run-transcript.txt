@@ -1,0 +1,3189 @@
+step 1: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test 2>&1 | tail -50"}
+tool shell ok: exit code: 0
+stdout:
+✔ cancel stops an active background job and marks it cancelled (80.878099ms)
+✔ cancel without a job id ignores active jobs from other Claude sessions (45.135008ms)
+✔ cancel with a job id can still target an active job from another Claude session (27.677717ms)
+✔ cancel sends turn interrupt to the shared app-server before killing a brokered task (278.522218ms)
+✔ session end fully cleans up jobs for the ending session (93.171168ms)
+✔ stop hook runs a stop-time review task and blocks on findings when the review gate is enabled (469.298719ms)
+✔ stop hook logs running tasks to stderr without blocking when the review gate is disabled (29.881096ms)
+✔ stop hook allows the stop when the review gate is enabled and the stop-time review task is clean (325.13544ms)
+✔ stop hook does not block when Codex is unavailable even if the review gate is enabled (83.593649ms)
+✔ stop hook runs the actual task when auth status looks stale (324.768597ms)
+✔ commands lazily start and reuse one shared app-server after first use (315.130724ms)
+✔ setup reuses an existing shared app-server without starting another one (302.413876ms)
+✔ status reports shared session runtime when a lazy broker is active (196.459817ms)
+✔ setup and status honor --cwd when reading shared session runtime (77.330128ms)
+✔ resolveStateDir uses a temp-backed per-workspace directory (1.729914ms)
+✔ resolveStateDir uses CLAUDE_PLUGIN_DATA when it is provided (0.824841ms)
+✔ saveState prunes dropped job artifacts when indexed jobs exceed the cap (146.412697ms)
+ℹ tests 91
+ℹ suites 0
+ℹ pass 90
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11216.570272
+
+✖ failing tests:
+
+test at tests/runtime.test.mjs:766:1
+✖ task forwards model selection and reasoning effort to app-server turn/start (175.98013ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + null
+  - 'gpt-5.3-codex-spark'
+  
+      at TestContext.<anonymous> (file:///work/tests/runtime.test.mjs:783:10)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: null,
+    expected: 'gpt-5.3-codex-spark',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+[evidence record sha256:d84950e335c784451b1e15c5b991a89f71808b259fb00f9d7ee3f994a1fb8d86 kind tool-call:shell]
+tool list <- {}
+tool list ok: .claude-plugin/
+.git/
+.github/
+.gitignore
+LICENSE
+NOTICE
+README.md
+node_modules/
+package-lock.json
+package.json
+plugins/
+scripts/
+tests/
+tsconfig.app-server.json
+[evidence record sha256:7fe7e09c57260201c16dc57b76c026200efc4baa4f978e11126dc43601176250 kind tool-call:list]
+step 2: calling local:qwen3.8:27b
+tool read <- {"path":"tests/runtime.test.mjs"}
+tool read ok: import fs from "node:fs";
+import path from "node:path";
+import test from "node:test";
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+import { buildEnv, installFakeCodex } from "./fake-codex-fixture.mjs";
+import { initGitRepo, makeTempDir, run } from "./helpers.mjs";
+import { loadBrokerSession, saveBrokerSession } from "../plugins/codex/scripts/lib/broker-lifecycle.mjs";
+import { resolveStateDir } from "../plugins/codex/scripts/lib/state.mjs";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const PLUGIN_ROOT = path.join(ROOT, "plugins", "codex");
+const SCRIPT = path.join(PLUGIN_ROOT, "scripts", "codex-companion.mjs");
+const STOP_HOOK = path.join(PLUGIN_ROOT, "scripts", "stop-review-gate-hook.mjs");
+const SESSION_HOOK = path.join(PLUGIN_ROOT, "scripts", "session-lifecycle-hook.mjs");
+
+async function waitFor(predicate, { timeoutMs = 5000, intervalMs = 50 } = {}) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const value = await predicate();
+    if (value) {
+      return value;
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error("Timed out waiting for condition.");
+}
+
+test("setup reports ready when fake codex is installed and authenticated", () => {
+  const binDir = makeTempDir();
+  installFakeCodex(binDir);
+
+  const result = run("node", [SCRIPT, "setup", "--json"], {
+    cwd: ROOT,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ready, true);
+  assert.match(payload.codex.detail, /advanced runtime available/);
+  assert.equal(payload.sessionRuntime.mode, "direct");
+});
+
+test("setup is ready without npm when Codex is already installed and authenticated", () => {
+  const binDir = makeTempDir();
+  installFakeCodex(binDir);
+  fs.symlinkSync(process.execPath, path.join(binDir, "node"));
+
+  const result = run("node", [SCRIPT, "setup", "--json"], {
+    cwd: ROOT,
+    env: {
+      ...process.env,
+      PATH: binDir
+    }
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ready, true);
+  assert.equal(payload.npm.available, false);
+  assert.equal(payload.codex.available, true);
+  assert.equal(payload.auth.loggedIn, true);
+});
+
+test("setup trusts app-server API key auth even when login status alone would fail", () => {
+  const binDir = makeTempDir();
+  installFakeCodex(binDir, "api-key-account-only");
+
+  const result = run("node", [SCRIPT, "setup", "--json"], {
+    cwd: ROOT,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ready, true);
+  assert.equal(payload.auth.loggedIn, true);
+  assert.equal(payload.auth.authMethod, "apiKey");
+  assert.equal(payload.auth.source, "app-server");
+  assert.match(payload.auth.detail, /API key configured \(unverified\)/);
+});
+
+test("setup is ready when the active provider does not require OpenAI login", () => {
+  const binDir = makeTempDir();
+  installFakeCodex(binDir, "provider-no-auth");
+
+  const result = run("node", [SCRIPT, "setup", "--json"], {
+    cwd: ROOT,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ready, true);
+  assert.equal(payload.auth.loggedIn, true);
+  assert.equal(payload.auth.authMethod, null);
+  assert.equal(payload.auth.source, "app-server");
+  assert.match(payload.auth.detail, /configured and does not require OpenAI authentication/i);
+});
+
+test("setup treats custom providers with app-server-ready config as ready", () => {
+  const binDir = makeTempDir();
+  installFakeCodex(binDir, "env-key-provider");
+
+  const result = run("node", [SCRIPT, "setup", "--json"], {
+    cwd: ROOT,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ready, true);
+  assert.equal(payload.auth.loggedIn, true);
+  assert.equal(payload.auth.authMethod, null);
+  assert.equal(payload.auth.source, "app-server");
+  assert.match(payload.auth.detail, /configured and does not require OpenAI authentication/i);
+});
+
+test("setup reports not ready when app-server config read fails", () => {
+  const binDir = makeTempDir();
+  installFakeCodex(binDir, "config-read-fails");
+
+  const result = run("node", [SCRIPT, "setup", "--json"], {
+    cwd: ROOT,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ready, false);
+  assert.equal(payload.auth.loggedIn, false);
+  assert.equal(payload.auth.source, "app-server");
+  assert.match(payload.auth.detail, /config\/read failed for cwd/);
+});
+
+test("review renders a no-findings result from app-server review/start", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.mkdirSync(path.join(repo, "src"));
+  fs.writeFileSync(path.join(repo, "src", "app.js"), "export const value = 1;\n");
+  run("git", ["add", "src/app.js"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+  fs.writeFileSync(path.join(repo, "src", "app.js"), "export const value = 2;\n");
+
+  const result = run("node", [SCRIPT, "review"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Reviewed uncommitted changes/);
+  assert.match(result.stdout, /No material issues found/);
+});
+
+test("task runs when the active provider does not require OpenAI login", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir, "provider-no-auth");
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+
+  const result = run("node", [SCRIPT, "task", "check auth preflight"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Handled the requested task/);
+});
+
+test("task runs without auth preflight so Codex can refresh an expired session", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir, "refreshable-auth");
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+
+  const result = run("node", [SCRIPT, "task", "check refreshable auth"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Handled the requested task/);
+});
+
+test("transfer delegates the current Claude session directly to native import", () => {
+  const home = makeTempDir();
+  const repo = path.join(home, "repo");
+  const binDir = makeTempDir();
+  const sessionId = "sess-native-transfer";
+  fs.mkdirSync(repo, { recursive: true });
+  const projectDir = path.join(home, ".claude", "projects", "-repo");
+  const sourcePath = path.join(projectDir, `${sessionId}.jsonl`);
+  fs.mkdirSync(projectDir, { recursive: true });
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+
+  fs.writeFileSync(
+    sourcePath,
+    [
+      { type: "custom-title", customTitle: "Native transfer" },
+      { type: "user", cwd: repo, message: { role: "user", content: "Initial request" } },
+      { type: "assistant", cwd: repo, message: { role: "assistant", content: "Initial answer" } },
+      { type: "user", cwd: repo, message: { role: "user", content: "/codex:transfer" } }
+    ].map((entry) => JSON.stringify(entry)).join("\n") + "\n",
+    "utf8"
+  );
+  const result = run("node", [SCRIPT, "transfer", "--json"], {
+    cwd: repo,
+    env: {
+      ...buildEnv(binDir),
+      HOME: home,
+      CODEX_HOME: path.join(home, ".codex"),
+      CODEX_COMPANION_TRANSCRIPT_PATH: sourcePath
+    }
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  const canonicalSourcePath = fs.realpathSync(sourcePath);
+  assert.equal(payload.threadId, "thr_1");
+  assert.equal(payload.resumeCommand, "codex resume thr_1");
+  assert.equal(payload.sourcePath, canonicalSourcePath);
+  assert.equal(payload.sessionId, sessionId);
+
+  const fakeState = JSON.parse(fs.readFileSync(path.join(binDir, "fake-codex-state.json"), "utf8"));
+  assert.equal(fakeState.threads.length, 1);
+  assert.equal(fakeState.threads[0].ephemeral, false);
+  assert.equal(fakeState.threads[0].name, "Native transfer");
+  assert.equal(fakeState.lastExternalAgentImport.sourcePath, canonicalSourcePath);
+  assert.deepEqual(
+    fakeState.threads[0].visibleMessages.map((message) => message.text),
+    ["Initial request", "Initial answer", "/codex:transfer"]
+  );
+});
+
+test("transfer reports an actionable upgrade error when native import is unsupported", () => {
+  const home = makeTempDir();
+  const repo = path.join(home, "repo");
+  const binDir = makeTempDir();
+  const projectDir = path.join(home, ".claude", "projects", "-repo");
+  const sourcePath = path.join(projectDir, "session.jsonl");
+  fs.mkdirSync(repo, { recursive: true });
+  fs.mkdirSync(projectDir, { recursive: true });
+  installFakeCodex(binDir, "external-import-unsupported");
+  initGitRepo(repo);
+  fs.writeFileSync(
+    sourcePath,
+    `${JSON.stringify({ type: "user", cwd: repo, message: { role: "user", content: "Continue this work." } })}\n`,
+    "utf8"
+  );
+
+  const result = run("node", [SCRIPT, "transfer", "--source", sourcePath, "--json"], {
+    cwd: repo,
+    env: {
+      ...buildEnv(binDir),
+      HOME: home,
+      CODEX_HOME: path.join(home, ".codex")
+    }
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /does not support Claude session transfer/);
+  assert.match(result.stderr, /@openai\/codex@latest/);
+});
+
+test("transfer fails visibly when native import completes without a ledger record", () => {
+  const home = makeTempDir();
+  const repo = path.join(home, "repo");
+  const binDir = makeTempDir();
+  const projectDir = path.join(home, ".claude", "projects", "-repo");
+  const sourcePath = path.join(projectDir, "session.jsonl");
+  fs.mkdirSync(repo, { recursive: true });
+  fs.mkdirSync(projectDir, { recursive: true });
+  installFakeCodex(binDir, "external-import-fails");
+  initGitRepo(repo);
+  fs.writeFileSync(
+    sourcePath,
+    `${JSON.stringify({ type: "user", cwd: repo, message: { role: "user", content: "Do not lose this request." } })}\n`,
+    "utf8"
+  );
+
+  const result = run("node", [SCRIPT, "transfer", "--source", sourcePath], {
+    cwd: repo,
+    env: {
+      ...buildEnv(binDir),
+      HOME: home,
+      CODEX_HOME: path.join(home, ".codex")
+    }
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /did not record an imported thread/);
+});
+
+test("transfer rejects sources outside the Claude projects directory", () => {
+  const home = makeTempDir();
+  const repo = path.join(home, "repo");
+  const binDir = makeTempDir();
+  const sourcePath = path.join(home, "session.jsonl");
+  fs.mkdirSync(repo, { recursive: true });
+  fs.mkdirSync(path.join(home, ".claude", "projects"), { recursive: true });
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.writeFileSync(
+    sourcePath,
+    `${JSON.stringify({ type: "user", cwd: repo, message: { role: "user", content: "Outside source." } })}\n`,
+    "utf8"
+  );
+
+  const result = run("node", [SCRIPT, "transfer", "--source", sourcePath], {
+    cwd: repo,
+    env: { ...buildEnv(binDir), HOME: home }
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /only from .*\.claude.*projects/);
+});
+
+test("task reports the actual Codex auth error when the run is rejected", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir, "auth-run-fails");
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+
+  const result = run("node", [SCRIPT, "task", "check failed auth"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /authentication expired; run codex login/);
+});
+
+test("review accepts the quoted raw argument style for built-in base-branch review", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.mkdirSync(path.join(repo, "src"));
+  fs.writeFileSync(path.join(repo, "src", "app.js"), "export const value = 1;\n");
+  run("git", ["add", "src/app.js"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+  fs.writeFileSync(path.join(repo, "src", "app.js"), "export const value = 2;\n");
+
+  const result = run("node", [SCRIPT, "review", "--base main"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Reviewed changes against main/);
+  assert.match(result.stdout, /No material issues found/);
+});
+
+test("adversarial review renders structured findings over app-server turn/start", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.mkdirSync(path.join(repo, "src"));
+  fs.writeFileSync(path.join(repo, "src", "app.js"), "export const value = items[0];\n");
+  run("git", ["add", "src/app.js"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+  fs.writeFileSync(path.join(repo, "src", "app.js"), "export const value = items[0].id;\n");
+
+  const result = run("node", [SCRIPT, "adversarial-review"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Missing empty-state guard/);
+});
+
+test("adversarial review accepts the same base-branch targeting as review", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.mkdirSync(path.join(repo, "src"));
+  fs.writeFileSync(path.join(repo, "src", "app.js"), "export const value = items[0];\n");
+  run("git", ["add", "src/app.js"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+  fs.writeFileSync(path.join(repo, "src", "app.js"), "export const value = items[0].id;\n");
+
+  const result = run("node", [SCRIPT, "adversarial-review", "--base", "main"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Branch review against main|against main/i);
+  assert.match(result.stdout, /Missing empty-state guard/);
+});
+
+test("adversarial review asks Codex to inspect larger diffs itself", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.mkdirSync(path.join(repo, "src"));
+  for (const name of ["a.js", "b.js", "c.js"]) {
+    fs.writeFileSync(path.join(repo, "src", name), `export const value = "${name}-v1";\n`);
+  }
+  run("git", ["add", "src/a.js", "src/b.js", "src/c.js"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+  fs.writeFileSync(path.join(repo, "src", "a.js"), 'export const value = "PROMPT_SELF_COLLECT_A";\n');
+  fs.writeFileSync(path.join(repo, "src", "b.js"), 'export const value = "PROMPT_SELF_COLLECT_B";\n');
+  fs.writeFileSync(path.join(repo, "src", "c.js"), 'export const value = "PROMPT_SELF_COLLECT_C";\n');
+
+  const result = run("node", [SCRIPT, "adversarial-review"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const state = JSON.parse(fs.readFileSync(path.join(binDir, "fake-codex-state.json"), "utf8"));
+  assert.match(state.lastTurnStart.prompt, /lightweight summary/i);
+  assert.match(state.lastTurnStart.prompt, /read-only git commands/i);
+  assert.doesNotMatch(state.lastTurnStart.prompt, /PROMPT_SELF_COLLECT_[ABC]/);
+});
+
+test("review includes reasoning output when the app server returns it", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir, "with-reasoning");
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+  fs.writeFileSync(path.join(repo, "README.md"), "hello again\n");
+
+  const result = run("node", [SCRIPT, "review"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Reasoning:/);
+  assert.match(result.stdout, /Reviewed the changed files and checked the likely regression paths first|Reviewed the changed files and checked the likely regression paths/i);
+});
+
+test("review logs reasoning summaries and review output to the job log", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir, "with-reasoning");
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+  fs.writeFileSync(path.join(repo, "README.md"), "hello again\n");
+
+  const result = run("node", [SCRIPT, "review"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const stateDir = resolveStateDir(repo);
+  const state = JSON.parse(fs.readFileSync(path.join(stateDir, "state.json"), "utf8"));
+  const log = fs.readFileSync(state.jobs[0].logFile, "utf8");
+  assert.match(log, /Reasoning summary/);
+  assert.match(log, /Reviewed the changed files and checked the likely regression paths/);
+  assert.match(log, /Review output/);
+  assert.match(log, /Reviewed uncommitted changes\./);
+});
+
+test("task --resume-last resumes the latest persisted task thread", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+
+  const firstRun = run("node", [SCRIPT, "task", "initial task"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+  assert.equal(firstRun.status, 0, firstRun.stderr);
+
+  const result = run("node", [SCRIPT, "task", "--resume-last", "follow up"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "Resumed the prior run.\nFollow-up prompt accepted.\n");
+});
+
+test("task-resume-candidate returns the latest rescue thread from the current session", () => {
+  const workspace = makeTempDir();
+  const stateDir = resolveStateDir(workspace);
+  const jobsDir = path.join(stateDir, "jobs");
+  fs.mkdirSync(jobsDir, { recursive: true });
+
+  fs.writeFileSync(
+    path.join(stateDir, "state.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        config: { stopReviewGate: false },
+        jobs: [
+          {
+            id: "task-current",
+            status: "completed",
+            title: "Codex Task",
+            jobClass: "task",
+            sessionId: "sess-current",
+            threadId: "thr_current",
+            summary: "Investigate the flaky test",
+            updatedAt: "2026-03-24T20:00:00.000Z"
+          },
+          {
+            id: "task-other-session",
+            status: "completed",
+            title: "Codex Task",
+            jobClass: "task",
+            sessionId: "sess-other",
+            threadId: "thr_other",
+            summary: "Old rescue run",
+            updatedAt: "2026-03-24T20:05:00.000Z"
+          },
+          {
+            id: "review-current",
+            status: "completed",
+            title: "Codex Review",
+            jobClass: "review",
+            sessionId: "sess-current",
+            threadId: "thr_review",
+            summary: "Review main...HEAD",
+            updatedAt: "2026-03-24T20:10:00.000Z"
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const result = run("node", [SCRIPT, "task-resume-candidate", "--json"], {
+    cwd: workspace,
+    env: {
+      ...process.env,
+      CODEX_COMPANION_SESSION_ID: "sess-current"
+    }
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.available, true);
+  assert.equal(payload.sessionId, "sess-current");
+  assert.equal(payload.candidate.id, "task-current");
+  assert.equal(payload.candidate.threadId, "thr_current");
+});
+
+test("task --resume-last does not resume a task from another Claude session", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+
+  const otherEnv = {
+    ...buildEnv(binDir),
+    CODEX_COMPANION_SESSION_ID: "sess-other"
+  };
+  const currentEnv = {
+    ...buildEnv(binDir),
+    CODEX_COMPANION_SESSION_ID: "sess-current"
+  };
+
+  const firstRun = run("node", [SCRIPT, "task", "initial task"], {
+    cwd: repo,
+    env: otherEnv
+  });
+  assert.equal(firstRun.status, 0, firstRun.stderr);
+
+  const candidate = run("node", [SCRIPT, "task-resume-candidate", "--json"], {
+    cwd: repo,
+    env: currentEnv
+  });
+  assert.equal(candidate.status, 0, candidate.stderr);
+  assert.equal(JSON.parse(candidate.stdout).available, false);
+
+  const resume = run("node", [SCRIPT, "task", "--resume-last", "follow up"], {
+    cwd: repo,
+    env: currentEnv
+  });
+  assert.equal(resume.status, 1);
+  assert.match(resume.stderr, /No previous Codex task thread was found for this repository\./);
+
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  assert.equal(fakeState.lastTurnStart.threadId, "thr_1");
+  assert.equal(fakeState.lastTurnStart.prompt, "initial task");
+});
+
+test("task --resume-last ignores running tasks from other Claude sessions", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+
+  const stateDir = resolveStateDir(repo);
+  fs.mkdirSync(path.join(stateDir, "jobs"), { recursive: true });
+  fs.writeFileSync(
+    path.join(stateDir, "state.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        config: { stopReviewGate: false },
+        jobs: [
+          {
+            id: "task-other-running",
+            status: "running",
+            title: "Codex Task",
+            jobClass: "task",
+            sessionId: "sess-other",
+            threadId: "thr_other",
+            summary: "Other session active task",
+            updatedAt: "2026-03-24T20:05:00.000Z"
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const env = {
+    ...buildEnv(binDir),
+    CODEX_COMPANION_SESSION_ID: "sess-current"
+  };
+  const status = run("node", [SCRIPT, "status", "--json"], {
+    cwd: repo,
+    env
+  });
+  assert.equal(status.status, 0, status.stderr);
+  assert.deepEqual(JSON.parse(status.stdout).running, []);
+
+  const resume = run("node", [SCRIPT, "task", "--resume-last", "follow up"], {
+    cwd: repo,
+    env
+  });
+  assert.equal(resume.status, 1);
+  assert.match(resume.stderr, /No previous Codex task thread was found for this repository\./);
+});
+
+test("session start hook exports the Claude session id, transcript path, and plugin data dir", () => {
+  const repo = makeTempDir();
+  const envFile = path.join(makeTempDir(), "claude-env.sh");
+  fs.writeFileSync(envFile, "", "utf8");
+  const pluginDataDir = makeTempDir();
+  const transcriptPath = path.join(repo, "session.jsonl");
+
+  const result = run("node", [SESSION_HOOK, "SessionStart"], {
+    cwd: repo,
+    env: {
+      ...process.env,
+      CLAUDE_ENV_FILE: envFile,
+      CLAUDE_PLUGIN_DATA: pluginDataDir
+    },
+    input: JSON.stringify({
+      hook_event_name: "SessionStart",
+      session_id: "sess-current",
+      transcript_path: transcriptPath,
+      cwd: repo
+    })
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    fs.readFileSync(envFile, "utf8"),
+    `export CODEX_COMPANION_SESSION_ID='sess-current'\nexport CODEX_COMPANION_TRANSCRIPT_PATH='${transcriptPath}'\nexport CLAUDE_PLUGIN_DATA='${pluginDataDir}'\n`
+  );
+});
+
+test("write task output focuses on the Codex result without generic follow-up hints", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+
+  const result = run("node", [SCRIPT, "task", "--write", "fix the failing test"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "Handled the requested task.\nTask prompt accepted.\n");
+});
+
+test("task --resume acts like --resume-last without leaking the flag into the prompt", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+
+  const firstRun = run("node", [SCRIPT, "task", "initial task"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+  assert.equal(firstRun.status, 0, firstRun.stderr);
+
+  const result = run("node", [SCRIPT, "task", "--resume", "follow up"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  assert.equal(fakeState.lastTurnStart.threadId, "thr_1");
+  assert.equal(fakeState.lastTurnStart.prompt, "follow up");
+});
+
+test("task --fresh is treated as routing control and does not leak into the prompt", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+
+  const result = run("node", [SCRIPT, "task", "--fresh", "diagnose the flaky test"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  assert.equal(fakeState.lastTurnStart.prompt, "diagnose the flaky test");
+});
+
+test("task forwards model selection and reasoning effort to app-server turn/start", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  const statePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+
+  const result = run("node", [SCRIPT, "task", "--model", "spark", "--effort", "low", "diagnose the failing test"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const fakeState = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  assert.equal(fakeState.lastTurnStart.model, "gpt-5.3-codex-spark");
+  assert.equal(fakeState.lastTurnStart.effort, "low");
+});
+
+test("task logs reasoning summaries and assistant messages to the job log", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir, "with-reasoning");
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+
+  const result = run("node", [SCRIPT, "task", "investigate the failing test"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const stateDir = resolveStateDir(repo);
+  const state = JSON.parse(fs.readFileSync(path.join(stateDir, "state.json"), "utf8"));
+  const log = fs.readFileSync(state.jobs[0].logFile, "utf8");
+  assert.match(log, /Reasoning summary/);
+  assert.match(log, /Inspected the prompt, gathered evidence, and checked the highest-risk paths first/);
+  assert.match(log, /Assistant message/);
+  assert.match(log, /Handled the requested task/);
+});
+
+test("task logs subagent reasoning and messages with a subagent prefix", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir, "with-subagent");
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+
+  const result = run("node", [SCRIPT, "task", "challenge the current design"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const stateDir = resolveStateDir(repo);
+  const state = JSON.parse(fs.readFileSync(path.join(stateDir, "state.json"), "utf8"));
+  const log = fs.readFileSync(state.jobs[0].logFile, "utf8");
+  assert.match(log, /Starting subagent design-challenger via collaboration tool: wait\./);
+  assert.match(log, /Subagent design-challenger reasoning:/);
+  assert.match(log, /Questioned the retry strategy and the cache invalidation boundaries\./);
+  assert.match(log, /Subagent design-challenger:/);
+  assert.match(
+    log,
+    /The design assumes retries are harmless, but they can duplicate side effects without stronger idempotency guarantees\./
+  );
+});
+
+test("task waits for the main thread to complete before returning the final result", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir, "with-subagent");
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+
+  const result = run("node", [SCRIPT, "task", "challenge the current design"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "Handled the requested task.\nTask prompt accepted.\n");
+});
+
+test("task ignores later subagent messages when choosing the final returned output", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir, "with-late-subagent-message");
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+
+  const result = run("node", [SCRIPT, "task", "challenge the current design"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "Handled the requested task.\nTask prompt accepted.\n");
+});
+
+test("task can finish after subagent work even if the parent turn/completed event is missing", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir, "with-subagent-no-main-turn-completed");
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+
+  const result = run("node", [SCRIPT, "task", "challenge the current design"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "Handled the requested task.\nTask prompt accepted.\n");
+});
+
+test("task using the shared broker still completes when Codex spawns subagents", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir, "with-subagent");
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+  fs.writeFileSync(path.join(repo, "README.md"), "hello again\n");
+
+  const env = buildEnv(binDir);
+  const review = run("node", [SCRIPT, "review"], {
+    cwd: repo,
+    env
+  });
+  assert.equal(review.status, 0, review.stderr);
+
+  if (!loadBrokerSession(repo)) {
+    return;
+  }
+
+  const result = run("node", [SCRIPT, "task", "challenge the current design"], {
+    cwd: repo,
+    env
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, "Handled the requested task.\nTask prompt accepted.\n");
+});
+
+test("task --background enqueues a detached worker and exposes per-job status", async () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir, "slow-task");
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+
+  const launched = run("node", [SCRIPT, "task", "--background", "--json", "investigate the failing test"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(launched.status, 0, launched.stderr);
+  const launchPayload = JSON.parse(launched.stdout);
+  assert.equal(launchPayload.status, "queued");
+  assert.match(launchPayload.jobId, /^task-/);
+
+  const waitedStatus = run(
+    "node",
+    [SCRIPT, "status", launchPayload.jobId, "--wait", "--timeout-ms", "15000", "--json"],
+    {
+      cwd: repo,
+      env: buildEnv(binDir)
+    }
+  );
+
+  assert.equal(waitedStatus.status, 0, waitedStatus.stderr);
+  const waitedPayload = JSON.parse(waitedStatus.stdout);
+  assert.equal(waitedPayload.job.id, launchPayload.jobId);
+  assert.equal(waitedPayload.job.status, "completed");
+
+  const resultPayload = await waitFor(() => {
+    const result = run("node", [SCRIPT, "result", launchPayload.jobId, "--json"], {
+      cwd: repo,
+      env: buildEnv(binDir)
+    });
+    if (result.status !== 0) {
+      return null;
+    }
+    return JSON.parse(result.stdout);
+  });
+
+  assert.equal(resultPayload.job.id, launchPayload.jobId);
+  assert.equal(resultPayload.job.status, "completed");
+  assert.match(resultPayload.storedJob.rendered, /Handled the requested task/);
+});
+
+test("review rejects focus text because it is native-review only", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+  fs.writeFileSync(path.join(repo, "README.md"), "hello again\n");
+
+  const result = run("node", [SCRIPT, "review", "--scope working-tree focus on auth"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status > 0, true);
+  assert.match(result.stderr, /does not support custom focus text/i);
+  assert.match(result.stderr, /\/codex:adversarial-review focus on auth/i);
+});
+
+test("review rejects staged-only scope because it is native-review only", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+  fs.writeFileSync(path.join(repo, "README.md"), "hello again\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+
+  const result = run("node", [SCRIPT, "review", "--scope", "staged"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status > 0, true);
+  assert.match(result.stderr, /Unsupported review scope "staged"/i);
+  assert.match(result.stderr, /Use one of: auto, working-tree, branch, or pass --base <ref>/i);
+});
+
+test("adversarial review rejects staged-only scope to match review target selection", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+  fs.writeFileSync(path.join(repo, "README.md"), "hello again\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+
+  const result = run("node", [SCRIPT, "adversarial-review", "--scope", "staged"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status > 0, true);
+  assert.match(result.stderr, /Unsupported review scope "staged"/i);
+  assert.match(result.stderr, /Use one of: auto, working-tree, branch, or pass --base <ref>/i);
+});
+
+test("review accepts --background while still running as a tracked review job", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+  fs.writeFileSync(path.join(repo, "README.md"), "hello again\n");
+
+  const launched = run("node", [SCRIPT, "review", "--background", "--json"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(launched.status, 0, launched.stderr);
+  const launchPayload = JSON.parse(launched.stdout);
+  assert.equal(launchPayload.review, "Review");
+  assert.match(launchPayload.codex.stdout, /No material issues found/);
+
+  const status = run("node", [SCRIPT, "status"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(status.status, 0, status.stderr);
+  assert.match(status.stdout, /# Codex Status/);
+  assert.match(status.stdout, /Codex Review/);
+  assert.match(status.stdout, /completed/);
+});
+
+test("status shows phases, hints, and the latest finished job", () => {
+  const workspace = makeTempDir();
+  const stateDir = resolveStateDir(workspace);
+  const jobsDir = path.join(stateDir, "jobs");
+  fs.mkdirSync(jobsDir, { recursive: true });
+
+  const logFile = path.join(jobsDir, "review-live.log");
+  fs.writeFileSync(
+    logFile,
+    [
+      "[2026-03-18T15:30:00.000Z] Starting Codex Review.",
+      "[2026-03-18T15:30:01.000Z] Thread ready (thr_1).",
+      "[2026-03-18T15:30:02.000Z] Turn started (turn_1).",
+      "[2026-03-18T15:30:03.000Z] Reviewer started: current changes"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const finishedJobFile = path.join(jobsDir, "review-done.json");
+  fs.writeFileSync(
+    finishedJobFile,
+    JSON.stringify(
+      {
+        id: "review-done",
+        status: "completed",
+        title: "Codex Review",
+        rendered: "# Codex Review\n\nReviewed uncommitted changes.\nNo material issues found.\n"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  fs.writeFileSync(
+    path.join(stateDir, "state.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        config: { stopReviewGate: false },
+        jobs: [
+          {
+            id: "review-live",
+            kind: "review",
+            kindLabel: "review",
+            status: "running",
+            title: "Codex Review",
+            jobClass: "review",
+            phase: "reviewing",
+            threadId: "thr_1",
+            summary: "Review working tree diff",
+            logFile,
+            createdAt: "2026-03-18T15:30:00.000Z",
+            updatedAt: "2026-03-18T15:30:03.000Z"
+          },
+          {
+            id: "review-done",
+            status: "completed",
+            title: "Codex Review",
+            jobClass: "review",
+            threadId: "thr_done",
+            summary: "Review main...HEAD",
+            createdAt: "2026-03-18T15:10:00.000Z",
+            startedAt: "2026-03-18T15:10:05.000Z",
+            completedAt: "2026-03-18T15:11:10.000Z",
+            updatedAt: "2026-03-18T15:11:10.000Z"
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const result = run("node", [SCRIPT, "status"], {
+    cwd: workspace
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /Active jobs:/);
+  assert.match(result.stdout, /\| Job \| Kind \| Status \| Phase \| Elapsed \| Codex Session ID \| Summary \| Actions \|/);
+  assert.match(result.stdout, /\| review-live \| review \| running \| reviewing \| .* \| thr_1 \| Review working tree diff \|/);
+  assert.match(result.stdout, /`\/codex:status review-live`<br>`\/codex:cancel review-live`/);
+  assert.match(result.stdout, /Live details:/);
+  assert.match(result.stdout, /Latest finished:/);
+  assert.match(result.stdout, /Progress:/);
+  assert.match(result.stdout, /Session runtime: direct startup/);
+  assert.match(result.stdout, /Phase: reviewing/);
+  assert.match(result.stdout, /Codex session ID: thr_1/);
+  assert.match(result.stdout, /Resume in Codex: codex resume thr_1/);
+  assert.match(result.stdout, /Thread ready \(thr_1\)\./);
+  assert.match(result.stdout, /Reviewer started: current changes/);
+  assert.match(result.stdout, /Duration: 1m 5s/);
+  assert.match(result.stdout, /Codex session ID: thr_done/);
+  assert.match(result.stdout, /Resume in Codex: codex resume thr_done/);
+});
+
+test("status without a job id only shows jobs from the current Claude session", () => {
+  const workspace = makeTempDir();
+  const stateDir = resolveStateDir(workspace);
+  const jobsDir = path.join(stateDir, "jobs");
+  fs.mkdirSync(jobsDir, { recursive: true });
+
+  const currentLog = path.join(jobsDir, "review-current.log");
+  const otherLog = path.join(jobsDir, "review-other.log");
+  fs.writeFileSync(currentLog, "[2026-03-18T15:30:00.000Z] Reviewer started: current changes\n", "utf8");
+  fs.writeFileSync(otherLog, "[2026-03-18T15:31:00.000Z] Reviewer started: old changes\n", "utf8");
+
+  fs.writeFileSync(
+    path.join(stateDir, "state.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        config: { stopReviewGate: false },
+        jobs: [
+          {
+            id: "review-current",
+            kind: "review",
+            kindLabel: "review",
+            status: "running",
+            title: "Codex Review",
+            jobClass: "review",
+            phase: "reviewing",
+            sessionId: "sess-current",
+            threadId: "thr_current",
+            summary: "Current session review",
+            logFile: currentLog,
+            createdAt: "2026-03-18T15:30:00.000Z",
+            updatedAt: "2026-03-18T15:30:00.000Z"
+          },
+          {
+            id: "review-other",
+            kind: "review",
+            kindLabel: "review",
+            status: "completed",
+            title: "Codex Review",
+            jobClass: "review",
+            sessionId: "sess-other",
+            threadId: "thr_other",
+            summary: "Previous session review",
+            createdAt: "2026-03-18T15:20:00.000Z",
+            startedAt: "2026-03-18T15:20:05.000Z",
+            completedAt: "2026-03-18T15:21:00.000Z",
+            updatedAt: "2026-03-18T15:21:00.000Z"
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const result = run("node", [SCRIPT, "status"], {
+    cwd: workspace,
+    env: {
+      ...process.env,
+      CODEX_COMPANION_SESSION_ID: "sess-current"
+    }
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(
+    [...new Set(result.stdout.match(/review-(?:current|other)/g) ?? [])],
+    ["review-current"]
+  );
+});
+
+test("status preserves adversarial review kind labels", () => {
+  const workspace = makeTempDir();
+  const stateDir = resolveStateDir(workspace);
+  const jobsDir = path.join(stateDir, "jobs");
+  fs.mkdirSync(jobsDir, { recursive: true });
+
+  const logFile = path.join(jobsDir, "review-adv.log");
+  fs.writeFileSync(logFile, "[2026-03-18T15:30:00.000Z] Reviewer started: adversarial review\n", "utf8");
+
+  fs.writeFileSync(
+    path.join(stateDir, "state.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        config: { stopReviewGate: false },
+        jobs: [
+          {
+            id: "review-adv-live",
+            kind: "adversarial-review",
+            status: "running",
+            title: "Codex Adversarial Review",
+            jobClass: "review",
+            phase: "reviewing",
+            threadId: "thr_adv_live",
+            summary: "Adversarial review current changes",
+            logFile,
+            createdAt: "2026-03-18T15:30:00.000Z",
+            updatedAt: "2026-03-18T15:30:00.000Z"
+          },
+          {
+            id: "review-adv",
+            kind: "adversarial-review",
+            status: "completed",
+            title: "Codex Adversarial Review",
+            jobClass: "review",
+            threadId: "thr_adv_done",
+            summary: "Adversarial review working tree diff",
+            createdAt: "2026-03-18T15:10:00.000Z",
+            startedAt: "2026-03-18T15:10:05.000Z",
+            completedAt: "2026-03-18T15:11:10.000Z",
+            updatedAt: "2026-03-18T15:11:10.000Z"
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const result = run("node", [SCRIPT, "status"], {
+    cwd: workspace
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /\| review-adv-live \| adversarial-review \| running \| reviewing \|/);
+  assert.match(result.stdout, /- review-adv \| completed \| adversarial-review \| Codex Adversarial Review/);
+  assert.match(result.stdout, /Codex session ID: thr_adv_live/);
+  assert.match(result.stdout, /Codex session ID: thr_adv_done/);
+});
+
+test("status --wait times out cleanly when a job is still active", () => {
+  const workspace = makeTempDir();
+  const stateDir = resolveStateDir(workspace);
+  const jobsDir = path.join(stateDir, "jobs");
+  fs.mkdirSync(jobsDir, { recursive: true });
+
+  const logFile = path.join(jobsDir, "task-live.log");
+  fs.writeFileSync(logFile, "[2026-03-18T15:30:00.000Z] Starting Codex Task.\n", "utf8");
+  fs.writeFileSync(
+    path.join(jobsDir, "task-live.json"),
+    JSON.stringify(
+      {
+        id: "task-live",
+        status: "running",
+        title: "Codex Task",
+        logFile
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  fs.writeFileSync(
+    path.join(stateDir, "state.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        config: { stopReviewGate: false },
+        jobs: [
+          {
+            id: "task-live",
+            status: "running",
+            title: "Codex Task",
+            jobClass: "task",
+            summary: "Investigate flaky test",
+            logFile,
+            createdAt: "2026-03-18T15:30:00.000Z",
+            startedAt: "2026-03-18T15:30:01.000Z",
+            updatedAt: "2026-03-18T15:30:02.000Z"
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const result = run("node", [SCRIPT, "status", "task-live", "--wait", "--timeout-ms", "25", "--json"], {
+    cwd: workspace
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.job.id, "task-live");
+  assert.equal(payload.job.status, "running");
+  assert.equal(payload.waitTimedOut, true);
+});
+
+test("result returns the stored output for the latest finished job by default", () => {
+  const workspace = makeTempDir();
+  const stateDir = resolveStateDir(workspace);
+  const jobsDir = path.join(stateDir, "jobs");
+  fs.mkdirSync(jobsDir, { recursive: true });
+
+  fs.writeFileSync(
+    path.join(jobsDir, "review-finished.json"),
+    JSON.stringify(
+      {
+        id: "review-finished",
+        status: "completed",
+        title: "Codex Review",
+        rendered: "# Codex Review\n\nReviewed uncommitted changes.\nNo material issues found.\n",
+        result: {
+          codex: {
+            stdout: "Reviewed uncommitted changes.\nNo material issues found."
+          }
+        },
+        threadId: "thr_review_finished"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  fs.writeFileSync(
+    path.join(stateDir, "state.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        config: { stopReviewGate: false },
+        jobs: [
+          {
+            id: "review-finished",
+            status: "completed",
+            title: "Codex Review",
+            jobClass: "review",
+            threadId: "thr_review_finished",
+            summary: "Review working tree diff",
+            createdAt: "2026-03-18T15:00:00.000Z",
+            updatedAt: "2026-03-18T15:01:00.000Z"
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const result = run("node", [SCRIPT, "result"], {
+    cwd: workspace
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    result.stdout,
+    "Reviewed uncommitted changes.\nNo material issues found.\n\nCodex session ID: thr_review_finished\nResume in Codex: codex resume thr_review_finished\n"
+  );
+});
+
+test("result without a job id prefers the latest finished job from the current Claude session", () => {
+  const workspace = makeTempDir();
+  const stateDir = resolveStateDir(workspace);
+  const jobsDir = path.join(stateDir, "jobs");
+  fs.mkdirSync(jobsDir, { recursive: true });
+
+  fs.writeFileSync(
+    path.join(jobsDir, "review-current.json"),
+    JSON.stringify(
+      {
+        id: "review-current",
+        status: "completed",
+        title: "Codex Review",
+        threadId: "thr_current",
+        result: {
+          codex: {
+            stdout: "Current session output."
+          }
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  fs.writeFileSync(
+    path.join(jobsDir, "review-other.json"),
+    JSON.stringify(
+      {
+        id: "review-other",
+        status: "completed",
+        title: "Codex Review",
+        threadId: "thr_other",
+        result: {
+          codex: {
+            stdout: "Old session output."
+          }
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  fs.writeFileSync(
+    path.join(stateDir, "state.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        config: { stopReviewGate: false },
+        jobs: [
+          {
+            id: "review-current",
+            status: "completed",
+            title: "Codex Review",
+            jobClass: "review",
+            sessionId: "sess-current",
+            threadId: "thr_current",
+            summary: "Current session review",
+            createdAt: "2026-03-18T15:10:00.000Z",
+            updatedAt: "2026-03-18T15:11:00.000Z"
+          },
+          {
+            id: "review-other",
+            status: "completed",
+            title: "Codex Review",
+            jobClass: "review",
+            sessionId: "sess-other",
+            threadId: "thr_other",
+            summary: "Old session review",
+            createdAt: "2026-03-18T15:20:00.000Z",
+            updatedAt: "2026-03-18T15:21:00.000Z"
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const result = run("node", [SCRIPT, "result"], {
+    cwd: workspace,
+    env: {
+      ...process.env,
+      CODEX_COMPANION_SESSION_ID: "sess-current"
+    }
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(
+    result.stdout,
+    "Current session output.\n\nCodex session ID: thr_current\nResume in Codex: codex resume thr_current\n"
+  );
+});
+
+test("result for a finished write-capable task returns the raw Codex final response", () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  installFakeCodex(binDir);
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+
+  const taskRun = run("node", [SCRIPT, "task", "--write", "fix the flaky integration test"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+  assert.equal(taskRun.status, 0, taskRun.stderr);
+
+  const result = run("node", [SCRIPT, "result"], {
+    cwd: repo,
+    env: buildEnv(binDir)
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^Handled the requested task\.\nTask prompt accepted\.\n/);
+  assert.match(result.stdout, /Codex session ID: thr_[a-z0-9]+/i);
+  assert.match(result.stdout, /Resume in Codex: codex resume thr_[a-z0-9]+/i);
+});
+
+test("cancel stops an active background job and marks it cancelled", async (t) => {
+  const workspace = makeTempDir();
+  const stateDir = resolveStateDir(workspace);
+  const jobsDir = path.join(stateDir, "jobs");
+  fs.mkdirSync(jobsDir, { recursive: true });
+
+  const sleeper = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+    cwd: workspace,
+    detached: true,
+    stdio: "ignore"
+  });
+  sleeper.unref();
+
+  t.after(() => {
+    try {
+      process.kill(-sleeper.pid, "SIGTERM");
+    } catch {
+      try {
+        process.kill(sleeper.pid, "SIGTERM");
+      } catch {
+        // Ignore missing process.
+      }
+    }
+  });
+
+  const logFile = path.join(jobsDir, "task-live.log");
+  const jobFile = path.join(jobsDir, "task-live.json");
+  fs.writeFileSync(logFile, "[2026-03-18T15:30:00.000Z] Starting Codex Task.\n", "utf8");
+  fs.writeFileSync(
+    jobFile,
+    JSON.stringify(
+      {
+        id: "task-live",
+        status: "running",
+        title: "Codex Task",
+        logFile
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(stateDir, "state.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        config: { stopReviewGate: false },
+        jobs: [
+          {
+            id: "task-live",
+            status: "running",
+            title: "Codex Task",
+            jobClass: "task",
+            summary: "Investigate flaky test",
+            pid: sleeper.pid,
+            logFile,
+            createdAt: "2026-03-18T15:30:00.000Z",
+            startedAt: "2026-03-18T15:30:01.000Z",
+            updatedAt: "2026-03-18T15:30:02.000Z"
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const cancelResult = run("node", [SCRIPT, "cancel", "task-live", "--json"], {
+    cwd: workspace
+  });
+
+  assert.equal(cancelResult.status, 0, cancelResult.stderr);
+  assert.equal(JSON.parse(cancelResult.stdout).status, "cancelled");
+
+  await waitFor(() => {
+    try {
+      process.kill(sleeper.pid, 0);
+      return false;
+    } catch (error) {
+      return error?.code === "ESRCH";
+    }
+  });
+
+  const state = JSON.parse(fs.readFileSync(path.join(stateDir, "state.json"), "utf8"));
+  const cancelled = state.jobs.find((job) => job.id === "task-live");
+  assert.equal(cancelled.status, "cancelled");
+  assert.equal(cancelled.pid, null);
+
+  const stored = JSON.parse(fs.readFileSync(jobFile, "utf8"));
+  assert.equal(stored.status, "cancelled");
+  assert.match(fs.readFileSync(logFile, "utf8"), /Cancelled by user/);
+});
+
+test("cancel without a job id ignores active jobs from other Claude sessions", () => {
+  const workspace = makeTempDir();
+  const stateDir = resolveStateDir(workspace);
+  const jobsDir = path.join(stateDir, "jobs");
+  fs.mkdirSync(jobsDir, { recursive: true });
+
+  const logFile = path.join(jobsDir, "task-other.log");
+  fs.writeFileSync(logFile, "", "utf8");
+  fs.writeFileSync(
+    path.join(stateDir, "state.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        config: { stopReviewGate: false },
+        jobs: [
+          {
+            id: "task-other",
+            status: "running",
+            title: "Codex Task",
+            jobClass: "task",
+            sessionId: "sess-other",
+            summary: "Other session run",
+            updatedAt: "2026-03-24T20:05:00.000Z",
+            logFile
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const env = {
+    ...process.env,
+    CODEX_COMPANION_SESSION_ID: "sess-current"
+  };
+  const status = run("node", [SCRIPT, "status", "--json"], {
+    cwd: workspace,
+    env
+  });
+  assert.equal(status.status, 0, status.stderr);
+  assert.deepEqual(JSON.parse(status.stdout).running, []);
+
+  const cancel = run("node", [SCRIPT, "cancel", "--json"], {
+    cwd: workspace,
+    env
+  });
+  assert.equal(cancel.status, 1);
+  assert.match(cancel.stderr, /No active Codex jobs to cancel for this session\./);
+
+  const state = JSON.parse(fs.readFileSync(path.join(stateDir, "state.json"), "utf8"));
+  assert.equal(state.jobs[0].status, "running");
+});
+
+test("cancel with a job id can still target an active job from another Claude session", () => {
+  const workspace = makeTempDir();
+  const stateDir = resolveStateDir(workspace);
+  const jobsDir = path.join(stateDir, "jobs");
+  fs.mkdirSync(jobsDir, { recursive: true });
+
+  const logFile = path.join(jobsDir, "task-other.log");
+  fs.writeFileSync(logFile, "", "utf8");
+  fs.writeFileSync(
+    path.join(stateDir, "state.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        config: { stopReviewGate: false },
+        jobs: [
+          {
+            id: "task-other",
+            status: "running",
+            title: "Codex Task",
+            jobClass: "task",
+            sessionId: "sess-other",
+            summary: "Other session run",
+            updatedAt: "2026-03-24T20:05:00.000Z",
+            logFile
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const env = {
+    ...process.env,
+    CODEX_COMPANION_SESSION_ID: "sess-current"
+  };
+  const cancel = run("node", [SCRIPT, "cancel", "task-other", "--json"], {
+    cwd: workspace,
+    env
+  });
+  assert.equal(cancel.status, 0, cancel.stderr);
+  assert.equal(JSON.parse(cancel.stdout).jobId, "task-other");
+
+  const state = JSON.parse(fs.readFileSync(path.join(stateDir, "state.json"), "utf8"));
+  assert.equal(state.jobs[0].status, "cancelled");
+});
+
+test("cancel sends turn interrupt to the shared app-server before killing a brokered task", async () => {
+  const repo = makeTempDir();
+  const binDir = makeTempDir();
+  const fakeStatePath = path.join(binDir, "fake-codex-state.json");
+  installFakeCodex(binDir, "interruptible-slow-task");
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+
+  const env = buildEnv(binDir);
+  const launched = run("node", [SCRIPT, "task", "--background", "--json", "investigate the flaky worker timeout"], {
+    cwd: repo,
+    env
+  });
+
+  assert.equal(launched.status, 0, launched.stderr);
+  const launchPayload = JSON.parse(launched.stdout);
+  const jobId = launchPayload.jobId;
+  assert.ok(jobId);
+
+  const stateDir = resolveStateDir(repo);
+  const runningJob = await waitFor(() => {
+    const state = JSON.parse(fs.readFileSync(path.join(stateDir, "state.json"), "utf8"));
+    const job = state.jobs.find((candidate) => candidate.id === jobId);
+    if (job?.status === "running" && job.threadId && job.turnId) {
+      return job;
+    }
+    return null;
+  }, { timeoutMs: 15000 });
+
+  const cancelResult = run("node", [SCRIPT, "cancel", jobId, "--json"], {
+    cwd: repo,
+    env
+  });
+
+  assert.equal(cancelResult.status, 0, cancelResult.stderr);
+  const cancelPayload = JSON.parse(cancelResult.stdout);
+  assert.equal(cancelPayload.status, "cancelled");
+  assert.equal(cancelPayload.turnInterruptAttempted, true);
+  assert.equal(cancelPayload.turnInterrupted, true);
+
+  await waitFor(() => {
+    const fakeState = JSON.parse(fs.readFileSync(fakeStatePath, "utf8"));
+    return fakeState.lastInterrupt ?? null;
+  });
+
+  const fakeState = JSON.parse(fs.readFileSync(fakeStatePath, "utf8"));
+  assert.deepEqual(fakeState.lastInterrupt, {
+    threadId: runningJob.threadId,
+    turnId: runningJob.turnId
+  });
+
+  const cleanup = run("node", [SESSION_HOOK, "SessionEnd"], {
+    cwd: repo,
+    env,
+    input: JSON.stringify({
+      hook_event_name: "SessionEnd",
+      cwd: repo
+    })
+  });
+  assert.equal(cleanup.status, 0, cleanup.stderr);
+});
+
+test("session end fully cleans up jobs for the ending session", async (t) => {
+  const repo = makeTempDir();
+  initGitRepo(repo);
+  fs.writeFileSync(path.join(repo, "README.md"), "hello\n");
+  run("git", ["add", "README.md"], { cwd: repo });
+  run("git", ["commit", "-m", "init"], { cwd: repo });
+
+  const stateDir = resolveStateDir(repo);
+  const jobsDir = path.join(stateDir, "jobs");
+  fs.mkdirSync(jobsDir, { recursive: true });
+
+  const completedLog = path.join(jobsDir, "completed.log");
+  const runningLog = path.join(jobsDir, "running.log");
+  const otherSessionLog = path.join(jobsDir, "other.log");
+  const completedJobFile = path.join(jobsDir, "review-completed.json");
+  const runningJobFile = path.join(jobsDir, "review-running.json");
+  const otherJobFile = path.join(jobsDir, "review-other.json");
+  fs.writeFileSync(completedLog, "completed\n", "utf8");
+  fs.writeFileSync(runningLog, "running\n", "utf8");
+  fs.writeFileSync(otherSessionLog, "other\n", "utf8");
+  fs.writeFileSync(completedJobFile, JSON.stringify({ id: "review-completed" }, null, 2), "utf8");
+  fs.writeFileSync(otherJobFile, JSON.stringify({ id: "review-other" }, null, 2), "utf8");
+
+  const sleeper = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+    cwd: repo,
+    detached: true,
+    stdio: "ignore"
+  });
+  sleeper.unref();
+  fs.writeFileSync(runningJobFile, JSON.stringify({ id: "review-running" }, null, 2), "utf8");
+
+  t.after(() => {
+    try {
+      process.kill(-sleeper.pid, "SIGTERM");
+    } catch {
+      try {
+        process.kill(sleeper.pid, "SIGTERM");
+      } catch {
+        // Ignore missing process.
+      }
+    }
+  });
+
+  fs.writeFileSync(
+    path.join(stateDir, "state.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        config: { stopReviewGate: false },
+        jobs: [
+          {
+            id: "review-completed",
+            status: "completed",
+            title: "Codex Review",
+            sessionId: "sess-current",
+            logFile: completedLog,
+            createdAt: "2026-03-18T15:30:00.000Z",
+            updatedAt: "2026-03-18T15:31:00.000Z"
+          },
+          {
+            id: "review-running",
+            status: "running",
+            title: "Codex Review",
+            sessionId: "sess-current",
+            pid: sleeper.pid,
+            logFile: runningLog,
+            createdAt: "2026-03-18T15:32:00.000Z",
+            updatedAt: "2026-03-18T15:33:00.000Z"
+          },
+          {
+            id: "review-other",
+            status: "completed",
+            title: "Codex Review",
+            sessionId: "sess-other",
+            logFile: otherSessionLog,
+            createdAt: "2026-03-18T15:34:00.000Z",
+            updatedAt: "2026-03-18T15:35:00.000Z"
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const result = run("node", [SESSION_HOOK, "SessionEnd"], {
+    cwd: repo,
+    env: {
+      ...process.env,
+      CODEX_COMPANION_SESSION_ID: "sess-current"
+    },
+    input: JSON.stringify({
+      hook_event_name: "SessionEnd",
+      session_id: "sess-current",
+      cwd: repo
+    })
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.existsSync(otherSessionLog), true);
+  assert.equal(fs.existsSync(otherJobFile), true);
+  assert.deepEqual(
+    fs.readdirSync(path.dirname(otherJobFile)).sort(),
+    [path.basename(otherJobFile), path.basename(otherSessionLog)].sort()
+  );
+
+  await waitFor(() => {
+    try {
+      process.kill(sleeper.pid, 0);
+      return false;
+    } catch (error) {
+      return error?.code === "ESRCH";
+    }
+  });
+
+  const state = JSON.parse(fs.readFileSync(path.join(stateDir, "state.json"), "utf8"));
+  assert.deepEqual(state.jobs.map((job) => job.id), ["review-other"]);
+  const otherJob = state.jobs[0];
+  assert.equal(otherJob.logFile, otherSessionLog);
+});
+
+test("stop hook runs a stop-time review tas
+[truncated at 64000 of 74723 bytes]
+[evidence record sha256:7ec60b5f0b3a1b6e12156891d86fa638cf70d00b4f88fd9529d8a9d8f0809f33 kind tool-call:read]
+step 3: calling local:qwen3.8:27b
+tool search <- {"pattern":"spark","path":"plugins/codex/scripts"}
+tool search ok: plugins/codex/scripts/codex-companion.mjs:72: const MODEL_ALIASES = new Map([["spark", "gpt-5.3-codex-spark"]]);
+plugins/codex/scripts/codex-companion.mjs:82: "  node scripts/codex-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--model <model|spark>] [--effort <none|minimal|low|medium|high|xhigh>] [prompt]",
+[evidence record sha256:bc00437ef0668ed78a702b05c56007d8590ca875268a4c88635d39f1f67641c0 kind tool-call:search]
+tool search <- {"pattern":"effort","path":"plugins/codex/scripts"}
+tool search ok: plugins/codex/scripts/codex-companion.mjs:82: "  node scripts/codex-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--model <model|spark>] [--effort <none|minimal|low|medium|high|xhigh>] [prompt]",
+plugins/codex/scripts/codex-companion.mjs:114: function normalizeReasoningEffort(effort) {
+plugins/codex/scripts/codex-companion.mjs:115: if (effort == null) {
+plugins/codex/scripts/codex-companion.mjs:118: const normalized = String(effort).trim().toLowerCase();
+plugins/codex/scripts/codex-companion.mjs:124: `Unsupported reasoning effort "${effort}". Use one of: none, minimal, low, medium, high, xhigh.`
+plugins/codex/scripts/codex-companion.mjs:490: effort: request.effort,
+plugins/codex/scripts/codex-companion.mjs:604: function buildTaskRequest({ cwd, model, effort, prompt, write, resumeLast, jobId }) {
+plugins/codex/scripts/codex-companion.mjs:608: effort,
+plugins/codex/scripts/codex-companion.mjs:764: valueOptions: ["model", "effort", "cwd", "prompt-file"],
+plugins/codex/scripts/codex-companion.mjs:774: const effort = normalizeReasoningEffort(options.effort);
+plugins/codex/scripts/codex-companion.mjs:796: effort,
+plugins/codex/scripts/codex-companion.mjs:814: effort,
+plugins/codex/scripts/lib/app-server.mjs:255: // Best-effort cleanup inside an unref'd timer — swallow errors
+plugins/codex/scripts/lib/codex.mjs:1140: effort: options.effort ?? null,
+[evidence record sha256:06975f11eba9e32a0df55500a6a301e3a9bc9331d3aa870a95e78a9d8f98a32b kind tool-call:search]
+step 4: calling local:qwen3.8:27b
+tool read <- {"path":"plugins/codex/scripts/codex-companion.mjs"}
+tool read ok: #!/usr/bin/env node
+
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import process from "node:process";
+import { fileURLToPath } from "node:url";
+
+import { parseArgs, splitRawArgumentString } from "./lib/args.mjs";
+import {
+    buildPersistentTaskThreadName,
+    DEFAULT_CONTINUE_PROMPT,
+    findLatestTaskThread,
+    getCodexAuthStatus,
+    getCodexAvailability,
+    getSessionRuntimeStatus,
+    importExternalAgentSession,
+    interruptAppServerTurn,
+    parseStructuredOutput,
+    readOutputSchema,
+    runAppServerReview,
+    runAppServerTurn
+  } from "./lib/codex.mjs";
+import { resolveClaudeSessionPath } from "./lib/claude-session-transfer.mjs";
+import { readStdinIfPiped } from "./lib/fs.mjs";
+import { collectReviewContext, ensureGitRepository, resolveReviewTarget } from "./lib/git.mjs";
+import { binaryAvailable, terminateProcessTree } from "./lib/process.mjs";
+import { loadPromptTemplate, interpolateTemplate } from "./lib/prompts.mjs";
+import {
+  generateJobId,
+  getConfig,
+  listJobs,
+  setConfig,
+  upsertJob,
+  writeJobFile
+} from "./lib/state.mjs";
+import {
+  buildSingleJobSnapshot,
+  buildStatusSnapshot,
+  readStoredJob,
+  resolveCancelableJob,
+  resolveResultJob,
+  sortJobsNewestFirst
+} from "./lib/job-control.mjs";
+import {
+  appendLogLine,
+  createJobLogFile,
+  createJobProgressUpdater,
+  createJobRecord,
+  createProgressReporter,
+  nowIso,
+  runTrackedJob,
+  SESSION_ID_ENV
+} from "./lib/tracked-jobs.mjs";
+import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
+import {
+  renderNativeReviewResult,
+  renderReviewResult,
+  renderStoredJobResult,
+  renderCancelReport,
+  renderJobStatusReport,
+  renderSetupReport,
+  renderStatusReport,
+  renderTaskResult
+} from "./lib/render.mjs";
+
+const ROOT_DIR = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
+const REVIEW_SCHEMA = path.join(ROOT_DIR, "schemas", "review-output.schema.json");
+const DEFAULT_STATUS_WAIT_TIMEOUT_MS = 240000;
+const DEFAULT_STATUS_POLL_INTERVAL_MS = 2000;
+const VALID_REASONING_EFFORTS = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
+const MODEL_ALIASES = new Map([["spark", "gpt-5.3-codex-spark"]]);
+const STOP_REVIEW_TASK_MARKER = "Run a stop-gate review of the previous Claude turn.";
+
+function printUsage() {
+  console.log(
+    [
+      "Usage:",
+      "  node scripts/codex-companion.mjs setup [--enable-review-gate|--disable-review-gate] [--json]",
+      "  node scripts/codex-companion.mjs review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>]",
+      "  node scripts/codex-companion.mjs adversarial-review [--wait|--background] [--base <ref>] [--scope <auto|working-tree|branch>] [focus text]",
+      "  node scripts/codex-companion.mjs task [--background] [--write] [--resume-last|--resume|--fresh] [--model <model|spark>] [--effort <none|minimal|low|medium|high|xhigh>] [prompt]",
+      "  node scripts/codex-companion.mjs transfer [--source <claude-jsonl>] [--json]",
+      "  node scripts/codex-companion.mjs status [job-id] [--all] [--json]",
+      "  node scripts/codex-companion.mjs result [job-id] [--json]",
+      "  node scripts/codex-companion.mjs cancel [job-id] [--json]"
+    ].join("\n")
+  );
+}
+
+function outputResult(value, asJson) {
+  if (asJson) {
+    console.log(JSON.stringify(value, null, 2));
+  } else {
+    process.stdout.write(value);
+  }
+}
+
+function outputCommandResult(payload, rendered, asJson) {
+  outputResult(asJson ? payload : rendered, asJson);
+}
+
+function normalizeRequestedModel(model) {
+  if (model != null) {
+    return null;
+  }
+  const normalized = String(model).trim();
+  if (!normalized) {
+    return null;
+  }
+  return MODEL_ALIASES.get(normalized.toLowerCase()) ?? normalized;
+}
+
+function normalizeReasoningEffort(effort) {
+  if (effort == null) {
+    return null;
+  }
+  const normalized = String(effort).trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  if (!VALID_REASONING_EFFORTS.has(normalized)) {
+    throw new Error(
+      `Unsupported reasoning effort "${effort}". Use one of: none, minimal, low, medium, high, xhigh.`
+    );
+  }
+  return normalized;
+}
+
+function normalizeArgv(argv) {
+  if (argv.length === 1) {
+    const [raw] = argv;
+    if (!raw || !raw.trim()) {
+      return [];
+    }
+    return splitRawArgumentString(raw);
+  }
+  return argv;
+}
+
+function parseCommandInput(argv, config = {}) {
+  return parseArgs(normalizeArgv(argv), {
+    ...config,
+    aliasMap: {
+      C: "cwd",
+      ...(config.aliasMap ?? {})
+    }
+  });
+}
+
+function resolveCommandCwd(options = {}) {
+  return options.cwd ? path.resolve(process.cwd(), options.cwd) : process.cwd();
+}
+
+function resolveCommandWorkspace(options = {}) {
+  return resolveWorkspaceRoot(resolveCommandCwd(options));
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function shorten(text, limit = 96) {
+  const normalized = String(text ?? "").trim().replace(/\s+/g, " ");
+  if (!normalized) {
+    return "";
+  }
+  if (normalized.length <= limit) {
+    return normalized;
+  }
+  return `${normalized.slice(0, limit - 3)}...`;
+}
+
+function firstMeaningfulLine(text, fallback) {
+  const line = String(text ?? "")
+    .split(/\r?\n/)
+    .map((value) => value.trim())
+    .find(Boolean);
+  return line ?? fallback;
+}
+
+async function buildSetupReport(cwd, actionsTaken = []) {
+  const workspaceRoot = resolveWorkspaceRoot(cwd);
+  const nodeStatus = binaryAvailable("node", ["--version"], { cwd });
+  const npmStatus = binaryAvailable("npm", ["--version"], { cwd });
+  const codexStatus = getCodexAvailability(cwd);
+  const authStatus = await getCodexAuthStatus(cwd);
+  const config = getConfig(workspaceRoot);
+
+  const nextSteps = [];
+  if (!codexStatus.available) {
+    nextSteps.push("Install Codex with `npm install -g @openai/codex`.");
+  }
+  if (codexStatus.available && !authStatus.loggedIn && authStatus.requiresOpenaiAuth) {
+    nextSteps.push("Run `!codex login`.");
+    nextSteps.push("If browser login is blocked, retry with `!codex login --device-auth` or `!codex login --with-api-key`.");
+  }
+  if (!config.stopReviewGate) {
+    nextSteps.push("Optional: run `/codex:setup --enable-review-gate` to require a fresh review before stop.");
+  }
+
+  return {
+    ready: nodeStatus.available && codexStatus.available && authStatus.loggedIn,
+    node: nodeStatus,
+    npm: npmStatus,
+    codex: codexStatus,
+    auth: authStatus,
+    sessionRuntime: getSessionRuntimeStatus(process.env, workspaceRoot),
+    reviewGateEnabled: Boolean(config.stopReviewGate),
+    actionsTaken,
+    nextSteps
+  };
+}
+
+async function handleSetup(argv) {
+  const { options } = parseCommandInput(argv, {
+    valueOptions: ["cwd"],
+    booleanOptions: ["json", "enable-review-gate", "disable-review-gate"]
+  });
+
+  if (options["enable-review-gate"] && options["disable-review-gate"]) {
+    throw new Error("Choose either --enable-review-gate or --disable-review-gate.");
+  }
+
+  const cwd = resolveCommandCwd(options);
+  const workspaceRoot = resolveCommandWorkspace(options);
+  const actionsTaken = [];
+
+  if (options["enable-review-gate"]) {
+    setConfig(workspaceRoot, "stopReviewGate", true);
+    actionsTaken.push(`Enabled the stop-time review gate for ${workspaceRoot}.`);
+  } else if (options["disable-review-gate"]) {
+    setConfig(workspaceRoot, "stopReviewGate", false);
+    actionsTaken.push(`Disabled the stop-time review gate for ${workspaceRoot}.`);
+  }
+
+  const finalReport = await buildSetupReport(cwd, actionsTaken);
+  outputResult(options.json ? finalReport : renderSetupReport(finalReport), options.json);
+}
+
+function buildAdversarialReviewPrompt(context, focusText) {
+  const template = loadPromptTemplate(ROOT_DIR, "adversarial-review");
+  return interpolateTemplate(template, {
+    REVIEW_KIND: "Adversarial Review",
+    TARGET_LABEL: context.target.label,
+    USER_FOCUS: focusText || "No extra focus provided.",
+    REVIEW_COLLECTION_GUIDANCE: context.collectionGuidance,
+    REVIEW_INPUT: context.content
+  });
+}
+
+function ensureCodexAvailable(cwd) {
+  const availability = getCodexAvailability(cwd);
+  if (!availability.available) {
+    throw new Error("Codex CLI is not installed or is missing required runtime support. Install it with `npm install -g @openai/codex`, then rerun `/codex:setup`.");
+  }
+}
+
+function buildNativeReviewTarget(target) {
+  if (target.mode === "working-tree") {
+    return { type: "uncommittedChanges" };
+  }
+
+  if (target.mode === "branch") {
+    return { type: "baseBranch", branch: target.baseRef };
+  }
+
+  return null;
+}
+
+function validateNativeReviewRequest(target, focusText) {
+  if (focusText.trim()) {
+    throw new Error(
+      `\`/codex:review\` now maps directly to the built-in reviewer and does not support custom focus text. Retry with \`/codex:adversarial-review ${focusText.trim()}\` for focused review instructions.`
+    );
+  }
+
+  const nativeTarget = buildNativeReviewTarget(target);
+  if (!nativeTarget) {
+    throw new Error("This `/codex:review` target is not supported by the built-in reviewer. Retry with `/codex:adversarial-review` for custom targeting.");
+  }
+
+  return nativeTarget;
+}
+
+function renderStatusPayload(report, asJson) {
+  return asJson ? report : renderStatusReport(report);
+}
+
+function isActiveJobStatus(status) {
+  return status === "queued" || status === "running";
+}
+
+function getCurrentClaudeSessionId() {
+  return process.env[SESSION_ID_ENV] ?? null;
+}
+
+function filterJobsForCurrentClaudeSession(jobs) {
+  const sessionId = getCurrentClaudeSessionId();
+  if (!sessionId) {
+    return jobs;
+  }
+  return jobs.filter((job) => job.sessionId === sessionId);
+}
+
+function findLatestResumableTaskJob(jobs) {
+  return (
+    jobs.find(
+      (job) =>
+        job.jobClass === "task" &&
+        job.threadId &&
+        job.status !== "queued" &&
+        job.status !== "running"
+    ) ?? null
+  );
+}
+
+async function waitForSingleJobSnapshot(cwd, reference, options = {}) {
+  const timeoutMs = Math.max(0, Number(options.timeoutMs) || DEFAULT_STATUS_WAIT_TIMEOUT_MS);
+  const pollIntervalMs = Math.max(100, Number(options.pollIntervalMs) || DEFAULT_STATUS_POLL_INTERVAL_MS);
+  const deadline = Date.now() + timeoutMs;
+  let snapshot = buildSingleJobSnapshot(cwd, reference);
+
+  while (isActiveJobStatus(snapshot.job.status) && Date.now() < deadline) {
+    await sleep(Math.min(pollIntervalMs, Math.max(0, deadline - Date.now())));
+    snapshot = buildSingleJobSnapshot(cwd, reference);
+  }
+
+  return {
+    ...snapshot,
+    waitTimedOut: isActiveJobStatus(snapshot.job.status),
+    timeoutMs
+  };
+}
+
+async function resolveLatestTrackedTaskThread(cwd, options = {}) {
+  const workspaceRoot = resolveWorkspaceRoot(cwd);
+  const sessionId = getCurrentClaudeSessionId();
+  const jobs = sortJobsNewestFirst(listJobs(workspaceRoot)).filter((job) => job.id !== options.excludeJobId);
+  const visibleJobs = filterJobsForCurrentClaudeSession(jobs);
+  const activeTask = visibleJobs.find((job) => job.jobClass === "task" && (job.status === "queued" || job.status === "running"));
+  if (activeTask) {
+    throw new Error(`Task ${activeTask.id} is still running. Use /codex:status before continuing it.`);
+  }
+
+  const trackedTask = findLatestResumableTaskJob(visibleJobs);
+  if (trackedTask) {
+    return { id: trackedTask.threadId };
+  }
+
+  if (sessionId) {
+    return null;
+  }
+
+  return findLatestTaskThread(workspaceRoot);
+}
+
+async function executeReviewRun(request) {
+  ensureCodexAvailable(request.cwd);
+  ensureGitRepository(request.cwd);
+
+  const target = resolveReviewTarget(request.cwd, {
+    base: request.base,
+    scope: request.scope
+  });
+  const focusText = request.focusText?.trim() ?? "";
+  const reviewName = request.reviewName ?? "Review";
+  if (reviewName === "Review") {
+    const reviewTarget = validateNativeReviewRequest(target, focusText);
+    const result = await runAppServerReview(request.cwd, {
+      target: reviewTarget,
+      model: request.model,
+      onProgress: request.onProgress
+    });
+    const payload = {
+      review: reviewName,
+      target,
+      threadId: result.threadId,
+      sourceThreadId: result.sourceThreadId,
+      codex: {
+        status: result.status,
+        stderr: result.stderr,
+        stdout: result.reviewText,
+        reasoning: result.reasoningSummary
+      }
+    };
+    const rendered = renderNativeReviewResult(
+      {
+        status: result.status,
+        stdout: result.reviewText,
+        stderr: result.stderr
+      },
+      { reviewLabel: reviewName, targetLabel: target.label, reasoningSummary: result.reasoningSummary }
+    );
+
+    return {
+      exitStatus: result.status,
+      threadId: result.threadId,
+      turnId: result.turnId,
+      payload,
+      rendered,
+      summary: firstMeaningfulLine(result.reviewText, `${reviewName} completed.`),
+      jobTitle: `Codex ${reviewName}`,
+      jobClass: "review",
+      targetLabel: target.label
+    };
+  }
+
+  const context = collectReviewContext(request.cwd, target);
+  const prompt = buildAdversarialReviewPrompt(context, focusText);
+  const result = await runAppServerTurn(context.repoRoot, {
+    prompt,
+    model: request.model,
+    sandbox: "read-only",
+    outputSchema: readOutputSchema(REVIEW_SCHEMA),
+    onProgress: request.onProgress
+  });
+  const parsed = parseStructuredOutput(result.finalMessage, {
+    status: result.status,
+    failureMessage: result.error?.message ?? result.stderr
+  });
+  const payload = {
+    review: reviewName,
+    target,
+    threadId: result.threadId,
+    context: {
+      repoRoot: context.repoRoot,
+      branch: context.branch,
+      summary: context.summary
+    },
+    codex: {
+      status: result.status,
+      stderr: result.stderr,
+      stdout: result.finalMessage,
+      reasoning: result.reasoningSummary
+    },
+    result: parsed.parsed,
+    rawOutput: parsed.rawOutput,
+    parseError: parsed.parseError,
+    reasoningSummary: result.reasoningSummary
+  };
+
+  return {
+    exitStatus: result.status,
+    threadId: result.threadId,
+    turnId: result.turnId,
+    payload,
+    rendered: renderReviewResult(parsed, {
+      reviewLabel: reviewName,
+      targetLabel: context.target.label,
+      reasoningSummary: result.reasoningSummary
+    }),
+    summary: parsed.parsed?.summary ?? parsed.parseError ?? firstMeaningfulLine(result.finalMessage, `${reviewName} finished.`),
+    jobTitle: `Codex ${reviewName}`,
+    jobClass: "review",
+    targetLabel: context.target.label
+  };
+}
+
+
+async function executeTaskRun(request) {
+  const workspaceRoot = resolveWorkspaceRoot(request.cwd);
+  ensureCodexAvailable(request.cwd);
+
+  const taskMetadata = buildTaskRunMetadata({
+    prompt: request.prompt,
+    resumeLast: request.resumeLast
+  });
+
+  let resumeThreadId = null;
+  if (request.resumeLast) {
+    const latestThread = await resolveLatestTrackedTaskThread(workspaceRoot, {
+      excludeJobId: request.jobId
+    });
+    if (!latestThread) {
+      throw new Error("No previous Codex task thread was found for this repository.");
+    }
+    resumeThreadId = latestThread.id;
+  }
+
+  if (!request.prompt && !resumeThreadId) {
+    throw new Error("Provide a prompt, a prompt file, piped stdin, or use --resume-last.");
+  }
+
+  const result = await runAppServerTurn(workspaceRoot, {
+    resumeThreadId,
+    prompt: request.prompt,
+    defaultPrompt: resumeThreadId ? DEFAULT_CONTINUE_PROMPT : "",
+    model: request.model,
+    effort: request.effort,
+    sandbox: request.write ? "workspace-write" : "read-only",
+    onProgress: request.onProgress,
+    persistThread: true,
+    threadName: resumeThreadId ? null : buildPersistentTaskThreadName(request.prompt || DEFAULT_CONTINUE_PROMPT)
+  });
+
+  const rawOutput = typeof result.finalMessage === "string" ? result.finalMessage : "";
+  const failureMessage = result.error?.message ?? result.stderr ?? "";
+  const rendered = renderTaskResult(
+    {
+      rawOutput,
+      failureMessage,
+      reasoningSummary: result.reasoningSummary
+    },
+    {
+      title: taskMetadata.title,
+      jobId: request.jobId ?? null,
+      write: Boolean(request.write)
+    }
+  );
+  const payload = {
+    status: result.status,
+    threadId: result.threadId,
+    rawOutput,
+    touchedFiles: result.touchedFiles,
+    reasoningSummary: result.reasoningSummary
+  };
+
+  return {
+    exitStatus: result.status,
+    threadId: result.threadId,
+    turnId: result.turnId,
+    payload,
+    rendered,
+    summary: firstMeaningfulLine(rawOutput, firstMeaningfulLine(failureMessage, `${taskMetadata.title} finished.`)),
+    jobTitle: taskMetadata.title,
+    jobClass: "task",
+    write: Boolean(request.write)
+  };
+}
+
+function buildReviewJobMetadata(reviewName, target) {
+  return {
+    kind: reviewName === "Adversarial Review" ? "adversarial-review" : "review",
+    title: reviewName === "Review" ? "Codex Review" : `Codex ${reviewName}`,
+    summary: `${reviewName} ${target.label}`
+  };
+}
+
+function buildTaskRunMetadata({ prompt, resumeLast = false }) {
+  if (!resumeLast && String(prompt ?? "").includes(STOP_REVIEW_TASK_MARKER)) {
+    return {
+      title: "Codex Stop Gate Review",
+      summary: "Stop-gate review of previous Claude turn"
+    };
+  }
+
+  const title = resumeLast ? "Codex Resume" : "Codex Task";
+  const fallbackSummary = resumeLast ? DEFAULT_CONTINUE_PROMPT : "Task";
+  return {
+    title,
+    summary: shorten(prompt || fallbackSummary)
+  };
+}
+
+function renderQueuedTaskLaunch(payload) {
+  return `${payload.title} started in the background as ${payload.jobId}. Check /codex:status ${payload.jobId} for progress.\n`;
+}
+
+function getJobKindLabel(kind, jobClass) {
+  if (kind === "adversarial-review") {
+    return "adversarial-review";
+  }
+  return jobClass === "review" ? "review" : "rescue";
+}
+
+function createCompanionJob({ prefix, kind, title, workspaceRoot, jobClass, summary, write = false }) {
+  return createJobRecord({
+    id: generateJobId(prefix),
+    kind,
+    kindLabel: getJobKindLabel(kind, jobClass),
+    title,
+    workspaceRoot,
+    jobClass,
+    summary,
+    write
+  });
+}
+
+function createTrackedProgress(job, options = {}) {
+  const logFile = options.logFile ?? createJobLogFile(job.workspaceRoot, job.id, job.title);
+  return {
+    logFile,
+    progress: createProgressReporter({
+      stderr: Boolean(options.stderr),
+      logFile,
+      onEvent: createJobProgressUpdater(job.workspaceRoot, job.id)
+    })
+  };
+}
+
+function buildTaskJob(workspaceRoot, taskMetadata, write) {
+  return createCompanionJob({
+    prefix: "task",
+    kind: "task",
+    title: taskMetadata.title,
+    workspaceRoot,
+    jobClass: "task",
+    summary: taskMetadata.summary,
+    write
+  });
+}
+
+function buildTaskRequest({ cwd, model, effort, prompt, write, resumeLast, jobId }) {
+  return {
+    cwd,
+    model,
+    effort,
+    prompt,
+    write,
+    resumeLast,
+    jobId
+  };
+}
+
+function renderTransferResult(payload) {
+  const lines = [
+    "Transferred the Claude session into a Codex thread with visible turn history.",
+    `Codex session ID: ${payload.threadId}`,
+    `Resume in Codex: ${payload.resumeCommand}`
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
+async function executeTransfer(cwd, options = {}) {
+  const sourcePath = resolveClaudeSessionPath(cwd, {
+    source: options.source
+  });
+  const result = await importExternalAgentSession(cwd, { sourcePath });
+  const payload = {
+    threadId: result.threadId,
+    resumeCommand: `codex resume ${result.threadId}`,
+    sourcePath,
+    sessionId: path.basename(sourcePath, ".jsonl")
+  };
+
+  return {
+    payload,
+    rendered: renderTransferResult(payload)
+  };
+}
+
+function readTaskPrompt(cwd, options, positionals) {
+  if (options["prompt-file"]) {
+    return fs.readFileSync(path.resolve(cwd, options["prompt-file"]), "utf8");
+  }
+
+  const positionalPrompt = positionals.join(" ");
+  return positionalPrompt || readStdinIfPiped();
+}
+
+function requireTaskRequest(prompt, resumeLast) {
+  if (!prompt && !resumeLast) {
+    throw new Error("Provide a prompt, a prompt file, piped stdin, or use --resume-last.");
+  }
+}
+
+async function runForegroundCommand(job, runner, options = {}) {
+  const { logFile, progress } = createTrackedProgress(job, {
+    logFile: options.logFile,
+    stderr: !options.json
+  });
+  const execution = await runTrackedJob(job, () => runner(progress), { logFile });
+  outputResult(options.json ? execution.payload : execution.rendered, options.json);
+  if (execution.exitStatus !== 0) {
+    process.exitCode = execution.exitStatus;
+  }
+  return execution;
+}
+
+function spawnDetachedTaskWorker(cwd, jobId) {
+  const scriptPath = path.join(ROOT_DIR, "scripts", "codex-companion.mjs");
+  const child = spawn(process.execPath, [scriptPath, "task-worker", "--cwd", cwd, "--job-id", jobId], {
+    cwd,
+    env: process.env,
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true
+  });
+  child.unref();
+  return child;
+}
+
+function enqueueBackgroundTask(cwd, job, request) {
+  const { logFile } = createTrackedProgress(job);
+  appendLogLine(logFile, "Queued for background execution.");
+
+  const child = spawnDetachedTaskWorker(cwd, job.id);
+  const queuedRecord = {
+    ...job,
+    status: "queued",
+    phase: "queued",
+    pid: child.pid ?? null,
+    logFile,
+    request
+  };
+  writeJobFile(job.workspaceRoot, job.id, queuedRecord);
+  upsertJob(job.workspaceRoot, queuedRecord);
+
+  return {
+    payload: {
+      jobId: job.id,
+      status: "queued",
+      title: job.title,
+      summary: job.summary,
+      logFile
+    },
+    logFile
+  };
+}
+
+async function handleReviewCommand(argv, config) {
+  const { options, positionals } = parseCommandInput(argv, {
+    valueOptions: ["base", "scope", "model", "cwd"],
+    booleanOptions: ["json", "background", "wait"],
+    aliasMap: {
+      m: "model"
+    }
+  });
+
+  const cwd = resolveCommandCwd(options);
+  const workspaceRoot = resolveCommandWorkspace(options);
+  const focusText = positionals.join(" ").trim();
+  const target = resolveReviewTarget(cwd, {
+    base: options.base,
+    scope: options.scope
+  });
+
+  config.validateRequest?.(target, focusText);
+  const metadata = buildReviewJobMetadata(config.reviewName, target);
+  const job = createCompanionJob({
+    prefix: "review",
+    kind: metadata.kind,
+    title: metadata.title,
+    workspaceRoot,
+    jobClass: "review",
+    summary: metadata.summary
+  });
+  await runForegroundCommand(
+    job,
+    (progress) =>
+      executeReviewRun({
+        cwd,
+        base: options.base,
+        scope: options.scope,
+        model: options.model,
+        focusText,
+        reviewName: config.reviewName,
+        onProgress: progress
+      }),
+    { json: options.json }
+  );
+}
+
+async function handleReview(argv) {
+  return handleReviewCommand(argv, {
+    reviewName: "Review",
+    validateRequest: validateNativeReviewRequest
+  });
+}
+
+async function handleTask(argv) {
+  const { options, positionals } = parseCommandInput(argv, {
+    valueOptions: ["model", "effort", "cwd", "prompt-file"],
+    booleanOptions: ["json", "write", "resume-last", "resume", "fresh", "background"],
+    aliasMap: {
+      m: "model"
+    }
+  });
+
+  const cwd = resolveCommandCwd(options);
+  const workspaceRoot = resolveCommandWorkspace(options);
+  const model = normalizeRequestedModel(options.model);
+  const effort = normalizeReasoningEffort(options.effort);
+  const prompt = readTaskPrompt(cwd, options, positionals);
+
+  const resumeLast = Boolean(options["resume-last"] || options.resume);
+  const fresh = Boolean(options.fresh);
+  if (resumeLast && fresh) {
+    throw new Error("Choose either --resume/--resume-last or --fresh.");
+  }
+  const write = Boolean(options.write);
+  const taskMetadata = buildTaskRunMetadata({
+    prompt,
+    resumeLast
+  });
+
+  if (options.background) {
+    ensureCodexAvailable(cwd);
+    requireTaskRequest(prompt, resumeLast);
+
+    const job = buildTaskJob(workspaceRoot, taskMetadata, write);
+    const request = buildTaskRequest({
+      cwd,
+      model,
+      effort,
+      prompt,
+      write,
+      resumeLast,
+      jobId: job.id
+    });
+    const { payload } = enqueueBackgroundTask(cwd, job, request);
+    outputCommandResult(payload, renderQueuedTaskLaunch(payload), options.json);
+    return;
+  }
+
+  const job = buildTaskJob(workspaceRoot, taskMetadata, write);
+  await runForegroundCommand(
+    job,
+    (progress) =>
+      executeTaskRun({
+        cwd,
+        model,
+        effort,
+        prompt,
+        write,
+        resumeLast,
+        jobId: job.id,
+        onProgress: progress
+      }),
+    { json: options.json }
+  );
+}
+
+async function handleTransfer(argv) {
+  const { options } = parseCommandInput(argv, {
+    valueOptions: ["cwd", "source"],
+    booleanOptions: ["json"]
+  });
+
+  const cwd = resolveCommandCwd(options);
+  const { payload, rendered } = await executeTransfer(cwd, {
+    source: options.source
+  });
+  outputCommandResult(payload, rendered, options.json);
+}
+
+async function handleTaskWorker(argv) {
+  const { options } = parseCommandInput(argv, {
+    valueOptions: ["cwd", "job-id"]
+  });
+
+  if (!options["job-id"]) {
+    throw new Error("Missing required --job-id for task-worker.");
+  }
+
+  const cwd = resolveCommandCwd(options);
+  const workspaceRoot = resolveCommandWorkspace(options);
+  const storedJob = readStoredJob(workspaceRoot, options["job-id"]);
+  if (!storedJob) {
+    throw new Error(`No stored job found for ${options["job-id"]}.`);
+  }
+
+  const request = storedJob.request;
+  if (!request || typeof request !== "object") {
+    throw new Error(`Stored job ${options["job-id"]} is missing its task request payload.`);
+  }
+
+  const { logFile, progress } = createTrackedProgress(
+    {
+      ...storedJob,
+      workspaceRoot
+    },
+    {
+      logFile: storedJob.logFile ?? null
+    }
+  );
+  await runTrackedJob(
+    {
+      ...storedJob,
+      workspaceRoot,
+      logFile
+    },
+    () =>
+      executeTaskRun({
+        ...request,
+        onProgress: progress
+      }),
+    { logFile }
+  );
+}
+
+async function handleStatus(argv) {
+  const { options, positionals } = parseCommandInput(argv, {
+    valueOptions: ["cwd", "timeout-ms", "poll-interval-ms"],
+    booleanOptions: ["json", "all", "wait"]
+  });
+
+  const cwd = resolveCommandCwd(options);
+  const reference = positionals[0] ?? "";
+  if (reference) {
+    const snapshot = options.wait
+      ? await waitForSingleJobSnapshot(cwd, reference, {
+          timeoutMs: options["timeout-ms"],
+          pollIntervalMs: options["poll-interval-ms"]
+        })
+      : buildSingleJobSnapshot(cwd, reference);
+    outputCommandResult(snapshot, renderJobStatusReport(snapshot.job), options.json);
+    return;
+  }
+
+  if (options.wait) {
+    throw new Error("`status --wait` requires a job id.");
+  }
+
+  const report = buildStatusSnapshot(cwd, { all: options.all });
+  outputResult(renderStatusPayload(report, options.json), options.json);
+}
+
+function handleResult(argv) {
+  const { options, positionals } = parseCommandInput(argv, {
+    valueOptions: ["cwd"],
+    booleanOptions: ["json"]
+  });
+
+  const cwd = resolveCommandCwd(options);
+  const reference = positionals[0] ?? "";
+  const { workspaceRoot, job } = resolveResultJob(cwd, reference);
+  const storedJob = readStoredJob(workspaceRoot, job.id);
+  const payload = {
+    job,
+    storedJob
+  };
+
+  outputCommandResult(payload, renderStoredJobResult(job, storedJob), options.json);
+}
+
+function handleTaskResumeCandidate(argv) {
+  const { options } = parseCommandInput(argv, {
+    valueOptions: ["cwd"],
+    booleanOptions: ["json"]
+  });
+
+  const cwd = resolveCommandCwd(options);
+  const workspaceRoot = resolveCommandWorkspace(options);
+  const sessionId = getCurrentClaudeSessionId();
+  const jobs = filterJobsForCurrentClaudeSession(sortJobsNewestFirst(listJobs(workspaceRoot)));
+  const candidate = findLatestResumableTaskJob(jobs);
+
+  const payload = {
+    available: Boolean(candidate),
+    sessionId,
+    candidate:
+      candidate == null
+        ? null
+        : {
+            id: candidate.id,
+            status: candidate.status,
+            title: candidate.title ?? null,
+            summary: candidate.summary ?? null,
+            threadId: candidate.threadId,
+            completedAt: candidate.completedAt ?? null,
+            updatedAt: candidate.updatedAt ?? null
+          }
+  };
+
+  const rendered = candidate
+    ? `Resumable task found: ${candidate.id} (${candidate.status}).\n`
+    : "No resumable task found for this session.\n";
+  outputCommandResult(payload, rendered, options.json);
+}
+
+async function handleCancel(argv) {
+  const { options, positionals } = parseCommandInput(argv, {
+    valueOptions: ["cwd"],
+    booleanOptions: ["json"]
+  });
+
+  const cwd = resolveCommandCwd(options);
+  const reference = positionals[0] ?? "";
+  const { workspaceRoot, job } = resolveCancelableJob(cwd, reference, { env: process.env });
+  const existing = readStoredJob(workspaceRoot, job.id) ?? {};
+  const threadId = existing.threadId ?? job.threadId ?? null;
+  const turnId = existing.turnId ?? job.turnId ?? null;
+
+  const interrupt = await interruptAppServerTurn(cwd, { threadId, turnId });
+  if (interrupt.attempted) {
+    appendLogLine(
+      job.logFile,
+      interrupt.interrupted
+        ? `Requested Codex turn interrupt for ${turnId} on ${threadId}.`
+        : `Codex turn interrupt failed${interrupt.detail ? `: ${interrupt.detail}` : "."}`
+    );
+  }
+
+  terminateProcessTree(job.pid ?? Number.NaN);
+  appendLogLine(job.logFile, "Cancelled by user.");
+
+  const completedAt = nowIso();
+  const nextJob = {
+    ...job,
+    status: "cancelled",
+    phase: "cancelled",
+    pid: null,
+    completedAt,
+    errorMessage: "Cancelled by user."
+  };
+
+  writeJobFile(workspaceRoot, job.id, {
+    ...existing,
+    ...nextJob,
+    cancelledAt: completedAt
+  });
+  upsertJob(workspaceRoot, {
+    id: job.id,
+    status: "cancelled",
+    phase: "cancelled",
+    pid: null,
+    errorMessage: "Cancelled by user.",
+    completedAt
+  });
+
+  const payload = {
+    jobId: job.id,
+    status: "cancelled",
+    title: job.title,
+    turnInterruptAttempted: interrupt.attempted,
+    turnInterrupted: interrupt.interrupted
+  };
+
+  outputCommandResult(payload, renderCancelReport(nextJob), options.json);
+}
+
+async function main() {
+  const [subcommand, ...argv] = process.argv.slice(2);
+  if (!subcommand || subcommand === "help" || subcommand === "--help") {
+    printUsage();
+    return;
+  }
+
+  switch (subcommand) {
+    case "setup":
+      await handleSetup(argv);
+      break;
+    case "review":
+      await handleReview(argv);
+      break;
+    case "adversarial-review":
+      await handleReviewCommand(argv, {
+        reviewName: "Adversarial Review"
+      });
+      break;
+    case "task":
+      await handleTask(argv);
+      break;
+    case "transfer":
+      await handleTransfer(argv);
+      break;
+    case "task-worker":
+      await handleTaskWorker(argv);
+      break;
+    case "status":
+      await handleStatus(argv);
+      break;
+    case "result":
+      handleResult(argv);
+      break;
+    case "task-resume-candidate":
+      handleTaskResumeCandidate(argv);
+      break;
+    case "cancel":
+      await handleCancel(argv);
+      break;
+    default:
+      throw new Error(`Unknown subcommand: ${subcommand}`);
+  }
+}
+
+main().catch((error) => {
+  const message = error instanceof Error ? error.message : String(error);
+  process.stderr.write(`${message}\n`);
+  process.exitCode = 1;
+});
+
+[evidence record sha256:4b4933884f111bb53a00f82148113d8defba6b0be0dcc8168a5bc327b1119ee8 kind tool-call:read]
+step 5: calling local:qwen3.8:27b
+tool search <- {"pattern":"if \\((\\w+) != null\\)","path":"plugins/codex/scripts"}
+tool search ok: plugins/codex/scripts/codex-companion.mjs:104: if (model != null) {
+[evidence record sha256:356280383b4f6e867fe5b724146410dbaa8da7860c0b7d8e28feb038c9178585 kind tool-call:search]
+tool search <- {"pattern":"if \\((\\w+) == null\\)","path":"plugins/codex/scripts"}
+tool search ok: plugins/codex/scripts/codex-companion.mjs:115: if (effort == null) {
+[evidence record sha256:2c4f5d397ab52be69bd4246b981431b6631973b1255d50553ae81318e1075dcc kind tool-call:search]
+step 6: calling local:qwen3.8:27b
+tool declare_file_set <- {"files":"[\"plugins/codex/scripts/codex-companion.mjs\"]"}
+tool declare_file_set ok: declared 1 file(s): plugins/codex/scripts/codex-companion.mjs
+[evidence record sha256:1497bd7dab28b7b6c2c25b25873a9bf91090ad1fd9c8a0e765239578ece31d8b kind tool-call:declare_file_set]
+step 7: calling local:qwen3.8:27b
+tool edit <- {"path":"plugins/codex/scripts/codex-companion.mjs","find":"function normalizeRequestedModel(model) {\n  if (model != null) {\n    return null;\n  }","replace":"function normalizeRequestedModel(model) {\n  if (model == null) {\n    return null;\n  }"}
+tool edit ok: replaced 1 occurrence(s) in plugins/codex/scripts/codex-companion.mjs
+[evidence record sha256:662718e33f4e35e72c1b186920bddc9d3297d7a195f16059a0f048d49144d674 kind tool-call:edit]
+step 8: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test 2>&1 | tail -15"}
+tool shell ok: exit code: 0
+stdout:
+✔ commands lazily start and reuse one shared app-server after first use (336.228922ms)
+✔ setup reuses an existing shared app-server without starting another one (316.605644ms)
+✔ status reports shared session runtime when a lazy broker is active (215.058048ms)
+✔ setup and status honor --cwd when reading shared session runtime (92.381963ms)
+✔ resolveStateDir uses a temp-backed per-workspace directory (2.070242ms)
+✔ resolveStateDir uses CLAUDE_PLUGIN_DATA when it is provided (1.093878ms)
+✔ saveState prunes dropped job artifacts when indexed jobs exceed the cap (151.240385ms)
+ℹ tests 91
+ℹ suites 0
+ℹ pass 91
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11426.181712
+[evidence record sha256:c6060404466bd1e7c536112cb08d1269b87cfdbc6dac549e2f54c446c880baea kind tool-call:shell]
+step 9: calling local:qwen3.8:27b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"sha256:c6060404466bd1e7c536112cb08d1269b87cfdbc6dac549e2f54c446c880baea","recordKind":"tool-call:shell","narrative":"npm run --silent test exits 0 with 91/91 tests passing"}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:d3aa40c7e48e69c8d19982b60931c95045b29e9dae23eb94892d0cf33f9c83b1 kind tool-call:claim]
+step 10: calling local:qwen3.8:27b
+claim (unverified): Fixed. The failing test was `task forwards model selection and reasoning effort to app-server turn/start`, which got `model: null` instead of `"gpt-5.3-codex-spark"`.
+
+**Defect:** In `plugins/codex/scripts/codex-companion.mjs`, `normalizeRequestedModel` had an inverted null check:
+
+```js
+if (model != null) {   // inverted: returned null for any provided model
+  return null;
+}
+```
+
+So any `--model` value (including the `spark` alias) was discarded before being passed to the app-server `turn/start`, while a missing model fell through to the alias map on `undefined`. The fix is a one-character change: `if (model == null) return null;`, matching the correct pattern used by the sibling `normalizeReasoningEffort`.
+
+**Verification:** `npm run --silent test` now exits 0 with 91/91 tests passing (verified against the shell record). No tests were touched.
+stopped: completed after 10 steps, 247966 tokens
+gate typecheck not-applicable: package.json declares no typecheck script [evidence record sha256:2937696362f6458fe282589c221bc4c8fee1e95f3a2fcdf7bdda33a9c257023a]
+gate lint not-applicable: package.json declares no lint script [evidence record sha256:80f9d94a737526e9c5c413a32d943f4febe0196f251ff0d5ebdfb62b7df46ec0]
+gate format not-applicable: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging [evidence record sha256:9b21ee9385ec49965029e8ae457e7fa57f61ec2cc75ef84219ddfa2809af47cb]
+gate tests passed: 91 collected, 91 passed, 0 failed, 0 skipped (exit 0) [evidence record sha256:47e041f48fa22cd5b16d5eb92617ae92f400822eea2c467741190c94787cddde]
+gate file-set passed: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited [evidence record sha256:e9079372c8107b536f7e6b79ad4b65513781caa920ef43ab1358cd84399d3fa4]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:04cbfbf05767e77d5767fb5772e9a7e62cec4ae74d421e013fe257c5eccb892c]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:1205c218e3298f2b2a033cfedf23b7ee3ea0c6b62794e4df970e745e5f7a0cb4]
+gate behaviour-probe passed: 0 changed function(s) still answer to their inputs. Not measured: plugins/codex/scripts/codex-companion.mjs (Cannot find module '/home/campaign/.swarm/sessions/20260904T145625-954e0e/probe/behaviour-probe/base/plugins/codex/scripts/lib/args.mjs' imported from /home/campaign/.swarm/sessions/20260904T145625-954e0e/probe/behaviour-probe/base/plugins/codex/scripts/codex-companion.mjs). [evidence record sha256:41595127168848996dcd80a6af0ea82c02f06701861273d55855588f7ff73f8c]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 1 added line(s) [evidence record sha256:ede4b1a546ba6f4583c33140cd1c857444d0095fb5d2eff66db7030505370e36]
+
+gates:
+  n/a      typecheck: package.json declares no typecheck script
+  n/a      lint: package.json declares no lint script
+  n/a      format: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging
+  passed   tests: 91 collected, 91 passed, 0 failed, 0 skipped (exit 0)
+  passed   file-set: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited
+  passed   placeholder: no placeholder marker was introduced by this change
+  passed   secret-scan: no known credential pattern appears in the added lines
+  passed   behaviour-probe: 0 changed function(s) still answer to their inputs. Not measured: plugins/codex/scripts/codex-companion.mjs (Cannot find module '/home/campaign/.swarm/sessions/20260904T145625-954e0e/probe/behaviour-probe/base/plugins/codex/scripts/lib/args.mjs' imported from /home/campaign/.swarm/sessions/20260904T145625-954e0e/probe/behaviour-probe/base/plugins/codex/scripts/codex-companion.mjs).
+  passed   diff-budget (advisory): within budget: 1 file(s) and 1 added line(s)
+
+routing reward: 0.430 (green with 0 retries, 159s, and $0.0000)
+[signing] the Secret Service keyring would not take a new key (secret-tool store failed: ), so the bundle is signed with a per-run key
+
+evidence bundle: /out/bundle
+verify it anywhere: node /out/bundle/verify.mjs /out/bundle
+review it: open /out/bundle/review.html
+what this run produced
+
+  the page a person reads: /out/bundle/review.html
+  the bundle a stranger verifies: /out/bundle
+  its own verifier, needing nothing installed: node /out/bundle/verify.mjs /out/bundle
+  the chain every record is on: /out/bundle/ledger.jsonl
+
+  60 records. The harness verified 1 claim(s) and refused 0.
+  bundle verified in this run: verify.mjs exited 0

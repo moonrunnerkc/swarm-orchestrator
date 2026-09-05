@@ -1,0 +1,86 @@
+diff --git a/src/utils/array.ts b/src/utils/array.ts
+index d00b30c..55d1186 100644
+--- a/src/utils/array.ts
++++ b/src/utils/array.ts
+@@ -32,3 +32,16 @@ export function toArray<T>(items: ArrayLike<T>): T[] {
+     }
+     return results;
+ }
++
++// NOTE: Pre-allocating with a fixed-length loop and direct index assignment is faster than push() in a nested loop
++// https://jsben.ch/kidOp
++export function chunk<T>(items: readonly T[], size: number): T[][] {
++    if (!Number.isInteger(size) || size < 1) {
++        throw new RangeError(`chunk size must be a positive integer, got ${size}`);
++    }
++    const results: T[][] = [];
++    for (let i = 0; i < items.length; i += size) {
++        results.push(Array.from(items.slice(i, i + size)));
++    }
++    return results;
++}
+diff --git a/tests/unit/utils/array.tests.ts b/tests/unit/utils/array.tests.ts
+new file mode 100644
+index 0000000..eee2326
+--- /dev/null
++++ b/tests/unit/utils/array.tests.ts
+@@ -0,0 +1,59 @@
++import {chunk} from '../../../src/utils/array';
++
++test('Chunk splits array into groups of the given size', () => {
++    expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
++});
++
++test('Chunk with size equal to array length returns single group', () => {
++    expect(chunk([1, 2, 3], 3)).toEqual([[1, 2, 3]]);
++});
++
++test('Chunk with size of 1 returns each element as its own group', () => {
++    expect(chunk([1, 2, 3], 1)).toEqual([[1], [2], [3]]);
++});
++
++test('Chunk returns empty array for empty input', () => {
++    expect(chunk([], 3)).toEqual([]);
++});
++
++test('Chunk preserves element order', () => {
++    const items = ['a', 'b', 'c', 'd'];
++    const result = chunk(items, 2);
++    expect(result).toEqual([['a', 'b'], ['c', 'd']]);
++});
++
++test('Chunk does not mutate its input', () => {
++    const items = [1, 2, 3, 4];
++    const originalLength = items.length;
++    chunk(items, 2);
++    expect(items.length).toBe(originalLength);
++});
++
++test('Chunk with size larger than array returns single group', () => {
++    expect(chunk([1, 2], 5)).toEqual([[1, 2]]);
++});
++
++test('Chunk throws RangeError for zero size', () => {
++    expect(() => chunk([1, 2], 0)).toThrow(RangeError);
++    expect(() => chunk([1, 2], 0)).toThrow(/chunk size must be a positive integer/);
++});
++
++test('Chunk throws RangeError for negative size', () => {
++    expect(() => chunk([1, 2], -1)).toThrow(RangeError);
++    expect(() => chunk([1, 2], -1)).toThrow(/chunk size must be a positive integer/);
++});
++
++test('Chunk throws RangeError for non-integer size (float)', () => {
++    expect(() => chunk([1, 2], 1.5)).toThrow(RangeError);
++    expect(() => chunk([1, 2], 1.5)).toThrow(/chunk size must be a positive integer/);
++});
++
++test('Chunk throws RangeError for NaN size', () => {
++    expect(() => chunk([1, 2], NaN)).toThrow(RangeError);
++    expect(() => chunk([1, 2], NaN)).toThrow(/chunk size must be a positive integer/);
++});
++
++test('Chunk throws RangeError for Infinity size', () => {
++    expect(() => chunk([1, 2], Infinity)).toThrow(RangeError);
++    expect(() => chunk([1, 2], Infinity)).toThrow(/chunk size must be a positive integer/);
++});

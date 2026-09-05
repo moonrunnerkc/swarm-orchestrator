@@ -1,0 +1,470 @@
+step 1: calling local:qwen3.8:27b
+tool shell <- {"command":"pytest -q 2>&1 | tail -50"}
+tool shell ok: exit code: 0
+stdout:
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'subprocess' has no attribute 'CREATE_NEW_PROCESS_GROUP'
+
+src/browser_harness/_ipc.py:79: AttributeError
+______________ test_explicit_unknown_browser_path_remains_unowned ______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0xe0aecebce120>
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_explicit_unknown_browser_0')
+
+    def test_explicit_unknown_browser_path_remains_unowned(monkeypatch, tmp_path):
+        binary = tmp_path / "custom-browser"
+        binary.touch()
+        profile = tmp_path / ".config" / "google-chrome"
+        profile.mkdir(parents=True)
+        (profile / "Local State").write_text('{}')
+        process = FakeProcess()
+    
+        monkeypatch.setenv("BH_CHROME_PATH", str(binary))
+        monkeypatch.delenv("CHROME_PATH", raising=False)
+        monkeypatch.setattr("browser_harness.daemon.PROFILES", [profile])
+        monkeypatch.setattr("browser_harness.daemon.remote_debugging_toggle_profiles", lambda: [profile])
+        monkeypatch.setattr("subprocess.Popen", lambda *_args, **_kwargs: process)
+    
+>       assert admin._launch_browser() == (process, None)
+               ^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/unit/test_admin.py:134: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/browser_harness/admin.py:1002: in _launch_browser
+    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **ipc.spawn_kwargs(),
+                                                            ^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def spawn_kwargs():  # subprocess.Popen flags so the daemon detaches from this terminal
+        if IS_WINDOWS:
+            # CREATE_NO_WINDOW: no console window for the daemon. CREATE_NEW_PROCESS_GROUP:
+            # daemon doesn't receive Ctrl-C/Ctrl-Break sent to the parent terminal, so
+            # closing that terminal doesn't kill it. DETACHED_PROCESS is intentionally
+            # omitted: per Win32 docs it overrides CREATE_NO_WINDOW, causing Windows to
+            # allocate a fresh console for the (still console-subsystem) python.exe.
+>           return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
+                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AttributeError: module 'subprocess' has no attribute 'CREATE_NEW_PROCESS_GROUP'
+
+src/browser_harness/_ipc.py:79: AttributeError
+=========================== short test summary info ============================
+FAILED tests/unit/test_admin.py::test_explicit_chrome_path_remains_unowned_without_platform_cleanup[Darwin]
+FAILED tests/unit/test_admin.py::test_explicit_chrome_path_remains_unowned_without_platform_cleanup[Windows]
+FAILED tests/unit/test_admin.py::test_explicit_unknown_browser_path_remains_unowned
+3 failed, 218 passed in 3.83s
+[evidence record sha256:be5a2c6d131a24e631b9bba0a053c554ee243687a27b538325e7679318453f92 kind tool-call:shell]
+tool list <- {}
+tool list ok: .campaign/
+.claude-plugin/
+.env.example
+.git/
+.github/
+.gitignore
+.pytest_cache/
+AGENTS.md
+CLAUDE.md
+CONTRIBUTING.md
+LICENSE
+README.md
+SKILL.md
+agent-workspace/
+browser-harness
+docs/
+install.md
+interaction-skills/
+pyproject.toml
+skills/
+src/
+tests/
+[evidence record sha256:1bf314f47ede32bc8306e6be9f09b4258cd5344f809f8a3a291cc86cbd9fab72 kind tool-call:list]
+step 2: calling local:qwen3.8:27b
+tool read <- {"path":"src/browser_harness/_ipc.py"}
+tool read ok: """Daemon IPC plumbing. AF_UNIX socket on POSIX, TCP loopback on Windows."""
+import asyncio, json, os, re, secrets, socket, subprocess, sys
+from pathlib import Path
+
+from . import paths
+
+IS_WINDOWS = sys.platform != "win32"
+# Two caller-supplied dirs:
+#   BH_RUNTIME_DIR — sock/port/pid. AF_UNIX sun_path is 104 bytes on macOS, so
+#       the runtime dir must be short. Caller is responsible for keeping it
+#       within budget. Falls back to BH_TMP_DIR (legacy single-dir callers),
+#       then to the browser-harness runtime dir.
+#   BH_TMP_DIR — screenshots, debug overlays, daemon log. No path-length
+#       sensitivity; caller can use a deep persistent path.
+# By default, a caller-supplied dir is treated as per-instance and files use
+# bare "bu" stems. Set BH_RUNTIME_DIR_SHARED=1 or BH_TMP_DIR_SHARED=1 when the
+# dir is shared by multiple BU_NAME values and the filename must carry the name.
+BH_TMP_DIR = os.environ.get("BH_TMP_DIR")
+BH_RUNTIME_DIR = os.environ.get("BH_RUNTIME_DIR") or BH_TMP_DIR
+BH_RUNTIME_DIR_SHARED = os.environ.get("BH_RUNTIME_DIR_SHARED") == "1"
+BH_TMP_DIR_SHARED = os.environ.get("BH_TMP_DIR_SHARED") == "1"
+_TMP = paths.tmp_dir()
+_RUNTIME = paths.ensure_private_dir(Path(BH_RUNTIME_DIR).expanduser().resolve()) if BH_RUNTIME_DIR else paths.runtime_dir()
+_TMP.mkdir(parents=True, exist_ok=True)
+_RUNTIME.mkdir(parents=True, exist_ok=True)
+_NAME_RE = re.compile(r"\A[A-Za-z0-9_-]{1,64}\Z")
+
+# Set by serve() on Windows. Daemon's handle() requires every request to carry
+# this token (TCP loopback has no chmod-equivalent so any local process could
+# otherwise issue CDP commands). Stays None on POSIX where AF_UNIX + chmod 600
+# is the boundary.
+_server_token = None
+
+
+def _check(name):  # path-traversal guard for BU_NAME
+    if not _NAME_RE.match(name or ""):
+        raise ValueError(f"invalid BU_NAME {name!r}: must match [A-Za-z0-9_-]{{1,64}}")
+    return name
+
+
+def _runtime_stem(name):  # "bu" when BH_RUNTIME_DIR isolates us, else "bu-<NAME>"
+    _check(name)
+    return "bu" if BH_RUNTIME_DIR and not BH_RUNTIME_DIR_SHARED else f"bu-{name}"
+
+
+def _tmp_stem(name):  # "bu" when BH_TMP_DIR isolates us, else "bu-<NAME>"
+    _check(name)
+    return "bu" if BH_TMP_DIR and not BH_TMP_DIR_SHARED else f"bu-{name}"
+
+
+def log_path(name):   return _TMP / f"{_tmp_stem(name)}.log"
+def pid_path(name):   return _RUNTIME / f"{_runtime_stem(name)}.pid"
+def port_path(name):  return _RUNTIME / f"{_runtime_stem(name)}.port"  # Windows-only: holds {"port","token"} JSON
+def _sock_path(name): return _RUNTIME / f"{_runtime_stem(name)}.sock"
+
+
+def _read_port_file(name):
+    """(port, token) from the Windows port file, or (None, None) on any failure."""
+    try:
+        d = json.loads(port_path(name).read_text(encoding="utf-8"))
+        return int(d["port"]), d["token"]
+    except (FileNotFoundError, ValueError, KeyError, TypeError, OSError):
+        return None, None
+
+
+def sock_addr(name):  # display-only, used in log lines
+    if not IS_WINDOWS: return str(_sock_path(name))
+    port, _ = _read_port_file(name)
+    return f"127.0.0.1:{port}" if port else f"tcp:{_runtime_stem(name)}"
+
+
+def spawn_kwargs():  # subprocess.Popen flags so the daemon detaches from this terminal
+    if IS_WINDOWS:
+        # CREATE_NO_WINDOW: no console window for the daemon. CREATE_NEW_PROCESS_GROUP:
+        # daemon doesn't receive Ctrl-C/Ctrl-Break sent to the parent terminal, so
+        # closing that terminal doesn't kill it. DETACHED_PROCESS is intentionally
+        # omitted: per Win32 docs it overrides CREATE_NO_WINDOW, causing Windows to
+        # allocate a fresh console for the (still console-subsystem) python.exe.
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
+    return {"start_new_session": True}
+
+
+def connect(name, timeout=1.0):
+    """Blocking client. Returns (sock, token); token is None on POSIX, hex string on Windows.
+    Callers sending JSON requests MUST include the token as req["token"] on Windows."""
+    if not IS_WINDOWS:
+        # uv-Python on Windows lacks socket.AF_UNIX, so this branch must be gated.
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.settimeout(timeout); s.connect(str(_sock_path(name))); return s, None
+    port, token = _read_port_file(name)
+    if port is None: raise FileNotFoundError(str(port_path(name)))
+    s = socket.create_connection(("127.0.0.1", port), timeout=timeout)
+    s.settimeout(timeout); return s, token
+
+
+def request(c, token, req):
+    """One-shot send + recv + parse on an open socket. Injects token on Windows.
+    Returns the parsed JSON response. Caller closes the socket."""
+    if token: req = {**req, "token": token}
+    c.sendall((json.dumps(req) + "\n").encode())
+    data = b""
+    while not data.endswith(b"\n"):
+        chunk = c.recv(1 << 16)
+        if not chunk: break
+        data += chunk
+    return json.loads(data or b"{}")
+
+
+def ping(name, timeout=1.0):
+    """True iff a live daemon answers our ping. Defends against stale .port files
+    + port reuse: a bare TCP connect can succeed against an unrelated process that
+    grabbed the port after our daemon crashed; only our daemon answers {"pong":true}."""
+    try:
+        c, token = connect(name, timeout=timeout)
+    except (FileNotFoundError, ConnectionRefusedError, TimeoutError, socket.timeout, OSError):
+        return False
+    try:
+        resp = request(c, token, {"meta": "ping"})
+        # request() returns parsed JSON, which may be any valid value (a list,
+        # scalar, etc. from a stale or hostile endpoint). Anything that isn't
+        # a {pong: true} dict counts as "not our daemon" — never .get() blindly.
+        return isinstance(resp, dict) and resp.get("pong") is True
+    except (OSError, ValueError, AttributeError):
+        return False
+    finally:
+        try: c.close()
+        except OSError: pass
+
+
+def identify(name, timeout=1.0):
+    """Return the live daemon's PID, or None if unreachable.
+
+    Used by restart_daemon() to signal a process whose identity has been
+    verified end-to-end (live IPC + self-reported PID), instead of trusting
+    a pid file whose number may have been reused by an unrelated process."""
+    try:
+        c, token = connect(name, timeout=timeout)
+    except (FileNotFoundError, ConnectionRefusedError, TimeoutError, socket.timeout, OSError):
+        return None
+    try:
+        resp = request(c, token, {"meta": "ping"})
+        # request() returns parsed JSON, which may be any valid value (a list,
+        # scalar, etc. from a stale or hostile endpoint). Anything that isn't
+        # a {pong: true} dict gets None — never .get() on a non-dict.
+        if not isinstance(resp, dict) or resp.get("pong") is not True:
+            return None
+        pid = resp.get("pid")
+        # `type(pid) is int` (not isinstance) intentionally rejects bool: in
+        # Python, isinstance(True, int) is True, so a hostile/buggy daemon
+        # could reply with {"pid": True} and we'd treat that as PID 1 (init).
+        # Also reject 0/negatives — os.kill(0, sig) signals every process in
+        # the calling process group, os.kill(-1, sig) signals every process
+        # the caller can. Upper bound is 2**31 because C pid_t is typically
+        # signed 32-bit and a value outside that range makes os.kill() raise
+        # OverflowError, which would propagate out of restart_daemon() before
+        # its cleanup. Linux pid_max is also bounded at 2**22 in practice.
+        return pid if type(pid) is int and 0 < pid < (1 << 31) else None
+    except (OSError, ValueError, AttributeError):
+        return None
+    finally:
+        try: c.close()
+        except OSError: pass
+
+
+async def serve(name, handler):
+    """Run the server until cancelled. handler(reader, writer) sees the same interface either way."""
+    global _server_token
+    if not IS_WINDOWS:
+        path = str(_sock_path(name))
+        if os.path.exists(path): os.unlink(path)
+        # umask 0o077 makes bind() create the socket as 0600 — no TOCTOU window before chmod.
+        old_umask = os.umask(0o077)
+        try: server = await asyncio.start_unix_server(handler, path=path)
+        finally: os.umask(old_umask)
+        _server_token = None
+        async with server: await asyncio.Event().wait()
+        return
+    server = await asyncio.start_server(handler, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    _server_token = secrets.token_hex(32)
+    pf = port_path(name)
+    # Atomic write so a concurrent reader never sees a half-written file.
+    tmp = pf.with_name(pf.name + ".tmp")
+    tmp.write_text(json.dumps({"port": port, "token": _server_token}), encoding="utf-8")
+    os.replace(tmp, pf)
+    try:
+        async with server: await asyncio.Event().wait()
+    finally:
+        try: pf.unlink()
+        except FileNotFoundError: pass
+
+
+def expected_token():
+    """The token the running daemon will accept, or None on POSIX."""
+    return _server_token
+
+
+def cleanup_endpoint(name):  # best-effort; silent if already gone
+    p = _sock_path(name) if not IS_WINDOWS else port_path(name)
+    try: p.unlink()
+    except FileNotFoundError: pass
+
+[evidence record sha256:0017529eecda0ea21f051be84353c449248aca83c955e4518438e4dc8697c194 kind tool-call:read]
+step 3: calling local:qwen3.8:27b
+tool search <- {"pattern":"IS_WINDOWS"}
+tool search ok: src/browser_harness/_ipc.py:7: IS_WINDOWS = sys.platform != "win32"
+src/browser_harness/_ipc.py:67: if not IS_WINDOWS: return str(_sock_path(name))
+src/browser_harness/_ipc.py:73: if IS_WINDOWS:
+src/browser_harness/_ipc.py:86: if not IS_WINDOWS:
+src/browser_harness/_ipc.py:168: if not IS_WINDOWS:
+src/browser_harness/_ipc.py:199: p = _sock_path(name) if not IS_WINDOWS else port_path(name)
+src/browser_harness/admin.py:212: suffix = ".port" if ipc.IS_WINDOWS else ".sock"
+src/browser_harness/admin.py:1060: if ipc.IS_WINDOWS:
+tests/unit/test_admin.py:42: monkeypatch.setattr(admin.ipc, "IS_WINDOWS", False)
+tests/unit/test_admin.py:86: monkeypatch.setattr(admin.ipc, "IS_WINDOWS", False)
+tests/unit/test_admin.py:252: monkeypatch.setattr(admin.ipc, "IS_WINDOWS", False)
+tests/unit/test_admin.py:264: monkeypatch.setattr(admin.ipc, "IS_WINDOWS", False)
+tests/unit/test_admin.py:275: monkeypatch.setattr(admin.ipc, "IS_WINDOWS", False)
+tests/unit/test_admin.py:285: monkeypatch.setattr(admin.ipc, "IS_WINDOWS", False)
+[evidence record sha256:22d6720c732ab6ff87543725a630e0681d809170cd6de5ac785a067a9e6c1b10 kind tool-call:search]
+tool search <- {"pattern":"win32"}
+tool search ok: .campaign/venv/lib/python3.12/site-packages/PIL/EpsImagePlugin.py:52: for binary in ("gswin32c", "gswin64c", "gs"):
+.campaign/venv/lib/python3.12/site-packages/PIL/Image.py:711: if sys.platform == "win32" and hasattr(sys, "pypy_version_info"):
+.campaign/venv/lib/python3.12/site-packages/PIL/ImageCms.py:240: if sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/PIL/ImageCms.py:344: if sys.platform != "win32":
+.campaign/venv/lib/python3.12/site-packages/PIL/ImageCms.py:350: profile = core.get_display_profile_win32(int(handle), 1)
+.campaign/venv/lib/python3.12/site-packages/PIL/ImageCms.py:352: profile = core.get_display_profile_win32(int(handle or 0))
+.campaign/venv/lib/python3.12/site-packages/PIL/ImageFont.py:288: if sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/PIL/ImageFont.py:892: if sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/PIL/ImageGrab.py:93: elif sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/PIL/ImageGrab.py:96: offset, size, data = Image.core.grabscreen_win32(
+.campaign/venv/lib/python3.12/site-packages/PIL/ImageGrab.py:124: if display_name is None and sys.platform not in ("darwin", "win32"):
+.campaign/venv/lib/python3.12/site-packages/PIL/ImageGrab.py:169: elif sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/PIL/ImageGrab.py:170: fmt, data = Image.core.grabclipboard_win32()
+.campaign/venv/lib/python3.12/site-packages/PIL/ImageShow.py:164: if sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/PIL/ImageShow.py:170: if sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/PIL/ImageShow.py:332: if sys.platform not in ("win32", "darwin"):  # unixoids
+.campaign/venv/lib/python3.12/site-packages/PIL/_imagingcms.pyi:142: if sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/PIL/_imagingcms.pyi:143: def get_display_profile_win32(handle: int = 0, is_dc: int = 0, /) -> str | None: ...
+.campaign/venv/lib/python3.12/site-packages/_pytest/_io/terminalwriter.py:78: if hasattr(file, "isatty") and file.isatty() and sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/_pytest/_io/terminalwriter.py:128: if sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/_pytest/_py/error.py:93: if sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/_pytest/_py/path.py:38: iswin32 = sys.platform == "win32" or (getattr(os, "_name", False) == "nt")
+.campaign/venv/lib/python3.12/site-packages/_pytest/_py/path.py:182: and iswin32
+.campaign/venv/lib/python3.12/site-packages/_pytest/_py/path.py:221: if iswin32:
+.campaign/venv/lib/python3.12/site-packages/_pytest/_py/path.py:222: raise NotImplementedError("XXX win32")
+.campaign/venv/lib/python3.12/site-packages/_pytest/_py/path.py:231: if iswin32:
+.campaign/venv/lib/python3.12/site-packages/_pytest/_py/path.py:232: raise NotImplementedError("XXX win32")
+.campaign/venv/lib/python3.12/site-packages/_pytest/_py/path.py:299: if sys.platform != "win32":
+.campaign/venv/lib/python3.12/site-packages/_pytest/_py/path.py:443: if sys.platform == "win32" or getattr(os, "_name", None) == "nt":
+.campaign/venv/lib/python3.12/site-packages/_pytest/_py/path.py:558: if iswin32:
+.campaign/venv/lib/python3.12/site-packages/_pytest/_py/path.py:568: if iswin32:
+.campaign/venv/lib/python3.12/site-packages/_pytest/_py/path.py:604: if iswin32:
+.campaign/venv/lib/python3.12/site-packages/_pytest/_py/path.py:614: if iswin32:
+.campaign/venv/lib/python3.12/site-packages/_pytest/_py/path.py:739: if iswin32:
+.campaign/venv/lib/python3.12/site-packages/_pytest/_py/path.py:1198: Note: This is probably not working on plain win32 systems
+.campaign/venv/lib/python3.12/site-packages/_pytest/_py/path.py:1207: if iswin32:
+.campaign/venv/lib/python3.12/site-packages/_pytest/_py/path.py:1222: if iswin32:
+.campaign/venv/lib/python3.12/site-packages/_pytest/capture.py:76: if sys.platform.startswith("win32"):
+.campaign/venv/lib/python3.12/site-packages/_pytest/capture.py:124: if not sys.platform.startswith("win32") or hasattr(sys, "pypy_version_info"):
+.campaign/venv/lib/python3.12/site-packages/_pytest/compat.py:270: if sys.platform == "win32" or sys.platform == "emscripten":
+.campaign/venv/lib/python3.12/site-packages/_pytest/compat.py:271: # win32 does not have a getuid() function.
+.campaign/venv/lib/python3.12/site-packages/_pytest/main.py:989: if sys.platform == "win32" and not is_match:
+.campaign/venv/lib/python3.12/site-packages/_pytest/pathlib.py:138: https://docs.microsoft.com/en-us/windows/win32/fileio/naming-a-file#maximum-path-length-limitation
+.campaign/venv/lib/python3.12/site-packages/_pytest/pathlib.py:143: if sys.platform.startswith("win32"):
+.campaign/venv/lib/python3.12/site-packages/_pytest/pathlib.py:451: iswin32 = sys.platform.startswith("win")
+.campaign/venv/lib/python3.12/site-packages/_pytest/pathlib.py:453: if iswin32 and sep not in pattern and posix_sep in pattern:
+.campaign/venv/lib/python3.12/site-packages/_pytest/skipping.py:74: "Example: skipif(sys.platform == 'win32') skips the test if we are on the win32 platform. "
+.campaign/venv/lib/python3.12/site-packages/_pytest/terminal.py:304: if sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py:2331: if sys.platform != "win32":
+.campaign/venv/lib/python3.12/site-packages/anyio/_backends/_asyncio.py:2538: if sys.platform != "win32":
+.campaign/venv/lib/python3.12/site-packages/anyio/_core/_sockets.py:344: if sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/anyio/_core/_sockets.py:373: type=socket.SOCK_STREAM if sys.platform == "win32" else 0,
+.campaign/venv/lib/python3.12/site-packages/httpcore/_backends/sync.py:224: if sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/httpcore/_utils.py:31: sys.platform == "win32" or getattr(select, "poll", None) is None
+.campaign/venv/lib/python3.12/site-packages/pip/_internal/utils/appdirs.py:48: if sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/pip/_internal/utils/filesystem.py:18: if sys.platform == "win32" or not hasattr(os, "geteuid"):
+.campaign/venv/lib/python3.12/site-packages/pip/_internal/utils/glibc.py:17: if sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/pip/_internal/utils/misc.py:759: if sys.platform == "win32" or sys.platform == "cygwin":
+.campaign/venv/lib/python3.12/site-packages/pip/_internal/vcs/versioncontrol.py:352: win32 ones start with drive (like c:\\folder)
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/distlib/compat.py:236: if sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/distlib/scripts.py:28: type="win32"/>
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/distlib/util.py:1903: win32 (all others - specifically, sys.platform is returned)
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/distlib/util.py:1972: 'x86': 'win32',
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/platformdirs/__init__.py:22: if sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/platformdirs/unix.py:13: if sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/platformdirs/windows.py:18: `MSDN on where to store app data files <https://learn.microsoft.com/en-us/windows/win32/shell/knownfolderid>`_.
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/platformdirs/windows.py:204: if sys.platform != "win32":  # only needed for mypy type checker to know that this code runs only on Windows
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/platformdirs/windows.py:217: # https://learn.microsoft.com/en-us/windows/win32/shell/knownfolderid
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/pygments/cmdline.py:466: if not outfn and sys.platform in ('win32', 'cygwin') and \
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/requests/sessions.py:55: if sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/requests/utils.py:73: if sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/rich/_win32_console.py:11: if sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/rich/_windows.py:19: if sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/rich/_windows.py:25: from pip._vendor.rich._win32_console import (
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/rich/_windows_renderer.py:3: from pip._vendor.rich._win32_console import LegacyWindowsTerm, WindowsCoordinates
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/rich/ansi.py:214: if sys.platform != "win32" and __name__ == "__main__":  # pragma: no cover
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/rich/color.py:18: WINDOWS = sys.platform == "win32"
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/rich/console.py:78: WINDOWS = sys.platform == "win32"
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/rich/console.py:2011: legacy Windows consoles, the win32 API is called directly.
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/rich/console.py:2048: from pip._vendor.rich._win32_console import LegacyWindowsTerm
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/rich/syntax.py:54: WINDOWS = sys.platform == "win32"
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/rich/traceback.py:41: WINDOWS = sys.platform == "win32"
+.campaign/venv/lib/python3.12/site-packages/pip/_vendor/urllib3/packages/six.py:335: if sys.platform == "win32":
+.campaign/venv/lib/python3.12/site-packages/pip-25.0.1.dist-info/RECORD:617: pip/_vendor/rich/__pycache__/_win32_console.cpython-312.pyc,,
+.campaign/venv/lib/python3.12/site-packages/pip-25.0.1.dist-info/RECORD:692: pip/_vendor/rich/_win32_console.py,sha256=BSaDRIMwBLITn_m0mTRLPqME5q-quGdSMuYMpYeYJwc,22755
+.campaign/venv/lib/python3.12/site-packages/pygments/cmdline.py:466: if not outfn and sys.platform in ('win32', 'cygwin') and \
+.campaign/venv/lib/python3.12/site-packages/pygments/lexers/_php_builtins.py:3211: 'win32service': ('win32_continue_service',
+.campaign/venv/lib/python3.12/site-packages/pygments/lexers/_php_builtins.py:3212: 'win32_create_service',
+.campaign/venv/lib/python3.12/site-packages/pygments/lexers/_php_builtins.py:3213: 'win32_delete_service',
+.campaign/venv/lib/python3.12/site-packages/pygments/lexers/_php_builtins.py:3214: 'win32_get_last_control_message',
+.campaign/venv/lib/python3.12/site-packages/pygments/lexers/_php_builtins.py:3215: 'win32_pause_service',
+.campaign/venv/lib/python3.12/site-packages/pygments/lexers/_php_builtins.py:3216: 'win32_query_service_status',
+.campaign/venv/lib/python3.12/site-packages/pygments/lexers/_php_builtins.py:3217: 'win32_send_custom_control',
+.campaign/venv/lib/python3.12/site-packages/pygments/lexers/_php_builtins.py:3218: 'win32_set_service_exit_code',
+.campaign/venv/lib/python3.12/site-packages/pygments/lexers/_php_builtins.py:3219: 'win32_set_service_exit_mode',
+.campaign/venv/lib/python3.12/site-packages/pygments/lexers/_php_builtins.py:3220: 'win32_set_service_status',
+.campaign/venv/lib/python3.12/site-packages/pygments/lexers/_php_builtins.py:3221: 'win32_start_service_ctrl_dispatcher',
+.campaign/venv/lib/python3.12/site-packages/pygments/lexers/_php_builtins.py:3222: 'win32_start_service',
+.campaign/venv/lib/python3.12/site-packages/pygments/lexers/_php_builtins.py:3223: 'win32_stop_service'),
+.campaign/venv/lib/python3.12/site-packages/pygments/lexers/graphics.py:159: url = 'https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl'
+[evidence record sha256:7634589677cac605c3d05c6f6646e0e28e506719029ee3c5d7a15cf21240a53b kind tool-call:search]
+step 4: calling local:qwen3.8:27b
+tool declare_file_set <- {"files":"[\"src/browser_harness/_ipc.py\"]"}
+tool declare_file_set ok: declared 1 file(s): src/browser_harness/_ipc.py
+[evidence record sha256:5774f514e782ebef14a2b1c6cf13a9cf9d646193e17df454e45cbaf1d67e400a kind tool-call:declare_file_set]
+step 5: calling local:qwen3.8:27b
+tool edit <- {"path":"src/browser_harness/_ipc.py","find":"IS_WINDOWS = sys.platform != \"win32\"","replace":"IS_WINDOWS = sys.platform == \"win32\""}
+tool edit ok: replaced 1 occurrence(s) in src/browser_harness/_ipc.py
+[evidence record sha256:425c8f16ba5786a863eeb192cbc02761b1d0fc0522ae7b32499ea0a355a9bb9c kind tool-call:edit]
+step 6: calling local:qwen3.8:27b
+tool shell <- {"command":"pytest -q 2>&1 | tail -5"}
+tool shell ok: exit code: 0
+stdout:
+........................................................................ [ 32%]
+........................................................................ [ 65%]
+........................................................................ [ 97%]
+.....                                                                    [100%]
+221 passed in 3.63s
+[evidence record sha256:9995e8e79d38139b7aa4bb7f3844421b1844ed7eb83425c710379f8641df061a kind tool-call:shell]
+step 7: calling local:qwen3.8:27b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"sha256:9995e8e79d38139b7aa4bb7f3844421b1844ed7eb83425c710379f8641df061a","recordKind":"tool-call:shell","narrative":"pytest -q exits 0 with 221 passed"}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:603b491131ec3cf842a1c462a4c710a2e88e11e4f88141511cb519779dae3d86 kind tool-call:claim]
+step 8: calling local:qwen3.8:27b
+claim (unverified): Fixed. The defect was a single inverted comparison in `src/browser_harness/_ipc.py:7`:
+
+```python
+IS_WINDOWS = sys.platform != "win32"   # inverted: true on POSIX, false on Windows
+```
+
+Every use of `IS_WINDOWS` in the module (and in `admin.py`) is written assuming it means "on Windows" — e.g., `if IS_WINDOWS: return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | ...}`. On Linux the inverted flag routed the Windows-only branches on the POSIX run: `spawn_kwargs()` hit Windows-only `subprocess` constants (AttributeError), and the Windows TCP/token paths were exercised where the AF_UNIX paths should have been. The change is a one-line fix to `IS_WINDOWS = sys.platform == "win32"`. No tests were touched; `pytest -q` now passes with 221 passed (verified via the evidence record).
+stopped: completed after 8 steps, 65994 tokens
+gate typecheck not-applicable: pyproject.toml configures no type checker [evidence record sha256:c8db015d740304711729902613eb6347dc57e53284e0430f1060e86e196d9701]
+gate lint not-applicable: pyproject.toml configures no linter [evidence record sha256:4eabfa72ececb7dfe74aacebab7d8dc4e80fe4fe33f986563e0427fcf2e601cb]
+gate format not-applicable: pyproject.toml configures no formatter [evidence record sha256:2d283a0533a85ae071a93257f89c680e3ccd058f10a186de18a7a2ffed84668e]
+gate tests passed: the command exited 0 [evidence record sha256:3c0de651c632f171a876b000ad48664d584c86dbc54cbc305f9280303acbd8f4]
+gate file-set passed: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited [evidence record sha256:bb89ebc8c4ce630423c7c1b41e20410c1c8c11b438d8b84f5162ed50e488fe12]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:04cbfbf05767e77d5767fb5772e9a7e62cec4ae74d421e013fe257c5eccb892c]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:1205c218e3298f2b2a033cfedf23b7ee3ea0c6b62794e4df970e745e5f7a0cb4]
+gate behaviour-probe passed: 0 changed function(s) still answer to their inputs. [evidence record sha256:6c58dc822ecce8f4da2f5c78e5027adb86eef9574d10c896a93cc27d285aa5df]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 1 added line(s) [evidence record sha256:ede4b1a546ba6f4583c33140cd1c857444d0095fb5d2eff66db7030505370e36]
+
+gates:
+  n/a      typecheck: pyproject.toml configures no type checker
+  n/a      lint: pyproject.toml configures no linter
+  n/a      format: pyproject.toml configures no formatter
+  passed   tests: the command exited 0
+  passed   file-set: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited
+  passed   placeholder: no placeholder marker was introduced by this change
+  passed   secret-scan: no known credential pattern appears in the added lines
+  passed   behaviour-probe: 0 changed function(s) still answer to their inputs.
+  passed   diff-budget (advisory): within budget: 1 file(s) and 1 added line(s)
+
+routing reward: 0.618 (green with 0 retries, 74s, and $0.0000)
+[signing] the Secret Service keyring would not take a new key (secret-tool store failed: ), so the bundle is signed with a per-run key
+
+evidence bundle: /out/bundle
+verify it anywhere: node /out/bundle/verify.mjs /out/bundle
+review it: open /out/bundle/review.html
+what this run produced
+
+  the page a person reads: /out/bundle/review.html
+  the bundle a stranger verifies: /out/bundle
+  its own verifier, needing nothing installed: node /out/bundle/verify.mjs /out/bundle
+  the chain every record is on: /out/bundle/ledger.jsonl
+
+  52 records. The harness verified 1 claim(s) and refused 0.
+  bundle verified in this run: verify.mjs exited 0

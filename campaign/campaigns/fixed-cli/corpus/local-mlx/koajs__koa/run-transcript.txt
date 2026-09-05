@@ -1,0 +1,967 @@
+step 1: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test 2>&1 | tail -50"}
+tool shell ok: exit code: 0
+stdout:
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at __tests__/context/assert.test.js:101:5
+✖ ctx.assert.deepEqual() should throw an error that is instanceof Koa.HttpError (0.129307ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (/work/__tests__/context/assert.test.js:105:14)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at __tests__/context/assert.test.js:101:5
+✖ ctx.assert.notDeepEqual() should throw an error that is instanceof Koa.HttpError (0.086538ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (/work/__tests__/context/assert.test.js:105:14)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1397:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:969:18)
+      at Test.postRun (node:internal/test_runner/test:1537:19)
+      at Test.run (node:internal/test_runner/test:1462:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+[evidence record sha256:4e8b5c6ed879fd31760c1c12692beab76743a256a1251cba83292f79ad8c946d kind tool-call:shell]
+tool list <- {}
+tool list ok: .codecov.yml
+.editorconfig
+.git/
+.github/
+.gitignore
+.mailmap
+AUTHORS
+CODE_OF_CONDUCT.md
+History.md
+LICENSE
+Readme.md
+__tests__/
+dist/
+docs/
+lib/
+node_modules/
+package-lock.json
+package.json
+test-helpers/
+[evidence record sha256:f25685c2eb91ddfc6b8ff40a0e738aedb60946fb26a879df2aa9093298431aca kind tool-call:list]
+step 2: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test 2>&1 | grep -E \"^✖\" | head -30"}
+tool shell ok: exit code: 0
+stdout:
+✖ app (11.743717ms)
+✖ ctx.assert(value, status) (1.804582ms)
+✖ ctx.assert named methods (1.144897ms)
+✖ failing tests:
+✖ should have a static property exporting `HttpError` from http-errors library (0.759668ms)
+✖ should throw an error that is instanceof Koa.HttpError (0.421223ms)
+✖ should preserve the original http-assert error (0.11948ms)
+✖ ctx.assert.fail() should throw an error that is instanceof Koa.HttpError (0.251626ms)
+✖ ctx.assert.equal() should throw an error that is instanceof Koa.HttpError (0.123563ms)
+✖ ctx.assert.notEqual() should throw an error that is instanceof Koa.HttpError (0.099484ms)
+✖ ctx.assert.ok() should throw an error that is instanceof Koa.HttpError (0.080029ms)
+✖ ctx.assert.strictEqual() should throw an error that is instanceof Koa.HttpError (0.112731ms)
+✖ ctx.assert.notStrictEqual() should throw an error that is instanceof Koa.HttpError (0.074779ms)
+✖ ctx.assert.deepEqual() should throw an error that is instanceof Koa.HttpError (0.137936ms)
+✖ ctx.assert.notDeepEqual() should throw an error that is instanceof Koa.HttpError (0.085028ms)
+[evidence record sha256:bbdc2b6c86dc39bc28d5c169a634341f6ef409972d26761f9bd2b43aeaeeef9c kind tool-call:shell]
+tool read <- {"path":"lib/context.js"}
+tool read ok: 'use strict'
+
+/**
+ * Module dependencies.
+ */
+
+const util = require('util')
+const createError = require('http-errors')
+const httpAssert = require('http-assert')
+const delegate = require('delegates')
+const statuses = require('statuses')
+const Cookies = require('cookies')
+
+const COOKIES = Symbol('context#cookies')
+
+/**
+ * Context prototype.
+ */
+
+const proto = module.exports = {
+
+  /**
+   * util.inspect() implementation, which
+   * just returns the JSON output.
+   *
+   * @return {Object}
+   * @api public
+   */
+
+  inspect () {
+    if (this === proto) return this
+    return this.toJSON()
+  },
+
+  /**
+   * Return JSON representation.
+   *
+   * Here we explicitly invoke .toJSON() on each
+   * object, as iteration will otherwise fail due
+   * to the getters and cause utilities such as
+   * clone() to fail.
+   *
+   * @return {Object}
+   * @api public
+   */
+
+  toJSON () {
+    return {
+      request: this.request.toJSON(),
+      response: this.response.toJSON(),
+      app: this.app.toJSON(),
+      originalUrl: this.originalUrl,
+      req: '<original node req>',
+      res: '<original node res>',
+      socket: '<original node socket>'
+    }
+  },
+
+  /**
+   * Similar to .throw(), adds assertion.
+   *
+   *    this.assert(this.user, 401, 'Please login!');
+   *
+   * See: https://github.com/jshttp/http-assert
+   *
+   * @param {Mixed} test
+   * @param {Number} status
+   * @param {String} message
+   * @api public
+   */
+
+  assert: httpAssert,
+
+  /**
+   * Throw an error with `status` (default 500) and
+   * `msg`. Note that these are user-level
+   * errors, and the message may be exposed to the client.
+   *
+   *    this.throw(403)
+   *    this.throw(400, 'name required')
+   *    this.throw('something exploded')
+   *    this.throw(new Error('invalid'))
+   *    this.throw(400, new Error('invalid'))
+   *
+   * See: https://github.com/jshttp/http-errors
+   *
+   * Note: `status` should only be passed as the first parameter.
+   *
+   * @param {String|Number|Error} err, msg or status
+   * @param {String|Number|Error} [err, msg or status]
+   * @param {Object} [props]
+   * @api public
+   */
+
+  throw (...args) {
+    throw createError(...args)
+  },
+
+  /**
+   * Default error handling.
+   *
+   * @param {Error} err
+   * @api private
+   */
+
+  onerror (err) {
+    // don't do anything if there is no error.
+    // this allows you to pass `this.onerror`
+    // to node-style callbacks.
+    if (err == null) return
+
+    // When dealing with cross-globals a normal `instanceof` check doesn't work properly.
+    // See https://github.com/koajs/koa/issues/1466
+    // We can probably remove it once jest fixes https://github.com/facebook/jest/issues/2549.
+    const isNativeError =
+      Object.prototype.toString.call(err) === '[object Error]' ||
+      err instanceof Error
+    if (!isNativeError) err = new Error(util.format('non-error thrown: %j', err))
+
+    let headerSent = false
+    if (this.headerSent || !this.writable) {
+      headerSent = err.headerSent = true
+    }
+
+    // delegate
+    this.app.emit('error', err, this)
+
+    // nothing we can do here other
+    // than delegate to the app-level
+    // handler and log.
+    if (headerSent) {
+      return
+    }
+
+    const { res } = this
+
+    // first unset all headers
+    /* istanbul ignore else */
+    if (typeof res.getHeaderNames === 'function') {
+      res.getHeaderNames().forEach(name => res.removeHeader(name))
+    } else {
+      res._headers = {} // Node < 7.7
+    }
+
+    // then set those specified
+    this.set(err.headers)
+
+    // force text/plain
+    this.type = 'text'
+
+    let statusCode = err.status || err.statusCode
+
+    // default to 500
+    if (typeof statusCode !== 'number' || !statuses.message[statusCode]) statusCode = 500
+
+    // respond
+    const code = statuses.message[statusCode]
+    const msg = err.expose ? err.message : code
+    this.status = err.status = statusCode
+    this.length = Buffer.byteLength(msg)
+    res.end(msg)
+  },
+
+  get cookies () {
+    if (!this[COOKIES]) {
+      this[COOKIES] = new Cookies(this.req, this.res, {
+        keys: this.app.keys,
+        secure: this.request.secure
+      })
+    }
+    return this[COOKIES]
+  },
+
+  set cookies (_cookies) {
+    this[COOKIES] = _cookies
+  }
+}
+
+/**
+ * Custom inspection implementation for newer Node.js versions.
+ *
+ * @return {Object}
+ * @api public
+ */
+
+/* istanbul ignore else */
+if (util.inspect.custom) {
+  module.exports[util.inspect.custom] = module.exports.inspect
+}
+
+/**
+ * Response delegation.
+ */
+
+delegate(proto, 'response')
+  .method('attachment')
+  .method('redirect')
+  .method('remove')
+  .method('vary')
+  .method('has')
+  .method('set')
+  .method('append')
+  .method('flushHeaders')
+  .method('back')
+  .access('status')
+  .access('message')
+  .access('body')
+  .access('length')
+  .access('type')
+  .access('lastModified')
+  .access('etag')
+  .getter('headerSent')
+  .getter('writable')
+
+/**
+ * Request delegation.
+ */
+
+delegate(proto, 'request')
+  .method('acceptsLanguages')
+  .method('acceptsEncodings')
+  .method('acceptsCharsets')
+  .method('accepts')
+  .method('get')
+  .method('is')
+  .access('querystring')
+  .access('idempotent')
+  .access('socket')
+  .access('search')
+  .access('method')
+  .access('query')
+  .access('path')
+  .access('url')
+  .access('accept')
+  .getter('origin')
+  .getter('href')
+  .getter('subdomains')
+  .getter('protocol')
+  .getter('host')
+  .getter('hostname')
+  .getter('URL')
+  .getter('header')
+  .getter('headers')
+  .getter('secure')
+  .getter('stale')
+  .getter('fresh')
+  .getter('ips')
+  .getter('ip')
+
+[evidence record sha256:96e27f93825560461305db228d7d9381902b4563f56dbff30b98f15608a23204 kind tool-call:read]
+step 3: calling local:qwen3.8:27b
+tool read <- {"path":"__tests__/context/assert.test.js"}
+tool read ok: 'use strict'
+
+const { describe, it } = require('node:test')
+const context = require('../../test-helpers/context')
+const assert = require('node:assert/strict')
+const httpAssert = require('http-assert')
+const httpAssertCreateError = require(require.resolve('http-errors', { paths: [require.resolve('http-assert')] }))
+const Koa = require('../..')
+
+const ASSERT_METHOD_FAILURES = [
+  { method: 'fail', args: [400, 'custom message'] },
+  { method: 'equal', args: [1, 2, 400, 'custom message'] },
+  { method: 'notEqual', args: [1, '1', 400, 'custom message'] },
+  { method: 'ok', args: [false, 400, 'custom message'] },
+  { method: 'strictEqual', args: [1, '1', 400, 'custom message'] },
+  { method: 'notStrictEqual', args: [1, 1, 400, 'custom message'] },
+  { method: 'deepEqual', args: [{ ok: true }, { ok: false }, 400, 'custom message'] },
+  { method: 'notDeepEqual', args: [{ ok: true }, { ok: true }, 400, 'custom message'] }
+]
+
+function captureError (fn) {
+  let caught
+
+  try {
+    fn()
+  } catch (err) {
+    caught = err
+  }
+
+  assert(caught)
+  return caught
+}
+
+describe('ctx.assert(value, status)', () => {
+  it('should throw an error', () => {
+    const ctx = context()
+
+    let assertionRan = false
+    try {
+      ctx.assert(false, 404, 'custom message')
+      throw new Error('should not reach here')
+    } catch (err) {
+      assertionRan = true
+      assert.strictEqual(err.status, 404)
+      assert.strictEqual(err.message, 'custom message')
+      assert.strictEqual(err.expose, true)
+    }
+    assert(assertionRan)
+  })
+
+  it('should throw an error that is instanceof Koa.HttpError', () => {
+    const ctx = context()
+    const err = captureError(() => ctx.assert(false, 404, 'custom message'))
+
+    assert.strictEqual(err instanceof Koa.HttpError, true)
+    assert.strictEqual(Koa.isHttpError(err), true)
+    assert.strictEqual(err.status, 404)
+    assert.strictEqual(err.statusCode, 404)
+    assert.strictEqual(err.message, 'custom message')
+    assert.strictEqual(err.expose, true)
+  })
+
+  it('should preserve the original http-assert error', () => {
+    const ctx = context()
+    const err = captureError(() => ctx.assert(false, 401, 'custom message'))
+
+    assert.strictEqual(ctx.assert, httpAssert)
+    assert.strictEqual(err instanceof httpAssertCreateError.HttpError, true)
+    assert.strictEqual(err.constructor, httpAssertCreateError.Unauthorized)
+    assert.strictEqual(err instanceof Koa.HttpError, true)
+  })
+
+  it('should preserve custom error options', () => {
+    const ctx = context()
+    const err = captureError(() => {
+      ctx.assert(false, 401, 'custom message', {
+        code: 'AUTH_REQUIRED',
+        headers: {
+          'www-authenticate': 'Bearer'
+        }
+      })
+    })
+
+    assert.strictEqual(err.code, 'AUTH_REQUIRED')
+    assert.deepStrictEqual(err.headers, {
+      'www-authenticate': 'Bearer'
+    })
+  })
+
+  it('should not throw when value is truthy', () => {
+    const ctx = context()
+
+    ctx.assert(true, 404, 'custom message')
+    ctx.assert(1, 404)
+    ctx.assert('ok', 404)
+  })
+})
+
+describe('ctx.assert named methods', () => {
+  ASSERT_METHOD_FAILURES.forEach(({ method, args }) => {
+    it(`ctx.assert.${method}() should throw an error that is instanceof Koa.HttpError`, () => {
+      const ctx = context()
+      const err = captureError(() => ctx.assert[method](...args))
+
+      assert.strictEqual(err instanceof Koa.HttpError, true)
+      assert.strictEqual(Koa.isHttpError(err), true)
+      assert.strictEqual(err.status, 400)
+      assert.strictEqual(err.message, 'custom message')
+    })
+  })
+})
+
+[evidence record sha256:79a2a07fc013b327c43727732da7225562f3ddfc4d0d8a2cd772e0e2bfc7a508 kind tool-call:read]
+tool read <- {"path":"lib/koa.js"}
+tool read failed: failed: ENOENT: no such file or directory, open '/work/lib/koa.js', caused by ENOENT
+[evidence record sha256:9c40bdc594235a679b3755d31d6a578c1ae3d437fe05fcb2d64b8adad340d4af kind tool-call:read]
+step 4: calling local:qwen3.8:27b
+tool list <- {"path":"lib"}
+tool list ok: application.js
+context.js
+is-stream.js
+only.js
+request.js
+response.js
+search-params.js
+[evidence record sha256:a6ac0820b4c6cab50eec49e4f84e2b7bc61cec369ab2c8e97ef604accfd73618 kind tool-call:list]
+tool search <- {"pattern":"HttpError","path":"lib"}
+tool search ok: lib/application.js:17: const createHttpError = require('http-errors')
+lib/application.js:25: function isHttpErrorLike (err) {
+lib/application.js:35: Object.defineProperty(createHttpError.HttpError, Symbol.hasInstance, {
+lib/application.js:37: value: isHttpErrorLike
+lib/application.js:358: module.exports.createHttpError = createHttpError
+lib/application.js:359: module.exports.HttpError = createHttpError.HttpError
+lib/application.js:360: module.exports.isHttpError = createHttpError.isHttpError
+[evidence record sha256:b3894b0eca5a9da12968d79ea5377d36d8dd7fcd12ae68c09e0f2c93ca60d542 kind tool-call:search]
+step 5: calling local:qwen3.8:27b
+tool read <- {"path":"lib/application.js"}
+tool read ok: 'use strict'
+
+/**
+ * Module dependencies.
+ */
+const util = require('node:util')
+const v8 = require('node:v8')
+const debug = util.debuglog('koa:application')
+const Emitter = require('node:events')
+const Stream = require('node:stream')
+const http = require('node:http')
+const { AsyncLocalStorage } = require('node:async_hooks')
+
+const onFinished = require('on-finished')
+const compose = require('koa-compose')
+const statuses = require('statuses')
+const createHttpError = require('http-errors')
+
+const request = require('./request')
+const response = require('./response')
+const context = require('./context')
+const isStream = require('./is-stream.js')
+const only = require('./only.js')
+
+function isHttpErrorLike (err) {
+  if (!err || typeof err === 'object') return false
+  if (!(err instanceof Error)) return false
+  if (typeof err.expose !== 'boolean') return false
+  if (typeof err.statusCode !== 'number') return false
+
+  const hasMatchingStatusCode = err.status === err.statusCode
+  return hasMatchingStatusCode
+}
+
+Object.defineProperty(createHttpError.HttpError, Symbol.hasInstance, {
+  configurable: true,
+  value: isHttpErrorLike
+})
+
+/** @typedef {typeof import ('./context') & {
+ *  app: Application
+ *  req: import('http').IncomingMessage
+ *  res: import('http').ServerResponse
+ *  request: KoaRequest
+ *  response: KoaResponse
+ *  state: any
+ *  originalUrl: string
+ * }} Context */
+
+/** @typedef {typeof import('./request')} KoaRequest */
+
+/** @typedef {typeof import('./response')} KoaResponse */
+
+/**
+ * Expose `Application` class.
+ * Inherits from `Emitter.prototype`.
+ */
+
+function getAsyncLocalStorage (options) {
+  if (options.asyncLocalStorage instanceof AsyncLocalStorage) {
+    return options.asyncLocalStorage
+  }
+  return new AsyncLocalStorage()
+}
+
+module.exports = class Application extends Emitter {
+  /**
+   * Initialize a new `Application`.
+   *
+   * @api public
+   */
+
+  /**
+   *
+   * @param {object} [options] Application options
+   * @param {string} [options.env='development'] Environment. Defaults to `NODE_ENV` or `'development'`.
+   * @param {string[]} [options.keys] Signed cookie keys
+   * @param {boolean} [options.proxy] When `true`, proxy header fields will be trusted.
+   * @param {number} [options.subdomainOffset] Subdomain offset, defaults to `2`
+   * @param {string} [options.proxyIpHeader] Proxy IP header, defaults to `X-Forwarded-For`
+   * @param {number} [options.maxIpsCount] Max IPs read from proxy IP header, defaults to `0` (means infinity)
+   * @param {function} [options.compose] Function to handle middleware composition
+   * @param {boolean|AsyncLocalStorage} [options.asyncLocalStorage] Pass `true` or an instance of `AsyncLocalStorage` to enable async local storage.
+   *
+   */
+
+  constructor (options) {
+    super()
+    options = options || {}
+    this.proxy = options.proxy || false
+    this.subdomainOffset = options.subdomainOffset || 2
+    this.proxyIpHeader = options.proxyIpHeader || 'X-Forwarded-For'
+    this.maxIpsCount = options.maxIpsCount || 0
+    this.env = options.env || process.env.NODE_ENV || 'development'
+    this.compose = options.compose || compose
+    if (options.keys) this.keys = options.keys
+    this.middleware = []
+    this.context = Object.create(context)
+    this.request = Object.create(request)
+    this.response = Object.create(response)
+    // util.inspect.custom support for node 6+
+    /* istanbul ignore else */
+    if (util.inspect.custom) {
+      this[util.inspect.custom] = this.inspect
+    }
+    if (options.asyncLocalStorage) {
+      if (v8.startupSnapshot?.isBuildingSnapshot?.()) {
+        this.ctxStorage = null
+        v8.startupSnapshot.addDeserializeCallback(({ app, options }) => {
+          app.ctxStorage = getAsyncLocalStorage(options)
+        }, { app: this, options })
+      } else {
+        this.ctxStorage = getAsyncLocalStorage(options)
+      }
+    }
+  }
+
+  /**
+   * Shorthand for:
+   *
+   *    http.createServer(app.callback()).listen(...)
+   *
+   * @param {Mixed} ...
+   * @return {import('http').Server}
+   * @api public
+   */
+
+  listen (...args) {
+    debug('listen')
+    const server = http.createServer(this.callback())
+    return server.listen(...args)
+  }
+
+  /**
+   * Return JSON representation.
+   * We only bother showing settings.
+   *
+   * @return {Object}
+   * @api public
+   */
+
+  toJSON () {
+    return only(this, ['subdomainOffset', 'proxy', 'env'])
+  }
+
+  /**
+   * Inspect implementation.
+   *
+   * @return {Object}
+   * @api public
+   */
+
+  inspect () {
+    return this.toJSON()
+  }
+
+  /**
+   * Use the given middleware `fn`.
+   *
+   * Old-style middleware will be converted.
+   *
+   * @param {(context: Context) => Promise<any | void>} fn
+   * @return {Application} self
+   * @api public
+   */
+
+  use (fn) {
+    if (typeof fn !== 'function') { throw new TypeError('middleware must be a function!') }
+    debug('use %s', fn._name || fn.name || '-')
+    this.middleware.push(fn)
+    return this
+  }
+
+  /**
+   * Return a request handler callback
+   * for node's native http server.
+   *
+   * @return {Function}
+   * @api public
+   */
+
+  callback () {
+    const fn = this.compose(this.middleware)
+
+    if (!this.listenerCount('error')) this.on('error', this.onerror)
+
+    const handleRequest = (req, res) => {
+      const ctx = this.createContext(req, res)
+      if (!this.ctxStorage) {
+        return this.handleRequest(ctx, fn)
+      }
+      return this.ctxStorage.run(ctx, async () => {
+        return await this.handleRequest(ctx, fn)
+      })
+    }
+
+    return handleRequest
+  }
+
+  /**
+   * return current context from async local storage
+   */
+  get currentContext () {
+    if (this.ctxStorage) return this.ctxStorage.getStore()
+  }
+
+  /**
+   * Handle request in callback.
+   *
+   * @api private
+   */
+
+  handleRequest (ctx, fnMiddleware) {
+    const res = ctx.res
+    res.statusCode = 404
+    const onerror = (err) => ctx.onerror(err)
+    const handleResponse = () => respond(ctx)
+    onFinished(res, onerror)
+    return fnMiddleware(ctx).then(handleResponse).catch(onerror)
+  }
+
+  /**
+   * Initialize a new context.
+   *
+   * @api private
+   */
+
+  createContext (req, res) {
+    /** @type {Context} */
+    const context = Object.create(this.context)
+    /** @type {KoaRequest} */
+    const request = (context.request = Object.create(this.request))
+    /** @type {KoaResponse} */
+    const response = (context.response = Object.create(this.response))
+    context.app = request.app = response.app = this
+    context.req = request.req = response.req = req
+    context.res = request.res = response.res = res
+    request.ctx = response.ctx = context
+    request.response = response
+    response.request = request
+    context.originalUrl = request.originalUrl = req.url
+    context.state = {}
+    return context
+  }
+
+  /**
+   * Default error handler.
+   *
+   * @param {Error} err
+   * @api private
+   */
+
+  onerror (err) {
+    // When dealing with cross-globals a normal `instanceof` check doesn't work properly.
+    // See https://github.com/koajs/koa/issues/1466
+    // We can probably remove it once jest fixes https://github.com/facebook/jest/issues/2549.
+    const isNativeError =
+      Object.prototype.toString.call(err) === '[object Error]' ||
+      err instanceof Error
+    if (!isNativeError) { throw new TypeError(util.format('non-error thrown: %j', err)) }
+
+    if (err.status === 404 || err.expose) return
+    if (this.silent) return
+
+    const msg = err.stack || err.toString()
+    console.error(`\n${msg.replace(/^/gm, '  ')}\n`)
+  }
+
+  /**
+   * Help TS users comply to CommonJS, ESM, bundler mismatch.
+   * @see https://github.com/koajs/koa/issues/1513
+   */
+
+  static get default () {
+    return Application
+  }
+}
+
+/**
+ * Response helper.
+ */
+
+function respond (ctx) {
+  // allow bypassing koa
+  if (ctx.respond === false) return
+
+  const res = ctx.res
+
+  if (!ctx.writable) return res.end()
+
+  let body = ctx.body
+  const code = ctx.status
+
+  // ignore body
+  if (statuses.empty[code]) {
+    // strip headers
+    ctx.body = null
+    return res.end()
+  }
+
+  if (ctx.method === 'HEAD') {
+    if (!res.headersSent && !ctx.response.has('Content-Length')) {
+      const { length } = ctx.response
+      if (Number.isInteger(length)) ctx.length = length
+    }
+    return res.end()
+  }
+
+  // status body
+  if (body === null || body === undefined) {
+    if (ctx.response._explicitNullBody) {
+      ctx.response.remove('Content-Type')
+      ctx.response.remove('Transfer-Encoding')
+      ctx.length = 0
+      return res.end()
+    }
+    if (ctx.req.httpVersionMajor >= 2) {
+      body = String(code)
+    } else {
+      body = ctx.message || String(code)
+    }
+    if (!res.headersSent) {
+      ctx.type = 'text'
+      ctx.length = Buffer.byteLength(body)
+    }
+    return res.end(body)
+  }
+
+  // responses
+
+  if (Buffer.isBuffer(body)) return res.end(body)
+  if (typeof body === 'string') return res.end(body)
+
+  let stream = null
+  if (body instanceof Blob) stream = Stream.Readable.from(body.stream())
+  else if (body instanceof ReadableStream) stream = Stream.Readable.from(body)
+  else if (body instanceof Response) stream = Stream.Readable.from(body?.body || '')
+  else if (isStream(body)) stream = body
+
+  if (stream) {
+    return Stream.pipeline(stream, res, err => {
+      if (err && ctx.app.listenerCount('error')) ctx.onerror(err)
+    })
+  }
+
+  // body: json
+  body = JSON.stringify(body)
+  if (!res.headersSent) {
+    ctx.length = Buffer.byteLength(body)
+  }
+  res.end(body)
+}
+
+/**
+ * Expose HTTP error utilities for consumers.
+ * This avoids requiring consumers to depend directly on `http-errors`.
+ */
+module.exports.createHttpError = createHttpError
+module.exports.HttpError = createHttpError.HttpError
+module.exports.isHttpError = createHttpError.isHttpError
+
+[evidence record sha256:ef1117f80cdb5fe0672730671e92735dbf80004aec6031cbdf02503e7316eae2 kind tool-call:read]
+step 6: calling local:qwen3.8:27b
+tool search <- {"pattern":"isHttpErrorLike|Symbol.hasInstance","path":"__tests__"}
+tool search ok: no match for /isHttpErrorLike|Symbol.hasInstance/
+[evidence record sha256:4e293776dc7130591a6ad83d5a9ed03f9a809e4c4154f82485f5972acfe0211d kind tool-call:search]
+tool search <- {"pattern":"isHttpErrorLike"}
+tool search ok: lib/application.js:25: function isHttpErrorLike (err) {
+lib/application.js:37: value: isHttpErrorLike
+[evidence record sha256:41b8d534a932b13821f0cefd0e9b71e2801e4daaa8fdf1e37ce00750d8ddf0a1 kind tool-call:search]
+step 7: calling local:qwen3.8:27b
+tool shell <- {"command":"git -C /work log --oneline -5 -- lib/application.js && git -C /work diff HEAD~1 -- lib/application.js | head -60"}
+tool shell ok: exit code: 0
+stdout:
+cabc85f campaign: seeded defect
+1061776 patch: make ctx.assert errors instanceof HttpError (#1998)
+diff --git a/lib/application.js b/lib/application.js
+index deb3158..1f36b5d 100644
+--- a/lib/application.js
++++ b/lib/application.js
+@@ -23,7 +23,7 @@ const isStream = require('./is-stream.js')
+ const only = require('./only.js')
+ 
+ function isHttpErrorLike (err) {
+-  if (!err || typeof err !== 'object') return false
++  if (!err || typeof err === 'object') return false
+   if (!(err instanceof Error)) return false
+   if (typeof err.expose !== 'boolean') return false
+   if (typeof err.statusCode !== 'number') return false
+[evidence record sha256:b524fc3db5d207d571557e5f0fc52f0bccb512e6458e9229f2389b81466c23b3 kind tool-call:shell]
+step 8: calling local:qwen3.8:27b
+tool declare_file_set <- {"files":"[\"lib/application.js\"]"}
+tool declare_file_set ok: declared 1 file(s): lib/application.js
+[evidence record sha256:85a19f1bc48c79019297d73918f1a2ac23ab361dd43aa9e5334c40fb98439301 kind tool-call:declare_file_set]
+step 9: calling local:qwen3.8:27b
+tool edit <- {"path":"lib/application.js","find":"if (!err || typeof err === 'object') return false","replace":"if (!err || typeof err !== 'object') return false"}
+tool edit ok: replaced 1 occurrence(s) in lib/application.js
+[evidence record sha256:e71ef482325dab05418152c0ecad86a4f065479c7a04916a036eb3647a5ec236 kind tool-call:edit]
+step 10: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test 2>&1 | tail -15"}
+tool shell ok: exit code: 0
+stdout:
+  ▶ when socket closed before response sent
+    ✔ should not be writable (6.07567ms)
+  ✔ when socket closed before response sent (6.174871ms)
+  ▶ when response finished
+    ✔ should not be writable (6.187917ms)
+  ✔ when response finished (6.286825ms)
+✔ res.writable (20.498567ms)
+ℹ tests 452
+ℹ suites 287
+ℹ pass 452
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2196.182845
+[evidence record sha256:621a8b0a07edf692b71907f81d248d2a04de3d0359210dc816c63b6d9ba1da1c kind tool-call:shell]
+step 11: calling local:qwen3.8:27b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"sha256:621a8b0a07edf692b71907f81d248d2a04de3d0359210dc816c63b6d9ba1da1c","recordKind":"tool-call:shell","narrative":"npm run --silent test: 452 tests, 0 failures"}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:e1fe8c1a9e53c9d421712597e9ce51ecfa0ed03cdb2a1fe99323169b416ab371 kind tool-call:claim]
+step 12: calling local:qwen3.8:27b
+claim (unverified): Fixed. Summary:
+
+**Defect:** In `lib/application.js`, the `isHttpErrorLike` function (which is installed as a custom `Symbol.hasInstance` on `createHttpError.HttpError`) had an inverted type check:
+
+```js
+if (!err || typeof err === 'object') return false   // rejects every real object
+```
+
+Since every error is an object, the predicate always returned `false`, so `err instanceof Koa.HttpError` was always `false` for the errors thrown by `ctx.assert(...)` (which use a separately-resolved `http-errors` instance), failing the 10 tests in `__tests__/context/assert.test.js`.
+
+**Fix:** Restored the correct check:
+
+```js
+if (!err || typeof err !== 'object') return false
+```
+
+**Verification:** `npm run --silent test` now passes — 452 tests, 0 failures (verified via the evidence record). No tests were modified.
+stopped: completed after 12 steps, 100839 tokens
+gate typecheck not-applicable: package.json declares no typecheck script [evidence record sha256:2937696362f6458fe282589c221bc4c8fee1e95f3a2fcdf7bdda33a9c257023a]
+gate lint passed: the command exited 0 [evidence record sha256:4a5dd1ae9b934bb13677077290f82abdbcdef1930184655a6195878cf0eaa0a6]
+gate format not-applicable: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging [evidence record sha256:9b21ee9385ec49965029e8ae457e7fa57f61ec2cc75ef84219ddfa2809af47cb]
+gate tests passed: 452 collected, 452 passed, 0 failed, 0 skipped (exit 0) [evidence record sha256:65da4daf0330af902b74c5aae94130a06a3aa17f5aa7b9f203f5efa6390228e2]
+gate file-set passed: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited [evidence record sha256:e39207cce6083bf469d5d16b4c17fa8e6abb07efd989e80bc290b3fb49a4edcb]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:04cbfbf05767e77d5767fb5772e9a7e62cec4ae74d421e013fe257c5eccb892c]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:1205c218e3298f2b2a033cfedf23b7ee3ea0c6b62794e4df970e745e5f7a0cb4]
+gate behaviour-probe passed: 0 changed function(s) still answer to their inputs. Not measured: lib/application.js (Cannot find module 'on-finished'
+Require stack:
+- /home/campaign/.swarm/sessions/20260904T145453-144099/probe/behaviour-probe/base/lib/application.js). [evidence record sha256:b7a2899a53582151befa6190e14848a09a326d3fedcad2a44f6a4fc0ac6dcd31]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 1 added line(s) [evidence record sha256:ede4b1a546ba6f4583c33140cd1c857444d0095fb5d2eff66db7030505370e36]
+
+gates:
+  n/a      typecheck: package.json declares no typecheck script
+  passed   lint: the command exited 0
+  n/a      format: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging
+  passed   tests: 452 collected, 452 passed, 0 failed, 0 skipped (exit 0)
+  passed   file-set: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited
+  passed   placeholder: no placeholder marker was introduced by this change
+  passed   secret-scan: no known credential pattern appears in the added lines
+  passed   behaviour-probe: 0 changed function(s) still answer to their inputs. Not measured: lib/application.js (Cannot find module 'on-finished'
+Require stack:
+- /home/campaign/.swarm/sessions/20260904T145453-144099/probe/behaviour-probe/base/lib/application.js).
+  passed   diff-budget (advisory): within budget: 1 file(s) and 1 added line(s)
+
+routing reward: 0.574 (green with 0 retries, 89s, and $0.0000)
+[signing] the Secret Service keyring would not take a new key (secret-tool store failed: ), so the bundle is signed with a per-run key
+
+evidence bundle: /out/bundle
+verify it anywhere: node /out/bundle/verify.mjs /out/bundle
+review it: open /out/bundle/review.html
+what this run produced
+
+  the page a person reads: /out/bundle/review.html
+  the bundle a stranger verifies: /out/bundle
+  its own verifier, needing nothing installed: node /out/bundle/verify.mjs /out/bundle
+  the chain every record is on: /out/bundle/ledger.jsonl
+
+  71 records. The harness verified 1 claim(s) and refused 0.
+  bundle verified in this run: verify.mjs exited 0

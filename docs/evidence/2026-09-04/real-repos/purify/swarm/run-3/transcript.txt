@@ -1,0 +1,460 @@
+step 1: calling local:qwen3.6:35b-a3b
+tool list <- {"path":"."}
+tool list ok: .git/
+.github/
+.gitignore
+.npmrc
+.prettierrc
+LICENSE
+README.md
+assets/
+node_modules/
+package-lock.json
+package.json
+publish.ps1
+renovate.json
+site/
+src/
+tsconfig.esm.json
+tsconfig.json
+[evidence record sha256:07efa97cd7d3b75840bec358025822195485b665288bbe4805c55587a58f7365 kind tool-call:list]
+step 2: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/List.ts"}
+tool read ok: import { Tuple } from './Tuple.js'
+import { Maybe, Just, Nothing } from './Maybe.js'
+import { Order, orderToNumber } from './Function.js'
+
+/** Returns Just the first element of an array or Nothing if there is none. If you don't want to work with a Maybe but still keep type safety, check out `NonEmptyList` */
+const head = <T>(list: readonly T[]): Maybe<T> =>
+  list.length > 0 ? Just(list[0]!) : Nothing
+
+/** Returns Just the last element of an array or Nothing if there is none */
+const last = <T>(list: readonly T[]): Maybe<T> =>
+  list.length > 0 ? Just(list[list.length - 1]!) : Nothing
+
+/** Returns all elements of an array except the first */
+const tail = <T>(list: readonly T[]): Maybe<T[]> =>
+  list.length > 0 ? Just(list.slice(1)) : Nothing
+
+/** Returns all elements of an array except the last */
+const init = <T>(list: readonly T[]): Maybe<T[]> =>
+  list.length > 0 ? Just(list.slice(0, -1)) : Nothing
+
+/** Returns a tuple of an array's head and tail */
+const uncons = <T>(list: readonly T[]): Maybe<Tuple<T, T[]>> =>
+  list.length > 0 ? Just(Tuple(list[0]!, list.slice(1))) : Nothing
+
+/* Returns the sum of all numbers inside an array */
+const sum = (list: readonly number[]): number =>
+  list.reduce((acc, x) => acc + x, 0)
+
+/** Returns the first element which satisfies a predicate. A more typesafe version of the already existing List.prototype.find */
+function find<T>(
+  f: (x: T, index: number, arr: T[]) => boolean,
+  list: T[]
+): Maybe<T>
+function find<T>(
+  f: (x: T, index: number, arr: T[]) => boolean
+): (list: T[]) => Maybe<T>
+function find<T>(
+  f: (x: T, index: number, arr: T[]) => boolean,
+  list?: T[]
+): any {
+  switch (arguments.length) {
+    case 1:
+      return (list: T[]) => find(f, list)
+    default:
+      return Maybe.fromNullable(list!.find(f))
+  }
+}
+
+/** Returns the index of the first element which satisfies a predicate. A more typesafe version of the already existing List.prototype.findIndex */
+function findIndex<T>(
+  f: (x: T, index: number, arr: T[]) => boolean,
+  list: T[]
+): Maybe<number>
+function findIndex<T>(
+  f: (x: T, index: number, arr: T[]) => boolean
+): (list: T[]) => Maybe<number>
+function findIndex<T>(
+  f: (x: T, index: number, arr: T[]) => boolean,
+  list?: T[]
+): any {
+  switch (arguments.length) {
+    case 1:
+      return (list: T[]) => findIndex(f, list)
+    default:
+      return Maybe.fromPredicate((x) => x !== -1, list!.findIndex(f))
+  }
+}
+
+/** Returns the element at a given index of a list */
+function at<T>(index: number, list: readonly T[]): Maybe<T>
+function at<T>(index: number): (list: readonly T[]) => Maybe<T>
+function at<T>(index: number, list?: readonly T[]): any {
+  switch (arguments.length) {
+    case 1:
+      return (list: T[]) => at(index, list)
+    default:
+      return list![index] === undefined ? Nothing : Just(list![index])
+  }
+}
+
+/** Sorts an array with the given comparison function */
+function sort<T>(compare: (a: T, b: T) => Order, list: readonly T[]): T[]
+function sort<T>(compare: (a: T, b: T) => Order): (list: readonly T[]) => T[]
+function sort<T>(compare: (a: T, b: T) => Order, list?: readonly T[]): any {
+  switch (arguments.length) {
+    case 1:
+      return (list: T[]) => sort(compare, list)
+    default:
+      return [...list!].sort((x, y) => orderToNumber(compare(x, y)))
+  }
+}
+
+export const List = {
+  init,
+  uncons,
+  at,
+  head,
+  last,
+  tail,
+  find,
+  findIndex,
+  sum,
+  sort
+}
+
+[evidence record sha256:6004fb2dcf0e347dab118b27b8b5cc1921c94f1c67b26a5b85dd23df1ddfb273 kind tool-call:read]
+tool read <- {"path":"src/List.test.ts"}
+tool read ok: import { List } from './List.js'
+import { Just, Nothing } from './Maybe'
+import { Tuple } from './Tuple'
+import { compare } from './Function'
+import { describe, expect, test } from 'vitest'
+
+describe('List', () => {
+  test('at', () => {
+    expect(List.at(0, [1, 2])).toEqual(Just(1))
+    expect(List.at(0)([1, 2])).toEqual(Just(1))
+    expect(List.at(0, [1, 2])).toEqual(Just(1))
+    expect(List.at(0, [])).toEqual(Nothing)
+  })
+
+  test('head', () => {
+    expect(List.head([1])).toEqual(Just(1))
+    expect(List.head([])).toEqual(Nothing)
+  })
+
+  test('last', () => {
+    expect(List.last([1, 2, 3])).toEqual(Just(3))
+    expect(List.last([])).toEqual(Nothing)
+  })
+
+  test('tail', () => {
+    expect(List.tail([1, 2, 3])).toEqual(Just([2, 3]))
+    expect(List.tail([1])).toEqual(Just([]))
+    expect(List.tail([])).toEqual(Nothing)
+  })
+
+  test('init', () => {
+    expect(List.init([1, 2, 3])).toEqual(Just([1, 2]))
+    expect(List.init([1])).toEqual(Just([]))
+    expect(List.init([])).toEqual(Nothing)
+  })
+
+  test('uncons', () => {
+    expect(List.uncons([])).toEqual(Nothing)
+    expect(List.uncons([1])).toEqual(Just(Tuple(1, [])))
+    expect(List.uncons([1, 2])).toEqual(Just(Tuple(1, [2])))
+    expect(List.uncons([1, 2, 3])).toEqual(Just(Tuple(1, [2, 3])))
+  })
+
+  test('sum', () => {
+    expect(List.sum([])).toEqual(0)
+    expect(List.sum([1, 2, 3])).toEqual(6)
+  })
+
+  test('find', () => {
+    expect(List.find((x) => x == 5)([1, 2, 3, 5])).toEqual(Just(5))
+    expect(List.find((x) => x == 5, [1, 2, 3, 5])).toEqual(Just(5))
+    expect(List.find((x) => x == 0, [1, 2, 3, 5])).toEqual(Nothing)
+  })
+
+  test('findIndex', () => {
+    expect(List.findIndex((x) => x == 5)([1, 2, 3, 5])).toEqual(Just(3))
+    expect(List.findIndex((x) => x == 5, [1, 2, 3, 5])).toEqual(Just(3))
+    expect(List.findIndex((x) => x == 0, [1, 2, 3, 5])).toEqual(Nothing)
+  })
+
+  test('sort', () => {
+    const arr = [4, 3, 1000, 0]
+
+    expect(List.sort(compare, arr)).toEqual([0, 3, 4, 1000])
+    expect(List.sort(compare)(arr)).toEqual([0, 3, 4, 1000])
+    // immutability check
+    expect(List.sort(compare, arr)).not.toBe(arr)
+  })
+})
+
+[evidence record sha256:ef6f69018fbe91c659129c5c0f890d305c503adc563b460512761bcf4c454aef kind tool-call:read]
+step 3: calling local:qwen3.6:35b-a3b
+tool declare_file_set <- {"files":["src/List.ts","src/List.test.ts"]}
+tool declare_file_set ok: declared 2 file(s): src/List.test.ts, src/List.ts
+[evidence record sha256:239efa15551db158b1d2e3928a8e3867e0c3525f0df36e08ee410675adefaa06 kind tool-call:declare_file_set]
+step 4: calling local:qwen3.6:35b-a3b
+tool edit <- {"path":"src/List.ts","find":"/** Sorts an array with the given comparison function */\nfunction sort<T>(compare: (a: T, b: T) => Order, list: readonly T[]): T[]\nfunction sort<T>(compare: (a: T, b: T) => Order): (list: readonly T[]) => T[]\nfunction sort<T>(compare: (a: T, b: T) => Order, list?: readonly T[]): any {\n  switch (arguments.length) {\n    case 1:\n      return (list: T[]) => sort(compare, list)\n    default:\n      return [...list!].sort((x, y) => orderToNumber(compare(x, y)))\n  }\n}","replace":"/** Sorts an array with the given comparison function */\nfunction sort<T>(compare: (a: T, b: T) => Order, list: readonly T[]): T[]\nfunction sort<T>(compare: (a: T, b: T) => Order): (list: readonly T[]) => T[]\nfunction sort<T>(compare: (a: T, b: T) => Order, list?: readonly T[]): any {\n  switch (arguments.length) {\n    case 1:\n      return (list: T[]) => sort(compare, list)\n    default:\n      return [...list!].sort((x, y) => orderToNumber(compare(x, y)))\n  }\n}\n\n/** Returns a tuple of arrays where the first contains elements the predicate accepted and the second contains rejected elements, both in original order */\nfunction partition<T>(\n  f: (x: T, index: number, arr: T[]) => boolean,\n  list: readonly T[]\n): Tuple<T[], T[]>\nfunction partition<T>(\n  f: (x: T, index: number, arr: T[]) => boolean\n): (list: readonly T[]) => Tuple<T[], T[]>\nfunction partition<T>(\n  f: (x: T, index: number, arr: T[]) => boolean,\n  list?: readonly T[]\n): any {\n  switch (arguments.length) {\n    case 1:\n      return (list: readonly T[]) => partition(f, list)\n    default:\n      const acc: [T[], T[]] = [[], []]\n      list!.forEach((x: T, i: number) => {\n        f(x, i, list!) ? (acc[0]![acc[0].length++] = x) : (acc[1]![acc[1].length++] = x)\n      })\n      return Tuple(acc[0], acc[1])\n  }\n}"}
+tool edit ok: replaced 1 occurrence(s) in src/List.ts
+[evidence record sha256:864a7ee180448f41e4286195e8aab528078ccb2c4574f87d8acddaa320dbe783 kind tool-call:edit]
+step 5: calling local:qwen3.6:35b-a3b
+tool edit <- {"find":"/** Returns a tuple of arrays where the first contains elements the predicate accepted and the second contains rejected elements, both in original order */\nfunction partition<T>(\n  f: (x: T, index: number, arr: T[]) => boolean,\n  list: readonly T[]\n): Tuple<T[], T[]>\nfunction partition<T>(\n  f: (x: T, index: number, arr: T[]) => boolean\n): (list: readonly T[]) => Tuple<T[], T[]>\nfunction partition<T>(\n  f: (x: T, index: number, arr: T[]) => boolean,\n  list?: readonly T[]\n): any {\n  switch (arguments.length) {\n    case 1:\n      return (list: readonly T[]) => partition(f, list)\n    default:\n      const acc: [T[], T[]] = [[], []]\n      list!.forEach((x: T, i: number) => {\n        f(x, i, list!) ? (acc[0]![acc[0].length++] = x) : (acc[1]![acc[1].length++] = x)\n      })\n      return Tuple(acc[0], acc[1])\n  }\n}","path":"src/List.ts"}
+tool edit failed: denied: input rejected: [
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "replace"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  }
+]
+[evidence record sha256:8a6638bc8f5dd9c5afea0f583ee81a8a2c0a6fd097c386cad62da7a2b435c8e4 kind tool-call:edit]
+step 6: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/List.ts"}
+tool read ok: import { Tuple } from './Tuple.js'
+import { Maybe, Just, Nothing } from './Maybe.js'
+import { Order, orderToNumber } from './Function.js'
+
+/** Returns Just the first element of an array or Nothing if there is none. If you don't want to work with a Maybe but still keep type safety, check out `NonEmptyList` */
+const head = <T>(list: readonly T[]): Maybe<T> =>
+  list.length > 0 ? Just(list[0]!) : Nothing
+
+/** Returns Just the last element of an array or Nothing if there is none */
+const last = <T>(list: readonly T[]): Maybe<T> =>
+  list.length > 0 ? Just(list[list.length - 1]!) : Nothing
+
+/** Returns all elements of an array except the first */
+const tail = <T>(list: readonly T[]): Maybe<T[]> =>
+  list.length > 0 ? Just(list.slice(1)) : Nothing
+
+/** Returns all elements of an array except the last */
+const init = <T>(list: readonly T[]): Maybe<T[]> =>
+  list.length > 0 ? Just(list.slice(0, -1)) : Nothing
+
+/** Returns a tuple of an array's head and tail */
+const uncons = <T>(list: readonly T[]): Maybe<Tuple<T, T[]>> =>
+  list.length > 0 ? Just(Tuple(list[0]!, list.slice(1))) : Nothing
+
+/* Returns the sum of all numbers inside an array */
+const sum = (list: readonly number[]): number =>
+  list.reduce((acc, x) => acc + x, 0)
+
+/** Returns the first element which satisfies a predicate. A more typesafe version of the already existing List.prototype.find */
+function find<T>(
+  f: (x: T, index: number, arr: T[]) => boolean,
+  list: T[]
+): Maybe<T>
+function find<T>(
+  f: (x: T, index: number, arr: T[]) => boolean
+): (list: T[]) => Maybe<T>
+function find<T>(
+  f: (x: T, index: number, arr: T[]) => boolean,
+  list?: T[]
+): any {
+  switch (arguments.length) {
+    case 1:
+      return (list: T[]) => find(f, list)
+    default:
+      return Maybe.fromNullable(list!.find(f))
+  }
+}
+
+/** Returns the index of the first element which satisfies a predicate. A more typesafe version of the already existing List.prototype.findIndex */
+function findIndex<T>(
+  f: (x: T, index: number, arr: T[]) => boolean,
+  list: T[]
+): Maybe<number>
+function findIndex<T>(
+  f: (x: T, index: number, arr: T[]) => boolean
+): (list: T[]) => Maybe<number>
+function findIndex<T>(
+  f: (x: T, index: number, arr: T[]) => boolean,
+  list?: T[]
+): any {
+  switch (arguments.length) {
+    case 1:
+      return (list: T[]) => findIndex(f, list)
+    default:
+      return Maybe.fromPredicate((x) => x !== -1, list!.findIndex(f))
+  }
+}
+
+/** Returns the element at a given index of a list */
+function at<T>(index: number, list: readonly T[]): Maybe<T>
+function at<T>(index: number): (list: readonly T[]) => Maybe<T>
+function at<T>(index: number, list?: readonly T[]): any {
+  switch (arguments.length) {
+    case 1:
+      return (list: T[]) => at(index, list)
+    default:
+      return list![index] === undefined ? Nothing : Just(list![index])
+  }
+}
+
+/** Sorts an array with the given comparison function */
+function sort<T>(compare: (a: T, b: T) => Order, list: readonly T[]): T[]
+function sort<T>(compare: (a: T, b: T) => Order): (list: readonly T[]) => T[]
+function sort<T>(compare: (a: T, b: T) => Order, list?: readonly T[]): any {
+  switch (arguments.length) {
+    case 1:
+      return (list: T[]) => sort(compare, list)
+    default:
+      return [...list!].sort((x, y) => orderToNumber(compare(x, y)))
+  }
+}
+
+/** Returns a tuple of arrays where the first contains elements the predicate accepted and the second contains rejected elements, both in original order */
+function partition<T>(
+  f: (x: T, index: number, arr: T[]) => boolean,
+  list: readonly T[]
+): Tuple<T[], T[]>
+function partition<T>(
+  f: (x: T, index: number, arr: T[]) => boolean
+): (list: readonly T[]) => Tuple<T[], T[]>
+function partition<T>(
+  f: (x: T, index: number, arr: T[]) => boolean,
+  list?: readonly T[]
+): any {
+  switch (arguments.length) {
+    case 1:
+      return (list: readonly T[]) => partition(f, list)
+    default:
+      const acc: [T[], T[]] = [[], []]
+      list!.forEach((x: T, i: number) => {
+        f(x, i, list!) ? (acc[0]![acc[0].length++] = x) : (acc[1]![acc[1].length++] = x)
+      })
+      return Tuple(acc[0], acc[1])
+  }
+}
+
+export const List = {
+  init,
+  uncons,
+  at,
+  head,
+  last,
+  tail,
+  find,
+  findIndex,
+  sum,
+  sort
+}
+
+[evidence record sha256:e7a0c904ba75ac39be1f9b6bcc27dda41a96c6b82db150ff43e049ac97186c4b kind tool-call:read]
+step 7: calling local:qwen3.6:35b-a3b
+tool edit <- {"path":"src/List.ts","find":"export const List = {\n  init,\n  uncons,\n  at,\n  head,\n  last,\n  tail,\n  find,\n  findIndex,\n  sum,\n  sort\n}","replace":"export const List = {\n  init,\n  uncons,\n  at,\n  head,\n  last,\n  tail,\n  find,\n  findIndex,\n  sum,\n  sort,\n  partition\n}"}
+tool edit ok: replaced 1 occurrence(s) in src/List.ts
+[evidence record sha256:3c1f7630226318b2f56b23645073889a1aafbe8d043b32c71c91770f36a4b08a kind tool-call:edit]
+step 8: calling local:qwen3.6:35b-a3b
+tool edit <- {"path":"src/List.ts","find":"      const acc: [T[], T[]] = [[], []]\n      list!.forEach((x: T, i: number) => {\n        f(x, i, list!) ? (acc[0]![acc[0].length++] = x) : (acc[1]![acc[1].length++] = x)\n      })","replace":"      const acc: [T[], T[]] = [[], []]\n      list!.forEach((x: T, i: number) => {\n        f(x, i, list!) ? acc[0]!.push(x) : acc[1]!.push(x)\n      })"}
+tool edit ok: replaced 1 occurrence(s) in src/List.ts
+[evidence record sha256:0b5ff284fd249fc230c5dce04a266f2434f110affc3a487b93417ba6b3259b81 kind tool-call:edit]
+step 9: calling local:qwen3.6:35b-a3b
+tool edit <- {"path":"src/List.test.ts","find":"  test('sort', () => {\n    const arr = [4, 3, 1000, 0]\n\n    expect(List.sort(compare, arr)).toEqual([0, 3, 4, 1000])\n    expect(List.sort(compare)(arr)).toEqual([0, 3, 4, 1000])\n    // immutability check\n    expect(List.sort(compare, arr)).not.toBe(arr)\n  })","replace":"  test('sort', () => {\n    const arr = [4, 3, 1000, 0]\n\n    expect(List.sort(compare, arr)).toEqual([0, 3, 4, 1000])\n    expect(List.sort(compare)(arr)).toEqual([0, 3, 4, 1000])\n    // immutability check\n    expect(List.sort(compare, arr)).not.toBe(arr)\n  })\n\n  test('partition', () => {\n    expect(List.partition((x) => x > 1, [1, 2, 3])).toEqual(Tuple([2, 3], [1]))\n    expect(List.partition((x) => x > 1)([1, 2, 3])).toEqual(Tuple([2, 3], [1]))\n    expect(List.partition((x) => x > 1, [])).toEqual(Tuple([], []))\n    expect(List.partition((x) => x > 1)([])).toEqual(Tuple([], []))\n  })"}
+tool edit ok: replaced 1 occurrence(s) in src/List.test.ts
+[evidence record sha256:94bcb992ee78b2d542b49e6ebcf805ec1afea7375d8eea13bb1cd6026f1e4b07 kind tool-call:edit]
+step 10: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"npx vitest run 2>&1","timeoutMs":60000}
+tool shell ok: exit code: 0
+stdout:
+
+ RUN  v3.0.7 /private/tmp/claude-501/-Users-brad-projects-swarm-orchestrator/03792e24-78cc-49de-a452-af39502479ec/scratchpad/real-repos/work/purify-swarm-3
+
+ ✓ src/Function.test.ts (1 test) 1ms
+ ✓ src/Tuple.test.ts (18 tests) 2ms
+ ✓ src/List.test.ts (11 tests) 2ms
+ ✓ src/MaybeAsync.test.ts (26 tests) 3ms
+ ✓ src/NonEmptyList.test.ts (10 tests) 2ms
+ ✓ src/Maybe.test.ts (41 tests) 4ms
+ ✓ src/Either.test.ts (36 tests) 5ms
+ ✓ src/Codec.test.ts (70 tests) 21ms
+ ✓ src/EitherAsync.test.ts (38 tests) 411ms
+
+ Test Files  9 passed (9)
+      Tests  251 passed (251)
+   Start at  21:51:23
+   Duration  605ms (transform 252ms, setup 0ms, collect 495ms, tests 452ms, environment 1ms, prepare 241ms)
+[evidence record sha256:b88f30d3c70417a9459744248d074d21172220c4dad95eef05aaa22304a2baf4 kind tool-call:shell]
+step 11: calling local:qwen3.6:35b-a3b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"b88f30d3c70417a9459744248d074d21172220c4dad95eef05aaa22304a2baf4","recordKind":"tool-call:shell"}
+tool claim failed: denied: input rejected: [
+  {
+    "origin": "string",
+    "code": "invalid_format",
+    "format": "regex",
+    "pattern": "/^sha256:[0-9a-f]{64}$/",
+    "path": [
+      "record"
+    ],
+    "message": "Invalid string: must match pattern /^sha256:[0-9a-f]{64}$/"
+  }
+]
+[evidence record sha256:386cc9b4b106df262e5b1276ca9253e4f3d3af4cd341b649dbd6f94ca306c312 kind tool-call:claim]
+step 12: calling local:qwen3.6:35b-a3b
+tool claim <- {"predicate":"facts.exitCode == 0 && facts.stdoutBytes > 0","record":"b88f30d3c70417a9459744248d074d21172220c4dad95eef05aaa22304a2baf4","recordKind":"tool-call:shell"}
+tool claim failed: denied: input rejected: [
+  {
+    "origin": "string",
+    "code": "invalid_format",
+    "format": "regex",
+    "pattern": "/^sha256:[0-9a-f]{64}$/",
+    "path": [
+      "record"
+    ],
+    "message": "Invalid string: must match pattern /^sha256:[0-9a-f]{64}$/"
+  }
+]
+[evidence record sha256:fe27b559246dff8bb2147910f88c8d8e54a966ffd2921c01e654077154c99505 kind tool-call:claim]
+step 13: calling local:qwen3.6:35b-a3b
+tool claim <- {"predicate":"facts.exitCode == 0 && facts.stdoutBytes > 0","record":"sha256:b88f30d3c70417a9459744248d074d21172220c4dad95eef05aaa22304a2baf4","recordKind":"tool-call:shell"}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:edfea75cdf06fd35d11b69333bf49207993aaa64e218c6d8a15b2784404a330d kind tool-call:claim]
+step 14: calling local:qwen3.6:35b-a3b
+claim (unverified): Done. All 251 existing tests pass (including the new `partition` test). The implementation adds `List.partition` following the same curried/overloaded pattern as `find` and `findIndex`, with a doc comment in the file's style, and exports it through the `List` object.
+stopped: completed after 14 steps, 102267 tokens
+gate typecheck not-applicable: package.json declares no typecheck script [evidence record sha256:2937696362f6458fe282589c221bc4c8fee1e95f3a2fcdf7bdda33a9c257023a]
+gate lint not-applicable: package.json declares no lint script [evidence record sha256:80f9d94a737526e9c5c413a32d943f4febe0196f251ff0d5ebdfb62b7df46ec0]
+gate format not-applicable: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging [evidence record sha256:9b21ee9385ec49965029e8ae457e7fa57f61ec2cc75ef84219ddfa2809af47cb]
+gate tests passed: the runner reported: 251 passed (251) [evidence record sha256:2959238d718b191ca4127be36db49fd469538b2e023b8b8117699c1e4e4b4b58]
+gate file-set passed: all 2 changed file(s) are inside the declared set of 2, and every one of them was declared before it was edited [evidence record sha256:48c19f74ba7f55df766e9cb20571de4456184a5c50fd84ee1f13bcdbf49a34e6]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:04cbfbf05767e77d5767fb5772e9a7e62cec4ae74d421e013fe257c5eccb892c]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:1205c218e3298f2b2a033cfedf23b7ee3ea0c6b62794e4df970e745e5f7a0cb4]
+gate behaviour-probe passed: 0 changed function(s) still answer to their inputs. [evidence record sha256:6c58dc822ecce8f4da2f5c78e5027adb86eef9574d10c896a93cc27d285aa5df]
+gate diff-budget passed (advisory): within budget: 2 file(s) and 33 added line(s) [evidence record sha256:eba165ad1582f2795ad319604875936c519454eacb66b0b8add77b668cbee61d]
+
+gates:
+  n/a      typecheck: package.json declares no typecheck script
+  n/a      lint: package.json declares no lint script
+  n/a      format: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging
+  passed   tests: the runner reported: 251 passed (251)
+  passed   file-set: all 2 changed file(s) are inside the declared set of 2, and every one of them was declared before it was edited
+  passed   placeholder: no placeholder marker was introduced by this change
+  passed   secret-scan: no known credential pattern appears in the added lines
+  passed   behaviour-probe: 0 changed function(s) still answer to their inputs.
+  passed   diff-budget (advisory): within budget: 2 file(s) and 33 added line(s)
+
+routing reward: 0.742 (green with 0 retries, 42s, and $0.0000)
+
+evidence bundle: /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-09-04/real-repos/purify/swarm/run-3/bundle
+verify it anywhere: node /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-09-04/real-repos/purify/swarm/run-3/bundle/verify.mjs /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-09-04/real-repos/purify/swarm/run-3/bundle
+review it: open /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-09-04/real-repos/purify/swarm/run-3/bundle/review.html
+what this run produced
+
+  the page a person reads: /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-09-04/real-repos/purify/swarm/run-3/bundle/review.html
+  the bundle a stranger verifies: /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-09-04/real-repos/purify/swarm/run-3/bundle
+  its own verifier, needing nothing installed: node /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-09-04/real-repos/purify/swarm/run-3/bundle/verify.mjs /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-09-04/real-repos/purify/swarm/run-3/bundle
+  the chain every record is on: /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-09-04/real-repos/purify/swarm/run-3/bundle/ledger.jsonl
+
+  68 records. The harness verified 1 claim(s) and refused 0.
+  bundle verified in this run: verify.mjs exited 0
+

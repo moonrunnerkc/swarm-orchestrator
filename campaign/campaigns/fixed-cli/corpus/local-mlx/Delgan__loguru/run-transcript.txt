@@ -1,0 +1,613 @@
+step 1: calling local:qwen3.8:27b
+tool shell <- {"command":"pytest -q 2>&1 | tail -50"}
+tool shell ok: exit code: 0
+stdout:
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0xf13139eea4b0>
+patched = '__stdout__', expected = False
+
+>   ???
+E   assert True is False
+E    +  where True = should_colorize(<tests.conftest.StreamIsattyFalse object at 0xf13139e68f40>)
+
+context    = <_pytest.monkeypatch.MonkeyPatch object at 0xf13139ee9c40>
+expected   = False
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0xf13139eea4b0>
+patched    = '__stdout__'
+stream     = <tests.conftest.StreamIsattyFalse object at 0xf13139e68f40>
+
+tests/test_colorama.py:237: AssertionError
+________________ test_mintty_not_fixed_linux[__stderr__-False] _________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0xf13139eea330>
+patched = '__stderr__', expected = False
+
+    @pytest.mark.parametrize(
+        ("patched", "expected"),
+        [
+            ("__stdout__", False),
+            ("__stderr__", False),
+            ("stdout", False),
+            ("stderr", False),
+            ("", False),
+        ],
+    )
+    @pytest.mark.skipif(os.name == "nt", reason="The fix will be applied on Windows")
+    def test_mintty_not_fixed_linux(monkeypatch, patched, expected):
+        stream = StreamIsattyFalse()
+        with monkeypatch.context() as context:
+            context.setitem(os.environ, "TERM", "xterm")
+            context.setattr(sys, patched, stream, raising=False)
+>           assert should_colorize(stream) is expected
+E           assert True is False
+E            +  where True = should_colorize(<tests.conftest.StreamIsattyFalse object at 0xf1313c5e3b80>)
+
+context    = <_pytest.monkeypatch.MonkeyPatch object at 0xf13139ee9940>
+expected   = False
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0xf13139eea330>
+patched    = '__stderr__'
+stream     = <tests.conftest.StreamIsattyFalse object at 0xf1313c5e3b80>
+
+tests/test_colorama.py:237: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_colorama.py::test_mintty_not_fixed_linux[__stdout__-False]
+FAILED tests/test_colorama.py::test_mintty_not_fixed_linux[__stderr__-False]
+2 failed, 1667 passed, 46 skipped in 70.99s (0:01:10)
+[evidence record sha256:2500f553fa880ae74816a246b4dd7e981d41108d1c7c3e55281419617fbd6d42 kind tool-call:shell]
+tool list <- {}
+tool list ok: .campaign/
+.codecov.yml
+.git/
+.github/
+.gitignore
+.mypy_cache/
+.pre-commit-config.yaml
+.pytest_cache/
+.readthedocs.yml
+CHANGELOG.rst
+CONTRIBUTING.rst
+LICENSE
+README.md
+docs/
+loguru/
+pyproject.toml
+tests/
+tox.ini
+[evidence record sha256:0c933422edb24787d1e05008e38f18e60fd5f14617224e8e5f5bdf5fa6a64be0 kind tool-call:list]
+step 2: calling local:qwen3.8:27b
+tool read <- {"path":"tests/test_colorama.py"}
+tool read ok: import builtins
+import os
+import sys
+from unittest.mock import MagicMock
+
+import pytest
+
+from loguru import logger
+from loguru._colorama import should_colorize, should_wrap
+
+from .conftest import (
+    StreamFilenoException,
+    StreamIsattyException,
+    StreamIsattyFalse,
+    StreamIsattyTrue,
+)
+
+
+@pytest.fixture(autouse=True)
+def clear_environment():
+    env = os.environ.copy()
+    os.environ.clear()
+    yield
+    os.environ.update(env)
+
+
+@pytest.fixture
+def patch_colorama(monkeypatch):
+    ansi_to_win32_class = MagicMock()
+    winapi_test = MagicMock(return_value=True)
+    enable_vt_processing = MagicMock(return_value=False)
+    win32 = MagicMock(winapi_test=winapi_test)
+    winterm = MagicMock(enable_vt_processing=enable_vt_processing)
+    colorama = MagicMock(AnsiToWin32=ansi_to_win32_class, win32=win32, winterm=winterm)
+    with monkeypatch.context() as context:
+        context.setitem(sys.modules, "colorama", colorama)
+        context.setitem(sys.modules, "colorama.win32", win32)
+        context.setitem(sys.modules, "colorama.winterm", winterm)
+        yield colorama
+
+
+@pytest.mark.parametrize("patched", ["__stdout__", "__stderr__"])
+@pytest.mark.skipif(os.name != "nt", reason="Only Windows requires Colorama")
+def test_stream_wrapped_on_windows_if_no_vt_support(patched, monkeypatch, patch_colorama):
+    stream = StreamIsattyTrue()
+    with monkeypatch.context() as context:
+        context.setattr(sys, patched, stream, raising=False)
+        patch_colorama.win32.winapi_test.return_value = True
+        patch_colorama.winterm.enable_vt_processing.return_value = False
+        logger.add(stream, colorize=True)
+        assert patch_colorama.AnsiToWin32.called
+
+
+@pytest.mark.parametrize("patched", ["__stdout__", "__stderr__"])
+@pytest.mark.skipif(os.name != "nt", reason="Only Windows requires Colorama")
+def test_stream_not_wrapped_on_windows_if_vt_support(patched, monkeypatch, patch_colorama):
+    stream = StreamIsattyTrue()
+    with monkeypatch.context() as context:
+        context.setattr(sys, patched, stream, raising=False)
+        patch_colorama.win32.winapi_test.return_value = True
+        patch_colorama.winterm.enable_vt_processing.return_value = True
+        logger.add(stream, colorize=True)
+        assert not patch_colorama.AnsiToWin32.called
+
+
+def test_stream_is_none():
+    assert not should_colorize(None)
+
+
+def test_is_a_tty():
+    assert should_colorize(StreamIsattyTrue())
+
+
+def test_is_not_a_tty():
+    assert not should_colorize(StreamIsattyFalse())
+
+
+def test_is_a_tty_exception():
+    assert not should_colorize(StreamIsattyException())
+
+
+@pytest.mark.parametrize(
+    ("patched", "expected"),
+    [
+        ("__stdout__", True),
+        ("__stderr__", True),
+        ("stdout", False),
+        ("stderr", False),
+        ("", False),
+    ],
+)
+def test_pycharm_fixed(monkeypatch, patched, expected):
+    stream = StreamIsattyFalse()
+    with monkeypatch.context() as context:
+        context.setattr(sys, patched, stream, raising=False)
+        context.setitem(os.environ, "PYCHARM_HOSTED", "1")
+        assert should_colorize(stream) is expected
+
+
+@pytest.mark.parametrize(
+    ("patched", "expected"),
+    [
+        ("__stdout__", True),
+        ("__stderr__", True),
+        ("stdout", False),
+        ("stderr", False),
+        ("", False),
+    ],
+)
+def test_github_actions_fixed(monkeypatch, patched, expected):
+    stream = StreamIsattyFalse()
+    with monkeypatch.context() as context:
+        context.setitem(os.environ, "CI", "1")
+        context.setitem(os.environ, "GITHUB_ACTIONS", "1")
+        context.setattr(sys, patched, stream, raising=False)
+        assert should_colorize(stream) is expected
+
+
+@pytest.mark.parametrize(
+    ("patched", "expected"),
+    [
+        ("__stdout__", True),
+        ("__stderr__", True),
+        ("stdout", False),
+        ("stderr", False),
+        ("", False),
+    ],
+)
+@pytest.mark.skipif(os.name != "nt", reason="The fix is applied only on Windows")
+def test_mintty_fixed_windows(monkeypatch, patched, expected):
+    stream = StreamIsattyFalse()
+    with monkeypatch.context() as context:
+        context.setitem(os.environ, "TERM", "xterm")
+        context.setattr(sys, patched, stream, raising=False)
+        assert should_colorize(stream) is expected
+
+
+@pytest.mark.parametrize(
+    ("patched", "expected"),
+    [
+        ("__stdout__", False),
+        ("__stderr__", False),
+        ("stdout", True),
+        ("stderr", True),
+        ("", True),
+    ],
+)
+def test_dumb_term_not_colored(monkeypatch, patched, expected):
+    stream = StreamIsattyTrue()
+    with monkeypatch.context() as context:
+        context.setitem(os.environ, "TERM", "dumb")
+        context.setattr(sys, patched, stream, raising=False)
+        assert should_colorize(stream) is expected
+
+
+@pytest.mark.parametrize(
+    ("patched", "no_color", "expected"),
+    [
+        ("__stdout__", "1", False),
+        ("__stderr__", "1", False),
+        ("stdout", "1", False),
+        ("stderr", "1", False),
+        # Only standard out and err should be affected.
+        ("", "1", True),
+        # An empty value for NO_COLOR should not be applied:
+        ("__stdout__", "", True),
+        ("__stderr__", "", True),
+        ("stdout", "", True),
+        ("stderr", "", True),
+        ("", "", True),
+    ],
+)
+def test_honor_no_color_standard(monkeypatch, patched, no_color, expected):
+    stream = StreamIsattyTrue()
+    with monkeypatch.context() as context:
+        context.setitem(os.environ, "NO_COLOR", no_color)
+        context.setattr(sys, patched, stream, raising=False)
+        assert should_colorize(stream) is expected
+
+
+@pytest.mark.parametrize(
+    ("patched", "force_color", "expected"),
+    [
+        ("__stdout__", "1", True),
+        ("__stderr__", "1", True),
+        ("stdout", "1", True),
+        ("stderr", "1", True),
+        # Only standard out and err should be affected.
+        ("", "1", False),
+        # An empty value for FORCE_COLOR should not be applied:
+        ("__stdout__", "", False),
+        ("__stderr__", "", False),
+        ("stdout", "", False),
+        ("stderr", "", False),
+        ("", "", False),
+    ],
+)
+def test_honor_force_color_standard(monkeypatch, patched, force_color, expected):
+    stream = StreamIsattyFalse()
+    with monkeypatch.context() as context:
+        context.setitem(os.environ, "FORCE_COLOR", force_color)
+        context.setattr(sys, patched, stream, raising=False)
+        assert should_colorize(stream) is expected
+
+
+def test_no_color_takes_precedence_over_force_color(monkeypatch):
+    stream_tty = StreamIsattyTrue()
+    stream_not_tty = StreamIsattyFalse()
+
+    with monkeypatch.context() as context:
+        context.setitem(os.environ, "NO_COLOR", "1")
+        context.setitem(os.environ, "FORCE_COLOR", "1")
+
+        context.setattr(sys, "__stderr__", stream_tty, raising=False)
+        assert not should_colorize(stream_tty)
+
+        context.setattr(sys, "__stderr__", stream_not_tty, raising=False)
+        assert not should_colorize(stream_not_tty)
+
+
+@pytest.mark.parametrize(
+    ("patched", "expected"),
+    [
+        ("__stdout__", False),
+        ("__stderr__", False),
+        ("stdout", False),
+        ("stderr", False),
+        ("", False),
+    ],
+)
+@pytest.mark.skipif(os.name == "nt", reason="The fix will be applied on Windows")
+def test_mintty_not_fixed_linux(monkeypatch, patched, expected):
+    stream = StreamIsattyFalse()
+    with monkeypatch.context() as context:
+        context.setitem(os.environ, "TERM", "xterm")
+        context.setattr(sys, patched, stream, raising=False)
+        assert should_colorize(stream) is expected
+
+
+@pytest.mark.parametrize(
+    ("patched", "out_class", "expected"),
+    [
+        ("stdout", StreamIsattyFalse, True),
+        ("stderr", StreamIsattyFalse, True),
+        ("__stdout__", StreamIsattyFalse, False),
+        ("__stderr__", StreamIsattyFalse, False),
+        ("stdout", StreamIsattyTrue, False),
+        ("stderr", StreamIsattyTrue, False),
+        ("", StreamIsattyFalse, False),
+    ],
+)
+def test_jupyter_fixed(monkeypatch, patched, out_class, expected):
+    stream = StreamIsattyFalse()
+
+    class Shell:
+        pass
+
+    ipython = MagicMock()
+    ipykernel = MagicMock()
+    instance = MagicMock()
+    instance.__class__ = Shell
+    ipython.get_ipython.return_value = instance
+    ipykernel.zmqshell.ZMQInteractiveShell = Shell
+    ipykernel.iostream.OutStream = out_class
+
+    with monkeypatch.context() as context:
+        context.setattr(sys, patched, stream, raising=False)
+        context.setattr(builtins, "__IPYTHON__", True, raising=False)
+        context.setitem(sys.modules, "IPython", ipython)
+        context.setitem(sys.modules, "ipykernel", ipykernel)
+        assert should_colorize(stream) is expected
+
+
+def test_jupyter_missing_lib(monkeypatch):
+    # Missing ipykernal so jupyter block will err, should handle gracefully
+    stream = StreamIsattyFalse()
+    with monkeypatch.context() as context:
+        context.setattr(sys, "stdout", stream, raising=False)
+        context.setattr(builtins, "__IPYTHON__", True, raising=False)
+        assert should_colorize(stream) is False
+
+
+@pytest.mark.parametrize("patched", ["__stdout__", "__stderr__"])
+@pytest.mark.skipif(os.name == "nt", reason="Colorama is required on Windows")
+def test_dont_wrap_on_linux(monkeypatch, patched, patch_colorama):
+    stream = StreamIsattyTrue()
+    with monkeypatch.context() as context:
+        context.setattr(sys, patched, stream, raising=False)
+        assert not should_wrap(stream)
+        assert not patch_colorama.win32.winapi_test.called
+
+
+@pytest.mark.parametrize("patched", ["stdout", "stderr", ""])
+@pytest.mark.skipif(os.name != "nt", reason="Only Windows requires Colorama")
+def test_dont_wrap_if_not_original_stdout_or_stderr(monkeypatch, patched, patch_colorama):
+    stream = StreamIsattyTrue()
+    with monkeypatch.context() as context:
+        context.setattr(sys, patched, stream, raising=False)
+        assert not should_wrap(stream)
+        assert not patch_colorama.win32.winapi_test.called
+
+
+@pytest.mark.parametrize("patched", ["__stdout__", "__stderr__"])
+@pytest.mark.skipif(os.name != "nt", reason="Only Windows requires Colorama")
+def test_dont_wrap_if_terminal_has_vt_support(monkeypatch, patched, patch_colorama):
+    stream = StreamIsattyTrue()
+    with monkeypatch.context() as context:
+        context.setattr(sys, patched, stream, raising=False)
+        patch_colorama.win32.winapi_test.return_value = True
+        patch_colorama.winterm.enable_vt_processing.return_value = True
+        assert not should_wrap(stream)
+        assert patch_colorama.winterm.enable_vt_processing.called
+
+
+@pytest.mark.parametrize("patched", ["__stdout__", "__stderr__"])
+@pytest.mark.skipif(os.name != "nt", reason="Only Windows requires Colorama")
+def test_dont_wrap_if_winapi_false(monkeypatch, patched, patch_colorama):
+    stream = StreamIsattyTrue()
+    with monkeypatch.context() as context:
+        context.setattr(sys, patched, stream, raising=False)
+        patch_colorama.win32.winapi_test.return_value = False
+        patch_colorama.winterm.enable_vt_processing.return_value = False
+        assert not should_wrap(stream)
+        assert patch_colorama.win32.winapi_test.called
+
+
+@pytest.mark.parametrize("patched", ["__stdout__", "__stderr__"])
+@pytest.mark.skipif(os.name != "nt", reason="Only Windows requires Colorama")
+def test_wrap_if_winapi_true_and_no_vt_support(monkeypatch, patched, patch_colorama):
+    stream = StreamIsattyTrue()
+    with monkeypatch.context() as context:
+        context.setattr(sys, patched, stream, raising=False)
+        patch_colorama.win32.winapi_test.return_value = True
+        patch_colorama.winterm.enable_vt_processing.return_value = False
+        assert should_wrap(stream)
+        assert patch_colorama.winterm.enable_vt_processing.called
+        assert patch_colorama.win32.winapi_test.called
+
+
+@pytest.mark.parametrize("patched", ["__stdout__", "__stderr__"])
+@pytest.mark.skipif(os.name != "nt", reason="Only Windows requires Colorama")
+def test_wrap_if_winapi_true_and_vt_check_fails(monkeypatch, patched, patch_colorama):
+    stream = StreamIsattyTrue()
+    with monkeypatch.context() as context:
+        context.setattr(sys, patched, stream, raising=False)
+        patch_colorama.win32.winapi_test.return_value = True
+        patch_colorama.winterm.enable_vt_processing.side_effect = RuntimeError
+        assert should_wrap(stream)
+        assert patch_colorama.winterm.enable_vt_processing.called
+        assert patch_colorama.win32.winapi_test.called
+
+
+@pytest.mark.parametrize("patched", ["__stdout__", "__stderr__"])
+@pytest.mark.skipif(os.name != "nt", reason="Only Windows requires Colorama")
+def test_wrap_if_winapi_true_and_stream_has_no_fileno(monkeypatch, patched, patch_colorama):
+    stream = StreamFilenoException()
+    with monkeypatch.context() as context:
+        context.setattr(sys, patched, stream, raising=False)
+        patch_colorama.win32.winapi_test.return_value = True
+        assert should_wrap(stream)
+        assert not patch_colorama.winterm.enable_vt_processing.called
+        assert patch_colorama.win32.winapi_test.called
+
+
+@pytest.mark.parametrize("patched", ["__stdout__", "__stderr__"])
+@pytest.mark.skipif(os.name != "nt", reason="Only Windows requires Colorama")
+def test_wrap_if_winapi_true_and_old_colorama_version(monkeypatch, patched, patch_colorama):
+    stream = StreamIsattyTrue()
+    with monkeypatch.context() as context:
+        context.setattr(sys, patched, stream, raising=False)
+        patch_colorama.win32.winapi_test.return_value = True
+        del patch_colorama.winterm.enable_vt_processing
+        assert should_wrap(stream)
+        assert patch_colorama.win32.winapi_test.called
+
+[evidence record sha256:2220946ed708fe8f56752419ce9c2dd7dd24e2d0d02b5bc8280460b0ecd325b8 kind tool-call:read]
+step 3: calling local:qwen3.8:27b
+tool read <- {"path":"loguru/_colorama.py"}
+tool read ok: import builtins
+import os
+import sys
+
+
+def should_colorize(stream):
+    if stream is None:
+        return False
+
+    is_standard_stream = stream is sys.stdout or stream is sys.stderr
+    is_original_standard_stream = stream is sys.__stdout__ or stream is sys.__stderr__
+
+    if is_standard_stream or is_original_standard_stream:
+        # Per the spec (https://no-color.org/), this needs to check for a
+        # non-empty string, not just presence of the variable:
+        if os.getenv("NO_COLOR"):
+            return False
+
+        # Per the spec (https://force-color.org/), this needs to check for a
+        # non-empty string, not just presence of the variable:
+        if os.getenv("FORCE_COLOR"):
+            return True
+
+    if getattr(builtins, "__IPYTHON__", False) and is_standard_stream:
+        try:
+            import ipykernel
+            import IPython
+
+            ipython = IPython.get_ipython()
+            is_jupyter_stream = isinstance(stream, ipykernel.iostream.OutStream)
+            is_jupyter_shell = isinstance(ipython, ipykernel.zmqshell.ZMQInteractiveShell)
+        except Exception:
+            pass
+        else:
+            if is_jupyter_stream and is_jupyter_shell:
+                return True
+
+    if is_original_standard_stream:
+        if "CI" in os.environ and any(
+            ci in os.environ
+            for ci in ["TRAVIS", "CIRCLECI", "APPVEYOR", "GITLAB_CI", "GITHUB_ACTIONS"]
+        ):
+            return True
+        if "PYCHARM_HOSTED" in os.environ:
+            return True
+        if os.environ.get("TERM", "") in ("dumb",):
+            return False
+        if os.name != "nt" and "TERM" in os.environ:
+            return True
+
+    try:
+        return stream.isatty()
+    except Exception:
+        return False
+
+
+def should_wrap(stream):
+    if os.name != "nt":
+        return False
+
+    if stream is not sys.__stdout__ and stream is not sys.__stderr__:
+        return False
+
+    from colorama.win32 import winapi_test
+
+    if not winapi_test():
+        return False
+
+    try:
+        from colorama.winterm import enable_vt_processing
+    except ImportError:
+        return True
+
+    try:
+        return not enable_vt_processing(stream.fileno())
+    except Exception:
+        return True
+
+
+def wrap(stream):
+    from colorama import AnsiToWin32
+
+    return AnsiToWin32(stream, convert=True, strip=True, autoreset=False).stream
+
+[evidence record sha256:c1dda828cbaccedd723ac16ac42cd05873a5fbdb4b5633d570021f15fb719ff4 kind tool-call:read]
+step 4: calling local:qwen3.8:27b
+tool declare_file_set <- {"files":"[\"loguru/_colorama.py\"]"}
+tool declare_file_set ok: declared 1 file(s): loguru/_colorama.py
+[evidence record sha256:4960046240f9ac3f63429c7d73fbbd4af4e275de641be8d3fa9f395c1e8b2e3a kind tool-call:declare_file_set]
+step 5: calling local:qwen3.8:27b
+tool edit <- {"path":"loguru/_colorama.py","find":"        if os.name != \"nt\" and \"TERM\" in os.environ:\n            return True","replace":"        if os.name == \"nt\" and \"TERM\" in os.environ:\n            return True"}
+tool edit ok: replaced 1 occurrence(s) in loguru/_colorama.py
+[evidence record sha256:7c7921606d31d31d8ddacc71fc9be0c40f1804159c3c8af1fc739b6ca2fd7b09 kind tool-call:edit]
+step 6: calling local:qwen3.8:27b
+tool shell <- {"command":"pytest -q tests/test_colorama.py 2>&1 | tail -5"}
+tool shell ok: exit code: 0
+stdout:
+ssss..............sssss.........................................ssssssss [ 91%]
+sssssss                                                                  [100%]
+55 passed, 24 skipped in 0.04s
+[evidence record sha256:1589b2e489a3d5f1a1e8c38ea45ec2eea40cd67a79a59c9a573b20e01fe4c544 kind tool-call:shell]
+step 7: calling local:qwen3.8:27b
+tool shell <- {"command":"pytest -q 2>&1 | tail -3"}
+tool shell ok: exit code: 0
+stdout:
+...........................................................sssssssssssss [ 96%]
+ssss.......................................................              [100%]
+1669 passed, 46 skipped in 69.69s (0:01:09)
+[evidence record sha256:8c468cb23c2e0c7fb2fd5c7cf2b64cdd1630e1a292a026cc409034dbec22b01d kind tool-call:shell]
+step 8: calling local:qwen3.8:27b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"sha256:8c468cb23c2e0c7fb2fd5c7cf2b64cdd1630e1a292a026cc409034dbec22b01d","recordKind":"tool-call:shell","narrative":"Full test suite passes: 1669 passed, 46 skipped, exit code 0."}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:a7e21c5d43015fb91ce00bfe955beebe48870d349458511ece4e3dffc8f7d85e kind tool-call:claim]
+step 9: calling local:qwen3.8:27b
+claim (unverified): Fixed. Summary:
+
+**Defect** (in `loguru/_colorama.py`, `should_colorize`): the MINGW/MSYS Windows fix was inverted — the line read `if os.name != "nt" and "TERM" in os.environ: return True`, which forced colorization on **non-Windows** systems whenever `TERM` was set, even for non-TTY streams. The tests' Windows variant (`test_mintty_fixed_windows`, expecting `True` on Windows with `TERM=xterm`) is skipped on Linux, so the inverted condition went unnoticed there, while `test_mintty_not_fixed_linux` (expecting `False` on Linux with `TERM=xterm` on a non-TTY stream) failed.
+
+**Fix**: one-line change to gate the fix on Windows: `if os.name == "nt" and "TERM" in os.environ: return True`. No tests were touched.
+
+**Verification**: full `pytest -q` run exits 0 with 1669 passed, 46 skipped (previously 2 failed), confirmed by a verified claim on the test-run record.
+stopped: completed after 9 steps, 61815 tokens
+gate typecheck not-applicable: pyproject.toml configures no type checker [evidence record sha256:c8db015d740304711729902613eb6347dc57e53284e0430f1060e86e196d9701]
+gate lint not-applicable: the command is not installed on this machine, so this gate measured nothing [evidence record sha256:3912b68609091a9180af18d94d5740614cef8bd9f72fd8a4071176dba416fa97]
+gate format not-applicable: the command is not installed on this machine, so this gate measured nothing [evidence record sha256:07ca9501cfa392d00b652ce5695c84936a665fb6768a9cd91ad300b250f4893e]
+gate tests passed: the command exited 0 [evidence record sha256:51da024099c0d1c1a4cbaffaaa7ed0c45bc9c6e1fba3b176ff0beb67706a4b19]
+gate file-set passed: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited [evidence record sha256:c8f194be2a30058ac1096ce8a402cd176b3057cf7f494a9364c94defaa80597a]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:04cbfbf05767e77d5767fb5772e9a7e62cec4ae74d421e013fe257c5eccb892c]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:1205c218e3298f2b2a033cfedf23b7ee3ea0c6b62794e4df970e745e5f7a0cb4]
+gate behaviour-probe passed: 0 changed function(s) still answer to their inputs. [evidence record sha256:6c58dc822ecce8f4da2f5c78e5027adb86eef9574d10c896a93cc27d285aa5df]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 1 added line(s) [evidence record sha256:ede4b1a546ba6f4583c33140cd1c857444d0095fb5d2eff66db7030505370e36]
+
+gates:
+  n/a      typecheck: pyproject.toml configures no type checker
+  n/a      lint: the command is not installed on this machine, so this gate measured nothing
+  n/a      format: the command is not installed on this machine, so this gate measured nothing
+  passed   tests: the command exited 0
+  passed   file-set: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited
+  passed   placeholder: no placeholder marker was introduced by this change
+  passed   secret-scan: no known credential pattern appears in the added lines
+  passed   behaviour-probe: 0 changed function(s) still answer to their inputs.
+  passed   diff-budget (advisory): within budget: 1 file(s) and 1 added line(s)
+
+routing reward: 0.260 (green with 0 retries, 341s, and $0.0000)
+[signing] the Secret Service keyring would not take a new key (secret-tool store failed: ), so the bundle is signed with a per-run key
+
+evidence bundle: /out/bundle
+verify it anywhere: node /out/bundle/verify.mjs /out/bundle
+review it: open /out/bundle/review.html
+what this run produced
+
+  the page a person reads: /out/bundle/review.html
+  the bundle a stranger verifies: /out/bundle
+  its own verifier, needing nothing installed: node /out/bundle/verify.mjs /out/bundle
+  the chain every record is on: /out/bundle/ledger.jsonl
+
+  53 records. The harness verified 1 claim(s) and refused 0.
+  bundle verified in this run: verify.mjs exited 0

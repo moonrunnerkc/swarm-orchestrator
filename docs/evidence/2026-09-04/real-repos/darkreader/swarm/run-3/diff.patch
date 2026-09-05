@@ -1,0 +1,69 @@
+diff --git a/src/utils/array.ts b/src/utils/array.ts
+index d00b30c..42b47fe 100644
+--- a/src/utils/array.ts
++++ b/src/utils/array.ts
+@@ -32,3 +32,14 @@ export function toArray<T>(items: ArrayLike<T>): T[] {
+     }
+     return results;
+ }
++
++export function chunk<T>(items: readonly T[], size: number): T[][] {
++    if (!Number.isInteger(size) || size <= 0) {
++        throw new RangeError(`size must be a positive integer, got ${size}`);
++    }
++    const results: T[][] = [];
++    for (let i = 0, len = items.length; i < len; i += size) {
++        results.push(Array.prototype.slice.call(items, i, i + size));
++    }
++    return results;
++}
+diff --git a/tests/unit/utils/array.tests.ts b/tests/unit/utils/array.tests.ts
+new file mode 100644
+index 0000000..7796cd5
+--- /dev/null
++++ b/tests/unit/utils/array.tests.ts
+@@ -0,0 +1,44 @@
++import {chunk} from '../../../src/utils/array';
++
++describe('chunk', () => {
++    test('splits an array into groups of size 2', () => {
++        expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
++    });
++
++    test('returns empty array for empty input', () => {
++        expect(chunk([], 3)).toEqual([]);
++    });
++
++    test('splits into exact multiples evenly', () => {
++        expect(chunk([1, 2, 3, 4], 2)).toEqual([[1, 2], [3, 4]]);
++    });
++
++    test('single element chunks', () => {
++        expect(chunk([1, 2, 3], 1)).toEqual([[1], [2], [3]]);
++    });
++
++    test('one chunk when size >= length', () => {
++        expect(chunk([1, 2, 3], 5)).toEqual([[1, 2, 3]]);
++    });
++
++    test('does not mutate input', () => {
++        const arr = [1, 2, 3, 4];
++        chunk(arr, 2);
++        expect(Array.isArray(arr)).toBe(true);
++        expect((arr as any).length).toBe(4);
++    });
++});
++
++describe('chunk validation', () => {
++    test.each([0, -1, 1.5, NaN, Infinity])(
++        'throws RangeError for invalid size %s',
++        (size) => {
++            expect(() => chunk([1, 2], size as any)).toThrow(RangeError);
++        },
++    );
++
++    test('RangeError message includes the size value', () => {
++        expect(() => chunk([1, 2], 0)).toThrow('size must be a positive integer, got 0');
++        expect(() => chunk([1, 2], NaN)).toThrow('size must be a positive integer, got NaN');
++    });
++});

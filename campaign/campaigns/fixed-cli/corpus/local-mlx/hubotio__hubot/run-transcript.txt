@@ -1,0 +1,1694 @@
+step 1: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test"}
+tool shell ok: exit code: 1
+stdout:
+Lint OK
+▶ Adapter Name
+  ✔ Adapter argument is an object with user function (1.396713ms)
+  ✔ Adapter argument is null (1.176652ms)
+  ✔ Adapter argument is a file path (1.003412ms)
+✔ Adapter Name (4.027575ms)
+▶ Adapter
+  ▶ Public API
+    ✔ assigns robot (0.699462ms)
+    ▶ send
+      ✔ is a function (0.25642ms)
+      ✔ does nothing (0.196129ms)
+    ✔ send (0.535354ms)
+    ▶ reply
+      ✔ is a function (0.732317ms)
+      ✔ does nothing (0.085848ms)
+    ✔ reply (0.881957ms)
+    ▶ emote
+      ✔ is a function (0.081095ms)
+      ✔ does nothing (0.072715ms)
+    ✔ emote (0.205761ms)
+    ▶ topic
+      ✔ is a function (0.068462ms)
+      ✔ does nothing (0.079511ms)
+    ✔ topic (0.188583ms)
+    ▶ play
+      ✔ is a function (0.092228ms)
+      ✔ does nothing (0.056329ms)
+    ✔ play (0.176575ms)
+    ▶ run
+      ✔ is a function (0.232695ms)
+      ✔ does nothing (0.068837ms)
+    ✔ run (0.327758ms)
+    ▶ close
+      ✔ is a function (0.098148ms)
+      ✔ does nothing (0.055912ms)
+    ✔ close (0.180161ms)
+  ✔ Public API (3.546966ms)
+  ✔ dispatches received messages to the robot (0.101067ms)
+✔ Adapter (3.825066ms)
+▶ Brain
+  ▶ Unit Tests
+    ▶ #mergeData
+      ✔ performs a proper merge with the new data taking precedent (2.107724ms)
+      ✔ emits a loaded event with the new data (0.54732ms)
+      ✔ coerces loaded data into User objects (1.898211ms)
+    ✔ #mergeData (4.885432ms)
+    ▶ #save
+      ✔ emits a save event (0.42378ms)
+    ✔ #save (0.468893ms)
+    ▶ #resetSaveInterval
+      ✔ updates the auto-save interval (6006.197486ms)
+    ✔ #resetSaveInterval (6006.835158ms)
+    ▶ #close
+      ✔ saves (2.083893ms)
+      ✔ emits a close event (1.689051ms)
+      ✔ saves before emitting the close event (1.731931ms)
+      ✔ stops auto-saving (10016.941825ms)
+    ✔ #close (10023.208934ms)
+    ▶ #get
+      ✔ returns the saved value (2.711598ms)
+      ✔ returns null if object is not found (1.44174ms)
+    ✔ #get (4.931974ms)
+    ▶ #set
+      ✔ sets multiple keys at once if an object is provided (1.972473ms)
+      ✔ emits loaded (1.805634ms)
+      ✔ returns the mockRobot.brain (1.199671ms)
+    ✔ #set (5.26215ms)
+    ▶ #remove
+      ✔ removes the specified key (1.24531ms)
+    ✔ #remove (1.342462ms)
+    ▶ #userForId
+      ✔ returns the user object (1.176207ms)
+      ✔ does an exact match (0.77972ms)
+      ✔ recreates the user if the room option differs from the user object (0.776469ms)
+      ▶ when there is no matching user ID
+        ✔ creates a new User (0.922885ms)
+        ✔ passes the provided options to the new User (0.887042ms)
+      ✔ when there is no matching user ID (1.949884ms)
+    ✔ #userForId (4.881043ms)
+    ▶ #userForName
+      ✔ returns the user with a matching name (1.115439ms)
+      ✔ does a case-insensitive match (0.855825ms)
+      ✔ returns null if no user matches (0.653893ms)
+    ✔ #userForName (2.821087ms)
+    ▶ #usersForRawFuzzyName
+      ✔ does a case-insensitive match (1.077846ms)
+      ✔ returns all matching users (prefix match) when there is not an exact match (case-insensitive) (1.063425ms)
+      ✔ returns all matching users (prefix match) when there is an exact match (case-insensitive) (0.8279ms)
+      ✔ returns an empty array if no users match (0.675857ms)
+    ✔ #usersForRawFuzzyName (3.980831ms)
+    ▶ #usersForFuzzyName
+      ✔ does a case-insensitive match (0.697655ms)
+      ✔ returns all matching users (prefix match) when there is not an exact match (0.807352ms)
+      ✔ returns just the user when there is an exact match (case-insensitive) (1.075137ms)
+      ✔ returns an empty array if no users match (2.55818ms)
+    ✔ #usersForFuzzyName (5.319708ms)
+  ✔ Unit Tests (16064.893587ms)
+  ▶ Auto-Save
+    ✔ is on by default (0.893211ms)
+    ✔ automatically saves every 5 seconds when turned on (5502.886805ms)
+    ✔ does not auto-save when turned off (10012.409626ms)
+  ✔ Auto-Save (15516.893736ms)
+  ▶ User Searching
+    ✔ finds users by ID (2.515566ms)
+    ✔ finds users by exact name (1.285003ms)
+    ✔ finds users by fuzzy name (prefix match) (1.064374ms)
+    ✔ returns User objects, not POJOs (0.982967ms)
+  ✔ User Searching (6.14065ms)
+✔ Brain (31588.228331ms)
+▶ CommandBus
+  ▶ register()
+    ✔ should register a command with minimal spec (1.978264ms)
+    ✔ should throw error when registering duplicate command id (0.433328ms)
+    ✔ should allow updating a command (0.856524ms)
+    ✔ should allow unregistering a command (0.92953ms)
+  ✔ register() (4.57135ms)
+  ▶ parse()
+    ✔ should parse command with quoted string arguments (0.841347ms)
+    ✔ should parse backslash-escaped quotes inside quoted strings (0.319795ms)
+    ✔ should parse command with key:value arguments (0.306494ms)
+    ✔ should parse boolean flags (0.773176ms)
+    ✔ should return null for messages not starting with prefix (0.268427ms)
+    ✔ should handle mixed argument styles (0.32705ms)
+    ✔ should return null for unknown command or alias (0.34306ms)
+    ✔ should use schema hints to disambiguate boolean flags (0.315625ms)
+  ✔ parse() (3.784956ms)
+  ▶ aliases
+    ✔ should normalize aliases and enforce uniqueness (0.634127ms)
+    ✔ should reject invalid aliases (0.208804ms)
+    ✔ should not execute or propose for alias invocation (0.24191ms)
+  ✔ aliases (1.150051ms)
+  ▶ validate()
+    ✔ should apply defaults from schema (0.558744ms)
+    ✔ should reject missing required args (0.590056ms)
+    ✔ should reject invalid enum values (0.26726ms)
+    ✔ should validate and convert number type (1.32575ms)
+    ✔ should validate boolean type (0.278726ms)
+  ✔ validate() (3.126355ms)
+  ▶ user resolver
+    ✔ should resolve user by name to brain user record (0.579424ms)
+    ✔ should fail validation if user not found (0.175282ms)
+  ✔ user resolver (0.804198ms)
+  ▶ room resolver
+    ✔ should validate room format (0.264133ms)
+    ✔ should reject invalid room format (0.213975ms)
+    ✔ should allow custom room resolver override (0.191293ms)
+  ✔ room resolver (0.738946ms)
+  ▶ date resolver
+    ✔ should parse "today" keyword (0.324047ms)
+    ✔ should parse "tomorrow" keyword (0.508961ms)
+    ✔ should parse ISO date string (0.285022ms)
+    ✔ should reject invalid date (0.506709ms)
+  ✔ date resolver (1.715924ms)
+  ▶ custom type resolvers
+    ✔ should allow registering custom type resolver (0.218561ms)
+    ✔ should reject invalid custom type values (1.689073ms)
+    ✔ should throw error for invalid resolver registration (0.215725ms)
+  ✔ custom type resolvers (2.190821ms)
+  ▶ propose() and confirm()
+    ✔ should create pending proposal for side-effect command (0.364908ms)
+    ✔ should execute on confirm("yes") (0.224398ms)
+    ✔ should cancel on confirm("no") (0.154227ms)
+    ✔ should cancel on confirm("cancel") (0.205469ms)
+    ✔ should return null if no pending confirmation exists (0.178326ms)
+  ✔ propose() and confirm() (1.208923ms)
+  ▶ _renderPreview()
+    ✔ should escape quotes inside quoted values (1.659679ms)
+  ✔ _renderPreview() (1.699496ms)
+  ▶ confirm policy
+    ✔ should require confirmation when confirm=always (0.879956ms)
+    ✔ should not require confirmation when confirm=never (0.988694ms)
+    ✔ should require confirmation for commands with sideEffects (0.210348ms)
+  ✔ confirm policy (2.228596ms)
+  ▶ execute()
+    ✔ should pass args and context to handler (0.202259ms)
+  ✔ execute() (0.229068ms)
+  ▶ permissions
+    ✔ should allow execution in allowed rooms (0.244619ms)
+    ✔ should deny execution in disallowed rooms (0.208346ms)
+    ✔ should allow execution when user has required role (0.207888ms)
+    ✔ should deny execution when user lacks required role (0.277016ms)
+    ✔ should check multiple roles and allow if user has any required role (0.201759ms)
+    ✔ should allow execution without permissionProvider when roles defined (0.335179ms)
+  ✔ permissions (1.571037ms)
+  ▶ invoke()
+    ✔ should parse, validate, and execute in one call (0.570293ms)
+    ✔ should return validation errors if invalid (0.287815ms)
+    ✔ should return help when --help flag is provided (0.185915ms)
+  ✔ invoke() (1.095056ms)
+  ▶ listCommands()
+    ✔ should list all commands when no filter (0.52839ms)
+    ✔ should filter commands by prefix (0.140593ms)
+  ✔ listCommands() (0.705215ms)
+  ▶ getHelp()
+    ✔ should return help text for a command (0.207137ms)
+  ✔ getHelp() (0.234404ms)
+  ▶ search()
+    ✔ should rank exact alias match highest (0.316292ms)
+    ✔ should rank alias token overlap above description overlap (0.148015ms)
+  ✔ search() (0.496078ms)
+  ▶ aliasCollisions()
+    ✔ should return collisions for normalized aliases (0.170988ms)
+  ✔ aliasCollisions() (0.204468ms)
+  ▶ event emission
+    ✔ should emit commands:registered event (0.21239ms)
+    ✔ should emit commands:invocation_parsed event (0.524513ms)
+  ✔ event emission (0.798318ms)
+  ▶ TTL for pending proposals
+    ✔ should expire pending proposals after TTL (160.126088ms)
+  ✔ TTL for pending proposals (160.220317ms)
+✔ CommandBus (189.257729ms)
+▶ Configuration
+  ▶ #robot
+    ✔ Load files from configuration folder (2.906668ms)
+  ✔ #robot (3.258484ms)
+✔ Configuration (3.395324ms)
+▶ Datastore
+  ▶ global scope
+    ✔ returns undefined for values not in the datastore (0.609611ms)
+    ✔ can store simple values (0.232112ms)
+    ✔ can store arbitrary JavaScript values (0.308788ms)
+    ✔ can dig inside objects for values (0.180619ms)
+    ✔ can set individual keys inside objects (0.179744ms)
+    ✔ creates an object from scratch when none exists (0.435954ms)
+    ✔ can append to an existing array (0.104986ms)
+    ✔ creates an array from scratch when none exists (0.085515ms)
+    ✔ creates an array with an array (0.094146ms)
+  ✔ global scope (2.634614ms)
+  ▶ User scope
+    ✔ has access to the robot object (0.097523ms)
+    ✔ can store user data which is separate from global data (0.097314ms)
+    ✔ stores user data separate per-user (0.06596ms)
+  ✔ User scope (0.326882ms)
+✔ Datastore (3.138279ms)
+{"level":50,"time":1788536544885,"pid":117,"hostname":"541a9bc6878f","name":"Hubot","msg":"Path /work/scripts does not exist"}
+{"level":50,"time":1788536544886,"pid":117,"hostname":"541a9bc6878f","name":"Hubot","msg":"Path /work/src/scripts does not exist"}
+{"level":30,"time":1788536544886,"pid":117,"hostname":"541a9bc6878f","name":"Hubot","msg":"No external-scripts.json found. Skipping."}
+▶ Running bin/Hubot.mjs
+  ✔ should load adapter from HUBOT_FILE environment variable (104.251715ms)
+  ✔ should output a help message when run with --help (51.28832ms)
+  ✔ should execute the command when run with --execute or -e (47.384571ms)
+✔ Running bin/Hubot.mjs (203.401418ms)
+[32mHubot> [0m
+[1m[31m[error][0m Path /work/scripts does not exist[22m
+
+[32mHubot> [0m
+[1m[31m[error][0m Path /work/src/scripts does not exist[22m
+
+[32mHubot> [0m[1m[34m[info][0m No external-scripts.json found. Skipping.[22m
+[32mHubot> [0m
+[TypeError: fetch failed] {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:8080
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2017:16) {
+    errno: -111,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 8080
+  }
+}
+▶ Running hubot with args
+  ✔ should not start web service when --disable-httpd is passed (67.646871ms)
+✔ Running hubot with args (67.75494ms)
+▶ Listener
+  ▶ Unit Tests
+    ▶ #call
+      ✔ calls the matcher (0.509878ms)
+      ✔ the response object should have the match results so listeners can have access to it (0.082555ms)
+      ▶ if the matcher returns true
+        ✔ executes the listener callback (0.161065ms)
+        ✔ returns true (0.069421ms)
+        ✔ calls the provided callback with true (0.113033ms)
+        ✔ calls the provided callback after the function returns (0.090768ms)
+        ✔ handles uncaught errors from the listener callback (0.193335ms)
+        ✔ calls the provided callback with true if there is an error thrown by the listener callback (0.217435ms)
+        ✔ calls the listener callback with a Response that wraps the Message (0.089351ms)
+        ✔ passes through the provided middleware stack (2.171933ms)
+        ✔ executes the listener callback if middleware succeeds (0.085432ms)
+        ✔ does not execute the listener callback if middleware fails (0.042362ms)
+      ✔ if the matcher returns true (3.45378ms)
+      ▶ if the matcher returns false
+        ✔ does not execute the listener callback (0.046739ms)
+        ✔ returns null (0.03398ms)
+        ✔ returns null because there is no matched listener (0.027893ms)
+      ✔ if the matcher returns false (0.156895ms)
+    ✔ #call (4.526696ms)
+    ▶ #constructor
+      ✔ requires a matcher (0.135297ms)
+      ✔ requires a callback (0.04553ms)
+      ✔ gracefully handles missing options (0.065126ms)
+      ✔ gracefully handles a missing ID (set to null) (0.022223ms)
+    ✔ #constructor (0.307661ms)
+    ▶ TextListener
+      ▶ #matcher
+        ✔ matches TextMessages (0.057621ms)
+        ✔ does not match EnterMessages (0.028644ms)
+        ✔ matches non-TextMessage objects with a match function (duck-typing regression test) (0.030896ms)
+      ✔ #matcher (0.156979ms)
+    ✔ TextListener (0.184247ms)
+  ✔ Unit Tests (5.108204ms)
+✔ Listener (5.226116ms)
+▶ Message
+  ▶ Unit Tests
+    ▶ #finish
+      ✔ marks the message as done (0.339926ms)
+    ✔ #finish (0.61185ms)
+    ▶ TextMessage
+      ▶ #match
+        ✔ should perform standard regex matching (0.101941ms)
+      ✔ #match (0.155099ms)
+    ✔ TextMessage (0.240154ms)
+  ✔ Unit Tests (0.95532ms)
+✔ Message (1.07844ms)
+▶ Middleware
+  ▶ Unit Tests
+    ▶ #execute
+      ✔ executes synchronous middleware (0.446494ms)
+      ✔ executes all registered middleware in definition order (0.29523ms)
+      ▶ error handling
+        ✔ does not execute subsequent middleware after the error is thrown (0.192456ms)
+      ✔ error handling (0.247866ms)
+    ✔ #execute (1.29387ms)
+    ▶ #register
+      ✔ adds to the list of middleware (0.267546ms)
+      ✔ validates the arity of middleware (0.171527ms)
+    ✔ #register (0.524544ms)
+  ✔ Unit Tests (1.906303ms)
+  ▶ Public Middleware APIs
+    ▶ listener middleware context
+      ▶ listener
+        ✔ is the listener object that matched, has metadata in options object with id (1.38597ms)
+      ✔ listener (1.438003ms)
+      ▶ response
+        ✔ is a Response that wraps the message (0.58304ms)
+      ✔ response (1.070768ms)
+    ✔ listener middleware context (2.578942ms)
+    ▶ receive middleware context
+      ▶ response
+        ✔ is a match-less Response object (0.417059ms)
+      ✔ response (0.451664ms)
+    ✔ receive middleware context (0.479682ms)
+  ✔ Public Middleware APIs (3.129545ms)
+✔ Middleware (5.203496ms)
+▶ CLI Argument Parsing
+  ✔ should parse arguments into options (0.589335ms)
+✔ CLI Argument Parsing (0.955278ms)
+{"level":50,"time":1788536545180,"pid":188,"hostname":"541a9bc6878f","name":"TestHubot","msg":"Error executing listener callback: Error: Expected error\n    at TestContext.<anonymous> (file:///work/test/Robot_test.mjs:269:24)\n    at Test.runInAsyncScope (node:async_hooks:227:14)\n    at Test.run (node:internal/test_runner/test:1397:25)\n    at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7)"}
+▶ Robot
+  ▶ #http
+    ✔ API (1.47461ms)
+    ✔ passes options through to the ScopedHttpClient (0.722546ms)
+    ✔ sets a user agent (0.425063ms)
+    ✔ meges global http options (0.411722ms)
+    ✔ local options override global http options (0.35481ms)
+    ✔ builds the url correctly from a string (0.331212ms)
+  ✔ #http (4.113674ms)
+  ▶ #respondPattern
+    ✔ matches messages starting with robot's name (0.570282ms)
+    ✔ matches messages starting with robot's alias (0.296607ms)
+    ✔ does not match unaddressed messages (0.431526ms)
+    ✔ matches properly when name is substring of alias (0.540721ms)
+    ✔ matches properly when alias is substring of name (0.273759ms)
+  ✔ #respondPattern (2.2268ms)
+  ▶ Listening API
+    ✔ #listen: registers a new listener directly (0.340468ms)
+    ✔ #hear: registers a new listener directly (0.297149ms)
+    ✔ #respond: registers a new listener using respond (0.245157ms)
+    ✔ #enter: registers a new listener using listen (0.327835ms)
+    ✔ #leave: registers a new listener using listen (0.33017ms)
+    ✔ #topic: registers a new listener using listen (0.239445ms)
+    ✔ #catchAll: registers a new listener using listen (0.23686ms)
+  ✔ Listening API (2.114603ms)
+  ▶ #receive
+    ✔ calls all registered listeners (0.654294ms)
+    ✔ sends a CatchAllMessage if no listener matches (0.392501ms)
+    ✔ calls the catch-all listener with a Response object (0.717292ms)
+    ✔ does not trigger a CatchAllMessage if a listener matches (0.380034ms)
+    ✔ stops processing if a listener marks the message as done (0.324458ms)
+    ✔ gracefully handles listener uncaughtExceptions (move on to next listener) (0.850878ms)
+  ✔ #receive (3.415686ms)
+{"level":50,"time":1788536545180,"pid":188,"hostname":"541a9bc6878f","name":"TestHubot","msg":"Error: Expected error\n    at TestContext.<anonymous> (file:///work/test/Robot_test.mjs:269:24)\n    at Test.runInAsyncScope (node:async_hooks:227:14)\n    at Test.run (node:internal/test_runner/test:1397:25)\n    at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7)"}
+{"level":50,"time":1788536545225,"pid":188,"hostname":"541a9bc6878f","name":"TestHubot","msg":"Error executing listener callback: Error: Expected error to be thrown\n    at TestContext.<anonymous> (file:///work/test/Robot_test.mjs:670:24)\n    at Test.runInAsyncScope (node:async_hooks:227:14)\n    at Test.run (node:internal/test_runner/test:1397:25)\n    at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7)"}
+  ▶ #load
+    ✔ should load scripts in the same order that they are in the folder (7.117555ms)
+  ✔ #load (7.222538ms)
+  ▶ #loadFile
+    ✔ should require the specified file (1.234957ms)
+    ✔ should load an .mjs file (0.707787ms)
+    ✔ should load an .ts file (25.728381ms)
+    ▶ proper script
+      ✔ should parse the script documentation (0.549227ms)
+    ✔ proper script (0.579663ms)
+    ▶ non-Function script
+      ✔ logs a warning for a .js file that does not export the correct API (0.801847ms)
+      ✔ logs a warning for a .mjs file that does not export the correct API (0.645413ms)
+    ✔ non-Function script (1.480614ms)
+    ▶ unsupported file extension
+      ✔ should not be loaded by the Robot (0.289227ms)
+    ✔ unsupported file extension (0.314201ms)
+  ✔ #loadFile (30.154587ms)
+  ▶ Sending API
+    ✔ #send: delegates to adapter "send" with proper context (0.323332ms)
+    ✔ #reply: delegates to adapter "reply" with proper context (0.268631ms)
+    ✔ #messageRoom: delegates to adapter "send" with proper context (0.296023ms)
+  ✔ Sending API (0.940519ms)
+  ▶ Listener Registration
+    ✔ #listen: forwards the matcher, options, and callback to Listener (0.322707ms)
+    ✔ #hear: matches TextMessages (0.269839ms)
+    ✔ does not match EnterMessages (0.253662ms)
+    ✔ #respond: matches TextMessages addressed to the robot (0.274718ms)
+    ✔ does not match EnterMessages (0.261042ms)
+    ✔ #enter: matches EnterMessages (0.264169ms)
+    ✔ does not match TextMessages (0.275677ms)
+    ✔ #leave: matches LeaveMessages (0.266087ms)
+    ✔ does not match TextMessages (0.261334ms)
+    ✔ #topic: matches TopicMessages (0.290228ms)
+    ✔ does not match TextMessages (0.298566ms)
+    ✔ #catchAll: matches CatchAllMessages (0.295897ms)
+    ✔ does not match TextMessages (0.279554ms)
+  ✔ Listener Registration (3.740977ms)
+  ▶ Message Processing
+    ✔ calls a matching listener (0.386038ms)
+    ✔ calls multiple matching listeners (0.34643ms)
+    ✔ calls the catch-all listener if no listeners match (0.338133ms)
+    ✔ does not call the catch-all listener if any listener matched (0.340551ms)
+    ✔ stops processing if message.finish() is called synchronously (0.376157ms)
+    ✔ calls non-TextListener objects (0.361148ms)
+    ✔ gracefully handles hearer uncaughtExceptions (move on to next hearer) (0.354769ms)
+  ✔ Message Processing (2.582235ms)
+  ▶ Listener Middleware
+    ✔ allows listener callback execution (0.312491ms)
+    ✔ can block listener callback execution (0.322581ms)
+    ✔ receives the correct arguments (0.991134ms)
+    ✔ executes middleware in order of definition (0.306904ms)
+  ✔ Listener Middleware (1.981143ms)
+  ▶ Receive Middleware
+    ✔ fires for all messages, including non-matching ones (1.956627ms)
+    ✔ can block listener execution (1.447051ms)
+    ✔ receives the correct arguments (0.329169ms)
+    ✔ executes receive middleware in order of definition (0.30136ms)
+    ✔ allows editing the message portion of the given response (0.308906ms)
+  ✔ Receive Middleware (4.415617ms)
+  ▶ Response Middleware
+    ✔ executes response middleware in order (0.385955ms)
+    ✔ allows replacing outgoing strings (0.298566ms)
+    ✔ marks plaintext as plaintext (0.335172ms)
+    ✔ does not send trailing functions to middleware (0.339384ms)
+  ✔ Response Middleware (1.403857ms)
+  ▶ Robot ES6
+    ✔ should load an ES6 module adapter from a file (0.597633ms)
+    ✔ should respond to a message (0.545766ms)
+  ✔ Robot ES6 (1.170249ms)
+{"level":50,"time":1788536545225,"pid":188,"hostname":"541a9bc6878f","name":"TestHubot","msg":"Error: Expected error to be thrown\n    at TestContext.<anonymous> (file:///work/test/Robot_test.mjs:670:24)\n    at Test.runInAsyncScope (node:async_hooks:227:14)\n    at Test.run (node:internal/test_runner/test:1397:25)\n    at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7)"}
+  ▶ Robot Defaults
+    ✔ should load the builtin Shell adapter by default (6.851134ms)
+  ✔ Robot Defaults (6.91284ms)
+  ▶ Robot HTTP Service
+    ✔ should start a web service (88.531944ms)
+  ✔ Robot HTTP Service (88.591732ms)
+✔ Robot (161.949383ms)
+▶ Shell history file test
+  ✖ History file is > 1024 bytes when running does not throw an error (4.96451ms)
+✖ Shell history file test (5.760186ms)
+[32mTestHubot> [0m[1mShell: hello from the other side[22m
+[32mTestHubot> [0m▶ Shell Adapter Integration Test
+  ✔ responds to a message that starts with the robot name (62.176871ms)
+[32mTestHubot> [0m[1mShell: hello from the other side[22m
+[32mTestHubot> [0m  ✔ responds to a message without starting with the robot name (62.100405ms)
+[32mTestHubot> [0m  ✔ shows prompt if nothing was entered (62.612107ms)
+[32mTestHubot> [0m  ✔ shows prompt if only spaces were entered (61.323824ms)
+[32mTestHubot> [0m  ✔ shows prompt if only tabs were entered (61.233267ms)
+✔ Shell Adapter Integration Test (310.648952ms)
+▶ Shell Adapter
+  ▶ Public API
+    ✔ assigns robot (1.242087ms)
+[32mTestHubot> [0m    ✔ sends a message (0.871682ms)
+[32mTestHubot> [0m    ✔ emotes a message (1.405566ms)
+[32mTestHubot> [0m    ✔ replies to a message (1.03241ms)
+    ✔ runs the adapter and emits connected (1.274315ms)
+{"level":20,"time":1788536545522,"pid":200,"hostname":"541a9bc6878f","name":"TestHubot","msg":"Loading adapter from npmjs: Shell"}
+    ✔ dispatches received messages to the robot (0.690692ms)
+  ✔ Public API (6.720092ms)
+✔ Shell Adapter (6.779296ms)
+[32mTestHubot> [0m[1m[35m[debug][0m should print debug message to console[22m
+[32mTestHubot> [0m[1m[34m[info][0m should print info message to console[22m
+▶ Shell Adapter: Print human readable logging in the console when something is logged with robot.logger
+  ✔ setting HUBOT_LOG_LEVEL to debug prints debug and info log messages to the console (1.516762ms)
+[32mTestHubot> [0m[1m[31m[error][0m should print error message to console[22m
+{"level":30,"time":1788536545527,"pid":200,"hostname":"541a9bc6878f","name":"TestHubot","msg":"log before adapter load"}
+  ✔ setting HUBOT_LOG_LEVEL to error only prints error log messages to the console (4.067686ms)
+✔ Shell Adapter: Print human readable logging in the console when something is logged with robot.logger (5.655952ms)
+{"level":30,"time":1788536545527,"pid":200,"hostname":"541a9bc6878f","name":"TestHubot","msg":"log after load before run"}
+[32mTestHubot> [0m▶ Shell Adapter: Logger before adapter run
+  ✔ does not throw when logging before the adapter initializes readline (0.899075ms)
+✔ Shell Adapter: Logger before adapter run (0.956738ms)
+▶ User
+  ▶ new
+    ✔ uses id as the default name (0.302735ms)
+    ✔ sets attributes passed in (0.063332ms)
+    ✔ uses name attribute when passed in, not id (0.048365ms)
+  ✔ new (0.714916ms)
+✔ User (0.856799ms)
+▶ Xample testing Hubot scripts
+  ✔ should handle /helo request (78.1365ms)
+  ✔ should reply with expected message (2.037054ms)
+  ✔ should send message to the #general room (1.236875ms)
+✔ Xample testing Hubot scripts (81.828154ms)
+✔ test/doubles/DummyAdapter.mjs (39.348054ms)
+✔ test/fixtures/MockAdapter.mjs (39.595546ms)
+✔ test/fixtures/TestScript.js (10.789779ms)
+✔ test/fixtures/TestScript.mjs (9.908966ms)
+(node:265) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///work/test/fixtures/TestScript.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /work/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ test/fixtures/TestScript.ts (34.136177ms)
+✔ test/fixtures/TestScriptIncorrectApi.js (10.041926ms)
+✔ test/fixtures/TestScriptIncorrectApi.mjs (9.298617ms)
+▶ hubot/index
+  ✔ exports User class (0.399005ms)
+  ✔ exports Brain class (0.104358ms)
+  ✔ exports Robot class (1.072103ms)
+  ✔ exports Adapter class (0.09773ms)
+  ✔ exports Response class (0.175738ms)
+  ✔ exports Listener class (0.081844ms)
+  ✔ exports TextListener class (0.078842ms)
+  ✔ exports Message class (0.082928ms)
+  ✔ exports TextMessage class (0.083428ms)
+  ✔ exports EnterMessage class (0.103358ms)
+  ✔ exports LeaveMessage class (0.060914ms)
+  ✔ exports TopicMessage class (0.045404ms)
+  ✔ exports CatchAllMessage class (0.138089ms)
+  ✔ exports loadBot function (0.35456ms)
+✔ hubot/index (3.461923ms)
+✔ test/ordered-scripts/01-PFirst.mjs (10.744167ms)
+✔ test/ordered-scripts/02-SetupBotConfig.mjs (10.375222ms)
+✔ test/ordered-scripts/WebSetup.mjs (10.041925ms)
+✔ test/scripts/Xample.mjs (10.317894ms)
+ℹ tests 286
+ℹ suites 107
+ℹ pass 285
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 31680.938277
+
+✖ failing tests:
+
+test at test/Shell_test.mjs:12:3
+✖ History file is > 1024 bytes when running does not throw an error (4.96451ms)
+  AssertionError [ERR_ASSERTION]: Should not throw an error when reading history file
+      at TestContext.<anonymous> (file:///work/test/Shell_test.mjs:26:14)
+      at async Test.run (node:internal/test_runner/test:1404:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1889:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: undefined,
+    operator: 'fail',
+    diff: 'simple'
+  }
+[evidence record sha256:667325c0d8c7a395c6343bc8a8f3941c9711e78f51de91dff579d578e6084ee3 kind tool-call:shell]
+tool list <- {}
+tool list ok: .editorconfig
+.git/
+.github/
+.gitignore
+.hubot_history
+.npmignore
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+LICENSE.md
+README.md
+bin/
+configuration/
+docs/
+examples/
+index.mjs
+node_modules/
+package-lock.json
+package.json
+script/
+sfab-hooks/
+src/
+test/
+[evidence record sha256:77762588aa893b49272f369ff986dfd3461f175b1c6dd0df49b7de9a9002cf69 kind tool-call:list]
+step 2: calling local:qwen3.8:27b
+tool read <- {"path":"test/Shell_test.mjs"}
+tool read ok: 'use strict'
+
+import { describe, it, beforeEach, afterEach } from 'node:test'
+import assert from 'node:assert/strict'
+import { Robot, TextMessage, User } from '../index.mjs'
+import stream from 'node:stream'
+import { writeFile, stat } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
+import path from 'node:path'
+
+describe('Shell history file test', () => {
+  it('History file is > 1024 bytes when running does not throw an error', async () => {
+    const robot = new Robot('Shell', false, 'TestHubot')
+    robot.stdin = new stream.Readable()
+    robot.stdin._read = () => {}
+    const __filename = fileURLToPath(import.meta.url)
+    const __dirname = path.dirname(__filename)
+    const historyPath = path.join(__dirname, '..', '.hubot_history')
+    await writeFile(historyPath, 'a'.repeat(1025))
+    await robot.loadAdapter()
+    await robot.run()
+    try {
+      const fileInfo = await stat(historyPath)
+      assert.ok(fileInfo.size <= 1024, 'History file should be less than or equal to 1024 bytes after running the robot')
+    } catch (error) {
+      assert.fail('Should not throw an error when reading history file')
+    } finally {
+      robot.shutdown()
+    }
+  })
+})
+
+describe('Shell Adapter Integration Test', () => {
+  let robot = null
+  beforeEach(async () => {
+    robot = new Robot('Shell', false, 'TestHubot')
+    robot.stdin = new stream.Readable()
+    robot.stdin._read = () => {}
+    await robot.loadAdapter()
+    await robot.run()
+  })
+  afterEach(() => {
+    robot.shutdown()
+  })
+  it('responds to a message that starts with the robot name', async () => {
+    let wasCalled = false
+    robot.respond(/helo/, async res => {
+      wasCalled = true
+      await res.reply('hello from the other side')
+    })
+    robot.stdin.push(robot.name + ' helo\n')
+    robot.stdin.push(null)
+    await new Promise(resolve => setTimeout(resolve, 60))
+    assert.deepEqual(wasCalled, true)
+  })
+  it('responds to a message without starting with the robot name', async () => {
+    let wasCalled = false
+    robot.respond(/helo/, async res => {
+      wasCalled = true
+      await res.reply('hello from the other side')
+    })
+    robot.stdin.push('helo\n')
+    robot.stdin.push(null)
+    await new Promise(resolve => setTimeout(resolve, 60))
+    assert.deepEqual(wasCalled, true)
+  })
+  it('shows prompt if nothing was entered', async () => {
+    let wasCalled = false
+    robot.respond(/\n/, async res => {
+      wasCalled = true
+      await res.reply('hello from the other side')
+    })
+    robot.stdin.push('\n')
+    robot.stdin.push(null)
+    await new Promise(resolve => setTimeout(resolve, 60))
+    assert.deepEqual(wasCalled, false)
+  })
+  it('shows prompt if only spaces were entered', async () => {
+    let wasCalled = false
+    robot.respond(/.*/, async res => {
+      wasCalled = true
+      await res.reply('hello from the other side')
+    })
+    robot.stdin.push('   \n')
+    robot.stdin.push(null)
+    await new Promise(resolve => setTimeout(resolve, 60))
+    assert.deepEqual(wasCalled, false)
+  })
+  it('shows prompt if only tabs were entered', async () => {
+    let wasCalled = false
+    robot.respond(/.*/, async res => {
+      wasCalled = true
+      await res.reply('hello from the other side')
+    })
+    robot.stdin.push('\t\t\n')
+    robot.stdin.push(null)
+    await new Promise(resolve => setTimeout(resolve, 60))
+    assert.deepEqual(wasCalled, false)
+  })
+})
+
+describe('Shell Adapter', () => {
+  let robot = null
+  beforeEach(async () => {
+    robot = new Robot('Shell', false, 'TestHubot')
+    robot.stdin = new stream.Readable()
+    robot.stdin._read = () => {}
+    await robot.loadAdapter()
+    await robot.run()
+  })
+  afterEach(() => {
+    robot.shutdown()
+  })
+
+  describe('Public API', () => {
+    let adapter = null
+    beforeEach(() => {
+      adapter = robot.adapter
+    })
+
+    it('assigns robot', () => {
+      assert.deepEqual(adapter.robot, robot, 'The adapter should have a reference to the robot.')
+    })
+
+    it('sends a message', async () => {
+      const old = console.log
+      let wasCalled = false
+      console.log = (...args) => {
+        console.log = old
+        assert.deepEqual(args[0], '\x1b[1mhello\x1b[22m', 'Message should be outputed as bold to the console.')
+        wasCalled = true
+      }
+      await adapter.send({ room: 'general' }, 'hello')
+      assert.deepEqual(wasCalled, true)
+    })
+
+    it('emotes a message', async () => {
+      const old = console.log
+      let wasCalled = false
+      console.log = (...args) => {
+        console.log = old
+        assert.deepEqual(args[0], '\x1b[1m* hello\x1b[22m', 'Message should be bold and have an * in front.')
+        wasCalled = true
+      }
+      await adapter.emote({ room: 'general' }, 'hello')
+      assert.deepEqual(wasCalled, true)
+    })
+
+    it('replies to a message', async () => {
+      const old = console.log
+      let wasCalled = false
+      console.log = (...args) => {
+        console.log = old
+        assert.deepEqual(args[0], '\x1b[1mnode: hello\x1b[22m', 'The strings should be passed through.')
+        wasCalled = true
+      }
+      await adapter.reply({ room: 'general', user: { name: 'node' } }, 'hello')
+      assert.deepEqual(wasCalled, true)
+    })
+
+    it('runs the adapter and emits connected', async () => {
+      let wasCalled = false
+      const connected = () => {
+        adapter.off('connected', connected)
+        assert.ok(true, 'The connected event should be emitted.')
+        wasCalled = true
+      }
+      adapter.on('connected', connected)
+      await adapter.run()
+      assert.deepEqual(wasCalled, true)
+      robot.shutdown()
+    })
+
+    it('dispatches received messages to the robot', async () => {
+      const message = new TextMessage(new User('node'), 'hello', 1)
+      let wasCalled = false
+      robot.receive = (msg) => {
+        assert.deepEqual(msg, message, 'The message should be passed through.')
+        wasCalled = true
+      }
+      await adapter.receive(message)
+      assert.deepEqual(wasCalled, true)
+    })
+  })
+})
+
+describe('Shell Adapter: Print human readable logging in the console when something is logged with robot.logger', async () => {
+  it('setting HUBOT_LOG_LEVEL to debug prints debug and info log messages to the console', async () => {
+    process.env.HUBOT_LOG_LEVEL = 'debug'
+    const robot = new Robot('Shell', false, 'TestHubot')
+    await robot.loadAdapter()
+    await robot.run()
+
+    const old = console.log
+    const expected = {
+      debug: false,
+      info: false
+    }
+    console.log = (...args) => {
+      old(...args)
+      switch (true) {
+        case args[0].includes('[debug]'):
+          expected.debug = true
+          break
+        case args[0].includes('[info]'):
+          expected.info = true
+          break
+      }
+    }
+    robot.logger.debug('should print debug message to console')
+    robot.logger.info('should print info message to console')
+    delete process.env.HUBOT_LOG_LEVEL
+    console.log = old
+    assert.deepEqual(expected, { debug: true, info: true })
+    robot.shutdown()
+  })
+
+  it('setting HUBOT_LOG_LEVEL to error only prints error log messages to the console', async () => {
+    process.env.HUBOT_LOG_LEVEL = 'error'
+    const robot = new Robot('Shell', false, 'TestHubot')
+    await robot.loadAdapter()
+    await robot.run()
+
+    const old = console.log
+    const expected = {
+      debug: false,
+      info: false,
+      error: false
+    }
+    console.log = (...args) => {
+      old(...args)
+      switch (true) {
+        case args[0].includes('[debug]'):
+          expected.debug = true
+          break
+        case args[0].includes('[info]'):
+          expected.info = true
+          break
+        case args[0].includes('[error]'):
+          expected.error = true
+          break
+      }
+    }
+    robot.logger.debug('should NOT print debug message to console')
+    robot.logger.info('should NOT print info message to console')
+    robot.logger.error('should print error message to console')
+    delete process.env.HUBOT_LOG_LEVEL
+    console.log = old
+    assert.deepEqual(expected, { debug: false, info: false, error: true })
+    robot.shutdown()
+  })
+})
+
+describe('Shell Adapter: Logger before adapter run', () => {
+  it('does not throw when logging before the adapter initializes readline', async () => {
+    const robot = new Robot('Shell', false, 'TestHubot')
+    robot.stdin = new stream.Readable()
+    robot.stdin._read = () => {}
+
+    const originalLog = console.log
+    const logMessages = []
+    console.log = (...args) => {
+      logMessages.push(args[0])
+    }
+
+    try {
+      await assert.doesNotReject(async () => {
+        // Before loadAdapter - uses default pino logger
+        robot.logger.info('log before adapter load')
+
+        await robot.loadAdapter()
+
+        // After loadAdapter but before run - still uses pino logger (logger override happens in run())
+        await robot.logger.info('log after load before run')
+
+        await robot.run()
+
+        // After run - uses Shell adapter's custom logger with formatted output
+        await robot.logger.info('log after run')
+      })
+
+      // Verify that logging after run() uses the Shell adapter's custom formatted logger
+      assert.ok(logMessages.some(msg => typeof msg === 'string' && msg.includes('[info]') && msg.includes('log after run')),
+        'Should use Shell adapter formatted logger after run()')
+    } finally {
+      console.log = originalLog
+      robot.shutdown()
+    }
+  })
+})
+
+[evidence record sha256:b4d1d8e3ff8fb2c38405ab5105e581b511f30a390178ec6f5bdb7be9e85a1cf3 kind tool-call:read]
+step 3: calling local:qwen3.8:27b
+tool search <- {"pattern":"history","path":"src"}
+tool search ok: src/adapters/Shell.mjs:8: const historySize = process.env.HUBOT_SHELL_HISTSIZE == null ? parseInt(process.env.HUBOT_SHELL_HISTSIZE) : 1024
+src/adapters/Shell.mjs:9: const historyPath = '.hubot_history'
+src/adapters/Shell.mjs:71: const stats = await stat(historyPath)
+src/adapters/Shell.mjs:72: if (stats.size > historySize) {
+src/adapters/Shell.mjs:73: await unlink(historyPath)
+src/adapters/Shell.mjs:74: await writeFile(historyPath, '')
+src/adapters/Shell.mjs:78: await writeFile(historyPath, '')
+src/adapters/Shell.mjs:111: this.#rl.history.push(input)
+src/adapters/Shell.mjs:127: this.#rl.on('history', async (history) => {
+src/adapters/Shell.mjs:128: if (history.length === 0) return
+src/adapters/Shell.mjs:129: await appendFile(historyPath, `${history[0]}\n`)
+src/adapters/Shell.mjs:132: const existingHistory = (await readFile(historyPath, 'utf8')).split('\n')
+src/adapters/Shell.mjs:133: existingHistory.reverse().forEach(line => this.#rl.history.push(line))
+[evidence record sha256:364a3dfe5bc8d6cf183532ca1cfc7d7d4d2b8367f4592ef1d3f6f0261a79d93f kind tool-call:search]
+step 4: calling local:qwen3.8:27b
+tool read <- {"path":"src/adapters/Shell.mjs"}
+tool read ok: 'use strict'
+
+import { stat, writeFile, unlink, appendFile, readFile } from 'node:fs/promises'
+import readline from 'node:readline'
+import Adapter from '../Adapter.mjs'
+import { TextMessage } from '../Message.mjs'
+
+const historySize = process.env.HUBOT_SHELL_HISTSIZE == null ? parseInt(process.env.HUBOT_SHELL_HISTSIZE) : 1024
+const historyPath = '.hubot_history'
+
+const completer = line => {
+  const completions = '\\q exit \\? help \\c clear'.split(' ')
+  const hits = completions.filter((c) => c.startsWith(line))
+  // Show all completions if none found
+  return [hits.length ? hits : completions, line]
+}
+const showHelp = () => {
+  console.log('usage:')
+  console.log('\\q, exit - close Shell and exit')
+  console.log('\\?, help - show this help')
+  console.log('\\c, clear - clear screen')
+}
+
+const bold = str => `\x1b[1m${str}\x1b[22m`
+const green = str => `\x1b[32m${str}\x1b[0m`
+const levelColors = {
+  error: '\x1b[31m',
+  warn: '\x1b[33m',
+  debug: '\x1b[35m',
+  info: '\x1b[34m',
+  trace: '\x1b[36m',
+  fatal: '\x1b[91m'
+}
+const reset = '\x1b[0m'
+
+class Shell extends Adapter {
+  #rl = null
+  #levels = ['trace', 'debug', 'info', 'warn', 'error', 'fatal']
+  #logLevel = 'info'
+  #levelPriorities = {}
+  constructor (robot) {
+    super(robot)
+    this.name = 'Shell'
+    this.#logLevel = process.env.HUBOT_LOG_LEVEL || this.#logLevel
+    this.#levelPriorities = this.#levels.reduce((acc, current, idx) => {
+      acc[current] = idx
+      return acc
+    }, {})
+
+    this.robot.on('scripts have loaded', () => {
+      this.#rl?.prompt()
+    })
+  }
+
+  async send (envelope, ...strings) {
+    this.#rl?.prompt()
+    Array.from(strings).forEach(str => console.log(bold(str)))
+  }
+
+  async emote (envelope, ...strings) {
+    Array.from(strings).map(str => this.send(envelope, `* ${str}`))
+  }
+
+  async reply (envelope, ...strings) {
+    strings = strings.map((s) => `${envelope.user.name}: ${s}`)
+    await this.send(envelope, ...strings)
+  }
+
+  async run () {
+    try {
+      const stats = await stat(historyPath)
+      if (stats.size > historySize) {
+        await unlink(historyPath)
+        await writeFile(historyPath, '')
+      }
+    } catch (error) {
+      console.log(error)
+      await writeFile(historyPath, '')
+    }
+
+    this.#rl = readline.createInterface({
+      input: this.robot.stdin ?? process.stdin,
+      output: this.robot.stdout ?? process.stdout,
+      prompt: green(`${this.robot.name ?? this.robot.alias}> `),
+      completer
+    })
+    this.#rl.on('line', async (line) => {
+      const input = line.trim()
+      switch (input) {
+        case '\\q':
+        case 'exit':
+          this.#rl.close()
+          process.exit(0)
+          break
+        case '\\?':
+        case 'help':
+          showHelp()
+          this.#rl.prompt()
+          break
+        case '\\c':
+        case 'clear':
+          this.#rl.write(null, { ctrl: true, name: 'l' })
+          this.#rl.prompt()
+          break
+      }
+      if (input.length === 0) {
+        this.#rl.prompt()
+        return
+      }
+      if (input.length > 0) {
+        this.#rl.history.push(input)
+      }
+      let userId = process.env.HUBOT_SHELL_USER_ID || '1'
+      if (userId.match(/A\d+z/)) {
+        userId = parseInt(userId)
+      }
+      const userName = process.env.HUBOT_SHELL_USER_NAME || 'Shell'
+      const user = this.robot.brain.userForId(userId, { name: userName, room: 'Shell' })
+      const message = new TextMessage(user, input, Date.now())
+      if (!message.text.startsWith(this.robot.name) && !message.text.startsWith(this.robot.alias)) {
+        message.text = `${this.robot.name} ${message.text}`
+      }
+      await this.receive(message)
+      this.#rl.prompt()
+    })
+
+    this.#rl.on('history', async (history) => {
+      if (history.length === 0) return
+      await appendFile(historyPath, `${history[0]}\n`)
+    })
+
+    const existingHistory = (await readFile(historyPath, 'utf8')).split('\n')
+    existingHistory.reverse().forEach(line => this.#rl.history.push(line))
+
+    const configuredPriority = this.#levelPriorities[this.#logLevel]
+    const noop = async () => {}
+    this.#levels.forEach(level => {
+      const priority = this.#levelPriorities[level]
+      if (priority >= configuredPriority) {
+        this.robot.logger[level] = async (...args) => {
+          const color = levelColors[level] || ''
+          const msg = `${color}[${level}]${reset} ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ')}`
+          await this.send({ user: { name: 'Logger', room: 'Shell' } }, msg)
+        }
+      } else {
+        this.robot.logger[level] = noop
+      }
+    })
+
+    try {
+      this.emit('connected', this)
+    } catch (error) {
+      console.log(error)
+    }
+  }
+
+  close () {
+    super.close()
+    if (this.#rl?.close) {
+      this.#rl.close()
+    }
+  }
+}
+
+// Prevent output buffer "swallowing" every other character on OSX / Node version > 16.19.0.
+process.stdout._handle.setBlocking(false)
+export default {
+  use (robot) {
+    return new Shell(robot)
+  }
+}
+
+[evidence record sha256:be57d469883c57b85bb6b84ad2a8a8dc5d7560715bae334a95c201866008c2e6 kind tool-call:read]
+step 5: calling local:qwen3.8:27b
+tool declare_file_set <- {"files":"[\"src/adapters/Shell.mjs\"]"}
+tool declare_file_set ok: declared 1 file(s): src/adapters/Shell.mjs
+[evidence record sha256:ee8c02ba3df016e688a8806b0795547895c87170bb7a6eeabbc562d81ac51147 kind tool-call:declare_file_set]
+step 6: calling local:qwen3.8:27b
+tool edit <- {"path":"src/adapters/Shell.mjs","find":"const historySize = process.env.HUBOT_SHELL_HISTSIZE == null ? parseInt(process.env.HUBOT_SHELL_HISTSIZE) : 1024","replace":"const historySize = process.env.HUBOT_SHELL_HISTSIZE == null ? 1024 : parseInt(process.env.HUBOT_SHELL_HISTSIZE)"}
+tool edit ok: replaced 1 occurrence(s) in src/adapters/Shell.mjs
+[evidence record sha256:380dded4b81612972a10a6a3034726e1c89ebb9b2733ca466e9dfff4337517ae kind tool-call:edit]
+step 7: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test"}
+tool shell ok: exit code: 0
+stdout:
+Lint OK
+▶ Adapter Name
+  ✔ Adapter argument is an object with user function (1.530011ms)
+  ✔ Adapter argument is null (1.299558ms)
+  ✔ Adapter argument is a file path (1.035018ms)
+✔ Adapter Name (4.332597ms)
+▶ Adapter
+  ▶ Public API
+    ✔ assigns robot (0.636642ms)
+    ▶ send
+      ✔ is a function (0.235676ms)
+      ✔ does nothing (2.392262ms)
+    ✔ send (2.723303ms)
+    ▶ reply
+      ✔ is a function (0.795123ms)
+      ✔ does nothing (0.076651ms)
+    ✔ reply (0.937898ms)
+    ▶ emote
+      ✔ is a function (0.066668ms)
+      ✔ does nothing (0.283713ms)
+    ✔ emote (0.458486ms)
+    ▶ topic
+      ✔ is a function (0.0896ms)
+      ✔ does nothing (0.112909ms)
+    ✔ topic (0.262117ms)
+    ▶ play
+      ✔ is a function (0.125231ms)
+      ✔ does nothing (0.069967ms)
+    ✔ play (0.250087ms)
+    ▶ run
+      ✔ is a function (0.182417ms)
+      ✔ does nothing (0.114204ms)
+    ✔ run (0.327699ms)
+    ▶ close
+      ✔ is a function (0.201758ms)
+      ✔ does nothing (0.062073ms)
+    ✔ close (0.292903ms)
+  ✔ Public API (6.273809ms)
+  ✔ dispatches received messages to the robot (0.112825ms)
+✔ Adapter (6.534547ms)
+▶ Brain
+  ▶ Unit Tests
+    ▶ #mergeData
+      ✔ performs a proper merge with the new data taking precedent (2.13662ms)
+      ✔ emits a loaded event with the new data (0.675197ms)
+      ✔ coerces loaded data into User objects (2.023084ms)
+    ✔ #mergeData (5.253829ms)
+    ▶ #save
+      ✔ emits a save event (0.417257ms)
+    ✔ #save (0.538103ms)
+    ▶ #resetSaveInterval
+      ✔ updates the auto-save interval (6013.455429ms)
+    ✔ #resetSaveInterval (6014.113119ms)
+    ▶ #close
+      ✔ saves (2.269604ms)
+      ✔ emits a close event (1.825105ms)
+      ✔ saves before emitting the close event (1.516087ms)
+      ✔ stops auto-saving (10008.600482ms)
+    ✔ #close (10015.182077ms)
+    ▶ #get
+      ✔ returns the saved value (2.687775ms)
+      ✔ returns null if object is not found (1.268019ms)
+    ✔ #get (4.173872ms)
+    ▶ #set
+      ✔ sets multiple keys at once if an object is provided (1.284197ms)
+      ✔ emits loaded (1.301001ms)
+      ✔ returns the mockRobot.brain (1.355375ms)
+    ✔ #set (4.202476ms)
+    ▶ #remove
+      ✔ removes the specified key (1.138799ms)
+    ✔ #remove (1.275191ms)
+    ▶ #userForId
+      ✔ returns the user object (1.137714ms)
+      ✔ does an exact match (0.956414ms)
+      ✔ recreates the user if the room option differs from the user object (0.864388ms)
+      ▶ when there is no matching user ID
+        ✔ creates a new User (1.224778ms)
+        ✔ passes the provided options to the new User (0.790583ms)
+      ✔ when there is no matching user ID (2.158176ms)
+    ✔ #userForId (5.345194ms)
+    ▶ #userForName
+      ✔ returns the user with a matching name (0.904251ms)
+      ✔ does a case-insensitive match (0.756392ms)
+      ✔ returns null if no user matches (0.616079ms)
+    ✔ #userForName (2.442635ms)
+    ▶ #usersForRawFuzzyName
+      ✔ does a case-insensitive match (0.792001ms)
+      ✔ returns all matching users (prefix match) when there is not an exact match (case-insensitive) (0.665658ms)
+      ✔ returns all matching users (prefix match) when there is an exact match (case-insensitive) (0.695847ms)
+      ✔ returns an empty array if no users match (0.543693ms)
+    ✔ #usersForRawFuzzyName (2.84464ms)
+    ▶ #usersForFuzzyName
+      ✔ does a case-insensitive match (0.677292ms)
+      ✔ returns all matching users (prefix match) when there is not an exact match (0.536979ms)
+      ✔ returns just the user when there is an exact match (case-insensitive) (0.561956ms)
+      ✔ returns an empty array if no users match (0.46576ms)
+    ✔ #usersForFuzzyName (2.371959ms)
+  ✔ Unit Tests (16058.699176ms)
+  ▶ Auto-Save
+    ✔ is on by default (0.490862ms)
+    ✔ automatically saves every 5 seconds when turned on (5512.763387ms)
+    ✔ does not auto-save when turned off (10017.518544ms)
+  ✔ Auto-Save (15531.326358ms)
+  ▶ User Searching
+    ✔ finds users by ID (1.998348ms)
+    ✔ finds users by exact name (1.306811ms)
+    ✔ finds users by fuzzy name (prefix match) (1.182243ms)
+    ✔ returns User objects, not POJOs (1.20882ms)
+  ✔ User Searching (5.960694ms)
+✔ Brain (31596.278447ms)
+▶ CommandBus
+  ▶ register()
+    ✔ should register a command with minimal spec (2.13921ms)
+    ✔ should throw error when registering duplicate command id (0.561077ms)
+    ✔ should allow updating a command (0.538729ms)
+    ✔ should allow unregistering a command (0.339561ms)
+  ✔ register() (3.976243ms)
+  ▶ parse()
+    ✔ should parse command with quoted string arguments (0.886645ms)
+    ✔ should parse backslash-escaped quotes inside quoted strings (0.394617ms)
+    ✔ should parse command with key:value arguments (0.875451ms)
+    ✔ should parse boolean flags (0.26738ms)
+    ✔ should return null for messages not starting with prefix (0.76037ms)
+    ✔ should handle mixed argument styles (0.426405ms)
+    ✔ should return null for unknown command or alias (0.215165ms)
+    ✔ should use schema hints to disambiguate boolean flags (0.166334ms)
+  ✔ parse() (5.024461ms)
+  ▶ aliases
+    ✔ should normalize aliases and enforce uniqueness (0.532171ms)
+    ✔ should reject invalid aliases (0.16621ms)
+    ✔ should not execute or propose for alias invocation (0.178866ms)
+  ✔ aliases (0.94287ms)
+  ▶ validate()
+    ✔ should apply defaults from schema (0.427951ms)
+    ✔ should reject missing required args (0.228532ms)
+    ✔ should reject invalid enum values (0.281332ms)
+    ✔ should validate and convert number type (0.774906ms)
+    ✔ should validate boolean type (0.538353ms)
+  ✔ validate() (2.353666ms)
+  ▶ user resolver
+    ✔ should resolve user by name to brain user record (0.244406ms)
+    ✔ should fail validation if user not found (0.301258ms)
+  ✔ user resolver (0.595078ms)
+  ▶ room resolver
+    ✔ should validate room format (0.221474ms)
+    ✔ should reject invalid room format (0.153469ms)
+    ✔ should allow custom room resolver override (0.249585ms)
+  ✔ room resolver (0.674947ms)
+  ▶ date resolver
+    ✔ should parse "today" keyword (0.374399ms)
+    ✔ should parse "tomorrow" keyword (0.222183ms)
+    ✔ should parse ISO date string (0.526531ms)
+    ✔ should reject invalid date (0.270347ms)
+  ✔ date resolver (1.453278ms)
+  ▶ custom type resolvers
+    ✔ should allow registering custom type resolver (0.625864ms)
+    ✔ should reject invalid custom type values (0.163995ms)
+    ✔ should throw error for invalid resolver registration (0.124229ms)
+  ✔ custom type resolvers (0.96175ms)
+  ▶ propose() and confirm()
+    ✔ should create pending proposal for side-effect command (0.319219ms)
+    ✔ should execute on confirm("yes") (0.211699ms)
+    ✔ should cancel on confirm("no") (0.2122ms)
+    ✔ should cancel on confirm("cancel") (0.139476ms)
+    ✔ should return null if no pending confirmation exists (0.172308ms)
+  ✔ propose() and confirm() (1.120566ms)
+  ▶ _renderPreview()
+    ✔ should escape quotes inside quoted values (1.265806ms)
+  ✔ _renderPreview() (1.309833ms)
+  ▶ confirm policy
+    ✔ should require confirmation when confirm=always (0.564836ms)
+    ✔ should not require confirmation when confirm=never (0.178156ms)
+    ✔ should require confirmation for commands with sideEffects (0.491778ms)
+  ✔ confirm policy (1.341621ms)
+  ▶ execute()
+    ✔ should pass args and context to handler (0.343029ms)
+  ✔ execute() (0.386972ms)
+  ▶ permissions
+    ✔ should allow execution in allowed rooms (0.376529ms)
+    ✔ should deny execution in disallowed rooms (0.200754ms)
+    ✔ should allow execution when user has required role (0.179159ms)
+    ✔ should deny execution when user lacks required role (0.241816ms)
+    ✔ should check multiple roles and allow if user has any required role (0.222893ms)
+    ✔ should allow execution without permissionProvider when roles defined (0.142818ms)
+  ✔ permissions (1.535526ms)
+  ▶ invoke()
+    ✔ should parse, validate, and execute in one call (0.217839ms)
+    ✔ should return validation errors if invalid (0.24545ms)
+    ✔ should return help when --help flag is provided (0.526908ms)
+  ✔ invoke() (1.062964ms)
+  ▶ listCommands()
+    ✔ should list all commands when no filter (0.389771ms)
+    ✔ should filter commands by prefix (2.814156ms)
+  ✔ listCommands() (3.253009ms)
+  ▶ getHelp()
+    ✔ should return help text for a command (0.201131ms)
+  ✔ getHelp() (0.228867ms)
+  ▶ search()
+    ✔ should rank exact alias match highest (0.403431ms)
+    ✔ should rank alias token overlap above description overlap (0.147704ms)
+  ✔ search() (0.584302ms)
+  ▶ aliasCollisions()
+    ✔ should return collisions for normalized aliases (0.312243ms)
+  ✔ aliasCollisions() (0.343196ms)
+  ▶ event emission
+    ✔ should emit commands:registered event (0.232209ms)
+    ✔ should emit commands:invocation_parsed event (1.440872ms)
+  ✔ event emission (1.778553ms)
+  ▶ TTL for pending proposals
+    ✔ should expire pending proposals after TTL (161.847047ms)
+  ✔ TTL for pending proposals (161.964719ms)
+✔ CommandBus (191.403705ms)
+▶ Configuration
+  ▶ #robot
+    ✔ Load files from configuration folder (2.920465ms)
+  ✔ #robot (3.287888ms)
+✔ Configuration (3.435426ms)
+▶ Datastore
+  ▶ global scope
+    ✔ returns undefined for values not in the datastore (0.627368ms)
+    ✔ can store simple values (0.186051ms)
+    ✔ can store arbitrary JavaScript values (0.310948ms)
+    ✔ can dig inside objects for values (0.19027ms)
+    ✔ can set individual keys inside objects (0.196912ms)
+    ✔ creates an object from scratch when none exists (0.428953ms)
+    ✔ can append to an existing array (0.108564ms)
+    ✔ creates an array from scratch when none exists (0.087971ms)
+    ✔ creates an array with an array (0.126025ms)
+  ✔ global scope (2.669584ms)
+  ▶ User scope
+    ✔ has access to the robot object (0.100795ms)
+    ✔ can store user data which is separate from global data (0.110528ms)
+    ✔ stores user data separate per-user (0.059024ms)
+  ✔ User scope (0.332168ms)
+✔ Datastore (3.164579ms)
+{"level":50,"time":1788536627346,"pid":407,"hostname":"541a9bc6878f","name":"Hubot","msg":"Path /work/scripts does not exist"}
+{"level":50,"time":1788536627347,"pid":407,"hostname":"541a9bc6878f","name":"Hubot","msg":"Path /work/src/scripts does not exist"}
+{"level":30,"time":1788536627347,"pid":407,"hostname":"541a9bc6878f","name":"Hubot","msg":"No external-scripts.json found. Skipping."}
+▶ Running bin/Hubot.mjs
+  ✔ should load adapter from HUBOT_FILE environment variable (103.808184ms)
+  ✔ should output a help message when run with --help (41.503599ms)
+  ✔ should execute the command when run with --execute or -e (50.174433ms)
+✔ Running bin/Hubot.mjs (195.986681ms)
+[32mHubot> [0m
+[1m[31m[error][0m Path /work/scripts does not exist[22m
+
+[32mHubot> [0m[1m[31m[error][0m Path /work/src/scripts does not exist[22m
+
+[32mHubot> [0m
+[1m[34m[info][0m No external-scripts.json found. Skipping.[22m
+
+[32mHubot> [0m
+[TypeError: fetch failed] {
+  [cause]: Error: connect ECONNREFUSED 127.0.0.1:8080
+      at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2017:16) {
+    errno: -111,
+    code: 'ECONNREFUSED',
+    syscall: 'connect',
+    address: '127.0.0.1',
+    port: 8080
+  }
+}
+▶ Running hubot with args
+  ✔ should not start web service when --disable-httpd is passed (67.52249ms)
+✔ Running hubot with args (67.636819ms)
+▶ Listener
+  ▶ Unit Tests
+    ▶ #call
+      ✔ calls the matcher (0.480499ms)
+      ✔ the response object should have the match results so listeners can have access to it (0.087052ms)
+      ▶ if the matcher returns true
+        ✔ executes the listener callback (0.16199ms)
+        ✔ returns true (0.07143ms)
+        ✔ calls the provided callback with true (0.10326ms)
+        ✔ calls the provided callback after the function returns (0.09595ms)
+        ✔ handles uncaught errors from the listener callback (0.207312ms)
+        ✔ calls the provided callback with true if there is an error thrown by the listener callback (0.219135ms)
+        ✔ calls the listener callback with a Response that wraps the Message (0.09407ms)
+        ✔ passes through the provided middleware stack (2.278435ms)
+        ✔ executes the listener callback if middleware succeeds (0.089433ms)
+        ✔ does not execute the listener callback if middleware fails (0.044905ms)
+      ✔ if the matcher returns true (3.592696ms)
+      ▶ if the matcher returns false
+        ✔ does not execute the listener callback (0.048999ms)
+        ✔ returns null (0.033668ms)
+        ✔ returns null because there is no matched listener (0.027319ms)
+      ✔ if the matcher returns false (0.165834ms)
+    ✔ #call (4.641081ms)
+    ▶ #constructor
+      ✔ requires a matcher (0.139893ms)
+      ✔ requires a callback (0.046784ms)
+      ✔ gracefully handles missing options (0.067127ms)
+      ✔ gracefully handles a missing ID (set to null) (0.022891ms)
+    ✔ #constructor (0.318383ms)
+    ▶ TextListener
+      ▶ #matcher
+        ✔ matches TextMessages (0.057937ms)
+        ✔ does not match EnterMessages (0.029658ms)
+        ✔ matches non-TextMessage objects with a match function (duck-typing regression test) (0.031161ms)
+      ✔ #matcher (0.15443ms)
+    ✔ TextListener (0.183085ms)
+  ✔ Unit Tests (5.231021ms)
+✔ Listener (5.353288ms)
+▶ Message
+  ▶ Unit Tests
+    ▶ #finish
+      ✔ marks the message as done (0.357356ms)
+    ✔ #finish (0.651972ms)
+    ▶ TextMessage
+      ▶ #match
+        ✔ should perform standard regex matching (0.104972ms)
+      ✔ #match (0.162115ms)
+    ✔ TextMessage (0.23083ms)
+  ✔ Unit Tests (0.990782ms)
+✔ Message (1.120024ms)
+▶ Middleware
+  ▶ Unit Tests
+    ▶ #execute
+      ✔ executes synchronous middleware (0.45435ms)
+      ✔ executes all registered middleware in definition order (0.292359ms)
+      ▶ error handling
+        ✔ does not execute subsequent middleware after the error is thrown (0.154722ms)
+      ✔ error handling (0.219008ms)
+    ✔ #execute (1.271153ms)
+    ▶ #register
+      ✔ adds to the list of middleware (0.219301ms)
+      ✔ validates the arity of middleware (0.150671ms)
+    ✔ #register (0.453181ms)
+  ✔ Unit Tests (1.808671ms)
+  ▶ Public Middleware APIs
+    ▶ listener middleware context
+      ▶ listener
+        ✔ is the listener object that matched, has metadata in options object with id (1.865229ms)
+      ✔ listener (1.918781ms)
+      ▶ response
+        ✔ is a Response that wraps the message (0.486514ms)
+      ✔ response (0.517927ms)
+    ✔ listener middleware context (2.528856ms)
+    ▶ receive middleware context
+      ▶ response
+        ✔ is a match-less Response object (0.398877ms)
+      ✔ response (0.432086ms)
+    ✔ receive middleware context (0.459404ms)
+  ✔ Public Middleware APIs (3.062572ms)
+✔ Middleware (5.101405ms)
+▶ CLI Argument Parsing
+  ✔ should parse arguments into options (0.428451ms)
+✔ CLI Argument Parsing (0.746041ms)
+{"level":50,"time":1788536627648,"pid":482,"hostname":"541a9bc6878f","name":"TestHubot","msg":"Error executing listener callback: Error: Expected error\n    at TestContext.<anonymous> (file:///work/test/Robot_test.mjs:269:24)\n    at Test.runInAsyncScope (node:async_hooks:227:14)\n    at Test.run (node:internal/test_runner/test:1397:25)\n    at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7)"}
+▶ Robot
+  ▶ #http
+    ✔ API (1.478299ms)
+    ✔ passes options through to the ScopedHttpClient (0.536682ms)
+    ✔ sets a user agent (0.605104ms)
+    ✔ meges global http options (0.420682ms)
+    ✔ local options override global http options (0.40861ms)
+    ✔ builds the url correctly from a string (0.386638ms)
+  ✔ #http (4.708541ms)
+  ▶ #respondPattern
+    ✔ matches messages starting with robot's name (0.642615ms)
+    ✔ matches messages starting with robot's alias (0.33622ms)
+    ✔ does not match unaddressed messages (0.342695ms)
+    ✔ matches properly when name is substring of alias (0.459404ms)
+    ✔ matches properly when alias is substring of name (0.316462ms)
+  ✔ #respondPattern (2.219411ms)
+  ▶ Listening API
+    ✔ #listen: registers a new listener directly (0.342694ms)
+    ✔ #hear: registers a new listener directly (0.306145ms)
+    ✔ #respond: registers a new listener using respond (0.329077ms)
+    ✔ #enter: registers a new listener using listen (0.336346ms)
+    ✔ #leave: registers a new listener using listen (0.322477ms)
+    ✔ #topic: registers a new listener using listen (0.282752ms)
+    ✔ #catchAll: registers a new listener using listen (0.254389ms)
+  ✔ Listening API (2.277766ms)
+  ▶ #receive
+    ✔ calls all registered listeners (0.597ms)
+    ✔ sends a CatchAllMessage if no listener matches (0.362703ms)
+    ✔ calls the catch-all listener with a Response object (0.455227ms)
+    ✔ does not trigger a CatchAllMessage if a listener matches (0.322184ms)
+    ✔ stops processing if a listener marks the message as done (0.302886ms)
+    ✔ gracefully handles listener uncaughtExceptions (move on to next listener) (0.806945ms)
+  ✔ #receive (2.929321ms)
+{"level":50,"time":1788536627648,"pid":482,"hostname":"541a9bc6878f","name":"TestHubot","msg":"Error: Expected error\n    at TestContext.<anonymous> (file:///work/test/Robot_test.mjs:269:24)\n    at Test.runInAsyncScope (node:async_hooks:227:14)\n    at Test.run (node:internal/test_runner/test:1397:25)\n    at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7)"}
+{"level":50,"time":1788536627686,"pid":482,"hostname":"541a9bc6878f","name":"TestHubot","msg":"Error executing listener callback: Error: Expected error to be thrown\n    at TestContext.<anonymous> (file:///work/test/Robot_test.mjs:670:24)\n    at Test.runInAsyncScope (node:async_hooks:227:14)\n    at Test.run (node:internal/test_runner/test:1397:25)\n    at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7)"}
+  ▶ #load
+    ✔ should load scripts in the same order that they are in the folder (6.690982ms)
+  ✔ #load (6.786807ms)
+  ▶ #loadFile
+    ✔ should require the specified file (1.003522ms)
+    ✔ should load an .mjs file (0.651345ms)
+    ✔ should load an .ts file (19.626242ms)
+    ▶ proper script
+      ✔ should parse the script documentation (0.57035ms)
+    ✔ proper script (0.601136ms)
+    ▶ non-Function script
+      ✔ logs a warning for a .js file that does not export the correct API (0.77595ms)
+      ✔ logs a warning for a .mjs file that does not export the correct API (0.622649ms)
+    ✔ non-Function script (1.436945ms)
+    ▶ unsupported file extension
+      ✔ should not be loaded by the Robot (0.29921ms)
+    ✔ unsupported file extension (0.32206ms)
+  ✔ #loadFile (23.741125ms)
+  ▶ Sending API
+    ✔ #send: delegates to adapter "send" with proper context (0.280705ms)
+    ✔ #reply: delegates to adapter "reply" with proper context (0.24357ms)
+    ✔ #messageRoom: delegates to adapter "send" with proper context (0.284548ms)
+  ✔ Sending API (0.854523ms)
+  ▶ Listener Registration
+    ✔ #listen: forwards the matcher, options, and callback to Listener (0.344449ms)
+    ✔ #hear: matches TextMessages (0.26571ms)
+    ✔ does not match EnterMessages (0.24637ms)
+    ✔ #respond: matches TextMessages addressed to the robot (0.276612ms)
+    ✔ does not match EnterMessages (0.253094ms)
+    ✔ #enter: matches EnterMessages (0.247371ms)
+    ✔ does not match TextMessages (0.233086ms)
+    ✔ #leave: matches LeaveMessages (0.233922ms)
+    ✔ does not match TextMessages (0.228909ms)
+    ✔ #topic: matches TopicMessages (0.246077ms)
+    ✔ does not match TextMessages (0.223729ms)
+    ✔ #catchAll: matches CatchAllMessages (0.248709ms)
+    ✔ does not match TextMessages (0.238558ms)
+  ✔ Listener Registration (3.408859ms)
+  ▶ Message Processing
+    ✔ calls a matching listener (0.349044ms)
+    ✔ calls multiple matching listeners (0.303805ms)
+    ✔ calls the catch-all listener if no listeners match (0.277739ms)
+    ✔ does not call the catch-all listener if any listener matched (0.319637ms)
+    ✔ stops processing if message.finish() is called synchronously (0.329954ms)
+    ✔ calls non-TextListener objects (0.355602ms)
+    ✔ gracefully handles hearer uncaughtExceptions (move on to next hearer) (0.409446ms)
+  ✔ Message Processing (2.429105ms)
+  ▶ Listener Middleware
+    ✔ allows listener callback execution (0.341108ms)
+    ✔ can block listener callback execution (0.307272ms)
+    ✔ receives the correct arguments (0.493365ms)
+    ✔ executes middleware in order of definition (0.799927ms)
+  ✔ Listener Middleware (1.994012ms)
+  ▶ Receive Middleware
+    ✔ fires for all messages, including non-matching ones (0.307565ms)
+    ✔ can block listener execution (0.260655ms)
+    ✔ receives the correct arguments (0.246537ms)
+    ✔ executes receive middleware in order of definition (0.269928ms)
+    ✔ allows editing the message portion of the given response (0.35297ms)
+  ✔ Receive Middleware (1.501357ms)
+  ▶ Response Middleware
+    ✔ executes response middleware in order (0.395202ms)
+    ✔ allows replacing outgoing strings (0.325777ms)
+    ✔ marks plaintext as plaintext (0.331416ms)
+    ✔ does not send trailing functions to middleware (0.294364ms)
+  ✔ Response Middleware (1.394547ms)
+  ▶ Robot ES6
+    ✔ should load an ES6 module adapter from a file (0.594911ms)
+    ✔ should respond to a message (0.51329ms)
+  ✔ Robot ES6 (1.134268ms)
+{"level":50,"time":1788536627686,"pid":482,"hostname":"541a9bc6878f","name":"TestHubot","msg":"Error: Expected error to be thrown\n    at TestContext.<anonymous> (file:///work/test/Robot_test.mjs:670:24)\n    at Test.runInAsyncScope (node:async_hooks:227:14)\n    at Test.run (node:internal/test_runner/test:1397:25)\n    at async Suite.processPendingSubtests (node:internal/test_runner/test:969:7)"}
+  ▶ Robot Defaults
+    ✔ should load the builtin Shell adapter by default (8.883284ms)
+  ✔ Robot Defaults (8.930444ms)
+  ▶ Robot HTTP Service
+    ✔ should start a web service (76.677623ms)
+  ✔ Robot HTTP Service (76.761126ms)
+✔ Robot (141.516202ms)
+▶ Shell history file test
+  ✔ History file is > 1024 bytes when running does not throw an error (5.429437ms)
+✔ Shell history file test (5.863152ms)
+[32mTestHubot> [0m[1mShell: hello from the other side[22m
+[32mTestHubot> [0m▶ Shell Adapter Integration Test
+  ✔ responds to a message that starts with the robot name (63.048162ms)
+[32mTestHubot> [0m[1mShell: hello from the other side[22m
+[32mTestHubot> [0m  ✔ responds to a message without starting with the robot name (61.363804ms)
+[32mTestHubot> [0m  ✔ shows prompt if nothing was entered (62.583243ms)
+[32mTestHubot> [0m  ✔ shows prompt if only spaces were entered (61.279634ms)
+[32mTestHubot> [0m  ✔ shows prompt if only tabs were entered (61.378466ms)
+✔ Shell Adapter Integration Test (309.908157ms)
+▶ Shell Adapter
+  ▶ Public API
+    ✔ assigns robot (1.111627ms)
+[32mTestHubot> [0m    ✔ sends a message (0.814087ms)
+[32mTestHubot> [0m    ✔ emotes a message (0.880129ms)
+[32mTestHubot> [0m    ✔ replies to a message (0.848925ms)
+    ✔ runs the adapter and emits connected (0.986604ms)
+{"level":20,"time":1788536627973,"pid":489,"hostname":"541a9bc6878f","name":"TestHubot","msg":"Loading adapter from npmjs: Shell"}
+    ✔ dispatches received messages to the robot (0.717971ms)
+  ✔ Public API (5.570291ms)
+✔ Shell Adapter (5.627727ms)
+[32mTestHubot> [0m[1m[35m[debug][0m should print debug message to console[22m
+[32mTestHubot> [0m[1m[34m[info][0m should print info message to console[22m
+▶ Shell Adapter: Print human readable logging in the console when something is logged with robot.logger
+  ✔ setting HUBOT_LOG_LEVEL to debug prints debug and info log messages to the console (1.50002ms)
+[32mTestHubot> [0m[1m[31m[error][0m should print error message to console[22m
+{"level":30,"time":1788536627975,"pid":489,"hostname":"541a9bc6878f","name":"TestHubot","msg":"log before adapter load"}
+  ✔ setting HUBOT_LOG_LEVEL to error only prints error log messages to the console (0.740987ms)
+✔ Shell Adapter: Print human readable logging in the console when something is logged with robot.logger (2.312395ms)
+{"level":30,"time":1788536627975,"pid":489,"hostname":"541a9bc6878f","name":"TestHubot","msg":"log after load before run"}
+[32mTestHubot> [0m▶ Shell Adapter: Logger before adapter run
+  ✔ does not throw when logging before the adapter initializes readline (1.594132ms)
+✔ Shell Adapter: Logger before adapter run (1.651651ms)
+▶ User
+  ▶ new
+    ✔ uses id as the default name (0.301884ms)
+    ✔ sets attributes passed in (0.066292ms)
+    ✔ uses name attribute when passed in, not id (0.046618ms)
+  ✔ new (0.728623ms)
+✔ User (0.989529ms)
+▶ Xample testing Hubot scripts
+  ✔ should handle /helo request (75.661905ms)
+  ✔ should reply with expected message (1.813182ms)
+  ✔ should send message to the #general room (1.100265ms)
+✔ Xample testing Hubot scripts (78.989893ms)
+✔ test/doubles/DummyAdapter.mjs (38.034603ms)
+✔ test/fixtures/MockAdapter.mjs (35.826839ms)
+✔ test/fixtures/TestScript.js (12.036978ms)
+✔ test/fixtures/TestScript.mjs (10.714319ms)
+(node:555) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///work/test/fixtures/TestScript.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to /work/package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ test/fixtures/TestScript.ts (36.631276ms)
+✔ test/fixtures/TestScriptIncorrectApi.js (10.289901ms)
+✔ test/fixtures/TestScriptIncorrectApi.mjs (9.848276ms)
+▶ hubot/index
+  ✔ exports User class (0.406711ms)
+  ✔ exports Brain class (0.103025ms)
+  ✔ exports Robot class (1.102995ms)
+  ✔ exports Adapter class (0.08465ms)
+  ✔ exports Response class (0.163536ms)
+  ✔ exports Listener class (0.07755ms)
+  ✔ exports TextListener class (0.081267ms)
+  ✔ exports Message class (0.071495ms)
+  ✔ exports TextMessage class (0.0958ms)
+  ✔ exports EnterMessage class (0.124908ms)
+  ✔ exports LeaveMessage class (0.062642ms)
+  ✔ exports TopicMessage class (0.051324ms)
+  ✔ exports CatchAllMessage class (0.070702ms)
+  ✔ exports loadBot function (0.504349ms)
+✔ hubot/index (3.557881ms)
+✔ test/ordered-scripts/01-PFirst.mjs (10.2932ms)
+✔ test/ordered-scripts/02-SetupBotConfig.mjs (9.115661ms)
+✔ test/ordered-scripts/WebSetup.mjs (10.310614ms)
+✔ test/scripts/Xample.mjs (10.122104ms)
+ℹ tests 286
+ℹ suites 107
+ℹ pass 286
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 31674.474091
+[evidence record sha256:8dc9d163f262d519b6de753a90c80ce61196dab7250f1266084dd46ef584d7c5 kind tool-call:shell]
+step 8: calling local:qwen3.8:27b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"sha256:8dc9d163f262d519b6de753a90c80ce61196dab7250f1266084dd46ef584d7c5","recordKind":"tool-call:shell","narrative":"npm run --silent test exits 0 with 286/286 tests passing"}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:e8728d2344f510eb40c97e30d4b4ad07ebc2479ad1934b40c1b052b799e35332 kind tool-call:claim]
+step 9: calling local:qwen3.8:27b
+claim (unverified): Fixed. The defect was in `src/adapters/Shell.mjs:8` — the history-size ternary was inverted:
+
+```js
+// before: env var unset → parseInt(undefined) → NaN → history never truncated
+const historySize = process.env.HUBOT_SHELL_HISTSIZE == null ? parseInt(process.env.HUBOT_SHELL_HISTSIZE) : 1024
+// after:
+const historySize = process.env.HUBOT_SHELL_HISTSIZE == null ? 1024 : parseInt(process.env.HUBOT_SHELL_HISTSIZE)
+```
+
+When `HUBOT_SHELL_HISTSIZE` is unset (the default), the old code produced `NaN`, so the `stats.size > historySize` check in `run()` was always false and the history file was never truncated. The failing test writes a 1025-byte history file, runs the adapter, and expects the file to be ≤ 1024 bytes afterwards. With the fix, the default is 1024 and the oversized history is truncated on run.
+
+No tests were touched. `npm run --silent test` now exits 0 with 286/286 tests passing (verified against the run record).
+stopped: completed after 9 steps, 156488 tokens
+gate typecheck not-applicable: package.json declares no typecheck script [evidence record sha256:2937696362f6458fe282589c221bc4c8fee1e95f3a2fcdf7bdda33a9c257023a]
+gate lint not-applicable: package.json declares no lint script [evidence record sha256:80f9d94a737526e9c5c413a32d943f4febe0196f251ff0d5ebdfb62b7df46ec0]
+gate format not-applicable: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging [evidence record sha256:9b21ee9385ec49965029e8ae457e7fa57f61ec2cc75ef84219ddfa2809af47cb]
+gate tests passed: 286 collected, 286 passed, 0 failed, 0 skipped (exit 0) [evidence record sha256:973e641615c4f4bcd8210987f15f70a1bf50d3920690bdc3ec0fb0d48cb56dd4]
+gate file-set passed: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited [evidence record sha256:0e480b47f52ad1adef0df5526d70da130c1bc24b0671e9b8e98a6ca67d8f645e]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:04cbfbf05767e77d5767fb5772e9a7e62cec4ae74d421e013fe257c5eccb892c]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:1205c218e3298f2b2a033cfedf23b7ee3ea0c6b62794e4df970e745e5f7a0cb4]
+gate behaviour-probe passed: 0 changed function(s) still answer to their inputs. Not measured: src/adapters/Shell.mjs (Cannot find module '/home/campaign/.swarm/sessions/20260904T154221-8dd696/probe/behaviour-probe/base/src/Adapter.mjs' imported from /home/campaign/.swarm/sessions/20260904T154221-8dd696/probe/behaviour-probe/base/src/adapters/Shell.mjs). [evidence record sha256:4ff5f414c8f95a71c40817988d326f76f0851f8f3a106e994bbfb0bbb42d8acc]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 1 added line(s) [evidence record sha256:ede4b1a546ba6f4583c33140cd1c857444d0095fb5d2eff66db7030505370e36]
+
+gates:
+  n/a      typecheck: package.json declares no typecheck script
+  n/a      lint: package.json declares no lint script
+  n/a      format: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging
+  passed   tests: 286 collected, 286 passed, 0 failed, 0 skipped (exit 0)
+  passed   file-set: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited
+  passed   placeholder: no placeholder marker was introduced by this change
+  passed   secret-scan: no known credential pattern appears in the added lines
+  passed   behaviour-probe: 0 changed function(s) still answer to their inputs. Not measured: src/adapters/Shell.mjs (Cannot find module '/home/campaign/.swarm/sessions/20260904T154221-8dd696/probe/behaviour-probe/base/src/Adapter.mjs' imported from /home/campaign/.swarm/sessions/20260904T154221-8dd696/probe/behaviour-probe/base/src/adapters/Shell.mjs).
+  passed   diff-budget (advisory): within budget: 1 file(s) and 1 added line(s)
+
+routing reward: 0.351 (green with 0 retries, 222s, and $0.0000)
+[signing] the Secret Service keyring would not take a new key (secret-tool store failed: ), so the bundle is signed with a per-run key
+
+evidence bundle: /out/bundle
+verify it anywhere: node /out/bundle/verify.mjs /out/bundle
+review it: open /out/bundle/review.html
+what this run produced
+
+  the page a person reads: /out/bundle/review.html
+  the bundle a stranger verifies: /out/bundle
+  its own verifier, needing nothing installed: node /out/bundle/verify.mjs /out/bundle
+  the chain every record is on: /out/bundle/ledger.jsonl
+
+  53 records. The harness verified 1 claim(s) and refused 0.
+  bundle verified in this run: verify.mjs exited 0

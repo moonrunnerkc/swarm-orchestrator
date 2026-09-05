@@ -1,0 +1,69 @@
+diff --git a/src/utils/array.ts b/src/utils/array.ts
+index d00b30c..951d71b 100644
+--- a/src/utils/array.ts
++++ b/src/utils/array.ts
+@@ -32,3 +32,15 @@ export function toArray<T>(items: ArrayLike<T>): T[] {
+     }
+     return results;
+ }
++
++// NOTE: Array.prototype.slice returns a shallow copy, so the input is never mutated.
++export function chunk<T>(items: readonly T[], size: number): T[][] {
++    if (!Number.isInteger(size) || size <= 0) {
++        throw new RangeError(`chunk size must be a positive integer, got ${size}`);
++    }
++    const results: T[][] = [];
++    for (let i = 0; i < items.length; i += size) {
++        results.push(items.slice(i, i + size));
++    }
++    return results;
++}
+diff --git a/tests/unit/utils/array.tests.ts b/tests/unit/utils/array.tests.ts
+new file mode 100644
+index 0000000..d7161e6
+--- /dev/null
++++ b/tests/unit/utils/array.tests.ts
+@@ -0,0 +1,43 @@
++import {chunk} from '../../../src/utils/array';
++
++test('Chunk with normal array', () => {
++    expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
++});
++
++test('Chunk evenly divides', () => {
++    expect(chunk([1, 2, 3, 4], 2)).toEqual([[1, 2], [3, 4]]);
++});
++
++test('Chunk with size equal to array length', () => {
++    expect(chunk([1, 2, 3], 3)).toEqual([[1, 2, 3]]);
++});
++
++test('Chunk with size larger than array', () => {
++    expect(chunk([1, 2, 3], 5)).toEqual([[1, 2, 3]]);
++});
++
++test('Chunk with size 1', () => {
++    expect(chunk([1, 2, 3], 1)).toEqual([[1], [2], [3]]);
++});
++
++test('Chunk empty array', () => {
++    expect(chunk([], 3)).toEqual([]);
++});
++
++test('Chunk does not mutate input', () => {
++    const original = [1, 2, 3, 4];
++    const copy = [...original];
++    chunk(original, 2);
++    expect(original).toEqual(copy);
++});
++
++test('Chunk returns new arrays (not shared refs)', () => {
++    const result = chunk([1, 2, 3], 2);
++    expect(result[0]).not.toBe(result[1]);
++});
++
++const invalidSizes = [0, -1, 1.5, NaN, Infinity, -Infinity];
++
++test.each(invalidSizes)('Chunk throws RangeError for size %p', (size) => {
++    expect(() => chunk([1, 2], size)).toThrow(RangeError);
++});

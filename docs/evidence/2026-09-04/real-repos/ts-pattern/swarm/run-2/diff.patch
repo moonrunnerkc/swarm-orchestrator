@@ -1,0 +1,155 @@
+diff --git a/src/patterns.ts b/src/patterns.ts
+index 1920974..6762d94 100644
+--- a/src/patterns.ts
++++ b/src/patterns.ts
+@@ -42,6 +42,7 @@ import {
+   ArrayChainable,
+   Variadic,
+   NonNullablePattern,
++  ObjectChainable,
+   RecordP,
+ } from './types/Pattern';
+ 
+@@ -1200,6 +1201,91 @@ const bigintChainable = <pattern extends Matcher<any, any, any, any, any>>(
+  */
+ export const bigint: BigIntPattern = bigintChainable(when(isBigInt));
+ 
++/**
++ * `P.object` is a wildcard pattern, matching any value whose `typeof` is `"object"` and which is not `null`.
++ * Includes arrays, Maps, Sets, and plain objects.
++ *
++ * [Read the documentation for `P.object` on GitHub](https://github.com/gvergnaud/ts-pattern#pobject-wildcard)
++ *
++ * @example
++ *   .with(P.object, () => 'will match on objects (including arrays, maps, sets)')
++ */
++export function object<input>(): Chainable<GuardP<unknown, object>, never>;
++export function object<input, const pattern extends Pattern<Extract<input, object>>>(
++  pattern: pattern
++): ObjectChainable<GuardP<input, Extract<input, object>>>;
++export function object<input>(): Chainable<GuardP<unknown, object>, never>;
++export function object<input, const pattern extends Pattern<Extract<input, object>>>(
++  pattern: pattern
++): ObjectChainable<GuardP<input, Extract<input, object>>>;
++export function object(
++  ...args: [pattern?: unknown]
++): Chainable<GuardP<unknown, object>, never> | ObjectChainable<GuardP<unknown, object>, never> {
++  if (args.length === 0) {
++    return chainable({
++      [matcher]() {
++        return {
++          match: <UnknownInput>(value: UnknownInput) => {
++            const result = value !== null && typeof value === 'object'
++              ? { matched: true, selections: {} as Record<string, unknown> }
++              : { matched: false, selections: {} as Record<string, unknown> };
++            return result;
++          },
++          getSelectionKeys: () => [],
++        };
++      },
++    });
++  }
++  const pattern = args[0];
++  return Object.assign(chainable({
++    [matcher]() {
++      return {
++        match: <UnknownInput>(value: UnknownInput) => {
++          if (value === null || typeof value !== 'object') {
++            return { matched: false, selections: {} as Record<string, unknown> };
++          }
++          const selector = (key: string, _v: unknown) => {};
++          const matched = matchPattern(pattern, value, selector);
++          if (typeof matched === 'boolean') {
++            return { matched, selections: {} as Record<string, unknown> };
++          }
++          return { ...matched, selections: matched.selections || {} };
++        },
++        getSelectionKeys: () => [
++          ...(args[0] ? getSelectionKeys(args[0]) : []),
++        ],
++      };
++    },
++  }), {
++    empty: (): GuardP<unknown, object> => when(isEmptyObject),
++  }) as ObjectChainable<GuardP<unknown, object>, never>;
++}
++
++// Guard for `P.object.empty`: not null, not undefined, typeof == "object", not array, not Map, not Set, and has no own enumerable keys
++function isEmptyObject(x: unknown): x is object {
++  return (
++    x !== null &&
++    x !== undefined &&
++    typeof x === 'object' &&
++    !Array.isArray(x) &&
++    !(x instanceof Map) &&
++    !(x instanceof Set) &&
++    Object.keys(x).length === 0
++  );
++}
++
++export function objectEmpty(): Chainable<GuardP<unknown, object>> {
++  return chainable(when(isEmptyObject));
++}
++
++/**
++ * `P.object.empty` is a wildcard pattern matching only values that match P.object
++ * (i.e. typeof "object" and not null), that are not arrays, Maps, Sets, and that have
++ * zero own enumerable property keys, so `{}` and `Object.create(null)` match it but
++ * `{ a: 1 }`, `[]`, `new Map()`, `new Set()`, `null` and `undefined` do not.
++ */
++export const object = { ...chainable(when(isUnknown)), _object_: true };
++
+ /**
+  * `P.boolean` is a wildcard pattern, matching any **boolean**.
+  *
+diff --git a/src/types/Pattern.ts b/src/types/Pattern.ts
+index 9145857..b1003ec 100644
+--- a/src/types/Pattern.ts
++++ b/src/types/Pattern.ts
+@@ -200,6 +200,46 @@ export type NullishPattern = Chainable<
+ 
+ export type NonNullablePattern = Chainable<GuardP<unknown, {}>, never>;
+ 
++export type ObjectChainable<p, omitted extends string = never> = Chainable<
++  p,
++  omitted
++> &
++  Omit<
++    {
++      /**
++       * `.optional()` returns a pattern which matches if the
++       * key is undefined or if it is defined and the previous pattern matches its value.
++       */
++      optional<input>(): Chainable<OptionalP<input, p>, omitted | 'optional'>;
++      /**
++       * `pattern.and(pattern)` returns a pattern that matches
++       * if the previous pattern and the next one match the input.
++       */
++      and<input, const p2 extends Pattern<input>>(
++        pattern: p2
++      ): Chainable<AndP<input, [p, p2]>, omitted>;
++      /**
++       * `pattern.or(pattern)` returns a pattern that matches
++       * if **either** the previous pattern or the next one match the input.
++       */
++      or<input, const p2 extends Pattern<input>>(
++        pattern: p2
++      ): Chainable<OrP<input, [p, p2]>, omitted>;
++      /**
++       * `P.select()` will inject this property into the handler function's arguments.
++       */
++      select<input>(): Chainable<
++        SelectP<symbols.anonymousSelectKey, input, p>,
++        omitted | 'select' | 'or' | 'and'
++      >;
++      select<input, k extends string>(
++        key: k
++      ): Chainable<SelectP<k, input, p>, omitted | 'select' | 'or' | 'and'>;
++    },
++    omitted
++  >;
++
++
+ type MergeGuards<input, guard1, guard2> = [guard1, guard2] extends [
+   GuardExcludeP<any, infer narrowed1, infer excluded1>,
+   GuardExcludeP<any, infer narrowed2, infer excluded2>

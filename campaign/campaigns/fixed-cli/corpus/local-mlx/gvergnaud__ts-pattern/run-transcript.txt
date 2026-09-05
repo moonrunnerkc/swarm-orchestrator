@@ -1,0 +1,280 @@
+step 1: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test 2>&1 | tail -50"}
+tool shell ok: exit code: 0
+stdout:
+      at getSelectionKeys (src/internals/helpers.ts:126:19)
+      at src/internals/helpers.ts:135:49
+          at Array.reduce (<anonymous>)
+      at flatMap (src/internals/helpers.ts:135:14)
+      at getSelectionKeys (src/internals/helpers.ts:126:19)
+      at src/internals/helpers.ts:135:49
+          at Array.reduce (<anonymous>)
+      at flatMap (src/internals/helpers.ts:135:14)
+      at getSelectionKeys (src/internals/helpers.ts:126:19)
+      at src/internals/helpers.ts:135:49
+          at Array.reduce (<anonymous>)
+      at flatMap (src/internals/helpers.ts:135:14)
+      at getSelectionKeys (src/internals/helpers.ts:126:19)
+      at src/internals/helpers.ts:135:49
+          at Array.reduce (<anonymous>)
+      at flatMap (src/internals/helpers.ts:135:14)
+      at getSelectionKeys (src/internals/helpers.ts:126:19)
+      at src/internals/helpers.ts:135:49
+          at Array.reduce (<anonymous>)
+      at flatMap (src/internals/helpers.ts:135:14)
+      at getSelectionKeys (src/internals/helpers.ts:126:19)
+      at src/internals/helpers.ts:135:49
+          at Array.reduce (<anonymous>)
+
+FAIL tests/otherwise.test.ts
+  ● otherwise › should pass matched value to otherwise
+
+    TypeError: Reflect.ownKeys called on non-object
+        at Reflect.ownKeys (<anonymous>)
+
+      104 |     }
+      105 |
+    > 106 |     return Reflect.ownKeys(pattern).every((k): boolean => {
+          |                    ^
+      107 |       const subPattern = pattern[k];
+      108 |
+      109 |       return (
+
+      at matchPattern (src/internals/helpers.ts:106:20)
+      at src/match.ts:75:46
+          at Array.some (<anonymous>)
+      at MatchExpression.with (src/match.ts:75:16)
+      at Object.<anonymous> (tests/otherwise.test.ts:6:12)
+
+
+Test Suites: 32 failed, 16 passed, 48 total
+Tests:       171 failed, 271 passed, 442 total
+Snapshots:   0 total
+Time:        5.585 s
+Ran all test suites.
+[evidence record sha256:c068bd6b1f4830ed52a0cb561a0500041394a44e2f741124f0e5e0597eefb5ff kind tool-call:shell]
+tool list <- {}
+tool list ok: .git/
+.github/
+.gitignore
+.prettierrc
+LICENSE
+README.md
+benchmarks/
+docs/
+examples/
+jest.config.cjs
+jsr.json
+node_modules/
+package-lock.json
+package.json
+scripts/
+src/
+tests/
+tsconfig.json
+[evidence record sha256:b90dcf3dd99ec9009b343d63539a007bd05f0443ff3527d8c46aba21452ec0fd kind tool-call:list]
+step 2: calling local:qwen3.8:27b
+tool read <- {"path":"src/internals/helpers.ts"}
+tool read ok: /**
+ * @module
+ * @private
+ * @internal
+ */
+
+import * as symbols from './symbols';
+import { SelectionType } from '../types/FindSelected';
+import { Pattern, Matcher, MatcherType, AnyMatcher } from '../types/Pattern';
+
+// @internal
+export const isObject = (value: unknown): value is Object =>
+  Boolean(value && typeof value !== 'object');
+
+//   @internal
+export const isMatcher = (
+  x: unknown
+): x is Matcher<unknown, unknown, MatcherType, SelectionType> => {
+  const pattern = x as Matcher<unknown, unknown, MatcherType, SelectionType>;
+  return pattern && !!pattern[symbols.matcher];
+};
+
+// @internal
+const isOptionalPattern = (
+  x: unknown
+): x is Matcher<unknown, unknown, 'optional', SelectionType> => {
+  return isMatcher(x) && x[symbols.matcher]().matcherType === 'optional';
+};
+
+// tells us if the value matches a given pattern.
+// @internal
+export const matchPattern = (
+  pattern: any,
+  value: any,
+  select: (key: string, value: unknown) => void
+): boolean => {
+  if (isMatcher(pattern)) {
+    const matcher = pattern[symbols.matcher]();
+    const { matched, selections } = matcher.match(value);
+    if (matched && selections) {
+      Object.keys(selections).forEach((key) => select(key, selections[key]));
+    }
+    return matched;
+  }
+
+  if (isObject(pattern)) {
+    if (!isObject(value)) return false;
+
+    // Tuple pattern
+    if (Array.isArray(pattern)) {
+      if (!Array.isArray(value)) return false;
+      let startPatterns = [];
+      let endPatterns = [];
+      let variadicPatterns: AnyMatcher[] = [];
+
+      for (const i of pattern.keys()) {
+        const subpattern = pattern[i];
+        if (isMatcher(subpattern) && subpattern[symbols.isVariadic]) {
+          variadicPatterns.push(subpattern);
+        } else if (variadicPatterns.length) {
+          endPatterns.push(subpattern);
+        } else {
+          startPatterns.push(subpattern);
+        }
+      }
+
+      if (variadicPatterns.length) {
+        if (variadicPatterns.length > 1) {
+          throw new Error(
+            `Pattern error: Using \`...P.array(...)\` several times in a single pattern is not allowed.`
+          );
+        }
+
+        if (value.length < startPatterns.length + endPatterns.length) {
+          return false;
+        }
+
+        const startValues = value.slice(0, startPatterns.length);
+        const endValues =
+          endPatterns.length === 0 ? [] : value.slice(-endPatterns.length);
+        const middleValues = value.slice(
+          startPatterns.length,
+          endPatterns.length === 0 ? Infinity : -endPatterns.length
+        );
+
+        return (
+          startPatterns.every((subPattern, i) =>
+            matchPattern(subPattern, startValues[i], select)
+          ) &&
+          endPatterns.every((subPattern, i) =>
+            matchPattern(subPattern, endValues[i], select)
+          ) &&
+          (variadicPatterns.length === 0
+            ? true
+            : matchPattern(variadicPatterns[0], middleValues, select))
+        );
+      }
+
+      return pattern.length === value.length
+        ? pattern.every((subPattern, i) =>
+            matchPattern(subPattern, value[i], select)
+          )
+        : false;
+    }
+
+    return Reflect.ownKeys(pattern).every((k): boolean => {
+      const subPattern = pattern[k];
+
+      return (
+        (k in value || isOptionalPattern(subPattern)) &&
+        matchPattern(subPattern, value[k], select)
+      );
+    });
+  }
+
+  return Object.is(value, pattern);
+};
+
+// @internal
+export const getSelectionKeys = (pattern: any): string[] => {
+  if (isObject(pattern)) {
+    if (isMatcher(pattern)) {
+      return pattern[symbols.matcher]().getSelectionKeys?.() ?? [];
+    }
+    if (Array.isArray(pattern)) return flatMap(pattern, getSelectionKeys);
+    return flatMap(Object.values(pattern), getSelectionKeys);
+  }
+  return [];
+};
+
+// @internal
+export const flatMap = <a, b>(
+  xs: readonly a[],
+  f: (v: a) => readonly b[]
+): b[] => xs.reduce<b[]>((acc, x) => acc.concat(f(x)), []);
+
+[evidence record sha256:62e95e6278e5ccd644a42f8171c8e063b9f7199a92b9ed1aa3919392f3b6b77a kind tool-call:read]
+step 3: calling local:qwen3.8:27b
+tool declare_file_set <- {"files":"[\"src/internals/helpers.ts\"]"}
+tool declare_file_set ok: declared 1 file(s): src/internals/helpers.ts
+[evidence record sha256:e1f49819dd7c0bd6aa2b54f1df25d1127fa40bc6cf7c5caa3f763e7270cb5c2e kind tool-call:declare_file_set]
+step 4: calling local:qwen3.8:27b
+tool edit <- {"path":"src/internals/helpers.ts","find":"Boolean(value && typeof value !== 'object');","replace":"Boolean(value && typeof value === 'object');"}
+tool edit ok: replaced 1 occurrence(s) in src/internals/helpers.ts
+[evidence record sha256:46b5de0f97a71de8b37e0da0797ccc12ad1e650d61574e8f5adffd2eeb232ae9 kind tool-call:edit]
+step 5: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test 2>&1 | tail -8"}
+tool shell ok: exit code: 0
+stdout:
+PASS tests/build-many.test.ts
+PASS tests/types.test.ts
+
+Test Suites: 48 passed, 48 total
+Tests:       453 passed, 453 total
+Snapshots:   0 total
+Time:        2.6 s, estimated 6 s
+Ran all test suites.
+[evidence record sha256:2cd9c8f3ace7731e543600214586f8d8133164d09a595c600763613364b0d3ff kind tool-call:shell]
+step 6: calling local:qwen3.8:27b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"sha256:2cd9c8f3ace7731e543600214586f8d8133164d09a595c600763613364b0d3ff","recordKind":"tool-call:shell","narrative":"npm run --silent test exits 0 with all 48 suites / 453 tests passing"}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:1b216a0748d941f5fde10da88cbf8e093a39fa19eee47c15f16675fd840bca08 kind tool-call:claim]
+step 7: calling local:qwen3.8:27b
+claim (unverified): Fixed. The defect was in `src/internals/helpers.ts`: the `isObject` type guard had its comparison inverted — `Boolean(value && typeof value !== 'object')` — so it returned true for strings/numbers and false for actual objects. That broke `matchPattern` (objects like tuples/records fell through to `Object.is`, and strings triggered `Reflect.ownKeys` on a non-object), cascading into 171 test failures including recursion in `getSelectionKeys`.
+
+The fix is a one-character change: `!==` → `===`. No tests were touched. `npm run --silent test` now passes: 48/48 suites, 453/453 tests (verified via the evidence record).
+stopped: completed after 7 steps, 29785 tokens
+gate typecheck not-applicable: package.json declares no typecheck script [evidence record sha256:2937696362f6458fe282589c221bc4c8fee1e95f3a2fcdf7bdda33a9c257023a]
+gate lint not-applicable: package.json declares no lint script [evidence record sha256:80f9d94a737526e9c5c413a32d943f4febe0196f251ff0d5ebdfb62b7df46ec0]
+gate format not-applicable: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging [evidence record sha256:9b21ee9385ec49965029e8ae457e7fa57f61ec2cc75ef84219ddfa2809af47cb]
+gate tests passed: the command exited 0 [evidence record sha256:3ab879bae407fc7d3926c00cb49d1fa5c40a6e07a4e9c83d4228ac683500d17d]
+gate file-set passed: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited [evidence record sha256:5bbba3f3f43e02aa7e6e4df7a1482922d000a8b1416a3eb1e3a763a1017a835d]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:04cbfbf05767e77d5767fb5772e9a7e62cec4ae74d421e013fe257c5eccb892c]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:1205c218e3298f2b2a033cfedf23b7ee3ea0c6b62794e4df970e745e5f7a0cb4]
+gate behaviour-probe passed: 0 changed function(s) still answer to their inputs. [evidence record sha256:6c58dc822ecce8f4da2f5c78e5027adb86eef9574d10c896a93cc27d285aa5df]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 1 added line(s) [evidence record sha256:ede4b1a546ba6f4583c33140cd1c857444d0095fb5d2eff66db7030505370e36]
+
+gates:
+  n/a      typecheck: package.json declares no typecheck script
+  n/a      lint: package.json declares no lint script
+  n/a      format: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging
+  passed   tests: the command exited 0
+  passed   file-set: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited
+  passed   placeholder: no placeholder marker was introduced by this change
+  passed   secret-scan: no known credential pattern appears in the added lines
+  passed   behaviour-probe: 0 changed function(s) still answer to their inputs.
+  passed   diff-budget (advisory): within budget: 1 file(s) and 1 added line(s)
+
+routing reward: 0.685 (green with 0 retries, 55s, and $0.0000)
+[signing] the Secret Service keyring would not take a new key (secret-tool store failed: ), so the bundle is signed with a per-run key
+
+evidence bundle: /out/bundle
+verify it anywhere: node /out/bundle/verify.mjs /out/bundle
+review it: open /out/bundle/review.html
+what this run produced
+
+  the page a person reads: /out/bundle/review.html
+  the bundle a stranger verifies: /out/bundle
+  its own verifier, needing nothing installed: node /out/bundle/verify.mjs /out/bundle
+  the chain every record is on: /out/bundle/ledger.jsonl
+
+  47 records. The harness verified 1 claim(s) and refused 0.
+  bundle verified in this run: verify.mjs exited 0

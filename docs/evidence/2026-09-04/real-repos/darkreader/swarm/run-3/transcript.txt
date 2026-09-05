@@ -1,0 +1,947 @@
+step 1: calling local:qwen3.6:35b-a3b
+plan: I'll start by exploring the workspace structure to understand the project layout and then implement the changes.
+tool list <- {"path":"."}
+tool list ok: .git/
+.gitattributes
+.github/
+.gitignore
+.npmignore
+CHANGELOG.md
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+LICENSE
+README.md
+SECURITY.md
+docs/
+eslint-plugin-local.js
+eslint.config.js
+index.d.ts
+integrity/
+node_modules/
+package-lock.json
+package.json
+src/
+tasks/
+tests/
+[evidence record sha256:1293eb922434aac4ccd00a346c6d612b0c9ba18bd68a8047953f0bdd11af3412 kind tool-call:list]
+step 2: calling local:qwen3.6:35b-a3b
+tool list <- {"path":"src"}
+tool list ok: _locales/
+api/
+background/
+config/
+defaults.ts
+definitions.d.ts
+generators/
+icons/
+inject/
+manifest-chrome-mv3.json
+manifest-firefox.json
+manifest-thunderbird.json
+manifest.json
+stubs/
+tsconfig.json
+ui/
+utils/
+[evidence record sha256:41d4175c448542bfb25261830bd57da253660ff11e328bf0f166d87db7736fab kind tool-call:list]
+tool list <- {"path":"tests"}
+tool list ok: browser/
+dependencies.js
+inject/
+package.json
+support/
+unit/
+[evidence record sha256:bb60c47c9e93d89490de100c159964399a3d5453782912e0794e889b28dbefc9 kind tool-call:list]
+tool read <- {"path":"package.json"}
+tool read ok: {
+  "name": "darkreader",
+  "version": "4.9.130",
+  "description": "Dark mode for every website",
+  "scripts": {
+    "api": "node --max-old-space-size=3072 tasks/cli.js build --api",
+    "build": "node --max-old-space-size=3072 tasks/cli.js build --release",
+    "build:all": "node --max-old-space-size=3072 tasks/cli.js build --debug --release --api",
+    "build:firefox": "node --max-old-space-size=3072 tasks/cli.js build --release --firefox",
+    "build:plus": "node --max-old-space-size=3072 tasks/cli.js build --plus --release",
+    "code-style": "npm run lint",
+    "config-cleanup": "node --max-http-header-size=131072 tasks/ping.js dark-sites detector-hints dynamic-theme-fixes inversion-fixes",
+    "debug": "node --max-old-space-size=3072 tasks/cli.js build --debug",
+    "debug:watch": "node --max-old-space-size=3072 tasks/cli.js build --debug --watch --chrome --firefox",
+    "debug:watch:mv3": "node --max-old-space-size=3072 tasks/cli.js build --debug --watch --chrome-mv3",
+    "debug:watch:plus": "node --max-old-space-size=3072 tasks/cli.js build --debug --watch --plus --chrome",
+    "dependencies:upgrade": "node tasks/dependencies.js",
+    "lint": "eslint -- 'src/**/*.ts' 'src/**/*.tsx' 'tasks/**/*.js' 'tests/[!coverage]**/*.js' 'tests/**/*.ts' eslint.config.js index.d.ts",
+    "lint:bundle": "(node ./tasks/check-exists.js ./build/debug/chrome || node tasks/build.js --debug --api --chrome) && eslint -- 'build/debug/chrome/**/*.js' 'darkreader.js' 'darkreader.mjs'",
+    "plus-link": "cd src && ln -s ../../darkreader-plus plus",
+    "prepublishOnly": "npm test && npm run api",
+    "release": "npm test && npm run lint && node tasks/cli.js build --release",
+    "test": "npm run test:unit",
+    "test:all": "npm run test:unit; npm run test:browser; npm run test:inject",
+    "test:browser": "npm run test:chrome && npm run test:chrome-mv3 && npm run test:firefox",
+    "test:chrome": "node tasks/cli.js build --debug --test --chrome-mv2 && jest --config=tests/browser/jest.config.mjs --runInBand",
+    "test:chrome-mv3": "node tasks/cli.js build --debug --test --chrome-mv3 && jest --config=tests/browser/jest.config.chrome-mv3.mjs --runInBand",
+    "test:ci": "npm run test:unit",
+    "test:coverage": "jest --config=tests/unit/jest.config.mjs --coverage",
+    "test:edge": "node tasks/cli.js build --debug --test --plus && jest --config=tests/browser/jest.config.mjs --runInBand",
+    "test:firefox": "node tasks/cli.js build --debug --test --firefox-mv2 && jest --config=tests/browser/jest.config.firefox.mjs --runInBand",
+    "test:inject": "node --max-old-space-size=3072 node_modules/.bin/karma start ./tests/inject/karma.conf.cjs",
+    "test:inject:debug": "node --max-old-space-size=3072 node_modules/.bin/karma start ./tests/inject/karma.conf.cjs --debug",
+    "test:unit": "jest --config=tests/unit/jest.config.mjs",
+    "test:unit:debug": "node --inspect-brk ./node_modules/jest/bin/jest --config=tests/unit/jest.config.mjs --runInBand --no-cache --watch",
+    "translate-en-message": "node ./tasks/translate.js --message",
+    "translate-new-en-messages": "node ./tasks/translate.js --new-messages",
+    "deno:bootstrap": "deno run --allow-read=./ --allow-sys=uid --allow-write=deno.json tasks/deno.js"
+  },
+  "main": "darkreader.js",
+  "module": "darkreader.mjs",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/darkreader/darkreader.git"
+  },
+  "author": "Alexander Shutau <darkreaderapp@gmail.com> (https://darkreader.org/)",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/darkreader/darkreader/issues"
+  },
+  "keywords": [
+    "dark-theme",
+    "dark-mode",
+    "night-mode",
+    "darkmode",
+    "nightmode",
+    "accessibility",
+    "eye-care"
+  ],
+  "homepage": "https://darkreader.org/",
+  "funding": {
+    "type": "opencollective",
+    "url": "https://opencollective.com/darkreader/donate"
+  },
+  "dependencies": {
+    "malevic": "0.20.3"
+  },
+  "devDependencies": {
+    "@eslint/compat": "2.1.0",
+    "@eslint/eslintrc": "3.3.7",
+    "@eslint/js": "10.0.0",
+    "@rollup/plugin-node-resolve": "16.0.3",
+    "@rollup/plugin-replace": "6.0.3",
+    "@rollup/plugin-typescript": "12.3.0",
+    "@stylistic/eslint-plugin": "5.10.0",
+    "@types/chrome": "0.2.8",
+    "@types/eslint": "9.6.1",
+    "@types/jasmine": "6.0.0",
+    "@types/jest": "30.0.0",
+    "@types/karma": "6.3.9",
+    "@types/karma-coverage": "2.0.3",
+    "@types/node": "26.4.1",
+    "@types/ws": "8.18.1",
+    "chokidar": "5.0.0",
+    "eslint-plugin-compat": "7.0.2",
+    "eslint-plugin-import": "2.32.0",
+    "globals": "17.12.0",
+    "globby": "16.2.4",
+    "jasmine-core": "7.0.2",
+    "jest": "30.5.1",
+    "jest-extended": "7.0.0",
+    "karma": "6.4.4",
+    "karma-chrome-launcher": "3.2.0",
+    "karma-coverage": "2.2.1",
+    "karma-firefox-launcher": "2.1.3",
+    "karma-jasmine": "5.1.0",
+    "karma-rollup-preprocessor": "7.0.8",
+    "karma-safari-launcher": "1.0.0",
+    "karma-spec-reporter": "0.0.36",
+    "less": "4.9.0",
+    "prettier": "3.9.6",
+    "puppeteer-core": "25.9.0",
+    "rollup": "4.63.1",
+    "rollup-plugin-istanbul": "5.0.0",
+    "ts-jest": "29.4.12",
+    "tslib": "2.8.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.69.0",
+    "ws": "8.21.3",
+    "yazl": "3.3.1"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-x64-gnu": "4.63.1",
+    "@rollup/rollup-win32-x64-msvc": "4.63.1"
+  }
+}
+
+[evidence record sha256:24ac36b0c79d44b97d357db48a18c7599c5e7757a2b84af65ba4865e7c6d238e kind tool-call:read]
+step 3: calling local:qwen3.6:35b-a3b
+tool list <- {"path":"src/utils"}
+tool list ok: array.ts
+async-queue.ts
+automation.ts
+cache.ts
+color.ts
+colorscheme-parser.ts
+csp.ts
+css-text/
+debounce.ts
+links.ts
+locales.ts
+math-eval.ts
+math.ts
+media-query.ts
+message.ts
+network.ts
+platform.ts
+promise-barrier.ts
+state-manager-impl.ts
+state-manager.ts
+tabs.ts
+text.ts
+throttle.ts
+time.ts
+uid.ts
+url.ts
+validation.ts
+visibility.ts
+[evidence record sha256:5f1fe2ec6b994324e23b0e9960d1532ea4e4aa6e7b2b150f38f8a3fe85d83739 kind tool-call:list]
+tool list <- {"path":"tests/unit"}
+tool list ok: config/
+csp/
+generators/
+inject/
+jest.config.mjs
+tsconfig.json
+utils/
+[evidence record sha256:b3852de6c400449f351aa91c4faf92ba45337c406e6e858c309832ba1e7111c2 kind tool-call:list]
+tool read <- {"path":"tests/unit/jest.config.mjs"}
+tool read ok: // @ts-check
+
+import {dirname} from 'node:path';
+import {createRequire} from 'node:module';
+const rootDir = dirname(createRequire(import.meta.url).resolve('../../package.json'));
+
+/** @type {import('@jest/types').Config.InitialOptions} */
+const config = {
+    rootDir,
+    testMatch: ['<rootDir>/tests/unit/**/*.tests.ts'],
+    moduleFileExtensions: ['ts', 'tsx', 'js'],
+    moduleNameMapper: {
+        '@plus/(.*)': ['<rootDir>/src/stubs/$1'],
+    },
+    transform: {'^.+\\.ts(x?)$': ['ts-jest', {tsconfig: '<rootDir>/tests/unit/tsconfig.json'}]},
+    globals: {
+        __FIREFOX_MV2__: false,
+        __CHROMIUM_MV2__: false,
+        __CHROMIUM_MV3__: false,
+        __THUNDERBIRD__: false,
+        __DEBUG__: false,
+        __PLUS__: false,
+        __TEST__: true,
+    },
+    setupFilesAfterEnv: ['jest-extended/all'],
+};
+
+export default config;
+
+[evidence record sha256:4bd3f4f3190a3e6c3bbbcfbc6eb86ceb6ab73f99e9b4d41cefa5c11b85005b16 kind tool-call:read]
+step 4: calling local:qwen3.6:35b-a3b
+tool list <- {"path":"tests/unit/utils"}
+tool list ok: color.tests.ts
+math.tests.ts
+parsing.tests.ts
+promise-barrier.tests.ts
+state-manager.tests.ts
+text.tests.ts
+time.tests.ts
+uid.tests.ts
+url.tests.ts
+validation.tests.ts
+[evidence record sha256:9e47df73c970a36fc2af007a04aeeb042512520c3bdf27d69bd633e0af36218f kind tool-call:list]
+tool read <- {"path":"src/utils/array.ts"}
+tool read ok: function isArrayLike<T>(items: Iterable<T> | ArrayLike<T>): items is ArrayLike<T> {
+    return (items as ArrayLike<T>).length != null;
+}
+
+// NOTE: Iterating Array-like items using `for .. of` is 3x slower in Firefox
+// https://jsben.ch/kidOp
+export function forEach<T>(items: Iterable<T> | ArrayLike<T> | Set<T>, iterator: (item: T) => void): void {
+    if (isArrayLike(items)) {
+        for (let i = 0, len = items.length; i < len; i++) {
+            iterator(items[i]);
+        }
+    } else {
+        for (const item of items) {
+            iterator(item);
+        }
+    }
+}
+
+// NOTE: Pushing items like `arr.push(...items)` is 3x slower in Firefox
+// https://jsben.ch/nr9OF
+export function push<T>(array: T[], addition: Iterable<T> | ArrayLike<T>): void {
+    forEach(addition, (a) => array.push(a));
+}
+
+// NOTE: Using `Array.from()` is 2x (FF) — 5x (Chrome) slower for ArrayLike (not for Iterable)
+// https://jsben.ch/FJ1mO
+// https://jsben.ch/ZmViL
+export function toArray<T>(items: ArrayLike<T>): T[] {
+    const results: T[] = [];
+    for (let i = 0, len = items.length; i < len; i++) {
+        results.push(items[i]);
+    }
+    return results;
+}
+
+[evidence record sha256:8f039a2c39d94c8a541d3593ed3f9fe34214c6f87fa2b28a3ac2921be65878ed kind tool-call:read]
+step 5: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"tests/unit/utils/parsing.tests.ts"}
+tool read ok: import {parseCSS} from '../../../src/utils/css-text/parse-css';
+import {parseGradient} from '../../../src/utils/css-text/parse-gradient';
+
+test('Parse CSS', () => {
+    const cssText = '@media all { div { } img[src*="a,b;c"] { background-color: black; background-image: url(data:image/gif;base64,XYZ); color: red !important; } } @media print, screen and (min-width: 20rem) { h1, h2 { } } c-wiz[data-p^="%.@.[[1,3"] { color: green; }';
+    const parsedCSS = parseCSS(cssText);
+    expect(parsedCSS).toEqual([
+        {
+            type: '@media',
+            query: 'all',
+            rules: [
+                {
+                    selectors: ['div'],
+                    declarations: [],
+                },
+                {
+                    selectors: ['img[src*="a,b;c"]'],
+                    declarations: [
+                        {
+                            property: 'background-color',
+                            value: 'black',
+                            important: false,
+                        },
+                        {
+                            property: 'background-image',
+                            value: 'url(data:image/gif;base64,XYZ)',
+                            important: false,
+                        },
+                        {
+                            property: 'color',
+                            value: 'red',
+                            important: true,
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            type: '@media',
+            query: 'print, screen and (min-width: 20rem)',
+            rules: [
+                {
+                    selectors: ['h1', 'h2'],
+                    declarations: [],
+                },
+            ],
+        },
+        {
+            selectors: ['c-wiz[data-p^="%.@.[[1,3"]'],
+            declarations: [
+                {
+                    property: 'color',
+                    value: 'green',
+                    important: false,
+                },
+            ],
+        },
+    ]);
+});
+
+test('type gradients', () => {
+    expect(parseGradient('linear-gradient(rgb(200))')).toEqual([{
+        typeGradient: 'linear-gradient',
+        match: 'rgb(200)',
+        offset: 17,
+        index: 0,
+        hasComma: false,
+    }]);
+    expect(parseGradient(`linear-gradient(217deg, rgba(255,0,0,.8), rgba(255,0,0,0) 70.71%),
+    linear-gradient(127deg, rgba(0,255,0,.8), rgba(0,255,0,0) 70.71%),
+    linear-gradient(336deg, rgba(0,0,255,.8), rgba(0,0,255,0) 70.71%);`)).toEqual([
+        {
+            offset: 17,
+            match: '217deg, rgba(255,0,0,.8), rgba(255,0,0,0) 70.71%',
+            hasComma: true,
+            index: 0,
+            typeGradient: 'linear-gradient',
+        },
+        {
+            typeGradient: 'linear-gradient',
+            match: '127deg, rgba(0,255,0,.8), rgba(0,255,0,0) 70.71%',
+            hasComma: true,
+            offset: 17,
+            index: 71,
+        },
+        {
+            typeGradient: 'linear-gradient',
+            match: '336deg, rgba(0,0,255,.8), rgba(0,0,255,0) 70.71%',
+            hasComma: false,
+            offset: 17,
+            index: 142,
+        },
+    ]);
+    expect(parseGradient('radial-gradient(rgb(200))')).toEqual([{
+        typeGradient: 'radial-gradient',
+        match: 'rgb(200)',
+        index: 0,
+        offset: 17,
+        hasComma: false,
+
+    }]);
+
+    expect(parseGradient('repeating-linear-gradient(transparent, #4d9f0c 40px), repeating-linear-gradient(0.25turn, transparent, #3f87a6 20px);')).toEqual([
+        {
+            typeGradient: 'repeating-linear-gradient',
+            match: 'transparent, #4d9f0c 40px',
+            hasComma: true,
+            offset: 27,
+            index: 0,
+        },
+        {
+            typeGradient: 'repeating-linear-gradient',
+            match: '0.25turn, transparent, #3f87a6 20px',
+            hasComma: false,
+            index: 54,
+            offset: 27,
+        },
+    ]);
+});
+
+[evidence record sha256:a5e96c8076c3103d43eba30726e23c417df104dc902464622b5568d83b3c6d01 kind tool-call:read]
+step 6: calling local:qwen3.6:35b-a3b
+tool declare_file_set <- {"files":["src/utils/array.ts","tests/unit/utils/array.tests.ts"]}
+tool declare_file_set ok: declared 2 file(s): src/utils/array.ts, tests/unit/utils/array.tests.ts
+[evidence record sha256:8a2fc0f6dd7c86daddc3c284fea244f0ce89bea78be3527b6d9b70f372ed4490 kind tool-call:declare_file_set]
+step 7: calling local:qwen3.6:35b-a3b
+tool edit <- {"path":"src/utils/array.ts","find":"export function toArray<T>(items: ArrayLike<T>): T[] {\n    const results: T[] = [];\n    for (let i = 0, len = items.length; i < len; i++) {\n        results.push(items[i]);\n    }\n    return results;\n}","replace":"export function toArray<T>(items: ArrayLike<T>): T[] {\n    const results: T[] = [];\n    for (let i = 0, len = items.length; i < len; i++) {\n        results.push(items[i]);\n    }\n    return results;\n}\n\nexport function chunk<T>(items: readonly T[], size: number): T[][] {\n    if (Number.isInteger(size) && size > 0) {\n        const results: T[][] = [];\n        for (let i = 0, len = items.length; i < len; i += size) {\n            results.push(Array.prototype.slice.call(items, i, i + size));\n        }\n        return results;\n    } else {\n        throw new RangeError(`size must be a positive integer, got ${size}`);\n    }\n}"}
+tool edit ok: replaced 1 occurrence(s) in src/utils/array.ts
+[evidence record sha256:c4da3e23e03f84f8b64b9bb1d97218751e63d4f8847c3833b9a2fa6ddd5eb92d kind tool-call:edit]
+step 8: calling local:qwen3.6:35b-a3b
+tool write <- {"path":"tests/unit/utils/array.tests.ts","content":"import {chunk} from '../../../src/utils/array';\n\ndescribe('chunk', () => {\n    test('splits an array into groups of size 2', () => {\n        expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);\n    });\n\n    test('returns empty array for empty input', () => {\n        expect(chunk([], 3)).toEqual([]);\n    });\n\n    test('splits into exact multiples evenly', () => {\n        expect(chunk([1, 2, 3, 4], 2)).toEqual([[1, 2], [3, 4]]);\n    });\n\n    test('single element chunks', () => {\n        expect(chunk([1, 2, 3], 1)).toEqual([[1], [2], [3]]);\n    });\n\n    test('one chunk when size >= length', () => {\n        expect(chunk([1, 2, 3], 5)).toEqual([[1, 2, 3]]);\n    });\n\n    test('does not mutate input', () => {\n        const arr = [1, 2, 3, 4];\n        chunk(arr, 2);\n        expect(Array.isArray(arr)).toBe(true);\n        expect((arr as any).length).toBe(4);\n    });\n});\n\ndescribe('chunk validation', () => {\n    test.each([0, -1, 1.5, NaN, Infinity])(\n        'throws RangeError for invalid size %s',\n        (size) => {\n            expect(() => chunk([1, 2], size as any)).toThrow(RangeError);\n        },\n    );\n\n    test('RangeError message includes the size value', () => {\n        expect(() => chunk([1, 2], 0)).toThrow('size must be a positive integer, got 0');\n        expect(() => chunk([1, 2], NaN)).toThrow('size must be a positive integer, got NaN');\n    });\n});\n"}
+tool write ok: wrote 1389 bytes to tests/unit/utils/array.tests.ts
+[evidence record sha256:3bbdb7888b6c19a5756dbd88ea2638aacf00623c574580f8fa43724ba7b77263 kind tool-call:write]
+step 9: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"npm run test:unit 2>&1","timeoutMs":120000}
+tool shell ok: exit code: 0
+stdout:
+
+> darkreader@4.9.130 test:unit
+> jest --config=tests/unit/jest.config.mjs
+
+
+Test Suites: 17 passed, 17 total
+Tests:       87 passed, 87 total
+Snapshots:   0 total
+Time:        1.789 s
+Ran all test suites.
+[evidence record sha256:fd5a05167cc106b91bbaef4a66d77ded0ef99d6541d2031730971b0b3c6532eb kind tool-call:shell]
+step 10: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/utils/array.ts"}
+tool read ok: function isArrayLike<T>(items: Iterable<T> | ArrayLike<T>): items is ArrayLike<T> {
+    return (items as ArrayLike<T>).length != null;
+}
+
+// NOTE: Iterating Array-like items using `for .. of` is 3x slower in Firefox
+// https://jsben.ch/kidOp
+export function forEach<T>(items: Iterable<T> | ArrayLike<T> | Set<T>, iterator: (item: T) => void): void {
+    if (isArrayLike(items)) {
+        for (let i = 0, len = items.length; i < len; i++) {
+            iterator(items[i]);
+        }
+    } else {
+        for (const item of items) {
+            iterator(item);
+        }
+    }
+}
+
+// NOTE: Pushing items like `arr.push(...items)` is 3x slower in Firefox
+// https://jsben.ch/nr9OF
+export function push<T>(array: T[], addition: Iterable<T> | ArrayLike<T>): void {
+    forEach(addition, (a) => array.push(a));
+}
+
+// NOTE: Using `Array.from()` is 2x (FF) — 5x (Chrome) slower for ArrayLike (not for Iterable)
+// https://jsben.ch/FJ1mO
+// https://jsben.ch/ZmViL
+export function toArray<T>(items: ArrayLike<T>): T[] {
+    const results: T[] = [];
+    for (let i = 0, len = items.length; i < len; i++) {
+        results.push(items[i]);
+    }
+    return results;
+}
+
+export function chunk<T>(items: readonly T[], size: number): T[][] {
+    if (Number.isInteger(size) && size > 0) {
+        const results: T[][] = [];
+        for (let i = 0, len = items.length; i < len; i += size) {
+            results.push(Array.prototype.slice.call(items, i, i + size));
+        }
+        return results;
+    } else {
+        throw new RangeError(`size must be a positive integer, got ${size}`);
+    }
+}
+
+[evidence record sha256:96da498951b4b224f5f2e45ad642d04fd388cb4628aa5934460e93585fefb7fc kind tool-call:read]
+step 11: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"tests/unit/utils/array.tests.ts"}
+tool read ok: import {chunk} from '../../../src/utils/array';
+
+describe('chunk', () => {
+    test('splits an array into groups of size 2', () => {
+        expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
+    });
+
+    test('returns empty array for empty input', () => {
+        expect(chunk([], 3)).toEqual([]);
+    });
+
+    test('splits into exact multiples evenly', () => {
+        expect(chunk([1, 2, 3, 4], 2)).toEqual([[1, 2], [3, 4]]);
+    });
+
+    test('single element chunks', () => {
+        expect(chunk([1, 2, 3], 1)).toEqual([[1], [2], [3]]);
+    });
+
+    test('one chunk when size >= length', () => {
+        expect(chunk([1, 2, 3], 5)).toEqual([[1, 2, 3]]);
+    });
+
+    test('does not mutate input', () => {
+        const arr = [1, 2, 3, 4];
+        chunk(arr, 2);
+        expect(Array.isArray(arr)).toBe(true);
+        expect((arr as any).length).toBe(4);
+    });
+});
+
+describe('chunk validation', () => {
+    test.each([0, -1, 1.5, NaN, Infinity])(
+        'throws RangeError for invalid size %s',
+        (size) => {
+            expect(() => chunk([1, 2], size as any)).toThrow(RangeError);
+        },
+    );
+
+    test('RangeError message includes the size value', () => {
+        expect(() => chunk([1, 2], 0)).toThrow('size must be a positive integer, got 0');
+        expect(() => chunk([1, 2], NaN)).toThrow('size must be a positive integer, got NaN');
+    });
+});
+
+[evidence record sha256:177aae01fb738dcbdb42be5434803d8783a69ecbe8fa109144909ff94ac74142 kind tool-call:read]
+step 12: calling local:qwen3.6:35b-a3b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"fd5a05167cc106b91bbaef4a66d77ded0ef99d6541d2031730971b0b3c6532eb","recordKind":"tool-call:shell"}
+tool claim failed: denied: input rejected: [
+  {
+    "origin": "string",
+    "code": "invalid_format",
+    "format": "regex",
+    "pattern": "/^sha256:[0-9a-f]{64}$/",
+    "path": [
+      "record"
+    ],
+    "message": "Invalid string: must match pattern /^sha256:[0-9a-f]{64}$/"
+  }
+]
+[evidence record sha256:17a57010a0f9d532fedbdba035083a8e05d5d3fa60f5c96c0dd70d69f9a95293 kind tool-call:claim]
+step 13: calling local:qwen3.6:35b-a3b
+claim (unverified): The test command ran successfully — all 17 test suites (87 tests) passed including both existing suites and the new `array.tests.ts`. Here's a summary of what was done:
+
+**Changes made:**
+
+1. **`src/utils/array.ts`** — Added `chunk<T>(items: readonly T[], size: number): T[][]` function that:
+   - Splits a read-only array into consecutive groups of `size` elements, preserving order
+   - The last group contains any remaining elements (may be smaller than `size`)
+   - Throws a `RangeError` naming the invalid size value when `size` is 0, negative, non-integer (e.g. 1.5), NaN, or Infinity
+   - Does not mutate the input (uses `Array.prototype.slice.call()` to create new arrays)
+
+2. **`tests/unit/utils/array.tests.ts`** — Created unit tests covering:
+   - Even split of a 5-element array into groups of 2 (`[[1,2], [3,4], [5]]`)
+   - Empty input returning `[]`
+   - Exact-multiple splits, single-element chunks, and oversized size values
+   - Input immutability verification
+   - Validation: RangeError for 0, -1, 1.5, NaN, and Infinity with correct message content
+stopped: completed after 13 steps, 98816 tokens
+gate typecheck not-applicable: package.json declares no typecheck script [evidence record sha256:2937696362f6458fe282589c221bc4c8fee1e95f3a2fcdf7bdda33a9c257023a]
+gate lint failed: the command exited 1 [evidence record sha256:9dd9e2d76ce2a136712b7ab48d5ed25520a41cfa0c3e925f86e25d6c7b836bd3]
+gate format not-applicable: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging [evidence record sha256:9b21ee9385ec49965029e8ae457e7fa57f61ec2cc75ef84219ddfa2809af47cb]
+gate tests passed: the command exited 0 [evidence record sha256:0400cc14cfd610bdd4b7a76f9cfd164b1b15b0faff38b2ba2d86277994c7f0b2]
+gate file-set passed: all 2 changed file(s) are inside the declared set of 2, and every one of them was declared before it was edited [evidence record sha256:2665d12eea29650d91ee0a4422dec0c77ee5362edf5a5096145061f58dacb810]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:04cbfbf05767e77d5767fb5772e9a7e62cec4ae74d421e013fe257c5eccb892c]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:1205c218e3298f2b2a033cfedf23b7ee3ea0c6b62794e4df970e745e5f7a0cb4]
+gate behaviour-probe passed: 0 changed function(s) still answer to their inputs. [evidence record sha256:6c58dc822ecce8f4da2f5c78e5027adb86eef9574d10c896a93cc27d285aa5df]
+gate diff-budget passed (advisory): within budget: 2 file(s) and 56 added line(s) [evidence record sha256:0afdb1fd228ee712e052ef557ec85d80d8240bba352ac1e2fef5497b84616845]
+auto-resolve attempt 1 of 3
+step 1: calling local:qwen3.6:35b-a3b
+tool list <- {"path":"src/utils"}
+tool list ok: array.ts
+async-queue.ts
+automation.ts
+cache.ts
+color.ts
+colorscheme-parser.ts
+csp.ts
+css-text/
+debounce.ts
+links.ts
+locales.ts
+math-eval.ts
+math.ts
+media-query.ts
+message.ts
+network.ts
+platform.ts
+promise-barrier.ts
+state-manager-impl.ts
+state-manager.ts
+tabs.ts
+text.ts
+throttle.ts
+time.ts
+uid.ts
+url.ts
+validation.ts
+visibility.ts
+[evidence record sha256:f315064bfc697de67d2f1286f9471ed95384201d0d0f54150c3262d7856eaf65 kind tool-call:list]
+tool read <- {"path":"src/utils/array.ts"}
+tool read ok: function isArrayLike<T>(items: Iterable<T> | ArrayLike<T>): items is ArrayLike<T> {
+    return (items as ArrayLike<T>).length != null;
+}
+
+// NOTE: Iterating Array-like items using `for .. of` is 3x slower in Firefox
+// https://jsben.ch/kidOp
+export function forEach<T>(items: Iterable<T> | ArrayLike<T> | Set<T>, iterator: (item: T) => void): void {
+    if (isArrayLike(items)) {
+        for (let i = 0, len = items.length; i < len; i++) {
+            iterator(items[i]);
+        }
+    } else {
+        for (const item of items) {
+            iterator(item);
+        }
+    }
+}
+
+// NOTE: Pushing items like `arr.push(...items)` is 3x slower in Firefox
+// https://jsben.ch/nr9OF
+export function push<T>(array: T[], addition: Iterable<T> | ArrayLike<T>): void {
+    forEach(addition, (a) => array.push(a));
+}
+
+// NOTE: Using `Array.from()` is 2x (FF) — 5x (Chrome) slower for ArrayLike (not for Iterable)
+// https://jsben.ch/FJ1mO
+// https://jsben.ch/ZmViL
+export function toArray<T>(items: ArrayLike<T>): T[] {
+    const results: T[] = [];
+    for (let i = 0, len = items.length; i < len; i++) {
+        results.push(items[i]);
+    }
+    return results;
+}
+
+export function chunk<T>(items: readonly T[], size: number): T[][] {
+    if (Number.isInteger(size) && size > 0) {
+        const results: T[][] = [];
+        for (let i = 0, len = items.length; i < len; i += size) {
+            results.push(Array.prototype.slice.call(items, i, i + size));
+        }
+        return results;
+    } else {
+        throw new RangeError(`size must be a positive integer, got ${size}`);
+    }
+}
+
+[evidence record sha256:afe94418182814848db351bc1afa61c55d8b0fbab6dfb86aa66db1d8afed992c kind tool-call:read]
+step 2: calling local:qwen3.6:35b-a3b
+tool edit <- {"path":"src/utils/array.ts","find":"    if (Number.isInteger(size) && size > 0) {\n        const results: T[][] = [];\n        for (let i, len items.length; i < len; i += size) {\n            results.push(Array.prototype.slice.call(items, i, i + size));\n        }\n        return results;\n    } else {\n        throw new RangeError(`size must be a positive integer, got ${size}`);\n    }","replace":"    if (!Number.isInteger(size) || size <= 0) {\n        throw new RangeError(`size must be a positive integer, got ${size}`);\n    }\n    const results: T[][] = [];\n    for (let i = 0, len = items.length; i < len; i += size) {\n        results.push(Array.prototype.slice.call(items, i, i + size));\n    }"}
+tool edit failed: failed: no occurrence of the search text in src/utils/array.ts. Read the file and copy the exact text.
+[evidence record sha256:f42914bc4d2813cc6fd25f95b3946dd1b3266d1c4ace0b4341f854c8e10daac2 kind tool-call:edit]
+step 3: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/utils/array.ts","maxBytes":2000}
+tool read ok: function isArrayLike<T>(items: Iterable<T> | ArrayLike<T>): items is ArrayLike<T> {
+    return (items as ArrayLike<T>).length != null;
+}
+
+// NOTE: Iterating Array-like items using `for .. of` is 3x slower in Firefox
+// https://jsben.ch/kidOp
+export function forEach<T>(items: Iterable<T> | ArrayLike<T> | Set<T>, iterator: (item: T) => void): void {
+    if (isArrayLike(items)) {
+        for (let i = 0, len = items.length; i < len; i++) {
+            iterator(items[i]);
+        }
+    } else {
+        for (const item of items) {
+            iterator(item);
+        }
+    }
+}
+
+// NOTE: Pushing items like `arr.push(...items)` is 3x slower in Firefox
+// https://jsben.ch/nr9OF
+export function push<T>(array: T[], addition: Iterable<T> | ArrayLike<T>): void {
+    forEach(addition, (a) => array.push(a));
+}
+
+// NOTE: Using `Array.from()` is 2x (FF) — 5x (Chrome) slower for ArrayLike (not for Iterable)
+// https://jsben.ch/FJ1mO
+// https://jsben.ch/ZmViL
+export function toArray<T>(items: ArrayLike<T>): T[] {
+    const results: T[] = [];
+    for (let i = 0, len = items.length; i < len; i++) {
+        results.push(items[i]);
+    }
+    return results;
+}
+
+export function chunk<T>(items: readonly T[], size: number): T[][] {
+    if (Number.isInteger(size) && size > 0) {
+        const results: T[][] = [];
+        for (let i = 0, len = items.length; i < len; i += size) {
+            results.push(Array.prototype.slice.call(items, i, i + size));
+        }
+        return results;
+    } else {
+        throw new RangeError(`size must be a positive integer, got ${size}`);
+    }
+}
+
+[evidence record sha256:37e363dde0b9f3b9e31af1e5fc62a8e1bf425703a5c9276f3112e9d635e39c3c kind tool-call:read]
+step 4: calling local:qwen3.6:35b-a3b
+tool edit <- {"path":"src/utils/array.ts","find":"export function chunk<T>(items: readonly T[], size: number): T[][] {\n    if (Number.isInteger(size) && size > 0) {\n        const results: T[][] = [];\n        for (let i = 0, len = items.length; i < len; i += size) {\n            results.push(Array.prototype.slice.call(items, i, i + size));\n        }\n        return results;\n    } else {\n        throw new RangeError(`size must be a positive integer, got ${size}`);\n    }\n}","replace":"export function chunk<T>(items: readonly T[], size: number): T[][] {\n    if (!Number.isInteger(size) || size <= 0) {\n        throw new RangeError(`size must be a positive integer, got ${size}`);\n    }\n    const results: T[][] = [];\n    for (let i, len items.length; i < len; i += size) {\n        results.push(Array.prototype.slice.call(items, i, i + size));\n    }"}
+tool edit ok: replaced 1 occurrence(s) in src/utils/array.ts
+[evidence record sha256:43369f69af730ca5e2c2b6dc6e6edd53ebf0efa52c9ca8cd5a3488b4ef7081b1 kind tool-call:edit]
+step 5: calling local:qwen3.6:35b-a3b
+tool edit <- {"path":"src/utils/array.ts","find":"    for (let i, len items.length; i < len; i += size) {","replace":"    for (let i = 0, len = items.length; i < len; i += size) {"}
+tool edit ok: replaced 1 occurrence(s) in src/utils/array.ts
+[evidence record sha256:b966642288a761cf3f6a43a99f10fb846c7de30c35768fcd785440bddda48d2f kind tool-call:edit]
+step 6: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/utils/array.ts","maxBytes":2000}
+tool read ok: function isArrayLike<T>(items: Iterable<T> | ArrayLike<T>): items is ArrayLike<T> {
+    return (items as ArrayLike<T>).length != null;
+}
+
+// NOTE: Iterating Array-like items using `for .. of` is 3x slower in Firefox
+// https://jsben.ch/kidOp
+export function forEach<T>(items: Iterable<T> | ArrayLike<T> | Set<T>, iterator: (item: T) => void): void {
+    if (isArrayLike(items)) {
+        for (let i = 0, len = items.length; i < len; i++) {
+            iterator(items[i]);
+        }
+    } else {
+        for (const item of items) {
+            iterator(item);
+        }
+    }
+}
+
+// NOTE: Pushing items like `arr.push(...items)` is 3x slower in Firefox
+// https://jsben.ch/nr9OF
+export function push<T>(array: T[], addition: Iterable<T> | ArrayLike<T>): void {
+    forEach(addition, (a) => array.push(a));
+}
+
+// NOTE: Using `Array.from()` is 2x (FF) — 5x (Chrome) slower for ArrayLike (not for Iterable)
+// https://jsben.ch/FJ1mO
+// https://jsben.ch/ZmViL
+export function toArray<T>(items: ArrayLike<T>): T[] {
+    const results: T[] = [];
+    for (let i = 0, len = items.length; i < len; i++) {
+        results.push(items[i]);
+    }
+    return results;
+}
+
+export function chunk<T>(items: readonly T[], size: number): T[][] {
+    if (!Number.isInteger(size) || size <= 0) {
+        throw new RangeError(`size must be a positive integer, got ${size}`);
+    }
+    const results: T[][] = [];
+    for (let i = 0, len = items.length; i < len; i += size) {
+        results.push(Array.prototype.slice.call(items, i, i + size));
+    }
+
+[evidence record sha256:06c662bbbc399a09eab7132c11c6b1b649ba5a20c36c713cbff7b6237408843b kind tool-call:read]
+step 7: calling local:qwen3.6:35b-a3b
+tool edit <- {"path":"src/utils/array.ts","find":"        results.push(Array.prototype.slice.call(items, i, i + size));\n    }","replace":"        results.push(Array.prototype.slice.call(items, i, i + size));\n    }\n    return results;\n}"}
+tool edit ok: replaced 1 occurrence(s) in src/utils/array.ts
+[evidence record sha256:84e787343e1297b38a35bb2a95cff34da5f402462c214fbc7d1edb4980be6e1e kind tool-call:edit]
+step 8: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"npm run lint 2>&1 | tail -5"}
+tool shell ok: exit code: 0
+stdout:
+
+> darkreader@4.9.130 lint
+> eslint -- 'src/**/*.ts' 'src/**/*.tsx' 'tasks/**/*.js' 'tests/[!coverage]**/*.js' 'tests/**/*.ts' eslint.config.js index.d.ts
+[evidence record sha256:2f34ca6ef612bf2e6196e605dfda74d7d245c49c9c8707ff9e9f9dfa66da400e kind tool-call:shell]
+step 9: calling local:qwen3.6:35b-a3b
+tool shell <- {"command":"npm run test:unit 2>&1 | tail -30"}
+tool shell ok: exit code: 0
+stdout:
+
+> darkreader@4.9.130 test:unit
+> jest --config=tests/unit/jest.config.mjs
+
+
+Test Suites: 17 passed, 17 total
+Tests:       87 passed, 87 total
+Snapshots:   0 total
+Time:        0.961 s, estimated 1 s
+Ran all test suites.
+[evidence record sha256:6c9fa5e0294b9bbae3dce0a934c189530d3457af9954bd4f28b6c03a2f602d99 kind tool-call:shell]
+step 10: calling local:qwen3.6:35b-a3b
+tool read <- {"path":"src/utils/array.ts"}
+tool read ok: function isArrayLike<T>(items: Iterable<T> | ArrayLike<T>): items is ArrayLike<T> {
+    return (items as ArrayLike<T>).length != null;
+}
+
+// NOTE: Iterating Array-like items using `for .. of` is 3x slower in Firefox
+// https://jsben.ch/kidOp
+export function forEach<T>(items: Iterable<T> | ArrayLike<T> | Set<T>, iterator: (item: T) => void): void {
+    if (isArrayLike(items)) {
+        for (let i = 0, len = items.length; i < len; i++) {
+            iterator(items[i]);
+        }
+    } else {
+        for (const item of items) {
+            iterator(item);
+        }
+    }
+}
+
+// NOTE: Pushing items like `arr.push(...items)` is 3x slower in Firefox
+// https://jsben.ch/nr9OF
+export function push<T>(array: T[], addition: Iterable<T> | ArrayLike<T>): void {
+    forEach(addition, (a) => array.push(a));
+}
+
+// NOTE: Using `Array.from()` is 2x (FF) — 5x (Chrome) slower for ArrayLike (not for Iterable)
+// https://jsben.ch/FJ1mO
+// https://jsben.ch/ZmViL
+export function toArray<T>(items: ArrayLike<T>): T[] {
+    const results: T[] = [];
+    for (let i = 0, len = items.length; i < len; i++) {
+        results.push(items[i]);
+    }
+    return results;
+}
+
+export function chunk<T>(items: readonly T[], size: number): T[][] {
+    if (!Number.isInteger(size) || size <= 0) {
+        throw new RangeError(`size must be a positive integer, got ${size}`);
+    }
+    const results: T[][] = [];
+    for (let i = 0, len = items.length; i < len; i += size) {
+        results.push(Array.prototype.slice.call(items, i, i + size));
+    }
+    return results;
+}
+
+[evidence record sha256:8851ae4ecbfa5f718b1293d00523e64851ae410d8bca0954d30a4ef286385535 kind tool-call:read]
+step 11: calling local:qwen3.6:35b-a3b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"2f34ca6ef612bf2e6196e605dfda74d7d245c49c9c8707ff9e9f9dfa66da400e","recordKind":"tool-call:shell"}
+tool claim failed: denied: input rejected: [
+  {
+    "origin": "string",
+    "code": "invalid_format",
+    "format": "regex",
+    "pattern": "/^sha256:[0-9a-f]{64}$/",
+    "path": [
+      "record"
+    ],
+    "message": "Invalid string: must match pattern /^sha256:[0-9a-f]{64}$/"
+  }
+]
+[evidence record sha256:9c6eae40cc29c6c07e45ad0010c1f38404b986f0b781b1eefa56ae0262557f6f kind tool-call:claim]
+tool claim <- {"predicate":"facts.exitCode == 0","record":"6c9fa5e0294b9bbae3dce0a934c189530d3457af9954bd4f28b6c03a2f602d99","recordKind":"tool-call:shell"}
+tool claim failed: denied: input rejected: [
+  {
+    "origin": "string",
+    "code": "invalid_format",
+    "format": "regex",
+    "pattern": "/^sha256:[0-9a-f]{64}$/",
+    "path": [
+      "record"
+    ],
+    "message": "Invalid string: must match pattern /^sha256:[0-9a-f]{64}$/"
+  }
+]
+[evidence record sha256:22166baaa801a344966c0a31b455680513cbdf3bb05722be6e792941ce51484d kind tool-call:claim]
+step 12: calling local:qwen3.6:35b-a3b
+claim (unverified): ## Summary
+
+The lint gate was failing due to ESLint rule `no-else-return` on line 43 of `src/utils/array.ts`. The `chunk` function had an unnecessary `else` block after a `return` statement inside its `if` branch:
+
+```typescript
+if (Number.isInteger(size) && size > 0) {
+    // ... push chunks ...
+    return results;
+} else {
+    throw new RangeError(...);  // <- no-else-return error here
+}
+```
+
+I restructured it to use a guard-clause pattern: checking for invalid input first and then proceeding with the normal flow:
+
+```typescript
+if (!Number.isInteger(size) || size <= 0) {
+    throw new RangeError(`size must be a positive integer, got ${size}`);
+}
+// ... push chunks ...
+return results;
+```
+
+This:
+- Fixes the lint error (no more unnecessary `else`)
+- Preserves the same logic and behavior
+- Keeps all 87 unit tests passing
+stopped: completed after 12 steps, 67450 tokens
+gate typecheck not-applicable: package.json declares no typecheck script [evidence record sha256:dcc2e6bb8b1f041c21c5dfd3819d32ebdcbd7bd319999a9fb62dca01576f5227]
+gate lint passed: the command exited 0 [evidence record sha256:6e0aee8f53bc07920aeaeeede4b39fb0653d8c2ee3ec36107ce78249ffccc139]
+gate format not-applicable: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging [evidence record sha256:de56ee4f49cd37e04578550df7589a9e701cb442e8b202888044c9c9e077f72e]
+gate tests passed: the command exited 0 [evidence record sha256:9100c06258b6cfae2461dc110e5d4f29071ac47350242519dd7cfd808728fa30]
+gate file-set passed: all 2 changed file(s) are inside the declared set of 2, and every one of them was declared before it was edited [evidence record sha256:0064e56dd8f3b00b84b35a16a5a77e3461e1bab12feb7575e641b4aabf4ea7e2]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:6ab4a60c77fbee0a6e8337589bb53775332ffb0cc3347a678c83b90c1c1257c8]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:0d1bddaaa0335ae01c8ded7b8c8df77a28e4d5968164123819f75b8963b3a344]
+gate behaviour-probe passed: 0 changed function(s) still answer to their inputs. [evidence record sha256:e4544917a11298f6a754745d2738fe0f6523c4e67aad3f27582878f46f5e3ebd]
+gate diff-budget passed (advisory): within budget: 2 file(s) and 55 added line(s) [evidence record sha256:3c4e381db6a7276301be0555e02af2457e85eb48c570aea697b07fc65dea8e12]
+ratchet accepted attempt 1: the ratchet accepted the attempt: no measure moved the wrong way (not compared: testsCollected, changedLineCoverage) [evidence record sha256:db084d9a8a20c715b03afdd70e49dade372f7843b4087e978944f5240c8b2a81]
+
+gates:
+  n/a      typecheck: package.json declares no typecheck script
+  passed   lint: the command exited 0
+  n/a      format: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging
+  passed   tests: the command exited 0
+  passed   file-set: all 2 changed file(s) are inside the declared set of 2, and every one of them was declared before it was edited
+  passed   placeholder: no placeholder marker was introduced by this change
+  passed   secret-scan: no known credential pattern appears in the added lines
+  passed   behaviour-probe: 0 changed function(s) still answer to their inputs.
+  passed   diff-budget (advisory): within budget: 2 file(s) and 55 added line(s)
+attempt 1: accepted - the ratchet accepted the attempt: no measure moved the wrong way (not compared: testsCollected, changedLineCoverage)
+
+routing reward: 0.402 (green with 1 retry, 79s, and $0.0000)
+
+evidence bundle: /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-09-04/real-repos/darkreader/swarm/run-3/bundle
+verify it anywhere: node /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-09-04/real-repos/darkreader/swarm/run-3/bundle/verify.mjs /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-09-04/real-repos/darkreader/swarm/run-3/bundle
+review it: open /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-09-04/real-repos/darkreader/swarm/run-3/bundle/review.html
+what this run produced
+
+  the page a person reads: /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-09-04/real-repos/darkreader/swarm/run-3/bundle/review.html
+  the bundle a stranger verifies: /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-09-04/real-repos/darkreader/swarm/run-3/bundle
+  its own verifier, needing nothing installed: node /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-09-04/real-repos/darkreader/swarm/run-3/bundle/verify.mjs /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-09-04/real-repos/darkreader/swarm/run-3/bundle
+  the chain every record is on: /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-09-04/real-repos/darkreader/swarm/run-3/bundle/ledger.jsonl
+
+  122 records. The harness verified 0 claim(s) and refused 0.
+  bundle verified in this run: verify.mjs exited 0
+

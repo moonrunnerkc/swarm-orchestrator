@@ -1,0 +1,223 @@
+step 1: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test 2>&1 | tail -50"}
+tool shell ok: exit code: 0
+stdout:
+       9 |   it('should cipher a string with different shifts', () => {
+      10 |     expect(caesarCipherEncrypt('abcde', 3)).toBe('defgh');
+    > 11 |     expect(caesarCipherDecrypt('defgh', 3)).toBe('abcde');
+         |                                             ^
+      12 |
+      13 |     expect(caesarCipherEncrypt('abcde', 1)).toBe('bcdef');
+      14 |     expect(caesarCipherDecrypt('bcdef', 1)).toBe('abcde');
+
+      at Object.toBe (src/algorithms/cryptography/caesar-cipher/__test__/caesarCipher.test.js:11:45)
+
+  ● caesarCipher › should not cipher unknown chars
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "ab2cde"
+    Received: "db2cde"
+
+      28 |   it('should not cipher unknown chars', () => {
+      29 |     expect(caesarCipherEncrypt('ab2cde', 3)).toBe('de2fgh');
+    > 30 |     expect(caesarCipherDecrypt('de2fgh', 3)).toBe('ab2cde');
+         |                                              ^
+      31 |   });
+      32 |
+      33 |   it('should encrypt and decrypt full phrases', () => {
+
+      at Object.toBe (src/algorithms/cryptography/caesar-cipher/__test__/caesarCipher.test.js:30:46)
+
+  ● caesarCipher › should encrypt and decrypt full phrases
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "qeb nrfzh yoltk clu grjmp lsbo qeb ixwv ald"
+    Received: "qeb nrfzh yoltk clu grjmp lsbo qeb ixwv dld"
+
+      33 |   it('should encrypt and decrypt full phrases', () => {
+      34 |     expect(caesarCipherEncrypt('THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG', 23))
+    > 35 |       .toBe('qeb nrfzh yoltk clu grjmp lsbo qeb ixwv ald');
+         |        ^
+      36 |
+      37 |     expect(caesarCipherDecrypt('qeb nrfzh yoltk clu grjmp lsbo qeb ixwv ald', 23))
+      38 |       .toBe('the quick brown fox jumps over the lazy dog');
+
+      at Object.toBe (src/algorithms/cryptography/caesar-cipher/__test__/caesarCipher.test.js:35:8)
+
+
+Test Suites: 1 failed, 177 passed, 178 total
+Tests:       3 failed, 584 passed, 587 total
+Snapshots:   0 total
+Time:        5.221 s
+Ran all test suites.
+[evidence record sha256:02863bc5d4618f4ec83ecb3621f645814c8998c354cd9036ad55a3c065a80a43 kind tool-call:shell]
+tool list <- {}
+tool list ok: .babelrc
+.editorconfig
+.eslintrc
+.git/
+.github/
+.gitignore
+.husky/
+.npmrc
+.nvmrc
+BACKERS.md
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+LICENSE
+README.ar-AR.md
+README.de-DE.md
+README.es-ES.md
+README.fr-FR.md
+README.he-IL.md
+README.id-ID.md
+README.it-IT.md
+README.ja-JP.md
+README.ko-KR.md
+README.md
+README.pl-PL.md
+README.pt-BR.md
+README.ru-RU.md
+README.tr-TR.md
+README.uk-UA.md
+README.uz-UZ.md
+README.vi-VN.md
+README.zh-CN.md
+README.zh-TW.md
+assets/
+jest.config.js
+node_modules/
+package-lock.json
+package.json
+src/
+[evidence record sha256:f7c3121225ecec8b3272861e347da27064e6cc812ca7ceec9e398bec98837b22 kind tool-call:list]
+step 2: calling local:qwen3.8:27b
+tool read <- {"path":"src/algorithms/cryptography/caesar-cipher/caesarCipher.js"}
+tool read ok: // Create alphabet array: ['a', 'b', 'c', ..., 'z'].
+const englishAlphabet = 'abcdefghijklmnopqrstuvwxyz'.split('');
+
+/**
+ * Generates a cipher map out of the alphabet.
+ * Example with a shift 3: {'a': 'd', 'b': 'e', 'c': 'f', ...}
+ *
+ * @param {string[]} alphabet - i.e. ['a', 'b', 'c', ... , 'z']
+ * @param {number} shift - i.e. 3
+ * @return {Object} - i.e. {'a': 'd', 'b': 'e', 'c': 'f', ..., 'z': 'c'}
+ */
+const getCipherMap = (alphabet, shift) => {
+  return alphabet
+    .reduce((charsMap, currentChar, charIndex) => {
+      const charsMapClone = { ...charsMap };
+      // Making the shift to be cyclic (i.e. with a shift of 1 - 'z' would be mapped to 'a').
+      let encryptedCharIndex = (charIndex + shift) % alphabet.length;
+      // Support negative shifts for creating a map for decryption
+      // (i.e. with shift -1 - 'a' would be mapped to 'z').
+      if (encryptedCharIndex <= 0) {
+        encryptedCharIndex += alphabet.length;
+      }
+      charsMapClone[currentChar] = alphabet[encryptedCharIndex];
+      return charsMapClone;
+    }, {});
+};
+
+/**
+ * @param {string} str
+ * @param {number} shift
+ * @param {string[]} alphabet
+ * @return {string}
+ */
+export const caesarCipherEncrypt = (str, shift, alphabet = englishAlphabet) => {
+  // Create a cipher map:
+  const cipherMap = getCipherMap(alphabet, shift);
+  return str
+    .toLowerCase()
+    .split('')
+    .map((char) => cipherMap[char] || char)
+    .join('');
+};
+
+/**
+ * @param {string} str
+ * @param {number} shift
+ * @param {string[]} alphabet
+ * @return {string}
+ */
+export const caesarCipherDecrypt = (str, shift, alphabet = englishAlphabet) => {
+  // Create a cipher map:
+  const cipherMap = getCipherMap(alphabet, -shift);
+  return str
+    .toLowerCase()
+    .split('')
+    .map((char) => cipherMap[char] || char)
+    .join('');
+};
+
+[evidence record sha256:c4a775c81c3f76bf77b553649f93f7e5299f9a74d661bb2172fc230357e5603e kind tool-call:read]
+step 3: calling local:qwen3.8:27b
+tool declare_file_set <- {"files":"[\"src/algorithms/cryptography/caesar-cipher/caesarCipher.js\"]"}
+tool declare_file_set ok: declared 1 file(s): src/algorithms/cryptography/caesar-cipher/caesarCipher.js
+[evidence record sha256:769022f4a38950ecd795663fcc9969e919661195e7d4c3df4a96e3369b870588 kind tool-call:declare_file_set]
+step 4: calling local:qwen3.8:27b
+tool edit <- {"path":"src/algorithms/cryptography/caesar-cipher/caesarCipher.js","find":"      // Support negative shifts for creating a map for decryption\n      // (i.e. with shift -1 - 'a' would be mapped to 'z').\n      if (encryptedCharIndex <= 0) {\n        encryptedCharIndex += alphabet.length;\n      }","replace":"      // Support negative shifts for creating a map for decryption\n      // (i.e. with shift -1 - 'a' would be mapped to 'z').\n      if (encryptedCharIndex < 0) {\n        encryptedCharIndex += alphabet.length;\n      }"}
+tool edit ok: replaced 1 occurrence(s) in src/algorithms/cryptography/caesar-cipher/caesarCipher.js
+[evidence record sha256:2fa8370a678f5e91efd465a63b46075ca6d65c4762cc9e66f8d1f23a173b20bc kind tool-call:edit]
+step 5: calling local:qwen3.8:27b
+tool shell <- {"command":"npm run --silent test 2>&1 | tail -8"}
+tool shell ok: exit code: 0
+stdout:
+PASS src/algorithms/math/fast-powering/__test__/fastPowering.test.js
+PASS src/utils/comparator/__test__/Comparator.test.js
+
+Test Suites: 178 passed, 178 total
+Tests:       587 passed, 587 total
+Snapshots:   0 total
+Time:        3.79 s, estimated 5 s
+Ran all test suites.
+[evidence record sha256:53c4a3f8975309bf2aa87b0b1cfacd2ee84d90a48dea4babad5af4d86cebbf68 kind tool-call:shell]
+step 6: calling local:qwen3.8:27b
+tool claim <- {"predicate":"facts.exitCode == 0","record":"sha256:53c4a3f8975309bf2aa87b0b1cfacd2ee84d90a48dea4babad5af4d86cebbf68","recordKind":"tool-call:shell","narrative":"Full test suite passes: 178/178 suites, 587/587 tests."}
+tool claim ok: VERIFIED: the harness evaluated the predicate against the cited tool-call:shell record and it held
+[evidence record sha256:4cbb524462839527612f2b6f70b05d32ca27d78e4522f5ef65216ebdfb980261 kind tool-call:claim]
+step 7: calling local:qwen3.8:27b
+claim (unverified): Fixed. The defect was in `src/algorithms/cryptography/caesar-cipher/caesarCipher.js`, in `getCipherMap`: the wrap-around guard for negative shifts used `if (encryptedCharIndex<= 0)`, which also triggered when the index was exactly `0`. That broke any shift where a character wrapped to index 0 (e.g., decrypting `'defgh'` with shift 3: `'d'` should map to `'a'`, but the map sent it to `'z'`), producing the three failing assertions. Changing the condition to`< 0` makes a zero index map correctly while still handling genuinely negative indices.
+
+No tests were touched. `npm run --silent test` now passes: 178/178 suites, 587/587 tests (verified via the evidence record).
+stopped: completed after 7 steps, 29471 tokens
+gate typecheck not-applicable: package.json declares no typecheck script [evidence record sha256:2937696362f6458fe282589c221bc4c8fee1e95f3a2fcdf7bdda33a9c257023a]
+gate lint passed: the command exited 0 [evidence record sha256:0f7514221649b0216d30c990a89a6dcf84eb644e13a2f191f799d14833c07161]
+gate format not-applicable: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging [evidence record sha256:9b21ee9385ec49965029e8ae457e7fa57f61ec2cc75ef84219ddfa2809af47cb]
+gate tests passed: the command exited 0 [evidence record sha256:3e41feb5e354ca5f2c136acbc1d7558aeb8b95216d305949a6949e3f2cc23f53]
+gate file-set passed: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited [evidence record sha256:c630fb18043bb055bf3558bcf51385979c6a93866880065ca44c275d1fbf3132]
+gate placeholder passed: no placeholder marker was introduced by this change [evidence record sha256:04cbfbf05767e77d5767fb5772e9a7e62cec4ae74d421e013fe257c5eccb892c]
+gate secret-scan passed: no known credential pattern appears in the added lines [evidence record sha256:1205c218e3298f2b2a033cfedf23b7ee3ea0c6b62794e4df970e745e5f7a0cb4]
+gate behaviour-probe passed: 2 changed function(s) still answer to their inputs. [evidence record sha256:7add4d5e684f6b5052a451ce3ecc63ca48dfaf33a952d6a21d00edf74d4a295d]
+gate diff-budget passed (advisory): within budget: 1 file(s) and 1 added line(s) [evidence record sha256:ede4b1a546ba6f4583c33140cd1c857444d0095fb5d2eff66db7030505370e36]
+
+gates:
+  n/a      typecheck: package.json declares no typecheck script
+  passed   lint: the command exited 0
+  n/a      format: package.json declares no check-only format script, and running a writing formatter as a gate would edit the tree it is judging
+  passed   tests: the command exited 0
+  passed   file-set: all 1 changed file(s) are inside the declared set of 1, and every one of them was declared before it was edited
+  passed   placeholder: no placeholder marker was introduced by this change
+  passed   secret-scan: no known credential pattern appears in the added lines
+  passed   behaviour-probe: 2 changed function(s) still answer to their inputs.
+  passed   diff-budget (advisory): within budget: 1 file(s) and 1 added line(s)
+
+routing reward: 0.615 (green with 0 retries, 75s, and $0.0000)
+[signing] the Secret Service keyring would not take a new key (secret-tool store failed: ), so the bundle is signed with a per-run key
+
+evidence bundle: /out/bundle
+verify it anywhere: node /out/bundle/verify.mjs /out/bundle
+review it: open /out/bundle/review.html
+what this run produced
+
+  the page a person reads: /out/bundle/review.html
+  the bundle a stranger verifies: /out/bundle
+  its own verifier, needing nothing installed: node /out/bundle/verify.mjs /out/bundle
+  the chain every record is on: /out/bundle/ledger.jsonl
+
+  48 records. The harness verified 1 claim(s) and refused 0.
+  bundle verified in this run: verify.mjs exited 0
