@@ -314,7 +314,7 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
   // The whole envelope a result depends on, not the gates alone. The gate-set seal fixes what
   // will be measured; this fixes what the run was allowed to do while being measured, and a
   // result read without that is a result read without its question.
-  const sealed = await sealSpecForRun(options, envelope, detected);
+  const sealed = await sealSpecForRun(options, envelope);
   // Durable state beside the ledger. The ledger says what happened and is append-only, which
   // makes it the wrong thing to ask "what is still owed": that needs mutable state a killed
   // process leaves behind, which is what `swarm list-runs` and `swarm resume` read.
@@ -497,7 +497,6 @@ const defaultRunTokens = 1_000_000;
 async function sealSpecForRun(
   options: AgentTaskOptions,
   envelope: ExecutionEnvelope,
-  detected: readonly string[],
 ): Promise<string | null> {
   try {
     const sealed = await sealRunSpec(options.evidence, {
