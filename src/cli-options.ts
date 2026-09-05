@@ -88,6 +88,20 @@ export interface ReplayCommand {
   readonly bundleDirectory: string;
 }
 
+/**
+ * Checks a bundle, and separately checks who signed it. The two are different questions: a
+ * bundle carries the public key that signed it, so its own signature check says the bundle is
+ * unchanged since it was written and nothing about who wrote it. The expected signers come
+ * from here, which is to say from outside the bundle, which is the only place they can come
+ * from and mean anything.
+ */
+export interface VerifyCommand {
+  readonly command: "verify";
+  readonly bundleDirectory: string;
+  /** Key fingerprints the reader expects. Empty means consistency only, never authenticity. */
+  readonly expectedSigners: readonly string[];
+}
+
 /** Shows a past bundle through the same panel a finished run ends on. */
 export interface ReviewCommand {
   readonly command: "review";
@@ -161,6 +175,7 @@ export type CommandLine =
   | SessionCommand
   | DoctorCommand
   | ReplayCommand
+  | VerifyCommand
   | ReviewCommand
   | GatesCommand
   | SelectCommand
@@ -188,6 +203,7 @@ export const usage = [
   "    --redundancy <n>                               try each task n ways, land the best",
   "    --concurrency <n>                              how many may hold a worktree at once",
   "  swarm review <bundle directory>                  what a run produced, and open it",
+  "  swarm verify <bundle directory> [--signer <fp>]  check the bundle, and who signed it",
   "  swarm replay <bundle directory>                  read a bundle back",
   "",
   "the screen:",
@@ -269,6 +285,21 @@ export function parseCommandLine(
   // is asking for help.
   if (flags.has("help") || words[0] === "help") {
     return { command: "help" };
+  }
+
+  if (words[0] === "verify") {
+    const target = words.slice(1).join(" ").trim();
+    if (target.length === 0) {
+      throw new InvalidCommandLineError("verify needs a bundle directory");
+    }
+    return {
+      command: "verify",
+      bundleDirectory: resolve(context.currentDirectory, target),
+      expectedSigners: (flags.get("signer") ?? "")
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0),
+    };
   }
 
   if (words[0] === "replay") {
@@ -413,6 +444,7 @@ export function parseCommandLine(
 /** Subcommands, for telling a typo from a task. Not the parser's source of truth, deliberately: this list going stale makes a suggestion worse, never a command unreachable. */
 const knownCommands = [
   "gates",
+  "verify",
   "select",
   "calibrate",
   "routing",

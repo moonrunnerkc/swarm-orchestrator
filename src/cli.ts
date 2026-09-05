@@ -24,6 +24,7 @@ import {
   type SelectCommand,
   type SessionCommand,
   usage,
+  type VerifyCommand,
 } from "./cli-options.ts";
 import { initializeSwarmToml, initWouldHelp, type PlannedGate } from "./config/init.ts";
 import {
@@ -49,6 +50,7 @@ import {
   openEvidenceSession,
 } from "./evidence/session.ts";
 import { createKeychainSecretStore, resolveSigningKey } from "./evidence/signing.ts";
+import { verifyBundleAt } from "./evidence/verify-report.ts";
 import { harnessChildEnvironment } from "./exec/child-environment.ts";
 import type { AutoResolveOutcome } from "./gates/auto-resolve.ts";
 import type { BondOutcome } from "./gates/bond-runner.ts";
@@ -246,6 +248,25 @@ async function resolveLocalBackend(
       }),
     appleSilicon: platform() === "darwin" && arch() === "arm64",
   });
+}
+
+/**
+ * The bundle's own consistency and the identity that signed it, reported apart. A bundle
+ * carries the public key its signature verifies against, so checking it against itself can
+ * only ever say "unchanged since written". Who wrote it is a question the caller answers, by
+ * naming the signers it expects.
+ */
+async function verifyBundle(options: VerifyCommand): Promise<number> {
+  const verification = await verifyBundleAt(options.bundleDirectory, options.expectedSigners);
+  for (const line of verification.lines) {
+    process.stdout.write(`${line}\n`);
+  }
+  if (options.expectedSigners.length === 0) {
+    process.stdout.write(
+      "\nname the signer you expect with --signer <fingerprint> to check authenticity.\n",
+    );
+  }
+  return verification.exitCode;
 }
 
 async function replay(options: ReplayCommand): Promise<number> {
@@ -1934,6 +1955,9 @@ async function main(): Promise<number> {
   if (options.command === "help") {
     process.stdout.write(`${usage}\n`);
     return 0;
+  }
+  if (options.command === "verify") {
+    return verifyBundle(options);
   }
   if (options.command === "replay") {
     return replay(options);
