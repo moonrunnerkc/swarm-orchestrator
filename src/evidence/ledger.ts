@@ -1,4 +1,4 @@
-import { appendFile, mkdir } from "node:fs/promises";
+import { appendFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Clock } from "../core/clock.ts";
 import type { ProvenanceTag } from "../core/model-client.ts";
@@ -11,6 +11,7 @@ import {
   type RecordType,
   serializeRecord,
 } from "./ledger-record.ts";
+import { makeOwnerOnlyDirectory, ownerOnlyFile } from "./store-mode.ts";
 
 export class LedgerWriteFailedError extends Error {
   constructor(path: string, cause: unknown) {
@@ -71,7 +72,7 @@ interface LedgerOptions {
  */
 export async function openLedger(options: LedgerOptions): Promise<Ledger> {
   const write = options.write ?? appendLine;
-  await mkdir(dirname(options.path), { recursive: true });
+  await makeOwnerOnlyDirectory(dirname(options.path));
 
   const written: LedgerRecord[] = [];
   let previousHash = genesisHash;
@@ -214,5 +215,5 @@ export function parseLedgerText(text: string): ParsedLedger {
 }
 
 async function appendLine(path: string, line: string): Promise<void> {
-  await appendFile(path, `${line}\n`, "utf8");
+  await appendFile(path, `${line}\n`, { encoding: "utf8", mode: ownerOnlyFile });
 }

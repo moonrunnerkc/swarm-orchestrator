@@ -1,6 +1,7 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { canonicalJson, digestFileName, digestOfBytes, type JsonValue } from "./canonical-json.ts";
+import { makeOwnerOnlyDirectory, ownerOnlyFile } from "./store-mode.ts";
 
 class BlobWriteFailedError extends Error {
   constructor(digest: string, cause: unknown) {
@@ -28,7 +29,7 @@ export interface BlobStore {
  * policy cheap later.
  */
 export async function openBlobStore(directory: string): Promise<BlobStore> {
-  await mkdir(directory, { recursive: true });
+  await makeOwnerOnlyDirectory(directory);
 
   const pathFor = (digest: string): string => join(directory, digestFileName(digest));
 
@@ -49,7 +50,11 @@ export async function openBlobStore(directory: string): Promise<BlobStore> {
       const digest = digestOfBytes(bytes);
       try {
         // Exclusive create: same content, same key, so an existing blob is already correct.
-        await writeFile(pathFor(digest), bytes, { encoding: "utf8", flag: "wx" });
+        await writeFile(pathFor(digest), bytes, {
+          encoding: "utf8",
+          flag: "wx",
+          mode: ownerOnlyFile,
+        });
       } catch (cause) {
         if ((cause as NodeJS.ErrnoException).code !== "EEXIST") {
           throw new BlobWriteFailedError(digest, cause);
