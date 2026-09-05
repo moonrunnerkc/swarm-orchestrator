@@ -1,3 +1,4 @@
+import { nearestName } from "../edit-distance.ts";
 import {
   type GateContext,
   type GateDefinition,
@@ -398,6 +399,24 @@ function overriddenGate(
  * repo gets one set per manifest, with the type in the gate id so two "tests" gates stay
  * distinguishable in the ledger.
  */
+/** A gate override whose id is one edit or two from a gate the set assembled. */
+export class UnknownGateOverrideError extends Error {
+  readonly nearMisses: readonly { readonly id: string; readonly meant: string }[];
+
+  constructor(nearMisses: readonly { readonly id: string; readonly meant: string }[]) {
+    super(
+      `swarm.toml declares gate override(s) under id(s) the assembled set does not have, ` +
+        `each of which is close to one it does: ` +
+        nearMisses.map((one) => `"${one.id}" (did you mean "${one.meant}"?)`).join(", ") +
+        ". An override under an unrecognised id adds a new blocking gate rather than " +
+        "replacing one, so a misspelling runs both. Correct the id, or pick one that is not " +
+        "a near miss if a new gate is what you meant.",
+    );
+    this.name = "UnknownGateOverrideError";
+    this.nearMisses = nearMisses;
+  }
+}
+
 export function assembleGates(
   detection: ProjectDetection,
   options: GateSetOptions = {},
@@ -422,9 +441,22 @@ export function assembleGates(
       ? gate
       : overriddenGate(gate.id, gate.title, gate.severity, override, detection);
   });
-  const added = Object.entries(overrides)
-    .filter(([id]) => !assembled.some((gate) => gate.id === id))
-    .sort(([left], [right]) => (left < right ? -1 : 1))
-    .map(([id, override]) => overriddenGate(id, id, "blocking", override, detection));
+  const assembledIds = assembled.map((gate) => gate.id);
+  const unmatched = Object.keys(overrides).filter((id) => !assembledIds.includes(id));
+
+  // An id nothing resembles adds a gate, which is a real feature: a project with a build step
+  // wants it checked. A near miss is a different thing. `tets` intending `tests` added a second
+  // blocking gate and left the assembled tests gate running its own command, so the run did
+  // more work than the author asked for and none of the work they meant.
+  const nearMisses = unmatched
+    .map((id) => ({ id, meant: nearestName(id, assembledIds) }))
+    .filter((entry): entry is { id: string; meant: string } => entry.meant !== null);
+  if (nearMisses.length > 0) {
+    throw new UnknownGateOverrideError(nearMisses);
+  }
+
+  const added = unmatched
+    .sort((left, right) => (left < right ? -1 : 1))
+    .map((id) => overriddenGate(id, id, "blocking", overrides[id] as GateOverride, detection));
   return [...replaced, ...added];
 }
