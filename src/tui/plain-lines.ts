@@ -12,6 +12,13 @@ export function describeLoopEvent(event: LoopEvent): string | null {
     // absence of a warning that there was no boundary in front of the commands about to run.
     case "execution-envelope":
       return event.lines.join("\n");
+    // Said once per compaction, not per call: a long run should report that its memory was
+    // shortened without saying so forty times.
+    case "compacted":
+      return (
+        `context compacted: ${event.droppedMessages} message(s) and about ` +
+        `${event.droppedTokens} tokens are no longer resent. The ledger still has all of it.`
+      );
     case "model-call":
       return `step ${event.step}: calling ${event.modelId}`;
     case "model-error":
