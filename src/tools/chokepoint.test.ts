@@ -17,10 +17,10 @@ import {
 } from "./chokepoint-record.ts";
 import { createDerivationHeuristic } from "./derivation.ts";
 import { createListTool } from "./file-tools.ts";
-import { createSandbox, type SandboxPolicy } from "./sandbox.ts";
+import { createPolicyGuard, type PolicyGuardRules } from "./policy-guard.ts";
 import { defineTool, type ToolDefinition } from "./tool-definition.ts";
 
-const policy: SandboxPolicy = {
+const policy: PolicyGuardRules = {
   workspaceRoot: "/work/repo",
   homeDir: "/home/dev",
   shellAllowlist: ["git"],
@@ -114,7 +114,7 @@ describe("a directory said two ways", () => {
   it("reads an empty path as the workspace root, the way an absent one is read", async () => {
     // A live run spent a step on `list {"path": ""}` being told "the path is empty". Absent
     // and empty are the same request; the distinction taught the model nothing worth a step.
-    const listing = createListTool(createSandbox(policy));
+    const listing = createListTool(createPolicyGuard(policy));
 
     expect(listing.pathsFrom({ path: "" })).toEqual(["."]);
     expect(listing.pathsFrom({ path: "   " })).toEqual(["."]);
@@ -129,7 +129,7 @@ describe("tool chokepoint", () => {
     const recorder = createRecordingRecorder();
     const chokepoint = createToolChokepoint({
       definitions: [createSpyTool("read", calls)],
-      sandbox: createSandbox(policy),
+      guard: createPolicyGuard(policy),
       confirm: () => Promise.resolve(false),
       recorder,
     });
@@ -151,7 +151,7 @@ describe("tool chokepoint", () => {
   it("tells the model which record it may cite, so a claim can point at this call", async () => {
     const chokepoint = createToolChokepoint({
       definitions: [createSpyTool("read", [])],
-      sandbox: createSandbox(policy),
+      guard: createPolicyGuard(policy),
       confirm: () => Promise.resolve(false),
       recorder: createRecordingRecorder(),
     });
@@ -169,7 +169,7 @@ describe("tool chokepoint", () => {
     const recorder = createRecordingRecorder();
     const chokepoint = createToolChokepoint({
       definitions: [createSpyTool("read", calls)],
-      sandbox: createSandbox(policy),
+      guard: createPolicyGuard(policy),
       confirm: () => Promise.resolve(false),
       recorder,
     });
@@ -187,7 +187,7 @@ describe("tool chokepoint", () => {
     const recorder = createRecordingRecorder();
     const chokepoint = createToolChokepoint({
       definitions: [createSpyTool("read", calls)],
-      sandbox: createSandbox(policy),
+      guard: createPolicyGuard(policy),
       confirm: () => Promise.resolve(false),
       recorder,
     });
@@ -204,7 +204,7 @@ describe("tool chokepoint", () => {
     const calls: string[] = [];
     const chokepoint = createToolChokepoint({
       definitions: [createSpyTool("read", calls)],
-      sandbox: createSandbox(policy),
+      guard: createPolicyGuard(policy),
       confirm: () => Promise.resolve(false),
       recorder: createRecordingRecorder(),
     });
@@ -219,7 +219,7 @@ describe("tool chokepoint", () => {
   it("reports an unknown tool as a failed outcome rather than throwing", async () => {
     const chokepoint = createToolChokepoint({
       definitions: [createSpyTool("read", [])],
-      sandbox: createSandbox(policy),
+      guard: createPolicyGuard(policy),
       confirm: () => Promise.resolve(false),
       recorder: createRecordingRecorder(),
     });
@@ -235,7 +235,7 @@ describe("tool chokepoint", () => {
     const asked: ConfirmationRequest[] = [];
     const chokepoint = createToolChokepoint({
       definitions: [createSpyShellTool(commands)],
-      sandbox: createSandbox(policy),
+      guard: createPolicyGuard(policy),
       confirm: (request) => {
         asked.push(request);
         return Promise.resolve(true);
@@ -258,7 +258,7 @@ describe("tool chokepoint", () => {
     const recorder = createRecordingRecorder();
     const chokepoint = createToolChokepoint({
       definitions: [createSpyShellTool(commands)],
-      sandbox: createSandbox(policy),
+      guard: createPolicyGuard(policy),
       confirm: (request) => {
         asked.push(request);
         return Promise.resolve(true);
@@ -288,7 +288,7 @@ describe("tool chokepoint", () => {
     const recorder = createRecordingRecorder();
     const chokepoint = createToolChokepoint({
       definitions: [createSpyShellTool(commands)],
-      sandbox: createSandbox(policy),
+      guard: createPolicyGuard(policy),
       confirm: () => Promise.resolve(false),
       recorder,
     });
@@ -317,7 +317,7 @@ describe("tool chokepoint", () => {
           execute: () => Promise.reject(new Error("disk on fire")),
         }),
       ],
-      sandbox: createSandbox(policy),
+      guard: createPolicyGuard(policy),
       confirm: () => Promise.resolve(false),
       recorder,
     });
@@ -356,7 +356,7 @@ describe("the derivation heuristic at the chokepoint", () => {
       definitions: [readTool, createSpyShellTool(commands), createSpyWriteTool([])],
       // `sh` is listed so that the allowlist is not what fires here: these tests measure the
       // derivation heuristic, and the allowlist would otherwise catch the piped payload first.
-      sandbox: createSandbox({ ...policy, shellAllowlist: ["git", "curl", "npm", "sh"] }),
+      guard: createPolicyGuard({ ...policy, shellAllowlist: ["git", "curl", "npm", "sh"] }),
       derivation: createDerivationHeuristic(),
       confirm: (request) => {
         asked.push(request);
@@ -374,7 +374,7 @@ describe("the derivation heuristic at the chokepoint", () => {
     const asked: ConfirmationRequest[] = [];
     const chokepoint = createToolChokepoint({
       definitions: [createSpyShellTool([])],
-      sandbox: createSandbox({ ...policy, shellAllowlist: ["git", "curl", "npm"] }),
+      guard: createPolicyGuard({ ...policy, shellAllowlist: ["git", "curl", "npm"] }),
       derivation: createDerivationHeuristic(),
       confirm: (request) => {
         asked.push(request);
@@ -502,7 +502,7 @@ describe("the chokepoint against a real ledger", () => {
     });
     const chokepoint = createToolChokepoint({
       definitions: [createSpyShellTool([], "AWS_SECRET_ACCESS_KEY=AKIAIOSFODNN7EXAMPLE")],
-      sandbox: createSandbox(policy),
+      guard: createPolicyGuard(policy),
       confirm: () => Promise.resolve(true),
       recorder: createLedgerChokepointRecorder(evidence),
     });
@@ -525,7 +525,7 @@ describe("the chokepoint against a real ledger", () => {
     });
     const chokepoint = createToolChokepoint({
       definitions: [createSpyShellTool(calls)],
-      sandbox: createSandbox(policy),
+      guard: createPolicyGuard(policy),
       confirm: () => Promise.resolve(true),
       recorder: createLedgerChokepointRecorder(evidence),
     });
@@ -542,7 +542,7 @@ describe("the chokepoint's denial reasons", () => {
     const recorder = createRecordingRecorder();
     const invoker = createToolChokepoint({
       definitions: [createSpyTool("list", [])],
-      sandbox: createSandbox(policy),
+      guard: createPolicyGuard(policy),
       confirm: () => Promise.resolve(true),
       recorder,
     });
@@ -556,7 +556,7 @@ describe("the chokepoint's denial reasons", () => {
     const recorder = createRecordingRecorder();
     const invoker = createToolChokepoint({
       definitions: [createSpyTool("list", [])],
-      sandbox: createSandbox(policy),
+      guard: createPolicyGuard(policy),
       confirm: () => Promise.resolve(true),
       recorder,
     });
@@ -566,25 +566,25 @@ describe("the chokepoint's denial reasons", () => {
     expect(recorder.settled()[0]).toMatchObject({ decision: "denied", denial: "invalid-input" });
   });
 
-  it("separates a sandbox refusal from a malformed call, because they blame different things", async () => {
+  it("separates a guard refusal from a malformed call, because they blame different things", async () => {
     const recorder = createRecordingRecorder();
     const invoker = createToolChokepoint({
       definitions: [createSpyTool("list", [])],
-      sandbox: createSandbox(policy),
+      guard: createPolicyGuard(policy),
       confirm: () => Promise.resolve(true),
       recorder,
     });
 
     await invoker.invoke(invocation({ toolName: "list", input: { path: "../../etc/passwd" } }));
 
-    expect(recorder.settled()[0]).toMatchObject({ decision: "denied", denial: "sandbox" });
+    expect(recorder.settled()[0]).toMatchObject({ decision: "denied", denial: "guard" });
   });
 
   it("leaves the reason null on a call that ran", async () => {
     const recorder = createRecordingRecorder();
     const invoker = createToolChokepoint({
       definitions: [createSpyTool("list", [])],
-      sandbox: createSandbox(policy),
+      guard: createPolicyGuard(policy),
       confirm: () => Promise.resolve(true),
       recorder,
     });
@@ -615,7 +615,7 @@ describe("the chokepoint against a model that stringifies its arguments", () => 
     const recorder = createRecordingRecorder();
     const invoker = createToolChokepoint({
       definitions: [createDeclareTool(declared)],
-      sandbox: createSandbox(policy),
+      guard: createPolicyGuard(policy),
       confirm: () => Promise.resolve(true),
       recorder,
     });
@@ -632,7 +632,7 @@ describe("the chokepoint against a model that stringifies its arguments", () => 
     const recorder = createRecordingRecorder();
     const invoker = createToolChokepoint({
       definitions: [createDeclareTool([])],
-      sandbox: createSandbox(policy),
+      guard: createPolicyGuard(policy),
       confirm: () => Promise.resolve(true),
       recorder,
     });
@@ -652,7 +652,7 @@ describe("the chokepoint against a model that stringifies its arguments", () => 
     const recorder = createRecordingRecorder();
     const invoker = createToolChokepoint({
       definitions: [createDeclareTool([])],
-      sandbox: createSandbox(policy),
+      guard: createPolicyGuard(policy),
       confirm: () => Promise.resolve(true),
       recorder,
     });
@@ -668,7 +668,7 @@ describe("the chokepoint against a model that stringifies its arguments", () => 
     const recorder = createRecordingRecorder();
     const invoker = createToolChokepoint({
       definitions: [createDeclareTool([])],
-      sandbox: createSandbox(policy),
+      guard: createPolicyGuard(policy),
       confirm: () => Promise.resolve(true),
       recorder,
     });
@@ -700,7 +700,7 @@ describe("the chokepoint against a model that stringifies its arguments", () => 
     const recorder = createRecordingRecorder();
     const invoker = createToolChokepoint({
       definitions: [shell],
-      sandbox: createSandbox(policy),
+      guard: createPolicyGuard(policy),
       confirm: () => Promise.resolve(true),
       recorder,
     });

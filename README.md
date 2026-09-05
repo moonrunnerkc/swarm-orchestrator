@@ -309,8 +309,22 @@ something.
 - **The ledger is append-only and hash-chained.** Each record carries the previous record's
   hash. A failed write aborts the run. Nothing is updated or deleted, ever.
 - **Every tool call goes through one chokepoint** that records it, tags its provenance, and
-  enforces the sandbox. Credential paths are denied by default and each denial is itself
-  recorded.
+  applies the policy guard. Credential paths are denied by default and each denial is itself
+  recorded. The guard is a lexical path and program policy, not a sandbox: it reads a command
+  into the programs it would run and the words that could name a file, and rules on those. That
+  bounds which programs start and never what they do once started, because an allowlisted
+  interpreter runs whatever a workspace script says.
+- **What a run executed under is measured, not asserted.** Before the first tool call a
+  containment self-test runs the escapes rather than reasoning about them: read a host file
+  outside the workspace, write outside it, open a network connection. Whatever gets through is
+  named in an `execution-envelope` ledger record and printed before the run starts. With no
+  kernel-enforced backend in front of it, the honest answer is `restricted`, and that is what
+  it says. `isolated` is reserved for a backend that refused every probe.
+- **Child processes get a built environment, never an inherited one.** A path check cannot see
+  `process.env.ANTHROPIC_API_KEY`, so the model's shell commands and the repository's own gate
+  commands run under an allowlist: PATH, the locale names, TERM, a harness-owned HOME, and
+  whatever the run authorized by name. Provider keys have no `swarm.toml` setting, and a file
+  that names one is refused with rotation guidance.
 - **Gates are data.** A gate declares a command, a parser, and whether it blocks. The engine
   never special-cases one.
 - **A pass is bonded, and the criteria are sealed first.** Before the model is asked for

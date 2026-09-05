@@ -10,7 +10,7 @@ import { asLatinLetters } from "./latin-lookalikes.ts";
  * because of its key rather than because its value looked harmless.
  *
  * Name the guarantee honestly wherever it is described: this is known-pattern scrubbing, not
- * secret removal. A credential under a name nobody listed here survives, so the sandbox
+ * secret removal. A credential under a name nobody listed here survives, so the guard
  * denylist stays the primary defense.
  */
 

@@ -14,16 +14,17 @@ export type ConfirmationReason = "shell-allowlist" | "derivation-heuristic";
 
 /**
  * Why a call was refused, as a value rather than a sentence. A malformed call is the model
- * getting the tool wrong; a sandbox refusal is the policy saying no to a call that was
+ * getting the tool wrong; a guard refusal is the policy saying no to a call that was
  * perfectly well formed. Calibration scores the first and not the second, so the two are
  * kept apart here rather than pattern-matched out of prose later.
+ *
+ * "guard" was spelled "sandbox" in bundles written before this build. The word was wrong: a
+ * lexical path and program policy is a real check and is not containment, and calling it a
+ * sandbox is what makes a reader stop asking what it covers. Nothing validates this field when
+ * a bundle is read back, so an older bundle still parses and still says what it said; a
+ * predicate written against the old spelling keeps evaluating against the old records.
  */
-const denialReasons = [
-  "unknown-tool",
-  "invalid-input",
-  "sandbox",
-  "confirmation-declined",
-] as const;
+const denialReasons = ["unknown-tool", "invalid-input", "guard", "confirmation-declined"] as const;
 
 export type DenialReason = (typeof denialReasons)[number];
 

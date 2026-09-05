@@ -5,7 +5,7 @@ import {
   createWriteTool,
   type WriteRefusal,
 } from "./file-tools.ts";
-import type { Sandbox } from "./sandbox.ts";
+import type { PolicyGuard } from "./policy-guard.ts";
 import { createSearchTool } from "./search-tool.ts";
 import { createShellTool } from "./shell-tool.ts";
 import type { ToolDefinition } from "./tool-definition.ts";
@@ -16,15 +16,15 @@ import type { ToolDefinition } from "./tool-definition.ts";
  * and the file-set gate reads every changed file afterwards whichever tool changed it.
  */
 export function createWorkspaceTools(
-  sandbox: Sandbox,
+  guard: PolicyGuard,
   refuseWrite?: WriteRefusal,
 ): readonly ToolDefinition[] {
   return [
-    createReadTool(sandbox),
-    createWriteTool(sandbox, refuseWrite),
-    createEditTool(sandbox, refuseWrite),
-    createListTool(sandbox),
-    createSearchTool(sandbox),
-    createShellTool(sandbox),
+    createReadTool(guard),
+    createWriteTool(guard, refuseWrite),
+    createEditTool(guard, refuseWrite),
+    createListTool(guard),
+    createSearchTool(guard),
+    createShellTool(guard),
   ];
 }

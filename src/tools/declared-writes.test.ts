@@ -7,7 +7,7 @@ import { type EvidenceRecorder, openEvidenceSession } from "../evidence/session.
 import { createFileSetRegistry, writeRefusal } from "../gates/file-set.ts";
 import { createToolChokepoint } from "./chokepoint.ts";
 import { createLedgerChokepointRecorder } from "./chokepoint-record.ts";
-import { createSandbox, defaultShellAllowlist } from "./sandbox.ts";
+import { createPolicyGuard, defaultShellAllowlist } from "./policy-guard.ts";
 import { createWorkspaceTools } from "./workspace-tools.ts";
 
 /**
@@ -39,16 +39,16 @@ afterEach(async () => {
 });
 
 function toolsFor(registry: ReturnType<typeof createFileSetRegistry>) {
-  const sandbox = createSandbox({
+  const guard = createPolicyGuard({
     workspaceRoot: workspace,
     homeDir: root,
     shellAllowlist: defaultShellAllowlist,
     deniedRoots: [],
   });
-  const definitions = createWorkspaceTools(sandbox, (path) => writeRefusal(registry.state(), path));
+  const definitions = createWorkspaceTools(guard, (path) => writeRefusal(registry.state(), path));
   return createToolChokepoint({
     definitions,
-    sandbox,
+    guard,
     confirm: () => Promise.resolve(false),
     recorder: createLedgerChokepointRecorder(evidence),
   });

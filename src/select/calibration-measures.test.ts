@@ -45,11 +45,11 @@ describe("tallyToolCalls", () => {
     expect(tally.validityRate).toBe(1);
   });
 
-  it("counts a malformed call apart from one the sandbox refused", () => {
+  it("counts a malformed call apart from one the guard refused", () => {
     const tally = tallyToolCalls([
       toolCall({ callId: "a", decision: "denied", denial: "invalid-input" }),
       toolCall({ callId: "b", decision: "denied", denial: "unknown-tool" }),
-      toolCall({ callId: "c", decision: "denied", denial: "sandbox" }),
+      toolCall({ callId: "c", decision: "denied", denial: "guard" }),
       toolCall({ callId: "d", decision: "allowed" }),
     ]);
 

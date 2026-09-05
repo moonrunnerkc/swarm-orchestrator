@@ -17,7 +17,7 @@ import {
   type DerivationAssessment,
   type DerivationHeuristic,
 } from "./derivation.ts";
-import type { Sandbox } from "./sandbox.ts";
+import type { PolicyGuard } from "./policy-guard.ts";
 import {
   type DecodedToolArguments,
   decodeStringifiedToolArguments,
@@ -37,7 +37,7 @@ export type ConfirmationPrompt = (request: ConfirmationRequest) => Promise<boole
 
 interface ChokepointDependencies {
   readonly definitions: readonly ToolDefinition[];
-  readonly sandbox: Sandbox;
+  readonly guard: PolicyGuard;
   readonly confirm: ConfirmationPrompt;
   readonly recorder: ChokepointRecorder;
   readonly derivation?: DerivationHeuristic;
@@ -53,7 +53,7 @@ const defaultGatedKinds: readonly ToolKind[] = ["shell"];
 
 /**
  * The single execution path for every tool call (invariant 3). It records the request,
- * enforces the sandbox, applies provenance tags, routes suspicious calls through
+ * enforces the guard, applies provenance tags, routes suspicious calls through
  * confirmation, runs the tool, and records the outcome. Two records per call is deliberate:
  * the request is on disk before anything runs, so a call that kills the process mid-flight
  * still left evidence that it was made.
@@ -145,9 +145,9 @@ export function createToolChokepoint(deps: ChokepointDependencies): ToolInvoker 
       }
 
       for (const path of definition.pathsFrom(parsed.data)) {
-        const verdict = deps.sandbox.checkPath(path);
+        const verdict = deps.guard.checkPath(path);
         if (!verdict.allowed) {
-          return settle("denied", verdict.reason, "", {}, "sandbox");
+          return settle("denied", verdict.reason, "", {}, "guard");
         }
       }
 
@@ -208,7 +208,7 @@ function confirmationNeeded(
 
   if (definition.kind === "shell") {
     const command = commandOf(input);
-    if (!deps.sandbox.isCommandAllowed(command)) {
+    if (!deps.guard.isCommandAllowed(command)) {
       return {
         toolName: definition.name,
         detail: command,

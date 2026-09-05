@@ -138,7 +138,7 @@ describe("the declaration has to precede the edit it authorizes", () => {
     expect(checkFileSet(state, ["src/b.ts"]).editedBeforeAuthorized).toEqual([]);
   });
 
-  it("ignores a write the sandbox refused, which never touched the file", async () => {
+  it("ignores a write the guard refused, which never touched the file", async () => {
     const registry = createFileSetRegistry(evidence);
     await evidence.record({
       type: "tool-call",
@@ -148,7 +148,7 @@ describe("the declaration has to precede the edit it authorizes", () => {
         toolName: "write",
         kind: "write",
         decision: "denied",
-        denial: "sandbox",
+        denial: "guard",
         facts: { path: "src/b.ts" },
       },
     });

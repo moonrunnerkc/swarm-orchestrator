@@ -8,6 +8,10 @@ export function describeLoopEvent(event: LoopEvent): string | null {
   switch (event.type) {
     case "plan":
       return event.text.length === 0 ? null : `plan: ${event.text}`;
+    // Said out loud before the first tool call. A reader should never have to infer from the
+    // absence of a warning that there was no boundary in front of the commands about to run.
+    case "execution-envelope":
+      return event.lines.join("\n");
     case "model-call":
       return `step ${event.step}: calling ${event.modelId}`;
     case "model-error":

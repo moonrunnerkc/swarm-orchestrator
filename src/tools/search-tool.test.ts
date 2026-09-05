@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createSandbox } from "./sandbox.ts";
+import { createPolicyGuard } from "./policy-guard.ts";
 import { createSearchTool } from "./search-tool.ts";
 
 /**
@@ -31,13 +31,13 @@ async function write(relativePath: string, contents: string): Promise<void> {
 }
 
 function search() {
-  const sandbox = createSandbox({
+  const guard = createPolicyGuard({
     workspaceRoot: workspace,
     homeDir: home,
     shellAllowlist: [],
     deniedRoots: [],
   });
-  return createSearchTool(sandbox);
+  return createSearchTool(guard);
 }
 
 async function run(input: Record<string, unknown>) {
@@ -122,7 +122,7 @@ describe("what the search will not read", () => {
     expect((await run({ pattern: "marker" })).facts).toMatchObject({ matches: 1 });
   });
 
-  it("does not read a file the sandbox denies", async () => {
+  it("does not read a file the guard denies", async () => {
     // The denylist is the same one the read tool answers to, and the walk asks about every
     // descendant, so a denied file is never opened rather than opened and filtered.
     await write(".env", "API_KEY=marker\n");

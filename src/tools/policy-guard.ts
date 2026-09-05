@@ -52,7 +52,7 @@ export const defaultShellAllowlist: readonly string[] = [
   "wc",
 ];
 
-export interface SandboxPolicy {
+export interface PolicyGuardRules {
   readonly workspaceRoot: string;
   readonly homeDir: string;
   /** Executables the shell tool may run without asking. Anything else needs confirmation. */
@@ -78,21 +78,21 @@ export interface SandboxPolicy {
   readonly authorizedEnvironmentNames?: readonly string[] | undefined;
 }
 
-type SandboxVerdict =
+type PolicyVerdict =
   | { readonly allowed: true; readonly absolutePath: string }
   | { readonly allowed: false; readonly reason: string };
 
-export interface Sandbox {
+export interface PolicyGuard {
   readonly workspaceRoot: string;
   /** What a child process this run spawns is given, built rather than inherited. */
   readonly childEnvironment: ChildEnvironment;
   /** Resolves a path against the workspace, refusing anything that escapes or is denied. */
-  checkPath(candidate: string): SandboxVerdict;
+  checkPath(candidate: string): PolicyVerdict;
   /** Whether the command's executable is on the allowlist. */
   isCommandAllowed(command: string): boolean;
 }
 
-export function createSandbox(policy: SandboxPolicy): Sandbox {
+export function createPolicyGuard(policy: PolicyGuardRules): PolicyGuard {
   const realpath = policy.realpath ?? defaultRealpath;
   const workspaceRoot = realpath(resolve(policy.workspaceRoot));
   const homeDirectory = resolve(policy.homeDir);
@@ -114,7 +114,7 @@ export function createSandbox(policy: SandboxPolicy): Sandbox {
         : { passThrough: policy.authorizedEnvironmentNames }),
     }),
 
-    checkPath(candidate: string): SandboxVerdict {
+    checkPath(candidate: string): PolicyVerdict {
       if (candidate.trim().length === 0) {
         return { allowed: false, reason: "the path is empty" };
       }
