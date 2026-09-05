@@ -23,12 +23,16 @@ import {
 import { createWorkPool } from "./pool.ts";
 import { blockedBy, scheduleLayers } from "./schedule.ts";
 import { recordSelection } from "./selection-record.ts";
+import { contractsFromGraph, declareTaskContracts } from "./task-contract.ts";
 import type { TaskGraph } from "./task-graph.ts";
 import { peersFor, type TrailPeer } from "./trail.ts";
 import { createReadTrailTool } from "./trail-tool.ts";
 import { addWorktree, sweepRunBranches, type Worktree } from "./worktree.ts";
 
 const runProcess = promisify(execFile);
+
+/** What a node's contract records where the run named no wall budget of its own. */
+const defaultNodeWallMs = 30 * 60 * 1000;
 
 interface ParallelRunOptions {
   readonly repositoryRoot: string;
@@ -127,6 +131,17 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
   const graph = options.graph ?? null;
   if (graph !== null) {
     await declareTaskGraph(options.coordinator, graph, options.graphSource ?? "file");
+    // The graph says what the nodes are; a contract says what each was allowed to do while
+    // doing it. A reader weighing a node's result needs both, and the second was never written.
+    await declareTaskContracts(
+      options.coordinator,
+      contractsFromGraph(graph, {
+        maxSteps: options.maxSteps,
+        maxWallMs: options.remainingWallMs?.() ?? defaultNodeWallMs,
+        immutablePaths: [],
+      }),
+      baseCommit,
+    );
   }
   // A run without a graph is a run with one layer holding every task, so both paths are the
   // same loop and the ordinary run reaches the queue exactly once, as it always did. A graph's
