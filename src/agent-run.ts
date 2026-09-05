@@ -12,6 +12,7 @@ import { sealRunSpec } from "./evidence/run-spec.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
 import type { ExecutionEnvelope, IsolationBackend } from "./exec/execution-mode.ts";
 import { describeEnvelopeForReader, establishExecutionEnvelope } from "./exec/run-envelope.ts";
+import { approvalsRequiredFor } from "./gates/approval.ts";
 import type { ResolveRequest } from "./gates/auto-resolve.ts";
 import type { SingleFileCommand } from "./gates/base-control.ts";
 import type { GateSetOptions } from "./gates/default-gates.ts";
@@ -521,7 +522,11 @@ async function sealSpecForRun(
       retention: { sessionsOlderThan: "30d" },
       signer: { policy: "any-key", signers: [] },
       isolation: { mode: envelope.mode, backend: envelope.backend },
-      humanApproval: { required: [] },
+      // Read off what the run may do, not off what anybody said about it. On the host with the
+      // network reachable, that is one approval; behind a backend with it denied, none.
+      humanApproval: {
+        required: [...approvalsRequiredFor({ network: envelope.network })],
+      },
       versions: { tool: buildVersion, schema: 1, node: process.versions.node },
     });
     return sealed.digest;

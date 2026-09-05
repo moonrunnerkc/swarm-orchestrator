@@ -140,3 +140,35 @@ describe("what a run establishes, as more than one answer", () => {
     expect(lines).toMatch(/no dynamic gate|nothing executed/i);
   });
 });
+
+describe("what a run still needs from a person", () => {
+  const base = {
+    cycle: cycle([{ id: "tests", capability: "dynamic", status: "passed" }]),
+    integrity: "valid" as const,
+    signer: "untrusted" as const,
+    executionTrust: "restricted" as const,
+  };
+
+  it("needs nobody where the run did nothing that calls for a decision", () => {
+    expect(runVerdict(base).humanApproval).toBe("not-required");
+  });
+
+  it("reports an outstanding approval as required, never as rejected", () => {
+    // Nobody said no. Nobody has said yes yet. Flattening those would let a run that never
+    // asked read as one that was refused.
+    const verdict = runVerdict({
+      ...base,
+      approvals: { required: ["network"], granted: [] },
+    });
+
+    expect(verdict.humanApproval).toBe("required");
+    expect(verdict.reasons.humanApproval).toContain("network");
+  });
+
+  it("reports approved once every approval it needed was given", () => {
+    expect(
+      runVerdict({ ...base, approvals: { required: ["network"], granted: ["network"] } })
+        .humanApproval,
+    ).toBe("approved");
+  });
+});
