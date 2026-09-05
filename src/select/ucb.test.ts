@@ -4,7 +4,7 @@ import { buildRewardEntry } from "./reward.ts";
 import type { RewardEntry } from "./routing-log.ts";
 import { routingLogSchemaVersion } from "./routing-log.ts";
 import type { TaskClass } from "./task-class.ts";
-import { defaultRouterSettings, type RoutingInput, routeModel } from "./ucb.ts";
+import { defaultRouterSettings, type RoutingInput, routeModel, routerSettingsFor } from "./ucb.ts";
 
 function reward(model: string, value: number, taskClass: TaskClass = "edit"): RewardEntry {
   return {
@@ -148,31 +148,47 @@ describe("routeModel above the sample threshold", () => {
 
 describe("routeModel and the epsilon of random assignment", () => {
   const enough = [...repeat("fast", 0.9, 30), ...repeat("slow", 0.1, 30)];
+  const calibrating = { settings: routerSettingsFor("calibration") };
 
-  it("marks a random assignment as one, so the log is not read as a choice", () => {
-    const decision = route({ entries: enough, random: { next: () => 0.01 } });
+  /**
+   * A tenth of ordinary runs used to be routed to a random model so the estimate would not be
+   * fed purely by its own routing. That is right about estimation and wrong about whose run
+   * pays for it, and nothing told them. Exploration is now something a caller asks for.
+   */
+  it("never assigns at random in an ordinary run, whatever the draw says", () => {
+    const decision = route({ entries: enough, random: { next: () => 0.0001 } });
+
+    expect(decision.assignment).not.toBe("epsilon");
+  });
+
+  it("marks a random assignment as one where a caller asked to calibrate", () => {
+    const decision = route({ ...calibrating, entries: enough, random: { next: () => 0.01 } });
 
     expect(decision.assignment).toBe("epsilon");
     expect(decision.reason).toMatch(/at random/);
   });
 
-  it("assigns at random at about the configured rate", () => {
+  it("assigns at random at about the configured rate while calibrating", () => {
     const random = createSeededRandom(20_260_813);
     let epsilonAssignments = 0;
 
     for (let trial = 0; trial < 2_000; trial += 1) {
-      if (route({ entries: enough, random }).assignment === "epsilon") {
+      if (route({ ...calibrating, entries: enough, random }).assignment === "epsilon") {
         epsilonAssignments += 1;
       }
     }
 
-    // 10% of 2000, well inside three standard deviations either way.
-    expect(epsilonAssignments).toBeGreaterThan(160);
-    expect(epsilonAssignments).toBeLessThan(240);
+    // A quarter of 2000, well inside three standard deviations either way.
+    expect(epsilonAssignments).toBeGreaterThan(420);
+    expect(epsilonAssignments).toBeLessThan(580);
   });
 
   it("never assigns at random below the threshold, where there is nothing to unbias", () => {
-    const decision = route({ entries: repeat("fast", 0.5, 4), random: { next: () => 0.01 } });
+    const decision = route({
+      ...calibrating,
+      entries: repeat("fast", 0.5, 4),
+      random: { next: () => 0.01 },
+    });
 
     expect(decision.assignment).toBe("calibration");
   });
@@ -182,7 +198,12 @@ describe("routeModel and the epsilon of random assignment", () => {
     const chosen = new Set<string>();
 
     for (let trial = 0; trial < 500; trial += 1) {
-      const decision = route({ candidates: ["a", "b", "c"], entries: enough, random });
+      const decision = route({
+        ...calibrating,
+        candidates: ["a", "b", "c"],
+        entries: enough,
+        random,
+      });
       if (decision.assignment === "epsilon") {
         chosen.add(decision.model);
       }

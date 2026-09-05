@@ -1,12 +1,18 @@
 import type { RandomSource } from "../core/random-source.ts";
 import type { CompetencyLookup } from "./competency-table.ts";
 import type { AssignmentKind, RewardEntry } from "./routing-log.ts";
+import { explorationRateFor, type RoutingMode } from "./routing-mode.ts";
 import { articleFor, type TaskClass } from "./task-class.ts";
 
 export interface RouterSettings {
   /** Rewards for a task class before the bandit takes over from the calibration pick. */
   readonly minSamples: number;
-  /** Share of assignments made at random, so the estimate is not fed purely by its own routing. */
+  /**
+   * Share of assignments made at random, so the estimate is not fed purely by its own routing.
+   * Zero in an ordinary run: somebody's actual work is not a sample, and routing a tenth of
+   * real runs to a random model without telling anybody is not a measurement anybody consented
+   * to. Exploration is what `swarm calibrate` and an explicit canary are for.
+   */
   readonly epsilon: number;
   /** UCB1's exploration constant. */
   readonly exploration: number;
@@ -19,9 +25,17 @@ export interface RouterSettings {
  */
 export const defaultRouterSettings: RouterSettings = {
   minSamples: 20,
-  epsilon: 0.1,
+  // The production rate. Section 3.8's argument for random assignment is right about
+  // estimation and wrong about whose run pays for it, so the sampling moved to the modes that
+  // exist to sample: `explorationRateFor("calibration")` and `explorationRateFor("canary")`.
+  epsilon: explorationRateFor("production"),
   exploration: Math.SQRT2,
 };
+
+/** What a caller asks for when it wants the estimate fed rather than the task served. */
+export function routerSettingsFor(mode: RoutingMode): RouterSettings {
+  return { ...defaultRouterSettings, epsilon: explorationRateFor(mode) };
+}
 
 export interface Arm {
   readonly model: string;
