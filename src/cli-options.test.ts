@@ -49,6 +49,7 @@ describe("parseCommandLine", () => {
       bundleDirectory: null,
       localEndpoint: null,
       interfaceFlags: { tui: null, color: null, openEvidence: null },
+      isolation: null,
     });
   });
 
@@ -67,6 +68,7 @@ describe("parseCommandLine", () => {
       bundleDirectory: null,
       localEndpoint: null,
       interfaceFlags: { tui: null, color: null, openEvidence: null },
+      isolation: null,
     });
   });
 
@@ -331,6 +333,7 @@ describe("the parallel command", () => {
     ).toEqual({
       command: "parallel",
       tasksFile: "/work/repo/tasks.txt",
+      isolation: null,
       workspace: "/work/repo/pkg",
       baseRef: "HEAD",
       maxSteps: null,

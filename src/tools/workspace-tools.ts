@@ -7,7 +7,7 @@ import {
 } from "./file-tools.ts";
 import type { PolicyGuard } from "./policy-guard.ts";
 import { createSearchTool } from "./search-tool.ts";
-import { createShellTool } from "./shell-tool.ts";
+import { createShellTool, type ShellToolOptions } from "./shell-tool.ts";
 import type { ToolDefinition } from "./tool-definition.ts";
 
 /**
@@ -18,6 +18,7 @@ import type { ToolDefinition } from "./tool-definition.ts";
 export function createWorkspaceTools(
   guard: PolicyGuard,
   refuseWrite?: WriteRefusal,
+  shell?: ShellToolOptions,
 ): readonly ToolDefinition[] {
   return [
     createReadTool(guard),
@@ -25,6 +26,6 @@ export function createWorkspaceTools(
     createEditTool(guard, refuseWrite),
     createListTool(guard),
     createSearchTool(guard),
-    createShellTool(guard),
+    createShellTool(guard, shell),
   ];
 }

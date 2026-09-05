@@ -8,6 +8,7 @@ import {
   describeExecutionEnvelope,
   type ExecutionEnvelope,
   hostExecutionBackend,
+  type IsolationBackend,
   selfTestContainment,
 } from "./execution-mode.ts";
 
@@ -20,6 +21,8 @@ import {
 export async function establishExecutionEnvelope(input: {
   readonly evidence: EvidenceRecorder;
   readonly guard: PolicyGuard;
+  /** Absent means the host, which is what a run gets when nobody asked for anything else. */
+  readonly backend?: IsolationBackend | undefined;
   readonly repositoryConfigTrusted: boolean;
 }): Promise<ExecutionEnvelope> {
   const decoyRoot = await mkdtemp(join(tmpdir(), "swarm-containment-decoy-"));
@@ -28,7 +31,7 @@ export async function establishExecutionEnvelope(input: {
     await writeFile(decoy, "decoy: a value only the host should hold\n", { mode: 0o600 });
 
     const envelope = describeExecutionEnvelope({
-      selfTest: await selfTestContainment(hostExecutionBackend, {
+      selfTest: await selfTestContainment(input.backend ?? hostExecutionBackend, {
         workspaceRoot: input.guard.workspaceRoot,
         hostFileOutsideWorkspace: decoy,
       }),
