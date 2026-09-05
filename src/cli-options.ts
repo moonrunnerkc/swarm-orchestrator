@@ -27,6 +27,11 @@ export interface RunCommand {
    * Null is `restricted` mode, and the execution envelope says so rather than implying it.
    */
   readonly isolation: string | null;
+  /**
+   * Line-delimited JSON on stdout instead of the text a person reads: one line per event and
+   * one result at the end, each naming its schema.
+   */
+  readonly json: boolean;
   readonly workspace: string;
   readonly maxSteps: number | null;
   /** Null means the session's own directory, which is outside the workspace by design. */
@@ -56,6 +61,11 @@ export interface SessionCommand {
    * Null is `restricted` mode, and the execution envelope says so rather than implying it.
    */
   readonly isolation: string | null;
+  /**
+   * Line-delimited JSON on stdout instead of the text a person reads: one line per event and
+   * one result at the end, each naming its schema.
+   */
+  readonly json: boolean;
   readonly workspace: string;
   readonly maxSteps: number | null;
   readonly bundleDirectory: string | null;
@@ -164,6 +174,7 @@ export interface ParallelCommand {
   readonly bundleDirectory: string | null;
   readonly modelSpec: string | null;
   readonly isolation: string | null;
+  readonly json: boolean;
   readonly localEndpoint: string | null;
   /** How many ways to try each task. Null is once, which is the run this always was. */
   readonly redundancy: number | null;
@@ -227,6 +238,8 @@ export const usage = [
   "  swarm verify <bundle directory> [--signer <fp>]  check the bundle, and who signed it",
   "  swarm replay <bundle directory>                  read a bundle back",
   "",
+  "  --json                         line-delimited JSON on stdout: one line per event, one",
+  "                                 result at the end, each naming its schema",
   "  --isolation <runtime[:image]>  run commands behind a kernel-enforced boundary",
   "                                 (docker, podman, nerdctl); default none, which is the host",
   "",
@@ -252,6 +265,7 @@ export class InvalidCommandLineError extends Error {
 /** The flags that are their own value. Everything else takes the word after it. */
 const switchFlags = new Set([
   "help",
+  "json",
   "fix",
   "offline",
   "no-tui",
@@ -370,6 +384,7 @@ export function parseCommandLine(
       tasksFile: named ? resolve(context.currentDirectory, tasksFile) : null,
       goal: asked ? goal.trim() : null,
       isolation: flags.get("isolation") ?? null,
+      json: flags.has("json"),
       workspace,
       baseRef: flags.get("base") ?? defaultBaseRef,
       maxSteps: parseFlagCount(flags.get("max-steps"), "--max-steps"),
@@ -434,6 +449,7 @@ export function parseCommandLine(
   const shared = {
     modelSpec: flags.get("model") ?? null,
     isolation: flags.get("isolation") ?? null,
+    json: flags.has("json"),
     workspace,
     maxSteps: parseFlagCount(flags.get("max-steps"), "--max-steps"),
     bundleDirectory,

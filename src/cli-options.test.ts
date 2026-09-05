@@ -50,6 +50,7 @@ describe("parseCommandLine", () => {
       localEndpoint: null,
       interfaceFlags: { tui: null, color: null, openEvidence: null },
       isolation: null,
+      json: false,
     });
   });
 
@@ -69,6 +70,7 @@ describe("parseCommandLine", () => {
       localEndpoint: null,
       interfaceFlags: { tui: null, color: null, openEvidence: null },
       isolation: null,
+      json: false,
     });
   });
 
@@ -334,6 +336,7 @@ describe("the parallel command", () => {
       command: "parallel",
       tasksFile: "/work/repo/tasks.txt",
       isolation: null,
+      json: false,
       workspace: "/work/repo/pkg",
       baseRef: "HEAD",
       maxSteps: null,
