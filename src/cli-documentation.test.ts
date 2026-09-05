@@ -21,6 +21,7 @@ const context = { currentDirectory: "/repo", environment: {} };
 /** What each documented command needs on the line beside it to parse at all. */
 const argumentsFor: Readonly<Record<string, readonly string[]>> = {
   parallel: ["--tasks", "./tasks.txt"],
+  ci: ["--patch", "./candidate.diff"],
   inspect: ["some-run-id"],
   resume: ["some-run-id"],
   abort: ["some-run-id"],
