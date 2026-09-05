@@ -5,10 +5,10 @@ import { failureSignature } from "./failure-signature.ts";
 import type { GateContext, GateDefinition, GateObservation } from "./gate-definition.ts";
 import {
   describeFailuresForModel,
+  executedTheChange,
   type GateCycle,
   type GateCycleDependencies,
   isGreen,
-  measuredTheChange,
   recordBaselineRun,
   runGateCycle,
 } from "./gate-runner.ts";
@@ -437,7 +437,7 @@ async function escalate(
   // A run can now end ungreen with no gate objecting: every gate that runs a command stood
   // down, so nothing executed the change. Naming that is the difference between an escalation
   // a reader can act on and one that says "gate unknown (unknown)" with an empty record.
-  const unmeasured = !measuredTheChange(cycle);
+  const unmeasured = !executedTheChange(cycle);
   const payload = escalationSchema.parse({
     gateId:
       blocking?.gateId ?? (unmeasured ? "unmeasured" : eroded === null ? "unknown" : "ratchet"),

@@ -17,7 +17,12 @@ import {
 import { type BondOutcome, runBonds } from "./bond-runner.ts";
 import { assembleGates, type GateSetOptions } from "./default-gates.ts";
 import type { FileSetRegistry } from "./file-set.ts";
-import type { DiffBudget, GateContext, GateDefinition } from "./gate-definition.ts";
+import type {
+  AuthorizedScope,
+  DiffBudget,
+  GateContext,
+  GateDefinition,
+} from "./gate-definition.ts";
 import { observe } from "./gate-runner.ts";
 import { describeGateSet, sealGateSet } from "./gate-set-seal.ts";
 import {
@@ -37,6 +42,12 @@ interface GatesEngineOptions {
   readonly baseRef: string;
   readonly evidence: EvidenceRecorder;
   readonly fileSet: FileSetRegistry;
+  /**
+   * Where the authorised scope comes from. Absent means agent-declared, which is what an agent
+   * run has always been; the standalone command has no planner and says so rather than failing
+   * every changed repository for a declaration nobody was there to make.
+   */
+  readonly authorizedScope?: AuthorizedScope;
   readonly clock: Clock;
   readonly emit: (event: LoopEvent) => void;
   readonly resolve: ResolveAttempt;
@@ -181,6 +192,7 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
         ? await probe.changes()
         : await changesTheRunMade(await probe.changes(), probe, options.inherited),
     fileSet: options.fileSet.state(),
+    ...(options.authorizedScope === undefined ? {} : { authorizedScope: options.authorizedScope }),
     budgets,
     probe,
     // Under the session store, beside the coverage reports and for the same reason: a probe

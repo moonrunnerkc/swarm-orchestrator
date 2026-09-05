@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { GateStatus, LoopEvent } from "../core/loop-events.ts";
 import { claimPayloadSchema } from "../evidence/claim.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
+import { capabilityOf, type GateCapability } from "./gate-capability.ts";
 import {
   defaultGateTimeoutMs,
   type GateCommandRunner,
@@ -19,6 +20,8 @@ const gateRunSchema = z.object({
   gateId: z.string().min(1),
   title: z.string(),
   severity: z.enum(["blocking", "advisory"]),
+  /** What a pass here establishes: linting is not a test run, and a verdict must not treat them alike. */
+  capability: z.enum(["static", "dynamic", "policy", "task-oracle"]),
   status: z.enum(["passed", "failed", "not-applicable"]),
   blocking: z.boolean(),
   detail: z.string(),
@@ -43,8 +46,10 @@ const gateRunSchema = z.object({
 
 interface GateRun {
   readonly gateId: string;
-  /** Whether this gate ran a command or read the diff, which is what "measured" turns on. */
+  /** Whether this gate ran a command or read the diff. */
   readonly kind: "command" | "inspection";
+  /** What a pass here establishes, which is what "executed the change" turns on. */
+  readonly capability: GateCapability;
   readonly title: string;
   readonly severity: GateSeverity;
   readonly status: GateStatus;
@@ -86,25 +91,32 @@ export interface GateCycleDependencies {
 }
 
 /**
- * Whether anything actually ran over the change.
+ * Whether anything actually executed the changed code.
  *
- * A gate that runs a command executed the code; one that reads the diff can do that over any
- * workspace and cannot vouch for code on its own. So a change every command gate stood down
- * on was never executed by anything: a run wrote three files into a workspace whose declared
- * test command collected no tests, no gate failed, and the strip read green over code nothing
- * had tried. Read off what a gate is rather than which gate it is (invariant 6).
+ * This used to ask whether any command gate ran, and lint is a command gate. So a change whose
+ * only passing command was a linter read as measured: a run wrote three files into a workspace
+ * whose declared test command collected no tests, lint passed over them, and the strip read
+ * green over code nothing had executed. Linting proves the source parses. It establishes
+ * nothing about whether any of it was ever run.
+ *
+ * So the question is what a gate is capable of establishing, read off its capability rather
+ * than off whether it spawned a process (invariant 6: never special-case a gate). Only a
+ * dynamic gate that passed executed the change; a dynamic gate that failed or stood down did
+ * not.
  *
  * A tree nothing touched is measured by definition: there is nothing there to run over.
  */
-export function measuredTheChange(cycle: GateCycle): boolean {
+export function executedTheChange(cycle: GateCycle): boolean {
   if ((cycle.measures.changedFiles ?? 0) === 0) {
     return true;
   }
-  return cycle.runs.some((run) => run.kind === "command" && run.status !== "not-applicable");
+  return cycle.runs.some(
+    (run) => run.kind === "command" && run.capability === "dynamic" && run.status === "passed",
+  );
 }
 
 export function isGreen(cycle: GateCycle): boolean {
-  return cycle.blockingFailures.length === 0 && measuredTheChange(cycle);
+  return cycle.blockingFailures.length === 0 && executedTheChange(cycle);
 }
 
 /**
@@ -131,6 +143,7 @@ export async function runGateCycle(
       gateId: gate.id,
       title: gate.title,
       severity: gate.severity,
+      capability: gate.capability ?? capabilityOf(gate.id),
       status: reading.status,
       blocking,
       detail: reading.detail,
@@ -159,6 +172,7 @@ export async function runGateCycle(
     const run: GateRun = {
       gateId: gate.id,
       kind: gate.source.kind,
+      capability: gate.capability ?? capabilityOf(gate.id),
       title: gate.title,
       severity: gate.severity,
       status: reading.status,
@@ -311,6 +325,7 @@ export async function recordBaselineRun(
     gateId: gate.id,
     title: gate.title,
     severity: gate.severity,
+    capability: gate.capability ?? capabilityOf(gate.id),
     status: reading.status,
     blocking: gate.severity === "blocking",
     detail: reading.detail,
@@ -378,7 +393,7 @@ export function describeFailuresForModel(
   // Not a gate's own bytes, because no gate objected: every one of them that runs a command
   // stood down, so there is nothing to quote and nothing yet to fix. Saying so is the only way
   // the loop that reads this can act on it.
-  const unmeasured = measuredTheChange(cycle)
+  const unmeasured = executedTheChange(cycle)
     ? []
     : [
         "Nothing ran over this change. Every gate that runs a command stood down: " +

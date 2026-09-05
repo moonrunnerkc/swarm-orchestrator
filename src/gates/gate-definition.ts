@@ -1,5 +1,6 @@
 import type { GateStatus } from "../core/loop-events.ts";
 import type { FileSetState } from "./file-set.ts";
+import type { GateCapability } from "./gate-capability.ts";
 import type { WorkspaceChanges, WorkspaceProbe } from "./workspace-changes.ts";
 
 export type GateSeverity = "blocking" | "advisory";
@@ -36,8 +37,26 @@ export interface DiffBudget {
   readonly maxAddedLines: number;
 }
 
+/**
+ * Where the authorized scope for this run comes from.
+ *
+ * `agent-declared` is the ordinary agent run: a planner declared its intended files before
+ * editing and the check is membership in that set (invariant 12). `allowed-files` is a caller
+ * naming the scope instead, which is the same check against a set from the command line.
+ * `observed` is the standalone case, where nothing authorized anything: the changed files are
+ * reported as what they are, observed rather than authorized, and the gate abstains. Failing
+ * for a declaration nobody was there to make rejects every changed repository, which is what
+ * made `swarm gates` unusable on real work.
+ */
+export type AuthorizedScope =
+  | { readonly kind: "agent-declared" }
+  | { readonly kind: "allowed-files"; readonly files: readonly string[] }
+  | { readonly kind: "observed" };
+
 export interface GateContext {
   readonly workspaceRoot: string;
+  /** Absent means `agent-declared`, which is what every agent run has always been. */
+  readonly authorizedScope?: AuthorizedScope;
   readonly changes: WorkspaceChanges;
   readonly fileSet: FileSetState;
   readonly budgets: DiffBudget;
@@ -110,6 +129,11 @@ export interface GateDefinition {
   readonly id: string;
   readonly title: string;
   readonly severity: GateSeverity;
+  /**
+   * What a pass here establishes. Absent means read it from the id, which is what every
+   * assembled gate does; an override that runs the code says so rather than being guessed at.
+   */
+  readonly capability?: GateCapability;
   readonly source: GateSource;
   readonly parse: GateParser;
   /** Absent means the exit-code rule, which is what an unnamed parser has always been. */

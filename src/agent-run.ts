@@ -21,7 +21,7 @@ import {
 import { type FileSetRegistry, writeRefusal } from "./gates/file-set.ts";
 import { createAmendFileSetTool, createDeclareFileSetTool } from "./gates/file-set-tool.ts";
 import type { DiffBudget } from "./gates/gate-definition.ts";
-import { measuredTheChange } from "./gates/gate-runner.ts";
+import { executedTheChange } from "./gates/gate-runner.ts";
 import { createGitWorkspaceProbe } from "./gates/git-workspace.ts";
 import { captureInheritedChanges, type InheritedChanges } from "./gates/inherited-changes.ts";
 import { detectProject } from "./gates/project-type.ts";
@@ -441,7 +441,7 @@ function wasGreen(loop: AgentLoopOutcome, gates: GatesEngineRun): boolean {
   // loop's own green, and the loop's copy did not have it, so a run that knew it was unmeasured
   // never asked the model to fix it: it reported the failure accurately and did nothing about
   // it, which is not the same as working.
-  return measuredTheChange(gates.outcome.finalCycle);
+  return executedTheChange(gates.outcome.finalCycle);
 }
 
 function criteriaRefOf(options: AgentTaskOptions): string {
