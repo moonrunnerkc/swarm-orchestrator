@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Clock } from "../core/clock.ts";
 import {
@@ -16,6 +16,7 @@ import { renderReviewPage } from "./review-page.ts";
 import { findKnownSecrets } from "./scrub.ts";
 import type { EvidenceRecorder } from "./session.ts";
 import { type SigningKey, signChainHead } from "./signing.ts";
+import { makeOwnerOnlyDirectory, ownerOnlyFile } from "./store-mode.ts";
 
 export class BundleChainError extends Error {
   constructor(problems: readonly ChainProblem[]) {
@@ -128,40 +129,42 @@ export async function exportBundle(options: ExportBundleOptions): Promise<Bundle
   });
 
   const blobDirectory = join(options.destination, bundleFileNames.blobs);
-  await mkdir(blobDirectory, { recursive: true });
+  await makeOwnerOnlyDirectory(blobDirectory);
   for (const [digest, bytes] of blobBytes) {
-    await writeFile(join(blobDirectory, digestFileName(digest)), bytes, "utf8");
+    await writeFile(join(blobDirectory, digestFileName(digest)), bytes, {
+      encoding: "utf8",
+      mode: ownerOnlyFile,
+    });
   }
 
   await writeFile(
     join(options.destination, bundleFileNames.ledger),
     `${records.map(serializeRecord).join("\n")}\n`,
-    "utf8",
+    { encoding: "utf8", mode: ownerOnlyFile },
   );
   await writeFile(
     join(options.destination, bundleFileNames.manifest),
     `${JSON.stringify(manifest, null, 2)}\n`,
-    "utf8",
+    { encoding: "utf8", mode: ownerOnlyFile },
   );
   await writeFile(
     join(options.destination, bundleFileNames.dag),
     `${JSON.stringify(stripPayloads(dag), null, 2)}\n`,
-    "utf8",
+    { encoding: "utf8", mode: ownerOnlyFile },
   );
-  await writeFile(
-    join(options.destination, bundleFileNames.verifier),
-    await readVerifierScript(),
-    "utf8",
-  );
+  await writeFile(join(options.destination, bundleFileNames.verifier), await readVerifierScript(), {
+    encoding: "utf8",
+    mode: ownerOnlyFile,
+  });
   await writeFile(
     join(options.destination, bundleFileNames.rederiver),
     await readRederiverScript(),
-    "utf8",
+    { encoding: "utf8", mode: ownerOnlyFile },
   );
   await writeFile(
     join(options.destination, bundleFileNames.review),
     `${renderReviewPage(manifest, dag)}\n`,
-    "utf8",
+    { encoding: "utf8", mode: ownerOnlyFile },
   );
 
   return { directory: options.destination, manifest, dag };
