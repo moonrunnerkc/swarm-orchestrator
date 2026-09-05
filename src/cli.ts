@@ -2257,6 +2257,7 @@ async function parallel(options: ParallelCommand): Promise<number> {
   // all reach the same signal, and every worker is handed that signal rather than a fresh
   // controller nobody aborts. Before this, `--max-wall-minutes` reached `runInParallel` through
   // a spread into an options object with no such field, so it did nothing at all.
+  const parallelIsolation = parseIsolationOption(options.isolation, options.workspace);
   const cancellation = createRunCancellation({
     clock,
     wallBudgetMs: settings.maxWallMinutes === null ? null : settings.maxWallMinutes * 60_000,
@@ -2309,6 +2310,12 @@ async function parallel(options: ParallelCommand): Promise<number> {
       maxSteps: settings.maxSteps,
       attempts: settings.attempts,
       remainingWallMs: () => cancellation.remainingMs(),
+      ...(parallelIsolation === null
+        ? {}
+        : {
+            isolation: (worktreePath: string) =>
+              createContainerBackend({ ...parallelIsolation, workspaceRoot: worktreePath }),
+          }),
       ...(gateOptions === undefined ? {} : { gateOptions }),
       abortSignal: cancellation.signal,
     });

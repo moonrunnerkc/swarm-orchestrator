@@ -1,5 +1,6 @@
 import type { Clock } from "../core/clock.ts";
 import type { ChildEnvironment } from "../exec/child-environment.ts";
+import type { IsolationBackend } from "../exec/execution-mode.ts";
 import { runProcessGroup } from "../exec/run-process.ts";
 import {
   type CommandOptions,
@@ -30,6 +31,13 @@ const notFoundExitCode = 127;
 export function createNodeCommandRunner(
   clock: Clock,
   environment: ChildEnvironment,
+  /**
+   * Where gate commands run. Absent is the host. A gate command is text the repository wrote,
+   * so it is as untrusted as anything else the repository wrote, and on the host it reaches
+   * whatever it names: the built environment keeps the credentials out of it and nothing keeps
+   * it out of the filesystem.
+   */
+  backend?: IsolationBackend,
 ): GateCommandRunner {
   const observe = async (
     file: string,
@@ -37,12 +45,18 @@ export function createNodeCommandRunner(
     options: CommandOptions,
   ): Promise<GateObservation> => {
     const startedAt = clock.now();
-    const ran = await runProcessGroup(file, args, {
-      cwd: options.cwd,
-      timeoutMs: options.timeoutMs,
-      maxOutputBytes: 16_000_000,
-      env: environment.variables,
-    });
+    const ran =
+      backend === undefined
+        ? await runProcessGroup(file, args, {
+            cwd: options.cwd,
+            timeoutMs: options.timeoutMs,
+            maxOutputBytes: 16_000_000,
+            env: environment.variables,
+          })
+        : await backend.run([file, ...args], {
+            cwd: options.cwd,
+            timeoutMs: options.timeoutMs,
+          });
     const durationMs = clock.now() - startedAt;
 
     if (ran.startFailure !== null) {

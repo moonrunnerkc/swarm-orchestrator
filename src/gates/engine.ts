@@ -3,6 +3,7 @@ import type { Clock } from "../core/clock.ts";
 import type { LoopEvent } from "../core/loop-events.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { harnessChildEnvironment } from "../exec/child-environment.ts";
+import type { IsolationBackend } from "../exec/execution-mode.ts";
 import {
   type AutoResolveOutcome,
   defaultAttemptCap,
@@ -48,6 +49,8 @@ interface GatesEngineOptions {
    * every changed repository for a declaration nobody was there to make.
    */
   readonly authorizedScope?: AuthorizedScope;
+  /** Where gate commands run. Absent is the host, which is what `restricted` mode is. */
+  readonly isolation?: IsolationBackend;
   readonly clock: Clock;
   readonly emit: (event: LoopEvent) => void;
   readonly resolve: ResolveAttempt;
@@ -156,7 +159,11 @@ export async function sealAssembledCriteria(
 export async function runGatesEngine(options: GatesEngineOptions): Promise<GatesEngineRun> {
   const workspace = { workspaceRoot: options.workspaceRoot, baseRef: options.baseRef };
   const probe = createGitWorkspaceProbe(workspace);
-  const commands = createNodeCommandRunner(options.clock, harnessChildEnvironment());
+  const commands = createNodeCommandRunner(
+    options.clock,
+    harnessChildEnvironment(),
+    options.isolation,
+  );
   // Read from the base commit, falling back to the tree only where the base had no manifest at
   // all. A run must not author the command that measures it: one rewrote package.json's test
   // script from `node --test` to a python runner that is not installed on the machine, and the

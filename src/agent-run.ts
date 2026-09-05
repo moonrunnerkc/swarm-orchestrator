@@ -408,6 +408,7 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
         budget: { ...loopDependencies.budget, maxWallTimeMs: wall.loopBudgetMs() },
       }),
     ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
+    ...(options.isolation === undefined ? {} : { isolation: options.isolation }),
     ...(options.diffBudget === undefined ? {} : { budgets: options.diffBudget }),
     ...(options.singleFileTestCommand === undefined
       ? {}
