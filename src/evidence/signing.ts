@@ -18,7 +18,7 @@ export const bundleSignatureSchema = z.object({
   keySource: z.enum(["keychain", "ephemeral"]),
 });
 
-type BundleSignature = z.infer<typeof bundleSignatureSchema>;
+export type BundleSignature = z.infer<typeof bundleSignatureSchema>;
 
 type SigningKeySource = BundleSignature["keySource"];
 
