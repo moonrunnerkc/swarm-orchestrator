@@ -56,4 +56,12 @@ export const bundleFileNames = {
   review: "review.html",
   blobs: "blobs",
   workers: "workers",
+  /**
+   * A DSSE envelope binding the patch, the spec, the source commit, the chain head and the
+   * verdict under one signature. The bundle signature binds the evidence to itself; this binds
+   * it to what it is about, so a reader holding a diff and a bundle can establish they belong
+   * together. Absent in a bundle written before this build, which reads as not attested rather
+   * than as failed.
+   */
+  attestation: "attestation.dsse.json",
 } as const;
