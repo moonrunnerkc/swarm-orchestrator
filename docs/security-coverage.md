@@ -578,3 +578,33 @@ caller that passes model output to `counterPattern` makes that dismissal wrong w
 unchanged. Dismissals must therefore expire and be re-derived. A closed finding does not need
 to, because its repro is re-run every round regardless. That asymmetry is the honest one: a
 mechanical check can be trusted indefinitely, an argument cannot.
+
+## Trust boundaries and controls, after the audit remediation
+
+One row per boundary, with what enforces it, what proves the enforcement, and what is still open.
+A control with no proving test is listed as unproven rather than as a control.
+
+| Boundary | What crosses it | Control | Proving test | Residual |
+| --- | --- | --- | --- | --- |
+| Operator environment to child process | Provider keys, cloud credentials, anything the run was started with | Allowlist-built environment: PATH, locale names, TERM, harness-owned HOME, system TMPDIR, plus names the run authorized. Credential-shaped and loader names refused even when authorized. | `src/exec/child-environment.test.ts`, `src/tools/shell-tool.test.ts`, `src/gates/node-command-runner.test.ts` | A name a project genuinely needs must be authorized explicitly; the failure mode is a gate that cannot run, not a leak. |
+| Repository configuration to provider credentials | `swarm.toml` in a cloned repository | Provider key fields removed from the schema; a file naming one is refused with rotation guidance. | `src/config/repository-credentials.test.ts` | A key already committed before this build is already shared; the message says to rotate. |
+| Model-written command to the host filesystem | Any shell command | On the host: the policy guard reads the command into programs and path-like words and rules on those. Behind a backend: only the workspace is mounted. | `src/tools/policy-guard.test.ts`, `src/tools/isolated-shell.test.ts` | On the host, an allowlisted interpreter runs whatever a workspace script says, and a substitution names no path to rule on. That is why the backend exists and why the host mode is called `restricted`. |
+| Repository-declared gate command to the host | Gate commands from `swarm.toml` or package manifests | Same built environment as the model's shell; process-group kill at the timeout. | `src/gates/node-command-runner.test.ts` | A declared command still runs on the host in `restricted` mode. |
+| Run to the machine after it ends | Processes the run started | Every child leads a process group; SIGTERM then SIGKILL to the group at a timeout, a Ctrl-C, a SIGTERM, or the wall deadline. | `src/exec/run-process.test.ts`, `src/exec/run-cancellation.test.ts` | A process that ignores SIGTERM survives until the grace period elapses. |
+| Workspace to evidence | Anything the model or a gate can write | Session store outside the workspace, denied to tools, created 0700/0600 with existing directories narrowed. | `src/evidence/store-permissions.test.ts` | Permissions are per-user; another process running as the same user can read the store. |
+| Bundle producer to bundle reader | A bundle that changed hands | Consistency and authenticity reported separately; expected signers come from the caller, never from the bundle. | `src/evidence/signer-trust.test.ts`, `src/evidence/resign-attack.test.ts` | A trusted signature says nothing about whether the producing machine was sound. |
+| Gate result to run verdict | What a passing gate is allowed to establish | Gate capabilities: only a passing `dynamic` gate establishes that the change was executed. | `src/gates/gate-capability.test.ts`, `src/evidence/verdict.test.ts` | `behavioral: pass` does not mean the tests were good tests. |
+| Backend claim to isolation verdict | A backend asserting containment | Self-test runs the escapes; a backend that also hides the workspace is `unknown`, never `isolated`. | `src/exec/execution-mode.test.ts`, `src/exec/container-backend.test.ts` | Three probes are a floor. A backend that refuses those three can still have a hole nobody probed for. |
+
+### Named as still open
+
+- **Host mode is the default.** A run gets `restricted` unless it asks for `--isolation`, and
+  `restricted` is a lexical policy in front of interpreters. The mode is reported before the run
+  starts and recorded on the chain; it is not silently mitigated.
+- **The container backend is unaudited against a determined escape.** It is a container, not a
+  virtual machine, and nothing here has tried to break out of it.
+- **Nothing establishes that the machine running the harness was sound.** Every verdict is
+  conditional on that, and the signer output says so rather than leaving it implied.
+- **The three residuals of invariant 9 stand** as the build guide states them: a credential in
+  fields nobody named as a credential, one written across the lines of a payload that is not
+  JSON, and a name spelled out of a script the lookalike list does not carry.
