@@ -24,7 +24,7 @@ const { canonicalJson, digestOfJson, digestPattern } = require(
   "../.swarm/fuzz-build/evidence/canonical-json.js",
 );
 const { createToolChokepoint } = require("../.swarm/fuzz-build/tools/chokepoint.js");
-const { createSandbox } = require("../.swarm/fuzz-build/tools/sandbox.js");
+const { createPolicyGuard } = require("../.swarm/fuzz-build/tools/policy-guard.js");
 const { defineTool } = require("../.swarm/fuzz-build/tools/tool-definition.js");
 
 const workspace = mkdtempSync(join(tmpdir(), "swarm-fuzz-workspace-"));
@@ -70,7 +70,7 @@ let approve = false;
 
 const chokepoint = createToolChokepoint({
   definitions: [readFile, runShell],
-  sandbox: createSandbox({
+  guard: createPolicyGuard({
     workspaceRoot: workspace,
     homeDir: workspace,
     shellAllowlist: ["echo", "ls"],
