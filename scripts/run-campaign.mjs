@@ -22,7 +22,7 @@ import {
   seedWorkspace,
 } from "../dist/eval/campaign-run.js";
 import { scoreArms } from "../dist/eval/arms.js";
-import { mcNemar } from "../dist/eval/statistics.js";
+import { mcNemar, wilsonInterval } from "../dist/eval/statistics.js";
 
 const run = promisify(execFile);
 const repositoryRoot = new URL("..", import.meta.url).pathname;
@@ -68,7 +68,11 @@ if (existsSync(resultsPath)) {
   for (const line of readFileSync(resultsPath, "utf8").split("\n")) {
     if (line.trim().length === 0) continue;
     const record = JSON.parse(line);
-    done.set(record.idempotencyKey, record);
+    // A record from before the harness verdict was captured cannot answer the question this
+    // campaign exists to answer, so it is re-run rather than counted as done.
+    if (record.corner !== undefined) {
+      done.set(record.idempotencyKey, record);
+    }
   }
   console.log(`resuming: ${done.size} run(s) already recorded`);
 }
@@ -111,6 +115,10 @@ for (const planned of plan.runs) {
   const startedAt = Date.now();
   let completed = true;
   let detail = "";
+  // What the harness itself concluded. Zero is its `acceptable` verdict; anything else is not.
+  // Without this the campaign can say how often a run worked and not how often the tool was
+  // wrong about whether it worked, and the second is the number this whole project is about.
+  let harnessAcceptable = false;
   try {
     await run(
       process.execPath,
@@ -129,6 +137,7 @@ for (const planned of plan.runs) {
       ],
       { cwd: workspace, timeout: (wallMinutes + 3) * 60_000, maxBuffer: 64 * 1024 * 1024 },
     );
+    harnessAcceptable = true;
   } catch (cause) {
     // Counted, never dropped: a run that failed to complete produced no accepted patch, and
     // removing it turns the arm's rate into the rate of the runs that happened to work.
@@ -143,9 +152,21 @@ for (const planned of plan.runs) {
   const latencyMs = Date.now() - startedAt;
 
   const judged = await judgeByHiddenOracle(workspace, one);
+  // The four corners. A false green is the harness saying acceptable over a change the oracle
+  // refuses, and it is the only one of the four that is a defect in this tool rather than in
+  // the model: the others are the model failing, or the tool being cautious.
+  const corner = harnessAcceptable
+    ? judged.accepted
+      ? "true-green"
+      : "false-green"
+    : judged.accepted
+      ? "false-red"
+      : "true-red";
   const record = {
     ...planned,
     accepted: judged.accepted,
+    harnessAcceptable,
+    corner,
     completed,
     costUsd: 0,
     latencyMs,
@@ -190,6 +211,27 @@ for (const score of scores) {
   );
 }
 
+console.log("\n=== what the harness said against what the oracle found ===");
+for (const arm of arms) {
+  const mine = finished.filter((entry) => entry.armId === arm.id && entry.corner !== undefined);
+  if (mine.length === 0) {
+    console.log(`${arm.id.padEnd(16)} no run recorded a harness verdict`);
+    continue;
+  }
+  const count = (name) => mine.filter((entry) => entry.corner === name).length;
+  const falseGreen = count("false-green");
+  const rate = wilsonInterval(falseGreen, mine.length);
+  console.log(
+    `${arm.id.padEnd(16)} ${mine.length} judged: ` +
+      `${count("true-green")} true green, ${falseGreen} FALSE GREEN, ` +
+      `${count("false-red")} false red, ${count("true-red")} true red`,
+  );
+  console.log(
+    `${"".padEnd(16)} false-green rate ${(rate.point * 100).toFixed(1)}% ` +
+      `[${(rate.lower * 100).toFixed(1)}, ${(rate.upper * 100).toFixed(1)}]`,
+  );
+}
+
 console.log("\n=== paired comparison ===");
 let onlyFirst = 0;
 let onlySecond = 0;
@@ -209,6 +251,36 @@ console.log(judged.reason);
 
 writeFileSync(
   join(resultsPath, "..", "summary.json"),
-  `${JSON.stringify({ model, endpoint, seeds, cases: cases.length, scores, mcNemar: judged, onlyFirst, onlySecond }, null, 2)}\n`,
+  `${JSON.stringify(
+    {
+      model,
+      endpoint,
+      seeds,
+      cases: cases.length,
+      scores,
+      mcNemar: judged,
+      onlyFirst,
+      onlySecond,
+      corners: Object.fromEntries(
+        arms.map((arm) => {
+          const mine = finished.filter((e) => e.armId === arm.id && e.corner !== undefined);
+          const count = (name) => mine.filter((e) => e.corner === name).length;
+          return [
+            arm.id,
+            {
+              judged: mine.length,
+              trueGreen: count("true-green"),
+              falseGreen: count("false-green"),
+              falseRed: count("false-red"),
+              trueRed: count("true-red"),
+              falseGreenRate: wilsonInterval(count("false-green"), mine.length),
+            },
+          ];
+        }),
+      ),
+    },
+    null,
+    2,
+  )}\n`,
 );
 console.log(`\nrecords: ${resultsPath}`);

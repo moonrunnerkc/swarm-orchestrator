@@ -179,6 +179,28 @@ describe("running a campaign", () => {
   });
 });
 
+describe("the workspace a case is run in", () => {
+  /**
+   * Without a test script the tests gate has nothing to run, so no dynamic gate can pass, so
+   * the harness correctly reports the change as not executed. The oracle then runs the case's
+   * own command directly and accepts it, and every run reads as a false red: the campaign was
+   * measuring a workspace it had misconfigured rather than the harness.
+   */
+  it("declares the case's own gate command as its test script", async () => {
+    const workspace = await seedWorkspace(root, cases[0]!);
+    const manifest = JSON.parse(await readFile(join(workspace, "package.json"), "utf8"));
+
+    expect(manifest.scripts.test).toBe(cases[0]!.gateCommand);
+  });
+
+  it("is a module, since the seeds are written as ES modules", async () => {
+    const workspace = await seedWorkspace(root, cases[0]!);
+    const manifest = JSON.parse(await readFile(join(workspace, "package.json"), "utf8"));
+
+    expect(manifest.type).toBe("module");
+  });
+});
+
 describe("a case whose files live in directories", () => {
   const nested = {
     id: "nested",
