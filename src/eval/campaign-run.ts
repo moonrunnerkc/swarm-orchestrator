@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { harnessChildEnvironment } from "../exec/child-environment.ts";
 import { runProcessGroup } from "../exec/run-process.ts";
 import { type ArmRun, type ArmScore, scoreArms } from "./arms.ts";
@@ -90,7 +90,7 @@ export async function judgeByHiddenOracle(
   for (const name of hiddenOracleFiles(one)) {
     const original = one.seed[name];
     if (original !== undefined) {
-      await writeFile(join(workspace, name), original);
+      await writeIntoWorkspace(workspace, name, original);
     }
   }
 
@@ -247,7 +247,18 @@ export async function seedWorkspace(scratchRoot: string, one: CampaignCase): Pro
   const workspace = await mkdtemp(join(scratchRoot, `${one.id}-`));
   await writeFile(join(workspace, "package.json"), `{"name":"${one.id}","type":"module"}\n`);
   for (const [name, content] of Object.entries(one.seed)) {
-    await writeFile(join(workspace, name), content);
+    await writeIntoWorkspace(workspace, name, content);
   }
   return workspace;
+}
+
+/**
+ * A case file can name a directory: four of the golden set's twenty do. Writing one without
+ * creating its parent stops the whole campaign at the first such case, which is what happened
+ * eighteen runs in.
+ */
+async function writeIntoWorkspace(workspace: string, name: string, content: string): Promise<void> {
+  const path = join(workspace, name);
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, content);
 }

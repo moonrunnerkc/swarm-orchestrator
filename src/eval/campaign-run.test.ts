@@ -2,7 +2,13 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { campaignPlan, hiddenOracleFiles, runCampaign } from "./campaign-run.ts";
+import {
+  campaignPlan,
+  hiddenOracleFiles,
+  judgeByHiddenOracle,
+  runCampaign,
+  seedWorkspace,
+} from "./campaign-run.ts";
 
 let root = "";
 
@@ -171,4 +177,42 @@ describe("running a campaign", () => {
     expect(pairing?.discordant).toBe(12);
     expect(pairing?.significant).toBe(true);
   });
+});
+
+describe("a case whose files live in directories", () => {
+  const nested = {
+    id: "nested",
+    taskClass: "tool-heavy",
+    prompt: "find the limit",
+    seed: {
+      "config/limits.mjs": "export const retryLimit = 3;\n",
+      "test/limits.test.mjs":
+        "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { retryLimit } from '../config/limits.mjs';\ntest('is five', () => assert.equal(retryLimit, 5));\n",
+    },
+    gateCommand: "node --test",
+  };
+
+  /**
+   * Four cases in the golden set put files under a directory. Writing one without creating its
+   * parent stops the whole campaign at the first such case, which is what happened eighteen
+   * runs in.
+   */
+  it("creates the directories a seed names before writing into them", async () => {
+    const workspace = await seedWorkspace(root, nested);
+
+    expect(await readFile(join(workspace, "config/limits.mjs"), "utf8")).toContain("retryLimit");
+  });
+
+  it("counts a nested test file as part of the oracle", () => {
+    expect(hiddenOracleFiles(nested)).toEqual(["test/limits.test.mjs"]);
+  });
+
+  it("restores a nested oracle file over whatever the run left", async () => {
+    const workspace = await seedWorkspace(root, nested);
+    await writeFile(join(workspace, "test/limits.test.mjs"), "// gone\n");
+
+    await judgeByHiddenOracle(workspace, nested);
+
+    expect(await readFile(join(workspace, "test/limits.test.mjs"), "utf8")).toContain("is five");
+  }, 60_000);
 });
