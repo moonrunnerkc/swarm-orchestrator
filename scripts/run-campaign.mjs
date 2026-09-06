@@ -49,6 +49,16 @@ const wallMinutes = Number(flag("wall-minutes", "6"));
 const resultsPath = flag("out", join(repositoryRoot, "campaign/eval/runs.jsonl"));
 
 /**
+ * Which oracle rule judged a record. Bumped whenever the rule changes, so records judged by an
+ * older one are re-run rather than silently compared against records judged by this one.
+ *
+ * 1: restore every test file.
+ * 2: do not restore where the gate measures coverage.
+ * 3: also do not restore where the gate names a test file and reads it.
+ */
+const oracleRule = 3;
+
+/**
  * The arms this architecture can actually separate. Evidence capture is not one of them: the
  * ledger is the core of the system rather than a layer over it, so there is no build of this
  * with it switched off, and pretending otherwise would be an arm that measures nothing.
@@ -168,6 +178,7 @@ for (const planned of plan.runs) {
     ...planned,
     accepted: judged.accepted,
     oracleMode: judged.mode,
+    oracleRule,
     harnessAcceptable,
     corner,
     completed,
