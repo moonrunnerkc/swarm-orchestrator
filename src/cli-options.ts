@@ -543,7 +543,7 @@ export function parseCommandLine(
       workspace,
       baseRef: flags.get("base") ?? defaultBaseRef,
       maxSteps: parseFlagCount(flags.get("max-steps"), "--max-steps"),
-      attempts: parseFlagCount(flags.get("attempts"), "--attempts"),
+      attempts: parseFlagCount(flags.get("attempts"), "--attempts", 0),
       maxWallMinutes: parseFlagCount(flags.get("max-wall-minutes"), "--max-wall-minutes"),
       bundleDirectory,
       modelSpec: flags.get("model") ?? null,
@@ -609,7 +609,7 @@ export function parseCommandLine(
     maxSteps: parseFlagCount(flags.get("max-steps"), "--max-steps"),
     bundleDirectory,
     baseRef: flags.get("base") ?? defaultBaseRef,
-    attempts: parseFlagCount(flags.get("attempts"), "--attempts"),
+    attempts: parseFlagCount(flags.get("attempts"), "--attempts", 0),
     maxWallMinutes: parseFlagCount(flags.get("max-wall-minutes"), "--max-wall-minutes"),
     localEndpoint: parseLocalEndpoint(flags.get("local-endpoint")),
     interfaceFlags: parseInterfaceFlags(flags),
@@ -743,13 +743,23 @@ function resolveShortlist(raw: string | undefined, context: CommandLineContext):
  * A non-numeric budget used to reach the loop as NaN, and every `steps >= NaN`
  * comparison is false, so the step limit silently stopped applying.
  */
-function parseFlagCount(raw: string | undefined, flag: string): number | null {
+/**
+ * A count from the command line. `floor` is the smallest value that means anything for this
+ * flag: zero attempts is a real request, since measuring the first answer without the
+ * auto-resolve loop is what `swarm gates` already does internally and what an evaluation arm
+ * needs, while zero steps could not run anything at all.
+ */
+function parseFlagCount(raw: string | undefined, flag: string, floor = 1): number | null {
   if (raw === undefined) {
     return null;
   }
   const parsed = Number(raw);
-  if (!Number.isSafeInteger(parsed) || parsed < 1) {
-    throw new InvalidCommandLineError(`${flag} must be a positive whole number, got "${raw}"`);
+  if (!Number.isSafeInteger(parsed) || parsed < floor) {
+    throw new InvalidCommandLineError(
+      floor === 0
+        ? `${flag} must be a whole number of zero or more, got "${raw}"`
+        : `${flag} must be a positive whole number, got "${raw}"`,
+    );
   }
   return parsed;
 }
