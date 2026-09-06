@@ -11,7 +11,7 @@
 // pinned base and runs the checks there. No model is called: the patches are already recorded,
 // so this is arithmetic over evidence rather than a new campaign.
 import { execFile } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
@@ -20,6 +20,29 @@ import { wilsonInterval } from "../dist/eval/statistics.js";
 const run = promisify(execFile);
 const repositoryRoot = new URL("..", import.meta.url).pathname;
 const evidenceRoot = join(repositoryRoot, "docs/evidence/2026-09-04/real-repos");
+
+/**
+ * The hidden acceptance test as the task oracle: written before any run, never shown to either
+ * arm, and the only thing here that says whether the task was done rather than whether anything
+ * broke. Each declares its own destination in its first line; the runner is the project's own.
+ *
+ * The command copies it in and runs that one file, which is what the 09-04 harness did.
+ */
+const oracles = {
+  "ts-pattern": { into: "tests/object-empty.hidden.test.ts", runner: "npx jest --" },
+  purify: { into: "src/List.partition.hidden.test.ts", runner: "npx vitest run" },
+  darkreader: { into: "tests/unit/utils/array-chunk.hidden.tests.ts", runner: "npx jest --" },
+};
+
+function oracleCommand(name) {
+  const oracle = oracles[name];
+  const source = join(evidenceRoot, name, "hidden");
+  const file = readdirSync(source)[0];
+  return (
+    `mkdir -p "$(dirname ${oracle.into})" && cp ${JSON.stringify(join(source, file))} ` +
+    `${oracle.into} && ${oracle.runner} ${oracle.into}`
+  );
+}
 
 const clones = {
   "ts-pattern": join(repositoryRoot, "campaign/work/gvergnaud__ts-pattern"),
@@ -56,6 +79,8 @@ for (const record of runs) {
         "--base",
         record.commit,
         "--install",
+        "--oracle",
+        oracleCommand(record.name),
         "--json",
       ],
       { timeout: 15 * 60_000, maxBuffer: 64 * 1024 * 1024 },
@@ -79,6 +104,9 @@ for (const record of runs) {
   // The hidden acceptance test is the oracle: written before any run and never shown to either
   // arm. `verified` is what this tool concluded. The two together are the only thing that says
   // whether the tool was right.
+  // The recorded hidden-test result from the 09-04 run, which is the ground truth this is
+  // scored against. `verified` is now what this tool concludes with the same test wired in as
+  // its oracle, so the two agreeing is the property under test.
   const oracle = record.hiddenTest?.passed === true;
   const corner = verified
     ? oracle

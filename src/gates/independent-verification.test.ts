@@ -73,7 +73,11 @@ describe("verification that does not trust the tree it is verifying", () => {
 
     expect(result.applied).toBe(true);
     expect(result.checks.find((check) => check.id === "tests")?.status).toBe("passed");
-    expect(result.verified).toBe(true);
+    // No regression, and nothing here says the task was done. `verified` requires both, which
+    // is what stops a suite written before the feature existed vouching for the feature.
+    expect(result.regression).toBe("pass");
+    expect(result.task).toBe("unjudged");
+    expect(result.verified).toBe(false);
   }, 180_000);
 
   it("does not read a report the worker wrote, because the worker is what is being checked", async () => {
@@ -100,6 +104,7 @@ describe("verification that does not trust the tree it is verifying", () => {
 
     expect(result.applied).toBe(true);
     expect(result.checks.find((check) => check.id === "tests")?.status).toBe("failed");
+    expect(result.regression).toBe("fail");
     expect(result.verified).toBe(false);
   }, 180_000);
 
@@ -244,4 +249,77 @@ describe("verifying a repository whose tests need its dependencies", () => {
     expect(result.install).not.toBeNull();
     expect(result.install?.attempted).toBe(true);
   }, 300_000);
+});
+
+/**
+ * Re-scoring eighteen real-repository patches with dependencies installed produced four false
+ * greens: `swarm ci` said verified over changes a hidden acceptance test refused. The cause is
+ * not a bug in a check, it is what the checks establish. A repository's own suite tests the
+ * behaviour it already had; the task adds behaviour it did not. A patch that adds the feature
+ * badly, or not at all, still passes that suite.
+ *
+ * So running the suite establishes that nothing broke. It does not establish that the task was
+ * done, and reporting the first as if it were the second is the false green this closes.
+ */
+describe("what passing a repository's own suite establishes", () => {
+  const workingPatch = [
+    "diff --git a/clamp.mjs b/clamp.mjs",
+    "--- a/clamp.mjs",
+    "+++ b/clamp.mjs",
+    "@@ -1 +1 @@",
+    "-export const clamp = (v) => v;",
+    "+export const clamp = (v) => (v < 0 ? 0 : v);",
+    "",
+  ].join("\n");
+
+  it("reports no regression and an unjudged task where no oracle was given", async () => {
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch: workingPatch,
+      commands: commands(),
+      clock,
+    });
+
+    expect(result.regression).toBe("pass");
+    expect(result.task).toBe("unjudged");
+    // Not verified: nothing here says the task was done, and saying so would be the false green.
+    expect(result.verified).toBe(false);
+  }, 180_000);
+
+  it("accepts the task where an oracle says it was done", async () => {
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch: workingPatch,
+      taskOracle: {
+        command: "node -e \"import('./clamp.mjs').then(m=>process.exit(m.clamp(-1)===0?0:1))\"",
+      },
+      commands: commands(),
+      clock,
+    });
+
+    expect(result.regression).toBe("pass");
+    expect(result.task).toBe("accepted");
+    expect(result.verified).toBe(true);
+  }, 180_000);
+
+  it("rejects the task where the oracle refuses it, even with the suite passing", async () => {
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      // A patch that changes nothing meaningful: the suite still passes, the task is not done.
+      patch:
+        "diff --git a/clamp.mjs b/clamp.mjs\n--- a/clamp.mjs\n+++ b/clamp.mjs\n@@ -1 +1 @@\n-export const clamp = (v) => v;\n+export const clamp = (v) => v; // touched\n",
+      taskOracle: {
+        command: "node -e \"import('./clamp.mjs').then(m=>process.exit(m.clamp(-1)===0?0:1))\"",
+      },
+      commands: commands(),
+      clock,
+    });
+
+    expect(result.regression).toBe("pass");
+    expect(result.task).toBe("rejected");
+    expect(result.verified).toBe(false);
+  }, 180_000);
 });

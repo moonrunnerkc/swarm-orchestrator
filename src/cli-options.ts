@@ -151,6 +151,12 @@ export interface CiCommand {
    */
   readonly installDependencies: boolean;
   /**
+   * A trusted check that says whether the task was done, run after the repository's own suite.
+   * Absent leaves the task unjudged, which is the honest answer: a suite tests the behaviour a
+   * project already had, and a task adds behaviour it did not.
+   */
+  readonly taskOracle: string | null;
+  /**
    * A stream some other agent emitted, replayed onto the chain beside the patch. Null verifies
    * the patch alone, which is the minimum an external producer has to hand over.
    */
@@ -324,6 +330,8 @@ export const usage = [
   "    [--agent-format generic|claude-code]           beside it, so the record is not a guess",
   "    [--install]                                    install the checkout's dependencies first,",
   "                                                   without which a real project measures nothing",
+  "    [--oracle <command>]                           what says the task was done; without it the",
+  "                                                   task is unjudged and nothing is verified",
   "",
   "  swarm list-runs                                  runs this machine has state for",
   "  swarm inspect <run-id> [--json]                  what a run did, and what it still owes",
@@ -432,6 +440,7 @@ export function parseCommandLine(
     return {
       command: "ci",
       installDependencies: flags.has("install"),
+      taskOracle: flags.get("oracle") ?? null,
       agentStream:
         streamPath === undefined || streamPath.trim().length === 0
           ? null

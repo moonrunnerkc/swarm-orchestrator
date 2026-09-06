@@ -335,6 +335,7 @@ async function verifyPatch(options: CiCommand): Promise<number> {
     patch: await readFile(options.patchFile, "utf8"),
     immutablePaths: options.immutablePaths,
     installDependencies: options.installDependencies,
+    ...(options.taskOracle === null ? {} : { taskOracle: { command: options.taskOracle } }),
     commands: createNodeCommandRunner(clock, harnessChildEnvironment()),
     clock,
   });
@@ -372,9 +373,10 @@ async function verifyPatch(options: CiCommand): Promise<number> {
     return exitCodes.notAcceptable;
   }
   process.stdout.write(
-    result.verified
-      ? "\nverified: the patch applied to a fresh base and the checks passed there.\n"
-      : "\nnot verified: see the checks above. Nothing the producing tree said was read.\n",
+    `\nregression: ${result.regression}   task: ${result.task}\n` +
+      (result.verified
+        ? "verified: no regression, and the oracle says the task was done.\n"
+        : `not verified. ${result.advice}\n`),
   );
   return result.verified ? exitCodes.acceptable : exitCodes.notAcceptable;
 }
