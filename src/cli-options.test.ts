@@ -237,9 +237,11 @@ describe("the auto-resolve budget", () => {
     expect(parseRun(["t"])).toMatchObject({ attempts: null, baseRef: "HEAD" });
   });
 
-  it("takes an attempt cap, and refuses one that is not a positive whole number", () => {
+  it("takes an attempt cap, and refuses one that is not a whole number of zero or more", () => {
     expect(parseRun(["--attempts", "5", "t"]).attempts).toBe(5);
-    for (const raw of ["0", "-1", "two", "1.5"]) {
+    // Zero is a real request: measure the first answer without the auto-resolve loop.
+    expect(parseRun(["--attempts", "0", "t"]).attempts).toBe(0);
+    for (const raw of ["-1", "two", "1.5"]) {
       expect(() => parseCommandLine(["--attempts", raw, "t"], context)).toThrow(
         InvalidCommandLineError,
       );
@@ -541,5 +543,30 @@ describe("a bare word that is nearly a subcommand", () => {
       command: "doctor",
       fix: true,
     });
+  });
+});
+
+describe("--attempts zero", () => {
+  /**
+   * Zero retries is a real request: measure the model's first answer and report, without the
+   * auto-resolve loop. `swarm gates` already runs the engine that way internally, and refusing
+   * the flag left no way to ask for it from outside, which is what an evaluation arm needs.
+   */
+  it("is accepted, because measuring without retrying is a thing to ask for", () => {
+    expect(parseCommandLine(["--attempts", "0", "fix the parser"], context)).toMatchObject({
+      attempts: 0,
+    });
+  });
+
+  it("still refuses a negative count, which is not a number of attempts", () => {
+    expect(() => parseCommandLine(["--attempts", "-1", "x y"], context)).toThrow(/whole number/);
+  });
+
+  it("still refuses something that is not a number at all", () => {
+    expect(() => parseCommandLine(["--attempts", "many", "x y"], context)).toThrow(/whole number/);
+  });
+
+  it("keeps the other counts positive, since zero steps could not run anything", () => {
+    expect(() => parseCommandLine(["--max-steps", "0", "x y"], context)).toThrow(/positive/);
   });
 });
