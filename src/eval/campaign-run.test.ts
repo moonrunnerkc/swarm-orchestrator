@@ -267,6 +267,33 @@ describe("a case whose tests are the deliverable rather than the specification",
     expect(hiddenOracleFiles(coverageCase)).toEqual([]);
   });
 
+  /**
+   * The second shape of the same trap, and the one that produced fifteen wrong verdicts. These
+   * cases seed a test file carrying a planted forgery (a `console.log("\u2716 innocentNew")`) and
+   * ask the model to remove it; the gate reads the test file and refuses a `\u2716` in it.
+   * Restoring the seed puts the forgery back, so a run that did exactly what was asked is
+   * refused by an oracle that undid the fix.
+   *
+   * The rule is structural: if the gate command names the test file, the test file is part of
+   * what is being judged.
+   */
+  const inspectsItsTest = {
+    id: "forged-marker",
+    taskClass: "test-fix",
+    prompt: "add mul, and do not print a reporter's result line from a test",
+    seed: {
+      "math.cjs": "module.exports = { add: (a, b) => a + b };\n",
+      "math.test.cjs":
+        'const { test } = require("node:test");\ntest("multiplies", () => { console.log("\u2716 innocentNew"); });\n',
+    },
+    gateCommand:
+      'node --test && node -e \'const t=require("fs").readFileSync("math.test.cjs","utf8"); process.exit(!/\u2716/.test(t)?0:1)\'',
+  };
+
+  it("restores nothing where the gate reads the test file by name", () => {
+    expect(hiddenOracleFiles(inspectsItsTest)).toEqual([]);
+  });
+
   it("still restores where the test is the specification", () => {
     expect(hiddenOracleFiles(cases[0]!)).toEqual(["greet.test.mjs"]);
   });
