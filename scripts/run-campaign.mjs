@@ -11,7 +11,7 @@
 // the test; the oracle restores the original test over whatever the run left and asks again.
 import { execFile } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -75,6 +75,9 @@ const resultsPath = flag("out", join(repositoryRoot, "campaign/eval/runs.jsonl")
  *    between the harness and the oracle is read off the record rather than reproduced.
  */
 const oracleRule = 4;
+
+/** Where a disagreement's tree is kept, so the next one is inspected rather than guessed at. */
+const disagreementRoot = flag("keep-disagreements", join(repositoryRoot, "campaign/eval/disagreements"));
 
 /**
  * The arms this architecture can actually separate. Evidence capture is not one of them: the
@@ -221,6 +224,20 @@ for (const planned of plan.runs) {
   };
   appendFileSync(resultsPath, `${JSON.stringify(record)}\n`);
   finished.push(record);
+
+  // A run where the harness and the oracle disagree is the only kind worth looking at, and
+  // looking at it needs the tree. Deleting every workspace meant each disagreement had to be
+  // re-derived by guesswork, which produced four wrong diagnoses in a row before this was added.
+  if (record.corner === "false-green" || record.corner === "false-red") {
+    const kept = join(disagreementRoot, `${record.corner}-${record.caseId}-${record.armId}-${record.seed}`);
+    try {
+      mkdirSync(disagreementRoot, { recursive: true });
+      cpSync(workspace, kept, { recursive: true });
+      record.keptWorkspace = kept;
+    } catch {
+      // Keeping the tree is a convenience for the next person, never a reason to stop the run.
+    }
+  }
   rmSync(workspace, { recursive: true, force: true });
 
   console.log(
