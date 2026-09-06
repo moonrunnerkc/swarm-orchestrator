@@ -4,15 +4,17 @@ The build guide's beta gates are the list this project agreed not to call itself
 without. This is where each one stands, with the evidence or the absence of it named. A row with
 no proving artifact is `unproven`, not `probably fine`.
 
-**Summary: not production-ready.** Four of twelve gates pass on measured evidence, five are
-partially met with the gap named, and three are unproven. The largest gap is scale: the
-false-green rate is zero on the corpus that has hidden oracles, and that corpus is three tasks.
+**Summary: not production-ready.** Four of twelve gates pass on measured evidence, four are
+partially met with the gap named, and four are unproven. The largest gap is gate 3, and it is
+larger than this page said yesterday: the false-green rate after the fix is not zero, it is
+unmeasured, because the measurement that produced the zero compared the hidden test against
+itself.
 
 | # | Gate | Status | Evidence, or what is missing |
 | - | ---- | ------ | ---------------------------- |
 | 1 | Zero successful host-file, host-secret, provider-key, evidence-store, cross-worker or unauthorised-egress attacks in the maintained corpus | **partial** | The deterministic corpus exists and passes: `src/exec/child-environment.test.ts`, `src/tools/shell-tool.test.ts`, `src/gates/node-command-runner.test.ts`, `src/evidence/store-permissions.test.ts`, `src/tools/isolated-shell.test.ts`. What it is not is an attack corpus written by somebody trying to get past it: every case here was written by the same person who wrote the defence. |
 | 2 | Zero accepted test-policy violations in the mutation suite | **pass** | The ratchet rejects test deletion and weakening under the per-test escape hatch; `src/gates/acceptance.test.ts` cases 4 and 5, and the falsification corpus replay. |
-| 3 | Zero false greens in at least 400 held-out tasks, with the interval reported | **fail, and now measured** | 0 of 18 on the real-repository corpus, 95% CI [0, 29.9] per arm: [`false-green-measurement.md`](evidence/2026-09-05/false-green-measurement.md). That is 18 runs across **three tasks**, not 400 tasks. Reaching 400 needs oracles for many more repositories, which is task authoring rather than compute. The rate was 22% before the measurement found what caused it. |
+| 3 | Zero false greens in at least 400 held-out tasks, with the interval reported | **unproven** | A rate of 22.2% [6.3, 54.7] was measured and fixed, and the rate after the fix is **unmeasured**: the 0 of 18 first reported here had the hidden test on both sides of the comparison, supplied to the tool as its oracle and then used as the ground truth it was scored against, so it agreed with itself on 18 of 18. Withdrawn, with the reasoning kept, in [`false-green-measurement.md`](evidence/2026-09-05/false-green-measurement.md). Measuring the post-fix rate needs a second oracle per task, independent of the one wired in, and the corpus has one. |
 | 4 | 99% recovery from injected termination without duplicate committed effects | **pass** | 100 injected kills, 300 committed effects, no duplicates: `src/durable/crash-recovery.test.ts`. |
 | 5 | Every stable documented command exists and works in the published artifact | **pass** | `scripts/check-packed-cli.mjs` packs the tarball, installs into an empty directory, reads the command list from the installed build's own help, and runs each. Runs in CI as its own job. |
 | 6 | Trusted-identity verification rejects a re-signed bundle from an unknown key | **pass** | `src/evidence/resign-attack.test.ts`: a bundle is edited, rehashed and re-signed with an attacker key; consistency still holds and the identity check refuses it, naming the substituted fingerprint. |
@@ -36,8 +38,12 @@ somebody has to do by hand.
 
 **A ten-minute first run (12).** Needs a person who has not seen the tool, and a stopwatch.
 
-## What changed today
+## What changed
 
-Gates 3, 4, 5, 6 and 11 moved from unproven to measured or passing. Gate 3 in particular went
-from "no benchmark numbers" to a number with an interval and a written account of the two
-defects that measuring it exposed.
+Gates 4, 5, 6 and 11 moved from unproven to passing on measured evidence.
+
+Gate 3 moved from unproven to measured and then back to unproven. The 22.2% pre-fix rate is real
+and the fix for it is real. The 0.0% post-fix rate was not a measurement, and it is withdrawn:
+scoring a tool against the same oracle it was handed measures reproducibility, and reporting that
+as a false-green rate is the collapse of *unmeasured* into *green* that this project exists to
+refuse, committed in the document announcing that it had been avoided elsewhere.

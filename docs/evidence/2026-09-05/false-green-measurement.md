@@ -4,8 +4,11 @@
 hidden acceptance tests written before any of them ran. No model was called: the patches already
 existed, so this is arithmetic over evidence rather than a new campaign.
 
-The headline is not the final number. It is that the measurement found two defects in the tool
-doing the measuring, and neither would have been visible without it.
+The headline is not the final number. It is that the measurement found defects in the tool doing
+the measuring, and then a defect in the measurement itself: the number this document first
+reported as a false-green rate of zero was the hidden test agreeing with itself. That claim is
+withdrawn below and the reasoning is kept, because a retracted number with its cause named is
+worth more than a quietly corrected one.
 
 ## What was measured
 
@@ -72,27 +75,55 @@ given rather than true by omission.
 
 `--oracle <command>` supplies one. Nothing infers it.
 
-### Third pass: eighteen of eighteen
+### Third pass: eighteen of eighteen, and why that number is not what it looks like
 
 With each repository's hidden test wired in as its oracle, using the invocations
 `scripts/real-repos.mjs` already records rather than retyped ones:
 
-| arm | runs | true green | false green | false red | true red |
+| arm | runs | agree accept | gates missed | gates stricter | agree refuse |
 | --- | --- | --- | --- | --- | --- |
-| swarm | 9 | 5 | **0** | 0 | 4 |
-| baseline | 9 | 6 | **0** | 0 | 3 |
+| swarm | 9 | 5 | 0 | 0 | 4 |
+| baseline | 9 | 6 | 0 | 0 | 3 |
 
-**False-green rate 0.0%, 95% CI [0.0, 29.9] per arm.** False reds: 11 under the old standalone
-scoring, 0 now.
+The tool agrees with the hidden acceptance test on all eighteen. **This was first written up as a
+false-green rate of 0.0%, 95% CI [0.0, 29.9] per arm. That was wrong and the claim is
+withdrawn.**
 
-The tool agrees with the hidden acceptance test on every one of the eighteen.
+The hidden test is on both sides of the comparison. It is handed to the tool as `--oracle`, so
+`verified` cannot be true unless it passes; and it is then the ground truth `verified` is scored
+against. `verified === oracle` on 18 of 18 with nothing off the diagonal, which is what a
+tautology looks like. Verify it directly:
+
+    node -e 'const r=require("./docs/evidence/2026-09-04/real-repos/rescored.json").runs;
+      console.log(r.filter(x=>x.verified===x.oracle).length,"of",r.length)'
+
+What those eighteen runs do establish: the hidden tests are deterministic across time and
+machine, and regression never failed on a run whose hidden test passed. Both are worth knowing.
+Neither is a false-green rate.
+
+**The 22.2% in the second pass is the real measurement**, and it is the one that still stands. The
+harness claimed verified on the strength of a repository's own suite, an independent oracle
+refused four of eighteen, and the two propositions were genuinely different. The fix closed that
+by making the tool stop asserting a task was done when nothing judged it, which removes the
+failure mode by removing the claim. Removing a claim is a real fix; it is not a measurement that
+the remaining claims are sound.
 
 ## What this does not establish
 
-**Eighteen runs is eighteen runs.** The interval on a zero rate at n=9 per arm reaches 29.9%, so
-what has been shown is that no false green occurred here, not that the rate is low. The mission's
-bar of 400 tasks would put the upper bound near 1%. The machinery to get there now exists and
-costs nothing per run, because it reads recorded patches.
+**The false-green rate after the fix is unmeasured.** Not zero, not low: unmeasured. Measuring it
+needs an oracle the tool is judged against but not given, and once the tool is given one the
+comparison collapses into the tautology above. The route out is an oracle that is independent of
+the one wired in, which means a second hidden test per task, and the corpus has one.
+
+**Without a task oracle the tool cannot emit a false green at all**, on the task dimension,
+because it makes no task claim: the verdict reads `task: unjudged` with the reason beside it. This
+is why the golden-set campaign cannot produce the number either. An earlier run of it reported
+8.3%, and that figure was scoring the harness's gate claim against a task oracle: two different
+propositions, and the gap between them measures whether the configured gates were adequate, never
+whether the tool lied. `scripts/run-campaign.mjs` now reports that column as `gates-missed` and
+says so in its own output.
+
+**Eighteen runs is eighteen runs**, across three repositories and three tasks.
 
 **Three repositories and three tasks.** Two of the seven true reds are the same task failing
 three ways. A corpus this small cannot say the tool generalises.
