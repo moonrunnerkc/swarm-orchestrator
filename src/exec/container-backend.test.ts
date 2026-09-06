@@ -79,30 +79,28 @@ describe.skipIf(!available)("a command run behind a kernel-enforced boundary", (
 });
 
 describe.skipIf(!available)("a boundary that hides the workspace as well as the host", () => {
-  it("is unknown rather than isolated, since a command that sees nothing cannot work", async () => {
-    // A mount of a path the runtime does not share. Every escape probe is refused, and so is
-    // the work, which is the reading this refuses to call containment.
-    const unshared = await mkdtemp(join(tmpdir(), "swarm-unshared-ws-"));
+  /**
+   * Whether a given path can be mounted is the runtime's business and differs by platform:
+   * Docker Desktop on macOS shares /Users and not /tmp, and Docker on Linux shares both. So this
+   * asserts the implication rather than the outcome, which is the part that must hold anywhere:
+   * a backend that cannot reach its workspace is never `isolated`, whatever the escapes did.
+   */
+  it("is never isolated where it could not reach its own workspace", async () => {
+    const elsewhere = await mkdtemp(join(tmpdir(), "swarm-unshared-ws-"));
     try {
       const result = await selfTestContainment(
         createContainerBackend({
           runtime: "docker",
           image: "node:24-bookworm",
-          workspaceRoot: unshared,
+          workspaceRoot: elsewhere,
           user: `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`,
         }),
-        {
-          workspaceRoot: unshared,
-          hostFileOutsideWorkspace: hostSecret,
-          timeoutMs: 120_000,
-        },
+        { workspaceRoot: elsewhere, hostFileOutsideWorkspace: hostSecret, timeoutMs: 120_000 },
       );
 
-      expect(result.workspaceReachable).toBe(false);
-      expect(result.mode).toBe("unknown");
-      expect(result.mode).not.toBe("isolated");
+      expect(result.mode === "unknown").toBe(!result.workspaceReachable);
     } finally {
-      await rm(unshared, { recursive: true, force: true });
+      await rm(elsewhere, { recursive: true, force: true });
     }
   }, 300_000);
 });

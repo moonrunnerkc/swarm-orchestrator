@@ -1,4 +1,4 @@
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { childEnvironment, defaultChildHome } from "./child-environment.ts";
 import { type ProcessRunResult, runProcessGroup } from "./run-process.ts";
 
@@ -101,6 +101,9 @@ export async function selfTestContainment(
   options: SelfTestOptions,
 ): Promise<ContainmentSelfTest> {
   const timeoutMs = options.timeoutMs ?? 15_000;
+  // Beside the decoy the harness made, so the write probe aims at a path the harness owns and
+  // can check afterwards from the host.
+  const writeTarget = `${options.hostFileOutsideWorkspace}.write-probe`;
   const probes = await Promise.all([
     runProbe(backend, options, timeoutMs, {
       id: "host-file-read",
@@ -109,8 +112,12 @@ export async function selfTestContainment(
     }),
     runProbe(backend, options, timeoutMs, {
       id: "host-file-write",
-      attempted: "writing a file outside the workspace",
-      script: `const p=require("node:path").join(${JSON.stringify(tmpdir())},"swarm-containment-probe.txt");require("node:fs").writeFileSync(p,"reached");process.stdout.write("wrote "+p)`,
+      attempted: `writing ${writeTarget}, which is outside the workspace`,
+      script: `require("node:fs").writeFileSync(${JSON.stringify(writeTarget)},"reached");process.stdout.write("wrote")`,
+      // Checked on the host, not by the exit code. A container with a tmpfs over the path the
+      // probe aimed at reports a successful write that never reached the host, and reading the
+      // exit code called that an escape: the probe wrote somewhere, and somewhere is not here.
+      landedOnHost: () => hostFileSays(writeTarget, "reached"),
     }),
     runProbe(backend, options, timeoutMs, {
       id: "network-egress",
@@ -176,11 +183,31 @@ async function canReachWorkspace(
   return ran.exitCode === 0 && ran.stdout.trim() === "reached";
 }
 
+/** Whether the host's own filesystem holds what the probe claims to have written. */
+function hostFileSays(path: string, expected: string): boolean {
+  try {
+    return readFileSync(path, "utf8").includes(expected);
+  } catch {
+    return false;
+  }
+}
+
 async function runProbe(
   backend: IsolationBackend,
   options: SelfTestOptions,
   timeoutMs: number,
-  probe: { readonly id: string; readonly attempted: string; readonly script: string },
+  probe: {
+    readonly id: string;
+    readonly attempted: string;
+    readonly script: string;
+    /**
+     * Where the harness can confirm the escape from the host rather than from the probe's own
+     * exit code. Absent means the probe's output is the evidence, which is right for a read and
+     * for a connection and wrong for a write, since a write can succeed into a filesystem that
+     * is not the host's.
+     */
+    readonly landedOnHost?: () => boolean;
+  },
 ): Promise<ContainmentProbe> {
   const ran = await backend.run([backend.nodeProgram, "-e", probe.script], {
     cwd: options.workspaceRoot,
@@ -197,6 +224,16 @@ async function runProbe(
       observed: `the probe could not start (${ran.startFailure}), so nothing was shown`,
     };
   }
+  if (probe.landedOnHost !== undefined) {
+    const landed = probe.landedOnHost();
+    return {
+      id: probe.id,
+      attempted: probe.attempted,
+      contained: !landed,
+      observed: landed ? "the host filesystem holds what the probe wrote" : "",
+    };
+  }
+
   const contained = ran.exitCode !== 0 || ran.stdout.trim().length === 0;
   return {
     id: probe.id,
