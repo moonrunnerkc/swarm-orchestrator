@@ -89,9 +89,27 @@ const arms = [
   { id: "single-gates", attempts: 3, what: "the gates and the ratchet, retrying up to three times" },
 ];
 
-const cases = JSON.parse(
+const onlyCases = (flag("only", "") ?? "")
+  .split(",")
+  .map((id) => id.trim())
+  .filter((id) => id.length > 0);
+
+const allCases = JSON.parse(
   readFileSync(join(repositoryRoot, "src/select/calibration-cases.v1.json"), "utf8"),
-).cases.slice(0, caseLimit);
+).cases;
+
+// Named cases beat a count, because re-running the two that disagreed is the ordinary follow-up
+// and slicing the first N cannot express it.
+const cases =
+  onlyCases.length > 0
+    ? allCases.filter((one) => onlyCases.includes(one.id))
+    : allCases.slice(0, caseLimit);
+
+if (onlyCases.length > 0 && cases.length !== onlyCases.length) {
+  const missing = onlyCases.filter((id) => !allCases.some((one) => one.id === id));
+  console.error(`--only names ${missing.length} case(s) that do not exist: ${missing.join(", ")}`);
+  process.exit(2);
+}
 
 mkdirSync(join(resultsPath, ".."), { recursive: true });
 const done = new Map();
