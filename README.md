@@ -424,7 +424,10 @@ records one completed lap and a directory is not a lap.
 ## What is not claimed
 
 Kept short and kept honest, because the point of the rest of this file is that claims cost
-something.
+something. The full list, with what would settle each, is
+[`docs/beta-gates.md`](docs/beta-gates.md): four of the twelve gates this project agreed not to
+call itself production-ready without are passing on measured evidence, five are partial with the
+gap named, and three are unproven. **It is not production-ready**, and the largest gap is scale.
 
 - **Not "fully secure".** The secret detector does known-pattern scrubbing, not secret
   removal, with a four-character floor. Zero crashes at a fuzz budget is evidence, not proof.
