@@ -334,6 +334,7 @@ async function verifyPatch(options: CiCommand): Promise<number> {
     baseCommit,
     patch: await readFile(options.patchFile, "utf8"),
     immutablePaths: options.immutablePaths,
+    installDependencies: options.installDependencies,
     commands: createNodeCommandRunner(clock, harnessChildEnvironment()),
     clock,
   });
@@ -355,9 +356,20 @@ async function verifyPatch(options: CiCommand): Promise<number> {
     );
     return exitCodes.notAcceptable;
   }
+  if (result.install !== null) {
+    process.stdout.write(
+      `  install  ${result.install.succeeded ? "ok" : "failed"}: ${result.install.detail}\n`,
+    );
+  }
   for (const check of result.checks) {
     const label = check.status === "not-applicable" ? "n/a" : check.status;
     process.stdout.write(`  ${label.padEnd(8)} ${check.id}: ${check.detail}\n`);
+  }
+  if (result.unmeasured) {
+    // Not the same finding as a refusal, and the difference is the whole point: a reader told
+    // "not verified" over a checkout where nothing ran learns nothing about the patch.
+    process.stdout.write(`\nnot measured: ${result.advice}\n`);
+    return exitCodes.notAcceptable;
   }
   process.stdout.write(
     result.verified

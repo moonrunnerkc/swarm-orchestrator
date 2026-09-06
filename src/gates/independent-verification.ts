@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,6 +27,13 @@ export interface IndependentCheck {
   readonly detail: string;
 }
 
+export interface DependencyInstall {
+  readonly attempted: boolean;
+  readonly succeeded: boolean;
+  readonly command: string;
+  readonly detail: string;
+}
+
 export interface IndependentVerification {
   /** Whether the patch applied cleanly to a fresh base. A patch that did not is not verified. */
   readonly applied: boolean;
@@ -33,6 +41,16 @@ export interface IndependentVerification {
   /** Why verification refused before running anything, or null where it ran. */
   readonly refusal: string | null;
   readonly verified: boolean;
+  /**
+   * Nothing measured, as against measured and found wanting. A fresh checkout has no installed
+   * dependencies, so a real project's runner is not there and its tests gate reports that it
+   * measured nothing. Reading that as a refusal is the mistake this whole project is about.
+   */
+  readonly unmeasured: boolean;
+  /** What would make the checks runnable, where nothing could run. Empty where they ran. */
+  readonly advice: string;
+  /** The install phase, where one was asked for. Null where it was not. */
+  readonly install: DependencyInstall | null;
   readonly checkoutPath: string | null;
 }
 
@@ -45,6 +63,14 @@ export interface IndependentVerificationOptions {
   readonly commands: GateCommandRunner;
   readonly clock: Clock;
   readonly timeoutMs?: number;
+  /**
+   * Install the checkout's dependencies from its lockfile before running the checks.
+   *
+   * Off by default, and deliberately: installing runs whatever install scripts the registry
+   * serves, which is one of the seven things the approval model says needs a person. A run that
+   * cannot measure says so instead of quietly installing on the reader's behalf.
+   */
+  readonly installDependencies?: boolean;
 }
 
 export async function verifyIndependently(
@@ -62,6 +88,9 @@ export async function verifyIndependently(
         "Nothing was run: a patch that reaches a path the run promised not to touch is " +
         "refused before it is measured, not measured and then judged.",
       verified: false,
+      unmeasured: false,
+      advice: "",
+      install: null,
       checkoutPath: null,
     };
   }
@@ -81,6 +110,9 @@ export async function verifyIndependently(
         checks: [],
         refusal: `a fresh checkout could not be made: ${cloned.stderr.trim() || cloned.stdout.trim()}`,
         verified: false,
+        unmeasured: true,
+        advice: "",
+        install: null,
         checkoutPath: null,
       };
     }
@@ -94,6 +126,9 @@ export async function verifyIndependently(
         checks: [],
         refusal: `the base commit ${options.baseCommit} is not in the checkout`,
         verified: false,
+        unmeasured: true,
+        advice: "",
+        install: null,
         checkoutPath: null,
       };
     }
@@ -111,25 +146,91 @@ export async function verifyIndependently(
         checks: [],
         refusal: null,
         verified: false,
+        unmeasured: false,
+        advice: "",
+        install: null,
         checkoutPath: null,
       };
     }
 
+    const install =
+      options.installDependencies === true
+        ? await installFromLockfile(checkout, options, timeoutMs)
+        : null;
+
     const checks = await runChecks(checkout, options, timeoutMs);
+    const measuredSomething = checks.some((check) => check.status !== "not-applicable");
     return {
       applied: true,
       checks,
       refusal: null,
-      // A dynamic check that passed and no check that failed. An empty check list is not
-      // verification: it is a checkout nothing measured.
+      // A check that passed and none that failed. An empty or wholly abstaining check list is
+      // not verification: it is a checkout nothing measured.
       verified:
         checks.some((check) => check.status === "passed") &&
         !checks.some((check) => check.status === "failed"),
+      unmeasured: !measuredSomething,
+      advice: measuredSomething
+        ? ""
+        : "nothing here measured the patch: every check stood down, which on a real project " +
+          "usually means the fresh checkout has no installed dependencies, so its test runner " +
+          "is not present. Pass --install to install them from the lockfile first, which runs " +
+          "whatever install scripts the registry serves and is therefore a decision rather " +
+          "than a default.",
+      install,
       checkoutPath: checkout,
     };
   } finally {
     await rm(checkout, { recursive: true, force: true });
   }
+}
+
+/**
+ * Installs from whichever lockfile the checkout carries, with no network beyond the registry the
+ * lockfile already names. Reported rather than assumed: an install that failed and a run that
+ * never installed produce the same absent runner, and they are different problems.
+ */
+async function installFromLockfile(
+  checkout: string,
+  options: IndependentVerificationOptions,
+  timeoutMs: number,
+): Promise<DependencyInstall> {
+  const lockfiles: readonly { readonly file: string; readonly argv: readonly string[] }[] = [
+    {
+      file: "package-lock.json",
+      argv: ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"],
+    },
+    { file: "pnpm-lock.yaml", argv: ["pnpm", "install", "--frozen-lockfile", "--ignore-scripts"] },
+    { file: "yarn.lock", argv: ["yarn", "install", "--frozen-lockfile", "--ignore-scripts"] },
+  ];
+
+  for (const candidate of lockfiles) {
+    if (!existsSync(join(checkout, candidate.file))) {
+      continue;
+    }
+    const ran = await options.commands.runVouched(candidate.argv, {
+      cwd: checkout,
+      timeoutMs: Math.max(timeoutMs, 10 * 60_000),
+    });
+    return {
+      attempted: true,
+      succeeded: ran.exitCode === 0,
+      command: candidate.argv.join(" "),
+      detail:
+        ran.exitCode === 0
+          ? `installed from ${candidate.file}`
+          : `install failed (exit ${ran.exitCode}): ${(ran.stderr || ran.stdout).trim().split("\n").slice(-2).join(" ")}`,
+    };
+  }
+
+  return {
+    attempted: true,
+    succeeded: false,
+    command: "",
+    detail:
+      "no lockfile this build installs from (package-lock.json, pnpm-lock.yaml, yarn.lock), " +
+      "so nothing was installed and the checks run against whatever is already there",
+  };
 }
 
 /**
