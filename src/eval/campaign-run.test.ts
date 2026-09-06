@@ -238,3 +238,50 @@ describe("a case whose files live in directories", () => {
     expect(await readFile(join(workspace, "test/limits.test.mjs"), "utf8")).toContain("is five");
   }, 60_000);
 });
+
+/**
+ * Restoring a case's tests is the right oracle where the test is the specification: the run was
+ * asked to make it pass, so putting it back and asking again catches a run that weakened it.
+ *
+ * It is the wrong oracle where the test is the deliverable. `edit-clamp-covers-its-own-branches`
+ * asks the model to implement clamp *and cover every branch it adds with a test*, and its gate
+ * measures coverage. Restoring the original one-assertion test deletes the work being judged and
+ * then measures coverage against what is left, which accepted three runs the harness had
+ * correctly refused for leaving branches uncovered. You cannot judge "did you write tests" by
+ * deleting the tests.
+ */
+describe("a case whose tests are the deliverable rather than the specification", () => {
+  const coverageCase = {
+    id: "covers-its-branches",
+    taskClass: "edit",
+    prompt: "implement clamp and cover every branch you add with a test",
+    seed: {
+      "clamp.mjs": "export const clamp = (v) => v;\n",
+      "clamp.test.mjs":
+        "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { clamp } from './clamp.mjs';\ntest('inside', () => assert.equal(clamp(5), 5));\n",
+    },
+    gateCommand: 'node --test --experimental-test-coverage && node -e "process.exit(0)"',
+  };
+
+  it("restores nothing, because restoring would delete the work being judged", () => {
+    expect(hiddenOracleFiles(coverageCase)).toEqual([]);
+  });
+
+  it("still restores where the test is the specification", () => {
+    expect(hiddenOracleFiles(cases[0]!)).toEqual(["greet.test.mjs"]);
+  });
+
+  it("says which oracle it used, so a reader is not left inferring it", async () => {
+    const workspace = await seedWorkspace(root, coverageCase);
+    const judged = await judgeByHiddenOracle(workspace, coverageCase);
+
+    expect(judged.mode).toBe("gate-as-written");
+  }, 60_000);
+
+  it("says the other mode too", async () => {
+    const workspace = await seedWorkspace(root, cases[0]!);
+    const judged = await judgeByHiddenOracle(workspace, cases[0]!);
+
+    expect(judged.mode).toBe("restored-tests");
+  }, 60_000);
+});
