@@ -313,3 +313,35 @@ async function writeIntoWorkspace(workspace: string, name: string, content: stri
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, content);
 }
+
+/**
+ * Which of the four cells a run lands in, comparing what the harness concluded against what the
+ * hidden oracle found.
+ *
+ * The names matter more than the arithmetic. An earlier version called the acceptable-but-refused
+ * cell a false green, which reads as the tool asserting that work was done when it was not. The
+ * harness asserts no such thing: run without `--oracle`, its verdict carries `task: unjudged`
+ * with the reason beside it, and its `acceptable` means no blocking gate failed, no policy gate
+ * failed, and something executed the change. That is a claim about the configured gates, not
+ * about the task, so a disagreement with a task oracle measures whether those gates were adequate
+ * for the task and never whether the tool lied. A false-green rate computed from this comparison
+ * is a category error, and it produced an 8.3% figure that described nothing.
+ */
+export function classifyAgainstOracle(input: {
+  harnessAcceptable: boolean;
+  oracleAccepted: boolean;
+}): "agree-accept" | "gates-missed" | "gates-strict" | "agree-refuse" {
+  if (input.harnessAcceptable) {
+    return input.oracleAccepted ? "agree-accept" : "gates-missed";
+  }
+  return input.oracleAccepted ? "gates-strict" : "agree-refuse";
+}
+
+/**
+ * Whether the harness claimed the task was done, which is the only claim a false green can be a
+ * defect in. Nothing infers a task oracle, so a run that was not given one never makes the claim
+ * and cannot produce a false green in either direction.
+ */
+export function harnessClaimsTaskDone(input: { taskOracleConfigured: boolean }): boolean {
+  return input.taskOracleConfigured;
+}

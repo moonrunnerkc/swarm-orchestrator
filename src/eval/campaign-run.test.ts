@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   campaignPlan,
+  classifyAgainstOracle,
+  harnessClaimsTaskDone,
   hiddenOracleFiles,
   judgeByHiddenOracle,
   runCampaign,
@@ -397,4 +399,44 @@ describe("what the oracle actually decides", () => {
     expect(judged.mode).toBe("restored-tests");
     expect(judged.accepted).toBe(false);
   }, 60_000);
+});
+
+describe("classifyAgainstOracle", () => {
+  // The campaign ran the agent CLI without an oracle, so the harness's own verdict reports
+  // `task: unjudged`. Scoring its acceptance against a task oracle therefore compares two
+  // different propositions, and naming the gap a false green attributes to the tool a claim it
+  // declined to make. These names say which proposition each cell is about.
+  it("names a gates-passed, oracle-refused run a gate gap rather than a false green", () => {
+    expect(classifyAgainstOracle({ harnessAcceptable: true, oracleAccepted: false })).toBe(
+      "gates-missed",
+    );
+  });
+
+  it("names a gates-refused, oracle-accepted run a strict gate rather than a false red", () => {
+    expect(classifyAgainstOracle({ harnessAcceptable: false, oracleAccepted: true })).toBe(
+      "gates-strict",
+    );
+  });
+
+  it("names agreement in both directions", () => {
+    expect(classifyAgainstOracle({ harnessAcceptable: true, oracleAccepted: true })).toBe(
+      "agree-accept",
+    );
+    expect(classifyAgainstOracle({ harnessAcceptable: false, oracleAccepted: false })).toBe(
+      "agree-refuse",
+    );
+  });
+});
+
+describe("harnessClaimsTaskDone", () => {
+  // A false green is only definable against a claim the tool actually makes. This is the
+  // predicate that says whether it made one, and it is false for every run in the golden-set
+  // campaign, which is why that campaign cannot produce a false-green rate at all.
+  it("is false when no task oracle was configured", () => {
+    expect(harnessClaimsTaskDone({ taskOracleConfigured: false })).toBe(false);
+  });
+
+  it("is true only when a task oracle judged the run", () => {
+    expect(harnessClaimsTaskDone({ taskOracleConfigured: true })).toBe(true);
+  });
 });

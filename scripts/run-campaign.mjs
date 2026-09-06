@@ -18,6 +18,7 @@ import { promisify } from "node:util";
 
 import {
   campaignPlan,
+  classifyAgainstOracle,
   judgeByHiddenOracle,
   seedWorkspace,
 } from "../dist/eval/campaign-run.js";
@@ -210,16 +211,10 @@ for (const planned of plan.runs) {
   const latencyMs = Date.now() - startedAt;
 
   const judged = await judgeByHiddenOracle(workspace, one);
-  // The four corners. A false green is the harness saying acceptable over a change the oracle
-  // refuses, and it is the only one of the four that is a defect in this tool rather than in
-  // the model: the others are the model failing, or the tool being cautious.
-  const corner = harnessAcceptable
-    ? judged.accepted
-      ? "true-green"
-      : "false-green"
-    : judged.accepted
-      ? "false-red"
-      : "true-red";
+  // The four cells, named for the proposition they actually compare. The harness ran without an
+  // oracle, so its verdict carries `task: unjudged` and its acceptance is a claim about the
+  // configured gates. Comparing that to a task oracle measures gate adequacy, never tool honesty.
+  const corner = classifyAgainstOracle({ harnessAcceptable, oracleAccepted: judged.accepted });
   const record = {
     ...planned,
     accepted: judged.accepted,
@@ -246,7 +241,7 @@ for (const planned of plan.runs) {
   // A run where the harness and the oracle disagree is the only kind worth looking at, and
   // looking at it needs the tree. Deleting every workspace meant each disagreement had to be
   // re-derived by guesswork, which produced four wrong diagnoses in a row before this was added.
-  if (record.corner === "false-green" || record.corner === "false-red") {
+  if (record.corner === "gates-missed" || record.corner === "gates-strict") {
     const kept = join(disagreementRoot, `${record.corner}-${record.caseId}-${record.armId}-${record.seed}`);
     try {
       mkdirSync(disagreementRoot, { recursive: true });
@@ -291,7 +286,12 @@ for (const score of scores) {
   );
 }
 
-console.log("\n=== what the harness said against what the oracle found ===");
+console.log("\n=== were the configured gates adequate for the task? ===");
+console.log(
+  "Not a false-green rate. These runs were given no task oracle, so every harness verdict\n" +
+    "reports `task: unjudged` and none of them claims the work was done. What the gap below\n" +
+    "measures is how often every configured gate passed over work a hidden oracle refuses.",
+);
 for (const arm of arms) {
   const mine = finished.filter((entry) => entry.armId === arm.id && entry.corner !== undefined);
   if (mine.length === 0) {
@@ -299,15 +299,15 @@ for (const arm of arms) {
     continue;
   }
   const count = (name) => mine.filter((entry) => entry.corner === name).length;
-  const falseGreen = count("false-green");
-  const rate = wilsonInterval(falseGreen, mine.length);
+  const missed = count("gates-missed");
+  const rate = wilsonInterval(missed, mine.length);
   console.log(
     `${arm.id.padEnd(16)} ${mine.length} judged: ` +
-      `${count("true-green")} true green, ${falseGreen} FALSE GREEN, ` +
-      `${count("false-red")} false red, ${count("true-red")} true red`,
+      `${count("agree-accept")} agree accept, ${missed} GATES MISSED, ` +
+      `${count("gates-strict")} gates stricter, ${count("agree-refuse")} agree refuse`,
   );
   console.log(
-    `${"".padEnd(16)} false-green rate ${(rate.point * 100).toFixed(1)}% ` +
+    `${"".padEnd(16)} gates-missed rate ${(rate.point * 100).toFixed(1)}% ` +
       `[${(rate.lower * 100).toFixed(1)}, ${(rate.upper * 100).toFixed(1)}]`,
   );
 }
@@ -349,11 +349,11 @@ writeFileSync(
             arm.id,
             {
               judged: mine.length,
-              trueGreen: count("true-green"),
-              falseGreen: count("false-green"),
-              falseRed: count("false-red"),
-              trueRed: count("true-red"),
-              falseGreenRate: wilsonInterval(count("false-green"), mine.length),
+              agreeAccept: count("agree-accept"),
+              gatesMissed: count("gates-missed"),
+              gatesStrict: count("gates-strict"),
+              agreeRefuse: count("agree-refuse"),
+              gatesMissedRate: wilsonInterval(count("gates-missed"), mine.length),
             },
           ];
         }),
