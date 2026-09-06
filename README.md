@@ -415,11 +415,16 @@ something.
   the run starts and recorded on the chain rather than quietly assumed, but it is not
   containment. The container backend has not been audited against a determined escape, and a
   container is not a virtual machine.
-- **No benchmark numbers.** Nothing here is measured against another tool. The evaluation
-  harness exists, is tested and is a command away, and it has not been run at scale: what
-  would make it worth reading is five seeds across matched arms with frozen environments, and
-  the frontier arms of that cost real money nobody has spent. The calibration results that do
-  exist are self-run, on one machine, and labelled directional in the file itself.
+- **The false-green rate is measured, on eighteen runs.** Eighteen real-repository patches
+  re-scored against hidden acceptance tests written before any of them ran: zero false greens,
+  zero false reds, 95% CI [0, 29.9] per arm. Eighteen runs is eighteen runs, and that interval
+  is what a zero out of nine per arm buys: what is shown is that none occurred here, not that
+  the rate is low. The measurement found two defects in the tool on the way, both now closed:
+  [`false-green-measurement.md`](docs/evidence/2026-09-05/false-green-measurement.md).
+- **No comparison against another tool.** Nothing here is measured against a competitor. The
+  evaluation harness runs matched arms on a local model and has not been run at the scale that
+  would make an arm comparison worth reading. The calibration results that do exist are
+  self-run, on one machine, and labelled directional in the file itself.
 - **A full clone is still heavy.** Blob payloads, 409 MB of the tracked tree, now live outside
   the repository with their digests committed beside them, and a shallow clone packs to about
   19 MB. A full clone still carries the history those blobs were committed into, and shrinking

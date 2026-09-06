@@ -11,11 +11,12 @@
 // pinned base and runs the checks there. No model is called: the patches are already recorded,
 // so this is arithmetic over evidence rather than a new campaign.
 import { execFile } from "node:child_process";
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { wilsonInterval } from "../dist/eval/statistics.js";
+import { repositories } from "./real-repos.mjs";
 
 const run = promisify(execFile);
 const repositoryRoot = new URL("..", import.meta.url).pathname;
@@ -24,23 +25,18 @@ const evidenceRoot = join(repositoryRoot, "docs/evidence/2026-09-04/real-repos")
 /**
  * The hidden acceptance test as the task oracle: written before any run, never shown to either
  * arm, and the only thing here that says whether the task was done rather than whether anything
- * broke. Each declares its own destination in its first line; the runner is the project's own.
+ * broke.
  *
- * The command copies it in and runs that one file, which is what the 09-04 harness did.
+ * The destination and the invocation come from `real-repos.mjs`, which is what the 2026-09-04
+ * harness used. Retyping them here would be a second account of the oracle, and a re-score
+ * measured by a different oracle than the one it is compared against measures nothing.
  */
-const oracles = {
-  "ts-pattern": { into: "tests/object-empty.hidden.test.ts", runner: "npx jest --" },
-  purify: { into: "src/List.partition.hidden.test.ts", runner: "npx vitest run" },
-  darkreader: { into: "tests/unit/utils/array-chunk.hidden.tests.ts", runner: "npx jest --" },
-};
-
 function oracleCommand(name) {
-  const oracle = oracles[name];
-  const source = join(evidenceRoot, name, "hidden");
-  const file = readdirSync(source)[0];
+  const hidden = repositories[name].hidden;
+  const source = join(evidenceRoot, hidden.file);
   return (
-    `mkdir -p "$(dirname ${oracle.into})" && cp ${JSON.stringify(join(source, file))} ` +
-    `${oracle.into} && ${oracle.runner} ${oracle.into}`
+    `mkdir -p "$(dirname ${hidden.destination})" && cp ${JSON.stringify(source)} ` +
+    `${hidden.destination} && ${hidden.argv.join(" ")}`
   );
 }
 
