@@ -40,6 +40,20 @@ export interface IndependentVerification {
   readonly checks: readonly IndependentCheck[];
   /** Why verification refused before running anything, or null where it ran. */
   readonly refusal: string | null;
+  /**
+   * Whether the repository's own suite still passes. This is what running that suite
+   * establishes: nothing broke. It is not whether the task was done, because a suite tests the
+   * behaviour a project already had and a task adds behaviour it did not.
+   */
+  readonly regression: "pass" | "fail" | "unmeasured";
+  /**
+   * Whether a trusted task-specific check says the task was done. `unjudged` where no oracle was
+   * given, which is the honest answer and never an implicit pass: four of eighteen real
+   * repository patches passed their project's suite and failed a hidden acceptance test, so
+   * reading a passing suite as an accepted task is a measured 22% false-green rate.
+   */
+  readonly task: "accepted" | "rejected" | "unjudged";
+  /** Both: no regression, and an oracle that says the task was done. */
   readonly verified: boolean;
   /**
    * Nothing measured, as against measured and found wanting. A fresh checkout has no installed
@@ -60,6 +74,12 @@ export interface IndependentVerificationOptions {
   readonly patch: string;
   /** Paths the run declared it would never change. A patch touching one is refused outright. */
   readonly immutablePaths?: readonly string[];
+  /**
+   * A trusted check that says whether the task was done, run in the fresh checkout after the
+   * repository's own suite. Absent leaves the task unjudged, which is honest: nothing else here
+   * can tell a change that does the work from one that merely does not break anything.
+   */
+  readonly taskOracle?: { readonly command: string };
   readonly commands: GateCommandRunner;
   readonly clock: Clock;
   readonly timeoutMs?: number;
@@ -87,6 +107,8 @@ export async function verifyIndependently(
         `the patch changes ${forbidden.join(", ")}, which the run declared immutable. ` +
         "Nothing was run: a patch that reaches a path the run promised not to touch is " +
         "refused before it is measured, not measured and then judged.",
+      regression: "unmeasured",
+      task: "unjudged",
       verified: false,
       unmeasured: false,
       advice: "",
@@ -109,6 +131,8 @@ export async function verifyIndependently(
         applied: false,
         checks: [],
         refusal: `a fresh checkout could not be made: ${cloned.stderr.trim() || cloned.stdout.trim()}`,
+        regression: "unmeasured",
+        task: "unjudged",
         verified: false,
         unmeasured: true,
         advice: "",
@@ -125,6 +149,8 @@ export async function verifyIndependently(
         applied: false,
         checks: [],
         refusal: `the base commit ${options.baseCommit} is not in the checkout`,
+        regression: "unmeasured",
+        task: "unjudged",
         verified: false,
         unmeasured: true,
         advice: "",
@@ -145,6 +171,8 @@ export async function verifyIndependently(
         applied: false,
         checks: [],
         refusal: null,
+        regression: "unmeasured",
+        task: "unjudged",
         verified: false,
         unmeasured: false,
         advice: "",
@@ -160,29 +188,63 @@ export async function verifyIndependently(
 
     const checks = await runChecks(checkout, options, timeoutMs);
     const measuredSomething = checks.some((check) => check.status !== "not-applicable");
+    const regression: IndependentVerification["regression"] = checks.some(
+      (check) => check.status === "failed",
+    )
+      ? "fail"
+      : checks.some((check) => check.status === "passed")
+        ? "pass"
+        : "unmeasured";
+    const task = await judgeTask(checkout, options, timeoutMs);
+
     return {
       applied: true,
       checks,
       refusal: null,
-      // A check that passed and none that failed. An empty or wholly abstaining check list is
-      // not verification: it is a checkout nothing measured.
-      verified:
-        checks.some((check) => check.status === "passed") &&
-        !checks.some((check) => check.status === "failed"),
+      regression,
+      task,
+      // Both, and the second is the one a suite cannot supply. A patch that adds a feature badly
+      // still passes a suite written before the feature existed.
+      verified: regression === "pass" && task === "accepted",
       unmeasured: !measuredSomething,
-      advice: measuredSomething
-        ? ""
-        : "nothing here measured the patch: every check stood down, which on a real project " +
+      advice: !measuredSomething
+        ? "nothing here measured the patch: every check stood down, which on a real project " +
           "usually means the fresh checkout has no installed dependencies, so its test runner " +
           "is not present. Pass --install to install them from the lockfile first, which runs " +
           "whatever install scripts the registry serves and is therefore a decision rather " +
-          "than a default.",
+          "than a default."
+        : task === "unjudged"
+          ? "the repository's own suite passed, which says nothing broke. It does not say the " +
+            "task was done: a suite tests the behaviour a project already had, and a task adds " +
+            "behaviour it did not. Pass --oracle <command> with a check that says whether the " +
+            "task was done."
+          : "",
       install,
       checkoutPath: checkout,
     };
   } finally {
     await rm(checkout, { recursive: true, force: true });
   }
+}
+
+/**
+ * The trusted task-specific check, run in the fresh checkout. Nothing infers it: a task oracle
+ * is written by whoever set the task, before the run, and its absence is reported rather than
+ * papered over with the suite's own verdict.
+ */
+async function judgeTask(
+  checkout: string,
+  options: IndependentVerificationOptions,
+  timeoutMs: number,
+): Promise<IndependentVerification["task"]> {
+  if (options.taskOracle === undefined) {
+    return "unjudged";
+  }
+  const ran = await options.commands.run(options.taskOracle.command, {
+    cwd: checkout,
+    timeoutMs,
+  });
+  return ran.exitCode === 0 ? "accepted" : "rejected";
 }
 
 /**
