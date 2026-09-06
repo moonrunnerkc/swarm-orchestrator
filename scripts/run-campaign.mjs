@@ -36,6 +36,22 @@ function latencyGuard(startedAt) {
   return Date.now() - startedAt >= 2_000;
 }
 
+/** The gate strip out of the harness's own report: one row per gate, as it printed them. */
+function gatesFrom(output) {
+  const gates = [];
+  for (const line of String(output).split("\n")) {
+    const read = /^ {2}(passed|failed|n\/a) +([a-z0-9:-]+)(?: \(advisory\))?: (.*)$/.exec(line);
+    if (read !== null) {
+      gates.push({
+        id: read[2],
+        status: read[1] === "n/a" ? "not-applicable" : read[1],
+        detail: String(read[3]).slice(0, 200),
+      });
+    }
+  }
+  return gates;
+}
+
 function flag(name, fallback) {
   const index = process.argv.indexOf(`--${name}`);
   return index === -1 ? fallback : process.argv[index + 1];
@@ -55,8 +71,10 @@ const resultsPath = flag("out", join(repositoryRoot, "campaign/eval/runs.jsonl")
  * 1: restore every test file.
  * 2: do not restore where the gate measures coverage.
  * 3: also do not restore where the gate names a test file and reads it.
+ * 4: same judgement as 3, and every record carries the harness's gate strip, so a disagreement
+ *    between the harness and the oracle is read off the record rather than reproduced.
  */
-const oracleRule = 3;
+const oracleRule = 4;
 
 /**
  * The arms this architecture can actually separate. Evidence capture is not one of them: the
@@ -127,6 +145,9 @@ for (const planned of plan.runs) {
   const startedAt = Date.now();
   let completed = true;
   let detail = "";
+  // What the harness said, gate by gate. Without this a refusal is a bare boolean and the only
+  // way to learn why is to reproduce the run, which is how three wrong diagnoses were reached.
+  let gateReport = "";
   // What the harness itself concluded. Zero is its `acceptable` verdict; anything else is not.
   // Without this the campaign can say how often a run worked and not how often the tool was
   // wrong about whether it worked, and the second is the number this whole project is about.
@@ -148,7 +169,10 @@ for (const planned of plan.runs) {
         one.prompt,
       ],
       { cwd: workspace, timeout: (wallMinutes + 3) * 60_000, maxBuffer: 64 * 1024 * 1024 },
-    );
+    ).then((ran) => {
+      gateReport = ran.stdout ?? "";
+      return ran;
+    });
     harnessAcceptable = true;
   } catch (cause) {
     // Counted, never dropped: a run that failed to complete produced no accepted patch, and
@@ -159,6 +183,7 @@ for (const planned of plan.runs) {
     // crash. Folding the two would hide an arm that never launched behind an arm that failed.
     const exitedCleanly = typeof cause.code === "number" && cause.killed !== true;
     completed = exitedCleanly && latencyGuard(startedAt);
+    gateReport = cause.stdout ?? "";
     detail = (cause.stderr ?? cause.message ?? "").split("\n").slice(-2).join(" ").slice(0, 300);
   }
   const latencyMs = Date.now() - startedAt;
@@ -179,6 +204,12 @@ for (const planned of plan.runs) {
     accepted: judged.accepted,
     oracleMode: judged.mode,
     oracleRule,
+    // Every gate the harness ran and what it concluded, so a disagreement with the oracle is
+    // read off the record rather than guessed at or reproduced.
+    gates: gatesFrom(gateReport),
+    blockingFailures: gatesFrom(gateReport)
+      .filter((gate) => gate.status === "failed")
+      .map((gate) => gate.id),
     harnessAcceptable,
     corner,
     completed,
