@@ -145,6 +145,12 @@ export interface CiCommand {
   readonly command: "ci";
   readonly patchFile: string;
   /**
+   * Install the fresh checkout's dependencies from its lockfile before checking. Off by default:
+   * installing runs whatever scripts the registry serves, which is a decision rather than a
+   * default, and a run that cannot measure says so instead of installing on the reader's behalf.
+   */
+  readonly installDependencies: boolean;
+  /**
    * A stream some other agent emitted, replayed onto the chain beside the patch. Null verifies
    * the patch alone, which is the minimum an external producer has to hand over.
    */
@@ -316,6 +322,8 @@ export const usage = [
   "    [--immutable <a,b>] [--json]                   the base, trusting nothing that made it",
   "    [--agent-stream <file>]                        replay another agent's own event stream",
   "    [--agent-format generic|claude-code]           beside it, so the record is not a guess",
+  "    [--install]                                    install the checkout's dependencies first,",
+  "                                                   without which a real project measures nothing",
   "",
   "  swarm list-runs                                  runs this machine has state for",
   "  swarm inspect <run-id> [--json]                  what a run did, and what it still owes",
@@ -354,6 +362,7 @@ const switchFlags = new Set([
   "help",
   "json",
   "remove",
+  "install",
   "fix",
   "offline",
   "no-tui",
@@ -422,6 +431,7 @@ export function parseCommandLine(
     }
     return {
       command: "ci",
+      installDependencies: flags.has("install"),
       agentStream:
         streamPath === undefined || streamPath.trim().length === 0
           ? null

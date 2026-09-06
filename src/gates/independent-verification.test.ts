@@ -154,3 +154,94 @@ describe("verification that does not trust the tree it is verifying", () => {
     expect(await readFile(join(repository, "clamp.mjs"), "utf8")).toBe(before);
   }, 120_000);
 });
+
+describe("verifying a repository whose tests need its dependencies", () => {
+  /**
+   * A fresh checkout has no node_modules. A real project's runner lives there, so the tests gate
+   * finds no command, reports that it measured nothing, and the patch comes back unverified with
+   * nothing failed. Eighteen real-repository patches re-scored that way: every one refused, and
+   * eleven of them passed a hidden acceptance test written before any run.
+   */
+  it("says the checks measured nothing rather than reporting a failure", async () => {
+    // A project whose test script names a runner that is not installed.
+    await writeFile(
+      join(repository, "package.json"),
+      // A runner that is genuinely absent. `vitest` is not: this suite runs under vitest, which
+      // puts its own node_modules/.bin on PATH, so a child resolves it and exits 1 on "no test
+      // files" rather than 127 on "not installed".
+      '{"name":"w","version":"1.0.0","type":"module","scripts":{"test":"definitely-not-a-runner run"}}\n',
+    );
+    git(["add", "-A"], repository);
+    git(["commit", "-qm", "needs a runner"], repository);
+
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch: [
+        "diff --git a/clamp.mjs b/clamp.mjs",
+        "--- a/clamp.mjs",
+        "+++ b/clamp.mjs",
+        "@@ -1 +1 @@",
+        "-export const clamp = (v) => v;",
+        "+export const clamp = (v) => (v < 0 ? 0 : v);",
+        "",
+      ].join("\n"),
+      commands: commands(),
+      clock,
+    });
+
+    expect(result.applied).toBe(true);
+    expect(result.verified).toBe(false);
+    // The distinction the whole project turns on: nothing measured is not the same as measured
+    // and found wanting, and the reader has to be able to tell which happened.
+    expect(result.unmeasured).toBe(true);
+    expect(result.checks.every((check) => check.status !== "failed")).toBe(true);
+  }, 180_000);
+
+  it("names the install that would make the checks runnable", async () => {
+    await writeFile(
+      join(repository, "package.json"),
+      // A runner that is genuinely absent. `vitest` is not: this suite runs under vitest, which
+      // puts its own node_modules/.bin on PATH, so a child resolves it and exits 1 on "no test
+      // files" rather than 127 on "not installed".
+      '{"name":"w","version":"1.0.0","type":"module","scripts":{"test":"definitely-not-a-runner run"}}\n',
+    );
+    git(["add", "-A"], repository);
+    git(["commit", "-qm", "needs a runner"], repository);
+
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch:
+        "diff --git a/clamp.mjs b/clamp.mjs\n--- a/clamp.mjs\n+++ b/clamp.mjs\n@@ -1 +1 @@\n-export const clamp = (v) => v;\n+export const clamp = (v) => v;\n",
+      commands: commands(),
+      clock,
+    });
+
+    expect(result.advice).toMatch(/--install/);
+  }, 180_000);
+
+  it("installs from the lockfile when asked, so the checks can run", async () => {
+    // node --test needs nothing installed, so this shows the phase runs and reports rather than
+    // that a particular package manager works: installing is a decision, and it is recorded.
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch: [
+        "diff --git a/clamp.mjs b/clamp.mjs",
+        "--- a/clamp.mjs",
+        "+++ b/clamp.mjs",
+        "@@ -1 +1 @@",
+        "-export const clamp = (v) => v;",
+        "+export const clamp = (v) => (v < 0 ? 0 : v);",
+        "",
+      ].join("\n"),
+      installDependencies: true,
+      commands: commands(),
+      clock,
+    });
+
+    expect(result.install).not.toBeNull();
+    expect(result.install?.attempted).toBe(true);
+  }, 300_000);
+});

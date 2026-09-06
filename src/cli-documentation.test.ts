@@ -94,7 +94,7 @@ describe("switches that take no value", () => {
    * A switch that is not registered as one eats the word after it, so `--json "fix the bug"`
    * consumed the task and reported that --json needed a value.
    */
-  for (const flag of ["--json", "--no-tui", "--color", "--open-evidence"]) {
+  for (const flag of ["--json", "--no-tui", "--color", "--open-evidence", "--install"]) {
     it(`does not swallow the task after ${flag}`, () => {
       const parsed = parseCommandLine([flag, "fix the parser"], context);
 
