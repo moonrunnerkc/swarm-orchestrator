@@ -70,7 +70,9 @@ if (existsSync(resultsPath)) {
     const record = JSON.parse(line);
     // A record from before the harness verdict was captured cannot answer the question this
     // campaign exists to answer, so it is re-run rather than counted as done.
-    if (record.corner !== undefined) {
+    // A record judged before the oracle knew the difference between a case's tests being its
+    // specification and being its deliverable cannot answer the question either.
+    if (record.corner !== undefined && record.oracleMode !== undefined) {
       done.set(record.idempotencyKey, record);
     }
   }
@@ -165,6 +167,7 @@ for (const planned of plan.runs) {
   const record = {
     ...planned,
     accepted: judged.accepted,
+    oracleMode: judged.mode,
     harnessAcceptable,
     corner,
     completed,

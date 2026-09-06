@@ -66,8 +66,27 @@ export function campaignPlan(input: {
   return { runs, total: runs.length };
 }
 
-/** The files the oracle restores: a case's tests, which are what acceptance is decided by. */
+/**
+ * Whether a case's tests are its specification or its deliverable.
+ *
+ * Restoring the tests is the right oracle where the test is the specification: the run was asked
+ * to make it pass, so putting it back and asking again catches a run that weakened it. It is the
+ * wrong oracle where the run was asked to write the tests, because restoring then deletes the
+ * work being judged and measures what is left.
+ *
+ * Read off the gate command rather than the prompt. A gate that measures coverage is a gate
+ * whose subject is the tests themselves, and that is a fact about the case rather than a reading
+ * of its English.
+ */
+export function testsAreTheDeliverable(one: CampaignCase): boolean {
+  return /coverage|--experimental-test-coverage/.test(one.gateCommand);
+}
+
+/** The files the oracle restores. Empty where restoring would delete what is being judged. */
 export function hiddenOracleFiles(one: CampaignCase): readonly string[] {
+  if (testsAreTheDeliverable(one)) {
+    return [];
+  }
   return Object.keys(one.seed)
     .filter((name) => /\.test\.[mc]?[jt]s$/.test(name) || name.startsWith("test/"))
     .sort();
@@ -76,6 +95,12 @@ export function hiddenOracleFiles(one: CampaignCase): readonly string[] {
 export interface OracleJudgement {
   readonly accepted: boolean;
   readonly detail: string;
+  /**
+   * Which oracle was applied. `restored-tests` put the case's own tests back and asked again;
+   * `gate-as-written` ran the case's gate over the produced tree untouched, because the tests
+   * are what the run was asked to write. A reader should not have to infer which.
+   */
+  readonly mode: "restored-tests" | "gate-as-written";
 }
 
 /**
@@ -102,11 +127,15 @@ export async function judgeByHiddenOracle(
   });
 
   const lastLines = (ran.stderr || ran.stdout).trim().split("\n").slice(-3).join(" ");
+  const mode = testsAreTheDeliverable(one) ? "gate-as-written" : "restored-tests";
   return {
     accepted: ran.exitCode === 0,
+    mode,
     detail:
       ran.exitCode === 0
-        ? "the original tests pass over what the run left"
+        ? mode === "restored-tests"
+          ? "the original tests pass over what the run left"
+          : "the case's own gate passes over what the run left, tests included"
         : `the hidden oracle refused it (exit ${ran.exitCode}): ${lastLines || "no output"}`,
   };
 }
