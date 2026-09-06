@@ -163,7 +163,7 @@ own paper.
 
 `swarm ci` is the separate opinion.
 
-    swarm ci --patch candidate.diff --immutable ".github/**"
+    swarm ci --patch candidate.diff --install --oracle "npx jest tests/the-task.test.ts"
 
 It clones the base commit into a fresh checkout, applies the patch there, and runs the checks in
 that checkout, with the gates assembled from the base commit's manifests rather than the patched
@@ -171,6 +171,24 @@ tree's, so a patch that rewrites the test script does not get to choose the inst
 measures it. A patch touching a path you declared immutable is refused before anything runs. A
 patch that will not apply reports that no check happened rather than passing on an unchanged
 tree.
+
+**It reports two answers, not one, and the second is the one a suite cannot give you.**
+
+    regression: pass   task: unjudged
+
+`regression` is whether the repository's own suite still passes: it says nothing broke. `task` is
+whether the work was actually done, and only an oracle can say that, because a suite tests the
+behaviour a project already had and a task adds behaviour it did not. A patch that adds a
+feature badly still passes a suite written before the feature existed. Measured: four of
+eighteen real-repository patches passed their project's whole suite and failed a hidden
+acceptance test, which is a 22% false-green rate until the two answers were separated.
+`--oracle <command>` supplies the second; without it the task is `unjudged` and nothing is
+verified, which is the honest answer rather than a pass by omission.
+
+`--install` installs the fresh checkout's dependencies from its lockfile, with install scripts
+off. It is not the default, because installing runs whatever the registry serves. Without it a
+real project has no test runner in the checkout and every check stands down, which is reported
+as `not measured` rather than as a refusal: those are different findings.
 
 It does not need this tool's agent to have produced the patch. Pass `--agent-stream` with
 `--agent-format claude-code` or `generic` and another agent's own event stream is read beside

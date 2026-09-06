@@ -27,6 +27,29 @@ It does not require this tool's agent to have produced the patch. Two adapters r
 agent's event stream beside it, and a line an adapter does not recognise refuses the whole
 stream by line number rather than being skipped.
 
+## Amended, 2026-09-05: a passing suite is not an accepted task
+
+Measuring found the first version of this wrong in a way that mattered. Eighteen real-repository
+patches were re-scored against hidden acceptance tests, and `swarm ci` verified four that the
+oracle refused: a 22% false-green rate against a bar of zero.
+
+The cause was not a bug in a check. A repository's own suite tests the behaviour the project
+already had, and a task adds behaviour it did not, so a patch that adds a feature badly still
+passes a suite written before the feature existed. Running the suite establishes that nothing
+broke; it does not establish that the task was done, and the first version reported the former
+as the latter.
+
+So a verification now reports `regression` and `task` separately, `verified` requires both, and
+`--oracle <command>` supplies the second. Its absence leaves the task `unjudged`, which is
+reported rather than defaulted to a pass. With each repository's hidden test wired in as its
+oracle, the same eighteen patches score eighteen of eighteen correct.
+
+A second finding on the way: a fresh checkout has no installed dependencies, so a real project's
+runner is absent and every check stands down. That was being reported as "not verified" when it
+should have been "not measured", which is the same collapse this whole project exists to avoid.
+`--install` installs from the lockfile, off by default because installing runs what the registry
+serves.
+
 ## Consequences
 
 The verification path is agent-agnostic, which is what lets the product be a verifier rather
@@ -34,7 +57,8 @@ than a particular agent.
 
 ## What this does not buy
 
-The fresh checkout runs the repository's own gates, so it inherits whatever those establish. A
-project whose tests do not cover the change gets a `behavioral: unmeasured` from a fresh
-checkout exactly as it does from the run itself. Independence removes one class of doubt, not
-every class.
+An oracle is only as good as whoever wrote it, and a task with no oracle is unjudged rather than
+accepted: this makes the gap visible, it does not fill it. The three oracles measured against
+were written by the people who wrote the tool, before the runs and never shown to the arms,
+which is what makes them oracles rather than gates and still leaves them three tests chosen by
+an interested party.
