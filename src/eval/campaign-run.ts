@@ -245,7 +245,18 @@ function comparePairs(
 /** A scratch workspace seeded from a case, which is what an arm is pointed at. */
 export async function seedWorkspace(scratchRoot: string, one: CampaignCase): Promise<string> {
   const workspace = await mkdtemp(join(scratchRoot, `${one.id}-`));
-  await writeFile(join(workspace, "package.json"), `{"name":"${one.id}","type":"module"}\n`);
+  // The case's own command, declared where the gates look for it. Without it the tests gate has
+  // nothing to run, no dynamic gate can pass, and the harness correctly reports the change as
+  // not executed while the oracle runs the command directly and accepts it: every run then reads
+  // as a false red, and what was being measured was a workspace the campaign had misconfigured.
+  await writeFile(
+    join(workspace, "package.json"),
+    `${JSON.stringify(
+      { name: one.id, version: "1.0.0", type: "module", scripts: { test: one.gateCommand } },
+      null,
+      2,
+    )}\n`,
+  );
   for (const [name, content] of Object.entries(one.seed)) {
     await writeIntoWorkspace(workspace, name, content);
   }
