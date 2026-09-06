@@ -42,6 +42,10 @@ const notThisProjectsSuite = [
   "campaign/work/**",
   "campaign/corpus/**",
   "campaign/campaigns/**",
+  // Trees kept from a campaign disagreement, so they can be looked at. They are other projects'
+  // test files: collecting them fails this suite with "no test suite found" in somebody else's
+  // clamp.test.mjs, which is what happened the moment the feature first kept one.
+  "campaign/eval/**",
   "docs/evidence/**",
 ];
 
