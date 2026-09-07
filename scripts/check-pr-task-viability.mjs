@@ -59,6 +59,16 @@ function runnerFor(checkout, testFile) {
   return ["node", ["--test", testFile]];
 }
 
+/**
+ * Written after every judgement rather than at the end of the run. Each candidate costs a clone,
+ * an install and two test runs, so a run that dies on its last one would otherwise throw away
+ * every judgement before it, and these scripts are only resumable if what they learned survives.
+ */
+function persist() {
+  judged.at = new Date().toISOString();
+  writeFileSync(judgedPath, `${JSON.stringify(judged, null, 2)}\n`);
+}
+
 const { candidates } = JSON.parse(readFileSync(candidatesPath, "utf8"));
 const judged = existsSync(judgedPath)
   ? JSON.parse(readFileSync(judgedPath, "utf8"))
@@ -89,6 +99,7 @@ for (const candidate of wanted) {
     if (cloned.code !== 0) {
       record.why = `clone failed: ${cloned.stderr.slice(0, 160)}`;
       judged.tasks.push(record);
+    persist();
       console.log(`  DROP  ${label.padEnd(42)} ${record.why}`);
       continue;
     }
@@ -101,6 +112,7 @@ for (const candidate of wanted) {
   if (fetched.code !== 0) {
     record.why = "the merge commit is not fetchable (force-pushed or deleted)";
     judged.tasks.push(record);
+    persist();
     console.log(`  DROP  ${label.padEnd(42)} ${record.why}`);
     continue;
   }
@@ -109,6 +121,7 @@ for (const candidate of wanted) {
   if (parent.code !== 0) {
     record.why = "the merge commit has no first parent to use as a base";
     judged.tasks.push(record);
+    persist();
     console.log(`  DROP  ${label.padEnd(42)} ${record.why}`);
     continue;
   }
@@ -125,6 +138,7 @@ for (const candidate of wanted) {
   if (installed.code !== 0) {
     record.why = `npm ci failed at the base: ${installed.stderr.slice(-160)}`;
     judged.tasks.push(record);
+    persist();
     console.log(`  DROP  ${label.padEnd(42)} ${record.why}`);
     continue;
   }
@@ -133,6 +147,7 @@ for (const candidate of wanted) {
   if (runner === null) {
     record.why = "no package.json to read a runner from";
     judged.tasks.push(record);
+    persist();
     console.log(`  DROP  ${label.padEnd(42)} ${record.why}`);
     continue;
   }
@@ -147,6 +162,7 @@ for (const candidate of wanted) {
   if (onBase.code === 0) {
     record.why = "the added tests already pass on the base source, so they specify nothing new";
     judged.tasks.push(record);
+    persist();
     console.log(`  DROP  ${label.padEnd(42)} ${record.why}`);
     continue;
   }
@@ -159,6 +175,7 @@ for (const candidate of wanted) {
   if (onMerge.code !== 0) {
     record.why = "the added tests do not pass on the merged tree either, so the target is unclear";
     judged.tasks.push(record);
+    persist();
     console.log(`  DROP  ${label.padEnd(42)} ${record.why}`);
     continue;
   }
@@ -166,10 +183,10 @@ for (const candidate of wanted) {
   record.viable = true;
   record.why = "fails on the base source, passes on the merged tree";
   judged.tasks.push(record);
+  persist();
   console.log(`  KEEP  ${label.padEnd(42)} ${record.runner}`);
 }
 
-judged.at = new Date().toISOString();
-writeFileSync(judgedPath, `${JSON.stringify(judged, null, 2)}\n`);
+persist();
 const viable = judged.tasks.filter((one) => one.viable);
 console.log(`\n${viable.length} viable of ${judged.tasks.length} judged: ${judgedPath}`);
