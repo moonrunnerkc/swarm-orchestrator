@@ -84,6 +84,18 @@ That is measurable rather than arguable: the pass records both verdicts per patc
 the halves disagree is a number this corpus produces about itself. A split whose halves never
 disagree on any patch is buying less than it appears to, and would say so.
 
+**A task the model cannot do produces no opportunity.** A false green needs the tool to certify a
+patch before a held-back oracle can refute it. The first two mined tasks scored, both algorithm
+implementations from `javascript-algorithms`, were failed outright by the local model: two
+true-reds, nothing certified, no opportunity. That is the same ceiling effect that cost the
+hand-authored corpus six of its eighteen runs, and at four hundred tasks it is the difference
+between a measurement and a pile of true-reds.
+
+Size is the only difficulty dial available before running anything, and it cuts both ways: a
+corpus of only tiny tasks measures the tool on tiny tasks. `--max-changed-lines` is a flag rather
+than a constant so the shaping is visible in the command that produced a corpus, and the certify
+rate is reported beside every result so a rate measured over easy tasks says so.
+
 **The viability filter admits only what it can establish.** A repository whose suite needs a
 database, a browser or a network is dropped, so the corpus skews toward libraries with fast unit
 tests. That is a real selection effect on what the resulting rate describes.

@@ -82,14 +82,22 @@ console.log(`mining ${repositories.length} repositories, API only\n`);
 
 const candidates = [];
 for (const repository of repositories) {
+  // Several pages, because a repository's most recent hundred closed pulls are mostly
+  // dependency bumps and documentation. Mining one page found nothing in twenty of fifty
+  // repositories that do have usable pull requests further back.
   let pulls = [];
   try {
-    pulls = await gh(`repos/${repository.fullName}/pulls`, {
-      state: "closed",
-      per_page: 100,
-      sort: "updated",
-      direction: "desc",
-    });
+    for (let page = 1; page <= numeric("--pages", 4); page += 1) {
+      const batch = await gh(`repos/${repository.fullName}/pulls`, {
+        state: "closed",
+        per_page: 100,
+        page,
+        sort: "updated",
+        direction: "desc",
+      });
+      pulls.push(...batch);
+      if (batch.length < 100) break;
+    }
   } catch (cause) {
     console.log(`${repository.fullName.padEnd(40)} pulls unavailable: ${String(cause).slice(0, 80)}`);
     continue;
@@ -112,15 +120,27 @@ for (const repository of repositories) {
     const sourceFiles = files.filter((file) => isSourcePath(file.filename));
     if (testFiles.length === 0 || sourceFiles.length === 0) continue;
 
+    // Size is the only difficulty dial available before running anything, and it cuts both ways.
+    // A corpus of tasks no model can do measures nothing: a false green needs the tool to certify
+    // a patch first, and the two tasks scored on 2026-09-06 were both algorithm implementations
+    // the local model failed outright, so neither produced an opportunity. A corpus of only tiny
+    // tasks measures the tool on tiny tasks. This is a flag rather than a constant so the shaping
+    // is visible in the command that produced a corpus.
     const changed = files.reduce((total, file) => total + file.changes, 0);
-    if (changed > 400) continue;
+    if (changed > numeric("--max-changed-lines", 400)) continue;
 
-    // One test file, so the two oracles are two halves of one specification rather than two
-    // files that may not even cover the same thing.
-    const [onlyTestFile] = testFiles;
-    if (testFiles.length !== 1 || onlyTestFile === undefined) continue;
-    const split = splitTestCases(addedLines(onlyTestFile.patch));
-    if (!split.splittable) continue;
+    // One test file per task, so the two oracles are halves of one specification rather than two
+    // files that may not cover the same thing. Where a pull request touched several, the one whose
+    // added cases split furthest is the one taken: the others are left rather than merged, because
+    // merging them is what would make the two halves incomparable.
+    const splits = testFiles
+      .map((file) => ({ file, split: splitTestCases(addedLines(file.patch)) }))
+      .filter((one) => one.split.splittable)
+      .sort((a, b) => b.split.sealed.length + b.split.heldBack.length - (a.split.sealed.length + a.split.heldBack.length));
+    const best = splits[0];
+    if (best === undefined) continue;
+    const onlyTestFile = best.file;
+    const split = best.split;
 
     candidates.push({
       repository: repository.fullName,
