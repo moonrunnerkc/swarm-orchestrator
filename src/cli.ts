@@ -11,6 +11,7 @@ import { render as inkRender } from "ink";
 import { eventsFromClaudeCodeStream, eventsFromGenericJsonl } from "./adapters/external-agent.ts";
 import { runAgentTask } from "./agent-run.ts";
 import { buildVersion } from "./build-version.ts";
+import { resolveLocalBackend } from "./cli-local-backend.ts";
 import {
   type AbortCommand,
   type AddCaseCommand,
@@ -35,6 +36,21 @@ import {
   usage,
   type VerifyCommand,
 } from "./cli-options.ts";
+import {
+  abortRun,
+  inspectRun,
+  listRuns,
+  repairRun,
+  resumeRun,
+  retryStep,
+  runStorePath,
+} from "./cli-run-commands.ts";
+import {
+  chooseModel,
+  select,
+  servedModelsTimeoutMs,
+  shortlistFetchTimeoutMs,
+} from "./cli-select.ts";
 import { initializeSwarmToml, initWouldHelp, type PlannedGate } from "./config/init.ts";
 import {
   type CommandLineSettings,
@@ -46,7 +62,6 @@ import type { Clock } from "./core/clock.ts";
 import type { ConversationMessage, ModelClient } from "./core/model-client.ts";
 import type { RandomSource } from "./core/random-source.ts";
 import type { StopReason } from "./core/termination.ts";
-import { openRunStore } from "./durable/run-store.ts";
 import { buildAttestation, signAttestation } from "./evidence/attestation.ts";
 import { bundleSourceFromRecorder, exportBundle, readBundle } from "./evidence/bundle.ts";
 import type { BundleManifest } from "./evidence/bundle-manifest.ts";
@@ -95,7 +110,6 @@ import {
   type ResolvedLocalEndpoint,
   resolveLocalEndpoint,
 } from "./providers/endpoint-resolution.ts";
-import { discoverLocalEndpoints } from "./providers/local-discovery.ts";
 import { type ModelSpec, parseModelSpec } from "./providers/model-spec.ts";
 import { createProviderRegistry } from "./providers/registry.ts";
 import { fetchServedModels } from "./providers/served-models.ts";
@@ -245,30 +259,6 @@ function registrySettingsFrom(
   };
 }
 
-/** Probing two localhost ports; a runtime that takes longer than this is not running. */
-const discoveryTimeoutMs = 1_500;
-
-/**
- * Null unless the spec asks for a local model: only then does an endpoint matter, and
- * resolving one for a frontier run would probe ports the run will never talk to.
- */
-async function resolveLocalBackend(
-  settings: ResolvedSettings,
-  specs: readonly ModelSpec[],
-): Promise<ResolvedLocalEndpoint | null> {
-  if (!specs.some((spec) => spec.provider === "local")) {
-    return null;
-  }
-  return resolveLocalEndpoint({
-    pinned: settings.localEndpoint,
-    discover: () =>
-      discoverLocalEndpoints({
-        fetch: (url) => fetch(url, { signal: AbortSignal.timeout(discoveryTimeoutMs) }),
-      }),
-    appleSilicon: platform() === "darwin" && arch() === "arm64",
-  });
-}
-
 /**
  * The bundle's own consistency and the identity that signed it, reported apart. A bundle
  * carries the public key its signature verifies against, so checking it against itself can
@@ -409,178 +399,6 @@ function readAgentStream(text: string, format: "generic" | "claude-code") {
   return format === "claude-code" ? eventsFromClaudeCodeStream(text) : eventsFromGenericJsonl(text);
 }
 
-/** Where the durable state lives: beside the sessions, outside every workspace. */
-function runStorePath(): string {
-  return join(defaultSessionRoot(homedir()), "..", "runs.db");
-}
-
-function withRunStore<T>(read: (store: ReturnType<typeof openRunStore>) => T): T {
-  const store = openRunStore(runStorePath());
-  try {
-    return read(store);
-  } finally {
-    store.close();
-  }
-}
-
-function listRuns(): Promise<number> {
-  const runs = withRunStore((store) => store.listRuns());
-  if (runs.length === 0) {
-    process.stdout.write("no runs are stored on this machine yet.\n");
-    return Promise.resolve(exitCodes.acceptable);
-  }
-  for (const run of runs) {
-    process.stdout.write(
-      `${run.runId}  ${run.state.padEnd(12)} ${new Date(run.startedAt).toISOString()}  ${run.task}\n`,
-    );
-  }
-  return Promise.resolve(exitCodes.acceptable);
-}
-
-function inspectRun(options: InspectCommand): Promise<number> {
-  const found = withRunStore((store) => ({
-    run: store.run(options.runId),
-    steps: store.steps(options.runId),
-    leases: store.leases(options.runId),
-    interrupted: store.run(options.runId) === null ? null : store.interrupted(options.runId),
-    remainingTokens:
-      store.run(options.runId) === null ? null : store.remainingTokens(options.runId),
-  }));
-
-  if (found.run === null) {
-    process.stderr.write(`no run named ${options.runId} is stored here. Try swarm list-runs\n`);
-    return Promise.resolve(exitCodes.invalidRequest);
-  }
-
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify({ schema: "swarm.inspect.v1", ...found })}\n`);
-    return Promise.resolve(exitCodes.acceptable);
-  }
-
-  process.stdout.write(
-    `${found.run.runId}\n` +
-      `  state:  ${found.run.state}\n` +
-      `  task:   ${found.run.task}\n` +
-      `  spec:   ${found.run.specDigest}\n` +
-      `  tokens: ${found.remainingTokens === null ? "no budget set" : `${found.remainingTokens} left`}\n` +
-      `  steps:  ${found.steps.length}\n`,
-  );
-  for (const step of found.steps) {
-    process.stdout.write(
-      `    ${step.state.padEnd(12)} ${step.stepId} (attempt ${step.attempt})${
-        step.detail === null ? "" : `: ${step.detail}`
-      }\n`,
-    );
-  }
-  if ((found.interrupted?.steps.length ?? 0) > 0) {
-    process.stdout.write(
-      `\n${found.interrupted?.steps.length} step(s) were in flight when this run stopped, ` +
-        `holding ${found.interrupted?.leases.length} lease(s). ` +
-        `swarm repair ${options.runId} releases them; swarm resume ${options.runId} takes it up.\n`,
-    );
-  }
-  return Promise.resolve(exitCodes.acceptable);
-}
-
-/**
- * Resuming is repairing plus reporting what is still owed. It deliberately does not restart the
- * model: a run that was killed mid-task is taken up by asking for the remaining work, and
- * pretending otherwise would be a resume that quietly did something else.
- */
-function resumeRun(options: ResumeCommand): Promise<number> {
-  const outcome = withRunStore((store) => {
-    const run = store.run(options.runId);
-    if (run === null) {
-      return null;
-    }
-    const repaired = store.repair(options.runId, Date.now());
-    return { run, repaired, steps: store.steps(options.runId) };
-  });
-
-  if (outcome === null) {
-    process.stderr.write(`no run named ${options.runId} is stored here. Try swarm list-runs\n`);
-    return Promise.resolve(exitCodes.invalidRequest);
-  }
-
-  const owed = outcome.steps.filter(
-    (step) => step.state === "interrupted" || step.state === "failed",
-  );
-  process.stdout.write(
-    `${options.runId}: released ${outcome.repaired.releasedLeases} lease(s), ` +
-      `reopened ${outcome.repaired.reopenedSteps} step(s).\n` +
-      (owed.length === 0
-        ? "nothing is owed: every step this run recorded reached a result.\n"
-        : `${owed.length} step(s) still owed: ${owed.map((step) => step.stepId).join(", ")}.\n` +
-          `Run them with swarm retry-step ${options.runId} <step-id>.\n`),
-  );
-  return Promise.resolve(exitCodes.acceptable);
-}
-
-function retryStep(options: RetryStepCommand): Promise<number> {
-  const outcome = withRunStore((store) => {
-    const step = store.steps(options.runId).find((one) => one.stepId === options.stepId);
-    if (step === undefined) {
-      return null;
-    }
-    if (step.state === "done") {
-      return { step, restarted: false };
-    }
-    store.beginStep({
-      runId: options.runId,
-      stepId: step.stepId,
-      kind: step.kind,
-      idempotencyKey: step.idempotencyKey,
-      at: Date.now(),
-    });
-    return { step, restarted: true };
-  });
-
-  if (outcome === null) {
-    process.stderr.write(
-      `run ${options.runId} has no step named ${options.stepId}. Try swarm inspect ${options.runId}\n`,
-    );
-    return Promise.resolve(exitCodes.invalidRequest);
-  }
-  process.stdout.write(
-    outcome.restarted
-      ? `${options.stepId} is open again as attempt ${outcome.step.attempt + 1}.\n`
-      : `${options.stepId} already completed, so it was not run again. Its result stands.\n`,
-  );
-  return Promise.resolve(exitCodes.acceptable);
-}
-
-function abortRun(options: AbortCommand): Promise<number> {
-  const found = withRunStore((store) => {
-    if (store.run(options.runId) === null) {
-      return false;
-    }
-    store.abortRun(options.runId, "aborted from the command line", Date.now());
-    store.repair(options.runId, Date.now());
-    return true;
-  });
-  if (!found) {
-    process.stderr.write(`no run named ${options.runId} is stored here.\n`);
-    return Promise.resolve(exitCodes.invalidRequest);
-  }
-  process.stdout.write(`${options.runId} is aborted and holds nothing. It accepts no new work.\n`);
-  return Promise.resolve(exitCodes.acceptable);
-}
-
-function repairRun(options: RepairCommand): Promise<number> {
-  const repaired = withRunStore((store) =>
-    store.run(options.runId) === null ? null : store.repair(options.runId, Date.now()),
-  );
-  if (repaired === null) {
-    process.stderr.write(`no run named ${options.runId} is stored here.\n`);
-    return Promise.resolve(exitCodes.invalidRequest);
-  }
-  process.stdout.write(
-    `${options.runId}: released ${repaired.releasedLeases} lease(s), ` +
-      `reopened ${repaired.reopenedSteps} step(s).\n`,
-  );
-  return Promise.resolve(exitCodes.acceptable);
-}
-
 async function replay(options: ReplayCommand): Promise<number> {
   for (const line of await replayBundle(options.bundleDirectory)) {
     process.stdout.write(`${line}\n`);
@@ -589,123 +407,6 @@ async function replay(options: ReplayCommand): Promise<number> {
 }
 
 /** Long enough for a cold CDN, short enough that the bundled snapshot takes over quickly. */
-const shortlistFetchTimeoutMs = 4_000;
-
-/**
- * No model, no ledger: every number this prints came off the machine or out of the shortlist,
- * so there is no claim here for evidence to answer.
- */
-async function select(options: SelectCommand): Promise<number> {
-  const profile = await probeHardware(systemProbeEnvironment());
-  const loaded = await loadShortlist({
-    fetch: (url) => fetch(url, { signal: AbortSignal.timeout(shortlistFetchTimeoutMs) }),
-    readFile: (path) => readFile(path, "utf8"),
-    requested: options.shortlist,
-  });
-  const recommendation = recommendModel(profile, loaded.shortlist);
-
-  for (const line of renderSelectReport({ profile, loaded, recommendation })) {
-    process.stdout.write(`${line}\n`);
-  }
-  return recommendation.outcome === "model" ? 0 : 1;
-}
-
-/**
- * Which model this task gets, and on what grounds. Without a calibration behind it there is
- * nothing to route between, so the command line stands and the run is logged as pinned.
- */
-async function chooseModel(
-  task: string,
-  home: string,
-  random: RandomSource,
-  settings: ResolvedSettings,
-): Promise<{
-  modelSpec: string | null;
-  assignment: "calibration" | "competency" | "ucb" | "epsilon" | "pinned";
-  /** What else the calibration measured, so an unserved pick can be swapped for a known one. */
-  candidates: readonly string[];
-  /**
-   * Null where there was nothing to route between. The decision travels back rather than
-   * being recorded here because the pick happens before the session opens: the model has
-   * to be resolved to build the client, and there is no ledger to write to yet.
-   */
-  decision: RoutingDecision | null;
-}> {
-  const calibrated = await readCalibrationPick(defaultPickPath(home));
-  if (calibrated?.model == null) {
-    return { modelSpec: null, assignment: "pinned", decision: null, candidates: [] };
-  }
-
-  // Route between models that can actually answer. A calibration outlives the machine it was
-  // measured on: a local arm whose model is no longer served can never be tried, and an arm
-  // with no samples is exactly the one UCB reaches for first, so it won a routing every time
-  // and was swapped out again every time. The reader saw a model named that no longer exists
-  // here, and the arm never got a sample to stop it being picked again.
-  const usable = await servedCandidates(calibrated.candidates, settings);
-  const candidates = usable.length > 0 ? usable : calibrated.candidates;
-
-  const log = await openRoutingLog({ path: defaultRoutingLogPath(home) });
-  const taskClass = classifyTask(task).taskClass;
-  const calibrationPick = candidates.includes(calibrated.model)
-    ? calibrated.model
-    : (candidates[0] ?? calibrated.model);
-  // The table is asked with the calibration pick listed first, so a tie falls to it rather
-  // than to whichever model the sweep happened to run first.
-  const competency = lookupCompetency({
-    table: await readCompetencyTable(defaultCompetencyTablePath(home)),
-    taskClass,
-    goldenSetVersion: calibrated.goldenSetVersion,
-    candidates: [calibrationPick, ...candidates.filter((model) => model !== calibrationPick)],
-  });
-  const decision = routeModel({
-    taskClass,
-    candidates,
-    calibrationPick,
-    entries: (await log.read()).entries,
-    random,
-    competency,
-  });
-
-  process.stdout.write(
-    `routing: ${decision.model} (${decision.assignment}) - ${decision.reason}\n`,
-  );
-  return {
-    modelSpec: decision.model,
-    assignment: decision.assignment,
-    decision,
-    candidates,
-  };
-}
-
-/**
- * The candidates a run could actually reach: every non-local arm, plus the local ones the
- * endpoint says it serves. An endpoint that cannot be reached filters nothing, because a
- * discovery that failed is not evidence that a model is absent.
- */
-async function servedCandidates(
-  candidates: readonly string[],
-  settings: ResolvedSettings,
-): Promise<readonly string[]> {
-  const local = candidates.filter((candidate) => candidate.startsWith("local:"));
-  if (local.length === 0) {
-    return candidates;
-  }
-
-  const backend = await resolveLocalBackend(settings, [parseModelSpec(local[0] ?? "local:x")]);
-  if (backend === null) {
-    return candidates;
-  }
-  const served = await fetchServedModels({
-    baseUrl: backend.url,
-    fetch: (url) => fetch(url, { signal: AbortSignal.timeout(servedModelsTimeoutMs) }),
-  });
-  // An endpoint that would not say what it serves filters nothing: not knowing is not the
-  // same as knowing a model is absent.
-  if (!served.enumerated) {
-    return candidates;
-  }
-  return servableCandidates(candidates, new Set(served.models.map((model) => model.id)));
-}
 
 /**
  * A session: one process, one ledger, many tasks, each typed rather than passed.
@@ -1976,7 +1677,6 @@ async function canaryFor(
 }
 
 /** How long a local backend gets to say what it serves before the answer stops being worth waiting for. */
-const servedModelsTimeoutMs = 2_000;
 
 /**
  * Which of the requested models the backend is actually serving, recorded and said out loud.
