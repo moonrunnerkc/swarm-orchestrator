@@ -224,6 +224,31 @@ for (const task of wanted) {
   const patchPath = join(patchRoot, `${task.repository.replace("/", "__")}-${task.pull}.patch`);
   writeFileSync(patchPath, diff.stdout);
 
+  // An empty patch is the agent having written nothing, and it must not be recorded the same way
+  // as the harness having failed to measure. Both produced `regression: unmeasured` before, which
+  // is how six tasks scored inside a path the policy guard denies were read as the model failing
+  // for six hours. Nothing to measure and could not measure are different findings.
+  if (diff.stdout.trim().length === 0) {
+    scored.runs.push({
+      repository: task.repository,
+      pull: task.pull,
+      baseCommit: task.baseCommit,
+      agentExit: agent.code,
+      regression: "no-change",
+      sealedOracle: "unjudged",
+      heldBackOracle: "unjudged",
+      verified: false,
+      corner: "true-red",
+      producedNoChange: true,
+      latencyMs,
+    });
+    writeFileSync(scoredPath, `${JSON.stringify(scored, null, 2)}\n`);
+    console.log(
+      `  ${label.padEnd(42)} the agent wrote nothing, so there is no patch to judge -> true-red`,
+    );
+    continue;
+  }
+
   const kind = runnerKind(task.runner);
   const runnerArgv = task.runner.split(" ");
   const zone = await declaredTimezone(checkout, task.baseCommit);
