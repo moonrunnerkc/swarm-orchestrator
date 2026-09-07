@@ -425,9 +425,10 @@ records one completed lap and a directory is not a lap.
 
 Kept short and kept honest, because the point of the rest of this file is that claims cost
 something. The full list, with what would settle each, is
-[`docs/beta-gates.md`](docs/beta-gates.md): four of the twelve gates this project agreed not to
-call itself production-ready without are passing on measured evidence, five are partial with the
-gap named, and three are unproven. **It is not production-ready**, and the largest gap is scale.
+[`docs/beta-gates.md`](docs/beta-gates.md): of the twelve gates this project agreed not to call
+itself production-ready without, six pass on measured evidence, three are partial with the gap
+named, two are unproven, and one fails on scale. **It is not production-ready**, and that last
+one is the largest gap.
 
 - **Not "fully secure".** The secret detector does known-pattern scrubbing, not secret
   removal, with a four-character floor. Zero crashes at a fuzz budget is evidence, not proof.
@@ -436,11 +437,17 @@ gap named, and three are unproven. **It is not production-ready**, and the large
   the run starts and recorded on the chain rather than quietly assumed, but it is not
   containment. The container backend has not been audited against a determined escape, and a
   container is not a virtual machine.
-- **The false-green rate is measured, on eighteen runs.** Eighteen real-repository patches
-  re-scored against hidden acceptance tests written before any of them ran: zero false greens,
-  zero false reds, 95% CI [0, 29.9] per arm. Eighteen runs is eighteen runs, and that interval
-  is what a zero out of nine per arm buys: what is shown is that none occurred here, not that
-  the rate is low. The measurement found two defects in the tool on the way, both now closed:
+- **The false-green rate is measured, on eleven opportunities.** Each task carries two oracles:
+  one sealed before the runs and handed to the tool, one written from the task text and held back
+  from it. A false green is only possible where the tool said `verified`, which happened eleven
+  times out of eighteen; the held-back oracle refuses none of them. **0 of 11, 95% CI
+  [0.0, 25.9]**: [`second-oracle/README.md`](docs/evidence/2026-09-06/second-oracle/README.md).
+  Eleven opportunities is eleven opportunities, and that interval is what a zero buys: what is
+  shown is that none occurred here, not that the rate is low. Three tasks, and six of the
+  eighteen runs could not contribute because neither arm ever passed that task's sealed oracle.
+  An earlier single-oracle version of this number, 0 of 18, was withdrawn as arithmetic rather
+  than corrected quietly: the same test was handed to the tool and then used as the ground truth
+  it was scored against, so it agreed with itself. That, and the real 22.2% it replaced, are in
   [`false-green-measurement.md`](docs/evidence/2026-09-05/false-green-measurement.md).
 - **No comparison against another tool.** Nothing here is measured against a competitor. The
   evaluation harness runs matched arms on a local model and has not been run at the scale that
