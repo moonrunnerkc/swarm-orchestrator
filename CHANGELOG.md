@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 14.0.2 - 2026-09-07
+
+### Fixed
+
+- **`swarm --version` answers instead of asking what value it takes.** The parser reads the word
+  after a flag as its value, and `version` was never registered as a switch, so a question that
+  takes no argument failed with "--version needs a value". This is the defect `--help` had, fixed
+  there and left here; the test beside it says asking for help must not fail for the reason a
+  person is asking for help, and the same holds for asking which build this is. `swarm version`
+  works too, and `--help` still outranks both, because a wrong command line is when help is asked
+  for.
+
 ## 14.0.1 - 2026-09-07
 
 ### Fixed
