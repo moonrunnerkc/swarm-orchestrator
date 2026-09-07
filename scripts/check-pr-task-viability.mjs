@@ -49,6 +49,15 @@ async function attempt(file, args, options) {
 }
 
 /** How this repository runs one test file, read off its devDependencies rather than guessed. */
+/**
+ * How this repository runs one test file.
+ *
+ * The project's own `scripts.test` is the authority, and devDependencies are only the fallback.
+ * Guessing from devDependencies alone picked `jest` for koa and commander, which both declare
+ * `"test": "node --test"` and merely still carry jest in devDependencies: the same repository
+ * then got `node --test` at one commit and `npx jest` at another, and the jest runs failed on the
+ * merged tree for a reason that had nothing to do with the pull request.
+ */
 function runnerFor(checkout, testFile) {
   let manifest = {};
   try {
@@ -56,12 +65,45 @@ function runnerFor(checkout, testFile) {
   } catch {
     return null;
   }
+  const declared = `${manifest.scripts?.test ?? ""} ${manifest.scripts?.["test:unit"] ?? ""}`;
+  // Read the declared command first, in the order a reader would: the first runner it names.
+  const named = [
+    [/\bnode\s+--test\b/, ["node", ["--test", testFile]]],
+    [/\bvitest\b/, ["npx", ["vitest", "run", testFile]]],
+    [/\bjest\b/, ["npx", ["jest", "--ci", testFile]]],
+    [/\bmocha\b/, ["npx", ["mocha", testFile]]],
+    [/\bava\b/, ["npx", ["ava", testFile]]],
+  ];
+  let earliest = null;
+  for (const [pattern, invocation] of named) {
+    const at = declared.search(pattern);
+    if (at !== -1 && (earliest === null || at < earliest.at)) earliest = { at, invocation };
+  }
+  if (earliest !== null) return earliest.invocation;
+
   const dependencies = { ...manifest.devDependencies, ...manifest.dependencies };
   if (dependencies.jest !== undefined) return ["npx", ["jest", "--ci", testFile]];
   if (dependencies.vitest !== undefined) return ["npx", ["vitest", "run", testFile]];
   if (dependencies.mocha !== undefined) return ["npx", ["mocha", testFile]];
   if (dependencies.ava !== undefined) return ["npx", ["ava", testFile]];
   return ["node", ["--test", testFile]];
+}
+
+/**
+ * A test script that sets TZ runs its suite under a zone the tests were written for. dayjs runs
+ * the same files under four zones in one command. A single file lifted out of that and run under
+ * whatever zone this machine is in fails for a reason that is not the pull request, so the zone
+ * travels with the invocation.
+ */
+function environmentFor(checkout) {
+  try {
+    const manifest = JSON.parse(readFileSync(join(checkout, "package.json"), "utf8"));
+    const declared = manifest.scripts?.test ?? "";
+    const zone = /\bTZ=([A-Za-z_+\-/0-9]+)/.exec(declared);
+    return zone === null ? {} : { TZ: zone[1] };
+  } catch {
+    return {};
+  }
 }
 
 /**
@@ -163,7 +205,13 @@ for (const candidate of wanted) {
   await attempt("git", ["checkout", "--quiet", candidate.mergeCommit, "--", candidate.testFile], {
     cwd: checkout,
   });
-  const onBase = await attempt(runner[0], runner[1], { cwd: checkout, timeout: 10 * 60_000 });
+  const suiteEnvironment = { ...process.env, ...environmentFor(checkout) };
+  if (suiteEnvironment.TZ !== undefined) record.timezone = suiteEnvironment.TZ;
+  const onBase = await attempt(runner[0], runner[1], {
+    cwd: checkout,
+    timeout: 10 * 60_000,
+    env: suiteEnvironment,
+  });
   if (onBase.code === 0) {
     record.why = "the added tests already pass on the base source, so they specify nothing new";
     judged.tasks.push(record);
@@ -176,7 +224,11 @@ for (const candidate of wanted) {
   await attempt("git", ["checkout", "--quiet", "--force", "--detach", candidate.mergeCommit], {
     cwd: checkout,
   });
-  const onMerge = await attempt(runner[0], runner[1], { cwd: checkout, timeout: 10 * 60_000 });
+  const onMerge = await attempt(runner[0], runner[1], {
+    cwd: checkout,
+    timeout: 10 * 60_000,
+    env: suiteEnvironment,
+  });
   if (onMerge.code !== 0) {
     record.why = "the added tests do not pass on the merged tree either, so the target is unclear";
     judged.tasks.push(record);
