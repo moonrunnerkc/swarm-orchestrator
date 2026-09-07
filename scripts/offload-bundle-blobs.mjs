@@ -1,29 +1,21 @@
 #!/usr/bin/env node
-// Moves a bundle's blobs out of the repository, leaving their digests behind.
+// Moves a bundle's large derived artifacts out of the repository, leaving their digests behind.
+//
+// It used to move the blobs too, and that was wrong. A blob is a ledger record's payload, so a
+// bundle without them fails its own verifier: 47 of 51 bundles in this tree stopped verifying
+// from a clone, four of them cited in the README and claims.md as evidence that verifies. A
+// project whose thesis is that every claim resolves to checkable evidence cannot ship evidence
+// that does not check, and 23 MB was never worth it. Derived artifacts are different in kind:
+// a rendered review page is regenerated from the records, so removing one costs nothing a reader
+// cannot rebuild.
 //
 // The manifest is written before anything is removed. A process killed between the two leaves
-// the blobs and no manifest, which is recoverable; the other order leaves a manifest and no
-// blobs and nothing to rebuild it from.
+// the artifacts and no manifest, which is recoverable; the other order leaves a manifest and
+// nothing to rebuild it from. Restore with scripts/restore-bundle-blobs.mjs.
 import { execFileSync } from "node:child_process";
-import { readdirSync, statSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import { offloadBlobs, offloadDerivedArtifacts } from "../dist/evidence/blob-manifest.js";
-
-/**
- * Bundles the suite actually runs against. These are minimal fixtures rather than bulk
- * evidence: offloading one would leave a test asserting on blobs that are not there, which is a
- * test that stops proving anything rather than a test that fails.
- */
-/**
- * Bundles the suite runs against. Their blobs stay: a test asserting on blobs that are not there
- * is a test that stops proving anything rather than one that fails. Their rendered pages do not,
- * because nothing reads those and one of them is eleven megabytes on its own.
- */
-const keptBlobs = [
-  "docs/evidence/2026-08-18/live-frontier",
-  "docs/evidence/2026-08-18/live-local",
-  "docs/evidence/2026-08-23/calibration",
-];
+import { offloadDerivedArtifacts } from "../dist/evidence/blob-manifest.js";
 
 /**
  * Only files git is tracking. This script deletes, and git history is the whole of what makes
@@ -45,34 +37,6 @@ if (roots.length === 0) {
       "Walks each directory for `blobs/` folders and offloads every one it finds.",
   );
   process.exit(2);
-}
-
-function blobDirectoriesUnder(root) {
-  const found = [];
-  const walk = (directory) => {
-    let entries;
-    try {
-      entries = readdirSync(directory, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      if (!entry.isDirectory()) {
-        continue;
-      }
-      const path = join(directory, entry.name);
-      if (entry.name === "blobs") {
-        if (keptBlobs.some((keep) => path.startsWith(keep))) {
-          continue;
-        }
-        found.push(path);
-      } else {
-        walk(path);
-      }
-    }
-  };
-  walk(root);
-  return found;
 }
 
 /** Big enough that removing it is worth the indirection, small enough to catch every one. */
@@ -113,22 +77,6 @@ for (const root of roots) {
           `${(derived.removedBytes / 1024 / 1024).toFixed(1)} MB`,
       );
     }
-  }
-  for (const blobs of blobDirectoriesUnder(root)) {
-    const held = readdirSync(blobs).filter((name) => tracked.has(join(blobs, name)));
-    if (held.length === 0) {
-      const untracked = readdirSync(blobs).length;
-      if (untracked > 0) {
-        console.log(`${blobs}: skipped, ${untracked} blob(s) git does not track`);
-      }
-      continue;
-    }
-    const offloaded = await offloadBlobs(blobs);
-    freed += offloaded.removedBytes;
-    console.log(
-      `${blobs}: ${offloaded.manifest.blobs.length} blob(s), ` +
-        `${(offloaded.removedBytes / 1024 / 1024).toFixed(1)} MB -> ${offloaded.manifestPath}`,
-    );
   }
 }
 
