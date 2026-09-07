@@ -121,6 +121,7 @@ for (const record of runs) {
   const corner = classifyAgainstHeldBackOracle({
     verifiedWithFirstOracle: verified,
     heldBackAccepted,
+    regression: sealed.regression,
   });
 
   scored.push({

@@ -444,6 +444,42 @@ describe("harnessClaimsTaskDone", () => {
 });
 
 describe("classifyAgainstHeldBackOracle", () => {
+  // The held-back oracle answers one question: was the feature added. The tool answers two, and
+  // refusing a patch that added the feature and broke the suite is the tool being right. Scoring
+  // that as a false red blames it for the one thing a regression check is for. A patch is good
+  // only where the held-back oracle accepts it and nothing broke.
+  it("does not call a refusal false when the patch broke the suite", () => {
+    expect(
+      classifyAgainstHeldBackOracle({
+        verifiedWithFirstOracle: false,
+        heldBackAccepted: true,
+        regression: "fail",
+      }),
+    ).toBe("true-red");
+  });
+
+  it("still calls it false where the patch broke nothing", () => {
+    expect(
+      classifyAgainstHeldBackOracle({
+        verifiedWithFirstOracle: false,
+        heldBackAccepted: true,
+        regression: "pass",
+      }),
+    ).toBe("false-red");
+  });
+
+  // A regression the harness could not measure is not a passing one, so a refusal over it is not
+  // evidence the tool was wrong either.
+  it("treats an unmeasured regression as not established rather than as passing", () => {
+    expect(
+      classifyAgainstHeldBackOracle({
+        verifiedWithFirstOracle: false,
+        heldBackAccepted: true,
+        regression: "unmeasured",
+      }),
+    ).toBe("true-red");
+  });
+
   // Unlike the campaign, this pass hands the tool a task oracle, so it does claim the task was
   // done and the claim can be false. The held-back oracle is a different test of the same
   // specification, never given to the tool, which is the only arrangement in which the two sides
