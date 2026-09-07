@@ -43,12 +43,19 @@ export function oracleCommand(input: {
   runnerArgv: readonly string[];
   titles: readonly string[];
 }): string {
-  const filter = titleFilterFor(input.runner, input.titles)
-    .map((one) => JSON.stringify(one))
-    .join(" ");
+  const filter = titleFilterFor(input.runner, input.titles).map((one) => JSON.stringify(one));
+  // Before the file, not after it. `node --test` stops reading flags at the first positional
+  // argument, so a filter appended to the end is silently ignored and the file runs whole:
+  // measured on a three-test file, 3 ran with the filter after and 1 with it before. Both halves
+  // of a split are the same file under a different filter, so an ignored filter makes the sealed
+  // and the held-back oracle identical and they agree by construction, which is the self-agreement
+  // the withdrawn 0-of-18 number was made of. Every other runner accepts flags in either place.
+  const beforeTheFile = [...input.runnerArgv];
+  const file = beforeTheFile.pop();
+  const invocation = [...beforeTheFile, ...filter, ...(file === undefined ? [] : [file])].join(" ");
   return (
     `mkdir -p "$(dirname ${input.destination})" && ` +
     `cp ${JSON.stringify(input.storedTestFile)} ${input.destination} && ` +
-    `${input.runnerArgv.join(" ")} ${filter}`
+    `${invocation}`
   );
 }
