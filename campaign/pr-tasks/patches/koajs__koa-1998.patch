@@ -1,0 +1,141 @@
+diff --git a/__tests__/context/assert.test.js b/__tests__/context/assert.test.js
+index b9dcb2d..e6e7d44 100644
+--- a/__tests__/context/assert.test.js
++++ b/__tests__/context/assert.test.js
+@@ -3,6 +3,9 @@
+ const { describe, it } = require('node:test')
+ const context = require('../../test-helpers/context')
+ const assert = require('node:assert/strict')
++const path = require('path')
++const httpErrors = require(path.resolve(__dirname, '../../node_modules/http-assert/node_modules/http-errors'))
++const Koa = require('../..')
+ 
+ describe('ctx.assert(value, status)', () => {
+   it('should throw an error', () => {
+@@ -20,4 +23,82 @@ describe('ctx.assert(value, status)', () => {
+     }
+     assert(assertionRan)
+   })
++
++  it('should recognize http-assert errors as Koa.HttpError instances', () => {
++    const ctx = context()
++
++    let assertionRan = false
++    try {
++      ctx.assert(false, 403, 'forbidden')
++      throw new Error('should not reach here')
++    } catch (err) {
++      assertionRan = true
++      assert.ok(Koa.HttpError[Symbol.hasInstance](err))
++      assert.ok(err instanceof Koa.HttpError)
++      assert.strictEqual(err.status, 403)
++      assert.strictEqual(err.expose, true)
++    }
++    assert(assertionRan)
++  })
++
++  it('should recognize http-assert errors via isHttpError', () => {
++    const ctx = context()
++
++    let assertionRan = false
++    try {
++      ctx.assert(false, 500, 'server error')
++      throw new Error('should not reach here')
++    } catch (err) {
++      assertionRan = true
++      assert.strictEqual(Koa.isHttpError(err), true)
++      assert.ok(httpErrors.isHttpError(err), 'should also pass http-errors isHttpError')
++    }
++    assert(assertionRan)
++  })
++
++  it('should propagate custom options from http-assert', () => {
++    const ctx = context()
++
++    let assertionRan = false
++    try {
++      ctx.assert(false, 401, 'Unauthorized', {
++        type: 'http://example.com/errors/unauthorized'
++      })
++      throw new Error('should not reach here')
++    } catch (err) {
++      assertionRan = true
++      assert.strictEqual(err.status, 401)
++      assert.strictEqual(err.expose, true)
++      assert.strictEqual(err.type, 'http://example.com/errors/unauthorized')
++    }
++    assert(assertionRan)
++  })
++
++  it('should complete silently on successful assertion', () => {
++    const ctx = context()
++
++    let threw = false
++    try {
++      ctx.assert(true, 400, 'should not throw')
++    } catch (err) {
++      threw = true
++    }
++    assert.strictEqual(threw, false)
++  })
++
++  it('should handle named assertion methods', () => {
++    const ctx = context()
++
++    let assertionRan = false
++    try {
++      ctx.assert.equal(1, 2, 400, 'not equal')
++      throw new Error('should not reach here')
++    } catch (err) {
++      assertionRan = true
++      assert.ok(Koa.HttpError[Symbol.hasInstance](err))
++      assert.strictEqual(err.status, 400)
++      assert.strictEqual(err.message, 'not equal')
++    }
++    assert(assertionRan)
++  })
+ })
+diff --git a/lib/application.js b/lib/application.js
+index d455168..332308d 100644
+--- a/lib/application.js
++++ b/lib/application.js
+@@ -340,6 +340,37 @@ function respond (ctx) {
+  * Expose HTTP error utilities for consumers.
+  * This avoids requiring consumers to depend directly on `http-errors`.
+  */
++
++// ---------------------------------------------------------------------------
++// Koa.HttpError – a drop-in replacement for http-errors HttpError.
++//
++// The problem this solves: http-assert ships its own copy of
++// http-errors@1.x and creates HTTP errors with that constructor.  Because
++// those errors don't inherit from `createHttpError.HttpError` (from the
++// version Koa depends on via package.json), code like
++// `err instanceof Koa.HttpError` will return `false`.
++//
++// Instead of replacing http-assert or upgrading its transitive dependency,
++// we provide our own `Koa.HttpError` whose `Symbol.hasInstance` returns true
++// for any object that has the characteristic shape of an HTTP error:
++// `{ status: number, expose: boolean }`.  This makes it compatible with
++// errors from http-errors@1.x, @2.x, and any future version.
++// ---------------------------------------------------------------------------
++
++function HttpError () { throw new TypeError('cannot construct abstract class') }
++Object.setPrototypeOf(HttpError, Error)
++HttpError.name = 'HttpError'
++HttpError.prototype = Object.create(Error.prototype, { constructor: { value: HttpError, enumerable: false, writable: true, configurable: true } })
++
++HttpError[Symbol.hasInstance] = function (instance) {
++  if (instance instanceof createHttpError.HttpError) return true
++  if (instance == null || typeof instance !== 'object') return false
++  return typeof instance.status === 'number' && typeof instance.expose === 'boolean'
++}
++
++Object.defineProperty(HttpError, 'isHttpError', { value: createHttpError.isHttpError, writable: true, configurable: true })
++HttpError.create = createHttpError
++HttpError.HttpError = HttpError
+ module.exports.createHttpError = createHttpError
+-module.exports.HttpError = createHttpError.HttpError
+-module.exports.isHttpError = createHttpError.isHttpError
++module.exports.HttpError = HttpError
++module.exports.isHttpError = function isHttpError (err) { return err != null && typeof err === 'object' && typeof err.status === 'number' && typeof err.expose === 'boolean' }

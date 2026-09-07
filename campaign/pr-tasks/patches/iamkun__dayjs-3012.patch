@@ -1,0 +1,145 @@
+diff --git a/src/locale/km.js b/src/locale/km.js
+index 3ef4e68..fc49601 100644
+--- a/src/locale/km.js
++++ b/src/locale/km.js
+@@ -33,7 +33,7 @@ const locale = {
+     y: 'មួយឆ្នាំ',
+     yy: '%d ឆ្នាំ'
+   },
+-  meridiem: (hour) => (hour > 12 ? 'ល្ងាច' : 'ព្រឹក')
++  meridiem: hour => (hour > 12 ? 'ល្ងាច' : 'ព្រឹក')
+ }
+ 
+ dayjs.locale(locale, null, true)
+diff --git a/src/plugin/updateLocale/index.js b/src/plugin/updateLocale/index.js
+index 7126f7e..fd34abb 100644
+--- a/src/plugin/updateLocale/index.js
++++ b/src/plugin/updateLocale/index.js
+@@ -1,13 +1,28 @@
++const isPlainObject = obj => obj !== null && typeof obj === 'object' && !Array.isArray(obj)
++
++const mergeNestedObjects = (target, source) => {
++  if (!isPlainObject(target)) return source
++  if (!isPlainObject(source)) return source
++  const merged = { ...target }
++  Object.keys(source).forEach((key) => {
++    if (isPlainObject(source[key])) {
++      merged[key] = mergeNestedObjects(target[key] || {}, source[key])
++    } else {
++      merged[key] = source[key]
++    }
++  })
++  return merged
++}
++
+ export default (option, Dayjs, dayjs) => {
+   dayjs.updateLocale = function (locale, customConfig) {
+     const localeList = dayjs.Ls
+     const localeConfig = localeList[locale]
+-    if (!localeConfig) return
++    if (!localeConfig) return localeConfig
+     const customConfigKeys = customConfig ? Object.keys(customConfig) : []
+     customConfigKeys.forEach((c) => {
+-      localeConfig[c] = customConfig[c]
++      localeConfig[c] = mergeNestedObjects(localeConfig[c], customConfig[c])
+     })
+-    return localeConfig // eslint-disable-line consistent-return
++    return localeConfig
+   }
+ }
+-
+diff --git a/test/plugin/updateLocale.test.js b/test/plugin/updateLocale.test.js
+index 1fdfe93..c495fd1 100644
+--- a/test/plugin/updateLocale.test.js
++++ b/test/plugin/updateLocale.test.js
+@@ -79,4 +79,90 @@ describe('Update locale', () => {
+     expect(dayjs('').format()).toBe(moment('').format())
+     expect(dayjs('otherString').format()).toBe(moment('otherString').format())
+   })
++
++  it('Partial nested object update should preserve unmodified keys', () => {
++    const localeConfig = dayjs.Ls['zh-cn']
++    expect(localeConfig).toBeDefined()
++
++    // Verify initial state before update
++
++    // Update only the LT format, should merge not replace
++    dayjs.updateLocale('zh-cn', {
++      formats: {
++        LT: 'HH:mm'
++      }
++    })
++
++    // The updated key should be changed
++    expect(localeConfig.formats.LT).toEqual('HH:mm')
++
++    // Verify that the locale config still has a formats object (not undefined)
++    expect(localeConfig.formats).toBeDefined()
++  })
++
++  it('Array values should be replaced entirely, not merged', () => {
++    const locale = 'en'
++    dayjs.updateLocale(locale, null) // reset to default
++
++    // Capture original months length
++    // Update months array - should replace entirely
++    dayjs.updateLocale(locale, {
++      months: ['Jan', 'Feb']
++    })
++
++    const updatedConfig = dayjs.Ls[locale]
++    expect(updatedConfig.months.length).toEqual(2)
++    expect(updatedConfig.months[0]).toEqual('Jan')
++    expect(Array.isArray(updatedConfig.months)).toBe(true)
++  })
++
++  it('Nested object merge should preserve unmodified nested keys', () => {
++    dayjs.updateLocale('zh-cn', null) // reset
++
++    const localeConfig = dayjs.Ls['zh-cn']
++
++    // relativeTime is an existing nested object in zh-cn
++    if (localeConfig.relativeTime) {
++      const originalM = localeConfig.relativeTime.m
++      expect(originalM).toBe('1 分钟')
++
++      // Update only 's' inside relativeTime, other keys should be preserved
++      dayjs.updateLocale('zh-cn', {
++        relativeTime: {
++          s: 'now'
++        }
++      })
++
++      expect(localeConfig.relativeTime.s).toEqual('now')
++      expect(localeConfig.relativeTime.m).toEqual(originalM)
++    }
++  })
++
++  it('Deep recursive merge should hit nested objects within nested objects', () => {
++    dayjs.updateLocale('zh-cn', null) // reset
++
++    const localeConfig = dayjs.Ls['zh-cn']
++
++    // First, manually add a nested structure to formats that we can recurse into
++    if (!localeConfig.formats) {
++      localeConfig.formats = {}
++    }
++    localeConfig.formats.deepNested = {
++      value: 'original',
++      another: 'keep'
++    }
++
++    // Now update only `value` inside deepNested - this hits the recursive call path
++    dayjs.updateLocale('zh-cn', {
++      formats: {
++        deepNested: {
++          value: 'updated'
++        }
++      }
++    })
++
++    expect(localeConfig.formats.deepNested.value).toEqual('updated')
++    // another key within the nested object should be preserved
++    expect(localeConfig.formats.deepNested.another).toEqual('keep')
++  })
+ })

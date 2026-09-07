@@ -1,0 +1,76 @@
+diff --git a/src/plugin/devHelper/index.js b/src/plugin/devHelper/index.js
+index bdb83ca..baafc83 100644
+--- a/src/plugin/devHelper/index.js
++++ b/src/plugin/devHelper/index.js
+@@ -26,6 +26,18 @@ export default (o, c, d) => {
+       }
+       return oldLocale(preset, object, isLocal)
+     }
++    const oldDiff = proto.diff
++    proto.diff = function (input, units, float) {
++      if (typeof input === 'undefined') {
++        console.warn(`Using .diff() without an argument: you may want to pass a comparison date explicitly. https://day.js.org/docs/en/query/diff`)
++      } else {
++        const that = d(input)
++        if (!that.isValid()) {
++          console.warn(`Invalid comparison date provided to .diff(). The argument "${input}" cannot be parsed as a valid date. https://day.js.org/docs/en/parse/string-format`)
++        }
++      }
++      return oldDiff.call(this, input, units, float)
++    }
+   }
+ }
+ 
+diff --git a/test/plugin/devHelper.test.js b/test/plugin/devHelper.test.js
+index c69190a..0ab53d8 100644
+--- a/test/plugin/devHelper.test.js
++++ b/test/plugin/devHelper.test.js
+@@ -5,6 +5,7 @@ import devHelper from '../../src/plugin/devHelper'
+ dayjs.extend(devHelper)
+ 
+ beforeEach(() => {
++  global.console.warn = jest.genMockFunction()
+   MockDate.set(new Date())
+ })
+ 
+@@ -12,8 +13,6 @@ afterEach(() => {
+   MockDate.reset()
+ })
+ 
+-global.console.warn = jest.genMockFunction()
+-
+ 
+ it('Warning: passing Year as a Number will be parsed as a Unix timestamp', () => {
+   const consoleSpy = jest.spyOn(console, 'warn')
+@@ -38,3 +37,31 @@ it('Warning: Setting locale before loading locale', () => {
+   dayjs.locale('zh-cn')
+   expect(consoleSpy).toHaveBeenCalledWith('Guessing you may want to use locale zh-cn, you have to load it before using it. https://day.js.org/docs/en/i18n/loading-into-nodejs')
+ })
++
++it('Warning: Using .diff() without an argument', () => {
++  const consoleSpy = jest.spyOn(console, 'warn')
++  dayjs().diff()
++  expect(consoleSpy).toHaveBeenCalledWith('Using .diff() without an argument: you may want to pass a comparison date explicitly. https://day.js.org/docs/en/query/diff')
++})
++
++it('Warning: Invalid comparison date in .diff()', () => {
++  const consoleSpy = jest.spyOn(console, 'warn')
++  dayjs('2020-01-01').diff('not-a-date')
++  expect(consoleSpy).toHaveBeenCalledWith('Invalid comparison date provided to .diff(). The argument "not-a-date" cannot be parsed as a valid date. https://day.js.org/docs/en/parse/string-format')
++})
++
++it('no warning for valid date string in .diff()', () => {
++  dayjs('2020-01-01').diff('2020-01-02')
++  const calls = console.warn.mock.calls.filter(
++    (c) => typeof c[0] === 'string' && c[0].startsWith('.diff()')
++  )
++  expect(calls).toHaveLength(0)
++})
++
++it('no warning for valid Day.js instance in .diff()', () => {
++  dayjs('2020-01-01').diff(dayjs('2020-01-02'))
++  const calls = console.warn.mock.calls.filter(
++    (c) => typeof c[0] === 'string' && c[0].startsWith('.diff()')
++  )
++  expect(calls).toHaveLength(0)
++})

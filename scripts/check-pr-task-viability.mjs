@@ -15,14 +15,19 @@
  */
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
+import { prTaskEvidenceRoot, prTaskWorkingRoot } from "../dist/eval/pr-task-paths.js";
+
 const run = promisify(execFile);
 const repositoryRoot = new URL("..", import.meta.url).pathname;
-const workRoot = join(repositoryRoot, "campaign/pr-tasks/work");
-const candidatesPath = join(repositoryRoot, "campaign/pr-tasks/candidates.json");
-const judgedPath = join(repositoryRoot, "campaign/pr-tasks/viable.json");
+// Clones live outside the repository: they are two gigabytes of other projects' trees, and kept
+// inside it they made this project's own suite walk 1,753 foreign test files on every run.
+const workRoot = join(prTaskWorkingRoot(homedir()), "work");
+const candidatesPath = join(prTaskEvidenceRoot(repositoryRoot), "candidates.json");
+const judgedPath = join(prTaskEvidenceRoot(repositoryRoot), "viable.json");
 
 const argv = process.argv.slice(2);
 const limitAt = argv.indexOf("--limit");
