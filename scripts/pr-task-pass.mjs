@@ -39,6 +39,12 @@ const limit = Number(flag("--limit", "1000"));
 const model = flag("--model", "local:malekoo/Qwen3.8-27B-MLX-8bit");
 const endpoint = flag("--endpoint", "http://127.0.0.1:8000/v1");
 const wallMinutes = Number(flag("--max-wall-minutes", "12"));
+/**
+ * Re-judge patches this pass already produced, without calling a model. What a harness change did
+ * to earlier results is then arithmetic over recorded evidence rather than a new campaign, which
+ * is how the false red caused by installing with --ignore-scripts was measured after it was fixed.
+ */
+const rejudge = argv.includes("--rejudge");
 
 async function attempt(file, args, options = {}) {
   try {
@@ -72,7 +78,7 @@ const scored = existsSync(scoredPath)
 const done = new Set(scored.runs.map((one) => `${one.repository}#${one.pull}`));
 
 mkdirSync(oracleRoot, { recursive: true });
-const wanted = viable.filter((one) => !done.has(`${one.repository}#${one.pull}`)).slice(0, limit);
+const wanted = (rejudge ? viable.filter((one) => done.has(`${one.repository}#${one.pull}`)) : viable.filter((one) => !done.has(`${one.repository}#${one.pull}`))).slice(0, limit);
 console.log(`scoring ${wanted.length} mined task(s) against a held-back oracle\n`);
 
 for (const task of wanted) {
@@ -91,6 +97,62 @@ for (const task of wanted) {
     continue;
   }
   writeFileSync(storedTest, shown.stdout);
+
+  const patchPathExisting = join(taskRoot, "runs", `${task.repository.replace("/", "__")}-${task.pull}.patch`);
+  if (rejudge && existsSync(patchPathExisting)) {
+    const kindOnly = runnerKind(task.runner);
+    const argvOnly = task.runner.split(" ");
+    const judgeOnly = async (titles) => {
+      const command = oracleCommand({
+        storedTestFile: storedTest,
+        destination: task.testFile,
+        runner: kindOnly,
+        runnerArgv: argvOnly,
+        titles,
+      });
+      const asked = await attempt(
+        process.execPath,
+        [
+          join(repositoryRoot, "dist/cli.js"), "ci",
+          "--patch", patchPathExisting,
+          "--workspace", checkout,
+          "--base", task.baseCommit,
+          "--install",
+          "--oracle", command,
+          "--json",
+        ],
+        { timeout: 20 * 60_000 },
+      );
+      try {
+        return JSON.parse(`${asked.stdout}`.trim().split("\n").at(-1));
+      } catch {
+        return { verified: false, task: "unjudged", regression: "unmeasured" };
+      }
+    };
+    const sealedAgain = await judgeOnly(task.sealedCases);
+    const heldBackAgain = await judgeOnly(task.heldBackCases);
+    const cornerAgain = classifyAgainstHeldBackOracle({
+      verifiedWithFirstOracle: sealedAgain.verified === true,
+      heldBackAccepted: heldBackAgain.task === "accepted",
+      regression: sealedAgain.regression,
+    });
+    const previous = scored.runs.find(
+      (one) => one.repository === task.repository && one.pull === task.pull,
+    );
+    if (previous !== undefined) {
+      previous.regression = sealedAgain.regression;
+      previous.sealedOracle = sealedAgain.task;
+      previous.heldBackOracle = heldBackAgain.task;
+      previous.verified = sealedAgain.verified === true;
+      previous.corner = cornerAgain;
+    }
+    writeFileSync(scoredPath, `${JSON.stringify(scored, null, 2)}\n`);
+    console.log(
+      `  ${label.padEnd(42)} regression=${String(sealedAgain.regression).padEnd(10)} ` +
+        `sealed=${String(sealedAgain.task).padEnd(9)} held-back=${String(heldBackAgain.task).padEnd(9)} -> ${cornerAgain}`,
+    );
+    continue;
+  }
 
   await attempt("rm", ["-rf", workspace]);
   const cloned = await attempt("git", ["clone", "--quiet", "--no-hardlinks", checkout, workspace], {

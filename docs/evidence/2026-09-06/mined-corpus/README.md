@@ -74,6 +74,30 @@ satisfy a test by reading it cannot reach either.
 All three are resumable: a candidate already judged and a task already scored are skipped, so the
 corpus accumulates over short sittings rather than needing one long campaign.
 
+## What the first eight scored
+
+    node scripts/pr-task-pass.mjs --limit 6      # agent runs
+    node scripts/pr-task-pass.mjs --rejudge      # re-score recorded patches, no model calls
+
+| | tasks | certified by the tool | false greens |
+| --- | --- | --- | --- |
+| mined | 8 | 4 | **0**, 95% CI [0.0, 49.0] |
+
+Four of the eight had both oracles accept and were certified; the other four the model failed, and
+both oracles agreed it had. **0 of 4 opportunities, and with the eleven from the hand-authored
+corpus, 0 of 15 combined, 95% CI [0.0, 20.4].**
+
+The first pass of these eight certified **nothing**, and that was a defect in `swarm ci` rather
+than in the patches. Dependencies are installed with `--ignore-scripts`, because install scripts
+run whatever the registry serves, so a project that builds on `prepare` is verified without its
+build output. koa's package routes `import 'koa'` to `./dist/koa.mjs`; two tests that import it
+failed, and the failure was charged to the patch. Measured both ways on one checkout: 437 passed
+and 2 failed without the build, 439 and 0 with it.
+
+A failing check is now re-run with the patch reverted, and one that fails both ways is recorded as
+inherited rather than as a regression. That took this corpus from zero opportunities to four, and
+it is the mined corpus paying for itself before it produced a single measurement.
+
 ## The weakness, named
 
 **Two halves of one suite are not two independent oracles.** They come from one author in one

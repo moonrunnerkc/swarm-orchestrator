@@ -9,16 +9,17 @@ is how the earlier "four of twelve pass" got in here and stayed wrong: **six pas
 11, and 8 passes by not building the thing it guards), **three are partial** with the gap named (1,
 9, 10), **two are unproven** (7, 12), and **gate 3 fails on scale**.
 
-Gate 3 is the largest gap and it is now scale rather than method. With a second oracle held back
-from the tool the false-green rate is measurable, and it measures zero on eleven opportunities,
-upper bound 25.9%. Getting that bound near 1% needs four hundred tasks, which is oracle authoring
-rather than compute.
+Gate 3 is the largest gap and it is now unattended time rather than method or authoring. The rate
+is zero on fifteen opportunities across two corpora, upper bound 20.4%. The mined corpus removes
+the authoring: 111 candidates are already mined and roughly 90 are expected viable, which would
+put the bound near 8%. Four hundred is then a matter of mining more repositories and letting the
+pass run.
 
 | # | Gate | Status | Evidence, or what is missing |
 | - | ---- | ------ | ---------------------------- |
 | 1 | Zero successful host-file, host-secret, provider-key, evidence-store, cross-worker or unauthorised-egress attacks in the maintained corpus | **partial** | The deterministic corpus exists and passes: `src/exec/child-environment.test.ts`, `src/tools/shell-tool.test.ts`, `src/gates/node-command-runner.test.ts`, `src/evidence/store-permissions.test.ts`, `src/tools/isolated-shell.test.ts`. What it is not is an attack corpus written by somebody trying to get past it: every case here was written by the same person who wrote the defence. |
 | 2 | Zero accepted test-policy violations in the mutation suite | **pass** | The ratchet rejects test deletion and weakening under the per-test escape hatch; `src/gates/acceptance.test.ts` cases 4 and 5, and the falsification corpus replay. |
-| 3 | Zero false greens in at least 400 held-out tasks, with the interval reported | **fail, and measured against a held-back oracle** | **0 of 11, 95% CI [0.0, 25.9]**, counting the eleven patches the tool actually certified: [`second-oracle/README.md`](evidence/2026-09-06/second-oracle/README.md). Each task carries two oracles now, one handed to the tool as `--oracle` and one held back, so the sides are different assertions and the agreement is not forced. The held-back oracles discriminate: they accept 11 of 11 the sealed ones accept and refuse 7 on their own account. Eleven opportunities is not 400 tasks, and 6 of the 18 runs could not contribute because no ts-pattern run passed its sealed oracle by either arm. The earlier 0 of 18 from a single oracle is withdrawn as arithmetic; the 22.2% [6.3, 54.7] that preceded the fix stands. |
+| 3 | Zero false greens in at least 400 held-out tasks, with the interval reported | **fail, and measured on two corpora** | **0 of 15 combined, 95% CI [0.0, 20.4]**: 11 opportunities against hand-authored held-back oracles ([`second-oracle/`](evidence/2026-09-06/second-oracle/README.md)) and 4 against oracles mined from merged pull requests ([`mined-corpus/`](evidence/2026-09-06/mined-corpus/README.md)). The mined corpus needs no hand-authoring: a merged pull request supplies the base, the task and a specification its own maintainers wrote, split alternately into a sealed half and a held-back one, and a candidate is kept only if its tests provably fail on the base source and pass on the merged tree. 111 candidates mined, 81% viable so far, 50% of scored tasks certified. Reaching 400 is now unattended time rather than authoring. |
 | 4 | 99% recovery from injected termination without duplicate committed effects | **pass** | 100 injected kills, 300 committed effects, no duplicates: `src/durable/crash-recovery.test.ts`. |
 | 5 | Every stable documented command exists and works in the published artifact | **pass** | `scripts/check-packed-cli.mjs` packs the tarball, installs into an empty directory, reads the command list from the installed build's own help, and runs each. Runs in CI as its own job. |
 | 6 | Trusted-identity verification rejects a re-signed bundle from an unknown key | **pass** | `src/evidence/resign-attack.test.ts`: a bundle is edited, rehashed and re-signed with an attacker key; consistency still holds and the identity check refuses it, naming the substituted fingerprint. |
