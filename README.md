@@ -206,9 +206,11 @@ one fails on scale. Each row and what would settle it: **[docs/beta-gates.md](do
 - **The default execution mode is `restricted`, not `isolated`.** A lexical path and program policy
   in front of interpreters unless you pass `--isolation`. Reported before the run starts and
   recorded on the chain rather than quietly assumed — but it is not containment.
-- **The false-green rate is 0 of 15**, 95% CI [0.0, 20.4], across two corpora with an oracle held
-  back from the tool. Fifteen opportunities is fifteen opportunities: what is shown is that none
-  occurred here, not that the rate is low. An earlier 0-of-18 was withdrawn as arithmetic rather
+- **The false-green rate is 0 of 13**, 95% CI [0.0, 22.8], across two corpora with an oracle held
+  back from the tool. Thirteen opportunities is thirteen opportunities: what is shown is that none
+  occurred here, not that the rate is low. Two further results were withdrawn on 2026-09-07 when
+  the filter separating the two oracles turned out to be ignored by `node --test`, which made both
+  halves run the same tests. An earlier 0-of-18 was withdrawn as arithmetic rather
   than corrected quietly — the same test was handed to the tool and then used as the ground truth
   it was scored against, so it agreed with itself.
 - **Six known gaps ship open**, and none is claimed closed. Four have detections built against them
