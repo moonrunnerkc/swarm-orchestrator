@@ -265,6 +265,10 @@ export interface HelpCommand {
   readonly command: "help";
 }
 
+export interface VersionCommand {
+  readonly command: "version";
+}
+
 /** Prints the routing table the reward log adds up to. */
 interface RoutingCommand {
   readonly command: "routing";
@@ -279,6 +283,7 @@ export interface SelectCommand {
 
 export type CommandLine =
   | HelpCommand
+  | VersionCommand
   | RunCommand
   | SessionCommand
   | DoctorCommand
@@ -314,6 +319,7 @@ export const usage = [
   "  swarm select [--shortlist <file|url|bundled>]    probe this machine, recommend a model",
   "  swarm calibrate [--models <a,b>] [--repeats <n>] measure models on the golden set",
   '  swarm calibrate --add-case "<task>" --seed <a,b> --gate "<command>"',
+  "  swarm --version                                  which build this is",
   "  swarm doctor [--fix] [--offline]                 what owns the swarm command, and fix it",
   "  swarm routing                                    what the reward log adds up to",
   "  swarm parallel --tasks <file>                    one worker per line, then a merge queue",
@@ -368,6 +374,7 @@ export class InvalidCommandLineError extends Error {
 /** The flags that are their own value. Everything else takes the word after it. */
 const switchFlags = new Set([
   "help",
+  "version",
   "json",
   "remove",
   "install",
@@ -420,6 +427,13 @@ export function parseCommandLine(
   // is asking for help.
   if (flags.has("help") || words[0] === "help") {
     return { command: "help" };
+  }
+
+  // After help, which is what a person asks for when the line is wrong, and before everything
+  // else for the same reason help is: the parser reads the word after a flag as its value, so
+  // asking a question that takes no argument must not be able to fail for needing one.
+  if (flags.has("version") || words[0] === "version") {
+    return { command: "version" };
   }
 
   if (words[0] === "ci") {
