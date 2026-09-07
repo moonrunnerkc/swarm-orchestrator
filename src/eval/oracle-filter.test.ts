@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { spawn } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { oracleCommand, titleFilterFor } from "./oracle-filter.ts";
 
 describe("titleFilterFor", () => {
@@ -63,4 +67,51 @@ describe("oracleCommand", () => {
     // beats a per-runner rule nobody will remember.
     expect(command).toContain('npx jest --ci "-t" "holds a value" src/__test__/Deque.test.js');
   });
+});
+
+/**
+ * The comment in oracle-filter.ts says node ignores a filter placed after the file. This runs it,
+ * because the whole defect was an assumption about a runner's argument handling that nobody had
+ * executed. A comment cannot notice when node changes; this can.
+ */
+describe("what node actually does with a trailing filter", () => {
+  let directory = "";
+
+  beforeEach(async () => {
+    directory = await mkdtemp(join(tmpdir(), "oracle-filter-"));
+    await writeFile(
+      join(directory, "three.test.mjs"),
+      [
+        'import { test } from "node:test";',
+        'test("alpha one", () => {});',
+        'test("beta two", () => {});',
+        'test("gamma three", () => {});',
+        "",
+      ].join("\n"),
+    );
+  });
+
+  afterEach(async () => {
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  const ran = (output: string) => Number(/^. tests (\d+)$/m.exec(output)?.[1] ?? "-1");
+
+  const runNode = (args: readonly string[]) =>
+    new Promise<string>((resolve) => {
+      const child = spawn(process.execPath, [...args], { cwd: directory });
+      let out = "";
+      child.stdout.on("data", (chunk) => {
+        out += chunk;
+      });
+      child.on("close", () => resolve(out));
+    });
+
+  it("ignores the filter after the file, and honours it before", async () => {
+    const after = await runNode(["--test", "three.test.mjs", "--test-name-pattern", "alpha one"]);
+    const before = await runNode(["--test", "--test-name-pattern", "alpha one", "three.test.mjs"]);
+
+    expect(ran(after)).toBe(3);
+    expect(ran(before)).toBe(1);
+  }, 30_000);
 });
