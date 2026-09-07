@@ -326,3 +326,29 @@ Already built (`docs/tech-debt.md` records its closing on 2026-08-31, 37 tests).
 lacked was the test the run screen has: `src/tui/calibrate-view.test.ts` now asserts the
 store exposes nothing a keystroke could reach, that no field of the projection at any depth
 shares a name with a gate-run record, and that no string it holds reads as a gate verdict.
+
+## Phase 3: recalibrate, then the campaign
+
+### 3.1 Calibration
+
+Two sweeps on the Ollama backend, 180 repeats, every one executed, from the CLI built at
+`710e63b4` with the Phase 1 rule in it: `../evidence/2026-09-04/calibration-report.md`, with
+the bundles beside it, both verifying with the verifier each carries. Read as distributions
+against the September 2 sweeps: qwen3.6 and gemma4 agree with themselves to within their own
+spreads on every dimension, and mistral is refused by the same usability floor on both days.
+
+Empty turns, exactly: none in 340 calls on the qwen3.6 sweep; nine in 604 on the pair sweep,
+four on gemma4 (two output caps sampled again, two calls aborted by the sweep's own repeat
+budget) and five on mistral of a shape August did not have, finish reason `stop` with tokens
+counted and nothing delivered. Every one is a record carrying the harness's verdict, and none
+reached a score: the five ended their repeats as `cut short before the gate`. Phase 1's rule
+held; the resample from Phase 5 (`96df15dc`) landed after these sweeps started and is not in
+them, which the report says. The machine was not idle during the pair sweep, and the report
+says that too. rapid-mlx was down for the whole pass, so `qwen3.8:27b` has no sweep today.
+
+### 3.2 The campaign
+
+The driver Phase 0 found is the one used, and its arms are the backends it names; there is no
+chore arm and no impossible arm in it, and none was built, since the found driver with its
+sealed criteria and manifest is what the pass says to resume. Records before this pass are
+kept: every one postdates the empty-turn fix. Resumed and reported below.
