@@ -2095,6 +2095,10 @@ async function main(): Promise<number> {
     process.stdout.write(`${usage}\n`);
     return 0;
   }
+  if (options.command === "version") {
+    process.stdout.write(`${await runningVersion(resolve(import.meta.dirname, ".."))}\n`);
+    return 0;
+  }
   if (options.command === "verify") {
     return verifyBundle(options);
   }

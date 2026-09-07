@@ -476,6 +476,22 @@ describe("asking for help", () => {
     expect(parseCommandLine(["gates", "--help"], context)).toEqual({ command: "help" });
     expect(parseCommandLine(["replay", "--help"], context)).toEqual({ command: "help" });
   });
+});
+
+describe("asking which version this is", () => {
+  // The same defect --help had, left in place: the parser takes the word after a flag as its
+  // value, so the published 14.0.1 answers `swarm --version` with "--version needs a value".
+  // Every CLI is expected to answer this, and a tool whose subject is honest reporting should
+  // not be unable to say what it is.
+  it("takes --version as its own answer, with or without anything beside it", () => {
+    expect(parseCommandLine(["--version"], context)).toEqual({ command: "version" });
+    expect(parseCommandLine(["--version", "do a thing"], context)).toEqual({ command: "version" });
+    expect(parseCommandLine(["version"], context)).toEqual({ command: "version" });
+  });
+
+  it("does not outrank help, which is what a person asks for when the line is wrong", () => {
+    expect(parseCommandLine(["--version", "--help"], context)).toEqual({ command: "help" });
+  });
 
   it("names every command and every screen flag", () => {
     for (const named of [
