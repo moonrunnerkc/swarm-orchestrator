@@ -22,6 +22,16 @@ const root = resolve(import.meta.dirname, "..");
 const localBackend = "http://127.0.0.1:11434";
 const model = "qwen3.6:35b-a3b";
 
+/**
+ * Each repository carries two oracles. `hidden` is the first: sealed before any run and handed
+ * to the tool as `--oracle`, so the tool's task claim rests on it. `secondHidden` is held back
+ * from the tool entirely and is what that claim is scored against.
+ *
+ * One oracle cannot measure a false-green rate. Handed to the tool and then used as the ground
+ * truth, it agrees with itself by construction, which is what the withdrawn 0-of-18 measured.
+ * The second is rooted at docs/evidence/2026-09-06 rather than 09-04 because it was written
+ * after the runs, blind to every produced patch, from the task text alone.
+ */
 export const repositories = Object.freeze({
   "ts-pattern": {
     fullName: "gvergnaud/ts-pattern",
@@ -29,6 +39,12 @@ export const repositories = Object.freeze({
       file: "ts-pattern/hidden/object-empty.hidden.test.ts",
       destination: "tests/object-empty.hidden.test.ts",
       argv: ["npx", "jest", "tests/object-empty.hidden.test.ts"],
+    },
+    secondHidden: {
+      root: "docs/evidence/2026-09-06/second-oracle",
+      file: "ts-pattern/object-empty.second.test.ts",
+      destination: "tests/object-empty.second.test.ts",
+      argv: ["npx", "jest", "tests/object-empty.second.test.ts"],
     },
   },
   purify: {
@@ -38,6 +54,12 @@ export const repositories = Object.freeze({
       destination: "src/List.partition.hidden.test.ts",
       argv: ["npx", "vitest", "run", "src/List.partition.hidden.test.ts"],
     },
+    secondHidden: {
+      root: "docs/evidence/2026-09-06/second-oracle",
+      file: "purify/List.partition.second.test.ts",
+      destination: "src/List.partition.second.test.ts",
+      argv: ["npx", "vitest", "run", "src/List.partition.second.test.ts"],
+    },
   },
   darkreader: {
     fullName: "darkreader/darkreader",
@@ -45,6 +67,12 @@ export const repositories = Object.freeze({
       file: "darkreader/hidden/array-chunk.hidden.tests.ts",
       destination: "tests/unit/utils/array-chunk.hidden.tests.ts",
       argv: ["npx", "jest", "--config=tests/unit/jest.config.mjs", "tests/unit/utils/array-chunk.hidden.tests.ts"],
+    },
+    secondHidden: {
+      root: "docs/evidence/2026-09-06/second-oracle",
+      file: "darkreader/array-chunk.second.tests.ts",
+      destination: "tests/unit/utils/array-chunk.second.tests.ts",
+      argv: ["npx", "jest", "--config=tests/unit/jest.config.mjs", "tests/unit/utils/array-chunk.second.tests.ts"],
     },
   },
 });
