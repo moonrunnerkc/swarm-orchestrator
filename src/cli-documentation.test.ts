@@ -49,17 +49,22 @@ describe("the commands the help text promises", () => {
   }
 });
 
-describe("the commands the README promises", () => {
+describe("the commands the documents promise", () => {
   /**
    * The help text and the README are two lists of what this build has, and they drift in both
    * directions: a command added without a README line is undiscoverable, and a README line left
    * behind after a rename is a promise the build does not keep. The help text is already held
    * to the parser above; this holds the README to the help text.
    */
+  // Every document a reader is pointed at, not just the front page. The command reference moved
+  // to docs/cli.md when the README was cut down, and a guard that only reads the README would
+  // have gone quietly vacuous the moment it did: four commands left behind, and the promise that
+  // a documented command exists no longer covering the file that documents them.
+  const documentingFiles = ["../README.md", "../docs/cli.md", "../docs/verifying.md"];
   const readmeCommands = [
     ...new Set(
-      readFileSync(new URL("../README.md", import.meta.url), "utf8")
-        .split("\n")
+      documentingFiles
+        .flatMap((path) => readFileSync(new URL(path, import.meta.url), "utf8").split("\n"))
         .flatMap((line) => [...line.matchAll(/\bswarm ([a-z][a-z-]+)\b/g)])
         .map((match) => match[1])
         .filter((name): name is string => name !== undefined),
