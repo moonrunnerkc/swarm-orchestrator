@@ -23,6 +23,33 @@ describe("titleFilterFor", () => {
 });
 
 describe("oracleCommand", () => {
+  /**
+   * `node --test a.test.mjs --test-name-pattern x` runs every test in the file: node stops reading
+   * flags once a positional argument appears. Measured, on a three-test file: filter after the
+   * file ran 3, filter before it ran 1.
+   *
+   * That silently voids the whole point of the pass. Both halves of a split are the same file
+   * under a different filter, so an ignored filter makes the sealed and the held-back oracle run
+   * identical tests, and the two agree by construction: the exact self-agreement the withdrawn
+   * 0-of-18 number was made of.
+   */
+  it("puts the filter before the file, where node still reads flags", () => {
+    const command = oracleCommand({
+      storedTestFile: "/corpus/length.test.js",
+      destination: "__tests__/length.test.js",
+      runner: "node",
+      runnerArgv: ["node", "--test", "__tests__/length.test.js"],
+      titles: ["handles zero"],
+    });
+    const invocation = command.slice(command.lastIndexOf("&&") + 2).trim();
+    expect(invocation).toBe(
+      'node --test "--test-name-pattern" "handles zero" __tests__/length.test.js',
+    );
+    expect(invocation.indexOf("--test-name-pattern")).toBeLessThan(
+      invocation.indexOf("__tests__/length.test.js"),
+    );
+  });
+
   it("copies the stored test file in and runs only the named half", () => {
     const command = oracleCommand({
       storedTestFile: "/corpus/Deque.test.js",
@@ -32,6 +59,8 @@ describe("oracleCommand", () => {
       titles: ["holds a value"],
     });
     expect(command).toContain('cp "/corpus/Deque.test.js" src/__test__/Deque.test.js');
-    expect(command).toContain('npx jest --ci src/__test__/Deque.test.js "-t" "holds a value"');
+    // Flags before the file for every runner, not only node: one order that is correct everywhere
+    // beats a per-runner rule nobody will remember.
+    expect(command).toContain('npx jest --ci "-t" "holds a value" src/__test__/Deque.test.js');
   });
 });
