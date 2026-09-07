@@ -329,14 +329,21 @@ console.log(
 );
 console.log(judged.reason);
 
+// A subset run writes its own file. `--only pass5,pass6` used to overwrite summary.json with a
+// six-run diagnostic, replacing a completed sixty-run campaign inside a file named for the
+// campaign, and nothing about the result said it was two cases rather than twenty.
+const summaryName = onlyCases.length > 0 ? `summary.only-${onlyCases.join("-")}.json` : "summary.json";
+
 writeFileSync(
-  join(resultsPath, "..", "summary.json"),
+  join(resultsPath, "..", summaryName),
   `${JSON.stringify(
     {
       model,
       endpoint,
       seeds,
       cases: cases.length,
+      // Named, so a subset result cannot be read as a whole-corpus one later.
+      onlyCases: onlyCases.length > 0 ? onlyCases : undefined,
       scores,
       mcNemar: judged,
       onlyFirst,
