@@ -48,11 +48,11 @@ a workspace it had never seen, recorded in a real terminal:
 
     npm install -g swarm-orchestrator
 
-That is **14.0.1**, and it leaves `swarm` on your path.
+That is **14.0.2**, and it leaves `swarm` on your path.
 
 Installing from a tag works too, but only into a project rather than globally:
 
-    npm install github:moonrunnerkc/swarm-orchestrator#v14.0.1
+    npm install github:moonrunnerkc/swarm-orchestrator#v14.0.2
 
 `dist/` is not committed, so a git ref builds itself on install and needs this package's
 devDependencies to do it. npm does not install those when a git ref is installed with `-g`: it
