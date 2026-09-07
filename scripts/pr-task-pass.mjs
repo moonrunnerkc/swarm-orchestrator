@@ -163,6 +163,7 @@ for (const task of wanted) {
       verifiedWithFirstOracle: sealedAgain.verified === true,
       heldBackAccepted: heldBackAgain.task === "accepted",
       regression: sealedAgain.regression,
+      sealedAccepted: sealedAgain.task === "accepted",
     });
     const previous = scored.runs.find(
       (one) => one.repository === task.repository && one.pull === task.pull,
@@ -287,6 +288,7 @@ for (const task of wanted) {
     verifiedWithFirstOracle: sealed.verified === true,
     heldBackAccepted: heldBack.task === "accepted",
     regression: sealed.regression,
+    sealedAccepted: sealed.task === "accepted",
   });
 
   scored.runs.push({

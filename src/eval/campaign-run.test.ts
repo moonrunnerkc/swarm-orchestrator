@@ -490,6 +490,38 @@ describe("classifyAgainstHeldBackOracle", () => {
     ).toBe("false-green");
   });
 
+  /**
+   * The two halves are one specification cut in two, so neither is the whole of it. Where the
+   * sealed half rejects and the held-back half accepts, the model did part of the work: the tool
+   * refused on evidence the held-back half does not cover, which is the tool being right. Calling
+   * that a false red blames it for the refusal it is supposed to make, and it happened twice in
+   * the first eleven mined tasks.
+   *
+   * The opposite direction is not symmetrical. Sealed accepting and held-back refusing is a claim
+   * that turned out wrong, which is the whole point of holding one back.
+   */
+  it("does not call it a false red when the sealed oracle is why the tool refused", () => {
+    expect(
+      classifyAgainstHeldBackOracle({
+        verifiedWithFirstOracle: false,
+        heldBackAccepted: true,
+        regression: "pass",
+        sealedAccepted: false,
+      }),
+    ).toBe("refused-on-sealed");
+  });
+
+  it("still calls it a false red where the sealed oracle accepted too", () => {
+    expect(
+      classifyAgainstHeldBackOracle({
+        verifiedWithFirstOracle: false,
+        heldBackAccepted: true,
+        regression: "pass",
+        sealedAccepted: true,
+      }),
+    ).toBe("false-red");
+  });
+
   it("names a refused run the held-back oracle accepts a false red", () => {
     expect(
       classifyAgainstHeldBackOracle({ verifiedWithFirstOracle: false, heldBackAccepted: true }),

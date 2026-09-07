@@ -362,7 +362,17 @@ export function classifyAgainstHeldBackOracle(input: {
   heldBackAccepted: boolean;
   /** What the same checkout said about the project's own suite, which both invocations measure. */
   regression?: "pass" | "fail" | "unmeasured";
-}): "true-green" | "false-green" | "false-red" | "true-red" {
+  /**
+   * Whether the sealed oracle accepted. The two halves are one specification cut in two, so where
+   * the sealed half rejects and the held-back half accepts, the model did part of the work and the
+   * tool refused on evidence the held-back half does not cover. That is the tool being right, and
+   * scoring it as a false red blames it for the refusal it exists to make.
+   *
+   * The directions are not symmetrical: sealed accepting while held-back refuses is a claim that
+   * turned out wrong, which is the whole reason one is held back.
+   */
+  sealedAccepted?: boolean;
+}): "true-green" | "false-green" | "false-red" | "true-red" | "refused-on-sealed" {
   // The held-back oracle answers one question, whether the feature was added. The tool answers
   // two, and refusing a patch that added the feature and broke the suite is the tool being right
   // about the second. Scoring that as a false red blames it for the one thing a regression check
@@ -373,7 +383,8 @@ export function classifyAgainstHeldBackOracle(input: {
   if (input.verifiedWithFirstOracle) {
     return good ? "true-green" : "false-green";
   }
-  return good ? "false-red" : "true-red";
+  if (!good) return "true-red";
+  return input.sealedAccepted === false ? "refused-on-sealed" : "false-red";
 }
 
 /**
