@@ -66,6 +66,24 @@ async function attempt(file, args, options = {}) {
   }
 }
 
+/**
+ * The timezone the project's own test script sets, read from the base commit rather than from the
+ * viability record: tasks judged before that fix carry no timezone, and re-deriving it here covers
+ * them without re-judging. dayjs runs its suite under four zones in one command, and a timezone
+ * test lifted out of that and run under whatever zone this machine is in fails for a reason that
+ * is not the patch, which costs an opportunity rather than producing a wrong verdict.
+ */
+async function declaredTimezone(checkout, baseCommit) {
+  const shown = await attempt("git", ["show", `${baseCommit}:package.json`], { cwd: checkout });
+  if (shown.code !== 0) return null;
+  try {
+    const declared = JSON.parse(shown.stdout).scripts?.test ?? "";
+    return (/\bTZ=([A-Za-z_+\-/0-9]+)/.exec(declared) ?? [])[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 const runnerKind = (runner) =>
   runner.includes("jest")
     ? "jest"
@@ -110,14 +128,16 @@ for (const task of wanted) {
   if (rejudge && existsSync(patchPathExisting)) {
     const kindOnly = runnerKind(task.runner);
     const argvOnly = task.runner.split(" ");
+    const zoneOnly = await declaredTimezone(checkout, task.baseCommit);
     const judgeOnly = async (titles) => {
-      const command = oracleCommand({
+      const built = oracleCommand({
         storedTestFile: storedTest,
         destination: task.testFile,
         runner: kindOnly,
         runnerArgv: argvOnly,
         titles,
       });
+      const command = zoneOnly === null ? built : `TZ=${zoneOnly} ${built}`;
       const asked = await attempt(
         process.execPath,
         [
@@ -206,14 +226,16 @@ for (const task of wanted) {
 
   const kind = runnerKind(task.runner);
   const runnerArgv = task.runner.split(" ");
+  const zone = await declaredTimezone(checkout, task.baseCommit);
   const judge = async (titles) => {
-    const command = oracleCommand({
+    const built = oracleCommand({
       storedTestFile: storedTest,
       destination: task.testFile,
       runner: kind,
       runnerArgv,
       titles,
     });
+    const command = zone === null ? built : `TZ=${zone} ${built}`;
     const asked = await attempt(
       process.execPath,
       [
