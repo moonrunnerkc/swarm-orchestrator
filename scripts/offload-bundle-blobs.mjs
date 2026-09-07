@@ -14,8 +14,17 @@
 // nothing to rebuild it from. Restore with scripts/restore-bundle-blobs.mjs.
 import { execFileSync } from "node:child_process";
 import { readdirSync } from "node:fs";
+
+/** The files in a directory, or none where there is no such directory. */
+const namesIn = (path) => {
+  try {
+    return readdirSync(path);
+  } catch {
+    return [];
+  }
+};
 import { join } from "node:path";
-import { offloadDerivedArtifacts } from "../dist/evidence/blob-manifest.js";
+import { offloadBlobs, offloadDerivedArtifacts } from "../dist/evidence/blob-manifest.js";
 
 /**
  * Only files git is tracking. This script deletes, and git history is the whole of what makes
@@ -30,7 +39,9 @@ const tracked = new Set(
     .filter((path) => path.length > 0),
 );
 
-const roots = process.argv.slice(2);
+const argv = process.argv.slice(2);
+const alsoPayloads = argv.includes("--payloads");
+const roots = argv.filter((one) => !one.startsWith("--"));
 if (roots.length === 0) {
   console.error(
     "usage: node scripts/offload-bundle-blobs.mjs <directory>...\n" +
@@ -77,6 +88,20 @@ for (const root of roots) {
           `${(derived.removedBytes / 1024 / 1024).toFixed(1)} MB`,
       );
     }
+    if (!alsoPayloads) {
+      continue;
+    }
+    const blobs = join(directory, "blobs");
+    const held = namesIn(blobs).filter((name) => tracked.has(join(blobs, name)));
+    if (held.length === 0) {
+      continue;
+    }
+    const offloaded = await offloadBlobs(blobs);
+    freed += offloaded.removedBytes;
+    console.log(
+      `${blobs}: ${offloaded.manifest.blobs.length} payload(s), ` +
+        `${(offloaded.removedBytes / 1024 / 1024).toFixed(1)} MB -> ${offloaded.manifestPath}`,
+    );
   }
 }
 

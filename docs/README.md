@@ -16,12 +16,23 @@
 
 ## Restoring offloaded artifacts
 
-Every evidence bundle in this tree verifies from a clone: `cd` into one and run `node verify.mjs`.
+**Every bundle a document calls verified verifies from a clone.** `cd` into one and run `node
+verify.mjs`. `node scripts/check-cited-bundles-verify.mjs` holds all fourteen of them to that on
+every push, because for a while none of them did and nothing noticed.
 
-Large *derived* artifacts, rendered review pages mostly, are kept outside the repository, with
-their digests left behind in the bundle's `blobs.digests.json`. A bundle regenerates those from
-its own records, so their absence does not stop it verifying. To put them back from the session
-store of the machine that produced the run:
+Two kinds of thing are kept outside the repository, with their digests left behind in the
+bundle's `blobs.digests.json`:
+
+- **Large derived artifacts**, rendered review pages mostly. A bundle regenerates those from its
+  own records, so their absence does not stop it verifying.
+- **The record payloads of bulk run archives that nothing cites as evidence**, which today means
+  the eighteen runs under `evidence/2026-09-04/real-repos/`. Those bundles do *not* verify until
+  the payloads are restored, and they are kept so their recorded patches can be re-scored, which
+  reads `runs.jsonl` and `diff.patch` rather than the ledger. A cited bundle is never offloaded
+  this way: a reader who follows a claim to its evidence and gets exit 1 has been told something
+  false.
+
+To put either back from the session store of the machine that produced the run:
 
     node scripts/restore-bundle-blobs.mjs                 # every bundle under docs/evidence
     node scripts/restore-bundle-blobs.mjs <dir>...        # named bundles
@@ -30,5 +41,6 @@ store of the machine that produced the run:
 A file is written only where its content hashes to the digest the manifest names, so a store
 holding the wrong thing under the right name is reported rather than copied over the top.
 
-Record payloads are never offloaded. A bundle without them cannot verify, and one that does not
-verify is not evidence.
+`scripts/offload-bundle-blobs.mjs` moves derived artifacts out by default and needs `--payloads`
+before it will touch a record payload, so removing the thing a bundle verifies against is a
+decision somebody typed rather than a side effect of tidying.

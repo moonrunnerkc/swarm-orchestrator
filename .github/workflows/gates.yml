@@ -39,6 +39,9 @@ jobs:
       # Bulk evidence blobs were the whole of this repository's weight. Removing them once fixed
       # a number; a check that fails when they come back fixes the cause.
       - run: node scripts/check-repo-weight.mjs
+      # A bundle a document calls verified must verify from a clone. This caught nothing for a
+      # while because nothing checked it, and 47 of 51 bundles had stopped verifying.
+      - run: node scripts/check-cited-bundles-verify.mjs
       - run: npm run gates
       # The 8-harness smoke, cheap enough for every push. Without it a harness that
       # stopped loading, or one built against a stale .swarm/fuzz-build, is only found

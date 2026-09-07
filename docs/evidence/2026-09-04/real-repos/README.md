@@ -33,3 +33,14 @@ criteria, runs every gate once with no model and no retries, and writes a bundle
 comparison carries the harness measures: tests declared, assertions, skip markers, tests
 collected and coverage of changed lines where the runner could be vouched for. The bundle is
 the record; the report reads from it.
+
+## These bundles need their payloads restored before they verify
+
+The ledgers here are kept so the recorded patches can be re-scored, which reads `runs.jsonl` and
+each run's `diff.patch` rather than the ledger. Their record payloads live outside the repository
+to keep it clonable, so `verify.mjs` in these directories exits 1 until:
+
+    node scripts/restore-bundle-blobs.mjs docs/evidence/2026-09-04/real-repos
+
+Nothing in this repository cites these bundles as evidence that verifies. The ones that are cited
+keep their payloads and are held to that by `../../../../scripts/check-cited-bundles-verify.mjs`.
