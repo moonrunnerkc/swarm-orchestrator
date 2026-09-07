@@ -25,6 +25,14 @@ export interface IndependentCheck {
   readonly id: string;
   readonly status: "passed" | "failed" | "not-applicable";
   readonly detail: string;
+  /**
+   * Whether this check fails at the base commit too, with the patch not applied. A failure the
+   * base already had was not caused by the patch, and charging it to the patch is the collapse of
+   * *unmeasured* into *failed* that the rest of this project refuses.
+   *
+   * Undefined where nothing failed, since the base is only measured to explain a failure.
+   */
+  readonly inheritedFromBase?: boolean;
 }
 
 export interface DependencyInstall {
@@ -186,16 +194,29 @@ export async function verifyIndependently(
         ? await installFromLockfile(checkout, options, timeoutMs)
         : null;
 
-    const checks = await runChecks(checkout, options, timeoutMs);
+    const withPatch = await runChecks(checkout, options, timeoutMs);
+    // The base is measured only to explain a failure, so a run where everything passed pays
+    // nothing for this. Install is not repeated: the same checkout is reset to the base, so the
+    // two runs differ in the patch and in nothing else, which is the whole point of the
+    // comparison.
+    // Before attribution, which reverts the patch to measure the base: the oracle judges the
+    // patched tree or it judges nothing worth knowing.
+    const task = await judgeTask(checkout, options, timeoutMs);
+    const checks = withPatch.some((check) => check.status === "failed")
+      ? await attributeFailures(withPatch, checkout, options, timeoutMs)
+      : withPatch;
     const measuredSomething = checks.some((check) => check.status !== "not-applicable");
-    const regression: IndependentVerification["regression"] = checks.some(
-      (check) => check.status === "failed",
-    )
+    const causedByThePatch = (check: IndependentCheck) =>
+      check.status === "failed" && check.inheritedFromBase !== true;
+    const regression: IndependentVerification["regression"] = checks.some(causedByThePatch)
       ? "fail"
       : checks.some((check) => check.status === "passed")
         ? "pass"
-        : "unmeasured";
-    const task = await judgeTask(checkout, options, timeoutMs);
+        : checks.some((check) => check.status === "failed")
+          ? // Everything that failed, the base failed identically, so this patch broke nothing and
+            // nothing here establishes that it did not either.
+            "unmeasured"
+          : "unmeasured";
 
     return {
       applied: true,
@@ -207,24 +228,55 @@ export async function verifyIndependently(
       // still passes a suite written before the feature existed.
       verified: regression === "pass" && task === "accepted",
       unmeasured: !measuredSomething,
-      advice: !measuredSomething
-        ? "nothing here measured the patch: every check stood down, which on a real project " +
-          "usually means the fresh checkout has no installed dependencies, so its test runner " +
-          "is not present. Pass --install to install them from the lockfile first, which runs " +
-          "whatever install scripts the registry serves and is therefore a decision rather " +
-          "than a default."
-        : task === "unjudged"
-          ? "the repository's own suite passed, which says nothing broke. It does not say the " +
-            "task was done: a suite tests the behaviour a project already had, and a task adds " +
-            "behaviour it did not. Pass --oracle <command> with a check that says whether the " +
-            "task was done."
-          : "",
+      advice: checks.some((check) => check.inheritedFromBase === true)
+        ? "at least one check fails at the base commit too, with this patch not applied, so it " +
+          "is reported as inherited rather than as a regression. A common cause is a project " +
+          "that builds on install: dependencies are installed with --ignore-scripts, because " +
+          "install scripts run whatever the registry serves, so a `prepare` step that generates " +
+          "what the tests import does not run."
+        : !measuredSomething
+          ? "nothing here measured the patch: every check stood down, which on a real project " +
+            "usually means the fresh checkout has no installed dependencies, so its test runner " +
+            "is not present. Pass --install to install them from the lockfile first, which runs " +
+            "whatever install scripts the registry serves and is therefore a decision rather " +
+            "than a default."
+          : task === "unjudged"
+            ? "the repository's own suite passed, which says nothing broke. It does not say the " +
+              "task was done: a suite tests the behaviour a project already had, and a task adds " +
+              "behaviour it did not. Pass --oracle <command> with a check that says whether the " +
+              "task was done."
+            : "",
       install,
       checkoutPath: checkout,
     };
   } finally {
     await rm(checkout, { recursive: true, force: true });
   }
+}
+
+/**
+ * Runs the same checks again with the patch reverted, so a failure can be attributed. A check that
+ * fails both ways was not caused by the patch; one that only fails with the patch was.
+ */
+async function attributeFailures(
+  withPatch: readonly IndependentCheck[],
+  checkout: string,
+  options: IndependentVerificationOptions,
+  timeoutMs: number,
+): Promise<readonly IndependentCheck[]> {
+  const reverted = await options.commands.runVouched(
+    ["git", "-C", checkout, "checkout", "--force", "--detach", options.baseCommit],
+    { cwd: checkout, timeoutMs },
+  );
+  if (reverted.exitCode !== 0) {
+    return withPatch;
+  }
+  const atBase = await runChecks(checkout, options, timeoutMs);
+  return withPatch.map((check) => {
+    if (check.status !== "failed") return check;
+    const same = atBase.find((one) => one.id === check.id);
+    return { ...check, inheritedFromBase: same?.status === "failed" };
+  });
 }
 
 /**
