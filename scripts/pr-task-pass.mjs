@@ -20,14 +20,21 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { promisify } from "node:util";
 
+import { homedir } from "node:os";
+
 import { classifyAgainstHeldBackOracle } from "../dist/eval/campaign-run.js";
 import { oracleCommand } from "../dist/eval/oracle-filter.js";
+import { prTaskEvidenceRoot, prTaskWorkingRoot } from "../dist/eval/pr-task-paths.js";
 import { wilsonInterval } from "../dist/eval/statistics.js";
 
 const run = promisify(execFile);
 const repositoryRoot = new URL("..", import.meta.url).pathname;
-const taskRoot = join(repositoryRoot, "campaign/pr-tasks");
-const oracleRoot = join(taskRoot, "oracles");
+// Evidence in the repository, bulk outside it. The results and the recorded patches are what
+// --rejudge reads, so they stay committed; clones, workspaces and extracted oracles do not.
+const taskRoot = prTaskEvidenceRoot(repositoryRoot);
+const workingRoot = prTaskWorkingRoot(homedir());
+const oracleRoot = join(workingRoot, "oracles");
+const patchRoot = join(taskRoot, "patches");
 const scoredPath = join(taskRoot, "scored.json");
 
 const argv = process.argv.slice(2);
@@ -78,13 +85,14 @@ const scored = existsSync(scoredPath)
 const done = new Set(scored.runs.map((one) => `${one.repository}#${one.pull}`));
 
 mkdirSync(oracleRoot, { recursive: true });
+mkdirSync(patchRoot, { recursive: true });
 const wanted = (rejudge ? viable.filter((one) => done.has(`${one.repository}#${one.pull}`)) : viable.filter((one) => !done.has(`${one.repository}#${one.pull}`))).slice(0, limit);
 console.log(`scoring ${wanted.length} mined task(s) against a held-back oracle\n`);
 
 for (const task of wanted) {
   const label = `${task.repository}#${task.pull}`;
-  const checkout = join(taskRoot, "work", task.repository.replace("/", "__"));
-  const workspace = join(taskRoot, "runs", `${task.repository.replace("/", "__")}-${task.pull}`);
+  const checkout = join(workingRoot, "work", task.repository.replace("/", "__"));
+  const workspace = join(workingRoot, "runs", `${task.repository.replace("/", "__")}-${task.pull}`);
 
   // The pull request's test file, kept outside every workspace so neither half can be read by the
   // thing being measured.
@@ -98,7 +106,7 @@ for (const task of wanted) {
   }
   writeFileSync(storedTest, shown.stdout);
 
-  const patchPathExisting = join(taskRoot, "runs", `${task.repository.replace("/", "__")}-${task.pull}.patch`);
+  const patchPathExisting = join(patchRoot, `${task.repository.replace("/", "__")}-${task.pull}.patch`);
   if (rejudge && existsSync(patchPathExisting)) {
     const kindOnly = runnerKind(task.runner);
     const argvOnly = task.runner.split(" ");
@@ -193,7 +201,7 @@ for (const task of wanted) {
 
   await attempt("git", ["add", "-A"], { cwd: workspace });
   const diff = await attempt("git", ["diff", "--cached", task.baseCommit], { cwd: workspace });
-  const patchPath = join(workspace, "..", `${task.repository.replace("/", "__")}-${task.pull}.patch`);
+  const patchPath = join(patchRoot, `${task.repository.replace("/", "__")}-${task.pull}.patch`);
   writeFileSync(patchPath, diff.stdout);
 
   const kind = runnerKind(task.runner);

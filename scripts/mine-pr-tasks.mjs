@@ -19,6 +19,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
+import { prTaskEvidenceRoot } from "../dist/eval/pr-task-paths.js";
 import { splitTestCases } from "../dist/eval/test-case-split.js";
 
 const run = promisify(execFile);
@@ -31,7 +32,7 @@ const numeric = (flag, fallback) => {
 };
 const outAt = argv.indexOf("--out");
 const outPath =
-  outAt === -1 ? join(repositoryRoot, "campaign/pr-tasks/candidates.json") : argv[outAt + 1];
+  outAt === -1 ? join(prTaskEvidenceRoot(repositoryRoot), "candidates.json") : argv[outAt + 1];
 
 const isTestPath = (path) =>
   /(^|\/)(__tests__|tests?|spec)\//.test(path) || /\.(test|spec)\.[cm]?[jt]sx?$/.test(path);
