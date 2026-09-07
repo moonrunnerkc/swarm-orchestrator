@@ -360,8 +360,13 @@ export function harnessClaimsTaskDone(input: { taskOracleConfigured: boolean }):
 export function classifyAgainstHeldBackOracle(input: {
   verifiedWithFirstOracle: boolean;
   heldBackAccepted: boolean;
-  /** What the same checkout said about the project's own suite, which both invocations measure. */
-  regression?: "pass" | "fail" | "unmeasured";
+  /**
+   * What the same checkout said about the project's own suite, which both invocations measure.
+   * `no-change` is the agent having written nothing, which is recorded apart from `unmeasured`
+   * because a run with nothing to measure and a run the harness could not measure are different
+   * findings. Only `pass` establishes that the patch broke nothing.
+   */
+  regression?: "pass" | "fail" | "unmeasured" | "no-change";
   /**
    * Whether the sealed oracle accepted. The two halves are one specification cut in two, so where
    * the sealed half rejects and the held-back half accepts, the model did part of the work and the
