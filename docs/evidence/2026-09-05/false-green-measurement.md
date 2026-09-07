@@ -110,10 +110,14 @@ the remaining claims are sound.
 
 ## What this does not establish
 
-**The false-green rate after the fix is unmeasured.** Not zero, not low: unmeasured. Measuring it
-needs an oracle the tool is judged against but not given, and once the tool is given one the
-comparison collapses into the tautology above. The route out is an oracle that is independent of
-the one wired in, which means a second hidden test per task, and the corpus has one.
+**The false-green rate after the fix was unmeasured when this was written.** Not zero, not low:
+unmeasured. Measuring it needs an oracle the tool is judged against but not given, and once the
+tool is given one the comparison collapses into the tautology above.
+
+That was done the next day. A second oracle per task, written from the task text and held back
+from the tool, puts a different assertion on each side: **0 of 11, 95% CI [0.0, 25.9]**, counting
+the eleven patches the tool certified. See
+[`../2026-09-06/second-oracle/README.md`](../2026-09-06/second-oracle/README.md).
 
 **Without a task oracle the tool cannot emit a false green at all**, on the task dimension,
 because it makes no task claim: the verdict reads `task: unjudged` with the reason beside it. This
