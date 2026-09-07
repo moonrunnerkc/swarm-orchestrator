@@ -4,6 +4,54 @@
 
 ### Added
 
+- **`swarm ci` reports whether anything broke and whether the task was done, separately.**
+  `regression` says the project's own suite still passes; `task` says a trusted oracle agrees the
+  work was done, and reads `unjudged` where none was given. `verified` requires both, so a run
+  with no oracle is unverified with the reason printed rather than verified by omission. This
+  closed a real 22.2% false-green rate: a repository's suite tests the behaviour the project
+  already had, and a task adds behaviour it did not, so a patch that adds a feature badly still
+  passes it.
+- **`--oracle <command>` supplies that task check.** Nothing infers one. It runs in the fresh
+  checkout after the suite, whether or not the suite passed, so its verdict is readable either
+  way.
+- **`--install` installs the fresh checkout's dependencies from its lockfile**, with install
+  scripts off. Off by default, because installing runs whatever the registry serves. Without it a
+  real project has no test runner in a fresh clone, every check stands down, and the honest
+  answer is that nothing was measured rather than that nothing passed. Reporting the second was a
+  defect, and it is why this exists.
+- **`--isolation <runtime[:image]>` runs commands behind a kernel-enforced boundary**, on docker,
+  podman or nerdctl, with no network, a read-only root, a tmpfs, dropped capabilities, no new
+  privileges, and memory and pid ceilings.
+- **A run measures what it actually executes under, before the first tool call.** The containment
+  self-test runs the escapes rather than reasoning about them: read a host file outside the
+  workspace, write outside it, open a socket. Whatever gets through is named in an
+  `execution-envelope` record and printed. With no kernel-enforced backend the answer is
+  `restricted`, and that is the word used. A backend that refused every escape and could not
+  reach its own workspace is `unknown` rather than `isolated`, since a command that sees nothing
+  is contained and cannot work.
+- **A bundle carries a DSSE envelope over an in-toto statement**, signed over the
+  pre-authentication encoding rather than the payload bytes, so what a run produced can be checked
+  by tooling that never heard of this project.
+- **Durable run state, and the commands to work with it.** `swarm list-runs`, `swarm inspect
+  <run-id>`, `swarm resume`, `swarm retry-step`, `swarm abort` and `swarm repair`, over a
+  `node:sqlite` store in WAL mode with intent recorded before effect and an idempotency key per
+  step, so an interrupted run is taken up rather than started again and a dead run's leases are
+  released rather than held forever.
+- **`swarm gc [--older-than 30d] [--remove]`** says what stored evidence would be removed before
+  removing any of it.
+- **`--json` on a run and on `swarm ci` and `swarm inspect`**: line-delimited JSON, one line per
+  event and one result at the end, each naming its schema.
+- **`confirm_timeout_minutes` under `[interface]`**, so a confirmation nobody answers is refused
+  after thirty minutes rather than holding a run open indefinitely.
+- **The false-green rate is measured against an oracle the tool is never given.** Each
+  real-repository task carries two: one sealed before the runs and handed to the tool, one written
+  from the task text and held back from it. 0 of 11, 95% CI [0.0, 25.9], counting the eleven
+  patches the tool certified. `node scripts/second-oracle-pass.mjs` reproduces it from recorded
+  diffs with no model calls. A single-oracle version of this number was published and withdrawn:
+  the same test on both sides of a comparison agrees with itself.
+- **`scripts/restore-bundle-blobs.mjs` puts offloaded artifacts back**, writing a file only where
+  its content hashes to the digest the bundle names.
+
 - **A run has a wall budget of its own.** `--max-wall-minutes <n>`, or `max_wall_minutes`
   under `[budgets]` in swarm.toml, bounds the whole run: the first loop and every auto-resolve
   attempt draw from it, the attempts stop when it is spent, and the run goes on to its final
@@ -206,6 +254,13 @@
   value and are still not caught, which build guide 7.1 says in those words.
 
 ### Fixed
+
+- **Every evidence bundle verifies from a clone again.** An earlier weight reduction moved record
+  payloads out of the tracked tree, which stopped 47 of 51 bundles passing their own verifier,
+  four of them cited in the README and `claims.md` in words like "verify.mjs exit 0". Payloads are
+  never offloaded now; only derived artifacts are, and those are regenerated from the records.
+- **The README no longer cites a number the documents behind it withdrew**, and its gate tally is
+  counted from the table rather than from memory.
 
 - **A parallel run now sweeps up the branches it created.** Worker branches outlive their
   worktrees on purpose, because the merge queue merges from them after the working copy is
