@@ -81,11 +81,18 @@ corpus accumulates over short sittings rather than needing one long campaign.
 
 | | tasks | certified by the tool | false greens |
 | --- | --- | --- | --- |
-| mined | 8 | 4 | **0**, 95% CI [0.0, 49.0] |
+| mined | 5 | 2 | **0**, 95% CI [0.0, 65.8] |
 
-Four of the eight had both oracles accept and were certified; the other four the model failed, and
-both oracles agreed it had. **0 of 4 opportunities, and with the eleven from the hand-authored
-corpus, 0 of 15 combined, 95% CI [0.0, 20.4].**
+Three of the first eight were withdrawn on 2026-09-07. They ran under `node --test`, which stops
+reading flags at the first positional argument, so the title filter that separates the sealed half
+from the held-back half was appended after the file and ignored: both oracles ran the whole file,
+and their agreement was construction rather than evidence. Measured on a three-test file, the
+filter after the file ran 3 and before it ran 1. The filter now goes before the file for every
+runner, and those tasks are being re-scored.
+
+Two of the five had both oracles accept and were certified; the other three the model failed, and
+both oracles agreed it had. **0 of 2 opportunities that were validly measured, and with the
+eleven from the hand-authored corpus, 0 of 13 combined, 95% CI [0.0, 22.8].**
 
 The first pass of these eight certified **nothing**, and that was a defect in `swarm ci` rather
 than in the patches. Dependencies are installed with `--ignore-scripts`, because install scripts
