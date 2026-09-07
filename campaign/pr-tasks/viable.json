@@ -1,5 +1,5 @@
 {
-  "at": "2026-09-07T03:10:33.786Z",
+  "at": "2026-09-07T03:39:30.646Z",
   "tasks": [
     {
       "repository": "trekhleb/javascript-algorithms",
@@ -102,6 +102,315 @@
       "why": "the added tests do not pass on the merged tree either, so the target is unclear",
       "baseCommit": "ae3a55025cdf0f06c8705b5e8b61cd4edb33697a",
       "runner": "npx jest --ci test/plugin/timezone.test.js"
+    },
+    {
+      "repository": "iamkun/dayjs",
+      "cloneUrl": "https://github.com/iamkun/dayjs.git",
+      "pull": 3174,
+      "mergeCommit": "e27ee8021a512b5770ffe683e010830bb9b6fb6d",
+      "taskText": "fix(timezone): compute instance .tz() offset without host DST. ## Summary Fixes incorrect timezone offsets when converting an instant with instance `.tz()` on a host that observes DST. This is the **minimal** follow-up to #3169, as requested by @iamkun: only the original `tzOffset()` change in `proto.tz`, no wall-clock / `set` / `add` / `startOf` refactor. **Bug:** `America/Guadeloupe` is a fixed UTC−4 zone (no DST). On hosts such as `Europe/Paris` or `Europe/London`, around the EU spring-forward Sunday, `dayjs(instant).tz('America/Guadeloupe')` could report **−03:00** instead of **−04:00**. Adding one day and converting again could then land on the **same calendar day**. The same host-DST leak also affects DST-observing target zones when their calendar is out of sync with the host (US vs EU mid-March / late October, southern-hemisphere summer). **Root cause:** `proto.tz` derived the offset from: Both `new Date(target)` and `getTimezoneOffset()` depend on the **host** timezone. The static helper `dayjs.tz(string, zone)` already used `tzOffset` via `Intl.DateTimeFormat#formatToParts` (host-independent). Instance `.tz()` did not. **Fix:** reuse the existing `tzOffset(+date, timezone)",
+      "testFile": "test/plugin/timezone.test.js",
+      "sourceFiles": [
+        "src/plugin/timezone/index.js"
+      ],
+      "changedLines": 223,
+      "sealedCases": [
+        "keeps local time when converting between DST-desynced zones",
+        "matches moment for America/Guadeloupe around host spring DST",
+        "converts to America/New_York while US is in DST and EU is not",
+        "converts to America/New_York while US is still in DST and EU has fallen back",
+        "converts to Australia/Sydney while southern hemisphere is in DST",
+        "parses the fall-back overlap the same way as moment",
+        "converts through the host fall-back overlap",
+        "converts Europe/London in winter (UTC+0)",
+        "keeps local time when converting a host-local instance",
+        "handles quarter-hour and date-line offsets"
+      ],
+      "heldBackCases": [
+        "keeps UTC−4 when converting an instant around host spring DST",
+        "advances the calendar day when adding 1 day across host spring DST",
+        "converts to Europe/Paris while EU is still on standard time",
+        "converts to Europe/Paris after EU has fallen back",
+        "converts to Europe/Paris while northern hemisphere is on standard time",
+        "keeps the two 01:30 instants distinct when converting",
+        "converts 30-minute DST (Australia/Lord_Howe)",
+        "handles the 30-minute Lord Howe gap and both sides of its overlap",
+        "diffs elapsed hours and calendar days across target DST"
+      ],
+      "viable": false,
+      "why": "the added tests do not pass on the merged tree either, so the target is unclear",
+      "baseCommit": "98364bcebc047529345cc8c2bbcc44a6a8c18e79",
+      "runner": "npx jest --ci test/plugin/timezone.test.js"
+    },
+    {
+      "repository": "iamkun/dayjs",
+      "cloneUrl": "https://github.com/iamkun/dayjs.git",
+      "pull": 3012,
+      "mergeCommit": "99691c5f3bd1371d3b763d5f9dfaed9a1945a477",
+      "taskText": "fix(updateLocale): merge nested objects for partial locale updates. ## Summary - Fixes the `updateLocale` plugin to shallow-merge nested object properties (like `formats`, `relativeTime`) instead of replacing the entire object when only a subset of keys is provided - Arrays and non-object values continue to be replaced entirely, preserving existing behavior - Adds tests for partial nested object updates and array replacement Fixes #1118 ## Test plan - [x] Existing `updateLocale` tests continue to pass - [x] New test: partial update to `formats` preserves unmodified keys (e.g., updating only `L` keeps `LT`, `LL`, etc.) - [x] New test: array values (like `months`) are still replaced entirely, not merged - [x] 100% code coverage on the updateLocale plugin",
+      "testFile": "test/plugin/updateLocale.test.js",
+      "sourceFiles": [
+        "src/plugin/updateLocale/index.js"
+      ],
+      "changedLines": 39,
+      "sealedCases": [
+        "Partial update to nested object (formats)"
+      ],
+      "heldBackCases": [
+        "Non-object values should still be replaced entirely"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "9d2b6a1ec744ad5db13afd4d701f93349135dfec",
+      "runner": "npx jest --ci test/plugin/updateLocale.test.js"
+    },
+    {
+      "repository": "iamkun/dayjs",
+      "cloneUrl": "https://github.com/iamkun/dayjs.git",
+      "pull": 2948,
+      "mergeCommit": "269a7a9cf3649b7a4b328e771173701764a8480d",
+      "taskText": "feat(dev-helper): add warning for invalid .diff() usage without comparison date. This PR enhances the dev-helper plugin by adding a developer warning when .diff() is called without a valid comparison date. Added unit tests to cover: Missing comparison date Invalid (unparsable) string Valid date strings and Day.js instances (no warning) Thanks for the earlier feedback in #2945 — this implementation follows the agreed approach to keep behavior consistent with Moment.js while improving developer guidance through dev-helper.",
+      "testFile": "test/plugin/devHelper.test.js",
+      "sourceFiles": [
+        "src/plugin/devHelper/index.js"
+      ],
+      "changedLines": 56,
+      "sealedCases": [
+        "warns when diff() is called with no comparison date",
+        "warns when diff() is called with an invalid comparison date (unparsable string)",
+        "does NOT warn when diff() is called with a valid Day.js instance"
+      ],
+      "heldBackCases": [
+        "warns when diff() is called with just the unit",
+        "does NOT warn when diff() is called with a valid string date"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "9e3132e952ca0fbd3c38de3ef8bc9a5e24d235a4",
+      "runner": "npx jest --ci test/plugin/devHelper.test.js"
+    },
+    {
+      "repository": "iamkun/dayjs",
+      "cloneUrl": "https://github.com/iamkun/dayjs.git",
+      "pull": 2930,
+      "mergeCommit": "9e9f76cf117fa834260b30193434bc4481b4b6be",
+      "taskText": "fix: replace italian \"un' ora fa\" with \"un'ora fa\", add tests for it locale. Fixes #2918 I also added tests for the it locale. However, while adding them, I noticed that \"a few seconds\" differs between Moment.js and Day.js: - Moment.js → \"alcuni secondi\" - Day.js → \"qualche secondo\" Since both are correct but not identical, I had to split that case out from the other relative time tests.",
+      "testFile": "test/locale/it.test.js",
+      "sourceFiles": [
+        "src/locale/it.js"
+      ],
+      "changedLines": 86,
+      "sealedCases": [
+        "Format month with locale function",
+        "RelativeTime: A few seconds"
+      ],
+      "heldBackCases": [
+        "RelativeTime: Time from X"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "1b0989a651c2371408417cb760e6db9c915a0e20",
+      "runner": "npx jest --ci test/locale/it.test.js"
+    },
+    {
+      "repository": "koajs/koa",
+      "cloneUrl": "https://github.com/koajs/koa.git",
+      "pull": 1999,
+      "mergeCommit": "571938d1b42d5bbfbc4f203202e1095a63003f7e",
+      "taskText": "fix: parse absolute-form request targets in request.URL. ## Problem When the request line is HTTP/1.1 absolute-form (`GET HTTP/1.1`), `ctx.href` is correct but `ctx.URL` is not: The same garbage URL is produced even when the `Host` header already matches `example.com` (` Proxies and some health checks send this request form. ## Fix `href` already special-cases `/^https?:\\/\\//i` on `originalUrl` and returns it as-is. `request.URL` now uses that same branch and constructs `new URL(originalUrl)` instead of concatenating `protocol://host` onto an already-absolute URL. Invalid input still collapses to `Object.create(null)`. `URL` continues to follow `originalUrl` after `ctx.path=` / `ctx.query=` rewrites, matching the existing `href` tests. ## Testing Covers http / https / `HTTP://` / port / matching Host / empty Host / path rewrite. New tests fail without the change and pass with it. `npm test` — 447 pass, 0 fail. ## Summary by Sourcery Correct `request.URL` parsing for absolute-form request targets. Bug Fixes: - Parse HTTP/1.1 absolute-form request targets correctly in `request.URL`, preserving their original scheme, host, port, path, and query instead of generating malformed URLs. En",
+      "testFile": "__tests__/request/whatwg-url.test.js",
+      "sourceFiles": [
+        "lib/request.js"
+      ],
+      "changedLines": 76,
+      "sealedCases": [
+        "should parse http absolute-form like href",
+        "should parse uppercase HTTP:// absolute-form",
+        "should parse absolute-form when Host matches the URL host",
+        "should still follow originalUrl after path rewrite"
+      ],
+      "heldBackCases": [
+        "should parse https absolute-form",
+        "should parse absolute-form with port",
+        "should parse absolute-form when Host is empty"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "10617764ac2b9160edf84b8eb2bdc8646c233b75",
+      "runner": "node --test __tests__/request/whatwg-url.test.js"
+    },
+    {
+      "repository": "koajs/koa",
+      "cloneUrl": "https://github.com/koajs/koa.git",
+      "pull": 1998,
+      "mergeCommit": "10617764ac2b9160edf84b8eb2bdc8646c233b75",
+      "taskText": "patch: make ctx.assert errors instanceof HttpError. ## Human Summary - Fixes #1925. - Follow-up to #1991. `ctx.assert()` still delegates to `http-assert`, which resolves its own nested `http-errors@1.x`. Koa now re-exports `HttpError` from `http-errors@2.x`, so errors thrown by `ctx.assert()` pass `Koa.isHttpError(err)` but fail `err instanceof Koa.HttpError`. This patch updates `Koa.HttpError` instance checks to recognize compatible HTTP errors without changing the existing `ctx.assert` implementation or error constructors. ## Notes This is a v3 compatibility patch, not the broader dependency cleanup discussed in #1778. Removing or replacing `http-assert` should be handled separately, likely in a future major unless upstream ships `http-errors@2` support. --- ## Summary by Sourcery Make `ctx.assert()` failures compatible with Koa’s HTTP error type checks. Bug Fixes: - Make errors thrown by `ctx.assert()` and its named assertion methods recognize as `Koa.HttpError` instances while preserving their existing status, messages, and custom properties. Enhancements: - Add coverage for HTTP error identity, propagated error details, custom options, and successful assertions. --- ## Summary",
+      "testFile": "__tests__/context/assert.test.js",
+      "sourceFiles": [
+        "lib/application.js"
+      ],
+      "changedLines": 103,
+      "sealedCases": [
+        "should throw an error that is instanceof Koa.HttpError",
+        "should preserve custom error options",
+        "ctx.assert.${method}() should throw an error that is instanceof Koa.HttpError"
+      ],
+      "heldBackCases": [
+        "should preserve the original http-assert error",
+        "should not throw when value is truthy"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "4a191b1fb7bc999ebbe4bc822e4f315bb752006e",
+      "runner": "node --test __tests__/context/assert.test.js"
+    },
+    {
+      "repository": "koajs/koa",
+      "cloneUrl": "https://github.com/koajs/koa.git",
+      "pull": 1961,
+      "mergeCommit": "3f3ac48904229f807939d13ab49fdf8262a7aa08",
+      "taskText": "fix: request.length overflows on Content-Length > 2GB. ## Problem `ctx.request.length` uses `~~len` (double bitwise NOT) to parse the Content-Length header, which truncates values to a signed 32-bit integer. For Content-Length values exceeding 2,147,483,647 bytes (~2GB), the result silently wraps to incorrect values: This affects any middleware using `ctx.request.length` for upload size enforcement, rate limiting, or request body pre-allocation. In the era of large file uploads and video processing APIs, this is a realistic scenario. ## Solution Replace `~~len` with `Number.parseInt(len, 10)`: - Replace ~~len (32-bit truncation) with Number.parseInt(len, 10) - Handles arbitrarily large Content-Length values up to Number.MAX_SAFE_INTEGER - Preserves existing behavior for values under 2GB, including zero - Add comprehensive test cases for overflow boundaries and edge cases Fixes integer overflow where ~~'2147483648' returned -2147483648 instead of the correct value. Now correctly parses large file uploads and returns undefined for unparseable values, consistent with existing patterns. ## Test Coverage Added 6 comprehensive test cases covering: - Zero value (edge case) - Content-Lengt",
+      "testFile": "__tests__/request/length.test.js",
+      "sourceFiles": [
+        "lib/request.js"
+      ],
+      "changedLines": 39,
+      "sealedCases": [
+        "should handle zero content-length",
+        "should handle very large Content-Length (10GB)",
+        "should return undefined for non-numeric strings"
+      ],
+      "heldBackCases": [
+        "should handle Content-Length > 2GB (2147483648)",
+        "should handle floating-point-like strings (truncate decimal)",
+        "should return undefined for empty string"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "e0ba8ef39d27fe5dae5492f9fe753d155124f994",
+      "runner": "node --test __tests__/request/length.test.js"
+    },
+    {
+      "repository": "koajs/koa",
+      "cloneUrl": "https://github.com/koajs/koa.git",
+      "pull": 1946,
+      "mergeCommit": "2503a1fb14ff3dbed9b55ea1cd6419be739ff150",
+      "taskText": "feat: defer AsyncLocalStorage creation for v8 startup snapshots. ## Summary - Defer `AsyncLocalStorage` creation when `v8.startupSnapshot.isBuildingSnapshot()` is true, making Koa compatible with Node.js startup snapshots - Register a `v8.startupSnapshot.addDeserializeCallback` to properly initialize `ctxStorage` after snapshot restoration - Extract `getAsyncLocalStorage()` helper to consolidate creation logic ## Test plan - [x] All 429 existing tests pass with 0 failures - [x] `currentContext` tests verify both `asyncLocalStorage: true` and custom `AsyncLocalStorage` instance paths work correctly - [x] Normal (non-snapshot) code path is unchanged — `v8.startupSnapshot?.isBuildingSnapshot?.()` returns `undefined` in regular execution 🤖 Generated with [Claude Code](",
+      "testFile": "__tests__/application/currentContext.test.js",
+      "sourceFiles": [
+        "lib/application.js"
+      ],
+      "changedLines": 101,
+      "sealedCases": [
+        "should defer AsyncLocalStorage creation when building snapshot",
+        "should work normally after deserialization"
+      ],
+      "heldBackCases": [
+        "should defer with custom AsyncLocalStorage when building snapshot",
+        "should not defer when not building snapshot"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "d3ea8bf9649d164b40c448b5ce0b40306b4dca90",
+      "runner": "node --test __tests__/application/currentContext.test.js"
+    },
+    {
+      "repository": "koajs/koa",
+      "cloneUrl": "https://github.com/koajs/koa.git",
+      "pull": 1910,
+      "mergeCommit": "27df3b6e0055c5d9ca9b40cad084f2a7f6e54d9c",
+      "taskText": "fix: adds steam clean up. ## Discription **Adds stream clean-up** in addition to nullish value clean-up. - update from @fengmk2's identified issue [here]( - - Stackblitz display issue + fix [here]( - ## Checklist - [x] I have ensured my pull request is not behind the main or master branch of the original repository. - [x] I have rebased all commits where necessary so that reviewing this pull request can be done without having to merge it first. - [x] I have written a commit message that passes commitlint linting. - [x] I have ensured that my code changes pass linting tests. - [x] I have ensured that my code changes pass unit tests. - [x] I have described my pull request and the reasons for code changes along with context if necessary.",
+      "testFile": "__tests__/response/body.test.js",
+      "sourceFiles": [
+        "lib/response.js"
+      ],
+      "changedLines": 130,
+      "sealedCases": [
+        "should cleanup original stream when replaced by new stream",
+        "should not throw unhandled errors when replacing failing stream",
+        "should handle four sequential stream replacements",
+        "should cleanup stream when replaced by buffer"
+      ],
+      "heldBackCases": [
+        "should cleanup original stream when replaced by null",
+        "should handle multiple sequential stream replacements",
+        "should cleanup stream when replaced by string",
+        "should cleanup stream when replaced by object"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "49a32077f671125901f50788f1e023dcec75aec4",
+      "runner": "node --test __tests__/response/body.test.js"
+    },
+    {
+      "repository": "koajs/koa",
+      "cloneUrl": "https://github.com/koajs/koa.git",
+      "pull": 1904,
+      "mergeCommit": "83128eb6cc210fa6f5519f93afb5606ffc3ffa5e",
+      "taskText": "fix: fixes response.attachment behaviour leads to Content-Type Sniffing. ## Checklist Added security-focused tests to verify: 1. Content-Type is preserved when already set 2. Content-Type is still set when not previously defined (backwards compatibility) 3. The fix prevents XSS vulnerabilities with HTML and SVG files credit \"Luca Carettoni of Doyensec LLC\" as [requested in the advisory]( --- - [x] I have ensured my pull request is not behind the main or master branch of the original repository. - [x] I have rebased all commits where necessary so that reviewing this pull request can be done without having to merge it first. - [x] I have written a commit message that passes commitlint linting. - [x] I have ensured that my code changes pass linting tests. - [x] I have ensured that my code changes pass unit tests. - [x] I have described my pull request and the reasons for code changes along with context if necessary.",
+      "testFile": "__tests__/response/attachment.test.js",
+      "sourceFiles": [
+        "lib/response.js"
+      ],
+      "changedLines": 26,
+      "sealedCases": [
+        "should NOT override Content-Type when already set",
+        "should set Content-Type when not previously set"
+      ],
+      "heldBackCases": [
+        "should preserve safe Content-Type for SVG files"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "1ddb048adce65fdf11402cc19d7b8eae4e176f78",
+      "runner": "node --test __tests__/response/attachment.test.js"
+    },
+    {
+      "repository": "koajs/koa",
+      "cloneUrl": "https://github.com/koajs/koa.git",
+      "pull": 1898,
+      "mergeCommit": "c02f188132dec670549a748224952f1a0c62d7ca",
+      "taskText": "fix: only allow back redirect to the same origin referer. close close",
+      "testFile": "__tests__/response/redirect.js",
+      "sourceFiles": [
+        "lib/response.js"
+      ],
+      "changedLines": 39,
+      "sealedCases": [
+        "should redirect to the same origin referrer"
+      ],
+      "heldBackCases": [
+        "should redirect to root if the same origin referrer is not present"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "ba1482206995d99e46b47c8de19980b2f526aaa0",
+      "runner": "npx jest --ci __tests__/response/redirect.js"
+    },
+    {
+      "repository": "koajs/koa",
+      "cloneUrl": "https://github.com/koajs/koa.git",
+      "pull": 1115,
+      "mergeCommit": "f9f7714e9528cb02f61ae7d8c8da09b502f88d69",
+      "taskText": "response.redirect: extract special-cased back, fixes #904. The simple solution to drop special-cased `'back'` in `response.redirect`. I can't label but should be labeled as version-major. This PR **does not** make use of Symbol as purposed in #904. **Edit** If this solution is acceptable, a deprecation should be added to Koa 2 on `'back'` use.",
+      "testFile": "__tests__/response/back.js",
+      "sourceFiles": [
+        "lib/context.js",
+        "lib/response.js"
+      ],
+      "changedLines": 58,
+      "sealedCases": [
+        "should redirect to Referrer",
+        "should default to alt"
+      ],
+      "heldBackCases": [
+        "should redirect to Referer",
+        "should default redirect to /"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "ff0f3b642a77cda1cc3daf31c5cec8be9dd00601",
+      "runner": "npx jest --ci __tests__/response/back.js"
     }
   ]
 }
