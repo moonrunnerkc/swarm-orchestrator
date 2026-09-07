@@ -169,6 +169,7 @@ for (const task of wanted) {
   const corner = classifyAgainstHeldBackOracle({
     verifiedWithFirstOracle: sealed.verified === true,
     heldBackAccepted: heldBack.task === "accepted",
+    regression: sealed.regression,
   });
 
   scored.runs.push({

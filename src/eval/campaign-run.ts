@@ -360,11 +360,20 @@ export function harnessClaimsTaskDone(input: { taskOracleConfigured: boolean }):
 export function classifyAgainstHeldBackOracle(input: {
   verifiedWithFirstOracle: boolean;
   heldBackAccepted: boolean;
+  /** What the same checkout said about the project's own suite, which both invocations measure. */
+  regression?: "pass" | "fail" | "unmeasured";
 }): "true-green" | "false-green" | "false-red" | "true-red" {
+  // The held-back oracle answers one question, whether the feature was added. The tool answers
+  // two, and refusing a patch that added the feature and broke the suite is the tool being right
+  // about the second. Scoring that as a false red blames it for the one thing a regression check
+  // exists to do, which a mined dayjs task did on the first batch that produced one. A patch is
+  // good only where the held-back oracle accepts it and nothing broke; an unmeasured regression
+  // is not a passing one, so it does not establish the patch either.
+  const good = input.heldBackAccepted && (input.regression ?? "pass") === "pass";
   if (input.verifiedWithFirstOracle) {
-    return input.heldBackAccepted ? "true-green" : "false-green";
+    return good ? "true-green" : "false-green";
   }
-  return input.heldBackAccepted ? "false-red" : "true-red";
+  return good ? "false-red" : "true-red";
 }
 
 /**
