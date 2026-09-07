@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 14.0.0 - 2026-09-06
+## 14.0.0 - 2026-09-07
 
 ### Breaking
 
@@ -268,6 +268,15 @@
 
 ### Fixed
 
+- **`swarm ci` no longer charges a patch for a failure the base already had.** Dependencies are
+  installed with `--ignore-scripts`, because install scripts run whatever the registry serves, so
+  a project that builds on `prepare` was verified without its build output and the tests that
+  import it failed. koa routes `import 'koa'` to `./dist/koa.mjs`: 437 passed and 2 failed without
+  the build, 439 and 0 with it, and the two were reported as a regression the patch caused. A
+  failing check is now re-run with the patch reverted on the same checkout, and one that fails
+  both ways is recorded as inherited rather than as a regression, with the build-on-install cause
+  named in the advice. A clean run pays nothing for this, since the base is measured only to
+  explain a failure.
 - **Every evidence bundle verifies from a clone again.** An earlier weight reduction moved record
   payloads out of the tracked tree, which stopped 47 of 51 bundles passing their own verifier,
   four of them cited in the README and `claims.md` in words like "verify.mjs exit 0". Payloads are
