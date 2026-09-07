@@ -39,13 +39,21 @@ const integrationSuites = [
 
 const notThisProjectsSuite = [
   ...configDefaults.exclude,
-  "campaign/work/**",
-  "campaign/corpus/**",
-  "campaign/campaigns/**",
-  // Trees kept from a campaign disagreement, so they can be looked at. They are other projects'
-  // test files: collecting them fails this suite with "no test suite found" in somebody else's
-  // clamp.test.mjs, which is what happened the moment the feature first kept one.
-  "campaign/eval/**",
+  // Everything under campaign/ is other projects' trees: clones, kept disagreement trees, mined
+  // pull-request checkouts and the oracles carved out of them. Collecting any of it fails this
+  // suite in somebody else's file, with "no test suite found" or a missing import of a module
+  // this repository never had.
+  //
+  // This was three separate entries, added one at a time as each new subdirectory broke the
+  // suite, which meant the next one broke it again: campaign/eval/** was added after a kept
+  // clamp.test.mjs, and campaign/pr-tasks/** would have been added after a mined Deque.test.js.
+  // One pattern states the rule the three were each standing in for.
+  //
+  // campaign/harness is the exception and the only one: it is this repository's own code, fifteen
+  // test files that belong to this suite. Excluding all of campaign drops them and the suite
+  // shrinks by a hundred tests while still reporting green, which is worse than the failure it
+  // was fixing.
+  "campaign/!(harness)/**",
   "docs/evidence/**",
 ];
 
