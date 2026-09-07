@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 14.0.0 - 2026-09-06
+
+### Breaking
+
+- **`swarm ci` no longer reports a patch verified because the project's suite passed.** A suite
+  says nothing broke; it does not say the task was done, because it tests the behaviour the
+  project already had and a task adds behaviour it did not. `verified` now requires both a
+  passing suite and a task oracle that accepts, so a run without `--oracle <command>` exits
+  non-zero with `task: unjudged` and the reason printed. Anything scripted against `swarm ci`
+  exiting 0 needs an oracle passed to it. This is the fix for a measured 22.2% false-green rate,
+  not a tightening for its own sake.
+- **The major version moves because of that one change.** Everything else below is additive.
+
 ### Added
 
 - **`swarm ci` reports whether anything broke and whether the task was done, separately.**
