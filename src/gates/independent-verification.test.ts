@@ -323,3 +323,107 @@ describe("what passing a repository's own suite establishes", () => {
     expect(result.verified).toBe(false);
   }, 180_000);
 });
+
+describe("a failure the base already had", () => {
+  /**
+   * A check that fails with the patch and fails identically without it was not caused by the
+   * patch. Charging it to the patch is the collapse of *unmeasured* into *failed* that this
+   * project exists to refuse, and it is not hypothetical: verifying a koa patch reported
+   * `regression: fail` on two tests that fail at the base too, because the install runs with
+   * --ignore-scripts and koa's `prepare` builds the ESM wrapper its tests import.
+   */
+  it("names a failure the base already had as inherited rather than as a regression", async () => {
+    await writeFile(
+      join(repository, "broken.test.mjs"),
+      "import { test } from 'node:test';\ntest('already broken', () => { throw new Error('base'); });\n",
+    );
+    git(["add", "-A"], repository);
+    git(["commit", "-qm", "a base that already fails"], repository);
+
+    const patch = [
+      "diff --git a/clamp.mjs b/clamp.mjs",
+      "--- a/clamp.mjs",
+      "+++ b/clamp.mjs",
+      "@@ -1 +1 @@",
+      "-export const clamp = (v) => v;",
+      "+export const clamp = (v) => (v < 0 ? 0 : v);",
+      "",
+    ].join("\n");
+
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch,
+      commands: commands(),
+      clock,
+    });
+
+    const tests = result.checks.find((check) => check.id === "tests");
+    expect(tests?.status).toBe("failed");
+    expect(tests?.inheritedFromBase).toBe(true);
+    // The patch broke nothing, so the verification must not say it did.
+    expect(result.regression).not.toBe("fail");
+  });
+
+  it("still calls a failure the patch caused a regression", async () => {
+    const patch = [
+      "diff --git a/clamp.mjs b/clamp.mjs",
+      "--- a/clamp.mjs",
+      "+++ b/clamp.mjs",
+      "@@ -1 +1 @@",
+      "-export const clamp = (v) => v;",
+      "+export const clamp = (v) => 999;",
+      "",
+    ].join("\n");
+
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch,
+      commands: commands(),
+      clock,
+    });
+
+    const tests = result.checks.find((check) => check.id === "tests");
+    expect(tests?.status).toBe("failed");
+    expect(tests?.inheritedFromBase).toBe(false);
+    expect(result.regression).toBe("fail");
+  });
+
+  /**
+   * Attribution reverts the patch to measure the base, so anything reading the tree afterwards
+   * reads the base. The oracle must run before that or it judges the source the patch replaced,
+   * rejects every patch, and reports it as the task not being done.
+   */
+  it("judges the task against the patched tree even when a failing check triggers attribution", async () => {
+    await writeFile(
+      join(repository, "broken.test.mjs"),
+      "import { test } from 'node:test';\ntest('already broken', () => { throw new Error('base'); });\n",
+    );
+    git(["add", "-A"], repository);
+    git(["commit", "-qm", "a base that already fails"], repository);
+
+    const patch = [
+      "diff --git a/clamp.mjs b/clamp.mjs",
+      "--- a/clamp.mjs",
+      "+++ b/clamp.mjs",
+      "@@ -1 +1 @@",
+      "-export const clamp = (v) => v;",
+      "+export const clamp = (v) => (v < 0 ? 0 : v);",
+      "",
+    ].join("\n");
+
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch,
+      commands: commands(),
+      clock,
+      // Passes only where the patch is applied, so it fails if the tree was reverted first.
+      taskOracle: { command: "grep -q 'v < 0' clamp.mjs" },
+    });
+
+    expect(result.checks.find((check) => check.id === "tests")?.inheritedFromBase).toBe(true);
+    expect(result.task).toBe("accepted");
+  });
+});
