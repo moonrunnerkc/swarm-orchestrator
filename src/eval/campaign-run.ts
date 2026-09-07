@@ -345,3 +345,41 @@ export function classifyAgainstOracle(input: {
 export function harnessClaimsTaskDone(input: { taskOracleConfigured: boolean }): boolean {
   return input.taskOracleConfigured;
 }
+
+/**
+ * The four corners for a pass that hands the tool one oracle and scores it against a second one
+ * held back, which is the only arrangement on this corpus where a false green is definable.
+ *
+ * With a single oracle the two sides are the same assertion: supplied as `--oracle` it gates
+ * `verified`, and used as the ground truth it is what `verified` is compared to, so they agree by
+ * construction. Holding a second, differently written test of the same specification back from
+ * the tool breaks that identity. A patch that satisfies the first oracle by special-casing its
+ * inputs, or that leaves part of the specification unimplemented where the first oracle happens
+ * not to look, passes the first and fails the second.
+ */
+export function classifyAgainstHeldBackOracle(input: {
+  verifiedWithFirstOracle: boolean;
+  heldBackAccepted: boolean;
+}): "true-green" | "false-green" | "false-red" | "true-red" {
+  if (input.verifiedWithFirstOracle) {
+    return input.heldBackAccepted ? "true-green" : "false-green";
+  }
+  return input.heldBackAccepted ? "false-red" : "true-red";
+}
+
+/**
+ * Whether a held-back oracle refused every patch the first oracle accepted, which is a defect in
+ * the instrument far more often than a finding about the runs. A backward-mined zero is the
+ * shape of a test that does not compile, imports the wrong path, or asserts against an API the
+ * task never specified, and reporting it as a 100% false-green rate would repeat the
+ * overconfidence this pass was built to correct.
+ *
+ * Where the first oracle accepted nothing there is nothing for the second to disagree with, so
+ * that is not a defect signal in either direction.
+ */
+export function heldBackOracleLooksBroken(input: {
+  firstOracleAccepted: number;
+  heldBackAlsoAccepted: number;
+}): boolean {
+  return input.firstOracleAccepted > 0 && input.heldBackAlsoAccepted === 0;
+}

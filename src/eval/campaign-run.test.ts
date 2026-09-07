@@ -4,8 +4,10 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   campaignPlan,
+  classifyAgainstHeldBackOracle,
   classifyAgainstOracle,
   harnessClaimsTaskDone,
+  heldBackOracleLooksBroken,
   hiddenOracleFiles,
   judgeByHiddenOracle,
   runCampaign,
@@ -438,5 +440,56 @@ describe("harnessClaimsTaskDone", () => {
 
   it("is true only when a task oracle judged the run", () => {
     expect(harnessClaimsTaskDone({ taskOracleConfigured: true })).toBe(true);
+  });
+});
+
+describe("classifyAgainstHeldBackOracle", () => {
+  // Unlike the campaign, this pass hands the tool a task oracle, so it does claim the task was
+  // done and the claim can be false. The held-back oracle is a different test of the same
+  // specification, never given to the tool, which is the only arrangement in which the two sides
+  // are not the same assertion.
+  it("names a verified run the held-back oracle refuses a false green", () => {
+    expect(
+      classifyAgainstHeldBackOracle({ verifiedWithFirstOracle: true, heldBackAccepted: false }),
+    ).toBe("false-green");
+  });
+
+  it("names a refused run the held-back oracle accepts a false red", () => {
+    expect(
+      classifyAgainstHeldBackOracle({ verifiedWithFirstOracle: false, heldBackAccepted: true }),
+    ).toBe("false-red");
+  });
+
+  it("names agreement in both directions", () => {
+    expect(
+      classifyAgainstHeldBackOracle({ verifiedWithFirstOracle: true, heldBackAccepted: true }),
+    ).toBe("true-green");
+    expect(
+      classifyAgainstHeldBackOracle({ verifiedWithFirstOracle: false, heldBackAccepted: false }),
+    ).toBe("true-red");
+  });
+});
+
+describe("heldBackOracleLooksBroken", () => {
+  // The guard against the instrument defect: a held-back oracle that refuses every patch the
+  // first oracle accepted is far more likely to be miswritten than to have caught every run
+  // cheating, and reporting that as a false-green rate of 100% would be the same overconfidence
+  // this pass exists to correct.
+  it("flags an oracle that refuses every patch the first oracle accepted", () => {
+    expect(heldBackOracleLooksBroken({ firstOracleAccepted: 6, heldBackAlsoAccepted: 0 })).toBe(
+      true,
+    );
+  });
+
+  it("does not flag one that accepts some of them", () => {
+    expect(heldBackOracleLooksBroken({ firstOracleAccepted: 6, heldBackAlsoAccepted: 1 })).toBe(
+      false,
+    );
+  });
+
+  it("does not flag where the first oracle accepted nothing, since there is nothing to disagree with", () => {
+    expect(heldBackOracleLooksBroken({ firstOracleAccepted: 0, heldBackAlsoAccepted: 0 })).toBe(
+      false,
+    );
   });
 });
