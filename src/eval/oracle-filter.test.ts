@@ -47,11 +47,46 @@ describe("oracleCommand", () => {
     });
     const invocation = command.slice(command.lastIndexOf("&&") + 2).trim();
     expect(invocation).toBe(
-      'node --test "--test-name-pattern" "handles zero" __tests__/length.test.js',
+      "node --test '--test-name-pattern' 'handles zero' '__tests__/length.test.js'",
     );
     expect(invocation.indexOf("--test-name-pattern")).toBeLessThan(
       invocation.indexOf("__tests__/length.test.js"),
     );
+  });
+
+  /**
+   * A test title is prose written by somebody else, and it reaches a shell. `JSON.stringify` is
+   * JSON quoting, not shell quoting: it leaves `$` alone, so koa's real title
+   * `ctx.assert.${method}() should throw ...` expands to `ctx.assert.() should throw ...` and the
+   * filter then matches no test at all. A backtick would be worse than wrong.
+   */
+  it("does not let a title expand in the shell", () => {
+    const command = oracleCommand({
+      storedTestFile: "/corpus/assert.test.js",
+      destination: "__tests__/assert.test.js",
+      runner: "jest",
+      runnerArgv: ["npx", "jest", "--ci", "__tests__/assert.test.js"],
+      titles: ["ctx.assert.${method}() throws", "uses `null` and $HOME"],
+    });
+
+    // Inside single quotes a POSIX shell expands nothing, so the title travels verbatim.
+    // Escaped once for the regex, then wrapped in single quotes so the shell expands nothing.
+    expect(command).toContain(
+      "'ctx\\.assert\\.\\$\\{method\\}\\(\\) throws|uses `null` and \\$HOME'",
+    );
+    expect(command).not.toContain('"ctx');
+  });
+
+  it("quotes a path with a space rather than interpolating it raw", () => {
+    const command = oracleCommand({
+      storedTestFile: "/corpus/a b.test.js",
+      destination: "tests/a b.test.js",
+      runner: "jest",
+      runnerArgv: ["npx", "jest", "--ci", "tests/a b.test.js"],
+      titles: ["x"],
+    });
+    expect(command).toContain("'/corpus/a b.test.js'");
+    expect(command).toContain("'tests/a b.test.js'");
   });
 
   it("copies the stored test file in and runs only the named half", () => {
@@ -62,10 +97,10 @@ describe("oracleCommand", () => {
       runnerArgv: ["npx", "jest", "--ci", "src/__test__/Deque.test.js"],
       titles: ["holds a value"],
     });
-    expect(command).toContain('cp "/corpus/Deque.test.js" src/__test__/Deque.test.js');
+    expect(command).toContain("cp '/corpus/Deque.test.js' 'src/__test__/Deque.test.js'");
     // Flags before the file for every runner, not only node: one order that is correct everywhere
     // beats a per-runner rule nobody will remember.
-    expect(command).toContain('npx jest --ci "-t" "holds a value" src/__test__/Deque.test.js');
+    expect(command).toContain("npx jest --ci '-t' 'holds a value' 'src/__test__/Deque.test.js'");
   });
 });
 
