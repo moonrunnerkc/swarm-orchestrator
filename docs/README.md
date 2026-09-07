@@ -9,6 +9,9 @@
 | [`ratchet-inputs.md`](ratchet-inputs.md) | every input the ratchet reads, who can author it, and what was moved |
 | [`security-coverage.md`](security-coverage.md) | the fuzzed boundaries and the instrumented coverage numbers |
 | [`empty-turn-diagnosis.md`](empty-turn-diagnosis.md) | the empty assistant turns of August, instrumented, replayed, and located |
+| [`beta-gates.md`](beta-gates.md) | the twelve gates this project will not call itself production-ready without, and where each stands |
+| [`evidence/2026-09-06/second-oracle/`](evidence/2026-09-06/second-oracle) | how a false-green rate is measured, why one oracle cannot produce one, and the number |
+| [`evidence/2026-09-06/mined-corpus/`](evidence/2026-09-06/mined-corpus) | tasks mined from merged pull requests, the filter that replaces labelling, and the weakness |
 | [`tech-debt.md`](tech-debt.md) | what the tree carries that it would rather not, with what closing each would take |
 | [`evidence/`](evidence) | dated runs, bundles, and reports, each verified by the verifier it carries |
 | [`state/`](state) | the state file of each unattended pass, with what was done and what was not |
