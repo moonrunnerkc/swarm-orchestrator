@@ -284,9 +284,26 @@ for (const task of wanted) {
 
   const sealed = await judge(task.sealedCases);
   const heldBack = await judge(task.heldBackCases);
+
+  // A false green is the most consequential thing this measures, so it is the last place to take a
+  // refusal at face value. Splitting one suite assumes its tests are independent and plenty are
+  // not: winston's container tests share state, and the held-back half failed alone while passing
+  // beside the sealed half. That refused a patch that was fine and scored as a false green.
+  //
+  // Only asked where it could change the answer, which is a certified run the held-back half
+  // refused. One extra run, on the tasks where being wrong would matter most.
+  let heldBackVerdict = heldBack.task;
+  let orderDependent = false;
+  if (sealed.verified === true && heldBack.task === "rejected") {
+    const together = await judge([...task.sealedCases, ...task.heldBackCases]);
+    if (together.task === "accepted") {
+      orderDependent = true;
+      heldBackVerdict = "accepted";
+    }
+  }
   const corner = classifyAgainstHeldBackOracle({
     verifiedWithFirstOracle: sealed.verified === true,
-    heldBackAccepted: heldBack.task === "accepted",
+    heldBackAccepted: heldBackVerdict === "accepted",
     regression: sealed.regression,
     sealedAccepted: sealed.task === "accepted",
   });
@@ -298,7 +315,8 @@ for (const task of wanted) {
     agentExit: agent.code,
     regression: sealed.regression,
     sealedOracle: sealed.task,
-    heldBackOracle: heldBack.task,
+    heldBackOracle: heldBackVerdict,
+    heldBackOrderDependent: orderDependent,
     verified: sealed.verified === true,
     corner,
     latencyMs,

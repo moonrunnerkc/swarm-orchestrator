@@ -75,3 +75,22 @@ export function oracleCommand(input: {
     `${invocation}`
   );
 }
+
+/**
+ * Whether a held-back oracle's refusal is about the patch rather than about being run alone.
+ *
+ * Splitting one suite in two assumes its tests are independent, and plenty are not. winston's
+ * container tests share state through the container itself: the held-back half passed with the
+ * sealed half beside it and failed on its own, so the oracle refused a patch that was fine and the
+ * pass recorded a false green. A false green is the most consequential thing this measures, so it
+ * is the last place to accept a result that has not been told apart from its artifact.
+ *
+ * The discriminator costs one extra run: a half that fails alone and passes in company was never
+ * refusing anything, it was missing its setup.
+ */
+export function heldBackRefusalIsReal(input: {
+  aloneFailed: boolean;
+  togetherFailed: boolean;
+}): boolean {
+  return input.aloneFailed && input.togetherFailed;
+}
