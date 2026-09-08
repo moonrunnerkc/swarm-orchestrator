@@ -206,11 +206,14 @@ one fails on scale. Each row and what would settle it: **[docs/beta-gates.md](do
 - **The default execution mode is `restricted`, not `isolated`.** A lexical path and program policy
   in front of interpreters unless you pass `--isolation`. Reported before the run starts and
   recorded on the chain rather than quietly assumed — but it is not containment.
-- **The false-green rate is 0 of 13**, 95% CI [0.0, 22.8], across two corpora with an oracle held
-  back from the tool. Thirteen opportunities is thirteen opportunities: what is shown is that none
-  occurred here, not that the rate is low. Two further results were withdrawn on 2026-09-07 when
-  the filter separating the two oracles turned out to be ignored by `node --test`, which made both
-  halves run the same tests. An earlier 0-of-18 was withdrawn as arithmetic rather
+- **The false-green rate is 3 in 26**, 11.5%, 95% CI [4.0, 29.0]. Every task carries two oracles,
+  one handed to the tool and one held back from it, and three times the tool reported `verified`
+  on a patch the held-back oracle refuses. All three were reproduced by hand. The bar this project
+  set itself is zero, so this is a **failure**, and it is the honest state of the tool rather than
+  a number waiting to be improved: [`mined-corpus/`](docs/evidence/2026-09-06/mined-corpus/README.md).
+  The eleven hand-authored opportunities found none; the fifteen mined from real pull requests
+  found three, because maintainers test what they cared about rather than what the author of a
+  tool thought to check. An earlier 0-of-18 was withdrawn as arithmetic rather
   than corrected quietly — the same test was handed to the tool and then used as the ground truth
   it was scored against, so it agreed with itself.
 - **Six known gaps ship open**, and none is claimed closed. Four have detections built against them

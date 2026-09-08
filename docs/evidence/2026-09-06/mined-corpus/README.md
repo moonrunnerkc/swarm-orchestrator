@@ -74,36 +74,48 @@ satisfy a test by reading it cannot reach either.
 All three are resumable: a candidate already judged and a task already scored are skipped, so the
 corpus accumulates over short sittings rather than needing one long campaign.
 
-## What the first eight scored
+## What it found
 
-    node scripts/pr-task-pass.mjs --limit 6      # agent runs
-    node scripts/pr-task-pass.mjs --rejudge      # re-score recorded patches, no model calls
+    node scripts/mine-pr-tasks.mjs --repos 50 --per-repo 12 --pages 4
+    node scripts/check-pr-task-viability.mjs
+    node scripts/pr-task-pass.mjs
+    node scripts/reclassify-scored.mjs
 
-| | tasks | certified by the tool | false greens |
-| --- | --- | --- | --- |
-| mined | 5 | 2 | **0**, 95% CI [0.0, 65.8] |
+111 candidates mined, 73 viable, 73 scored.
 
-Three of the first eight were withdrawn on 2026-09-07. They ran under `node --test`, which stops
-reading flags at the first positional argument, so the title filter that separates the sealed half
-from the held-back half was appended after the file and ignored: both oracles ran the whole file,
-and their agreement was construction rather than evidence. Measured on a three-test file, the
-filter after the file ran 3 and before it ran 1. The filter now goes before the file for every
-runner, and those tasks are being re-scored.
+**3 false greens in 15 certified opportunities: 20.0%, 95% CI [7.0, 45.2].** With the eleven from
+the hand-authored corpus, 3 of 26, 11.5% [4.0, 29.0].
 
-Two of the five had both oracles accept and were certified; the other three the model failed, and
-both oracles agreed it had. **0 of 2 opportunities that were validly measured, and with the
-eleven from the hand-authored corpus, 0 of 13 combined, 95% CI [0.0, 22.8].**
+| | |
+| --- | --- |
+| koajs/koa#1946 | exported a deferred `AsyncLocalStorage` but ignores a caller-supplied instance |
+| winstonjs/winston#2181 | `exports.Logger` set to the deprecation shim: present, inspectable, not a class |
+| iamkun/dayjs#3181 | guards invalid Day.js values, still throws on an invalid string in `d.tz()` |
 
-The first pass of these eight certified **nothing**, and that was a defect in `swarm ci` rather
-than in the patches. Dependencies are installed with `--ignore-scripts`, because install scripts
-run whatever the registry serves, so a project that builds on `prepare` is verified without its
-build output. koa's package routes `import 'koa'` to `./dist/koa.mjs`; two tests that import it
-failed, and the failure was charged to the patch. Measured both ways on one checkout: 437 passed
-and 2 failed without the build, 439 and 0 with it.
+All three are the same shape: a patch that makes the assertion it was shown true while leaving the
+adjacent case broken. Each was reproduced by hand, both halves run separately on a fresh clone.
 
-A failing check is now re-run with the patch reverted, and one that fails both ways is recorded as
-inherited rather than as a regression. That took this corpus from zero opportunities to four, and
-it is the mined corpus paying for itself before it produced a single measurement.
+### Where 73 tasks went
+
+| | |
+| --- | --- |
+| 15 | certified, so an opportunity to catch a false green |
+| 12 | the agent wrote nothing |
+| 3 | the base suite was already failing, so regression is unmeasurable |
+| 43 | judged and refused on the merits |
+
+Only a fifth of scored tasks become an opportunity. A quarter cannot become one whatever the tool
+does, which is why the interval is wider than the task count suggests.
+
+### The two directions are not symmetrical
+
+6 of 73 tasks came out `refused-on-sealed`: the sealed half rejected and the held-back half
+accepted. Those are not tool errors. The halves are one specification cut in two, so the tool
+refused on evidence the held-back half does not cover, which is the refusal it exists to make.
+Scoring them as false reds would blame it for being right.
+
+The other direction is the measurement: sealed accepting while held-back refuses is a claim that
+turned out wrong.
 
 ## The weakness, named
 
