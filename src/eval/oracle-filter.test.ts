@@ -3,7 +3,12 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { heldBackRefusalIsReal, oracleCommand, titleFilterFor } from "./oracle-filter.ts";
+import {
+  heldBackRefusalIsReal,
+  oracleCommand,
+  sealedOracleTestsThePatch,
+  titleFilterFor,
+} from "./oracle-filter.ts";
 
 describe("titleFilterFor", () => {
   it("uses each runner's own selector", () => {
@@ -167,5 +172,21 @@ describe("telling a real refusal from an order-dependent one", () => {
 
   it("is not consulted where the half passed alone, since there is nothing to explain", () => {
     expect(heldBackRefusalIsReal({ aloneFailed: false, togetherFailed: false })).toBe(false);
+  });
+});
+
+describe("whether a sealed oracle tests the patch at all", () => {
+  /**
+   * A sealed half that passes on the base source accepts a patch that changes nothing, so the
+   * tool's `task: accepted` says nothing about the work and a "false green" built on it is an
+   * artifact. winston#2181 was published as a false green and withdrawn for exactly this: its
+   * sealed case, "that Logger class is exported", was already true before the patch.
+   *
+   * The viability filter checks that the whole added test file fails on the base. It does not
+   * check each half, and the halves are what the oracles actually run.
+   */
+  it("requires the sealed half to fail on the base before a certification means anything", () => {
+    expect(sealedOracleTestsThePatch({ sealedFailedOnBase: true })).toBe(true);
+    expect(sealedOracleTestsThePatch({ sealedFailedOnBase: false })).toBe(false);
   });
 });

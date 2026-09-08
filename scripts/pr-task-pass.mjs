@@ -34,9 +34,6 @@ const repositoryRoot = new URL("..", import.meta.url).pathname;
 const taskRoot = prTaskEvidenceRoot(repositoryRoot);
 const workingRoot = prTaskWorkingRoot(homedir());
 const oracleRoot = join(workingRoot, "oracles");
-const patchRoot = arm === null ? join(taskRoot, "patches") : join(taskRoot, `patches-${arm}`);
-const scoredPath =
-  arm === null ? join(taskRoot, "scored.json") : join(taskRoot, `scored.${arm}.json`);
 
 const argv = process.argv.slice(2);
 const flag = (name, fallback) => {
@@ -59,6 +56,10 @@ const rejudge = argv.includes("--rejudge");
  * one arm overwriting another would destroy the result it is meant to be compared against.
  */
 const arm = flag("--arm", null);
+
+const patchRoot = arm === null ? join(taskRoot, "patches") : join(taskRoot, `patches-${arm}`);
+const scoredPath =
+  arm === null ? join(taskRoot, "scored.json") : join(taskRoot, `scored.${arm}.json`);
 
 async function attempt(file, args, options = {}) {
   try {
@@ -223,6 +224,11 @@ for (const task of wanted) {
     join(workspace, "swarm.toml"),
     `[providers]\nlocal_endpoint = "${endpoint}"\nlocal_thinking = false\n`,
   );
+  // Excluded from the captured diff. `git add -A` takes it otherwise, so a run where the agent
+  // wrote nothing produces a 210-byte patch containing this file rather than an empty one: the
+  // no-change check is bypassed, every patch carries configuration that is not the model's work,
+  // and `swarm ci` then applies that configuration into the checkout it judges from.
+  writeFileSync(join(workspace, ".git", "info", "exclude"), "swarm.toml\n");
 
   const startedAt = Date.now();
   const agent = await attempt(

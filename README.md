@@ -206,9 +206,11 @@ one fails on scale. Each row and what would settle it: **[docs/beta-gates.md](do
 - **The default execution mode is `restricted`, not `isolated`.** A lexical path and program policy
   in front of interpreters unless you pass `--isolation`. Reported before the run starts and
   recorded on the chain rather than quietly assumed — but it is not containment.
-- **The false-green rate is 3 in 26**, 11.5%, 95% CI [4.0, 29.0]. Every task carries two oracles,
-  one handed to the tool and one held back from it, and three times the tool reported `verified`
-  on a patch the held-back oracle refuses. All three were reproduced by hand. The bar this project
+- **The false-green rate is 2 in 26**, 7.7%, 95% CI [2.1, 24.1]. Every task carries two oracles,
+  one handed to the tool and one held back from it, and twice the tool reported `verified` on a
+  patch the held-back oracle refuses. Both were reproduced by hand, and a third was withdrawn when
+  its sealed half turned out to pass on the base source, which means it would have accepted a
+  patch that changed nothing. The bar this project
   set itself is zero, so this is a **failure**, and it is the honest state of the tool rather than
   a number waiting to be improved: [`mined-corpus/`](docs/evidence/2026-09-06/mined-corpus/README.md).
   The eleven hand-authored opportunities found none; the fifteen mined from real pull requests
