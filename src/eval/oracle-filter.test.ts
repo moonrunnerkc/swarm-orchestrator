@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { oracleCommand, titleFilterFor } from "./oracle-filter.ts";
+import { heldBackRefusalIsReal, oracleCommand, titleFilterFor } from "./oracle-filter.ts";
 
 describe("titleFilterFor", () => {
   it("uses each runner's own selector", () => {
@@ -149,4 +149,23 @@ describe("what node actually does with a trailing filter", () => {
     expect(ran(after)).toBe(3);
     expect(ran(before)).toBe(1);
   }, 30_000);
+});
+
+describe("telling a real refusal from an order-dependent one", () => {
+  /**
+   * Splitting a suite assumes its tests are independent, and plenty are not. winston's container
+   * tests share state: the held-back half passed when run beside the sealed half and failed when
+   * run alone, so the oracle refused a patch that was fine and it scored as a false green.
+   *
+   * The discriminator is cheap. A held-back half that fails alone but passes with the sealed half
+   * beside it was not refusing the patch, it was missing its setup.
+   */
+  it("names a half that only fails in isolation as order-dependent, not as a refusal", () => {
+    expect(heldBackRefusalIsReal({ aloneFailed: true, togetherFailed: true })).toBe(true);
+    expect(heldBackRefusalIsReal({ aloneFailed: true, togetherFailed: false })).toBe(false);
+  });
+
+  it("is not consulted where the half passed alone, since there is nothing to explain", () => {
+    expect(heldBackRefusalIsReal({ aloneFailed: false, togetherFailed: false })).toBe(false);
+  });
 });
