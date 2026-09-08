@@ -58,9 +58,25 @@ function taskTextFrom(pull) {
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/<!--[\s\S]*?-->/g, " ")
     .replace(/https?:\/\/\S+/g, " ")
+    // What a stripped cross-reference leaves behind. A body that is mostly "part of #1234" and
+    // "closes #567" reduces to a string of dangling connectives: refined-github#9832 became
+    // "`extensible-nav` - Allow extension by other features. - part of - part of", which is not a
+    // task, and the model reasonably wrote nothing.
+    .replace(/\b(part of|closes?|fixes?|refs?|see|related to)\b[\s.,;:-]*(?=(\s|$))/gi, " ")
+    .replace(/[\s-]*[-–—][\s-]*/g, " ")
     .replace(/\s+/g, " ")
     .trim();
   return `${pull.title.trim()}. ${body}`.trim().slice(0, 1200);
+}
+
+/**
+ * Whether what the model will actually be given says enough to act on. The length check that ran
+ * before this measured the raw body, so a pull request whose body was mostly links passed it and
+ * then reduced to nothing once the links were stripped. Measure what is handed over, not what it
+ * was made from.
+ */
+function saysEnoughToActOn(taskText) {
+  return taskText.length >= 80;
 }
 
 /** The lines a diff added, which for a test file is the cases the pull request wrote. */
@@ -143,12 +159,15 @@ for (const repository of repositories) {
     const onlyTestFile = best.file;
     const split = best.split;
 
+    const taskText = taskTextFrom(pull);
+    if (!saysEnoughToActOn(taskText)) continue;
+
     candidates.push({
       repository: repository.fullName,
       cloneUrl: repository.cloneUrl,
       pull: pull.number,
       mergeCommit: pull.merge_commit_sha,
-      taskText: taskTextFrom(pull),
+      taskText,
       testFile: onlyTestFile.filename,
       sourceFiles: sourceFiles.map((file) => file.filename),
       changedLines: changed,
