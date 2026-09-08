@@ -1,0 +1,238 @@
+diff --git a/src/data-structures/stack/README.md b/src/data-structures/stack/README.md
+index 612f926..5cdd7ba 100644
+--- a/src/data-structures/stack/README.md
++++ b/src/data-structures/stack/README.md
+@@ -30,6 +30,54 @@ Simple representation of a stack runtime with push and pop operations.
+ 
+ *Made with [okso.app](https://okso.app)*
+ 
++## Examples
++
++The `Stack` data structure is used to solve a variety of algorithm problems.
++Here are a few examples that are implemented in the `Stack` class:
++
++### Palindrome check
++
++A **palindrome** is a string that reads the same from left to right and from
++right to left (e.g. `racecar`). The idea is to push the first half of the
++string onto the stack and then compare the popped values with the second half
++of the string.
++
++```js
++const stack = new Stack();
++
++stack.isPalindrome('racecar'); // true
++stack.isPalindrome('hello'); // false
++```
++
++### Balanced brackets check
++
++A string has **balanced brackets** if every opening bracket has a matching
++closing bracket in the correct order (e.g. `([{}])`). The idea is to push the
++opening brackets onto the stack and then pop them when the matching closing
++bracket is found. If the stack is empty at the end of the string then the
++brackets are balanced.
++
++```js
++const stack = new Stack();
++
++stack.hasBalancedBrackets('([{}])'); // true
++stack.hasBalancedBrackets('([)]'); // false
++```
++
++### Balanced parentheses check
++
++A string has **balanced parentheses** if every opening parenthesis has a
++matching closing parenthesis in the correct order (e.g. `(()())`). The idea is
++the same as for the balanced brackets check, but only the parentheses are
++considered.
++
++```js
++const stack = new Stack();
++
++stack.hasBalancedParentheses('(()())'); // true
++stack.hasBalancedParentheses('(()'); // false
++```
++
+ ## References
+ 
+ - [Wikipedia](https://en.wikipedia.org/wiki/Stack_(abstract_data_type))
+diff --git a/src/data-structures/stack/Stack.js b/src/data-structures/stack/Stack.js
+index 8d06141..432c4c5 100644
+--- a/src/data-structures/stack/Stack.js
++++ b/src/data-structures/stack/Stack.js
+@@ -64,4 +64,119 @@ export default class Stack {
+   toString(callback) {
+     return this.linkedList.toString(callback);
+   }
++
++  /**
++   * Check if a string is a palindrome (reads the same from left to right
++   * and from right to left). The idea is to push the first half of the
++   * string onto the stack and then compare the popped values with the
++   * second half of the string.
++   *
++   * @param {string} str
++   * @return {boolean}
++   */
++  isPalindrome(str) {
++    // The empty string is a palindrome.
++    if (str.length === 0) {
++      return true;
++    }
++
++    // Push the first half of the string onto the stack.
++    for (let i = 0; i < Math.floor(str.length / 2); i += 1) {
++      this.push(str[i]);
++    }
++
++    // Compare the popped values with the second half of the string.
++    // For the odd-length strings the middle character is skipped.
++    for (let i = Math.ceil(str.length / 2); i < str.length; i += 1) {
++      const last = this.pop();
++
++      if (str[i] !== last) {
++        return false;
++      }
++    }
++
++    return true;
++  }
++
++  /**
++   * Check if a string has balanced brackets. The idea is to push the
++   * opening brackets onto the stack and then pop them when the matching
++   * closing bracket is found. If the stack is empty at the end of the
++   * string then the brackets are balanced.
++   *
++   * @param {string} str
++   * @return {boolean}
++   */
++  hasBalancedBrackets(str) {
++    // Use a local stack so the result doesn't depend on the state of
++    // this stack instance.
++    const stack = new Stack();
++
++    // The mapping of the closing brackets to the opening ones.
++    const brackets = {
++      ')': '(',
++      '}': '{',
++      ']': '[',
++    };
++
++    // The opening brackets that should be pushed onto the stack.
++    const openingBrackets = Object.values(brackets);
++
++    for (let i = 0; i < str.length; i += 1) {
++      const char = str[i];
++
++      // Push the opening brackets onto the stack.
++      if (openingBrackets.includes(char)) {
++        stack.push(char);
++      } else if (Object.keys(brackets).includes(char)) {
++        // The closing bracket should match the last opening bracket.
++        const last = stack.pop();
++
++        if (last !== brackets[char]) {
++          // The stack is empty or the last opening bracket doesn't match
++          // the current closing bracket.
++          return false;
++        }
++      }
++    }
++
++    // The brackets are balanced if the stack is empty at the end.
++    return stack.isEmpty();
++  }
++
++  /**
++   * Check if a string has balanced parentheses. The idea is to push the
++   * opening parentheses onto the stack and then pop them when the closing
++   * parenthesis is found. If the stack is empty at the end of the string
++   * then the parentheses are balanced.
++   *
++   * @param {string} str
++   * @return {boolean}
++   */
++  hasBalancedParentheses(str) {
++    // Use a local stack so the result doesn't depend on the state of
++    // this stack instance.
++    const stack = new Stack();
++
++    for (let i = 0; i < str.length; i += 1) {
++      const char = str[i];
++
++      // Push the opening parentheses onto the stack.
++      if (char === '(') {
++        stack.push(char);
++      } else if (char === ')') {
++        // The closing parenthesis should match the last opening one.
++        const last = stack.pop();
++
++        if (last !== '(') {
++          // The stack is empty or the last opening parenthesis doesn't match
++          // the current closing parenthesis.
++          return false;
++        }
++      }
++    }
++
++    // The parentheses are balanced if the stack is empty at the end.
++    return stack.isEmpty();
++  }
+ }
+diff --git a/src/data-structures/stack/__test__/Stack.test.js b/src/data-structures/stack/__test__/Stack.test.js
+index 1112277..a9d4ddb 100644
+--- a/src/data-structures/stack/__test__/Stack.test.js
++++ b/src/data-structures/stack/__test__/Stack.test.js
+@@ -74,4 +74,50 @@ describe('Stack', () => {
+ 
+     expect(stack.toArray()).toEqual([3, 2, 1]);
+   });
++
++  it('should check if a string is a palindrome', () => {
++    const stack = new Stack();
++
++    expect(stack.isPalindrome('')).toBe(true);
++    expect(stack.isPalindrome('a')).toBe(true);
++    expect(stack.isPalindrome('ab')).toBe(false);
++    expect(stack.isPalindrome('aba')).toBe(true);
++    expect(stack.isPalindrome('abba')).toBe(true);
++    expect(stack.isPalindrome('abc')).toBe(false);
++    expect(stack.isPalindrome('racecar')).toBe(true);
++    expect(stack.isPalindrome('hello')).toBe(false);
++  });
++
++  it('should check if a string has balanced brackets', () => {
++    const stack = new Stack();
++
++    expect(stack.hasBalancedBrackets('')).toBe(true);
++    expect(stack.hasBalancedBrackets('()')).toBe(true);
++    expect(stack.hasBalancedBrackets('{}')).toBe(true);
++    expect(stack.hasBalancedBrackets('[]')).toBe(true);
++    expect(stack.hasBalancedBrackets('()[]{}')).toBe(true);
++    expect(stack.hasBalancedBrackets('([{}])')).toBe(true);
++    expect(stack.hasBalancedBrackets('a(b[c{d}e]f)')).toBe(true);
++    expect(stack.hasBalancedBrackets('(')).toBe(false);
++    expect(stack.hasBalancedBrackets(')')).toBe(false);
++    expect(stack.hasBalancedBrackets('()(')).toBe(false);
++    expect(stack.hasBalancedBrackets('())')).toBe(false);
++    expect(stack.hasBalancedBrackets('([)]')).toBe(false);
++    expect(stack.hasBalancedBrackets('({)}')).toBe(false);
++  });
++
++  it('should check if a string has balanced parentheses', () => {
++    const stack = new Stack();
++
++    expect(stack.hasBalancedParentheses('')).toBe(true);
++    expect(stack.hasBalancedParentheses('()')).toBe(true);
++    expect(stack.hasBalancedParentheses('()()')).toBe(true);
++    expect(stack.hasBalancedParentheses('(()())')).toBe(true);
++    expect(stack.hasBalancedParentheses('a(b(c)d)e')).toBe(true);
++    expect(stack.hasBalancedParentheses('(')).toBe(false);
++    expect(stack.hasBalancedParentheses(')')).toBe(false);
++    expect(stack.hasBalancedParentheses('()(')).toBe(false);
++    expect(stack.hasBalancedParentheses('())')).toBe(false);
++    expect(stack.hasBalancedParentheses('(()')).toBe(false);
++  });
+ });

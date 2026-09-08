@@ -1,0 +1,59 @@
+diff --git a/__tests__/request/length.test.js b/__tests__/request/length.test.js
+index 0dea3b8..d7c0389 100644
+--- a/__tests__/request/length.test.js
++++ b/__tests__/request/length.test.js
+@@ -15,4 +15,40 @@ describe('ctx.length', () => {
+     const req = request()
+     assert.strictEqual(req.length, undefined)
+   })
++
++  it('should return 0 for a zero content-length', () => {
++    const req = request()
++    req.header['content-length'] = '0'
++    assert.strictEqual(req.length, 0)
++  })
++
++  it('should return the value for content-length under 2GB', () => {
++    const req = request()
++    req.header['content-length'] = '2147483647'
++    assert.strictEqual(req.length, 2147483647)
++  })
++
++  it('should not overflow for content-length of 2GB', () => {
++    const req = request()
++    req.header['content-length'] = '2147483648'
++    assert.strictEqual(req.length, 2147483648)
++  })
++
++  it('should parse content-length above 2GB', () => {
++    const req = request()
++    req.header['content-length'] = '5368709120'
++    assert.strictEqual(req.length, 5368709120)
++  })
++
++  it('should parse content-length up to Number.MAX_SAFE_INTEGER', () => {
++    const req = request()
++    req.header['content-length'] = String(Number.MAX_SAFE_INTEGER)
++    assert.strictEqual(req.length, Number.MAX_SAFE_INTEGER)
++  })
++
++  it('should return undefined for an unparseable content-length', () => {
++    const req = request()
++    req.header['content-length'] = 'abc'
++    assert.strictEqual(req.length, undefined)
++  })
+ })
+diff --git a/lib/request.js b/lib/request.js
+index 7860c40..2304501 100644
+--- a/lib/request.js
++++ b/lib/request.js
+@@ -392,7 +392,8 @@ module.exports = {
+   get length () {
+     const len = this.get('Content-Length')
+     if (len === '') return
+-    return ~~len
++    const parsed = Number.parseInt(len, 10)
++    return Number.isNaN(parsed) ? undefined : parsed
+   },
+ 
+   /**

@@ -1,0 +1,16 @@
+diff --git a/check-assert.js b/check-assert.js
+new file mode 100644
+index 0000000..784b8d4
+--- /dev/null
++++ b/check-assert.js
+@@ -0,0 +1,10 @@
++const he = require('http-errors')
++const e = he(404, 'x')
++console.log('own proto is HttpError.prototype:', Object.getPrototypeOf(e) === he.HttpError.prototype)
++console.log('HttpError.prototype instanceof Error:', he.HttpError.prototype instanceof Error)
++console.log('HttpError.prototype instanceof HttpError:', he.HttpError.prototype instanceof he.HttpError)
++const a = require('http-assert')
++try { a.fail(404, 'y') } catch (err) {
++  console.log('assert err proto is HttpError.prototype:', Object.getPrototypeOf(err) === he.HttpError.prototype)
++  console.log('assert err proto instanceof HttpError:', Object.getPrototypeOf(err) instanceof he.HttpError)
++}
