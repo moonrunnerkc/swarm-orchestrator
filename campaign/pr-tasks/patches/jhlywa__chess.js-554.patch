@@ -1,0 +1,83 @@
+diff --git a/__tests__/castling-rights.test.ts b/__tests__/castling-rights.test.ts
+index 32c38a1..dc98ea6 100644
+--- a/__tests__/castling-rights.test.ts
++++ b/__tests__/castling-rights.test.ts
+@@ -88,3 +88,38 @@ test('setCastlingRights - fail to set black queenside', () => {
+   expect(chess.setCastlingRights(BLACK, { [QUEEN]: true })).toEqual(false)
+   expect(chess.getCastlingRights(BLACK)[QUEEN]).toEqual(false)
+ })
++
++// Regression test for #552: ignore invalid castling rights from FEN
++test('invalid castling rights in FEN are ignored', () => {
++  // FEN claims all four castling rights, but none of the kings/rooks have
++  // ever been at their starting squares - these are entirely invalid
++  const chess = new Chess('r4rk1/8/8/8/8/8/8/R3K2k w KQkq - 0 1')
++
++  /* eslint-disable vitest/no-conditional-in-test */
++  // King is not on e1, so no white castling at all
++  expect(chess.fen().split(' ')[2]).not.toContain('K')
++  expect(chess.fen().split(' ')[2]).not.toContain('Q')
++
++  // Black king is neither on e8 nor e1, so no black kingside castling
++  expect(fenCastling()).toContain('-')
++  /* eslint-enable vitest/no-conditional-in-test */
++
++  function fenCastling(): string {
++    return chess.fen().split(' ')[2]
++  }
++
++  // No valid castling moves should exist (king isn't on its home square)
++  expect(chess.moves()).not.toContain('O-O')
++  expect(chess.moves()).not.toContain('O-O-O')
++})
++
++test('partially invalid castling rights are stripped per-side', () => {
++  // White king is at e1 (good for white castling), but no rook on a1 or h1
++  // FEN claims KQ but rooks aren't present so rights should be removed
++  const chess = new Chess('8/8/8/8/8/8/K7/8 w Qkq - 0 1')
++
++  // White king at e1 but no a1/h1 rooks means white can't castle
++  expect(chess.fen().split(' ')[2]).toBe('-')
++
++  // Black has kq but is on wrong side of board anyway, black pieces are absent
++})
+diff --git a/__tests__/regression.test.ts b/__tests__/regression.test.ts
+index f139bf1..859842e 100644
+--- a/__tests__/regression.test.ts
++++ b/__tests__/regression.test.ts
+@@ -38,7 +38,7 @@ describe('Regression Tests', () => {
+       '1. Rh6#',
+     ]
+     chess.loadPgn(pgn.join('\n'))
+-    expect(chess.fen()).toBe('7k/5K2/7R/8/8/8/8/8 b KQkq - 1 1')
++    expect(chess.fen()).toBe('7k/5K2/7R/8/8/8/8/8 b - - 1 1')
+   })
+ 
+   it('Github Issue #85 (black) - SetUp and FEN should be accepted in loadPgn', () => {
+@@ -51,7 +51,7 @@ describe('Regression Tests', () => {
+     ]
+     chess.loadPgn(pgn.join('\n'))
+     expect(chess.fen()).toBe(
+-      'r4r1k/1p4b1/3p3p/2q3p1/1RP5/6P1/3NP3/2Q2RKB w KQkq - 1 2',
++      'r4r1k/1p4b1/3p3p/2q3p1/1RP5/6P1/3NP3/2Q2RKB w - - 1 2',
+     )
+   })
+ 
+diff --git a/src/chess.ts b/src/chess.ts
+index c759a08..50db3d1 100644
+--- a/src/chess.ts
++++ b/src/chess.ts
+@@ -811,6 +811,13 @@ export class Chess {
+       this._castling.b |= BITS.QSIDE_CASTLE
+     }
+ 
++    /*
++     * Ignore invalid castling rights. The FEN may indicate a side can castle,
++     * but the king or rook might have moved or been captured (e.g., a board
++     * setup error in the FEN string)
++     */
++    this._updateCastlingRights()
++
+     this._epSquare = tokens[3] === '-' ? EMPTY : Ox88[tokens[3] as Square]
+     this._fenEpSquare = this._epSquare
+     this._halfMoves = parseInt(tokens[4], 10)

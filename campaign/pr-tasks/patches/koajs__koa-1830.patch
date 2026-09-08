@@ -1,0 +1,146 @@
+diff --git a/__tests__/request/whatwg-url.js b/__tests__/request/whatwg-url.js
+index bc96be0..1b9e9fc 100644
+--- a/__tests__/request/whatwg-url.js
++++ b/__tests__/request/whatwg-url.js
+@@ -1,5 +1,7 @@
+ 'use strict'
+ 
++const Stream = require('stream')
++const context = require('../../test-helpers/context')
+ const request = require('../../test-helpers/context').request
+ const assert = require('assert')
+ 
+@@ -22,3 +24,88 @@ describe('req.URL', () => {
+     assert.deepStrictEqual(req.URL, Object.create(null))
+   })
+ })
++
++describe('req.searchParams', () => {
++  describe('with valid URL', () => {
++    const ctx = (() => {
++      const socket = new Stream.Duplex()
++      const req = Object.assign({
++        url: '/foo?bar=baz&qux=123',
++        headers: { host: 'localhost' },
++        __proto__: Stream.Readable.prototype,
++        socket,
++        httpVersionMajor: 1
++      }, Stream.Readable.prototype)
++      return context(req, {})
++    })()
++
++    it('should return URLSearchParams for valid URL', () => {
++      assert.ok(ctx.request.searchParams instanceof URLSearchParams)
++    })
++
++    it('should get query parameters using searchParams.get()', () => {
++      assert.strictEqual(ctx.request.searchParams.get('bar'), 'baz')
++      assert.strictEqual(ctx.request.searchParams.get('qux'), '123')
++    })
++
++    it('should return null for missing key', () => {
++      assert.strictEqual(ctx.request.searchParams.get('missing'), null)
++    })
++
++    it('should have searchParams.has()', () => {
++      assert.strictEqual(ctx.request.searchParams.has('bar'), true)
++      assert.strictEqual(ctx.request.searchParams.has('missing'), false)
++    })
++
++    it('should support searchParams.getAll()', () => {
++      const ctx2 = (() => {
++        const socket = new Stream.Duplex()
++        const req = Object.assign({
++          url: '/foo?a=1&a=2&b=3',
++          headers: { host: 'localhost' },
++          __proto__: Stream.Readable.prototype,
++          socket,
++          httpVersionMajor: 1
++        }, Stream.Readable.prototype)
++        return context(req, {})
++      })()
++      const a = ctx2.request.searchParams.getAll('a')
++      assert.strictEqual(a.length, 2)
++      assert.strictEqual(a[0], '1')
++      assert.strictEqual(a[1], '2')
++      assert.strictEqual(ctx2.request.searchParams.getAll('b')[0], '3')
++    })
++
++    it('should be delegated to request', () => {
++      assert.ok(ctx.searchParams instanceof URLSearchParams)
++      assert.strictEqual(ctx.searchParams.get('bar'), 'baz')
++    })
++  })
++
++  describe('with empty search string', () => {
++    const ctx = (() => {
++      const socket = new Stream.Duplex()
++      const req = Object.assign({
++        url: '/foo',
++        headers: { host: 'localhost' },
++        __proto__: Stream.Readable.prototype,
++        socket,
++        httpVersionMajor: 1
++      }, Stream.Readable.prototype)
++      return context(req, {})
++    })()
++
++    it('should have empty searchParams', () => {
++      assert.strictEqual(ctx.request.searchParams.has('anything'), false)
++      assert.strictEqual(ctx.request.searchParams.get('anything'), null)
++    })
++  })
++
++  describe('with invalid host', () => {
++    it('should not throw and return empty object', () => {
++      const req = request()
++      req.header.host = 'invalid host'
++      assert.deepStrictEqual(req.searchParams, Object.create(null))
++    })
++  })
++})
+diff --git a/lib/context.js b/lib/context.js
+index 83b4d8f..8db6b9b 100644
+--- a/lib/context.js
++++ b/lib/context.js
+@@ -241,6 +241,7 @@ delegate(proto, 'request')
+   .getter('host')
+   .getter('hostname')
+   .getter('URL')
++  .getter('searchParams')
+   .getter('header')
+   .getter('headers')
+   .getter('secure')
+diff --git a/lib/request.js b/lib/request.js
+index b756a7a..dac98b9 100644
+--- a/lib/request.js
++++ b/lib/request.js
+@@ -296,6 +296,28 @@ module.exports = {
+     return this.memoizedURL
+   },
+ 
++  /**
++   * Get parsed query string, returned as a WHATWG URLSearchParams object.
++   * Lazily memoized.
++   *
++   * @return {URLSearchParams|Object}
++   * @api public
++   */
++
++  get searchParams () {
++    /* istanbul ignore else */
++    if (!this.memoizedSearchParams) {
++      const url = this.URL
++      // If URL is an empty object (meaning the original URL was invalid),
++      // return the same empty object for consistency.
++      if (url && typeof url.searchParams === 'undefined') {
++        return Object.create(null)
++      }
++      this.memoizedSearchParams = url ? url.searchParams : Object.create(null)
++    }
++    return this.memoizedSearchParams
++  },
++
+   /**
+    * Check if the request is fresh, aka
+    * Last-Modified and/or the ETag

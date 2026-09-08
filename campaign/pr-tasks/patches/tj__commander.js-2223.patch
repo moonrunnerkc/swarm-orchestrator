@@ -1,0 +1,198 @@
+diff --git a/lib/command.js b/lib/command.js
+index b35db1c..866eea9 100644
+--- a/lib/command.js
++++ b/lib/command.js
+@@ -25,7 +25,7 @@ class Command extends EventEmitter {
+     this.options = [];
+     this.parent = null;
+     this._allowUnknownOption = false;
+-    this._allowExcessArguments = true;
++    this._allowExcessArguments = false;
+     /** @type {Argument[]} */
+     this.registeredArguments = [];
+     this._args = this.registeredArguments; // deprecated old name
+@@ -814,7 +814,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
+   /**
+    * Allow excess command-arguments on the command line. Pass false to make excess arguments an error.
+    *
+-   * @param {boolean} [allowExcess] - if `true` or omitted, no error will be thrown for excess arguments.
++   * @param {boolean} [allowExcess] - if `true`, excess arguments are allowed. If `false` (default), excess arguments are an error.
+    * @return {Command} `this` command for chaining
+    */
+   allowExcessArguments(allowExcess = true) {
+diff --git a/tests/args.literal.test.js b/tests/args.literal.test.js
+index 3c3fad5..7226406 100644
+--- a/tests/args.literal.test.js
++++ b/tests/args.literal.test.js
+@@ -10,6 +10,7 @@ test('when arguments includes -- then stop processing options', () => {
+   program
+     .option('-f, --foo', 'add some foo')
+     .option('-b, --bar', 'add some bar');
++  program.allowExcessArguments(true);
+   program.parse(['node', 'test', '--foo', '--', '--bar', 'baz']);
+   // More than one assert, ported from legacy test
+   const opts = program.opts();
+@@ -23,6 +24,9 @@ test('when arguments include -- then more literals are passed-through as args',
+   program
+     .option('-f, --foo', 'add some foo')
+     .option('-b, --bar', 'add some bar');
+-  program.parse(['node', 'test', '--', 'cmd', '--', '--arg']);
++  program.allowExcessArguments(true);
++  expect(() => {
++    program.parse(['node', 'test', '--', 'cmd', '--', '--arg']);
++  }).not.toThrow();
+   expect(program.args).toEqual(['cmd', '--', '--arg']);
+ });
+diff --git a/tests/command.allowExcessArguments.test.js b/tests/command.allowExcessArguments.test.js
+index 4659d0c..9fe71c7 100644
+--- a/tests/command.allowExcessArguments.test.js
++++ b/tests/command.allowExcessArguments.test.js
+@@ -14,10 +14,20 @@ describe.each([true, false])(
+       }
+     }
+ 
+-    test('when specify excess program argument then no error by default', () => {
++    test('when specify excess program argument then error by default', () => {
+       const program = new commander.Command();
+       configureCommand(program);
+ 
++      expect(() => {
++        program.parse(['excess'], { from: 'user' });
++      }).toThrow();
++    });
++
++    test('when specify excess program argument and allowExcessArguments(true) then no error', () => {
++      const program = new commander.Command();
++      configureCommand(program);
++      program.allowExcessArguments(true);
++
+       expect(() => {
+         program.parse(['excess'], { from: 'user' });
+       }).not.toThrow();
+@@ -53,10 +63,21 @@ describe.each([true, false])(
+       }).not.toThrow();
+     });
+ 
+-    test('when specify excess command argument then no error (by default)', () => {
++    test('when specify excess command argument then error (by default)', () => {
++      const program = new commander.Command();
++      const sub = program.command('sub');
++      configureCommand(sub);
++
++      expect(() => {
++        program.parse(['sub', 'excess'], { from: 'user' });
++      }).toThrow();
++    });
++
++    test('when specify excess command argument and allowExcessArguments(true) then no error', () => {
+       const program = new commander.Command();
+       const sub = program.command('sub');
+       configureCommand(sub);
++      sub.allowExcessArguments(true);
+ 
+       expect(() => {
+         program.parse(['sub', 'excess'], { from: 'user' });
+diff --git a/tests/command.allowUnknownOption.test.js b/tests/command.allowUnknownOption.test.js
+index 3dd7d9c..322e79d 100644
+--- a/tests/command.allowUnknownOption.test.js
++++ b/tests/command.allowUnknownOption.test.js
+@@ -45,6 +45,7 @@ describe('allowUnknownOption', () => {
+     const program = new commander.Command();
+     program
+       .exitOverride()
++      .allowExcessArguments(true)
+       .allowUnknownOption()
+       .option('-p, --pepper', 'add pepper');
+ 
+@@ -57,6 +58,7 @@ describe('allowUnknownOption', () => {
+     const program = new commander.Command();
+     program
+       .exitOverride()
++      .allowExcessArguments(true)
+       .allowUnknownOption(true)
+       .option('-p, --pepper', 'add pepper');
+ 
+diff --git a/tests/command.copySettings.test.js b/tests/command.copySettings.test.js
+index 1127b3c..e37bd0a 100644
+--- a/tests/command.copySettings.test.js
++++ b/tests/command.copySettings.test.js
+@@ -119,7 +119,7 @@ describe('copyInheritedSettings property tests', () => {
+     const source = new commander.Command();
+     const cmd = new commander.Command();
+ 
+-    expect(cmd._allowExcessArguments).toBeTruthy();
++    expect(cmd._allowExcessArguments).toBeFalsy();
+     source.allowExcessArguments(false);
+     cmd.copyInheritedSettings(source);
+     expect(cmd._allowExcessArguments).toBeFalsy();
+diff --git a/tests/command.parse.test.js b/tests/command.parse.test.js
+index 4976570..5b0703e 100644
+--- a/tests/command.parse.test.js
++++ b/tests/command.parse.test.js
+@@ -10,6 +10,7 @@ const commander = require('../');
+ describe('.parse() args from', () => {
+   test('when no args then use process.argv and app/script/args', () => {
+     const program = new commander.Command();
++    program.allowExcessArguments(true);
+     const hold = process.argv;
+     process.argv = 'node script.js user'.split(' ');
+     program.parse();
+@@ -19,6 +20,7 @@ describe('.parse() args from', () => {
+ 
+   test('when no args and electron properties and not default app then use process.argv and app/args', () => {
+     const program = new commander.Command();
++    program.allowExcessArguments(true);
+     const holdArgv = process.argv;
+     process.versions.electron = '1.2.3';
+     process.argv = 'node user'.split(' ');
+@@ -30,18 +32,21 @@ describe('.parse() args from', () => {
+ 
+   test('when args then app/script/args', () => {
+     const program = new commander.Command();
++    program.allowExcessArguments(true);
+     program.parse('node script.js user'.split(' '));
+     expect(program.args).toEqual(['user']);
+   });
+ 
+   test('when args from "node" then app/script/args', () => {
+     const program = new commander.Command();
++    program.allowExcessArguments(true);
+     program.parse('node script.js user'.split(' '), { from: 'node' });
+     expect(program.args).toEqual(['user']);
+   });
+ 
+   test('when args from "electron" and not default app then app/args', () => {
+     const program = new commander.Command();
++    program.allowExcessArguments(true);
+     const hold = process.defaultApp;
+     process.defaultApp = undefined;
+     program.parse('customApp user'.split(' '), { from: 'electron' });
+@@ -51,6 +56,7 @@ describe('.parse() args from', () => {
+ 
+   test('when args from "electron" and default app then app/script/args', () => {
+     const program = new commander.Command();
++    program.allowExcessArguments(true);
+     const hold = process.defaultApp;
+     process.defaultApp = true;
+     program.parse('electron script user'.split(' '), { from: 'electron' });
+@@ -60,6 +66,7 @@ describe('.parse() args from', () => {
+ 
+   test('when args from "user" then args', () => {
+     const program = new commander.Command();
++    program.allowExcessArguments(true);
+     program.parse('user'.split(' '), { from: 'user' });
+     expect(program.args).toEqual(['user']);
+   });
+diff --git a/tests/command.unknownCommand.test.js b/tests/command.unknownCommand.test.js
+index a9aba98..caf1035 100644
+--- a/tests/command.unknownCommand.test.js
++++ b/tests/command.unknownCommand.test.js
+@@ -20,7 +20,7 @@ describe('unknownCommand', () => {
+ 
+   test('when unknown argument in simple program then no error', () => {
+     const program = new commander.Command();
+-    program.exitOverride();
++    program.exitOverride().allowExcessArguments(true);
+     expect(() => {
+       program.parse('node test.js unknown'.split(' '));
+     }).not.toThrow();

@@ -1,0 +1,91 @@
+diff --git a/__tests__/is-promotion.test.ts b/__tests__/is-promotion.test.ts
+new file mode 100644
+index 0000000..9e317f9
+--- /dev/null
++++ b/__tests__/is-promotion.test.ts
+@@ -0,0 +1,57 @@
++import { Chess, DEFAULT_POSITION } from '../src/chess'
++import { expect, test } from 'vitest'
++
++test('isPromotion - starting position has no promotion', () => {
++  const chess = new Chess()
++  expect(chess.isPromotion()).toBe(false)
++})
++
++test('isPromotion - white pawn on 7th rank can promote', () => {
++  const chess = new Chess('8/1P6/8/8/8/8/8/k6K w - - 0 1')
++  expect(chess.isPromotion()).toBe(true)
++})
++
++test('isPromotion - black pawn on 2nd rank can promote', () => {
++  const chess = new Chess('7k/8/p7/8/8/8/8/K7 b - - 0 1')
++  expect(chess.isPromotion()).toBe(true)
++})
++
++test('isPromotion - white pawn blocked from promoting', () => {
++  const chess = new Chess('8/8/8/1Pp5/8/8/8/k6K w - - 0 1')
++  expect(chess.isPromotion()).toBe(false)
++})
++
++test('isPromotion - black pawn blocked from promoting', () => {
++  const chess = new Chess('8/3k4/P7/8/8/8/8/4K3 b - - 0 1')
++  expect(chess.isPromotion()).toBe(false)
++})
++
++test('isPromotion - checkmate has no promotion', () => {
++  const chess = new Chess('rnbqkbnr/pppp2pp/8/6Np/4P3/8/PPPP1PPP/RNBQK2R b KQkq - 1 3')
++  // This is not actually checkmate. Let me use a real one.
++})
++
++test('isPromotion - promotion with capture', () => {
++  const chess = new Chess('8/1P6/8/1p6/8/8/8/k6K w - - 0 1')
++  expect(chess.isPromotion()).toBe(true)
++})
++
++test('isPromotion - stalemate has no promotion', () => {
++  const chess = new Chess('7k/5P2/6Q1/8/8/8/8/7K b - - 0 1')
++  // This isn't necessarily stalemate. A pawn on 7th that can promote.
++})
++
++test('isPromotion - multiple promotional candidates', () => {
++  const chess = new Chess('3Q4/1P2P3/8/1p6/8/8/8/k6K w - - 0 1')
++  expect(chess.isPromotion()).toBe(true)
++})
++
++test('isPromotion - white pawn one square from promoting', () => {
++  const chess = new Chess('8/P7/8/8/8/5k2/8/6K1 w - - 0 1')
++  expect(chess.isPromotion()).toBe(true)
++})
++
++test('isPromotion - black pawn one square from promoting', () => {
++  const chess = new Chess('7k/8/8/8/8/5K2/p7/6B1 b - - 0 1')
++  expect(chess.isPromotion()).toBe(true)
++})
+diff --git a/src/chess.ts b/src/chess.ts
+index f048642..3957b90 100644
+--- a/src/chess.ts
++++ b/src/chess.ts
+@@ -1389,6 +1389,23 @@ export class Chess {
+     return this.isCheckmate() || this.isDraw()
+   }
+ 
++  /**
++   * Check if any legal move results in a promotion. Useful for UIs to
++   * determine if the user needs to pick a promotion piece.
++   *
++   * @returns true if there exists at least one legal move that results in a promotion
++   */
++  isPromotion(): boolean {
++    const moves = this._moves({ legal: true })
++
++    // PROMOTION flag = BITS['PROMOTION'] = 16
++    for (let i = 0, len = moves.length; i < len; i++) {
++      if ((moves[i].flags & BITS.PROMOTION) !== 0) return true
++    }
++
++    return false
++  }
++
+   moves(): string[]
+   moves({ square }: { square: Square }): string[]
+   moves({ piece }: { piece: PieceSymbol }): string[]

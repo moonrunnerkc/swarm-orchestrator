@@ -1,0 +1,173 @@
+diff --git a/src/engine.ts b/src/engine.ts
+index ee7e8b5..198a517 100644
+--- a/src/engine.ts
++++ b/src/engine.ts
+@@ -447,26 +447,53 @@ export class MLCEngine implements MLCEngineInterface {
+       ) as Array<ChatCompletionChunk.Choice.Delta.ToolCall>;
+     }
+ 
+-    const lastChunk: ChatCompletionChunk = {
+-      id: id,
+-      choices: [
+-        {
+-          delta: isFunctionCalling
+-            ? {
+-                role: "assistant",
+-                tool_calls: tool_calls,
+-              }
+-            : {},
+-          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+-          finish_reason: finish_reason,
+-          index: 0,
+-        },
+-      ],
+-      model: model,
+-      object: "chat.completion.chunk",
+-      created: created,
+-    };
+-    yield lastChunk;
++    let total_completion_tokens = 0;
++
++    if (request.stream_options?.include_usage) {
++      // Accumulate completion tokens from all choices (only one choice is supported for streaming)
++      total_completion_tokens += this.getPipeline().getCurRoundDecodingTotalTokens();
++      // Add prefill/decode tokens per second
++      const usage: CompletionUsage = {
++        prompt_tokens: this.getPipeline().getCurRoundPrefillTotalTokens(),
++        completion_tokens: total_completion_tokens,
++        total_tokens:
++          this.getPipeline().getCurRoundPrefillTotalTokens()
++            + total_completion_tokens,
++        prefill_tokens_per_s: this.getPipeline().getPrefillTokensPerSecond(),
++        decode_tokens_per_s: this.getPipeline().getDecodeTokensPerSecond(),
++      };
++
++      const lastChunk: ChatCompletionChunk = {
++        id: id,
++        choices: [],
++        model: model,
++        object: "chat.completion.chunk",
++        created: created,
++        usage: usage,
++      };
++      yield lastChunk;
++    } else {
++      const lastChunk: ChatCompletionChunk = {
++        id: id,
++        choices: [
++          {
++            delta: isFunctionCalling
++              ? {
++                  role: "assistant",
++                  tool_calls: tool_calls,
++                }
++              : {},
++            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
++            finish_reason: finish_reason,
++            index: 0,
++          },
++        ],
++        model: model,
++        object: "chat.completion.chunk",
++        created: created,
++      };
++      yield lastChunk;
++    }
+   }
+ 
+   /**
+@@ -586,6 +613,8 @@ export class MLCEngine implements MLCEngineInterface {
+         completion_tokens: completion_tokens,
+         prompt_tokens: prompt_tokens,
+         total_tokens: completion_tokens + prompt_tokens,
++        prefill_tokens_per_s: this.getPipeline().getPrefillTokensPerSecond(),
++        decode_tokens_per_s: this.getPipeline().getDecodeTokensPerSecond(),
+       } as CompletionUsage,
+     };
+ 
+diff --git a/src/llm_chat.ts b/src/llm_chat.ts
+index 2ce1966..a2e1a44 100644
+--- a/src/llm_chat.ts
++++ b/src/llm_chat.ts
+@@ -363,12 +363,35 @@ export class LLMChatPipeline {
+    * @returns Runtime stats information.
+    */
+   runtimeStatsText(): string {
++    return this.runtimeStats();
++  }
++
++  /**
++   * @returns A string representation of the runtime stats (prefill/decode tokens per second).
++   */
++  runtimeStats(): string {
+     return (
+       `prefill: ${(this.prefillTotalTokens / this.prefillTotalTime).toFixed(4)} tokens/sec, ` +
+       `decoding: ${(this.decodingTotalTokens / this.decodingTotalTime).toFixed(4)} tokens/sec`
+     );
+   }
+ 
++  /**
++   * @returns The prefill phase token speed (tokens/sec) as a number. Returns 0 if no stats are available.
++   */
++  getPrefillTokensPerSecond(): number {
++    if (this.prefillTotalTime === 0) return 0;
++    return this.prefillTotalTokens / this.prefillTotalTime;
++  }
++
++  /**
++   * @returns The decode phase token speed (tokens/sec) as a number. Returns 0 if no stats are available.
++   */
++  getDecodeTokensPerSecond(): number {
++    if (this.decodingTotalTime === 0) return 0;
++    return this.decodingTotalTokens / this.decodingTotalTime;
++  }
++
+   /**
+    * Set the seed for the RNG `this.tvm.rng`.
+    */
+diff --git a/src/openai_api_protocols/chat_completion.ts b/src/openai_api_protocols/chat_completion.ts
+index 70eb3da..19eec33 100644
+--- a/src/openai_api_protocols/chat_completion.ts
++++ b/src/openai_api_protocols/chat_completion.ts
+@@ -205,6 +205,11 @@ export interface ChatCompletionRequestBase {
+    */
+   response_format?: ResponseFormat;
+ 
++  /**
++   * Options for streaming response. Only set this when you have `stream` set to `true`.
++   */
++  stream_options?: { include_usage?: boolean } | null;
++
+   //////////////// BELOW FIELDS NOT SUPPORTED YET ////////////////
+ 
+   /**
+@@ -316,6 +321,12 @@ export interface ChatCompletionChunk {
+    */
+   object: "chat.completion.chunk";
+ 
++  /**
++   * Usage statistics for the completion request.
++   * @note Only set when `stream_options.include_usage` is true.
++   */
++  usage?: CompletionUsage;
++
+   /**
+    * This fingerprint represents the backend configuration that the model runs with.
+    * Can be used in conjunction with the `seed` request parameter to understand when
+@@ -812,6 +823,16 @@ export interface CompletionUsage {
+    * Total number of tokens used in the request (prompt + completion).
+    */
+   total_tokens: number;
++
++  /**
++   * Number of tokens per second for the prefill phase.
++   */
++  prefill_tokens_per_s?: number;
++
++  /**
++   * Number of tokens per second for the decode phase.
++   */
++  decode_tokens_per_s?: number;
+ }
+ 
+ /**

@@ -1,0 +1,200 @@
+diff --git a/lib/internal/heap.js b/lib/internal/heap.js
+new file mode 100644
+index 0000000..14323b8
+--- /dev/null
++++ b/lib/internal/heap.js
+@@ -0,0 +1,170 @@
++// Stable Min-Heap (Priority Queue) Data Structure
++// Items with lower priority value → higher precedence.
++// Among items with equal priority, earlier insertion order wins (FIFO stability).
++export default class HeapTree {
++    constructor() {
++        this._heap = [];
++        this.length = 0;
++        this.pushSequence = 0;    // Monotonically increasing counter for push()
++        this.unshiftSequence = 0;  // Monotonically decreasing counter for unshift()
++    }
++
++    _parent(i)   { return ((i + 1) >>> 1) - 1; }
++    _leftChild(i)  { return 2 * i + 1; }
++    _rightChild(i) { return 2 * i + 2; }
++
++    // Compare: returns true if `a` should bubble UP above `b`.
++    // Lower priority number = higher precedence.
++    // Among equal priorities, lower id (earlier insert) = higher precedence.
++    _comp(a, b) {
++        if (a.priority < b.priority) return true;
++        if (a.priority > b.priority) return false;
++        var aId = typeof a.id === 'number' ? a.id : Infinity;
++        var bId = typeof b.id === 'number' ? b.id : Infinity;
++        return aId < bId;
++    }
++
++    _swap(i, j) {
++        var tmp = this._heap[i];
++        this._heap[i] = this._heap[j];
++        this._heap[j] = tmp;
++    }
++
++    /** Add item to the back of the logical queue. FIFO among equal priority. */
++    push(nodeData) {
++        nodeData.id = ++this.pushSequence;
++        this._heap.push(nodeData);
++        this.length = this._heap.length;
++        this._bubbleUp(this.length - 1);
++    }
++
++    /** Add item to the front of the logical queue. Among equal priority, always comes before push items. */
++    unshift(nodeData) {
++        nodeData.id = --this.unshiftSequence;
++        this._heap.push(nodeData);
++        this.length = this._heap.length;
++        this._bubbleUp(this.length - 1);
++    }
++
++    /** Remove and return the highest-priority item (root). */
++    shift() {
++        if (this.length === 0) return null;
++        var top = this._heap[0];
++        if (this.length === 1) {
++            this._heap.pop();
++            this.length = 0;
++        } else {
++            this._swap(0, this.length - 1);
++            this._heap.pop();
++            this.length--;
++            this._bubbleDown(0);
++        }
++        return top;
++    }
++
++    /** Remove items matching testFn. O(n) scan because heap has no efficient search. */
++    remove(testFn) {
++        var i = 0;
++        while (i < this.length) {
++            if (testFn(this._heap[i])) {
++                // Found a match — swap with last element and fix invariants from both directions.
++                var lastIndex = this.length - 1;
++                if (i !== lastIndex) {
++                    this._swap(i, lastIndex);
++                    this._bubbleDown(i);
++                    this._bubbleUp(i);
++                } else {
++                    // Last element — just pop.
++                    this._heap.pop();
++                    this.length--;
++                }
++                i--; // Check the same index again (new element moved in)
++            } else {
++                i++;
++            }
++        }
++    }
++
++    /** Remove all items. */
++    empty() {
++        this._heap.length = 0;
++        this.length = 0;
++        return this;
++    }
++
++    /** Bubble element at idx upward to restore heap invariant. */
++    _bubbleUp(idx) {
++        while (idx > 0) {
++            var pIdx = this._parent(idx);
++            if (this._comp(this._heap[idx], this._heap[pIdx])) {
++                this._swap(idx, pIdx);
++                idx = pIdx;
++            } else {
++                break;
++            }
++        }
++    }
++
++    /** Bubble element at idx downward to restore heap invariant. */
++    _bubbleDown(idx) {
++        while (true) {
++            var left = this._leftChild(idx);
++            var right = this._rightChild(idx);
++            var smallest = idx;
++
++            if (left < this.length && this._comp(this._heap[left], this._heap[smallest])) {
++                smallest = left;
++            }
++            if (right < this.length && this._comp(this._heap[right], this._heap[smallest])) {
++                smallest = right;
++            }
++            if (smallest === idx) break;
++            this._swap(idx, smallest);
++            idx = smallest;
++        }
++    }
++
++    /** Yield items in priority order. Non-mutating: creates a temporary heap on a snapshot. */
++    *[Symbol.iterator]() {
++        var snap = [];
++        for (var i = 0; i < this.length; i++) snap[i] = this._heap[i];
++        var len = this.length;
++
++        // Build temp heap on the snapshot
++        for (var i = Math.floor(len / 2) - 1; i >= 0; i--) {
++            _siftDownTemp(snap, len, i);
++        }
++
++        while (len > 0) {
++            yield snap[0]; // smallest element (min)
++            len--;
++            snap[0] = snap[len];
++            _siftDownTemp(snap, len, 0);
++        }
++    }
++}
++
++function _siftDownTemp(heap, length, idx) {
++    while (true) {
++        var left = 2 * idx + 1;
++        var right = 2 * idx + 2;
++        var smallest = idx;
++
++        if (left < length && _comp(heap[left], heap[smallest])) smallest = left;
++        if (right < length && _comp(heap[right], heap[smallest])) smallest = right;
++
++        if (smallest === idx) break;
++        var tmp = heap[idx];
++        heap[idx] = heap[smallest];
++        heap[smallest] = tmp;
++        idx = smallest;
++    }
++}
++
++function _comp(a, b) {
++    if (a.priority < b.priority) return true;
++    if (a.priority > b.priority) return false;
++    var aId = typeof a.id === 'number' ? a.id : Infinity;
++    var bId = typeof b.id === 'number' ? b.id : Infinity;
++    return aId < bId;
++}
+diff --git a/lib/internal/queue.js b/lib/internal/queue.js
+index 751b562..de16cb5 100644
+--- a/lib/internal/queue.js
++++ b/lib/internal/queue.js
+@@ -1,6 +1,6 @@
+ import onlyOnce from './onlyOnce';
+ import setImmediate from './setImmediate';
+-import DLL from './DoublyLinkedList';
++import HeapTree from './heap';
+ import wrapAsync from './wrapAsync';
+ 
+ const noop = () => {}
+@@ -87,9 +87,9 @@ export default function queue(worker, concurrency, payload) {
+ 
+     var isProcessing = false;
+     var q = {
+-        _tasks: new DLL(),
++        _tasks: new HeapTree(),
+         *[Symbol.iterator] () {
+-            yield* q._tasks[Symbol.iterator]()
++            yield* q._tasks
+         },
+         concurrency,
+         payload,

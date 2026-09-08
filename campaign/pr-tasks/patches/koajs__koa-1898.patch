@@ -1,0 +1,104 @@
+diff --git a/__tests__/response/redirect.js b/__tests__/response/redirect.js
+index 53b475d..0ed6160 100644
+--- a/__tests__/response/redirect.js
++++ b/__tests__/response/redirect.js
+@@ -71,6 +71,44 @@ describe('ctx.redirect(url)', () => {
+       ctx.redirect('back');
+       assert.strictEqual(ctx.response.header.location, '/');
+     });
++
++    describe('when the referrer is an absolute URL', () => {
++      it('should allow back redirect to same-origin URL', done => {
++        const ctx = context({ headers: { host: 'localhost' } });
++        ctx.req.headers.referer = 'http://localhost/';
++        ctx.redirect('back');
++        assert.strictEqual(ctx.response.header.location, 'http://localhost/');
++        done();
++      });
++
++      it('should block redirect to different origin', () => {
++        const ctx = context({ headers: { host: 'localhost' } });
++        ctx.req.headers.referer = 'http://example.com/login';
++        ctx.redirect('back');
++        assert.strictEqual(ctx.response.header.location, '/');
++      });
++
++      it('should fall back to alt for different origin', () => {
++        const ctx = context({ host: 'localhost' });
++        ctx.req.headers.referer = 'http://example.com/login';
++        ctx.redirect('back', '/safe.html');
++        assert.strictEqual(ctx.response.header.location, '/safe.html');
++      });
++
++      it('should fall back to alt for invalid URL', () => {
++        const ctx = context();
++        ctx.req.headers.referer = 'not a valid url';
++        ctx.redirect('back', '/safe.html');
++        assert.strictEqual(ctx.response.header.location, '/safe.html');
++      });
++
++      it('should block protocol-relative URLs', () => {
++        const ctx = context({ host: 'localhost' });
++        ctx.req.headers.referer = '//evil.com/login';
++        ctx.redirect('back', '/safe.html');
++        assert.strictEqual(ctx.response.header.location, '/safe.html');
++      });
++    });
+   });
+ 
+   describe('when html is accepted', () => {
+diff --git a/lib/response.js b/lib/response.js
+index b8e2938..6425069 100644
+--- a/lib/response.js
++++ b/lib/response.js
+@@ -261,7 +261,10 @@ module.exports = {
+ 
+   redirect(url, alt) {
+     // location
+-    if ('back' === url) url = this.ctx.get('Referrer') || alt || '/';
++    if ('back' === url) {
++      const backUrl = this.getBackReferer(alt);
++      url = backUrl || alt || '/';
++    }
+     if (/^https?:\/\//i.test(url)) {
+       // formatting url again avoid security escapes
+       url = new URL(url).toString();
+@@ -284,6 +287,38 @@ module.exports = {
+     this.body = `Redirecting to ${url}.`;
+   },
+ 
++  /**
++   * Get the back referer URL for redirect('back') when Referrer header is used.
++   * Only allows same-origin URLs to prevent open redirect attacks.
++   *
++   * @param {String} alt
++   * @return {String|undefined}
++   */
++
++  getBackReferer(alt) {
++    const referrer = this.ctx.get('Referrer');
++
++    // no referrer - let the caller use alt or default to '/'
++    if (!referrer) return;
++
++    // only allow back redirect to the same origin referer for security
++    if (referrer[0] === '/') {
++      // relative reference: allow it, but block protocol-relative URLs (e.g. //evil.com)
++      return referrer[1] !== '/' ? referrer : '';
++    }
++
++    let parsedUrl;
++    try {
++      parsedUrl = new URL(referrer);
++    } catch (_) {
++      return alt;
++    }
++
++    if (parsedUrl.origin !== this.ctx.origin && parsedUrl.origin !== `${this.ctx.protocol}://${this.ctx.host}`) return alt;
++
++    return referrer;
++  },
++
+   /**
+    * Set Content-Disposition header to "attachment" with optional `filename`.
+    *

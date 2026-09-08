@@ -1,0 +1,75 @@
+diff --git a/__tests__/response/body.test.js b/__tests__/response/body.test.js
+index 25de696..92ff7e9 100644
+--- a/__tests__/response/body.test.js
++++ b/__tests__/response/body.test.js
+@@ -117,14 +117,14 @@ describe('res.body=', () => {
+       assert.strictEqual('application/octet-stream', res.header['content-type'])
+     })
+ 
+-    it('should add error handler to the stream, but only once', () => {
++    it('should not add error handler to stream (handled by pipeline)', () => {
+       const res = response()
+       const body = new Stream.PassThrough()
+       assert.strictEqual(body.listenerCount('error'), 0)
+       res.body = body
+-      assert.strictEqual(body.listenerCount('error'), 1)
++      assert.strictEqual(body.listenerCount('error'), 0)
+       res.body = body
+-      assert.strictEqual(body.listenerCount('error'), 1)
++      assert.strictEqual(body.listenerCount('error'), 0)
+     })
+   })
+ 
+diff --git a/lib/application.js b/lib/application.js
+index ff32453..cd65044 100644
+--- a/lib/application.js
++++ b/lib/application.js
+@@ -304,10 +304,18 @@ function respond (ctx) {
+ 
+   if (Buffer.isBuffer(body)) return res.end(body)
+   if (typeof body === 'string') return res.end(body)
+-  if (body instanceof Blob) { return Stream.Readable.from(body.stream()).pipe(res) }
+-  if (body instanceof ReadableStream) { return Stream.Readable.from(body).pipe(res) }
+-  if (body instanceof Response) { return Stream.Readable.from(body?.body || '').pipe(res) }
+-  if (isStream(body)) return body.pipe(res)
++
++  let stream = null
++  if (body instanceof Blob) stream = Stream.Readable.from(body.stream())
++  else if (body instanceof ReadableStream) stream = Stream.Readable.from(body)
++  else if (body instanceof Response) stream = Stream.Readable.from(body?.body || '')
++  else if (isStream(body)) stream = body
++
++  if (stream) {
++    return Stream.pipeline(stream, res, err => {
++      if (err && ctx.app.listenerCount('error')) ctx.onerror(err)
++    })
++  }
+ 
+   // body: json
+   body = JSON.stringify(body)
+diff --git a/lib/response.js b/lib/response.js
+index c516e0e..d842a38 100644
+--- a/lib/response.js
++++ b/lib/response.js
+@@ -149,6 +149,13 @@ module.exports = {
+       this.remove('Content-Type')
+       this.remove('Content-Length')
+       this.remove('Transfer-Encoding')
++
++      const shouldDestroyOriginal = original && isStream(original)
++      if (shouldDestroyOriginal) {
++        // Ignore errors during cleanup to prevent unhandled exceptions when destroying the stream
++        original.once('error', () => {})
++        destroy(original)
++      }
+       return
+     }
+ 
+@@ -176,7 +183,6 @@ module.exports = {
+     if (isStream(val)) {
+       onFinish(this.res, destroy.bind(null, val))
+       if (original !== val) {
+-        val.once('error', err => this.ctx.onerror(err))
+         // overwriting
+         if (original != null) this.remove('Content-Length')
+       }

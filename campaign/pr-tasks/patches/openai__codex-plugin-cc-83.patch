@@ -1,0 +1,23 @@
+diff --git a/plugins/codex/scripts/codex-companion.mjs b/plugins/codex/scripts/codex-companion.mjs
+index aafe136..92d400e 100644
+--- a/plugins/codex/scripts/codex-companion.mjs
++++ b/plugins/codex/scripts/codex-companion.mjs
+@@ -307,13 +307,16 @@ async function waitForSingleJobSnapshot(cwd, reference, options = {}) {
+ 
+ async function resolveLatestTrackedTaskThread(cwd, options = {}) {
+   const workspaceRoot = resolveWorkspaceRoot(cwd);
++  const sessionId = process.env[SESSION_ID_ENV] ?? null;
+   const jobs = sortJobsNewestFirst(listJobs(workspaceRoot)).filter((job) => job.id !== options.excludeJobId);
+-  const activeTask = jobs.find((job) => job.jobClass === "task" && (job.status === "queued" || job.status === "running"));
++  const scopedJobs =
++    sessionId == null ? jobs : jobs.filter((job) => job.sessionId === sessionId);
++  const activeTask = scopedJobs.find((job) => job.jobClass === "task" && (job.status === "queued" || job.status === "running"));
+   if (activeTask) {
+     throw new Error(`Task ${activeTask.id} is still running. Use /codex:status before continuing it.`);
+   }
+ 
+-  const trackedTask = jobs.find((job) => job.jobClass === "task" && job.status === "completed" && job.threadId);
++  const trackedTask = scopedJobs.find((job) => job.jobClass === "task" && job.status === "completed" && job.threadId);
+   if (trackedTask) {
+     return { id: trackedTask.threadId };
+   }

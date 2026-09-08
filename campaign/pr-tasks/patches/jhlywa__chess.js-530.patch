@@ -1,0 +1,117 @@
+diff --git a/__tests__/setTurn.test.ts b/__tests__/setTurn.test.ts
+new file mode 100644
+index 0000000..1a00efc
+--- /dev/null
++++ b/__tests__/setTurn.test.ts
+@@ -0,0 +1,89 @@
++import { Chess } from '../src/chess'
++import { test, expect } from 'vitest'
++
++test('white starts by default', () => {
++  const chess = new Chess()
++  const fenBefore = chess.fen().split(' ')[1]
++  expect(fenBefore).toBe('w')
++})
++
++test('setTurn switches from white to black', () => {
++  const chess = new Chess()
++  chess.setTurn('b')
++  const fenAfter = chess.fen().split(' ')[1]
++  expect(fenAfter).toBe('b')
++})
++
++test('setTurn switches from black to white', () => {
++  const fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1'
++  const chess = new Chess(fen)
++  chess.setTurn('w')
++  const fenAfter = chess.fen().split(' ')[1]
++  expect(fenAfter).toBe('w')
++})
++
++test('setTurn updates the hash key when switching colors', () => {
++  const chess = new Chess()
++  const initialHash = chess.hash()
++  chess.setTurn('b')
++  const switchedHash = chess.hash()
++  // Hash should differ because side-to-move changed, but board state is same
++  expect(initialHash).not.toBe(switchedHash)
++
++  chess.setTurn('w')
++  const backToWhiteHash = chess.hash()
++  expect(backToWhiteHash).toBe(initialHash)
++})
++
++test('setTurn to same color is a no-op', () => {
++  const chess = new Chess()
++  // Calling setTurn with the current turn shouldn't change anything
++  const fenBefore = chess.fen().split(' ')[1]
++
++  chess.setTurn('w')
++  const fenAfter = chess.fen().split(' ')[1]
++
++  expect(fenBefore).toBe(fenAfter)
++})
++
++test('setTurn affects move generation', () => {
++  const chess = new Chess()
++  // Switch to black; no legal moves since black's pawns are blocked
++  chess.setTurn('b')
++  const fenAfter = chess.fen().split(' ')[1]
++  expect(fenAfter).toBe('b')
++})
++
++test('setTurn works correctly after moves have been made', () => {
++  const chess = new Chess()
++  chess.move('e4')
++  chess.move('e5')
++  chess.setTurn('w')
++  const fenAfter = chess.fen().split(' ')[1]
++  expect(fenAfter).toBe('w')
++})
++
++test('setTurn does not alter board state or history', () => {
++  const chess = new Chess()
++  chess.move('e4')
++  chess.move('e5')
++  const boardSnapshot = chess.fen().split(' ')[0]
++  const historyLength = chess.history().length
++
++  chess.setTurn('w')
++
++  expect(chess.fen().split(' ')[0]).toBe(boardSnapshot)
++  expect(chess.history().length).toBe(historyLength)
++})
++
++test('setTurn and null move interact correctly', () => {
++  const chess = new Chess()
++  chess.move('--') // null move: w -> b
++  expect(chess.fen().split(' ')[1]).toBe('b')
++
++  chess.setTurn('w')
++  expect(chess.fen().split(' ')[1]).toBe('w')
++
++  chess.setTurn('b')
++  expect(chess.fen().split(' ')[1]).toBe('b')
++})
+diff --git a/src/chess.ts b/src/chess.ts
+index 149a066..d8cad3b 100644
+--- a/src/chess.ts
++++ b/src/chess.ts
+@@ -1000,6 +1000,17 @@ export class Chess {
+     this.load(DEFAULT_POSITION)
+   }
+ 
++  /**
++   * Set the side to move ('w' or 'b') and update hash accordingly.
++   * Builds on the null move functionality which also toggles turn.
++   */
++  setTurn(color: Color): void {
++    if (color !== this._turn) {
++      this._turn = color
++      this._hash ^= SIDE_KEY
++    }
++  }
++
+   get(square: Square): Piece | undefined {
+     return this._board[Ox88[square]]
+   }

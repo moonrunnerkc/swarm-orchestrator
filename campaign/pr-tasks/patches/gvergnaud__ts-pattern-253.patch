@@ -1,0 +1,216 @@
+diff --git a/README.md b/README.md
+index e6d2852..c3e12b5 100644
+--- a/README.md
++++ b/README.md
+@@ -536,7 +536,7 @@ function returnType<TOutputOverride>(): Match<TInput, TOutputOverride>;
+ - `TOutputOverride`
+   - The type that your `match` expression will return. All branches must return values assignable to it.
+ 
+-### `.exhaustive`
++### `.exhaustive(fallback?)`
+ 
+ ```ts
+ match(...)
+@@ -550,9 +550,14 @@ Runs the pattern-matching expression and returns its result. It also enables exh
+ 
+ ```ts
+ function exhaustive(): TOutput;
++function exhaustive(fallback: (value: TInput) => TOutput): TOutput;
+ ```
+ 
+-#### Example
++When no patterns match the input and you do not provide a fallback function, `.exhaustive()` will throw a `NonExhaustiveError`. The error contains the unhandled value, allowing you to see which case was missed. You can catch this error at runtime if needed.
++
++However, you can also pass your own handler function as an optional parameter to decide what should happen for unexpected values:
++
++#### Example with no fallback (throws on unhandled)
+ 
+ ```ts
+ type Permission = 'editor' | 'viewer';
+@@ -576,6 +581,38 @@ const fn2 = (org: Plan, user: Permission) =>
+     .exhaustive(); // Works!
+ ```
+ 
++#### Example with fallback (throws your own custom error)
++
++If your types are incorrect and you receive an unexpected value, you can pass a fallback function to throw a custom error:
++
++```ts
++class MyCustomError extends Error {
++  constructor(public input: unknown) {
++    super('Unexpected pattern match input: ' + JSON.stringify(input));
++  }
++}
++
++const fn = (user: Permission | Plan) =>
++  match(user)
++    .with('editor', () => 'has editor')
++    .exhaustive((input) => { throw new MyCustomError(input); });
++```
++
++#### Example with fallback (log and return default value)
++
++You can also log an error and return a default value:
++
++```ts
++const fn = (user: Permission | Plan): string =>
++  match(user)
++    .with('editor', () => 'has editor')
++    .with('viewer', () => 'has viewer')
++    .exhaustive((unhandledInput) => {
++      console.error('Unhandled case:', unhandledInput);
++      return 'fallback value';
++    });
++```
++
+ ### `.otherwise`
+ 
+ ```ts
+diff --git a/src/match.ts b/src/match.ts
+index 6c801aa..9cc1cab 100644
+--- a/src/match.ts
++++ b/src/match.ts
+@@ -112,9 +112,13 @@ class MatchExpression<input, output> {
+     return handler(this.input);
+   }
+ 
+-  exhaustive(): output {
++  exhaustive(fallback?: (value: input) => output): output {
+     if (this.state.matched) return this.state.value;
+ 
++    if (fallback) {
++      return fallback(this.input);
++    }
++
+     throw new NonExhaustiveError(this.input);
+   }
+ 
+diff --git a/src/types/Match.ts b/src/types/Match.ts
+index 77a2708..4f6005b 100644
+--- a/src/types/Match.ts
++++ b/src/types/Match.ts
+@@ -188,13 +188,23 @@ export type Match<
+    * all cases. You should probably add another `.with(...)` clause
+    * to match the missing case and prevent runtime errors.
+    *
++   * It is also possible to pass a fallback handler function that will be called
++   * with the unhandled value. This allows you to handle unexpected values gracefully:
++   * ```ts
++   * .exhaustive((value) => defaultValue);
++   * // or
++   * .exhaustive((value) => { throw new CustomError(value); });
++   * ```
++   *
+    * [Read the documentation for `.exhaustive()` on GitHub](https://github.com/gvergnaud/ts-pattern#exhaustive)
+    *
+    * */
+   exhaustive: DeepExcludeAll<i, handledCases> extends infer remainingCases
+     ? [remainingCases] extends [never]
+-      ? () => PickReturnValue<o, inferredOutput>
+-      : NonExhaustiveError<remainingCases>
++      ? { (): PickReturnValue<o, inferredOutput>; <T>(fallback: (value: i) => T): PickReturnValue<o, Union<inferredOutput, T>> }
++      : NonExhaustiveError<remainingCases> & {
++          <T>(fallback: (value: i) => T): PickReturnValue<o, Union<inferredOutput, T>>;
++        }
+     : never;
+ 
+   /**
+diff --git a/tests/exhaustive-match.test.ts b/tests/exhaustive-match.test.ts
+index 554447f..1f1bc79 100644
+--- a/tests/exhaustive-match.test.ts
++++ b/tests/exhaustive-match.test.ts
+@@ -990,4 +990,94 @@ describe('exhaustive()', () => {
+       .with(P.instanceOf(Date), (value) => 3)
+       .exhaustive();
+   });
++
++  describe('.exhaustive(fallback)', () => {
++    it('should call fallback when no pattern matches', () => {
++      type Input = 'a' | 'b' | 'c';
++      const input = 'd' as Input;
++
++      const result = match(input)
++        .with('a', () => 'A')
++        .with('b', () => 'B')
++        .exhaustive((value) => `Unhandled: ${value}`);
++
++      expect(result).toBe('Unhandled: d');
++    });
++
++    it('should return the correct type when using fallback', () => {
++      type Input = 'a' | 'b' | 'c';
++      const input = 'd' as Input;
++
++      let capturedInput: Input | undefined;
++      const result = match(input)
++        .with('a', () => 1)
++        .with('b', () => 2)
++        .exhaustive((value: Input) => {
++          capturedInput = value;
++          return -1;
++        });
++
++      expect(capturedInput).toBe('d');
++      expect(result).toBe(-1);
++    });
++
++    it('should not call fallback when a pattern matches', () => {
++      type Input = 'a' | 'b' | 'c';
++
++      const result = match<Input>('b')
++        .with('a', () => 'A')
++        .with('b', () => 'B')
++        .exhaustive((() => { throw new Error('should not be called'); }) as never);
++
++      expect(result).toBe('B');
++    });
++
++    it('should allow throwing custom error in fallback', () => {
++      class CustomError extends Error {
++        constructor(public input: unknown) {
++          super(`Custom error for ${JSON.stringify(input)}`);
++        }
++      }
++
++      type Input = 'a' | 'b' | 'c';
++      const input = 'd' as Input;
++
++      expect(() =>
++        match(input)
++          .with('a', () => 'A')
++          .with('b', () => 'B')
++          .exhaustive((value) => { throw new CustomError(value); })
++      ).toThrow(CustomError);
++    });
++
++    it('should log and return default value in fallback', () => {
++      type Input = 'a' | 'b' | 'c';
++      let loggedValue: unknown;
++      const input = 'd' as Input;
++
++      const result = match(input)
++        .with('a', () => 'A')
++        .with('b', () => 'B')
++        .exhaustive((value) => {
++          loggedValue = value;
++          return 'default';
++        });
++
++      expect(loggedValue).toBe('d');
++      expect(result).toBe('default');
++    });
++
++    it('should work on exhaustive match (no missing cases)', () => {
++      type Input = 'a' | 'b' | 'c';
++      const input = 'b' as Input;
++
++      const result = match(input)
++        .with('a', () => 'A')
++        .with('b', () => 'B')
++        .with('c', () => 'C')
++        .exhaustive((value) => `fallback: ${value}`);
++
++      expect(result).toBe('B');
++    });
++  });
+ });

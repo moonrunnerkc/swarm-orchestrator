@@ -1,0 +1,64 @@
+diff --git a/src/chess.ts b/src/chess.ts
+index 13c387a..1e08706 100644
+--- a/src/chess.ts
++++ b/src/chess.ts
+@@ -341,6 +341,59 @@ const SECOND_RANK = { b: RANK_7, w: RANK_2 }
+ 
+ const TERMINATION_MARKERS = ['1-0', '0-1', '1/2-1/2', '*']
+ 
++/** The Seven Tag Roster (STR), in canonical order per the PGN spec */
++const SEVEN_TAG_ROSTER = [
++  'Event',
++  'Site',
++  'Date',
++  'Round',
++  'White',
++  'Black',
++  'Result',
++] as const
++
++/** The Seven Tag Roster (STR), with default values per the PGN spec */
++const SEVEN_TAG_ROSTER_DEFAULTS: Record<string, string> = {
++  Event: '?',
++  Site: '?',
++  Date: '????.??.??',
++  Round: '?',
++  White: 'unknown',
++  Black: 'unknown',
++  Result: '*',
++}
++
++const SUPPLEMENTAL_TAGS: Partial<Record<string, string | null>> = {
++  SetUp: null,
++  FEN: null,
++  ECO: null,
++  Opening: null,
++  Variation: null,
++  SubVariation: null,
++}
++
++/** Header template containing the Seven Tag Roster (STR) defaults and supplemental tags */
++const HEADER_TEMPLATE: Record<string, string | null> = {
++  ...SEVEN_TAG_ROSTER_DEFAULTS,
++  ...SUPPLEMENTAL_TAGS,
++}
++
++const HEADER_SUBSET_OF = [
++  ...new Set([
++    'SetUp',
++    'FEN',
++    'ECO',
++    'Opening',
++    'Variation',
++    'SubVariation',
++  ]),
++] as unknown as null
++
++/** Is the given key a member of SUPPLEMENTAL_TAGS? */
++const isSupplementalTag = (key: string): boolean => {
++  return key in SUPPLEMENTAL_TAGS
++}
++
+ // Extracts the zero-based rank of an 0x88 square.
+ function rank(square: number): number {
+   return square >> 4

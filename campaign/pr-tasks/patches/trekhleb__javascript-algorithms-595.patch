@@ -1,0 +1,283 @@
+diff --git a/src/algorithms/ml/kmeans/README.md b/src/algorithms/ml/kmeans/README.md
+new file mode 100644
+index 0000000..6d8961a
+--- /dev/null
++++ b/src/algorithms/ml/kmeans/README.md
+@@ -0,0 +1,43 @@
++# KMeans Clustering Algorithm
++
++The **KMeans algorithm** is an unsupervised Machine Learning algorithm used for clustering. It partitions a set of data points into `k` clusters, where each point belongs to the cluster with the nearest centroid (mean).
++
++## How it works
++
++1. Choose the number of clusters `k`.
++2. Initialize `k` centroids (using L++-inspired initialization to pick well-separated initial centers).
++3. Assign each data point to the nearest centroid.
++4. Recompute centroids as the mean of points assigned to each cluster.
++5. Repeat steps 3–4 until the assignments stop changing or the maximum number of iterations is reached.
++
++## Usage
++
++```javascript
++import kmeans from './kmeans';
++
++const samples = [
++  [0, 0], [1, 0], [0, 1],
++  [10, 10], [11, 10], [10, 11]
++];
++
++const { centroids, labels } = kmeans(samples, 2);
++// centroids: [[~0.33, ~0.33], [~10.33, ~10.33]]
++// labels:    [0, 0, 0, 1, 1, 1]
++```
++
++## API
++
++### `kmeans(samples, k, maxIterations?)`
++
++| Parameter         | Type           | Description                     |
++|-------------------|----------------|---------------------------------|
++| `samples`         | `number[][]`   | Array of data points            |
++| `k`               | `number`       | Number of clusters to create    |
++| `maxIterations?`  | `number`       | Max iterations (default: 10)    |
++
++**Returns:** `{ centroids: number[][], labels: number[] }`
++
++## References
++
++- [K-means clustering on Wikipedia](https://en.wikipedia.org/wiki/K-means_clustering)
++- ["Why KMeans Works — Intuitive Explanation of the Algorithm"](https://stackoverflow.com/questions/21984207/why-kmeans-work-intuitive-explanation-of-the-algorithm)
+diff --git a/src/algorithms/ml/kmeans/__test__/kmeans.test.js b/src/algorithms/ml/kmeans/__test__/kmeans.test.js
+new file mode 100644
+index 0000000..a7f6ffa
+--- /dev/null
++++ b/src/algorithms/ml/kmeans/__test__/kmeans.test.js
+@@ -0,0 +1,105 @@
++import kmeans from '../kmeans';
++
++describe('kmeans', () => {
++  it('should throw an error on empty samples', () => {
++    expect(() => {
++      kmeans([], 2);
++    }).toThrowError('Empty sample array');
++  });
++
++  it('should throw an error on k <= 0', () => {
++    expect(() => {
++      kmeans([[1, 2]], 0);
++    }).toThrowError('k must be greater than 0');
++  });
++
++  it('should throw an error when k > number of samples', () => {
++    expect(() => {
++      kmeans([[1, 2]], 3);
++    }).toThrowError('k cannot be larger than the number of samples');
++  });
++
++  it('should cluster into one group when k = 1', () => {
++    const samples = [
++      [1, 1], [1.1, 0.9], [0.8, 1.2],
++      [5, 5], [4.9, 5.1], [5.2, 4.8],
++    ];
++    const result = kmeans(samples, 1);
++    expect(result.labels).toHaveLength(samples.length);
++
++    // All points should be assigned to cluster 0
++
++    const areAllZero = result.labels.every((l) => l === 0);
++    expect(areAllZero).toBe(true);
++  });
++
++  it('should separate two well-separated clusters', () => {
++    const samples = [
++      [1, 1], [1.1, 1], [1, 1.1],
++      [2, 2], [1.9, 2.1], [0.5, 1.8],
++      [10, 10], [10.1, 9.9], [9.9, 10.1],
++      [9.8, 10.2],
++    ];
++    const result = kmeans(samples, 2);
++
++    // Should have exactly 2 clusters
++    expect(new Set(result.labels)).toEqual(new Set([0, 1]));
++  });
++
++  it('should assign all points to a cluster', () => {
++    const samples = [
++      [0, 0], [1, 0], [0, 1], [1, 1],
++      [10, 10], [11, 10], [10, 11],
++    ];
++    const result = kmeans(samples, 2);
++    expect(result.labels.length).toBe(samples.length);
++
++    for (let i = 0; i < result.labels.length; i += 1) {
++      expect(result.labels[i]).toBeGreaterThanOrEqual(0);
++      expect(result.labels[i]).toBeLessThan(2);
++    }
++  });
++
++  it('should return centroids with correct dimensions', () => {
++    const samples = [[0, 0], [1, 1], [5, 5]];
++    const result = kmeans(samples, 2);
++    expect(result.centroids.length).toBe(2);
++
++    for (let i = 0; i < result.centroids.length; i += 1) {
++      expect(result.centroids[i]).toHaveLength(2);
++    }
++  });
++
++  it('should handle 3D data', () => {
++    const samples = [
++      [0, 0, 0], [1, 0, 0], [0, 1, 0],
++      [10, 10, 10], [11, 10, 10], [10, 11, 10],
++    ];
++    const result = kmeans(samples, 2);
++    expect(result.centroids.length).toBe(2);
++    for (let i = 0; i < result.centroids.length; i += 1) {
++      expect(result.centroids[i]).toHaveLength(3);
++    }
++    expect(new Set(result.labels)).toEqual(new Set([0, 1]));
++  });
++
++  it('should handle single-sample k=1', () => {
++    const samples = [[42, 42]];
++    const result = kmeans(samples, 1);
++    expect(result.centroids).toHaveLength(1);
++    expect(result.labels).toEqual([0]);
++    expect(result.centroids[0]).toEqual([42, 42]);
++  });
++
++  it('should produce consistent results across runs', () => {
++    const samples = [
++      [1, 1], [1.2, 0.9], [0.9, 1.1],
++      [8, 8], [8.1, 7.9], [7.9, 8.1],
++    ];
++    const result1 = kmeans(samples, 2, 20);
++    const result2 = kmeans(samples, 2, 20);
++
++    // Same cluster assignments (may differ by cluster label indexing)
++    expect(result1.labels.sort()).toEqual(result2.labels.sort());
++  });
++});
+diff --git a/src/algorithms/ml/kmeans/kmeans.js b/src/algorithms/ml/kmeans/kmeans.js
+new file mode 100644
+index 0000000..274f1a1
+--- /dev/null
++++ b/src/algorithms/ml/kmeans/kmeans.js
+@@ -0,0 +1,117 @@
++/**
++ * KMeans clustering algorithm.
++ * Divides n-dimensional data points into k clusters with minimal
++ * within-cluster variance.
++ *
++ * @param {number[][]}  samples         - array of data points
++ * @param {number}      k               - number of clusters
++ * @param {number} [10] maxIterations    - maximum iterations
++ * @returns {{
++ *   centroids: number[][],
++ *   labels: number[]
++ * }} clustered result
++ */
++
++export default function kmeans(samples, k, maxIterations = 10) {
++  if (!samples || samples.length === 0) {
++    throw new Error('Empty sample array');
++  }
++  if (k <= 0) {
++    throw new Error('k must be greater than 0');
++  }
++  if (k > samples.length) {
++    throw new Error('k cannot be larger than the number of samples');
++  }
++
++  // Euclidean distance between two points
++  function distance(a, b) {
++    let sum = 0;
++    for (let i = 0; i < a.length; i += 1) {
++      const diff = a[i] - b[i];
++      sum += diff * diff;
++    }
++    return Math.sqrt(sum);
++  }
++
++  // Pick k centroids using L++-inspired initialization
++  const centroids = [samples[0].slice()];
++  for (let c = 1; c < k; c += 1) {
++    let maxDist = 0;
++    let furthestIdx = 0;
++
++    // For each sample, find distance to nearest centroid
++    const distancesToCentroids = samples.map((s) => {
++      let minD = Infinity;
++      for (let j = 0; j < c; j += 1) {
++        const d = distance(s, centroids[j]);
++        if (d < minD) {
++          minD = d;
++        }
++      }
++      return minD;
++    });
++
++    // Weight by squared distance and pick next centroid
++    for (let i = 0; i < samples.length; i += 1) {
++      if (distancesToCentroids[i] > maxDist) {
++        maxDist = distancesToCentroids[i];
++        furthestIdx = i;
++      }
++    }
++    centroids.push(samples[furthestIdx].slice());
++  }
++
++  const labels = new Array(samples.length).fill(0);
++
++  for (let iteration = 0; iteration < maxIterations; iteration += 1) {
++    let converged = true;
++
++    // Assign each point to nearest centroid
++    for (let i = 0; i < samples.length; i += 1) {
++      let minDist = Infinity;
++      let bestCluster = 0;
++      for (let j = 0; j < k; j += 1) {
++        const d = distance(samples[i], centroids[j]);
++        if (d < minDist) {
++          minDist = d;
++          bestCluster = j;
++        }
++      }
++      if (labels[i] !== bestCluster) {
++        converged = false;
++      }
++      labels[i] = bestCluster;
++    }
++
++    // Update centroids: compute mean of each cluster
++    for (let j = 0; j < k; j += 1) {
++      const members = [];
++      for (let i = 0; i < samples.length; i += 1) {
++        if (labels[i] === j) {
++          members.push(samples[i]);
++        }
++      }
++      if (members.length > 0) {
++        for (let dim = 0; dim < samples[0].length; dim += 1) {
++          const meanDim = members.reduce((s, m) => s + m[dim], 0)
++            / members.length;
++          if (Math.abs(meanDim - centroids[j][dim]) > 1e-6) {
++            converged = false;
++          }
++          centroids[j][dim] = meanDim;
++        }
++      } else {
++        // Empty cluster: reinitialize to a random sample nearby
++        for (let dim = 0; dim < samples[0].length; dim += 1) {
++          const randomSample = samples[Math.floor(Math.random()
++            * samples.length)];
++          centroids[j][dim] = randomSample[dim];
++        }
++      }
++    }
++
++    if (converged) break;
++  }
++
++  return { centroids, labels };
++}

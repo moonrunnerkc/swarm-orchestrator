@@ -1,0 +1,67 @@
+diff --git a/src/chess.ts b/src/chess.ts
+index 59c07d5..ce45439 100644
+--- a/src/chess.ts
++++ b/src/chess.ts
+@@ -107,6 +107,15 @@ type InternalMove = {
+   captured?: PieceSymbol
+   promotion?: PieceSymbol
+   flags: number
++} | {
++  color: Color
++  from: -1
++  to: -1
++  piece: null
++  captured: undefined
++  promotion: never
++  flags: number
++  nullMove: boolean
+ }
+ 
+ interface History {
+@@ -219,6 +228,7 @@ const FLAGS: Record<string, string> = {
+   PROMOTION: 'p',
+   KSIDE_CASTLE: 'k',
+   QSIDE_CASTLE: 'q',
++  NULL_MOVE: 'x',
+ }
+ 
+ // prettier-ignore
+@@ -241,6 +251,7 @@ const BITS: Record<string, number> = {
+   PROMOTION: 16,
+   KSIDE_CASTLE: 32,
+   QSIDE_CASTLE: 64,
++  NULL_MOVE: 128,
+ }
+ 
+ /* eslint-disable @typescript-eslint/naming-convention */
+@@ -1729,6 +1740,11 @@ export class Chess {
+     const them = swapColor(us)
+     this._push(move)
+ 
++    if (move.flags & BITS.NULL_MOVE) {
++      this._turn = them
++      return
++    }
++
+     this._hash ^= this._epKey()
+     this._hash ^= this._castlingKey()
+ 
+@@ -2271,6 +2287,18 @@ export class Chess {
+       }
+     }
+ 
++    // null move handling
++    const NULL_SAN = '-'
++    if (cleanMove === NULL_SAN) {
++      return {
++        color: this._turn,
++        from: -1,
++        to: -1,
++        piece: null as never,
++        flags: BITS.NULL_MOVE,
++      } as unknown as InternalMove
++    }
++
+     let pieceType = inferPieceType(cleanMove)
+     let moves = this._moves({ legal: true, piece: pieceType })
+ 

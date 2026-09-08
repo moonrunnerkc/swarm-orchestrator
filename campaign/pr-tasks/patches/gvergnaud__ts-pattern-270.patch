@@ -1,0 +1,165 @@
+diff --git a/src/index.ts b/src/index.ts
+index 1276264..49b46b9 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,5 +1,6 @@
+ import * as Pattern from './patterns';
+ 
++export { ExhaustiveError } from './internals/ExhaustiveError';
+ export { match } from './match';
+ export { isMatching } from './is-matching';
+ export { Pattern, Pattern as P };
+diff --git a/src/internals/ExhaustiveError.ts b/src/internals/ExhaustiveError.ts
+new file mode 100644
+index 0000000..d167ffc
+--- /dev/null
++++ b/src/internals/ExhaustiveError.ts
+@@ -0,0 +1,29 @@
++/**
++ * Custom error thrown when a `.exhaustive()` call encounters a value
++ * that doesn't match any previously registered pattern.
++ *
++ * Extends `Error` and exposes the unmatched value via its `value` property,
++ * allowing callers to inspect what caused the failure programmatically.
++ */
++export class ExhaustiveError extends Error {
++  /** The input value that failed to match any pattern. */
++  readonly value: unknown;
++
++  constructor(value: unknown) {
++    let message: string;
++    try {
++      message = `Pattern matching error: no pattern matches value ${JSON.stringify(value, null, 2)}`;
++    } catch {
++      message = `Pattern matching error: no pattern matches value ${value}`;
++    }
++    super(message);
++
++    // Preserve the native stack trace
++    if (Error.captureStackTrace) {
++      Error.captureStackTrace(this, ExhaustiveError);
++    }
++
++    this.name = 'ExhaustiveError';
++    this.value = value;
++  }
++}
+diff --git a/src/match.ts b/src/match.ts
+index 278aefd..f0c9bc0 100644
+--- a/src/match.ts
++++ b/src/match.ts
+@@ -2,6 +2,7 @@ import { Pattern } from './types/Pattern';
+ import { Match } from './types/Match';
+ import * as symbols from './internals/symbols';
+ import { matchPattern } from './internals/helpers';
++import { ExhaustiveError } from './internals/ExhaustiveError';
+ 
+ type MatchState<output> =
+   | { matched: true; value: output }
+@@ -114,16 +115,7 @@ class MatchExpression<input, output> {
+   exhaustive(): output {
+     if (this.state.matched) return this.state.value;
+ 
+-    let displayedValue;
+-    try {
+-      displayedValue = JSON.stringify(this.input);
+-    } catch (e) {
+-      displayedValue = this.input;
+-    }
+-
+-    throw new Error(
+-      `Pattern matching error: no pattern matches value ${displayedValue}`
+-    );
++    throw new ExhaustiveError(this.input);
+   }
+ 
+   run(): output {
+diff --git a/tests/exhaustive-match.test.ts b/tests/exhaustive-match.test.ts
+index 86d03f0..c3979bb 100644
+--- a/tests/exhaustive-match.test.ts
++++ b/tests/exhaustive-match.test.ts
+@@ -1,4 +1,4 @@
+-import { match, P } from '../src';
++import { match, P, ExhaustiveError } from '../src';
+ import { Equal, Expect } from '../src/types/helpers';
+ import {
+   Option,
+@@ -932,4 +932,78 @@ describe('exhaustive()', () => {
+       expect(withoutTypo({ sex: 'b', age: 'c' })).toBe(1);
+     });
+   });
++
++  describe('ExhaustiveError runtime checks', () => {
++    function nonExhaustiveMatch(input: unknown) {
++      return match(input).with('a', () => 1);
++    }
++
++    it('throws an ExhaustiveError with correct name when no pattern matches', () => {
++      expect(() =>
++        (nonExhaustiveMatch('c') as any).exhaustive()
++      ).toThrow(ExhaustiveError);
++    });
++
++    it('makes the unmatched value accessible via .value', () => {
++      let caught: ExhaustiveError | undefined;
++      try {
++        (nonExhaustiveMatch('c') as any).exhaustive();
++      } catch (e) {
++        if (e instanceof ExhaustiveError) {
++          caught = e;
++        }
++      }
++
++      expect(caught).toBeDefined();
++      expect(caught!.value).toBe('c');
++    });
++
++    it('includes a meaningful error message with the value JSON serialized', () => {
++      let caught: Error | undefined;
++      try {
++        (nonExhaustiveMatch('missing') as any).exhaustive();
++      } catch (e) {
++        if (e instanceof ExhaustiveError) {
++          caught = e;
++        }
++      }
++
++      expect(caught!.message).toContain('no pattern matches value');
++    });
++
++    it('handles objects that cannot be JSON serialized', () => {
++      const fn = () => 'test';
++      let caught: Error | undefined;
++      try {
++        (match(fn) as any).exhaustive();
++      } catch (e) {
++        if (e instanceof ExhaustiveError) {
++          caught = e;
++        }
++      }
++
++      expect(caught).toBeDefined();
++    });
++
++    it('can be caught and distinguished from errors thrown in handlers', () => {
++      let exhaustiveError: ExhaustiveError | undefined;
++      let handlerError: Error | undefined;
++
++      // When the input matches a registered pattern but its handler throws an error,
++      // we should get the handler's error, not an ExhaustiveError.
++      try {
++        (match('a' as 'a' | 'b').with('a', (x) => { throw new Error('handler error'); return x; }) as any).exhaustive();
++      } catch (e) {
++        if (e instanceof ExhaustiveError) {
++          exhaustiveError = e;
++        } else if (e instanceof Error) {
++          handlerError = e;
++        }
++      }
++
++      // Since 'a' was matched and the handler threw, we get a handler error, not an ExhaustiveError
++      expect(handlerError).toBeDefined();
++      expect(exhaustiveError).toBeUndefined();
++    });
++  });
+ });

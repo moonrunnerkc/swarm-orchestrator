@@ -1,0 +1,24 @@
+diff --git a/lib/command.js b/lib/command.js
+index 93b9d01..d0586cf 100644
+--- a/lib/command.js
++++ b/lib/command.js
+@@ -1043,10 +1043,16 @@ Expecting one of '${allowedValues.join("', '")}'`);
+     // Suppressing the exit if exitCallback defined is a bit messy and of limited use, but does allow process to stay running!
+     const exitCallback = this._exitCallback;
+     if (!exitCallback) {
+-      proc.on('close', process.exit.bind(process));
++      proc.on('close', (code, signal) => {
++        // If the subprocess is terminated by a signal, code is null. Use exit code 1 to indicate failure.
++        const effectiveExitCode = signal ? 1 : (code !== null ? code : 0);
++        process.exit(effectiveExitCode);
++      });
+     } else {
+-      proc.on('close', () => {
+-        exitCallback(new CommanderError(process.exitCode || 0, 'commander.executeSubCommandAsync', '(close)'));
++      proc.on('close', (code, signal) => {
++        // If the subprocess is terminated by a signal, code is null. Use exit code 1 to indicate failure.
++        const effectiveExitCode = signal ? 1 : (code !== null ? code : 0);
++        exitCallback(new CommanderError(effectiveExitCode, 'commander.executeSubCommandAsync', '(close)'));
+       });
+     }
+     proc.on('error', (err) => {

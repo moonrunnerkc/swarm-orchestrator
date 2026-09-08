@@ -1,0 +1,125 @@
+diff --git a/es2015.js b/es2015.js
+index 2936427..2678072 100644
+--- a/es2015.js
++++ b/es2015.js
+@@ -26,7 +26,7 @@ module.exports = {
+   DataStore: DataStore.DataStore,
+   DataStoreUnavailable: DataStore.DataStoreUnavailable,
+ 
+-  loadBot (adapterPath, adapterName, enableHttpd, botName, botAlias) {
+-    return new module.exports.Robot(adapterPath, adapterName, enableHttpd, botName, botAlias)
++  async loadBot (adapterPath, adapterName, enableHttpd, botName, botAlias) {
++    return await module.exports.Robot.load(adapterPath, adapterName, enableHttpd, botName, botAlias)
+   }
+ }
+diff --git a/src/robot.js b/src/robot.js
+index 4320ec8..14d7ecf 100644
+--- a/src/robot.js
++++ b/src/robot.js
+@@ -68,7 +68,11 @@ class Robot {
+       this.setupNullRouter()
+     }
+ 
+-    this.loadAdapter(adapter)
++    // For non-file adapter names, load synchronously for backward compatibility
++    const ext = path.extname(adapter || '')
++    if (!ext) {
++      this.loadAdapterSync(adapter)
++    }
+ 
+     this.adapterName = adapter
+     this.errorHandlers = []
+@@ -501,19 +505,68 @@ class Robot {
+     }
+   }
+ 
++  // Load the adapter synchronously for built-in/non-file adapter names.
++  //
++  // adapter - A String of the adapter name to use.
++  //
++  // Returns nothing.
++  loadAdapterSync (adapter) {
++    const name = Array.from(HUBOT_DEFAULT_ADAPTERS).indexOf(adapter) !== -1
++      ? `${this.adapterPath}/${adapter}`
++      : `hubot-${adapter}`
++
++    this.logger.debug(`Loading synchronously adapter ${name}`)
++    try {
++      this.adapter = require(name).use(this)
++    } catch (err) {
++      this.logger.error(`Cannot load adapter ${adapter} - ${err}`)
++      process.exit(1)
++    }
++  }
++
+   // Load the adapter Hubot is going to use.
+   //
+   // path    - A String of the path to adapter if local.
+   // adapter - A String of the adapter name to use.
+   //
+-  // Returns nothing.
+-  loadAdapter (adapter) {
++  // Returns Promise that resolves with the loaded adapter instance or undefined for built-in adapters and hubot-<name> packages.
++  async loadAdapter (adapter) {
+     this.logger.debug(`Loading adapter ${adapter}`)
+ 
+     try {
+-      const path = Array.from(HUBOT_DEFAULT_ADAPTERS).indexOf(adapter) !== -1 ? `${this.adapterPath}/${adapter}` : `hubot-${adapter}`
++      const ext = path.extname(adapter)
++      if (ext && ['.mjs', '.coffee', '.js', '.cjs'].includes(ext)) {
++        let loaded
++        if (ext === '.coffee') {
++          const coffee = require('coffeescript')
++          coffee.register()
++          loaded = require(path.resolve(adapter))
++        } else if (ext === '.mjs') {
++          // Dynamic import for ES modules (.mjs)
++          const fileUrl = `file://${path.resolve(adapter)}`
++          const mod = await import(fileUrl)
++          loaded = mod.default || mod
++        } else {
++          // For .js and .cjs, use require (CommonJS)
++          loaded = require(path.resolve(adapter))
++        }
++
++        // Support both CommonJS module.exports.use and ES default export style
++        if (typeof loaded === 'function' && typeof loaded.default !== 'function') {
++          this.adapter = loaded(this)
++        } else if (typeof loaded?.use === 'function') {
++          this.adapter = loaded.use(this)
++        } else if (typeof loaded === 'function') {
++          // It's already an adapter instance or can be called as constructor-like
++          this.adapter = loaded
++        } else {
++          throw new Error('Adapter module did not export a valid use function or default export')
++        }
++      } else {
++        const name = Array.from(HUBOT_DEFAULT_ADAPTERS).indexOf(adapter) !== -1 ? `${this.adapterPath}/${adapter}` : `hubot-${adapter}`
+ 
+-      this.adapter = require(path).use(this)
++        this.adapter = require(name).use(this)
++      }
+     } catch (err) {
+       this.logger.error(`Cannot load adapter ${adapter} - ${err}`)
+       process.exit(1)
+@@ -722,6 +775,20 @@ class Robot {
+   }
+ }
+ 
++Robot.load = async function (adapterPath, adapter, httpd, name, alias) {
++  // Factory method for async adapter loading.
++  // adapterPath - A String of the path to built-in adapters (defaults to src/adapters)
++  // adapter     - A String of the adapter name or file path to load as an adapter.
++  // httpd       - A Boolean whether to enable the HTTP daemon.
++  // name        - A String of the robot name, defaults to Hubot.
++  // alias       - A String of the alias of the robot name
++  //
++  // Returns Promise that resolves to a new Robot instance with its adapter loaded.
++  const robot = new Robot(adapterPath, adapter, httpd, name, alias)
++  await robot.loadAdapter(adapter)
++  return robot
++}
++
+ module.exports = Robot
+ 
+ function isCatchAllMessage (message) {

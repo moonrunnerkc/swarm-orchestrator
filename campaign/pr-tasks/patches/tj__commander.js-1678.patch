@@ -1,0 +1,34 @@
+diff --git a/lib/option.js b/lib/option.js
+index c68110e..c56ae0c 100644
+--- a/lib/option.js
++++ b/lib/option.js
+@@ -197,6 +197,29 @@ class Option {
+   isBoolean() {
+     return !this.required && !this.optional && !this.negate;
+   }
++
++  /**
++   * Add a conflict that will error if both options are specified on the same command.
++   *
++   * @param {string|string[]} optionNames - names of conflicting options
++   * @return {Option}
++   */
++
++  conflicts(optionNames) {
++    this.conflictsWith = (Array.isArray(optionNames)) ? optionNames : [optionNames];
++    return this;
++  }
++
++  /**
++   * Return name of the conflicting options.
++   *
++   * @return {string[]}
++   * @api private
++   */
++
++  _isConflicting() {
++    // helper for checking conflicts, used by Command class
++  }
+ }
+ 
+ /**

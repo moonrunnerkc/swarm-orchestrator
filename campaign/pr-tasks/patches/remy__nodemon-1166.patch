@@ -1,0 +1,88 @@
+diff --git a/lib/cli/parse.js b/lib/cli/parse.js
+index bff13e3..5e9e8d7 100644
+--- a/lib/cli/parse.js
++++ b/lib/cli/parse.js
+@@ -21,6 +21,51 @@ var existsSync = fs.existsSync || path.existsSync;
+ 
+ module.exports = parse;
+ 
++var extensionsSupported = ['.js', '.coffee', '.ts', '.ls'];
++
++
++function findApp(filename, ext) {
++  // if it has an extension, use as-is
++  if (path.extname(filename)) {
++    if (existsSync(filename)) {
++      return filename;
++    }
++
++    // try the custom extensions provided via --ext option
++    if (ext && ext.length > 0) {
++      var extensions = ext.split(',');
++      for (var i = 0; i < extensions.length; i++) {
++        // trim whitespace from the extension, and only look at first char
++        var trimmedExtension = extensions[i].trim();
++        // avoid '.' as extension, as it will just be a file with no extension
++        if (!trimmedExtension || trimmedExtension === '.') {
++          continue;
++        }
++
++        // add leading dot if needed
++        if (trimmedExtension[0] !== '.') {
++          trimmedExtension = '.' + trimmedExtension;
++        }
++
++        var fileWithExt = filename + trimmedExtension;
++        if (existsSync(fileWithExt)) {
++          return fileWithExt;
++        }
++      }
++    }
++
++    // fallback to default extensions
++    for (var j = 0; j < extensionsSupported.length; j++) {
++      var fileWithExt = filename + extensionsSupported[j];
++      if (existsSync(fileWithExt)) {
++        return fileWithExt;
++      }
++    }
++  }
++
++  return null;
++}
++
+ /**
+  * Parses the command line arguments `process.argv` and returns the
+  * nodemon options, the user script and the executable script.
+@@ -61,6 +106,24 @@ function parse(argv) {
+         i--;
+         continue;
+       }
++
++      // if it's a file without an extension, try to find it with various extensions
++      if (!path.extname(args[i])) {
++        if (nodemonOptions.ext) {
++          script = findApp(args[i], nodemonOptions.ext);
++        } else {
++          script = findApp(args[i]);
++        }
++
++        // if we found the file, remove it from args and mark as the script
++        if (script) {
++          args.splice(i, 1);
++
++          nodemonOptions.scriptPosition = i;
++          i--;
++          continue;
++        }
++      }
+     }
+ 
+     if (lookForArgs) {
+diff --git a/test/fixtures/index b/test/fixtures/index
+new file mode 100644
+index 0000000..f053ebf
+--- /dev/null
++++ b/test/fixtures/index
+@@ -0,0 +1 @@
++module.exports = {};

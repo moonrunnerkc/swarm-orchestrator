@@ -1,87 +1,94 @@
 diff --git a/__tests__/request/whatwg-url.test.js b/__tests__/request/whatwg-url.test.js
-index 05f5ffa..61fd2d9 100644
+index 05f5ffa..8c5e0d5 100644
 --- a/__tests__/request/whatwg-url.test.js
 +++ b/__tests__/request/whatwg-url.test.js
-@@ -22,4 +22,58 @@ describe('req.URL', () => {
+@@ -22,4 +22,61 @@ describe('req.URL', () => {
      req.header.host = 'invalid host'
      assert.deepStrictEqual(req.URL, Object.create(null))
    })
 +
-+  // absolute-form request target tests (GET http://example.com/foo)
-+  it('should parse http absolute-form URL correctly', () => {
-+    const req = request()
-+    req.originalUrl = 'http://example.com/path?query=1'
-+    assert.strictEqual(req.URL.href, 'http://example.com/path?query=1')
-+  })
++  describe('absolute-form request targets', () => {
++    it('should parse http absolute-form request URLs correctly', () => {
++      const req = request()
++      req.originalUrl = 'http://example.com/foo'
++      assert.strictEqual(req.URL.href, 'http://example.com/foo')
++    })
 +
-+  it('should parse https absolute-form URL correctly', () => {
-+    const req = request()
-+    req.originalUrl = 'https://example.com/path?query=1'
-+    assert.strictEqual(req.URL.href, 'https://example.com/path?query=1')
-+  })
++    it('should parse https absolute-form request URLs correctly', () => {
++      const req = request()
++      req.originalUrl = 'https://example.com/bar?query=1'
++      assert.strictEqual(req.URL.href, 'https://example.com/bar?query=1')
++      assert.strictEqual(req.URL.protocol, 'https:')
++      assert.strictEqual(req.URL.hostname, 'example.com')
++      assert.strictEqual(req.URL.pathname, '/bar')
++      assert.strictEqual(req.URL.search, '?query=1')
++    })
 +
-+  it('should handle HTTP:// uppercase scheme', () => {
-+    const req = request()
-+    req.originalUrl = 'HTTP://EXAMPLE.COM/path'
-+    // URL constructor normalizes hostname to lowercase per spec
-+    assert.strictEqual(req.URL.href, 'http://example.com/path')
-+  })
++    it('should parse HTTP:// (uppercase) absolute-form URLs correctly', () => {
++      const req = request()
++      req.originalUrl = 'HTTP://example.com/path'
++      assert.strictEqual(req.URL.href, 'http://example.com/path')
++      assert.strictEqual(req.URL.protocol, 'http:')
++    })
 +
-+  it('should parse absolute-form with custom port', () => {
-+    const req = request()
-+    req.originalUrl = 'https://example.com:8443/path'
-+    assert.strictEqual(req.URL.href, 'https://example.com:8443/path')
-+  })
++    it('should parse absolute-form URLs with non-default port', () => {
++      const req = request()
++      req.originalUrl = 'https://example.com:8443/foo'
++      assert.strictEqual(req.URL.href, 'https://example.com:8443/foo')
++      assert.strictEqual(req.URL.port, '8443')
++    })
 +
-+  it('should handle matching Host header (Host already matches originalUrl)', () => {
-+    const req = request()
-+    req.originalUrl = 'http://example.com/foo/bar'
-+    req.header.host = 'example.com'
-+    assert.strictEqual(req.URL.href, 'http://example.com/foo/bar')
-+  })
++    it('should use absolute-form URL even when Host header differs', () => {
++      const req = request()
++      req.originalUrl = 'http://other.com/foo'
++      req.header.host = 'example.com'
++      assert.strictEqual(req.URL.href, 'http://other.com/foo')
++      assert.strictEqual(req.URL.hostname, 'other.com')
++    })
 +
-+  it('should handle empty Host header with absolute-form URL', () => {
-+    const req = request()
-+    req.originalUrl = 'https://example.com/path?b=10&q=20'
-+    req.header.host = ''
-+    assert.strictEqual(req.URL.href, 'https://example.com/path?b=10&q=20')
-+  })
++    it('should work with absolute-form URL and empty Host header', () => {
++      const req = request()
++      req.originalUrl = 'http://example.com/test'
++      req.header.host = ''
++      assert.strictEqual(req.URL.href, 'http://example.com/test')
++    })
 +
-+  it('should use updated originalUrl after assignment', () => {
-+    const req = request()
-+    req.originalUrl = 'http://example.com/path?q=1'
-+    req.header.host = 'example.com'
-+    assert.strictEqual(req.URL.pathname, '/path')
++    it('should preserve scheme from originalUrl', () => {
++      const reqHttp = request()
++      reqHttp.originalUrl = 'http://example.com/foo'
++      assert.strictEqual(reqHttp.URL.protocol, 'http:')
 +
-+    // After reassigning originalUrl, the memoized URL should be invalidated
-+    // since we use a new check each time (originalUrl changed)
-+    req.originalUrl = 'http://other.com/new?q=2'
-+    // Force recreation by clearing memoization
-+    delete req.memoizedURL
-+    assert.strictEqual(req.URL.href, 'http://other.com/new?q=2')
++      const reqHttps = request()
++      reqHttps.originalUrl = 'https://example.com/foo'
++      assert.strictEqual(reqHttps.URL.protocol, 'https:')
++    })
 +  })
  })
 diff --git a/lib/request.js b/lib/request.js
-index 2304501..598d5a9 100644
+index 2304501..7761cbe 100644
 --- a/lib/request.js
 +++ b/lib/request.js
-@@ -296,8 +296,18 @@ module.exports = {
-   get URL () {
-     /* istanbul ignore else */
+@@ -298,7 +298,9 @@ module.exports = {
      if (!this.memoizedURL) {
--      const originalUrl = this.originalUrl || '' // avoid undefined in template string
-+      let originalUrl = this.originalUrl || '' // avoid undefined in template string
-+      if (/^https?:\/\//i.test(originalUrl)) {
-+        try {
-+          this.memoizedURL = new URL(originalUrl)
-+          return this.memoizedURL
-+        } catch (err) {
-+          this.memoizedURL = Object.create(null)
-+          return this.memoizedURL
-+        }
-+      }
+       const originalUrl = this.originalUrl || '' // avoid undefined in template string
        try {
-+        originalUrl += '' // ensure string
-         this.memoizedURL = new URL(`${this.protocol}://${this.host}${originalUrl}`)
+-        this.memoizedURL = new URL(`${this.protocol}://${this.host}${originalUrl}`)
++        this.memoizedURL = /^https?:\/\//i.test(originalUrl)
++          ? new URL(originalUrl)
++          : new URL(`${this.protocol}://${this.host}${originalUrl}`)
        } catch (err) {
          this.memoizedURL = Object.create(null)
+       }
+@@ -586,10 +588,10 @@ module.exports = {
+   /**
+    * Return accepted charsets or best fit based on `charsets`.
+    *
+-   * Given `Accept-Charset: utf-8, iso-8859-1;q=0.2, utf-7;q=0.5`
++   * Given `Accept-Charset: utf-8, iso-88991;q=0.2, utf-7;q=0.5`
+    * an array sorted by quality is returned:
+    *
+-   *     ['utf-8', 'utf-7', 'iso-8859-1']
++   *     ['utf-8', 'utf-7', 'iso-88991']
+    *
+    * @param {String|Array} charset(s)...
+    * @return {String|Array}

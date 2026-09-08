@@ -1,0 +1,81 @@
+diff --git a/src/constant.js b/src/constant.js
+index 22d6e8a..560c6f0 100644
+--- a/src/constant.js
++++ b/src/constant.js
+@@ -26,5 +26,5 @@ export const FORMAT_DEFAULT = 'YYYY-MM-DDTHH:mm:ssZ'
+ export const INVALID_DATE_STRING = 'Invalid Date'
+ 
+ // regex
+-export const REGEX_PARSE = /^(\d{4})[-/]?(\d{1,2})?[-/]?(\d{0,2})[Tt\s]*(\d{1,2})?:?(\d{1,2})?:?(\d{1,2})?[.:]?(\d+)?$/
++export const REGEX_PARSE = /^(-?\d{4})[-/]?(\d{1,2})?[-/]?(\d{0,2})[Tt\s]*(\d{1,2})?:?(\d{1,2})?:?(\d{1,2})?[.:]?(\d+)?$/
+ export const REGEX_FORMAT = /\[([^\]]+)]|Y{1,4}|M{1,4}|D{1,2}|d{1,4}|H{1,2}|h{1,2}|a|A|m{1,2}|s{1,2}|Z{1,2}|SSS/g
+diff --git a/src/index.js b/src/index.js
+index 061ade1..e3f2cb4 100644
+--- a/src/index.js
++++ b/src/index.js
+@@ -71,10 +71,10 @@ const parseDate = (cfg) => {
+       const m = d[2] - 1 || 0
+       const ms = (d[7] || '0').substring(0, 3)
+       if (utc) {
+-        return new Date(Date.UTC(d[1], m, d[3]
++        return new Date(Date.UTC(Number(d[1]), m, d[3]
+           || 1, d[4] || 0, d[5] || 0, d[6] || 0, ms))
+       }
+-      return new Date(d[1], m, d[3]
++      return new Date(Number(d[1]), m, d[3]
+         || 1, d[4] || 0, d[5] || 0, d[6] || 0, ms)
+     }
+   }
+diff --git a/test/parse.test.js b/test/parse.test.js
+index 9f2dedf..09c7256 100644
+--- a/test/parse.test.js
++++ b/test/parse.test.js
+@@ -138,7 +138,48 @@ it('Clone with same value', () => {
+   expect(newBase.toString()).toBe(another.toString())
+ })
+ 
++describe('negative year', () => {
++  it('parses negative year as string and returns correct year value', () => {
++    const date = '-0001-01-01'
++    expect(dayjs(date).year()).toBe(-1)
++    expect(dayjs(date).isValid()).toBe(true)
++  })
++
++  it('parses negative year with time components', () => {
++    const date = '-0001-03-25T06:41:00.999'
++    expect(dayjs(date).year()).toBe(-1)
++    expect(dayjs(date).isValid()).toBe(true)
++  })
++
++  it('parses year at lower bound of native Date range', () => {
++    const date = '-271354-04-31'
++    expect(dayjs(date).year()).toBe(-271354)
++    expect(dayjs(date).isValid()).toBe(true)
++  })
++
++  it('negative year is within valid JS Date range', () => {
++    const date = '-0001'
++    // -0001 maps to a valid negative year value for JavaScript Date
++    expect(dayjs(date).isValid()).toBe(true)
++    expect(dayjs(date).year()).toBe(-1)
++  })
++
++  it('NEGATIVE year parses correctly with REGEX_PARSE', () => {
++    const date = '-0001-01-01'
++    const d = date.match(REGEX_PARSE)
++    expect(d[1]).toBe('-0001')
++    expect(Number(d[1])).toBe(-1)
++  })
++})
++
+ describe('REGEX_PARSE', () => {
++  it('negative year', () => {
++    const date = '-0001-01-01'
++    const d = date.match(REGEX_PARSE)
++    expect(d[1]).toBe('-0001')
++    expect(dayjs(date).isValid()).toBe(moment(date, 'YYYY-MM-DD').isValid())
++  })
++
+   it('2020/9/30', () => {
+     const date = '2020/9/30'
+     const d = date.match(REGEX_PARSE)

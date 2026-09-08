@@ -1,0 +1,17 @@
+diff --git a/lib/winston/container.js b/lib/winston/container.js
+index 1c6f114..5772030 100644
+--- a/lib/winston/container.js
++++ b/lib/winston/container.js
+@@ -40,7 +40,11 @@ module.exports = class Container {
+ 
+       // Remark: Make sure if we have an array of transports we slice it to
+       // make copies of those references.
+-      options.transports = existing ? existing.slice() : [];
++      if (existing) {
++        options.transports = Array.isArray(existing) ? existing.slice() : [existing];
++      } else {
++        options.transports = [];
++      }
+ 
+       const logger = createLogger(options);
+       logger.on('close', () => this._delete(id));

@@ -1,0 +1,19 @@
+diff --git a/src/plugin/timezone/index.js b/src/plugin/timezone/index.js
+index 44e78c1..94d4ad8 100644
+--- a/src/plugin/timezone/index.js
++++ b/src/plugin/timezone/index.js
+@@ -38,8 +38,13 @@ export default (o, c, d) => {
+ 
+   const makeFormatParts = (timestamp, timezone, options = {}) => {
+     const date = new Date(timestamp)
++    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return []
+     const dtf = getDateTimeFormat(timezone, options)
+-    return dtf.formatToParts(date)
++    try {
++      return dtf.formatToParts(date)
++    } catch (e) {
++      return []
++    }
+   }
+ 
+   const tzOffset = (timestamp, timezone) => {

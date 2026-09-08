@@ -1,0 +1,218 @@
+diff --git a/src/chat_module.ts b/src/chat_module.ts
+index 4cb6cf1..48a1fc6 100644
+--- a/src/chat_module.ts
++++ b/src/chat_module.ts
+@@ -285,6 +285,7 @@ export class ChatModule implements ChatInterface {
+       stop: request.stop,
+       top_p: request.top_p,
+       temperature: request.temperature,
++      logit_bias: request.logit_bias,
+     }
+ 
+     // 1. If request is streaming, return an AsyncIterable (an iterable version of `generate()`)
+diff --git a/src/config.ts b/src/config.ts
+index ca9205b..abe0a58 100644
+--- a/src/config.ts
++++ b/src/config.ts
+@@ -68,6 +68,7 @@ export interface GenerationConfig {
+   presence_penalty?: number | null;
+   stop?: string | null | Array<string>;
+   n?: number | null;
++  logit_bias?: Record<string, number> | null;
+ }
+ 
+ export function postInitAndCheckGenerationConfigValues(config: GenerationConfig): void {
+diff --git a/src/llm_chat.ts b/src/llm_chat.ts
+index fee910a..a13e663 100644
+--- a/src/llm_chat.ts
++++ b/src/llm_chat.ts
+@@ -68,6 +68,17 @@ export class LLMChatPipeline {
+   // LogitProcessor
+   private logitProcessor?: LogitProcessor = undefined;
+ 
++  // Apply logit bias from genConfig
++  private applyLogitBias(logits: Float32Array, logit_bias: Record<string, number> | null): void {
++    if (logit_bias === null || logit_bias === undefined || typeof logit_bias !== 'object') return;
++    for (const [tokenStr, bias] of Object.entries(logit_bias)) {
++      const tokenIdx = parseInt(tokenStr, 10);
++      if (!isNaN(tokenIdx) && tokenIdx >= 0 && tokenIdx < logits.length) {
++        logits[tokenIdx] += bias;
++      }
++    }
++  }
++
+   constructor(tvm: tvmjs.Instance, tokenizer: Tokenizer, config: ChatConfig, logitProcessor?: LogitProcessor) {
+     // 0. Setting attributes
+     this.tvm = tvm;
+@@ -624,12 +635,14 @@ export class LLMChatPipeline {
+     let repetition_penalty = this.config.repetition_penalty;
+     let frequency_penalty = undefined;
+     let presence_penalty = undefined;
++    let logit_bias: Record<string, number> | null = null;
+     if (genConfig !== undefined) {
+       if (_hasValue(genConfig.temperature)) { temperature = genConfig.temperature!; }
+       if (_hasValue(genConfig.top_p)) { top_p = genConfig.top_p!; }
+       if (_hasValue(genConfig.repetition_penalty)) { repetition_penalty = genConfig.repetition_penalty!; }
+       if (_hasValue(genConfig.frequency_penalty)) { frequency_penalty = genConfig.frequency_penalty!; }
+       if (_hasValue(genConfig.presence_penalty)) { presence_penalty = genConfig.presence_penalty!; }
++      if (_hasValue(genConfig.logit_bias)) { logit_bias = genConfig.logit_bias!; }
+       // If only one of frequency or presence penatly is set, make the other one 0.0
+       if (_hasValue(frequency_penalty) && !_hasValue(presence_penalty)) { presence_penalty = 0.0; }
+       if (_hasValue(presence_penalty) && !_hasValue(frequency_penalty)) { frequency_penalty = 0.0; }
+@@ -662,6 +675,13 @@ export class LLMChatPipeline {
+       this.logitsOnCPU.copyFrom(logitsOnCPUArray);
+     }
+ 
++    // 2.5. Apply logit bias (modify logits for specified tokens)
++    if (logit_bias !== null && Object.keys(logit_bias).length > 0) {
++      let logitsOnCPUArray: Float32Array = <Float32Array>(this.logitsOnCPU.toArray());
++      this.applyLogitBias(logitsOnCPUArray, logit_bias);
++      this.logitsOnCPU.copyFrom(logitsOnCPUArray);
++    }
++
+     // 3. Sample
+     if (_hasValue(frequency_penalty) && _hasValue(presence_penalty)) {
+       // 3.1. Use frequency and presence penalty
+diff --git a/src/openai_api_protocols/chat_completion.ts b/src/openai_api_protocols/chat_completion.ts
+index 00b31b2..ac81212 100644
+--- a/src/openai_api_protocols/chat_completion.ts
++++ b/src/openai_api_protocols/chat_completion.ts
+@@ -109,10 +109,11 @@ export interface ChatCompletionRequestBase {
+     model?: string | null;
+ 
+     /**
+-     *
+      * Modify the likelihood of specified tokens appearing in the completion.
+      * 
+-     * @note Not supported, see `webllm.LogitProcessor` instead.
++     * A JSON object mapping token IDs to an associated bias value ranging from -100 to 100.
++     * Positive values (e.g., 100) increase relative probabilities, negative values (e.g., -100)
++     * decrease them. The bias is applied in the sampling step rather than during forward computation.
+      */
+     logit_bias?: Record<string, number> | null;
+ 
+@@ -292,16 +293,7 @@ export interface ChatCompletionChunk {
+     system_fingerprint?: string;
+ }
+ 
+-export const ChatCompletionRequestUnsupportedFields: Array<string> = [
+-    "model",
+-    "logit_bias",
+-    "logprobs",
+-    "tool_choice",
+-    "tools",
+-    "response_format",
+-    "seed",
+-    "top_logprobs"
+-];
++
+ 
+ export function postInitAndCheckFields(request: ChatCompletionRequest): void {
+     // 1. Check unsupported fields in request
+@@ -750,6 +742,16 @@ export namespace ChatCompletion {
+     }
+ }
+ 
++export const ChatCompletionRequestUnsupportedFields: Array<string> = [
++    "model",
++    "logprobs",
++    "tool_choice",
++    "tools",
++    "response_format",
++    "seed",
++    "top_logprobs"
++];
++
+ export namespace ChatCompletionChunk {
+     export interface Choice {
+         /**
+diff --git a/tests/generation_config.test.ts b/tests/generation_config.test.ts
+index 542874f..1389d02 100644
+--- a/tests/generation_config.test.ts
++++ b/tests/generation_config.test.ts
+@@ -21,4 +21,33 @@ describe('Check generation post init', () => {
+         postInitAndCheckGenerationConfigValues(genConfig);
+         expect(genConfig.presence_penalty).toBe(0.0);
+     });
++
++    test('logit_bias is accepted in GenerationConfig', () => {
++        const genConfig: GenerationConfig = {
++            logit_bias: {
++                "1": 10,
++                "2": -5,
++                "3": 100,
++            },
++        };
++        expect(() => {
++            postInitAndCheckGenerationConfigValues(genConfig);
++        }).not.toThrow();
++    });
++
++    test('logit_bias is optional in GenerationConfig', () => {
++        const genConfig: GenerationConfig = {};
++        expect(() => {
++            postInitAndCheckGenerationConfigValues(genConfig);
++        }).not.toThrow();
++    });
++
++    test('logit_bias can be set to null', () => {
++        const genConfig: GenerationConfig = {
++            logit_bias: null,
++        };
++        expect(() => {
++            postInitAndCheckGenerationConfigValues(genConfig);
++        }).not.toThrow();
++    });
+ });
+diff --git a/tests/openai_chat_completion.test.ts b/tests/openai_chat_completion.test.ts
+index 779c65f..eed023f 100644
+--- a/tests/openai_chat_completion.test.ts
++++ b/tests/openai_chat_completion.test.ts
+@@ -115,6 +115,47 @@ describe('Check chat completion unsupported requests', () => {
+     });
+ });
+ 
++describe('Supported logit_bias', () => {
++    test('logit_bias is a supported field and does not throw postInitAndCheckFields', () => {
++        const request: ChatCompletionRequest = {
++            messages: [
++                { role: "system", content: "You are a helpful assistant." },
++                { role: "user", content: "Hello! " },
++            ],
++            logit_bias: {
++                "0": 10,
++                "1": -5,
++                "42": 100,
++            },
++        };
++        postInitAndCheckFields(request); // should not throw
++    });
++
++    test('logit_bias works with streaming request', () => {
++        const request: ChatCompletionRequest = {
++            messages: [
++                { role: "system", content: "You are a helpful assistant." },
++                { role: "user", content: "Hello! " },
++            ],
++            stream: true,
++            logit_bias: {
++                "123": 50,
++            },
++        };
++        postInitAndCheckFields(request); // should not throw
++    });
++
++    test('logit_bias is optional', () => {
++        const request: ChatCompletionRequest = {
++            messages: [
++                { role: "system", content: "You are a helpful assistant." },
++                { role: "user", content: "Hello! " },
++            ],
++        };
++        postInitAndCheckFields(request); // should not throw without logit_bias
++    });
++});
++
+ describe('Supported requests', () => {
+     test('Supproted chat completion request', () => {
+         const request: ChatCompletionRequest = {

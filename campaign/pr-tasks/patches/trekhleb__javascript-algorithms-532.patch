@@ -1,0 +1,271 @@
+diff --git a/src/algorithms/math/prime-factors/README.md b/src/algorithms/math/prime-factors/README.md
+new file mode 100644
+index 0000000..5c8bcf4
+--- /dev/null
++++ b/src/algorithms/math/prime-factors/README.md
+@@ -0,0 +1,44 @@
++# Omega function (distinct prime factors)
++
++Measures the number of distinct prime factors of a natural number n. The notation is
++
++$$\omega(n) = \text{the count of distinct primes dividing n}$$
++
++---
++
++## References
++
++- **Hardy-Ramanujan theorem**: A foundational result in analytic number theory
++  stating that for "almost all" numbers, $\omega(n)$ is close to the normal order
++  function $ \ln(\ln n) $.
++  More precisely, for every positive function ϕ(n) → ∞,
++
++  $$\left|\omega(n) - \ln(\ln n)\right| < \sqrt{\phi(n)\,\ln(\ln n)}$$
++
++  holds for all sufficiently large n except on a set of density zero.
++
++- This means the Hardy-Ramanujan estimate works as an **asymptotic normal order**
++  — it becomes tighter only for very large numbers and should not be expected to
++  match small cases exactly.
++
++## Implementation
++
++Both algorithms are exported from this directory:
++
++| File | Description |
++|---|---|
++| [`omega.js`](./omega.js) | Hardy-Ramanujan **approximate** algorithm; uses the formula `ln(ln(n)) + M` where *M* is the Meissel-Mertens constant to improve accuracy. |
++| [`omegaAccurate.js`](./omegaAccurate.js) | **Accurate** algorithm; factors n and counts each distinct prime exactly using trial division up to √n. |
++
++For numbers ≥ 2 both functions return a non-negative count:
++
++- `omegaAccurate(12)` → `2` (distinct primes: {2, 3})
++- `omega(30)` returns the approximate Hardy-Ramanujan estimate for the count.
++
++## Test suite
++
++Run tests with:
++
++```bash
++npm test
++```
+diff --git a/src/algorithms/math/prime-factors/__test__/omega.test.js b/src/algorithms/math/prime-factors/__test__/omega.test.js
+new file mode 100644
+index 0000000..f3292a6
+--- /dev/null
++++ b/src/algorithms/math/prime-factors/__test__/omega.test.js
+@@ -0,0 +1,130 @@
++import omegaApproximate from '../omega';
++import omegaAccurate from '../omegaAccurate';
++
++describe('omega (Hardy-Ramanujan approximation)', () => {
++  it.each([2, 3, 4, 5, 6, 7, 8, 9, 10])(
++    'should return a value near ln(ln(n)) + M for n=%d',
++    (n) => {
++      const actual = omegaApproximate(n);
++      const expected = parseFloat((Math.log(Math.log(n)) + 0.261497).toFixed(2));
++      // The approximation should match the theoretical estimate closely.
++      expect(actual).toBe(expected);
++    },
++  );
++
++  it('should throw for values less than 2', () => {
++    expect(() => omegaApproximate(1)).toThrow(
++      'Input must be an integer greater than or equal to 2',
++    );
++    expect(() => omegaApproximate(-5)).toThrow(
++      'Input must be an integer greater than or equal to 2',
++    );
++  });
++
++  it('should throw for non-integer values', () => {
++    expect(() => omegaApproximate(1.5)).toThrow(
++      'Input must be an integer greater than or equal to 2',
++    );
++    expect(() => omegaApproximate(-0.5)).toThrow(
++      'Input must be an integer greater than or equal to 2',
++    );
++  });
++
++  it('should handle larger inputs', () => {
++    const value = omegaApproximate(1000);
++    const expected = parseFloat((Math.log(Math.log(1000)) + 0.261497).toFixed(2));
++    expect(value).toBe(expected);
++  });
++});
++
++describe('omegaAccurate', () => {
++  it.each([
++    [2, 1],
++    [3, 1],
++    [4, 1],
++    [5, 1],
++    [6, 2],
++    [7, 1],
++    [8, 1],
++    [9, 1],
++    [10, 2],
++    [12, 2],
++    [30, 3],
++    [60, 3],
++    [210, 4],
++    [105, 3],
++    [65537, 1], // Fermat prime (known to be prime)
++    [9973, 1], // known prime near 10000
++  ])('should return the exact count of distinct prime factors for n=%d', (n, expected) => {
++    expect(omegaAccurate(n)).toBe(expected);
++  });
++
++  it('should throw for values less than 2', () => {
++    expect(() => omegaAccurate(1)).toThrow(
++      'Input must be an integer greater than or equal to 2',
++    );
++    expect(() => omegaAccurate(-5)).toThrow(
++      'Input must be an integer greater than or equal to 2',
++    );
++  });
++
++  it('should throw for non-integer values', () => {
++    expect(() => omegaAccurate(1.5)).toThrow(
++      'Input must be an integer greater than or equal to 2',
++    );
++  });
++});
++
++describe('comparison of approximate vs accurate omega', () => {
++  const testCases = [
++    // n -> accurate count, estimated error threshold for approximation
++    [2, 10],
++    [6, 15],
++    [30, 25],
++    [210, 40],
++    [2310, 60], // 2 * 3 * 5 * 7 * 11
++    [30030, 80], // 2 * 3 * 5 * 7 * 11 * 13
++  ];
++
++  it.each(testCases)(
++    'for n=%d: accurate=%d should be within ~error_threshold of the Hardy-Ramanujan estimate',
++    (n, errorThreshold) => {
++      const actual = omegaAccurate(n);
++      const approximated = parseFloat(omegaApproximate(n));
++
++      // The difference between approximate and accurate values is generally small
++      // for numbers where the approximation has meaningful magnitude.
++      // For extremely small n the approximation can be negative or zero
++      // which is expected behavior since ln(ln(n)) diverges slowly.
++      const diff = Math.abs(actual - approximated);
++
++      expect(diff).toBeLessThanOrEqual(errorThreshold + 10);
++
++      if (actual > 5) {
++        // For numbers with enough prime factors the approximation becomes
++        // tighter relative to the count.
++        const relativeError = (diff / actual) * 100;
++        expect(relativeError).toBeLessThan(60);
++      }
++    },
++  );
++
++  it('should show that both functions agree on small numbers with known factor counts', () => {
++    // These are edge cases where the approximation is not expected to be exact
++    // but we verify no errors occur.
++    const n = 12;
++    const accurate = omegaAccurate(n); // 2 (primes: 2, 3)
++    const approximated = omegaApproximate(n);
++
++    expect(accurate).toBe(2);
++    expect(approximated).toBeGreaterThan(-5); // approximation is rough for small n
++    expect(approximated).toBeLessThan(100); // sanity bound
++
++    // Verify the approximation at least gives a positive estimate near correct range
++    const n2 = 30;
++    const accurate2 = omegaAccurate(n2);
++    const approximated2 = omegaApproximate(n2);
++    expect(accurate2).toBe(3); // primes: 2, 3, 5
++    expect(approximated2).toBeGreaterThan(0);
++  });
++});
+diff --git a/src/algorithms/math/prime-factors/omega.js b/src/algorithms/math/prime-factors/omega.js
+new file mode 100644
+index 0000000..14ecec8
+--- /dev/null
++++ b/src/algorithms/math/prime-factors/omega.js
+@@ -0,0 +1,27 @@
++/**
++ * Computes an approximate count of distinct prime factors for a given natural number
++ * using Hardy-Ramanujan's theorem.
++ *
++ * The normal order function ω(n) (the number of distinct prime factors of n) satisfies:
++ *   ln(ω(n)) ~ ln(ln(n))
++ * i.e., omega(n) is close to ln(ln(n)), and most numbers have
++ * approximately ln(ln(n)) distinct prime factors.
++ *
++ * However, this theorem describes the asymptotic normal order - it does not give
++ * an exact count for any particular number. For actual values we use the estimate:
++ *   omega_approx ≈ ln(ln(n)) + M
++ * where M is the Meissel-Mertens constant (~0.261497) to improve accuracy.
++ *
++ * @param {number} n - A natural number (n >= 2).
++ * @returns {number} An estimate of the number of distinct prime factors.
++ */
++export default function omegaApproximate(n) {
++  if (!Number.isInteger(n) || n < 2) {
++    throw new Error('Input must be an integer greater than or equal to 2');
++  }
++
++  const meisselMertensConstant = 0.261497;
++  const estimatedLog = Math.log(Math.log(n)) + meisselMertensConstant;
++
++  return Math.round(estimatedLog * 100) / 100;
++}
+diff --git a/src/algorithms/math/prime-factors/omegaAccurate.js b/src/algorithms/math/prime-factors/omegaAccurate.js
+new file mode 100644
+index 0000000..e34431d
+--- /dev/null
++++ b/src/algorithms/math/prime-factors/omegaAccurate.js
+@@ -0,0 +1,46 @@
++/**
++ * Computes the exact count of distinct prime factors for a given natural number.
++ * For example:
++ *   omega(12) = 2 because 12 = 2^2 * 3 (distinct primes: {2, 3})
++ *   omega(60) = 3 because 60 = 2^2 * 3 * 5 (distinct primes: {2, 3, 5})
++ *
++ * @param {number} n - A natural number (n >= 2).
++ * @returns {number} The count of distinct prime factors.
++ */
++export default function omegaAccurate(n) {
++  if (!Number.isInteger(n) || n < 2) {
++    throw new Error('Input must be an integer greater than or equal to 2');
++  }
++
++  let number = n;
++  let count = 0;
++
++  // Count the distinct factor 2.
++  if (number % 2 === 0) {
++    count += 1;
++    while (number % 2 === 0) {
++      number = Math.floor(number / 2);
++    }
++  }
++
++  // Count odd distinct prime factors.
++  let divider = 3;
++  const limit = Math.sqrt(n);
++  while (divider <= limit) {
++    if (number % divider === 0) {
++      count += 1;
++      while (number % divider === 0) {
++        number = Math.floor(number / divider);
++      }
++      // No need to update divider since we only count distinct factors.
++    }
++    divider += 2;
++  }
++
++  // If number > 1, then the remaining number itself is a distinct prime factor.
++  if (number > 1) {
++    count += 1;
++  }
++
++  return count;
++}

@@ -1,0 +1,104 @@
+diff --git a/source/features/extend-conversation-status-filters.tsx b/source/features/extend-conversation-status-filters.tsx
+index e3cb912e..aae42cbc 100644
+--- a/source/features/extend-conversation-status-filters.tsx
++++ b/source/features/extend-conversation-status-filters.tsx
+@@ -36,7 +36,7 @@ function addMergeLink(lastLink: HTMLAnchorElement): void {
+ 	const mergeLink = lastLink.cloneNode(true);
+ 	mergeLink.textContent = 'Merged';
+ 	mergeLink.classList.toggle('selected', isMerged);
+-	mergeLink.href = SearchQuery.from(mergeLink).replace('is:closed', 'is:merged').href;
++	mergeLink.href = SearchQuery.from(mergeLink).replace(/is:closed|state:closed/, 'is:merged').href;
+ 	lastLink.after(' ', mergeLink);
+ }
+ 
+@@ -55,6 +55,8 @@ function removeAllFilters(link: HTMLAnchorElement): void {
+ 				'is:closed',
+ 				'is:merged',
+ 				'is:unmerged',
++				'state:open',
++				'state:closed',
+ 			)
+ 			.href;
+ 	}
+diff --git a/source/github-helpers/search-query.test.ts b/source/github-helpers/search-query.test.ts
+index 382b3a42..ce9bb285 100644
+--- a/source/github-helpers/search-query.test.ts
++++ b/source/github-helpers/search-query.test.ts
+@@ -74,7 +74,7 @@ test('defaults', () => {
+ 	const link = document.createElement('a');
+ 	link.href = 'https://github.com/owner/repo/issues';
+ 	const queryFromLink = SearchQuery.from(link);
+-	assert.equal(queryFromLink.get(), 'is:issue is:open');
++	assert.equal(queryFromLink.get(), 'is:issue state:open');
+ });
+ 
+ test('deduplicate is:pr/issue', () => {
+@@ -95,7 +95,7 @@ test('parse label link', () => {
+ 	link.href = 'https://github.com/owner/repo/labels/bug';
+ 	const query = SearchQuery.from(link);
+ 
+-	assert.equal(query.get(), 'is:open label:bug');
++	assert.equal(query.get(), 'state:open label:bug');
+ 	assert.isTrue(query.href.startsWith('https://github.com/owner/repo/issues?'));
+ });
+ 
+diff --git a/source/github-helpers/search-query.ts b/source/github-helpers/search-query.ts
+index e857830f..d7cb1aff 100644
+--- a/source/github-helpers/search-query.ts
++++ b/source/github-helpers/search-query.ts
+@@ -64,7 +64,7 @@ export default class SearchQuery {
+ 		// Parse label links #5176
+ 		const labelName = labelLinkRegex.exec(this.url.pathname)?.[1];
+ 		if (labelName) {
+-			this.queryParts = ['is:open', 'label:' + SearchQuery.escapeValue(decodeURIComponent(labelName))];
++			this.queryParts = ['state:open', 'label:' + SearchQuery.escapeValue(decodeURIComponent(labelName))];
+ 			return;
+ 		}
+ 
+@@ -72,7 +72,7 @@ export default class SearchQuery {
+ 		// When we explicitly set ?q=* they're overridden, so they need to be manually added again.
+ 
+ 		// Repo example: is:issue is:open
+-		this.queryParts.push(/\/pulls\/?$/.test(this.url.pathname) ? 'is:pr' : 'is:issue', 'is:open');
++		this.queryParts.push(/\/pulls\/?$/.test(this.url.pathname) ? 'is:pr' : 'is:issue', 'state:open');
+ 
+ 		// Header nav example: is:open is:issue author:you archived:false
+ 		if (this.url.pathname === '/issues' || this.url.pathname === '/pulls') {
+diff --git a/source/helpers/rgh-links.test.ts b/source/helpers/rgh-links.test.ts
+index 3dfcc87b..8ead6aa3 100644
+--- a/source/helpers/rgh-links.test.ts
++++ b/source/helpers/rgh-links.test.ts
+@@ -3,10 +3,10 @@ import {assert, test} from 'vitest';
+ import {getFeatureRelatedIssuesQuery, getFeatureRelatedIssuesUrl} from './rgh-links.js';
+ 
+ test('getFeatureRelatedIssuesQuery', () => {
+-	assert.equal(getFeatureRelatedIssuesQuery('comment-excess'), 'is:open "comment-excess"');
++	assert.equal(getFeatureRelatedIssuesQuery('comment-excess'), 'state:open "comment-excess"');
+ 	assert.equal(
+ 		getFeatureRelatedIssuesQuery('closing-remarks'),
+-		'is:open ("closing-remarks" OR "first-published-tag-for-merged-pr")',
++		'state:open ("closing-remarks" OR "first-published-tag-for-merged-pr")',
+ 	);
+ });
+ 
+@@ -16,6 +16,6 @@ test('getFeatureRelatedIssuesUrl', () => {
+ 	assert.equal(url.pathname, '/refined-github/refined-github/issues');
+ 	assert.equal(
+ 		url.searchParams.get('q'),
+-		'is:open ("closing-remarks" OR "first-published-tag-for-merged-pr")',
++		'state:open ("closing-remarks" OR "first-published-tag-for-merged-pr")',
+ 	);
+ });
+diff --git a/source/helpers/rgh-links.tsx b/source/helpers/rgh-links.tsx
+index e770a371..2b176dbe 100644
+--- a/source/helpers/rgh-links.tsx
++++ b/source/helpers/rgh-links.tsx
+@@ -25,7 +25,7 @@ export function getFeatureRelatedIssuesQuery(id: string): string {
+ 	const oldNames = getOldFeatureNames(id);
+ 	const searchTerms = [id, ...oldNames].map(name => `"${name}"`);
+ 	const joinedTerms = searchTerms.length > 1 ? `(${searchTerms.join(' OR ')})` : searchTerms[0];
+-	return `is:open ${joinedTerms}`;
++	return `state:open ${joinedTerms}`;
+ }
+ 
+ export function getFeatureRelatedIssuesUrl(id: string): URL {

@@ -1,0 +1,41 @@
+diff --git a/src/plugin/minMax/index.js b/src/plugin/minMax/index.js
+index f515c60..2639960 100644
+--- a/src/plugin/minMax/index.js
++++ b/src/plugin/minMax/index.js
+@@ -1,16 +1,25 @@
+ export default (o, c, d) => {
+   const sortBy = (method, dates) => {
+-    if (!dates || !dates.length || !dates[0] || (dates.length === 1 && !dates[0].length)) {
++    if (!dates || !dates.length) {
+       return null
+     }
+-    if (dates.length === 1 && dates[0].length > 0) {
++
++    // Flatten: extract inner array if a single array argument is provided
++    if (dates.length === 1 && Array.isArray(dates[0])) {
+       [dates] = dates
+     }
++
++    // Filter out null/undefined entries so comparison doesn't throw TypeError
++    const validDates = dates.filter(date => date != null)
++    if (!validDates.length) {
++      return null
++    }
++
+     let result
+-    [result] = dates
+-    for (let i = 1; i < dates.length; i += 1) {
+-      if (!dates[i].isValid() || dates[i][method](result)) {
+-        result = dates[i]
++    [result] = validDates
++    for (let i = 1; i < validDates.length; i += 1) {
++      if (!validDates[i].isValid() || validDates[i][method](result)) {
++        result = validDates[i]
+       }
+     }
+     return result
+@@ -25,4 +34,3 @@ export default (o, c, d) => {
+     return sortBy('isBefore', args)
+   }
+ }
+-

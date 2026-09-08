@@ -1,0 +1,316 @@
+diff --git a/README.md b/README.md
+index 9994971..1b8ceeb 100644
+--- a/README.md
++++ b/README.md
+@@ -143,6 +143,7 @@ a set of rules that precisely define a sequence of operations.
+   * `B` [Caesar Cipher](src/algorithms/cryptography/caesar-cipher) - simple substitution cipher
+ * **Machine Learning**
+   * `B` [NanoNeuron](https://github.com/trekhleb/nano-neuron) - 7 simple JS functions that illustrate how machines can actually learn (forward/backward propagation)
++  * `B` [K Nearest Neighbor](src/algorithms/ml/k-nearest-neighbor) - classification algorithm based on finding the k closest training examples
+ * **Uncategorized**
+   * `B` [Tower of Hanoi](src/algorithms/uncategorized/hanoi-tower)
+   * `B` [Square Matrix Rotation](src/algorithms/uncategorized/square-matrix-rotation) - in-place algorithm
+diff --git a/src/algorithms/ml/k-nearest-neighbor/README.md b/src/algorithms/ml/k-nearest-neighbor/README.md
+new file mode 100644
+index 0000000..b7d17d4
+--- /dev/null
++++ b/src/algorithms/ml/k-nearest-neighbor/README.md
+@@ -0,0 +1,62 @@
++# K Nearest Neighbor (KNN)
++
++The K Nearest Neighbor (KNN) algorithm is one of the simplest and most widely used **classification** techniques in machine learning. It was introduced by Thomas Cover and Peter Hart in 1967. The core idea is: **"nearby points share similar labels."**
++
++## How It Works
++
++Given a set of labeled training data, KNN classifies a new data point by:
++
++1. **Computing distances** between the new point and every point in the training data (using Euclidean distance).
++2. **Selecting the k closest** training points (the "k nearest neighbors").
++3. **Counting votes** — each neighbor "votes" for its label.
++4. **Assigning the majority label** as the prediction for the new point.
++
++### Example
++
++Suppose we have the following training data:
++
++|   x  |   y  | Label |
++|------|------|-------|
++|  1   |  1   | A     |
++|  2   |  1   | A     |
++|  3   |  4   | B     |
++|  4   |  5   | B     |
++
++If we want to classify a new point at `(2.5, 3)` with **k=3**:
++
++1. Compute distances from `(2.5, 3)` to each training point:
++   - Distance A(1, 1): `√(6.25 + 4) = √10.25 ≈ 3.20`
++   - Distance A(2, 1): `√(0.25 + 4) = √4.25 ≈ 2.06`
++   - Distance B(3, 4): `√(0.25 + 1) = √1.25 ≈ 1.12`
++   - Distance B(4, 5): `√(2.25 + 4) = √6.25 ≈ 2.50`
++
++2. The 3 nearest neighbors are: **B(3,4)**, **A(2,1)**, and **B(4,5)** — wait, let me re-sort: (3,4)=1.12, (2,1)=2.06, (4,5)=2.50
++
++3. Votes: A=1, B=2 → **Classified as B**
++
++*(Note: With these exact numbers the nearest neighbors for k=3 would be B(3,4), then A(2,1) at 2.06, then B(4,5) at 2.50 — that gives B voting twice and A once, so the prediction is **B**.)*
++
++## Complexity
++
++**Time Complexity**: `O(n × d)` per prediction where:
++- `n` = number of training instances
++- `d` = number of features/dimensions
++
++Distance computation takes `O(d)`, done for each of `n` points. Sorting the `n` distances adds another `O(n log n)`.
++
++**Space Complexity**: `O(n)` to store the training data and distance array.
++
++KNN is a **lazy learner** — it stores all training data and defers computation until classification time, meaning training has **O(1)** complexity while prediction cost grows with data size.
++
++## Choosing k
++
++- **Small k** (e.g., k=1): Model is sensitive to noise and outliers (low bias, high variance).
++- **Large k**: Smooths decision boundaries but may include irrelevant points (high bias, low variance).
++- A common heuristic: `k = √n` where n is training set size.
++- **k should be odd** for binary classification to avoid ties.
++
++## References
++
++- [Wikipedia - K-Nearest Neighbors algorithm](https://en.wikipedia.org/wiki/K-nearest_neighbors_algorithm)
++- [Coursera - Machine Learning (Andrew Ng)](https://www.coursera.org/learn/machine-learning)
++- [Understanding KNN — towardsdatascience.com](https://towardsdatascience.com/understanding-the-k-nearest-neighbors-algorithm-3a037346aab7)
+diff --git a/src/algorithms/ml/k-nearest-neighbor/__test__/knn.test.js b/src/algorithms/ml/k-nearest-neighbor/__test__/knn.test.js
+new file mode 100644
+index 0000000..0e2644e
+--- /dev/null
++++ b/src/algorithms/ml/k-nearest-neighbor/__test__/knn.test.js
+@@ -0,0 +1,153 @@
++import knn from '../knn';
++
++describe('knn', () => {
++  const trainData2D = [
++    { x: 1, y: 1, label: 'A' },
++    { x: 2, y: 1, label: 'A' },
++    { x: 3, y: 4, label: 'B' },
++    { x: 4, y: 5, label: 'B' },
++  ];
++
++  describe('with k=1', () => {
++    it('should classify a point close to class A', () => {
++      const result = knn(trainData2D, { x: 1.5, y: 0.8 }, 1);
++      expect(result).toBe('A');
++    });
++
++    it('should classify a point close to class B', () => {
++      const result = knn(trainData2D, { x: 3.2, y: 4.8 }, 1);
++      expect(result).toBe('B');
++    });
++  });
++
++  describe('with k=3', () => {
++    it('should classify based on majority vote from 3 nearest neighbors', () => {
++      const result = knn(trainData2D, { x: 1.5, y: 0.8 }, 3);
++      expect(result).toBe('A');
++    });
++
++    it('should classify a point closer to B cluster with majority of B votes', () => {
++      const result = knn(trainData2D, { x: 3.5, y: 4.5 }, 3);
++      expect(result).toBe('B');
++    });
++
++    it('should use the 3rd nearest for majority vote with more B votes', () => {
++      const point = { x: 2.6, y: 3 };
++      // Distances: A(1,1)~2.56, A(2,1)~2.09, B(3,4)~1.08, B(4,5)~2.44
++      // Top 3: B(3,4), A(2,1), B(4,5) -> votes: B=2, A=1 => majority is B
++      const result = knn(trainData2D, point, 3);
++      expect(result).toBe('B');
++    });
++  });
++
++  describe('with k=2', () => {
++    it('should handle tie case (equal votes)', () => {
++      const tiedTrain = [
++        { x: 0, y: 0, label: 'A' },
++        { x: 10, y: 10, label: 'B' },
++      ];
++      // Point at (5,5) is equidistant to both neighbors -> tie
++      const result = knn(tiedTrain, { x: 5, y: 5 }, 2);
++      expect(['A', 'B']).toContain(result);
++    });
++  });
++
++  describe('with k equal to training set size', () => {
++    it('should consider all training instances for majority vote', () => {
++      const simpleTrain = [
++        { x: 1, y: 1, label: 'A' },
++        { x: 2, y: 1, label: 'A' },
++        { x: 3, y: 4, label: 'B' },
++      ];
++      // Majority is A (2 vs 1) regardless of input point position
++      const result = knn(simpleTrain, { x: 50, y: 50 }, 3);
++      expect(result).toBe('A');
++    });
++
++    it('should return B when majority is B with same k', () => {
++      const simpleTrain = [
++        { x: 1, label: 'A' },
++        { x: 2, label: 'B' },
++        { x: 3, label: 'B' },
++      ];
++      const result = knn(simpleTrain, { x: 50 }, 3);
++      expect(result).toBe('B');
++    });
++  });
++
++  describe('edge cases', () => {
++    it('should handle a single training instance', () => {
++      const singleTrain = [
++        { x: 5, label: 'A' },
++      ];
++      const result = knn(singleTrain, { x: 6 }, 1);
++      expect(result).toBe('A');
++    });
++
++    it('should work with labels that are numbers', () => {
++      const numericLabelTrain = [
++        { x: 0,
++          label: 0 },
++        { x: 5,
++          label: 1 }];
++      // Nearest to (1) is (0) which has label 0. JS object keys are strings, so result is '0'.
++      const result = knn(numericLabelTrain, { x: 1 }, 1);
++      expect(result).toBe('0');
++    });
++
++    it('should work with higher dimensional data (3D)', () => {
++      const train3D = [
++        { x: 0, y: 0, z: 0, label: 'A' },
++        { x: 10, y: 10, z: 10, label: 'B' },
++      ];
++      const result = knn(train3D, { x: 1, y: 1, z: 1 }, 1);
++      expect(result).toBe('A');
++    });
++
++    it('should throw error for k less than 1', () => {
++      expect(() => knn(trainData2D, { x: 0, y: 0 }, 0)).toThrow();
++      expect(() => knn(trainData2D, { x: 0, y: 0 }, -1)).toThrow();
++    });
++
++    it('should throw error for empty training data', () => {
++      expect(() => knn([], { x: 0, y: 0 }, 1)).toThrow();
++    });
++
++    it('should throw error for null training data', () => {
++      expect(() => knn(null, { x: 0, y: 0 }, 1)).toThrow();
++    });
++
++    it('should throw error for undefined training data', () => {
++      expect(() => knn(undefined, { x: 0, y: 0 }, 1)).toThrow();
++    });
++
++    it('should throw error for null newPoint', () => {
++      expect(() => knn(trainData2D, null, 1)).toThrow();
++    });
++
++    it('should throw error for undefined newPoint', () => {
++      expect(() => knn(trainData2D, undefined, 1)).toThrow();
++    });
++
++    it('should throw error for number as newPoint', () => {
++      // typeof 5 is 'number', not 'object' (for primitives)
++      expect(() => knn(trainData2D, 5, 1)).toThrow();
++    });
++
++    it('should throw error for string newPoint', () => {
++      expect(() => knn(trainData2D, 'five', 1)).toThrow();
++    });
++  });
++
++  describe('multiple feature dimensions', () => {
++    it('should correctly compute distance across multiple features', () => {
++      const trainMultiFeat = [
++        { a: 1, b: 2, label: 'A' },
++        { a: 5, b: 6, label: 'B' },
++      ];
++      // Point closer to (1,2) in euclidean distance
++      const result = knn(trainMultiFeat, { a: 2, b: 3 }, 1);
++      expect(result).toBe('A');
++    });
++  });
++});
+diff --git a/src/algorithms/ml/k-nearest-neighbor/knn.js b/src/algorithms/ml/k-nearest-neighbor/knn.js
+new file mode 100644
+index 0000000..63dcec4
+--- /dev/null
++++ b/src/algorithms/ml/k-nearest-neighbor/knn.js
+@@ -0,0 +1,71 @@
++/**
++ * K Nearest Neighbor (KNN) classifier implementation.
++ *
++ * @param {Array} trainData - Array of training instances, each with features and a label.
++ *   Each instance must have a `label` property and feature properties ({ x, y }, etc.).
++ * @param {Object} newPoint - The data point to classify. Contains feature properties.
++ * @param {number} k - Number of nearest neighbors to consider. Must be >= 1.
++ * @return {string} - The predicted label for the new point.
++ */
++
++export default function knn(trainData, newPoint, k) {
++  // Validate inputs
++  if (!Array.isArray(trainData) || trainData.length === 0) {
++    throw new Error('Training data must be a non-empty array');
++  }
++
++  if (!newPoint || typeof newPoint !== 'object') {
++    throw new Error('New point must be a non-null object');
++  }
++
++  if (k < 1) {
++    throw new Error('k must be at least 1');
++  }
++
++  // Find all features (property keys that are not 'label')
++  const features = Object.keys(trainData[0]).filter((key) => key !== 'label');
++
++  // Helper function: compute Euclidean distance between two points
++  function computeDistance(a, b) {
++    let sum = 0;
++    for (let i = 0; i < features.length; i += 1) {
++      const diff = a[features[i]] - b[features[i]];
++      sum += diff * diff;
++    }
++    return Math.sqrt(sum);
++  }
++
++  // Compute distances from newPoint to all training instances
++  const distances = trainData.map((point) => ({
++    distance: computeDistance(newPoint, point),
++    label: point.label,
++  }));
++
++  // Sort by distance (ascending) and take the k nearest neighbors
++  distances.sort((a, b) => a.distance - b.distance);
++  const nearestNeighbors = distances.slice(0, k);
++
++  // Count votes for each label
++  const votes = {};
++  nearestNeighbors.forEach((neighbor) => {
++    if (Object.prototype.hasOwnProperty.call(votes, neighbor.label)) {
++      votes[neighbor.label] += 1;
++    } else {
++      votes[neighbor.label] = 1;
++    }
++  });
++
++  // Find the label with the maximum vote
++  let maxVotes = 0;
++  let predictedLabel = null;
++
++  const labels = Object.keys(votes);
++  for (let i = 0; i < labels.length; i += 1) {
++    if (votes[labels[i]] > maxVotes) {
++      maxVotes = votes[labels[i]];
++      predictedLabel = labels[i];
++    }
++  }
++
++  return predictedLabel;
++}

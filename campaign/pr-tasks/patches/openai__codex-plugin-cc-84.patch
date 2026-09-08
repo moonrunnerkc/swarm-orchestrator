@@ -1,0 +1,20 @@
+diff --git a/plugins/codex/scripts/lib/job-control.mjs b/plugins/codex/scripts/lib/job-control.mjs
+index 74ba7f7..a7efc49 100644
+--- a/plugins/codex/scripts/lib/job-control.mjs
++++ b/plugins/codex/scripts/lib/job-control.mjs
+@@ -291,10 +291,12 @@ export function resolveCancelableJob(cwd, reference) {
+     return { workspaceRoot, job: selected };
+   }
+ 
+-  if (activeJobs.length === 1) {
+-    return { workspaceRoot, job: activeJobs[0] };
++  const sessionActiveJobs = filterJobsForCurrentSession(activeJobs);
++
++  if (sessionActiveJobs.length === 1) {
++    return { workspaceRoot, job: sessionActiveJobs[0] };
+   }
+-  if (activeJobs.length > 1) {
++  if (sessionActiveJobs.length > 1) {
+     throw new Error("Multiple Codex jobs are active. Pass a job id to /codex:cancel.");
+   }
+ 

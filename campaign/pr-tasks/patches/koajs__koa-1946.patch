@@ -1,0 +1,56 @@
+diff --git a/lib/application.js b/lib/application.js
+index cd65044..5bdba55 100644
+--- a/lib/application.js
++++ b/lib/application.js
+@@ -8,6 +8,7 @@ const debug = util.debuglog('koa:application')
+ const Emitter = require('node:events')
+ const Stream = require('node:stream')
+ const http = require('node:http')
++const v8 = require('node:v8')
+ const { AsyncLocalStorage } = require('node:async_hooks')
+ 
+ const onFinished = require('on-finished')
+@@ -81,10 +82,12 @@ module.exports = class Application extends Emitter {
+       this[util.inspect.custom] = this.inspect
+     }
+     if (options.asyncLocalStorage) {
+-      if (options.asyncLocalStorage instanceof AsyncLocalStorage) {
+-        this.ctxStorage = options.asyncLocalStorage
+-      } else {
+-        this.ctxStorage = new AsyncLocalStorage()
++      this.ctxStorage = getAsyncLocalStorage(options)
++      // If creation was deferred during snapshot building, register callback for after deserialization
++      if (this.ctxStorage === null) {
++        v8.startupSnapshot.addDeserializeCallback((data) => {
++          data.ctxStorage = new AsyncLocalStorage()
++        }, this)
+       }
+     }
+   }
+@@ -250,6 +253,26 @@ module.exports = class Application extends Emitter {
+   }
+ }
+ 
++/**
++ * Helper to get or create an AsyncLocalStorage instance.
++ * Defers creation during v8 startup snapshot building to avoid errors,
++ * returning null to signal that a deserialization callback should be registered instead.
++ *
++ * @param {object} options Application options
++ * @returns {AsyncLocalStorage|null} The AsyncLocalStorage instance, or null if deferred for snapshot
++ */
++
++function getAsyncLocalStorage (options) {
++  // Defer creation when building a v8 startup snapshot
++  if (v8.startupSnapshot.isBuildingSnapshot()) {
++    return null
++  }
++  if (options.asyncLocalStorage instanceof AsyncLocalStorage) {
++    return options.asyncLocalStorage
++  }
++  return new AsyncLocalStorage()
++}
++
+ /**
+  * Response helper.
+  */

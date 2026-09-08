@@ -1,0 +1,76 @@
+diff --git a/lib/command.js b/lib/command.js
+index 7e568df..a6783a8 100644
+--- a/lib/command.js
++++ b/lib/command.js
+@@ -75,6 +75,9 @@ class Command extends EventEmitter {
+     /** @type {Command} */
+     this._helpCommand = undefined; // lazy initialised, inherited
+     this._helpConfiguration = {};
++
++    /** @type {Option} */
++    this._helpOption = null;
+   }
+ 
+   /**
+@@ -94,6 +97,7 @@ class Command extends EventEmitter {
+     this._helpLongFlag = sourceCommand._helpLongFlag;
+     this._helpCommand = sourceCommand._helpCommand;
+     this._helpConfiguration = sourceCommand._helpConfiguration;
++    this._helpOption = sourceCommand._helpOption;
+     this._exitCallback = sourceCommand._exitCallback;
+     this._storeOptionsAsProperties = sourceCommand._storeOptionsAsProperties;
+     this._combineFlagAndOptionalValue = sourceCommand._combineFlagAndOptionalValue;
+@@ -2151,6 +2155,37 @@ Expecting one of '${allowedValues.join("', '")}'`);
+     this._helpShortFlag = helpFlags.shortFlag;
+     this._helpLongFlag = helpFlags.longFlag;
+ 
++    // Create a synthetic Option to hold the help option properties.
++    this._helpOption = this.createOption(this._helpFlags, this._helpDescription);
++
++    return this;
++  }
++
++  /**
++   * Add a custom help option that will be displayed with the built-in help
++   * and recognized as a help flag when invoked on the command line.
++   *
++   * @param {Option} option
++   * @return {Command} `this` command for chaining
++   */
++
++  addHelpOption(option) {
++    if (option === undefined || option.flags === false) {
++      this._hasHelpOption = false;
++      this._helpOption = null;
++      return this;
++    }
++    this._hasHelpOption = true;
++    this._helpFlags = option.flags;
++    this._helpDescription = option.description;
++
++    const helpFlags = splitOptionFlags(option.flags);
++    this._helpShortFlag = helpFlags.shortFlag;
++    this._helpLongFlag = helpFlags.longFlag;
++
++    // Use the provided option itself, or a copy for backwards compat with createOption.
++    this._helpOption = option;
++
+     return this;
+   }
+ 
+diff --git a/lib/help.js b/lib/help.js
+index 586bad8..64829bb 100644
+--- a/lib/help.js
++++ b/lib/help.js
+@@ -68,7 +68,10 @@ class Help {
+     const showLongHelpFlag = cmd._hasHelpOption && !cmd._findOption(cmd._helpLongFlag);
+     if (showShortHelpFlag || showLongHelpFlag) {
+       let helpOption;
+-      if (!showShortHelpFlag) {
++      // Use the stored _helpOption (via addHelpOption) if it exists, otherwise create one.
++      if (cmd._helpOption) {
++        helpOption = cmd._helpOption;
++      } else if (!showShortHelpFlag) {
+         helpOption = cmd.createOption(cmd._helpLongFlag, cmd._helpDescription);
+       } else if (!showLongHelpFlag) {
+         helpOption = cmd.createOption(cmd._helpShortFlag, cmd._helpDescription);

@@ -1,59 +1,55 @@
 diff --git a/__tests__/request/length.test.js b/__tests__/request/length.test.js
-index 0dea3b8..d299f6e 100644
+index 0dea3b8..d4cca52 100644
 --- a/__tests__/request/length.test.js
 +++ b/__tests__/request/length.test.js
-@@ -15,4 +15,40 @@ describe('ctx.length', () => {
+@@ -1,8 +1,8 @@
+ 'use strict'
+ 
++const assert = require('node:assert/strict')
+ const { describe, it } = require('node:test')
+ const request = require('../../test-helpers/context').request
+-const assert = require('node:assert/strict')
+ 
+ describe('ctx.length', () => {
+   it('should return length in content-length', () => {
+@@ -15,4 +15,27 @@ describe('ctx.length', () => {
      const req = request()
      assert.strictEqual(req.length, undefined)
    })
 +
-+  it('should handle zero Content-Length', () => {
++  it('should return length with zero content-length', () => {
 +    const req = request()
 +    req.header['content-length'] = '0'
 +    assert.strictEqual(req.length, 0)
 +  })
 +
-+  it('should handle Content-Length exactly at the 32-bit signed integer max', () => {
++  it('should not overflow for Content-Length > 2GB', () => {
++    // 3GB in bytes = 3_221_225_472
 +    const req = request()
-+    req.header['content-length'] = '2147483647'
-+    assert.strictEqual(req.length, 2147483647)
-+  })
++    req.header['content-length'] = '3221225472'
++    assert.strictEqual(req.length, 3221225472)
 +
-+  it('should handle Content-Length exceeding the 32-bit signed integer max', () => {
-+    const req = request()
-+    req.header['content-length'] = '2147483648'
-+    assert.strictEqual(req.length, 2147483648)
-+  })
++    // The overflow boundary: ~~(2147483648) === -2147483648
++    const req2 = request()
++    req2.header['content-length'] = '2147483648'
++    assert.strictEqual(req2.length, 2147483648)
 +
-+  it('should handle large Content-Length values', () => {
-+    const req = request()
-+    req.header['content-length'] = '4000000000'
-+    assert.strictEqual(req.length, 4000000000)
-+  })
-+
-+  it('should return undefined for unparseable Content-Length', () => {
-+    const req = request()
-+    req.header['content-length'] = 'abc'
-+    assert.strictEqual(req.length, undefined)
-+  })
-+
-+  it('should return undefined for empty string Content-Length', () => {
-+    const req = request()
-+    req.header['content-length'] = ''
-+    assert.strictEqual(req.length, undefined)
++    // Just above the overflow boundary
++    const req3 = request()
++    req3.header['content-length'] = '2147483649'
++    assert.strictEqual(req3.length, 2147483649)
 +  })
  })
 diff --git a/lib/request.js b/lib/request.js
-index 7860c40..c51ab66 100644
+index 7860c40..c7457e3 100644
 --- a/lib/request.js
 +++ b/lib/request.js
-@@ -392,7 +392,8 @@ module.exports = {
+@@ -392,7 +392,7 @@ module.exports = {
    get length () {
      const len = this.get('Content-Length')
      if (len === '') return
 -    return ~~len
-+    const parsed = Number.parseInt(len, 10)
-+    return isNaN(parsed) ? undefined : parsed
++    return Number.parseInt(len, 10)
    },
  
    /**

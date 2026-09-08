@@ -1,0 +1,14 @@
+diff --git a/src/plugin/timezone/index.js b/src/plugin/timezone/index.js
+index bcacf9a..5f70011 100644
+--- a/src/plugin/timezone/index.js
++++ b/src/plugin/timezone/index.js
+@@ -96,8 +96,7 @@ export default (o, c, d) => {
+     const oldOffset = this.utcOffset()
+     const date = this.toDate()
+     const target = date.toLocaleString('en-US', { timeZone: timezone })
+-    const diff = Math.round((date - new Date(target)) / 1000 / 60)
+-    const offset = (-Math.round(date.getTimezoneOffset() / 15) * 15) - diff
++    const offset = tzOffset(+this, timezone)
+     const isUTC = !Number(offset)
+     let ins
+     if (isUTC) { // if utcOffset is 0, turn it to UTC mode

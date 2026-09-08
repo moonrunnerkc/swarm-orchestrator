@@ -1,5 +1,5 @@
 {
-  "at": "2026-09-07T03:39:30.646Z",
+  "at": "2026-09-07T22:52:20.253Z",
   "tasks": [
     {
       "repository": "trekhleb/javascript-algorithms",
@@ -58,89 +58,6 @@
       "why": "fails on the base source, passes on the merged tree",
       "baseCommit": "ca3d16dcce7a493ae12c03ca20ede4fd7801f7a2",
       "runner": "npx jest --ci src/algorithms/stack/valid-parentheses/__test__/validParentheses.test.js"
-    },
-    {
-      "repository": "iamkun/dayjs",
-      "cloneUrl": "https://github.com/iamkun/dayjs.git",
-      "pull": 3180,
-      "mergeCommit": "dad46e6fe5198d77d87ed3b121937f77adaee0a6",
-      "taskText": "fix(plugin/timezone): prevent RangeError for invalid Day.js values. Add early-return guards in proto.tz and d.tz so that invalid dates return an invalid Day.js instance instead of throwing when Intl.DateTimeFormat.formatToParts receives an invalid Date. Regression introduced in 1.11.22 by e27ee80. fix",
-      "testFile": "test/plugin/timezone.test.js",
-      "sourceFiles": [
-        "src/plugin/timezone/index.js"
-      ],
-      "changedLines": 18,
-      "sealedCases": [
-        "does not throw for invalid Day.js values (regression #111.22)"
-      ],
-      "heldBackCases": [
-        "does not throw for invalid string in d.tz()"
-      ],
-      "viable": false,
-      "why": "the added tests do not pass on the merged tree either, so the target is unclear",
-      "baseCommit": "ae3a55025cdf0f06c8705b5e8b61cd4edb33697a",
-      "runner": "npx jest --ci test/plugin/timezone.test.js"
-    },
-    {
-      "repository": "iamkun/dayjs",
-      "cloneUrl": "https://github.com/iamkun/dayjs.git",
-      "pull": 3181,
-      "mergeCommit": "2a3785fd27084d6bb78dfe8c3d7320c736ef4862",
-      "taskText": "D2M. …lues (#3180) Add early-return guards in proto.tz and d.tz so that invalid dates return an invalid Day.js instance instead of throwing when Intl.DateTimeFormat.formatToParts receives an invalid Date. Regression introduced in 1.11.22 by e27ee80.",
-      "testFile": "test/plugin/timezone.test.js",
-      "sourceFiles": [
-        "src/plugin/timezone/index.js"
-      ],
-      "changedLines": 18,
-      "sealedCases": [
-        "does not throw for invalid Day.js values (regression #111.22)"
-      ],
-      "heldBackCases": [
-        "does not throw for invalid string in d.tz()"
-      ],
-      "viable": false,
-      "why": "the added tests do not pass on the merged tree either, so the target is unclear",
-      "baseCommit": "ae3a55025cdf0f06c8705b5e8b61cd4edb33697a",
-      "runner": "npx jest --ci test/plugin/timezone.test.js"
-    },
-    {
-      "repository": "iamkun/dayjs",
-      "cloneUrl": "https://github.com/iamkun/dayjs.git",
-      "pull": 3174,
-      "mergeCommit": "e27ee8021a512b5770ffe683e010830bb9b6fb6d",
-      "taskText": "fix(timezone): compute instance .tz() offset without host DST. ## Summary Fixes incorrect timezone offsets when converting an instant with instance `.tz()` on a host that observes DST. This is the **minimal** follow-up to #3169, as requested by @iamkun: only the original `tzOffset()` change in `proto.tz`, no wall-clock / `set` / `add` / `startOf` refactor. **Bug:** `America/Guadeloupe` is a fixed UTC−4 zone (no DST). On hosts such as `Europe/Paris` or `Europe/London`, around the EU spring-forward Sunday, `dayjs(instant).tz('America/Guadeloupe')` could report **−03:00** instead of **−04:00**. Adding one day and converting again could then land on the **same calendar day**. The same host-DST leak also affects DST-observing target zones when their calendar is out of sync with the host (US vs EU mid-March / late October, southern-hemisphere summer). **Root cause:** `proto.tz` derived the offset from: Both `new Date(target)` and `getTimezoneOffset()` depend on the **host** timezone. The static helper `dayjs.tz(string, zone)` already used `tzOffset` via `Intl.DateTimeFormat#formatToParts` (host-independent). Instance `.tz()` did not. **Fix:** reuse the existing `tzOffset(+date, timezone)",
-      "testFile": "test/plugin/timezone.test.js",
-      "sourceFiles": [
-        "src/plugin/timezone/index.js"
-      ],
-      "changedLines": 223,
-      "sealedCases": [
-        "keeps local time when converting between DST-desynced zones",
-        "matches moment for America/Guadeloupe around host spring DST",
-        "converts to America/New_York while US is in DST and EU is not",
-        "converts to America/New_York while US is still in DST and EU has fallen back",
-        "converts to Australia/Sydney while southern hemisphere is in DST",
-        "parses the fall-back overlap the same way as moment",
-        "converts through the host fall-back overlap",
-        "converts Europe/London in winter (UTC+0)",
-        "keeps local time when converting a host-local instance",
-        "handles quarter-hour and date-line offsets"
-      ],
-      "heldBackCases": [
-        "keeps UTC−4 when converting an instant around host spring DST",
-        "advances the calendar day when adding 1 day across host spring DST",
-        "converts to Europe/Paris while EU is still on standard time",
-        "converts to Europe/Paris after EU has fallen back",
-        "converts to Europe/Paris while northern hemisphere is on standard time",
-        "keeps the two 01:30 instants distinct when converting",
-        "converts 30-minute DST (Australia/Lord_Howe)",
-        "handles the 30-minute Lord Howe gap and both sides of its overlap",
-        "diffs elapsed hours and calendar days across target DST"
-      ],
-      "viable": false,
-      "why": "the added tests do not pass on the merged tree either, so the target is unclear",
-      "baseCommit": "98364bcebc047529345cc8c2bbcc44a6a8c18e79",
-      "runner": "npx jest --ci test/plugin/timezone.test.js"
     },
     {
       "repository": "iamkun/dayjs",
@@ -411,6 +328,2531 @@
       "why": "fails on the base source, passes on the merged tree",
       "baseCommit": "ff0f3b642a77cda1cc3daf31c5cec8be9dd00601",
       "runner": "npx jest --ci __tests__/response/back.js"
+    },
+    {
+      "repository": "trekhleb/javascript-algorithms",
+      "cloneUrl": "https://github.com/trekhleb/javascript-algorithms.git",
+      "pull": 595,
+      "mergeCommit": "b7cd425ce9a3fc0238321e717c26505335764322",
+      "taskText": "Added kmeans clustering. Hi Oleksii, I've added the kmeans clustering with tests and README. Please tell if anything else is needed. Thanks, Avi",
+      "testFile": "src/algorithms/ml/kmeans/__test__/kmeans.test.js",
+      "sourceFiles": [
+        "src/algorithms/ml/kmeans/kmeans.js"
+      ],
+      "changedLines": 167,
+      "sealedCases": [
+        "should throw an error on invalid data",
+        "should find the nearest neighbour",
+        "should find the nearest neighbour in 3D space"
+      ],
+      "heldBackCases": [
+        "should throw an error on inconsistent data",
+        "should find the clusters with equal distances"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "90ec1b76d0ac502a9a6f9c8b632fd317ef966354",
+      "runner": "npx jest --ci src/algorithms/ml/kmeans/__test__/kmeans.test.js"
+    },
+    {
+      "repository": "trekhleb/javascript-algorithms",
+      "cloneUrl": "https://github.com/trekhleb/javascript-algorithms.git",
+      "pull": 592,
+      "mergeCommit": "871d20d8685df552d6f5c57b23f420b62404ef5a",
+      "taskText": "Adding K Nearest Neighbor to ML folder in algorithms with README and tests. Hi Oleksii, I've created a folder for ML in algorithms and added KNN to it. Added tests in __tests__ folder, and they are running with full code coverage. I have created a README explaining the algorithm. Also I've added KNN to the main README with link. Please do have a look and tell if anything else needs to be done. Thanks, Avi",
+      "testFile": "src/algorithms/ML/KNN/__test__/knn.test.js",
+      "sourceFiles": [
+        "src/algorithms/ML/KNN/knn.js"
+      ],
+      "changedLines": 138,
+      "sealedCases": [
+        "should throw an error on invalid data",
+        "should throw an error on not giving classification vector",
+        "should find the nearest neighbour"
+      ],
+      "heldBackCases": [
+        "should throw an error on invalid labels",
+        "should throw an error on not giving classification vector"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "802557f1ac83fa299613a9e5332096547712bf6a",
+      "runner": "npx jest --ci src/algorithms/ML/KNN/__test__/knn.test.js"
+    },
+    {
+      "repository": "trekhleb/javascript-algorithms",
+      "cloneUrl": "https://github.com/trekhleb/javascript-algorithms.git",
+      "pull": 532,
+      "mergeCommit": "827906c1401a2842575f4d602875b0b4f563507f",
+      "taskText": "added prime-factors algorithms under maths algorithms. An algorithm to compute total distinct count of prime factors for a given natural number using the approximate Hardy-Ramanujan algorithm and its comparison with the original accurate algorithm.",
+      "testFile": "src/algorithms/math/prime-factors/__test__/primefactors.test.js",
+      "sourceFiles": [
+        "src/algorithms/math/prime-factors/primefactors.js"
+      ],
+      "changedLines": 119,
+      "sealedCases": [
+        "should give prime factors",
+        "should give prime factors count approximately using Hardy-Ramanujan-Approx"
+      ],
+      "heldBackCases": [
+        "should give prime factors count accurately",
+        "should give error percentage of deviation of Hardy-Ramanujan-Approx prime-factors count from accurate prime-factors count"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "498ab10b1b8eb71a4f6c80a62f84cc9c289a40c8",
+      "runner": "npx jest --ci src/algorithms/math/prime-factors/__test__/primefactors.test.js"
+    },
+    {
+      "repository": "iamkun/dayjs",
+      "cloneUrl": "https://github.com/iamkun/dayjs.git",
+      "pull": 2367,
+      "mergeCommit": "890a17a8d8ddd43c7c8b806e3afc7b27f3288d27",
+      "taskText": "fix: round durations to millisecond precision for ISO string. Fixes #2366 Rounds the seconds value before formatting an ISO duration string",
+      "testFile": "test/plugin/duration.test.js",
+      "sourceFiles": [
+        "src/plugin/duration/index.js"
+      ],
+      "changedLines": 9,
+      "sealedCases": [
+        "handles rounding to millisecond precision"
+      ],
+      "heldBackCases": [
+        "should handle round with millisecond precision when negative"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "1fe1b1d9a214d3b8c9f267b432801424a493f1c4",
+      "runner": "npx jest --ci test/plugin/duration.test.js"
+    },
+    {
+      "repository": "iamkun/dayjs",
+      "cloneUrl": "https://github.com/iamkun/dayjs.git",
+      "pull": 2231,
+      "mergeCommit": "00c223b7e92970d07557133994fcb225a6d4c960",
+      "taskText": "Add missing padding to 'YYYY' format. Adds padding to the year component when formatted with `'YYYY'`, similar to how padding is handled for `'MM'` and `'DD'`. Fixes #2230",
+      "testFile": "test/display.test.js",
+      "sourceFiles": [
+        "src/index.js"
+      ],
+      "changedLines": 14,
+      "sealedCases": [
+        "Year 1 formatted with YYYY should pad with zeroes"
+      ],
+      "heldBackCases": [
+        "Year 1 formatting matches moment format"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "b87aa0ed9a748c478a66ef48230cd1d6350d7b8a",
+      "runner": "npx jest --ci test/display.test.js"
+    },
+    {
+      "repository": "iamkun/dayjs",
+      "cloneUrl": "https://github.com/iamkun/dayjs.git",
+      "pull": 2330,
+      "mergeCommit": "3c2c6ee4db00bbb43a7a3bb0b56bc0d0f03daddc",
+      "taskText": "Fix/minMax. ### Motivation: If I automatically get a list of dates from somewhere, that list might contain 'nulls', or even just return a single valid argument. At the moment, if not treated, the user will receive a TypeError or 'null' as a return, even with valid arguments. ### Makes two adjustments: - If an array has a 'null' arg, doesnt return a TypeError, now just ignore the 'null' args and consider the others: Example: - The second adjustment is when provided just one arg, instead of returning null, it returns the only given value. Example: I also added some tests to validate this propose.",
+      "testFile": "test/plugin/minMax.test.js",
+      "sourceFiles": [
+        "src/plugin/minMax/index.js"
+      ],
+      "changedLines": 24,
+      "sealedCases": [
+        "Ignore if exists an \"null\" argument"
+      ],
+      "heldBackCases": [
+        "Return the only date if just provided one argument"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "013968f609c32e2269df69b4dd1feb2e8e1e035a",
+      "runner": "npx jest --ci test/plugin/minMax.test.js"
+    },
+    {
+      "repository": "koajs/koa",
+      "cloneUrl": "https://github.com/koajs/koa.git",
+      "pull": 1893,
+      "mergeCommit": "49a32077f671125901f50788f1e023dcec75aec4",
+      "taskText": "feat: fixes mem leak relating to issue-1834. ## Description - closes #1834 - closes #1882 - closes #1889 ## Checklist - [x] I have ensured my pull request is not behind the main or master branch of the original repository. - [x] I have rebased all commits where necessary so that reviewing this pull request can be done without having to merge it first. - [x] I have written a commit message that passes commitlint linting. - [x] I have ensured that my code changes pass linting tests. - [x] I have ensured that my code changes pass unit tests. - [x] I have described my pull request and the reasons for code changes along with context if necessary. ## Checklist for 1834 (before re-pinging team) - [x] Update stackblitz - [stackblitz demostrating error and fix]( - [x] Address comments - [x] Re-review after merging 2 issues together",
+      "testFile": "__tests__/application/respond.test.js",
+      "sourceFiles": [
+        "lib/application.js",
+        "lib/response.js"
+      ],
+      "changedLines": 283,
+      "sealedCases": [
+        "should handle ReadableStream with chunks",
+        "should respond with body content",
+        "should handle Response from fetch() with streaming body",
+        "should handle stream errors when error listener exists",
+        "should handle ReadableStream errors when error listener exists"
+      ],
+      "heldBackCases": [
+        "should handle ReadableStream with custom headers",
+        "should handle Response from fetch() with JSON",
+        "should handle Response from fetch() with Blob body",
+        "should not crash when stream errors and no error listener exists",
+        "should cleanup streams on client abort"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "ffd497a1903ff4df54f14b3d1763813d5c7d10fc",
+      "runner": "node --test __tests__/application/respond.test.js"
+    },
+    {
+      "repository": "koajs/koa",
+      "cloneUrl": "https://github.com/koajs/koa.git",
+      "pull": 1828,
+      "mergeCommit": "7cf1462d346b97d009a9fa1726e1d066bb45c88f",
+      "taskText": "Feat: Replace node querystring with URLSearchParams. Fix #1570 Replace node querystring with URLSearchParams it mimics the way that querystring works ## Checklist - [x] I have ensured my pull request is not behind the main or master branch of the original repository. - [x] I have rebased all commits where necessary so that reviewing this pull request can be done without having to merge it first. - [x] I have written a commit message that passes commitlint linting. - [x] I have ensured that my code changes pass linting tests. - [x] I have ensured that my code changes pass unit tests. - [x] I have described my pull request and the reasons for code changes along with context if necessary.",
+      "testFile": "__tests__/lib/search-params.js",
+      "sourceFiles": [
+        "lib/request.js",
+        "lib/search-params.js"
+      ],
+      "changedLines": 81,
+      "sealedCases": [
+        "Should stringify a simple object",
+        "Should stringify an object with an array with a single value",
+        "Should not stringify an object with a nested object",
+        "Should parse a query string with same key and multiple values"
+      ],
+      "heldBackCases": [
+        "Should stringify an object with an array",
+        "Stringify an object with an array with a single empty value",
+        "Should parse a simple query string",
+        "Should parse a query string with an array with a single empty value"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "d0f854382445749309740a54c54c963410d2a68b",
+      "runner": "npx jest --ci __tests__/lib/search-params.js"
+    },
+    {
+      "repository": "koajs/koa",
+      "cloneUrl": "https://github.com/koajs/koa.git",
+      "pull": 1830,
+      "mergeCommit": "8d5beb329d0851a9e2eb00ed08d3996ebde53994",
+      "taskText": "feat: add support web WHATWG. Feat to handle WHATWG #1777 I'm open to any suggestions ## Checklist - [x ] I have ensured my pull request is not behind the main or master branch of the original repository. - [x ] I have rebased all commits where necessary so that reviewing this pull request can be done without having to merge it first. - [x ] I have written a commit message that passes commitlint linting. - [x ] I have ensured that my code changes pass linting tests. - [x ] I have ensured that my code changes pass unit tests. - [x ] I have described my pull request and the reasons for code changes along with context if necessary.",
+      "testFile": "__tests__/response/body.js",
+      "sourceFiles": [
+        "lib/application.js",
+        "lib/response.js"
+      ],
+      "changedLines": 167,
+      "sealedCases": [
+        "should default to an octet stream",
+        "should set length",
+        "should set headers"
+      ],
+      "heldBackCases": [
+        "should default to an octet stream",
+        "should set the status",
+        "should redirect"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "757e4ebc5146784ebd00664545c6d37231610a61",
+      "runner": "npx jest --ci __tests__/response/body.js"
+    },
+    {
+      "repository": "openai/codex-plugin-cc",
+      "cloneUrl": "https://github.com/openai/codex-plugin-cc.git",
+      "pull": 179,
+      "mergeCommit": "bc8fa661a50998ead1c1164a94339fc9cab1d742",
+      "taskText": "fix: avoid embedding large adversarial review diffs. ## Summary - Fixes `/codex:adversarial-review` failing on larger diffs by using the initial changed-file count to decide whether to inline the diff. - Keeps inline diff context for small review scopes. - Uses lightweight review context for larger scopes and instructs Codex to inspect the target diff itself with read-only git commands. - Adds regression coverage for both inline and self-inspection paths. Closes #11 ## Testing - `node --test tests/git.test.mjs tests/runtime.test.mjs tests/commands.test.mjs`",
+      "testFile": "tests/git.test.mjs",
+      "sourceFiles": [
+        "plugins/codex/scripts/codex-companion.mjs",
+        "plugins/codex/scripts/lib/git.mjs",
+        "plugins/codex/scripts/lib/process.mjs"
+      ],
+      "changedLines": 296,
+      "sealedCases": [
+        "collectReviewContext keeps inline diffs for tiny adversarial reviews",
+        "collectReviewContext falls back to lightweight context for oversized single-file diffs"
+      ],
+      "heldBackCases": [
+        "collectReviewContext falls back to lightweight context for larger adversarial reviews",
+        "collectReviewContext keeps untracked file content in lightweight working tree context"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "d216a5fdead7fdc6d081831d3d259d9fef70a8d4",
+      "runner": "node --test tests/git.test.mjs"
+    },
+    {
+      "repository": "openai/codex-plugin-cc",
+      "cloneUrl": "https://github.com/openai/codex-plugin-cc.git",
+      "pull": 84,
+      "mergeCommit": "d216a5fdead7fdc6d081831d3d259d9fef70a8d4",
+      "taskText": "codex: scope default cancel selection to the current Claude session. Closes #82 ## Summary - scope default `cancel` target selection to the current Claude session - keep explicit `cancel <job-id>` working across sessions for precise targeting - add regression tests for hidden active jobs owned by another session ## Testing - `node --test --test-name-pattern 'cancel without a job id|cancel with a job id|cancel stops an active background job' tests/runtime.test.mjs` - `npm test`",
+      "testFile": "tests/runtime.test.mjs",
+      "sourceFiles": [
+        "plugins/codex/scripts/codex-companion.mjs",
+        "plugins/codex/scripts/lib/job-control.mjs"
+      ],
+      "changedLines": 119,
+      "sealedCases": [
+        "cancel without a job id ignores active jobs from other Claude sessions"
+      ],
+      "heldBackCases": [
+        "cancel with a job id can still target an active job from another Claude session"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "40d213d13f71362ebd1033decf5616d97ad5b17d",
+      "runner": "node --test tests/runtime.test.mjs"
+    },
+    {
+      "repository": "openai/codex-plugin-cc",
+      "cloneUrl": "https://github.com/openai/codex-plugin-cc.git",
+      "pull": 83,
+      "mergeCommit": "40d213d13f71362ebd1033decf5616d97ad5b17d",
+      "taskText": "codex: scope implicit resume-last selection to the current Claude session. Closes #81 ## Summary - scope implicit `--resume-last` selection to the current Claude session when a Claude session id is present - reuse the same session-aware selection logic for `task-resume-candidate` and `task --resume-last` - stop tasks from other sessions from being resumed implicitly or blocking the current session ## Testing - `node --test --test-name-pattern 'task-resume-candidate|task --resume-last|task --resume acts like --resume-last' tests/runtime.test.mjs` - `npm test`",
+      "testFile": "tests/runtime.test.mjs",
+      "sourceFiles": [
+        "plugins/codex/scripts/codex-companion.mjs"
+      ],
+      "changedLines": 147,
+      "sealedCases": [
+        "task --resume-last does not resume a task from another Claude session"
+      ],
+      "heldBackCases": [
+        "task --resume-last ignores running tasks from other Claude sessions"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "4bd783b7ce7feb19f61f461be21446a2587ec280",
+      "runner": "node --test tests/runtime.test.mjs"
+    },
+    {
+      "repository": "openai/codex-plugin-cc",
+      "cloneUrl": "https://github.com/openai/codex-plugin-cc.git",
+      "pull": 166,
+      "mergeCommit": "594fd1e8da9befb42ab0a1fcf151e2b8d655e7ce",
+      "taskText": "Fix working-tree review crash on untracked directories. ## Summary - Skip untracked directory entries when formatting working-tree review context. - Add regression coverage for nested untracked worktree directories. Fixes #14 ## Testing - Not run (not requested)",
+      "testFile": "tests/git.test.mjs",
+      "sourceFiles": [
+        "plugins/codex/scripts/lib/git.mjs"
+      ],
+      "changedLines": 50,
+      "sealedCases": [
+        "collectReviewContext skips untracked directories in working tree review"
+      ],
+      "heldBackCases": [
+        "collectReviewContext skips broken untracked symlinks instead of crashing"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "8e403f9d4b496b0b0aff50fa3673f889f6a22cb1",
+      "runner": "node --test tests/git.test.mjs"
+    },
+    {
+      "repository": "tj/commander.js",
+      "cloneUrl": "https://github.com/tj/commander.js.git",
+      "pull": 2405,
+      "mergeCommit": "63eed4aa05435575d515311bb5efaf6d88b6be84",
+      "taskText": "Make order not matter for adding combo positive/negative options. ## Problem Lone negated options default to true. (Historical.) Positive then negative does not default to true. (By design.) Negative then positive still defaults to true, for implementation reasons rather than by design. See: #2397 ## Solution Move the setting of the default to when the options are known. Alternative approach to #2398. That PR retroactively removes the \"default true\" when the positive option is added second. ## ChangeLog Fix: only lone negated option defaults option value to true",
+      "testFile": "tests/options.bool.combo.test.js",
+      "sourceFiles": [
+        "examples/options-negatable.js",
+        "lib/command.js"
+      ],
+      "changedLines": 81,
+      "sealedCases": [
+        "when lone negative then default value is true",
+        "when boolean combo and negative second then no implicit default"
+      ],
+      "heldBackCases": [
+        "when boolean combo and negative first then no implicit default",
+        "when boolean combo and negative second with explicit default then get explicit default"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "2e96cd388764064fe271f7f452d0dff780355b42",
+      "runner": "npx jest --ci tests/options.bool.combo.test.js"
+    },
+    {
+      "repository": "tj/commander.js",
+      "cloneUrl": "https://github.com/tj/commander.js.git",
+      "pull": 2339,
+      "mergeCommit": "f6302de32c773e9f0d3bb71e257d308885af3603",
+      "taskText": "Allow negative numbers as optional optional arguments and command arguments when unambiguous. ## Problem It is unexpected when negative numbers don't work as option-arguments or command arguments and require special treatment. e.g. `test --optional -3` => `test --optional=-3` `test -12.4` => `test -- -12.4` See: #61 #413 #2338 ## Solution Allow negative numbers for optional option-arguments and for command arguments. Like Python, if there are options with digit short flag then don't treat negative numbers as special since they overlap with some options. Keep the behaviour simple and conservative. Description of what some other libraries do: - yargs has support for negative numbers - Python allows negative numbers for positionals if there are not options that look like negative numbers (Python [Arguments containing -]( ## ChangeLog - add: support for negative numbers as option-arguments and command-arguments",
+      "testFile": "tests/negatives.test.js",
+      "sourceFiles": [
+        "lib/command.js"
+      ],
+      "changedLines": 298,
+      "sealedCases": [
+        "when complex example with negative numbers then all consumed",
+        "when default command without digit option then negatives accepted",
+        "when program has subcommand and action handler then negative command-argument unsupported"
+      ],
+      "heldBackCases": [
+        "when program has digit option then negatives not allowed in leaf command",
+        "when default command with digit option then negative throws"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "68199e64b31851839c03dff1567a81d7714baa08",
+      "runner": "npx jest --ci tests/negatives.test.js"
+    },
+    {
+      "repository": "tj/commander.js",
+      "cloneUrl": "https://github.com/tj/commander.js.git",
+      "pull": 2223,
+      "mergeCommit": "58c28eb13da522aeec33f53aa1767e9bd8374dc7",
+      "taskText": "Disallow excess arguments. ## Problem By default, if is not an error to pass excess command-arguments. This may sometimes be as intended but will often mean a command-line error by the user will be silently ignored. A nice example from #2149 > One particular case is when an argument is a name/title/label, in which the user may include spaces while forgetting quotes. I originally intended excess arguments to be an error by default, but made it opt-in for the first release to reduce breakage at the time: - - #1429 See: #2149 ## Solution - Make `allowExcessArguments` false by default. - Fix lots of broken tests where passing undeclared arguments! - Add migration tips to CHANGELOG for the breaking change.",
+      "testFile": "tests/command.allowExcessArguments.test.js",
+      "sourceFiles": [
+        "lib/command.js"
+      ],
+      "changedLines": 111,
+      "sealedCases": [
+        "when specify excess program argument then error by default"
+      ],
+      "heldBackCases": [
+        "when specify excess command argument then error (by default)"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "4fcb276f93e589adb3f4fa769d63542267e0aeff",
+      "runner": "npx jest --ci tests/command.allowExcessArguments.test.js"
+    },
+    {
+      "repository": "tj/commander.js",
+      "cloneUrl": "https://github.com/tj/commander.js.git",
+      "pull": 1678,
+      "mergeCommit": "fc4fd417ee3ddde6a8b01b6767bd711f4dfc4347",
+      "taskText": "feat(option): allow to set options as conflicting. # Pull Request Hello 👋 Thank you for this lovely package, this PR implements exclusive options (see details below). ~~Happy to rename it to `conflicts`~~ (edit: done) or anything else you find suiting, and of course open to any kind of feedback (especially if you think this should be user code and not package code). I searched previous issues and PRs and could only find this related comment: ## Problem I would like to configure options that are mutually exclusive. For example `--json` (to set the output type), conflicts with `--silent` (to suppress output). Related to ## Solution Added a new option method `conflicts` that accepts an array of strings (or a single string) with options that conflict with the configured option. - [x] TypeScript typings - [x] JSDoc documentation in code - [x] tests - [x] README - [x] examples/ ## ChangeLog feat(option): allow to configure conflicting options",
+      "testFile": "tests/command.conflicts.test.js",
+      "sourceFiles": [
+        "examples/options-extra.js",
+        "lib/command.js",
+        "lib/option.js",
+        "typings/index.test-d.ts"
+      ],
+      "changedLines": 385,
+      "sealedCases": [
+        "should call action if there are no explicit conflicting options set",
+        "should exit with error if conflicting options were set",
+        "should report the env variable as the configured option source, when configured option is set",
+        "should allow default value with a conflicting option",
+        "should report conflict on negated option env variable",
+        "should report correct error for positive option when negated is configured",
+        "should report correct error for positive env variable when negated is configured",
+        "should report correct error for positive option with string value when negated is configured",
+        "should not throw error when conflicts is invoked with a single string that includes another option"
+      ],
+      "heldBackCases": [
+        "should call action when there are no implicit conflicting options set",
+        "should report the env variable as the conflicting option source, when conflicting option is set",
+        "should report both env variables as sources, when configured option and conflicting option are set",
+        "should report conflict on negated option flag",
+        "should report correct error for shorthand negated option",
+        "should report correct error for negated option when positive is configured",
+        "should report correct error for negated env variable when positive is configured",
+        "should report correct error for negated option with preset when negated is configured",
+        "should throw error when conflicts is invoked with a single string that equals another option"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "997655dea2783323ffaddb2ddb5fb8786a73ad61",
+      "runner": "npx jest --ci tests/command.conflicts.test.js"
+    },
+    {
+      "repository": "tj/commander.js",
+      "cloneUrl": "https://github.com/tj/commander.js.git",
+      "pull": 2055,
+      "mergeCommit": "b96af407cd7980aa9cd6d0a08c793a8c09122cee",
+      "taskText": "Throw error when add option with clashing flags. # Pull Request ## Problem There are no warnings/errors for adding options with overlapping flags. One of the \"more usage errors\" suggestion in a poll: ## Solution Throw an error from `.option()` or `.addOption()` if there are clashing flags. This is building on #1923, and adds tests. Example: ## ChangeLog - _Breaking_: throw an error if add an option with flags which are already in use",
+      "testFile": "tests/options.registerClash.test.js",
+      "sourceFiles": [
+        "lib/command.js"
+      ],
+      "changedLines": 88,
+      "sealedCases": [
+        "when short option flag conflicts then throws",
+        "when use help options separately then does not throw",
+        "when short option flags conflicts then throws"
+      ],
+      "heldBackCases": [
+        "when long option flag conflicts then throws",
+        "when reuse flags in subcommand then does not throw",
+        "when long option flags conflicts then throws"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "d90e81eddf9fbef9f265c3f05be93836b809f629",
+      "runner": "npx jest --ci tests/options.registerClash.test.js"
+    },
+    {
+      "repository": "tj/commander.js",
+      "cloneUrl": "https://github.com/tj/commander.js.git",
+      "pull": 2006,
+      "mergeCommit": "09244af7ab71d4241bb9566380db7fd56eceb969",
+      "taskText": "Refactor help option implementation to hold actual Option. # Pull Request The main motivation for this refactor is to potentially simplify future work that uses more Option properties. For example, adding help group to Option like in #1910. Instead of extending `.helpOption()` to add parallel features like: could instead use same approach as normal options: (This overlaps with motivation and implementation in #1929.) ## Problem Additions to `Option` that can be used with `.addOption()` can't be used with the help option. For example, hiding the help option (#689). There are an annoying number of help option related properties on `Command`. Determining the help option flags does not go through `cmd.createOption()` so misses some potential custom class behaviour, such as custom flags parsing. (Minor!) ## Solution Store a help Option rather than the necessary deconstructed properties. Add `.addHelpOption()` to add author created option, exposing more configuration just like `.addOption()` does. ## ChangeLog - Added: `.addHelpOption()` as another way of configuring built-in help option - Changed: refactor internal implementation of built-in help option",
+      "testFile": "tests/command.addHelpOption.test.js",
+      "sourceFiles": [
+        "lib/command.js",
+        "lib/help.js",
+        "lib/option.js",
+        "typings/index.test-d.ts"
+      ],
+      "changedLines": 268,
+      "sealedCases": [
+        "when addHelpOption has custom flags then custom short flag invokes help",
+        "when addHelpOption with hidden help option then help does not include help option"
+      ],
+      "heldBackCases": [
+        "when addHelpOption has custom flags then custom long flag invokes help"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "ff08a02866d5431a9702edb43915b448c3002f82",
+      "runner": "npx jest --ci tests/command.addHelpOption.test.js"
+    },
+    {
+      "repository": "tj/commander.js",
+      "cloneUrl": "https://github.com/tj/commander.js.git",
+      "pull": 2023,
+      "mergeCommit": "5aaca0d666271f56fcc79044391765db527123f2",
+      "taskText": "Exit with non-zero code when subprocess terminated by signal. # Pull Request ## Problem There are a couple of problems with the `'close'` event handler from spawned executable subcommand: - exit code is effectively zero if subprocess terminated due to a signal - exit code passed to exit override is (probably) always zero See #2021 ## Solution Use the event `code`argument, or `1` if code is `null` because of a signal. Why `1` for signal? The exit code seen in the shell when a process terminates due to a signal is often the signal number plus an offset, like 128+n in bash. We don't have a good way of mapping a signal name to a signal number, and don't have a way of returning the right offset for the current shell through `process.exit()`. Using `kill` to terminate main process with the same signal as subprocess feels a bit heavy handed and dubious. So going for exit code of `1` as simple and an incremental improvement from existing code. Targeting a major version as changing years old behaviour, although I think it is effectively a bug fix. ## ChangeLog - fix: use non-zero exit code when spawned executable subcommand terminates due to a signal",
+      "testFile": "tests/command.executableSubcommand.signals.test.js",
+      "sourceFiles": [
+        "lib/command.js"
+      ],
+      "changedLines": 92,
+      "sealedCases": [
+        "when executable subcommand sent signal then program exit code is non-zero",
+        "when command has exitOverride and executable subcommand fails then program exit code is subcommand exit code"
+      ],
+      "heldBackCases": [
+        "when command has exitOverride and executable subcommand sent signal then exit code is non-zero"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "a0ca1bd4722b8459c7d6bab426c283c63c39bb68",
+      "runner": "npx jest --ci tests/command.executableSubcommand.signals.test.js"
+    },
+    {
+      "repository": "tj/commander.js",
+      "cloneUrl": "https://github.com/tj/commander.js.git",
+      "pull": 2059,
+      "mergeCommit": "1d3dd47d76375c9f5595a3510db65c8c2fa1e035",
+      "taskText": "Prevent commands being created with overlapping names or aliases. # Pull Request ## Problem Silently allow overlapping commands, such as two commands with same name, or two commands with same alias. ## Solution Check names and aliases when adding new command or alias. Throw if overlaps with existing command. See: #1903 #1924 Related PR for clashing options: #2055. ## ChangeLog - _Breaking_: throw an error if add a command with name or alias which is already in use",
+      "testFile": "tests/command.registerClash.test.js",
+      "sourceFiles": [
+        "lib/command.js"
+      ],
+      "changedLines": 87,
+      "sealedCases": [
+        "when command name conflicts with existing name then throw",
+        "when command alias conflicts with existing name then throw",
+        "when .addCommand name conflicts with existing name then throw"
+      ],
+      "heldBackCases": [
+        "when command name conflicts with existing alias then throw",
+        "when command alias conflicts with existing alias then throw",
+        "when .addCommand alias conflicts with existing name then throw"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "b96af407cd7980aa9cd6d0a08c793a8c09122cee",
+      "runner": "npx jest --ci tests/command.registerClash.test.js"
+    },
+    {
+      "repository": "caolan/async",
+      "cloneUrl": "https://github.com/caolan/async.git",
+      "pull": 1790,
+      "mergeCommit": "6927a814ad505920179e5dd50e3ccb085f591273",
+      "taskText": "update priorityQueue functionality to match queue [fixes #1725]. This PR updates the `priorityQueue` behaviour to match the `queue` implementation: * better supports promises in `priorityQueue` (see #1725). * supports `pushAsync` and removes `unshiftAsync`. * fixes a bug where `drain` wasn't being called when an empty task was pushed. * eliminates duplicate code by keeping all of the `queue` logic in `queue`. The one issue with this is it now iterates over the `tasks` twice, once in `priorityQueue` and once in `queue`. Let me know if there's a better way you can think of. I also added a few tests from `queue` to `priorityQueue` to make sure the functionality matches.",
+      "testFile": "test/priorityQueue.js",
+      "sourceFiles": [
+        "lib/internal/queue.js",
+        "lib/priorityQueue.js"
+      ],
+      "changedLines": 343,
+      "sealedCases": [
+        "pushAsync",
+        "should be the same length as running()",
+        "should call the drain callback if receives an empty push",
+        "should error when calling unshift",
+        "should error when the callback is called more than once"
+      ],
+      "heldBackCases": [
+        "kill",
+        "should contain the items being processed",
+        "should be iterable",
+        "should error when calling unshiftAsync"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "576ba747a2aca0e5392f2aad75f4a9912603b2d5",
+      "runner": "npx mocha test/priorityQueue.js"
+    },
+    {
+      "repository": "caolan/async",
+      "cloneUrl": "https://github.com/caolan/async.git",
+      "pull": 1767,
+      "mergeCommit": "cdfb4917e6028c8f966276d6e792018c7fd2ae3c",
+      "taskText": "Fix an inefficient regex in autoInject. This fixes the issues highlighted in",
+      "testFile": "test/autoInject.js",
+      "sourceFiles": [
+        "lib/autoInject.js"
+      ],
+      "changedLines": 31,
+      "sealedCases": [
+        "should not be subject to ReDoS"
+      ],
+      "heldBackCases": [
+        "should properly strip comments in argument definitions"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "bb41f2a59aa41af0b906f0cb9a11ffa6332e56dd",
+      "runner": "npx mocha test/autoInject.js"
+    },
+    {
+      "repository": "caolan/async",
+      "cloneUrl": "https://github.com/caolan/async.git",
+      "pull": 1595,
+      "mergeCommit": "a5a9f13ee024e58a3bd074f9c4e0130f0499d27b",
+      "taskText": "Use heap tree in priority queue. I implemented a stable heap tree. I replaced the DLL with the heap in priorityQueue. Let me know if you see anything wrong. Fixes #1594",
+      "testFile": "test/heap.js",
+      "sourceFiles": [
+        "lib/internal/Heap.js",
+        "lib/priorityQueue.js",
+        "perf/suites.js"
+      ],
+      "changedLines": 285,
+      "sealedCases": [
+        "push",
+        "remove",
+        "remove (tail)",
+        "empty"
+      ],
+      "heldBackCases": [
+        "toArray",
+        "remove (head)",
+        "remove (all)"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "884b040c22bb27f69d9136bf4391a79a16911c12",
+      "runner": "npx mocha test/heap.js"
+    },
+    {
+      "repository": "remy/nodemon",
+      "cloneUrl": "https://github.com/remy/nodemon.git",
+      "pull": 1166,
+      "mergeCommit": "a282afbbe3f0d5bbcf45c934945d91dc960973a1",
+      "taskText": "fix: support nodemon index to expand to index.js. With support for custom extensions (picking only the first). Fixes #1165",
+      "testFile": "test/cli/exec.test.js",
+      "sourceFiles": [
+        "lib/config/exec.js",
+        "lib/config/load.js"
+      ],
+      "changedLines": 112,
+      "sealedCases": [
+        "should expand app.js",
+        "should ignore foo.js",
+        "should expand based on custom extensions to hello.py",
+        "should not expand index to non-existant index.js"
+      ],
+      "heldBackCases": [
+        "should expand hello.py",
+        "should expand app to app.js",
+        "should expand based on custom extensions to app.js (js,jsx,mjs)"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "fd961d605305805fe3b6df414339a2774a27239a",
+      "runner": "npx mocha test/cli/exec.test.js"
+    },
+    {
+      "repository": "winstonjs/winston",
+      "cloneUrl": "https://github.com/winstonjs/winston.git",
+      "pull": 2181,
+      "mergeCommit": "eda40efce55555498759c7afaee018b2f0f26678",
+      "taskText": "Export Logger class. This allows to extend Logger with custom functionality. fixes #1902 fixes #2170",
+      "testFile": "test/integration/logger.test.js",
+      "sourceFiles": [
+        "lib/winston.js",
+        "lib/winston/common.js"
+      ],
+      "changedLines": 53,
+      "sealedCases": [
+        "that Logger class is exported"
+      ],
+      "heldBackCases": [
+        "can be inherited"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "f7e7f2f9ccca06e5edba17c03da9ed7c97b48d91",
+      "runner": "npx mocha test/integration/logger.test.js"
+    },
+    {
+      "repository": "winstonjs/winston",
+      "cloneUrl": "https://github.com/winstonjs/winston.git",
+      "pull": 2256,
+      "mergeCommit": "eec59af77486c2d36dc3df945a2f8fcf93cc659e",
+      "taskText": "fix: properly allow passing non-arry transport. LoggerOptions allows transports to be a single Transport instance as seen here: in containers, if you do this it will result in an error that says `existing.slice` doesn't exist",
+      "testFile": "test/unit/winston/container.test.js",
+      "sourceFiles": [
+        "lib/winston/container.js"
+      ],
+      "changedLines": 26,
+      "sealedCases": [
+        ".get(some-logger)"
+      ],
+      "heldBackCases": [
+        ".get(some-other-logger)"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "95af18250e7626785840531cf20bf7323fe0ce76",
+      "runner": "npx mocha test/unit/winston/container.test.js"
+    },
+    {
+      "repository": "winstonjs/winston",
+      "cloneUrl": "https://github.com/winstonjs/winston.git",
+      "pull": 1352,
+      "mergeCommit": "908c300f305803a372f96d0396eb7d7ca1bd590b",
+      "taskText": "Added `isLevelEnabled(string)` & `isXXXEnabled()`. Make logger expose functions to check if a particular level is enabled. This could be useful if either message or parameter creation is an expensive operation, which should be avoided when log level is disabled. Logger will contain `isLevelEnabled(level: string)` function and multiple `isXXXEnabled()` where \"XXX\" is the capitalized name of the configured log level. E.g. `isDebugEnabled()`, `isInfoEnabled()`, etc. Resolves",
+      "testFile": "test/logger.test.js",
+      "sourceFiles": [
+        "lib/winston/create-logger.js",
+        "lib/winston/logger.js"
+      ],
+      "changedLines": 220,
+      "sealedCases": [
+        "default levels",
+        "default levels, no transports",
+        "custom levels, no transports"
+      ],
+      "heldBackCases": [
+        "default levels, transport override",
+        "custom levels",
+        "custom levels, transport override"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "a32aa3c74859054f0351ac26b3079a5bc21f82b5",
+      "runner": "npx mocha test/logger.test.js"
+    },
+    {
+      "repository": "JedWatson/classnames",
+      "cloneUrl": "https://github.com/JedWatson/classnames.git",
+      "pull": 170,
+      "mergeCommit": "b166fd132d4a46b6ed93b3264ca638c7f14d4620",
+      "taskText": "Ability to handle object with own `.toString()` method. This will allow using custom `.toString()` methods for objects to generate class names. From a performance standpoint, it's not affecting existing scenarios (scenario with an object containing `.toString()` method will be obviously slower a bit because we need to call this function). Here is JSPerf for this: From JSPerf I can see that it's hard to find any performance impact, so I it's less than a statistical error rate. Time to time you can get results like this: ![2018-07-19-145124_974x309_escrotum]( Closing #153 and same problem for SemanticUI @dcousens , @JedWatson can you take a look?",
+      "testFile": "tests/bind.js",
+      "sourceFiles": [
+        "bind.js",
+        "dedupe.js",
+        "index.js"
+      ],
+      "changedLines": 104,
+      "sealedCases": [
+        "handles own toString() method defined on object",
+        "handles toString() method defined inherited in object"
+      ],
+      "heldBackCases": [
+        "handles own toString() method defined on object"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "09ec170394ef433f6f8121e76d30061637c6a629",
+      "runner": "npx mocha tests/bind.js"
+    },
+    {
+      "repository": "hubotio/hubot",
+      "cloneUrl": "https://github.com/hubotio/hubot.git",
+      "pull": 1799,
+      "mergeCommit": "8ad0c3dc64e5231541677b490ecc73f544206040",
+      "taskText": "fix: #1793 Shell adapter logging. Shell adapter now respects HUBOT_LOG_LEVEL when printing log messages to the console.",
+      "testFile": "test/Shell_test.mjs",
+      "sourceFiles": [
+        "src/adapters/Shell.mjs"
+      ],
+      "changedLines": 90,
+      "sealedCases": [
+        "setting HUBOT_LOG_LEVEL to debug prints debug and info log messages to the console"
+      ],
+      "heldBackCases": [
+        "setting HUBOT_LOG_LEVEL to error only prints error log messages to the console"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "cad58c59cc631b7e0335f90c9a0c15428768f827",
+      "runner": "node --test test/Shell_test.mjs"
+    },
+    {
+      "repository": "hubotio/hubot",
+      "cloneUrl": "https://github.com/hubotio/hubot.git",
+      "pull": 1710,
+      "mergeCommit": "a842eb6a1a22dc8d8c3f60fe93b8146565e95565",
+      "taskText": "feat: add example test to hubot --create output. Addresses #1709 Changes in Hubot's API has broken the `hubot-test-helper` current version. This PR adds some guidance on how to test hubot scripts. #1652",
+      "testFile": "test/XampleTest.mjs",
+      "sourceFiles": [
+        "src/GenHubot.mjs"
+      ],
+      "changedLines": 303,
+      "sealedCases": [
+        "should reply with expected message"
+      ],
+      "heldBackCases": [
+        "should send message to the #general room"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "2e65d78ae09291042b179b2e251253b4fc27c603",
+      "runner": "node --test test/XampleTest.mjs"
+    },
+    {
+      "repository": "hubotio/hubot",
+      "cloneUrl": "https://github.com/hubotio/hubot.git",
+      "pull": 1635,
+      "mergeCommit": "74c580c099fc52ef8b8ceb3bd13c86bfbeac7ca1",
+      "taskText": "feat(adapter): Load adapter from local disk. - load a .mjs file as an adapter (ES6 import - load a .coffe, .js or .cjs file from local disk as an adapter (e.g. -f ./adapters/CustomAdapter.coffee, -f ./adapters/CustomAdapter.js, -f ./adapters/CustomAdapter.cjs) - introduce new cli argument -f (file) that specifies the adapter path and file to load the adapter, e.g. -f ./adapters/CustomAdapter.mjs BREAKING CHANGE: ES6 import is async, thus loadAdapter was changed to an async function. #1624",
+      "testFile": "test/robot_test.js",
+      "sourceFiles": [
+        "bin/hubot.js",
+        "index.js",
+        "src/robot.js"
+      ],
+      "changedLines": 361,
+      "sealedCases": [
+        "should load an ES6 module adapter from a file",
+        "should load a CoffeeScript adapter from a file"
+      ],
+      "heldBackCases": [
+        "should respond to a message",
+        "should load a coffeescript file and respond to a message"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "67e8732ebd0a535f81e7525645d640d9cbb03682",
+      "runner": "npx mocha test/robot_test.js"
+    },
+    {
+      "repository": "refined-github/refined-github",
+      "cloneUrl": "https://github.com/refined-github/refined-github.git",
+      "pull": 9832,
+      "mergeCommit": "128a26df5af58e430cfd11b325c62e2d3f0e0d15",
+      "taskText": "`extensible-nav` - Allow extension by other features. - part of - part of",
+      "testFile": "source/helpers/extensible-nav-store.test.ts",
+      "sourceFiles": [
+        "source/features/extensible-nav.tsx",
+        "source/helpers/extensible-nav-store.ts"
+      ],
+      "changedLines": 256,
+      "sealedCases": [
+        "starts empty",
+        "appends a tab with no \"before\"",
+        "appends a tab when \"before\" does not match any tab",
+        "hides a native tab",
+        "replacing native tabs does not drop extra tabs"
+      ],
+      "heldBackCases": [
+        "reflects native tabs",
+        "inserts a tab before a matching native tab",
+        "inserts multiple extra tabs before the same native tab in call order",
+        "does not hide extra tabs (only filters native tabs by id)",
+        "tracks the selected tab id"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "37ace9ebab3e08b4923d1b52b3b8b66741691829",
+      "runner": "npx vitest run source/helpers/extensible-nav-store.test.ts"
+    },
+    {
+      "repository": "refined-github/refined-github",
+      "cloneUrl": "https://github.com/refined-github/refined-github.git",
+      "pull": 9662,
+      "mergeCommit": "1b8d825923c927942fa1b76adb0133f1037ba998",
+      "taskText": "Update search queries from `is:` to `state:`. ## Summary - switch generated/default issue and PR list queries from `is:open` to `state:open` - update the status-filter helper to remove both `is:` and `state:` open/closed filters - keep merged/unmerged handling intact while supporting `state:closed` merge-link sources Closes #9661 ## Testing - `npm run vitest -- source/helpers/rgh-links.test.ts source/github-helpers/search-query.test.ts` - `npm run build:typescript`",
+      "testFile": "source/helpers/set-status-filter.test.ts",
+      "sourceFiles": [
+        "source/features/extend-conversation-status-filters.tsx",
+        "source/features/global-conversation-list-filters.tsx",
+        "source/features/last-update-sort.tsx",
+        "source/features/show-open-prs-of-forks.tsx",
+        "source/github-helpers/search-query.ts",
+        "source/helpers/errors.ts",
+        "source/helpers/rgh-links.tsx",
+        "source/helpers/set-status-filter.ts"
+      ],
+      "changedLines": 169,
+      "sealedCases": [
+        "setStatusFilter removes draft filters before switching status",
+        "setStatusFilter replaces merged and unmerged filters with a new state filter",
+        "setStatusFilter replaces the legacy unmerged alias with a modern state filter"
+      ],
+      "heldBackCases": [
+        "setStatusFilter clears legacy and modern draft filters",
+        "setStatusFilter replaces draft filters when switching to the merged state"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "8eb93681dfd37af2b9d119d5362f975b04e3f920",
+      "runner": "npx vitest run source/helpers/set-status-filter.test.ts"
+    },
+    {
+      "repository": "refined-github/refined-github",
+      "cloneUrl": "https://github.com/refined-github/refined-github.git",
+      "pull": 9370,
+      "mergeCommit": "e795356bb06a74c54d20a6dbc55ba2aa5add596e",
+      "taskText": "`rgh-linkify-features` `rgh-feature-descriptions` - Bug count. ## Test URLs Both inline and after opening the link: - `bugs-tab` - Feature with open issues: - CSS-only feature: - Feature mentioned in a comment: ## Screenshot <img src=\" <img src=\"",
+      "testFile": "source/helpers/rgh-links.test.ts",
+      "sourceFiles": [
+        "source/features/rgh-feature-descriptions.tsx",
+        "source/features/rgh-linkify-features.tsx",
+        "source/features/show-open-prs-of-forks.tsx",
+        "source/helpers/rgh-links.tsx",
+        "source/helpers/rgh-related-issues-count.ts"
+      ],
+      "changedLines": 132,
+      "sealedCases": [
+        "getFeatureRelatedIssuesQuery"
+      ],
+      "heldBackCases": [
+        "getFeatureRelatedIssuesUrl"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "30246cea1bc76d865885cfa8f7de36c4d5f00feb",
+      "runner": "npx vitest run source/helpers/rgh-links.test.ts"
+    },
+    {
+      "repository": "mlc-ai/web-llm",
+      "cloneUrl": "https://github.com/mlc-ai/web-llm.git",
+      "pull": 851,
+      "mergeCommit": "56d318cd5855bfc75a87b1b60755328b5994cc23",
+      "taskText": "Reject NaN in generation parameter validation. Generation parameter range checks let `NaN` through because comparisons with it are false. Invalid values can therefore reach generation instead of raising the existing validation errors. Reject `NaN` in the range-checked parameters and logit biases, while preserving defaults, valid boundaries, and existing infinity handling. Add eight regressions and compatibility controls. Validation on Node 24.11.1: - `npm test -- --runInBand`: 17 suites, 216 tests passed, with coverage enabled. - `npm run lint`: passed. - `npm run build`: passed; Rollup warned about the external `ws` dependency. - All eight NaN regressions fail against the unchanged upstream code.",
+      "testFile": "tests/generation_config.test.ts",
+      "sourceFiles": [
+        "src/config.ts",
+        "src/llm_chat.ts"
+      ],
+      "changedLines": 178,
+      "sealedCases": [
+        "accepts null, undefined, zero, and positive infinity where supported",
+        "keeps undefined generation values omitted"
+      ],
+      "heldBackCases": [
+        "accepts inclusive range endpoints"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "fa123eba72978920c6c9f1b1e96c0c7c6be41f0f",
+      "runner": "npx jest --ci tests/generation_config.test.ts"
+    },
+    {
+      "repository": "mlc-ai/web-llm",
+      "cloneUrl": "https://github.com/mlc-ai/web-llm.git",
+      "pull": 456,
+      "mergeCommit": "ee2745df81c453c4561d86c9521d0a141c11b269",
+      "taskText": "[OpenAI] Add include_usage in streaming, add prefill decode speed to usage. This change is not breaking. Behavior only changes when `stream_options: {include_usage: True}` is set for streaming, during which we yield another chunk with empty `choices` after the last chunk. Also include `prefill_tokens_per_s` and `decode_tokens_per_s` for `usage` in both streaming and non-streaming, hence replacing the previous usage of `runtimeStatsText()`.",
+      "testFile": "tests/openai_chat_completion.test.ts",
+      "sourceFiles": [
+        "examples/function-calling/src/function_calling.ts",
+        "examples/get-started-web-worker/src/main.ts",
+        "examples/get-started/src/get_started.ts",
+        "examples/json-mode/src/json_mode.ts",
+        "examples/json-schema/src/json_schema.ts",
+        "examples/multi-round-chat/src/multi_round_chat.ts",
+        "examples/seed-to-reproduce/src/seed.ts",
+        "examples/service-worker/src/main.ts",
+        "examples/streaming/src/streaming.ts",
+        "src/engine.ts",
+        "src/llm_chat.ts",
+        "src/openai_api_protocols/chat_completion.ts"
+      ],
+      "changedLines": 242,
+      "sealedCases": [
+        "stream_options without stream specified"
+      ],
+      "heldBackCases": [
+        "stream_options with stream=false"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "b2718de853174d3c07618228c35abadef107fd2e",
+      "runner": "npx jest --ci tests/openai_chat_completion.test.ts"
+    },
+    {
+      "repository": "mlc-ai/web-llm",
+      "cloneUrl": "https://github.com/mlc-ai/web-llm.git",
+      "pull": 333,
+      "mergeCommit": "6d665b91db0dc2442cee1d346e24a5721665aba9",
+      "taskText": "[OpenAI] Support logprobs and top_logprobs in ChatCompletion. Support `logprobs` and `top_logprobs` for OpenAI API `ChatCompletion`. Subsequently, these are added to `GenerationConfig` as well. See [this link]( for reference. Implementation-wise, since we need the actual distribution, we use `tvmjs.applySoftmaxWithTemperature()` and `tvmjs.sampleTopPFromProb()` instead of `tvmjs.sampleTopPFromLogits()`. Performance-wise, despite all sampling being done on CPU, with `top_logprobs=2`, we observe no degradation with Llama-2-7b-q4f32 on M3 Macbook. Note that without `logprobs`, exact same behavior (hence performance) is maintained. We also support `CompletionUsage` in this PR for token counting.",
+      "testFile": "tests/generation_config.test.ts",
+      "sourceFiles": [
+        "examples/openai-api/src/openai_api.ts",
+        "src/chat_module.ts",
+        "src/config.ts",
+        "src/llm_chat.ts",
+        "src/openai_api_protocols/chat_completion.ts",
+        "src/support.ts"
+      ],
+      "changedLines": 384,
+      "sealedCases": [
+        "top_logprobs out of range",
+        "top_logprobs set though logprobs is false",
+        "Set both logprobs and top_logprobs"
+      ],
+      "heldBackCases": [
+        "top_logprobs set without setting logprobs",
+        "Set logprobs without setting top_logprobs"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "81e1a99ac00d09400956fb7b49a660cf54db9a96",
+      "runner": "npx jest --ci tests/generation_config.test.ts"
+    },
+    {
+      "repository": "mlc-ai/web-llm",
+      "cloneUrl": "https://github.com/mlc-ai/web-llm.git",
+      "pull": 331,
+      "mergeCommit": "81e1a99ac00d09400956fb7b49a660cf54db9a96",
+      "taskText": "[OpenAI] Support logit_bias in chat completion. Support `logit_bias` in `ChatCompletionRequest`, hence also in `GenerationCongfig`. This `record<string, number>` modifies the likelihood of seeing a token. For more, see",
+      "testFile": "tests/generation_config.test.ts",
+      "sourceFiles": [
+        "examples/openai-api/src/openai_api.ts",
+        "src/chat_module.ts",
+        "src/config.ts",
+        "src/llm_chat.ts",
+        "src/openai_api_protocols/chat_completion.ts",
+        "src/types.ts"
+      ],
+      "changedLines": 111,
+      "sealedCases": [
+        "logit_bias exceeds range"
+      ],
+      "heldBackCases": [
+        "logit_bias invalid key"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "212ae18c62fab487cb660d412b1435a34060176a",
+      "runner": "npx jest --ci tests/generation_config.test.ts"
+    },
+    {
+      "repository": "gvergnaud/ts-pattern",
+      "cloneUrl": "https://github.com/gvergnaud/ts-pattern.git",
+      "pull": 319,
+      "mergeCommit": "8517f7f3ce8c08ac306931164dac232b10a47c58",
+      "taskText": "fix(.exhaustive): optional discriminant. This PR fixes #278 This new release fixes the following bug in exhaustiveness checking when matching on optional properties: These two cases don't type check anymore. They fail with a `NonExhaustiveError<{ type?: undefined; }>`. To fix it, you should do: This is a purely type-level change, the runtime behavior is still the same.",
+      "testFile": "tests/exhaustive-match.test.ts",
+      "sourceFiles": [
+        "src/types/BuildMany.ts",
+        "src/types/InvertPattern.ts",
+        "src/types/helpers.ts"
+      ],
+      "changedLines": 145,
+      "sealedCases": [
+        "exhaustive should fail when the optional key isn't provided",
+        "exhaustive should pass when using P.optional(undefined)"
+      ],
+      "heldBackCases": [
+        "exhaustive should fail when matching on { type: undefined }",
+        "exhaustive should pass when using {} and { type: undefined }"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "03e8898b417a46b03d04bf77f40d66a1ec050894",
+      "runner": "npx jest --ci tests/exhaustive-match.test.ts"
+    },
+    {
+      "repository": "gvergnaud/ts-pattern",
+      "cloneUrl": "https://github.com/gvergnaud/ts-pattern.git",
+      "pull": 253,
+      "mergeCommit": "60af2168cf998c3d6a50fc8735a50a5009cc86bf",
+      "taskText": "feat(exhaustive): Add support for passing a fallback function. Solves #144 #218 and replaces #38 #219 ## Docs By default, `.exhaustive()` will throw an error if the input value wasn't handled by any `.with(...)` clause. This should only happen if your types are incorrect. It is possible to pass your own handler function as a parameter to decide what should happen if an unexpected value has been received. You can for example throw your own custom error: Or log an error and return a default value:",
+      "testFile": "tests/exhaustive-fallback.test.ts",
+      "sourceFiles": [
+        "src/match.ts",
+        "src/types/Match.ts"
+      ],
+      "changedLines": 134,
+      "sealedCases": [
+        "should be called if the runtime value isn't expected",
+        "should return a value assignable to the explicit output type"
+      ],
+      "heldBackCases": [
+        "should throw otherwise",
+        "should return a value assignable .returnType<T>()"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "672b5efdb9d095b069055451a43c01e1f1082460",
+      "runner": "npx jest --ci tests/exhaustive-fallback.test.ts"
+    },
+    {
+      "repository": "gvergnaud/ts-pattern",
+      "cloneUrl": "https://github.com/gvergnaud/ts-pattern.git",
+      "pull": 305,
+      "mergeCommit": "c415e0c0dd0037f24819af57db5a3d9a6ace6d1d",
+      "taskText": "fix(isMatching): Allow unknown properties in pattern. The previous release introduced a bug with `isMatching` which made it unable to narrow union types properly, and would make it reject patterns containing extra unknown properties. This PR fixes this",
+      "testFile": "tests/is-matching.test.ts",
+      "sourceFiles": [
+        "src/is-matching.ts",
+        "src/types/Pattern.ts"
+      ],
+      "changedLines": 52,
+      "sealedCases": [
+        "should allow patterns targetting one member of a union type"
+      ],
+      "heldBackCases": [
+        "should allow targetting unknown properties"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "34f7a41d337e19f65ad5506ec50d135e7ca6c970",
+      "runner": "npx jest --ci tests/is-matching.test.ts"
+    },
+    {
+      "repository": "gvergnaud/ts-pattern",
+      "cloneUrl": "https://github.com/gvergnaud/ts-pattern.git",
+      "pull": 270,
+      "mergeCommit": "b0ae86bbccb84e18411e39a35fa80f523cc2075f",
+      "taskText": "feat: throw custom `ExhaustiveError` when no matched pattern. This adds/exports a custom `ExhaustiveError` which will be thrown at runtime when a `match` input doesn't match any pattern and `.exhaustive()` has been specified. This gives better error handling capabilities, for example when trying to distinguish between an unmatched pattern error and an error thrown within a matched pattern's callback. Resolves #269",
+      "testFile": "tests/exhaustive-match.test.ts",
+      "sourceFiles": [
+        "src/errors.ts",
+        "src/index.ts",
+        "src/match.ts"
+      ],
+      "changedLines": 77,
+      "sealedCases": [
+        "Unmatched pattern results in ExhaustiveError"
+      ],
+      "heldBackCases": [
+        "Matched pattern with callback error does not result in ExhaustiveError"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "1c81e6eb0185c2a5931edb3075e1ed5377f48c1a",
+      "runner": "npx jest --ci tests/exhaustive-match.test.ts"
+    },
+    {
+      "repository": "gvergnaud/ts-pattern",
+      "cloneUrl": "https://github.com/gvergnaud/ts-pattern.git",
+      "pull": 180,
+      "mergeCommit": "37f4a1b243159bd57243e20aa459711c8a69f89d",
+      "taskText": "🐛 fix: Accept branded primitive types as patterns. TS-Pattern v4 used to support branded types, usually defined as an intersection between a literal type (like `number` or `string`) and an object containing a unique symbol. There is a bug in v5 that prevents people from using branded types as patterns and this PR fixes it. This closes issue #167 and #178.",
+      "testFile": "tests/branded-nominal-types.test.ts",
+      "sourceFiles": [
+        "src/types/Pattern.ts"
+      ],
+      "changedLines": 36,
+      "sealedCases": [
+        "issue #167"
+      ],
+      "heldBackCases": [
+        "issue #178"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "369e88ca75a0518bd7a46207d7531fccf8e4895c",
+      "runner": "npx jest --ci tests/branded-nominal-types.test.ts"
+    },
+    {
+      "repository": "gvergnaud/ts-pattern",
+      "cloneUrl": "https://github.com/gvergnaud/ts-pattern.git",
+      "pull": 23,
+      "mergeCommit": "e42438faa300c956cc54b2dc4c4f7e9bd8f08514",
+      "taskText": "Gabriel.vergnaud/infer output as a union 2. ## Improve output type inference the output type of a match expressions will now be inferred as the Union of the return types of all branches:",
+      "testFile": "tests/output-type.test.ts",
+      "sourceFiles": [
+        "src/types/Match.ts",
+        "src/types/helpers.ts"
+      ],
+      "changedLines": 214,
+      "sealedCases": [
+        "should return a single type if they are all compatible",
+        "It should still be possible specify a precise output type",
+        "if the current inferred output is assignable to the new output, just pick the broader one",
+        "should return a single type if they are all compatible",
+        "It should still be possible specify a precise output type"
+      ],
+      "heldBackCases": [
+        "if the current inferred output is assignable to the new output, just pick the broader one",
+        "should return a single type if they are all compatible",
+        "It should still be possible specify a precise output type",
+        "if the current inferred output is assignable to the new output, just pick the broader one"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "131824a864078a6c4205cce115ffc92489721db1",
+      "runner": "npx jest --ci tests/output-type.test.ts"
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 554,
+      "mergeCommit": "daf4eec2ef9812d18e3ee0c5c795f59704013fa5",
+      "taskText": "Ignore invalid castling rights. Fixes #552. Turns out that the move generator was generating invalid castling moves due to incorrect castling rights in the FEN.",
+      "testFile": "__tests__/load.test.ts",
+      "sourceFiles": [
+        "src/chess.ts"
+      ],
+      "changedLines": 85,
+      "sealedCases": [
+        "load - full castling rights but white king moved",
+        "load - full castling rights but white queenside rook moved",
+        "load - full castling rights but black kingside rook moved"
+      ],
+      "heldBackCases": [
+        "load - full castling rights but white kingside rook moved",
+        "load - full castling rights but black king moved",
+        "load - full castling rights but black queenside rook moved"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "d2e02a427d3b8a9b7ad2f4fff8c363892d8a8eb3",
+      "runner": "npx vitest run __tests__/load.test.ts"
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 539,
+      "mergeCommit": "07507fc9669ed1f32ea896a394da2348b2853d72",
+      "taskText": "isPromotion method for UIs. Inspired by #148, covers off issues raised about knowing when a UI needs to prompt for a promotion piece.",
+      "testFile": "__tests__/is-promotion.test.ts",
+      "sourceFiles": [
+        "src/chess.ts"
+      ],
+      "changedLines": 44,
+      "sealedCases": [
+        "isPromotion - true for promotion",
+        "isPromotion - false for normal pawn move"
+      ],
+      "heldBackCases": [
+        "isPromotion - false for illegal move",
+        "isPromotion - false for non pawn move to eighth rank"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "f2f1fc63a40e2d89998a82d9ee4bf419adfe81d0",
+      "runner": "npx vitest run __tests__/is-promotion.test.ts"
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 530,
+      "mergeCommit": "33b19b3db0c1a3c20d6cfc91d72b9129f6a02e9a",
+      "taskText": "Add setTurn() method. Builds on the freshly merged null move functionality.",
+      "testFile": "__tests__/setTurn.test.ts",
+      "sourceFiles": [
+        "src/chess.ts"
+      ],
+      "changedLines": 50,
+      "sealedCases": [
+        "setTurn for current color returns false",
+        "setTurn throws if attempting to change color when in check"
+      ],
+      "heldBackCases": [
+        "setTurn for opposite color returns true"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "cca94e552cac1e90411906aa6a8bf2618763870e",
+      "runner": "npx vitest run __tests__/setTurn.test.ts"
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 451,
+      "mergeCommit": "3482911ac9351e0443a32e6feef3e1bbb1f5a1e8",
+      "taskText": "#319: add null move functionality. Implemented null move logic for SAN '--' and added a simple test case. Please review, I am open for discussions!",
+      "testFile": "__tests__/nullmove.test.ts",
+      "sourceFiles": [
+        "src/chess.ts"
+      ],
+      "changedLines": 108,
+      "sealedCases": [
+        "null move at start",
+        "null move is correctly displayed in pgn",
+        "6 null moves in a row result in a draw"
+      ],
+      "heldBackCases": [
+        "making null move by passing null object",
+        "null move while in check is not allowed"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "50f951d8fc8279b68968c94a78ba69e600f500c5",
+      "runner": "npx jest --ci __tests__/nullmove.test.ts"
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 501,
+      "mergeCommit": "f30a6ff60640626bb09f7ee177a8640ebba5003c",
+      "taskText": "Canonical PGN Header Tag order; mandatory Seven Tag Roster always included in PGN output. # Premises In order to be consistent with the PGN specification, the following is assumed: 1. The mandatory **Seven Tag Roster** (STR) is…mandatory\\! 1. Default values should be provided as specified in the spec 2. pgnLoad() can be lax, however 2. The order of header tags should reflect the order they appear in the spec 1. “Like with like”, e.g. **Opening, Variation, SubVariation** 3. A **game termination marker** is required at the end of the **movetext** 1. It should match the mandatory **Result** value in the STR # Changes The chess.header() deprecation tag was not active; it is in this patch. The method will return null-valued header tags, which is undesirable (see getHeaders(), below). A HEADER\\_TEMPLATE has been added and it contains the subtemplates SEVEN\\_TAG\\_ROSTER and SUPPLEMENTAL\\_TAGS. SEVEN\\_TAG\\_ROSTER has default values (since they are mandatory per spec). The SUPPLEMENTAL\\_TAGS values are initialized to null; fields with null values are not included in the output of method chess.getHeaders(). The \\_header type has been modified to allow for nulls in addition to strings. The pu",
+      "testFile": "__tests__/headers.test.ts",
+      "sourceFiles": [
+        "src/chess.ts"
+      ],
+      "changedLines": 390,
+      "sealedCases": [
+        "setHeader should add or update a header",
+        "getHeaders should return only non-null headers"
+      ],
+      "heldBackCases": [
+        "removeHeader should remove a header if it exists"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "dc1f397bc0195dda45e12f0ddf3322550cbee078",
+      "runner": "npx jest --ci __tests__/headers.test.ts"
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 494,
+      "mergeCommit": "e9b19efa78ed6be45dc181779f21c2541778ac83",
+      "taskText": "feat: add getSquareByPiece function. Hi! I have been in need of this method while playing with your **awesome** library. I hope the implementation satisfies your code guidelines. Added a test following the example of `__tests__/get.test.ts`. For this function name, I had originally thought of `getSquare`, simply. I then went for `getSquareByPiece` for clarity. Please, let me know if I should make any changes to this pr 😃 Again, great project!",
+      "testFile": "__tests__/get-square-by-piece.test.ts",
+      "sourceFiles": [
+        "src/chess.ts"
+      ],
+      "changedLines": 75,
+      "sealedCases": [
+        "findPiece - returns array with the only piece",
+        "findPiece - returns empty array for missing piece"
+      ],
+      "heldBackCases": [
+        "findPiece - returns array with all the pieces",
+        "findPiece - returns empty array for invalid piece"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "15bf18423d5d637b0bb14aabb0b8352f710fe937",
+      "runner": "npx jest --ci __tests__/get-square-by-piece.test.ts"
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 456,
+      "mergeCommit": "52f7579e927fb4bd2d51f3d3f07e7d2200770ddd",
+      "taskText": "#186: Add attackers(). # Changes - Added attackers(), a new public method that returns a list of attacking squares, as mentioned in #186. The method follows all the same rules as isAttacked(). - Modified _attacked() to take in an optional boolean parameter, `verbose`. When `verbose` is false, it behaves like normal (unchanged). When `verbose` is true, it returns a list of attacking squares. - Created test cases for attackers(). - Updated the README.md. Any previous code that calls _attacked() should remain unaffected since the `verbose` parameter is optional. Running all the test cases before and after modifying _attacked() shows no difference in performance. # Examples (as shown in the README.md):",
+      "testFile": "__tests__/attackers.test.ts",
+      "sourceFiles": [
+        "src/chess.ts"
+      ],
+      "changedLines": 301,
+      "sealedCases": [
+        "attackers - attacker count in default position",
+        "attackers - attacker count when all but one square is covered",
+        "attackers - every piece attacking empty square",
+        "attackers - every piece defending empty square",
+        "attackers - pinned pieces still attack and defend",
+        "attackers - a lot of attackers",
+        "attackers - readme tests"
+      ],
+      "heldBackCases": [
+        "attackers - attacker count in middlegame position",
+        "attackers - return value depends on side to move",
+        "attackers - every piece attacking another piece",
+        "attackers - every piece defending another piece",
+        "attackers - king can \"attack\" defended piece",
+        "attackers - no attackers"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "0762754ed3f9f9d6369dd45a1a00fc7a4fadd10d",
+      "runner": "npx jest --ci __tests__/attackers.test.ts"
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 418,
+      "mergeCommit": "55181a901c7133eb303441fe6639a8c5707d38cb",
+      "taskText": "Fix #144 and optimisations. As discussed in [the other PR]( I'm splitting the optimisations into their own PR. Since the bug fix is a dependency of the `isThreefoldRepetition` optimisation, I've included it in this PR.",
+      "testFile": "__tests__/position-counts.test.ts",
+      "sourceFiles": [
+        "src/chess.ts"
+      ],
+      "changedLines": 165,
+      "sealedCases": [
+        "_positionCounts - counts repeated positions",
+        "_positionCounts - resets when cleared",
+        "_positionCounts - resets when loading PGN"
+      ],
+      "heldBackCases": [
+        "_positionCounts - removes when undo",
+        "_positionCounts - resets when loading FEN"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "0f6a2bb07dfbb7db973ee7bd3b635ddbcc501afe",
+      "runner": "npx jest --ci __tests__/position-counts.test.ts"
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 387,
+      "mergeCommit": "7cb2d3438299d209d31ecf3d517a62815adefb5a",
+      "taskText": "Ensure put/remove functions update castling rights. @jhlywa Once you are happy with this PR, I'll create a second one to ensure the ep square is updated also.",
+      "testFile": "__tests__/castling-rights.test.ts",
+      "sourceFiles": [
+        "src/chess.ts"
+      ],
+      "changedLines": 258,
+      "sealedCases": [
+        "setCastlingRights - clear white kingside",
+        "setCastlingRights - clear black kingside",
+        "setCastlingRights - set white kingside",
+        "setCastlingRights - set black kingside",
+        "setCastlingRights - fail to set white kingside",
+        "setCastlingRights - fail to set black kingside"
+      ],
+      "heldBackCases": [
+        "setCastlingRights - clear white queenside",
+        "setCastlingRights - clear black queenside",
+        "setCastlingRights - set white queenside",
+        "setCastlingRights - set black queenside",
+        "setCastlingRights - fail to set white queenside",
+        "setCastlingRights - fail to set black queenside"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "67b4b741b98204165931f4bee6bd7473dc04a2ed",
+      "runner": "npx jest --ci __tests__/castling-rights.test.ts"
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 378,
+      "mergeCommit": "e02c53e5678997581fe13329962a3395d8604b2f",
+      "taskText": "Implemented moves list by piece. Added support for moves() to filter by piece, as well as tests in moves.test.ts. closes #377 _moves() already seems to properly handle piece filtering, as well as filtering for both a square and piece type. So didn't take much to implement. Think I managed to cover every case with the overloads added for move(), but probably worth double checking. Added a few unit tests to confirm the changes are working as intended. Hopefully this is helpful !",
+      "testFile": "__tests__/moves.test.ts",
+      "sourceFiles": [
+        "src/chess.ts"
+      ],
+      "changedLines": 133,
+      "sealedCases": [
+        "moves - piece",
+        "moves - piece - no such piece",
+        "moves - square and piece"
+      ],
+      "heldBackCases": [
+        "moves - piece - en passante",
+        "moves - piece - verbose"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "fd4cf2093aee181e8a885992ea3ca0cad286050d",
+      "runner": "npx jest --ci __tests__/moves.test.ts"
+    },
+    {
+      "repository": "trekhleb/javascript-algorithms",
+      "cloneUrl": "https://github.com/trekhleb/javascript-algorithms.git",
+      "pull": 438,
+      "mergeCommit": "1503325329d63f7fead7f455fda5a4338b4e93bb",
+      "taskText": "Graph customization. * Allow graph edges with custom keys. This is important if we have two edges connected to the same vertices but having a different weight. We could have used the weight in the name, but as conceptually two edges could also have the same vertices and weight, I think it's a better idea to propose the user a way to make sure this edge case (pun intended) doesn't happen. * Vertex can be converted to string, so I made sure that the `toString()` method is called, in case we have objects convertible to strings. The native `toString()` implementation might throw exceptions as expected. * Edge key is now sure to be correctly converted to string too. * We currently can't add an edge twice to a graph, I also added support for not adding a vertex twice.",
+      "testFile": "src/data-structures/graph/__test__/GraphEdge.test.js",
+      "sourceFiles": [
+        "src/data-structures/graph/Graph.js",
+        "src/data-structures/graph/GraphEdge.js",
+        "src/data-structures/graph/GraphVertex.js"
+      ],
+      "changedLines": 85,
+      "sealedCases": [
+        "should return edges names as key",
+        "should execute toString on key  when calling toString on edge"
+      ],
+      "heldBackCases": [
+        "should return custom key if defined"
+      ],
+      "viable": false,
+      "why": "the added tests already pass on the base source, so they specify nothing new",
+      "baseCommit": "e743df6fab242d24dddad13e2d9399b2d642d3c9",
+      "runner": "npx jest --ci src/data-structures/graph/__test__/GraphEdge.test.js"
+    },
+    {
+      "repository": "trekhleb/javascript-algorithms",
+      "cloneUrl": "https://github.com/trekhleb/javascript-algorithms.git",
+      "pull": 980,
+      "mergeCommit": "e4f2ccdbece78d44d3f4bd908c828408b1c0c791",
+      "taskText": "Add an example of the LRU (Least Recently Used) Cache implementation. The `LRUCache` implementation example. The solution uses a `HashMap` for fast `O(1)` cache items access, and a `DoublyLinkedList` for fast `O(1)` cache items promotions and eviction (to keep the maximum allowed cache capacity).",
+      "testFile": "src/data-structures/lru-cache/__test__/LRUCache.test.js",
+      "sourceFiles": [
+        "src/data-structures/lru-cache/LRUCache.js",
+        "src/data-structures/lru-cache/LinkedListNode.js"
+      ],
+      "changedLines": 339,
+      "sealedCases": [
+        "should set and get values to and from the cache",
+        "should evict least recently used items from cache with cache size of 2",
+        "should promote the node while calling set() method",
+        "should promote the recently accessed item with cache size of 4"
+      ],
+      "heldBackCases": [
+        "should evict least recently used items from cache with cache size of 1",
+        "should evict least recently used items from cache with cache size of 3",
+        "should promote the recently accessed item with cache size of 3"
+      ],
+      "viable": false,
+      "why": "npm ci failed at the base:  -v v1.0.8\nnpm error node-pre-gyp ERR! not ok\nnpm error A complete log of this run can be found in: /Users/brad/.npm/_logs/2026-09-07T22_29_44_258Z-debug-0.log\n",
+      "baseCommit": "6c335c5d833fd2a68342cf3648a3174bed8c01ad"
+    },
+    {
+      "repository": "trekhleb/javascript-algorithms",
+      "cloneUrl": "https://github.com/trekhleb/javascript-algorithms.git",
+      "pull": 737,
+      "mergeCommit": "b2d1ec83f04a66d9d2d3f09150bcaf0cacb0f7ba",
+      "taskText": "Binary representation of floating-point numbers. 1. Adding the explanation of how the floating-point numbers like `-27.156` are stored in binary format in a computer's memory. 2. Adding an example of how to convert an array of bits to the floating-point number (the example is a bit artificial but still it gives the overview of how the conversion is going on) 3. Adding an example of how to see the actual binary representation of the floating-point number in JavaScript",
+      "testFile": "src/algorithms/math/binary-floating-point/__tests__/bitsToFloat.test.js",
+      "sourceFiles": [
+        "src/algorithms/math/binary-floating-point/bitsToFloat.js",
+        "src/algorithms/math/binary-floating-point/floatAsBinaryString.js",
+        "src/algorithms/math/binary-floating-point/testCases.js"
+      ],
+      "changedLines": 397,
+      "sealedCases": [
+        "should convert floating point binary bits to floating point decimal number",
+        "should convert floating point binary bits to floating point decimal number"
+      ],
+      "heldBackCases": [
+        "should convert floating point binary bits to floating point decimal number"
+      ],
+      "viable": false,
+      "why": "npm ci failed at the base: -v v0.15.0\nnpm error node-pre-gyp ERR! not ok\nnpm error A complete log of this run can be found in: /Users/brad/.npm/_logs/2026-09-07T22_29_48_433Z-debug-0.log\n",
+      "baseCommit": "433515f1b22a1a53443429b20f09f821a3325895"
+    },
+    {
+      "repository": "trekhleb/javascript-algorithms",
+      "cloneUrl": "https://github.com/trekhleb/javascript-algorithms.git",
+      "pull": 517,
+      "mergeCommit": "bd7475ee1921fedc0d0272b7ae331a95451023fc",
+      "taskText": "Caeser cipher. Hi @trekhleb. I just added the ceaserCipher algorithm to your javascript-algorithms repository and it is well tested and documented, I would like you to merge it with the existing repository. Thanks in advance",
+      "testFile": "src/algorithms/string/caeserCipher/__test__/caeserCipher.test.js",
+      "sourceFiles": [
+        "src/algorithms/string/caeserCipher/caeserCipher.js"
+      ],
+      "changedLines": 72,
+      "sealedCases": [
+        "should subtitute each character by shifting up the alphabet by a given integer",
+        "should only shift letters and ignore non-alphabetic characters"
+      ],
+      "heldBackCases": [
+        "should wrap back to the beginning of the alphabet if it shifts more than the 26 english alphabets",
+        "should ignore case sensitivity"
+      ],
+      "viable": false,
+      "why": "the added tests do not pass on the merged tree either, so the target is unclear",
+      "baseCommit": "e54a3df23184c9e09d57713f8709fee9a799bde1",
+      "runner": "npx jest --ci src/algorithms/string/caeserCipher/__test__/caeserCipher.test.js"
+    },
+    {
+      "repository": "iamkun/dayjs",
+      "cloneUrl": "https://github.com/iamkun/dayjs.git",
+      "pull": 3180,
+      "mergeCommit": "dad46e6fe5198d77d87ed3b121937f77adaee0a6",
+      "taskText": "fix(plugin/timezone): prevent RangeError for invalid Day.js values. Add early-return guards in proto.tz and d.tz so that invalid dates return an invalid Day.js instance instead of throwing when Intl.DateTimeFormat.formatToParts receives an invalid Date. Regression introduced in 1.11.22 by e27ee80. fix",
+      "testFile": "test/plugin/timezone.test.js",
+      "sourceFiles": [
+        "src/plugin/timezone/index.js"
+      ],
+      "changedLines": 18,
+      "sealedCases": [
+        "does not throw for invalid Day.js values (regression #111.22)"
+      ],
+      "heldBackCases": [
+        "does not throw for invalid string in d.tz()"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "ae3a55025cdf0f06c8705b5e8b61cd4edb33697a",
+      "runner": "npx jest --ci test/plugin/timezone.test.js",
+      "timezone": "Pacific/Auckland"
+    },
+    {
+      "repository": "iamkun/dayjs",
+      "cloneUrl": "https://github.com/iamkun/dayjs.git",
+      "pull": 3181,
+      "mergeCommit": "2a3785fd27084d6bb78dfe8c3d7320c736ef4862",
+      "taskText": "D2M. …lues (#3180) Add early-return guards in proto.tz and d.tz so that invalid dates return an invalid Day.js instance instead of throwing when Intl.DateTimeFormat.formatToParts receives an invalid Date. Regression introduced in 1.11.22 by e27ee80.",
+      "testFile": "test/plugin/timezone.test.js",
+      "sourceFiles": [
+        "src/plugin/timezone/index.js"
+      ],
+      "changedLines": 18,
+      "sealedCases": [
+        "does not throw for invalid Day.js values (regression #111.22)"
+      ],
+      "heldBackCases": [
+        "does not throw for invalid string in d.tz()"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "ae3a55025cdf0f06c8705b5e8b61cd4edb33697a",
+      "runner": "npx jest --ci test/plugin/timezone.test.js",
+      "timezone": "Pacific/Auckland"
+    },
+    {
+      "repository": "iamkun/dayjs",
+      "cloneUrl": "https://github.com/iamkun/dayjs.git",
+      "pull": 3174,
+      "mergeCommit": "e27ee8021a512b5770ffe683e010830bb9b6fb6d",
+      "taskText": "fix(timezone): compute instance .tz() offset without host DST. ## Summary Fixes incorrect timezone offsets when converting an instant with instance `.tz()` on a host that observes DST. This is the **minimal** follow-up to #3169, as requested by @iamkun: only the original `tzOffset()` change in `proto.tz`, no wall-clock / `set` / `add` / `startOf` refactor. **Bug:** `America/Guadeloupe` is a fixed UTC−4 zone (no DST). On hosts such as `Europe/Paris` or `Europe/London`, around the EU spring-forward Sunday, `dayjs(instant).tz('America/Guadeloupe')` could report **−03:00** instead of **−04:00**. Adding one day and converting again could then land on the **same calendar day**. The same host-DST leak also affects DST-observing target zones when their calendar is out of sync with the host (US vs EU mid-March / late October, southern-hemisphere summer). **Root cause:** `proto.tz` derived the offset from: Both `new Date(target)` and `getTimezoneOffset()` depend on the **host** timezone. The static helper `dayjs.tz(string, zone)` already used `tzOffset` via `Intl.DateTimeFormat#formatToParts` (host-independent). Instance `.tz()` did not. **Fix:** reuse the existing `tzOffset(+date, timezone)",
+      "testFile": "test/plugin/timezone.test.js",
+      "sourceFiles": [
+        "src/plugin/timezone/index.js"
+      ],
+      "changedLines": 223,
+      "sealedCases": [
+        "keeps local time when converting between DST-desynced zones",
+        "matches moment for America/Guadeloupe around host spring DST",
+        "converts to America/New_York while US is in DST and EU is not",
+        "converts to America/New_York while US is still in DST and EU has fallen back",
+        "converts to Australia/Sydney while southern hemisphere is in DST",
+        "parses the fall-back overlap the same way as moment",
+        "converts through the host fall-back overlap",
+        "converts Europe/London in winter (UTC+0)",
+        "keeps local time when converting a host-local instance",
+        "handles quarter-hour and date-line offsets"
+      ],
+      "heldBackCases": [
+        "keeps UTC−4 when converting an instant around host spring DST",
+        "advances the calendar day when adding 1 day across host spring DST",
+        "converts to Europe/Paris while EU is still on standard time",
+        "converts to Europe/Paris after EU has fallen back",
+        "converts to Europe/Paris while northern hemisphere is on standard time",
+        "keeps the two 01:30 instants distinct when converting",
+        "converts 30-minute DST (Australia/Lord_Howe)",
+        "handles the 30-minute Lord Howe gap and both sides of its overlap",
+        "diffs elapsed hours and calendar days across target DST"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "98364bcebc047529345cc8c2bbcc44a6a8c18e79",
+      "runner": "npx jest --ci test/plugin/timezone.test.js",
+      "timezone": "Pacific/Auckland"
+    },
+    {
+      "repository": "iamkun/dayjs",
+      "cloneUrl": "https://github.com/iamkun/dayjs.git",
+      "pull": 2693,
+      "mergeCommit": "b575c81a8c9c85c7a0baf6f608a12f9d3ba95bd1",
+      "taskText": "fix: timezone plugin correct parse UTC tz. fix",
+      "testFile": "test/plugin/timezone.test.js",
+      "sourceFiles": [
+        "src/index.js",
+        "src/plugin/timezone/index.js"
+      ],
+      "changedLines": 50,
+      "sealedCases": [
+        "TZ with UTC with Locale"
+      ],
+      "heldBackCases": [
+        "TZ with UTC"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "f3ef705613af83333fe132b470896a65e12f31b0",
+      "runner": "npx jest --ci test/plugin/timezone.test.js",
+      "timezone": "Pacific/Auckland"
+    },
+    {
+      "repository": "iamkun/dayjs",
+      "cloneUrl": "https://github.com/iamkun/dayjs.git",
+      "pull": 2640,
+      "mergeCommit": "6a42e0d7398639238f575d51287daaf4d495a2a3",
+      "taskText": "feat: Add negative years support. Add ability to parse negative years This fix [2636]( issue",
+      "testFile": "test/plugin/negativeYear.test.js",
+      "sourceFiles": [
+        "src/plugin/negativeYear/index.js"
+      ],
+      "changedLines": 79,
+      "sealedCases": [
+        "parses negative years",
+        "works with other plugins",
+        "Compare date with negative years"
+      ],
+      "heldBackCases": [
+        "does not parse non-negative years",
+        "Add and subtract with negative years"
+      ],
+      "viable": true,
+      "why": "fails on the base source, passes on the merged tree",
+      "baseCommit": "3737c8c35459562d4e345136cbb83290e88c6692",
+      "runner": "npx jest --ci test/plugin/negativeYear.test.js",
+      "timezone": "Pacific/Auckland"
+    },
+    {
+      "repository": "iamkun/dayjs",
+      "cloneUrl": "https://github.com/iamkun/dayjs.git",
+      "pull": 1255,
+      "mergeCommit": "f2e479006a9a49bc0917f8620101d40ac645f7f2",
+      "taskText": "Preparse postformat + implementation in ar locale + tests. Added a plugin to implement the preparse / postformat functions for locales such as \"ar\", based on the moment implementation. I added tests for both the plugin and the locale changes based on the moment tests. This should solve #416 Do note that the relative time implementation for the ar locale does not match the moment one, so the tests for the locale are different (to focus on coverage and not correctness tests - since I am not an arabic speaker and could not fix the relative time implementation in the scope of this change).",
+      "testFile": "test/plugin/preParsePostFormat.test.js",
+      "sourceFiles": [
+        "src/locale/ar.js",
+        "src/plugin/preParsePostFormat/index.js",
+        "src/plugin/relativeTime/index.js"
+      ],
+      "changedLines": 322,
+      "sealedCases": [
+        "preparse string + format",
+        "postformat",
+        "postformat should work on dayjs.fn.fromNow",
+        "today at the same time",
+        "Now plus 1 hour",
+        "Now minus 1 hour"
+      ],
+      "heldBackCases": [
+        "preparse ISO8601 string",
+        "postformat should work on dayjs.fn.from",
+        "postformat should work on dayjs.duration.fn.humanize",
+        "Now plus 25 min",
+        "tomorrow at the same time",
+        "yesterday at the same time"
+      ],
+      "viable": false,
+      "why": "npm ci failed at the base: ror\nnpm error Run \"npm help ci\" for more info\nnpm error A complete log of this run can be found in: /Users/brad/.npm/_logs/2026-09-07T22_30_39_232Z-debug-0.log\n",
+      "baseCommit": "de49bb100badfb92b9a5933cc568841f340a923f"
+    },
+    {
+      "repository": "koajs/koa",
+      "cloneUrl": "https://github.com/koajs/koa.git",
+      "pull": 1814,
+      "mergeCommit": "b89e19a27509c96d27af722f9951e0d72cb41eb5",
+      "taskText": "fix: improve body null check. ## Checklist - [x] I have ensured my pull request is not behind the main or master branch of the original repository. - [x] I have rebased all commits where necessary so that reviewing this pull request can be done without having to merge it first. - [x] I have written a commit message that passes commitlint linting. - [x] I have ensured that my code changes pass linting tests. - [x] I have ensured that my code changes pass unit tests. - [x] I have described my pull request and the reasons for code changes along with context if necessary.",
+      "testFile": "__tests__/application/respond.js",
+      "sourceFiles": [
+        "lib/application.js"
+      ],
+      "changedLines": 38,
+      "sealedCases": [
+        "should respond 204 by default"
+      ],
+      "heldBackCases": [
+        "should respond 204 with status=200"
+      ],
+      "viable": false,
+      "why": "the added tests do not pass on the merged tree either, so the target is unclear",
+      "baseCommit": "00f3fed66d15f1e574311909304fabe4bf2cdee6",
+      "runner": "npx jest --ci __tests__/application/respond.js"
+    },
+    {
+      "repository": "tj/commander.js",
+      "cloneUrl": "https://github.com/tj/commander.js.git",
+      "pull": 2299,
+      "mergeCommit": "49423a288b6561190461bf91231a18085e60dad4",
+      "taskText": "Add save/restore state to allow multiple calls to parse. # Pull Request ## Problem People may not realise parse should only be called once, and discover by trial and error. See: #438 #1565 #1819 #1829 #1916 #2036 #2246 #2247 #2263 ## Solution I thought it was going to be hard and messy to save/restore state and not worth it, but turned out fairly straightforward! Fingers crossed. When `storeOptionsAsProperties: false` allow multiple calls to parse by storing and resetting the state. This is done in a lazy way, so a wide or deep hierarchy of subcommands does not need to save state on whole tree. When `storeOptionsAsProperties: true` then throw on the second call to parse. Not planning to support multiple calls to `.parseOptions()` as little used for direct calls, but could do that by moving the implementation into a private routine and call `._prepareForParse()` in public routine. ## ChangeLog - support multiple calls to `.parse()` with default settings - throw on multiple calls to `.parse()` if `storeOptionsAsProperties: true` - add `.saveStateBeforeParse()` and `.restoreStateBeforeParse()` for use by subclasses",
+      "testFile": "tests/command.parse.test.js",
+      "sourceFiles": [
+        "lib/command.js",
+        "typings/index.test-d.ts"
+      ],
+      "changedLines": 297,
+      "sealedCases": [
+        "when use boolean options then option values reset",
+        "when use options with option-argument and default then option values and sources reset",
+        "when use variadic option then option values reset",
+        "when use increaseVerbosity example then option value resets",
+        "when call subcommand then option values reset (program and subcommand)",
+        "when parse with different implied program name then name changes",
+        "when parse with different arguments then rawArgs change",
+        "when parse subcommand then reset state before preSubcommand hook called"
+      ],
+      "heldBackCases": [
+        "when use options with option-argument then option values and sources reset",
+        "when use negated options then option values reset",
+        "when use collect example then option value resets",
+        "when use parse and parseAsync then option values reset",
+        "when call different subcommand then no reset because lazy",
+        "when parse with different arguments then args change",
+        "when parse with different arguments then processedArgs change",
+        "when using storeOptionsAsProperties then throw on second parse"
+      ],
+      "viable": false,
+      "why": "the added tests do not pass on the merged tree either, so the target is unclear",
+      "baseCommit": "497c11d83065567a3b2840bc0800d30e6ab4ed33",
+      "runner": "npx jest --ci tests/command.parse.test.js"
+    },
+    {
+      "repository": "tj/commander.js",
+      "cloneUrl": "https://github.com/tj/commander.js.git",
+      "pull": 1937,
+      "mergeCommit": "ac8db3a6f1d1025ea9a9b11d3cf4483a71610666",
+      "taskText": "Add missing check for broken passThrough. ## Problem <details> <summary>A check for this case is considered unnecessary, see <a href=\" </details> ## Solution Throw errors in all demonstrated cases. Additionally make the error message more meaningful by including the command name (similar to #1923 and #1924). ## ChangeLog ### Changed - _Breaking:_ throw when a subcommand with `passThroughOptions` is added to a command without `enablePositionalOptions`",
+      "testFile": "tests/command.positionalOptions.test.js",
+      "sourceFiles": [
+        "lib/command.js"
+      ],
+      "changedLines": 40,
+      "sealedCases": [
+        "when program not positional and turn on passThroughOptions in subcommand then error"
+      ],
+      "heldBackCases": [
+        "when program not positional and add subcommand with passThroughOptions then error"
+      ],
+      "viable": false,
+      "why": "the added tests already pass on the base source, so they specify nothing new",
+      "baseCommit": "ec1942ddcc404adbe9cea3e11d87ed4043782b6c",
+      "runner": "npx jest --ci tests/command.positionalOptions.test.js"
+    },
+    {
+      "repository": "tj/commander.js",
+      "cloneUrl": "https://github.com/tj/commander.js.git",
+      "pull": 2013,
+      "mergeCommit": "384f17b7660d474f44136c75d25eb8f6b796e9c8",
+      "taskText": "Fix factory functions with typescript whole module import. # Pull Request A subtle problem with Commander exports got reported in #1974 ## Problem The factory functions like `createOption` were not available using a TypeScript whole module import (`import * as commander`) when `esModuleInterop: true`. ## Solution Explicitly export the factory functions, rather than just rely on implicitly being available via global program. This is also consistent with eventual goal of dropping deprecated default export of global program. Inspired by #1974. Lists @aweebit as co-author in commit comment. <strike> ## ChangeLog - fix: global factory functions now available when using TypeScript whole module import (`import * as commander`) </strike> NB: re-export reverted in #2014 due to problems!",
+      "testFile": "tests/ts-imports.test.ts",
+      "sourceFiles": [
+        "index.js"
+      ],
+      "changedLines": 147,
+      "sealedCases": [
+        "program",
+        "Option",
+        "Help",
+        "InvalidArgumentError",
+        "createCommand",
+        "createArgument",
+        "Command",
+        "Argument",
+        "CommanderError",
+        "InvalidOptionArgumentError",
+        "createOption"
+      ],
+      "heldBackCases": [
+        "Command",
+        "Argument",
+        "CommanderError",
+        "InvalidOptionArgumentError",
+        "createOption",
+        "program",
+        "Option",
+        "Help",
+        "InvalidArgumentError",
+        "createCommand",
+        "createArgument"
+      ],
+      "viable": false,
+      "why": "the added tests already pass on the base source, so they specify nothing new",
+      "baseCommit": "58820a47b3d8cd7a336346861bffc3848502352e",
+      "runner": "npx jest --ci tests/ts-imports.test.ts"
+    },
+    {
+      "repository": "tj/commander.js",
+      "cloneUrl": "https://github.com/tj/commander.js.git",
+      "pull": 2017,
+      "mergeCommit": "c876dee8a5ac71598dd8f252a3a29d71942e3c73",
+      "taskText": "Remove default export of global program. # Pull Request ## Problem We have been slowly moving towards removing the default export of global Command instance. Already removed from the README, removed from the TypeScript, and omitted from the esm interface. Recently observed some problems due to the legacy export: #2013 #2014 Deprecation: Issue: #2016 ## Solution Remove from the CommonJS exports too! ## ChangeLog - Removed: _breaking_: removed default export of a global Command instance from CommonJS (use the named `program` export instead)",
+      "testFile": "tests/program.test.js",
+      "sourceFiles": [
+        "index.js"
+      ],
+      "changedLines": 96,
+      "sealedCases": [
+        "program",
+        "Option",
+        "Help",
+        "InvalidArgumentError"
+      ],
+      "heldBackCases": [
+        "Command",
+        "Argument",
+        "CommanderError",
+        "InvalidOptionArgumentError"
+      ],
+      "viable": false,
+      "why": "the added tests already pass on the base source, so they specify nothing new",
+      "baseCommit": "f570b089a7a05d965258d36e16f0fa56a9c93c11",
+      "runner": "npx jest --ci tests/program.test.js"
+    },
+    {
+      "repository": "caolan/async",
+      "cloneUrl": "https://github.com/caolan/async.git",
+      "pull": 1640,
+      "mergeCommit": "667e71760e7f2dd558e868796bd6e6008a3bac16",
+      "taskText": "BREAKING CHANGE: remove partial application feature of applyEach. Fixes #1228 , making it more type-able. This reduces the utility of `applyEach`, though. I'm almost in favor of removing the whole method. I couldn't find any examples of it being used in the wild, and has always been a strange method.",
+      "testFile": "test/es2017/awaitableFunctions.js",
+      "sourceFiles": [
+        "lib/eachSeries.js",
+        "lib/internal/applyEach.js"
+      ],
+      "changedLines": 87,
+      "sealedCases": [
+        "should return a Promise: applyEach"
+      ],
+      "heldBackCases": [
+        "should return a Promise: applyEachSeries"
+      ],
+      "viable": false,
+      "why": "the added tests already pass on the base source, so they specify nothing new",
+      "baseCommit": "4330d536c106592139fa82062494c9dba0da1fdb",
+      "runner": "npx mocha test/es2017/awaitableFunctions.js"
+    },
+    {
+      "repository": "remy/nodemon",
+      "cloneUrl": "https://github.com/remy/nodemon.git",
+      "pull": 1787,
+      "mergeCommit": "03c4ed3b76d569988038e35727c5c6808f323d52",
+      "taskText": "fix: ignore ./<path> on cwd. Fixes: #1784 This fixes the watch/ignore rules where the config is ignoring the relative local path of ./ - this fix was in place for the positive (watch) test but not patched for the negative (ignore).",
+      "testFile": "test/monitor/match.test.js",
+      "sourceFiles": [
+        "lib/monitor/match.js"
+      ],
+      "changedLines": 53,
+      "sealedCases": [
+        "should resolve ./ in positive match",
+        "should resolve ./ in negative match (hit test)"
+      ],
+      "heldBackCases": [
+        "should resolve ./ in positive match (miss test)"
+      ],
+      "viable": false,
+      "why": "the added tests do not pass on the merged tree either, so the target is unclear",
+      "baseCommit": "7e00a30d31c5a464f7a2bee0657a4aa5e702236a",
+      "runner": "npx mocha test/monitor/match.test.js"
+    },
+    {
+      "repository": "remy/nodemon",
+      "cloneUrl": "https://github.com/remy/nodemon.git",
+      "pull": 1111,
+      "mergeCommit": "29a9a449d5b2011bb704f1a80d786f57455f036c",
+      "taskText": "fix: Add support for multi-level file extensions. Fixes #810 Allows the ability to watch file extensions such as `ts.d` without it triggering when a `.ts` or `.d` file is changed.",
+      "testFile": "test/cli/exec.test.js",
+      "sourceFiles": [
+        "lib/config/exec.js"
+      ],
+      "changedLines": 19,
+      "sealedCases": [
+        "should support multi-level file extensions"
+      ],
+      "heldBackCases": [
+        "should support single-level file extensions"
+      ],
+      "viable": false,
+      "why": "npm ci failed at the base: or 404 tarball, folder, http url, or git url.\nnpm error A complete log of this run can be found in: /Users/brad/.npm/_logs/2026-09-07T22_51_07_163Z-debug-0.log\n",
+      "baseCommit": "ff935cae7f92a205b465328d9c0583445f9c8b80"
+    },
+    {
+      "repository": "remy/nodemon",
+      "cloneUrl": "https://github.com/remy/nodemon.git",
+      "pull": 1028,
+      "mergeCommit": "fb5da380c8d2b72cd3da59fb7b5c174ff071be89",
+      "taskText": "Support configuration from 'nodemonConfig' in package.json. Allow `nodemonConfig` to be used in a projects `package.json`. This matches the option of a lot of other development tools - [ESLint as `eslintConfig `]( [JSHint as `jshintConfig`]( [JSCS as `jscsConfig`]( but to name a few...! This feature is entirely additive - if the `--config <file>` is specified or there's a local `nodemon.json` then `nodemonConfig` in the `package.json` will be ignored.",
+      "testFile": "test/config/load.test.js",
+      "sourceFiles": [
+        "lib/config/load.js"
+      ],
+      "changedLines": 133,
+      "sealedCases": [
+        "should read package.json config",
+        "should give package.json config preference",
+        "should give package.json specified exec config over package.scripts.start"
+      ],
+      "heldBackCases": [
+        "should give local files preference over package.json config",
+        "should give user specified settings preference over package.json config"
+      ],
+      "viable": false,
+      "why": "npm ci failed at the base: ror\nnpm error Run \"npm help ci\" for more info\nnpm error A complete log of this run can be found in: /Users/brad/.npm/_logs/2026-09-07T22_51_10_520Z-debug-0.log\n",
+      "baseCommit": "63e8606748200837016145f69799568e746e9e70"
+    },
+    {
+      "repository": "remy/nodemon",
+      "cloneUrl": "https://github.com/remy/nodemon.git",
+      "pull": 634,
+      "mergeCommit": "61959163ff35b1228d5bac15909b0184a7173a68",
+      "taskText": "allow for dotfiles. Dotfiles are being ignored without even though they're being included in the watched directories. There's two commits: - added tests and exposed `watch` and `resetWatch` - ignore dotfiles only if it was not explicitly told to watch for dotfiles.",
+      "testFile": "test/monitor/match.test.js",
+      "sourceFiles": [
+        "lib/monitor/index.js",
+        "lib/monitor/run.js",
+        "lib/monitor/watch.js"
+      ],
+      "changedLines": 70,
+      "sealedCases": [
+        "should match a dotfile if explicitly asked to"
+      ],
+      "heldBackCases": [
+        "should match a dotfolder if explicitly asked to"
+      ],
+      "viable": false,
+      "why": "the merge commit is not fetchable (force-pushed or deleted)"
+    },
+    {
+      "repository": "remy/nodemon",
+      "cloneUrl": "https://github.com/remy/nodemon.git",
+      "pull": 539,
+      "mergeCommit": "be3e165b1bc487d344608a4f848b246d64b6d122",
+      "taskText": "Fix running coffee scripts with application --args. Related issue: #530. See both commit messages for more details. The second commit is related to the fact that nodemon prints out a line like this: This is wrong because the two node flags should be grouped as a single argument, so it would look more correct as `--nodejs \"--debug --harmony\"`. I thought making the output clear was important, so I fixed how command stringification worked. In the process, there is a test that was strangely broken because it seems to group arguments when it probably should not be. Let me know what you think we should do about that.",
+      "testFile": "test/utils/stringify.test.js",
+      "sourceFiles": [
+        "lib/config/exec.js",
+        "lib/config/index.js",
+        "lib/monitor/run.js",
+        "lib/utils/index.js"
+      ],
+      "changedLines": 109,
+      "sealedCases": [
+        "should combine the executable and arguments",
+        "should quote arguments with spaces"
+      ],
+      "heldBackCases": [
+        "should not include excess whitespace",
+        "should escape quotes"
+      ],
+      "viable": false,
+      "why": "npm ci failed at the base: ror\nnpm error Run \"npm help ci\" for more info\nnpm error A complete log of this run can be found in: /Users/brad/.npm/_logs/2026-09-07T22_51_11_921Z-debug-0.log\n",
+      "baseCommit": "c0f7a66aeef2e6404bc1e9f7b812c80b48aaca89"
+    },
+    {
+      "repository": "winstonjs/winston",
+      "cloneUrl": "https://github.com/winstonjs/winston.git",
+      "pull": 2594,
+      "mergeCommit": "86c890f295edef574c654382447cc27d3714a6bf",
+      "taskText": "fix: ensure File transport flushes all data before emitting finish. Fixes #1504 and relates to When you call `logger.end()` and then `process.exit()`, log messages get lost. This has been an open issue since 2018. The problem is that the File transport's `finish` event fires when the internal PassThrough drains, not when the actual file write completes. So you think you're safe to exit, but the OS hasn't finished writing yet. The fix adds a `_final()` method (the standard Node.js stream hook for this) that waits for the fs.WriteStream to finish before letting the transport emit `finish`. --- **To verify the fix:** Before: ~1 line written. After: all 1001 lines written. Also added regression tests under \"Flushing on end (issue #1504)\" in `file.test.js`.",
+      "testFile": "test/unit/winston/transports/file.test.js",
+      "sourceFiles": [
+        "lib/winston/transports/file.js"
+      ],
+      "changedLines": 111,
+      "sealedCases": [
+        "should flush all messages to file when logger.end() is called"
+      ],
+      "heldBackCases": [
+        "should flush all messages when transport finish event is used"
+      ],
+      "viable": false,
+      "why": "the added tests already pass on the base source, so they specify nothing new",
+      "baseCommit": "3b8be029489bab4b683c24f00a626b9967926161",
+      "runner": "npx jest --ci test/unit/winston/transports/file.test.js"
+    },
+    {
+      "repository": "winstonjs/winston",
+      "cloneUrl": "https://github.com/winstonjs/winston.git",
+      "pull": 2337,
+      "mergeCommit": "02d426748d859c00caa71bd457e914cda6f3160b",
+      "taskText": "Added functionality to long broken zippedArchive option. This PR solves the issue I would like to thanks @pixtron for his work in",
+      "testFile": "test/unit/winston/transports/02-file-archive.test.js",
+      "sourceFiles": [
+        "lib/winston/transports/file.js"
+      ],
+      "changedLines": 383,
+      "sealedCases": [
+        "should not create zip when file is being used",
+        "should have correct no zip files with maxfiles",
+        "should not create extra file"
+      ],
+      "heldBackCases": [
+        "should create multiple zip files",
+        "should have zip files with tailable"
+      ],
+      "viable": false,
+      "why": "the added tests do not pass on the merged tree either, so the target is unclear",
+      "baseCommit": "069a40d003dbc5932097bb12ec535ba80e55b9be",
+      "runner": "npx mocha test/unit/winston/transports/02-file-archive.test.js"
+    },
+    {
+      "repository": "winstonjs/winston",
+      "cloneUrl": "https://github.com/winstonjs/winston.git",
+      "pull": 2317,
+      "mergeCommit": "f7e7f2f9ccca06e5edba17c03da9ed7c97b48d91",
+      "taskText": "Added Lazy Option in transport. This change tries to address the issue -Added lazy option in file transport - Added test case for file rotation format - Added test case for lazy option",
+      "testFile": "test/unit/winston/transports/file-lazy.test.js",
+      "sourceFiles": [
+        "lib/winston/transports/file.js"
+      ],
+      "changedLines": 378,
+      "sealedCases": [
+        "should not create a log file before receiving any logs"
+      ],
+      "heldBackCases": [
+        "should create a log file after receiving log"
+      ],
+      "viable": false,
+      "why": "the added tests already pass on the base source, so they specify nothing new",
+      "baseCommit": "de2e887bc29f392c6b640e564848f1e7a007c79e",
+      "runner": "npx mocha test/unit/winston/transports/file-lazy.test.js"
+    },
+    {
+      "repository": "JedWatson/classnames",
+      "cloneUrl": "https://github.com/JedWatson/classnames.git",
+      "pull": 133,
+      "mergeCommit": "616cacd2b591b84befdc8cf58c623a4323ab6e4f",
+      "taskText": "Fix issue with empty arrays being pushed. Arrays that are a 2nd parameter to classNames, and arrays that contain empty nested arrays get pushed resulting in spaces at the end of the classNames function output. This PR fixes that issue.",
+      "testFile": "tests/index.js",
+      "sourceFiles": [
+        "index.js"
+      ],
+      "changedLines": 15,
+      "sealedCases": [
+        "handles arrays that are empty"
+      ],
+      "heldBackCases": [
+        "handles nested arrays that have empty nested arrays"
+      ],
+      "viable": false,
+      "why": "npm ci failed at the base: ror\nnpm error Run \"npm help ci\" for more info\nnpm error A complete log of this run can be found in: /Users/brad/.npm/_logs/2026-09-07T22_51_24_353Z-debug-0.log\n",
+      "baseCommit": "0469d5f38e4a6ea6fab9fb946bf9043122de9666"
+    },
+    {
+      "repository": "hubotio/hubot",
+      "cloneUrl": "https://github.com/hubotio/hubot.git",
+      "pull": 1700,
+      "mergeCommit": "7fa3841497bd1158f97ff2f5981637a5c8a66137",
+      "taskText": "fix: Revert back to 10.0.3. fix: Accidently releasing the removal of CoffeeScript in a minor version. fixes #1698",
+      "testFile": "test/robot_test.js",
+      "sourceFiles": [
+        "es2015.js",
+        "index.js",
+        "src/robot.js"
+      ],
+      "changedLines": 265,
+      "sealedCases": [
+        "should load a CoffeeScript adapter from a file"
+      ],
+      "heldBackCases": [
+        "should load a coffeescript file and respond to a message"
+      ],
+      "viable": false,
+      "why": "the added tests do not pass on the merged tree either, so the target is unclear",
+      "baseCommit": "2ca88f4a1b5e9e2343a9cb50e0a02c2bf28cae8c",
+      "runner": "node --test test/robot_test.js"
+    },
+    {
+      "repository": "hubotio/hubot",
+      "cloneUrl": "https://github.com/hubotio/hubot.git",
+      "pull": 1489,
+      "mergeCommit": "d2b57bd796749fbb9ca02eff33b7a345bcd40d68",
+      "taskText": "Add a new persistence model - Datastore. This pull request adds support for a secondary persistence model to complement the traditional Hubot brain. My company's Hubot installation has been hitting some pain points with the traditional Hubot brain. The model of storing data in-memory, and persisting the entire structure on a schedule, has a few intractable pain points: 1. We run multiple Hubots, which want cooperative access to a database. This isn't feasible in a solution where the brain is persisted and loaded as a whole on a schedule. 2. Many scripts, including third-party scripts we have installed, access the underlying `robot.brain.data` structure directly instead of going via getters and setters. This is also true for user-scoped data, which currently doesn't provide any getter/setter model at all. 3. We can't feasibly subclass the existing brain because the documented behaviour of the brain's `get` and `set` methods is synchronous, whereas many database adapters (like the node mysql adapter) provide only asynchronous database access. 4. Data integrity depends on Hubot itself maintaining a valid in-memory structure. We've experienced periods of data loss when Hubot goes offli",
+      "testFile": "test/datastore_test.js",
+      "sourceFiles": [
+        "es2015.js",
+        "src/brain.js",
+        "src/datastore.js",
+        "src/datastores/memory.js",
+        "src/robot.js",
+        "src/user.js"
+      ],
+      "changedLines": 376,
+      "sealedCases": [
+        "returns undefined for values not in the datastore",
+        "can store arbitrary JavaScript values",
+        "can set individual keys inside objects",
+        "can append to an existing array",
+        "has access to the robot object",
+        "stores user data separate per-user"
+      ],
+      "heldBackCases": [
+        "can store simple values",
+        "can dig inside objects for values",
+        "creates an object from scratch when none exists",
+        "creates an array from scratch when none exists",
+        "can store user data which is separate from global data"
+      ],
+      "viable": false,
+      "why": "npm ci failed at the base: ror\nnpm error Run \"npm help ci\" for more info\nnpm error A complete log of this run can be found in: /Users/brad/.npm/_logs/2026-09-07T22_51_26_680Z-debug-0.log\n",
+      "baseCommit": "067a70d930dc186c4c1412503c701df3cad5af5f"
+    },
+    {
+      "repository": "hubotio/hubot",
+      "cloneUrl": "https://github.com/hubotio/hubot.git",
+      "pull": 1487,
+      "mergeCommit": "a3d80c1faed497a1c96019c2b3ffd839dc1893e4",
+      "taskText": "Brain: ensure User objects are actually User objects. While the brain consistently documents that its functions return `User` objects, this actually isn't guaranteed. If the data is serialized to JSON for persisting - [like the Redis brain does]( - then `User` objects are serialized as plain JS objects and parsed back as them too. This leads to a mix of plain JS objects and actual `User` instances. This can lead to confusion, and it's also causing problems with an in-development branch of mine which grants instance methods to `User` objects. This PR resolves this by turning plain objects back into `User` objects in `mergeData` before calling `loaded`. The new objects retain all the properties of the original ones, ensuring they're consistent with any newly-constructed objects created at runtime. cc @technicalpickles",
+      "testFile": "test/brain_test.js",
+      "sourceFiles": [
+        "src/brain.js"
+      ],
+      "changedLines": 49,
+      "sealedCases": [
+        "coerces loaded data into User objects"
+      ],
+      "heldBackCases": [
+        "returns User objects, not POJOs"
+      ],
+      "viable": false,
+      "why": "npm ci failed at the base: ror\nnpm error Run \"npm help ci\" for more info\nnpm error A complete log of this run can be found in: /Users/brad/.npm/_logs/2026-09-07T22_51_27_213Z-debug-0.log\n",
+      "baseCommit": "f9b18bec15a1db4e3dd19a5869b0d3edde125e14"
+    },
+    {
+      "repository": "hubotio/hubot",
+      "cloneUrl": "https://github.com/hubotio/hubot.git",
+      "pull": 1390,
+      "mergeCommit": "97f8c2f458b9912fb1d841199d294d436e67ac91",
+      "taskText": "Fix robot helpers delegation to adapter and events. Robot 'send', 'reply', 'messageRoom' methods delegate invocations to adapter but using as 'this' the robot while they should be using the adapter. Robot 'on', 'emit' methods delegate invocations to events but using as 'this' the robot but they should be using the events. The original CoffeeScript code from release 2.19.0 uses simple delegation, i.e. [send]( [reply]( [messageRoom]( [on]( [emit]( This PR should address #1386.",
+      "testFile": "test/robot_test.js",
+      "sourceFiles": [
+        "src/robot.js"
+      ],
+      "changedLines": 65,
+      "sealedCases": [
+        "delegates to adapter \"send\" with proper context",
+        "delegates to adapter \"send\" with proper context",
+        "delegates to events \"emit\" with proper context"
+      ],
+      "heldBackCases": [
+        "delegates to adapter \"reply\" with proper context",
+        "delegates to events \"on\" with proper context"
+      ],
+      "viable": false,
+      "why": "npm ci failed at the base: ror\nnpm error Run \"npm help ci\" for more info\nnpm error A complete log of this run can be found in: /Users/brad/.npm/_logs/2026-09-07T22_51_27_740Z-debug-0.log\n",
+      "baseCommit": "6bdf3e2c1923b29d13285a113a6d3133594ca5b5"
+    },
+    {
+      "repository": "hubotio/hubot",
+      "cloneUrl": "https://github.com/hubotio/hubot.git",
+      "pull": 1359,
+      "mergeCommit": "e744f624881ab05450deeabacdf98018d249b43d",
+      "taskText": "add tests for require(hubot/es2015). part of",
+      "testFile": "test/es2015_test.js",
+      "sourceFiles": [
+        "es2015.js"
+      ],
+      "changedLines": 201,
+      "sealedCases": [
+        "exports User class",
+        "exports Robot class",
+        "exports Response class",
+        "exports TextListener class",
+        "exports TextMessage class",
+        "exports LeaveMessage class",
+        "exports CatchAllMessage class"
+      ],
+      "heldBackCases": [
+        "exports Brain class",
+        "exports Adapter class",
+        "exports Listener class",
+        "exports Message class",
+        "exports EnterMessage class",
+        "exports TopicMessage class",
+        "exports loadBot function"
+      ],
+      "viable": false,
+      "why": "npm ci failed at the base: ror\nnpm error Run \"npm help ci\" for more info\nnpm error A complete log of this run can be found in: /Users/brad/.npm/_logs/2026-09-07T22_51_28_328Z-debug-0.log\n",
+      "baseCommit": "6e393a63d92c8c37d53740a6723985ba92221d19"
+    },
+    {
+      "repository": "darkreader/darkreader",
+      "cloneUrl": "https://github.com/darkreader/darkreader.git",
+      "pull": 15760,
+      "mergeCommit": "191a0249bbdff7b88106e7924a9d25092133c4ac",
+      "taskText": "Fix delayed style injection before body exists. This was causing issues with bloomberg.com articles loading dark text on dark background:",
+      "testFile": "tests/inject/dynamic/injection.tests.ts",
+      "sourceFiles": [
+        "src/inject/dynamic-theme/injection.ts"
+      ],
+      "changedLines": 65,
+      "sealedCases": [
+        "should inject a queued style when the body becomes available"
+      ],
+      "heldBackCases": [
+        "should clear queued styles and allow observing a new body"
+      ],
+      "viable": false,
+      "why": "the added tests do not pass on the merged tree either, so the target is unclear",
+      "baseCommit": "c6a97630316e006364bcc9f64db2e5176b8ab7ae",
+      "runner": "npx jest --ci tests/inject/dynamic/injection.tests.ts"
+    },
+    {
+      "repository": "mlc-ai/web-llm",
+      "cloneUrl": "https://github.com/mlc-ai/web-llm.git",
+      "pull": 350,
+      "mergeCommit": "985ef8005074f093a91265c78124cb6794f48b59",
+      "taskText": "[Grammar] Support response_format json mode in chatCompletion. We support json formatting in chatCompletion, essentially the option `response_format: { type: \"json_object\" }` in a `chatCompletionRequest`. By adding this field, it is guaranteed that the model would generate in json format. We also observe no performance degradation, possibly due to how bitmasking is performed with WebGPU kernels. This requires wasms to be built with MLC-LLM after From this PR on, old wasms would not be compatible with the newer version of WebLLM npms. We will add wasm versioning soon so that old wasms can work with old web-llm npm.",
+      "testFile": "tests/util.test.ts",
+      "sourceFiles": [
+        "examples/openai-api/src/json_format.ts",
+        "src/chat_module.ts",
+        "src/config.ts",
+        "src/grammar.ts",
+        "src/llm_chat.ts",
+        "src/openai_api_protocols/chat_completion.ts",
+        "src/support.ts"
+      ],
+      "changedLines": 384,
+      "sealedCases": [
+        "Token represents a byte",
+        "Regular tokens"
+      ],
+      "heldBackCases": [
+        "Token contains a space"
+      ],
+      "viable": false,
+      "why": "the added tests do not pass on the merged tree either, so the target is unclear",
+      "baseCommit": "772c3c1cf99105d728276f12288c3c7956e29060",
+      "runner": "npx jest --ci tests/util.test.ts"
+    },
+    {
+      "repository": "uuidjs/uuid",
+      "cloneUrl": "https://github.com/uuidjs/uuid.git",
+      "pull": 972,
+      "mergeCommit": "6adcc1d81bfaeb653c49d9b7ca7b0579244ae60c",
+      "taskText": "fix(v1): carry nsecs overflow into the timestamp's high bits. `v1()` and `v6()` can encode a timestamp **429.4967296 seconds (2^32 × 100ns) in the past**, which breaks the monotonicity that v1 ordering and v6 sorting depend on, and can make a stable generator emit the same id twice. No options are needed to reach it. ## Root cause The RFC 9562 v1 timestamp is `msecs * 10000 + nsecs`, in 100-nanosecond intervals since the Gregorian epoch. That needs 57+ bits, so `v1Bytes()` builds it as a 32-bit `time_low` and a 28-bit `time_mid`/`time_high` half: `nsecs` is added to the low half, and the low half is then reduced `% 0x100000000` — so when `nsecs` pushes it past 2^32 it wraps, and nothing increments the high half. The high half is derived from `msecs` alone, so it cannot see that carry. The wrap happens when `msecs * 10000` lands within 10000 of a 2^32 boundary — one millisecond roughly every 430 seconds — and then only for the `nsecs` values at or above the boundary. Over a 24-hour span, 201 milliseconds are affected. ## Reproducing `v1()`'s internal state walks `nsecs` from 0 to 9999 within a millisecond, so the default no-options path hits this by simply generating enough ids insi",
+      "testFile": "src/test/v1.test.ts",
+      "sourceFiles": [
+        "src/v1.ts"
+      ],
+      "changedLines": 72,
+      "sealedCases": [
+        "v1 timestamp carries nsecs into time_mid"
+      ],
+      "heldBackCases": [
+        "v1 sort order (time_low overflow)"
+      ],
+      "viable": false,
+      "why": "the added tests do not pass on the merged tree either, so the target is unclear",
+      "baseCommit": "ea83515d6a4de13a8f9d253fe772752c9dd7bbbe",
+      "runner": "node --test src/test/v1.test.ts"
+    },
+    {
+      "repository": "uuidjs/uuid",
+      "cloneUrl": "https://github.com/uuidjs/uuid.git",
+      "pull": 845,
+      "mergeCommit": "e0ee90051ebd13475bbcff4d371330aa4f9bd1dd",
+      "taskText": "fix: Test for invalid byte array sizes and ranges in `v1()`, `v4()`, and `v7()`. Check and `throw` the following conditions for `v1()`, `v4()`, and `v7()`: * `options.random` or `options.rng()` returning too-short byte arrays * range errors involving `buf` and `offset`",
+      "testFile": "src/test/v1.test.ts",
+      "sourceFiles": [
+        "src/v1.ts",
+        "src/v4.ts",
+        "src/v7.ts"
+      ],
+      "changedLines": 105,
+      "sealedCases": [
+        "throws when option.random is too short",
+        "throws RangeError for out-of-range indexes"
+      ],
+      "heldBackCases": [
+        "throws when options.rng() is too short"
+      ],
+      "viable": false,
+      "why": "the added tests do not pass on the merged tree either, so the target is unclear",
+      "baseCommit": "6e83b3ae8360ed03042be658645ece06a27abd69",
+      "runner": "node --test src/test/v1.test.ts"
+    },
+    {
+      "repository": "uuidjs/uuid",
+      "cloneUrl": "https://github.com/uuidjs/uuid.git",
+      "pull": 786,
+      "mergeCommit": "afe62323c4408a824755a39d7b971a8ae06f7199",
+      "taskText": "fix: remove v4 options default assignment preventing native.randomUUID from being used. This removes the v4 options default assignment introduced during porting to ts (by mistake maybe?), during - [PR diff]( - [commit]( preventing `native.randomUUID` from being used if `options` always have a value, we will never enter the if in line 11. `{}` will be assigned to `options` in line 15 after the native check it looks to me that the line 9 statement is added by mistake",
+      "testFile": "src/test/v4.test.ts",
+      "sourceFiles": [
+        "src/v4.ts"
+      ],
+      "changedLines": 25,
+      "sealedCases": [
+        "should uses native randomUUID() if no option is passed"
+      ],
+      "heldBackCases": [
+        "should not use native randomUUID() if an option is passed"
+      ],
+      "viable": false,
+      "why": "the added tests do not pass on the merged tree either, so the target is unclear",
+      "baseCommit": "18f9493925c3e0302847cca646e250731eff1b17",
+      "runner": "node --test src/test/v4.test.ts"
+    },
+    {
+      "repository": "uuidjs/uuid",
+      "cloneUrl": "https://github.com/uuidjs/uuid.git",
+      "pull": 597,
+      "mergeCommit": "3a033f6bab6bb3780ece6d645b902548043280bc",
+      "taskText": "chore: optimize uuid.v4 by 4.3x (430%) (internal stringify by 33x). It turns out that validation in `uuidStringify()` is slowing it down by 33x. Since `uuidv1()` and `uuidv4()` produce valid buffers by the virtue of their algorithm they can safely use a validation-free version of stringify. ## Benchmark changes `uuidv1()` - faster by **1.3x** `uuidv4()` - faster by **4.3x** the gains are due to `.unsafeStringify()` with no validation (as it is not required) is 33x faster than the version with validation. The public `uuidStringify()` has been left unchanged but my recommendation would be to also remove validation from this method in the future and just export the unsafe version. ## Benchmark (Core i9-10900K) ## Benchmark prior to changes",
+      "testFile": "test/unit/stringify.test.js",
+      "sourceFiles": [
+        "src/stringify.js",
+        "src/v1.js",
+        "src/v35.js",
+        "src/v4.js"
+      ],
+      "changedLines": 79,
+      "sealedCases": [
+        "Stringify Array",
+        "Stringify w/ offset",
+        "Throws on not enough values",
+        "Throws on invalid value"
+      ],
+      "heldBackCases": [
+        "Stringify TypedArray",
+        "Stringify Array",
+        "Throws on undefined value"
+      ],
+      "viable": false,
+      "why": "npm ci failed at the base: /2026-09-07T22_51_48_326Z-eresolve-report.txt\nnpm error A complete log of this run can be found in: /Users/brad/.npm/_logs/2026-09-07T22_51_48_326Z-debug-0.log\n",
+      "baseCommit": "aa114858260402107ec8a1e1a825dea0a259bcb5"
+    },
+    {
+      "repository": "uuidjs/uuid",
+      "cloneUrl": "https://github.com/uuidjs/uuid.git",
+      "pull": 622,
+      "mergeCommit": "fcd73881692d9fabb63872576ba28e30ff852091",
+      "taskText": "fix: handle error when parameter is not set in v3 and v5.",
+      "testFile": "test/unit/v35.test.js",
+      "sourceFiles": [
+        "src/v35.js"
+      ],
+      "changedLines": 38,
+      "sealedCases": [
+        "v3 undefined/null"
+      ],
+      "heldBackCases": [
+        "v5 undefined/null"
+      ],
+      "viable": false,
+      "why": "npm ci failed at the base: /2026-09-07T22_51_49_113Z-eresolve-report.txt\nnpm error A complete log of this run can be found in: /Users/brad/.npm/_logs/2026-09-07T22_51_49_113Z-debug-0.log\n",
+      "baseCommit": "4f99b5e990e30cce2eb914e86749b1e7abe734f3"
+    },
+    {
+      "repository": "uuidjs/uuid",
+      "cloneUrl": "https://github.com/uuidjs/uuid.git",
+      "pull": 361,
+      "mergeCommit": "c0bdf15e417639b1aeb0b247b2fb11f7a0a26b23",
+      "taskText": "feat: deprecate deep requires. - [x] Add test that covers the fact that deep requiring still works.",
+      "testFile": "test/unit/deep-require-deprecation.test.js",
+      "sourceFiles": [
+        "v1.js",
+        "v3.js",
+        "v4.js",
+        "v5.js"
+      ],
+      "changedLines": 144,
+      "sealedCases": [
+        "v1",
+        "v4"
+      ],
+      "heldBackCases": [
+        "v3",
+        "v5"
+      ],
+      "viable": false,
+      "why": "the added tests do not pass on the merged tree either, so the target is unclear",
+      "baseCommit": "0bbbdd0e66dec9052f1e38ab8ef822ec2ebe0105",
+      "runner": "npx jest --ci test/unit/deep-require-deprecation.test.js"
+    },
+    {
+      "repository": "gvergnaud/ts-pattern",
+      "cloneUrl": "https://github.com/gvergnaud/ts-pattern.git",
+      "pull": 237,
+      "mergeCommit": "19ae81e39e026dfd8475404af5513bda123160af",
+      "taskText": "Fix(P.nonNullable): narrowing of unions of objects. fixes",
+      "testFile": "tests/extract-precise-value.test.ts",
+      "sourceFiles": [
+        "src/types/ExtractPreciseValue.ts",
+        "src/types/helpers.ts"
+      ],
+      "changedLines": 255,
+      "sealedCases": [
+        "should exclude objects if the absent",
+        "should exclude objects even if the non-nullable key is deeply nested"
+      ],
+      "heldBackCases": [
+        "should keep empty objects if they come from the input type"
+      ],
+      "viable": false,
+      "why": "the added tests already pass on the base source, so they specify nothing new",
+      "baseCommit": "72e1079d6647690166ad83107223f3bb08e15e92",
+      "runner": "npx jest --ci tests/extract-precise-value.test.ts"
+    },
+    {
+      "repository": "peers/peerjs",
+      "cloneUrl": "https://github.com/peers/peerjs.git",
+      "pull": 1142,
+      "mergeCommit": "094f849816d327bf74a447fbf7d58195c1a4fc66",
+      "taskText": "fix: convert `Blob`s to `ArrayBuffer`s during `.send()`. BinaryPack 2 can’t pack `Blob`s anymore. Convert them to `ArrayBuffer`s during send.",
+      "testFile": "e2e/datachannel/serialization_binary.spec.ts",
+      "sourceFiles": [
+        "e2e/datachannel/blobs.js",
+        "e2e/datachannel/files.js",
+        "e2e/datachannel/serialization.js",
+        "lib/dataconnection/BufferedConnection/BinaryPack.ts",
+        "lib/dataconnection/DataConnection.ts"
+      ],
+      "changedLines": 69,
+      "sealedCases": [
+        "should transfer Blobs"
+      ],
+      "heldBackCases": [
+        "should transfer Files"
+      ],
+      "viable": false,
+      "why": "the added tests do not pass on the merged tree either, so the target is unclear",
+      "baseCommit": "348afaa8cf89212abc02a41db7906b7c49b916ca",
+      "runner": "npx jest --ci e2e/datachannel/serialization_binary.spec.ts"
+    },
+    {
+      "repository": "peers/peerjs",
+      "cloneUrl": "https://github.com/peers/peerjs.git",
+      "pull": 1038,
+      "mergeCommit": "0fb61792ed3afe91123550a159c8633ed0976f89",
+      "taskText": "fix(datachannel): sending order is now preserved correctly. This upgrades `binarypack` to version 2. `pack` now returns `ArrayBuffer`s which can be sent over all data channel types without asynchronous conversion. This implementation is also much faster than version 1. Closes #746",
+      "testFile": "e2e/datachannel/serialization.spec.ts",
+      "sourceFiles": [
+        "lib/dataconnection.ts",
+        "lib/util.ts"
+      ],
+      "changedLines": 84,
+      "sealedCases": [
+        "should transfer strings"
+      ],
+      "heldBackCases": [
+        "should transfer typed arrays / array buffers"
+      ],
+      "viable": false,
+      "why": "the added tests do not pass on the merged tree either, so the target is unclear",
+      "baseCommit": "0836356d18c91449f4cbb23e4d4660a4351d7f56",
+      "runner": "npx jest --ci e2e/datachannel/serialization.spec.ts"
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 516,
+      "mergeCommit": "95d3b2740b6221690a0cdcd02049a1a61029d7c8",
+      "taskText": "Added support for chess annotation symbols. Added support for chess annotation symbols. To elaborate on the implementation, let's take this PGN file as an example `1. e4 e5 2. f4!? { King's gambit } * ` Now, when calling the getComments function, the result will be The new key is suffix. Lichess uses the Annotate with glyph functionality to add these suffixes in their chess editor.",
+      "testFile": "__tests__/comments.test.ts",
+      "sourceFiles": [
+        "src/chess.ts",
+        "src/node.ts"
+      ],
+      "changedLines": 224,
+      "sealedCases": [
+        "captures multiple suffixes and comments",
+        "should handle manually set suffix-only with an empty comment string for the current FEN"
+      ],
+      "heldBackCases": [
+        "should correctly handle comments, suffixes, and suffix-only cases from PGN loading"
+      ],
+      "viable": false,
+      "why": "the added tests do not pass on the merged tree either, so the target is unclear",
+      "baseCommit": "3eecceac084ed06c05f3e2bc740c2ecf3926b29c",
+      "runner": "npx vitest run __tests__/comments.test.ts"
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 154,
+      "mergeCommit": "b2650a33d7cda5c3ca29b06556a45eb267b9db58",
+      "taskText": "Loading PGN data containing SetUp and FEN tags causes header information to be lost. With reference to #129. I have added a couple of tests, but am new to writing JS tests (and GitHub/PRs in general), so please critically review.",
+      "testFile": "test/tests.js",
+      "sourceFiles": [
+        "chess.js",
+        "chess.min.js"
+      ],
+      "changedLines": 61,
+      "sealedCases": [
+        "Github Issue #129 load_pgn() should not clear headers if PGN contains SetUp and FEN tags"
+      ],
+      "heldBackCases": [
+        "Github Issue #129 clear() should clear the board and delete all headers with the exception of SetUp and FEN"
+      ],
+      "viable": false,
+      "why": "npm ci failed at the base: ror\nnpm error Run \"npm help ci\" for more info\nnpm error A complete log of this run can be found in: /Users/brad/.npm/_logs/2026-09-07T22_52_20_175Z-debug-0.log\n",
+      "baseCommit": "128aedec937823caab94492102548697f222170e"
     }
   ]
 }

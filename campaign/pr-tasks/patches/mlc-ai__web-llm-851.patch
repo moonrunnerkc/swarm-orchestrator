@@ -1,0 +1,201 @@
+diff --git a/src/config.ts b/src/config.ts
+index 6c45add..e7a8520 100644
+--- a/src/config.ts
++++ b/src/config.ts
+@@ -171,29 +171,56 @@ export function postInitAndCheckGenerationConfigValues(
+     // if we use `if value` directly, `value` being 0 evaluates to false, violating semantics
+     return value !== undefined && value !== null;
+   }
++  function _isNaN(value: any): boolean {
++    return typeof value === "number" && Number.isNaN(value);
++  }
++  if (_hasValue(config.frequency_penalty) && _isNaN(config.frequency_penalty)) {
++    throw new RangeError("frequency_penalty", -2.0, 2.0);
++  }
+   if (
+     config.frequency_penalty &&
+     (config.frequency_penalty < -2.0 || config.frequency_penalty > 2.0)
+   ) {
+     throw new RangeError("frequency_penalty", -2.0, 2.0);
+   }
++  if (_hasValue(config.presence_penalty) && _isNaN(config.presence_penalty)) {
++    throw new RangeError("presence_penalty", -2.0, 2.0);
++  }
+   if (
+     config.presence_penalty &&
+     (config.presence_penalty < -2.0 || config.presence_penalty > 2.0)
+   ) {
+     throw new RangeError("presence_penalty", -2.0, 2.0);
+   }
+-  if (_hasValue(config.repetition_penalty) && config.repetition_penalty! <= 0) {
+-    throw new MinValueError("repetition_penalty", 0);
++  if (_hasValue(config.repetition_penalty)) {
++    if (_isNaN(config.repetition_penalty)) {
++      throw new MinValueError("repetition_penalty", 0);
++    }
++    if (config.repetition_penalty! <= 0) {
++      throw new MinValueError("repetition_penalty", 0);
++    }
++  }
++  if (_hasValue(config.max_tokens)) {
++    if (_isNaN(config.max_tokens)) {
++      throw new MinValueError("max_tokens", 0);
++    }
++    if (config.max_tokens! <= 0) {
++      throw new MinValueError("max_tokens", 0);
++    }
+   }
+-  if (_hasValue(config.max_tokens) && config.max_tokens! <= 0) {
+-    throw new MinValueError("max_tokens", 0);
++  if (_hasValue(config.top_p) && _isNaN(config.top_p)) {
++    throw new RangeError("top_p", 0, 1);
+   }
+   if ((_hasValue(config.top_p) && config.top_p! <= 0) || config.top_p! > 1) {
+     throw new RangeError("top_p", 0, 1);
+   }
+-  if (_hasValue(config.temperature) && config.temperature! < 0) {
+-    throw new NonNegativeError("temperature");
++  if (_hasValue(config.temperature)) {
++    if (_isNaN(config.temperature)) {
++      throw new NonNegativeError("temperature");
++    }
++    if (config.temperature! < 0) {
++      throw new NonNegativeError("temperature");
++    }
+   }
+   // If only one of frequency or presence penatly is set, make the other one 0.0
+   if (
+@@ -216,6 +243,14 @@ export function postInitAndCheckGenerationConfigValues(
+   if (_hasValue(config.logit_bias)) {
+     for (const tokenID in config.logit_bias) {
+       const bias = config.logit_bias[tokenID];
++      if (isNaN(bias)) {
++        throw new RangeError(
++          "logit_bias",
++          -100,
++          100,
++          "Got " + bias + " for tokenID " + tokenID,
++        );
++      }
+       if (bias > 100 || bias < -100) {
+         throw new RangeError(
+           "logit_bias",
+@@ -236,7 +271,11 @@ export function postInitAndCheckGenerationConfigValues(
+       throw new DependencyError("top_logprobs", "logprobs", true);
+     }
+     // top_logprobs should be in range [0,5]
+-    if (config.top_logprobs! < 0 || config.top_logprobs! > 5) {
++    if (
++      _isNaN(config.top_logprobs) ||
++      config.top_logprobs! < 0 ||
++      config.top_logprobs! > 5
++    ) {
+       throw new RangeError("top_logprobs", 0, 5, "Got " + config.top_logprobs);
+     }
+   }
+diff --git a/tests/generation_config.test.ts b/tests/generation_config.test.ts
+index e48b225..ff4dd06 100644
+--- a/tests/generation_config.test.ts
++++ b/tests/generation_config.test.ts
+@@ -98,4 +98,101 @@ describe("Check generation post init", () => {
+     postInitAndCheckGenerationConfigValues(genConfig);
+     expect(genConfig.top_logprobs).toBe(2);
+   });
++
++  test("Infinity frequency_penalty is rejected by range check", () => {
++    expect(() => {
++      const genConfig: GenerationConfig = {
++        frequency_penalty: Infinity,
++      };
++      postInitAndCheckGenerationConfigValues(genConfig);
++    }).toThrow();
++  });
++
++  test("Infinity presence_penalty is rejected by range check", () => {
++    expect(() => {
++      const genConfig: GenerationConfig = {
++        presence_penalty: -Infinity,
++      };
++      postInitAndCheckGenerationConfigValues(genConfig);
++    }).toThrow();
++  });
++});
++
++describe("Reject NaN in generation config values", () => {
++  test("NaN frequency_penalty throws RangeError", () => {
++    expect(() => {
++      const genConfig: GenerationConfig = {
++        frequency_penalty: NaN,
++      };
++      postInitAndCheckGenerationConfigValues(genConfig);
++    }).toThrow("Make sure -2.0 < frequency_penalty <= 2.0");
++  });
++
++  test("NaN presence_penalty throws RangeError", () => {
++    expect(() => {
++      const genConfig: GenerationConfig = {
++        presence_penalty: NaN,
++      };
++      postInitAndCheckGenerationConfigValues(genConfig);
++    }).toThrow("Make sure -2.0 < presence_penalty <= 2.0");
++  });
++
++  test("NaN repetition_penalty throws MinValueError", () => {
++    expect(() => {
++      const genConfig: GenerationConfig = {
++        repetition_penalty: NaN,
++      };
++      postInitAndCheckGenerationConfigValues(genConfig);
++    }).toThrow("Make sure `repetition_penalty` > 0");
++  });
++
++  test("NaN max_tokens throws MinValueError", () => {
++    expect(() => {
++      const genConfig: GenerationConfig = {
++        max_tokens: NaN,
++      };
++      postInitAndCheckGenerationConfigValues(genConfig);
++    }).toThrow("Make sure `max_tokens` > 0");
++  });
++
++  test("NaN top_p throws RangeError", () => {
++    expect(() => {
++      const genConfig: GenerationConfig = {
++        top_p: NaN,
++      };
++      postInitAndCheckGenerationConfigValues(genConfig);
++    }).toThrow("Make sure 0 < top_p <= 1");
++  });
++
++  test("NaN temperature throws NonNegativeError", () => {
++    expect(() => {
++      const genConfig: GenerationConfig = {
++        temperature: NaN,
++      };
++      postInitAndCheckGenerationConfigValues(genConfig);
++    }).toThrow("Make sure temperature >= 0");
++  });
++
++  test("NaN logit_bias value throws RangeError", () => {
++    expect(() => {
++      const genConfig: GenerationConfig = {
++        max_tokens: 10,
++        logit_bias: {
++          "0": NaN,
++        },
++      };
++      postInitAndCheckGenerationConfigValues(genConfig);
++    }).toThrow("Make sure -100 < logit_bias <= 100");
++  });
++
++  test("NaN top_logprobs throws RangeError", () => {
++    expect(() => {
++      const genConfig: GenerationConfig = {
++        logprobs: true,
++        top_logprobs: NaN,
++        max_tokens: 10,
++      };
++      postInitAndCheckGenerationConfigValues(genConfig);
++    }).toThrow("Make sure 0 < top_logprobs <= 5");
++  });
+ });

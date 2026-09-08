@@ -1,0 +1,284 @@
+diff --git a/__tests__/attackers.test.ts b/__tests__/attackers.test.ts
+new file mode 100644
+index 0000000..538e65a
+--- /dev/null
++++ b/__tests__/attackers.test.ts
+@@ -0,0 +1,204 @@
++import { Chess, SQUARES, WHITE, BLACK, DEFAULT_POSITION } from '../src/chess'
++
++function sameSet<A>(a: A[], b: A[]): boolean {
++  if (a.length !== b.length) return false
++  for (const x of a) {
++    if (!b.includes(x)) return false
++  }
++  return true
++}
++
++test('attackers() - default position, white attacks f3', () => {
++  const chess = new Chess()
++  // In the starting position, black's king and knight attack e1, but for white:
++  // g1 knight can reach f3. Also we need to think about which squares white attacks from.
++  expect(sameSet(chess.attackers('f3'), [WHITE])).toBe(true)
++  const result = chess.attackers('f3', undefined)
++  // attackers() defaults to the side-to-move's opponent (opposite of turn)
++  // wait - in starting position, white is to move, so by default color is black (opposite of turn)
++  // Actually let me re-examine. The spec says "attacks square f3" not "attackers of f3".
++  // Actually, the task just doesn't give full examples. Let me think about what makes sense.
++})
++
++test('attackers() - default position, e1 attacked by black', () => {
++  const chess = new Chess()
++  expect(sameSet(chess.attackers('e1'), [BLACK])).toBe(true)
++})
++
++test('attackers() - empty board returns empty array', () => {
++  const chess = new Chess()
++  chess.clear()
++  expect(chess.attackers('e4')).toHaveLength(0)
++})
++
++test('attackers() - specific color', () => {
++  const chess = new Chess(DEFAULT_POSITION)
++  // e1 is attacked by black pieces
++  expect(sameSet(chess.attackers('e1', BLACK), [BLACK])).toBe(true)
++})
++
++test('attackers() - pawn attackers', () => {
++  const chess = new Chess(
++    '8/8/8/8/4p3/8/4P3/4K3 w - - 0 1',
++  )
++  // e4 can be attacked by white with pawns on d3 and f3
++  // let me put pawns to attack e4 - need: d3 and f3 for white, or e5 for black (but that's a pawn going forward)
++
++  chess.clear()
++  chess.put({ type: 'p', color: WHITE }, 'd3')
++  chess.put({ type: 'p', color: WHITE }, 'f3')
++  expect(sameSet(chess.attackers('e4', WHITE), [WHITE])).toBe(true)
++})
++
++test('attackers() - rook attackers', () => {
++  const chess = new Chess(
++    '8/8/8/8/8/8/R7/K7 w - - 0 1',
++  )
++  chess.clear()
++  chess.put({ type: 'r', color: BLACK }, 'a2')
++  expect(chess.attackers('e4')).not.toContainEqual('a2') // rook on rank, not on file
++
++  chess.clear()
++  chess.put({ type: 'r', color: BLACK }, 'e8')
++  expect(sameSet(chess.attackers('e4', BLACK), [BLACK])).toBe(true)
++})
++
++test('attackers() - blocked rook', () => {
++  const chess = new Chess(
++    '8/8/8/8/8/8/R7/K3k3 w - - 0 1',
++  )
++  chess.clear()
++  chess.put({ type: 'r', color: BLACK }, 'a8')
++  // block on e4 path with a piece? No, let me put a blocker.
++  
++  chess.clear()
++  chess.put({ type: 'r', color: BLACK }, 'e1')
++  chess.put({ type: 'p', color: WHITE }, 'e3')
++  // The white pawn on e3 blocks the rook from attacking e4
++  expect(chess.attackers('e4')).not.toContainEqual('e1')
++})
++
++test('attackers() - knight attackers', () => {
++  const chess = new Chess(
++    '8/8/8/8/8/8/8/K7 w - - 0 1',
++  )
++  chess.clear()
++  chess.put({ type: 'n', color: BLACK }, 'g3')
++  // From g3, knight can reach f5 and e4 (among others)
++  expect(chess.attackers('e4')).toContainEqual('g3')
++})
++
++test('attackers() - king attackers', () => {
++  const chess = new Chess(
++    '8/8/8/8/8/8/K7/8 w - - 0 1',
++  )
++  chess.clear()
++  chess.put({ type: 'k', color: BLACK }, 'e3')
++  expect(chess.attackers('e4')).toContainEqual('e3')
++})
++
++test('attackers() - bishop attackers', () => {
++  const chess = new Chess(
++    '8/8/8/8/8/8/B7/K7 w - - 0 1',
++  )
++  chess.clear()
++  chess.put({ type: 'b', color: BLACK }, 'c6')
++  // From c6, bishop cannot reach e4 (wrong diagonal)
++  expect(chess.attackers('e4')).not.toContainEqual('c6')
++
++  chess.clear()
++  chess.put({ type: 'b', color: BLACK }, 'g2')
++  // From g2, bishop can reach e4 (a8-e4 is wrong, but let's check)
++  // b1-h7 diagonal from g2: f1. c5-g1 diagonal from g2: h3-f1-d3-b1 and h1. 
++  // Actually a6-f1 diagonal passes through g2? No...
++  // Let me use d4->f2 diagonal.
++  
++  chess.clear()
++  chess.put({ type: 'b', color: BLACK }, 'h6')
++  // From h6 (rank 2 from bottom, file h = index 7): bishop attacks on diagonals
++  // That's not right. h6 is a7-g5 diagonal and g5-f4-e3-d2-c1 diagonal
++  // To attack e4, need diagonal: a8-h1 diagonal. a8(0)=rank8/file0, e4=rank4/file4. diff = (7-4)+(7-4) = 6 from opposite end... 
++  // Let me just calculate properly. a7-g1 diagonal goes through b6, c5, d4. So d4 can't reach e4.
++  // For e4: diagonals are d3-b1 and f5-d1 (wait these aren't right either)
++  // From e4, diagonals go: h1-d5, b7-h1... let me think more carefully.
++  // e(4)f(5)g(6)h(7) = e-file from rank7 down to rank1. d3,b1 for one diagonal: a2-g8? No.
++  // Let me use a simple approach - put bishop at f3 (on the right diagonal toward e4):
++  
++  chess.clear()
++  chess.put({ type: 'b', color: BLACK }, 'f3')
++  expect(chess.attackers('e4')).toContainEqual('f3')
++})
++
++test('attackers() - queen attackers', () => {
++  const chess = new Chess(
++    '8/8/8/8/8/8/Q7/K7 w - - 0 1',
++  )
++  chess.clear()
++  chess.put({ type: 'q', color: BLACK }, 'b4')
++  // From b4 on diagonal a3-f2 and file b. Need to attack e4. 
++  // Let me put queen directly:
++  
++  chess.clear()
++  chess.put({ type: 'q', color: BLACK }, 'e7')
++  expect(chess.attackers('e4')).toContainEqual('e7')
++})
++
++test('attackers() - multiple attackers return all', () => {
++  const chess = new Chess(
++    '8/8/8/8/8/8/8/K7 w - - 0 1',
++  )
++  chess.clear()
++  chess.put({ type: 'n', color: BLACK }, 'c3')
++  chess.put({ type: 'p', color: BLACK }, 'e5')
++  
++  const att = chess.attackers('e4', BLACK)
++  expect(att).toContainEqual('c3')
++  expect(att).toContainEqual('e5')
++})
++
++test('attackers() - attackers of empty square', () => {
++  const chess = new Chess(DEFAULT_POSITION)
++  // In starting position, e2 is attacked by white pieces
++  const att = chess.attackers('e3', WHITE)
++  expect(att.length).toBeGreaterThanOrEqual(1)
++})
++
++test('attackers() - no color specified defaults to opponent of side-to-move', () => {
++  const chess = new Chess(DEFAULT_POSITION)
++  // white is to move, so default attackers check black's attacks on each square
++  const e1_white_default = chess.attackers('e1')
++  expect(e1_white_default).toContainEqual('d8') // queen attacks
++  
++  chess.load(DEFAULT_POSITION)
++  chess.move('e4')
++  // now it's black to move, so default should be white pieces that attack squares
++  const e5_default = chess.attackers('e5')
++  expect(e5_default).toContainEqual('e4') // pawn on e4 attacks e5
++})
++
++test('attackers() - same set equality works', () => {
++  const chess = new Chess(
++    '8/8/8/2K5/8/8/8/3k4 w - - 0 1',
++  )
++  expect(sameSet(chess.attackers('e3'), [BLACK])).toBe(true)
++})
++
++test('attackers() - pinned piece still listed as attacker', () => {
++  const chess = new Chess('4k3/4r3/8/8/8/8/4P3/4K3 w - - 0 1')
++  // White pawn on e2 is pinned by the black rook on e7 but still attacks d3 and f3
++  const attackersOfF3 = chess.attackers('f3', WHITE)
++  expect(attackersOfF3).toContainEqual('e2')
++})
++
++test('attackers() - return type consistency (empty vs non-empty)', () => {
++  const chess = new Chess()
++  chess.clear()
++  
++  // empty board returns []
++  expect(chess.attackers('e4').length).toBe(0)
++  
++  // should be array for non-empty too
++  chess.put({ type: 'p', color: WHITE }, 'e2')
++  const atts = chess.attackers('f3', WHITE)
++  expect(Array.isArray(atts)).toBe(true)
++})
+diff --git a/src/chess.ts b/src/chess.ts
+index cc4719f..892b6ed 100644
+--- a/src/chess.ts
++++ b/src/chess.ts
+@@ -906,7 +906,9 @@ export class Chess {
+     }
+   }
+ 
+-  private _attacked(color: Color, square: number) {
++  private _attacked(color: Color, square: number, verbose: boolean = false): Square[] | boolean {
++    const attackers: Square[] = []
++
+     for (let i = Ox88.a8; i <= Ox88.h1; i++) {
+       // did we run off the end of the board
+       if (i & 0x88) {
+@@ -932,15 +934,24 @@ export class Chess {
+       if (ATTACKS[index] & PIECE_MASKS[piece.type]) {
+         if (piece.type === PAWN) {
+           if (difference > 0) {
+-            if (piece.color === WHITE) return true
++            if (piece.color === WHITE) {
++              if (verbose) attackers.push(algebraic(i))
++              else return true
++            }
+           } else {
+-            if (piece.color === BLACK) return true
++            if (piece.color === BLACK) {
++              if (verbose) attackers.push(algebraic(i))
++              else return true
++            }
+           }
+           continue
+         }
+ 
+         // if the piece is a knight or a king
+-        if (piece.type === 'n' || piece.type === 'k') return true
++        if (piece.type === 'n' || piece.type === 'k') {
++          if (verbose) attackers.push(algebraic(i))
++          else return true
++        }
+ 
+         const offset = RAYS[index]
+         let j = i + offset
+@@ -954,10 +965,14 @@ export class Chess {
+           j += offset
+         }
+ 
+-        if (!blocked) return true
++        if (!blocked) {
++          if (verbose) attackers.push(algebraic(i))
++          else return true
++        }
+       }
+     }
+ 
++    if (verbose) return attackers
+     return false
+   }
+ 
+@@ -967,7 +982,13 @@ export class Chess {
+   }
+ 
+   isAttacked(square: Square, attackedBy: Color) {
+-    return this._attacked(attackedBy, Ox88[square])
++    return this._attacked(attackedBy, Ox88[square]) as boolean
++  }
++
++  attackers(square: Square, color?: Color): Square[] {
++    const attackingColor = color ?? swapColor(this._turn)
++    const result = this._attacked(attackingColor, Ox88[square], true)
++    return result as Square[]
+   }
+ 
+   isCheck() {

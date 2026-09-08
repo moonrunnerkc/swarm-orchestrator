@@ -1,0 +1,276 @@
+diff --git a/plugins/codex/scripts/lib/git.mjs b/plugins/codex/scripts/lib/git.mjs
+index 6fca213..3d5215a 100644
+--- a/plugins/codex/scripts/lib/git.mjs
++++ b/plugins/codex/scripts/lib/git.mjs
+@@ -5,6 +5,7 @@ import { isProbablyText } from "./fs.mjs";
+ import { runCommand, runCommandChecked } from "./process.mjs";
+ 
+ const MAX_UNTRACKED_BYTES = 24 * 1024;
++const DEFAULT_INLINE_THRESHOLD = 50;
+ 
+ function git(cwd, args, options = {}) {
+   return runCommand("git", args, { cwd, ...options });
+@@ -161,23 +162,39 @@ function formatUntrackedFile(cwd, relativePath) {
+   return [`### ${relativePath}`, "```", buffer.toString("utf8").trimEnd(), "```"].join("\n");
+ }
+ 
++function getInlineThreshold() {
++  try {
++    const val = Number(process.env.CODEX_INLINE_FILE_THRESHOLD);
++    if (Number.isFinite(val) && val > 0) {
++      return Math.floor(val);
++    }
++  } catch {
++    // ignore bad env
++  }
++  return DEFAULT_INLINE_THRESHOLD;
++}
++
+ function collectWorkingTreeContext(cwd, state) {
+   const status = gitChecked(cwd, ["status", "--short"]).stdout.trim();
++  const totalFiles = state.staged.length + state.unstaged.length + state.untracked.length;
++
++  if (totalFiles > getInlineThreshold()) {
++    return collectWorkingTreeLightweight(cwd, state);
++  }
++
+   const stagedDiff = gitChecked(cwd, ["diff", "--cached", "--binary", "--no-ext-diff", "--submodule=diff"]).stdout;
+   const unstagedDiff = gitChecked(cwd, ["diff", "--binary", "--no-ext-diff", "--submodule=diff"]).stdout;
+   const untrackedBody = state.untracked.map((file) => formatUntrackedFile(cwd, file)).join("\n\n");
+ 
+-  const parts = [
+-    formatSection("Git Status", status),
+-    formatSection("Staged Diff", stagedDiff),
+-    formatSection("Unstaged Diff", unstagedDiff),
+-    formatSection("Untracked Files", untrackedBody)
+-  ];
+-
+   return {
+     mode: "working-tree",
+     summary: `Reviewing ${state.staged.length} staged, ${state.unstaged.length} unstaged, and ${state.untracked.length} untracked file(s).`,
+-    content: parts.join("\n")
++    content: [
++      formatSection("Git Status", status),
++      formatSection("Staged Diff", stagedDiff),
++      formatSection("Unstaged Diff", unstagedDiff),
++      formatSection("Untracked Files", untrackedBody)
++    ].join("\n")
+   };
+ }
+ 
+@@ -185,6 +202,12 @@ function collectBranchContext(cwd, baseRef) {
+   const mergeBase = gitChecked(cwd, ["merge-base", "HEAD", baseRef]).stdout.trim();
+   const commitRange = `${mergeBase}..HEAD`;
+   const currentBranch = getCurrentBranch(cwd);
++  const changedFilesCount = gitChecked(cwd, ["diff", "--name-only", commitRange]).stdout.trim().split("\n").filter(Boolean).length;
++
++  if (changedFilesCount > getInlineThreshold()) {
++    return collectBranchLightweight(cwd, baseRef, mergeBase, currentBranch);
++  }
++
+   const logOutput = gitChecked(cwd, ["log", "--oneline", "--decorate", commitRange]).stdout.trim();
+   const diffStat = gitChecked(cwd, ["diff", "--stat", commitRange]).stdout.trim();
+   const diff = gitChecked(cwd, ["diff", "--binary", "--no-ext-diff", "--submodule=diff", commitRange]).stdout;
+@@ -200,6 +223,61 @@ function collectBranchContext(cwd, baseRef) {
+   };
+ }
+ 
++function collectWorkingTreeLightweight(cwd, state) {
++  const threshold = getInlineThreshold();
++  const status = gitChecked(cwd, ["status", "--short"]).stdout.trim();
++  const stagedFiles = state.staged.map((f) => `- ${f}`).join("\n");
++  const unstagedFiles = state.unstaged.map((f) => `- ${f}`).join("\n");
++  const untrackedFiles = state.untracked.map((f) => `- ${f}`).join("\n");
++
++  return {
++    mode: "working-tree",
++    summary: `Reviewing ${state.staged.length} staged, ${state.unstaged.length} unstaged, and ${state.untracked.length} untracked file(s).`,
++    content: [
++      formatSection("Git Status", status),
++      formatSection("Staged Files", stagedFiles || "(none)"),
++      formatSection("Unstaged Files", unstagedFiles || "(none)"),
++      formatSection("Untracked Files", untrackedFiles || "(none)"),
++      "### Instructions",
++      `This review covers more than ${threshold} changed files and is omitted to avoid overwhelming the LLM context window. You have read-only access to this repository: inspect the target diff directly with safe git commands rather than relying on embedded content.`,
++      "```bash",
++      "# Inspect unstaged changes (read only):",
++      "git status --short --untracked-files=all",
++      "git diff --name-only | head -50",
++      "git diff HEAD~10..HEAD  # inspect recent commits only",
++      "# Show a specific file diff:",
++      "git show HEAD:path/to/file",
++      "```"
++    ].join("\n")
++  };
++}
++
++function collectBranchLightweight(cwd, baseRef, mergeBase, currentBranch) {
++  const threshold = getInlineThreshold();
++  const commitRange = `${mergeBase}..HEAD`;
++  const logOutput = gitChecked(cwd, ["log", "--oneline", "--decorate", commitRange]).stdout.trim();
++  const diffStat = gitChecked(cwd, ["diff", "--stat", commitRange]).stdout.trim();
++  const changedFiles = gitChecked(cwd, ["diff", "--name-only", commitRange]).stdout.trim().split("\n").filter(Boolean);
++
++  return {
++    mode: "branch",
++    summary: `Reviewing branch ${currentBranch} against ${baseRef} from merge-base ${mergeBase}.`,
++    content: [
++      formatSection("Commit Log", logOutput),
++      formatSection("Diff Stat", diffStat),
++      formatSection("Changed Files", changedFiles.join("\n")),
++      "### Instructions",
++      `This review covers more than ${threshold} changed files and is omitted to avoid overwhelming the LLM context window. You have read-only access to this repository: inspect the target diff directly with safe git commands rather than relying on embedded content.`,
++      "```bash",
++      "# List all changed files:",
++      `git diff --name-only ${commitRange}`,
++      "# Show a specific file diff:",
++      "git show <commit>:<path>",
++      "```"
++    ].join("\n")
++  };
++}
++
+ export function collectReviewContext(cwd, target) {
+   const repoRoot = getRepoRoot(cwd);
+   const state = getWorkingTreeState(cwd);
+diff --git a/tests/git.test.mjs b/tests/git.test.mjs
+index dd6a7a4..66267bc 100644
+--- a/tests/git.test.mjs
++++ b/tests/git.test.mjs
+@@ -101,3 +101,136 @@ test("collectReviewContext skips broken untracked symlinks instead of crashing",
+   assert.match(context.content, /### broken-link/);
+   assert.match(context.content, /skipped: broken symlink or unreadable file/i);
+ });
++
++test("inline review path includes branch diff for small repositories", () => {
++  const cwd = makeTempDir();
++  initGitRepo(cwd);
++  fs.writeFileSync(path.join(cwd, "app.js"), "console.log('v1');\n");
++  run("git", ["add", "app.js"], { cwd });
++  run("git", ["commit", "-m", "init"], { cwd });
++  run("git", ["checkout", "-b", "feature/test"], { cwd });
++  fs.writeFileSync(path.join(cwd, "app.js"), "console.log('v2');\n");
++  run("git", ["add", "app.js"], { cwd });
++  run("git", ["commit", "-m", "change"], { cwd });
++
++  const target = resolveReviewTarget(cwd, {});
++  const context = collectReviewContext(cwd, target);
++
++  assert.equal(target.mode, "branch");
++  assert.match(context.content, /Commit Log/);
++  assert.match(context.content, /Diff Stat/);
++  assert.match(context.content, /Branch Diff/);
++});
++
++test("inline review path includes working-tree diffs for small scopes", () => {
++  const cwd = makeTempDir();
++  initGitRepo(cwd);
++  fs.writeFileSync(path.join(cwd, "app.js"), "console.log('v1');\n");
++  run("git", ["add", "app.js"], { cwd });
++  run("git", ["commit", "-m", "init"], { cwd });
++  fs.writeFileSync(path.join(cwd, "app.js"), "console.log('v2');\n");
++
++  const target = resolveReviewTarget(cwd, {});
++  assert.equal(target.mode, "working-tree");
++
++  const context = collectReviewContext(cwd, target);
++
++  assert.match(context.content, /Git Status/);
++  assert.match(context.content, /Unstaged Diff/);
++});
++
++test("adversarial review uses lightweight context when file count exceeds threshold", async () => {
++  const cwd = makeTempDir();
++  initGitRepo(cwd);
++  fs.writeFileSync(path.join(cwd, "app.js"), "console.log('v1');\n");
++  run("git", ["add", "app.js"], { cwd });
++  run("git", ["commit", "-m", "init"], { cwd });
++  run("git", ["checkout", "-b", "large-branch"], { cwd });
++
++  for (let i = 0; i < 55; i++) {
++    fs.writeFileSync(path.join(cwd, `file-${i}.js`), `module.exports = ${i};\n`);
++    run("git", ["add", `file-${i}.js`], { cwd });
++  }
++  run("git", ["commit", "-m", "add many files"], { cwd });
++
++  const originalEnv = process.env.CODEX_INLINE_FILE_THRESHOLD;
++  process.env.CODEX_INLINE_FILE_THRESHOLD = "10";
++
++  try {
++    const target = resolveReviewTarget(cwd, {});
++    assert.equal(target.mode, "branch");
++
++    const context = collectReviewContext(cwd, target);
++
++    assert.match(context.content, /Changed Files/);
++    assert.match(context.content, /more than 10 changed files/i);
++    assert.doesNotMatch(context.content, /Branch Diff/);
++    assert.equal(context.mode, "branch");
++  } finally {
++    if (originalEnv !== undefined) {
++      process.env.CODEX_INLINE_FILE_THRESHOLD = originalEnv;
++    } else {
++      delete process.env.CODEX_INLINE_FILE_THRESHOLD;
++    }
++  }
++});
++
++test("small branch scope still uses inline diff when below threshold", async () => {
++  const cwd = makeTempDir();
++  initGitRepo(cwd);
++  fs.writeFileSync(path.join(cwd, "app.js"), "console.log('v1');\n");
++  run("git", ["add", "app.js"], { cwd });
++  run("git", ["commit", "-m", "init"], { cwd });
++  run("git", ["checkout", "-b", "small-branch"], { cwd });
++
++  fs.writeFileSync(path.join(cwd, "app.js"), "console.log('v2');\n");
++  run("git", ["add", "app.js"], { cwd });
++  run("git", ["commit", "-m", "one change"], { cwd });
++
++  const originalEnv = process.env.CODEX_INLINE_FILE_THRESHOLD;
++  process.env.CODEX_INLINE_FILE_THRESHOLD = "10";
++
++  try {
++    const target = resolveReviewTarget(cwd, {});
++    assert.equal(target.mode, "branch");
++
++    const context = collectReviewContext(cwd, target);
++
++    assert.match(context.content, /Branch Diff/);
++    assert.match(context.content, /Commit Log/);
++    assert.doesNotMatch(context.content, /more than/);
++  } finally {
++    if (originalEnv !== undefined) {
++      process.env.CODEX_INLINE_FILE_THRESHOLD = originalEnv;
++    } else {
++      delete process.env.CODEX_INLINE_FILE_THRESHOLD;
++    }
++  }
++});
++
++test("inline threshold env var respects negative and invalid values by falling back to default", async () => {
++  const cwd = makeTempDir();
++  initGitRepo(cwd);
++  fs.writeFileSync(path.join(cwd, "app.js"), "console.log('v1');\n");
++  run("git", ["add", "app.js"], { cwd });
++  run("git", ["commit", "-m", "init"], { cwd });
++  run("git", ["checkout", "-b", "test-env-fallback"], { cwd });
++
++  fs.writeFileSync(path.join(cwd, "app.js"), "console.log('v2');\n");
++  run("git", ["add", "app.js"], { cwd });
++  run("git", ["commit", "-m", "one change"], { cwd });
++
++  const originalEnv = process.env.CODEX_INLINE_FILE_THRESHOLD;
++  delete process.env.CODEX_INLINE_FILE_THRESHOLD;
++
++  try {
++    const target = resolveReviewTarget(cwd, {});
++    assert.equal(target.mode, "branch");
++    const context = collectReviewContext(cwd, target);
++    assert.match(context.content, /Branch Diff/);
++  } finally {
++    if (originalEnv !== undefined) {
++      process.env.CODEX_INLINE_FILE_THRESHOLD = originalEnv;
++    }
++  }
++});

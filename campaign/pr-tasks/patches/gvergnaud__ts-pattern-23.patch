@@ -1,0 +1,57 @@
+diff --git a/src/types/Match.ts b/src/types/Match.ts
+index 8c23010..4ac8d4d 100644
+--- a/src/types/Match.ts
++++ b/src/types/Match.ts
+@@ -13,7 +13,7 @@ export type MatchedValue<a, invpattern> = WithDefault<
+ 
+ export type Unset = '@ts-pattern/unset';
+ 
+-export type PickReturnValue<a, b> = a extends Unset ? b : a;
++export type PickReturnValue<a, b> = a extends Unset ? b : a | b;
+ 
+ type NonExhaustiveError<i> = { __nonExhaustive: never } & i;
+ 
+diff --git a/tests/unions.test.ts b/tests/unions.test.ts
+index d11c0eb..493d104 100644
+--- a/tests/unions.test.ts
++++ b/tests/unions.test.ts
+@@ -103,4 +103,39 @@ describe('Unions (a | b)', () => {
+ 
+     expect(ouput).toEqual('<img src="hello.com" />');
+   });
++
++  it('should infer output as union of all branch return types', () => {
++    type Input = string | number;
++
++    const res = match<Input>(1)
++      .with(__.number, (n) => {
++        type t = Expect<Equal<typeof n, number>>;
++        return 'got a number';
++      })
++      .with(__.string, (s) => {
++        type t = Expect<Equal<typeof s, string>>;
++        return 42;
++      })
++      .exhaustive();
++
++    // The output should be a union of both branch return types: 'got a number' | 42
++    type t = Expect<Equal<typeof res, 'got a number' | 42>>;
++
++    expect(res).toEqual(42);
++  });
++
++  it('should infer accumulated union across many branches', () => {
++    type Input = string | number | boolean;
++
++    const res = match<Input>(true)
++      .with(__.string, (s) => 'str' as const)
++      .with(__.number, (n) => 123 as const)
++      .with(__.boolean, (b) => true as const)
++      .exhaustive();
++
++    // The output should be the union of all three return types
++    type t = Expect<Equal<typeof res, 'str' | 123 | true>>;
++
++    expect(res).toEqual(true);
++  });
+ });

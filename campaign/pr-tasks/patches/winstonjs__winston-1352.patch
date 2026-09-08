@@ -1,0 +1,229 @@
+diff --git a/index.d.ts b/index.d.ts
+index 445546b..edc6d37 100644
+--- a/index.d.ts
++++ b/index.d.ts
+@@ -116,6 +116,13 @@ declare namespace winston {
+     warning: LeveledLogMethod;
+     notice: LeveledLogMethod;
+ 
++    isLevelEnabled(level: string): boolean;
++    isDebugEnabled(): boolean;
++    isErrorEnabled(): boolean;
++    isFatalEnabled(): boolean;
++    isInfoEnabled(): boolean;
++    isWarnEnabled(): boolean;
++
+     query(options?: QueryOptions, callback?: (err: Error, results: any) => void): any;
+     stream(options?: any): NodeJS.ReadableStream;
+ 
+@@ -169,6 +176,16 @@ declare namespace winston {
+   let level: string;
+   let exceptions: ExceptionHandler;
+   let exitOnError: Function | boolean;
++  // isXXXEnabled methods
++  let isDebugEnabled: () => boolean;
++  let isErrorEnabled: () => boolean;
++  let isFatalEnabled: () => boolean;
++  let isInfoEnabled: () => boolean;
++  let isWarnEnabled: () => boolean;
++
++  // isLevelEnabled method
++  let isLevelEnabled: (level: string) => boolean;
++
+   // let default: object;
+ }
+ 
+diff --git a/lib/winston.js b/lib/winston.js
+index b396a3a..e64c6ae 100644
+--- a/lib/winston.js
++++ b/lib/winston.js
+@@ -101,6 +101,15 @@ Object.keys(winston.config.npm.levels).concat([
+   winston[method] = (...args) => defaultLogger[method](...args)
+ ));
+ 
++// Pass through the isXXXEnabled methods onto `winston`
++Object.keys(winston.config.npm.levels).forEach(level => {
++  const isLevelMethodName = `is${level.charAt(0).toUpperCase()}${level.slice(1)}Enabled`;
++  winston[isLevelMethodName] = () => defaultLogger.isLevelEnabled(level);
++});
++
++// Pass through the isLevelEnabled method onto `winston`
++winston.isLevelEnabled = (...args) => defaultLogger.isLevelEnabled(...args);
++
+ /**
+  * Define getter / setter for the default logger level which need to be exposed
+  * by winston.
+diff --git a/lib/winston/create-logger.js b/lib/winston/create-logger.js
+index d8cc4b1..6716d26 100644
+--- a/lib/winston/create-logger.js
++++ b/lib/winston/create-logger.js
+@@ -61,6 +61,10 @@ class DerivedLogger extends Logger {
+         // 2. v1/v2 API: log(level, msg, ... [string interpolate], [{metadata}], [callback])
+         return this.log(level, ...args);
+       };
++
++      // Define the isXXXEnabled() methods for each level
++      const enabledMethodName = `is${level.charAt(0).toUpperCase()}${level.slice(1)}Enabled`;
++      this[enabledMethodName] = () => this.isLevelEnabled(level);
+     });
+   }
+ }
+diff --git a/lib/winston/logger.js b/lib/winston/logger.js
+index 2f606ee..71a5334 100644
+--- a/lib/winston/logger.js
++++ b/lib/winston/logger.js
+@@ -480,6 +480,21 @@ class Logger extends stream.Transform {
+     this.exceptions.unhandle(...args);
+   }
+ 
++  /**
++   * Returns whether or not a logging method is enabled.
++   * @param {string} level - The level to check.
++   * @returns {boolean} - Whether or not the specified level is enabled.
++   */
++  isLevelEnabled(level) {
++    // eslint-disable-next-line no-bitwise, no-restricted-syntax
++    const levelValue = typeof level === 'string' ? this.levels[level] : level;
++    if (typeof levelValue !== 'number') {
++      throw new Error(`No level defined for: ${level}`);
++    }
++    // eslint-disable-next-line no-bitwise
++    return levelValue >= this.levels[this.level];
++  }
++
+   /**
+    * Throw a more meaningful deprecation notice
+    * @throws {Error} - TODO: add throws description.
+diff --git a/test/logger.test.js b/test/logger.test.js
+index 306f6f3..d4d5dff 100755
+--- a/test/logger.test.js
++++ b/test/logger.test.js
+@@ -659,3 +659,128 @@ describe('Logger (profile, startTimer)', function (done) {
+     }, 100);
+   });
+ });
++
++describe('Logger (isLevelEnabled)', function () {
++  it('.isLevelEnabled(level) should return the correct value for enabled levels', function () {
++    var logger = winston.createLogger({
++      level: 'info',
++      transports: []
++    });
++
++    // At 'info' level, only info and above are enabled
++    assume(logger.isLevelEnabled('info')).true();
++    assume(logger.isLevelEnabled('warn')).true();
++    assume(logger.isLevelEnabled('error')).true();
++    assume(logger.isLevelEnabled('silly')).false();
++    assume(logger.isLevelEnabled('verbose')).false();
++  });
++
++  it('.isLevelEnabled(level) should handle numeric level values', function () {
++    var logger = winston.createLogger({
++      level: 'info',
++      transports: []
++    });
++
++    // npm levels: silly:0, verbose:1, info:2, warn:3, error:4
++    assume(logger.isLevelEnabled(2)).true();   // info
++    assume(logger.isLevelEnabled(3)).true();   // warn
++    assume(logger.isLevelEnabled(4)).true();   // error
++    assume(logger.isLevelEnabled(0)).false();  // silly
++    assume(logger.isLevelEnabled(1)).false();  // verbose
++  });
++
++  it('.isDebugEnabled() should return the correct value when debug is disabled', function () {
++    var logger = winston.createLogger({
++      levels: { debug: 0, info: 1, warn: 2, error: 3 },
++      level: 'info',
++      transports: []
++    });
++
++    // At 'info' level (1), debug (0) is disabled
++    assume(logger.isDebugEnabled()).false();
++  });
++
++  it('.isInfoEnabled() should return the correct value for info', function () {
++    var logger = winston.createLogger({
++      levels: { debug: 0, info: 1, warn: 2, error: 3 },
++      level: 'info',
++      transports: []
++    });
++
++    // At 'info' level (1), info (1) is enabled
++    assume(logger.isInfoEnabled()).true();
++  });
++
++  it('.isDebugEnabled() should return the correct value when debug is enabled', function () {
++    var logger = winston.createLogger({
++      levels: { debug: 0, info: 1, warn: 2, error: 3 },
++      level: 'debug',
++      transports: []
++    });
++
++    // At 'debug' level (0), all levels >= 0 are enabled
++    assume(logger.isDebugEnabled()).true();
++  });
++
++  it('.isInfoEnabled() should return the correct value for info when debug is set', function () {
++    var logger = winston.createLogger({
++      levels: { debug: 0, info: 1, warn: 2, error: 3 },
++      level: 'debug',
++      transports: []
++    });
++
++    // At 'debug' level (0), info (1) >= 0 so it's enabled
++    assume(logger.isInfoEnabled()).true();
++  });
++
++  it('.isWarnEnabled() and .isErrorEnabled() should still return true when debug is set', function () {
++    var logger = winston.createLogger({
++      levels: { debug: 0, info: 1, warn: 2, error: 3 },
++      level: 'debug',
++      transports: []
++    });
++
++    assume(logger.isWarnEnabled()).true();   // warn (2) >= debug (0)
++    assume(logger.isErrorEnabled()).true();  // error (3) >= debug (0)
++  });
++
++  it('.isLevelEnabled(level) should throw on unknown level', function () {
++    var logger = winston.createLogger({
++      transports: []
++    });
++
++    assume(function () {
++      logger.isLevelEnabled('unknown');
++    }).throws(/No level defined for/);
++  });
++});
++
++describe('Logger (isXXXEnabled with custom levels)', function () {
++  it('should create isXXXEnabled methods for custom levels', function () {
++    var myLevels = {
++      silly: 0,
++      log:   1,
++      custom: 2,
++      warn:  3,
++      error: 4
++    };
++
++    var logger = winston.createLogger({
++      levels: myLevels,
++      level: 'custom',
++      transports: []
++    });
++
++    Object.keys(myLevels).forEach(level => {
++      const isLevelMethodName = `is${level.charAt(0).toUpperCase()}${level.slice(1)}Enabled`;
++      assume(logger[isLevelMethodName]).is.a('function');
++    });
++
++    // At 'custom' level (2), only levels >= 2 should be enabled
++    assume(logger.isCustomEnabled()).true();
++    assume(logger.isWarnEnabled()).true();
++    assume(logger.isErrorEnabled()).true();
++    assume(logger.isLogEnabled()).false();
++    assume(logger.isSillyEnabled()).false();
++  });
++});

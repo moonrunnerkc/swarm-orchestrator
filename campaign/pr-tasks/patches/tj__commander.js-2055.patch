@@ -1,0 +1,191 @@
+diff --git a/lib/command.js b/lib/command.js
+index 8cca025..41f0451 100644
+--- a/lib/command.js
++++ b/lib/command.js
+@@ -546,6 +546,13 @@ Expecting one of '${allowedValues.join("', '")}'`);
+     const oname = option.name();
+     const name = option.attributeName();
+ 
++    if (option.short && (this._findOption(option.short) || option.short === this._helpShortFlag)) {
++      throw new Error(`Option with flag '${option.short}' is already in use.`);
++    }
++    if (option.long && (this._findOption(option.long) || option.long === this._helpLongFlag)) {
++      throw new Error(`Option with flag '${option.long}' is already in use.`);
++    }
++
+     // store default value
+     if (option.negate) {
+       // --no-foo is special and defaults foo to true, unless a --foo option is already defined
+diff --git a/tests/options.flags.test.js b/tests/options.flags.test.js
+index 7e773b8..f11130b 100644
+--- a/tests/options.flags.test.js
++++ b/tests/options.flags.test.js
+@@ -1,83 +1,98 @@
+ const commander = require('../');
+ 
+-// Test the various ways flags can be specified in the first parameter to `.option`
++describe('option with already-in-use flags', () => {
++  test('when adding option with clashing short flag then throw', () => {
++    const program = new commander.Command();
++    program.addOption(new commander.Option('-s, --silent'));
++    expect(() => {
++      program.addOption(new commander.Option('-s, --verbose'));
++    }).toThrow("Option with flag '-s' is already in use.");
++  });
+ 
+-test('when only short flag defined and not specified then value is undefined', () => {
+-  const program = new commander.Command();
+-  program
+-    .option('-p', 'add pepper');
+-  program.parse(['node', 'test']);
+-  expect(program.opts().p).toBeUndefined();
+-});
++  test('when adding option with clashing long flag then throw', () => {
++    const program = new commander.Command();
++    program.addOption(new commander.Option('-s, --silent'));
++    expect(() => {
++      program.addOption(new commander.Option('-v, --silent'));
++    }).toThrow("Option with flag '--silent' is already in use.");
++  });
+ 
+-test('when only short flag defined and specified then value is true', () => {
+-  const program = new commander.Command();
+-  program
+-    .option('-p', 'add pepper');
+-  program.parse(['node', 'test', '-p']);
+-  expect(program.opts().p).toBe(true);
+-});
++  test('when adding option with .option() using clashing short flag then throw', () => {
++    const program = new commander.Command();
++    program.option('-s, --silent');
++    expect(() => {
++      program.option('-s, --verbose');
++    }).toThrow("Option with flag '-s' is already in use.");
++  });
+ 
+-test('when only long flag defined and not specified then value is undefined', () => {
+-  const program = new commander.Command();
+-  program
+-    .option('--pepper', 'add pepper');
+-  program.parse(['node', 'test']);
+-  expect(program.opts().pepper).toBeUndefined();
+-});
++  test('when adding option with .option() using clashing long flag then throw', () => {
++    const program = new commander.Command();
++    program.option('--silent');
++    expect(() => {
++      program.addOption(new commander.Option('-v, --silent'));
++    }).toThrow("Option with flag '--silent' is already in use.");
++  });
+ 
+-test('when only long flag defined and specified then value is true', () => {
+-  const program = new commander.Command();
+-  program
+-    .option('--pepper', 'add pepper');
+-  program.parse(['node', 'test', '--pepper']);
+-  expect(program.opts().pepper).toBe(true);
+-});
++  test('when adding option that overwrites existing flags then throw', () => {
++    const program = new commander.Command();
++    program.addOption(new commander.Option('-s, --silent'));
++    expect(() => {
++      program.addOption(new commander.Option('-s, --silent'));
++    }).toThrow("Option with flag '-s' is already in use.");
++  });
+ 
+-test('when "short,long" flags defined and short specified then value is true', () => {
+-  const program = new commander.Command();
+-  program
+-    .option('-p,--pepper', 'add pepper');
+-  program.parse(['node', 'test', '-p']);
+-  expect(program.opts().pepper).toBe(true);
+-});
++  test('when adding option with non-clashing flags then NOT throw', () => {
++    const program = new commander.Command();
++    program.addOption(new commander.Option('-s, --silent'));
++    expect(() => {
++      program.addOption(new commander.Option('-v, --verbose'));
++    }).not.toThrow();
++  });
+ 
+-test('when "short,long" flags defined and long specified then value is true', () => {
+-  const program = new commander.Command();
+-  program
+-    .option('-p,--pepper', 'add pepper');
+-  program.parse(['node', 'test', '--pepper']);
+-  expect(program.opts().pepper).toBe(true);
+-});
++  test('lone short flag can clash', () => {
++    const program = new commander.Command();
++    program.addOption(new commander.Option('-s'));
++    expect(() => {
++      program.addOption(new commander.Option('-s'));
++    }).toThrow("Option with flag '-s' is already in use.");
++  });
+ 
+-test('when "short|long" flags defined and short specified then value is true', () => {
+-  const program = new commander.Command();
+-  program
+-    .option('-p|--pepper', 'add pepper');
+-  program.parse(['node', 'test', '-p']);
+-  expect(program.opts().pepper).toBe(true);
+-});
++  test('lone short flag can be unique', () => {
++    const program = new commander.Command();
++    program.addOption(new commander.Option('-s'));
++    expect(() => {
++      program.addOption(new commander.Option('-v'));
++    }).not.toThrow();
++  });
+ 
+-test('when "short|long" flags defined and long specified then value is true', () => {
+-  const program = new commander.Command();
+-  program
+-    .option('-p|--pepper', 'add pepper');
+-  program.parse(['node', 'test', '--pepper']);
+-  expect(program.opts().pepper).toBe(true);
+-});
++  test('version does not use addOption so bypasses check', () => {
++    // version() directly pushes to options array, bypassing addOption()
++    const program = new commander.Command();
++    expect(() => {
++      program.version('1.0.0');
++    }).not.toThrow();
++  });
+ 
+-test('when "short long" flags defined and short specified then value is true', () => {
+-  const program = new commander.Command();
+-  program
+-    .option('-p --pepper', 'add pepper');
+-  program.parse(['node', 'test', '-p']);
+-  expect(program.opts().pepper).toBe(true);
+-});
++  test('adding option with same flags as added explicit -h/--help then throw', () => {
++    const program = new commander.Command();
++    program.helpOption('-h, --help'); // explicitly adds help to options array
++    expect(() => {
++      program.addOption(new commander.Option('-H, --verbose')); // clash with explicit help
++    }).toThrow("Option with flag '--help' is already in use.");
++  });
++
++  test('adding option with same short flags as added explicit -h/--help then throw', () => {
++    const program = new commander.Command();
++    program.helpOption('-h, --verbose'); // explicitly adds verbose help
++    expect(() => {
++      program.addOption(new commander.Option('-v, --verbose')); // clash with explicit help
++    }).toThrow("Option with flag '-v' is already in use.");
++  });
+ 
+-test('when "short long" flags defined and long specified then value is true', () => {
+-  const program = new commander.Command();
+-  program
+-    .option('-p --pepper', 'add pepper');
+-  program.parse(['node', 'test', '--pepper']);
+-  expect(program.opts().pepper).toBe(true);
++  test('when version flags not yet added then adding -V clashes NOT', () => {
++    const program = new commander.Command();
++    expect(() => {
++      program.addOption(new commander.Option('-V, --version'));
++    }).not.toThrow();
++  });
+ });

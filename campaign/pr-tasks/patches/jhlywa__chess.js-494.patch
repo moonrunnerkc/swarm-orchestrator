@@ -1,0 +1,93 @@
+diff --git a/__tests__/get.test.ts b/__tests__/get.test.ts
+index 967aab8..89d80f0 100644
+--- a/__tests__/get.test.ts
++++ b/__tests__/get.test.ts
+@@ -1,4 +1,13 @@
+-import { Chess, Square, PAWN, WHITE, BLACK } from '../src/chess'
++import {
++  Chess,
++  Square,
++  PAWN,
++  KNIGHT,
++  ROOK,
++  KING,
++  WHITE,
++  BLACK,
++} from '../src/chess'
+ 
+ test('get', () => {
+   const chess = new Chess()
+@@ -22,3 +31,45 @@ test('get - returns undefined for invalid square', () => {
+   const chess = new Chess()
+   expect(chess.get('bad-square' as Square)).toEqual(undefined)
+ })
++
++// getSquareByPiece tests
++
++test('getSquareByPiece - finds piece by type and explicit white color', () => {
++  const chess = new Chess()
++  expect(chess.getSquareByPiece(PAWN, WHITE)).toEqual('a2')
++})
++
++test('getSquareByPiece - finds piece by type and color', () => {
++  const chess = new Chess()
++  // Find white rooks (first one found at a1)
++  expect(chess.getSquareByPiece(ROOK, WHITE)).toEqual('a1')
++  // Find black rooks (first one found at a8)
++  expect(chess.getSquareByPiece(ROOK, BLACK)).toEqual('a8')
++})
++
++test('getSquareByPiece - returns null for non-existent piece type', () => {
++  const chess = new Chess()
++  chess.clear()
++  expect(chess.getSquareByPiece(PAWN)).toEqual(null)
++})
++
++test('getSquareByPiece - returns null when color filter matches nothing', () => {
++  const chess = new Chess()
++  // Test with empty board (skipValidation since it's a custom position)
++  chess.clear()
++  expect(chess.getSquareByPiece(ROOK, WHITE)).toEqual(null)
++})
++
++test('getSquareByPiece - finds correct piece after load', () => {
++  const chess = new Chess()
++  chess.load('rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1')
++  expect(chess.getSquareByPiece(KING, WHITE)).toEqual('e1')
++  expect(chess.getSquareByPiece(KING, BLACK)).toEqual('e8')
++})
++
++test('getSquareByPiece - works with custom pieces', () => {
++  const chess = new Chess()
++  chess.clear()
++  chess.put({ type: KNIGHT, color: WHITE }, 'e4')
++  expect(chess.getSquareByPiece(KNIGHT, WHITE)).toEqual('e4')
++})
+diff --git a/src/chess.ts b/src/chess.ts
+index 905634f..b5b9e94 100644
+--- a/src/chess.ts
++++ b/src/chess.ts
+@@ -842,6 +842,23 @@ export class Chess {
+     return this._board[Ox88[square]]
+   }
+ 
++  getSquareByPiece(piece: PieceSymbol): Square | null
++  getSquareByPiece(piece: PieceSymbol, color: Color): Square | null
++  getSquareByPiece(piece: PieceSymbol, color?: Color): Square | null {
++    for (const square of SQUARES) {
++      const found = this._board[Ox88[square]]
++      if (
++        found &&
++        found.type === piece &&
++        (color === undefined || found.color === color)
++      ) {
++        return square
++      }
++    }
++
++    return null
++  }
++
+   put(
+     { type, color }: { type: PieceSymbol; color: Color },
+     square: Square,

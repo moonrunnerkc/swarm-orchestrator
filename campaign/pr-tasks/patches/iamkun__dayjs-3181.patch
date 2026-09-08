@@ -1,0 +1,60 @@
+diff --git a/src/plugin/timezone/index.js b/src/plugin/timezone/index.js
+index 44e78c1..824df3c 100644
+--- a/src/plugin/timezone/index.js
++++ b/src/plugin/timezone/index.js
+@@ -93,6 +93,7 @@ export default (o, c, d) => {
+   const proto = c.prototype
+ 
+   proto.tz = function (timezone = defaultTimezone, keepLocalTime) {
++    if (!this.isValid()) return this.clone()
+     const oldOffset = this.utcOffset()
+     const date = this.toDate()
+     const target = date.toLocaleString('en-US', { timeZone: timezone })
+@@ -137,7 +138,9 @@ export default (o, c, d) => {
+     const previousOffset = tzOffset(+d(), timezone)
+     if (typeof input !== 'string') {
+       // timestamp number || js Date || Day.js
+-      return d(input).tz(timezone)
++      const ins = d(input)
++      if (!ins.isValid()) return ins
++      return ins.tz(timezone)
+     }
+     const localTs = d.utc(input, parseFormat).valueOf()
+     const [targetTs, targetOffset] = fixOffset(localTs, previousOffset, timezone)
+diff --git a/test/plugin/timezone.test.js b/test/plugin/timezone.test.js
+index e5a406e..c345022 100644
+--- a/test/plugin/timezone.test.js
++++ b/test/plugin/timezone.test.js
+@@ -569,3 +569,32 @@ describe('DST edge cases vs moment', () => {
+     })
+   })
+ })
++
++describe('Invalid date handling (regression #3180)', () => {
++  const invalidDate = new Date('Invalid')
++
++  it('proto.tz on an invalid dayjs instance returns an invalid dayjs without throwing', () => {
++    const d = dayjs(invalidDate)
++    expect(() => d.tz(NY)).not.toThrow()
++    const result = d.tz(NY)
++    expect(result.isValid()).toBe(false)
++  })
++
++  it('d.tz with an invalid Date returns an invalid dayjs without throwing', () => {
++    expect(() => dayjs.tz(invalidDate, NY)).not.toThrow()
++    const result = dayjs.tz(invalidDate, NY)
++    expect(result.isValid()).toBe(false)
++  })
++
++  it('d.tz with a js Date that becomes invalid returns an invalid dayjs', () => {
++    const d2 = new Date(NaN)
++    expect(() => dayjs.tz(d2, NY)).not.toThrow()
++    const result = dayjs.tz(d2, NY)
++    expect(result.isValid()).toBe(false)
++  })
++
++  it('proto.tz on already tz-ed invalid instance does not throw', () => {
++    const d = dayjs(invalidDate).tz(NY)
++    expect(() => d.tz()).not.toThrow()
++  })
++})

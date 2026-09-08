@@ -1,0 +1,125 @@
+diff --git a/bind.js b/bind.js
+index 4553172..7a1f66b 100644
+--- a/bind.js
++++ b/bind.js
+@@ -24,9 +24,14 @@
+ 			} else if (Array.isArray(arg)) {
+ 				classes.push(classNames.apply(this, arg));
+ 			} else if (argType === 'object') {
+-				for (var key in arg) {
+-					if (hasOwn.call(arg, key) && arg[key]) {
+-						classes.push(this && this[key] || key);
++				if (hasOwn.call(arg, 'toString')) {
++					var str = arg.toString();
++					if (str) classes.push(str);
++				} else {
++					for (var key in arg) {
++						if (hasOwn.call(arg, key) && arg[key]) {
++							classes.push(this && this[key] || key);
++						}
+ 					}
+ 				}
+ 			}
+diff --git a/dedupe.js b/dedupe.js
+index eeaf675..5040746 100644
+--- a/dedupe.js
++++ b/dedupe.js
+@@ -29,11 +29,17 @@
+ 		}
+ 
+ 		function _parseObject (resultSet, object) {
+-			for (var k in object) {
+-				if (hasOwn.call(object, k)) {
+-					// set value to false instead of deleting it to avoid changing object structure
+-					// https://www.smashingmagazine.com/2012/11/writing-fast-memory-efficient-javascript/#de-referencing-misconceptions
+-					resultSet[k] = !!object[k];
++			// if object has custom toString, use that instead of the keys
++			if (hasOwn.call(object, 'toString')) {
++				var str = object.toString();
++				if (str) _parseString(resultSet, str);
++			} else {
++				for (var k in object) {
++					if (hasOwn.call(object, k)) {
++						// set value to false instead of deleting it to avoid changing object structure
++						// https://www.smashingmagazine.com/2012/11/writing-fast-memory-efficient-javascript/#de-referencing-misconceptions
++						resultSet[k] = !!object[k];
++					}
+ 				}
+ 			}
+ 		}
+diff --git a/index.js b/index.js
+index 4bb201e..e3a2cea 100644
+--- a/index.js
++++ b/index.js
+@@ -27,9 +27,14 @@
+ 					classes.push(inner);
+ 				}
+ 			} else if (argType === 'object') {
+-				for (var key in arg) {
+-					if (hasOwn.call(arg, key) && arg[key]) {
+-						classes.push(key);
++				if (hasOwn.call(arg, 'toString')) {
++					var str = arg.toString();
++					if (str) classes.push(str);
++				} else {
++					for (var key in arg) {
++						if (hasOwn.call(arg, key) && arg[key]) {
++							classes.push(key);
++						}
+ 					}
+ 				}
+ 			}
+diff --git a/tests/bind.js b/tests/bind.js
+index e241a1e..5d572c7 100644
+--- a/tests/bind.js
++++ b/tests/bind.js
+@@ -143,4 +143,26 @@ describe('bind', function () {
+ 		});
+ 	});
+ 
++	describe('objects with custom toString', function () {
++		it('uses custom toString for class name', function () {
++			var obj = {
++				toString: function () { return 'custom-class'; }
++			};
++			assert.equal(classNames(obj), 'custom-class');
++		});
++
++		it('handles custom toString among other arguments', function () {
++			var obj = {
++				toString: function () { return 'custom-class'; }
++			};
++			assert.equal(classNames('a', obj, 'b'), 'a custom-class b');
++		});
++
++		it('uses custom toString with bound classNames', function () {
++			var obj = {
++				toString: function () { return '#custom-class'; }
++			};
++			assert.equal(classNamesBound(obj), '#custom-class');
++		});
++	});
+ })
+diff --git a/tests/index.js b/tests/index.js
+index a7b49c2..c32ef28 100644
+--- a/tests/index.js
++++ b/tests/index.js
+@@ -90,4 +90,18 @@ describe('classNames', function () {
+ 			greaterZero: 1
+ 		}), 'nonEmptyString whitespace function emptyObject nonEmptyObject emptyList nonEmptyList greaterZero');
+ 	});
++
++	it('handles objects with custom toString', function () {
++		var obj = {
++			toString: function () { return 'custom-class'; }
++		};
++		assert.equal(classNames(obj), 'custom-class');
++	});
++
++	it('handles objects with custom toString among other arguments', function () {
++		var obj = {
++			toString: function () { return 'custom-class'; }
++		};
++		assert.equal(classNames('a', obj, 'b'), 'a custom-class b');
++	});
+ });

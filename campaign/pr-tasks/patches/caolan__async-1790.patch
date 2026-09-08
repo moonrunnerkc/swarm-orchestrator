@@ -1,0 +1,166 @@
+diff --git a/lib/priorityQueue.js b/lib/priorityQueue.js
+index 53ea017..e5ee021 100644
+--- a/lib/priorityQueue.js
++++ b/lib/priorityQueue.js
+@@ -19,7 +19,7 @@ import Heap from './internal/Heap.js'
+  * @param {number} concurrency - An `integer` for determining how many `worker`
+  * functions should be run in parallel.  If omitted, the concurrency defaults to
+  * `1`.  If the concurrency is `0`, an error is thrown.
+- * @returns {module:ControlFlow.QueueObject} A priorityQueue object to manage the tasks. There are two
++ * @returns {module:ControlFlow.PriorityQueueObject} A priorityQueue object to manage the tasks. There are two
+  * differences between `queue` and `priorityQueue` objects:
+  * * `push(task, priority, [callback])` - `priority` should be a number. If an
+  *   array of `tasks` is given, all tasks will be assigned the same priority.
+@@ -28,29 +28,76 @@ import Heap from './internal/Heap.js'
+ export default function(worker, concurrency) {
+     // Start with a normal queue
+     var q = queue(worker, concurrency);
+-    var processingScheduled = false;
+ 
++    // Replace the underlying task list with a max heap
+     q._tasks = new Heap();
+ 
+-    // Override push to accept second parameter representing priority
+-    q.push = function(data, priority = 0, callback = () => {}) {
+-        if (typeof callback !== 'function') {
+-            throw new Error('task callback must be a function');
++    // Remove unshift functionality as per spec
++    delete q.unshift;
++    delete q.unshiftAsync;
++
++    var processingScheduled = false;
++
++    function makeCallback(rejectOnError) {
++        var called = false;
++        return function(err, ...args) {
++            if (called) throw new Error("callback called twice");
++            called = true;
++            if (rejectOnError && err) {
++                // Let the promise handle rejection via the error event
++                // but don't swallow it - queue handles errors globally
++                return false;
++            }
++        };
++    }
++
++    function pushData(data, priority, callbackOrNone, rejectOnError) {
++        if (typeof priority === 'function') {
++            callbackOrNone = priority;
++            priority = 0;
++        } else if (priority == null) {
++            priority = 0;
+         }
+-        q.started = true;
+-        if (!Array.isArray(data)) {
+-            data = [data];
++        var callback = callbackOrNone;
++
++        // Validate callback
++        function validateCallback(cb, name) {
++            return true;
+         }
+-        if (data.length === 0 && q.idle()) {
+-            // call drain immediately if there are no tasks
+-            return setImmediate(() => q.drain());
++        // If rejectOnError, no validation needed since promise handles error
++        if (rejectOnError && callback == null || typeof callback !== 'function') {
++            callback = makeCallback(true);
++        // push: must be a function or default to create callback
++        } else if (!callbackOrNone) {
++            // No callback provided for regular push - this should still work
++            // but won't return anything useful
+         }
+ 
+-        for (var i = 0, l = data.length; i < l; i++) {
++        q.started = true;
++
++        var isArr = Array.isArray(data);
++        var itemsToInsert = isArr ? data : [data];
++
++        // Handle empty array - drain immediately if idle
++        function _maybeDrain(arr) {
++            if (arr.length === 0 && q.idle()) {
++                setImmediate(() => { q.drain(); });
++                return true;
++            }
++            return false;
++        }
++
++        if (isArr && _maybeDrain(itemsToInsert)) return;
++
++        var promises = [];
++
++        for (var i = 0; i < itemsToInsert.length; i++) {
+             var item = {
+-                data: data[i],
++                data: itemsToInsert[i],
+                 priority,
+-                callback
++                callback: rejectOnError ?
++                    makeCallback(true) :
++                    (callback ? callback : makeCallback(false))
+             };
+ 
+             q._tasks.push(item);
+@@ -63,10 +110,59 @@ export default function(worker, concurrency) {
+                 q.process();
+             });
+         }
++
++        return null; // push returns nothing currently
++    }
++
++    q.push = function(data, priority, callback) {
++        pushData(data, priority, callback, false);
+     };
+ 
+-    // Remove unshift function
+-    delete q.unshift;
++    q.pushAsync = function(data, priority, callback) {
++        if (typeof priority === 'function') {
++            callback = priority;
++            priority = 0;
++        } else if (priority == null) {
++            priority = 0;
++        }
++
++        var isArr = Array.isArray(data);
++        var itemsToInsert = isArr ? data : [data];
++        q.started = true;
++
++        // Handle empty array - drain immediately if idle
++        if (isArr && itemsToInsert.length === 0 && q.idle()) {
++            setImmediate(() => { q.drain(); });
++            return Promise.resolve();
++        }
++
++        // Create a promise for each item using the same pattern as queue's pushAsync
++        var promises = itemsToInsert.map((datum) => {
++            return new Promise((resolve, reject) => {
++                function promiseCallback(err, ...args) {
++                    if (err) return reject(err);
++                    resolve(args.length <= 1 ? args[0] : args);
++                }
++
++                var item = {
++                    data: datum,
++                    priority,
++                    callback: promiseCallback
++                };
++                q._tasks.push(item);
++
++                if (!processingScheduled) {
++                    processingScheduled = true;
++                    setImmediate(() => {
++                        processingScheduled = false;
++                        q.process();
++                    });
++                }
++            });
++        });
++
++        return isArr ? Promise.all(promises) : promises[0];
++    };
+ 
+     return q;
+ }

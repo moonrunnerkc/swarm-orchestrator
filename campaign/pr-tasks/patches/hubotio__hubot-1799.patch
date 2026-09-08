@@ -1,0 +1,56 @@
+diff --git a/src/adapters/Shell.mjs b/src/adapters/Shell.mjs
+index 3dbca3c..0c76789 100644
+--- a/src/adapters/Shell.mjs
++++ b/src/adapters/Shell.mjs
+@@ -41,6 +41,7 @@ class Shell extends Adapter {
+     const levels = ['trace', 'debug', 'info', 'warn', 'error', 'fatal']
+     levels.forEach(level => {
+       robot.logger[level] = async (...args) => {
++        if (!robot.logger.isLevelEnabled(level)) return
+         const color = levelColors[level] || ''
+         const msg = `${color}[${level}]${reset} ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ')}`
+         await this.send({ user: { name: 'Logger', room: 'Shell' } }, msg)
+diff --git a/test/Shell_test.mjs b/test/Shell_test.mjs
+index b2513c9..51d663b 100644
+--- a/test/Shell_test.mjs
++++ b/test/Shell_test.mjs
+@@ -77,6 +77,39 @@ describe('Shell Adapter Integration Test', () => {
+   })
+ })
+ 
++describe('Shell Adapter log level filtering', () => {
++  it('suppresses debug messages when HUBOT_LOG_LEVEL is info (default)', async () => {
++    const robot = new Robot('Shell', false, 'TestHubot')
++    
++    // With default HUBOT_LOG_LEVEL of "info", debug should be disabled
++    assert.equal(robot.logger.isLevelEnabled('debug'), false)
++    assert.equal(robot.logger.isLevelEnabled('error'), true)
++  })
++
++  it('allows trace when HUBOT_LOG_LEVEL is set to trace', async () => {
++    const originalLevel = process.env.HUBOT_LOG_LEVEL
++    process.env.HUBOT_LOG_LEVEL = 'trace'
++    const robot = new Robot('Shell', false, 'TestHubotTrace')
++    
++    assert.equal(robot.logger.isLevelEnabled('trace'), true)
++    assert.equal(robot.logger.isLevelEnabled('debug'), true)
++    assert.equal(robot.logger.isLevelEnabled('info'), true)
++
++    process.env.HUBOT_LOG_LEVEL = originalLevel
++  })
++
++  it('allows only fatal messages when HUBOT_LOG_LEVEL is set to fatal', async () => {
++    const originalLevel = process.env.HUBOT_LOG_LEVEL
++    process.env.HUBOT_LOG_LEVEL = 'fatal'
++    const robot = new Robot('Shell', false, 'TestHubotFatal')
++    
++    assert.equal(robot.logger.isLevelEnabled('error'), false)
++    assert.equal(robot.logger.isLevelEnabled('fatal'), true)
++
++    process.env.HUBOT_LOG_LEVEL = originalLevel
++  })
++})
++
+ describe('Shell Adapter', () => {
+   let robot = null
+   beforeEach(async () => {

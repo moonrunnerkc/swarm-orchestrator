@@ -1,0 +1,60 @@
+diff --git a/__tests__/response/attachment.test.js b/__tests__/response/attachment.test.js
+index b621496..fdafccf 100644
+--- a/__tests__/response/attachment.test.js
++++ b/__tests__/response/attachment.test.js
+@@ -182,4 +182,40 @@ describe('contentDisposition(filename, options)', () => {
+         'inline')
+     })
+   })
++
++  /**
++   * Security-focused tests for Content-Type Sniffing prevention.
++   * Credit: Luca Carettoni of Doyensec LLC [1]
++   * [1] https://github.com/koajs/koa/issues/1904
++   */
++  describe('when setting content-type beforehand', () => {
++    it('should preserve the existing Content-Type when already set', () => {
++      const ctx = context()
++      ctx.set('Content-Type', 'text/plain')
++      ctx.attachment('script.html')
++      assert.strictEqual(ctx.response.header['content-type'], 'text/plain')
++    })
++
++    it('should not overwrite Content-Type with HTML filename', () => {
++      const ctx = context()
++      ctx.type = 'json'
++      ctx.attachment('evil.html')
++      assert.ok(ctx.response.header['content-type'].startsWith('application/json'))
++    })
++
++    it('should not overwrite Content-Type with SVG filename', () => {
++      const ctx = context()
++      ctx.type = 'image/png'
++      ctx.attachment('exploit.svg')
++      assert.strictEqual(ctx.response.header['content-type'], 'image/png')
++    })
++  })
++
++  describe('when omitting filename', () => {
++    it('should still not set Content-Type if none was previously defined', () => {
++      const ctx = context()
++      ctx.attachment()
++      assert.ok(!ctx.response.header['content-type'], 'Content-Type should not be set when no filename is provided')
++    })
++  })
+ })
+diff --git a/lib/response.js b/lib/response.js
+index d0de4a7..71fca0a 100644
+--- a/lib/response.js
++++ b/lib/response.js
+@@ -351,8 +351,8 @@ module.exports = {
+    */
+ 
+   attachment (filename, options) {
+-    if (filename) this.type = extname(filename)
+-    this.set('Content-Disposition', contentDisposition(filename, options))
++    if (filename && !this.has('Content-Type')) this.type = extname(filename)
++    this.set('Content-Disposition', contentDisposition(filename || undefined, options))
+   },
+ 
+   /**

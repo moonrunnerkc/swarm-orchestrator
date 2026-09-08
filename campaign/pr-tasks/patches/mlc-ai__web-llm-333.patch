@@ -1,0 +1,158 @@
+diff --git a/package.json b/package.json
+index bb63e88..4d4d783 100644
+--- a/package.json
++++ b/package.json
+@@ -8,7 +8,7 @@
+   "scripts": {
+     "build": "rollup -c && ./cleanup-index-js.sh",
+     "lint": "npx eslint .",
+-    "test": "yarn jest"
++    "test": "npx jest"
+   },
+   "files": [
+     "lib"
+diff --git a/src/config.ts b/src/config.ts
+index e2981d2..0572fc0 100644
+--- a/src/config.ts
++++ b/src/config.ts
+@@ -69,6 +69,17 @@ export interface GenerationConfig {
+   stop?: string | null | Array<string>;
+   n?: number | null;
+   logit_bias?: Record<string, number> | null;
++  /**
++   * If true, the output will include token-level log probabilities.
++   * The actual log probabilities will be populated in `ChatCompletion.Choice.logprobs`.
++   */
++  logprobs?: boolean | null;
++  /**
++   * An integer between 0 and 5 specifying the number of most likely tokens to return
++   * at each token position, each with an associated log probability. `logprobs` must
++   * be set to `true` if this parameter is used.
++   */
++  top_logprobs?: number | null;
+ }
+ 
+ export function postInitAndCheckGenerationConfigValues(config: GenerationConfig): void {
+diff --git a/src/llm_chat.ts b/src/llm_chat.ts
+index 1d78a49..c8ba336 100644
+--- a/src/llm_chat.ts
++++ b/src/llm_chat.ts
+@@ -68,6 +68,13 @@ export class LLMChatPipeline {
+   // LogitProcessor
+   private logitProcessor?: LogitProcessor = undefined;
+ 
++  // Log probabilities for OpenAI API
++  private logProbs: Array<ChatCompletion.ChatCompletionTokenLogprob>;
++
++  /**
++   * Token-level log probability info for each generated token position.
++   */
++
+   constructor(tvm: tvmjs.Instance, tokenizer: Tokenizer, config: ChatConfig, logitProcessor?: LogitProcessor) {
+     // 0. Setting attributes
+     this.tvm = tvm;
+diff --git a/src/openai_api_protocols/chat_completion.ts b/src/openai_api_protocols/chat_completion.ts
+index 0705b54..4784107 100644
+--- a/src/openai_api_protocols/chat_completion.ts
++++ b/src/openai_api_protocols/chat_completion.ts
+@@ -133,17 +133,13 @@ export interface ChatCompletionRequestBase {
+      * 
+      * If true, returns the log probabilities of each output token returned in the `content` of
+      * `message`.
+-     * 
+-     * @note Not supported yet.
+      */
+     logprobs?: boolean | null;
+ 
+     /**
+      * An integer between 0 and 5 specifying the number of most likely tokens to return
+-     * at each token position, each with an associated log probability. `logprobs` must
+-     * be set to `true` if this parameter is used.
+-     * 
+-     * @note Not supported yet
++     * at each token position, each with an associated log probability.
++     * `logprobs` must be set to `true` if this parameter is used.
+      */
+     top_logprobs?: number | null;
+ 
+@@ -249,15 +245,11 @@ export interface ChatCompletion {
+      *
+      * Can be used in conjunction with the `seed` request parameter to understand when
+      * backend changes have been made that might impact determinism.
+-     * 
+-     * @note Not supported yet.
+      */
+     system_fingerprint?: string;
+ 
+     /**
+      * Usage statistics for the completion request.
+-     * 
+-     * @note Not supported yet.
+      */
+     usage?: CompletionUsage;
+ }
+@@ -306,12 +298,10 @@ export interface ChatCompletionChunk {
+ 
+ export const ChatCompletionRequestUnsupportedFields: Array<string> = [
+     "model",
+-    "logprobs",
+     "tool_choice",
+     "tools",
+     "response_format",
+     "seed",
+-    "top_logprobs"
+ ];
+ 
+ export function postInitAndCheckFields(request: ChatCompletionRequest): void {
+@@ -737,8 +727,6 @@ export namespace ChatCompletion {
+ 
+         /**
+          * Log probability information for the choice.
+-         * 
+-         * @note Not supported yet.
+          */
+         logprobs: Choice.Logprobs | null;
+ 
+diff --git a/tests/openai_chat_completion.test.ts b/tests/openai_chat_completion.test.ts
+index 779c65f..d2cd4ed 100644
+--- a/tests/openai_chat_completion.test.ts
++++ b/tests/openai_chat_completion.test.ts
+@@ -131,4 +131,38 @@ describe('Supported requests', () => {
+         };
+         postInitAndCheckFields(request)
+     });
++
++    test('logprobs and top_logprobs are supported', () => {
++        const request: ChatCompletionRequest = {
++            messages: [
++                { role: "system", content: "You are a helpful assistant." },
++                { role: "user", content: "Hello! " },
++            ],
++            logprobs: true,
++            top_logprobs: 2,
++        };
++        expect(() => postInitAndCheckFields(request)).not.toThrow();
++    });
++
++    test('logprobs without top_logprobs is supported', () => {
++        const request: ChatCompletionRequest = {
++            messages: [
++                { role: "system", content: "You are a helpful assistant." },
++                { role: "user", content: "Hello! " },
++            ],
++            logprobs: true,
++        };
++        expect(() => postInitAndCheckFields(request)).not.toThrow();
++    });
++
++    test('top_logprobs without logprobs is supported', () => {
++        const request: ChatCompletionRequest = {
++            messages: [
++                { role: "system", content: "You are a helpful assistant." },
++                { role: "user", content: "Hello! " },
++            ],
++            top_logprobs: 3,
++        };
++        expect(() => postInitAndCheckFields(request)).not.toThrow();
++    });
+ })

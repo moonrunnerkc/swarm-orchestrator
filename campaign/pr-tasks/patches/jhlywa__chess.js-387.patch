@@ -1,0 +1,39 @@
+diff --git a/src/chess.ts b/src/chess.ts
+index 0521b98..747a80b 100644
+--- a/src/chess.ts
++++ b/src/chess.ts
+@@ -760,6 +760,15 @@ export class Chess {
+       this._kings[color] = sq
+     }
+ 
++    // update castling rights
++    this._castling[color] = 0
++    for (const rook of ROOKS[color]) {
++      const rookSquare = algebraic(rook.square)
++      if (rookSquare === square) {
++        this._castling[color] |= rook.flag
++      }
++    }
++
+     this._updateSetup(this.fen())
+ 
+     return true
+@@ -767,6 +776,18 @@ export class Chess {
+ 
+   remove(square: Square) {
+     const piece = this.get(square)
++
++    // if removing rook, turn off castling
++    for (let color of [WHITE, BLACK] as const) {
++      for (const rook of ROOKS[color]) {
++        if (square === algebraic(rook.square)) {
++          if (this._castling[color] & rook.flag) {
++            this._castling[color] ^= rook.flag
++          }
++        }
++      }
++    }
++
+     delete this._board[Ox88[square]]
+     if (piece && piece.type === KING) {
+       this._kings[piece.color] = EMPTY
