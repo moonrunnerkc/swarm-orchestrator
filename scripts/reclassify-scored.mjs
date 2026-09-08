@@ -19,7 +19,12 @@ import { join } from "node:path";
 import { classifyAgainstHeldBackOracle } from "../dist/eval/campaign-run.js";
 
 const repositoryRoot = new URL("..", import.meta.url).pathname;
-const path = join(repositoryRoot, "campaign/pr-tasks/scored.json");
+const armAt = process.argv.indexOf("--arm");
+const arm = armAt === -1 ? null : process.argv[armAt + 1];
+const path = join(
+  repositoryRoot,
+  arm === null ? "campaign/pr-tasks/scored.json" : `campaign/pr-tasks/scored.${arm}.json`,
+);
 const checkOnly = process.argv.includes("--check");
 
 const scored = JSON.parse(readFileSync(path, "utf8"));
