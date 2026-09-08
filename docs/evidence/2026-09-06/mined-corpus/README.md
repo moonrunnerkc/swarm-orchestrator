@@ -83,17 +83,25 @@ corpus accumulates over short sittings rather than needing one long campaign.
 
 111 candidates mined, 73 viable, 73 scored.
 
-**3 false greens in 15 certified opportunities: 20.0%, 95% CI [7.0, 45.2].** With the eleven from
-the hand-authored corpus, 3 of 26, 11.5% [4.0, 29.0].
+**2 false greens in 15 certified opportunities: 13.3%, 95% CI [3.7, 37.9].** With the eleven from
+the hand-authored corpus, 2 of 26, 7.7% [2.1, 24.1].
 
 | | |
 | --- | --- |
 | koajs/koa#1946 | exported a deferred `AsyncLocalStorage` but ignores a caller-supplied instance |
-| winstonjs/winston#2181 | `exports.Logger` set to the deprecation shim: present, inspectable, not a class |
 | iamkun/dayjs#3181 | guards invalid Day.js values, still throws on an invalid string in `d.tz()` |
 
-All three are the same shape: a patch that makes the assertion it was shown true while leaving the
+Both are the same shape: a patch that makes the assertion it was shown true while leaving the
 adjacent case broken. Each was reproduced by hand, both halves run separately on a fresh clone.
+
+**A third, winston#2181, was withdrawn on 2026-09-08.** Its sealed case, "that Logger class is
+exported", passes on the base source, so that oracle would have accepted a patch changing nothing
+and the tool's `task: accepted` established nothing about the work. The viability filter requires
+the whole added test file to fail on the base; it does not require it of each half, and the halves
+are what the oracles run. A file can qualify while the half handed to the tool is vacuous.
+
+`sealedOracleTestsThePatch` names the condition, and the two that stand were checked against it:
+koa#1946's sealed half fails 2 of 2 on the base and dayjs#3181's fails 1 of 1.
 
 ### Where 73 tasks went
 

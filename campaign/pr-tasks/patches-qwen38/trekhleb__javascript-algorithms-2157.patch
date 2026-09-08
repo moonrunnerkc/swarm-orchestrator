@@ -1,0 +1,331 @@
+diff --git a/src/data-structures/deque/Deque.js b/src/data-structures/deque/Deque.js
+new file mode 100644
+index 0000000..d16308d
+--- /dev/null
++++ b/src/data-structures/deque/Deque.js
+@@ -0,0 +1,88 @@
++import LinkedList from '../linked-list/LinkedList';
++
++export default class Deque {
++  constructor() {
++    // We're going to implement Deque based on LinkedList since the two
++    // structures are quite similar. Namely, they both operate mostly on
++    // the elements at the beginning and the end. Compare pushFront/pushBack
++    // and popFront/popBack operations of Deque with prepend/append and
++    // deleteHead/deleteTail operations of LinkedList.
++    this.linkedList = new LinkedList();
++  }
++
++  /**
++   * @return {boolean}
++   */
++  isEmpty() {
++    return !this.linkedList.head;
++  }
++
++  /**
++   * Read the element at the front of the deque without removing it.
++   * @return {*}
++   */
++  peekFront() {
++    if (this.isEmpty()) {
++      return null;
++    }
++
++    return this.linkedList.head.value;
++  }
++
++  /**
++   * Read the element at the back of the deque without removing it.
++   * @return {*}
++   */
++  peekBack() {
++    if (this.isEmpty()) {
++      return null;
++    }
++
++    return this.linkedList.tail.value;
++  }
++
++  /**
++   * Add a new element to the front of the deque (the head of the linked list).
++   * @param {*} value
++   */
++  pushFront(value) {
++    this.linkedList.prepend(value);
++  }
++
++  /**
++   * Add a new element to the back of the deque (the tail of the linked list).
++   * @param {*} value
++   */
++  pushBack(value) {
++    this.linkedList.append(value);
++  }
++
++  /**
++   * Remove the element at the front of the deque (the head of the linked list).
++   * If the deque is empty, return null.
++   * @return {*}
++   */
++  popFront() {
++    const removedHead = this.linkedList.deleteHead();
++    return removedHead ? removedHead.value : null;
++  }
++
++  /**
++   * Remove the element at the back of the deque (the tail of the linked list).
++   * If the deque is empty, return null.
++   * @return {*}
++   */
++  popBack() {
++    const removedTail = this.linkedList.deleteTail();
++    return removedTail ? removedTail.value : null;
++  }
++
++  /**
++   * @param [callback]
++   * @return {string}
++   */
++  toString(callback) {
++    // Return string representation of the deque's linked list.
++    return this.linkedList.toString(callback);
++  }
++}
+diff --git a/src/data-structures/deque/README.md b/src/data-structures/deque/README.md
+new file mode 100644
+index 0000000..d09761b
+--- /dev/null
++++ b/src/data-structures/deque/README.md
+@@ -0,0 +1,45 @@
++# Deque
++
++In computer science, a **deque** (pronounced "deck") is a generalization of a
++queue that allows insertion and deletion of elements from either end. The name
++is a portmanteau of "double-ended queue". A deque generalises both the
++**queue** (FIFO) and the **stack** (LIFO): by restricting which ends you
++operate on, a deque can behave like either of them.
++
++## Operations
++
++| Operation     | Description                                        | Time Complexity |
++| ------------- | -------------------------------------------------- | --------------- |
++| `pushFront`   | Add an element to the front of the deque           | O(1)            |
++| `pushBack`    | Add an element to the back of the deque            | O(1)            |
++| `popFront`    | Remove and return the element at the front         | O(1)            |
++| `popBack`     | Remove and return the element at the back          | O(1)            |
++| `peekFront`   | Return the element at the front without removing it| O(1)            |
++| `peekBack`    | Return the element at the back without removing it | O(1)            |
++| `isEmpty`     | Check whether the deque is empty                   | O(1)            |
++| `toString`    | Return a string representation of the deque        | O(n)            |
++
++## Implementation
++
++This implementation is backed by a [linked list](../linked-list/README.md),
++which makes every operation O(1) because the list keeps direct references to
++both its head and its tail:
++
++- `pushFront` / `popFront` map to `prepend` / `deleteHead`
++- `pushBack` / `popBack` map to `append` / `deleteTail`
++
++## Use cases
++
++- **Undo/redo history**: new actions are pushed to the back, undo pops from
++  the back, redo pushes back again.
++- **Sliding window maximum**: maintain a deque of candidate elements while
++  scanning a window.
++- **Breadth-first search**: a deque can act as a queue (pushBack/popFront) or
++  as a double-ended BFS frontier.
++- **Palindrome checking**: push all characters to the back, then compare
++  `popFront` and `popBack` pairs.
++
++## References
++
++- [Wikipedia](https://en.wikipedia.org/wiki/Double-ended_queue)
++- [GeeksforGeeks](https://www.geeksforgeeks.org/deque-in-python/)
+diff --git a/src/data-structures/deque/__test__/Deque.test.js b/src/data-structures/deque/__test__/Deque.test.js
+new file mode 100644
+index 0000000..1a0ac5a
+--- /dev/null
++++ b/src/data-structures/deque/__test__/Deque.test.js
+@@ -0,0 +1,171 @@
++import Deque from '../Deque';
++
++describe('Deque', () => {
++  it('should create empty deque', () => {
++    const deque = new Deque();
++    expect(deque).not.toBeNull();
++    expect(deque.linkedList).not.toBeNull();
++  });
++
++  it('should check if deque is empty', () => {
++    const deque = new Deque();
++
++    expect(deque.isEmpty()).toBe(true);
++
++    deque.pushBack(1);
++
++    expect(deque.isEmpty()).toBe(false);
++
++    deque.popBack();
++
++    expect(deque.isEmpty()).toBe(true);
++  });
++
++  it('should push data to the back of deque', () => {
++    const deque = new Deque();
++
++    deque.pushBack(1);
++    deque.pushBack(2);
++
++    expect(deque.toString()).toBe('1,2');
++  });
++
++  it('should push data to the front of deque', () => {
++    const deque = new Deque();
++
++    deque.pushFront(1);
++    deque.pushFront(2);
++
++    expect(deque.toString()).toBe('2,1');
++  });
++
++  it('should be possible to push/pop objects', () => {
++    const deque = new Deque();
++
++    deque.pushBack({ value: 'test1', key: 'key1' });
++    deque.pushFront({ value: 'test2', key: 'key2' });
++
++    const stringifier = (value) => `${value.key}:${value.value}`;
++
++    expect(deque.toString(stringifier)).toBe('key2:test2,key1:test1');
++    expect(deque.popFront().value).toBe('test2');
++    expect(deque.popBack().value).toBe('test1');
++  });
++
++  it('should peek data from the front of deque', () => {
++    const deque = new Deque();
++
++    expect(deque.peekFront()).toBeNull();
++
++    deque.pushBack(1);
++    deque.pushBack(2);
++
++    expect(deque.peekFront()).toBe(1);
++    expect(deque.peekFront()).toBe(1);
++  });
++
++  it('should peek data from the back of deque', () => {
++    const deque = new Deque();
++
++    expect(deque.peekBack()).toBeNull();
++
++    deque.pushBack(1);
++    deque.pushBack(2);
++
++    expect(deque.peekBack()).toBe(2);
++    expect(deque.peekBack()).toBe(2);
++  });
++
++  it('should pop from the front of deque in FIFO order', () => {
++    const deque = new Deque();
++
++    deque.pushBack(1);
++    deque.pushBack(2);
++
++    expect(deque.popFront()).toBe(1);
++    expect(deque.popFront()).toBe(2);
++    expect(deque.popFront()).toBeNull();
++    expect(deque.isEmpty()).toBe(true);
++  });
++
++  it('should pop from the back of deque in LIFO order', () => {
++    const deque = new Deque();
++
++    deque.pushBack(1);
++    deque.pushBack(2);
++
++    expect(deque.popBack()).toBe(2);
++    expect(deque.popBack()).toBe(1);
++    expect(deque.popBack()).toBeNull();
++    expect(deque.isEmpty()).toBe(true);
++  });
++
++  it('should pop from an empty deque', () => {
++    const deque = new Deque();
++
++    expect(deque.popFront()).toBeNull();
++    expect(deque.popBack()).toBeNull();
++    expect(deque.isEmpty()).toBe(true);
++  });
++
++  it('should work with a single element', () => {
++    const deque = new Deque();
++
++    deque.pushBack(1);
++
++    expect(deque.peekFront()).toBe(1);
++    expect(deque.peekBack()).toBe(1);
++    expect(deque.popFront()).toBe(1);
++    expect(deque.isEmpty()).toBe(true);
++  });
++
++  it('should alternate pushing to both ends', () => {
++    const deque = new Deque();
++
++    deque.pushBack(1);
++    deque.pushFront(2);
++    deque.pushBack(3);
++    deque.pushFront(4);
++
++    expect(deque.toString()).toBe('4,2,1,3');
++  });
++
++  it('should alternate popping from both ends', () => {
++    const deque = new Deque();
++
++    deque.pushBack(1);
++    deque.pushBack(2);
++    deque.pushBack(3);
++    deque.pushBack(4);
++
++    expect(deque.popFront()).toBe(1);
++    expect(deque.popBack()).toBe(4);
++    expect(deque.popFront()).toBe(2);
++    expect(deque.popBack()).toBe(3);
++    expect(deque.isEmpty()).toBe(true);
++  });
++
++  it('should behave like a queue when using pushBack/popFront', () => {
++    const deque = new Deque();
++
++    deque.pushBack(1);
++    deque.pushBack(2);
++    deque.pushBack(3);
++
++    expect(deque.popFront()).toBe(1);
++    expect(deque.popFront()).toBe(2);
++    expect(deque.popFront()).toBe(3);
++  });
++
++  it('should behave like a stack when using pushBack/popBack', () => {
++    const deque = new Deque();
++
++    deque.pushBack(1);
++    deque.pushBack(2);
++    deque.pushBack(3);
++
++    expect(deque.popBack()).toBe(3);
++    expect(deque.popBack()).toBe(2);
++    expect(deque.popBack()).toBe(1);
++  });
++});
+diff --git a/swarm.toml b/swarm.toml
+new file mode 100644
+index 0000000..8435c6a
+--- /dev/null
++++ b/swarm.toml
+@@ -0,0 +1,3 @@
++[providers]
++local_endpoint = "http://127.0.0.1:8000/v1"
++local_thinking = false

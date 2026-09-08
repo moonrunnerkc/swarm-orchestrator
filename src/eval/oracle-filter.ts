@@ -94,3 +94,19 @@ export function heldBackRefusalIsReal(input: {
 }): boolean {
   return input.aloneFailed && input.togetherFailed;
 }
+
+/**
+ * Whether the sealed oracle is capable of distinguishing the work from no work.
+ *
+ * A sealed half that passes on the base source accepts a patch that changes nothing, so the tool's
+ * `task: accepted` establishes nothing and a false green resting on it is an artifact rather than
+ * a finding. winston#2181 was published as a false green and withdrawn for this reason: its sealed
+ * case asserted that a class is exported, and it was exported before the patch.
+ *
+ * The viability filter requires the whole added test file to fail on the base. It does not require
+ * it of each half, and the halves are what the oracles run, so a file can qualify while the half
+ * handed to the tool is vacuous.
+ */
+export function sealedOracleTestsThePatch(input: { sealedFailedOnBase: boolean }): boolean {
+  return input.sealedFailedOnBase;
+}
