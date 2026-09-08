@@ -83,8 +83,15 @@ corpus accumulates over short sittings rather than needing one long campaign.
 
 111 candidates mined, 73 viable, 73 scored.
 
-**2 false greens in 15 certified opportunities: 13.3%, 95% CI [3.7, 37.9].** With the eleven from
-the hand-authored corpus, 2 of 26, 7.7% [2.1, 24.1].
+**2 false greens in 11 valid opportunities: 18.2%, 95% CI [5.1, 47.7].** With the eleven from the
+hand-authored corpus, 2 of 22, 9.1% [2.5, 27.8].
+
+Fifteen tasks were certified, and four are not opportunities: `scripts/audit-sealed-oracles.mjs`
+found that dayjs#2930, dayjs#3174, dayjs#2693 and winston#2181 have a sealed half that passes on
+the base source. Such a half accepts a patch that changes nothing, so the tool's `task: accepted`
+establishes nothing and no held-back oracle could ever have caught anything there. The viability
+filter now checks each sealed half against the base, which it never did: it checked the whole
+added file, and a file can qualify while the half handed to the tool is vacuous.
 
 | | |
 | --- | --- |

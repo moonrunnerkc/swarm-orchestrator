@@ -19,6 +19,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
+import { titleFilterFor } from "../dist/eval/oracle-filter.js";
 import { prTaskEvidenceRoot, prTaskWorkingRoot } from "../dist/eval/pr-task-paths.js";
 
 const run = promisify(execFile);
@@ -115,6 +116,13 @@ function persist() {
   judged.at = new Date().toISOString();
   writeFileSync(judgedPath, `${JSON.stringify(judged, null, 2)}\n`);
 }
+
+const runnerKindOf = (r) =>
+  r.includes("jest") ? "jest"
+  : r.includes("vitest") ? "vitest"
+  : r.includes("mocha") ? "mocha"
+  : r.includes("ava") ? "ava"
+  : "node";
 
 const { candidates } = JSON.parse(readFileSync(candidatesPath, "utf8"));
 const judged = existsSync(judgedPath)
@@ -237,8 +245,32 @@ for (const candidate of wanted) {
     continue;
   }
 
+  // The sealed half is what the tool is handed, and a half that passes on the base accepts a patch
+  // that changes nothing: the tool's `task: accepted` then establishes nothing and the task is not
+  // an opportunity to catch a false green. The check above measures the whole added file, and four
+  // of fifteen certified tasks turned out to have a vacuous sealed half underneath a file that
+  // qualified. winston#2181 was published as a false green on one before this was noticed.
+  await attempt("git", ["checkout", "--quiet", "--force", "--detach", base], { cwd: checkout });
+  await attempt("git", ["clean", "-qfd"], { cwd: checkout });
+  await attempt("git", ["checkout", "--quiet", candidate.mergeCommit, "--", candidate.testFile], {
+    cwd: checkout,
+  });
+  const sealedFilter = titleFilterFor(runnerKindOf(record.runner), split.sealed.map((c) => c.title));
+  const sealedOnBase = await attempt(
+    runner[0],
+    [...runner[1].slice(0, -1), ...sealedFilter, runner[1].at(-1)],
+    { cwd: checkout, timeout: 10 * 60_000, env: suiteEnvironment },
+  );
+  if (sealedOnBase.code === 0) {
+    record.why = "the sealed half passes on the base source, so it would accept a patch that changes nothing";
+    judged.tasks.push(record);
+    persist();
+    console.log(`  DROP  ${label.padEnd(42)} ${record.why}`);
+    continue;
+  }
+
   record.viable = true;
-  record.why = "fails on the base source, passes on the merged tree";
+  record.why = "fails on the base source, passes on the merged tree, and the sealed half fails on the base";
   judged.tasks.push(record);
   persist();
   console.log(`  KEEP  ${label.padEnd(42)} ${record.runner}`);
