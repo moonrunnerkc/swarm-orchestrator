@@ -127,6 +127,19 @@ corpus of only tiny tasks measures the tool on tiny tasks. `--max-changed-lines`
 than a constant so the shaping is visible in the command that produced a corpus, and the certify
 rate is reported beside every result so a rate measured over easy tasks says so.
 
+**Nearly half the splits are one case against one.** Across 73 viable tasks, 23 are 1+1 and 31
+have at least one half that is a single test case: 42%. A single-assertion oracle is thin evidence
+for whether a task was done, and two single assertions disagreeing says more about which one the
+model happened to satisfy than about completeness. Measured on the first 25 scored tasks, three of
+the four `refused-on-sealed` outcomes came from 1+1 splits, and 6 of 9 certified opportunities had
+a single-case half.
+
+This is why the rate is reported beside the split thickness rather than alone. The one false green
+found so far came from a 2+2 split and was reproduced by hand, which is the kind that carries
+weight; a false green from a 1+1 split would mean the model passed one assertion and failed one,
+which is real but much thinner. Requiring two cases per half would cut the corpus by a third and
+is the obvious next tightening.
+
 **The viability filter admits only what it can establish.** A repository whose suite needs a
 database, a browser or a network is dropped, so the corpus skews toward libraries with fast unit
 tests. That is a real selection effect on what the resulting rate describes.
