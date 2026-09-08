@@ -152,6 +152,17 @@ weight; a false green from a 1+1 split would mean the model passed one assertion
 which is real but much thinner. Requiring two cases per half would cut the corpus by a third and
 is the obvious next tightening.
 
+**Two arms are only comparable on tasks both of them measured.** The regression check runs the
+project's own suite, and that suite is not always deterministic across runs: dayjs sets a timezone
+per invocation in its test script, and `swarm ci` does not carry one, so the same base commit
+answered `pass` in one arm and `unmeasured` in another. The attribution logic is right either way,
+since a check that fails at the base is not charged to the patch, but a task where one arm
+measured a regression and the other could not is not evidence about the models.
+
+Any arm comparison therefore runs over the intersection: tasks where both arms produced a
+measurable regression. Reporting the two rates over different denominators would attribute an
+environment difference to a model.
+
 **The viability filter admits only what it can establish.** A repository whose suite needs a
 database, a browser or a network is dropped, so the corpus skews toward libraries with fast unit
 tests. That is a real selection effect on what the resulting rate describes.
