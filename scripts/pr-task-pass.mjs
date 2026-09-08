@@ -34,8 +34,9 @@ const repositoryRoot = new URL("..", import.meta.url).pathname;
 const taskRoot = prTaskEvidenceRoot(repositoryRoot);
 const workingRoot = prTaskWorkingRoot(homedir());
 const oracleRoot = join(workingRoot, "oracles");
-const patchRoot = join(taskRoot, "patches");
-const scoredPath = join(taskRoot, "scored.json");
+const patchRoot = arm === null ? join(taskRoot, "patches") : join(taskRoot, `patches-${arm}`);
+const scoredPath =
+  arm === null ? join(taskRoot, "scored.json") : join(taskRoot, `scored.${arm}.json`);
 
 const argv = process.argv.slice(2);
 const flag = (name, fallback) => {
@@ -52,6 +53,12 @@ const wallMinutes = Number(flag("--max-wall-minutes", "12"));
  * is how the false red caused by installing with --ignore-scripts was measured after it was fixed.
  */
 const rejudge = argv.includes("--rejudge");
+/**
+ * Which arm's results these are. A second model scored against the same tasks is a second arm, and
+ * it must not write over the first: the recorded patches are the evidence `--rejudge` reads, so
+ * one arm overwriting another would destroy the result it is meant to be compared against.
+ */
+const arm = flag("--arm", null);
 
 async function attempt(file, args, options = {}) {
   try {
@@ -110,7 +117,11 @@ console.log(`scoring ${wanted.length} mined task(s) against a held-back oracle\n
 for (const task of wanted) {
   const label = `${task.repository}#${task.pull}`;
   const checkout = join(workingRoot, "work", task.repository.replace("/", "__"));
-  const workspace = join(workingRoot, "runs", `${task.repository.replace("/", "__")}-${task.pull}`);
+  const workspace = join(
+    workingRoot,
+    "runs",
+    `${arm === null ? "" : `${arm}-`}${task.repository.replace("/", "__")}-${task.pull}`,
+  );
 
   // The pull request's test file, kept outside every workspace so neither half can be read by the
   // thing being measured.
@@ -202,6 +213,16 @@ for (const task of wanted) {
     console.log(`  SKIP  ${label.padEnd(42)} npm ci failed in the workspace`);
     continue;
   }
+
+  // A reasoning model served locally answers with an empty `content` unless thinking is turned
+  // off: it spends the whole output budget on `reasoning` and the agent sees nothing to act on,
+  // which reaches this pass as an empty patch and reads as the model failing the task. Ollama's
+  // OpenAI route ignores the flag, so the first arm never needed it; MLX honours it, so the second
+  // arm would have produced nothing at all without this.
+  writeFileSync(
+    join(workspace, "swarm.toml"),
+    `[providers]\nlocal_endpoint = "${endpoint}"\nlocal_thinking = false\n`,
+  );
 
   const startedAt = Date.now();
   const agent = await attempt(
