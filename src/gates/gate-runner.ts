@@ -104,15 +104,21 @@ export interface GateCycleDependencies {
  * dynamic gate that passed executed the change; a dynamic gate that failed or stood down did
  * not.
  *
+ * Capability alone, and not the gate's shape beside it. Asking for a command as well was the
+ * unreplaced half of the older predicate, and it discarded the one dynamic gate the harness
+ * runs itself: the behaviour probe imports the changed module and calls its functions, which is
+ * the code being executed however the gate is spawned. Keeping the clause made the probe's
+ * classification dead, and with it the two abstentions added to keep a probe that measured
+ * nothing from reading as a pass, so a project with no declared runner burnt every attempt and
+ * escalated saying nothing ran over a change its own probe had just run.
+ *
  * A tree nothing touched is measured by definition: there is nothing there to run over.
  */
 export function executedTheChange(cycle: GateCycle): boolean {
   if ((cycle.measures.changedFiles ?? 0) === 0) {
     return true;
   }
-  return cycle.runs.some(
-    (run) => run.kind === "command" && run.capability === "dynamic" && run.status === "passed",
-  );
+  return cycle.runs.some((run) => run.capability === "dynamic" && run.status === "passed");
 }
 
 export function isGreen(cycle: GateCycle): boolean {
