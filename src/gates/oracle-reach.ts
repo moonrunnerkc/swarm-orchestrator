@@ -14,6 +14,31 @@
  * patch and the coverage of the run it just performed, which is why it can be applied to an oracle
  * written by somebody else for a purpose nobody declared.
  */
+/**
+ * Whether a changed path is one of the patch's own tests.
+ *
+ * Named as what it is: a convention, not a guarantee. A file under a test directory, or one whose
+ * name ends in `.test.*` or `.spec.*`, is read as a test; `latest.ts`, `contest.js` and
+ * `testing-helpers.ts` are not, because the word appearing inside a name says nothing.
+ *
+ * Reach exists to ask whether the oracle judged the behaviour the patch introduced, and a test
+ * file is not that behaviour. An acceptance oracle runs its own test file and never the
+ * candidate's, so the candidate's tests are absent from every coverage report by construction.
+ * Counting them turned two koa patches that both oracles accept into refusals.
+ *
+ * What being wrong costs, in each direction: a source file mistaken for a test drops out of reach,
+ * which weakens the check by one file; a test file not recognized is reported unreached, which
+ * refuses a patch that is fine. Neither is silent, since the unreached files are named.
+ */
+function namesATestFile(path: string): boolean {
+  const segments = path.split("/");
+  const basename = segments.at(-1) ?? "";
+  return (
+    segments.slice(0, -1).some((segment) => /^(__tests__|__test__|tests?|specs?)$/.test(segment)) ||
+    /\.(test|spec)\.[^.]+$/.test(basename)
+  );
+}
+
 export interface ChangedLines {
   readonly path: string;
   readonly addedLines: readonly number[];
@@ -42,7 +67,7 @@ export function oracleReachedTheChange(input: {
   const unreached: { path: string; lines: number[] }[] = [];
 
   for (const file of input.changed) {
-    if (file.addedLines.length === 0) {
+    if (file.addedLines.length === 0 || namesATestFile(file.path)) {
       continue;
     }
     // A file the report does not mention was not measured, and not measured is not covered.
