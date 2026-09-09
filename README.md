@@ -176,9 +176,14 @@ real-repository patches passed their project's whole suite and failed a hidden a
 **And it judges the oracle it was handed, not only the patch.** An oracle that accepts the base
 commit would have accepted a patch that changes nothing, so `task` reads `vacuous` and nothing is
 verified. An oracle that never executed the lines the patch adds cannot have judged them, so
-`oracleReach` reads `unreached` and nothing is verified. Both were found by measuring this tool
-against real work: four of fifteen certified tasks rested on an oracle that could not fail, and
-the first false green found was certified by an oracle that never ran the branch it broke.
+`oracleReach` reads `unreached`, the lines are named, and nothing is verified. Both were found by
+measuring this tool against real work: certified tasks rested on oracles that could not fail, and
+the first false green found was certified by an oracle that never ran the branch it broke. That
+one is now refused, and refusing it cost no correct result: across both corpora the reach check
+turned down nothing that both oracles accept.
+
+Reach is measured only where the harness can rebuild the oracle's own invocation, so an oracle run
+through another test runner reports `unmeasured` rather than a guess.
 
 Full detail in **[docs/verifying.md](docs/verifying.md)**.
 
@@ -213,18 +218,20 @@ one fails on scale. Each row and what would settle it: **[docs/beta-gates.md](do
 - **The default execution mode is `restricted`, not `isolated`.** A lexical path and program policy
   in front of interpreters unless you pass `--isolation`. Reported before the run starts and
   recorded on the chain rather than quietly assumed — but it is not containment.
-- **The false-green rate is 2 in 22**, 9.1%, 95% CI [2.5, 27.8]. Every task carries two oracles,
-  one handed to the tool and one held back from it, and twice the tool reported `verified` on a
-  patch the held-back oracle refuses. Both were reproduced by hand. Four other certified tasks were
-  dropped from the denominator when an audit found their sealed half passes on the base source, so
-  it would have accepted a patch that changed nothing and could never have caught anything. The bar this project
-  set itself is zero, so this is a **failure**, and it is the honest state of the tool rather than
-  a number waiting to be improved: [`mined-corpus/`](docs/evidence/2026-09-06/mined-corpus/README.md).
-  The eleven hand-authored opportunities found none; the fifteen mined from real pull requests
-  found three, because maintainers test what they cared about rather than what the author of a
-  tool thought to check. An earlier 0-of-18 was withdrawn as arithmetic rather
-  than corrected quietly — the same test was handed to the tool and then used as the ground truth
-  it was scored against, so it agreed with itself.
+- **The false-green rate is 1 in 19**, 5.3%, 95% CI [0.9, 24.6]. Every task carries two oracles,
+  one handed to the tool and one held back from it, and once the tool reported `verified` on a
+  patch the held-back oracle refuses. The bar this project set itself is zero, so this is a
+  **failure**: [`mined-corpus/`](docs/evidence/2026-09-06/mined-corpus/README.md). The eleven
+  hand-authored opportunities found none; every false green came from tasks mined out of real pull
+  requests, because maintainers test what they cared about rather than what the author of a tool
+  thought to check.
+- **The one that stands is a patch that is simply incomplete.** Its oracle ran every line the
+  patch wrote and passed; the held-back case names a branch the patch never handled at all. No
+  property of the patch or of the run reveals that, so it is not a check waiting to be written.
+  Tasks a *held-back* oracle cannot judge are reported as unjudgeable and leave the denominator,
+  21 of 73 mined, rather than quietly reducing it. An earlier 0-of-18 was withdrawn as arithmetic
+  rather than corrected quietly — the same test was handed to the tool and then used as the ground
+  truth it was scored against, so it agreed with itself.
 - **Six known gaps ship open**, and none is claimed closed. Four have detections built against them
   and have not yet been attacked, so what is claimed is a detection and not a closure.
 - **A signature does not make the machine honest.** It proves the bundle was not altered after it
@@ -240,7 +247,7 @@ change is fast and its claims are checkable — not that review is unnecessary.
 The roadmap is the six unmet beta gates, tracked with their evidence in
 **[docs/beta-gates.md](docs/beta-gates.md)**:
 
-- [ ] Zero false greens in 400 held-out tasks — currently 2 in 22, upper bound 27.8%
+- [ ] Zero false greens in 400 held-out tasks — currently 1 in 19, upper bound 24.6%
 - [ ] An adversarial corpus written by somebody trying to get past the defences
 - [ ] Task success non-inferior to the strongest single-agent baseline, at a size that supports it
 - [ ] Deadline overshoot measured, not just bounded by a mechanism

@@ -2,6 +2,61 @@
 
 ## Unreleased
 
+### Added
+
+- **`swarm ci` refuses to certify on an oracle that never ran the change.** An oracle is evidence
+  only about the code it executed, so the run reports `oracleReach`, and a change the oracle
+  demonstrably skipped is not verified. The unreached lines are named, because "extend the oracle
+  to cover the lines the patch added" is not actionable without them. Reach is measured only where
+  the harness can rebuild the oracle's invocation as an argument vector it controls, per invariant
+  7; anywhere else it reads `unmeasured`, which blocks nothing. koa#1946, the first false green
+  this project found, is refused by it: its oracle never executed lines 270-273 of the file it
+  certified. Across both corpora the check produced no false reds.
+
+### Fixed
+
+- **An invocation the harness could not read, so it could not measure.** The recognizer that
+  decides whether the harness controls a command read quoted text as bare: a title filter's `|`
+  tripped its shell-operator scan and its spaces split one argument into several, so no real
+  oracle could be vouched. Quoting is read now, which is narrower than a shell rather than wider:
+  nothing expands, nothing is escaped, and an operator outside quotes still ends the reading.
+  Vouching those commands then exposed that a flag whose value is the next argument was being
+  separated from it, which asked node to filter titles by a coverage flag and to run a test file
+  named after the titles.
+- **The patch's own tests are not code the oracle skipped.** An acceptance oracle runs its own test
+  file and never the candidate's, so the candidate's tests are absent from every coverage report by
+  construction. Counting them refused patches that both oracles accept, which is nearly every
+  well-behaved change, since a feature is expected to arrive with its tests.
+- **Reach measured the tree the oracle judged.** Two paths reverted the patch and left it reverted:
+  the vacuity check stashed it and popped it back without checking the pop, which fails when the
+  patch adds a file the oracle overwrites, and attribution reverts it to measure the base. Both
+  meant later measurements were taken on the base commit and reported as though they were about the
+  patch. The revert and re-apply are checked now, and a checkout that could not be put back makes
+  reach abstain rather than measure whatever the tree holds.
+- **`swarm ci` stops what it started.** The command installed no signal handler, so a Ctrl-C or a
+  supervisor's SIGTERM ended the CLI and left its test runners reparented and running: two node
+  processes from an oracle were found holding a checkout open five hours after the run that started
+  them had gone. It takes the same cancellation the run commands use, so a stop reaches the process
+  group rather than only the process.
+- **An oracle that cannot judge is not an oracle that refused.** The corner classifier read the
+  held-back verdict as a boolean, folding "accepts the base too" and "could not be run" into a
+  refusal. Both now classify as unjudgeable and leave the denominator, with the count reported
+  beside the rate. This cuts both ways: it stopped charging the tool for certifying work that
+  nothing contradicted, and it removed two tasks that were being counted as opportunities the tool
+  passed.
+- **Re-judging cannot answer worse than scoring did.** `--rejudge` re-derives verdicts from
+  recorded patches after a harness change, and the order-dependence check lived only in the fresh
+  scoring pass, so re-judging winston#2256 turned a task already recorded as order-dependent into a
+  false green. Both passes go through one function, and it calls the rule that was already in src
+  with tests beside it rather than a third hand-rolled copy.
+
+### Measured
+
+- **False-green rate 1 in 19 valid opportunities: 5.3%, 95% CI [0.9, 24.6]**, from 2 in 22. One of
+  the two is now refused by the reach check; the other two changes are corpus defects found while
+  re-judging, where a held-back oracle that accepts the base was counted as an opportunity the tool
+  passed. The bar is zero, so gate 3 still fails, and 19 opportunities is not 400 tasks.
+
 ## 14.0.2 - 2026-09-07
 
 ### Fixed

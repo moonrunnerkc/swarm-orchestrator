@@ -83,23 +83,34 @@ corpus accumulates over short sittings rather than needing one long campaign.
 
 111 candidates mined, 73 viable, 73 scored.
 
-**2 false greens in 11 valid opportunities: 18.2%, 95% CI [5.1, 47.7].** With the eleven from the
-hand-authored corpus, 2 of 22, 9.1% [2.5, 27.8].
+**1 false green in 8 valid opportunities: 12.5%, 95% CI [2.2, 47.1].** With the eleven from the
+hand-authored corpus, 1 of 19, 5.3% [0.9, 24.6].
 
-Fifteen tasks were certified, and four are not opportunities: `scripts/audit-sealed-oracles.mjs`
-found that dayjs#2930, dayjs#3174, dayjs#2693 and winston#2181 have a sealed half that passes on
-the base source. Such a half accepts a patch that changes nothing, so the tool's `task: accepted`
-establishes nothing and no held-back oracle could ever have caught anything there. The viability
-filter now checks each sealed half against the base, which it never did: it checked the whole
-added file, and a file can qualify while the half handed to the tool is vacuous.
+Twenty-one of the 73 are unjudgeable: an oracle on one side or the other accepts the base commit,
+or the harness could not run it at all. Such an oracle can contradict nothing, so the task tests
+nothing about the tool in either direction, and it leaves the denominator rather than counting as
+a refusal. `classifyAgainstHeldBackOracle` decides that, which is a change from an audit script
+applying it by hand to four tasks; doing it in the classifier means the next batch cannot forget.
+It cuts both ways. dayjs#3012 and koa#1893 were being counted as opportunities the tool passed,
+and their *held-back* half accepts the base, so they were flattering it.
 
 | | |
 | --- | --- |
-| koajs/koa#1946 | exported a deferred `AsyncLocalStorage` but ignores a caller-supplied instance |
 | iamkun/dayjs#3181 | guards invalid Day.js values, still throws on an invalid string in `d.tz()` |
 
-Both are the same shape: a patch that makes the assertion it was shown true while leaving the
-adjacent case broken. Each was reproduced by hand, both halves run separately on a fresh clone.
+Reproduced by hand, both halves run separately on a fresh clone.
+
+**koa#1946 is no longer one.** It was the first false green found and the tool now refuses it: its
+sealed oracle never executed lines 270-273 of the file it certified, which is where the
+caller-supplied `AsyncLocalStorage` was ignored and what the held-back half then broke. An oracle
+is evidence only about the code it ran. The whole account, including the four harness defects that
+made the check look like it worked when it did not, is in
+[`first-false-green.md`](../2026-09-07/first-false-green.md).
+
+dayjs#3181 is the shape that check cannot reach. Its oracle ran every line the patch wrote and
+passed; the patch handles the non-string branch its sealed case exercises and never handles the
+string one the held-back case names. Nothing in the patch or the run says the work is incomplete,
+so this is not a check waiting to be written.
 
 **A third, winston#2181, was withdrawn on 2026-09-08.** Its sealed case, "that Logger class is
 exported", passes on the base source, so that oracle would have accepted a patch changing nothing
@@ -114,12 +125,11 @@ koa#1946's sealed half fails 2 of 2 on the base and dayjs#3181's fails 1 of 1.
 
 | | |
 | --- | --- |
-| 15 | certified, so an opportunity to catch a false green |
-| 12 | the agent wrote nothing |
-| 3 | the base suite was already failing, so regression is unmeasurable |
-| 43 | judged and refused on the merits |
+| 8 | certified, so an opportunity to catch a false green |
+| 21 | unjudgeable: an oracle on one side accepts the base, or could not be run |
+| 44 | judged and refused, 39 on the merits and 5 where the sealed half refused work the held-back half accepts |
 
-Only a fifth of scored tasks become an opportunity. A quarter cannot become one whatever the tool
+Roughly a ninth of scored tasks become an opportunity, and 21 cannot become one whatever the tool
 does, which is why the interval is wider than the task count suggests.
 
 ### The two directions are not symmetrical
