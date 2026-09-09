@@ -8,7 +8,9 @@ Swarm Orchestrator v13: an evidence-first coding agent. Every claim of completed
 - `npm run lint` : Biome check
 - `npm run format` : Biome format, write
 - `npm test` : Vitest, full suite
-- `npm run gates` : all of the above in sequence; this is the definition of green
+- `npm run checks` : invariant drift, documentation paths, repository weight, cited bundles verify
+- `npm run gates` : all of the above in sequence; this is the definition of green, and it is
+  what CI runs, so a green run here is a green run there
 - `npm run dev` : run the CLI from source against a scratch workspace
 
 Run `npm run gates` before claiming any task complete. Paste the real output. Never summarize gate results from memory.

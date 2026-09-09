@@ -105,7 +105,7 @@ sealed oracle never executed lines 270-273 of the file it certified, which is wh
 caller-supplied `AsyncLocalStorage` was ignored and what the held-back half then broke. An oracle
 is evidence only about the code it ran. The whole account, including the four harness defects that
 made the check look like it worked when it did not, is in
-[`first-false-green.md`](../2026-09-07/first-false-green.md).
+[`first-false-green.md`](../../2026-09-07/first-false-green.md).
 
 dayjs#3181 is the shape that check cannot reach. Its oracle ran every line the patch wrote and
 passed; the patch handles the non-string branch its sealed case exercises and never handles the
