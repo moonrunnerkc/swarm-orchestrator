@@ -9,14 +9,25 @@ is how the earlier "four of twelve pass" got in here and stayed wrong: **six pas
 11, and 8 passes by not building the thing it guards), **three are partial** with the gap named (1,
 9, 10), **two are unproven** (7, 12), and **gate 3 fails on scale**.
 
-Gate 3 is measured and failing. **2 false greens in 22 valid opportunities: 9.1%, 95% CI
-[2.5, 27.8].** The tool certifies work an independent test refuses about one time in eleven, and
-the bar it set itself is zero.
+Gate 3 is measured and failing. **1 false green in 19 valid opportunities: 5.3%, 95% CI
+[0.9, 24.6].** The bar it set itself is zero, so this is a failure, and 19 opportunities is not
+400 tasks.
 
-That number exists because the corpus was mined rather than hand-authored. Eleven opportunities
-written by this project's own authors produced none; fifteen taken from merged pull requests
-produced three. A specification written by maintainers who never heard of this tool tests what
-they cared about, not what its author thought to check. The mined corpus removes
+The rate moved from 2 in 22, and the movement is worth reading carefully, because two thirds of it
+is the corpus rather than the tool. One false green, koa#1946, is now refused: its oracle never ran
+the branch the held-back oracle then broke, and the tool declines to certify on an oracle shown to
+have skipped part of the change. The other two changes are instrument defects found while
+re-judging. dayjs#3012 and koa#1893 leave the denominator because their *held-back* oracle accepts
+the base commit, so it can contradict nothing and the task could never have tested anything. They
+were being counted as opportunities the tool passed, which flattered it in the other direction.
+
+What did not move: the reach check cost nothing. Across both corpora it produced zero false reds,
+so no patch that both oracles accept was refused by it.
+
+That there is a number here at all is because the corpus was mined rather than hand-authored.
+Eleven opportunities written by this project's own authors produced none; the mined ones produced
+every false green found. A specification written by maintainers who never heard of this tool tests
+what they cared about, not what its author thought to check. The mined corpus removes
 the authoring: 111 candidates are already mined and roughly 90 are expected viable, which would
 put the bound near 8%. Four hundred is then a matter of mining more repositories and letting the
 pass run.
@@ -25,7 +36,7 @@ pass run.
 | - | ---- | ------ | ---------------------------- |
 | 1 | Zero successful host-file, host-secret, provider-key, evidence-store, cross-worker or unauthorised-egress attacks in the maintained corpus | **partial** | The deterministic corpus exists and passes: `src/exec/child-environment.test.ts`, `src/tools/shell-tool.test.ts`, `src/gates/node-command-runner.test.ts`, `src/evidence/store-permissions.test.ts`, `src/tools/isolated-shell.test.ts`. What it is not is an attack corpus written by somebody trying to get past it: every case here was written by the same person who wrote the defence. |
 | 2 | Zero accepted test-policy violations in the mutation suite | **pass** | The ratchet rejects test deletion and weakening under the per-test escape hatch; `src/gates/acceptance.test.ts` cases 4 and 5, and the falsification corpus replay. |
-| 3 | Zero false greens in at least 400 held-out tasks, with the interval reported | **fail, and measured** | **2 false greens in 22 valid opportunities: 9.1%, 95% CI [2.5, 27.8].** On the mined corpus alone, 2 of 11: 18.2% [5.1, 47.7]. Both were reproduced by hand on a fresh clone with each half run separately: [`first-false-green.md`](evidence/2026-09-07/first-false-green.md) and [`mined-corpus/`](evidence/2026-09-06/mined-corpus/README.md). Fifteen mined tasks were certified and four are not opportunities, because their sealed oracle passes on the base commit and would have accepted a patch that changes nothing. The hand-authored corpus found none in eleven; the mined one found two in eleven, because a specification written by a project's own maintainers tests what they cared about rather than what the tool's author thought to check. 22 opportunities is not 400 tasks. |
+| 3 | Zero false greens in at least 400 held-out tasks, with the interval reported | **fail, and measured** | **1 false green in 19 valid opportunities: 5.3%, 95% CI [0.9, 24.6].** On the mined corpus alone, 1 of 8: 12.5% [2.2, 47.1]; the hand-authored corpus found none in 11. The one that stands is [`dayjs#3181`](evidence/2026-09-06/mined-corpus/README.md), where the patch handles the non-string branch its sealed case exercises and never handles the string one the held-back case names: the oracle ran every line the patch wrote, so nothing in the patch or the run says the work is incomplete. koa#1946, the first false green found, is now refused, because its oracle never executed the lines it certified: [`first-false-green.md`](evidence/2026-09-07/first-false-green.md). Of 73 mined tasks 21 are left out as unjudgeable, an oracle on one side or the other accepting the base and so able to contradict nothing, and that count is reported rather than quietly reducing the denominator. 19 opportunities is not 400 tasks. |
 | 4 | 99% recovery from injected termination without duplicate committed effects | **pass** | 100 injected kills, 300 committed effects, no duplicates: `src/durable/crash-recovery.test.ts`. |
 | 5 | Every stable documented command exists and works in the published artifact | **pass** | `scripts/check-packed-cli.mjs` packs the tarball, installs into an empty directory, reads the command list from the installed build's own help, and runs each. Runs in CI as its own job. |
 | 6 | Trusted-identity verification rejects a re-signed bundle from an unknown key | **pass** | `src/evidence/resign-attack.test.ts`: a bundle is edited, rehashed and re-signed with an attacker key; consistency still holds and the identity check refuses it, naming the substituted fingerprint. |
