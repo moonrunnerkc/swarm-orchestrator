@@ -19,7 +19,15 @@ node_modules/
 # scanner working, and the finding says nothing about this repository.
 fuzz/corpus/scrub/
 
-# Captured output of runs that exercised the scrubber, kept as evidence of what those runs
-# showed. The credential-shaped strings in them are the inputs the scrub was demonstrated on,
-# and rewriting a captured log to quiet a scanner would falsify the record it exists to be.
-docs/evidence/*/shakedown/logs/
+# Captured evidence: exported bundles, the campaign corpora that are the same thing per
+# repository, and the logs of runs that exercised the scrubber. Each is the record of a run that
+# happened, and rewriting one to quiet a scanner falsifies the record it exists to be. A bundle
+# also carries the verifier and the re-derivation script copied in beside its ledger, so a third
+# party can check it without this tree, and those copies are where the scan spent 171 of its 177
+# findings: they are copies. The template is src/evidence/verifier/rederive.mjs, it is scanned as
+# source, and it is where a finding in them gets fixed. That one was the missing half of a
+# suppression its mirror in src/gates/parsers.ts already carried, which is how a single
+# un-suppressed line became 98% of a scan and three issues nobody could act on.
+docs/evidence/
+campaign/corpus/
+campaign/campaigns/
