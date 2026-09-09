@@ -15,6 +15,13 @@
 
 ### Fixed
 
+- **vitest and `@vitest/coverage-v8` to 4.1.11, for GHSA-82fw-gwwq-j7x9.** A path traversal in
+  `@vitest/mocker`'s redirect mock, CVSS 5.9, published 2026-09-08 against every version from
+  2.1.0. Dev-only and inside the range `package.json` already declared, so the lockfile was the
+  only thing holding the tree on 4.1.10. The coverage provider is pinned exactly rather than
+  ranged, so it moves in the same change or it drifts away from the runner it instruments. This is
+  the first finding the weekly scan has produced that was the world changing rather than the tree:
+  it landed a day after the last scheduled run, and the scan caught it on the next.
 - **A dynamic gate the harness ran itself now counts as having executed the change.** Reported from
   outside against e261c859b: a project declaring a linter and no test runner settled green over a
   changed source file that nothing had executed, because the check for "was this change measured"
