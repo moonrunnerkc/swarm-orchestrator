@@ -6,7 +6,11 @@ import type { Clock } from "../core/clock.ts";
 import { assembleGateSet } from "./engine.ts";
 import { normalizePath } from "./file-set.ts";
 import { defaultGateTimeoutMs, type GateCommandRunner } from "./gate-definition.ts";
+import { harnessReportingCommand } from "./harness-reporting.ts";
+import { oracleReachedTheChange } from "./oracle-reach.ts";
+import { parseLineHits } from "./parsers.ts";
 import { pathsInPatch } from "./patch-paths.ts";
+import { parseUnifiedDiff } from "./unified-diff.ts";
 
 /**
  * Verification that does not trust the tree it is verifying.
@@ -63,6 +67,13 @@ export interface IndependentVerification {
    * reading a passing suite as an accepted task is a measured 22% false-green rate.
    */
   readonly task: "accepted" | "rejected" | "unjudged" | "vacuous";
+  /**
+   * Whether the oracle executed the lines the patch added. An oracle is evidence only about code
+   * it ran, and koa#1946 was certified by one that never reached the branch a held-back oracle
+   * then refused. `unmeasured` where the harness could not build the oracle's invocation itself,
+   * since a coverage number the workspace could author is not a measurement of the workspace.
+   */
+  readonly oracleReach: "reached" | "unreached" | "unmeasured";
   /** Both: no regression, and an oracle that says the task was done. */
   readonly verified: boolean;
   /**
@@ -119,6 +130,7 @@ export async function verifyIndependently(
         "refused before it is measured, not measured and then judged.",
       regression: "unmeasured",
       task: "unjudged",
+      oracleReach: "unmeasured",
       verified: false,
       unmeasured: false,
       advice: "",
@@ -143,6 +155,7 @@ export async function verifyIndependently(
         refusal: `a fresh checkout could not be made: ${cloned.stderr.trim() || cloned.stdout.trim()}`,
         regression: "unmeasured",
         task: "unjudged",
+        oracleReach: "unmeasured",
         verified: false,
         unmeasured: true,
         advice: "",
@@ -161,6 +174,7 @@ export async function verifyIndependently(
         refusal: `the base commit ${options.baseCommit} is not in the checkout`,
         regression: "unmeasured",
         task: "unjudged",
+        oracleReach: "unmeasured",
         verified: false,
         unmeasured: true,
         advice: "",
@@ -183,6 +197,7 @@ export async function verifyIndependently(
         refusal: null,
         regression: "unmeasured",
         task: "unjudged",
+        oracleReach: "unmeasured",
         verified: false,
         unmeasured: false,
         advice: "",
@@ -241,15 +256,24 @@ export async function verifyIndependently(
             "unmeasured"
           : "unmeasured";
 
+    const oracleReach =
+      task === "accepted"
+        ? await measureOracleReach(checkout, options, timeoutMs)
+        : ("unmeasured" as const);
+
     return {
       applied: true,
       checks,
+      oracleReach,
       refusal: null,
       regression,
       task,
       // Both, and the second is the one a suite cannot supply. A patch that adds a feature badly
       // still passes a suite written before the feature existed.
-      verified: regression === "pass" && task === "accepted",
+      // `unreached` blocks, `unmeasured` does not: an oracle shown to have skipped part of the
+      // change did not judge it, while an oracle whose reach could not be measured is simply
+      // unproven either way.
+      verified: regression === "pass" && task === "accepted" && oracleReach !== "unreached",
       unmeasured: !measuredSomething,
       advice:
         task === "vacuous"
@@ -280,6 +304,41 @@ export async function verifyIndependently(
   } finally {
     await rm(checkout, { recursive: true, force: true });
   }
+}
+
+/**
+ * Whether the oracle executed the lines the patch added.
+ *
+ * Only where the harness can rebuild the oracle's invocation as a vouched argv it controls, which
+ * is invariant 7's rule: a coverage report the workspace could author is not a measurement of the
+ * workspace. Anywhere else this is `unmeasured`, which is an absence of evidence and must not
+ * block on its own.
+ */
+async function measureOracleReach(
+  checkout: string,
+  options: IndependentVerificationOptions,
+  timeoutMs: number,
+): Promise<"reached" | "unreached" | "unmeasured"> {
+  const instrumented = harnessReportingCommand(options.taskOracle?.command);
+  if (instrumented === null) {
+    return "unmeasured";
+  }
+  const observed = await options.commands.runVouched(instrumented, { cwd: checkout, timeoutMs });
+  const sections = parseLineHits(observed.stderr);
+  if (sections.length === 0) {
+    return "unmeasured";
+  }
+  const covered: Record<string, number[]> = {};
+  for (const section of sections) {
+    covered[section.file] = [...section.hits.entries()]
+      .filter(([, hits]) => hits > 0)
+      .map(([line]) => line);
+  }
+  const changed = parseUnifiedDiff(options.patch).map((file) => ({
+    path: file.path,
+    addedLines: file.addedLines.map((added) => added.line),
+  }));
+  return oracleReachedTheChange({ changed, covered }).reached ? "reached" : "unreached";
 }
 
 /**
