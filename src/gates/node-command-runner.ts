@@ -38,6 +38,13 @@ export function createNodeCommandRunner(
    * it out of the filesystem.
    */
   backend?: IsolationBackend,
+  /**
+   * The run's own cancellation. Without it a command's process group is stopped only by its own
+   * timeout, so a run that is interrupted, terminated or past its budget leaves whatever it
+   * started running: two node processes from a `swarm ci` oracle outlived their run by five
+   * hours, still holding the checkout open.
+   */
+  cancellation?: AbortSignal,
 ): GateCommandRunner {
   const observe = async (
     file: string,
@@ -52,6 +59,7 @@ export function createNodeCommandRunner(
             timeoutMs: options.timeoutMs,
             maxOutputBytes: 16_000_000,
             env: environment.variables,
+            signal: cancellation,
           })
         : await backend.run([file, ...args], {
             cwd: options.cwd,

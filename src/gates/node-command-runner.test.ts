@@ -93,3 +93,41 @@ describe("what a gate leaves running after it is stopped", () => {
     expect(existsSync(join(workspace, "orphan.txt"))).toBe(false);
   }, 20_000);
 });
+
+describe("what a gate leaves running after the run itself is stopped", () => {
+  /**
+   * The timeout is not the only way a command stops. A person presses Ctrl-C, a supervisor sends
+   * SIGTERM, a wall budget expires: the harness process goes away, and whatever it started is
+   * reparented and keeps running. Two node processes from a `swarm ci` oracle were found five
+   * hours after the run that started them had gone, still holding the workspace open.
+   *
+   * A runner given the run's cancellation stops its groups when the run stops, which is what makes
+   * the signal handler at the top worth having: without it the group signal has nothing to fire.
+   */
+  it("kills the tree when the run is cancelled, not only at the timeout", async () => {
+    await writeFile(
+      join(workspace, "child.mjs"),
+      "import { writeFileSync } from 'node:fs';\nsetTimeout(() => writeFileSync('orphan.txt', 'written'), 900);\n",
+    );
+    await writeFile(
+      join(workspace, "parent.mjs"),
+      "import { spawn } from 'node:child_process';\nspawn(process.execPath, ['child.mjs'], { stdio: 'ignore' });\nsetTimeout(() => {}, 20000);\n",
+    );
+
+    const stopping = new AbortController();
+    const cancellable = createNodeCommandRunner(
+      { now: () => 0, sleep: () => Promise.resolve() },
+      childEnvironment(process.env, { homeDir: join(workspace, "child-home") }),
+      undefined,
+      stopping.signal,
+    );
+    const running = cancellable.run("node parent.mjs", { cwd: workspace, timeoutMs: 30_000 });
+    setTimeout(() => stopping.abort(), 300);
+
+    const observed = await running;
+    expect(observed.exitCode).not.toBe(0);
+
+    await new Promise((settle) => setTimeout(settle, 2_500));
+    expect(existsSync(join(workspace, "orphan.txt"))).toBe(false);
+  }, 20_000);
+});
