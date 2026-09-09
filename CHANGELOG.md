@@ -15,6 +15,29 @@
 
 ### Fixed
 
+- **A dynamic gate the harness ran itself now counts as having executed the change.** Reported from
+  outside against e261c859b: a project declaring a linter and no test runner settled green over a
+  changed source file that nothing had executed, because the check for "was this change measured"
+  asked only whether some command gate had passed and a linter is one. That reading was replaced by
+  what a gate is capable of establishing, and half the old predicate was left behind: it still
+  asked for a command as well, which discards the behaviour probe, an inspection that imports the
+  changed module and calls its functions. So the probe's classification was dead, and with it the
+  two abstentions added to keep a probe that measured nothing from reading as a pass, and a project
+  with no declared runner spent every attempt and escalated saying nothing had run over a change
+  its own probe had just run. Capability decides it now, and the gate's shape decides nothing. The
+  reported case is driven whole in `src/gates/static-only-project.test.ts`, with the changed file
+  instrumented so that executing it leaves a trace: it settles green only where the trace exists.
+- **The weekly scan reports what somebody can act on.** It read 16,731 files, nearly all of them
+  captured evidence, and 171 of its 177 findings were one rule firing once per copy of the
+  re-derivation script that every exported bundle carries. Editing a bundle to quiet a scanner
+  falsifies the record it exists to be, so those paths are data the scan does not read, and the
+  finding was fixed where it lives: the template in `src/evidence/verifier/rederive.mjs` was
+  missing the suppression its mirror in `src/gates/parsers.ts` already carried. The other five in
+  source are dispositioned at the line that carries each, one of them a fix: a `replace` stripping
+  the first `$` of a pattern where every one of them was meant. The scan now reads 1,050 files and
+  reports nothing. It also stops opening a fresh issue every Monday for findings that have not
+  changed: it comments on the open one, since three identical notifications is how a scan teaches
+  people to close it unread.
 - **An invocation the harness could not read, so it could not measure.** The recognizer that
   decides whether the harness controls a command read quoted text as bare: a title filter's `|`
   tripped its shell-operator scan and its spaces split one argument into several, so no real
