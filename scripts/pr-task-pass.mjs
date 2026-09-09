@@ -56,6 +56,11 @@ const rejudge = argv.includes("--rejudge");
  * one arm overwriting another would destroy the result it is meant to be compared against.
  */
 const arm = flag("--arm", null);
+/**
+ * One task, named `owner/repo#pull`. A harness change is checked against the task it was written
+ * for before it is charged the hours of re-judging the whole corpus.
+ */
+const only = flag("--only", null);
 
 const patchRoot = arm === null ? join(taskRoot, "patches") : join(taskRoot, `patches-${arm}`);
 const scoredPath =
@@ -112,7 +117,9 @@ const done = new Set(scored.runs.map((one) => `${one.repository}#${one.pull}`));
 
 mkdirSync(oracleRoot, { recursive: true });
 mkdirSync(patchRoot, { recursive: true });
-const wanted = (rejudge ? viable.filter((one) => done.has(`${one.repository}#${one.pull}`)) : viable.filter((one) => !done.has(`${one.repository}#${one.pull}`))).slice(0, limit);
+const named = (one) => `${one.repository}#${one.pull}`;
+const chosen = only === null ? viable : viable.filter((one) => named(one) === only);
+const wanted = (rejudge ? chosen.filter((one) => done.has(named(one))) : chosen.filter((one) => !done.has(named(one)))).slice(0, limit);
 console.log(`scoring ${wanted.length} mined task(s) against a held-back oracle\n`);
 
 for (const task of wanted) {
