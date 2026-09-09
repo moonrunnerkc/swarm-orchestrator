@@ -127,6 +127,9 @@ function valueAt(value: unknown, path: readonly PropertyKey[]): unknown {
     if (here === null || typeof here !== "object") {
       return undefined;
     }
+    // A read, never a write: this walk reaches a field named in a schema issue so the bad
+    // value can be quoted back, and assigns nothing into the object it walks.
+    // nosemgrep: javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.prototype-pollution-loop
     here = (here as Record<PropertyKey, unknown>)[step];
   }
   return here;

@@ -359,6 +359,7 @@ function installSteps(type, facts, workspace) {
       const steps = [["python", "-m", "venv", `/work/${workspaceCacheDirectory}/venv`], ...installRecipes.python];
       const pyproject = readFileSync(join(workspace, "pyproject.toml"), "utf8");
       const extras = installRecipes.pythonOptionalExtras.filter((extra) =>
+        // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp - extra comes from the frozen list in criteria.mjs, never from the repository being read.
         new RegExp(`^${extra}\\s*=`, "m").test(pyproject),
       );
       if (extras.length > 0) {

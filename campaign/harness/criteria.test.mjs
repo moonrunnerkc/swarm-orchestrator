@@ -75,7 +75,7 @@ describe("the sealed criteria and the document agree", () => {
       stated(`\`${directory}\``);
     }
     for (const pattern of excludedFilePatterns) {
-      stated(`\`${pattern.source.replaceAll("\\", "").replace("$", "")}\``);
+      stated(`\`${pattern.source.replaceAll("\\", "").replaceAll("$", "")}\``);
     }
   });
 

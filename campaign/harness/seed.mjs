@@ -38,6 +38,7 @@ export function rankSourceFiles(sourcePaths, testTexts) {
     if (stem.length < 3 || ["index", "main", "mod", "lib", "init", "__init__"].includes(stem)) {
       return false;
     }
+    // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp - the stem is regex-escaped on this line before it is interpolated.
     const word = new RegExp(`(^|[^A-Za-z0-9_])${stem.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^A-Za-z0-9_]|$)`);
     return testTexts.some((text) => word.test(text));
   };
