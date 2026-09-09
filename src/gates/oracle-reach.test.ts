@@ -80,3 +80,82 @@ describe("whether the oracle ran the lines the patch changed", () => {
     expect(reach.unreached).toEqual([{ path: "lib/application.js", lines: [86] }]);
   });
 });
+
+/**
+ * Measured, not assumed. Running the sealed oracle of three koa tasks under coverage and reading
+ * what it left unexecuted:
+ *
+ *   koa#1946  lib/application.js            27 added,  4 never ran   <- the real finding
+ *   koa#1999  lib/request.js                 5 added,  0 never ran
+ *             __tests__/request/whatwg-url    57 added, absent from the report
+ *   koa#1904  lib/response.js                2 added,  0 never ran
+ *             __tests__/response/attachment   36 added, absent from the report
+ *
+ * Counting those test files against reach turned two patches both oracles accept into refusals.
+ * It also asserts something false: an acceptance oracle runs its own test file and never the
+ * candidate's, so the candidate's tests are absent from every report by construction, and
+ * "the oracle did not execute your tests" is not a finding about the patch.
+ */
+describe("the patch's own tests", () => {
+  it("does not count a test file the oracle was never going to run", () => {
+    const reach = oracleReachedTheChange({
+      changed: [
+        { path: "lib/request.js", addedLines: [40, 41] },
+        { path: "__tests__/request/whatwg-url.test.js", addedLines: [1, 2, 3] },
+      ],
+      measured: { "lib/request.js": { 40: 2, 41: 1 } },
+    });
+
+    expect(reach.reached).toBe(true);
+  });
+
+  /** The catch this exists for survives the change: source lines still have to run. */
+  it("still refuses a source file whose added lines never ran", () => {
+    const reach = oracleReachedTheChange({
+      changed: [
+        { path: "lib/application.js", addedLines: [265, 270] },
+        { path: "__tests__/application/currentContext.test.js", addedLines: [1, 2] },
+      ],
+      measured: { "lib/application.js": { 265: 3, 270: 0 } },
+    });
+
+    expect(reach.reached).toBe(false);
+    expect(reach.unreached).toEqual([{ path: "lib/application.js", lines: [270] }]);
+  });
+
+  /** And a source file the oracle never loaded at all is still the stronger version of that. */
+  it("still refuses a source file the report never mentions", () => {
+    const reach = oracleReachedTheChange({
+      changed: [{ path: "lib/response.js", addedLines: [12] }],
+      measured: { "lib/request.js": { 40: 1 } },
+    });
+
+    expect(reach.reached).toBe(false);
+  });
+
+  it("reads the conventional test paths and leaves names that merely contain the word", () => {
+    const onlyTests = (path: string) =>
+      oracleReachedTheChange({ changed: [{ path, addedLines: [1] }], measured: {} }).reached;
+
+    for (const path of [
+      "__tests__/a.js",
+      "test/a.js",
+      "tests/unit/a.js",
+      "spec/a.js",
+      "src/a.test.ts",
+      "src/a.spec.js",
+      "src/__tests__/a.tsx",
+    ]) {
+      expect({ path, ignored: onlyTests(path) }).toEqual({ path, ignored: true });
+    }
+
+    for (const path of [
+      "src/latest.ts",
+      "src/contest.js",
+      "src/testing-helpers.ts",
+      "lib/spec.ts",
+    ]) {
+      expect({ path, ignored: onlyTests(path) }).toEqual({ path, ignored: false });
+    }
+  });
+});
