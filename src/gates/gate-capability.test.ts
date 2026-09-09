@@ -53,6 +53,32 @@ describe("what a passing gate establishes about changed code", () => {
     expect(isGreen(cycle)).toBe(true);
   });
 
+  it("reads a dynamic gate the harness ran itself as having executed the change", () => {
+    // Capability decides this, never the gate's shape. The behaviour probe is an inspection
+    // that imports the changed module and calls its functions, and asking for a command beside
+    // the capability discarded it: a project with no declared runner then spent every attempt
+    // and escalated saying nothing had run over a change its own probe had just run.
+    const cycle = cycleWith([
+      { id: "lint", kind: "command", status: "passed" },
+      { id: "tests", kind: "inspection", status: "not-applicable" },
+      { id: "behaviour-probe", kind: "inspection", status: "passed" },
+    ]);
+
+    expect(executedTheChange(cycle)).toBe(true);
+    expect(isGreen(cycle)).toBe(true);
+  });
+
+  it("does not read a probe that measured nothing as having executed the change", () => {
+    const cycle = cycleWith([
+      { id: "lint", kind: "command", status: "passed" },
+      { id: "tests", kind: "inspection", status: "not-applicable" },
+      { id: "behaviour-probe", kind: "inspection", status: "not-applicable" },
+    ]);
+
+    expect(executedTheChange(cycle)).toBe(false);
+    expect(isGreen(cycle)).toBe(false);
+  });
+
   it("does not read a failed test run as having executed the change into a pass", () => {
     const cycle = cycleWith([{ id: "tests", kind: "command", status: "failed" }]);
 
