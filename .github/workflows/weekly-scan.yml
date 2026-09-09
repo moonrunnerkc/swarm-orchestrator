@@ -53,25 +53,45 @@ jobs:
             --recursive
             ./
 
-      - name: file an issue for whatever was found
+      # One open issue at a time, not one a week. A scan that opens a fresh issue every Monday
+      # for findings that have not changed teaches people to close it unread, which is the
+      # failure mode .semgrepignore already names arriving one level up: three identical issues
+      # sat open together while the findings behind them went untriaged. So a run with findings
+      # comments on the open issue where there is one, and the issue stays open until somebody
+      # has actually dispositioned what is in it.
+      - name: report whatever was found
         if: steps.semgrep.outcome == 'failure' || steps.osv.outcome == 'failure'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # A scan whose findings go nowhere is a scan that did not run. If the token
-          # cannot open an issue, the job fails rather than passing quietly.
+          # A scan whose findings go nowhere is a scan that did not run. If the token cannot
+          # reach the issue, the job fails rather than passing quietly.
           if ! gh auth status >/dev/null 2>&1; then
             echo "::error::findings exist and gh is not authenticated, so nothing can be filed"
             exit 1
           fi
+
+          body="$(printf '%s\n' \
+            "semgrep: ${{ steps.semgrep.outcome }}" \
+            "osv-scanner: ${{ steps.osv.outcome }}" \
+            "" \
+            "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            "" \
+            "Findings are in that run's logs. This issue is the notification, not the report.")"
+
+          open="$(gh issue list --state open --label security --limit 1 \
+                    --search 'in:title "weekly scan findings"' --json number --jq '.[0].number')"
+
+          if [ -n "$open" ]; then
+            gh issue comment "$open" \
+              --body "$(printf '%s\n' "Still found, $(date -u +%Y-%m-%d):" "" "$body")" \
+              || { echo "::error::gh issue comment failed, so findings would go unreported"; exit 1; }
+            echo "reported on existing issue #$open"
+            exit 0
+          fi
+
           gh issue create \
             --title "weekly scan findings, $(date -u +%Y-%m-%d)" \
             --label security \
-            --body "$(printf '%s\n' \
-              "semgrep: ${{ steps.semgrep.outcome }}" \
-              "osv-scanner: ${{ steps.osv.outcome }}" \
-              "" \
-              "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-              "" \
-              "Findings are in that run's logs. This issue is the notification, not the report.")" \
+            --body "$body" \
             || { echo "::error::gh issue create failed, so findings would go unreported"; exit 1; }
