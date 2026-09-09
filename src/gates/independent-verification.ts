@@ -6,7 +6,7 @@ import type { Clock } from "../core/clock.ts";
 import { assembleGateSet } from "./engine.ts";
 import { normalizePath } from "./file-set.ts";
 import { defaultGateTimeoutMs, type GateCommandRunner } from "./gate-definition.ts";
-import { harnessReportingCommand } from "./harness-reporting.ts";
+import { instrumentedOracle } from "./oracle-instrumentation.ts";
 import { oracleReachedTheChange } from "./oracle-reach.ts";
 import { parseLineHits } from "./parsers.ts";
 import { pathsInPatch } from "./patch-paths.ts";
@@ -275,29 +275,36 @@ export async function verifyIndependently(
       // unproven either way.
       verified: regression === "pass" && task === "accepted" && oracleReach !== "unreached",
       unmeasured: !measuredSomething,
+      // Ordered by what decided the verdict, not by what is true of the checkout. An inherited
+      // failure does not block and an unreached oracle does, so naming the inherited one first
+      // sent a reader of the koa#1946 run to fix a dependency install that was not the finding.
       advice:
         task === "vacuous"
           ? "the oracle accepts the base commit as well, so it would have accepted a patch that " +
             "changes nothing and its acceptance of this one establishes nothing. An oracle is only " +
             "evidence where it can refuse: give one that the base fails."
-          : checks.some((check) => check.inheritedFromBase === true)
-            ? "at least one check fails at the base commit too, with this patch not applied, so it " +
-              "is reported as inherited rather than as a regression. A common cause is a project " +
-              "that builds on install: dependencies are installed with --ignore-scripts, because " +
-              "install scripts run whatever the registry serves, so a `prepare` step that generates " +
-              "what the tests import does not run."
-            : !measuredSomething
-              ? "nothing here measured the patch: every check stood down, which on a real project " +
-                "usually means the fresh checkout has no installed dependencies, so its test runner " +
-                "is not present. Pass --install to install them from the lockfile first, which runs " +
-                "whatever install scripts the registry serves and is therefore a decision rather " +
-                "than a default."
-              : task === "unjudged"
-                ? "the repository's own suite passed, which says nothing broke. It does not say the " +
-                  "task was done: a suite tests the behaviour a project already had, and a task adds " +
-                  "behaviour it did not. Pass --oracle <command> with a check that says whether the " +
-                  "task was done."
-                : "",
+          : oracleReach === "unreached"
+            ? "the oracle passed but never ran part of what the patch added, so it did not judge " +
+              "that part: an oracle is evidence only about code it executed. Extend it to exercise " +
+              "the lines the patch added, or leave them unjudged and say so."
+            : checks.some((check) => check.inheritedFromBase === true)
+              ? "at least one check fails at the base commit too, with this patch not applied, so it " +
+                "is reported as inherited rather than as a regression. A common cause is a project " +
+                "that builds on install: dependencies are installed with --ignore-scripts, because " +
+                "install scripts run whatever the registry serves, so a `prepare` step that generates " +
+                "what the tests import does not run."
+              : !measuredSomething
+                ? "nothing here measured the patch: every check stood down, which on a real project " +
+                  "usually means the fresh checkout has no installed dependencies, so its test runner " +
+                  "is not present. Pass --install to install them from the lockfile first, which runs " +
+                  "whatever install scripts the registry serves and is therefore a decision rather " +
+                  "than a default."
+                : task === "unjudged"
+                  ? "the repository's own suite passed, which says nothing broke. It does not say the " +
+                    "task was done: a suite tests the behaviour a project already had, and a task adds " +
+                    "behaviour it did not. Pass --oracle <command> with a check that says whether the " +
+                    "task was done."
+                  : "",
       install,
       checkoutPath: checkout,
     };
@@ -319,26 +326,32 @@ async function measureOracleReach(
   options: IndependentVerificationOptions,
   timeoutMs: number,
 ): Promise<"reached" | "unreached" | "unmeasured"> {
-  const instrumented = harnessReportingCommand(options.taskOracle?.command);
+  const instrumented = instrumentedOracle(options.taskOracle?.command ?? "");
   if (instrumented === null) {
     return "unmeasured";
   }
-  const observed = await options.commands.runVouched(instrumented, { cwd: checkout, timeoutMs });
+  // The setup is the harness's own mkdir and cp, run as the shell string it already was. Only the
+  // final test run is rebuilt as an argv, and only that one produces the report being read.
+  if (instrumented.setup.length > 0) {
+    await options.commands.run(instrumented.setup, { cwd: checkout, timeoutMs });
+  }
+  const observed = await options.commands.runVouched(instrumented.argv, {
+    cwd: checkout,
+    timeoutMs,
+  });
   const sections = parseLineHits(observed.stderr);
   if (sections.length === 0) {
     return "unmeasured";
   }
-  const covered: Record<string, number[]> = {};
+  const measured: Record<string, Record<number, number>> = {};
   for (const section of sections) {
-    covered[section.file] = [...section.hits.entries()]
-      .filter(([, hits]) => hits > 0)
-      .map(([line]) => line);
+    measured[section.file] = Object.fromEntries(section.hits);
   }
   const changed = parseUnifiedDiff(options.patch).map((file) => ({
     path: file.path,
     addedLines: file.addedLines.map((added) => added.line),
   }));
-  return oracleReachedTheChange({ changed, covered }).reached ? "reached" : "unreached";
+  return oracleReachedTheChange({ changed, measured }).reached ? "reached" : "unreached";
 }
 
 /**

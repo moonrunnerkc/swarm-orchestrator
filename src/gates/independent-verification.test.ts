@@ -528,3 +528,116 @@ describe("an oracle that only ran part of the change", () => {
     expect(result.verified).toBe(true);
   });
 });
+
+describe("an oracle that never ran the lines the patch added", () => {
+  /**
+   * The koa#1946 shape, reduced. The patch does two things: it coerces the value, which the
+   * oracle's own test detects, and it adds a floor branch, which that test never takes. So the
+   * oracle refuses the base (not vacuous) and passes the patch while judging only half of it,
+   * and a held-back test of the floor would have refused. Certifying here is the tool asserting
+   * more than it measured, which is why `unreached` blocks where `unmeasured` does not.
+   */
+  const branchingPatch = [
+    "diff --git a/clamp.mjs b/clamp.mjs",
+    "--- a/clamp.mjs",
+    "+++ b/clamp.mjs",
+    "@@ -1 +1,6 @@",
+    "-export const clamp = (v) => v;",
+    "+export const clamp = (v, low = 0) => {",
+    "+  if (v < low) {",
+    "+    return low;",
+    "+  }",
+    "+  return Number(v);",
+    "+};",
+    "",
+  ].join("\n");
+
+  /** Copied in at judging time, never present in the tree the patch was written against. */
+  async function oracleThatSkipsTheBranch() {
+    const stored = join(repository, "..", `oracle-${Date.now()}.mjs`);
+    await writeFile(
+      stored,
+      "import { test } from 'node:test';\n" +
+        "import assert from 'node:assert/strict';\n" +
+        "import { clamp } from './clamp.mjs';\n" +
+        "test('coerces', () => assert.strictEqual(clamp('3'), 3));\n",
+    );
+    return {
+      stored,
+      command: `cp '${stored}' 'oracle.test.mjs' && node --test 'oracle.test.mjs'`,
+    };
+  }
+
+  it("reports the change as unreached and refuses to certify it", async () => {
+    const oracle = await oracleThatSkipsTheBranch();
+    try {
+      const result = await verifyIndependently({
+        repositoryRoot: repository,
+        baseCommit: baseCommit(),
+        patch: branchingPatch,
+        commands: commands(),
+        clock,
+        taskOracle: { command: oracle.command },
+      });
+
+      expect(result.task).toBe("accepted");
+      expect(result.oracleReach).toBe("unreached");
+      expect(result.verified).toBe(false);
+    } finally {
+      await rm(oracle.stored, { force: true });
+    }
+  });
+
+  /**
+   * The advice has to name the finding that decided the verdict. On the real koa#1946 run it named
+   * an inherited failure, which is true of that checkout and is not why the tool refused, and a
+   * reader told the wrong reason goes and fixes the wrong thing.
+   */
+  it("says the oracle never ran the change rather than naming some other finding", async () => {
+    const oracle = await oracleThatSkipsTheBranch();
+    try {
+      const result = await verifyIndependently({
+        repositoryRoot: repository,
+        baseCommit: baseCommit(),
+        patch: branchingPatch,
+        commands: commands(),
+        clock,
+        taskOracle: { command: oracle.command },
+      });
+
+      expect(result.advice).toContain("never ran");
+    } finally {
+      await rm(oracle.stored, { force: true });
+    }
+  });
+
+  /** The other half of the same patch: an oracle that does take the branch is not blocked. */
+  it("certifies where the oracle runs every line the patch added", async () => {
+    const stored = join(repository, "..", `reaching-${Date.now()}.mjs`);
+    await writeFile(
+      stored,
+      "import { test } from 'node:test';\n" +
+        "import assert from 'node:assert/strict';\n" +
+        "import { clamp } from './clamp.mjs';\n" +
+        "test('coerces', () => assert.strictEqual(clamp('3'), 3));\n" +
+        "test('floors', () => assert.strictEqual(clamp(-2), 0));\n",
+    );
+    try {
+      const result = await verifyIndependently({
+        repositoryRoot: repository,
+        baseCommit: baseCommit(),
+        patch: branchingPatch,
+        commands: commands(),
+        clock,
+        taskOracle: {
+          command: `cp '${stored}' 'oracle.test.mjs' && node --test 'oracle.test.mjs'`,
+        },
+      });
+
+      expect(result.oracleReach).toBe("reached");
+      expect(result.verified).toBe(true);
+    } finally {
+      await rm(stored, { force: true });
+    }
+  });
+});

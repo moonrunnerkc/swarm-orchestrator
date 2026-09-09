@@ -363,7 +363,8 @@ async function verifyPatch(options: CiCommand): Promise<number> {
     return exitCodes.notAcceptable;
   }
   process.stdout.write(
-    `\nregression: ${result.regression}   task: ${result.task}\n` +
+    `\nregression: ${result.regression}   task: ${result.task}   ` +
+      `oracle reach: ${result.oracleReach}\n` +
       (result.verified
         ? "verified: no regression, and the oracle says the task was done.\n"
         : `not verified. ${result.advice}\n`),
