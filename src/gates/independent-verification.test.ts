@@ -641,3 +641,218 @@ describe("an oracle that never ran the lines the patch added", () => {
     }
   });
 });
+
+describe("reach measured on the tree the oracle judged", () => {
+  /**
+   * Attribution reverts the patch to see whether a failing check fails at the base too, and it
+   * leaves the checkout there. Reach ran after it, so on any run with a failing check it read the
+   * coverage of the base source, where the added line numbers are somebody else's lines.
+   *
+   * koa#1999 is that run: two failures its base already has, a patch whose five added lines the
+   * oracle covers completely, and `unreached` every time. The task oracle already runs before
+   * attribution for exactly this reason, and reach had the same requirement without the same
+   * order.
+   *
+   * The fixture discriminates rather than merely passing. At the base, the added line numbers land
+   * on a function the oracle never calls, so measuring there says unreached; on the patched tree
+   * the oracle runs every added line.
+   */
+  it("measures the patched tree even when a failing check sent attribution to the base", async () => {
+    await writeFile(
+      join(repository, "clamp.mjs"),
+      "export const clamp = (v) => v;\nexport const neverCalled = () => {\n  return 'unused';\n};\n",
+    );
+    await writeFile(
+      join(repository, "inherited.test.mjs"),
+      "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\ntest('fails at base too', () => assert.equal(1, 2));\n",
+    );
+    git(["add", "-A"], repository);
+    git(["commit", "-qm", "a failure the base already has"], repository);
+
+    const stored = join(repository, "..", `reaching-order-${Date.now()}.mjs`);
+    await writeFile(
+      stored,
+      "import { test } from 'node:test';\n" +
+        "import assert from 'node:assert/strict';\n" +
+        "import { clamp } from './clamp.mjs';\n" +
+        "test('coerces', () => assert.strictEqual(clamp('3'), 3));\n" +
+        "test('floors', () => assert.strictEqual(clamp(-2), 0));\n",
+    );
+
+    try {
+      const result = await verifyIndependently({
+        repositoryRoot: repository,
+        baseCommit: baseCommit(),
+        patch: [
+          "diff --git a/clamp.mjs b/clamp.mjs",
+          "--- a/clamp.mjs",
+          "+++ b/clamp.mjs",
+          "@@ -1,4 +1,9 @@",
+          "-export const clamp = (v) => v;",
+          "+export const clamp = (v, low = 0) => {",
+          "+  if (v < low) {",
+          "+    return low;",
+          "+  }",
+          "+  return Number(v);",
+          "+};",
+          " export const neverCalled = () => {",
+          "   return 'unused';",
+          " };",
+          "",
+        ].join("\n"),
+        commands: commands(),
+        clock,
+        taskOracle: {
+          command: `cp '${stored}' 'oracle.test.mjs' && node --test 'oracle.test.mjs'`,
+        },
+      });
+
+      expect(result.checks.some((check) => check.inheritedFromBase === true)).toBe(true);
+      expect(result.oracleReach).toBe("reached");
+    } finally {
+      await rm(stored, { force: true });
+    }
+  });
+});
+
+describe("the tree the vacuity check leaves behind", () => {
+  /**
+   * The vacuity check stashes the patch, judges the base, and pops the stash back. The pop's exit
+   * code was discarded, and it does not always succeed: an oracle puts its own test file in place
+   * before running, so where the patch adds a file at that same path the pop finds it already
+   * there and refuses. The patch is then still in the stash, and everything measured afterwards is
+   * measured on the base.
+   *
+   * That is koa#1999 and koa#1904, whose patches add the very test file their oracle copies over.
+   * Both are patches both oracles accept, and koa#1999 was refused for a reach gap that belongs to
+   * the base source rather than to the patch.
+   *
+   * The fixture discriminates: at the base, the added line numbers land on a function the oracle
+   * never calls, so a measurement taken there says unreached.
+   */
+  it("still holds the patch after judging the base, when the oracle owns a path the patch adds", async () => {
+    await writeFile(
+      join(repository, "clamp.mjs"),
+      "export const clamp = (v) => v;\nexport const neverCalled = () => {\n  return 'unused';\n};\n",
+    );
+    git(["add", "-A"], repository);
+    git(["commit", "-qm", "a function the oracle never calls"], repository);
+
+    const stored = join(repository, "..", `owned-path-${Date.now()}.mjs`);
+    await writeFile(
+      stored,
+      "import { test } from 'node:test';\n" +
+        "import assert from 'node:assert/strict';\n" +
+        "import { clamp } from './clamp.mjs';\n" +
+        "test('coerces', () => assert.strictEqual(clamp('3'), 3));\n" +
+        "test('floors', () => assert.strictEqual(clamp(-2), 0));\n",
+    );
+
+    try {
+      const result = await verifyIndependently({
+        repositoryRoot: repository,
+        baseCommit: baseCommit(),
+        // Touches the source and adds a test of its own, at the path the oracle copies over.
+        patch: [
+          "diff --git a/clamp.mjs b/clamp.mjs",
+          "--- a/clamp.mjs",
+          "+++ b/clamp.mjs",
+          "@@ -1,4 +1,9 @@",
+          "-export const clamp = (v) => v;",
+          "+export const clamp = (v, low = 0) => {",
+          "+  if (v < low) {",
+          "+    return low;",
+          "+  }",
+          "+  return Number(v);",
+          "+};",
+          " export const neverCalled = () => {",
+          "   return 'unused';",
+          " };",
+          "diff --git a/oracle.test.mjs b/oracle.test.mjs",
+          "new file mode 100644",
+          "--- /dev/null",
+          "+++ b/oracle.test.mjs",
+          "@@ -0,0 +1,2 @@",
+          "+import { test } from 'node:test';",
+          "+test('the model wrote this one', () => {});",
+          "",
+        ].join("\n"),
+        commands: commands(),
+        clock,
+        taskOracle: {
+          command: `cp '${stored}' 'oracle.test.mjs' && node --test 'oracle.test.mjs'`,
+        },
+      });
+
+      expect(result.task).toBe("accepted");
+      expect(result.oracleReach).toBe("reached");
+    } finally {
+      await rm(stored, { force: true });
+    }
+  });
+});
+
+describe("a tree the vacuity check could not put back", () => {
+  /**
+   * The vacuity check stashes the patch, judges the base, and restores. The restore's exit code
+   * was discarded, so a restore that fails leaves the checkout at the base and everything measured
+   * afterwards is measured on the wrong tree, silently, reported as though it were about the
+   * patch.
+   *
+   * It fails in practice. An oracle puts its own test file in place before running, so where the
+   * patch adds a file at that path the stash pop finds it already there and refuses. koa#1999 read
+   * `unreached` for `lib/request.js:303`, a line the patch adds and its oracle covers, because 303
+   * of the base file is a line nothing in the oracle runs.
+   *
+   * A measurement on a tree the harness cannot confirm is not a measurement, so it abstains by
+   * name rather than reporting a verdict about lines it never saw.
+   */
+  it("abstains on reach rather than measuring whatever the tree happens to hold", async () => {
+    const commands = createNodeCommandRunner(clock, harnessChildEnvironment());
+    const refusingToRestore = {
+      run: commands.run.bind(commands),
+      runVouched: (argv: readonly string[], options: { cwd: string; timeoutMs: number }) =>
+        argv.includes("apply") && argv.includes("--3way")
+          ? Promise.resolve({
+              exitCode: 1,
+              stdout: "",
+              stderr: "patch does not apply",
+              durationMs: 0,
+              unavailable: null,
+            })
+          : commands.runVouched(argv, options),
+    };
+
+    const stored = join(repository, "..", `unrestorable-${Date.now()}.mjs`);
+    await writeFile(
+      stored,
+      "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { clamp } from './clamp.mjs';\ntest('coerces', () => assert.strictEqual(clamp('3'), 3));\n",
+    );
+
+    try {
+      const result = await verifyIndependently({
+        repositoryRoot: repository,
+        baseCommit: baseCommit(),
+        patch: [
+          "diff --git a/clamp.mjs b/clamp.mjs",
+          "--- a/clamp.mjs",
+          "+++ b/clamp.mjs",
+          "@@ -1 +1 @@",
+          "-export const clamp = (v) => v;",
+          "+export const clamp = (v) => Number(v);",
+          "",
+        ].join("\n"),
+        commands: refusingToRestore,
+        clock,
+        taskOracle: {
+          command: `cp '${stored}' 'oracle.test.mjs' && node --test 'oracle.test.mjs'`,
+        },
+      });
+
+      expect(result.oracleReach).toBe("unmeasured");
+      expect(result.advice).toContain("could not be put back");
+    } finally {
+      await rm(stored, { force: true });
+    }
+  });
+});

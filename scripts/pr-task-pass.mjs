@@ -191,6 +191,10 @@ for (const task of wanted) {
       previous.regression = sealedAgain.regression;
       previous.sealedOracle = sealedAgain.task;
       previous.heldBackOracle = heldBackAgain.task;
+      // Recorded because it is what the sealed oracle is worth: `unreached` is the tool refusing
+      // to certify an oracle that never ran the change, and a corpus that does not carry the
+      // verdict cannot show which refusals came from it.
+      previous.oracleReach = sealedAgain.oracleReach ?? "unmeasured";
       previous.verified = sealedAgain.verified === true;
       previous.corner = cornerAgain;
     }
@@ -349,6 +353,7 @@ for (const task of wanted) {
     agentExit: agent.code,
     regression: sealed.regression,
     sealedOracle: sealed.task,
+    oracleReach: sealed.oracleReach ?? "unmeasured",
     heldBackOracle: heldBackVerdict,
     heldBackOrderDependent: orderDependent,
     verified: sealed.verified === true,
