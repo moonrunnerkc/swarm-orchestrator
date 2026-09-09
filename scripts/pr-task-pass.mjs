@@ -23,6 +23,7 @@ import { promisify } from "node:util";
 import { homedir } from "node:os";
 
 import { classifyAgainstHeldBackOracle } from "../dist/eval/campaign-run.js";
+import { heldBackRefusalIsReal } from "../dist/eval/oracle-filter.js";
 import { oracleCommand } from "../dist/eval/oracle-filter.js";
 import { prTaskEvidenceRoot, prTaskWorkingRoot } from "../dist/eval/pr-task-paths.js";
 import { wilsonInterval } from "../dist/eval/statistics.js";
@@ -117,6 +118,53 @@ const done = new Set(scored.runs.map((one) => `${one.repository}#${one.pull}`));
 
 mkdirSync(oracleRoot, { recursive: true });
 mkdirSync(patchRoot, { recursive: true });
+/**
+ * The verdicts one task produces, given a judge that runs one half of its cases.
+ *
+ * One function because there are two callers, the fresh pass and `--rejudge`, and they disagreed.
+ * The order-dependence check lived only in the fresh pass, so re-judging winston#2256 turned a
+ * task already recorded as order-dependent back into a false green: the same evidence, a worse
+ * answer, from the path whose whole purpose is re-deriving answers after a harness change.
+ *
+ * The rule itself is `heldBackRefusalIsReal`, which lives in src with tests beside it. Both
+ * callers had hand-rolled copies of it and one copy was missing.
+ */
+async function judgeAgainstBothHalves(judge, task) {
+  const sealed = await judge(task.sealedCases);
+  const heldBack = await judge(task.heldBackCases);
+
+  // A false green is the most consequential thing this measures, so it is the last place to take a
+  // refusal at face value. Splitting one suite assumes its tests are independent and plenty are
+  // not: winston's container tests share state, and the held-back half failed alone while passing
+  // beside the sealed half. Asked only where it could change the answer, which is a certified run
+  // the held-back half refused, so it costs one extra run on the tasks where being wrong matters.
+  let heldBackVerdict = heldBack.task;
+  let orderDependent = false;
+  if (sealed.verified === true && heldBack.task === "rejected") {
+    const together = await judge([...task.sealedCases, ...task.heldBackCases]);
+    orderDependent = !heldBackRefusalIsReal({
+      aloneFailed: true,
+      togetherFailed: together.task !== "accepted",
+    });
+    if (orderDependent) {
+      heldBackVerdict = "accepted";
+    }
+  }
+
+  return {
+    sealed,
+    heldBack,
+    heldBackVerdict,
+    orderDependent,
+    corner: classifyAgainstHeldBackOracle({
+      verifiedWithFirstOracle: sealed.verified === true,
+      heldBack: heldBackVerdict,
+      regression: sealed.regression,
+      sealed: sealed.task,
+    }),
+  };
+}
+
 const named = (one) => `${one.repository}#${one.pull}`;
 const chosen = only === null ? viable : viable.filter((one) => named(one) === only);
 const wanted = (rejudge ? chosen.filter((one) => done.has(named(one))) : chosen.filter((one) => !done.has(named(one)))).slice(0, limit);
@@ -176,21 +224,17 @@ for (const task of wanted) {
         return { verified: false, task: "unjudged", regression: "unmeasured" };
       }
     };
-    const sealedAgain = await judgeOnly(task.sealedCases);
-    const heldBackAgain = await judgeOnly(task.heldBackCases);
-    const cornerAgain = classifyAgainstHeldBackOracle({
-      verifiedWithFirstOracle: sealedAgain.verified === true,
-      heldBack: heldBackAgain.task,
-      regression: sealedAgain.regression,
-      sealed: sealedAgain.task,
-    });
+    const again = await judgeAgainstBothHalves(judgeOnly, task);
+    const sealedAgain = again.sealed;
+    const cornerAgain = again.corner;
     const previous = scored.runs.find(
       (one) => one.repository === task.repository && one.pull === task.pull,
     );
     if (previous !== undefined) {
       previous.regression = sealedAgain.regression;
       previous.sealedOracle = sealedAgain.task;
-      previous.heldBackOracle = heldBackAgain.task;
+      previous.heldBackOracle = again.heldBackVerdict;
+      previous.heldBackOrderDependent = again.orderDependent;
       // Recorded because it is what the sealed oracle is worth: `unreached` is the tool refusing
       // to certify an oracle that never ran the change, and a corpus that does not carry the
       // verdict cannot show which refusals came from it.
@@ -201,7 +245,7 @@ for (const task of wanted) {
     writeFileSync(scoredPath, `${JSON.stringify(scored, null, 2)}\n`);
     console.log(
       `  ${label.padEnd(42)} regression=${String(sealedAgain.regression).padEnd(10)} ` +
-        `sealed=${String(sealedAgain.task).padEnd(9)} held-back=${String(heldBackAgain.task).padEnd(9)} -> ${cornerAgain}`,
+        `sealed=${String(sealedAgain.task).padEnd(9)} held-back=${String(again.heldBackVerdict).padEnd(9)} -> ${cornerAgain}`,
     );
     continue;
   }
@@ -320,31 +364,12 @@ for (const task of wanted) {
     }
   };
 
-  const sealed = await judge(task.sealedCases);
-  const heldBack = await judge(task.heldBackCases);
-
-  // A false green is the most consequential thing this measures, so it is the last place to take a
-  // refusal at face value. Splitting one suite assumes its tests are independent and plenty are
-  // not: winston's container tests share state, and the held-back half failed alone while passing
-  // beside the sealed half. That refused a patch that was fine and scored as a false green.
-  //
-  // Only asked where it could change the answer, which is a certified run the held-back half
-  // refused. One extra run, on the tasks where being wrong would matter most.
-  let heldBackVerdict = heldBack.task;
-  let orderDependent = false;
-  if (sealed.verified === true && heldBack.task === "rejected") {
-    const together = await judge([...task.sealedCases, ...task.heldBackCases]);
-    if (together.task === "accepted") {
-      orderDependent = true;
-      heldBackVerdict = "accepted";
-    }
-  }
-  const corner = classifyAgainstHeldBackOracle({
-    verifiedWithFirstOracle: sealed.verified === true,
-    heldBack: heldBackVerdict,
-    regression: sealed.regression,
-    sealed: sealed.task,
-  });
+  const judged = await judgeAgainstBothHalves(judge, task);
+  const sealed = judged.sealed;
+  const heldBack = judged.heldBack;
+  const heldBackVerdict = judged.heldBackVerdict;
+  const orderDependent = judged.orderDependent;
+  const corner = judged.corner;
 
   scored.runs.push({
     repository: task.repository,
