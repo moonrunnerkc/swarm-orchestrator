@@ -75,7 +75,6 @@ describe("a flag smuggled through the place a file pattern goes", () => {
   it("abstains where the quoting does not settle what the argument is", () => {
     for (const body of [
       "node --test '--test-isolation=none",
-      "node --test --test-name-pattern='foo bar'",
       "node --test 'src/a.mjs\"",
       "node --test ''",
     ]) {
@@ -84,6 +83,18 @@ describe("a flag smuggled through the place a file pattern goes", () => {
         argv: null,
       });
     }
+  });
+
+  /**
+   * This one used to sit in the list above, and it did not belong there. A quote closing against
+   * the text beside it is one argument to a shell, and it abstained only because the recognizer
+   * split on whitespace before it read the quote. Nothing about the value is acted on: the flag
+   * is on the vouched list and its value is a pattern node matches titles against.
+   */
+  it("joins a quoted value to the flag it closes against", () => {
+    expect(
+      harnessControlledNodeTest("node --test --test-name-pattern='foo bar'", reporting),
+    ).toContain("--test-name-pattern=foo bar");
   });
 });
 
@@ -165,5 +176,123 @@ describe("everything else the harness cannot stand behind", () => {
     expect(
       harnessControlledNodeTest("node --test", [processIsolation, "--test-isolation=none"]),
     ).toBeNull();
+  });
+});
+
+/**
+ * A quote settles where an argument begins and ends, and the recognizer used to read past it in
+ * two places: a whitespace split cut a quoted argument into pieces, and a scan for shell
+ * operators read the whole body without noticing which characters a shell would never act on.
+ *
+ * Both together made every real oracle unvouchable. A held-back oracle names its test cases in a
+ * title filter, `'should defer AsyncLocalStorage creation when building snapshot|should work
+ * normally after deserialization'`, one argument carrying both spaces and a regex alternation.
+ * The reach check that decides whether an oracle ran the lines a patch added therefore reported
+ * `unmeasured` on koa#1946, the exact case it was written for, and the run stayed verified.
+ *
+ * Reading quotes is not the rewriting this module renounces. A rewrite predicts what a shell will
+ * make of text; quoting is the one rule that removes the prediction, and the reading below is
+ * strictly narrower than a shell's: no expansions, no escapes, no concatenation of anything a
+ * quote does not close.
+ */
+describe("an argument a quote settles", () => {
+  it("reads a quoted pattern holding spaces and an alternation as one argument", () => {
+    const argv = harnessControlledNodeTest(
+      "node --test '--test-name-pattern' 'first case|second case' 'a/b.test.js'",
+      reporting,
+    );
+
+    expect(argv).toContain("first case|second case");
+    expect(argv).toContain("a/b.test.js");
+  });
+
+  it("reads a workspace path holding a space as one argument", () => {
+    const argv = harnessControlledNodeTest("node --test 'My Projects/a.test.js'", reporting);
+
+    expect(argv).toContain("My Projects/a.test.js");
+  });
+
+  it("abstains where an operator sits outside every quote", () => {
+    for (const body of [
+      "node --test 'a.test.js' | tee out",
+      "node --test 'a.test.js'; rm -rf /",
+      "node --test $(printf a).test.js",
+      "node --test `printf a`.test.js",
+      "node --test 'a.test.js' && node --test 'b.test.js'",
+    ]) {
+      expect({ body, argv: harnessControlledNodeTest(body, reporting) }).toEqual({
+        body,
+        argv: null,
+      });
+    }
+  });
+
+  it("abstains on a quote nothing closes, since the argument has no end", () => {
+    expect(harnessControlledNodeTest("node --test 'a.test.js", reporting)).toBeNull();
+  });
+
+  /**
+   * Double quotes leave expansion on, so what the text says is not what the process gets. Single
+   * quotes leave nothing on, so a dollar sign inside them is a character in a file name.
+   */
+  it("abstains on an expansion inside double quotes and keeps one inside single quotes", () => {
+    expect(harnessControlledNodeTest('node --test "$HOME/a.test.js"', reporting)).toBeNull();
+    expect(harnessControlledNodeTest("node --test '$HOME/a.test.js'", reporting)).toContain(
+      "$HOME/a.test.js",
+    );
+  });
+
+  it("still refuses a quoted flag once the quotes are read", () => {
+    expect(
+      harnessControlledNodeTest(
+        "node --test '--test-name-pattern=x' '--require=./h.cjs'",
+        reporting,
+      ),
+    ).toBeNull();
+  });
+
+  /** An environment assignment ahead of the program is still the program not being node. */
+  it("abstains where something other than node starts the command", () => {
+    expect(harnessControlledNodeTest("TZ='UTC' node --test 'a.test.js'", reporting)).toBeNull();
+  });
+});
+
+/**
+ * A flag whose value is the argument after it is two tokens naming one thing, and a reader that
+ * sorts tokens into flags and file patterns pulls them apart. Nothing caught that while quoted
+ * commands abstained outright; the moment they were vouched, koa#1946's oracle came back as
+ * `node --test --test-name-pattern --experimental-test-coverage … 'should defer …' file`, which
+ * asks node to filter titles by the coverage flag and to run a test file named after the titles.
+ *
+ * That is the failure mode this module exists to prevent, arriving through the recognizer rather
+ * than through a shell: an invocation vouched as measured that means something else entirely.
+ */
+describe("a flag whose value is the argument after it", () => {
+  it("keeps the value with its flag rather than sorting it into the file patterns", () => {
+    const argv = harnessControlledNodeTest(
+      "node --test '--test-name-pattern' 'first case|second case' 'a/b.test.js'",
+      reporting,
+    );
+
+    const at = argv?.indexOf("--test-name-pattern") ?? -1;
+    expect(at).toBeGreaterThan(-1);
+    expect(argv?.[at + 1]).toBe("first case|second case");
+    expect(argv?.at(-1)).toBe("a/b.test.js");
+  });
+
+  it("keeps the separated value out of the patterns an arm replaces", () => {
+    const argv = harnessControlledNodeTest(
+      "node --test --test-name-pattern 'only me' 'a/b.test.js'",
+      reporting,
+      ["a/one.test.js"],
+    );
+
+    expect(argv).toContain("only me");
+    expect(argv?.at(-1)).toBe("a/one.test.js");
+    expect(argv).not.toContain("a/b.test.js");
+  });
+
+  it("abstains where the flag that needs a value is the last thing said", () => {
+    expect(harnessControlledNodeTest("node --test --test-name-pattern", reporting)).toBeNull();
   });
 });

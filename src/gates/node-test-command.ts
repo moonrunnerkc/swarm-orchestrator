@@ -69,6 +69,25 @@ const vouchedFlags: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Vouched flags whose value is the argument after them. Node accepts `--flag=value` as well, and
+ * the two spellings mean the same thing to node, but only the separated spelling can be taken
+ * apart by a reader sorting arguments into flags and file patterns.
+ *
+ * Keeping the pair together is not a convenience. koa#1946's oracle names its cases as
+ * `--test-name-pattern` followed by the titles, and sorting the titles into the file patterns
+ * built an argv asking node to filter by the coverage flag and to run a test file named after the
+ * titles: an invocation vouched as measured that measures something nobody declared.
+ */
+const flagsTakingAValue: ReadonlySet<string> = new Set([
+  "--test-name-pattern",
+  "--test-skip-pattern",
+  "--test-concurrency",
+  "--test-timeout",
+  "--test-shard",
+  "--disable-warning",
+]);
+
+/**
  * Anything that makes the text mean something other than what it says: a second command, a
  * redirection, a substitution, a line continuation. One of these anywhere in the body ends the
  * question, because what a reader would build from it is not knowable here.
@@ -76,6 +95,9 @@ const vouchedFlags: ReadonlySet<string> = new Set([
 const shellControl = /[|&;<>()$`\\\n\r]/;
 
 const quoteCharacter = /["']/;
+
+/** What a shell still acts on inside double quotes, which is why only single quotes disarm. */
+const expandsInsideDoubleQuotes = /[$`\\]/;
 
 /** Node reads a flag's underscores as dashes, so both spellings name one flag. */
 function flagName(token: string): string {
@@ -104,27 +126,61 @@ interface VouchedInvocation {
 }
 
 /**
- * One token of the declared command as the argument it stands for, or null where the text does
- * not settle what that argument is.
+ * The declared command as the arguments a shell would hand the process, or null where the text
+ * does not settle what those arguments are.
  *
- * A token wrapped in matching quotes with no quote inside it is one argument spelled the one
- * way that has a single reading, and the body has already been refused if it carries anything
- * an expansion could reach. Reading it is not the rewrite this module renounces: what comes out
- * is then classified by the same rules as every other argument, so a flag that arrived quoted
- * is judged as a flag rather than waved through as a file pattern. That direction is the whole
- * point, since the loss this closes was a flag being read as a path. Anything else carrying a
- * quote is not read at all, and not read means the arm abstains.
+ * A quote is the one rule that removes the prediction this module renounces: inside single
+ * quotes a shell acts on nothing, so an operator there is a character, and the whitespace that
+ * separates arguments is separating them only where no quote is open. Reading the two together
+ * is what lets a title filter, one argument carrying both spaces and a regex alternation, arrive
+ * as the argument it is; a whitespace split cut it into pieces and an operator scan over the
+ * whole body refused it, which is why the oracle-reach check reported not measured on every real
+ * oracle it was given.
+ *
+ * What comes out is still narrower than a shell by a wide margin. Nothing expands, nothing is
+ * escaped, and every character a shell would act on outside quotes ends the reading. Double
+ * quotes leave expansion on, so the characters that expand are refused inside them too.
  */
-function argumentFrom(token: string): string | null {
-  if (!quoteCharacter.test(token)) {
-    return token.length === 0 ? null : token;
+function shellWords(body: string): string[] | null {
+  const words: string[] = [];
+  let word: string | null = null;
+  let quote: '"' | "'" | null = null;
+
+  for (const character of body) {
+    if (quote === "'") {
+      if (character === "'") quote = null;
+      else word += character;
+      continue;
+    }
+    if (quote === '"') {
+      if (character === '"') quote = null;
+      else if (expandsInsideDoubleQuotes.test(character)) return null;
+      else word += character;
+      continue;
+    }
+    if (/\s/.test(character)) {
+      if (word !== null) words.push(word);
+      word = null;
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      word ??= "";
+      continue;
+    }
+    if (shellControl.test(character)) {
+      return null;
+    }
+    word = (word ?? "") + character;
   }
-  const opening = token[0];
-  if (opening === undefined || !quoteCharacter.test(opening) || token.at(-1) !== opening) {
+
+  if (quote !== null) {
     return null;
   }
-  const inside = token.slice(1, -1);
-  return inside.length === 0 || quoteCharacter.test(inside) ? null : inside;
+  if (word !== null) {
+    words.push(word);
+  }
+  return words.some((each) => each.length === 0) ? null : words;
 }
 
 /**
@@ -132,10 +188,13 @@ function argumentFrom(token: string): string | null {
  * than completely.
  */
 function vouch(body: string | undefined): VouchedInvocation | null {
-  if (body === undefined || body.trim().length === 0 || shellControl.test(body)) {
+  if (body === undefined) {
     return null;
   }
-  const tokens = body.trim().split(/\s+/);
+  const tokens = shellWords(body);
+  if (tokens === null || tokens.length === 0) {
+    return null;
+  }
   // The first token is the program. `node` and nothing else: npm runs pre and post scripts,
   // npx resolves a package, and a shell function is whatever the profile made it.
   if (tokens[0] !== "node") {
@@ -144,11 +203,9 @@ function vouch(body: string | undefined): VouchedInvocation | null {
 
   const flags: string[] = [];
   const patterns: string[] = [];
-  for (const token of tokens.slice(1)) {
-    const argument = argumentFrom(token);
-    if (argument === null) {
-      return null;
-    }
+  const declared = tokens.slice(1);
+  for (let index = 0; index < declared.length; index += 1) {
+    const argument = declared[index] as string;
     if (!argument.startsWith("-")) {
       patterns.push(argument);
       continue;
@@ -157,6 +214,15 @@ function vouch(body: string | undefined): VouchedInvocation | null {
       return null;
     }
     flags.push(argument);
+    if (argument.includes("=") || !flagsTakingAValue.has(flagName(argument))) {
+      continue;
+    }
+    const value = declared[index + 1];
+    if (value === undefined) {
+      return null;
+    }
+    flags.push(value);
+    index += 1;
   }
 
   return flags.some((flag) => flagName(flag) === "--test") ? { flags, patterns } : null;
