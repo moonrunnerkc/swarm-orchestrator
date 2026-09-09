@@ -74,6 +74,18 @@ export interface IndependentVerification {
    * since a coverage number the workspace could author is not a measurement of the workspace.
    */
   readonly oracleReach: "reached" | "unreached" | "unmeasured";
+  /**
+   * The added lines the oracle never ran, per file. Empty unless `oracleReach` is `unreached`.
+   *
+   * The advice tells a reader to extend the oracle to cover the lines the patch added, which is
+   * not actionable without knowing which ones they are, and the answer is what separates a real
+   * gap from a defect in this measurement: koa#1999 read `unreached` on a patch whose source lines
+   * its oracle covers completely, and no output said which file the verdict was about.
+   */
+  readonly unreachedByOracle: readonly {
+    readonly path: string;
+    readonly lines: readonly number[];
+  }[];
   /** Both: no regression, and an oracle that says the task was done. */
   readonly verified: boolean;
   /**
@@ -131,6 +143,7 @@ export async function verifyIndependently(
       regression: "unmeasured",
       task: "unjudged",
       oracleReach: "unmeasured",
+      unreachedByOracle: [],
       verified: false,
       unmeasured: false,
       advice: "",
@@ -156,6 +169,7 @@ export async function verifyIndependently(
         regression: "unmeasured",
         task: "unjudged",
         oracleReach: "unmeasured",
+        unreachedByOracle: [],
         verified: false,
         unmeasured: true,
         advice: "",
@@ -175,6 +189,7 @@ export async function verifyIndependently(
         regression: "unmeasured",
         task: "unjudged",
         oracleReach: "unmeasured",
+        unreachedByOracle: [],
         verified: false,
         unmeasured: true,
         advice: "",
@@ -198,6 +213,7 @@ export async function verifyIndependently(
         regression: "unmeasured",
         task: "unjudged",
         oracleReach: "unmeasured",
+        unreachedByOracle: [],
         verified: false,
         unmeasured: false,
         advice: "",
@@ -224,22 +240,27 @@ export async function verifyIndependently(
     // as `accepted` is how four of fifteen certified tasks in the mined corpus were certified on
     // checks that could not fail. Asked only where the oracle accepted, since that is the only
     // place the answer can change, and before attribution reverts the tree for its own reasons.
+    let restored = true;
     if (task === "accepted") {
-      const reverted = await options.commands.runVouched(
-        ["git", "-C", checkout, "stash", "push", "--include-untracked", "--quiet"],
-        { cwd: checkout, timeoutMs },
-      );
-      if (reverted.exitCode === 0) {
+      const reverted = await resetToBase(checkout, options, timeoutMs);
+      if (reverted) {
         const onBase = await judgeTask(checkout, options, timeoutMs);
-        await options.commands.runVouched(["git", "-C", checkout, "stash", "pop", "--quiet"], {
-          cwd: checkout,
-          timeoutMs,
-        });
+        restored = await restorePatch(checkout, options, timeoutMs);
         if (onBase === "accepted") {
           task = "vacuous";
         }
       }
     }
+    // Before attribution as well, and for the same reason the oracle runs before it: attribution
+    // reverts the patch and leaves the checkout at the base, where the added line numbers are
+    // somebody else's lines. Measuring there refused koa#1999, a patch whose five added lines its
+    // oracle covers completely, on every run its base already had a failure.
+    // A measurement of a tree the harness could not put back is a measurement of some other tree.
+    const reach =
+      task === "accepted" && restored
+        ? await measureOracleReach(checkout, options, timeoutMs)
+        : { verdict: "unmeasured" as const, unreached: [] };
+    const oracleReach = reach.verdict;
     const checks = withPatch.some((check) => check.status === "failed")
       ? await attributeFailures(withPatch, checkout, options, timeoutMs)
       : withPatch;
@@ -256,15 +277,11 @@ export async function verifyIndependently(
             "unmeasured"
           : "unmeasured";
 
-    const oracleReach =
-      task === "accepted"
-        ? await measureOracleReach(checkout, options, timeoutMs)
-        : ("unmeasured" as const);
-
     return {
       applied: true,
       checks,
       oracleReach,
+      unreachedByOracle: reach.unreached,
       refusal: null,
       regression,
       task,
@@ -283,28 +300,32 @@ export async function verifyIndependently(
           ? "the oracle accepts the base commit as well, so it would have accepted a patch that " +
             "changes nothing and its acceptance of this one establishes nothing. An oracle is only " +
             "evidence where it can refuse: give one that the base fails."
-          : oracleReach === "unreached"
-            ? "the oracle passed but never ran part of what the patch added, so it did not judge " +
-              "that part: an oracle is evidence only about code it executed. Extend it to exercise " +
-              "the lines the patch added, or leave them unjudged and say so."
-            : checks.some((check) => check.inheritedFromBase === true)
-              ? "at least one check fails at the base commit too, with this patch not applied, so it " +
-                "is reported as inherited rather than as a regression. A common cause is a project " +
-                "that builds on install: dependencies are installed with --ignore-scripts, because " +
-                "install scripts run whatever the registry serves, so a `prepare` step that generates " +
-                "what the tests import does not run."
-              : !measuredSomething
-                ? "nothing here measured the patch: every check stood down, which on a real project " +
-                  "usually means the fresh checkout has no installed dependencies, so its test runner " +
-                  "is not present. Pass --install to install them from the lockfile first, which runs " +
-                  "whatever install scripts the registry serves and is therefore a decision rather " +
-                  "than a default."
-                : task === "unjudged"
-                  ? "the repository's own suite passed, which says nothing broke. It does not say the " +
-                    "task was done: a suite tests the behaviour a project already had, and a task adds " +
-                    "behaviour it did not. Pass --oracle <command> with a check that says whether the " +
-                    "task was done."
-                  : "",
+          : !restored
+            ? "the checkout could not be put back after the base was judged, so nothing measured " +
+              "after that point is about this patch. The repository's own checks and the oracle's " +
+              "verdict were taken before it and stand; the oracle's reach was not, and abstains."
+            : oracleReach === "unreached"
+              ? "the oracle passed but never ran part of what the patch added, so it did not judge " +
+                "that part: an oracle is evidence only about code it executed. Extend it to exercise " +
+                "the lines the patch added, or leave them unjudged and say so."
+              : checks.some((check) => check.inheritedFromBase === true)
+                ? "at least one check fails at the base commit too, with this patch not applied, so it " +
+                  "is reported as inherited rather than as a regression. A common cause is a project " +
+                  "that builds on install: dependencies are installed with --ignore-scripts, because " +
+                  "install scripts run whatever the registry serves, so a `prepare` step that generates " +
+                  "what the tests import does not run."
+                : !measuredSomething
+                  ? "nothing here measured the patch: every check stood down, which on a real project " +
+                    "usually means the fresh checkout has no installed dependencies, so its test runner " +
+                    "is not present. Pass --install to install them from the lockfile first, which runs " +
+                    "whatever install scripts the registry serves and is therefore a decision rather " +
+                    "than a default."
+                  : task === "unjudged"
+                    ? "the repository's own suite passed, which says nothing broke. It does not say the " +
+                      "task was done: a suite tests the behaviour a project already had, and a task adds " +
+                      "behaviour it did not. Pass --oracle <command> with a check that says whether the " +
+                      "task was done."
+                    : "",
       install,
       checkoutPath: checkout,
     };
@@ -325,10 +346,14 @@ async function measureOracleReach(
   checkout: string,
   options: IndependentVerificationOptions,
   timeoutMs: number,
-): Promise<"reached" | "unreached" | "unmeasured"> {
+): Promise<{
+  verdict: "reached" | "unreached" | "unmeasured";
+  unreached: readonly { readonly path: string; readonly lines: readonly number[] }[];
+}> {
+  const nothingMeasured = { verdict: "unmeasured" as const, unreached: [] };
   const instrumented = instrumentedOracle(options.taskOracle?.command ?? "");
   if (instrumented === null) {
-    return "unmeasured";
+    return nothingMeasured;
   }
   // The setup is the harness's own mkdir and cp, run as the shell string it already was. Only the
   // final test run is rebuilt as an argv, and only that one produces the report being read.
@@ -341,7 +366,7 @@ async function measureOracleReach(
   });
   const sections = parseLineHits(observed.stderr);
   if (sections.length === 0) {
-    return "unmeasured";
+    return nothingMeasured;
   }
   const measured: Record<string, Record<number, number>> = {};
   for (const section of sections) {
@@ -351,7 +376,60 @@ async function measureOracleReach(
     path: file.path,
     addedLines: file.addedLines.map((added) => added.line),
   }));
-  return oracleReachedTheChange({ changed, measured }).reached ? "reached" : "unreached";
+  const reach = oracleReachedTheChange({ changed, measured });
+  return {
+    verdict: reach.reached ? "reached" : "unreached",
+    unreached: reach.unreached,
+  };
+}
+
+/**
+ * Puts the checkout back at the base, patch and all its leftovers gone.
+ *
+ * `git stash` was doing this and could not always undo itself: an oracle copies its own test file
+ * into place before running, so a patch that adds a file at that path leaves the pop with the file
+ * already there, and the pop refuses. Reverting and re-applying is two operations the harness can
+ * check, and `git clean` removes what the oracle left rather than letting it collide.
+ *
+ * Ignored files are kept, since that is where the installed dependencies live and reinstalling
+ * them would change what the base run measures.
+ */
+async function resetToBase(
+  checkout: string,
+  options: IndependentVerificationOptions,
+  timeoutMs: number,
+): Promise<boolean> {
+  const reverted = await options.commands.runVouched(
+    ["git", "-C", checkout, "checkout", "--force", "--detach", options.baseCommit],
+    { cwd: checkout, timeoutMs },
+  );
+  if (reverted.exitCode !== 0) {
+    return false;
+  }
+  const cleaned = await options.commands.runVouched(["git", "-C", checkout, "clean", "-fdq"], {
+    cwd: checkout,
+    timeoutMs,
+  });
+  return cleaned.exitCode === 0;
+}
+
+/** The patch again, on a checkout `resetToBase` emptied, reported rather than assumed. */
+async function restorePatch(
+  checkout: string,
+  options: IndependentVerificationOptions,
+  timeoutMs: number,
+): Promise<boolean> {
+  if (!(await resetToBase(checkout, options, timeoutMs))) {
+    return false;
+  }
+  const patchPath = join(checkout, ".swarm-restore.patch");
+  await writeFile(patchPath, options.patch.endsWith("\n") ? options.patch : `${options.patch}\n`);
+  const applied = await options.commands.runVouched(
+    ["git", "-C", checkout, "apply", "--3way", "--whitespace=nowarn", patchPath],
+    { cwd: checkout, timeoutMs },
+  );
+  await rm(patchPath, { force: true });
+  return applied.exitCode === 0;
 }
 
 /**

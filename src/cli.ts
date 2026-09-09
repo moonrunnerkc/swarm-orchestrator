@@ -387,12 +387,28 @@ async function verifyPatchUnderCancellation(
   }
   process.stdout.write(
     `\nregression: ${result.regression}   task: ${result.task}   ` +
-      `oracle reach: ${result.oracleReach}\n` +
+      `oracle reach: ${result.oracleReach}${describeUnreached(result.unreachedByOracle)}\n` +
       (result.verified
         ? "verified: no regression, and the oracle says the task was done.\n"
         : `not verified. ${result.advice}\n`),
   );
   return result.verified ? exitCodes.acceptable : exitCodes.notAcceptable;
+}
+
+/** Which added lines the oracle never ran, so "extend the oracle" names something to extend. */
+function describeUnreached(
+  unreached: readonly { readonly path: string; readonly lines: readonly number[] }[],
+): string {
+  if (unreached.length === 0) {
+    return "";
+  }
+  const named = unreached
+    .map(
+      (file) =>
+        `${file.path}: ${file.lines.slice(0, 8).join(", ")}${file.lines.length > 8 ? ", ..." : ""}`,
+    )
+    .join("; ");
+  return ` (${named})`;
 }
 
 /**
