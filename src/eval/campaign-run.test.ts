@@ -452,7 +452,7 @@ describe("classifyAgainstHeldBackOracle", () => {
     expect(
       classifyAgainstHeldBackOracle({
         verifiedWithFirstOracle: false,
-        heldBackAccepted: true,
+        heldBack: "accepted",
         regression: "fail",
       }),
     ).toBe("true-red");
@@ -462,7 +462,7 @@ describe("classifyAgainstHeldBackOracle", () => {
     expect(
       classifyAgainstHeldBackOracle({
         verifiedWithFirstOracle: false,
-        heldBackAccepted: true,
+        heldBack: "accepted",
         regression: "pass",
       }),
     ).toBe("false-red");
@@ -474,7 +474,7 @@ describe("classifyAgainstHeldBackOracle", () => {
     expect(
       classifyAgainstHeldBackOracle({
         verifiedWithFirstOracle: false,
-        heldBackAccepted: true,
+        heldBack: "accepted",
         regression: "unmeasured",
       }),
     ).toBe("true-red");
@@ -486,7 +486,7 @@ describe("classifyAgainstHeldBackOracle", () => {
   // are not the same assertion.
   it("names a verified run the held-back oracle refuses a false green", () => {
     expect(
-      classifyAgainstHeldBackOracle({ verifiedWithFirstOracle: true, heldBackAccepted: false }),
+      classifyAgainstHeldBackOracle({ verifiedWithFirstOracle: true, heldBack: "rejected" }),
     ).toBe("false-green");
   });
 
@@ -504,9 +504,9 @@ describe("classifyAgainstHeldBackOracle", () => {
     expect(
       classifyAgainstHeldBackOracle({
         verifiedWithFirstOracle: false,
-        heldBackAccepted: true,
+        heldBack: "accepted",
         regression: "pass",
-        sealedAccepted: false,
+        sealed: "rejected",
       }),
     ).toBe("refused-on-sealed");
   });
@@ -515,25 +515,25 @@ describe("classifyAgainstHeldBackOracle", () => {
     expect(
       classifyAgainstHeldBackOracle({
         verifiedWithFirstOracle: false,
-        heldBackAccepted: true,
+        heldBack: "accepted",
         regression: "pass",
-        sealedAccepted: true,
+        sealed: "accepted",
       }),
     ).toBe("false-red");
   });
 
   it("names a refused run the held-back oracle accepts a false red", () => {
     expect(
-      classifyAgainstHeldBackOracle({ verifiedWithFirstOracle: false, heldBackAccepted: true }),
+      classifyAgainstHeldBackOracle({ verifiedWithFirstOracle: false, heldBack: "accepted" }),
     ).toBe("false-red");
   });
 
   it("names agreement in both directions", () => {
     expect(
-      classifyAgainstHeldBackOracle({ verifiedWithFirstOracle: true, heldBackAccepted: true }),
+      classifyAgainstHeldBackOracle({ verifiedWithFirstOracle: true, heldBack: "accepted" }),
     ).toBe("true-green");
     expect(
-      classifyAgainstHeldBackOracle({ verifiedWithFirstOracle: false, heldBackAccepted: false }),
+      classifyAgainstHeldBackOracle({ verifiedWithFirstOracle: false, heldBack: "rejected" }),
     ).toBe("true-red");
   });
 });
@@ -559,5 +559,66 @@ describe("heldBackOracleLooksBroken", () => {
     expect(heldBackOracleLooksBroken({ firstOracleAccepted: 0, heldBackAlsoAccepted: 0 })).toBe(
       false,
     );
+  });
+});
+
+/**
+ * A held-back oracle has four possible answers and only two of them are verdicts about the patch.
+ * Reading the verdict as a boolean, accepted or not, folded the other two into a refusal: an
+ * oracle that accepts the base as well judges nothing, and one the harness could not run at all
+ * judged nothing either, and both were being scored as the patch having been refused.
+ *
+ * That is not a small bookkeeping point. dayjs#3012 was scored a false green on a held-back oracle
+ * that came back vacuous, which charges the tool with certifying work that nothing contradicted.
+ * A task whose held-back oracle cannot judge leaves the measurement rather than landing in it.
+ */
+describe("a held-back oracle that cannot judge", () => {
+  it("leaves the measurement rather than counting as a refusal", () => {
+    expect(
+      classifyAgainstHeldBackOracle({
+        verifiedWithFirstOracle: true,
+        heldBack: "vacuous",
+        regression: "pass",
+        sealed: "accepted",
+      }),
+    ).toBe("unjudgeable");
+  });
+
+  it("leaves the measurement where the harness could not run it at all", () => {
+    expect(
+      classifyAgainstHeldBackOracle({
+        verifiedWithFirstOracle: true,
+        heldBack: "unjudged",
+        regression: "pass",
+        sealed: "accepted",
+      }),
+    ).toBe("unjudgeable");
+  });
+
+  /**
+   * The same on the tool's own side. A sealed oracle the harness could not run is the tool having
+   * failed to measure, not the tool having refused the patch, and scoring it as a true red credits
+   * a correct refusal that was never made.
+   */
+  it("leaves the measurement where the tool's own oracle never ran", () => {
+    expect(
+      classifyAgainstHeldBackOracle({
+        verifiedWithFirstOracle: false,
+        heldBack: "rejected",
+        regression: "unmeasured",
+        sealed: "unjudged",
+      }),
+    ).toBe("unjudgeable");
+  });
+
+  it("still reads a real refusal as one", () => {
+    expect(
+      classifyAgainstHeldBackOracle({
+        verifiedWithFirstOracle: true,
+        heldBack: "rejected",
+        regression: "pass",
+        sealed: "accepted",
+      }),
+    ).toBe("false-green");
   });
 });

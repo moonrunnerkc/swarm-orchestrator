@@ -32,9 +32,9 @@ let changed = 0;
 for (const run of scored.runs) {
   const corner = classifyAgainstHeldBackOracle({
     verifiedWithFirstOracle: run.verified,
-    heldBackAccepted: run.heldBackOracle === "accepted",
+    heldBack: run.heldBackOracle,
     regression: run.regression,
-    sealedAccepted: run.sealedOracle === "accepted",
+    sealed: run.sealedOracle,
   });
   if (corner !== run.corner) {
     console.log(`  ${run.repository}#${run.pull}: ${run.corner} -> ${corner}`);

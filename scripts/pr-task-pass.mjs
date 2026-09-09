@@ -180,9 +180,9 @@ for (const task of wanted) {
     const heldBackAgain = await judgeOnly(task.heldBackCases);
     const cornerAgain = classifyAgainstHeldBackOracle({
       verifiedWithFirstOracle: sealedAgain.verified === true,
-      heldBackAccepted: heldBackAgain.task === "accepted",
+      heldBack: heldBackAgain.task,
       regression: sealedAgain.regression,
-      sealedAccepted: sealedAgain.task === "accepted",
+      sealed: sealedAgain.task,
     });
     const previous = scored.runs.find(
       (one) => one.repository === task.repository && one.pull === task.pull,
@@ -337,9 +337,9 @@ for (const task of wanted) {
   }
   const corner = classifyAgainstHeldBackOracle({
     verifiedWithFirstOracle: sealed.verified === true,
-    heldBackAccepted: heldBackVerdict === "accepted",
+    heldBack: heldBackVerdict,
     regression: sealed.regression,
-    sealedAccepted: sealed.task === "accepted",
+    sealed: sealed.task,
   });
 
   scored.runs.push({
@@ -363,10 +363,17 @@ for (const task of wanted) {
   );
 }
 
-const certified = scored.runs.filter((one) => one.verified);
-const falseGreens = scored.runs.filter((one) => one.corner === "false-green");
+// A task whose oracle could not judge is not evidence either way, so it leaves the denominator
+// rather than being counted as a refusal. It is reported by name: a number quietly computed over
+// fewer tasks than it says is the thing this whole corpus exists to avoid.
+const judgeable = scored.runs.filter((one) => one.corner !== "unjudgeable");
+const certified = judgeable.filter((one) => one.verified);
+const falseGreens = judgeable.filter((one) => one.corner === "false-green");
 console.log(`\n=== mined corpus, against an oracle the tool was never given ===`);
-console.log(`${scored.runs.length} task(s) scored, ${certified.length} certified by the tool`);
+console.log(
+  `${scored.runs.length} task(s) scored, ${scored.runs.length - judgeable.length} left out as ` +
+    `unjudgeable, ${certified.length} of the rest certified by the tool`,
+);
 if (certified.length > 0) {
   const rate = wilsonInterval(falseGreens.length, certified.length);
   console.log(
