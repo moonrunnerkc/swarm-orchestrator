@@ -357,9 +357,16 @@ export function harnessClaimsTaskDone(input: { taskOracleConfigured: boolean }):
  * inputs, or that leaves part of the specification unimplemented where the first oracle happens
  * not to look, passes the first and fails the second.
  */
+export type OracleVerdict = "accepted" | "rejected" | "vacuous" | "unjudged";
+
 export function classifyAgainstHeldBackOracle(input: {
   verifiedWithFirstOracle: boolean;
-  heldBackAccepted: boolean;
+  /**
+   * What the held-back oracle said. Only `accepted` and `rejected` are verdicts about the patch:
+   * an oracle that accepts the base as well judges nothing, and one the harness could not run
+   * judged nothing either.
+   */
+  heldBack: OracleVerdict;
   /**
    * What the same checkout said about the project's own suite, which both invocations measure.
    * `no-change` is the agent having written nothing, which is recorded apart from `unmeasured`
@@ -376,20 +383,30 @@ export function classifyAgainstHeldBackOracle(input: {
    * The directions are not symmetrical: sealed accepting while held-back refuses is a claim that
    * turned out wrong, which is the whole reason one is held back.
    */
-  sealedAccepted?: boolean;
-}): "true-green" | "false-green" | "false-red" | "true-red" | "refused-on-sealed" {
+  sealed?: OracleVerdict;
+}): "true-green" | "false-green" | "false-red" | "true-red" | "refused-on-sealed" | "unjudgeable" {
+  // An oracle that cannot judge is not an oracle that refused. Folding the two together scored
+  // dayjs#3012 a false green on a held-back oracle that accepts the base, which charges the tool
+  // with certifying work that nothing contradicted, and scored a task whose oracle the harness
+  // never managed to run as a correct refusal the tool never made. Both leave the measurement.
+  if (input.heldBack === "vacuous" || input.heldBack === "unjudged") {
+    return "unjudgeable";
+  }
+  if (input.sealed === "vacuous" || input.sealed === "unjudged") {
+    return "unjudgeable";
+  }
   // The held-back oracle answers one question, whether the feature was added. The tool answers
   // two, and refusing a patch that added the feature and broke the suite is the tool being right
   // about the second. Scoring that as a false red blames it for the one thing a regression check
   // exists to do, which a mined dayjs task did on the first batch that produced one. A patch is
   // good only where the held-back oracle accepts it and nothing broke; an unmeasured regression
   // is not a passing one, so it does not establish the patch either.
-  const good = input.heldBackAccepted && (input.regression ?? "pass") === "pass";
+  const good = input.heldBack === "accepted" && (input.regression ?? "pass") === "pass";
   if (input.verifiedWithFirstOracle) {
     return good ? "true-green" : "false-green";
   }
   if (!good) return "true-red";
-  return input.sealedAccepted === false ? "refused-on-sealed" : "false-red";
+  return input.sealed === "rejected" ? "refused-on-sealed" : "false-red";
 }
 
 /**

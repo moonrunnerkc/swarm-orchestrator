@@ -117,11 +117,11 @@ for (const record of runs) {
   );
 
   const verified = sealed.verified === true;
-  const heldBackAccepted = heldBack.task === "accepted";
   const corner = classifyAgainstHeldBackOracle({
     verifiedWithFirstOracle: verified,
-    heldBackAccepted,
+    heldBack: heldBack.task,
     regression: sealed.regression,
+    sealed: sealed.task,
   });
 
   scored.push({
