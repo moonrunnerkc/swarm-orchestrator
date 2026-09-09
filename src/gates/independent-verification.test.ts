@@ -427,3 +427,64 @@ describe("a failure the base already had", () => {
     expect(result.task).toBe("accepted");
   });
 });
+
+describe("an oracle that cannot fail", () => {
+  /**
+   * `swarm ci` runs the oracle it is handed and reports what it said, never asking whether it was
+   * capable of saying anything else. An oracle that accepts the unpatched base accepts a patch
+   * that changes nothing, so `task: accepted` establishes nothing about the work.
+   *
+   * Four of fifteen certified tasks in the mined corpus had exactly this, and one of them was
+   * published as a false green before it was noticed. The same reasoning already runs on gates,
+   * where a check that passes over a bond it saw is recorded vacuous.
+   */
+  it("does not report a task accepted when the oracle accepts the base too", async () => {
+    const patch = [
+      "diff --git a/clamp.mjs b/clamp.mjs",
+      "--- a/clamp.mjs",
+      "+++ b/clamp.mjs",
+      "@@ -1 +1 @@",
+      "-export const clamp = (v) => v;",
+      "+export const clamp = (v) => (v < 0 ? 0 : v);",
+      "",
+    ].join("\n");
+
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch,
+      commands: commands(),
+      clock,
+      // True before the patch and after it, so it distinguishes nothing.
+      taskOracle: { command: "test -f clamp.mjs" },
+    });
+
+    expect(result.task).toBe("vacuous");
+    expect(result.verified).toBe(false);
+    expect(result.advice).toContain("accepts the base");
+  });
+
+  it("still accepts an oracle that the base fails", async () => {
+    const patch = [
+      "diff --git a/clamp.mjs b/clamp.mjs",
+      "--- a/clamp.mjs",
+      "+++ b/clamp.mjs",
+      "@@ -1 +1 @@",
+      "-export const clamp = (v) => v;",
+      "+export const clamp = (v) => (v < 0 ? 0 : v);",
+      "",
+    ].join("\n");
+
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch,
+      commands: commands(),
+      clock,
+      taskOracle: { command: "grep -q 'v < 0' clamp.mjs" },
+    });
+
+    expect(result.task).toBe("accepted");
+    expect(result.verified).toBe(true);
+  });
+});
