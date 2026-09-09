@@ -12,10 +12,13 @@ import { oracleReachedTheChange } from "./oracle-reach.ts";
 describe("whether the oracle ran the lines the patch changed", () => {
   const changed = [{ path: "lib/application.js", addedLines: [85, 265, 270, 271] }];
 
+  /** Hits by line as the report gave them: a line absent from it was never executable. */
+  const measured = (hits: Record<number, number>) => ({ "lib/application.js": hits });
+
   it("says no when added lines were never executed", () => {
     const reach = oracleReachedTheChange({
       changed,
-      covered: { "lib/application.js": [85, 265] },
+      measured: measured({ 85: 3, 265: 1, 270: 0, 271: 0 }),
     });
 
     expect(reach.reached).toBe(false);
@@ -25,7 +28,7 @@ describe("whether the oracle ran the lines the patch changed", () => {
   it("says yes when every added line ran", () => {
     const reach = oracleReachedTheChange({
       changed,
-      covered: { "lib/application.js": [85, 265, 270, 271, 999] },
+      measured: measured({ 85: 3, 265: 1, 270: 1, 271: 2, 999: 1 }),
     });
 
     expect(reach.reached).toBe(true);
@@ -36,7 +39,7 @@ describe("whether the oracle ran the lines the patch changed", () => {
   // not shown to have judged anything, and saying otherwise is the collapse of unmeasured into
   // pass that the rest of this project refuses.
   it("does not claim reach for a file the report never mentions", () => {
-    const reach = oracleReachedTheChange({ changed, covered: {} });
+    const reach = oracleReachedTheChange({ changed, measured: {} });
 
     expect(reach.reached).toBe(false);
     expect(reach.unreached).toEqual([{ path: "lib/application.js", lines: [85, 265, 270, 271] }]);
@@ -45,9 +48,35 @@ describe("whether the oracle ran the lines the patch changed", () => {
   it("ignores a file the patch did not add lines to", () => {
     const reach = oracleReachedTheChange({
       changed: [{ path: "README.md", addedLines: [] }],
-      covered: {},
+      measured: {},
     });
 
     expect(reach.reached).toBe(true);
+  });
+
+  /**
+   * A report names the lines it could have executed. A blank line, a comment, a closing brace and
+   * a bare `else` are none of them, so they carry no entry, and counting an absent entry as a line
+   * the oracle skipped marks every patch unreached: a change that adds one comment beside a line
+   * the oracle ran would refuse certification for a line nothing can execute.
+   */
+  it("does not count an added line the report never called executable", () => {
+    const reach = oracleReachedTheChange({
+      changed: [{ path: "lib/application.js", addedLines: [85, 86, 87] }],
+      // 86 and 87 are the comment and the closing brace the patch added beside line 85.
+      measured: measured({ 85: 4 }),
+    });
+
+    expect(reach.reached).toBe(true);
+  });
+
+  it("still counts an executable added line the report says never ran", () => {
+    const reach = oracleReachedTheChange({
+      changed: [{ path: "lib/application.js", addedLines: [85, 86, 87] }],
+      measured: measured({ 85: 4, 86: 0 }),
+    });
+
+    expect(reach.reached).toBe(false);
+    expect(reach.unreached).toEqual([{ path: "lib/application.js", lines: [86] }]);
   });
 });

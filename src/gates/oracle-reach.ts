@@ -27,7 +27,17 @@ export interface OracleReach {
 
 export function oracleReachedTheChange(input: {
   changed: readonly ChangedLines[];
-  covered: Readonly<Record<string, readonly number[]>>;
+  /**
+   * Hits by line, per file, as the coverage report gave them. Presence and hit count carry two
+   * different facts and both are needed: a line the report names with zero hits is one the oracle
+   * could have run and did not, while a line it does not name at all is not executable.
+   *
+   * Reading absence as a skipped line was the earlier shape of this, and it marks nearly every
+   * patch unreached. A report has no entry for a blank line, a comment, a closing brace or a bare
+   * `else`, so a change adding a comment beside a line the oracle ran came back as a change the
+   * oracle skipped, and the check would have refused certification over a line nothing can run.
+   */
+  measured: Readonly<Record<string, Readonly<Record<number, number>>>>;
 }): OracleReach {
   const unreached: { path: string; lines: number[] }[] = [];
 
@@ -37,8 +47,11 @@ export function oracleReachedTheChange(input: {
     }
     // A file the report does not mention was not measured, and not measured is not covered.
     // Treating a missing entry as full reach would let an oracle that ran nothing look thorough.
-    const ran = new Set(input.covered[file.path] ?? []);
-    const missed = file.addedLines.filter((line) => !ran.has(line));
+    const hits = input.measured[file.path];
+    const missed =
+      hits === undefined
+        ? [...file.addedLines]
+        : file.addedLines.filter((line) => hits[line] === 0);
     if (missed.length > 0) {
       unreached.push({ path: file.path, lines: missed });
     }
