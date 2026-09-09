@@ -55,12 +55,14 @@ export interface IndependentVerification {
    */
   readonly regression: "pass" | "fail" | "unmeasured";
   /**
-   * Whether a trusted task-specific check says the task was done. `unjudged` where no oracle was
+   * Whether a trusted task-specific check says the task was done. `vacuous` where the oracle
+   * accepts the base commit too, so it would have accepted a patch that changes nothing and
+   * establishes nothing about this one. `unjudged` where no oracle was
    * given, which is the honest answer and never an implicit pass: four of eighteen real
    * repository patches passed their project's suite and failed a hidden acceptance test, so
    * reading a passing suite as an accepted task is a measured 22% false-green rate.
    */
-  readonly task: "accepted" | "rejected" | "unjudged";
+  readonly task: "accepted" | "rejected" | "unjudged" | "vacuous";
   /** Both: no regression, and an oracle that says the task was done. */
   readonly verified: boolean;
   /**
@@ -201,7 +203,28 @@ export async function verifyIndependently(
     // comparison.
     // Before attribution, which reverts the patch to measure the base: the oracle judges the
     // patched tree or it judges nothing worth knowing.
-    const task = await judgeTask(checkout, options, timeoutMs);
+    let task = await judgeTask(checkout, options, timeoutMs);
+    // An oracle is only evidence if it can refuse. One that accepts the unpatched base accepts a
+    // patch that changes nothing, so its acceptance of this patch says nothing, and reporting that
+    // as `accepted` is how four of fifteen certified tasks in the mined corpus were certified on
+    // checks that could not fail. Asked only where the oracle accepted, since that is the only
+    // place the answer can change, and before attribution reverts the tree for its own reasons.
+    if (task === "accepted") {
+      const reverted = await options.commands.runVouched(
+        ["git", "-C", checkout, "stash", "push", "--include-untracked", "--quiet"],
+        { cwd: checkout, timeoutMs },
+      );
+      if (reverted.exitCode === 0) {
+        const onBase = await judgeTask(checkout, options, timeoutMs);
+        await options.commands.runVouched(["git", "-C", checkout, "stash", "pop", "--quiet"], {
+          cwd: checkout,
+          timeoutMs,
+        });
+        if (onBase === "accepted") {
+          task = "vacuous";
+        }
+      }
+    }
     const checks = withPatch.some((check) => check.status === "failed")
       ? await attributeFailures(withPatch, checkout, options, timeoutMs)
       : withPatch;
@@ -228,24 +251,29 @@ export async function verifyIndependently(
       // still passes a suite written before the feature existed.
       verified: regression === "pass" && task === "accepted",
       unmeasured: !measuredSomething,
-      advice: checks.some((check) => check.inheritedFromBase === true)
-        ? "at least one check fails at the base commit too, with this patch not applied, so it " +
-          "is reported as inherited rather than as a regression. A common cause is a project " +
-          "that builds on install: dependencies are installed with --ignore-scripts, because " +
-          "install scripts run whatever the registry serves, so a `prepare` step that generates " +
-          "what the tests import does not run."
-        : !measuredSomething
-          ? "nothing here measured the patch: every check stood down, which on a real project " +
-            "usually means the fresh checkout has no installed dependencies, so its test runner " +
-            "is not present. Pass --install to install them from the lockfile first, which runs " +
-            "whatever install scripts the registry serves and is therefore a decision rather " +
-            "than a default."
-          : task === "unjudged"
-            ? "the repository's own suite passed, which says nothing broke. It does not say the " +
-              "task was done: a suite tests the behaviour a project already had, and a task adds " +
-              "behaviour it did not. Pass --oracle <command> with a check that says whether the " +
-              "task was done."
-            : "",
+      advice:
+        task === "vacuous"
+          ? "the oracle accepts the base commit as well, so it would have accepted a patch that " +
+            "changes nothing and its acceptance of this one establishes nothing. An oracle is only " +
+            "evidence where it can refuse: give one that the base fails."
+          : checks.some((check) => check.inheritedFromBase === true)
+            ? "at least one check fails at the base commit too, with this patch not applied, so it " +
+              "is reported as inherited rather than as a regression. A common cause is a project " +
+              "that builds on install: dependencies are installed with --ignore-scripts, because " +
+              "install scripts run whatever the registry serves, so a `prepare` step that generates " +
+              "what the tests import does not run."
+            : !measuredSomething
+              ? "nothing here measured the patch: every check stood down, which on a real project " +
+                "usually means the fresh checkout has no installed dependencies, so its test runner " +
+                "is not present. Pass --install to install them from the lockfile first, which runs " +
+                "whatever install scripts the registry serves and is therefore a decision rather " +
+                "than a default."
+              : task === "unjudged"
+                ? "the repository's own suite passed, which says nothing broke. It does not say the " +
+                  "task was done: a suite tests the behaviour a project already had, and a task adds " +
+                  "behaviour it did not. Pass --oracle <command> with a check that says whether the " +
+                  "task was done."
+                : "",
       install,
       checkoutPath: checkout,
     };
