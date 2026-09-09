@@ -488,3 +488,43 @@ describe("an oracle that cannot fail", () => {
     expect(result.verified).toBe(true);
   });
 });
+
+describe("an oracle that only ran part of the change", () => {
+  /**
+   * koa#1946 was certified by an oracle that never executed the branch a held-back oracle then
+   * refused: lines 270 to 273 of the file it changed were never reached. An oracle is evidence
+   * only about the code it ran, so certifying on one that skipped part of the change is the tool
+   * asserting more than it measured.
+   *
+   * Measurable only where the harness can build the invocation itself, per invariant 7: a coverage
+   * number the workspace could author is not a measurement of the workspace. Where it cannot,
+   * reach is `unmeasured` and says so rather than passing.
+   */
+  it("reports reach as unmeasured when it cannot build the oracle invocation itself", async () => {
+    const patch = [
+      "diff --git a/clamp.mjs b/clamp.mjs",
+      "--- a/clamp.mjs",
+      "+++ b/clamp.mjs",
+      "@@ -1 +1 @@",
+      "-export const clamp = (v) => v;",
+      "+export const clamp = (v) => (v < 0 ? 0 : v);",
+      "",
+    ].join("\n");
+
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch,
+      commands: commands(),
+      clock,
+      // A shell string the harness cannot re-express as a vouched argv, so nothing can be
+      // instrumented and the honest answer is that reach was not measured.
+      taskOracle: { command: "grep -q 'v < 0' clamp.mjs" },
+    });
+
+    expect(result.task).toBe("accepted");
+    expect(result.oracleReach).toBe("unmeasured");
+    // Not measured must not block: it is an absence of evidence, not evidence of a gap.
+    expect(result.verified).toBe(true);
+  });
+});

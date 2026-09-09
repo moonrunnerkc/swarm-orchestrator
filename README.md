@@ -173,6 +173,13 @@ and nothing here is allowed to make one.
 `task` says the work was done — and only an oracle can say the second. Four of eighteen
 real-repository patches passed their project's whole suite and failed a hidden acceptance test.
 
+**And it judges the oracle it was handed, not only the patch.** An oracle that accepts the base
+commit would have accepted a patch that changes nothing, so `task` reads `vacuous` and nothing is
+verified. An oracle that never executed the lines the patch adds cannot have judged them, so
+`oracleReach` reads `unreached` and nothing is verified. Both were found by measuring this tool
+against real work: four of fifteen certified tasks rested on an oracle that could not fail, and
+the first false green found was certified by an oracle that never ran the branch it broke.
+
 Full detail in **[docs/verifying.md](docs/verifying.md)**.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -233,7 +240,7 @@ change is fast and its claims are checkable — not that review is unnecessary.
 The roadmap is the six unmet beta gates, tracked with their evidence in
 **[docs/beta-gates.md](docs/beta-gates.md)**:
 
-- [ ] Zero false greens in 400 held-out tasks — at 15 opportunities, upper bound 20.4%
+- [ ] Zero false greens in 400 held-out tasks — currently 2 in 22, upper bound 27.8%
 - [ ] An adversarial corpus written by somebody trying to get past the defences
 - [ ] Task success non-inferior to the strongest single-agent baseline, at a size that supports it
 - [ ] Deadline overshoot measured, not just bounded by a mechanism
