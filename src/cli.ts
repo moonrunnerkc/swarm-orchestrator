@@ -305,6 +305,29 @@ async function collectGarbage(options: GcCommand): Promise<number> {
  */
 async function verifyPatch(options: CiCommand): Promise<number> {
   const clock = createSystemClock();
+  // Verification spawns test runners in a checkout, and this command had nothing that stopped
+  // them when it was stopped itself. A Ctrl-C or a supervisor's SIGTERM ended the CLI and left
+  // the runner reparented and running: two node processes from an oracle were still holding a
+  // checkout open five hours after the run that started them had gone.
+  const stopping = createRunCancellation({ clock, wallBudgetMs: null });
+  const onInterrupt = () => stopping.cancel("interrupted");
+  const onTerminate = () => stopping.cancel("terminated");
+  process.on("SIGINT", onInterrupt);
+  process.on("SIGTERM", onTerminate);
+  try {
+    return await verifyPatchUnderCancellation(options, clock, stopping.signal);
+  } finally {
+    process.off("SIGINT", onInterrupt);
+    process.off("SIGTERM", onTerminate);
+    stopping.dispose();
+  }
+}
+
+async function verifyPatchUnderCancellation(
+  options: CiCommand,
+  clock: Clock,
+  stopping: AbortSignal,
+): Promise<number> {
   const baseCommit = await resolveBaseCommit(options.workspace, options.baseRef);
   // What the producer said it did, where it said anything. Read strictly: a line this build
   // does not recognize refuses the whole stream rather than being skipped, because a skipped
@@ -326,7 +349,7 @@ async function verifyPatch(options: CiCommand): Promise<number> {
     immutablePaths: options.immutablePaths,
     installDependencies: options.installDependencies,
     ...(options.taskOracle === null ? {} : { taskOracle: { command: options.taskOracle } }),
-    commands: createNodeCommandRunner(clock, harnessChildEnvironment()),
+    commands: createNodeCommandRunner(clock, harnessChildEnvironment(), undefined, stopping),
     clock,
   });
 
