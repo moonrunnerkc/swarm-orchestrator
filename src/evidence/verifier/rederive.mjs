@@ -37,6 +37,7 @@ function notApplicable(observation) {
 }
 
 function counter(text, name) {
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp - name is one of the counter names this file calls with, never input. Mirrors src/gates/parsers.ts.
   const found = new RegExp(`^[#ℹ]\\s+${name}\\s+(\\d+)\\s*$`, "m").exec(text)?.[1];
   return found === undefined ? null : Number(found);
 }
