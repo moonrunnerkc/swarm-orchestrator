@@ -259,9 +259,17 @@ export async function checkDocumentationPaths(root) {
 
   // Asked once, at the end: a path git ignores names something generated rather than a pointer
   // that broke, and asking per path would spawn git several hundred times.
+  // A reference that leaves the repository is not something git can call ignored, and handing it
+  // one costs far more than the answer about it: git refuses the whole list at the first such path
+  // and stops reading, so every candidate after it is classified as a broken pointer. One wrong
+  // link in one document reported five misses, four of them in files nobody had touched.
+  const insideTheRepository = (raw) => {
+    const target = resolve(root, raw);
+    return target === root || target.startsWith(`${root}${sep}`);
+  };
   const ignored = await ignoredAmong(
     root,
-    unresolved.map((entry) => entry.raw),
+    unresolved.map((entry) => entry.raw).filter(insideTheRepository),
   );
   for (const entry of unresolved) {
     if (ignored.has(entry.raw)) {
