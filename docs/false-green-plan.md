@@ -48,22 +48,69 @@ it carries the same four words: `held`, `vacuous`, `unshown`, `not-bonded`.
 
 The operators are in [`src/gates/oracle-mutants.ts`](../src/gates/oracle-mutants.ts), and every one
 of them is a syntactic rule over a line rather than a rule about a repository, a patch or a task: a
-check whose sensitivity can be tuned per subject measures the tuning. Invert a comparison; swap the
-operands of a non-commutative arithmetic operator; replace a returned expression with a sentinel;
-swap the two arguments of a call; drop a no-argument call whose result the chain uses. Six mutants
-per patch at most, two per operator, ordered by how often each operator produces a mutant that
-changes nothing, because each mutant is another oracle run.
+check whose sensitivity can be tuned per subject measures the tuning. Six mutants per patch at
+most, two per operator, ordered by how often each operator produces a mutant that changes nothing,
+because each mutant is another oracle run.
 
-`vacuous` needs the oracle to have demonstrably run the mutated line, which is the coverage reach
-already read of the same run. Where nothing was measured the answer is `unshown`, not `vacuous`:
-absence of evidence about the oracle is not evidence against it.
+**There are eight of them, and the first five were silent on ordinary code.** Invert a comparison;
+swap the operands of a non-commutative arithmetic operator; replace a returned expression with a
+sentinel; swap the two arguments of a call; drop a no-argument call whose result the chain uses.
+Each needs a particular token on the line, and a guard clause, an assignment, a `require` and a
+callback carry none of them, so `mutantOfLine` returned null and the bond said `not-bonded` because
+it had nothing to ask. Both adversarial false greens are that shape and produced zero mutants
+between them across every line they add.
 
-**The residual, stated rather than solved.** A mutant that changes nothing observable is
-indistinguishable here from an oracle that failed to notice one that did. That is the equivalent
-mutant problem and this does not solve it. What it does instead is keep the operators few and
-mechanical and audit every `vacuous` verdict by hand before any of them refuses anything. Beside
-it: a patch with no line these operators can change gets no bond at all, which is
-`not-bonded` and is never read as `held`.
+Three more cover the statement shapes that went uncovered: an `if` or `while` condition negated
+whole, the value a plain assignment or declaration writes replaced by a sentinel, and the statement
+removed. Read off the language's own `Statement` productions rather than off the patches that
+exposed the gap, since operators fitted to the cases that motivated them measure the fitting. The
+derivation, the ordering, and which tasks were in sample when it was written are in
+[`oracle-bond-operators.md`](oracle-bond-operators.md), committed before any of it was implemented.
+
+Statement deletion is the one operator that can leave a file that does not compile, and every
+oracle refuses one of those, so a bond counting that refusal would credit the oracle with a
+rejection it never made. It is held to `node --check` over the file the patch left and over the
+file with the line blanked. Where the original does not parse, node cannot read the dialect and so
+cannot tell a syntax error from a mutant, and the operator proposes nothing for that file:
+TypeScript and JSX keep the other seven.
+
+**`vacuous` takes two facts, and it used to assert the second without evidence.** The first is that
+the oracle demonstrably ran the mutated line, read from the coverage reach already took of the same
+run; absent that the answer is `unshown`. The second is that the mutant changed anything at all. A
+mutant that changes nothing is indistinguishable from an oracle that failed to notice one that did,
+and what told them apart was a person reading each mutated line. That audit found two equivalent
+mutants and narrowed two operators. It does not scale, and it is not evidence anybody else can
+re-derive.
+
+So a second detector adjudicates every mutant the oracle accepted on a line it ran, and `vacuous`
+requires it to have seen a difference. Cheapest first, and the first that answers decides it. The
+oracle is run again over the mutant under the same instrumentation reach used, and a line other
+than the mutated one that ran in one reading and not the other is a demonstrated difference in what
+the program did; the mutated line is excluded, because a deleted statement stops running by
+construction. Failing that, the repository's own gates that passed with the patch applied are run
+again, and one that now fails is a demonstrated difference. Neither seeing anything is `unshown`,
+never `vacuous`, and a suite run that was never spent is recorded as not adjudicated rather than as
+either answer.
+
+What the pair cannot see is named rather than implied away. Coverage sees a mutant that changes
+control flow or stops reaching code, and not one that changes a value on a path that runs either
+way, which includes reordering a sequence every element of which is visited. The repository's own
+suite sees a mutant that breaks behaviour the project already had, and on a patch that adds a
+feature it is silent by construction, because the suite was written before that behaviour existed.
+A mutant that changes only a value, on a path that runs either way, in code the project did not
+have before, is witnessed by neither and lands in `unshown`.
+
+**That costs the refusal of commander#1671, and the reason is worth as much as the catch was.** Its
+mutant drops a `.reverse()`: coverage sees the same lines run the same number of times in a
+different order, and commander's own suite never had the precedence the patch adds. Neither
+detector can witness it, so the verdict is `unshown`. That refusal rested on a person reading the
+mutated line and calling it behaviour-changing, and invariant 16 says a verdict nothing can
+re-derive is named as not re-derived rather than agreed with. Keeping it by making the hand
+judgement a condition would be keeping a number by keeping the audit that produced it.
+
+Beside all of it: a patch with no line these operators can change gets no bond at all, which is
+`not-bonded` and is never read as `held`. It is much rarer now. koa#1999 is the patch the rejected
+stricter option below called untouchable by any operator here, and it certifies on `held`.
 
 #### The decision rule, pre-registered
 
@@ -235,15 +282,37 @@ four hundred tasks. The pipeline is unattended and resumable, so this is machine
 authoring, and it was right to leave until last: mining more tasks through filters that admit
 vacuous oracles would have produced a bigger wrong number, and the filters are only now correct.
 
-What the arithmetic actually says, measured rather than assumed. 192 candidates are mined, all of them checked, and 79 are viable, so mining and viability are cheap. The expensive ratio is the one
-after that: 5 of 79 scored tasks became an opportunity, because an opportunity needs the tool to
-certify a patch and the local model fails most of these tasks outright. At that rate four hundred
-opportunities is roughly eight thousand tasks, which is not machine time, it is a different plan.
+What the arithmetic actually says, measured rather than assumed. 192 candidates are mined, all of
+them checked, and 79 are viable, so mining and viability are cheap. The expensive ratio is the one
+after that: an opportunity needs the tool to certify a patch, and the local model solves 11 of 79
+of these tasks at all (`node scripts/task-difficulty.mjs`). At that rate four hundred opportunities
+is roughly eight thousand tasks, which is not machine time, it is a different plan.
 
-Two things would change it, and both are decisions rather than code. A stronger model would certify
-more, which costs money this project has declined to spend. Shaping the corpus toward tasks a local
-model can do would raise the ratio and narrow what the resulting rate describes, which has to be
-said next to the number if it is done.
+**Mining more repositories is measured now, and it is not the answer.** Two further passes over the
+same fifty-repository selection, one at four pages per repository and one at ten, added **zero new
+candidates**: the same 192, because the pulls the miner reaches are the same pulls. Going deeper
+needs a higher per-repository cap, which costs one API call per pull examined, and going wider
+needs repositories nobody has chosen yet. Either is machine time spent on the cheap half of the
+pipeline while the expensive half is untouched.
+
+**What grows 3b's denominator is the adversarial arm, by twenty to one.** That denominator is
+oracles a held-back oracle proves inadequate, which means a patch the sealed half accepts and the
+held-back half refuses. The ordinary arm produced 3 of those in 97 judgements, because it has to
+wait for a model that is trying to do the task to happen to satisfy one half and not the other. The
+adversarial arm produces them on purpose: it showed the model the oracle it would be judged by and
+got 2 in 9. Per model run that is roughly twenty times the yield, on the one number this gate is
+short of.
+
+The two rates can never be added, and the reason is the same reason the yield differs: a model shown
+its acceptance test is a stronger adversary than a contributor who cannot see it, so its rate is an
+upper bound on the tool's blindness rather than a rate of anything in the wild.
+`separateAdversarialRows` enforces that by reading what a row records about its own prompt, so a row
+in the wrong file is still not pooled.
+
+One thing would change the ordinary arm's ratio and it is a decision rather than code. A stronger
+model would certify more, which costs money this project has declined to spend. Shaping the corpus
+toward tasks a local model can do would raise the ratio and narrow what the resulting rate
+describes, which has to be said next to the number if it is done.
 
 ## What is not achievable, and should stop being implied
 
