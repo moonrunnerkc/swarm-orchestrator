@@ -193,6 +193,23 @@ describe("a file no runner can execute", () => {
     expect(reach.reached).toBe(true);
   });
 
+  /**
+   * A declaration file is types and nothing else: it is erased before anything runs, so no
+   * coverage report can name it. commander#1671, #1763 and #1832 were all refused over
+   * `typings/index.d.ts`. The miner already excludes `.d.ts` from the source files it counts.
+   */
+  it("cannot be refused over a declaration file either", () => {
+    const reach = oracleReachedTheChange({
+      changed: [
+        { path: "typings/index.d.ts", addedLines: numbered([667, 668]) },
+        { path: "types/api.d.mts", addedLines: numbered([4]) },
+      ],
+      measured: {},
+    });
+
+    expect(reach.reached).toBe(true);
+  });
+
   it("still judges every spelling of a script the runners load", () => {
     for (const path of [
       "lib/a.js",
