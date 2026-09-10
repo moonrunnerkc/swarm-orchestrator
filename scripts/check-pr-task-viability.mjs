@@ -27,6 +27,7 @@ import { join } from "node:path";
 import { runProcessGroup } from "../dist/exec/run-process.js";
 import { titleFilterFor } from "../dist/eval/oracle-filter.js";
 import { prTaskEvidenceRoot, prTaskWorkingRoot } from "../dist/eval/pr-task-paths.js";
+import { npmFailureReason } from "../dist/eval/npm-failure.js";
 import { duplicateOf } from "../dist/eval/task-identity.js";
 import { testCaseDeals } from "../dist/eval/test-case-split.js";
 import { parseUnifiedDiff } from "../dist/gates/unified-diff.js";
@@ -290,7 +291,7 @@ for (const candidate of wanted) {
 
   const installed = await installIfTheLockfileMoved(checkout);
   if (installed.code !== 0) {
-    record.why = `npm ci failed at the base: ${installed.stderr.slice(-160)}`;
+    record.why = `npm ci failed at the base: ${npmFailureReason(installed.stderr)}`;
     saveJudgement(record);
     console.log(`  DROP  ${label.padEnd(42)} ${record.why}`);
     continue;
