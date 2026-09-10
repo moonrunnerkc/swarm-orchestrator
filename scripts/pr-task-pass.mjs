@@ -468,7 +468,7 @@ for (const task of wanted) {
     }
     writeFileSync(scoredPath, `${JSON.stringify(scored, null, 2)}\n`);
     console.log(
-      `  ${label.padEnd(42)} ${reading.detail} -> true-red`,
+      `  ${label.padEnd(42)} the agent wrote nothing, so there is no patch to judge -> true-red`,
     );
     continue;
   }
