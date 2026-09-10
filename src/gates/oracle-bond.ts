@@ -1,5 +1,9 @@
 import { type BondVerdict, bondVerdict } from "./bonds.ts";
-import { type MutantWitness, witnessedADifference } from "./mutant-witness.ts";
+import {
+  type MutantWitness,
+  vacuousRequiresAWitness,
+  witnessedADifference,
+} from "./mutant-witness.ts";
 import type { Mutant } from "./oracle-mutants.ts";
 
 /**
@@ -62,15 +66,21 @@ export function mutantWasSeen(
  * that accepted a mutant nothing shows changed anything has been shown nothing, and reads
  * `unshown` with the detector that abstained named beside it.
  */
-export function bondOfMutantObservations(observations: readonly MutantObservation[]): OracleBond {
+export function bondOfMutantObservations(
+  observations: readonly MutantObservation[],
+  regime?: { readonly requireAWitness?: boolean },
+): OracleBond {
+  const requireAWitness = regime?.requireAWitness ?? vacuousRequiresAWitness;
   const mutants = observations.map((observation) => ({
     ...observation.mutant,
-    // Two facts, and `vacuous` needs both: the oracle ran the line, and something other than the
-    // oracle showed the mutant changed the program. Either alone leaves an accepted mutant
-    // indistinguishable from one that does nothing, which is the residual this closes.
+    // Two facts, and which of them `vacuous` rests on is the one decision in `mutant-witness.ts`:
+    // that the oracle ran the line, always, and that something other than the oracle showed the
+    // mutant changed the program, where a witness is required. Without the second, an accepted
+    // mutant is indistinguishable from one that does nothing; requiring it costs a refusal
+    // nothing could witness.
     verdict: bondVerdict({
       observed: observation.oracle,
-      provable: observation.seen && witnessedADifference(observation.witness),
+      provable: observation.seen && (!requireAWitness || witnessedADifference(observation.witness)),
       collectedBefore: null,
       collectedAfter: null,
     }),

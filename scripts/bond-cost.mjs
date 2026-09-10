@@ -63,6 +63,15 @@ function bothRegimes(row) {
   };
   const withoutBond =
     row.regression === "pass" && sealed === "accepted" && row.oracleReach !== "unreached";
+  // The third regime, re-derived rather than re-run. A mutant carrying any witness other than
+  // `not-adjudicated` was accepted on a line the oracle demonstrably ran, which is the whole of
+  // what `vacuous` meant before a witness was required of it, so the row's own record answers
+  // what the other regime would have said about it.
+  const vacuousWithoutAWitness = (row.bondedMutants ?? []).some(
+    (one) =>
+      one.verdict === "vacuous" ||
+      (one.witness !== undefined && one.witness !== "not-adjudicated"),
+  );
   return {
     reportOnly: classifyAgainstHeldBackOracle({
       ...shared,
@@ -72,6 +81,11 @@ function bothRegimes(row) {
       ...shared,
       verifiedWithFirstOracle: withoutBond && row.oracleBond !== "vacuous",
       oracleBond: row.oracleBond,
+    }),
+    witnessRecorded: classifyAgainstHeldBackOracle({
+      ...shared,
+      verifiedWithFirstOracle: withoutBond && !vacuousWithoutAWitness,
+      oracleBond: vacuousWithoutAWitness ? "vacuous" : row.oracleBond,
     }),
   };
 }
@@ -145,9 +159,13 @@ if (showMutants) {
 const percent = (value) => (value === null ? "n/a" : `${(value * 100).toFixed(1)}%`);
 
 /**
- * The two regimes side by side. Under blocking, a certified patch whose bond came back vacuous
- * leaves the certified set, exactly as a reach refusal already does, so both the numerator and the
- * denominator move and the interval widens with them.
+ * The three regimes side by side. Under either blocking one, a certified patch whose bond came
+ * back vacuous leaves the certified set, exactly as a reach refusal already does, so both the
+ * numerator and the denominator move and the interval widens with them.
+ *
+ * The third differs from the second in one thing: whether a mutant the oracle ran and accepted has
+ * to have been witnessed before it refuses. It is re-derived from what each row recorded about its
+ * own mutants rather than from a second pass, so both answers come off the same evidence.
  */
 function regime(label, which) {
   const corners = rows.map((row) => ({ corner: regimes.get(row)[which] }));
@@ -162,6 +180,31 @@ function regime(label, which) {
   );
 }
 
-console.log(`\n=== certify rate and false-green rate, both regimes ===`);
+console.log(`\n=== certify rate and false-green rate, all three regimes ===`);
 regime("report-only", "reportOnly");
-regime("blocking on vacuous", "blocking");
+regime("witness required", "blocking");
+regime("witness recorded", "witnessRecorded");
+
+// Which rows the two blocking regimes disagree about, named rather than left to the difference
+// between two counts. That set is the whole of what requiring a witness costs or buys.
+const disputed = rows.filter(
+  (row) => regimes.get(row).blocking !== regimes.get(row).witnessRecorded,
+);
+console.log(
+  disputed.length === 0
+    ? "\nthe two blocking regimes agree on every row, so requiring a witness changes nothing here"
+    : `\nthe two blocking regimes disagree on ${disputed.length} row(s), which is the whole of ` +
+        "what requiring a witness costs or buys:",
+);
+for (const row of disputed) {
+  const unwitnessed = (row.bondedMutants ?? []).filter((one) => one.witness === "none");
+  console.log(
+    `  ${named(row).padEnd(24)} witness required -> ${regimes.get(row).blocking}, ` +
+      `witness recorded -> ${regimes.get(row).witnessRecorded}`,
+  );
+  for (const mutant of unwitnessed) {
+    console.log(`      ${mutant.id}  no detector witnessed this mutant`);
+    console.log(`      - ${mutant.before.trim()}`);
+    console.log(`      + ${mutant.after.trim()}`);
+  }
+}
