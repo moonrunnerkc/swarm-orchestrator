@@ -1,11 +1,14 @@
-# Getting to a working result on gate 3
+# Getting to a working result on the false-green rate
 
-Gate 3 asks for zero false greens over at least four hundred held-out tasks. The measured rate is
-**1 in 16, 95% CI [1.1, 28.3]**, down from 2 in 22 when this was written. This is what would have
-to be true for that number to be both trustworthy and better, separated into the two different
-problems it actually is.
+Written when gate 3 asked for zero false greens over at least four hundred held-out tasks. That
+wording is retired, for four measured reasons in [`beta-gates.md`](beta-gates.md), and what replaced
+it is three statements about three different questions. The work below is unaffected by that: it is
+what would have to be true for the rate to be both trustworthy and better, separated into the two
+different problems it actually is, and every item is still open or closed on its own terms.
 
-Five of the six items below are done. What is left is the one that was always the hard one, scale.
+Five of the six items are done. What is left is the one that was always the hard one, scale, and
+the shape of it has changed: mining more is measured and does not help, while the arm that grows
+the denominator gate 3b is short of is the adversarial one.
 
 ## The distinction that matters
 
