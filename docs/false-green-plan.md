@@ -1,8 +1,12 @@
 # Getting to a working result on gate 3
 
 Gate 3 asks for zero false greens over at least four hundred held-out tasks. The measured rate is
-**2 in 22, 9.1% [2.5, 27.8]**. This is what would have to be true for that number to be both
-trustworthy and better, separated into the two different problems it actually is.
+**0 in 14, 95% CI [0.0, 21.5]**, down from 2 in 22 when this was written. This is what would have
+to be true for that number to be both trustworthy and better, separated into the two different
+problems it actually is.
+
+Four of the six items below are done. What is left is the one that was always the hard one, scale,
+and one that turned out to be the wrong idea.
 
 ## The distinction that matters
 
@@ -98,9 +102,21 @@ how many cases are in it.
 
 ### 6. Scale
 
-Twenty-two opportunities is not four hundred tasks. The pipeline is unattended and resumable, so
-this is machine time rather than authoring, and it is the last thing to do rather than the first:
-mining more tasks through filters that admit vacuous oracles would produce a bigger wrong number.
+**Not done, and now the only thing between this gate and an answer.** Fourteen opportunities is not
+four hundred tasks. The pipeline is unattended and resumable, so this is machine time rather than
+authoring, and it was right to leave until last: mining more tasks through filters that admit
+vacuous oracles would have produced a bigger wrong number, and the filters are only now correct.
+
+What the arithmetic actually says, measured rather than assumed. 192 candidates are mined and 59 of
+the 111 checked so far are viable, so mining and viability are cheap. The expensive ratio is the one
+after that: 3 of 59 scored tasks became an opportunity, because an opportunity needs the tool to
+certify a patch and the local model fails most of these tasks outright. At that rate four hundred
+opportunities is roughly eight thousand tasks, which is not machine time, it is a different plan.
+
+Two things would change it, and both are decisions rather than code. A stronger model would certify
+more, which costs money this project has declined to spend. Shaping the corpus toward tasks a local
+model can do would raise the ratio and narrow what the resulting rate describes, which has to be
+said next to the number if it is done.
 
 ## What is not achievable, and should stop being implied
 
