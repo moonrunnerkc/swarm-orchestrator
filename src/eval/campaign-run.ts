@@ -391,6 +391,13 @@ export function classifyAgainstHeldBackOracle(input: {
    * the certified set either way, and the interval widens with it.
    */
   oracleReach?: "reached" | "unreached" | "unmeasured";
+  /**
+   * What the tool said about bonding its own oracle. `vacuous` is the oracle having accepted a
+   * change to a line it demonstrably ran, so running it established nothing about that line: a
+   * refusal about the evidence, exactly as `unreached` is, and named rather than counted as a
+   * wrong refusal. It is not free either, for the same reason: the task leaves the certified set.
+   */
+  oracleBond?: "held" | "vacuous" | "unshown" | "not-bonded";
 }):
   | "true-green"
   | "false-green"
@@ -398,6 +405,7 @@ export function classifyAgainstHeldBackOracle(input: {
   | "true-red"
   | "refused-on-sealed"
   | "refused-on-reach"
+  | "refused-on-bond"
   | "unjudgeable" {
   // An oracle that cannot judge is not an oracle that refused. Folding the two together scored
   // dayjs#3012 a false green on a held-back oracle that accepts the base, which charges the tool
@@ -426,7 +434,12 @@ export function classifyAgainstHeldBackOracle(input: {
   // sealed half takes the if on both its cases: the else is never executed, so nothing the oracle
   // did says whether it is right. Calling that a false red blames the tool for the refusal the
   // reach check exists to make.
-  return input.oracleReach === "unreached" ? "refused-on-reach" : "false-red";
+  if (input.oracleReach === "unreached") return "refused-on-reach";
+  // Only reachable where bonding refuses. Under the report-only regime a run that got this far,
+  // regression passing and the sealed oracle accepting and the change reached, is a run the tool
+  // certified, so `verifiedWithFirstOracle` would have been true and this line never read.
+  if (input.oracleBond === "vacuous") return "refused-on-bond";
+  return "false-red";
 }
 
 /**

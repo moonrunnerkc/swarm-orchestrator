@@ -120,3 +120,30 @@ describe("groupByHarness", () => {
     expect(groups[0]?.harness).toBe("unrecorded");
   });
 });
+
+/**
+ * `verified` is not one word. A patch certified on an oracle that refused every mutant of the
+ * change is a stronger claim than one certified on an oracle nothing was asked of, and a rate
+ * that flattens the two describes neither. Gate 3c reports the split for that reason.
+ */
+describe("the certified patches, split by what bonding their oracle showed", () => {
+  it("counts each bond state among the certified and among the false greens", () => {
+    const tally = tallyFalseGreens([
+      { corner: "true-green", oracleBond: "held" },
+      { corner: "true-green", oracleBond: "not-bonded" },
+      { corner: "false-green", oracleBond: "unshown" },
+      { corner: "true-red", oracleBond: "held" },
+      { corner: "refused-on-bond", oracleBond: "vacuous" },
+    ]);
+
+    expect(tally.certifiedByBond).toEqual({ held: 1, "not-bonded": 1, unshown: 1 });
+    expect(tally.falseGreensByBond).toEqual({ unshown: 1 });
+    expect(tally.refusedOnBond).toBe(1);
+  });
+
+  it("names a row written before bonding existed rather than reading it as not bonded", () => {
+    const tally = tallyFalseGreens([{ corner: "true-green" }]);
+
+    expect(tally.certifiedByBond).toEqual({ "not-recorded": 1 });
+  });
+});

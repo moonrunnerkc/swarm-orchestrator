@@ -535,6 +535,39 @@ describe("classifyAgainstHeldBackOracle", () => {
     ).toBe("refused-on-reach");
   });
 
+  /**
+   * The refusal one layer under reach: the oracle ran the change and then accepted a mutant of
+   * it, so running it established nothing. Named rather than counted as a wrong refusal, and not
+   * free either, since the task leaves the certified set exactly as a reach refusal does.
+   */
+  it("names a refusal the oracle bond caused", () => {
+    expect(
+      classifyAgainstHeldBackOracle({
+        verifiedWithFirstOracle: false,
+        heldBack: "accepted",
+        regression: "pass",
+        sealed: "accepted",
+        oracleReach: "reached",
+        oracleBond: "vacuous",
+      }),
+    ).toBe("refused-on-bond");
+  });
+
+  it("never reads a bond that held or was not built as a refusal", () => {
+    for (const oracleBond of ["held", "unshown", "not-bonded"] as const) {
+      expect(
+        classifyAgainstHeldBackOracle({
+          verifiedWithFirstOracle: false,
+          heldBack: "accepted",
+          regression: "pass",
+          sealed: "accepted",
+          oracleReach: "reached",
+          oracleBond,
+        }),
+      ).toBe("false-red");
+    }
+  });
+
   // A refusal the reach check did not cause is still a false red, whatever reach reported.
   it("still calls it a false red where the oracle ran the change and the tool refused anyway", () => {
     expect(
