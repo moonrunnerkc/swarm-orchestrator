@@ -110,6 +110,70 @@ The switch is one exported boolean,
 [`bondRefusesCertification`](../src/gates/certification.ts), so turning it on or off is one line
 and the evidence beside it.
 
+#### What the measurement produced, and what the rule did with it
+
+Bonding ran over all sixteen patches the tool had certified. `node scripts/bond-cost.mjs` derives
+this from the recorded rows, in both regimes, whichever one is currently on.
+
+| bond | count |
+| --- | --- |
+| held | 14 |
+| vacuous | 1 |
+| unshown | 0 |
+| not bonded | 1 |
+
+**The audit found two mutants that changed nothing, and both narrowed an operator.** Reading every
+`vacuous` verdict by hand is the check that found all three reach artifacts, and it earned its
+place again here. `tj/commander.js#1711` adds `return false;` inside a `filter` predicate, and
+`return undefined;` there is the same predicate, because `filter` reads truthiness and both are
+falsy. A darkreader patch computes `Math.min(i + size, len)`, and swapping the arguments of a
+commutative call is not a change. Neither was excused as a special case: the sentinel now has to
+differ from the returned expression wherever that expression's truthiness is known from its
+spelling, and the argument swap now leaves JavaScript's commutative operations alone. Re-measured
+after the narrowing, both came back `held`.
+
+**One `vacuous` verdict stands, and it is the false green.** `tj/commander.js#1671`, mutant
+`lib/command.js:1473:drop-chained-call`:
+
+```
+-     getCommandAndParents(this).reverse().forEach((cmd) => {
++     getCommandAndParents(this).forEach((cmd) => {
+```
+
+Dropping `.reverse()` inverts the merge precedence the patch exists to set, on a line the sealed
+half runs on every case. Behaviour-changing, and not an artifact. Its held-back oracle never judged
+the mutant, because it refuses the unmutated patch, so it falls in none of the three buckets: it is
+the tool being right about the patch as well as about the oracle.
+
+So the split over the sixteen is **0 real gaps, 0 unconfirmed refusals, 0 false refusals**, with
+the one `vacuous` verdict on a patch whose held-back oracle was never in a position to judge the
+mutant.
+
+**All three conditions held, so bonding blocks.** Zero false refusals; commander#1671 refused; the
+known-answer smoke unchanged at koa#1946 true-red, koa#1999 true-green, koa#1904 true-green. The
+switch went true in one commit, `343ae4740`, whose revert restores report-only.
+
+| regime | certified | false greens |
+| --- | --- | --- |
+| report-only | 16 of 97, 16.5% [10.4, 25.1] | 1: 6.3% [1.1, 28.3] |
+| blocking on vacuous | 15 of 97, 15.5% [9.6, 24.0] | 0: 0.0% [0.0, 20.4] |
+
+#### The stricter option that was rejected, with its counts
+
+**Require `held`.** Under that rule a certified patch would need its oracle to have refused a
+mutant, and `not bonded` would refuse as well. It costs one more patch of the sixteen:
+`koajs/koa#1999`, whose added lines are a regular-expression test, two `new URL(...)` calls and a
+template literal, and which no operator here can change into something that behaves differently.
+Both oracles accept that patch. Refusing it would be the tool reporting a property of its own
+operator table as a property of somebody else's oracle, which is reason 4 in
+[`beta-gates.md`](beta-gates.md) with a different knob: the certify rate would become a function of
+how many mutation operators this build happens to carry, and every operator added would move a
+published number.
+
+Counts, so the choice can be reopened from numbers rather than from this paragraph: requiring
+`held` certifies **14 of 97** rather than 15, with the same **0** false greens, and the one patch
+it costs is one both oracles accept.
+
 ### 3. Report whether the oracle executed the change
 
 **Done, and then done properly.** An oracle that never runs the changed lines cannot have judged
