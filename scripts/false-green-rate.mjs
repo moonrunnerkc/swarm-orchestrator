@@ -10,12 +10,13 @@
  *
  * Reads what the passes recorded. Runs no model, judges nothing, and clones nothing.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
   groupByHarness,
   heldBackAgreementRate,
+  separateAdversarialRows,
   tallyFalseGreens,
   tallyInadequateOracles,
 } from "../dist/eval/false-green-rate.js";
@@ -36,7 +37,26 @@ function minedRows() {
   const { tasks } = JSON.parse(readFileSync(join(root, "viable.json"), "utf8"));
   const viable = new Set(tasks.filter((one) => one.viable).map(named));
   const admitted = runs.filter((one) => viable.has(named(one)));
-  return { kept: admitted, setAside: runs.length - admitted.length };
+  // Any row here that was shown its oracle belongs to the other arm whatever file it is in, and
+  // is dropped from this one rather than pooled into it.
+  const { ordinary } = separateAdversarialRows(admitted);
+  return { kept: ordinary, setAside: runs.length - ordinary.length };
+}
+
+/**
+ * The adversarial arm, read from its own file and reported on its own.
+ *
+ * Never added to anything above. The model was shown the oracle it would be judged by and asked
+ * to satisfy that and leave an adjacent case broken, which is a different sampling process rather
+ * than a harder subset of the same one.
+ */
+function adversarialRows() {
+  const path = join(prTaskEvidenceRoot(repositoryRoot), "scored.attack.json");
+  if (!existsSync(path)) {
+    return [];
+  }
+  const { runs } = JSON.parse(readFileSync(path, "utf8"));
+  return separateAdversarialRows(runs).adversarial;
 }
 
 /**
@@ -173,6 +193,29 @@ console.log(
     : `${inadequate.refused} of ${inadequate.proved} refused: ${percent(inadequate.point)} ` +
         `95% CI [${percent(inadequate.lower)}, ${percent(inadequate.upper)}]`,
 );
+
+// The adversarial arm, last and apart. It is the efficient generator of the denominator gate 3b
+// is short of, because proving an oracle inadequate is what it is built to do, and that is
+// exactly why its rate is not the tool's rate against a contributor.
+const attack = adversarialRows();
+if (attack.length > 0) {
+  const tally = report("the adversarial arm, shown the oracle it would be judged by", attack);
+  reportHarnessSplit(attack);
+  const attackInadequate = tallyInadequateOracles(attack);
+  console.log(
+    attackInadequate.proved === 0
+      ? "no oracle here was proved inadequate"
+      : `oracles a held-back oracle proved inadequate: ${attackInadequate.refused} of ` +
+          `${attackInadequate.proved} refused: ${percent(attackInadequate.point)} ` +
+          `95% CI [${percent(attackInadequate.lower)}, ${percent(attackInadequate.upper)}]`,
+  );
+  console.log(
+    "Not added to anything above, and not comparable with it: a model shown its acceptance test " +
+      "is a stronger adversary than a contributor who cannot see it, so this is an upper bound " +
+      "on the tool's blindness rather than a rate of anything in the wild.",
+  );
+  void tally;
+}
 
 // Said out loud, because the denominator moves when the tool does. A check that refuses more makes
 // the tool safer and the measurement weaker at once, and a rate printed without that is half a
