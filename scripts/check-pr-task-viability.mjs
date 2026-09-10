@@ -27,6 +27,7 @@ import { join } from "node:path";
 import { runProcessGroup } from "../dist/exec/run-process.js";
 import { titleFilterFor } from "../dist/eval/oracle-filter.js";
 import { prTaskEvidenceRoot, prTaskWorkingRoot } from "../dist/eval/pr-task-paths.js";
+import { duplicateOf } from "../dist/eval/task-identity.js";
 import { testCaseDeals } from "../dist/eval/test-case-split.js";
 import { parseUnifiedDiff } from "../dist/gates/unified-diff.js";
 
@@ -436,6 +437,23 @@ for (const candidate of wanted) {
   record.sealedCases = dealt.sealedTitles;
   record.heldBackCases = dealt.heldBackTitles;
   record.dealsTried = dealsTried;
+
+  // Two pull requests can carry one specification: dayjs#3180 and #3181 sit on the same base, add
+  // the same cases to the same file, and #3181's own title references #3180. Kept as two they are
+  // two opportunities for a false green, so one blind spot in that pair of oracles produces two of
+  // them, which is one finding counted twice. The earlier pull wins, so a re-check in a different
+  // order keeps the same one.
+  const repeats = duplicateOf(
+    record,
+    judged.tasks.filter((one) => one.viable && one.repository === record.repository),
+  );
+  if (repeats !== null) {
+    record.why = `the same specification as ${repeats.repository}#${repeats.pull}: same base commit, same test file, same halves`;
+    saveJudgement(record);
+    console.log(`  DROP  ${label.padEnd(42)} ${record.why}`);
+    continue;
+  }
+
   record.viable = true;
   record.why =
     "fails on the base source, passes on the merged tree, and both halves of the deal fail on the base";
