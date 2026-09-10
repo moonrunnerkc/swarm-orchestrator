@@ -1,7 +1,12 @@
 import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { isCredentialName } from "../evidence/scrub.ts";
-import { childEnvironment, harnessChildEnvironment } from "./child-environment.ts";
+import {
+  childEnvironment,
+  harnessChildEnvironment,
+  overlaidEnvironment,
+  UnauthorizableEnvironmentName,
+} from "./child-environment.ts";
 
 const workerHome = "/tmp/worker-home";
 
@@ -153,5 +158,45 @@ describe("a name a run authorizes that may never travel", () => {
         childEnvironment({ [name]: "/tmp/hook.so" }, { homeDir: workerHome, passThrough: [name] }),
       ).toThrow(/any process/);
     }
+  });
+});
+
+describe("a command's own environment overlay", () => {
+  const built = () => childEnvironment({ PATH: "/usr/bin" }, { homeDir: workerHome }).variables;
+
+  // The reach measurement asks node to write a coverage artifact to a directory the harness
+  // named. That is where the process writes, not what it loads, and it is the one NODE_ name
+  // this allows: the blanket refusal of the rest stays, because the family is where a preload
+  // arrives under whatever spelling comes next.
+  it("carries the coverage destination the harness named", () => {
+    const overlaid = overlaidEnvironment(built(), { NODE_V8_COVERAGE: "/tmp/reach-abc" });
+
+    expect(overlaid.NODE_V8_COVERAGE).toBe("/tmp/reach-abc");
+    expect(overlaid.PATH).toBe("/usr/bin");
+  });
+
+  it("refuses a name that decides what node loads, whoever asked for it", () => {
+    expect(() => overlaidEnvironment(built(), { NODE_OPTIONS: "--require=./hook.js" })).toThrow(
+      UnauthorizableEnvironmentName,
+    );
+    expect(() => overlaidEnvironment(built(), { NODE_PATH: "/evil" })).toThrow(
+      UnauthorizableEnvironmentName,
+    );
+    expect(() => overlaidEnvironment(built(), { DYLD_INSERT_LIBRARIES: "/evil.dylib" })).toThrow(
+      UnauthorizableEnvironmentName,
+    );
+  });
+
+  it("refuses a credential name, so an overlay cannot put back what the build withheld", () => {
+    expect(() => overlaidEnvironment(built(), { ANTHROPIC_API_KEY: "sk-ant-x" })).toThrow(
+      UnauthorizableEnvironmentName,
+    );
+  });
+
+  it("leaves the environment it was given alone", () => {
+    const base = built();
+    overlaidEnvironment(base, { TZ: "America/New_York" });
+
+    expect(base.TZ).toBeUndefined();
   });
 });

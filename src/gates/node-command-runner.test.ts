@@ -54,6 +54,41 @@ describe("what a repository-declared gate command inherits", () => {
     expect(observed.stdout).toContain("ran");
   });
 
+  // The reach measurement needs one name the run as a whole has no business carrying: where node
+  // writes its coverage artifact. Without this it travelled nowhere and reach could only be read
+  // from node's own test runner, which four of seventeen corpus repositories use.
+  it("carries a command's own environment overlay into the child", async () => {
+    const observed = await runner().run(
+      "node -e \"process.stdout.write(process.env.NODE_V8_COVERAGE ?? 'absent')\"",
+      { ...options, cwd: workspace, environment: { NODE_V8_COVERAGE: "/tmp/reach-destination" } },
+    );
+
+    expect(observed.stdout).toContain("/tmp/reach-destination");
+  });
+
+  it("carries the overlay into a vouched vector as well", async () => {
+    const observed = await runner().runVouched(
+      [process.execPath, "-e", "process.stdout.write(process.env.NODE_V8_COVERAGE ?? 'absent')"],
+      { ...options, cwd: workspace, environment: { NODE_V8_COVERAGE: "/tmp/vouched-destination" } },
+    );
+
+    expect(observed.stdout).toContain("/tmp/vouched-destination");
+  });
+
+  // Fail closed, and report rather than run: a command measured under an environment nobody
+  // declared is the thing the built environment exists to prevent, and an overlay is a second
+  // door into it.
+  it("refuses to run at all where the overlay names something that decides what node loads", async () => {
+    const observed = await runner().run("node -e \"process.stdout.write('ran')\"", {
+      ...options,
+      cwd: workspace,
+      environment: { NODE_OPTIONS: "--require=/tmp/hook.js" },
+    });
+
+    expect(observed.stdout).not.toContain("ran");
+    expect(observed.unavailable).toContain("NODE_OPTIONS");
+  });
+
   it("does not hand a vouched vector the provider key either", async () => {
     process.env.OPENAI_API_KEY = "sk-oai-decoy-value-for-this-test";
     try {
