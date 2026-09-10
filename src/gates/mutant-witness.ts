@@ -124,9 +124,16 @@ export function witnessedADifference(witness: MutantWitness): boolean {
  * number either produces, and `docs/oracle-bond-operators.md` carries the conditions.
  *
  * `true` is the stricter reading of `vacuous`: two facts, and an accepted mutant nothing shows
- * changed anything is an abstention. Its cost is measured, one true catch on this corpus and no
- * false refusal prevented. `false` keeps the two facts apart, refusing on what `vacuous` has
- * always meant and recording the witness beside it, so the audit reads only the refusals nothing
- * witnessed.
+ * changed anything is an abstention. Measured over both corpora it changes exactly one verdict,
+ * `tj/commander.js#1671`, and that one is a true catch: it prevents no false refusal, because only
+ * two mutants in the corpus were ever adjudicated at all. Under it the bond refuses nothing, which
+ * reproduces the report-only column exactly and undoes the pre-registered decision at `343ae4740`.
+ *
+ * `false`, which is what this is, keeps the two facts apart. It refuses on what `vacuous` has
+ * always meant, that the oracle ran the line and accepted a change to it, and records beside it
+ * what showed the mutant changed anything. The audit then reads only the refusals nothing
+ * witnessed rather than every verdict, and the count of those is published. Its own residual is
+ * the one the stricter reading exists to avoid: a refusal on a mutant that changes nothing is a
+ * false red, and what makes that answerable rather than invisible is the recorded field.
  */
-export const vacuousRequiresAWitness: boolean = true;
+export const vacuousRequiresAWitness: boolean = false;
