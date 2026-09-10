@@ -41,16 +41,20 @@ reached before it reports a verdict:
 
 ```
 regression: pass   task: accepted   oracle reach: unreached (lib/winston/container.js: 46, 47)
+oracle bond: not-bonded (no mutant of the change could be built, so nothing was asked of the oracle)
 ```
 
-Two ways an oracle can fail to be evidence, and both are checked. One that **accepts the base
-commit** would have accepted a patch that changes nothing, so `task` reads `vacuous` and nothing is
-verified. One that **never executed lines the patch added** cannot have judged them, so
-`oracleReach` reads `unreached`, the lines are named, and nothing is verified.
+Three ways an oracle can fail to be evidence, and all three are checked. One that **accepts the
+base commit** would have accepted a patch that changes nothing, so `task` reads `vacuous` and
+nothing is verified. One that **never executed lines the patch added** cannot have judged them, so
+`oracleReach` reads `unreached`, the lines are named, and nothing is verified. One that **executed
+those lines and accepted a change to them** ran the code without asserting anything about it, so
+`oracleBond` reads `vacuous` and the mutant it accepted is printed.
 
-Both came out of measuring this tool against real work. Certified tasks turned out to rest on
-oracles that could not fail, and the first false green found was certified by an oracle that never
-ran the branch it broke.
+All three came out of measuring this tool against real work. Certified tasks turned out to rest on
+oracles that could not fail; the first false green found was certified by an oracle that never ran
+the branch it broke; and the one false green that still stands, `commander#1671`, is certified by
+an oracle that runs every line the patch adds and never tests the precedence those lines decide.
 
 `unreached` blocks. `unmeasured` does not: an absence of evidence is not evidence of a gap.
 
@@ -93,6 +97,51 @@ early never reaches its implicit end; a changelog; and a TypeScript declaration 
 erased before anything runs. Each refused patches that were fine, and one of them was also masking
 a patch that was not. A line carrying no character that could begin an identifier, a number or a
 string is skipped, and so is a file no runner could load.
+
+### Bonding the oracle, and what a bond is worth
+
+Reach asks whether the oracle executed the change. It cannot ask the question underneath: an
+oracle can run a line and assert nothing about it. So after the oracle accepts, the lines the patch
+added are changed into something that behaves differently and the oracle is run again.
+
+The four words are the ones a gate bond already uses. **held**: the oracle refused the mutant.
+**vacuous**: it accepted one the coverage of its own run says it executed. **unshown**: it accepted
+one nothing says it ran. **not bonded**: no mutant could be built, or the run was already refused
+for another reason. `unshown` and `not bonded` are absences of evidence about the oracle rather
+than evidence against it, and neither is ever read as `held`.
+
+The operators are mechanical and few, each a syntactic rule over a line and never a rule keyed to a
+repository, a patch or a task: invert a comparison, swap the operands of a non-commutative
+arithmetic operator, replace a returned expression with a sentinel, swap the two arguments of a
+call, drop a no-argument call whose result the chain uses. Six mutants per patch at most, two per
+operator.
+
+**Three residuals, named rather than implied away.**
+
+A mutant that changes nothing observable is indistinguishable here from an oracle that failed to
+notice one that did. That is the equivalent mutant problem and this does not solve it; what it does
+instead is keep the operators mechanical and audit every `vacuous` verdict by hand before any of
+them refuses anything. Two such mutants were found that way, in the first sixteen patches this ran
+over, and each narrowed the operator that produced it by a general rule rather than by skipping the
+patch. `return false;` inside a `filter` predicate, replaced by `return undefined;`, is the same
+predicate, because `filter` reads truthiness and both are falsy; the sentinel now has to differ
+from the returned expression wherever that expression's truthiness is known from its spelling.
+`Math.min(i + size, len)` with its arguments swapped is the same call, because `Math.min` is
+commutative; the operator now leaves JavaScript's commutative operations alone.
+
+What is left of that residual, stated rather than implied away: the truthiness of an expression
+that is not a literal is not syntactically known, so `undefined` is still an equivalent sentinel
+wherever such an expression was falsy at runtime and the caller read only its truthiness.
+
+A patch with no line these operators can change gets no bond at all. `koa#1999` is one: its added
+lines are a regular-expression test, two `new URL(...)` calls and a template literal, and nothing
+here can change any of them into something that behaves differently. `not bonded` is not a pass and
+is never counted as one, and the certify rate is reported split by bond state for that reason.
+
+A bond that held under a runner that type-checks before it runs may have held on the types. The
+mutant a `filter` predicate or a swapped argument list produces is often not well typed, and
+`darkreader`'s oracle runs `ts-jest`, which refuses it as a compile error. The oracle did refuse the
+mutant, which is what `held` says; what it does not say is that the assertions would have.
 
 **What it does not catch, measured rather than reasoned about.** Reach refuses a patch that adds
 code the oracle never runs. It says nothing about a patch that never wrote the code at all. Given

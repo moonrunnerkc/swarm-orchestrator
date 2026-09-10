@@ -101,12 +101,12 @@ describe("mutants built from the lines a patch added", () => {
     expect(sentinel?.after).toBe("    return undefined;");
   });
 
-  it("leaves a return of undefined alone, which the sentinel would not change", () => {
+  it("changes a return of undefined into something a caller can tell apart", () => {
     const built = mutantsOfChangedLines({
       changed: only("lib/command.js", [[10, "    return undefined;"]]),
     });
 
-    expect(built).toEqual([]);
+    expect(built[0]?.after).toBe('    return "swarm-oracle-bond";');
   });
 
   /**
@@ -214,5 +214,78 @@ describe("what counts as an operand", () => {
     });
 
     expect(built.map((one) => one.operator)).not.toContain("swap-arithmetic-operands");
+  });
+});
+
+/**
+ * Found by auditing a `vacuous` verdict rather than by reasoning: commander#1711 adds
+ * `return false;` inside a `filter` predicate, and replacing it with `return undefined;` is the
+ * same predicate, because `filter` reads truthiness and both are falsy. A sentinel equivalent to
+ * what it replaces is not a sentinel, and the oracle's acceptance of it says nothing about the
+ * oracle.
+ */
+describe("a sentinel that has to differ from what it replaces", () => {
+  it("uses a truthy sentinel where the returned expression is a falsy literal", () => {
+    for (const falsy of ["false", "0", "null", "undefined", "''", "NaN"]) {
+      const built = mutantsOfChangedLines({
+        changed: only("lib/command.js", [[10, `              return ${falsy};`]]),
+      });
+
+      expect(built[0]?.operator).toBe("return-sentinel");
+      expect(built[0]?.after).toBe('              return "swarm-oracle-bond";');
+    }
+  });
+
+  it("keeps undefined where the returned expression is anything else", () => {
+    const built = mutantsOfChangedLines({
+      changed: only("lib/command.js", [[10, "    return results;"]]),
+    });
+
+    expect(built[0]?.after).toBe("    return undefined;");
+  });
+
+  /**
+   * The residual this leaves, named: the truthiness of an expression that is not a literal is not
+   * syntactically known, so `undefined` is equivalent wherever that expression was falsy at
+   * runtime and the caller read only its truthiness.
+   */
+  it("leaves a returned expression whose truthiness nothing here can know", () => {
+    const built = mutantsOfChangedLines({
+      changed: only("lib/command.js", [[10, "    return cache.get(key);"]]),
+    });
+
+    expect(built[0]?.after).toBe("    return undefined;");
+  });
+});
+
+/**
+ * The second artifact the audit found, and it is in the operator's own name: swapping the
+ * arguments of a *commutative* call changes nothing. `Math.min(i + size, len)` became
+ * `Math.min(len, i + size)` on a darkreader patch, the oracle accepted it, and that was recorded
+ * as a gap in an oracle that had none.
+ */
+describe("a call whose arguments have an order", () => {
+  it("leaves a commutative standard-library call alone", () => {
+    for (const call of [
+      "    const end = Math.min(i + size, len);",
+      "    const start = Math.max(first, second);",
+      "    const span = Math.hypot(width, height);",
+      "    if (Object.is(one, other)) {",
+    ]) {
+      const built = mutantsOfChangedLines({ changed: only("src/utils/array.ts", [[10, call]]) });
+
+      expect(built.map((one) => one.operator)).not.toContain("swap-call-arguments");
+    }
+  });
+
+  it("still swaps a call whose arguments mean different things", () => {
+    const built = mutantsOfChangedLines({
+      changed: only("src/utils/array.ts", [
+        [10, "        results.push(Array.from(items.slice(i, i + size)));"],
+      ]),
+    });
+
+    expect(built[0]?.operator).toBe("swap-call-arguments");
+    expect(built[0]?.after).toBe("        results.push(Array.from(items.slice(i + size, i)));");
   });
 });

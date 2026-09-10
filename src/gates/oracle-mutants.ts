@@ -209,26 +209,64 @@ function swappedArithmetic(text: string, masked: string): string | null {
 }
 
 /**
+ * Literals whose truthiness is known from the spelling alone. A sentinel that agrees with one of
+ * these on truthiness is not a sentinel: `filter` and every `if` read nothing else.
+ */
+const falsyLiterals = new Set([
+  "false",
+  "0",
+  "-0",
+  "0n",
+  "''",
+  '""',
+  "``",
+  "null",
+  "undefined",
+  "void 0",
+  "NaN",
+]);
+
+/**
  * A returned expression replaced by a sentinel no caller asked for.
  *
- * The residual, since it is the one this operator carries: a function whose return value nothing
- * reads behaves identically with the sentinel in place, and the oracle's acceptance of that mutant
- * says nothing about the oracle.
+ * The sentinel is chosen to differ from the expression wherever the expression's truthiness is
+ * known: `undefined` for anything else, and a truthy string where the expression is a falsy
+ * literal. Measured, not reasoned about: commander#1711 adds `return false;` inside a `filter`
+ * predicate, and `return undefined;` there is the same predicate, so the oracle accepting it was
+ * recorded as a gap in an oracle that had none.
+ *
+ * The residual this leaves: the truthiness of an expression that is not a literal is not
+ * syntactically known, so `undefined` is equivalent wherever that expression was falsy at runtime
+ * and the caller read only its truthiness. Beside it, the residual every operator here carries: a
+ * function whose return value nothing reads behaves identically with any sentinel in place.
  */
 function returnedSentinel(text: string, masked: string): string | null {
   const found = /^(\s*)return\s+(.+?);\s*$/.exec(masked);
   if (found === null) {
     return null;
   }
-  const returned = text.slice((found[1] ?? "").length + "return ".length).trim();
-  if (returned === "undefined;" || returned === "void 0;") {
-    return null;
-  }
-  return `${found[1] ?? ""}return undefined;`;
+  const indent = found[1] ?? "";
+  const returned = text.slice(indent.length + "return ".length, text.lastIndexOf(";")).trim();
+  return `${indent}return ${falsyLiterals.has(returned) ? '"swarm-oracle-bond"' : "undefined"};`;
 }
 
 const callee = /(^|[^A-Za-z0-9_$.])([A-Za-z_$][A-Za-z0-9_$.]*)\(/g;
 const keywordsThatAreNotCalls = new Set(["if", "for", "while", "switch", "catch", "function"]);
+
+/**
+ * Operations whose two arguments have no order, so swapping them is not a change.
+ *
+ * A property of JavaScript rather than of any repository: `Math.min(a, b)` and `Math.min(b, a)`
+ * are the same call. Measured, not reasoned about: a darkreader patch's `Math.min(i + size, len)`
+ * was swapped, the oracle accepted the result, and that was recorded as a gap in an oracle that
+ * had none.
+ *
+ * Matched on the last segment of the callee, so a project's own `min(a, b)` is covered too. Wrong
+ * in the permissive direction only: a two-argument function of one of these names whose arguments
+ * do have an order loses one mutant, which weakens the check by one line rather than refusing a
+ * patch that is fine.
+ */
+const commutativeOperations = new Set(["min", "max", "hypot", "imul", "is"]);
 
 /**
  * The two arguments of a call, swapped.
@@ -243,7 +281,11 @@ function swappedArguments(text: string, masked: string): string | null {
   for (let found = callee.exec(masked); found !== null; found = callee.exec(masked)) {
     const name = found[2] ?? "";
     const before = masked.slice(0, found.index + (found[1] ?? "").length).trimEnd();
-    if (keywordsThatAreNotCalls.has(name) || /\bfunction$/.test(before)) {
+    if (
+      keywordsThatAreNotCalls.has(name) ||
+      commutativeOperations.has(name.split(".").at(-1) ?? "") ||
+      /\bfunction$/.test(before)
+    ) {
       continue;
     }
     const open = found.index + found[0].length - 1;
