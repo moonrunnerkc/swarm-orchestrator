@@ -419,7 +419,8 @@ for (const task of wanted) {
     writeFileSync(scoredPath, `${JSON.stringify(scored, null, 2)}\n`);
     console.log(
       `  ${label.padEnd(42)} regression=${String(sealedAgain.regression).padEnd(10)} ` +
-        `sealed=${String(sealedAgain.task).padEnd(9)} held-back=${String(again.heldBackVerdict).padEnd(9)} -> ${cornerAgain}`,
+        `sealed=${String(sealedAgain.task).padEnd(9)} held-back=${String(again.heldBackVerdict).padEnd(9)}` +
+        `${again.orderDependent ? " (its refusal was order dependence)" : ""} -> ${cornerAgain}`,
     );
     continue;
   }
@@ -543,7 +544,8 @@ for (const task of wanted) {
 
   console.log(
     `  ${label.padEnd(42)} regression=${String(sealed.regression).padEnd(10)} ` +
-      `sealed=${String(sealed.task).padEnd(9)} held-back=${String(heldBack.task).padEnd(9)} -> ${corner}`,
+      `sealed=${String(sealed.task).padEnd(9)} held-back=${String(heldBackVerdict).padEnd(9)}` +
+      `${orderDependent ? " (its refusal was order dependence)" : ""} -> ${corner}`,
   );
 }
 
