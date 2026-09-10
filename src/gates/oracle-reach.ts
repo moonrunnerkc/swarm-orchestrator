@@ -46,14 +46,14 @@ import { resolvedPath } from "./resolved-path.ts";
  * file that cannot be covered but is recognized refuses a patch that is fine. Neither is silent,
  * since the unreached files are named.
  */
-function aRunnerCouldLoadIt(path: string): boolean {
+export function aRunnerCouldLoadIt(path: string): boolean {
   // A declaration file is types and nothing else, erased before anything runs, so it matches the
   // extension and can still never appear in a report. The miner excludes it from source files for
   // the same reason.
   return /\.[cm]?[jt]sx?$/.test(path) && !/\.d\.[cm]?ts$/.test(path);
 }
 
-function namesATestFile(path: string): boolean {
+export function namesATestFile(path: string): boolean {
   const segments = path.split("/");
   const basename = segments.at(-1) ?? "";
   return (
