@@ -1059,11 +1059,18 @@ describe("whether the oracle refuses a change to the lines the patch added", () 
   });
 
   /**
-   * The commander#1671 shape, reduced. Every line the patch adds runs under the oracle, so reach
-   * says `reached`, and the precedence those lines decide is one `.reverse()` the oracle never
-   * tests: merging two objects that share no key gives the same answer either way.
+   * The commander#1671 shape, reduced, and the residual the adjudication leaves. Every line the
+   * patch adds runs under the oracle, and the precedence those lines decide is one `.reverse()`
+   * the oracle never tests: merging two objects that share no key gives the same answer either
+   * way. So the oracle accepts a mutant of a line it ran, which used to be `vacuous` on the
+   * strength of a person reading the line and calling it behaviour-changing.
+   *
+   * Neither detector can witness it. Coverage sees the same lines run the same number of times in
+   * a different order, and the repository's own suite never had the precedence this patch adds. So
+   * the mutant is `unshown`, and this is what that costs: a real gap the tool cannot demonstrate,
+   * and therefore does not refuse on. `docs/oracle-bond-operators.md` pre-registered it.
    */
-  it("reports a gap where the oracle ran a line and accepted a change to it", async () => {
+  it("abstains where the oracle accepted a change no detector can show changed anything", async () => {
     const patch = [
       "diff --git a/merge.mjs b/merge.mjs",
       "new file mode 100644",
@@ -1095,12 +1102,14 @@ describe("whether the oracle refuses a change to the lines the patch added", () 
       });
 
       expect(result.oracleReach).toBe("reached");
-      expect(result.oracleBond).toBe("vacuous");
-      const gap = result.bondedMutants.find((one) => one.verdict === "vacuous");
-      expect(gap?.operator).toBe("drop-chained-call");
-      expect(gap?.after).toBe("  parents.forEach((one) => {");
-      // One mutant the oracle ran and accepted is the finding whatever the others did.
-      expect(result.bondedMutants.some((one) => one.verdict === "held")).toBe(true);
+      const dropped = result.bondedMutants.find((one) => one.operator === "drop-chained-call");
+      expect(dropped?.after).toBe("  parents.forEach((one) => {");
+      expect(dropped?.verdict).toBe("unshown");
+      expect(dropped?.witness).toBe("none");
+      // Both detectors were asked and neither answered, so the refusals the other mutants earned
+      // are what the bond reports.
+      expect(result.oracleBond).toBe("held");
+      expect(result.verified).toBe(true);
     } finally {
       await rm(script, { force: true });
     }
@@ -1131,14 +1140,65 @@ describe("whether the oracle refuses a change to the lines the patch added", () 
     }
   });
 
-  it("bonds nothing where no operator can change a line the patch added", async () => {
+  /**
+   * The coverage detector, which is the one that reaches behaviour the project did not have
+   * before. The oracle runs the guard and asserts only on the returned length, so inverting the
+   * comparison leaves the assertion true and stops a line inside the guard from running at all.
+   * That is a demonstrated difference in what the program did, and the oracle accepted it.
+   */
+  it("reports a gap where coverage shows the accepted mutant changed what ran", async () => {
     const patch = [
-      "diff --git a/note.mjs b/note.mjs",
+      "diff --git a/count.mjs b/count.mjs",
       "new file mode 100644",
       "--- /dev/null",
-      "+++ b/note.mjs",
-      "@@ -0,0 +1,1 @@",
-      "+export const note = 'unchanged';",
+      "+++ b/count.mjs",
+      "@@ -0,0 +1,7 @@",
+      "+const seen = [];",
+      "+export const size = (all) => {",
+      "+  if (all.length > 0) {",
+      "+    seen.push(all.length);",
+      "+  }",
+      "+  return all.length;",
+      "+};",
+      "",
+    ].join("\n");
+    const script = await oracleScript(
+      "import assert from 'node:assert/strict';\n" +
+        "import { size } from './count.mjs';\n" +
+        "assert.strictEqual(size([1, 2]), 2);\n",
+    );
+    try {
+      const result = await verifyIndependently({
+        repositoryRoot: repository,
+        baseCommit: baseCommit(),
+        patch,
+        commands: commands(),
+        clock,
+        taskOracle: { command: `cp '${script}' oracle.mjs && node oracle.mjs` },
+      });
+
+      expect(result.oracleBond).toBe("vacuous");
+      const gap = result.bondedMutants.find((one) => one.verdict === "vacuous");
+      expect(gap?.operator).toBe("invert-comparison");
+      expect(gap?.witness).toBe("coverage");
+      expect(result.verified).toBe(false);
+    } finally {
+      await rm(script, { force: true });
+    }
+  });
+
+  /**
+   * `not-bonded` is what is left once ordinary statements are covered: a patch adding no line
+   * with behaviour on it. It used to be what a guard clause, an assignment or a `require` got.
+   */
+  it("bonds nothing where the patch adds no line with behaviour on it", async () => {
+    const patch = [
+      "diff --git a/clamp.mjs b/clamp.mjs",
+      "--- a/clamp.mjs",
+      "+++ b/clamp.mjs",
+      "@@ -1 +1,2 @@",
+      "+// a clamped value is a number",
+      " export const clamp = (v) => v;",
       "",
     ].join("\n");
 
@@ -1148,7 +1208,7 @@ describe("whether the oracle refuses a change to the lines the patch added", () 
       patch,
       commands: commands(),
       clock,
-      taskOracle: { command: "node -e \"import('./note.mjs')\"" },
+      taskOracle: { command: "node -e \"import('./clamp.mjs')\"" },
     });
 
     expect(result.oracleBond).toBe("not-bonded");

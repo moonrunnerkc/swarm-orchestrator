@@ -1,4 +1,5 @@
 import { type BondVerdict, bondVerdict } from "./bonds.ts";
+import { type MutantWitness, witnessedADifference } from "./mutant-witness.ts";
 import type { Mutant } from "./oracle-mutants.ts";
 
 /**
@@ -17,10 +18,17 @@ export interface MutantObservation {
   readonly oracle: "passed" | "failed";
   /** Whether the coverage of the oracle's own run names the mutated line with a hit. */
   readonly seen: boolean;
+  /**
+   * What, if anything, showed that the mutant changed the program. Read only where the oracle
+   * accepted, which is the only place a verdict turns on it.
+   */
+  readonly witness: MutantWitness;
 }
 
 export interface BondedMutant extends Mutant {
   readonly verdict: BondVerdict;
+  /** Which detector answered, so a reader can tell the two absences apart. */
+  readonly witness: MutantWitness;
 }
 
 export interface OracleBond {
@@ -49,16 +57,24 @@ export function mutantWasSeen(
  * One mutant the oracle ran and accepted is a demonstrated gap whatever the others did, so
  * `vacuous` outranks `held`: the refusals establish that the oracle can fail, and say nothing
  * about the line it passed over. Below that, a refusal outranks an absence of evidence.
+ *
+ * A demonstrated gap needs the mutant to have been a change, which is the second fact. An oracle
+ * that accepted a mutant nothing shows changed anything has been shown nothing, and reads
+ * `unshown` with the detector that abstained named beside it.
  */
 export function bondOfMutantObservations(observations: readonly MutantObservation[]): OracleBond {
   const mutants = observations.map((observation) => ({
     ...observation.mutant,
+    // Two facts, and `vacuous` needs both: the oracle ran the line, and something other than the
+    // oracle showed the mutant changed the program. Either alone leaves an accepted mutant
+    // indistinguishable from one that does nothing, which is the residual this closes.
     verdict: bondVerdict({
       observed: observation.oracle,
-      provable: observation.seen,
+      provable: observation.seen && witnessedADifference(observation.witness),
       collectedBefore: null,
       collectedAfter: null,
     }),
+    witness: observation.witness,
   }));
   const held = mutants.some((one) => one.verdict === "held");
   const vacuous = mutants.some((one) => one.verdict === "vacuous");

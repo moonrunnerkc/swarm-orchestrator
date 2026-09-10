@@ -1,4 +1,9 @@
-import { aRunnerCouldLoadIt, type ChangedLines, namesATestFile } from "./oracle-reach.ts";
+import {
+  aRunnerCouldLoadIt,
+  type ChangedLines,
+  carriesCode,
+  namesATestFile,
+} from "./oracle-reach.ts";
 
 /**
  * Changes to the lines a patch added that an oracle worth anything has to refuse.
@@ -11,31 +16,46 @@ import { aRunnerCouldLoadIt, type ChangedLines, namesATestFile } from "./oracle-
  * Every operator is a syntactic rule over a line, never a rule about a repository, a patch or a
  * task: a check whose sensitivity can be tuned per subject measures the tuning.
  *
- * What this cannot tell apart, named rather than implied away: a mutant that changes nothing
- * observable is indistinguishable here from an oracle that failed to notice one that did. That is
- * the equivalent-mutant problem and nothing in this file solves it. What it does instead is keep
- * the operators few and mechanical, and rank them by how often each produces a mutant that
- * changes nothing, so a cost bound cuts the doubtful ones first.
+ * The equivalent-mutant problem is not solved here and is not left open either: a mutant that
+ * changes nothing observable is indistinguishable from an oracle that failed to notice one that
+ * did, so a second detector has to witness the change before an accepted mutant is read as a gap.
+ * That lives in `mutant-witness.ts`. What this file does is keep the operators mechanical and rank
+ * them by how often each produces a mutant that changes nothing, so a cost bound cuts the
+ * doubtful ones first.
+ *
+ * The operator set is derived from the language's statement productions rather than from the
+ * patches that exposed a gap in it. `docs/oracle-bond-operators.md` carries the derivation, the
+ * ordering and which tasks were in sample when it was written.
  */
 export type MutantOperator =
   | "invert-comparison"
+  | "negate-condition"
   | "swap-arithmetic-operands"
   | "return-sentinel"
+  | "replace-assigned-value"
   | "swap-call-arguments"
-  | "drop-chained-call";
+  | "drop-chained-call"
+  | "delete-statement";
 
 /**
  * Ordered by how often the operator produces a mutant that behaves exactly as the original did.
- * Inverting a comparison changes the predicate whatever the operands are; dropping a call because
- * its result feeds the next one in the chain changes nothing where that call was already the
- * identity on its input, `.slice()` on an array nobody else holds.
+ * Inverting a comparison changes the predicate whatever the operands are; deleting a statement
+ * changes nothing wherever that statement had no observable effect, which is the residual the
+ * whole list is ordered by. Two rules never compete for one line: the first one here that fires
+ * takes it, and the bound on mutants per patch cuts the tail of this list before the head.
+ *
+ * The three general operators are last. They are last because they are general: a rule that fires
+ * on almost any statement fires on the statements that do nothing as well.
  */
 const operatorsByEquivalenceRisk: readonly MutantOperator[] = [
   "invert-comparison",
+  "negate-condition",
   "swap-arithmetic-operands",
   "return-sentinel",
+  "replace-assigned-value",
   "swap-call-arguments",
   "drop-chained-call",
+  "delete-statement",
 ];
 
 export interface Mutant {
@@ -317,6 +337,159 @@ function droppedChainedCall(text: string, masked: string): string | null {
   return `${text.slice(0, found.index)}.${text.slice(found.index + found[0].length)}`;
 }
 
+/**
+ * `if` and `while` read as keywords rather than as two or five characters. A call whose name ends
+ * in one, `motif(list)` or `erstwhile(all)`, would otherwise have its arguments wrapped in a
+ * negation, which changes what the call is handed rather than which branch runs.
+ */
+const conditionHead = /(^|[^A-Za-z0-9_$.])(if|while)\s*\(/g;
+
+/**
+ * The whole condition of an `if` or a `while`, negated.
+ *
+ * The general rule for a guard clause, which is the shape ordinary code is mostly made of and the
+ * shape the first five operators had no rule for. The whole parenthesis is wrapped rather than a
+ * token inside it edited, so one rule covers `if (!this.isValid()) {`, `} else if (a && b) {` and
+ * `while (queue.length) {`.
+ *
+ * `for` is left alone deliberately: its parenthesis holds three clauses and wrapping all of them
+ * is not a condition negation.
+ *
+ * Equivalence residual: a condition whose two branches do the same thing.
+ */
+function negatedCondition(text: string, masked: string): string | null {
+  conditionHead.lastIndex = 0;
+  for (let found = conditionHead.exec(masked); found !== null; found = conditionHead.exec(masked)) {
+    const open = found.index + found[0].length - 1;
+    const close = matchingParenthesis(masked, open);
+    if (close === null || text.slice(open + 1, close).trim().length === 0) {
+      continue;
+    }
+    return `${text.slice(0, open + 1)}!(${text.slice(open + 1, close)})${text.slice(close)}`;
+  }
+  return null;
+}
+
+/** How deep into brackets an index sits, or null where the text up to it does not balance. */
+function depthBefore(masked: string, end: number): number | null {
+  let depth = 0;
+  for (let at = 0; at < end; at += 1) {
+    const character = masked[at] ?? "";
+    if ("([{".includes(character)) depth += 1;
+    if (")]}".includes(character)) {
+      depth -= 1;
+      if (depth < 0) return null;
+    }
+  }
+  return depth;
+}
+
+/**
+ * The one `=` that assigns, or null where the line has none.
+ *
+ * Not `==`, `===`, `!=`, `!==`, `<=`, `>=`, or the `=` of an arrow, and not a compound assignment,
+ * whose operator carries the arithmetic the mutant would be throwing away. Not an `=` inside
+ * brackets either: a default parameter and a destructuring default are both written with one, and
+ * neither is the value the statement writes.
+ */
+function plainAssignment(masked: string): number | null {
+  for (let at = 0; at < masked.length; at += 1) {
+    if (masked[at] !== "=" || masked[at + 1] === "=" || masked[at + 1] === ">") {
+      continue;
+    }
+    if (/[=!<>+\-*/%&|^?:]/.test(masked[at - 1] ?? "")) {
+      continue;
+    }
+    if (depthBefore(masked, at) !== 0) {
+      continue;
+    }
+    return at;
+  }
+  return null;
+}
+
+/**
+ * The value a plain assignment or a declaration writes, replaced by a sentinel nobody asked for.
+ *
+ * The shape `return-sentinel` covers one statement over from, and the second most common thing an
+ * added line is after a call. The sentinel is chosen the way that operator chooses it, and for the
+ * reason it was narrowed: one that agrees with what it replaces on truthiness is not a sentinel.
+ *
+ * Only where the line is a complete statement, because an assignment whose value opens an object
+ * literal continues on the lines below and replacing the opening leaves them orphaned.
+ *
+ * Equivalence residual: an assignment nothing reads.
+ */
+function replacedAssignedValue(text: string, masked: string): string | null {
+  if (!looksLikeACompleteStatement(masked)) {
+    return null;
+  }
+  const at = plainAssignment(masked);
+  if (at === null || masked.slice(0, at).trim().length === 0) {
+    return null;
+  }
+  const raw = text.slice(at + 1);
+  const terminator = /(\s*;?\s*)$/.exec(raw)?.[1] ?? "";
+  const written = raw.slice(0, raw.length - terminator.length).trim();
+  if (written.length === 0) {
+    return null;
+  }
+  const sentinel = falsyLiterals.has(written) ? '"swarm-oracle-bond"' : "undefined";
+  return `${text.slice(0, at + 1)} ${sentinel}${terminator}`;
+}
+
+/** Keywords whose line is the head of a block below it, so the line is not a statement of its own. */
+const keywordsNeedingTheirBlock = new Set([
+  "else",
+  "case",
+  "default",
+  "catch",
+  "finally",
+  "do",
+  "try",
+  "switch",
+]);
+
+/** A line that ends here is waiting for the next one. */
+const endsUnfinished = /[+\-*/%&|^<>=!?:,({[]$/;
+
+/** A line that starts here is finishing the one before it. */
+const startsUnfinished = /^(\?\.|[.,:)\]}+\-*/%&|^<>=!?])/;
+
+/**
+ * Whether the line reads as a whole statement, read lexically because there is no parser here.
+ *
+ * Balanced brackets that never go negative, an end that is not waiting for the next line, a start
+ * that is not finishing the last one, and no keyword whose block sits below it. This is a
+ * sufficiency test rather than a decision: it is wrong only in the direction of proposing a
+ * deletion that does not parse, and `mutantParses` refuses those before they are used as evidence.
+ */
+function looksLikeACompleteStatement(masked: string): boolean {
+  const trimmed = masked.trim();
+  if (trimmed.length === 0 || endsUnfinished.test(trimmed) || startsUnfinished.test(trimmed)) {
+    return false;
+  }
+  if (keywordsNeedingTheirBlock.has(/^[A-Za-z_$][A-Za-z0-9_$]*/.exec(trimmed)?.[0] ?? "")) {
+    return false;
+  }
+  return depthBefore(masked, masked.length) === 0;
+}
+
+/**
+ * The statement removed.
+ *
+ * The most general operator there is: almost any complete statement can be taken out, and a test
+ * that asserts on what it did will notice. It is last in the ordering for the same reason, since a
+ * rule that fires on almost any statement fires on the ones that do nothing too.
+ *
+ * Blanked rather than removed, so every line below it keeps its number. The coverage hit map the
+ * bond reads is keyed by line, and a mutant that renumbers the file is a mutant nothing can be
+ * shown to have run.
+ */
+function deletedStatement(_text: string, masked: string): string | null {
+  return looksLikeACompleteStatement(masked) ? "" : null;
+}
+
 function matchingParenthesis(masked: string, open: number): number | null {
   let depth = 0;
   for (let at = open; at < masked.length; at += 1) {
@@ -344,10 +517,13 @@ function topLevelCommas(masked: string, from: number, to: number): readonly numb
 const mutateBy: Readonly<Record<MutantOperator, (text: string, masked: string) => string | null>> =
   {
     "invert-comparison": invertedComparison,
+    "negate-condition": negatedCondition,
     "swap-arithmetic-operands": swappedArithmetic,
     "return-sentinel": returnedSentinel,
+    "replace-assigned-value": replacedAssignedValue,
     "swap-call-arguments": swappedArguments,
     "drop-chained-call": droppedChainedCall,
+    "delete-statement": deletedStatement,
   };
 
 /**
@@ -358,7 +534,9 @@ const mutateBy: Readonly<Record<MutantOperator, (text: string, masked: string) =
  * line the first rule already covered.
  */
 function mutantOfLine(path: string, line: number, text: string): Mutant | null {
-  if (readsAsAComment(text)) {
+  // A line with no behaviour on it has no behaviour to change, read off reach's own definition
+  // rather than a second spelling of it.
+  if (readsAsAComment(text) || !carriesCode(text)) {
     return null;
   }
   const masked = withoutLiterals(text);

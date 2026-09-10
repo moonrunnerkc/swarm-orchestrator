@@ -107,8 +107,12 @@ export interface ChangedLines {
  * identifier, a number or a string runs no code of its own. `} else {` keeps its `else` and is
  * judged; `}`, `});` and `],` are not. Being wrong costs one line of reach in the permissive
  * direction, and a line of pure punctuation is not where an unjudged behaviour hides.
+ *
+ * The mutant planner reads the same rule off this one definition. A line with no behaviour on it
+ * has no behaviour to change, and two spellings of "carries code" would let reach skip a line the
+ * bond then built a mutant of.
  */
-function carriesCode(text: string): boolean {
+export function carriesCode(text: string): boolean {
   return /[A-Za-z0-9_$'"`]/.test(text);
 }
 
