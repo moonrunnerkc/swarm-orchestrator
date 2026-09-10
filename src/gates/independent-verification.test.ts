@@ -489,6 +489,64 @@ describe("an oracle that cannot fail", () => {
   });
 });
 
+/**
+ * A second judgement of the same patch by a different oracle needs the oracle's verdict and
+ * nothing else: the repository's own suite answers the same way both times, and running it again
+ * is the same minutes spent twice. On the mined corpus that is most of a campaign, because dayjs
+ * runs its suite under four timezones and every task is judged two or three times.
+ *
+ * Skipping is not passing. `regression` is `unmeasured`, `verified` is false, and the advice says
+ * the checks were not asked for, because a run that did not measure the suite cannot certify.
+ */
+describe("a verification asked only for the oracle's verdict", () => {
+  const patch = [
+    "diff --git a/clamp.mjs b/clamp.mjs",
+    "--- a/clamp.mjs",
+    "+++ b/clamp.mjs",
+    "@@ -1 +1 @@",
+    "-export const clamp = (v) => v;",
+    "+export const clamp = (v) => (v < 0 ? 0 : v);",
+    "",
+  ].join("\n");
+
+  it("judges the oracle and reports the suite as unmeasured rather than passed", async () => {
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch,
+      commands: commands(),
+      clock,
+      repositoryChecks: "skip",
+      taskOracle: {
+        command:
+          "node -e \"import('./clamp.mjs').then(m => process.exit(m.clamp(-1) === 0 ? 0 : 1))\"",
+      },
+    });
+
+    expect(result.task).toBe("accepted");
+    expect(result.checks).toEqual([]);
+    expect(result.regression).toBe("unmeasured");
+    expect(result.verified).toBe(false);
+    expect(result.advice).toContain("were not asked for");
+  });
+
+  it("still runs them when nothing asked it not to", async () => {
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch,
+      commands: commands(),
+      clock,
+      taskOracle: {
+        command:
+          "node -e \"import('./clamp.mjs').then(m => process.exit(m.clamp(-1) === 0 ? 0 : 1))\"",
+      },
+    });
+
+    expect(result.checks.length).toBeGreaterThan(0);
+  });
+});
+
 describe("an oracle that only ran part of the change", () => {
   /**
    * koa#1946 was certified by an oracle that never executed the branch a held-back oracle then

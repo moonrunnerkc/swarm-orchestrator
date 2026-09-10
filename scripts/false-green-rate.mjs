@@ -10,6 +10,7 @@
  *
  * Reads what the passes recorded. Runs no model, judges nothing, and clones nothing.
  */
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -21,6 +22,47 @@ const repositoryRoot = new URL("..", import.meta.url).pathname;
 const named = (one) => `${one.repository}#${one.pull}`;
 
 /**
+ * The harness a set of rows agrees on, which is the one the rate is about.
+ *
+ * A rate assembled from rows two tool versions produced measures neither, which is why every row
+ * carries the commit that judged it. Read from the rows rather than from HEAD: the tree moves for
+ * reasons that do not change a verdict, a documentation commit among them, and a report that
+ * insisted on HEAD would throw away a corpus every time one landed. Rows from any other commit are
+ * named and left out rather than folded in.
+ */
+function newestHarnessAmong(rows) {
+  const commits = new Set();
+  for (const row of rows) {
+    // A row that names no harness predates the rule that every row names one. It cannot be
+    // attributed to a tool version, so it cannot be in a rate about one.
+    if (row.harness !== undefined) commits.add(row.harness);
+  }
+  // The newest, not the commonest. A re-judge fills in from the oldest rows forward, so the
+  // commonest commit is the one being replaced, and a rate labelled with it describes the tool
+  // that is being measured away.
+  let newest = null;
+  let newestAt = -1;
+  for (const commit of commits) {
+    let at = -1;
+    try {
+      at = Number(
+        execFileSync("git", ["show", "-s", "--format=%ct", commit], {
+          cwd: repositoryRoot,
+          encoding: "utf8",
+        }).trim(),
+      );
+    } catch {
+      continue;
+    }
+    if (at > newestAt) {
+      newest = commit;
+      newestAt = at;
+    }
+  }
+  return newest;
+}
+
+/**
  * Mined rows for tasks the viability filter still admits. A row whose task the filter now rejects
  * is not an opportunity: its halves are known not to both refuse the base, so a verdict on it
  * establishes nothing. The rows stay where they are, because they are what was run.
@@ -30,9 +72,16 @@ function minedRows() {
   const { runs } = JSON.parse(readFileSync(join(root, "scored.json"), "utf8"));
   const { tasks } = JSON.parse(readFileSync(join(root, "viable.json"), "utf8"));
   const viable = new Set(tasks.filter((one) => one.viable).map(named));
+  const admitted = runs.filter((one) => viable.has(named(one)));
+  const harness = newestHarnessAmong(admitted);
   return {
-    kept: runs.filter((one) => viable.has(named(one))),
-    setAside: runs.filter((one) => !viable.has(named(one))).length,
+    kept: harness === null ? [] : admitted.filter((one) => one.harness === harness),
+    setAside: runs.length - admitted.length,
+    otherHarness:
+      harness === null
+        ? admitted.length
+        : admitted.filter((one) => one.harness !== harness).length,
+    harness,
   };
 }
 
@@ -92,9 +141,9 @@ const mined = minedRows();
 report(
   "mined from merged pull requests",
   mined.kept,
-  mined.setAside === 0
-    ? ""
-    : ` (${mined.setAside} more set aside: the viability filter no longer admits them)`,
+  `${mined.setAside === 0 ? "" : `, ${mined.setAside} set aside: the viability filter no longer admits them`}` +
+    `${mined.otherHarness === 0 ? "" : `, ${mined.otherHarness} left out: judged by a different harness commit`}` +
+    `, judged at ${mined.harness === null ? "no recorded harness" : mined.harness.slice(0, 9)}`,
 );
 reportAgreement(mined.kept);
 const hand = handAuthoredRows();

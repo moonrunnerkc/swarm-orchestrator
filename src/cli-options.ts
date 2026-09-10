@@ -151,6 +151,15 @@ export interface CiCommand {
    */
   readonly installDependencies: boolean;
   /**
+   * Judge the oracle and skip the repository's own checks.
+   *
+   * For a second judgement of the same patch by a different oracle: the suite answers the same way
+   * both times, and running it again is the same minutes spent twice. `regression` then reads
+   * `unmeasured` and nothing is verified, because a run that did not measure the suite has not
+   * established that the patch broke nothing.
+   */
+  readonly oracleOnly: boolean;
+  /**
    * A trusted check that says whether the task was done, run after the repository's own suite.
    * Absent leaves the task unjudged, which is the honest answer: a suite tests the behaviour a
    * project already had, and a task adds behaviour it did not.
@@ -378,6 +387,7 @@ const switchFlags = new Set([
   "json",
   "remove",
   "install",
+  "oracle-only",
   "fix",
   "offline",
   "no-tui",
@@ -454,6 +464,7 @@ export function parseCommandLine(
     return {
       command: "ci",
       installDependencies: flags.has("install"),
+      oracleOnly: flags.has("oracle-only"),
       taskOracle: flags.get("oracle") ?? null,
       agentStream:
         streamPath === undefined || streamPath.trim().length === 0

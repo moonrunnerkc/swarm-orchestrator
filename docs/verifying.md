@@ -105,6 +105,17 @@ Without it a real project has no test runner in the checkout and every check sta
 reported as `not measured` rather than as a refusal. Those are different findings, and the
 difference is the point of this tool.
 
+## Judging a second oracle without re-running the suite
+
+`--oracle-only` runs the oracle and skips the repository's own checks. It is for the second
+judgement of one patch by a different oracle, where the suite would answer the same way both times:
+on a corpus where a project runs its tests under four timezones and every patch is judged twice,
+that is most of the machine time.
+
+Skipping is not passing. `regression` reads `unmeasured`, nothing is verified, and the advice says
+the checks were not asked for, because a run that did not measure the suite has not established
+that the patch broke nothing.
+
 ## Reading another agent's stream
 
 Pass `--agent-stream` with `--agent-format claude-code` or `generic` and another agent's own event

@@ -83,6 +83,23 @@ describe("parseCommandLine", () => {
     );
   });
 
+  /**
+   * A flag that is its own value must be on the switch list, or the parser reads the next word as
+   * its value and refuses the line. `--oracle-only --oracle "npx jest x"` threw "needs a value",
+   * the judgement came back with no verdict, and three known-answer tasks read `unjudgeable`
+   * before the smoke that exists for exactly this caught it.
+   */
+  it("reads a switch flag without eating the flag after it", () => {
+    const parsed = parseCommandLine(
+      ["ci", "--patch", "p.diff", "--oracle-only", "--oracle", "npx jest x", "--json"],
+      { currentDirectory: "/w", defaultBaseRef: "HEAD" },
+    );
+
+    expect(parsed.command).toBe("ci");
+    expect(parsed.command === "ci" && parsed.oracleOnly).toBe(true);
+    expect(parsed.command === "ci" && parsed.taskOracle).toBe("npx jest x");
+  });
+
   it("resolves a relative workspace against the current directory", () => {
     expect(parseRun(["--workspace", "../other", "t"]).workspace).toBe("/work/other");
   });

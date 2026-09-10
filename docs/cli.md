@@ -78,6 +78,7 @@ See [using.md](using.md) for what a parallel run looks like and how the merge qu
 swarm ci --patch <file>          # verify a patch in a fresh checkout of the base
   --oracle <command>             # what says the task was done
   --install                      # install the checkout's dependencies from its lockfile
+  --oracle-only                  # judge the oracle, skip the repository's own checks
   --immutable <a,b>              # paths the patch may not touch
   --agent-stream <file>          # another agent's event stream, read beside it
   --agent-format claude-code     # or generic
