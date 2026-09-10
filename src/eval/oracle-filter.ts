@@ -17,7 +17,21 @@ function asPattern(title: string): string {
   return title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-export function titleFilterFor(runner: TestRunner, titles: readonly string[]): readonly string[] {
+/**
+ * The selector that runs exactly these titles, or null where the runner has no spelling for it.
+ *
+ * Null rather than the widest filter that parses. ava matches by glob and has no alternation, so
+ * several titles used to become `--match '*'`, which selects every case in the file: both halves
+ * then run the whole suite, the sealed oracle and the held-back oracle become the same check, and
+ * they agree on every patch by construction. A pair of oracles that cannot disagree measures
+ * reproducibility and reports it as a false-green rate, which is the mistake the withdrawn 0-of-18
+ * number was made of. No ava task has been mined yet; this is the runner arriving before the
+ * corpus does.
+ */
+export function titleFilterFor(
+  runner: TestRunner,
+  titles: readonly string[],
+): readonly string[] | null {
   const pattern = titles.map(asPattern).join("|");
   switch (runner) {
     case "jest":
@@ -26,7 +40,7 @@ export function titleFilterFor(runner: TestRunner, titles: readonly string[]): r
     case "mocha":
       return ["--grep", pattern];
     case "ava":
-      return ["--match", titles.length === 1 ? (titles[0] ?? "") : `*`];
+      return titles.length === 1 ? ["--match", titles[0] ?? ""] : null;
     case "node":
       return ["--test-name-pattern", pattern];
   }
@@ -53,8 +67,12 @@ export function oracleCommand(input: {
   runner: TestRunner;
   runnerArgv: readonly string[];
   titles: readonly string[];
-}): string {
-  const filter = titleFilterFor(input.runner, input.titles).map(shellQuoted);
+}): string | null {
+  const selector = titleFilterFor(input.runner, input.titles);
+  if (selector === null) {
+    return null;
+  }
+  const filter = selector.map(shellQuoted);
   // Before the file, not after it. `node --test` stops reading flags at the first positional
   // argument, so a filter appended to the end is silently ignored and the file runs whole:
   // measured on a three-test file, 3 ran with the filter after and 1 with it before. Both halves
