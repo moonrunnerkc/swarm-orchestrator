@@ -64,6 +64,46 @@
 
 ### Fixed
 
+- **A regular expression is masked like the literal it is.** The claim beside the deletion parse
+  check was that no other operator can leave a file which does not parse, and that claim is why
+  only one operator is checked at runtime. Measured across every operator over 186 real files, it
+  was false: `swap-call-arguments` broke 1 of its 105 on a line splitting on a pattern whose own
+  comma is part of it. `withoutLiterals` masked strings and comments and had never masked a
+  pattern, so the argument scan read that comma as an argument separator and swapped halves of a
+  regex; the same blindness reached every operator that looks for a token, since a comparison
+  inside a pattern is not a comparison. Which of two things a slash is gets settled by what
+  precedes it, wrong only in the direction that masks too much and costs a mutant. Re-measured over
+  the same files: 2,702 mutants and every operator but the deletion at zero.
+- **An empty patch is not charged to the model unless the endpoint answered.** An MLX server ran
+  out of GPU memory mid-batch, inside `mx.eval` over its own prompt cache, and every task after it
+  came back with a zero-byte patch recorded as the model writing nothing. That is the
+  misattribution this corpus was already bitten by in the other direction, when twelve rows the
+  agent had failed on were reported as an oracle nobody could run. `scripts/pr-task-pass.mjs` now
+  probes the endpoint before the pass and again after any empty patch, records nothing where it
+  does not answer, and stops, because every task after an endpoint failure records the same wrong
+  thing. Not under `--rejudge`, which re-derives verdicts from recorded patches and asks no model
+  anything.
+- **`swarm ci` stops printing one sentence for two different absences.** `unshown` said "the oracle
+  accepted, and nothing shows it ran the mutated lines" even where it had run them and no detector
+  could show the mutant changed anything, which sends a reader to inspect coverage that is fine. The
+  line names which absence it is, and a gap names what witnessed it, because a refusal resting on an
+  instrument and one resting on the operator alone are different amounts of evidence.
+- **The deadline overshoot test measured the machine rather than the tool.** It went red inside its
+  own suite. Overshoot is scheduling and does not shrink with the budget, so 2% of a 500ms budget is
+  10ms of headroom and the whole suite running in parallel ate it: 3ms idle, 5ms with eight
+  processes spinning, more than 10ms under the suite. The 2% claim is now made at a two-second
+  budget where 40ms stands against a measured 2 to 5, the absolute number is asserted separately,
+  and gate 9's row says the published 1.20% is an idle-machine number.
+- **The bond stops spending detectors once the verdict cannot change.** Which fact the verdict rests
+  on also decides when adjudicating can stop, and the loop read only one of the two, so detectors
+  were spent looking for something that could not change the answer. One coverage reading and at
+  most one suite run per patch now. That also removed a state the record could not describe
+  honestly, a mutant past the bound on suite runs recorded as not adjudicated while coverage had
+  been asked and been silent.
+- **Two imports nothing in `src/cli-select.ts` used**, and an empty shell argument read as a path.
+  `sed -i '' 's/a/b/' file` is the in-place form every macOS invocation uses and it was refused with
+  "the path is empty", because the quoted empty argument reached a check whose whole subject is
+  paths.
 - **Three attacks that got past the policy guard.** Every security case in this repository was
   written by whoever wrote the defence, so `src/tools/guard-attacks.test.ts` was written the other
   way round. Casing: macOS and Windows are case-insensitive by default, so `.ENV` opens `.env`, and
@@ -82,9 +122,6 @@
   succeed and are asserted as succeeding, because a residual nobody can point at is not named:
   `git config --list` reads a denied file without naming it, and `node -e "..."` is an allowlisted
   interpreter handed a program.
-- **Two imports nothing in `src/cli-select.ts` used**, on which `npm run lint` and therefore
-  `npm run gates` were failing.
-
 - **vitest and `@vitest/coverage-v8` to 4.1.11, for GHSA-82fw-gwwq-j7x9.** A path traversal in
   `@vitest/mocker`'s redirect mock, CVSS 5.9, published 2026-09-08 against every version from
   2.1.0. Dev-only and inside the range `package.json` already declared, so the lockfile was the
