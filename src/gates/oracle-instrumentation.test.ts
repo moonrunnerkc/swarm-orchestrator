@@ -1,37 +1,35 @@
 import { describe, expect, it } from "vitest";
-import { instrumentedOracle, oracleCoveragePlan } from "./oracle-instrumentation.ts";
+import { oracleCoveragePlan } from "./oracle-instrumentation.ts";
 
 /**
  * A real oracle command is a compound shell string: it puts the held-back test file in place and
- * then runs it. `harnessReportingCommand` only vouches a bare node invocation, so reach came back
- * `unmeasured` on koa#1946, the very case the check was built for.
- *
- * The setup before the final command is the harness's own mkdir and cp. Only the last segment
- * needs instrumenting, and only if it is a node test run the harness can rebuild itself.
+ * then runs it. The setup before the final command is the harness's own mkdir and cp, so only the
+ * last segment is instrumented, and only where this can say how.
  */
 describe("instrumenting a compound oracle command", () => {
+  const destination = "/scratch/reach-abc";
+
   it("separates the setup from a final node test run it can rebuild", () => {
-    const found = instrumentedOracle(
+    const plan = oracleCoveragePlan(
       `mkdir -p "$(dirname a/b.test.js)" && cp '/corpus/b.test.js' 'a/b.test.js' && node --test '--test-name-pattern' 'x' 'a/b.test.js'`,
+      destination,
     );
 
-    expect(found).not.toBeNull();
-    expect(found?.setup).toContain("mkdir -p");
-    expect(found?.setup).toContain("cp '/corpus/b.test.js'");
-    expect(found?.argv[0]).toBe("node");
-    expect(found?.argv).toContain("--experimental-test-coverage");
-    expect(found?.argv).toContain("a/b.test.js");
+    expect(plan?.setup).toContain("mkdir -p");
+    expect(plan?.setup).toContain("cp '/corpus/b.test.js'");
+    expect(plan?.kind).toBe("node-lcov");
+    expect(plan?.kind === "node-lcov" && plan.argv[0]).toBe("node");
+    expect(plan?.kind === "node-lcov" && plan.argv).toContain("a/b.test.js");
   });
 
-  it("gives up on a final command it cannot rebuild, rather than guessing", () => {
-    expect(instrumentedOracle("cp x y && npx jest --ci -t 'x' a.test.js")).toBeNull();
-    expect(instrumentedOracle("grep -q 'v < 0' clamp.mjs")).toBeNull();
+  it("gives up on a final command it cannot make report anything", () => {
+    expect(oracleCoveragePlan("grep -q 'v < 0' clamp.mjs", destination)).toBeNull();
   });
 
   // A shell operator the harness did not put there decides what runs, and rebuilding around it
   // means predicting a shell. Invariant 7 refuses that for the ratchet and it is refused here.
   it("gives up when the final segment carries a shell operator", () => {
-    expect(instrumentedOracle("cp x y && node --test a.test.js | tee out")).toBeNull();
+    expect(oracleCoveragePlan("cp x y && node --test a.test.js | tee out", destination)).toBeNull();
   });
 
   /**
@@ -42,12 +40,12 @@ describe("instrumenting a compound oracle command", () => {
    * deserialization', and reach stayed unmeasured on the case the check exists for.
    */
   it("reads an operator inside quotes as the character it is", () => {
-    const found = instrumentedOracle(
+    const plan = oracleCoveragePlan(
       `cp '/corpus/b.test.js' 'a/b.test.js' && node --test '--test-name-pattern' 'first|second' 'a/b.test.js'`,
+      destination,
     );
 
-    expect(found).not.toBeNull();
-    expect(found?.argv).toContain("first|second");
+    expect(plan?.kind === "node-lcov" && plan.argv).toContain("first|second");
   });
 });
 
