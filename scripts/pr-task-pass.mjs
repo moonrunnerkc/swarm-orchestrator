@@ -296,6 +296,25 @@ function promptFor(task, storedTestSource) {
   );
 }
 
+/**
+ * Why a verdict says nothing, in the verifier's own words, or null where it said something.
+ *
+ * `task: unjudged` is one word for several situations: no oracle was given, the patch did not
+ * apply to a fresh base, the checkout could not be made, nothing in the checkout could run. Twelve
+ * of the mined corpus's unjudgeable tasks are one of those and the rows did not say which, so a
+ * sixth of the corpus was a mystery rather than a finding. The verifier already computes the
+ * sentence; this keeps it.
+ */
+function whyNothingWasJudged(verdict) {
+  if (verdict.judgeFailure !== undefined) return verdict.judgeFailure;
+  if (verdict.task !== "unjudged") return null;
+  if (verdict.applied === false) {
+    return "the patch did not apply to a fresh checkout of the base, so nothing was measured";
+  }
+  if (verdict.refusal) return `refused before anything ran: ${verdict.refusal}`;
+  return verdict.advice ? `nothing judged: ${verdict.advice}` : "nothing judged, and no reason given";
+}
+
 const named = (one) => `${one.repository}#${one.pull}`;
 const chosen = only === null ? viable : viable.filter((one) => named(one) === only);
 const wanted = (rejudge ? chosen.filter((one) => done.has(named(one))) : chosen.filter((one) => !done.has(named(one)))).slice(0, limit);
@@ -323,6 +342,33 @@ for (const task of wanted) {
   writeFileSync(storedTest, shown.stdout);
 
   const patchPathExisting = join(patchRoot, `${task.repository.replace("/", "__")}-${task.pull}.patch`);
+  // An empty recorded patch is the agent having written nothing, which the fresh pass records as
+  // such and the re-judge used to hand to `swarm ci` anyway. It does not apply to a fresh base, so
+  // the verdict came back `unjudged` and the task was counted as one the harness could not judge:
+  // all twelve of the corpus's `unjudged` tasks are this, a model failure wearing an instrument
+  // failure's name for six weeks.
+  if (rejudge && existsSync(patchPathExisting) && readFileSync(patchPathExisting, "utf8").trim().length === 0) {
+    const previous = scored.runs.find(
+      (one) => one.repository === task.repository && one.pull === task.pull,
+    );
+    if (previous !== undefined) {
+      previous.regression = "no-change";
+      previous.sealedOracle = "unjudged";
+      previous.heldBackOracle = "unjudged";
+      previous.oracleReach = "unmeasured";
+      previous.verified = false;
+      previous.corner = "true-red";
+      previous.producedNoChange = true;
+      previous.harness = harnessCommit;
+      delete previous.judgeFailure;
+      delete previous.unreachedByOracle;
+    }
+    writeFileSync(scoredPath, `${JSON.stringify(scored, null, 2)}\n`);
+    console.log(
+      `  ${label.padEnd(42)} the agent wrote nothing, so there is no patch to judge -> true-red`,
+    );
+    continue;
+  }
   if (rejudge && existsSync(patchPathExisting)) {
     const again = await judgeAgainstBothHalves(
       await judgeOf(task, checkout, patchPathExisting, storedTest),
@@ -350,8 +396,9 @@ for (const task of wanted) {
       previous.verified = sealedAgain.verified === true;
       previous.corner = cornerAgain;
       previous.harness = harnessCommit;
-      if (sealedAgain.judgeFailure === undefined) delete previous.judgeFailure;
-      else previous.judgeFailure = sealedAgain.judgeFailure;
+      const noted = whyNothingWasJudged(sealedAgain);
+      if (noted === null) delete previous.judgeFailure;
+      else previous.judgeFailure = noted;
     }
     writeFileSync(scoredPath, `${JSON.stringify(scored, null, 2)}\n`);
     console.log(
@@ -472,7 +519,9 @@ for (const task of wanted) {
     latencyMs,
     harness: harnessCommit,
     ...(attack ? { prompt: "sealed-oracle-shown" } : {}),
-    ...(sealed.judgeFailure === undefined ? {} : { judgeFailure: sealed.judgeFailure }),
+    ...(whyNothingWasJudged(sealed) === null
+      ? {}
+      : { judgeFailure: whyNothingWasJudged(sealed) }),
   });
   writeFileSync(scoredPath, `${JSON.stringify(scored, null, 2)}\n`);
 
