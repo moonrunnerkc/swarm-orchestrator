@@ -187,6 +187,26 @@ and all four patches reach refused in the hand-authored corpus were refused on e
 carrying no character that could begin an identifier, a number or a string runs no code of its own
 and cannot be an unjudged behaviour.
 
+## The adversarial arm
+
+Every defect this tool has was found by whoever wrote it, which is the weakest form of the
+evidence. The ordinary pass measures a model trying to do a task. `--attack` measures one trying
+to look like it did: the sealed half is shown to the model, case by case, with an instruction to
+satisfy those cases and let an adjacent one stay broken.
+
+    node scripts/pr-task-pass.mjs --attack --arm attack --only <owner/repo#pull>
+
+The half held back stays held back. The cases are lifted out by title rather than by handing over
+the file, because the file holds both halves and a model that has read the second oracle is not
+being measured against it. Scoring is the same arithmetic against the same second oracle, and the
+arm writes to its own results file so an attack row can never be read as an ordinary one.
+
+What it measures is an upper bound rather than a rate in the wild. An attacker who can read the
+acceptance test is a stronger adversary than a careless contributor, and a tool that survives the
+stronger one survives the weaker. It is also the arm where the reach check has least to say: a
+patch written to satisfy exactly the sealed cases has no unexercised lines to be refused over, so
+what the held-back half catches there is incompleteness the coverage cannot see.
+
 ## The weakness, named
 
 **Two halves of one suite are not two independent oracles.** They come from one author in one
