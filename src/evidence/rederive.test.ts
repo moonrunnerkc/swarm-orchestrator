@@ -14,6 +14,8 @@ import {
 import { assembleGateSet, defaultDiffBudget, runGatesEngine } from "../gates/engine.ts";
 import { createFileSetRegistry } from "../gates/file-set.ts";
 import { describeGateSet, sealGateSet } from "../gates/gate-set-seal.ts";
+import type { MutantWitness } from "../gates/mutant-witness.ts";
+import { bondOfMutantObservations, type MutantObservation } from "../gates/oracle-bond.ts";
 import { exitCodeParser, inspectionParser, testOutputParser } from "../gates/parsers.ts";
 import { bundleSourceFromRecorder, exportBundle } from "./bundle.ts";
 import { digestOfBytes } from "./canonical-json.ts";
@@ -378,6 +380,45 @@ describe("the re-derivation script agrees with the certification policy", () => 
     }
   });
 
+  it("aggregates a bond the same way the tool that wrote the record does", () => {
+    const observed = (
+      oracle: "passed" | "failed",
+      seen: boolean,
+      witness: MutantWitness,
+      at: number,
+    ): MutantObservation => ({
+      mutant: {
+        id: `lib/a.js:${at}:invert-comparison`,
+        path: "lib/a.js",
+        line: at + 1,
+        operator: "invert-comparison",
+        before: "  if (a === b) {",
+        after: "  if (a !== b) {",
+      },
+      oracle,
+      seen,
+      witness,
+    });
+    const shapes: (readonly MutantObservation[])[] = [
+      [],
+      [observed("failed", true, "not-adjudicated", 0)],
+      [observed("passed", true, "coverage", 0)],
+      [observed("passed", true, "none", 0)],
+      [observed("passed", false, "not-adjudicated", 0)],
+      [
+        observed("failed", true, "not-adjudicated", 0),
+        observed("passed", true, "repository-suite", 1),
+      ],
+    ];
+
+    for (const observations of shapes) {
+      const bond = bondOfMutantObservations(observations);
+      expect(rederive.rederiveOracleBond(bond.mutants), JSON.stringify(observations)).toBe(
+        bond.verdict,
+      );
+    }
+  });
+
   it("carries the same blocking decision", () => {
     expect(rederive.bondRefusesCertification).toBe(bondRefusesCertification);
   });
@@ -428,5 +469,41 @@ describe("the re-derivation script agrees with the certification policy", () => 
 
     expect(judged.rederived).toBe(bondRefusesCertification ? false : true);
     expect(judged.missing).toEqual(bondRefusesCertification ? ["oracleBond"] : []);
+  });
+});
+
+/**
+ * A bond verdict is a measurement the row carries, and until now it was taken on trust: gate 3a
+ * re-derived whether `verified` follows from `oracleBond`, and nothing asked whether `oracleBond`
+ * follows from the mutants recorded beside it. A record whose bond nobody can recompute is the
+ * same shape of claim as a green nobody can recompute.
+ *
+ * The aggregation is not written twice. This is the copy a bundle ships, and the parity test below
+ * holds it to `bondOfMutantObservations`, where a run computes it.
+ */
+describe("re-deriving an oracle bond from the mutants a row records", () => {
+  it("reads no mutants as not bonded", () => {
+    expect(rederive.rederiveOracleBond([])).toBe("not-bonded");
+    expect(rederive.rederiveOracleBond(undefined)).toBe("not-bonded");
+  });
+
+  it("reads one vacuous mutant as a vacuous bond whatever the others did", () => {
+    expect(
+      rederive.rederiveOracleBond([
+        { verdict: "held" },
+        { verdict: "vacuous" },
+        { verdict: "unshown" },
+      ]),
+    ).toBe("vacuous");
+  });
+
+  it("reads a refusal as held where nothing was vacuous", () => {
+    expect(rederive.rederiveOracleBond([{ verdict: "unshown" }, { verdict: "held" }])).toBe("held");
+  });
+
+  it("reads only absences as unshown", () => {
+    expect(rederive.rederiveOracleBond([{ verdict: "unshown" }, { verdict: "unshown" }])).toBe(
+      "unshown",
+    );
   });
 });
