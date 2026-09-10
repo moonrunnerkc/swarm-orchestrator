@@ -52,7 +52,7 @@ It cannot make a gate pass, mark a claim verified, or change a record after the 
 
 Give it a task and a git repository and it will make the change. Give it somebody else's patch and
 it will tell you what that patch actually establishes. Either way what comes back is a signed,
-hash-chained record of what ran, what passed, and what nobody measured — which anybody can check
+hash-chained record of what ran, what passed, and what nobody measured. Anybody can check it
 without installing this tool.
 
 |  | |
@@ -89,7 +89,7 @@ export ANTHROPIC_API_KEY=...          # or OPENAI_API_KEY, GOOGLE_GENERATIVE_AI_
 # or start Ollama / rapid-mlx and pass --model local:<id>
 ```
 
-Keys come from the environment or your OS keychain, never from `swarm.toml` — that file is
+Keys come from the environment or your OS keychain, never from `swarm.toml`, which is
 committed and cloned, so a key in it has already been shared with everyone holding the repository.
 
 ### Installation
@@ -129,7 +129,7 @@ acceptable: yes (no blocking gate failed, no policy gate failed, and something e
 ```
 
 **A pass is a claim until it is shown able to fail.** After the gates go green, each one that
-passed is handed a bond — one file it has to refuse. A check that refused it held. A check that
+passed is handed a bond: one file it has to refuse. A check that refused it held. A check that
 passed over a bond it demonstrably saw is vacuous, and a vacuous blocking gate makes the run not
 green whatever the cycle said.
 
@@ -163,32 +163,44 @@ Nine answers, not one. `unmeasured` is a value, not a missing one:
                   commands ran under a lexical path and program policy, which is not containment
 ```
 
-That run passed its tests, so `behavioral` is a pass — but it declares no typecheck, lint or
+That run passed its tests, so `behavioral` is a pass, but it declares no typecheck, lint or
 format script, so `mechanical` is `unmeasured` rather than a pass. A change whose only passing
 gate was a linter is not a change anything ran, and the reverse holds too. `semantic` abstains by
 construction, because judging whether a change means what was asked is a judgement about meaning,
 and nothing here is allowed to make one.
 
 `swarm ci` reports **two** answers where a suite gives you one: `regression` says nothing broke,
-`task` says the work was done — and only an oracle can say the second. Four of eighteen
+`task` says the work was done, and only an oracle can say the second. Four of eighteen
 real-repository patches passed their project's whole suite and failed a hidden acceptance test.
 
-**And it judges the oracle it was handed, not only the patch.** An oracle that accepts the base
-commit would have accepted a patch that changes nothing, so `task` reads `vacuous` and nothing is
-verified. An oracle that never executed the lines the patch adds cannot have judged them, so
-`oracleReach` reads `unreached`, the lines are named, and nothing is verified. Both were found by
-measuring this tool against real work: certified tasks rested on oracles that could not fail, and
-both false greens found so far were certified by an oracle that never ran the branch that broke.
+**And it judges the oracle it was handed, not only the patch.** Three ways an oracle can fail to
+be evidence, and all three are checked:
+
+| the oracle | the tool says | why |
+| --- | --- | --- |
+| accepts the base commit too | `task: vacuous` | it would have accepted a patch that changes nothing |
+| never ran the lines the patch adds | `oracleReach: unreached`, lines named | it cannot have judged what it did not execute |
+| ran them and accepts a change to them | `oracleBond: vacuous`, mutant printed | it executed the code without asserting anything about it |
+
+All three came out of measuring this tool against real work rather than from reasoning about it.
+Certified tasks rested on oracles that could not fail. The first false green found was certified by
+an oracle that never ran the branch it broke. The last one standing, `commander#1671`, was
+certified by an oracle that runs every line the patch adds and never tests the precedence those
+lines decide, so bonding hands it that same line with the `.reverse()` dropped and the oracle
+passes it.
 
 Reach is read from whichever coverage the oracle's own runner can be made to write: node's lcov
 reporter, V8's own coverage for a runner that loads the file as written, or jest's and vitest's
 own reports. A runner none of those fits reports `unmeasured` rather than a guess, and `unmeasured`
 blocks nothing.
 
-**It is not free, and the cost is reported rather than netted off.** A patch that restructures one
-assignment into an `if` and an `else`, judged by an oracle whose cases all take the `if`, is
-refused with the `else` named. Those are counted as `refused-on-reach`: not the tool being wrong
-about the patch, and not a pass either.
+**None of it is free, and the cost is reported rather than netted off.** A patch that restructures
+one assignment into an `if` and an `else`, judged by an oracle whose cases all take the `if`, is
+refused with the `else` named. Refusals get their own names, `refused-on-reach` and
+`refused-on-bond`: not the tool being wrong about the patch, and not a pass either. Only a bond the
+oracle demonstrably saw and passed refuses. One that could not be built, or that nothing shows the
+oracle read, is reported and blocks nothing, because an absence of evidence about the oracle is not
+evidence against it.
 
 Full detail in **[docs/verifying.md](docs/verifying.md)**.
 
@@ -199,13 +211,13 @@ Full detail in **[docs/verifying.md](docs/verifying.md)**.
 Every claim this project makes links to a committed artifact of the thing happening. The full
 table is **[docs/claims.md](docs/claims.md)**. Three of them:
 
-- **One changed byte breaks verification** — the same bundle verified and then tampered with in a
+- **One changed byte breaks verification.** The same bundle verified and then tampered with in a
   single byte, exit 0 and exit 1 side by side, with a script to reproduce it:
   [tamper demo](docs/evidence/2026-08-18/tamper-demo).
-- **A bundle verifies on a machine that has never seen this repo** — run in a `node:24` container
+- **A bundle verifies on a machine that has never seen this repo.** Run in a `node:24` container
   with no network and no mount of this repository:
   [clean-container-verification.md](docs/evidence/2026-08-23/clean-container-verification.md).
-- **A green verdict is computed by the harness, and the model cannot produce one** — in a real run
+- **A green verdict is computed by the harness, and the model cannot produce one.** In a real run
   the model asserted a predicate the language does not parse; the harness rendered it
   `UNVERIFIED` and carried on, twice:
   [shakedown results](docs/evidence/2026-08-18/shakedown/results.md).
@@ -214,15 +226,18 @@ table is **[docs/claims.md](docs/claims.md)**. Three of them:
 
 ## What is not claimed
 
-**It is not production-ready.** Of the twelve gates this project agreed not to call itself
-production-ready without, six pass on measured evidence, three are partial, two are unproven, and
-one fails on scale. Each row and what would settle it: **[docs/beta-gates.md](docs/beta-gates.md)**.
+**It is not production-ready.** Of the gates this project agreed not to call itself
+production-ready without, seven pass on measured evidence, three are partial, two are unproven, and
+two are reported rather than barred. The old "zero false greens in 400 held-out tasks" gate is
+retired, for four reasons that are measured rather than argued, and replaced by three statements
+about three different questions. Each row and what would settle it:
+**[docs/beta-gates.md](docs/beta-gates.md)**.
 
 - **Not "fully secure".** The secret detector does known-pattern scrubbing, not secret removal.
   Zero crashes at a fuzz budget is evidence, not proof.
 - **The default execution mode is `restricted`, not `isolated`.** A lexical path and program policy
   in front of interpreters unless you pass `--isolation`. Reported before the run starts and
-  recorded on the chain rather than quietly assumed — but it is not containment.
+  recorded on the chain rather than quietly assumed, but it is not containment.
 - **The false-green rate is 0 in 15**, 0.0%, 95% CI [0.0, 20.4], and that upper bound is the honest
   half of it. Every task carries two oracles, one handed to the tool and one held back from it, and
   fifteen certified patches cannot say more than "under 20%":
@@ -239,14 +254,14 @@ one fails on scale. Each row and what would settle it: **[docs/beta-gates.md](do
   accepted a change to a line it had run. A tool that refuses more
   has fewer claims to be wrong about, so the interval over what is left is wider. Both halves are
   reported, and a refusal is never counted as a pass.
-- **The one that stood is now refused, and not for the reason it was written up.** dayjs#3181 guards
-  one path into the plugin and one into its static entry; its sealed case exercises the first and
-  never the second, which is where the held-back case breaks. The write-up said its oracle had run
-  every line the patch wrote. That was never measured: reach could only be read from node's own
-  test runner, and dayjs runs jest. Measured, the oracle skips three of the lines.
+- **Every number here has been wrong at least once, and the corrections are in the history.** A
+  reported zero was withdrawn as self-agreement. A patch was refused over a TypeScript declaration
+  file, which hid a real false green behind a wrong refusal. Two mutation operators were producing
+  changes that changed nothing until an audit read every refusal by hand. The pattern is the same
+  each time: read what a check names before believing it.
 - Twelve tasks reported as unjudgeable were the agent having written nothing at all, which is a
   model failure and is recorded as one. An earlier 0-of-18 was withdrawn as arithmetic rather than
-  corrected quietly — the same test was handed to the tool and then used as the ground truth it was
+  corrected quietly: the same test was handed to the tool and then used as the ground truth it was
   scored against, so it agreed with itself.
 - **Six known gaps ship open**, and none is claimed closed. Four have detections built against them
   and have not yet been attacked, so what is claimed is a detection and not a closure.
@@ -254,19 +269,23 @@ one fails on scale. Each row and what would settle it: **[docs/beta-gates.md](do
   left the machine that produced it.
 
 Gates prove mechanical quality, not design quality. What a bundle buys you is that reviewing the
-change is fast and its claims are checkable — not that review is unnecessary.
+change is fast and its claims are checkable, not that review is unnecessary.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Roadmap
 
-The roadmap is the six unmet beta gates, tracked with their evidence in
+The roadmap is the beta gates that are not met yet, tracked with their evidence in
 **[docs/beta-gates.md](docs/beta-gates.md)**:
 
-- [ ] A false-green rate whose interval means something — currently 0 in 15, upper bound 20.4%, and
-      the old "zero in 400 tasks" wording is retired for four measured reasons in
-      [docs/beta-gates.md](docs/beta-gates.md)
-- [ ] An adversarial corpus written by somebody trying to get past the defences — the verification
+- [ ] A false-green rate whose interval means something: currently 0 in 15, upper bound 20.4%.
+      The old "zero in 400 tasks" wording is retired for four measured reasons, and the one bar
+      that replaced it, no green claim that fails to follow from its own record, passes at zero
+      over 129 recorded verdicts
+- [ ] A denominator for that rate the tool did not choose. Of the oracles a second oracle proves
+      inadequate, this refuses 3 of 3, but the denominator is three and one of them is the case
+      the mutation operators were written knowing about
+- [ ] An adversarial corpus written by somebody trying to get past the defences. The verification
       surface now has one, and it lands: 2 false greens in 5 certified when the model is shown the
       oracle it will be judged by, against 0 in 3 when it is not
 - [ ] Task success non-inferior to the strongest single-agent baseline, at a size that supports it
@@ -302,12 +321,12 @@ Distributed under the ISC License. See [LICENSE](LICENSE) for more information.
 
 ## Contact
 
-Brad Kinnard — [@KChackerman](https://x.com/KChackerman) — bradkinnard@proton.me
+Brad Kinnard, [@KChackerman](https://x.com/KChackerman), bradkinnard@proton.me
 
 Project Link: [github.com/moonrunnerkc/swarm-orchestrator](https://github.com/moonrunnerkc/swarm-orchestrator)
 
 <sub>Upgrading from v12? It was a PR auditor that ran as a GitHub Action; v13 and later are a coding
-agent. Same package name, different product, no migration path — stay on the `v12-final` tag. See
+agent. Same package name, different product, no migration path: stay on the `v12-final` tag. See
 [CHANGELOG.md](CHANGELOG.md).</sub>
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
