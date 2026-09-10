@@ -92,8 +92,10 @@ than the mutated one that ran in one reading and not the other is a demonstrated
 the program did; the mutated line is excluded, because a deleted statement stops running by
 construction. Failing that, the repository's own gates that passed with the patch applied are run
 again, and one that now fails is a demonstrated difference. Neither seeing anything is `unshown`,
-never `vacuous`, and a suite run that was never spent is recorded as not adjudicated rather than as
-either answer.
+never `vacuous` under that reading, and the two absences are kept apart: `none` where everything
+that could be asked was asked and nothing showed a difference, which includes a patch whose own
+checks leave nothing to ask of the second detector, and `not adjudicated` where no detector was
+asked at all.
 
 What the pair cannot see is named rather than implied away. Coverage sees a mutant that changes
 control flow or stops reaching code, and not one that changes a value on a path that runs either

@@ -204,8 +204,16 @@ that witnesses a difference decides it:
    the mutant. One that now fails is a demonstrated difference. A gate that failed with the patch
    applied witnesses nothing and is not read.
 
-If neither witnesses a difference the verdict is `unshown` and never `vacuous`. That is an
-abstention, it does not refuse certification, and it is not flattened into `held`.
+If neither witnesses a difference the verdict is `unshown` and never `vacuous`, under the reading
+that requires a witness. That is an abstention, it does not refuse certification, and it is not
+flattened into `held`.
+
+Two absences, and they are not one word. `none` says everything that could be asked was asked and
+nothing showed a difference, which includes a patch whose own checks all failed and so leave the
+second detector nothing to compare a mutant against. `not adjudicated` says no detector was asked
+at all: the oracle refused the mutant, or nothing showed it ran the line, or the verdict was
+already settled. Recording the first as the second put a refusal on two commander rows with
+nothing beside it to explain itself.
 
 What each detector can and cannot see, stated because the pair is not a proof of equivalence:
 
