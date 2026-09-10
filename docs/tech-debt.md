@@ -464,6 +464,30 @@ and return types that are part of a module's shape and are used without being na
 **Not worth acting on without a type-aware tool.** Removing an export that a caller uses
 structurally changes nothing at runtime and loses the name a reader looks for.
 
+## Debt: a test suite that detaches a server outlives the harness that ran it
+
+Found on 2026-09-09, while re-checking the mined corpus. One repository in it, whose tests start
+an application server per case, had left **around two thousand node processes running**, the
+oldest more than two days old, each holding a checkout that had been deleted underneath it.
+
+What was fixed is the part that is fixable here: the campaign scripts used `execFile`, whose
+timeout signals the process it started and nothing else, so a suite killed at its deadline left
+its whole tree running. They now go through `runProcessGroup`, which is what the gate runner has
+used since the same leak was fixed there, and the tests that prove a timeout and a cancellation
+take the tree down are in `src/exec/run-process.test.ts`.
+
+What is not fixed, and is the reason this is here rather than closed: a process that leaves its
+own process group, which is what a server with a pid file and a socket is written to do, cannot be
+reached by signalling that group. Whatever the harness does to the group it created, that process
+is in a different one. Attempts to demonstrate a cleanup for it on this machine did not reproduce
+either direction reliably, and an execution-path change nobody can show working is not one this
+tree takes.
+
+The cost is not measurement error: those processes hold no lock the campaign needs and nothing
+read from them. It is a machine filling up with strays, and it needs either a decision to run such
+suites under a kernel-enforced backend that can bound them, or a decision not to mine repositories
+whose suites start daemons.
+
 ## Test files whose name does not match a source file
 
 Six, and none is an orphan: `redteam-adversarial`, `verifier-parity`, `acceptance` (twice),
