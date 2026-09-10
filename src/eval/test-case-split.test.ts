@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitTestCases, testCasesIn } from "./test-case-split.ts";
+import { splitTestCases, testCaseDeals, testCasesIn } from "./test-case-split.ts";
 
 const suite = `import { describe, it, expect } from "vitest";
 import { chunk } from "../src/chunk";
@@ -63,5 +63,52 @@ describe("splitTestCases", () => {
   it("refuses a suite with fewer than two cases", () => {
     expect(splitTestCases('it("only one", () => {});').splittable).toBe(false);
     expect(splitTestCases(suite).splittable).toBe(true);
+  });
+});
+
+describe("testCaseDeals", () => {
+  const four = `it("a", () => {});
+it("b", () => {});
+it("c", () => {});
+it("d", () => {});
+`;
+
+  // The alternating deal is still the one to prefer, for the reason it was chosen: it gives both
+  // halves the same mix of easy and edge cases. The others exist only for when it produces a half
+  // that passes on the base source, which is a half that can accept a patch changing nothing.
+  it("offers the alternating deal first", () => {
+    const deals = testCaseDeals(four);
+    expect(deals[0]?.sealed.map((one) => one.title)).toEqual(["a", "c"]);
+    expect(deals[0]?.heldBack.map((one) => one.title)).toEqual(["b", "d"]);
+  });
+
+  // Where every case that fails on the base sits at an even index, the alternating deal puts all
+  // of them in one half and the other half specifies nothing. Dealing in larger blocks moves a
+  // different set of cases across, which is the only way a re-deal can change that answer.
+  it("re-deals in blocks, so a half that passed on the base gets different cases", () => {
+    const deals = testCaseDeals(four);
+    expect(deals[1]?.sealed.map((one) => one.title)).toEqual(["a", "b"]);
+    expect(deals[1]?.heldBack.map((one) => one.title)).toEqual(["c", "d"]);
+    expect(deals[2]?.sealed.map((one) => one.title)).toEqual(["a", "b", "c"]);
+    expect(deals[2]?.heldBack.map((one) => one.title)).toEqual(["d"]);
+  });
+
+  // A half with no cases in it is not an oracle: the runner matches nothing, exits zero, and the
+  // task reads as accepted by a check that never ran.
+  it("never offers a deal with an empty half", () => {
+    const deals = testCaseDeals(`it("a", () => {});\nit("b", () => {});\n`);
+    expect(deals).toHaveLength(1);
+    expect(deals.every((deal) => deal.sealed.length > 0 && deal.heldBack.length > 0)).toBe(true);
+  });
+
+  // Each deal costs two runs of the suite on the base source, paid at mining time on every
+  // candidate. The bound is what keeps that from growing with the size of the test file.
+  it("offers no more than three deals however many cases there are", () => {
+    const many = Array.from({ length: 12 }, (_, at) => `it("t${at}", () => {});`).join("\n");
+    expect(testCaseDeals(many)).toHaveLength(3);
+  });
+
+  it("offers nothing where there is only one case", () => {
+    expect(testCaseDeals('it("only one", () => {});')).toEqual([]);
   });
 });

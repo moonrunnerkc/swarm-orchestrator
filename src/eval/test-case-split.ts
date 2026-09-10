@@ -101,9 +101,49 @@ export function splitTestCases(source: string): TestCaseSplit {
   if (cases.length < 2) {
     return { splittable: false, sealed: cases, heldBack: [] };
   }
-  return {
-    splittable: true,
-    sealed: cases.filter((_, index) => index % 2 === 0),
-    heldBack: cases.filter((_, index) => index % 2 === 1),
-  };
+  return dealInBlocksOf(cases, 1);
+}
+
+/** Blocks of `size` dealt alternately: sealed takes the first block, held-back the second. */
+function dealInBlocksOf(cases: readonly TestCase[], size: number): TestCaseSplit {
+  const sealed = cases.filter((_, index) => Math.floor(index / size) % 2 === 0);
+  const heldBack = cases.filter((_, index) => Math.floor(index / size) % 2 === 1);
+  return { splittable: sealed.length > 0 && heldBack.length > 0, sealed, heldBack };
+}
+
+/**
+ * How many deals a viability check pays for. Each one costs two runs of the suite on the base
+ * source, on every candidate mined, so the bound is what keeps that cost from growing with the
+ * size of the test file rather than a judgement about how many are enough.
+ */
+const dealsToTry = 3;
+
+/**
+ * The deals to try, in order, when each half has to fail on the base source before the task is
+ * usable.
+ *
+ * The viability filter used to check that the whole added test file fails on the base, which says
+ * nothing about either half: the halves are what the oracles run, and a half that passes on the
+ * base accepts a patch that changes nothing, so a task dealt that way was never an opportunity to
+ * catch anything. Testing each half means a half can be refused, and a refused deal is worth
+ * re-dealing rather than dropping the task: which cases fail on the base is a property of the
+ * suite, not of the cut, and a different cut can put a failing case on both sides.
+ *
+ * Blocks rather than rotations. Rotating an even-length list by one produces the same partition
+ * with the halves swapped, and both halves have to fail either way, so a rotation answers the
+ * same question twice. Dealing in blocks of `size` puts the first held-back case at index `size`,
+ * so every size names a partition no other size can name.
+ *
+ * The alternating deal stays first, because its reason still holds: it is the one that gives both
+ * halves the same mix of easy and edge cases. Larger blocks approach the front/back cut it exists
+ * to avoid, and they are offered only where the alternating deal produced a half that specifies
+ * nothing, where the choice is a cruder cut or no task at all.
+ */
+export function testCaseDeals(source: string): readonly TestCaseSplit[] {
+  const cases = testCasesIn(source);
+  const deals: TestCaseSplit[] = [];
+  for (let size = 1; size <= dealsToTry && size < cases.length; size += 1) {
+    deals.push(dealInBlocksOf(cases, size));
+  }
+  return deals;
 }
