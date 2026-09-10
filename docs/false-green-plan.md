@@ -107,9 +107,9 @@ four hundred tasks. The pipeline is unattended and resumable, so this is machine
 authoring, and it was right to leave until last: mining more tasks through filters that admit
 vacuous oracles would have produced a bigger wrong number, and the filters are only now correct.
 
-What the arithmetic actually says, measured rather than assumed. 192 candidates are mined and 59 of
+What the arithmetic actually says, measured rather than assumed. 192 candidates are mined and 58 of
 the 111 checked so far are viable, so mining and viability are cheap. The expensive ratio is the one
-after that: 3 of 59 scored tasks became an opportunity, because an opportunity needs the tool to
+after that: 3 of 58 scored tasks became an opportunity, because an opportunity needs the tool to
 certify a patch and the local model fails most of these tasks outright. At that rate four hundred
 opportunities is roughly eight thousand tasks, which is not machine time, it is a different plan.
 
