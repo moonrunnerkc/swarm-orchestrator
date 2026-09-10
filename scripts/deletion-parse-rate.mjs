@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * How often the lexical rule behind `delete-statement` would be wrong without the parse check.
+ * How often each mutation operator produces a file that does not parse.
  *
  * The operator proposes a deletion where a line reads as a whole statement, and that reading is
  * lexical because the planner has one line and no parser. A line can balance, start and end on a
@@ -9,8 +9,10 @@
  * longer compiles is refused by every oracle and crediting that refusal would be crediting a
  * syntax error.
  *
- * That is the argument. This is the number: every deletion the planner proposes over real
- * JavaScript, checked, with the ones the check throws away named.
+ * The other seven are claimed to be incapable of it, because each replaces a token with a token of
+ * the same shape, wraps a balanced region in a negation, or removes a balanced one. That claim is
+ * the reason only one operator is checked at runtime, so it is measured here rather than asserted:
+ * every operator, every line of every file, checked.
  *
  *   node scripts/deletion-parse-rate.mjs <directory> [<directory> ...]
  *
@@ -61,9 +63,10 @@ function parses(path) {
 const scratch = mkdtempSync(join(tmpdir(), "swarm-deletion-"));
 const mutantPath = join(scratch, "mutant.js");
 let read = 0;
-let proposed = 0;
-let discarded = 0;
+const proposed = new Map();
+const discarded = new Map();
 const named = [];
+const count = (into, key) => into.set(key, (into.get(key) ?? 0) + 1);
 
 try {
   for (const root of roots) {
@@ -76,23 +79,25 @@ try {
       const lines = source.split("\n");
       // Every line offered as an added line, which is the strongest version of the question: what
       // the operator would do given the whole file rather than one patch's worth of it.
-      const deletions = mutantsOfChangedLines({
+      const mutants = mutantsOfChangedLines({
         changed: [
           { path: "probe.js", addedLines: lines.map((text, at) => ({ line: at + 1, text })) },
         ],
         limit: Number.MAX_SAFE_INTEGER,
         perOperatorLimit: Number.MAX_SAFE_INTEGER,
-      }).filter((one) => one.operator === "delete-statement");
+      });
 
-      for (const mutant of deletions) {
-        proposed += 1;
+      for (const mutant of mutants) {
+        count(proposed, mutant.operator);
         const mutated = [...lines];
         mutated[mutant.line - 1] = mutant.after;
         writeFileSync(mutantPath, mutated.join("\n"));
         if (!parses(mutantPath)) {
-          discarded += 1;
-          if (named.length < 10) {
-            named.push(`${file}:${mutant.line}  ${mutant.before.trim().slice(0, 90)}`);
+          count(discarded, mutant.operator);
+          if (named.length < 12) {
+            named.push(
+              `${mutant.operator}  ${file}:${mutant.line}  ${mutant.before.trim().slice(0, 80)}`,
+            );
           }
         }
       }
@@ -102,17 +107,26 @@ try {
   rmSync(scratch, { recursive: true, force: true });
 }
 
-console.log(`${read} file(s) node --check reads, ${proposed} deletion(s) proposed`);
-console.log(
-  proposed === 0
-    ? "nothing proposed, so there is no rate here rather than a rate of zero"
-    : `${discarded} discarded as a syntax error: ${((discarded / proposed) * 100).toFixed(2)}%`,
-);
+const total = [...proposed.values()].reduce((sum, one) => sum + one, 0);
+console.log(`${read} file(s) node --check reads, ${total} mutant(s) proposed\n`);
+for (const [operator, count] of [...proposed].sort((one, other) => other[1] - one[1])) {
+  const broke = discarded.get(operator) ?? 0;
+  console.log(
+    `  ${operator.padEnd(24)} ${String(count).padStart(5)} proposed  ` +
+      `${String(broke).padStart(4)} do not parse  ${((broke / count) * 100).toFixed(2)}%`,
+  );
+}
 for (const one of named) {
-  console.log(`  discarded ${one}`);
+  console.log(`\n  discarded ${one}`);
 }
 console.log(
-  "\nEach discarded line is the middle of an expression the line below it continues, which is what" +
-    " one line of context cannot see. The check is what makes the operator safe rather than the" +
+  "\nOnly `delete-statement` is checked at runtime, because only it can unbalance a file: the" +
+    " others replace a token with a token of the same shape, wrap a balanced region, or remove a" +
+    " balanced one. A non-zero rate on any other row would mean that claim is wrong and the check" +
+    " belongs on that operator too.",
+);
+console.log(
+  "Each discarded deletion is the middle of an expression the line below it continues, which one" +
+    " line of context cannot see. The check is what makes the operator safe rather than the" +
     " lexical rule, and this is the share of the work it does.",
 );
