@@ -17,6 +17,7 @@ import {
   groupByHarness,
   heldBackAgreementRate,
   tallyFalseGreens,
+  tallyInadequateOracles,
 } from "../dist/eval/false-green-rate.js";
 import { prTaskEvidenceRoot } from "../dist/eval/pr-task-paths.js";
 
@@ -155,6 +156,23 @@ reportHarnessSplit(mined.kept);
 const hand = handAuthoredRows();
 report("hand-authored, two oracles per task", hand);
 const both = report("both corpora", [...mined.kept, ...hand]);
+// Across both files, not only within the mined one. The published rate is the combined figure, so
+// the guard that stops it being assembled out of two tool versions has to read the set it is a
+// rate of.
+reportHarnessSplit([...mined.kept, ...hand]);
+
+// Gate 3b, the capability question: of the oracles a held-back oracle proved inadequate, how many
+// the tool refuses to certify on. The denominator is oracles rather than tasks, so a better model
+// does not move it, and it is small because a demonstration of inadequacy is rare. The interval
+// says how small.
+const inadequate = tallyInadequateOracles([...mined.kept, ...hand]);
+console.log("\n=== the oracles a held-back oracle proved inadequate ===");
+console.log(
+  inadequate.proved === 0
+    ? "none proved inadequate, so there is nothing here to refuse on"
+    : `${inadequate.refused} of ${inadequate.proved} refused: ${percent(inadequate.point)} ` +
+        `95% CI [${percent(inadequate.lower)}, ${percent(inadequate.upper)}]`,
+);
 
 // Said out loud, because the denominator moves when the tool does. A check that refuses more makes
 // the tool safer and the measurement weaker at once, and a rate printed without that is half a

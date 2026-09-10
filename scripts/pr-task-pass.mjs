@@ -237,9 +237,12 @@ function bondEvidence(sealed, heldBack) {
   for (const one of heldBack.bondedMutants ?? []) {
     heldBackByMutant[one.id] = one.verdict;
   }
+  // Absent where the verdict carried no bond, never filled in with a word of this script's own.
+  // A field a row manufactures is a field nothing can re-derive the row from, and the three
+  // qwen38 rows that claimed `verified` with no reach recorded are what that costs.
   return {
-    oracleBond: sealed.oracleBond ?? "not-recorded",
-    heldBackBond: heldBack.oracleBond ?? "not-recorded",
+    ...(sealed.oracleBond === undefined ? {} : { oracleBond: sealed.oracleBond }),
+    ...(heldBack.oracleBond === undefined ? {} : { heldBackBond: heldBack.oracleBond }),
     ...((sealed.bondedMutants ?? []).length === 0
       ? {}
       : { bondedMutants: sealed.bondedMutants, heldBackBondedMutants: heldBackByMutant }),
@@ -407,7 +410,10 @@ for (const task of wanted) {
       previous.regression = "no-change";
       previous.sealedOracle = "unjudged";
       previous.heldBackOracle = "unjudged";
+      // Not a value taken from a verdict: no verdict was asked for. The harness knows directly
+      // that a run with no patch measured nothing, and says so.
       previous.oracleReach = "unmeasured";
+      previous.oracleBond = "not-bonded";
       previous.verified = false;
       previous.corner = "true-red";
       previous.producedNoChange = true;
@@ -439,7 +445,10 @@ for (const task of wanted) {
       // Recorded because it is what the sealed oracle is worth: `unreached` is the tool refusing
       // to certify an oracle that never ran the change, and a corpus that does not carry the
       // verdict cannot show which refusals came from it.
-      previous.oracleReach = sealedAgain.oracleReach ?? "unmeasured";
+      if (sealedAgain.oracleReach === undefined) delete previous.oracleReach;
+      else previous.oracleReach = sealedAgain.oracleReach;
+      delete previous.oracleBond;
+      delete previous.heldBackBond;
       // What the oracle did with a change to the lines the patch added, and what the held-back
       // half did with the same change. Recorded because it is what the sealed oracle is worth:
       // one that accepts a mutant of a line it ran established nothing about that line.
@@ -538,6 +547,9 @@ for (const task of wanted) {
       regression: "no-change",
       sealedOracle: "unjudged",
       heldBackOracle: "unjudged",
+      // The harness knows directly that a run with no patch measured nothing, and says so.
+      oracleReach: "unmeasured",
+      oracleBond: "not-bonded",
       verified: false,
       corner: "true-red",
       producedNoChange: true,
@@ -568,7 +580,7 @@ for (const task of wanted) {
     agentExit: agent.code,
     regression: sealed.regression,
     sealedOracle: sealed.task,
-    oracleReach: sealed.oracleReach ?? "unmeasured",
+    ...(sealed.oracleReach === undefined ? {} : { oracleReach: sealed.oracleReach }),
     ...(sealed.oracleReach === "unreached"
       ? { unreachedByOracle: sealed.unreachedByOracle ?? [] }
       : {}),
