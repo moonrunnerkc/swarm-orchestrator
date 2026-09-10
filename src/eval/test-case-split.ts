@@ -9,8 +9,9 @@
  *
  * What this does not give is the independence two separately authored oracles have. Both halves
  * come from one author in one sitting and can share a blind spot. That is measurable rather than
- * arguable: `heldBackAgreementRate` over a corpus says how often the halves reach the same verdict
- * on the same patch, and a split whose halves never disagree is buying less than it appears to.
+ * arguable: `heldBackAgreementRate` in `false-green-rate.ts` says how often the halves reach the
+ * same verdict on the same patch, and a split whose halves never disagree is buying less than it
+ * appears to.
  */
 export interface TestCase {
   readonly title: string;

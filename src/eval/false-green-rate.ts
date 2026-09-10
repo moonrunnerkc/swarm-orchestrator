@@ -50,3 +50,42 @@ export function tallyFalseGreens(rows: readonly CorpusJudgement[]): FalseGreenTa
     unjudgeable: count("unjudgeable"),
   };
 }
+
+/** What one half said about a patch, as the passes record it. */
+export interface HalfVerdicts {
+  readonly sealedOracle?: string;
+  readonly heldBackOracle?: string;
+}
+
+export interface HeldBackAgreement {
+  /** Patches both halves actually judged, which is the only place they can agree or disagree. */
+  readonly compared: number;
+  readonly agreed: number;
+  /** Null where neither half judged anything: there is no agreement to have. */
+  readonly rate: number | null;
+}
+
+/**
+ * How often the two halves of one specification reach the same verdict on the same patch.
+ *
+ * This is the mined corpus's weakness made into a number. Both halves come from one author in one
+ * sitting, often in one `describe` block, and they can share a blind spot in a way two separately
+ * authored oracles cannot. A split whose halves never disagree on any patch is buying less than it
+ * appears to, and the only way to know is to count.
+ *
+ * Only verdicts about the patch count. A half that accepts the base judges nothing, and one the
+ * harness could not run judged nothing either, so neither agrees with anything.
+ */
+export function heldBackAgreementRate(rows: readonly HalfVerdicts[]): HeldBackAgreement {
+  const judged = rows.filter(
+    (row) =>
+      (row.sealedOracle === "accepted" || row.sealedOracle === "rejected") &&
+      (row.heldBackOracle === "accepted" || row.heldBackOracle === "rejected"),
+  );
+  const agreed = judged.filter((row) => row.sealedOracle === row.heldBackOracle).length;
+  return {
+    compared: judged.length,
+    agreed,
+    rate: judged.length === 0 ? null : agreed / judged.length,
+  };
+}
