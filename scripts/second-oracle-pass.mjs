@@ -25,7 +25,7 @@ import {
   heldBackOracleLooksBroken,
 } from "../dist/eval/campaign-run.js";
 import { runProcessGroup } from "../dist/exec/run-process.js";
-import { wilsonInterval } from "../dist/eval/statistics.js";
+import { tallyFalseGreens } from "../dist/eval/false-green-rate.js";
 import { repositories } from "./real-repos.mjs";
 
 const repositoryRoot = new URL("..", import.meta.url).pathname;
@@ -141,6 +141,12 @@ for (const record of runs) {
     heldBackOracle: heldBack.task,
     verified,
     corner,
+    oracleReach: sealed.oracleReach ?? "unmeasured",
+    // Which lines, not just that some were missed: "extend the oracle" names nothing to extend
+    // without them, and they are what separates a real gap from a defect in this measurement.
+    ...(sealed.oracleReach === "unreached"
+      ? { unreachedByOracle: sealed.unreachedByOracle ?? [] }
+      : {}),
   });
 
   console.log(
@@ -174,20 +180,26 @@ for (const name of new Set(scored.map((entry) => entry.name))) {
   );
 }
 
-console.log("\n=== the four corners, against an oracle the tool was never given ===");
+// One tally rule for both corpora. This block counted four corners and divided false greens by
+// every run, refusals included, while the mined pass divided by the patches the tool certified.
+// Two rates under one name is how a published number stops meaning anything.
+console.log("\n=== the corners, against an oracle the tool was never given ===");
 for (const arm of ["swarm", "baseline"]) {
   const mine = scored.filter((entry) => entry.arm === arm);
   if (mine.length === 0) continue;
-  const count = (corner) => mine.filter((entry) => entry.corner === corner).length;
-  const rate = wilsonInterval(count("false-green"), mine.length);
+  const tally = tallyFalseGreens(mine);
+  const percent = (value) => (value === null ? "n/a" : `${(value * 100).toFixed(1)}%`);
   console.log(
-    `${arm.padEnd(9)} ${mine.length} runs: ${count("true-green")} true green, ` +
-      `${count("false-green")} FALSE GREEN, ${count("false-red")} false red, ` +
-      `${count("true-red")} true red`,
+    `${arm.padEnd(9)} ${mine.length} runs: ${tally.opportunities} certified ` +
+      `(${tally.falseGreens} FALSE GREEN), ${tally.refusedOnReach} refused on reach, ` +
+      `${tally.refusedOnSealed} refused on the sealed half, ${tally.falseReds} false red, ` +
+      `${mine.length - tally.opportunities - tally.refusedOnReach - tally.refusedOnSealed - tally.falseReds - tally.unjudgeable} true red`,
   );
   console.log(
-    `${"".padEnd(9)} false-green rate ${(rate.point * 100).toFixed(1)}% ` +
-      `[${(rate.lower * 100).toFixed(1)}, ${(rate.upper * 100).toFixed(1)}]`,
+    tally.point === null
+      ? `${"".padEnd(9)} nothing certified, so there is no rate here rather than a rate of zero`
+      : `${"".padEnd(9)} false-green rate ${percent(tally.point)} ` +
+          `[${percent(tally.lower)}, ${percent(tally.upper)}]`,
   );
 }
 
