@@ -34,6 +34,57 @@ failed a hidden acceptance test. That is a 22% false-green rate, and it existed 
 answers were separated. `--oracle <command>` supplies the second; without it the task is
 `unjudged` and nothing is verified, which is the honest answer rather than a pass by omission.
 
+## The oracle is judged too
+
+An oracle is evidence only about the code it ran, so `swarm ci` reports what its own oracle
+reached before it reports a verdict:
+
+```
+regression: pass   task: accepted   oracle reach: unreached (lib/winston/container.js: 46, 47)
+```
+
+Two ways an oracle can fail to be evidence, and both are checked. One that **accepts the base
+commit** would have accepted a patch that changes nothing, so `task` reads `vacuous` and nothing is
+verified. One that **never executed lines the patch added** cannot have judged them, so
+`oracleReach` reads `unreached`, the lines are named, and nothing is verified.
+
+Both came out of measuring this tool against real work. Certified tasks turned out to rest on
+oracles that could not fail, and the first false green found was certified by an oracle that never
+ran the branch it broke.
+
+`unreached` blocks. `unmeasured` does not: an absence of evidence is not evidence of a gap.
+
+### How reach is measured, and what it is not
+
+Three ways of asking, chosen by what the oracle starts, and `unmeasured` where none applies:
+
+| the oracle starts | reach comes from |
+| --- | --- |
+| node's own test runner, in an invocation the harness can rebuild itself | that runner's lcov reporter, on a stream the harness owns |
+| a runner that loads the file as written (mocha, a plain node script) | V8's own coverage, written to a directory the harness names outside the workspace |
+| jest or vitest, which transform before they run | the runner's own lcov report, under coverage flags the harness appends |
+| anything else | nothing: reach is `unmeasured` |
+
+A transforming runner is caught where it shows. Under jest the coverage offsets address babel's
+output rather than the file: dayjs's `src/index.js` is 11,794 characters on disk and its coverage
+names offsets past 218,000. An offset past the end of the file abstains the whole reading rather
+than dropping the file, because a file missing from a reading reads as one the oracle skipped, and
+that would refuse the patch instead of declining to judge it.
+
+**Named honestly:** the last two arms read a report the workspace's own processes wrote, and
+nothing here detects a forged one. That is deliberate and it is not the hole it sounds like. The
+bar the ratchet uses, an invocation the harness assembled with no shell in between, exists because
+a workspace can inflate a number a retry is judged against. Reach only ever turns a green into a
+refusal, so a workspace that forged its coverage would be handed `reached`, which is exactly what
+an oracle nobody could measure already gets. Holding reach to the ratchet's bar cost thirteen of
+seventeen repositories in the mined corpus and closed nothing.
+
+**What it costs.** Reach refuses patches that are fine. A change that restructures one assignment
+into an `if` and an `else`, judged by an oracle whose cases all take the `if`, is refused with the
+`else` named: the oracle did not run it, so it did not judge it. Those refusals are reported as
+`refused-on-reach` rather than as the tool being wrong about the patch, and they are counted where
+the rate is, because a refused patch is one the tool did not certify.
+
 ## A failure the base already had is not a regression
 
 A check that fails with the patch is re-run with the patch reverted, on the same checkout, so the

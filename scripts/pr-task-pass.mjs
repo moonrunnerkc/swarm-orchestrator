@@ -485,14 +485,22 @@ for (const task of wanted) {
 // A task whose oracle could not judge is not evidence either way, so it leaves the denominator
 // rather than being counted as a refusal. It is reported by name: a number quietly computed over
 // fewer tasks than it says is the thing this whole corpus exists to avoid.
-const judgeable = scored.runs.filter((one) => one.corner !== "unjudgeable");
+//
+// The same applies to a row the viability filter no longer admits. Rows are kept, because they are
+// what was run and deleting them would make the corpus unreproducible, but a task whose halves are
+// now known not to both refuse the base is not an opportunity and cannot be counted as one. How
+// many were set aside prints beside the rate.
+const stillViable = new Set(viable.map(named));
+const currentRuns = scored.runs.filter((one) => stillViable.has(named(one)));
+const setAside = scored.runs.length - currentRuns.length;
+const judgeable = currentRuns.filter((one) => one.corner !== "unjudgeable");
 const certified = judgeable.filter((one) => one.verified);
 const falseGreens = judgeable.filter((one) => one.corner === "false-green");
 // Reported beside the rate rather than folded into it. A patch refused because the tool's own
 // oracle never ran part of it is not the tool being wrong about the patch, and it is not free
 // either: the task leaves the certified set, so the interval this prints is wider for it.
 const refusedOnReach = judgeable.filter((one) => one.corner === "refused-on-reach");
-const reachMeasured = scored.runs.filter(
+const reachMeasured = currentRuns.filter(
   (one) => one.oracleReach === "reached" || one.oracleReach === "unreached",
 );
 console.log(
@@ -501,8 +509,10 @@ console.log(
     : `\n=== mined corpus, against an oracle the tool was never given ===`,
 );
 console.log(
-  `${scored.runs.length} task(s) scored, ${scored.runs.length - judgeable.length} left out as ` +
-    `unjudgeable, ${certified.length} of the rest certified by the tool`,
+  `${currentRuns.length} task(s) scored and still viable` +
+    `${setAside === 0 ? "" : ` (${setAside} more set aside: the viability filter no longer admits them)`}` +
+    `, ${currentRuns.length - judgeable.length} left out as unjudgeable, ` +
+    `${certified.length} of the rest certified by the tool`,
 );
 if (certified.length > 0) {
   const rate = wilsonInterval(falseGreens.length, certified.length);
@@ -513,7 +523,7 @@ if (certified.length > 0) {
   );
 }
 console.log(
-  `oracle reach measured on ${reachMeasured.length} of ${scored.runs.length}; ` +
+  `oracle reach measured on ${reachMeasured.length} of ${currentRuns.length}; ` +
     `${refusedOnReach.length} patch(es) refused because the oracle never ran part of the change`,
 );
 console.log(`written: ${scoredPath}`);
