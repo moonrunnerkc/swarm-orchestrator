@@ -5,8 +5,7 @@ Gate 3 asks for zero false greens over at least four hundred held-out tasks. The
 to be true for that number to be both trustworthy and better, separated into the two different
 problems it actually is.
 
-Four of the six items below are done. What is left is the one that was always the hard one, scale,
-and one that turned out to be the wrong idea.
+Five of the six items below are done. What is left is the one that was always the hard one, scale.
 
 ## The distinction that matters
 
@@ -42,9 +41,74 @@ false greens rather than measuring them.
 
 ### 2. Bond the oracle
 
-After an oracle accepts, hand it a mutation of the changed lines that it should refuse. An oracle
-that accepts the mutant did not test what it appeared to test. This extends the bond machinery
-already applied to gates, which is the same idea one layer up.
+**Built, report-only.** After the oracle accepts, the lines the patch added are changed into
+something that behaves differently and the oracle is run again. One that still accepts did not
+test what it appeared to test. This is the bond machinery the gates already use, one layer up, and
+it carries the same four words: `held`, `vacuous`, `unshown`, `not-bonded`.
+
+The operators are in [`src/gates/oracle-mutants.ts`](../src/gates/oracle-mutants.ts), and every one
+of them is a syntactic rule over a line rather than a rule about a repository, a patch or a task: a
+check whose sensitivity can be tuned per subject measures the tuning. Invert a comparison; swap the
+operands of a non-commutative arithmetic operator; replace a returned expression with a sentinel;
+swap the two arguments of a call; drop a no-argument call whose result the chain uses. Six mutants
+per patch at most, two per operator, ordered by how often each operator produces a mutant that
+changes nothing, because each mutant is another oracle run.
+
+`vacuous` needs the oracle to have demonstrably run the mutated line, which is the coverage reach
+already read of the same run. Where nothing was measured the answer is `unshown`, not `vacuous`:
+absence of evidence about the oracle is not evidence against it.
+
+**The residual, stated rather than solved.** A mutant that changes nothing observable is
+indistinguishable here from an oracle that failed to notice one that did. That is the equivalent
+mutant problem and this does not solve it. What it does instead is keep the operators few and
+mechanical and audit every `vacuous` verdict by hand before any of them refuses anything. Beside
+it: a patch with no line these operators can change gets no bond at all, which is
+`not-bonded` and is never read as `held`.
+
+#### The decision rule, pre-registered
+
+Written here, and committed, before the measurement over the sixteen certified patches ran. It
+does not change after the table is seen. If the table shows the rule was wrong, that is what the
+report says.
+
+Bonding blocks on `vacuous`, and only on `vacuous`, if all three hold after the audit:
+
+1. zero false refusals across the sixteen, where a false refusal is a `vacuous` verdict whose
+   mutant is equivalent or whose refusal comes from an artifact of the check;
+2. `tj/commander.js#1671` is refused;
+3. the known-answer smoke still gives koa#1946 true-red, and if koa#1999 or koa#1904 changes, the
+   change is a refusal whose mutant the audit confirmed behaviour-changing.
+
+If any condition fails, bonding stays report-only, and the report names the condition and the lines
+responsible.
+
+Every `vacuous` verdict is read by hand before it is counted, the same check the reach refusals
+got, and split three ways by what the held-back oracle does with the same mutant:
+
+- **real gap:** the held-back oracle refuses the same mutant. A user who supplied the whole suite
+  would get `held` here, so this refusal is a product of splitting one suite in two rather than
+  something users would meet.
+- **unconfirmed:** both oracles accept the mutant, and reading the mutated line confirms it changes
+  behaviour an oracle could execute. This is the refusal a whole-suite user would actually see.
+- **false refusal:** the mutant is equivalent, or the refusal comes from an artifact. This is the
+  one that vetoes.
+
+`unshown` and `not-bonded` never block. They are absences of evidence about the oracle rather than
+evidence against it, and blocking on them would make the certify rate a function of how many
+mutation operators this build happens to carry. They are also never flattened into `held`: `swarm
+ci` prints the bond state beside the verdict and gate 3c splits the certify rate by it, so
+`verified` reads as "no regression, the oracle accepted, it ran the change, and no mutant of the
+change got past it", with a `held` bond shown as the stronger claim.
+
+**Why `vacuous` is the one that blocks.** An oracle that accepted a behaviour-changing mutant of
+the change has not verified the change, and the standing principle here is to abstain rather than
+certify on evidence known to be empty. Real gaps and unconfirmed refusals are the price of that,
+and they are reported rather than treated as a veto: each one is the tool being right about its
+oracle.
+
+The switch is one exported boolean,
+[`bondRefusesCertification`](../src/gates/certification.ts), so turning it on or off is one line
+and the evidence beside it.
 
 ### 3. Report whether the oracle executed the change
 
