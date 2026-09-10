@@ -526,4 +526,9 @@ console.log(
   `oracle reach measured on ${reachMeasured.length} of ${currentRuns.length}; ` +
     `${refusedOnReach.length} patch(es) refused because the oracle never ran part of the change`,
 );
-console.log(`written: ${scoredPath}`);
+// The results file is written per task, so a pass with nothing to run writes none. Saying it was
+// written anyway names an artifact that is not there, which is the shape of claim this corpus
+// exists to catch elsewhere.
+console.log(
+  existsSync(scoredPath) ? `written: ${scoredPath}` : "nothing ran, so nothing was written",
+);
