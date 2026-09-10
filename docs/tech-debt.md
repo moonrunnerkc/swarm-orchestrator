@@ -488,6 +488,24 @@ read from them. It is a machine filling up with strays, and it needs either a de
 suites under a kernel-enforced backend that can bound them, or a decision not to mine repositories
 whose suites start daemons.
 
+**Measured again on 2026-09-10, and this time the cost was measurement error.** One corpus
+re-judge left **328 orphans**, growing to 440 while it ran, each in its own process group with
+PPID 1, started by a command that exited zero so nothing was left to signal. Around 25GB of the
+box went with them, and the local model server then died with
+`RuntimeError: [METAL] Command buffer execution failed: Insufficient Memory` in `mx.eval` over its
+own prompt cache. Every task after that came back with a zero-byte patch and was recorded as the
+model writing nothing, which is a model failure in the corpus. Two rows were dropped and the
+attribution is now checked rather than assumed, in `src/eval/empty-patch-attribution.ts`: an empty
+patch is charged to the model only where the endpoint answers afterwards.
+
+So the leak does reach the measurements, by way of the machine rather than by way of a lock, and
+that closes the question of whether it is worth fixing. Two things it also changes about the shape
+of a fix. A PPID walk at kill time cannot find these, because their parent had already exited; the
+subtree has to be recorded while the command runs, or bounded by a backend. And gate 10's claim
+that orphan processes are proven was too strong: `src/exec/run-process.test.ts` kills a child that
+outlives its parent inside the group the harness created, which is a different thing, and
+[`beta-gates.md`](beta-gates.md) now says so.
+
 ## Test files whose name does not match a source file
 
 Six, and none is an orphan: `redteam-adversarial`, `verifier-parity`, `acceptance` (twice),
