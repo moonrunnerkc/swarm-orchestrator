@@ -1,10 +1,8 @@
 import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { resolveLocalBackend } from "./cli-local-backend.ts";
 import type { SelectCommand } from "./cli-options.ts";
 import type { ResolvedSettings } from "./config/settings.ts";
 import type { RandomSource } from "./core/random-source.ts";
-import { exitCodes } from "./machine-output.ts";
 import { parseModelSpec } from "./providers/model-spec.ts";
 import { fetchServedModels } from "./providers/served-models.ts";
 import {
