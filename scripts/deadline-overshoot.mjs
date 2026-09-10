@@ -46,3 +46,11 @@ console.log(
   `a ${worst.overshootMs}ms overshoot is under 2% of any budget above ` +
     `${Math.ceil(worst.overshootMs / 0.02)}ms, which is what the percentage above depends on`,
 );
+// And on how busy the machine is, which is the other half of the same point. The overshoot is
+// scheduling and does not shrink with the budget, so a percentage taken at a small budget is a
+// statement about the load at the time. Measured on this machine: 3ms idle, 5ms with eight
+// processes spinning, and more than 10ms with the whole test suite running in parallel.
+console.log(
+  "Run this on a busy machine and the milliseconds grow while the tool contributes the same " +
+    "amount, so quote the absolute number with the load beside it rather than the percentage alone.",
+);
