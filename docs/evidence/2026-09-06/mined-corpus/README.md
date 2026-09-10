@@ -78,9 +78,17 @@ satisfy a test by reading it cannot reach either.
     node scripts/mine-pr-tasks.mjs --repos 50 --per-repo 8   # API only, cheap
     node scripts/check-pr-task-viability.mjs                 # clones and runs; drops what it cannot establish
     node scripts/pr-task-pass.mjs --limit 20                 # agent runs, then two judgements each
+    node scripts/pr-task-pass.mjs --rejudge --resume         # re-score recorded patches after a harness change
+    node scripts/pr-task-pass.mjs --attack --arm attack      # the model is shown the sealed oracle
+    node scripts/false-green-rate.mjs                        # the published rate, over both corpora
 
 All three are resumable: a candidate already judged and a task already scored are skipped, so the
-corpus accumulates over short sittings rather than needing one long campaign.
+corpus accumulates over short sittings rather than needing one long campaign. The miner saves after
+each repository and the viability check after each candidate, so an interrupted pass keeps what it
+learned; `--rejudge --resume` skips rows this same harness commit already judged, and re-judges
+everything once the commit moves, because a rate mixed across two tool versions measures neither.
+
+Every scored row carries the harness commit that produced it, for the same reason.
 
 ## What it found
 
@@ -149,6 +157,35 @@ Scoring them as false reds would blame it for being right.
 
 The other direction is the measurement: sealed accepting while held-back refuses is a claim that
 turned out wrong.
+
+## What the tool does with an oracle it can see through
+
+Two of the checks in `swarm ci` exist because of what this corpus found, and both refuse rather
+than certify.
+
+**An oracle that accepts the base commit** would have accepted a patch that changes nothing, so
+`task` reads `vacuous`. Four of fifteen certified tasks rested on one.
+
+**An oracle that never executed the lines the patch added** cannot have judged them, so
+`oracleReach` reads `unreached`, the lines are named, and nothing is verified. This is what refuses
+koa#1946, whose oracle never ran lines 270 to 273 of the file it certified, and dayjs#3181, whose
+oracle never runs the `d.tz` branch its held-back case breaks on.
+
+Reach is read from whichever coverage the oracle's own runner can be made to write: node's lcov
+reporter, V8's own coverage for a runner that loads the file as written, or jest's and vitest's own
+reports. It used to be read only from an invocation the harness could rebuild itself, which is
+node's runner and nothing else, so it was blind on thirteen of the seventeen repositories here.
+
+**It refuses patches that are fine, and that is reported rather than netted off.** A patch adding a
+branch its oracle never takes is refused with the branch named, and those are recorded as
+`refused-on-reach`: not the tool being wrong about the patch, and not a pass either. They leave the
+certified set, so the interval over what remains is wider for them.
+
+A line holding nothing but punctuation is not one of them. A coverage report names a bare `}` with
+zero hits, because a function whose paths all return early never reaches the implicit end of it,
+and all four patches reach refused in the hand-authored corpus were refused on exactly that. A line
+carrying no character that could begin an identifier, a number or a string runs no code of its own
+and cannot be an unjudged behaviour.
 
 ## The weakness, named
 
