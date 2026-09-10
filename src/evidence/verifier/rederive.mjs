@@ -82,21 +82,29 @@ export function refusalsToCertify(verdict) {
 /**
  * The verdict a recorded `swarm ci` result implies, or the fields that stop it implying one.
  *
- * A record missing a field the policy reads is not re-derived rather than agreed with, which is
- * the same rule this file applies to a gate run whose output was truncated. A green claim nobody
- * can recompute is exactly what gate 3a exists to bar, so the caller reads `rederived` before it
- * reads `verified`.
+ * A green claim nobody can recompute is exactly what gate 3a exists to bar, so a record claiming
+ * `verified` has to carry every field the policy reads, in words the policy knows: a field nobody
+ * recorded could have held the reason that refuses it.
+ *
+ * A refusal is different, and reading it the same way was a defect in this check rather than in
+ * the records. The reasons are monotone in the fields present, so a record whose present fields
+ * already hold one has a determinate verdict whatever is missing: nothing a later field could say
+ * takes a reason back. Demanding every field of a refusal too reported 94 of 129 recorded verdicts
+ * as impossible to check when 89 of them were determinate.
  */
 export function rederiveCiVerdict(verdict) {
   const read = bondRefusesCertification
     ? [...fieldsTheVerdictPolicyReads, "oracleBond"]
     : fieldsTheVerdictPolicyReads;
   const missing = read.filter((name) => !verdictVocabulary[name].includes(verdict[name]));
+  const reasons = refusalsToCertify(verdict);
+  if (reasons.length > 0) {
+    return { rederived: true, missing, reasons, verified: false };
+  }
   if (missing.length > 0) {
     return { rederived: false, missing, reasons: [], verified: null };
   }
-  const reasons = refusalsToCertify(verdict);
-  return { rederived: true, missing: [], reasons, verified: reasons.length === 0 };
+  return { rederived: true, missing: [], reasons, verified: true };
 }
 
 function notApplicable(observation) {

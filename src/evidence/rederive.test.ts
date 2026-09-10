@@ -399,6 +399,21 @@ describe("the re-derivation script agrees with the certification policy", () => 
   });
 
   /**
+   * A reason to refuse cannot be taken back by a field nobody recorded: the reasons are monotone
+   * in the fields present, so a record that already holds one has a determinate verdict whatever
+   * is missing. Reading those as un-re-derivable said 94 of 129 recorded verdicts could not be
+   * checked when 89 of them were determinate, which is a refusal that does not survive reading.
+   */
+  it("re-derives a refusal whose present fields already hold a reason", () => {
+    const judged = rederive.rederiveCiVerdict({ regression: "fail", task: "accepted" });
+
+    expect(judged.rederived).toBe(true);
+    expect(judged.verified).toBe(false);
+    expect(judged.reasons).toEqual(["regression-not-pass"]);
+    expect(judged.missing).toContain("oracleReach");
+  });
+
+  /**
    * A field carrying a word the policy does not know is the more dangerous half of this:
    * `not-recorded` in a field a rule tests for one value reads as "not that value" and lets the
    * record certify.
