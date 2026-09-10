@@ -4,6 +4,55 @@
 
 ### Added
 
+- **The oracle bond asks something of ordinary code.** Its five operators each needed a particular
+  token on the line, and a guard clause, an assignment, a `require` and a callback carry none of
+  them, so `not-bonded` was what a bond said when it had nothing to ask rather than when it had
+  found a strong oracle. Both adversarial false greens are that shape and produced zero mutants
+  between them across every line they add. Three more operators cover the statement shapes that
+  went uncovered: an `if` or `while` condition negated whole, the value a plain assignment or
+  declaration writes replaced by a sentinel, and the statement removed. They are read off the
+  language's own `Statement` productions rather than off the patches that exposed the gap, because
+  operators fitted to the cases that motivated them measure the fitting, and the derivation, the
+  ordering and which tasks were in sample were committed before any of it was implemented:
+  [`docs/oracle-bond-operators.md`](docs/oracle-bond-operators.md). All eight fire on the mined
+  corpus and the three new ones account for 25 of the 34 mutants built. `koa#1999`, the patch a
+  rejected stricter option would have cost because nothing here could change any of its added
+  lines, certifies on `held`.
+- **A deleted statement is confirmed to parse before it is read as evidence.** Statement deletion
+  is the one operator that can leave a file which does not compile, and every oracle refuses one of
+  those, so a bond counting that refusal would credit the oracle with a rejection it never made. It
+  runs `node --check` over the file the patch left and over the file with the line blanked. Where
+  the original does not parse, node cannot read the dialect and so cannot tell a syntax error from
+  a mutant: the operator proposes nothing for that file and the other seven still apply, which is
+  what TypeScript and JSX get.
+- **A vacuous bond names what showed the mutant changed anything.** An oracle accepting a mutant
+  means nothing unless the mutant was a change, and what established that was a person reading each
+  mutated line: an audit that found two equivalent mutants, does not scale, and is not evidence
+  anybody else can re-derive. Every mutant the oracle accepted on a line it ran is now adjudicated
+  by a second detector, cheapest first. The oracle runs again under the same instrumentation reach
+  uses, and a line other than the mutated one that ran in one reading and not the other is a
+  demonstrated difference in what the program did; failing that, the repository's own gates that
+  passed with the patch are run again. Neither seeing anything is recorded as such, and a suite run
+  that was never spent says so rather than answering. What the pair cannot see is named: a mutant
+  that changes only a value on a path that runs either way, in code the project did not have
+  before.
+- **`scripts/deadline-overshoot.mjs`, and gate 9 has a number.** Twenty samples with a real child
+  that outlives its deadline and the whole cancellation tree between them. Worst overshoot 3ms,
+  1.20% of a 250ms budget against the 2% the gate asks, and the budget floor is printed beside the
+  percentage because the percentage depends on both. The wall clock rather than an injected one: a
+  driven clock reports zero by construction, which is the one answer this cannot be allowed to
+  give.
+- **`scripts/task-difficulty.mjs`, and gate 7's blocker was misdiagnosed.** That row said the
+  discriminating corpus has three tasks and more would have to be authored by hand. They are
+  already mined: over the pull-request corpus this model solves 11 of 79, 13.9% [8.0, 23.2], spread
+  across fourteen repositories. A set where the model both succeeds and fails is what a paired test
+  needs and what the golden set does not give. What is left is arm selection in the mined pass and
+  a second run of every task, neither of which is authoring.
+- **The adversarial arm's numbers come out of the same script as the rest.** They were in prose and
+  nothing re-derived them. `separateAdversarialRows` also keeps them out of every other rate by a
+  check rather than by which file a row sits in, since a model shown its acceptance test is a
+  different sampling process rather than a harder subset of one.
+
 - **`swarm ci` refuses to certify on an oracle that never ran the change.** An oracle is evidence
   only about the code it executed, so the run reports `oracleReach`, and a change the oracle
   demonstrably skipped is not verified. The unreached lines are named, because "extend the oracle
@@ -14,6 +63,27 @@
   certified. Across both corpora the check produced no false reds.
 
 ### Fixed
+
+- **Three attacks that got past the policy guard.** Every security case in this repository was
+  written by whoever wrote the defence, so `src/tools/guard-attacks.test.ts` was written the other
+  way round. Casing: macOS and Windows are case-insensitive by default, so `.ENV` opens `.env`, and
+  every pattern in the credential denylist was case-sensitive. Measured on APFS before the fix,
+  `readFileSync('.ENV')` returns what `.env` holds, and `realpathSync` hands back the casing it was
+  given rather than the casing on disk, so nothing upstream normalized it; `SWARM.TOML`,
+  `server.PEM`, `.git/CONFIG` and a differently cased denied root were the same hole. The denial
+  comparisons now fold, whatever the host filesystem does, because a denial whose verdict depends
+  on which machine ran it is the defect. The workspace containment check does not fold: that one
+  decides whether anything is allowed at all, and folding it is the fail-open direction. A revision
+  and a path in one word: `git show HEAD:.env` prints a credential file and the word the guard
+  ruled on matched no pattern. A path inside a word the shell passes whole: `sed -n
+  'w /home/dev/.ssh/authorized_keys'` writes outside the workspace and the operand was the whole
+  script. A word now offers every path it could open, its whitespace-separated pieces and what
+  follows a colon, each through the same guard, with a URL scheme left alone. Two attacks still
+  succeed and are asserted as succeeding, because a residual nobody can point at is not named:
+  `git config --list` reads a denied file without naming it, and `node -e "..."` is an allowlisted
+  interpreter handed a program.
+- **Two imports nothing in `src/cli-select.ts` used**, on which `npm run lint` and therefore
+  `npm run gates` were failing.
 
 - **vitest and `@vitest/coverage-v8` to 4.1.11, for GHSA-82fw-gwwq-j7x9.** A path traversal in
   `@vitest/mocker`'s redirect mock, CVSS 5.9, published 2026-09-08 against every version from
