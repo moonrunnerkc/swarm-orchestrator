@@ -223,20 +223,26 @@ one fails on scale. Each row and what would settle it: **[docs/beta-gates.md](do
 - **The default execution mode is `restricted`, not `isolated`.** A lexical path and program policy
   in front of interpreters unless you pass `--isolation`. Reported before the run starts and
   recorded on the chain rather than quietly assumed — but it is not containment.
-- **The false-green rate is 1 in 19**, 5.3%, 95% CI [0.9, 24.6]. Every task carries two oracles,
-  one handed to the tool and one held back from it, and once the tool reported `verified` on a
-  patch the held-back oracle refuses. The bar this project set itself is zero, so this is a
-  **failure**: [`mined-corpus/`](docs/evidence/2026-09-06/mined-corpus/README.md). The eleven
-  hand-authored opportunities found none; every false green came from tasks mined out of real pull
-  requests, because maintainers test what they cared about rather than what the author of a tool
-  thought to check.
-- **The one that stands is a patch that is simply incomplete.** Its oracle ran every line the
-  patch wrote and passed; the held-back case names a branch the patch never handled at all. No
-  property of the patch or of the run reveals that, so it is not a check waiting to be written.
-  Tasks a *held-back* oracle cannot judge are reported as unjudgeable and leave the denominator,
-  21 of 73 mined, rather than quietly reducing it. An earlier 0-of-18 was withdrawn as arithmetic
-  rather than corrected quietly — the same test was handed to the tool and then used as the ground
-  truth it was scored against, so it agreed with itself.
+- **The false-green rate is 0 in 14**, 95% CI [0.0, 21.5]. Every task carries two oracles, one
+  handed to the tool and one held back from it. The bar this project set itself is zero over four
+  hundred tasks, so this is still a **failure**, of scale rather than of the rate:
+  [`mined-corpus/`](docs/evidence/2026-09-06/mined-corpus/README.md). Every false green ever found
+  came from tasks mined out of real pull requests, because maintainers test what they cared about
+  rather than what the author of a tool thought to check.
+- **The denominator moved when the tool did, and that is a cost.** Three patches both oracles
+  accept are refused because the tool's own oracle never ran part of what they changed, and four
+  more because the sealed half rejects work the held-back half accepts. A tool that refuses more
+  has fewer claims to be wrong about, so the interval over what is left is wider. Both halves are
+  reported, and a refusal is never counted as a pass.
+- **The one that stood is now refused, and not for the reason it was written up.** dayjs#3181 guards
+  one path into the plugin and one into its static entry; its sealed case exercises the first and
+  never the second, which is where the held-back case breaks. The write-up said its oracle had run
+  every line the patch wrote. That was never measured: reach could only be read from node's own
+  test runner, and dayjs runs jest. Measured, the oracle skips three of the lines.
+- Twelve tasks reported as unjudgeable were the agent having written nothing at all, which is a
+  model failure and is recorded as one. An earlier 0-of-18 was withdrawn as arithmetic rather than
+  corrected quietly — the same test was handed to the tool and then used as the ground truth it was
+  scored against, so it agreed with itself.
 - **Six known gaps ship open**, and none is claimed closed. Four have detections built against them
   and have not yet been attacked, so what is claimed is a detection and not a closure.
 - **A signature does not make the machine honest.** It proves the bundle was not altered after it
@@ -252,7 +258,7 @@ change is fast and its claims are checkable — not that review is unnecessary.
 The roadmap is the six unmet beta gates, tracked with their evidence in
 **[docs/beta-gates.md](docs/beta-gates.md)**:
 
-- [ ] Zero false greens in 400 held-out tasks — currently 1 in 19, upper bound 24.6%
+- [ ] Zero false greens in 400 held-out tasks — currently 0 in 14, upper bound 21.5%
 - [ ] An adversarial corpus written by somebody trying to get past the defences
 - [ ] Task success non-inferior to the strongest single-agent baseline, at a size that supports it
 - [ ] Deadline overshoot measured, not just bounded by a mechanism
