@@ -57,6 +57,14 @@ The cases are dealt **alternately**, not cut front and back. A suite is usually 
 first and edge cases last, so a straight cut hands the tool the weak half and holds back the
 strong one, manufacturing disagreements that say more about the cut than about the patch.
 
+**Both halves are run against the base source before the task is kept**, because the halves are
+what the oracles run and the file is not. A half that passes on the base accepts a patch that
+changes nothing, so a verdict resting on it establishes nothing: 21 of the first 73 mined tasks
+were unjudgeable for that reason, and every one of them was found after a model run had been spent
+on it. A half that passes is re-dealt rather than dropped, in blocks of two and then three, since
+which cases fail on the base is a property of the suite and not of the cut. A task where no deal
+leaves both halves refusing the base is dropped with that named.
+
 Both halves are the same file run under a **different title filter**, so nothing reconstructs
 imports or `describe` wrappers around a subset of cases. A half that does not parse would refuse
 every patch for a reason that has nothing to do with the patch.
@@ -174,8 +182,13 @@ a single-case half.
 This is why the rate is reported beside the split thickness rather than alone. The one false green
 found so far came from a 2+2 split and was reproduced by hand, which is the kind that carries
 weight; a false green from a 1+1 split would mean the model passed one assertion and failed one,
-which is real but much thinner. Requiring two cases per half would cut the corpus by a third and
-is the obvious next tightening.
+which is real but much thinner.
+
+**Requiring two cases per half is not the tightening to make.** It reads as one and it is
+denominator management: dayjs#3181, the one false green that stands, has a 1+1 split and would be
+excluded by it. A filter that removes the finding is not a filter on the instrument. What each
+half is now held to instead is the thing that actually matters, that it can refuse the base source,
+which is a property of the half rather than of how many cases are in it.
 
 **Two arms are only comparable on tasks both of them measured.** The regression check runs the
 project's own suite, and that suite is not always deterministic across runs: dayjs sets a timezone
