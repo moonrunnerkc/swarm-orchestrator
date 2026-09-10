@@ -80,6 +80,30 @@ export function refusalsToCertify(verdict) {
 }
 
 /**
+ * The bond a row's own mutants imply, so the measurement is checkable and not only the verdict
+ * that reads it.
+ *
+ * Gate 3a re-derived whether `verified` follows from `oracleBond`, and nothing asked whether
+ * `oracleBond` follows from the mutants recorded beside it. A measurement nobody can recompute is
+ * the same shape of claim as a green nobody can recompute.
+ *
+ * Worst finding first, which is the rule a run applies. One mutant the oracle accepted on a line
+ * it ran is a demonstrated gap whatever the others did, so `vacuous` outranks `held`: the refusals
+ * establish that the oracle can fail and say nothing about the line it passed over. Below that a
+ * refusal outranks an absence of evidence, and no mutant at all means nothing was asked.
+ */
+export function rederiveOracleBond(mutants) {
+  const recorded = mutants ?? [];
+  if (recorded.length === 0) {
+    return "not-bonded";
+  }
+  if (recorded.some((one) => one.verdict === "vacuous")) {
+    return "vacuous";
+  }
+  return recorded.some((one) => one.verdict === "held") ? "held" : "unshown";
+}
+
+/**
  * The verdict a recorded `swarm ci` result implies, or the fields that stop it implying one.
  *
  * A green claim nobody can recompute is exactly what gate 3a exists to bar, so a record claiming

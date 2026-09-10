@@ -82,6 +82,53 @@ describe("a recorded verdict the tool's own record does not support", () => {
     expect(judged.violations[0]).toContain("holds no reason to refuse");
   });
 
+  /**
+   * The bond is a measurement the row carries, and the verdict that reads it was the only part
+   * anybody could recompute. A row recording mutants and a bond they do not imply is a
+   * measurement nobody can recompute, which is the same shape of claim as a green nobody can.
+   */
+  it("fails on a bond the row's own mutants do not imply", () => {
+    const judged = judgeRecordedVerdicts(
+      [
+        {
+          repository: "owner/repo",
+          pull: 1,
+          regression: "pass",
+          sealedOracle: "accepted",
+          oracleReach: "reached",
+          oracleBond: "held",
+          bondedMutants: [
+            { id: "lib/a.js:1:invert-comparison", verdict: "vacuous", witness: "coverage" },
+          ],
+          verified: true,
+        },
+      ],
+      "fixture",
+    );
+
+    expect(judged.violations).toHaveLength(1);
+    expect(judged.violations[0]).toContain("imply vacuous");
+  });
+
+  it("says nothing about a bond on a row that records no mutants", () => {
+    const judged = judgeRecordedVerdicts(
+      [
+        {
+          repository: "owner/repo",
+          pull: 2,
+          regression: "pass",
+          sealedOracle: "accepted",
+          oracleReach: "reached",
+          oracleBond: "not-bonded",
+          verified: true,
+        },
+      ],
+      "fixture",
+    );
+
+    expect(judged.violations).toEqual([]);
+  });
+
   it("passes a record whose claim follows from its own fields", async () => {
     const path = await recordedAt([
       {

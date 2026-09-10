@@ -21,7 +21,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { rederiveCiVerdict } from "../src/evidence/verifier/rederive.mjs";
+import { rederiveCiVerdict, rederiveOracleBond } from "../src/evidence/verifier/rederive.mjs";
 
 const repositoryRoot = new URL("..", import.meta.url).pathname;
 
@@ -78,6 +78,19 @@ export function judgeRecordedVerdicts(rows, label) {
   let notRederived = 0;
 
   for (const row of rows) {
+    // The bond before the verdict that reads it. A row recording mutants and a bond they do not
+    // imply is a measurement nobody can recompute, which is the same shape of claim as a green
+    // nobody can recompute, and it was taken on trust until now. A row with no mutants recorded
+    // says nothing to check: the bond is then the only thing written down.
+    if (Array.isArray(row.bondedMutants) && row.bondedMutants.length > 0) {
+      const implied = rederiveOracleBond(row.bondedMutants);
+      if (row.oracleBond !== implied) {
+        violations.push(
+          `${label}: ${nameOf(row)} records oracleBond ${row.oracleBond} and its own ` +
+            `${row.bondedMutants.length} mutant(s) imply ${implied}`,
+        );
+      }
+    }
     const judged = rederiveCiVerdict(verdictOf(row));
     const claimed = row.verified === true;
     if (!judged.rederived) {

@@ -44,3 +44,15 @@ export declare function rederiveCiVerdict(verdict: {
   readonly reasons: readonly string[];
   readonly verified: boolean | null;
 };
+/**
+ * The bond a row's own mutants imply, so the measurement is checkable and not only the verdict
+ * that reads it. Worst finding first: one mutant the oracle accepted on a line it ran outranks
+ * every refusal, a refusal outranks an absence of evidence, and no mutant means nothing was asked.
+ */
+export declare function rederiveOracleBond(
+  mutants:
+    | readonly {
+        readonly verdict?: string;
+      }[]
+    | undefined,
+): string;
