@@ -256,6 +256,25 @@ most of what would actually go wrong in this codebase.
 - **Whether the denied path set is the right set.** The sandbox mechanically denies `.env*`,
   `*.pem`, `*.key`, `.git/config`, `~/.aws`, `~/.ssh`. That the enforcement works is testable.
   That the list is complete for a given deployment is a design judgment.
+
+  What is testable was tested the other way round in `src/tools/guard-attacks.test.ts`, written
+  from the source of the check looking for what it does not read rather than for what its author
+  had in mind. Three attacks landed and are closed: the patterns were case-sensitive while macOS
+  and Windows are not, so `.ENV` opened `.env`; `git show HEAD:.env` named the file where the
+  guard was not looking; and `sed -n 'w /outside/path'` hid a path inside one word. Two still
+  succeed and are asserted as succeeding, because neither is reachable by a path check at all:
+  `git config --list` reads a denied file without naming it, and `node -e "..."` is an allowlisted
+  interpreter handed a program. That is the whole of what "a lexical path and program policy, not
+  a sandbox" means, and closing either is a decision about interpreters rather than a fix to a
+  check.
+- **What a command leaves running after it exits.** The harness spawns each command as a process
+  group and signals the group, which stops a child that outlives its parent. A descendant that
+  calls `setsid` leaves that group, and a command that exits zero leaves nothing to signal.
+  Measured, not hypothesised: one corpus re-judge left **328 orphaned processes** from one
+  repository's suite, each in its own process group with PPID 1, holding checkouts that had
+  already been deleted. What would close it is a subtree recorded while the command runs, or a
+  backend whose teardown takes everything with it. Neither is built, and gate 10 no longer claims
+  processes are proven.
 - **Races in the worker merge queue.** `src/workers/` runs a git worktree per worker and lands
   them through a merge queue. Concurrency bugs there need a scheduler-aware test, not a
   fuzzer, and none exists.
