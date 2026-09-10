@@ -1,0 +1,136 @@
+diff --git a/lib/command.js b/lib/command.js
+index 9284ec3..c2a536e 100644
+--- a/lib/command.js
++++ b/lib/command.js
+@@ -1547,6 +1547,21 @@ Expecting one of '${allowedValues.join("', '")}'`);
+     );
+   }
+ 
++  /**
++   * Return an object containing merged local and global option value sources as key-value pairs.
++   * Same priority order as optsWithGlobals(), so globals overwrite locals.
++   * Expected values are default | config | env | cli | implied
++   *
++   * @return {Object}
++   */
++  getOptionValueSourceWithGlobals(key) {
++    // globals have priority over locals
++    return getCommandAndParents(this).reverse().reduce(
++      (source, cmd) => source || cmd.getOptionValueSource(key),
++      undefined
++    );
++  }
++
+   /**
+    * Display error message and exit (or call exitOverride).
+    *
+diff --git a/tests/options.getValueSourceWithGlobals.test.js b/tests/options.getValueSourceWithGlobals.test.js
+new file mode 100644
+index 0000000..1975664
+--- /dev/null
++++ b/tests/options.getValueSourceWithGlobals.test.js
+@@ -0,0 +1,87 @@
++const commander = require('../');
++
++test('when no options used then getOptionValueSource with globals returns same as local getOptionValueSource', () => {
++  const program = new commander.Command();
++  program.option('-e, --environment <value>');
++  expect(program.getOptionValueSourceWithGlobals('environment')).toBeUndefined();
++  expect(program.getOptionValueSource('environment')).toBeUndefined();
++});
++
++test('when option value from cli then getOptionValueSourceWithGlobals returns cli', () => {
++  const program = new commander.Command();
++  program.option('-e, --env <value>');
++  program.parse(['--env', 'bar'], { from: 'user' });
++  expect(program.getOptionValue('env')).toBe('bar');
++  expect(program.getOptionValueSource('env')).toBe('cli');
++  expect(program.getOptionValueSourceWithGlobals('env')).toBe('cli');
++});
++
++test('when option value from default then getOptionValueSourceWithGlobals returns default', () => {
++  const program = new commander.Command();
++  program.option('-e, --env <value>', 'desc', 'defaultVal');
++  expect(program.getOptionValueSource('env')).toBe('default');
++  expect(program.getOptionValueSourceWithGlobals('env')).toBe('default');
++});
++
++test('when options in sub and program getOptionValueSourceWithGlobals returns values from both with cli sources', () => {
++  const program = new commander.Command();
++  let source1;
++  let source2;
++  program.option('-g, --global <value>');
++  program
++    .command('sub')
++    .option('-l, --local <val>')
++    .action((cmd) => {
++      source1 = cmd.getOptionValueSourceWithGlobals('global');
++      source2 = cmd.getOptionValueSourceWithGlobals('local');
++    });
++
++  program.parse(['-g', 'GGG', 'sub', '-l', 'LLL'], { from: 'user' });
++  expect(source1).toBe('cli');
++  expect(source2).toBe('cli');
++});
++
++test('when option only in parent then sub gets its source via getOptionValueSourceWithGlobals', () => {
++  const program = new commander.Command();
++  let source;
++  program.option('-e, --env <value>');
++  program
++    .command('sub')
++    .action((cmd) => {
++      source = cmd.getOptionValueSourceWithGlobals('env');
++    });
++
++  program.parse(['-e', 'globalval', 'sub'], { from: 'user' });
++  expect(source).toBe('cli');
++});
++
++test('when option value set via env on command then getOptionValueSourceWithGlobals returns env', () => {
++  const program = new commander.Command();
++  program.addOption(new commander.Option('-e, --env <value>').env('MY_TEST_ENV'));
++  process.env.MY_TEST_ENV = 'fromenv';
++
++  program.parse([], { from: 'user' });
++  expect(program.getOptionValueSource('env')).toBe('env');
++  expect(program.getOptionValueSourceWithGlobals('env')).toBe('env');
++
++  delete process.env.MY_TEST_ENV;
++});
++
++test('when option in sub has default and parent has cli source, global wins over sublocal default', () => {
++  const program = new commander.Command();
++  let envSource;
++  let localSource;
++  program.option('-e, --env <value>', 'desc', 'globalVal');
++  program.enablePositionalOptions();
++  program
++    .command('sub')
++    .enablePositionalOptions()
++    .option('--env <val>')
++    .action((cmd) => {
++      envSource = cmd.getOptionValueSourceWithGlobals('env');
++      localSource = cmd.getOptionValueSource('env');
++    });
++
++  program.parse(['-e', 'globalVal', 'sub'], { from: 'user' });
++  expect(envSource).toBe('default');
++});
+diff --git a/typings/index.d.ts b/typings/index.d.ts
+index 7c76805..7f0f403 100644
+--- a/typings/index.d.ts
++++ b/typings/index.d.ts
+@@ -711,6 +711,12 @@ export class Command {
+    */
+   optsWithGlobals<T extends OptionValues>(): T;
+ 
++  /**
++   * Return an object containing merged local and global option value sources as key-value pairs.
++   * Same priority order as optsWithGlobals(), so globals overwrite locals.
++   */
++  getOptionValueSourceWithGlobals(key: string): OptionValueSource | undefined;
++
+   /**
+    * Set the description.
+    *

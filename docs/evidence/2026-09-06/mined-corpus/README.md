@@ -97,8 +97,16 @@ Every scored row carries the harness commit that produced it, for the same reaso
     node scripts/pr-task-pass.mjs
     node scripts/reclassify-scored.mjs
 
-192 candidates mined, 142 of them checked by running them, 66 viable, 66 scored. The other 50 are
-waiting on a viability pass.
+192 candidates mined, all of them checked by running them, 79 viable.
+
+**What the drops say about mining deeper.** Nineteen of the last fifty candidates fail `npm ci` at
+their base commit because there is no lockfile there at all. Pull requests are taken newest first,
+so more pages reach older ones, and in dayjs and koa the older ones predate `package-lock.json`.
+`swarm ci --install` refuses to install without a lockfile, deliberately, because resolving fresh
+versions builds a different tree from the one the pull request was tested against; so a candidate
+that cannot be installed could never be judged either. commander's older pull requests do carry a
+lockfile, so this is a property of a repository rather than of age. Yield comes from mining more
+repositories, not more pages of the same ones.
 
 **0 false greens in 3 valid opportunities here: 0.0%, 95% CI [0.0, 56.1].** With the eleven from the
 hand-authored corpus, 0 of 14, 0.0% [0.0, 21.5]. Every row names the harness commit that judged it,

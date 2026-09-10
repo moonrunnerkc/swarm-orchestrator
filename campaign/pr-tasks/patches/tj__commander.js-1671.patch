@@ -1,0 +1,183 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 1ded04a..7b3808c 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
+ - Option.preset() allows specifying value/arg for option when used without option-argument (especially optional, but also boolean option) ([#1652])
+ - `.executableDir()` for custom search for subcommands ([#1571])
+ - throw with helpful message if pass `Option` to `.option()` or `.requiredOption()` ([#1655])
++- Add `.optsWithGlobals()` to return merged local and global options
+ 
+ ### Changed
+ 
+diff --git a/lib/command.js b/lib/command.js
+index 12e7bb7..ee14dd1 100644
+--- a/lib/command.js
++++ b/lib/command.js
+@@ -1461,6 +1461,23 @@ Expecting one of '${allowedValues.join("', '")}'`);
+     return this._optionValues;
+   }
+ 
++  /**
++   * Return an object containing local and inherited (global) options as key-value pairs.
++   * The method is identical to `.opts()` but also includes options from parent commands.
++   * Local option values take precedence over global ones.
++   *
++   * @return {Object}
++   */
++  optsWithGlobals() {
++    const result = Object.create(null);
++    getCommandAndParents(this).reverse().forEach((cmd) => {
++      // eslint-disable-next-line no-prototype-builtins
++      Object.assign(result, cmd.opts());
++    });
++
++    return result;
++  }
++
+   /**
+    * Internal bottleneck for handling of parsing errors.
+    *
+diff --git a/tests/options.optsWithGlobals.test.js b/tests/options.optsWithGlobals.test.js
+new file mode 100644
+index 0000000..a5390ca
+--- /dev/null
++++ b/tests/options.optsWithGlobals.test.js
+@@ -0,0 +1,119 @@
++const commander = require('../');
++
++// Test the `.optsWithGlobals()` way of accessing merged local and global option values.
++
++test('when no parent command then optsWithGlobals returns same as opts', () => {
++  const program = new commander.Command();
++  program.option('-p, --pepper', 'add pepper');
++  program.parse(['node', 'test', '--pepper']);
++  expect(program.optsWithGlobals()).toEqual({ pepper: true });
++});
++
++describe.each([true, false])('storeOptionsAsProperties is %s', (storeOptionsAsProperties) => {
++  test('when parent has option set then optsWithGlobals includes it', () => {
++    const root = new commander.Command();
++    root.storeOptionsAsProperties(storeOptionsAsProperties)
++      .option('-r, --root-opt <value>', 'root option');
++
++    const mid = root.createCommand('mid');
++    mid.parent = root;
++    mid.option('-m, --mid-opt <value>', 'mid option');
++
++    if (storeOptionsAsProperties) {
++      root.setOptionValueWithSource('rootOpt', 'ROOT_VAL', 'cli');
++    } else {
++      root.setOptionValueWithSource('rootOpt', 'ROOT_VAL', 'cli');
++    }
++    mid.setOptionValueWithSource('midOpt', 'MID_VAL', 'cli');
++
++    const combined = mid.optsWithGlobals();
++    expect(combined).toHaveProperty('rootOpt', 'ROOT_VAL');
++    expect(combined).toHaveProperty('midOpt', 'MID_VAL');
++  });
++
++  test('when child overrides same option as parent then local takes precedence', () => {
++    const parent = new commander.Command();
++    parent.storeOptionsAsProperties(storeOptionsAsProperties)
++      .option('-n, --name <value>', 'name option for parent');
++
++    const sub = parent.createCommand('sub');
++    sub.parent = parent;
++    sub.option('-n, --name <value>', 'name option for child');
++
++    parent.setOptionValueWithSource('name', 'parent-name', 'cli');
++    sub.setOptionValueWithSource('name', 'child-name', 'cli');
++
++    const combined = sub.optsWithGlobals();
++    expect(combined.name).toBe('child-name');
++  });
++
++  test('when multiple levels of nesting then all ancestors included', () => {
++    const root = new commander.Command();
++    root.storeOptionsAsProperties(storeOptionsAsProperties)
++      .option('-r, --root-opt <value>', 'root option');
++
++    const mid = root.createCommand('mid');
++    mid.parent = root;
++    mid.option('-m, --mid-opt <value>', 'mid option');
++
++    const leaf = mid.createCommand('leaf');
++    leaf.parent = mid;
++    leaf.option('-l, --leaf-opt <value>', 'leaf option');
++
++    root.setOptionValueWithSource('rootOpt', 'ROOT_VAL', 'cli');
++    mid.setOptionValueWithSource('midOpt', 'MID_VAL', 'cli');
++    leaf.setOptionValueWithSource('leafOpt', 'LEAF_VAL', 'cli');
++
++    const combined = leaf.optsWithGlobals();
++    expect(combined).toHaveProperty('rootOpt', 'ROOT_VAL');
++    expect(combined).toHaveProperty('midOpt', 'MID_VAL');
++    expect(combined).toHaveProperty('leafOpt', 'LEAF_VAL');
++  });
++
++  test('when child has no local options but parent does then optsWithGlobals returns parent only', () => {
++    const parent = new commander.Command();
++    parent.storeOptionsAsProperties(storeOptionsAsProperties)
++      .option('-g, --global <value>', 'global option');
++
++    const sub = parent.createCommand('sub');
++    sub.parent = parent;
++
++    parent.setOptionValueWithSource('global', 'world', 'cli');
++
++    expect(sub.optsWithGlobals()).toHaveProperty('global', 'world');
++  });
++
++  test('when only boolean parent option set then optsWithGlobals true', () => {
++    const parent = new commander.Command();
++    parent.storeOptionsAsProperties(storeOptionsAsProperties)
++      .option('-G, --grand', 'a grand flag');
++
++    const sub = parent.createCommand('sub');
++    sub.parent = parent;
++
++    parent.setOptionValueWithSource('grand', true, 'cli');
++
++    expect(sub.optsWithGlobals()).toHaveProperty('grand', true);
++  });
++});
++
++test('when using program.command() then optsWithGlobals includes global options from parsing', () => {
++  const program = new commander.Command();
++  program.storeOptionsAsProperties(false)
++    .option('-g, --global <value>', 'global option');
++
++  const subCmd = program.command('sub')
++    .option('-p, --pepper <flavour>', 'add pepper')
++    .action(() => {});
++
++  // Subcommand created via .command() has parent set automatically
++  expect(subCmd.parent).toBe(program);
++
++  // Parse the program (sets option values)
++  program.setOptionValueWithSource('global', 'world', 'cli');
++  subCmd.setOptionValueWithSource('pepper', 'red', 'cli');
++
++  const combined = subCmd.optsWithGlobals();
++  expect(combined).toHaveProperty('global', 'world');
++  expect(combined).toHaveProperty('pepper', 'red');
++});
+diff --git a/typings/index.d.ts b/typings/index.d.ts
+index b2a7005..28875eb 100644
+--- a/typings/index.d.ts
++++ b/typings/index.d.ts
+@@ -663,6 +663,13 @@ export class Command {
+    */
+   opts<T extends OptionValues>(): T;
+ 
++  /**
++   * Return an object containing local and inherited (global) options as key-value pairs.
++   * The method is identical to `.opts()` but also includes options from parent commands.
++   * Local option values take precedence over global ones.
++   */
++  optsWithGlobals<T extends OptionValues>(): T;
++
+   /**
+    * Set the description.
+    *

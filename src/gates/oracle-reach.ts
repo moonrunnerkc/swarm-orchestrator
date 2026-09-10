@@ -47,7 +47,10 @@ import { resolvedPath } from "./resolved-path.ts";
  * since the unreached files are named.
  */
 function aRunnerCouldLoadIt(path: string): boolean {
-  return /\.[cm]?[jt]sx?$/.test(path);
+  // A declaration file is types and nothing else, erased before anything runs, so it matches the
+  // extension and can still never appear in a report. The miner excludes it from source files for
+  // the same reason.
+  return /\.[cm]?[jt]sx?$/.test(path) && !/\.d\.[cm]?ts$/.test(path);
 }
 
 function namesATestFile(path: string): boolean {

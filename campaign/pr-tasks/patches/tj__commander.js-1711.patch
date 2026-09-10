@@ -1,0 +1,171 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 0df87ad..b3eff76 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
+ <!-- markdownlint-disable MD024 -->
+ <!-- markdownlint-disable MD004 -->
+ 
++## [9.2.0] (Unreleased)
++
++### Fixed
++
++- check for option conflicts across parent commands, not just current command ([#1710])
++
+ ## [9.1.0] (2022-03-19)
+ 
+ ### Added
+diff --git a/lib/command.js b/lib/command.js
+index cd6614f..fe90ba1 100644
+--- a/lib/command.js
++++ b/lib/command.js
+@@ -946,6 +946,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
+ 
+     // Not checking for help first. Unlikely to have mandatory and executable, and can't robustly test for help flags in external command.
+     this._checkForMissingMandatoryOptions();
++    this._checkForConflictingOptions(this);
+ 
+     // executableFile and executableDir might be full path, or just a name
+     let executableFile = subcommand._executableFile || `${this._name}-${subcommand._name}`;
+@@ -1315,28 +1316,44 @@ Expecting one of '${allowedValues.join("', '")}'`);
+    *
+    * @api private
+    */
+-  _checkForConflictingOptions() {
+-    const definedNonDefaultOptions = this.options.filter(
+-      (option) => {
+-        const optionKey = option.attributeName();
+-        if (this.getOptionValue(optionKey) === undefined) {
+-          return false;
+-        }
+-        return this.getOptionValueSource(optionKey) !== 'default';
+-      }
+-    );
++  _checkForConflictingOptions(cmd = this) {
++    // Walk up hierarchy so can call in subcommand after checking for displaying help.
++    const definedNonDefaultOptionsInHierarchy = [];
++    for (let currentCmd = cmd; currentCmd; currentCmd = currentCmd.parent) {
++      definedNonDefaultOptionsInHierarchy.push(
++        ...currentCmd.options.filter(
++          (option) => {
++            const optionKey = option.attributeName();
++            if (currentCmd.getOptionValue(optionKey) === undefined) {
++              return false;
++            }
++            return currentCmd.getOptionValueSource(optionKey) !== 'default';
++          }
++        )
++      );
++    }
+ 
+-    const optionsWithConflicting = definedNonDefaultOptions.filter(
++    const optionsWithConflictingInHierarchy = definedNonDefaultOptionsInHierarchy.filter(
+       (option) => option.conflictsWith.length > 0
+     );
+ 
+-    optionsWithConflicting.forEach((option) => {
+-      const conflictingAndDefined = definedNonDefaultOptions.find((defined) =>
+-        option.conflictsWith.includes(defined.attributeName())
+-      );
+-      if (conflictingAndDefined) {
+-        this._conflictingOption(option, conflictingAndDefined);
++    // Collect all unique non-conflicting options for matching.
++    const conflictingAndDefinedSet = {};
++    definedNonDefaultOptionsInHierarchy.forEach((definedOption) => {
++      if (!conflictingAndDefinedSet[definedOption.attributeName()]) {
++        conflictingAndDefinedSet[definedOption.attributeName()] = [];
+       }
++      conflictingAndDefinedSet[definedOption.attributeName()].push(definedOption);
++    });
++
++    optionsWithConflictingInHierarchy.forEach((option) => {
++      option.conflictsWith.forEach((conflictingOptionName) => {
++        const conflictingOptions = conflictingAndDefinedSet[conflictingOptionName];
++        if (conflictingOptions && conflictingOptions.length > 0) {
++          const conflictingOption = conflictingOptions[0]; // first match is fine for error reporting
++          this._conflictingOption(option, conflictingOption);
++        }
++      });
+     });
+   }
+ 
+diff --git a/tests/command.conflicts.test.js b/tests/command.conflicts.test.js
+index 8e2ce98..9a48d3f 100644
+--- a/tests/command.conflicts.test.js
++++ b/tests/command.conflicts.test.js
+@@ -253,4 +253,75 @@ describe('command with conflicting options', () => {
+       program.parse('node test.js bar --a --b'.split(' '));
+     }).toThrow("error: option '--b' cannot be used with option '--a'");
+   });
++
++  describe('conflicts in parent commands', () => {
++    test('should detect conflict from subcommand to parent command options', () => {
++      const actionMock = jest.fn();
++      const program = new commander.Command();
++      program.exitOverride().configureOutput({ writeErr: () => {} });
++
++      // Parent has --child option
++      program.addOption(new commander.Option('--child'));
++
++      // Subcommand has --cmd that conflicts with 'child' option name
++      program
++        .command('sub')
++        .addOption(new commander.Option('-c, --cmd').conflicts(['child']))
++        .action(actionMock);
++
++      expect(() => {
++        program.parse('node test.js sub --cmd --child'.split(' '));
++      }).toThrow("error: option '-c, --cmd' cannot be used with option '--child'");
++    });
++
++    test('should detect conflict from parent command to subcommand options', () => {
++      const actionMock = jest.fn();
++      const program = new commander.Command();
++      program.exitOverride().configureOutput({ writeErr: () => {} });
++
++      // Subcommand has --alpha option
++      program.addOption(new commander.Option('--alpha')).command('sub')
++        .addOption(new commander.Option('-c, --cmd'))
++        .action(actionMock);
++
++      expect(() => {
++        program.parse('node test.js sub --cmd'.split(' '));
++      }).not.toThrow();
++    });
++
++    test('should detect conflict across multiple levels of nested subcommands', () => {
++      const actionMock = jest.fn();
++      const program = new commander.Command();
++      program.exitOverride().configureOutput({ writeErr: () => {} });
++
++      // level1 has --alpha option
++      const level1 = program
++        .addOption(new commander.Option('-a, --alpha'))
++        .command('level2')
++        .addOption(
++          new commander.Option('-b, --beta').conflicts(['alpha'])
++        );
++
++      level1.action(actionMock);
++
++      expect(() => {
++        program.parse('node test.js --alpha level2 --beta'.split(' '));
++      }).toThrow("error: option '-b, --beta' cannot be used with option '-a, --alpha'");
++    });
++
++    test('should not throw error when options are in different commands without conflicts declared', () => {
++      const actionMock = jest.fn();
++      const program = new commander.Command();
++      program.exitOverride().configureOutput({ writeErr: () => {} });
++
++      program.addOption(new commander.Option('-x, --opt-x'))
++        .command('sub')
++        .addOption(new commander.Option('-y, --opt-y'))
++        .action(actionMock);
++
++      program.parse('node test.js sub --opt-x --opt-y'.split(' '));
++
++      expect(actionMock).toHaveBeenCalledTimes(1);
++    });
++  });
+ });

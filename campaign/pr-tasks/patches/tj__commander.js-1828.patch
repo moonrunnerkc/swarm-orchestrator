@@ -1,0 +1,119 @@
+diff --git a/lib/help.js b/lib/help.js
+index 2b8c955..1222de8 100644
+--- a/lib/help.js
++++ b/lib/help.js
+@@ -16,6 +16,8 @@ class Help {
+     this.helpWidth = undefined;
+     this.sortSubcommands = false;
+     this.sortOptions = false;
++    this.showGlobalOptions = false;
++    this.sortGlobalOptions = false;
+   }
+ 
+   /**
+@@ -80,6 +82,36 @@ class Help {
+     return visibleOptions;
+   }
+ 
++  /**
++   * Get a list of the visible global (inherited) options.
++   *
++   * @param {Command} cmd
++   * @returns {Option[]}
++   */
++
++  visibleGlobalOptions(cmd) {
++    const visibleGlobalOptions = [];
++    for (let parentCmd = cmd.parent; parentCmd; parentCmd = parentCmd.parent) {
++      const globalOptions = parentCmd.options.filter((option) => !option.hidden);
++      // Only include each option once, prefer the first definition in hierarchy going up.
++      for (const option of globalOptions) {
++        if (!visibleGlobalOptions.find(v => v.name() === option.name())) {
++          visibleGlobalOptions.push(option);
++        }
++      }
++    }
++    if (this.sortGlobalOptions) {
++      const getSortKey = (option) => {
++        // WYSIWYG for order displayed in help with short before long, no special handling for negated.
++        return option.short ? option.short.replace(/^-/, '') : option.long.replace(/^--/, '');
++      };
++      visibleGlobalOptions.sort((a, b) => {
++        return getSortKey(a).localeCompare(getSortKey(b));
++      });
++    }
++    return visibleGlobalOptions;
++  }
++
+   /**
+    * Get an array of the arguments if any have a description.
+    *
+@@ -168,6 +200,20 @@ class Help {
+     }, 0);
+   }
+ 
++  /**
++   * Get the longest global (inherited) option term length.
++   *
++   * @param {Command} cmd
++   * @param {Help} helper
++   * @returns {number}
++   */
++
++  longestGlobalOptionTermLength(cmd, helper) {
++    return helper.visibleGlobalOptions(cmd).reduce((max, option) => {
++      return Math.max(max, helper.optionTerm(option).length);
++    }, 0);
++  }
++
+   /**
+    * Get the longest argument term length.
+    *
+@@ -333,6 +379,14 @@ class Help {
+       output = output.concat(['Arguments:', formatList(argumentList), '']);
+     }
+ 
++    // Global Options
++    const globalOptionList = helper.visibleGlobalOptions(cmd).map((option) => {
++      return formatItem(helper.optionTerm(option), helper.optionDescription(option));
++    });
++    if (helper.showGlobalOptions && (globalOptionList.length > 0)) {
++      output = output.concat(['Global Options:', formatList(globalOptionList), '']);
++    }
++
+     // Options
+     const optionList = helper.visibleOptions(cmd).map((option) => {
+       return formatItem(helper.optionTerm(option), helper.optionDescription(option));
+@@ -361,8 +415,18 @@ class Help {
+    */
+ 
+   padWidth(cmd, helper) {
++    const width = helper.longestOptionTermLength(cmd, helper);
++    if (helper.showGlobalOptions) {
++      // Add the longest global option term length to the widest local option/arg/subcommand term.
++      return Math.max(
++        width,
++        helper.longestSubcommandTermLength(cmd, helper),
++        helper.longestArgumentTermLength(cmd, helper),
++        helper.longestGlobalOptionTermLength(cmd, helper)
++      );
++    }
+     return Math.max(
+-      helper.longestOptionTermLength(cmd, helper),
++      width,
+       helper.longestSubcommandTermLength(cmd, helper),
+       helper.longestArgumentTermLength(cmd, helper)
+     );
+diff --git a/typings/index.d.ts b/typings/index.d.ts
+index b69ea91..77733b1 100644
+--- a/typings/index.d.ts
++++ b/typings/index.d.ts
+@@ -199,6 +199,8 @@ export class Help {
+   helpWidth?: number;
+   sortSubcommands: boolean;
+   sortOptions: boolean;
++  showGlobalOptions: boolean;
++  sortGlobalOptions: boolean;
+ 
+   constructor();
+ 
