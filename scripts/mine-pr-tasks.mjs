@@ -15,7 +15,7 @@
  *   node scripts/mine-pr-tasks.mjs [--repos <n>] [--per-repo <n>] [--out <file>]
  */
 import { execFile } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
@@ -47,6 +47,22 @@ async function gh(path, parameters = {}) {
     maxBuffer: 64 * 1024 * 1024,
   });
   return JSON.parse(stdout);
+}
+
+/**
+ * How many API calls are left, asked before a repository rather than discovered by failing.
+ *
+ * A rate-limited call lands in the same catch as a pull request with no readable files, so a run
+ * that ran out of budget mines nothing and says it found no candidates. That is a corpus quietly
+ * smaller than the command that produced it claims, which is the one thing this corpus cannot
+ * afford: the denominator is the measurement.
+ */
+async function callsRemaining() {
+  try {
+    return (await gh("rate_limit")).resources.core.remaining;
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
 }
 
 /**
@@ -98,7 +114,18 @@ const repositories = (Array.isArray(selection) ? selection : Object.values(selec
 console.log(`mining ${repositories.length} repositories, API only\n`);
 
 const candidates = [];
+/** Enough left to finish a repository, rather than stopping halfway through one. */
+const budgetFloor = 200;
 for (const repository of repositories) {
+  const remaining = await callsRemaining();
+  if (remaining < budgetFloor) {
+    console.log(
+      `\nstopped with ${repositories.length - repositories.indexOf(repository)} repositories ` +
+        `unmined: ${remaining} API calls left, which is not enough to finish one. ` +
+        "What is written is what was mined, and the rest is not missing, it is unasked.",
+    );
+    break;
+  }
   // Several pages, because a repository's most recent hundred closed pulls are mostly
   // dependency bumps and documentation. Mining one page found nothing in twenty of fifty
   // repositories that do have usable pull requests further back.
@@ -179,6 +206,22 @@ for (const repository of repositories) {
   console.log(`${repository.fullName.padEnd(40)} ${found} candidate(s)`);
 }
 
-writeFileSync(outPath, `${JSON.stringify({ at: new Date().toISOString(), candidates }, null, 2)}\n`);
-console.log(`\n${candidates.length} candidate(s) written: ${outPath}`);
+/**
+ * Added to what is already there rather than written over it.
+ *
+ * The corpus README calls all three of these scripts resumable and this one was not: a second
+ * mining pass replaced the file, so every candidate the new pass did not happen to find again was
+ * gone, along with the viability judgement and the score that had been paid for it. A pull request
+ * is named once by owner, repository and number, so the merge is by that name.
+ */
+const already =
+  existsSync(outPath) && outPath.endsWith(".json")
+    ? (JSON.parse(readFileSync(outPath, "utf8")).candidates ?? [])
+    : [];
+const nameOf = (one) => `${one.repository}#${one.pull}`;
+const found = new Set(candidates.map(nameOf));
+const merged = [...already.filter((one) => !found.has(nameOf(one))), ...candidates];
+
+writeFileSync(outPath, `${JSON.stringify({ at: new Date().toISOString(), candidates: merged }, null, 2)}\n`);
+console.log(`\n${candidates.length} candidate(s) this pass, ${merged.length} in all: ${outPath}`);
 console.log("None of these is known to work yet. Run scripts/check-pr-task-viability.mjs next.");
