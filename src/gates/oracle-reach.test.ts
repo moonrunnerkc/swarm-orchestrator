@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { oracleReachedTheChange } from "./oracle-reach.ts";
+import { lineHitsByWorkspacePath, oracleReachedTheChange } from "./oracle-reach.ts";
 
 /**
  * The measurement that motivated this. koa#1946 was certified by an oracle that never executed the
@@ -157,5 +157,39 @@ describe("the patch's own tests", () => {
     ]) {
       expect({ path, ignored: onlyTests(path) }).toEqual({ path, ignored: false });
     }
+  });
+});
+
+describe("lineHitsByWorkspacePath", () => {
+  // node's lcov reporter writes `SF:` relative to the directory it ran in; jest and vitest write
+  // it absolute. The patch names paths one way only, so the report is brought to the patch's
+  // spelling rather than the comparison being loosened to accept both.
+  it("keeps a relative section name as the patch would write it", () => {
+    const measured = lineHitsByWorkspacePath(
+      [{ file: "lib/application.js", hits: new Map([[270, 0]]) }],
+      "/checkout",
+    );
+
+    expect(measured["lib/application.js"]?.[270]).toBe(0);
+  });
+
+  it("makes an absolute section name relative to the checkout", () => {
+    const measured = lineHitsByWorkspacePath(
+      [{ file: "/checkout/src/index.js", hits: new Map([[12, 3]]) }],
+      "/checkout",
+    );
+
+    expect(measured["src/index.js"]?.[12]).toBe(3);
+  });
+
+  // A section for something outside the tree is not a file the patch can have changed, and
+  // keeping it under a name that climbs out of the checkout would match nothing anyway.
+  it("drops a section naming a file outside the checkout", () => {
+    const measured = lineHitsByWorkspacePath(
+      [{ file: "/elsewhere/other.js", hits: new Map([[1, 1]]) }],
+      "/checkout",
+    );
+
+    expect(Object.keys(measured)).toEqual([]);
   });
 });

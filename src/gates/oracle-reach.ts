@@ -1,3 +1,6 @@
+import { realpathSync } from "node:fs";
+import { isAbsolute, relative, sep } from "node:path";
+
 /**
  * Whether the task oracle executed the lines the patch added.
  *
@@ -37,6 +40,45 @@ function namesATestFile(path: string): boolean {
     segments.slice(0, -1).some((segment) => /^(__tests__|__test__|tests?|specs?)$/.test(segment)) ||
     /\.(test|spec)\.[^.]+$/.test(basename)
   );
+}
+
+/**
+ * The report's own names for the files it measured, as paths the patch would name.
+ *
+ * node's lcov reporter writes `SF:` relative to the directory the run started in; jest and vitest
+ * write it absolute. The patch names one spelling, so the report is brought to it rather than the
+ * comparison being loosened to accept both, which is the kind of loosening that turns a file the
+ * oracle never ran into a file nobody noticed.
+ */
+export function lineHitsByWorkspacePath(
+  sections: readonly { readonly file: string; readonly hits: ReadonlyMap<number, number> }[],
+  workspaceRoot: string,
+): Record<string, Record<number, number>> {
+  const measured: Record<string, Record<number, number>> = {};
+  const root = realpathOrItself(workspaceRoot);
+  for (const section of sections) {
+    const path = isAbsolute(section.file)
+      ? relative(root, realpathOrItself(section.file))
+      : section.file;
+    if (path.length === 0 || path.startsWith("..") || isAbsolute(path)) {
+      continue;
+    }
+    measured[path.split(sep).join("/")] = Object.fromEntries(section.hits);
+  }
+  return measured;
+}
+
+/**
+ * The path with its symlinks resolved, or the path itself. A checkout under the system scratch
+ * directory is reached through one on macOS, so a report's absolute path and the directory the
+ * harness named are the same file under two spellings.
+ */
+function realpathOrItself(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
 }
 
 export interface ChangedLines {
