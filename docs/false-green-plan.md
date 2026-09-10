@@ -44,24 +44,57 @@ already applied to gates, which is the same idea one layer up.
 
 ### 3. Report whether the oracle executed the change
 
-An oracle that never runs the changed lines cannot have judged them. Coverage of changed lines is
-already measured for the ratchet; pointing it at the oracle answers a different question with the
-same instrument.
+**Done, and then done properly.** An oracle that never runs the changed lines cannot have judged
+them, so `oracleReach` reports `reached`, `unreached` or `unmeasured` and `unreached` refuses to
+certify, naming the lines.
+
+Pointing the ratchet's own instrument at it was the first attempt and it was the wrong instrument.
+The ratchet reads a coverage artifact only from an invocation the harness assembled itself with no
+shell in between, because there the workspace can inflate a number a retry is judged against.
+Reach only ever turns a green into a refusal, so a workspace that forged its coverage would land on
+`reached`, which is exactly what an oracle nobody could measure already gets. Holding reach to that
+bar left it blind on thirteen of the seventeen repositories in the mined corpus.
+
+It now reads whichever coverage the oracle's own runner can be made to write: node's lcov reporter,
+V8's own coverage for a runner that loads the file as written, or jest's and vitest's own reports
+under flags the harness appends. A transforming runner is caught where it shows, by offsets past
+the end of the file, and abstains the whole reading rather than dropping a file.
+
+The residual is named rather than closed: those reports are written by the workspace's own
+processes and nothing detects a forged one. That is safe only while the check can do nothing but
+refuse, and it must not be reused anywhere a number can buy something.
+
+**And it is not free.** A patch that restructures one assignment into an `if` and an `else`, judged
+by an oracle whose cases all take the `if`, is refused with the `else` named. Those refusals are
+recorded as `refused-on-reach`: not the tool being wrong about the patch, and not a pass either.
+They leave the certified set, so the interval over what remains is wider.
 
 ### 4. Carry the declared environment into the regression check
 
-`swarm ci` runs the project's own suite with no regard for what that suite needs. dayjs sets a
-timezone per invocation, so the same base commit answered `pass` in one run and `unmeasured` in
-another. A measurement that is not reproducible cannot support a rate.
+**Done.** The zone the project's own test script declares travels to `swarm ci` as an environment
+name, so the repository's checks and the oracle both run under it.
+
+It had been travelling as a shell prefix on the oracle command, `TZ=x mkdir … && cp … && npx jest
+…`, which sets the zone for the `mkdir` and nothing else. So the oracle ran under whatever zone the
+machine was in while the viability filter that admitted the task ran under the project's own, and
+one dayjs task changes verdict between the two.
 
 ### 5. Corpus filters that raise the yield per task
 
-- Require at least two cases in each half. 42% of splits have a single-case half, and a lone
-  assertion is thin evidence either way.
-- Require the base suite to pass. Three of seventy-three tasks can never produce an opportunity
-  because the repository is already red at the base.
+**Done, and one of the two proposals here was wrong.**
 
-Both shrink the corpus and raise the fraction of tasks that can actually resolve a question.
+Each half is now run against the base source before a task is kept, and a half that passes is
+re-dealt in larger blocks before the task is given up on. The halves are what the oracles run and
+the whole file is not: 21 of the first 73 mined tasks came back unjudgeable because one half or the
+other accepts the base, every one of them after a model run had been spent. Fourteen candidates
+left the corpus on this rule and on the one beside it, that a test file which does not finish on
+the base source was being read as one that fails there.
+
+**Requiring at least two cases in each half is not a filter on the instrument.** dayjs#3181, the
+one false green that stands, has a 1+1 split and would be excluded by it. A filter that removes the
+finding is denominator management wearing a tightening's clothes. What each half is held to instead
+is the property that matters, that it can refuse the base, which belongs to the half rather than to
+how many cases are in it.
 
 ### 6. Scale
 
