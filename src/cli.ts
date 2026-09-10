@@ -389,11 +389,41 @@ async function verifyPatchUnderCancellation(
   process.stdout.write(
     `\nregression: ${result.regression}   task: ${result.task}   ` +
       `oracle reach: ${result.oracleReach}${describeUnreached(result.unreachedByOracle)}\n` +
+      `oracle bond: ${result.oracleBond}${describeBond(result)}\n` +
       (result.verified
         ? "verified: no regression, and the oracle says the task was done.\n"
         : `not verified. ${result.advice}\n`),
   );
   return result.verified ? exitCodes.acceptable : exitCodes.notAcceptable;
+}
+
+/**
+ * What the mutants of the change showed about the oracle, in one line beside the reach verdict.
+ *
+ * A gap names the mutant that found it, because "the oracle is inadequate" is not actionable
+ * without the line and the change to it. A bond that held names how many mutants it refused, since
+ * one refusal and five are different amounts of evidence.
+ */
+function describeBond(result: {
+  readonly oracleBond: string;
+  readonly bondedMutants: readonly {
+    readonly id: string;
+    readonly verdict: string;
+    readonly before: string;
+    readonly after: string;
+  }[];
+}): string {
+  if (result.oracleBond === "not-bonded") {
+    return " (no mutant of the change could be built, so nothing was asked of the oracle)";
+  }
+  const gap = result.bondedMutants.find((one) => one.verdict === "vacuous");
+  if (gap !== undefined) {
+    return `\n  accepted ${gap.id}\n    - ${gap.before.trim()}\n    + ${gap.after.trim()}`;
+  }
+  const held = result.bondedMutants.filter((one) => one.verdict === "held").length;
+  return held > 0
+    ? ` (${held} mutant(s) of the change refused)`
+    : " (the oracle accepted, and nothing shows it ran the mutated lines)";
 }
 
 /** Which added lines the oracle never ran, so "extend the oracle" names something to extend. */

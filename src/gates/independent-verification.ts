@@ -3,10 +3,20 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Clock } from "../core/clock.ts";
+import { certifies } from "./certification.ts";
 import { assembleGateSet } from "./engine.ts";
 import { normalizePath } from "./file-set.ts";
 import { defaultGateTimeoutMs, type GateCommandRunner } from "./gate-definition.ts";
+import {
+  type BondedMutant,
+  bondOfMutantObservations,
+  type MutantObservation,
+  mutantWasSeen,
+  type OracleBond,
+  type OracleBondVerdict,
+} from "./oracle-bond.ts";
 import { type OracleCoveragePlan, oracleCoveragePlan } from "./oracle-instrumentation.ts";
+import { mutantsOfChangedLines } from "./oracle-mutants.ts";
 import { lineHitsByWorkspacePath, oracleReachedTheChange } from "./oracle-reach.ts";
 import { parseLineHits } from "./parsers.ts";
 import { pathsInPatch } from "./patch-paths.ts";
@@ -87,6 +97,18 @@ export interface IndependentVerification {
     readonly path: string;
     readonly lines: readonly number[];
   }[];
+  /**
+   * Whether the oracle refused a change to the lines the patch added. Reach asks whether the
+   * oracle ran the change; this asks whether running it established anything, because an oracle
+   * can execute a line and assert nothing about it.
+   *
+   * `not-bonded` covers both a patch with no line these operators can change and a run where no
+   * bond was attempted, since the run was already refused for another reason. Neither is a bond
+   * that held, and neither is ever read as one.
+   */
+  readonly oracleBond: OracleBondVerdict;
+  /** Every mutant that was built and run, with what the oracle did with it. */
+  readonly bondedMutants: readonly BondedMutant[];
   /** Both: no regression, and an oracle that says the task was done. */
   readonly verified: boolean;
   /**
@@ -157,6 +179,8 @@ export async function verifyIndependently(
       task: "unjudged",
       oracleReach: "unmeasured",
       unreachedByOracle: [],
+      oracleBond: "not-bonded",
+      bondedMutants: [],
       verified: false,
       unmeasured: false,
       advice: "",
@@ -183,6 +207,8 @@ export async function verifyIndependently(
         task: "unjudged",
         oracleReach: "unmeasured",
         unreachedByOracle: [],
+        oracleBond: "not-bonded",
+        bondedMutants: [],
         verified: false,
         unmeasured: true,
         advice: "",
@@ -203,6 +229,8 @@ export async function verifyIndependently(
         task: "unjudged",
         oracleReach: "unmeasured",
         unreachedByOracle: [],
+        oracleBond: "not-bonded",
+        bondedMutants: [],
         verified: false,
         unmeasured: true,
         advice: "",
@@ -227,6 +255,8 @@ export async function verifyIndependently(
         task: "unjudged",
         oracleReach: "unmeasured",
         unreachedByOracle: [],
+        oracleBond: "not-bonded",
+        bondedMutants: [],
         verified: false,
         unmeasured: false,
         advice: "",
@@ -273,8 +303,16 @@ export async function verifyIndependently(
     const reach =
       task === "accepted" && restored
         ? await measureOracleReach(checkout, options, timeoutMs)
-        : { verdict: "unmeasured" as const, unreached: [] };
+        : { verdict: "unmeasured" as const, unreached: [], measured: null };
     const oracleReach = reach.verdict;
+    // Asked only where the run is still a candidate to certify. A patch already refused because
+    // the oracle never ran part of it does not become more refused by a mutant, and every mutant
+    // is another oracle run. Before attribution, which reverts the patch: a mutant of the lines
+    // the patch added has no meaning on a tree that does not have them.
+    const bond =
+      task === "accepted" && restored && oracleReach !== "unreached"
+        ? await bondTheOracle(checkout, options, timeoutMs, reach.measured)
+        : { verdict: "not-bonded" as const, mutants: [] };
     const checks = withPatch.some((check) => check.status === "failed")
       ? await attributeFailures(withPatch, checkout, options, timeoutMs)
       : withPatch;
@@ -298,15 +336,18 @@ export async function verifyIndependently(
       checks,
       oracleReach,
       unreachedByOracle: reach.unreached,
+      oracleBond: bond.verdict,
+      bondedMutants: bond.mutants,
       refusal: null,
       regression,
       task,
       // Both, and the second is the one a suite cannot supply. A patch that adds a feature badly
       // still passes a suite written before the feature existed.
-      // `unreached` blocks, `unmeasured` does not: an oracle shown to have skipped part of the
-      // change did not judge it, while an oracle whose reach could not be measured is simply
-      // unproven either way.
-      verified: regression === "pass" && task === "accepted" && oracleReach !== "unreached",
+      //
+      // Computed from the recorded fields by the same rule a third party applies to the record
+      // afterwards, so `verified` is the absence of a named reason to refuse rather than a
+      // separate opinion about the same evidence.
+      verified: certifies({ regression, task, oracleReach, oracleBond: bond.verdict }),
       // Not the same as a checkout where nothing could run: this one was asked for one thing and
       // did it, so the absence of checks is the request rather than a failure to measure.
       unmeasured: !onlyTheOracle && !measuredSomething,
@@ -328,24 +369,30 @@ export async function verifyIndependently(
               ? "the oracle passed but never ran part of what the patch added, so it did not judge " +
                 "that part: an oracle is evidence only about code it executed. Extend it to exercise " +
                 "the lines the patch added, or leave them unjudged and say so."
-              : checks.some((check) => check.inheritedFromBase === true)
-                ? "at least one check fails at the base commit too, with this patch not applied, so it " +
-                  "is reported as inherited rather than as a regression. A common cause is a project " +
-                  "that builds on install: dependencies are installed with --ignore-scripts, because " +
-                  "install scripts run whatever the registry serves, so a `prepare` step that generates " +
-                  "what the tests import does not run."
-                : !measuredSomething
-                  ? "nothing here measured the patch: every check stood down, which on a real project " +
-                    "usually means the fresh checkout has no installed dependencies, so its test runner " +
-                    "is not present. Pass --install to install them from the lockfile first, which runs " +
-                    "whatever install scripts the registry serves and is therefore a decision rather " +
-                    "than a default."
-                  : task === "unjudged"
-                    ? "the repository's own suite passed, which says nothing broke. It does not say the " +
-                      "task was done: a suite tests the behaviour a project already had, and a task adds " +
-                      "behaviour it did not. Pass --oracle <command> with a check that says whether the " +
-                      "task was done."
-                    : "",
+              : bond.verdict === "vacuous" &&
+                  !certifies({ regression, task, oracleReach, oracleBond: "vacuous" })
+                ? "the oracle ran a line the patch added and then accepted a change to that same " +
+                  `line (${bond.mutants.find((one) => one.verdict === "vacuous")?.id}), so running ` +
+                  "it established nothing about that line. Extend it to assert on the behaviour " +
+                  "those lines decide, or leave them unjudged and say so."
+                : checks.some((check) => check.inheritedFromBase === true)
+                  ? "at least one check fails at the base commit too, with this patch not applied, so it " +
+                    "is reported as inherited rather than as a regression. A common cause is a project " +
+                    "that builds on install: dependencies are installed with --ignore-scripts, because " +
+                    "install scripts run whatever the registry serves, so a `prepare` step that generates " +
+                    "what the tests import does not run."
+                  : !measuredSomething
+                    ? "nothing here measured the patch: every check stood down, which on a real project " +
+                      "usually means the fresh checkout has no installed dependencies, so its test runner " +
+                      "is not present. Pass --install to install them from the lockfile first, which runs " +
+                      "whatever install scripts the registry serves and is therefore a decision rather " +
+                      "than a default."
+                    : task === "unjudged"
+                      ? "the repository's own suite passed, which says nothing broke. It does not say the " +
+                        "task was done: a suite tests the behaviour a project already had, and a task adds " +
+                        "behaviour it did not. Pass --oracle <command> with a check that says whether the " +
+                        "task was done."
+                      : "",
       install,
       checkoutPath: checkout,
     };
@@ -376,8 +423,13 @@ async function measureOracleReach(
 ): Promise<{
   verdict: "reached" | "unreached" | "unmeasured";
   unreached: readonly { readonly path: string; readonly lines: readonly number[] }[];
+  /**
+   * The hits this reading found, which the bond reads again rather than measuring twice: a line
+   * the oracle ran is a line a mutant of it was demonstrably seen on.
+   */
+  measured: Readonly<Record<string, Readonly<Record<number, number>>>> | null;
 }> {
-  const nothingMeasured = { verdict: "unmeasured" as const, unreached: [] };
+  const nothingMeasured = { verdict: "unmeasured" as const, unreached: [], measured: null };
   const oracle = options.taskOracle?.command;
   if (oracle === undefined) {
     return nothingMeasured;
@@ -405,10 +457,71 @@ async function measureOracleReach(
       return nothingMeasured;
     }
     const reach = oracleReachedTheChange({ changed, measured });
-    return { verdict: reach.reached ? "reached" : "unreached", unreached: reach.unreached };
+    return {
+      verdict: reach.reached ? "reached" : "unreached",
+      unreached: reach.unreached,
+      measured,
+    };
   } finally {
     await rm(destination, { recursive: true, force: true });
   }
+}
+
+/**
+ * Whether the oracle refuses a change to the lines the patch added.
+ *
+ * The question reach cannot ask. An oracle can execute a line and assert nothing about it, and
+ * commander#1671 is that exactly: every line it adds runs under the sealed half, and the sealed
+ * half never tests the name collision whose precedence those lines decide. So each mutant is
+ * written into the checkout one at a time, the oracle is run again, and the file is put back.
+ *
+ * A mutant is only ever written where the checkout's line still reads as the patch left it. A
+ * checkout that says something else is not the tree the mutant was built from, and editing it
+ * would measure some other change.
+ *
+ * The residual, named here because this is where it is created: a mutant that changes nothing
+ * observable is indistinguishable from an oracle that failed to notice one that did. Nothing in
+ * this file tells them apart, and the operators are kept mechanical and few for that reason.
+ */
+async function bondTheOracle(
+  checkout: string,
+  options: IndependentVerificationOptions,
+  timeoutMs: number,
+  measured: Readonly<Record<string, Readonly<Record<number, number>>>> | null,
+): Promise<OracleBond> {
+  const oracle = options.taskOracle?.command;
+  if (oracle === undefined) {
+    return { verdict: "not-bonded", mutants: [] };
+  }
+  const changed = parseUnifiedDiff(options.patch).map((file) => ({
+    path: file.path,
+    addedLines: file.addedLines,
+  }));
+  const observations: MutantObservation[] = [];
+  for (const mutant of mutantsOfChangedLines({ changed })) {
+    const file = join(checkout, mutant.path);
+    const original = await readFile(file, "utf8").catch(() => null);
+    if (original === null) {
+      continue;
+    }
+    const lines = original.split("\n");
+    if (lines[mutant.line - 1] !== mutant.before) {
+      continue;
+    }
+    lines[mutant.line - 1] = mutant.after;
+    await writeFile(file, lines.join("\n"));
+    try {
+      const ran = await options.commands.run(oracle, { cwd: checkout, timeoutMs });
+      observations.push({
+        mutant,
+        oracle: ran.exitCode === 0 ? "passed" : "failed",
+        seen: mutantWasSeen(measured, mutant),
+      });
+    } finally {
+      await writeFile(file, original);
+    }
+  }
+  return bondOfMutantObservations(observations);
 }
 
 /**
