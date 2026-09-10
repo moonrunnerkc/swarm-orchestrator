@@ -297,7 +297,9 @@ for (const candidate of wanted) {
     env: suiteEnvironment,
   });
   if (onMerge.code !== 0) {
-    record.why = "the added tests do not pass on the merged tree either, so the target is unclear";
+    record.why = onMerge.timedOut
+      ? "the added tests do not finish on the merged tree, so the target cannot be run"
+      : "the added tests do not pass on the merged tree either, so the target is unclear";
     saveJudgement(record);
     console.log(`  DROP  ${label.padEnd(42)} ${record.why}`);
     continue;
