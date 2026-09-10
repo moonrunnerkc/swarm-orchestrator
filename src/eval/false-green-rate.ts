@@ -89,3 +89,38 @@ export function heldBackAgreementRate(rows: readonly HalfVerdicts[]): HeldBackAg
     rate: judged.length === 0 ? null : agreed / judged.length,
   };
 }
+
+export interface HarnessGroup {
+  /** The commit that judged these rows, or `unrecorded` for rows written before that rule. */
+  readonly harness: string;
+  readonly tally: FalseGreenTally;
+  readonly rows: readonly CorpusJudgement[];
+}
+
+/**
+ * The rows, split by the tool version that judged them.
+ *
+ * A corpus can span two commits without spanning two tools: a re-judge under one, a handful of
+ * later tasks scored under another, with nothing between them that a verdict depends on. Picking
+ * the newest group and dropping the rest reported "no rate" over eight rows that happened to be
+ * newest while three certified patches sat in the other group.
+ *
+ * So every group is reported. The case worth shouting about is more than one of them holding a
+ * certified patch, because that is a rate assembled across tool versions rather than a corpus
+ * merely recorded across them: a group with nothing certified contributes no opportunity and can
+ * change no rate.
+ */
+export function groupByHarness(
+  rows: readonly (CorpusJudgement & { readonly harness?: string })[],
+): readonly HarnessGroup[] {
+  const perCommit = new Map<string, (CorpusJudgement & { readonly harness?: string })[]>();
+  for (const row of rows) {
+    const commit = row.harness ?? "unrecorded";
+    perCommit.set(commit, [...(perCommit.get(commit) ?? []), row]);
+  }
+  return [...perCommit.entries()].map(([harness, kept]) => ({
+    harness,
+    tally: tallyFalseGreens(kept),
+    rows: kept,
+  }));
+}

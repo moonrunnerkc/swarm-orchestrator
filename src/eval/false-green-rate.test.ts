@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { heldBackAgreementRate, tallyFalseGreens } from "./false-green-rate.ts";
+import { groupByHarness, heldBackAgreementRate, tallyFalseGreens } from "./false-green-rate.ts";
 
 describe("tallyFalseGreens", () => {
   /**
@@ -87,5 +87,36 @@ describe("heldBackAgreementRate", () => {
     expect(
       heldBackAgreementRate([{ sealedOracle: "vacuous", heldBackOracle: "unjudged" }]).rate,
     ).toBeNull();
+  });
+});
+
+describe("groupByHarness", () => {
+  /**
+   * A corpus can end up spanning two tool versions: a re-judge under one commit, eight more tasks
+   * scored after another. Picking one group and dropping the rest reported "no rate" over the
+   * eight rows that happened to be newest while three certified patches sat in the other group.
+   *
+   * Every group is reported, and the loud case is the one where more than one of them holds a
+   * certified patch, because that is the rate spanning tool versions rather than the corpus
+   * merely being recorded across them.
+   */
+  it("keeps every harness apart and says which ones hold an opportunity", () => {
+    const groups = groupByHarness([
+      { corner: "true-green", harness: "aaa" },
+      { corner: "false-green", harness: "aaa" },
+      { corner: "true-red", harness: "bbb" },
+      { corner: "true-red", harness: "bbb" },
+    ]);
+
+    expect(groups.map((one) => one.harness)).toEqual(["aaa", "bbb"]);
+    expect(groups[0]?.tally.opportunities).toBe(2);
+    expect(groups[1]?.tally.opportunities).toBe(0);
+    expect(groups.filter((one) => one.tally.opportunities > 0)).toHaveLength(1);
+  });
+
+  it("names a row that recorded no harness rather than dropping it", () => {
+    const groups = groupByHarness([{ corner: "true-green" }]);
+
+    expect(groups[0]?.harness).toBe("unrecorded");
   });
 });
