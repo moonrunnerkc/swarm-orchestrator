@@ -241,6 +241,16 @@ async function judgeOf(task, checkout, patchPath, storedTest) {
   const runner = runnerKind(task.runner);
   const runnerArgv = task.runner.split(" ");
   const zone = await declaredTimezone(checkout, task.baseCommit);
+  /**
+   * The repository's own checks run once per task, on the first judgement.
+   *
+   * Only that judgement's `regression` is read: the corner is classified from the sealed run's,
+   * and the held-back run and the order-dependence run are asked for a task verdict alone. The
+   * suite answers the same way in all three, so running it three times is the same minutes spent
+   * three times, and on this corpus that is most of a campaign: dayjs runs its tests under four
+   * timezones and every task is judged two or three times.
+   */
+  let checksAlreadyRun = false;
   return async (titles) => {
     const command = oracleCommand({
       storedTestFile: storedTest,
@@ -257,6 +267,8 @@ async function judgeOf(task, checkout, patchPath, storedTest) {
         judgeFailure: `${runner} has no filter that names exactly one half's cases`,
       };
     }
+    const onlyTheOracle = checksAlreadyRun;
+    checksAlreadyRun = true;
     const asked = await attempt(
       process.execPath,
       [
@@ -265,6 +277,7 @@ async function judgeOf(task, checkout, patchPath, storedTest) {
         "--workspace", checkout,
         "--base", task.baseCommit,
         "--install",
+        ...(onlyTheOracle ? ["--oracle-only"] : []),
         "--oracle", command,
         "--json",
       ],

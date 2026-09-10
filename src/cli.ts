@@ -348,6 +348,7 @@ async function verifyPatchUnderCancellation(
     patch: await readFile(options.patchFile, "utf8"),
     immutablePaths: options.immutablePaths,
     installDependencies: options.installDependencies,
+    ...(options.oracleOnly ? { repositoryChecks: "skip" as const } : {}),
     ...(options.taskOracle === null ? {} : { taskOracle: { command: options.taskOracle } }),
     commands: createNodeCommandRunner(clock, harnessChildEnvironment(), undefined, stopping),
     clock,

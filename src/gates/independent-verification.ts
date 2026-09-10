@@ -125,6 +125,18 @@ export interface IndependentVerificationOptions {
    * cannot measure says so instead of quietly installing on the reader's behalf.
    */
   readonly installDependencies?: boolean;
+  /**
+   * Whether to run the repository's own checks, or only the oracle.
+   *
+   * `skip` is for a second judgement of the same patch by a different oracle: the suite answers
+   * the same way both times, and running it again is the same minutes spent twice. On the mined
+   * corpus that is most of a campaign, since dayjs runs its suite under four timezones and every
+   * task is judged two or three times.
+   *
+   * Skipping is not passing. `regression` reads `unmeasured` and nothing is verified, because a
+   * run that did not measure the suite has not established that the patch broke nothing.
+   */
+  readonly repositoryChecks?: "run" | "skip";
 }
 
 export async function verifyIndependently(
@@ -228,7 +240,8 @@ export async function verifyIndependently(
         ? await installFromLockfile(checkout, options, timeoutMs)
         : null;
 
-    const withPatch = await runChecks(checkout, options, timeoutMs);
+    const onlyTheOracle = options.repositoryChecks === "skip";
+    const withPatch = onlyTheOracle ? [] : await runChecks(checkout, options, timeoutMs);
     // The base is measured only to explain a failure, so a run where everything passed pays
     // nothing for this. Install is not repeated: the same checkout is reset to the base, so the
     // two runs differ in the patch and in nothing else, which is the whole point of the
@@ -265,6 +278,8 @@ export async function verifyIndependently(
     const checks = withPatch.some((check) => check.status === "failed")
       ? await attributeFailures(withPatch, checkout, options, timeoutMs)
       : withPatch;
+    // A run that was not asked to measure the suite reports that, rather than reporting the
+    // absence of a failure as an absence of a problem.
     const measuredSomething = checks.some((check) => check.status !== "not-applicable");
     const causedByThePatch = (check: IndependentCheck) =>
       check.status === "failed" && check.inheritedFromBase !== true;
@@ -292,12 +307,16 @@ export async function verifyIndependently(
       // change did not judge it, while an oracle whose reach could not be measured is simply
       // unproven either way.
       verified: regression === "pass" && task === "accepted" && oracleReach !== "unreached",
-      unmeasured: !measuredSomething,
+      // Not the same as a checkout where nothing could run: this one was asked for one thing and
+      // did it, so the absence of checks is the request rather than a failure to measure.
+      unmeasured: !onlyTheOracle && !measuredSomething,
       // Ordered by what decided the verdict, not by what is true of the checkout. An inherited
       // failure does not block and an unreached oracle does, so naming the inherited one first
       // sent a reader of the koa#1946 run to fix a dependency install that was not the finding.
-      advice:
-        task === "vacuous"
+      advice: onlyTheOracle
+        ? "the repository's own checks were not asked for, so nothing here says whether the patch " +
+          "broke anything: this run carries the oracle's verdict and nothing else."
+        : task === "vacuous"
           ? "the oracle accepts the base commit as well, so it would have accepted a patch that " +
             "changes nothing and its acceptance of this one establishes nothing. An oracle is only " +
             "evidence where it can refuse: give one that the base fails."
