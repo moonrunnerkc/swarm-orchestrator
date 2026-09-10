@@ -89,6 +89,56 @@ export interface HalfVerdicts {
   readonly heldBackOracle?: string;
 }
 
+export interface InadequateOracleTally {
+  /**
+   * Oracles a held-back oracle proved inadequate: the sealed one accepted a patch the held-back
+   * one refuses, with the repository's own suite passing. That is a demonstration, not an
+   * opinion, and it is the only denominator here the tool does not choose.
+   */
+  readonly proved: number;
+  /** How many of those the tool declined to certify on, whatever the reason it gave. */
+  readonly refused: number;
+  readonly point: number | null;
+  readonly lower: number | null;
+  readonly upper: number | null;
+}
+
+/**
+ * Gate 3b: of the oracles shown to be inadequate, how many the tool refuses to certify on.
+ *
+ * This is the capability question, and it is the one gate 3 was always trying to ask. It does not
+ * move when a model gets better or worse, because the denominator is oracles rather than tasks,
+ * and it does not reward a tool for refusing more, because a tool that refuses everything scores
+ * one here and zero on everything else.
+ *
+ * The denominator is small and it is the honest size: three across both corpora. An interval over
+ * three is wide, and reporting the fraction without it would be the overconfidence this whole
+ * measurement exists to correct.
+ */
+export function tallyInadequateOracles(
+  rows: readonly (HalfVerdicts & {
+    readonly firstOracle?: string;
+    readonly regression?: string;
+    readonly verified?: boolean;
+  })[],
+): InadequateOracleTally {
+  const proved = rows.filter(
+    (row) =>
+      (row.sealedOracle ?? row.firstOracle) === "accepted" &&
+      row.heldBackOracle === "rejected" &&
+      row.regression === "pass",
+  );
+  const refused = proved.filter((row) => row.verified !== true);
+  const rate = proved.length === 0 ? null : wilsonInterval(refused.length, proved.length);
+  return {
+    proved: proved.length,
+    refused: refused.length,
+    point: rate?.point ?? null,
+    lower: rate?.lower ?? null,
+    upper: rate?.upper ?? null,
+  };
+}
+
 export interface HeldBackAgreement {
   /** Patches both halves actually judged, which is the only place they can agree or disagree. */
   readonly compared: number;

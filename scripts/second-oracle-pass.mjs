@@ -95,6 +95,19 @@ async function verify(patchPath, workspace, commit, oracle) {
   }
 }
 
+/**
+ * The commit of the tool that produced a row, recorded on the row, exactly as the mined pass does.
+ * Results from two tool versions in one file are not one measurement, and nothing in a verdict
+ * says which version reached it.
+ */
+const harnessCommit = (
+  await runProcessGroup("git", ["rev-parse", "HEAD"], {
+    cwd: repositoryRoot,
+    timeoutMs: 30_000,
+    maxOutputBytes: 64 * 1024,
+  })
+).stdout.trim();
+
 const runs = readFileSync(join(evidenceRoot, "runs.jsonl"), "utf8")
   .trim()
   .split("\n")
@@ -149,14 +162,15 @@ for (const record of runs) {
     heldBackOracle: heldBack.task,
     verified,
     corner,
-    oracleReach: sealed.oracleReach ?? "unmeasured",
+    ...(sealed.oracleReach === undefined ? {} : { oracleReach: sealed.oracleReach }),
     // Which lines, not just that some were missed: "extend the oracle" names nothing to extend
     // without them, and they are what separates a real gap from a defect in this measurement.
     ...(sealed.oracleReach === "unreached"
       ? { unreachedByOracle: sealed.unreachedByOracle ?? [] }
       : {}),
-    oracleBond: sealed.oracleBond ?? "not-recorded",
-    heldBackBond: heldBack.oracleBond ?? "not-recorded",
+    harness: harnessCommit,
+    ...(sealed.oracleBond === undefined ? {} : { oracleBond: sealed.oracleBond }),
+    ...(heldBack.oracleBond === undefined ? {} : { heldBackBond: heldBack.oracleBond }),
     ...((sealed.bondedMutants ?? []).length === 0
       ? {}
       : { bondedMutants: sealed.bondedMutants, heldBackBondedMutants: heldBackByMutant }),

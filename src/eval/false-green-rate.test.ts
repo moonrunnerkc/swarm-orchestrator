@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { groupByHarness, heldBackAgreementRate, tallyFalseGreens } from "./false-green-rate.ts";
+import {
+  groupByHarness,
+  heldBackAgreementRate,
+  tallyFalseGreens,
+  tallyInadequateOracles,
+} from "./false-green-rate.ts";
 
 describe("tallyFalseGreens", () => {
   /**
@@ -145,5 +150,39 @@ describe("the certified patches, split by what bonding their oracle showed", () 
     const tally = tallyFalseGreens([{ corner: "true-green" }]);
 
     expect(tally.certifiedByBond).toEqual({ "not-recorded": 1 });
+  });
+});
+
+/**
+ * Gate 3b's denominator is oracles rather than tasks, which is what makes it a question about the
+ * tool: a better model certifies more patches and proves no more oracles inadequate.
+ */
+describe("the oracles a held-back oracle proved inadequate", () => {
+  it("counts only where the sealed oracle accepted a patch the held-back one refuses", () => {
+    const tally = tallyInadequateOracles([
+      { sealedOracle: "accepted", heldBackOracle: "rejected", regression: "pass", verified: false },
+      { sealedOracle: "accepted", heldBackOracle: "rejected", regression: "pass", verified: true },
+      { sealedOracle: "accepted", heldBackOracle: "accepted", regression: "pass", verified: true },
+      { sealedOracle: "rejected", heldBackOracle: "rejected", regression: "pass", verified: false },
+      // Nothing established that the patch broke nothing, so nothing established the oracle either.
+      { sealedOracle: "accepted", heldBackOracle: "rejected", regression: "fail", verified: false },
+    ]);
+
+    expect(tally.proved).toBe(2);
+    expect(tally.refused).toBe(1);
+    expect(tally.point).toBe(0.5);
+  });
+
+  it("reads the hand-authored pass's spelling of the same field", () => {
+    const tally = tallyInadequateOracles([
+      { firstOracle: "accepted", heldBackOracle: "rejected", regression: "pass", verified: false },
+    ]);
+
+    expect(tally.proved).toBe(1);
+    expect(tally.refused).toBe(1);
+  });
+
+  it("has no rate where nothing was proved inadequate", () => {
+    expect(tallyInadequateOracles([]).point).toBeNull();
   });
 });
