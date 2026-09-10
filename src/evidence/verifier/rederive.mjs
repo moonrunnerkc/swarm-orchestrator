@@ -37,7 +37,7 @@ import {
  * coincidence rather than by construction, so the parity test in that tree holds the two to each
  * other over a table of cases.
  */
-export const bondRefusesCertification = false;
+export const bondRefusesCertification = true;
 
 /**
  * The fields the policy reads, and the words each of them may carry.

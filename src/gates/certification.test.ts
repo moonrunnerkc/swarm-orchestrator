@@ -40,16 +40,19 @@ describe("what refuses to certify a patch", () => {
   });
 
   /**
-   * The one switch. Reach cost three artifacts before it was safe to block on, and bonding is
-   * audited the same way before this turns on, so the report-only regime has to be expressible
-   * and has to be the one thing that changes.
+   * Turned on after the audit the pre-registered rule asked for: sixteen certified patches, one
+   * vacuous verdict among them, and reading its mutant by hand confirmed it changes behaviour the
+   * oracle executed. The two mutants that were equivalent were found the same way and their
+   * operators narrowed, which is what the audit is for.
+   *
+   * Reverting the commit that flipped this restores report-only, which is why it is one boolean.
    */
-  it("treats a vacuous bond as a reason to refuse only where bonding blocks", () => {
+  it("refuses to certify on an oracle that accepted a mutant of the change", () => {
     const vacuous = { ...clean, oracleBond: "vacuous" } as const;
 
-    expect(reasonsToRefuse(vacuous)).toEqual(
-      bondRefusesCertification ? ["oracle-bond-vacuous"] : [],
-    );
+    expect(bondRefusesCertification).toBe(true);
+    expect(reasonsToRefuse(vacuous)).toEqual(["oracle-bond-vacuous"]);
+    expect(certifies(vacuous)).toBe(false);
   });
 
   /**
