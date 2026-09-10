@@ -115,3 +115,18 @@ export function witnessOfADifference(input: {
 export function witnessedADifference(witness: MutantWitness): boolean {
   return witness === "coverage" || witness === "repository-suite";
 }
+
+/**
+ * Whether a mutant the oracle ran and accepted has to be witnessed before it refuses.
+ *
+ * The one place the decision lives, so either regime is one line and the evidence beside it. Both
+ * are measured and published, because the choice between them is the finding rather than the
+ * number either produces, and `docs/oracle-bond-operators.md` carries the conditions.
+ *
+ * `true` is the stricter reading of `vacuous`: two facts, and an accepted mutant nothing shows
+ * changed anything is an abstention. Its cost is measured, one true catch on this corpus and no
+ * false refusal prevented. `false` keeps the two facts apart, refusing on what `vacuous` has
+ * always meant and recording the witness beside it, so the audit reads only the refusals nothing
+ * witnessed.
+ */
+export const vacuousRequiresAWitness: boolean = true;

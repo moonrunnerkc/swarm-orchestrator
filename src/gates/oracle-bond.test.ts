@@ -131,3 +131,62 @@ describe("whether the oracle demonstrably ran the line a mutant changed", () => 
     expect(mutantWasSeen({}, mutant("one"))).toBe(false);
   });
 });
+
+/**
+ * Both regimes, because the choice between them is a published finding rather than a default
+ * somebody picked. The one the measurement argues for keeps the two facts apart: that the oracle
+ * accepted a change to a line it ran, which is true whatever a detector saw, and whether anything
+ * showed the mutant changed the program, which is recorded beside it.
+ */
+describe("whether a vacuous verdict requires a witness", () => {
+  it("abstains on an unwitnessed mutant where a witness is required", () => {
+    const bond = bondOfMutantObservations([observed("one", "passed", true, "none")], {
+      requireAWitness: true,
+    });
+
+    expect(bond.verdict).toBe("unshown");
+  });
+
+  it("refuses an unwitnessed mutant where the witness is only recorded", () => {
+    const bond = bondOfMutantObservations([observed("one", "passed", true, "none")], {
+      requireAWitness: false,
+    });
+
+    expect(bond.verdict).toBe("vacuous");
+    expect(bond.mutants[0]?.witness).toBe("none");
+  });
+
+  /**
+   * Neither regime touches the line the oracle never ran. That absence is about the oracle's
+   * coverage rather than about the mutant, and it has always read `unshown`.
+   */
+  it("leaves a mutant nothing says the oracle ran alone in either regime", () => {
+    for (const requireAWitness of [true, false]) {
+      const bond = bondOfMutantObservations([observed("one", "passed", false, "not-adjudicated")], {
+        requireAWitness,
+      });
+
+      expect(bond.verdict, String(requireAWitness)).toBe("unshown");
+    }
+  });
+
+  it("refuses a witnessed mutant in either regime", () => {
+    for (const requireAWitness of [true, false]) {
+      const bond = bondOfMutantObservations([observed("one", "passed", true, "coverage")], {
+        requireAWitness,
+      });
+
+      expect(bond.verdict, String(requireAWitness)).toBe("vacuous");
+    }
+  });
+
+  it("holds on a refusal in either regime", () => {
+    for (const requireAWitness of [true, false]) {
+      const bond = bondOfMutantObservations([observed("one", "failed", true, "not-adjudicated")], {
+        requireAWitness,
+      });
+
+      expect(bond.verdict, String(requireAWitness)).toBe("held");
+    }
+  });
+});
