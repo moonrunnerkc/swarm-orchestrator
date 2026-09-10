@@ -161,10 +161,18 @@ async function adjudicate(input: {
   if (coverage) {
     return "coverage";
   }
-  // Nothing to compare against, so nothing to ask. A suite that was not measured with the patch
-  // applied, or that had no check pass, cannot witness a mutant breaking it.
+  // Two different absences, and they were one word until a commander row read `vacuous` with
+  // nothing beside it to explain the refusal.
+  //
+  // A suite with no passing check cannot witness anything about any mutant, so there is nothing to
+  // ask rather than something left unasked: coverage was asked and was silent, which is what
+  // `none` says. The bound is the other case, where the suite could have answered and the run
+  // chose not to spend it, and that is an absence about what was asked.
   const comparable = input.checksWithPatch.some((check) => check.status === "passed");
-  if (!input.mayRunTheSuite || !comparable) {
+  if (!comparable) {
+    return witnessOfADifference({ coverage: false, suite: false });
+  }
+  if (!input.mayRunTheSuite) {
     return witnessOfADifference({ coverage: false, suite: null });
   }
   const withMutantChecks = await input.runner.runRepositoryChecks();
