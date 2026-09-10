@@ -154,6 +154,18 @@ describe("naming a file where the guard is not looking for one", () => {
   it("leaves prose with a colon and spaces in it alone", () => {
     expect(shellCallIsRefused("git commit -m 'fix: read the config'")).toBe(false);
   });
+
+  /**
+   * An empty word names no file, so it is not offered as a path. `sed -i '' 's/a/b/' file` is the
+   * in-place form every macOS invocation uses, and it was refused with "the path is empty": the
+   * quoted empty argument reached a check whose whole subject is paths. A word that cannot name
+   * anything is not a path candidate, and refusing it hid a real command behind a reason that was
+   * not about it.
+   */
+  it("leaves an empty argument alone, which names no file", () => {
+    expect(shellCallIsRefused("sed -i '' 's/one/two/' src/parse.js")).toBe(false);
+    expect(shellCallIsRefused('grep -e "" src/parse.js')).toBe(false);
+  });
 });
 
 describe("attacks the lexical guard cannot see, named rather than implied away", () => {
