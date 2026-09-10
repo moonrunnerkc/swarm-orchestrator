@@ -324,3 +324,43 @@ refuses at all, so either regime is one line and the evidence beside it.
 If any of them fails, the witness requirement stays the default and the report names the condition.
 Whichever way it goes, both regimes are published side by side, because the choice between them is
 the finding rather than the number either one produces.
+
+### What the third column said, and the decision
+
+```
+report-only            certified 16 of 97 (16.5% [10.4, 25.1]), false green(s) 1: 6.3% [1.1, 28.3]
+witness required       certified 16 of 97 (16.5% [10.4, 25.1]), false green(s) 1: 6.3% [1.1, 28.3]
+witness recorded       certified 15 of 97 (15.5% [9.6, 24.0]), false green(s) 0: 0.0% [0.0, 20.4]
+```
+
+`node scripts/bond-cost.mjs`, all three off the same rows.
+
+**The first two rows are the same row.** Requiring a witness does not make the bond stricter by
+some measured amount; it makes the bond refuse nothing, and the certify rate and the false-green
+rate come back identical to the regime where bonding blocks nothing at all. The third row is the
+column the pre-registered decision at `343ae4740` published, to the digit. So the choice is not
+between two strengths of a check. It is between a check and no check, with the no-check option
+reverting an earlier decision without saying so.
+
+**All three conditions hold.**
+
+1. **Zero false refusals.** The regime refuses one row of the ninety-seven, `tj/commander.js#1671`,
+   and its held-back oracle rejects that patch. A refusal of a patch a second oracle rejects is not
+   a false refusal by any reading. No other row moves, so there is no other refusal to audit.
+2. **The known-answer smoke is unchanged**, and the record shows it directly rather than by
+   re-running: none of `koa#1946`, `koa#1999` or `koa#1904` has a mutant carrying any witness other
+   than `not-adjudicated`, so no verdict of theirs can turn on this. They stand at true-red,
+   certified and certified.
+3. **`tj/commander.js#1671` is refused.**
+
+So the witness becomes a recorded field and the refusal returns to what `vacuous` has always
+meant. `vacuousRequiresAWitness` is `false`, one line, both values tested, and reverting the commit
+that set it restores the stricter reading.
+
+**What that leaves open, which is the thing the stricter reading existed to close.** A refusal on a
+mutant that changes nothing is a false red, and nothing here proves a mutant changed anything. What
+is different from the hand audit it replaces is that the record names which refusals could be one:
+a refusal carrying `witness: none` is the only shape that needs reading, `bond-cost.mjs` counts
+them, and `swarm ci` prints the witness beside the mutant so a reader weighs the refusal rather
+than taking it. On this corpus that set has one member and it is a true catch. It is not zero by
+construction and will not stay at one.
