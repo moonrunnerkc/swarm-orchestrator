@@ -113,7 +113,30 @@ const repositories = (Array.isArray(selection) ? selection : Object.values(selec
 
 console.log(`mining ${repositories.length} repositories, API only\n`);
 
+/**
+ * What is already on disk, read once at the start so the file can be written after every
+ * repository rather than at the end.
+ *
+ * The other two scripts in this pipeline save a judgement when it is made, for the reason this one
+ * needed and did not have: a pass that dies on its last repository throws away every candidate
+ * before it, and three hours of API budget with it.
+ */
+const already = existsSync(outPath)
+  ? (JSON.parse(readFileSync(outPath, "utf8")).candidates ?? [])
+  : [];
+const nameOf = (one) => `${one.repository}#${one.pull}`;
+
 const candidates = [];
+function persist() {
+  const found = new Set(candidates.map(nameOf));
+  const merged = [...already.filter((one) => !found.has(nameOf(one))), ...candidates];
+  writeFileSync(
+    outPath,
+    `${JSON.stringify({ at: new Date().toISOString(), candidates: merged }, null, 2)}\n`,
+  );
+  return merged.length;
+}
+
 /** Enough left to finish a repository, rather than stopping halfway through one. */
 const budgetFloor = 200;
 for (const repository of repositories) {
@@ -204,24 +227,12 @@ for (const repository of repositories) {
     found += 1;
   }
   console.log(`${repository.fullName.padEnd(40)} ${found} candidate(s)`);
+  persist();
 }
 
-/**
- * Added to what is already there rather than written over it.
- *
- * The corpus README calls all three of these scripts resumable and this one was not: a second
- * mining pass replaced the file, so every candidate the new pass did not happen to find again was
- * gone, along with the viability judgement and the score that had been paid for it. A pull request
- * is named once by owner, repository and number, so the merge is by that name.
- */
-const already =
-  existsSync(outPath) && outPath.endsWith(".json")
-    ? (JSON.parse(readFileSync(outPath, "utf8")).candidates ?? [])
-    : [];
-const nameOf = (one) => `${one.repository}#${one.pull}`;
-const found = new Set(candidates.map(nameOf));
-const merged = [...already.filter((one) => !found.has(nameOf(one))), ...candidates];
-
-writeFileSync(outPath, `${JSON.stringify({ at: new Date().toISOString(), candidates: merged }, null, 2)}\n`);
-console.log(`\n${candidates.length} candidate(s) this pass, ${merged.length} in all: ${outPath}`);
+// Added to what is already there rather than written over it: a second mining pass used to replace
+// the file, so every candidate it did not happen to find again was gone, along with the viability
+// judgement and the score that had been paid for it. A pull request is named once by owner,
+// repository and number, so the merge is by that name.
+console.log(`\n${candidates.length} candidate(s) this pass, ${persist()} in all: ${outPath}`);
 console.log("None of these is known to work yet. Run scripts/check-pr-task-viability.mjs next.");
