@@ -364,7 +364,18 @@ function whyNothingWasJudged(verdict) {
 }
 
 const named = (one) => `${one.repository}#${one.pull}`;
-const chosen = only === null ? viable : viable.filter((one) => named(one) === only);
+/**
+ * A task named explicitly is re-judged whether or not the viability filter still admits it.
+ *
+ * The filter decides what counts toward a rate, and a task it set aside contributes to none: both
+ * this pass and false-green-rate.mjs drop those rows before they compute anything. What a recorded
+ * verdict still has to be is re-derivable from its own record, and dayjs#3012 is a row claiming
+ * `verified` that nothing could re-derive because the fields the policy reads were not recorded
+ * when it was written. Refusing to re-judge it because its oracle turned out to be worthless left
+ * a green claim standing that nobody can check, which is a different defect from the one the
+ * filter is about.
+ */
+const chosen = only === null ? viable : tasks.filter((one) => named(one) === only);
 const judgedByThisHarness = new Set(
   scored.runs.filter((one) => one.harness === harnessCommit).map(named),
 );
