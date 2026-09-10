@@ -255,3 +255,72 @@ and calling it behaviour-changing. Invariant 16 says a verdict nothing can re-de
 not re-derived rather than agreed with. Keeping the refusal by making the hand judgement a
 condition would be keeping a number by keeping the audit that produced it, which is the practice
 this replaces. It is reported either way, with the detector output that decided it.
+
+## What the measurement said, and the one thing it argues for
+
+The rule above ran unchanged over both corpora. This section is what the table showed, written
+after seeing it and marked as such.
+
+**The operators do what they were built to do.** All eight fire on the mined corpus, and the three
+new ones account for 25 of the 34 mutants built: `replace-assigned-value` 11, `negate-condition` 8,
+`delete-statement` 6. Every certified patch now carries a `held` bond. `koa#1999`, the patch the
+plan called untouchable by any operator here and the one the rejected stricter option would have
+cost, certifies on `held`. The known-answer smoke is unchanged: `koa#1946` true-red, `koa#1999` and
+`koa#1904` certified.
+
+**The adjudication fired, and it fired correctly.** One `vacuous` verdict across the corpus, on
+`iamkun/dayjs#3180` in the ordinary arm, witnessed by coverage: negating a guard that returns early
+on an invalid date stops the lines after it from running, the sealed oracle accepted that, and the
+patch was already refused on reach. Behaviour-changing, demonstrated by an instrument, and not an
+artifact.
+
+**And it cost the refusal of `tj/commander.js#1671`, which the pre-registration said it might.**
+Its `drop-chained-call` mutant reads `unshown` with `witness: none`: both detectors were asked and
+neither answered. So the bond is `held` on the other three mutants, the patch certifies, and it is
+a false green again. The mined arm goes from 0 false greens in 4 certified to 1 in 5, and 3b from
+3 of 3 to 2 of 3.
+
+**Here is the finding.** Across the whole corpus the witness requirement changed exactly one
+verdict, and that one was a true catch. It prevented zero false refusals, because the aggressive
+operators produced no accepted-and-seen mutant that was equivalent: only two mutants in the corpus
+were ever adjudicated at all, one witnessed by coverage and one by nothing. The insurance the
+requirement exists to provide has not paid out once, and its premium is the one false green this
+corpus still holds.
+
+That is derivable from the record rather than from this paragraph, because a mutant's witness is
+recorded beside its verdict: a mutant carrying any witness other than `not-adjudicated` was
+accepted on a line the oracle ran, which is the whole of what the earlier rule needed.
+`node scripts/bond-cost.mjs` prints both regimes off the same rows.
+
+### The third regime, stated before it is measured
+
+Not a blind pre-registration, and not presented as one: it is proposed because the table above
+argues for it. What is fixed here before the numbers are read is the rule and the conditions, and
+nothing below moves once the third column is seen.
+
+**Refuse on a mutant the oracle ran and accepted, and record the witness rather than requiring
+it.** Two facts, kept as two: that the oracle accepted a change to a line it ran, which is what
+`vacuous` has always meant and is true whatever a detector saw, and whether anything showed the
+mutant changed the program, which is recorded beside it. A refusal carrying `witness: none` says
+what backs it, so the audit that used to read every vacuous verdict now reads only those, and the
+count is published rather than lived with.
+
+Its cost is the one the witness requirement was built to avoid: a refusal on a mutant that changes
+nothing is a false red. What makes that answerable rather than invisible is the field, which names
+exactly which refusals could be one.
+
+The switch is one exported boolean beside the one that already decides whether a vacuous bond
+refuses at all, so either regime is one line and the evidence beside it.
+
+**It becomes the default if all three hold:**
+
+1. **Zero false refusals across both corpora**, where a false refusal is a patch both oracles
+   accept, certified under report-only, that this regime refuses on a mutant which does not change
+   behaviour. Every refusal carrying `witness: none` is read by hand once, which is now a named
+   and countable set rather than every vacuous verdict.
+2. **The known-answer smoke unchanged**: `koa#1946` true-red, `koa#1999` and `koa#1904` certified.
+3. **`tj/commander.js#1671` refused**, which is the catch this exists to recover.
+
+If any of them fails, the witness requirement stays the default and the report names the condition.
+Whichever way it goes, both regimes are published side by side, because the choice between them is
+the finding rather than the number either one produces.
