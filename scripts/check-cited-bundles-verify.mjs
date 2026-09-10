@@ -21,11 +21,17 @@ const repositoryRoot = new URL("..", import.meta.url).pathname;
 
 /** Each bundle with the document that calls it verified, so the list says why it is on the list. */
 const cited = [
-  ["docs/evidence/2026-09-02/gates-bonded", "README.md, claims.md: verify.mjs exit 0, 17 verdicts re-derived"],
+  [
+    "docs/evidence/2026-09-02/gates-bonded",
+    "README.md, claims.md: verify.mjs exit 0, 17 verdicts re-derived",
+  ],
   ["docs/evidence/2026-08-24/session", "claims.md: verifies from outside the workspace"],
   ["docs/evidence/2026-08-24/swarm/redundancy", "claims.md: it verifies from where it sits"],
   ["docs/evidence/2026-08-24/swarm/decomposition", "claims.md: and it verifies"],
-  ["docs/evidence/2026-08-18/shakedown/bundles/task-08-file-set-amended", "claims.md: the file-set gate blocked until an amendment was recorded"],
+  [
+    "docs/evidence/2026-08-18/shakedown/bundles/task-08-file-set-amended",
+    "claims.md: the file-set gate blocked until an amendment was recorded",
+  ],
   ["docs/evidence/2026-08-18/live-frontier", "README.md, and the nightly proof workflow"],
   ["docs/evidence/2026-08-18/live-local", "README.md"],
   ["docs/evidence/2026-08-23/calibration", "claims.md"],
@@ -33,8 +39,14 @@ const cited = [
   ["docs/evidence/2026-09-02/calibration/qwen36-first", "2026-09-02/run-report.md"],
   ["docs/evidence/2026-09-02/calibration/qwen36-second", "2026-09-02/run-report.md"],
   ["docs/evidence/2026-09-02/calibration/gemma4-mistral", "2026-09-02/run-report.md"],
-  ["docs/evidence/2026-09-04/calibration/qwen36", "2026-09-04/calibration-report.md: verify with the verifier each carries, exit 0"],
-  ["docs/evidence/2026-09-04/calibration/gemma4-mistral", "2026-09-04/calibration-report.md: verify with the verifier each carries, exit 0"],
+  [
+    "docs/evidence/2026-09-04/calibration/qwen36",
+    "2026-09-04/calibration-report.md: verify with the verifier each carries, exit 0",
+  ],
+  [
+    "docs/evidence/2026-09-04/calibration/gemma4-mistral",
+    "2026-09-04/calibration-report.md: verify with the verifier each carries, exit 0",
+  ],
 ];
 
 let failed = 0;

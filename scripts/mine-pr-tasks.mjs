@@ -152,7 +152,7 @@ for (const repository of repositories) {
   // Several pages, because a repository's most recent hundred closed pulls are mostly
   // dependency bumps and documentation. Mining one page found nothing in twenty of fifty
   // repositories that do have usable pull requests further back.
-  let pulls = [];
+  const pulls = [];
   try {
     for (let page = 1; page <= numeric("--pages", 4); page += 1) {
       const batch = await gh(`repos/${repository.fullName}/pulls`, {
@@ -166,7 +166,9 @@ for (const repository of repositories) {
       if (batch.length < 100) break;
     }
   } catch (cause) {
-    console.log(`${repository.fullName.padEnd(40)} pulls unavailable: ${String(cause).slice(0, 80)}`);
+    console.log(
+      `${repository.fullName.padEnd(40)} pulls unavailable: ${String(cause).slice(0, 80)}`,
+    );
     continue;
   }
 
@@ -179,7 +181,9 @@ for (const repository of repositories) {
 
     let files = [];
     try {
-      files = await gh(`repos/${repository.fullName}/pulls/${pull.number}/files`, { per_page: 100 });
+      files = await gh(`repos/${repository.fullName}/pulls/${pull.number}/files`, {
+        per_page: 100,
+      });
     } catch {
       continue;
     }
@@ -203,7 +207,12 @@ for (const repository of repositories) {
     const splits = testFiles
       .map((file) => ({ file, split: splitTestCases(addedLines(file.patch)) }))
       .filter((one) => one.split.splittable)
-      .sort((a, b) => b.split.sealed.length + b.split.heldBack.length - (a.split.sealed.length + a.split.heldBack.length));
+      .sort(
+        (a, b) =>
+          b.split.sealed.length +
+          b.split.heldBack.length -
+          (a.split.sealed.length + a.split.heldBack.length),
+      );
     const best = splits[0];
     if (best === undefined) continue;
     const onlyTestFile = best.file;

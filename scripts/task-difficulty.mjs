@@ -76,7 +76,9 @@ for (const row of ordinary) {
   byRepository.set(row.repository, held);
 }
 console.log("\nby repository, so the difficulty is not one project's:");
-for (const [repository, rows] of [...byRepository].sort((one, other) => other[1].length - one[1].length)) {
+for (const [repository, rows] of [...byRepository].sort(
+  (one, other) => other[1].length - one[1].length,
+)) {
   const one = tallyTaskSuccess(rows);
   console.log(
     `  ${repository.padEnd(34)} ${String(one.solved).padStart(2)} of ${String(one.attempted).padStart(2)} solved` +

@@ -111,7 +111,7 @@ export function judgeRecordedVerdicts(rows, label) {
     violations.push(
       claimed
         ? `${label}: ${nameOf(row)} claims verified and its own record holds ` +
-          `${judged.reasons.join(", ")}`
+            `${judged.reasons.join(", ")}`
         : `${label}: ${nameOf(row)} refuses and its own record holds no reason to refuse`,
     );
   }

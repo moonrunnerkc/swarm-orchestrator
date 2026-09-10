@@ -79,9 +79,7 @@ export function expectedChainFailure(recordIndex) {
 export function judgeArms({ reference, tampered }) {
   const problems = [];
   if (reference.exitCode !== 0) {
-    problems.push(
-      `the reference bundle did not verify: its verifier exited ${reference.exitCode}`,
-    );
+    problems.push(`the reference bundle did not verify: its verifier exited ${reference.exitCode}`);
   }
   if (tampered.exitCode === 0) {
     problems.push(
@@ -154,7 +152,9 @@ export function proveBundle(bundle, log) {
     });
     log("");
     if (verdict.passed) {
-      log("proof holds: the verifier accepted the bundle and refused the copy, naming the broken link");
+      log(
+        "proof holds: the verifier accepted the bundle and refused the copy, naming the broken link",
+      );
     }
     for (const problem of verdict.problems) {
       log(`proof FAILED: ${problem}`);

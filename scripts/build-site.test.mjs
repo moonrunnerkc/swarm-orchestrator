@@ -1,7 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { backingLinks, parseClaims, renderBacking, renderPage, resolveBackingPath } from "./build-site.mjs";
+import {
+  backingLinks,
+  parseClaims,
+  renderBacking,
+  renderPage,
+  resolveBackingPath,
+} from "./build-site.mjs";
 
 const repositoryRoot = join(import.meta.dirname, "..");
 const claimsMarkdown = await readFile(join(repositoryRoot, "docs", "claims.md"), "utf8");
@@ -29,14 +35,18 @@ describe("reading the claims table", () => {
     const { forbidden } = parseClaims(claimsMarkdown);
 
     expect(forbidden.length).toBeGreaterThan(3);
-    expect(forbidden.every((entry) => entry.phrase.length > 0 && entry.reason.length > 0)).toBe(true);
+    expect(forbidden.every((entry) => entry.phrase.length > 0 && entry.reason.length > 0)).toBe(
+      true,
+    );
     expect(forbidden.some((entry) => entry.phrase.includes("Seven red-team laps"))).toBe(true);
   });
 });
 
 describe("resolving what a backing cell points at", () => {
   it("reads a cell path as relative to the document that holds it", () => {
-    expect(resolveBackingPath("../src/evidence/claim.ts", tracked)?.path).toBe("src/evidence/claim.ts");
+    expect(resolveBackingPath("../src/evidence/claim.ts", tracked)?.path).toBe(
+      "src/evidence/claim.ts",
+    );
     expect(resolveBackingPath("evidence/2026-08-18/notes.md", tracked)?.path).toBe(
       "docs/evidence/2026-08-18/notes.md",
     );
@@ -71,7 +81,10 @@ describe("resolving what a backing cell points at", () => {
   });
 
   it("counts each artifact once however often the cell names it", () => {
-    const links = backingLinks("`../src/evidence/claim.ts` and `../src/evidence/claim.ts`", tracked);
+    const links = backingLinks(
+      "`../src/evidence/claim.ts` and `../src/evidence/claim.ts`",
+      tracked,
+    );
 
     expect(links.length).toBe(1);
   });
@@ -114,7 +127,9 @@ describe("the rendered page", () => {
    * harness, so the only verdict it may show is one it is quoting, and that one is a refusal.
    */
   it("renders no verdict of its own, only the refused claim it quotes", () => {
-    const stamped = [...html.matchAll(/<span class="stamp">([^<]+)<\/span>/g)].map((match) => match[1]);
+    const stamped = [...html.matchAll(/<span class="stamp">([^<]+)<\/span>/g)].map(
+      (match) => match[1],
+    );
 
     expect(stamped).toEqual(["UNVERIFIED"]);
   });
@@ -127,7 +142,18 @@ describe("the rendered page", () => {
   });
 
   it("closes every tag it opens", () => {
-    for (const tag of ["main", "header", "footer", "article", "section", "ul", "li", "dl", "dt", "dd"]) {
+    for (const tag of [
+      "main",
+      "header",
+      "footer",
+      "article",
+      "section",
+      "ul",
+      "li",
+      "dl",
+      "dt",
+      "dd",
+    ]) {
       const opened = html.match(new RegExp(`<${tag}[\\s>]`, "g")) ?? [];
       const closed = html.match(new RegExp(`</${tag}>`, "g")) ?? [];
       expect(closed.length, tag).toBe(opened.length);

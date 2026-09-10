@@ -14,7 +14,15 @@
  * they left, with no model involved, and by the hidden test the task names.
  */
 import { spawn } from "node:child_process";
-import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  appendFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 import { distribution } from "./compare-calibrations.mjs";
 
@@ -66,13 +74,23 @@ export const repositories = Object.freeze({
     hidden: {
       file: "darkreader/hidden/array-chunk.hidden.tests.ts",
       destination: "tests/unit/utils/array-chunk.hidden.tests.ts",
-      argv: ["npx", "jest", "--config=tests/unit/jest.config.mjs", "tests/unit/utils/array-chunk.hidden.tests.ts"],
+      argv: [
+        "npx",
+        "jest",
+        "--config=tests/unit/jest.config.mjs",
+        "tests/unit/utils/array-chunk.hidden.tests.ts",
+      ],
     },
     secondHidden: {
       root: "docs/evidence/2026-09-06/second-oracle",
       file: "darkreader/array-chunk.second.tests.ts",
       destination: "tests/unit/utils/array-chunk.second.tests.ts",
-      argv: ["npx", "jest", "--config=tests/unit/jest.config.mjs", "tests/unit/utils/array-chunk.second.tests.ts"],
+      argv: [
+        "npx",
+        "jest",
+        "--config=tests/unit/jest.config.mjs",
+        "tests/unit/utils/array-chunk.second.tests.ts",
+      ],
     },
   },
 });
@@ -103,7 +121,12 @@ function readLedger(directory) {
     .map((line) => JSON.parse(line));
   return ledger.map((record) => ({
     ...record,
-    payload: JSON.parse(readFileSync(join(directory, "blobs", `${record.payloadDigest.replace("sha256:", "")}.json`), "utf8")),
+    payload: JSON.parse(
+      readFileSync(
+        join(directory, "blobs", `${record.payloadDigest.replace("sha256:", "")}.json`),
+        "utf8",
+      ),
+    ),
   }));
 }
 
@@ -113,20 +136,37 @@ function readLedger(directory) {
  */
 export function scoreFromRecords(records) {
   const gateRuns = records.filter((record) => record.type === "gate-run");
-  const lastAttempt = gateRuns.length === 0 ? 0 : Math.max(...gateRuns.map((record) => record.payload.attempt ?? 0));
+  const lastAttempt =
+    gateRuns.length === 0 ? 0 : Math.max(...gateRuns.map((record) => record.payload.attempt ?? 0));
   const gates = {};
   for (const record of gateRuns) {
-    if ((record.payload.attempt ?? 0) === lastAttempt) gates[record.payload.gateId] = record.payload.status;
+    if ((record.payload.attempt ?? 0) === lastAttempt)
+      gates[record.payload.gateId] = record.payload.status;
   }
-  const base = records.find((record) => record.type === "ratchet-decision" && record.payload.scope === "base");
+  const base = records.find(
+    (record) => record.type === "ratchet-decision" && record.payload.scope === "base",
+  );
   const measures = base === undefined ? null : base.payload.measures.after;
   const blockingFailures = gateRuns
-    .filter((record) => (record.payload.attempt ?? 0) === lastAttempt && record.payload.blocking && record.payload.status === "failed")
+    .filter(
+      (record) =>
+        (record.payload.attempt ?? 0) === lastAttempt &&
+        record.payload.blocking &&
+        record.payload.status === "failed",
+    )
     .map((record) => record.payload.gateId);
   const commandGateRan = gateRuns.some(
-    (record) => (record.payload.attempt ?? 0) === lastAttempt && record.payload.command !== null && record.payload.status !== "not-applicable",
+    (record) =>
+      (record.payload.attempt ?? 0) === lastAttempt &&
+      record.payload.command !== null &&
+      record.payload.status !== "not-applicable",
   );
-  return { gates, measures, blockingFailures, green: blockingFailures.length === 0 && commandGateRan };
+  return {
+    gates,
+    measures,
+    blockingFailures,
+    green: blockingFailures.length === 0 && commandGateRan,
+  };
 }
 
 /** Tokens the swarm arm spent, summed over its model-call records. */
@@ -146,11 +186,19 @@ export function tokensFromRecords(records) {
 function run(command, args, options) {
   return new Promise((settle) => {
     const startedAt = Date.now();
-    const child = spawn(command, args, { cwd: options.cwd, env: options.env ?? process.env, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(command, args, {
+      cwd: options.cwd,
+      env: options.env ?? process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let stdout = "";
     let stderr = "";
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
     child.on("close", (code) => settle({ code, stdout, stderr, wallMs: Date.now() - startedAt }));
   });
 }
@@ -171,8 +219,13 @@ async function prepareWorkspace(source, commit, destination) {
   rmSync(destination, { recursive: true, force: true });
   await git(root, "clone", "--quiet", source, destination);
   await git(destination, "checkout", "--quiet", commit);
-  const installed = await run("npm", ["ci", "--no-audit", "--no-fund", "--loglevel=error"], { cwd: destination });
-  if (installed.code !== 0) throw new Error(`npm ci in ${destination} exited ${installed.code}: ${installed.stderr.slice(-800)}`);
+  const installed = await run("npm", ["ci", "--no-audit", "--no-fund", "--loglevel=error"], {
+    cwd: destination,
+  });
+  if (installed.code !== 0)
+    throw new Error(
+      `npm ci in ${destination} exited ${installed.code}: ${installed.stderr.slice(-800)}`,
+    );
 }
 
 /** The whole tree against the pinned commit, untracked files included, without moving the index for good. */
@@ -208,7 +261,22 @@ async function runArm(arm, workspace, commit, task, runDirectory) {
     const bundle = join(runDirectory, "bundle");
     const done = await run(
       "node",
-      [join(root, "dist/cli.js"), "--no-tui", "--no-color", "--workspace", workspace, "--base", commit, "--model", `local:${model}`, "--bundle", bundle, "--max-wall-minutes", "30", task],
+      [
+        join(root, "dist/cli.js"),
+        "--no-tui",
+        "--no-color",
+        "--workspace",
+        workspace,
+        "--base",
+        commit,
+        "--model",
+        `local:${model}`,
+        "--bundle",
+        bundle,
+        "--max-wall-minutes",
+        "30",
+        task,
+      ],
       { cwd: root, env: swarmEnvironment() },
     );
     const records = existsSync(join(bundle, "ledger.jsonl")) ? readLedger(bundle) : [];
@@ -225,7 +293,19 @@ async function runArm(arm, workspace, commit, task, runDirectory) {
   }
   const done = await run(
     "claude",
-    ["-p", task, "--model", model, "--permission-mode", "bypassPermissions", "--dangerously-skip-permissions", "--output-format", "json", "--max-turns", "80"],
+    [
+      "-p",
+      task,
+      "--model",
+      model,
+      "--permission-mode",
+      "bypassPermissions",
+      "--dangerously-skip-permissions",
+      "--output-format",
+      "json",
+      "--max-turns",
+      "80",
+    ],
     { cwd: workspace, env: baselineEnvironment() },
   );
   let parsed = null;
@@ -238,7 +318,17 @@ async function runArm(arm, workspace, commit, task, runDirectory) {
     exitCode: done.code,
     wallMs: done.wallMs,
     transcript: `${done.stdout}\n${done.stderr}`,
-    tokens: parsed === null ? null : { calls: parsed.num_turns ?? null, input: (parsed.usage?.input_tokens ?? 0) + (parsed.usage?.cache_creation_input_tokens ?? 0) + (parsed.usage?.cache_read_input_tokens ?? 0), output: parsed.usage?.output_tokens ?? 0 },
+    tokens:
+      parsed === null
+        ? null
+        : {
+            calls: parsed.num_turns ?? null,
+            input:
+              (parsed.usage?.input_tokens ?? 0) +
+              (parsed.usage?.cache_creation_input_tokens ?? 0) +
+              (parsed.usage?.cache_read_input_tokens ?? 0),
+            output: parsed.usage?.output_tokens ?? 0,
+          },
     stopReason: parsed?.stop_reason ?? parsed?.terminal_reason ?? null,
     escalated: null,
     bundleRecords: null,
@@ -251,7 +341,11 @@ async function hiddenTest(workspace, hidden, evidenceRoot) {
   cpSync(join(evidenceRoot, hidden.file), destination);
   try {
     const done = await run(hidden.argv[0], hidden.argv.slice(1), { cwd: workspace });
-    return { passed: done.code === 0, exitCode: done.code, output: `${done.stdout}\n${done.stderr}`.slice(-4000) };
+    return {
+      passed: done.code === 0,
+      exitCode: done.code,
+      output: `${done.stdout}\n${done.stderr}`.slice(-4000),
+    };
   } finally {
     rmSync(destination, { force: true });
   }
@@ -259,15 +353,20 @@ async function hiddenTest(workspace, hidden, evidenceRoot) {
 
 async function runOne(options) {
   const repository = repositories[options.repo];
-  if (repository === undefined) throw new Error(`no such repository: ${options.repo}. One of ${Object.keys(repositories).join(", ")}`);
-  if (!arms.includes(options.arm)) throw new Error(`no such arm: ${options.arm}. One of ${arms.join(", ")}`);
+  if (repository === undefined)
+    throw new Error(
+      `no such repository: ${options.repo}. One of ${Object.keys(repositories).join(", ")}`,
+    );
+  if (!arms.includes(options.arm))
+    throw new Error(`no such arm: ${options.arm}. One of ${arms.join(", ")}`);
   const evidenceRoot = join(root, "docs/evidence", options.date, "real-repos");
   const selection = JSON.parse(readFileSync(join(root, "campaign/selection/repos.json"), "utf8"));
   const commit = pinnedCommit(repository.fullName, selection);
   const task = taskText(readFileSync(join(evidenceRoot, options.repo, "task.md"), "utf8"));
   const source = join(root, "campaign/work", repository.fullName.replace("/", "__"));
   const runDirectory = join(evidenceRoot, options.repo, options.arm, `run-${options.run}`);
-  if (existsSync(join(runDirectory, "run.json"))) throw new Error(`${runDirectory} already holds a run; a run is never overwritten`);
+  if (existsSync(join(runDirectory, "run.json")))
+    throw new Error(`${runDirectory} already holds a run; a run is never overwritten`);
   const workspace = join(options.scratch, `${options.repo}-${options.arm}-${options.run}`);
   mkdirSync(runDirectory, { recursive: true });
 
@@ -278,10 +377,26 @@ async function runOne(options) {
   writeFileSync(join(runDirectory, "diff.patch"), await captureDiff(workspace, commit));
 
   const scoreDirectory = join(runDirectory, "score");
-  const scored = await run("node", [join(root, "dist/cli.js"), "gates", "--workspace", workspace, "--base", commit, "--bundle", scoreDirectory], { cwd: root });
-  const score = existsSync(join(scoreDirectory, "ledger.jsonl")) ? scoreFromRecords(readLedger(scoreDirectory)) : null;
+  const scored = await run(
+    "node",
+    [
+      join(root, "dist/cli.js"),
+      "gates",
+      "--workspace",
+      workspace,
+      "--base",
+      commit,
+      "--bundle",
+      scoreDirectory,
+    ],
+    { cwd: root },
+  );
+  const score = existsSync(join(scoreDirectory, "ledger.jsonl"))
+    ? scoreFromRecords(readLedger(scoreDirectory))
+    : null;
   const hidden = await hiddenTest(workspace, repository.hidden, evidenceRoot);
-  for (const directory of ["bundle", "score"]) rmSync(join(runDirectory, directory, "review.html"), { force: true });
+  for (const directory of ["bundle", "score"])
+    rmSync(join(runDirectory, directory, "review.html"), { force: true });
 
   const record = {
     repository: repository.fullName,
@@ -306,7 +421,9 @@ async function runOne(options) {
   writeFileSync(join(runDirectory, "run.json"), `${JSON.stringify(record, null, 2)}\n`);
   writeFileSync(join(runDirectory, "hidden-test.txt"), hidden.output);
   appendFileSync(join(evidenceRoot, "runs.jsonl"), `${JSON.stringify(record)}\n`);
-  process.stdout.write(`${options.repo} ${options.arm} run ${options.run}: exit ${armResult.exitCode}, ${Math.round(armResult.wallMs / 1000)}s, gates ${score === null ? "unscored" : score.green ? "green" : `not green (${score.blockingFailures.join(", ") || "nothing ran"})`}, hidden test ${hidden.passed ? "passed" : "failed"}\n`);
+  process.stdout.write(
+    `${options.repo} ${options.arm} run ${options.run}: exit ${armResult.exitCode}, ${Math.round(armResult.wallMs / 1000)}s, gates ${score === null ? "unscored" : score.green ? "green" : `not green (${score.blockingFailures.join(", ") || "nothing ran"})`}, hidden test ${hidden.passed ? "passed" : "failed"}\n`,
+  );
   return record;
 }
 
@@ -316,12 +433,20 @@ function format(value, digits) {
 
 /** Per repository and arm, distributions over the runs, read from the records alone. */
 export function renderReport(records, date) {
-  const lines = [`# Real repositories: ${records.some((r) => r.arm === "baseline") ? "two arms" : "single arm"}, ${date}`, ""];
-  lines.push(`Generated from \`runs.jsonl\` beside this file. Every number is over the runs recorded there.`, "");
+  const lines = [
+    `# Real repositories: ${records.some((r) => r.arm === "baseline") ? "two arms" : "single arm"}, ${date}`,
+    "",
+  ];
+  lines.push(
+    `Generated from \`runs.jsonl\` beside this file. Every number is over the runs recorded there.`,
+    "",
+  );
   const names = [...new Set(records.map((record) => record.name))].sort();
   for (const name of names) {
     lines.push(`## ${name}`, "");
-    lines.push("| arm | runs | gates green | hidden test passed | tests declared | assertions | skip markers | tests collected | changed-line coverage | wall time (s) | output tokens |");
+    lines.push(
+      "| arm | runs | gates green | hidden test passed | tests declared | assertions | skip markers | tests collected | changed-line coverage | wall time (s) | output tokens |",
+    );
     lines.push("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |");
     for (const arm of arms) {
       const mine = records.filter((record) => record.name === name && record.arm === arm);
@@ -332,13 +457,25 @@ export function renderReport(records, date) {
       const measure = (key) => mine.map((record) => record.score?.measures?.[key] ?? null);
       const spread = (values, digits) => {
         const d = distribution(values);
-        return d.count === 0 ? "not measured" : `${format(d.minimum, digits)} / ${format(d.median, digits)} / ${format(d.maximum, digits)}${d.count < mine.length ? ` (${d.count} of ${mine.length})` : ""}`;
+        return d.count === 0
+          ? "not measured"
+          : `${format(d.minimum, digits)} / ${format(d.median, digits)} / ${format(d.maximum, digits)}${d.count < mine.length ? ` (${d.count} of ${mine.length})` : ""}`;
       };
       lines.push(
-        `| ${arm} | ${mine.length} | ${mine.filter((record) => record.score?.green === true).length} of ${mine.length} | ${mine.filter((record) => record.hiddenTest.passed).length} of ${mine.length} | ${spread(measure("testsDeclared"), 0)} | ${spread(measure("assertions"), 0)} | ${spread(measure("skipMarkers"), 0)} | ${spread(measure("testsCollected"), 0)} | ${spread(measure("changedLineCoverage"), 3)} | ${spread(mine.map((record) => record.wallMs / 1000), 0)} | ${spread(mine.map((record) => record.tokens?.output ?? null), 0)} |`,
+        `| ${arm} | ${mine.length} | ${mine.filter((record) => record.score?.green === true).length} of ${mine.length} | ${mine.filter((record) => record.hiddenTest.passed).length} of ${mine.length} | ${spread(measure("testsDeclared"), 0)} | ${spread(measure("assertions"), 0)} | ${spread(measure("skipMarkers"), 0)} | ${spread(measure("testsCollected"), 0)} | ${spread(measure("changedLineCoverage"), 3)} | ${spread(
+          mine.map((record) => record.wallMs / 1000),
+          0,
+        )} | ${spread(
+          mine.map((record) => record.tokens?.output ?? null),
+          0,
+        )} |`,
       );
     }
-    lines.push("", "Distributions are min / median / max over the runs; a measure fewer runs carried says how many.", "");
+    lines.push(
+      "",
+      "Distributions are min / median / max over the runs; a measure fewer runs carried says how many.",
+      "",
+    );
   }
   return lines.join("\n");
 }
@@ -346,7 +483,8 @@ export function renderReport(records, date) {
 function parseArguments(argv) {
   const [command, ...rest] = argv;
   const flags = {};
-  for (let index = 0; index < rest.length; index += 2) flags[rest[index].replace(/^--/, "")] = rest[index + 1];
+  for (let index = 0; index < rest.length; index += 2)
+    flags[rest[index].replace(/^--/, "")] = rest[index + 1];
   return { command, flags };
 }
 
@@ -355,7 +493,9 @@ if (import.meta.filename === process.argv[1]) {
   const date = flags.date ?? "2026-09-04";
   if (command === "run") {
     if (flags.repo === undefined || flags.arm === undefined || flags.run === undefined) {
-      console.error("usage: node scripts/real-repos.mjs run --repo <name> --arm <swarm|baseline> --run <n> [--date <YYYY-MM-DD>]");
+      console.error(
+        "usage: node scripts/real-repos.mjs run --repo <name> --arm <swarm|baseline> --run <n> [--date <YYYY-MM-DD>]",
+      );
       process.exit(2);
     }
     const scratch = flags.scratch ?? join(root, ".swarm", "real-repos");
@@ -363,7 +503,10 @@ if (import.meta.filename === process.argv[1]) {
     await runOne({ repo: flags.repo, arm: flags.arm, run: Number(flags.run), date, scratch });
   } else if (command === "report") {
     const evidenceRoot = join(root, "docs/evidence", date, "real-repos");
-    const records = readFileSync(join(evidenceRoot, "runs.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
+    const records = readFileSync(join(evidenceRoot, "runs.jsonl"), "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
     const report = renderReport(records, date);
     writeFileSync(join(evidenceRoot, "report.md"), `${report}\n`);
     process.stdout.write(report);

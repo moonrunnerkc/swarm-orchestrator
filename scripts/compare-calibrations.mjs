@@ -13,21 +13,46 @@ import { existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
 export const dimensions = [
-  { key: "gatePassed", label: "gate green (1 or 0)", read: (run) => (run.gatePassed === null ? null : run.gatePassed ? 1 : 0), digits: 2 },
-  { key: "tokensPerSecond", label: "output tokens per second", read: (run) => run.tokensPerSecond, digits: 1 },
-  { key: "firstTokenMs", label: "time to first token (ms)", read: (run) => run.firstTokenMs, digits: 0 },
+  {
+    key: "gatePassed",
+    label: "gate green (1 or 0)",
+    read: (run) => (run.gatePassed === null ? null : run.gatePassed ? 1 : 0),
+    digits: 2,
+  },
+  {
+    key: "tokensPerSecond",
+    label: "output tokens per second",
+    read: (run) => run.tokensPerSecond,
+    digits: 1,
+  },
+  {
+    key: "firstTokenMs",
+    label: "time to first token (ms)",
+    read: (run) => run.firstTokenMs,
+    digits: 0,
+  },
   { key: "steps", label: "steps per run", read: (run) => run.steps, digits: 1 },
-  { key: "responseTimeMs", label: "run wall time (ms)", read: (run) => run.responseTimeMs, digits: 0 },
+  {
+    key: "responseTimeMs",
+    label: "run wall time (ms)",
+    read: (run) => run.responseTimeMs,
+    digits: 0,
+  },
 ];
 
 function quantile(sorted, fraction) {
   if (sorted.length === 0) return null;
-  const position = Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * fraction)));
+  const position = Math.min(
+    sorted.length - 1,
+    Math.max(0, Math.round((sorted.length - 1) * fraction)),
+  );
   return sorted[position];
 }
 
 export function distribution(values) {
-  const sorted = values.filter((value) => typeof value === "number" && Number.isFinite(value)).sort((a, b) => a - b);
+  const sorted = values
+    .filter((value) => typeof value === "number" && Number.isFinite(value))
+    .sort((a, b) => a - b);
   return {
     count: sorted.length,
     minimum: quantile(sorted, 0),
@@ -46,7 +71,11 @@ export function readCalibrationRuns(bundleDirectory) {
   const runs = [];
   for (const record of ledger) {
     if (record.type !== "calibration-run") continue;
-    const path = join(bundleDirectory, "blobs", `${record.payloadDigest.replace("sha256:", "")}.json`);
+    const path = join(
+      bundleDirectory,
+      "blobs",
+      `${record.payloadDigest.replace("sha256:", "")}.json`,
+    );
     if (!existsSync(path)) continue;
     runs.push(JSON.parse(readFileSync(path, "utf8")));
   }
@@ -57,12 +86,22 @@ export function readCalibrationRuns(bundleDirectory) {
 export function summarize(runs) {
   const byModel = new Map();
   for (const run of runs) {
-    const entry = byModel.get(run.model) ?? { attempted: 0, executed: 0, runs: [], cases: new Map() };
+    const entry = byModel.get(run.model) ?? {
+      attempted: 0,
+      executed: 0,
+      runs: [],
+      cases: new Map(),
+    };
     entry.attempted += 1;
     if (run.executed) {
       entry.executed += 1;
       entry.runs.push(run);
-      const perCase = entry.cases.get(run.caseId) ?? { taskClass: run.taskClass, green: 0, executed: 0, cutShort: 0 };
+      const perCase = entry.cases.get(run.caseId) ?? {
+        taskClass: run.taskClass,
+        green: 0,
+        executed: 0,
+        cutShort: 0,
+      };
       perCase.executed += 1;
       if (run.gatePassed === null) perCase.cutShort += 1;
       else if (run.gatePassed) perCase.green += 1;
@@ -76,7 +115,12 @@ export function summarize(runs) {
     for (const dimension of dimensions) {
       perDimension[dimension.key] = distribution(entry.runs.map(dimension.read));
     }
-    summaries[model] = { attempted: entry.attempted, executed: entry.executed, dimensions: perDimension, cases: Object.fromEntries(entry.cases) };
+    summaries[model] = {
+      attempted: entry.attempted,
+      executed: entry.executed,
+      dimensions: perDimension,
+      cases: Object.fromEntries(entry.cases),
+    };
   }
   return summaries;
 }
@@ -109,7 +153,9 @@ export function render(labelled) {
       lines.push(`${label}: ${summary.executed} of ${summary.attempted} repeats executed`);
     }
     lines.push("");
-    const caseIds = [...new Set(labelled.flatMap(({ summaries }) => Object.keys(summaries[model]?.cases ?? {})))];
+    const caseIds = [
+      ...new Set(labelled.flatMap(({ summaries }) => Object.keys(summaries[model]?.cases ?? {}))),
+    ];
     lines.push(`| case | class | ${labelled.map(({ label }) => `${label} green`).join(" | ")} |`);
     lines.push(`| --- | --- | ${labelled.map(() => "---").join(" | ")} |`);
     for (const caseId of caseIds) {
@@ -117,9 +163,13 @@ export function render(labelled) {
         const perCase = summaries[model]?.cases[caseId];
         if (perCase === undefined) return "not run";
         const measured = perCase.executed - perCase.cutShort;
-        return perCase.cutShort === 0 ? `${perCase.green} of ${measured}` : `${perCase.green} of ${measured}, ${perCase.cutShort} cut short`;
+        return perCase.cutShort === 0
+          ? `${perCase.green} of ${measured}`
+          : `${perCase.green} of ${measured}, ${perCase.cutShort} cut short`;
       });
-      const taskClass = labelled.map(({ summaries }) => summaries[model]?.cases[caseId]?.taskClass).find((value) => value !== undefined);
+      const taskClass = labelled
+        .map(({ summaries }) => summaries[model]?.cases[caseId]?.taskClass)
+        .find((value) => value !== undefined);
       lines.push(`| ${caseId} | ${taskClass} | ${cells.join(" | ")} |`);
     }
     lines.push("");
@@ -137,7 +187,9 @@ if (import.meta.filename === process.argv[1]) {
   const labelled = directories.map((argument) => {
     const at = argument.indexOf("=");
     const [label, directory] =
-      at === -1 ? [basename(argument.replace(/\/+$/, "")), argument] : [argument.slice(0, at), argument.slice(at + 1)];
+      at === -1
+        ? [basename(argument.replace(/\/+$/, "")), argument]
+        : [argument.slice(0, at), argument.slice(at + 1)];
     return { label, summaries: summarize(readCalibrationRuns(directory)) };
   });
   process.stdout.write(render(labelled));
