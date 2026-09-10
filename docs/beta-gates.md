@@ -29,7 +29,8 @@ passes.
 
 **Reach now reaches.** It is measured on all 10 mined tasks whose oracle accepted, which is every
 task where it can matter, and on 11 of the 18 hand-authored runs. Before, it could be read only
-from node's own runner, which is 4 of the 17 mined repositories.
+from node's own test runner, which is 10 of the 59 viable mined tasks across 3 of their 13
+repositories; the rest run jest, mocha or vitest.
 
 **Nothing was refused wrongly.** Zero false reds across both corpora, on the definition that has
 always applied: a patch both oracles accept that the tool refused with no refusal it can point at.
