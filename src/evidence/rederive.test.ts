@@ -387,10 +387,31 @@ describe("the re-derivation script agrees with the certification policy", () => 
    * the policy reads is not re-derived rather than agreed with.
    */
   it("refuses to re-derive a record missing a field the policy reads", () => {
-    const judged = rederive.rederiveCiVerdict({ regression: "pass", task: "accepted" });
+    const judged = rederive.rederiveCiVerdict({
+      regression: "pass",
+      task: "accepted",
+      oracleBond: "held",
+    });
 
     expect(judged.rederived).toBe(false);
     expect(judged.missing).toEqual(["oracleReach"]);
     expect(judged.verified).toBeNull();
+  });
+
+  /**
+   * A field carrying a word the policy does not know is the more dangerous half of this:
+   * `not-recorded` in a field a rule tests for one value reads as "not that value" and lets the
+   * record certify.
+   */
+  it("refuses to re-derive a record whose field carries a word the policy does not know", () => {
+    const judged = rederive.rederiveCiVerdict({
+      regression: "pass",
+      task: "accepted",
+      oracleReach: "reached",
+      oracleBond: "not-recorded",
+    });
+
+    expect(judged.rederived).toBe(bondRefusesCertification ? false : true);
+    expect(judged.missing).toEqual(bondRefusesCertification ? ["oracleBond"] : []);
   });
 });

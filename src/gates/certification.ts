@@ -3,17 +3,23 @@ import type { OracleBondVerdict } from "./oracle-bond.ts";
 /**
  * Whether a vacuous oracle bond refuses to certify.
  *
- * The one place the decision lives, so turning it on is this line and the evidence behind it.
+ * The one place the decision lives, so reverting the commit that set this true restores
+ * report-only and nothing else moves with it.
+ *
  * Reach cost three artifacts, a closing brace, a changelog and a declaration file, before it was
- * safe to refuse on, and each of them turned a correct patch into a refusal. Bonding is held to
- * the same audit: every vacuous verdict read by hand across the certified corpus, zero of them a
- * mutant that changes nothing, before this becomes true.
+ * safe to refuse on, and each of them turned a correct patch into a refusal. Bonding was held to
+ * the same audit before this became true: every vacuous verdict across the sixteen certified
+ * patches read by hand. Two were mutants that changed nothing, `return false;` replaced by
+ * `return undefined;` inside a filter predicate and a swapped `Math.min`, and both narrowed the
+ * operator that produced them rather than excusing the patch. Re-measured after that, one vacuous
+ * verdict stands, on the one false green the corpus still holds, and its mutant inverts a merge
+ * order the oracle runs and never tests.
  *
  * Only `vacuous` is ever a candidate. `unshown` and `not-bonded` are absences of evidence about
  * the oracle rather than evidence against it, and refusing on them would make the certify rate a
  * function of how many mutation operators this build carries.
  */
-export const bondRefusesCertification: boolean = false;
+export const bondRefusesCertification: boolean = true;
 
 export interface RecordedVerdict {
   readonly regression: "pass" | "fail" | "unmeasured";
