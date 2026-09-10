@@ -138,8 +138,12 @@ So every mutant the oracle accepted on a line it ran is adjudicated, cheapest de
 oracle runs again over the mutant under the same instrumentation reach used, and a line other than
 the mutated one that ran in one reading and not the other is a demonstrated difference in what the
 program did. Failing that, the repository's own gates that passed with the patch are run again, and
-one that now fails is a demonstrated difference. Neither seeing anything is `unshown`, and a suite
-run that was never spent is recorded as not adjudicated rather than as either answer.
+one that now fails is a demonstrated difference. Neither seeing anything is `none`, which means
+everything that could be asked was asked and nothing showed a difference; a patch whose own checks
+all failed leaves nothing to ask of the second detector and reads the same way. `not adjudicated`
+is the other absence, that no detector was asked at all, and the two are not one word: a refusal
+carrying the wrong one is a refusal with nothing beside it to explain itself, which is how two
+commander rows read before this was separated.
 
 **Three residuals, named rather than implied away.**
 
