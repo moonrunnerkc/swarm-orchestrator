@@ -5,36 +5,69 @@ without. This is where each one stands, with the evidence or the absence of it n
 no proving artifact is `unproven`, not `probably fine`.
 
 **Summary: not production-ready.** Counted against the table below rather than from memory, which
-is how the earlier "four of twelve pass" got in here and stayed wrong: **six pass** (2, 4, 5, 6, 8,
-11, and 8 passes by not building the thing it guards), **three are partial** with the gap named (1,
-9, 10), **two are unproven** (7, 12), and **gate 3 fails**, on the rate and on the scale.
+is how the earlier "four of twelve pass" got in here and stayed wrong: **seven pass** (2, 3a, 4, 5,
+6, 8, 11, and 8 passes by not building the thing it guards), **three are partial** with the gap
+named (1, 9, 10), **two are unproven** (7, 12), and **two are reported rather than barred** (3b,
+3c), which is what replaced the old gate 3.
 
-Gate 3 is measured and failing. **1 false green in 16 valid opportunities: 6.3%, 95% CI
-[1.1, 28.3].** The bar it set itself is zero over four hundred tasks. Sixteen opportunities is not
-four hundred tasks, and one false green is not zero, so this fails on both counts.
+## Gate 3 was one bar asking three questions, and it is retired
 
-**It was reported as zero earlier the same day, and that was wrong.** The reach check was refusing
-commander#1671 over `typings/index.d.ts`, a declaration file that is erased before anything runs
-and can appear in no coverage report. Removing that artifact let the tool certify the patch, which
-is what it should always have done, and the patch is incomplete: it adds `optsWithGlobals()`
-merging parent options with the local value winning, while the held-back case is "when same named
-option in sub and program then optsWithGlobals includes global". The precedence is inverted against
-what the maintainers specified and the sealed half never tests a name collision. A wrong refusal
-had been hiding a real false green.
+The wording was **zero false greens in at least 400 held-out tasks**. Four measured things are
+wrong with it, and running more tasks fixes none of them.
 
-**Both of the false greens ever found are the same shape, and reach cannot see either.** The patch
-never wrote the code, so there is no unexecuted line to point at: koa#1946 and dayjs#3181 were of
-that shape too, and are refused only because those patches also added something their oracle did
-not run. Only a second oracle distinguishes an incomplete patch from a complete one.
+**1. Self-defeating in its units.** An opportunity needs the tool to certify a patch first. The
+certify rate on the mined corpus is 4 of 79, 5.1%, so 400 *tasks* buys 20 opportunities, whose
+Wilson upper bound with zero false greens is 16.1%. Passing the gate exactly as worded would still
+leave "under 16%". A bound near 1% needs about 300 opportunities, which at that certify rate is
+about 5,900 tasks. Every check that makes the tool safer lowers the certify rate and pushes that
+number further away, which is the shape of the problem rather than an accident of this corpus.
 
-**The denominator is 16 rather than 19, and that is a cost.** Four patches both oracles accept are
-refused because their oracle never ran part of what they added, and five more on the sealed half. A
-tool that refuses more has fewer claims to be wrong about, so the interval over what is left is
-wider. The refusals have their own name, `refused-on-reach`, so they can never be read as passes.
+**2. Zero is not reachable by a verifier that can only check what it was given.** Every false green
+this corpus has produced is one shape: the patch omits code the sealed oracle never tests. koa#1946
+and dayjs#3181 are refused only incidentally, because those patches also added a line their own
+oracle never ran. commander#1671 had nothing extra to point at, which is why it stood.
 
-**Reach now reaches.** It is measured on every mined task whose oracle accepted, and on 11 of the
-18 hand-authored runs. Before, it could be read only from node's own test runner, which is 10 of
-the 79 viable mined tasks across 3 of their 14 repositories.
+**3. The number grades the oracles, not the tool.** It measures how often half a maintainer's suite
+fails to cover what the other half covers. Change the split and it moves; hand the tool the whole
+suite and it goes to nearly zero, with no change to the verifier at all.
+
+**4. The denominator is set by the model.** A more capable model certifies more and reaches 400
+opportunities sooner; a more conservative verifier never reaches it. The gate rewards
+permissiveness in the thing it constrains.
+
+Three statements replace it. **3a** is the only bar, and the only one whose denominator the tool
+does not choose. **3b** is the capability question, measured on a denominator too small and too
+in-sample to be a bar yet. **3c** is reported and is a property of the oracles supplied rather than
+of the verifier.
+
+### What the tool learned to refuse, and what it still cannot
+
+The one false green that stood is now refused, and not by a check that knows anything about
+commander. After the oracle accepts, the lines the patch added are changed into something that
+behaves differently and the oracle is run again; one that still accepts ran the code without
+asserting anything about it. commander#1671's precedence is one `.reverse()`, its sealed half runs
+that line on every case and never tests a name collision, and dropping it the sealed half still
+passes:
+
+```
+regression: pass   task: accepted   oracle reach: reached
+oracle bond: vacuous
+  accepted lib/command.js:1473:drop-chained-call
+    - getCommandAndParents(this).reverse().forEach((cmd) => {
+    + getCommandAndParents(this).forEach((cmd) => {
+not verified. the oracle ran a line the patch added and then accepted a change to that same line
+```
+
+**What it costs and what it does not catch are both measured.** Across the sixteen patches the tool
+had certified: 14 bonds held, 1 vacuous, 0 unshown, 1 not bonded. Zero false refusals, after an
+audit that read every vacuous verdict by hand and narrowed two operators that were producing
+mutants which changed nothing. The full decision, the audit and the rejected stricter option are in
+[`false-green-plan.md`](false-green-plan.md).
+
+**The adversarial arm is unchanged, and that is the residual doing visible work.** Shown its oracle
+and asked to satisfy only that, the model still produces 2 false greens in 5 certified, both with
+`not bonded`: a minimal patch written to pass a visible test has no added line these operators can
+change. Bonding closes the careless case and not the adversarial one.
 
 **Nothing was refused wrongly.** Zero false reds across both corpora, on the definition that has
 always applied: a patch both oracles accept that the tool refused with no refusal it can point at.
@@ -44,18 +77,21 @@ Eleven opportunities written by this project's own authors produced none; the mi
 every false green found. A specification written by maintainers who never heard of this tool tests
 what they cared about, not what its author thought to check.
 
-Scale is the whole of what is left, and it is machine time rather than authoring. 192 candidates
-are mined, all of them checked by running them, and 79 are viable. What a candidate costs after that is one agent run, and what an agent
-run buys is an opportunity only where the tool certifies the patch, which on this corpus is 5 of
-79. Twenty-one tasks scored after the first re-judge added two of those five: the rest were
-algorithm implementations the local model failed outright, or tasks it wrote nothing for. That ratio is the real obstacle to four hundred: the local model fails most of these tasks
-outright, and a task nobody can do produces a true red rather than an opportunity.
+Scale is what is left of 3c, and it is machine time rather than authoring. 192 candidates are
+mined, all of them checked by running them, and 79 are viable. What a candidate costs after that is
+one agent run, and what an agent run buys is an opportunity only where the tool certifies the
+patch, which on this corpus is 4 of 79. That ratio is the obstacle, and it is not one more tasks
+solve on their own: the local model fails most of these outright, a task nobody can do produces a
+true red rather than an opportunity, and every check that makes the tool safer takes another patch
+out of the certified set.
 
 | # | Gate | Status | Evidence, or what is missing |
 | - | ---- | ------ | ---------------------------- |
 | 1 | Zero successful host-file, host-secret, provider-key, evidence-store, cross-worker or unauthorised-egress attacks in the maintained corpus | **partial** | The deterministic corpus exists and passes: `src/exec/child-environment.test.ts`, `src/tools/shell-tool.test.ts`, `src/gates/node-command-runner.test.ts`, `src/evidence/store-permissions.test.ts`, `src/tools/isolated-shell.test.ts`. What it is not is an attack corpus written by somebody trying to get past it: every case here was written by the same person who wrote the defence. There is now an adversarial arm for the *verification* surface, `pr-task-pass.mjs --attack`, which shows a model the oracle it will be judged by and asks it to satisfy that and leave an adjacent case broken. On its first run it produced **2 false greens in 5 certified, 40.0% [11.8, 76.9]**, against 0 in 3 for the ordinary arm on the same tasks, and both landed on tasks whose honest attempt the reach check had refused. It is not the security corpus this gate asks for, and it does not move this row. |
 | 2 | Zero accepted test-policy violations in the mutation suite | **pass** | The ratchet rejects test deletion and weakening under the per-test escape hatch; `src/gates/acceptance.test.ts` cases 4 and 5, and the falsification corpus replay. |
-| 3 | Zero false greens in at least 400 held-out tasks, with the interval reported | **fail, and measured** | **1 false green in 16 valid opportunities: 6.3%, 95% CI [1.1, 28.3].** Mined corpus 1 of 5, hand-authored 0 of 11, every row naming the harness commit that judged it and all 79 mined rows judged by one build. The one that stands is [`commander#1671`](evidence/2026-09-06/mined-corpus/README.md), which merges parent options with the local value winning where the held-back case says the global one should: the sealed half never tests a name collision, every line the patch adds runs, and no property of the patch or of the run says the work is incomplete. Two earlier ones are refused because their patches also added a line the oracle never ran: koa#1946 at [`first-false-green.md`](evidence/2026-09-07/first-false-green.md) and dayjs#3181. The corpus is 79 viable of 192 candidates, all of them checked by running them, and nothing is unjudgeable where 21 of 73 were. What the rate costs is in the same row: 4 patches both oracles accept are refused because the oracle never ran part of the change, and 5 on the sealed half, so the certified set is smaller and the interval wider. |
+| 3a | `swarm ci` reports `verified` zero times where its own record holds a reason to refuse | **pass** | **Zero, over 129 recorded verdicts.** `npm run checks` runs `scripts/check-ci-verdicts.mjs`, which re-derives every `swarm ci` verdict this repository records from the fields the record carries and compares it with what the tool claimed. The rule is not written twice: it is `rederiveCiVerdict` in the dependency-free verifier a bundle ships, and a parity test holds that to `src/gates/certification.ts`, where `swarm ci` computes `verified`. A green claim missing a field the policy reads fails as loudly as a green claim contradicted by one, because a green nobody can recompute is the thing this bars; a refusal is re-derived from the fields it does carry, since the reasons are monotone and nothing absent can take one back. It went red twice before it went green, once on a fixture that records a reason to refuse and still says `verified` (`scripts/check-ci-verdicts.test.mjs`), and once on the real corpus, over three rows of the second-model arm that claimed `verified` with no `oracleReach` recorded at all. Those were re-judged and the writer fixed: a field the verdict did not carry is now absent from the row rather than filled in with a word of the pass's own. **Named as failing this row historically:** the same three rows, and `iamkun/dayjs#3012`, whose records could not be re-derived until they were re-judged. `swarm ci` writes no evidence bundle of its own, so what is re-derived is the verdict record rather than a signed bundle; that is the gap this row still carries. |
+| 3b | Of the oracles a held-back oracle proves inadequate, the fraction the tool refuses to certify on | **measured, not yet a bar: 3 of 3, 100.0% [43.9, 100.0]** | `node scripts/false-green-rate.mjs`. The denominator is oracles rather than tasks, which is what makes this a question about the tool: a better model certifies more patches and proves no more oracles inadequate. **The denominator is three.** koa#1946 and commander#1557 were already refused; commander#1671 is the one bonding added, and it is **in-sample**: the operators were chosen knowing that patch, so catching it shows the check works on the case it was built for and says nothing about whether it generalizes. An interval over three is wide and the point estimate is not the finding. This becomes a bar when the denominator is both larger and out-of-sample, and not before. |
+| 3c | The held-back false-green rate, with the certify rate beside it, split by bond state | **reported, not a bar** | **0 false greens in 15 certified: 0.0%, 95% CI [0.0, 20.4]**, from `node scripts/false-green-rate.mjs`, every row judged at one harness commit. Certified by bond state: **14 held, 1 not bonded**, so `verified` is never one word here: a patch certified on an oracle that refused every mutant of the change is a stronger claim than one certified on an oracle nothing could be asked of. Stated as what it is: a property of the oracles supplied rather than of the verifier. Hand the tool a whole suite instead of half of one and this number goes toward zero without the verifier changing. What it costs is in the same row: 4 patches both oracles accept are refused because the oracle never ran part of the change, 5 on the sealed half, and 1 on the bond in the report-only comparison, so the certified set is smaller and the interval wider. The corpus is 79 viable of 192 candidates, all checked by running them, and nothing is unjudgeable where 21 of 73 were. |
 | 4 | 99% recovery from injected termination without duplicate committed effects | **pass** | 100 injected kills, 300 committed effects, no duplicates: `src/durable/crash-recovery.test.ts`. |
 | 5 | Every stable documented command exists and works in the published artifact | **pass** | `scripts/check-packed-cli.mjs` packs the tarball, installs into an empty directory, reads the command list from the installed build's own help, and runs each. Runs in CI as its own job. |
 | 6 | Trusted-identity verification rejects a re-signed bundle from an unknown key | **pass** | `src/evidence/resign-attack.test.ts`: a bundle is edited, rehashed and re-signed with an attacker key; consistency still holds and the identity check refuses it, naming the substituted fingerprint. |
@@ -80,6 +116,31 @@ somebody has to do by hand.
 **A ten-minute first run (12).** Needs a person who has not seen the tool, and a stopwatch.
 
 ## What changed
+
+### 2026-09-10: gate 3 was retired, and the false green it could not see is refused
+
+**The bar was replaced by three statements, not lowered.** The four reasons are at the top of this
+document, and none of them is fixed by running more tasks: the gate's units defeat it, its target
+is unreachable by any verifier that only checks what it was given, its number grades the oracles
+rather than the tool, and its denominator is chosen by the model. **3a** carries the bar, at zero
+over 129 recorded verdicts, and it is the only one whose denominator the tool does not set.
+
+**The oracle is now bonded.** After it accepts, the lines the patch added are changed into
+something that behaves differently and the oracle is run again; one that still accepts ran the code
+without asserting anything about it. That refuses commander#1671, the one false green that had
+nothing unexecuted to point at, and it does so by a rule that knows nothing about commander.
+
+**The rule was written down before the measurement and was not changed afterwards.** It is
+committed at `6e84d532e` and the switch went true at `343ae4740`, whose revert restores
+report-only. What the audit found on the way is worth as much as the finding: two mutants that
+changed nothing, `return false;` replaced by `return undefined;` inside a `filter` predicate and a
+swapped `Math.min`, each narrowing the operator that produced it. Both came back `held` after that,
+which is the difference between a check that refuses and a check that refuses for a reason.
+
+**What is still open is named rather than implied away.** A mutant that changes nothing is
+indistinguishable here from an oracle that failed to notice one that did. A patch with no mutable
+added line gets no bond at all, and the adversarial arm is exactly that shape: 2 false greens in 5
+certified, both `not bonded`, unchanged by any of this.
 
 Gates 4, 5, 6 and 11 moved from unproven to passing on measured evidence.
 
