@@ -86,7 +86,9 @@ describe("judging the two arms", () => {
   it("fails when the reference bundle itself does not verify", () => {
     const verdict = judgeArms({ reference: { exitCode: 1, output: "" }, tampered: refused(20) });
     expect(verdict.passed).toBe(false);
-    expect(verdict.problems).toEqual(["the reference bundle did not verify: its verifier exited 1"]);
+    expect(verdict.problems).toEqual([
+      "the reference bundle did not verify: its verifier exited 1",
+    ]);
   });
 
   it("fails when the tampered copy verifies, which is a verifier that cannot say no", () => {

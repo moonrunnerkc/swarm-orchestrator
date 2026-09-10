@@ -24,8 +24,8 @@ import {
   classifyAgainstHeldBackOracle,
   heldBackOracleLooksBroken,
 } from "../dist/eval/campaign-run.js";
-import { runProcessGroup } from "../dist/exec/run-process.js";
 import { tallyFalseGreens } from "../dist/eval/false-green-rate.js";
+import { runProcessGroup } from "../dist/exec/run-process.js";
 import { repositories } from "./real-repos.mjs";
 
 const repositoryRoot = new URL("..", import.meta.url).pathname;
@@ -74,9 +74,7 @@ async function verify(patchPath, workspace, commit, oracle) {
   // its own children, and a timeout that signals only the process it started leaves those running.
   const ran = await runProcessGroup(process.execPath, argv, {
     cwd: repositoryRoot,
-    env: Object.fromEntries(
-      Object.entries(process.env).filter(([, value]) => value !== undefined),
-    ),
+    env: Object.fromEntries(Object.entries(process.env).filter(([, value]) => value !== undefined)),
     timeoutMs: 15 * 60_000,
     maxOutputBytes: 64 * 1024 * 1024,
   });

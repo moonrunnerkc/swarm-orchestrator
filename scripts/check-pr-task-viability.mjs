@@ -23,13 +23,12 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-
-import { runProcessGroup } from "../dist/exec/run-process.js";
+import { npmFailureReason } from "../dist/eval/npm-failure.js";
 import { titleFilterFor } from "../dist/eval/oracle-filter.js";
 import { prTaskEvidenceRoot, prTaskWorkingRoot } from "../dist/eval/pr-task-paths.js";
-import { npmFailureReason } from "../dist/eval/npm-failure.js";
 import { duplicateOf } from "../dist/eval/task-identity.js";
 import { testCaseDeals } from "../dist/eval/test-case-split.js";
+import { runProcessGroup } from "../dist/exec/run-process.js";
 import { parseUnifiedDiff } from "../dist/gates/unified-diff.js";
 
 const repositoryRoot = new URL("..", import.meta.url).pathname;
@@ -93,9 +92,7 @@ async function attempt(file, args, options = {}) {
 
 /** An environment as spawn wants it: every name a string, none of them absent. */
 function definedNames(environment) {
-  return Object.fromEntries(
-    Object.entries(environment).filter(([, value]) => value !== undefined),
-  );
+  return Object.fromEntries(Object.entries(environment).filter(([, value]) => value !== undefined));
 }
 
 /** How this repository runs one test file, read off its devDependencies rather than guessed. */
@@ -221,11 +218,15 @@ function saveJudgement(judgement) {
 const wholeFileDeadlineMs = 5 * 60_000;
 
 const runnerKindOf = (r) =>
-  r.includes("jest") ? "jest"
-  : r.includes("vitest") ? "vitest"
-  : r.includes("mocha") ? "mocha"
-  : r.includes("ava") ? "ava"
-  : "node";
+  r.includes("jest")
+    ? "jest"
+    : r.includes("vitest")
+      ? "vitest"
+      : r.includes("mocha")
+        ? "mocha"
+        : r.includes("ava")
+          ? "ava"
+          : "node";
 
 const { candidates } = JSON.parse(readFileSync(candidatesPath, "utf8"));
 const judged = existsSync(judgedPath)
@@ -276,7 +277,9 @@ for (const candidate of wanted) {
     continue;
   }
 
-  const parent = await attempt("git", ["rev-parse", `${candidate.mergeCommit}^1`], { cwd: checkout });
+  const parent = await attempt("git", ["rev-parse", `${candidate.mergeCommit}^1`], {
+    cwd: checkout,
+  });
   if (parent.code !== 0) {
     record.why = "the merge commit has no first parent to use as a base";
     saveJudgement(record);

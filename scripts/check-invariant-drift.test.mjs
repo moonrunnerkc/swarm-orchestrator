@@ -21,7 +21,17 @@ async function write(name, invariants) {
   const path = join(directory, name);
   await writeFile(
     path,
-    ["# Title", "", "## Invariants (violating any of these fails review)", "", ...invariants, "", "## Code Style", "", "- something"].join("\n"),
+    [
+      "# Title",
+      "",
+      "## Invariants (violating any of these fails review)",
+      "",
+      ...invariants,
+      "",
+      "## Code Style",
+      "",
+      "- something",
+    ].join("\n"),
   );
   return path;
 }
@@ -79,7 +89,7 @@ describe("the invariant drift check", () => {
     const outcome = await check(left, right);
 
     expect(outcome.code).not.toBe(0);
-    expect(outcome.stderr).toContain("no \"## Invariants\" heading");
+    expect(outcome.stderr).toContain('no "## Invariants" heading');
   });
 
   it("holds the prompt's predicate catalogue to the ledger and the verifier when run over this repository", async () => {

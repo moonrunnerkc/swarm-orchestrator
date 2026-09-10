@@ -31,28 +31,47 @@ const attempt = async (file, args, options = {}) => {
     const done = await run(file, args, { maxBuffer: 64 * 1024 * 1024, ...options });
     return { code: 0, stdout: done.stdout };
   } catch (cause) {
-    return { code: typeof cause.code === "number" ? cause.code : 1, stdout: `${cause.stdout ?? ""}` };
+    return {
+      code: typeof cause.code === "number" ? cause.code : 1,
+      stdout: `${cause.stdout ?? ""}`,
+    };
   }
 };
 
 const runnerKind = (r) =>
-  r.includes("jest") ? "jest" : r.includes("vitest") ? "vitest" : r.includes("mocha") ? "mocha"
-  : r.includes("ava") ? "ava" : "node";
+  r.includes("jest")
+    ? "jest"
+    : r.includes("vitest")
+      ? "vitest"
+      : r.includes("mocha")
+        ? "mocha"
+        : r.includes("ava")
+          ? "ava"
+          : "node";
 
-const viable = JSON.parse(readFileSync(join(taskRoot, "viable.json"), "utf8")).tasks.filter((t) => t.viable);
+const viable = JSON.parse(readFileSync(join(taskRoot, "viable.json"), "utf8")).tasks.filter(
+  (t) => t.viable,
+);
 const scored = JSON.parse(readFileSync(join(taskRoot, "scored.json"), "utf8")).runs;
 const certified = new Set(scored.filter((r) => r.verified).map((r) => `${r.repository}#${r.pull}`));
-const wanted = certifiedOnly ? viable.filter((t) => certified.has(`${t.repository}#${t.pull}`)) : viable;
+const wanted = certifiedOnly
+  ? viable.filter((t) => certified.has(`${t.repository}#${t.pull}`))
+  : viable;
 
 console.log(`auditing ${wanted.length} task(s): does the sealed half fail on the base source?\n`);
 
 const vacuous = [];
 for (const task of wanted) {
   const checkout = join(workingRoot, "work", task.repository.replace("/", "__"));
-  const stored = join(workingRoot, "oracles",
-    `${task.repository.replace("/", "__")}-${task.pull}-${task.testFile.split("/").pop()}`);
+  const stored = join(
+    workingRoot,
+    "oracles",
+    `${task.repository.replace("/", "__")}-${task.pull}-${task.testFile.split("/").pop()}`,
+  );
 
-  await attempt("git", ["checkout", "--quiet", "--force", "--detach", task.baseCommit], { cwd: checkout });
+  await attempt("git", ["checkout", "--quiet", "--force", "--detach", task.baseCommit], {
+    cwd: checkout,
+  });
   await attempt("git", ["clean", "-qfd"], { cwd: checkout });
 
   const zone = task.timezone === undefined ? {} : { TZ: task.timezone };

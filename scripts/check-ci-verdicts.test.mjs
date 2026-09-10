@@ -50,7 +50,15 @@ describe("a recorded verdict the tool's own record does not support", () => {
 
   it("fails on a green claim whose record is missing a field the policy reads", () => {
     const judged = judgeRecordedVerdicts(
-      [{ repository: "fixture/repo", pull: 2, regression: "pass", sealedOracle: "accepted", verified: true }],
+      [
+        {
+          repository: "fixture/repo",
+          pull: 2,
+          regression: "pass",
+          sealedOracle: "accepted",
+          verified: true,
+        },
+      ],
       "fixture",
     );
 

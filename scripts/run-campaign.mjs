@@ -10,19 +10,26 @@
 // ships its test inside the case seed, so an arm with no ratchet can pass its gate by deleting
 // the test; the oracle restores the original test over whatever the run left and asks again.
 import { execFile } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  appendFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-
+import { scoreArms } from "../dist/eval/arms.js";
 import {
   campaignPlan,
   classifyAgainstOracle,
   judgeByHiddenOracle,
   seedWorkspace,
 } from "../dist/eval/campaign-run.js";
-import { scoreArms } from "../dist/eval/arms.js";
 import { mcNemar, wilsonInterval } from "../dist/eval/statistics.js";
 
 const run = promisify(execFile);
@@ -78,7 +85,10 @@ const resultsPath = flag("out", join(repositoryRoot, "campaign/eval/runs.jsonl")
 const oracleRule = 4;
 
 /** Where a disagreement's tree is kept, so the next one is inspected rather than guessed at. */
-const disagreementRoot = flag("keep-disagreements", join(repositoryRoot, "campaign/eval/disagreements"));
+const disagreementRoot = flag(
+  "keep-disagreements",
+  join(repositoryRoot, "campaign/eval/disagreements"),
+);
 
 /**
  * The arms this architecture can actually separate. Evidence capture is not one of them: the
@@ -87,7 +97,11 @@ const disagreementRoot = flag("keep-disagreements", join(repositoryRoot, "campai
  */
 const arms = [
   { id: "single-minimal", attempts: 0, what: "no auto-resolve: the model's first answer stands" },
-  { id: "single-gates", attempts: 3, what: "the gates and the ratchet, retrying up to three times" },
+  {
+    id: "single-gates",
+    attempts: 3,
+    what: "the gates and the ratchet, retrying up to three times",
+  },
 ];
 
 const onlyCases = (flag("only", "") ?? "")
@@ -158,11 +172,9 @@ for (const planned of plan.runs) {
     `[providers]\nlocal_endpoint = "${endpoint}"\nlocal_thinking = false\n`,
   );
   await run("git", ["add", "-A"], { cwd: workspace });
-  await run(
-    "git",
-    ["-c", "user.email=c@i", "-c", "user.name=campaign", "commit", "-qm", "base"],
-    { cwd: workspace },
-  );
+  await run("git", ["-c", "user.email=c@i", "-c", "user.name=campaign", "commit", "-qm", "base"], {
+    cwd: workspace,
+  });
 
   const startedAt = Date.now();
   let completed = true;
@@ -242,7 +254,10 @@ for (const planned of plan.runs) {
   // looking at it needs the tree. Deleting every workspace meant each disagreement had to be
   // re-derived by guesswork, which produced four wrong diagnoses in a row before this was added.
   if (record.corner === "gates-missed" || record.corner === "gates-strict") {
-    const kept = join(disagreementRoot, `${record.corner}-${record.caseId}-${record.armId}-${record.seed}`);
+    const kept = join(
+      disagreementRoot,
+      `${record.corner}-${record.caseId}-${record.armId}-${record.seed}`,
+    );
     try {
       mkdirSync(disagreementRoot, { recursive: true });
       cpSync(workspace, kept, { recursive: true });
@@ -332,7 +347,8 @@ console.log(judged.reason);
 // A subset run writes its own file. `--only pass5,pass6` used to overwrite summary.json with a
 // six-run diagnostic, replacing a completed sixty-run campaign inside a file named for the
 // campaign, and nothing about the result said it was two cases rather than twenty.
-const summaryName = onlyCases.length > 0 ? `summary.only-${onlyCases.join("-")}.json` : "summary.json";
+const summaryName =
+  onlyCases.length > 0 ? `summary.only-${onlyCases.join("-")}.json` : "summary.json";
 
 writeFileSync(
   join(resultsPath, "..", summaryName),

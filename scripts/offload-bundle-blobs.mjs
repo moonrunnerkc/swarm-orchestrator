@@ -23,6 +23,7 @@ const namesIn = (path) => {
     return [];
   }
 };
+
 import { join } from "node:path";
 import { offloadBlobs, offloadDerivedArtifacts } from "../dist/evidence/blob-manifest.js";
 

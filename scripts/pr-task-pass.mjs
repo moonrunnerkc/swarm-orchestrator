@@ -17,18 +17,15 @@
  * corpus accumulates rather than needing one long campaign.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
-
 import { homedir } from "node:os";
-
-import { runProcessGroup } from "../dist/exec/run-process.js";
+import { basename, join } from "node:path";
 import { classifyAgainstHeldBackOracle } from "../dist/eval/campaign-run.js";
-import { casesTitled } from "../dist/eval/test-case-split.js";
-import { heldBackRefusalIsReal } from "../dist/eval/oracle-filter.js";
-import { oracleCommand } from "../dist/eval/oracle-filter.js";
 import { readAnEmptyPatch } from "../dist/eval/empty-patch-attribution.js";
+import { heldBackRefusalIsReal, oracleCommand } from "../dist/eval/oracle-filter.js";
 import { prTaskEvidenceRoot, prTaskWorkingRoot } from "../dist/eval/pr-task-paths.js";
 import { wilsonInterval } from "../dist/eval/statistics.js";
+import { casesTitled } from "../dist/eval/test-case-split.js";
+import { runProcessGroup } from "../dist/exec/run-process.js";
 
 const repositoryRoot = new URL("..", import.meta.url).pathname;
 // Evidence in the repository, bulk outside it. The results and the recorded patches are what
@@ -117,9 +114,7 @@ async function attempt(file, args, options = {}) {
 
 /** An environment as spawn wants it: every name a string, none of them absent. */
 function definedNames(environment) {
-  return Object.fromEntries(
-    Object.entries(environment).filter(([, value]) => value !== undefined),
-  );
+  return Object.fromEntries(Object.entries(environment).filter(([, value]) => value !== undefined));
 }
 
 /**
@@ -299,13 +294,18 @@ async function judgeOf(task, checkout, patchPath, storedTest) {
     const asked = await attempt(
       process.execPath,
       [
-        join(repositoryRoot, "dist/cli.js"), "ci",
-        "--patch", patchPath,
-        "--workspace", checkout,
-        "--base", task.baseCommit,
+        join(repositoryRoot, "dist/cli.js"),
+        "ci",
+        "--patch",
+        patchPath,
+        "--workspace",
+        checkout,
+        "--base",
+        task.baseCommit,
         "--install",
         ...(onlyTheOracle ? ["--oracle-only"] : []),
-        "--oracle", command,
+        "--oracle",
+        command,
         "--json",
       ],
       {
@@ -324,7 +324,9 @@ async function judgeOf(task, checkout, patchPath, storedTest) {
         task: "unjudged",
         regression: "unmeasured",
         judgeFailure:
-          (asked.timedOut ? "swarm ci was killed at its deadline: " : `swarm ci exited ${asked.code} without a verdict: `) +
+          (asked.timedOut
+            ? "swarm ci was killed at its deadline: "
+            : `swarm ci exited ${asked.code} without a verdict: `) +
           `${(asked.stderr || asked.stdout).trim().split("\n").slice(-2).join(" ").slice(0, 300)}`,
       };
     }
@@ -361,7 +363,9 @@ function whyNothingWasJudged(verdict) {
     return "the patch did not apply to a fresh checkout of the base, so nothing was measured";
   }
   if (verdict.refusal) return `refused before anything ran: ${verdict.refusal}`;
-  return verdict.advice ? `nothing judged: ${verdict.advice}` : "nothing judged, and no reason given";
+  return verdict.advice
+    ? `nothing judged: ${verdict.advice}`
+    : "nothing judged, and no reason given";
 }
 
 /**
@@ -403,7 +407,9 @@ const judgedByThisHarness = new Set(
 );
 const wanted = (
   rejudge
-    ? chosen.filter((one) => done.has(named(one)) && !(resume && judgedByThisHarness.has(named(one))))
+    ? chosen.filter(
+        (one) => done.has(named(one)) && !(resume && judgedByThisHarness.has(named(one))),
+      )
     : chosen.filter((one) => !done.has(named(one)))
 ).slice(0, limit);
 console.log(`scoring ${wanted.length} mined task(s) against a held-back oracle\n`);
@@ -431,7 +437,10 @@ for (const task of wanted) {
 
   // The pull request's test file, kept outside every workspace so neither half can be read by the
   // thing being measured.
-  const storedTest = join(oracleRoot, `${task.repository.replace("/", "__")}-${task.pull}-${basename(task.testFile)}`);
+  const storedTest = join(
+    oracleRoot,
+    `${task.repository.replace("/", "__")}-${task.pull}-${basename(task.testFile)}`,
+  );
   const shown = await attempt("git", ["show", `${task.mergeCommit}:${task.testFile}`], {
     cwd: checkout,
   });
@@ -441,13 +450,20 @@ for (const task of wanted) {
   }
   writeFileSync(storedTest, shown.stdout);
 
-  const patchPathExisting = join(patchRoot, `${task.repository.replace("/", "__")}-${task.pull}.patch`);
+  const patchPathExisting = join(
+    patchRoot,
+    `${task.repository.replace("/", "__")}-${task.pull}.patch`,
+  );
   // An empty recorded patch is the agent having written nothing, which the fresh pass records as
   // such and the re-judge used to hand to `swarm ci` anyway. It does not apply to a fresh base, so
   // the verdict came back `unjudged` and the task was counted as one the harness could not judge:
   // all twelve of the corpus's `unjudged` tasks are this, a model failure wearing an instrument
   // failure's name for six weeks.
-  if (rejudge && existsSync(patchPathExisting) && readFileSync(patchPathExisting, "utf8").trim().length === 0) {
+  if (
+    rejudge &&
+    existsSync(patchPathExisting) &&
+    readFileSync(patchPathExisting, "utf8").trim().length === 0
+  ) {
     const previous = scored.runs.find(
       (one) => one.repository === task.repository && one.pull === task.pull,
     );
@@ -562,12 +578,17 @@ for (const task of wanted) {
     process.execPath,
     [
       join(repositoryRoot, "dist/cli.js"),
-      "--model", model,
-      "--local-endpoint", endpoint,
+      "--model",
+      model,
+      "--local-endpoint",
+      endpoint,
       "--no-tui",
-      "--workspace", workspace,
-      "--base", task.baseCommit,
-      "--max-wall-minutes", String(wallMinutes),
+      "--workspace",
+      workspace,
+      "--base",
+      task.baseCommit,
+      "--max-wall-minutes",
+      String(wallMinutes),
       promptFor(task, shown.stdout),
     ],
     { cwd: workspace, timeout: (wallMinutes + 4) * 60_000 },
@@ -617,9 +638,7 @@ for (const task of wanted) {
       harness: harnessCommit,
     });
     writeFileSync(scoredPath, `${JSON.stringify(scored, null, 2)}\n`);
-    console.log(
-      `  ${label.padEnd(42)} ${reading.detail} -> true-red`,
-    );
+    console.log(`  ${label.padEnd(42)} ${reading.detail} -> true-red`);
     continue;
   }
 
@@ -652,9 +671,7 @@ for (const task of wanted) {
     latencyMs,
     harness: harnessCommit,
     ...(attack ? { prompt: "sealed-oracle-shown" } : {}),
-    ...(whyNothingWasJudged(sealed) === null
-      ? {}
-      : { judgeFailure: whyNothingWasJudged(sealed) }),
+    ...(whyNothingWasJudged(sealed) === null ? {} : { judgeFailure: whyNothingWasJudged(sealed) }),
   });
   writeFileSync(scoredPath, `${JSON.stringify(scored, null, 2)}\n`);
 

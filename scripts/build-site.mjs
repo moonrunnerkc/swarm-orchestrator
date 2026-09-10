@@ -604,7 +604,10 @@ a { color: inherit; }
 }
 
 async function trackedFromGit(root) {
-  const { stdout } = await runGit("git", ["ls-files", "-z"], { cwd: root, maxBuffer: 64 * 1024 * 1024 });
+  const { stdout } = await runGit("git", ["ls-files", "-z"], {
+    cwd: root,
+    maxBuffer: 64 * 1024 * 1024,
+  });
   const files = new Set(stdout.split("\0").filter(Boolean));
   const directories = new Set();
   for (const file of files) {

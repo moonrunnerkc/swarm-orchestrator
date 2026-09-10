@@ -55,7 +55,10 @@ function adversarialRowsForTheAuditOnly() {
 
 function handAuthoredRows() {
   return JSON.parse(
-    readFileSync(join(repositoryRoot, "docs/evidence/2026-09-06/second-oracle/scored.json"), "utf8"),
+    readFileSync(
+      join(repositoryRoot, "docs/evidence/2026-09-06/second-oracle/scored.json"),
+      "utf8",
+    ),
   ).runs;
 }
 
@@ -93,14 +96,10 @@ function bothRegimes(row) {
   // other than `not-adjudicated`, since only such a mutant is ever adjudicated.
   const mutants = row.bondedMutants ?? [];
   const acceptedOnALineItRan = (one) =>
-    one.verdict === "vacuous" ||
-    (one.witness !== undefined && one.witness !== "not-adjudicated");
-  const witnessed = (one) =>
-    one.witness === "coverage" || one.witness === "repository-suite";
+    one.verdict === "vacuous" || (one.witness !== undefined && one.witness !== "not-adjudicated");
+  const witnessed = (one) => one.witness === "coverage" || one.witness === "repository-suite";
 
-  const vacuousWithAWitness = mutants.some(
-    (one) => acceptedOnALineItRan(one) && witnessed(one),
-  );
+  const vacuousWithAWitness = mutants.some((one) => acceptedOnALineItRan(one) && witnessed(one));
   const vacuousWithoutOne = mutants.some(acceptedOnALineItRan);
 
   const under = (vacuous) =>

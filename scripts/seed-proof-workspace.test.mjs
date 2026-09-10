@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { knownFix, proofTask, seedProofWorkspace, seededFiles } from "./seed-proof-workspace.mjs";
+import { knownFix, proofTask, seededFiles, seedProofWorkspace } from "./seed-proof-workspace.mjs";
 
 const scratchDirectories = [];
 afterEach(() => {
@@ -33,7 +33,10 @@ describe("the seeded workspace", () => {
     expect(baseCommit).toMatch(/^[0-9a-f]{40}$/);
     const tracked = spawnSync("git", ["ls-files"], { cwd: directory, encoding: "utf8" }).stdout;
     expect(tracked.trim().split("\n").sort()).toEqual(Object.keys(seededFiles).sort());
-    const status = spawnSync("git", ["status", "--porcelain"], { cwd: directory, encoding: "utf8" });
+    const status = spawnSync("git", ["status", "--porcelain"], {
+      cwd: directory,
+      encoding: "utf8",
+    });
     expect(status.stdout).toBe("");
   });
 

@@ -45,9 +45,18 @@ describe("summarizing runs", () => {
 
     expect(summaries["local:a"].attempted).toBe(3);
     expect(summaries["local:a"].executed).toBe(2);
-    expect(summaries["local:a"].dimensions.tokensPerSecond).toMatchObject({ count: 2, minimum: 50, maximum: 70 });
+    expect(summaries["local:a"].dimensions.tokensPerSecond).toMatchObject({
+      count: 2,
+      minimum: 50,
+      maximum: 70,
+    });
     expect(summaries["local:a"].dimensions.gatePassed.median).toBe(1);
-    expect(summaries["local:a"].cases["case-1"]).toEqual({ taskClass: "edit", green: 1, executed: 2, cutShort: 0 });
+    expect(summaries["local:a"].cases["case-1"]).toEqual({
+      taskClass: "edit",
+      green: 1,
+      executed: 2,
+      cutShort: 0,
+    });
     expect(summaries["local:b"].executed).toBe(1);
   });
 
@@ -56,8 +65,15 @@ describe("summarizing runs", () => {
 
     expect(summaries["local:a"].executed).toBe(2);
     expect(summaries["local:a"].dimensions.gatePassed).toMatchObject({ count: 1, median: 1 });
-    expect(summaries["local:a"].cases["case-1"]).toEqual({ taskClass: "edit", green: 1, executed: 2, cutShort: 1 });
-    expect(render([{ label: "one", summaries }])).toContain("| case-1 | edit | 1 of 1, 1 cut short |");
+    expect(summaries["local:a"].cases["case-1"]).toEqual({
+      taskClass: "edit",
+      green: 1,
+      executed: 2,
+      cutShort: 1,
+    });
+    expect(render([{ label: "one", summaries }])).toContain(
+      "| case-1 | edit | 1 of 1, 1 cut short |",
+    );
   });
 });
 
@@ -85,7 +101,11 @@ describe("over the committed sweep", () => {
     const summaries = summarize(runs);
 
     expect(runs).toHaveLength(180);
-    expect(Object.keys(summaries).sort()).toEqual(["local:gemma4:31b", "local:qwen3.5:27b", "local:qwen3.6:35b-a3b"]);
+    expect(Object.keys(summaries).sort()).toEqual([
+      "local:gemma4:31b",
+      "local:qwen3.5:27b",
+      "local:qwen3.6:35b-a3b",
+    ]);
     expect(summaries["local:qwen3.6:35b-a3b"].executed).toBe(59);
   });
 });
