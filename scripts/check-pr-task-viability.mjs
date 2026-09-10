@@ -18,6 +18,7 @@
  *
  *   node scripts/check-pr-task-viability.mjs [--limit <n>] [--only <owner/repo[#pull]>] [--recheck]
  */
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -143,6 +144,39 @@ function environmentFor(checkout) {
 }
 
 /**
+ * Installs only where the lockfile is not the one already installed in this checkout.
+ *
+ * Every candidate in a repository is a different base commit, so the install ran again for each
+ * one: at half a minute to three minutes apiece, on a corpus of hundreds, that is most of the
+ * campaign spent reinstalling what was already there. The lockfile and the manifest are what
+ * decide the tree, so their digest is what decides whether it has to be built again, and an
+ * absent `node_modules` overrides the digest because a recorded install is not an installed one.
+ */
+const installedLockfiles = new Map();
+
+async function installIfTheLockfileMoved(checkout) {
+  const declaring = ["package-lock.json", "package.json"]
+    .map((name) => {
+      try {
+        return readFileSync(join(checkout, name), "utf8");
+      } catch {
+        return "";
+      }
+    })
+    .join("\u0000");
+  const digest = createHash("sha256").update(declaring).digest("hex");
+  if (installedLockfiles.get(checkout) === digest && existsSync(join(checkout, "node_modules"))) {
+    return { code: 0, stdout: "", stderr: "", timedOut: false };
+  }
+  const ran = await attempt("npm", ["ci", "--no-audit", "--no-fund", "--loglevel=error"], {
+    cwd: checkout,
+    timeout: 15 * 60_000,
+  });
+  if (ran.code === 0) installedLockfiles.set(checkout, digest);
+  return ran;
+}
+
+/**
  * Written after every judgement rather than at the end of the run. Each candidate costs a clone,
  * an install and two test runs, so a run that dies on its last one would otherwise throw away
  * every judgement before it, and these scripts are only resumable if what they learned survives.
@@ -240,10 +274,7 @@ for (const candidate of wanted) {
   await attempt("git", ["checkout", "--quiet", "--force", "--detach", base], { cwd: checkout });
   await attempt("git", ["clean", "-qfd"], { cwd: checkout });
 
-  const installed = await attempt("npm", ["ci", "--no-audit", "--no-fund", "--loglevel=error"], {
-    cwd: checkout,
-    timeout: 15 * 60_000,
-  });
+  const installed = await installIfTheLockfileMoved(checkout);
   if (installed.code !== 0) {
     record.why = `npm ci failed at the base: ${installed.stderr.slice(-160)}`;
     saveJudgement(record);

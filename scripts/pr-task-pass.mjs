@@ -179,11 +179,16 @@ async function judgeAgainstBothHalves(judge, task) {
   // A false green is the most consequential thing this measures, so it is the last place to take a
   // refusal at face value. Splitting one suite assumes its tests are independent and plenty are
   // not: winston's container tests share state, and the held-back half failed alone while passing
-  // beside the sealed half. Asked only where it could change the answer, which is a certified run
-  // the held-back half refused, so it costs one extra run on the tasks where being wrong matters.
+  // beside the sealed half.
+  //
+  // Asked wherever the answer can change, which is wherever the sealed half accepted and the
+  // held-back half refused. It used to be asked only where the tool had certified, and that gate
+  // flattered the tool as soon as the reach check started refusing: winston#2256 was recorded as a
+  // correct refusal of a bad patch, when the patch is fine, the held-back half only fails alone,
+  // and what the tool actually did was decline to certify a change its oracle had not run.
   let heldBackVerdict = heldBack.task;
   let orderDependent = false;
-  if (sealed.verified === true && heldBack.task === "rejected") {
+  if (sealed.task === "accepted" && heldBack.task === "rejected") {
     const together = await judge([...task.sealedCases, ...task.heldBackCases]);
     orderDependent = !heldBackRefusalIsReal({
       aloneFailed: true,
@@ -337,6 +342,11 @@ for (const task of wanted) {
       // to certify an oracle that never ran the change, and a corpus that does not carry the
       // verdict cannot show which refusals came from it.
       previous.oracleReach = sealedAgain.oracleReach ?? "unmeasured";
+      // Which lines, not just that some were missed. "Extend the oracle" names nothing to extend
+      // without them, and they are what separates a real gap from a defect in this measurement.
+      if (sealedAgain.oracleReach === "unreached") {
+        previous.unreachedByOracle = sealedAgain.unreachedByOracle ?? [];
+      } else delete previous.unreachedByOracle;
       previous.verified = sealedAgain.verified === true;
       previous.corner = cornerAgain;
       previous.harness = harnessCommit;
@@ -452,6 +462,9 @@ for (const task of wanted) {
     regression: sealed.regression,
     sealedOracle: sealed.task,
     oracleReach: sealed.oracleReach ?? "unmeasured",
+    ...(sealed.oracleReach === "unreached"
+      ? { unreachedByOracle: sealed.unreachedByOracle ?? [] }
+      : {}),
     heldBackOracle: heldBackVerdict,
     heldBackOrderDependent: orderDependent,
     verified: sealed.verified === true,
