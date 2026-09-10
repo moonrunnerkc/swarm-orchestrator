@@ -178,12 +178,17 @@ commit would have accepted a patch that changes nothing, so `task` reads `vacuou
 verified. An oracle that never executed the lines the patch adds cannot have judged them, so
 `oracleReach` reads `unreached`, the lines are named, and nothing is verified. Both were found by
 measuring this tool against real work: certified tasks rested on oracles that could not fail, and
-the first false green found was certified by an oracle that never ran the branch it broke. That
-one is now refused, and refusing it cost no correct result: across both corpora the reach check
-turned down nothing that both oracles accept.
+both false greens found so far were certified by an oracle that never ran the branch that broke.
 
-Reach is measured only where the harness can rebuild the oracle's own invocation, so an oracle run
-through another test runner reports `unmeasured` rather than a guess.
+Reach is read from whichever coverage the oracle's own runner can be made to write: node's lcov
+reporter, V8's own coverage for a runner that loads the file as written, or jest's and vitest's
+own reports. A runner none of those fits reports `unmeasured` rather than a guess, and `unmeasured`
+blocks nothing.
+
+**It is not free, and the cost is reported rather than netted off.** A patch that restructures one
+assignment into an `if` and an `else`, judged by an oracle whose cases all take the `if`, is
+refused with the `else` named. Those are counted as `refused-on-reach`: not the tool being wrong
+about the patch, and not a pass either.
 
 Full detail in **[docs/verifying.md](docs/verifying.md)**.
 
