@@ -97,7 +97,7 @@ Every scored row carries the harness commit that produced it, for the same reaso
     node scripts/pr-task-pass.mjs
     node scripts/reclassify-scored.mjs
 
-192 candidates mined, 111 of them checked by running them, 59 viable, 59 scored. The other 81 are
+192 candidates mined, 111 of them checked by running them, 58 viable, 58 scored. The other 81 are
 waiting on a viability pass.
 
 **0 false greens in 3 valid opportunities here: 0.0%, 95% CI [0.0, 56.1].** With the eleven from the
@@ -112,7 +112,8 @@ written nothing at all: their patch files are zero bytes, and handing an empty p
 produced `unjudged`, which was recorded as an oracle that could not be run. It is a model failure
 and it is recorded as one.
 
-**Both false greens ever found are now refused, for the same reason.**
+**Both false greens ever found are now refused, for the same reason.** A held-back oracle refuses
+the patch, and the tool had certified it on a sealed oracle that never ran the branch being broken.
 
 | | |
 | --- | --- |
@@ -128,12 +129,19 @@ every line the patch wrote. That was never measured. Reach could only be read fr
 runner, dayjs runs jest, and the verdict was `unmeasured` rather than `reached`. Measured, the
 oracle skips three of the lines, and the tool refuses to certify on it.
 
+**dayjs#3180 and dayjs#3181 are one specification.** Same base commit, same test file, the same two
+cases dealt into the same halves, and #3181's own title references #3180. Kept as two they were two
+opportunities for a false green, so one blind spot in that one pair of oracles would produce two of
+them, which is one finding counted twice. The corpus keeps the earlier pull and sets the other
+aside; [`taskIdentity`](../../../../src/eval/task-identity.ts) decides it, and the earlier pull wins so that
+a re-check in a different order keeps the same one. It was the only such pair in 59.
+
 **What the refusals cost.** Certified fell from 8 to 3 on this corpus: three patches both oracles
 accept are refused because their oracle never ran part of what they added, and four on the sealed
 half. A tool that refuses more has fewer claims to be wrong about, so the interval over what is
 left is wider. That is the trade, and both halves of it are printed beside the rate.
 
-**The halves disagree on 6 of the 49 patches both judged**, 87.8% agreement. That is the first
+**The halves disagree on 5 of the 48 patches both judged**, 89.6% agreement. That is the first
 evidence about the thing this corpus is weakest on: two halves of one specification, written by one
 author in one sitting, could have agreed on everything and bought nothing.
 
@@ -146,14 +154,14 @@ are what the oracles run. A file can qualify while the half handed to the tool i
 `sealedOracleTestsThePatch` names the condition, and the two that stand were checked against it:
 koa#1946's sealed half fails 2 of 2 on the base and dayjs#3181's fails 1 of 1.
 
-### Where 59 tasks went
+### Where 58 tasks went
 
 | | |
 | --- | --- |
 | 3 | certified, so an opportunity to catch a false green |
 | 3 | refused because the oracle never ran part of the change |
 | 4 | refused because the sealed half rejects work the held-back half accepts |
-| 49 | judged and refused on the merits, 10 of them the agent having written nothing at all |
+| 48 | judged and refused on the merits, 10 of them the agent having written nothing at all |
 
 One task in twenty becomes an opportunity, which is the real obstacle to four hundred: the local
 model fails most of these outright, and a task nobody can do produces a true red rather than
@@ -240,8 +248,8 @@ corpus of only tiny tasks measures the tool on tiny tasks. `--max-changed-lines`
 than a constant so the shaping is visible in the command that produced a corpus, and the certify
 rate is reported beside every result so a rate measured over easy tasks says so.
 
-**Nearly half the splits are one case against one.** Across 73 viable tasks, 23 are 1+1 and 31
-have at least one half that is a single test case: 42%. A single-assertion oracle is thin evidence
+**Nearly half the splits are one case against one.** Across the 73 tasks viable before the deal
+rule, 23 were 1+1 and 31 had at least one half that is a single test case: 42%. A single-assertion oracle is thin evidence
 for whether a task was done, and two single assertions disagreeing says more about which one the
 model happened to satisfy than about completeness. Measured on the first 25 scored tasks, three of
 the four `refused-on-sealed` outcomes came from 1+1 splits, and 6 of 9 certified opportunities had

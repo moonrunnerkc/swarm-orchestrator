@@ -1,0 +1,15 @@
+diff --git a/src/plugin/timezone/index.js b/src/plugin/timezone/index.js
+index 44e78c1..088a421 100644
+--- a/src/plugin/timezone/index.js
++++ b/src/plugin/timezone/index.js
+@@ -93,6 +93,10 @@ export default (o, c, d) => {
+   const proto = c.prototype
+ 
+   proto.tz = function (timezone = defaultTimezone, keepLocalTime) {
++    if (!this.isValid()) {
++      this.$x.$timezone = timezone
++      return this
++    }
+     const oldOffset = this.utcOffset()
+     const date = this.toDate()
+     const target = date.toLocaleString('en-US', { timeZone: timezone })

@@ -1,0 +1,42 @@
+diff --git a/__tests__/response/attachment.test.js b/__tests__/response/attachment.test.js
+index b621496..eb4ee31 100644
+--- a/__tests__/response/attachment.test.js
++++ b/__tests__/response/attachment.test.js
+@@ -49,6 +49,24 @@ describe('ctx.attachment([filename])', () => {
+   })
+ })
+ 
++describe('when Content-Type is already set', () => {
++  it('should NOT override Content-Type when already set', () => {
++    const ctx = context()
++    ctx.response.set('Content-Type', 'application/octet-stream')
++    ctx.attachment('malicious.html')
++    assert.strictEqual(ctx.response.get('Content-Type'), 'application/octet-stream')
++    assert.strictEqual(ctx.response.header['content-disposition'], 'attachment; filename="malicious.html"')
++  })
++})
++
++describe('when Content-Type is not set', () => {
++  it('should set Content-Type when not previously set', () => {
++    const ctx = context()
++    ctx.attachment('document.pdf')
++    assert.strictEqual(ctx.response.get('Content-Type'), 'application/pdf')
++  })
++})
++
+ // reference test case of content-disposition module
+ describe('contentDisposition(filename, options)', () => {
+   describe('with "fallback" option', () => {
+diff --git a/lib/response.js b/lib/response.js
+index d0de4a7..9503096 100644
+--- a/lib/response.js
++++ b/lib/response.js
+@@ -351,7 +351,7 @@ module.exports = {
+    */
+ 
+   attachment (filename, options) {
+-    if (filename) this.type = extname(filename)
++    if (filename && !this.has('Content-Type')) this.type = extname(filename)
+     this.set('Content-Disposition', contentDisposition(filename, options))
+   },
+ 

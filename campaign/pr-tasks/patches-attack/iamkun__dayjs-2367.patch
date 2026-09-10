@@ -1,0 +1,29 @@
+diff --git a/src/plugin/duration/index.js b/src/plugin/duration/index.js
+index 26bc75e..09fe4e0 100644
+--- a/src/plugin/duration/index.js
++++ b/src/plugin/duration/index.js
+@@ -139,7 +139,7 @@ class Duration {
+ 
+     let seconds = this.$d.seconds || 0
+     if (this.$d.milliseconds) {
+-      seconds += this.$d.milliseconds / 1000
++      seconds = Math.round((seconds + ((this.$d.milliseconds) / 1000)) * 1000) / 1000
+     }
+ 
+     const S = getNumberUnitFormat(seconds, 'S')
+diff --git a/test/plugin/duration.test.js b/test/plugin/duration.test.js
+index 4a47539..df5eb3e 100644
+--- a/test/plugin/duration.test.js
++++ b/test/plugin/duration.test.js
+@@ -256,6 +256,11 @@ describe('prettyUnit', () => {
+   const d = dayjs.duration(2, 's')
+   expect(d.toISOString()).toBe('PT2S')
+   expect(d.as('seconds')).toBe(2)
++  describe('rounding to millisecond precision', () => {
++    it('handles rounding to millisecond precision', () => {
++      expect(dayjs.duration(2 / 3).toISOString()).toBe('PT0.001S')
++    })
++  })
+   expect(d.get('s')).toBe(2)
+   expect(dayjs.duration({
+     M: 12,

@@ -1,0 +1,29 @@
+diff --git a/lib/request.js b/lib/request.js
+index 2304501..45ead87 100644
+--- a/lib/request.js
++++ b/lib/request.js
+@@ -296,11 +296,19 @@ module.exports = {
+   get URL () {
+     /* istanbul ignore else */
+     if (!this.memoizedURL) {
+-      const originalUrl = this.originalUrl || '' // avoid undefined in template string
+-      try {
+-        this.memoizedURL = new URL(`${this.protocol}://${this.host}${originalUrl}`)
+-      } catch (err) {
+-        this.memoizedURL = Object.create(null)
++      let originalUrl = this.originalUrl || '' // avoid undefined in template string
++      if (/^https?:\/\//i.test(originalUrl)) {
++        try {
++          this.memoizedURL = new URL(originalUrl)
++        } catch (err) {
++          this.memoizedURL = Object.create(null)
++        }
++      } else {
++        try {
++          this.memoizedURL = new URL(`${this.protocol}://${this.host}${originalUrl}`)
++        } catch (err) {
++          this.memoizedURL = Object.create(null)
++        }
+       }
+     }
+     return this.memoizedURL
