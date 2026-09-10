@@ -49,14 +49,15 @@ base commit** would have accepted a patch that changes nothing, so `task` reads 
 nothing is verified. One that **never executed lines the patch added** cannot have judged them, so
 `oracleReach` reads `unreached`, the lines are named, and nothing is verified. One that **executed
 those lines and accepted a change to them** ran the code without asserting anything about it, so
-`oracleBond` reads `vacuous` and the mutant it accepted is printed.
+`oracleBond` reads `vacuous`, the mutant it accepted is printed, and nothing is verified.
 
 All three came out of measuring this tool against real work. Certified tasks turned out to rest on
 oracles that could not fail; the first false green found was certified by an oracle that never ran
 the branch it broke; and the one false green that still stands, `commander#1671`, is certified by
 an oracle that runs every line the patch adds and never tests the precedence those lines decide.
 
-`unreached` blocks. `unmeasured` does not: an absence of evidence is not evidence of a gap.
+`unreached` and `vacuous` block. `unmeasured`, `unshown` and `not bonded` do not: an absence of
+evidence is not evidence of a gap.
 
 ### How reach is measured, and what it is not
 
@@ -106,9 +107,12 @@ added are changed into something that behaves differently and the oracle is run 
 
 The four words are the ones a gate bond already uses. **held**: the oracle refused the mutant.
 **vacuous**: it accepted one the coverage of its own run says it executed. **unshown**: it accepted
-one nothing says it ran. **not bonded**: no mutant could be built, or the run was already refused
-for another reason. `unshown` and `not bonded` are absences of evidence about the oracle rather
-than evidence against it, and neither is ever read as `held`.
+one nothing says it ran. **not bonded**: no mutant could be built, or the oracle did not accept, so
+nothing was asked of it. `unshown` and `not bonded` are absences of evidence about the oracle
+rather than evidence against it, and neither is ever read as `held`. Only `vacuous` refuses, and
+whether it does is one exported boolean so that turning it off is one line: it went true after an
+audit read every vacuous verdict across the sixteen certified patches by hand, and the two mutants
+that turned out to change nothing narrowed the operators that produced them.
 
 The operators are mechanical and few, each a syntactic rule over a line and never a rule keyed to a
 repository, a patch or a task: invert a comparison, swap the operands of a non-commutative
