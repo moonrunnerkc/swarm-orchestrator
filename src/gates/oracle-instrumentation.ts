@@ -2,24 +2,16 @@ import { harnessReportingCommand } from "./harness-reporting.ts";
 import { commandWords, shellQuoted } from "./node-test-command.ts";
 
 /**
- * Splits an oracle command into the setup that puts its test file in place and a final test run
- * the harness can rebuild under coverage.
+ * How an oracle command is asked for the lines it ran.
  *
- * A real oracle is a compound shell string: `mkdir … && cp … && node --test …`. Vouching the whole
- * string fails, so reach came back `unmeasured` on koa#1946, which is the case the reach check
- * exists for. The setup is the harness's own mkdir and cp, so only the last segment matters.
+ * A real oracle is a compound shell string: `mkdir … && cp … && node --test …`. The setup is the
+ * harness's own mkdir and cp, so only the last segment is instrumented, and what can be done with
+ * it depends on what it starts.
  *
- * Nothing here predicts what a shell will do with a command. The final segment is rebuilt through
- * the same vouching the ratchet uses, and anything it cannot express as an argv it controls is
- * refused rather than corrected into something that looks close enough.
+ * Nothing here predicts what a shell will do with a command. A segment whose effect a shell
+ * decides is refused rather than corrected into something that looks close enough, and a runner
+ * nobody recognized gets no flags invented for it.
  */
-export interface InstrumentedOracle {
-  /** Everything before the final command, run as the shell string it already was. */
-  readonly setup: string;
-  /** The final test run, rebuilt as an argv the harness controls, with coverage on. */
-  readonly argv: readonly string[];
-}
-
 /**
  * Whether a shell, rather than this code, decides what the segment runs.
  *
@@ -43,22 +35,6 @@ function shellDecidesIt(segment: string): boolean {
     if ("|;&<>`$(){}".includes(character)) return true;
   }
   return false;
-}
-
-export function instrumentedOracle(command: string): InstrumentedOracle | null {
-  const segments = command.split("&&");
-  if (segments.length === 0) {
-    return null;
-  }
-  const last = segments.at(-1)?.trim() ?? "";
-  if (last.length === 0 || shellDecidesIt(last)) {
-    return null;
-  }
-  const argv = harnessReportingCommand(last);
-  if (argv === null) {
-    return null;
-  }
-  return { setup: segments.slice(0, -1).join("&&").trim(), argv };
 }
 
 /**
