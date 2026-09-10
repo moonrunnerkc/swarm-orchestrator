@@ -122,8 +122,13 @@ describe("running an oracle against each mutant of the change", () => {
     expect(recorded.suiteRuns).toHaveLength(1);
   });
 
-  it("abstains where neither detector saw a difference", async () => {
-    const { runner } = fakeRunner({ hits: () => seenAtLineTwo });
+  /**
+   * The loop's job is which detectors it spends and what it records, so that is what is asserted
+   * here. Which verdict a recorded witness earns is `bondOfMutantObservations`, and asserting it
+   * through the loop would be asserting the regime switch rather than the loop.
+   */
+  it("records that both detectors were asked and neither answered", async () => {
+    const { runner, recorded } = fakeRunner({ hits: () => seenAtLineTwo });
 
     const bond = await bondOracleWithMutants({
       mutants: [negated],
@@ -132,8 +137,9 @@ describe("running an oracle against each mutant of the change", () => {
       runner,
     });
 
-    expect(bond.verdict).toBe("unshown");
     expect(bond.mutants[0]?.witness).toBe("none");
+    expect(recorded.coverageReads).toHaveLength(1);
+    expect(recorded.suiteRuns).toHaveLength(1);
   });
 
   /**
@@ -277,7 +283,6 @@ describe("what adjudication is allowed to cost", () => {
       "not-adjudicated",
       "not-adjudicated",
     ]);
-    expect(bond.verdict).toBe("unshown");
   });
 
   /**

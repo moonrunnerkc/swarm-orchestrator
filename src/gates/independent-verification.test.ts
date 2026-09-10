@@ -1067,10 +1067,12 @@ describe("whether the oracle refuses a change to the lines the patch added", () 
    *
    * Neither detector can witness it. Coverage sees the same lines run the same number of times in
    * a different order, and the repository's own suite never had the precedence this patch adds. So
-   * the mutant is `unshown`, and this is what that costs: a real gap the tool cannot demonstrate,
-   * and therefore does not refuse on. `docs/oracle-bond-operators.md` pre-registered it.
+   * the refusal stands on what `vacuous` has always meant, that the oracle ran the line and
+   * accepted a change to it, and the record says no detector corroborated it. Which of those two
+   * facts the verdict rests on is one boolean in `mutant-witness.ts`, measured both ways in
+   * `docs/oracle-bond-operators.md`.
    */
-  it("abstains where the oracle accepted a change no detector can show changed anything", async () => {
+  it("refuses on an accepted mutant of a line it ran, and says nothing witnessed it", async () => {
     const patch = [
       "diff --git a/merge.mjs b/merge.mjs",
       "new file mode 100644",
@@ -1104,12 +1106,11 @@ describe("whether the oracle refuses a change to the lines the patch added", () 
       expect(result.oracleReach).toBe("reached");
       const dropped = result.bondedMutants.find((one) => one.operator === "drop-chained-call");
       expect(dropped?.after).toBe("  parents.forEach((one) => {");
-      expect(dropped?.verdict).toBe("unshown");
+      expect(dropped?.verdict).toBe("vacuous");
+      // Both detectors were asked and neither answered, which is recorded rather than required.
       expect(dropped?.witness).toBe("none");
-      // Both detectors were asked and neither answered, so the refusals the other mutants earned
-      // are what the bond reports.
-      expect(result.oracleBond).toBe("held");
-      expect(result.verified).toBe(true);
+      expect(result.oracleBond).toBe("vacuous");
+      expect(result.verified).toBe(false);
     } finally {
       await rm(script, { force: true });
     }

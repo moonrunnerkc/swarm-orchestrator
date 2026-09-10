@@ -44,17 +44,33 @@ describe("what bonding an oracle with a mutant of the change showed", () => {
    * changes nothing has been shown nothing about, and the audit that used to establish this was a
    * person reading the line.
    */
-  it("is unshown where nothing showed the mutant changed anything", () => {
-    const bond = bondOfMutantObservations([observed("one", "passed", true, "none")]);
+  it("is unshown where nothing showed the mutant changed anything, under the strict regime", () => {
+    const bond = bondOfMutantObservations([observed("one", "passed", true, "none")], {
+      requireAWitness: true,
+    });
 
     expect(bond.verdict).toBe("unshown");
     expect(bond.mutants[0]?.witness).toBe("none");
   });
 
-  it("is unshown where the second detector was never asked", () => {
-    const bond = bondOfMutantObservations([observed("one", "passed", true, "not-adjudicated")]);
+  /**
+   * Where the witness is only recorded, an accepted mutant on a line the oracle ran is a gap
+   * whatever was asked of it, and the field says the second detector never was. The loop reaches
+   * that state when the bound on suite runs is hit, so the refusal stands and the reason it could
+   * not be corroborated is in the record beside it.
+   */
+  it("reads a mutant the second detector was never asked about by the regime", () => {
+    expect(
+      bondOfMutantObservations([observed("one", "passed", true, "not-adjudicated")], {
+        requireAWitness: true,
+      }).verdict,
+    ).toBe("unshown");
 
-    expect(bond.verdict).toBe("unshown");
+    expect(
+      bondOfMutantObservations([observed("one", "passed", true, "not-adjudicated")], {
+        requireAWitness: false,
+      }).verdict,
+    ).toBe("vacuous");
   });
 
   /**
@@ -93,11 +109,11 @@ describe("what bonding an oracle with a mutant of the change showed", () => {
     expect(bond.verdict).toBe("vacuous");
   });
 
-  it("keeps a held verdict where the one mutant that got past changed nothing anybody saw", () => {
-    const bond = bondOfMutantObservations([
-      observed("one", "failed", true),
-      observed("two", "passed", true, "none"),
-    ]);
+  it("keeps a held verdict where the unwitnessed mutant is only unwitnessed, under the strict regime", () => {
+    const bond = bondOfMutantObservations(
+      [observed("one", "failed", true), observed("two", "passed", true, "none")],
+      { requireAWitness: true },
+    );
 
     expect(bond.verdict).toBe("held");
   });
