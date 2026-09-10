@@ -97,7 +97,7 @@ Every scored row carries the harness commit that produced it, for the same reaso
     node scripts/pr-task-pass.mjs
     node scripts/reclassify-scored.mjs
 
-192 candidates mined, 111 of them checked by running them, 58 viable, 58 scored. The other 81 are
+192 candidates mined, 142 of them checked by running them, 66 viable, 66 scored. The other 50 are
 waiting on a viability pass.
 
 **0 false greens in 3 valid opportunities here: 0.0%, 95% CI [0.0, 56.1].** With the eleven from the
@@ -141,7 +141,7 @@ accept are refused because their oracle never ran part of what they added, and f
 half. A tool that refuses more has fewer claims to be wrong about, so the interval over what is
 left is wider. That is the trade, and both halves of it are printed beside the rate.
 
-**The halves disagree on 5 of the 48 patches both judged**, 89.6% agreement. That is the first
+**The halves disagree on 5 of the 55 patches both judged**, 90.9% agreement. That is the first
 evidence about the thing this corpus is weakest on: two halves of one specification, written by one
 author in one sitting, could have agreed on everything and bought nothing.
 
@@ -154,18 +154,20 @@ are what the oracles run. A file can qualify while the half handed to the tool i
 `sealedOracleTestsThePatch` names the condition, and the two that stand were checked against it:
 koa#1946's sealed half fails 2 of 2 on the base and dayjs#3181's fails 1 of 1.
 
-### Where 58 tasks went
+### Where 66 tasks went
 
 | | |
 | --- | --- |
 | 3 | certified, so an opportunity to catch a false green |
 | 3 | refused because the oracle never ran part of the change |
 | 4 | refused because the sealed half rejects work the held-back half accepts |
-| 48 | judged and refused on the merits, 10 of them the agent having written nothing at all |
+| 56 | judged and refused on the merits, 11 of them the agent having written nothing at all |
 
-One task in twenty becomes an opportunity, which is the real obstacle to four hundred: the local
-model fails most of these outright, and a task nobody can do produces a true red rather than
-something for a held-back oracle to disagree with.
+One task in twenty-two becomes an opportunity, which is the real obstacle to four hundred: the
+local model fails most of these outright, and a task nobody can do produces a true red rather than
+something for a held-back oracle to disagree with. The eight tasks scored after the re-judge are
+the shape of it: seven algorithm implementations failed outright, one produced no patch at all,
+and not one of them became an opportunity.
 
 ### The two directions are not symmetrical
 

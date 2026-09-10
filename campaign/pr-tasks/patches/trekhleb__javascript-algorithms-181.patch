@@ -1,0 +1,152 @@
+diff --git a/src/data-structures/trie/Trie.js b/src/data-structures/trie/Trie.js
+index 631ea11..4e96ad4 100644
+--- a/src/data-structures/trie/Trie.js
++++ b/src/data-structures/trie/Trie.js
+@@ -68,4 +68,45 @@ export default class Trie {
+ 
+     return currentNode;
+   }
++
++  /**
++   * @param {string} word
++   * @return {boolean}
++   */
++  deleteWord(word) {
++    const characters = Array.from(word);
++    const nodes = [];
++    let currentNode = this.head;
++
++    for (let charIndex = 0; charIndex < characters.length; charIndex += 1) {
++      if (!currentNode.hasChild(characters[charIndex])) {
++        return false;
++      }
++
++      currentNode = currentNode.getChild(characters[charIndex]);
++      nodes.push(currentNode);
++    }
++
++    // Mark the last node as not a complete word.
++    const lastNode = nodes[nodes.length - 1];
++    if (!lastNode.isCompleteWord) {
++      return false;
++    }
++
++    lastNode.isCompleteWord = false;
++
++    // Remove nodes bottom-up (depth-first: last to first).
++    for (let index = nodes.length - 1; index >= 0; index -= 1) {
++      const node = nodes[index];
++      const parent = index === 0 ? this.head : nodes[index - 1];
++
++      if (node.children.getKeys().length === 0 && !node.isCompleteWord) {
++        parent.removeChild(node.character);
++      } else {
++        break;
++      }
++    }
++
++    return true;
++  }
+ }
+diff --git a/src/data-structures/trie/TrieNode.js b/src/data-structures/trie/TrieNode.js
+index 188d72b..660c277 100644
+--- a/src/data-structures/trie/TrieNode.js
++++ b/src/data-structures/trie/TrieNode.js
+@@ -52,6 +52,13 @@ export default class TrieNode {
+     return [...this.children.getKeys()];
+   }
+ 
++  /**
++   * @param {string} character
++   */
++  removeChild(character) {
++    this.children.delete(character);
++  }
++
+   /**
+    * @return {string}
+    */
+diff --git a/src/data-structures/trie/__test__/Trie.test.js b/src/data-structures/trie/__test__/Trie.test.js
+index 194ca16..a83e84b 100644
+--- a/src/data-structures/trie/__test__/Trie.test.js
++++ b/src/data-structures/trie/__test__/Trie.test.js
+@@ -52,4 +52,54 @@ describe('Trie', () => {
+     expect(trie.doesWordExist('cap')).toBe(false);
+     expect(trie.doesWordExist('call')).toBe(false);
+   });
++
++  it('should delete a word from trie', () => {
++    const trie = new Trie();
++
++    trie.addWord('cat');
++    trie.addWord('cats');
++    trie.addWord('car');
++
++    // Delete "cat" - should not remove the "c-a" nodes because "cars" still uses them.
++    trie.deleteWord('car');
++    expect(trie.doesWordExist('car')).toBe(false);
++    expect(trie.doesWordExist('cat')).toBe(true);
++    expect(trie.doesWordExist('cats')).toBe(true);
++
++    // Now delete "car" (which is not a complete word anymore).
++    trie.deleteWord('cat');
++    expect(trie.doesWordExist('cat')).toBe(false);
++  });
++
++  it('should not delete a word that does not exist', () => {
++    const trie = new Trie();
++
++    trie.addWord('cat');
++    trie.addWord('carpet');
++
++    expect(trie.deleteWord('car')).toBe(false);
++    expect(trie.doesWordExist('carpet')).toBe(true);
++  });
++
++  it('should delete only the word being targeted, preserving other words', () => {
++    const trie = new Trie();
++
++    trie.addWord('dog');
++    trie.addWord('dogs');
++
++    trie.deleteWord('dog');
++
++    expect(trie.doesWordExist('dog')).toBe(false);
++    expect(trie.doesWordExist('dogs')).toBe(true);
++  });
++
++  it('should delete a word when no shared path exists', () => {
++    const trie = new Trie();
++
++    trie.addWord('apple');
++    trie.deleteWord('apple');
++
++    expect(trie.doesWordExist('apple')).toBe(false);
++    expect(trie.head.toString()).toBe('*');
++  });
+ });
+diff --git a/src/data-structures/trie/__test__/TrieNode.test.js b/src/data-structures/trie/__test__/TrieNode.test.js
+index 3edacd2..7a003ba 100644
+--- a/src/data-structures/trie/__test__/TrieNode.test.js
++++ b/src/data-structures/trie/__test__/TrieNode.test.js
+@@ -49,4 +49,20 @@ describe('TrieNode', () => {
+ 
+     expect(trieNode.suggestChildren()).toEqual(['a', 'o']);
+   });
++
++  it('should remove child nodes', () => {
++    const trieNode = new TrieNode('c');
++
++    trieNode.addChild('a');
++    trieNode.addChild('o');
++
++    expect(trieNode.hasChild('a')).toBe(true);
++    expect(trieNode.hasChild('o')).toBe(true);
++
++    trieNode.removeChild('a');
++
++    expect(trieNode.hasChild('a')).toBe(false);
++    expect(trieNode.hasChild('o')).toBe(true);
++    expect(trieNode.suggestChildren()).toEqual(['o']);
++  });
+ });

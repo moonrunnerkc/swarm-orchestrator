@@ -1,0 +1,155 @@
+diff --git a/src/algorithms/sorting/radix-sort/RadixSort.js b/src/algorithms/sorting/radix-sort/RadixSort.js
+new file mode 100644
+index 0000000..f32427e
+--- /dev/null
++++ b/src/algorithms/sorting/radix-sort/RadixSort.js
+@@ -0,0 +1,76 @@
++import Sort from '../Sort';
++
++export default class RadixSort extends Sort {
++  /**
++   * @param {number[]} originalArray
++   * @returns {number[]}
++   */
++  sort(originalArray) {
++    if (!originalArray || originalArray.length === 0) {
++      return [];
++    }
++
++    // Clone array to prevent modification of the original.
++    let array = [...originalArray];
++
++    // Radix sort works on non-negative integers.
++    let maxElement = -Infinity;
++    for (let i = 0; i < array.length; i += 1) {
++      this.callbacks.visitingCallback(array[i]);
++
++      if (this.comparator.greaterThan(array[i], maxElement)) {
++        maxElement = array[i];
++      }
++    }
++
++    // Count the number of digits in maxElement.
++    let numDigits = 0;
++    let val = maxElement;
++    while (val > 0 || numDigits === 0) {
++      numDigits += 1;
++      /* eslint-disable-next-line no-param-reassign */
++      val = Math.floor(val / 10);
++    }
++
++    // Perform counting sort for each digit position.
++    let exp;
++    for (exp = 0; exp < numDigits; exp += 1) {
++      array = this.countingSortByDigit(array, 10 ** exp);
++    }
++
++    return array;
++  }
++
++  /**
++   * Counting sort as a subroutine, sorting by the digit at position `exp`.
++   * Returns the sorted copy.
++   * @param {number[]} arr - Array to sort.
++   * @param {number} exp - The radix base-power (1, 10, 100, etc.).
++   * @returns {number[]}
++   */
++  countingSortByDigit(arr, exp) {
++    const n = arr.length;
++    const output = new Array(n);
++    const count = new Array(10).fill(0);
++
++    for (let i = 0; i < n; i += 1) {
++      this.callbacks.visitingCallback(arr[i]);
++      const digit = Math.floor(arr[i] / exp) % 10;
++      count[digit] += 1;
++    }
++
++    // Accumulate counts so count[i] contains the position of element with digit i.
++    for (let i = 1; i < 10; i += 1) {
++      count[i] += count[i - 1];
++    }
++
++    // Build output (traverse backwards to maintain stability).
++    for (let i = n - 1; i >= 0; i -= 1) {
++      const digit = Math.floor(arr[i] / exp) % 10;
++      output[count[digit] - 1] = arr[i];
++      count[digit] -= 1;
++    }
++
++    return output;
++  }
++}
+diff --git a/src/algorithms/sorting/radix-sort/__test__/RadixSort.test.js b/src/algorithms/sorting/radix-sort/__test__/RadixSort.test.js
+new file mode 100644
+index 0000000..4b8eab5
+--- /dev/null
++++ b/src/algorithms/sorting/radix-sort/__test__/RadixSort.test.js
+@@ -0,0 +1,67 @@
++import RadixSort from '../RadixSort';
++import {
++  equalArr,
++  notSortedArr,
++  reverseArr,
++  sortedArr,
++  SortTester,
++} from '../../SortTester';
++
++describe('RadixSort', () => {
++  it('should sort array', () => {
++    SortTester.testSort(RadixSort);
++  });
++
++  it('should do stable sorting', () => {
++    const sorter = new RadixSort();
++    // Radix sort processes digits; stability is verified via the
++    // counting-subroutine order when digits are equal.
++    expect(sorter.sort([4, 2, 3, 1, 5])).toEqual([1, 2, 3, 4, 5]);
++    expect(sorter.sort([170, 45, 75, 90, 802, 24, 2, 66])).toEqual([
++      2, 24, 45, 66, 75, 90, 170, 802,
++    ]);
++  });
++
++  it('should sort empty array', () => {
++    const sorter = new RadixSort();
++    expect(sorter.sort([])).toEqual([]);
++  });
++
++  it('should not modify the original array', () => {
++    const sorter = new RadixSort();
++    const original = [5, 3, 1, 4, 2];
++    const copy = [...original];
++    sorter.sort(original);
++    expect(copy).not.toEqual([1, 2, 3, 4, 5]);
++  });
++
++  it('should sort sorted array (best case)', () => {
++    const sorter = new RadixSort();
++    expect(sorter.sort(sortedArr)).toEqual(sortedArr);
++  });
++
++  it('should sort reverse sorted array (worst case)', () => {
++    const sorter = new RadixSort();
++    expect(sorter.sort(reverseArr)).toEqual(sortedArr);
++  });
++
++  it('should handle equal elements', () => {
++    const sorter = new RadixSort();
++    expect(sorter.sort(equalArr)).toEqual(equalArr);
++  });
++
++  it('sorts arrays composed of non-negative integers', () => {
++    // Radix sort operates on non-negative integers. Verify test helpers comply.
++    sortedArr.forEach((el) => {
++      expect(el).toBeGreaterThanOrEqual(0);
++    });
++
++    notSortedArr.forEach((el) => {
++      expect(el).toBeGreaterThanOrEqual(0);
++    });
++
++    reverseArr.forEach((el) => {
++      expect(el).toBeGreaterThanOrEqual(0);
++    });
++  });
++});

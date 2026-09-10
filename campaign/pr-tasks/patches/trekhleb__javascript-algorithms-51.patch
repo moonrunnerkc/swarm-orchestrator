@@ -1,0 +1,209 @@
+diff --git a/src/data-structures/tree/binary-indexed-tree/BinaryIndexedTree.js b/src/data-structures/tree/binary-indexed-tree/BinaryIndexedTree.js
+new file mode 100644
+index 0000000..f59636c
+--- /dev/null
++++ b/src/data-structures/tree/binary-indexed-tree/BinaryIndexedTree.js
+@@ -0,0 +1,71 @@
++/**
++ * Binary Indexed Tree (Fenwick Tree) implementation.
++ *
++ * Supports:
++ *   - point update (additive)
++ *   - prefix sum
++ *   - range sum
++ */
++
++export default class BinaryIndexedTree {
++  /**
++   * Build the tree from an initial array.
++   *
++   * @param {number[]} array - the initial array of numbers.
++   */
++  constructor(array) {
++    this.treeSize = array.length + 1;
++    this.tree = new Array(this.treeSize).fill(0);
++
++    // Build the tree by adding every element once.
++    for (let i = 0; i < array.length; i += 1) {
++      this.add(i, array[i]);
++    }
++  }
++
++  /**
++   * Add **value** to the element at **index**.
++   *
++   * @param {number} index - zero-based index in the original array.
++   * @param {number} value - amount to add.
++   */
++  add(index, value) {
++    let idx = index + 1; // BIT is 1-based internally.
++
++    while (idx < this.treeSize) {
++      this.tree[idx] += value;
++      idx += idx & (-idx); // move to next covering node.
++    }
++  }
++
++  /**
++   * Compute the prefix sum up to and including **index** (0-based).
++   *
++   * @param {number} index - zero-based index.
++   * @return {number}
++   */
++  getPrefixSum(index) {
++    let sum = 0;
++    let idx = index + 1;
++
++    while (idx > 0) {
++      sum += this.tree[idx];
++      idx -= idx & (-idx); // move to parent.
++    }
++
++    return sum;
++  }
++
++  /**
++   * Compute the sum of elements in range [left, right] inclusive (0-based).
++   *
++   * @param {number} left - left bound of the range.
++   * @param {number} right - right bound of the range.
++   * @return {number}
++   */
++  getRangeSum(left, right) {
++    if (left > right) return 0;
++
++    return this.getPrefixSum(right) - (left > 0 ? this.getPrefixSum(left - 1) : 0);
++  }
++}
+diff --git a/src/data-structures/tree/binary-indexed-tree/__test__/BinaryIndexedTree.test.js b/src/data-structures/tree/binary-indexed-tree/__test__/BinaryIndexedTree.test.js
+new file mode 100644
+index 0000000..e3b1419
+--- /dev/null
++++ b/src/data-structures/tree/binary-indexed-tree/__test__/BinaryIndexedTree.test.js
+@@ -0,0 +1,126 @@
++import BinaryIndexedTree from '../BinaryIndexedTree';
++
++describe('BinaryIndexedTree', () => {
++  describe('construction', () => {
++    it('should compute correct initial prefix sums', () => {
++      const arr = [1, 2, 3, 4, 5];
++      const tree = new BinaryIndexedTree(arr);
++
++      expect(tree.getPrefixSum(0)).toBe(1);
++      expect(tree.getPrefixSum(1)).toBe(3);
++      expect(tree.getPrefixSum(2)).toBe(6);
++      expect(tree.getPrefixSum(3)).toBe(10);
++      expect(tree.getPrefixSum(4)).toBe(15);
++    });
++
++    it('should work with all zeros', () => {
++      const arr = [0, 0, 0];
++      const tree = new BinaryIndexedTree(arr);
++
++      expect(tree.getPrefixSum(0)).toBe(0);
++      expect(tree.getPrefixSum(1)).toBe(0);
++      expect(tree.getPrefixSum(2)).toBe(0);
++    });
++
++    it('should work with negative values', () => {
++      const arr = [-1, -2, -3];
++      const tree = new BinaryIndexedTree(arr);
++
++      expect(tree.getPrefixSum(0)).toBe(-1);
++      expect(tree.getPrefixSum(1)).toBe(-3);
++      expect(tree.getPrefixSum(2)).toBe(-6);
++    });
++
++    it('should handle a single element', () => {
++      const arr = [42];
++      const tree = new BinaryIndexedTree(arr);
++
++      expect(tree.getPrefixSum(0)).toBe(42);
++    });
++  });
++
++  describe('add', () => {
++    it('should update prefix sums after adding to an element', () => {
++      const arr = [1, 2, 3, 4, 5];
++      const tree = new BinaryIndexedTree(arr);
++
++      // Add 3 at index 1 (was 2, becomes 5)
++      tree.add(1, 3);
++
++      expect(tree.getPrefixSum(0)).toBe(1); // unchanged
++      expect(tree.getPrefixSum(1)).toBe(6); // 1 + (2+3) = 6
++      expect(tree.getPrefixSum(2)).toBe(9); // 1 + 5 + 3 = 9
++      expect(tree.getPrefixSum(4)).toBe(18); // original 15 + 3
++    });
++
++    it('should handle adding to the last element', () => {
++      const arr = [1, 2, 3];
++      const tree = new BinaryIndexedTree(arr);
++
++      tree.add(2, -1);
++
++      expect(tree.getPrefixSum(1)).toBe(3);
++      expect(tree.getPrefixSum(2)).toBe(5);
++    });
++
++    it('should handle multiple adds to the same index', () => {
++      const arr = [0, 0, 0];
++      const tree = new BinaryIndexedTree(arr);
++
++      tree.add(1, 5);
++      tree.add(1, 3);
++
++      expect(tree.getPrefixSum(0)).toBe(0);
++      expect(tree.getPrefixSum(1)).toBe(8);
++      expect(tree.getPrefixSum(2)).toBe(8);
++    });
++  });
++
++  describe('getRangeSum', () => {
++    it('should compute range sum from index 0', () => {
++      const arr = [1, 2, 3, 4, 5];
++      const tree = new BinaryIndexedTree(arr);
++
++      expect(tree.getRangeSum(0, 0)).toBe(1);
++      expect(tree.getRangeSum(0, 2)).toBe(6);
++      expect(tree.getRangeSum(0, 4)).toBe(15);
++    });
++
++    it('should compute range sum for interior ranges', () => {
++      const arr = [1, 2, 3, 4, 5];
++      const tree = new BinaryIndexedTree(arr);
++
++      expect(tree.getRangeSum(1, 3)).toBe(2 + 3 + 4); // 9
++      expect(tree.getRangeSum(2, 4)).toBe(3 + 4 + 5); // 12
++      expect(tree.getRangeSum(0, 4)).toBe(15);
++    });
++
++    it('should handle equal left and right bounds', () => {
++      const arr = [1, 2, 3, 4, 5];
++      const tree = new BinaryIndexedTree(arr);
++
++      expect(tree.getRangeSum(3, 3)).toBe(4);
++      expect(tree.getRangeSum(0, 0)).toBe(1);
++      expect(tree.getRangeSum(4, 4)).toBe(5);
++    });
++
++    it('should account for modifications', () => {
++      const arr = [1, 2, 3, 4, 5];
++      const tree = new BinaryIndexedTree(arr);
++
++      tree.add(1, 8); // element at index 1 becomes 10
++
++      expect(tree.getRangeSum(0, 0)).toBe(1);
++      expect(tree.getRangeSum(1, 3)).toBe(10 + 3 + 4); // 17
++      expect(tree.getRangeSum(0, 4)).toBe(23); // original 15 + 8
++    });
++
++    it('should return 0 when left > right (invalid range)', () => {
++      const arr = [1, 2, 3];
++      const tree = new BinaryIndexedTree(arr);
++
++      // When left > right, the range is invalid and returns 0.
++      expect(tree.getRangeSum(3, 1)).toBe(0);
++    });
++  });
++});

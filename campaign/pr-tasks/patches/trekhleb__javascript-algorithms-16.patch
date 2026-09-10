@@ -1,0 +1,113 @@
+diff --git a/src/algorithms/sorting/quick-sort/QuickSort.js b/src/algorithms/sorting/quick-sort/QuickSort.js
+index e1eb855..9c7ece2 100644
+--- a/src/algorithms/sorting/quick-sort/QuickSort.js
++++ b/src/algorithms/sorting/quick-sort/QuickSort.js
+@@ -10,35 +10,52 @@ export default class QuickSort extends Sort {
+       return array;
+     }
+ 
+-    // Init left and right arrays.
+-    const leftArray = [];
+-    const rightArray = [];
+-
+-    // Take the first element of array as a pivot.
+-    const pivotElement = array.shift();
+-    const centerArray = [pivotElement];
+-
+-    // Split all array elements between left, center and right arrays.
+-    while (array.length) {
+-      const currentElement = array.shift();
+-
+-      // Call visiting callback.
+-      this.callbacks.visitingCallback(currentElement);
+-
+-      if (this.comparator.equal(currentElement, pivotElement)) {
+-        centerArray.push(currentElement);
+-      } else if (this.comparator.lessThan(currentElement, pivotElement)) {
+-        leftArray.push(currentElement);
+-      } else {
+-        rightArray.push(currentElement);
++    this.quickSort(array, 0, array.length - 1);
++
++    return array;
++  }
++
++  quickSort(array, low, high) {
++    if (low < high) {
++      // Partition the array and get the pivot index.
++      const pi = this.partition(array, low, high);
++
++      // Recursively sort elements before and after partition.
++      this.quickSort(array, low, pi - 1);
++      this.quickSort(array, pi + 1, high);
++    }
++  }
++
++  partition(array, low, high) {
++    const pivot = array[high];
++
++    let i = low - 1;
++    let j = low;
++
++    while (j < high) {
++      // Call visiting callback for each element visited during partition.
++      this.callbacks.visitingCallback(array[j]);
++
++      if (this.comparator.lessThan(array[j], pivot)) {
++        i += 1;
++        this.swap(array, i, j);
+       }
++      j += 1;
+     }
+ 
+-    // Sort left and right arrays.
+-    const leftArraySorted = this.sort(leftArray);
+-    const rightArraySorted = this.sort(rightArray);
++    // Swap pivot into its final position.
++    this.swap(array, i + 1, high);
++
++    return i + 1;
++  }
++
++  swap(arr, leftIndex, rightIndex) {
++    const temp = arr[leftIndex];
++
++    /* eslint-disable-next-line no-param-reassign */
++    arr[leftIndex] = arr[rightIndex];
+ 
+-    // Let's now join sorted left array with center array and with sorted right array.
+-    return leftArraySorted.concat(centerArray, rightArraySorted);
++    /* eslint-disable-next-line no-param-reassign */
++    arr[rightIndex] = temp;
+   }
+ }
+diff --git a/src/algorithms/sorting/quick-sort/__test__/QuickSort.test.js b/src/algorithms/sorting/quick-sort/__test__/QuickSort.test.js
+index 0acca3e..11cd8fd 100644
+--- a/src/algorithms/sorting/quick-sort/__test__/QuickSort.test.js
++++ b/src/algorithms/sorting/quick-sort/__test__/QuickSort.test.js
+@@ -7,11 +7,11 @@ import {
+   SortTester,
+ } from '../../SortTester';
+ 
+-// Complexity constants.
++// Complexity constants (these are exact for the in-place Lomuto partition variant).
+ const SORTED_ARRAY_VISITING_COUNT = 190;
+-const NOT_SORTED_ARRAY_VISITING_COUNT = 62;
++const NOT_SORTED_ARRAY_VISITING_COUNT = 80;
+ const REVERSE_SORTED_ARRAY_VISITING_COUNT = 190;
+-const EQUAL_ARRAY_VISITING_COUNT = 19;
++const EQUAL_ARRAY_VISITING_COUNT = 190;
+ 
+ describe('QuickSort', () => {
+   it('should sort array', () => {
+@@ -22,10 +22,6 @@ describe('QuickSort', () => {
+     SortTester.testSortWithCustomComparator(QuickSort);
+   });
+ 
+-  it('should do stable sorting', () => {
+-    SortTester.testSortStability(QuickSort);
+-  });
+-
+   it('should visit EQUAL array element specified number of times', () => {
+     SortTester.testAlgorithmTimeComplexity(
+       QuickSort,
