@@ -338,7 +338,15 @@ describe("what adjudication is allowed to cost", () => {
     ]);
   });
 
-  it("asks no suite where the patch left no passing check to compare against", async () => {
+  /**
+   * A suite with no passing check cannot witness anything about any mutant, so there is nothing to
+   * ask rather than something left unasked. Coverage was asked and was silent, which is what
+   * `none` says: nothing that could be asked showed a difference. Recording that as
+   * `not-adjudicated` put it under the same word as a mutant no detector was asked about at all,
+   * and it happened for real, on two commander rows whose first mutant read vacuous with nothing
+   * to explain it.
+   */
+  it("reads a patch with no passing check as nothing to ask rather than nothing asked", async () => {
     const { runner, recorded } = fakeRunner({ hits: () => seenAtLineTwo });
 
     const bond = await bondOracleWithMutants({
@@ -348,7 +356,31 @@ describe("what adjudication is allowed to cost", () => {
       runner,
     });
 
+    expect(recorded.coverageReads).toHaveLength(1);
     expect(recorded.suiteRuns).toEqual([]);
+    expect(bond.mutants[0]?.witness).toBe("none");
+  });
+
+  /**
+   * The bound is different: the suite could have answered and the run chose not to spend it, so
+   * the absence is about what was asked rather than about what there was to ask. Only reachable
+   * under the stricter reading, where a silent detector settles nothing.
+   */
+  it("keeps not-adjudicated for a suite the bound stopped it from asking", async () => {
+    const { runner } = fakeRunner({
+      text: "const ok = true\n  if (ok) {\n  }\n\n",
+      hits: () => ({ "lib/command.js": { 2: 1, 3: 1, 4: 1 } }),
+    });
+
+    const bond = await bondOracleWithMutants({
+      mutants: three,
+      measured: { "lib/command.js": { 2: 1, 3: 1, 4: 1 } },
+      checksWithPatch: [{ id: "tests", status: "passed" }],
+      runner,
+      requireAWitness: true,
+      suiteAdjudicationLimit: 0,
+    });
+
     expect(bond.mutants[0]?.witness).toBe("not-adjudicated");
   });
 });

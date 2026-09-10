@@ -9,9 +9,12 @@ import type { Mutant } from "./oracle-mutants.ts";
  * told them apart was a person reading each mutated line, which found two equivalent mutants,
  * does not scale, and is not evidence anybody else can re-derive.
  *
- * `none` is an abstention and never a refusal. `not-adjudicated` is a different absence: the
- * second detector was never spent, and flattening that into either answer is the collapse of
- * *unmeasured* into an opinion.
+ * `none` is an abstention and never a demonstration: everything that could be asked was asked and
+ * nothing showed a difference. `not-adjudicated` is a different absence, that no detector was
+ * asked at all, and flattening the two into one word is the collapse of *unmeasured* into an
+ * opinion. A suite with no passing check to compare against is the first of those rather than the
+ * second, because there was nothing to ask, and reading it the other way put a refusal on the
+ * record with nothing beside it to explain it.
  */
 export type MutantWitness = "coverage" | "repository-suite" | "none" | "not-adjudicated";
 
