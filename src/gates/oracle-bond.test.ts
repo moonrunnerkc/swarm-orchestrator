@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { MutantWitness } from "./mutant-witness.ts";
 import { bondOfMutantObservations, mutantWasSeen } from "./oracle-bond.ts";
 
 const mutant = (id: string) => ({
@@ -10,11 +11,12 @@ const mutant = (id: string) => ({
   after: "  if (a !== b) {",
 });
 
-const observed = (id: string, oracle: "passed" | "failed", seen: boolean) => ({
-  mutant: mutant(id),
-  oracle,
-  seen,
-});
+const observed = (
+  id: string,
+  oracle: "passed" | "failed",
+  seen: boolean,
+  witness: MutantWitness = "coverage",
+) => ({ mutant: mutant(id), oracle, seen, witness });
 
 describe("what bonding an oracle with a mutant of the change showed", () => {
   it("holds where the oracle refused the mutant", () => {
@@ -24,10 +26,45 @@ describe("what bonding an oracle with a mutant of the change showed", () => {
     expect(bond.mutants[0]?.verdict).toBe("held");
   });
 
-  it("is vacuous where the oracle accepted a mutant it demonstrably ran", () => {
-    const bond = bondOfMutantObservations([observed("one", "passed", true)]);
+  it("is vacuous where the oracle accepted a mutant it ran and something showed changed", () => {
+    const bond = bondOfMutantObservations([observed("one", "passed", true, "coverage")]);
 
     expect(bond.verdict).toBe("vacuous");
+    expect(bond.mutants[0]?.witness).toBe("coverage");
+  });
+
+  it("is vacuous where the repository's own suite is what saw the difference", () => {
+    const bond = bondOfMutantObservations([observed("one", "passed", true, "repository-suite")]);
+
+    expect(bond.verdict).toBe("vacuous");
+  });
+
+  /**
+   * The other half of `vacuous`, and the half that was missing. An oracle accepting a mutant that
+   * changes nothing has been shown nothing about, and the audit that used to establish this was a
+   * person reading the line.
+   */
+  it("is unshown where nothing showed the mutant changed anything", () => {
+    const bond = bondOfMutantObservations([observed("one", "passed", true, "none")]);
+
+    expect(bond.verdict).toBe("unshown");
+    expect(bond.mutants[0]?.witness).toBe("none");
+  });
+
+  it("is unshown where the second detector was never asked", () => {
+    const bond = bondOfMutantObservations([observed("one", "passed", true, "not-adjudicated")]);
+
+    expect(bond.verdict).toBe("unshown");
+  });
+
+  /**
+   * A refusal needs no witness. The oracle failing the mutant is the oracle doing its job, and
+   * whether the mutant also changed something an instrument could see does not bear on that.
+   */
+  it("holds on a refusal whatever the detectors saw", () => {
+    const bond = bondOfMutantObservations([observed("one", "failed", false, "none")]);
+
+    expect(bond.verdict).toBe("held");
   });
 
   it("is unshown where the oracle accepted a mutant nothing says it ran", () => {
@@ -54,6 +91,15 @@ describe("what bonding an oracle with a mutant of the change showed", () => {
     ]);
 
     expect(bond.verdict).toBe("vacuous");
+  });
+
+  it("keeps a held verdict where the one mutant that got past changed nothing anybody saw", () => {
+    const bond = bondOfMutantObservations([
+      observed("one", "failed", true),
+      observed("two", "passed", true, "none"),
+    ]);
+
+    expect(bond.verdict).toBe("held");
   });
 
   it("prefers a refusal to an absence of evidence", () => {

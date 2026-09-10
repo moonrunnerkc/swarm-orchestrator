@@ -141,7 +141,10 @@ describe("mutants built from the lines a patch added", () => {
       ]),
     });
 
-    expect(built).toEqual([]);
+    // The string line is still a statement, and `replace-assigned-value` reads it as one. What
+    // must not happen is a comparison being found inside the message or the prose.
+    expect(built.map((one) => one.operator)).not.toContain("invert-comparison");
+    expect(built.map((one) => one.line)).toEqual([10]);
   });
 
   it("names every mutant once, by file, line and operator", () => {
@@ -287,5 +290,232 @@ describe("a call whose arguments have an order", () => {
 
     expect(built[0]?.operator).toBe("swap-call-arguments");
     expect(built[0]?.after).toBe("        results.push(Array.from(items.slice(i + size, i)));");
+  });
+});
+
+/**
+ * The shapes the first five operators had no rule for. Read off the language's statement
+ * productions rather than off the patches that exposed the gap: an operator chosen knowing the
+ * case it has to catch measures the choosing. The design and the ordering are in
+ * `docs/oracle-bond-operators.md`.
+ */
+describe("the conditions a guard clause decides", () => {
+  it("negates an if condition that carries no comparison", () => {
+    const built = mutantsOfChangedLines({
+      changed: only("src/plugin/timezone/index.js", [[96, "    if (!this.isValid()) {"]]),
+    });
+
+    expect(built[0]?.operator).toBe("negate-condition");
+    expect(built[0]?.after).toBe("    if (!(!this.isValid())) {");
+  });
+
+  it("negates an else-if condition, which is the same rule", () => {
+    const built = mutantsOfChangedLines({
+      changed: only("lib/application.js", [[87, "      } else if (options.zone) {"]]),
+    });
+
+    expect(built[0]?.after).toBe("      } else if (!(options.zone)) {");
+  });
+
+  it("negates a while condition", () => {
+    const built = mutantsOfChangedLines({
+      changed: only("lib/queue.js", [[10, "    while (pending.length) {"]]),
+    });
+
+    expect(built[0]?.operator).toBe("negate-condition");
+    expect(built[0]?.after).toBe("    while (!(pending.length)) {");
+  });
+
+  it("leaves a comparison to the operator that reads comparisons", () => {
+    const built = mutantsOfChangedLines({
+      changed: only("lib/command.js", [[10, "    if (value === other) {"]]),
+    });
+
+    expect(built[0]?.operator).toBe("invert-comparison");
+  });
+
+  /**
+   * `if` and `while` are read as keywords, not as three or five characters. A call whose name
+   * ends in either would otherwise have its arguments wrapped in a negation, which changes what
+   * the call is handed rather than which branch runs.
+   */
+  it("leaves a call whose name ends in the keyword alone", () => {
+    for (const line of ["    const found = motif(list);", "    const seen = erstwhile(all);"]) {
+      const built = mutantsOfChangedLines({ changed: only("lib/text.js", [[10, line]]) });
+
+      expect(built.map((one) => one.operator)).not.toContain("negate-condition");
+    }
+  });
+
+  it("leaves a for head alone, whose condition is not the whole parenthesis", () => {
+    const built = mutantsOfChangedLines({
+      changed: only("lib/queue.js", [[10, "    for (const one of pending) {"]]),
+    });
+
+    expect(built.map((one) => one.operator)).not.toContain("negate-condition");
+  });
+});
+
+describe("the value an assignment writes", () => {
+  it("replaces the value a plain assignment writes", () => {
+    const built = mutantsOfChangedLines({
+      changed: only("src/plugin/timezone/index.js", [[97, "      this.$x.$timezone = timezone"]]),
+    });
+
+    expect(built[0]?.operator).toBe("replace-assigned-value");
+    expect(built[0]?.after).toBe("      this.$x.$timezone = undefined");
+  });
+
+  it("replaces the value a declaration initialises with", () => {
+    const built = mutantsOfChangedLines({
+      changed: only("lib/application.js", [[12, "const parser = require('node:path')"]]),
+    });
+
+    expect(built[0]?.operator).toBe("replace-assigned-value");
+    expect(built[0]?.after).toBe("const parser = undefined");
+  });
+
+  /**
+   * The same rule `return-sentinel` was narrowed by, for the same reason: a sentinel that agrees
+   * with what it replaces on truthiness is not a sentinel, and an oracle accepting it says
+   * nothing about the oracle.
+   */
+  it("uses a truthy sentinel where the assigned value is a falsy literal", () => {
+    const built = mutantsOfChangedLines({
+      changed: only("lib/application.js", [[88, "        this.ctxStorage = null"]]),
+    });
+
+    expect(built[0]?.after).toBe('        this.ctxStorage = "swarm-oracle-bond"');
+  });
+
+  it("leaves a compound assignment alone, which is not a plain one", () => {
+    const built = mutantsOfChangedLines({
+      changed: only("lib/duration.js", [[10, "      collected += one"]]),
+    });
+
+    expect(built.map((one) => one.operator)).not.toContain("replace-assigned-value");
+  });
+
+  it("leaves a comparison alone, which is not an assignment", () => {
+    for (const line of ["    const same = one == other;", "    const upTo = one <= other;"]) {
+      const built = mutantsOfChangedLines({ changed: only("lib/compare.js", [[10, line]]) });
+
+      expect(built.map((one) => one.operator)).not.toContain("replace-assigned-value");
+    }
+  });
+
+  /** An arrow is not an assignment. The plain `=` in front of it is the one this reads. */
+  it("reads the assignment in front of an arrow rather than the arrow", () => {
+    const built = mutantsOfChangedLines({
+      changed: only("lib/compare.js", [[10, "    const run = () => start();"]]),
+    });
+
+    expect(built[0]?.operator).toBe("replace-assigned-value");
+    expect(built[0]?.after).toBe("    const run = undefined;");
+  });
+});
+
+describe("a statement removed altogether", () => {
+  it("blanks a complete statement", () => {
+    const built = mutantsOfChangedLines({
+      changed: only("lib/application.js", [[10, "      this.emit('ready')"]]),
+    });
+
+    expect(built[0]?.operator).toBe("delete-statement");
+    expect(built[0]?.after).toBe("");
+  });
+
+  it("blanks a return the sentinel rule cannot read, which has no semicolon", () => {
+    const built = mutantsOfChangedLines({
+      changed: only("src/plugin/timezone/index.js", [[98, "      return this"]]),
+    });
+
+    expect(built[0]?.operator).toBe("delete-statement");
+    expect(built[0]?.after).toBe("");
+  });
+
+  it("blanks rather than removes, so every line after it keeps its number", () => {
+    const built = mutantsOfChangedLines({
+      changed: only("lib/application.js", [[10, "      queue.flush()"]]),
+    });
+
+    expect(built[0]?.after).toBe("");
+    expect(built[0]?.line).toBe(10);
+  });
+
+  it("leaves a line that opens a block", () => {
+    for (const line of [
+      "  function merge(local, global) {",
+      "  try {",
+      "    } else {",
+      "      } catch (cause) {",
+      "  switch (kind) {",
+    ]) {
+      const built = mutantsOfChangedLines({ changed: only("lib/command.js", [[10, line]]) });
+
+      expect(built.map((one) => one.operator)).not.toContain("delete-statement");
+    }
+  });
+
+  it("leaves a line that continues the one before it", () => {
+    for (const line of [
+      "      .then((one) => one.run())",
+      "      ?.filter(Boolean)",
+      "      , second",
+      "      && other",
+      "    ) {",
+    ]) {
+      const built = mutantsOfChangedLines({ changed: only("lib/command.js", [[10, line]]) });
+
+      expect(built.map((one) => one.operator)).not.toContain("delete-statement");
+    }
+  });
+
+  it("leaves a line the one after it continues", () => {
+    for (const line of ["      const total = one +", "      collect(", "      const run = () =>"]) {
+      const built = mutantsOfChangedLines({ changed: only("lib/command.js", [[10, line]]) });
+
+      expect(built.map((one) => one.operator)).not.toContain("delete-statement");
+    }
+  });
+
+  it("leaves a line whose brackets do not balance", () => {
+    for (const line of ["      collect(one, two", "      })", "      ])"]) {
+      const built = mutantsOfChangedLines({ changed: only("lib/command.js", [[10, line]]) });
+
+      expect(built.map((one) => one.operator)).not.toContain("delete-statement");
+    }
+  });
+
+  it("leaves a case label, which needs the block it heads", () => {
+    for (const line of ["      case 'utc':", "      default:"]) {
+      const built = mutantsOfChangedLines({ changed: only("lib/command.js", [[10, line]]) });
+
+      expect(built.map((one) => one.operator)).not.toContain("delete-statement");
+    }
+  });
+
+  it("leaves a line carrying no code at all", () => {
+    for (const line of ["", "      ", "      }", "      });", "      ],"]) {
+      const built = mutantsOfChangedLines({ changed: only("lib/command.js", [[10, line]]) });
+
+      expect(built).toEqual([]);
+    }
+  });
+
+  /**
+   * Last in the ordering, because it is the operator that produces the most mutants which change
+   * nothing observable, so a cost bound cuts it before it cuts anything else.
+   */
+  it("is the operator of last resort", () => {
+    const built = mutantsOfChangedLines({
+      changed: only("lib/command.js", [
+        [10, "      queue.flush()"],
+        [11, "      if (pending.length) {"],
+      ]),
+      limit: 1,
+    });
+
+    expect(built.map((one) => one.operator)).toEqual(["negate-condition"]);
   });
 });

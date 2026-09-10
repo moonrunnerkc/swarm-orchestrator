@@ -7,14 +7,10 @@ import { certifies } from "./certification.ts";
 import { assembleGateSet } from "./engine.ts";
 import { normalizePath } from "./file-set.ts";
 import { defaultGateTimeoutMs, type GateCommandRunner } from "./gate-definition.ts";
-import {
-  type BondedMutant,
-  bondOfMutantObservations,
-  type MutantObservation,
-  mutantWasSeen,
-  type OracleBond,
-  type OracleBondVerdict,
-} from "./oracle-bond.ts";
+import { nodeSyntaxCheck } from "./mutant-parse.ts";
+import type { LineHits } from "./mutant-witness.ts";
+import type { BondedMutant, OracleBond, OracleBondVerdict } from "./oracle-bond.ts";
+import { bondOracleWithMutants } from "./oracle-bond-run.ts";
 import { type OracleCoveragePlan, oracleCoveragePlan } from "./oracle-instrumentation.ts";
 import { mutantsOfChangedLines } from "./oracle-mutants.ts";
 import { lineHitsByWorkspacePath, oracleReachedTheChange } from "./oracle-reach.ts";
@@ -313,7 +309,7 @@ export async function verifyIndependently(
     // on a tree that does not have them.
     const bond =
       task === "accepted" && restored
-        ? await bondTheOracle(checkout, options, timeoutMs, reach.measured)
+        ? await bondTheOracle(checkout, options, timeoutMs, reach.measured, withPatch)
         : { verdict: "not-bonded" as const, mutants: [] };
     const checks = withPatch.some((check) => check.status === "failed")
       ? await attributeFailures(withPatch, checkout, options, timeoutMs)
@@ -489,7 +485,8 @@ async function bondTheOracle(
   checkout: string,
   options: IndependentVerificationOptions,
   timeoutMs: number,
-  measured: Readonly<Record<string, Readonly<Record<number, number>>>> | null,
+  measured: LineHits | null,
+  checksWithPatch: readonly IndependentCheck[],
 ): Promise<OracleBond> {
   const oracle = options.taskOracle?.command;
   if (oracle === undefined) {
@@ -499,31 +496,40 @@ async function bondTheOracle(
     path: file.path,
     addedLines: file.addedLines,
   }));
-  const observations: MutantObservation[] = [];
-  for (const mutant of mutantsOfChangedLines({ changed })) {
-    const file = join(checkout, mutant.path);
-    const original = await readFile(file, "utf8").catch(() => null);
-    if (original === null) {
-      continue;
-    }
-    const lines = original.split("\n");
-    if (lines[mutant.line - 1] !== mutant.before) {
-      continue;
-    }
-    lines[mutant.line - 1] = mutant.after;
-    await writeFile(file, lines.join("\n"));
-    try {
-      const ran = await options.commands.run(oracle, { cwd: checkout, timeoutMs });
-      observations.push({
-        mutant,
-        oracle: ran.exitCode === 0 ? "passed" : "failed",
-        seen: mutantWasSeen(measured, mutant),
-      });
-    } finally {
-      await writeFile(file, original);
-    }
-  }
-  return bondOfMutantObservations(observations);
+
+  return bondOracleWithMutants({
+    mutants: mutantsOfChangedLines({ changed }),
+    measured,
+    checksWithPatch,
+    runner: {
+      read: (path) => readFile(join(checkout, path), "utf8").catch(() => null),
+      write: (path, text) => writeFile(join(checkout, path), text),
+      parses: nodeSyntaxCheck(options.commands, { cwd: checkout, timeoutMs }),
+      runOracle: async () => {
+        const ran = await options.commands.run(oracle, { cwd: checkout, timeoutMs });
+        return { accepted: ran.exitCode === 0 };
+      },
+      // A destination of its own per reading, outside the workspace. V8 writes one file per
+      // process into the directory it is given and never clears it, so a shared destination
+      // would have the mutant's reading include the unmutated run's.
+      measureLineHits: async () => {
+        const destination = await mkdtemp(join(tmpdir(), "swarm-bond-"));
+        try {
+          const plan = oracleCoveragePlan(oracle, destination);
+          if (plan === null) {
+            return null;
+          }
+          if (plan.setup.length > 0) {
+            await options.commands.run(plan.setup, { cwd: checkout, timeoutMs });
+          }
+          return await lineHitsUnder(plan, checkout, changed, options, timeoutMs);
+        } finally {
+          await rm(destination, { recursive: true, force: true });
+        }
+      },
+      runRepositoryChecks: () => runChecks(checkout, options, timeoutMs),
+    },
+  });
 }
 
 /**
