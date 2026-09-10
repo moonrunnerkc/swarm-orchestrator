@@ -211,8 +211,20 @@ if (broken) {
 }
 
 const destination = join(repositoryRoot, "docs/evidence/2026-09-06/second-oracle/scored.json");
+// Merged with what is already recorded rather than written over it. `--only purify` scored six
+// runs and would have left a results file holding six, silently dropping the twelve it did not
+// re-run: a corpus that shrinks to whatever the last command happened to name.
+const identity = (one) => `${one.name}/${one.arm}/${one.run}`;
+const rerun = new Set(scored.map(identity));
+const kept = (() => {
+  try {
+    return JSON.parse(readFileSync(destination, "utf8")).runs ?? [];
+  } catch {
+    return [];
+  }
+})().filter((one) => !rerun.has(identity(one)));
 writeFileSync(
   destination,
-  `${JSON.stringify({ at: new Date().toISOString(), heldBackOracleSuspect: broken, runs: scored }, null, 2)}\n`,
+  `${JSON.stringify({ at: new Date().toISOString(), heldBackOracleSuspect: broken, runs: [...kept, ...scored] }, null, 2)}\n`,
 );
 console.log(`\nwritten: ${destination}`);
