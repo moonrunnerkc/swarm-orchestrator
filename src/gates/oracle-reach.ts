@@ -1,5 +1,5 @@
-import { realpathSync } from "node:fs";
 import { isAbsolute, relative, sep } from "node:path";
+import { resolvedPath } from "./resolved-path.ts";
 
 /**
  * Whether the task oracle executed the lines the patch added.
@@ -55,10 +55,10 @@ export function lineHitsByWorkspacePath(
   workspaceRoot: string,
 ): Record<string, Record<number, number>> {
   const measured: Record<string, Record<number, number>> = {};
-  const root = realpathOrItself(workspaceRoot);
+  const root = resolvedPath(workspaceRoot);
   for (const section of sections) {
     const path = isAbsolute(section.file)
-      ? relative(root, realpathOrItself(section.file))
+      ? relative(root, resolvedPath(section.file))
       : section.file;
     if (path.length === 0 || path.startsWith("..") || isAbsolute(path)) {
       continue;
@@ -66,19 +66,6 @@ export function lineHitsByWorkspacePath(
     measured[path.split(sep).join("/")] = Object.fromEntries(section.hits);
   }
   return measured;
-}
-
-/**
- * The path with its symlinks resolved, or the path itself. A checkout under the system scratch
- * directory is reached through one on macOS, so a report's absolute path and the directory the
- * harness named are the same file under two spellings.
- */
-function realpathOrItself(path: string): string {
-  try {
-    return realpathSync(path);
-  } catch {
-    return path;
-  }
 }
 
 export interface ChangedLines {

@@ -1,6 +1,7 @@
-import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolvedPath } from "./resolved-path.ts";
 
 /**
  * Line hits from the coverage V8 writes itself, for the runners whose invocation the harness
@@ -118,7 +119,7 @@ export function readV8Coverage(input: {
   }
 
   const wanted = new Set(input.files);
-  const root = realpathOf(input.workspaceRoot);
+  const root = resolvedPath(input.workspaceRoot);
   const rangesByPath = new Map<string, CoverageRange[][]>();
 
   for (const name of written) {
@@ -183,7 +184,7 @@ function workspacePathOf(url: unknown, root: string): string | null {
   }
   let path = "";
   try {
-    path = realpathOf(fileURLToPath(url));
+    path = resolvedPath(fileURLToPath(url));
   } catch {
     return null;
   }
@@ -192,18 +193,4 @@ function workspacePathOf(url: unknown, root: string): string | null {
     return null;
   }
   return within.split(sep).join("/");
-}
-
-/**
- * The path with every symlink resolved, or the path itself where it cannot be. A checkout under
- * the system scratch directory is reached through a symlink on macOS, so a coverage url and the
- * directory the harness named are the same file under two spellings, and comparing them as text
- * puts every file outside the tree.
- */
-function realpathOf(path: string): string {
-  try {
-    return realpathSync(statSync(path).isDirectory() ? path : path);
-  } catch {
-    return path;
-  }
 }
