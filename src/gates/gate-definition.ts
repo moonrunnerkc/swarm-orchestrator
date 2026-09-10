@@ -143,6 +143,16 @@ export interface GateDefinition {
 export interface CommandOptions {
   readonly cwd: string;
   readonly timeoutMs: number;
+  /**
+   * Names this one command needs on top of the environment the harness built for the run.
+   *
+   * The reach measurement is what needs it: node's coverage destination is an environment name
+   * rather than a flag, and the runners that honour it are the ones reach could not otherwise be
+   * read from. Held to the same refusals as an authorized pass-through, so a caller cannot put
+   * back through here what the build withheld, and a refused name stops the command rather than
+   * being dropped from it.
+   */
+  readonly environment?: Readonly<Record<string, string>>;
 }
 
 /** Injected so the engine's tests never depend on a real shell. */

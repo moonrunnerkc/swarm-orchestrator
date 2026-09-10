@@ -1,5 +1,9 @@
 import type { Clock } from "../core/clock.ts";
-import type { ChildEnvironment } from "../exec/child-environment.ts";
+import {
+  type ChildEnvironment,
+  overlaidEnvironment,
+  UnauthorizableEnvironmentName,
+} from "../exec/child-environment.ts";
 import type { IsolationBackend } from "../exec/execution-mode.ts";
 import { runProcessGroup } from "../exec/run-process.ts";
 import {
@@ -52,13 +56,31 @@ export function createNodeCommandRunner(
     options: CommandOptions,
   ): Promise<GateObservation> => {
     const startedAt = clock.now();
+    let variables = environment.variables;
+    if (options.environment !== undefined) {
+      // A backend runs the command somewhere this process does not build the environment, so an
+      // overlay it cannot carry is reported rather than silently left off: a measurement taken
+      // without the name it asked for is not the measurement that was asked for.
+      if (backend !== undefined) {
+        return unavailableObservation(
+          "this command asked for environment names the isolation backend cannot carry, " +
+            "so it was not run rather than run without them",
+        );
+      }
+      try {
+        variables = overlaidEnvironment(environment.variables, options.environment);
+      } catch (cause) {
+        if (!(cause instanceof UnauthorizableEnvironmentName)) throw cause;
+        return unavailableObservation(cause.message);
+      }
+    }
     const ran =
       backend === undefined
         ? await runProcessGroup(file, args, {
             cwd: options.cwd,
             timeoutMs: options.timeoutMs,
             maxOutputBytes: 16_000_000,
-            env: environment.variables,
+            env: variables,
             signal: cancellation,
           })
         : await backend.run([file, ...args], {

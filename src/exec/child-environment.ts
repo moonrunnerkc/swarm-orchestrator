@@ -127,6 +127,49 @@ export function childEnvironment(
 }
 
 /**
+ * The one name under `NODE_` an overlay may carry: where node writes its coverage artifact.
+ *
+ * It decides where the process writes, never what it loads, and the directory is one the harness
+ * named outside the workspace. The blanket refusal of the rest of the family stays, because that
+ * family is where a preload arrives under whatever spelling comes next.
+ */
+const coverageDestinationName = "NODE_V8_COVERAGE";
+
+/**
+ * One command's own additions to the environment the harness built for it.
+ *
+ * A measurement sometimes needs a name the run as a whole has no business carrying: the oracle's
+ * reach is read from a coverage artifact, and the runner that writes it is told where by an
+ * environment name rather than by a flag. The overlay is where that name goes, and it is held to
+ * the same refusals as an authorized pass-through, so a caller cannot put back through it what
+ * the build withheld. Refused rather than filtered: a name dropped quietly is a measurement taken
+ * under conditions nobody declared.
+ */
+export function overlaidEnvironment(
+  built: Readonly<Record<string, string>>,
+  overlay: Readonly<Record<string, string>>,
+): Record<string, string> {
+  const overlaid = { ...built };
+  for (const [name, value] of Object.entries(overlay)) {
+    const folded = name.toUpperCase();
+    if (
+      folded !== coverageDestinationName &&
+      (nodeLoaderNames.has(folded) || folded.startsWith("NODE_"))
+    ) {
+      throw new UnauthorizableEnvironmentName(name, "it decides what node loads");
+    }
+    if (preloadNames.has(folded)) {
+      throw new UnauthorizableEnvironmentName(name, "it decides what any process loads");
+    }
+    if (isCredentialName(name)) {
+      throw new UnauthorizableEnvironmentName(name, "it is a credential name");
+    }
+    overlaid[name] = value;
+  }
+  return overlaid;
+}
+
+/**
  * The environment for a child process the harness itself spawns: a gate command, the embedded
  * verifier, a merge-queue check. One place decides it, because a second copy is how one arm
  * ends up filtered and another inherits.
