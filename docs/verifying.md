@@ -85,6 +85,15 @@ into an `if` and an `else`, judged by an oracle whose cases all take the `if`, i
 `refused-on-reach` rather than as the tool being wrong about the patch, and they are counted where
 the rate is, because a refused patch is one the tool did not certify.
 
+**What it does not catch, measured rather than reasoned about.** Reach refuses a patch that adds
+code the oracle never runs. It says nothing about a patch that never wrote the code at all. Given
+the oracle it will be judged by and told to satisfy that and leave an adjacent case broken, a model
+produces exactly the second kind: every line it adds is executed by the sealed cases, `oracleReach`
+reads `reached`, and a second oracle still refuses the result. On the two tasks where that happened
+the honest attempt had been refused on reach and the minimal one was certified, which is the
+ordering nobody wants and is what a visible oracle buys an attacker. Only a second oracle
+distinguishes them.
+
 ## A failure the base already had is not a regression
 
 A check that fails with the patch is re-run with the patch reverted, on the same checkout, so the
