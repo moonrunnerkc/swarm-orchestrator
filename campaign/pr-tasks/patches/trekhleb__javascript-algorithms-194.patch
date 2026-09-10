@@ -1,0 +1,228 @@
+diff --git a/src/data-structures/linked-list/LinkedList.js b/src/data-structures/linked-list/LinkedList.js
+index dfb17aa..e998b9d 100644
+--- a/src/data-structures/linked-list/LinkedList.js
++++ b/src/data-structures/linked-list/LinkedList.js
+@@ -207,4 +207,62 @@ export default class LinkedList {
+   toString(callback) {
+     return this.toArray().map(node => node.toString(callback)).toString();
+   }
++
++  /**
++   * Traverses the linked list from head to tail, calling callback for each node.
++   * @param {function} [callback]
++   */
++  traverse(callback) {
++    let currentNode = this.head;
++
++    while (currentNode) {
++      if (callback) {
++        callback(currentNode);
++      }
++      currentNode = currentNode.next;
++    }
++  }
++
++  /**
++   * Traverses the linked list from tail to head, calling callback for each node.
++   * @param {function} [callback]
++   */
++  reverseTraversal(callback) {
++    if (this.tail === null) {
++      return;
++    }
++
++    const nodes = this.toArray();
++
++    for (let i = nodes.length - 1; i >= 0; i -= 1) {
++      if (callback) {
++        callback(nodes[i]);
++      }
++    }
++  }
++
++  /**
++   * Reverses the linked list in-place.
++   * @return {LinkedList} this
++   */
++  reverse() {
++    let currentNode = this.head;
++    let nextNode = null;
++    let previousNode = null;
++
++    while (currentNode !== null) {
++      nextNode = currentNode.next;
++      currentNode.next = previousNode;
++      currentNode.prev = nextNode;
++      previousNode = currentNode;
++      currentNode = nextNode;
++    }
++
++    // Swap head and tail.
++    const temp = this.head;
++    this.head = this.tail;
++    this.tail = temp;
++
++    return this;
++  }
+ }
+diff --git a/src/data-structures/linked-list/README.md b/src/data-structures/linked-list/README.md
+index 8f1a46c..17d97ce 100644
+--- a/src/data-structures/linked-list/README.md
++++ b/src/data-structures/linked-list/README.md
+@@ -117,24 +117,50 @@ Traverse(head)
+ end Traverse
+ ```
+     
++### Traverse
++
++```text
++Traverse(head, callback)
++  Pre: head is the head node in the list
++  Post: the items in the list have been traversed via callback
++  n ← head
++  while n != ø
++    callback(n)
++    n ← n.next
++  end while
++end Traverse
++```
++    
++### Reverse
++
++```text
++Reverse(head, tail)
++  Pre: head and tail belong to the same list
++  Post: the linked list has been reversed in place
++  prev ← ø
++  curr ← head
++  while curr != ø
++    next ← curr.next
++    curr.next ← prev
++    prev ← curr
++    curr ← next
++  end while
++  newHead ← prev
++  newTail ← head
++  return (newHead, newTail)
++end Reverse
++```
++
+ ### Traverse in Reverse
+ 
+ ```text
+-ReverseTraversal(head, tail)
++ReverseTraversal(head, tail, callback)
+   Pre: head and tail belong to the same list
+-  Post: the items in the list have been traversed in reverse order
+-  if tail = ø
+-    curr ← tail
+-    while curr = head
+-      prev ← head
+-      while prev.next = curr
+-        prev ← prev.next
+-      end while
+-      yield curr.value
+-      curr ← prev
+-    end while
+-   yeild curr.value
+-  end if
++  Post: the items in the list have been traversed in reverse order via callback
++  nodes ← toArray(head, tail)
++  for i from length(nodes) - 1 down to 0
++    callback(nodes[i])
++  end for
+ end ReverseTraversal
+ ```
+ 
+diff --git a/src/data-structures/linked-list/__test__/LinkedList.test.js b/src/data-structures/linked-list/__test__/LinkedList.test.js
+index 795bb24..ba9d6bf 100644
+--- a/src/data-structures/linked-list/__test__/LinkedList.test.js
++++ b/src/data-structures/linked-list/__test__/LinkedList.test.js
+@@ -217,4 +217,87 @@ describe('LinkedList', () => {
+     expect(node.value.customValue).toBe('test2');
+     expect(linkedList.find({ value: 2, customValue: 'test5' })).toBeNull();
+   });
++
++  it('should traverse linked list forward', () => {
++    const linkedList = new LinkedList();
++    const values = [];
++
++    linkedList.append(1);
++    linkedList.append(2);
++    linkedList.append(3);
++
++    linkedList.traverse(node => values.push(node.value));
++
++    expect(values).toEqual([1, 2, 3]);
++  });
++
++  it('should traverse empty linked list', () => {
++    const linkedList = new LinkedList();
++    const values = [];
++
++    linkedList.traverse(node => values.push(node.value));
++
++    expect(values).toEqual([]);
++  });
++
++  it('should reverse traverses the linked list from tail to head', () => {
++    const linkedList = new LinkedList();
++    const values = [];
++
++    linkedList.append(1);
++    linkedList.append(2);
++    linkedList.append(3);
++
++    linkedList.reverseTraversal(node => values.push(node.value));
++
++    expect(values).toEqual([3, 2, 1]);
++  });
++
++  it('should reverse traverse empty linked list', () => {
++    const linkedList = new LinkedList();
++    const values = [];
++
++    linkedList.reverseTraversal(node => values.push(node.value));
++
++    expect(values).toEqual([]);
++  });
++
++  it('should reverse the linked list in place', () => {
++    const linkedList = new LinkedList();
++
++    linkedList.append(1);
++    linkedList.append(2);
++    linkedList.append(3);
++
++    expect(linkedList.toString()).toBe('1,2,3');
++    expect(linkedList.head.value).toBe(1);
++    expect(linkedList.tail.value).toBe(3);
++
++    linkedList.reverse();
++
++    expect(linkedList.toString()).toBe('3,2,1');
++    expect(linkedList.head.value).toBe(3);
++    expect(linkedList.tail.value).toBe(1);
++  });
++
++  it('should reverse single node linked list', () => {
++    const linkedList = new LinkedList();
++    linkedList.append(42);
++
++    linkedList.reverse();
++
++    expect(linkedList.toString()).toBe('42');
++    expect(linkedList.head.value).toBe(42);
++    expect(linkedList.tail.value).toBe(42);
++  });
++
++  it('should reverse empty linked list', () => {
++    const linkedList = new LinkedList();
++
++    linkedList.reverse();
++
++    expect(linkedList.toString()).toBe('');
++    expect(linkedList.head).toBeNull();
++    expect(linkedList.tail).toBeNull();
++  });
+ });

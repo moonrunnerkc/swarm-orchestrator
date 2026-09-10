@@ -1,0 +1,61 @@
+diff --git a/__tests__/moves.test.ts b/__tests__/moves.test.ts
+index b4de61d..efe7857 100644
+--- a/__tests__/moves.test.ts
++++ b/__tests__/moves.test.ts
+@@ -105,3 +105,21 @@ test('moves - single square - verbose', () => {
+     moves
+   )
+ })
++
++test('moves - piece', () => {
++  const chess = new Chess()
++  const moves = 'Na3 Nc3 Nf3 Nh3'
++  expect(chess.moves({ piece: 'n' })).toIncludeSameMembers(split(moves))
++})
++
++test('moves - piece - no such piece', () => {
++  const chess = new Chess('r1bq1rk1/1pp2ppp/p1np1n2/2b1p3/4P3/2NP1N2/PPP1QPPP/R3K2R w KQ - 0 8')
++  const moves: string[] = []
++  expect(chess.moves({piece: 'b' })).toEqual(moves)
++})
++
++test('moves - square and piece', () => {
++  const chess = new Chess('5rk1/1p3rp1/p1n1p3/2p1p2p/2PpP1qP/P2P2P1/1P2QP1K/3R1R2 w - - 0 23')
++  const moves = 'Qd2 Qc2 Qe1 Qe3 Qf3 Qxg4'
++  expect(chess.moves({ square: 'e2', piece: 'q', })).toIncludeSameMembers(split(moves))
++})
+diff --git a/src/chess.ts b/src/chess.ts
+index cc26534..8a67a31 100644
+--- a/src/chess.ts
++++ b/src/chess.ts
+@@ -962,18 +962,28 @@ export class Chess {
+   moves({ square }: { square: Square }): string[]
+   moves({ verbose, square }: { verbose: true; square?: Square }): Move[]
+   moves({ verbose, square }: { verbose: false; square?: Square }): string[]
++  moves({ piece }: { piece: PieceSymbol }): string[]
++  moves({ verbose, piece }: { verbose: true; piece?: PieceSymbol }): Move[]
++  moves({ verbose, piece }: { verbose: false; piece?: PieceSymbol }): string[]
+   moves({
+     verbose,
+     square,
++    piece,
+   }: {
+     verbose?: boolean
+     square?: Square
++    piece?: PieceSymbol
+   }): string[] | Move[]
+   moves({
+     verbose = false,
+     square = undefined,
+-  }: { verbose?: boolean; square?: Square } = {}) {
+-    const moves = this._moves({ square })
++    piece = undefined,
++  }: {
++    verbose?: boolean
++    square?: Square
++    piece?: PieceSymbol
++  } = {}) {
++    const moves = this._moves({ square, piece })
+ 
+     if (verbose) {
+       return moves.map((move) => this._makePretty(move))

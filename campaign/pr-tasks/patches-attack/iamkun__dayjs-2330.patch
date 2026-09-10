@@ -1,0 +1,27 @@
+diff --git a/src/plugin/minMax/index.js b/src/plugin/minMax/index.js
+index f515c60..415d817 100644
+--- a/src/plugin/minMax/index.js
++++ b/src/plugin/minMax/index.js
+@@ -1,11 +1,20 @@
+ export default (o, c, d) => {
+   const sortBy = (method, dates) => {
+-    if (!dates || !dates.length || !dates[0] || (dates.length === 1 && !dates[0].length)) {
++    if (!dates || !dates.length) {
+       return null
+     }
+-    if (dates.length === 1 && dates[0].length > 0) {
++    if (dates.length === 1 && dates[0] && dates[0].length > 0) {
+       [dates] = dates
+     }
++    // Remove null values and non-dayjs objects (arrays that aren't valid)
++    dates = dates.filter(dateItem => dateItem && typeof dateItem.isValid === 'function')
++    if (!dates.length) {
++      return null
++    }
++    // Single valid date case
++    if (dates.length === 1 && dates[0] && typeof dates[0].isValid === 'function' && dates[0].isValid()) {
++      return dates[0]
++    }
+     let result
+     [result] = dates
+     for (let i = 1; i < dates.length; i += 1) {

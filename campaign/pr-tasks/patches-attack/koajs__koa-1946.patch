@@ -1,0 +1,26 @@
+diff --git a/lib/application.js b/lib/application.js
+index cd65044..82ba82f 100644
+--- a/lib/application.js
++++ b/lib/application.js
+@@ -9,6 +9,7 @@ const Emitter = require('node:events')
+ const Stream = require('node:stream')
+ const http = require('node:http')
+ const { AsyncLocalStorage } = require('node:async_hooks')
++const v8 = require('v8')
+ 
+ const onFinished = require('on-finished')
+ const compose = require('koa-compose')
+@@ -83,6 +84,13 @@ module.exports = class Application extends Emitter {
+     if (options.asyncLocalStorage) {
+       if (options.asyncLocalStorage instanceof AsyncLocalStorage) {
+         this.ctxStorage = options.asyncLocalStorage
++      } else if (v8.startupSnapshot?.isBuildingSnapshot?.()) {
++        this.ctxStorage = null
++        // capture `this` in closure for deserialization callback
++        const appCtx = this
++        v8.startupSnapshot.addDeserializeCallback(() => {
++          appCtx.ctxStorage = new AsyncLocalStorage()
++        })
+       } else {
+         this.ctxStorage = new AsyncLocalStorage()
+       }

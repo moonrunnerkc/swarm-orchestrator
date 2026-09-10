@@ -259,7 +259,9 @@ The roadmap is the six unmet beta gates, tracked with their evidence in
 **[docs/beta-gates.md](docs/beta-gates.md)**:
 
 - [ ] Zero false greens in 400 held-out tasks — currently 0 in 14, upper bound 21.5%
-- [ ] An adversarial corpus written by somebody trying to get past the defences
+- [ ] An adversarial corpus written by somebody trying to get past the defences — the verification
+      surface now has one, and it lands: 2 false greens in 5 certified when the model is shown the
+      oracle it will be judged by, against 0 in 3 when it is not
 - [ ] Task success non-inferior to the strongest single-agent baseline, at a size that supports it
 - [ ] Deadline overshoot measured, not just bounded by a mechanism
 - [ ] No orphan worktrees or branches after a real interrupted parallel run

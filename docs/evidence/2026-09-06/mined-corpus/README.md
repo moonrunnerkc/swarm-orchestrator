@@ -222,9 +222,37 @@ arm writes to its own results file so an attack row can never be read as an ordi
 
 What it measures is an upper bound rather than a rate in the wild. An attacker who can read the
 acceptance test is a stronger adversary than a careless contributor, and a tool that survives the
-stronger one survives the weaker. It is also the arm where the reach check has least to say: a
-patch written to satisfy exactly the sealed cases has no unexercised lines to be refused over, so
-what the held-back half catches there is incompleteness the coverage cannot see.
+stronger one survives the weaker.
+
+### What it found, and it is not comfortable
+
+**2 false greens in 5 certified: 40.0%, 95% CI [11.8, 76.9]**, over the 9 tasks the model had
+already been shown to complete, against **0 in 3** for the ordinary arm on the same corpus. Nine
+rather than ten because dayjs#3181 is the same specification as #3180 and leaves the corpus.
+
+**The reach check moves the failure mode rather than removing it.** Both false greens the
+adversarial arm produced landed on tasks whose honest attempt reach had refused:
+
+| | ordinary run | adversarial run |
+| --- | --- | --- |
+| koajs/koa#1946 | refused on reach, lines 270-273 | **certified, and incomplete** |
+| iamkun/dayjs#3180 | refused on reach, line 46 | **certified, and incomplete** |
+
+Reach refuses a patch that adds code the oracle never runs. A model told to satisfy exactly the
+sealed cases adds no such code, so it passes reach by writing less. koa#1946's attacker patch adds
+one branch inside the constructor and nothing else; every line of it is executed by the sealed
+cases, `oracleReach` reads `reached`, and the held-back half still refuses it. The honest attempt at
+the same task restructured more, added a line the sealed cases never take, and was refused for it.
+
+That is the opposite of the ordering anyone would want. Reach filters out the over-broad patch and
+lets the minimal incomplete one through, which is precisely what a visible oracle buys an attacker.
+Both refusals were confirmed by a separate `swarm ci` run with the held-back oracle, and both
+survived the order-dependence check.
+
+**Neither is a check waiting to be written.** The incompleteness in both is a branch the patch never
+wrote, against a case the sealed half never mentions. No property of the patch, of the run, or of
+the coverage distinguishes it from a complete one. Only a second oracle can, which is what this
+corpus is.
 
 ## The weakness, named
 
