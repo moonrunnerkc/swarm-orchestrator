@@ -12,7 +12,7 @@
  *
  * Runs no model, judges nothing and clones nothing.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { classifyAgainstHeldBackOracle } from "../dist/eval/campaign-run.js";
@@ -34,6 +34,23 @@ function minedRows() {
   const { tasks } = JSON.parse(readFileSync(join(root, "viable.json"), "utf8"));
   const viable = new Set(tasks.filter((one) => one.viable).map(named));
   return runs.filter((one) => viable.has(named(one)));
+}
+
+/**
+ * The adversarial arm, read for the audit and never for a rate.
+ *
+ * Its rows must not reach any number above: a model shown the oracle it will be judged by is a
+ * different sampling process, which is why `separateAdversarialRows` exists. What the audit needs
+ * is every refusal the bond produced anywhere, because "zero false refusals" is a claim about the
+ * check rather than about one corpus, and a claim resting on a query somebody typed once is the
+ * shape this project refuses.
+ */
+function adversarialRowsForTheAuditOnly() {
+  const path = join(prTaskEvidenceRoot(repositoryRoot), "scored.attack.json");
+  if (!existsSync(path)) {
+    return [];
+  }
+  return JSON.parse(readFileSync(path, "utf8")).runs;
 }
 
 function handAuthoredRows() {
@@ -178,6 +195,41 @@ console.log(
     ? "  nothing to read: every refusal rests on a detector"
     : "  a refusal of a patch a held-back oracle also rejects is not a false red whatever a " +
         "detector saw; the ones to read are those a held-back oracle accepts",
+);
+
+/**
+ * Every refusal the bond produced anywhere, and whether it cost a certification.
+ *
+ * A vacuous bond on a row already refused for its regression or its reach adds a second reason and
+ * costs nothing, which is a different thing from a refusal the bond alone produced. The claim that
+ * matters is about the second kind, and it is one line per row rather than a sentence.
+ */
+console.log("\n=== every vacuous bond, and what else was already refusing that row ===");
+const audited = [
+  ...rows.map((row) => ({ row, arm: "ordinary" })),
+  ...adversarialRowsForTheAuditOnly().map((row) => ({ row, arm: "adversarial" })),
+].filter(({ row }) => row.oracleBond === "vacuous");
+let boundAlone = 0;
+for (const { row, arm } of audited) {
+  const gap = (row.bondedMutants ?? []).find((one) => one.verdict === "vacuous");
+  const alsoRefusing = [
+    row.regression !== "pass" ? `regression ${row.regression}` : null,
+    row.oracleReach === "unreached" ? "reach unreached" : null,
+    (row.sealedOracle ?? row.firstOracle) !== "accepted" ? "the sealed half" : null,
+  ].filter((one) => one !== null);
+  if (alsoRefusing.length === 0) {
+    boundAlone += 1;
+  }
+  console.log(
+    `  ${arm.padEnd(12)} ${named(row).padEnd(24)} witness ${(gap?.witness ?? "not-recorded").padEnd(17)} ` +
+      `held-back ${(row.heldBackOracle ?? "-").padEnd(9)} ` +
+      `${alsoRefusing.length === 0 ? "THE BOND ALONE" : `also: ${alsoRefusing.join(", ")}`}`,
+  );
+}
+console.log(
+  `  ${audited.length} vacuous bond(s), ${boundAlone} of them the only reason that row was ` +
+    "refused. A refusal of a patch a held-back oracle rejects is the check working; one of a " +
+    "patch both oracles accept is what a false red would look like.",
 );
 
 if (showMutants) {
