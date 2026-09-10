@@ -101,10 +101,30 @@ function report(label, rows, extra = "") {
         : ` 95% CI [${percent(tally.lower)}, ${percent(tally.upper)}]`),
   );
   console.log(
-    `refused: ${tally.refusedOnReach} on reach, ${tally.refusedOnSealed} on the sealed half; ` +
+    `refused: ${tally.refusedOnReach} on reach, ${tally.refusedOnBond} on the bond, ` +
+      `${tally.refusedOnSealed} on the sealed half; ` +
       `${tally.falseReds} false red(s); ${tally.unjudgeable} unjudgeable`,
   );
+  // Gate 3c reports the certify rate split by bond state rather than as one word. A patch
+  // certified on an oracle that refused every mutant of the change is a stronger claim than one
+  // certified on an oracle nothing could be asked of, and a rate that flattens them describes
+  // neither.
+  console.log(
+    `certified by bond state: ${describeBondSplit(tally.certifiedByBond)}` +
+      (tally.falseGreens === 0
+        ? ""
+        : `; false greens by bond state: ${describeBondSplit(tally.falseGreensByBond)}`),
+  );
   return tally;
+}
+
+/** The bond states in a fixed order, so two runs of this print the same line. */
+function describeBondSplit(counts) {
+  const order = ["held", "vacuous", "unshown", "not-bonded", "not-recorded"];
+  const named = [...order, ...Object.keys(counts).filter((one) => !order.includes(one))]
+    .filter((state) => (counts[state] ?? 0) > 0)
+    .map((state) => `${counts[state]} ${state}`);
+  return named.length === 0 ? "none" : named.join(", ");
 }
 
 /**

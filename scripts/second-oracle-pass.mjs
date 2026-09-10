@@ -130,7 +130,15 @@ for (const record of runs) {
     regression: sealed.regression,
     sealed: sealed.task,
     oracleReach: sealed.oracleReach,
+    oracleBond: sealed.oracleBond,
   });
+  // Keyed by mutant id, which is file, line and operator, so the two oracles are compared on the
+  // same change. A mutant the sealed oracle accepted and the held-back one refuses is a gap this
+  // split produced; one both accept is the refusal a whole-suite user would actually see.
+  const heldBackByMutant = {};
+  for (const one of heldBack.bondedMutants ?? []) {
+    heldBackByMutant[one.id] = one.verdict;
+  }
 
   scored.push({
     name: record.name,
@@ -147,13 +155,18 @@ for (const record of runs) {
     ...(sealed.oracleReach === "unreached"
       ? { unreachedByOracle: sealed.unreachedByOracle ?? [] }
       : {}),
+    oracleBond: sealed.oracleBond ?? "not-recorded",
+    heldBackBond: heldBack.oracleBond ?? "not-recorded",
+    ...((sealed.bondedMutants ?? []).length === 0
+      ? {}
+      : { bondedMutants: sealed.bondedMutants, heldBackBondedMutants: heldBackByMutant }),
   });
 
   console.log(
     `${record.name.padEnd(11)} ${record.arm.padEnd(9)} run ${record.run}  ` +
       `regression=${String(sealed.regression).padEnd(10)} ` +
       `sealed=${String(sealed.task).padEnd(9)} held-back=${String(heldBack.task).padEnd(9)} ` +
-      `-> ${corner}`,
+      `bond=${String(sealed.oracleBond ?? "not-recorded").padEnd(10)} -> ${corner}`,
   );
 }
 

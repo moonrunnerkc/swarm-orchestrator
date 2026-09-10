@@ -12,6 +12,12 @@ import { wilsonInterval } from "./statistics.ts";
  */
 export interface CorpusJudgement {
   readonly corner: string;
+  /**
+   * What bonding the tool's own oracle showed, where the row records it. `not-recorded` stands
+   * for a row written before bonding existed, and is kept separate from `not-bonded`: one is a
+   * patch no mutant could be built from, the other is a question nobody asked.
+   */
+  readonly oracleBond?: string;
 }
 
 export interface FalseGreenTally {
@@ -26,14 +32,37 @@ export interface FalseGreenTally {
   readonly refusedOnReach: number;
   /** Refused because the sealed half rejected work the held-back half accepts. */
   readonly refusedOnSealed: number;
+  /** Refused because the oracle accepted a change to a line it demonstrably ran. */
+  readonly refusedOnBond: number;
+  /**
+   * The certified patches split by what bonding their oracle showed, and the false greens among
+   * them likewise. `verified` is not one word: a patch certified on an oracle that refused every
+   * mutant of the change is a stronger claim than one certified on an oracle nothing was asked
+   * of, and a rate that flattens the two describes neither.
+   */
+  readonly certifiedByBond: Readonly<Record<string, number>>;
+  readonly falseGreensByBond: Readonly<Record<string, number>>;
   /** Refused with both oracles accepting and no refusal the tool can point at. */
   readonly falseReds: number;
   /** An oracle on one side or the other could judge nothing, so the task is evidence of nothing. */
   readonly unjudgeable: number;
 }
 
+/** How many rows carry each bond state, with an unrecorded one named rather than assumed. */
+function byBondState(rows: readonly CorpusJudgement[]): Readonly<Record<string, number>> {
+  const counted: Record<string, number> = {};
+  for (const row of rows) {
+    const state = row.oracleBond ?? "not-recorded";
+    counted[state] = (counted[state] ?? 0) + 1;
+  }
+  return counted;
+}
+
 export function tallyFalseGreens(rows: readonly CorpusJudgement[]): FalseGreenTally {
   const count = (corner: string) => rows.filter((row) => row.corner === corner).length;
+  const certified = rows.filter(
+    (row) => row.corner === "true-green" || row.corner === "false-green",
+  );
   const falseGreens = count("false-green");
   const opportunities = count("true-green") + falseGreens;
   const rate = opportunities === 0 ? null : wilsonInterval(falseGreens, opportunities);
@@ -46,6 +75,9 @@ export function tallyFalseGreens(rows: readonly CorpusJudgement[]): FalseGreenTa
     upper: rate?.upper ?? null,
     refusedOnReach: count("refused-on-reach"),
     refusedOnSealed: count("refused-on-sealed"),
+    refusedOnBond: count("refused-on-bond"),
+    certifiedByBond: byBondState(certified),
+    falseGreensByBond: byBondState(certified.filter((row) => row.corner === "false-green")),
     falseReds: count("false-red"),
     unjudgeable: count("unjudgeable"),
   };

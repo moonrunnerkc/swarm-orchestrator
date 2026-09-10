@@ -219,7 +219,30 @@ async function judgeAgainstBothHalves(judge, task) {
       regression: sealed.regression,
       sealed: sealed.task,
       oracleReach: sealed.oracleReach,
+      oracleBond: sealed.oracleBond,
     }),
+  };
+}
+
+/**
+ * What each half did with the same mutants, recorded together.
+ *
+ * A mutant the sealed half accepted is only half a finding: a whole-suite user would see the
+ * held-back half's answer to the same mutant, and that is what separates an oracle gap this split
+ * manufactured from one a user would meet. Keyed by mutant id, which is file, line and operator,
+ * so the two sides are compared on the same change and never on the same line by coincidence.
+ */
+function bondEvidence(sealed, heldBack) {
+  const heldBackByMutant = {};
+  for (const one of heldBack.bondedMutants ?? []) {
+    heldBackByMutant[one.id] = one.verdict;
+  }
+  return {
+    oracleBond: sealed.oracleBond ?? "not-recorded",
+    heldBackBond: heldBack.oracleBond ?? "not-recorded",
+    ...((sealed.bondedMutants ?? []).length === 0
+      ? {}
+      : { bondedMutants: sealed.bondedMutants, heldBackBondedMutants: heldBackByMutant }),
   };
 }
 
@@ -417,6 +440,12 @@ for (const task of wanted) {
       // to certify an oracle that never ran the change, and a corpus that does not carry the
       // verdict cannot show which refusals came from it.
       previous.oracleReach = sealedAgain.oracleReach ?? "unmeasured";
+      // What the oracle did with a change to the lines the patch added, and what the held-back
+      // half did with the same change. Recorded because it is what the sealed oracle is worth:
+      // one that accepts a mutant of a line it ran established nothing about that line.
+      delete previous.bondedMutants;
+      delete previous.heldBackBondedMutants;
+      Object.assign(previous, bondEvidence(sealedAgain, again.heldBack));
       // Which lines, not just that some were missed. "Extend the oracle" names nothing to extend
       // without them, and they are what separates a real gap from a defect in this measurement.
       if (sealedAgain.oracleReach === "unreached") {
@@ -432,7 +461,8 @@ for (const task of wanted) {
     writeFileSync(scoredPath, `${JSON.stringify(scored, null, 2)}\n`);
     console.log(
       `  ${label.padEnd(42)} regression=${String(sealedAgain.regression).padEnd(10)} ` +
-        `sealed=${String(sealedAgain.task).padEnd(9)} held-back=${String(again.heldBackVerdict).padEnd(9)}` +
+        `sealed=${String(sealedAgain.task).padEnd(9)} held-back=${String(again.heldBackVerdict).padEnd(9)} ` +
+        `bond=${String(sealedAgain.oracleBond ?? "not-recorded").padEnd(10)}` +
         `${again.orderDependent ? " (its refusal was order dependence)" : ""} -> ${cornerAgain}`,
     );
     continue;
@@ -544,6 +574,7 @@ for (const task of wanted) {
       : {}),
     heldBackOracle: heldBackVerdict,
     heldBackOrderDependent: orderDependent,
+    ...bondEvidence(sealed, heldBack),
     verified: sealed.verified === true,
     corner,
     latencyMs,
@@ -557,7 +588,8 @@ for (const task of wanted) {
 
   console.log(
     `  ${label.padEnd(42)} regression=${String(sealed.regression).padEnd(10)} ` +
-      `sealed=${String(sealed.task).padEnd(9)} held-back=${String(heldBackVerdict).padEnd(9)}` +
+      `sealed=${String(sealed.task).padEnd(9)} held-back=${String(heldBackVerdict).padEnd(9)} ` +
+      `bond=${String(sealed.oracleBond ?? "not-recorded").padEnd(10)}` +
       `${orderDependent ? " (its refusal was order dependence)" : ""} -> ${corner}`,
   );
 }
