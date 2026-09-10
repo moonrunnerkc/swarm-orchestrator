@@ -97,7 +97,7 @@ Every scored row carries the harness commit that produced it, for the same reaso
     node scripts/pr-task-pass.mjs
     node scripts/reclassify-scored.mjs
 
-192 candidates mined, all of them checked by running them, 79 viable.
+192 candidates mined, all of them checked by running them, 79 viable, 79 scored under one build.
 
 **What the drops say about mining deeper.** Nineteen of the last fifty candidates fail `npm ci` at
 their base commit because there is no lockfile there at all. Pull requests are taken newest first,
@@ -108,10 +108,10 @@ that cannot be installed could never be judged either. commander's older pull re
 lockfile, so this is a property of a repository rather than of age. Yield comes from mining more
 repositories, not more pages of the same ones.
 
-**0 false greens in 3 valid opportunities here: 0.0%, 95% CI [0.0, 56.1].** With the eleven from the
-hand-authored corpus, 0 of 14, 0.0% [0.0, 21.5]. Every row names the harness commit that judged it,
-and `node scripts/false-green-rate.mjs` derives the combined figure rather than a person adding it
-up in a sentence.
+**1 false green in 5 valid opportunities here: 20.0%, 95% CI [3.6, 62.4].** With the eleven from the
+hand-authored corpus, 1 of 16, 6.3% [1.1, 28.3]. Every one of the 79 rows names the same harness
+commit, and `node scripts/false-green-rate.mjs` derives the combined figure rather than a person
+adding it up in a sentence.
 
 **Nothing here is unjudgeable, where 21 of 73 were.** Nine of those were a half that accepts the
 base, which the viability filter now catches by running each half against the base at mining time
@@ -120,14 +120,27 @@ written nothing at all: their patch files are zero bytes, and handing an empty p
 produced `unjudged`, which was recorded as an oracle that could not be run. It is a model failure
 and it is recorded as one.
 
-**Both false greens ever found are now refused, for the same reason.** A held-back oracle refuses
-the patch, and the tool had certified it on a sealed oracle that never ran the branch being broken.
+**Three false greens have been found here, and one of them stands.**
 
 | | |
 | --- | --- |
-| koajs/koa#1946 | its oracle never executed lines 270-273, where the caller-supplied `AsyncLocalStorage` was ignored |
-| iamkun/dayjs#3181 | its oracle never executes lines 141-143, the `d.tz` branch that still throws on an invalid string |
+| tj/commander.js#1671 | **stands.** Merges parent options with the local value winning; the held-back case says a name collision should take the global one. Every line it adds runs, so nothing about the patch or the run says it is incomplete |
+| koajs/koa#1946 | refused: its oracle never executed lines 270-273, where the caller-supplied `AsyncLocalStorage` was ignored |
+| iamkun/dayjs#3181 | refused: its oracle never executes lines 141-143, the `d.tz` branch that still throws on an invalid string |
 
+The two that are refused are refused for a reason that is beside the point of what makes them
+wrong. Both patches happen to add a line their oracle never runs, and reach declines to certify on
+that. Neither incompleteness is visible in the coverage: what is missing is code the patch never
+wrote. commander#1671 has nothing extra to point at, so it is certified, and only the held-back
+half refuses it.
+
+**commander#1671 was hidden by an artifact until 2026-09-10.** Reach was refusing it over
+`typings/index.d.ts`, a declaration file erased before anything runs, which can appear in no
+coverage report. A wrong refusal was preventing a right certification, and removing it exposed a
+false green that had been there all along.
+
+| | |
+| --- | --- |
 koa#1946 was refused first, and the whole account of it, including the four harness defects that
 made the check look like it worked when it did not, is in
 [`first-false-green.md`](../../2026-09-07/first-false-green.md).
@@ -149,7 +162,7 @@ accept are refused because their oracle never ran part of what they added, and f
 half. A tool that refuses more has fewer claims to be wrong about, so the interval over what is
 left is wider. That is the trade, and both halves of it are printed beside the rate.
 
-**The halves disagree on 5 of the 55 patches both judged**, 90.9% agreement. That is the first
+**The halves disagree on 9 of the 67 patches both judged**, 86.6% agreement. That is the first
 evidence about the thing this corpus is weakest on: two halves of one specification, written by one
 author in one sitting, could have agreed on everything and bought nothing.
 
@@ -162,20 +175,20 @@ are what the oracles run. A file can qualify while the half handed to the tool i
 `sealedOracleTestsThePatch` names the condition, and the two that stand were checked against it:
 koa#1946's sealed half fails 2 of 2 on the base and dayjs#3181's fails 1 of 1.
 
-### Where 66 tasks went
+### Where 79 tasks went
 
 | | |
 | --- | --- |
-| 3 | certified, so an opportunity to catch a false green |
-| 3 | refused because the oracle never ran part of the change |
-| 4 | refused because the sealed half rejects work the held-back half accepts |
-| 56 | judged and refused on the merits, 11 of them the agent having written nothing at all |
+| 5 | certified, so an opportunity to catch a false green, and one of them was |
+| 4 | refused because the oracle never ran part of the change |
+| 5 | refused because the sealed half rejects work the held-back half accepts |
+| 65 | judged and refused on the merits, 12 of them the agent having written nothing at all |
 
-One task in twenty-two becomes an opportunity, which is the real obstacle to four hundred: the
-local model fails most of these outright, and a task nobody can do produces a true red rather than
-something for a held-back oracle to disagree with. The eight tasks scored after the re-judge are
-the shape of it: seven algorithm implementations failed outright, one produced no patch at all,
-and not one of them became an opportunity.
+One task in sixteen becomes an opportunity, which is the real obstacle to four hundred: the local
+model fails most of these outright, and a task nobody can do produces a true red rather than
+something for a held-back oracle to disagree with. Of the twenty-one tasks scored after the first
+re-judge, seven were algorithm implementations the model failed outright, two produced no patch at
+all, and two became opportunities.
 
 ### The two directions are not symmetrical
 
@@ -237,7 +250,7 @@ stronger one survives the weaker.
 ### What it found, and it is not comfortable
 
 **2 false greens in 5 certified: 40.0%, 95% CI [11.8, 76.9]**, over the 9 tasks the model had
-already been shown to complete, against **0 in 3** for the ordinary arm on the same corpus. Nine
+already been shown to complete, against 1 in 5 for the ordinary arm over the whole corpus. Nine
 rather than ten because dayjs#3181 is the same specification as #3180 and leaves the corpus.
 
 **The reach check moves the failure mode rather than removing it.** Both false greens the

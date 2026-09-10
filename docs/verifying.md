@@ -85,6 +85,15 @@ into an `if` and an `else`, judged by an oracle whose cases all take the `if`, i
 `refused-on-reach` rather than as the tool being wrong about the patch, and they are counted where
 the rate is, because a refused patch is one the tool did not certify.
 
+**What it is easy to get wrong, measured three times.** Reach compares the lines a patch added
+against a coverage report, so anything the patch touches that *cannot appear in such a report*
+reads as a line the oracle skipped. Three of those were found by running it against real patches:
+a line holding one closing brace, which lcov names with zero hits because a function returning
+early never reaches its implicit end; a changelog; and a TypeScript declaration file, which is
+erased before anything runs. Each refused patches that were fine, and one of them was also masking
+a patch that was not. A line carrying no character that could begin an identifier, a number or a
+string is skipped, and so is a file no runner could load.
+
 **What it does not catch, measured rather than reasoned about.** Reach refuses a patch that adds
 code the oracle never runs. It says nothing about a patch that never wrote the code at all. Given
 the oracle it will be judged by and told to satisfy that and leave an adjacent case broken, a model
