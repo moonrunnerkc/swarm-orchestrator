@@ -38,6 +38,7 @@ Paths are relative to this file's directory.
 | The criteria are sealed before the loop, every pass is bonded, and a bundle re-derives its own verdicts | `../src/gates/gate-set-seal.ts`, `../src/gates/bonds.ts` and `../src/gates/bond-runner.ts` with their tests, and `../src/evidence/verifier/rederive.mjs` held to the parsers by `../src/evidence/rederive.test.ts`. Shown on a real run in `evidence/2026-09-02/gates-bonded/`: nine gates sealed at record 1, the tests, placeholder, secret-scan and diff-budget bonds held, the behaviour probe recorded as not bonded rather than as held, `verify.mjs` exit 0 with the seal and the bonds recomputed, and `rederive.mjs` agreeing on all seventeen verdicts with none it could not re-derive. `../src/gates/bond-runner.test.ts` shows the other direction: a runner that passes over a bond it collected is recorded vacuous, and `../src/evidence/rederive.test.ts` hands the re-deriver a bundle that lies about a status and asserts it disagrees |
 | The tool was measured on fifty repositories in five languages, each seeded with one defect its own suite catches, under criteria sealed before any repository was looked at, and every bundle of the corpus verifies | `../campaign/criteria.md` and `../campaign/methodology.md`, both committed before what they govern; `../campaign/seeds/manifest.json`, committed before any arm ran; `../campaign/results/report.md`, generated from the result records alone: 43 of 43 executed bundles verify on `local-mlx` and 50 of 50 on `local-ollama`, with the frontier arm carried at zero runs. The bundles are under `../campaign/corpus/` with their own verifiers |
 | `swarm ci` refuses to certify on an oracle that never ran the change, and says which lines | `../src/gates/oracle-reach.ts` with `../src/gates/oracle-reach.test.ts` for the rule, `../src/gates/v8-coverage.ts` with `../src/gates/v8-coverage.test.ts` for the reader, which is checked line by line against node's own lcov report of the same run, and `../src/gates/independent-verification.test.ts` for both directions end to end: an oracle that takes a branch reads `reached` and one that does not reads `unreached` with the line named. Measured on the mined corpus: koa#1946 is refused for lines 270 to 273 of the file it certified, and dayjs#3181 for the `d.tz` branch its held-back case breaks on |
+| `swarm ci` asks whether the oracle asserted anything about the lines the patch added, and says what showed the mutant changed the program | `../src/gates/oracle-mutants.ts` with `../src/gates/oracle-mutants.test.ts` for the eight operators, read off the language's statement productions and derived in `oracle-bond-operators.md` before any of them was implemented; `../src/gates/mutant-parse.ts` with `../src/gates/mutant-parse.test.ts`, which runs each dialect rather than asserting which ones `node --check` reads; `../src/gates/mutant-witness.ts` and `../src/gates/oracle-bond-run.ts` with their tests for the two detectors and the order they are spent in; and `../src/gates/independent-verification.test.ts` for all of it end to end, including a patch whose accepted mutant coverage shows changed what ran, and one whose accepted mutant neither detector can witness. Measured over the corpus: all eight operators fire, the three general ones account for 25 of the 34 mutants built, and `node scripts/bond-cost.mjs` prints what requiring a witness costs against recording it |
 | The declared-file-set check blocks an out-of-set edit until an amendment is recorded | `evidence/2026-08-18/shakedown/bundles/task-08-file-set-amended`, where the gate blocked three times and the run went green only after an amendment with a reason reached the ledger |
 
 ## What may not be said
@@ -68,6 +69,18 @@ Verbatim, because each of these has been tempting at some point in this project'
   detects a forged one. That is safe only because the check can do nothing but refuse: a forged
   report buys `reached`, which is what an unmeasured oracle already gets. Say "refuses to certify
   on an oracle shown to have skipped part of the change".
+- **That the oracle bond proves the oracle judged the task.** It asks whether the oracle asserted
+  anything about the lines the patch *added*, and it cannot ask what the patch left out. Measured
+  rather than reasoned about: shown the oracle it would be judged by, a model writes a patch whose
+  added lines that oracle tests, so the oracle refuses every mutant of them and the bond reads
+  `held` on a patch a held-back oracle rejects. Say "asks whether running the oracle established
+  anything about the change it did make".
+- **That a `vacuous` verdict means the mutant changed behaviour, or that an `unshown` one means it
+  did not.** Two detectors are asked, the oracle's own coverage and the repository's own suite, and
+  what each cannot see is written down: coverage misses a value changed on a path that runs either
+  way, and a suite written before the patch existed misses anything the patch is adding. A mutant
+  both miss is recorded as unwitnessed, which is an absence of evidence and not evidence of
+  absence.
 - **Any number the tool did not measure locally.** No benchmark, no comparison against
   another agent, no throughput figure carried over from a model card. The shortlist's size
   and memory figures are curated estimates and the select report says so itself.
