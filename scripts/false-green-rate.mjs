@@ -36,10 +36,17 @@ function minedRows() {
   };
 }
 
+/**
+ * The hand-authored corpus as the second-oracle pass last scored it.
+ *
+ * Not `2026-09-04/real-repos/rescored.json`, which holds the same eighteen runs under an earlier
+ * scoring: reading that one reports corners no current pass produced, which is a published number
+ * describing a tool that no longer exists.
+ */
 function handAuthoredRows() {
   const { runs } = JSON.parse(
     readFileSync(
-      join(repositoryRoot, "docs/evidence/2026-09-04/real-repos/rescored.json"),
+      join(repositoryRoot, "docs/evidence/2026-09-06/second-oracle/scored.json"),
       "utf8",
     ),
   );
