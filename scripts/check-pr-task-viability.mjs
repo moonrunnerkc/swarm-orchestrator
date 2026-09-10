@@ -16,7 +16,8 @@
  * dealt that way was never an opportunity to catch anything. A half that passes is re-dealt rather
  * than dropped, since which cases fail on the base is a property of the suite and not of the cut.
  *
- *   node scripts/check-pr-task-viability.mjs [--limit <n>] [--only <owner/repo[#pull]>] [--recheck]
+ *   node scripts/check-pr-task-viability.mjs [--limit <n>] [--only <owner/repo[#pull]>]
+ *                                              [--recheck] [--only-viable]
  */
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -50,6 +51,16 @@ const only = onlyAt === -1 ? null : argv[onlyAt + 1];
  * to discover whether a rule is right is the expensive failure this project keeps paying for.
  */
 const recheck = argv.includes("--recheck");
+/**
+ * Judge again only what is already viable.
+ *
+ * A rule change that can only narrow, which each half having to refuse the base is, cannot rescue
+ * a candidate that failed an earlier gate: a clone that does not fetch, an install that does not
+ * build, tests that pass on the base source. Re-running those costs the clone, the install and two
+ * test runs to arrive at the answer already recorded, and on this corpus that is a third of the
+ * candidates and most of an afternoon.
+ */
+const onlyViable = argv.includes("--only-viable");
 
 /**
  * One command, with whatever it started stopped alongside it.
@@ -222,9 +233,11 @@ const alreadyJudged = new Set(judged.tasks.map((one) => `${one.repository}#${one
 
 mkdirSync(workRoot, { recursive: true });
 const named = (one) => `${one.repository}#${one.pull}`;
+const alreadyViable = new Set(judged.tasks.filter((one) => one.viable).map(named));
 const wanted = candidates.filter(
   (one) =>
     (recheck || !alreadyJudged.has(named(one))) &&
+    (!onlyViable || alreadyViable.has(named(one))) &&
     (only === null || one.repository === only || named(one) === only),
 );
 console.log(`checking ${Math.min(wanted.length, limit)} candidate(s) by running them\n`);
