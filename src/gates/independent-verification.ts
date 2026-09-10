@@ -408,6 +408,9 @@ async function lineHitsUnder(
 ): Promise<Record<string, Record<number, number>> | null> {
   if (plan.kind === "node-lcov") {
     const observed = await options.commands.runVouched(plan.argv, { cwd: checkout, timeoutMs });
+    if (observed.exitCode !== 0) {
+      return null;
+    }
     const sections = parseLineHits(observed.stderr);
     return sections.length === 0 ? null : lineHitsByWorkspacePath(sections, checkout);
   }
