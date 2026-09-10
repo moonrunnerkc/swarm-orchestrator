@@ -17,19 +17,17 @@
  *
  * No model is called: the patches are recorded, so this is arithmetic over evidence.
  */
-import { execFile } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { promisify } from "node:util";
 
 import {
   classifyAgainstHeldBackOracle,
   heldBackOracleLooksBroken,
 } from "../dist/eval/campaign-run.js";
+import { runProcessGroup } from "../dist/exec/run-process.js";
 import { wilsonInterval } from "../dist/eval/statistics.js";
 import { repositories } from "./real-repos.mjs";
 
-const run = promisify(execFile);
 const repositoryRoot = new URL("..", import.meta.url).pathname;
 const evidenceRoot = join(repositoryRoot, "docs/evidence/2026-09-04/real-repos");
 
@@ -72,19 +70,28 @@ async function verify(patchPath, workspace, commit, oracle) {
     oracle,
     "--json",
   ];
-  const read = (text) => JSON.parse(text.trim().split("\n").at(-1));
+  // A process group rather than one process: `swarm ci` starts a test runner, that runner starts
+  // its own children, and a timeout that signals only the process it started leaves those running.
+  const ran = await runProcessGroup(process.execPath, argv, {
+    cwd: repositoryRoot,
+    env: Object.fromEntries(
+      Object.entries(process.env).filter(([, value]) => value !== undefined),
+    ),
+    timeoutMs: 15 * 60_000,
+    maxOutputBytes: 64 * 1024 * 1024,
+  });
   try {
-    const { stdout } = await run(process.execPath, argv, {
-      timeout: 15 * 60_000,
-      maxBuffer: 64 * 1024 * 1024,
-    });
-    return read(stdout);
-  } catch (cause) {
-    try {
-      return read(`${cause.stdout ?? ""}`);
-    } catch {
-      return { verified: false, task: "unjudged", regression: "unmeasured", failure: true };
-    }
+    return JSON.parse(`${ran.stdout}`.trim().split("\n").at(-1));
+  } catch {
+    return {
+      verified: false,
+      task: "unjudged",
+      regression: "unmeasured",
+      failure: true,
+      judgeFailure:
+        (ran.timedOut ? "killed at its deadline: " : `exited ${ran.exitCode} without a verdict: `) +
+        `${(ran.stderr || ran.stdout).trim().split("\n").slice(-2).join(" ").slice(0, 300)}`,
+    };
   }
 }
 
