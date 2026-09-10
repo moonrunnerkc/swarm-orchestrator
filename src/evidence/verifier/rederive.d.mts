@@ -19,3 +19,28 @@ export declare function rederiveRatchet(payload: JsonValue): {
 };
 /** Returns the process exit code: 0 when every re-derived verdict agrees. */
 export declare function rederiveBundle(directory: string, log?: (line: string) => void): number;
+
+/** Mirrors `bondRefusesCertification` in ../../gates/certification.ts; a parity test holds them. */
+export declare const bondRefusesCertification: boolean;
+/** Mirrors `reasonsToRefuse` in ../../gates/certification.ts. */
+export declare function refusalsToCertify(verdict: {
+  readonly regression?: string;
+  readonly task?: string;
+  readonly oracleReach?: string;
+  readonly oracleBond?: string;
+}): readonly string[];
+/**
+ * The verdict a recorded `swarm ci` result implies. `rederived` is false, and `verified` null,
+ * where a field the policy reads is absent or carries a word the policy does not know.
+ */
+export declare function rederiveCiVerdict(verdict: {
+  readonly regression?: string;
+  readonly task?: string;
+  readonly oracleReach?: string;
+  readonly oracleBond?: string;
+}): {
+  readonly rederived: boolean;
+  readonly missing: readonly string[];
+  readonly reasons: readonly string[];
+  readonly verified: boolean | null;
+};
