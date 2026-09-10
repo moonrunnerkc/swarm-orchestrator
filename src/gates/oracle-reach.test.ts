@@ -169,6 +169,49 @@ describe("the patch's own tests", () => {
   });
 });
 
+describe("a file no runner can execute", () => {
+  /**
+   * Measured: commander#1711 was refused because its oracle never ran lines 11, 13 and 15 of
+   * `CHANGELOG.md`. Nothing runs a changelog. A file a runner cannot load has no executable line,
+   * so it can never be reached and refuses every patch that touches it.
+   *
+   * The same shape as the test-file convention beside it, and wrong in the same two directions: a
+   * source file this does not recognize drops out of reach, which weakens the check by one file; a
+   * file that genuinely cannot be covered but is recognized refuses a patch that is fine. Only one
+   * of those is silent, and it is not this one, because the unreached files are named.
+   */
+  it("cannot be the reason an oracle is refused", () => {
+    const reach = oracleReachedTheChange({
+      changed: [
+        { path: "CHANGELOG.md", addedLines: numbered([11, 13, 15]) },
+        { path: "package.json", addedLines: numbered([4]) },
+        { path: "docs/api.md", addedLines: numbered([2]) },
+      ],
+      measured: {},
+    });
+
+    expect(reach.reached).toBe(true);
+  });
+
+  it("still judges every spelling of a script the runners load", () => {
+    for (const path of [
+      "lib/a.js",
+      "lib/a.mjs",
+      "lib/a.cjs",
+      "src/a.ts",
+      "src/a.tsx",
+      "src/a.mts",
+    ]) {
+      const reach = oracleReachedTheChange({
+        changed: [{ path, addedLines: numbered([7]) }],
+        measured: {},
+      });
+
+      expect(`${path} judged: ${!reach.reached}`).toBe(`${path} judged: true`);
+    }
+  });
+});
+
 describe("a line with nothing on it but punctuation", () => {
   /**
    * Measured on the hand-authored corpus: all four patches the reach check refused there were

@@ -33,6 +33,23 @@ import { resolvedPath } from "./resolved-path.ts";
  * which weakens the check by one file; a test file not recognized is reported unreached, which
  * refuses a patch that is fine. Neither is silent, since the unreached files are named.
  */
+/**
+ * Whether a runner could load this file at all.
+ *
+ * Measured: commander#1711 was refused because its oracle never ran lines 11, 13 and 15 of
+ * `CHANGELOG.md`. Nothing runs a changelog. A file no runner loads has no executable line, so it
+ * cannot appear in any coverage report, can never be reached, and refuses every patch that touches
+ * it.
+ *
+ * A convention like the test-file one beside it, and wrong in the same two directions: a source
+ * file this spelling does not recognize drops out of reach, which weakens the check by one file; a
+ * file that cannot be covered but is recognized refuses a patch that is fine. Neither is silent,
+ * since the unreached files are named.
+ */
+function aRunnerCouldLoadIt(path: string): boolean {
+  return /\.[cm]?[jt]sx?$/.test(path);
+}
+
 function namesATestFile(path: string): boolean {
   const segments = path.split("/");
   const basename = segments.at(-1) ?? "";
@@ -116,7 +133,7 @@ export function oracleReachedTheChange(input: {
 
   for (const file of input.changed) {
     const judgeable = file.addedLines.filter((added) => carriesCode(added.text));
-    if (judgeable.length === 0 || namesATestFile(file.path)) {
+    if (judgeable.length === 0 || namesATestFile(file.path) || !aRunnerCouldLoadIt(file.path)) {
       continue;
     }
     // A file the report does not mention was not measured, and not measured is not covered.
