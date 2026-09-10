@@ -26,6 +26,7 @@ import { classifyAgainstHeldBackOracle } from "../dist/eval/campaign-run.js";
 import { casesTitled } from "../dist/eval/test-case-split.js";
 import { heldBackRefusalIsReal } from "../dist/eval/oracle-filter.js";
 import { oracleCommand } from "../dist/eval/oracle-filter.js";
+import { readAnEmptyPatch } from "../dist/eval/empty-patch-attribution.js";
 import { prTaskEvidenceRoot, prTaskWorkingRoot } from "../dist/eval/pr-task-paths.js";
 import { wilsonInterval } from "../dist/eval/statistics.js";
 
@@ -363,6 +364,27 @@ function whyNothingWasJudged(verdict) {
   return verdict.advice ? `nothing judged: ${verdict.advice}` : "nothing judged, and no reason given";
 }
 
+/**
+ * Whether the model endpoint answers a trivial request, asked of the endpoint this pass was told
+ * to use rather than of the model's own reachability in general.
+ *
+ * Spent in two places and nowhere else: once before the pass starts, so a dead endpoint costs a
+ * second rather than a task's whole wall budget, and once after any run that produced no patch,
+ * because that is the only verdict whose meaning depends on the endpoint having been alive.
+ */
+async function endpointAnswers() {
+  try {
+    const asked = await fetch(`${endpoint.replace(/\/+$/, "")}/models`, {
+      signal: AbortSignal.timeout(15_000),
+    });
+    return asked.ok
+      ? { answered: true, detail: "" }
+      : { answered: false, detail: `HTTP ${asked.status} from ${endpoint}` };
+  } catch (cause) {
+    return { answered: false, detail: `${cause?.message ?? cause} (${endpoint})` };
+  }
+}
+
 const named = (one) => `${one.repository}#${one.pull}`;
 /**
  * A task named explicitly is re-judged whether or not the viability filter still admits it.
@@ -385,6 +407,18 @@ const wanted = (
     : chosen.filter((one) => !done.has(named(one)))
 ).slice(0, limit);
 console.log(`scoring ${wanted.length} mined task(s) against a held-back oracle\n`);
+
+// A dead endpoint costs one second here and a whole wall budget per task if it is found later.
+// Only where a model will actually be called: `--rejudge` re-derives verdicts from recorded
+// patches and never asks a model anything.
+if (!rejudge && wanted.length > 0) {
+  const health = await endpointAnswers();
+  if (!health.answered) {
+    console.log(`the model endpoint is not answering: ${health.detail}`);
+    console.log("nothing was run, because an empty patch from a dead endpoint is not a result.");
+    process.exit(1);
+  }
+}
 
 for (const task of wanted) {
   const label = `${task.repository}#${task.pull}`;
@@ -434,7 +468,7 @@ for (const task of wanted) {
     }
     writeFileSync(scoredPath, `${JSON.stringify(scored, null, 2)}\n`);
     console.log(
-      `  ${label.padEnd(42)} the agent wrote nothing, so there is no patch to judge -> true-red`,
+      `  ${label.padEnd(42)} ${reading.detail} -> true-red`,
     );
     continue;
   }
@@ -550,6 +584,21 @@ for (const task of wanted) {
   // is how six tasks scored inside a path the policy guard denies were read as the model failing
   // for six hours. Nothing to measure and could not measure are different findings.
   if (diff.stdout.trim().length === 0) {
+    // An endpoint that is not answering says nothing about a model, so nothing is recorded. An MLX
+    // server ran out of GPU memory mid-batch and every task after it came back with a zero-byte
+    // patch, each one written down as the model failing: the same misattribution as the twelve
+    // rows above, running the other way. Asked only here, because this is the one verdict whose
+    // meaning depends on the endpoint having been alive.
+    const health = await endpointAnswers();
+    const reading = readAnEmptyPatch({
+      endpointAnswered: health.answered,
+      endpointDetail: health.detail,
+    });
+    if (!reading.attributable) {
+      console.log(`  ${label.padEnd(42)} ${reading.detail}`);
+      console.log("stopping: every task after an endpoint failure would record the same thing.");
+      break;
+    }
     scored.runs.push({
       repository: task.repository,
       pull: task.pull,
@@ -569,7 +618,7 @@ for (const task of wanted) {
     });
     writeFileSync(scoredPath, `${JSON.stringify(scored, null, 2)}\n`);
     console.log(
-      `  ${label.padEnd(42)} the agent wrote nothing, so there is no patch to judge -> true-red`,
+      `  ${label.padEnd(42)} ${reading.detail} -> true-red`,
     );
     continue;
   }

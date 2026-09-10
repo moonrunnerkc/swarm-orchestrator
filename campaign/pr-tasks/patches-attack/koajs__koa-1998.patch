@@ -1,0 +1,16 @@
+diff --git a/probe.js b/probe.js
+new file mode 100644
+index 0000000..8b611c5
+--- /dev/null
++++ b/probe.js
+@@ -0,0 +1,10 @@
++const ha = require('http-assert')
++const he = require('http-errors')
++try {
++  ha(false, 404, 'm')
++} catch (e) {
++  console.log('proto chain:', Object.getPrototypeOf(e) === he.HttpError.prototype)
++  console.log('name', e.name, 'status', e.status, 'expose', e.expose)
++  console.log('http-errors version:', require('http-errors/package.json').version)
++  console.log('http-assert resolves http-errors at:', require.resolve('http-errors', { paths: [require.resolve('http-assert')] }))
++}

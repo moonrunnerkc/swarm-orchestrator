@@ -1,0 +1,14 @@
+diff --git a/lib/request.js b/lib/request.js
+index 7860c40..2304501 100644
+--- a/lib/request.js
++++ b/lib/request.js
+@@ -392,7 +392,8 @@ module.exports = {
+   get length () {
+     const len = this.get('Content-Length')
+     if (len === '') return
+-    return ~~len
++    const parsed = Number.parseInt(len, 10)
++    return Number.isNaN(parsed) ? undefined : parsed
+   },
+ 
+   /**

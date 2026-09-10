@@ -1,0 +1,56 @@
+diff --git a/src/data-structures/stack/__test__/isValid.test.js b/src/data-structures/stack/__test__/isValid.test.js
+new file mode 100644
+index 0000000..27c26f9
+--- /dev/null
++++ b/src/data-structures/stack/__test__/isValid.test.js
+@@ -0,0 +1,13 @@
++import isValid from '../isValid';
++
++describe('isValid', () => {
++  it('should return false when string is empty', () => {
++    expect(isValid('')).toBe(false);
++  });
++
++  it('should return false when string contains invalid parentheses', () => {
++    expect(isValid('(]')).toBe(false);
++    expect(isValid('()[]{} }')).toBe(false);
++    expect(isValid('((({[(]})))')).toBe(false);
++  });
++});
+diff --git a/src/data-structures/stack/isValid.js b/src/data-structures/stack/isValid.js
+new file mode 100644
+index 0000000..986833b
+--- /dev/null
++++ b/src/data-structures/stack/isValid.js
+@@ -0,0 +1,31 @@
++import Stack from './Stack';
++
++/**
++ * Check whether a string of parentheses is valid using a Stack.
++ *
++ * @param {string} str
++ * @return {boolean}
++ */
++export default function isValid(str) {
++  // An empty string is not considered valid.
++  if (str.length === 0) {
++    return false;
++  }
++
++  const stack = new Stack();
++  const pairs = { ')': '(', ']': '[', '}': '{' };
++
++  for (let i = 0; i < str.length; i += 1) {
++    const char = str[i];
++    if (char === '(' || char === '[' || char === '{') {
++      stack.push(char);
++    } else if (char === ')' || char === ']' || char === '}') {
++      const top = stack.pop();
++      if (top !== pairs[char]) {
++        return false;
++      }
++    }
++  }
++
++  return stack.isEmpty();
++}

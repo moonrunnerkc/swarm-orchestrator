@@ -26,10 +26,36 @@
       "verified": false,
       "corner": "true-red",
       "latencyMs": 122620,
-      "harness": "343ae4740cced71e22018a85a0e340902b654e53",
+      "harness": "eb8cad1f636683bab33b5faf4e03672ec9152a08",
       "prompt": "sealed-oracle-shown",
-      "oracleBond": "not-bonded",
-      "heldBackBond": "not-bonded"
+      "oracleBond": "held",
+      "heldBackBond": "held",
+      "bondedMutants": [
+        {
+          "id": "lib/request.js:302:replace-assigned-value",
+          "path": "lib/request.js",
+          "line": 302,
+          "operator": "replace-assigned-value",
+          "before": "          this.memoizedURL = new URL(originalUrl)",
+          "after": "          this.memoizedURL = undefined",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/request.js:304:replace-assigned-value",
+          "path": "lib/request.js",
+          "line": 304,
+          "operator": "replace-assigned-value",
+          "before": "          this.memoizedURL = Object.create(null)",
+          "after": "          this.memoizedURL = undefined",
+          "verdict": "unshown",
+          "witness": "not-adjudicated"
+        }
+      ],
+      "heldBackBondedMutants": {
+        "lib/request.js:302:replace-assigned-value": "held",
+        "lib/request.js:304:replace-assigned-value": "unshown"
+      }
     },
     {
       "repository": "koajs/koa",
@@ -44,10 +70,25 @@
       "verified": true,
       "corner": "true-green",
       "latencyMs": 59696,
-      "harness": "343ae4740cced71e22018a85a0e340902b654e53",
+      "harness": "eb8cad1f636683bab33b5faf4e03672ec9152a08",
       "prompt": "sealed-oracle-shown",
-      "oracleBond": "not-bonded",
-      "heldBackBond": "not-bonded"
+      "oracleBond": "held",
+      "heldBackBond": "held",
+      "bondedMutants": [
+        {
+          "id": "lib/response.js:354:negate-condition",
+          "path": "lib/response.js",
+          "line": 354,
+          "operator": "negate-condition",
+          "before": "    if (filename && !this.has('Content-Type')) this.type = extname(filename)",
+          "after": "    if (!(filename && !this.has('Content-Type'))) this.type = extname(filename)",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        }
+      ],
+      "heldBackBondedMutants": {
+        "lib/response.js:354:negate-condition": "held"
+      }
     },
     {
       "repository": "iamkun/dayjs",
@@ -62,7 +103,7 @@
       "verified": true,
       "corner": "true-green",
       "latencyMs": 604652,
-      "harness": "343ae4740cced71e22018a85a0e340902b654e53",
+      "harness": "eb8cad1f636683bab33b5faf4e03672ec9152a08",
       "prompt": "sealed-oracle-shown",
       "oracleBond": "held",
       "heldBackBond": "held",
@@ -74,7 +115,8 @@
           "operator": "swap-arithmetic-operands",
           "before": "      seconds = Math.round((seconds + ((this.$d.milliseconds) / 1000)) * 1000) / 1000",
           "after": "      seconds = 1000 / Math.round((seconds + ((this.$d.milliseconds) / 1000)) * 1000)",
-          "verdict": "held"
+          "verdict": "held",
+          "witness": "not-adjudicated"
         }
       ],
       "heldBackBondedMutants": {
@@ -94,10 +136,43 @@
       "verified": true,
       "corner": "false-green",
       "latencyMs": 627653,
-      "harness": "343ae4740cced71e22018a85a0e340902b654e53",
+      "harness": "eb8cad1f636683bab33b5faf4e03672ec9152a08",
       "prompt": "sealed-oracle-shown",
-      "oracleBond": "not-bonded",
-      "heldBackBond": "not-bonded"
+      "oracleBond": "held",
+      "heldBackBond": "not-bonded",
+      "bondedMutants": [
+        {
+          "id": "src/plugin/timezone/index.js:96:negate-condition",
+          "path": "src/plugin/timezone/index.js",
+          "line": 96,
+          "operator": "negate-condition",
+          "before": "    if (!this.isValid()) {",
+          "after": "    if (!(!this.isValid())) {",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "src/plugin/timezone/index.js:97:replace-assigned-value",
+          "path": "src/plugin/timezone/index.js",
+          "line": 97,
+          "operator": "replace-assigned-value",
+          "before": "      this.$x.$timezone = timezone",
+          "after": "      this.$x.$timezone = undefined",
+          "verdict": "unshown",
+          "witness": "none"
+        },
+        {
+          "id": "src/plugin/timezone/index.js:98:delete-statement",
+          "path": "src/plugin/timezone/index.js",
+          "line": 98,
+          "operator": "delete-statement",
+          "before": "      return this",
+          "after": "",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        }
+      ],
+      "heldBackBondedMutants": {}
     },
     {
       "repository": "iamkun/dayjs",
@@ -121,11 +196,21 @@
       "verified": false,
       "corner": "refused-on-reach",
       "latencyMs": 604450,
-      "harness": "343ae4740cced71e22018a85a0e340902b654e53",
+      "harness": "eb8cad1f636683bab33b5faf4e03672ec9152a08",
       "prompt": "sealed-oracle-shown",
       "oracleBond": "held",
-      "heldBackBond": "held",
+      "heldBackBond": "vacuous",
       "bondedMutants": [
+        {
+          "id": "src/plugin/minMax/index.js:3:negate-condition",
+          "path": "src/plugin/minMax/index.js",
+          "line": 3,
+          "operator": "negate-condition",
+          "before": "    if (!dates || !dates.length) {",
+          "after": "    if (!(!dates || !dates.length)) {",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
         {
           "id": "src/plugin/minMax/index.js:6:invert-comparison",
           "path": "src/plugin/minMax/index.js",
@@ -133,7 +218,8 @@
           "operator": "invert-comparison",
           "before": "    if (dates.length === 1 && dates[0] && dates[0].length > 0) {",
           "after": "    if (dates.length !== 1 && dates[0] && dates[0].length > 0) {",
-          "verdict": "held"
+          "verdict": "held",
+          "witness": "not-adjudicated"
         },
         {
           "id": "src/plugin/minMax/index.js:10:invert-comparison",
@@ -142,12 +228,47 @@
           "operator": "invert-comparison",
           "before": "    dates = dates.filter(dateItem => dateItem && typeof dateItem.isValid === 'function')",
           "after": "    dates = dates.filter(dateItem => dateItem && typeof dateItem.isValid !== 'function')",
-          "verdict": "held"
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "src/plugin/minMax/index.js:11:negate-condition",
+          "path": "src/plugin/minMax/index.js",
+          "line": 11,
+          "operator": "negate-condition",
+          "before": "    if (!dates.length) {",
+          "after": "    if (!(!dates.length)) {",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "src/plugin/minMax/index.js:12:delete-statement",
+          "path": "src/plugin/minMax/index.js",
+          "line": 12,
+          "operator": "delete-statement",
+          "before": "      return null",
+          "after": "",
+          "verdict": "unshown",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "src/plugin/minMax/index.js:16:delete-statement",
+          "path": "src/plugin/minMax/index.js",
+          "line": 16,
+          "operator": "delete-statement",
+          "before": "      return dates[0]",
+          "after": "",
+          "verdict": "unshown",
+          "witness": "not-adjudicated"
         }
       ],
       "heldBackBondedMutants": {
+        "src/plugin/minMax/index.js:3:negate-condition": "held",
         "src/plugin/minMax/index.js:6:invert-comparison": "held",
-        "src/plugin/minMax/index.js:10:invert-comparison": "held"
+        "src/plugin/minMax/index.js:10:invert-comparison": "held",
+        "src/plugin/minMax/index.js:11:negate-condition": "held",
+        "src/plugin/minMax/index.js:12:delete-statement": "unshown",
+        "src/plugin/minMax/index.js:16:delete-statement": "vacuous"
       }
     },
     {
@@ -163,10 +284,47 @@
       "verified": true,
       "corner": "true-green",
       "latencyMs": 302962,
-      "harness": "343ae4740cced71e22018a85a0e340902b654e53",
+      "harness": "eb8cad1f636683bab33b5faf4e03672ec9152a08",
       "prompt": "sealed-oracle-shown",
-      "oracleBond": "not-bonded",
-      "heldBackBond": "not-bonded"
+      "oracleBond": "held",
+      "heldBackBond": "held",
+      "bondedMutants": [
+        {
+          "id": "src/chess.ts:965:delete-statement",
+          "path": "src/chess.ts",
+          "line": 965,
+          "operator": "delete-statement",
+          "before": "  moves({ piece }: { piece: PieceSymbol }): string[]",
+          "after": "",
+          "verdict": "unshown",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "src/chess.ts:966:delete-statement",
+          "path": "src/chess.ts",
+          "line": 966,
+          "operator": "delete-statement",
+          "before": "  moves({ verbose, piece }: { verbose: true; piece?: PieceSymbol }): Move[]",
+          "after": "",
+          "verdict": "unshown",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "src/chess.ts:986:replace-assigned-value",
+          "path": "src/chess.ts",
+          "line": 986,
+          "operator": "replace-assigned-value",
+          "before": "    const moves = this._moves({ square, piece })",
+          "after": "    const moves = undefined",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        }
+      ],
+      "heldBackBondedMutants": {
+        "src/chess.ts:965:delete-statement": "unshown",
+        "src/chess.ts:966:delete-statement": "unshown",
+        "src/chess.ts:986:replace-assigned-value": "held"
+      }
     },
     {
       "repository": "tj/commander.js",
@@ -181,10 +339,25 @@
       "verified": false,
       "corner": "true-red",
       "latencyMs": 603233,
-      "harness": "343ae4740cced71e22018a85a0e340902b654e53",
+      "harness": "eb8cad1f636683bab33b5faf4e03672ec9152a08",
       "prompt": "sealed-oracle-shown",
-      "oracleBond": "not-bonded",
-      "heldBackBond": "not-bonded"
+      "oracleBond": "held",
+      "heldBackBond": "held",
+      "bondedMutants": [
+        {
+          "id": "lib/command.js:28:replace-assigned-value",
+          "path": "lib/command.js",
+          "line": 28,
+          "operator": "replace-assigned-value",
+          "before": "    this._allowExcessArguments = false;",
+          "after": "    this._allowExcessArguments = \"swarm-oracle-bond\";",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        }
+      ],
+      "heldBackBondedMutants": {
+        "lib/command.js:28:replace-assigned-value": "held"
+      }
     },
     {
       "repository": "koajs/koa",
@@ -199,10 +372,43 @@
       "verified": true,
       "corner": "false-green",
       "latencyMs": 201726,
-      "harness": "343ae4740cced71e22018a85a0e340902b654e53",
+      "harness": "eb8cad1f636683bab33b5faf4e03672ec9152a08",
       "prompt": "sealed-oracle-shown",
-      "oracleBond": "not-bonded",
-      "heldBackBond": "not-bonded"
+      "oracleBond": "held",
+      "heldBackBond": "not-bonded",
+      "bondedMutants": [
+        {
+          "id": "lib/application.js:12:replace-assigned-value",
+          "path": "lib/application.js",
+          "line": 12,
+          "operator": "replace-assigned-value",
+          "before": "const v8 = require('v8')",
+          "after": "const v8 = undefined",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/application.js:87:negate-condition",
+          "path": "lib/application.js",
+          "line": 87,
+          "operator": "negate-condition",
+          "before": "      } else if (v8.startupSnapshot?.isBuildingSnapshot?.()) {",
+          "after": "      } else if (!(v8.startupSnapshot?.isBuildingSnapshot?.())) {",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/application.js:88:replace-assigned-value",
+          "path": "lib/application.js",
+          "line": 88,
+          "operator": "replace-assigned-value",
+          "before": "        this.ctxStorage = null",
+          "after": "        this.ctxStorage = \"swarm-oracle-bond\"",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        }
+      ],
+      "heldBackBondedMutants": {}
     },
     {
       "repository": "winstonjs/winston",
@@ -225,10 +431,249 @@
       "verified": false,
       "corner": "refused-on-reach",
       "latencyMs": 296905,
-      "harness": "343ae4740cced71e22018a85a0e340902b654e53",
+      "harness": "eb8cad1f636683bab33b5faf4e03672ec9152a08",
       "prompt": "sealed-oracle-shown",
+      "oracleBond": "held",
+      "heldBackBond": "not-bonded",
+      "bondedMutants": [
+        {
+          "id": "lib/winston/container.js:43:delete-statement",
+          "path": "lib/winston/container.js",
+          "line": 43,
+          "operator": "delete-statement",
+          "before": "      let trans;",
+          "after": "",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/winston/container.js:44:negate-condition",
+          "path": "lib/winston/container.js",
+          "line": 44,
+          "operator": "negate-condition",
+          "before": "      if (Array.isArray(existing)) {",
+          "after": "      if (!(Array.isArray(existing))) {",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/winston/container.js:45:replace-assigned-value",
+          "path": "lib/winston/container.js",
+          "line": 45,
+          "operator": "replace-assigned-value",
+          "before": "        trans = existing.slice();",
+          "after": "        trans = undefined;",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/winston/container.js:46:negate-condition",
+          "path": "lib/winston/container.js",
+          "line": 46,
+          "operator": "negate-condition",
+          "before": "      } else if (existing) {",
+          "after": "      } else if (!(existing)) {",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/winston/container.js:47:replace-assigned-value",
+          "path": "lib/winston/container.js",
+          "line": 47,
+          "operator": "replace-assigned-value",
+          "before": "        trans = [existing];",
+          "after": "        trans = undefined;",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        }
+      ],
+      "heldBackBondedMutants": {}
+    },
+    {
+      "repository": "trekhleb/javascript-algorithms",
+      "pull": 2157,
+      "baseCommit": "0ae5dd8becd841a780c4183cba416c2c8417a05b",
+      "agentExit": 0,
+      "regression": "pass",
+      "sealedOracle": "accepted",
+      "oracleReach": "unmeasured",
+      "heldBackOracle": "accepted",
+      "heldBackOrderDependent": false,
+      "oracleBond": "held",
+      "heldBackBond": "held",
+      "bondedMutants": [
+        {
+          "id": "src/data-structures/deque/Deque.js:8:replace-assigned-value",
+          "path": "src/data-structures/deque/Deque.js",
+          "line": 8,
+          "operator": "replace-assigned-value",
+          "before": "    this.linkedList = new LinkedList();",
+          "after": "    this.linkedList = undefined;",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "src/data-structures/deque/Deque.js:15:return-sentinel",
+          "path": "src/data-structures/deque/Deque.js",
+          "line": 15,
+          "operator": "return-sentinel",
+          "before": "    return !this.linkedList.head;",
+          "after": "    return undefined;",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "src/data-structures/deque/Deque.js:22:return-sentinel",
+          "path": "src/data-structures/deque/Deque.js",
+          "line": 22,
+          "operator": "return-sentinel",
+          "before": "    return this.linkedList.toArray().length;",
+          "after": "    return undefined;",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "src/data-structures/deque/Deque.js:30:negate-condition",
+          "path": "src/data-structures/deque/Deque.js",
+          "line": 30,
+          "operator": "negate-condition",
+          "before": "    if (this.isEmpty()) {",
+          "after": "    if (!(this.isEmpty())) {",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "src/data-structures/deque/Deque.js:42:negate-condition",
+          "path": "src/data-structures/deque/Deque.js",
+          "line": 42,
+          "operator": "negate-condition",
+          "before": "    if (this.isEmpty()) {",
+          "after": "    if (!(this.isEmpty())) {",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "src/data-structures/deque/Deque.js:71:replace-assigned-value",
+          "path": "src/data-structures/deque/Deque.js",
+          "line": 71,
+          "operator": "replace-assigned-value",
+          "before": "    const removedHead = this.linkedList.deleteHead();",
+          "after": "    const removedHead = undefined;",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        }
+      ],
+      "heldBackBondedMutants": {
+        "src/data-structures/deque/Deque.js:8:replace-assigned-value": "held",
+        "src/data-structures/deque/Deque.js:15:return-sentinel": "held",
+        "src/data-structures/deque/Deque.js:22:return-sentinel": "held",
+        "src/data-structures/deque/Deque.js:30:negate-condition": "held",
+        "src/data-structures/deque/Deque.js:42:negate-condition": "held",
+        "src/data-structures/deque/Deque.js:71:replace-assigned-value": "held"
+      },
+      "verified": true,
+      "corner": "true-green",
+      "latencyMs": 196348,
+      "harness": "b83b1c9cff1292c42447979e620d8c938824659f",
+      "prompt": "sealed-oracle-shown"
+    },
+    {
+      "repository": "trekhleb/javascript-algorithms",
+      "pull": 1077,
+      "baseCommit": "ca3d16dcce7a493ae12c03ca20ede4fd7801f7a2",
+      "agentExit": 0,
+      "regression": "pass",
+      "sealedOracle": "rejected",
+      "oracleReach": "unmeasured",
+      "heldBackOracle": "rejected",
+      "heldBackOrderDependent": false,
       "oracleBond": "not-bonded",
-      "heldBackBond": "not-bonded"
+      "heldBackBond": "not-bonded",
+      "verified": false,
+      "corner": "true-red",
+      "latencyMs": 156696,
+      "harness": "b83b1c9cff1292c42447979e620d8c938824659f",
+      "prompt": "sealed-oracle-shown"
+    },
+    {
+      "repository": "iamkun/dayjs",
+      "pull": 2948,
+      "baseCommit": "9e3132e952ca0fbd3c38de3ef8bc9a5e24d235a4",
+      "agentExit": 1,
+      "regression": "pass",
+      "sealedOracle": "rejected",
+      "oracleReach": "unmeasured",
+      "heldBackOracle": "rejected",
+      "heldBackOrderDependent": false,
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded",
+      "verified": false,
+      "corner": "true-red",
+      "latencyMs": 725615,
+      "harness": "b83b1c9cff1292c42447979e620d8c938824659f",
+      "prompt": "sealed-oracle-shown"
+    },
+    {
+      "repository": "koajs/koa",
+      "pull": 1998,
+      "baseCommit": "4a191b1fb7bc999ebbe4bc822e4f315bb752006e",
+      "agentExit": 0,
+      "regression": "pass",
+      "sealedOracle": "rejected",
+      "oracleReach": "unmeasured",
+      "heldBackOracle": "rejected",
+      "heldBackOrderDependent": false,
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded",
+      "verified": false,
+      "corner": "true-red",
+      "latencyMs": 283129,
+      "harness": "b83b1c9cff1292c42447979e620d8c938824659f",
+      "prompt": "sealed-oracle-shown"
+    },
+    {
+      "repository": "koajs/koa",
+      "pull": 1961,
+      "baseCommit": "e0ba8ef39d27fe5dae5492f9fe753d155124f994",
+      "agentExit": 0,
+      "regression": "pass",
+      "sealedOracle": "accepted",
+      "oracleReach": "reached",
+      "heldBackOracle": "accepted",
+      "heldBackOrderDependent": false,
+      "oracleBond": "held",
+      "heldBackBond": "held",
+      "bondedMutants": [
+        {
+          "id": "lib/request.js:395:replace-assigned-value",
+          "path": "lib/request.js",
+          "line": 395,
+          "operator": "replace-assigned-value",
+          "before": "    const parsed = Number.parseInt(len, 10)",
+          "after": "    const parsed = undefined",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/request.js:396:delete-statement",
+          "path": "lib/request.js",
+          "line": 396,
+          "operator": "delete-statement",
+          "before": "    return Number.isNaN(parsed) ? undefined : parsed",
+          "after": "",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        }
+      ],
+      "heldBackBondedMutants": {
+        "lib/request.js:395:replace-assigned-value": "held",
+        "lib/request.js:396:delete-statement": "held"
+      },
+      "verified": true,
+      "corner": "true-green",
+      "latencyMs": 110201,
+      "harness": "b83b1c9cff1292c42447979e620d8c938824659f",
+      "prompt": "sealed-oracle-shown"
     }
   ]
 }

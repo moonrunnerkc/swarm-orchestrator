@@ -1,0 +1,29 @@
+diff --git a/probe-tz.js b/probe-tz.js
+new file mode 100644
+index 0000000..05a6f40
+--- /dev/null
++++ b/probe-tz.js
+@@ -0,0 +1,23 @@
++const d = new Date(0)
++console.log('local:', d.toLocaleString('en-US', { timeZone: 'America/New_York' }))
++const dtf = new Intl.DateTimeFormat('en-US', { hour12: false, timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
++console.log(dtf.formatToParts(d).map(p => p.type + '=' + p.value).join(' '))
++const s = '2012-03-11 02:00:00'
++const t = new Date(s)
++console.log('parsed:', t.toISOString())
++console.log('tz str:', t.toLocaleString('en-US', { timeZone: 'America/New_York' }))
++console.log('back:', new Date(t.toLocaleString('en-US', { timeZone: 'America/New_York' })).toISOString())
++const f = new Intl.DateTimeFormat('en-US', { hour12: false, timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
++console.log('fmt:', f.format(t))
++const f2 = new Intl.DateTimeFormat('en-US', { hourCycle: 'h23', timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
++console.log('fmt2:', f2.format(t))
++console.log('fmt2 epoch:', f2.format(d))
++console.log('toLocaleString epoch:', d.toLocaleString('en-US', { timeZone: 'America/New_York' }))
++console.log('toLocaleString t:', t.toLocaleString('en-US', { timeZone: 'America/New_York' }))
++console.log('toLocaleString t h23:', t.toLocaleString('en-US', { timeZone: 'America/New_York', hourCycle: 'h23' }))
++console.log('toLocaleString t hour12false:', t.toLocaleString('en-US', { timeZone: 'America/New_York', hour12: false }))
++console.log('toLocaleString t hour12false h23:', t.toLocaleString('en-US', { timeZone: 'America/New_York', hour12: false, hourCycle: 'h23' }))
++console.log('toLocaleString t hour12true:', t.toLocaleString('en-US', { timeZone: 'America/New_York', hour12: true }))
++console.log('toLocaleString t hour12true h23:', t.toLocaleString('en-US', { timeZone: 'America/New_York', hour12: true, hourCycle: 'h23' }))
++console.log('toLocaleString t hour12true h11:', t.toLocaleString('en-US', { timeZone: 'America/New_York', hour12: true, hourCycle: 'h11' }))
++console.log('toLocaleString t hour12true h24:', t.toLocaleString('en-US', { timeZone: 'America/New_York', hour12: true, hourCycle: 'h24' }))

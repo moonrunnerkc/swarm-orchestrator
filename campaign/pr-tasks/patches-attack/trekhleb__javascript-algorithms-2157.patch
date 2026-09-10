@@ -1,0 +1,261 @@
+diff --git a/src/data-structures/deque/Deque.js b/src/data-structures/deque/Deque.js
+new file mode 100644
+index 0000000..13cab8b
+--- /dev/null
++++ b/src/data-structures/deque/Deque.js
+@@ -0,0 +1,100 @@
++import LinkedList from '../linked-list/LinkedList';
++
++export default class Deque {
++  constructor() {
++    // We're going to implement Deque based on LinkedList since the two
++    // structures are quite similar. Namely, they both operate mostly on
++    // the elements at the beginning and the end.
++    this.linkedList = new LinkedList();
++  }
++
++  /**
++   * @return {boolean}
++   */
++  isEmpty() {
++    return !this.linkedList.head;
++  }
++
++  /**
++   * @return {number}
++   */
++  get size() {
++    return this.linkedList.toArray().length;
++  }
++
++  /**
++   * Read the element at the front of the deque without removing it.
++   * @return {*}
++   */
++  peekFront() {
++    if (this.isEmpty()) {
++      return null;
++    }
++
++    return this.linkedList.head.value;
++  }
++
++  /**
++   * Read the element at the back of the deque without removing it.
++   * @return {*}
++   */
++  peekBack() {
++    if (this.isEmpty()) {
++      return null;
++    }
++
++    return this.linkedList.tail.value;
++  }
++
++  /**
++   * Add a new element to the front of the deque.
++   * @param {*} value
++   */
++  addFront(value) {
++    this.linkedList.prepend(value);
++  }
++
++  /**
++   * Add a new element to the back of the deque.
++   * @param {*} value
++   */
++  addBack(value) {
++    this.linkedList.append(value);
++  }
++
++  /**
++   * Remove the element at the front of the deque.
++   * If the deque is empty, return null.
++   * @return {*}
++   */
++  removeFront() {
++    const removedHead = this.linkedList.deleteHead();
++    return removedHead ? removedHead.value : null;
++  }
++
++  /**
++   * Remove the element at the back of the deque.
++   * If the deque is empty, return null.
++   * @return {*}
++   */
++  removeBack() {
++    const removedTail = this.linkedList.deleteTail();
++    return removedTail ? removedTail.value : null;
++  }
++
++  /**
++   * @return {*[]}
++   */
++  toArray() {
++    return this.linkedList.toArray().map((node) => node.value);
++  }
++
++  /**
++   * @param [callback]
++   * @return {string}
++   */
++  toString(callback) {
++    // Return string representation of the deque's linked list.
++    return this.linkedList.toString(callback);
++  }
++}
+diff --git a/src/data-structures/deque/README.md b/src/data-structures/deque/README.md
+new file mode 100644
+index 0000000..3292d18
+--- /dev/null
++++ b/src/data-structures/deque/README.md
+@@ -0,0 +1,54 @@
++# Deque
++
++A **Deque** (double-ended queue) is a data structure that generalises both a
++[Queue](../queue/README.md) and a [Stack](../stack/README.md): elements can be
++added and removed from either end.
++
++This implementation is backed by the existing
++[LinkedList](../linked-list/README.md), which already supports O(1) operations
++at both the head and the tail.
++
++## Operations
++
++| Operation     | Description                              | Time Complexity |
++| ------------- | ---------------------------------------- | --------------- |
++| `addFront`    | Add an element to the front of the deque | O(1)            |
++| `addBack`     | Add an element to the back of the deque  | O(1)            |
++| `removeFront` | Remove the element at the front          | O(1)            |
++| `removeBack`  | Remove the element at the back           | O(1)            |
++| `peekFront`   | Read the front element without removing  | O(1)            |
++| `peekBack`    | Read the back element without removing   | O(1)            |
++| `isEmpty`     | Check whether the deque is empty         | O(1)            |
++| `size`        | Number of elements in the deque          | O(n)            |
++| `toArray`     | Convert the deque to an array            | O(n)            |
++| `toString`    | String representation (optional callback)| O(n)            |
++
++## Example
++
++```js
++import Deque from './Deque';
++
++const deque = new Deque();
++
++deque.addBack(1);
++deque.addBack(2);
++deque.addFront(0);
++
++deque.toArray(); // [0, 1, 2]
++deque.peekFront(); // 0
++deque.peekBack(); // 2
++deque.removeFront(); // 0
++deque.removeBack(); // 2
++```
++
++## Use Cases
++
++- **Breadth-first search** with the ability to expand from both ends.
++- **Sliding window maximum/minimum** algorithms.
++- **Undo/redo** stacks where operations can be pushed and popped from either end.
++- **Task scheduling** where tasks can be prioritised at either end.
++
++## References
++
++- [Deque — Wikipedia](https://en.wikipedia.org/wiki/Double-ended_queue)
++- [Deque — GeeksforGeeks](https://www.geeksforgeeks.org/deque-in-python/)
+diff --git a/src/data-structures/deque/__test__/Deque.test.js b/src/data-structures/deque/__test__/Deque.test.js
+new file mode 100644
+index 0000000..1dc2c36
+--- /dev/null
++++ b/src/data-structures/deque/__test__/Deque.test.js
+@@ -0,0 +1,89 @@
++import Deque from '../Deque';
++
++describe('Deque', () => {
++  it('should create an empty deque', () => {
++    const deque = new Deque();
++
++    expect(deque).not.toBeNull();
++    expect(deque.isEmpty()).toBe(true);
++    expect(deque.size).toBe(0);
++  });
++
++  it('should return null when removing from an empty deque', () => {
++    const deque = new Deque();
++
++    expect(deque.removeFront()).toBeNull();
++    expect(deque.removeBack()).toBeNull();
++  });
++
++  it('should add elements to the front and remove from the back (reversed queue)', () => {
++    const deque = new Deque();
++
++    deque.addFront(1);
++    deque.addFront(2);
++    deque.addFront(3);
++
++    expect(deque.size).toBe(3);
++    expect(deque.peekFront()).toBe(3);
++    expect(deque.peekBack()).toBe(1);
++
++    expect(deque.removeBack()).toBe(1);
++    expect(deque.removeBack()).toBe(2);
++    expect(deque.removeBack()).toBe(3);
++    expect(deque.removeBack()).toBeNull();
++    expect(deque.isEmpty()).toBe(true);
++  });
++
++  it('should support mixed addFront and addBack operations', () => {
++    const deque = new Deque();
++
++    // Build: [3, 1, 2, 4]
++    deque.addBack(1);
++    deque.addBack(2);
++    deque.addFront(3);
++    deque.addBack(4);
++
++    expect(deque.size).toBe(4);
++    expect(deque.peekFront()).toBe(3);
++    expect(deque.peekBack()).toBe(4);
++    expect(deque.toArray()).toEqual([3, 1, 2, 4]);
++  });
++
++  it('should handle a single element correctly', () => {
++    const deque = new Deque();
++
++    deque.addBack(42);
++
++    expect(deque.size).toBe(1);
++    expect(deque.peekFront()).toBe(42);
++    expect(deque.peekBack()).toBe(42);
++
++    expect(deque.removeFront()).toBe(42);
++    expect(deque.isEmpty()).toBe(true);
++    expect(deque.peekFront()).toBeNull();
++    expect(deque.peekBack()).toBeNull();
++  });
++
++  it('should convert to array correctly', () => {
++    const deque = new Deque();
++
++    expect(deque.toArray()).toEqual([]);
++
++    deque.addBack(1);
++    deque.addBack(2);
++    deque.addFront(0);
++
++    expect(deque.toArray()).toEqual([0, 1, 2]);
++  });
++
++  it('should convert to string with a custom callback', () => {
++    const deque = new Deque();
++
++    deque.addBack({ value: 1, key: 'test1' });
++    deque.addBack({ value: 2, key: 'test2' });
++
++    const toString = (value) => `${value.key}:${value.value}`;
++
++    expect(deque.toString(toString)).toBe('test1:1,test2:2');
++  });
++});
