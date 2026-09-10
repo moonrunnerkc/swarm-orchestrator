@@ -1,0 +1,70 @@
+diff --git a/lib/command.js b/lib/command.js
+index 536d806..e3b1209 100644
+--- a/lib/command.js
++++ b/lib/command.js
+@@ -118,22 +118,8 @@ class Command extends EventEmitter {
+ 
+     cmd._outputConfiguration = this._outputConfiguration;
+ 
+-    cmd._hidden = !!(opts.noHelp || opts.hidden); // noHelp is deprecated old name for hidden
+-    cmd._hasHelpOption = this._hasHelpOption;
+-    cmd._helpFlags = this._helpFlags;
+-    cmd._helpDescription = this._helpDescription;
+-    cmd._helpShortFlag = this._helpShortFlag;
+-    cmd._helpLongFlag = this._helpLongFlag;
+-    cmd._helpCommandName = this._helpCommandName;
+-    cmd._helpCommandnameAndArgs = this._helpCommandnameAndArgs;
+-    cmd._helpCommandDescription = this._helpCommandDescription;
+-    cmd._helpConfiguration = this._helpConfiguration;
+-    cmd._exitCallback = this._exitCallback;
+-    cmd._storeOptionsAsProperties = this._storeOptionsAsProperties;
+-    cmd._combineFlagAndOptionalValue = this._combineFlagAndOptionalValue;
+-    cmd._allowExcessArguments = this._allowExcessArguments;
+-    cmd._enablePositionalOptions = this._enablePositionalOptions;
+-    cmd._showHelpAfterError = this._showHelpAfterError;
++    cmd.copyInheritedSettings(this);
++    if (opts.noHelp || opts.hidden) cmd._hidden = true; // noHelp is deprecated old name for hidden
+ 
+     cmd._executableFile = opts.executableFile || null; // Custom name for executable file, set missing to null to match constructor
+     if (args) cmd.arguments(args);
+@@ -249,10 +235,39 @@ class Command extends EventEmitter {
+ 
+     opts = opts || {};
+     if (opts.isDefault) this._defaultCommandName = cmd._name;
+-    if (opts.noHelp || opts.hidden) cmd._hidden = true; // modifying passed command due to existing implementation
+ 
+     this.commands.push(cmd);
+     cmd.parent = this;
++    cmd.copyInheritedSettings(this);
++    if (opts.noHelp || opts.hidden) cmd._hidden = true; // modifying passed command due to existing implementation
++    return this;
++  };
++
++  /**
++   * Copy inherited settings from source command.
++   *
++   * @param {Command} source - command to copy inherited settings from
++   * @return {Command} `this` command for chaining
++   */
++
++  copyInheritedSettings(source) {
++    this._hidden = !!source._hidden;
++    this._hasHelpOption = source._hasHelpOption;
++    this._helpFlags = source._helpFlags;
++    this._helpDescription = source._helpDescription;
++    this._helpShortFlag = source._helpShortFlag;
++    this._helpLongFlag = source._helpLongFlag;
++    this._helpCommandName = source._helpCommandName;
++    this._helpCommandnameAndArgs = source._helpCommandnameAndArgs;
++    this._helpCommandDescription = source._helpCommandDescription;
++    this._helpConfiguration = source._helpConfiguration;
++    this._exitCallback = source._exitCallback;
++    this._storeOptionsAsProperties = source._storeOptionsAsProperties;
++    this._combineFlagAndOptionalValue = source._combineFlagAndOptionalValue;
++    this._allowExcessArguments = source._allowExcessArguments;
++    this._enablePositionalOptions = source._enablePositionalOptions;
++    this._showHelpAfterError = source._showHelpAfterError;
++
+     return this;
+   };
+ 

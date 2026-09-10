@@ -1,0 +1,128 @@
+diff --git a/index.d.ts b/index.d.ts
+index f788cfd..bf7a079 100644
+--- a/index.d.ts
++++ b/index.d.ts
+@@ -124,9 +124,15 @@ declare namespace winston {
+ 
+     configure(options: LoggerOptions): void;
+ 
++    child(options: ChildLoggerOptions): Logger;
++
+     new(options?: LoggerOptions): Logger;
+   }
+ 
++  interface ChildLoggerOptions extends Partial<LoggerOptions> {
++    transports?: Transport[] | Transport;
++  }
++
+   interface Container {
+     loggers: Map<string, Logger>;
+     options: LoggerOptions;
+diff --git a/lib/winston/logger.js b/lib/winston/logger.js
+index b45d376..2f8db89 100644
+--- a/lib/winston/logger.js
++++ b/lib/winston/logger.js
+@@ -521,6 +521,27 @@ class Logger extends Transform {
+     ].join('\n'));
+   }
+ 
++  /**
++   * Create a child logger with the same (or custom) transports.
++   * @param {Object} options - Options for the new child logger.
++   * @returns {Logger} - A new Logger instance.
++   */
++  child(options = {}) {
++    const winston = require('../');
++    // Deep clone the parents transports so we do not mutate
++    return winston.createLogger({
++      level: this.level,
++      format: this.format,
++      levels: this.levels,
++      exitOnError: this.exitOnError,
++      transports: Array.isArray(this.transports)
++        ? this.transports.map(t => t)
++        : [],
++      silent: this.silent,
++      ...options
++    });
++  }
++
+   /**
+    * Bubbles the `event` that occured on the specified `transport` up
+    * from this instance.
+diff --git a/test/logger.test.js b/test/logger.test.js
+index 025a667..3175d2d 100755
+--- a/test/logger.test.js
++++ b/test/logger.test.js
+@@ -863,6 +863,71 @@ describe('Logger (profile, startTimer)', function (done) {
+   });
+ });
+ 
++describe('Logger.child', function () {
++  it('should return a Logger instance', function (done) {
++    var logger = winston.createLogger({
++      transports: [new TransportStream({})]
++    });
++
++    var child = logger.child({});
++
++    assume(child).is.an('object');
++    assume(logger.level).equals(child.level);
++    done();
++  });
++
++  it('should share the transports of its parent', function (done) {
++    const expectedMsg = 'bar';
++    var transport = new winston.transports.Console();
++
++    transport.on('logged', function () {
++      done(new Error('Should not have logged to console transport'));
++    });
++
++    var logger = winston.createLogger({
++      transports: [new TransportStream({})]
++    });
++
++    var child = logger.child({});
++    // Use the level-method API rather than positional arguments to test properly
++    child.info(expectedMsg);
++
++    done();
++  });
++
++  it('should allow overriding the level', function (done) {
++    let transport;
++    var logger = winston.createLogger({
++      transports: [
++        new TransportStream({})
++      ]
++    });
++
++    transport = new TransportStream({
++      log: function (info) {
++        done(new Error('Should not have logged'));
++      }
++    });
++
++    var child = logger.child({ level: 'warn', transports: [transport] });
++    child.log({ message: 'test', level: 'debug' });
++
++    setImmediate(() => done());
++  });
++
++  it('should share the exception handlers with parent', function () {
++    var logger = winston.createLogger({
++      transports: [new TransportStream({})]
++    });
++
++    var child = logger.child({});
++
++    assume(Object.keys(child.exceptions.handlers)).deep.equals(
++      Object.keys(logger.exceptions.handlers)
++    );
++  });
++});
++
+ describe('Should bubble transport events', () => {
+   it('error', (done) => {
+     const consoleTransport = new winston.transports.Console();

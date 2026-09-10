@@ -1,0 +1,19 @@
+diff --git a/lib/winston/transports/file.js b/lib/winston/transports/file.js
+index 0134fe4..c714f44 100644
+--- a/lib/winston/transports/file.js
++++ b/lib/winston/transports/file.js
+@@ -493,9 +493,11 @@ module.exports = class File extends TransportStream {
+ 
+     debug('create stream start', fullpath, this.options);
+     const dest = fs.createWriteStream(fullpath, this.options)
+-      // TODO: What should we do with errors here?
+-      .on('error', err => debug(err))
+-      .on('close', () => debug('close', dest.path, dest.bytesWritten))
++      .on('error', this._onError)
++      .on('drain', this._onDrain)
++      .on('close', function close() {
++        debug('close', this.path, this.bytesWritten);
++      })
+       .on('open', () => {
+         debug('file open ok', fullpath);
+         this.emit('open', fullpath);

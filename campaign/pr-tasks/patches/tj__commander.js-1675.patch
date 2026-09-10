@@ -1,0 +1,45 @@
+diff --git a/lib/command.js b/lib/command.js
+index ffd8a1d..593f910 100644
+--- a/lib/command.js
++++ b/lib/command.js
+@@ -1475,19 +1475,31 @@ Expecting one of '${allowedValues.join("', '")}'`);
+   }
+ 
+   /**
+-   * Internal bottleneck for handling of parsing errors.
+-   *
+-   * @api private
+-   */
+-  _displayError(exitCode, code, message) {
+-    this._outputConfiguration.outputError(`${message}\n`, this._outputConfiguration.writeErr);
+-    if (typeof this._showHelpAfterError === 'string') {
++   * Display an error message and call process.exit.
++   *
++   * @param {string} message - message to display
++   * @param {string} [code] - error id to include in CommanderError
++   * @param {number} [exitCode] - suggested exit code for the CLI program
++   * @return {never}
++   */
++  error(message, code, exitCode) {
++    exitCode = (exitCode === undefined) ? 1 : exitCode;
++    const errorMessage = `${message}`;
++    this._outputConfiguration.outputError(`${errorMessage}\n`, this._outputConfiguration.writeErr);
++    if(typeof this._showHelpAfterError === 'string') {
+       this._outputConfiguration.writeErr(`${this._showHelpAfterError}\n`);
+-    } else if (this._showHelpAfterError) {
++    } else if(this._showHelpAfterError) {
+       this._outputConfiguration.writeErr('\n');
+       this.outputHelp({ error: true });
+     }
+-    this._exit(exitCode, code, message);
++    // Use default code of 'commander.error' when not specified (for compatibility with internal usage).
++    const errorCode = code || 'commander.error';
++    if (!this._exitCallback) {
++      process.exit(exitCode);
++    } else {
++      // Expecting this line is not reached.
++      this._exitCallback(new CommanderError(exitCode, errorCode, errorMessage));
++    }
+   }
+ 
+   /**

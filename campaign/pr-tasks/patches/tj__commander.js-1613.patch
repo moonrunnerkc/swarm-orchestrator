@@ -1,0 +1,123 @@
+diff --git a/lib/command.js b/lib/command.js
+index 184bc0b..a484bdb 100644
+--- a/lib/command.js
++++ b/lib/command.js
+@@ -792,6 +792,35 @@ Expecting one of '${allowedValues.join("', '")}'`);
+     return this;
+   };
+ 
++  /**
++   * Retrieve option value from the command-line argument or a default/env/config source.
++   * Returns the priority of the source: 'default', 'env', 'config', or 'cli'.
++   * Priority order is: default < env < config < cli
++   *
++   * @param {string} key
++   * @return {string|undefined}
++   */
++
++  getOptionValueSource(key) {
++    return this._optionValueSources[key];
++  };
++
++  /**
++   * Store option value with source info. The source argument specifies the priority level: 'default', 'env', 'config', or 'cli'.
++   * Later calls from higher priority sources will overwrite earlier values from lower priority ones.
++   *
++   * @param {string} key
++   * @param {*} value
++   * @param {string} source
++   * @returns {Command} `this` command for chaining
++   */
++
++  setOptionValueWithSource(key, value, source) {
++    this.setOptionValue(key, value);
++    this._optionValueSources[key] = source;
++    return this;
++  };
++
+   /**
+    * @api private
+    */
+diff --git a/tests/options.getset.test.js b/tests/options.getset.test.js
+index adb15e6..e8ae938 100644
+--- a/tests/options.getset.test.js
++++ b/tests/options.getset.test.js
+@@ -22,3 +22,46 @@ describe.each([true, false])('storeOptionsAsProperties is %s', (storeOptionsAsPr
+     expect(program.opts().cheese).toBe(cheeseType);
+   });
+ });
++
++describe('getOptionValueSource', () => {
++  test('when getOptionValueSource called with undefined key then returns undefined', () => {
++    const program = new commander.Command();
++    expect(program.getOptionValueSource(undefined)).toBeUndefined();
++  });
++
++  test('when getOptionValueSource called after parsing CLI option then returns cli', () => {
++    const program = new commander.Command();
++    program.option('--cheese [type]', 'cheese type');
++    program.parse(['node', 'test', '--cheese']);
++    expect(program.getOptionValueSource('cheese')).toBe('cli');
++  });
++
++  test('when getOptionValueSource called after setOptionValue then returns undefined', () => {
++    const program = new commander.Command();
++    program.option('--cheese', 'cheese type');
++    program.setOptionValue('cheese', true);
++    expect(program.getOptionValueSource('cheese')).toBeUndefined();
++  });
++
++  test('when setOptionValueWithSource called then getOptionValueSource returns correct source', () => {
++    const program = new commander.Command();
++    program.option('--cheese [type]', 'cheese type');
++    program.setOptionValueWithSource('cheese', true, 'default');
++    expect(program.getOptionValueSource('cheese')).toBe('default');
++    program.setOptionValueWithSource('cheese', true, 'cli');
++    expect(program.getOptionValueSource('cheese')).toBe('cli');
++  });
++
++  test('when setOptionValueWithSource called then value is also set', () => {
++    const program = new commander.Command();
++    program.option('--cheese [type]', 'cheese type');
++    const cheeseType = 'blue';
++    program.setOptionValueWithSource('cheese', cheeseType, 'env');
++    expect(program.getOptionValue('cheese')).toBe(cheeseType);
++  });
++
++  test('when setOptionValueWithSource called then returns this for chaining', () => {
++    const program = new commander.Command();
++    expect(program.setOptionValueWithSource('foo', 'bar', 'default')).toBe(program);
++  });
++});
+diff --git a/typings/index.d.ts b/typings/index.d.ts
+index cba74f6..2c50bfa 100644
+--- a/typings/index.d.ts
++++ b/typings/index.d.ts
+@@ -531,6 +531,27 @@ export class Command {
+    */
+   setOptionValue(key: string, value: unknown): this;
+ 
++  /**
++   * Retrieve option value source (priority over other sources).
++   *
++   * Priority order is: default < env < config < cli
++   *
++   * @param key
++   * @returns 'default', 'env', 'config', or 'cli'
++   */
++  getOptionValueSource(key: string): string | undefined;
++
++  /**
++   * Store option value with source info. The source argument specifies the priority level: 'default', 'env', 'config', or 'cli'.
++   * Later calls from higher priority sources will overwrite earlier values from lower priority ones.
++   *
++   * @param key
++   * @param value
++   * @param source one of 'default', 'env', 'config', 'cli'
++   * @returns `this` command for chaining
++   */
++  setOptionValueWithSource(key: string, value: unknown, source: string): this;
++
+   /**
+    * Alter parsing of short flags with optional values.
+    *
