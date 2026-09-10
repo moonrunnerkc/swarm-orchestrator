@@ -105,6 +105,13 @@ const namesAScheme = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
  * commands and `//host/path` would resolve to an absolute path outside any workspace.
  */
 function pathsAWordCouldOpen(word: string): readonly string[] {
+  // An empty word names no file, so it is not a path candidate. `sed -i '' 's/a/b/' file` is the
+  // in-place form every macOS invocation uses, and the quoted empty argument reached a check whose
+  // whole subject is paths and came back "the path is empty": a real command refused for a reason
+  // that was not about it.
+  if (word.length === 0) {
+    return [];
+  }
   const candidates = new Set<string>([word]);
   for (const piece of word.split(/[\s]+/)) {
     if (piece.length > 0) {
