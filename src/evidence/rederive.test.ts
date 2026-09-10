@@ -5,6 +5,12 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { bondVerdict } from "../gates/bonds.ts";
+import {
+  bondRefusesCertification,
+  certifies,
+  type RecordedVerdict,
+  reasonsToRefuse,
+} from "../gates/certification.ts";
 import { assembleGateSet, defaultDiffBudget, runGatesEngine } from "../gates/engine.ts";
 import { createFileSetRegistry } from "../gates/file-set.ts";
 import { describeGateSet, sealGateSet } from "../gates/gate-set-seal.ts";
@@ -339,5 +345,52 @@ describe("a bundle that lies about a gate", () => {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * The certification policy is written twice: once in TypeScript, where `swarm ci` computes
+ * `verified`, and once in the dependency-free script a bundle carries so a third party can
+ * recompute it. Two copies of a rule agree by coincidence until something holds them together.
+ */
+describe("the re-derivation script agrees with the certification policy", () => {
+  const verdicts: RecordedVerdict[] = [
+    { regression: "pass", task: "accepted", oracleReach: "reached", oracleBond: "held" },
+    { regression: "pass", task: "accepted", oracleReach: "unmeasured", oracleBond: "not-bonded" },
+    { regression: "pass", task: "accepted", oracleReach: "reached", oracleBond: "vacuous" },
+    { regression: "pass", task: "accepted", oracleReach: "reached", oracleBond: "unshown" },
+    { regression: "pass", task: "accepted", oracleReach: "unreached", oracleBond: "not-bonded" },
+    { regression: "fail", task: "accepted", oracleReach: "reached", oracleBond: "held" },
+    {
+      regression: "unmeasured",
+      task: "unjudged",
+      oracleReach: "unmeasured",
+      oracleBond: "not-bonded",
+    },
+    { regression: "pass", task: "vacuous", oracleReach: "unmeasured", oracleBond: "not-bonded" },
+    { regression: "pass", task: "rejected", oracleReach: "unmeasured", oracleBond: "not-bonded" },
+  ];
+
+  it("names the same reasons to refuse as the tool that wrote the record", () => {
+    for (const verdict of verdicts) {
+      expect(rederive.refusalsToCertify(verdict)).toEqual(reasonsToRefuse(verdict));
+      expect(rederive.rederiveCiVerdict(verdict).verified).toBe(certifies(verdict));
+    }
+  });
+
+  it("carries the same blocking decision", () => {
+    expect(rederive.bondRefusesCertification).toBe(bondRefusesCertification);
+  });
+
+  /**
+   * A green claim nobody can recompute is what gate 3a exists to bar, so a record missing a field
+   * the policy reads is not re-derived rather than agreed with.
+   */
+  it("refuses to re-derive a record missing a field the policy reads", () => {
+    const judged = rederive.rederiveCiVerdict({ regression: "pass", task: "accepted" });
+
+    expect(judged.rederived).toBe(false);
+    expect(judged.missing).toEqual(["oracleReach"]);
+    expect(judged.verified).toBeNull();
   });
 });

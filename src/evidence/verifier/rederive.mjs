@@ -29,6 +29,76 @@ import {
   sha256,
 } from "./verify.mjs";
 
+/**
+ * Whether a vacuous oracle bond refuses to certify.
+ *
+ * Mirrors `bondRefusesCertification` in src/gates/certification.ts, which is where the decision
+ * lives. A verifier that carried its own opinion of the policy would agree with the tool by
+ * coincidence rather than by construction, so the parity test in that tree holds the two to each
+ * other over a table of cases.
+ */
+export const bondRefusesCertification = false;
+
+/**
+ * The fields the policy reads, and the words each of them may carry.
+ *
+ * A field carrying a word the policy does not know is as unreadable as an absent one, and it is
+ * the more dangerous of the two: `not-recorded` in a field a rule tests for one specific value
+ * reads as "not that value" and lets the record certify. So the vocabulary is checked rather than
+ * assumed, and only for the fields the policy actually reads, since holding a record to a rule
+ * nothing applies would refuse it for a field no verdict depends on.
+ *
+ * `no-change` is the passes' word for the agent having written nothing, kept apart from
+ * `unmeasured` because a run with nothing to measure and a run the harness could not measure are
+ * different findings. Neither is `pass`, so neither certifies.
+ */
+const verdictVocabulary = {
+  regression: ["pass", "fail", "unmeasured", "no-change"],
+  task: ["accepted", "rejected", "unjudged", "vacuous"],
+  oracleReach: ["reached", "unreached", "unmeasured"],
+  oracleBond: ["held", "vacuous", "unshown", "not-bonded"],
+};
+
+const fieldsTheVerdictPolicyReads = ["regression", "task", "oracleReach"];
+
+/**
+ * Every reason a recorded `swarm ci` verdict holds for not certifying, named.
+ *
+ * Mirrors `reasonsToRefuse` in src/gates/certification.ts, rule for rule. `verified` is the
+ * absence of these and nothing else, which is what lets a third party recompute it from the
+ * record instead of trusting the run that wrote it.
+ */
+export function refusalsToCertify(verdict) {
+  const reasons = [];
+  if (verdict.regression !== "pass") reasons.push("regression-not-pass");
+  if (verdict.task !== "accepted") reasons.push("task-not-accepted");
+  if (verdict.oracleReach === "unreached") reasons.push("oracle-did-not-reach-the-change");
+  if (bondRefusesCertification && verdict.oracleBond === "vacuous") {
+    reasons.push("oracle-bond-vacuous");
+  }
+  return reasons;
+}
+
+/**
+ * The verdict a recorded `swarm ci` result implies, or the fields that stop it implying one.
+ *
+ * A record missing a field the policy reads is not re-derived rather than agreed with, which is
+ * the same rule this file applies to a gate run whose output was truncated. A green claim nobody
+ * can recompute is exactly what gate 3a exists to bar, so the caller reads `rederived` before it
+ * reads `verified`.
+ */
+export function rederiveCiVerdict(verdict) {
+  const read = bondRefusesCertification
+    ? [...fieldsTheVerdictPolicyReads, "oracleBond"]
+    : fieldsTheVerdictPolicyReads;
+  const missing = read.filter((name) => !verdictVocabulary[name].includes(verdict[name]));
+  if (missing.length > 0) {
+    return { rederived: false, missing, reasons: [], verified: null };
+  }
+  const reasons = refusalsToCertify(verdict);
+  return { rederived: true, missing: [], reasons, verified: reasons.length === 0 };
+}
+
 function notApplicable(observation) {
   if (observation.unavailable !== null && observation.unavailable !== undefined)
     return "not-applicable";
