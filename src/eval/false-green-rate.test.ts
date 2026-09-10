@@ -47,7 +47,7 @@ describe("tallyFalseGreens", () => {
     ]);
 
     expect(tally.opportunities).toBe(19);
-    expect(Number(tally.point.toFixed(3))).toBe(0.053);
+    expect(Number(tally.point?.toFixed(3))).toBe(0.053);
     expect(tally.lower).toBeGreaterThan(0);
     expect(tally.upper).toBeLessThan(0.3);
   });

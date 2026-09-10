@@ -365,7 +365,7 @@ async function measureOracleReach(
   }
   const changed = parseUnifiedDiff(options.patch).map((file) => ({
     path: file.path,
-    addedLines: file.addedLines.map((added) => added.line),
+    addedLines: file.addedLines,
   }));
 
   // Outside the workspace, so nothing the oracle runs can read the destination out of the tree it
