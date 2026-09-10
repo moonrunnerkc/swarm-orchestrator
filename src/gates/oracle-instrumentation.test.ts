@@ -100,9 +100,13 @@ describe("how an oracle can be asked for coverage", () => {
     expect(plan?.kind === "lcov-file" && plan.file).toBe(`${destination}/lcov.info`);
   });
 
+  // Spelled with the value rather than as a bare boolean: a coverage setting that a runner's
+  // argument parser reads as something other than "on" is a run with no report, and the arm then
+  // abstains for a reason that has nothing to do with the oracle.
   it("uses vitest's own spelling of the same two flags", () => {
     const plan = oracleCoveragePlan(`${setup} && npx vitest run -t 'x' 'a.test.js'`, destination);
 
+    expect(plan?.kind === "lcov-file" && plan.command).toContain("--coverage.enabled=true");
     expect(plan?.kind).toBe("lcov-file");
     expect(plan?.kind === "lcov-file" && plan.command).toContain(
       `--coverage.reportsDirectory='${destination}'`,

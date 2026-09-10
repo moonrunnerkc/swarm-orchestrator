@@ -147,7 +147,7 @@ export function oracleCoveragePlan(
     return {
       kind: "lcov-file",
       setup,
-      command: `${last} --coverage.enabled --coverage.reportsDirectory=${quotedDestination} --coverage.reporter=lcovonly`,
+      command: `${last} --coverage.enabled=true --coverage.reportsDirectory=${quotedDestination} --coverage.reporter=lcovonly`,
       file: `${destination}/lcov.info`,
     };
   }
