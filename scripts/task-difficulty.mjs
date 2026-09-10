@@ -39,6 +39,26 @@ console.log(
   `${tally.producedNoChange} run(s) wrote no patch at all, ${tally.unjudgeable} unjudgeable ` +
     "and out of the denominator, because a task nothing could judge says nothing about the model",
 );
+
+// The sensitivity that matters, because an empty patch is only a model failure if the model was
+// reachable. These rows were recorded before anything checked that, and an outage on
+// 2026-09-10 showed what it costs: two rows written down as the model writing nothing, one of
+// which came back a certified success once the endpoint was up. Their latencies say nothing is
+// obviously wrong, since a run refused at the socket returns in seconds and none of these did,
+// but that is weak evidence and it is reported as weak.
+const withoutTheEmpties = tallyTaskSuccess(ordinary.filter((one) => one.producedNoChange !== true));
+if (tally.producedNoChange > 0) {
+  console.log(
+    `\nThose ${tally.producedNoChange} are in the denominator as model failures, and their ` +
+      "attribution predates the endpoint probe that now confirms it. Dropping them entirely, " +
+      `which is the most generous reading, gives ${withoutTheEmpties.solved} of ` +
+      `${withoutTheEmpties.attempted}: ${percent(withoutTheEmpties.point)}` +
+      (withoutTheEmpties.point === null
+        ? ""
+        : ` [${percent(withoutTheEmpties.lower)}, ${percent(withoutTheEmpties.upper)}]`) +
+      ". The set discriminates either way, which is what this measures.",
+  );
+}
 console.log(
   tally.discriminates
     ? "The model both succeeds and fails inside this set, so a paired comparison over it has " +
