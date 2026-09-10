@@ -21,13 +21,34 @@ describe("titleFilterFor", () => {
   // A title is prose, so it carries parentheses and dots that mean something else in a regex.
   // Unescaped, "does not throw (regression #11.2)" selects cases nobody meant to select.
   it("escapes regex punctuation in a title", () => {
-    const [, pattern] = titleFilterFor("jest", ["does not throw (regression #11.2)"]);
+    const [, pattern] = titleFilterFor("jest", ["does not throw (regression #11.2)"]) ?? [];
     expect(pattern).toBe("does not throw \\(regression #11\\.2\\)");
   });
 
   it("joins several titles into one alternation", () => {
-    const [, pattern] = titleFilterFor("jest", ["first", "second"]);
+    const [, pattern] = titleFilterFor("jest", ["first", "second"]) ?? [];
     expect(pattern).toBe("first|second");
+  });
+
+  /**
+   * ava's `--match` takes a glob, not an alternation, and there is no spelling of it that names
+   * several titles. The filter for more than one title was `*`, which matches every case in the
+   * file: both halves then run the whole suite, the sealed and the held-back oracle are the same
+   * check, and they agree by construction. That is the self-agreement the withdrawn 0-of-18
+   * number was made of, arriving through a runner nobody had mined yet.
+   */
+  it("refuses a filter a runner cannot express, rather than one that matches everything", () => {
+    expect(titleFilterFor("ava", ["only one"])).toEqual(["--match", "only one"]);
+    expect(titleFilterFor("ava", ["first", "second"])).toBeNull();
+    expect(
+      oracleCommand({
+        storedTestFile: "/corpus/x.test.js",
+        destination: "test/x.test.js",
+        runner: "ava",
+        runnerArgv: ["npx", "ava", "test/x.test.js"],
+        titles: ["first", "second"],
+      }),
+    ).toBeNull();
   });
 });
 
@@ -50,7 +71,7 @@ describe("oracleCommand", () => {
       runnerArgv: ["node", "--test", "__tests__/length.test.js"],
       titles: ["handles zero"],
     });
-    const invocation = command.slice(command.lastIndexOf("&&") + 2).trim();
+    const invocation = (command ?? "").slice((command ?? "").lastIndexOf("&&") + 2).trim();
     expect(invocation).toBe(
       "node --test '--test-name-pattern' 'handles zero' '__tests__/length.test.js'",
     );
