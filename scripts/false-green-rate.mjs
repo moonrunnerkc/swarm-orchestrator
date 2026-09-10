@@ -10,57 +10,19 @@
  *
  * Reads what the passes recorded. Runs no model, judges nothing, and clones nothing.
  */
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { heldBackAgreementRate, tallyFalseGreens } from "../dist/eval/false-green-rate.js";
+import {
+  groupByHarness,
+  heldBackAgreementRate,
+  tallyFalseGreens,
+} from "../dist/eval/false-green-rate.js";
 import { prTaskEvidenceRoot } from "../dist/eval/pr-task-paths.js";
 
 const repositoryRoot = new URL("..", import.meta.url).pathname;
 
 const named = (one) => `${one.repository}#${one.pull}`;
-
-/**
- * The harness a set of rows agrees on, which is the one the rate is about.
- *
- * A rate assembled from rows two tool versions produced measures neither, which is why every row
- * carries the commit that judged it. Read from the rows rather than from HEAD: the tree moves for
- * reasons that do not change a verdict, a documentation commit among them, and a report that
- * insisted on HEAD would throw away a corpus every time one landed. Rows from any other commit are
- * named and left out rather than folded in.
- */
-function newestHarnessAmong(rows) {
-  const commits = new Set();
-  for (const row of rows) {
-    // A row that names no harness predates the rule that every row names one. It cannot be
-    // attributed to a tool version, so it cannot be in a rate about one.
-    if (row.harness !== undefined) commits.add(row.harness);
-  }
-  // The newest, not the commonest. A re-judge fills in from the oldest rows forward, so the
-  // commonest commit is the one being replaced, and a rate labelled with it describes the tool
-  // that is being measured away.
-  let newest = null;
-  let newestAt = -1;
-  for (const commit of commits) {
-    let at = -1;
-    try {
-      at = Number(
-        execFileSync("git", ["show", "-s", "--format=%ct", commit], {
-          cwd: repositoryRoot,
-          encoding: "utf8",
-        }).trim(),
-      );
-    } catch {
-      continue;
-    }
-    if (at > newestAt) {
-      newest = commit;
-      newestAt = at;
-    }
-  }
-  return newest;
-}
 
 /**
  * Mined rows for tasks the viability filter still admits. A row whose task the filter now rejects
@@ -73,16 +35,39 @@ function minedRows() {
   const { tasks } = JSON.parse(readFileSync(join(root, "viable.json"), "utf8"));
   const viable = new Set(tasks.filter((one) => one.viable).map(named));
   const admitted = runs.filter((one) => viable.has(named(one)));
-  const harness = newestHarnessAmong(admitted);
-  return {
-    kept: harness === null ? [] : admitted.filter((one) => one.harness === harness),
-    setAside: runs.length - admitted.length,
-    otherHarness:
-      harness === null
-        ? admitted.length
-        : admitted.filter((one) => one.harness !== harness).length,
-    harness,
-  };
+  return { kept: admitted, setAside: runs.length - admitted.length };
+}
+
+/**
+ * Which tool versions judged these rows, and whether that matters.
+ *
+ * A corpus can span two commits without spanning two tools: a re-judge under one, a handful of
+ * later tasks scored under another. Reporting only the newest group said "no rate" over eight rows
+ * that happened to be newest while three certified patches sat in the other group. A group with
+ * nothing certified contributes no opportunity and can change no rate; two groups both holding
+ * certified patches is a rate assembled across tool versions, and that is the case worth stopping
+ * for.
+ */
+function reportHarnessSplit(rows) {
+  const groups = groupByHarness(rows);
+  if (groups.length <= 1) {
+    return;
+  }
+  console.log(`recorded across ${groups.length} harness commits:`);
+  for (const group of groups) {
+    console.log(
+      `  ${group.harness.slice(0, 9)}  ${group.rows.length} row(s), ` +
+        `${group.tally.opportunities} certified, ${group.tally.falseGreens} false green(s)`,
+    );
+  }
+  const withOpportunities = groups.filter((one) => one.tally.opportunities > 0);
+  console.log(
+    withOpportunities.length > 1
+      ? "  more than one holds a certified patch, so the rate above spans tool versions: " +
+          "re-judge before quoting it"
+      : "  only one holds a certified patch, so the others contribute no opportunity and the " +
+          "rate above is that group's",
+  );
 }
 
 /**
@@ -141,11 +126,12 @@ const mined = minedRows();
 report(
   "mined from merged pull requests",
   mined.kept,
-  `${mined.setAside === 0 ? "" : `, ${mined.setAside} set aside: the viability filter no longer admits them`}` +
-    `${mined.otherHarness === 0 ? "" : `, ${mined.otherHarness} left out: judged by a different harness commit`}` +
-    `, judged at ${mined.harness === null ? "no recorded harness" : mined.harness.slice(0, 9)}`,
+  mined.setAside === 0
+    ? ""
+    : `, ${mined.setAside} set aside: the viability filter no longer admits them`,
 );
 reportAgreement(mined.kept);
+reportHarnessSplit(mined.kept);
 const hand = handAuthoredRows();
 report("hand-authored, two oracles per task", hand);
 const both = report("both corpora", [...mined.kept, ...hand]);
