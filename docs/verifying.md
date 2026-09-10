@@ -106,41 +106,55 @@ oracle can run a line and assert nothing about it. So after the oracle accepts, 
 added are changed into something that behaves differently and the oracle is run again.
 
 The four words are the ones a gate bond already uses. **held**: the oracle refused the mutant.
-**vacuous**: it accepted one the coverage of its own run says it executed. **unshown**: it accepted
-one nothing says it ran. **not bonded**: no mutant could be built, or the oracle did not accept, so
+**vacuous**: it accepted one the coverage of its own run says it executed, and a second detector
+says changed something. **unshown**: it accepted one nothing says it ran, or one nothing shows
+changed anything. **not bonded**: no mutant could be built, or the oracle did not accept, so
 nothing was asked of it. `unshown` and `not bonded` are absences of evidence about the oracle
 rather than evidence against it, and neither is ever read as `held`. Only `vacuous` refuses, and
-whether it does is one exported boolean so that turning it off is one line: it went true after an
-audit read every vacuous verdict across the sixteen certified patches by hand, and the two mutants
-that turned out to change nothing narrowed the operators that produced them.
+whether it does is one exported boolean so that turning it off is one line.
 
-The operators are mechanical and few, each a syntactic rule over a line and never a rule keyed to a
-repository, a patch or a task: invert a comparison, swap the operands of a non-commutative
-arithmetic operator, replace a returned expression with a sentinel, swap the two arguments of a
-call, drop a no-argument call whose result the chain uses. Six mutants per patch at most, two per
-operator.
+There are eight operators, each a syntactic rule over a line and never a rule keyed to a
+repository, a patch or a task: invert a comparison, negate an `if` or `while` condition, swap the
+operands of a non-commutative arithmetic operator, replace a returned expression with a sentinel,
+replace the value a plain assignment writes, swap the two arguments of a call, drop a no-argument
+call whose result the chain uses, remove the statement. Six mutants per patch at most, two per
+operator. They are read off the language's statement productions rather than off the patches that
+exposed a gap in them, and the derivation is in
+[`oracle-bond-operators.md`](oracle-bond-operators.md).
+
+Removing a statement is the one that can leave a file which does not compile, and every oracle
+refuses one of those, so it is confirmed against `node --check` on the file the patch left and on
+the file with the line blanked. In a dialect `node --check` cannot read, TypeScript or JSX, it
+proposes nothing and the other seven still apply.
+
+**Why a second detector, and what it is.** An oracle accepting a mutant means nothing unless the
+mutant was a change, and until recently what established that was a person reading each mutated
+line. That audit found two equivalent mutants, `return false;` replaced by `return undefined;`
+inside a `filter` predicate, which is the same predicate because both are falsy, and a swapped
+`Math.min`, which is the same call. Each narrowed the operator that produced it. It does not scale
+and it is not evidence anybody else can re-derive.
+
+So every mutant the oracle accepted on a line it ran is adjudicated, cheapest detector first. The
+oracle runs again over the mutant under the same instrumentation reach used, and a line other than
+the mutated one that ran in one reading and not the other is a demonstrated difference in what the
+program did. Failing that, the repository's own gates that passed with the patch are run again, and
+one that now fails is a demonstrated difference. Neither seeing anything is `unshown`, and a suite
+run that was never spent is recorded as not adjudicated rather than as either answer.
 
 **Three residuals, named rather than implied away.**
 
-A mutant that changes nothing observable is indistinguishable here from an oracle that failed to
-notice one that did. That is the equivalent mutant problem and this does not solve it; what it does
-instead is keep the operators mechanical and audit every `vacuous` verdict by hand before any of
-them refuses anything. Two such mutants were found that way, in the first sixteen patches this ran
-over, and each narrowed the operator that produced it by a general rule rather than by skipping the
-patch. `return false;` inside a `filter` predicate, replaced by `return undefined;`, is the same
-predicate, because `filter` reads truthiness and both are falsy; the sentinel now has to differ
-from the returned expression wherever that expression's truthiness is known from its spelling.
-`Math.min(i + size, len)` with its arguments swapped is the same call, because `Math.min` is
-commutative; the operator now leaves JavaScript's commutative operations alone.
+Neither detector sees a mutant that changes only a value on a path that runs either way, in code
+the project did not have before. Coverage cannot: the same lines run the same number of times.
+The repository's own suite cannot: it was written before that behaviour existed. That costs a real
+catch. `commander#1671` was refused because its oracle accepted a mutant dropping one `.reverse()`,
+which inverts a merge precedence, and nothing here can witness a reordering. It reads `unshown`
+now, and the tool no longer refuses it.
 
-What is left of that residual, stated rather than implied away: the truthiness of an expression
-that is not a literal is not syntactically known, so `undefined` is still an equivalent sentinel
-wherever such an expression was falsy at runtime and the caller read only its truthiness.
-
-A patch with no line these operators can change gets no bond at all. `koa#1999` is one: its added
-lines are a regular-expression test, two `new URL(...)` calls and a template literal, and nothing
-here can change any of them into something that behaves differently. `not bonded` is not a pass and
-is never counted as one, and the certify rate is reported split by bond state for that reason.
+A patch with no line these operators can change gets no bond at all, and that is much rarer than it
+was: `koa#1999`, whose added lines are a regular-expression test, two `new URL(...)` calls and a
+template literal, used to be the example and now certifies on `held`. `not bonded` is still not a
+pass and is never counted as one, and the certify rate is reported split by bond state for that
+reason.
 
 A bond that held under a runner that type-checks before it runs may have held on the types. The
 mutant a `filter` predicate or a swapped argument list produces is often not well typed, and
