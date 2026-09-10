@@ -999,3 +999,159 @@ describe("a tree the vacuity check could not put back", () => {
     }
   });
 });
+
+/**
+ * Bonding the oracle: after it accepts, the lines the patch added are changed into something that
+ * behaves differently and it is run again. Reach asks whether the oracle executed the change; this
+ * asks whether executing it established anything, which is the question commander#1671 turns on.
+ *
+ * Both directions are here, because a check that only ever reports a gap has not been shown able
+ * to say the oracle was adequate and is worth nothing.
+ */
+describe("whether the oracle refuses a change to the lines the patch added", () => {
+  const branchingPatch = [
+    "diff --git a/clamp.mjs b/clamp.mjs",
+    "--- a/clamp.mjs",
+    "+++ b/clamp.mjs",
+    "@@ -1 +1,7 @@",
+    "-export const clamp = (v) => v;",
+    "+export const clamp = (v) => {",
+    "+  const n = Number(v);",
+    "+  if (n < 0) {",
+    "+    return 0;",
+    "+  }",
+    "+  return n;",
+    "+};",
+    "",
+  ].join("\n");
+
+  async function oracleScript(body: string): Promise<string> {
+    const script = join(repository, "..", `bond-${Date.now()}-${Math.random()}.mjs`);
+    await writeFile(script, body);
+    return script;
+  }
+
+  it("holds where the oracle refuses every mutant of the change", async () => {
+    const script = await oracleScript(
+      "import assert from 'node:assert/strict';\n" +
+        "import { clamp } from './clamp.mjs';\n" +
+        "assert.strictEqual(clamp('3'), 3);\n" +
+        "assert.strictEqual(clamp(-2), 0);\n",
+    );
+    try {
+      const result = await verifyIndependently({
+        repositoryRoot: repository,
+        baseCommit: baseCommit(),
+        patch: branchingPatch,
+        commands: commands(),
+        clock,
+        taskOracle: { command: `cp '${script}' oracle.mjs && node oracle.mjs` },
+      });
+
+      expect(result.oracleReach).toBe("reached");
+      expect(result.oracleBond).toBe("held");
+      expect(result.bondedMutants.map((one) => one.operator)).toContain("invert-comparison");
+      expect(result.bondedMutants.every((one) => one.verdict === "held")).toBe(true);
+      expect(result.verified).toBe(true);
+    } finally {
+      await rm(script, { force: true });
+    }
+  });
+
+  /**
+   * The commander#1671 shape, reduced. Every line the patch adds runs under the oracle, so reach
+   * says `reached`, and the precedence those lines decide is one `.reverse()` the oracle never
+   * tests: merging two objects that share no key gives the same answer either way.
+   */
+  it("reports a gap where the oracle ran a line and accepted a change to it", async () => {
+    const patch = [
+      "diff --git a/merge.mjs b/merge.mjs",
+      "new file mode 100644",
+      "--- /dev/null",
+      "+++ b/merge.mjs",
+      "@@ -0,0 +1,7 @@",
+      "+export const merge = (parents) => {",
+      "+  const merged = {};",
+      "+  parents.reverse().forEach((one) => {",
+      "+    Object.assign(merged, one);",
+      "+  });",
+      "+  return merged;",
+      "+};",
+      "",
+    ].join("\n");
+    const script = await oracleScript(
+      "import assert from 'node:assert/strict';\n" +
+        "import { merge } from './merge.mjs';\n" +
+        "assert.deepStrictEqual(merge([{ a: 1 }, { b: 2 }]), { a: 1, b: 2 });\n",
+    );
+    try {
+      const result = await verifyIndependently({
+        repositoryRoot: repository,
+        baseCommit: baseCommit(),
+        patch,
+        commands: commands(),
+        clock,
+        taskOracle: { command: `cp '${script}' oracle.mjs && node oracle.mjs` },
+      });
+
+      expect(result.oracleReach).toBe("reached");
+      expect(result.oracleBond).toBe("vacuous");
+      const gap = result.bondedMutants.find((one) => one.verdict === "vacuous");
+      expect(gap?.operator).toBe("drop-chained-call");
+      expect(gap?.after).toBe("  parents.forEach((one) => {");
+      // One mutant the oracle ran and accepted is the finding whatever the others did.
+      expect(result.bondedMutants.some((one) => one.verdict === "held")).toBe(true);
+    } finally {
+      await rm(script, { force: true });
+    }
+  });
+
+  it("leaves the checkout as the patch left it, whatever the mutants did", async () => {
+    const script = await oracleScript(
+      "import assert from 'node:assert/strict';\n" +
+        "import { clamp } from './clamp.mjs';\n" +
+        "assert.strictEqual(clamp(-2), 0);\n",
+    );
+    try {
+      const result = await verifyIndependently({
+        repositoryRoot: repository,
+        baseCommit: baseCommit(),
+        patch: branchingPatch,
+        commands: commands(),
+        clock,
+        taskOracle: { command: `cp '${script}' oracle.mjs && node oracle.mjs` },
+      });
+
+      // The repository's own suite ran before any mutant existed, and the base comparison after
+      // them: a mutant left behind would charge the patch with a failure nothing in it caused.
+      expect(result.regression).toBe("pass");
+      expect(result.checks.some((check) => check.status === "failed")).toBe(false);
+    } finally {
+      await rm(script, { force: true });
+    }
+  });
+
+  it("bonds nothing where no operator can change a line the patch added", async () => {
+    const patch = [
+      "diff --git a/note.mjs b/note.mjs",
+      "new file mode 100644",
+      "--- /dev/null",
+      "+++ b/note.mjs",
+      "@@ -0,0 +1,1 @@",
+      "+export const note = 'unchanged';",
+      "",
+    ].join("\n");
+
+    const result = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch,
+      commands: commands(),
+      clock,
+      taskOracle: { command: "node -e \"import('./note.mjs')\"" },
+    });
+
+    expect(result.oracleBond).toBe("not-bonded");
+    expect(result.bondedMutants).toEqual([]);
+  });
+});
