@@ -173,7 +173,7 @@ function saveJudgement(judgement) {
  */
 const wholeFileDeadlineMs = 5 * 60_000;
 
-const runnerKindOf = (r) =
+const runnerKindOf = (r) =>
   r.includes("jest") ? "jest"
   : r.includes("vitest") ? "vitest"
   : r.includes("mocha") ? "mocha"
