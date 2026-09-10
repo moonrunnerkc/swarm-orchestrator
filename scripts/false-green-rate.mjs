@@ -13,7 +13,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { tallyFalseGreens } from "../dist/eval/false-green-rate.js";
+import { heldBackAgreementRate, tallyFalseGreens } from "../dist/eval/false-green-rate.js";
 import { prTaskEvidenceRoot } from "../dist/eval/pr-task-paths.js";
 
 const repositoryRoot = new URL("..", import.meta.url).pathname;
@@ -66,6 +66,21 @@ function report(label, rows, extra = "") {
   return tally;
 }
 
+/**
+ * How independent the two halves of a mined split turn out to be, which is this corpus's one
+ * weakness against the hand-authored one: both halves come from one author in one sitting. A pair
+ * that never disagrees is buying less than it appears to, and only the corpus can say.
+ */
+function reportAgreement(rows) {
+  const agreement = heldBackAgreementRate(rows);
+  console.log(
+    agreement.rate === null
+      ? "halves compared on 0 patches, so nothing here says whether they are independent"
+      : `halves agreed on ${agreement.agreed} of ${agreement.compared} patches both judged: ` +
+          `${(agreement.rate * 100).toFixed(1)}%`,
+  );
+}
+
 const mined = minedRows();
 report(
   "mined from merged pull requests",
@@ -74,6 +89,7 @@ report(
     ? ""
     : ` (${mined.setAside} more set aside: the viability filter no longer admits them)`,
 );
+reportAgreement(mined.kept);
 const hand = handAuthoredRows();
 report("hand-authored, two oracles per task", hand);
 const both = report("both corpora", [...mined.kept, ...hand]);

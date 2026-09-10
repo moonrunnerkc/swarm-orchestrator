@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { tallyFalseGreens } from "./false-green-rate.ts";
+import { heldBackAgreementRate, tallyFalseGreens } from "./false-green-rate.ts";
 
 describe("tallyFalseGreens", () => {
   /**
@@ -59,5 +59,33 @@ describe("tallyFalseGreens", () => {
 
     expect(tally.opportunities).toBe(0);
     expect(tally.point).toBeNull();
+  });
+});
+
+describe("heldBackAgreementRate", () => {
+  /**
+   * The weakness the mined corpus has and the hand-authored one does not: both halves come from
+   * one author in one sitting and can share a blind spot. That is measurable rather than
+   * arguable, and this is the measurement. A split whose halves never disagree on any patch is
+   * buying less than it appears to.
+   */
+  it("counts only the patches both halves actually judged", () => {
+    const agreement = heldBackAgreementRate([
+      { sealedOracle: "accepted", heldBackOracle: "accepted" },
+      { sealedOracle: "accepted", heldBackOracle: "rejected" },
+      { sealedOracle: "rejected", heldBackOracle: "rejected" },
+      { sealedOracle: "vacuous", heldBackOracle: "accepted" },
+      { sealedOracle: "accepted", heldBackOracle: "unjudged" },
+    ]);
+
+    expect(agreement.compared).toBe(3);
+    expect(agreement.agreed).toBe(2);
+    expect(Number(agreement.rate?.toFixed(3))).toBe(0.667);
+  });
+
+  it("has no rate where no patch was judged by both", () => {
+    expect(
+      heldBackAgreementRate([{ sealedOracle: "vacuous", heldBackOracle: "unjudged" }]).rate,
+    ).toBeNull();
   });
 });
