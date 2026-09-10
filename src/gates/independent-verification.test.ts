@@ -1155,3 +1155,51 @@ describe("whether the oracle refuses a change to the lines the patch added", () 
     expect(result.bondedMutants).toEqual([]);
   });
 });
+
+/**
+ * The bond and reach answer different questions, so one does not gate the other. Tying them
+ * together cost the answer that matters most for reading a gap: what a second oracle does with the
+ * same mutant, which is only measurable where its own run is bonded too.
+ */
+describe("bonding an oracle whose reach came back unreached", () => {
+  it("still asks the oracle to refuse a mutant of what it did run", async () => {
+    const patch = [
+      "diff --git a/clamp.mjs b/clamp.mjs",
+      "--- a/clamp.mjs",
+      "+++ b/clamp.mjs",
+      "@@ -1 +1,7 @@",
+      "-export const clamp = (v) => v;",
+      "+export const clamp = (v) => {",
+      "+  const n = Number(v);",
+      "+  if (n < 0) {",
+      "+    return 0;",
+      "+  }",
+      "+  return n;",
+      "+};",
+      "",
+    ].join("\n");
+    const script = join(repository, "..", `unreached-bond-${Date.now()}.mjs`);
+    await writeFile(
+      script,
+      "import assert from 'node:assert/strict';\n" +
+        "import { clamp } from './clamp.mjs';\n" +
+        "assert.strictEqual(clamp('3'), 3);\n",
+    );
+    try {
+      const result = await verifyIndependently({
+        repositoryRoot: repository,
+        baseCommit: baseCommit(),
+        patch,
+        commands: commands(),
+        clock,
+        taskOracle: { command: `cp '${script}' oracle.mjs && node oracle.mjs` },
+      });
+
+      expect(result.oracleReach).toBe("unreached");
+      expect(result.oracleBond).toBe("held");
+      expect(result.verified).toBe(false);
+    } finally {
+      await rm(script, { force: true });
+    }
+  });
+});

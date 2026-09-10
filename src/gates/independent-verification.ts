@@ -305,12 +305,14 @@ export async function verifyIndependently(
         ? await measureOracleReach(checkout, options, timeoutMs)
         : { verdict: "unmeasured" as const, unreached: [], measured: null };
     const oracleReach = reach.verdict;
-    // Asked only where the run is still a candidate to certify. A patch already refused because
-    // the oracle never ran part of it does not become more refused by a mutant, and every mutant
-    // is another oracle run. Before attribution, which reverts the patch: a mutant of the lines
-    // the patch added has no meaning on a tree that does not have them.
+    // Asked wherever the oracle accepted, and independently of what reach said. Gating it on
+    // reach tied two checks that answer different questions together and cost the answer that
+    // matters most: what a second oracle does with the same mutant, which is what separates a gap
+    // this split manufactured from one a user supplying a whole suite would meet. Before
+    // attribution, which reverts the patch: a mutant of the lines the patch added has no meaning
+    // on a tree that does not have them.
     const bond =
-      task === "accepted" && restored && oracleReach !== "unreached"
+      task === "accepted" && restored
         ? await bondTheOracle(checkout, options, timeoutMs, reach.measured)
         : { verdict: "not-bonded" as const, mutants: [] };
     const checks = withPatch.some((check) => check.status === "failed")
