@@ -147,3 +147,18 @@ export function testCaseDeals(source: string): readonly TestCaseSplit[] {
   }
   return deals;
 }
+
+/**
+ * The source of the cases with these titles, and of no others.
+ *
+ * What an adversarial pass shows a model: the half it will be judged by. Handing over the file
+ * would hand over the half held back with it, and a model that has read the second oracle is not
+ * being measured against it, so the cases are lifted out by name and nothing else travels.
+ */
+export function casesTitled(source: string, titles: readonly string[]): string {
+  const wanted = new Set(titles);
+  return testCasesIn(source)
+    .filter((one) => wanted.has(one.title))
+    .map((one) => one.source)
+    .join("\n\n");
+}

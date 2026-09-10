@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitTestCases, testCaseDeals, testCasesIn } from "./test-case-split.ts";
+import { casesTitled, splitTestCases, testCaseDeals, testCasesIn } from "./test-case-split.ts";
 
 const suite = `import { describe, it, expect } from "vitest";
 import { chunk } from "../src/chunk";
@@ -110,5 +110,25 @@ it("d", () => {});
 
   it("offers nothing where there is only one case", () => {
     expect(testCaseDeals('it("only one", () => {});')).toEqual([]);
+  });
+});
+
+describe("casesTitled", () => {
+  /**
+   * What an attacker is shown. Handing over the file would hand over the half held back with it,
+   * and a model that has read the second oracle is not being measured against it, so the cases
+   * are lifted out by name and nothing else travels.
+   */
+  it("returns the named cases and nothing else in the file", () => {
+    const shown = casesTitled(suite, ["splits evenly", "throws on a bad size"]);
+
+    expect(shown).toContain("toEqual([[1], [2]])");
+    expect(shown).toContain("toThrow()");
+    expect(shown).not.toContain("keeps the remainder last");
+    expect(shown).not.toContain("[[1, 2], [3]]");
+  });
+
+  it("returns nothing where no case carries a named title", () => {
+    expect(casesTitled(suite, ["a case this file does not have"])).toBe("");
   });
 });
