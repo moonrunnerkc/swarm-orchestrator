@@ -203,7 +203,14 @@ switch went true in one commit, `343ae4740`, whose revert restores report-only.
 | regime | certified | false greens |
 | --- | --- | --- |
 | report-only | 16 of 97, 16.5% [10.4, 25.1] | 1: 6.3% [1.1, 28.3] |
-| blocking on vacuous | 15 of 97, 15.5% [9.6, 24.0] | 0: 0.0% [0.0, 20.4] |
+| witness required | 16 of 97, 16.5% [10.4, 25.1] | 1: 6.3% [1.1, 28.3] |
+| blocking on vacuous, witness recorded | 15 of 97, 15.5% [9.6, 24.0] | 0: 0.0% [0.0, 20.4] |
+
+`node scripts/bond-cost.mjs` prints all three off the same rows. The middle one is what requiring
+a witness of a vacuous verdict would do, and it is the first row to the digit: a bond that refuses
+nothing. That is why the witness is recorded beside a refusal rather than required of it, decided
+against conditions written down before the column was computed, in
+[`oracle-bond-operators.md`](oracle-bond-operators.md).
 
 #### The stricter option that was rejected, with its counts
 
