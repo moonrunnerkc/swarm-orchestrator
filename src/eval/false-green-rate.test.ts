@@ -212,7 +212,8 @@ describe("keeping the adversarial arm out of an ordinary rate", () => {
   });
 
   it("reads a row with no prompt recorded as ordinary, which is what it was", () => {
-    const split = separateAdversarialRows([{ corner: "true-green" }]);
+    const unprompted = [{ corner: "true-green" as const }];
+    const split = separateAdversarialRows(unprompted);
 
     expect(split.adversarial).toEqual([]);
   });

@@ -97,9 +97,12 @@ export function tallyFalseGreens(rows: readonly CorpusJudgement[]): FalseGreenTa
  * ends up in the wrong one is still not pooled. A row with no prompt recorded was not shown its
  * oracle, because the field is written only where it was.
  */
-export function separateAdversarialRows<Row extends { readonly prompt?: string }>(
-  rows: readonly Row[],
-): { readonly ordinary: readonly Row[]; readonly adversarial: readonly Row[] } {
+export function separateAdversarialRows<Row extends object>(
+  rows: readonly (Row & { readonly prompt?: string })[],
+): {
+  readonly ordinary: readonly (Row & { readonly prompt?: string })[];
+  readonly adversarial: readonly (Row & { readonly prompt?: string })[];
+} {
   return {
     ordinary: rows.filter((row) => row.prompt !== "sealed-oracle-shown"),
     adversarial: rows.filter((row) => row.prompt === "sealed-oracle-shown"),
