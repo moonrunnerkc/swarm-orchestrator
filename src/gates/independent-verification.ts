@@ -1,16 +1,17 @@
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Clock } from "../core/clock.ts";
 import { assembleGateSet } from "./engine.ts";
 import { normalizePath } from "./file-set.ts";
 import { defaultGateTimeoutMs, type GateCommandRunner } from "./gate-definition.ts";
-import { instrumentedOracle } from "./oracle-instrumentation.ts";
-import { oracleReachedTheChange } from "./oracle-reach.ts";
+import { type OracleCoveragePlan, oracleCoveragePlan } from "./oracle-instrumentation.ts";
+import { lineHitsByWorkspacePath, oracleReachedTheChange } from "./oracle-reach.ts";
 import { parseLineHits } from "./parsers.ts";
 import { pathsInPatch } from "./patch-paths.ts";
 import { parseUnifiedDiff } from "./unified-diff.ts";
+import { readV8Coverage } from "./v8-coverage.ts";
 
 /**
  * Verification that does not trust the tree it is verifying.
@@ -337,10 +338,17 @@ export async function verifyIndependently(
 /**
  * Whether the oracle executed the lines the patch added.
  *
- * Only where the harness can rebuild the oracle's invocation as a vouched argv it controls, which
- * is invariant 7's rule: a coverage report the workspace could author is not a measurement of the
- * workspace. Anywhere else this is `unmeasured`, which is an absence of evidence and must not
- * block on its own.
+ * Three ways of asking, chosen by what the oracle starts, and `unmeasured` where none of them
+ * applies. It used to be one way, node's own runner rebuilt as an argv the harness vouched for,
+ * which is invariant 7's rule for an artifact the ratchet reads. That rule is the wrong one here:
+ * it exists because the workspace can author a number a retry is judged against, and reach only
+ * ever turns a green into a refusal, so a workspace that forged its coverage would be handed
+ * `reached`, which is exactly what an oracle nobody could measure already gets. Four of the
+ * seventeen mined repositories use node's runner; the bar cost the other thirteen and closed
+ * nothing.
+ *
+ * The residual that leaves, named rather than implied away: the reports the two new arms read are
+ * written by the workspace's own processes, and nothing here detects a forged one.
  */
 async function measureOracleReach(
   checkout: string,
@@ -351,36 +359,86 @@ async function measureOracleReach(
   unreached: readonly { readonly path: string; readonly lines: readonly number[] }[];
 }> {
   const nothingMeasured = { verdict: "unmeasured" as const, unreached: [] };
-  const instrumented = instrumentedOracle(options.taskOracle?.command ?? "");
-  if (instrumented === null) {
+  const oracle = options.taskOracle?.command;
+  if (oracle === undefined) {
     return nothingMeasured;
-  }
-  // The setup is the harness's own mkdir and cp, run as the shell string it already was. Only the
-  // final test run is rebuilt as an argv, and only that one produces the report being read.
-  if (instrumented.setup.length > 0) {
-    await options.commands.run(instrumented.setup, { cwd: checkout, timeoutMs });
-  }
-  const observed = await options.commands.runVouched(instrumented.argv, {
-    cwd: checkout,
-    timeoutMs,
-  });
-  const sections = parseLineHits(observed.stderr);
-  if (sections.length === 0) {
-    return nothingMeasured;
-  }
-  const measured: Record<string, Record<number, number>> = {};
-  for (const section of sections) {
-    measured[section.file] = Object.fromEntries(section.hits);
   }
   const changed = parseUnifiedDiff(options.patch).map((file) => ({
     path: file.path,
     addedLines: file.addedLines.map((added) => added.line),
   }));
-  const reach = oracleReachedTheChange({ changed, measured });
-  return {
-    verdict: reach.reached ? "reached" : "unreached",
-    unreached: reach.unreached,
-  };
+
+  // Outside the workspace, so nothing the oracle runs can read the destination out of the tree it
+  // is being measured in, and named by the harness rather than by the project's configuration.
+  const destination = await mkdtemp(join(tmpdir(), "swarm-reach-"));
+  try {
+    const plan = oracleCoveragePlan(oracle, destination);
+    if (plan === null) {
+      return nothingMeasured;
+    }
+    // The setup is the harness's own mkdir and cp, run as the shell string it already was. Only
+    // the final run is instrumented, and only that one produces the report being read.
+    if (plan.setup.length > 0) {
+      await options.commands.run(plan.setup, { cwd: checkout, timeoutMs });
+    }
+    const measured = await lineHitsUnder(plan, checkout, changed, options, timeoutMs);
+    if (measured === null) {
+      return nothingMeasured;
+    }
+    const reach = oracleReachedTheChange({ changed, measured });
+    return { verdict: reach.reached ? "reached" : "unreached", unreached: reach.unreached };
+  } finally {
+    await rm(destination, { recursive: true, force: true });
+  }
+}
+
+/**
+ * The lines one coverage plan says ran, or null where the instrumented run produced no reading.
+ *
+ * A run that did not exit zero produces none. The oracle already passed by the time reach is
+ * asked, so an instrumented run that fails is the instrumentation having changed the outcome, and
+ * a coverage report from a run that did something else is not about the run that was judged.
+ */
+async function lineHitsUnder(
+  plan: OracleCoveragePlan,
+  checkout: string,
+  changed: readonly { readonly path: string }[],
+  options: IndependentVerificationOptions,
+  timeoutMs: number,
+): Promise<Record<string, Record<number, number>> | null> {
+  if (plan.kind === "node-lcov") {
+    const observed = await options.commands.runVouched(plan.argv, { cwd: checkout, timeoutMs });
+    const sections = parseLineHits(observed.stderr);
+    return sections.length === 0 ? null : lineHitsByWorkspacePath(sections, checkout);
+  }
+
+  if (plan.kind === "v8") {
+    const observed = await options.commands.run(plan.command, {
+      cwd: checkout,
+      timeoutMs,
+      environment: { NODE_V8_COVERAGE: plan.destination },
+    });
+    if (observed.exitCode !== 0) {
+      return null;
+    }
+    const read = readV8Coverage({
+      directory: plan.destination,
+      workspaceRoot: checkout,
+      files: changed.map((file) => file.path),
+    });
+    return read.unusable === null ? { ...read.hits } : null;
+  }
+
+  const observed = await options.commands.run(plan.command, { cwd: checkout, timeoutMs });
+  if (observed.exitCode !== 0) {
+    return null;
+  }
+  const written = await readFile(plan.file, "utf8").catch(() => null);
+  if (written === null) {
+    return null;
+  }
+  const sections = parseLineHits(written);
+  return sections.length === 0 ? null : lineHitsByWorkspacePath(sections, checkout);
 }
 
 /**

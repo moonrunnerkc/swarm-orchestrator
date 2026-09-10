@@ -26,6 +26,7 @@ const integrationSuites = [
   "src/gates/report-forgery.test.ts",
   "src/gates/killed-command.test.ts",
   "src/gates/node-command-runner.test.ts",
+  "src/gates/v8-coverage.test.ts",
   "src/gates/git-workspace.test.ts",
   "src/evidence/redteam-adversarial.test.ts",
   "src/agent-run.test.ts",

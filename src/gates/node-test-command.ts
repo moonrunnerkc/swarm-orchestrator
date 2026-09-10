@@ -141,7 +141,7 @@ interface VouchedInvocation {
  * escaped, and every character a shell would act on outside quotes ends the reading. Double
  * quotes leave expansion on, so the characters that expand are refused inside them too.
  */
-function shellWords(body: string): string[] | null {
+export function commandWords(body: string): string[] | null {
   const words: string[] = [];
   let word: string | null = null;
   let quote: '"' | "'" | null = null;
@@ -191,7 +191,7 @@ function vouch(body: string | undefined): VouchedInvocation | null {
   if (body === undefined) {
     return null;
   }
-  const tokens = shellWords(body);
+  const tokens = commandWords(body);
   if (tokens === null || tokens.length === 0) {
     return null;
   }
