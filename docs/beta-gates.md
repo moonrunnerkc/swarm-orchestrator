@@ -7,30 +7,34 @@ no proving artifact is `unproven`, not `probably fine`.
 **Summary: not production-ready.** Counted against the table below rather than from memory, which
 is how the earlier "four of twelve pass" got in here and stayed wrong: **six pass** (2, 4, 5, 6, 8,
 11, and 8 passes by not building the thing it guards), **three are partial** with the gap named (1,
-9, 10), **two are unproven** (7, 12), and **gate 3 fails on scale**.
+9, 10), **two are unproven** (7, 12), and **gate 3 fails**, on the rate and on the scale.
 
-Gate 3 is measured and failing on scale. **0 false greens in 14 valid opportunities: 0.0%, 95% CI
-[0.0, 21.5].** The bar it set itself is zero over four hundred tasks. The rate is zero and the
-sample is fourteen, so this is a failure of scale rather than of the rate, and the two are not the
-same finding.
+Gate 3 is measured and failing. **1 false green in 16 valid opportunities: 6.3%, 95% CI
+[1.1, 28.3].** The bar it set itself is zero over four hundred tasks. Sixteen opportunities is not
+four hundred tasks, and one false green is not zero, so this fails on both counts.
 
-The rate moved from 1 in 19, and how it moved matters more than that it did. **The one false green
-that stood is now refused.** dayjs#3181 adds a guard on the instance path and a guard on the static
-one; its sealed case exercises the first and never the second, which is exactly where the held-back
-case breaks. The write-up said its oracle had run every line the patch wrote. That was never
-measured: reach could only be read from node's own test runner, and dayjs runs jest.
+**It was reported as zero earlier the same day, and that was wrong.** The reach check was refusing
+commander#1671 over `typings/index.d.ts`, a declaration file that is erased before anything runs
+and can appear in no coverage report. Removing that artifact let the tool certify the patch, which
+is what it should always have done, and the patch is incomplete: it adds `optsWithGlobals()`
+merging parent options with the local value winning, while the held-back case is "when same named
+option in sub and program then optsWithGlobals includes global". The precedence is inverted against
+what the maintainers specified and the sealed half never tests a name collision. A wrong refusal
+had been hiding a real false green.
 
-**The denominator fell with it, from 19 to 14, and that is a cost rather than a saving.** Three
-patches both oracles accept are refused because their oracle never ran part of what they added, and
-four more are refused on the sealed half. A tool that refuses more has fewer claims to be wrong
-about, so the interval over what is left is wider. Both halves of that are reported wherever the
-rate is, and the refusals have their own name, `refused-on-reach`, so they can never be read as
-passes.
+**Both of the false greens ever found are the same shape, and reach cannot see either.** The patch
+never wrote the code, so there is no unexecuted line to point at: koa#1946 and dayjs#3181 were of
+that shape too, and are refused only because those patches also added something their oracle did
+not run. Only a second oracle distinguishes an incomplete patch from a complete one.
 
-**Reach now reaches.** It is measured on all 10 mined tasks whose oracle accepted, which is every
-task where it can matter, and on 11 of the 18 hand-authored runs. Before, it could be read only
-from node's own test runner, which is 10 of the 66 viable mined tasks across 3 of their 14
-repositories; the rest run jest, mocha or vitest.
+**The denominator is 16 rather than 19, and that is a cost.** Four patches both oracles accept are
+refused because their oracle never ran part of what they added, and five more on the sealed half. A
+tool that refuses more has fewer claims to be wrong about, so the interval over what is left is
+wider. The refusals have their own name, `refused-on-reach`, so they can never be read as passes.
+
+**Reach now reaches.** It is measured on every mined task whose oracle accepted, and on 11 of the
+18 hand-authored runs. Before, it could be read only from node's own test runner, which is 10 of
+the 79 viable mined tasks across 3 of their 14 repositories.
 
 **Nothing was refused wrongly.** Zero false reds across both corpora, on the definition that has
 always applied: a patch both oracles accept that the tool refused with no refusal it can point at.
@@ -41,18 +45,17 @@ every false green found. A specification written by maintainers who never heard 
 what they cared about, not what its author thought to check.
 
 Scale is the whole of what is left, and it is machine time rather than authoring. 192 candidates
-are mined, of which 142 have been checked by running them and 66 are viable; the other 50 are
-waiting on a viability pass. What a candidate costs after that is one agent run, and what an agent
-run buys is an opportunity only where the tool certifies the patch, which on this corpus is 3 of
-66. Eight tasks scored after the re-judge added none: seven algorithm implementations the local
-model failed outright and one it wrote nothing for. That ratio is the real obstacle to four hundred: the local model fails most of these tasks
+are mined, all of them checked by running them, and 79 are viable. What a candidate costs after that is one agent run, and what an agent
+run buys is an opportunity only where the tool certifies the patch, which on this corpus is 5 of
+79. Twenty-one tasks scored after the first re-judge added two of those five: the rest were
+algorithm implementations the local model failed outright, or tasks it wrote nothing for. That ratio is the real obstacle to four hundred: the local model fails most of these tasks
 outright, and a task nobody can do produces a true red rather than an opportunity.
 
 | # | Gate | Status | Evidence, or what is missing |
 | - | ---- | ------ | ---------------------------- |
 | 1 | Zero successful host-file, host-secret, provider-key, evidence-store, cross-worker or unauthorised-egress attacks in the maintained corpus | **partial** | The deterministic corpus exists and passes: `src/exec/child-environment.test.ts`, `src/tools/shell-tool.test.ts`, `src/gates/node-command-runner.test.ts`, `src/evidence/store-permissions.test.ts`, `src/tools/isolated-shell.test.ts`. What it is not is an attack corpus written by somebody trying to get past it: every case here was written by the same person who wrote the defence. There is now an adversarial arm for the *verification* surface, `pr-task-pass.mjs --attack`, which shows a model the oracle it will be judged by and asks it to satisfy that and leave an adjacent case broken. On its first run it produced **2 false greens in 5 certified, 40.0% [11.8, 76.9]**, against 0 in 3 for the ordinary arm on the same tasks, and both landed on tasks whose honest attempt the reach check had refused. It is not the security corpus this gate asks for, and it does not move this row. |
 | 2 | Zero accepted test-policy violations in the mutation suite | **pass** | The ratchet rejects test deletion and weakening under the per-test escape hatch; `src/gates/acceptance.test.ts` cases 4 and 5, and the falsification corpus replay. |
-| 3 | Zero false greens in at least 400 held-out tasks, with the interval reported | **fail on scale, and measured** | **0 false greens in 14 valid opportunities: 0.0%, 95% CI [0.0, 21.5].** Mined corpus 0 of 3, hand-authored 0 of 11, every row naming the harness commit that judged it. Both false greens ever found are now refused for the same reason, an oracle that never ran the branch the held-back case breaks: koa#1946 at [`first-false-green.md`](evidence/2026-09-07/first-false-green.md), and [`dayjs#3181`](evidence/2026-09-06/mined-corpus/README.md), whose oracle skips lines 141 to 143 of the plugin it certifies. That pull request and dayjs#3180 carry one specification, so the corpus now keeps the earlier and sets the other aside; both attempts at it are refused. The corpus is 66 viable of 142 candidates rather than 73: fourteen leave because no deal of their added cases leaves both halves failing on the base source, or because their test file does not finish on the base at all, and one because it is the same specification as another pull request at the same base commit, all of which were true before and unchecked. Nothing is unjudgeable now, where 21 of 73 were: nine were a half that accepts the base, caught at mining time now, and twelve were the agent having written nothing, which is a model failure and is recorded as one. What the rate costs is in the same row: 3 patches both oracles accept are refused because the oracle never ran part of the change, and 4 on the sealed half, so the certified set is smaller and the interval wider. 14 opportunities is not 400 tasks, and that is the gate. |
+| 3 | Zero false greens in at least 400 held-out tasks, with the interval reported | **fail, and measured** | **1 false green in 16 valid opportunities: 6.3%, 95% CI [1.1, 28.3].** Mined corpus 1 of 5, hand-authored 0 of 11, every row naming the harness commit that judged it and all 79 mined rows judged by one build. The one that stands is [`commander#1671`](evidence/2026-09-06/mined-corpus/README.md), which merges parent options with the local value winning where the held-back case says the global one should: the sealed half never tests a name collision, every line the patch adds runs, and no property of the patch or of the run says the work is incomplete. Two earlier ones are refused because their patches also added a line the oracle never ran: koa#1946 at [`first-false-green.md`](evidence/2026-09-07/first-false-green.md) and dayjs#3181. The corpus is 79 viable of 192 candidates, all of them checked by running them, and nothing is unjudgeable where 21 of 73 were. What the rate costs is in the same row: 4 patches both oracles accept are refused because the oracle never ran part of the change, and 5 on the sealed half, so the certified set is smaller and the interval wider. |
 | 4 | 99% recovery from injected termination without duplicate committed effects | **pass** | 100 injected kills, 300 committed effects, no duplicates: `src/durable/crash-recovery.test.ts`. |
 | 5 | Every stable documented command exists and works in the published artifact | **pass** | `scripts/check-packed-cli.mjs` packs the tarball, installs into an empty directory, reads the command list from the installed build's own help, and runs each. Runs in CI as its own job. |
 | 6 | Trusted-identity verification rejects a re-signed bundle from an unknown key | **pass** | `src/evidence/resign-attack.test.ts`: a bundle is edited, rehashed and re-signed with an attacker key; consistency still holds and the identity check refuses it, naming the substituted fingerprint. |

@@ -223,9 +223,9 @@ one fails on scale. Each row and what would settle it: **[docs/beta-gates.md](do
 - **The default execution mode is `restricted`, not `isolated`.** A lexical path and program policy
   in front of interpreters unless you pass `--isolation`. Reported before the run starts and
   recorded on the chain rather than quietly assumed — but it is not containment.
-- **The false-green rate is 0 in 14**, 95% CI [0.0, 21.5]. Every task carries two oracles, one
+- **The false-green rate is 1 in 16**, 6.3%, 95% CI [1.1, 28.3]. Every task carries two oracles, one
   handed to the tool and one held back from it. The bar this project set itself is zero over four
-  hundred tasks, so this is still a **failure**, of scale rather than of the rate:
+  hundred tasks, so this is a **failure** on both counts:
   [`mined-corpus/`](docs/evidence/2026-09-06/mined-corpus/README.md). Every false green ever found
   came from tasks mined out of real pull requests, because maintainers test what they cared about
   rather than what the author of a tool thought to check.
@@ -258,7 +258,7 @@ change is fast and its claims are checkable — not that review is unnecessary.
 The roadmap is the six unmet beta gates, tracked with their evidence in
 **[docs/beta-gates.md](docs/beta-gates.md)**:
 
-- [ ] Zero false greens in 400 held-out tasks — currently 0 in 14, upper bound 21.5%
+- [ ] Zero false greens in 400 held-out tasks — currently 1 in 16, upper bound 28.3%
 - [ ] An adversarial corpus written by somebody trying to get past the defences — the verification
       surface now has one, and it lands: 2 false greens in 5 certified when the model is shown the
       oracle it will be judged by, against 0 in 3 when it is not

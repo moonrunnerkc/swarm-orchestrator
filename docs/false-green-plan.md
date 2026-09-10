@@ -1,7 +1,7 @@
 # Getting to a working result on gate 3
 
 Gate 3 asks for zero false greens over at least four hundred held-out tasks. The measured rate is
-**0 in 14, 95% CI [0.0, 21.5]**, down from 2 in 22 when this was written. This is what would have
+**1 in 16, 95% CI [1.1, 28.3]**, down from 2 in 22 when this was written. This is what would have
 to be true for that number to be both trustworthy and better, separated into the two different
 problems it actually is.
 
@@ -107,9 +107,8 @@ four hundred tasks. The pipeline is unattended and resumable, so this is machine
 authoring, and it was right to leave until last: mining more tasks through filters that admit
 vacuous oracles would have produced a bigger wrong number, and the filters are only now correct.
 
-What the arithmetic actually says, measured rather than assumed. 192 candidates are mined and 66 of
-the 142 checked so far are viable, so mining and viability are cheap. The expensive ratio is the one
-after that: 3 of 66 scored tasks became an opportunity, because an opportunity needs the tool to
+What the arithmetic actually says, measured rather than assumed. 192 candidates are mined, all of them checked, and 79 are viable, so mining and viability are cheap. The expensive ratio is the one
+after that: 5 of 79 scored tasks became an opportunity, because an opportunity needs the tool to
 certify a patch and the local model fails most of these tasks outright. At that rate four hundred
 opportunities is roughly eight thousand tasks, which is not machine time, it is a different plan.
 
