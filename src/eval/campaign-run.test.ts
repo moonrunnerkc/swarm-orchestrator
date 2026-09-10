@@ -511,6 +511,43 @@ describe("classifyAgainstHeldBackOracle", () => {
     ).toBe("refused-on-sealed");
   });
 
+  /**
+   * The same reasoning one step along. Where the tool refused because its own oracle never ran
+   * part of what the patch added, it is declining to certify what it could not judge rather than
+   * saying the patch is wrong, and scoring that as a false red blames it for the refusal the
+   * reach check exists to make. Measured on winston#2256: the patch restructures one assignment
+   * into an if and an else, the sealed half takes the if on both of its cases, and the else is
+   * never executed by the oracle that would have to have executed it to judge it.
+   *
+   * It is not a free pass. A refusal is still a patch the tool did not certify, so the task
+   * leaves the certified set and the false-green interval widens with it, and this corner is
+   * reported by name wherever the corners are.
+   */
+  it("does not call it a false red when the oracle never ran part of the change", () => {
+    expect(
+      classifyAgainstHeldBackOracle({
+        verifiedWithFirstOracle: false,
+        heldBack: "accepted",
+        regression: "pass",
+        sealed: "accepted",
+        oracleReach: "unreached",
+      }),
+    ).toBe("refused-on-reach");
+  });
+
+  // A refusal the reach check did not cause is still a false red, whatever reach reported.
+  it("still calls it a false red where the oracle ran the change and the tool refused anyway", () => {
+    expect(
+      classifyAgainstHeldBackOracle({
+        verifiedWithFirstOracle: false,
+        heldBack: "accepted",
+        regression: "pass",
+        sealed: "accepted",
+        oracleReach: "reached",
+      }),
+    ).toBe("false-red");
+  });
+
   it("still calls it a false red where the sealed oracle accepted too", () => {
     expect(
       classifyAgainstHeldBackOracle({
