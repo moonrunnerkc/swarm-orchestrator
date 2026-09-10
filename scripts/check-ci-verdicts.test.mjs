@@ -112,12 +112,34 @@ describe("a recorded verdict the tool's own record does not support", () => {
   });
 
   /**
-   * A refusal missing a field is reported rather than counted against the gate: the bar is about
-   * green claims, and an absence of re-derivation is not a disagreement.
+   * A refusal whose present fields already hold a reason is determinate whatever is missing,
+   * because a field nobody recorded cannot take a reason back.
+   */
+  it("re-derives a refusal from the fields it does carry", () => {
+    const judged = judgeRecordedVerdicts(
+      [{ repository: "fixture/repo", pull: 6, regression: "no-change", verified: false }],
+      "fixture",
+    );
+
+    expect(judged.violations).toEqual([]);
+    expect(judged.agreed).toBe(1);
+  });
+
+  /**
+   * One that is genuinely indeterminate is reported rather than counted against the gate: the bar
+   * is about green claims, and an absence of re-derivation is not a disagreement.
    */
   it("reports a refusal it could not re-derive without failing on it", () => {
     const judged = judgeRecordedVerdicts(
-      [{ repository: "fixture/repo", pull: 6, regression: "no-change", verified: false }],
+      [
+        {
+          repository: "fixture/repo",
+          pull: 7,
+          regression: "pass",
+          sealedOracle: "accepted",
+          verified: false,
+        },
+      ],
       "fixture",
     );
 
