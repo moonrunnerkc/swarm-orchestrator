@@ -180,7 +180,7 @@ be evidence, and all three are checked:
 | --- | --- | --- |
 | accepts the base commit too | `task: vacuous` | it would have accepted a patch that changes nothing |
 | never ran the lines the patch adds | `oracleReach: unreached`, lines named | it cannot have judged what it did not execute |
-| ran them and accepts a change to them | `oracleBond: vacuous`, mutant printed | it executed the code without asserting anything about it |
+| ran them and accepts a change to them | `oracleBond: vacuous`, mutant and witness printed | it executed the code without asserting anything about it |
 
 All three came out of measuring this tool against real work rather than from reasoning about it.
 Certified tasks rested on oracles that could not fail. The first false green found was certified by
@@ -188,6 +188,15 @@ an oracle that never ran the branch it broke. The last one standing, `commander#
 certified by an oracle that runs every line the patch adds and never tests the precedence those
 lines decide, so bonding hands it that same line with the `.reverse()` dropped and the oracle
 passes it.
+
+There are eight mutation operators, read off the language's own statement productions rather than
+off the patches that exposed a gap in them, so a guard clause, an assignment and a `require` all
+have something asked of them. Removing a statement is confirmed against `node --check` first,
+because a file that no longer compiles is refused by every oracle and crediting that refusal would
+be crediting a syntax error. And a `vacuous` verdict now says what showed the mutant changed
+anything: the oracle's own coverage running a different set of lines, or the repository's own suite
+failing where it passed. A refusal nothing witnessed says that too, which is what makes the audit a
+named set rather than every verdict.
 
 Reach is read from whichever coverage the oracle's own runner can be made to write: node's lcov
 reporter, V8's own coverage for a runner that loads the file as written, or jest's and vitest's
@@ -245,9 +254,11 @@ about three different questions. Each row and what would settle it:
   came from tasks mined out of real pull requests, because maintainers test what they cared about
   rather than what the author of a tool thought to check. The one that used to stand,
   `commander#1671`, is refused now because its oracle accepted a change to a line it had run.
-- **Shown its oracle, a model still gets past this: 2 false greens in 5 certified.** Both have no
-  bond, because a patch written to satisfy a visible test adds no line a mutation operator can
-  change. Bonding closes the careless case, not the adversarial one.
+- **Shown its oracle, a model still gets past this.** Both of those patches now get a bond and both
+  bonds hold, which is the finding rather than a fix: a patch written to satisfy a visible test has
+  its added lines tested by that test, so the oracle refuses every mutant of them and is right to.
+  Bonding asks whether the oracle judged what the patch added. It cannot ask what the patch left
+  out, and that is what an adversarial patch does.
 - **The denominator moved when the tool did, and that is a cost.** Four patches both oracles
   accept are refused because the tool's own oracle never ran part of what they changed, five more
   because the sealed half rejects work the held-back half accepts, and one because its oracle
@@ -288,10 +299,17 @@ The roadmap is the beta gates that are not met yet, tracked with their evidence 
 - [ ] An adversarial corpus written by somebody trying to get past the defences. The verification
       surface now has one, and it lands: 2 false greens in 5 certified when the model is shown the
       oracle it will be judged by, against 0 in 3 when it is not
-- [ ] Task success non-inferior to the strongest single-agent baseline, at a size that supports it
-- [ ] Deadline overshoot measured, not just bounded by a mechanism
-- [ ] No orphan worktrees or branches after a real interrupted parallel run
-- [ ] A new user productive in under ten minutes, timed with somebody who has not seen the tool
+- [ ] Task success non-inferior to the strongest single-agent baseline, at a size that supports it.
+      The set that discriminates is identified and measured, 11 of 79 solved; what is left is
+      running the baseline arm over it
+- [ ] An adversarial security corpus written against the guard as it stands. Three attacks landed
+      and are closed, casing on a case-insensitive filesystem, a path after a colon and a path
+      inside a quoted word; two still succeed and are asserted as succeeding
+- [ ] No orphan processes after a command that started a daemon and exited. A corpus re-judge left
+      328, each in its own process group: the harness signals the group it created and a descendant
+      that leaves it is out of reach
+- [ ] A new user productive in under ten minutes, timed with somebody who has not seen the tool.
+      The script such a run would follow is written; nothing in it is timed
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
