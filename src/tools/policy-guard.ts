@@ -146,13 +146,19 @@ export function createPolicyGuard(policy: PolicyGuardRules): PolicyGuard {
       }
 
       for (const denied of deniedRoots) {
-        if (isInside(denied, absolutePath)) {
+        if (isInside(denied, absolutePath) || isInsideIgnoringCase(denied, absolutePath)) {
           return { allowed: false, reason: `${absolutePath} is under the denied path ${denied}` };
         }
       }
 
       const workspacePath = relative(workspaceRoot, absolutePath).split(sep).join("/");
-      if (credentialPatterns.some((pattern) => pattern.test(`/${workspacePath}`))) {
+      // Folded, because macOS and Windows are case-insensitive by default and `.ENV` opens
+      // `.env` there while matching none of these patterns. Measured on APFS: reading `.ENV`
+      // returns what `.env` holds, and `realpathSync` hands back the casing it was given rather
+      // than the casing on disk, so nothing upstream normalizes it. Folded whatever the host
+      // filesystem does, because a denial whose verdict depends on which machine ran it is the
+      // defect rather than a property of the machine, and the fold can only add denials.
+      if (credentialPatterns.some((pattern) => pattern.test(`/${workspacePath.toLowerCase()}`))) {
         return {
           allowed: false,
           reason: `${workspacePath} matches the credential denylist (.env*, *.pem, *.key, .git/config, swarm.toml)`,
@@ -227,4 +233,15 @@ function isInside(root: string, candidate: string): boolean {
     return true;
   }
   return candidate.startsWith(root.endsWith(sep) ? root : root + sep);
+}
+
+/**
+ * The same containment, case-folded, for the checks that deny.
+ *
+ * Only ever used to add a denial. Folding the workspace containment check instead would read a
+ * differently cased path as inside the workspace, which is the fail-open direction and the one
+ * this must not move in.
+ */
+function isInsideIgnoringCase(root: string, candidate: string): boolean {
+  return isInside(root.toLowerCase(), candidate.toLowerCase());
 }

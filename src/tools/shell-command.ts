@@ -79,8 +79,49 @@ export function readShellCommand(command: string): ShellCommand | null {
   }
   return {
     executables: pipeline.map((one) => one.executable),
-    operands: pipeline.flatMap((one) => [...one.arguments]),
+    operands: pipeline.flatMap((one) => one.arguments.flatMap(pathsAWordCouldOpen)),
   };
+}
+
+/** A word whose colon is part of a scheme names a resource rather than a file after the colon. */
+const namesAScheme = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
+
+/**
+ * Every path one word of a command could open.
+ *
+ * A word is not a path, and a program is free to read more than one out of it. Two shapes got
+ * past a check that took the word whole, and both were found by attacking it:
+ *
+ *   - `git show HEAD:.env` prints a credential file, and `HEAD:.env` resolves to a path inside
+ *     the workspace that does not exist and matches no pattern. A revision and a path share one
+ *     word, so what is after the colon is offered as well.
+ *   - `sed -n 'w /home/dev/.ssh/authorized_keys'` writes outside the workspace, and the operand
+ *     is the whole script. A shell hands a quoted word over whole, and the program then reads a
+ *     path out of the middle of it, so the whitespace-separated pieces are offered too.
+ *
+ * Offered rather than decided: each candidate goes through the same guard the word does, so being
+ * wrong costs a denial or a confirmation on a word that was not a path, which is the guard's own
+ * answer to a string it cannot read. A scheme is left alone because a URL is ordinary in these
+ * commands and `//host/path` would resolve to an absolute path outside any workspace.
+ */
+function pathsAWordCouldOpen(word: string): readonly string[] {
+  const candidates = new Set<string>([word]);
+  for (const piece of word.split(/[\s]+/)) {
+    if (piece.length > 0) {
+      candidates.add(piece);
+    }
+  }
+  for (const candidate of [...candidates]) {
+    const colon = candidate.indexOf(":");
+    if (colon === -1 || namesAScheme.test(candidate)) {
+      continue;
+    }
+    const after = candidate.slice(colon + 1);
+    if (after.length > 0) {
+      candidates.add(after);
+    }
+  }
+  return [...candidates];
 }
 
 function tokenize(command: string): Token[] | null {
