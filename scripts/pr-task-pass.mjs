@@ -15,20 +15,18 @@
  * Resumable: a task already scored is skipped, so this can be run in short sittings and the
  * corpus accumulates rather than needing one long campaign.
  */
-import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import { promisify } from "node:util";
 
 import { homedir } from "node:os";
 
+import { runProcessGroup } from "../dist/exec/run-process.js";
 import { classifyAgainstHeldBackOracle } from "../dist/eval/campaign-run.js";
 import { heldBackRefusalIsReal } from "../dist/eval/oracle-filter.js";
 import { oracleCommand } from "../dist/eval/oracle-filter.js";
 import { prTaskEvidenceRoot, prTaskWorkingRoot } from "../dist/eval/pr-task-paths.js";
 import { wilsonInterval } from "../dist/eval/statistics.js";
 
-const run = promisify(execFile);
 const repositoryRoot = new URL("..", import.meta.url).pathname;
 // Evidence in the repository, bulk outside it. The results and the recorded patches are what
 // --rejudge reads, so they stay committed; clones, workspaces and extracted oracles do not.
@@ -67,17 +65,36 @@ const patchRoot = arm === null ? join(taskRoot, "patches") : join(taskRoot, `pat
 const scoredPath =
   arm === null ? join(taskRoot, "scored.json") : join(taskRoot, `scored.${arm}.json`);
 
+/**
+ * One command, with whatever it started stopped alongside it.
+ *
+ * `execFile`'s timeout signals the process it started and nothing else, and a mined repository's
+ * suite starts servers: two thousand node processes belonging to one repository's tests were
+ * still running two days after the campaign that began them, holding deleted checkouts open. The
+ * harness already owns the answer, a process group and one signal to it, and a second weaker way
+ * of starting a process beside it is how that leak got here.
+ */
 async function attempt(file, args, options = {}) {
-  try {
-    const done = await run(file, args, { maxBuffer: 64 * 1024 * 1024, ...options });
-    return { code: 0, stdout: done.stdout, stderr: done.stderr };
-  } catch (cause) {
-    return {
-      code: typeof cause.code === "number" ? cause.code : 1,
-      stdout: `${cause.stdout ?? ""}`,
-      stderr: `${cause.stderr ?? cause.message ?? ""}`,
-    };
-  }
+  const ran = await runProcessGroup(file, args, {
+    cwd: options.cwd ?? process.cwd(),
+    env: definedNames(options.env ?? process.env),
+    timeoutMs: options.timeout ?? 10 * 60_000,
+    maxOutputBytes: 64 * 1024 * 1024,
+  });
+  return {
+    code: ran.startFailure === null ? ran.exitCode : 127,
+    stdout: ran.stdout,
+    stderr: ran.startFailure ?? ran.stderr,
+    /** Killed at its deadline rather than finished, which is a different thing from failing. */
+    timedOut: ran.timedOut,
+  };
+}
+
+/** An environment as spawn wants it: every name a string, none of them absent. */
+function definedNames(environment) {
+  return Object.fromEntries(
+    Object.entries(environment).filter(([, value]) => value !== undefined),
+  );
 }
 
 /**
@@ -108,6 +125,17 @@ const runnerKind = (runner) =>
         : runner.includes("ava")
           ? "ava"
           : "node";
+
+/**
+ * The commit of the tool that produced a row, recorded on the row.
+ *
+ * Results from two tool versions in one file are not one measurement, and nothing in a verdict
+ * says which version reached it. A rate computed across a harness change is arithmetic over two
+ * different instruments, which is how a 73-task run was thrown away once already.
+ */
+const harnessCommit = (
+  await attempt("git", ["rev-parse", "HEAD"], { cwd: repositoryRoot })
+).stdout.trim();
 
 const { tasks } = JSON.parse(readFileSync(join(taskRoot, "viable.json"), "utf8"));
 const viable = tasks.filter((one) => one.viable);
@@ -165,6 +193,74 @@ async function judgeAgainstBothHalves(judge, task) {
   };
 }
 
+/**
+ * The judge for one task: one half's case titles in, `swarm ci`'s verdict out.
+ *
+ * One definition, because the fresh pass and `--rejudge` ask the same question and every place
+ * they were written twice has been a defect. The order-dependence check lived in one copy and not
+ * the other, so re-judging winston#2256 turned a task already recorded as order-dependent back
+ * into a false green: the same evidence, a worse answer, from the path whose purpose is
+ * re-deriving answers after a harness change.
+ *
+ * The declared timezone travels as an environment name rather than as a shell prefix on the
+ * command. `TZ=x mkdir … && cp … && npx jest …` sets the zone for the mkdir and nothing else, so
+ * the oracle ran under whatever zone this machine is in while the viability filter that admitted
+ * the task ran under the project's own. dayjs runs its suite under four zones for a reason.
+ */
+async function judgeOf(task, checkout, patchPath, storedTest) {
+  const runner = runnerKind(task.runner);
+  const runnerArgv = task.runner.split(" ");
+  const zone = await declaredTimezone(checkout, task.baseCommit);
+  return async (titles) => {
+    const command = oracleCommand({
+      storedTestFile: storedTest,
+      destination: task.testFile,
+      runner,
+      runnerArgv,
+      titles,
+    });
+    if (command === null) {
+      return {
+        verified: false,
+        task: "unjudged",
+        regression: "unmeasured",
+        judgeFailure: `${runner} has no filter that names exactly one half's cases`,
+      };
+    }
+    const asked = await attempt(
+      process.execPath,
+      [
+        join(repositoryRoot, "dist/cli.js"), "ci",
+        "--patch", patchPath,
+        "--workspace", checkout,
+        "--base", task.baseCommit,
+        "--install",
+        "--oracle", command,
+        "--json",
+      ],
+      {
+        timeout: 20 * 60_000,
+        env: zone === null ? process.env : { ...process.env, TZ: zone },
+      },
+    );
+    try {
+      return JSON.parse(`${asked.stdout}`.trim().split("\n").at(-1));
+    } catch {
+      // A judge that could not run is not a judge that had nothing to say. Both used to arrive
+      // here as `unjudged`, which is also what a run with no oracle reports, and twelve of the
+      // corpus's twenty-one unjudgeable tasks are this case with nothing recorded about why.
+      return {
+        verified: false,
+        task: "unjudged",
+        regression: "unmeasured",
+        judgeFailure:
+          (asked.timedOut ? "swarm ci was killed at its deadline: " : `swarm ci exited ${asked.code} without a verdict: `) +
+          `${(asked.stderr || asked.stdout).trim().split("\n").slice(-2).join(" ").slice(0, 300)}`,
+      };
+    }
+  };
+}
+
 const named = (one) => `${one.repository}#${one.pull}`;
 const chosen = only === null ? viable : viable.filter((one) => named(one) === only);
 const wanted = (rejudge ? chosen.filter((one) => done.has(named(one))) : chosen.filter((one) => !done.has(named(one)))).slice(0, limit);
@@ -193,38 +289,10 @@ for (const task of wanted) {
 
   const patchPathExisting = join(patchRoot, `${task.repository.replace("/", "__")}-${task.pull}.patch`);
   if (rejudge && existsSync(patchPathExisting)) {
-    const kindOnly = runnerKind(task.runner);
-    const argvOnly = task.runner.split(" ");
-    const zoneOnly = await declaredTimezone(checkout, task.baseCommit);
-    const judgeOnly = async (titles) => {
-      const built = oracleCommand({
-        storedTestFile: storedTest,
-        destination: task.testFile,
-        runner: kindOnly,
-        runnerArgv: argvOnly,
-        titles,
-      });
-      const command = zoneOnly === null ? built : `TZ=${zoneOnly} ${built}`;
-      const asked = await attempt(
-        process.execPath,
-        [
-          join(repositoryRoot, "dist/cli.js"), "ci",
-          "--patch", patchPathExisting,
-          "--workspace", checkout,
-          "--base", task.baseCommit,
-          "--install",
-          "--oracle", command,
-          "--json",
-        ],
-        { timeout: 20 * 60_000 },
-      );
-      try {
-        return JSON.parse(`${asked.stdout}`.trim().split("\n").at(-1));
-      } catch {
-        return { verified: false, task: "unjudged", regression: "unmeasured" };
-      }
-    };
-    const again = await judgeAgainstBothHalves(judgeOnly, task);
+    const again = await judgeAgainstBothHalves(
+      await judgeOf(task, checkout, patchPathExisting, storedTest),
+      task,
+    );
     const sealedAgain = again.sealed;
     const cornerAgain = again.corner;
     const previous = scored.runs.find(
@@ -241,6 +309,9 @@ for (const task of wanted) {
       previous.oracleReach = sealedAgain.oracleReach ?? "unmeasured";
       previous.verified = sealedAgain.verified === true;
       previous.corner = cornerAgain;
+      previous.harness = harnessCommit;
+      if (sealedAgain.judgeFailure === undefined) delete previous.judgeFailure;
+      else previous.judgeFailure = sealedAgain.judgeFailure;
     }
     writeFileSync(scoredPath, `${JSON.stringify(scored, null, 2)}\n`);
     console.log(
@@ -324,6 +395,7 @@ for (const task of wanted) {
       corner: "true-red",
       producedNoChange: true,
       latencyMs,
+      harness: harnessCommit,
     });
     writeFileSync(scoredPath, `${JSON.stringify(scored, null, 2)}\n`);
     console.log(
@@ -332,39 +404,10 @@ for (const task of wanted) {
     continue;
   }
 
-  const kind = runnerKind(task.runner);
-  const runnerArgv = task.runner.split(" ");
-  const zone = await declaredTimezone(checkout, task.baseCommit);
-  const judge = async (titles) => {
-    const built = oracleCommand({
-      storedTestFile: storedTest,
-      destination: task.testFile,
-      runner: kind,
-      runnerArgv,
-      titles,
-    });
-    const command = zone === null ? built : `TZ=${zone} ${built}`;
-    const asked = await attempt(
-      process.execPath,
-      [
-        join(repositoryRoot, "dist/cli.js"), "ci",
-        "--patch", patchPath,
-        "--workspace", checkout,
-        "--base", task.baseCommit,
-        "--install",
-        "--oracle", command,
-        "--json",
-      ],
-      { timeout: 20 * 60_000 },
-    );
-    try {
-      return JSON.parse(`${asked.stdout}`.trim().split("\n").at(-1));
-    } catch {
-      return { verified: false, task: "unjudged", regression: "unmeasured" };
-    }
-  };
-
-  const judged = await judgeAgainstBothHalves(judge, task);
+  const judged = await judgeAgainstBothHalves(
+    await judgeOf(task, checkout, patchPath, storedTest),
+    task,
+  );
   const sealed = judged.sealed;
   const heldBack = judged.heldBack;
   const heldBackVerdict = judged.heldBackVerdict;
@@ -384,6 +427,8 @@ for (const task of wanted) {
     verified: sealed.verified === true,
     corner,
     latencyMs,
+    harness: harnessCommit,
+    ...(sealed.judgeFailure === undefined ? {} : { judgeFailure: sealed.judgeFailure }),
   });
   writeFileSync(scoredPath, `${JSON.stringify(scored, null, 2)}\n`);
 
