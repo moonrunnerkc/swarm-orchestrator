@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import { lineHitsByWorkspacePath, oracleReachedTheChange } from "./oracle-reach.ts";
 
 /**
+ * Lines with a body on them, for the cases that only care about the numbers. Reach reads what is
+ * on a line now, because a line holding one closing brace runs no code of its own, so a case that
+ * names a line has to say what is on it.
+ */
+const numbered = (lines: readonly number[]) =>
+  lines.map((line) => ({ line, text: `  value${line} = compute(${line});` }));
+
+/**
  * The measurement that motivated this. koa#1946 was certified by an oracle that never executed the
  * branch the held-back oracle refuses: `swarm ci` said verified, and running the sealed half under
  * coverage showed lines 270-273 of the file it changed were never reached.
@@ -10,7 +18,7 @@ import { lineHitsByWorkspacePath, oracleReachedTheChange } from "./oracle-reach.
  * of the change is the tool asserting more than it measured.
  */
 describe("whether the oracle ran the lines the patch changed", () => {
-  const changed = [{ path: "lib/application.js", addedLines: [85, 265, 270, 271] }];
+  const changed = [{ path: "lib/application.js", addedLines: numbered([85, 265, 270, 271]) }];
 
   /** Hits by line as the report gave them: a line absent from it was never executable. */
   const measured = (hits: Record<number, number>) => ({ "lib/application.js": hits });
@@ -62,7 +70,7 @@ describe("whether the oracle ran the lines the patch changed", () => {
    */
   it("does not count an added line the report never called executable", () => {
     const reach = oracleReachedTheChange({
-      changed: [{ path: "lib/application.js", addedLines: [85, 86, 87] }],
+      changed: [{ path: "lib/application.js", addedLines: numbered([85, 86, 87]) }],
       // 86 and 87 are the comment and the closing brace the patch added beside line 85.
       measured: measured({ 85: 4 }),
     });
@@ -72,7 +80,7 @@ describe("whether the oracle ran the lines the patch changed", () => {
 
   it("still counts an executable added line the report says never ran", () => {
     const reach = oracleReachedTheChange({
-      changed: [{ path: "lib/application.js", addedLines: [85, 86, 87] }],
+      changed: [{ path: "lib/application.js", addedLines: numbered([85, 86, 87]) }],
       measured: measured({ 85: 4, 86: 0 }),
     });
 
@@ -100,8 +108,8 @@ describe("the patch's own tests", () => {
   it("does not count a test file the oracle was never going to run", () => {
     const reach = oracleReachedTheChange({
       changed: [
-        { path: "lib/request.js", addedLines: [40, 41] },
-        { path: "__tests__/request/whatwg-url.test.js", addedLines: [1, 2, 3] },
+        { path: "lib/request.js", addedLines: numbered([40, 41]) },
+        { path: "__tests__/request/whatwg-url.test.js", addedLines: numbered([1, 2, 3]) },
       ],
       measured: { "lib/request.js": { 40: 2, 41: 1 } },
     });
@@ -113,8 +121,8 @@ describe("the patch's own tests", () => {
   it("still refuses a source file whose added lines never ran", () => {
     const reach = oracleReachedTheChange({
       changed: [
-        { path: "lib/application.js", addedLines: [265, 270] },
-        { path: "__tests__/application/currentContext.test.js", addedLines: [1, 2] },
+        { path: "lib/application.js", addedLines: numbered([265, 270]) },
+        { path: "__tests__/application/currentContext.test.js", addedLines: numbered([1, 2]) },
       ],
       measured: { "lib/application.js": { 265: 3, 270: 0 } },
     });
@@ -126,7 +134,7 @@ describe("the patch's own tests", () => {
   /** And a source file the oracle never loaded at all is still the stronger version of that. */
   it("still refuses a source file the report never mentions", () => {
     const reach = oracleReachedTheChange({
-      changed: [{ path: "lib/response.js", addedLines: [12] }],
+      changed: [{ path: "lib/response.js", addedLines: numbered([12]) }],
       measured: { "lib/request.js": { 40: 1 } },
     });
 
@@ -135,7 +143,8 @@ describe("the patch's own tests", () => {
 
   it("reads the conventional test paths and leaves names that merely contain the word", () => {
     const onlyTests = (path: string) =>
-      oracleReachedTheChange({ changed: [{ path, addedLines: [1] }], measured: {} }).reached;
+      oracleReachedTheChange({ changed: [{ path, addedLines: numbered([1]) }], measured: {} })
+        .reached;
 
     for (const path of [
       "__tests__/a.js",
@@ -157,6 +166,65 @@ describe("the patch's own tests", () => {
     ]) {
       expect({ path, ignored: onlyTests(path) }).toEqual({ path, ignored: false });
     }
+  });
+});
+
+describe("a line with nothing on it but punctuation", () => {
+  /**
+   * Measured on the hand-authored corpus: all four patches the reach check refused there were
+   * refused on a line holding one closing brace. A coverage report names such a line, because a
+   * function whose paths all return early never reaches the implicit end of it, and lcov reports
+   * that as a line with zero hits. It is still not behaviour: nothing an oracle could exercise
+   * lives on it, so "the oracle did not judge this line" says nothing about the patch.
+   *
+   * The rule is syntactic rather than a guess: a line carrying no character that could begin an
+   * identifier, a number or a string runs no code of its own. `} else {` keeps its `else` and is
+   * judged; `}` and `});` are not.
+   */
+  it("cannot be the reason an oracle is refused", () => {
+    const reach = oracleReachedTheChange({
+      changed: [
+        {
+          path: "src/List.ts",
+          addedLines: [
+            { line: 115, text: "      return Tuple(res[0], res[1])" },
+            { line: 116, text: "  }" },
+            { line: 117, text: "}" },
+          ],
+        },
+      ],
+      measured: { "src/List.ts": { 115: 3, 116: 0, 117: 0 } },
+    });
+
+    expect(reach.reached).toBe(true);
+  });
+
+  it("is still refused where behaviour on the line went unrun", () => {
+    const reach = oracleReachedTheChange({
+      changed: [
+        {
+          path: "src/List.ts",
+          addedLines: [
+            { line: 115, text: "      return Tuple(res[0], res[1])" },
+            { line: 117, text: "}" },
+          ],
+        },
+      ],
+      measured: { "src/List.ts": { 115: 0, 117: 0 } },
+    });
+
+    expect(reach.unreached).toEqual([{ path: "src/List.ts", lines: [115] }]);
+  });
+
+  // `} else {` is a branch, not a brace: the keyword on it is code and an oracle that never took
+  // that branch did not judge it.
+  it("keeps a line whose punctuation surrounds a keyword", () => {
+    const reach = oracleReachedTheChange({
+      changed: [{ path: "a.js", addedLines: [{ line: 4, text: "  } else {" }] }],
+      measured: { "a.js": { 4: 0 } },
+    });
+
+    expect(reach.reached).toBe(false);
   });
 });
 

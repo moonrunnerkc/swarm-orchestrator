@@ -63,6 +63,15 @@ const arm = flag("--arm", null);
  */
 const only = flag("--only", null);
 /**
+ * Skip rows this same harness commit already judged.
+ *
+ * A re-judge over the corpus is hours, and an interruption costs all of them: it re-judges every
+ * task whether or not the answer is already recorded under the tool that would answer again.
+ * Keyed on the commit rather than on a timestamp, so a run that resumes after a code change
+ * re-judges everything, which is the only honest answer once the instrument has moved.
+ */
+const resume = argv.includes("--resume");
+/**
  * Show the model the oracle it will be judged by, and ask it to satisfy that and nothing more.
  *
  * Every defect this tool has was found by its own author, which is the weakest form of the
@@ -317,7 +326,14 @@ function whyNothingWasJudged(verdict) {
 
 const named = (one) => `${one.repository}#${one.pull}`;
 const chosen = only === null ? viable : viable.filter((one) => named(one) === only);
-const wanted = (rejudge ? chosen.filter((one) => done.has(named(one))) : chosen.filter((one) => !done.has(named(one)))).slice(0, limit);
+const judgedByThisHarness = new Set(
+  scored.runs.filter((one) => one.harness === harnessCommit).map(named),
+);
+const wanted = (
+  rejudge
+    ? chosen.filter((one) => done.has(named(one)) && !(resume && judgedByThisHarness.has(named(one))))
+    : chosen.filter((one) => !done.has(named(one)))
+).slice(0, limit);
 console.log(`scoring ${wanted.length} mined task(s) against a held-back oracle\n`);
 
 for (const task of wanted) {

@@ -70,7 +70,26 @@ export function lineHitsByWorkspacePath(
 
 export interface ChangedLines {
   readonly path: string;
-  readonly addedLines: readonly number[];
+  /** The lines the patch added, with what is on them: the rule reads both. */
+  readonly addedLines: readonly { readonly line: number; readonly text: string }[];
+}
+
+/**
+ * Whether a line carries anything an oracle could have executed.
+ *
+ * A line holding one closing brace is named by a coverage report with zero hits, because a
+ * function whose paths all return early never reaches the implicit end of it, and lcov reports
+ * that as an executable line nothing ran. It is still not behaviour, and "the oracle did not
+ * judge this line" says nothing about the patch. Measured: all four patches the reach check
+ * refused in the hand-authored corpus were refused on one closing brace apiece.
+ *
+ * Syntactic rather than a guess about meaning: a line carrying no character that could begin an
+ * identifier, a number or a string runs no code of its own. `} else {` keeps its `else` and is
+ * judged; `}`, `});` and `],` are not. Being wrong costs one line of reach in the permissive
+ * direction, and a line of pure punctuation is not where an unjudged behaviour hides.
+ */
+function carriesCode(text: string): boolean {
+  return /[A-Za-z0-9_$'"`]/.test(text);
 }
 
 export interface OracleReach {
@@ -96,7 +115,8 @@ export function oracleReachedTheChange(input: {
   const unreached: { path: string; lines: number[] }[] = [];
 
   for (const file of input.changed) {
-    if (file.addedLines.length === 0 || namesATestFile(file.path)) {
+    const judgeable = file.addedLines.filter((added) => carriesCode(added.text));
+    if (judgeable.length === 0 || namesATestFile(file.path)) {
       continue;
     }
     // A file the report does not mention was not measured, and not measured is not covered.
@@ -104,8 +124,8 @@ export function oracleReachedTheChange(input: {
     const hits = input.measured[file.path];
     const missed =
       hits === undefined
-        ? [...file.addedLines]
-        : file.addedLines.filter((line) => hits[line] === 0);
+        ? judgeable.map((added) => added.line)
+        : judgeable.filter((added) => hits[added.line] === 0).map((added) => added.line);
     if (missed.length > 0) {
       unreached.push({ path: file.path, lines: missed });
     }
