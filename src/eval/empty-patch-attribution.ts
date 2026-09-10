@@ -10,6 +10,12 @@
  * server ran out of GPU memory mid-batch, in `mx.eval` over its own prompt cache, and every task
  * after it came back with a zero-byte patch and was recorded as the model writing nothing. An
  * endpoint that is not answering says nothing about a model, so nothing is what gets recorded.
+ *
+ * The residual, named rather than implied away: the probe is one sample taken after the run, so a
+ * run that failed on a transient error and then recovered is still charged to the model. What it
+ * catches is an endpoint that stayed down, which is the shape the outage above had and the shape
+ * that corrupts a batch rather than a row. Measured on the task the outage first hit: re-run
+ * against a live endpoint, `koajs/koa#1910` produced nothing again, so that row is the model.
  */
 export interface EmptyPatchReading {
   /** Whether the emptiness can be charged to the model at all. */
