@@ -70,9 +70,92 @@ export interface Mutant {
 }
 
 /**
- * String and comment contents replaced by spaces, so an operator scanning for `===` cannot find
- * one inside a message about precedence. Same length as the input, so every index a scan returns
- * still addresses the original text.
+ * Characters after which a slash opens a pattern rather than dividing. After a name, a number or a
+ * closing bracket it divides; after an operator, an opening bracket or nothing at all it opens one.
+ */
+const aSlashOpensAPattern = new Set([
+  "",
+  "(",
+  "[",
+  "{",
+  ",",
+  ";",
+  ":",
+  "=",
+  "!",
+  "&",
+  "|",
+  "?",
+  "+",
+  "-",
+  "*",
+  "/",
+  "%",
+  "<",
+  ">",
+  "~",
+  "^",
+]);
+
+/** And after these words, which end in a letter and so would otherwise read as a name. */
+const wordsBeforeAPattern = new Set([
+  "return",
+  "typeof",
+  "case",
+  "in",
+  "of",
+  "new",
+  "delete",
+  "void",
+  "do",
+  "else",
+  "yield",
+  "await",
+  "instanceof",
+]);
+
+/**
+ * Where a regular-expression literal starting at `at` ends, past its flags.
+ *
+ * The slash inside a character class is literal, so `[^/]` does not close the pattern. A pattern
+ * cannot span a line, so text that never closes is taken to the end of it, which masks more than
+ * it should rather than less.
+ */
+function endOfPattern(text: string, at: number): number {
+  let inClass = false;
+  for (let scan = at + 1; scan < text.length; scan += 1) {
+    const character = text[scan];
+    if (character === "\\") {
+      scan += 1;
+      continue;
+    }
+    if (character === "[") inClass = true;
+    else if (character === "]") inClass = false;
+    else if (character === "/" && !inClass) {
+      let past = scan + 1;
+      while (/[a-z]/.test(text[past] ?? "")) past += 1;
+      return past;
+    }
+  }
+  return text.length;
+}
+
+/**
+ * String, comment and pattern contents replaced by spaces, so an operator scanning for `===`
+ * cannot find one inside a message about precedence. Same length as the input, so every index a
+ * scan returns still addresses the original text.
+ *
+ * A regular expression is a literal like the others, and it was not treated as one. Measured
+ * rather than reasoned about: `deletion-parse-rate.mjs` holds the claim that only
+ * `delete-statement` can leave a file which does not parse, and `swap-call-arguments` broke it on
+ * a line splitting on a pattern whose own comma is part of it. The scan read that comma as the
+ * separator between two arguments and swapped halves of a regex. The same blindness reaches every
+ * operator that looks for a token: a comparison inside a pattern is not a comparison.
+ *
+ * Which of the two things a slash is cannot be settled by the character itself, so it is settled by
+ * what comes before, and being wrong is one-directional: reading a division as a pattern masks the
+ * rest of the line and costs mutants, while reading a pattern as a division is what produced the
+ * syntax error.
  */
 function withoutLiterals(text: string): string {
   const masked = [...text];
@@ -102,8 +185,28 @@ function withoutLiterals(text: string): string {
       }
       break;
     }
+    if (character === "/" && opensAPattern(masked, at)) {
+      const ends = endOfPattern(text, at);
+      for (let rest = at; rest < ends; rest += 1) {
+        masked[rest] = " ";
+      }
+      at = ends - 1;
+    }
   }
   return masked.join("");
+}
+
+/** Whether the slash at `at` opens a pattern, decided by the masked text already settled before it. */
+function opensAPattern(masked: readonly string[], at: number): boolean {
+  let back = at - 1;
+  while (back >= 0 && (masked[back] === " " || masked[back] === "\t")) back -= 1;
+  const previous = back < 0 ? "" : (masked[back] ?? "");
+  if (aSlashOpensAPattern.has(previous)) {
+    return true;
+  }
+  let wordFrom = back;
+  while (wordFrom >= 0 && /[A-Za-z]/.test(masked[wordFrom] ?? "")) wordFrom -= 1;
+  return wordsBeforeAPattern.has(masked.slice(wordFrom + 1, back + 1).join(""));
 }
 
 /**

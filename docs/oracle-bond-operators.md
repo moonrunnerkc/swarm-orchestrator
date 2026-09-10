@@ -140,23 +140,37 @@ needs the check, because no other operator can produce a file that does not pars
 replaces a token with a token of the same shape, wraps a balanced region, or removes a balanced
 one.
 
-**How much work the check does, measured rather than argued.** `node scripts/deletion-parse-rate.mjs`
-offers every line of a real file as an added line and checks every deletion the planner proposes.
-Over `koa/lib`, `dayjs/src` and `commander/lib`, 186 files and 929 proposals: **924 parse and 5 do
-not, 0.54%**. Every one of the five is the middle of an expression the line below it continues,
-which one line of context cannot see:
+**How much work the check does, and whether the claim beside it is true.**
+`node scripts/deletion-parse-rate.mjs` offers every line of a real file as an added line and checks
+every mutant the planner proposes, not only the deletions, because "no other operator can do this"
+is the reason only one is checked at runtime and is therefore a claim rather than a design. Over
+`koa/lib`, `dayjs/src` and `commander/lib`, 186 files and 2,702 mutants:
 
 ```
-koa/lib/request.js:411          return proxy && val
-koa/lib/request.js:436          return hostname
-commander/lib/argument.js:125   return arg.required
-commander/lib/command.js:1102   getCommandAndParents(this)
-commander/lib/help.js:118       (args ? ' ' + args : '');
+delete-statement           929 proposed     5 do not parse  0.54%
+replace-assigned-value     920 proposed     0 do not parse  0.00%
+invert-comparison          273 proposed     0 do not parse  0.00%
+negate-condition           234 proposed     0 do not parse  0.00%
+return-sentinel            171 proposed     0 do not parse  0.00%
+swap-call-arguments        105 proposed     0 do not parse  0.00%
+swap-arithmetic-operands    59 proposed     0 do not parse  0.00%
+drop-chained-call           11 proposed     0 do not parse  0.00%
 ```
 
-So the lexical rule is right about 99.5% of the lines it fires on, and the check is what covers the
-rest. Without it those five would have been handed to an oracle, refused as compile errors, and
-counted as five bonds that held.
+Each of the five deletions is the middle of an expression the line below it continues, which one
+line of context cannot see: `return proxy && val`, `return hostname`, `return arg.required`,
+`getCommandAndParents(this)`, `(args ? ' ' + args : '');`. So the lexical rule is right about 99.5%
+of the lines it fires on and the check covers the rest. Without it those five reach an oracle, are
+refused as compile errors, and count as five bonds that held.
+
+**The claim was false the first time it was measured, and the measurement is why it is true now.**
+`swap-call-arguments` broke 1 of its 105 on `val.split(...)`, splitting on a pattern whose own comma
+is part of it: `withoutLiterals` masked strings and comments and had never masked a regular
+expression, so the argument scan read that comma as the separator between two arguments and swapped
+halves of a regex. The same blindness reached every operator that looks for a token, since a
+comparison inside a pattern is not a comparison. A pattern is now masked like any other literal,
+and which of two things a slash is gets settled by what precedes it, wrong only in the direction
+that masks too much and costs a mutant.
 
 ## What makes a bond vacuous, and what abstains
 

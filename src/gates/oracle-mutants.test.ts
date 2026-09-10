@@ -519,3 +519,72 @@ describe("a statement removed altogether", () => {
     expect(built.map((one) => one.operator)).toEqual(["negate-condition"]);
   });
 });
+
+/**
+ * A regular-expression literal is a literal, and it was not masked.
+ *
+ * Found by measuring a claim rather than by reasoning: `deletion-parse-rate.mjs` asserts that only
+ * `delete-statement` can leave a file which does not parse, and over three real repositories
+ * `swap-call-arguments` broke one of its 105 mutants. The line splits on a pattern whose own comma
+ * is part of it, so the argument scan read that comma as the separator between two arguments and
+ * swapped halves of a regex.
+ *
+ * The same blindness reaches every operator that scans for a token: a comparison inside a pattern
+ * is not a comparison, and a slash or a percent inside one is not arithmetic.
+ */
+describe("a regular expression is a literal too", () => {
+  it("does not read a comma inside a pattern as an argument separator", () => {
+    const built = mutantsOfChangedLines({
+      changed: only("lib/request.js", [[10, "    value.split(/\\s*,\\s*/);"]]),
+    });
+
+    expect(built.map((one) => one.operator)).not.toContain("swap-call-arguments");
+  });
+
+  it("does not read a comparison inside a pattern as a comparison", () => {
+    const built = mutantsOfChangedLines({
+      changed: only("lib/parse.js", [[10, "    if (/a > b/.test(one)) {"]]),
+    });
+
+    expect(built.map((one) => one.operator)).not.toContain("invert-comparison");
+  });
+
+  it("does not read arithmetic inside a pattern as arithmetic", () => {
+    const built = mutantsOfChangedLines({
+      changed: only("lib/parse.js", [[10, "    one.match(/a % b/);"]]),
+    });
+
+    expect(built.map((one) => one.operator)).not.toContain("swap-arithmetic-operands");
+  });
+
+  /**
+   * Division still has to be readable, which is the whole difficulty: one character both starts a
+   * pattern and divides. What comes before it decides, and after a name or a closing bracket it
+   * divides.
+   */
+  it("still reads division as division", () => {
+    const built = mutantsOfChangedLines({
+      changed: only("lib/duration.js", [[10, "  const share = total / count;"]]),
+    });
+
+    expect(built[0]?.operator).toBe("swap-arithmetic-operands");
+    expect(built[0]?.after).toBe("  const share = count / total;");
+  });
+
+  it("still swaps the arguments a call outside a pattern was given", () => {
+    const built = mutantsOfChangedLines({
+      changed: only("lib/request.js", [[10, "    merge(target, /a,b/.source);"]]),
+    });
+
+    expect(built[0]?.operator).toBe("swap-call-arguments");
+    expect(built[0]?.after).toBe("    merge(/a,b/.source, target);");
+  });
+
+  it("reads a pattern that opens a line, where nothing before it decides", () => {
+    const built = mutantsOfChangedLines({
+      changed: only("lib/request.js", [[10, "      .replace(/a,b/g, ';')"]]),
+    });
+
+    expect(built.map((one) => one.operator)).not.toContain("swap-call-arguments");
+  });
+});
