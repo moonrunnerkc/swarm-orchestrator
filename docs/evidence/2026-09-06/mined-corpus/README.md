@@ -97,36 +97,45 @@ Every scored row carries the harness commit that produced it, for the same reaso
     node scripts/pr-task-pass.mjs
     node scripts/reclassify-scored.mjs
 
-111 candidates mined, 73 viable, 73 scored.
+192 candidates mined, 111 of them checked by running them, 59 viable, 59 scored. The other 81 are
+waiting on a viability pass.
 
-**1 false green in 8 valid opportunities: 12.5%, 95% CI [2.2, 47.1].** With the eleven from the
-hand-authored corpus, 1 of 19, 5.3% [0.9, 24.6].
+**0 false greens in 3 valid opportunities here: 0.0%, 95% CI [0.0, 56.1].** With the eleven from the
+hand-authored corpus, 0 of 14, 0.0% [0.0, 21.5]. Every row names the harness commit that judged it,
+and `node scripts/false-green-rate.mjs` derives the combined figure rather than a person adding it
+up in a sentence.
 
-Twenty-one of the 73 are unjudgeable: an oracle on one side or the other accepts the base commit,
-or the harness could not run it at all. Such an oracle can contradict nothing, so the task tests
-nothing about the tool in either direction, and it leaves the denominator rather than counting as
-a refusal. `classifyAgainstHeldBackOracle` decides that, which is a change from an audit script
-applying it by hand to four tasks; doing it in the classifier means the next batch cannot forget.
-It cuts both ways. dayjs#3012 and koa#1893 were being counted as opportunities the tool passed,
-and their *held-back* half accepts the base, so they were flattering it.
+**Nothing here is unjudgeable, where 21 of 73 were.** Nine of those were a half that accepts the
+base, which the viability filter now catches by running each half against the base at mining time
+rather than leaving it to be found after a model run. The other twelve were the agent having
+written nothing at all: their patch files are zero bytes, and handing an empty patch to `swarm ci`
+produced `unjudged`, which was recorded as an oracle that could not be run. It is a model failure
+and it is recorded as one.
+
+**Both false greens ever found are now refused, for the same reason.**
 
 | | |
 | --- | --- |
-| iamkun/dayjs#3181 | guards invalid Day.js values, still throws on an invalid string in `d.tz()` |
+| koajs/koa#1946 | its oracle never executed lines 270-273, where the caller-supplied `AsyncLocalStorage` was ignored |
+| iamkun/dayjs#3181 | its oracle never executes lines 141-143, the `d.tz` branch that still throws on an invalid string |
 
-Reproduced by hand, both halves run separately on a fresh clone.
-
-**koa#1946 is no longer one.** It was the first false green found and the tool now refuses it: its
-sealed oracle never executed lines 270-273 of the file it certified, which is where the
-caller-supplied `AsyncLocalStorage` was ignored and what the held-back half then broke. An oracle
-is evidence only about the code it ran. The whole account, including the four harness defects that
+koa#1946 was refused first, and the whole account of it, including the four harness defects that
 made the check look like it worked when it did not, is in
 [`first-false-green.md`](../../2026-09-07/first-false-green.md).
 
-dayjs#3181 is the shape that check cannot reach. Its oracle ran every line the patch wrote and
-passed; the patch handles the non-string branch its sealed case exercises and never handles the
-string one the held-back case names. Nothing in the patch or the run says the work is incomplete,
-so this is not a check waiting to be written.
+dayjs#3181 was written up here as the shape the check cannot reach: its oracle was said to have run
+every line the patch wrote. That was never measured. Reach could only be read from node's own test
+runner, dayjs runs jest, and the verdict was `unmeasured` rather than `reached`. Measured, the
+oracle skips three of the lines, and the tool refuses to certify on it.
+
+**What the refusals cost.** Certified fell from 8 to 3 on this corpus: three patches both oracles
+accept are refused because their oracle never ran part of what they added, and four on the sealed
+half. A tool that refuses more has fewer claims to be wrong about, so the interval over what is
+left is wider. That is the trade, and both halves of it are printed beside the rate.
+
+**The halves disagree on 6 of the 49 patches both judged**, 87.8% agreement. That is the first
+evidence about the thing this corpus is weakest on: two halves of one specification, written by one
+author in one sitting, could have agreed on everything and bought nothing.
 
 **A third, winston#2181, was withdrawn on 2026-09-08.** Its sealed case, "that Logger class is
 exported", passes on the base source, so that oracle would have accepted a patch changing nothing
@@ -137,16 +146,18 @@ are what the oracles run. A file can qualify while the half handed to the tool i
 `sealedOracleTestsThePatch` names the condition, and the two that stand were checked against it:
 koa#1946's sealed half fails 2 of 2 on the base and dayjs#3181's fails 1 of 1.
 
-### Where 73 tasks went
+### Where 59 tasks went
 
 | | |
 | --- | --- |
-| 8 | certified, so an opportunity to catch a false green |
-| 21 | unjudgeable: an oracle on one side accepts the base, or could not be run |
-| 44 | judged and refused, 39 on the merits and 5 where the sealed half refused work the held-back half accepts |
+| 3 | certified, so an opportunity to catch a false green |
+| 3 | refused because the oracle never ran part of the change |
+| 4 | refused because the sealed half rejects work the held-back half accepts |
+| 49 | judged and refused on the merits, 10 of them the agent having written nothing at all |
 
-Roughly a ninth of scored tasks become an opportunity, and 21 cannot become one whatever the tool
-does, which is why the interval is wider than the task count suggests.
+One task in twenty becomes an opportunity, which is the real obstacle to four hundred: the local
+model fails most of these outright, and a task nobody can do produces a true red rather than
+something for a held-back oracle to disagree with.
 
 ### The two directions are not symmetrical
 
