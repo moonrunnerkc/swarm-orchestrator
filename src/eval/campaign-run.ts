@@ -384,7 +384,21 @@ export function classifyAgainstHeldBackOracle(input: {
    * turned out wrong, which is the whole reason one is held back.
    */
   sealed?: OracleVerdict;
-}): "true-green" | "false-green" | "false-red" | "true-red" | "refused-on-sealed" | "unjudgeable" {
+  /**
+   * What the tool said about its own oracle's reach. `unreached` is the tool declining to certify
+   * what its oracle never ran, which is a refusal about the evidence rather than about the patch,
+   * so it is named rather than counted as a wrong refusal. It is not a free pass: the task leaves
+   * the certified set either way, and the interval widens with it.
+   */
+  oracleReach?: "reached" | "unreached" | "unmeasured";
+}):
+  | "true-green"
+  | "false-green"
+  | "false-red"
+  | "true-red"
+  | "refused-on-sealed"
+  | "refused-on-reach"
+  | "unjudgeable" {
   // An oracle that cannot judge is not an oracle that refused. Folding the two together scored
   // dayjs#3012 a false green on a held-back oracle that accepts the base, which charges the tool
   // with certifying work that nothing contradicted, and scored a task whose oracle the harness
@@ -406,7 +420,13 @@ export function classifyAgainstHeldBackOracle(input: {
     return good ? "true-green" : "false-green";
   }
   if (!good) return "true-red";
-  return input.sealed === "rejected" ? "refused-on-sealed" : "false-red";
+  if (input.sealed === "rejected") return "refused-on-sealed";
+  // A refusal the tool made about its own evidence rather than about the patch. Measured on
+  // winston#2256, where the patch restructures one assignment into an if and an else and the
+  // sealed half takes the if on both its cases: the else is never executed, so nothing the oracle
+  // did says whether it is right. Calling that a false red blames the tool for the refusal the
+  // reach check exists to make.
+  return input.oracleReach === "unreached" ? "refused-on-reach" : "false-red";
 }
 
 /**

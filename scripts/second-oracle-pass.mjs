@@ -122,6 +122,7 @@ for (const record of runs) {
     heldBack: heldBack.task,
     regression: sealed.regression,
     sealed: sealed.task,
+    oracleReach: sealed.oracleReach,
   });
 
   scored.push({
