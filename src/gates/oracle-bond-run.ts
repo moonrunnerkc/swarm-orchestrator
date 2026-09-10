@@ -4,6 +4,7 @@ import {
   type LineHits,
   type MutantWitness,
   suiteWitnessesADifference,
+  vacuousRequiresAWitness,
   witnessedADifference,
   witnessOfADifference,
 } from "./mutant-witness.ts";
@@ -44,7 +45,11 @@ export interface OracleBondRunner {
  * The second detector is the repository's whole suite, which on a real project is minutes. Two is
  * enough to reach the two lowest-risk mutants of a patch, which are the ones most likely to be
  * real, and small enough that a patch full of accepted mutants cannot turn one verification into
- * an afternoon. Anything past it is recorded as not adjudicated, never as either answer.
+ * an afternoon.
+ *
+ * Where the witness is recorded rather than required this is never reached, because the first
+ * accepted mutant on a line the oracle ran settles the verdict and adjudicating stops there. It
+ * binds only under the stricter reading, where a silent detector settles nothing.
  */
 const suiteRunsPerPatch = 2;
 
@@ -72,11 +77,14 @@ export async function bondOracleWithMutants(input: {
   readonly checksWithPatch: readonly CheckStatus[];
   readonly runner: OracleBondRunner;
   readonly suiteAdjudicationLimit?: number;
+  /** Which fact the verdict rests on, which is also what decides when adjudicating can stop. */
+  readonly requireAWitness?: boolean;
 }): Promise<OracleBond> {
   const { runner } = input;
+  const requireAWitness = input.requireAWitness ?? vacuousRequiresAWitness;
   const observations: MutantObservation[] = [];
   let suiteRunsLeft = input.suiteAdjudicationLimit ?? suiteRunsPerPatch;
-  let gapDemonstrated = false;
+  let decided = false;
 
   for (const mutant of input.mutants) {
     const original = await runner.read(mutant.path);
@@ -102,7 +110,7 @@ export async function bondOracleWithMutants(input: {
       const ran = await runner.runOracle();
       const seen = mutantWasSeen(input.measured, mutant);
       const witness: MutantWitness =
-        ran.accepted && seen && !gapDemonstrated
+        ran.accepted && seen && !decided
           ? await adjudicate({
               mutant,
               measured: input.measured,
@@ -114,7 +122,13 @@ export async function bondOracleWithMutants(input: {
       if (witness === "none" || witness === "repository-suite") {
         suiteRunsLeft -= 1;
       }
-      gapDemonstrated = gapDemonstrated || witnessedADifference(witness);
+      // Adjudicating stops once the verdict cannot change, and which fact the verdict rests on
+      // decides when that is. Where the witness is recorded rather than required, an accepted
+      // mutant on a line the oracle ran already settles it, so the detectors annotate the mutant
+      // that settled it rather than searching for one they can witness: at most one adjudication
+      // per patch, and the bound on suite runs is never reached. Where a witness is required, a
+      // silent detector settles nothing and the search goes on.
+      decided = decided || (requireAWitness ? witnessedADifference(witness) : ran.accepted && seen);
       observations.push({ mutant, oracle: ran.accepted ? "passed" : "failed", seen, witness });
     } finally {
       await runner.write(mutant.path, original);

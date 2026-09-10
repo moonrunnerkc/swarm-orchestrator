@@ -501,6 +501,8 @@ async function bondTheOracle(
     mutants: mutantsOfChangedLines({ changed }),
     measured,
     checksWithPatch,
+    // Left to the one place the decision lives rather than passed from here, so a run and the
+    // arithmetic over its record cannot disagree about which regime produced it.
     runner: {
       read: (path) => readFile(join(checkout, path), "utf8").catch(() => null),
       write: (path, text) => writeFile(join(checkout, path), text),

@@ -274,6 +274,7 @@ describe("what adjudication is allowed to cost", () => {
       measured: { "lib/command.js": { 2: 1, 3: 1, 4: 1 } },
       checksWithPatch: [{ id: "tests", status: "passed" }],
       runner,
+      requireAWitness: true,
       suiteAdjudicationLimit: 1,
     });
 
@@ -283,6 +284,30 @@ describe("what adjudication is allowed to cost", () => {
       "not-adjudicated",
       "not-adjudicated",
     ]);
+  });
+
+  /**
+   * Where the witness is recorded rather than required, an accepted mutant on a line the oracle
+   * ran already decides the bond, so nothing is spent looking at a second one. The detectors then
+   * annotate the mutant that decided it rather than searching for one that can be witnessed, and
+   * at most one adjudication happens per patch.
+   */
+  it("stops adjudicating once the verdict is decided, whatever a detector said", async () => {
+    const { runner, recorded } = fakeRunner({
+      text: "const ok = true\n  if (ok) {\n  }\n\n",
+      hits: () => ({ "lib/command.js": { 2: 1, 3: 1, 4: 1 } }),
+    });
+
+    await bondOracleWithMutants({
+      mutants: three,
+      measured: { "lib/command.js": { 2: 1, 3: 1, 4: 1 } },
+      checksWithPatch: [{ id: "tests", status: "passed" }],
+      runner,
+      requireAWitness: false,
+    });
+
+    expect(recorded.coverageReads).toHaveLength(1);
+    expect(recorded.suiteRuns).toHaveLength(1);
   });
 
   /**
