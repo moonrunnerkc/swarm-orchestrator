@@ -223,15 +223,20 @@ one fails on scale. Each row and what would settle it: **[docs/beta-gates.md](do
 - **The default execution mode is `restricted`, not `isolated`.** A lexical path and program policy
   in front of interpreters unless you pass `--isolation`. Reported before the run starts and
   recorded on the chain rather than quietly assumed — but it is not containment.
-- **The false-green rate is 1 in 16**, 6.3%, 95% CI [1.1, 28.3]. Every task carries two oracles, one
-  handed to the tool and one held back from it. The bar this project set itself is zero over four
-  hundred tasks, so this is a **failure** on both counts:
+- **The false-green rate is 0 in 15**, 0.0%, 95% CI [0.0, 20.4], and that upper bound is the honest
+  half of it. Every task carries two oracles, one handed to the tool and one held back from it, and
+  fifteen certified patches cannot say more than "under 20%":
   [`mined-corpus/`](docs/evidence/2026-09-06/mined-corpus/README.md). Every false green ever found
   came from tasks mined out of real pull requests, because maintainers test what they cared about
-  rather than what the author of a tool thought to check.
-- **The denominator moved when the tool did, and that is a cost.** Three patches both oracles
-  accept are refused because the tool's own oracle never ran part of what they changed, and four
-  more because the sealed half rejects work the held-back half accepts. A tool that refuses more
+  rather than what the author of a tool thought to check. The one that used to stand,
+  `commander#1671`, is refused now because its oracle accepted a change to a line it had run.
+- **Shown its oracle, a model still gets past this: 2 false greens in 5 certified.** Both have no
+  bond, because a patch written to satisfy a visible test adds no line a mutation operator can
+  change. Bonding closes the careless case, not the adversarial one.
+- **The denominator moved when the tool did, and that is a cost.** Four patches both oracles
+  accept are refused because the tool's own oracle never ran part of what they changed, five more
+  because the sealed half rejects work the held-back half accepts, and one because its oracle
+  accepted a change to a line it had run. A tool that refuses more
   has fewer claims to be wrong about, so the interval over what is left is wider. Both halves are
   reported, and a refusal is never counted as a pass.
 - **The one that stood is now refused, and not for the reason it was written up.** dayjs#3181 guards
@@ -258,7 +263,9 @@ change is fast and its claims are checkable — not that review is unnecessary.
 The roadmap is the six unmet beta gates, tracked with their evidence in
 **[docs/beta-gates.md](docs/beta-gates.md)**:
 
-- [ ] Zero false greens in 400 held-out tasks — currently 1 in 16, upper bound 28.3%
+- [ ] A false-green rate whose interval means something — currently 0 in 15, upper bound 20.4%, and
+      the old "zero in 400 tasks" wording is retired for four measured reasons in
+      [docs/beta-gates.md](docs/beta-gates.md)
 - [ ] An adversarial corpus written by somebody trying to get past the defences — the verification
       surface now has one, and it lands: 2 false greens in 5 certified when the model is shown the
       oracle it will be judged by, against 0 in 3 when it is not

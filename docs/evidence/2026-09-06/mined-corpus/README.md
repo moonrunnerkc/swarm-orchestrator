@@ -108,10 +108,18 @@ that cannot be installed could never be judged either. commander's older pull re
 lockfile, so this is a property of a repository rather than of age. Yield comes from mining more
 repositories, not more pages of the same ones.
 
-**1 false green in 5 valid opportunities here: 20.0%, 95% CI [3.6, 62.4].** With the eleven from the
-hand-authored corpus, 1 of 16, 6.3% [1.1, 28.3]. Every one of the 79 rows names the same harness
-commit, and `node scripts/false-green-rate.mjs` derives the combined figure rather than a person
-adding it up in a sentence.
+**0 false greens in 4 valid opportunities here: 0.0%, 95% CI [0.0, 49.0].** With the eleven from the
+hand-authored corpus, 0 of 15, 0.0% [0.0, 20.4]. `node scripts/false-green-rate.mjs` derives the
+combined figure rather than a person adding it up in a sentence, and refuses to combine rows across
+tool versions where more than one holds a certified patch.
+
+**The one that used to stand is refused, and the denominator lost a patch for it.** `commander#1671`
+was 1 of 5 here. Its oracle runs every line the patch adds and never tests the name collision whose
+precedence those lines decide, so bonding hands that oracle a change to one of those lines,
+`getCommandAndParents(this).reverse()` with the `.reverse()` dropped, and the sealed half passes it.
+An oracle that accepts a change to a line it ran established nothing about that line, so the tool
+refuses. That is why this corpus now certifies 4 of 79 rather than 5: every check that makes the
+tool safer takes a patch out of the set it can be wrong about.
 
 **Nothing here is unjudgeable, where 21 of 73 were.** Nine of those were a half that accepts the
 base, which the viability filter now catches by running each half against the base at mining time
