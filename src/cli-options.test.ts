@@ -92,7 +92,7 @@ describe("parseCommandLine", () => {
   it("reads a switch flag without eating the flag after it", () => {
     const parsed = parseCommandLine(
       ["ci", "--patch", "p.diff", "--oracle-only", "--oracle", "npx jest x", "--json"],
-      { currentDirectory: "/w", defaultBaseRef: "HEAD" },
+      { currentDirectory: "/w" },
     );
 
     expect(parsed.command).toBe("ci");
