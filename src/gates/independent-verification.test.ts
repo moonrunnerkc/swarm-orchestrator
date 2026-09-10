@@ -529,6 +529,91 @@ describe("an oracle that only ran part of the change", () => {
   });
 });
 
+/**
+ * The arm that reads V8's own coverage, which is what reach falls back to wherever the harness
+ * cannot rebuild the oracle as a node test-runner invocation. Thirteen of the seventeen mined
+ * repositories are in that position, and reach was blind on every one of them.
+ *
+ * The oracle here is a plain node script rather than node's test runner, which is the shape the
+ * vouching refuses and the coverage plan still recognizes. Both directions are exercised, because
+ * an arm that only ever answers `unreached` would pass a test that only checks the gap.
+ */
+describe("reach read from the coverage the run itself wrote", () => {
+  // Two things at once, which is the shape reach exists for: a coercion the oracle's own
+  // assertion detects, and a floor branch it never takes.
+  const patch = [
+    "diff --git a/clamp.mjs b/clamp.mjs",
+    "--- a/clamp.mjs",
+    "+++ b/clamp.mjs",
+    "@@ -1 +1,7 @@",
+    "-export const clamp = (v) => v;",
+    "+export const clamp = (v) => {",
+    "+  const n = Number(v);",
+    "+  if (n < 0) {",
+    "+    return 0;",
+    "+  }",
+    "+  return n;",
+    "+};",
+    "",
+  ].join("\n");
+
+  async function oracleScript(body: string): Promise<string> {
+    const script = join(repository, "..", `reach-v8-${Date.now()}-${Math.random()}.mjs`);
+    await writeFile(script, body);
+    return script;
+  }
+
+  it("names the added line an oracle of its own never ran", async () => {
+    const script = await oracleScript(
+      "import assert from 'node:assert/strict';\n" +
+        "import { clamp } from './clamp.mjs';\n" +
+        "assert.strictEqual(clamp('3'), 3);\n",
+    );
+    try {
+      const result = await verifyIndependently({
+        repositoryRoot: repository,
+        baseCommit: baseCommit(),
+        patch,
+        commands: commands(),
+        clock,
+        taskOracle: { command: `cp '${script}' oracle.mjs && node oracle.mjs` },
+      });
+
+      expect(result.task).toBe("accepted");
+      expect(result.oracleReach).toBe("unreached");
+      expect(result.unreachedByOracle.map((file) => file.path)).toEqual(["clamp.mjs"]);
+      expect(result.unreachedByOracle[0]?.lines).toContain(4);
+      expect(result.verified).toBe(false);
+    } finally {
+      await rm(script, { force: true });
+    }
+  });
+
+  it("reports reached where the same oracle takes the branch as well", async () => {
+    const script = await oracleScript(
+      "import assert from 'node:assert/strict';\n" +
+        "import { clamp } from './clamp.mjs';\n" +
+        "assert.strictEqual(clamp('3'), 3);\n" +
+        "assert.strictEqual(clamp(-2), 0);\n",
+    );
+    try {
+      const result = await verifyIndependently({
+        repositoryRoot: repository,
+        baseCommit: baseCommit(),
+        patch,
+        commands: commands(),
+        clock,
+        taskOracle: { command: `cp '${script}' oracle.mjs && node oracle.mjs` },
+      });
+
+      expect(result.oracleReach).toBe("reached");
+      expect(result.verified).toBe(true);
+    } finally {
+      await rm(script, { force: true });
+    }
+  });
+});
+
 describe("an oracle that never ran the lines the patch added", () => {
   /**
    * The koa#1946 shape, reduced. The patch does two things: it coerces the value, which the
