@@ -159,7 +159,11 @@ reason.
 A bond that held under a runner that type-checks before it runs may have held on the types. The
 mutant a `filter` predicate or a swapped argument list produces is often not well typed, and
 `darkreader`'s oracle runs `ts-jest`, which refuses it as a compile error. The oracle did refuse the
-mutant, which is what `held` says; what it does not say is that the assertions would have.
+mutant, which is what `held` says; what it does not say is that the assertions would have. Two of
+the three new operators widen that: `const at: number = undefined` and a deleted declaration are
+both compile errors before they are anything else, so on a type-checking runner a `held` bond over
+them says less than the same word over an untyped one. The witness beside a gap does not help
+here, because this is a residual of a refusal rather than of an acceptance.
 
 **What it does not catch, measured rather than reasoned about.** Reach refuses a patch that adds
 code the oracle never runs. It says nothing about a patch that never wrote the code at all. Given
