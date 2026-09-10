@@ -84,6 +84,28 @@ export function tallyFalseGreens(rows: readonly CorpusJudgement[]): FalseGreenTa
 }
 
 /** What one half said about a patch, as the passes record it. */
+/**
+ * The rows produced by showing the model its oracle, kept apart from the rest.
+ *
+ * A different sampling process, not a harder subset of one. The adversarial arm asks a model to
+ * satisfy the acceptance test it was shown and leave an adjacent case broken, which is an upper
+ * bound on the tool's blindness against a reader of that test; the ordinary arm is what a
+ * contributor who cannot see it produces. A rate over the two together describes a population
+ * nobody sampled.
+ *
+ * The two arms write to different files, which is a convention. This is the check, so a row that
+ * ends up in the wrong one is still not pooled. A row with no prompt recorded was not shown its
+ * oracle, because the field is written only where it was.
+ */
+export function separateAdversarialRows<Row extends { readonly prompt?: string }>(
+  rows: readonly Row[],
+): { readonly ordinary: readonly Row[]; readonly adversarial: readonly Row[] } {
+  return {
+    ordinary: rows.filter((row) => row.prompt !== "sealed-oracle-shown"),
+    adversarial: rows.filter((row) => row.prompt === "sealed-oracle-shown"),
+  };
+}
+
 export interface HalfVerdicts {
   readonly sealedOracle?: string;
   readonly heldBackOracle?: string;

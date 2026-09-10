@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   groupByHarness,
   heldBackAgreementRate,
+  separateAdversarialRows,
   tallyFalseGreens,
   tallyInadequateOracles,
 } from "./false-green-rate.ts";
@@ -184,5 +185,42 @@ describe("the oracles a held-back oracle proved inadequate", () => {
 
   it("has no rate where nothing was proved inadequate", () => {
     expect(tallyInadequateOracles([]).point).toBeNull();
+  });
+});
+
+/**
+ * A row produced by showing the model the oracle it will be judged by is a different sampling
+ * process from one produced by handing it the task alone. Pooling the two reports a rate over a
+ * population nobody sampled: the adversarial arm is an upper bound on the tool's blindness
+ * against a reader of its acceptance test, and the ordinary arm is what a contributor produces.
+ *
+ * The rows live in different files today, which is a convention rather than a check. This is the
+ * check, so a row that ends up in the wrong file is still not pooled.
+ */
+describe("keeping the adversarial arm out of an ordinary rate", () => {
+  const rows = [
+    { corner: "true-green" as const },
+    { corner: "false-green" as const, prompt: "sealed-oracle-shown" },
+    { corner: "true-red" as const },
+  ];
+
+  it("splits rows by whether the model was shown its oracle", () => {
+    const split = separateAdversarialRows(rows);
+
+    expect(split.ordinary).toHaveLength(2);
+    expect(split.adversarial).toHaveLength(1);
+  });
+
+  it("reads a row with no prompt recorded as ordinary, which is what it was", () => {
+    const split = separateAdversarialRows([{ corner: "true-green" }]);
+
+    expect(split.adversarial).toEqual([]);
+  });
+
+  it("tallies each side on its own denominator", () => {
+    const split = separateAdversarialRows(rows);
+
+    expect(tallyFalseGreens(split.ordinary).falseGreens).toBe(0);
+    expect(tallyFalseGreens(split.adversarial).falseGreens).toBe(1);
   });
 });
