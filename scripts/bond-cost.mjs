@@ -63,30 +63,43 @@ function bothRegimes(row) {
   };
   const withoutBond =
     row.regression === "pass" && sealed === "accepted" && row.oracleReach !== "unreached";
-  // The third regime, re-derived rather than re-run. A mutant carrying any witness other than
-  // `not-adjudicated` was accepted on a line the oracle demonstrably ran, which is the whole of
-  // what `vacuous` meant before a witness was required of it, so the row's own record answers
-  // what the other regime would have said about it.
-  const vacuousWithoutAWitness = (row.bondedMutants ?? []).some(
-    (one) =>
-      one.verdict === "vacuous" ||
-      (one.witness !== undefined && one.witness !== "not-adjudicated"),
+
+  // Both blocking regimes are re-derived from the row's own mutants rather than from the bond it
+  // recorded, and that is not a nicety. Reading the recorded bond makes a column mean whichever
+  // regime happened to produce the rows: once the relaxed one shipped, the "witness required"
+  // column started reporting the relaxed answer and the table showed two identical columns, which
+  // is the failure this file's header warns about one layer up.
+  //
+  // What each regime needs of a mutant, read the same way whichever regime wrote the row. A
+  // mutant the oracle accepted on a line it demonstrably ran is what `vacuous` has always meant,
+  // and a relaxed record says so with the verdict while a strict one says so with any witness
+  // other than `not-adjudicated`, since only such a mutant is ever adjudicated.
+  const mutants = row.bondedMutants ?? [];
+  const acceptedOnALineItRan = (one) =>
+    one.verdict === "vacuous" ||
+    (one.witness !== undefined && one.witness !== "not-adjudicated");
+  const witnessed = (one) =>
+    one.witness === "coverage" || one.witness === "repository-suite";
+
+  const vacuousWithAWitness = mutants.some(
+    (one) => acceptedOnALineItRan(one) && witnessed(one),
   );
+  const vacuousWithoutOne = mutants.some(acceptedOnALineItRan);
+
+  const under = (vacuous) =>
+    classifyAgainstHeldBackOracle({
+      ...shared,
+      verifiedWithFirstOracle: withoutBond && !vacuous,
+      oracleBond: vacuous ? "vacuous" : row.oracleBond,
+    });
+
   return {
     reportOnly: classifyAgainstHeldBackOracle({
       ...shared,
       verifiedWithFirstOracle: withoutBond,
     }),
-    blocking: classifyAgainstHeldBackOracle({
-      ...shared,
-      verifiedWithFirstOracle: withoutBond && row.oracleBond !== "vacuous",
-      oracleBond: row.oracleBond,
-    }),
-    witnessRecorded: classifyAgainstHeldBackOracle({
-      ...shared,
-      verifiedWithFirstOracle: withoutBond && !vacuousWithoutAWitness,
-      oracleBond: vacuousWithoutAWitness ? "vacuous" : row.oracleBond,
-    }),
+    blocking: under(vacuousWithAWitness),
+    witnessRecorded: under(vacuousWithoutOne),
   };
 }
 
@@ -143,12 +156,37 @@ console.log(
   "  a mutant that changes nothing is not decidable here and is what the audit reads by hand",
 );
 
+// Which refusals the audit actually has to read, which is the whole of what recording the witness
+// instead of requiring it costs. A refusal a detector witnessed rests on an instrument; one
+// carrying `none` rests on the operator alone and is the only shape that can be a false red.
+const unwitnessed = vacuous.filter((row) =>
+  (row.bondedMutants ?? []).some((one) => one.verdict === "vacuous" && one.witness === "none"),
+);
+console.log(`\n=== the refusals the audit has to read: ${unwitnessed.length} ===`);
+for (const row of unwitnessed) {
+  const gap = (row.bondedMutants ?? []).find(
+    (one) => one.verdict === "vacuous" && one.witness === "none",
+  );
+  console.log(
+    `  ${named(row)}  ${gap.id}  held-back oracle: ${row.heldBackOracle ?? "not recorded"}`,
+  );
+  console.log(`      - ${gap.before.trim()}`);
+  console.log(`      + ${gap.after.trim()}`);
+}
+console.log(
+  unwitnessed.length === 0
+    ? "  nothing to read: every refusal rests on a detector"
+    : "  a refusal of a patch a held-back oracle also rejects is not a false red whatever a " +
+        "detector saw; the ones to read are those a held-back oracle accepts",
+);
+
 if (showMutants) {
   console.log(`\n=== every vacuous verdict, for the audit ===`);
   for (const row of vacuous) {
     for (const gap of (row.bondedMutants ?? []).filter((one) => one.verdict === "vacuous")) {
       console.log(
-        `  ${named(row)}  ${gap.id}  held-back: ${(row.heldBackBondedMutants ?? {})[gap.id] ?? "never judged the mutant"}`,
+        `  ${named(row)}  ${gap.id}  witness: ${gap.witness ?? "not-recorded"}  ` +
+          `held-back: ${(row.heldBackBondedMutants ?? {})[gap.id] ?? "never judged the mutant"}`,
       );
       console.log(`      - ${gap.before}`);
       console.log(`      + ${gap.after}`);
