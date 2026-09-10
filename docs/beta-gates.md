@@ -5,10 +5,10 @@ without. This is where each one stands, with the evidence or the absence of it n
 no proving artifact is `unproven`, not `probably fine`.
 
 **Summary: not production-ready.** Counted against the table below rather than from memory, which
-is how the earlier "four of twelve pass" got in here and stayed wrong: **seven pass** (2, 3a, 4, 5,
-6, 8, 11, and 8 passes by not building the thing it guards), **three are partial** with the gap
-named (1, 9, 10), **two are unproven** (7, 12), and **two are reported rather than barred** (3b,
-3c), which is what replaced the old gate 3.
+is how the earlier "four of twelve pass" got in here and stayed wrong: **eight pass** (2, 3a, 4, 5,
+6, 8, 9, 11, and 8 passes by not building the thing it guards), **two are partial** with the gap
+named (1, 10), **two are unproven** (7, 12), and **two are reported rather than barred** (3b, 3c),
+which is what replaced the old gate 3.
 
 ## Gate 3 was one bar asking three questions, and it is retired
 
