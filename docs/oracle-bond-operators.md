@@ -140,6 +140,24 @@ needs the check, because no other operator can produce a file that does not pars
 replaces a token with a token of the same shape, wraps a balanced region, or removes a balanced
 one.
 
+**How much work the check does, measured rather than argued.** `node scripts/deletion-parse-rate.mjs`
+offers every line of a real file as an added line and checks every deletion the planner proposes.
+Over `koa/lib`, `dayjs/src` and `commander/lib`, 186 files and 929 proposals: **924 parse and 5 do
+not, 0.54%**. Every one of the five is the middle of an expression the line below it continues,
+which one line of context cannot see:
+
+```
+koa/lib/request.js:411          return proxy && val
+koa/lib/request.js:436          return hostname
+commander/lib/argument.js:125   return arg.required
+commander/lib/command.js:1102   getCommandAndParents(this)
+commander/lib/help.js:118       (args ? ' ' + args : '');
+```
+
+So the lexical rule is right about 99.5% of the lines it fires on, and the check is what covers the
+rest. Without it those five would have been handed to an oracle, refused as compile errors, and
+counted as five bonds that held.
+
 ## What makes a bond vacuous, and what abstains
 
 `vacuous` means the oracle ran a line the patch added and then accepted a change to that same
