@@ -624,6 +624,12 @@ for (const task of wanted) {
       repository: task.repository,
       pull: task.pull,
       baseCommit: task.baseCommit,
+      // Which arm produced this row, on the row that records a failure as much as on the row that
+      // records a success. Only the judged push carried it, so an adversarial run that wrote no
+      // patch came out untagged, `separateAdversarialRows` dropped it, and the arm's denominator
+      // lost exactly the rows where the model failed. A denominator missing its failures is the
+      // defect this project measures other people's oracles for.
+      ...(attack ? { prompt: "sealed-oracle-shown" } : {}),
       agentExit: agent.code,
       regression: "no-change",
       sealedOracle: "unjudged",
