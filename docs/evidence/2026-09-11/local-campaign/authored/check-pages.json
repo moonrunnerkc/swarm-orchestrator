@@ -1,0 +1,76 @@
+{
+  "id": "check-pages",
+  "phase": "evaluation",
+  "topic": "Paginate an array with one-based pages, define invalid page and size behavior, and report total pages.",
+  "specification": "Implement a function `solve({ data, page, size })` that paginates an array. The `page` parameter is 1-indexed. If `size` is less than or equal to 0, return `{ error: 'Invalid size' }`. If `page` is less than or equal to 0, return `{ error: 'Invalid page' }`. If `page` is greater than the total number of pages, return an empty `items` array. The output must be an object containing `items` (the slice of the array for the current page) and `totalPages` (the total number of pages, calculated as the ceiling of the data length divided by size). If the data array is empty, `totalPages` should be 0.",
+  "reference": "export function solve({ data, page, size }) {\n  if (size <= 0) return { error: 'Invalid size' };\n  if (page <= 0) return { error: 'Invalid page' };\n  const totalPages = Math.ceil(data.length / size);\n  const start = (page - 1) * size;\n  return {\n    items: data.slice(start, start + size),\n    totalPages: totalPages\n  };\n}",
+  "counterexample": "export function solve({ data, page, size }) {\n  if (page <= 0) return { error: 'Invalid page' };\n  const totalPages = Math.ceil(data.length / size);\n  const start = (page - 1) * size;\n  return {\n    items: data.slice(start, start + size),\n    totalPages: totalPages\n  };\n}",
+  "publicChecks": [
+    {
+      "input": {
+        "data": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "page": 1,
+        "size": 2
+      },
+      "expected": {
+        "items": [
+          1,
+          2
+        ],
+        "totalPages": 3
+      }
+    },
+    {
+      "input": {
+        "data": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "page": 3,
+        "size": 2
+      },
+      "expected": {
+        "items": [
+          5
+        ],
+        "totalPages": 3
+      }
+    },
+    {
+      "input": {
+        "data": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "page": 0,
+        "size": 2
+      },
+      "expected": {
+        "error": "Invalid page"
+      }
+    },
+    {
+      "input": {
+        "data": [],
+        "page": 1,
+        "size": 5
+      },
+      "expected": {
+        "items": [],
+        "totalPages": 0
+      }
+    }
+  ]
+}

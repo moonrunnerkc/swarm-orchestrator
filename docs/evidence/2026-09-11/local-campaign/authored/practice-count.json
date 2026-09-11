@@ -1,0 +1,34 @@
+{
+  "id": "practice-count",
+  "phase": "practice",
+  "topic": "Count distinct strings without confusing object prototype names with ordinary keys.",
+  "specification": "The function solve(input) accepts a single argument. If the input is not an array, the function must return null. If the input is an array of strings, the function must return the number of unique strings in that array. The implementation must correctly distinguish between strings provided in the input array and properties inherited from the Object prototype (e.g., 'toString', 'valueOf', '__proto__'), ensuring that these strings are counted as unique elements if they appear in the input array.",
+  "reference": "export function solve(input) {\n  if (!Array.isArray(input)) return null;\n  return new Set(input).size;\n}",
+  "counterexample": "export function solve(input) {\n  if (!Array.isArray(input)) return null;\n  const seen = {};\n  let count = 0;\n  for (const s of input) {\n    if (!seen[s]) {\n      seen[s] = true;\n      count++;\n    }\n  }\n  return count;\n}",
+  "publicChecks": [
+    {
+      "input": [
+        "apple",
+        "banana",
+        "apple"
+      ],
+      "expected": 2
+    },
+    {
+      "input": [
+        "x",
+        "y",
+        "z"
+      ],
+      "expected": 3
+    },
+    {
+      "input": [],
+      "expected": 0
+    },
+    {
+      "input": 123,
+      "expected": null
+    }
+  ]
+}

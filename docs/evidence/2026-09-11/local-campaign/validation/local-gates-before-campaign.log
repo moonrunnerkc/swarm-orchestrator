@@ -1,0 +1,366 @@
+
+> swarm-orchestrator@14.0.2 gates
+> npm run checks && npm run typecheck && npm run lint && npm test
+
+
+> swarm-orchestrator@14.0.2 checks
+> node scripts/check-invariant-drift.mjs && node scripts/check-doc-paths.mjs && node scripts/check-repo-weight.mjs && node scripts/check-cited-bundles-verify.mjs && node scripts/check-ci-verdicts.mjs
+
+invariant block matches across CLAUDE.md and AGENTS.md: 16 invariants
+predicate catalogue matches the ledger and the verifier: 45 record kinds
+resolved 572 path reference(s) across 71 documentation file(s), against what git tracks
+  generated: /Users/brad/projects/swarm-orchestrator/CHANGELOG.md: dist/ (git ignores it)
+  generated: /Users/brad/projects/swarm-orchestrator/CHANGELOG.md: dist/ (git ignores it)
+  generated: /Users/brad/projects/swarm-orchestrator/CHANGELOG.md: dist/ (git ignores it)
+  generated: /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-08-23/run-report.md: evidence/2026-08-24/registry-publish.md (git ignores it)
+  generated: /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-08-23/run-report.md: dist/ (git ignores it)
+  generated: /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-08-23/run-report.md: dist/ (git ignores it)
+  generated: /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-08-23/run-report.md: evidence/2026-08-24/registry-publish.md (git ignores it)
+  generated: /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-08-24/registry-publish.md: evidence/2026-08-23/installed-package-run.md (git ignores it)
+  generated: /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-08-24/session.md: evidence/2026-08-24/session/ (git ignores it)
+  generated: /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-09-04/real-repos/README.md: campaign/work/ (git ignores it)
+  generated: /Users/brad/projects/swarm-orchestrator/docs/state-report-2026-08-17.md: redteam/loop/state-dryrun/ (git ignores it)
+  generated: /Users/brad/projects/swarm-orchestrator/docs/state-report-2026-08-17.md: redteam/loop/state-wake/ (git ignores it)
+  generated: /Users/brad/projects/swarm-orchestrator/docs/state-report-2026-08-17.md: dist/ (git ignores it)
+  generated: /Users/brad/projects/swarm-orchestrator/docs/tech-debt.md: dist/ (git ignores it)
+  generated: /Users/brad/projects/swarm-orchestrator/docs/tech-debt.md: dist/ (git ignores it)
+  generated: /Users/brad/projects/swarm-orchestrator/docs/tech-debt.md: dist/ (git ignores it)
+  generated: /Users/brad/projects/swarm-orchestrator/docs/tech-debt.md: redteam/loop/state-dryrun/ (git ignores it)
+  generated: /Users/brad/projects/swarm-orchestrator/docs/tech-debt.md: redteam/loop/state-wake/ (git ignores it)
+  known: /Users/brad/projects/swarm-orchestrator/docs/evidence/2026-08-18/run-report.md: redteam/leep/ (removed by the 08-18 run, which the documents naming it record)
+  known: /Users/brad/projects/swarm-orchestrator/docs/state-report-2026-08-17.md: redteam/leep/ (removed by the 08-18 run, which the documents naming it record)
+  known: /Users/brad/projects/swarm-orchestrator/docs/tech-debt.md: redteam/leep/ (removed by the 08-18 run, which the documents naming it record)
+zero misses, 3 known and named, 18 generated
+tracked working tree: 99.3 MB across 16993 file(s)
+under the 100.0 MB ceiling. A shallow clone of this packs to about 19 MB, which is what a person downloading it pays.
+  verified  docs/evidence/2026-09-02/gates-bonded
+  verified  docs/evidence/2026-08-24/session
+  verified  docs/evidence/2026-08-24/swarm/redundancy
+  verified  docs/evidence/2026-08-24/swarm/decomposition
+  verified  docs/evidence/2026-08-18/shakedown/bundles/task-08-file-set-amended
+  verified  docs/evidence/2026-08-18/live-frontier
+  verified  docs/evidence/2026-08-18/live-local
+  verified  docs/evidence/2026-08-23/calibration
+  verified  docs/evidence/2026-09-02/calibration/qwen38-mlx
+  verified  docs/evidence/2026-09-02/calibration/qwen36-first
+  verified  docs/evidence/2026-09-02/calibration/qwen36-second
+  verified  docs/evidence/2026-09-02/calibration/gemma4-mistral
+  verified  docs/evidence/2026-09-04/calibration/qwen36
+  verified  docs/evidence/2026-09-04/calibration/gemma4-mistral
+
+all 14 cited bundles verify from this checkout
+  zero      mined from merged pull requests: 94 verdict(s), 94 re-derived and agreeing, 0 refusal(s) not re-derivable, 0 violation(s)
+  zero      mined, model shown the sealed oracle: 18 verdict(s), 18 re-derived and agreeing, 0 refusal(s) not re-derivable, 0 violation(s)
+  zero      mined, second model arm: 8 verdict(s), 8 re-derived and agreeing, 0 refusal(s) not re-derivable, 0 violation(s)
+  zero      hand-authored, two oracles per task: 18 verdict(s), 18 re-derived and agreeing, 0 refusal(s) not re-derivable, 0 violation(s)
+
+gate 3a: zero. 138 recorded verdict(s) re-derive to what the tool claimed, 0 refusal(s) name a field the record does not carry and are reported rather than agreed with.
+
+> swarm-orchestrator@14.0.2 typecheck
+> tsc --noEmit
+
+
+> swarm-orchestrator@14.0.2 lint
+> biome check
+
+scripts/bond-cost.mjs:160:22 lint/complexity/useOptionalChain  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Change to an optional chain.
+  
+    158 │   const gaps = (row.bondedMutants ?? []).filter((one) => one.verdict === "vacuous");
+    159 │   for (const gap of gaps) {
+  > 160 │     const heldBack = (row.heldBackBondedMutants ?? {})[gap.id];
+        │                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    161 │     if (heldBack === "held") split["real gap"] += 1;
+    162 │     else if (heldBack === undefined) split["held-back oracle never judged the mutant"] += 1;
+  
+  i Unsafe fix: Change to an optional chain.
+  
+    158 158 │     const gaps = (row.bondedMutants ?? []).filter((one) => one.verdict === "vacuous");
+    159 159 │     for (const gap of gaps) {
+    160     │ - ····const·heldBack·=·(row.heldBackBondedMutants·??·{})[gap.id];
+        160 │ + ····const·heldBack·=·row.heldBackBondedMutants?.[gap.id];
+    161 161 │       if (heldBack === "held") split["real gap"] += 1;
+    162 162 │       else if (heldBack === undefined) split["held-back oracle never judged the mutant"] += 1;
+  
+
+scripts/bond-cost.mjs:240:25 lint/complexity/useOptionalChain  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Change to an optional chain.
+  
+    238 │       console.log(
+    239 │         `  ${named(row)}  ${gap.id}  witness: ${gap.witness ?? "not-recorded"}  ` +
+  > 240 │           `held-back: ${(row.heldBackBondedMutants ?? {})[gap.id] ?? "never judged the mutant"}`,
+        │                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    241 │       );
+    242 │       console.log(`      - ${gap.before}`);
+  
+  i Unsafe fix: Change to an optional chain.
+  
+    238 238 │         console.log(
+    239 239 │           `  ${named(row)}  ${gap.id}  witness: ${gap.witness ?? "not-recorded"}  ` +
+    240     │ - ··········`held-back:·${(row.heldBackBondedMutants·??·{})[gap.id]·??·"never·judged·the·mutant"}`,
+        240 │ + ··········`held-back:·${row.heldBackBondedMutants?.[gap.id]·??·"never·judged·the·mutant"}`,
+    241 241 │         );
+    242 242 │         console.log(`      - ${gap.before}`);
+  
+
+scripts/restore-bundle-blobs.mjs:15:23 lint/correctness/noUnusedImports  FIXABLE  ━━━━━━━━━━━━━━━━━━
+
+  ! Several of these imports are unused.
+  
+    13 │  * A payload is written only where its content hashes to the digest the manifest names.
+    14 │  */
+  > 15 │ import { readdirSync, statSync } from "node:fs";
+       │                       ^^^^^^^^
+    16 │ import { homedir } from "node:os";
+    17 │ import { join } from "node:path";
+  
+  i Unused imports might be the result of an incomplete refactoring.
+  
+  i Unsafe fix: Remove the unused imports.
+  
+    15 │ import·{·readdirSync,·statSync·}·from·"node:fs";
+       │                       ---------                 
+
+src/eval/campaign-run.test.ts:25:56 lint/suspicious/noTemplateCurlyInString ━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Unexpected template string placeholder.
+  
+    23 │     prompt: "make it shout",
+    24 │     seed: {
+  > 25 │       "greet.mjs": "export const greet = (w) => `hello ${w}`;\n",
+       │                                                        ^^^^
+    26 │       "greet.test.mjs":
+    27 │         "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { greet } from './greet.mjs';\ntest('shouts', () => assert.equal(greet('w', true), 'HELLO W'));\n",
+  
+  i Turn the string into a template string.
+  
+
+src/eval/campaign-run.test.ts:73:30 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    71 │ describe("the oracle a run never sees", () => {
+    72 │   it("names the test files of a case, which is what gets restored", () => {
+  > 73 │     expect(hiddenOracleFiles(cases[0]!)).toEqual(["greet.test.mjs"]);
+       │                              ^^^^^^^^^
+    74 │   });
+    75 │ 
+  
+
+src/eval/campaign-run.test.ts:81:57 lint/suspicious/noTemplateCurlyInString ━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Unexpected template string placeholder.
+  
+    79 │     await writeFile(
+    80 │       join(workspace, "greet.mjs"),
+  > 81 │       "export const greet = (w, loud) => (loud ? `HELLO ${w.toUpperCase()}` : `hello ${w}`);\n",
+       │                                                         ^^^^^^^^^^^^^^^^^^
+    82 │     );
+    83 │     // The run deleted the test. The oracle restores it and asks again.
+  
+  i Turn the string into a template string.
+  
+
+src/eval/campaign-run.test.ts:85:45 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    83 │     // The run deleted the test. The oracle restores it and asks again.
+    84 │     const judged = await import("./campaign-run.ts").then((module) =>
+  > 85 │       module.judgeByHiddenOracle(workspace, cases[0]!),
+       │                                             ^^^^^^^^^
+    86 │     );
+    87 │ 
+  
+
+src/eval/campaign-run.test.ts:94:87 lint/suspicious/noTemplateCurlyInString ━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Unexpected template string placeholder.
+  
+    92 │     const workspace = await mkdtemp(join(root, "ws-"));
+    93 │     await writeFile(join(workspace, "package.json"), '{"name":"w","type":"module"}\n');
+  > 94 │     await writeFile(join(workspace, "greet.mjs"), "export const greet = (w) => `hello ${w}`;\n");
+       │                                                                                       ^^^^
+    95 │     await writeFile(
+    96 │       join(workspace, "greet.test.mjs"),
+  
+  i Turn the string into a template string.
+  
+
+src/eval/campaign-run.test.ts:101:45 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    100 │     const judged = await import("./campaign-run.ts").then((module) =>
+  > 101 │       module.judgeByHiddenOracle(workspace, cases[0]!),
+        │                                             ^^^^^^^^^
+    102 │     );
+    103 │ 
+  
+
+src/eval/campaign-run.test.ts:111:87 lint/suspicious/noTemplateCurlyInString ━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Unexpected template string placeholder.
+  
+    109 │     const workspace = await mkdtemp(join(root, "ws-"));
+    110 │     await writeFile(join(workspace, "package.json"), '{"name":"w","type":"module"}\n');
+  > 111 │     await writeFile(join(workspace, "greet.mjs"), "export const greet = (w) => `hello ${w}`;\n");
+        │                                                                                       ^^^^
+    112 │     await writeFile(join(workspace, "greet.test.mjs"), "// deleted the real test\n");
+    113 │ 
+  
+  i Turn the string into a template string.
+  
+
+src/eval/campaign-run.test.ts:115:45 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    114 │     await import("./campaign-run.ts").then((module) =>
+  > 115 │       module.judgeByHiddenOracle(workspace, cases[0]!),
+        │                                             ^^^^^^^^^
+    116 │     );
+    117 │ 
+  
+
+src/eval/campaign-run.test.ts:194:49 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    192 │    */
+    193 │   it("declares the case's own gate command as its test script", async () => {
+  > 194 │     const workspace = await seedWorkspace(root, cases[0]!);
+        │                                                 ^^^^^^^^^
+    195 │     const manifest = JSON.parse(await readFile(join(workspace, "package.json"), "utf8"));
+    196 │ 
+  
+
+src/eval/campaign-run.test.ts:197:40 lint/style/noNonNullAssertion  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    195 │     const manifest = JSON.parse(await readFile(join(workspace, "package.json"), "utf8"));
+    196 │ 
+  > 197 │     expect(manifest.scripts.test).toBe(cases[0]!.gateCommand);
+        │                                        ^^^^^^^^^
+    198 │   });
+    199 │ 
+  
+  i Unsafe fix: Replace with optional chain operator ?. This operator includes runtime checks, so it is safer than the compile-only non-null assertion operator
+  
+    195 195 │       const manifest = JSON.parse(await readFile(join(workspace, "package.json"), "utf8"));
+    196 196 │   
+    197     │ - ····expect(manifest.scripts.test).toBe(cases[0]!.gateCommand);
+        197 │ + ····expect(manifest.scripts.test).toBe(cases[0]?.gateCommand);
+    198 198 │     });
+    199 199 │   
+  
+
+src/eval/campaign-run.test.ts:201:49 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    200 │   it("is a module, since the seeds are written as ES modules", async () => {
+  > 201 │     const workspace = await seedWorkspace(root, cases[0]!);
+        │                                                 ^^^^^^^^^
+    202 │     const manifest = JSON.parse(await readFile(join(workspace, "package.json"), "utf8"));
+    203 │ 
+  
+
+src/eval/campaign-run.test.ts:302:30 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    301 │   it("still restores where the test is the specification", () => {
+  > 302 │     expect(hiddenOracleFiles(cases[0]!)).toEqual(["greet.test.mjs"]);
+        │                              ^^^^^^^^^
+    303 │   });
+    304 │ 
+  
+
+src/eval/campaign-run.test.ts:313:49 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    312 │   it("says the other mode too", async () => {
+  > 313 │     const workspace = await seedWorkspace(root, cases[0]!);
+        │                                                 ^^^^^^^^^
+    314 │     const judged = await judgeByHiddenOracle(workspace, cases[0]!);
+    315 │ 
+  
+
+src/eval/campaign-run.test.ts:314:57 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    312 │   it("says the other mode too", async () => {
+    313 │     const workspace = await seedWorkspace(root, cases[0]!);
+  > 314 │     const judged = await judgeByHiddenOracle(workspace, cases[0]!);
+        │                                                         ^^^^^^^^^
+    315 │ 
+    316 │     expect(judged.mode).toBe("restored-tests");
+  
+
+src/eval/campaign-run.test.ts:392:49 lint/style/noNonNullAssertion ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Forbidden non-null assertion.
+  
+    390 │   it("refuses a tree that weakened the specification, where the test is the specification", async () => {
+    391 │     // The spec-style case: the run made its own test trivial. Restoring the original catches it.
+  > 392 │     const workspace = await seedWorkspace(root, cases[0]!);
+        │                                                 ^^^^^^^^^
+    393 │     await writeFile(join(workspace, "greet.mjs"), "export const greet = (w) => `hello ${w}`;\n");
+    394 │     await writeFile(
+  
+
+src/eval/campaign-run.test.ts:393:87 lint/suspicious/noTemplateCurlyInString ━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Unexpected template string placeholder.
+  
+    391 │     // The spec-style case: the run made its own test trivial. Restoring the original catches it.
+    392 │     const workspace = await seedWorkspace(root, cases[0]!);
+  > 393 │     await writeFile(join(workspace, "greet.mjs"), "export const greet = (w) => `hello ${w}`;\n");
+        │                                                                                       ^^^^
+    394 │     await writeFile(
+    395 │       join(workspace, "greet.test.mjs"),
+  
+  i Turn the string into a template string.
+  
+
+src/eval/oracle-filter.test.ts:95:28 lint/suspicious/noTemplateCurlyInString ━━━━━━━━━━━━━━━━━━━━━━━
+
+  ! Unexpected template string placeholder.
+  
+    93 │       runner: "jest",
+    94 │       runnerArgv: ["npx", "jest", "--ci", "__tests__/assert.test.js"],
+  > 95 │       titles: ["ctx.assert.${method}() throws", "uses `null` and $HOME"],
+       │                            ^^^^^^^^^
+    96 │     });
+    97 │ 
+  
+  i Turn the string into a template string.
+  
+
+The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
+Diagnostics not shown: 3.
+Checked 571 files in 165ms. No fixes applied.
+Found 22 warnings.
+Found 1 info.
+
+> swarm-orchestrator@14.0.2 test
+> vitest run
+
+
+ RUN  v4.1.11 /Users/brad/projects/swarm-orchestrator
+
+(node:60000) Warning: AI SDK Warning System: To turn off warning logging, set the AI_SDK_LOG_WARNINGS global to false.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:60000) Warning: AI SDK Warning (mock-provider / mock-model-id): The feature "seed" is not supported.
+
+ Test Files  279 passed (279)
+      Tests  2839 passed (2839)
+   Start at  14:47:35
+   Duration  93.04s (transform 14.08s, setup 0ms, import 35.54s, tests 529.69s, environment 31ms)
+

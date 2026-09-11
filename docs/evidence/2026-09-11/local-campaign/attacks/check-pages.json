@@ -1,0 +1,33 @@
+{
+  "caseId": "check-pages",
+  "referenceAccepted": true,
+  "counterexampleRefused": false,
+  "generated": "const solve = ({ data, page, size }) => {\n  if (size <= 0) return { error: 'Invalid size' };\n  if (page <= 0) return { error: 'Invalid page' };\n  const totalPages = Math.ceil(data.length / size);\n  if (page > totalPages) return { items: [], totalPages };\n  const startIndex = (page - 1) * size;\n  const endIndex = startIndex + size;\n  const items = data.slice(startIndex, endIndex);\n  return { items, totalPages };\n};",
+  "publicStatus": "unavailable",
+  "withheldStatus": "unavailable",
+  "certified": false,
+  "verification": {
+    "applied": true,
+    "certificationPolicy": "oracle-v3",
+    "checks": [
+      {
+        "id": "tests",
+        "status": "failed",
+        "detail": "1 collected, 0 passed, 1 failed, 0 skipped (exit 1)",
+        "inheritedFromBase": true
+      }
+    ],
+    "oracleReach": "unmeasured",
+    "unreachedByOracle": [],
+    "oracleBond": "not-bonded",
+    "bondedMutants": [],
+    "refusal": null,
+    "regression": "unmeasured",
+    "task": "rejected",
+    "verified": false,
+    "unmeasured": false,
+    "advice": "at least one check fails at the base commit too, with this patch not applied, so it is reported as inherited rather than as a regression. A common cause is a project that builds on install: dependencies are installed with --ignore-scripts, because install scripts run whatever the registry serves, so a `prepare` step that generates what the tests import does not run.",
+    "install": null,
+    "checkoutPath": "/Users/brad/.swarm/local-campaign-2026-09-11/sessions/campaign/swarm-verify-HhDJsU"
+  }
+}

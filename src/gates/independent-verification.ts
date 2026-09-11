@@ -131,6 +131,8 @@ export interface IndependentVerification {
 
 export interface IndependentVerificationOptions {
   readonly repositoryRoot: string;
+  /** A harness-owned root shared with the selected runtime, outside the producing workspace. */
+  readonly checkoutRoot?: string;
   readonly baseCommit: string;
   readonly patch: string;
   /** Paths the run declared it would never change. A patch touching one is refused outright. */
@@ -211,7 +213,7 @@ export async function verifyIndependently(
     };
   }
 
-  const checkout = await mkdtemp(join(tmpdir(), "swarm-verify-"));
+  const checkout = await mkdtemp(join(options.checkoutRoot ?? tmpdir(), "swarm-verify-"));
   const timeoutMs = options.timeoutMs ?? defaultGateTimeoutMs;
   try {
     // A worktree of the base commit, not a copy of the workspace. Nothing the run wrote is
@@ -240,8 +242,9 @@ export async function verifyIndependently(
     }
     if (options.commandsForCheckout !== undefined)
       options = { ...options, commands: await options.commandsForCheckout(checkout) };
+    // The backend owns cwd translation; host absolute paths do not name the mounted checkout.
     const reset = await options.commands.runVouched(
-      ["git", "-C", checkout, "checkout", "--quiet", "--detach", options.baseCommit],
+      ["git", "-C", ".", "checkout", "--quiet", "--detach", options.baseCommit],
       { cwd: checkout, timeoutMs },
     );
     if (reset.exitCode !== 0) {
@@ -266,7 +269,7 @@ export async function verifyIndependently(
     const patchPath = join(checkout, ".swarm-verify.patch");
     await writeFile(patchPath, options.patch.endsWith("\n") ? options.patch : `${options.patch}\n`);
     const applied = await options.commands.runVouched(
-      ["git", "-C", checkout, "apply", "--whitespace=nowarn", patchPath],
+      ["git", "-C", ".", "apply", "--whitespace=nowarn", ".swarm-verify.patch"],
       { cwd: checkout, timeoutMs },
     );
     await rm(patchPath, { force: true });
@@ -649,13 +652,13 @@ async function resetToBase(
   timeoutMs: number,
 ): Promise<boolean> {
   const reverted = await options.commands.runVouched(
-    ["git", "-C", checkout, "checkout", "--force", "--detach", options.baseCommit],
+    ["git", "-C", ".", "checkout", "--force", "--detach", options.baseCommit],
     { cwd: checkout, timeoutMs },
   );
   if (reverted.exitCode !== 0) {
     return false;
   }
-  const cleaned = await options.commands.runVouched(["git", "-C", checkout, "clean", "-fdq"], {
+  const cleaned = await options.commands.runVouched(["git", "-C", ".", "clean", "-fdq"], {
     cwd: checkout,
     timeoutMs,
   });
@@ -674,7 +677,7 @@ async function restorePatch(
   const patchPath = join(checkout, ".swarm-restore.patch");
   await writeFile(patchPath, options.patch.endsWith("\n") ? options.patch : `${options.patch}\n`);
   const applied = await options.commands.runVouched(
-    ["git", "-C", checkout, "apply", "--3way", "--whitespace=nowarn", patchPath],
+    ["git", "-C", ".", "apply", "--3way", "--whitespace=nowarn", ".swarm-restore.patch"],
     { cwd: checkout, timeoutMs },
   );
   await rm(patchPath, { force: true });
@@ -692,7 +695,7 @@ async function attributeFailures(
   timeoutMs: number,
 ): Promise<readonly IndependentCheck[]> {
   const reverted = await options.commands.runVouched(
-    ["git", "-C", checkout, "checkout", "--force", "--detach", options.baseCommit],
+    ["git", "-C", ".", "checkout", "--force", "--detach", options.baseCommit],
     { cwd: checkout, timeoutMs },
   );
   if (reverted.exitCode !== 0) {

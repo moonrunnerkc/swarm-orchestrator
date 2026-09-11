@@ -1,0 +1,63 @@
+{
+  "id": "check-chunks",
+  "phase": "evaluation",
+  "topic": "Split a JSON array into chunks, preserving a final shorter chunk and defining invalid sizes.",
+  "specification": "The function `solve` takes an object containing `data` (an array) and `chunkSize` (an integer). It must split the `data` array into multiple arrays, each with a maximum length of `chunkSize`. If the total length of `data` is not perfectly divisible by `chunkSize`, the final chunk must contain the remaining elements and will be shorter than `chunkSize`. If `chunkSize` is less than or equal to 0, the function must return the string 'INVALID_SIZE'. If `data` is an empty array, the function must return an empty array.",
+  "reference": "export function solve({ data, chunkSize }) {\n  if (chunkSize <= 0) return 'INVALID_SIZE';\n  const result = [];\n  for (let i = 0; i < data.length; i += chunkSize) {\n    result.push(data.slice(i, i + chunkSize));\n  }\n  return result;\n}",
+  "counterexample": "export function solve({ data, chunkSize }) {\n  const result = [];\n  for (let i = 0; i < data.length; i += chunkSize) {\n    result.push(data.slice(i, i + chunkSize));\n  }\n  return result;\n}",
+  "publicChecks": [
+    {
+      "input": {
+        "data": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "chunkSize": 2
+      },
+      "expected": [
+        [
+          1,
+          2
+        ],
+        [
+          3,
+          4
+        ],
+        [
+          5
+        ]
+      ]
+    },
+    {
+      "input": {
+        "data": [
+          10,
+          20,
+          30
+        ],
+        "chunkSize": 1
+      },
+      "expected": [
+        [
+          10
+        ],
+        [
+          20
+        ],
+        [
+          30
+        ]
+      ]
+    },
+    {
+      "input": {
+        "data": [],
+        "chunkSize": 5
+      },
+      "expected": []
+    }
+  ]
+}

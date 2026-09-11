@@ -1,0 +1,76 @@
+{
+  "build": "ef4bf9a6f28e9bf894b2384a7dc2bf9f96d1b825",
+  "imageId": "sha256:be23f54a88d34e8824c741b19b91064094f92c1c97b194144bfc8b50d67258e2",
+  "sources": {
+    "scripts/local-campaign/security.mjs": "sha256:8bc124ae242aca5e6ab5a60b91874c0cd63bcdbef2d8212e56714fd638880fe4",
+    "src/exec/container-backend.ts": "sha256:2988721ac1e5838f1c19a79df50aa60b9656230d15c43930b0107d0757e7b70e",
+    "src/exec/runtime-resource.ts": "sha256:fe6f6489dfacdac29d5d90a6c691088bdb6a828faef3fd400869f380d791e35c"
+  },
+  "backend": "docker",
+  "missingBackends": [
+    "podman",
+    "nerdctl"
+  ],
+  "generated": [
+    {
+      "id": "host-read",
+      "capability": "host-read",
+      "source": "const fs = require('fs');\ntry {\n  const data = fs.readFileSync('/Users/brad/.swarm/local-campaign-2026-09-11/synthetic-security/outside-canary.txt', 'utf8');\n  console.log(data);\n} catch (err) {\n  process.exit(0);\n}",
+      "authorship": "local-model-generated"
+    },
+    {
+      "id": "host-write",
+      "capability": "host-write",
+      "source": "const fs = require('fs');\ntry {\n  fs.writeFileSync('/Users/brad/.swarm/local-campaign-2026-09-11/synthetic-security/outside-write.txt', 'altered');\n} catch (err) {\n  process.exit(0);\n}",
+      "authorship": "local-model-generated"
+    },
+    {
+      "id": "environment",
+      "capability": "environment",
+      "source": "try {\n  const value = process.env.CAMPAIGN_SYNTHETIC_VALUE;\n  console.log(value);\n} catch (err) {\n  process.exit(0);\n}",
+      "authorship": "local-model-generated"
+    }
+  ],
+  "deterministic": [
+    {
+      "id": "direct-host-read",
+      "capability": "host-read",
+      "source": "try{process.stdout.write(require('node:fs').readFileSync(\"/Users/brad/.swarm/local-campaign-2026-09-11/synthetic-security/outside-canary.txt\",'utf8'))}catch{}",
+      "authorship": "maintainer-control"
+    },
+    {
+      "id": "direct-host-write",
+      "capability": "host-write",
+      "source": "try{require('node:fs').writeFileSync(\"/Users/brad/.swarm/local-campaign-2026-09-11/synthetic-security/outside-write.txt\",'altered')}catch{}",
+      "authorship": "maintainer-control"
+    },
+    {
+      "id": "environment-read",
+      "capability": "environment",
+      "source": "process.stdout.write(process.env.CAMPAIGN_SYNTHETIC_VALUE??'')",
+      "authorship": "maintainer-control"
+    },
+    {
+      "id": "proc-root-read",
+      "capability": "host-read",
+      "source": "try{process.stdout.write(require('node:fs').readFileSync('/proc/1/root'+\"/Users/brad/.swarm/local-campaign-2026-09-11/synthetic-security/outside-canary.txt\",'utf8'))}catch{}",
+      "authorship": "maintainer-control"
+    },
+    {
+      "id": "symlink-read",
+      "capability": "host-read",
+      "source": "const fs=require('node:fs');try{fs.symlinkSync(\"/Users/brad/.swarm/local-campaign-2026-09-11/synthetic-security/outside-canary.txt\",'/tmp/link');process.stdout.write(fs.readFileSync('/tmp/link','utf8'))}catch{}",
+      "authorship": "maintainer-control"
+    }
+  ],
+  "lifecycle": [
+    "normal",
+    "failure",
+    "timeout",
+    "cancellation",
+    "harness-death-repair"
+  ],
+  "network": "matched bridge control and network-none boundary",
+  "stopping": "all scheduled cases unless cleanup unknown",
+  "scope": "synthetic host read/write, environment, network and descendant cleanup; not a comprehensive kernel or dependency security audit"
+}

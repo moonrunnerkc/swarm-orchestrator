@@ -117,3 +117,24 @@ observations and cannot substitute for those people.
 These materials support preparation and regression testing. The search did not locate an
 independently admitted current-build campaign or a qualifying frozen strongest-baseline
 comparison. Authorship statements in historical files were not independently authenticated.
+
+## Local campaign delivered on September 11
+
+The [local campaign report](evidence/2026-09-11/local-campaign/report.md) records the bounded work
+possible on this machine. Separate local models authored cases, checks and attacks. All ten
+preparation outcomes remain visible; one practice case and one evaluation case passed admission.
+Both real baseline arms and the ordinary Swarm path ran under frozen budgets. The original
+baseline failures remain beside the development repeats after the provider repair.
+
+The live runs exposed two implementation faults now covered by regressions: verification passed
+host checkout paths into Docker and used temporary directories outside its mount sharing, and
+the local provider omitted Ollama's reasoning-effort control. Verification now uses a shared,
+harness-owned checkout and relative arguments. The provider sends the SDK option whose wire form
+Ollama reads. Both tools passed the repeated development case, with time and tokens reported.
+
+The visible oracle still accepted a known omission. Supplying the admitted requirement contract
+made that omission fail its named obligation while the complete reference passed. Docker's
+fourteen declared security and lifecycle observations passed, including repair after abrupt
+harness death, with functioning positive controls. Podman and nerdctl were unavailable. The
+first-run fixture was exercised; no new users were observed. None of this closes the broader
+population, independent authorship, strongest-baseline or user-study requirements above.

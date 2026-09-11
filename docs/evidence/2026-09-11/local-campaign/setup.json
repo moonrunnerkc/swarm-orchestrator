@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "build": "ef4bf9a6f28e9bf894b2384a7dc2bf9f96d1b825",
+  "endpoint": "http://127.0.0.1:11434/v1",
+  "identities": {
+    "author": {
+      "name": "gemma4:31b",
+      "digest": "6316f0629137b426c9d9b853ffc4c8209589f30ee39aebede6285096c0ff47e7",
+      "size": 19868981791
+    },
+    "checker": {
+      "name": "mistral-small3.2:24b",
+      "digest": "5a408ab55df5c1b5cf46533c368813b30bf9e4d8fc39263bf2a3338cfa3b895b",
+      "size": 15177384862
+    },
+    "solver": {
+      "name": "qwen3.6:35b-a3b",
+      "digest": "096fdbd02fe620fc10cbeb6537e080f8041aece851e5d696aed024d4f70f2e47",
+      "size": 22621314381
+    }
+  },
+  "image": "node:24-bookworm",
+  "imageId": "sha256:be23f54a88d34e8824c741b19b91064094f92c1c97b194144bfc8b50d67258e2",
+  "population": "ten model-authored synthetic utility fixtures; convenience population, not independent repositories",
+  "topics": [
+    {
+      "id": "practice-clamp",
+      "phase": "practice",
+      "topic": "Clamp an integer to an inclusive range; reversed bounds are normalized."
+    },
+    {
+      "id": "practice-count",
+      "phase": "practice",
+      "topic": "Count distinct strings without confusing object prototype names with ordinary keys."
+    },
+    {
+      "id": "check-chunks",
+      "phase": "evaluation",
+      "topic": "Split a JSON array into chunks, preserving a final shorter chunk and defining invalid sizes."
+    },
+    {
+      "id": "check-merge",
+      "phase": "evaluation",
+      "topic": "Merge overlapping or touching closed integer intervals, normalizing reversed endpoints and sorting the output."
+    },
+    {
+      "id": "check-escape",
+      "phase": "evaluation",
+      "topic": "HTML-escape ampersand, less-than, greater-than, double quote and apostrophe exactly once in the original input."
+    },
+    {
+      "id": "check-pages",
+      "phase": "evaluation",
+      "topic": "Paginate an array with one-based pages, define invalid page and size behavior, and report total pages."
+    },
+    {
+      "id": "check-frequency",
+      "phase": "evaluation",
+      "topic": "Rank strings by descending frequency, breaking ties lexicographically with code-unit comparison."
+    },
+    {
+      "id": "check-path",
+      "phase": "evaluation",
+      "topic": "Normalize a relative slash-separated path, handling dot segments, repeated slashes and parent segments without escaping the relative root."
+    },
+    {
+      "id": "check-partition",
+      "phase": "evaluation",
+      "topic": "Partition integers into inclusive range matches and nonmatches, preserving original order and defining reversed bounds."
+    },
+    {
+      "id": "check-rotate",
+      "phase": "evaluation",
+      "topic": "Rotate a JSON array by a signed integer offset, handle negative offsets and offsets larger than the length."
+    }
+  ],
+  "rules": {
+    "authorRequestsPerCase": 1,
+    "checkerRequestsPerCase": 1,
+    "admission": "reference passes public and withheld checks; counterexample passes public and fails an executed withheld assertion",
+    "replacements": false,
+    "baselineCandidates": [
+      "direct-once",
+      "direct-feedback"
+    ],
+    "selection": [
+      "most practice cases accepted by withheld checks",
+      "least total measured latency",
+      "direct-once"
+    ],
+    "finalCases": "all admitted evaluation cases in declared order",
+    "comparison": "descriptive paired outcomes; no population non-inferiority claim",
+    "tokens": 20000,
+    "modelOutputTokens": 1800,
+    "wallMs": 180000,
+    "candidate": "ordinary runAgentTask with Qwen, Docker and one retry",
+    "security": "Docker only; other runtimes unavailable",
+    "firstUsers": "not observed"
+  }
+}

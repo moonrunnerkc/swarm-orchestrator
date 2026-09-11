@@ -1,9 +1,10 @@
 import { execFileSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { harnessChildEnvironment } from "../exec/child-environment.ts";
+import { containerRuntimeAvailable, createContainerBackend } from "../exec/container-backend.ts";
 import { verifyIndependently } from "./independent-verification.ts";
 import { createNodeCommandRunner } from "./node-command-runner.ts";
 
@@ -50,6 +51,50 @@ function baseCommit() {
 }
 
 const commands = () => createNodeCommandRunner(clock, harnessChildEnvironment());
+
+it.skipIf(!containerRuntimeAvailable("docker"))(
+  "verifies and restores a patch when the checkout is mounted at a different container path",
+  async () => {
+    const checkoutRoot = await mkdtemp(join(homedir(), ".swarm-verification-test-"));
+    try {
+      await writeFile(
+        join(repository, "clamp.mjs"),
+        "export const clamp = (v) => Math.max(0, v);\n",
+      );
+      const patch = execFileSync("git", ["diff", "HEAD"], { cwd: repository, encoding: "utf8" });
+      const verification = await verifyIndependently({
+        repositoryRoot: repository,
+        checkoutRoot,
+        baseCommit: baseCommit(),
+        patch,
+        commands: commands(),
+        commandsForCheckout: async (checkout) =>
+          createNodeCommandRunner(
+            clock,
+            harnessChildEnvironment(),
+            createContainerBackend({
+              runtime: "docker",
+              image: "node:24-bookworm",
+              workspaceRoot: checkout,
+              user: `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`,
+            }),
+          ),
+        taskOracle: {
+          command: `node --input-type=module -e "import {clamp} from './clamp.mjs'; import assert from 'node:assert/strict'; assert.equal(clamp(-1),0)"`,
+        },
+        clock,
+        timeoutMs: 30000,
+      });
+      expect(verification.applied).toBe(true);
+      expect(verification.regression).toBe("pass");
+      expect(verification.task).toBe("accepted");
+      expect(verification.verified).toBe(true);
+    } finally {
+      await rm(checkoutRoot, { recursive: true, force: true });
+    }
+  },
+  60000,
+);
 
 describe("verification that does not trust the tree it is verifying", () => {
   it("applies the patch to a fresh checkout of the base and runs the checks there", async () => {

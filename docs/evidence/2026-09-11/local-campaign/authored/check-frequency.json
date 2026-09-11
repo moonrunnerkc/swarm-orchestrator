@@ -1,0 +1,40 @@
+{
+  "id": "check-frequency",
+  "phase": "evaluation",
+  "topic": "Rank strings by descending frequency, breaking ties lexicographically with code-unit comparison.",
+  "specification": "Given an array of strings, return a list of the unique strings sorted primarily by their frequency in the input array in descending order. If two or more strings have the same frequency, they must be sorted lexicographically in ascending order based on their UTF-16 code unit values. If the input array is empty, return an empty array.",
+  "reference": "export function solve(input) {\n  const counts = {};\n  for (const s of input) counts[s] = (counts[s] || 0) + 1;\n  return Object.keys(counts).sort((a, b) => {\n    const diff = counts[b] - counts[a];\n    if (diff !== 0) return diff;\n    return a < b ? -1 : a > b ? 1 : 0;\n  });\n}",
+  "counterexample": "export function solve(input) {\n  const counts = {};\n  for (const s of input) counts[s] = (counts[s] || 0) + 1;\n  return Object.keys(counts).sort((a, b) => counts[b] - counts[a]);\n}",
+  "publicChecks": [
+    {
+      "input": [
+        "apple",
+        "apple",
+        "banana"
+      ],
+      "expected": [
+        "apple",
+        "banana"
+      ]
+    },
+    {
+      "input": [
+        "cat",
+        "dog",
+        "dog",
+        "bird",
+        "bird",
+        "bird"
+      ],
+      "expected": [
+        "bird",
+        "dog",
+        "cat"
+      ]
+    },
+    {
+      "input": [],
+      "expected": []
+    }
+  ]
+}

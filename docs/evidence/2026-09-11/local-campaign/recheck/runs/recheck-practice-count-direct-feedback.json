@@ -1,0 +1,103 @@
+{
+  "runId": "recheck-practice-count-direct-feedback",
+  "caseId": "practice-count",
+  "arm": "direct-feedback",
+  "status": "completed",
+  "stopReason": "completed",
+  "tokens": 298,
+  "productionMs": 1055,
+  "totalMs": 4188,
+  "costUsd": null,
+  "source": "export function solve(input) {\n  if (!Array.isArray(input)) {\n    return null;\n  }\n\n  const uniqueStrings = new Set();\n\n  for (const item of input) {\n    if (typeof item === 'string') {\n      uniqueStrings.add(item);\n    }\n  }\n\n  return uniqueStrings.size;\n}",
+  "withinBudget": true,
+  "acceptedWithinBudget": true,
+  "publicAccepted": true,
+  "heldBackAccepted": true,
+  "certified": true,
+  "agentVerdict": null,
+  "verification": {
+    "applied": true,
+    "certificationPolicy": "oracle-v3",
+    "checks": [
+      {
+        "id": "tests",
+        "status": "passed",
+        "detail": "4 collected, 4 passed, 0 failed, 0 skipped (exit 0)"
+      }
+    ],
+    "oracleReach": "unmeasured",
+    "unreachedByOracle": [],
+    "oracleBond": "held",
+    "bondedMutants": [
+      {
+        "id": "solution.mjs:2:negate-condition",
+        "path": "solution.mjs",
+        "line": 2,
+        "operator": "negate-condition",
+        "before": "  if (!Array.isArray(input)) {",
+        "after": "  if (!(!Array.isArray(input))) {",
+        "verdict": "held",
+        "witness": "not-adjudicated"
+      },
+      {
+        "id": "solution.mjs:3:return-sentinel",
+        "path": "solution.mjs",
+        "line": 3,
+        "operator": "return-sentinel",
+        "before": "    return null;",
+        "after": "    return \"swarm-oracle-bond\";",
+        "verdict": "held",
+        "witness": "not-adjudicated"
+      },
+      {
+        "id": "solution.mjs:6:replace-assigned-value",
+        "path": "solution.mjs",
+        "line": 6,
+        "operator": "replace-assigned-value",
+        "before": "  const uniqueStrings = new Set();",
+        "after": "  const uniqueStrings = undefined;",
+        "verdict": "held",
+        "witness": "not-adjudicated"
+      },
+      {
+        "id": "solution.mjs:9:invert-comparison",
+        "path": "solution.mjs",
+        "line": 9,
+        "operator": "invert-comparison",
+        "before": "    if (typeof item === 'string') {",
+        "after": "    if (typeof item !== 'string') {",
+        "verdict": "held",
+        "witness": "not-adjudicated"
+      },
+      {
+        "id": "solution.mjs:10:delete-statement",
+        "path": "solution.mjs",
+        "line": 10,
+        "operator": "delete-statement",
+        "before": "      uniqueStrings.add(item);",
+        "after": "",
+        "verdict": "held",
+        "witness": "not-adjudicated"
+      },
+      {
+        "id": "solution.mjs:14:return-sentinel",
+        "path": "solution.mjs",
+        "line": 14,
+        "operator": "return-sentinel",
+        "before": "  return uniqueStrings.size;",
+        "after": "  return undefined;",
+        "verdict": "held",
+        "witness": "not-adjudicated"
+      }
+    ],
+    "refusal": null,
+    "regression": "pass",
+    "task": "accepted",
+    "verified": true,
+    "unmeasured": false,
+    "advice": "",
+    "install": null,
+    "checkoutPath": "/Users/brad/.swarm/local-campaign-2026-09-11/sessions/recheck-practice-count-direct-feedback/swarm-verify-S5Xxib"
+  },
+  "cleanup": "confirmed"
+}

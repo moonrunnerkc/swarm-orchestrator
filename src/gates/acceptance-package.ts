@@ -57,7 +57,7 @@ export async function acceptancePackageExecutor(
       const patch = patches[digest];
       if (patch === undefined || digestOfBytes(patch) !== digest)
         throw new Error(`control patch ${digest} is unavailable`);
-      const checkout = await mkdtemp(join(tmpdir(), "swarm-obligation-"));
+      const checkout = await mkdtemp(join(options.evidence.directory, "swarm-obligation-"));
       const dispose = () => rm(checkout, { recursive: true, force: true });
       try {
         for (const argv of [

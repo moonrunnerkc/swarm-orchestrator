@@ -1,0 +1,523 @@
+[
+  {
+    "id": "practice-count",
+    "phase": "practice",
+    "topic": "Count distinct strings without confusing object prototype names with ordinary keys.",
+    "specification": "The function solve(input) accepts a single argument. If the input is not an array, the function must return null. If the input is an array of strings, the function must return the number of unique strings in that array. The implementation must correctly distinguish between strings provided in the input array and properties inherited from the Object prototype (e.g., 'toString', 'valueOf', '__proto__'), ensuring that these strings are counted as unique elements if they appear in the input array.",
+    "reference": "export function solve(input) {\n  if (!Array.isArray(input)) return null;\n  return new Set(input).size;\n}",
+    "counterexample": "export function solve(input) {\n  if (!Array.isArray(input)) return null;\n  const seen = {};\n  let count = 0;\n  for (const s of input) {\n    if (!seen[s]) {\n      seen[s] = true;\n      count++;\n    }\n  }\n  return count;\n}",
+    "publicChecks": [
+      {
+        "input": [
+          "apple",
+          "banana",
+          "apple"
+        ],
+        "expected": 2
+      },
+      {
+        "input": [
+          "x",
+          "y",
+          "z"
+        ],
+        "expected": 3
+      },
+      {
+        "input": [],
+        "expected": 0
+      },
+      {
+        "input": 123,
+        "expected": null
+      }
+    ],
+    "checks": [
+      {
+        "input": null,
+        "expected": null
+      },
+      {
+        "input": 123,
+        "expected": null
+      },
+      {
+        "input": "not an array",
+        "expected": null
+      },
+      {
+        "input": [],
+        "expected": 0
+      },
+      {
+        "input": [
+          "toString",
+          "valueOf",
+          "__proto__"
+        ],
+        "expected": 3
+      },
+      {
+        "input": [
+          "a",
+          "b",
+          "c",
+          "a",
+          "b",
+          "c"
+        ],
+        "expected": 3
+      },
+      {
+        "input": [
+          "a",
+          "b",
+          "c",
+          "toString",
+          "valueOf",
+          "__proto__"
+        ],
+        "expected": 6
+      },
+      {
+        "input": [
+          "a",
+          "b",
+          "c",
+          "a",
+          "b",
+          "c",
+          "toString",
+          "valueOf",
+          "__proto__",
+          "toString",
+          "valueOf",
+          "__proto__"
+        ],
+        "expected": 6
+      },
+      {
+        "input": [
+          "toString",
+          "toString",
+          "valueOf",
+          "valueOf",
+          "__proto__",
+          "__proto__"
+        ],
+        "expected": 3
+      },
+      {
+        "input": [
+          "a",
+          "b",
+          "c",
+          "a",
+          "b",
+          "c",
+          "toString",
+          "valueOf",
+          "__proto__",
+          "toString",
+          "valueOf",
+          "__proto__",
+          "d",
+          "e",
+          "f"
+        ],
+        "expected": 9
+      },
+      {
+        "input": [
+          "a",
+          "b",
+          "c",
+          "a",
+          "b",
+          "c",
+          "toString",
+          "valueOf",
+          "__proto__",
+          "toString",
+          "valueOf",
+          "__proto__",
+          "d",
+          "e",
+          "f",
+          "d",
+          "e",
+          "f"
+        ],
+        "expected": 9
+      },
+      {
+        "input": [
+          "toString",
+          "valueOf",
+          "__proto__",
+          "toString",
+          "valueOf",
+          "__proto__",
+          "toString",
+          "valueOf",
+          "__proto__"
+        ],
+        "expected": 3
+      }
+    ]
+  },
+  {
+    "id": "check-pages",
+    "phase": "evaluation",
+    "topic": "Paginate an array with one-based pages, define invalid page and size behavior, and report total pages.",
+    "specification": "Implement a function `solve({ data, page, size })` that paginates an array. The `page` parameter is 1-indexed. If `size` is less than or equal to 0, return `{ error: 'Invalid size' }`. If `page` is less than or equal to 0, return `{ error: 'Invalid page' }`. If `page` is greater than the total number of pages, return an empty `items` array. The output must be an object containing `items` (the slice of the array for the current page) and `totalPages` (the total number of pages, calculated as the ceiling of the data length divided by size). If the data array is empty, `totalPages` should be 0.",
+    "reference": "export function solve({ data, page, size }) {\n  if (size <= 0) return { error: 'Invalid size' };\n  if (page <= 0) return { error: 'Invalid page' };\n  const totalPages = Math.ceil(data.length / size);\n  const start = (page - 1) * size;\n  return {\n    items: data.slice(start, start + size),\n    totalPages: totalPages\n  };\n}",
+    "counterexample": "export function solve({ data, page, size }) {\n  if (page <= 0) return { error: 'Invalid page' };\n  const totalPages = Math.ceil(data.length / size);\n  const start = (page - 1) * size;\n  return {\n    items: data.slice(start, start + size),\n    totalPages: totalPages\n  };\n}",
+    "publicChecks": [
+      {
+        "input": {
+          "data": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "page": 1,
+          "size": 2
+        },
+        "expected": {
+          "items": [
+            1,
+            2
+          ],
+          "totalPages": 3
+        }
+      },
+      {
+        "input": {
+          "data": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "page": 3,
+          "size": 2
+        },
+        "expected": {
+          "items": [
+            5
+          ],
+          "totalPages": 3
+        }
+      },
+      {
+        "input": {
+          "data": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "page": 0,
+          "size": 2
+        },
+        "expected": {
+          "error": "Invalid page"
+        }
+      },
+      {
+        "input": {
+          "data": [],
+          "page": 1,
+          "size": 5
+        },
+        "expected": {
+          "items": [],
+          "totalPages": 0
+        }
+      }
+    ],
+    "checks": [
+      {
+        "input": {
+          "data": [],
+          "page": 1,
+          "size": 10
+        },
+        "expected": {
+          "items": [],
+          "totalPages": 0
+        }
+      },
+      {
+        "input": {
+          "data": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ],
+          "page": 1,
+          "size": 10
+        },
+        "expected": {
+          "items": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ],
+          "totalPages": 1
+        }
+      },
+      {
+        "input": {
+          "data": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ],
+          "page": 1,
+          "size": 5
+        },
+        "expected": {
+          "items": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "totalPages": 2
+        }
+      },
+      {
+        "input": {
+          "data": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ],
+          "page": 2,
+          "size": 5
+        },
+        "expected": {
+          "items": [
+            6,
+            7,
+            8,
+            9,
+            10
+          ],
+          "totalPages": 2
+        }
+      },
+      {
+        "input": {
+          "data": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ],
+          "page": 3,
+          "size": 5
+        },
+        "expected": {
+          "items": [],
+          "totalPages": 2
+        }
+      },
+      {
+        "input": {
+          "data": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ],
+          "page": 1,
+          "size": 0
+        },
+        "expected": {
+          "error": "Invalid size"
+        }
+      },
+      {
+        "input": {
+          "data": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ],
+          "page": 0,
+          "size": 5
+        },
+        "expected": {
+          "error": "Invalid page"
+        }
+      },
+      {
+        "input": {
+          "data": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ],
+          "page": 1,
+          "size": -1
+        },
+        "expected": {
+          "error": "Invalid size"
+        }
+      },
+      {
+        "input": {
+          "data": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ],
+          "page": -1,
+          "size": 5
+        },
+        "expected": {
+          "error": "Invalid page"
+        }
+      },
+      {
+        "input": {
+          "data": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ],
+          "page": 1,
+          "size": 1
+        },
+        "expected": {
+          "items": [
+            1
+          ],
+          "totalPages": 10
+        }
+      },
+      {
+        "input": {
+          "data": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ],
+          "page": 10,
+          "size": 1
+        },
+        "expected": {
+          "items": [
+            10
+          ],
+          "totalPages": 10
+        }
+      },
+      {
+        "input": {
+          "data": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10
+          ],
+          "page": 11,
+          "size": 1
+        },
+        "expected": {
+          "items": [],
+          "totalPages": 10
+        }
+      }
+    ]
+  }
+]

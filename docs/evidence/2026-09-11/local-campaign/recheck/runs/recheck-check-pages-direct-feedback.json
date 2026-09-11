@@ -1,0 +1,103 @@
+{
+  "runId": "recheck-check-pages-direct-feedback",
+  "caseId": "check-pages",
+  "arm": "direct-feedback",
+  "status": "completed",
+  "stopReason": "completed",
+  "tokens": 589,
+  "productionMs": 2109,
+  "totalMs": 4982,
+  "costUsd": null,
+  "source": "export function solve({ data, page, size }) {\n  if (size <= 0) {\n    return { error: 'Invalid size' };\n  }\n  if (page <= 0) {\n    return { error: 'Invalid page' };\n  }\n\n  const totalItems = data.length;\n  let totalPages;\n  \n  if (totalItems === 0) {\n    totalPages = 0;\n  } else {\n    totalPages = Math.ceil(totalItems / size);\n  }\n\n  // If page is greater than total pages, return empty items array\n  if (page > totalPages) {\n    return { items: [], totalPages };\n  }\n\n  // Calculate start and end indices for slicing\n  const startIndex = (page - 1) * size;\n  const endIndex = Math.min(startIndex + size, totalItems);\n\n  const items = data.slice(startIndex, endIndex);\n\n  return { items, totalPages };\n}",
+  "withinBudget": true,
+  "acceptedWithinBudget": true,
+  "publicAccepted": true,
+  "heldBackAccepted": true,
+  "certified": true,
+  "agentVerdict": null,
+  "verification": {
+    "applied": true,
+    "certificationPolicy": "oracle-v3",
+    "checks": [
+      {
+        "id": "tests",
+        "status": "passed",
+        "detail": "4 collected, 4 passed, 0 failed, 0 skipped (exit 0)"
+      }
+    ],
+    "oracleReach": "unmeasured",
+    "unreachedByOracle": [],
+    "oracleBond": "held",
+    "bondedMutants": [
+      {
+        "id": "solution.mjs:2:invert-comparison",
+        "path": "solution.mjs",
+        "line": 2,
+        "operator": "invert-comparison",
+        "before": "  if (size <= 0) {",
+        "after": "  if (size > 0) {",
+        "verdict": "held",
+        "witness": "not-adjudicated"
+      },
+      {
+        "id": "solution.mjs:3:return-sentinel",
+        "path": "solution.mjs",
+        "line": 3,
+        "operator": "return-sentinel",
+        "before": "    return { error: 'Invalid size' };",
+        "after": "    return undefined;",
+        "verdict": "unshown",
+        "witness": "not-adjudicated"
+      },
+      {
+        "id": "solution.mjs:5:invert-comparison",
+        "path": "solution.mjs",
+        "line": 5,
+        "operator": "invert-comparison",
+        "before": "  if (page <= 0) {",
+        "after": "  if (page > 0) {",
+        "verdict": "held",
+        "witness": "not-adjudicated"
+      },
+      {
+        "id": "solution.mjs:6:return-sentinel",
+        "path": "solution.mjs",
+        "line": 6,
+        "operator": "return-sentinel",
+        "before": "    return { error: 'Invalid page' };",
+        "after": "    return undefined;",
+        "verdict": "held",
+        "witness": "not-adjudicated"
+      },
+      {
+        "id": "solution.mjs:15:swap-arithmetic-operands",
+        "path": "solution.mjs",
+        "line": 15,
+        "operator": "swap-arithmetic-operands",
+        "before": "    totalPages = Math.ceil(totalItems / size);",
+        "after": "    totalPages = Math.ceil(size / totalItems);",
+        "verdict": "held",
+        "witness": "not-adjudicated"
+      },
+      {
+        "id": "solution.mjs:24:swap-arithmetic-operands",
+        "path": "solution.mjs",
+        "line": 24,
+        "operator": "swap-arithmetic-operands",
+        "before": "  const startIndex = (page - 1) * size;",
+        "after": "  const startIndex = (1 - page) * size;",
+        "verdict": "held",
+        "witness": "not-adjudicated"
+      }
+    ],
+    "refusal": null,
+    "regression": "pass",
+    "task": "accepted",
+    "verified": true,
+    "unmeasured": false,
+    "advice": "",
+    "install": null,
+    "checkoutPath": "/Users/brad/.swarm/local-campaign-2026-09-11/sessions/recheck-check-pages-direct-feedback/swarm-verify-SSEHII"
+  },
+  "cleanup": "confirmed"
+}

@@ -1,0 +1,34 @@
+{
+  "id": "practice-clamp",
+  "phase": "practice",
+  "topic": "Clamp an integer to an inclusive range; reversed bounds are normalized.",
+  "specification": "The function `solve` accepts an object containing three integers: `value`, `min`, and `max`. It must return the `value` clamped to the inclusive range defined by `min` and `max`. If the provided `min` is greater than `max`, the bounds must be normalized (swapped) so that the smaller value acts as the lower bound and the larger value acts as the upper bound. If `value` is within the range, return `value`. If `value` is less than the lower bound, return the lower bound. If `value` is greater than the upper bound, return the upper bound.",
+  "reference": "export function solve({ value, min, max }) {\n  const low = Math.min(min, max);\n  const high = Math.max(min, max);\n  return Math.max(low, Math.min(high, value));\n}",
+  "counterexample": "export function solve({ value, min, max }) {\n  return Math.max(min, Math.min(max, value));\n}",
+  "publicChecks": [
+    {
+      "input": {
+        "value": 5,
+        "min": 1,
+        "max": 10
+      },
+      "expected": 5
+    },
+    {
+      "input": {
+        "value": -5,
+        "min": 1,
+        "max": 10
+      },
+      "expected": 1
+    },
+    {
+      "input": {
+        "value": 15,
+        "min": 1,
+        "max": 10
+      },
+      "expected": 10
+    }
+  ]
+}

@@ -1,0 +1,116 @@
+{
+  "runId": "check-pages-swarm",
+  "caseId": "check-pages",
+  "arm": "swarm",
+  "status": "completed",
+  "stopReason": "completed",
+  "tokens": 28128,
+  "productionMs": 13310,
+  "totalMs": 16111,
+  "costUsd": null,
+  "source": "export function solve({ data, page, size }) {\n  if (size <= 0) return { error: 'Invalid size' };\n  if (page <= 0) return { error: 'Invalid page' };\n\n  const totalPages = data.length === 0 ? 0 : Math.ceil(data.length / size);\n\n  if (page > totalPages) return { items: [], totalPages };\n\n  const start = (page - 1) * size;\n  const items = data.slice(start, start + size);\n\n  return { items, totalPages };\n}\n",
+  "withinBudget": true,
+  "acceptedWithinBudget": true,
+  "publicAccepted": true,
+  "heldBackAccepted": true,
+  "certified": true,
+  "agentVerdict": {
+    "version": 1,
+    "integrity": "unverified",
+    "signer": "untrusted",
+    "executionTrust": "isolated",
+    "policy": "pass",
+    "mechanical": "unmeasured",
+    "behavioral": "pass",
+    "semantic": "unmeasured",
+    "task": "unjudged",
+    "humanApproval": "not-required",
+    "reasons": {
+      "assessment": "final ratchet and bonds accepted the completed work",
+      "mechanical": "every static gate stood down (typecheck, lint, format)",
+      "policy": "file-set, placeholder, secret-scan, diff-budget passed",
+      "behavioral": "tests passed",
+      "semantic": "no check here judges whether the change means what the task asked for, and nothing in this system is allowed to: a model's opinion is not a verdict",
+      "task": "no trusted task oracle was configured for this run",
+      "executionTrust": "a containment self-test refused every escape it tried",
+      "humanApproval": "this run did nothing that needs a person's decision",
+      "signer": "no expected signer was matched, so the signature shows the bundle is unchanged since it was written and not who wrote it"
+    },
+    "acceptable": true
+  },
+  "verification": {
+    "applied": true,
+    "certificationPolicy": "oracle-v3",
+    "checks": [
+      {
+        "id": "tests",
+        "status": "passed",
+        "detail": "4 collected, 4 passed, 0 failed, 0 skipped (exit 0)"
+      }
+    ],
+    "oracleReach": "unmeasured",
+    "unreachedByOracle": [],
+    "oracleBond": "held",
+    "bondedMutants": [
+      {
+        "id": "solution.mjs:2:invert-comparison",
+        "path": "solution.mjs",
+        "line": 2,
+        "operator": "invert-comparison",
+        "before": "  if (size <= 0) return { error: 'Invalid size' };",
+        "after": "  if (size > 0) return { error: 'Invalid size' };",
+        "verdict": "held",
+        "witness": "not-adjudicated"
+      },
+      {
+        "id": "solution.mjs:3:invert-comparison",
+        "path": "solution.mjs",
+        "line": 3,
+        "operator": "invert-comparison",
+        "before": "  if (page <= 0) return { error: 'Invalid page' };",
+        "after": "  if (page > 0) return { error: 'Invalid page' };",
+        "verdict": "held",
+        "witness": "not-adjudicated"
+      },
+      {
+        "id": "solution.mjs:9:swap-arithmetic-operands",
+        "path": "solution.mjs",
+        "line": 9,
+        "operator": "swap-arithmetic-operands",
+        "before": "  const start = (page - 1) * size;",
+        "after": "  const start = (1 - page) * size;",
+        "verdict": "held",
+        "witness": "not-adjudicated"
+      },
+      {
+        "id": "solution.mjs:10:replace-assigned-value",
+        "path": "solution.mjs",
+        "line": 10,
+        "operator": "replace-assigned-value",
+        "before": "  const items = data.slice(start, start + size);",
+        "after": "  const items = undefined;",
+        "verdict": "held",
+        "witness": "not-adjudicated"
+      },
+      {
+        "id": "solution.mjs:12:return-sentinel",
+        "path": "solution.mjs",
+        "line": 12,
+        "operator": "return-sentinel",
+        "before": "  return { items, totalPages };",
+        "after": "  return undefined;",
+        "verdict": "held",
+        "witness": "not-adjudicated"
+      }
+    ],
+    "refusal": null,
+    "regression": "pass",
+    "task": "accepted",
+    "verified": true,
+    "unmeasured": false,
+    "advice": "",
+    "install": null,
+    "checkoutPath": "/Users/brad/.swarm/local-campaign-2026-09-11/sessions/check-pages-swarm/swarm-verify-BmN9vw"
+  },
+  "cleanup": "confirmed"
+}
