@@ -163,6 +163,22 @@ function reportAgreement(rows) {
   );
 }
 
+/**
+ * The tasks that were read before the mutation operators were designed, named here because
+ * `oracle-bond-operators.md` named them before any of this was measured.
+ *
+ * `dayjs#3180` and `koa#1946` are the two adversarial false greens, reproduced line by line to
+ * establish that the five old operators produced nothing on them. `commander#1671` is the case the
+ * original five were chosen knowing about. A result on any of the three shows the check works on a
+ * case it was built for and says nothing about whether it generalizes, which is the whole reason
+ * gate 3b is not yet a bar.
+ */
+const readBeforeTheOperatorsWereDesigned = new Set([
+  "iamkun/dayjs#3180",
+  "koajs/koa#1946",
+  "tj/commander.js#1671",
+]);
+
 const mined = minedRows();
 report(
   "mined from merged pull requests",
@@ -201,6 +217,25 @@ const attack = adversarialRows();
 if (attack.length > 0) {
   const tally = report("the adversarial arm, shown the oracle it would be judged by", attack);
   reportHarnessSplit(attack);
+  // In sample and out of sample, reported apart because a check measured on the cases that shaped
+  // it measures the shaping. Three tasks were read before the operators were designed and are
+  // named in the pre-registration; every other row is out of sample for them.
+  const inSample = attack.filter((one) => readBeforeTheOperatorsWereDesigned.has(named(one)));
+  const outOfSample = attack.filter((one) => !readBeforeTheOperatorsWereDesigned.has(named(one)));
+  for (const [label, rows] of [
+    ["read before the operators were designed", inSample],
+    ["out of sample for the operators", outOfSample],
+  ]) {
+    const split = tallyFalseGreens(rows);
+    console.log(
+      `  ${label.padEnd(42)} ${rows.length} row(s), ${split.opportunities} certified, ` +
+        `${split.falseGreens} false green(s)` +
+        (split.point === null
+          ? ""
+          : `: ${percent(split.point)} [${percent(split.lower)}, ${percent(split.upper)}]`),
+    );
+  }
+
   const attackInadequate = tallyInadequateOracles(attack);
   console.log(
     attackInadequate.proved === 0
