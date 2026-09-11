@@ -61,9 +61,7 @@ describe("whether two harness commits differ where a verdict comes from", () => 
    * clone, anything git cannot answer about, has to read as different rather than as safe.
    */
   it("reads a pair git cannot answer about as different tools", () => {
-    expect(
-      harnessesDifferWhereItMatters(["abc1234", "def5678"], () => null),
-    ).toBe(true);
+    expect(harnessesDifferWhereItMatters(["abc1234", "def5678"], () => null)).toBe(true);
   });
 
   it("reads one commit as nothing to compare", () => {
