@@ -10,6 +10,7 @@
  *
  * Reads what the passes recorded. Runs no model, judges nothing, and clones nothing.
  */
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -21,6 +22,7 @@ import {
   tallyInadequateOracles,
 } from "../dist/eval/false-green-rate.js";
 import { prTaskEvidenceRoot } from "../dist/eval/pr-task-paths.js";
+import { harnessesDifferWhereItMatters } from "../dist/eval/verification-closure.js";
 
 const repositoryRoot = new URL("..", import.meta.url).pathname;
 
@@ -82,12 +84,44 @@ function reportHarnessSplit(rows) {
     );
   }
   const withOpportunities = groups.filter((one) => one.tally.opportunities > 0);
+  if (withOpportunities.length <= 1) {
+    console.log(
+      "  only one holds a certified patch, so the others contribute no opportunity and the " +
+        "rate above is that group's",
+    );
+    return;
+  }
+  // Whether those commits are different tools, which is the question, rather than whether they are
+  // different commits, which is not. A documentation commit landing between two corpus stages used
+  // to make a rate unquotable; what must not be pooled is rows produced by different verification
+  // code. Anything git cannot answer about reads as different, because a comparison nobody could
+  // make is not a comparison that passed.
+  const differ = harnessesDifferWhereItMatters(
+    withOpportunities.map((one) => one.harness),
+    (from, to) => {
+      try {
+        return execFileSync("git", ["diff", "--name-only", `${from}..${to}`], {
+          cwd: repositoryRoot,
+          encoding: "utf8",
+        })
+          .split("\n")
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0);
+      } catch (cause) {
+        // Said out loud rather than swallowed. This returned null once because the callback itself
+        // was broken, and a silent null reads exactly like git declining to answer: the guard
+        // failed closed, which was right, and reported a reason that was not the reason.
+        console.log(`  (could not compare ${from} with ${to}: ${String(cause).slice(0, 120)})`);
+        return null;
+      }
+    },
+  );
   console.log(
-    withOpportunities.length > 1
-      ? "  more than one holds a certified patch, so the rate above spans tool versions: " +
-          "re-judge before quoting it"
-      : "  only one holds a certified patch, so the others contribute no opportunity and the " +
-          "rate above is that group's",
+    differ
+      ? "  more than one holds a certified patch and they differ in what computes a verdict, so " +
+          "the rate above spans tool versions: re-judge before quoting it"
+      : "  more than one holds a certified patch, and nothing a verdict reads differs between " +
+          "them, so the rate above is one tool's",
   );
 }
 
