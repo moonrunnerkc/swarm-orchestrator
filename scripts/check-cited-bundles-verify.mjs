@@ -75,3 +75,15 @@ if (failed > 0) {
   process.exit(1);
 }
 console.log(`\nall ${cited.length} cited bundles verify from this checkout`);
+
+const { verifyArchive } = await import("./local-campaign/verify-archive.mjs");
+const localCampaign = await verifyArchive(
+  join(repositoryRoot, "docs/evidence/2026-09-11/local-campaign"),
+);
+if (!localCampaign.ok) {
+  console.error(JSON.stringify(localCampaign, null, 2));
+  process.exit(1);
+}
+console.log(
+  `local campaign: ${localCampaign.artifacts} artifacts and ${localCampaign.bundles} bundles verify; summaries re-derived`,
+);

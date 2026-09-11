@@ -69,8 +69,9 @@ without installing this tool.
 [![Biome][Biome]][Biome-url]
 [![Zod][Zod]][Zod-url]
 
-Durable state is `node:sqlite` rather than a database. The verifier a bundle carries is
-dependency-free by design, so checking somebody's evidence needs nothing but Node.
+Durable state is an append-only JSONL journal, with a read-only importer for older SQLite
+sessions. The verifier a bundle carries is dependency-free by design, so checking somebody's
+evidence needs nothing but Node.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -100,6 +101,10 @@ npm install -g swarm-orchestrator
 
 That is **14.0.2**, and it leaves `swarm` on your path. If `swarm` turns out to be an older version
 than you installed, `swarm doctor` says what owns the command and `--fix` repairs it.
+
+The September 11 audit repairs are on `v13-main`. They are source-checkout changes, not a claim
+that a new npm release has been published. What changed and what remains unproved are in
+[the implementation record](docs/audit-implementation-2026-09-11.md).
 
 Anything below 13 is a different program: this package name carried a pull-request auditor through
 12.x. Pin the major if you depend on one or the other.
@@ -236,8 +241,9 @@ table is **[docs/claims.md](docs/claims.md)**. Three of them:
 ## What is not claimed
 
 **It is not production-ready.** Of the gates this project agreed not to call itself
-production-ready without, eight pass on measured evidence, two are partial, two are unproven, and
-two are reported rather than barred. The old "zero false greens in 400 held-out tasks" gate is
+production-ready without, the historical assessment records eight passing, two partial, two
+unproven, and two reported rather than barred. Those counts describe the linked campaigns, not
+a fresh measurement of every gate on this checkout. The old "zero false greens in 400 held-out tasks" gate is
 retired, for four reasons that are measured rather than argued, and replaced by three statements
 about three different questions. Each row and what would settle it:
 **[docs/beta-gates.md](docs/beta-gates.md)**.
@@ -247,12 +253,12 @@ about three different questions. Each row and what would settle it:
 - **The default execution mode is `restricted`, not `isolated`.** A lexical path and program policy
   in front of interpreters unless you pass `--isolation`. Reported before the run starts and
   recorded on the chain rather than quietly assumed, but it is not containment.
-- **The false-green rate is 0 in 15**, 0.0%, 95% CI [0.0, 20.4], and that upper bound is the honest
+- **The September 6 mined-corpus rate was 0 in 15**, 0.0%, 95% CI [0.0, 20.4], and that upper bound is the honest
   half of it. Every task carries two oracles, one handed to the tool and one held back from it, and
   fifteen certified patches cannot say more than "under 20%":
-  [`mined-corpus/`](docs/evidence/2026-09-06/mined-corpus/README.md). Every false green ever found
-  came from tasks mined out of real pull requests, because maintainers test what they cared about
-  rather than what the author of a tool thought to check. The one that used to stand,
+  [`mined-corpus/`](docs/evidence/2026-09-06/mined-corpus/README.md). Those tasks came from real pull requests, where maintainers test what they cared about
+  rather than what the author of a tool thought to check. That historical rate is not a rate for
+  the current build or for the separate synthetic campaign. The one that used to stand,
   `commander#1671`, is refused now because its oracle accepted a change to a line it had run.
 - **Shown its oracle, a model still gets past this.** Both of those patches now get a bond and both
   bonds hold, which is the finding rather than a fix: a patch written to satisfy a visible test has
@@ -286,34 +292,41 @@ change is fast and its claims are checkable, not that review is unnecessary.
 
 ## Roadmap
 
-The roadmap is the beta gates that are not met yet, tracked with their evidence in
-**[docs/beta-gates.md](docs/beta-gates.md)**:
+The implementation is ahead of the evidence needed to call this production-ready. The audit
+repairs are recorded in **[the implementation record](docs/audit-implementation-2026-09-11.md)**;
+the local campaign and every excluded case are in
+**[the September 11 report](docs/evidence/2026-09-11/local-campaign/report.md)**.
 
-- [ ] A false-green rate whose interval means something: currently 0 in 15, upper bound 20.4%.
-      The old "zero in 400 tasks" wording is retired for four measured reasons, and the one bar
-      that replaced it, no green claim that fails to follow from its own record, passes at zero
-      over 138 recorded verdicts
-- [ ] A denominator for that rate the tool did not choose. Of the oracles a second oracle proves
-      inadequate, this refuses 3 of 3, but the denominator is three and one of them is the case
-      the mutation operators were written knowing about. Mining more repositories does not grow it:
-      two deeper passes over the same selection added zero candidates. The arm that does grow it is
-      the adversarial one, and there it stands at 1 of 3
-- [ ] An adversarial corpus written by somebody trying to get past the defences. The verification
-      surface has one and it still lands: 2 false greens in 9 certified over 18 rows, 22.2%
-      [6.3, 54.7], down from 2 in 5. Out of sample for the mutation operators it is 1 in 8. One of
-      the two it used to carry is closed by an operator; the other will not be, and neither will the
-      one found out of sample, because their oracles do test the lines those patches added
-- [ ] Task success non-inferior to the strongest single-agent baseline, at a size that supports it.
-      The set that discriminates is identified and measured, 11 of 79 solved; what is left is
-      running the baseline arm over it
-- [ ] An adversarial security corpus written against the guard as it stands. Three attacks landed
-      and are closed, casing on a case-insensitive filesystem, a path after a colon and a path
-      inside a quoted word; two still succeed and are asserted as succeeding
-- [ ] No orphan processes after a command that started a daemon and exited. A corpus re-judge left
-      328, each in its own process group: the harness signals the group it created and a descendant
-      that leaves it is out of reach
-- [ ] A new user productive in under ten minutes, timed with somebody who has not seen the tool.
-      The script such a run would follow is written; nothing in it is timed
+- [x] Connect verification, displayed acceptance, cancellation, budgets and recovery to the
+      records that establish them. Use standard DSSE signing bytes and literal replacement text.
+- [x] Build the campaign machinery: separate case author, checker and solver models; admission
+      controls before grading; frozen schedules; actual baseline dispatch; every failed launch
+      retained; raw evidence that can be checked from the checkout.
+- [x] Run the available Docker security and cleanup matrix. Fourteen declared observations
+      passed, with working attack controls and a separate check that ordinary work still runs.
+      Repair after abrupt harness death was exercised too.
+- [ ] A false-green interval that supports a population claim. The historical 0 in 15 has a
+      20.4% upper bound. The new synthetic pilot admits one evaluation case and cannot narrow
+      that bound for real work. Freeze an independent population and a sufficient sample first.
+- [ ] A denominator the tool did not choose. The new admission pass checks references and
+      predetermined counterexamples, but model authorship alone does not establish independence
+      or complete requirements. Independent admission and review are still needed.
+- [ ] An adversarial verification corpus that covers omitted requirements. Separate local
+      models supplied fresh checks and attacks. Mutation of added lines still cannot establish
+      that a patch implemented something it left out; the report keeps those outcomes visible.
+- [ ] Task success non-inferior to the strongest alternative. The two local baseline arms now
+      execute, with matched tasks and budgets. This pilot is too small to establish which tool
+      is strongest or to support a non-inferiority claim.
+- [ ] Security evidence for every supported backend. Docker was measured here; Podman and
+      nerdctl were unavailable. Independent attacks and those runtime matrices remain open.
+- [ ] No surviving daemons across the supported runtime boundaries. Docker cleanup passed the
+      declared lifecycle cases. Restricted host execution still cannot own a descendant that
+      leaves its process group; abrupt harness death requires supervision or later repair.
+- [ ] A new user productive in under ten minutes. The fixture and observer procedure are ready.
+      No new users were observed, so setup checks cannot close this item.
+
+Each broader claim stays open until its own evidence meets the bar in
+**[docs/beta-gates.md](docs/beta-gates.md)**.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

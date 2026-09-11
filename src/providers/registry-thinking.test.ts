@@ -43,13 +43,15 @@ describe("whether the local model reasons before it answers", () => {
     // truncated at the output cap on four runs out of four, and finished in seven steps with
     // it off. A setup that wants reasoning back says so; nobody has to write a file to work.
     expect(body.enable_thinking).toBe(false);
+    expect(body.reasoning_effort).toBe("none");
     expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
   });
 
-  it("turns it off in both spellings the servers that accept it use", async () => {
+  it("turns it off in the wire formats used by local servers", async () => {
     const body = await bodyOfOneCall(false);
 
     expect(body.enable_thinking).toBe(false);
+    expect(body.reasoning_effort).toBe("none");
     expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
   });
 
@@ -57,6 +59,7 @@ describe("whether the local model reasons before it answers", () => {
     const body = await bodyOfOneCall(true);
 
     expect(body.enable_thinking).toBe(true);
+    expect(body.reasoning_effort).toBe("medium");
     expect(body.chat_template_kwargs).toEqual({ enable_thinking: true });
   });
 });

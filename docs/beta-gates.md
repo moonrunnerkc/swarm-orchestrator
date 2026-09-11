@@ -4,7 +4,14 @@ The build guide's beta gates are the list this project agreed not to call itself
 without. This is where each one stands, with the evidence or the absence of it named. A row with
 no proving artifact is `unproven`, not `probably fine`.
 
-**Summary: not production-ready.** Counted against the table below rather than from memory, which
+**September 11 update: not production-ready.** The audit implementation is on `v13-main`.
+The [local campaign](evidence/2026-09-11/local-campaign/report.md) adds model-authored admission
+records, actual baseline dispatch, and a Docker security and lifecycle matrix. It does not
+supply an independently sampled population, a powered baseline comparison, or new-user
+observations. The measurements below retain their original populations and versions; they are
+not pooled with this pilot or silently attributed to the repaired build.
+
+**Historical assessment.** Counted against the table below rather than from memory, which
 is how the earlier "four of twelve pass" got in here and stayed wrong: **eight pass** (2, 3a, 4, 5,
 6, 8, 9, 11, and 8 passes by not building the thing it guards), **two are partial** with the gap
 named (1, 10), **two are unproven** (7, 12), and **two are reported rather than barred** (3b, 3c),

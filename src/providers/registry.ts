@@ -146,9 +146,9 @@ function tracedFetch(settings: ProviderSettings): typeof globalThis.fetch {
 }
 
 /**
- * Whether the model behind the local endpoint should reason before it answers, in the two
- * spellings the servers that accept it use: rapid-mlx and vLLM read the top-level field, and
- * the templated form is what a server that passes the flag to its chat template wants.
+ * Whether the model behind the local endpoint should reason before it answers. Ollama reads
+ * reasoning_effort; rapid-mlx and vLLM also use enable_thinking or its templated form.
+ * The SDK maps reasoningEffort to the wire spelling, so the request-body test is load-bearing.
  *
  * Off unless a setup asks for it on, which is a default chosen from a measurement rather than
  * a preference. A reasoning model given tools spends its output budget thinking about the edit
@@ -166,7 +166,11 @@ function thinkingOptions(
 ): Record<string, Record<string, JSONValue>> | undefined {
   const enabled = settings.localThinking ?? false;
   return {
-    local: { enable_thinking: enabled, chat_template_kwargs: { enable_thinking: enabled } },
+    local: {
+      reasoningEffort: enabled ? "medium" : "none",
+      enable_thinking: enabled,
+      chat_template_kwargs: { enable_thinking: enabled },
+    },
   };
 }
 
