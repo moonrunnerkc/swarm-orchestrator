@@ -292,7 +292,7 @@ The roadmap is the beta gates that are not met yet, tracked with their evidence 
 - [ ] A false-green rate whose interval means something: currently 0 in 15, upper bound 20.4%.
       The old "zero in 400 tasks" wording is retired for four measured reasons, and the one bar
       that replaced it, no green claim that fails to follow from its own record, passes at zero
-      over 129 recorded verdicts
+      over 138 recorded verdicts
 - [ ] A denominator for that rate the tool did not choose. Of the oracles a second oracle proves
       inadequate, this refuses 3 of 3, but the denominator is three and one of them is the case
       the mutation operators were written knowing about. Mining more repositories does not grow it:
