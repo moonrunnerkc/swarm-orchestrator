@@ -236,7 +236,7 @@ table is **[docs/claims.md](docs/claims.md)**. Three of them:
 ## What is not claimed
 
 **It is not production-ready.** Of the gates this project agreed not to call itself
-production-ready without, seven pass on measured evidence, three are partial, two are unproven, and
+production-ready without, eight pass on measured evidence, two are partial, two are unproven, and
 two are reported rather than barred. The old "zero false greens in 400 held-out tasks" gate is
 retired, for four reasons that are measured rather than argued, and replaced by three statements
 about three different questions. Each row and what would settle it:
@@ -295,10 +295,14 @@ The roadmap is the beta gates that are not met yet, tracked with their evidence 
       over 129 recorded verdicts
 - [ ] A denominator for that rate the tool did not choose. Of the oracles a second oracle proves
       inadequate, this refuses 3 of 3, but the denominator is three and one of them is the case
-      the mutation operators were written knowing about
+      the mutation operators were written knowing about. Mining more repositories does not grow it:
+      two deeper passes over the same selection added zero candidates. The arm that does grow it is
+      the adversarial one, and there it stands at 1 of 3
 - [ ] An adversarial corpus written by somebody trying to get past the defences. The verification
-      surface now has one, and it lands: 2 false greens in 5 certified when the model is shown the
-      oracle it will be judged by, against 0 in 3 when it is not
+      surface has one and it still lands: 2 false greens in 9 certified over 18 rows, 22.2%
+      [6.3, 54.7], down from 2 in 5. Out of sample for the mutation operators it is 1 in 8. One of
+      the two it used to carry is closed by an operator; the other will not be, and neither will the
+      one found out of sample, because their oracles do test the lines those patches added
 - [ ] Task success non-inferior to the strongest single-agent baseline, at a size that supports it.
       The set that discriminates is identified and measured, 11 of 79 solved; what is left is
       running the baseline arm over it
