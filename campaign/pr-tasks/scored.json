@@ -14,7 +14,9 @@
       "latencyMs": 108186,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "iamkun/dayjs",
@@ -99,7 +101,9 @@
       "latencyMs": 485225,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "iamkun/dayjs",
@@ -128,8 +132,9 @@
       "latencyMs": 167473,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1",
-      "producedNoChange": true
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "producedNoChange": true,
+      "oracleBond": "not-bonded"
     },
     {
       "repository": "koajs/koa",
@@ -144,9 +149,24 @@
       "latencyMs": 175372,
       "oracleReach": "reached",
       "heldBackOrderDependent": false,
-      "harness": "343ae4740cced71e22018a85a0e340902b654e53",
-      "oracleBond": "not-bonded",
-      "heldBackBond": "not-bonded"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "held",
+      "heldBackBond": "held",
+      "bondedMutants": [
+        {
+          "id": "lib/request.js:301:replace-assigned-value",
+          "path": "lib/request.js",
+          "line": 301,
+          "operator": "replace-assigned-value",
+          "before": "        this.memoizedURL = /^https?:\\/\\//i.test(originalUrl)",
+          "after": "        this.memoizedURL = undefined",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        }
+      ],
+      "heldBackBondedMutants": {
+        "lib/request.js:301:replace-assigned-value": "held"
+      }
     },
     {
       "repository": "koajs/koa",
@@ -161,8 +181,9 @@
       "latencyMs": 82368,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1",
-      "producedNoChange": true
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "producedNoChange": true,
+      "oracleBond": "not-bonded"
     },
     {
       "repository": "koajs/koa",
@@ -177,7 +198,9 @@
       "latencyMs": 39771,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "held"
     },
     {
       "repository": "koajs/koa",
@@ -192,7 +215,7 @@
       "latencyMs": 124908,
       "oracleReach": "unreached",
       "heldBackOrderDependent": false,
-      "harness": "343ae4740cced71e22018a85a0e340902b654e53",
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
       "unreachedByOracle": [
         {
           "path": "lib/application.js",
@@ -207,13 +230,64 @@
       "heldBackBond": "not-bonded",
       "bondedMutants": [
         {
+          "id": "lib/application.js:11:replace-assigned-value",
+          "path": "lib/application.js",
+          "line": 11,
+          "operator": "replace-assigned-value",
+          "before": "const v8 = require('node:v8')",
+          "after": "const v8 = undefined",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/application.js:85:replace-assigned-value",
+          "path": "lib/application.js",
+          "line": 85,
+          "operator": "replace-assigned-value",
+          "before": "      this.ctxStorage = getAsyncLocalStorage(options)",
+          "after": "      this.ctxStorage = undefined",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
           "id": "lib/application.js:87:invert-comparison",
           "path": "lib/application.js",
           "line": 87,
           "operator": "invert-comparison",
           "before": "      if (this.ctxStorage === null) {",
           "after": "      if (this.ctxStorage !== null) {",
-          "verdict": "held"
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/application.js:267:negate-condition",
+          "path": "lib/application.js",
+          "line": 267,
+          "operator": "negate-condition",
+          "before": "  if (v8.startupSnapshot.isBuildingSnapshot()) {",
+          "after": "  if (!(v8.startupSnapshot.isBuildingSnapshot())) {",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/application.js:268:delete-statement",
+          "path": "lib/application.js",
+          "line": 268,
+          "operator": "delete-statement",
+          "before": "    return null",
+          "after": "",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/application.js:270:negate-condition",
+          "path": "lib/application.js",
+          "line": 270,
+          "operator": "negate-condition",
+          "before": "  if (options.asyncLocalStorage instanceof AsyncLocalStorage) {",
+          "after": "  if (!(options.asyncLocalStorage instanceof AsyncLocalStorage)) {",
+          "verdict": "unshown",
+          "witness": "not-adjudicated"
         }
       ],
       "heldBackBondedMutants": {}
@@ -231,8 +305,9 @@
       "latencyMs": 603982,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1",
-      "producedNoChange": true
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "producedNoChange": true,
+      "oracleBond": "not-bonded"
     },
     {
       "repository": "koajs/koa",
@@ -247,10 +322,20 @@
       "latencyMs": 303421,
       "oracleReach": "reached",
       "heldBackOrderDependent": false,
-      "harness": "343ae4740cced71e22018a85a0e340902b654e53",
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
       "oracleBond": "held",
       "heldBackBond": "vacuous",
       "bondedMutants": [
+        {
+          "id": "lib/response.js:354:negate-condition",
+          "path": "lib/response.js",
+          "line": 354,
+          "operator": "negate-condition",
+          "before": "    if (filename && !this.has('Content-Type')) this.type = extname(filename)",
+          "after": "    if (!(filename && !this.has('Content-Type'))) this.type = extname(filename)",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
         {
           "id": "lib/response.js:355:swap-call-arguments",
           "path": "lib/response.js",
@@ -258,10 +343,12 @@
           "operator": "swap-call-arguments",
           "before": "    this.set('Content-Disposition', contentDisposition(filename || undefined, options))",
           "after": "    this.set(contentDisposition(filename || undefined, options), 'Content-Disposition')",
-          "verdict": "held"
+          "verdict": "held",
+          "witness": "not-adjudicated"
         }
       ],
       "heldBackBondedMutants": {
+        "lib/response.js:354:negate-condition": "held",
         "lib/response.js:355:swap-call-arguments": "vacuous"
       }
     },
@@ -291,7 +378,9 @@
       "latencyMs": 100897,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "trekhleb/javascript-algorithms",
@@ -306,7 +395,9 @@
       "latencyMs": 248466,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "trekhleb/javascript-algorithms",
@@ -321,7 +412,9 @@
       "latencyMs": 607477,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "trekhleb/javascript-algorithms",
@@ -336,7 +429,9 @@
       "latencyMs": 101252,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "iamkun/dayjs",
@@ -351,7 +446,7 @@
       "latencyMs": 604379,
       "oracleReach": "reached",
       "heldBackOrderDependent": false,
-      "harness": "343ae4740cced71e22018a85a0e340902b654e53",
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
       "oracleBond": "held",
       "heldBackBond": "held",
       "bondedMutants": [
@@ -362,7 +457,8 @@
           "operator": "swap-arithmetic-operands",
           "before": "      seconds += Math.round(this.$d.milliseconds) / 1000",
           "after": "      seconds += 1000 / Math.round(this.$d.milliseconds)",
-          "verdict": "held"
+          "verdict": "held",
+          "witness": "not-adjudicated"
         }
       ],
       "heldBackBondedMutants": {
@@ -405,7 +501,79 @@
           ]
         }
       ],
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "held",
+      "heldBackBond": "held",
+      "bondedMutants": [
+        {
+          "id": "src/plugin/minMax/index.js:3:negate-condition",
+          "path": "src/plugin/minMax/index.js",
+          "line": 3,
+          "operator": "negate-condition",
+          "before": "    if (!dates || !dates.length) {",
+          "after": "    if (!(!dates || !dates.length)) {",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "src/plugin/minMax/index.js:8:invert-comparison",
+          "path": "src/plugin/minMax/index.js",
+          "line": 8,
+          "operator": "invert-comparison",
+          "before": "    if (dates.length === 1 && Array.isArray(dates[0])) {",
+          "after": "    if (dates.length !== 1 && Array.isArray(dates[0])) {",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "src/plugin/minMax/index.js:13:invert-comparison",
+          "path": "src/plugin/minMax/index.js",
+          "line": 13,
+          "operator": "invert-comparison",
+          "before": "    const validDates = dates.filter(date => date != null)",
+          "after": "    const validDates = dates.filter(date => date == null)",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "src/plugin/minMax/index.js:14:negate-condition",
+          "path": "src/plugin/minMax/index.js",
+          "line": 14,
+          "operator": "negate-condition",
+          "before": "    if (!validDates.length) {",
+          "after": "    if (!(!validDates.length)) {",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "src/plugin/minMax/index.js:19:replace-assigned-value",
+          "path": "src/plugin/minMax/index.js",
+          "line": 19,
+          "operator": "replace-assigned-value",
+          "before": "    [result] = validDates",
+          "after": "    [result] = undefined",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "src/plugin/minMax/index.js:22:replace-assigned-value",
+          "path": "src/plugin/minMax/index.js",
+          "line": 22,
+          "operator": "replace-assigned-value",
+          "before": "        result = validDates[i]",
+          "after": "        result = undefined",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        }
+      ],
+      "heldBackBondedMutants": {
+        "src/plugin/minMax/index.js:3:negate-condition": "held",
+        "src/plugin/minMax/index.js:8:invert-comparison": "held",
+        "src/plugin/minMax/index.js:13:invert-comparison": "held",
+        "src/plugin/minMax/index.js:14:negate-condition": "held",
+        "src/plugin/minMax/index.js:19:replace-assigned-value": "held",
+        "src/plugin/minMax/index.js:22:replace-assigned-value": "unshown"
+      }
     },
     {
       "repository": "koajs/koa",
@@ -433,7 +601,9 @@
       "latencyMs": 95438,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "koajs/koa",
@@ -448,7 +618,9 @@
       "latencyMs": 214420,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "openai/codex-plugin-cc",
@@ -463,7 +635,9 @@
       "latencyMs": 444219,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "openai/codex-plugin-cc",
@@ -491,7 +665,9 @@
       "latencyMs": 452475,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "vacuous"
     },
     {
       "repository": "openai/codex-plugin-cc",
@@ -506,7 +682,9 @@
       "latencyMs": 207684,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "tj/commander.js",
@@ -521,8 +699,9 @@
       "latencyMs": 608546,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1",
-      "producedNoChange": true
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "producedNoChange": true,
+      "oracleBond": "not-bonded"
     },
     {
       "repository": "tj/commander.js",
@@ -537,8 +716,9 @@
       "latencyMs": 273687,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1",
-      "producedNoChange": true
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "producedNoChange": true,
+      "oracleBond": "not-bonded"
     },
     {
       "repository": "tj/commander.js",
@@ -553,7 +733,24 @@
       "latencyMs": 604030,
       "oracleReach": "reached",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "held",
+      "heldBackBond": "held",
+      "bondedMutants": [
+        {
+          "id": "lib/command.js:28:replace-assigned-value",
+          "path": "lib/command.js",
+          "line": 28,
+          "operator": "replace-assigned-value",
+          "before": "    this._allowExcessArguments = false;",
+          "after": "    this._allowExcessArguments = \"swarm-oracle-bond\";",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        }
+      ],
+      "heldBackBondedMutants": {
+        "lib/command.js:28:replace-assigned-value": "held"
+      }
     },
     {
       "repository": "tj/commander.js",
@@ -568,7 +765,9 @@
       "latencyMs": 301546,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "tj/commander.js",
@@ -583,7 +782,9 @@
       "latencyMs": 605338,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "tj/commander.js",
@@ -598,7 +799,9 @@
       "latencyMs": 610154,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "vacuous"
     },
     {
       "repository": "tj/commander.js",
@@ -613,7 +816,9 @@
       "latencyMs": 137147,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "tj/commander.js",
@@ -628,8 +833,9 @@
       "latencyMs": 609802,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1",
-      "producedNoChange": true
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "producedNoChange": true,
+      "oracleBond": "not-bonded"
     },
     {
       "repository": "caolan/async",
@@ -644,7 +850,9 @@
       "latencyMs": 622658,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "caolan/async",
@@ -672,7 +880,9 @@
       "latencyMs": 620189,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "remy/nodemon",
@@ -687,7 +897,9 @@
       "latencyMs": 602058,
       "oracleReach": "unmeasured",
       "heldBackOrderDependent": false,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "winstonjs/winston",
@@ -716,7 +928,7 @@
       "latencyMs": 265214,
       "heldBackOrderDependent": true,
       "oracleReach": "unreached",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1",
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
       "unreachedByOracle": [
         {
           "path": "lib/winston/container.js",
@@ -724,7 +936,42 @@
             46
           ]
         }
-      ]
+      ],
+      "oracleBond": "held",
+      "heldBackBond": "not-bonded",
+      "bondedMutants": [
+        {
+          "id": "lib/winston/container.js:43:negate-condition",
+          "path": "lib/winston/container.js",
+          "line": 43,
+          "operator": "negate-condition",
+          "before": "      if (existing) {",
+          "after": "      if (!(existing)) {",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/winston/container.js:44:replace-assigned-value",
+          "path": "lib/winston/container.js",
+          "line": 44,
+          "operator": "replace-assigned-value",
+          "before": "        options.transports = Array.isArray(existing) ? existing.slice() : [existing];",
+          "after": "        options.transports = undefined;",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/winston/container.js:46:replace-assigned-value",
+          "path": "lib/winston/container.js",
+          "line": 46,
+          "operator": "replace-assigned-value",
+          "before": "        options.transports = [];",
+          "after": "        options.transports = undefined;",
+          "verdict": "unshown",
+          "witness": "not-adjudicated"
+        }
+      ],
+      "heldBackBondedMutants": {}
     },
     {
       "repository": "winstonjs/winston",
@@ -739,7 +986,9 @@
       "corner": "true-red",
       "latencyMs": 695580,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "JedWatson/classnames",
@@ -754,7 +1003,9 @@
       "corner": "refused-on-sealed",
       "latencyMs": 358061,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "held"
     },
     {
       "repository": "hubotio/hubot",
@@ -783,7 +1034,9 @@
       "corner": "true-red",
       "latencyMs": 186695,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "hubotio/hubot",
@@ -798,7 +1051,9 @@
       "corner": "true-red",
       "latencyMs": 690847,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "refined-github/refined-github",
@@ -813,7 +1068,8 @@
       "producedNoChange": true,
       "latencyMs": 183303,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded"
     },
     {
       "repository": "refined-github/refined-github",
@@ -828,7 +1084,9 @@
       "corner": "true-red",
       "latencyMs": 193202,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "refined-github/refined-github",
@@ -843,7 +1101,8 @@
       "producedNoChange": true,
       "latencyMs": 627867,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded"
     },
     {
       "repository": "mlc-ai/web-llm",
@@ -872,7 +1131,9 @@
       "corner": "true-red",
       "latencyMs": 602790,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "mlc-ai/web-llm",
@@ -887,7 +1148,9 @@
       "corner": "true-red",
       "latencyMs": 603718,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "mlc-ai/web-llm",
@@ -902,7 +1165,9 @@
       "corner": "true-red",
       "latencyMs": 601995,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "gvergnaud/ts-pattern",
@@ -917,7 +1182,8 @@
       "producedNoChange": true,
       "latencyMs": 608555,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded"
     },
     {
       "repository": "gvergnaud/ts-pattern",
@@ -932,7 +1198,9 @@
       "corner": "true-red",
       "latencyMs": 599904,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "gvergnaud/ts-pattern",
@@ -947,7 +1215,8 @@
       "producedNoChange": true,
       "latencyMs": 570570,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded"
     },
     {
       "repository": "gvergnaud/ts-pattern",
@@ -962,7 +1231,9 @@
       "corner": "true-red",
       "latencyMs": 151200,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "gvergnaud/ts-pattern",
@@ -1005,7 +1276,9 @@
       "corner": "true-red",
       "latencyMs": 603491,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "jhlywa/chess.js",
@@ -1020,7 +1293,9 @@
       "corner": "true-red",
       "latencyMs": 616857,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "jhlywa/chess.js",
@@ -1035,7 +1310,9 @@
       "corner": "true-red",
       "latencyMs": 150739,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "jhlywa/chess.js",
@@ -1050,7 +1327,9 @@
       "corner": "true-red",
       "latencyMs": 605717,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "jhlywa/chess.js",
@@ -1065,7 +1344,9 @@
       "corner": "true-red",
       "latencyMs": 609166,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "jhlywa/chess.js",
@@ -1080,7 +1361,9 @@
       "corner": "true-red",
       "latencyMs": 196851,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "jhlywa/chess.js",
@@ -1095,7 +1378,9 @@
       "corner": "true-red",
       "latencyMs": 651927,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "jhlywa/chess.js",
@@ -1110,7 +1395,9 @@
       "corner": "true-red",
       "latencyMs": 379200,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "jhlywa/chess.js",
@@ -1125,7 +1412,9 @@
       "corner": "true-red",
       "latencyMs": 607927,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "jhlywa/chess.js",
@@ -1140,7 +1429,46 @@
       "corner": "true-red",
       "latencyMs": 704144,
       "oracleReach": "reached",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "held",
+      "heldBackBond": "held",
+      "bondedMutants": [
+        {
+          "id": "src/chess.ts:963:delete-statement",
+          "path": "src/chess.ts",
+          "line": 963,
+          "operator": "delete-statement",
+          "before": "  moves({ piece }: { piece: PieceSymbol }): string[]",
+          "after": "",
+          "verdict": "unshown",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "src/chess.ts:964:delete-statement",
+          "path": "src/chess.ts",
+          "line": 964,
+          "operator": "delete-statement",
+          "before": "  moves({ square, piece }: { square: Square; piece: PieceSymbol }): string[]",
+          "after": "",
+          "verdict": "unshown",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "src/chess.ts:999:replace-assigned-value",
+          "path": "src/chess.ts",
+          "line": 999,
+          "operator": "replace-assigned-value",
+          "before": "    const moves = this._moves({ square, piece })",
+          "after": "    const moves = undefined",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        }
+      ],
+      "heldBackBondedMutants": {
+        "src/chess.ts:963:delete-statement": "unshown",
+        "src/chess.ts:964:delete-statement": "unshown",
+        "src/chess.ts:999:replace-assigned-value": "held"
+      }
     },
     {
       "repository": "iamkun/dayjs",
@@ -1163,7 +1491,46 @@
           ]
         }
       ],
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "vacuous",
+      "heldBackBond": "vacuous",
+      "bondedMutants": [
+        {
+          "id": "src/plugin/timezone/index.js:41:negate-condition",
+          "path": "src/plugin/timezone/index.js",
+          "line": 41,
+          "operator": "negate-condition",
+          "before": "    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return []",
+          "after": "    if (!(!(date instanceof Date) || Number.isNaN(date.getTime()))) return []",
+          "verdict": "vacuous",
+          "witness": "coverage"
+        },
+        {
+          "id": "src/plugin/timezone/index.js:44:delete-statement",
+          "path": "src/plugin/timezone/index.js",
+          "line": 44,
+          "operator": "delete-statement",
+          "before": "      return dtf.formatToParts(date)",
+          "after": "",
+          "verdict": "vacuous",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "src/plugin/timezone/index.js:46:delete-statement",
+          "path": "src/plugin/timezone/index.js",
+          "line": 46,
+          "operator": "delete-statement",
+          "before": "      return []",
+          "after": "",
+          "verdict": "unshown",
+          "witness": "not-adjudicated"
+        }
+      ],
+      "heldBackBondedMutants": {
+        "src/plugin/timezone/index.js:41:negate-condition": "vacuous",
+        "src/plugin/timezone/index.js:44:delete-statement": "held",
+        "src/plugin/timezone/index.js:46:delete-statement": "unshown"
+      }
     },
     {
       "repository": "iamkun/dayjs",
@@ -1233,7 +1600,9 @@
       "corner": "true-red",
       "latencyMs": 604672,
       "oracleReach": "unmeasured",
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "trekhleb/javascript-algorithms",
@@ -1248,7 +1617,9 @@
       "verified": false,
       "corner": "true-red",
       "latencyMs": 62075,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "trekhleb/javascript-algorithms",
@@ -1263,7 +1634,9 @@
       "verified": false,
       "corner": "true-red",
       "latencyMs": 104104,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "trekhleb/javascript-algorithms",
@@ -1278,7 +1651,9 @@
       "verified": false,
       "corner": "true-red",
       "latencyMs": 609102,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "trekhleb/javascript-algorithms",
@@ -1293,7 +1668,9 @@
       "verified": false,
       "corner": "true-red",
       "latencyMs": 123091,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "trekhleb/javascript-algorithms",
@@ -1308,7 +1685,9 @@
       "verified": false,
       "corner": "true-red",
       "latencyMs": 471404,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "trekhleb/javascript-algorithms",
@@ -1323,7 +1702,9 @@
       "verified": false,
       "corner": "true-red",
       "latencyMs": 239694,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "trekhleb/javascript-algorithms",
@@ -1338,7 +1719,9 @@
       "verified": false,
       "corner": "true-red",
       "latencyMs": 603922,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "refined-github/refined-github",
@@ -1352,8 +1735,9 @@
       "corner": "true-red",
       "producedNoChange": true,
       "latencyMs": 842007,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1",
-      "oracleReach": "unmeasured"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleReach": "unmeasured",
+      "oracleBond": "not-bonded"
     },
     {
       "repository": "tj/commander.js",
@@ -1367,8 +1751,9 @@
       "corner": "true-red",
       "producedNoChange": true,
       "latencyMs": 415059,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1",
-      "oracleReach": "unmeasured"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleReach": "unmeasured",
+      "oracleBond": "not-bonded"
     },
     {
       "repository": "tj/commander.js",
@@ -1383,7 +1768,9 @@
       "verified": false,
       "corner": "true-red",
       "latencyMs": 43032,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "tj/commander.js",
@@ -1398,7 +1785,9 @@
       "verified": false,
       "corner": "refused-on-sealed",
       "latencyMs": 192978,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "vacuous"
     },
     {
       "repository": "tj/commander.js",
@@ -1413,7 +1802,35 @@
       "verified": false,
       "corner": "true-red",
       "latencyMs": 603979,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "vacuous",
+      "heldBackBond": "held",
+      "bondedMutants": [
+        {
+          "id": "lib/command.js:1559:drop-chained-call",
+          "path": "lib/command.js",
+          "line": 1559,
+          "operator": "drop-chained-call",
+          "before": "    return getCommandAndParents(this).reverse().reduce(",
+          "after": "    return getCommandAndParents(this).reduce(",
+          "verdict": "vacuous",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/command.js:1561:delete-statement",
+          "path": "lib/command.js",
+          "line": 1561,
+          "operator": "delete-statement",
+          "before": "      undefined",
+          "after": "",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        }
+      ],
+      "heldBackBondedMutants": {
+        "lib/command.js:1559:drop-chained-call": "held",
+        "lib/command.js:1561:delete-statement": "held"
+      }
     },
     {
       "repository": "tj/commander.js",
@@ -1428,7 +1845,9 @@
       "verified": false,
       "corner": "true-red",
       "latencyMs": 173276,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "tj/commander.js",
@@ -1452,7 +1871,72 @@
       "verified": false,
       "corner": "true-red",
       "latencyMs": 603831,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "vacuous",
+      "heldBackBond": "not-bonded",
+      "bondedMutants": [
+        {
+          "id": "lib/command.js:402:replace-assigned-value",
+          "path": "lib/command.js",
+          "line": 402,
+          "operator": "replace-assigned-value",
+          "before": "    const allowedValues = ['preAction', 'postAction', 'preSubcommand'];",
+          "after": "    const allowedValues = undefined;",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/command.js:1059:drop-chained-call",
+          "path": "lib/command.js",
+          "line": 1059,
+          "operator": "drop-chained-call",
+          "before": "    getCommandAndParents(subCommand).reverse().forEach(hookedCommand => {",
+          "after": "    getCommandAndParents(subCommand).forEach(hookedCommand => {",
+          "verdict": "vacuous",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/command.js:1060:negate-condition",
+          "path": "lib/command.js",
+          "line": 1060,
+          "operator": "negate-condition",
+          "before": "      if (hookedCommand._lifeCycleHooks['preSubcommand']) {",
+          "after": "      if (!(hookedCommand._lifeCycleHooks['preSubcommand'])) {",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/command.js:1062:replace-assigned-value",
+          "path": "lib/command.js",
+          "line": 1062,
+          "operator": "replace-assigned-value",
+          "before": "          hookResult = this._chainOrCall(hookResult, () => hook(hookedCommand, subCommand));",
+          "after": "          hookResult = undefined;",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/command.js:1069:swap-call-arguments",
+          "path": "lib/command.js",
+          "line": 1069,
+          "operator": "swap-call-arguments",
+          "before": "        this._executeSubCommand(subCommand, operands.concat(unknown));",
+          "after": "        this._executeSubCommand(operands.concat(unknown), subCommand);",
+          "verdict": "unshown",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/command.js:1072:return-sentinel",
+          "path": "lib/command.js",
+          "line": 1072,
+          "operator": "return-sentinel",
+          "before": "      return this._chainOrCall(hookResult, () => subCommand._parseCommand(operands, unknown));",
+          "after": "      return undefined;",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        }
+      ],
+      "heldBackBondedMutants": {}
     },
     {
       "repository": "tj/commander.js",
@@ -1467,10 +1951,30 @@
       "verified": true,
       "corner": "true-green",
       "latencyMs": 539596,
-      "harness": "343ae4740cced71e22018a85a0e340902b654e53",
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
       "oracleBond": "held",
       "heldBackBond": "held",
       "bondedMutants": [
+        {
+          "id": "lib/command.js:1321:replace-assigned-value",
+          "path": "lib/command.js",
+          "line": 1321,
+          "operator": "replace-assigned-value",
+          "before": "    const definedNonDefaultOptionsInHierarchy = [];",
+          "after": "    const definedNonDefaultOptionsInHierarchy = undefined;",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/command.js:1326:replace-assigned-value",
+          "path": "lib/command.js",
+          "line": 1326,
+          "operator": "replace-assigned-value",
+          "before": "            const optionKey = option.attributeName();",
+          "after": "            const optionKey = undefined;",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
         {
           "id": "lib/command.js:1327:invert-comparison",
           "path": "lib/command.js",
@@ -1478,7 +1982,8 @@
           "operator": "invert-comparison",
           "before": "            if (currentCmd.getOptionValue(optionKey) === undefined) {",
           "after": "            if (currentCmd.getOptionValue(optionKey) !== undefined) {",
-          "verdict": "held"
+          "verdict": "held",
+          "witness": "not-adjudicated"
         },
         {
           "id": "lib/command.js:1328:return-sentinel",
@@ -1487,7 +1992,8 @@
           "operator": "return-sentinel",
           "before": "              return false;",
           "after": "              return \"swarm-oracle-bond\";",
-          "verdict": "held"
+          "verdict": "held",
+          "witness": "not-adjudicated"
         },
         {
           "id": "lib/command.js:1330:invert-comparison",
@@ -1496,23 +2002,27 @@
           "operator": "invert-comparison",
           "before": "            return currentCmd.getOptionValueSource(optionKey) !== 'default';",
           "after": "            return currentCmd.getOptionValueSource(optionKey) === 'default';",
-          "verdict": "held"
+          "verdict": "held",
+          "witness": "not-adjudicated"
         },
         {
-          "id": "lib/command.js:1354:swap-call-arguments",
+          "id": "lib/command.js:1343:negate-condition",
           "path": "lib/command.js",
-          "line": 1354,
-          "operator": "swap-call-arguments",
-          "before": "          this._conflictingOption(option, conflictingOption);",
-          "after": "          this._conflictingOption(conflictingOption, option);",
-          "verdict": "held"
+          "line": 1343,
+          "operator": "negate-condition",
+          "before": "      if (!conflictingAndDefinedSet[definedOption.attributeName()]) {",
+          "after": "      if (!(!conflictingAndDefinedSet[definedOption.attributeName()])) {",
+          "verdict": "held",
+          "witness": "not-adjudicated"
         }
       ],
       "heldBackBondedMutants": {
+        "lib/command.js:1321:replace-assigned-value": "held",
+        "lib/command.js:1326:replace-assigned-value": "held",
         "lib/command.js:1327:invert-comparison": "held",
         "lib/command.js:1328:return-sentinel": "held",
         "lib/command.js:1330:invert-comparison": "held",
-        "lib/command.js:1354:swap-call-arguments": "held"
+        "lib/command.js:1343:negate-condition": "held"
       }
     },
     {
@@ -1528,10 +2038,20 @@
       "verified": false,
       "corner": "true-red",
       "latencyMs": 245590,
-      "harness": "343ae4740cced71e22018a85a0e340902b654e53",
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
       "oracleBond": "vacuous",
       "heldBackBond": "not-bonded",
       "bondedMutants": [
+        {
+          "id": "lib/command.js:1472:replace-assigned-value",
+          "path": "lib/command.js",
+          "line": 1472,
+          "operator": "replace-assigned-value",
+          "before": "    const result = Object.create(null);",
+          "after": "    const result = undefined;",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
         {
           "id": "lib/command.js:1473:drop-chained-call",
           "path": "lib/command.js",
@@ -1539,7 +2059,8 @@
           "operator": "drop-chained-call",
           "before": "    getCommandAndParents(this).reverse().forEach((cmd) => {",
           "after": "    getCommandAndParents(this).forEach((cmd) => {",
-          "verdict": "vacuous"
+          "verdict": "vacuous",
+          "witness": "none"
         },
         {
           "id": "lib/command.js:1475:swap-call-arguments",
@@ -1548,7 +2069,8 @@
           "operator": "swap-call-arguments",
           "before": "      Object.assign(result, cmd.opts());",
           "after": "      Object.assign(cmd.opts(), result);",
-          "verdict": "held"
+          "verdict": "held",
+          "witness": "not-adjudicated"
         },
         {
           "id": "lib/command.js:1478:return-sentinel",
@@ -1557,7 +2079,8 @@
           "operator": "return-sentinel",
           "before": "    return result;",
           "after": "    return undefined;",
-          "verdict": "held"
+          "verdict": "held",
+          "witness": "not-adjudicated"
         }
       ],
       "heldBackBondedMutants": {}
@@ -1575,7 +2098,9 @@
       "verified": false,
       "corner": "true-red",
       "latencyMs": 603788,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "tj/commander.js",
@@ -1600,7 +2125,57 @@
       "verified": false,
       "corner": "refused-on-reach",
       "latencyMs": 92937,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "held",
+      "heldBackBond": "vacuous",
+      "bondedMutants": [
+        {
+          "id": "lib/command.js:805:return-sentinel",
+          "path": "lib/command.js",
+          "line": 805,
+          "operator": "return-sentinel",
+          "before": "    return this._optionValueSources[key];",
+          "after": "    return undefined;",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/command.js:819:swap-call-arguments",
+          "path": "lib/command.js",
+          "line": 819,
+          "operator": "swap-call-arguments",
+          "before": "    this.setOptionValue(key, value);",
+          "after": "    this.setOptionValue(value, key);",
+          "verdict": "unshown",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/command.js:820:replace-assigned-value",
+          "path": "lib/command.js",
+          "line": 820,
+          "operator": "replace-assigned-value",
+          "before": "    this._optionValueSources[key] = source;",
+          "after": "    this._optionValueSources[key] = undefined;",
+          "verdict": "unshown",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/command.js:821:return-sentinel",
+          "path": "lib/command.js",
+          "line": 821,
+          "operator": "return-sentinel",
+          "before": "    return this;",
+          "after": "    return undefined;",
+          "verdict": "unshown",
+          "witness": "not-adjudicated"
+        }
+      ],
+      "heldBackBondedMutants": {
+        "lib/command.js:805:return-sentinel": "held",
+        "lib/command.js:819:swap-call-arguments": "vacuous",
+        "lib/command.js:820:replace-assigned-value": "held",
+        "lib/command.js:821:return-sentinel": "vacuous"
+      }
     },
     {
       "repository": "tj/commander.js",
@@ -1625,7 +2200,72 @@
       "verified": false,
       "corner": "true-red",
       "latencyMs": 329127,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "vacuous",
+      "heldBackBond": "not-bonded",
+      "bondedMutants": [
+        {
+          "id": "lib/command.js:121:delete-statement",
+          "path": "lib/command.js",
+          "line": 121,
+          "operator": "delete-statement",
+          "before": "    cmd.copyInheritedSettings(this);",
+          "after": "",
+          "verdict": "held",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/command.js:122:negate-condition",
+          "path": "lib/command.js",
+          "line": 122,
+          "operator": "negate-condition",
+          "before": "    if (opts.noHelp || opts.hidden) cmd._hidden = true; // noHelp is deprecated old name for hidden",
+          "after": "    if (!(opts.noHelp || opts.hidden)) cmd._hidden = true; // noHelp is deprecated old name for hidden",
+          "verdict": "vacuous",
+          "witness": "repository-suite"
+        },
+        {
+          "id": "lib/command.js:242:negate-condition",
+          "path": "lib/command.js",
+          "line": 242,
+          "operator": "negate-condition",
+          "before": "    if (opts.noHelp || opts.hidden) cmd._hidden = true; // modifying passed command due to existing implementation",
+          "after": "    if (!(opts.noHelp || opts.hidden)) cmd._hidden = true; // modifying passed command due to existing implementation",
+          "verdict": "unshown",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/command.js:243:return-sentinel",
+          "path": "lib/command.js",
+          "line": 243,
+          "operator": "return-sentinel",
+          "before": "    return this;",
+          "after": "    return undefined;",
+          "verdict": "unshown",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/command.js:254:replace-assigned-value",
+          "path": "lib/command.js",
+          "line": 254,
+          "operator": "replace-assigned-value",
+          "before": "    this._hidden = !!source._hidden;",
+          "after": "    this._hidden = undefined;",
+          "verdict": "vacuous",
+          "witness": "not-adjudicated"
+        },
+        {
+          "id": "lib/command.js:255:replace-assigned-value",
+          "path": "lib/command.js",
+          "line": 255,
+          "operator": "replace-assigned-value",
+          "before": "    this._hasHelpOption = source._hasHelpOption;",
+          "after": "    this._hasHelpOption = undefined;",
+          "verdict": "vacuous",
+          "witness": "not-adjudicated"
+        }
+      ],
+      "heldBackBondedMutants": {}
     },
     {
       "repository": "winstonjs/winston",
@@ -1640,7 +2280,9 @@
       "verified": false,
       "corner": "true-red",
       "latencyMs": 643177,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     },
     {
       "repository": "winstonjs/winston",
@@ -1655,7 +2297,9 @@
       "verified": false,
       "corner": "true-red",
       "latencyMs": 622856,
-      "harness": "282d2eb2bce7a8cc208df12aae3ecf0d2012a6a1"
+      "harness": "1c07ef0efac01365c712db037a25c5c28cfc9e7c",
+      "oracleBond": "not-bonded",
+      "heldBackBond": "not-bonded"
     }
   ]
 }

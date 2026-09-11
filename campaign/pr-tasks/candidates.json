@@ -1,5 +1,5 @@
 {
-  "at": "2026-09-10T03:26:09.817Z",
+  "at": "2026-09-10T20:40:32.157Z",
   "candidates": [
     {
       "repository": "iamkun/dayjs",
@@ -54,117 +54,6 @@
       ],
       "heldBackCases": [
         "should properly strip comments in argument definitions"
-      ]
-    },
-    {
-      "repository": "hubotio/hubot",
-      "cloneUrl": "https://github.com/hubotio/hubot.git",
-      "pull": 1710,
-      "mergeCommit": "a842eb6a1a22dc8d8c3f60fe93b8146565e95565",
-      "taskText": "feat: add example test to hubot --create output. Addresses #1709 Changes in Hubot's API has broken the `hubot-test-helper` current version. This PR adds some guidance on how to test hubot scripts. #1652",
-      "testFile": "test/XampleTest.mjs",
-      "sourceFiles": [
-        "src/GenHubot.mjs"
-      ],
-      "changedLines": 303,
-      "sealedCases": [
-        "should reply with expected message"
-      ],
-      "heldBackCases": [
-        "should send message to the #general room"
-      ]
-    },
-    {
-      "repository": "hubotio/hubot",
-      "cloneUrl": "https://github.com/hubotio/hubot.git",
-      "pull": 1635,
-      "mergeCommit": "74c580c099fc52ef8b8ceb3bd13c86bfbeac7ca1",
-      "taskText": "feat(adapter): Load adapter from local disk. - load a .mjs file as an adapter (ES6 import - load a .coffe, .js or .cjs file from local disk as an adapter (e.g. -f ./adapters/CustomAdapter.coffee, -f ./adapters/CustomAdapter.js, -f ./adapters/CustomAdapter.cjs) - introduce new cli argument -f (file) that specifies the adapter path and file to load the adapter, e.g. -f ./adapters/CustomAdapter.mjs BREAKING CHANGE: ES6 import is async, thus loadAdapter was changed to an async function. #1624",
-      "testFile": "test/robot_test.js",
-      "sourceFiles": [
-        "bin/hubot.js",
-        "index.js",
-        "src/robot.js"
-      ],
-      "changedLines": 361,
-      "sealedCases": [
-        "should load an ES6 module adapter from a file",
-        "should load a CoffeeScript adapter from a file"
-      ],
-      "heldBackCases": [
-        "should respond to a message",
-        "should load a coffeescript file and respond to a message"
-      ]
-    },
-    {
-      "repository": "hubotio/hubot",
-      "cloneUrl": "https://github.com/hubotio/hubot.git",
-      "pull": 1489,
-      "mergeCommit": "d2b57bd796749fbb9ca02eff33b7a345bcd40d68",
-      "taskText": "Add a new persistence model - Datastore. This pull request adds support for a secondary persistence model to complement the traditional Hubot brain. My company's Hubot installation has been hitting some pain points with the traditional Hubot brain. The model of storing data in-memory, and persisting the entire structure on a schedule, has a few intractable pain points: 1. We run multiple Hubots, which want cooperative access to a database. This isn't feasible in a solution where the brain is persisted and loaded as a whole on a schedule. 2. Many scripts, including third-party scripts we have installed, access the underlying `robot.brain.data` structure directly instead of going via getters and setters. This is also true for user-scoped data, which currently doesn't provide any getter/setter model at all. 3. We can't feasibly subclass the existing brain because the documented behaviour of the brain's `get` and `set` methods is synchronous, whereas many database adapters (like the node mysql adapter) provide only asynchronous database access. 4. Data integrity depends on Hubot itself maintaining a valid in-memory structure. We've experienced periods of data loss when Hubot goes offli",
-      "testFile": "test/datastore_test.js",
-      "sourceFiles": [
-        "es2015.js",
-        "src/brain.js",
-        "src/datastore.js",
-        "src/datastores/memory.js",
-        "src/robot.js",
-        "src/user.js"
-      ],
-      "changedLines": 376,
-      "sealedCases": [
-        "returns undefined for values not in the datastore",
-        "can store arbitrary JavaScript values",
-        "can set individual keys inside objects",
-        "can append to an existing array",
-        "has access to the robot object",
-        "stores user data separate per-user"
-      ],
-      "heldBackCases": [
-        "can store simple values",
-        "can dig inside objects for values",
-        "creates an object from scratch when none exists",
-        "creates an array from scratch when none exists",
-        "can store user data which is separate from global data"
-      ]
-    },
-    {
-      "repository": "hubotio/hubot",
-      "cloneUrl": "https://github.com/hubotio/hubot.git",
-      "pull": 1487,
-      "mergeCommit": "a3d80c1faed497a1c96019c2b3ffd839dc1893e4",
-      "taskText": "Brain: ensure User objects are actually User objects. While the brain consistently documents that its functions return `User` objects, this actually isn't guaranteed. If the data is serialized to JSON for persisting - [like the Redis brain does]( - then `User` objects are serialized as plain JS objects and parsed back as them too. This leads to a mix of plain JS objects and actual `User` instances. This can lead to confusion, and it's also causing problems with an in-development branch of mine which grants instance methods to `User` objects. This PR resolves this by turning plain objects back into `User` objects in `mergeData` before calling `loaded`. The new objects retain all the properties of the original ones, ensuring they're consistent with any newly-constructed objects created at runtime. cc @technicalpickles",
-      "testFile": "test/brain_test.js",
-      "sourceFiles": [
-        "src/brain.js"
-      ],
-      "changedLines": 49,
-      "sealedCases": [
-        "coerces loaded data into User objects"
-      ],
-      "heldBackCases": [
-        "returns User objects, not POJOs"
-      ]
-    },
-    {
-      "repository": "hubotio/hubot",
-      "cloneUrl": "https://github.com/hubotio/hubot.git",
-      "pull": 1390,
-      "mergeCommit": "97f8c2f458b9912fb1d841199d294d436e67ac91",
-      "taskText": "Fix robot helpers delegation to adapter and events. Robot 'send', 'reply', 'messageRoom' methods delegate invocations to adapter but using as 'this' the robot while they should be using the adapter. Robot 'on', 'emit' methods delegate invocations to events but using as 'this' the robot but they should be using the events. The original CoffeeScript code from release 2.19.0 uses simple delegation, i.e. [send]( [reply]( [messageRoom]( [on]( [emit]( This PR should address #1386.",
-      "testFile": "test/robot_test.js",
-      "sourceFiles": [
-        "src/robot.js"
-      ],
-      "changedLines": 65,
-      "sealedCases": [
-        "delegates to adapter \"send\" with proper context",
-        "delegates to adapter \"send\" with proper context",
-        "delegates to events \"emit\" with proper context"
-      ],
-      "heldBackCases": [
-        "delegates to adapter \"reply\" with proper context",
-        "delegates to events \"on\" with proper context"
       ]
     },
     {
@@ -279,6 +168,792 @@
       ],
       "heldBackCases": [
         "setTurn for opposite color returns true"
+      ]
+    },
+    {
+      "repository": "uuidjs/uuid",
+      "cloneUrl": "https://github.com/uuidjs/uuid.git",
+      "pull": 188,
+      "mergeCommit": "1d56dc9e80774f651602c53899a5f63cc304ed0f",
+      "taskText": "V5 support. Here's the v5 code I've been noodling on. I'm comfortable with the API, and it works in node (via `npm test`), but I haven't done any in browser testing. There's also room for performance improvements, as currently I convert the namespace strings to byte arrays on every call, which is less than ideal, but I have limited time to work on this. I think we can deal with that later, if it ever becomes an issue people care about.",
+      "testFile": "test/test.js",
+      "sourceFiles": [
+        "lib/bytesToUuid.js",
+        "lib/rng-browser.js",
+        "lib/rng.js",
+        "lib/sha1-browser.js",
+        "lib/sha1.js",
+        "v1.js",
+        "v5.js"
+      ],
+      "changedLines": 288,
+      "sealedCases": [
+        "sha1 node",
+        "v5"
+      ],
+      "heldBackCases": [
+        "sha1 browser"
+      ]
+    },
+    {
+      "repository": "google/gts",
+      "cloneUrl": "https://github.com/google/gts.git",
+      "pull": 340,
+      "mergeCommit": "4a3c51143856b462804b318a5fce6baa2784e549",
+      "taskText": "feat: install a default src template. A template is copied in the project if the src directory is not present or does not contain ts files. Supercedes: #320",
+      "testFile": "test/test-init.ts",
+      "sourceFiles": [
+        "src/init.ts",
+        "src/util.ts",
+        "template/index.ts"
+      ],
+      "changedLines": 275,
+      "sealedCases": [
+        "should install a default template if the source directory do not exists",
+        "should install template copy if src directory already exists and contains files other than ts"
+      ],
+      "heldBackCases": [
+        "should install template copy if src directory already exists and is empty",
+        "should copy the template with correct contents"
+      ]
+    },
+    {
+      "repository": "google/gts",
+      "cloneUrl": "https://github.com/google/gts.git",
+      "pull": 185,
+      "mergeCommit": "d0d430d0e77848c7bb8dc333f4145d7bef2acf1b",
+      "taskText": "fix: allow 'gts clean' to follow tsconfig.json dependency chain. I wrote and edited the tests to show the new functionality and to catch circular references. This still should be abstracted to effect all commands that look at the contents of tsconfig.json. Also there is no support for compileOnSave yet. fix: #64",
+      "testFile": "test/test-util.ts",
+      "sourceFiles": [
+        "src/util.ts"
+      ],
+      "changedLines": 192,
+      "sealedCases": [
+        "should throw an error if it finds a circular reference",
+        "when a file contains an extends field, the base file is loaded first then overridden by the inherited files",
+        "function throws an error when reading a file that does not exist"
+      ],
+      "heldBackCases": [
+        "should follow dependency chain caused by extends files",
+        "when reading a file, all filepaths should be relative to the config file currently being read"
+      ]
+    },
+    {
+      "repository": "google/gts",
+      "cloneUrl": "https://github.com/google/gts.git",
+      "pull": 186,
+      "mergeCommit": "f7c75ee67c534a2f980922d93463ca637546c0ad",
+      "taskText": "feat: print clang-format output. Still working on the feature so that it can support non utf8 characters. #181",
+      "testFile": "test/test-format.ts",
+      "sourceFiles": [
+        "src/format.ts"
+      ],
+      "changedLines": 245,
+      "sealedCases": [
+        "format should print suggestions for fixes for ill-formatted file",
+        "should throw error if xml are missing offset, length, or fix values"
+      ],
+      "heldBackCases": [
+        "formatting output should display unicode characters correctly"
+      ]
+    },
+    {
+      "repository": "google/gts",
+      "cloneUrl": "https://github.com/google/gts.git",
+      "pull": 182,
+      "mergeCommit": "b2b5bbd41d56e0d114ae9e3adb1f7d87999eda56",
+      "taskText": "Add more tests. In an effort to improve coverage, I started working some tests. It turns out that our current coverage numbers are a lie as `init.ts` wasn't accounted for. It only gets tested via `test kitchen.ts` which is hard to report for coverage purposes (it uses an tarball installed version of the package rather than the existing files). Here some more tests. Still more to come, but no reason to sit on these. These can land.",
+      "testFile": "test/test-init.ts",
+      "sourceFiles": [
+        "src/format.ts",
+        "src/init.ts"
+      ],
+      "changedLines": 213,
+      "sealedCases": [
+        "addScripts should add a scripts section if none exists",
+        "addScripts should edit existing scripts on yes",
+        "addDependencies should not edit existing deps on no",
+        "init should read local package.json"
+      ],
+      "heldBackCases": [
+        "addScripts should not edit existing scripts on no",
+        "addDependencies should add a deps section if none exists",
+        "addDependencies should edit existing deps on yes",
+        "init should handle missing package.json"
+      ]
+    },
+    {
+      "repository": "google/gts",
+      "cloneUrl": "https://github.com/google/gts.git",
+      "pull": 28,
+      "mergeCommit": "7f86709353fd05c00723b81107d77d1b4a9d0dcb",
+      "taskText": "test: add tests for tscfg. Refactor the code to make it more testable through dependency injection. Add tests.",
+      "testFile": "test/test-tscfg.ts",
+      "sourceFiles": [
+        "src/clean.ts",
+        "src/fix.ts",
+        "src/tscfg.ts"
+      ],
+      "changedLines": 317,
+      "sealedCases": [
+        "get should use the provided readFile",
+        "get should parse the config file json",
+        "getExcludeFiles should return default exclude if not present",
+        "getInputFiles, when files is present",
+        "getInputFiles should list files before include globs",
+        "getInputFiles should use default when files and include are omitted"
+      ],
+      "heldBackCases": [
+        "get should open the correct tsconfig file",
+        "getExcludeFiles should return exclude from the config",
+        "getExcludeFiles should return take outDir into consideration",
+        "getInputFiles should glob include patterns",
+        "getInputFiles should pass exclude to glob options"
+      ]
+    },
+    {
+      "repository": "google/gts",
+      "cloneUrl": "https://github.com/google/gts.git",
+      "pull": 99,
+      "mergeCommit": "d3bc94bdb52df965fe5ab08922d857cdd7e53499",
+      "taskText": "fix: format root files only. #98 We should use `getRootFileNames` instead of `getSourceFiles` when retrieving a list of files to format; the latter gets every files in the dependency graph constructed from files included in `tsconfig.json`.",
+      "testFile": "test/test-format.ts",
+      "sourceFiles": [
+        "src/format.ts"
+      ],
+      "changedLines": 71,
+      "sealedCases": [
+        "format should return false for ill-formatted files"
+      ],
+      "heldBackCases": [
+        "format should only look in root files"
+      ]
+    },
+    {
+      "repository": "google/gts",
+      "cloneUrl": "https://github.com/google/gts.git",
+      "pull": 52,
+      "mergeCommit": "4821c492954cf33b81952de2f9f6a2a82f4a9f11",
+      "taskText": "fix: fix broken commands. #49 broke `gts check` (and `gts fix`) by omitting a `module.exports` in `lint.ts`. In addition to fixing the above, I've added tests for this, and run `npm run lint`.",
+      "testFile": "test/test-kitchen.ts",
+      "sourceFiles": [
+        "src/cli.ts",
+        "src/util.ts"
+      ],
+      "changedLines": 36,
+      "sealedCases": [
+        "check before fix",
+        "check after fix"
+      ],
+      "heldBackCases": [
+        "fix"
+      ]
+    },
+    {
+      "repository": "google/gts",
+      "cloneUrl": "https://github.com/google/gts.git",
+      "pull": 38,
+      "mergeCommit": "c692d0662197e45b4ae3d3dcf545c7d7a1421360",
+      "taskText": "test: add fixture mechanism for unit testing. Makes it possible to run runs with fixtures without having out of band fixtures directories. Add tests for lint.ts.",
+      "testFile": "test/test-lint.ts",
+      "sourceFiles": [
+        "src/cli.ts",
+        "src/fix.ts",
+        "src/init.ts",
+        "src/lint.ts"
+      ],
+      "changedLines": 287,
+      "sealedCases": [
+        "createProgram should return an object",
+        "lint should return true on good code",
+        "lint should lint files listed in tsconfig.files",
+        "lint should not lint files listed in exclude"
+      ],
+      "heldBackCases": [
+        "lint should throw error if tslint is missing",
+        "lint should return false on bad code",
+        "lint should lint *.ts files when no files or inlcude has been specified",
+        "lint should lint globs listed in include"
+      ]
+    },
+    {
+      "repository": "uuidjs/uuid",
+      "cloneUrl": "https://github.com/uuidjs/uuid.git",
+      "pull": 972,
+      "mergeCommit": "6adcc1d81bfaeb653c49d9b7ca7b0579244ae60c",
+      "taskText": "fix(v1): carry nsecs overflow into the timestamp's high bits. `v1()` and `v6()` can encode a timestamp **429.4967296 seconds (2^32 × 100ns) in the past**, which breaks the monotonicity that v1 ordering and v6 sorting depend on, and can make a stable generator emit the same id twice. No options are needed to reach it. ## Root cause The RFC 9562 v1 timestamp is `msecs * 10000 + nsecs`, in 100 nanosecond intervals since the Gregorian epoch. That needs 57+ bits, so `v1Bytes()` builds it as a 32 bit `time_low` and a 28 bit `time_mid`/`time_high` half: `nsecs` is added to the low half, and the low half is then reduced `% 0x100000000` so when `nsecs` pushes it past 2^32 it wraps, and nothing increments the high half. The high half is derived from `msecs` alone, so it cannot that carry. The wrap happens when `msecs * 10000` lands within 10000 of a 2^32 boundary one millisecond roughly every 430 seconds and then only for the `nsecs` values at or above the boundary. Over a 24 hour span, 201 milliseconds are affected. ## Reproducing `v1()`'s internal state walks `nsecs` from 0 to 9999 within a millisecond, so the default no options path hits this by simply generating enough ids inside the unl",
+      "testFile": "src/test/v1.test.ts",
+      "sourceFiles": [
+        "src/v1.ts"
+      ],
+      "changedLines": 72,
+      "sealedCases": [
+        "v1 timestamp carries nsecs into time_mid"
+      ],
+      "heldBackCases": [
+        "v1 sort order (time_low overflow)"
+      ]
+    },
+    {
+      "repository": "uuidjs/uuid",
+      "cloneUrl": "https://github.com/uuidjs/uuid.git",
+      "pull": 845,
+      "mergeCommit": "e0ee90051ebd13475bbcff4d371330aa4f9bd1dd",
+      "taskText": "fix: Test for invalid byte array sizes and ranges in `v1()`, `v4()`, and `v7()`. Check and `throw` the following conditions for `v1()`, `v4()`, and `v7()`: * `options.random` or `options.rng()` returning too short byte arrays * range errors involving `buf` and `offset`",
+      "testFile": "src/test/v1.test.ts",
+      "sourceFiles": [
+        "src/v1.ts",
+        "src/v4.ts",
+        "src/v7.ts"
+      ],
+      "changedLines": 105,
+      "sealedCases": [
+        "throws when option.random is too short",
+        "throws RangeError for out-of-range indexes"
+      ],
+      "heldBackCases": [
+        "throws when options.rng() is too short"
+      ]
+    },
+    {
+      "repository": "uuidjs/uuid",
+      "cloneUrl": "https://github.com/uuidjs/uuid.git",
+      "pull": 786,
+      "mergeCommit": "afe62323c4408a824755a39d7b971a8ae06f7199",
+      "taskText": "fix: remove v4 options default assignment preventing native.randomUUID from being used. This removes the v4 options default assignment introduced during porting to ts (by mistake maybe?), during [PR diff]( [commit]( preventing `native.randomUUID` from being used if `options` always have a value, we will never enter the if in line 11. `{}` will be assigned to `options` in line 15 after the native check it looks to me that the line 9 statement is added by mistake",
+      "testFile": "src/test/v4.test.ts",
+      "sourceFiles": [
+        "src/v4.ts"
+      ],
+      "changedLines": 25,
+      "sealedCases": [
+        "should uses native randomUUID() if no option is passed"
+      ],
+      "heldBackCases": [
+        "should not use native randomUUID() if an option is passed"
+      ]
+    },
+    {
+      "repository": "uuidjs/uuid",
+      "cloneUrl": "https://github.com/uuidjs/uuid.git",
+      "pull": 597,
+      "mergeCommit": "3a033f6bab6bb3780ece6d645b902548043280bc",
+      "taskText": "chore: optimize uuid.v4 by 4.3x (430%) (internal stringify by 33x). It turns out that validation in `uuidStringify()` is slowing it down by 33x. Since `uuidv1()` and `uuidv4()` produce valid buffers by the virtue of their algorithm they can safely use a validation free version of stringify. ## Benchmark changes `uuidv1()` faster by **1.3x** `uuidv4()` faster by **4.3x** the gains are due to `.unsafeStringify()` with no validation (as it is not required) is 33x faster than the version with validation. The public `uuidStringify()` has been left unchanged but my recommendation would be to also remove validation from this method in the future and just export the unsafe version. ## Benchmark (Core i9 10900K) ## Benchmark prior to changes",
+      "testFile": "test/unit/stringify.test.js",
+      "sourceFiles": [
+        "src/stringify.js",
+        "src/v1.js",
+        "src/v35.js",
+        "src/v4.js"
+      ],
+      "changedLines": 79,
+      "sealedCases": [
+        "Stringify Array",
+        "Stringify w/ offset",
+        "Throws on not enough values",
+        "Throws on invalid value"
+      ],
+      "heldBackCases": [
+        "Stringify TypedArray",
+        "Stringify Array",
+        "Throws on undefined value"
+      ]
+    },
+    {
+      "repository": "uuidjs/uuid",
+      "cloneUrl": "https://github.com/uuidjs/uuid.git",
+      "pull": 361,
+      "mergeCommit": "c0bdf15e417639b1aeb0b247b2fb11f7a0a26b23",
+      "taskText": "feat: deprecate deep requires. [x] Add test that covers the fact that deep requiring still works.",
+      "testFile": "test/unit/deep-require-deprecation.test.js",
+      "sourceFiles": [
+        "v1.js",
+        "v3.js",
+        "v4.js",
+        "v5.js"
+      ],
+      "changedLines": 144,
+      "sealedCases": [
+        "v1",
+        "v4"
+      ],
+      "heldBackCases": [
+        "v3",
+        "v5"
+      ]
+    },
+    {
+      "repository": "gvergnaud/ts-pattern",
+      "cloneUrl": "https://github.com/gvergnaud/ts-pattern.git",
+      "pull": 319,
+      "mergeCommit": "8517f7f3ce8c08ac306931164dac232b10a47c58",
+      "taskText": "fix(.exhaustive): optional discriminant. This PR #278 This new release the following bug in exhaustiveness checking when matching on optional properties: These two cases don't type check anymore. They fail with a `NonExhaustiveError<{ type?: undefined; }>`. To fix it, you should do: This is a purely type level change, the runtime behavior is still the same.",
+      "testFile": "tests/exhaustive-match.test.ts",
+      "sourceFiles": [
+        "src/types/BuildMany.ts",
+        "src/types/InvertPattern.ts",
+        "src/types/helpers.ts"
+      ],
+      "changedLines": 145,
+      "sealedCases": [
+        "exhaustive should fail when the optional key isn't provided",
+        "exhaustive should pass when using P.optional(undefined)"
+      ],
+      "heldBackCases": [
+        "exhaustive should fail when matching on { type: undefined }",
+        "exhaustive should pass when using {} and { type: undefined }"
+      ]
+    },
+    {
+      "repository": "gvergnaud/ts-pattern",
+      "cloneUrl": "https://github.com/gvergnaud/ts-pattern.git",
+      "pull": 253,
+      "mergeCommit": "60af2168cf998c3d6a50fc8735a50a5009cc86bf",
+      "taskText": "feat(exhaustive): Add support for passing a fallback function. Solves #144 #218 and replaces #38 #219 ## Docs By default, `.exhaustive()` will throw an error if the input value wasn't handled by any `.with(...)` clause. This should only happen if your types are incorrect. It is possible to pass your own handler function as a parameter to decide what should happen if an unexpected value has been received. You can for example throw your own custom error: Or log an error and return a default value:",
+      "testFile": "tests/exhaustive-fallback.test.ts",
+      "sourceFiles": [
+        "src/match.ts",
+        "src/types/Match.ts"
+      ],
+      "changedLines": 134,
+      "sealedCases": [
+        "should be called if the runtime value isn't expected",
+        "should return a value assignable to the explicit output type"
+      ],
+      "heldBackCases": [
+        "should throw otherwise",
+        "should return a value assignable .returnType<T>()"
+      ]
+    },
+    {
+      "repository": "gvergnaud/ts-pattern",
+      "cloneUrl": "https://github.com/gvergnaud/ts-pattern.git",
+      "pull": 305,
+      "mergeCommit": "c415e0c0dd0037f24819af57db5a3d9a6ace6d1d",
+      "taskText": "fix(isMatching): Allow unknown properties in pattern. The previous release introduced a bug with `isMatching` which made it unable to narrow union types properly, and would make it reject patterns containing extra unknown properties. This PR this",
+      "testFile": "tests/is-matching.test.ts",
+      "sourceFiles": [
+        "src/is-matching.ts",
+        "src/types/Pattern.ts"
+      ],
+      "changedLines": 52,
+      "sealedCases": [
+        "should allow patterns targetting one member of a union type"
+      ],
+      "heldBackCases": [
+        "should allow targetting unknown properties"
+      ]
+    },
+    {
+      "repository": "gvergnaud/ts-pattern",
+      "cloneUrl": "https://github.com/gvergnaud/ts-pattern.git",
+      "pull": 270,
+      "mergeCommit": "b0ae86bbccb84e18411e39a35fa80f523cc2075f",
+      "taskText": "feat: throw custom `ExhaustiveError` when no matched pattern. This adds/exports a custom `ExhaustiveError` which will be thrown at runtime when a `match` input doesn't match any pattern and `.exhaustive()` has been specified. This gives better error handling capabilities, for example when trying to distinguish between an unmatched pattern error and an error thrown within a matched pattern's callback. Resolves #269",
+      "testFile": "tests/exhaustive-match.test.ts",
+      "sourceFiles": [
+        "src/errors.ts",
+        "src/index.ts",
+        "src/match.ts"
+      ],
+      "changedLines": 77,
+      "sealedCases": [
+        "Unmatched pattern results in ExhaustiveError"
+      ],
+      "heldBackCases": [
+        "Matched pattern with callback error does not result in ExhaustiveError"
+      ]
+    },
+    {
+      "repository": "gvergnaud/ts-pattern",
+      "cloneUrl": "https://github.com/gvergnaud/ts-pattern.git",
+      "pull": 180,
+      "mergeCommit": "37f4a1b243159bd57243e20aa459711c8a69f89d",
+      "taskText": "🐛 fix: Accept branded primitive types as patterns. TS Pattern v4 used to support branded types, usually defined as an intersection between a literal type (like `number` or `string`) and an object containing a unique symbol. There is a bug in v5 that prevents people from using branded types as patterns and this PR it. This issue #167 and #178.",
+      "testFile": "tests/branded-nominal-types.test.ts",
+      "sourceFiles": [
+        "src/types/Pattern.ts"
+      ],
+      "changedLines": 36,
+      "sealedCases": [
+        "issue #167"
+      ],
+      "heldBackCases": [
+        "issue #178"
+      ]
+    },
+    {
+      "repository": "gvergnaud/ts-pattern",
+      "cloneUrl": "https://github.com/gvergnaud/ts-pattern.git",
+      "pull": 23,
+      "mergeCommit": "e42438faa300c956cc54b2dc4c4f7e9bd8f08514",
+      "taskText": "Gabriel.vergnaud/infer output as a union 2. ## Improve output type inference the output type of a match expressions will now be inferred as the Union of the return types of all branches:",
+      "testFile": "tests/output-type.test.ts",
+      "sourceFiles": [
+        "src/types/Match.ts",
+        "src/types/helpers.ts"
+      ],
+      "changedLines": 214,
+      "sealedCases": [
+        "should return a single type if they are all compatible",
+        "It should still be possible specify a precise output type",
+        "if the current inferred output is assignable to the new output, just pick the broader one",
+        "should return a single type if they are all compatible",
+        "It should still be possible specify a precise output type"
+      ],
+      "heldBackCases": [
+        "if the current inferred output is assignable to the new output, just pick the broader one",
+        "should return a single type if they are all compatible",
+        "It should still be possible specify a precise output type",
+        "if the current inferred output is assignable to the new output, just pick the broader one"
+      ]
+    },
+    {
+      "repository": "peers/peerjs",
+      "cloneUrl": "https://github.com/peers/peerjs.git",
+      "pull": 1142,
+      "mergeCommit": "094f849816d327bf74a447fbf7d58195c1a4fc66",
+      "taskText": "fix: convert `Blob`s to `ArrayBuffer`s during `.send()`. BinaryPack 2 can’t pack `Blob`s anymore. Convert them to `ArrayBuffer`s during send.",
+      "testFile": "e2e/datachannel/serialization_binary.spec.ts",
+      "sourceFiles": [
+        "e2e/datachannel/blobs.js",
+        "e2e/datachannel/files.js",
+        "e2e/datachannel/serialization.js",
+        "lib/dataconnection/BufferedConnection/BinaryPack.ts",
+        "lib/dataconnection/DataConnection.ts"
+      ],
+      "changedLines": 69,
+      "sealedCases": [
+        "should transfer Blobs"
+      ],
+      "heldBackCases": [
+        "should transfer Files"
+      ]
+    },
+    {
+      "repository": "peers/peerjs",
+      "cloneUrl": "https://github.com/peers/peerjs.git",
+      "pull": 1038,
+      "mergeCommit": "0fb61792ed3afe91123550a159c8633ed0976f89",
+      "taskText": "fix(datachannel): sending order is now preserved correctly. This upgrades `binarypack` to version 2. `pack` now returns `ArrayBuffer`s which can be sent over all data channel types without asynchronous conversion. This implementation is also much faster than version 1. #746",
+      "testFile": "e2e/datachannel/serialization.spec.ts",
+      "sourceFiles": [
+        "lib/dataconnection.ts",
+        "lib/util.ts"
+      ],
+      "changedLines": 84,
+      "sealedCases": [
+        "should transfer strings"
+      ],
+      "heldBackCases": [
+        "should transfer typed arrays / array buffers"
+      ]
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 554,
+      "mergeCommit": "daf4eec2ef9812d18e3ee0c5c795f59704013fa5",
+      "taskText": "Ignore invalid castling rights. #552. Turns out that the move generator was generating invalid castling moves due to incorrect castling rights in the FEN.",
+      "testFile": "__tests__/load.test.ts",
+      "sourceFiles": [
+        "src/chess.ts"
+      ],
+      "changedLines": 85,
+      "sealedCases": [
+        "load - full castling rights but white king moved",
+        "load - full castling rights but white queenside rook moved",
+        "load - full castling rights but black kingside rook moved"
+      ],
+      "heldBackCases": [
+        "load - full castling rights but white kingside rook moved",
+        "load - full castling rights but black king moved",
+        "load - full castling rights but black queenside rook moved"
+      ]
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 516,
+      "mergeCommit": "95d3b2740b6221690a0cdcd02049a1a61029d7c8",
+      "taskText": "Added support for chess annotation symbols. Added support for chess annotation symbols. To elaborate on the implementation, let's take this PGN file as an example `1. e4 e5 2. f4!? { King's gambit } * ` Now, when calling the getComments function, the result will be The new key is suffix. Lichess uses the Annotate with glyph functionality to add these suffixes in their chess editor.",
+      "testFile": "__tests__/comments.test.ts",
+      "sourceFiles": [
+        "src/chess.ts",
+        "src/node.ts"
+      ],
+      "changedLines": 224,
+      "sealedCases": [
+        "captures multiple suffixes and comments",
+        "should handle manually set suffix-only with an empty comment string for the current FEN"
+      ],
+      "heldBackCases": [
+        "should correctly handle comments, suffixes, and suffix-only cases from PGN loading"
+      ]
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 539,
+      "mergeCommit": "07507fc9669ed1f32ea896a394da2348b2853d72",
+      "taskText": "isPromotion method for UIs. Inspired by #148, covers off issues raised about knowing when a UI needs to prompt for a promotion piece.",
+      "testFile": "__tests__/is-promotion.test.ts",
+      "sourceFiles": [
+        "src/chess.ts"
+      ],
+      "changedLines": 44,
+      "sealedCases": [
+        "isPromotion - true for promotion",
+        "isPromotion - false for normal pawn move"
+      ],
+      "heldBackCases": [
+        "isPromotion - false for illegal move",
+        "isPromotion - false for non pawn move to eighth rank"
+      ]
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 451,
+      "mergeCommit": "3482911ac9351e0443a32e6feef3e1bbb1f5a1e8",
+      "taskText": "#319: add null move functionality. Implemented null move logic for SAN ' ' and added a simple test case. Please review, I am open for discussions!",
+      "testFile": "__tests__/nullmove.test.ts",
+      "sourceFiles": [
+        "src/chess.ts"
+      ],
+      "changedLines": 108,
+      "sealedCases": [
+        "null move at start",
+        "null move is correctly displayed in pgn",
+        "6 null moves in a row result in a draw"
+      ],
+      "heldBackCases": [
+        "making null move by passing null object",
+        "null move while in check is not allowed"
+      ]
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 501,
+      "mergeCommit": "f30a6ff60640626bb09f7ee177a8640ebba5003c",
+      "taskText": "Canonical PGN Header Tag order; mandatory Seven Tag Roster always included in PGN output. # Premises In order to be consistent with the PGN specification, the following is assumed: 1. The mandatory **Seven Tag Roster** (STR) is…mandatory\\! 1. Default values should be provided as specified in the spec 2. pgnLoad() can be lax, however 2. The order of header tags should reflect the order they appear in the spec 1. “Like with like”, e.g. **Opening, Variation, SubVariation** 3. A **game termination marker** is required at the end of the **movetext** 1. It should match the mandatory **Result** value in the STR # Changes The chess.header() deprecation tag was not active; it is in this patch. The method will return null valued header tags, which is undesirable ( getHeaders(), below). A HEADER\\_TEMPLATE has been added and it contains the subtemplates SEVEN\\_TAG\\_ROSTER and SUPPLEMENTAL\\_TAGS. SEVEN\\_TAG\\_ROSTER has default values (since they are mandatory per spec). The SUPPLEMENTAL\\_TAGS values are initialized to null; fields with null values are not included in the output of method chess.getHeaders(). The \\_header type has been modified to allow for nulls in addition to strings. The purpo",
+      "testFile": "__tests__/headers.test.ts",
+      "sourceFiles": [
+        "src/chess.ts"
+      ],
+      "changedLines": 390,
+      "sealedCases": [
+        "setHeader should add or update a header",
+        "getHeaders should return only non-null headers"
+      ],
+      "heldBackCases": [
+        "removeHeader should remove a header if it exists"
+      ]
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 494,
+      "mergeCommit": "e9b19efa78ed6be45dc181779f21c2541778ac83",
+      "taskText": "feat: add getSquareByPiece function. Hi! I have been in need of this method while playing with your **awesome** library. I hope the implementation satisfies your code guidelines. Added a test following the example of `__tests__/get.test.ts`. For this function name, I had originally thought of `getSquare`, simply. I then went for `getSquareByPiece` for clarity. Please, let me know if I should make any changes to this pr 😃 Again, great project!",
+      "testFile": "__tests__/get-square-by-piece.test.ts",
+      "sourceFiles": [
+        "src/chess.ts"
+      ],
+      "changedLines": 75,
+      "sealedCases": [
+        "findPiece - returns array with the only piece",
+        "findPiece - returns empty array for missing piece"
+      ],
+      "heldBackCases": [
+        "findPiece - returns array with all the pieces",
+        "findPiece - returns empty array for invalid piece"
+      ]
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 456,
+      "mergeCommit": "52f7579e927fb4bd2d51f3d3f07e7d2200770ddd",
+      "taskText": "#186: Add attackers(). # Changes Added attackers(), a new public method that returns a list of attacking squares, as mentioned in #186. The method follows all the same rules as isAttacked(). Modified _attacked() to take in an optional boolean parameter, `verbose`. When `verbose` is false, it behaves like normal (unchanged). When `verbose` is true, it returns a list of attacking squares. Created test cases for attackers(). Updated the README.md. Any previous code that calls _attacked() should remain unaffected since the `verbose` parameter is optional. Running all the test cases before and after modifying _attacked() shows no difference in performance. # Examples (as shown in the README.md):",
+      "testFile": "__tests__/attackers.test.ts",
+      "sourceFiles": [
+        "src/chess.ts"
+      ],
+      "changedLines": 301,
+      "sealedCases": [
+        "attackers - attacker count in default position",
+        "attackers - attacker count when all but one square is covered",
+        "attackers - every piece attacking empty square",
+        "attackers - every piece defending empty square",
+        "attackers - pinned pieces still attack and defend",
+        "attackers - a lot of attackers",
+        "attackers - readme tests"
+      ],
+      "heldBackCases": [
+        "attackers - attacker count in middlegame position",
+        "attackers - return value depends on side to move",
+        "attackers - every piece attacking another piece",
+        "attackers - every piece defending another piece",
+        "attackers - king can \"attack\" defended piece",
+        "attackers - no attackers"
+      ]
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 418,
+      "mergeCommit": "55181a901c7133eb303441fe6639a8c5707d38cb",
+      "taskText": "Fix #144 and optimisations. As discussed in [the other PR]( I'm splitting the optimisations into their own PR. Since the bug fix is a dependency of the `isThreefoldRepetition` optimisation, I've included it in this PR.",
+      "testFile": "__tests__/position-counts.test.ts",
+      "sourceFiles": [
+        "src/chess.ts"
+      ],
+      "changedLines": 165,
+      "sealedCases": [
+        "_positionCounts - counts repeated positions",
+        "_positionCounts - resets when cleared",
+        "_positionCounts - resets when loading PGN"
+      ],
+      "heldBackCases": [
+        "_positionCounts - removes when undo",
+        "_positionCounts - resets when loading FEN"
+      ]
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 387,
+      "mergeCommit": "7cb2d3438299d209d31ecf3d517a62815adefb5a",
+      "taskText": "Ensure put/remove functions update castling rights. @jhlywa Once you are happy with this PR, I'll create a second one to ensure the ep square is updated also.",
+      "testFile": "__tests__/castling-rights.test.ts",
+      "sourceFiles": [
+        "src/chess.ts"
+      ],
+      "changedLines": 258,
+      "sealedCases": [
+        "setCastlingRights - clear white kingside",
+        "setCastlingRights - clear black kingside",
+        "setCastlingRights - set white kingside",
+        "setCastlingRights - set black kingside",
+        "setCastlingRights - fail to set white kingside",
+        "setCastlingRights - fail to set black kingside"
+      ],
+      "heldBackCases": [
+        "setCastlingRights - clear white queenside",
+        "setCastlingRights - clear black queenside",
+        "setCastlingRights - set white queenside",
+        "setCastlingRights - set black queenside",
+        "setCastlingRights - fail to set white queenside",
+        "setCastlingRights - fail to set black queenside"
+      ]
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 378,
+      "mergeCommit": "e02c53e5678997581fe13329962a3395d8604b2f",
+      "taskText": "Implemented moves list by piece. Added support for moves() to filter by piece, as well as tests in moves.test.ts. #377 _moves() already seems to properly handle piece filtering, as well as filtering for both a square and piece type. So didn't take much to implement. Think I managed to cover every case with the overloads added for move(), but probably worth double checking. Added a few unit tests to confirm the changes are working as intended. Hopefully this is helpful !",
+      "testFile": "__tests__/moves.test.ts",
+      "sourceFiles": [
+        "src/chess.ts"
+      ],
+      "changedLines": 133,
+      "sealedCases": [
+        "moves - piece",
+        "moves - piece - no such piece",
+        "moves - square and piece"
+      ],
+      "heldBackCases": [
+        "moves - piece - en passante",
+        "moves - piece - verbose"
+      ]
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 154,
+      "mergeCommit": "b2650a33d7cda5c3ca29b06556a45eb267b9db58",
+      "taskText": "Loading PGN data containing SetUp and FEN tags causes header information to be lost. With reference to #129. I have added a couple of tests, but am new to writing JS tests (and GitHub/PRs in general), so please critically review.",
+      "testFile": "test/tests.js",
+      "sourceFiles": [
+        "chess.js",
+        "chess.min.js"
+      ],
+      "changedLines": 61,
+      "sealedCases": [
+        "Github Issue #129 load_pgn() should not clear headers if PGN contains SetUp and FEN tags"
+      ],
+      "heldBackCases": [
+        "Github Issue #129 clear() should clear the board and delete all headers with the exception of SetUp and FEN"
+      ]
+    },
+    {
+      "repository": "jhlywa/chess.js",
+      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
+      "pull": 101,
+      "mergeCommit": "5ece123113619d105dc942e993b5ee0ce6026f0f",
+      "taskText": "Addressed GitHub Issue #98. Added starting move number to track the move number passed in by fen. Added a test based on explanation of Issue 98",
+      "testFile": "test/tests.js",
+      "sourceFiles": [
+        "chess.js",
+        "chess.min.js"
+      ],
+      "changedLines": 72,
+      "sealedCases": [
+        "Github Issue #32 - castling flag reappearing",
+        "Github Issue #85 (white) - SetUp and FEN should be accepted in load_pgn",
+        "Github Issue #98 - Wrong movement number after setting a position via FEN"
+      ],
+      "heldBackCases": [
+        "Github Issue #58 - placing more than one king",
+        "Github Issue #85 (black) - SetUp and FEN should be accepted in load_pgn"
+      ]
+    },
+    {
+      "repository": "badgen/badgen.net",
+      "cloneUrl": "https://github.com/badgen/badgen.net.git",
+      "pull": 768,
+      "mergeCommit": "1581f2d5db1f0dd4ef6e1dc1d339523a8c8501db",
+      "taskText": "Add email badge endpoint. I have added a new `/email` endpoint to generate email badges. The endpoint follows the pattern `/email/<tld>/<name>/<domain>`, which reconstructs the email address as `<name>@<domain>.<tld>`. This approach avoids putting the full email address in a single URL segment, helping to mitigate simple scrapers while still providing a functional badge. Key changes: Created a new API route in `pages/api/email.ts` using the project's standard `createBadgenHandler`. Registered the `/email` prefix in `next.config.js` to ensure it's correctly routed to the new API handler. Included automated tests in `test/email.test.mjs` to verify the functionality. Verified the changes manually using a local development server. *PR created automatically by Jules for task [5308397379689487379]( started by @amio*",
+      "testFile": "test/email.test.mjs",
+      "sourceFiles": [
+        "libs/badge-list2.ts",
+        "next.config.js",
+        "pages/api/email.ts"
+      ],
+      "changedLines": 47,
+      "sealedCases": [
+        "/email: simple email badge"
+      ],
+      "heldBackCases": [
+        "/email: email badge with TLD in domain"
+      ]
+    },
+    {
+      "repository": "badgen/badgen.net",
+      "cloneUrl": "https://github.com/badgen/badgen.net.git",
+      "pull": 766,
+      "mergeCommit": "50009fa32282da741c5d30c378cc5aede440eb00",
+      "taskText": "Add Codeberg support. Support for codeberg.org badges has been implemented. This includes a variety of metrics such as stars, forks, issues, pull requests, releases, tags, and commit data. The implementation leverages the Codeberg (Gitea/Forgejo) API and includes comprehensive E2E tests and documentation examples. *PR created automatically by Jules for task [71452159505630164]( started by @amio*",
+      "testFile": "test/e2e.test.mjs",
+      "sourceFiles": [
+        "libs/badge-list.ts",
+        "libs/badge-list2.ts",
+        "libs/codeberg.ts",
+        "next.config.js",
+        "pages/api/codeberg.ts"
+      ],
+      "changedLines": 211,
+      "sealedCases": [
+        "/codeberg/stars/forgejo/forgejo",
+        "/codeberg/commits/forgejo/forgejo",
+        "/codeberg/release/forgejo/forgejo"
+      ],
+      "heldBackCases": [
+        "/codeberg/issues/forgejo/forgejo",
+        "/codeberg/prs/forgejo/forgejo"
       ]
     },
     {
@@ -3090,6 +3765,24 @@
     {
       "repository": "hubotio/hubot",
       "cloneUrl": "https://github.com/hubotio/hubot.git",
+      "pull": 1710,
+      "mergeCommit": "a842eb6a1a22dc8d8c3f60fe93b8146565e95565",
+      "taskText": "feat: add example test to hubot --create output. Addresses #1709 Changes in Hubot's API has broken the `hubot test helper` current version. This PR adds some guidance on how to test hubot scripts. #1652",
+      "testFile": "test/XampleTest.mjs",
+      "sourceFiles": [
+        "src/GenHubot.mjs"
+      ],
+      "changedLines": 303,
+      "sealedCases": [
+        "should reply with expected message"
+      ],
+      "heldBackCases": [
+        "should send message to the #general room"
+      ]
+    },
+    {
+      "repository": "hubotio/hubot",
+      "cloneUrl": "https://github.com/hubotio/hubot.git",
       "pull": 1700,
       "mergeCommit": "7fa3841497bd1158f97ff2f5981637a5c8a66137",
       "taskText": "fix: Revert back to 10.0.3. fix: Accidently releasing the removal of CoffeeScript in a minor version. #1698",
@@ -3105,6 +3798,99 @@
       ],
       "heldBackCases": [
         "should load a coffeescript file and respond to a message"
+      ]
+    },
+    {
+      "repository": "hubotio/hubot",
+      "cloneUrl": "https://github.com/hubotio/hubot.git",
+      "pull": 1635,
+      "mergeCommit": "74c580c099fc52ef8b8ceb3bd13c86bfbeac7ca1",
+      "taskText": "feat(adapter): Load adapter from local disk. load a .mjs file as an adapter (ES6 import load a .coffe, .js or .cjs file from local disk as an adapter (e.g. f ./adapters/CustomAdapter.coffee, f ./adapters/CustomAdapter.js, f ./adapters/CustomAdapter.cjs) introduce new cli argument f (file) that specifies the adapter path and file to load the adapter, e.g. f ./adapters/CustomAdapter.mjs BREAKING CHANGE: ES6 import is async, thus loadAdapter was changed to an async function. #1624",
+      "testFile": "test/robot_test.js",
+      "sourceFiles": [
+        "bin/hubot.js",
+        "index.js",
+        "src/robot.js"
+      ],
+      "changedLines": 361,
+      "sealedCases": [
+        "should load an ES6 module adapter from a file",
+        "should load a CoffeeScript adapter from a file"
+      ],
+      "heldBackCases": [
+        "should respond to a message",
+        "should load a coffeescript file and respond to a message"
+      ]
+    },
+    {
+      "repository": "hubotio/hubot",
+      "cloneUrl": "https://github.com/hubotio/hubot.git",
+      "pull": 1489,
+      "mergeCommit": "d2b57bd796749fbb9ca02eff33b7a345bcd40d68",
+      "taskText": "Add a new persistence model - Datastore. This pull request adds support for a secondary persistence model to complement the traditional Hubot brain. My company's Hubot installation has been hitting some pain points with the traditional Hubot brain. The model of storing data in memory, and persisting the entire structure on a schedule, has a few intractable pain points: 1. We run multiple Hubots, which want cooperative access to a database. This isn't feasible in a solution where the brain is persisted and loaded as a whole on a schedule. 2. Many scripts, including third party scripts we have installed, access the underlying `robot.brain.data` structure directly instead of going via getters and setters. This is also true for user scoped data, which currently doesn't provide any getter/setter model at all. 3. We can't feasibly subclass the existing brain because the documented behaviour of the brain's `get` and `set` methods is synchronous, whereas many database adapters (like the node mysql adapter) provide only asynchronous database access. 4. Data integrity depends on Hubot itself maintaining a valid in memory structure. We've experienced periods of data loss when Hubot goes offli",
+      "testFile": "test/datastore_test.js",
+      "sourceFiles": [
+        "es2015.js",
+        "src/brain.js",
+        "src/datastore.js",
+        "src/datastores/memory.js",
+        "src/robot.js",
+        "src/user.js"
+      ],
+      "changedLines": 376,
+      "sealedCases": [
+        "returns undefined for values not in the datastore",
+        "can store arbitrary JavaScript values",
+        "can set individual keys inside objects",
+        "can append to an existing array",
+        "has access to the robot object",
+        "stores user data separate per-user"
+      ],
+      "heldBackCases": [
+        "can store simple values",
+        "can dig inside objects for values",
+        "creates an object from scratch when none exists",
+        "creates an array from scratch when none exists",
+        "can store user data which is separate from global data"
+      ]
+    },
+    {
+      "repository": "hubotio/hubot",
+      "cloneUrl": "https://github.com/hubotio/hubot.git",
+      "pull": 1487,
+      "mergeCommit": "a3d80c1faed497a1c96019c2b3ffd839dc1893e4",
+      "taskText": "Brain: ensure User objects are actually User objects. While the brain consistently documents that its functions return `User` objects, this actually isn't guaranteed. If the data is serialized to JSON for persisting [like the Redis brain does]( then `User` objects are serialized as plain JS objects and parsed back as them too. This leads to a mix of plain JS objects and actual `User` instances. This can lead to confusion, and it's also causing problems with an in development branch of mine which grants instance methods to `User` objects. This PR resolves this by turning plain objects back into `User` objects in `mergeData` before calling `loaded`. The new objects retain all the properties of the original ones, ensuring they're consistent with any newly constructed objects created at runtime. cc @technicalpickles",
+      "testFile": "test/brain_test.js",
+      "sourceFiles": [
+        "src/brain.js"
+      ],
+      "changedLines": 49,
+      "sealedCases": [
+        "coerces loaded data into User objects"
+      ],
+      "heldBackCases": [
+        "returns User objects, not POJOs"
+      ]
+    },
+    {
+      "repository": "hubotio/hubot",
+      "cloneUrl": "https://github.com/hubotio/hubot.git",
+      "pull": 1390,
+      "mergeCommit": "97f8c2f458b9912fb1d841199d294d436e67ac91",
+      "taskText": "Fix robot helpers delegation to adapter and events. Robot 'send', 'reply', 'messageRoom' methods delegate invocations to adapter but using as 'this' the robot while they should be using the adapter. Robot 'on', 'emit' methods delegate invocations to events but using as 'this' the robot but they should be using the events. The original CoffeeScript code from release 2.19.0 uses simple delegation, i.e. [send]( [reply]( [messageRoom]( [on]( [emit]( This PR should address #1386.",
+      "testFile": "test/robot_test.js",
+      "sourceFiles": [
+        "src/robot.js"
+      ],
+      "changedLines": 65,
+      "sealedCases": [
+        "delegates to adapter \"send\" with proper context",
+        "delegates to adapter \"send\" with proper context",
+        "delegates to events \"emit\" with proper context"
+      ],
+      "heldBackCases": [
+        "delegates to adapter \"reply\" with proper context",
+        "delegates to events \"on\" with proper context"
       ]
     },
     {
@@ -3195,6 +3981,47 @@
       ],
       "heldBackCases": [
         "mark same-thread raw URL comment link as earlier comment"
+      ]
+    },
+    {
+      "repository": "refined-github/refined-github",
+      "cloneUrl": "https://github.com/refined-github/refined-github.git",
+      "pull": 8430,
+      "mergeCommit": "bc528c830294aa7a3e4c15ad57f7ff43ab72f4b1",
+      "taskText": "`bugs-tab` - Support Bug type. #8227 Not the best at crafting regexp, so would appreciate suggestions on how to improve it if possible, but all existing tests on queryPartsRegExp are still passing. ## Test URLs Unfortunately don't have any public repository available to test the issue type bug on. ## Screenshot <img width=\"479\" alt=\"image\" src=\" /> <img width=\"637\" alt=\"image\" src=\" />",
+      "testFile": "source/github-helpers/search-query.test.ts",
+      "sourceFiles": [
+        "source/features/bugs-tab.tsx",
+        "source/github-helpers/search-query.ts"
+      ],
+      "changedLines": 167,
+      "sealedCases": [
+        "getQueryParts with parentheses support",
+        "queries with special characters in quoted values",
+        "queries with multiple spaces between parts",
+        "complex parenthesized expressions",
+        "keys with special characters",
+        "queries with date ranges",
+        "queries with comparison operators",
+        "queries with special URL characters",
+        "queries with multiple key-value pairs having the same key",
+        "queries with numbers and other special characters in search terms",
+        "queries with unicode characters",
+        "queries with multiple quoted strings"
+      ],
+      "heldBackCases": [
+        "complex queries with multiple conditions",
+        "queries with colons in quoted values",
+        "queries with empty quoted values",
+        "quoted strings without keys",
+        "mixed key-value types in one query",
+        "queries with negation operators",
+        "queries with wildcard characters",
+        "queries with multiple negation patterns",
+        "queries with complex boolean combinations",
+        "queries with dots in key values",
+        "queries with multiple parenthesized groups",
+        "queries with URL-encoded characters"
       ]
     },
     {
@@ -3336,792 +4163,6 @@
       ],
       "heldBackCases": [
         "logit_bias invalid key"
-      ]
-    },
-    {
-      "repository": "uuidjs/uuid",
-      "cloneUrl": "https://github.com/uuidjs/uuid.git",
-      "pull": 972,
-      "mergeCommit": "6adcc1d81bfaeb653c49d9b7ca7b0579244ae60c",
-      "taskText": "fix(v1): carry nsecs overflow into the timestamp's high bits. `v1()` and `v6()` can encode a timestamp **429.4967296 seconds (2^32 × 100ns) in the past**, which breaks the monotonicity that v1 ordering and v6 sorting depend on, and can make a stable generator emit the same id twice. No options are needed to reach it. ## Root cause The RFC 9562 v1 timestamp is `msecs * 10000 + nsecs`, in 100 nanosecond intervals since the Gregorian epoch. That needs 57+ bits, so `v1Bytes()` builds it as a 32 bit `time_low` and a 28 bit `time_mid`/`time_high` half: `nsecs` is added to the low half, and the low half is then reduced `% 0x100000000` so when `nsecs` pushes it past 2^32 it wraps, and nothing increments the high half. The high half is derived from `msecs` alone, so it cannot that carry. The wrap happens when `msecs * 10000` lands within 10000 of a 2^32 boundary one millisecond roughly every 430 seconds and then only for the `nsecs` values at or above the boundary. Over a 24 hour span, 201 milliseconds are affected. ## Reproducing `v1()`'s internal state walks `nsecs` from 0 to 9999 within a millisecond, so the default no options path hits this by simply generating enough ids inside the unl",
-      "testFile": "src/test/v1.test.ts",
-      "sourceFiles": [
-        "src/v1.ts"
-      ],
-      "changedLines": 72,
-      "sealedCases": [
-        "v1 timestamp carries nsecs into time_mid"
-      ],
-      "heldBackCases": [
-        "v1 sort order (time_low overflow)"
-      ]
-    },
-    {
-      "repository": "uuidjs/uuid",
-      "cloneUrl": "https://github.com/uuidjs/uuid.git",
-      "pull": 845,
-      "mergeCommit": "e0ee90051ebd13475bbcff4d371330aa4f9bd1dd",
-      "taskText": "fix: Test for invalid byte array sizes and ranges in `v1()`, `v4()`, and `v7()`. Check and `throw` the following conditions for `v1()`, `v4()`, and `v7()`: * `options.random` or `options.rng()` returning too short byte arrays * range errors involving `buf` and `offset`",
-      "testFile": "src/test/v1.test.ts",
-      "sourceFiles": [
-        "src/v1.ts",
-        "src/v4.ts",
-        "src/v7.ts"
-      ],
-      "changedLines": 105,
-      "sealedCases": [
-        "throws when option.random is too short",
-        "throws RangeError for out-of-range indexes"
-      ],
-      "heldBackCases": [
-        "throws when options.rng() is too short"
-      ]
-    },
-    {
-      "repository": "uuidjs/uuid",
-      "cloneUrl": "https://github.com/uuidjs/uuid.git",
-      "pull": 786,
-      "mergeCommit": "afe62323c4408a824755a39d7b971a8ae06f7199",
-      "taskText": "fix: remove v4 options default assignment preventing native.randomUUID from being used. This removes the v4 options default assignment introduced during porting to ts (by mistake maybe?), during [PR diff]( [commit]( preventing `native.randomUUID` from being used if `options` always have a value, we will never enter the if in line 11. `{}` will be assigned to `options` in line 15 after the native check it looks to me that the line 9 statement is added by mistake",
-      "testFile": "src/test/v4.test.ts",
-      "sourceFiles": [
-        "src/v4.ts"
-      ],
-      "changedLines": 25,
-      "sealedCases": [
-        "should uses native randomUUID() if no option is passed"
-      ],
-      "heldBackCases": [
-        "should not use native randomUUID() if an option is passed"
-      ]
-    },
-    {
-      "repository": "uuidjs/uuid",
-      "cloneUrl": "https://github.com/uuidjs/uuid.git",
-      "pull": 597,
-      "mergeCommit": "3a033f6bab6bb3780ece6d645b902548043280bc",
-      "taskText": "chore: optimize uuid.v4 by 4.3x (430%) (internal stringify by 33x). It turns out that validation in `uuidStringify()` is slowing it down by 33x. Since `uuidv1()` and `uuidv4()` produce valid buffers by the virtue of their algorithm they can safely use a validation free version of stringify. ## Benchmark changes `uuidv1()` faster by **1.3x** `uuidv4()` faster by **4.3x** the gains are due to `.unsafeStringify()` with no validation (as it is not required) is 33x faster than the version with validation. The public `uuidStringify()` has been left unchanged but my recommendation would be to also remove validation from this method in the future and just export the unsafe version. ## Benchmark (Core i9 10900K) ## Benchmark prior to changes",
-      "testFile": "test/unit/stringify.test.js",
-      "sourceFiles": [
-        "src/stringify.js",
-        "src/v1.js",
-        "src/v35.js",
-        "src/v4.js"
-      ],
-      "changedLines": 79,
-      "sealedCases": [
-        "Stringify Array",
-        "Stringify w/ offset",
-        "Throws on not enough values",
-        "Throws on invalid value"
-      ],
-      "heldBackCases": [
-        "Stringify TypedArray",
-        "Stringify Array",
-        "Throws on undefined value"
-      ]
-    },
-    {
-      "repository": "uuidjs/uuid",
-      "cloneUrl": "https://github.com/uuidjs/uuid.git",
-      "pull": 361,
-      "mergeCommit": "c0bdf15e417639b1aeb0b247b2fb11f7a0a26b23",
-      "taskText": "feat: deprecate deep requires. [x] Add test that covers the fact that deep requiring still works.",
-      "testFile": "test/unit/deep-require-deprecation.test.js",
-      "sourceFiles": [
-        "v1.js",
-        "v3.js",
-        "v4.js",
-        "v5.js"
-      ],
-      "changedLines": 144,
-      "sealedCases": [
-        "v1",
-        "v4"
-      ],
-      "heldBackCases": [
-        "v3",
-        "v5"
-      ]
-    },
-    {
-      "repository": "uuidjs/uuid",
-      "cloneUrl": "https://github.com/uuidjs/uuid.git",
-      "pull": 188,
-      "mergeCommit": "1d56dc9e80774f651602c53899a5f63cc304ed0f",
-      "taskText": "V5 support. Here's the v5 code I've been noodling on. I'm comfortable with the API, and it works in node (via `npm test`), but I haven't done any in browser testing. There's also room for performance improvements, as currently I convert the namespace strings to byte arrays on every call, which is less than ideal, but I have limited time to work on this. I think we can deal with that later, if it ever becomes an issue people care about.",
-      "testFile": "test/test.js",
-      "sourceFiles": [
-        "lib/bytesToUuid.js",
-        "lib/rng-browser.js",
-        "lib/rng.js",
-        "lib/sha1-browser.js",
-        "lib/sha1.js",
-        "v1.js",
-        "v5.js"
-      ],
-      "changedLines": 288,
-      "sealedCases": [
-        "sha1 node",
-        "v5"
-      ],
-      "heldBackCases": [
-        "sha1 browser"
-      ]
-    },
-    {
-      "repository": "gvergnaud/ts-pattern",
-      "cloneUrl": "https://github.com/gvergnaud/ts-pattern.git",
-      "pull": 319,
-      "mergeCommit": "8517f7f3ce8c08ac306931164dac232b10a47c58",
-      "taskText": "fix(.exhaustive): optional discriminant. This PR #278 This new release the following bug in exhaustiveness checking when matching on optional properties: These two cases don't type check anymore. They fail with a `NonExhaustiveError<{ type?: undefined; }>`. To fix it, you should do: This is a purely type level change, the runtime behavior is still the same.",
-      "testFile": "tests/exhaustive-match.test.ts",
-      "sourceFiles": [
-        "src/types/BuildMany.ts",
-        "src/types/InvertPattern.ts",
-        "src/types/helpers.ts"
-      ],
-      "changedLines": 145,
-      "sealedCases": [
-        "exhaustive should fail when the optional key isn't provided",
-        "exhaustive should pass when using P.optional(undefined)"
-      ],
-      "heldBackCases": [
-        "exhaustive should fail when matching on { type: undefined }",
-        "exhaustive should pass when using {} and { type: undefined }"
-      ]
-    },
-    {
-      "repository": "gvergnaud/ts-pattern",
-      "cloneUrl": "https://github.com/gvergnaud/ts-pattern.git",
-      "pull": 253,
-      "mergeCommit": "60af2168cf998c3d6a50fc8735a50a5009cc86bf",
-      "taskText": "feat(exhaustive): Add support for passing a fallback function. Solves #144 #218 and replaces #38 #219 ## Docs By default, `.exhaustive()` will throw an error if the input value wasn't handled by any `.with(...)` clause. This should only happen if your types are incorrect. It is possible to pass your own handler function as a parameter to decide what should happen if an unexpected value has been received. You can for example throw your own custom error: Or log an error and return a default value:",
-      "testFile": "tests/exhaustive-fallback.test.ts",
-      "sourceFiles": [
-        "src/match.ts",
-        "src/types/Match.ts"
-      ],
-      "changedLines": 134,
-      "sealedCases": [
-        "should be called if the runtime value isn't expected",
-        "should return a value assignable to the explicit output type"
-      ],
-      "heldBackCases": [
-        "should throw otherwise",
-        "should return a value assignable .returnType<T>()"
-      ]
-    },
-    {
-      "repository": "gvergnaud/ts-pattern",
-      "cloneUrl": "https://github.com/gvergnaud/ts-pattern.git",
-      "pull": 305,
-      "mergeCommit": "c415e0c0dd0037f24819af57db5a3d9a6ace6d1d",
-      "taskText": "fix(isMatching): Allow unknown properties in pattern. The previous release introduced a bug with `isMatching` which made it unable to narrow union types properly, and would make it reject patterns containing extra unknown properties. This PR this",
-      "testFile": "tests/is-matching.test.ts",
-      "sourceFiles": [
-        "src/is-matching.ts",
-        "src/types/Pattern.ts"
-      ],
-      "changedLines": 52,
-      "sealedCases": [
-        "should allow patterns targetting one member of a union type"
-      ],
-      "heldBackCases": [
-        "should allow targetting unknown properties"
-      ]
-    },
-    {
-      "repository": "gvergnaud/ts-pattern",
-      "cloneUrl": "https://github.com/gvergnaud/ts-pattern.git",
-      "pull": 270,
-      "mergeCommit": "b0ae86bbccb84e18411e39a35fa80f523cc2075f",
-      "taskText": "feat: throw custom `ExhaustiveError` when no matched pattern. This adds/exports a custom `ExhaustiveError` which will be thrown at runtime when a `match` input doesn't match any pattern and `.exhaustive()` has been specified. This gives better error handling capabilities, for example when trying to distinguish between an unmatched pattern error and an error thrown within a matched pattern's callback. Resolves #269",
-      "testFile": "tests/exhaustive-match.test.ts",
-      "sourceFiles": [
-        "src/errors.ts",
-        "src/index.ts",
-        "src/match.ts"
-      ],
-      "changedLines": 77,
-      "sealedCases": [
-        "Unmatched pattern results in ExhaustiveError"
-      ],
-      "heldBackCases": [
-        "Matched pattern with callback error does not result in ExhaustiveError"
-      ]
-    },
-    {
-      "repository": "gvergnaud/ts-pattern",
-      "cloneUrl": "https://github.com/gvergnaud/ts-pattern.git",
-      "pull": 180,
-      "mergeCommit": "37f4a1b243159bd57243e20aa459711c8a69f89d",
-      "taskText": "🐛 fix: Accept branded primitive types as patterns. TS Pattern v4 used to support branded types, usually defined as an intersection between a literal type (like `number` or `string`) and an object containing a unique symbol. There is a bug in v5 that prevents people from using branded types as patterns and this PR it. This issue #167 and #178.",
-      "testFile": "tests/branded-nominal-types.test.ts",
-      "sourceFiles": [
-        "src/types/Pattern.ts"
-      ],
-      "changedLines": 36,
-      "sealedCases": [
-        "issue #167"
-      ],
-      "heldBackCases": [
-        "issue #178"
-      ]
-    },
-    {
-      "repository": "gvergnaud/ts-pattern",
-      "cloneUrl": "https://github.com/gvergnaud/ts-pattern.git",
-      "pull": 23,
-      "mergeCommit": "e42438faa300c956cc54b2dc4c4f7e9bd8f08514",
-      "taskText": "Gabriel.vergnaud/infer output as a union 2. ## Improve output type inference the output type of a match expressions will now be inferred as the Union of the return types of all branches:",
-      "testFile": "tests/output-type.test.ts",
-      "sourceFiles": [
-        "src/types/Match.ts",
-        "src/types/helpers.ts"
-      ],
-      "changedLines": 214,
-      "sealedCases": [
-        "should return a single type if they are all compatible",
-        "It should still be possible specify a precise output type",
-        "if the current inferred output is assignable to the new output, just pick the broader one",
-        "should return a single type if they are all compatible",
-        "It should still be possible specify a precise output type"
-      ],
-      "heldBackCases": [
-        "if the current inferred output is assignable to the new output, just pick the broader one",
-        "should return a single type if they are all compatible",
-        "It should still be possible specify a precise output type",
-        "if the current inferred output is assignable to the new output, just pick the broader one"
-      ]
-    },
-    {
-      "repository": "peers/peerjs",
-      "cloneUrl": "https://github.com/peers/peerjs.git",
-      "pull": 1142,
-      "mergeCommit": "094f849816d327bf74a447fbf7d58195c1a4fc66",
-      "taskText": "fix: convert `Blob`s to `ArrayBuffer`s during `.send()`. BinaryPack 2 can’t pack `Blob`s anymore. Convert them to `ArrayBuffer`s during send.",
-      "testFile": "e2e/datachannel/serialization_binary.spec.ts",
-      "sourceFiles": [
-        "e2e/datachannel/blobs.js",
-        "e2e/datachannel/files.js",
-        "e2e/datachannel/serialization.js",
-        "lib/dataconnection/BufferedConnection/BinaryPack.ts",
-        "lib/dataconnection/DataConnection.ts"
-      ],
-      "changedLines": 69,
-      "sealedCases": [
-        "should transfer Blobs"
-      ],
-      "heldBackCases": [
-        "should transfer Files"
-      ]
-    },
-    {
-      "repository": "peers/peerjs",
-      "cloneUrl": "https://github.com/peers/peerjs.git",
-      "pull": 1038,
-      "mergeCommit": "0fb61792ed3afe91123550a159c8633ed0976f89",
-      "taskText": "fix(datachannel): sending order is now preserved correctly. This upgrades `binarypack` to version 2. `pack` now returns `ArrayBuffer`s which can be sent over all data channel types without asynchronous conversion. This implementation is also much faster than version 1. #746",
-      "testFile": "e2e/datachannel/serialization.spec.ts",
-      "sourceFiles": [
-        "lib/dataconnection.ts",
-        "lib/util.ts"
-      ],
-      "changedLines": 84,
-      "sealedCases": [
-        "should transfer strings"
-      ],
-      "heldBackCases": [
-        "should transfer typed arrays / array buffers"
-      ]
-    },
-    {
-      "repository": "google/gts",
-      "cloneUrl": "https://github.com/google/gts.git",
-      "pull": 340,
-      "mergeCommit": "4a3c51143856b462804b318a5fce6baa2784e549",
-      "taskText": "feat: install a default src template. A template is copied in the project if the src directory is not present or does not contain ts files. Supercedes: #320",
-      "testFile": "test/test-init.ts",
-      "sourceFiles": [
-        "src/init.ts",
-        "src/util.ts",
-        "template/index.ts"
-      ],
-      "changedLines": 275,
-      "sealedCases": [
-        "should install a default template if the source directory do not exists",
-        "should install template copy if src directory already exists and contains files other than ts"
-      ],
-      "heldBackCases": [
-        "should install template copy if src directory already exists and is empty",
-        "should copy the template with correct contents"
-      ]
-    },
-    {
-      "repository": "google/gts",
-      "cloneUrl": "https://github.com/google/gts.git",
-      "pull": 185,
-      "mergeCommit": "d0d430d0e77848c7bb8dc333f4145d7bef2acf1b",
-      "taskText": "fix: allow 'gts clean' to follow tsconfig.json dependency chain. I wrote and edited the tests to show the new functionality and to catch circular references. This still should be abstracted to effect all commands that look at the contents of tsconfig.json. Also there is no support for compileOnSave yet. fix: #64",
-      "testFile": "test/test-util.ts",
-      "sourceFiles": [
-        "src/util.ts"
-      ],
-      "changedLines": 192,
-      "sealedCases": [
-        "should throw an error if it finds a circular reference",
-        "when a file contains an extends field, the base file is loaded first then overridden by the inherited files",
-        "function throws an error when reading a file that does not exist"
-      ],
-      "heldBackCases": [
-        "should follow dependency chain caused by extends files",
-        "when reading a file, all filepaths should be relative to the config file currently being read"
-      ]
-    },
-    {
-      "repository": "google/gts",
-      "cloneUrl": "https://github.com/google/gts.git",
-      "pull": 186,
-      "mergeCommit": "f7c75ee67c534a2f980922d93463ca637546c0ad",
-      "taskText": "feat: print clang-format output. Still working on the feature so that it can support non utf8 characters. #181",
-      "testFile": "test/test-format.ts",
-      "sourceFiles": [
-        "src/format.ts"
-      ],
-      "changedLines": 245,
-      "sealedCases": [
-        "format should print suggestions for fixes for ill-formatted file",
-        "should throw error if xml are missing offset, length, or fix values"
-      ],
-      "heldBackCases": [
-        "formatting output should display unicode characters correctly"
-      ]
-    },
-    {
-      "repository": "google/gts",
-      "cloneUrl": "https://github.com/google/gts.git",
-      "pull": 182,
-      "mergeCommit": "b2b5bbd41d56e0d114ae9e3adb1f7d87999eda56",
-      "taskText": "Add more tests. In an effort to improve coverage, I started working some tests. It turns out that our current coverage numbers are a lie as `init.ts` wasn't accounted for. It only gets tested via `test kitchen.ts` which is hard to report for coverage purposes (it uses an tarball installed version of the package rather than the existing files). Here some more tests. Still more to come, but no reason to sit on these. These can land.",
-      "testFile": "test/test-init.ts",
-      "sourceFiles": [
-        "src/format.ts",
-        "src/init.ts"
-      ],
-      "changedLines": 213,
-      "sealedCases": [
-        "addScripts should add a scripts section if none exists",
-        "addScripts should edit existing scripts on yes",
-        "addDependencies should not edit existing deps on no",
-        "init should read local package.json"
-      ],
-      "heldBackCases": [
-        "addScripts should not edit existing scripts on no",
-        "addDependencies should add a deps section if none exists",
-        "addDependencies should edit existing deps on yes",
-        "init should handle missing package.json"
-      ]
-    },
-    {
-      "repository": "google/gts",
-      "cloneUrl": "https://github.com/google/gts.git",
-      "pull": 28,
-      "mergeCommit": "7f86709353fd05c00723b81107d77d1b4a9d0dcb",
-      "taskText": "test: add tests for tscfg. Refactor the code to make it more testable through dependency injection. Add tests.",
-      "testFile": "test/test-tscfg.ts",
-      "sourceFiles": [
-        "src/clean.ts",
-        "src/fix.ts",
-        "src/tscfg.ts"
-      ],
-      "changedLines": 317,
-      "sealedCases": [
-        "get should use the provided readFile",
-        "get should parse the config file json",
-        "getExcludeFiles should return default exclude if not present",
-        "getInputFiles, when files is present",
-        "getInputFiles should list files before include globs",
-        "getInputFiles should use default when files and include are omitted"
-      ],
-      "heldBackCases": [
-        "get should open the correct tsconfig file",
-        "getExcludeFiles should return exclude from the config",
-        "getExcludeFiles should return take outDir into consideration",
-        "getInputFiles should glob include patterns",
-        "getInputFiles should pass exclude to glob options"
-      ]
-    },
-    {
-      "repository": "google/gts",
-      "cloneUrl": "https://github.com/google/gts.git",
-      "pull": 99,
-      "mergeCommit": "d3bc94bdb52df965fe5ab08922d857cdd7e53499",
-      "taskText": "fix: format root files only. #98 We should use `getRootFileNames` instead of `getSourceFiles` when retrieving a list of files to format; the latter gets every files in the dependency graph constructed from files included in `tsconfig.json`.",
-      "testFile": "test/test-format.ts",
-      "sourceFiles": [
-        "src/format.ts"
-      ],
-      "changedLines": 71,
-      "sealedCases": [
-        "format should return false for ill-formatted files"
-      ],
-      "heldBackCases": [
-        "format should only look in root files"
-      ]
-    },
-    {
-      "repository": "google/gts",
-      "cloneUrl": "https://github.com/google/gts.git",
-      "pull": 52,
-      "mergeCommit": "4821c492954cf33b81952de2f9f6a2a82f4a9f11",
-      "taskText": "fix: fix broken commands. #49 broke `gts check` (and `gts fix`) by omitting a `module.exports` in `lint.ts`. In addition to fixing the above, I've added tests for this, and run `npm run lint`.",
-      "testFile": "test/test-kitchen.ts",
-      "sourceFiles": [
-        "src/cli.ts",
-        "src/util.ts"
-      ],
-      "changedLines": 36,
-      "sealedCases": [
-        "check before fix",
-        "check after fix"
-      ],
-      "heldBackCases": [
-        "fix"
-      ]
-    },
-    {
-      "repository": "google/gts",
-      "cloneUrl": "https://github.com/google/gts.git",
-      "pull": 38,
-      "mergeCommit": "c692d0662197e45b4ae3d3dcf545c7d7a1421360",
-      "taskText": "test: add fixture mechanism for unit testing. Makes it possible to run runs with fixtures without having out of band fixtures directories. Add tests for lint.ts.",
-      "testFile": "test/test-lint.ts",
-      "sourceFiles": [
-        "src/cli.ts",
-        "src/fix.ts",
-        "src/init.ts",
-        "src/lint.ts"
-      ],
-      "changedLines": 287,
-      "sealedCases": [
-        "createProgram should return an object",
-        "lint should return true on good code",
-        "lint should lint files listed in tsconfig.files",
-        "lint should not lint files listed in exclude"
-      ],
-      "heldBackCases": [
-        "lint should throw error if tslint is missing",
-        "lint should return false on bad code",
-        "lint should lint *.ts files when no files or inlcude has been specified",
-        "lint should lint globs listed in include"
-      ]
-    },
-    {
-      "repository": "jhlywa/chess.js",
-      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
-      "pull": 554,
-      "mergeCommit": "daf4eec2ef9812d18e3ee0c5c795f59704013fa5",
-      "taskText": "Ignore invalid castling rights. #552. Turns out that the move generator was generating invalid castling moves due to incorrect castling rights in the FEN.",
-      "testFile": "__tests__/load.test.ts",
-      "sourceFiles": [
-        "src/chess.ts"
-      ],
-      "changedLines": 85,
-      "sealedCases": [
-        "load - full castling rights but white king moved",
-        "load - full castling rights but white queenside rook moved",
-        "load - full castling rights but black kingside rook moved"
-      ],
-      "heldBackCases": [
-        "load - full castling rights but white kingside rook moved",
-        "load - full castling rights but black king moved",
-        "load - full castling rights but black queenside rook moved"
-      ]
-    },
-    {
-      "repository": "jhlywa/chess.js",
-      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
-      "pull": 516,
-      "mergeCommit": "95d3b2740b6221690a0cdcd02049a1a61029d7c8",
-      "taskText": "Added support for chess annotation symbols. Added support for chess annotation symbols. To elaborate on the implementation, let's take this PGN file as an example `1. e4 e5 2. f4!? { King's gambit } * ` Now, when calling the getComments function, the result will be The new key is suffix. Lichess uses the Annotate with glyph functionality to add these suffixes in their chess editor.",
-      "testFile": "__tests__/comments.test.ts",
-      "sourceFiles": [
-        "src/chess.ts",
-        "src/node.ts"
-      ],
-      "changedLines": 224,
-      "sealedCases": [
-        "captures multiple suffixes and comments",
-        "should handle manually set suffix-only with an empty comment string for the current FEN"
-      ],
-      "heldBackCases": [
-        "should correctly handle comments, suffixes, and suffix-only cases from PGN loading"
-      ]
-    },
-    {
-      "repository": "jhlywa/chess.js",
-      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
-      "pull": 539,
-      "mergeCommit": "07507fc9669ed1f32ea896a394da2348b2853d72",
-      "taskText": "isPromotion method for UIs. Inspired by #148, covers off issues raised about knowing when a UI needs to prompt for a promotion piece.",
-      "testFile": "__tests__/is-promotion.test.ts",
-      "sourceFiles": [
-        "src/chess.ts"
-      ],
-      "changedLines": 44,
-      "sealedCases": [
-        "isPromotion - true for promotion",
-        "isPromotion - false for normal pawn move"
-      ],
-      "heldBackCases": [
-        "isPromotion - false for illegal move",
-        "isPromotion - false for non pawn move to eighth rank"
-      ]
-    },
-    {
-      "repository": "jhlywa/chess.js",
-      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
-      "pull": 451,
-      "mergeCommit": "3482911ac9351e0443a32e6feef3e1bbb1f5a1e8",
-      "taskText": "#319: add null move functionality. Implemented null move logic for SAN ' ' and added a simple test case. Please review, I am open for discussions!",
-      "testFile": "__tests__/nullmove.test.ts",
-      "sourceFiles": [
-        "src/chess.ts"
-      ],
-      "changedLines": 108,
-      "sealedCases": [
-        "null move at start",
-        "null move is correctly displayed in pgn",
-        "6 null moves in a row result in a draw"
-      ],
-      "heldBackCases": [
-        "making null move by passing null object",
-        "null move while in check is not allowed"
-      ]
-    },
-    {
-      "repository": "jhlywa/chess.js",
-      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
-      "pull": 501,
-      "mergeCommit": "f30a6ff60640626bb09f7ee177a8640ebba5003c",
-      "taskText": "Canonical PGN Header Tag order; mandatory Seven Tag Roster always included in PGN output. # Premises In order to be consistent with the PGN specification, the following is assumed: 1. The mandatory **Seven Tag Roster** (STR) is…mandatory\\! 1. Default values should be provided as specified in the spec 2. pgnLoad() can be lax, however 2. The order of header tags should reflect the order they appear in the spec 1. “Like with like”, e.g. **Opening, Variation, SubVariation** 3. A **game termination marker** is required at the end of the **movetext** 1. It should match the mandatory **Result** value in the STR # Changes The chess.header() deprecation tag was not active; it is in this patch. The method will return null valued header tags, which is undesirable ( getHeaders(), below). A HEADER\\_TEMPLATE has been added and it contains the subtemplates SEVEN\\_TAG\\_ROSTER and SUPPLEMENTAL\\_TAGS. SEVEN\\_TAG\\_ROSTER has default values (since they are mandatory per spec). The SUPPLEMENTAL\\_TAGS values are initialized to null; fields with null values are not included in the output of method chess.getHeaders(). The \\_header type has been modified to allow for nulls in addition to strings. The purpo",
-      "testFile": "__tests__/headers.test.ts",
-      "sourceFiles": [
-        "src/chess.ts"
-      ],
-      "changedLines": 390,
-      "sealedCases": [
-        "setHeader should add or update a header",
-        "getHeaders should return only non-null headers"
-      ],
-      "heldBackCases": [
-        "removeHeader should remove a header if it exists"
-      ]
-    },
-    {
-      "repository": "jhlywa/chess.js",
-      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
-      "pull": 494,
-      "mergeCommit": "e9b19efa78ed6be45dc181779f21c2541778ac83",
-      "taskText": "feat: add getSquareByPiece function. Hi! I have been in need of this method while playing with your **awesome** library. I hope the implementation satisfies your code guidelines. Added a test following the example of `__tests__/get.test.ts`. For this function name, I had originally thought of `getSquare`, simply. I then went for `getSquareByPiece` for clarity. Please, let me know if I should make any changes to this pr 😃 Again, great project!",
-      "testFile": "__tests__/get-square-by-piece.test.ts",
-      "sourceFiles": [
-        "src/chess.ts"
-      ],
-      "changedLines": 75,
-      "sealedCases": [
-        "findPiece - returns array with the only piece",
-        "findPiece - returns empty array for missing piece"
-      ],
-      "heldBackCases": [
-        "findPiece - returns array with all the pieces",
-        "findPiece - returns empty array for invalid piece"
-      ]
-    },
-    {
-      "repository": "jhlywa/chess.js",
-      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
-      "pull": 456,
-      "mergeCommit": "52f7579e927fb4bd2d51f3d3f07e7d2200770ddd",
-      "taskText": "#186: Add attackers(). # Changes Added attackers(), a new public method that returns a list of attacking squares, as mentioned in #186. The method follows all the same rules as isAttacked(). Modified _attacked() to take in an optional boolean parameter, `verbose`. When `verbose` is false, it behaves like normal (unchanged). When `verbose` is true, it returns a list of attacking squares. Created test cases for attackers(). Updated the README.md. Any previous code that calls _attacked() should remain unaffected since the `verbose` parameter is optional. Running all the test cases before and after modifying _attacked() shows no difference in performance. # Examples (as shown in the README.md):",
-      "testFile": "__tests__/attackers.test.ts",
-      "sourceFiles": [
-        "src/chess.ts"
-      ],
-      "changedLines": 301,
-      "sealedCases": [
-        "attackers - attacker count in default position",
-        "attackers - attacker count when all but one square is covered",
-        "attackers - every piece attacking empty square",
-        "attackers - every piece defending empty square",
-        "attackers - pinned pieces still attack and defend",
-        "attackers - a lot of attackers",
-        "attackers - readme tests"
-      ],
-      "heldBackCases": [
-        "attackers - attacker count in middlegame position",
-        "attackers - return value depends on side to move",
-        "attackers - every piece attacking another piece",
-        "attackers - every piece defending another piece",
-        "attackers - king can \"attack\" defended piece",
-        "attackers - no attackers"
-      ]
-    },
-    {
-      "repository": "jhlywa/chess.js",
-      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
-      "pull": 418,
-      "mergeCommit": "55181a901c7133eb303441fe6639a8c5707d38cb",
-      "taskText": "Fix #144 and optimisations. As discussed in [the other PR]( I'm splitting the optimisations into their own PR. Since the bug fix is a dependency of the `isThreefoldRepetition` optimisation, I've included it in this PR.",
-      "testFile": "__tests__/position-counts.test.ts",
-      "sourceFiles": [
-        "src/chess.ts"
-      ],
-      "changedLines": 165,
-      "sealedCases": [
-        "_positionCounts - counts repeated positions",
-        "_positionCounts - resets when cleared",
-        "_positionCounts - resets when loading PGN"
-      ],
-      "heldBackCases": [
-        "_positionCounts - removes when undo",
-        "_positionCounts - resets when loading FEN"
-      ]
-    },
-    {
-      "repository": "jhlywa/chess.js",
-      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
-      "pull": 387,
-      "mergeCommit": "7cb2d3438299d209d31ecf3d517a62815adefb5a",
-      "taskText": "Ensure put/remove functions update castling rights. @jhlywa Once you are happy with this PR, I'll create a second one to ensure the ep square is updated also.",
-      "testFile": "__tests__/castling-rights.test.ts",
-      "sourceFiles": [
-        "src/chess.ts"
-      ],
-      "changedLines": 258,
-      "sealedCases": [
-        "setCastlingRights - clear white kingside",
-        "setCastlingRights - clear black kingside",
-        "setCastlingRights - set white kingside",
-        "setCastlingRights - set black kingside",
-        "setCastlingRights - fail to set white kingside",
-        "setCastlingRights - fail to set black kingside"
-      ],
-      "heldBackCases": [
-        "setCastlingRights - clear white queenside",
-        "setCastlingRights - clear black queenside",
-        "setCastlingRights - set white queenside",
-        "setCastlingRights - set black queenside",
-        "setCastlingRights - fail to set white queenside",
-        "setCastlingRights - fail to set black queenside"
-      ]
-    },
-    {
-      "repository": "jhlywa/chess.js",
-      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
-      "pull": 378,
-      "mergeCommit": "e02c53e5678997581fe13329962a3395d8604b2f",
-      "taskText": "Implemented moves list by piece. Added support for moves() to filter by piece, as well as tests in moves.test.ts. #377 _moves() already seems to properly handle piece filtering, as well as filtering for both a square and piece type. So didn't take much to implement. Think I managed to cover every case with the overloads added for move(), but probably worth double checking. Added a few unit tests to confirm the changes are working as intended. Hopefully this is helpful !",
-      "testFile": "__tests__/moves.test.ts",
-      "sourceFiles": [
-        "src/chess.ts"
-      ],
-      "changedLines": 133,
-      "sealedCases": [
-        "moves - piece",
-        "moves - piece - no such piece",
-        "moves - square and piece"
-      ],
-      "heldBackCases": [
-        "moves - piece - en passante",
-        "moves - piece - verbose"
-      ]
-    },
-    {
-      "repository": "jhlywa/chess.js",
-      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
-      "pull": 154,
-      "mergeCommit": "b2650a33d7cda5c3ca29b06556a45eb267b9db58",
-      "taskText": "Loading PGN data containing SetUp and FEN tags causes header information to be lost. With reference to #129. I have added a couple of tests, but am new to writing JS tests (and GitHub/PRs in general), so please critically review.",
-      "testFile": "test/tests.js",
-      "sourceFiles": [
-        "chess.js",
-        "chess.min.js"
-      ],
-      "changedLines": 61,
-      "sealedCases": [
-        "Github Issue #129 load_pgn() should not clear headers if PGN contains SetUp and FEN tags"
-      ],
-      "heldBackCases": [
-        "Github Issue #129 clear() should clear the board and delete all headers with the exception of SetUp and FEN"
-      ]
-    },
-    {
-      "repository": "jhlywa/chess.js",
-      "cloneUrl": "https://github.com/jhlywa/chess.js.git",
-      "pull": 101,
-      "mergeCommit": "5ece123113619d105dc942e993b5ee0ce6026f0f",
-      "taskText": "Addressed GitHub Issue #98. Added starting move number to track the move number passed in by fen. Added a test based on explanation of Issue 98",
-      "testFile": "test/tests.js",
-      "sourceFiles": [
-        "chess.js",
-        "chess.min.js"
-      ],
-      "changedLines": 72,
-      "sealedCases": [
-        "Github Issue #32 - castling flag reappearing",
-        "Github Issue #85 (white) - SetUp and FEN should be accepted in load_pgn",
-        "Github Issue #98 - Wrong movement number after setting a position via FEN"
-      ],
-      "heldBackCases": [
-        "Github Issue #58 - placing more than one king",
-        "Github Issue #85 (black) - SetUp and FEN should be accepted in load_pgn"
-      ]
-    },
-    {
-      "repository": "badgen/badgen.net",
-      "cloneUrl": "https://github.com/badgen/badgen.net.git",
-      "pull": 768,
-      "mergeCommit": "1581f2d5db1f0dd4ef6e1dc1d339523a8c8501db",
-      "taskText": "Add email badge endpoint. I have added a new `/email` endpoint to generate email badges. The endpoint follows the pattern `/email/<tld>/<name>/<domain>`, which reconstructs the email address as `<name>@<domain>.<tld>`. This approach avoids putting the full email address in a single URL segment, helping to mitigate simple scrapers while still providing a functional badge. Key changes: Created a new API route in `pages/api/email.ts` using the project's standard `createBadgenHandler`. Registered the `/email` prefix in `next.config.js` to ensure it's correctly routed to the new API handler. Included automated tests in `test/email.test.mjs` to verify the functionality. Verified the changes manually using a local development server. *PR created automatically by Jules for task [5308397379689487379]( started by @amio*",
-      "testFile": "test/email.test.mjs",
-      "sourceFiles": [
-        "libs/badge-list2.ts",
-        "next.config.js",
-        "pages/api/email.ts"
-      ],
-      "changedLines": 47,
-      "sealedCases": [
-        "/email: simple email badge"
-      ],
-      "heldBackCases": [
-        "/email: email badge with TLD in domain"
-      ]
-    },
-    {
-      "repository": "badgen/badgen.net",
-      "cloneUrl": "https://github.com/badgen/badgen.net.git",
-      "pull": 766,
-      "mergeCommit": "50009fa32282da741c5d30c378cc5aede440eb00",
-      "taskText": "Add Codeberg support. Support for codeberg.org badges has been implemented. This includes a variety of metrics such as stars, forks, issues, pull requests, releases, tags, and commit data. The implementation leverages the Codeberg (Gitea/Forgejo) API and includes comprehensive E2E tests and documentation examples. *PR created automatically by Jules for task [71452159505630164]( started by @amio*",
-      "testFile": "test/e2e.test.mjs",
-      "sourceFiles": [
-        "libs/badge-list.ts",
-        "libs/badge-list2.ts",
-        "libs/codeberg.ts",
-        "next.config.js",
-        "pages/api/codeberg.ts"
-      ],
-      "changedLines": 211,
-      "sealedCases": [
-        "/codeberg/stars/forgejo/forgejo",
-        "/codeberg/commits/forgejo/forgejo",
-        "/codeberg/release/forgejo/forgejo"
-      ],
-      "heldBackCases": [
-        "/codeberg/issues/forgejo/forgejo",
-        "/codeberg/prs/forgejo/forgejo"
       ]
     }
   ]

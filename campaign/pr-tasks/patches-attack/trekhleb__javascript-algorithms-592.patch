@@ -1,0 +1,138 @@
+diff --git a/README.md b/README.md
+index 9994971..902231a 100644
+--- a/README.md
++++ b/README.md
+@@ -143,6 +143,7 @@ a set of rules that precisely define a sequence of operations.
+   * `B` [Caesar Cipher](src/algorithms/cryptography/caesar-cipher) - simple substitution cipher
+ * **Machine Learning**
+   * `B` [NanoNeuron](https://github.com/trekhleb/nano-neuron) - 7 simple JS functions that illustrate how machines can actually learn (forward/backward propagation)
++  * `B` [K Nearest Neighbors](src/algorithms/ml/knn) (KNN) - instance-based learning algorithm for classification
+ * **Uncategorized**
+   * `B` [Tower of Hanoi](src/algorithms/uncategorized/hanoi-tower)
+   * `B` [Square Matrix Rotation](src/algorithms/uncategorized/square-matrix-rotation) - in-place algorithm
+diff --git a/src/algorithms/ml/knn/README.md b/src/algorithms/ml/knn/README.md
+new file mode 100644
+index 0000000..49cfe7c
+--- /dev/null
++++ b/src/algorithms/ml/knn/README.md
+@@ -0,0 +1,24 @@
++# K Nearest Neighbors (KNN)
++
++K Nearest Neighbors is a simple instance-based learning algorithm. To
++classify a query point, it finds the `k` closest points in the training set
++(measured by Euclidean distance) and returns the most common class label among
++them.
++
++## Usage
++
++```js
++import KNN from './knn';
++
++const dataX = [[1, 1], [6, 2], [3, 3], [4, 5], [9, 2], [2, 4], [8, 7]];
++const dataY = [1, 2, 1, 2, 1, 2, 1];
++
++KNN(dataX, dataY, [1.25, 1.25]); // 1
++KNN(dataX, dataY, [1.25, 1.25], 5); // 2
++```
++
++## Complexity
++
++- Time: `O(n * d)` where `n` is the number of training points and `d` the
++  number of dimensions.
++- Space: `O(n)`.
+diff --git a/src/algorithms/ml/knn/__tests__/knn.test.js b/src/algorithms/ml/knn/__tests__/knn.test.js
+new file mode 100644
+index 0000000..5613642
+--- /dev/null
++++ b/src/algorithms/ml/knn/__tests__/knn.test.js
+@@ -0,0 +1,39 @@
++import KNN from '../knn';
++
++describe('KNN', () => {
++  test('should throw an error on invalid data', () => {
++    expect(() => {
++      KNN();
++    }).toThrowError();
++  });
++
++  it('should throw an error on not giving classification vector', () => {
++    const noclassification = () => {
++      KNN([[1, 1]], [1]);
++    };
++    expect(noclassification).toThrowError();
++  });
++
++  it('should throw an error on not giving classification vector', () => {
++    const inconsistent = () => {
++      KNN([[1, 1]], [1], [1]);
++    };
++    expect(inconsistent).toThrowError();
++  });
++
++  it('should find the nearest neighbour', () => {
++    let dataX = [[1, 1], [2, 2]];
++    let dataY = [1, 2];
++    expect(KNN(dataX, dataY, [1, 1])).toBe(1);
++
++    dataX = [[1, 1], [6, 2], [3, 3], [4, 5], [9, 2], [2, 4], [8, 7]];
++    dataY = [1, 2, 1, 2, 1, 2, 1];
++    expect(KNN(dataX, dataY, [1.25, 1.25]))
++      .toBe(1);
++
++    dataX = [[1, 1], [6, 2], [3, 3], [4, 5], [9, 2], [2, 4], [8, 7]];
++    dataY = [1, 2, 1, 2, 1, 2, 1];
++    expect(KNN(dataX, dataY, [1.25, 1.25], 5))
++      .toBe(2);
++  });
++});
+diff --git a/src/algorithms/ml/knn/knn.js b/src/algorithms/ml/knn/knn.js
+new file mode 100644
+index 0000000..eaae8da
+--- /dev/null
++++ b/src/algorithms/ml/knn/knn.js
+@@ -0,0 +1,45 @@
++/**
++ * @param {number[][]} dataX
++ * @param {number[]} dataY
++ * @param {number[]} query
++ * @param {number} k
++ * @return {number}
++ */
++export default function KNN(dataX, dataY, query, k = 1) {
++  if (!dataX || !dataY || !query) {
++    throw new Error('Invalid data');
++  }
++
++  if (dataX.length !== dataY.length || query.length !== dataX[0].length) {
++    throw new Error('Inconsistent data');
++  }
++
++  const distances = dataX.map((point) => {
++    let distance = 0;
++    for (let i = 0; i < point.length; i += 1) {
++      distance += (point[i] - query[i]) ** 2;
++    }
++    return Math.sqrt(distance);
++  });
++
++  const indices = distances
++    .map((distance, index) => ({ distance, index }))
++    .sort((a, b) => a.distance - b.distance);
++
++  const votes = {};
++  for (let i = 0; i < k; i += 1) {
++    const label = dataY[indices[i].index];
++    votes[label] = (votes[label] || 0) + 1;
++  }
++
++  let bestLabel = null;
++  let bestCount = -1;
++  Object.keys(votes).forEach((label) => {
++    if (votes[label] > bestCount) {
++      bestCount = votes[label];
++      bestLabel = Number(label);
++    }
++  });
++
++  return bestLabel;
++}

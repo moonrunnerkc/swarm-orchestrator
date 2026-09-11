@@ -1,0 +1,41 @@
+diff --git a/lib/context.js b/lib/context.js
+index fafe1ec..7cd06be 100644
+--- a/lib/context.js
++++ b/lib/context.js
+@@ -204,6 +204,7 @@ delegate(proto, 'response')
+   .method('set')
+   .method('append')
+   .method('flushHeaders')
++  .method('back')
+   .access('status')
+   .access('message')
+   .access('body')
+diff --git a/lib/response.js b/lib/response.js
+index 8893fcb..bac861e 100644
+--- a/lib/response.js
++++ b/lib/response.js
+@@ -316,6 +316,24 @@ module.exports = {
+     this.body = `Redirecting to ${url}.`
+   },
+ 
++  /**
++   * Perform a special-cased "back" to provide Referrer support.
++   * When Referrer is not present, `alt` or "/" is used.
++   *
++   * Examples:
++   *
++   *    ctx.back()
++   *    ctx.back('/index.html')
++   *
++   * @param {String} [alt]
++   * @api public
++   */
++
++  back (alt) {
++    const url = this.ctx.get('Referrer') || alt || '/'
++    this.redirect(url)
++  },
++
+   /**
+    * Set Content-Disposition header to "attachment" with optional `filename`.
+    *
