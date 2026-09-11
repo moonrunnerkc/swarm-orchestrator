@@ -10,6 +10,11 @@ Five of the six items are done. What is left is the one that was always the hard
 the shape of it has changed: mining more is measured and does not help, while the arm that grows
 the denominator gate 3b is short of is the adversarial one.
 
+Where the rate stands, from `node scripts/false-green-rate.mjs` rather than from this sentence:
+**0 false greens in 15 certified over 97 judgements, 0.0% [0.0, 20.4]**, with 0 false reds. The
+report-only comparison over the same rows is 1 in 16, so the one patch bonding refuses is the one
+the rate would otherwise carry.
+
 ## The distinction that matters
 
 **Measurement hygiene** makes the number believable. **Product work** makes the number smaller.
@@ -165,14 +170,19 @@ and the evidence beside it.
 #### What the measurement produced, and what the rule did with it
 
 Bonding ran over all sixteen patches the tool had certified. `node scripts/bond-cost.mjs` derives
-this from the recorded rows, in both regimes, whichever one is currently on.
+this from the recorded rows, in every regime, whichever one is currently on.
 
-| bond | count |
-| --- | --- |
-| held | 14 |
-| vacuous | 1 |
-| unshown | 0 |
-| not bonded | 1 |
+| bond | count, five operators | count, eight operators |
+| --- | --- | --- |
+| held | 14 | 16 |
+| vacuous | 1 | 0 |
+| unshown | 0 | 0 |
+| not bonded | 1 | 0 |
+
+The right-hand column is what the three general operators bought, and it is the whole of what they
+bought here: every certified patch is now bonded, where one of the sixteen had nothing any operator
+could change and one was refused. `not bonded` has not disappeared from the tool, only from the
+certified set of this corpus, and it is still never read as `held`.
 
 **The audit found two mutants that changed nothing, and both narrowed an operator.** Reading every
 `vacuous` verdict by hand is the check that found all three reach artifacts, and it earned its
