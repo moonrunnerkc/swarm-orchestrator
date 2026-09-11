@@ -3,7 +3,7 @@ import type { Clock } from "../core/clock.ts";
 import type { ProvenanceTag } from "../core/model-client.ts";
 import type { RandomSource } from "../core/random-source.ts";
 import { type BlobStore, openBlobStore } from "./blob-store.ts";
-import type { JsonValue } from "./canonical-json.ts";
+import { digestOfBytes, type JsonValue } from "./canonical-json.ts";
 import { type ClaimEvaluation, type ClaimPayload, evaluateClaim } from "./claim.ts";
 import { type ChainHead, type Ledger, openLedger } from "./ledger.ts";
 import type { LedgerRecord, RecordType } from "./ledger-record.ts";
@@ -104,6 +104,14 @@ export async function openEvidenceSession(
   });
 
   const payloads = new Map<string, JsonValue>();
+  for (const entry of ledger.records()) {
+    const bytes = await blobs.bytes(entry.payloadDigest);
+    if (bytes === null || digestOfBytes(bytes) !== entry.payloadDigest)
+      throw new Error(
+        `session payload ${entry.sequence} is missing or corrupted; preserve the session before recovery`,
+      );
+    payloads.set(entry.payloadDigest, JSON.parse(bytes) as JsonValue);
+  }
 
   const record = async (entry: EvidenceEntry): Promise<RecordedEvidence> => {
     const scrubbed = scrubJson(entry.payload);

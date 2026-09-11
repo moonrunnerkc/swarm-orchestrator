@@ -1,6 +1,14 @@
 # 0007. A run's state outlives its process
 
-**Status:** accepted
+**Status:** superseded by the 2026-09-11 audit implementation
+
+The current repository instructions prohibit a database. Recovery now uses an append-only,
+hash-checked JSONL journal outside the workspace. The projection is rebuildable; a failed
+journal append stops execution. Actual tool intents and terminal observations feed it.
+Cancellation requests are observed by the active run. Resume constructs a continuation from
+checked execution records and refuses unresolved external effects. The original SQLite
+rationale below is retained as historical context, not authorization to add a database.
+Historical administrative rows without execution evidence cannot establish completed effects.
 
 ## Context
 

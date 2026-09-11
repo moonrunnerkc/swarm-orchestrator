@@ -15,6 +15,7 @@ export type GateMeasures = Readonly<Record<string, number>>;
  * what keeps a gate result evidence rather than an assertion (invariant 1).
  */
 export interface GateObservation {
+  readonly outputTruncated?: boolean;
   readonly exitCode: number;
   readonly stdout: string;
   readonly stderr: string;

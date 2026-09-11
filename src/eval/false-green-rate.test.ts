@@ -225,3 +225,15 @@ describe("keeping the adversarial arm out of an ordinary rate", () => {
     expect(tallyFalseGreens(split.adversarial).falseGreens).toBe(1);
   });
 });
+
+it("counts an oracle once and refuses conflicting primary judgements", () => {
+  const row = {
+    oracleId: "oracle-one",
+    sealedOracle: "accepted",
+    heldBackOracle: "rejected",
+    regression: "pass",
+    verified: false,
+  };
+  expect(tallyInadequateOracles([row, row]).proved).toBe(1);
+  expect(() => tallyInadequateOracles([row, { ...row, verified: true }])).toThrow(/conflicting/);
+});

@@ -45,6 +45,14 @@ export interface RunVerdict {
 
 interface VerdictInput {
   readonly cycle: GateCycle;
+  readonly assessment?: {
+    readonly lifecycle: string;
+    readonly cancelled: boolean;
+    readonly settled: string;
+    readonly baseRatchetAccepted: boolean;
+    readonly vacuousBlockingBonds: readonly string[];
+    readonly changedFiles: number;
+  };
   /** Approvals the run's spec said it would need, and whether they were given. */
   readonly approvals?: {
     readonly required: readonly string[];
@@ -75,6 +83,18 @@ export function runVerdict(input: VerdictInput): RunVerdict {
   const executed = changed === 0 || behavioral.answer === "pass";
   const blockingFailed = input.cycle.blockingFailures.length > 0;
 
+  const approval = input.humanApproval ?? approvalStateOf(input.approvals);
+  const complete = input.assessment;
+  const finalAccepted =
+    complete === undefined ||
+    (complete.settled === "green" &&
+      complete.baseRatchetAccepted &&
+      !complete.cancelled &&
+      complete.lifecycle !== "interrupted" &&
+      complete.lifecycle !== "max-wall-time" &&
+      complete.lifecycle !== "max-tokens" &&
+      complete.vacuousBlockingBonds.length === 0 &&
+      (complete.changedFiles > 0 || complete.lifecycle === "completed"));
   return {
     version: 1,
     integrity: input.integrity,
@@ -88,8 +108,14 @@ export function runVerdict(input: VerdictInput): RunVerdict {
     // its own tests, so this abstains by construction rather than by accident.
     semantic: "unmeasured",
     task: input.task ?? "unjudged",
-    humanApproval: input.humanApproval ?? approvalStateOf(input.approvals),
+    humanApproval: approval,
     reasons: {
+      assessment:
+        complete === undefined
+          ? "legacy cycle-only assessment"
+          : finalAccepted
+            ? "final ratchet and bonds accepted the completed work"
+            : `work refused: lifecycle ${complete.lifecycle}, settled ${complete.settled}, base ratchet ${complete.baseRatchetAccepted ? "accepted" : "rejected"}, vacuous blocking bonds ${complete.vacuousBlockingBonds.join(", ") || "none"}, cancelled ${complete.cancelled}`,
       mechanical: mechanical.reason,
       policy: policy.reason,
       behavioral: behavioral.reason,
@@ -108,7 +134,14 @@ export function runVerdict(input: VerdictInput): RunVerdict {
           : "no expected signer was matched, so the signature shows the bundle is unchanged " +
             "since it was written and not who wrote it",
     },
-    acceptable: !blockingFailed && policy.answer !== "fail" && executed,
+    acceptable:
+      finalAccepted &&
+      !blockingFailed &&
+      policy.answer !== "fail" &&
+      executed &&
+      input.task !== "rejected" &&
+      approval !== "required" &&
+      approval !== "rejected",
   };
 }
 
@@ -176,6 +209,7 @@ export function describeVerdict(verdict: RunVerdict): readonly string[] {
   };
   return [
     "verdict:",
+    row("assessment", verdict.acceptable ? "accepted" : "refused"),
     row("integrity", verdict.integrity),
     row("signer", verdict.signer),
     row("executionTrust", verdict.executionTrust),

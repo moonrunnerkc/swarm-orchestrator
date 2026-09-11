@@ -253,3 +253,14 @@ describe("the counters the header shows", () => {
     expect(stopped.tokensUsed).toBe(902);
   });
 });
+
+it("shows the final assessment refusal after every gate passed", () => {
+  const view = applyLoopEvent(emptySessionView, {
+    type: "run-assessment",
+    acceptable: false,
+    detail: "base ratchet rejected",
+    record: "sha256:assessment",
+  });
+  expect(view.escalated).toBe(true);
+  expect(view.status).toContain("base ratchet rejected");
+});

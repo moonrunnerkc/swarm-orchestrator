@@ -40,7 +40,34 @@ export function createAiSdkModelClient(
         if (providerOptions === undefined || request.abortSignal.aborted || !wasRejected(cause)) {
           throw cause;
         }
-        return await streamOnce(model, request, undefined);
+        const rejected = {
+          outcome: "rejected" as const,
+          statusCode: (cause as { statusCode: number }).statusCode,
+          usage: "unknown" as const,
+        };
+        try {
+          const response = await streamOnce(model, request, undefined);
+          return {
+            ...response,
+            providerAttempts: [
+              rejected,
+              { outcome: "response", statusCode: null, usage: response.usageStatus ?? "reported" },
+            ],
+          };
+        } catch (failure) {
+          if (failure !== null && typeof failure === "object")
+            Object.assign(failure, {
+              providerAttempts: [
+                rejected,
+                {
+                  outcome: "rejected",
+                  statusCode: (failure as { statusCode?: number }).statusCode ?? null,
+                  usage: "unknown",
+                },
+              ],
+            });
+          throw failure;
+        }
       }
     },
   };
@@ -49,7 +76,7 @@ export function createAiSdkModelClient(
 /** A 4xx from the server: it read the request and would not take it. */
 function wasRejected(cause: unknown): boolean {
   const status = (cause as { statusCode?: unknown })?.statusCode;
-  return typeof status === "number" && status >= 400 && status < 500;
+  return typeof status === "number" && (status === 400 || status === 422);
 }
 
 async function streamOnce(
@@ -59,6 +86,7 @@ async function streamOnce(
 ): Promise<ModelResponse> {
   const result = streamText({
     model,
+    maxRetries: 0,
     system: request.system,
     messages: toModelMessages(request.messages),
     tools: toToolSet(request.tools),
@@ -102,6 +130,8 @@ async function streamOnce(
       toolName: call.toolName,
       input: call.input,
     })),
+    usageStatus:
+      usage.inputTokens === undefined || usage.outputTokens === undefined ? "unknown" : "reported",
     inputTokens: usage.inputTokens ?? 0,
     outputTokens: usage.outputTokens ?? 0,
     finishReason: await result.finishReason,

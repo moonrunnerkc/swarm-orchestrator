@@ -1264,3 +1264,89 @@ describe("bonding an oracle whose reach came back unreached", () => {
     }
   });
 });
+
+it("runs an externally authored omission check even when the old suite passes", async () => {
+  const { digestOfBytes } = await import("../evidence/canonical-json.ts");
+  const { openEvidenceSession } = await import("../evidence/session.ts");
+  const { acceptancePackageExecutor } = await import("./acceptance-package.ts");
+  const artifact =
+    "import { test } from 'node:test'; import assert from 'node:assert/strict'; import { clamp } from '../clamp.mjs'; test('upper bound is required',()=>assert.equal(clamp(20),10));\n";
+  const patch =
+    "diff --git a/clamp.mjs b/clamp.mjs\n--- a/clamp.mjs\n+++ b/clamp.mjs\n@@ -1 +1 @@\n-export const clamp = (v) => v;\n+export const clamp = (v) => Math.max(0,v);\n";
+  const reference = patch.replace("Math.max(0,v)", "Math.min(10,Math.max(0,v))");
+  const digest = digestOfBytes(artifact);
+  const root = await mkdtemp(join(tmpdir(), "swarm-required-obligation-"));
+  try {
+    const evidence = await openEvidenceSession({ root, sessionId: "verification", clock });
+    const commands = createNodeCommandRunner(clock, harnessChildEnvironment());
+    const contract = {
+      version: 1,
+      author: "external fixture author",
+      taskId: "both clamp bounds",
+      exposure: "public",
+      immutablePaths: ["clamp.test.mjs"],
+      requirements: [
+        {
+          id: "upper-bound",
+          artifactDigest: digest,
+          argv: ["node", "--test", ".swarm-acceptance/upper-bound.test.mjs"],
+          severity: "required",
+          applicable: true,
+          referenceDigest: digestOfBytes(reference),
+          violatingControlDigest: digestOfBytes(patch),
+        },
+      ],
+    };
+    const path = join(root, "acceptance.json");
+    await writeFile(
+      path,
+      JSON.stringify({
+        contract,
+        artifacts: { [digest]: artifact },
+        patches: { [digestOfBytes(reference)]: reference, [digestOfBytes(patch)]: patch },
+      }),
+    );
+    const acceptance = await acceptancePackageExecutor(path, {
+      repositoryRoot: repository,
+      baseCommit: "HEAD",
+      candidatePatch: patch,
+      evidence,
+      preparationCommands: commands,
+      commands: async () => commands,
+      timeoutMs: 10_000,
+    });
+    const verification = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: "HEAD",
+      patch,
+      commands,
+      clock,
+      acceptance,
+    });
+    expect(verification.regression).toBe("pass");
+    expect(verification.acceptance?.obligations[0]?.status).toBe("rejected");
+    expect(verification.verified).toBe(false);
+    expect(verification.certificationPolicy).toBe("required-obligations-v1");
+    await evidence.record({
+      type: "independent-verification",
+      actor: "harness",
+      provenance: ["tool-output"],
+      payload: JSON.parse(JSON.stringify(verification)),
+    });
+    const { bundleSourceFromRecorder, exportBundle } = await import("../evidence/bundle.ts");
+    const { createEphemeralSigningKey } = await import("../evidence/signing.ts");
+    const { verifyBundleAt } = await import("../evidence/verify-report.ts");
+    const bundle = join(root, "bundle");
+    await exportBundle({
+      source: bundleSourceFromRecorder(evidence),
+      destination: bundle,
+      signingKey: createEphemeralSigningKey(),
+      clock,
+    });
+    const verified = await verifyBundleAt(bundle, []);
+    expect(verified.integrity, verified.lines.join("\n")).toBe("valid");
+    expect(verified.lines.join("\n")).toContain("controlled-node-tap-v1");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

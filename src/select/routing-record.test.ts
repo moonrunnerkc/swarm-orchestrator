@@ -43,7 +43,7 @@ function decisionOver(entries: readonly RewardEntry[]) {
     random: { next: () => 0.99 },
     settings: defaultRouterSettings,
   };
-  return routeModel(input);
+  return routeModel({ ...input, authority: "experimental" });
 }
 
 describe("the routing decision as a ledger record", () => {

@@ -1,3 +1,4 @@
+import { wilsonInterval } from "../eval/statistics.ts";
 /**
  * When a run is allowed to explore, and whether learned routing has earned being the default.
  *
@@ -98,7 +99,7 @@ export function learnedRoutingJustified(input: {
 }
 
 /**
- * A normal-approximation interval on the difference of two rates. Deliberately simple and
+ * A Wilson-based diagnostic interval on two marginal rates, never production authorization. Deliberately simple and
  * deliberately reported: the number it produces is checkable, which a bare verdict is not.
  */
 function successDifferenceInterval(
@@ -107,10 +108,18 @@ function successDifferenceInterval(
 ): readonly [number, number] {
   const baseRate = baseline.trials === 0 ? 0 : baseline.successes / baseline.trials;
   const learnedRate = learned.trials === 0 ? 0 : learned.successes / learned.trials;
-  const variance =
-    (baseline.trials === 0 ? 0 : (baseRate * (1 - baseRate)) / baseline.trials) +
-    (learned.trials === 0 ? 0 : (learnedRate * (1 - learnedRate)) / learned.trials);
-  const halfWidth = 1.96 * Math.sqrt(variance);
+  if (baseline.trials === 0 || learned.trials === 0) return [-1, 1];
+  const base = wilsonInterval(baseline.successes, baseline.trials);
+  const candidate = wilsonInterval(learned.successes, learned.trials);
   const difference = learnedRate - baseRate;
-  return [difference - halfWidth, difference + halfWidth];
+  return [
+    Math.max(
+      -1,
+      difference - Math.hypot(candidate.point - candidate.lower, base.upper - base.point),
+    ),
+    Math.min(
+      1,
+      difference + Math.hypot(candidate.upper - candidate.point, base.point - base.lower),
+    ),
+  ];
 }

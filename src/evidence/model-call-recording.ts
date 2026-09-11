@@ -1,3 +1,4 @@
+import { withModelCancellation } from "../core/model-cancellation.ts";
 import {
   describeUnknownError,
   type ModelClient,
@@ -7,6 +8,7 @@ import {
 import { asJsonValue, digestOfJson, type JsonValue } from "./canonical-json.ts";
 import { scrubJson } from "./scrub.ts";
 import type { EvidenceRecorder } from "./session.ts";
+import { recordTranscript } from "./transcript.ts";
 import { callFailedTurn, classifyTurnContent } from "./turn-content.ts";
 
 /**
@@ -23,21 +25,36 @@ import { callFailedTurn, classifyTurnContent } from "./turn-content.ts";
 export function createRecordingModelClient(
   model: ModelClient,
   recorder: EvidenceRecorder,
+  options?: { readonly transcript: "components" },
 ): ModelClient {
   let step = 0;
 
   return {
     modelId: model.modelId,
+    recordsCancellation: true,
 
     async generate(request: ModelRequest): Promise<ModelResponse> {
       step += 1;
       // Scrubbed before hashing so the digest addresses exactly what lands in the blob.
       const prompt = scrubJson(describeRequest(request)).value;
       const promptDigest = digestOfJson(prompt);
+      const storedPrompt =
+        options?.transcript === "components" ? await recordTranscript(recorder, prompt) : prompt;
+      const started =
+        options?.transcript === "components"
+          ? await recorder.record({
+              type: "model-call-started",
+              actor: "harness",
+              provenance: ["model"],
+              payload: { step, modelId: model.modelId, prompt: storedPrompt, promptDigest },
+            })
+          : undefined;
+      const intent = started === undefined ? {} : { startedRecord: started.record.payloadDigest };
 
       let response: ModelResponse;
       try {
-        response = await model.generate(request);
+        request.abortSignal.throwIfAborted();
+        response = await withModelCancellation(model.generate(request), request.abortSignal);
       } catch (cause) {
         const failure = scrubJson({ failed: true, message: describeUnknownError(cause) }).value;
         await recorder.record({
@@ -45,9 +62,14 @@ export function createRecordingModelClient(
           actor: model.modelId,
           provenance: ["model"],
           payload: {
+            ...intent,
             step,
-            prompt,
+            prompt: storedPrompt,
             response: failure,
+            providerAttempts: asJsonValue(
+              (cause as { providerAttempts?: unknown })?.providerAttempts ?? [],
+            ),
+            usageStatus: "unknown",
             inputTokens: 0,
             outputTokens: 0,
             content: { ...callFailedTurn },
@@ -64,9 +86,11 @@ export function createRecordingModelClient(
         actor: model.modelId,
         provenance: ["model"],
         payload: {
+          ...intent,
           step,
-          prompt,
+          prompt: storedPrompt,
           response: recordedResponse,
+          usageStatus: response.usageStatus ?? "reported",
           inputTokens: response.inputTokens,
           outputTokens: response.outputTokens,
           finishReason: response.finishReason,
@@ -77,6 +101,7 @@ export function createRecordingModelClient(
           // What the backend would not take. Recorded beside the settings that were sent, so
           // a seed in the prompt record is never read as a seed the sampler used.
           unsupportedFeatures: [...response.unsupportedFeatures],
+          providerAttempts: asJsonValue(response.providerAttempts ?? []),
           // Flat and named, so a calibration score is a predicate over this record rather
           // than a number someone reports about it.
           performance: {
@@ -98,7 +123,11 @@ function describeRequest(request: ModelRequest): JsonValue {
   return {
     system: request.system,
     messages: asJsonValue(request.messages),
-    tools: request.tools.map((tool) => tool.name),
+    tools: request.tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: asJsonValue(tool.inputSchema.toJSONSchema()),
+    })),
     maxOutputTokens: request.maxOutputTokens,
     // What the decoding was, in the record, so a report of a distribution names the settings
     // it was drawn under rather than leaving a reader to assume the backend's defaults.

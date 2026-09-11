@@ -113,3 +113,15 @@ describe("running a process the harness can still stop", () => {
     }
   });
 });
+
+it("never spawns a pre-cancelled request", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const ran = await runProcessGroup(
+    process.execPath,
+    ["-e", "require('node:fs').writeFileSync('should-not-exist','x')"],
+    options({ signal: controller.signal }),
+  );
+  expect(ran.cancelled).toBe(true);
+  expect(existsSync(join(workspace, "should-not-exist"))).toBe(false);
+});

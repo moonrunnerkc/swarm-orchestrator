@@ -132,6 +132,9 @@ export async function exportBundle(options: ExportBundleOptions): Promise<Bundle
     missingBlobs,
     claims: { verified: dag.verifiedCount, unverified: dag.unverifiedCount },
     workers: options.workers ?? [],
+    ...(options.attestation === undefined
+      ? {}
+      : { attestationDigest: digestOfBytes(`${JSON.stringify(options.attestation, null, 2)}\n`) }),
   });
 
   const blobDirectory = join(options.destination, bundleFileNames.blobs);

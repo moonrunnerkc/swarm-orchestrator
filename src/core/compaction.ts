@@ -24,14 +24,10 @@ import type { ConversationMessage } from "./model-client.ts";
  * budget it serves is a ceiling with room under it rather than an exact fit.
  */
 export function estimateTokens(messages: readonly ConversationMessage[]): number {
-  return messages.reduce((total, message) => total + Math.ceil(textOf(message).length / 4), 0);
-}
-
-/** A tool turn carries outcomes rather than text, and those are the largest thing in a run. */
-function textOf(message: ConversationMessage): string {
-  return message.role === "tool"
-    ? message.outcomes.map((outcome) => JSON.stringify(outcome)).join("")
-    : message.text;
+  return messages.reduce(
+    (total, message) => total + Math.ceil(JSON.stringify(message).length / 4) + 4,
+    0,
+  );
 }
 
 export interface CompactionOptions {
@@ -53,37 +49,37 @@ export function compactConversation(
   messages: readonly ConversationMessage[],
   options: CompactionOptions,
 ): CompactedConversation {
-  if (estimateTokens(messages) <= options.maxTokens || messages.length <= 2) {
+  if (estimateTokens(messages) <= options.maxTokens) {
     return { messages, compacted: false, droppedMessages: 0, droppedTokens: 0 };
   }
-
-  const [task, ...rest] = messages;
-  if (task === undefined) {
-    return { messages, compacted: false, droppedMessages: 0, droppedTokens: 0 };
+  const constraints = messages.filter((message) => message.role === "user");
+  const groups: ConversationMessage[][] = [];
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index];
+    if (message === undefined || message.role === "user") continue;
+    if (message.role === "tool") continue;
+    const group: ConversationMessage[] = [message];
+    while (messages[index + 1]?.role === "tool") {
+      group.push(messages[++index] as ConversationMessage);
+    }
+    groups.push(group);
   }
-
-  const keepRecent = options.keepRecent ?? defaultKeepRecent;
-  let recentCount = Math.min(keepRecent, rest.length);
-
-  // Shrink the recent window until what is kept fits, but never below one message: a
-  // conversation with nothing but a task and a note about what was dropped cannot be answered.
-  const held = () => [task, ...rest.slice(rest.length - recentCount)];
-  while (recentCount > 1 && estimateTokens(held()) > options.maxTokens) {
-    recentCount -= 1;
-  }
-
-  const dropped = rest.slice(0, rest.length - recentCount);
-  const summary: ConversationMessage = {
+  let recent: ConversationMessage[] = [];
+  const note = (dropped: number): ConversationMessage => ({
     role: "user",
-    text:
-      `[${dropped.length} message(s) compacted out of this conversation, about ` +
-      `${estimateTokens(dropped)} tokens. The full record is on the ledger; what you can see ` +
-      "here is the task and the most recent steps. If you need something from earlier, read " +
-      "the file rather than recalling it.]",
-  } as ConversationMessage;
-
+    text: `[${dropped} messages compacted. Full transcript remains on the ledger. Read files for earlier details.]`,
+  });
+  for (const group of groups.slice(-(options.keepRecent ?? defaultKeepRecent)).reverse()) {
+    const candidate = [...group, ...recent];
+    if (estimateTokens([...constraints, note(messages.length), ...candidate]) > options.maxTokens)
+      break;
+    recent = candidate;
+  }
+  const kept = new Set([...constraints, ...recent]);
+  const dropped = messages.filter((message) => !kept.has(message));
+  const held = [...constraints, note(dropped.length), ...recent];
   return {
-    messages: [task, summary, ...rest.slice(rest.length - recentCount)],
+    messages: held,
     compacted: true,
     droppedMessages: dropped.length,
     droppedTokens: estimateTokens(dropped),

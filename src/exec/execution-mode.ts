@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { childEnvironment, defaultChildHome } from "./child-environment.ts";
+import { controlledNetworkTarget } from "./controlled-network.ts";
 import { type ProcessRunResult, runProcessGroup } from "./run-process.ts";
 
 /**
@@ -28,7 +29,12 @@ export interface IsolationBackend {
   readonly nodeProgram: string;
   run(
     argv: readonly string[],
-    options: { readonly cwd: string; readonly timeoutMs: number },
+    options: {
+      readonly cwd: string;
+      readonly timeoutMs: number;
+      readonly signal?: AbortSignal | undefined;
+      readonly environment?: Record<string, string> | undefined;
+    },
   ): Promise<ProcessRunResult>;
 }
 
@@ -36,7 +42,7 @@ export interface ContainmentProbe {
   readonly id: string;
   /** What the probe tried to reach, in the words a reader would use. */
   readonly attempted: string;
-  readonly contained: boolean;
+  readonly contained: boolean | null;
   /** What came back. Present where the probe got through, so the escape is legible. */
   readonly observed: string;
 }
@@ -86,6 +92,7 @@ export const hostExecutionBackend: IsolationBackend = {
       cwd: options.cwd,
       env: childEnvironment(process.env, { homeDir: defaultChildHome() }).variables,
       timeoutMs: options.timeoutMs,
+      signal: options.signal,
       maxOutputBytes: 64_000,
     });
   },
@@ -119,18 +126,11 @@ export async function selfTestContainment(
       // exit code called that an escape: the probe wrote somewhere, and somewhere is not here.
       landedOnHost: () => hostFileSays(writeTarget, "reached"),
     }),
-    runProbe(backend, options, timeoutMs, {
-      id: "network-egress",
-      attempted: "opening a network connection to a host outside the machine",
-      script:
-        'const s=require("node:net").connect(443,"example.com");' +
-        's.setTimeout(4000);s.on("connect",()=>{process.stdout.write("connected");s.destroy()});' +
-        's.on("error",()=>process.stderr.write("refused"));s.on("timeout",()=>{process.stderr.write("timed out");s.destroy()})',
-    }),
+    networkProbe(backend, options, timeoutMs),
   ]);
 
   const workspaceReachable = await canReachWorkspace(backend, options, timeoutMs);
-  const escaped = probes.filter((probe) => !probe.contained);
+  const escaped = probes.filter((probe) => probe.contained === false);
 
   // Reachability first. A backend that refused every escape because the command could see
   // nothing at all has measured nothing about containment, and saying `isolated` there would
@@ -148,14 +148,17 @@ export async function selfTestContainment(
     };
   }
 
-  const mode: ExecutionMode = escaped.length === 0 ? "isolated" : "restricted";
+  const unknown = probes.some((probe) => probe.contained === null);
+  const mode: ExecutionMode = escaped.length > 0 ? "restricted" : unknown ? "unknown" : "isolated";
   const summary =
-    escaped.length === 0
-      ? `${backend.name} refused every escape and still reached its workspace, so this run is isolated.`
-      : `${backend.name} has no kernel-enforced boundary in front of it: ${escaped
-          .map((probe) => probe.id)
-          .join(", ")} got through. Commands are ruled on by a lexical path and program ` +
-        "policy, which is a real check and is not a sandbox.";
+    mode === "unknown"
+      ? `${backend.name} has incomplete containment measurements; inspect the unknown probes.`
+      : escaped.length === 0
+        ? `${backend.name} refused every escape and still reached its workspace, so this run is isolated.`
+        : `${backend.name} has no kernel-enforced boundary in front of it: ${escaped
+            .map((probe) => probe.id)
+            .join(", ")} got through. Commands are ruled on by a lexical path and program ` +
+          "policy, which is a real check and is not a sandbox.";
 
   return { backend: backend.name, mode, probes, workspaceReachable, summary };
 }
@@ -216,11 +219,11 @@ async function runProbe(
   // Contained means the attempt ran and did not succeed. A probe that could not start is not
   // evidence of containment: it is a probe that measured nothing, and reading it as
   // containment is how a backend comes to look isolated because its node was missing.
-  if (ran.startFailure !== null) {
+  if (ran.startFailure !== null || ran.cancelled || ran.timedOut) {
     return {
       id: probe.id,
       attempted: probe.attempted,
-      contained: false,
+      contained: null,
       observed: `the probe could not start (${ran.startFailure}), so nothing was shown`,
     };
   }
@@ -285,4 +288,33 @@ export function describeExecutionEnvelope(input: {
     probes: input.selfTest.probes,
     summary: input.selfTest.summary,
   };
+}
+
+async function networkProbe(
+  backend: IsolationBackend,
+  options: SelfTestOptions,
+  timeoutMs: number,
+): Promise<ContainmentProbe> {
+  const target = await controlledNetworkTarget();
+  const unknown: ContainmentProbe = {
+    id: "network-egress",
+    attempted: "connecting to a controlled host endpoint",
+    contained: null,
+    observed: "no matched reachable host control; network containment is unknown",
+  };
+  if (target === null) return unknown;
+  try {
+    const control = await hostExecutionBackend.run(
+      [hostExecutionBackend.nodeProgram, "-e", target.script],
+      { cwd: options.workspaceRoot, timeoutMs },
+    );
+    if (control.exitCode !== 0 || control.stdout !== "connected") return unknown;
+    return await runProbe(backend, options, timeoutMs, {
+      id: "network-egress",
+      attempted: "connecting to the same controlled endpoint reached by the host control",
+      script: target.script,
+    });
+  } finally {
+    await target.close();
+  }
 }

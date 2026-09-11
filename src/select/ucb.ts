@@ -60,6 +60,7 @@ export interface RoutingDecision {
 }
 
 export interface RoutingInput {
+  readonly authority?: "experimental" | "held-out-evaluation" | undefined;
   readonly taskClass: TaskClass;
   /** The models the router may choose between. The calibration pick should be one of them. */
   readonly candidates: readonly string[];
@@ -103,10 +104,11 @@ export function routeModel(input: RoutingInput): RoutingDecision {
     reason,
   });
 
-  if (forClass.length < settings.minSamples) {
+  if (input.authority === undefined || forClass.length < settings.minSamples) {
     const short =
-      `the ${input.taskClass} class has ${forClass.length} of the ${settings.minSamples} rewards ` +
-      "the router needs";
+      input.authority === undefined
+        ? "no experimental policy or held-out evaluation authorizes learned routing"
+        : `the ${input.taskClass} class has ${forClass.length} of the ${settings.minSamples} rewards the router needs`;
     const competency = input.competency;
     if (competency !== undefined && competency.pick !== null) {
       return decide(

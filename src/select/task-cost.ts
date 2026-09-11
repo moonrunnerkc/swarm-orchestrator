@@ -28,12 +28,20 @@ export function costOfTask(input: TaskCostInput): TaskCost {
   let inputTokens = 0;
   let outputTokens = 0;
   let modelCalls = 0;
+  let usageUnknown = false;
 
   for (const entry of input.entries) {
     if (entry.type !== "model-call") {
       continue;
     }
     modelCalls += 1;
+    const payload = entry.payload as {
+      usageStatus?: string;
+      providerAttempts?: { usage: string }[];
+    };
+    usageUnknown ||=
+      payload?.usageStatus === "unknown" ||
+      payload?.providerAttempts?.some((attempt) => attempt.usage === "unknown") === true;
     inputTokens += numberAt(entry.payload, "inputTokens");
     outputTokens += numberAt(entry.payload, "outputTokens");
   }
@@ -51,16 +59,17 @@ export function costOfTask(input: TaskCostInput): TaskCost {
   }
 
   const rate = rateFor(input.pricing, input.modelSpec);
-  if (rate === null) {
+  if (rate === null || usageUnknown) {
     return {
       costUsd: null,
       source: "unknown",
       inputTokens,
       outputTokens,
       modelCalls,
-      detail:
-        `the ${input.pricing.revision} pricing table holds no rate for ${input.modelSpec}, ` +
-        "so the cost is unknown rather than zero",
+      detail: usageUnknown
+        ? "one or more provider attempts did not report usage; the total cost is unknown"
+        : `the ${input.pricing.revision} pricing table holds no rate for ${input.modelSpec}, ` +
+          "so the cost is unknown rather than zero",
     };
   }
 

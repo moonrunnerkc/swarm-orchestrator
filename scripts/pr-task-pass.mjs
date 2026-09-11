@@ -19,12 +19,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
+import { readArmDriver } from "../dist/eval/arm-dispatch.js";
 import { classifyAgainstHeldBackOracle } from "../dist/eval/campaign-run.js";
 import { readAnEmptyPatch } from "../dist/eval/empty-patch-attribution.js";
 import { heldBackRefusalIsReal, oracleCommand } from "../dist/eval/oracle-filter.js";
 import { prTaskEvidenceRoot, prTaskWorkingRoot } from "../dist/eval/pr-task-paths.js";
 import { wilsonInterval } from "../dist/eval/statistics.js";
 import { casesTitled } from "../dist/eval/test-case-split.js";
+import { childEnvironment, defaultChildHome } from "../dist/exec/child-environment.js";
 import { runProcessGroup } from "../dist/exec/run-process.js";
 
 const repositoryRoot = new URL("..", import.meta.url).pathname;
@@ -43,6 +45,8 @@ const limit = Number(flag("--limit", "1000"));
 const model = flag("--model", "local:malekoo/Qwen3.8-27B-MLX-8bit");
 const endpoint = flag("--endpoint", "http://127.0.0.1:8000/v1");
 const wallMinutes = Number(flag("--max-wall-minutes", "12"));
+const tokenBudget = Number(flag("--max-tokens", "1000000"));
+const isolation = flag("--isolation", null);
 /**
  * Re-judge patches this pass already produced, without calling a model. What a harness change did
  * to earlier results is then arithmetic over recorded evidence rather than a new campaign, which
@@ -82,6 +86,18 @@ const resume = argv.includes("--resume");
  * contributor, and a tool that survives the stronger one survives the weaker.
  */
 const attack = argv.includes("--attack");
+const armConfig = flag("--arm-config", null);
+if (
+  !rejudge &&
+  arm !== null &&
+  arm !== "single-gates" &&
+  !(arm === "attack" && attack) &&
+  armConfig === null
+)
+  throw new Error(
+    "a comparison --arm needs --arm-config <file> naming its actual driver; use --arm single-gates for the existing harness",
+  );
+const armDriver = armConfig === null ? null : await readArmDriver(armConfig, arm);
 
 const patchRoot = arm === null ? join(taskRoot, "patches") : join(taskRoot, `patches-${arm}`);
 const scoredPath =
@@ -99,7 +115,7 @@ const scoredPath =
 async function attempt(file, args, options = {}) {
   const ran = await runProcessGroup(file, args, {
     cwd: options.cwd ?? process.cwd(),
-    env: definedNames(options.env ?? process.env),
+    env: childEnvironment(options.env ?? process.env, { homeDir: defaultChildHome() }).variables,
     timeoutMs: options.timeout ?? 10 * 60_000,
     maxOutputBytes: 64 * 1024 * 1024,
   });
@@ -110,11 +126,6 @@ async function attempt(file, args, options = {}) {
     /** Killed at its deadline rather than finished, which is a different thing from failing. */
     timedOut: ran.timedOut,
   };
-}
-
-/** An environment as spawn wants it: every name a string, none of them absent. */
-function definedNames(environment) {
-  return Object.fromEntries(Object.entries(environment).filter(([, value]) => value !== undefined));
 }
 
 /**
@@ -296,6 +307,7 @@ async function judgeOf(task, checkout, patchPath, storedTest) {
       [
         join(repositoryRoot, "dist/cli.js"),
         "ci",
+        ...(isolation === null ? [] : ["--isolation", isolation]),
         "--patch",
         patchPath,
         "--workspace",
@@ -574,25 +586,49 @@ for (const task of wanted) {
   writeFileSync(join(workspace, ".git", "info", "exclude"), "swarm.toml\n");
 
   const startedAt = Date.now();
-  const agent = await attempt(
-    process.execPath,
-    [
-      join(repositoryRoot, "dist/cli.js"),
-      "--model",
-      model,
-      "--local-endpoint",
-      endpoint,
-      "--no-tui",
-      "--workspace",
-      workspace,
-      "--base",
-      task.baseCommit,
-      "--max-wall-minutes",
-      String(wallMinutes),
-      promptFor(task, shown.stdout),
-    ],
-    { cwd: workspace, timeout: (wallMinutes + 4) * 60_000 },
-  );
+  const defaultAgentArgs = [
+    join(repositoryRoot, "dist/cli.js"),
+    "--model",
+    model,
+    "--local-endpoint",
+    endpoint,
+    "--no-tui",
+    "--workspace",
+    workspace,
+    "--base",
+    task.baseCommit,
+    "--max-tokens",
+    String(tokenBudget),
+    ...(isolation === null ? [] : ["--isolation", isolation]),
+    "--max-wall-minutes",
+    String(wallMinutes),
+    promptFor(task, shown.stdout),
+  ];
+  let agentArgv = [process.execPath, ...defaultAgentArgs];
+  if (armDriver !== null) {
+    const inputs = join(workingRoot, "arm-inputs");
+    mkdirSync(inputs, { recursive: true, mode: 0o700 });
+    const inputPath = join(inputs, `${task.repository.replaceAll("/", "-")}-${task.pull}.json`);
+    writeFileSync(
+      inputPath,
+      JSON.stringify({
+        workspace,
+        baseCommit: task.baseCommit,
+        task: promptFor(task, shown.stdout),
+        model,
+        endpoint,
+        budget: { wallMs: wallMinutes * 60000, tokens: tokenBudget },
+        armId: arm,
+        implementationDigest: armDriver.implementationDigest,
+      }),
+      { mode: 0o600 },
+    );
+    agentArgv = armDriver.argv(inputPath);
+  }
+  const agent = await attempt(agentArgv[0], agentArgv.slice(1), {
+    cwd: workspace,
+    timeout: (wallMinutes + 4) * 60_000,
+  });
   const latencyMs = Date.now() - startedAt;
 
   await attempt("git", ["add", "-A"], { cwd: workspace });
@@ -605,7 +641,7 @@ for (const task of wanted) {
   // is how six tasks scored inside a path the policy guard denies were read as the model failing
   // for six hours. Nothing to measure and could not measure are different findings.
   if (diff.stdout.trim().length === 0) {
-    // An endpoint that is not answering says nothing about a model, so nothing is recorded. An MLX
+    // A failed endpoint is retained as infrastructure failure and stops further dispatch. An MLX
     // server ran out of GPU memory mid-batch and every task after it came back with a zero-byte
     // patch, each one written down as the model failing: the same misattribution as the twelve
     // rows above, running the other way. Asked only here, because this is the one verdict whose
@@ -616,6 +652,27 @@ for (const task of wanted) {
       endpointDetail: health.detail,
     });
     if (!reading.attributable) {
+      scored.runs.push({
+        repository: task.repository,
+        pull: task.pull,
+        baseCommit: task.baseCommit,
+        armId: arm ?? "single-gates",
+        implementationDigest: armDriver?.implementationDigest ?? null,
+        agentExit: agent.code,
+        status: "infrastructure-failure",
+        regression: "unmeasured",
+        sealedOracle: "unjudged",
+        heldBackOracle: "unjudged",
+        oracleReach: "unmeasured",
+        oracleBond: "not-bonded",
+        verified: false,
+        corner: "unjudgeable",
+        latencyMs,
+        harness: harnessCommit,
+        detail: reading.detail,
+        ...(attack ? { prompt: "sealed-oracle-shown" } : {}),
+      });
+      writeFileSync(scoredPath, `${JSON.stringify(scored, null, 2)}\n`);
       console.log(`  ${label.padEnd(42)} ${reading.detail}`);
       console.log("stopping: every task after an endpoint failure would record the same thing.");
       break;
@@ -642,6 +699,8 @@ for (const task of wanted) {
       producedNoChange: true,
       latencyMs,
       harness: harnessCommit,
+      armId: arm ?? "single-gates",
+      implementationDigest: armDriver?.implementationDigest ?? null,
     });
     writeFileSync(scoredPath, `${JSON.stringify(scored, null, 2)}\n`);
     console.log(`  ${label.padEnd(42)} ${reading.detail} -> true-red`);
@@ -676,6 +735,8 @@ for (const task of wanted) {
     corner,
     latencyMs,
     harness: harnessCommit,
+    armId: arm ?? "single-gates",
+    implementationDigest: armDriver?.implementationDigest ?? null,
     ...(attack ? { prompt: "sealed-oracle-shown" } : {}),
     ...(whyNothingWasJudged(sealed) === null ? {} : { judgeFailure: whyNothingWasJudged(sealed) }),
   });

@@ -163,6 +163,7 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
     options.clock,
     harnessChildEnvironment(),
     options.isolation,
+    options.abortSignal,
   );
   // Read from the base commit, falling back to the tree only where the base had no manifest at
   // all. A run must not author the command that measures it: one rewrote package.json's test

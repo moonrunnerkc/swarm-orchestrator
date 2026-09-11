@@ -75,3 +75,16 @@ describe("what refuses to certify a patch", () => {
     ).toEqual(["regression-not-pass", "task-not-accepted", "oracle-did-not-reach-the-change"]);
   });
 });
+
+it("required obligations refuse an omission even when the historical oracle accepted", () => {
+  const acceptance = {
+    policy: "required-obligations-v1",
+    contractDigest: "fixture",
+    accepted: true,
+    obligations: [{ id: "missing", severity: "required", status: "rejected", observations: [] }],
+  } as const;
+  expect(certifies({ ...clean, certificationPolicy: "required-obligations-v1", acceptance })).toBe(
+    false,
+  );
+  expect(certifies(clean)).toBe(true);
+});

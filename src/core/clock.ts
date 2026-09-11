@@ -7,5 +7,5 @@ export interface Clock {
    * beside a call is let go of when the call returns first: a timer nobody cancels would
    * hold the process open for the whole interval after the run is over.
    */
-  sleep(milliseconds: number, cancel?: AbortSignal): Promise<void>;
+  sleep(milliseconds: number, cancel?: AbortSignal, purpose?: "deadline" | "delay"): Promise<void>;
 }

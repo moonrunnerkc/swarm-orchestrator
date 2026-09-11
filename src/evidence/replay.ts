@@ -1,10 +1,11 @@
 import { readBundle } from "./bundle.ts";
 import type { BundleManifest } from "./bundle-manifest.ts";
-import type { JsonValue } from "./canonical-json.ts";
+import { digestOfJson, type JsonValue } from "./canonical-json.ts";
 import { buildEvidenceDag } from "./dag.ts";
 import { verifyChain } from "./ledger.ts";
 import type { LedgerRecord } from "./ledger-record.ts";
 import { verifyChainHeadSignature } from "./signing.ts";
+import { reconstructTranscript } from "./transcript.ts";
 
 interface ReplayInput {
   readonly records: readonly LedgerRecord[];
@@ -52,6 +53,23 @@ export function renderReplay(input: ReplayInput): readonly string[] {
 
   for (const record of input.records) {
     const payload = input.payloads.get(record.payloadDigest) ?? null;
+    if (
+      record.type === "model-call" &&
+      payload !== null &&
+      typeof payload === "object" &&
+      "prompt" in payload
+    ) {
+      try {
+        const prompt = reconstructTranscript(payload.prompt, input.payloads) as JsonValue;
+        lines.push(
+          `prompt ${record.sequence}: ${digestOfJson(prompt) === record.promptDigest ? "exact reconstruction verified" : "DIGEST MISMATCH"}`,
+        );
+      } catch (cause) {
+        lines.push(
+          `prompt ${record.sequence}: unavailable (${cause instanceof Error ? cause.message : String(cause)})`,
+        );
+      }
+    }
     lines.push(
       `#${String(record.sequence).padStart(3, "0")} ${isoTime(record.timestamp)} ` +
         `${record.type.padEnd(15)} ${describePayload(record, payload)}`,

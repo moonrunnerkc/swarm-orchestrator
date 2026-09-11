@@ -107,3 +107,26 @@ their words in it.
 If the run goes over ten minutes, the row says so and names which step took the time. A gate that
 fails on the install rather than on the tool is a different problem from one that fails in step 6,
 and averaging them would hide both.
+
+## Recording the study
+
+The observer can create the common repository with `node scripts/create-first-run-fixture.mjs <new-directory>`.
+Its TASK.txt fixes the task and its baseline test runs without dependencies. Creating the fixture
+is preparation, not a participant observation. Record supplied credentials, runtime images,
+network access, warm caches and the expected signer fingerprint among the prerequisites.
+Obtain that fingerprint through a trusted channel independent of the bundle being checked.
+The verify flag accepts a fingerprint, not a filename.
+
+After building this checkout, use `node scripts/observe-first-run.mjs <protocol.json> <event.json>`
+at each milestone. The schemas live in `src/eval/first-run-observation.ts`. Freeze the build digest,
+phase, anonymized participant and observer IDs, consent, prerequisite list, sample size, passing
+fraction and cap before starting. Record all installation, policy, task, patch, verification and
+explanation milestones, plus every assistance or failure event. A verification milestone names
+the task bundle digest; the explanation supplies the silent observer's three comprehension
+scores. The recorder timestamps each event and refuses replacing an earlier observation.
+
+Formative participants and validation participants are separate. Validation rejects participants
+recorded as having used the tool, read this repository or seen a demonstration. These declarations
+require the observer's confirmation. The recorder cannot establish that a person is new or that an
+observer is independent. A synthetic fixture observation never counts as a human study result.
+The ten-minute target, cohort pass fraction and any later hard stopping cap must be prespecified.

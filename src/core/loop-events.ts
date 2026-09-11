@@ -12,6 +12,14 @@ export type GateStatus = "passed" | "failed" | "not-applicable";
  * side channel, so every displayed line traces to something the harness observed.
  */
 export type LoopEvent =
+  | {
+      readonly type: "run-assessment";
+      readonly steps?: number;
+      readonly tokensUsed?: number;
+      readonly acceptable: boolean;
+      readonly detail: string;
+      readonly record: string;
+    }
   | { readonly type: "plan"; readonly text: string }
   /**
    * What actually stands between a command and the machine, measured before the first tool

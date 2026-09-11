@@ -179,6 +179,10 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
   async function landLayer(proposals: readonly RankedProposal[]): Promise<void> {
     const landed = await runMergeQueue({
       integrationPath: integration.path,
+      abortSignal: options.abortSignal,
+      ...(options.isolation === undefined
+        ? {}
+        : { isolation: options.isolation(integration.path) }),
       // Each layer is ratcheted against the tree the layer before it left, which is also
       // the tree its workers branched from. A dependent node has to see its parent's work.
       baseCommit: head,

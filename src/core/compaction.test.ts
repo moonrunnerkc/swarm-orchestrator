@@ -100,3 +100,23 @@ describe("keeping a conversation inside a budget", () => {
     expect(estimateTokens([])).toBe(0);
   });
 });
+
+it("counts tool arguments and keeps call/result groups intact", () => {
+  const call: ConversationMessage = {
+    role: "assistant",
+    text: "",
+    toolCalls: [{ callId: "large", toolName: "write", input: { content: "x".repeat(100_000) } }],
+  };
+  const reply: ConversationMessage = {
+    role: "tool",
+    outcomes: [{ callId: "large", toolName: "write", output: "ok", failed: false }],
+  };
+  expect(estimateTokens([call])).toBeGreaterThan(25_000);
+  const compacted = compactConversation(
+    [message("user", "old task"), call, reply, message("user", "current task")],
+    { maxTokens: 100 },
+  );
+  expect(compacted.messages.some((entry) => entry.role === "tool")).toBe(false);
+  expect(compacted.messages.some((entry) => textOf(entry) === "current task")).toBe(true);
+  expect(estimateTokens(compacted.messages)).toBeLessThanOrEqual(100);
+});

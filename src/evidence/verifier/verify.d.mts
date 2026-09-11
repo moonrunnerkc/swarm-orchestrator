@@ -19,7 +19,7 @@ export declare function indexCitedRecords(
 ): ReadonlyMap<string, CitedRecord>;
 export declare function evaluateClaim(claim: ClaimPayload, lookup: EvidenceLookup): ClaimEvaluation;
 /** Returns the process exit code: 0 when every check passed. */
-export declare function verifyBundle(directory: string): number;
+export declare function verifyBundle(directory: string, write?: (line: string) => void): number;
 
 export type BondVerdict = "held" | "vacuous" | "unshown" | "not-measured";
 export declare function bondVerdict(input: {

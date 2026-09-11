@@ -293,7 +293,9 @@ describe("a turn that carries nothing", () => {
     // been cut off, which is the one fact "empty-response" does not carry.
     // Three, because a spiral is retried before it is believed: the retry policy is what
     // decides how many samples of the same request it takes before the cap is the answer.
-    const harness = createHarness([respondTruncated(), respondTruncated(), respondTruncated()]);
+    const harness = createHarness([respondTruncated(), respondTruncated(), respondTruncated()], {
+      budget: { ...generousBudget, maxTokens: 100_000 },
+    });
     const outcome = await runAgentLoop("do the thing", harness.deps);
 
     expect(outcome.stopReason).toBe("output-cap");
@@ -340,4 +342,87 @@ describe("a turn that carries nothing", () => {
     expect(outcome.stopReason).toBe("completed");
     expect(outcome.answeredSteps).toBe(2);
   });
+});
+
+describe("composition budget regressions", () => {
+  it("counts every truncated provider attempt", async () => {
+    const harness = createHarness(
+      [respondTruncated(), respondTruncated(), respondWithText("done")],
+      { budget: { ...generousBudget, maxTokens: 100_000 } },
+    );
+    const outcome = await runAgentLoop("count attempts", harness.deps);
+    expect(outcome.tokensUsed).toBeGreaterThan(16_384);
+  });
+  it("does not dispatch the second tool after cancellation during the first", async () => {
+    const harness = createHarness([
+      respondWithToolCalls("", [
+        { callId: "first", toolName: "write", input: {} },
+        { callId: "second", toolName: "write", input: {} },
+      ]),
+    ]);
+    const invoker = createRecordingToolInvoker(() => {
+      harness.controller.abort();
+      return "done";
+    });
+    const outcome = await runAgentLoop("cancel batch", { ...harness.deps, toolInvoker: invoker });
+    expect(invoker.invocations.map((call) => call.callId)).toEqual(["first"]);
+    expect(outcome.stopReason).toBe("interrupted");
+  });
+  it("does not restart the wall budget on a retry", async () => {
+    const harness = createHarness([], {
+      budget: { ...generousBudget, maxWallTimeMs: 100 },
+      retryPolicy: { attempts: 3, baseDelayMs: 0, maxJitterRatio: 0 },
+    });
+    let calls = 0;
+    const fixture = createFixtureModelClient({
+      modelId: "fixture",
+      turns: [respondTruncated(), respondWithText("done")],
+    });
+    const model: ModelClient = {
+      modelId: "fixture",
+      async generate(request) {
+        calls += 1;
+        harness.clock.advance(60);
+        return fixture.generate(request);
+      },
+    };
+    const outcome = await runAgentLoop("bounded retries", { ...harness.deps, model });
+    expect(outcome.stopReason).toBe("max-wall-time");
+    expect(calls).toBe(2);
+    expect(outcome.tokensUsed).toBeGreaterThan(8192);
+  });
+  it("does not retry rejected credentials", async () => {
+    const denied = Object.assign(new Error("unauthorized"), { statusCode: 401 });
+    const harness = createHarness([], {
+      model: {
+        modelId: "denied",
+        generate: async () => {
+          throw denied;
+        },
+      },
+    });
+    expect((await runAgentLoop("authenticate", harness.deps)).stopReason).toBe("model-error");
+    expect(harness.clock.sleeps).toEqual([]);
+  });
+});
+
+it("enforces its deadline even when a provider ignores cancellation", async () => {
+  const harness = createHarness([]);
+  let entered = false;
+  const pending = runAgentLoop("work", {
+    ...harness.deps,
+    budget: { ...generousBudget, maxWallTimeMs: 100 },
+    model: {
+      modelId: "unresponsive",
+      generate: () => {
+        entered = true;
+        return new Promise(() => {});
+      },
+    },
+  });
+  for (let turn = 0; !entered && turn < 20; turn += 1) await Promise.resolve();
+  expect(entered).toBe(true);
+  harness.clock.advance(100);
+  expect((await pending).stopReason).toBe("max-wall-time");
+  expect(harness.toolInvoker.invocations).toHaveLength(0);
 });

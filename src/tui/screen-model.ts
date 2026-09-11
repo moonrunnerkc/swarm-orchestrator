@@ -47,7 +47,7 @@ export interface ScreenInput {
 
 export interface TranscriptLine {
   readonly text: string;
-  readonly kind: "task" | "outcome";
+  readonly kind: "task" | "outcome" | "note";
 }
 
 export function buildScreen(input: ScreenInput): readonly ScreenRow[] {

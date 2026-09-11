@@ -6,6 +6,8 @@ import type { LoopEvent } from "../core/loop-events.ts";
  */
 export function describeLoopEvent(event: LoopEvent): string | null {
   switch (event.type) {
+    case "run-assessment":
+      return `work ${event.acceptable ? "accepted" : "refused"}: ${event.detail}`;
     case "plan":
       return event.text.length === 0 ? null : `plan: ${event.text}`;
     // Said out loud before the first tool call. A reader should never have to infer from the

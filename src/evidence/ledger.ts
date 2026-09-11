@@ -1,7 +1,8 @@
-import { appendFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { Clock } from "../core/clock.ts";
 import type { ProvenanceTag } from "../core/model-client.ts";
+import { appendLedgerLine } from "./ledger-file.ts";
 import {
   genesisHash,
   hashOfRecord,
@@ -11,7 +12,7 @@ import {
   type RecordType,
   serializeRecord,
 } from "./ledger-record.ts";
-import { makeOwnerOnlyDirectory, ownerOnlyFile } from "./store-mode.ts";
+import { makeOwnerOnlyDirectory } from "./store-mode.ts";
 
 export class LedgerWriteFailedError extends Error {
   constructor(path: string, cause: unknown) {
@@ -71,12 +72,24 @@ interface LedgerOptions {
  * a failed write seals the ledger rather than letting the run continue unrecorded.
  */
 export async function openLedger(options: LedgerOptions): Promise<Ledger> {
-  const write = options.write ?? appendLine;
+  const write = options.write ?? appendLedgerLine;
   await makeOwnerOnlyDirectory(dirname(options.path));
 
-  const written: LedgerRecord[] = [];
-  let previousHash = genesisHash;
-  let sequence = 0;
+  let existing = "";
+  try {
+    existing = await readFile(options.path, "utf8");
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause;
+  }
+  const parsed = parseLedgerText(existing);
+  const verified = verifyChain(parsed.records);
+  if ((existing !== "" && !existing.endsWith("\n")) || parsed.problems.length > 0 || !verified.ok)
+    throw new Error(
+      `ledger at ${options.path} cannot be resumed: preserve the damaged chain and reconcile it before continuing`,
+    );
+  const written: LedgerRecord[] = [...parsed.records];
+  let previousHash = verified.head;
+  let sequence = written.length;
   let sealed = false;
   let pending: Promise<unknown> = Promise.resolve();
 
@@ -212,8 +225,4 @@ export function parseLedgerText(text: string): ParsedLedger {
   }
 
   return { records, problems };
-}
-
-async function appendLine(path: string, line: string): Promise<void> {
-  await appendFile(path, `${line}\n`, { encoding: "utf8", mode: ownerOnlyFile });
 }

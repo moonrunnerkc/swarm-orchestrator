@@ -148,3 +148,26 @@ export function intentionToTreat(runs: readonly LaunchedRun[]): IntentionToTreat
     rate: wilsonInterval(accepted, launched),
   };
 }
+
+/** Hoeffding's finite-sample bound on independent paired differences in [-1, 1]. */
+export function pairedNonInferiority(
+  pairs: readonly { baseline: boolean; candidate: boolean }[],
+  margin: number,
+): Interval & { nonInferior: boolean; method: "paired-hoeffding-95" } {
+  if (!(margin > 0 && margin <= 1)) throw new Error("prespecify a margin in (0, 1]");
+  const point =
+    pairs.length === 0
+      ? 0
+      : pairs.reduce((sum, pair) => sum + Number(pair.candidate) - Number(pair.baseline), 0) /
+        pairs.length;
+  const radius = pairs.length === 0 ? 1 : Math.sqrt((2 * Math.log(40)) / pairs.length);
+  const lower = Math.max(-1, point - radius);
+  const upper = Math.min(1, point + radius);
+  return {
+    point,
+    lower,
+    upper,
+    nonInferior: pairs.length > 0 && lower > -margin,
+    method: "paired-hoeffding-95",
+  };
+}

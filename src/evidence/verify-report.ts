@@ -1,8 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type AttestationJudgement, verifyAttestation } from "./attestation.ts";
-import { bundleFileNames } from "./bundle-manifest.ts";
+import { type AttestationJudgement, invalidAttestation, verifyAttestation } from "./attestation.ts";
+import { bundleFileNames, bundleManifestSchema } from "./bundle-manifest.ts";
 import { judgeSigner, type SignerJudgement, type TrustPolicy } from "./signer-trust.ts";
+import { rederiveBundle } from "./verifier/rederive.mjs";
+import { verifyBundle } from "./verifier/verify.mjs";
 
 export interface BundleVerification {
   readonly integrity: "valid" | "invalid" | "unverified";
@@ -25,7 +27,9 @@ export async function verifyBundleAt(
 ): Promise<BundleVerification> {
   let manifest: { chainHead?: string; signature?: unknown };
   try {
-    manifest = JSON.parse(await readFile(join(directory, bundleFileNames.manifest), "utf8"));
+    manifest = bundleManifestSchema.parse(
+      JSON.parse(await readFile(join(directory, bundleFileNames.manifest), "utf8")),
+    );
   } catch (cause) {
     return {
       integrity: "unverified",
@@ -59,17 +63,27 @@ export async function verifyBundleAt(
   }
 
   const judgement = judgeSigner(manifest.chainHead, signature, policy);
-  const integrity = judgement.signer === "invalid" ? "invalid" : "valid";
+  const checks: string[] = [];
+  let verified = false;
+  try {
+    verified = verifyBundle(directory, (line) => checks.push(line)) === 0;
+    if (verified) verified = rederiveBundle(directory, (line) => checks.push(line)) === 0;
+  } catch (cause) {
+    checks.push(`verification failed: ${cause instanceof Error ? cause.message : String(cause)}`);
+  }
   const attested = await readAttestation(directory, policy);
+  const integrity =
+    verified && judgement.signer !== "invalid" && attested?.integrity !== "invalid"
+      ? "valid"
+      : "invalid";
 
   return {
     integrity,
     signerJudgement: judgement,
     attestation: attested,
     lines: [
-      `integrity:  ${integrity} (the signature over the chain head ${
-        integrity === "valid" ? "verifies" : "does not verify"
-      })`,
+      `integrity:  ${integrity} (installed verifier checked the ledger, payloads and recorded verdicts)`,
+      ...checks,
       `signer:     ${judgement.signer}`,
       `            ${judgement.reason}`,
       `fingerprint: ${judgement.fingerprint}`,
@@ -87,7 +101,7 @@ export async function verifyBundleAt(
             "it was written. It says nothing about whether the machine that wrote it was sound.",
           ]),
     ],
-    exitCode: judgement.signer === "trusted" ? 0 : 1,
+    exitCode: integrity === "valid" && judgement.signer === "trusted" ? 0 : 1,
   };
 }
 
@@ -105,7 +119,9 @@ async function readAttestation(
       await readFile(join(directory, bundleFileNames.attestation), "utf8"),
     );
     return verifyAttestation(envelope, policy);
-  } catch {
-    return null;
+  } catch (cause) {
+    return (cause as NodeJS.ErrnoException).code === "ENOENT"
+      ? null
+      : invalidAttestation(`attestation could not be read: ${String(cause)}`);
   }
 }

@@ -448,6 +448,46 @@ describe("the run's wall budget", () => {
 
     expect(outcome.green).toBe(true);
     const records = evidence.records();
-    expect(records.some((record) => record.type === "session-budget")).toBe(false);
+    expect(
+      records
+        .filter((record) => record.type === "session-budget")
+        .map((record) => evidence.payloads().get(record?.payloadDigest ?? "")),
+    ).toEqual([expect.objectContaining({ phase: "settled", tokensUsed: outcome.loop.tokensUsed })]);
+  });
+});
+
+it("records real tool intents and completions in durable state", async () => {
+  const { openRunStore } = await import("./durable/run-store.ts");
+  const path = join(scratch, "runs.jsonl");
+  const completed = await task(goodTurns(stillGreen), { runStorePath: path });
+  const store = openRunStore(path);
+  expect(
+    store.steps(evidence.sessionId).some((step) => step.kind === "write" && step.state === "done"),
+  ).toBe(true);
+  expect(store.run(evidence.sessionId)?.state).toBe(
+    completed.verdict.acceptable ? "finished" : "aborted",
+  );
+});
+
+it("keeps a test deletion refused in the returned and recorded assessment", async () => {
+  const deleted = await task([
+    respondWithToolCalls("declare", [
+      { callId: "declare", toolName: "declare_file_set", input: { files: ["src/greet.test.js"] } },
+    ]),
+    respondWithToolCalls("delete a test", [
+      {
+        callId: "edit",
+        toolName: "write",
+        input: { path: "src/greet.test.js", content: "import { test } from 'node:test';\n" },
+      },
+    ]),
+    respondWithText("done"),
+  ]);
+  expect(deleted.gates.outcome.baseComparison.decision.accepted).toBe(false);
+  expect(deleted.green).toBe(false);
+  expect(deleted.verdict.acceptable).toBe(false);
+  const recorded = evidence.records().findLast((entry) => entry.type === "run-assessment");
+  expect(evidence.payloads().get(recorded?.payloadDigest ?? "")).toMatchObject({
+    verdict: { acceptable: false },
   });
 });
