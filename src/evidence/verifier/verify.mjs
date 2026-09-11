@@ -603,6 +603,87 @@ function collectChecks(directory) {
       : `${missing.length} missing: ${missing.join(", ")}`,
   );
 
+  const referenced = [...new Set(records.map((entry) => entry.payloadDigest))].sort();
+  record(
+    "manifest blob inventory matches the ledger",
+    Array.isArray(manifest.blobs) &&
+      JSON.stringify([...manifest.blobs].sort()) === JSON.stringify(referenced) &&
+      Array.isArray(manifest.missingBlobs) &&
+      manifest.missingBlobs.length === 0,
+    "every referenced payload must be listed and present",
+  );
+
+  let attestationBytes;
+  try {
+    attestationBytes = readFileSync(join(directory, "attestation.dsse.json"), "utf8");
+  } catch (cause) {
+    if (cause.code !== "ENOENT") record("attestation reads", false, cause.message);
+  }
+  if (manifest.attestationDigest !== undefined) {
+    record(
+      "attestation content address",
+      attestationBytes !== undefined && sha256(attestationBytes) === manifest.attestationDigest,
+      "declared attestation must be present and unchanged",
+    );
+  }
+  if (attestationBytes !== undefined) {
+    try {
+      const envelope = JSON.parse(attestationBytes);
+      const payload = Buffer.from(envelope.payload, "base64");
+      const statement = JSON.parse(payload.toString("utf8"));
+      const legacy = statement.predicateType === "https://swarm-orchestrator.dev/attestation/v3";
+      const pae = Buffer.concat([
+        Buffer.from(
+          `DSSEv1 ${Buffer.byteLength(envelope.payloadType)} ${envelope.payloadType} ${payload.length} `,
+        ),
+        payload,
+      ]);
+      const signature = envelope.signatures[0];
+      const signatureHolds = verifySignature(
+        null,
+        legacy ? Buffer.from(pae.toString("base64")) : pae,
+        createPublicKey({
+          key: Buffer.from(signature.publicKey, "base64"),
+          format: "der",
+          type: "spki",
+        }),
+        Buffer.from(signature.sig, "base64"),
+      );
+      record(
+        "attestation signature and type",
+        signatureHolds &&
+          envelope.payloadType === "application/vnd.in-toto+json" &&
+          statement._type === "https://in-toto.io/Statement/v1" &&
+          (legacy || statement.predicateType === "https://swarm-orchestrator.dev/attestation/v4") &&
+          signature.publicKey === manifest.signature.publicKey,
+        legacy ? "legacy v3 base64 signing compatibility" : "standard DSSE raw PAE",
+      );
+      const latest = (type) =>
+        payloads.get(records.filter((entry) => entry.type === type).at(-1)?.payloadDigest);
+      const patch = latest("workspace-diff");
+      const assessment = latest("run-assessment");
+      const spec = records.find((entry) => entry.type === "run-spec-sealed");
+      record(
+        "attestation bound to this bundle",
+        statement.predicate.chainHead === manifest.chainHead &&
+          statement.predicate.runId === manifest.sessionId &&
+          (legacy ||
+            (typeof patch?.patch === "string" &&
+              patch.truncated === false &&
+              statement.subject?.length === 1 &&
+              statement.subject[0]?.digest?.sha256 === sha256(patch.patch).slice(7) &&
+              statement.predicate.specDigest === spec?.payloadDigest &&
+              statement.predicate.sourceCommit ===
+                payloads.get(spec?.payloadDigest)?.spec?.repository?.baseCommit &&
+              canonicalJson(statement.predicate.verdict) === canonicalJson(assessment?.verdict) &&
+              statement.predicate.executionMode === assessment?.verdict?.executionTrust)),
+        "patch bytes, spec, source, assessment and chain must agree",
+      );
+    } catch (cause) {
+      record("attestation verifies", false, cause.message);
+    }
+  }
+
   const cited = indexCitedRecords(records, payloads);
   const lookup = (digest) => cited.get(digest);
   const verdicts = records
@@ -615,7 +696,8 @@ function collectChecks(directory) {
   const verified = verdicts.filter((entry) => entry.evaluation.verdict === "verified").length;
   record(
     "claim verdicts recomputed",
-    manifest.claims.verified === verified,
+    manifest.claims.verified === verified &&
+      manifest.claims.unverified === verdicts.length - verified,
     `${verified} verified, ${verdicts.length - verified} unverified; manifest says ${manifest.claims.verified} verified`,
   );
 
@@ -671,6 +753,224 @@ function collectChecks(directory) {
               .join(", ")}`),
     );
   }
+
+  for (const entry of records.filter((candidate) => candidate.type === "model-call")) {
+    const payload = payloads.get(entry.payloadDigest);
+    if (payload?.prompt?.transcriptVersion !== 2) continue;
+    try {
+      const reference = payload.prompt;
+      const read = (digest, kind) => {
+        if (
+          !records.some(
+            (candidate) =>
+              candidate.sequence < entry.sequence &&
+              candidate.type === "transcript-component" &&
+              candidate.payloadDigest === digest,
+          )
+        )
+          throw new Error("component is not recorded before this prompt");
+        const component = payloads.get(digest);
+        if (component?.kind !== kind) throw new Error("component kind mismatch");
+        return component;
+      };
+      const messages = [];
+      const visited = new Set();
+      let tail = reference.tail;
+      while (tail !== null) {
+        if (
+          visited.has(tail) ||
+          messages.length >= reference.length ||
+          messages.length > records.length
+        )
+          throw new Error("invalid transcript links");
+        visited.add(tail);
+        const component = read(tail, "message");
+        messages.push(component.value);
+        tail = component.previous;
+      }
+      const reconstructed = {
+        system: read(reference.system, "system").value,
+        tools: read(reference.tools, "tools").value,
+        messages: messages.reverse(),
+        maxOutputTokens: reference.maxOutputTokens,
+        sampling: reference.sampling,
+      };
+      record(
+        `transcript ${entry.sequence} reconstructs`,
+        messages.length === reference.length &&
+          sha256(canonicalJson(reconstructed)) === entry.promptDigest,
+        "component chain and exact prompt digest",
+      );
+    } catch (cause) {
+      record(`transcript ${entry.sequence} reconstructs`, false, String(cause));
+    }
+  }
+
+  for (const entry of records.filter((candidate) => candidate.type === "contract-verification")) {
+    const verification = payloads.get(entry.payloadDigest);
+    const declaration = records.find(
+      (candidate) =>
+        candidate.type === "acceptance-contract" &&
+        candidate.sequence < entry.sequence &&
+        payloads.get(candidate.payloadDigest)?.digest === verification?.contractDigest,
+    );
+    const contract = payloads.get(declaration?.payloadDigest)?.contract;
+    let consistent =
+      declaration !== undefined &&
+      sha256(canonicalJson(contract)) === verification?.contractDigest &&
+      verification?.policy === "required-obligations-v1";
+    const requirements = contract?.requirements ?? [];
+    const obligations = verification?.obligations ?? [];
+    consistent &&=
+      requirements.length === obligations.length &&
+      new Set(requirements.map((requirement) => requirement.id)).size === requirements.length;
+    let accepted = true;
+    for (const [index, requirement] of requirements.entries()) {
+      const obligation = obligations[index];
+      const observations = obligation?.observations ?? [];
+      consistent &&=
+        obligation?.id === requirement.id &&
+        obligation?.severity === requirement.severity &&
+        observations.length === (requirement.applicable ? 3 : 0);
+      for (const [position, observation] of observations.entries()) {
+        const named = records.find(
+          (candidate) =>
+            candidate.type === "verification-command" &&
+            candidate.sequence > declaration.sequence &&
+            candidate.sequence < entry.sequence &&
+            candidate.payloadDigest === observation.evidenceDigest,
+        );
+        const captured = payloads.get(named?.payloadDigest);
+        consistent &&=
+          captured?.status === observation.status &&
+          captured?.requirementId === requirement.id &&
+          captured?.target === ["reference", "violating-control", "candidate"][position] &&
+          captured?.artifactDigest === requirement.artifactDigest &&
+          (position === 2 ||
+            captured?.patchDigest ===
+              (position === 0 ? requirement.referenceDigest : requirement.violatingControlDigest));
+      }
+      const instrument =
+        observations[0]?.status === "passed" && observations[1]?.status === "assertion-failed";
+      const status = !requirement.applicable
+        ? "not-applicable"
+        : !instrument || observations[2]?.status === "unavailable"
+          ? "unjudged"
+          : observations[2]?.status === "passed"
+            ? "accepted"
+            : "rejected";
+      consistent &&= obligation?.status === status;
+      accepted &&=
+        requirement.severity !== "required" || status === "accepted" || status === "not-applicable";
+    }
+    record(
+      `required obligations ${entry.sequence} re-derived`,
+      consistent && verification?.accepted === accepted,
+      `obligation conjunction implies ${accepted}`,
+    );
+  }
+  for (const entry of records.filter(
+    (candidate) => candidate.type === "independent-verification",
+  )) {
+    const verification = payloads.get(entry.payloadDigest);
+    if (verification?.certificationPolicy !== "required-obligations-v1") continue;
+    const named = records
+      .filter(
+        (candidate) =>
+          candidate.type === "contract-verification" && candidate.sequence < entry.sequence,
+      )
+      .at(-1);
+    const acceptance = payloads.get(named?.payloadDigest);
+    record(
+      `independent obligations ${entry.sequence} bound`,
+      named !== undefined &&
+        canonicalJson(acceptance) === canonicalJson(verification.acceptance) &&
+        verification.verified ===
+          (verification.regression === "pass" && acceptance?.accepted === true),
+      "the final verification cites the recorded requirement checks",
+    );
+  }
+  for (const entry of records.filter((candidate) => candidate.type === "run-assessment")) {
+    const assessment = payloads.get(entry.payloadDigest);
+    const inputs = assessment?.inputs;
+    const verdict = assessment?.verdict;
+    let consistent =
+      inputs?.policy === "run-acceptance-v1" && typeof verdict?.acceptable === "boolean";
+    const prior = records.filter((candidate) => candidate.sequence < entry.sequence);
+    const lookupKind = (digest, kind) =>
+      prior.some((candidate) => candidate.payloadDigest === digest && candidate.type === kind);
+    const gateRecords = Array.isArray(inputs?.gateRecords) ? inputs.gateRecords : [];
+    const gates = gateRecords.map((digest) => payloads.get(digest));
+    consistent &&= gateRecords.every((digest) => lookupKind(digest, "gate-run"));
+    const previousAssessment =
+      prior.filter((candidate) => candidate.type === "run-assessment").at(-1)?.sequence ?? -1;
+    const thisRun = prior.filter((candidate) => candidate.sequence > previousAssessment);
+    const latestGates = new Map(
+      thisRun
+        .filter((candidate) => candidate.type === "gate-run")
+        .map((candidate) => [
+          payloads.get(candidate.payloadDigest)?.gateId,
+          candidate.payloadDigest,
+        ]),
+    );
+    consistent &&=
+      gateRecords.length === latestGates.size &&
+      new Set(gateRecords).size === gateRecords.length &&
+      [...latestGates.values()].every((digest) => gateRecords.includes(digest));
+    const measured = Object.assign({}, ...gates.map((gate) => gate?.measures ?? {}));
+    consistent &&= inputs?.changedFiles === (measured.changedFiles ?? 0);
+    const stop = thisRun.filter((candidate) => candidate.type === "session-stopped").at(-1);
+    consistent &&=
+      inputs?.lifecycleRecord === (stop?.payloadDigest ?? null) &&
+      (stop === undefined
+        ? inputs?.lifecycle === "completed"
+        : payloads.get(stop.payloadDigest)?.stopReason === inputs?.lifecycle);
+    consistent &&=
+      inputs?.settled ===
+      (thisRun.some((candidate) => candidate.type === "escalation") ? "escalated" : "green");
+
+    const base = payloads.get(inputs?.baseRatchetRecord);
+    consistent &&=
+      lookupKind(inputs?.baseRatchetRecord, "ratchet-decision") &&
+      base?.scope === "base" &&
+      base?.accepted === inputs?.baseRatchetAccepted;
+    const blockingVacuous = bonds
+      .filter(
+        (bond) =>
+          bond.sequence < entry.sequence &&
+          bond.sequence > previousAssessment &&
+          bond.payload.severity === "blocking" &&
+          bond.payload.verdict === "vacuous",
+      )
+      .map((bond) => bond.payload.gateId);
+    consistent &&= JSON.stringify(blockingVacuous) === JSON.stringify(inputs?.vacuousBlockingBonds);
+    const failed = gates.some((gate) => gate?.severity === "blocking" && gate.status === "failed");
+    const policyFailed = gates.some(
+      (gate) => gate?.capability === "policy" && gate.status === "failed",
+    );
+    const dynamic = gates.filter((gate) => gate?.capability === "dynamic");
+    const executed =
+      inputs?.changedFiles === 0 ||
+      (dynamic.some((gate) => gate.status === "passed") &&
+        !dynamic.some((gate) => gate.status === "failed"));
+    const acceptable =
+      inputs?.settled === "green" &&
+      base?.accepted === true &&
+      inputs?.cancelled === false &&
+      !["interrupted", "max-wall-time", "max-tokens"].includes(inputs?.lifecycle) &&
+      (inputs?.changedFiles > 0 || inputs?.lifecycle === "completed") &&
+      blockingVacuous.length === 0 &&
+      !failed &&
+      !policyFailed &&
+      executed &&
+      verdict?.task !== "rejected" &&
+      !["required", "rejected"].includes(verdict?.humanApproval);
+    record(
+      `run assessment ${entry.sequence} re-derived`,
+      consistent && verdict?.acceptable === acceptable,
+      `recorded ${verdict?.acceptable}, evidence implies ${acceptable}`,
+    );
+  }
   const vacuous = bonds.filter((entry) => entry.payload.verdict === "vacuous");
 
   return { checks, verdicts, payloads, manifest, vacuous };
@@ -686,7 +986,7 @@ function namesChainHead(payloads, chainHead) {
   return false;
 }
 
-export function verifyBundle(directory) {
+export function verifyBundle(directory, write = console.log) {
   const top = collectChecks(directory);
   const checks = [...top.checks];
   const sections = [{ title: null, verdicts: top.verdicts }];
@@ -713,8 +1013,8 @@ export function verifyBundle(directory) {
   }
 
   for (const entry of top.vacuous ?? []) {
-    console.log("");
-    console.log(
+    write("");
+    write(
       `  VACUOUS    record ${entry.sequence}: the ${entry.payload.gateId} gate passed over its bond` +
         ` (${entry.payload.bond?.description ?? "no description"}), so that pass cannot fail`,
     );
@@ -724,32 +1024,32 @@ export function verifyBundle(directory) {
     if (section.verdicts.length === 0) {
       continue;
     }
-    console.log("");
+    write("");
     if (section.title !== null) {
-      console.log(`  ${section.title}`);
+      write(`  ${section.title}`);
     }
     for (const entry of section.verdicts) {
       const mark = entry.evaluation.verdict === "verified" ? "VERIFIED  " : "UNVERIFIED";
       const reason = entry.evaluation.reason === null ? "" : ` [${entry.evaluation.reason}]`;
-      console.log(
+      write(
         `  ${mark} record ${entry.sequence}: ${entry.claim?.predicate ?? "(no predicate)"}${reason}`,
       );
     }
   }
 
-  return report(checks);
+  return report(checks, write);
 }
 
-function report(checks) {
-  console.log("");
+function report(checks, write) {
+  write("");
   for (const check of checks) {
-    console.log(
+    write(
       `  ${check.ok ? "PASS" : "FAIL"}  ${check.name}${check.detail ? `: ${check.detail}` : ""}`,
     );
   }
   const failed = checks.filter((check) => !check.ok).length;
-  console.log("");
-  console.log(
+  write("");
+  write(
     failed === 0
       ? "bundle verified: every check passed"
       : `bundle FAILED: ${failed} check(s) did not pass`,

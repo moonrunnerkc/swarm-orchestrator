@@ -79,3 +79,15 @@ describe("costOfTask", () => {
     expect(cost).toMatchObject({ costUsd: 0, source: "priced", modelCalls: 0 });
   });
 });
+
+it("does not price unknown provider attempts as zero-cost successes", () => {
+  const cost = costOfTask({
+    modelSpec: "openai:gpt-5",
+    pricing,
+    entries: [
+      { type: "model-call", payload: { inputTokens: 0, outputTokens: 0, usageStatus: "unknown" } },
+    ],
+  });
+  expect(cost.costUsd).toBeNull();
+  expect(cost.source).toBe("unknown");
+});

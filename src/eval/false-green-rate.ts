@@ -142,12 +142,22 @@ export interface InadequateOracleTally {
  */
 export function tallyInadequateOracles(
   rows: readonly (HalfVerdicts & {
+    readonly oracleId?: string;
     readonly firstOracle?: string;
     readonly regression?: string;
     readonly verified?: boolean;
   })[],
 ): InadequateOracleTally {
-  const proved = rows.filter(
+  const identities = new Map<string, (typeof rows)[number]>();
+  for (const row of rows) {
+    const id = row.oracleId ?? JSON.stringify(row);
+    const prior = identities.get(id);
+    if (prior !== undefined && JSON.stringify(prior) !== JSON.stringify(row))
+      throw new Error(`conflicting primary observation for oracle ${id}`);
+    identities.set(id, row);
+  }
+  const distinct = [...identities.values()];
+  const proved = distinct.filter(
     (row) =>
       (row.sealedOracle ?? row.firstOracle) === "accepted" &&
       row.heldBackOracle === "rejected" &&

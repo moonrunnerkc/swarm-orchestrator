@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 
 /**
  * A process the harness can still stop after it has started something of its own.
@@ -42,6 +43,17 @@ export function runProcessGroup(
   args: readonly string[],
   options: ProcessRunOptions,
 ): Promise<ProcessRunResult> {
+  if (options.signal?.aborted || options.timeoutMs <= 0) {
+    return Promise.resolve({
+      stdout: "",
+      stderr: "execution refused before spawn",
+      exitCode: 128,
+      timedOut: options.timeoutMs <= 0,
+      cancelled: options.signal?.aborted === true,
+      truncated: false,
+      startFailure: null,
+    });
+  }
   return new Promise((settle) => {
     const child = spawn(file, [...args], {
       cwd: options.cwd,
@@ -57,17 +69,15 @@ export function runProcessGroup(
     let timedOut = false;
     let cancelled = false;
     let settled = false;
+    let outputBytes = 0;
+    const decoders = { out: new StringDecoder("utf8"), err: new StringDecoder("utf8") };
 
     const collect = (into: "out" | "err") => (chunk: Buffer) => {
-      const held = into === "out" ? stdout.length : stderr.length;
-      const room = options.maxOutputBytes - held;
-      if (room <= 0) {
-        truncated = true;
-        return;
-      }
-      const text = chunk.toString("utf8");
-      const kept = text.length > room ? text.slice(0, room) : text;
-      truncated ||= kept.length < text.length;
+      const room = Math.max(0, options.maxOutputBytes - outputBytes);
+      const bytes = chunk.subarray(0, room);
+      outputBytes += bytes.length;
+      truncated ||= bytes.length < chunk.length;
+      const kept = decoders[into].write(bytes);
       if (into === "out") {
         stdout += kept;
       } else {
@@ -97,6 +107,7 @@ export function runProcessGroup(
       stopGroup();
     };
     options.signal?.addEventListener("abort", onCancel, { once: true });
+    if (options.signal?.aborted) onCancel();
 
     const finish = (result: ProcessRunResult) => {
       if (settled) {
@@ -121,6 +132,11 @@ export function runProcessGroup(
     });
 
     child.on("close", (code, signalName) => {
+      if (!truncated) {
+        stdout += decoders.out.end();
+        stderr += decoders.err.end();
+      }
+      signalGroup(child.pid, "SIGKILL");
       finish({
         stdout,
         stderr,

@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { commandDefinitions, commandHelpLines } from "./cli-command-definitions.ts";
 import { nearestName } from "./edit-distance.ts";
 import { bundledShortlistKeyword } from "./select/shortlist-source.ts";
 
@@ -19,6 +20,16 @@ export interface InterfaceFlags {
  * resolution lives in src/config/settings.ts rather than here.
  */
 export interface RunCommand {
+  readonly maxTokens?: number;
+  readonly recovery?: {
+    readonly history: readonly import("./core/model-client.ts").ConversationMessage[];
+    readonly remainingTokens: number;
+    readonly remainingWallMs: number;
+    readonly deadline: number;
+    readonly source: { readonly sessionId: string; readonly head: string };
+    readonly previousCriteria: import("./gates/gate-set-seal.ts").GateSetSeal;
+    readonly previousSpec: import("./evidence/run-spec.ts").RunSpec;
+  };
   readonly command: "run";
   readonly task: string;
   readonly modelSpec: string | null;
@@ -98,6 +109,7 @@ export interface InitCommand {
 
 /** Runs the gates over a workspace and reports, with no model and no retries. */
 export interface GatesCommand {
+  readonly isolation?: string | null;
   readonly command: "gates";
   readonly workspace: string;
   readonly baseRef: string;
@@ -142,6 +154,9 @@ export interface GcCommand {
  * checkout of the base, the patch applied there, and the checks run in that checkout.
  */
 export interface CiCommand {
+  readonly isolation?: string | null;
+  readonly acceptanceContract?: string;
+  readonly bundleDirectory?: string;
   readonly command: "ci";
   readonly patchFile: string;
   /**
@@ -317,30 +332,20 @@ export type CommandLine =
 
 export const usage = [
   "swarm [--model <provider:id>] [--workspace <dir>] [--bundle <dir>] [--base <ref>]",
-  '  [--attempts <n>] [--max-steps <n>] [--max-wall-minutes <n>] [--local-endpoint <url>] ["<task>"]',
+  '  [--attempts <n>] [--max-steps <n>] [--max-tokens <n>] [--max-wall-minutes <n>] [--local-endpoint <url>] ["<task>"]',
   "",
   "  swarm                                            a session: type tasks, one after another",
   "",
-  "  swarm init [--workspace <dir>]                   write swarm.toml from package.json's scripts",
-  "  swarm gates [--workspace <dir>] [--base <ref>]   run the gates, no model",
+  ...commandHelpLines,
   "    --allowed-files <a,b>                          the scope you authorise; without it the",
   "                                                   file-set gate reports observed scope only",
-  "  swarm select [--shortlist <file|url|bundled>]    probe this machine, recommend a model",
-  "  swarm calibrate [--models <a,b>] [--repeats <n>] measure models on the golden set",
   '  swarm calibrate --add-case "<task>" --seed <a,b> --gate "<command>"',
   "  swarm --version                                  which build this is",
-  "  swarm doctor [--fix] [--offline]                 what owns the swarm command, and fix it",
-  "  swarm routing                                    what the reward log adds up to",
-  "  swarm parallel --tasks <file>                    one worker per line, then a merge queue",
-  "  swarm parallel --goal <text>                     break the goal into tasks, then run them",
   "    --redundancy <n>                               try each task n ways, land the best",
   "    --concurrency <n>                              how many may hold a worktree at once",
-  "  swarm review <bundle directory>                  what a run produced, and open it",
-  "  swarm verify <bundle directory> [--signer <fp>]  check the bundle, and who signed it",
-  "  swarm gc [--older-than 30d] [--remove]           what stored evidence would be removed",
   "",
-  "  swarm ci --patch <file> [--base <ref>]           verify a patch in a fresh checkout of",
   "    [--immutable <a,b>] [--json]                   the base, trusting nothing that made it",
+  "    [--contract <file>] [--isolation <runtime[:image]>] [--bundle <dir>]",
   "    [--agent-stream <file>]                        replay another agent's own event stream",
   "    [--agent-format generic|claude-code]           beside it, so the record is not a guess",
   "    [--install]                                    install the checkout's dependencies first,",
@@ -348,13 +353,6 @@ export const usage = [
   "    [--oracle <command>]                           what says the task was done; without it the",
   "                                                   task is unjudged and nothing is verified",
   "",
-  "  swarm list-runs                                  runs this machine has state for",
-  "  swarm inspect <run-id> [--json]                  what a run did, and what it still owes",
-  "  swarm resume <run-id>                            take up a run that was interrupted",
-  "  swarm retry-step <run-id> <step-id>              run one step again",
-  "  swarm abort <run-id>                             stop a run and refuse it new work",
-  "  swarm repair <run-id>                            release what a dead run left held",
-  "  swarm replay <bundle directory>                  read a bundle back",
   "",
   "  --json                         line-delimited JSON on stdout: one line per event, one",
   "                                 result at the end, each naming its schema",
@@ -463,6 +461,13 @@ export function parseCommandLine(
     }
     return {
       command: "ci",
+      ...(flags.has("isolation") ? { isolation: flags.get("isolation") ?? null } : {}),
+      ...(flags.has("contract")
+        ? { acceptanceContract: resolve(context.currentDirectory, flags.get("contract") as string) }
+        : {}),
+      ...(flags.has("bundle")
+        ? { bundleDirectory: resolve(context.currentDirectory, flags.get("bundle") as string) }
+        : {}),
       installDependencies: flags.has("install"),
       oracleOnly: flags.has("oracle-only"),
       taskOracle: flags.get("oracle") ?? null,
@@ -632,6 +637,7 @@ export function parseCommandLine(
     const allowed = flags.get("allowed-files");
     return {
       command: "gates",
+      ...(flags.has("isolation") ? { isolation: flags.get("isolation") ?? null } : {}),
       workspace,
       baseRef: flags.get("base") ?? defaultBaseRef,
       bundleDirectory,
@@ -679,30 +685,18 @@ export function parseCommandLine(
     );
   }
 
-  return { command: "run", task, ...shared };
+  return {
+    command: "run",
+    task,
+    ...shared,
+    ...(flags.has("max-tokens")
+      ? { maxTokens: parseFlagCount(flags.get("max-tokens"), "--max-tokens") ?? 0 }
+      : {}),
+  };
 }
 
 /** Subcommands, for telling a typo from a task. Not the parser's source of truth, deliberately: this list going stale makes a suggestion worse, never a command unreachable. */
-const knownCommands = [
-  "gates",
-  "verify",
-  "gc",
-  "ci",
-  "list-runs",
-  "inspect",
-  "resume",
-  "retry-step",
-  "abort",
-  "repair",
-  "select",
-  "calibrate",
-  "routing",
-  "parallel",
-  "replay",
-  "review",
-  "doctor",
-  "help",
-] as const;
+const knownCommands = commandDefinitions.map((command) => command.name);
 
 /** The closest command within two edits, or null when the word is not close to any of them. */
 function nearestCommand(task: string): string | null {

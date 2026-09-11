@@ -83,6 +83,12 @@ export interface ModelPerformance {
 }
 
 export interface ModelResponse {
+  readonly usageStatus?: "reported" | "unknown";
+  readonly providerAttempts?: readonly {
+    outcome: "response" | "rejected";
+    statusCode: number | null;
+    usage: "reported" | "unknown";
+  }[];
   readonly text: string;
   readonly toolCalls: readonly ModelToolCall[];
   readonly inputTokens: number;
@@ -110,6 +116,8 @@ export const unobservedPerformance: ModelPerformance = {
 
 /** The model port. Providers implement it; the loop never imports a provider. */
 export interface ModelClient {
+  /** Harness wrappers that persist abort outcomes settle only after that recording is durable. */
+  readonly recordsCancellation?: boolean;
   readonly modelId: string;
   generate(request: ModelRequest): Promise<ModelResponse>;
 }

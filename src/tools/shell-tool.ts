@@ -37,13 +37,14 @@ export function createShellTool(guard: PolicyGuard, options?: ShellToolOptions):
     // the read and write tools answer to. Without this a shell call reached any path on the
     // machine, and `cat ~/.ssh/id_rsa` was a credential read the denylist never saw.
     pathsFrom: (input) => readShellCommand(input.command)?.operands ?? [],
-    async execute(input) {
+    async execute(input, context) {
       const timeoutMs = input.timeoutMs ?? defaultTimeoutMs;
       const ran =
         options?.backend === undefined
           ? await runProcessGroup("/bin/sh", ["-c", input.command], {
               cwd: guard.workspaceRoot,
               timeoutMs,
+              signal: context?.signal,
               maxOutputBytes: 4_000_000,
               // Built rather than inherited. A path check cannot see
               // `process.env.OPENAI_API_KEY`, so the only thing between a command the model
@@ -53,8 +54,24 @@ export function createShellTool(guard: PolicyGuard, options?: ShellToolOptions):
           : await options.backend.run(["/bin/sh", "-c", input.command], {
               cwd: guard.workspaceRoot,
               timeoutMs,
+              signal: context?.signal,
             });
-      return describeRun(input.command, ran.stdout, ran.stderr, ran.exitCode, ran.timedOut);
+      const described = describeRun(
+        input.command,
+        ran.stdout,
+        ran.stderr,
+        ran.exitCode,
+        ran.timedOut,
+      );
+      return {
+        ...described,
+        facts: {
+          ...described.facts,
+          cancelled: ran.cancelled,
+          truncated: ran.truncated,
+          startFailure: ran.startFailure,
+        },
+      };
     },
   });
 }

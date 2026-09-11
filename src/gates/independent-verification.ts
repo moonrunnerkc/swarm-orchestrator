@@ -3,7 +3,14 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Clock } from "../core/clock.ts";
+import { freezeAcceptanceContract } from "../evidence/acceptance-contract.ts";
+import type { EvidenceRecorder } from "../evidence/session.ts";
 import { certifies } from "./certification.ts";
+import {
+  type ContractVerification,
+  type RequirementObservation,
+  verifyAcceptanceContract,
+} from "./contract-verification.ts";
 import { assembleGateSet } from "./engine.ts";
 import { normalizePath } from "./file-set.ts";
 import { defaultGateTimeoutMs, type GateCommandRunner } from "./gate-definition.ts";
@@ -54,6 +61,8 @@ export interface DependencyInstall {
 }
 
 export interface IndependentVerification {
+  readonly certificationPolicy?: "oracle-v3" | "required-obligations-v1";
+  readonly acceptance?: ContractVerification;
   /** Whether the patch applied cleanly to a fresh base. A patch that did not is not verified. */
   readonly applied: boolean;
   readonly checks: readonly IndependentCheck[];
@@ -133,6 +142,16 @@ export interface IndependentVerificationOptions {
    */
   readonly taskOracle?: { readonly command: string };
   readonly commands: GateCommandRunner;
+  readonly commandsForCheckout?: (checkout: string) => Promise<GateCommandRunner>;
+  readonly acceptance?: {
+    readonly contract: unknown;
+    readonly evidence: EvidenceRecorder;
+    readonly execute: (
+      requirement: ReturnType<typeof freezeAcceptanceContract>["contract"]["requirements"][number],
+      target: "reference" | "violating-control" | "candidate",
+      candidateCheckout: string,
+    ) => Promise<RequirementObservation>;
+  };
   readonly clock: Clock;
   readonly timeoutMs?: number;
   /**
@@ -160,7 +179,14 @@ export interface IndependentVerificationOptions {
 export async function verifyIndependently(
   options: IndependentVerificationOptions,
 ): Promise<IndependentVerification> {
-  const immutable = options.immutablePaths ?? [];
+  const contract =
+    options.acceptance === undefined
+      ? undefined
+      : freezeAcceptanceContract(options.acceptance.contract);
+  const immutable = [
+    ...(options.immutablePaths ?? []),
+    ...(contract?.contract.immutablePaths ?? []),
+  ];
   const touched = pathsInPatch(options.patch);
   const forbidden = touched.filter((path) => matchesAny(path, immutable));
   if (forbidden.length > 0) {
@@ -212,6 +238,8 @@ export async function verifyIndependently(
         checkoutPath: null,
       };
     }
+    if (options.commandsForCheckout !== undefined)
+      options = { ...options, commands: await options.commandsForCheckout(checkout) };
     const reset = await options.commands.runVouched(
       ["git", "-C", checkout, "checkout", "--quiet", "--detach", options.baseCommit],
       { cwd: checkout, timeoutMs },
@@ -311,6 +339,14 @@ export async function verifyIndependently(
       task === "accepted" && restored
         ? await bondTheOracle(checkout, options, timeoutMs, reach.measured, withPatch)
         : { verdict: "not-bonded" as const, mutants: [] };
+    const evaluator = options.acceptance;
+    const acceptance =
+      evaluator === undefined || contract === undefined
+        ? undefined
+        : await verifyAcceptanceContract(contract.contract, {
+            evidence: evaluator.evidence,
+            execute: (requirement, target) => evaluator.execute(requirement, target, checkout),
+          });
     const checks = withPatch.some((check) => check.status === "failed")
       ? await attributeFailures(withPatch, checkout, options, timeoutMs)
       : withPatch;
@@ -331,6 +367,8 @@ export async function verifyIndependently(
 
     return {
       applied: true,
+      certificationPolicy: acceptance === undefined ? "oracle-v3" : "required-obligations-v1",
+      ...(acceptance === undefined ? {} : { acceptance }),
       checks,
       oracleReach,
       unreachedByOracle: reach.unreached,
@@ -345,7 +383,15 @@ export async function verifyIndependently(
       // Computed from the recorded fields by the same rule a third party applies to the record
       // afterwards, so `verified` is the absence of a named reason to refuse rather than a
       // separate opinion about the same evidence.
-      verified: certifies({ regression, task, oracleReach, oracleBond: bond.verdict }),
+      verified: certifies({
+        regression,
+        task,
+        oracleReach,
+        oracleBond: bond.verdict,
+        ...(acceptance === undefined
+          ? {}
+          : { certificationPolicy: "required-obligations-v1", acceptance }),
+      }),
       // Not the same as a checkout where nothing could run: this one was asked for one thing and
       // did it, so the absence of checks is the request rather than a failure to measure.
       unmeasured: !onlyTheOracle && !measuredSomething,

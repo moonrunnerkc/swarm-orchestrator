@@ -163,6 +163,7 @@ export async function runGateCycle(
       stdout: truncate(observation.stdout),
       stderr: truncate(observation.stderr),
       outputTruncated:
+        observation.outputTruncated === true ||
         observation.stdout.length > maxRecordedOutputChars ||
         observation.stderr.length > maxRecordedOutputChars,
       measures: reading.measures,
@@ -345,6 +346,7 @@ export async function recordBaselineRun(
     stdout: truncate(observation.stdout),
     stderr: truncate(observation.stderr),
     outputTruncated:
+      observation.outputTruncated === true ||
       observation.stdout.length > maxRecordedOutputChars ||
       observation.stderr.length > maxRecordedOutputChars,
     measures: reading.measures,

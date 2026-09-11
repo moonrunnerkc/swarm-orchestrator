@@ -127,3 +127,23 @@ describe("session ids", () => {
     expect(createSessionId(clock, { next: () => 0.5 })).toBe(id);
   });
 });
+
+it("reopens existing evidence and keeps the earlier payloads and citation order", async () => {
+  const first = await openSession();
+  const capture = await first.record({
+    type: "session-started",
+    actor: "harness",
+    provenance: ["user"],
+    payload: { task: "first" },
+  });
+  const second = await openSession();
+  expect(second.payloads().get(capture.record.payloadDigest)).toEqual({ task: "first" });
+  const next = await second.record({
+    type: "session-stopped",
+    actor: "harness",
+    provenance: ["tool-output"],
+    payload: { stopReason: "completed" },
+  });
+  expect(next.record.sequence).toBe(1);
+  expect(verifyChain(second.records()).ok).toBe(true);
+});

@@ -1,4 +1,6 @@
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { buildVersion } from "./build-version.ts";
 import { resolveLocalBackend } from "./cli-local-backend.ts";
 import type { SelectCommand } from "./cli-options.ts";
 import type { ResolvedSettings } from "./config/settings.ts";
@@ -12,6 +14,7 @@ import {
 } from "./select/competency-table.ts";
 import { probeHardware } from "./select/hardware-probe.ts";
 import { defaultPickPath, readCalibrationPick } from "./select/pick-store.ts";
+import { productionRouting } from "./select/production-routing.ts";
 import { recommendModel } from "./select/recommendation.ts";
 import { defaultRoutingLogPath, openRoutingLog } from "./select/routing-log.ts";
 import { renderSelectReport } from "./select/select-report.ts";
@@ -19,7 +22,7 @@ import { servableCandidates } from "./select/servable-candidates.ts";
 import { loadShortlist } from "./select/shortlist-source.ts";
 import { systemProbeEnvironment } from "./select/system-probe.ts";
 import { classifyTask } from "./select/task-class.ts";
-import { type RoutingDecision, routeModel } from "./select/ucb.ts";
+import type { RoutingDecision } from "./select/ucb.ts";
 
 /** Long enough for the shortlist host to answer, short enough that an offline run is not a wait. */
 export const shortlistFetchTimeoutMs = 4_000;
@@ -93,16 +96,28 @@ export async function chooseModel(
     goldenSetVersion: calibrated.goldenSetVersion,
     candidates: [calibrationPick, ...candidates.filter((model) => model !== calibrationPick)],
   });
-  const decision = routeModel({
-    taskClass,
-    candidates,
-    calibrationPick,
-    entries: (await log.read()).entries,
-    random,
-    competency,
-  });
+  let evaluation: unknown;
+  try {
+    evaluation = JSON.parse(
+      await readFile(join(home, ".swarm", "routing-evaluation.json"), "utf8"),
+    );
+  } catch {
+    evaluation = null;
+  }
+  const decision = productionRouting(
+    {
+      taskClass,
+      candidates,
+      calibrationPick,
+      entries: (await log.read()).entries,
+      random,
+      competency,
+    },
+    { toolVersion: buildVersion, goldenSetVersion: calibrated.goldenSetVersion },
+    evaluation,
+  );
 
-  process.stdout.write(
+  process.stderr.write(
     `routing: ${decision.model} (${decision.assignment}) - ${decision.reason}\n`,
   );
   return {

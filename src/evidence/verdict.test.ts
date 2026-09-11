@@ -172,3 +172,32 @@ describe("what a run still needs from a person", () => {
     ).toBe("approved");
   });
 });
+
+describe("final work assessment", () => {
+  it.each([
+    { baseRatchetAccepted: false },
+    { cancelled: true },
+    { lifecycle: "interrupted" },
+    { lifecycle: "max-wall-time" },
+    { vacuousBlockingBonds: ["tests"] },
+    { settled: "escalated" },
+  ])("refuses passed gates when final evidence refuses: %j", (refusal) => {
+    const verdict = runVerdict({
+      cycle: cycle([{ id: "tests", capability: "dynamic", status: "passed" }]),
+      integrity: "valid",
+      signer: "trusted",
+      executionTrust: "restricted",
+      assessment: {
+        lifecycle: "completed",
+        cancelled: false,
+        settled: "green",
+        baseRatchetAccepted: true,
+        vacuousBlockingBonds: [],
+        changedFiles: 3,
+        ...refusal,
+      },
+    });
+    expect(verdict.acceptable).toBe(false);
+    expect(describeVerdict(verdict).join("\n")).toContain("acceptable: no");
+  });
+});

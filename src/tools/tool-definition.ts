@@ -8,6 +8,10 @@ import type { JsonValue } from "../evidence/canonical-json.ts";
  */
 export type ToolKind = "read" | "write" | "shell" | "evidence";
 
+export interface ToolExecutionContext {
+  readonly signal?: AbortSignal | undefined;
+}
+
 export interface ToolOutput {
   /** What the model sees. Prose, and never the thing a claim gets to check itself against. */
   readonly text: string;
@@ -24,7 +28,7 @@ export interface ToolDefinition extends ToolSchema {
   readonly kind: ToolKind;
   /** Workspace paths this call would touch, so the guard can rule before anything runs. */
   readonly pathsFrom: (input: unknown) => readonly string[];
-  execute(input: unknown): Promise<ToolOutput>;
+  execute(input: unknown, context?: ToolExecutionContext): Promise<ToolOutput>;
 }
 
 /** A tool as its author writes it, with the input type its schema describes. */
@@ -34,7 +38,7 @@ interface TypedToolSpec<Input> {
   readonly inputSchema: ZodType<Input>;
   readonly kind: ToolKind;
   readonly pathsFrom: (input: Input) => readonly string[];
-  execute(input: Input): Promise<ToolOutput>;
+  execute(input: Input, context?: ToolExecutionContext): Promise<ToolOutput>;
 }
 
 /**
@@ -48,6 +52,6 @@ export function defineTool<Input>(spec: TypedToolSpec<Input>): ToolDefinition {
     inputSchema: spec.inputSchema,
     kind: spec.kind,
     pathsFrom: (input) => spec.pathsFrom(spec.inputSchema.parse(input)),
-    execute: (input) => spec.execute(spec.inputSchema.parse(input)),
+    execute: (input, context) => spec.execute(spec.inputSchema.parse(input), context),
   };
 }

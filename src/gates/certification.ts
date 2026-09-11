@@ -22,6 +22,8 @@ import type { OracleBondVerdict } from "./oracle-bond.ts";
 export const bondRefusesCertification: boolean = true;
 
 export interface RecordedVerdict {
+  readonly certificationPolicy?: "oracle-v3" | "required-obligations-v1";
+  readonly acceptance?: import("./contract-verification.ts").ContractVerification;
   readonly regression: "pass" | "fail" | "unmeasured";
   readonly task: "accepted" | "rejected" | "unjudged" | "vacuous";
   readonly oracleReach: "reached" | "unreached" | "unmeasured";
@@ -29,6 +31,7 @@ export interface RecordedVerdict {
 }
 
 export type RefusalReason =
+  | "required-obligations-not-accepted"
   | "regression-not-pass"
   | "task-not-accepted"
   | "oracle-did-not-reach-the-change"
@@ -45,6 +48,21 @@ export function reasonsToRefuse(verdict: RecordedVerdict): readonly RefusalReaso
   const reasons: RefusalReason[] = [];
   if (verdict.regression !== "pass") {
     reasons.push("regression-not-pass");
+  }
+  if (verdict.certificationPolicy === "required-obligations-v1") {
+    const obligations = verdict.acceptance?.obligations;
+    if (
+      obligations === undefined ||
+      obligations.length === 0 ||
+      !obligations.every(
+        (entry) =>
+          entry.severity === "advisory" ||
+          entry.status === "accepted" ||
+          entry.status === "not-applicable",
+      )
+    )
+      reasons.push("required-obligations-not-accepted");
+    return reasons;
   }
   if (verdict.task !== "accepted") {
     reasons.push("task-not-accepted");

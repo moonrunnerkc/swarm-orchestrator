@@ -29,8 +29,13 @@ export function createTestClock(start = 0): TestClock {
 
   return {
     now: () => current,
-    sleep(milliseconds: number, cancel?: AbortSignal): Promise<void> {
-      if (cancel === undefined) {
+    sleep(
+      milliseconds: number,
+      cancel?: AbortSignal,
+      purpose?: "deadline" | "delay",
+    ): Promise<void> {
+      if (cancel?.aborted) return Promise.resolve();
+      if (cancel === undefined || purpose === "delay") {
         sleeps.push(milliseconds);
         current += milliseconds;
         return Promise.resolve();

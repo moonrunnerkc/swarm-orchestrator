@@ -48,7 +48,7 @@ export function createRunCancellation(options: {
   if (options.wallBudgetMs !== null) {
     void options.clock.sleep(options.wallBudgetMs, releaseDeadline.signal).then(
       () => {
-        cancel("deadline");
+        if (!releaseDeadline.signal.aborted) cancel("deadline");
       },
       () => {
         // The sleep was released because the run stopped for some other reason first.

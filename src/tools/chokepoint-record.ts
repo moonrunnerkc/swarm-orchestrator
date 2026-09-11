@@ -72,7 +72,10 @@ export interface ChokepointRecorder {
   recordConfirmation(entry: ConfirmationRecord): Promise<void>;
 }
 
-export function createLedgerChokepointRecorder(evidence: EvidenceRecorder): ChokepointRecorder {
+export function createLedgerChokepointRecorder(
+  evidence: EvidenceRecorder,
+  observe?: (entry: ChokepointRecord, digest: string, sequence: number) => void,
+): ChokepointRecorder {
   return {
     async recordCall(entry: ChokepointRecord): Promise<string> {
       const recorded = await evidence.record({
@@ -94,6 +97,7 @@ export function createLedgerChokepointRecorder(evidence: EvidenceRecorder): Chok
           derivation: asJsonValue(entry.derivation),
         },
       });
+      observe?.(entry, recorded.record.payloadDigest, recorded.record.sequence);
       return recorded.record.payloadDigest;
     },
 

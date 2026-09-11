@@ -41,7 +41,7 @@ export function keyFingerprint(publicKeySpkiBase64: string): string {
 }
 
 export function judgeSigner(
-  chainHead: string,
+  chainHead: string | Uint8Array,
   signature: BundleSignature,
   policy: TrustPolicy,
 ): SignerJudgement {

@@ -4,6 +4,7 @@ import type { Clock } from "../core/clock.ts";
 import type { GateStatus, LoopEvent } from "../core/loop-events.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { harnessChildEnvironment } from "../exec/child-environment.ts";
+import type { IsolationBackend } from "../exec/execution-mode.ts";
 import type { GateSetOptions } from "../gates/default-gates.ts";
 import { assembleGateSet, defaultDiffBudget } from "../gates/engine.ts";
 import type { FileSetRegistry } from "../gates/file-set.ts";
@@ -67,6 +68,8 @@ export interface MergeQueueResult {
 }
 
 interface MergeQueueOptions {
+  readonly isolation?: IsolationBackend;
+  readonly abortSignal?: AbortSignal;
   readonly integrationPath: string;
   readonly baseCommit: string;
   /** Proposals in the order they will be tried. Order is the queue. */
@@ -123,7 +126,12 @@ export async function runMergeQueue(options: MergeQueueOptions): Promise<MergeQu
     workspaceRoot: options.integrationPath,
     baseRef: options.baseCommit,
   });
-  const commands = createNodeCommandRunner(options.clock, harnessChildEnvironment());
+  const commands = createNodeCommandRunner(
+    options.clock,
+    harnessChildEnvironment(),
+    options.isolation,
+    options.abortSignal,
+  );
   const criteriaRef = options.criteriaRef ?? options.baseCommit;
   const { detection, gates } = await assembleGateSet({
     workspaceRoot: options.integrationPath,

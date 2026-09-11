@@ -96,3 +96,62 @@ describe("an attestation over what a run produced", () => {
     expect(envelope.signatures[0]?.keyid).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
 });
+
+it("verifies against independently assembled DSSE signing bytes", async () => {
+  const { createPublicKey, verify } = await import("node:crypto");
+  const key = namedKey();
+  const envelope = signAttestation(buildAttestation(subject), key);
+  const body = Buffer.from(envelope.payload, "base64");
+  const type = Buffer.from(envelope.payloadType, "utf8");
+  const bytes = Buffer.concat([
+    Buffer.from(`DSSEv1 ${type.length} `),
+    type,
+    Buffer.from(` ${body.length} `),
+    body,
+  ]);
+  expect(
+    verify(
+      null,
+      bytes,
+      createPublicKey({
+        key: Buffer.from(key.publicKeySpki, "base64"),
+        type: "spki",
+        format: "der",
+      }),
+      Buffer.from(envelope.signatures[0]?.sig ?? "", "base64"),
+    ),
+  ).toBe(true);
+});
+
+it("treats malformed signed statements as invalid", () => {
+  const key = namedKey();
+  const envelope = signAttestation({ ...buildAttestation(subject), _type: "wrong" } as never, key);
+  expect(verifyAttestation(envelope, { mode: "any-key" }).integrity).toBe("invalid");
+});
+
+it("keeps legacy base64 signing behind an explicit v3 compatibility path", () => {
+  const key = namedKey();
+  const statement = {
+    ...buildAttestation(subject),
+    predicateType: "https://swarm-orchestrator.dev/attestation/v3",
+  };
+  const payload = Buffer.from(JSON.stringify(statement));
+  const type = "application/vnd.in-toto+json";
+  const pae = Buffer.concat([
+    Buffer.from(`DSSEv1 ${Buffer.byteLength(type)} ${type} ${payload.length} `),
+    payload,
+  ]);
+  const envelope = {
+    payloadType: type,
+    payload: payload.toString("base64"),
+    signatures: [
+      {
+        keyid: keyFingerprint(key.publicKeySpki),
+        publicKey: key.publicKeySpki,
+        sig: key.sign(pae.toString("base64")),
+        keySource: key.source,
+      },
+    ],
+  };
+  expect(verifyAttestation(envelope, { mode: "any-key" })).toMatchObject({ integrity: "valid" });
+});

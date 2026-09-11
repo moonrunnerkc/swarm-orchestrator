@@ -86,6 +86,7 @@ export function createNodeCommandRunner(
         : await backend.run([file, ...args], {
             cwd: options.cwd,
             timeoutMs: options.timeoutMs,
+            signal: cancellation,
           });
     const durationMs = clock.now() - startedAt;
 
@@ -115,7 +116,8 @@ export function createNodeCommandRunner(
       : "";
 
     return {
-      exitCode: ran.exitCode,
+      exitCode: ran.cancelled || ran.timedOut ? 128 : ran.exitCode,
+      outputTruncated: ran.truncated,
       stdout: ran.stdout,
       stderr: `${ran.stderr}${killed}`,
       durationMs,

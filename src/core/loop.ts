@@ -1,6 +1,7 @@
 import type { Clock } from "./clock.ts";
-import { compactConversation } from "./compaction.ts";
+import { compactConversation, estimateTokens } from "./compaction.ts";
 import type { LoopEvent } from "./loop-events.ts";
+import { withModelCancellation } from "./model-cancellation.ts";
 import {
   type ConversationMessage,
   describeUnknownError,
@@ -78,6 +79,7 @@ export async function runAgentLoop(
   deps: AgentLoopDependencies,
 ): Promise<AgentLoopOutcome> {
   const startedAt = deps.clock.now();
+  const deadline = startedAt + deps.budget.maxWallTimeMs;
   const messages: ConversationMessage[] = [...(deps.history ?? []), { role: "user", text: task }];
   let lastCompactedAt = 0;
   let steps = 0;
@@ -126,14 +128,23 @@ export async function runAgentLoop(
         deps,
         {
           ...buildRequest(deps, messages),
+          maxOutputTokens: Math.max(
+            1,
+            Math.min(deps.maxOutputTokens, deps.budget.maxTokens - tokensUsed),
+          ),
           onText: (text) => {
             deps.emit({ type: "model-text", step: steps + 1, text });
           },
         },
         steps + 1,
-        deps.budget.maxWallTimeMs - (deps.clock.now() - startedAt),
+        deadline,
+        (response) => {
+          tokensUsed += response.inputTokens + response.outputTokens;
+        },
+        () => deps.budget.maxTokens - tokensUsed,
       );
     } catch (cause) {
+      if (cause instanceof ModelTokenBudgetError) return finish("max-tokens", "");
       if (cause instanceof ModelCallDeadlineError) {
         return finish("max-wall-time", "");
       }
@@ -145,7 +156,9 @@ export async function runAgentLoop(
     if (answered) {
       answeredSteps += 1;
     }
-    tokensUsed += response.inputTokens + response.outputTokens;
+    if (deps.abortSignal.aborted) return finish("interrupted", "");
+    if (deps.clock.now() >= deadline) return finish("max-wall-time", "");
+    if (tokensUsed >= deps.budget.maxTokens) return finish("max-tokens", "");
     messages.push({
       role: "assistant",
       text: response.text,
@@ -174,6 +187,22 @@ export async function runAgentLoop(
 
     const outcomes: ToolCallOutcome[] = [];
     for (const call of response.toolCalls) {
+      if (deps.abortSignal.aborted || deps.clock.now() >= deadline) {
+        const remaining = response.toolCalls.slice(outcomes.length);
+        messages.push({
+          role: "tool",
+          outcomes: [
+            ...outcomes,
+            ...remaining.map((pending) => ({
+              callId: pending.callId,
+              toolName: pending.toolName,
+              failed: true,
+              output: "not dispatched: run stopped",
+            })),
+          ],
+        });
+        return finish(deps.abortSignal.aborted ? "interrupted" : "max-wall-time", "");
+      }
       deps.emit({
         type: "tool-call",
         callId: call.callId,
@@ -202,9 +231,21 @@ function buildRequest(
   // whole conversation and only what is resent is shortened. What falls out is chosen: the
   // task and the recent turns are kept, and the model is told how much went rather than
   // quietly having a hole in its memory.
-  const held = compactConversation(messages, {
-    maxTokens: deps.contextTokens ?? defaultContextTokens,
-  });
+  const overhead =
+    Math.ceil(
+      (deps.systemPrompt.length +
+        JSON.stringify(
+          deps.toolSchemas.map((tool) => ({
+            name: tool.name,
+            description: tool.description,
+            schema: tool.inputSchema.toJSONSchema(),
+          })),
+        ).length) /
+        4,
+    ) + deps.maxOutputTokens;
+  const available = Math.max(0, (deps.contextTokens ?? defaultContextTokens) - overhead);
+  const held = compactConversation(messages, { maxTokens: available });
+  if (estimateTokens(held.messages) > available) throw new ModelTokenBudgetError();
   return {
     system: deps.systemPrompt,
     // Snapshot: the loop keeps appending, and a provider must see the turn it was given.
@@ -244,6 +285,8 @@ function arrivedEmpty(response: ModelResponse): boolean {
  * The wall budget ran out inside a call. Distinct from a failed call because it is not
  * retried and the loop stops for the budget's reason rather than the model's.
  */
+class ModelTokenBudgetError extends Error {}
+
 class ModelCallDeadlineError extends Error {
   constructor(remainingMs: number) {
     super(`the model call did not return within the ${remainingMs} ms left of the wall budget`);
@@ -262,6 +305,8 @@ async function callWithinBudget(
   request: ModelRequest,
   remainingMs: number,
 ): Promise<ModelResponse> {
+  if (remainingMs <= 0) throw new ModelCallDeadlineError(remainingMs);
+  deps.abortSignal.throwIfAborted();
   const controller = new AbortController();
   const forward = () => controller.abort();
   deps.abortSignal.addEventListener("abort", forward, { once: true });
@@ -275,7 +320,10 @@ async function callWithinBudget(
     }
   });
   try {
-    return await deps.model.generate({ ...request, abortSignal: controller.signal });
+    const pending = deps.model.generate({ ...request, abortSignal: controller.signal });
+    return await (deps.model.recordsCancellation === true
+      ? pending
+      : withModelCancellation(pending, controller.signal));
   } catch (cause) {
     throw expired ? new ModelCallDeadlineError(remainingMs) : cause;
   } finally {
@@ -288,15 +336,30 @@ async function callModelWithRetry(
   deps: AgentLoopDependencies,
   request: ModelRequest,
   step: number,
-  remainingMs: number,
+  deadline: number,
+  account: (response: ModelResponse) => void,
+  remainingTokens: () => number,
 ): Promise<ModelResponse> {
   const { attempts, baseDelayMs, maxJitterRatio } = deps.retryPolicy;
   let lastCause: unknown;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const willRetry = attempt < attempts - 1 && !deps.abortSignal.aborted;
+    deps.abortSignal.throwIfAborted();
+    if (deps.clock.now() >= deadline) throw new ModelCallDeadlineError(0);
+    if (remainingTokens() <= 0) throw new ModelTokenBudgetError();
+    let willRetry = attempt < attempts - 1 && !deps.abortSignal.aborted;
     try {
-      const response = await callWithinBudget(deps, request, remainingMs);
+      const response = await callWithinBudget(
+        deps,
+        {
+          ...request,
+          maxOutputTokens: Math.max(1, Math.min(request.maxOutputTokens, remainingTokens())),
+        },
+        deadline - deps.clock.now(),
+      );
+      account(response);
+      if (deps.clock.now() >= deadline) throw new ModelCallDeadlineError(0);
+      if (remainingTokens() <= 0) return response;
       // The last attempt's truncation or silence is returned rather than thrown, so the loop
       // stops as output-cap or empty-response and names which. A call-failed error there would
       // say less about more.
@@ -317,6 +380,17 @@ async function callModelWithRetry(
         deps.emit({ type: "model-error", step, message: cause.message, willRetry: false });
         throw cause;
       }
+      if (cause instanceof ModelTokenBudgetError) throw cause;
+      const status = (cause as { statusCode?: number }).statusCode;
+      willRetry &&=
+        (cause as { isRetryable?: boolean }).isRetryable !== false &&
+        !(
+          status !== undefined &&
+          status >= 400 &&
+          status < 500 &&
+          status !== 408 &&
+          status !== 429
+        );
       lastCause = cause;
       deps.emit({
         type: "model-error",
@@ -329,7 +403,11 @@ async function callModelWithRetry(
       }
     }
     const backoffMs = baseDelayMs * 2 ** attempt;
-    await deps.clock.sleep(Math.round(backoffMs * (1 + deps.random.next() * maxJitterRatio)));
+    const delay = Math.min(
+      deadline - deps.clock.now(),
+      Math.round(backoffMs * (1 + deps.random.next() * maxJitterRatio)),
+    );
+    await deps.clock.sleep(Math.max(0, delay), deps.abortSignal, "delay");
   }
 
   throw new ModelCallFailedError(deps.model.modelId, lastCause);

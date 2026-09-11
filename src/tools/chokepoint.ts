@@ -36,6 +36,7 @@ export interface ConfirmationRequest {
 export type ConfirmationPrompt = (request: ConfirmationRequest) => Promise<boolean>;
 
 interface ChokepointDependencies {
+  readonly abortSignal?: AbortSignal | undefined;
   readonly definitions: readonly ToolDefinition[];
   readonly guard: PolicyGuard;
   readonly confirm: ConfirmationPrompt;
@@ -129,6 +130,8 @@ export function createToolChokepoint(deps: ChokepointDependencies): ToolInvoker 
         derivation: assessment,
       });
 
+      if (deps.abortSignal?.aborted)
+        return settle("failed", "cancelled before execution", "", { cancelled: true });
       if (definition === undefined) {
         return settle(
           "denied",
@@ -176,7 +179,8 @@ export function createToolChokepoint(deps: ChokepointDependencies): ToolInvoker 
 
       let output: ToolOutput;
       try {
-        output = await definition.execute(parsed.data);
+        deps.abortSignal?.throwIfAborted();
+        output = await definition.execute(parsed.data, { signal: deps.abortSignal });
       } catch (cause) {
         return settle("failed", describeUnknownError(cause), "", {});
       }

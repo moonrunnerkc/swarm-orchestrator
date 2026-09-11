@@ -110,3 +110,159 @@ describe("naming a runtime that is not installed", () => {
     expect(containerRuntimeAvailable("definitely-not-a-container-runtime")).toBe(false);
   });
 });
+
+it("owns cleanup after a successful parent exit", async () => {
+  const commands: readonly string[][] = [];
+  const captured = commands as string[][];
+  const phases: string[] = [];
+  const backend = createContainerBackend({
+    runtime: "test-runtime",
+    image: "test-image",
+    workspaceRoot: workspace,
+    user: "1000:1000",
+    observeLifecycle: async (event) => {
+      phases.push(event.phase);
+    },
+    runProcess: async (_program, args) => {
+      captured.push([...args]);
+      return {
+        stdout: "",
+        stderr: "",
+        exitCode: 0,
+        timedOut: false,
+        cancelled: false,
+        truncated: false,
+        startFailure: null,
+      };
+    },
+  });
+  await backend.run(["node", "parent.mjs"], { cwd: workspace, timeoutMs: 1000 });
+  expect(captured.map((args) => args[0])).toEqual(["create", "start", "rm", "ps"]);
+  expect(phases).toEqual(["created", "removed"]);
+  expect(captured[0]?.some((arg) => arg.startsWith("--name=swarm-"))).toBe(true);
+});
+
+it.skipIf(!available)(
+  "removes a detached descendant after its parent exits successfully",
+  async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { runProcessGroup } = await import("./run-process.ts");
+    const phases: { identity: string; phase: string }[] = [];
+    const backend = createContainerBackend({
+      runtime: "docker",
+      image: "node:24-bookworm",
+      workspaceRoot: workspace,
+      user: `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`,
+      observeLifecycle: async (event) => {
+        phases.push(event);
+      },
+    });
+    const child =
+      "const fs=require('node:fs');setInterval(()=>fs.appendFileSync('/workspace/canary','x'),20);process.on('SIGTERM',()=>{});";
+    const parent = `const {spawn}=require('node:child_process');spawn('node',['-e',${JSON.stringify(child)}],{detached:true,stdio:'ignore'}).unref();setTimeout(()=>process.exit(0),300);`;
+    const ran = await backend.run(["node", "-e", parent], { cwd: workspace, timeoutMs: 30_000 });
+    expect(ran.exitCode).toBe(0);
+    const before = await readFile(join(workspace, "canary"), "utf8");
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(await readFile(join(workspace, "canary"), "utf8")).toBe(before);
+    const identity = phases[0]?.identity ?? "missing-runtime-identity";
+    const inspected = await runProcessGroup(
+      "docker",
+      ["ps", "--all", "--quiet", "--filter", `name=^/${identity}$`],
+      {
+        cwd: workspace,
+        env: { PATH: process.env.PATH ?? "", HOME: homedir() },
+        timeoutMs: 10_000,
+        maxOutputBytes: 1000,
+      },
+    );
+    expect(inspected.stdout.trim()).toBe("");
+    expect(phases.at(-1)?.phase).toBe("removed");
+  },
+  60_000,
+);
+
+it.skipIf(!available).each(["timeout", "cancel"] as const)(
+  "removes detached descendants after %s",
+  async (mode) => {
+    const { readFile } = await import("node:fs/promises");
+    const abort = new AbortController();
+    const phases: string[] = [];
+    const backend = createContainerBackend({
+      runtime: "docker",
+      image: "node:24-bookworm",
+      workspaceRoot: workspace,
+      user: `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`,
+      observeLifecycle: async (event) => {
+        phases.push(event.phase);
+      },
+    });
+    const descendant =
+      "const fs=require('node:fs');process.on('SIGTERM',()=>{});setInterval(()=>fs.appendFileSync('/workspace/late-canary','x'),20);";
+    const parent = `require('node:child_process').spawn('node',['-e',${JSON.stringify(descendant)}],{detached:true,stdio:'ignore'}).unref();process.on('SIGTERM',()=>{});setInterval(()=>{},1000);`;
+    const executing = backend.run(["node", "-e", parent], {
+      cwd: workspace,
+      timeoutMs: mode === "timeout" ? 2000 : 10000,
+      signal: abort.signal,
+    });
+    if (mode === "cancel") {
+      for (let attempt = 0; attempt < 150; attempt += 1) {
+        if (await readFile(join(workspace, "late-canary"), "utf8").catch(() => "")) break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      abort.abort();
+    }
+    const observed = await executing;
+    expect(mode === "cancel" ? observed.cancelled : observed.timedOut).toBe(true);
+    const before = await readFile(join(workspace, "late-canary"), "utf8");
+    expect(before.length).toBeGreaterThan(0);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(await readFile(join(workspace, "late-canary"), "utf8")).toBe(before);
+    expect(phases.at(-1)).toBe("removed");
+  },
+  30000,
+);
+
+it.skipIf(!available)(
+  "repairs the owned runtime after abrupt harness death",
+  async () => {
+    const { spawn } = await import("node:child_process");
+    const { readFile } = await import("node:fs/promises");
+    const { repairRuntimeResources } = await import("./runtime-resource.ts");
+    const { pathToFileURL } = await import("node:url");
+    const { resolve } = await import("node:path");
+    const program = join(hostRoot, "harness.mjs");
+    const evidenceModule = pathToFileURL(resolve("src/evidence/session.ts")).href;
+    const backendModule = pathToFileURL(resolve("src/exec/runtime-resource.ts")).href;
+    await writeFile(
+      program,
+      `import {openEvidenceSession} from ${JSON.stringify(evidenceModule)};import {recordedContainerBackend} from ${JSON.stringify(backendModule)};
+const evidence=await openEvidenceSession({root:${JSON.stringify(hostRoot)},sessionId:'abandoned',clock:{now:()=>Date.now(),sleep:async()=>{}}});
+const backend=recordedContainerBackend({runtime:'docker',image:'node:24-bookworm',workspaceRoot:${JSON.stringify(workspace)},user:${JSON.stringify(`${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`)}},evidence);
+await backend.run(['node','-e',"setInterval(()=>require('node:fs').appendFileSync('/workspace/death-canary','x'),20)"],{cwd:${JSON.stringify(workspace)},timeoutMs:30000});`,
+    );
+    const child = spawn(process.execPath, [program], { stdio: "ignore" });
+    const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+    try {
+      let ready = false;
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        ready =
+          (await readFile(join(workspace, "death-canary"), "utf8").catch(() => "")).length > 0;
+        if (ready) break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(ready).toBe(true);
+      child.kill("SIGKILL");
+      await exited;
+      expect(await repairRuntimeResources(hostRoot, "abandoned")).toHaveLength(1);
+      const before = await readFile(join(workspace, "death-canary"), "utf8");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(await readFile(join(workspace, "death-canary"), "utf8")).toBe(before);
+    } finally {
+      child.kill("SIGKILL");
+      await exited;
+      await repairRuntimeResources(hostRoot, "abandoned");
+    }
+  },
+  30000,
+);

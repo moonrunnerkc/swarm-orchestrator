@@ -122,7 +122,7 @@ describe("model call recording", () => {
 
     const steps = await Promise.all(
       evidence.records().map(async (record) => {
-        const payload = (await evidence.blobs.get(record.payloadDigest)) as { step: number };
+        const payload = (await evidence.blobs.get(record?.payloadDigest ?? "")) as { step: number };
         return payload.step;
       }),
     );
@@ -160,5 +160,22 @@ describe("model call recording", () => {
       outputTokensPerSecond: 44.5,
       responseTimeMs: 2_300,
     });
+  });
+});
+
+it("records an aborted unresponsive call before returning, with unknown usage explicit", async () => {
+  const evidence = await openSession();
+  const cancellation = new AbortController();
+  const model = createRecordingModelClient(
+    { modelId: "unresponsive", generate: () => new Promise(() => {}) },
+    evidence,
+  );
+  const pending = model.generate({ ...request("work"), abortSignal: cancellation.signal });
+  cancellation.abort();
+  await expect(pending).rejects.toThrow();
+  const record = evidence.records().find((entry) => entry.type === "model-call");
+  expect(evidence.payloads().get(record?.payloadDigest ?? "")).toMatchObject({
+    usageStatus: "unknown",
+    response: { failed: true },
   });
 });

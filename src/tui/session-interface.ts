@@ -26,8 +26,8 @@ export interface SessionInterface {
   /**
    * A line for the person rather than for the screen: the gate summary, the routing reward,
    * a signing notice, where the bundle went. On the plain path it is written straight out, in
-   * order, exactly as before. On the interactive path it is held until the screen comes down,
-   * because a raw write into a terminal Ink is drawing on lands in the middle of a frame.
+   * order, exactly as before. On the interactive path it appears immediately in the transcript,
+   * then is copied to scrollback on exit. Raw writes would interrupt the frame.
    */
   note(line: string): void;
   /**
@@ -367,6 +367,8 @@ function interactiveInterface(options: SessionInterfaceOptions): SessionInterfac
         return;
       }
       held.push(line);
+      for (const text of line.split("\n")) transcript.push({ text, kind: "note" });
+      redraw();
     },
     confirm: (request) => (state.detached ? Promise.resolve(false) : confirmations.ask(request)),
     cancelled: () =>

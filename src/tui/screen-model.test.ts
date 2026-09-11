@@ -550,3 +550,8 @@ describe("showing that the run is alive, and what it is doing", () => {
     ).toBe(false);
   });
 });
+
+it("shows result notes before a turn ends", () => {
+  const rows = screen({ transcript: [{ text: "evidence bundle: /review/one", kind: "note" }] });
+  expect(rows.some((row) => row.text.includes("evidence bundle: /review/one"))).toBe(true);
+});

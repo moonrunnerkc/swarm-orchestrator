@@ -25,7 +25,7 @@ type SigningKeySource = BundleSignature["keySource"];
 export interface SigningKey {
   readonly source: SigningKeySource;
   readonly publicKeySpki: string;
-  sign(message: string): string;
+  sign(message: string | Uint8Array): string;
 }
 
 interface SecretStore {
@@ -213,7 +213,10 @@ export function signChainHead(chainHead: string, key: SigningKey): BundleSignatu
   };
 }
 
-export function verifyChainHeadSignature(chainHead: string, signature: BundleSignature): boolean {
+export function verifyChainHeadSignature(
+  chainHead: string | Uint8Array,
+  signature: BundleSignature,
+): boolean {
   try {
     const publicKey = createPublicKey({
       key: Buffer.from(signature.publicKey, "base64"),
@@ -222,7 +225,7 @@ export function verifyChainHeadSignature(chainHead: string, signature: BundleSig
     });
     return verifyBytes(
       null,
-      Buffer.from(chainHead, "utf8"),
+      typeof chainHead === "string" ? Buffer.from(chainHead, "utf8") : chainHead,
       publicKey,
       Buffer.from(signature.value, "base64"),
     );
@@ -239,20 +242,27 @@ function keyFrom(privateKey: KeyObject, source: SigningKeySource): SigningKey {
   return {
     source,
     publicKeySpki,
-    sign: (message: string) =>
-      signBytes(null, Buffer.from(message, "utf8"), privateKey).toString("base64"),
+    sign: (message) =>
+      signBytes(
+        null,
+        typeof message === "string" ? Buffer.from(message, "utf8") : message,
+        privateKey,
+      ).toString("base64"),
   };
 }
 
 function runCommand(file: string, args: readonly string[], input?: string): Promise<CommandResult> {
   return new Promise((resolve) => {
-    const child = execFile(file, [...args], (error, stdout, stderr) => {
-      const code =
-        error === null ? 0 : ((error as NodeJS.ErrnoException & { code?: number }).code ?? 1);
-      resolve({ stdout, stderr, code: typeof code === "number" ? code : 1 });
-    });
-    if (input !== undefined) {
-      child.stdin?.end(input);
-    }
+    const child = execFile(
+      file,
+      [...args],
+      { timeout: 5_000, killSignal: "SIGKILL" },
+      (error, stdout, stderr) => {
+        const code =
+          error === null ? 0 : ((error as NodeJS.ErrnoException & { code?: number }).code ?? 1);
+        resolve({ stdout, stderr, code: typeof code === "number" ? code : 1 });
+      },
+    );
+    child.stdin?.end(input);
   });
 }

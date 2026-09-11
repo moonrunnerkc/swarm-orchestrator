@@ -4,9 +4,10 @@
 // `files` in package.json is present locally and missing everywhere else, and the command
 // that reads it works here and fails there.
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const repository = process.cwd();
 const scratch = mkdtempSync(join(tmpdir(), "swarm-packed-"));
@@ -61,50 +62,49 @@ try {
     process.exit(1);
   }
 
-  // A command that needs an argument gets one that is valid but does nothing, so what is under
-  // test is whether the command exists in the package rather than what it does.
-  const argumentsFor = {
-    gates: ["--workspace", workspace],
-    init: ["--workspace", workspace],
-    replay: [join(scratch, "absent-bundle")],
-    review: [join(scratch, "absent-bundle")],
-    verify: [join(scratch, "absent-bundle")],
-    parallel: ["--tasks", join(scratch, "absent-tasks.txt")],
-    select: ["--shortlist", "bundled"],
-    ci: ["--patch", "/nonexistent.diff"],
-    inspect: ["no-such-run"],
-    resume: ["no-such-run"],
-    abort: ["no-such-run"],
-    repair: ["no-such-run"],
-    "retry-step": ["no-such-run", "no-such-step"],
-  };
-
+  const { commandDefinitions } = await import(
+    pathToFileURL(
+      join(install, "node_modules", "swarm-orchestrator", "dist", "cli-command-definitions.js"),
+    )
+  );
+  const home = join(scratch, "home");
+  mkdirSync(home);
   for (const name of documented) {
-    try {
-      run(swarm, [name, ...(argumentsFor[name] ?? [])], { cwd: workspace });
-      console.log(`ok   swarm ${name}`);
-    } catch (cause) {
-      const output = `${cause.stdout ?? ""}${cause.stderr ?? ""}`;
-      // A command that ran and reported something is present. One the build does not have
-      // reports that it does not have it, which is the failure this looks for.
-      const missing =
-        /is not a (?:command|swarm command)/i.test(output) ||
-        /Cannot find module/i.test(output) ||
-        /ERR_MODULE_NOT_FOUND/.test(output);
-      if (missing) {
-        console.error(`FAIL swarm ${name}: the packed build does not have it\n${output}`);
-        failures += 1;
-      } else {
-        console.log(`ok   swarm ${name} (exited non-zero, which is a command that ran)`);
-      }
+    const contract = commandDefinitions.find((command) => command.name === name)?.smoke;
+    if (contract === undefined) {
+      console.error(`FAIL no behavioral smoke contract for ${name}`);
+      failures += 1;
+      continue;
     }
+    let status = 0;
+    let output = "";
+    try {
+      output = run(swarm, [name, ...contract.args], {
+        cwd: workspace,
+        timeout: 60000,
+        env: { PATH: process.env.PATH, HOME: home, NO_COLOR: "1" },
+      });
+    } catch (cause) {
+      status = cause.status;
+      output = `${cause.stdout ?? ""}${cause.stderr ?? ""}`;
+    }
+    const passed =
+      contract.exits.includes(status) &&
+      new RegExp(contract.output, "i").test(output) &&
+      !/ERR_MODULE_NOT_FOUND|Cannot find module|SyntaxError|TypeError/.test(output);
+    if (!passed) {
+      console.error(
+        `FAIL swarm ${name}: exit ${status}, expected ${contract.exits.join("/")} and ${contract.output}\n${output}`,
+      );
+      failures += 1;
+    } else console.log(`ok   swarm ${name}: expected exit ${status} and diagnostic`);
   }
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }
 
 if (failures > 0) {
-  console.error(`${failures} documented command(s) are missing from the packed build`);
+  console.error(`${failures} documented command(s) failed their packaged behavioral contract`);
   process.exit(1);
 }
-console.log("every documented command exists in the packed build");
+console.log("every documented command met its packaged behavioral contract");

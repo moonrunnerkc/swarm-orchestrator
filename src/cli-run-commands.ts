@@ -1,6 +1,5 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-
 import type {
   AbortCommand,
   InspectCommand,
@@ -8,13 +7,19 @@ import type {
   ResumeCommand,
   RetryStepCommand,
 } from "./cli-options.ts";
+import { importLegacyRunStore } from "./durable/legacy-run-store.ts";
+import { recoveryContext } from "./durable/recovery-context.ts";
 import { openRunStore } from "./durable/run-store.ts";
 import { defaultSessionRoot } from "./evidence/session.ts";
+import { repairRuntimeResources } from "./exec/runtime-resource.ts";
 import { exitCodes } from "./machine-output.ts";
 
 /** Where the durable state lives: beside the sessions, outside every workspace. */
 export function runStorePath(): string {
-  return join(defaultSessionRoot(homedir()), "..", "runs.db");
+  const root = join(defaultSessionRoot(homedir()), "..");
+  const destination = join(root, "runs.jsonl");
+  importLegacyRunStore(join(root, "runs.db"), destination);
+  return destination;
 }
 
 function withRunStore<T>(read: (store: ReturnType<typeof openRunStore>) => T): T {
@@ -85,12 +90,16 @@ export function inspectRun(options: InspectCommand): Promise<number> {
   return Promise.resolve(exitCodes.acceptable);
 }
 
-/**
- * Resuming is repairing plus reporting what is still owed. It deliberately does not restart the
- * model: a run that was killed mid-task is taken up by asking for the remaining work, and
- * pretending otherwise would be a resume that quietly did something else.
- */
-export function resumeRun(options: ResumeCommand): Promise<number> {
+export async function resumeRun(
+  options: ResumeCommand,
+  execute?: (context: Awaited<ReturnType<typeof recoveryContext>>) => Promise<number>,
+): Promise<number> {
+  await repairRuntimeResources(defaultSessionRoot(homedir()), options.runId);
+  const context = await recoveryContext(defaultSessionRoot(homedir()), options.runId);
+  if (execute === undefined)
+    throw new Error("resume requires an execution handler; no work was restarted");
+  if (context.remainingTokens <= 0)
+    throw new Error("the original token budget is exhausted; start a new authorized run");
   const outcome = withRunStore((store) => {
     const run = store.run(options.runId);
     if (run === null) {
@@ -112,14 +121,17 @@ export function resumeRun(options: ResumeCommand): Promise<number> {
     `${options.runId}: released ${outcome.repaired.releasedLeases} lease(s), ` +
       `reopened ${outcome.repaired.reopenedSteps} step(s).\n` +
       (owed.length === 0
-        ? "nothing is owed: every step this run recorded reached a result.\n"
+        ? "no unfinished recorded steps; this does not establish task completion.\n"
         : `${owed.length} step(s) still owed: ${owed.map((step) => step.stepId).join(", ")}.\n` +
-          `Run them with swarm retry-step ${options.runId} <step-id>.\n`),
+          "Continuing from the verified execution history.\n"),
   );
-  return Promise.resolve(exitCodes.acceptable);
+  return execute(context);
 }
 
-export function retryStep(options: RetryStepCommand): Promise<number> {
+export function retryStep(
+  options: RetryStepCommand,
+  execute?: (context: Awaited<ReturnType<typeof recoveryContext>>) => Promise<number>,
+): Promise<number> {
   const outcome = withRunStore((store) => {
     const step = store.steps(options.runId).find((one) => one.stepId === options.stepId);
     if (step === undefined) {
@@ -128,13 +140,10 @@ export function retryStep(options: RetryStepCommand): Promise<number> {
     if (step.state === "done") {
       return { step, restarted: false };
     }
-    store.beginStep({
-      runId: options.runId,
-      stepId: step.stepId,
-      kind: step.kind,
-      idempotencyKey: step.idempotencyKey,
-      at: Date.now(),
-    });
+    if (!["read", "list", "search"].includes(step.kind))
+      throw new Error(
+        `step ${step.stepId} may have an external effect; reconcile it before retrying`,
+      );
     return { step, restarted: true };
   });
 
@@ -146,10 +155,12 @@ export function retryStep(options: RetryStepCommand): Promise<number> {
   }
   process.stdout.write(
     outcome.restarted
-      ? `${options.stepId} is open again as attempt ${outcome.step.attempt + 1}.\n`
+      ? `${options.stepId} is eligible for retry; reconstructing the recorded execution.\n`
       : `${options.stepId} already completed, so it was not run again. Its result stands.\n`,
   );
-  return Promise.resolve(exitCodes.acceptable);
+  return outcome.restarted
+    ? resumeRun({ command: "resume", runId: options.runId }, execute)
+    : Promise.resolve(exitCodes.acceptable);
 }
 
 export function abortRun(options: AbortCommand): Promise<number> {
@@ -158,18 +169,20 @@ export function abortRun(options: AbortCommand): Promise<number> {
       return false;
     }
     store.abortRun(options.runId, "aborted from the command line", Date.now());
-    store.repair(options.runId, Date.now());
     return true;
   });
   if (!found) {
     process.stderr.write(`no run named ${options.runId} is stored here.\n`);
     return Promise.resolve(exitCodes.invalidRequest);
   }
-  process.stdout.write(`${options.runId} is aborted and holds nothing. It accepts no new work.\n`);
+  process.stdout.write(
+    `${options.runId} has a recorded abort request. An active run observes it and stops its execution paths.\n`,
+  );
   return Promise.resolve(exitCodes.acceptable);
 }
 
-export function repairRun(options: RepairCommand): Promise<number> {
+export async function repairRun(options: RepairCommand): Promise<number> {
+  await repairRuntimeResources(defaultSessionRoot(homedir()), options.runId);
   const repaired = withRunStore((store) =>
     store.run(options.runId) === null ? null : store.repair(options.runId, Date.now()),
   );

@@ -98,3 +98,19 @@ describe("counting every run that was launched", () => {
     expect(counted.crashed).toBe(1);
   });
 });
+
+it("keeps the paired non-inferiority interval open at all-success boundaries", async () => {
+  const { pairedNonInferiority } = await import("./statistics.ts");
+  expect(pairedNonInferiority([], 0.05)).toMatchObject({ lower: -1, upper: 1, nonInferior: false });
+  const pairs = Array.from({ length: 79 }, () => ({ baseline: true, candidate: true }));
+  const interval = pairedNonInferiority(pairs, 0.05);
+  expect(interval.point).toBe(0);
+  expect(interval.lower).toBeCloseTo(-Math.sqrt((2 * Math.log(40)) / 79));
+  expect(interval.nonInferior).toBe(false);
+  expect(
+    pairedNonInferiority(
+      Array.from({ length: 3000 }, () => ({ baseline: true, candidate: true })),
+      0.05,
+    ).nonInferior,
+  ).toBe(true);
+});

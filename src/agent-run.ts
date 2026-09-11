@@ -7,9 +7,12 @@ import type { ConversationMessage, ModelClient, SamplingSettings } from "./core/
 import type { RandomSource } from "./core/random-source.ts";
 import type { ToolInvoker } from "./core/tool-invoker.ts";
 import { openRunStore } from "./durable/run-store.ts";
+import { digestOfBytes } from "./evidence/canonical-json.ts";
 import { renderPredicateCatalogue } from "./evidence/predicate-catalogue.ts";
+import { recordRunAssessment } from "./evidence/run-assessment.ts";
 import { sealRunSpec } from "./evidence/run-spec.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
+import type { RunVerdict } from "./evidence/verdict.ts";
 import type { ExecutionEnvelope, IsolationBackend } from "./exec/execution-mode.ts";
 import { describeEnvelopeForReader, establishExecutionEnvelope } from "./exec/run-envelope.ts";
 import { approvalsRequiredFor } from "./gates/approval.ts";
@@ -21,13 +24,11 @@ import {
   type GatesEngineRun,
   runGatesEngine,
   sealAssembledCriteria,
-  vacuousBlockingBonds,
 } from "./gates/engine.ts";
 import { type FileSetRegistry, writeRefusal } from "./gates/file-set.ts";
 import { createAmendFileSetTool, createDeclareFileSetTool } from "./gates/file-set-tool.ts";
 import { capabilityOf } from "./gates/gate-capability.ts";
 import type { DiffBudget } from "./gates/gate-definition.ts";
-import { executedTheChange } from "./gates/gate-runner.ts";
 import { createGitWorkspaceProbe } from "./gates/git-workspace.ts";
 import { captureInheritedChanges, type InheritedChanges } from "./gates/inherited-changes.ts";
 import { detectProject } from "./gates/project-type.ts";
@@ -115,6 +116,9 @@ const trailInstruction = [
 ].join(" ");
 
 export interface AgentTaskOptions {
+  readonly maxTokens?: number;
+  readonly previousCriteria?: import("./gates/gate-set-seal.ts").GateSetSeal;
+  readonly previousSpec?: import("./evidence/run-spec.ts").RunSpec;
   readonly task: string;
   /** Where durable run state goes. Absent means this run leaves none, which a test wants. */
   readonly runStorePath?: string | undefined;
@@ -180,6 +184,7 @@ export interface AgentTaskResult {
   readonly gates: GatesEngineRun;
   /** The model finished and the gates went green. Not the model's opinion of either. */
   readonly green: boolean;
+  readonly verdict: RunVerdict;
 }
 
 /**
@@ -203,6 +208,8 @@ export interface AgentToolset {
 }
 
 export interface ToolsetOptions {
+  readonly observeTool?: Parameters<typeof createLedgerChokepointRecorder>[1];
+  readonly abortSignal?: AbortSignal | undefined;
   readonly workspace: string;
   /**
    * Where commands actually run. Absent is the host, which is `restricted`: the policy guard
@@ -249,19 +256,89 @@ export function assembleToolset(options: ToolsetOptions): AgentToolset {
     toolInvoker: createToolChokepoint({
       definitions,
       guard,
+      abortSignal: options.abortSignal,
       derivation: createDerivationHeuristic(),
       confirm: options.confirm,
-      recorder: createLedgerChokepointRecorder(options.evidence),
+      recorder: createLedgerChokepointRecorder(options.evidence, options.observeTool),
     }),
   };
 }
 
 export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTaskResult> {
+  const wall = createWallBudget(options);
+  const cancellation = new AbortController();
+  const stopping = AbortSignal.any([options.abortSignal, cancellation.signal]);
+  const watcher =
+    options.runStorePath === undefined
+      ? null
+      : setInterval(() => {
+          try {
+            const store = openRunStore(options.runStorePath as string);
+            try {
+              if (store.run(options.evidence.sessionId)?.state === "aborted")
+                cancellation.abort("administrative abort");
+            } finally {
+              store.close();
+            }
+          } catch {
+            cancellation.abort("recovery journal unavailable");
+          }
+        }, 200);
+  try {
+    return await executeAgentTask({ ...options, abortSignal: stopping }, wall);
+  } finally {
+    if (watcher !== null) clearInterval(watcher);
+    wall.release();
+  }
+}
+
+async function executeAgentTask(
+  options: AgentTaskOptions,
+  wall: WallBudget,
+): Promise<AgentTaskResult> {
+  const pending = new Map<string, string>();
   const { definitions, toolInvoker, guard } = assembleToolset({
     workspace: options.workspace,
+    abortSignal: options.abortSignal,
     homeDir: options.homeDir,
     confirm: options.confirm,
     evidence: options.evidence,
+    observeTool: (entry, digest, sequence) => {
+      if (options.runStorePath === undefined) return;
+      const store = openRunStore(options.runStorePath);
+      try {
+        if (entry.decision === "requested") {
+          const stepId = `${sequence}:${entry.callId}`;
+          pending.set(entry.callId, stepId);
+          store.beginStep({
+            runId: options.evidence.sessionId,
+            stepId,
+            kind: entry.toolName,
+            idempotencyKey: digest,
+            at: options.clock.now(),
+          });
+        } else {
+          const stepId = pending.get(entry.callId);
+          if (stepId === undefined) throw new Error(`no durable intent for ${entry.callId}`);
+          if (entry.decision === "allowed")
+            store.finishStep({
+              runId: options.evidence.sessionId,
+              stepId,
+              resultDigest: digest,
+              at: options.clock.now(),
+            });
+          else
+            store.failStep({
+              runId: options.evidence.sessionId,
+              stepId,
+              reason: entry.detail,
+              at: options.clock.now(),
+            });
+        }
+      } finally {
+        store.close();
+      }
+    },
     ...(options.isolation === undefined ? {} : { isolation: options.isolation }),
     tools: (guard) => [
       ...createWorkspaceTools(
@@ -311,12 +388,25 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
   const inherited = await captureInherited(options);
   const detected = await detectedTypes(options);
   const criteriaSealed = options.criteriaSealed === true || (await sealCriteria(options));
+  if (options.previousCriteria !== undefined) {
+    const current = options.evidence
+      .records()
+      .findLast((entry) => entry.type === "gate-set-sealed");
+    const payload = options.evidence.payloads().get(current?.payloadDigest ?? "") as
+      | Record<string, unknown>
+      | undefined;
+    for (const field of ["criteriaRef", "gates", "budgets", "ratchetArms"] as const) {
+      if (JSON.stringify(payload?.[field]) !== JSON.stringify(options.previousCriteria[field]))
+        throw new Error(
+          `recovery criteria ${field} differ from the sealed run; restore its policy or start a new run explicitly`,
+        );
+    }
+  }
   // The whole envelope a result depends on, not the gates alone. The gate-set seal fixes what
   // will be measured; this fixes what the run was allowed to do while being measured, and a
   // result read without that is a result read without its question.
   const sealed = await sealSpecForRun(options, envelope);
-  // Durable state beside the ledger. The ledger says what happened and is append-only, which
-  // makes it the wrong thing to ask "what is still owed": that needs mutable state a killed
+  // Administrative state is a projection of append-only records. A killed
   // process leaves behind, which is what `swarm list-runs` and `swarm resume` read.
   recordRunStart(options, sealed);
   if (inherited.size > 0) {
@@ -332,7 +422,6 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
     });
   }
 
-  const wall = createWallBudget(options);
   const loopDependencies = {
     model: options.model,
     toolInvoker,
@@ -342,7 +431,7 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
     emit: options.emit,
     budget: {
       maxSteps: options.maxSteps,
-      maxTokens: 1_000_000,
+      maxTokens: options.maxTokens ?? 1_000_000,
       maxWallTimeMs: wall.loopBudgetMs(),
     },
     abortSignal: options.abortSignal,
@@ -355,11 +444,17 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
     ...(options.sampling === undefined ? {} : { sampling: options.sampling }),
   };
 
+  let remainingTokens = loopDependencies.budget.maxTokens;
   const loop = await runAgentLoop(options.task, {
     ...loopDependencies,
     ...(options.history === undefined ? {} : { history: options.history }),
   });
 
+  let finalStopReason = loop.stopReason;
+  let totalSteps = loop.steps;
+  let completionClaim = loop.completionClaim;
+  let messages = loop.messages;
+  remainingTokens -= loop.tokensUsed;
   await options.evidence.record({
     type: "session-stopped",
     actor: "harness",
@@ -402,11 +497,32 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
     inherited,
     criteriaSealed,
     criteriaRef: criteriaRefOf(options),
-    resolve: (request) =>
-      resolveWithModel(request, options, {
+    resolve: async (request) => {
+      const repair = await resolveWithModel(request, options, {
         ...loopDependencies,
-        budget: { ...loopDependencies.budget, maxWallTimeMs: wall.loopBudgetMs() },
-      }),
+        budget: {
+          ...loopDependencies.budget,
+          maxTokens: Math.max(0, remainingTokens),
+          maxWallTimeMs: wall.loopBudgetMs(),
+        },
+      });
+      remainingTokens -= repair.tokensUsed;
+      finalStopReason = repair.stopReason;
+      totalSteps += repair.steps;
+      completionClaim = repair.completionClaim;
+      messages = repair.messages;
+      await options.evidence.record({
+        type: "session-stopped",
+        actor: "harness",
+        provenance: ["tool-output"],
+        payload: {
+          stopReason: repair.stopReason,
+          steps: repair.steps,
+          tokensUsed: repair.tokensUsed,
+          repair: true,
+        },
+      });
+    },
     ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
     ...(options.isolation === undefined ? {} : { isolation: options.isolation }),
     ...(options.diffBudget === undefined ? {} : { budgets: options.diffBudget }),
@@ -429,54 +545,44 @@ export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTask
   // code?": the file-set record names files, the diff budget counts lines, and the tool calls
   // hold fragments, so a reviewer had to leave the evidence and run git themselves.
   await recordWorkspaceDiff(options);
-  recordRunEnd(options);
 
-  return {
-    loop,
-    gates,
-    // The gates decide this, because deciding the outcome is what the gates are for. A run the
-    // model stopped short of and the auto-resolve carried to green leaves a tree every gate
-    // measured and passed, and reading the model's own stop reason as a second condition let
-    // its account of itself overrule that measurement, which is invariant 1 the wrong way
-    // round. The one thing the gates cannot speak for is a run somebody cancelled: that is not
-    // a verdict on the tree, so it is not green whatever the gates last saw.
-    green: wasGreen(loop, gates),
+  const finalLoop = {
+    ...loop,
+    stopReason: finalStopReason,
+    steps: totalSteps,
+    tokensUsed: loopDependencies.budget.maxTokens - remainingTokens,
+    completionClaim,
+    messages,
   };
-}
-
-/**
- * Whether this run is a result anybody should act on.
- *
- * The gates decide it, because deciding an outcome is what the gates are for: a run the model
- * stopped short of and the auto-resolve carried to green leaves a tree every gate measured and
- * passed, and reading the model's own account of itself as a second condition let it overrule
- * that measurement, which is invariant 1 the wrong way round.
- *
- * Two things the gates cannot speak for. A run somebody cancelled is not a verdict on the tree.
- * And gates over a tree nothing touched pass for the same reason an empty diff has no bugs: a
- * run that died before it wrote anything left every gate trivially satisfied and reported
- * success, which is the reward log's "nothing was done and there is nothing to reward" being
- * told to a person as green. Changing nothing is only a result where the model meant to.
- */
-function wasGreen(loop: AgentLoopOutcome, gates: GatesEngineRun): boolean {
-  if (gates.outcome.settled !== "green" || loop.stopReason === "interrupted") {
-    return false;
-  }
-  // A blocking pass that could not be made to fail is not a pass. The gates said green over
-  // a check that would have said green over anything, and green means the check held.
-  if (vacuousBlockingBonds(gates.bonds).length > 0) {
-    return false;
-  }
-  const changed = gates.outcome.finalCycle.measures.changedFiles ?? 0;
-  if (changed === 0) {
-    return loop.stopReason === "completed";
-  }
-
-  // One definition, in the cycle that measured it. This rule lived here and in the resolve
-  // loop's own green, and the loop's copy did not have it, so a run that knew it was unmeasured
-  // never asked the model to fix it: it reported the failure accurately and did nothing about
-  // it, which is not the same as working.
-  return executedTheChange(gates.outcome.finalCycle);
+  await options.evidence.record({
+    type: "session-budget",
+    actor: "harness",
+    provenance: ["tool-output"],
+    payload: {
+      phase: "settled",
+      steps: finalLoop.steps,
+      tokensUsed: finalLoop.tokensUsed,
+      stopReason: finalLoop.stopReason,
+    },
+  });
+  const verdict = await recordRunAssessment(
+    options.evidence,
+    gates,
+    finalStopReason,
+    envelope.mode,
+    options.abortSignal.aborted ||
+      (wall.deadlineMs !== null && options.clock.now() >= wall.deadlineMs),
+  );
+  recordRunEnd(options, verdict.acceptable);
+  options.emit({
+    type: "run-assessment",
+    acceptable: verdict.acceptable,
+    detail: verdict.reasons.assessment ?? "",
+    record: options.evidence.records().at(-1)?.payloadDigest ?? "",
+    steps: finalLoop.steps,
+    tokensUsed: finalLoop.tokensUsed,
+  });
+  return { loop: finalLoop, gates, green: verdict.acceptable, verdict };
 }
 
 function criteriaRefOf(options: AgentTaskOptions): string {
@@ -491,14 +597,15 @@ const defaultRunTokens = 1_000_000;
 /**
  * Sealed after the gate set, because the spec names the gates the set assembled, and before the
  * loop, because that is what makes it a declaration rather than an account of what happened.
- * Failing to seal never stops a run: the spec is what a reader is owed, and refusing to do the
- * work because the record of the question could not be written helps nobody.
+ * A failed seal aborts before model dispatch, like every other failed evidence write.
  */
 async function sealSpecForRun(
   options: AgentTaskOptions,
   envelope: ExecutionEnvelope,
 ): Promise<string | null> {
-  try {
+  const existing = options.evidence.records().find((entry) => entry.type === "run-spec-sealed");
+  if (existing !== undefined) return existing.payloadDigest;
+  {
     const sealed = await sealRunSpec(options.evidence, {
       version: 1,
       repository: { root: options.workspace, baseCommit: options.baseRef },
@@ -517,7 +624,7 @@ async function sealSpecForRun(
         maxSteps: options.maxSteps,
         attempts: options.attempts,
         maxWallMs: options.maxWallTimeMs ?? defaultRunWallMs,
-        maxTokens: defaultRunTokens,
+        maxTokens: options.maxTokens ?? defaultRunTokens,
       },
       retention: { sessionsOlderThan: "30d" },
       signer: { policy: "any-key", signers: [] },
@@ -529,64 +636,64 @@ async function sealSpecForRun(
       },
       versions: { tool: buildVersion, schema: 1, node: process.versions.node },
     });
+    if (options.previousSpec !== undefined) {
+      for (const field of [
+        "repository",
+        "architecture",
+        "model",
+        "tools",
+        "network",
+        "paths",
+        "taskOracle",
+        "gates",
+        "signer",
+        "humanApproval",
+        "versions",
+      ] as const) {
+        if (JSON.stringify(sealed.spec[field]) !== JSON.stringify(options.previousSpec[field]))
+          throw new Error(
+            `recovery ${field} differs from the sealed run; restore its configuration or start a new run explicitly`,
+          );
+      }
+      if (sealed.spec.isolation.backend !== options.previousSpec.isolation.backend)
+        throw new Error("recovery backend differs from the sealed execution boundary");
+    }
     return sealed.digest;
-  } catch (cause) {
-    // Recorded on the chain rather than thrown, so a reader learns the spec is missing and why,
-    // instead of finding a run with no spec and no explanation. A run whose question could not
-    // be written down is still a run worth doing.
-    await options.evidence.record({
-      type: "session-budget",
-      actor: "harness",
-      provenance: ["tool-output"],
-      payload: {
-        note: "the run spec could not be sealed",
-        reason: cause instanceof Error ? cause.message : String(cause),
-      },
-    });
-    return null;
   }
 }
 
 /**
- * Never fatal. Durable state is what makes a killed run recoverable; a machine that cannot open
- * the store is a machine where recovery will not be available, and refusing to do the work over
- * that would trade a whole run for a convenience.
+ * A requested durable store must be writable before the first effect is dispatched.
  */
 function recordRunStart(options: AgentTaskOptions, specDigest: string | null): void {
-  if (options.runStorePath === undefined) {
-    return;
-  }
+  if (options.runStorePath === undefined) return;
+  const store = openRunStore(options.runStorePath);
   try {
-    const store = openRunStore(options.runStorePath);
-    try {
-      store.startRun({
-        runId: options.evidence.sessionId,
-        specDigest: specDigest ?? "sha256:unsealed",
-        task: options.task,
-        startedAt: options.clock.now(),
-      });
-    } finally {
-      store.close();
-    }
-  } catch {
-    // Recovery will not be available for this run. The run itself is unaffected.
+    store.startRun({
+      runId: options.evidence.sessionId,
+      specDigest: specDigest ?? "sha256:unsealed",
+      task: options.task,
+      startedAt: options.clock.now(),
+    });
+  } finally {
+    store.close();
   }
 }
 
 /** The run reached its end under its own power, so nothing about it is owed. */
-function recordRunEnd(options: AgentTaskOptions): void {
-  if (options.runStorePath === undefined) {
-    return;
-  }
+function recordRunEnd(options: AgentTaskOptions, accepted: boolean): void {
+  if (options.runStorePath === undefined) return;
+  const store = openRunStore(options.runStorePath);
   try {
-    const store = openRunStore(options.runStorePath);
-    try {
-      store.finishRun(options.evidence.sessionId, options.clock.now());
-    } finally {
-      store.close();
-    }
-  } catch {
-    // As above: durable state is a convenience for the next process, not this one.
+    if (accepted) store.finishRun(options.evidence.sessionId, options.clock.now());
+    else
+      store.abortRun(
+        options.evidence.sessionId,
+        "work refused; consult the recorded assessment",
+        options.clock.now(),
+      );
+  } finally {
+    store.close();
   }
 }
 
@@ -673,6 +780,7 @@ async function recordWorkspaceDiff(options: AgentTaskOptions): Promise<void> {
       baseRef: options.baseRef,
       truncated,
       characters: patch.length,
+      rawPatchDigest: digestOfBytes(patch),
       patch: truncated ? `${patch.slice(0, diffCharacterCap)}\n... truncated` : patch,
     },
   });
@@ -728,7 +836,7 @@ async function resolveWithModel(
   request: ResolveRequest,
   options: AgentTaskOptions,
   loopDependencies: Parameters<typeof runAgentLoop>[1],
-): Promise<void> {
+): Promise<AgentLoopOutcome> {
   const brief = [
     `The task was: ${options.task}`,
     "",
@@ -740,5 +848,5 @@ async function resolveWithModel(
     request.gateOutput,
   ].join("\n");
 
-  await runAgentLoop(brief, loopDependencies);
+  return runAgentLoop(brief, loopDependencies);
 }

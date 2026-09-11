@@ -210,3 +210,21 @@ describe("chain verification", () => {
     expect(parsed.problems).toHaveLength(2);
   });
 });
+
+it("resumes a valid chain and refuses a stale writer without forking history", async () => {
+  const { ledger } = await openTestLedger();
+  const entry = {
+    type: "session-started",
+    actor: "harness",
+    provenance: ["user"],
+    payloadDigest: payloadDigest("one"),
+  } as const;
+  await ledger.append(entry);
+  const before = await readFile(ledger.path, "utf8");
+  const reopened = (await openTestLedger()).ledger;
+  await reopened.append(entry);
+  await expect(ledger.append(entry)).rejects.toThrow(/changed since this writer/);
+  const after = await readFile(ledger.path, "utf8");
+  expect(after.startsWith(before)).toBe(true);
+  expect(verifyChain(parseLedgerText(after).records)).toMatchObject({ ok: true, recordCount: 2 });
+});

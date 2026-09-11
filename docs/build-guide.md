@@ -70,7 +70,7 @@ An MDL-flavored gate: diff size and file-touch count get budgets scaled to task 
 
 ### 3.8 Model Routing as a Bandit (established math, grounded application)
 
-After calibration picks a starting local model, treat per-task-class model choice as a UCB bandit problem where reward is gate outcome weighted by cost and latency. Two corrections keep that signal honest. First, the reward depends on the section 3.6 numeric ratchet: unratcheted gate-pass-rate rewards whichever model is best at weakening tests, so the ratchet numerics ride along in every reward record and a pass earned by erosion scores as a failure. Second, the router selects the model, so the estimate feeds on its own output; a small epsilon of random assignment (roughly 10%) keeps it unbiased, since UCB's exploration term and self-declared task class are only thin compensation. With both in place, every real task produces usable ground truth (did the gates honestly pass, in how many attempts) and the routing table improves for free as the tool is used. This carries your Counterfactual Court UCB budget-allocator concept into a new domain. v1 ships the reward logging; the actual bandit switch-over activates in phase 5 once enough samples exist, because a bandit on five data points is astrology.
+After calibration selects a measured starting model, ordinary tasks keep the calibration or competency pick until a matching held-out evaluation authorizes learned routing. Reward counts alone grant no authority. The versioned evaluation binds the candidate set, tool and golden-set versions, policy digest, independent repository population, baseline selection, budgets and paired non-inferiority margin. It must clear that margin and demonstrate cost or latency benefit. Production exploitation never chooses an untried arm. UCB and epsilon exploration remain available only under explicit experimental policy. Ratchet numerics continue to travel with each reward; weakening tests cannot earn a success. No held-out evaluation or independent campaign is completed merely by implementing this policy.
 
 Below that switch-over the router no longer stands on one calibration pick for every class. Calibration writes a competency table beside the pick: per model and per task class, the executed repeats and the ones whose gate passed, per sweep, read off the sweep's own run records and folded across sweeps of the same golden set, never across golden sets. A task's class is looked up before the rewards are consulted, and a candidate with at least six executed runs on that class, the best gate share among those, is the default that stands until the rewards take over. Two refusals keep that honest. A class where no candidate clears the floor abstains by name, and the calibration pick stands; the abstention travels with the routing decision so a reader sees the table was asked. And a model with no entry for a class has no competency there whatever it did on the others: the table never interpolates, because a competency it has no evidence for would be a guess with a number on it.
 
@@ -187,3 +187,34 @@ The rest of what the four passes found is not listed here because it is closed a
 A sixth pass, the credibility pass of 2026-09-04, closed four more at the harness level and named one boundary: the manifest a session's next turn or a parallel run's next layer read its gate commands from, which the turn or layer before it had written, so the criteria are now read from the commit the run started on and sealed once for the whole of it (invariant 16); a failing gate stood down by printing that a tool was missing, so not-applicable is decided by the exit code and nothing a run printed; a gate stood down by hanging it, so a kill at the timeout is the failure of the gate that ran; and the verifier holding a run to the sealed command and to the last cycle rather than the highest attempt number (all invariant 16, with cases 19 to 21 in the adversarial suite and `src/evidence/seal-conformance.test.ts`). The full inventory, what each was and what was chosen, is `ratchet-inputs.md`.
 
 Three scope notes belong with them, because each is a boundary rather than a hole. The placeholder gate and the secret detector share a named list of Greek, Cyrillic, and fullwidth letters that render as the Latin ones markers and credential names are spelled with; something spelled out of a script nobody listed still reads as itself to a person and is not caught, and the fix for that is a longer list rather than a different mechanism. And the escape hatch clears individual tests, which needs the base-source control run to name which tests failed, and that name comes only from the TAP result the harness asked node's own runner to write. Where no such result can be asked for, nothing is attributed and nothing is cleared: the printed output is not read as a second-best source, because a reporter line is text a test can print for the test beside it. That costs the per-test exemption on any project whose runner this harness cannot ask, which makes the ratchet stricter there rather than looser. The same boundary sits under the coverage arm: both arms measure only where the harness builds the whole invocation itself, an argument vector spawned with no shell in between, under an environment it built rather than inherited, holding its own node process with no wrapper in front of it, flags from a list that cannot change loading, reporting, or isolation, and an isolation setting the harness wrote and confirmed by reading back the vector it built. A declared command that cannot be expressed as one is asked for no artifact at all, so it is not measured rather than measured under conditions nobody can vouch for, and the gate record carries the vector that actually ran beside the rendering of it a reader sees. And what a process exits with is the process's to choose: 127 is the shell's word for a program it could not find, and a test that exits 127 on purpose makes its gate not applicable. That never renders green on its own, since a change every command gate stood down on is not measured, and it is one visible line in a diff; reading anything but the exit code to tell the two apart was the defect the sixth pass closed.
+
+## September 2026 audit integration
+
+The implementation and outstanding empirical milestones are recorded in
+[audit-implementation-2026-09-11.md](audit-implementation-2026-09-11.md).
+The installed verifier checks the chain, payload inventory, seal, signatures and independently
+re-derived verdicts without executing code from the bundle. A run assessment records the full
+lifecycle, final ratchet and bond outcomes; work acceptance remains distinct from evidence
+integrity and signer trust. DSSE v4 uses protocol signing bytes. The explicitly labeled v3
+compatibility reader preserves historical signatures without calling them standard DSSE.
+
+Recovery administration now appends to an owner-only JSONL journal. Real tool intents and
+terminal observations drive durable steps. Session reopening validates and continues the chain
+and reloads its payloads. A stale writer refuses to fork that chain. The read-only SQLite importer
+is a historical compatibility reader, never the active store. Conflicting or partially imported
+histories require reconciliation. Unknown provider usage and ambiguous effects refuse automatic
+replay; resumption spends the original remaining budget and binds the original configuration.
+
+Runtime resource identities are recorded before creation and their removal is verified after
+execution. Repair only removes resources whose session labels match the validated ledger.
+A restricted host process group remains best effort and cannot own arbitrary detached sessions.
+Abrupt harness death needs runtime supervision or a later repair; no JavaScript cleanup block can
+run after SIGKILL. Controlled network probes require a successful matched host control, and an
+unavailable control yields unknown. Strict coverage report channels unavailable under a backend
+remain not measured. Container image contents remain part of the trusted execution configuration.
+
+Requirement contracts bind external acceptance artifacts, a passing reference and a failing
+counterexample before candidate grading. Their named policy preserves each required obligation,
+including unavailable and not-applicable observations. The independent authorship, task
+completeness and representativeness of a contract require external review. Maintainer-authored
+fixtures do not satisfy an independent attack campaign or a new-user study.

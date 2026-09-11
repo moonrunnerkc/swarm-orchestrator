@@ -1,38 +1,31 @@
 #!/usr/bin/env node
-// First, so its check runs before any other module's top-level code.
+// Check the runtime before loading the command composition.
 import "./node-floor.ts";
+
 import { spawn } from "node:child_process";
 import { appendFileSync, statSync } from "node:fs";
 import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { arch, availableParallelism, homedir, platform, tmpdir } from "node:os";
+import { availableParallelism, homedir, platform, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { render as inkRender } from "ink";
-import { eventsFromClaudeCodeStream, eventsFromGenericJsonl } from "./adapters/external-agent.ts";
 import { runAgentTask } from "./agent-run.ts";
 import { buildVersion } from "./build-version.ts";
-import { describeOracleBond } from "./cli-bond-report.ts";
+import { verifyPatch } from "./cli-ci.ts";
 import { resolveLocalBackend } from "./cli-local-backend.ts";
 import {
-  type AbortCommand,
   type AddCaseCommand,
   type CalibrateCommand,
-  type CiCommand,
   type CommandLine,
   type DoctorCommand,
   type GatesCommand,
   type GcCommand,
   type InitCommand,
-  type InspectCommand,
   type ParallelCommand,
   parseCommandLine,
-  type RepairCommand,
   type ReplayCommand,
-  type ResumeCommand,
-  type RetryStepCommand,
   type ReviewCommand,
   type RunCommand,
-  type SelectCommand,
   type SessionCommand,
   usage,
   type VerifyCommand,
@@ -46,6 +39,7 @@ import {
   retryStep,
   runStorePath,
 } from "./cli-run-commands.ts";
+import { createSystemClock, createSystemRandom } from "./cli-runtime-inputs.ts";
 import {
   chooseModel,
   select,
@@ -66,11 +60,13 @@ import type { StopReason } from "./core/termination.ts";
 import { buildAttestation, signAttestation } from "./evidence/attestation.ts";
 import { bundleSourceFromRecorder, exportBundle, readBundle } from "./evidence/bundle.ts";
 import type { BundleManifest } from "./evidence/bundle-manifest.ts";
+import { digestOfBytes } from "./evidence/canonical-json.ts";
 import { exportCombinedBundle } from "./evidence/combined-bundle.ts";
 import { buildEvidenceDag, type EvidenceDag } from "./evidence/dag.ts";
 import { createRecordingModelClient } from "./evidence/model-call-recording.ts";
 import { replayBundle } from "./evidence/replay.ts";
 import { collectSessions, describeCollection, olderThanMs } from "./evidence/retention.ts";
+import { recordRunAssessment } from "./evidence/run-assessment.ts";
 import {
   createSessionId,
   defaultSessionRoot,
@@ -78,12 +74,13 @@ import {
   openEvidenceSession,
 } from "./evidence/session.ts";
 import { createKeychainSecretStore, resolveSigningKey } from "./evidence/signing.ts";
-import { describeVerdict, runVerdict } from "./evidence/verdict.ts";
+import { describeVerdict } from "./evidence/verdict.ts";
 import { verifyBundleAt } from "./evidence/verify-report.ts";
 import { harnessChildEnvironment } from "./exec/child-environment.ts";
-import { createContainerBackend } from "./exec/container-backend.ts";
+import { hostExecutionBackend, selfTestContainment } from "./exec/execution-mode.ts";
 import { parseIsolationOption } from "./exec/isolation-option.ts";
 import { createRunCancellation } from "./exec/run-cancellation.ts";
+import { recordedContainerBackend } from "./exec/runtime-resource.ts";
 import type { AutoResolveOutcome } from "./gates/auto-resolve.ts";
 import type { BondOutcome } from "./gates/bond-runner.ts";
 import type { GateSetOptions } from "./gates/default-gates.ts";
@@ -98,7 +95,6 @@ import { createFileSetRegistry } from "./gates/file-set.ts";
 import type { DiffBudget } from "./gates/gate-definition.ts";
 import { citedRecords, type GateCycle, outstandingJustifications } from "./gates/gate-runner.ts";
 import { resolveBaseCommit } from "./gates/git-workspace.ts";
-import { verifyIndependently } from "./gates/independent-verification.ts";
 import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { summarizeRatchet } from "./gates/ratchet-summary.ts";
 import { recordTurnBaseline } from "./gates/turn-baseline.ts";
@@ -109,9 +105,8 @@ import { exitCodes, jsonEventLine, jsonResultLine } from "./machine-output.ts";
 import {
   localEndpointRecord,
   type ResolvedLocalEndpoint,
-  resolveLocalEndpoint,
 } from "./providers/endpoint-resolution.ts";
-import { type ModelSpec, parseModelSpec } from "./providers/model-spec.ts";
+import { parseModelSpec } from "./providers/model-spec.ts";
 import { createProviderRegistry } from "./providers/registry.ts";
 import { fetchServedModels } from "./providers/served-models.ts";
 import type { TransportTraceSink } from "./providers/transport-trace.ts";
@@ -128,7 +123,6 @@ import { payloadsSince } from "./select/calibration-measures.ts";
 import { renderCalibrationReport } from "./select/calibration-report.ts";
 import {
   defaultCompetencyTablePath,
-  lookupCompetency,
   readCompetencyTable,
   sweepFromRuns,
   withSweep,
@@ -144,20 +138,17 @@ import {
   preflightLocalModels,
   preflightRecord,
 } from "./select/model-preflight.ts";
-import { defaultPickPath, readCalibrationPick, writeCalibrationPick } from "./select/pick-store.ts";
+import { defaultPickPath, writeCalibrationPick } from "./select/pick-store.ts";
 import { loadPricing } from "./select/pricing-source.ts";
 import { calibrationCandidates, recommendModel } from "./select/recommendation.ts";
 import { buildRewardEntry } from "./select/reward.ts";
 import { defaultRoutingLogPath, openRoutingLog } from "./select/routing-log.ts";
 import { routingDecisionRecord } from "./select/routing-record.ts";
 import { renderRoutingReport } from "./select/routing-report.ts";
-import { renderSelectReport } from "./select/select-report.ts";
-import { servableCandidates } from "./select/servable-candidates.ts";
 import { loadShortlist } from "./select/shortlist-source.ts";
 import { systemProbeEnvironment } from "./select/system-probe.ts";
 import { classifyTask } from "./select/task-class.ts";
 import { costOfTask, type TaskCost } from "./select/task-cost.ts";
-import { type RoutingDecision, routeModel } from "./select/ucb.ts";
 import { createTelemetry, jsonLinesSink, type Telemetry } from "./telemetry/otel.ts";
 import { createPolicyGuard, defaultShellAllowlist } from "./tools/policy-guard.ts";
 import { createWorkspaceTools } from "./tools/workspace-tools.ts";
@@ -174,33 +165,6 @@ import { type ParallelRunResult, runInParallel } from "./workers/parallel-run.ts
 import { type PlannerOutcome, runPlanner } from "./workers/planner-run.ts";
 import { defaultWorkerConcurrency } from "./workers/pool.ts";
 import { readTaskGraph, type TaskGraph } from "./workers/task-graph.ts";
-
-/** The ambient clock lives at the composition root; src/core only ever sees the port. */
-function createSystemClock(): Clock {
-  return {
-    now: () => Date.now(),
-    sleep: (milliseconds, cancel) =>
-      new Promise((resolveSleep) => {
-        if (cancel?.aborted) {
-          resolveSleep();
-          return;
-        }
-        const timer = setTimeout(() => {
-          cancel?.removeEventListener("abort", onCancel);
-          resolveSleep();
-        }, milliseconds);
-        function onCancel(): void {
-          clearTimeout(timer);
-          resolveSleep();
-        }
-        cancel?.addEventListener("abort", onCancel, { once: true });
-      }),
-  };
-}
-
-function createSystemRandom(): RandomSource {
-  return { next: () => Math.random() };
-}
 
 const noFlagSettings: CommandLineSettings = {
   model: null,
@@ -304,116 +268,6 @@ async function collectGarbage(options: GcCommand): Promise<number> {
  * patch applied there, the checks run there, and nothing from the producer travelling except the
  * patch itself.
  */
-async function verifyPatch(options: CiCommand): Promise<number> {
-  const clock = createSystemClock();
-  // Verification spawns test runners in a checkout, and this command had nothing that stopped
-  // them when it was stopped itself. A Ctrl-C or a supervisor's SIGTERM ended the CLI and left
-  // the runner reparented and running: two node processes from an oracle were still holding a
-  // checkout open five hours after the run that started them had gone.
-  const stopping = createRunCancellation({ clock, wallBudgetMs: null });
-  const onInterrupt = () => stopping.cancel("interrupted");
-  const onTerminate = () => stopping.cancel("terminated");
-  process.on("SIGINT", onInterrupt);
-  process.on("SIGTERM", onTerminate);
-  try {
-    return await verifyPatchUnderCancellation(options, clock, stopping.signal);
-  } finally {
-    process.off("SIGINT", onInterrupt);
-    process.off("SIGTERM", onTerminate);
-    stopping.dispose();
-  }
-}
-
-async function verifyPatchUnderCancellation(
-  options: CiCommand,
-  clock: Clock,
-  stopping: AbortSignal,
-): Promise<number> {
-  const baseCommit = await resolveBaseCommit(options.workspace, options.baseRef);
-  // What the producer said it did, where it said anything. Read strictly: a line this build
-  // does not recognize refuses the whole stream rather than being skipped, because a skipped
-  // line is evidence that quietly went unread.
-  const replayed =
-    options.agentStream === null
-      ? []
-      : readAgentStream(
-          await readFile(options.agentStream.path, "utf8"),
-          options.agentStream.format,
-        );
-  if (replayed.length > 0) {
-    process.stdout.write(`agent stream: ${replayed.length} event(s) read\n`);
-  }
-  const result = await verifyIndependently({
-    repositoryRoot: options.workspace,
-    baseCommit,
-    patch: await readFile(options.patchFile, "utf8"),
-    immutablePaths: options.immutablePaths,
-    installDependencies: options.installDependencies,
-    ...(options.oracleOnly ? { repositoryChecks: "skip" as const } : {}),
-    ...(options.taskOracle === null ? {} : { taskOracle: { command: options.taskOracle } }),
-    commands: createNodeCommandRunner(clock, harnessChildEnvironment(), undefined, stopping),
-    clock,
-  });
-
-  if (options.json) {
-    process.stdout.write(`${JSON.stringify({ schema: "swarm.ci.v1", baseCommit, ...result })}\n`);
-    return result.verified ? exitCodes.acceptable : exitCodes.notAcceptable;
-  }
-
-  process.stdout.write(`base: ${baseCommit}\n`);
-  if (result.refusal !== null) {
-    process.stdout.write(`refused: ${result.refusal}\n`);
-    return exitCodes.notAcceptable;
-  }
-  if (!result.applied) {
-    process.stdout.write(
-      "the patch did not apply to a fresh checkout of the base, so nothing was measured. " +
-        "That is not a failing check, it is no check at all.\n",
-    );
-    return exitCodes.notAcceptable;
-  }
-  if (result.install !== null) {
-    process.stdout.write(
-      `  install  ${result.install.succeeded ? "ok" : "failed"}: ${result.install.detail}\n`,
-    );
-  }
-  for (const check of result.checks) {
-    const label = check.status === "not-applicable" ? "n/a" : check.status;
-    process.stdout.write(`  ${label.padEnd(8)} ${check.id}: ${check.detail}\n`);
-  }
-  if (result.unmeasured) {
-    // Not the same finding as a refusal, and the difference is the whole point: a reader told
-    // "not verified" over a checkout where nothing ran learns nothing about the patch.
-    process.stdout.write(`\nnot measured: ${result.advice}\n`);
-    return exitCodes.notAcceptable;
-  }
-  process.stdout.write(
-    `\nregression: ${result.regression}   task: ${result.task}   ` +
-      `oracle reach: ${result.oracleReach}${describeUnreached(result.unreachedByOracle)}\n` +
-      `oracle bond: ${result.oracleBond}${describeOracleBond(result)}\n` +
-      (result.verified
-        ? "verified: no regression, and the oracle says the task was done.\n"
-        : `not verified. ${result.advice}\n`),
-  );
-  return result.verified ? exitCodes.acceptable : exitCodes.notAcceptable;
-}
-
-/** Which added lines the oracle never ran, so "extend the oracle" names something to extend. */
-function describeUnreached(
-  unreached: readonly { readonly path: string; readonly lines: readonly number[] }[],
-): string {
-  if (unreached.length === 0) {
-    return "";
-  }
-  const named = unreached
-    .map(
-      (file) =>
-        `${file.path}: ${file.lines.slice(0, 8).join(", ")}${file.lines.length > 8 ? ", ..." : ""}`,
-    )
-    .join("; ");
-  return ` (${named})`;
-}
-
 /**
  * Spans go where SWARM_OTEL_FILE names, and nowhere otherwise. Payload capture is a second
  * decision on top of that, because tool arguments are where the credentials are and a telemetry
@@ -436,10 +290,6 @@ function createRunTelemetry(runId: string): Telemetry {
       }
     }),
   });
-}
-
-function readAgentStream(text: string, format: "generic" | "claude-code") {
-  return format === "claude-code" ? eventsFromClaudeCodeStream(text) : eventsFromGenericJsonl(text);
 }
 
 async function replay(options: ReplayCommand): Promise<number> {
@@ -624,6 +474,7 @@ async function runOneTurn(input: {
   const model = createRecordingModelClient(
     registry.create(parseModelSpec(usable.modelSpec)),
     evidence,
+    { transcript: "components" },
   );
   const fileSet = createFileSetRegistry(evidence);
 
@@ -645,7 +496,7 @@ async function runOneTurn(input: {
       task,
       workspace: options.workspace,
       runStorePath: runStorePath(),
-      ...(isolation === null ? {} : { isolation: createContainerBackend(isolation) }),
+      ...(isolation === null ? {} : { isolation: recordedContainerBackend(isolation, evidence) }),
       baseRef: input.baseRef,
       criteriaRef: input.criteriaRef,
       criteriaSealed: input.criteriaSealed,
@@ -1015,6 +866,13 @@ async function run(options: RunCommand): Promise<number> {
     sessionId: createSessionId(clock, random),
     clock,
   });
+  if (options.recovery !== undefined)
+    await evidence.record({
+      type: "session-started",
+      actor: "harness",
+      provenance: ["tool-output"],
+      payload: { task: options.task, continuation: options.recovery.source },
+    });
   if (localBackend !== null) {
     await evidence.record(localEndpointRecord(localBackend));
   }
@@ -1037,14 +895,16 @@ async function run(options: RunCommand): Promise<number> {
         })
       : ({ outcome: "as-requested", modelSpec, reason: "not a local model" } as const);
   if (usable.outcome === "substituted") {
-    process.stdout.write(
+    process.stderr.write(
       `model: ${usable.modelSpec} instead of ${usable.requested}, ${usable.reason}\n`,
     );
   }
   const runSpec = parseModelSpec(usable.modelSpec);
 
   const registry = createProviderRegistry(registrySettingsFrom(settings, localBackend));
-  const model = createRecordingModelClient(registry.create(runSpec), evidence);
+  const model = createRecordingModelClient(registry.create(runSpec), evidence, {
+    transcript: "components",
+  });
   const fileSet = createFileSetRegistry(evidence);
 
   const ui = startInterface({
@@ -1070,18 +930,31 @@ async function run(options: RunCommand): Promise<number> {
   // secrets end up somewhere nobody scrubs, and payload capture stays a second decision on top.
   const telemetry = createRunTelemetry(evidence.sessionId);
 
+  let exporting = false;
   try {
-    const { loop, gates, green } = await runAgentTask({
+    const { loop, gates, green, verdict } = await runAgentTask({
       task: options.task,
+      ...(options.recovery === undefined
+        ? options.maxTokens === undefined
+          ? {}
+          : { maxTokens: options.maxTokens }
+        : {
+            history: options.recovery.history,
+            maxTokens: options.recovery.remainingTokens,
+            previousSpec: options.recovery.previousSpec,
+            previousCriteria: options.recovery.previousCriteria,
+          }),
       workspace: options.workspace,
       runStorePath: runStorePath(),
-      ...(isolation === null ? {} : { isolation: createContainerBackend(isolation) }),
+      ...(isolation === null ? {} : { isolation: recordedContainerBackend(isolation, evidence) }),
       baseRef: await resolveBaseCommit(options.workspace, options.baseRef),
       maxSteps: settings.maxSteps,
       attempts: settings.attempts,
-      ...(settings.maxWallMinutes === null
-        ? {}
-        : { maxWallTimeMs: settings.maxWallMinutes * 60_000 }),
+      ...(options.recovery !== undefined
+        ? { maxWallTimeMs: Math.max(0, options.recovery.deadline - clock.now()) }
+        : settings.maxWallMinutes === null
+          ? {}
+          : { maxWallTimeMs: settings.maxWallMinutes * 60_000 }),
       model,
       evidence,
       fileSet,
@@ -1126,15 +999,10 @@ async function run(options: RunCommand): Promise<number> {
     // here from `settled` alone let the two disagree, and they did. A run wrote three files
     // into a workspace whose only command gate found no tests to run, so nothing measured the
     // change, `green` said so, and the exit code said 0 because no gate had actually failed.
-    const verdict = runVerdict({
-      cycle: gates.outcome.finalCycle,
-      integrity: "valid",
-      signer: "untrusted",
-      executionTrust: isolation === null ? "restricted" : "isolated",
-    });
+    exporting = true;
     const written = await writeBundle(evidence, options.bundleDirectory, clock, ui.note, {
       verdict: { ...verdict },
-      executionMode: isolation === null ? "restricted" : "isolated",
+      executionMode: verdict.executionTrust,
     });
     announceBundle(written.directory, ui.note);
     await ui.presentEvidence(await summarizeEvidence(written));
@@ -1150,6 +1018,20 @@ async function run(options: RunCommand): Promise<number> {
       );
     }
     return code;
+  } catch (cause) {
+    if (!exporting) {
+      try {
+        const captured = await writeBundle(evidence, options.bundleDirectory, clock, (line) =>
+          process.stderr.write(`${line}\n`),
+        );
+        process.stderr.write(`execution failed; captured evidence: ${captured.directory}\n`);
+      } catch (exportFailure) {
+        process.stderr.write(
+          `failure evidence could not be exported: ${describeError(exportFailure)}; session: ${evidence.directory}\n`,
+        );
+      }
+    }
+    throw cause;
   } finally {
     await ui.stop();
     process.off("SIGINT", onInterrupt);
@@ -1305,6 +1187,21 @@ function writeOut(line: string): void {
 
 /** The gates on their own: no model, no retries, just what the workspace measures right now. */
 async function gates(options: GatesCommand): Promise<number> {
+  const stopping = createRunCancellation({ clock: createSystemClock(), wallBudgetMs: null });
+  const interrupt = () => stopping.cancel("interrupted");
+  const terminate = () => stopping.cancel("terminated");
+  process.on("SIGINT", interrupt);
+  process.on("SIGTERM", terminate);
+  try {
+    return await gatesUnderCancellation(options, stopping.signal);
+  } finally {
+    process.off("SIGINT", interrupt);
+    process.off("SIGTERM", terminate);
+    stopping.dispose();
+  }
+}
+
+async function gatesUnderCancellation(options: GatesCommand, signal: AbortSignal): Promise<number> {
   const settings = await settingsFor(options.workspace, noFlagSettings);
   const clock = createSystemClock();
   const random = createSystemRandom();
@@ -1325,6 +1222,24 @@ async function gates(options: GatesCommand): Promise<number> {
     payload: { task: "gates", workspace: options.workspace, baseRef },
   });
 
+  const requestedBackend = parseIsolationOption(options.isolation ?? null, options.workspace);
+  const backend =
+    requestedBackend === null
+      ? hostExecutionBackend
+      : recordedContainerBackend(requestedBackend, evidence);
+  const canary = join(evidence.directory, "containment-canary");
+  await writeFile(canary, "synthetic containment control");
+  const envelope = await selfTestContainment(backend, {
+    workspaceRoot: options.workspace,
+    hostFileOutsideWorkspace: canary,
+  });
+  await evidence.record({
+    type: "execution-envelope",
+    actor: "harness",
+    provenance: ["tool-output"],
+    payload: JSON.parse(JSON.stringify(envelope)),
+  });
+
   const gateOptions = gateOptionsFrom(settings);
   const diffBudget = diffBudgetFrom(settings);
   // Sealed before anything runs, exactly as a task run seals its criteria before the loop, so
@@ -1339,6 +1254,8 @@ async function gates(options: GatesCommand): Promise<number> {
   });
   const run = await runGatesEngine({
     workspaceRoot: options.workspace,
+    abortSignal: signal,
+    ...(requestedBackend === null ? {} : { isolation: backend }),
     baseRef,
     evidence,
     fileSet,
@@ -1371,17 +1288,17 @@ async function gates(options: GatesCommand): Promise<number> {
   // The verdict rather than a boolean: a change nothing executed used to exit 0 here, because
   // "no blocking gate failed" is true of a run where the only thing that passed was a linter.
   // Each dimension is reported with its reason, and unmeasured is never coerced into a pass.
-  const verdict = runVerdict({
-    cycle: run.outcome.firstCycle,
-    integrity: "valid",
-    signer: "untrusted",
-    executionTrust: "restricted",
-  });
+  const verdict = await recordRunAssessment(
+    evidence,
+    run,
+    signal.aborted ? "interrupted" : "completed",
+    envelope.mode,
+    signal.aborted,
+  );
   process.stdout.write(`\n${describeVerdict(verdict).join("\n")}\n`);
 
   announceBundle((await writeBundle(evidence, options.bundleDirectory, clock)).directory);
-  const vacuous = vacuousBlockingBonds(run.bonds).length > 0;
-  return verdict.acceptable && !vacuous ? 0 : 1;
+  return verdict.acceptable ? 0 : 1;
 }
 
 /**
@@ -1432,15 +1349,22 @@ async function writeBundle(
     note(`[signing] ${signing.notice}`);
   }
   const directory = destination ?? join(evidence.directory, "bundle");
+  const patch = recordedField(evidence, "workspace-diff", "patch");
+  const patchDigest = recordedField(evidence, "workspace-diff", "rawPatchDigest");
+  const patchBound = patch !== null && patchDigest === digestOfBytes(patch);
+  if (attested !== undefined && !patchBound)
+    note(
+      "[attestation] raw patch binding is unavailable; the evidence bundle remains independently verifiable",
+    );
   const attestation =
-    attested === undefined
+    attested === undefined || !patchBound || recordedDigest(evidence, "run-spec-sealed") === null
       ? undefined
       : signAttestation(
           buildAttestation({
             runId: evidence.sessionId,
             specDigest: recordedDigest(evidence, "run-spec-sealed") ?? "sha256:unsealed",
-            sourceCommit: recordedField(evidence, "session-started", "baseRef") ?? "unknown",
-            patchDigest: recordedDigest(evidence, "workspace-diff") ?? "sha256:none",
+            sourceCommit: recordedSpecBase(evidence),
+            patchDigest: patchDigest as string,
             chainHead: evidence.head().hash,
             toolVersion: buildVersion,
             executionMode: attested.executionMode,
@@ -1458,13 +1382,22 @@ async function writeBundle(
   return { directory, manifest: written.manifest, dag: written.dag };
 }
 
+function recordedSpecBase(evidence: EvidenceRecorder): string {
+  const digest = recordedDigest(evidence, "run-spec-sealed");
+  const payload = digest === null ? undefined : evidence.payloads().get(digest);
+  return (
+    (payload as { spec?: { repository?: { baseCommit?: string } } })?.spec?.repository
+      ?.baseCommit ?? "unknown"
+  );
+}
+
 /** The payload digest of the first record of a kind, which is the thing an attestation binds. */
 function recordedDigest(evidence: EvidenceRecorder, type: string): string | null {
   return evidence.records().find((record) => record.type === type)?.payloadDigest ?? null;
 }
 
 function recordedField(evidence: EvidenceRecorder, type: string, field: string): string | null {
-  const record = evidence.records().find((entry) => entry.type === type);
+  const record = evidence.records().findLast((entry) => entry.type === type);
   const payload = record === undefined ? undefined : evidence.payloads().get(record.payloadDigest);
   const value = (payload as Record<string, unknown> | undefined)?.[field];
   return typeof value === "string" ? value : null;
@@ -2049,7 +1982,7 @@ async function parallel(options: ParallelCommand): Promise<number> {
       createWorkerSession: (workerId) =>
         openEvidenceSession({ root: sessionRoot, sessionId: `${runId}-${workerId}`, clock }),
       createModel: (_workerId, evidence) =>
-        createRecordingModelClient(registry.create(spec), evidence),
+        createRecordingModelClient(registry.create(spec), evidence, { transcript: "components" }),
       redundancy,
       concurrency,
       modelSpec: settings.modelSpec,
@@ -2071,7 +2004,10 @@ async function parallel(options: ParallelCommand): Promise<number> {
         ? {}
         : {
             isolation: (worktreePath: string) =>
-              createContainerBackend({ ...parallelIsolation, workspaceRoot: worktreePath }),
+              recordedContainerBackend(
+                { ...parallelIsolation, workspaceRoot: worktreePath },
+                coordinator,
+              ),
           }),
       ...(gateOptions === undefined ? {} : { gateOptions }),
       abortSignal: cancellation.signal,
@@ -2158,10 +2094,10 @@ async function main(): Promise<number> {
     return inspectRun(options);
   }
   if (options.command === "resume") {
-    return resumeRun(options);
+    return resumeRun(options, resumeExecution);
   }
   if (options.command === "retry-step") {
-    return retryStep(options);
+    return retryStep(options, resumeExecution);
   }
   if (options.command === "abort") {
     return abortRun(options);
@@ -2211,3 +2147,43 @@ main().then(
     process.exitCode = 1;
   },
 );
+
+async function resumeExecution(
+  context: Awaited<ReturnType<typeof import("./durable/recovery-context.ts").recoveryContext>>,
+): Promise<number> {
+  const parsed = parseCommandLine(
+    [
+      "--workspace",
+      context.spec.repository.root,
+      "--base",
+      context.spec.repository.baseCommit,
+      "--model",
+      context.spec.model.spec,
+      "--isolation",
+      context.spec.isolation.backend === "host" ? "none" : context.spec.isolation.backend,
+      ...(context.spec.taskOracle === null ? [] : ["--oracle", context.spec.taskOracle.command]),
+      "--attempts",
+      String(context.remainingAttempts),
+      "--max-steps",
+      String(context.remainingSteps),
+      "--max-wall-minutes",
+      String(Math.max(1, Math.floor(context.spec.budgets.maxWallMs / 60_000))),
+      context.spec.task,
+    ],
+    { currentDirectory: process.cwd() },
+  );
+  if (parsed.command !== "run")
+    throw new Error("recovery could not construct the original run command");
+  return run({
+    ...parsed,
+    recovery: {
+      history: context.history,
+      remainingTokens: context.remainingTokens,
+      remainingWallMs: context.remainingWallMs,
+      deadline: context.deadline,
+      previousSpec: context.spec,
+      previousCriteria: context.criteria,
+      source: context.source,
+    },
+  });
+}

@@ -104,6 +104,16 @@ export const emptySessionView: SessionView = {
  */
 export function applyLoopEvent(view: SessionView, event: LoopEvent): SessionView {
   switch (event.type) {
+    case "run-assessment":
+      return {
+        ...view,
+        tokensUsed: event.tokensUsed ?? view.tokensUsed,
+        steps: event.steps ?? view.steps,
+        status: event.acceptable ? "work accepted" : `work refused: ${event.detail}`,
+        escalated: !event.acceptable,
+        finished: true,
+        activity: null,
+      };
     case "plan":
       return { ...view, plan: event.text, status: "planning" };
     case "execution-envelope":

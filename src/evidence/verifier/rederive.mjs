@@ -117,6 +117,32 @@ export function rederiveOracleBond(mutants) {
  * as impossible to check when 89 of them were determinate.
  */
 export function rederiveCiVerdict(verdict) {
+  if (verdict.certificationPolicy === "required-obligations-v1") {
+    const obligations = verdict.acceptance?.obligations;
+    if (
+      !Array.isArray(obligations) ||
+      obligations.length === 0 ||
+      !verdictVocabulary.regression.includes(verdict.regression) ||
+      obligations.some(
+        (entry) =>
+          !["required", "advisory"].includes(entry.severity) ||
+          !["accepted", "rejected", "unjudged", "not-applicable"].includes(entry.status),
+      )
+    )
+      return { rederived: false, missing: ["acceptance.obligations"], reasons: [], verified: null };
+    const accepted = obligations.every(
+      (obligation) =>
+        obligation.severity === "advisory" ||
+        ["accepted", "not-applicable"].includes(obligation.status),
+    );
+    const verified = verdict.regression === "pass" && accepted;
+    return {
+      rederived: true,
+      missing: [],
+      reasons: verified ? [] : ["required-obligations-or-regression-refused"],
+      verified,
+    };
+  }
   const read = bondRefusesCertification
     ? [...fieldsTheVerdictPolicyReads, "oracleBond"]
     : fieldsTheVerdictPolicyReads;
@@ -280,9 +306,38 @@ export function rederiveBundle(directory, log = console.log) {
     say("NOT RE-DERIVED", text);
   };
 
+  for (const entry of records.filter((record) => record.type === "verification-command")) {
+    const payload = payloads.get(entry.payloadDigest);
+    const status = rederiveRequirementCommand(payload);
+    if (status === null)
+      cannot(`verification-command ${entry.sequence}: rule or complete output is unavailable`);
+    else if (status === payload.status)
+      agree(`verification-command ${entry.sequence}: ${status} under ${payload.rule}`);
+    else
+      disagree(
+        `verification-command ${entry.sequence}: recorded ${payload.status}, the rule reads ${status}`,
+      );
+  }
   const parserByGate = new Map();
   // A gate-baseline record is a gate run over the base tree, in the same shape, read by the
   // same rule.
+
+  for (const entry of records.filter(
+    (candidate) => candidate.type === "independent-verification",
+  )) {
+    const payload = payloads.get(entry.payloadDigest);
+    const reading = rederiveCiVerdict(payload ?? {});
+    if (!reading.rederived)
+      cannot(`independent verification ${entry.sequence}: ${reading.missing.join(", ")}`);
+    else if (payload?.verified === reading.verified)
+      agree(
+        `independent verification ${entry.sequence}: ${reading.verified} under ${payload.certificationPolicy ?? "oracle-v3"}`,
+      );
+    else
+      disagree(
+        `independent verification ${entry.sequence}: recorded ${payload?.verified}, policy implies ${reading.verified}`,
+      );
+  }
   for (const entry of records) {
     if (entry.type !== "gate-run" && entry.type !== "gate-baseline") continue;
     const payload = payloads.get(entry.payloadDigest);
@@ -425,6 +480,49 @@ export function rederiveBundle(directory, log = console.log) {
       : `re-derivation FAILED: ${disagreements} verdict(s) disagree, ${agreements} agree, ${notRederived} could not be re-derived`,
   );
   return disagreements === 0 ? 0 : 1;
+}
+
+function rederiveRequirementCommand(payload) {
+  if (payload?.rule !== "controlled-node-tap-v1") return null;
+  if (payload.unavailable != null || payload.outputTruncated === true) return "unavailable";
+  if (typeof payload.stdout !== "string" || !/^TAP version \d+/m.test(payload.stdout))
+    return "unavailable";
+  let plan = null;
+  let top = 0;
+  let collected = 0;
+  let skippedCount = 0;
+  const skipped = new Set();
+  const passed = new Set();
+  const failed = new Set();
+  for (const line of payload.stdout.split("\n")) {
+    if (/^\s*#/.test(line)) continue;
+    const count = /^1\.\.(\d+)\s*$/.exec(line);
+    if (count !== null) {
+      plan = Number(count[1]);
+      continue;
+    }
+    const point = /^(\s*)(not ok|ok)\s+\d+\s+-\s+(.+?)\s*$/.exec(line);
+    if (point === null) continue;
+    if (point[1] === "") top += 1;
+    collected += 1;
+    const [name, directive] = point[3].split(/\s+#\s+/, 2);
+    if (/^skip\b/i.test(directive ?? "")) skippedCount += 1;
+    if (/^(skip|todo)\b/i.test(directive ?? "")) skipped.add(name);
+    else (point[2] === "not ok" ? failed : passed).add(name);
+  }
+  const failures = [...failed].filter((name) => !skipped.has(name) && !passed.has(name));
+  const successes = [...passed].filter((name) => !skipped.has(name) && !failed.has(name));
+  if (
+    plan === null ||
+    plan !== top ||
+    collected - skippedCount === 0 ||
+    failures.length + successes.length === 0
+  )
+    return "unavailable";
+  if (payload.exitCode === 0) return "passed";
+  return failures.length > 0 && /^\s+code: ['"]?ERR_ASSERTION['"]?\s*$/m.test(payload.stdout)
+    ? "assertion-failed"
+    : "unavailable";
 }
 
 const entry =

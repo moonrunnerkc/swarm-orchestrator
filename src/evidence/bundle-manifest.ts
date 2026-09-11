@@ -43,6 +43,10 @@ export const bundleManifestSchema = z.object({
    * ignores the field reads exactly what it read before.
    */
   workers: z.array(workerChainSchema).default([]),
+  attestationDigest: z
+    .string()
+    .regex(/^sha256:[0-9a-f]{64}$/)
+    .optional(),
 });
 
 export type BundleManifest = z.infer<typeof bundleManifestSchema>;

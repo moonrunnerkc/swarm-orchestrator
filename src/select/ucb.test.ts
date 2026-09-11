@@ -54,6 +54,7 @@ function createSeededRandom(seed: number): RandomSource {
 
 function route(overrides: Partial<RoutingInput> = {}) {
   return routeModel({
+    authority: "experimental",
     taskClass: "edit",
     candidates: ["fast", "slow"],
     calibrationPick: "fast",
@@ -307,4 +308,15 @@ describe("routeModel and the competency table", () => {
   it("records no competency where no table was consulted", () => {
     expect(route().competency).toBeNull();
   });
+});
+
+it("keeps production on the measured calibration pick without explicit authority", () => {
+  const decision = routeModel({
+    taskClass: "edit",
+    candidates: ["measured", "untried"],
+    calibrationPick: "measured",
+    entries: repeat("measured", 1, 20),
+    random: never,
+  });
+  expect(decision).toMatchObject({ model: "measured", assignment: "calibration" });
 });

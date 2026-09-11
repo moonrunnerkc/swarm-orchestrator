@@ -1,6 +1,7 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { z } from "zod";
+import { readFileWindow } from "./bounded-file.ts";
 import type { PolicyGuard } from "./policy-guard.ts";
 import { defineTool, type ToolDefinition } from "./tool-definition.ts";
 import { resolveInsideWorkspace } from "./workspace-path.ts";
@@ -9,7 +10,9 @@ const defaultReadLimit = 64_000;
 
 const readInput = z.object({
   path: z.string().describe("Workspace-relative path to read."),
-  maxBytes: z.number().int().positive().optional(),
+  maxBytes: z.number().int().positive().max(1_000_000).optional(),
+  startLine: z.number().int().positive().optional(),
+  endLine: z.number().int().positive().optional(),
 });
 
 const writeInput = z.object({
@@ -48,16 +51,21 @@ export function createReadTool(guard: PolicyGuard): ToolDefinition {
     inputSchema: readInput,
     kind: "read",
     pathsFrom: (input) => [input.path],
-    async execute(input) {
+    async execute(input, context) {
+      if (input.endLine !== undefined && input.endLine < (input.startLine ?? 1))
+        throw new Error("endLine must be at least startLine");
       const absolutePath = resolveInsideWorkspace(guard, input.path);
-      const limit = input.maxBytes ?? defaultReadLimit;
-      const content = await readFile(absolutePath, "utf8");
-      const truncated = content.length > limit;
+      const window = await readFileWindow(absolutePath, {
+        ...input,
+        maxBytes: input.maxBytes ?? defaultReadLimit,
+        signal: context?.signal,
+      });
+      const { text, ...facts } = window;
       return {
-        text: truncated
-          ? `${content.slice(0, limit)}\n[truncated at ${limit} of ${content.length} bytes]`
-          : content,
-        facts: { path: input.path, bytes: content.length, truncated },
+        text: window.truncated
+          ? `${text}\n[truncated after ${window.bytes} bytes; request a narrower line range]`
+          : text,
+        facts: { path: input.path, ...facts },
       };
     },
   });
@@ -111,7 +119,7 @@ export function createEditTool(guard: PolicyGuard, refuse?: WriteRefusal): ToolD
       const after =
         input.replaceAll === true
           ? before.split(input.find).join(input.replace)
-          : before.replace(input.find, input.replace);
+          : before.replace(input.find, () => input.replace);
       await writeFile(absolutePath, after, "utf8");
       return {
         text: `replaced ${occurrences} occurrence(s) in ${input.path}`,
