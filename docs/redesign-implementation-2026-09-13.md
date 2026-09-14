@@ -842,3 +842,17 @@ patch application. `completion-composition-source-audit` preserves that failed r
 evidence `sha256:74c6f85eb6b7b4e932246f253eac5943dbf9f8f120f686bafe2a7840b136f576`.
 The clean-source baseline and newer CI, rather than a reconstructed historical patch, close the
 source-binding gap. No credential detector rule was weakened.
+
+### Completion release version
+
+The completion candidate is `14.1.0`, with matching package and lockfile versions. The registry
+already contains `14.0.2`, published from `14eb4bfa61c710a45d9267fcf59e9a15057183a8`; that
+source is an ancestor of the remote default branch. Registry lookup for `14.1.0` returned E404
+on September 14. A minor version reflects the added adaptive goal execution, bounded graph
+revisions, resource controls and explicit bootstrap while retaining existing command options
+and historical contract/evidence formats. No new dependency is required.
+
+The candidate remains unpublished. The established tag-triggered publish workflow will run
+from the integrated, validated source with npm provenance and the existing package name,
+using the normal `latest` channel. Registry state and candidate identity must be checked again
+immediately before publication. The older local `14.0.2` tarball is historical evidence only.
