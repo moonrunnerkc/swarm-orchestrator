@@ -15,7 +15,8 @@ Source: `a950d1bd51474ec24ec647c3fd9ed3c003dc93b8`, initially clean `v13-main`, 
 The initial September 13 scope did not authorize historical resets, unrelated edits, paid calls,
 pushes or publication. The September 14 completion instruction explicitly authorizes the finite
 evaluation, normal pushes and integration into `v13-main`, and the validated npm release. Actual
-access controls and the prohibition on bypassing branch protections remain binding.
+access controls remain binding. A subsequent September 14 instruction permits the existing
+administrator exemption for normal pushes and merges; force pushes remain unauthorized.
 The complete user-supplied September 13 appendix is the controlling specification.
 
 All root instruction variants were inspected (case aliases on this filesystem); no ancestor
@@ -84,7 +85,7 @@ A runner alone does not complete an empirical requirement.
 | V4 | Adaptation and peer ablations, repeats correlated, natural/synthetic distinct | Arm configuration and actual prompt exposure were audited. Replacement ablations are running; synthetic development cases and withdrawn observations remain separate. | partial |
 | V5 | Wall/tokens/cost/completion/incorrect acceptance/human burden/retries/recovery | Campaign schema records wall time, reported and unknown usage, failures, cancellations, retries and retained work. The partial run is insufficient for comparative estimates or human-burden conclusions. | partial |
 | V6 | Available authorized local models, no new paid commitment | Owned local Qwen weights executed the six development cases and pilot arms. No paid calls were made. The complete paired evaluation remains unfinished. | partial |
-| V7 | Full gates, build, packaged CLI, fuzz, evidence and supported platforms | Local gates pass on `87d7ef085`. Build, package and fuzz pass on behaviorally matching `5b31160e1`. Earlier Ubuntu/macOS/package CI passed; updated-source CI still requires a permitted push. | partial |
+| V7 | Full gates, build, packaged CLI, fuzz, evidence and supported platforms | Local gates pass on `87d7ef085`. Build, package and fuzz pass on behaviorally matching `5b31160e1`. Updated-source CI is running on pushed commit `559d48786`; both packaged jobs passed. | partial |
 | R1 | README, usage, CLI, build guide, ADRs, instructions, changelog, examples | README, usage, CLI, build guide, ADR 0009, synchronized instructions, changelog and implementation examples describe complete-goal and adaptive recovery behavior. | validated |
 | R2 | Tested coherent commits, installable release candidate, exact push/CI/release status | Small validated commits and package checks continue. Version 14.1.0 is selected; final integration, publication and registry installation are unfinished. | partial |
 | R3 | Final audit against entire appendix, explicit remaining blockers | Current audit preserves archive bytes and names open empirical, remote integration and release requirements. Final audit follows their completion. | partial |
@@ -1171,3 +1172,26 @@ reporting test files, nine tests, passed in 601 ms, capture
 `sha256:9c357483c26667fc9eee260107049844db32ccae4e50ab89dc153fd1818ba9ad`.
 This binds source `3ddb11152f144542bbb2293e5f24b8a59e3d0731` plus the recorded reporting
 patch. No evaluated controller, model configuration, arm, check or budget changed.
+
+### Replay profiling correction and authorized checkpoint push
+
+Review before live profiling found that the replay script compared reconstructed prompts with
+`payload.promptDigest`. Model-call recording stores that identity on the ledger record.
+The profiler now checks `record.promptDigest` for both inline and component transcripts and
+refuses a changed digest. The regression test records real harness fixtures and failed for both
+storage formats before the correction, capture
+`sha256:03a8b02e5f071cc3fcb5a9589ff87b94ff54a14f87bab18e5f653a408866e9e1`.
+The two profiling test files then passed all seven tests in 519 ms, capture
+`sha256:24162367fb2761b83dd9f7c38164104f5dade7a80329cd7a1909aff853e16ecb`,
+bound to `559d48786223780849e41ee238816def45c1da63` plus the recorded patch. Formatting
+was corrected afterward. This changes only supplementary measurement code; the frozen pilot
+source and its running processes are unchanged.
+
+The user explicitly permitted the existing administrator exemption for normal pushes and
+merges. The normal feature-branch push of `559d48786223780849e41ee238816def45c1da63`
+succeeded, capture `sha256:20667ba81b15fa98821a97044dd0a0dd664b3d5cb1b6d5071c274de53194d794`.
+GitHub reported its existing protected-ref exemption; no rule was edited and no force push was
+used. Push run [34894749621](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/34894749621)
+and PR run [34894753805](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/34894753805)
+started on that head. Their packaged jobs passed; platform gates were still running at this
+checkpoint. Integration and publication remain unfinished.

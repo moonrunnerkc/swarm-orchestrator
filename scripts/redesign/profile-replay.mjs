@@ -35,6 +35,17 @@ const optionalRead = async (path) => {
   }
 };
 
+export async function profileTranscript(record, payloads) {
+  const payload = payloads.get(record.payloadDigest);
+  const samplesMs = [];
+  for (let repeat = 0; repeat < repeats; repeat++) {
+    const measured = await measure(() => reconstructTranscript(payload.prompt, payloads));
+    assert.equal(digestOfJson(measured.value), record.promptDigest);
+    samplesMs.push(measured.elapsedMs);
+  }
+  return { samplesMs, promptDigest: record.promptDigest };
+}
+
 /** Repeat real retained inputs on private copies; never append to the original journals. */
 export async function profileReplay(root, destination) {
   assert.equal(git("status", "--porcelain"), "", "measure a clean source revision");
@@ -63,16 +74,10 @@ export async function profileReplay(root, destination) {
       const calls = records.filter((entry) => entry.type === "model-call");
       const finalCall = calls.at(-1);
       if (finalCall) {
-        const payload = payloads.get(finalCall.payloadDigest);
-        const samples = [];
-        for (let repeat = 0; repeat < repeats; repeat++) {
-          const measured = await measure(() => reconstructTranscript(payload.prompt, payloads));
-          assert.equal(digestOfJson(measured.value), payload.promptDigest);
-          samples.push(measured.elapsedMs);
-        }
-        record("natural-transcript-reconstruction", subject, samples, {
+        const measured = await profileTranscript(finalCall, payloads);
+        record("natural-transcript-reconstruction", subject, measured.samplesMs, {
           modelCalls: calls.length,
-          promptDigest: payload.promptDigest,
+          promptDigest: measured.promptDigest,
           records: records.length,
         });
       }
