@@ -170,3 +170,14 @@ Full `m2-gates`: exit 0, 290 test files and 2890 tests passed, 89.00 seconds. Bi
 597 files and retained 22 baseline warnings and one info diagnostic. No skipped tests were
 reported. The AI SDK seed warning is the existing unsupported-feature fixture. This validates
 the first complete repair loop, not M3 scheduler recovery or the held-out pilot.
+
+
+### M3 scheduling and revision integration, September 13
+
+The controller now dispatches ready tasks as their own prerequisites land, with one integration writer. Real Git fixtures exercise a dependent starting while an unrelated provider request remains active, a typed dependency request invalidating its stale candidate, a replacement attempt on the accepted prerequisite, and a coupled-task collapse producing one accepted worker for two preserved original obligations. A split cannot erase the final goal checks. Controller outcome v2 reads the current revision and every member responsible for each original obligation. The legacy graph outcome remains an account of the original node executions.
+
+Dispatch intent, candidate snapshots, integration intent/completion, and worktree cleanup intent/completion are journal records. Transitions are checked before effects, and replay refuses duplicate dispatches, stale integration, missing merge observations, and model-authored authority. An independent dependency-free controller reader ships beside the bundle verifier. Full process reconciliation and the durable CLI resume path remain unfinished in M3; these event records alone do not establish resumable swarm execution.
+
+The repeated-failure fingerprint now uses `failureDigest`. The earlier field name `failureKey` was correctly scrubbed by credential-name detection and could not support replay comparisons. Historical records remain readable, the scrubber is unchanged, and new recorded digests are exercised by the repair regression. Reading captured merge feedback now uses the ledger's `detail` field. Comparing the retained patch stops an unchanged failed repair before another provider launch. No performance claim is made from that regression.
+
+Validation is in progress. The earlier M3 readiness check exposed three behavior/expectation issues and was recorded as failed in `m3-readiness-journal`. Subsequent focused checks found a non-serializable coordination tool schema, which was corrected and given a transport-schema regression. The full M3 gate run will be recorded separately, with its exact tested diff and output.

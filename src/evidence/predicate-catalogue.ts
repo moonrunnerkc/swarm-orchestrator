@@ -25,6 +25,38 @@ export interface CatalogueEntry {
 
 export const predicateCatalogue: readonly CatalogueEntry[] = [
   {
+    type: "controller-graph",
+    controllerOnly: true,
+    subjectField: null,
+    example: "ordinal == 0",
+    sample: { ordinal: 0 },
+    says: "bounded graph revision retaining original obligations and policy",
+  },
+  {
+    type: "controller-transition",
+    controllerOnly: true,
+    subjectField: null,
+    example: 'kind == "dispatch-intent"',
+    sample: { kind: "dispatch-intent" },
+    says: "durable controller intent or observed completion",
+  },
+  {
+    type: "controller-candidate",
+    controllerOnly: true,
+    subjectField: null,
+    example: "green == false",
+    sample: { green: false },
+    says: "retained candidate snapshot bound to an attempt and base",
+  },
+  {
+    type: "coordination-event",
+    controllerOnly: true,
+    subjectField: null,
+    example: 'kind == "dependency-request"',
+    sample: { kind: "dependency-request" },
+    says: "bounded attributed coordination proposal, never a success verdict",
+  },
+  {
     type: "controller-assessment",
     controllerOnly: true,
     subjectField: null,

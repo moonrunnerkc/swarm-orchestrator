@@ -14,7 +14,16 @@ import type { EvidenceRecorder } from "./session.ts";
  * Sealed once. A second seal would mean the run was measured by two specs and nothing could say
  * which, so widening means another run.
  */
-export const toolNames = ["read", "write", "edit", "list", "search", "shell", "trail"] as const;
+export const toolNames = [
+  "read",
+  "write",
+  "edit",
+  "list",
+  "search",
+  "shell",
+  "trail",
+  "coordination",
+] as const;
 
 const nonEmpty = z.string().min(1);
 

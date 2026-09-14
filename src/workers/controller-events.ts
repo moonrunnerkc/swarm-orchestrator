@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { asJsonValue } from "../evidence/canonical-json.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 
 const nonnegative = z.number().int().nonnegative();
@@ -44,7 +45,8 @@ export const controllerEventSchema = z.discriminatedUnion("kind", [
     baseCommit: z.string(),
     attempt: nonnegative,
     reason: z.string(),
-    failureKey: z.string(),
+    failureKey: z.string().optional(),
+    failureDigest: z.string().optional(),
   }),
   z.strictObject({
     kind: z.literal("repair-exhausted"),
@@ -64,7 +66,7 @@ export async function recordControllerEvent(
     type: "controller-event",
     actor: "harness",
     provenance: ["tool-output"],
-    payload: controllerEventSchema.parse(event),
+    payload: asJsonValue(controllerEventSchema.parse(event)),
   });
 }
 

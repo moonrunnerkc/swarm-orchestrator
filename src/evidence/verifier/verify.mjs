@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 // Embedded bundle verifier for swarm-orchestrator evidence bundles.
 //
 // Dependency-free on purpose: it imports nothing outside node: builtins, so a reviewer can
@@ -14,6 +15,9 @@ import { createHash, createPublicKey, verify as verifySignature } from "node:cry
 import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { readControllerHistory } from "./controller.mjs";
+
+export { readControllerHistory };
 
 const GENESIS = "genesis";
 const COMPARISONS = ["==", "!=", ">=", "<=", ">", "<"];
@@ -981,6 +985,14 @@ function collectChecks(directory) {
       "final goal policy binds independent regression and goal observations",
     );
   }
+  if (records.some((entry) => entry.type === "controller-graph")) {
+    const board = readControllerHistory(records, payloads);
+    record(
+      "controller history re-derived",
+      board.problems.length === 0,
+      board.problems.join("; ") || "bounded graph revisions and effect ordering agree",
+    );
+  }
   for (const entry of records.filter((candidate) => candidate.type === "controller-assessment")) {
     const reading = payloads.get(entry.payloadDigest);
     const prior = records.filter((candidate) => candidate.sequence < entry.sequence);
@@ -998,31 +1010,56 @@ function collectChecks(directory) {
       .at(-1);
     const verification = payloads.get(verificationRecord?.payloadDigest);
     let consistent =
-      reading?.policy === "controller-outcome-v1" &&
+      ["controller-outcome-v1", "controller-outcome-v2"].includes(reading?.policy) &&
       declared.length > 0 &&
       tasks.length === declared.length &&
       reading?.requirements?.length === requirements.length;
-    for (const [index, task] of declared.entries()) {
-      const current = tasks[index];
-      const workers = prior
-        .filter(
-          (candidate) =>
-            candidate.type === "worker-finished" &&
-            payloads.get(candidate.payloadDigest)?.taskId === task.id,
-        )
-        .map((candidate) => payloads.get(candidate.payloadDigest));
-      const landed = workers.find((worker) =>
-        prior.some(
-          (candidate) =>
-            candidate.type === "merge-attempt" &&
-            payloads.get(candidate.payloadDigest)?.workerId === worker.workerId &&
-            payloads.get(candidate.payloadDigest)?.landed === true,
-        ),
-      );
+    if (reading?.policy === "controller-outcome-v2") {
+      const board = readControllerHistory(prior, payloads);
       consistent &&=
-        current?.id === task.id &&
-        (current?.state === "accepted") === (landed !== undefined) &&
-        (landed === undefined || current.workerId === landed.workerId);
+        board.problems.length === 0 &&
+        board.graph?.revision === reading.graphRevision &&
+        equalIds(
+          board.graph?.obligations ?? [],
+          declared.map((task) => task.id),
+        );
+      for (const [index, task] of declared.entries()) {
+        const current = tasks[index];
+        const members =
+          board.graph?.nodes
+            .filter((node) => node.obligations.includes(task.id))
+            .map((node) => node.id) ?? [];
+        const allAccepted = members.length > 0 && members.every((id) => board.accepted.has(id));
+        consistent &&=
+          current?.id === task.id &&
+          equalIds(current?.members ?? [], members) &&
+          (current?.state === "accepted") === allAccepted &&
+          (!allAccepted ||
+            members.some((id) => board.accepted.get(id)?.workerId === current.workerId));
+      }
+    } else {
+      for (const [index, task] of declared.entries()) {
+        const current = tasks[index];
+        const workers = prior
+          .filter(
+            (candidate) =>
+              candidate.type === "worker-finished" &&
+              payloads.get(candidate.payloadDigest)?.taskId === task.id,
+          )
+          .map((candidate) => payloads.get(candidate.payloadDigest));
+        const landed = workers.find((worker) =>
+          prior.some(
+            (candidate) =>
+              candidate.type === "merge-attempt" &&
+              payloads.get(candidate.payloadDigest)?.workerId === worker.workerId &&
+              payloads.get(candidate.payloadDigest)?.landed === true,
+          ),
+        );
+        consistent &&=
+          current?.id === task.id &&
+          (current?.state === "accepted") === (landed !== undefined) &&
+          (landed === undefined || current.workerId === landed.workerId);
+      }
     }
     for (const [index, requirement] of requirements.entries()) {
       consistent &&=
@@ -1167,6 +1204,10 @@ function namesChainHead(payloads, chainHead) {
     }
   }
   return false;
+}
+
+function equalIds(left, right) {
+  return canonicalJson(left) === canonicalJson(right);
 }
 
 export function verifyBundle(directory, write = console.log) {

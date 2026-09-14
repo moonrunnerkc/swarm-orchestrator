@@ -180,6 +180,7 @@ export interface AgentTaskOptions {
    * offered nothing, so the single-agent tool set is unchanged (phase 6 stays phase 6).
    */
   readonly trail?: ToolDefinition;
+  readonly coordination?: readonly ToolDefinition[];
   /**
    * Set only where a task is being tried several ways at once, so the attempts can diverge
    * rather than being one answer written down N times. Absent is the ordinary run.
@@ -400,6 +401,9 @@ async function executeAgentTask(
           options.contract === undefined ||
           options.contract.allowedTools.some((name) => name === tool.name),
       ),
+      ...(options.contract?.allowedTools.includes("coordination") === true
+        ? (options.coordination ?? [])
+        : []),
       createClaimTool(options.evidence, options.model.modelId),
       createDeclareFileSetTool(options.fileSet, options.model.modelId),
       createAmendFileSetTool(options.fileSet, options.model.modelId),

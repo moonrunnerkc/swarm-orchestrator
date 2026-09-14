@@ -15,7 +15,7 @@ import { toolNames } from "./run-spec.ts";
  */
 const nonEmpty = z.string().min(1);
 
-const taskContractSchema = z
+export const taskContractSchema = z
   .strictObject({
     version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
     scopeKind: z.enum(["files", "workspace"]).optional(),
