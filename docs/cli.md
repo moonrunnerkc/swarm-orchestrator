@@ -83,6 +83,13 @@ carrying the same assessment, its record digest, branch, commit and evidence dir
 before assessment reports an error with no invented goal verdict. Execution limitations remain
 visible and full envelopes remain in the evidence. `resume` uses the same compact display.
 
+The goal controller shares one budget across planning, workers, retries, integration and final
+verification. It starts a dependent as soon as its prerequisites land, retains rejected candidates,
+and can append a bounded graph revision for a missing prerequisite or tightly coupled work. A
+successful local check is still only a task result. The final status is accepted only when the fresh
+verifier checks every applicable requirement; generated checks identify their authorship and are
+reported as acceptance instruments rather than independent ground truth.
+
 See [using.md](using.md) for how work is integrated and repaired.
 
 For a new standard-library Node project, initialize an empty Git commit, then run:

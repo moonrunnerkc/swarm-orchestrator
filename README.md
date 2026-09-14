@@ -4,7 +4,7 @@
 
 <h1>swarm-orchestrator</h1>
 
-<p><strong>A proof-carrying runner and verifier for bounded code changes.</strong></p>
+<p><strong>A local-capable swarm that completes bounded engineering goals with evidence.</strong></p>
 
 <p>
 The model can say whatever it likes.<br />
@@ -50,16 +50,27 @@ It cannot make a gate pass, mark a claim verified, or change a record after the 
 
 ## About The Project
 
-Give it a task and a git repository and it will make the change. Give it somebody else's patch and
-it will tell you what that patch actually establishes. Either way what comes back is a signed,
-hash-chained record of what ran, what passed, and what nobody measured. Anybody can check it
-without installing this tool.
+Give it a substantial goal and a git repository. Swarm plans the work, dispatches only ready tasks,
+integrates one candidate at a time, repairs failures against the current tree, and checks the
+complete goal. What comes back is a reviewable branch plus a signed, hash-chained record of what
+ran, what passed, and what nobody measured. Anybody can check it without installing this tool.
 
 |  | |
 | --- | --- |
 | **Make a bounded change** | It declares the files it intends to touch, edits through a chokepoint that records every tool call, runs your gates, and retries failures under a numeric ratchet that refuses a fix trading away tests, assertions or coverage. |
 | **Verify anybody's patch** | `swarm ci` clones the base commit somewhere the producing tree cannot reach, applies the patch there, and runs the checks in that checkout. Nothing the producer said travels except the patch. |
 | **Say what a result does not establish** | A run reports nine answers rather than a boolean, and `unmeasured` is one of the values. "Nobody checked" and "checked and failed" are different findings, and flattening them is how a change nothing executed comes to read green. |
+
+For a cross-component change, use the goal controller:
+
+```sh
+swarm parallel --goal "Add pagination through storage, the API, the SDK, and maintained tests" \
+  --model local:qwen3.6:35b-a3b --max-tokens 200000
+```
+
+The controller shares one budget, starts dependents when their prerequisites land, and creates
+bounded repair work when a clean merge fails behaviorally. Tiny or tightly coupled goals stay with
+one worker. The result names accepted requirements, blockers, the integrated branch, and its evidence.
 
 ### Built With
 
