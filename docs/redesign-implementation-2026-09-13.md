@@ -2,6 +2,8 @@
 
 Status: implementation delivered on the review branch. Complete-goal behavior is established by
 development and integration evidence; no performance advantage or universal correctness is claimed.
+September 14 completion: replacement cohort 2 is running from `87d7ef085`; the original cohort
+is withdrawn and preserved. Integration, final platform checks and publication remain unfinished.
 This record tracks the entire approved redesign, including empirical work that code alone
 cannot complete. The September 11 audit record remains historical evidence.
 
@@ -10,7 +12,10 @@ cannot complete. The September 11 audit record remains historical evidence.
 Source: `a950d1bd51474ec24ec647c3fd9ed3c003dc93b8`, initially clean `v13-main`, origin
 `https://github.com/moonrunnerkc/swarm-orchestrator`. Implementation branch:
 `redesign/adaptive-goal-controller`. Node v24.15.0, npm 11.12.1, macOS. `v12-final` is present.
-No historical reset, unrelated edit, paid call, push or publication was authorized by this work.
+The initial September 13 scope did not authorize historical resets, unrelated edits, paid calls,
+pushes or publication. The September 14 completion instruction explicitly authorizes the finite
+evaluation, normal pushes and integration into `v13-main`, and the validated npm release. Actual
+access controls and the prohibition on bypassing branch protections remain binding.
 The complete user-supplied September 13 appendix is the controlling specification.
 
 All root instruction variants were inspected (case aliases on this filesystem); no ancestor
@@ -50,7 +55,7 @@ A runner alone does not complete an empirical requirement.
 | D3 | Preserve requirements/history, invalidate affected acceptance | original obligation membership survives split/combine; downstream acceptance invalidated and independently re-derived | validated |
 | D4 | Base/revision identity and stale candidate refusal | late candidate after dependency revision is retained, refused and repaired from current integration base | validated |
 | D5 | Typed bounded proposals, relevant deltas, provenance, independent alternatives | bounded typed proposals and tool provenance; same-task alternatives receive no peer tools; exported reader tests | validated |
-| D6 | Prefer one worker for tiny/coupled work | Tiny/coupled planner guidance and collapse are implemented; six live development cases and the paired pilot distinguish scheduling behavior from an advantage | implemented |
+| D6 | Prefer one worker for tiny/coupled work | Planner guidance and collapse are implemented. A valid completed natural pilot is still required to measure crossover conditions; development demonstrations do not establish a threshold. | implemented |
 | E1 | Independent final acceptance at exact integrated tree | fresh independent checkout with exact Git tree check; locally green omission refused | validated |
 | E2 | One authoritative CLI/exit/TUI/export assessment, distinct trust dimensions | One controller projection drives plain, Ink, JSON, CLI exit and bundle outcome; stale/cancelled assessments and recovery fixtures pass | validated |
 | E3 | User checks and recorded candidate checks protected from worker writes | User and planner-authored artifacts are pinned outside producer writes; authorship, whole-checkout restoration and bootstrap regressions pass | validated |
@@ -74,15 +79,15 @@ A runner alone does not complete an empirical requirement.
 | H1 | External transcript/patch import and honest unavailable provenance | existing importer, historical bundle, signer and tamper fixtures remain in full gates through goal-selection milestone | validated |
 | H2 | Concrete external CLI driver only after pilot bar and supported CLI availability | conditional prerequisites, no driver claim before both hold | conditional |
 | V1 | Six development goal classes, valid fixes and omissions | Six frozen synthetic development goals accepted with offline-verifying bundles; one exposed repeat also exercised a valid dependency revision | validated |
-| V2 | Freeze 24 goals, at least eight repositories, JS/TS and Python, multiple categories | Protocol v2 froze 24 public-history goals across eight repositories with all 15 Node and nine Python instruments admitted. Only four of 120 launches produced observations before the local execution window was stopped. | partial |
-| V3 | Single with repair, frozen old parallel, adaptive, feasible competitor | Single, frozen historical parallel and adaptive arms ran under the frozen protocol. The frozen arm recorded a shared-budget admission crash; the local Loom canary did not complete within its timeout and no paid provider was available. | partial |
-| V4 | Adaptation and peer ablations, repeats correlated, natural/synthetic distinct | No-adaptation began and was cancelled at the same budget admission boundary; no-peer and full ablation totals remain unobserved. Synthetic development cases remain separately labeled. | partial |
+| V2 | Freeze 24 goals, at least eight repositories, JS/TS and Python, multiple categories | Replacement cohort 2 starts 120 independent slots on `87d7ef085` after all 24 controller controls and references were validated. The original 31 terminal slots remain withdrawn, with 89 unlaunched. | partial |
+| V3 | Single with repair, frozen old parallel, adaptive, feasible competitor | Five internal arms are scheduled in the replacement cohort. The local Loom canary did not complete within its timeout; no external comparison is claimed. | partial |
+| V4 | Adaptation and peer ablations, repeats correlated, natural/synthetic distinct | Arm configuration and actual prompt exposure were audited. Replacement ablations are running; synthetic development cases and withdrawn observations remain separate. | partial |
 | V5 | Wall/tokens/cost/completion/incorrect acceptance/human burden/retries/recovery | Campaign schema records wall time, reported and unknown usage, failures, cancellations, retries and retained work. The partial run is insufficient for comparative estimates or human-burden conclusions. | partial |
 | V6 | Available authorized local models, no new paid commitment | Owned local Qwen weights executed the six development cases and pilot arms. No paid calls were made. The complete paired evaluation remains unfinished. | partial |
-| V7 | Full gates, build, packaged CLI, fuzz, evidence and supported platforms | Final gates, build, packaged command contracts and fuzz passed on macOS at `f971b53594b6ef63d747074a739655ff0e765414`; Linux and other CI platform checks were unavailable locally. | partial |
+| V7 | Full gates, build, packaged CLI, fuzz, evidence and supported platforms | Local gates pass on `87d7ef085`. Build, package and fuzz pass on behaviorally matching `5b31160e1`. Earlier Ubuntu/macOS/package CI passed; updated-source CI still requires a permitted push. | partial |
 | R1 | README, usage, CLI, build guide, ADRs, instructions, changelog, examples | README, usage, CLI, build guide, ADR 0009, synchronized instructions, changelog and implementation examples describe complete-goal and adaptive recovery behavior. | validated |
-| R2 | Tested coherent commits, installable release candidate, exact push/CI/release status | Coherent commits and package checks are complete; final dry-run tarball and branch status are recorded below. No push, CI run or registry publication was authorized. | validated |
-| R3 | Final audit against entire appendix, explicit remaining blockers | This map records every mandatory implementable item and names the incomplete empirical pilot and unavailable platform/competitor checks below. | validated |
+| R2 | Tested coherent commits, installable release candidate, exact push/CI/release status | Small validated commits and package checks continue. Version 14.1.0 is selected; final integration, publication and registry installation are unfinished. | partial |
+| R3 | Final audit against entire appendix, explicit remaining blockers | Current audit preserves archive bytes and names open empirical, remote integration and release requirements. Final audit follows their completion. | partial |
 
 ## Source findings verified
 
@@ -1098,3 +1103,44 @@ Build, packaged and fuzz capture digests are respectively
 The archive review also byte-compared the original 25,878-byte policy and all 18 archived
 transcripts, 1,346,516 bytes, against their recorded commits; every byte matched
 (`sha256:3f25ef512cc019973780100704ae868d54d2b91370477ea5ef673d6065a57ae9`).
+
+### Replacement cohort 2 launched on the validated source
+
+The full preflight now contains 24 rejected controls and 24 accepted historical references,
+with 53 attempted checks retained, including the original failures and diagnostics. Each row
+names its source commit, captured patch, harness record and raw artifact digest. The source
+comparison permits only the explicit reservation metric change, tests and the Click-only test
+scratch correction; every selected Click observation uses the corrected command. The first
+consolidation refused an unsanitized raw-payload comparison. The corrected comparison applies
+the same shared write-time scrub and matches the recorded digest, preserving both representations.
+Capture `completion-preflight-consolidation-verified`:
+`sha256:16babe79fbfaf30ee35b15ed7df8ecfb4539d28926711a5e5f6ca5af0259aebf`.
+Report bytes: `sha256:6c807b1b5978798b504e13a6c96c5c91c65405d6922edf83a9064b781692aa7e`.
+
+Clean source `87d7ef0854e22de12042d190188578f606ae9aa7` passed `npm run gates`,
+capture `sha256:9a03828eac3c024baa08926cf5a3c2559d5d230c980146afd57e734d634dd5d6`:
+
+```text
+ Test Files  321 passed (321)
+      Tests  3051 passed (3051)
+   Start at  14:16:36
+   Duration  133.72s (transform 10.48s, setup 0ms, import 23.29s, tests 1003.90s, environment 16ms)
+```
+
+No failed or skipped tests; the existing 22 Biome warnings and one information diagnostic remain.
+The freeze capture is `sha256:036940187e308f6f9453ac6d276a30afa46821d36273a6fc0f3d68d7deafe4e4`.
+The replacement identities are:
+
+- Source: `87d7ef0854e22de12042d190188578f606ae9aa7`.
+- Manifest: `sha256:ea431de331175e31750d347169b2131ea350e2e8ba5f42cdf2006c50c6caedd2`.
+- Protocol: `sha256:9d82eb08b3782cd0426e16178291b554ef18cd38b779d6409435de0af01b9569`.
+- Cohort generation: 2, explicitly replacing the withdrawn original manifest and chain head.
+- Storage: `/Users/brad/.cache/swarm-redesign-pilot/frozen-pilot-replacement-2/`.
+- Clean execution checkout: `/Users/brad/projects/swarm-redesign-pilot-replacement/`.
+
+`completion-replacement-pilot` runs durably with a streamed log and the existing campaign resume
+ledger. It has 120 initial slots, no outer retries, 600,000 tokens and 15 minutes per slot,
+one model permit, one test permit and two worktree slots. Each slot retains the original two
+repair attempts, four graph revisions and one minute of separately bounded cleanup. The local
+model and weight digest are unchanged. No original observation is transferred into this cohort.
+This evidence-only update follows the frozen source and does not alter its evaluated behavior.
