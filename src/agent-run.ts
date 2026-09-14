@@ -12,14 +12,18 @@ import { renderPredicateCatalogue } from "./evidence/predicate-catalogue.ts";
 import { recordRunAssessment } from "./evidence/run-assessment.ts";
 import { sealRunSpec } from "./evidence/run-spec.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
+import { parseTaskContract, type TaskContract } from "./evidence/task-contract.ts";
 import type { RunVerdict } from "./evidence/verdict.ts";
 import type { ExecutionEnvelope, IsolationBackend } from "./exec/execution-mode.ts";
 import { describeEnvelopeForReader, establishExecutionEnvelope } from "./exec/run-envelope.ts";
+import { enforceContractExecution } from "./exec/task-contract-enforcement.ts";
 import { approvalsRequiredFor } from "./gates/approval.ts";
 import type { ResolveRequest } from "./gates/auto-resolve.ts";
 import type { SingleFileCommand } from "./gates/base-control.ts";
+import { restrictFileSet } from "./gates/contract-scope.ts";
 import type { GateSetOptions } from "./gates/default-gates.ts";
 import {
+  assembleGateSet,
   defaultDiffBudget,
   type GatesEngineRun,
   runGatesEngine,
@@ -116,6 +120,7 @@ const trailInstruction = [
 ].join(" ");
 
 export interface AgentTaskOptions {
+  readonly contract?: TaskContract;
   readonly maxTokens?: number;
   readonly previousCriteria?: import("./gates/gate-set-seal.ts").GateSetSeal;
   readonly previousSpec?: import("./evidence/run-spec.ts").RunSpec;
@@ -264,7 +269,50 @@ export function assembleToolset(options: ToolsetOptions): AgentToolset {
   };
 }
 
-export async function runAgentTask(options: AgentTaskOptions): Promise<AgentTaskResult> {
+export async function runAgentTask(input: AgentTaskOptions): Promise<AgentTaskResult> {
+  const contract = input.contract === undefined ? undefined : parseTaskContract(input.contract);
+  const options: AgentTaskOptions =
+    contract === undefined
+      ? input
+      : {
+          ...input,
+          contract,
+          task: contract.objective,
+          maxSteps: Math.min(input.maxSteps, contract.budget.maxSteps),
+          maxTokens: Math.min(
+            input.maxTokens ?? defaultRunTokens,
+            contract.budget.maxTokens ?? defaultRunTokens,
+          ),
+          maxWallTimeMs: Math.min(
+            input.maxWallTimeMs ?? defaultRunWallMs,
+            contract.budget.maxWallMs,
+          ),
+          fileSet: restrictFileSet(input.fileSet, contract),
+        };
+  if (contract !== undefined) {
+    await options.evidence.record({
+      type: "task-contract",
+      actor: "harness",
+      provenance: ["user"],
+      payload: {
+        ...JSON.parse(JSON.stringify(contract)),
+        phase: "effective",
+        baseCommit: options.baseRef,
+      },
+    });
+    const assembled = await assembleGateSet({
+      workspaceRoot: options.workspace,
+      criteriaRef: criteriaRefOf(options),
+      ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
+    });
+    const unknown = contract.requiredChecks.filter(
+      (id) => !assembled.gates.some((gate) => gate.id === id),
+    );
+    if (unknown.length > 0)
+      throw new Error(
+        `task ${contract.taskId} requires undefined checks: ${unknown.join(", ")}; configure them before dispatch`,
+      );
+  }
   const wall = createWallBudget(options);
   const cancellation = new AbortController();
   const stopping = AbortSignal.any([options.abortSignal, cancellation.signal]);
@@ -345,11 +393,18 @@ async function executeAgentTask(
         guard,
         (path) => writeRefusal(options.fileSet.state(), path),
         options.isolation === undefined ? undefined : { backend: options.isolation },
+      ).filter(
+        (tool) =>
+          options.contract === undefined ||
+          options.contract.allowedTools.some((name) => name === tool.name),
       ),
       createClaimTool(options.evidence, options.model.modelId),
       createDeclareFileSetTool(options.fileSet, options.model.modelId),
       createAmendFileSetTool(options.fileSet, options.model.modelId),
-      ...(options.trail === undefined ? [] : [options.trail]),
+      ...(options.trail === undefined ||
+      (options.contract !== undefined && !options.contract.allowedTools.includes("trail"))
+        ? []
+        : [options.trail]),
     ],
   });
 
@@ -376,6 +431,8 @@ async function executeAgentTask(
     ...(options.isolation === undefined ? {} : { backend: options.isolation }),
     repositoryConfigTrusted: options.repositoryConfigTrusted ?? false,
   });
+  if (options.contract !== undefined)
+    await enforceContractExecution(options.contract, envelope, options.evidence);
   options.emit?.({
     type: "execution-envelope",
     mode: envelope.mode,
@@ -572,6 +629,7 @@ async function executeAgentTask(
     envelope.mode,
     options.abortSignal.aborted ||
       (wall.deadlineMs !== null && options.clock.now() >= wall.deadlineMs),
+    options.contract,
   );
   recordRunEnd(options, verdict.acceptable);
   options.emit({
@@ -612,9 +670,12 @@ async function sealSpecForRun(
       task: options.task,
       architecture: "single-agent",
       model: { spec: options.model.modelId, pinned: true },
-      tools: ["read", "write", "edit", "list", "search", "shell"],
+      tools: options.contract?.allowedTools ?? ["read", "write", "edit", "list", "search", "shell"],
       network: envelope.network === "denied" ? "denied" : "unrestricted",
-      paths: { writable: ["**"], immutable: [] },
+      paths: {
+        writable: options.contract?.allowedPaths ?? ["**"],
+        immutable: options.contract?.immutablePaths ?? [],
+      },
       taskOracle: null,
       // The gates the set actually sealed, read back off the chain. Deriving a plausible list
       // here would put a second account of the criteria beside the sealed one, and a spec that

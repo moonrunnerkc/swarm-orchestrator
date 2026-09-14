@@ -1,83 +1,17 @@
-import { z } from "zod";
-import { canonicalJson, digestOfJson } from "../evidence/canonical-json.ts";
-import { toolNames } from "../evidence/run-spec.ts";
+import { canonicalJson } from "../evidence/canonical-json.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
+import {
+  idempotencyKeyFor,
+  parseTaskContract,
+  type TaskContract,
+} from "../evidence/task-contract.ts";
 
-/**
- * What one node of a decomposition was allowed to do, and what it was for.
- *
- * The task graph already declares an id, an instruction, dependencies and intended files, and
- * invariant 15 checks the shape of the graph. What it does not say is the envelope the node runs
- * under: which tools it may use, which paths it may never touch whatever it declares, what has
- * to pass before its work counts, what it may spend, and who may widen any of that. Those are
- * the things a reviewer needs to weigh a node's result, and a node whose envelope nobody wrote
- * down is a node whose result is read against whatever the reader assumes.
- */
-const nonEmpty = z.string().min(1);
-
-const taskContractSchema = z
-  .strictObject({
-    version: z.literal(1),
-    taskId: nonEmpty,
-    objective: nonEmpty,
-    dependsOn: z.array(nonEmpty),
-    /** At least one: a node that declares no files is a node whose scope nothing can check. */
-    allowedPaths: z.array(nonEmpty).min(1),
-    immutablePaths: z.array(nonEmpty),
-    allowedTools: z.array(z.enum(toolNames)).min(1),
-    network: z.enum(["denied", "mediated", "unrestricted"]),
-    requiredChecks: z.array(nonEmpty),
-    budget: z.strictObject({
-      maxSteps: z.number().int().positive(),
-      maxWallMs: z.number().int().positive(),
-    }),
-    /** What a failure here would cost, which is what decides whether a person is asked. */
-    riskTier: z.enum(["low", "medium", "high"]),
-    /** Who may widen this contract. A worker never widens its own. */
-    scopeAuthority: z.enum(["controller", "human"]),
-  })
-  .refine(
-    (contract) => !contract.allowedPaths.some((path) => contract.immutablePaths.includes(path)),
-    { message: "a path cannot be both writable and immutable; one of the two is a lie" },
-  );
-
-export type TaskContract = z.infer<typeof taskContractSchema>;
-
-export class MalformedTaskContractError extends Error {
-  constructor(problem: string) {
-    super(`the task contract is not usable: ${problem}`);
-    this.name = "MalformedTaskContractError";
-  }
-}
-
-export function parseTaskContract(value: unknown): TaskContract {
-  const parsed = taskContractSchema.safeParse(value);
-  if (!parsed.success) {
-    throw new MalformedTaskContractError(
-      parsed.error.issues
-        .map((issue) => {
-          const path = issue.path.join(".") || "(root)";
-          const found = valueAt(value, issue.path);
-          return found === undefined
-            ? `${path}: ${issue.message}`
-            : `${path}: ${issue.message} (found ${JSON.stringify(found)})`;
-        })
-        .join("; "),
-    );
-  }
-  return parsed.data;
-}
-
-/**
- * Keyed on what the work is and the tree it starts from, never on a clock. Two dispatches of
- * the same contract against the same base are the same work, which is what lets a resumed run
- * tell work it already did from work it still owes.
- */
-export function idempotencyKeyFor(contract: TaskContract, baseCommit: string): string {
-  return digestOfJson(
-    JSON.parse(canonicalJson({ baseCommit, contract: JSON.parse(canonicalJson(contract)) })),
-  );
-}
+export {
+  idempotencyKeyFor,
+  MalformedTaskContractError,
+  parseTaskContract,
+  type TaskContract,
+} from "../evidence/task-contract.ts";
 
 interface GraphLike {
   readonly nodes: readonly {
@@ -85,6 +19,7 @@ interface GraphLike {
     readonly instruction: string;
     readonly dependsOn: readonly string[];
     readonly files: readonly string[];
+    readonly acceptance?: readonly string[];
   }[];
 }
 
@@ -93,6 +28,9 @@ export function contractsFromGraph(
   graph: GraphLike,
   defaults: {
     readonly maxSteps: number;
+    readonly maxTokens?: number;
+    readonly network?: TaskContract["network"];
+    readonly execution?: "restricted" | "isolated";
     readonly maxWallMs: number;
     readonly immutablePaths: readonly string[];
     readonly allowedTools?: readonly TaskContract["allowedTools"][number][];
@@ -101,7 +39,7 @@ export function contractsFromGraph(
 ): readonly TaskContract[] {
   return graph.nodes.map((node) =>
     parseTaskContract({
-      version: 1,
+      version: 2,
       taskId: node.id,
       objective: node.instruction,
       dependsOn: [...node.dependsOn],
@@ -110,29 +48,22 @@ export function contractsFromGraph(
       allowedTools: [
         ...(defaults.allowedTools ?? ["read", "write", "edit", "list", "search", "shell"]),
       ],
-      network: "denied",
-      requiredChecks: [...(defaults.requiredChecks ?? [])],
-      budget: { maxSteps: defaults.maxSteps, maxWallMs: defaults.maxWallMs },
+      network: defaults.network ?? "unrestricted",
+      execution: defaults.execution ?? "restricted",
+      requiredChecks: [
+        ...new Set([...(defaults.requiredChecks ?? []), ...(node.acceptance ?? [])]),
+      ],
+      budget: {
+        maxSteps: defaults.maxSteps,
+        maxWallMs: defaults.maxWallMs,
+        maxTokens: defaults.maxTokens ?? 200_000,
+      },
       // Every node is medium until something measures otherwise. Assuming low is the direction
       // that skips a person, so it is not the direction an unmeasured default goes.
       riskTier: "medium",
       scopeAuthority: "controller",
     }),
   );
-}
-
-function valueAt(value: unknown, path: readonly PropertyKey[]): unknown {
-  let here: unknown = value;
-  for (const step of path) {
-    if (here === null || typeof here !== "object") {
-      return undefined;
-    }
-    // A read, never a write: this walk reaches a field named in a schema issue so the bad
-    // value can be quoted back, and assigns nothing into the object it walks.
-    // nosemgrep: javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.prototype-pollution-loop
-    here = (here as Record<PropertyKey, unknown>)[step];
-  }
-  return here;
 }
 
 /**
@@ -152,7 +83,7 @@ export async function declareTaskContracts(
       // The envelope is the harness's, whoever wrote the graph inside it.
       provenance: ["user"],
       payload: {
-        ...JSON.parse(canonicalJson(contract)),
+        ...JSON.parse(canonicalJson(JSON.parse(JSON.stringify(contract)))),
         idempotencyKey: idempotencyKeyFor(contract, baseCommit),
         baseCommit,
       },
