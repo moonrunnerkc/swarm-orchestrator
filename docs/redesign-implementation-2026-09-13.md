@@ -223,4 +223,27 @@ Repair feedback is recorded with tool-output provenance and seeded into the exis
 
 The stage shares the original wall deadline, test permits, cancellation and selected execution backend. It observes Node's version, one passing test control and one failing test control. A runner that ignores the failing file, a missing backend, truncated output, timeout or cancellation cannot admit implementation. Those controls establish an instrument, not a completed feature. Final regression and pinned goal acceptance remain mandatory. Interrupted setup recreates only recorded exact files and object identities, with three bounded check invocations per control; moved references or altered files require reconciliation. Cleanup has its separate allowance, validates ownership and retains unexpected files. The independent bundle reader reconstructs setup Git identities and re-derives all three observations with its own rule.
 
-`bootstrap-public-path` exited 0 with 2 files and 77 tests in 11.69 seconds. `bootstrap-recovery-focused` exited 0 with 6 files and 110 tests in 12.08 seconds, including both Git object formats, a public complete-goal execution/resume, ignored negative control, unknown backend, queued cancellation, interrupted intent, altered cleanup files and forged observations. These deterministic results are development validation, not a live-model pilot. Final full gates for this stage remain pending.
+`bootstrap-public-path` exited 0 with 2 files and 77 tests in 11.69 seconds. `bootstrap-recovery-focused` exited 0 with 6 files and 110 tests in 12.08 seconds, including both Git object formats, a public complete-goal execution/resume, ignored negative control, unknown backend, queued cancellation, interrupted intent, altered cleanup files and forged observations. These deterministic results are development validation, not a live-model pilot. Full `bootstrap-gates` exited 0: 305 files and 2982 tests passed in 111.13 seconds, no skips and unchanged baseline Biome diagnostics. Evidence digest: `sha256:a84a7b2a3601af48ae296327a1962e9ca0f5a7834a3f77bf84ee36c30a090cb1`. The tested diff is commit `d7e13cb81ff9c3ba604b7c023b483cc3972298d9`.
+
+
+### M4 measured journal replay
+
+`scripts/redesign/profile.mjs` measures fixed journal, growing transcript, reconstruction, citation-index, peer-projection, immutable-check assembly and synthetic resource-permit fixtures. Raw samples, fixture digests, script digest, source identity and platform are captured outside the workspace. The first profile preceded optimization. The repeated comparison uses the same corrected script on the changed source and a detached `d7e13cb81ff9c3ba604b7c023b483cc3972298d9` checkout. The correction places the peer exit code at the actual gate-record field and asserts twelve folded failures; the original profile is retained, not silently replaced.
+
+| Fixed fixture, seven repetitions | Baseline median ms | Changed median ms |
+| --- | ---: | ---: |
+| Cold replay, 12,000 entries / 7,667,836 bytes | 30.825 | 34.440 |
+| 200 unchanged administrative reads | 757.695 | 508.270 |
+| 50 reads after independently appended deltas | 1530.164 | 247.253 |
+| 30 own updates with fsync | 517.636 | 447.008 |
+| Record 180 growing transcript prompts | 911.215 | 910.214 |
+| Reconstruct 180 messages fifty times | 80.413 | 82.184 |
+| Rebuild 12,000-record citation index 100 times | 162.017 | 159.783 |
+| Project three 12,000-record peer chains 100 times | 102.386 | 101.806 |
+| Assemble immutable check definitions 10,000 times | 16.641 | 16.477 |
+
+The journal replays only new links after re-hashing the entire observed file and its previously verified prefix. It still reads actual bytes on every poll, detects same-size/mtime alteration, refuses removed history and preserves torn or changed files. A new regression reproduced an existing cache-poisoning defect: an unexpected write between validation and append was cached as trusted content. Appends now compare the complete observed file with the expected prefix plus their exact new line before updating the cache. Raw-byte digests avoid decoding malformed UTF-8 into a replacement character. The single worker retains one administrative store handle across polling, tools and lifecycle recording.
+
+The measured reduction is 83.8% for the external-append fixture and 32.9% for unchanged reads, with an 11.7% cold-replay increase (3.6 ms). These repeated synthetic measurements on one shared machine are not independent repository observations or whole-run speed estimates. No transcript, citation, peer or check-result cache was introduced: their measured costs did not justify extra state. Exact transcript reconstruction and all final checks remain mandatory. The separate-resource fixture observes about 242 ms versus 428 ms with one shared permit for sixteen fixed 25 ms activities. This demonstrates scheduling overlap only; actual model-server contention remains part of the live development/pilot work.
+
+`journal-append-corruption-before` failed the new corruption assertion, preserving that reproduction. `journal-preservation-focused` exited 0 with 6 files and 66 tests in 24.67 seconds, including a real second-process abort and removal of a verified budget event. Profile captures are `m4-profile-before`, `m4-profile-after` and `m4-profile-control`; the corrected control digest is `sha256:d0e27dfb1c2dcc0cf18cc100220c02d858bd8fc253c21ee341f1a668ff5fd99a`. Full gates for this optimization remain pending.
