@@ -533,3 +533,47 @@ digest `sha256:1e555a68a92260bf2f76fca772ba8cc4404fdd59fefc5ff560358fd90ab7c370`
 Full `coordination-guidance-gates` exited 0: 317 files and 3026 tests passed, no skips,
 126.28 seconds, digest `sha256:14653a46b9a792cd1c308cb38b65d63c04930f6d2bb6ad0139dd70f97e6ce67e`.
 The capture binds parent `07298dcea0092d727f0b4e4658b87de869270986` and its tested diff.
+
+### Python checks and ambiguous verifier setup
+
+Legacy `setup.cfg` and `setup.py` now identify Python projects without executing setup code.
+Configured mypy `files` remain authoritative: passing `.` previously replaced those targets
+with unrelated untyped tests. Explicit TOML/INI targets now use `mypy`; projects without targets
+retain `mypy .`. No blocking check becomes advisory. Ruff lint explicitly uses `--no-fix`, since
+project configuration can otherwise make a purported check edit its subject. A real Ruff 0.15.9
+canary with `fix = true` demonstrated the defect: the old invocation removed the unused import
+and exited 0; the corrected invocation preserved it and exited 1. Capture digest:
+`sha256:a60d5d129c853fc0839a51a8a6cfd229ba0c29f1838d27f1f45805570685d5b1`.
+
+Independent verification now retains its checkout when dependency setup has no completion
+observation, and names the path in its reconciliation error. A regression injects a lost installer
+observation after a filesystem effect and checks that both the effect and checkout survive.
+`python-configured-checks-focused` passed 26 tests in two files, 593 ms, digest
+`sha256:1f4bbec482db437246015cefbae65b78c09ef9a827a13e961ffdbb81c043043b`.
+The preceding public-contract focused run passed 34 tests in three files in 12.61 seconds,
+digest `sha256:f79d5b1d61456fce918dc328635fc3949548ac88fcde21cdd100bd9c682a463c`.
+
+The separate one-case live repeat at `caa20f0994c74c778b4534fc84b2e7cc6ab02be0` submitted
+a valid missing-prerequisite proposal. The controller appended revision 1, preserved the goal
+and both obligations, waited for beta, and repaired the consumer against beta's accepted commit.
+Final commit `71f886cf2e32e1fa56b0530c50f25421a0183d75` passed goal acceptance and its bundle
+verified offline. Reported usage was 319,121 tokens with no unknown or reserved remainder.
+This exposed repeat is additional development evidence, not another independent pilot goal.
+Capture `coordination-public-live`, digest
+`sha256:7227699b4b64e3acb9329a4fa79b1fa7bf0f56538aec754cbe865281ea5a726b`.
+
+Pilot fixture preparation has not yet frozen or launched the paired pilot. All 15 JavaScript/
+TypeScript bases installed; twelve passed their declared checks on Node 24.15.0. Three Day.js
+bases exposed timezone and historical webpack/OpenSSL incompatibility. Python preparation caught
+installed `attrs` shadowing source, missing package metadata/dependencies and incorrect mypy
+scope. Those are unusable measurements, not model failures. Their records remain available as
+`pilot-node-base-admission-started` (`sha256:bace6f21ac41ea363263e0ca1d628056ff0bdec144d2d63f0d014648639e5871`)
+and `pilot-python-base-admission` (`sha256:ef6d32d65626ad71a72b78073b92e2fb6e74ec58c3908f050cf6405dc22aac26`).
+Historical-runtime admission and source-identity corrections remain in progress.
+
+Full `python-project-checks-gates` exited 0: 317 files and 3029 tests passed, no skips,
+134.79 seconds. Digest `sha256:498c6bdfe23e6d66945537e46a5f8a26873fa2a989da0236dfd02b6933b2c4dd`
+binds parent `caa20f0994c74c778b4534fc84b2e7cc6ab02be0` and its tested diff. A real Python
+canary established mounted-source imports for attrs and Click and successful configured mypy
+checking of Click's 28 declared source files, digest
+`sha256:4580682f9c788ab4cdd37e4870770bc3d9de53da50ca847bbaeffc36ea2e8618`.
