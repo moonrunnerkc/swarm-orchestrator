@@ -1,6 +1,6 @@
 # 0009. Complete goals through bounded integration repair
 
-**Status:** approved September 13, 2026; implementation tracked separately
+**Status:** approved September 13, 2026; implementation delivered, pilot evidence reported separately
 
 Swarm should return a reviewable integrated change whose declared requirements were checked.
 The owner approved replacing the fixed-graph product constraint with one deterministic
