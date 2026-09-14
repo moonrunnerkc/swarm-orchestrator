@@ -4,32 +4,26 @@ import "./node-floor.ts";
 
 import { spawn } from "node:child_process";
 import { appendFileSync, statSync } from "node:fs";
-import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { homedir, platform, tmpdir } from "node:os";
+import { readFile, realpath, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { createInterface } from "node:readline/promises";
-import { render as inkRender } from "ink";
 import { runAgentTask } from "./agent-run.ts";
-import { buildVersion } from "./build-version.ts";
-import { verifyPatch } from "./cli-ci.ts";
+import { announceBundle, summarizeEvidence, writeBundle } from "./cli-bundle.ts";
+import { offerInit } from "./cli-init.ts";
 import { resolveLocalBackend } from "./cli-local-backend.ts";
+import { preflightAll } from "./cli-model-preflight.ts";
 import {
-  type AddCaseCommand,
-  type CalibrateCommand,
   type CommandLine,
   type DoctorCommand,
   type GatesCommand,
   type GcCommand,
-  type InitCommand,
   parseCommandLine,
   type ReplayCommand,
   type ReviewCommand,
   type RunCommand,
-  type SessionCommand,
   usage,
   type VerifyCommand,
 } from "./cli-options.ts";
-import { parallel } from "./cli-parallel.ts";
 import {
   abortRun,
   inspectRun,
@@ -39,6 +33,7 @@ import {
   retryStep,
   runStorePath,
 } from "./cli-run-commands.ts";
+import { describeCycle, reportBonds, reportGates } from "./cli-run-report.ts";
 import {
   diffBudgetFrom,
   gateOptionsFrom,
@@ -47,56 +42,28 @@ import {
   settingsFor,
 } from "./cli-run-settings.ts";
 import { createSystemClock, createSystemRandom } from "./cli-runtime-inputs.ts";
-import {
-  chooseModel,
-  select,
-  servedModelsTimeoutMs,
-  shortlistFetchTimeoutMs,
-} from "./cli-select.ts";
-import { initializeSwarmToml, initWouldHelp, type PlannedGate } from "./config/init.ts";
-import type { ResolvedSettings } from "./config/settings.ts";
-import type { Clock } from "./core/clock.ts";
-import type { ConversationMessage } from "./core/model-client.ts";
-import type { RandomSource } from "./core/random-source.ts";
+import { chooseModel, select } from "./cli-select.ts";
+import { logReward, priceTask } from "./cli-task-cost.ts";
+import { startInterface } from "./cli-terminal.ts";
 import type { StopReason } from "./core/termination.ts";
-import { buildAttestation, signAttestation } from "./evidence/attestation.ts";
-import { bundleSourceFromRecorder, exportBundle, readBundle } from "./evidence/bundle.ts";
-import type { BundleManifest } from "./evidence/bundle-manifest.ts";
-import { digestOfBytes } from "./evidence/canonical-json.ts";
-import { buildEvidenceDag, type EvidenceDag } from "./evidence/dag.ts";
+import { readBundle } from "./evidence/bundle.ts";
+import { buildEvidenceDag } from "./evidence/dag.ts";
 import { createRecordingModelClient } from "./evidence/model-call-recording.ts";
 import { replayBundle } from "./evidence/replay.ts";
 import { collectSessions, describeCollection, olderThanMs } from "./evidence/retention.ts";
 import { recordRunAssessment } from "./evidence/run-assessment.ts";
-import {
-  createSessionId,
-  defaultSessionRoot,
-  type EvidenceRecorder,
-  openEvidenceSession,
-} from "./evidence/session.ts";
-import { createKeychainSecretStore, resolveSigningKey } from "./evidence/signing.ts";
+import { createSessionId, defaultSessionRoot, openEvidenceSession } from "./evidence/session.ts";
 import { describeVerdict } from "./evidence/verdict.ts";
 import { verifyBundleAt } from "./evidence/verify-report.ts";
-import { harnessChildEnvironment } from "./exec/child-environment.ts";
 import { hostExecutionBackend, selfTestContainment } from "./exec/execution-mode.ts";
 import { parseIsolationOption } from "./exec/isolation-option.ts";
 import { createRunCancellation } from "./exec/run-cancellation.ts";
 import { recordedContainerBackend } from "./exec/runtime-resource.ts";
-import type { AutoResolveOutcome } from "./gates/auto-resolve.ts";
-import type { BondOutcome } from "./gates/bond-runner.ts";
-import {
-  defaultDiffBudget,
-  runGatesEngine,
-  sealAssembledCriteria,
-  vacuousBlockingBonds,
-} from "./gates/engine.ts";
-import { describeEscalation } from "./gates/escalation.ts";
+import { defaultDiffBudget, runGatesEngine, sealAssembledCriteria } from "./gates/engine.ts";
 import { createFileSetRegistry } from "./gates/file-set.ts";
-import { citedRecords, type GateCycle, outstandingJustifications } from "./gates/gate-runner.ts";
+import { citedRecords, outstandingJustifications } from "./gates/gate-runner.ts";
 import { resolveBaseCommit } from "./gates/git-workspace.ts";
-import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { summarizeRatchet } from "./gates/ratchet-summary.ts";
-import { recordTurnBaseline } from "./gates/turn-baseline.ts";
 import { diagnose, remediesFor } from "./install/health.ts";
 import { inspectInstall } from "./install/inspect.ts";
 import { describeInstall } from "./install/report.ts";
@@ -104,55 +71,12 @@ import { exitCodes, jsonEventLine, jsonResultLine } from "./machine-output.ts";
 import { localEndpointRecord } from "./providers/endpoint-resolution.ts";
 import { parseModelSpec } from "./providers/model-spec.ts";
 import { createProviderRegistry } from "./providers/registry.ts";
-import { fetchServedModels } from "./providers/served-models.ts";
-import {
-  type BackendCanary,
-  canaryRecord,
-  describeCanary,
-  runBackendCanary,
-} from "./select/backend-canary.ts";
-import { runCalibration } from "./select/calibrate.ts";
-import { parseCalibrationCase } from "./select/calibration-case.ts";
-import { payloadsSince } from "./select/calibration-measures.ts";
-import { renderCalibrationReport } from "./select/calibration-report.ts";
-import {
-  defaultCompetencyTablePath,
-  readCompetencyTable,
-  sweepFromRuns,
-  withSweep,
-  writeCompetencyTable,
-} from "./select/competency-table.ts";
-import { appendCalibrationCase, defaultGoldenSetPath, readGoldenSet } from "./select/golden-set.ts";
-import { probeHardware } from "./select/hardware-probe.ts";
-import { createOllamaMemoryProbe } from "./select/memory-probe.ts";
 import { chooseUsableModel } from "./select/model-fallback.ts";
-import {
-  describePreflight,
-  type LocalModelPreflight,
-  preflightLocalModels,
-  preflightRecord,
-} from "./select/model-preflight.ts";
-import { defaultPickPath, writeCalibrationPick } from "./select/pick-store.ts";
-import { loadPricing } from "./select/pricing-source.ts";
-import { calibrationCandidates, recommendModel } from "./select/recommendation.ts";
-import { buildRewardEntry } from "./select/reward.ts";
 import { defaultRoutingLogPath, openRoutingLog } from "./select/routing-log.ts";
 import { routingDecisionRecord } from "./select/routing-record.ts";
 import { renderRoutingReport } from "./select/routing-report.ts";
-import { loadShortlist } from "./select/shortlist-source.ts";
-import { systemProbeEnvironment } from "./select/system-probe.ts";
-import { classifyTask } from "./select/task-class.ts";
-import { costOfTask, type TaskCost } from "./select/task-cost.ts";
 import { createTelemetry, jsonLinesSink, type Telemetry } from "./telemetry/otel.ts";
-import { createPolicyGuard, defaultShellAllowlist } from "./tools/policy-guard.ts";
-import { createWorkspaceTools } from "./tools/workspace-tools.ts";
-import { startCalibrateInterface } from "./tui/calibrate-interface.ts";
-import { describeEvidence, type EvidenceSummary } from "./tui/evidence-panel.ts";
-import { resolveKeyBindings } from "./tui/key-bindings.ts";
-import { evidenceLocation, type OpenCommand, openEnvironment } from "./tui/open-path.ts";
-import { type SessionInterface, startSessionInterface } from "./tui/session-interface.ts";
-import { resolveTheme } from "./tui/theme.ts";
-import { runEmbeddedVerifier } from "./tui/verify-bundle.ts";
+import { describeEvidence } from "./tui/evidence-panel.ts";
 
 /**
  * The bundle's own consistency and the identity that signed it, reported apart. A bundle
@@ -232,324 +156,6 @@ async function replay(options: ReplayCommand): Promise<number> {
 /** Long enough for a cold CDN, short enough that the bundled snapshot takes over quickly. */
 
 /**
- * A session: one process, one ledger, many tasks, each typed rather than passed.
- *
- * Everything expensive is built once, which is the point of a session over repeated runs: the
- * settings, the provider registry, the guard and its tool definitions, the evidence chain and
- * the screen all outlive a turn. What is rebuilt per turn is what carries state that a second
- * task must not inherit, and each of those is a decision rather than an oversight:
- *
- *   - the abort controller, because a signal is one-shot and a reused aborted one would make
- *     the next turn stop before it started;
- *   - the file-set registry, because declaring a set twice is an error and the check walks the
- *     whole chain when it decides what was edited before it was authorised;
- *   - the base commit, because the previous turn's edits are still uncommitted, and measuring
- *     against the start of the session would charge this turn with the last one's diff;
- *   - the routed model, because routing reads the task, and a different task may deserve a
- *     different arm.
- *
- * The conversation is what carries across, so a follow-up can say "now make it throw" and mean
- * the file the previous turn wrote.
- */
-async function session(options: SessionCommand): Promise<number> {
-  if (!statSync(options.workspace).isDirectory()) {
-    throw new Error(`${options.workspace} is not a directory to work in`);
-  }
-  await offerInit(options.workspace);
-  const settings = await settingsFor(options.workspace, {
-    model: options.modelSpec,
-    maxSteps: options.maxSteps,
-    attempts: options.attempts,
-    maxWallMinutes: options.maxWallMinutes,
-    localEndpoint: options.localEndpoint,
-    interfaceFlags: options.interfaceFlags,
-  });
-
-  const clock = createSystemClock();
-  const random = createSystemRandom();
-  const evidence = await openEvidenceSession({
-    root: defaultSessionRoot(homedir()),
-    sessionId: createSessionId(clock, random),
-    clock,
-  });
-  const ui = startInterface({ task: "", workspace: options.workspace, settings, clock });
-
-  // Resolved once, here, before any gate reads it. A symbolic ref is spent at the moment each
-  // base-side question is asked, and `git` is on the shell allowlist.
-  let baseRef = await resolveBaseCommit(options.workspace, options.baseRef);
-  // The commit the session started on is what every turn is measured by, and it is sealed
-  // once, before the first turn. The base moves to the end of each turn so the next is not
-  // charged with the last one's diff, and a turn that read its gate commands from there would
-  // run whatever the previous turn's model wrote into the manifest.
-  const criteriaRef = baseRef;
-  const sessionGateOptions = gateOptionsFrom(settings);
-  const criteriaSealed = await sealAssembledCriteria({
-    workspaceRoot: options.workspace,
-    criteriaRef,
-    ...(sessionGateOptions === undefined ? {} : { gateOptions: sessionGateOptions }),
-    evidence,
-    budgets: diffBudgetFrom(settings) ?? defaultDiffBudget,
-    attemptCap: settings.attempts,
-  });
-  let history: readonly ConversationMessage[] = [];
-  let turns = 0;
-  let lastGreen = true;
-
-  try {
-    for (;;) {
-      const task = await ui.readTask();
-      if (task === null) {
-        break;
-      }
-      turns += 1;
-      ui.beginTurn(task);
-
-      const outcome = await runOneTurn({
-        task,
-        history,
-        baseRef,
-        criteriaRef,
-        criteriaSealed,
-        options,
-        settings,
-        evidence,
-        ui,
-        clock,
-        random,
-      });
-      history = outcome.messages;
-      lastGreen = outcome.green;
-
-      // Where this turn ended is where the next one starts being measured from. A repository
-      // with no commit yet has nothing to hang one off, and the base stays where it was.
-      const recorded = await recordTurnBaseline({
-        workspaceRoot: options.workspace,
-        label: `turn ${turns}`,
-        previousBase: baseRef,
-      });
-      if (recorded !== null) {
-        baseRef = recorded;
-      }
-    }
-  } finally {
-    if (turns > 0) {
-      const written = await writeBundle(evidence, options.bundleDirectory, clock, ui.note);
-      announceBundle(written.directory, ui.note);
-    }
-    await ui.stop();
-    taskReader?.close();
-    taskReader = null;
-    taskLines = null;
-  }
-
-  if (turns === 0) {
-    process.stdout.write("nothing was asked for, so nothing ran.\n");
-    return 0;
-  }
-  return lastGreen ? 0 : 1;
-}
-
-/** One turn of a session, from a typed task to a settled set of gates. */
-async function runOneTurn(input: {
-  readonly task: string;
-  readonly history: readonly ConversationMessage[];
-  readonly baseRef: string;
-  readonly criteriaRef: string;
-  readonly criteriaSealed: boolean;
-  readonly options: SessionCommand;
-  readonly settings: ResolvedSettings;
-  readonly evidence: EvidenceRecorder;
-  readonly ui: SessionInterface;
-  readonly clock: Clock;
-  readonly random: RandomSource;
-}): Promise<{ readonly messages: readonly ConversationMessage[]; readonly green: boolean }> {
-  const { task, options, settings, evidence, ui, clock, random } = input;
-  // Refused here, before the model is asked for anything: a run that discovers its runtime is
-  // missing after the model has edited files has spent the interesting part of its budget
-  // finding out.
-  const isolation = parseIsolationOption(options.isolation, options.workspace);
-
-  const routed = settings.modelPinned
-    ? {
-        modelSpec: null as string | null,
-        assignment: "pinned" as const,
-        decision: null,
-        candidates: [] as readonly string[],
-      }
-    : await chooseModel(task, homedir(), random, settings);
-  const modelSpec = routed.modelSpec ?? settings.modelSpec;
-  const spec = parseModelSpec(modelSpec);
-  const localBackend = await resolveLocalBackend(settings, [spec]);
-  if (localBackend !== null) {
-    await evidence.record(localEndpointRecord(localBackend));
-  }
-  if (routed.decision !== null) {
-    await evidence.record(routingDecisionRecord(routed.decision));
-  }
-
-  const usable =
-    spec.provider === "local" && localBackend !== null
-      ? chooseUsableModel({
-          requested: modelSpec,
-          preflight: await preflightAll(evidence, localBackend.url, [modelSpec]),
-          keys: settings.providerKeys,
-          candidates: routed.candidates,
-        })
-      : ({ outcome: "as-requested", modelSpec, reason: "not a local model" } as const);
-  if (usable.outcome === "substituted") {
-    ui.note(`model: ${usable.modelSpec} instead of ${usable.requested}, ${usable.reason}`);
-  }
-
-  const registry = createProviderRegistry(registrySettingsFrom(settings, localBackend));
-  const model = createRecordingModelClient(
-    registry.create(parseModelSpec(usable.modelSpec)),
-    evidence,
-    { transcript: "components" },
-  );
-  const fileSet = createFileSetRegistry(evidence);
-
-  const interruption = new AbortController();
-  const onInterrupt = () => {
-    interruption.abort();
-  };
-  // SIGTERM as well as SIGINT: a run stopped by a supervisor, a container stop or a CI
-  // cancellation arrives as SIGTERM, and a run that ignores it is killed with work in flight.
-  process.on("SIGINT", onInterrupt);
-  process.on("SIGTERM", onInterrupt);
-  void ui.cancelled().then(onInterrupt);
-  const startedAt = clock.now();
-  const gateOptions = gateOptionsFrom(settings);
-  const diffBudget = diffBudgetFrom(settings);
-
-  try {
-    const { loop, gates, green } = await runAgentTask({
-      task,
-      workspace: options.workspace,
-      runStorePath: runStorePath(),
-      ...(isolation === null ? {} : { isolation: recordedContainerBackend(isolation, evidence) }),
-      baseRef: input.baseRef,
-      criteriaRef: input.criteriaRef,
-      criteriaSealed: input.criteriaSealed,
-      maxSteps: settings.maxSteps,
-      attempts: settings.attempts,
-      ...(settings.maxWallMinutes === null
-        ? {}
-        : { maxWallTimeMs: settings.maxWallMinutes * 60_000 }),
-      model,
-      evidence,
-      fileSet,
-      clock,
-      random,
-      emit: (event) => {
-        ui.emit(event);
-      },
-      confirm: ui.confirm,
-      abortSignal: interruption.signal,
-      homeDir: homedir(),
-      history: input.history,
-      ...(gateOptions === undefined ? {} : { gateOptions }),
-      ...(diffBudget === undefined ? {} : { diffBudget }),
-    });
-
-    reportGates(gates.outcome, evidence, ui.note);
-    reportBonds(gates.bonds, ui.note);
-    await logReward({
-      evidence,
-      home: homedir(),
-      task,
-      modelSpec: usable.modelSpec,
-      assignment: routed.assignment,
-      ratchet: summarizeRatchet(gates.outcome),
-      green,
-      changedFiles: gates.outcome.finalCycle.measures.changedFiles ?? null,
-      latencyMs: clock.now() - startedAt,
-      recordedAt: clock.now(),
-      cost: await priceTask(usable.modelSpec, evidence),
-      note: ui.note,
-    });
-
-    return {
-      messages: loop.messages,
-      // The run's own verdict. This had a third copy of the rule and it was the stale one, so
-      // a session turn could call green what a single run would not.
-      green,
-    };
-  } finally {
-    process.off("SIGINT", onInterrupt);
-    process.off("SIGTERM", onInterrupt);
-  }
-}
-
-const initOnDisk = (workspace: string) => ({
-  workspace,
-  exists: (path: string) =>
-    access(path).then(
-      () => true,
-      () => false,
-    ),
-  readFile: (path: string) =>
-    readFile(path, "utf8").catch((cause: NodeJS.ErrnoException) => {
-      if (cause.code === "ENOENT") {
-        return null;
-      }
-      throw cause;
-    }),
-  writeFile: (path: string, text: string) => writeFile(path, text, "utf8"),
-});
-
-function describePlannedGate(gate: PlannedGate): string {
-  return (
-    `  ${gate.id}: ${gate.command} (${gate.parser}, ${gate.severity}) from scripts.${gate.script}` +
-    (gate.reason === null ? "" : `\n    ${gate.reason}`)
-  );
-}
-
-/** `swarm init`: the file a first run can work from, from what package.json declares. */
-async function init(options: InitCommand): Promise<number> {
-  if (!statSync(options.workspace, { throwIfNoEntry: false })?.isDirectory()) {
-    throw new Error(
-      `workspace ${options.workspace} is not a directory. Create it, or pass --workspace.`,
-    );
-  }
-  const outcome = await initializeSwarmToml(initOnDisk(options.workspace));
-  writeOut(`wrote ${outcome.path}`);
-  for (const gate of outcome.gates) {
-    writeOut(describePlannedGate(gate));
-  }
-  if (outcome.gates.length === 0) {
-    writeOut("  no gate written: package.json declares none of test, lint, typecheck or build");
-  }
-  return 0;
-}
-
-/**
- * The first run in a workspace with a manifest and no swarm.toml offers to write one, in the
- * one question the chokepoint's plain path asks and with the same answer key. Off a terminal
- * nothing is asked and nothing is written: the run works from what the harness detects, as
- * it always did.
- */
-async function offerInit(workspace: string): Promise<void> {
-  const onDisk = initOnDisk(workspace);
-  const isTty = process.stdout.isTTY === true && process.stdin.isTTY === true;
-  if (!isTty || !(await initWouldHelp(onDisk))) {
-    return;
-  }
-  process.stderr.write(
-    "no swarm.toml here, and package.json declares scripts: swarm init would write one with " +
-      "the gates read off them, each naming the rule that reads it.\n",
-  );
-  const answer = await askOnTerminal('Run "swarm init" first? [y/N] ');
-  if (answer.trim().toLowerCase() !== "y") {
-    return;
-  }
-  const outcome = await initializeSwarmToml(onDisk);
-  process.stderr.write(`wrote ${outcome.path}\n`);
-  for (const gate of outcome.gates) {
-    process.stderr.write(`${describePlannedGate(gate)}\n`);
-  }
-}
-
-/**
  * What owns the `swarm` command, and with `--fix`, making the right thing own it.
  *
  * A development checkout linked into the global prefix owns the command until it is removed,
@@ -614,128 +220,6 @@ async function runningVersion(packageRoot: string): Promise<string> {
   } catch {
     return "unknown";
   }
-}
-
-/**
- * Everything ambient the screen needs, gathered here so nothing below the composition root
- * reads a terminal, an environment variable, or the clock (invariant 8).
- */
-function startInterface(input: {
-  readonly task: string;
-  readonly workspace: string;
-  readonly settings: ResolvedSettings;
-  readonly clock: Clock;
-}): SessionInterface {
-  const isTty = process.stdout.isTTY === true && process.stdin.isTTY === true;
-  const ui = input.settings.interface;
-
-  return startSessionInterface({
-    task: input.task,
-    workspace: input.workspace,
-    isTty,
-    interactive: ui.tui,
-    writeLine: (line) => {
-      process.stdout.write(`${line}\n`);
-    },
-    writeError: (line) => {
-      process.stderr.write(`${line}\n`);
-    },
-    clock: input.clock,
-    theme: resolveTheme({
-      mode: ui.color,
-      term: process.env.TERM,
-      noColorSet: process.env.NO_COLOR !== undefined,
-      isTty,
-      palette: ui.theme,
-    }),
-    bindings: resolveKeyBindings(ui.keys),
-    ...(isTty ? { askOnTerminal } : {}),
-    readLine: readTaskLine,
-    openEvidence: ui.openEvidence,
-    confirmTimeoutMs: ui.confirmTimeoutMs,
-    spawnOpen: spawnOpener,
-    platform: platform(),
-  });
-}
-
-/**
- * One readline for the whole session, opened when the first task is asked for.
- *
- * Kept open rather than opened per question, because a fresh interface per line loses whatever
- * is already buffered from a pipe, and a piped session is a list of tasks somebody wrote down.
- * Null at end of input is what ends the session.
- */
-let taskReader: ReturnType<typeof createInterface> | null = null;
-let taskLines: AsyncIterator<string> | null = null;
-
-async function readTaskLine(prompt: string): Promise<string | null> {
-  if (taskReader === null) {
-    taskReader = createInterface({ input: process.stdin, output: process.stderr });
-    taskLines = taskReader[Symbol.asyncIterator]();
-  }
-  if (process.stdin.isTTY === true) {
-    process.stderr.write(prompt);
-  }
-  const next = await taskLines?.next();
-  if (next === undefined || next.done === true) {
-    return null;
-  }
-  return next.value;
-}
-
-/** Readline, on the plain path only. Ink owns stdin whenever the screen is up. */
-async function askOnTerminal(question: string): Promise<string> {
-  const prompt = createInterface({ input: process.stdin, output: process.stderr });
-  try {
-    return await prompt.question(question);
-  } finally {
-    prompt.close();
-  }
-}
-
-/**
- * An argument vector, spawned with no shell in between and under an environment built rather
- * than inherited. The path is one argument, so nothing in it is read as syntax by anything.
- */
-function spawnOpener(command: OpenCommand): Promise<number | null> {
-  return new Promise((settle, fail) => {
-    const child = spawn(command.file, [...command.args], {
-      env: openEnvironment(process.env),
-      stdio: "ignore",
-      detached: false,
-    });
-    child.on("error", fail);
-    child.on("exit", (code) => {
-      settle(code);
-    });
-  });
-}
-
-/** How long the embedded verifier gets before the panel says it could not be asked. */
-const verifyTimeoutMs = 60_000;
-
-/**
- * What the run produced, with the bundle checked by its own verifier here rather than taken
- * on trust: the panel may say verified only where that ran in this session and exited zero.
- */
-async function summarizeEvidence(written: {
-  readonly directory: string;
-  readonly manifest: BundleManifest;
-  readonly dag: EvidenceDag;
-}): Promise<EvidenceSummary> {
-  const location = evidenceLocation(written.directory, "harness");
-  return {
-    location,
-    recordCount: written.manifest.recordCount,
-    claimsVerified: written.dag.verifiedCount,
-    claimsRefused: written.dag.unverifiedCount,
-    verification: await runEmbeddedVerifier({
-      location,
-      nodeExecutable: process.execPath,
-      environment: process.env,
-      timeoutMs: verifyTimeoutMs,
-    }),
-  };
 }
 
 /** A past bundle, through the same panel a finished run ends on. Nothing is re-run. */
@@ -837,7 +321,7 @@ async function run(options: RunCommand): Promise<number> {
   });
   const fileSet = createFileSetRegistry(evidence);
 
-  const ui = startInterface({
+  const ui = await startInterface({
     task: options.task,
     workspace: options.workspace,
     settings,
@@ -969,146 +453,8 @@ async function run(options: RunCommand): Promise<number> {
   }
 }
 
-function describeCycle(cycle: GateCycle): string {
-  return cycle.runs
-    .map((gate) => {
-      const label = gate.status === "not-applicable" ? "n/a" : gate.status;
-      const advisory = gate.severity === "advisory" ? " (advisory)" : "";
-      return `  ${label.padEnd(8)} ${gate.gateId}${advisory}: ${gate.detail}`;
-    })
-    .join("\n");
-}
-
-/** Written through `note`, so an interactive screen holds them until it comes down. */
-function reportGates(
-  outcome: AutoResolveOutcome,
-  evidence: EvidenceRecorder,
-  note: (line: string) => void,
-): void {
-  // Said before the gate table rather than after it, because a table of passes over a tree
-  // nothing touched is the most misleading thing this tool can print. A model that answered in
-  // prose, or emitted its tool calls as text the protocol never parsed, reaches here having
-  // done nothing, stops for the honest reason "completed", and every gate then passes over an
-  // empty diff. A task can legitimately change nothing, so this states the fact rather than
-  // calling it a failure.
-  if (outcome.finalCycle.measures.changedFiles === 0) {
-    note(
-      "\nno files were changed. The gates below measured an unchanged workspace, so they say " +
-        "nothing about work being done.",
-    );
-  }
-  note(`\ngates:\n${describeCycle(outcome.finalCycle)}`);
-
-  for (const attempt of outcome.attempts) {
-    note(
-      `attempt ${attempt.attempt}: ${attempt.decision.accepted ? "accepted" : "REJECTED"} - ` +
-        `${attempt.decision.detail}`,
-    );
-  }
-
-  for (const run of outstandingJustifications(outcome.finalCycle, citedRecords(evidence))) {
-    note(
-      `\nthe ${run.gateId} gate asked for a justification and no claim cites its record ` +
-        `${run.record}. This does not block, and the bundle shows it unanswered.`,
-    );
-  }
-
-  if (outcome.escalation !== null) {
-    note(`\n${describeEscalation(outcome.escalation)}`);
-  }
-}
-
-/**
- * What this run cost, from its own ledger's token counts times the published rate. A table
- * that cannot be read prices the run as unknown: the run still finishes, and the reward
- * treats unknown as neutral rather than free (see src/select/reward.ts).
- */
-async function priceTask(modelSpec: string, evidence: EvidenceRecorder): Promise<TaskCost> {
-  try {
-    const loaded = await loadPricing({
-      fetch: (url) => fetch(url, { signal: AbortSignal.timeout(shortlistFetchTimeoutMs) }),
-    });
-    return costOfTask({ modelSpec, entries: payloadsSince(evidence, 0), pricing: loaded.pricing });
-  } catch (cause) {
-    return {
-      costUsd: null,
-      source: "unknown",
-      inputTokens: 0,
-      outputTokens: 0,
-      modelCalls: 0,
-      detail: `no pricing table could be read: ${describeError(cause)}`,
-    };
-  }
-}
-
-interface RewardLogInput {
-  readonly evidence: EvidenceRecorder;
-  readonly home: string;
-  readonly task: string;
-  readonly modelSpec: string;
-  readonly assignment: "calibration" | "competency" | "ucb" | "epsilon" | "pinned";
-  readonly ratchet: ReturnType<typeof summarizeRatchet>;
-  /** The run's own verdict, so the router is not taught by the gate strip alone. */
-  readonly green: boolean;
-  readonly changedFiles: number | null;
-  readonly latencyMs: number;
-  readonly recordedAt: number;
-  readonly cost: TaskCost;
-  readonly note: (line: string) => void;
-}
-
-/**
- * Written twice on purpose: into the session ledger, where it is part of this run's evidence,
- * and into the cross-session routing log, which is the signal the bandit reads. A failure to
- * write the log is reported and not fatal: routing is a hint, and losing one sample must not
- * cost a run that has already finished.
- */
-async function logReward(input: RewardLogInput): Promise<void> {
-  const classification = classifyTask(input.task);
-  const entry = buildRewardEntry({
-    recordedAt: input.recordedAt,
-    sessionId: input.evidence.sessionId,
-    taskClass: classification.taskClass,
-    model: input.modelSpec,
-    assignment: input.assignment,
-    ratchet: input.ratchet,
-    green: input.green,
-    changedFiles: input.changedFiles,
-    latencyMs: input.latencyMs,
-    costUsd: input.cost.costUsd,
-    costSource: input.cost.source,
-  });
-
-  await input.evidence.record({
-    type: "reward",
-    actor: "harness",
-    provenance: ["tool-output"],
-    payload: {
-      ...entry,
-      taskClassRule: classification.rule,
-      costDetail: input.cost.detail,
-      costInputTokens: input.cost.inputTokens,
-      costOutputTokens: input.cost.outputTokens,
-    },
-  });
-
-  try {
-    const log = await openRoutingLog({ path: defaultRoutingLogPath(input.home) });
-    await log.append(entry);
-    input.note(`\nrouting reward: ${entry.reward.toFixed(3)} (${entry.rewardReason})`);
-  } catch (cause) {
-    input.note(`[routing] the reward could not be appended to the log: ${describeError(cause)}`);
-  }
-}
-
 function describeError(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
-}
-
-function announceBundle(directory: string, note: (line: string) => void = writeOut): void {
-  note(`\nevidence bundle: ${directory}`);
-  note(`verify it anywhere: node ${join(directory, "verify.mjs")} ${directory}`);
-  note(`review it: open ${join(directory, "review.html")}`);
 }
 
 function writeOut(line: string): void {
@@ -1231,433 +577,7 @@ async function gatesUnderCancellation(options: GatesCommand, signal: AbortSignal
   return verdict.acceptable ? 0 : 1;
 }
 
-/**
- * What each pass was shown to be worth. Said after the table, since the table is what the
- * gates decided and this is whether that decision could have gone the other way.
- */
-function reportBonds(bonds: readonly BondOutcome[], note: (line: string) => void): void {
-  if (bonds.length === 0) {
-    return;
-  }
-  note("\nbonds, one per gate that passed:");
-  for (const bond of bonds) {
-    const mark =
-      bond.verdict === "held"
-        ? "held"
-        : bond.verdict === "vacuous"
-          ? "VACUOUS"
-          : bond.verdict === "not-bonded"
-            ? "not bonded"
-            : bond.verdict;
-    note(`  ${bond.gateId}: ${mark}. ${bond.detail}`);
-  }
-  const vacuous = vacuousBlockingBonds(bonds);
-  if (vacuous.length > 0) {
-    note(
-      `\n${vacuous.map((bond) => bond.gateId).join(", ")}: a blocking gate passed over a change it ` +
-        "had to refuse, so its pass has not been shown capable of failing and this run is not green.",
-    );
-  }
-}
-
-async function writeBundle(
-  evidence: EvidenceRecorder,
-  destination: string | null,
-  clock: Clock,
-  note: (line: string) => void = writeOut,
-  attested?: {
-    readonly verdict: Readonly<Record<string, unknown>>;
-    readonly executionMode: string;
-  },
-): Promise<{
-  readonly directory: string;
-  readonly manifest: BundleManifest;
-  readonly dag: EvidenceDag;
-}> {
-  const signing = await resolveSigningKey(createKeychainSecretStore({ platform: platform() }));
-  if (signing.notice !== null) {
-    note(`[signing] ${signing.notice}`);
-  }
-  const directory = destination ?? join(evidence.directory, "bundle");
-  const patch = recordedField(evidence, "workspace-diff", "patch");
-  const patchDigest = recordedField(evidence, "workspace-diff", "rawPatchDigest");
-  const patchBound = patch !== null && patchDigest === digestOfBytes(patch);
-  if (attested !== undefined && !patchBound)
-    note(
-      "[attestation] raw patch binding is unavailable; the evidence bundle remains independently verifiable",
-    );
-  const attestation =
-    attested === undefined || !patchBound || recordedDigest(evidence, "run-spec-sealed") === null
-      ? undefined
-      : signAttestation(
-          buildAttestation({
-            runId: evidence.sessionId,
-            specDigest: recordedDigest(evidence, "run-spec-sealed") ?? "sha256:unsealed",
-            sourceCommit: recordedSpecBase(evidence),
-            patchDigest: patchDigest as string,
-            chainHead: evidence.head().hash,
-            toolVersion: buildVersion,
-            executionMode: attested.executionMode,
-            verdict: attested.verdict,
-          }),
-          signing.key,
-        );
-  const written = await exportBundle({
-    source: bundleSourceFromRecorder(evidence),
-    destination: directory,
-    signingKey: signing.key,
-    clock,
-    ...(attestation === undefined ? {} : { attestation }),
-  });
-  return { directory, manifest: written.manifest, dag: written.dag };
-}
-
-function recordedSpecBase(evidence: EvidenceRecorder): string {
-  const digest = recordedDigest(evidence, "run-spec-sealed");
-  const payload = digest === null ? undefined : evidence.payloads().get(digest);
-  return (
-    (payload as { spec?: { repository?: { baseCommit?: string } } })?.spec?.repository
-      ?.baseCommit ?? "unknown"
-  );
-}
-
-/** The payload digest of the first record of a kind, which is the thing an attestation binds. */
-function recordedDigest(evidence: EvidenceRecorder, type: string): string | null {
-  return evidence.records().find((record) => record.type === type)?.payloadDigest ?? null;
-}
-
-function recordedField(evidence: EvidenceRecorder, type: string, field: string): string | null {
-  const record = evidence.records().findLast((entry) => entry.type === type);
-  const payload = record === undefined ? undefined : evidence.payloads().get(record.payloadDigest);
-  const value = (payload as Record<string, unknown> | undefined)?.[field];
-  return typeof value === "string" ? value : null;
-}
-
-/** Roughly the build guide's five to ten minutes: four cases, three repeats, two models. */
-const calibrationModelLimit = 2;
-
-async function calibrate(options: CalibrateCommand): Promise<number> {
-  const settings = await settingsFor(process.cwd(), noFlagSettings);
-  const clock = createSystemClock();
-  const random = createSystemRandom();
-  const home = homedir();
-
-  const profile = await probeHardware(systemProbeEnvironment());
-  const loaded = await loadShortlist({
-    fetch: (url) => fetch(url, { signal: AbortSignal.timeout(shortlistFetchTimeoutMs) }),
-    readFile: (path) => readFile(path, "utf8"),
-    requested: options.shortlist,
-  });
-  const recommendation = recommendModel(profile, loaded.shortlist);
-  const staticPick = recommendation.outcome === "model" ? recommendation.modelSpec : null;
-  const models =
-    options.models ??
-    (recommendation.outcome === "model"
-      ? calibrationCandidates(recommendation, profile, calibrationModelLimit)
-      : []);
-
-  if (models.length === 0) {
-    throw new Error(
-      "there is nothing to calibrate: the shortlist matched no tier for this machine and " +
-        "--models named none. Run swarm select to see why, or pass --models <a,b>.",
-    );
-  }
-
-  const goldenSet = await readGoldenSet({ localPath: defaultGoldenSetPath(home) });
-  const evidence = await openEvidenceSession({
-    root: defaultSessionRoot(home),
-    sessionId: createSessionId(clock, random),
-    clock,
-  });
-  await evidence.record({
-    type: "session-started",
-    actor: "harness",
-    provenance: ["user"],
-    payload: {
-      task: "calibrate",
-      models: [...models],
-      repeats: options.repeats,
-      goldenSetVersion: goldenSet.version,
-      staticPick,
-    },
-  });
-
-  const localBackend = await resolveLocalBackend(
-    settings,
-    models.map((candidate) => parseModelSpec(candidate)),
-  );
-  if (localBackend !== null) {
-    await evidence.record(localEndpointRecord(localBackend));
-  }
-
-  // Before any run exists: a model the backend does not serve fails at dispatch, and repeats
-  // that never dispatched would be recorded as runs of a model nothing was measured about.
-  const runSet =
-    localBackend === null ? models : await preflight(evidence, localBackend.url, models);
-  if (runSet.length === 0) {
-    const empty = (await writeBundle(evidence, options.bundleDirectory, clock)).directory;
-    process.stdout.write(
-      "no usable model: the backend serves none of the models asked for, so nothing was " +
-        "calibrated, no runs were created, and no pick was written.\n",
-    );
-    announceBundle(empty);
-    return 1;
-  }
-
-  const registry = createProviderRegistry(registrySettingsFrom(settings, localBackend));
-  // Outside the session store, which tools may never write to, and outside any workspace.
-  const scratchRoot = await mkdtemp(join(tmpdir(), "swarm-calibration-"));
-
-  // One round trip before the golden set: a runtime that cannot form a single tool call will
-  // score every model at zero, and learning that from the report costs the whole run.
-  const canary = await canaryFor(evidence, registry, runSet, scratchRoot);
-  if (canary !== null && !canary.healthy) {
-    const sick = (await writeBundle(evidence, options.bundleDirectory, clock)).directory;
-    process.stdout.write(
-      "no usable backend: calibration would measure the runtime rather than the model, " +
-        "so no runs were created and no pick was written.\n",
-    );
-    announceBundle(sick);
-    await rm(scratchRoot, { recursive: true, force: true });
-    return 1;
-  }
-
-  const isTty = process.stdout.isTTY === true && process.stdin.isTTY === true;
-  const screen = startCalibrateInterface({
-    isTty,
-    interactive: settings.interface.tui,
-    theme: resolveTheme({
-      mode: settings.interface.color,
-      term: process.env.TERM,
-      noColorSet: process.env.NO_COLOR !== undefined,
-      isTty,
-      palette: settings.interface.theme,
-    }),
-    clock,
-    bundleDirectory: options.bundleDirectory ?? defaultSessionRoot(home),
-    writeLine: (line) => {
-      process.stdout.write(`${line}\n`);
-    },
-    ...(isTty && settings.interface.tui ? { render: inkRender } : {}),
-  });
-  screen.apply({
-    type: "plan",
-    plan: {
-      models: [...runSet],
-      cases: goldenSet.cases.length,
-      repeats: options.repeats,
-      goldenSetVersion: goldenSet.version,
-    },
-  });
-
-  try {
-    const result = await runCalibration({
-      models: runSet,
-      repeats: options.repeats,
-      goldenSet,
-      staticPick,
-      onProgress: (event) => {
-        screen.apply(
-          event.type === "run-started"
-            ? {
-                type: "run-started",
-                current: { model: event.model, caseId: event.caseId, repeat: event.repeat },
-              }
-            : {
-                type: "run-finished",
-                outcome: {
-                  model: event.observation.model,
-                  caseId: event.observation.caseId,
-                  repeat: event.observation.repeat,
-                  executed: event.observation.executed,
-                  gatePassed: event.observation.gatePassed,
-                  abstentionReason: event.observation.abstentionReason,
-                },
-              },
-        );
-      },
-      deps: {
-        evidence,
-        clock,
-        random,
-        createModel: (modelSpec) => registry.create(parseModelSpec(modelSpec)),
-        commands: createNodeCommandRunner(clock, harnessChildEnvironment()),
-        probeMemory: createOllamaMemoryProbe({
-          // With no local model among the candidates there is nothing to probe, and the
-          // probe against the default port simply reports nothing.
-          baseUrl: localBackend?.url ?? "http://127.0.0.1:11434/v1",
-          fetch: (url) => fetch(url, { signal: AbortSignal.timeout(2_000) }),
-        }),
-        scratchRoot,
-        maxSteps: 12,
-        abortSignal: new AbortController().signal,
-      },
-    });
-
-    const directory = (await writeBundle(evidence, options.bundleDirectory, clock)).directory;
-    for (const line of renderCalibrationReport({
-      goldenSetVersion: result.goldenSetVersion,
-      cases: result.cases,
-      repeats: result.repeats,
-      models: result.models,
-      pick: result.pick,
-      comparison: result.comparison,
-      bundleDirectory: directory,
-    })) {
-      process.stdout.write(`${line}\n`);
-    }
-    announceBundle(directory);
-
-    await writeCalibrationPick(defaultPickPath(home), {
-      model: result.pick.model,
-      candidates: [...runSet],
-      goldenSetVersion: result.goldenSetVersion,
-      recordedAt: clock.now(),
-    });
-    // The class-by-class counts beside the pick, from this sweep's own run records, added to
-    // whatever earlier sweeps of the same golden set already measured.
-    const tablePath = defaultCompetencyTablePath(home);
-    await writeCompetencyTable(
-      tablePath,
-      withSweep(
-        await readCompetencyTable(tablePath),
-        sweepFromRuns(
-          {
-            sessionId: evidence.sessionId,
-            goldenSetVersion: result.goldenSetVersion,
-            recordedAt: clock.now(),
-          },
-          result.observations,
-        ),
-      ),
-    );
-    return result.pick.model === null ? 1 : 0;
-  } finally {
-    // Before the report is read, so the screen is down and the terminal is the shell's again.
-    await screen.stop();
-    await rm(scratchRoot, { recursive: true, force: true });
-  }
-}
-
-/** Enough attempts to tell a runtime that cannot form a call from one that merely stumbled. */
-const canaryAttempts = 3;
-
-/**
- * The canary, against the first local model in the run set. Frontier models are not what this
- * watches: it exists for a local runtime whose tool-call transport has stopped working, which
- * is a property of the backend rather than of any one model it serves.
- */
-async function canaryFor(
-  evidence: EvidenceRecorder,
-  registry: ReturnType<typeof createProviderRegistry>,
-  runSet: readonly string[],
-  scratchRoot: string,
-): Promise<BackendCanary | null> {
-  const local = runSet.find((spec) => parseModelSpec(spec).provider === "local");
-  if (local === undefined) {
-    return null;
-  }
-
-  const probeRoot = join(scratchRoot, "canary");
-  await mkdir(probeRoot, { recursive: true });
-  const guard = createPolicyGuard({
-    workspaceRoot: probeRoot,
-    homeDir: probeRoot,
-    shellAllowlist: defaultShellAllowlist,
-    deniedRoots: [],
-  });
-
-  const canary = await runBackendCanary({
-    modelSpec: local,
-    model: registry.create(parseModelSpec(local)),
-    tools: createWorkspaceTools(guard),
-    attempts: canaryAttempts,
-    abortSignal: new AbortController().signal,
-  });
-
-  await evidence.record(canaryRecord(canary));
-  for (const line of describeCanary(canary)) {
-    process.stdout.write(`${line}\n`);
-  }
-  return canary;
-}
-
 /** How long a local backend gets to say what it serves before the answer stops being worth waiting for. */
-
-/**
- * Which of the requested models the backend is actually serving, recorded and said out loud.
- * A backend that cannot be asked excludes nothing: an unanswered probe is not a backend
- * serving nothing, and treating it as one would drop every model on no evidence at all.
- */
-async function preflight(
-  evidence: EvidenceRecorder,
-  backendUrl: string,
-  models: readonly string[],
-): Promise<readonly string[]> {
-  const checked = await preflightAll(evidence, backendUrl, models);
-  // Calibration's own account of the probe: which models it will not create runs for, and
-  // how many of the ones asked for survive. A single run says something else, because it
-  // goes on to substitute one and needs to name the substitution rather than the shortfall.
-  for (const line of describePreflight(checked)) {
-    process.stdout.write(`${line}\n`);
-  }
-  return checked.runnable;
-}
-
-/** The whole answer rather than the runnable subset, for the caller that has to choose. */
-async function preflightAll(
-  evidence: EvidenceRecorder,
-  backendUrl: string,
-  models: readonly string[],
-): Promise<LocalModelPreflight> {
-  const checked = preflightLocalModels({
-    requested: models,
-    backendUrl,
-    list: await fetchServedModels({
-      baseUrl: backendUrl,
-      fetch: (url, init) => fetch(url, init),
-      signal: AbortSignal.timeout(servedModelsTimeoutMs),
-    }),
-  });
-
-  await evidence.record(preflightRecord(checked));
-  return checked;
-}
-
-/** Turns a task that went wrong into a case the golden set will measure against forever. */
-async function addCase(options: AddCaseCommand): Promise<number> {
-  const seed: Record<string, string> = {};
-  for (const path of options.seed) {
-    seed[path] = await readFile(resolve(options.workspace, path), "utf8");
-  }
-
-  const clock = createSystemClock();
-  const one = parseCalibrationCase(
-    {
-      id: `captured-${new Date(clock.now())
-        .toISOString()
-        .replace(/[-:.TZ]/g, "")
-        .slice(0, 14)}`,
-      taskClass: classifyTask(options.task).taskClass,
-      prompt: options.task,
-      seed,
-      gateCommand: options.gateCommand,
-      origin: "captured",
-      addedAt: new Date(clock.now()).toISOString().slice(0, 10),
-    },
-    "the case being captured",
-  );
-
-  const localPath = defaultGoldenSetPath(homedir());
-  const goldenSet = await appendCalibrationCase({ localPath }, one);
-
-  process.stdout.write(
-    `captured ${one.id} (${one.taskClass}) from ${options.seed.length} file(s).\n` +
-      `the golden set now holds ${goldenSet.cases.length} case(s) at version ${goldenSet.version}.\n` +
-      `it is append-only: this case will be measured by every calibration from now on.\n`,
-  );
-  return 0;
-}
 
 /**
  * A tasks file is one task per line, or a JSON task graph. Both reach the same run: what a
@@ -1709,7 +629,7 @@ async function main(): Promise<number> {
     return collectGarbage(options);
   }
   if (options.command === "ci") {
-    return verifyPatch(options);
+    return (await import("./cli-ci.ts")).verifyPatch(options);
   }
   if (options.command === "list-runs") {
     return listRuns();
@@ -1739,25 +659,25 @@ async function main(): Promise<number> {
     return select(options);
   }
   if (options.command === "calibrate") {
-    return calibrate(options);
+    return (await import("./cli-calibrate.ts")).calibrate(options);
   }
   if (options.command === "add-case") {
-    return addCase(options);
+    return (await import("./cli-calibrate.ts")).addCase(options);
   }
   if (options.command === "routing") {
     return routing();
   }
   if (options.command === "parallel") {
-    return parallel(options);
+    return (await import("./cli-parallel.ts")).parallel(options);
   }
   if (options.command === "doctor") {
     return doctor(options);
   }
   if (options.command === "session") {
-    return session(options);
+    return (await import("./cli-session.ts")).session(options);
   }
   if (options.command === "init") {
-    return init(options);
+    return (await import("./cli-init.ts")).init(options);
   }
   return options.command === "gates" ? gates(options) : run(options);
 }
