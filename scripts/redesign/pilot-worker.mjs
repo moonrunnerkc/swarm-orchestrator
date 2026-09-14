@@ -398,6 +398,13 @@ export async function executePilotGoal({
   }
   const cleanup = live.size === 0 ? "confirmed" : "failed";
   const cancelled = context.signal.aborted;
+  const termination = execution.signal.aborted
+    ? "cancelled"
+    : accounting.unknownCalls > 0 || failure
+      ? "crashed"
+      : cancelled
+        ? "budget"
+        : "completed";
   const certified =
     sealed?.verified === true &&
     integrity === 0 &&
@@ -405,14 +412,9 @@ export async function executePilotGoal({
   const goal = {
     ...unobservedGoalMetrics(
       candidate.contracts.sealed.requirements.length,
-      cancelled
-        ? execution.signal.aborted
-          ? "cancelled"
-          : "budget"
-        : failure
-          ? "crashed"
-          : "completed",
+      termination,
       failure ??
+        context.signal.reason?.message ??
         "All observations retained; generated or historical checks are limited acceptance instruments.",
     ),
     inputTokens: accounting.unknownCalls === 0 ? inputTokens : null,
@@ -443,11 +445,12 @@ export async function executePilotGoal({
     partialBranch: branch,
   };
   const outcome = {
-    status: cancelled
-      ? "cancelled"
-      : failure || heldBack === null || heldBack.task === "unjudged"
-        ? "crashed"
-        : "completed",
+    status:
+      termination === "cancelled" || termination === "budget"
+        ? "cancelled"
+        : failure || heldBack === null || heldBack.task === "unjudged"
+          ? "crashed"
+          : "completed",
     certified,
     heldBackAccepted:
       heldBack === null || heldBack.task === "unjudged" ? null : heldBack.task === "accepted",

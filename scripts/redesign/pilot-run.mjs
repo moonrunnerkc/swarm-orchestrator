@@ -1,10 +1,11 @@
 import { execFile } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { freemem } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { createSystemClock } from "../../src/cli-runtime-inputs.ts";
+import { openCampaign } from "../../src/eval/campaign-record.ts";
 import { runFrozenCampaign } from "../../src/eval/frozen-campaign.ts";
 import { goalCampaignProtocolSchema } from "../../src/eval/goal-protocol.ts";
 import { bundleSourceFromRecorder, exportBundle } from "../../src/evidence/bundle.ts";
@@ -223,6 +224,18 @@ export async function freezePilot(root, admissionRoots) {
     flag: "wx",
     mode: 0o400,
   });
+  const evidence = await openEvidenceSession({
+    root: join(root, "sessions"),
+    sessionId: "pilot",
+    clock: createSystemClock(),
+  });
+  await openCampaign(protocol, evidence);
+  await evidence.record({
+    type: "campaign-observation",
+    actor: "harness",
+    provenance: ["file"],
+    payload: { phase: "frozen-inputs", digest: digestOfJson(asJsonValue(frozen)) },
+  });
   console.log(
     JSON.stringify({
       phase: "frozen",
@@ -234,11 +247,36 @@ export async function freezePilot(root, admissionRoots) {
     }),
   );
 }
+export function assertFrozenInputs(evidence, frozen) {
+  const declarations = evidence
+    .records()
+    .filter((record) => record.type === "campaign-observation")
+    .map((record) => evidence.payloads().get(record.payloadDigest))
+    .filter((payload) => payload?.phase === "frozen-inputs");
+  if (declarations.length !== 1 || declarations[0].digest !== digestOfJson(asJsonValue(frozen)))
+    throw new Error(
+      "Frozen campaign inputs are missing or changed; preserve the history and reconcile before dispatch",
+    );
+}
 export async function runPilot(root, resume) {
   const frozen = JSON.parse(await readFile(join(root, "frozen.json"), "utf8"));
   const protocol = goalCampaignProtocolSchema.parse(frozen.protocol);
   const settings = pilotSettingsSchema.parse(frozen.settings);
   const candidates = z.array(preparedCaseSchema).parse(frozen.candidates);
+  const clock = createSystemClock();
+  const evidence = await openEvidenceSession({
+    root: join(root, "sessions"),
+    sessionId: "pilot",
+    clock,
+  });
+  assertFrozenInputs(evidence, frozen);
+  if (
+    !resume &&
+    evidence
+      .records()
+      .some((record) => evidence.payloads().get(record.payloadDigest)?.phase === "launched")
+  )
+    throw new Error("This campaign already launched work; resume its original schedule explicitly");
   if (
     (await git(sourceRoot, "rev-parse", "HEAD")) !== frozen.sourceCommit ||
     (await git(sourceRoot, "status", "--porcelain")) ||
@@ -249,22 +287,17 @@ export async function runPilot(root, resume) {
       "Frozen implementation source changed; preserve the campaign and run from the pinned clean checkouts",
     );
   assertLocalModel(await localInventory(), settings.model, frozen.model.digest);
-  const clock = createSystemClock();
-  const evidence = await openEvidenceSession({
-    root: join(root, "sessions"),
-    sessionId: "pilot",
-    clock,
-  });
   const cancellation = new AbortController();
   const stop = () => cancellation.abort(new Error("pilot interrupted"));
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
   const launchesRoot = join(root, "launches");
+  let exportDirectory;
   await mkdir(launchesRoot, { recursive: true, mode: 0o700 });
   try {
     const report = await runFrozenCampaign({
       protocol,
-      resume,
+      resume: true,
       evidence,
       now: () => clock.now(),
       signal: cancellation.signal,
@@ -298,20 +331,20 @@ export async function runPilot(root, resume) {
         },
       })),
       exportEvidence: async () => {
+        exportDirectory = await mkdtemp(join(root, "export-"));
         await exportBundle({
           source: bundleSourceFromRecorder(evidence),
-          destination: join(root, `campaign-bundle-${evidence.head().recordCount}`),
+          destination: join(exportDirectory, "bundle"),
           signingKey: createEphemeralSigningKey(),
           clock,
         });
       },
     });
-    await writeFile(
-      join(root, `report-${evidence.head().recordCount}.json`),
-      JSON.stringify(report, null, 2),
-      { flag: "wx", mode: 0o600 },
-    );
-    console.log(JSON.stringify(report));
+    await writeFile(join(exportDirectory, "report.json"), JSON.stringify(report, null, 2), {
+      flag: "wx",
+      mode: 0o600,
+    });
+    console.log(JSON.stringify({ exportDirectory, report }));
     return report;
   } finally {
     process.removeListener("SIGINT", stop);
