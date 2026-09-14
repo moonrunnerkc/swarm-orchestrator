@@ -1,6 +1,7 @@
 # Adaptive goal controller implementation, September 13, 2026
 
-Status: implementation in progress. No complete-goal or performance advantage is established.
+Status: implementation delivered on the review branch. Complete-goal behavior is established by
+development and integration evidence; no performance advantage or universal correctness is claimed.
 This record tracks the entire approved redesign, including empirical work that code alone
 cannot complete. The September 11 audit record remains historical evidence.
 
@@ -614,7 +615,13 @@ an empty patch. Nonempty patch failures retain their actual diagnostic. The focu
 verifier suite passed 36 tests in 17.85 seconds, digest
 `sha256:3dae51cbbd780452f0e7bd52b9ad58cd7caa2d688e6bc90e1755570cbabb749d`.
 Chess acceptance explicitly runs its pinned parser generation. Additional Python checks cover
-hook exceptions and public typing. The corrected instrument admission is still running.
+hook exceptions and public typing. The corrected instrument admission is complete: all 15
+JavaScript/TypeScript and all nine Python cases have `admitted: true`. The corrected Python
+admission capture is `pilot-python-admission-corrected-only`
+(`sha256:d4555b064c61c8c0fd290d4eabd88dcb40d76f97e3ff801a8aa40d76158869ac`). The corrected Node
+wrapper completed all 15 admissions, but its final wrapper status was 1 because it was pointed at
+a missing Python runtime directory after the completed work. That retained observation is
+`sha256:649880b5...` and is not used as a passing total.
 
 The native pilot executors include a strong single worker with repair, the unmodified review
 controller with an external accounting/setup wrapper, the adaptive controller and both ablations.
@@ -624,4 +631,13 @@ bundle export. A six-test driver suite exercised real checkouts and both a valid
 locally green omission; both bundles verified offline. Capture `pilot-driver-linked-evidence`,
 digest `sha256:4d4a0f59eacb509d4abc7f3a0f4be94becc7eb9880f42192c91ba4887a20ad36`.
 Earlier driver failures from mixing goal declarations and omitting chain links remain recorded.
-No paired pilot result or speed advantage is claimed by this admission work.
+Earlier driver failures from mixing goal declarations, shallow base reachability, Docker volume
+path separators, and shared reservation sizing remain retained. The frozen pilot protocol is 24
+goals, eight repositories, five arms and 120 scheduled launches. The latest clean freeze is
+`pilot-freeze-final-8`, source `d4e77ad35679124f7533acea8fda07f661dc3c16`, protocol digest
+`sha256:d4fffbee9e998de5b8e9c7c9583c5b16c4739dc691a3ec48d1ee59a28b77062d`. Its run was interrupted
+after the early serialized launches because the local model and historical repository checks made
+the full schedule exceed the available execution window. Retained outcomes are descriptive
+development observations, not a complete pilot result or speed advantage claim. The exact
+unfinished requirement is the complete 24-goal paired pilot and its adaptation and peer-information
+ablation totals.

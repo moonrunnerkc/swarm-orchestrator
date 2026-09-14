@@ -176,7 +176,7 @@ export async function executePilotGoal({
         random: { next: () => 0.5 },
         emit: () => {},
         maxSteps: settings.plannerSteps,
-        maxTokens: context.accounting().remaining,
+        maxTokens: Math.min(200_000, context.accounting().remaining),
         maxWallTimeMs: context.remainingWallMs(),
         abortSignal: context.signal,
       });
