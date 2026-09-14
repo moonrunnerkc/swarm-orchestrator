@@ -60,10 +60,10 @@ A runner alone does not complete an empirical requirement.
 | F2 | Original remaining budget/policy, no duplicate landing or ambiguous replay | original pinned launch/configuration, retained unknown usage and token ceiling; accepted producer not called on resume | validated |
 | F3 | Intent before effect, completion after; preserve torn/altered history | intent/completion windows distinguished; checksum/torn history and missing candidate evidence refuse reconciliation | validated |
 | F4 | Verify ownership before cleanup, retain user and other-session resources | writer lease and container labels checked; dirty worktrees, changed refs, live/unknown owners and other resources preserved | validated |
-| G1 | Extract CLI/session/parallel composition and common settings/outcome | parallel handler and common settings extracted; session extraction remains | partial |
+| G1 | Extract CLI/session/parallel composition and common settings/outcome | focused handlers and shared settings, ledger-derived output; child-process command and buffered session checks | implemented |
 | G2 | Shared immutable verification setup, independent trust and known-answer tests | verifier/signature/hash parity and independent fixtures | open |
 | G3 | Harness routine claims, smaller optional vocabulary; compare before default change | prompt success and usage comparison | open |
-| G4 | Profile journal, polling, transcripts, peers, checks and contention first | fixed fixture time/space measurements | open |
+| G4 | Profile journal, polling, transcripts, peers, checks and contention first | fixed fixture profiles and preserved reconstruction; live model/test contention remains | partial |
 | G5 | Warranted incremental processing, exact reconstruction, cross-process visibility | corrupt history and exact prompt tests | open |
 | G6 | Immutable check reuse, observations rerun after relevant changes; unknown disables cache | content/environment identity tests if caching is warranted | open |
 | G7 | Final blocking checks mandatory, remove duplicate workflow calls, explicit corpus setup | gates workflow retains Linux/macOS and fuzz, packaged job; duplicate invocations removed and v12-final prerequisite checked in M0 | validated |
@@ -262,4 +262,19 @@ its renderer. No default worker prompt changed.
 CLI execution path observes all jobs accepted while goal checks remain pending, then emits the
 recorded assessment and matching exit code. Additional checks cover model-authored verdict
 refusal, unknown usage reservations, repeated settlements, terminal control sanitization and
-idempotent screen cleanup. Full gates for this change remain pending.
+idempotent screen cleanup. Full `controller-presentation-gates` exited 0: 307 files and 2994 tests passed in 110.90 seconds, no skips and unchanged baseline Biome diagnostics. The tested diff is commit `c17328b02f7593eb923abfcb20192e3433fe9050`; evidence digest `sha256:d3cad1304b24a578242d8eb75d54510827c88bdab1ce82b9ab06320382d18d81`.
+
+
+### CLI composition preservation
+
+Session execution, calibration, initialization, terminal setup, pricing/reward recording,
+bundle export and gate reporting now have focused composition modules. Settings still resolve
+through one shared function. The root dispatches optional session, calibration, parallel and
+independent-CI handlers when selected; terminal setup loads the session renderer when invoked.
+Existing single-task execution, predicate support, bundle formats and command options remain.
+This is a maintainability change, with no claimed runtime speed ratio.
+
+`cli-composition-focused` exited 0: 4 files and 91 tests passed in 887 ms. It includes actual child
+processes that reject inactive calibration/Ink loading during help, preserve two buffered piped
+tasks through EOF, and refuse tampered bundles and unknown signers through the CLI. Full gates
+and packaged command validation for the extraction remain pending.
