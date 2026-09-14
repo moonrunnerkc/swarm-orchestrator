@@ -57,56 +57,90 @@ export async function consumeCoordination(options: {
       if (graph === null) throw new Error("coordination precedes the graph");
       const findId = (id: string) =>
         graph.nodes.find((node) => node.id === id || node.contract.taskId === id)?.id ?? id;
-      const operation =
-        proposal.kind === "dependency-request"
-          ? {
-              kind: "add-prerequisite" as const,
-              taskId: peer.taskId,
-              prerequisite: findId(proposal.prerequisite),
-            }
-          : proposal.kind === "repair-request"
-            ? proposal.revision
-            : undefined;
+      const explicit = proposal.kind === "repair-request" ? proposal.revision : undefined;
       if (
-        operation?.kind === "combine" &&
-        operation.tasks.some((id) =>
+        explicit?.kind === "combine" &&
+        explicit.tasks.some((id) =>
           ["running", "candidate"].includes(board.states.get(id) ?? "pending"),
         )
       )
         continue;
       let disposition: "applied" | "refused" | "observed" = "observed";
       let reason = "untrusted peer proposal retained; no acceptance or permission granted";
-      if (operation !== undefined) {
+      if (proposal.kind === "dependency-request" || explicit !== undefined) {
         if (!options.adaptation) {
           disposition = "refused";
           reason = "adaptive revisions disabled by the declared comparison policy";
         } else {
-          // Compute separately from append: an evidence failure must abort, not become a refused proposal.
-          let revised: ControllerGraph | undefined;
+          const revisions: ControllerGraph[] = [];
           try {
-            revised = reviseGraph(
-              graph,
-              operation,
-              board.states,
-              proposal.kind === "dependency-request"
-                ? proposal.reason
-                : proposal.kind === "repair-request"
-                  ? proposal.summary
-                  : "coordination proposal",
-              "model",
-            );
+            const operations: RevisionOperation[] = [];
+            if (proposal.kind === "dependency-request") {
+              if (proposal.missing === undefined)
+                operations.push({
+                  kind: "add-prerequisite",
+                  taskId: peer.taskId,
+                  prerequisite: findId(proposal.prerequisite),
+                });
+              else {
+                const owner = graph.nodes.find((node) => node.id === peer.taskId);
+                if (owner === undefined)
+                  throw new Error("missing prerequisite requester is no longer a current task");
+                const prerequisite = parseTaskContract({
+                  ...owner.contract,
+                  taskId: proposal.prerequisite,
+                  objective: proposal.missing.instruction,
+                  scopeKind: "files",
+                  dependsOn: [],
+                  allowedPaths: proposal.missing.files,
+                });
+                const additions = prerequisite.allowedPaths.filter(
+                  (path) => !owner.contract.allowedPaths.includes(path),
+                );
+                if (owner.contract.scopeKind !== "workspace" && additions.length > 0)
+                  operations.push({ kind: "amend-scope", taskId: owner.id, paths: additions });
+                operations.push({
+                  kind: "insert-prerequisite",
+                  taskId: owner.id,
+                  node: {
+                    id: proposal.prerequisite,
+                    contract: prerequisite,
+                    dependsOn: [],
+                    obligations: [...owner.obligations],
+                  },
+                });
+              }
+            } else if (explicit !== undefined) operations.push(explicit);
+            let parent = graph;
+            for (const operation of operations) {
+              parent = reviseGraph(
+                parent,
+                operation,
+                board.states,
+                proposal.kind === "dependency-request"
+                  ? proposal.reason
+                  : proposal.kind === "repair-request"
+                    ? proposal.summary
+                    : "coordination proposal",
+                "model",
+              );
+              revisions.push(parent);
+            }
           } catch (cause) {
+            revisions.length = 0;
             disposition = "refused";
             reason = cause instanceof Error ? cause.message : String(cause);
           }
-          if (revised !== undefined) {
+          // Preflight the complete proposal. A failed evidence append aborts rather than becoming a refusal.
+          for (const revised of revisions)
             await appendControllerRecord(
               options.evidence,
               "controller-graph",
               asJsonValue(revised),
             );
+          if (revisions.length > 0) {
             disposition = "applied";
-            reason = `bounded scheduling revision ${revised.revision}; proposal remains untrusted`;
+            reason = `bounded scheduling revision ${revisions.at(-1)?.revision}; proposal remains untrusted`;
           }
         }
       }

@@ -38,3 +38,5 @@ strict reference/control package and all historical evidence readers remain supp
 This decision authorizes implementation, not an empirical claim of advantage. The six
 maintainer development goals and frozen 24-goal, eight-repository paired pilot have separate
 exit criteria. Paid models, publication and protected-branch merges require existing authority.
+
+Graph version two makes scope allocation explicit. The pre-planning user scope is distinct from a task's exact writable files. A controller-authorized amendment can allocate another file within that ceiling, and a missing-prerequisite insertion preserves the consumer's original obligations. Neither operation widens the run's permissions or budget. Legacy version-one graphs have no such scope-amendment authority. Ordinary goal commands authorize controller allocation within the workspace; supplied file graphs retain their file ceiling. Task authorship cannot change immutable acceptance artifacts or human-only scope authority.

@@ -3,52 +3,58 @@ import { asJsonValue, canonicalJson, digestOfJson } from "../evidence/canonical-
 import { goalContractSchema } from "../evidence/goal-contract.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { taskContractSchema } from "../evidence/task-contract.ts";
+import { controllerScopeSchema } from "./controller-scope.ts";
 import { revisionOperationSchema } from "./graph-revision.ts";
 import { readTaskGraph } from "./task-graph.ts";
 
 const positive = z.number().int().positive();
-export const controllerConfigurationSchema = z.strictObject({
-  version: z.literal(1),
-  runId: z.string().regex(/^[a-zA-Z0-9_-]+$/),
-  repositoryRoot: z.string(),
-  baseCommit: z.string().regex(/^[0-9a-f]{40,64}$/),
-  scratchRoot: z.string(),
-  tasks: z.array(z.string()).min(1),
-  graph: z
-    .unknown()
-    .nullable()
-    .transform((graph) => (graph === null ? null : readTaskGraph(graph))),
-  graphSource: z.enum(["goal", "file"]),
-  contracts: z.array(taskContractSchema).min(1),
-  goalContract: goalContractSchema.nullable(),
-  modelSpec: z.string(),
-  maxSteps: positive,
-  attempts: z.number().int().nonnegative(),
-  repairAttempts: z.number().int().min(0).max(8),
-  redundancy: positive,
-  concurrency: z.number().int().nonnegative(),
-  adaptation: z.boolean(),
-  peerInformation: z.boolean(),
-  graphRevisionLimit: z.number().int().min(0).max(16),
-  revisions: z.array(z.strictObject({ operation: revisionOperationSchema, reason: z.string() })),
-  execution: z.enum(["host", "backend"]),
-  executionIdentity: z.string().nullable(),
-  gateOptions: z.strictObject({
-    commandOverrides: z
-      .record(
-        z.string(),
-        z.union([
+export const controllerConfigurationSchema = z
+  .strictObject({
+    version: z.union([z.literal(1), z.literal(2)]),
+    controllerScope: controllerScopeSchema.optional(),
+    runId: z.string().regex(/^[a-zA-Z0-9_-]+$/),
+    repositoryRoot: z.string(),
+    baseCommit: z.string().regex(/^[0-9a-f]{40,64}$/),
+    scratchRoot: z.string(),
+    tasks: z.array(z.string()).min(1),
+    graph: z
+      .unknown()
+      .nullable()
+      .transform((graph) => (graph === null ? null : readTaskGraph(graph))),
+    graphSource: z.enum(["goal", "file"]),
+    contracts: z.array(taskContractSchema).min(1),
+    goalContract: goalContractSchema.nullable(),
+    modelSpec: z.string(),
+    maxSteps: positive,
+    attempts: z.number().int().nonnegative(),
+    repairAttempts: z.number().int().min(0).max(8),
+    redundancy: positive,
+    concurrency: z.number().int().nonnegative(),
+    adaptation: z.boolean(),
+    peerInformation: z.boolean(),
+    graphRevisionLimit: z.number().int().min(0).max(16),
+    revisions: z.array(z.strictObject({ operation: revisionOperationSchema, reason: z.string() })),
+    execution: z.enum(["host", "backend"]),
+    executionIdentity: z.string().nullable(),
+    gateOptions: z.strictObject({
+      commandOverrides: z
+        .record(
           z.string(),
-          z.strictObject({
-            command: z.string(),
-            severity: z.enum(["blocking", "advisory"]).optional(),
-            parser: z.enum(["exit-code", "test-output", "no-output"]).optional(),
-          }),
-        ]),
-      )
-      .optional(),
-  }),
-});
+          z.union([
+            z.string(),
+            z.strictObject({
+              command: z.string(),
+              severity: z.enum(["blocking", "advisory"]).optional(),
+              parser: z.enum(["exit-code", "test-output", "no-output"]).optional(),
+            }),
+          ]),
+        )
+        .optional(),
+    }),
+  })
+  .refine((spec) => (spec.version === 2) === (spec.controllerScope !== undefined), {
+    message: "controller scope authority requires version two and must be preserved",
+  });
 export type ControllerConfiguration = z.infer<typeof controllerConfigurationSchema>;
 
 export function controllerConfiguration(

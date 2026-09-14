@@ -208,7 +208,15 @@ export async function parallel(options: ParallelCommand): Promise<number> {
   const launch = await declareControllerLaunch(
     coordinator,
     controllerLaunchSchema.parse({
-      version: 1,
+      version: 2,
+      controllerScope:
+        options.goal !== null || fromFile?.graph == null
+          ? { kind: "workspace", allowedPaths: [], immutablePaths: [] }
+          : {
+              kind: "files",
+              allowedPaths: [...new Set(fromFile.graph.nodes.flatMap((node) => node.files))],
+              immutablePaths: [],
+            },
       runId,
       repositoryRoot: options.workspace,
       baseCommit,
@@ -428,6 +436,7 @@ export async function executeControllerLaunch(
     );
     const isolation = launch.isolation;
     const completed = await runInParallel({
+      ...(launch.controllerScope === undefined ? {} : { controllerScope: launch.controllerScope }),
       repositoryRoot: launch.repositoryRoot,
       baseRef: launch.baseCommit,
       scratchRoot: launch.scratchRoot,
