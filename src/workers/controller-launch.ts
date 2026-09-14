@@ -10,7 +10,8 @@ const positive = z.number().int().positive();
 /** The pre-planning declaration contains no provider credentials or mutable input-file references. */
 export const controllerLaunchSchema = z
   .strictObject({
-    version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+    version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
+    installDependencies: z.literal(true).optional(),
     bootstrap: z.literal("node").optional(),
     controllerScope: controllerScopeSchema.optional(),
     runId: z.string().regex(/^[a-zA-Z0-9_-]+$/),
@@ -54,11 +55,15 @@ export const controllerLaunchSchema = z
   })
   .refine(
     (spec) =>
-      (spec.version === 3) === (spec.bootstrap !== undefined) &&
+      (spec.version === 4
+        ? spec.installDependencies === true && spec.bootstrap === undefined
+        : spec.installDependencies === undefined &&
+          (spec.version === 3) === (spec.bootstrap !== undefined)) &&
       (spec.bootstrap === undefined ||
         (spec.goal !== null && spec.controllerScope?.kind === "workspace")),
     {
-      message: "bootstrap requires a version-three goal launch with workspace authority",
+      message:
+        "bootstrap requires a version-three goal launch; lockfile setup requires version four without bootstrap",
     },
   );
 export type ControllerLaunch = z.infer<typeof controllerLaunchSchema>;

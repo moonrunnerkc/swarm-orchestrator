@@ -8,6 +8,7 @@ import { hashOfRecord } from "../evidence/ledger-record.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { harnessChildEnvironment } from "../exec/child-environment.ts";
 import { repairRuntimeResources } from "../exec/runtime-resource.ts";
+import { assertDependencyEffectsSettled } from "../gates/dependency-install.ts";
 import { createFileSetRegistry } from "../gates/file-set.ts";
 import { emptyMeasureSnapshot } from "../gates/measure-snapshot.ts";
 import { controllerConfiguration } from "./controller-configuration.ts";
@@ -46,6 +47,7 @@ export async function reconcileController(
   signal?: AbortSignal,
 ): Promise<{ workers: WorkerResult[]; landings: QueueLanding[]; head: string }> {
   options.owner?.assertOwned();
+  assertDependencyEffectsSettled(options.coordinator);
   const configuration = controllerConfiguration(options.coordinator);
   if (configuration === null)
     throw new Error("controller configuration is unavailable; preserve and inspect this history");
@@ -93,6 +95,7 @@ export async function reconcileController(
         `worker ${intent.workerId} candidate ledger is missing; preserve and reconcile lost history`,
       );
     const evidence = await options.createWorkerSession(intent.workerId);
+    assertDependencyEffectsSettled(evidence);
     if (intent.sessionDirectory !== undefined && evidence.directory !== intent.sessionDirectory)
       throw new Error(`worker ${intent.workerId} session location changed`);
     if (evidence.sessionId !== intent.sessionId)

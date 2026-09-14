@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createSystemClock } from "../cli-runtime-inputs.ts";
 import { createFixedRandom } from "../core/test-doubles.ts";
 import { bundleSourceFromRecorder, exportBundle } from "../evidence/bundle.ts";
+import { freezeGoalContract } from "../evidence/goal-contract.ts";
 import { openEvidenceSession } from "../evidence/session.ts";
 import { createEphemeralSigningKey } from "../evidence/signing.ts";
 import { parseTaskContract } from "../evidence/task-contract.ts";
@@ -63,7 +64,12 @@ afterEach(async () => {
 
 async function execute(
   turns: readonly FixtureTurn[],
-  options: { required?: string; network?: "denied" | "mediated"; tools?: readonly string[] } = {},
+  options: {
+    required?: string;
+    network?: "denied" | "mediated";
+    tools?: readonly string[];
+    installDependencies?: boolean;
+  } = {},
 ) {
   const graph = readTaskGraph({
     goal: "authorized task",
@@ -81,7 +87,10 @@ async function execute(
     ...contractsFromGraph(graph, {
       maxSteps: 8,
       maxWallMs: 60_000,
-      immutablePaths: ["base.test.js"],
+      immutablePaths:
+        options.installDependencies === true
+          ? ["base.test.js", "package.json", "package-lock.json", "acceptance.mjs"]
+          : ["base.test.js"],
     })[0],
     ...(options.network === undefined ? {} : { network: options.network }),
     ...(options.tools === undefined ? {} : { allowedTools: options.tools }),
@@ -95,6 +104,32 @@ async function execute(
   const offered: string[][] = [];
   const briefs: string[] = [];
   const outcome = await runInParallel({
+    installDependencies: options.installDependencies === true,
+    ...(options.installDependencies === true
+      ? {
+          goalContract: freezeGoalContract({
+            version: 1,
+            goal: "authorized task",
+            immutablePaths: ["package.json", "package-lock.json", "base.test.js"],
+            requirements: [{ id: "value", description: "allowed equals two", checks: ["value"] }],
+            checks: [
+              {
+                id: "value",
+                command: "node acceptance.mjs",
+                author: "user",
+                exposure: "withheld",
+                artifacts: [
+                  {
+                    path: "acceptance.mjs",
+                    content:
+                      "import assert from 'node:assert/strict'; import {allowed} from './allowed.js'; assert.equal(allowed,2);\n",
+                  },
+                ],
+              },
+            ],
+          }).contract,
+        }
+      : {}),
     repositoryRoot: repository,
     baseRef: "HEAD",
     tasks: ["authorized task"],
@@ -134,7 +169,7 @@ async function execute(
       commandOverrides: { special: { command: 'node -e "process.exit(1)"', severity: "advisory" } },
     },
   });
-  return { outcome, modelCalls, offered, briefs };
+  return { outcome, modelCalls, offered, briefs, coordinator };
 }
 
 const declare = respondWithToolCalls("scope", [
@@ -261,4 +296,51 @@ describe("task contracts through public parallel execution", () => {
     expect(offered[0]).not.toContain("write");
     expect(offered[0]).not.toContain("read_trail");
   });
+});
+
+it("runs explicit lockfile setup before native worker execution and integration checks", async () => {
+  await writeFile(join(repository, ".gitignore"), "node_modules/\n");
+  await writeFile(
+    join(repository, "package-lock.json"),
+    JSON.stringify({ lockfileVersion: 3, requires: true, packages: { "": {} } }),
+  );
+  await git("git", ["-C", repository, "add", "."]);
+  await git("git", [
+    "-C",
+    repository,
+    "-c",
+    "user.name=fixture",
+    "-c",
+    "user.email=fixture@example.com",
+    "commit",
+    "-qm",
+    "pinned dependencies",
+  ]);
+  const { outcome, coordinator } = await execute(
+    [
+      declare,
+      respondWithToolCalls("implementation", [
+        {
+          callId: "write",
+          toolName: "write",
+          input: { path: "allowed.js", content: "export const allowed = 2;\n" },
+        },
+      ]),
+      respondWithText("done"),
+    ],
+    { installDependencies: true },
+  );
+  const worker = outcome.workers[0];
+  expect(worker?.green).toBe(true);
+  expect(outcome.queue?.landings.at(-1)?.landed).toBe(true);
+  expect(outcome.outcome.goalAccepted).toBe(true);
+  const workerRecords = worker?.evidence.records() ?? [];
+  const setup = workerRecords.filter((record) => record.type === "dependency-install");
+  expect(setup).toHaveLength(2);
+  expect(setup[1]?.sequence).toBeLessThan(
+    workerRecords.find((record) => record.type === "tool-call")?.sequence ?? -1,
+  );
+  expect(
+    coordinator.records().filter((record) => record.type === "dependency-install"),
+  ).toHaveLength(6);
 });

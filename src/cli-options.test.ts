@@ -652,3 +652,12 @@ it("parses separate shared budgets, resource classes and supplied goal checks", 
     testConcurrency: 2,
   });
 });
+
+it("makes parallel lockfile setup explicit", () => {
+  expect(parseCommandLine(["parallel", "--goal", "fix cache", "--install"], context)).toMatchObject(
+    { command: "parallel", installDependencies: true },
+  );
+  expect(parseCommandLine(["parallel", "--goal", "fix cache"], context)).not.toHaveProperty(
+    "installDependencies",
+  );
+});

@@ -7,6 +7,7 @@ import { harnessChildEnvironment } from "../exec/child-environment.ts";
 import type { IsolationBackend } from "../exec/execution-mode.ts";
 import type { ResourcePool } from "../exec/resource-pool.ts";
 import type { GateSetOptions } from "../gates/default-gates.ts";
+import { installFromLockfile } from "../gates/dependency-install.ts";
 import { assembleGateSet, defaultDiffBudget } from "../gates/engine.ts";
 import type { FileSetRegistry } from "../gates/file-set.ts";
 import type { GateContext, GateDefinition } from "../gates/gate-definition.ts";
@@ -69,6 +70,8 @@ export interface MergeQueueResult {
 }
 
 interface MergeQueueOptions {
+  readonly installDependencies?: boolean;
+  readonly remainingWallMs?: (() => number | null) | undefined;
   readonly beforeAttempt?: (candidate: QueueCandidate, accepted: string) => Promise<void>;
   readonly afterAttempt?: (landing: QueueLanding) => Promise<void>;
   readonly commandPool?: ResourcePool | undefined;
@@ -198,6 +201,16 @@ export async function runMergeQueue(options: MergeQueueOptions): Promise<MergeQu
     });
   };
 
+  if (options.installDependencies === true) {
+    const setup = await installFromLockfile({
+      workspace: options.integrationPath,
+      commands,
+      timeoutMs: options.remainingWallMs?.() ?? 300000,
+      evidence: options.evidence,
+      ...(options.abortSignal === undefined ? {} : { signal: options.abortSignal }),
+    });
+    if (!setup.succeeded) throw new Error(setup.detail);
+  }
   const baseContext = await context();
   const baseCycle = await runGateCycle(gates, baseContext, 0, {
     commands,
@@ -303,6 +316,30 @@ async function tryCandidate(
     };
   }
 
+  if (options.installDependencies === true) {
+    const setup = await installFromLockfile({
+      workspace: options.integrationPath,
+      commands: attempt.commands,
+      timeoutMs: options.remainingWallMs?.() ?? 300000,
+      evidence: options.evidence,
+      ...(options.abortSignal === undefined ? {} : { signal: options.abortSignal }),
+    });
+    if (!setup.succeeded) {
+      await resetHard(options.integrationPath, attempt.accepted);
+      return {
+        measures: null,
+        landing: await recordAttempt(attempt, {
+          landed: false,
+          reason: "gates",
+          feedback: setup.detail,
+          commit: null,
+          cycle: null,
+          decision: null,
+          conflictingPaths: [],
+        }),
+      };
+    }
+  }
   const candidateContext = await attempt.context();
   const cycle = await runGateCycle(attempt.gates, candidateContext, attempt.position, {
     commands: attempt.commands,
