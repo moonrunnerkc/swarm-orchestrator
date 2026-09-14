@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -204,4 +204,153 @@ it("executes ordinary goal acceptance for an empty patch instead of failing git 
   });
   expect(observed.applied).toBe(true);
   expect(observed.goalAcceptance?.accepted).toBe(true);
+});
+
+it("runs each goal check without ignored artifacts left by a preceding check", async () => {
+  const setup = await fixture();
+  await writeFile(join(setup.repository, ".gitignore"), "generated/\n");
+  const existingTest = await readFile(join(setup.repository, "base.test.js"), "utf8");
+  await writeFile(
+    join(setup.repository, "base.test.js"),
+    existingTest +
+      "import {mkdirSync, writeFileSync} from 'node:fs'; mkdirSync('generated', {recursive:true}); writeFileSync('generated/setup.json', 'baseline');\n",
+  );
+  await command("git", ["-C", setup.repository, "add", "."]);
+  const patch = (await command("git", ["-C", setup.repository, "diff", "--cached", "--binary"]))
+    .stdout;
+  const tree = (await command("git", ["-C", setup.repository, "write-tree"])).stdout.trim();
+  const contract: GoalContract = {
+    ...goal,
+    requirements: [
+      { id: "feature", description: "independent observations", checks: ["build", "fresh"] },
+    ],
+    checks: [
+      {
+        id: "build",
+        author: "user",
+        exposure: "withheld",
+        command: "node build.mjs",
+        artifacts: [
+          {
+            path: "build.mjs",
+            content:
+              "import {mkdirSync, writeFileSync} from 'node:fs'; mkdirSync('generated', {recursive:true}); writeFileSync('generated/feature.json', 'true'); writeFileSync('generated/setup.json', 'changed');\n",
+          },
+        ],
+      },
+      {
+        id: "fresh",
+        author: "user",
+        exposure: "withheld",
+        command: "node fresh.mjs",
+        artifacts: [
+          {
+            path: "fresh.mjs",
+            content:
+              "import assert from 'node:assert/strict'; import {existsSync, readFileSync} from 'node:fs'; assert.equal(existsSync('generated/feature.json'), false); assert.equal(readFileSync('generated/setup.json', 'utf8'), 'baseline');\n",
+          },
+        ],
+      },
+    ],
+  };
+  await declareGoalContract(setup.evidence, contract);
+  const observed = await verifyIndependently({
+    ...setup,
+    repositoryRoot: setup.repository,
+    patch,
+    goal: { contract, evidence: setup.evidence, tree },
+  });
+  expect(observed.goalAcceptance?.accepted).toBe(true);
+});
+it("rejects a check that stages its source mutation to hide it from git diff", async () => {
+  const setup = await fixture();
+  const contract: GoalContract = {
+    ...goal,
+    checks: [
+      {
+        id: "feature",
+        author: "user",
+        exposure: "withheld",
+        command: "node staged.mjs",
+        artifacts: [
+          {
+            path: "staged.mjs",
+            content:
+              "import {writeFileSync} from 'node:fs'; import {execFileSync} from 'node:child_process'; writeFileSync('feature.js', 'export const feature = 99;\\n'); execFileSync('git', ['add', 'feature.js']);\n",
+          },
+        ],
+      },
+    ],
+  };
+  await declareGoalContract(setup.evidence, contract);
+  const observed = await verifyIndependently({
+    ...setup,
+    repositoryRoot: setup.repository,
+    goal: { contract, evidence: setup.evidence, tree: setup.tree },
+  });
+  expect(observed.goalAcceptance?.accepted).toBe(false);
+});
+
+it("refuses a candidate link as an acceptance artifact parent without writing outside the checkout", async () => {
+  const setup = await fixture();
+  const outside = join(setup.root, "outside");
+  await mkdir(outside);
+  await symlink(outside, join(setup.repository, "checks"), "dir");
+  await command("git", ["-C", setup.repository, "add", "."]);
+  const patch = (await command("git", ["-C", setup.repository, "diff", "--cached", "--binary"]))
+    .stdout;
+  const tree = (await command("git", ["-C", setup.repository, "write-tree"])).stdout.trim();
+  const contract: GoalContract = {
+    ...goal,
+    checks: [
+      {
+        id: "feature",
+        author: "user",
+        exposure: "withheld",
+        command: "node checks/accept.mjs",
+        artifacts: [{ path: "checks/accept.mjs", content: "process.exit(0);\n" }],
+      },
+    ],
+  };
+  await declareGoalContract(setup.evidence, contract);
+  await expect(
+    verifyIndependently({
+      ...setup,
+      repositoryRoot: setup.repository,
+      patch,
+      goal: { contract, evidence: setup.evidence, tree },
+    }),
+  ).rejects.toThrow("acceptance artifact refused");
+  await expect(readFile(join(outside, "accept.mjs"))).rejects.toMatchObject({ code: "ENOENT" });
+});
+it("cleans a replaced artifact directory without following its link to another file", async () => {
+  const setup = await fixture();
+  const outside = join(setup.root, "outside");
+  await mkdir(outside);
+  await writeFile(join(outside, "accept.mjs"), "user file");
+  const contract: GoalContract = {
+    ...goal,
+    checks: [
+      {
+        id: "feature",
+        author: "user",
+        exposure: "withheld",
+        command: "node checks/accept.mjs",
+        artifacts: [
+          {
+            path: "checks/accept.mjs",
+            content: `import {rmSync, symlinkSync} from 'node:fs'; rmSync('checks', {recursive:true}); symlinkSync(${JSON.stringify(outside)}, 'checks', 'dir');\n`,
+          },
+        ],
+      },
+    ],
+  };
+  await declareGoalContract(setup.evidence, contract);
+  const observed = await verifyIndependently({
+    ...setup,
+    repositoryRoot: setup.repository,
+    goal: { contract, evidence: setup.evidence, tree: setup.tree },
+  });
+  expect(observed.goalAcceptance?.accepted).toBe(false);
+  expect(await readFile(join(outside, "accept.mjs"), "utf8")).toBe("user file");
 });

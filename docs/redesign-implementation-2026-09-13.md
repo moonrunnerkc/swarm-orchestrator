@@ -276,5 +276,23 @@ This is a maintainability change, with no claimed runtime speed ratio.
 
 `cli-composition-focused` exited 0: 4 files and 91 tests passed in 887 ms. It includes actual child
 processes that reject inactive calibration/Ink loading during help, preserve two buffered piped
-tasks through EOF, and refuse tampered bundles and unknown signers through the CLI. Full gates
-and packaged command validation for the extraction remain pending.
+tasks through EOF, and refuse tampered bundles and unknown signers through the CLI. Full `cli-composition-gates` exited 0: 308 files and 2996 tests passed in 111.47 seconds, no skips and unchanged baseline Biome diagnostics. `cli-composition-package` exited 0, building and installing the tarball and checking all 19 documented commands against their behavioral contracts. The tested diff is commit `e86fb82250c5a8f7f9c5bb3a4c05cf6f1ff7f234`. Gate evidence: `sha256:777a9e12ad94e2fafdb81d52db907d953a91d39a30ed3cbe4d89164183046f2e`; package evidence: `sha256:57d1f82465db5e5c959873b20105f2988ac261b7223b760265432888e490db90`.
+
+
+### Acceptance check isolation correction
+
+Two new public verifier regressions failed against the prior source: ignored output from one
+check contaminated the next, and staging a source mutation hid it from a worktree-to-index diff.
+`goal-check-contamination-before` retained both failures. Checks now compare tracked content
+against the exact integrated tree and restore a verifier-owned snapshot between observations.
+The snapshot preserves installed dependencies and setup outputs without reusing a check result.
+It copies symbolic links without traversing them, honors cancellation while preparing the copy,
+and restores the owned checkout during cleanup. This adds copying work; no speed benefit is
+claimed. Acceptance artifact reads reject replaced links and cleanup removes the owned checkout
+entries rather than following an artifact path whose parent a check could replace.
+
+`goal-check-isolation-focused` passed 2 files and 11 tests in 12.13 seconds. The next focused run
+passed seven cases and failed one expected diagnostic: the existing path guard already refused
+a candidate's link outside the verifier. The assertion now names that actual guard boundary;
+the outside-file preservation assertion remains. Expanded checks cover preserved setup files,
+source staging, ignored artifacts and a replaced artifact directory. Full gates remain pending.

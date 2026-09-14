@@ -1,10 +1,15 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { asJsonValue } from "../evidence/canonical-json.ts";
 import { freezeGoalContract, type GoalContract } from "../evidence/goal-contract.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { createPolicyGuard } from "../tools/policy-guard.ts";
 import type { GateCommandRunner } from "./gate-definition.ts";
+import {
+  goalArtifactUnchanged,
+  prepareGoalArtifact,
+  snapshotGoalCheckout,
+} from "./goal-checkout.ts";
 
 export interface GoalVerification {
   readonly policy: "goal-obligations-v1";
@@ -26,6 +31,7 @@ export async function verifyGoal(options: {
   tree: string;
   commands: GateCommandRunner;
   timeoutMs: number;
+  signal?: AbortSignal;
 }): Promise<GoalVerification> {
   const { contract, digest } = freezeGoalContract(options.contract);
   const run = (argv: readonly string[]) =>
@@ -38,72 +44,68 @@ export async function verifyGoal(options: {
     string,
     { status: "accepted" | "rejected" | "unjudged"; record: string }
   >();
-  for (const check of contract.checks) {
-    const restored = await run(["git", "read-tree", "--reset", "-u", options.tree]);
-    if (restored.exitCode !== 0)
-      throw new Error("cannot restore the candidate for goal acceptance");
-    const created: string[] = [];
-    try {
-      for (const artifact of check.artifacts) {
-        const policy = createPolicyGuard({
-          workspaceRoot: options.checkout,
-          homeDir: options.evidence.directory,
-          deniedRoots: [join(options.checkout, ".git"), options.evidence.directory],
-          shellAllowlist: [],
+  const snapshot = await snapshotGoalCheckout(options.checkout, options.signal);
+  try {
+    for (const check of contract.checks) {
+      options.signal?.throwIfAborted();
+      const restored = await run(["git", "read-tree", "--reset", "-u", options.tree]);
+      if (restored.exitCode !== 0)
+        throw new Error("cannot restore the candidate for goal acceptance");
+      try {
+        for (const artifact of check.artifacts) {
+          const policy = createPolicyGuard({
+            workspaceRoot: options.checkout,
+            homeDir: options.evidence.directory,
+            deniedRoots: [join(options.checkout, ".git"), options.evidence.directory],
+            shellAllowlist: [],
+          });
+          const permission = policy.checkPath(artifact.path);
+          if (!permission.allowed)
+            throw new Error(`acceptance artifact refused: ${permission.reason}`);
+          const path = await prepareGoalArtifact(options.checkout, artifact.path);
+          await writeFile(path, artifact.content, { flag: "wx", mode: 0o400 });
+        }
+        const observation = await options.commands.run(check.command, {
+          cwd: options.checkout,
+          timeoutMs: options.timeoutMs,
         });
-        const permission = policy.checkPath(artifact.path);
-        if (!permission.allowed)
-          throw new Error(`acceptance artifact refused: ${permission.reason}`);
-        const path = permission.absolutePath;
-        await mkdir(dirname(path), { recursive: true });
-        await writeFile(path, artifact.content, { flag: "wx", mode: 0o400 });
-        created.push(path);
-      }
-      const observation = await options.commands.run(check.command, {
-        cwd: options.checkout,
-        timeoutMs: options.timeoutMs,
-      });
-      const unchanged = await run(["git", "diff", "--exit-code"]);
-      const artifactsUnchanged = (
-        await Promise.all(
-          check.artifacts.map(async (artifact) => {
-            try {
-              return (
-                (await readFile(join(options.checkout, artifact.path), "utf8")) === artifact.content
-              );
-            } catch (cause) {
-              if ((cause as NodeJS.ErrnoException).code === "ENOENT") return false;
-              throw cause;
-            }
+        const unchanged = await run(["git", "diff", "--exit-code", options.tree, "--"]);
+        const artifactsUnchanged = (
+          await Promise.all(
+            check.artifacts.map((artifact) =>
+              goalArtifactUnchanged(options.checkout, artifact.path, artifact.content),
+            ),
+          )
+        ).every(Boolean);
+        const status =
+          observation.unavailable !== null
+            ? "unjudged"
+            : observation.exitCode === 0 && unchanged.exitCode === 0 && artifactsUnchanged
+              ? "accepted"
+              : "rejected";
+        const recorded = await options.evidence.record({
+          type: "goal-check",
+          actor: "harness",
+          provenance: ["tool-output"],
+          payload: asJsonValue({
+            contractDigest: digest,
+            checkId: check.id,
+            tree: options.tree,
+            author: check.author,
+            exposure: check.exposure,
+            command: check.command,
+            observation,
+            unchanged: unchanged.exitCode === 0 && artifactsUnchanged,
+            status,
           }),
-        )
-      ).every(Boolean);
-      const status =
-        observation.unavailable !== null
-          ? "unjudged"
-          : observation.exitCode === 0 && unchanged.exitCode === 0 && artifactsUnchanged
-            ? "accepted"
-            : "rejected";
-      const recorded = await options.evidence.record({
-        type: "goal-check",
-        actor: "harness",
-        provenance: ["tool-output"],
-        payload: asJsonValue({
-          contractDigest: digest,
-          checkId: check.id,
-          tree: options.tree,
-          author: check.author,
-          exposure: check.exposure,
-          command: check.command,
-          observation,
-          unchanged: unchanged.exitCode === 0 && artifactsUnchanged,
-          status,
-        }),
-      });
-      checks.set(check.id, { status, record: recorded.record.payloadDigest });
-    } finally {
-      for (const path of created) await rm(path, { force: true });
+        });
+        checks.set(check.id, { status, record: recorded.record.payloadDigest });
+      } finally {
+        await snapshot.restore();
+      }
     }
+  } finally {
+    await snapshot.dispose();
   }
   const obligations = contract.requirements.map((requirement) => ({
     id: requirement.id,
