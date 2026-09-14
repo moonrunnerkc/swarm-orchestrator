@@ -142,3 +142,66 @@ it("rejects a check that mutates the candidate and leaves uncovered requirements
   ]);
   expect(observed.verified).toBe(false);
 });
+
+it("records refusal when a check deletes its own pinned artifact", async () => {
+  const setup = await fixture();
+  const contract: GoalContract = {
+    ...goal,
+    checks: [
+      {
+        id: "feature",
+        author: "user",
+        exposure: "withheld",
+        command: "node acceptance.mjs",
+        artifacts: [
+          {
+            path: "acceptance.mjs",
+            content: "import {unlinkSync} from 'node:fs'; unlinkSync(new URL(import.meta.url));\n",
+          },
+        ],
+      },
+    ],
+  };
+  await declareGoalContract(setup.evidence, contract);
+  const observed = await verifyIndependently({
+    ...setup,
+    repositoryRoot: setup.repository,
+    goal: { contract, evidence: setup.evidence, tree: setup.tree },
+  });
+  expect(observed.verified).toBe(false);
+  expect(observed.goalAcceptance?.obligations[0]?.status).toBe("rejected");
+  expect(setup.evidence.records().some((record) => record.type === "goal-check")).toBe(true);
+});
+it("executes ordinary goal acceptance for an empty patch instead of failing git apply", async () => {
+  const setup = await fixture();
+  const tree = (
+    await command("git", ["-C", setup.repository, "rev-parse", `${setup.baseCommit}^{tree}`])
+  ).stdout.trim();
+  const contract: GoalContract = {
+    ...goal,
+    checks: [
+      {
+        id: "feature",
+        author: "user",
+        exposure: "withheld",
+        command: "node acceptance.mjs",
+        artifacts: [
+          {
+            path: "acceptance.mjs",
+            content:
+              "import assert from 'node:assert/strict'; import {existsSync} from 'node:fs'; assert.ok(existsSync('package.json'));\n",
+          },
+        ],
+      },
+    ],
+  };
+  await declareGoalContract(setup.evidence, contract);
+  const observed = await verifyIndependently({
+    ...setup,
+    repositoryRoot: setup.repository,
+    patch: "",
+    goal: { contract, evidence: setup.evidence, tree },
+  });
+  expect(observed.applied).toBe(true);
+  expect(observed.goalAcceptance?.accepted).toBe(true);
+});

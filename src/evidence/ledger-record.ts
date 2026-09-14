@@ -33,6 +33,8 @@ export const recordTypes = [
   "controller-graph",
   "controller-configuration",
   "controller-launch",
+  "goal-candidate-verification",
+  "goal-attempt-selection",
   "controller-transition",
   "controller-candidate",
   "coordination-event",

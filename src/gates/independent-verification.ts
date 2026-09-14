@@ -12,6 +12,7 @@ import {
   type RequirementObservation,
   verifyAcceptanceContract,
 } from "./contract-verification.ts";
+import type { GateSetOptions } from "./default-gates.ts";
 import { assembleGateSet } from "./engine.ts";
 import { normalizePath } from "./file-set.ts";
 import { defaultGateTimeoutMs, type GateCommandRunner } from "./gate-definition.ts";
@@ -133,6 +134,7 @@ export interface IndependentVerification {
 }
 
 export interface IndependentVerificationOptions {
+  readonly gateOptions?: GateSetOptions;
   readonly goal?: {
     readonly contract: GoalContract;
     readonly evidence: EvidenceRecorder;
@@ -282,7 +284,15 @@ export async function verifyIndependently(
     const patchPath = join(checkout, ".swarm-verify.patch");
     await writeFile(patchPath, options.patch.endsWith("\n") ? options.patch : `${options.patch}\n`);
     const applied = await options.commands.runVouched(
-      ["git", "-C", ".", "apply", "--whitespace=nowarn", ".swarm-verify.patch"],
+      [
+        "git",
+        "-C",
+        ".",
+        "apply",
+        ...(options.patch.trim() === "" ? ["--allow-empty"] : []),
+        "--whitespace=nowarn",
+        ".swarm-verify.patch",
+      ],
       { cwd: checkout, timeoutMs },
     );
     await rm(patchPath, { force: true });
@@ -709,7 +719,16 @@ async function restorePatch(
   const patchPath = join(checkout, ".swarm-restore.patch");
   await writeFile(patchPath, options.patch.endsWith("\n") ? options.patch : `${options.patch}\n`);
   const applied = await options.commands.runVouched(
-    ["git", "-C", ".", "apply", "--3way", "--whitespace=nowarn", ".swarm-restore.patch"],
+    [
+      "git",
+      "-C",
+      ".",
+      "apply",
+      ...(options.patch.trim() === "" ? ["--allow-empty"] : []),
+      "--3way",
+      "--whitespace=nowarn",
+      ".swarm-restore.patch",
+    ],
     { cwd: checkout, timeoutMs },
   );
   await rm(patchPath, { force: true });
@@ -821,6 +840,7 @@ async function runChecks(
   const { gates } = await assembleGateSet({
     workspaceRoot: options.repositoryRoot,
     criteriaRef: options.baseCommit,
+    ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
   });
 
   const results: IndependentCheck[] = [];

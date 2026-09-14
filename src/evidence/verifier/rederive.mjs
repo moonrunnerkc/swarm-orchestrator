@@ -24,6 +24,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   evaluateClaim,
+  goalSelectionConformance,
   indexCitedRecords,
   readControllerHistory,
   recomputeBondVerdict,
@@ -349,6 +350,14 @@ export function rederiveBundle(directory, log = console.log) {
     else
       agree(
         `controller history: graph revision ${board.graph?.ordinal}, ${board.accepted.size} currently accepted tasks`,
+      );
+  }
+  for (const selection of goalSelectionConformance(records, payloads)) {
+    if (selection.problems.length > 0)
+      disagree(`goal selection ${selection.sequence}: ${selection.problems.join("; ")}`);
+    else
+      agree(
+        `goal selection ${selection.sequence}: complete requirements, measured objective and stable order`,
       );
   }
   const parserByGate = new Map();

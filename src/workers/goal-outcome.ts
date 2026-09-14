@@ -3,7 +3,7 @@ import { asJsonValue } from "../evidence/canonical-json.ts";
 import type { GoalContract } from "../evidence/goal-contract.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import type { IndependentVerification } from "../gates/independent-verification.ts";
-import type { ControllerState } from "./controller-state.ts";
+import { type ControllerState, candidateRefusal } from "./controller-state.ts";
 import type { QueueLanding } from "./merge-queue.ts";
 import type { WorkerResult } from "./parallel-run.ts";
 
@@ -76,6 +76,7 @@ export async function assessController(options: {
           : ([...options.landings]
               .reverse()
               .find((landing) => landing.workerId === latest?.workerId)?.feedback ??
+            candidateRefusal(options.evidence, latest?.workerId) ??
             latest?.detail ??
             "prerequisites did not land"),
     };

@@ -37,7 +37,9 @@ import { reconcileController } from "./controller-recovery.ts";
 import { runControllerSchedule } from "./controller-scheduler.ts";
 import { recordTransition, replayController } from "./controller-state.ts";
 import { planAttempts } from "./fan-out.ts";
+import { verifyGoalCandidates } from "./goal-candidates.ts";
 import { assessController, type ControllerOutcome } from "./goal-outcome.ts";
+import type { GoalSelection } from "./goal-selection.ts";
 import { claimGraphOutcome, declareTaskGraph, type NodeOutcome } from "./graph-record.ts";
 import { initialControllerGraph, recordControllerGraph } from "./graph-revision.ts";
 import {
@@ -144,6 +146,7 @@ export interface WorkerResult {
 }
 
 export interface ParallelRunResult {
+  readonly goalSelections?: readonly GoalSelection[];
   readonly outcome: ControllerOutcome;
   readonly verification: IndependentVerification | null;
   readonly workers: readonly WorkerResult[];
@@ -491,6 +494,7 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
   });
 
   const selections: AttemptSelection[] = [];
+  const goalSelections: GoalSelection[] = [];
   const landings: QueueLanding[] = [...(recovered?.landings ?? [])];
   let queue: MergeQueueResult | null = null;
   let head = recovered?.head ?? baseCommit;
@@ -574,6 +578,20 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
       workers,
       head: () => head,
       integrate: async (completed) => {
+        if (completed.length === 0) return;
+        if (options.goalContract !== undefined && options.redundancy > 1) {
+          const selection = await verifyGoalCandidates(completed, {
+            ...options,
+            goalContract: options.goalContract,
+          });
+          goalSelections.push(selection);
+          const eligible = selection.order
+            .map((id) => completed.find((worker) => worker.workerId === id))
+            .filter((worker) => worker !== undefined);
+          const [winner, ...alternates] = eligible;
+          if (winner !== undefined) await landLayer([{ winner, alternates }]);
+          return;
+        }
         const chosen = await chooseProposals(completed, completed[0]?.baseCommit ?? head, options);
         selections.push(...chosen.selections);
         if (chosen.proposals.length > 0) await landLayer(chosen.proposals);
@@ -693,6 +711,7 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
                 options.runContext?.tests,
               ),
           }),
+      ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
       goal: { contract: options.goalContract, evidence: options.coordinator, tree },
     });
     await options.coordinator.record({
@@ -731,6 +750,7 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
         left.workerId.localeCompare(right.workerId, "en", { numeric: true }),
     ),
     selections,
+    goalSelections,
     queue,
     integrationBranch: integration.branch,
     sweptBranches,

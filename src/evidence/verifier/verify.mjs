@@ -29,6 +29,8 @@ const SUBJECT_FIELD_BY_TYPE = {
   "gate-run": "gateId",
   "tool-call": "toolName",
   "attempt-selection": "taskId",
+  "goal-attempt-selection": "taskId",
+  "goal-candidate-verification": "workerId",
 };
 
 export function recordKindOf(type, payload) {
@@ -985,6 +987,12 @@ function collectChecks(directory) {
       "final goal policy binds independent regression and goal observations",
     );
   }
+  for (const assessment of goalSelectionConformance(records, payloads))
+    record(
+      `goal alternatives ${assessment.sequence} re-derived`,
+      assessment.problems.length === 0,
+      assessment.problems.join("; ") || "complete obligations precede the declared objective",
+    );
   if (records.some((entry) => entry.type === "controller-graph")) {
     const board = readControllerHistory(records, payloads);
     record(
@@ -1291,4 +1299,170 @@ if (entry === import.meta.url) {
   const target = process.argv[2] ?? ".";
   console.log(`verifying bundle at ${target}`);
   process.exitCode = verifyBundle(target);
+}
+
+/** Independently re-read eligibility, usage and ordering; a selection cannot testify about itself. */
+export function goalSelectionConformance(records, payloads) {
+  return records
+    .filter((entry) => entry.type === "goal-attempt-selection")
+    .map((entry) => {
+      const problems = [];
+      const require = (condition, reason) => {
+        if (!condition) throw new Error(reason);
+      };
+      try {
+        const selection = payloads.get(entry.payloadDigest);
+        require(entry.actor === "harness" &&
+          selection?.policy ===
+            "complete-goal-selection-v1", "goal selection lacks harness authority or its declared policy");
+        const prior = records.filter((record) => record.sequence < entry.sequence);
+        const declaration = prior.find(
+          (record) => record.type === "goal-contract" && record.actor === "harness",
+        );
+        const contract = payloads.get(declaration?.payloadDigest)?.contract;
+        require(contract &&
+          Array.isArray(contract.requirements) &&
+          contract.requirements.length > 0, "goal selection has no pinned requirement set");
+        require(selection.objective ===
+          (contract.selection === "cost"
+            ? "reported-model-tokens"
+            : contract.selection), "goal selection changed the declared objective");
+        const candidates = selection.candidates;
+        require(Array.isArray(candidates) &&
+          candidates.length > 0 &&
+          new Set(candidates.map((candidate) => candidate.workerId)).size ===
+            candidates.length, "goal candidate identities are missing or duplicated");
+        for (const candidate of candidates) {
+          require(candidate.baseCommit ===
+            selection.baseCommit, "goal candidates do not share a base");
+          const captured = prior.find(
+            (record) =>
+              record.type === "controller-candidate" &&
+              record.actor === "harness" &&
+              payloads.get(record.payloadDigest)?.workerId === candidate.workerId,
+          );
+          const producer = payloads.get(captured?.payloadDigest);
+          require(producer &&
+            producer.taskId === selection.taskId &&
+            producer.baseCommit === selection.baseCommit &&
+            producer.attemptIndex ===
+              candidate.attemptIndex, "goal candidate lacks its captured task, base and attempt");
+          let obligations = [];
+          let regression = false;
+          if (candidate.verification !== null) {
+            const record = prior.find(
+              (record) =>
+                record.type === "goal-candidate-verification" &&
+                record.actor === "harness" &&
+                record.payloadDigest === candidate.verification,
+            );
+            const observation = payloads.get(record?.payloadDigest);
+            require(observation?.workerId === candidate.workerId &&
+              observation?.baseCommit ===
+                candidate.baseCommit, "goal candidate cites another attempt's verification");
+            const verified = observation.verification;
+            const goalRecord = prior
+              .filter(
+                (one) =>
+                  one.sequence < record.sequence &&
+                  one.type === "goal-verification" &&
+                  one.actor === "harness",
+              )
+              .at(-1);
+            const goal = payloads.get(goalRecord?.payloadDigest);
+            require(goal &&
+              canonicalJson(goal) === canonicalJson(verified.goalAcceptance) &&
+              goal.tree ===
+                observation.tree, "candidate verification is not bound to its goal observations and tree");
+            require(verified.verified ===
+              (verified.regression === "pass" &&
+                goal.accepted === true), "candidate verification disagrees with its goal policy");
+            obligations = goal.obligations.map((obligation) => ({
+              id: obligation.id,
+              accepted: obligation.status === "accepted",
+            }));
+            regression =
+              producer.green &&
+              verified.regression === "pass" &&
+              !verified.checks.some((check) => check.status === "failed");
+            require(candidate.changedFiles === observation.changedFiles &&
+              candidate.changedLines ===
+                observation.changedLines, "candidate change size differs from the captured Git observation");
+          }
+          require(canonicalJson(candidate.obligations) === canonicalJson(obligations) &&
+            candidate.regressionPassed ===
+              regression, "selection altered its candidate acceptance");
+          const events = prior
+            .filter((record) => record.type === "controller-event" && record.actor === "harness")
+            .map((record) => payloads.get(record.payloadDigest));
+          const calls = events.filter(
+            (event) => event?.kind === "usage-reserved" && event.activity === candidate.workerId,
+          );
+          let count = calls.length > 0 ? 0 : null;
+          for (const call of calls) {
+            const settled = events.find(
+              (event) => event?.kind === "usage-settled" && event.id === call.id,
+            );
+            if (
+              settled?.status !== "reported" ||
+              !Number.isInteger(settled.inputTokens) ||
+              !Number.isInteger(settled.outputTokens)
+            ) {
+              count = null;
+              break;
+            }
+            count += settled.inputTokens + settled.outputTokens;
+          }
+          require(candidate.tokenCount ===
+            count, "selection altered reported or unknown provider usage");
+          const missing = contract.requirements.filter(
+            (requirement) =>
+              requirement.checks.length === 0 ||
+              !obligations.some((observed) => observed.id === requirement.id && observed.accepted),
+          );
+          const reason =
+            candidate.verification === null
+              ? "no independent verification"
+              : !regression
+                ? "required integrated checks did not pass"
+                : missing.length > 0
+                  ? `unaccepted requirements: ${missing.map((requirement) => requirement.id).join(", ")}`
+                  : null;
+          require(candidate.eligible === (reason === null) &&
+            candidate.reason ===
+              reason, "goal eligibility does not cover every pinned requirement");
+        }
+        const eligible = candidates.filter((candidate) => candidate.eligible);
+        const measured = eligible.some((candidate) => candidate.tokenCount !== null);
+        const ordered = [...eligible]
+          .sort((left, right) => {
+            if (selection.objective === "reported-model-tokens" && measured) {
+              if (left.tokenCount === null)
+                return right.tokenCount === null ? left.attemptIndex - right.attemptIndex : 1;
+              if (right.tokenCount === null) return -1;
+              if (left.tokenCount !== right.tokenCount) return left.tokenCount - right.tokenCount;
+            }
+            if (selection.objective !== "stable") {
+              const size =
+                left.changedLines - right.changedLines || left.changedFiles - right.changedFiles;
+              if (size !== 0) return size;
+            }
+            return left.attemptIndex - right.attemptIndex;
+          })
+          .map((candidate) => candidate.workerId);
+        require(canonicalJson(ordered) === canonicalJson(selection.order) &&
+          selection.winner ===
+            (ordered[0] ??
+              null), "goal ranking disagrees with its declared objective and stable tie-break");
+        const abstentions =
+          selection.objective === "reported-model-tokens" && !measured
+            ? ["provider token usage was not measured; monetary cost is also unavailable"]
+            : [];
+        require(canonicalJson(abstentions) ===
+          canonicalJson(selection.abstentions), "goal selection hides an unmeasured dimension");
+      } catch (cause) {
+        problems.push(cause instanceof Error ? cause.message : String(cause));
+      }
+      return { sequence: entry.sequence, problems };
+    });
 }

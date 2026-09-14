@@ -44,11 +44,20 @@ export function renderParallelReport(
     lines.push("", "chosen", ...result.selections.map(describeSelection));
   }
 
+  for (const selection of result.goalSelections ?? []) {
+    lines.push(
+      "",
+      `goal alternatives: ${selection.candidates.filter((candidate) => candidate.eligible).length}/${selection.candidates.length} acceptable; selected ${selection.winner ?? "none"} by ${selection.objective}`,
+    );
+    for (const candidate of selection.candidates.filter((candidate) => !candidate.eligible))
+      lines.push(`  ${candidate.workerId}: ${candidate.reason}`);
+    for (const abstention of selection.abstentions) lines.push(`  not measured: ${abstention}`);
+  }
+
   if (result.queue === null) {
     lines.push(
       "",
-      "no worker produced anything for the queue: every one of them finished red, so there",
-      "was nothing to arbitrate and the integration branch stands at the base.",
+      "no candidate satisfied the required eligibility checks; the integration branch stands at the base.",
     );
     return lines;
   }
