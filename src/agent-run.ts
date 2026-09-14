@@ -6,7 +6,7 @@ import type { LoopEvent } from "./core/loop-events.ts";
 import type { ConversationMessage, ModelClient, SamplingSettings } from "./core/model-client.ts";
 import type { RandomSource } from "./core/random-source.ts";
 import type { ToolInvoker } from "./core/tool-invoker.ts";
-import { openRunStore } from "./durable/run-store.ts";
+import { openRunStore, type RunStore } from "./durable/run-store.ts";
 import { digestOfBytes } from "./evidence/canonical-json.ts";
 import { predicateCatalogue, renderPredicateCatalogue } from "./evidence/predicate-catalogue.ts";
 import { recordRunAssessment } from "./evidence/run-assessment.ts";
@@ -325,36 +325,34 @@ export async function runAgentTask(input: AgentTaskOptions): Promise<AgentTaskRe
         `task ${contract.taskId} requires undefined checks: ${unknown.join(", ")}; configure them before dispatch`,
       );
   }
+  const store = options.runStorePath === undefined ? undefined : openRunStore(options.runStorePath);
   const wall = createWallBudget(options);
   const cancellation = new AbortController();
   const stopping = AbortSignal.any([options.abortSignal, cancellation.signal]);
   const watcher =
-    options.runStorePath === undefined
+    store === undefined
       ? null
       : setInterval(() => {
           try {
-            const store = openRunStore(options.runStorePath as string);
-            try {
-              if (store.run(options.evidence.sessionId)?.state === "aborted")
-                cancellation.abort("administrative abort");
-            } finally {
-              store.close();
-            }
+            if (store.run(options.evidence.sessionId)?.state === "aborted")
+              cancellation.abort("administrative abort");
           } catch {
             cancellation.abort("recovery journal unavailable");
           }
         }, 200);
   try {
-    return await executeAgentTask({ ...options, abortSignal: stopping }, wall);
+    return await executeAgentTask({ ...options, abortSignal: stopping }, wall, store);
   } finally {
     if (watcher !== null) clearInterval(watcher);
     wall.release();
+    store?.close();
   }
 }
 
 async function executeAgentTask(
   options: AgentTaskOptions,
   wall: WallBudget,
+  store: RunStore | undefined,
 ): Promise<AgentTaskResult> {
   const pending = new Map<string, string>();
   const { definitions, toolInvoker, guard } = assembleToolset({
@@ -365,39 +363,34 @@ async function executeAgentTask(
     confirm: options.confirm,
     evidence: options.evidence,
     observeTool: (entry, digest, sequence) => {
-      if (options.runStorePath === undefined) return;
-      const store = openRunStore(options.runStorePath);
-      try {
-        if (entry.decision === "requested") {
-          const stepId = `${sequence}:${entry.callId}`;
-          pending.set(entry.callId, stepId);
-          store.beginStep({
+      if (store === undefined) return;
+      if (entry.decision === "requested") {
+        const stepId = `${sequence}:${entry.callId}`;
+        pending.set(entry.callId, stepId);
+        store.beginStep({
+          runId: options.evidence.sessionId,
+          stepId,
+          kind: entry.toolName,
+          idempotencyKey: digest,
+          at: options.clock.now(),
+        });
+      } else {
+        const stepId = pending.get(entry.callId);
+        if (stepId === undefined) throw new Error(`no durable intent for ${entry.callId}`);
+        if (entry.decision === "allowed")
+          store.finishStep({
             runId: options.evidence.sessionId,
             stepId,
-            kind: entry.toolName,
-            idempotencyKey: digest,
+            resultDigest: digest,
             at: options.clock.now(),
           });
-        } else {
-          const stepId = pending.get(entry.callId);
-          if (stepId === undefined) throw new Error(`no durable intent for ${entry.callId}`);
-          if (entry.decision === "allowed")
-            store.finishStep({
-              runId: options.evidence.sessionId,
-              stepId,
-              resultDigest: digest,
-              at: options.clock.now(),
-            });
-          else
-            store.failStep({
-              runId: options.evidence.sessionId,
-              stepId,
-              reason: entry.detail,
-              at: options.clock.now(),
-            });
-        }
-      } finally {
-        store.close();
+        else
+          store.failStep({
+            runId: options.evidence.sessionId,
+            stepId,
+            reason: entry.detail,
+            at: options.clock.now(),
+          });
       }
     },
     ...(options.isolation === undefined ? {} : { isolation: options.isolation }),
@@ -481,7 +474,7 @@ async function executeAgentTask(
   const sealed = await sealSpecForRun(options, envelope);
   // Administrative state is a projection of append-only records. A killed
   // process leaves behind, which is what `swarm list-runs` and `swarm resume` read.
-  recordRunStart(options, sealed);
+  recordRunStart(options, sealed, store);
   if (inherited.size > 0) {
     await options.evidence.record({
       type: "inherited-changes",
@@ -653,7 +646,7 @@ async function executeAgentTask(
       (wall.deadlineMs !== null && options.clock.now() >= wall.deadlineMs),
     options.contract,
   );
-  recordRunEnd(options, verdict.acceptable);
+  recordRunEnd(options, verdict.acceptable, store);
   options.emit({
     type: "run-assessment",
     acceptable: verdict.acceptable,
@@ -748,36 +741,34 @@ async function sealSpecForRun(
 /**
  * A requested durable store must be writable before the first effect is dispatched.
  */
-function recordRunStart(options: AgentTaskOptions, specDigest: string | null): void {
-  if (options.runStorePath === undefined) return;
-  const store = openRunStore(options.runStorePath);
-  try {
-    store.startRun({
-      runId: options.evidence.sessionId,
-      specDigest: specDigest ?? "sha256:unsealed",
-      task: options.task,
-      startedAt: options.clock.now(),
-    });
-  } finally {
-    store.close();
-  }
+function recordRunStart(
+  options: AgentTaskOptions,
+  specDigest: string | null,
+  store: RunStore | undefined,
+): void {
+  if (store === undefined) return;
+  store.startRun({
+    runId: options.evidence.sessionId,
+    specDigest: specDigest ?? "sha256:unsealed",
+    task: options.task,
+    startedAt: options.clock.now(),
+  });
 }
 
 /** The run reached its end under its own power, so nothing about it is owed. */
-function recordRunEnd(options: AgentTaskOptions, accepted: boolean): void {
-  if (options.runStorePath === undefined) return;
-  const store = openRunStore(options.runStorePath);
-  try {
-    if (accepted) store.finishRun(options.evidence.sessionId, options.clock.now());
-    else
-      store.abortRun(
-        options.evidence.sessionId,
-        "work refused; consult the recorded assessment",
-        options.clock.now(),
-      );
-  } finally {
-    store.close();
-  }
+function recordRunEnd(
+  options: AgentTaskOptions,
+  accepted: boolean,
+  store: RunStore | undefined,
+): void {
+  if (store === undefined) return;
+  if (accepted) store.finishRun(options.evidence.sessionId, options.clock.now());
+  else
+    store.abortRun(
+      options.evidence.sessionId,
+      "work refused; consult the recorded assessment",
+      options.clock.now(),
+    );
 }
 
 /**

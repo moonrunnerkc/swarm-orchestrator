@@ -9,6 +9,14 @@ import {
   NonCanonicalValueError,
 } from "./canonical-json.ts";
 
+it("hashes raw bytes with the known SHA-256 vector without decoding malformed UTF-8", () => {
+  expect(digestOfBytes(Uint8Array.of(97, 98, 99))).toBe(
+    "sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+  );
+  expect(digestOfBytes(Uint8Array.of(255))).not.toBe(digestOfBytes("\uFFFD"));
+  expect(digestOfBytes(Buffer.from("é", "utf8"))).toBe(digestOfBytes("é"));
+});
+
 describe("canonicalJson", () => {
   it("orders keys so structurally equal payloads produce identical bytes", () => {
     const one = canonicalJson({ b: 1, a: { d: 4, c: 3 } });
