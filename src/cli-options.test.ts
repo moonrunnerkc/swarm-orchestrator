@@ -9,6 +9,15 @@ import {
 
 const context = { currentDirectory: "/work/repo" };
 
+it("parses compact, detailed and JSON controller output without changing goal text", () => {
+  expect(
+    parseCommandLine(
+      ["parallel", "--details", "--no-tui", "--json", "--goal", "fix the API"],
+      context,
+    ),
+  ).toMatchObject({ details: true, tui: false, json: true, goal: "fix the API" });
+});
+
 it("requires an explicit supported bootstrap goal", () => {
   expect(
     parseCommandLine(["parallel", "--goal", "create a counter", "--bootstrap", "node"], context),

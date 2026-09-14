@@ -246,4 +246,20 @@ The journal replays only new links after re-hashing the entire observed file and
 
 The measured reduction is 83.8% for the external-append fixture and 32.9% for unchanged reads, with an 11.7% cold-replay increase (3.6 ms). These repeated synthetic measurements on one shared machine are not independent repository observations or whole-run speed estimates. No transcript, citation, peer or check-result cache was introduced: their measured costs did not justify extra state. Exact transcript reconstruction and all final checks remain mandatory. The separate-resource fixture observes about 242 ms versus 428 ms with one shared permit for sixteen fixed 25 ms activities. This demonstrates scheduling overlap only; actual model-server contention remains part of the live development/pilot work.
 
-`journal-append-corruption-before` failed the new corruption assertion, preserving that reproduction. `journal-preservation-focused` exited 0 with 6 files and 66 tests in 24.67 seconds, including a real second-process abort and removal of a verified budget event. Profile captures are `m4-profile-before`, `m4-profile-after` and `m4-profile-control`; the corrected control digest is `sha256:d0e27dfb1c2dcc0cf18cc100220c02d858bd8fc253c21ee341f1a668ff5fd99a`. Full gates for this optimization remain pending.
+`journal-append-corruption-before` failed the new corruption assertion, preserving that reproduction. `journal-preservation-focused` exited 0 with 6 files and 66 tests in 24.67 seconds, including a real second-process abort and removal of a verified budget event. Profile captures are `m4-profile-before`, `m4-profile-after` and `m4-profile-control`; the corrected control digest is `sha256:d0e27dfb1c2dcc0cf18cc100220c02d858bd8fc253c21ee341f1a668ff5fd99a`. Full `journal-optimization-gates` exited 0: 305 files and 2987 tests passed in 110.77 seconds, no skips and unchanged baseline Biome diagnostics. Evidence digest: `sha256:52389901d7ac0cd11f4b37dd2518acce520e79a33813a222c4d7af80df26f8bb`. The tested diff is commit `64d9ec24158580897631bbc983250e82a3d7d554`.
+
+
+### Controller presentation
+
+Plain output, the terminal screen and structured JSON project the same coordinator ledger.
+Worker completion does not supply a goal verdict; a later verification or graph change withdraws
+a previously displayed assessment. The ordinary view leads with requirements, blockers,
+resources and the resulting branch. Detailed assurance and worker events remain available with
+`--details`. The terminal loads only when selected; JSON and plain controller output do not load
+its renderer. No default worker prompt changed.
+
+`controller-presentation-focused` exited 0 with 4 files and 84 tests in 11.77 seconds. The actual
+CLI execution path observes all jobs accepted while goal checks remain pending, then emits the
+recorded assessment and matching exit code. Additional checks cover model-authored verdict
+refusal, unknown usage reservations, repeated settlements, terminal control sanitization and
+idempotent screen cleanup. Full gates for this change remain pending.

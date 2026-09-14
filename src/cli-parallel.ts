@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { resolveLocalBackend } from "./cli-local-backend.ts";
 import type { ParallelCommand } from "./cli-options.ts";
+import { type ParallelOutput, startParallelOutput } from "./cli-parallel-output.ts";
 import { runStorePath } from "./cli-run-commands.ts";
 import { gateOptionsFrom, registrySettingsFrom, settingsFor } from "./cli-run-settings.ts";
 import { createSystemClock, createSystemRandom } from "./cli-runtime-inputs.ts";
@@ -45,7 +46,6 @@ import {
 } from "./workers/controller-launch.ts";
 import { acquireControllerOwner } from "./workers/controller-owner.ts";
 import { reconcileController, repairControllerRuntime } from "./workers/controller-recovery.ts";
-import { renderParallelReport } from "./workers/parallel-report.ts";
 import { type ParallelRunResult, runInParallel } from "./workers/parallel-run.ts";
 import { type PlannerOutcome, runPlanner } from "./workers/planner-run.ts";
 import { defaultWorkerConcurrency } from "./workers/pool.ts";
@@ -93,6 +93,7 @@ interface DecomposeContext {
   readonly home: string;
   readonly model: () => ModelClient;
   readonly maxSteps: number;
+  readonly note: (line: string) => void;
 }
 
 /** The planner, on a chain of its own, so what it read before deciding is on the record. */
@@ -135,7 +136,7 @@ async function decompose(goal: string, context: DecomposeContext): Promise<Plann
     sessionId: `${context.runId}-plan`,
     clock: context.clock,
   });
-  process.stdout.write(`planning: ${goal}\n`);
+  context.note(`planning: ${goal}`);
 
   const outcome = await runPlanner({
     goal,
@@ -158,7 +159,7 @@ async function decompose(goal: string, context: DecomposeContext): Promise<Plann
 
   if (outcome.graph !== null) {
     const named = outcome.graph.nodes.map((node) => node.id).join(", ");
-    process.stdout.write(`planned ${outcome.graph.nodes.length} task(s): ${named}\n`);
+    context.note(`planned ${outcome.graph.nodes.length} task(s): ${named}`);
   }
   return outcome;
 }
@@ -255,8 +256,9 @@ export async function parallel(options: ParallelCommand): Promise<number> {
       bundleDirectory: options.bundleDirectory,
     }),
   );
-  return presentParallel(
-    await executeControllerLaunch(launch, {
+  return runAndPresent(
+    launch,
+    {
       coordinator,
       clock,
       random,
@@ -264,10 +266,12 @@ export async function parallel(options: ParallelCommand): Promise<number> {
       home: homedir(),
       storePath: runStorePath(),
       createModel: () => registry.create(spec),
-    }),
-    launch,
-    coordinator,
-    clock,
+    },
+    {
+      json: options.json,
+      details: options.details ?? false,
+      interactive: process.stdout.isTTY === true && (options.tui ?? settings.interface.tui),
+    },
   );
 }
 
@@ -295,16 +299,23 @@ export async function resumeParallel(runId: string): Promise<number> {
     localThinking: launch.localThinking,
   });
   const spec = parseModelSpec(launch.modelSpec);
-  const completed = await executeControllerLaunch(launch, {
-    coordinator,
-    clock,
-    random: createSystemRandom(),
-    sessionRoot,
-    home: homedir(),
-    storePath: runStorePath(),
-    createModel: () => registry.create(spec),
-  });
-  return presentParallel(completed, launch, coordinator, clock);
+  return runAndPresent(
+    launch,
+    {
+      coordinator,
+      clock,
+      random: createSystemRandom(),
+      sessionRoot,
+      home: homedir(),
+      storePath: runStorePath(),
+      createModel: () => registry.create(spec),
+    },
+    {
+      json: false,
+      details: false,
+      interactive: process.stdout.isTTY === true && settings.interface.tui,
+    },
+  );
 }
 
 export async function executeControllerLaunch(
@@ -317,9 +328,11 @@ export async function executeControllerLaunch(
     home: string;
     storePath: string;
     createModel: () => ModelClient;
+    presentation?: Pick<ParallelOutput, "note" | "loop">;
   },
 ): Promise<ParallelRunResult> {
   const { coordinator, clock, random } = runtime;
+  const note = runtime.presentation?.note ?? ((line: string) => process.stdout.write(`${line}\n`));
   const original = controllerLaunch(coordinator);
   if (
     original === null ||
@@ -451,6 +464,7 @@ export async function executeControllerLaunch(
           home: runtime.home,
           model: runtime.createModel,
           maxSteps: launch.maxSteps,
+          note,
         },
       );
       if (planned.graph === null)
@@ -470,8 +484,8 @@ export async function executeControllerLaunch(
         immutablePaths: [...new Set([...goalContract.immutablePaths, ...bootstrap.immutablePaths])],
       }).contract;
     const tasks = configured?.tasks ?? graph?.nodes.map((node) => node.instruction) ?? launch.tasks;
-    process.stdout.write(
-      `run ${launch.runId}: ${tasks.length} task(s), ${launch.concurrency} worktree slot(s), ${context.accounting().remaining} tokens remaining\n`,
+    note(
+      `run ${launch.runId}: ${tasks.length} task(s), ${launch.concurrency} worktree slot(s), ${context.accounting().remaining} tokens remaining`,
     );
     const completed = await runInParallel({
       ...(launch.controllerScope === undefined ? {} : { controllerScope: launch.controllerScope }),
@@ -497,10 +511,12 @@ export async function executeControllerLaunch(
         createRecordingModelClient(runtime.createModel(), evidence, { transcript: "components" }),
       clock,
       random,
-      emit: (workerId, event) => {
-        const line = describeLoopEvent(event);
-        if (line !== null) process.stdout.write(`[${workerId}] ${line}\n`);
-      },
+      emit:
+        runtime.presentation?.loop ??
+        ((workerId, event) => {
+          const line = describeLoopEvent(event);
+          if (line !== null) process.stdout.write(`[${workerId}] ${line}\n`);
+        }),
       maxSteps: launch.maxSteps,
       attempts: launch.attempts,
       repairAttempts: launch.repairAttempts,
@@ -598,17 +614,41 @@ export async function executeControllerLaunch(
   return completedRun;
 }
 
-async function presentParallel(
+async function runAndPresent(
+  launch: ControllerLaunch,
+  runtime: Parameters<typeof executeControllerLaunch>[1],
+  presentation: { json: boolean; details: boolean; interactive: boolean },
+): Promise<number> {
+  const output = await startParallelOutput({
+    ...presentation,
+    evidence: runtime.coordinator,
+    clock: runtime.clock,
+    write: (line) => process.stdout.write(`${line}\n`),
+  });
+  try {
+    const completed = await executeControllerLaunch(launch, {
+      ...runtime,
+      coordinator: output.evidence,
+      presentation: output,
+    });
+    const directory = await exportParallel(completed, launch, runtime.coordinator, runtime.clock);
+    await output.finish(completed, directory);
+    return completed.outcome.exitCode;
+  } catch (cause) {
+    await output.stop();
+    output.fail(cause);
+    throw cause;
+  } finally {
+    await output.stop();
+  }
+}
+
+async function exportParallel(
   completed: ParallelRunResult,
   launch: ControllerLaunch,
   coordinator: EvidenceRecorder,
   clock: Clock,
-): Promise<number> {
-  for (const line of renderParallelReport(completed, {
-    repositoryRoot: launch.repositoryRoot,
-    baseRef: launch.baseCommit,
-  }))
-    process.stdout.write(`${line}\n`);
+): Promise<string> {
   const signing = await resolveSigningKey(createKeychainSecretStore({ platform: platform() }));
   if (signing.notice !== null) process.stderr.write(`[signing] ${signing.notice}\n`);
   const directory =
@@ -624,8 +664,7 @@ async function presentParallel(
     signingKey: signing.key,
     clock,
   });
-  process.stdout.write(`evidence bundle: ${directory}\n`);
-  return completed.outcome.exitCode;
+  return directory;
 }
 
 export async function repairParallel(runId: string): Promise<number> {
