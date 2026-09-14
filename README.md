@@ -110,12 +110,11 @@ committed and cloned, so a key in it has already been shared with everyone holdi
 npm install -g swarm-orchestrator
 ```
 
-That is **14.0.2**, and it leaves `swarm` on your path. If `swarm` turns out to be an older version
+That is **14.1.0**, and it leaves `swarm` on your path. If `swarm` turns out to be an older version
 than you installed, `swarm doctor` says what owns the command and `--fix` repairs it.
 
-The September 11 audit repairs are on `v13-main`. They are source-checkout changes, not a claim
-that a new npm release has been published. What changed and what remains unproved are in
-[the implementation record](docs/audit-implementation-2026-09-11.md).
+The adaptive controller and its measured release evidence are recorded in
+[the implementation record](docs/redesign-implementation-2026-09-13.md).
 
 Anything below 13 is a different program: this package name carried a pull-request auditor through
 12.x. Pin the major if you depend on one or the other.
