@@ -77,7 +77,46 @@ export function assertLocalModel(inventory, name, expectedDigest) {
     );
   return model;
 }
-export async function freezePilot(root, admissionRoots) {
+export function validateReplacement(predecessor, candidates, preflight) {
+  preflight = z
+    .object({
+      sourceManifest: digest,
+      passed: z.boolean(),
+      observations: z.array(
+        z.object({
+          caseId: z.string(),
+          target: z.enum(["base", "reference"]),
+          task: z.string(),
+          regression: z.string(),
+          verified: z.boolean(),
+        }),
+      ),
+    })
+    .parse(preflight);
+  if (
+    digestOfJson(asJsonValue(candidates)) !== digestOfJson(asJsonValue(predecessor.candidates)) ||
+    preflight.sourceManifest !== digestOfJson(asJsonValue(predecessor))
+  )
+    throw new Error("Replacement must preserve the original goal and evaluator bytes");
+  const required = candidates.flatMap((candidate) =>
+    ["base", "reference"].map((target) => `${candidate.id}:${target}`),
+  );
+  const observed = preflight.observations.map((row) => `${row.caseId}:${row.target}`);
+  if (
+    preflight.passed !== true ||
+    observed.length !== required.length ||
+    new Set(observed).size !== required.length ||
+    required.some((id) => !observed.includes(id)) ||
+    preflight.observations.some((row) =>
+      row.target === "base"
+        ? row.task !== "rejected" || row.regression !== "pass" || row.verified !== false
+        : row.task !== "accepted" || row.regression !== "pass" || row.verified !== true,
+    )
+  )
+    throw new Error("Replacement requires every real controller control and reference preflight");
+}
+
+export async function freezePilot(root, admissionRoots, replacement) {
   if (await git(sourceRoot, "status", "--porcelain"))
     throw new Error("Commit and test the pilot source before freezing it");
   const sourceCommit = await git(sourceRoot, "rev-parse", "HEAD");
@@ -110,6 +149,59 @@ export async function freezePilot(root, admissionRoots) {
     throw new Error(
       `Missing admitted instruments: ${pilotCaseIds.filter((id) => !candidates.has(id)).join(", ")}`,
     );
+  let cohort = { generation: 1, replaces: null };
+  let predecessor;
+  if (replacement !== undefined) {
+    predecessor = JSON.parse(await readFile(join(replacement.root, "frozen.json"), "utf8"));
+    const previousEvidence = await openEvidenceSession({
+      root: join(replacement.root, "sessions"),
+      sessionId: "pilot",
+      clock: createSystemClock(),
+    });
+    assertFrozenInputs(previousEvidence, predecessor);
+    const withdrawal = previousEvidence
+      .records()
+      .filter(
+        (record) =>
+          record.actor === "harness" &&
+          previousEvidence.payloads().get(record.payloadDigest)?.phase === "cohort-withdrawn",
+      );
+    if (withdrawal.length !== 1)
+      throw new Error("Replacement requires the original cohort's recorded withdrawal");
+    const disposition = z
+      .object({ unresolved: z.literal(0), manifestDigest: digest })
+      .parse(previousEvidence.payloads().get(withdrawal[0].payloadDigest));
+    if (disposition.manifestDigest !== digestOfJson(asJsonValue(predecessor)))
+      throw new Error("Withdrawal names different frozen inputs");
+    const preflight = JSON.parse(
+      await readFile(join(replacement.preflightRoot, "report.json"), "utf8"),
+    );
+    const preflightEvidence = await openEvidenceSession({
+      root: join(replacement.preflightRoot, "sessions"),
+      sessionId: "preflight",
+      clock: createSystemClock(),
+    });
+    const summary = digestOfJson(asJsonValue({ phase: "preflight-summary", ...preflight }));
+    if (
+      !preflightEvidence
+        .records()
+        .some((record) => record.actor === "harness" && record.payloadDigest === summary)
+    )
+      throw new Error("Preflight report lacks its harness-captured summary");
+    validateReplacement(predecessor, [...candidates.values()], preflight);
+    cohort = {
+      generation: (predecessor.cohort?.generation ?? 1) + 1,
+      replaces: {
+        manifestDigest: digestOfJson(asJsonValue(predecessor)),
+        protocolDigest: digestOfJson(asJsonValue(predecessor.protocol)),
+        sourceCommit: predecessor.sourceCommit,
+        campaignHead: previousEvidence.head(),
+        preflightSource: preflight.source,
+        preflightDigest: summary,
+        reason: z.string().min(1).parse(replacement.reason),
+      },
+    };
+  }
   const settings = pilotSettingsSchema.parse({
     model: "swarm-redesign-qwen36-32k:latest",
     endpoint: "http://127.0.0.1:11434/v1",
@@ -123,7 +215,12 @@ export async function freezePilot(root, admissionRoots) {
     worktreeConcurrency: 2,
     cleanupMs: 60000,
   });
-  const model = assertLocalModel(await localInventory(), settings.model);
+  if (
+    predecessor &&
+    digestOfJson(asJsonValue(settings)) !== digestOfJson(asJsonValue(predecessor.settings))
+  )
+    throw new Error("Replacement must preserve the frozen model and resource settings");
+  const model = assertLocalModel(await localInventory(), settings.model, predecessor?.model.digest);
   const settingsDigest = digestOfJson(asJsonValue(settings));
   const backendDigest = digestOfJson(
     asJsonValue(
@@ -180,7 +277,7 @@ export async function freezePilot(root, admissionRoots) {
       previouslyExposed: candidate.previouslyExposed,
     })),
     arms,
-    verifierDigest: digestOfJson({ sourceCommit, policy: "goal-obligations-v1" }),
+    verifierDigest: digestOfJson({ sourceCommit, policy: "goal-obligations-v1", cohort }),
     budgets: { tokens: 600000, wallMs: 900000 },
     limits: {
       maxSteps: settings.maxSteps,
@@ -212,6 +309,7 @@ export async function freezePilot(root, admissionRoots) {
   });
   await mkdir(root, { mode: 0o700 });
   const frozen = {
+    cohort,
     protocol,
     settings,
     sourceCommit,

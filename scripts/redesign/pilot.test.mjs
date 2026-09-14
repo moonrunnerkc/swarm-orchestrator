@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
+import { digestOfJson } from "../../src/evidence/canonical-json.ts";
 import { freezeGoalContract } from "../../src/evidence/goal-contract.ts";
 import {
   createFixtureModelClient,
@@ -11,11 +12,35 @@ import {
 } from "../../src/providers/fixture-provider.ts";
 import { filteredCheck, pilotCaseIds, quote } from "./pilot-cases.mjs";
 import { instrumentContract } from "./pilot-prepare.mjs";
-import { assertLocalModel } from "./pilot-run.mjs";
+import { assertLocalModel, validateReplacement } from "./pilot-run.mjs";
 import { projectGateOptions } from "./pilot-runtime.mjs";
 import { executePilotGoal } from "./pilot-worker.mjs";
 
 let scratch;
+it("requires unchanged instruments and every control and reference before replacement", () => {
+  const candidates = [{ id: "goal", contracts: { sealed: "pinned", "held-back": "pinned" } }];
+  const predecessor = { candidates };
+  const preflight = {
+    sourceManifest: digestOfJson(predecessor),
+    passed: true,
+    observations: [
+      { caseId: "goal", target: "base", task: "rejected", regression: "pass", verified: false },
+      { caseId: "goal", target: "reference", task: "accepted", regression: "pass", verified: true },
+    ],
+  };
+  expect(() => validateReplacement(predecessor, candidates, preflight)).not.toThrow();
+  expect(() =>
+    validateReplacement(predecessor, [{ ...candidates[0], contracts: {} }], preflight),
+  ).toThrow("evaluator bytes");
+  for (const observations of [
+    preflight.observations.slice(1),
+    [preflight.observations[0], preflight.observations[0]],
+    [preflight.observations[0], { ...preflight.observations[1], verified: false }],
+  ])
+    expect(() =>
+      validateReplacement(predecessor, candidates, { ...preflight, observations }),
+    ).toThrow("every real controller");
+});
 afterEach(async () => {
   if (scratch) await rm(scratch, { recursive: true, force: true });
   scratch = undefined;
