@@ -39,6 +39,7 @@ export async function verifyControllerCommit(
     );
   const verification = await verifyIndependently({
     repositoryRoot: options.repositoryRoot,
+    checkoutRoot: options.scratchRoot,
     installDependencies: options.installDependencies === true,
     signal: options.abortSignal,
     baseCommit,
