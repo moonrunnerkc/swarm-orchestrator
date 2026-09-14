@@ -647,19 +647,23 @@ comparison.
 
 ### Final validation and delivery
 
-The final committed source is `f971b53594b6ef63d747074a739655ff0e765414` on
-`redesign/adaptive-goal-controller`. `redesign-gates-final-4` exited 0 with 318 test files and
-3036 tests passed, no skips, in 150.32 seconds. Biome retained the baseline 22 warnings and one
+The implementation tree for this final validation sequence was `b56761e63b5f6e9dd3499f6cb6693c1aab132b9f` on
+`redesign/adaptive-goal-controller`. `redesign-gates-final-5` exited 0 with 318 test files and
+3036 tests passed, no skips, in 130.55 seconds. Biome retained the baseline 22 warnings and one
 informational diagnostic. The capture digest is
-`sha256:8c48d1c4e9eebf42111bf14eaaf579d4973dd248c2e3388971415bda529654f2`.
+`sha256:13291c81a67e32dadc90ec93563be936138788777cc7452d9f63b8e9747c0fdd`.
 
 The committed-tree build exited 0 and copied nine assets, digest
 `sha256:29752d4d95d064a743147123e871a4e716bf34c87a9a3baae3ee09d4f4ef625d`. Packaged command
 contracts exited 0 for all 19 documented commands, digest
 `sha256:1730a636ac237de0dec5b26d8793ae1c571c60c18671de0a77f20c20b2295f65`. Fuzz smoke exited 0
 with eight adapters and the declared seed counts, digest
-`sha256:26911d7860ed7f92e45ec648adf0926a4c7e2089cfe9894f9c0603803e1b8027`. A local release
-candidate tarball was generated with `npm pack --dry-run`; it was not published. Linux, macOS CI
+`sha256:099418576bab30ebd082921f7f72b07ddc9954df3feced9d8ed66c78646e57a6`. A local release
+candidate tarball was generated with `npm pack --pack-destination /tmp/swarm-orchestrator-rc`; the
+package is version 14.0.2, 641 files, 812.2 kB compressed and 3.4 MB unpacked. The dry-run capture
+is `sha256:022d71b6621f1a114e56c182a42eca99cbd809214bc56cd241f5e1afb16c7159`, and the materialized
+tarball capture is `sha256:bb8e31ccb725b4e081b19ada448cc94c34741df4793fa239e6b3d31c548720e1`. A local release
+candidate tarball was also generated with `npm pack --dry-run`; it was not published. Linux, macOS CI
 replay, registry publication and push were not performed because no external authorization or CI
 runner was available.
 
