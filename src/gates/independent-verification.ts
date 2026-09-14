@@ -284,15 +284,9 @@ export async function verifyIndependently(
     const patchPath = join(checkout, ".swarm-verify.patch");
     await writeFile(patchPath, options.patch.endsWith("\n") ? options.patch : `${options.patch}\n`);
     const applied = await options.commands.runVouched(
-      [
-        "git",
-        "-C",
-        ".",
-        "apply",
-        ...(options.patch.trim() === "" ? ["--allow-empty"] : []),
-        "--whitespace=nowarn",
-        ".swarm-verify.patch",
-      ],
+      options.patch.trim() === ""
+        ? ["git", "diff", "--exit-code", "HEAD", "--"]
+        : ["git", "-C", ".", "apply", "--whitespace=nowarn", ".swarm-verify.patch"],
       { cwd: checkout, timeoutMs },
     );
     await rm(patchPath, { force: true });
@@ -300,7 +294,7 @@ export async function verifyIndependently(
       return {
         applied: false,
         checks: [],
-        refusal: null,
+        refusal: `candidate patch could not be applied: ${applied.stderr.trim() || applied.stdout.trim() || `exit ${applied.exitCode}`}`,
         regression: "unmeasured",
         task: "unjudged",
         oracleReach: "unmeasured",
