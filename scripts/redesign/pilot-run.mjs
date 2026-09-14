@@ -114,7 +114,7 @@ export async function freezePilot(root, admissionRoots) {
     model: "swarm-redesign-qwen36-32k:latest",
     endpoint: "http://127.0.0.1:11434/v1",
     maxSteps: 24,
-    plannerSteps: 12,
+    plannerSteps: 24,
     attempts: 1,
     repairAttempts: 2,
     graphRevisions: 4,

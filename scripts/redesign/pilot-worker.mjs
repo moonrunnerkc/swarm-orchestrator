@@ -114,6 +114,7 @@ export async function executePilotGoal({
     });
   let measured = null;
   let failure = null;
+  let plannerFallback = null;
   let sealed = null;
   let heldBack = null;
   let integrity = null;
@@ -159,7 +160,15 @@ export async function executePilotGoal({
         abortSignal: context.signal,
       });
       graph = planned.graph;
-      if (graph === null) throw new Error(`Planner produced no graph (${planned.stopReason})`);
+      if (graph === null) {
+        plannerFallback = planned.stopReason;
+        await coordinator.record({
+          type: "campaign-observation",
+          actor: "harness",
+          provenance: ["model", "tool-output"],
+          payload: { phase: "planner-fallback", stopReason: planned.stopReason },
+        });
+      }
     }
     const contractDefaults = {
       maxSteps: settings.maxSteps,
@@ -416,7 +425,9 @@ export async function executePilotGoal({
       termination,
       failure ??
         context.signal.reason?.message ??
-        "All observations retained; generated or historical checks are limited acceptance instruments.",
+        (plannerFallback === null
+          ? "All observations retained; generated or historical checks are limited acceptance instruments."
+          : `Planner stopped with ${plannerFallback}; one bounded worker handled the goal.`),
     ),
     inputTokens: accounting.unknownCalls === 0 ? inputTokens : null,
     outputTokens: accounting.unknownCalls === 0 ? outputTokens : null,
