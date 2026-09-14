@@ -603,3 +603,32 @@ describe("--attempts zero", () => {
     expect(() => parseCommandLine(["--max-steps", "0", "x y"], context)).toThrow(/positive/);
   });
 });
+
+it("parses separate shared budgets, resource classes and supplied goal checks", () => {
+  expect(
+    parseCommandLine(
+      [
+        "parallel",
+        "--goal",
+        "pagination",
+        "--goal-checks",
+        "checks.json",
+        "--max-tokens",
+        "500000",
+        "--repair-attempts",
+        "0",
+        "--model-concurrency",
+        "1",
+        "--test-concurrency",
+        "2",
+      ],
+      { currentDirectory: "/repo" },
+    ),
+  ).toMatchObject({
+    goalChecksFile: "/repo/checks.json",
+    maxTokens: 500000,
+    repairAttempts: 0,
+    modelConcurrency: 1,
+    testConcurrency: 2,
+  });
+});

@@ -260,6 +260,11 @@ export interface AddCaseCommand {
 
 /** N workers over git worktrees, then one merge queue that lands what they produced. */
 export interface ParallelCommand {
+  readonly goalChecksFile?: string;
+  readonly maxTokens?: number;
+  readonly repairAttempts?: number;
+  readonly modelConcurrency?: number;
+  readonly testConcurrency?: number;
   readonly command: "parallel";
   /**
    * One task per line, or a JSON task graph. A file rather than repeated flags, so a run is
@@ -585,6 +590,30 @@ export function parseCommandLine(
     }
     return {
       command: "parallel",
+      ...(flags.has("goal-checks")
+        ? { goalChecksFile: resolve(context.currentDirectory, flags.get("goal-checks") ?? "") }
+        : {}),
+      ...(flags.has("max-tokens")
+        ? { maxTokens: parseFlagCount(flags.get("max-tokens"), "--max-tokens") ?? 200_000 }
+        : {}),
+      ...(flags.has("repair-attempts")
+        ? {
+            repairAttempts:
+              parseFlagCount(flags.get("repair-attempts"), "--repair-attempts", 0) ?? 2,
+          }
+        : {}),
+      ...(flags.has("model-concurrency")
+        ? {
+            modelConcurrency:
+              parseFlagCount(flags.get("model-concurrency"), "--model-concurrency") ?? 1,
+          }
+        : {}),
+      ...(flags.has("test-concurrency")
+        ? {
+            testConcurrency:
+              parseFlagCount(flags.get("test-concurrency"), "--test-concurrency") ?? 1,
+          }
+        : {}),
       tasksFile: named ? resolve(context.currentDirectory, tasksFile) : null,
       goal: asked ? goal.trim() : null,
       isolation: flags.get("isolation") ?? null,

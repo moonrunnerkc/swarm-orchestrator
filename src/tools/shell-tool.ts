@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { IsolationBackend } from "../exec/execution-mode.ts";
+import type { ResourcePool } from "../exec/resource-pool.ts";
 import { runProcessGroup } from "../exec/run-process.ts";
 import type { PolicyGuard } from "./policy-guard.ts";
 import { readShellCommand } from "./shell-command.ts";
@@ -13,6 +14,7 @@ const shellInput = z.object({
 });
 
 export interface ShellToolOptions {
+  readonly pool?: ResourcePool | undefined;
   /**
    * Where the command runs. Absent means the host, which is what `restricted` mode is: the
    * lexical policy has already ruled on the paths it could read out of the command, and that
@@ -39,9 +41,9 @@ export function createShellTool(guard: PolicyGuard, options?: ShellToolOptions):
     pathsFrom: (input) => readShellCommand(input.command)?.operands ?? [],
     async execute(input, context) {
       const timeoutMs = input.timeoutMs ?? defaultTimeoutMs;
-      const ran =
+      const execute = () =>
         options?.backend === undefined
-          ? await runProcessGroup("/bin/sh", ["-c", input.command], {
+          ? runProcessGroup("/bin/sh", ["-c", input.command], {
               cwd: guard.workspaceRoot,
               timeoutMs,
               signal: context?.signal,
@@ -51,11 +53,15 @@ export function createShellTool(guard: PolicyGuard, options?: ShellToolOptions):
               // wrote and the operator's own keys is what the child is handed.
               env: guard.childEnvironment.variables,
             })
-          : await options.backend.run(["/bin/sh", "-c", input.command], {
+          : options.backend.run(["/bin/sh", "-c", input.command], {
               cwd: guard.workspaceRoot,
               timeoutMs,
               signal: context?.signal,
             });
+      const ran =
+        options?.pool === undefined
+          ? await execute()
+          : await options.pool.run(execute, context?.signal);
       const described = describeRun(
         input.command,
         ran.stdout,

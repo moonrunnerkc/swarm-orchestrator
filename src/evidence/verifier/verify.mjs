@@ -890,6 +890,173 @@ function collectChecks(directory) {
       "the final verification cites the recorded requirement checks",
     );
   }
+  for (const entry of records.filter((candidate) => candidate.type === "goal-verification")) {
+    const reading = payloads.get(entry.payloadDigest);
+    const declaration = records.find(
+      (candidate) =>
+        candidate.type === "goal-contract" &&
+        candidate.sequence < entry.sequence &&
+        payloads.get(candidate.payloadDigest)?.digest === reading?.contractDigest,
+    );
+    const contract = payloads.get(declaration?.payloadDigest)?.contract;
+    let consistent =
+      contract?.version === 1 &&
+      sha256(canonicalJson(contract)) === reading?.contractDigest &&
+      reading?.policy === "goal-obligations-v1";
+    const requirements = contract?.requirements ?? [];
+    const checks = contract?.checks ?? [];
+    const obligations = reading?.obligations ?? [];
+    consistent &&=
+      requirements.length > 0 &&
+      requirements.length === obligations.length &&
+      new Set(requirements.map((requirement) => requirement.id)).size === requirements.length &&
+      new Set(checks.map((check) => check.id)).size === checks.length;
+    for (const [index, requirement] of requirements.entries()) {
+      const obligation = obligations[index];
+      consistent &&=
+        requirement.id === obligation?.id &&
+        requirement.checks.length === obligation?.checks?.length;
+      const statuses = [];
+      for (const [position, checkId] of requirement.checks.entries()) {
+        const definition = checks.find((check) => check.id === checkId);
+        const capturedRecord = records.find(
+          (candidate) =>
+            candidate.type === "goal-check" &&
+            candidate.sequence > declaration.sequence &&
+            candidate.sequence < entry.sequence &&
+            candidate.payloadDigest === obligation?.checks?.[position],
+        );
+        const captured = payloads.get(capturedRecord?.payloadDigest);
+        const status =
+          captured?.observation?.unavailable !== null
+            ? "unjudged"
+            : captured?.observation?.exitCode === 0 && captured?.unchanged === true
+              ? "accepted"
+              : "rejected";
+        consistent &&=
+          definition !== undefined &&
+          capturedRecord !== undefined &&
+          captured?.checkId === checkId &&
+          captured?.contractDigest === reading.contractDigest &&
+          captured?.tree === reading.tree &&
+          captured?.command === definition.command &&
+          captured?.author === definition.author &&
+          captured?.exposure === definition.exposure &&
+          captured?.status === status;
+        statuses.push(status);
+      }
+      const status =
+        statuses.length === 0 || statuses.includes("unjudged")
+          ? "unjudged"
+          : statuses.every((status) => status === "accepted")
+            ? "accepted"
+            : "rejected";
+      consistent &&= obligation?.status === status;
+    }
+    record(
+      `goal obligations ${entry.sequence} re-derived`,
+      consistent &&
+        reading?.accepted === obligations.every((obligation) => obligation.status === "accepted"),
+      "every pinned requirement is bound to its captured check observations",
+    );
+  }
+  for (const entry of records.filter(
+    (candidate) => candidate.type === "independent-verification",
+  )) {
+    const reading = payloads.get(entry.payloadDigest);
+    if (reading?.certificationPolicy !== "goal-obligations-v1") continue;
+    const observed = records
+      .filter(
+        (candidate) =>
+          candidate.type === "goal-verification" && candidate.sequence < entry.sequence,
+      )
+      .at(-1);
+    const goal = payloads.get(observed?.payloadDigest);
+    record(
+      `independent goal ${entry.sequence} bound`,
+      goal === undefined
+        ? reading.verified === false
+        : canonicalJson(goal) === canonicalJson(reading.goalAcceptance) &&
+            reading.verified === (reading.regression === "pass" && goal.accepted === true),
+      "final goal policy binds independent regression and goal observations",
+    );
+  }
+  for (const entry of records.filter((candidate) => candidate.type === "controller-assessment")) {
+    const reading = payloads.get(entry.payloadDigest);
+    const prior = records.filter((candidate) => candidate.sequence < entry.sequence);
+    const declaration = prior.find(
+      (candidate) =>
+        candidate.type === "controller-event" &&
+        payloads.get(candidate.payloadDigest)?.kind === "work-declared",
+    );
+    const declared = payloads.get(declaration?.payloadDigest)?.tasks ?? [];
+    const tasks = reading?.tasks ?? [];
+    const goal = prior.find((candidate) => candidate.type === "goal-contract");
+    const requirements = payloads.get(goal?.payloadDigest)?.contract?.requirements ?? [];
+    const verificationRecord = prior
+      .filter((candidate) => candidate.type === "independent-verification")
+      .at(-1);
+    const verification = payloads.get(verificationRecord?.payloadDigest);
+    let consistent =
+      reading?.policy === "controller-outcome-v1" &&
+      declared.length > 0 &&
+      tasks.length === declared.length &&
+      reading?.requirements?.length === requirements.length;
+    for (const [index, task] of declared.entries()) {
+      const current = tasks[index];
+      const workers = prior
+        .filter(
+          (candidate) =>
+            candidate.type === "worker-finished" &&
+            payloads.get(candidate.payloadDigest)?.taskId === task.id,
+        )
+        .map((candidate) => payloads.get(candidate.payloadDigest));
+      const landed = workers.find((worker) =>
+        prior.some(
+          (candidate) =>
+            candidate.type === "merge-attempt" &&
+            payloads.get(candidate.payloadDigest)?.workerId === worker.workerId &&
+            payloads.get(candidate.payloadDigest)?.landed === true,
+        ),
+      );
+      consistent &&=
+        current?.id === task.id &&
+        (current?.state === "accepted") === (landed !== undefined) &&
+        (landed === undefined || current.workerId === landed.workerId);
+    }
+    for (const [index, requirement] of requirements.entries()) {
+      consistent &&=
+        reading.requirements[index]?.id === requirement.id &&
+        reading.requirements[index]?.status ===
+          (verification?.goalAcceptance?.obligations.find(
+            (obligation) => obligation.id === requirement.id,
+          )?.status ?? "unjudged");
+    }
+    const integrated = tasks.length > 0 && tasks.every((task) => task.state === "accepted");
+    const accepted =
+      integrated &&
+      reading.status !== "cancelled" &&
+      verification?.verified === true &&
+      requirements.length > 0 &&
+      reading.requirements.every((requirement) => requirement.status === "accepted");
+    const status =
+      reading.status === "cancelled"
+        ? "cancelled"
+        : accepted
+          ? "accepted"
+          : integrated && goal === undefined
+            ? "integrated"
+            : "blocked";
+    record(
+      `controller outcome ${entry.sequence} re-derived`,
+      consistent &&
+        reading.goalAccepted === accepted &&
+        reading.status === status &&
+        reading.exitCode ===
+          (status === "cancelled" ? 130 : ["accepted", "integrated"].includes(status) ? 0 : 1),
+      "all declared tasks and requirements govern the terminal outcome",
+    );
+  }
   for (const entry of records.filter((candidate) => candidate.type === "run-assessment")) {
     const assessment = payloads.get(entry.payloadDigest);
     const inputs = assessment?.inputs;

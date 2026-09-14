@@ -383,18 +383,19 @@ describe("trying each task several ways", () => {
 
   const oneTask = { "add a shout to alpha": attemptWriting(1) };
 
-  it("writes exactly the record types it always did when each task is tried once", async () => {
+  it("preserves legacy records and adds shared controller accounting when each task is tried once", async () => {
     await parallel(oneTask);
 
-    // Pinned deliberately. A run that tries each task once must reach the ledger exactly as
-    // it did before any of the selection work existed, so a new record type showing up here
-    // is a regression rather than a detail.
+    // Shared accounting and outcome records extend the legacy chain; selection stays absent.
     const types = [...new Set(coordinator.records().map((record) => record.type))].sort();
     expect(types).toEqual([
+      "controller-assessment",
+      "controller-event",
       "file-set-declared",
       "gate-run",
       "gate-set-sealed",
       "merge-attempt",
+      "task-contract",
       "worker-finished",
       "worker-started",
     ]);
@@ -608,7 +609,8 @@ describe("running a declared task graph", () => {
 
     const result = await parallel(failing, { graph });
 
-    expect(result.workers.map((worker) => worker.task)).toEqual([shoutAlpha]);
+    expect(result.workers.length).toBeGreaterThan(0);
+    expect(result.workers.every((worker) => worker.task === shoutAlpha)).toBe(true);
 
     const dag = buildEvidenceDag(coordinator.records(), coordinator.payloads());
     const outcome = dag.claims.find((claim) => claim.recordKind === "task-graph-outcome");

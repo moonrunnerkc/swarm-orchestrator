@@ -5,12 +5,21 @@ import type { LoopEvent } from "../core/loop-events.ts";
 import type { ModelClient } from "../core/model-client.ts";
 import type { RandomSource } from "../core/random-source.ts";
 import type { StopReason } from "../core/termination.ts";
+import {
+  freezeGoalContract,
+  type GoalContract,
+  goalContractSchema,
+} from "../evidence/goal-contract.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
+import { defineTool } from "../tools/tool-definition.ts";
 import { createWorkspaceTools } from "../tools/workspace-tools.ts";
 import { createDeclareTaskGraphTool, type DeclaredGraph } from "./graph-tool.ts";
 import type { TaskGraph } from "./task-graph.ts";
 
 export interface PlannerOptions {
+  readonly requireGoalChecks?: boolean;
+  readonly maxTokens?: number;
+  readonly maxWallTimeMs?: number;
   readonly goal: string;
   readonly workspace: string;
   readonly homeDir: string;
@@ -38,6 +47,7 @@ const plannerPrompt = [
 ].join(" ");
 
 export interface PlannerOutcome {
+  readonly goalContract?: GoalContract | null;
   /** Null where the model never declared one. That is not the same as an empty graph. */
   readonly graph: TaskGraph | null;
   /**
@@ -62,6 +72,7 @@ export interface PlannerOutcome {
  */
 export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcome> {
   const declared: DeclaredGraph = { graph: null };
+  let goalContract: GoalContract | null = null;
 
   const { definitions, toolInvoker } = assembleToolset({
     workspace: options.workspace,
@@ -72,6 +83,38 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
     tools: (guard) => [
       ...createWorkspaceTools(guard).filter((tool) => tool.kind === "read"),
       createDeclareTaskGraphTool(declared),
+      ...(options.requireGoalChecks !== true
+        ? []
+        : [
+            defineTool({
+              name: "declare_goal_contract",
+              description:
+                "Pin observable requirements and executable acceptance checks before implementation. Checks are candidate instruments authored by this model, never independent ground truth. A requirement without executable coverage remains unjudged. Artifact paths must be new files used only by the verifier.",
+              inputSchema: goalContractSchema,
+              kind: "evidence",
+              pathsFrom: () => [],
+              execute(input) {
+                if (goalContract !== null)
+                  throw new Error(
+                    "goal checks already declared; their requirements cannot be overwritten",
+                  );
+                if (input.goal !== options.goal)
+                  throw new Error("the goal contract must retain the supplied goal verbatim");
+                goalContract = freezeGoalContract({
+                  ...input,
+                  checks: input.checks.map((check) => ({
+                    ...check,
+                    author: "model",
+                    exposure: "shared",
+                  })),
+                }).contract;
+                return Promise.resolve({
+                  text: "candidate goal checks pinned; the independent verifier will run these on the integrated tree",
+                  facts: { requirements: goalContract.requirements.length },
+                });
+              },
+            }),
+          ]),
     ],
   });
 
@@ -95,9 +138,16 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
     clock: options.clock,
     random: options.random,
     emit: options.emit,
-    budget: { maxSteps: options.maxSteps, maxTokens: 200_000, maxWallTimeMs: 10 * 60 * 1000 },
+    budget: {
+      maxSteps: options.maxSteps,
+      maxTokens: options.maxTokens ?? 200_000,
+      maxWallTimeMs: options.maxWallTimeMs ?? 10 * 60 * 1000,
+    },
     abortSignal: options.abortSignal,
-    systemPrompt: plannerPrompt,
+    systemPrompt:
+      options.requireGoalChecks === true
+        ? `${plannerPrompt} Before finishing, also call declare_goal_contract with the supplied goal verbatim, every observable requirement and executable checks that cover their combined behavior. Author new check artifacts that can run from a fresh checkout. Do not require a reference implementation. Prefer one worker for a tiny or tightly coupled goal. Requirements without executable checks will remain unjudged.`
+        : plannerPrompt,
     maxOutputTokens: 8192,
     retryPolicy: { attempts: 3, baseDelayMs: 500, maxJitterRatio: 0.5 },
   });
@@ -114,5 +164,10 @@ export async function runPlanner(options: PlannerOptions): Promise<PlannerOutcom
     },
   });
 
-  return { graph: declared.graph, stopReason: loop.stopReason, steps: loop.steps };
+  return {
+    graph: declared.graph,
+    stopReason: loop.stopReason,
+    steps: loop.steps,
+    ...(options.requireGoalChecks === true ? { goalContract } : {}),
+  };
 }

@@ -14,6 +14,7 @@ import { evaluateClaim, recordKindOf } from "./verifier/verify.mjs";
  */
 export interface CatalogueEntry {
   readonly type: RecordType;
+  readonly controllerOnly?: boolean;
   /** The payload field the kind is keyed on, or null where the type alone is the kind. */
   readonly subjectField: string | null;
   readonly example: string;
@@ -23,6 +24,38 @@ export interface CatalogueEntry {
 }
 
 export const predicateCatalogue: readonly CatalogueEntry[] = [
+  {
+    type: "controller-assessment",
+    controllerOnly: true,
+    subjectField: null,
+    example: "goalAccepted == false",
+    sample: { goalAccepted: false },
+    says: "controller task states and final goal outcome",
+  },
+  {
+    type: "goal-contract",
+    controllerOnly: true,
+    subjectField: null,
+    example: "contract.version == 1",
+    sample: { contract: { version: 1 } },
+    says: "pinned goal requirements and authored executable checks",
+  },
+  {
+    type: "goal-check",
+    controllerOnly: true,
+    subjectField: null,
+    example: 'status == "rejected"',
+    sample: { status: "rejected" },
+    says: "a goal check observed on the exact integrated tree",
+  },
+  {
+    type: "goal-verification",
+    controllerOnly: true,
+    subjectField: null,
+    example: "accepted == false",
+    sample: { accepted: false },
+    says: "the conjunction of all pinned goal requirements",
+  },
   {
     type: "model-call-started",
     subjectField: null,
@@ -125,6 +158,14 @@ export const predicateCatalogue: readonly CatalogueEntry[] = [
       baseCommit: "a".repeat(40),
     },
     says: "everything the run is measured by, fixed before the model was asked for anything",
+  },
+  {
+    type: "controller-event",
+    controllerOnly: true,
+    subjectField: null,
+    example: 'kind == "usage-settled"',
+    sample: { kind: "usage-settled" },
+    says: "a typed controller lifecycle or resource observation",
   },
   {
     type: "task-contract",
