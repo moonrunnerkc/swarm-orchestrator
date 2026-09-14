@@ -31,7 +31,9 @@ export async function verifyControllerCommit(
     createNodeCommandRunner(
       options.clock,
       harnessChildEnvironment(),
-      checkout === undefined ? undefined : options.isolation?.(checkout),
+      checkout === undefined
+        ? undefined
+        : (options.verificationIsolation?.(checkout) ?? options.isolation?.(checkout)),
       options.abortSignal,
       options.runContext?.tests,
     );
@@ -46,7 +48,7 @@ export async function verifyControllerCommit(
     timeoutMs: Math.min(120000, options.remainingWallMs?.() ?? 120000),
     commands: commands(),
     ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
-    ...(options.isolation === undefined
+    ...(options.isolation === undefined && options.verificationIsolation === undefined
       ? {}
       : { commandsForCheckout: async (checkout: string) => commands(checkout) }),
     goal: { contract: options.goalContract, evidence: options.coordinator, tree },
