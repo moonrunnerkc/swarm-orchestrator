@@ -15,6 +15,7 @@ import {
 } from "./controller-state.ts";
 import { createCoordinationTools } from "./coordination.ts";
 import type { PlannedAttempt } from "./fan-out.ts";
+import { goalRepairFeedback } from "./goal-repair.ts";
 import type { ParallelRunOptions, WorkerResult } from "./parallel-run.ts";
 import { peersFor, type TrailPeer } from "./trail.ts";
 import { createReadTrailTool } from "./trail-tool.ts";
@@ -99,9 +100,10 @@ export async function runOneWorker(
     });
     const fileSet = createFileSetRegistry(evidence);
     const remainingWall = options.remainingWallMs?.() ?? null;
+    const feedback = repairFeedback ?? goalRepairFeedback(options.coordinator, taskId);
     const result = await runAgentTask({
       ...(contract === undefined ? {} : { contract }),
-      ...(repairFeedback === undefined ? {} : { repairFeedback }),
+      ...(feedback === undefined ? {} : { repairFeedback: feedback }),
       task,
       coordination:
         options.peerInformation === false ||

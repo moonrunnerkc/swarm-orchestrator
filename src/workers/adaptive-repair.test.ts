@@ -301,6 +301,7 @@ it("refuses goal omission even when every worker and integrated regression check
     },
     undefined,
     goal,
+    0,
   );
   expect(outcome.workers.every((worker) => worker.green)).toBe(true);
   expect(outcome.outcome.regression).toBe("pass");
@@ -652,7 +653,8 @@ it("repairs a regression of a declared advisory requirement on the integrated tr
         !landing.landed && landing.reason === "ratchet" && landing.feedback.includes("interaction"),
     ),
   ).toBe(true);
-  expect(calls).toEqual(["worker-1", "worker-2", "task-2-repair-1"]);
+  expect(calls.slice(0, 2).sort()).toEqual(["worker-1", "worker-2"]);
+  expect(calls.slice(2)).toEqual(["task-2-repair-1"]);
   expect(outcome.outcome.goalAccepted).toBe(true);
 });
 
@@ -758,3 +760,47 @@ it.each([true, false])(
   },
   60000,
 );
+
+it("repairs a final goal omission from the accepted tree and retains the failed acceptance", async () => {
+  const { outcome, coordinator, calls, events } = await execute(
+    {
+      "worker-1": { "a.js": "export const a = 2;\n" },
+      "worker-2": { "b.js": "export const b = 1; // incomplete goal\n" },
+      "goal-repair-1-attempt-1": { "b.js": "export const b = 3;\n" },
+    },
+    undefined,
+    goal,
+    1,
+  );
+  expect(calls.slice(0, 2).sort()).toEqual(["worker-1", "worker-2"]);
+  expect(calls.slice(2)).toEqual(["goal-repair-1-attempt-1"]);
+  expect(outcome.workers.every((worker) => worker.green)).toBe(true);
+  expect(outcome.outcome.goalAccepted, JSON.stringify(outcome.outcome)).toBe(true);
+  expect(
+    outcome.workers.find((worker) => worker.workerId === "goal-repair-1-attempt-1")?.task,
+  ).toContain("Recorded independent verifier observations");
+  expect(events.find((event) => event.kind === "goal-repair-requested")).toMatchObject({
+    baseCommit: outcome.queue?.landings[1]?.commit,
+  });
+  const verifications = coordinator
+    .records()
+    .filter((record) => record.type === "goal-verification")
+    .map((record) => coordinator.payloads().get(record.payloadDigest));
+  expect(verifications).toMatchObject([{ accepted: false }, { accepted: true }]);
+  expect(outcome.outcome.tasks.map((task) => task.members)).toEqual([
+    ["goal-repair-1"],
+    ["goal-repair-1"],
+  ]);
+  const destination = join(scratch, "final-repair-bundle");
+  await exportBundle({
+    source: bundleSourceFromRecorder(coordinator),
+    destination,
+    signingKey: createEphemeralSigningKey(),
+    clock,
+  });
+  const lines: string[] = [];
+  expect(
+    verifyBundle(destination, (line: string) => lines.push(line)),
+    lines.join("\n"),
+  ).toBe(0);
+}, 60000);

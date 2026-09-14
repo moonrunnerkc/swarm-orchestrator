@@ -146,7 +146,7 @@ function interrupted(evidence: EvidenceRecorder, kind: string, before: boolean):
       const matches =
         armed &&
         (entry.type === kind ||
-          (entry.type === "controller-transition" &&
+          (["controller-transition", "controller-event"].includes(entry.type) &&
             payload !== null &&
             typeof payload === "object" &&
             "kind" in payload &&
@@ -324,4 +324,50 @@ await runInParallel({...${JSON.stringify(serialized)}, coordinator, createWorker
   for (const [taskId, accepted] of acceptedBefore)
     expect(replayController(restarted).accepted.get(taskId)).toEqual(accepted);
   expect(calls).not.toContain("worker-1");
+}, 60000);
+
+it("resumes an authorized final-goal repair intent before its graph was appended", async () => {
+  const original = await open();
+  const factory = (evidence: EvidenceRecorder) => {
+    const configured = options(evidence);
+    return {
+      ...configured,
+      repairAttempts: 1,
+      createModel(workerId: string, workerEvidence: EvidenceRecorder) {
+        if (workerId !== "worker-2") return configured.createModel(workerId, workerEvidence);
+        calls.push(workerId);
+        return createFixtureModelClient({
+          modelId: "fixture:recovery",
+          turns: [
+            respondWithToolCalls("scope", [
+              { callId: "d", toolName: "declare_file_set", input: { files: ["b.js"] } },
+            ]),
+            respondWithToolCalls("incomplete", [
+              {
+                callId: "w",
+                toolName: "write",
+                input: { path: "b.js", content: "export const b = 1; // missing behavior\n" },
+              },
+            ]),
+            respondWithText("done"),
+          ],
+        });
+      },
+    };
+  };
+  await expect(
+    runInParallel(factory(interrupted(original, "goal-repair-requested", false))),
+  ).rejects.toThrow("injected crash");
+  expect(
+    controllerEvents(original).filter((event) => event.kind === "goal-repair-requested"),
+  ).toHaveLength(1);
+  expect(replayController(original).graph?.ordinal).toBe(0);
+  const restarted = await open();
+  const completed = await runInParallel({ ...factory(restarted), resume: true });
+  expect(completed.outcome.goalAccepted, JSON.stringify(completed.outcome)).toBe(true);
+  expect(calls).toEqual(["worker-1", "worker-2", "goal-repair-1-attempt-1"]);
+  expect(
+    controllerEvents(restarted).filter((event) => event.kind === "goal-repair-requested"),
+  ).toHaveLength(1);
+  expect(replayController(restarted).graph?.ordinal).toBe(1);
 }, 60000);

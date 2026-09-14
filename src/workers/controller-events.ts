@@ -1,9 +1,27 @@
 import { z } from "zod";
 import { asJsonValue } from "../evidence/canonical-json.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
+import { controllerGraphSchema } from "./graph-revision.ts";
 
 const nonnegative = z.number().int().nonnegative();
 export const controllerEventSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("goal-repair-requested"),
+    attempt: nonnegative,
+    taskId: z.string(),
+    baseCommit: z.string(),
+    tree: z.string(),
+    observation: z.string(),
+    failureDigest: z.string(),
+    checks: z.array(z.string()),
+    revision: controllerGraphSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("goal-repair-exhausted"),
+    tree: z.string(),
+    observation: z.string(),
+    reason: z.string(),
+  }),
   z.strictObject({
     kind: z.literal("attempt-not-dispatched"),
     taskId: z.string(),
@@ -80,5 +98,9 @@ export function controllerEvents(evidence: EvidenceRecorder): readonly Controlle
   return evidence
     .records()
     .filter((record) => record.type === "controller-event")
-    .map((record) => controllerEventSchema.parse(evidence.payloads().get(record.payloadDigest)));
+    .map((record) => {
+      if (record.actor !== "harness")
+        throw new Error("controller events require harness authority");
+      return controllerEventSchema.parse(evidence.payloads().get(record.payloadDigest));
+    });
 }

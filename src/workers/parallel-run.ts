@@ -15,16 +15,11 @@ import {
 } from "../evidence/goal-contract.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { parseTaskContract } from "../evidence/task-contract.ts";
-import { harnessChildEnvironment } from "../exec/child-environment.ts";
 import type { IsolationBackend } from "../exec/execution-mode.ts";
 import type { GateSetOptions } from "../gates/default-gates.ts";
 import { createFileSetRegistry } from "../gates/file-set.ts";
-import {
-  type IndependentVerification,
-  verifyIndependently,
-} from "../gates/independent-verification.ts";
+import type { IndependentVerification } from "../gates/independent-verification.ts";
 import type { MeasureSnapshot } from "../gates/measure-snapshot.ts";
-import { createNodeCommandRunner } from "../gates/node-command-runner.ts";
 import { type Attempt, type AttemptSelection, selectAttempt } from "./attempt-selector.ts";
 import { withControllerCleanup } from "./controller-cleanup.ts";
 import {
@@ -37,9 +32,11 @@ import { reconcileController } from "./controller-recovery.ts";
 import { runControllerSchedule } from "./controller-scheduler.ts";
 import { type ControllerScope, parseControllerScope } from "./controller-scope.ts";
 import { recordTransition, replayController } from "./controller-state.ts";
+import { verifyControllerCommit } from "./controller-verification.ts";
 import { planAttempts } from "./fan-out.ts";
 import { verifyGoalCandidates } from "./goal-candidates.ts";
 import { assessController, type ControllerOutcome } from "./goal-outcome.ts";
+import { reconcileGoalRepairIntent, requestGoalRepair } from "./goal-repair.ts";
 import type { GoalSelection } from "./goal-selection.ts";
 import { claimGraphOutcome, declareTaskGraph, type NodeOutcome } from "./graph-record.ts";
 import { initialControllerGraph, recordControllerGraph } from "./graph-revision.ts";
@@ -579,36 +576,70 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
     queue = { ...landed, baseCommit, headCommit: head, landings };
   }
 
+  let verification: IndependentVerification | null = null;
   let orderly = false;
   try {
+    if (options.resume) await reconcileGoalRepairIntent(options.coordinator);
     if (recovered !== null && landings.length > 0) await landLayer([]);
-    await runControllerSchedule({
-      options,
-      criteriaRef: baseCommit,
-      planned,
-      registered,
-      workers,
-      head: () => head,
-      integrate: async (completed) => {
-        if (completed.length === 0) return;
-        if (options.goalContract !== undefined && options.redundancy > 1) {
-          const selection = await verifyGoalCandidates(completed, {
-            ...options,
-            goalContract: options.goalContract,
-          });
-          goalSelections.push(selection);
-          const eligible = selection.order
-            .map((id) => completed.find((worker) => worker.workerId === id))
-            .filter((worker) => worker !== undefined);
-          const [winner, ...alternates] = eligible;
-          if (winner !== undefined) await landLayer([{ winner, alternates }]);
-          return;
-        }
-        const chosen = await chooseProposals(completed, completed[0]?.baseCommit ?? head, options);
-        selections.push(...chosen.selections);
-        if (chosen.proposals.length > 0) await landLayer(chosen.proposals);
-      },
-    });
+    let repairingGoal = false;
+    for (;;) {
+      await runControllerSchedule({
+        options: repairingGoal
+          ? { ...options, resume: false, revisions: [], redundancy: 1 }
+          : options,
+        criteriaRef: baseCommit,
+        planned,
+        registered,
+        workers,
+        head: () => head,
+        integrate: async (completed) => {
+          if (completed.length === 0) return;
+          if (options.goalContract !== undefined && options.redundancy > 1) {
+            const selection = await verifyGoalCandidates(completed, {
+              ...options,
+              goalContract: options.goalContract,
+            });
+            goalSelections.push(selection);
+            const eligible = selection.order
+              .map((id) => completed.find((worker) => worker.workerId === id))
+              .filter((worker) => worker !== undefined);
+            const [winner, ...alternates] = eligible;
+            if (winner !== undefined) await landLayer([{ winner, alternates }]);
+            return;
+          }
+          const chosen = await chooseProposals(
+            completed,
+            completed[0]?.baseCommit ?? head,
+            options,
+          );
+          selections.push(...chosen.selections);
+          if (chosen.proposals.length > 0) await landLayer(chosen.proposals);
+        },
+      });
+      if (options.goalContract === undefined || options.abortSignal.aborted) break;
+      const checked = await verifyControllerCommit(
+        { ...options, goalContract: options.goalContract },
+        baseCommit,
+        head,
+      );
+      verification = checked.verification;
+      const captured = await options.coordinator.record({
+        type: "independent-verification",
+        actor: "harness",
+        provenance: ["tool-output"],
+        payload: asJsonValue(verification),
+      });
+      if (
+        !(await requestGoalRepair(options, {
+          commit: head,
+          tree: checked.tree,
+          verification,
+          observation: captured.record.payloadDigest,
+        }))
+      )
+        break;
+      repairingGoal = true;
+    }
     orderly = true;
   } finally {
     if (orderly) {
@@ -688,51 +719,6 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
     commit: head,
     tree,
   });
-  let verification: IndependentVerification | null = null;
-  if (options.goalContract !== undefined && !options.abortSignal.aborted) {
-    const patch = (
-      await runProcess("git", ["diff", "--binary", baseCommit, head], {
-        cwd: options.repositoryRoot,
-        maxBuffer: 64_000_000,
-      })
-    ).stdout;
-    const commands = createNodeCommandRunner(
-      options.clock,
-      harnessChildEnvironment(),
-      undefined,
-      options.abortSignal,
-      options.runContext?.tests,
-    );
-    verification = await verifyIndependently({
-      repositoryRoot: options.repositoryRoot,
-      baseCommit,
-      patch,
-      immutablePaths: options.immutablePaths ?? [],
-      clock: options.clock,
-      timeoutMs: Math.min(120_000, options.remainingWallMs?.() ?? 120_000),
-      commands,
-      ...(options.isolation === undefined
-        ? {}
-        : {
-            commandsForCheckout: async (checkout: string) =>
-              createNodeCommandRunner(
-                options.clock,
-                harnessChildEnvironment(),
-                options.isolation?.(checkout),
-                options.abortSignal,
-                options.runContext?.tests,
-              ),
-          }),
-      ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
-      goal: { contract: options.goalContract, evidence: options.coordinator, tree },
-    });
-    await options.coordinator.record({
-      type: "independent-verification",
-      actor: "harness",
-      provenance: ["tool-output"],
-      payload: asJsonValue(verification),
-    });
-  }
   const outcome = await assessController({
     evidence: options.coordinator,
     board: replayController(options.coordinator),
