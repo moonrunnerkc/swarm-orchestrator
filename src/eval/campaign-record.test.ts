@@ -78,3 +78,50 @@ it("does not pool certifications across comparison arms", async () => {
   ]);
   expect(report.comparisons[0]?.nonInferior).toBe(false);
 });
+
+it("replays recorded launches and settlements without replaying an ambiguous effect", async () => {
+  const { evidence, campaign: first } = await campaign();
+  const executionId = first.schedule[0]?.executionId ?? "";
+  await first.launch(executionId);
+  const reopened = await openCampaign(campaignProtocolFixture(), evidence, { resume: true });
+  expect(reopened.unresolved()).toEqual([executionId]);
+  await expect(reopened.launch(reopened.schedule[1]?.executionId ?? "")).rejects.toThrow(
+    "reconciliation",
+  );
+  await reopened.settle({
+    executionId,
+    status: "completed",
+    certified: true,
+    heldBackAccepted: true,
+    costUsd: 1,
+    latencyMs: 20,
+    evidenceDigest: campaignProtocolFixture().verifierDigest,
+    cleanup: "confirmed",
+  });
+  const resumed = await openCampaign(campaignProtocolFixture(), evidence, { resume: true });
+  expect(resumed.completed(executionId)).toBe(true);
+  await expect(resumed.launch(executionId)).rejects.toThrow("duplicate");
+  const altered = campaignProtocolFixture();
+  altered.budgets.tokens += 1;
+  await expect(openCampaign(altered, evidence, { resume: true })).rejects.toThrow("preserve");
+});
+
+it("refuses an appended history event that changes a frozen launch identity", async () => {
+  const { evidence, campaign: first } = await campaign();
+  const planned = first.schedule[0];
+  if (planned === undefined) throw new Error("fixture has no schedule");
+  await evidence.record({
+    type: "campaign-observation",
+    actor: "harness",
+    provenance: ["tool-output"],
+    payload: {
+      phase: "launched",
+      protocolDigest: first.report().protocolDigest,
+      ...planned,
+      armId: "invented",
+    },
+  });
+  await expect(openCampaign(campaignProtocolFixture(), evidence, { resume: true })).rejects.toThrow(
+    "frozen identity",
+  );
+});

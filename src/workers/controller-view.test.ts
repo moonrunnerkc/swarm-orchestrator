@@ -90,3 +90,23 @@ it("withdraws an old assessment when subsequent verification starts", async () =
   });
   expect(projectControllerView(evidence)).toMatchObject({ outcome: null, record: null });
 });
+
+it("retains the actual shared-budget blocker after the final cancelled assessment", async () => {
+  const reason = "shared token budget cannot reserve the input and output allowance";
+  await recordControllerEvent(evidence, { kind: "stop-requested", reason });
+  await assessController({
+    evidence,
+    taskIds: [],
+    workers: [],
+    landings: [],
+    tree: "tree",
+    goal: null,
+    verification: null,
+    cancelled: true,
+    usage: { spent: 750, reserved: 0, unknownCalls: 0, remaining: 250 },
+  });
+  expect(projectControllerView(evidence)).toMatchObject({
+    activity: "cancelled",
+    blockers: [reason],
+  });
+});

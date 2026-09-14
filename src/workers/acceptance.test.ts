@@ -136,9 +136,10 @@ function modelFor(
       if (inner === null) {
         const first = request.messages[0];
         const prompt = first?.role === "user" ? first.text : "";
+        const objective = prompt.split("\n\nEffective task contract (")[0] ?? prompt;
         inner = createFixtureModelClient({
           modelId: "fixture:worker",
-          turns: scripts[prompt] ?? [respondWithText("I do not know what to do.")],
+          turns: scripts[objective] ?? [respondWithText("I do not know what to do.")],
         });
       }
       return inner.generate(request);

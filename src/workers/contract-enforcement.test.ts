@@ -93,6 +93,7 @@ async function execute(
   });
   let modelCalls = 0;
   const offered: string[][] = [];
+  const briefs: string[] = [];
   const outcome = await runInParallel({
     repositoryRoot: repository,
     baseRef: "HEAD",
@@ -109,6 +110,11 @@ async function execute(
         generate: (request) => {
           modelCalls += 1;
           offered.push(request.tools.map((tool) => tool.name));
+          briefs.push(
+            ...request.messages
+              .filter((message) => message.role === "user")
+              .map((message) => message.text),
+          );
           return fixture.generate(request);
         },
       };
@@ -128,7 +134,7 @@ async function execute(
       commandOverrides: { special: { command: 'node -e "process.exit(1)"', severity: "advisory" } },
     },
   });
-  return { outcome, modelCalls, offered };
+  return { outcome, modelCalls, offered, briefs };
 }
 
 const declare = respondWithToolCalls("scope", [
@@ -136,6 +142,12 @@ const declare = respondWithToolCalls("scope", [
 ]);
 
 describe("task contracts through public parallel execution", () => {
+  it("shows the exact effective permissions before the first worker call", async () => {
+    const { briefs } = await execute([respondWithText("done")]);
+    expect(briefs[0]).toContain('"writable":["allowed.js"]');
+    expect(briefs[0]).toContain('"immutable":["base.test.js"]');
+    expect(briefs[0]).toContain("declarations cannot enlarge this authority");
+  });
   it("executes a graph-required check and refuses its advisory failure", async () => {
     const { outcome } = await execute([respondWithText("done")], { required: "special" });
     expect(outcome.workers[0]?.green).toBe(false);

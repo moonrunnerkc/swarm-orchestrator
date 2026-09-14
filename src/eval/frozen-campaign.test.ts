@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { expect, it } from "vitest";
 import { openEvidenceSession } from "../evidence/session.ts";
 import { runFrozenCampaign } from "./frozen-campaign.ts";
-import { campaignProtocolFixture } from "./protocol-fixture.ts";
+import { campaignProtocolFixture, goalCampaignProtocolFixture } from "./protocol-fixture.ts";
 
 it("dispatches different frozen implementations and exports failure evidence", async () => {
   const root = await mkdtemp(join(tmpdir(), "swarm-arm-dispatch-"));
@@ -53,6 +53,50 @@ it("dispatches different frozen implementations and exports failure evidence", a
     expect(dispatched).toEqual(["baseline", "candidate"]);
     expect(exported).toBe(true);
     expect(report).toMatchObject({ launched: 2, completed: 1, unknown: 1 });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("records every unlaunched pilot execution when an endpoint is unavailable", async () => {
+  const root = await mkdtemp(join(tmpdir(), "swarm-pilot-admission-"));
+  try {
+    const protocol = goalCampaignProtocolFixture();
+    const evidence = await openEvidenceSession({
+      root,
+      sessionId: "pilot",
+      clock: { now: () => 0, sleep: async () => {} },
+    });
+    let launches = 0;
+    const report = await runFrozenCampaign({
+      protocol,
+      evidence,
+      now: () => 0,
+      signal: new AbortController().signal,
+      health: async () => ({
+        healthy: true,
+        processes: 0,
+        memoryBytes: 0,
+        endpoint: "unavailable",
+      }),
+      exportEvidence: async () => {},
+      executors: protocol.arms.map((arm) => ({
+        id: arm.id,
+        implementationDigest: arm.implementationDigest,
+        run: async () => {
+          launches++;
+          throw new Error("unreachable provider");
+        },
+      })),
+    });
+    expect(launches).toBe(0);
+    expect(report.notLaunched).toHaveLength(120);
+    expect(report.goal).toMatchObject({
+      allObserved: false,
+      settledRuns: 0,
+      scheduledGoals: 24,
+      repositories: 8,
+    });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

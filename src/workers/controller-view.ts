@@ -139,8 +139,9 @@ export function projectControllerView(evidence: EvidenceRecorder): ControllerVie
         status: requirement.checks.length === 0 ? "unjudged" : "pending",
       })) ??
       [],
-    blockers:
-      outcome === null
+    blockers: [
+      ...(stop === undefined ? [] : [stop.reason]),
+      ...(outcome === null
         ? repair === undefined
           ? []
           : [repair.reason]
@@ -151,7 +152,8 @@ export function projectControllerView(evidence: EvidenceRecorder): ControllerVie
             ...outcome.requirements
               .filter((requirement) => requirement.status !== "accepted")
               .map((requirement) => `${requirement.id}: ${requirement.status}`),
-          ],
+          ]),
+    ],
     usage,
     deadlineAt: started?.deadlineAt ?? null,
     branch: board.resource?.branch ?? null,

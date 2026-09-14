@@ -360,3 +360,79 @@ No default change or empirical benefit is claimed before those observations exis
 public worker that reads the full reference, falsely narrates success, and remains rejected by
 the real check. Digest collisions retain unverified status and model-authored records generate
 no harness receipts. Evidence digest: `sha256:21ca7331906643912bf19ca8e265b6562a58e9bfd6d0ebad3bf17d8a02ced6e5`.
+
+Full `prompt-profiles-corrected-gates` exited 0: 311 files and 3005 tests passed in 111.12 seconds,
+no skips and unchanged baseline diagnostics. The first full invocation stopped at a TypeScript
+narrowing error in the new test; that failure remains in `prompt-profiles-gates`. Tested source
+commit: `e0a4602b23c219b8851a30360d1bd12dcfdb5a10`. Passing evidence digest:
+`sha256:b5a0a0e01f0c931ba34a116cabde240ab57e93252115895fe6c5a7368e77195a`.
+
+The first fixed prompt comparison launched all six scheduled workers using local Qwen 3.6
+35b-a3b, context configuration 32768, thinking disabled, one model slot and one test slot.
+Five were locally green; all six failed independent admission because they modified
+`base.test.js`, which the comparison driver marked immutable only at verification. This is a
+driver defect, not evidence that either prompt completes these goals. The driver now passes
+the same effective contract into worker execution. Worker and repair briefs display enforced
+scope, immutable paths, required checks and resource limits before the model needs to discover
+a refusal. The original single-worker task bytes stay unchanged where no contract is supplied.
+The first comparison remains preserved as development evidence and will not be relabeled.
+
+| Synthetic development goal | Legacy time / reported tokens | Concise time / reported tokens | Final acceptance |
+| --- | --- | --- | --- |
+| Cursor pagination | 70,244 ms / 212,529 | 48,398 ms / 135,365 | both refused |
+| Cache invalidation | 19,038 ms / 45,437 | 32,333 ms / 57,273 | both refused |
+| Interface result | 31,935 ms / 75,050 | 21,505 ms / 37,271 | both refused |
+
+These are correlated development cases with a defective admission setup. No prompt benefit,
+complete-goal advantage or default change follows from them. `prompt-comparison-live` exited 0
+because the fixed schedule completed, with zero accepted goals; digest
+`sha256:f10b529e236bf53c43436c0352d02137d71b1b528cfb2dcbb36cdeb699f1110c`.
+Raw protocol, observations, retained commits and session evidence are under the external
+`redesign-development/prompt-comparison-1` directory.
+
+### Goal-level pilot protocol and recovery
+
+Version two extends the existing frozen campaign machinery for goals clustered by repository.
+The pilot seal requires at least 24 goals, eight repositories, Python and JavaScript/TypeScript,
+all three native comparison roles and both ablations. It fixes requirement identities, source
+and check digests, model/backend settings, limits, arm rotation and the comparison subset.
+Previously exposed tasks cannot be relabeled fresh held-out tasks. Version-one independent
+repository protocols and their arithmetic remain supported.
+
+The report keeps all scheduled work, observed wall time, unknown accounting, incomplete branches,
+missed checks, retries, integration repairs and human burden. Failed goals are charged the fixed
+deadline in the declared time-to-success comparison; actual elapsed time remains separate.
+Descriptive intervals resample whole repositories, preserving goals and correlated repeats.
+The legacy independent-repository interval is not applied to version two. The numerical pilot
+threshold remains a development decision, never a population non-inferiority claim.
+
+Campaign replay validates the pinned protocol and event identities. An unsettled launch requires
+explicit effect/usage reconciliation; an accepted execution is never launched again. Unavailable
+pre-launch observations record the reason for every unlaunched scheduled entry. The ordinary
+controller display now retains the actual shared-budget stop reason after its final assessment,
+including a refusal to reserve a request when some tokens remain.
+
+`goal-pilot-protocol-focused` exited 0 with 8 files and 26 tests in 9.82 seconds. It exercises
+requirement omission, repository clustering, all-schedule denominators, unavailable admission,
+changed history, budget display and public worker scope exposure. Evidence digest:
+`sha256:815ccba7bc619a1c9af93f743629af15fc3c8c8e8f3e731e41a1f044f2803996`.
+The real 24-goal pilot has not yet been frozen or launched.
+
+### Historical transcript weight
+
+The existing lossless archive format now holds 18 September 4 transcripts: 1,346,516 source
+bytes in a 55,986-byte compressed file, plus its manifest and per-file inventory. Every restored
+file was compared byte-for-byte before removing duplicate raw files. Original relative paths,
+source commit and SHA-256 digests are preserved; historical ledgers, checks, patches, verdicts
+and cited bundles were not changed. Restoration instructions are in that campaign's README.
+`archive-historical-transcripts` exited 0 with all 18 byte comparisons equal, digest
+`sha256:655a97f96476ea65381e386e752289a09fd77de695ba4f8ec88ac511744a789a`.
+The repository weight ceiling remains 100 MB.
+
+Full `goal-pilot-preparation-corrected-gates` exited 0: 314 test files and 3015 tests passed
+in 122.95 seconds, with no skips. The prior invocation had eight failures in the scripted
+worker acceptance fixture because its exact first-message lookup did not recognize the new
+contract briefing. The fixture now separates that briefing from its script identity; acceptance,
+landing and claim assertions are unchanged. Both invocations remain in the implementation ledger.
+Passing evidence: `sha256:0b74ee78698303c2c8c0637efd5bf783e75b06394d7387c2563a54bef65e8d64`,
+bound to parent `e0a4602b23c219b8851a30360d1bd12dcfdb5a10` and the captured source diff.
