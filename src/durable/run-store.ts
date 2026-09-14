@@ -46,6 +46,7 @@ export interface Repaired {
 export interface RunStore {
   startRun(input: { runId: string; specDigest: string; task: string; startedAt: number }): void;
   finishRun(runId: string, at: number): void;
+  interruptRun(runId: string, reason: string, at: number): void;
   abortRun(runId: string, reason: string, at: number): void;
   listRuns(): readonly StoredRun[];
   run(runId: string): StoredRun | null;
@@ -69,6 +70,7 @@ export interface RunStore {
 
   setBudget(input: { runId: string; tokens: number }): void;
   reserve(input: { runId: string; stepId: string; tokens: number }): boolean;
+  settleReservation(input: { runId: string; stepId: string; tokenCount: number }): void;
   remainingTokens(runId: string): number | null;
 
   recordApproval(input: { runId: string; subject: string; granted: boolean; at: number }): void;
@@ -110,7 +112,15 @@ const projectionSchema = z.object({
   steps: z.record(z.string(), stepSchema),
   leases: z.record(z.string(), leaseSchema),
   budgets: z.record(z.string(), z.number()),
-  reservations: z.record(z.string(), z.object({ runId: z.string(), tokens: z.number() })),
+  reservations: z.record(
+    z.string(),
+    z.union([
+      z.object({ runId: z.string(), tokenCount: z.number().nonnegative() }),
+      z
+        .object({ runId: z.string(), tokens: z.number().nonnegative() })
+        .transform((reservation) => ({ runId: reservation.runId, tokenCount: reservation.tokens })),
+    ]),
+  ),
   approvals: z.record(z.string(), z.object({ granted: z.boolean() })),
 });
 type Projection = z.infer<typeof projectionSchema>;
@@ -143,7 +153,23 @@ export function openRunStore(path: string): RunStore {
   return {
     startRun: (input) =>
       journal.update("run-started", (projection) => {
+        const existing = projection.runs[input.runId];
+        if (existing !== undefined) {
+          if (existing.specDigest !== input.specDigest || existing.task !== input.task)
+            throw new Error(
+              `run ${input.runId} already has a different specification; preserve the original identity`,
+            );
+          return;
+        }
         projection.runs[input.runId] = { ...input, state: "running", endedAt: null, detail: null };
+      }),
+    interruptRun: (runId, reason, at) =>
+      journal.update("run-interrupted", (projection) => {
+        Object.assign(requireRun(projection, runId), {
+          state: "interrupted",
+          endedAt: at,
+          detail: reason,
+        });
       }),
     finishRun: (runId, at) =>
       journal.update("run-finished", (projection) => {
@@ -226,6 +252,15 @@ export function openRunStore(path: string): RunStore {
         .sort((left, right) => left.path.localeCompare(right.path)),
     setBudget: (input) =>
       journal.update("budget-set", (projection) => {
+        const previous = projection.budgets[input.runId];
+        if (
+          !Number.isSafeInteger(input.tokens) ||
+          input.tokens < 0 ||
+          (previous !== undefined && input.tokens > previous)
+        )
+          throw new Error(
+            "a stored run budget cannot be enlarged; start a new explicitly authorized run",
+          );
         projection.budgets[input.runId] = input.tokens;
       }),
     reserve: (input) =>
@@ -234,10 +269,23 @@ export function openRunStore(path: string): RunStore {
         const id = key(input.runId, input.stepId);
         const spent = Object.entries(projection.reservations)
           .filter(([stored, reservation]) => stored !== id && reservation.runId === input.runId)
-          .reduce((sum, [, reservation]) => sum + reservation.tokens, 0);
+          .reduce((sum, [, reservation]) => sum + reservation.tokenCount, 0);
         if (budget !== undefined && input.tokens > budget - spent) return false;
-        projection.reservations[id] = { runId: input.runId, tokens: input.tokens };
+        if (!Number.isSafeInteger(input.tokens) || input.tokens < 0)
+          throw new Error("reservation must be a nonnegative integer");
+        projection.reservations[id] = { runId: input.runId, tokenCount: input.tokens };
         return true;
+      }),
+    settleReservation: (input) =>
+      journal.update("budget-settled", (projection) => {
+        const reservation = projection.reservations[key(input.runId, input.stepId)];
+        if (
+          reservation === undefined ||
+          !Number.isSafeInteger(input.tokenCount) ||
+          input.tokenCount < 0
+        )
+          throw new Error("measured settlement requires a prior reservation and nonnegative usage");
+        reservation.tokenCount = input.tokenCount;
       }),
     remainingTokens: (runId) => {
       const projection = journal.read();
@@ -247,7 +295,7 @@ export function openRunStore(path: string): RunStore {
         : budget -
             Object.values(projection.reservations)
               .filter((reservation) => reservation.runId === runId)
-              .reduce((sum, reservation) => sum + reservation.tokens, 0);
+              .reduce((sum, reservation) => sum + reservation.tokenCount, 0);
     },
     recordApproval: (input) =>
       journal.update("approval-recorded", (projection) => {

@@ -26,6 +26,7 @@ export async function createRunContext(options: {
   modelConcurrency: number;
   testConcurrency: number;
   signal: AbortSignal;
+  observe?: () => void;
 }): Promise<RunContext> {
   const events = controllerEvents(options.evidence);
   const starts = events.filter((event) => event.kind === "run-started");
@@ -101,6 +102,7 @@ export async function createRunContext(options: {
   const record = async (event: Parameters<typeof recordControllerEvent>[1]) => {
     try {
       await recordControllerEvent(options.evidence, event);
+      options.observe?.();
     } catch (cause) {
       cancellation.abort(cause);
       throw cause;

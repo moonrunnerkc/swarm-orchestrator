@@ -391,6 +391,7 @@ describe("trying each task several ways", () => {
     expect(types).toEqual([
       "controller-assessment",
       "controller-candidate",
+      "controller-configuration",
       "controller-event",
       "controller-graph",
       "controller-transition",

@@ -138,7 +138,7 @@ it("owns cleanup after a successful parent exit", async () => {
   });
   await backend.run(["node", "parent.mjs"], { cwd: workspace, timeoutMs: 1000 });
   expect(captured.map((args) => args[0])).toEqual(["create", "start", "rm", "ps"]);
-  expect(phases).toEqual(["created", "removed"]);
+  expect(phases).toEqual(["create-intent", "created", "removed"]);
   expect(captured[0]?.some((arg) => arg.startsWith("--name=swarm-"))).toBe(true);
 });
 

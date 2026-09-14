@@ -61,6 +61,7 @@ const dispatchSchema = z.strictObject({
   taskId: z.string(),
   workerId: z.string(),
   sessionId: z.string(),
+  sessionDirectory: z.string().optional(),
   branch: z.string(),
   path: z.string(),
   baseCommit: z.string(),
@@ -80,6 +81,37 @@ const integrationSchema = z.strictObject({
 export const controllerTransitionSchema = z.discriminatedUnion("kind", [
   dispatchSchema,
   integrationSchema,
+  z.strictObject({ kind: z.literal("task-reopened"), taskId: z.string(), reason: z.string() }),
+  z.strictObject({
+    kind: z.literal("recovery-commit-intent"),
+    workerId: z.string(),
+    branch: z.string(),
+    baseCommit: z.string(),
+  }),
+  z.strictObject({
+    kind: z.literal("recovery-reset-intent"),
+    effectId: z.string(),
+    observedCommit: z.string(),
+    targetCommit: z.string(),
+  }),
+  z.strictObject({
+    kind: z.literal("recovery-ref-intent"),
+    effectId: z.string(),
+    commit: z.string(),
+  }),
+  z.strictObject({
+    kind: z.literal("integration-abandoned"),
+    effectId: z.string(),
+    retainedCommit: z.string().nullable(),
+    reason: z.string(),
+  }),
+  z.strictObject({
+    kind: z.literal("integration-resource"),
+    phase: z.enum(["create-intent", "created", "cleanup-intent", "removed"]),
+    path: z.string(),
+    branch: z.string(),
+    commit: z.string(),
+  }),
   z.strictObject({
     kind: z.literal("coordination-consumed"),
     source: z.string(),
@@ -144,6 +176,7 @@ export interface ControllerState {
   readonly cleaned: Set<string>;
   readonly stale: Set<string>;
   readonly accepted: Map<string, { workerId: string; commit: string; graphRevision: string }>;
+  resource: Extract<ControllerTransition, { kind: "integration-resource" }> | null;
   head: string | null;
 }
 
@@ -165,8 +198,10 @@ export function replayController(
     cleaned: new Set(),
     stale: new Set(),
     accepted: new Map(),
+    resource: null,
     head: null,
   };
+  const integrationOrder = new Map<string, number>();
   const entries = evidence.records().map((record) => ({
     type: record.type,
     actor: record.actor,
@@ -248,6 +283,44 @@ export function replayController(
     switch (event.kind) {
       case "coordination-consumed":
         break;
+      case "recovery-commit-intent":
+        if (state.dispatches.get(event.workerId)?.branch !== event.branch)
+          throw new Error("recovery commit names an unowned worker branch");
+        break;
+      case "recovery-reset-intent":
+        if (
+          state.integrations.get(event.effectId)?.baseCommit !== event.targetCommit ||
+          state.completedIntegrations.has(event.effectId)
+        )
+          throw new Error("recovery reset lacks its unresolved integration and original base");
+        break;
+      case "recovery-ref-intent":
+        if (
+          !state.integrations.has(event.effectId) ||
+          state.completedIntegrations.has(event.effectId)
+        )
+          throw new Error("recovery reference lacks its unresolved integration");
+        break;
+      case "integration-resource": {
+        const prior = state.resource;
+        if (prior !== null && (prior.path !== event.path || prior.branch !== event.branch))
+          throw new Error("integration resource identity changed");
+        if (event.phase === "created" && prior?.phase !== "create-intent")
+          throw new Error("integration worktree creation lacks prior intent");
+        if (event.phase === "removed" && prior?.phase !== "cleanup-intent")
+          throw new Error("integration cleanup lacks prior intent");
+        state.resource = event;
+        break;
+      }
+      case "integration-abandoned": {
+        const intent = state.integrations.get(event.effectId);
+        if (intent === undefined || state.completedIntegrations.has(event.effectId))
+          throw new Error("abandoned integration lacks an unresolved intent");
+        state.completedIntegrations.add(event.effectId);
+        state.states.set(intent.taskId, "candidate");
+        state.head = intent.baseCommit;
+        break;
+      }
       case "dispatch-intent": {
         const node = state.graph.nodes.find((node) => node.id === event.taskId);
         if (
@@ -283,6 +356,7 @@ export function replayController(
         if (state.head !== null && state.head !== event.baseCommit)
           throw new Error("integration intent does not name the accepted head");
         state.integrations.set(event.effectId, event);
+        integrationOrder.set(event.effectId, record.sequence);
         state.head = event.baseCommit;
         break;
       }
@@ -291,6 +365,8 @@ export function replayController(
         const observation = entries.find(
           (entry) =>
             entry.sequence < record.sequence &&
+            entry.sequence > (integrationOrder.get(event.effectId) ?? Infinity) &&
+            entry.actor === "harness" &&
             entry.type === "merge-attempt" &&
             entry.payloadDigest === event.observation,
         );
@@ -328,6 +404,11 @@ export function replayController(
         if (!state.accepted.has(candidate.taskId)) state.states.set(candidate.taskId, "pending");
         break;
       }
+      case "task-reopened":
+        if (!state.states.has(event.taskId) || state.accepted.has(event.taskId))
+          throw new Error("reopening cannot duplicate accepted work");
+        state.states.set(event.taskId, "pending");
+        break;
       case "task-blocked":
         if (!state.states.has(event.taskId) || state.accepted.has(event.taskId))
           throw new Error("blocking observation cannot remove accepted work");
@@ -337,6 +418,11 @@ export function replayController(
         if (!state.dispatches.has(event.workerId) || state.reconciledDispatches.has(event.workerId))
           throw new Error("dispatch reconciliation is missing its unique intent");
         state.reconciledDispatches.add(event.workerId);
+        if (event.disposition === "not-started") {
+          const intent = state.dispatches.get(event.workerId);
+          if (intent !== undefined && !state.accepted.has(intent.taskId))
+            state.states.set(intent.taskId, "pending");
+        }
         break;
       case "worktree-created":
       case "cleanup-intent":
@@ -366,7 +452,7 @@ export async function recordTransition(
   await appendControllerRecord(
     evidence,
     "controller-transition",
-    controllerTransitionSchema.parse(event),
+    asJsonValue(controllerTransitionSchema.parse(event)),
   );
 }
 

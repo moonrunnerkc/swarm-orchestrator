@@ -7,6 +7,7 @@ import type {
   ResumeCommand,
   RetryStepCommand,
 } from "./cli-options.ts";
+import { controllerSessionId } from "./durable/controller-location.ts";
 import { importLegacyRunStore } from "./durable/legacy-run-store.ts";
 import { recoveryContext } from "./durable/recovery-context.ts";
 import { openRunStore } from "./durable/run-store.ts";
@@ -94,6 +95,8 @@ export async function resumeRun(
   options: ResumeCommand,
   execute?: (context: Awaited<ReturnType<typeof recoveryContext>>) => Promise<number>,
 ): Promise<number> {
+  if ((await controllerSessionId(defaultSessionRoot(homedir()), options.runId)) !== null)
+    return (await import("./cli-parallel.ts")).resumeParallel(options.runId);
   await repairRuntimeResources(defaultSessionRoot(homedir()), options.runId);
   const context = await recoveryContext(defaultSessionRoot(homedir()), options.runId);
   if (execute === undefined)
@@ -182,6 +185,8 @@ export function abortRun(options: AbortCommand): Promise<number> {
 }
 
 export async function repairRun(options: RepairCommand): Promise<number> {
+  if ((await controllerSessionId(defaultSessionRoot(homedir()), options.runId)) !== null)
+    return (await import("./cli-parallel.ts")).repairParallel(options.runId);
   await repairRuntimeResources(defaultSessionRoot(homedir()), options.runId);
   const repaired = withRunStore((store) =>
     store.run(options.runId) === null ? null : store.repair(options.runId, Date.now()),

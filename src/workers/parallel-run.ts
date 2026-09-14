@@ -1,13 +1,15 @@
 import { execFile } from "node:child_process";
+import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { Clock } from "../core/clock.ts";
 import type { LoopEvent } from "../core/loop-events.ts";
 import type { ModelClient } from "../core/model-client.ts";
 import type { RandomSource } from "../core/random-source.ts";
-import { asJsonValue } from "../evidence/canonical-json.ts";
+import { asJsonValue, digestOfJson } from "../evidence/canonical-json.ts";
 import {
   declareGoalContract,
+  freezeGoalContract,
   type GoalContract,
   goalImmutablePaths,
 } from "../evidence/goal-contract.ts";
@@ -24,7 +26,14 @@ import {
 import type { MeasureSnapshot } from "../gates/measure-snapshot.ts";
 import { createNodeCommandRunner } from "../gates/node-command-runner.ts";
 import { type Attempt, type AttemptSelection, selectAttempt } from "./attempt-selector.ts";
+import { withControllerCleanup } from "./controller-cleanup.ts";
+import {
+  controllerConfiguration,
+  sealControllerConfiguration,
+} from "./controller-configuration.ts";
 import { recordControllerEvent } from "./controller-events.ts";
+import { acquireControllerOwner, type ControllerOwner } from "./controller-owner.ts";
+import { reconcileController } from "./controller-recovery.ts";
 import { runControllerSchedule } from "./controller-scheduler.ts";
 import { recordTransition, replayController } from "./controller-state.ts";
 import { planAttempts } from "./fan-out.ts";
@@ -43,7 +52,7 @@ import { recordSelection } from "./selection-record.ts";
 import { contractsFromGraph, declareTaskContracts, type TaskContract } from "./task-contract.ts";
 import type { TaskGraph } from "./task-graph.ts";
 import type { TrailPeer } from "./trail.ts";
-import { addWorktree, sweepRunBranches } from "./worktree.ts";
+import { addWorktree, reopenWorktree, restoreWorktree, sweepRunBranches } from "./worktree.ts";
 
 const runProcess = promisify(execFile);
 
@@ -51,6 +60,9 @@ const runProcess = promisify(execFile);
 const defaultNodeWallMs = 30 * 60 * 1000;
 
 export interface ParallelRunOptions {
+  readonly resume?: boolean;
+  readonly owner?: ControllerOwner;
+  readonly executionIdentity?: string;
   readonly adaptation?: boolean;
   readonly peerInformation?: boolean;
   readonly graphRevisionLimit?: number;
@@ -155,36 +167,69 @@ export interface ParallelRunResult {
  * worse failure than any merge conflict.
  */
 export async function runInParallel(input: ParallelRunOptions): Promise<ParallelRunResult> {
-  const context =
-    input.runContext ??
-    (await createRunContext({
+  const owner =
+    input.owner ??
+    acquireControllerOwner({
       evidence: input.coordinator,
       clock: input.clock,
-      runId: input.runId,
-      maxTokens: input.maxTokens ?? 200_000,
-      maxWallMs: input.remainingWallMs?.() ?? defaultNodeWallMs,
-      modelConcurrency: input.modelConcurrency ?? 1,
-      testConcurrency: input.testConcurrency ?? 1,
-      signal: input.abortSignal,
-    }));
-  try {
-    const goalContract =
-      input.goalContract === undefined
-        ? undefined
-        : await declareGoalContract(input.coordinator, input.goalContract);
-    return await executeParallel({
-      ...input,
-      immutablePaths: [
-        ...(input.immutablePaths ?? []),
-        ...(goalContract === undefined ? [] : goalImmutablePaths(goalContract)),
-      ],
-      runContext: context,
-      abortSignal: context.signal,
-      remainingWallMs: () =>
-        Math.min(context.remainingWallMs(), input.remainingWallMs?.() ?? Infinity),
+      random: input.random,
     });
+  try {
+    owner.assertOwned();
+    const context =
+      input.runContext ??
+      (await createRunContext({
+        evidence: input.coordinator,
+        clock: input.clock,
+        runId: input.runId,
+        maxTokens: input.maxTokens ?? 200_000,
+        maxWallMs: input.remainingWallMs?.() ?? defaultNodeWallMs,
+        modelConcurrency: input.modelConcurrency ?? 1,
+        testConcurrency: input.testConcurrency ?? 1,
+        signal: input.abortSignal,
+      }));
+    try {
+      const goalContract =
+        input.goalContract === undefined
+          ? undefined
+          : freezeGoalContract(input.goalContract).contract;
+      const pinned = input.coordinator
+        .records()
+        .filter((record) => record.type === "goal-contract");
+      if (pinned.length > 1)
+        throw new Error("goal contract is duplicated; preserve the declaration");
+      if (pinned[0] !== undefined) {
+        const captured = input.coordinator.payloads().get(pinned[0].payloadDigest);
+        if (
+          captured === null ||
+          typeof captured !== "object" ||
+          !("digest" in captured) ||
+          goalContract === undefined ||
+          captured.digest !== digestOfJson(asJsonValue(goalContract))
+        )
+          throw new Error(
+            "resume must preserve the original goal requirements and acceptance artifacts",
+          );
+      } else if (goalContract !== undefined)
+        await declareGoalContract(input.coordinator, goalContract);
+      return await executeParallel({
+        ...input,
+        owner,
+        ...(goalContract === undefined ? {} : { goalContract }),
+        immutablePaths: [
+          ...(input.immutablePaths ?? []),
+          ...(goalContract === undefined ? [] : goalImmutablePaths(goalContract)),
+        ],
+        runContext: context,
+        abortSignal: context.signal,
+        remainingWallMs: () =>
+          Math.min(context.remainingWallMs(), input.remainingWallMs?.() ?? Infinity),
+      });
+    } finally {
+      if (input.runContext === undefined) context.dispose();
+    }
   } finally {
-    if (input.runContext === undefined) context.dispose();
+    if (input.owner === undefined) owner.release();
   }
 }
 
@@ -260,7 +305,8 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
             "coordination",
           ],
         });
-  const effectiveContracts = options.contracts ?? contracts;
+  const priorConfiguration = controllerConfiguration(options.coordinator);
+  const effectiveContracts = options.contracts ?? priorConfiguration?.contracts ?? contracts;
   if (graph !== null) {
     for (const contract of effectiveContracts) {
       const node = graph.nodes.find((node) => node.id === contract.taskId);
@@ -285,9 +331,52 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
     ) {
       throw new Error("every graph node requires exactly one effective contract");
     }
-    await declareTaskGraph(options.coordinator, graph, options.graphSource ?? "file");
+    if (!options.coordinator.records().some((record) => record.type === "task-graph"))
+      await declareTaskGraph(options.coordinator, graph, options.graphSource ?? "file");
   }
-  await declareTaskContracts(options.coordinator, effectiveContracts, baseCommit);
+  await sealControllerConfiguration(
+    options.coordinator,
+    {
+      version: 1,
+      runId: options.runId,
+      repositoryRoot: options.repositoryRoot,
+      baseCommit,
+      scratchRoot: options.scratchRoot,
+      tasks: [...options.tasks],
+      graph,
+      graphSource: options.graphSource ?? "file",
+      contracts: [...effectiveContracts],
+      goalContract: options.goalContract ?? null,
+      modelSpec: options.modelSpec,
+      maxSteps: options.maxSteps,
+      attempts: options.attempts,
+      repairAttempts: options.repairAttempts ?? 2,
+      redundancy: options.redundancy,
+      concurrency: options.concurrency,
+      adaptation: options.adaptation !== false,
+      peerInformation: options.peerInformation !== false,
+      graphRevisionLimit: options.graphRevisionLimit ?? 4,
+      revisions: (options.revisions ?? []).map((request) => ({ ...request })),
+      execution: options.isolation === undefined ? "host" : "backend",
+      executionIdentity:
+        options.executionIdentity ??
+        (options.isolation === undefined
+          ? `host:${process.platform}:${process.arch}:${process.version}`
+          : null),
+      gateOptions: options.gateOptions ?? {},
+    },
+    options.resume === true,
+  );
+  if (
+    options.resume &&
+    priorConfiguration?.execution === "backend" &&
+    priorConfiguration.executionIdentity === null
+  )
+    throw new Error(
+      "original backend identity was unavailable; reconcile execution policy before resuming",
+    );
+  if (!options.resume)
+    await declareTaskContracts(options.coordinator, effectiveContracts, baseCommit);
   // A run without a graph is a run with one layer holding every task, so both paths are the
   // same loop and the ordinary run reaches the queue exactly once, as it always did. A graph's
   // layers carry their node ids, which is what a blocked node is named by.
@@ -331,29 +420,86 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
     options.goalContract?.requirements.map((requirement) => requirement.id) ?? [],
     options.graphRevisionLimit ?? 4,
   );
-  await recordControllerGraph(options.coordinator, controllerGraph);
-  await recordControllerEvent(options.coordinator, {
-    kind: "work-declared",
-    tasks: initialTasks.map((objective, index) => ({ id: `task-${index + 1}`, objective })),
+  if (replayController(options.coordinator).graph === null)
+    await recordControllerGraph(options.coordinator, controllerGraph);
+  if (
+    !options.coordinator
+      .records()
+      .some(
+        (record) =>
+          record.type === "controller-event" &&
+          (
+            options.coordinator.payloads().get(record.payloadDigest) as
+              | { kind?: string }
+              | undefined
+          )?.kind === "work-declared",
+      )
+  )
+    await recordControllerEvent(options.coordinator, {
+      kind: "work-declared",
+      tasks: initialTasks.map((objective, index) => ({ id: `task-${index + 1}`, objective })),
+    });
+  const recovered = options.resume
+    ? await withControllerCleanup(options.clock, (signal) => reconcileController(options, signal))
+    : null;
+  const workers: WorkerResult[] = [...(recovered?.workers ?? [])];
+  for (const worker of workers)
+    registered.push({ workerId: worker.workerId, taskId: worker.taskId, chain: worker.evidence });
+  const integrationPath = join(options.scratchRoot, "integration");
+  const integrationBranch = `swarm/${options.runId}/integration`;
+  let integrationPresent = false;
+  try {
+    integrationPresent = (await stat(integrationPath)).isDirectory();
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause;
+  }
+  const resource = replayController(options.coordinator).resource;
+  if (integrationPresent && resource === null)
+    throw new Error("integration location already exists without an ownership record; preserve it");
+  await recordTransition(options.coordinator, {
+    kind: "integration-resource",
+    phase: "create-intent",
+    path: integrationPath,
+    branch: integrationBranch,
+    commit: recovered?.head ?? baseCommit,
   });
-  const integration = await addWorktree({
+  options.owner?.assertOwned();
+  const integrationSettings = {
     repositoryRoot: options.repositoryRoot,
-    path: join(options.scratchRoot, "integration"),
-    branch: `swarm/${options.runId}/integration`,
-    baseRef: baseCommit,
+    path: integrationPath,
+    branch: integrationBranch,
+    baseRef: recovered?.head ?? baseCommit,
+  };
+  const retainedIntegration = (
+    await runProcess(
+      "git",
+      ["for-each-ref", "--format=%(objectname)", `refs/heads/${integrationBranch}`],
+      { cwd: options.repositoryRoot },
+    )
+  ).stdout.trim();
+  const integration = integrationPresent
+    ? await reopenWorktree(integrationSettings)
+    : retainedIntegration === ""
+      ? await addWorktree(integrationSettings)
+      : await restoreWorktree(integrationSettings);
+  await recordTransition(options.coordinator, {
+    kind: "integration-resource",
+    phase: "created",
+    path: integrationPath,
+    branch: integrationBranch,
+    commit: recovered?.head ?? baseCommit,
   });
 
-  const workers: WorkerResult[] = [];
   const selections: AttemptSelection[] = [];
-  const landings: QueueLanding[] = [];
+  const landings: QueueLanding[] = [...(recovered?.landings ?? [])];
   let queue: MergeQueueResult | null = null;
-  let head = baseCommit;
+  let head = recovered?.head ?? baseCommit;
   // One registry across every layer: the first declares, the rest amend, because the union
   // of what the workers touched is not known until the last layer has run.
   const fileSet = createFileSetRegistry(options.coordinator);
 
   const integrationEffects = new Map<string, string>();
-  let integrationSequence = 0;
+  let integrationSequence = replayController(options.coordinator).integrations.size;
   async function landLayer(proposals: readonly RankedProposal[]): Promise<void> {
     const landed = await runMergeQueue({
       integrationPath: integration.path,
@@ -405,7 +551,9 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
       },
       // The first layer seals the chain's criteria; every later layer runs under that seal,
       // and every layer reads its gate commands from the commit the run branched from.
-      criteriaSealed: queue !== null,
+      criteriaSealed: options.coordinator
+        .records()
+        .some((record) => record.type === "gate-set-sealed"),
       criteriaRef: baseCommit,
       ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
     });
@@ -415,7 +563,9 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
     queue = { ...landed, baseCommit, headCommit: head, landings };
   }
 
+  let orderly = false;
   try {
+    if (recovered !== null && landings.length > 0) await landLayer([]);
     await runControllerSchedule({
       options,
       criteriaRef: baseCommit,
@@ -429,8 +579,26 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
         if (chosen.proposals.length > 0) await landLayer(chosen.proposals);
       },
     });
+    orderly = true;
   } finally {
-    await integration.remove();
+    if (orderly) {
+      await recordTransition(options.coordinator, {
+        kind: "integration-resource",
+        phase: "cleanup-intent",
+        path: integration.path,
+        branch: integration.branch,
+        commit: head,
+      });
+      options.owner?.assertOwned();
+      await withControllerCleanup(options.clock, (signal) => integration.remove(signal));
+      await recordTransition(options.coordinator, {
+        kind: "integration-resource",
+        phase: "removed",
+        path: integration.path,
+        branch: integration.branch,
+        commit: head,
+      });
+    }
   }
 
   // The queue is finished with the worker branches now, so they go. They outlive their

@@ -140,6 +140,38 @@ export function checkFileSet(state: FileSetState, changedFiles: readonly string[
  */
 export function createFileSetRegistry(evidence: EvidenceRecorder): FileSetRegistry {
   let current: FileSetState = emptyFileSet;
+  for (const record of evidence.records()) {
+    if (record.type === "file-set-declared") {
+      if (current.wasDeclared) throw new FileSetAlreadyDeclaredError();
+      const declaration = fileSetDeclarationSchema.parse(
+        evidence.payloads().get(record.payloadDigest),
+      );
+      const declared = unique(declaration.files);
+      if (declared.length !== declaration.fileCount)
+        throw new Error("file-set declaration count does not match its files");
+      current = { ...emptyFileSet, declared, allowed: new Set(declared), wasDeclared: true };
+    }
+    if (record.type === "file-set-amended") {
+      const amendment = fileSetAmendmentSchema.parse(evidence.payloads().get(record.payloadDigest));
+      const added = amendment.files.filter((path) => !current.allowed.has(path));
+      const allowed = new Set([...current.allowed, ...amendment.files]);
+      if (
+        added.length !== amendment.addedCount ||
+        allowed.size !== amendment.fileCountAfter ||
+        added.some((path) => !amendment.added.includes(path))
+      )
+        throw new Error("file-set amendment does not follow from its prior authorization");
+      current = {
+        ...current,
+        allowed,
+        amendments: [
+          ...current.amendments,
+          { files: amendment.files, added, reason: amendment.reason, record: record.payloadDigest },
+        ],
+      };
+    }
+  }
+  current = { ...current, editedBeforeAuthorized: writesBeforeAuthorization(evidence, current) };
 
   /**
    * Recomputed from the chain rather than tracked alongside it. The ledger is the record of
