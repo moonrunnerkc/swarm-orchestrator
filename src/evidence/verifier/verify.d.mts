@@ -40,3 +40,8 @@ export declare function sealConformance(
 };
 
 export { readControllerHistory } from "./controller.mjs";
+
+export declare function goalSelectionConformance(
+  records: readonly Pick<LedgerRecord, "type" | "sequence" | "actor" | "payloadDigest">[],
+  payloads: ReadonlyMap<string, JsonValue>,
+): readonly { sequence: number; problems: readonly string[] }[];

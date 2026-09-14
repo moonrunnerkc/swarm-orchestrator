@@ -159,7 +159,7 @@ describe("renderParallelReport", () => {
       headCommit: "c".repeat(40),
     });
 
-    expect(text).toMatch(/no worker produced anything for the queue/);
+    expect(text).toMatch(/no candidate satisfied the required eligibility checks/);
     expect(text).not.toContain("git merge");
   });
 });

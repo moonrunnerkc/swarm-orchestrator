@@ -104,7 +104,8 @@ export async function runOneWorker(
       ...(repairFeedback === undefined ? {} : { repairFeedback }),
       task,
       coordination:
-        options.peerInformation === false
+        options.peerInformation === false ||
+        (options.goalContract !== undefined && options.redundancy > 1)
           ? []
           : createCoordinationTools({
               workerId,
@@ -139,7 +140,8 @@ export async function runOneWorker(
       // The remainder rather than a fresh budget: a worker starting late gets what is left.
       ...(remainingWall === null ? {} : { maxWallTimeMs: remainingWall }),
       homeDir: options.scratchRoot,
-      ...(options.peerInformation === false
+      ...(options.peerInformation === false ||
+      (options.goalContract !== undefined && options.redundancy > 1)
         ? {}
         : {
             trail: createReadTrailTool({

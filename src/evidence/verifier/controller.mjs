@@ -357,6 +357,24 @@ export function readControllerHistory(records, payloads) {
           } else states.set(intent.taskId, "failed");
           break;
         }
+        case "candidate-refused": {
+          const candidate = candidates.get(observed.workerId);
+          const capture = records.find(
+            (record) =>
+              record.sequence < entry.sequence &&
+              record.actor === "harness" &&
+              record.type === "goal-candidate-verification" &&
+              record.payloadDigest === observed.observation,
+          );
+          const reading = payloads.get(capture?.payloadDigest);
+          require(candidate &&
+            reading?.workerId === candidate.workerId &&
+            (reading.verification?.verified === false ||
+              reading.verification?.checks?.some((check) => check.status === "failed")) &&
+            !accepted.has(candidate.taskId), "candidate refusal lacks independent failure");
+          states.set(candidate.taskId, "failed");
+          break;
+        }
         case "candidate-stale": {
           const candidate = candidates.get(observed.workerId);
           require(candidate &&

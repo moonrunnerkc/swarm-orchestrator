@@ -66,10 +66,16 @@ export async function verifyGoal(options: {
       const unchanged = await run(["git", "diff", "--exit-code"]);
       const artifactsUnchanged = (
         await Promise.all(
-          check.artifacts.map(
-            async (artifact) =>
-              (await readFile(join(options.checkout, artifact.path), "utf8")) === artifact.content,
-          ),
+          check.artifacts.map(async (artifact) => {
+            try {
+              return (
+                (await readFile(join(options.checkout, artifact.path), "utf8")) === artifact.content
+              );
+            } catch (cause) {
+              if ((cause as NodeJS.ErrnoException).code === "ENOENT") return false;
+              throw cause;
+            }
+          }),
         )
       ).every(Boolean);
       const status =

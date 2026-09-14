@@ -27,7 +27,7 @@ export const revisionOperationSchema = z.discriminatedUnion("kind", [
   }),
   z.strictObject({
     kind: z.literal("combine"),
-    tasks: z.array(id).min(2).max(8),
+    tasks: z.array(id).min(2).max(128),
     combined: controllerNodeSchema,
   }),
   z.strictObject({ kind: z.literal("reroute"), taskId: id, replacement: controllerNodeSchema }),

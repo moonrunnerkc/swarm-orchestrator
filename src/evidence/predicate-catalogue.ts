@@ -25,6 +25,22 @@ export interface CatalogueEntry {
 
 export const predicateCatalogue: readonly CatalogueEntry[] = [
   {
+    type: "goal-candidate-verification",
+    controllerOnly: true,
+    subjectField: "workerId",
+    example: "verification.verified == true",
+    sample: { workerId: "worker-1", verification: { verified: true } },
+    says: "independent checks of one complete goal candidate",
+  },
+  {
+    type: "goal-attempt-selection",
+    controllerOnly: true,
+    subjectField: "taskId",
+    example: "winner != null",
+    sample: { taskId: "goal", winner: "worker-1" },
+    says: "a declared objective compared only independently acceptable complete goal candidates",
+  },
+  {
     type: "controller-launch",
     controllerOnly: true,
     subjectField: null,

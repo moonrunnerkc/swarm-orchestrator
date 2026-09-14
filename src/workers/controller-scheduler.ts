@@ -5,10 +5,19 @@ import { harnessChildEnvironment } from "../exec/child-environment.ts";
 import { createResourcePool } from "../exec/resource-pool.ts";
 import { controllerEvents, recordControllerEvent } from "./controller-events.ts";
 import { runOneWorker } from "./controller-jobs.ts";
-import { applyControllerRevision, consumeCoordination } from "./controller-revisions.ts";
+import {
+  applyControllerRevision,
+  coalesceGoalAlternatives,
+  consumeCoordination,
+} from "./controller-revisions.ts";
 import { readyTasks } from "./controller-schedule.ts";
-import { candidateIsCurrent, recordTransition, replayController } from "./controller-state.ts";
-import type { PlannedAttempt } from "./fan-out.ts";
+import {
+  candidateIsCurrent,
+  candidateRefusal,
+  recordTransition,
+  replayController,
+} from "./controller-state.ts";
+import { type PlannedAttempt, planAttempts } from "./fan-out.ts";
 import type { ControllerNode } from "./graph-revision.ts";
 import type { ParallelRunOptions, WorkerResult } from "./parallel-run.ts";
 import type { TrailPeer } from "./trail.ts";
@@ -30,6 +39,8 @@ export async function runControllerSchedule(settings: {
   const limit = options.concurrency > 0 ? options.concurrency : 128;
   for (const revision of options.resume ? [] : (options.revisions ?? []))
     await applyControllerRevision(options.coordinator, revision, "user");
+  if (!options.resume && options.goalContract !== undefined && options.redundancy > 1)
+    await coalesceGoalAlternatives(options.coordinator, options.goalContract.goal);
 
   const launch = (node: ControllerNode, attempts: readonly PlannedAttempt[], feedback?: string) => {
     const graphRevision = replayController(options.coordinator).graph?.revision;
@@ -106,7 +117,7 @@ export async function runControllerSchedule(settings: {
       "detail" in rejection &&
       typeof rejection.detail === "string"
         ? rejection.detail
-        : previous.detail;
+        : (candidateRefusal(options.coordinator, previous.workerId) ?? previous.detail);
     const patch =
       previous.commit === null
         ? ""
@@ -199,7 +210,9 @@ export async function runControllerSchedule(settings: {
         await consumeCoordination({
           evidence: options.coordinator,
           peers: settings.registered,
-          adaptation: options.adaptation !== false,
+          adaptation:
+            options.adaptation !== false &&
+            !(options.goalContract !== undefined && options.redundancy > 1),
         });
       const board = replayController(options.coordinator);
       if (board.graph === null) throw new Error("controller history lacks its graph");
@@ -243,15 +256,15 @@ export async function runControllerSchedule(settings: {
                 ]
               : initial.length > 0
                 ? initial
-                : [
-                    {
-                      workerId: `${taskId}-attempt-1`,
-                      taskId,
-                      task: node.contract.objective,
-                      attemptIndex: 0,
-                      sampling: null,
-                    },
-                  ],
+                : planAttempts(
+                    [node.contract.objective],
+                    options.redundancy,
+                    options.modelSpec,
+                  ).map((attempt) => ({
+                    ...attempt,
+                    taskId,
+                    workerId: `${taskId}-attempt-${attempt.attemptIndex + 1}`,
+                  })),
           );
         }
       }
@@ -278,7 +291,9 @@ export async function runControllerSchedule(settings: {
         await consumeCoordination({
           evidence: options.coordinator,
           peers: settings.registered,
-          adaptation: options.adaptation !== false,
+          adaptation:
+            options.adaptation !== false &&
+            !(options.goalContract !== undefined && options.redundancy > 1),
         });
       const current = replayController(options.coordinator);
       const eligible: WorkerResult[] = [];

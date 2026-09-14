@@ -12,6 +12,7 @@ import { type EvidenceRecorder, openEvidenceSession } from "../evidence/session.
 import { createEphemeralSigningKey } from "../evidence/signing.ts";
 import { parseTaskContract } from "../evidence/task-contract.ts";
 import { verifyBundle } from "../evidence/verifier/verify.mjs";
+import type { GateSetOptions } from "../gates/default-gates.ts";
 import {
   createFixtureModelClient,
   respondWithText,
@@ -67,6 +68,8 @@ async function execute(
   repairAttempts = 2,
   controls: {
     holdUntilDependent?: boolean;
+    holdSecondUntilFirst?: boolean;
+    gateOptions?: GateSetOptions;
     coordination?: Readonly<Record<string, CoordinationEvent["proposal"]>>;
     revisions?: readonly RevisionRequest[];
   } = {},
@@ -113,6 +116,7 @@ async function execute(
   const calls: string[] = [];
   const outcome = await runInParallel({
     revisions: controls.revisions ?? [],
+    ...(controls.gateOptions === undefined ? {} : { gateOptions: controls.gateOptions }),
     repositoryRoot: repository,
     baseRef: "HEAD",
     tasks: ["first change", "second change"],
@@ -153,7 +157,10 @@ async function execute(
       return {
         modelId: fixture.modelId,
         generate: async (request) => {
-          if ((graph === undefined || holdUntilDependent) && workerId === "worker-2") {
+          if (
+            (graph === undefined || holdUntilDependent || controls.holdSecondUntilFirst) &&
+            workerId === "worker-2"
+          ) {
             longWaiting = true;
             await secondReady;
             longWaiting = false;
@@ -581,4 +588,65 @@ it("cannot accept a split obligation when only one replacement implements its pa
   expect(
     outcome.outcome.requirements.every((requirement) => requirement.status === "rejected"),
   ).toBe(true);
+});
+
+it("repairs a regression of a declared advisory requirement on the integrated tree", async () => {
+  await writeFile(
+    join(repository, "base.test.js"),
+    "import {test} from 'node:test'; import assert from 'node:assert/strict'; test('regression',()=>assert.ok(true));\n",
+  );
+  await command("git", ["-C", repository, "add", "."]);
+  await command("git", [
+    "-C",
+    repository,
+    "-c",
+    "user.name=fixture",
+    "-c",
+    "user.email=fixture@example.com",
+    "commit",
+    "-qm",
+    "ordinary regression harness",
+  ]);
+  const { outcome, calls } = await execute(
+    {
+      "worker-1": { "a.js": "export const a = 2;\n" },
+      "worker-2": { "b.js": "export const b = 2;\n" },
+      "task-2-repair-1": { "b.js": "export const b = 3;\n" },
+    },
+    {
+      goal: "compatible components",
+      nodes: [
+        {
+          id: "first",
+          title: "first",
+          instruction: "change a",
+          files: ["a.js"],
+          acceptance: ["interaction"],
+        },
+        { id: "second", title: "second", instruction: "change b", files: ["b.js"] },
+      ],
+    },
+    goal,
+    2,
+    {
+      holdSecondUntilFirst: true,
+      gateOptions: {
+        commandOverrides: {
+          interaction: {
+            command: `node --input-type=module -e "import {a} from './a.js'; import {b} from './b.js'; process.exit(a+b === 4 ? 1 : 0)"`,
+            severity: "advisory",
+          },
+        },
+      },
+    },
+  );
+  expect(outcome.workers.find((worker) => worker.workerId === "worker-2")?.green).toBe(true);
+  expect(
+    outcome.queue?.landings.some(
+      (landing) =>
+        !landing.landed && landing.reason === "ratchet" && landing.feedback.includes("interaction"),
+    ),
+  ).toBe(true);
+  expect(calls).toEqual(["worker-1", "worker-2", "task-2-repair-1"]);
+  expect(outcome.outcome.goalAccepted).toBe(true);
 });

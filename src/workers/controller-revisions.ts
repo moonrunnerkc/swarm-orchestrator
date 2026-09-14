@@ -1,5 +1,6 @@
 import { asJsonValue } from "../evidence/canonical-json.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
+import { parseTaskContract } from "../evidence/task-contract.ts";
 import { appendControllerRecord, replayController } from "./controller-state.ts";
 import { coordinationEvents } from "./coordination.ts";
 import { type ControllerGraph, type RevisionOperation, reviseGraph } from "./graph-revision.ts";
@@ -122,4 +123,57 @@ export async function consumeCoordination(options: {
       consumed.add(source);
     }
   }
+}
+
+/** Whole-goal alternatives must satisfy one complete contract before their objective can rank them. */
+export async function coalesceGoalAlternatives(
+  evidence: EvidenceRecorder,
+  objective: string,
+): Promise<void> {
+  const board = replayController(evidence);
+  if (board.graph === null || board.graph.nodes.length < 2) return;
+  if (board.dispatches.size > 0)
+    throw new Error("whole-goal alternatives must be declared before dispatch");
+  const originals = board.graph.nodes;
+  const first = originals[0];
+  if (first === undefined) throw new Error("whole-goal alternatives have no original task");
+  let identity = "complete-goal";
+  let suffix = 0;
+  while (originals.some((node) => node.id === identity) || board.graph.retired.includes(identity))
+    identity = `complete-goal-${++suffix}`;
+  const workspaceScope = originals.some((node) => node.contract.scopeKind === "workspace");
+  const contract = parseTaskContract({
+    ...first.contract,
+    taskId: identity,
+    objective: `${objective}\n\nRequired implementation work:\n${originals.map((node) => `${node.contract.taskId}: ${node.contract.objective}`).join("\n")}`,
+    dependsOn: [],
+    scopeKind: workspaceScope ? "workspace" : "files",
+    scopeAuthority: workspaceScope ? "human" : first.contract.scopeAuthority,
+    allowedPaths: workspaceScope
+      ? ["**"]
+      : [...new Set(originals.flatMap((node) => node.contract.allowedPaths))],
+    immutablePaths: [...new Set(originals.flatMap((node) => node.contract.immutablePaths))],
+    requiredChecks: [...new Set(originals.flatMap((node) => node.contract.requiredChecks))],
+    allowedTools: first.contract.allowedTools.filter((tool) =>
+      originals.every((node) => node.contract.allowedTools.includes(tool)),
+    ),
+  });
+  await applyControllerRevision(
+    evidence,
+    {
+      operation: {
+        kind: "combine",
+        tasks: originals.map((node) => node.id),
+        combined: {
+          id: identity,
+          contract,
+          dependsOn: [],
+          obligations: [...board.graph.obligations],
+        },
+      },
+      reason:
+        "complete-goal alternatives share every original obligation and compete only after independent goal acceptance",
+    },
+    "harness",
+  );
 }

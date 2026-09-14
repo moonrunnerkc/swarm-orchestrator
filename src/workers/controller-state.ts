@@ -79,6 +79,12 @@ const integrationSchema = z.strictObject({
   branch: z.string(),
 });
 export const controllerTransitionSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("candidate-refused"),
+    workerId: z.string(),
+    observation: z.string(),
+    reason: z.string(),
+  }),
   dispatchSchema,
   integrationSchema,
   z.strictObject({ kind: z.literal("task-reopened"), taskId: z.string(), reason: z.string() }),
@@ -396,6 +402,35 @@ export function replayController(
         } else state.states.set(intent.taskId, "failed");
         break;
       }
+      case "candidate-refused": {
+        const candidate = state.candidates.get(event.workerId);
+        const observed = entries.find(
+          (entry) =>
+            entry.sequence < record.sequence &&
+            entry.actor === "harness" &&
+            entry.type === "goal-candidate-verification" &&
+            entry.payloadDigest === event.observation,
+        );
+        const reading = z
+          .object({
+            workerId: z.string(),
+            verification: z.object({
+              verified: z.boolean(),
+              checks: z.array(z.object({ status: z.string() })),
+            }),
+          })
+          .parse(observed?.payload);
+        if (
+          candidate === undefined ||
+          reading.workerId !== candidate.workerId ||
+          (reading.verification.verified &&
+            !reading.verification.checks.some((check) => check.status === "failed")) ||
+          state.accepted.has(candidate.taskId)
+        )
+          throw new Error("candidate refusal lacks its independent failure observation");
+        state.states.set(candidate.taskId, "failed");
+        break;
+      }
       case "candidate-stale": {
         const candidate = state.candidates.get(event.workerId);
         if (candidate === undefined || event.currentRevision !== state.graph.revision)
@@ -488,4 +523,17 @@ export async function appendControllerRecord(
   });
   writers.set(evidence, write);
   await write;
+}
+
+export function candidateRefusal(
+  evidence: EvidenceRecorder,
+  workerId: string | undefined,
+): string | null {
+  if (workerId === undefined) return null;
+  for (const record of [...evidence.records()].reverse()) {
+    if (record.type !== "controller-transition") continue;
+    const event = controllerTransitionSchema.parse(evidence.payloads().get(record.payloadDigest));
+    if (event.kind === "candidate-refused" && event.workerId === workerId) return event.reason;
+  }
+  return null;
 }
