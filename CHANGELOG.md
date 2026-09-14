@@ -4,6 +4,17 @@
 
 ### Added
 
+- **Goal runs now complete through adaptive integration.** `swarm parallel --goal` creates one
+  shared run context before planning, resolves each task contract into enforced paths, tools,
+  checks, runtime policy and budget, and schedules ready work without whole-layer barriers. Merge
+  conflicts, behavioral failures and ratchet rejections retain their candidate commits and create
+  bounded repair attempts against the current integration tree. Missing prerequisites, coupled
+  tasks and repair routes use append-only graph revisions that preserve requirement identities.
+  Final status comes from independent checks of the exact integrated tree. `resume` rebuilds the
+  durable controller state and will not duplicate an accepted landing. The pilot driver and its
+  paired evaluation remain descriptive evidence, not a claim of universal correctness or swarm
+  superiority.
+
 - **The oracle bond asks something of ordinary code.** Its five operators each needed a particular
   token on the line, and a guard clause, an assignment, a `require` and a callback carry none of
   them, so `not-bonded` was what a bond said when it had nothing to ask rather than when it had
