@@ -68,9 +68,30 @@ swarm parallel --tasks <file>    # a worker per task, then a merge queue
 swarm parallel --goal <text>     # break the goal into tasks, then run them
   --redundancy <n>               # try each task n ways, land the best of them
   --concurrency <n>              # how many workers may hold a worktree at once
+  --bootstrap node               # explicit Node 24 setup for an empty Git base
 ```
 
 See [using.md](using.md) for what a parallel run looks like and how the merge queue lands work.
+
+For a new standard-library Node project, initialize an empty Git commit, then run:
+
+```sh
+git init
+git -c user.name='Project owner' -c user.email='owner@example.com' commit --allow-empty -m 'Empty project'
+swarm parallel --goal 'Implement a bounded in-memory counter with reset and tests' --bootstrap node --model local:qwen3.6:35b-a3b --max-tokens 200000
+```
+
+Bootstrap runs before planning inside the original deadline and test-process limit. It creates a
+retained setup commit, verifies Node 24, and checks that `npm test` both accepts a passing control
+and rejects a failing one. Goal checks are pinned afterward and still run against the final
+integrated tree. Setup controls are not evidence that the requested feature works. The initial
+`package.json` and `.gitignore` remain immutable during implementation. This bootstrap supports
+Node ESM using the standard library; projects requiring another toolchain or dependency setup
+should establish it first and run without this flag. Existing projects retain their ordinary path.
+The current branch and index stay unchanged. `resume` preserves the original setup identity and
+budget; `repair` cleans only exact, owned setup files. Altered files or references require
+reconciliation. This stage uses the selected execution backend; host execution remains restricted,
+not isolated.
 
 ## Verifying
 

@@ -25,6 +25,14 @@ export interface CatalogueEntry {
 
 export const predicateCatalogue: readonly CatalogueEntry[] = [
   {
+    type: "bootstrap-stage",
+    controllerOnly: true,
+    subjectField: null,
+    example: 'phase == "ready"',
+    sample: { phase: "ready" },
+    says: "the explicit setup stage observed its pinned toolchain and both test controls",
+  },
+  {
     type: "goal-candidate-verification",
     controllerOnly: true,
     subjectField: "workerId",

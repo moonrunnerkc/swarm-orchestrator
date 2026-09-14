@@ -260,6 +260,7 @@ export interface AddCaseCommand {
 
 /** N workers over git worktrees, then one merge queue that lands what they produced. */
 export interface ParallelCommand {
+  readonly bootstrap?: "node";
   readonly goalChecksFile?: string;
   readonly maxTokens?: number;
   readonly repairAttempts?: number;
@@ -348,6 +349,7 @@ export const usage = [
   "  swarm --version                                  which build this is",
   "    --redundancy <n>                               try each task n ways, land the best",
   "    --concurrency <n>                              how many may hold a worktree at once",
+  "    --bootstrap node                               establish Node 24 checks on an empty Git base",
   "",
   "    [--immutable <a,b>] [--json]                   the base, trusting nothing that made it",
   "    [--contract <file>] [--isolation <runtime[:image]>] [--bundle <dir>]",
@@ -579,6 +581,10 @@ export function parseCommandLine(
     const goal = flags.get("goal");
     const named = tasksFile !== undefined && tasksFile.trim().length > 0;
     const asked = goal !== undefined && goal.trim().length > 0;
+    if (flags.has("bootstrap") && (flags.get("bootstrap") !== "node" || !asked))
+      throw new InvalidCommandLineError(
+        "--bootstrap node requires --goal and supports an empty Git base with Node 24",
+      );
     if (named === asked) {
       throw new InvalidCommandLineError(
         named
@@ -590,6 +596,7 @@ export function parseCommandLine(
     }
     return {
       command: "parallel",
+      ...(flags.has("bootstrap") ? { bootstrap: "node" as const } : {}),
       ...(flags.has("goal-checks")
         ? { goalChecksFile: resolve(context.currentDirectory, flags.get("goal-checks") ?? "") }
         : {}),

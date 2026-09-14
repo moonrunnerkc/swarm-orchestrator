@@ -10,7 +10,8 @@ const positive = z.number().int().positive();
 /** The pre-planning declaration contains no provider credentials or mutable input-file references. */
 export const controllerLaunchSchema = z
   .strictObject({
-    version: z.union([z.literal(1), z.literal(2)]),
+    version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+    bootstrap: z.literal("node").optional(),
     controllerScope: controllerScopeSchema.optional(),
     runId: z.string().regex(/^[a-zA-Z0-9_-]+$/),
     repositoryRoot: z.string(),
@@ -48,9 +49,18 @@ export const controllerLaunchSchema = z
     gateOptions: controllerConfigurationSchema.shape.gateOptions,
     bundleDirectory: z.string().nullable(),
   })
-  .refine((spec) => (spec.version === 2) === (spec.controllerScope !== undefined), {
+  .refine((spec) => spec.version >= 2 === (spec.controllerScope !== undefined), {
     message: "controller scope authority requires version two and must be preserved",
-  });
+  })
+  .refine(
+    (spec) =>
+      (spec.version === 3) === (spec.bootstrap !== undefined) &&
+      (spec.bootstrap === undefined ||
+        (spec.goal !== null && spec.controllerScope?.kind === "workspace")),
+    {
+      message: "bootstrap requires a version-three goal launch with workspace authority",
+    },
+  );
 export type ControllerLaunch = z.infer<typeof controllerLaunchSchema>;
 export function controllerLaunch(evidence: EvidenceRecorder): ControllerLaunch | null {
   const records = evidence.records().filter((record) => record.type === "controller-launch");

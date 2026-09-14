@@ -993,7 +993,15 @@ function collectChecks(directory) {
       assessment.problems.length === 0,
       assessment.problems.join("; ") || "complete obligations precede the declared objective",
     );
-  if (records.some((entry) => entry.type === "controller-graph")) {
+  if (
+    records.some(
+      (entry) =>
+        entry.type === "controller-graph" ||
+        entry.type === "bootstrap-stage" ||
+        (entry.type === "controller-launch" &&
+          payloads.get(entry.payloadDigest)?.spec?.bootstrap !== undefined),
+    )
+  ) {
     const board = readControllerHistory(records, payloads);
     record(
       "controller history re-derived",
