@@ -69,6 +69,8 @@ export interface MergeQueueResult {
 }
 
 interface MergeQueueOptions {
+  readonly beforeAttempt?: (candidate: QueueCandidate, accepted: string) => Promise<void>;
+  readonly afterAttempt?: (landing: QueueLanding) => Promise<void>;
   readonly commandPool?: ResourcePool | undefined;
   readonly isolation?: IsolationBackend;
   readonly abortSignal?: AbortSignal;
@@ -213,6 +215,7 @@ export async function runMergeQueue(options: MergeQueueOptions): Promise<MergeQu
     const ranked = [candidate, ...(candidate.alternates ?? [])];
 
     for (const [rank, attempt] of ranked.entries()) {
+      await options.beforeAttempt?.(attempt, accepted);
       const landing = await tryCandidate({
         candidate: attempt,
         position: index + 1,
@@ -226,6 +229,7 @@ export async function runMergeQueue(options: MergeQueueOptions): Promise<MergeQu
         accepted,
         options,
       });
+      await options.afterAttempt?.(landing.landing);
       landings.push(landing.landing);
 
       if (landing.landing.landed) {

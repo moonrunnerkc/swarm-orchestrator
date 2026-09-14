@@ -38,3 +38,5 @@ export declare function sealConformance(
   readonly sealed: { readonly sequence: number; readonly gates: number } | null;
   readonly problems: readonly string[];
 };
+
+export { readControllerHistory } from "./controller.mjs";

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 // Re-derivation for swarm-orchestrator evidence bundles.
 //
 // verify.mjs checks that a bundle is what it says it is. This script asks a harder question of
@@ -24,6 +25,7 @@ import { pathToFileURL } from "node:url";
 import {
   evaluateClaim,
   indexCitedRecords,
+  readControllerHistory,
   recomputeBondVerdict,
   sealConformance,
   sha256,
@@ -339,6 +341,14 @@ export function rederiveBundle(directory, log = console.log) {
     else
       disagree(
         `verification-command ${entry.sequence}: recorded ${payload.status}, the rule reads ${status}`,
+      );
+  }
+  if (records.some((entry) => entry.type === "controller-graph")) {
+    const board = readControllerHistory(records, payloads);
+    if (board.problems.length > 0) disagree(`controller history: ${board.problems.join("; ")}`);
+    else
+      agree(
+        `controller history: graph revision ${board.graph?.ordinal}, ${board.accepted.size} currently accepted tasks`,
       );
   }
   const parserByGate = new Map();

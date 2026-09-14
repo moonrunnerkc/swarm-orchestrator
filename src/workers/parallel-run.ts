@@ -1,8 +1,6 @@
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { runAgentTask } from "../agent-run.ts";
 import type { Clock } from "../core/clock.ts";
 import type { LoopEvent } from "../core/loop-events.ts";
 import type { ModelClient } from "../core/model-client.ts";
@@ -13,7 +11,6 @@ import {
   type GoalContract,
   goalImmutablePaths,
 } from "../evidence/goal-contract.ts";
-import { LedgerSealedError, LedgerWriteFailedError } from "../evidence/ledger.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { parseTaskContract } from "../evidence/task-contract.ts";
 import { harnessChildEnvironment } from "../exec/child-environment.ts";
@@ -24,36 +21,40 @@ import {
   type IndependentVerification,
   verifyIndependently,
 } from "../gates/independent-verification.ts";
-import { emptyMeasureSnapshot, type MeasureSnapshot } from "../gates/measure-snapshot.ts";
+import type { MeasureSnapshot } from "../gates/measure-snapshot.ts";
 import { createNodeCommandRunner } from "../gates/node-command-runner.ts";
-import { summarizeRatchet } from "../gates/ratchet-summary.ts";
 import { type Attempt, type AttemptSelection, selectAttempt } from "./attempt-selector.ts";
 import { recordControllerEvent } from "./controller-events.ts";
-import { type PlannedAttempt, planAttempts } from "./fan-out.ts";
+import { runControllerSchedule } from "./controller-scheduler.ts";
+import { recordTransition, replayController } from "./controller-state.ts";
+import { planAttempts } from "./fan-out.ts";
 import { assessController, type ControllerOutcome } from "./goal-outcome.ts";
 import { claimGraphOutcome, declareTaskGraph, type NodeOutcome } from "./graph-record.ts";
+import { initialControllerGraph, recordControllerGraph } from "./graph-revision.ts";
 import {
   type MergeQueueResult,
   type QueueCandidate,
   type QueueLanding,
   runMergeQueue,
 } from "./merge-queue.ts";
-import { createWorkPool } from "./pool.ts";
 import { createRunContext, type RunContext } from "./run-context.ts";
-import { blockedBy, scheduleLayers } from "./schedule.ts";
+import { scheduleLayers } from "./schedule.ts";
 import { recordSelection } from "./selection-record.ts";
 import { contractsFromGraph, declareTaskContracts, type TaskContract } from "./task-contract.ts";
 import type { TaskGraph } from "./task-graph.ts";
-import { peersFor, type TrailPeer } from "./trail.ts";
-import { createReadTrailTool } from "./trail-tool.ts";
-import { addWorktree, sweepRunBranches, type Worktree } from "./worktree.ts";
+import type { TrailPeer } from "./trail.ts";
+import { addWorktree, sweepRunBranches } from "./worktree.ts";
 
 const runProcess = promisify(execFile);
 
 /** What a node's contract records where the run named no wall budget of its own. */
 const defaultNodeWallMs = 30 * 60 * 1000;
 
-interface ParallelRunOptions {
+export interface ParallelRunOptions {
+  readonly adaptation?: boolean;
+  readonly peerInformation?: boolean;
+  readonly graphRevisionLimit?: number;
+  readonly revisions?: readonly import("./controller-revisions.ts").RevisionRequest[];
   readonly goalContract?: GoalContract;
   readonly runContext?: RunContext;
   readonly repairAttempts?: number;
@@ -205,7 +206,6 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
   // The slot covers the whole worktree lifetime rather than the agent loop alone: several
   // attempts per task multiplies the concurrent `git worktree add` calls against one
   // repository, which is the contention the cap exists for.
-  const pool = createWorkPool(options.concurrency);
 
   const graph = options.graph ?? null;
   const contracts =
@@ -219,7 +219,16 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
             scopeKind: "workspace",
             allowedPaths: ["**"],
             immutablePaths: options.immutablePaths ?? [],
-            allowedTools: ["read", "write", "edit", "list", "search", "shell", "trail"],
+            allowedTools: [
+              "read",
+              "write",
+              "edit",
+              "list",
+              "search",
+              "shell",
+              "trail",
+              "coordination",
+            ],
             network: options.isolation === undefined ? "unrestricted" : "denied",
             execution: options.isolation === undefined ? "restricted" : "isolated",
             requiredChecks: options.requiredChecks ?? [],
@@ -240,7 +249,16 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
           maxTokens: options.maxTokens ?? 200_000,
           network: options.isolation === undefined ? "unrestricted" : "denied",
           execution: options.isolation === undefined ? "restricted" : "isolated",
-          allowedTools: ["read", "write", "edit", "list", "search", "shell", "trail"],
+          allowedTools: [
+            "read",
+            "write",
+            "edit",
+            "list",
+            "search",
+            "shell",
+            "trail",
+            "coordination",
+          ],
         });
   const effectiveContracts = options.contracts ?? contracts;
   if (graph !== null) {
@@ -276,11 +294,47 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
   const layers: readonly { ids: readonly string[]; tasks: readonly string[] }[] =
     graph === null ? [{ ids: [], tasks: options.tasks }] : layersOf(graph);
 
+  const nodeOfTask = new Map<string, string>();
+  const orderedNodes =
+    graph === null
+      ? []
+      : layers
+          .flatMap((layer) => layer.ids)
+          .map((id) => graph.nodes.find((node) => node.id === id))
+          .filter((node) => node !== undefined);
+  const initialTasks =
+    graph === null ? options.tasks : orderedNodes.map((node) => node.instruction);
+  const planned = planAttempts(initialTasks, options.redundancy, options.modelSpec);
+  const taskIds = [...new Set(planned.map((attempt) => attempt.taskId))];
+  for (const [index, taskId] of taskIds.entries()) {
+    const node = orderedNodes[index];
+    if (node !== undefined) nodeOfTask.set(taskId, node.id);
+  }
+  const taskOfNode = new Map([...nodeOfTask].map(([taskId, nodeId]) => [nodeId, taskId]));
+  const scheduled = taskIds.map((id, index) => ({
+    id,
+    dependsOn:
+      orderedNodes[index]?.dependsOn.map(
+        (dependency) => taskOfNode.get(dependency) ?? dependency,
+      ) ?? [],
+    files: orderedNodes[index]?.files ?? [],
+  }));
+  const initialNodes = scheduled.map((task) => {
+    const contract = effectiveContracts.find(
+      (contract) => contract.taskId === (nodeOfTask.get(task.id) ?? task.id),
+    );
+    if (contract === undefined) throw new Error(`task ${task.id} has no effective contract`);
+    return { id: task.id, contract, dependsOn: task.dependsOn, obligations: [task.id] };
+  });
+  const controllerGraph = initialControllerGraph(
+    initialNodes,
+    options.goalContract?.requirements.map((requirement) => requirement.id) ?? [],
+    options.graphRevisionLimit ?? 4,
+  );
+  await recordControllerGraph(options.coordinator, controllerGraph);
   await recordControllerEvent(options.coordinator, {
     kind: "work-declared",
-    tasks: (graph?.nodes.map((node) => node.instruction) ?? options.tasks).map(
-      (objective, index) => ({ id: `task-${index + 1}`, objective }),
-    ),
+    tasks: initialTasks.map((objective, index) => ({ id: `task-${index + 1}`, objective })),
   });
   const integration = await addWorktree({
     repositoryRoot: options.repositoryRoot,
@@ -292,19 +346,45 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
   const workers: WorkerResult[] = [];
   const selections: AttemptSelection[] = [];
   const landings: QueueLanding[] = [];
-  const landedTasks = new Set<string>();
   let queue: MergeQueueResult | null = null;
   let head = baseCommit;
-  let tasksPlanned = 0;
-  const notLanded = new Set<string>();
-  const nodeOfTask = new Map<string, string>();
   // One registry across every layer: the first declares, the rest amend, because the union
   // of what the workers touched is not known until the last layer has run.
   const fileSet = createFileSetRegistry(options.coordinator);
 
+  const integrationEffects = new Map<string, string>();
+  let integrationSequence = 0;
   async function landLayer(proposals: readonly RankedProposal[]): Promise<void> {
     const landed = await runMergeQueue({
       integrationPath: integration.path,
+      beforeAttempt: async (candidate, accepted) => {
+        const worker = workers.find((worker) => worker.workerId === candidate.workerId);
+        if (worker?.commit == null) throw new Error("integration candidate has no retained commit");
+        const effectId = `integration-${++integrationSequence}`;
+        integrationEffects.set(worker.workerId, effectId);
+        await recordTransition(options.coordinator, {
+          kind: "integration-intent",
+          effectId,
+          taskId: worker.taskId,
+          workerId: worker.workerId,
+          baseCommit: accepted,
+          graphRevision:
+            replayController(options.coordinator).graph?.revision ?? controllerGraph.revision,
+          candidateCommit: worker.commit,
+          branch: worker.branch,
+        });
+      },
+      afterAttempt: async (landing) => {
+        const effectId = integrationEffects.get(landing.workerId);
+        if (effectId === undefined) throw new Error("integration completion has no intent");
+        await recordTransition(options.coordinator, {
+          kind: "integration-completed",
+          effectId,
+          landed: landing.landed,
+          commit: landing.commit,
+          observation: landing.record,
+        });
+      },
       commandPool: options.runContext?.tests,
       abortSignal: options.abortSignal,
       ...(options.isolation === undefined
@@ -333,165 +413,22 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
     landings.push(...landed.landings);
     head = landed.headCommit;
     queue = { ...landed, baseCommit, headCommit: head, landings };
-    for (const landing of landed.landings.filter((one) => one.landed)) {
-      const worker = workers.find((one) => one.workerId === landing.workerId);
-      if (worker !== undefined) {
-        landedTasks.add(worker.taskId);
-      }
-    }
   }
 
   try {
-    for (const layer of layers) {
-      const blocked = graph === null ? new Set<string>() : new Set(blockedBy(graph, notLanded));
-      const runnable = layer.ids
-        .map((id, index) => ({ id, task: layer.tasks[index] ?? "" }))
-        .filter((one) => !blocked.has(one.id));
-      const tasks = graph === null ? layer.tasks : runnable.map((one) => one.task);
-      if (tasks.length === 0) {
-        continue;
-      }
-      const planned = planAttempts(tasks, options.redundancy, options.modelSpec, {
-        tasks: tasksPlanned,
-        workers: workers.length,
-      });
-      tasksPlanned += tasks.length;
-      const plannedTaskIds = [...new Set(planned.map((attempt) => attempt.taskId))];
-      const ran = await Promise.all(
-        planned.map((attempt) =>
-          pool.run(() =>
-            runOneWorker(
-              attempt,
-              head,
-              baseCommit,
-              options,
-              registered,
-              effectiveContracts.find(
-                (contract) =>
-                  contract.taskId ===
-                  (graph === null
-                    ? attempt.taskId
-                    : runnable[plannedTaskIds.indexOf(attempt.taskId)]?.id),
-              ),
-            ),
-          ),
-        ),
-      );
-      workers.push(...ran);
-      // taskIds come out of the planner in task order, so zipping them with the layer's
-      // runnable node ids is exact rather than a match on the brief text, which two nodes
-      // could legitimately share.
-      const taskIds = [...new Set(planned.map((one) => one.taskId))];
-      for (const [index, taskId] of taskIds.entries()) {
-        const nodeId = runnable[index]?.id;
-        if (nodeId !== undefined) {
-          nodeOfTask.set(taskId, nodeId);
-        }
-      }
-
-      const chosen = await chooseProposals(ran, head, options);
-      selections.push(...chosen.selections);
-
-      if (chosen.proposals.length > 0) {
-        await landLayer(chosen.proposals);
-      }
-
-      for (const taskId of taskIds) {
-        const initialAttempt = [...workers].reverse().find((worker) => worker.taskId === taskId);
-        if (initialAttempt === undefined || landedTasks.has(taskId)) continue;
-        let previous: WorkerResult = initialAttempt;
-        const seenFailures = new Set<string>();
-        for (let repair = 1; repair <= (options.repairAttempts ?? 2); repair++) {
-          if (options.abortSignal.aborted || landedTasks.has(taskId)) break;
-          const rejection = [...landings]
-            .reverse()
-            .find((landing) => landing.workerId === previous?.workerId && !landing.landed);
-          // Admission failures and empty attempts cannot justify another provider call.
-          if (previous.commit === null && rejection === undefined) break;
-          const feedback = rejection?.feedback ?? previous.detail;
-          const patch =
-            previous.commit === null
-              ? ""
-              : (
-                  await runProcess("git", ["show", "--format=", "--binary", previous.commit], {
-                    cwd: options.repositoryRoot,
-                    maxBuffer: 64_000_000,
-                  })
-                ).stdout;
-          const failureKey = createHash("sha256")
-            .update(JSON.stringify([head, rejection?.reason ?? "worker-checks", patch]))
-            .digest("hex");
-          if (seenFailures.has(failureKey)) {
-            await recordControllerEvent(options.coordinator, {
-              kind: "repair-exhausted",
-              taskId,
-              previousWorkerId: previous.workerId,
-              baseCommit: head,
-              reason: `repeated ineffective repair: ${feedback}`,
-            });
-            break;
-          }
-          seenFailures.add(failureKey);
-          const workerId = `${taskId}-repair-${repair}`;
-          await recordControllerEvent(options.coordinator, {
-            kind: "repair-requested",
-            taskId,
-            workerId,
-            previousWorkerId: previous.workerId,
-            previousCommit: previous.commit,
-            baseCommit: head,
-            attempt: repair,
-            reason: feedback,
-            failureKey,
-          });
-          const repaired = await pool.run(() =>
-            runOneWorker(
-              {
-                workerId,
-                taskId,
-                task: previous?.task ?? "",
-                attemptIndex: options.redundancy + repair - 1,
-                sampling: null,
-              },
-              head,
-              baseCommit,
-              options,
-              registered,
-              effectiveContracts.find(
-                (contract) =>
-                  contract.taskId === (graph === null ? taskId : nodeOfTask.get(taskId)),
-              ),
-              `Previous candidate ${previous?.commit ?? "none"}; current integration base ${head}.\nFailure observation:\n${feedback.slice(0, 24000)}\nPrevious patch (retained in Git; excerpt limited to 48000 characters):\n${patch.slice(0, 48000)}\nRepair this task against the current tree and preserve already accepted work. The authorized paths and required checks remain unchanged.`,
-            ),
-          );
-          workers.push(repaired);
-          previous = repaired;
-          if (repaired.green && repaired.commit !== null)
-            await landLayer([{ winner: repaired, alternates: [] }]);
-          if (repair === (options.repairAttempts ?? 2) && !landedTasks.has(taskId)) {
-            await recordControllerEvent(options.coordinator, {
-              kind: "repair-exhausted",
-              taskId,
-              previousWorkerId: repaired.workerId,
-              baseCommit: head,
-              reason:
-                [...landings].reverse().find((landing) => landing.workerId === repaired.workerId)
-                  ?.feedback ?? repaired.detail,
-            });
-          }
-        }
-      }
-
-      // Always, including where the layer proposed nothing at all: a node whose attempts all
-      // finished red did not land either, and its dependents must not run against a tree
-      // that lacks it. Skipping this on the empty path is what let a blocked node run.
-      for (const taskId of taskIds) {
-        const nodeId = nodeOfTask.get(taskId);
-        if (nodeId !== undefined && !landedTasks.has(taskId)) {
-          notLanded.add(nodeId);
-        }
-      }
-    }
+    await runControllerSchedule({
+      options,
+      criteriaRef: baseCommit,
+      planned,
+      registered,
+      workers,
+      head: () => head,
+      integrate: async (completed) => {
+        const chosen = await chooseProposals(completed, completed[0]?.baseCommit ?? head, options);
+        selections.push(...chosen.selections);
+        if (chosen.proposals.length > 0) await landLayer(chosen.proposals);
+      },
+    });
   } finally {
     await integration.remove();
   }
@@ -544,6 +481,7 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
     });
   }
 
+  replayController(options.coordinator);
   const tree = (
     await runProcess("git", ["rev-parse", `${head}^{tree}`], { cwd: options.repositoryRoot })
   ).stdout.trim();
@@ -598,6 +536,7 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
   }
   const outcome = await assessController({
     evidence: options.coordinator,
+    board: replayController(options.coordinator),
     taskIds: Array.from(
       { length: graph?.nodes.length ?? options.tasks.length },
       (_, index) => `task-${index + 1}`,
@@ -618,7 +557,11 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
   return {
     outcome,
     verification,
-    workers,
+    workers: [...workers].sort(
+      (left, right) =>
+        left.attemptIndex - right.attemptIndex ||
+        left.workerId.localeCompare(right.workerId, "en", { numeric: true }),
+    ),
     selections,
     queue,
     integrationBranch: integration.branch,
@@ -736,154 +679,6 @@ function asAttempt(worker: WorkerResult, baseCommit: string): Attempt {
     changedFiles: worker.changedFiles,
     addedLines: worker.addedLines,
   };
-}
-
-async function runOneWorker(
-  planned: PlannedAttempt,
-  baseCommit: string,
-  /** The commit the whole run branched from, which every worker's gates are read from. */
-  criteriaRef: string,
-  options: ParallelRunOptions,
-  registered: TrailPeer[],
-  contract?: TaskContract,
-  repairFeedback?: string,
-): Promise<WorkerResult> {
-  const { workerId, task, taskId, attemptIndex } = planned;
-  const evidence = await options.createWorkerSession(workerId);
-  registered.push({ workerId, taskId, chain: evidence });
-  const branch = `swarm/${options.runId}/${workerId}`;
-  let worktree: Worktree | null = null;
-
-  await options.coordinator.record({
-    type: "worker-started",
-    actor: "harness",
-    provenance: ["user"],
-    payload: {
-      workerId,
-      taskId,
-      attemptIndex,
-      sessionId: evidence.sessionId,
-      task,
-      branch,
-      baseCommit,
-    },
-  });
-
-  try {
-    options.abortSignal.throwIfAborted();
-    worktree = await addWorktree({
-      repositoryRoot: options.repositoryRoot,
-      path: join(options.scratchRoot, workerId),
-      branch,
-      baseRef: baseCommit,
-    });
-
-    const fileSet = createFileSetRegistry(evidence);
-    const remainingWall = options.remainingWallMs?.() ?? null;
-    const result = await runAgentTask({
-      ...(contract === undefined ? {} : { contract }),
-      ...(repairFeedback === undefined ? {} : { repairFeedback }),
-      task,
-      workspace: worktree.path,
-      baseRef: baseCommit,
-      criteriaRef,
-      maxSteps: options.maxSteps,
-      attempts: options.attempts,
-      model:
-        options.runContext?.model(workerId, options.createModel(workerId, evidence)) ??
-        options.createModel(workerId, evidence),
-      commandPool: options.runContext?.tests,
-      ...(options.runStorePath === undefined ? {} : { runStorePath: options.runStorePath }),
-      evidence,
-      fileSet,
-      clock: options.clock,
-      random: options.random,
-      emit: (event) => {
-        options.emit(workerId, event);
-      },
-      // A worker is unattended, so a call that needs a human is refused and recorded.
-      confirm: () => Promise.resolve(false),
-      abortSignal: options.abortSignal,
-      ...(options.isolation === undefined ? {} : { isolation: options.isolation(worktree.path) }),
-      // The remainder rather than a fresh budget: a worker starting late gets what is left.
-      ...(remainingWall === null ? {} : { maxWallTimeMs: remainingWall }),
-      homeDir: options.scratchRoot,
-      trail: createReadTrailTool({
-        peers: () => peersFor(workerId, taskId, registered),
-      }),
-      ...(planned.sampling === null ? {} : { sampling: planned.sampling }),
-      ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
-    });
-
-    // Rejected patches remain reachable for repair. Only green candidates enter integration.
-    const commit = await worktree.commitAll(`${workerId}: ${task}`);
-
-    const measures = result.gates.outcome.finalMeasures;
-    const cycle = result.gates.outcome.finalCycle;
-
-    return {
-      baseCommit,
-      graphRevision: "initial",
-      workerId,
-      taskId,
-      attemptIndex,
-      task,
-      branch,
-      evidence,
-      green: result.green,
-      commit,
-      declaredFiles: fileSet.state().declared,
-      detail: result.green
-        ? `gates green after ${result.loop.steps} step(s)`
-        : describeRed(cycle.blockingFailures, result.loop.stopReason),
-      measures,
-      erosions: summarizeRatchet(result.gates.outcome).erosions,
-      changedFiles: cycle.measures.changedFiles ?? 0,
-      addedLines: cycle.measures.addedLines ?? 0,
-    };
-  } catch (cause) {
-    if (cause instanceof LedgerWriteFailedError || cause instanceof LedgerSealedError) throw cause;
-    const detail = `the worker did not finish: ${describeCause(cause)}`;
-    // On the worker's own chain as well as in the report: a worker that fell over before it
-    // recorded anything would otherwise ship an empty bundle that explains nothing.
-    await evidence.record({
-      type: "session-stopped",
-      actor: "harness",
-      provenance: ["tool-output"],
-      payload: { workerId, task, stopReason: "worker-failed", detail },
-    });
-    return {
-      baseCommit,
-      graphRevision: "initial",
-      workerId,
-      taskId,
-      attemptIndex,
-      task,
-      branch,
-      evidence,
-      green: false,
-      commit: null,
-      declaredFiles: [],
-      detail,
-      measures: emptyMeasureSnapshot,
-      erosions: 0,
-      changedFiles: 0,
-      addedLines: 0,
-    };
-  } finally {
-    await worktree?.remove();
-  }
-}
-
-function describeCause(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
-}
-
-function describeRed(blocking: readonly { readonly gateId: string }[], stopReason: string): string {
-  if (blocking.length > 0) {
-    return `blocking gate(s) failed: ${blocking.map((gate) => gate.gateId).join(", ")}`;
-  }
-  return `the loop stopped with ${stopReason}`;
 }
 
 /** Each layer as its node ids and the briefs those nodes hand their workers. */

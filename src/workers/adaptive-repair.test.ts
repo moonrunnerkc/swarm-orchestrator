@@ -8,8 +8,9 @@ import { createSystemClock } from "../cli-runtime-inputs.ts";
 import { createFixedRandom } from "../core/test-doubles.ts";
 import { bundleSourceFromRecorder, exportBundle } from "../evidence/bundle.ts";
 import { freezeGoalContract } from "../evidence/goal-contract.ts";
-import { openEvidenceSession } from "../evidence/session.ts";
+import { type EvidenceRecorder, openEvidenceSession } from "../evidence/session.ts";
 import { createEphemeralSigningKey } from "../evidence/signing.ts";
+import { parseTaskContract } from "../evidence/task-contract.ts";
 import { verifyBundle } from "../evidence/verifier/verify.mjs";
 import {
   createFixtureModelClient,
@@ -17,6 +18,9 @@ import {
   respondWithToolCalls,
 } from "../providers/fixture-provider.ts";
 import { controllerEvents } from "./controller-events.ts";
+import type { RevisionRequest } from "./controller-revisions.ts";
+import { replayController } from "./controller-state.ts";
+import type { CoordinationEvent } from "./coordination.ts";
 import { runInParallel } from "./parallel-run.ts";
 import { readTaskGraph } from "./task-graph.ts";
 
@@ -61,14 +65,54 @@ async function execute(
   graph?: unknown,
   goal?: unknown,
   repairAttempts = 2,
+  controls: {
+    holdUntilDependent?: boolean;
+    coordination?: Readonly<Record<string, CoordinationEvent["proposal"]>>;
+    revisions?: readonly RevisionRequest[];
+  } = {},
 ) {
-  const coordinator = await openEvidenceSession({
+  const holdUntilDependent = controls.holdUntilDependent === true;
+  let longWaiting = false;
+  let dependentStartedWhileWaiting = false;
+  let releaseSecond = () => {};
+  const secondReady = new Promise<void>((resolve) => {
+    releaseSecond = resolve;
+  });
+  const rawCoordinator = await openEvidenceSession({
     root: join(scratch, "sessions"),
     sessionId: "queue",
     clock,
   });
+  const coordinator: EvidenceRecorder = {
+    ...rawCoordinator,
+    record: async (entry) => {
+      const written = await rawCoordinator.record(entry);
+      if (
+        holdUntilDependent &&
+        entry.type === "worker-started" &&
+        typeof entry.payload === "object" &&
+        entry.payload !== null &&
+        "workerId" in entry.payload &&
+        entry.payload.workerId === "worker-3"
+      ) {
+        dependentStartedWhileWaiting = longWaiting;
+        releaseSecond();
+      }
+      if (
+        !holdUntilDependent &&
+        entry.type === "merge-attempt" &&
+        typeof entry.payload === "object" &&
+        entry.payload !== null &&
+        "landed" in entry.payload &&
+        entry.payload.landed === true
+      )
+        releaseSecond();
+      return written;
+    },
+  };
   const calls: string[] = [];
   const outcome = await runInParallel({
+    revisions: controls.revisions ?? [],
     repositoryRoot: repository,
     baseRef: "HEAD",
     tasks: ["first change", "second change"],
@@ -81,7 +125,7 @@ async function execute(
     createModel: (workerId) => {
       calls.push(workerId);
       const files = edits[workerId] ?? {};
-      return createFixtureModelClient({
+      const fixture = createFixtureModelClient({
         modelId: "fixture:repair",
         turns: [
           respondWithToolCalls("scope", [
@@ -92,9 +136,31 @@ async function execute(
               { callId: `w${index}`, toolName: "write", input: { path, content } },
             ]),
           ),
+          ...(controls.coordination?.[workerId] === undefined
+            ? []
+            : [
+                respondWithToolCalls("dependency discovery", [
+                  {
+                    callId: "coord",
+                    toolName: "coordinate",
+                    input: controls.coordination[workerId],
+                  },
+                ]),
+              ]),
           respondWithText("done"),
         ],
       });
+      return {
+        modelId: fixture.modelId,
+        generate: async (request) => {
+          if ((graph === undefined || holdUntilDependent) && workerId === "worker-2") {
+            longWaiting = true;
+            await secondReady;
+            longWaiting = false;
+          }
+          return fixture.generate(request);
+        },
+      };
     },
     ...(graph === undefined ? {} : { graph: readTaskGraph(graph) }),
     clock,
@@ -110,7 +176,13 @@ async function execute(
     modelSpec: "fixture:repair",
     abortSignal: new AbortController().signal,
   });
-  return { outcome, calls, coordinator, events: controllerEvents(coordinator) };
+  return {
+    outcome,
+    calls,
+    coordinator,
+    dependentStartedWhileWaiting,
+    events: controllerEvents(coordinator),
+  };
 }
 
 it("repairs a clean merge with behavioral failure against the accepted integration commit", async () => {
@@ -302,7 +374,10 @@ it("stops repeated ineffective repairs before the attempt ceiling and retains th
     undefined,
     4,
   );
-  expect(calls).toHaveLength(4);
+  expect(calls).toHaveLength(3);
+  expect(events.find((event) => event.kind === "repair-requested")).toMatchObject({
+    failureDigest: expect.stringMatching(/^[0-9a-f]{64}$/),
+  });
   expect(
     events.some(
       (event) =>
@@ -312,4 +387,198 @@ it("stops repeated ineffective repairs before the attempt ceiling and retains th
   expect(outcome.outcome.tasks.find((task) => task.id === "task-2")?.blocker).toContain("tests");
   expect(outcome.outcome.tasks.find((task) => task.id === "task-1")?.state).toBe("accepted");
   expect(outcome.outcome.exitCode).toBe(1);
+});
+
+it("starts a dependent on its accepted prerequisite while an unrelated worker is still running", async () => {
+  const { outcome, coordinator, dependentStartedWhileWaiting } = await execute(
+    {
+      "worker-1": { "a.js": "export const a = 2;\n" },
+      "worker-2": { "b.js": "export const b = 4;\n" },
+      "worker-3": {
+        "dependent.test.js":
+          "import {test} from 'node:test'; import assert from 'node:assert/strict'; import {a} from './a.js'; test('prerequisite', () => assert.equal(a, 2));\n",
+      },
+    },
+    {
+      goal: "dependent readiness",
+      nodes: [
+        { id: "a-parent", title: "parent", instruction: "change a", files: ["a.js"] },
+        { id: "z-long", title: "long", instruction: "change b", files: ["b.js"] },
+        {
+          id: "child",
+          title: "child",
+          instruction: "test parent",
+          files: ["dependent.test.js"],
+          dependsOn: ["a-parent"],
+        },
+      ],
+    },
+    undefined,
+    2,
+    { holdUntilDependent: true },
+  );
+  expect(dependentStartedWhileWaiting).toBe(true);
+  const parent = outcome.queue?.landings.find((landing) => landing.workerId === "worker-1");
+  const child = coordinator
+    .records()
+    .find(
+      (entry) =>
+        entry.type === "worker-started" &&
+        (coordinator.payloads().get(entry.payloadDigest) as { workerId?: string })?.workerId ===
+          "worker-3",
+    );
+  expect(coordinator.payloads().get(child?.payloadDigest ?? "")).toMatchObject({
+    baseCommit: parent?.commit,
+  });
+  expect(outcome.outcome.tasks.every((task) => task.state === "accepted")).toBe(true);
+});
+
+it("turns a typed missing dependency discovery into a revision and refuses the stale candidate", async () => {
+  const { outcome, coordinator, calls } = await execute(
+    {
+      "worker-1": { "a.js": "export const a = 2;\n" },
+      "worker-2": { "b.js": "export const b = 5;\n" },
+      "task-1-repair-1": { "a.js": "export const a = 2;\n" },
+    },
+    {
+      goal: "change the interaction",
+      nodes: [
+        { id: "a-consumer", title: "consumer", instruction: "change a", files: ["a.js"] },
+        { id: "b-provider", title: "provider", instruction: "change b", files: ["b.js"] },
+      ],
+    },
+    {
+      ...goal,
+      requirements: [
+        { id: "first-side", description: "a is two", checks: ["interaction"] },
+        { id: "second-side", description: "b is five", checks: ["interaction"] },
+      ],
+      checks: goal.checks.map((check) => ({
+        ...check,
+        artifacts: check.artifacts.map((artifact) => ({
+          ...artifact,
+          content: artifact.content.replace("assert.equal(b, 3)", "assert.equal(b, 5)"),
+        })),
+      })),
+    },
+    2,
+    {
+      coordination: {
+        "worker-1": {
+          kind: "dependency-request",
+          prerequisite: "b-provider",
+          reason: "consumer requires the changed provider interface",
+        },
+      },
+    },
+  );
+  const board = replayController(coordinator);
+  expect(board.graph?.ordinal).toBe(1);
+  expect(board.graph?.nodes.find((node) => node.id === "task-1")?.dependsOn).toEqual(["task-2"]);
+  expect(board.stale.has("worker-1")).toBe(true);
+  expect(outcome.queue?.landings.some((landing) => landing.workerId === "worker-1")).toBe(false);
+  expect(outcome.outcome.goalAccepted).toBe(true);
+  expect(calls.filter((worker) => worker === "worker-2")).toHaveLength(1);
+  expect(calls).toContain("task-1-repair-1");
+});
+
+function replacement(id: string, files: string[], obligations: string[]) {
+  return {
+    id,
+    dependsOn: [],
+    obligations,
+    contract: parseTaskContract({
+      version: 2,
+      taskId: id,
+      objective: `implement ${id}`,
+      dependsOn: [],
+      allowedPaths: files,
+      immutablePaths: ["base.test.js", "acceptance.mjs"],
+      allowedTools: ["read", "write"],
+      network: "unrestricted",
+      execution: "restricted",
+      requiredChecks: [],
+      budget: { maxSteps: 6, maxWallMs: 10000, maxTokens: 100000 },
+      riskTier: "medium",
+      scopeAuthority: "controller",
+    }),
+  };
+}
+it("executes a coupled-task collapse with one worker while preserving both original outcomes", async () => {
+  const { outcome, calls, coordinator } = await execute(
+    { "coupled-attempt-1": { "a.js": "export const a = 2;\n", "b.js": "export const b = 3;\n" } },
+    {
+      goal: "change the interaction",
+      nodes: [
+        { id: "a", title: "a", instruction: "change a", files: ["a.js"] },
+        { id: "b", title: "b", instruction: "change b", files: ["b.js"] },
+      ],
+    },
+    goal,
+    2,
+    {
+      revisions: [
+        {
+          operation: {
+            kind: "combine",
+            tasks: ["task-1", "task-2"],
+            combined: replacement("coupled", ["a.js", "b.js"], ["task-1", "task-2"]),
+          },
+          reason: "one worker owns the coupled interface",
+        },
+      ],
+    },
+  );
+  expect(calls).toEqual(["coupled-attempt-1"]);
+  expect(outcome.outcome.tasks.map((task) => [task.id, task.state, task.members])).toEqual([
+    ["task-1", "accepted", ["coupled"]],
+    ["task-2", "accepted", ["coupled"]],
+  ]);
+  expect(outcome.outcome.goalAccepted).toBe(true);
+  const destination = join(scratch, "collapsed-bundle");
+  await exportBundle({
+    source: bundleSourceFromRecorder(coordinator),
+    destination,
+    signingKey: createEphemeralSigningKey(),
+    clock,
+  });
+  const lines: string[] = [];
+  expect(
+    verifyBundle(destination, (line: string) => lines.push(line)),
+    lines.join("\n"),
+  ).toBe(0);
+});
+it("cannot accept a split obligation when only one replacement implements its part", async () => {
+  const { outcome } = await execute(
+    { "first-attempt-1": { "a.js": "export const a = 2;\n" } },
+    {
+      goal: "change both components",
+      nodes: [
+        { id: "both", title: "both", instruction: "change a and b", files: ["a.js", "b.js"] },
+      ],
+    },
+    goal,
+    0,
+    {
+      revisions: [
+        {
+          operation: {
+            kind: "split",
+            taskId: "task-1",
+            parts: [
+              replacement("first", ["a.js"], ["task-1"]),
+              replacement("second", ["b.js"], ["task-1"]),
+            ],
+          },
+          reason: "independent components",
+        },
+      ],
+    },
+  );
+  expect(outcome.outcome.tasks).toHaveLength(1);
+  expect(outcome.outcome.tasks[0]?.members).toEqual(["first", "second"]);
+  expect(outcome.outcome.goalAccepted).toBe(false);
+  expect(
+    outcome.outcome.requirements.every((requirement) => requirement.status === "rejected"),
+  ).toBe(true);
 });

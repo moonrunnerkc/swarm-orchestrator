@@ -390,7 +390,10 @@ describe("trying each task several ways", () => {
     const types = [...new Set(coordinator.records().map((record) => record.type))].sort();
     expect(types).toEqual([
       "controller-assessment",
+      "controller-candidate",
       "controller-event",
+      "controller-graph",
+      "controller-transition",
       "file-set-declared",
       "gate-run",
       "gate-set-sealed",
@@ -506,10 +509,12 @@ describe("trying each task several ways", () => {
     });
 
     const dag = buildEvidenceDag(coordinator.records(), coordinator.payloads());
-    expect(dag.claims.map((claim) => claim.evaluation.verdict).sort()).toEqual([
-      "unverified",
-      "verified",
-    ]);
+    expect(
+      dag.claims
+        .filter((claim) => claim.recordKind === "merge-attempt")
+        .map((claim) => claim.evaluation.verdict)
+        .sort(),
+    ).toEqual(["unverified", "verified"]);
     const refused = dag.claims.find((claim) => claim.evaluation.verdict === "unverified");
     expect(refused?.evaluation.reason).toBe("predicate-false");
     expect(refused?.narrative).toMatch(/chose worker-4/);
