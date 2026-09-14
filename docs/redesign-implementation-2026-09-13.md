@@ -313,7 +313,7 @@ searches without removing them from Git or verification.
 
 `canonical-policy-focused` exited 0: 2 files and 8 tests in 230 ms. Tests preserve custom two-file
 drift checks, detect drift outside the numbered block and refuse missing/reordered invariants.
-Full gates for this consolidation remain pending.
+Full `canonical-policy-gates` exited 0: 309 files and 3002 tests passed in 111.47 seconds, no skips and unchanged baseline diagnostics. Tested commit `3f59d62ec38104e2dd0e5fabd2fcd6d7a6727960`; evidence digest `sha256:d4610b8ec605095953d8568ec46d935009ddecd882cfcc17210c4144bbca6aa3`.
 
 ### Live evaluation preparation
 
@@ -328,3 +328,35 @@ Eight public repositories were fetched for admission preparation: dayjs, koa, co
 chess.js, ts-pattern, click, attrs and itsdangerous. No 24-goal protocol has yet been frozen or
 scored. `pilot-repository-fetch` records their fetched source identities. No paid service was
 used, and no external production worker driver has been activated.
+
+
+### Prompt comparison and first live development observation
+
+The first actual CLI pagination goal at `3f59d62` stopped when its next input/output reservation
+would exceed the shared ceiling. Reported usage was 183,455 of 250,000 tokens, with no unknown
+calls. The 66,545 remaining tokens were insufficient for the next conservatively reserved
+request. No task landed and the goal remained unjudged. The planner split a small four-file
+fixture into six jobs, separated tests from implementation, and invented interfaces. A worker
+tried to add a test outside its authorized scope; both the write and self-amendment were refused.
+The retained candidate and cancelled test-process observation are failures, not a completed
+repair demonstration. Capture `pagination-development-live` exited 130, digest
+`sha256:7844395ea75ccf539773128f2f37055e2d58b51a6387984448d558754878f35e`.
+
+Planner guidance now preserves actual interfaces, keeps maintained tests with implementation,
+and favors one worker for tiny or coupled goals, including when the user supplies final checks.
+It no longer incorrectly says final executable goal checking is absent. This is guidance, not
+a semantic proof that a decomposition is suitable.
+
+A separately selectable concise worker profile removes routine predicate enumeration, retaining
+the general claim tool and a chokepoint-mediated full reference tool. Harness receipts record
+observed gate statuses, lifecycle and usage; a receipt for a failure does not accept the task.
+The historical default is unchanged and its exact digest has a regression check. The comparison
+runner freezes three synthetic development goals, both prompt bytes, local model identity,
+check artifacts, counterbalanced order and identical limits before launch. It includes worker
+repair and independent final verification. It is a worker prompt comparison, not a swarm pilot.
+No default change or empirical benefit is claimed before those observations exist.
+
+`prompt-profiles-focused` exited 0: 5 files and 43 tests passed in 23.09 seconds, including a
+public worker that reads the full reference, falsely narrates success, and remains rejected by
+the real check. Digest collisions retain unverified status and model-authored records generate
+no harness receipts. Evidence digest: `sha256:21ca7331906643912bf19ca8e265b6562a58e9bfd6d0ebad3bf17d8a02ced6e5`.

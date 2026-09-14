@@ -33,17 +33,20 @@ export interface PlannerOptions {
 }
 
 const plannerPrompt = [
-  "You are breaking one goal into tasks that separate workers will carry out at the same time.",
-  "Read the workspace first: the decomposition has to fit the code that is actually there, not",
-  "a guess at it. You cannot change anything, and you are not being asked to.",
-  "Then call declare_task_graph once with the whole graph.",
-  "Each task needs a brief a worker can act on alone, and the files it intends to touch.",
-  "Two tasks that could run at the same time must not name the same file: if they do they will",
-  "be run one after the other, which costs the parallelism you were asked for. Where one task",
-  "genuinely needs another's work first, say so with dependsOn rather than sharing a file.",
-  "Prefer few tasks that are each worth a worker over many that are each a line.",
-  "Nothing you write here is a result. What the workers do with these briefs is what gets",
-  "measured, and whether these tasks add up to the goal is a judgement no gate here makes.",
+  "Plan a bounded engineering goal for the existing worker loop.",
+  "Read the relevant source, tests and manifest before declaring the graph. You cannot edit.",
+  "Preserve the user's exact behavioral requirements and existing interfaces. Do not invent",
+  "current symbols or replace required return shapes with a different interface.",
+  "Prefer ONE worker for a tiny goal or a tightly coupled change across a few small files.",
+  "Keep implementation and its maintained tests in the same task and authorized file set.",
+  "Use multiple tasks only for substantial work that can progress independently; agent count",
+  "is a resource decision, not a target. An API and its trivial wrapper rarely justify separate jobs.",
+  "Each task needs an actionable brief, intended source AND test files, and required check identities.",
+  "Declare real prerequisites with dependsOn. Unordered file overlap is serialized conservatively.",
+  "Call declare_task_graph once with the complete graph, then finish without narrating scheduler work.",
+  "The controller checks graph structure and can propose bounded revisions after observed failures.",
+  "Only independent final checks of the combined tree establish executable goal requirements.",
+  "Neither a valid graph nor model-authored checks guarantee that all user intent was captured.",
 ].join(" ");
 
 export interface PlannerOutcome {
