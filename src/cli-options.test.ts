@@ -9,6 +9,17 @@ import {
 
 const context = { currentDirectory: "/work/repo" };
 
+it("requires an explicit supported bootstrap goal", () => {
+  expect(
+    parseCommandLine(["parallel", "--goal", "create a counter", "--bootstrap", "node"], context),
+  ).toMatchObject({ bootstrap: "node", goal: "create a counter" });
+  for (const argv of [
+    ["parallel", "--goal", "create", "--bootstrap", "python"],
+    ["parallel", "--tasks", "tasks.json", "--bootstrap", "node"],
+  ])
+    expect(() => parseCommandLine(argv, context)).toThrow("--bootstrap node requires");
+});
+
 /** Every test below drives the run command; replay has its own block. */
 function parseRun(argv: readonly string[], overrides = context): RunCommand {
   const parsed: CommandLine = parseCommandLine(argv, overrides);

@@ -33,6 +33,7 @@ import { localEndpointRecord } from "./providers/endpoint-resolution.ts";
 import { parseModelSpec } from "./providers/model-spec.ts";
 import { createProviderRegistry } from "./providers/registry.ts";
 import { describeLoopEvent } from "./tui/plain-lines.ts";
+import { bootstrapRepository, cleanupBootstrap } from "./workers/bootstrap.ts";
 import { controllerAdministration } from "./workers/controller-administration.ts";
 import { withControllerCleanup } from "./workers/controller-cleanup.ts";
 import { controllerConfiguration } from "./workers/controller-configuration.ts";
@@ -208,7 +209,8 @@ export async function parallel(options: ParallelCommand): Promise<number> {
   const launch = await declareControllerLaunch(
     coordinator,
     controllerLaunchSchema.parse({
-      version: 2,
+      version: options.bootstrap === undefined ? 2 : 3,
+      ...(options.bootstrap === undefined ? {} : { bootstrap: options.bootstrap }),
       controllerScope:
         options.goal !== null || fromFile?.graph == null
           ? { kind: "workspace", allowedPaths: [], immutablePaths: [] }
@@ -337,6 +339,7 @@ export async function executeControllerLaunch(
   let stopped: unknown;
   let failure: unknown;
   let completedRun: ParallelRunResult | undefined;
+  let bootstrap: Awaited<ReturnType<typeof bootstrapRepository>> | undefined;
   const recovery = {
     coordinator,
     owner,
@@ -388,6 +391,32 @@ export async function executeControllerLaunch(
       cancellation.cancel("policy");
     });
     const configured = controllerConfiguration(coordinator);
+    const isolation = launch.isolation;
+    const execution =
+      isolation === null
+        ? undefined
+        : (workspaceRoot: string) =>
+            recordedContainerBackend(
+              {
+                runtime: isolation.runtime,
+                image: isolation.image,
+                user: isolation.user,
+                workspaceRoot,
+                ...(isolation.memory === undefined ? {} : { memory: isolation.memory }),
+                ...(isolation.processLimit === undefined
+                  ? {}
+                  : { processLimit: isolation.processLimit }),
+                ...(isolation.network === undefined ? {} : { network: isolation.network }),
+              },
+              coordinator,
+            );
+    if (launch.bootstrap !== undefined)
+      bootstrap = await bootstrapRepository({
+        launch,
+        evidence: coordinator,
+        context,
+        ...(execution === undefined ? {} : { isolation: execution }),
+      });
     let graph = configured?.graph ?? launch.graph;
     let goalContract = configured?.goalContract ?? launch.suppliedGoal;
     if (configured === null && launch.goal !== null) {
@@ -407,18 +436,23 @@ export async function executeControllerLaunch(
           throw new Error("pinned goal contract is malformed");
         goalContract = freezeGoalContract(captured.contract).contract;
       }
-      const planned = await decompose(launch.goal, {
-        runContext: context,
-        requireGoalChecks: goalContract === null,
-        workspace: launch.repositoryRoot,
-        sessionRoot: runtime.sessionRoot,
-        runId: launch.runId,
-        clock,
-        random,
-        home: runtime.home,
-        model: runtime.createModel,
-        maxSteps: launch.maxSteps,
-      });
+      const planned = await decompose(
+        bootstrap === undefined
+          ? launch.goal
+          : `${launch.goal}\nThe explicit bootstrap pins Node 24 ESM and the standard-library test harness. package.json and .gitignore are immutable setup artifacts; implement with the standard library.`,
+        {
+          runContext: context,
+          requireGoalChecks: goalContract === null,
+          workspace: bootstrap?.workspace ?? launch.repositoryRoot,
+          sessionRoot: runtime.sessionRoot,
+          runId: launch.runId,
+          clock,
+          random,
+          home: runtime.home,
+          model: runtime.createModel,
+          maxSteps: launch.maxSteps,
+        },
+      );
       if (planned.graph === null)
         throw new Error(
           `planning stopped with ${planned.stopReason}: ${describePlannerStop(planned.stopReason)}`,
@@ -430,15 +464,19 @@ export async function executeControllerLaunch(
           "planning did not pin goal acceptance; inspect the retained planning evidence",
         );
     }
+    if (bootstrap !== undefined && goalContract !== null)
+      goalContract = freezeGoalContract({
+        ...goalContract,
+        immutablePaths: [...new Set([...goalContract.immutablePaths, ...bootstrap.immutablePaths])],
+      }).contract;
     const tasks = configured?.tasks ?? graph?.nodes.map((node) => node.instruction) ?? launch.tasks;
     process.stdout.write(
       `run ${launch.runId}: ${tasks.length} task(s), ${launch.concurrency} worktree slot(s), ${context.accounting().remaining} tokens remaining\n`,
     );
-    const isolation = launch.isolation;
     const completed = await runInParallel({
       ...(launch.controllerScope === undefined ? {} : { controllerScope: launch.controllerScope }),
       repositoryRoot: launch.repositoryRoot,
-      baseRef: launch.baseCommit,
+      baseRef: bootstrap?.baseCommit ?? launch.baseCommit,
       scratchRoot: launch.scratchRoot,
       runId: launch.runId,
       coordinator,
@@ -486,25 +524,11 @@ export async function executeControllerLaunch(
         ),
       },
       abortSignal: context.signal,
-      ...(isolation === null
+      ...(isolation === null || execution === undefined
         ? {}
         : {
             executionIdentity: `${isolation.runtime}:${isolation.image}:${isolation.user}`,
-            isolation: (workspaceRoot: string) =>
-              recordedContainerBackend(
-                {
-                  runtime: isolation.runtime,
-                  image: isolation.image,
-                  user: isolation.user,
-                  workspaceRoot,
-                  ...(isolation.memory === undefined ? {} : { memory: isolation.memory }),
-                  ...(isolation.processLimit === undefined
-                    ? {}
-                    : { processLimit: isolation.processLimit }),
-                  ...(isolation.network === undefined ? {} : { network: isolation.network }),
-                },
-                coordinator,
-              ),
+            isolation: execution,
           }),
     });
     if (stopped !== undefined) throw stopped;
@@ -534,6 +558,20 @@ export async function executeControllerLaunch(
     context?.dispose();
     cancellation.dispose();
     administration?.close();
+    try {
+      if (launch.bootstrap !== undefined)
+        await withControllerCleanup(clock, (signal) =>
+          cleanupBootstrap(launch, coordinator, signal),
+        );
+    } catch (cause) {
+      failure =
+        failure === undefined
+          ? cause
+          : new AggregateError(
+              [failure, cause],
+              "controller and bootstrap cleanup failed; preserve remaining files",
+            );
+    }
     try {
       owner.release();
     } catch (cause) {
@@ -610,6 +648,7 @@ export async function repairParallel(runId: string): Promise<number> {
     await withControllerCleanup(clock, async (signal) => {
       await repairControllerRuntime(recovery, signal);
       if (controllerConfiguration(evidence) !== null) await reconcileController(recovery, signal);
+      if (launch.bootstrap !== undefined) await cleanupBootstrap(launch, evidence, signal);
     });
     process.stdout.write(
       `${runId}: owned resources reconciled; no model call or accepted landing was repeated. Resume uses the original budget.\n`,

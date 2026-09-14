@@ -8,8 +8,12 @@ import { executeControllerLaunch } from "./cli-parallel.ts";
 import { createSystemClock } from "./cli-runtime-inputs.ts";
 import { createFixedRandom } from "./core/test-doubles.ts";
 import { openRunStore } from "./durable/run-store.ts";
+import { bundleSourceFromRecorder, exportBundle } from "./evidence/bundle.ts";
 import { freezeGoalContract } from "./evidence/goal-contract.ts";
 import { openEvidenceSession } from "./evidence/session.ts";
+import { createEphemeralSigningKey } from "./evidence/signing.ts";
+import { readControllerHistory } from "./evidence/verifier/controller.mjs";
+import { verifyBundle } from "./evidence/verifier/verify.mjs";
 import {
   createFixtureModelClient,
   respondWithText,
@@ -276,3 +280,126 @@ it("cancels queued alternatives without creating their worktrees or calling a pr
   });
   expect(dispatched).toHaveLength(1);
 }, 30000);
+
+it("bootstraps an empty base before planning, checks the complete goal and resumes its setup once", async () => {
+  await git("git", ["-C", repository, "rm", "-rf", "."]);
+  await git("git", [
+    "-C",
+    repository,
+    "-c",
+    "user.name=fixture",
+    "-c",
+    "user.email=fixture@example.com",
+    "commit",
+    "-qm",
+    "empty base",
+  ]);
+  const { launch, runtime } = await fixture({
+    version: 3,
+    bootstrap: "node",
+    controllerScope: { kind: "workspace", allowedPaths: [], immutablePaths: [] },
+  });
+  let calls = 0;
+  const createModel = () => {
+    expect(
+      runtime.coordinator
+        .records()
+        .some(
+          (entry) =>
+            entry.type === "bootstrap-stage" &&
+            (runtime.coordinator.payloads().get(entry.payloadDigest) as { phase?: string })
+              .phase === "ready",
+        ),
+    ).toBe(true);
+    return createFixtureModelClient({
+      modelId: "fixture:bootstrap",
+      turns:
+        calls++ === 0
+          ? [
+              respondWithToolCalls("plan", [
+                {
+                  callId: "graph",
+                  toolName: "declare_task_graph",
+                  input: {
+                    goal: launch.goal,
+                    nodes: [
+                      {
+                        id: "change",
+                        title: "change",
+                        instruction: "a becomes two",
+                        files: ["a.js", "a.test.js"],
+                      },
+                    ],
+                  },
+                },
+              ]),
+              respondWithText("planned"),
+            ]
+          : [
+              respondWithToolCalls("declare", [
+                {
+                  callId: "d",
+                  toolName: "declare_file_set",
+                  input: { files: ["a.js", "a.test.js"] },
+                },
+              ]),
+              respondWithToolCalls("implement", [
+                {
+                  callId: "a",
+                  toolName: "write",
+                  input: { path: "a.js", content: "export const a = 2;\n" },
+                },
+                {
+                  callId: "t",
+                  toolName: "write",
+                  input: {
+                    path: "a.test.js",
+                    content:
+                      "import {test} from 'node:test'; import assert from 'node:assert/strict'; import {a} from './a.js'; test('a is two',()=>assert.equal(a,2));\n",
+                  },
+                },
+              ]),
+              respondWithText("done"),
+            ],
+    });
+  };
+  const completed = await executeControllerLaunch(launch, { ...runtime, createModel });
+  expect(completed.outcome.goalAccepted).toBe(true);
+  expect(calls).toBe(2);
+  expect(
+    (await git("git", ["-C", repository, "show", `${completed.headCommit}:package.json`])).stdout,
+  ).toContain('"test": "node --test"');
+  expect((await git("git", ["-C", repository, "rev-parse", "HEAD"])).stdout.trim()).toBe(
+    launch.baseCommit,
+  );
+  const resumed = await executeControllerLaunch(launch, {
+    ...runtime,
+    createModel: () => {
+      throw new Error("accepted bootstrap goal must not repeat producers");
+    },
+  });
+  expect(resumed.headCommit).toBe(completed.headCommit);
+  const stages = runtime.coordinator
+    .records()
+    .filter((entry) => entry.type === "bootstrap-stage")
+    .map((entry) => runtime.coordinator.payloads().get(entry.payloadDigest) as { phase: string });
+  expect(stages.filter((entry) => entry.phase === "ready")).toHaveLength(1);
+  expect(stages.filter((entry) => entry.phase === "check-observed")).toHaveLength(3);
+  expect(
+    readControllerHistory(runtime.coordinator.records(), runtime.coordinator.payloads()).problems,
+  ).toEqual([]);
+  const destination = join(root, "bootstrap-bundle");
+  await exportBundle({
+    source: bundleSourceFromRecorder(runtime.coordinator),
+    destination,
+    signingKey: createEphemeralSigningKey(),
+    clock,
+  });
+  const lines: string[] = [];
+  expect(
+    verifyBundle(destination, (line) => lines.push(line)),
+    lines.join("\n"),
+  ).toBe(0);
+  const embedded = await git(process.execPath, [join(destination, "verify.mjs"), destination]);
+  expect(embedded.stdout).toContain("controller history re-derived");
+}, 60000);

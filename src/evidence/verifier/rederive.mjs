@@ -344,7 +344,15 @@ export function rederiveBundle(directory, log = console.log) {
         `verification-command ${entry.sequence}: recorded ${payload.status}, the rule reads ${status}`,
       );
   }
-  if (records.some((entry) => entry.type === "controller-graph")) {
+  if (
+    records.some(
+      (entry) =>
+        entry.type === "controller-graph" ||
+        entry.type === "bootstrap-stage" ||
+        (entry.type === "controller-launch" &&
+          payloads.get(entry.payloadDigest)?.spec?.bootstrap !== undefined),
+    )
+  ) {
     const board = readControllerHistory(records, payloads);
     if (board.problems.length > 0) disagree(`controller history: ${board.problems.join("; ")}`);
     else

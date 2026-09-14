@@ -40,7 +40,7 @@ export function readControllerHistory(records, payloads) {
   const cleanup = new Set();
   const cleaned = new Set();
   const reconciled = new Set();
-  const problems = [];
+  const problems = bootstrapProblems(records, payloads);
   const require = (condition, description) => {
     if (!condition) throw new Error(description);
   };
@@ -564,4 +564,188 @@ export function readControllerHistory(records, payloads) {
     problems.push(cause instanceof Error ? cause.message : String(cause));
   }
   return { graph, states, accepted, head, problems };
+}
+
+/** Bootstrap observations are interpreted here independently of the producer's schema and rule. */
+function bootstrapProblems(records, payloads) {
+  const problems = [];
+  try {
+    const insist = (holds, reason) => {
+      if (!holds) throw new Error(`bootstrap: ${reason}`);
+    };
+    const launches = records.filter((record) => record.type === "controller-launch");
+    const launch = payloads.get(launches[0]?.payloadDigest)?.spec;
+    const stages = records.filter((record) => record.type === "bootstrap-stage");
+    if (launch?.bootstrap === undefined && stages.length === 0) return [];
+    insist(
+      launches.length === 1 &&
+        launches[0].actor === "harness" &&
+        launch.version === 3 &&
+        launch.bootstrap === "node" &&
+        launch.controllerScope?.kind === "workspace" &&
+        launch.goal !== null,
+      "requires one authorized version-three goal launch",
+    );
+    const expectedFiles = {
+      ".gitignore": "node_modules/\ncoverage/\n",
+      "package.json": `${JSON.stringify({ private: true, type: "module", engines: { node: ">=24" }, scripts: { test: "node --test" } }, null, 2)}\n`,
+    };
+    let intent = null;
+    let ready = null;
+    let cleaning = false;
+    const calls = new Map();
+    const observations = new Map();
+    const settled = new Set();
+    for (const record of records) {
+      const payload = payloads.get(record.payloadDigest);
+      if (record.type === "bootstrap-stage") {
+        insist(
+          record.actor === "harness" && payload !== undefined,
+          "requires harness observations",
+        );
+        if (payload.phase === "intent") {
+          insist(
+            intent === null &&
+              record.sequence > launches[0].sequence &&
+              payload.version === 1 &&
+              payload.language === "node" &&
+              payload.baseCommit === launch.baseCommit &&
+              payload.timestamp === 0 &&
+              payload.ref === `refs/swarm-bootstrap/${launch.runId}` &&
+              payload.workspace === `${launch.scratchRoot}/bootstrap` &&
+              equal(payload.files, expectedFiles),
+            "intent changed the authorized setup",
+          );
+          const algorithm = launch.baseCommit.length === 40 ? "sha1" : "sha256";
+          const object = (kind, bytes) =>
+            createHash(algorithm).update(`${kind} ${bytes.length}\0`).update(bytes).digest("hex");
+          const treeBytes = Buffer.concat(
+            Object.entries(expectedFiles).map(([path, bytes]) =>
+              Buffer.concat([
+                Buffer.from(`100644 ${path}\0`),
+                Buffer.from(object("blob", Buffer.from(bytes)), "hex"),
+              ]),
+            ),
+          );
+          const tree = object("tree", treeBytes);
+          const who = "Swarm Orchestrator <swarm@localhost> 0 +0000";
+          const commit = object(
+            "commit",
+            Buffer.from(
+              `tree ${tree}\nparent ${launch.baseCommit}\nauthor ${who}\ncommitter ${who}\n\nEstablish Node 24 bootstrap harness\n`,
+            ),
+          );
+          insist(
+            payload.tree === tree && payload.commit === commit,
+            "setup commit does not describe its recorded objects",
+          );
+          intent = payload;
+        } else {
+          insist(intent !== null, "effect preceded its intent");
+          if (payload.phase === "check-intent") {
+            const attempt =
+              [...calls.values()].filter((call) => call.check === payload.check).length + 1;
+            insist(
+              ready === null &&
+                ["toolchain", "positive", "negative"].includes(payload.check) &&
+                attempt <= 3 &&
+                payload.id === `${payload.check}-${attempt}` &&
+                !calls.has(payload.id),
+              "invalid check identity, retry or order",
+            );
+            const backend =
+              launch.isolation === null
+                ? "host"
+                : `${launch.isolation.runtime}:${launch.isolation.image}`;
+            const fixtures =
+              payload.check === "toolchain"
+                ? expectedFiles
+                : {
+                    ...expectedFiles,
+                    "control.test.js": `import {test} from 'node:test'; import assert from 'node:assert/strict'; test('bootstrap-${payload.check}',()=>assert.equal(1,${payload.check === "positive" ? 1 : 2}));\n`,
+                  };
+            insist(
+              payload.backend === backend && equal(payload.files, fixtures),
+              "check changed its backend or controls",
+            );
+            insist(
+              payload.check === "toolchain"
+                ? typeof payload.argv?.[0] === "string" &&
+                    equal(payload.argv.slice(1), [
+                      "-e",
+                      "process.stdout.write(process.versions.node); if(Number(process.versions.node.split('.')[0])<24) process.exitCode=1",
+                    ])
+                : equal(payload.argv, ["npm", "test", "--", "--test-reporter=tap"]),
+              "check command differs from its declared instrument",
+            );
+            calls.set(payload.id, payload);
+          } else if (payload.phase === "check-observed") {
+            const call = calls.get(payload.id);
+            insist(
+              call !== undefined && !settled.has(payload.id) && ready === null,
+              "observation lacks its unique preceding call",
+            );
+            settled.add(payload.id);
+            const seen = payload.observation;
+            const complete =
+              seen?.cancelled === false &&
+              seen.timedOut === false &&
+              seen.truncated === false &&
+              seen.startFailure === null &&
+              typeof seen.stdout === "string";
+            let held = false;
+            if (complete && call.check === "toolchain")
+              held =
+                seen.exitCode === 0 &&
+                /^\d+\.\d+\.\d+$/.test(seen.stdout) &&
+                Number(seen.stdout.split(".")[0]) >= 24;
+            if (complete && call.check !== "toolchain") {
+              const failure = call.check === "negative";
+              held =
+                seen.exitCode === (failure ? 1 : 0) &&
+                seen.stdout
+                  .split("\n")
+                  .includes(`${failure ? "not ok" : "ok"} 1 - bootstrap-${call.check}`) &&
+                seen.stdout.split("\n").includes("# tests 1") &&
+                seen.stdout.split("\n").includes(`# fail ${failure ? 1 : 0}`);
+            }
+            observations.set(record.payloadDigest, { check: call.check, held });
+          } else if (payload.phase === "ready") {
+            insist(
+              ready === null &&
+                payload.commit === intent.commit &&
+                payload.tree === intent.tree &&
+                Array.isArray(payload.checks) &&
+                payload.checks.length === 3 &&
+                payload.checks.every((digest, index) => {
+                  const seen = observations.get(digest);
+                  return (
+                    seen?.held === true &&
+                    seen.check === ["toolchain", "positive", "negative"][index]
+                  );
+                }),
+              "readiness lacks the exact toolchain and both controls",
+            );
+            ready = payload;
+          } else if (payload.phase === "cleanup-intent") cleaning = true;
+          else if (payload.phase === "cleanup-completed") {
+            insist(cleaning, "cleanup has no intent");
+            cleaning = false;
+          } else insist(false, "unknown stage phase");
+        }
+      }
+      if (record.type === "controller-configuration")
+        insist(
+          ready !== null && payload?.spec?.baseCommit === ready.commit,
+          "dispatch base was not established by the setup",
+        );
+      if (record.type === "controller-event" && payload?.kind === "usage-reserved")
+        insist(ready !== null, "model activity preceded setup acceptance");
+      if (record.type === "goal-contract")
+        insist(ready !== null, "goal checks were pinned before setup acceptance");
+    }
+  } catch (cause) {
+    problems.push(cause instanceof Error ? cause.message : String(cause));
+  }
+  return problems;
 }
