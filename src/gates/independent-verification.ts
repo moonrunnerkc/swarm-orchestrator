@@ -134,6 +134,7 @@ export interface IndependentVerification {
 }
 
 export interface IndependentVerificationOptions {
+  readonly signal?: AbortSignal;
   readonly gateOptions?: GateSetOptions;
   readonly goal?: {
     readonly contract: GoalContract;
@@ -376,7 +377,13 @@ export async function verifyIndependently(
     const goalAcceptance =
       options.goal === undefined || !restored
         ? undefined
-        : await verifyGoal({ ...options.goal, checkout, commands: options.commands, timeoutMs });
+        : await verifyGoal({
+            ...options.goal,
+            checkout,
+            commands: options.commands,
+            timeoutMs,
+            ...(options.signal === undefined ? {} : { signal: options.signal }),
+          });
     if (goalAcceptance !== undefined)
       task = goalAcceptance.accepted
         ? "accepted"
