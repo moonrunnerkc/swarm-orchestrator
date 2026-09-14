@@ -754,3 +754,29 @@ diagnostic. Its complete output and command identity are in the external capture
 This is baseline validation, not final integration or release evidence. Fetching all tags also
 exposed an existing local/origin disagreement for `v14.0.0`; neither historical tag was overwritten.
 Branch fetch succeeded separately with `--no-tags`.
+
+### Completion reporting checks
+
+`scripts/redesign/pilot-report.mjs` reads the frozen campaign and validates each settled
+observation against its ledger outcome, manifest bytes and independent bundle verdict. It
+preserves failed bundle verdicts. Campaign elapsed time includes the surrounding health
+probes, while executor elapsed time does not; the report checks this relationship rather than
+requiring the two clocks to agree. The reconciled interrupted slot retains unknown execution
+time, separately from its original calendar time to administrative reconciliation.
+
+The report keeps all 120 scheduled slots in the denominator, distinguishes observed incorrect
+acceptance from unknown judgments, and keeps unknown usage, cost and human time explicit.
+Model and command intervals are descriptive projections of recorded timestamps, not direct
+measurements of CPU pressure or permit waiting. No evaluated worker or protocol changed.
+
+The five reporting regression cases passed in `completion-report-bound-tests-v2`, based on
+`7616cbbc0ab89ad6c2f0c1f41380bed31b598636` plus the captured patch, evidence
+`sha256:db90db7f46cf10c6ec65a7073958f734f71912d83cc325c7faabef9e76a33499`.
+The first eight settled slots passed raw-evidence validation in
+`completion-report-first-batch-v3`, evidence
+`sha256:bf89b4587f9953ab729fdecb67bd2b109d4078c2e43f67e1619141387cea930d`.
+Its report digest is
+`sha256:c820f56f2c6bd8c34cd931811c794685cef164481cb8fb5399585379072ee7ed`.
+It explicitly reports `completeSchedule: false`. The earlier failed checks remain retained:
+the first exposed the executor/campaign timing distinction; the second used an output
+directory already created by the command recorder. Neither failure altered pilot observations.
