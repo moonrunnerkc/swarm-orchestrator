@@ -17,7 +17,7 @@ export type ApprovalSubject =
   | "policy-exception";
 
 export interface ProposedAction {
-  readonly network?: "denied" | "mediated" | "unrestricted";
+  readonly network?: "denied" | "mediated" | "unrestricted" | "unknown";
   /** Installing a dependency runs code the repository chose from a registry. */
   readonly installsDependencies?: boolean;
   readonly usesSecrets?: boolean;

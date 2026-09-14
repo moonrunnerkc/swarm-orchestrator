@@ -7,6 +7,11 @@ import { approvalsRequiredFor, describeApprovalRequest, riskOf } from "./approva
  * read off what the action is rather than off how the model described it.
  */
 describe("what needs a person", () => {
+  it("never treats unknown network reachability as denied", () => {
+    expect(approvalsRequiredFor({ network: "unknown" })).toEqual(["network"]);
+    expect(riskOf({ network: "unknown" })).toBe("medium");
+  });
+
   it("needs nobody for an ordinary edit inside the declared scope", () => {
     expect(
       approvalsRequiredFor({
