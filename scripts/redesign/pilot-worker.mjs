@@ -51,8 +51,10 @@ export async function executePilotGoal({
 }) {
   const clock = createSystemClock();
   const started = clock.now();
-  const directory = join(root, execution.executionId);
   const runId = execution.executionId.replace(/^sha256:/, "");
+  // Execution ids remain content-addressed in evidence, but a filesystem component must not
+  // contain the colon that Docker interprets as a volume separator.
+  const directory = join(root, runId);
   await mkdir(directory, { mode: 0o700 });
   const coordinator = await openEvidenceSession({
     root: join(directory, "sessions"),

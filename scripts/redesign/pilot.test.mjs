@@ -188,7 +188,7 @@ it.each([false, true])(
       await readFile(
         join(
           root,
-          "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
           "observation.json",
         ),
         "utf8",
