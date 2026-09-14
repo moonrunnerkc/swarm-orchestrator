@@ -1,8 +1,15 @@
 import { z } from "zod";
 import { asJsonValue, digestOfJson } from "../evidence/canonical-json.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
-import { parseTaskContract, protectsPath, taskContractSchema } from "../evidence/task-contract.ts";
+import { contractPath, parseTaskContract, taskContractSchema } from "../evidence/task-contract.ts";
 import type { TaskState } from "./controller-schedule.ts";
+import {
+  amendControllerScope,
+  assertNarrowerContract,
+  type ControllerScope,
+  controllerScopeSchema,
+  parseControllerScope,
+} from "./controller-scope.ts";
 
 const id = z
   .string()
@@ -19,6 +26,16 @@ export const controllerNodeSchema = z.strictObject({
 });
 export type ControllerNode = z.infer<typeof controllerNodeSchema>;
 export const revisionOperationSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("amend-scope"),
+    taskId: id,
+    paths: z.array(z.string()).min(1).max(128),
+  }),
+  z.strictObject({
+    kind: z.literal("insert-prerequisite"),
+    taskId: id,
+    node: controllerNodeSchema,
+  }),
   z.strictObject({ kind: z.literal("add-prerequisite"), taskId: id, prerequisite: id }),
   z.strictObject({
     kind: z.literal("split"),
@@ -34,7 +51,8 @@ export const revisionOperationSchema = z.discriminatedUnion("kind", [
 ]);
 export type RevisionOperation = z.infer<typeof revisionOperationSchema>;
 export const controllerGraphSchema = z.strictObject({
-  version: z.literal(1),
+  version: z.union([z.literal(1), z.literal(2)]),
+  scope: controllerScopeSchema.optional(),
   revision: z.string(),
   parent: z.string().nullable(),
   reason: z.string().min(1).max(8192),
@@ -51,6 +69,20 @@ export const controllerGraphSchema = z.strictObject({
 export type ControllerGraph = z.infer<typeof controllerGraphSchema>;
 
 export function validateControllerGraph(graph: ControllerGraph): void {
+  if ((graph.version === 2) !== (graph.scope !== undefined))
+    throw new Error("graph scope authority requires version two and cannot be omitted");
+  if (graph.scope !== undefined) {
+    const scope = parseControllerScope(graph.scope);
+    for (const node of graph.nodes) {
+      if (
+        scope.immutablePaths.some((path) => !node.contract.immutablePaths.includes(path)) ||
+        (scope.kind === "files" &&
+          (node.contract.scopeKind === "workspace" ||
+            node.contract.allowedPaths.some((path) => !scope.allowedPaths.includes(path))))
+      )
+        throw new Error("task contract exceeds the pinned controller scope");
+    }
+  }
   const ids = graph.nodes.map((node) => node.id);
   if (
     new Set(ids).size !== ids.length ||
@@ -101,9 +133,11 @@ export function initialControllerGraph(
   nodes: readonly ControllerNode[],
   requirements: readonly string[],
   limit = 4,
+  scope?: ControllerScope,
 ): ControllerGraph {
   return sealGraph({
-    version: 1,
+    version: scope === undefined ? 1 : 2,
+    ...(scope === undefined ? {} : { scope: parseControllerScope(scope) }),
     parent: null,
     reason: "initial authorized decomposition",
     author: "harness",
@@ -129,6 +163,8 @@ export function reviseGraph(
   if (previous.ordinal >= previous.limit)
     throw new Error(`graph revision budget exhausted (${previous.limit})`);
   const operation = revisionOperationSchema.parse(input);
+  if (operation.kind === "amend-scope")
+    operation.paths = [...new Set(operation.paths.map(contractPath))].sort();
   if (operation.kind === "split")
     operation.parts = operation.parts.map((node) => ({
       ...node,
@@ -144,6 +180,8 @@ export function reviseGraph(
       ...operation.replacement,
       contract: parseTaskContract(operation.replacement.contract),
     };
+  if (operation.kind === "insert-prerequisite")
+    operation.node = { ...operation.node, contract: parseTaskContract(operation.node.contract) };
   const removed = operation.kind === "combine" ? operation.tasks : [operation.taskId];
   const originals = removed.map((id) => {
     const node = previous.nodes.find((node) => node.id === id);
@@ -160,6 +198,40 @@ export function reviseGraph(
         ? { ...node, dependsOn: [...new Set([...node.dependsOn, operation.prerequisite])] }
         : node,
     );
+  } else if (operation.kind === "amend-scope") {
+    nodes = nodes.map((node) =>
+      node.id === operation.taskId
+        ? {
+            ...node,
+            contract: amendControllerScope(node.contract, operation.paths, previous.scope),
+          }
+        : node,
+    );
+  } else if (operation.kind === "insert-prerequisite") {
+    const owner = originals[0];
+    if (owner === undefined) throw new Error("missing prerequisite has no requesting task");
+    if (
+      previous.nodes.some((node) => node.id === operation.node.id) ||
+      previous.retired.includes(operation.node.id)
+    )
+      throw new Error("prerequisite identity was already used");
+    if (
+      operation.node.obligations.length !== owner.obligations.length ||
+      owner.obligations.some((id) => !operation.node.obligations.includes(id))
+    )
+      throw new Error("new prerequisite must preserve the requesting task's obligations");
+    assertNarrowerContract(operation.node.contract, [owner.contract]);
+    nodes = [
+      ...nodes.map((node) =>
+        node.id === operation.taskId
+          ? { ...node, dependsOn: [...node.dependsOn, operation.node.id] }
+          : node,
+      ),
+      {
+        ...operation.node,
+        dependsOn: [...new Set([...owner.dependsOn, ...operation.node.dependsOn])],
+      },
+    ];
   } else {
     if (
       originals.some((node) => ["running", "candidate"].includes(states.get(node.id) ?? "pending"))
@@ -186,42 +258,10 @@ export function reviseGraph(
         previous.retired.includes(replacement.id)
       )
         throw new Error(`replacement identity ${replacement.id} was already used`);
-      const allowed = originals.flatMap((node) => node.contract.allowedPaths);
-      const immutable = originals.flatMap((node) => node.contract.immutablePaths);
-      const required = originals.flatMap((node) => node.contract.requiredChecks);
-      if (
-        replacement.contract.allowedPaths.some(
-          (path) =>
-            !allowed.includes(path) &&
-            !originals.some((node) => node.contract.scopeKind === "workspace"),
-        ) ||
-        replacement.contract.allowedPaths.some((path) =>
-          immutable.some((protectedPath) => protectsPath(protectedPath, path)),
-        ) ||
-        immutable.some((path) => !replacement.contract.immutablePaths.includes(path)) ||
-        required.some((check) => !replacement.contract.requiredChecks.includes(check))
-      )
-        throw new Error(
-          "graph revision cannot broaden paths or weaken immutable paths and required checks",
-        );
-      if (
-        replacement.contract.allowedTools.some(
-          (tool) => !originals.every((node) => node.contract.allowedTools.includes(tool)),
-        ) ||
-        originals.some(
-          (node) =>
-            node.contract.network !== replacement.contract.network ||
-            node.contract.execution !== replacement.contract.execution ||
-            node.contract.riskTier !== replacement.contract.riskTier,
-        ) ||
-        replacement.contract.budget.maxSteps >
-          Math.max(...originals.map((node) => node.contract.budget.maxSteps)) ||
-        replacement.contract.budget.maxWallMs >
-          Math.max(...originals.map((node) => node.contract.budget.maxWallMs)) ||
-        (replacement.contract.budget.maxTokens ?? 200000) >
-          Math.max(...originals.map((node) => node.contract.budget.maxTokens ?? 200000))
-      )
-        throw new Error("graph revision cannot broaden execution, tool or budget policy");
+      assertNarrowerContract(
+        replacement.contract,
+        originals.map((node) => node.contract),
+      );
     }
     const replacementIds = replacements.map((node) => node.id);
     const inheritedDependencies = [

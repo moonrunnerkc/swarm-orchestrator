@@ -18,7 +18,17 @@ export const coordinationProposalSchema = z.discriminatedUnion("kind", [
     summary: brief,
     paths: z.array(z.string().max(256)).max(8),
   }),
-  z.strictObject({ kind: z.literal("dependency-request"), prerequisite: identity, reason: brief }),
+  z.strictObject({
+    kind: z.literal("dependency-request"),
+    prerequisite: identity,
+    reason: brief,
+    missing: z
+      .strictObject({
+        instruction: brief,
+        files: z.array(z.string().min(1).max(256)).min(1).max(128),
+      })
+      .optional(),
+  }),
   z.strictObject({
     kind: z.literal("artifact-ready"),
     targets: z.array(identity).min(1).max(8),
@@ -79,7 +89,7 @@ export function createCoordinationTools(options: {
     defineTool({
       name: "coordinate",
       description:
-        "Publish a bounded interface proposal, dependency request, artifact reference, observed failure or repair request. These are proposals, never acceptance or permission. Use task ids from the task board.",
+        "Publish a bounded interface proposal, dependency request, artifact reference, observed failure or repair request. These are proposals, never acceptance or permission. Use task ids from the task board. A dependency request may include a missing task instruction and files; the controller must authorize any scope amendment before dispatch.",
       inputSchema: coordinationProposalSchema,
       kind: "evidence",
       pathsFrom: () => [],

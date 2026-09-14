@@ -12,8 +12,18 @@ const equal = (left, right) => canonical(left) === canonical(right);
 const hash = (value) => `sha256:${createHash("sha256").update(canonical(value)).digest("hex")}`;
 const containsAll = (haystack, needles) => needles.every((item) => haystack.includes(item));
 const unique = (items) => new Set(items).size === items.length;
+const protectedPath = (immutable, path) => {
+  const root = immutable.replace(/\/\*\*$/, "");
+  return path === root || path.startsWith(`${root}/`);
+};
+const canonicalPath = (path) =>
+  typeof path === "string" &&
+  path.length > 0 &&
+  !/^[a-zA-Z]:|^[/~]|[\\*?{}[\]]/.test(path) &&
+  ![...path].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127) &&
+  !path.split("/").some((part) => part === "" || part === "." || part === "..");
 
-/** Independent interpretation of controller graph v1 and effect events, with no producer imports. */
+/** Independent interpretation of controller graph v1/v2 and effect events, with no producer imports. */
 export function readControllerHistory(records, payloads) {
   let graph = null;
   let head = null;
@@ -56,7 +66,7 @@ export function readControllerHistory(records, payloads) {
       require(observed !== null && typeof observed === "object", "controller payload is missing");
       if (entry.type === "controller-graph") {
         const { revision, ...content } = observed;
-        require(observed.version === 1 &&
+        require([1, 2].includes(observed.version) &&
           hash(content) === revision, "controller revision digest or version is invalid");
         require(Number.isInteger(observed.ordinal) &&
           Number.isInteger(observed.limit) &&
@@ -68,6 +78,29 @@ export function readControllerHistory(records, payloads) {
           unique(observed.nodes.map((node) => node.id)) &&
           unique(observed.nodes.map((node) => node.contract.taskId)) &&
           unique(observed.retired), "controller task identities are invalid");
+        require((observed.version === 2) ===
+          (observed.scope !== undefined), "controller scope authority requires graph version two");
+        if (observed.scope !== undefined) {
+          const scope = observed.scope;
+          require(["files", "workspace"].includes(scope.kind) &&
+            Array.isArray(scope.allowedPaths) &&
+            scope.allowedPaths.every(canonicalPath) &&
+            (scope.kind === "workspace"
+              ? scope.allowedPaths.length === 0
+              : scope.allowedPaths.length > 0), "controller scope authority is malformed");
+          require(Array.isArray(scope.immutablePaths) &&
+            scope.immutablePaths.every((path) =>
+              canonicalPath(path.replace(/\/\*\*$/, "")),
+            ), "controller immutable scope is malformed");
+          for (const node of observed.nodes)
+            require(containsAll(node.contract.immutablePaths, scope.immutablePaths) &&
+              (scope.kind === "workspace" ||
+                (node.contract.scopeKind !== "workspace" &&
+                  containsAll(
+                    scope.allowedPaths,
+                    node.contract.allowedPaths,
+                  ))), "task exceeds the pinned controller scope");
+        }
         const ids = observed.nodes.map((node) => node.id);
         require(!observed.retired.some((id) =>
           ids.includes(id),
@@ -102,6 +135,19 @@ export function readControllerHistory(records, payloads) {
             observed.nodes.every((node) =>
               equal(node.obligations, [node.id]),
             ), "initial task obligations do not match the declaration");
+          const configuration = records
+            .filter(
+              (record) =>
+                record.sequence < entry.sequence &&
+                record.type === "controller-configuration" &&
+                record.actor === "harness",
+            )
+            .at(-1);
+          if (configuration !== undefined)
+            require(equal(
+              observed.scope ?? null,
+              payloads.get(configuration.payloadDigest)?.spec?.controllerScope ?? null,
+            ), "initial graph changed the pinned controller scope");
           const goal = records
             .filter((record) => record.sequence < entry.sequence && record.type === "goal-contract")
             .at(-1);
@@ -113,7 +159,9 @@ export function readControllerHistory(records, payloads) {
                 ?.contract?.requirements.map((requirement) => requirement.id),
             ), "controller graph does not cover the pinned goal requirements");
         } else {
-          require(observed.parent === graph.revision &&
+          require(observed.version === graph.version &&
+            equal(observed.scope ?? null, graph.scope ?? null) &&
+            observed.parent === graph.revision &&
             observed.ordinal === graph.ordinal + 1 &&
             observed.limit === graph.limit &&
             equal(observed.obligations, graph.obligations) &&
@@ -123,15 +171,49 @@ export function readControllerHistory(records, payloads) {
             ), "revision erased obligations, changed the ceiling or has the wrong parent");
           const operation = observed.operation;
           require(operation &&
-            ["add-prerequisite", "split", "combine", "reroute"].includes(
-              operation.kind,
-            ), "unknown controller revision operation");
+            [
+              "add-prerequisite",
+              "amend-scope",
+              "insert-prerequisite",
+              "split",
+              "combine",
+              "reroute",
+            ].includes(operation.kind), "unknown controller revision operation");
           const removed = operation.kind === "combine" ? operation.tasks : [operation.taskId];
           require(unique(removed) &&
             removed.every((id) =>
               graph.nodes.some((node) => node.id === id),
             ), "revision references an undeclared task");
           const originals = graph.nodes.filter((node) => removed.includes(node.id));
+          const within = (contract, originals) => {
+            require(!originals.some((prior) => prior.contract.scopeAuthority === "human") ||
+              contract.scopeAuthority === "human", "revision delegated human scope authority");
+            const allowed = originals.flatMap((prior) => prior.contract.allowedPaths);
+            const immutable = originals.flatMap((prior) => prior.contract.immutablePaths);
+            const checks = originals.flatMap((prior) => prior.contract.requiredChecks);
+            require(originals.some((prior) => prior.contract.scopeKind === "workspace") ||
+              containsAll(allowed, contract.allowedPaths), "revision broadened authorized paths");
+            require(!contract.allowedPaths.some((path) =>
+              immutable.some((protectedFile) => protectedPath(protectedFile, path)),
+            ) &&
+              containsAll(contract.immutablePaths, immutable) &&
+              containsAll(
+                contract.requiredChecks,
+                checks,
+              ), "revision weakened immutable paths or required checks");
+            require(originals.every(
+              (prior) =>
+                containsAll(prior.contract.allowedTools, contract.allowedTools) &&
+                prior.contract.network === contract.network &&
+                prior.contract.execution === contract.execution &&
+                prior.contract.riskTier === contract.riskTier,
+            ), "revision broadened execution or tool authority");
+            for (const key of ["maxSteps", "maxWallMs", "maxTokens"])
+              require((contract.budget[key] ?? 200000) <=
+                Math.max(
+                  ...originals.map((prior) => prior.contract.budget[key] ?? 200000),
+                ), "revision broadened task budget");
+          };
           let expected;
           let retired = graph.retired;
           if (operation.kind === "add-prerequisite") {
@@ -143,6 +225,60 @@ export function readControllerHistory(records, payloads) {
                 ? { ...node, dependsOn: [...new Set([...node.dependsOn, operation.prerequisite])] }
                 : node,
             );
+          } else if (operation.kind === "amend-scope") {
+            const owner = originals[0];
+            const scope = graph.scope;
+            require(scope &&
+              owner.contract.scopeAuthority === "controller" &&
+              owner.contract.scopeKind !==
+                "workspace", "task scope has no controller amendment authority");
+            require(Array.isArray(operation.paths) &&
+              operation.paths.length > 0 &&
+              operation.paths.length <= 128 &&
+              unique(operation.paths) &&
+              operation.paths.every(canonicalPath) &&
+              operation.paths.some(
+                (path) => !owner.contract.allowedPaths.includes(path),
+              ), "scope amendment is malformed or unchanged");
+            require(operation.paths.every(
+              (path) =>
+                (scope.kind === "workspace" || scope.allowedPaths.includes(path)) &&
+                ![...scope.immutablePaths, ...owner.contract.immutablePaths].some((immutable) =>
+                  protectedPath(immutable, path),
+                ),
+            ), "scope amendment exceeds pinned authority");
+            expected = graph.nodes.map((node) =>
+              node.id === operation.taskId
+                ? {
+                    ...node,
+                    contract: {
+                      ...node.contract,
+                      allowedPaths: [
+                        ...new Set([...node.contract.allowedPaths, ...operation.paths]),
+                      ].sort(),
+                    },
+                  }
+                : node,
+            );
+          } else if (operation.kind === "insert-prerequisite") {
+            const owner = originals[0];
+            const node = operation.node;
+            require(node &&
+              !graph.nodes.some((prior) => prior.id === node.id) &&
+              !graph.retired.includes(node.id), "prerequisite identity was reused");
+            require(equal(
+              [...node.obligations].sort(),
+              [...owner.obligations].sort(),
+            ), "new prerequisite erased the requesting task's obligations");
+            within(node.contract, originals);
+            expected = [
+              ...graph.nodes.map((prior) =>
+                prior.id === operation.taskId
+                  ? { ...prior, dependsOn: [...prior.dependsOn, node.id] }
+                  : prior,
+              ),
+              { ...node, dependsOn: [...new Set([...owner.dependsOn, ...node.dependsOn])] },
+            ];
           } else {
             require(originals.every(
               (node) => !["running", "candidate"].includes(states.get(node.id)),
@@ -166,29 +302,7 @@ export function readControllerHistory(records, payloads) {
                 !graph.nodes.some(
                   (prior) => prior.id === node.id,
                 ), "replacement reused an identity");
-              const contract = node.contract;
-              const allowed = originals.flatMap((prior) => prior.contract.allowedPaths);
-              const immutable = originals.flatMap((prior) => prior.contract.immutablePaths);
-              const checks = originals.flatMap((prior) => prior.contract.requiredChecks);
-              require(originals.some((prior) => prior.contract.scopeKind === "workspace") ||
-                containsAll(allowed, contract.allowedPaths), "revision broadened authorized paths");
-              require(containsAll(contract.immutablePaths, immutable) &&
-                containsAll(
-                  contract.requiredChecks,
-                  checks,
-                ), "revision weakened immutable paths or required checks");
-              require(originals.every(
-                (prior) =>
-                  containsAll(prior.contract.allowedTools, contract.allowedTools) &&
-                  prior.contract.network === contract.network &&
-                  prior.contract.execution === contract.execution &&
-                  prior.contract.riskTier === contract.riskTier,
-              ), "revision broadened execution or tool authority");
-              for (const key of ["maxSteps", "maxWallMs", "maxTokens"])
-                require((contract.budget[key] ?? 200000) <=
-                  Math.max(
-                    ...originals.map((prior) => prior.contract.budget[key] ?? 200000),
-                  ), "revision broadened task budget");
+              within(node.contract, originals);
             }
             const inherited = [
               ...new Set(

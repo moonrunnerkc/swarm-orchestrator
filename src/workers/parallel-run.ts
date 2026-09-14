@@ -35,6 +35,7 @@ import { recordControllerEvent } from "./controller-events.ts";
 import { acquireControllerOwner, type ControllerOwner } from "./controller-owner.ts";
 import { reconcileController } from "./controller-recovery.ts";
 import { runControllerSchedule } from "./controller-scheduler.ts";
+import { type ControllerScope, parseControllerScope } from "./controller-scope.ts";
 import { recordTransition, replayController } from "./controller-state.ts";
 import { planAttempts } from "./fan-out.ts";
 import { verifyGoalCandidates } from "./goal-candidates.ts";
@@ -62,6 +63,7 @@ const runProcess = promisify(execFile);
 const defaultNodeWallMs = 30 * 60 * 1000;
 
 export interface ParallelRunOptions {
+  readonly controllerScope?: ControllerScope;
   readonly resume?: boolean;
   readonly owner?: ControllerOwner;
   readonly executionIdentity?: string;
@@ -309,6 +311,14 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
           ],
         });
   const priorConfiguration = controllerConfiguration(options.coordinator);
+  const scopeInput = options.controllerScope ?? priorConfiguration?.controllerScope;
+  const controllerScope =
+    scopeInput === undefined
+      ? undefined
+      : parseControllerScope({
+          ...scopeInput,
+          immutablePaths: [...scopeInput.immutablePaths, ...(options.immutablePaths ?? [])],
+        });
   const effectiveContracts = options.contracts ?? priorConfiguration?.contracts ?? contracts;
   if (graph !== null) {
     for (const contract of effectiveContracts) {
@@ -340,7 +350,8 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
   await sealControllerConfiguration(
     options.coordinator,
     {
-      version: 1,
+      version: controllerScope === undefined ? 1 : 2,
+      ...(controllerScope === undefined ? {} : { controllerScope }),
       runId: options.runId,
       repositoryRoot: options.repositoryRoot,
       baseCommit,
@@ -422,6 +433,7 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
     initialNodes,
     options.goalContract?.requirements.map((requirement) => requirement.id) ?? [],
     options.graphRevisionLimit ?? 4,
+    controllerScope,
   );
   if (replayController(options.coordinator).graph === null)
     await recordControllerGraph(options.coordinator, controllerGraph);

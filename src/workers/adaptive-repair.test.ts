@@ -20,6 +20,7 @@ import {
 } from "../providers/fixture-provider.ts";
 import { controllerEvents } from "./controller-events.ts";
 import type { RevisionRequest } from "./controller-revisions.ts";
+import type { ControllerScope } from "./controller-scope.ts";
 import { replayController } from "./controller-state.ts";
 import type { CoordinationEvent } from "./coordination.ts";
 import { runInParallel } from "./parallel-run.ts";
@@ -67,6 +68,7 @@ async function execute(
   goal?: unknown,
   repairAttempts = 2,
   controls: {
+    controllerScope?: ControllerScope;
     holdUntilDependent?: boolean;
     holdSecondUntilFirst?: boolean;
     gateOptions?: GateSetOptions;
@@ -116,6 +118,9 @@ async function execute(
   const calls: string[] = [];
   const outcome = await runInParallel({
     revisions: controls.revisions ?? [],
+    ...(controls.controllerScope === undefined
+      ? {}
+      : { controllerScope: controls.controllerScope }),
     ...(controls.gateOptions === undefined ? {} : { gateOptions: controls.gateOptions }),
     repositoryRoot: repository,
     baseRef: "HEAD",
@@ -650,3 +655,106 @@ it("repairs a regression of a declared advisory requirement on the integrated tr
   expect(calls).toEqual(["worker-1", "worker-2", "task-2-repair-1"]);
   expect(outcome.outcome.goalAccepted).toBe(true);
 });
+
+it.each([true, false])(
+  "handles a discovered prerequisite within explicit controller scope (authorized=%s)",
+  async (authorized) => {
+    const consumer = "import {value} from './helper.js'; export const a = value;\n";
+    const { outcome, coordinator, calls } = await execute(
+      {
+        "worker-1": { "a.js": consumer },
+        "worker-2": { "b.js": "export const b = 5;\n" },
+        "helper-attempt-1": { "helper.js": "export const value = 2;\n" },
+        "task-1-repair-1": { "a.js": consumer },
+      },
+      {
+        goal: "use a missing helper",
+        nodes: [
+          {
+            id: "consumer",
+            title: "consumer",
+            instruction: "use helper value in a",
+            files: ["a.js"],
+          },
+          { id: "unrelated", title: "unrelated", instruction: "b becomes five", files: ["b.js"] },
+        ],
+      },
+      {
+        ...goal,
+        goal: "consumer a is two and unrelated b is five",
+        requirements: [
+          { id: "first-side", description: "a is two", checks: ["interaction"] },
+          { id: "second-side", description: "b is five", checks: ["interaction"] },
+        ],
+        checks: goal.checks.map((check) => ({
+          ...check,
+          artifacts: check.artifacts.map((artifact) => ({
+            ...artifact,
+            content: artifact.content.replace("assert.equal(b, 3)", "assert.equal(b, 5)"),
+          })),
+        })),
+      },
+      2,
+      {
+        controllerScope: {
+          kind: "files",
+          allowedPaths: ["a.js", "b.js", ...(authorized ? ["helper.js"] : [])],
+          immutablePaths: [],
+        },
+        coordination: {
+          "worker-1": {
+            kind: "dependency-request",
+            prerequisite: "helper",
+            reason: "the consumer imports a missing helper module",
+            missing: { instruction: "create helper.js exporting value two", files: ["helper.js"] },
+          },
+        },
+      },
+    );
+    const board = replayController(coordinator);
+    expect(board.graph?.version).toBe(2);
+    expect(calls.filter((id) => id === "worker-2")).toHaveLength(1);
+    if (authorized) {
+      expect(board.graph?.ordinal).toBe(2);
+      expect(board.graph?.nodes.find((node) => node.id === "helper")?.obligations).toEqual([
+        "task-1",
+      ]);
+      expect(board.stale.has("worker-1")).toBe(true);
+      expect(outcome.outcome.goalAccepted, JSON.stringify(outcome.outcome)).toBe(true);
+      expect(calls).toContain("helper-attempt-1");
+      expect(calls).toContain("task-1-repair-1");
+      expect(outcome.outcome.tasks.find((task) => task.id === "task-1")?.members).toEqual([
+        "task-1",
+        "helper",
+      ]);
+    } else {
+      expect(board.graph?.ordinal).toBe(0);
+      expect(calls).not.toContain("helper-attempt-1");
+      expect(outcome.outcome.goalAccepted).toBe(false);
+      expect(
+        [...coordinator.payloads().values()].some(
+          (payload) =>
+            typeof payload === "object" &&
+            payload !== null &&
+            "disposition" in payload &&
+            payload.disposition === "refused" &&
+            "reason" in payload &&
+            String(payload.reason).includes("pinned user authority"),
+        ),
+      ).toBe(true);
+    }
+    const destination = join(scratch, "discovered-bundle");
+    await exportBundle({
+      source: bundleSourceFromRecorder(coordinator),
+      destination,
+      signingKey: createEphemeralSigningKey(),
+      clock,
+    });
+    const lines: string[] = [];
+    expect(
+      verifyBundle(destination, (line: string) => lines.push(line)),
+      lines.join("\n"),
+    ).toBe(0);
+  },
+  60000,
+);

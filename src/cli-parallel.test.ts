@@ -123,75 +123,86 @@ async function fixture(overrides: Partial<ControllerLaunch> = {}) {
     },
   };
 }
-it("accounts for planning and implementation together and resumes an accepted branch without another producer call", async () => {
-  const { launch, runtime } = await fixture();
-  let calls = 0;
-  const createModel = () =>
-    createFixtureModelClient({
-      modelId: "fixture:cli",
-      turns:
-        calls++ === 0
-          ? [
-              respondWithToolCalls("plan", [
-                {
-                  callId: "graph",
-                  toolName: "declare_task_graph",
-                  input: {
-                    goal: launch.goal,
-                    nodes: [
-                      {
-                        id: "change",
-                        title: "change",
-                        instruction: "a becomes two",
-                        files: ["a.js"],
-                      },
-                    ],
+it.each([false, true])(
+  "accounts for planning and resumes without another producer call (scope v2=%s)",
+  async (scoped) => {
+    const { launch, runtime } = await fixture(
+      scoped
+        ? {
+            version: 2,
+            controllerScope: { kind: "files", allowedPaths: ["a.js"], immutablePaths: [] },
+          }
+        : {},
+    );
+    let calls = 0;
+    const createModel = () =>
+      createFixtureModelClient({
+        modelId: "fixture:cli",
+        turns:
+          calls++ === 0
+            ? [
+                respondWithToolCalls("plan", [
+                  {
+                    callId: "graph",
+                    toolName: "declare_task_graph",
+                    input: {
+                      goal: launch.goal,
+                      nodes: [
+                        {
+                          id: "change",
+                          title: "change",
+                          instruction: "a becomes two",
+                          files: ["a.js"],
+                        },
+                      ],
+                    },
                   },
-                },
-              ]),
-              respondWithText("planned"),
-            ]
-          : [
-              respondWithToolCalls("declare", [
-                { callId: "d", toolName: "declare_file_set", input: { files: ["a.js"] } },
-              ]),
-              respondWithToolCalls("edit", [
-                {
-                  callId: "w",
-                  toolName: "write",
-                  input: { path: "a.js", content: "export const a = 2;\n" },
-                },
-              ]),
-              respondWithText("done"),
-            ],
+                ]),
+                respondWithText("planned"),
+              ]
+            : [
+                respondWithToolCalls("declare", [
+                  { callId: "d", toolName: "declare_file_set", input: { files: ["a.js"] } },
+                ]),
+                respondWithToolCalls("edit", [
+                  {
+                    callId: "w",
+                    toolName: "write",
+                    input: { path: "a.js", content: "export const a = 2;\n" },
+                  },
+                ]),
+                respondWithText("done"),
+              ],
+      });
+    const completed = await executeControllerLaunch(launch, { ...runtime, createModel });
+    expect(completed.outcome.goalAccepted).toBe(true);
+    expect(calls).toBe(2);
+    const store = openRunStore(runtime.storePath);
+    expect(store.steps("run").some((step) => step.kind === "planning")).toBe(true);
+    expect(store.remainingTokens("run")).toBe(completed.outcome.usage.remaining);
+    const restarted = await openEvidenceSession({
+      root: runtime.sessionRoot,
+      sessionId: "run-queue",
+      clock,
     });
-  const completed = await executeControllerLaunch(launch, { ...runtime, createModel });
-  expect(completed.outcome.goalAccepted).toBe(true);
-  expect(calls).toBe(2);
-  const store = openRunStore(runtime.storePath);
-  expect(store.steps("run").some((step) => step.kind === "planning")).toBe(true);
-  expect(store.remainingTokens("run")).toBe(completed.outcome.usage.remaining);
-  const restarted = await openEvidenceSession({
-    root: runtime.sessionRoot,
-    sessionId: "run-queue",
-    clock,
-  });
-  const captured = controllerLaunch(restarted);
-  expect(captured).toEqual(launch);
-  const resumed = await executeControllerLaunch(launch, {
-    ...runtime,
-    coordinator: restarted,
-    createModel: () => {
-      throw new Error("accepted producer must not rerun");
-    },
-  });
-  expect(resumed.headCommit).toBe(completed.headCommit);
-  expect(resumed.outcome.goalAccepted).toBe(true);
-  expect(controllerEvents(restarted).filter((event) => event.kind === "run-started")).toHaveLength(
-    1,
-  );
-  store.close();
-}, 60000);
+    const captured = controllerLaunch(restarted);
+    expect(captured).toEqual(launch);
+    const resumed = await executeControllerLaunch(launch, {
+      ...runtime,
+      coordinator: restarted,
+      createModel: () => {
+        throw new Error("accepted producer must not rerun");
+      },
+    });
+    expect(resumed.headCommit).toBe(completed.headCommit);
+    expect(resumed.outcome.goalAccepted).toBe(true);
+    expect(
+      controllerEvents(restarted).filter((event) => event.kind === "run-started"),
+    ).toHaveLength(1);
+    store.close();
+  },
+  60000,
+);
 it("observes administrative cancellation during planning and retains unknown usage on restart", async () => {
   const { launch, runtime } = await fixture();
   let calls = 0;

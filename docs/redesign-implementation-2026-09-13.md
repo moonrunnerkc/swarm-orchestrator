@@ -36,41 +36,41 @@ A runner alone does not complete an empirical requirement.
 | A1 | Effective objective, dependencies, authorized/immutable paths, tools, checks, execution and budget | graph and legacy workspace contracts reach tools, execution admission, budget and assessment; public dispatch tests | validated |
 | A2 | Worker declarations cannot enlarge controller scope; normalized paths | normalized exact graph scope, denied amendment and shell post-check regressions | validated |
 | A3 | Required checks run and affect acceptance; unsupported restrictions refuse dispatch | required advisory and undefined checks plus unsupported host network tests | validated |
-| B1 | Run context before planning; all activities share cancellation and budget | context precedes CLI planning and wraps provider calls, tests and final verification; planning cancellation tested; recovery open | partial |
+| B1 | Run context before planning; all activities share cancellation and budget | context precedes CLI planning and wraps provider calls, tests and final verification; original deadline and budget resume tests | validated |
 | B2 | Separate worktree, model-call and test-process limits | separate worktree cap and FIFO model/test permits, cancellation tests; contention measurement remains M4 | implemented |
 | B3 | In-flight input/output reservation, measured settlement, failed and unknown usage | reservation races, settlement, failed/unknown usage and original deadline restart tests | validated |
-| B4 | Stop dispatch, separately bounded cleanup, durable parallel lifecycle | cancellation and recovery integrations | open |
+| B4 | Stop dispatch, separately bounded cleanup, durable parallel lifecycle | durable planning/dispatch/integration lifecycle and separate cleanup deadline; recovery and CLI abort tests | validated |
 | C1 | Failed integrated checks, conflicts and relevant ratchet failures start bounded repair | three real-worktree synthetic repair cases pass through the public runner | validated |
 | C2 | Retain rejected attempts and reachable commits; reuse failure context | rejected Git refs retained; accepted peer executes once in repair tests | validated |
 | C3 | Revalidate repair and combined tree, one final task outcome | repair and integration checks followed by exact-tree independent goal checks; final outcome tests | validated |
 | C4 | Repeated failure fingerprints and limits, exact blocker and partial work | repeated patch/base/reason fingerprint and attempt cap; blocker test passes | validated |
-| D1 | Readiness scheduling, one integration writer, actual integration base | dependent starts while unrelated worker runs | open |
-| D2 | Versioned bounded revisions: prerequisite, split, combine, reroute | cycle/reference rejection and overlap serialization | open |
-| D3 | Preserve requirements/history, invalidate affected acceptance | revision omission and changed-dependency tests | open |
-| D4 | Base/revision identity and stale candidate refusal | late worker after integration/revision change | open |
-| D5 | Typed bounded proposals, relevant deltas, provenance, independent alternatives | event projection and tool-path regressions | open |
-| D6 | Prefer one worker for tiny/coupled work | no-op, single-file, over-decomposition cases | open |
+| D1 | Readiness scheduling, one integration writer, actual integration base | real Git readiness fixture starts a dependent while an unrelated provider remains active; one integration writer | validated |
+| D2 | Versioned bounded revisions: prerequisite, split, combine, reroute | v1 bounded split/combine/reroute/dependency revisions; v2 missing prerequisite and scope allocation are under current validation | partial |
+| D3 | Preserve requirements/history, invalidate affected acceptance | original obligation membership survives split/combine; downstream acceptance invalidated and independently re-derived | validated |
+| D4 | Base/revision identity and stale candidate refusal | late candidate after dependency revision is retained, refused and repaired from current integration base | validated |
+| D5 | Typed bounded proposals, relevant deltas, provenance, independent alternatives | bounded typed proposals and tool provenance; same-task alternatives receive no peer tools; exported reader tests | validated |
+| D6 | Prefer one worker for tiny/coupled work | coupled-task collapse is exercised; planner instructed to stay single for tiny work; local development evaluation remains | partial |
 | E1 | Independent final acceptance at exact integrated tree | fresh independent checkout with exact Git tree check; locally green omission refused | validated |
 | E2 | One authoritative CLI/exit/TUI/export assessment, distinct trust dimensions | CLI and plain progress report consume exported controller assessment; TUI and recovery remain | partial |
 | E3 | User checks and recorded candidate checks protected from worker writes | user and planner-authored candidate checks, immutable artifacts and authorship regression; bootstrap open | implemented |
 | E4 | Preserve strict reference/control package and human judgment gaps | strict reference/control path and existing corpus remain green; uncovered requirements unjudged | validated |
 | E5 | Explicit empty-repository bootstrap before acceptance pinning and implementation | bootstrap end-to-end fixture | open |
-| E6 | All obligations eligible before goal ranking, declared objective; legacy comparator retained | omission ineligible despite test volume | open |
-| F1 | Journal replay and reconciliation of attempts, usage, candidates, trees, integration, resources | crash/restart around each effect | open |
-| F2 | Original remaining budget/policy, no duplicate landing or ambiguous replay | restart and accounting tests | open |
-| F3 | Intent before effect, completion after; preserve torn/altered history | crash at journal boundaries | open |
-| F4 | Verify ownership before cleanup, retain user and other-session resources | cleanup ownership negatives | open |
+| E6 | All obligations eligible before goal ranking, declared objective; legacy comparator retained | complete-goal alternatives checked independently before objective ranking; omission with twelve extra tests is ineligible; legacy comparator retained | validated |
+| F1 | Journal replay and reconciliation of attempts, usage, candidates, trees, integration, resources | validated controller replay, resource and Git reconciliation; injected boundaries plus real SIGKILL after recorded landing | validated |
+| F2 | Original remaining budget/policy, no duplicate landing or ambiguous replay | original pinned launch/configuration, retained unknown usage and token ceiling; accepted producer not called on resume | validated |
+| F3 | Intent before effect, completion after; preserve torn/altered history | intent/completion windows distinguished; checksum/torn history and missing candidate evidence refuse reconciliation | validated |
+| F4 | Verify ownership before cleanup, retain user and other-session resources | writer lease and container labels checked; dirty worktrees, changed refs, live/unknown owners and other resources preserved | validated |
 | G1 | Extract CLI/session/parallel composition and common settings/outcome | parallel handler and common settings extracted; session extraction remains | partial |
 | G2 | Shared immutable verification setup, independent trust and known-answer tests | verifier/signature/hash parity and independent fixtures | open |
 | G3 | Harness routine claims, smaller optional vocabulary; compare before default change | prompt success and usage comparison | open |
 | G4 | Profile journal, polling, transcripts, peers, checks and contention first | fixed fixture time/space measurements | open |
 | G5 | Warranted incremental processing, exact reconstruction, cross-process visibility | corrupt history and exact prompt tests | open |
 | G6 | Immutable check reuse, observations rerun after relevant changes; unknown disables cache | content/environment identity tests if caching is warranted | open |
-| G7 | Final blocking checks mandatory, remove duplicate workflow calls, explicit corpus setup | complete scripts and CI review | open |
+| G7 | Final blocking checks mandatory, remove duplicate workflow calls, explicit corpus setup | gates workflow retains Linux/macOS and fuzz, packaged job; duplicate invocations removed and v12-final prerequisite checked in M0 | validated |
 | G8 | Consolidate policy and archive narrative losslessly, meaningful weight gate | drift, restoration and cited bundles | open |
 | G9 | Goal/blocker/resource/acceptance/branch output, detailed features accessible | public command fixtures | open |
 | G10 | Learned routing stays experimental pending matching evaluation | existing routing authority tests | open |
-| H1 | External transcript/patch import and honest unavailable provenance | historical import compatibility | open |
+| H1 | External transcript/patch import and honest unavailable provenance | existing importer, historical bundle, signer and tamper fixtures remain in full gates through goal-selection milestone | validated |
 | H2 | Concrete external CLI driver only after pilot bar and supported CLI availability | conditional prerequisites, no driver claim before both hold | conditional |
 | V1 | Six development goal classes, valid fixes and omissions | missing dependency, interface, behavior, conflict, interruption, over-decomposition | open |
 | V2 | Freeze 24 goals, at least eight repositories, JS/TS and Python, multiple categories | source/acceptance/budget/stopping/order identities before launches | open |
@@ -200,4 +200,10 @@ With an ordinary goal contract, redundancy now means independent attempts at the
 
 A real-worktree regression creates a locally green alternative with twelve unrelated tests and a missing required behavior. It is ineligible even though its test count is larger. When both alternatives omit the behavior, one bounded repair receives the acceptance failures and establishes both requirements. The final integrated verifier still runs. An independent bundle reader checks candidate identity, captured acceptance, usage, eligibility and the declared ordering. Known-answer tests forge omissions, usage, bases, citations and winners. These are synthetic behavioral checks, not evidence of a model or swarm advantage.
 
-Ordinary acceptance now handles an empty patch and records a check that deletes its own pinned artifact as rejected instead of throwing an incidental missing-file exception. Both regressions failed before the fix. Required advisory integration failures already triggered the existing numeric ratchet; the added repair regression confirms that preservation rather than claiming a missing enforcement path. The first full gate run, `goal-selection-gates`, retained 302 passing files and 2962 passing tests, with one failing malformed-patch compatibility test. Git's unconditional `--allow-empty` also accepted arbitrary non-patch text. The flag is now used only when the submitted patch contains no non-whitespace content; malformed imports still refuse. Corrected full gates remain pending.
+Ordinary acceptance now handles an empty patch and records a check that deletes its own pinned artifact as rejected instead of throwing an incidental missing-file exception. Both regressions failed before the fix. Required advisory integration failures already triggered the existing numeric ratchet; the added repair regression confirms that preservation rather than claiming a missing enforcement path. The first full gate run, `goal-selection-gates`, retained 302 passing files and 2962 passing tests, with one failing malformed-patch compatibility test. Git's unconditional `--allow-empty` also accepted arbitrary non-patch text. The flag is now used only when the submitted patch contains no non-whitespace content; malformed imports still refuse. Corrected `goal-selection-gates-corrected` exited 0: 303 files and 2963 tests passed in 105.55 seconds, no skips, with the unchanged baseline Biome diagnostics. Evidence digest: `sha256:e8970434d15d67d3aadad684e488e00ada83bc50e21676554b14f247862beee9`. The tested diff is commit `27ddb08b401e501441a26d7a9486652775e97e67`.
+
+### Missing prerequisites and explicit scope allocation
+
+Graph version two pins the controller's user-authorized scope separately from each worker contract. New ordinary CLI goals permit controller allocation within the workspace; a supplied task graph keeps its declared file ceiling. Programmatic callers must explicitly supply a controller scope. Version-one launch/configuration/graph histories remain readable and acquire no amendment authority on resume. Required acceptance artifacts and immutable paths remain protected, and every existing lexical guard and execution admission still applies. This is permission allocation, not containment or a semantic proof that a proposed file is relevant to the goal.
+
+A missing-prerequisite proposal can name a bounded instruction and file list. The controller preflights a scope amendment, when needed, and insertion as separate append-only revisions before dispatch. The new task inherits the requesting task's obligations, checks, tools, execution policy and per-attempt limits. The original consumer becomes stale and must run again against the accepted prerequisite. Human-only scope authority cannot be delegated by a replacement task. Unknown references, cycles, immutable paths, out-of-ceiling files and budget increases remain refused. The independent bundle reader re-derives both operations. Current focused integration validation includes refusal outside the pinned file ceiling and version-two resume; full gates for this batch remain pending.
