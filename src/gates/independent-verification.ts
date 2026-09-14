@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +12,7 @@ import {
   verifyAcceptanceContract,
 } from "./contract-verification.ts";
 import type { GateSetOptions } from "./default-gates.ts";
+import { type DependencyInstall, installFromLockfile } from "./dependency-install.ts";
 import { assembleGateSet } from "./engine.ts";
 import { normalizePath } from "./file-set.ts";
 import { defaultGateTimeoutMs, type GateCommandRunner } from "./gate-definition.ts";
@@ -56,12 +56,7 @@ export interface IndependentCheck {
   readonly inheritedFromBase?: boolean;
 }
 
-export interface DependencyInstall {
-  readonly attempted: boolean;
-  readonly succeeded: boolean;
-  readonly command: string;
-  readonly detail: string;
-}
+export type { DependencyInstall } from "./dependency-install.ts";
 
 export interface IndependentVerification {
   readonly certificationPolicy?: "oracle-v3" | "required-obligations-v1" | "goal-obligations-v1";
@@ -170,9 +165,8 @@ export interface IndependentVerificationOptions {
   /**
    * Install the checkout's dependencies from its lockfile before running the checks.
    *
-   * Off by default, and deliberately: installing runs whatever install scripts the registry
-   * serves, which is one of the seven things the approval model says needs a person. A run that
-   * cannot measure says so instead of quietly installing on the reader's behalf.
+   * Off by default. Explicit authorization permits registry access through the selected runner.
+   * Frozen lockfile commands disable lifecycle scripts; observed setup is recorded separately.
    */
   readonly installDependencies?: boolean;
   /**
@@ -318,8 +312,32 @@ export async function verifyIndependently(
 
     const install =
       options.installDependencies === true
-        ? await installFromLockfile(checkout, options, timeoutMs)
+        ? await installFromLockfile({
+            workspace: checkout,
+            commands: options.commands,
+            timeoutMs,
+            ...(options.signal === undefined ? {} : { signal: options.signal }),
+            ...(options.goal === undefined ? {} : { evidence: options.goal.evidence }),
+          })
         : null;
+
+    if (install !== null && !install.succeeded)
+      return {
+        applied: true,
+        checks: [],
+        refusal: install.detail,
+        regression: "unmeasured",
+        task: "unjudged",
+        oracleReach: "unmeasured",
+        unreachedByOracle: [],
+        oracleBond: "not-bonded",
+        bondedMutants: [],
+        verified: false,
+        unmeasured: true,
+        advice: install.detail,
+        install,
+        checkoutPath: checkout,
+      };
 
     const onlyTheOracle = options.repositoryChecks === "skip";
     const withPatch = onlyTheOracle ? [] : await runChecks(checkout, options, timeoutMs);
@@ -480,9 +498,8 @@ export async function verifyIndependently(
                   : !measuredSomething
                     ? "nothing here measured the patch: every check stood down, which on a real project " +
                       "usually means the fresh checkout has no installed dependencies, so its test runner " +
-                      "is not present. Pass --install to install them from the lockfile first, which runs " +
-                      "whatever install scripts the registry serves and is therefore a decision rather " +
-                      "than a default."
+                      "is not present. Pass --install to authorize lockfile setup with lifecycle scripts disabled, " +
+                      "or provide a prepared runtime. Required execution restrictions still apply."
                     : task === "unjudged"
                       ? "the repository's own suite passed, which says nothing broke. It does not say the " +
                         "task was done: a suite tests the behaviour a project already had, and a task adds " +
@@ -785,54 +802,6 @@ async function judgeTask(
     timeoutMs,
   });
   return ran.exitCode === 0 ? "accepted" : "rejected";
-}
-
-/**
- * Installs from whichever lockfile the checkout carries, with no network beyond the registry the
- * lockfile already names. Reported rather than assumed: an install that failed and a run that
- * never installed produce the same absent runner, and they are different problems.
- */
-async function installFromLockfile(
-  checkout: string,
-  options: IndependentVerificationOptions,
-  timeoutMs: number,
-): Promise<DependencyInstall> {
-  const lockfiles: readonly { readonly file: string; readonly argv: readonly string[] }[] = [
-    {
-      file: "package-lock.json",
-      argv: ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"],
-    },
-    { file: "pnpm-lock.yaml", argv: ["pnpm", "install", "--frozen-lockfile", "--ignore-scripts"] },
-    { file: "yarn.lock", argv: ["yarn", "install", "--frozen-lockfile", "--ignore-scripts"] },
-  ];
-
-  for (const candidate of lockfiles) {
-    if (!existsSync(join(checkout, candidate.file))) {
-      continue;
-    }
-    const ran = await options.commands.runVouched(candidate.argv, {
-      cwd: checkout,
-      timeoutMs: Math.max(timeoutMs, 10 * 60_000),
-    });
-    return {
-      attempted: true,
-      succeeded: ran.exitCode === 0,
-      command: candidate.argv.join(" "),
-      detail:
-        ran.exitCode === 0
-          ? `installed from ${candidate.file}`
-          : `install failed (exit ${ran.exitCode}): ${(ran.stderr || ran.stdout).trim().split("\n").slice(-2).join(" ")}`,
-    };
-  }
-
-  return {
-    attempted: true,
-    succeeded: false,
-    command: "",
-    detail:
-      "no lockfile this build installs from (package-lock.json, pnpm-lock.yaml, yarn.lock), " +
-      "so nothing was installed and the checks run against whatever is already there",
-  };
 }
 
 /**

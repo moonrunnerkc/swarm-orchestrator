@@ -60,6 +60,7 @@ const runProcess = promisify(execFile);
 const defaultNodeWallMs = 30 * 60 * 1000;
 
 export interface ParallelRunOptions {
+  readonly installDependencies?: boolean;
   readonly controllerScope?: ControllerScope;
   readonly resume?: boolean;
   readonly owner?: ControllerOwner;
@@ -347,7 +348,8 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
   await sealControllerConfiguration(
     options.coordinator,
     {
-      version: controllerScope === undefined ? 1 : 2,
+      version: options.installDependencies === true ? 3 : controllerScope === undefined ? 1 : 2,
+      ...(options.installDependencies === true ? { installDependencies: true } : {}),
       ...(controllerScope === undefined ? {} : { controllerScope }),
       runId: options.runId,
       repositoryRoot: options.repositoryRoot,
@@ -516,6 +518,8 @@ async function executeParallel(options: ParallelRunOptions): Promise<ParallelRun
   async function landLayer(proposals: readonly RankedProposal[]): Promise<void> {
     const landed = await runMergeQueue({
       integrationPath: integration.path,
+      installDependencies: options.installDependencies === true,
+      remainingWallMs: options.remainingWallMs,
       beforeAttempt: async (candidate, accepted) => {
         const worker = workers.find((worker) => worker.workerId === candidate.workerId);
         if (worker?.commit == null) throw new Error("integration candidate has no retained commit");

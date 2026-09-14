@@ -3,6 +3,7 @@ import { runAgentTask } from "../agent-run.ts";
 import { asJsonValue } from "../evidence/canonical-json.ts";
 import { LedgerSealedError, LedgerWriteFailedError } from "../evidence/ledger.ts";
 import type { TaskContract } from "../evidence/task-contract.ts";
+import { DependencySetupReconciliationError } from "../gates/dependency-install.ts";
 import { createFileSetRegistry } from "../gates/file-set.ts";
 import { emptyMeasureSnapshot } from "../gates/measure-snapshot.ts";
 import { summarizeRatchet } from "../gates/ratchet-summary.ts";
@@ -105,6 +106,7 @@ export async function runOneWorker(
       ...(contract === undefined ? {} : { contract }),
       ...(feedback === undefined ? {} : { repairFeedback: feedback }),
       task,
+      installDependencies: options.installDependencies === true,
       coordination:
         options.peerInformation === false ||
         (options.goalContract !== undefined && options.redundancy > 1)
@@ -187,7 +189,11 @@ export async function runOneWorker(
       addedLines: cycle.measures.addedLines ?? 0,
     });
   } catch (cause) {
-    if (cause instanceof LedgerWriteFailedError || cause instanceof LedgerSealedError) {
+    if (
+      cause instanceof LedgerWriteFailedError ||
+      cause instanceof LedgerSealedError ||
+      cause instanceof DependencySetupReconciliationError
+    ) {
       preserveWorktree = true;
       throw cause;
     }

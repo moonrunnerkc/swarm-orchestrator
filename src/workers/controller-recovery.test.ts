@@ -371,3 +371,53 @@ it("resumes an authorized final-goal repair intent before its graph was appended
   ).toHaveLength(1);
   expect(replayController(restarted).graph?.ordinal).toBe(1);
 }, 60000);
+
+it("does not replay a dependency installation whose completion was lost", async () => {
+  await writeFile(join(repository, ".gitignore"), "node_modules/\n");
+  await writeFile(
+    join(repository, "package-lock.json"),
+    JSON.stringify({ lockfileVersion: 3, requires: true, packages: { "": {} } }),
+  );
+  await git("git", ["-C", repository, "add", "."]);
+  await git("git", [
+    "-C",
+    repository,
+    "-c",
+    "user.name=fixture",
+    "-c",
+    "user.email=fixture@example.com",
+    "commit",
+    "-qm",
+    "setup lock",
+  ]);
+  const coordinator = await open();
+  let modelCalls = 0;
+  const original = options(coordinator);
+  const settings = {
+    ...original,
+    installDependencies: true,
+    createModel: (...args: Parameters<typeof original.createModel>) => {
+      const provider = original.createModel(...args);
+      return {
+        ...provider,
+        generate: (request: Parameters<typeof provider.generate>[0]) => {
+          modelCalls++;
+          return provider.generate(request);
+        },
+      };
+    },
+  };
+  const create = settings.createWorkerSession;
+  await expect(
+    runInParallel({
+      ...settings,
+      createWorkerSession: async (workerId) =>
+        interrupted(await create(workerId), "dependency-install", false),
+    }),
+  ).rejects.toThrow("injected crash");
+  expect(modelCalls).toBe(0);
+  await expect(
+    runInParallel({ ...options(await open()), installDependencies: true, resume: true }),
+  ).rejects.toThrow("unresolved effect");
+  expect(modelCalls).toBe(0);
+});

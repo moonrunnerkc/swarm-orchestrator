@@ -25,6 +25,14 @@ export interface CatalogueEntry {
 
 export const predicateCatalogue: readonly CatalogueEntry[] = [
   {
+    type: "dependency-install",
+    controllerOnly: true,
+    subjectField: null,
+    example: "succeeded == true",
+    sample: { phase: "completed", succeeded: true },
+    says: "authorized lockfile setup completed under the selected execution policy",
+  },
+  {
     type: "bootstrap-stage",
     controllerOnly: true,
     subjectField: null,

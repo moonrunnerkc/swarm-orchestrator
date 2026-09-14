@@ -210,7 +210,8 @@ export async function parallel(options: ParallelCommand): Promise<number> {
   const launch = await declareControllerLaunch(
     coordinator,
     controllerLaunchSchema.parse({
-      version: options.bootstrap === undefined ? 2 : 3,
+      version: options.installDependencies === true ? 4 : options.bootstrap === undefined ? 2 : 3,
+      ...(options.installDependencies === true ? { installDependencies: true } : {}),
       ...(options.bootstrap === undefined ? {} : { bootstrap: options.bootstrap }),
       controllerScope:
         options.goal !== null || fromFile?.graph == null
@@ -498,6 +499,7 @@ export async function executeControllerLaunch(
       resume: configured !== null,
       runContext: context,
       maxTokens: launch.maxTokens,
+      installDependencies: launch.installDependencies === true,
       tasks,
       ...(graph === null ? {} : { graph, graphSource: launch.goal === null ? "file" : "goal" }),
       ...(goalContract === null ? {} : { goalContract }),

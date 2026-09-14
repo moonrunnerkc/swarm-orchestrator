@@ -262,6 +262,7 @@ export interface AddCaseCommand {
 export interface ParallelCommand {
   readonly details?: boolean;
   readonly tui?: boolean;
+  readonly installDependencies?: boolean;
   readonly bootstrap?: "node";
   readonly goalChecksFile?: string;
   readonly maxTokens?: number;
@@ -600,6 +601,7 @@ export function parseCommandLine(
     }
     return {
       command: "parallel",
+      ...(flags.has("install") ? { installDependencies: true } : {}),
       ...(flags.has("details") ? { details: true } : {}),
       ...(flags.has("no-tui") ? { tui: false } : {}),
       ...(flags.has("bootstrap") ? { bootstrap: "node" as const } : {}),

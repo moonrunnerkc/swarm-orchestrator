@@ -436,3 +436,41 @@ contract briefing. The fixture now separates that briefing from its script ident
 landing and claim assertions are unchanged. Both invocations remain in the implementation ledger.
 Passing evidence: `sha256:0b74ee78698303c2c8c0637efd5bf783e75b06394d7387c2563a54bef65e8d64`,
 bound to parent `e0a4602b23c219b8851a30360d1bd12dcfdb5a10` and the captured source diff.
+
+### Explicit dependency setup across the controller
+
+`parallel --install` now carries opt-in lockfile setup through the native worker, each integration
+measurement and the fresh independent verifier. The launch uses version four and controller
+configuration version three; older launches keep their original defaults and remain readable.
+Bootstrap and lockfile setup are distinct stages. Commands use the selected execution backend,
+built child environment, cancellation and test-process pool, with no fresh timeout allowance.
+The supported npm/pnpm/Yarn lockfile invocations disable lifecycle scripts. This is not a claim
+that package managers execute no project-controlled code or that host execution is containment.
+
+Setup records intent, source/lockfile identities, process observation and completion. An installer
+that changes tracked or visible source is refused; ignored dependency directories remain runtime
+material. A failed install cannot turn into accepted independent verification. An unanswered
+setup intent requires reconciliation rather than a fresh installation, including worker recovery.
+The bundled verifier separately derives setup status from process and source observations.
+
+`dependency-setup-corrected-focused` exited 0 with 8 files and 146 tests in 43.56 seconds,
+digest `sha256:a3420e57b15918abc5ecd75ddf6f5d41a6bb48d958ee88975f76acbf0eec3978`.
+The prior focused invocation retained two failures from an unsupported conjunction in a new
+predicate example; the example now uses the existing predicate grammar. Full `dependency-setup-gates`
+exited 0 with 316 files and 3024 tests in 122.32 seconds, no skips, digest
+`sha256:f2113d3d47caf40f97742b31a9276d050a50c39efc198d2ddd25ea692533dfd1`.
+It exercises real npm setup without registry dependencies, suppressed lifecycle execution,
+source mutation refusal, public worker/integration/final verification, post-intent crash recovery
+and independently rejected forged setup status. The capture binds parent
+`3b5d730bd9dab0e9c44abed2547cd854dd4b303a` and the tested diff.
+
+The corrected six-launch prompt comparison at that parent accepted three executable behavior
+checks out of six scheduled runs: legacy accepted one of three, concise two of three. Pagination
+was locally green under legacy but failed the final behavior check. Concise pagination exhausted
+its next reservation; legacy cache work returned incomplete provider usage (one call remained
+reserved at 56,554 tokens), so verification stopped for reconciliation. These development cases
+are exposed and correlated, and their checks do not establish every prose instruction such as
+maintained-test quality. Default prompts remain unchanged; no speed or completion advantage is
+claimed. Protocol, all observations and candidates remain under `redesign-development/prompt-comparison-2`.
+Capture `prompt-comparison-corrected-live` exited 0 because all six launches settled, digest
+`sha256:bd02672248549c6b148af53e98b0a5d3516636122c11ef7b9074097a4b5e6ed7`.

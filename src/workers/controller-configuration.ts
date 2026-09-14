@@ -10,7 +10,8 @@ import { readTaskGraph } from "./task-graph.ts";
 const positive = z.number().int().positive();
 export const controllerConfigurationSchema = z
   .strictObject({
-    version: z.union([z.literal(1), z.literal(2)]),
+    version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+    installDependencies: z.literal(true).optional(),
     controllerScope: controllerScopeSchema.optional(),
     runId: z.string().regex(/^[a-zA-Z0-9_-]+$/),
     repositoryRoot: z.string(),
@@ -52,9 +53,17 @@ export const controllerConfigurationSchema = z
         .optional(),
     }),
   })
-  .refine((spec) => (spec.version === 2) === (spec.controllerScope !== undefined), {
-    message: "controller scope authority requires version two and must be preserved",
-  });
+  .refine(
+    (spec) =>
+      (spec.version === 1
+        ? spec.controllerScope === undefined
+        : spec.version === 2
+          ? spec.controllerScope !== undefined
+          : true) && (spec.version === 3) === (spec.installDependencies === true),
+    {
+      message: "controller scope authority requires version two and must be preserved",
+    },
+  );
 export type ControllerConfiguration = z.infer<typeof controllerConfigurationSchema>;
 
 export function controllerConfiguration(

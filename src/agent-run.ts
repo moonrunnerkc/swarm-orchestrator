@@ -15,6 +15,7 @@ import { sealRunSpec } from "./evidence/run-spec.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
 import { parseTaskContract, type TaskContract } from "./evidence/task-contract.ts";
 import type { RunVerdict } from "./evidence/verdict.ts";
+import { harnessChildEnvironment } from "./exec/child-environment.ts";
 import type { ExecutionEnvelope, IsolationBackend } from "./exec/execution-mode.ts";
 import type { ResourcePool } from "./exec/resource-pool.ts";
 import { describeEnvelopeForReader, establishExecutionEnvelope } from "./exec/run-envelope.ts";
@@ -24,6 +25,7 @@ import type { ResolveRequest } from "./gates/auto-resolve.ts";
 import type { SingleFileCommand } from "./gates/base-control.ts";
 import { restrictFileSet } from "./gates/contract-scope.ts";
 import type { GateSetOptions } from "./gates/default-gates.ts";
+import { installFromLockfile } from "./gates/dependency-install.ts";
 import {
   assembleGateSet,
   defaultDiffBudget,
@@ -37,6 +39,7 @@ import { capabilityOf } from "./gates/gate-capability.ts";
 import type { DiffBudget } from "./gates/gate-definition.ts";
 import { createGitWorkspaceProbe } from "./gates/git-workspace.ts";
 import { captureInheritedChanges, type InheritedChanges } from "./gates/inherited-changes.ts";
+import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
 import { detectProject } from "./gates/project-type.ts";
 import { diffAgainstBase } from "./gates/scratch-index.ts";
 import { taskBrief } from "./task-brief.ts";
@@ -95,6 +98,7 @@ const trailInstruction = [
 ].join(" ");
 
 export interface AgentTaskOptions {
+  readonly installDependencies?: boolean;
   readonly promptProfile?: WorkerPromptProfile;
   readonly commandPool?: ResourcePool | undefined;
   readonly contract?: TaskContract;
@@ -462,6 +466,23 @@ async function executeAgentTask(
         note: "already different from the base when the run started, so not attributed to it",
       },
     });
+  }
+
+  if (options.installDependencies === true) {
+    const setup = await installFromLockfile({
+      workspace: options.workspace,
+      commands: createNodeCommandRunner(
+        options.clock,
+        harnessChildEnvironment(),
+        options.isolation,
+        options.abortSignal,
+        options.commandPool,
+      ),
+      timeoutMs: wall.loopBudgetMs(),
+      evidence: options.evidence,
+      signal: options.abortSignal,
+    });
+    if (!setup.succeeded) throw new Error(setup.detail);
   }
 
   const loopDependencies = {

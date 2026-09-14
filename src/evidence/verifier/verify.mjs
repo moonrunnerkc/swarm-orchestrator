@@ -875,6 +875,37 @@ function collectChecks(directory) {
       `obligation conjunction implies ${accepted}`,
     );
   }
+  const setupIntents = new Map();
+  const setupSeen = new Set();
+  for (const entry of records.filter((candidate) => candidate.type === "dependency-install")) {
+    const setup = payloads.get(entry.payloadDigest);
+    let consistent = entry.actor === "harness" && setup?.version === 1;
+    if (setup?.phase === "intent") {
+      consistent &&= typeof setup.id === "string" && !setupSeen.has(setup.id);
+      setupSeen.add(setup.id);
+      setupIntents.set(setup.id, setup);
+    } else if (setup?.phase === "completed") {
+      const intent = setupIntents.get(setup.id);
+      consistent &&=
+        intent !== undefined &&
+        ["workspace", "argv", "lockDigest", "sourceDigest"].every(
+          (key) => canonicalJson(intent[key]) === canonicalJson(setup[key]),
+        ) &&
+        typeof setup.sourceAfter === "string" &&
+        (Number.isInteger(setup.exitCode) || setup.exitCode === null) &&
+        (typeof setup.unavailable === "string" || setup.unavailable === null) &&
+        setup.succeeded ===
+          (setup.exitCode === 0 &&
+            setup.unavailable === null &&
+            setup.sourceAfter === intent.sourceDigest);
+      setupIntents.delete(setup.id);
+    } else consistent = false;
+    record(
+      `dependency setup ${entry.sequence} re-derived`,
+      consistent,
+      "intent identity, process observation and source preservation determine setup status",
+    );
+  }
   for (const entry of records.filter(
     (candidate) => candidate.type === "independent-verification",
   )) {
