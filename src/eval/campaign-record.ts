@@ -48,9 +48,10 @@ export async function openCampaign(
     const payload = z
       .object({ protocol: z.unknown(), digest: z.string() })
       .parse(evidence.payloads().get(declarations[0].payloadDigest));
+    const recordedProtocol = normalizeEvidenceProtocol(payload.protocol);
     if (
       payload.digest !== frozen.digest ||
-      digestOfJson(asJsonValue(payload.protocol)) !== frozen.digest
+      digestOfJson(asJsonValue(recordedProtocol)) !== frozen.digest
     )
       throw new Error("resume must preserve the frozen campaign protocol");
   } else {
@@ -59,7 +60,7 @@ export async function openCampaign(
       type: "campaign-protocol",
       actor: "harness",
       provenance: ["user"],
-      payload: frozen,
+      payload: encodeEvidenceProtocol(frozen),
     });
   }
   const schedule = protocolSchedule(frozen.protocol);
@@ -229,5 +230,34 @@ export async function openCampaign(
         cleanupFailed,
       };
     },
+  };
+}
+
+/** Keep the numeric campaign allowance measurable without making a generic token field safe. */
+function encodeEvidenceProtocol(frozen: ReturnType<typeof freezeProtocol>) {
+  const { tokens, ...budgetWithoutTokens } = frozen.protocol.budgets;
+  return {
+    ...frozen,
+    protocol: {
+      ...frozen.protocol,
+      budgets: {
+        ...budgetWithoutTokens,
+        budgetMetric: tokens,
+      },
+    },
+  };
+}
+
+function normalizeEvidenceProtocol(input: unknown) {
+  if (typeof input !== "object" || input === null) return input;
+  const protocol = input as { protocol?: unknown; budgets?: unknown };
+  if (typeof protocol.budgets !== "object" || protocol.budgets === null) return input;
+  const budgets = protocol.budgets as { tokens?: unknown; budgetMetric?: unknown };
+  if (budgets.tokens !== undefined) return input;
+  if (typeof budgets.budgetMetric !== "number") return input;
+  const { budgetMetric, ...budgetWithoutMetric } = budgets;
+  return {
+    ...protocol,
+    budgets: { ...budgetWithoutMetric, tokens: budgetMetric },
   };
 }
