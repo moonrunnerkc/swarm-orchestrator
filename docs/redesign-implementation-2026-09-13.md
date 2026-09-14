@@ -61,7 +61,7 @@ A runner alone does not complete an empirical requirement.
 | F2 | Original remaining budget/policy, no duplicate landing or ambiguous replay | original pinned launch/configuration, retained unknown usage and token ceiling; accepted producer not called on resume | validated |
 | F3 | Intent before effect, completion after; preserve torn/altered history | intent/completion windows distinguished; checksum/torn history and missing candidate evidence refuse reconciliation | validated |
 | F4 | Verify ownership before cleanup, retain user and other-session resources | writer lease and container labels checked; dirty worktrees, changed refs, live/unknown owners and other resources preserved | validated |
-| G1 | Extract CLI/session/parallel composition and common settings/outcome | focused handlers and shared settings, ledger-derived output; child-process command and buffered session checks | implemented |
+| G1 | Extract CLI/session/parallel composition and common settings/outcome | focused handlers and shared settings, ledger-derived output; audited composition checks and clean-source Ubuntu/macOS/package CI below | validated |
 | G2 | Shared immutable verification setup, independent trust and known-answer tests | Controller verification shares immutable setup; fresh checkouts and independent hash/signature/verdict known-answer tests remain separate | validated |
 | G3 | Harness routine claims, smaller optional vocabulary; compare before default change | Harness receipts and optional small claim vocabulary; six exposed prompt-comparison launches were inconclusive, so the default remains unchanged | validated |
 | G4 | Profile journal, polling, transcripts, peers, checks and contention first | fixed fixture profiles and preserved reconstruction; live model/test contention remains | partial |
@@ -818,3 +818,27 @@ at `527dd134836dc9cae5810efae7d7436a551a459b` plus the captured configuration/te
 patch, evidence `sha256:a55f05c5a4bf5c3fc0400e8a6a993417d10cf02c67f004ad488cc6501c2af3c3`.
 The full remote matrix must validate this change before integration. The frozen pilot checkout
 does not use the changed test configuration.
+
+### G1 closure: CLI, session and parallel composition
+
+G1 is validated by the clean-source baseline at `88c5064d3` and CI run `34881194271` on
+tree `5dc7ba770d2b87a8f1f1b83026cf1ceac930644c`, with the exact identities and complete
+matrix results above. Its Ubuntu log separately records passing CLI option tests (74),
+parallel composition tests (5), session-interface tests (11), CLI documentation tests (27),
+verification tests (5), parallel-output tests (3), bond-report tests (6), session composition
+tests (2) and command-definition tests (1). The parallel tests exercise administrative
+cancellation, queued alternatives, explicit bootstrap and durable continuation through the
+public command composition. Session child processes exercise lazy help discovery and two
+buffered tasks through EOF. The separate packaged job checks all 19 public command contracts.
+These results establish the declared extraction and behavior coverage, not universal CLI
+correctness or a live pilot advantage.
+
+The historical composition sessions were reopened and their chains and output digests agree
+with the earlier entry. Their actual recorded source is `c17328b02f7593eb923abfcb20192e3433fe9050`
+plus a patch, later landed as `e86fb82250c5a8f7f9c5bb3a4c05cf6f1ff7f234`. The earlier shorthand
+"tested diff is commit" should be read with this qualification: known-pattern scrubbing replaced
+benign `signingKey` and `keys` assignment expressions in the recorded patch, preventing exact
+patch application. `completion-composition-source-audit` preserves that failed reconstruction,
+evidence `sha256:74c6f85eb6b7b4e932246f253eac5943dbf9f8f120f686bafe2a7840b136f576`.
+The clean-source baseline and newer CI, rather than a reconstructed historical patch, close the
+source-binding gap. No credential detector rule was weakened.
