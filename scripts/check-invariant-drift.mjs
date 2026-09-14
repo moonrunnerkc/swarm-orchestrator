@@ -72,6 +72,8 @@ if (problems.length > 0) {
 stdout.write(`invariant block matches across ${first} and ${second}: ${left.length} invariants\n`);
 
 if (files.length === 0) {
+  const { synchronizeInstructions } = await import("./sync-agent-instructions.mjs");
+  await synchronizeInstructions(new URL("..", import.meta.url).pathname);
   const { catalogueDrift, predicateCatalogue } = await import(
     "../src/evidence/predicate-catalogue.ts"
   );

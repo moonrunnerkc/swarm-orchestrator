@@ -21,7 +21,7 @@ The exact policy revisions are:
 - The build guide replaces its rejection of a swarm-first product direction with bounded
   adaptive integration and independent final acceptance, without a multi-agent core.
 
-Both agent files carry the same policy through the existing invariant drift check. The
+Both agent files are generated from `docs/engineering-policy.md` by the synchronization script. The invariant drift check retains its original comparison and also checks each entire file against that canonical source. Detailed prior instructions remain in `docs/history/agent-policy-2026-09-13.md`. The
 command and architecture descriptions previously differed outside that check; they are now
 synchronized to the fuller CLAUDE.md description.
 
