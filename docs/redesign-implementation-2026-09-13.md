@@ -780,3 +780,41 @@ Its report digest is
 It explicitly reports `completeSchedule: false`. The earlier failed checks remain retained:
 the first exposed the executor/campaign timing distinction; the second used an output
 directory already created by the command recorder. Neither failure altered pilot observations.
+
+### CI deadline measurement isolation
+
+Push run [34881004809](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/34881004809),
+attempt 1, tested `7616cbbc0ab89ad6c2f0c1f41380bed31b598636`. Ubuntu gates and packaged
+commands passed. macOS reported one deadline sample with 255 ms overshoot against the existing
+250 ms bound; its separate 2% assertion passed. The complete failed output is retained in
+`completion-ci-34881004809.zip` and `completion-ci-34881004809-failed.log`. Actual macOS summary:
+
+```text
+ Test Files  1 failed | 316 passed | 1 skipped (318)
+      Tests  1 failed | 3020 passed | 15 skipped (3036)
+   Duration  379.73s
+```
+
+The independently triggered PR run
+[34881194271](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/34881194271),
+attempt 1, passed all three jobs on merge preview
+`45c53130a1d901f2f491def48e7de103c458668a`. Its tree
+`5dc7ba770d2b87a8f1f1b83026cf1ceac930644c` equals the feature head's tree. It used Node
+24.20.0 and npm 11.19.0 on Ubuntu 24 and macOS 26 arm64. Ubuntu reported 318 files and
+3036 tests passed; macOS reported 317 files passed, one skipped, 3021 tests passed and
+15 skipped. The existing Docker-dependent cases account for the hosted macOS skips.
+Both operating systems completed the eight fuzz harnesses; the packaged job satisfied all
+19 documented command contracts. These are separate runs, not a combined passing total.
+The full PR log is captured by `completion-ci-pr-full-log`, evidence
+`sha256:8942e4035f64d55f7b313d475b73a3589c59d1466e6fd94f2296b9f05d769e4b`.
+
+The deadline suite now runs in a later Vitest project after competing test processes finish.
+This controls the measurement load without changing either deadline bound, cancellation code,
+the supported matrix or the test universe. The failed measurement under concurrent suite load
+remains a limitation; an isolated timing pass does not establish the same bound under arbitrary
+contention. File collection before and after retained the same 319 unique files, including the
+new reporting tests. `completion-ci-timing-targeted` passed all six deadline cases in 2.59 s
+at `527dd134836dc9cae5810efae7d7436a551a459b` plus the captured configuration/test-comment
+patch, evidence `sha256:a55f05c5a4bf5c3fc0400e8a6a993417d10cf02c67f004ad488cc6501c2af3c3`.
+The full remote matrix must validate this change before integration. The frozen pilot checkout
+does not use the changed test configuration.
