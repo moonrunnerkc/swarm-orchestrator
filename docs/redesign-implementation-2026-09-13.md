@@ -474,3 +474,26 @@ maintained-test quality. Default prompts remain unchanged; no speed or completio
 claimed. Protocol, all observations and candidates remain under `redesign-development/prompt-comparison-2`.
 Capture `prompt-comparison-corrected-live` exited 0 because all six launches settled, digest
 `sha256:bd02672248549c6b148af53e98b0a5d3516636122c11ef7b9074097a4b5e6ed7`.
+
+### Six local controller development goals
+
+The fixed development driver uses the real native worker and controller with local weights,
+protected final behavior checks, retained candidate commits and combined offline-verifiable
+bundles. Its six cases cover missing prerequisites, incompatible integrated behavior, textual
+conflicts, mismatched interface proposals, a declared post-landing crash and over-decomposition.
+These are synthetic development cases with deliberately flawed starting assignments. They do
+not count toward the natural 24-goal pilot. No source patch is applied manually between attempts.
+The interruption is an in-process fault after durable completion; separate recovery tests kill
+an actual process. All cases share the frozen limits: 600,000 tokens, ten minutes, 16 steps,
+one worker gate repair, two controller repairs, four revisions, two worktrees and one model/test
+slot each. The supplied decompositions mean planning cost is absent from this development run.
+
+The development control test establishes that all six base suites pass and all six final checks
+refuse their base. `development-controls` passed in 534 ms, digest
+`sha256:546a1d0ad0ee5cb1990f267c4fdd596830769d03524c0a87d786be46fd7869d3`.
+The first full invocation caught a reporter-format assumption in that new control test. It now
+requests TAP explicitly before interpreting TAP output. Full `controller-development-corrected-gates`
+exited 0: 317 files and 3025 tests passed in 122.16 seconds, no skips. Passing digest:
+`sha256:0df8ac57a11b0046acb750ae5ba8c87f9af79bf6a1cd94deb1d23047009f4c46`,
+bound to parent `8646cbfac4961764243f34ad1aac5e8da536f51e` and the captured diff.
+Live results are pending; a runnable driver is not empirical completion.
