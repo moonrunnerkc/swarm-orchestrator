@@ -142,7 +142,7 @@ it.each([false, true])(
       },
       arm: { id: "single", role: "single" },
       execution: {
-        executionId: "single-fixture",
+        executionId: "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
         budget: { tokens: 200000, wallMs: 60000 },
         signal: new AbortController().signal,
       },
@@ -185,7 +185,14 @@ it.each([false, true])(
     expect(outcome.goal.unknownCalls).toBe(0);
     expect(outcome.goal.partialBranch).toMatch(/integration$/);
     const observed = JSON.parse(
-      await readFile(join(root, "single-fixture", "observation.json"), "utf8"),
+      await readFile(
+        join(
+          root,
+          "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "observation.json",
+        ),
+        "utf8",
+      ),
     );
     expect(observed.integrity).toBe(0);
   },

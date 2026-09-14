@@ -52,6 +52,7 @@ export async function executePilotGoal({
   const clock = createSystemClock();
   const started = clock.now();
   const directory = join(root, execution.executionId);
+  const runId = execution.executionId.replace(/^sha256:/, "");
   await mkdir(directory, { mode: 0o700 });
   const coordinator = await openEvidenceSession({
     root: join(directory, "sessions"),
@@ -61,7 +62,7 @@ export async function executePilotGoal({
   const context = await createRunContext({
     evidence: coordinator,
     clock,
-    runId: execution.executionId,
+    runId,
     maxTokens: execution.budget.tokens,
     maxWallMs: execution.budget.wallMs,
     modelConcurrency: settings.modelConcurrency,
@@ -197,7 +198,7 @@ export async function executePilotGoal({
     const options = {
       repositoryRoot: workspace,
       baseRef: candidate.baseCommit,
-      runId: execution.executionId,
+      runId,
       scratchRoot,
       coordinator,
       tasks: graph?.nodes.map((node) => node.instruction) ?? [task],
