@@ -1,5 +1,3 @@
-<!-- Generated from docs/engineering-policy.md by scripts/sync-agent-instructions.mjs. -->
-
 # Engineering policy
 
 Swarm Orchestrator completes bounded engineering goals through one reusable worker loop,
