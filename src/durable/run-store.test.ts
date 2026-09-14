@@ -132,3 +132,31 @@ describe("what a run leaves behind that survives the process", () => {
     expect(store.approvalFor("r1", "landing")).toBeNull();
   });
 });
+
+it("retains the original identity, start time and ceiling across a reopen", () => {
+  const input = { runId: "r1", specDigest: spec.digest, task: spec.task, startedAt: 1 };
+  store.startRun(input);
+  store.setBudget({ runId: "r1", tokens: 20000 });
+  store.reserve({ runId: "r1", stepId: "model-1", tokens: 15000 });
+  store.interruptRun("r1", "interrupted", 5);
+  store.startRun({ ...input, startedAt: 900 });
+  expect(store.run("r1")).toMatchObject({ startedAt: 1, state: "interrupted" });
+  expect(store.remainingTokens("r1")).toBe(5000);
+  expect(() => store.startRun({ ...input, task: "another goal" })).toThrow(
+    "different specification",
+  );
+  expect(() => store.setBudget({ runId: "r1", tokens: 30000 })).toThrow("cannot be enlarged");
+});
+it("settles measured usage including overrun without scrubbing a numeric metric as a credential", () => {
+  store.startRun({ runId: "r1", specDigest: spec.digest, task: spec.task, startedAt: 1 });
+  store.setBudget({ runId: "r1", tokens: 20000 });
+  expect(store.reserve({ runId: "r1", stepId: "model-1", tokens: 15000 })).toBe(true);
+  store.settleReservation({ runId: "r1", stepId: "model-1", tokenCount: 21000 });
+  const reopened = openRunStore(join(root, "runs.db"));
+  expect(reopened.remainingTokens("r1")).toBe(-1000);
+  expect(reopened.reserve({ runId: "r1", stepId: "model-2", tokens: 1 })).toBe(false);
+  expect(() =>
+    reopened.settleReservation({ runId: "r1", stepId: "missing", tokenCount: 0 }),
+  ).toThrow("prior reservation");
+  reopened.close();
+});

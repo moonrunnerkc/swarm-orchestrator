@@ -31,6 +31,8 @@ export const recordTypes = [
   "task-contract",
   "controller-event",
   "controller-graph",
+  "controller-configuration",
+  "controller-launch",
   "controller-transition",
   "controller-candidate",
   "coordination-event",

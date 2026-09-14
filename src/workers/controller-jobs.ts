@@ -6,6 +6,7 @@ import type { TaskContract } from "../evidence/task-contract.ts";
 import { createFileSetRegistry } from "../gates/file-set.ts";
 import { emptyMeasureSnapshot } from "../gates/measure-snapshot.ts";
 import { summarizeRatchet } from "../gates/ratchet-summary.ts";
+import { withControllerCleanup } from "./controller-cleanup.ts";
 import {
   appendControllerRecord,
   candidateSchema,
@@ -41,6 +42,7 @@ export async function runOneWorker(
     taskId,
     workerId,
     sessionId: evidence.sessionId,
+    sessionDirectory: evidence.directory,
     branch,
     path,
     baseCommit,
@@ -171,7 +173,7 @@ export async function runOneWorker(
       evidence,
       green: result.green,
       commit,
-      declaredFiles: fileSet.state().declared,
+      declaredFiles: [...fileSet.state().allowed].sort(),
       detail: result.green
         ? `gates green after ${result.loop.steps} step(s)`
         : describeRed(cycle.blockingFailures, result.loop.stopReason),
@@ -221,7 +223,8 @@ export async function runOneWorker(
         path,
         branch,
       });
-      await worktree.remove();
+      const owned = worktree;
+      await withControllerCleanup(options.clock, (signal) => owned.remove(signal));
       await recordTransition(options.coordinator, {
         kind: "cleanup-completed",
         workerId,

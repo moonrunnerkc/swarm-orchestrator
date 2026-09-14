@@ -5,6 +5,12 @@ import type { EvidenceRecorder } from "../evidence/session.ts";
 const nonnegative = z.number().int().nonnegative();
 export const controllerEventSchema = z.discriminatedUnion("kind", [
   z.strictObject({
+    kind: z.literal("attempt-not-dispatched"),
+    taskId: z.string(),
+    workerId: z.string(),
+    reason: z.string(),
+  }),
+  z.strictObject({
     kind: z.literal("work-declared"),
     tasks: z.array(z.strictObject({ id: z.string(), objective: z.string() })).min(1),
   }),

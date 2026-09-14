@@ -17,16 +17,19 @@ const unique = (items) => new Set(items).size === items.length;
 export function readControllerHistory(records, payloads) {
   let graph = null;
   let head = null;
+  let resource = null;
   const graphs = [];
   const states = new Map();
   const accepted = new Map();
   const dispatches = new Map();
   const candidates = new Map();
   const integrations = new Map();
+  const integrationOrder = new Map();
   const completed = new Set();
   const stale = new Set();
   const cleanup = new Set();
   const cleaned = new Set();
+  const reconciled = new Set();
   const problems = [];
   const require = (condition, description) => {
     if (!condition) throw new Error(description);
@@ -269,6 +272,25 @@ export function readControllerHistory(records, payloads) {
         continue;
       }
       switch (observed.kind) {
+        case "integration-resource":
+          require(resource === null ||
+            (resource.path === observed.path &&
+              resource.branch === observed.branch), "integration resource identity changed");
+          require(observed.phase !== "created" ||
+            resource?.phase === "create-intent", "integration resource lacks creation intent");
+          require(observed.phase !== "removed" ||
+            resource?.phase === "cleanup-intent", "integration resource lacks cleanup intent");
+          resource = observed;
+          break;
+        case "integration-abandoned": {
+          const intent = integrations.get(observed.effectId);
+          require(intent &&
+            !completed.has(observed.effectId), "abandoned integration lacks its unresolved intent");
+          completed.add(observed.effectId);
+          states.set(intent.taskId, "candidate");
+          head = intent.baseCommit;
+          break;
+        }
         case "dispatch-intent": {
           const node = graph.nodes.find((node) => node.id === observed.taskId);
           require(node &&
@@ -299,6 +321,7 @@ export function readControllerHistory(records, payloads) {
           require(head === null ||
             head === observed.baseCommit, "integration skipped the actual accepted head");
           integrations.set(observed.effectId, observed);
+          integrationOrder.set(observed.effectId, entry.sequence);
           head = observed.baseCommit;
           break;
         }
@@ -307,6 +330,8 @@ export function readControllerHistory(records, payloads) {
           const capture = records.find(
             (record) =>
               record.sequence < entry.sequence &&
+              record.sequence > (integrationOrder.get(observed.effectId) ?? Infinity) &&
+              record.actor === "harness" &&
               record.type === "merge-attempt" &&
               record.payloadDigest === observed.observation,
           );
@@ -341,6 +366,11 @@ export function readControllerHistory(records, payloads) {
           if (!accepted.has(candidate.taskId)) states.set(candidate.taskId, "pending");
           break;
         }
+        case "task-reopened":
+          require(states.has(observed.taskId) &&
+            !accepted.has(observed.taskId), "reopening duplicates accepted work");
+          states.set(observed.taskId, "pending");
+          break;
         case "task-blocked":
           require(states.has(observed.taskId) &&
             !accepted.has(observed.taskId), "blocking cannot erase acceptance");
@@ -366,8 +396,33 @@ export function readControllerHistory(records, payloads) {
         }
         case "coordination-consumed":
           break;
+        case "recovery-commit-intent":
+          require(dispatches.get(observed.workerId)?.branch ===
+            observed.branch, "recovery commit is not owned");
+          break;
+        case "recovery-reset-intent":
+          require(integrations.get(observed.effectId)?.baseCommit === observed.targetCommit &&
+            !completed.has(
+              observed.effectId,
+            ), "recovery reset lacks its unresolved integration and original base");
+          break;
+        case "recovery-ref-intent":
+          require(integrations.has(observed.effectId) &&
+            !completed.has(
+              observed.effectId,
+            ), "recovery reference lacks an unresolved integration");
+          break;
         case "dispatch-reconciled":
-          require(dispatches.has(observed.workerId), "reconciliation lacks dispatch intent");
+          require(dispatches.has(observed.workerId) &&
+            !reconciled.has(
+              observed.workerId,
+            ), "reconciliation lacks one unreconciled dispatch intent");
+          reconciled.add(observed.workerId);
+          if (
+            observed.disposition === "not-started" &&
+            !accepted.has(dispatches.get(observed.workerId).taskId)
+          )
+            states.set(dispatches.get(observed.workerId).taskId, "pending");
           break;
         default:
           throw new Error(`unknown controller transition ${observed.kind}`);

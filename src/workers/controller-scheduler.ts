@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 import { harnessChildEnvironment } from "../exec/child-environment.ts";
+import { createResourcePool } from "../exec/resource-pool.ts";
 import { controllerEvents, recordControllerEvent } from "./controller-events.ts";
 import { runOneWorker } from "./controller-jobs.ts";
 import { applyControllerRevision, consumeCoordination } from "./controller-revisions.ts";
@@ -10,7 +11,6 @@ import { candidateIsCurrent, recordTransition, replayController } from "./contro
 import type { PlannedAttempt } from "./fan-out.ts";
 import type { ControllerNode } from "./graph-revision.ts";
 import type { ParallelRunOptions, WorkerResult } from "./parallel-run.ts";
-import { createWorkPool } from "./pool.ts";
 import type { TrailPeer } from "./trail.ts";
 
 const git = promisify(execFile);
@@ -25,10 +25,10 @@ export async function runControllerSchedule(settings: {
   integrate: (workers: readonly WorkerResult[]) => Promise<void>;
 }): Promise<void> {
   const { options, workers } = settings;
-  const pool = createWorkPool(options.concurrency);
+  const pool = createResourcePool(options.concurrency > 0 ? options.concurrency : 128);
   const active = new Map<string, Promise<{ taskId: string; workers: WorkerResult[] }>>();
   const limit = options.concurrency > 0 ? options.concurrency : 128;
-  for (const revision of options.revisions ?? [])
+  for (const revision of options.resume ? [] : (options.revisions ?? []))
     await applyControllerRevision(options.coordinator, revision, "user");
 
   const launch = (node: ControllerNode, attempts: readonly PlannedAttempt[], feedback?: string) => {
@@ -36,21 +36,38 @@ export async function runControllerSchedule(settings: {
     if (graphRevision === undefined) throw new Error("dispatch has no current graph");
     const base = settings.head();
     const pending = Promise.all(
-      attempts.map((attempt) =>
-        pool.run(() =>
-          runOneWorker(
-            attempt,
-            base,
-            settings.criteriaRef,
-            options,
-            settings.registered,
-            node.contract,
-            feedback,
-            graphRevision,
-          ),
-        ),
-      ),
-    ).then((completed) => ({ taskId: node.id, workers: completed }));
+      attempts.map(async (attempt) => {
+        let admitted = false;
+        try {
+          return await pool.run(() => {
+            admitted = true;
+            return runOneWorker(
+              attempt,
+              base,
+              settings.criteriaRef,
+              options,
+              settings.registered,
+              node.contract,
+              feedback,
+              graphRevision,
+            );
+          }, options.abortSignal);
+        } catch (cause) {
+          if (admitted || !options.abortSignal.aborted || cause !== options.abortSignal.reason)
+            throw cause;
+          await recordControllerEvent(options.coordinator, {
+            kind: "attempt-not-dispatched",
+            taskId: node.id,
+            workerId: attempt.workerId,
+            reason: "cancelled while waiting for a worktree slot",
+          });
+          return null;
+        }
+      }),
+    ).then((completed) => ({
+      taskId: node.id,
+      workers: completed.filter((worker) => worker !== null),
+    }));
     active.set(node.id, pending);
   };
 
@@ -64,7 +81,10 @@ export async function runControllerSchedule(settings: {
     );
     const attempt = earlier.length + 1;
     const stale = board.stale.has(previous.workerId);
-    if (attempt > (options.repairAttempts ?? 2) || (previous.commit === null && !stale))
+    if (
+      attempt > (options.repairAttempts ?? 2) ||
+      (previous.commit === null && !stale && !options.resume)
+    )
       return false;
     const rejection = options.coordinator
       .records()
@@ -145,6 +165,34 @@ export async function runControllerSchedule(settings: {
     return true;
   }
 
+  if (options.resume) {
+    const previous = replayController(options.coordinator);
+    for (const node of previous.graph?.nodes ?? [])
+      if (["blocked", "cancelled", "failed"].includes(previous.states.get(node.id) ?? "pending"))
+        await recordTransition(options.coordinator, {
+          kind: "task-reopened",
+          taskId: node.id,
+          reason: "explicit resume within the original remaining policy and budget",
+        });
+    for (const worker of workers)
+      if (!candidateIsCurrent(previous, worker) && !previous.stale.has(worker.workerId))
+        await recordTransition(options.coordinator, {
+          kind: "candidate-stale",
+          workerId: worker.workerId,
+          currentRevision: previous.graph?.revision ?? "",
+          reason: "recovered candidate belongs to an invalidated task or dependency revision",
+        });
+    for (const node of previous.graph?.nodes ?? []) {
+      if (previous.states.get(node.id) !== "candidate" || options.abortSignal.aborted) continue;
+      const candidates = workers.filter(
+        (worker) =>
+          worker.taskId === node.id &&
+          candidateIsCurrent(previous, worker) &&
+          !previous.stale.has(worker.workerId),
+      );
+      if (candidates.length > 0) await settings.integrate(candidates);
+    }
+  }
   try {
     for (;;) {
       if (options.peerInformation !== false)
@@ -168,26 +216,42 @@ export async function runControllerSchedule(settings: {
           if (node === undefined)
             throw new Error(`ready task ${taskId} disappeared from its graph`);
           if (
-            board.dispatches.size > 0 &&
-            [...board.dispatches.values()].some((dispatch) => dispatch.taskId === taskId)
+            [...board.dispatches.values()].some(
+              (dispatch) =>
+                dispatch.taskId === taskId && !board.reconciledDispatches.has(dispatch.workerId),
+            )
           ) {
             if (active.size === 0 && (await repair(node))) break;
             continue;
           }
+          options.owner?.assertOwned();
           const initial = settings.planned.filter((attempt) => attempt.taskId === taskId);
+          const resumed = [...board.dispatches.values()].filter(
+            (dispatch) => dispatch.taskId === taskId,
+          ).length;
           launch(
             node,
-            initial.length > 0
-              ? initial
-              : [
+            resumed > 0
+              ? [
                   {
-                    workerId: `${taskId}-attempt-1`,
+                    workerId: `${taskId}-resume-${resumed}`,
                     taskId,
                     task: node.contract.objective,
                     attemptIndex: 0,
                     sampling: null,
                   },
-                ],
+                ]
+              : initial.length > 0
+                ? initial
+                : [
+                    {
+                      workerId: `${taskId}-attempt-1`,
+                      taskId,
+                      task: node.contract.objective,
+                      attemptIndex: 0,
+                      sampling: null,
+                    },
+                  ],
           );
         }
       }

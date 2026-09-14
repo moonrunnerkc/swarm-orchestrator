@@ -25,6 +25,22 @@ export interface CatalogueEntry {
 
 export const predicateCatalogue: readonly CatalogueEntry[] = [
   {
+    type: "controller-launch",
+    controllerOnly: true,
+    subjectField: null,
+    example: "spec.version == 1",
+    sample: { spec: { version: 1 } },
+    says: "the original pre-planning inputs and permissions",
+  },
+  {
+    type: "controller-configuration",
+    controllerOnly: true,
+    subjectField: null,
+    example: "spec.version == 1",
+    sample: { spec: { version: 1 } },
+    says: "the pinned controller inputs used by dispatch and recovery",
+  },
+  {
     type: "controller-graph",
     controllerOnly: true,
     subjectField: null,
