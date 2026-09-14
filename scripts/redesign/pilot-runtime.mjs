@@ -75,7 +75,7 @@ export async function checkoutBase({ clone, baseCommit, workspace, evidence, sig
   for (const argv of [
     ["git", "init", "--quiet"],
     ["git", "fetch", "--depth", "1", clone, baseCommit],
-    ["git", "checkout", "--detach", "--quiet", "FETCH_HEAD"],
+    ["git", "checkout", "-b", "swarm-base", "--quiet", "FETCH_HEAD"],
   ]) {
     await evidence.record({
       type: "campaign-observation",
