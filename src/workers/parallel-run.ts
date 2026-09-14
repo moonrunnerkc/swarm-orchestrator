@@ -121,6 +121,8 @@ export interface ParallelRunOptions {
    * worker's tree, which is what worktrees exist to prevent.
    */
   readonly isolation?: (worktreePath: string) => IsolationBackend;
+  /** Optional verifier backend that can keep checkout administration on the host. */
+  readonly verificationIsolation?: (worktreePath: string) => IsolationBackend | undefined;
 }
 
 export interface WorkerResult {

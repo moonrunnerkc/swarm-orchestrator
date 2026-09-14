@@ -25,7 +25,7 @@ import { verifyControllerCommit } from "../../src/workers/controller-verificatio
 import { runInParallel } from "../../src/workers/parallel-run.ts";
 import { runPlanner } from "../../src/workers/planner-run.ts";
 import { createRunContext } from "../../src/workers/run-context.ts";
-import { contractsFromGraph } from "../../src/workers/task-contract.ts";
+import { contractsFromGraph, MalformedTaskContractError } from "../../src/workers/task-contract.ts";
 import { checkoutBase, projectGateOptions, runtimeFor } from "./pilot-runtime.mjs";
 
 const execute = promisify(execFile);
@@ -112,6 +112,25 @@ export async function executePilotGoal({
       signal: context.signal,
       commandPool: context.tests,
     });
+  // Some pinned runtime images intentionally contain only the project toolchain. Git remains a
+  // host-owned operation for the fresh verifier checkout, while checks still run in the image.
+  const verifierIsolation = (checkout) => {
+    const isolated = runtime(checkout).isolation;
+    if (isolated === undefined) return undefined;
+    return {
+      ...isolated,
+      run: async (argv, commandOptions) =>
+        argv[0] === "git"
+          ? runProcessGroup(argv[0], argv.slice(1), {
+              cwd: commandOptions.cwd,
+              env: harnessChildEnvironment().variables,
+              signal: commandOptions.signal,
+              timeoutMs: commandOptions.timeoutMs,
+              maxOutputBytes: 16_000_000,
+            })
+          : isolated.run(argv, commandOptions),
+    };
+  };
   let measured = null;
   let failure = null;
   let plannerFallback = null;
@@ -180,30 +199,48 @@ export async function executePilotGoal({
       execution: candidate.language === "python" ? "isolated" : "restricted",
       allowedTools: ["read", "write", "edit", "list", "search", "shell", "trail", "coordination"],
     };
-    const contracts = graph
-      ? contractsFromGraph(graph, contractDefaults)
-      : [
-          parseTaskContract({
-            version: 3,
-            taskId: "task-1",
-            objective: task,
-            dependsOn: [],
-            allowedPaths: ["**"],
-            scopeKind: "workspace",
-            scopeAuthority: "human",
-            immutablePaths,
-            allowedTools: contractDefaults.allowedTools,
-            network: contractDefaults.network,
-            execution: contractDefaults.execution,
-            requiredChecks: ["tests"],
-            riskTier: "medium",
-            budget: {
-              maxSteps: settings.maxSteps,
-              maxTokens: execution.budget.tokens,
-              maxWallMs: execution.budget.wallMs,
-            },
-          }),
-        ];
+    let contracts;
+    if (graph !== null) {
+      try {
+        contracts = contractsFromGraph(graph, contractDefaults);
+      } catch (cause) {
+        if (!(cause instanceof MalformedTaskContractError)) throw cause;
+        await coordinator.record({
+          type: "campaign-observation",
+          actor: "harness",
+          provenance: ["model", "tool-output"],
+          payload: {
+            phase: "planner-contract-fallback",
+            detail: cause.message,
+            graphRevision: 0,
+          },
+        });
+        graph = null;
+        plannerFallback = plannerFallback ?? "planner contract rejected";
+      }
+    }
+    contracts ??= [
+      parseTaskContract({
+        version: 3,
+        taskId: "task-1",
+        objective: task,
+        dependsOn: [],
+        allowedPaths: ["**"],
+        scopeKind: "workspace",
+        scopeAuthority: "human",
+        immutablePaths,
+        allowedTools: contractDefaults.allowedTools,
+        network: contractDefaults.network,
+        execution: contractDefaults.execution,
+        requiredChecks: ["tests"],
+        riskTier: "medium",
+        budget: {
+          maxSteps: settings.maxSteps,
+          maxTokens: execution.budget.tokens,
+          maxWallMs: execution.budget.wallMs,
+        },
+      }),
+    ];
     const options = {
       repositoryRoot: workspace,
       baseRef: candidate.baseCommit,
@@ -240,6 +277,7 @@ export async function executePilotGoal({
       gateOptions: projectGateOptions(candidate),
       installDependencies: candidate.language !== "python",
       ...(candidate.image === null ? {} : { isolation: (checkout) => runtime(checkout).isolation }),
+      verificationIsolation: verifierIsolation,
       executionIdentity: candidate.image ?? `host:${process.version}`,
     };
     if (frozen) {
@@ -333,7 +371,14 @@ export async function executePilotGoal({
           context.signal,
           context.tests,
         ),
-        commandsForCheckout: async (checkout) => runtime(checkout).commands,
+        commandsForCheckout: async (checkout) =>
+          createNodeCommandRunner(
+            clock,
+            harnessChildEnvironment(),
+            verifierIsolation(checkout),
+            context.signal,
+            context.tests,
+          ),
         goal: { contract: candidate.contracts["held-back"], evidence: heldBackEvidence, tree },
         installDependencies: candidate.language !== "python",
         repositoryChecks: "skip",
