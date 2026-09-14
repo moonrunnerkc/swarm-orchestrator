@@ -1,6 +1,11 @@
 import { expect, it } from "vitest";
 import { digestOfBytes } from "../../src/evidence/canonical-json.ts";
-import { assertObservation, summarizeResources, summarizeSlots } from "./pilot-report.mjs";
+import {
+  assertObservation,
+  inspectArmEvidence,
+  summarizeResources,
+  summarizeSlots,
+} from "./pilot-report.mjs";
 
 const protocol = { arms: [{ id: "single" }, { id: "adaptive" }] };
 const schedule = [
@@ -24,6 +29,31 @@ const outcome = {
     humanRepairMinutes: null,
   },
 };
+
+it("checks ablations against recorded worker tool exposure and graph revisions", () => {
+  const entry = (type, payloadDigest, payload) => ({ record: { type, payloadDigest }, payload });
+  const sessions = [
+    {
+      sessionId: "worker-1",
+      entries: [
+        entry("transcript-component", "tools", { kind: "tools", value: [{ name: "read" }] }),
+        entry("model-call-started", "started", {
+          prompt: { transcriptVersion: 2, tools: "tools" },
+        }),
+      ],
+    },
+  ];
+  expect(inspectArmEvidence("no-peer", sessions, {})).toMatchObject({
+    workerPrompts: 1,
+    peerTools: [],
+    configurationObserved: false,
+  });
+  sessions[0].entries[0].payload.value.push({ name: "read_coordination" });
+  expect(() => inspectArmEvidence("no-peer", sessions, {})).toThrow(/disabled worker/);
+  expect(inspectArmEvidence("adaptive", sessions, {}).peerTools).toEqual(["read_coordination"]);
+  sessions[0].entries.push(entry("controller-graph", "revision", { parent: "earlier" }));
+  expect(() => inspectArmEvidence("no-adaptation", sessions, {})).toThrow(/adaptation disabled/);
+});
 
 it("keeps offline reconciliation time out of runtime totals without replacing the original outcome", () => {
   const report = summarizeSlots(protocol, schedule, new Map([["one", outcome]]), [

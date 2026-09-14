@@ -23,6 +23,84 @@ const sumKnown = (values) =>
     ? null
     : values.reduce((total, value) => total + value, 0);
 
+export function inspectArmEvidence(role, sessions, limits) {
+  const configurations = [];
+  const resourceDeclarations = [];
+  const peerTools = new Set();
+  let workerPrompts = 0;
+  let revisions = 0;
+  for (const { sessionId, entries } of sessions) {
+    const payloads = new Map(entries.map(({ record, payload }) => [record.payloadDigest, payload]));
+    for (const { record, payload } of entries) {
+      if (record.type === "controller-configuration") {
+        const { spec } = z
+          .object({
+            spec: z.object({
+              adaptation: z.boolean(),
+              peerInformation: z.boolean(),
+              concurrency: count.positive(),
+            }),
+          })
+          .parse(payload);
+        assert.equal(
+          spec.adaptation,
+          role !== "no-adaptation",
+          "adaptation ablation did not reach the controller",
+        );
+        assert.equal(
+          spec.peerInformation,
+          !["single", "no-peer"].includes(role),
+          "peer ablation did not reach the controller",
+        );
+        assert.equal(spec.concurrency, role === "single" ? 1 : limits.worktreeConcurrency);
+        configurations.push({ record: record.payloadDigest, ...spec });
+      }
+      if (record.type === "controller-event" && payload.kind === "run-started") {
+        const resource = z
+          .object({ modelConcurrency: count.positive(), testConcurrency: count.positive() })
+          .parse(payload);
+        assert.equal(resource.modelConcurrency, limits.modelConcurrency);
+        assert.equal(resource.testConcurrency, limits.testConcurrency);
+        resourceDeclarations.push({ record: record.payloadDigest, ...resource });
+      }
+      if (record.type === "controller-graph" && payload.parent !== null) revisions++;
+      if (!sessionId.startsWith("worker-") || record.type !== "model-call-started") continue;
+      const prompt = z
+        .object({ transcriptVersion: count.optional(), tools: z.unknown() })
+        .parse(payload.prompt);
+      const tools =
+        prompt.transcriptVersion === 2
+          ? z
+              .object({ kind: z.literal("tools"), value: z.unknown() })
+              .parse(payloads.get(prompt.tools)).value
+          : prompt.tools;
+      const names = z
+        .array(z.object({ name: z.string() }))
+        .parse(tools)
+        .map((tool) => tool.name);
+      workerPrompts++;
+      for (const name of names)
+        if (["read_trail", "coordinate", "read_coordination"].includes(name)) peerTools.add(name);
+    }
+  }
+  if (["single", "no-peer"].includes(role))
+    assert.equal(peerTools.size, 0, "peer tools reached a disabled worker");
+  if (role === "no-adaptation")
+    assert.equal(revisions, 0, "a graph revision occurred with adaptation disabled");
+  return {
+    configurations,
+    resourceDeclarations,
+    workerPrompts,
+    peerTools: [...peerTools].sort(),
+    graphRevisions: revisions,
+    configurationObserved: configurations.length > 0,
+    limitation:
+      role === "frozen-parallel"
+        ? "The historical controller has no current configuration record; its source and frozen wrapper identify this arm."
+        : null,
+  };
+}
+
 export function assertObservation(outcome, observation, manifest, healthy = true) {
   const parsed = z.object({ outcome: z.unknown(), integrity: count.nullable() }).parse(observation);
   const worker = campaignOutcomeSchema.parse({
@@ -257,6 +335,7 @@ export async function reportPilot(root) {
       inventory.push({ path: join(relative, "observation.json"), digest: digestOfBytes(raw) });
     }
     const sessions = [];
+    const armSessions = [];
     for (const sessionId of (await readdir(join(root, relative, "sessions"))).sort()) {
       const session = await openEvidenceSession({
         root: join(root, relative, "sessions"),
@@ -267,6 +346,7 @@ export async function reportPilot(root) {
         .records()
         .map((record) => ({ record, payload: session.payloads().get(record.payloadDigest) }));
       sessions.push(entries);
+      armSessions.push({ sessionId, entries });
       inventory.push({
         path: join(relative, "sessions", sessionId, "ledger.jsonl"),
         head: session.head(),
@@ -276,6 +356,11 @@ export async function reportPilot(root) {
     resources.push({
       executionId: slot.executionId,
       bundleVerification,
+      armEvidence: inspectArmEvidence(
+        protocol.arms.find((arm) => arm.id === slot.armId).role,
+        armSessions,
+        protocol.limits,
+      ),
       ...summarizeResources(sessions),
     });
   }
@@ -319,7 +404,13 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
         path,
         digest: digestOfBytes(await readFile(path)),
         completeSchedule: report.completeSchedule,
-        arms: report.arms,
+        arms: report.arms.map(({ id, scheduled, settled, complete, unknownJudgments }) => ({
+          id,
+          scheduled,
+          settled,
+          complete,
+          unknownJudgments,
+        })),
       },
       null,
       2,

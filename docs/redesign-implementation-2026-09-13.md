@@ -905,3 +905,27 @@ retained failed activities, ambiguous resume and failed runtime cleanup. The ear
 report/profiler check passed nine tests in two files, evidence
 `sha256:34665de9f9316a0e57a45fea733d7deea4a6196b3549df179cc89b111ed442dd`.
 Live profiling and B2/G4 measurement closure remain pending at this entry.
+
+### Recorded ablation-path audit
+
+The reporter also checks the controller's recorded adaptation, peer-information and worktree
+settings, the shared model/test declarations, and the actual tools in every worker prompt.
+Single-worker and no-peer prompts must contain no peer tools. A no-adaptation run must contain
+no graph revision. Missing configuration records remain named, including the historical
+frozen-parallel controller, rather than being filled from the arm label.
+
+At 21 settled slots, `completion-ablation-observations` passed these checks and the raw
+observation/bundle checks. Evidence:
+`sha256:2133e39066578b9ab092c6e784af56f7ffccbd45659e07cb220de8cbfc4f0800`;
+report digest `sha256:4fa35e3bb3b51097aed0f40511e37e97c84a21a25b6da84fd9f7a76d3d5c1d6d`.
+It measured 7,821,442 input and 127,743 output tokens, with zero unknown calls in those settled
+slots. The original interrupted no-peer slot remains included with qualified unknown wall
+time. There were 99 unsettled slot ceilings, including active work, at this checkpoint; the
+conservative remaining ceiling was 59,400,000 tokens, with no outer retries.
+
+The observed worker prompts were 54 single, 147 frozen-parallel, 56 adaptive, 78 no-adaptation
+and 62 no-peer. Single and no-peer contained no peer tools. Frozen parallel exposed its legacy
+`read_trail`; adaptive and no-adaptation exposed `read_trail`, `coordinate` and
+`read_coordination`. This verifies distinct information paths; it does not establish an
+ablation advantage. No graph revision had yet occurred in these slots. The reporter still
+marks the pilot incomplete and makes no superiority claim.
