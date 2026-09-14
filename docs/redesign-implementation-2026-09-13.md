@@ -929,3 +929,58 @@ and 62 no-peer. Single and no-peer contained no peer tools. Frozen parallel expo
 `read_coordination`. This verifies distinct information paths; it does not establish an
 ablation advantage. No graph revision had yet occurred in these slots. The reporter still
 marks the pilot incomplete and makes no superiority claim.
+
+### Original cohort withdrawn after final-verifier mount failure
+
+The earlier suitability audit missed a controller-specific checkout path. On September 14,
+the resumed Day.js observations showed that sealed final verification installed dependencies
+inside a container mounted from macOS system temporary storage. Colima did not share that
+directory. The container saw an empty checkout, and `npm ci` refused the missing lockfile.
+Held-back verification explicitly selected the shared scratch root and did not have this
+fault. These infrastructure refusals cannot establish agent performance.
+
+`completion-verifier-mount-probe` independently observed ENOENT under `/var/folders` and
+successful access under `/Users`, using the pinned Day.js image. Capture digest:
+`sha256:56866bbccb2646c21056991ff61acf35d3301bc80ea0974d2744da200b5bb726`.
+The original runner was stopped with SIGINT; no original record or candidate was deleted.
+It retained 31 terminal slots, including the cancelled in-flight slot, and 89 unlaunched slots.
+The complete resume command exited 0, which describes runner termination, not goal acceptance:
+`sha256:723ee981c68b88d27a64c61eb8f7451e93e98989115a73c1fb537e0142b7077b`.
+The original four observations, interrupted fifth observation and continuation all remain in
+the original cohort. None will count toward the replacement cohort's 120 slots.
+
+The controller now passes its configured scratch root to the existing independent verifier.
+A new regression runs actual repository and withheld acceptance commands through a backend
+that rejects checkouts outside that root. It rejects the control commit and accepts the repair
+in separate fresh checkouts. Before the fix, it failed at the path boundary
+(`sha256:7e65be7bb732b63ef0c33c78c4ddb44516163120f5dc7e1523ae37bd2a547b63`).
+After the fix, this regression and the existing pilot-driver tests passed: two files, seven
+tests (`sha256:513895f4465267a6bae74a1f2f4c4e28f0f67ae0d2c3a4b6f9321b00f00f1d89`).
+
+Full gates on source `01529a64b8911f9a7f8d6f6c285b7678eb12bf14` plus the recorded
+controller fix and regression patch exited 0. The report paragraph itself followed that run.
+Capture `completion-verifier-fix-gates`,
+`sha256:f9d8b1c29be641f3154e172d0f63fc16a72457f08a28e2d542ce0fb405170fff`:
+
+```text
+Found 22 warnings.
+Found 1 info.
+ Test Files  321 passed (321)
+      Tests  3048 passed (3048)
+   Start at  13:45:48
+   Duration  132.04s (transform 9.59s, setup 0ms, import 21.02s, tests 965.46s, environment 16ms)
+```
+
+There were no failed or skipped tests. Full stdout and stderr remain in the capture. B2, D6,
+G4 and V2 through V7 are still open; this fix does not close their measurements. The replacement
+will use a clean fixed source and unchanged acceptance instruments after a bounded real
+controller preflight: 24 controls and 24 references, no model calls, no retries and a 96-minute
+total wall cap. Its initial model schedule has a maximum of 72,000,000 tokens and 30 hours,
+plus a separately bounded two hours of cleanup. Actual prior usage remains separately charged.
+
+The stopped cohort also exposed a numeric `reservedTokens` field scrubbed into a redaction
+marker. Standard campaign replay correctly refuses that malformed record. Failed report capture
+`completion-original-pilot-stopped-report` is retained at
+`sha256:686bec8094b1fd95b053b80d4941cc7f9776bb228dfdbbbfb9e259d04d865613`.
+That separate metric-name defect must be resolved before the new freeze. Historical bytes will
+remain unchanged, with any lost measurement reported as unavailable or independently reconciled.
