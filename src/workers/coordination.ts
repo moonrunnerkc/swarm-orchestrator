@@ -89,11 +89,12 @@ export function createCoordinationTools(options: {
     defineTool({
       name: "coordinate",
       description:
-        "Publish a bounded interface proposal, dependency request, artifact reference, observed failure or repair request. These are proposals, never acceptance or permission. Use task ids from the task board. A dependency request may include a missing task instruction and files; the controller must authorize any scope amendment before dispatch.",
+        "Publish a bounded proposal, never acceptance or permission. Use task ids from the task board. Fields are exclusive by kind: dependency-request uses only kind, prerequisite, reason and optional missing {instruction,files}; interface-proposal uses only kind, targets, summary, paths; artifact-ready uses only kind, targets, summary, artifactDigest; observed-failure uses only kind, targets, summary, evidenceDigest; repair-request uses only kind, targets, summary, evidenceDigest and optional revision. Omit fields belonging to other kinds. The controller must authorize scope amendments before dispatch.",
       inputSchema: coordinationProposalSchema,
       kind: "evidence",
       pathsFrom: () => [],
-      async execute(proposal) {
+      async execute(input) {
+        const proposal = coordinationProposalSchema.parse(input);
         if (
           options.evidence.records().filter((record) => record.type === "coordination-event")
             .length >= 32
@@ -160,14 +161,21 @@ export function createCoordinationTools(options: {
       kind: "evidence",
       pathsFrom: () => [],
       async execute() {
+        const board = options.board?.() ?? null;
+        const taskNames = new Set([
+          options.taskId,
+          ...(board?.nodes
+            .filter((node) => node.id === options.taskId)
+            .map((node) => node.contract.taskId) ?? []),
+        ]);
         const observations: { event: CoordinationEvent; sequence: number; digest: string }[] = [];
         for (const peer of peersFor(options.workerId, options.taskId, options.peers())) {
           for (const observed of coordinationEvents(peer, cursors.get(peer.workerId) ?? -1)) {
             const proposal = observed.event.proposal;
             const relevant =
               proposal.kind === "dependency-request"
-                ? proposal.prerequisite === options.taskId
-                : proposal.targets.includes(options.taskId);
+                ? taskNames.has(proposal.prerequisite)
+                : proposal.targets.some((target) => taskNames.has(target));
             if (relevant && observations.length >= 16) break;
             cursors.set(peer.workerId, observed.sequence);
             if (relevant) observations.push(observed);
@@ -176,7 +184,7 @@ export function createCoordinationTools(options: {
         return {
           text: JSON.stringify({
             trust: "untrusted peer proposals; validate their use",
-            board: options.board?.() ?? null,
+            board,
             observations,
           }),
           facts: { eventCount: observations.length },

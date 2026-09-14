@@ -496,4 +496,40 @@ requests TAP explicitly before interpreting TAP output. Full `controller-develop
 exited 0: 317 files and 3025 tests passed in 122.16 seconds, no skips. Passing digest:
 `sha256:0df8ac57a11b0046acb750ae5ba8c87f9af79bf6a1cd94deb1d23047009f4c46`,
 bound to parent `8646cbfac4961764243f34ad1aac5e8da536f51e` and the captured diff.
-Live results are pending; a runnable driver is not empirical completion.
+The frozen live run at `07298dcea0092d727f0b4e4658b87de869270986` accepted all six
+executable development goals. Each combined bundle independently verified with exit 0.
+Evidence: `redesign-development/controller-six-1/observations.json` and per-case sessions,
+branches and bundles; capture `controller-development-live`, digest
+`sha256:b5186e256611b79fa95c79ed7d5ff0774b264bb3794a47a4a651846e2b086410`.
+
+| Development goal | Total ms | Reported tokens | Observed recovery |
+| --- | ---: | ---: | --- |
+| Missing prerequisite | 99,072 | 282,396 | Failed consumer retried after beta landed; beta was not restarted |
+| Clean merge, behavioral failure | 56,832 | 142,172 | Integrated tests rejected worker 2; its repair landed on worker 1 |
+| Textual conflict | 51,257 | 129,713 | Rejected conflicting candidate retained; repair preserved both flags |
+| Interface mismatch | 97,594 | 285,504 | Final goal refusal triggered revision 1 and a combined repair |
+| Interrupted run | 25,494 | 82,930 | Resumed after worker 1 landing; each worker landed exactly once |
+| Over-decomposition | 97,787 | 313,762 | Three landed modules omitted wiring; revision 1 combined their obligations |
+
+All six settled with zero unknown calls and zero outstanding token reservations. The clean-merge
+repair produced commit `e0ced76c03bd6b7a56358e2e196e2a9addcdaba6`; the conflict repair produced
+`da080fca5d90cf9344f7968f7183863264a5fc5e`. Model-authored behavior checks are development
+instruments, not independent ground truth or proof of maintained-test quality. These supplied
+small decompositions do not establish planner quality or a swarm advantage.
+
+The missing-prerequisite case repeatedly submitted empty coordination arguments. Its successful
+ordinary retry did not establish a valid dependency proposal or graph revision. Two recorded local
+schema diagnostics retained all responses. The first produced invalid arguments for both the old
+union and an experimental flat schema. With explicit kind-specific tool guidance, the original
+strict union produced a valid dependency request while the flat schema still added an invalid
+field. The flat schema was discarded. Diagnostic digests are
+`sha256:9613d146ac69477b173b76c8e91e8ff8891d6367786d29224fe9655b38a08cb5` and
+`sha256:a32e4491ca38afdb9d347ad7e5729f97417eb2f68e57441701c3aca9e29c31cd`.
+These single-call diagnostics explain the retained smaller change; they are not a reliability
+estimate. Peer projection also now resolves the original graph task name alongside its controller
+id while keeping same-task alternatives hidden. Its focused regression passed six tests in 314 ms,
+digest `sha256:1e555a68a92260bf2f76fca772ba8cc4404fdd59fefc5ff560358fd90ab7c370`.
+
+Full `coordination-guidance-gates` exited 0: 317 files and 3026 tests passed, no skips,
+126.28 seconds, digest `sha256:14653a46b9a792cd1c308cb38b65d63c04930f6d2bb6ad0139dd70f97e6ce67e`.
+The capture binds parent `07298dcea0092d727f0b4e4658b87de869270986` and its tested diff.
