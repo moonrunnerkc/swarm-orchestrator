@@ -97,6 +97,30 @@ it.skipIf(!containerRuntimeAvailable("docker"))(
 );
 
 describe("verification that does not trust the tree it is verifying", () => {
+  it("measures an unchanged candidate without requiring git apply's newer empty-patch flag", async () => {
+    const ordinary = commands();
+    const invoked: string[][] = [];
+    const verification = await verifyIndependently({
+      repositoryRoot: repository,
+      baseCommit: baseCommit(),
+      patch: "",
+      commands: {
+        ...ordinary,
+        runVouched: async (argv, options) => {
+          invoked.push([...argv]);
+          if (argv.includes("--allow-empty")) throw new Error("unsupported on Git 2.30");
+          return ordinary.runVouched(argv, options);
+        },
+      },
+      clock,
+    });
+    expect(verification.applied).toBe(true);
+    expect(verification.regression).toBe("pass");
+    expect(verification.task).toBe("unjudged");
+    expect(verification.verified).toBe(false);
+    expect(invoked).toContainEqual(["git", "diff", "--exit-code", "HEAD", "--"]);
+  });
+
   it("applies the patch to a fresh checkout of the base and runs the checks there", async () => {
     const patch = [
       "diff --git a/clamp.mjs b/clamp.mjs",

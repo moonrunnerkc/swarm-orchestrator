@@ -45,39 +45,39 @@ A runner alone does not complete an empirical requirement.
 | C3 | Revalidate repair and combined tree, one final task outcome | repair and integration checks followed by exact-tree independent goal checks; final outcome tests | validated |
 | C4 | Repeated failure fingerprints and limits, exact blocker and partial work | repeated patch/base/reason fingerprint and attempt cap; blocker test passes | validated |
 | D1 | Readiness scheduling, one integration writer, actual integration base | real Git readiness fixture starts a dependent while an unrelated provider remains active; one integration writer | validated |
-| D2 | Versioned bounded revisions: prerequisite, split, combine, reroute | v1 bounded split/combine/reroute/dependency revisions; v2 missing prerequisite and scope allocation are under current validation | partial |
+| D2 | Versioned bounded revisions: prerequisite, split, combine, reroute | Bounded prerequisite, split, combine, reroute and scope-allocation revisions; deterministic invalidation tests and the caa20 public dependency repeat | validated |
 | D3 | Preserve requirements/history, invalidate affected acceptance | original obligation membership survives split/combine; downstream acceptance invalidated and independently re-derived | validated |
 | D4 | Base/revision identity and stale candidate refusal | late candidate after dependency revision is retained, refused and repaired from current integration base | validated |
 | D5 | Typed bounded proposals, relevant deltas, provenance, independent alternatives | bounded typed proposals and tool provenance; same-task alternatives receive no peer tools; exported reader tests | validated |
-| D6 | Prefer one worker for tiny/coupled work | coupled-task collapse is exercised; planner instructed to stay single for tiny work; local development evaluation remains | partial |
+| D6 | Prefer one worker for tiny/coupled work | Tiny/coupled planner guidance and collapse are implemented; six live development cases and the paired pilot distinguish scheduling behavior from an advantage | implemented |
 | E1 | Independent final acceptance at exact integrated tree | fresh independent checkout with exact Git tree check; locally green omission refused | validated |
-| E2 | One authoritative CLI/exit/TUI/export assessment, distinct trust dimensions | CLI and plain progress report consume exported controller assessment; TUI and recovery remain | partial |
-| E3 | User checks and recorded candidate checks protected from worker writes | user and planner-authored candidate checks, immutable artifacts and authorship regression; bootstrap open | implemented |
+| E2 | One authoritative CLI/exit/TUI/export assessment, distinct trust dimensions | One controller projection drives plain, Ink, JSON, CLI exit and bundle outcome; stale/cancelled assessments and recovery fixtures pass | validated |
+| E3 | User checks and recorded candidate checks protected from worker writes | User and planner-authored artifacts are pinned outside producer writes; authorship, whole-checkout restoration and bootstrap regressions pass | validated |
 | E4 | Preserve strict reference/control package and human judgment gaps | strict reference/control path and existing corpus remain green; uncovered requirements unjudged | validated |
-| E5 | Explicit empty-repository bootstrap before acceptance pinning and implementation | explicit Node 24 stage before planning, positive/negative controls, immutable harness, SHA-1/SHA-256 and restart fixtures | implemented |
+| E5 | Explicit empty-repository bootstrap before acceptance pinning and implementation | Explicit Node 24 bootstrap pins its harness before planning; positive/negative controls, both Git object formats and public restart fixtures pass | validated |
 | E6 | All obligations eligible before goal ranking, declared objective; legacy comparator retained | complete-goal alternatives checked independently before objective ranking; omission with twelve extra tests is ineligible; legacy comparator retained | validated |
 | F1 | Journal replay and reconciliation of attempts, usage, candidates, trees, integration, resources | validated controller replay, resource and Git reconciliation; injected boundaries plus real SIGKILL after recorded landing | validated |
 | F2 | Original remaining budget/policy, no duplicate landing or ambiguous replay | original pinned launch/configuration, retained unknown usage and token ceiling; accepted producer not called on resume | validated |
 | F3 | Intent before effect, completion after; preserve torn/altered history | intent/completion windows distinguished; checksum/torn history and missing candidate evidence refuse reconciliation | validated |
 | F4 | Verify ownership before cleanup, retain user and other-session resources | writer lease and container labels checked; dirty worktrees, changed refs, live/unknown owners and other resources preserved | validated |
 | G1 | Extract CLI/session/parallel composition and common settings/outcome | focused handlers and shared settings, ledger-derived output; child-process command and buffered session checks | implemented |
-| G2 | Shared immutable verification setup, independent trust and known-answer tests | verifier/signature/hash parity and independent fixtures | open |
-| G3 | Harness routine claims, smaller optional vocabulary; compare before default change | prompt success and usage comparison | open |
+| G2 | Shared immutable verification setup, independent trust and known-answer tests | Controller verification shares immutable setup; fresh checkouts and independent hash/signature/verdict known-answer tests remain separate | validated |
+| G3 | Harness routine claims, smaller optional vocabulary; compare before default change | Harness receipts and optional small claim vocabulary; six exposed prompt-comparison launches were inconclusive, so the default remains unchanged | validated |
 | G4 | Profile journal, polling, transcripts, peers, checks and contention first | fixed fixture profiles and preserved reconstruction; live model/test contention remains | partial |
-| G5 | Warranted incremental processing, exact reconstruction, cross-process visibility | corrupt history and exact prompt tests | open |
-| G6 | Immutable check reuse, observations rerun after relevant changes; unknown disables cache | content/environment identity tests if caching is warranted | open |
+| G5 | Warranted incremental processing, exact reconstruction, cross-process visibility | Measured incremental journal parsing retains full-byte hashing and cross-process visibility; corruption and exact transcript tests pass | validated |
+| G6 | Immutable check reuse, observations rerun after relevant changes; unknown disables cache | Immutable gate definitions reused; all final observations rerun. Fixed-fixture transcript/peer/check timings did not justify observation caches | validated |
 | G7 | Final blocking checks mandatory, remove duplicate workflow calls, explicit corpus setup | gates workflow retains Linux/macOS and fuzz, packaged job; duplicate invocations removed and v12-final prerequisite checked in M0 | validated |
-| G8 | Consolidate policy and archive narrative losslessly, meaningful weight gate | drift, restoration and cited bundles | open |
-| G9 | Goal/blocker/resource/acceptance/branch output, detailed features accessible | public command fixtures | open |
-| G10 | Learned routing stays experimental pending matching evaluation | existing routing authority tests | open |
+| G8 | Consolidate policy and archive narrative losslessly, meaningful weight gate | Canonical generated policy, lossless historical archive and 18 transcript offloads; byte restoration, drift and cited-bundle gates pass | validated |
+| G9 | Goal/blocker/resource/acceptance/branch output, detailed features accessible | Goal, blockers, resources, acceptance and branch views share a projection; all 19 legacy commands passed the packaged composition check | validated |
+| G10 | Learned routing stays experimental pending matching evaluation | Learned routing remains opt-in and experimental; no pilot claim or default promotion | validated |
 | H1 | External transcript/patch import and honest unavailable provenance | existing importer, historical bundle, signer and tamper fixtures remain in full gates through goal-selection milestone | validated |
 | H2 | Concrete external CLI driver only after pilot bar and supported CLI availability | conditional prerequisites, no driver claim before both hold | conditional |
-| V1 | Six development goal classes, valid fixes and omissions | missing dependency, interface, behavior, conflict, interruption, over-decomposition | open |
-| V2 | Freeze 24 goals, at least eight repositories, JS/TS and Python, multiple categories | source/acceptance/budget/stopping/order identities before launches | open |
-| V3 | Single with repair, frozen old parallel, adaptive, feasible competitor | same verifier, exposure and budget; disclose comparability | open |
-| V4 | Adaptation and peer ablations, repeats correlated, natural/synthetic distinct | all launches/failures/timeouts/admission/unknown retained | open |
-| V5 | Wall/tokens/cost/completion/incorrect acceptance/human burden/retries/recovery | overhead included; uncertainty, no held-out tuning | open |
-| V6 | Available authorized local models, no new paid commitment | runnable infrastructure is not empirical completion | open |
+| V1 | Six development goal classes, valid fixes and omissions | Six frozen synthetic development goals accepted with offline-verifying bundles; one exposed repeat also exercised a valid dependency revision | validated |
+| V2 | Freeze 24 goals, at least eight repositories, JS/TS and Python, multiple categories | 24 public-history candidates across eight repositories selected; runtime and positive/negative instrument admission precede the pending freeze | in progress |
+| V3 | Single with repair, frozen old parallel, adaptive, feasible competitor | Runnable single, frozen historical parallel and adaptive executors share final verification; live driver admission and competitor feasibility are underway | in progress |
+| V4 | Adaptation and peer ablations, repeats correlated, natural/synthetic distinct | Both ablation executors and fixed schedule/replay infrastructure exist; paired launches remain pending | in progress |
+| V5 | Wall/tokens/cost/completion/incorrect acceptance/human burden/retries/recovery | Campaign records and reports retain unknowns, all scheduled failures and repository-clustered uncertainty; live pilot remains pending | in progress |
+| V6 | Available authorized local models, no new paid commitment | Owned local Qwen weights executed development cases and prompt comparisons; no paid calls. Native paired evaluation is still pending | in progress |
 | V7 | Full gates, build, packaged CLI, fuzz, evidence and supported platforms | actual final output bound to commit; unavailable separately | open |
 | R1 | README, usage, CLI, build guide, ADRs, instructions, changelog, examples | complete-goal and adaptive recovery reproduction | open |
 | R2 | Tested coherent commits, installable release candidate, exact push/CI/release status | package contents and installed behavior | open |
@@ -569,7 +569,7 @@ installed `attrs` shadowing source, missing package metadata/dependencies and in
 scope. Those are unusable measurements, not model failures. Their records remain available as
 `pilot-node-base-admission-started` (`sha256:bace6f21ac41ea363263e0ca1d628056ff0bdec144d2d63f0d014648639e5871`)
 and `pilot-python-base-admission` (`sha256:ef6d32d65626ad71a72b78073b92e2fb6e74ec58c3908f050cf6405dc22aac26`).
-Historical-runtime admission and source-identity corrections remain in progress.
+The corrected runtime and source-identity observations are recorded below; these earlier unusable measurements remain preserved.
 
 Full `python-project-checks-gates` exited 0: 317 files and 3029 tests passed, no skips,
 134.79 seconds. Digest `sha256:498c6bdfe23e6d66945537e46a5f8a26873fa2a989da0236dfd02b6933b2c4dd`
@@ -577,3 +577,51 @@ binds parent `caa20f0994c74c778b4534fc84b2e7cc6ab02be0` and its tested diff. A r
 canary established mounted-source imports for attrs and Click and successful configured mypy
 checking of Click's 28 declared source files, digest
 `sha256:4580682f9c788ab4cdd37e4870770bc3d9de53da50ca847bbaeffc36ea2e8618`.
+
+### Pilot runtime and instrument admission
+
+All 24 selected public-history bases now have runnable declared checks. Day.js uses its historical
+Node 16.20.2 image while the Swarm harness remains on Node 24.15.0. Its three complete build,
+test and lint runs passed without changing assertions or adding OpenSSL loading flags. Capture
+`dayjs-container-installed-checks`, digest
+`sha256:60480a898d19c85308e028bb51ba201ee166fd312d397ca4c2c6b08630ee2263`.
+
+Python images install metadata from the pinned base and import the mounted candidate source,
+not an installed reference implementation. Corrected attrs and itsdangerous checks and all
+source-identity observations are in `pilot-python-corrected-admission`, digest
+`sha256:4301da63c83a795f329c123c0fc9b15a7f0924acfc7ba1f829a13bf8e9817e60`.
+Click additionally needs the declared `less` utility. Its fake pager fixtures cannot execute on
+the container's noexec temporary mount, so pytest uses its ignored workspace cache and the same
+filesystem for temporary capability detection. The noexec mount, unprivileged user, dropped
+capabilities, read-only root and denied network remain. All three corrected Click suites passed;
+existing platform skips, expected failures and the project's 31,000 stress-case deselections are
+reported, not promoted to passes. Capture `click-complete-admissions`, digest
+`sha256:edf08c28bedef84d020b74e3fec6f5a5d572860a5b4ff7084b7394234bbf7a99`.
+
+The first nine Python acceptance pairs each rejected the original source and accepted the
+normalized historical fix. These maintainer model-authored checks share reasoning across their
+input variants, so agreement is not independent ground truth. Capture
+`pilot-python-instruments-1`, digest
+`sha256:de4bc652aa2e9d282a8771dadd314fdfb791673ed2ef5fd7b2f5cbff4d05150a`.
+The first JavaScript/TypeScript instrument pass admitted 10 of 15 cases. Three unchanged Day.js
+candidates exposed Git 2.30's lack of `git apply --allow-empty`; two chess cases needed their
+project-declared generated parser. Both faults are preparation defects, not agent failures.
+Their failed observations remain in `pilot-node-instruments-1`, digest
+`sha256:6490adaa2dc6ed124c5382283d8512095820c447168ff13f832112860c004f27`.
+
+Unchanged candidate verification now measures a clean Git diff instead of asking Git to apply
+an empty patch. Nonempty patch failures retain their actual diagnostic. The focused independent
+verifier suite passed 36 tests in 17.85 seconds, digest
+`sha256:3dae51cbbd780452f0e7bd52b9ad58cd7caa2d688e6bc90e1755570cbabb749d`.
+Chess acceptance explicitly runs its pinned parser generation. Additional Python checks cover
+hook exceptions and public typing. The corrected instrument admission is still running.
+
+The native pilot executors include a strong single worker with repair, the unmodified review
+controller with an external accounting/setup wrapper, the adaptive controller and both ablations.
+They use the same independent final acceptance path and retain all attempted launches. Separate
+held-back verification has its own declared evidence chain, linked by the coordinator before
+bundle export. A six-test driver suite exercised real checkouts and both a valid change and a
+locally green omission; both bundles verified offline. Capture `pilot-driver-linked-evidence`,
+digest `sha256:4d4a0f59eacb509d4abc7f3a0f4be94becc7eb9880f42192c91ba4887a20ad36`.
+Earlier driver failures from mixing goal declarations and omitting chain links remain recorded.
+No paired pilot result or speed advantage is claimed by this admission work.
