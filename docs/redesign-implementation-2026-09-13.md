@@ -1003,3 +1003,39 @@ Typecheck and targeted Biome checks passed. These captures bind source
 `57f0dd1bc97ec3bd546688439d6a31effc68f85f` plus the recorded fix and test patch;
 this evidence paragraph followed those checks. No historical payload was changed or replayed
 with a guessed reservation count. The replacement freeze includes this evidence behavior fix.
+
+### Replacement cohort identity and prior usage
+
+The existing pilot freezer now records a cohort generation and predecessor identity in its
+manifest and protocol digest. A replacement requires an explicit withdrawal on the old chain,
+unchanged goal and evaluator bytes, the original model identity and resource settings, and
+harness-captured controller preflight results for every control and reference. Duplicate,
+missing, altered and failed preflight rows are rejected by regression tests. This changes
+freezing and reporting; it adds no scheduler or model-selection behavior.
+
+The original cohort withdrawal is recorded at chain head
+`sha256:d82e8204161177c988c47935f922e5e30a17d435639e80394c5bc6b89fb49493`,
+sequence 215. Capture `completion-original-cohort-withdrawal`,
+`sha256:c093e74743fe63993629307d8cc398709dce5fae63774cb5ff487fb333508561`,
+preserves all 31 terminal outcomes and names the 89 unlaunched slots. They reported
+10,891,973 input and 165,608 output tokens, with one unknown call. The outstanding reservation
+is independently recorded as 88,254 in controller payload
+`sha256:4e866e7cf0371e236a91ac6c2cdd18467390157b6244c9690e8dd206c5658b36` and
+agrees with raw observation `sha256:c769bf59c883bf63fee63636f7281e807320fde64399918a494f4c8d3de70ac3`.
+The report projects that quantity with both references. The original malformed settlement
+remains intact and ordinary campaign replay still refuses it.
+
+The 31 launched original slots had an authorized ceiling of 18,600,000 tokens. A complete
+replacement adds 72,000,000, and the separately declared live contention profile adds 600,000:
+91,200,000 tokens across these schedules at their maximum per-slot allocations. This is a
+resource ceiling, not measured usage or provider billing. The one unknown call remains unknown;
+an outstanding reservation is not counted as additional reported usage. All model execution
+uses the same existing local weights. No paid fallback or infrastructure purchase is authorized.
+Intervention purposes are recorded, with unavailable human repair minutes left null.
+
+Replacement-boundary and report regressions passed: two files, 13 tests in 11.93 seconds,
+capture `completion-replacement-final-targeted`,
+`sha256:cd0fbb7b38a1aaf27b586f7cac5897c613353fcc380e510b4e4246dee50c4b37`.
+This binds `44867ea13186feaf48c78213d43ce3feffad412f` plus the captured freezer, test
+and documentation patch. The preflight and replacement schedule were still running or unlaunched
+at this checkpoint; this entry claims neither completed validation nor pilot acceptance.
