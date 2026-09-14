@@ -680,3 +680,77 @@ with all five arms and ablations, run any authorized supported-platform gates, a
 competitor only if its supported local or already-authorized provider completes the same protocol.
 No swarm advantage, independence claim, or universal correctness claim follows from the partial
 observations.
+
+
+### Completion execution audit, September 14
+
+The owner authorized the finite pilot, validation, branch delivery and npm publication in the
+September 14 completion instruction. This supersedes the earlier authorization limits without
+changing access controls. The clean starting review commit was
+`88c5064d3cde1fa8d54ac96d62863184e559c1d0`. Origin's literal default remains `v13-main`, at
+`a950d1bd51474ec24ec647c3fd9ed3c003dc93b8`; no open review PR existed at inspection.
+The repository permits merge commits. Its active ruleset restricts branch creation, updates,
+non-fast-forward updates and deletion, with the existing administrator role authorized. No
+required reviewer or status-check rule was returned. No rule was changed.
+
+The original frozen source resolves to `f971b53594b6ef63d747047a739655ff0e765414`.
+The earlier full SHA above transposed `047` to `074`; the original manifest was unchanged.
+`sha256:bc4890f4110d7eea1691e419154faf69a70d6b17c83050afa7d1a32d97c8831c` identifies the full
+frozen inputs, while the actual protocol digest is
+`sha256:a083e15d54f31f318f3b9e243948470165d2bcbbe52119f5d64bf1b896f0b7cb`.
+The checked manifest, campaign chain, 24 repository pins, sealed and held-back check digests,
+reference patches, image identities and five launch chains are retained in `completion-audit.json`
+under the existing external evidence root. Digest:
+`sha256:a72f7158efc7dde31b3b28f242218bff08b4733bb0c2da0ca72b6a5dac91bbe7`.
+
+The four settled observations match their raw files. Three bundles verify with exit 0. The
+frozen-parallel bundle retains its original exit 1 because the admission crash left required
+final gates missing; that failure is not an artifact-integrity success or an accepted goal.
+A fifth no-peer launch was present despite the earlier narrative: it stopped during a test,
+leaving 35 completed model calls, 311,368 reported input tokens and 4,039 output tokens, with
+no pending model reservation. Its candidate edits and patch are preserved. A current process
+inspection found no pilot process and Docker confirmed every named container absent. Append-only
+reconciliation records an infrastructure outcome with unknown final acceptance and unknown
+execution wall time. Its campaign latency is explicitly elapsed calendar time to reconciliation,
+including offline time, and must not enter execution-time totals. Reconciliation evidence:
+`sha256:f990b3def2a3a82943cb8735149e09f9a8063b42972ac90463efc4c0bfafea31`.
+
+The selected path resumes this original cohort from the clean detached
+`/Users/brad/projects/swarm-redesign-pilot-resume` checkout. There are 115 unstarted slots,
+not 116. No outer retry is scheduled. The remaining ceiling is 69,000,000 tokens and 103,500,000 ms
+of execution, plus 6,900,000 ms of cleanup allowances. Each slot keeps 600,000 tokens, 900,000 ms,
+24 worker/planner steps, one worker gate retry, two controller repairs, four graph revisions,
+one model permit, one test permit and two worktree slots. The owned Qwen model digest remains
+`1289b9ba3f4f06af094e6f09811c6c098af51dc315ebdc9dfd77582b999c89ee`.
+No paid provider or additional infrastructure is used. No synthetic development goal joins this
+natural schedule. Frozen parallel retains the historical planner and layer controller;
+no-adaptation uses the current readiness controller and bounded ordinary repairs while refusing
+graph revisions and final-goal revisions. No-peer removes both coordination and trail tools and
+peer projection. All five paths retain independent final acceptance.
+
+Current completion checklist:
+
+- Original-cohort audit and interrupted-launch reconciliation: measured; historical records retained.
+- B2, D6, G4 and V2 through V6: execution pending, with live measurements still required.
+- G1: existing composition and package evidence identified; closure review pending.
+- V7: local baseline passed; remote matrix, final build/package/fuzz and release-source checks pending.
+- Integration and npm release: pending. Registry `14.0.2` already exists at
+  `14eb4bfa61c710a45d9267fcf59e9a15057183a8` and is not this candidate. An unpublished version
+  will be selected from the final compatibility diff. The historical local tarball will not be published.
+- H2: conditional; the complete pilot bar and a successful supported external CLI remain unmet.
+
+`completion-baseline-gates` passed at `88c5064d3` with an empty tracked diff. Actual summary:
+
+```text
+ Test Files  318 passed (318)
+      Tests  3036 passed (3036)
+   Start at  12:22:43
+   Duration  130.56s (transform 9.47s, setup 0ms, import 21.65s, tests 993.30s, environment 16ms)
+```
+
+The command exited 0, reported no test skips, and retained 22 Biome warnings and one informational
+diagnostic. Its complete output and command identity are in the external capture, digest
+`sha256:9a37e8a5bb7d3a4dd020939dfb644a0262ae0fc44e22264a8effb459c1f5905d`.
+This is baseline validation, not final integration or release evidence. Fetching all tags also
+exposed an existing local/origin disagreement for `v14.0.0`; neither historical tag was overwritten.
+Branch fetch succeeded separately with `--no-tags`.
