@@ -984,3 +984,22 @@ marker. Standard campaign replay correctly refuses that malformed record. Failed
 `sha256:686bec8094b1fd95b053b80d4941cc7f9776bb228dfdbbbfb9e259d04d865613`.
 That separate metric-name defect must be resolved before the new freeze. Historical bytes will
 remain unchanged, with any lost measurement reported as unavailable or independently reconciled.
+
+### Preserve outstanding reservation measurements during evidence scrubbing
+
+The shared detector's exact metric-name table now includes `reservedTokens`. This is an
+accounting quantity, including when cancellation leaves a large outstanding reservation.
+The credential-name policy, four-character floor, structural JSON rules and accepted residuals
+remain as specified in build guide section 7.1 and archived invariant 9. A nearby credential
+name, `reservedApiToken`, remains scrubbed and blocking for the same numeric value.
+
+A real campaign replay regression records a cancelled outcome with 600,000 reserved tokens
+and one unknown call, reopens the on-disk session, and compares its complete report. It failed
+on the prior source with the same Zod error seen in the original pilot
+(`sha256:3173f7073429e5b2f436af5d3acdcf1529712c31ec7e3ae5ff1ac35014840849`).
+With the name correction, three files and 59 tests passed, including shared scrubbing and child
+environment regressions (`sha256:25955e0ddce2e42964ca84e6e3ad360622b7443c8cc688fff363f33f3e3b25db`).
+Typecheck and targeted Biome checks passed. These captures bind source
+`57f0dd1bc97ec3bd546688439d6a31effc68f85f` plus the recorded fix and test patch;
+this evidence paragraph followed those checks. No historical payload was changed or replayed
+with a guessed reservation count. The replacement freeze includes this evidence behavior fix.

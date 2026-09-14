@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { openEvidenceSession } from "../evidence/session.ts";
 import { openCampaign } from "./campaign-record.ts";
-import { campaignProtocolFixture } from "./protocol-fixture.ts";
+import { unobservedGoalMetrics } from "./goal-observation.ts";
+import { campaignProtocolFixture, goalCampaignProtocolFixture } from "./protocol-fixture.ts";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -124,4 +125,40 @@ it("refuses an appended history event that changes a frozen launch identity", as
   await expect(openCampaign(campaignProtocolFixture(), evidence, { resume: true })).rejects.toThrow(
     "frozen identity",
   );
+});
+
+it("replays cancelled goal outcomes with outstanding token reservations", async () => {
+  const root = await mkdtemp(join(tmpdir(), "swarm-campaign-reservation-"));
+  roots.push(root);
+  const options = { root, sessionId: "campaign", clock: { now: () => 0, sleep: async () => {} } };
+  const evidence = await openEvidenceSession(options);
+  const protocol = goalCampaignProtocolFixture();
+  const campaign = await openCampaign(protocol, evidence);
+  const first = campaign.schedule[0];
+  if (first === undefined) throw new Error("fixture schedule is empty");
+  await campaign.launch(first.executionId);
+  const outcome = {
+    executionId: first.executionId,
+    status: "cancelled",
+    certified: null,
+    heldBackAccepted: null,
+    costUsd: null,
+    latencyMs: 20,
+    evidenceDigest: null,
+    cleanup: "confirmed",
+    goal: {
+      ...unobservedGoalMetrics(1, "cancelled", "cancelled with usage still unknown"),
+      reservedTokens: 600000,
+      unknownCalls: 1,
+    },
+  };
+  await campaign.settle(outcome);
+  const reopened = await openCampaign(protocol, await openEvidenceSession(options), {
+    resume: true,
+  });
+  expect(reopened.completed(first.executionId)).toBe(true);
+  expect(reopened.report()).toEqual(campaign.report());
+  expect(evidence.payloads().get(evidence.records().at(-1)?.payloadDigest ?? "")).toMatchObject({
+    goal: { reservedTokens: 600000, unknownCalls: 1 },
+  });
 });

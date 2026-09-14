@@ -238,7 +238,12 @@ describe("detection keyed on the name rather than the shape of the value", () =>
   });
 
   it("keeps the metric exemption exact at all three sites, nested or not", () => {
-    const metrics = { outputTokensPerSecond: 129.9, maxTokens: 1000000, tokenCount: 48291736 };
+    const metrics = {
+      outputTokensPerSecond: 129.9,
+      maxTokens: 1000000,
+      tokenCount: 48291736,
+      reservedTokens: 600000,
+    };
     const text = JSON.stringify({ credentials: metrics });
 
     expect(scrubJson({ credentials: metrics }).redactions).toEqual([]);
@@ -246,6 +251,12 @@ describe("detection keyed on the name rather than the shape of the value", () =>
     expect(scrubText(text)).toEqual({ value: text, redactions: [] });
     expect(findKnownSecrets(text)).toEqual([]);
     expect(findBlockingSecrets(text)).toEqual([]);
+    const credential = { reservedApiToken: metrics.reservedTokens };
+    expect(scrubJson(credential).value).toEqual({
+      reservedApiToken: "[redacted:credential-field]",
+    });
+    expect(findKnownSecrets(JSON.stringify(credential))).not.toEqual([]);
+    expect(findBlockingSecrets(JSON.stringify(credential))).not.toEqual([]);
   });
 
   it("reads a credential name as a reader reads it, whatever the letters are", () => {
