@@ -1039,3 +1039,62 @@ capture `completion-replacement-final-targeted`,
 This binds `44867ea13186feaf48c78213d43ce3feffad412f` plus the captured freezer, test
 and documentation patch. The preflight and replacement schedule were still running or unlaunched
 at this checkpoint; this entry claims neither completed validation nor pilot acceptance.
+
+### Repair Click's test temporary directory before the replacement freeze
+
+The first controller preflight completed 36 observations, then refused the Click control because
+repository checks left an unexpected tree. It exited 1; capture
+`sha256:697cb5e39130f38d185a7e3750fb134a56fc41f3b239848f05ed26cfa556beb9`.
+The pilot command precreated `.pytest_cache`, so pytest skipped creating its own ignore file.
+Editor and pager fixtures and pytest scratch files then appeared as candidate additions.
+The pinned image's installed pytest implementation confirms that early return, captured in
+`completion-pytest-cache-source`,
+`sha256:45ef04f73e2ed0d33c9d64f3bf517c5fbe8675ad4da9b8fca811932a44aac864`.
+Both original Click control and reference were refused in the full-output diagnostic,
+`sha256:8fe7ffd11997dcc53dbdde32a99000ace9df104c2550218ee46a12b1ac1d2432`.
+
+The pilot now puts temporary files in Click's already ignored `.tox/swarm-tmp`, leaving pytest
+to initialize its own cache. No test, check, assertion or acceptance artifact is removed or
+weakened. A command-level regression verifies that the cache has not been precreated and that
+both editor and test scratch files are ignored by Git. Its before-fix filtered run had one
+failure and seven tests not selected, reported as skipped by Vitest
+(`sha256:86980e94b5b4991859aed780db29548fa1f5fbcda55380a4a7a8c4842f95eed3`).
+After the fix, all eight pilot-driver tests passed in 9.62 seconds
+(`sha256:78470db7ba2f5d97a0a5a3050c13c331dd3cd775a1e632d28253a66202b5f94e`).
+
+Real controller validation then rejected all three unchanged Click controls and accepted all
+three historical references. Typecheck, lint, format and repository tests passed for all six.
+Capture `completion-click-controls-fixed`,
+`sha256:87bec19d83cd31093379b0baa77e00eccf89d9f46f677cee99960cc25e4bcc17`,
+took 36,777 ms and binds `5b31160e1e207d0058b777c327651a5dee37d65a` plus the recorded
+Click command and regression patch. This documentation followed that measurement.
+
+One initial Koa reference had a repository test failure despite accepted goal checks. A direct
+diagnostic passed all 452 tests, and a fresh controller diagnostic rejected the control and
+accepted the reference with all 452 tests passing. The initial failure remains unreproduced;
+its individual failing-test output was not retained by the original final verifier. The fresh
+diagnostic retains full command output. Its process later failed before Click dispatch because
+monitoring opened future evidence sessions and created empty directories. That observer error
+is recorded at `sha256:5ffffae14e7469266b403de1e586971d86d40127f52ee16f030d358585b0cc33`;
+the empty directories and successful Koa records remain preserved, and Click used a new root.
+These are validation interventions, not additional model attempts. Their human minutes are unknown.
+
+Before this pilot-only command fix, clean source `5b31160e1e207d0058b777c327651a5dee37d65a`
+also passed full gates, build, 19 packaged command checks and eight fuzz harnesses with 84 seeds.
+The full gates capture is `sha256:939954066fa020157b64e5afae7b7e2966aeab6cd1dd3348d70ea3bc8b960b75`:
+
+```text
+ Test Files  321 passed (321)
+      Tests  3050 passed (3050)
+   Start at  14:08:32
+   Duration  136.77s (transform 11.27s, setup 0ms, import 24.57s, tests 1026.03s, environment 18ms)
+```
+
+No failed or skipped tests; 22 Biome warnings and one information diagnostic remained unchanged.
+Build, packaged and fuzz capture digests are respectively
+`sha256:74764786f5e1325cd87a5a8670535544289e5d5941d7309412740f0fc5e1828c`,
+`sha256:45814366a1d9a7eac4aedbd2e48ef6a37385cc5e9c4fb1d734fabe142bf91fc4` and
+`sha256:8efcd96d7191cfad1268f14cd25721b13fbd7641977f90ddfca4ca315e62ffc5`.
+The archive review also byte-compared the original 25,878-byte policy and all 18 archived
+transcripts, 1,346,516 bytes, against their recorded commits; every byte matched
+(`sha256:3f25ef512cc019973780100704ae868d54d2b91370477ea5ef673d6065a57ae9`).
