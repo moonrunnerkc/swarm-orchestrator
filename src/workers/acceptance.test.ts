@@ -497,14 +497,13 @@ describe("trying each task several ways", () => {
       "add a shout to alpha": attemptWriting(1),
       "add a shout to alpha again": attemptWriting(1),
     };
-    await parallel(collide, {
+    const result = await parallel(collide, {
       redundancy: 2,
       byWorker: {
         "worker-1": attemptWriting(1),
         "worker-2": attemptWriting(4),
         "worker-3": attemptWriting(2),
-        // The winner of the second task writes the same file as the winner of the first,
-        // with different content, so the queue has a real conflict to refuse.
+        // Readiness determines arrival order. These winners conflict whichever arrives first.
         "worker-4": attemptWriting(6),
       },
     });
@@ -517,8 +516,16 @@ describe("trying each task several ways", () => {
         .sort(),
     ).toEqual(["unverified", "verified"]);
     const refused = dag.claims.find((claim) => claim.evaluation.verdict === "unverified");
+    const rejected = result.queue?.landings.find((landing) => !landing.landed);
+    expect(
+      result.selections
+        .flatMap((selection) => (selection.winner === null ? [] : [selection.winner]))
+        .sort(),
+    ).toEqual(["worker-2", "worker-4"]);
+    expect(rejected).toBeDefined();
     expect(refused?.evaluation.reason).toBe("predicate-false");
-    expect(refused?.narrative).toMatch(/chose worker-4/);
+    expect(refused?.narrative).toContain(`chose ${rejected?.workerId}`);
+    expect(refused?.predicate).toBe(`landed == true && workerId == "${rejected?.workerId}"`);
   });
 
   it("offers only the winner to the queue, so the losers never conflict with it", async () => {

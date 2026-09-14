@@ -217,6 +217,7 @@ export interface AgentToolset {
 }
 
 export interface ToolsetOptions {
+  readonly untrustedContext?: string;
   readonly observeTool?: Parameters<typeof createLedgerChokepointRecorder>[1];
   readonly abortSignal?: AbortSignal | undefined;
   readonly workspace: string;
@@ -257,6 +258,13 @@ export function assembleToolset(options: ToolsetOptions): AgentToolset {
   });
 
   const definitions = options.tools(guard);
+  const derivation = createDerivationHeuristic();
+  if (options.untrustedContext !== undefined)
+    derivation.observe(options.untrustedContext, {
+      tag: "tool-output",
+      label: "recorded repair context",
+      digest: digestOfBytes(options.untrustedContext),
+    });
 
   return {
     definitions,
@@ -266,7 +274,7 @@ export function assembleToolset(options: ToolsetOptions): AgentToolset {
       definitions,
       guard,
       abortSignal: options.abortSignal,
-      derivation: createDerivationHeuristic(),
+      derivation,
       confirm: options.confirm,
       recorder: createLedgerChokepointRecorder(options.evidence, options.observeTool),
     }),
@@ -351,6 +359,7 @@ async function executeAgentTask(
   const pending = new Map<string, string>();
   const { definitions, toolInvoker, guard } = assembleToolset({
     workspace: options.workspace,
+    ...(options.repairFeedback === undefined ? {} : { untrustedContext: options.repairFeedback }),
     abortSignal: options.abortSignal,
     homeDir: options.homeDir,
     confirm: options.confirm,
@@ -417,8 +426,9 @@ async function executeAgentTask(
   await options.evidence.record({
     type: "session-started",
     actor: "harness",
-    provenance: ["user"],
+    provenance: options.repairFeedback === undefined ? ["user"] : ["user", "tool-output"],
     payload: {
+      ...(options.repairFeedback === undefined ? {} : { repairContext: options.repairFeedback }),
       task: options.task,
       workspace: options.workspace,
       modelSpec: options.model.modelId,

@@ -3,7 +3,12 @@ import type { EvidenceRecorder } from "../evidence/session.ts";
 import { parseTaskContract } from "../evidence/task-contract.ts";
 import { appendControllerRecord, replayController } from "./controller-state.ts";
 import { coordinationEvents } from "./coordination.ts";
-import { type ControllerGraph, type RevisionOperation, reviseGraph } from "./graph-revision.ts";
+import {
+  type ControllerGraph,
+  type ControllerNode,
+  type RevisionOperation,
+  reviseGraph,
+} from "./graph-revision.ts";
 import type { TrailPeer } from "./trail.ts";
 
 export interface RevisionRequest {
@@ -168,13 +173,37 @@ export async function coalesceGoalAlternatives(
   if (board.graph === null || board.graph.nodes.length < 2) return;
   if (board.dispatches.size > 0)
     throw new Error("whole-goal alternatives must be declared before dispatch");
-  const originals = board.graph.nodes;
-  const first = originals[0];
-  if (first === undefined) throw new Error("whole-goal alternatives have no original task");
   let identity = "complete-goal";
   let suffix = 0;
-  while (originals.some((node) => node.id === identity) || board.graph.retired.includes(identity))
+  while (
+    board.graph.nodes.some((node) => node.id === identity) ||
+    board.graph.retired.includes(identity)
+  )
     identity = `complete-goal-${++suffix}`;
+  const combined = combinedControllerNode(board.graph, identity, objective);
+  await applyControllerRevision(
+    evidence,
+    {
+      operation: {
+        kind: "combine",
+        tasks: board.graph.nodes.map((node) => node.id),
+        combined,
+      },
+      reason:
+        "complete-goal alternatives share every original obligation and compete only after independent goal acceptance",
+    },
+    "harness",
+  );
+}
+
+export function combinedControllerNode(
+  graph: ControllerGraph,
+  identity: string,
+  objective: string,
+): ControllerNode {
+  const originals = graph.nodes;
+  const first = originals[0];
+  if (first === undefined) throw new Error("whole-goal alternatives have no original task");
   const workspaceScope = originals.some((node) => node.contract.scopeKind === "workspace");
   const contract = parseTaskContract({
     ...first.contract,
@@ -192,22 +221,5 @@ export async function coalesceGoalAlternatives(
       originals.every((node) => node.contract.allowedTools.includes(tool)),
     ),
   });
-  await applyControllerRevision(
-    evidence,
-    {
-      operation: {
-        kind: "combine",
-        tasks: originals.map((node) => node.id),
-        combined: {
-          id: identity,
-          contract,
-          dependsOn: [],
-          obligations: [...board.graph.obligations],
-        },
-      },
-      reason:
-        "complete-goal alternatives share every original obligation and compete only after independent goal acceptance",
-    },
-    "harness",
-  );
+  return { id: identity, contract, dependsOn: [], obligations: [...graph.obligations] };
 }
