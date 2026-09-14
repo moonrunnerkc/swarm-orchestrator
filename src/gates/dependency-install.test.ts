@@ -8,6 +8,7 @@ import { createSystemClock } from "../cli-runtime-inputs.ts";
 import { openEvidenceSession } from "../evidence/session.ts";
 import { harnessChildEnvironment } from "../exec/child-environment.ts";
 import { installFromLockfile } from "./dependency-install.ts";
+import { verifyIndependently } from "./independent-verification.ts";
 import { createNodeCommandRunner } from "./node-command-runner.ts";
 
 const execute = promisify(execFile);
@@ -104,4 +105,47 @@ it("does not reserve or launch setup after cancellation", async () => {
     installFromLockfile({ ...options, signal: AbortSignal.abort(new Error("cancelled")) }),
   ).rejects.toThrow("cancelled");
   expect(options.evidence.records()).toHaveLength(0);
+});
+it("preserves an independent checkout when setup completion is unknown", async () => {
+  await execute("git", ["add", "."], { cwd: workspace });
+  await execute(
+    "git",
+    [
+      "-c",
+      "user.name=Fixture",
+      "-c",
+      "user.email=fixture@example.com",
+      "commit",
+      "--quiet",
+      "-m",
+      "base",
+    ],
+    { cwd: workspace },
+  );
+  const options = await settings();
+  let preserved = "";
+  await expect(
+    verifyIndependently({
+      repositoryRoot: workspace,
+      baseCommit: "HEAD",
+      patch: "",
+      checkoutRoot: root,
+      clock,
+      installDependencies: true,
+      commands: {
+        ...options.commands,
+        runVouched: async (argv, invocation) => {
+          if (argv[0] !== "npm") return options.commands.runVouched(argv, invocation);
+          preserved = invocation.cwd;
+          await writeFile(join(preserved, "setup-effect"), "must survive reconciliation");
+          throw new Error("lost installer observation");
+        },
+      },
+    }),
+  ).rejects.toThrow("lost installer observation");
+  expect(preserved).toContain("swarm-verify-");
+  expect(await readFile(join(preserved, "setup-effect"), "utf8")).toBe(
+    "must survive reconciliation",
+  );
+  await expect(access(join(preserved, ".git"))).resolves.toBeUndefined();
 });

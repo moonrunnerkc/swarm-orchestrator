@@ -12,7 +12,11 @@ import {
   verifyAcceptanceContract,
 } from "./contract-verification.ts";
 import type { GateSetOptions } from "./default-gates.ts";
-import { type DependencyInstall, installFromLockfile } from "./dependency-install.ts";
+import {
+  type DependencyInstall,
+  DependencySetupReconciliationError,
+  installFromLockfile,
+} from "./dependency-install.ts";
 import { assembleGateSet } from "./engine.ts";
 import { normalizePath } from "./file-set.ts";
 import { defaultGateTimeoutMs, type GateCommandRunner } from "./gate-definition.ts";
@@ -225,6 +229,7 @@ export async function verifyIndependently(
 
   const checkout = await mkdtemp(join(options.checkoutRoot ?? tmpdir(), "swarm-verify-"));
   const timeoutMs = options.timeoutMs ?? defaultGateTimeoutMs;
+  let preserveCheckout = false;
   try {
     // A worktree of the base commit, not a copy of the workspace. Nothing the run wrote is
     // here except what the patch carries.
@@ -509,8 +514,14 @@ export async function verifyIndependently(
       install,
       checkoutPath: checkout,
     };
+  } catch (cause) {
+    if (cause instanceof DependencySetupReconciliationError) {
+      preserveCheckout = true;
+      throw new DependencySetupReconciliationError(`${checkout}: ${cause.message}`);
+    }
+    throw cause;
   } finally {
-    await rm(checkout, { recursive: true, force: true });
+    if (!preserveCheckout) await rm(checkout, { recursive: true, force: true });
   }
 }
 
