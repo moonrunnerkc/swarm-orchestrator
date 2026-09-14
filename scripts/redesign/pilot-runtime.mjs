@@ -10,7 +10,7 @@ export function projectGateOptions(candidate) {
     return {
       commandOverrides: {
         tests:
-          "mkdir -p .pytest_cache && TMPDIR=/workspace/.pytest_cache pytest --basetemp=.pytest_cache/swarm-tmp",
+          "mkdir -p .tox/swarm-tmp && TMPDIR=/workspace/.tox/swarm-tmp pytest --basetemp=.tox/swarm-tmp/pytest",
       },
     };
   if (candidate.repository === "python-attrs/attrs")

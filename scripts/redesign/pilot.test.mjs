@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { digestOfJson } from "../../src/evidence/canonical-json.ts";
 import { freezeGoalContract } from "../../src/evidence/goal-contract.ts";
@@ -98,6 +98,47 @@ it("preserves project checks and initializes the generated chess parser", () => 
   expect(
     filteredCheck({ id: "jhlywa-chess-js-451", runner: "jest" }, "test.ts", ["null move"]),
   ).toMatch(/^npm run parser && /);
+});
+it("keeps Click test scratch files ignored without precreating pytest's cache", async () => {
+  scratch = await mkdtemp(join(tmpdir(), "swarm-click-temporary-"));
+  const repository = join(scratch, "repo");
+  const bin = join(scratch, "bin");
+  await mkdir(repository);
+  await mkdir(bin);
+  await writeFile(join(repository, ".gitignore"), ".tox/\n");
+  execFileSync("git", ["init", "-q"], { cwd: repository });
+  execFileSync("git", ["add", ".gitignore"], { cwd: repository });
+  // Pytest installs its own ignore file only when it creates the cache directory.
+  await writeFile(
+    join(bin, "pytest"),
+    `#!${process.execPath}
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+assert.equal(fs.existsSync('.pytest_cache'), false);
+assert.ok(process.env.TMPDIR.startsWith('/workspace/'));
+const temporary = process.env.TMPDIR.slice('/workspace/'.length);
+const base = process.argv.find(arg => arg.startsWith('--basetemp=')).slice('--basetemp='.length);
+fs.writeFileSync(path.join(temporary, 'editor-output'), 'temporary');
+fs.mkdirSync(base, { recursive: true });
+fs.writeFileSync(path.join(base, 'test-output'), 'temporary');
+`,
+    { mode: 0o700 },
+  );
+  execFileSync(
+    "/bin/sh",
+    ["-c", projectGateOptions({ repository: "pallets/click" }).commandOverrides.tests],
+    {
+      cwd: repository,
+      env: { PATH: [bin, dirname(process.execPath), "/usr/bin", "/bin"].join(":") },
+    },
+  );
+  expect(
+    execFileSync("git", ["ls-files", "--others", "--exclude-standard"], {
+      cwd: repository,
+      encoding: "utf8",
+    }),
+  ).toBe("");
 });
 it.each([false, true])(
   "runs the pilot's public worker and fresh final checks (omit goal: %s)",
