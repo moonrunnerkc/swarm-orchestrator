@@ -4,7 +4,7 @@
 
 <h1>swarm-orchestrator</h1>
 
-<p><strong>A local-capable swarm for completing bounded engineering goals with evidence.</strong></p>
+<p><strong>Local-capable coordination for completing bounded engineering goals with evidence.</strong></p>
 
 <p>
 The model can say whatever it likes.<br />
