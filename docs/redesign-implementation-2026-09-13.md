@@ -856,3 +856,52 @@ The candidate remains unpublished. The established tag-triggered publish workflo
 from the integrated, validated source with npm provenance and the existing package name,
 using the normal `latest` channel. Registry state and candidate identity must be checked again
 immediately before publication. The older local `14.0.2` tarball is historical evidence only.
+
+### Supplementary contention and replay protocol
+
+The natural pilot retains its original source, 120 slots and limits. The following separate
+measurements close questions that its fixed model/test concurrency cannot answer. They must
+start after every pilot slot settles. They do not change pilot denominators, acceptance checks
+or worker behavior, and no profiling output is used to repair a pilot candidate.
+
+`scripts/redesign/profile-live.mjs freeze` records one clean source commit, the completed
+campaign head, the unchanged local model digest and the complete measurement schedule. The
+selected inputs are the first non-Python and first Python goals in frozen order, regardless of
+their outcomes. The fixed limits are 24 model calls, 600,000 total reserved/reported tokens,
+900,000 ms for execution and 60,000 ms for stopped cleanup. There are no retries. Each model
+request uses the natural goal description, no tools and a 128-token output ceiling. The local
+adapter retains its existing disabled thinking and zero provider retries.
+
+Each measurement uses concurrency order 1, 2, 2, 1, giving two observations per condition:
+
+- Model batches: four requests each, 16 calls total.
+- Test batches: one declared test command on each of the two pinned baseline repositories,
+  eight commands total. Dependency setup occurs once per repository and is timed separately.
+- Worktree batches: two temporary Git worktrees of the same owned baseline copy, eight
+  creations total. Each batch is cleaned before the next, with at most two temporary worktrees.
+- Mixed batches: the same two model requests and one Node test command, first with one shared
+  permit and then with separate model/test permits according to the fixed order. This adds
+  eight model calls and four test commands.
+
+The two prepared baseline repositories remain retained outside the workspace. Model and test
+execution never exceed two simultaneous operations of either kind. Queue time, admitted
+operation time, provider timing/usage, observed rate-limit responses, test outcomes, worktree
+failures, host load and parent-process CPU are recorded. Parent CPU does not measure test-child
+or container CPU. Persistent local-server caches, short prompts and two repetitions limit the
+interpretation. Failures stay in their original batches. An interrupted batch or unconfirmed
+runtime cleanup prevents further dispatch until actual effects and usage are reconciled.
+
+`scripts/redesign/profile-replay.mjs` separately measures every retained launch's available
+controller state, final model transcript, citation index, peer projection, ownership journal
+and gate definitions. Seven repeated readings use the actual natural artifacts. Each journal
+uses a new private copy for cold replay; 200 polls verify unchanged bytes, and append replay
+uses the exact final historical entry on a private prefix. Original evidence is never changed.
+Gate-definition assembly uses 1,000 assemblies per sample and never reuses a check observation.
+This read-only pass has a 15-minute limit and no model calls. Missing artifact classes remain
+unmeasured. It is a microbenchmark of recorded workloads, not a whole-run speed claim.
+
+The pre-execution regression checks cover fixed resource ceilings, shared/separate permits,
+retained failed activities, ambiguous resume and failed runtime cleanup. The earlier combined
+report/profiler check passed nine tests in two files, evidence
+`sha256:34665de9f9316a0e57a45fea733d7deea4a6196b3549df179cc89b111ed442dd`.
+Live profiling and B2/G4 measurement closure remain pending at this entry.
