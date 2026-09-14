@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, expect, it } from "vitest";
 import { executeControllerLaunch } from "./cli-parallel.ts";
+import { startParallelOutput } from "./cli-parallel-output.ts";
 import { createSystemClock } from "./cli-runtime-inputs.ts";
 import { createFixedRandom } from "./core/test-doubles.ts";
 import { openRunStore } from "./durable/run-store.ts";
@@ -178,7 +179,42 @@ it.each([false, true])(
                 respondWithText("done"),
               ],
       });
-    const completed = await executeControllerLaunch(launch, { ...runtime, createModel });
+    const lines: string[] = [];
+    const output = await startParallelOutput({
+      evidence: runtime.coordinator,
+      clock,
+      json: true,
+      details: false,
+      interactive: false,
+      write: (line) => lines.push(line),
+    });
+    const completed = await executeControllerLaunch(launch, {
+      ...runtime,
+      createModel,
+      coordinator: output.evidence,
+      presentation: output,
+    });
+    await output.finish(completed, join(root, "bundle"));
+    await output.stop();
+    const messages = lines.map((line) => JSON.parse(line));
+    expect(messages.at(-1)).toMatchObject({
+      schema: "swarm.controller.result.v1",
+      outcome: completed.outcome,
+      exitCode: completed.outcome.exitCode,
+      commit: completed.headCommit,
+    });
+    expect(
+      messages.some(
+        (entry) =>
+          entry.event?.type === "progress" &&
+          entry.event.view.jobs.length > 0 &&
+          entry.event.view.jobs.every((job: { state: string }) => job.state === "accepted") &&
+          entry.event.view.outcome === null &&
+          entry.event.view.requirements.some(
+            (requirement: { status: string }) => requirement.status === "pending",
+          ),
+      ),
+    ).toBe(true);
     expect(completed.outcome.goalAccepted).toBe(true);
     expect(calls).toBe(2);
     const store = openRunStore(runtime.storePath);

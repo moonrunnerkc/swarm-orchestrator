@@ -260,6 +260,8 @@ export interface AddCaseCommand {
 
 /** N workers over git worktrees, then one merge queue that lands what they produced. */
 export interface ParallelCommand {
+  readonly details?: boolean;
+  readonly tui?: boolean;
   readonly bootstrap?: "node";
   readonly goalChecksFile?: string;
   readonly maxTokens?: number;
@@ -368,6 +370,7 @@ export const usage = [
   "",
   "the screen:",
   "  --no-tui                     plain lines even on a terminal",
+  "  --details                    parallel: include worker events and the full assurance report",
   "  --color, --no-color          paint, or do not, whatever the terminal says",
   "  --open-evidence              open the review page when the run finishes",
   "  --no-open-evidence           never open it",
@@ -396,6 +399,7 @@ const switchFlags = new Set([
   "fix",
   "offline",
   "no-tui",
+  "details",
   "color",
   "no-color",
   "open-evidence",
@@ -596,6 +600,8 @@ export function parseCommandLine(
     }
     return {
       command: "parallel",
+      ...(flags.has("details") ? { details: true } : {}),
+      ...(flags.has("no-tui") ? { tui: false } : {}),
       ...(flags.has("bootstrap") ? { bootstrap: "node" as const } : {}),
       ...(flags.has("goal-checks")
         ? { goalChecksFile: resolve(context.currentDirectory, flags.get("goal-checks") ?? "") }
