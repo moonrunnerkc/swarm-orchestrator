@@ -24,7 +24,7 @@ import {
 import { createWorkPool } from "./pool.ts";
 import { blockedBy, scheduleLayers } from "./schedule.ts";
 import { recordSelection } from "./selection-record.ts";
-import { contractsFromGraph, declareTaskContracts } from "./task-contract.ts";
+import { contractsFromGraph, declareTaskContracts, type TaskContract } from "./task-contract.ts";
 import type { TaskGraph } from "./task-graph.ts";
 import { peersFor, type TrailPeer } from "./trail.ts";
 import { createReadTrailTool } from "./trail-tool.ts";
@@ -64,6 +64,10 @@ interface ParallelRunOptions {
    */
   readonly graph?: TaskGraph;
   readonly graphSource?: "goal" | "file";
+  readonly contracts?: readonly TaskContract[];
+  readonly immutablePaths?: readonly string[];
+  readonly requiredChecks?: readonly string[];
+  readonly maxTokens?: number;
   readonly gateOptions?: GateSetOptions;
   readonly abortSignal: AbortSignal;
   /**
@@ -136,19 +140,42 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
   const pool = createWorkPool(options.concurrency);
 
   const graph = options.graph ?? null;
+  const contracts =
+    graph === null
+      ? []
+      : contractsFromGraph(graph, {
+          maxSteps: options.maxSteps,
+          maxWallMs: Math.max(1, options.remainingWallMs?.() ?? defaultNodeWallMs),
+          immutablePaths: options.immutablePaths ?? [],
+          requiredChecks: options.requiredChecks ?? [],
+          maxTokens: options.maxTokens ?? 200_000,
+          network: options.isolation === undefined ? "unrestricted" : "denied",
+          execution: options.isolation === undefined ? "restricted" : "isolated",
+          allowedTools: ["read", "write", "edit", "list", "search", "shell", "trail"],
+        });
+  const effectiveContracts = options.contracts ?? contracts;
   if (graph !== null) {
+    for (const contract of effectiveContracts) {
+      const node = graph.nodes.find((node) => node.id === contract.taskId);
+      if (
+        node === undefined ||
+        contract.objective !== node.instruction ||
+        contract.allowedPaths.some((path) => !node.files.includes(path)) ||
+        node.acceptance.some((id) => !contract.requiredChecks.includes(id))
+      ) {
+        throw new Error(
+          `contract ${contract.taskId} does not preserve its graph scope and acceptance`,
+        );
+      }
+    }
+    if (
+      effectiveContracts.length !== graph.nodes.length ||
+      new Set(effectiveContracts.map((contract) => contract.taskId)).size !== graph.nodes.length
+    ) {
+      throw new Error("every graph node requires exactly one effective contract");
+    }
     await declareTaskGraph(options.coordinator, graph, options.graphSource ?? "file");
-    // The graph says what the nodes are; a contract says what each was allowed to do while
-    // doing it. A reader weighing a node's result needs both, and the second was never written.
-    await declareTaskContracts(
-      options.coordinator,
-      contractsFromGraph(graph, {
-        maxSteps: options.maxSteps,
-        maxWallMs: options.remainingWallMs?.() ?? defaultNodeWallMs,
-        immutablePaths: [],
-      }),
-      baseCommit,
-    );
+    await declareTaskContracts(options.coordinator, effectiveContracts, baseCommit);
   }
   // A run without a graph is a run with one layer holding every task, so both paths are the
   // same loop and the ordinary run reaches the queue exactly once, as it always did. A graph's
@@ -229,9 +256,22 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
         workers: workers.length,
       });
       tasksPlanned += tasks.length;
+      const plannedTaskIds = [...new Set(planned.map((attempt) => attempt.taskId))];
       const ran = await Promise.all(
         planned.map((attempt) =>
-          pool.run(() => runOneWorker(attempt, head, baseCommit, options, registered)),
+          pool.run(() =>
+            runOneWorker(
+              attempt,
+              head,
+              baseCommit,
+              options,
+              registered,
+              effectiveContracts.find(
+                (contract) =>
+                  contract.taskId === runnable[plannedTaskIds.indexOf(attempt.taskId)]?.id,
+              ),
+            ),
+          ),
         ),
       );
       workers.push(...ran);
@@ -431,6 +471,7 @@ async function runOneWorker(
   criteriaRef: string,
   options: ParallelRunOptions,
   registered: TrailPeer[],
+  contract?: TaskContract,
 ): Promise<WorkerResult> {
   const { workerId, task, taskId, attemptIndex } = planned;
   const evidence = await options.createWorkerSession(workerId);
@@ -462,6 +503,7 @@ async function runOneWorker(
     const fileSet = createFileSetRegistry(evidence);
     const remainingWall = options.remainingWallMs?.() ?? null;
     const result = await runAgentTask({
+      ...(contract === undefined ? {} : { contract }),
       task,
       workspace: worktree.path,
       baseRef: baseCommit,

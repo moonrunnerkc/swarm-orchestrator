@@ -895,7 +895,8 @@ function collectChecks(directory) {
     const inputs = assessment?.inputs;
     const verdict = assessment?.verdict;
     let consistent =
-      inputs?.policy === "run-acceptance-v1" && typeof verdict?.acceptable === "boolean";
+      ["run-acceptance-v1", "run-acceptance-v2"].includes(inputs?.policy) &&
+      typeof verdict?.acceptable === "boolean";
     const prior = records.filter((candidate) => candidate.sequence < entry.sequence);
     const lookupKind = (digest, kind) =>
       prior.some((candidate) => candidate.payloadDigest === digest && candidate.type === kind);
@@ -944,6 +945,20 @@ function collectChecks(directory) {
       )
       .map((bond) => bond.payload.gateId);
     consistent &&= JSON.stringify(blockingVacuous) === JSON.stringify(inputs?.vacuousBlockingBonds);
+    const requiredChecks = inputs?.policy === "run-acceptance-v2" ? inputs.requiredChecks : [];
+    if (inputs?.policy === "run-acceptance-v2") {
+      const contract = payloads.get(inputs.contractRecord);
+      consistent &&=
+        lookupKind(inputs.contractRecord, "task-contract") &&
+        contract?.phase === "effective" &&
+        Array.isArray(requiredChecks) &&
+        canonicalJson(contract.requiredChecks) === canonicalJson(requiredChecks);
+    }
+    const requiredPassed =
+      Array.isArray(requiredChecks) &&
+      requiredChecks.every((id) =>
+        gates.some((gate) => gate?.gateId === id && gate.status === "passed"),
+      );
     const failed = gates.some((gate) => gate?.severity === "blocking" && gate.status === "failed");
     const policyFailed = gates.some(
       (gate) => gate?.capability === "policy" && gate.status === "failed",
@@ -954,6 +969,7 @@ function collectChecks(directory) {
       (dynamic.some((gate) => gate.status === "passed") &&
         !dynamic.some((gate) => gate.status === "failed"));
     const acceptable =
+      requiredPassed &&
       inputs?.settled === "green" &&
       base?.accepted === true &&
       inputs?.cancelled === false &&

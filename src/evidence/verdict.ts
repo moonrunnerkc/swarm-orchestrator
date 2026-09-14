@@ -46,6 +46,7 @@ export interface RunVerdict {
 interface VerdictInput {
   readonly cycle: GateCycle;
   readonly assessment?: {
+    readonly requiredChecks?: readonly string[] | undefined;
     readonly lifecycle: string;
     readonly cancelled: boolean;
     readonly settled: string;
@@ -85,9 +86,13 @@ export function runVerdict(input: VerdictInput): RunVerdict {
 
   const approval = input.humanApproval ?? approvalStateOf(input.approvals);
   const complete = input.assessment;
+  const unmetChecks = (complete?.requiredChecks ?? []).filter(
+    (id) => !runs.some((run) => run.gateId === id && run.status === "passed"),
+  );
   const finalAccepted =
     complete === undefined ||
-    (complete.settled === "green" &&
+    (unmetChecks.length === 0 &&
+      complete.settled === "green" &&
       complete.baseRatchetAccepted &&
       !complete.cancelled &&
       complete.lifecycle !== "interrupted" &&
@@ -115,7 +120,7 @@ export function runVerdict(input: VerdictInput): RunVerdict {
           ? "legacy cycle-only assessment"
           : finalAccepted
             ? "final ratchet and bonds accepted the completed work"
-            : `work refused: lifecycle ${complete.lifecycle}, settled ${complete.settled}, base ratchet ${complete.baseRatchetAccepted ? "accepted" : "rejected"}, vacuous blocking bonds ${complete.vacuousBlockingBonds.join(", ") || "none"}, cancelled ${complete.cancelled}`,
+            : `work refused: required checks ${unmetChecks.join(", ") || "passed"}, lifecycle ${complete.lifecycle}, settled ${complete.settled}, base ratchet ${complete.baseRatchetAccepted ? "accepted" : "rejected"}, vacuous blocking bonds ${complete.vacuousBlockingBonds.join(", ") || "none"}, cancelled ${complete.cancelled}`,
       mechanical: mechanical.reason,
       policy: policy.reason,
       behavioral: behavioral.reason,

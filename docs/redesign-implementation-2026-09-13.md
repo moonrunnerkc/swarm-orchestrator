@@ -107,3 +107,25 @@ a committed tree. The initial capture helper lost one completion to the ledger's
 refusal during overlapping captures. Its history was preserved; separate command sessions now
 avoid shared writers. The authoritative baseline is the later `baseline-final` exit record,
 not an invented combination of incomplete launches.
+
+## Enforced contracts
+
+The shared contract schema now lives in `src/evidence/task-contract.ts`; the old worker import
+continues to export its API. Version-one contracts remain readable. Version two records token
+allocation and required execution mode. The worker receives that contract, restricts declaration
+and amendment, offers its permitted tools, caps its own budget, admits the observed execution
+policy, and checks every required gate in the final assessment. Unsupported or undefined
+requirements cannot silently disappear. Graph acceptance ids now feed required checks.
+
+`src/workers/contract-enforcement.test.ts` exercises the real dispatch path, including shell
+effects caught by the final file-set gate, denied scope amendments, required advisory failure,
+undefined checks, unsupported host network requirements and tool availability. A legitimate
+refused outcome exports and verifies; a newly signed forged assessment that drops its required
+check is refused. The host path remains lexical policy plus post-execution checking, not
+containment. The existing graph fixture needed the repository's deadline-aware test clock once
+contracts actually enforced deadlines; its original assertions remain intact.
+
+Full `m1-gates-formatted` command: exit 0, 285 files and 2866 tests passed, 71.15 seconds.
+Biome retains the baseline 22 warnings and one info diagnostic. The first full attempt stopped
+on formatting in the modified independent verifier; its log remains beside the corrected run.
+CLI lifecycle extraction, controller-wide accounting and ordinary goal acceptance remain open.
