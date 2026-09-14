@@ -75,6 +75,10 @@
 
 ### Fixed
 
+- Run the deadline measurement tests after competing test processes finish, retaining the
+  existing timing bounds. A hosted macOS run exposed a 255 ms overshoot under concurrent suite
+  load; that failed observation remains recorded in the implementation evidence.
+
 - **A regular expression is masked like the literal it is.** The claim beside the deletion parse
   check was that no other operator can leave a file which does not parse, and that claim is why
   only one operator is checked at runtime. Measured across every operator over 186 real files, it
