@@ -193,7 +193,7 @@ export async function executePilotGoal({
     }
     const contractDefaults = {
       maxSteps: settings.maxSteps,
-      maxTokens: execution.budget.tokens,
+      maxTokens: Math.min(200_000, execution.budget.tokens),
       maxWallMs: execution.budget.wallMs,
       immutablePaths,
       requiredChecks: ["tests"],
@@ -238,7 +238,7 @@ export async function executePilotGoal({
         riskTier: "medium",
         budget: {
           maxSteps: settings.maxSteps,
-          maxTokens: execution.budget.tokens,
+          maxTokens: Math.min(200_000, execution.budget.tokens),
           maxWallMs: execution.budget.wallMs,
         },
       }),
