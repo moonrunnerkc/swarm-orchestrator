@@ -1144,3 +1144,30 @@ one model permit, one test permit and two worktree slots. Each slot retains the 
 repair attempts, four graph revisions and one minute of separately bounded cleanup. The local
 model and weight digest are unchanged. No original observation is transferred into this cohort.
 This evidence-only update follows the frozen source and does not alter its evaluated behavior.
+
+### D6 exploratory comparison rubric
+
+The D6 reporting rubric is separately recorded at
+`sha256:75992d46e79bf0e0e1a14ef9640f35b1178924802c57e6cab08fb71e2245739b`,
+with rubric digest `sha256:b5db8973a34cdcc9b984d6c0ed86e2ef9b58fbedf7466fdbe6fa17376d1a0717`.
+Two replacement slots had settled when the declaration was written. This is exploratory work
+after the withdrawn observations and early replacement execution, not a change to the primary
+analysis or a claim of prospective statistical testing.
+
+Normalized reference patches identify nine tiny goals, at most 20 production-line additions
+plus deletions in one source file, and 12 single-file goals. Tests, declaration tests, examples,
+benchmarks and documentation are excluded from that source count. Four coupled goals are named
+with explicit API reasons: Commander 1678 and 2006, ts-pattern 253, and attrs 4b5b295b. Groups
+overlap and are reported separately for each comparison arm.
+
+Paired complete-goal acceptance takes precedence. Two accepted attempts are compared by wall
+time and reported input/output tokens; a preference requires dominance in both with at least
+one strict improvement. Tradeoffs, two failed goals, unknown usage and infrastructure failures
+remain separate outcomes. Repeated slots require a declared aggregation and cannot silently
+select a favorable attempt. No universal threshold or additional confidence interval is claimed.
+
+The existing pilot report includes this analysis through one focused reporting module. Two
+reporting test files, nine tests, passed in 601 ms, capture
+`sha256:9c357483c26667fc9eee260107049844db32ccae4e50ab89dc153fd1818ba9ad`.
+This binds source `3ddb11152f144542bbb2293e5f24b8a59e3d0731` plus the recorded reporting
+patch. No evaluated controller, model configuration, arm, check or budget changed.

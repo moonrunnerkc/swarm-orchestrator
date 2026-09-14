@@ -8,6 +8,7 @@ import { goalCampaignProtocolSchema } from "../../src/eval/goal-protocol.ts";
 import { asJsonValue, digestOfBytes, digestOfJson } from "../../src/evidence/canonical-json.ts";
 import { openEvidenceSession } from "../../src/evidence/session.ts";
 import { verifyBundle } from "../../src/evidence/verifier/verify.mjs";
+import { summarizeCrossover } from "./pilot-crossover.mjs";
 import { assertFrozenInputs } from "./pilot-run.mjs";
 
 const count = z.number().int().nonnegative();
@@ -379,6 +380,7 @@ export async function reportPilot(root) {
     ...summary,
     resources,
     inventory,
+    crossover: summarizeCrossover(frozen.candidates, summary.slots, protocol.arms),
     completeSchedule: original.goal.allObserved && campaign.unresolved().length === 0,
     limitations: [
       "All scheduled slots remain in the declared analysis. Infrastructure errors are not measurements of agent performance.",
