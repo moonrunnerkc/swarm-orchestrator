@@ -21,6 +21,16 @@ export function renderParallelReport(
 ): readonly string[] {
   const lines = [
     "parallel run",
+    field("outcome", result.outcome.status),
+    field("goal acceptance", result.outcome.goalAccepted ? "accepted" : "not established"),
+    field(
+      "requirements",
+      `${result.outcome.requirements.filter((requirement) => requirement.status === "accepted").length}/${result.outcome.requirements.length} accepted`,
+    ),
+    field(
+      "token budget",
+      `${result.outcome.usage.remaining} remaining; ${result.outcome.usage.spent} reported; ${result.outcome.usage.reserved} reserved; ${result.outcome.usage.unknownCalls} unknown call(s)`,
+    ),
     field("repository", context.repositoryRoot),
     field("base", `${short(result.baseCommit)} (${context.baseRef})`),
     field("workers", String(result.workers.length)),

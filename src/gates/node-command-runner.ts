@@ -5,6 +5,7 @@ import {
   UnauthorizableEnvironmentName,
 } from "../exec/child-environment.ts";
 import type { IsolationBackend } from "../exec/execution-mode.ts";
+import type { ResourcePool } from "../exec/resource-pool.ts";
 import { runProcessGroup } from "../exec/run-process.ts";
 import {
   type CommandOptions,
@@ -49,6 +50,7 @@ export function createNodeCommandRunner(
    * hours, still holding the checkout open.
    */
   cancellation?: AbortSignal,
+  pool?: ResourcePool,
 ): GateCommandRunner {
   const observe = async (
     file: string,
@@ -125,9 +127,26 @@ export function createNodeCommandRunner(
     };
   };
 
+  const scheduled = async (file: string, args: readonly string[], options: CommandOptions) => {
+    try {
+      return pool === undefined
+        ? await observe(file, args, options)
+        : await pool.run(() => observe(file, args, options), cancellation);
+    } catch (cause) {
+      if (!cancellation?.aborted) throw cause;
+      return {
+        exitCode: 128,
+        stdout: "",
+        stderr: "cancelled while waiting for a process slot",
+        durationMs: 0,
+        unavailable: null,
+      };
+    }
+  };
+
   return {
     run: (command: string, options: CommandOptions): Promise<GateObservation> =>
-      observe("/bin/sh", ["-c", command], options),
+      scheduled("/bin/sh", ["-c", command], options),
 
     runVouched: (argv: readonly string[], options: CommandOptions): Promise<GateObservation> => {
       const [program, ...args] = argv;
@@ -136,7 +155,7 @@ export function createNodeCommandRunner(
           unavailableObservation("the harness was handed an empty vector, so nothing was run"),
         );
       }
-      return observe(program, args, options);
+      return scheduled(program, args, options);
     },
   };
 }

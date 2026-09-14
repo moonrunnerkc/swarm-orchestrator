@@ -17,7 +17,8 @@ const nonEmpty = z.string().min(1);
 
 const taskContractSchema = z
   .strictObject({
-    version: z.union([z.literal(1), z.literal(2)]),
+    version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+    scopeKind: z.enum(["files", "workspace"]).optional(),
     taskId: nonEmpty,
     objective: nonEmpty,
     dependsOn: z.array(nonEmpty),
@@ -68,7 +69,20 @@ export function parseTaskContract(value: unknown): TaskContract {
     );
   }
   const contract = parsed.data;
-  const allowedPaths = [...new Set(contract.allowedPaths.map(contractPath))].sort();
+  const workspaceScope = contract.scopeKind === "workspace";
+  if (
+    workspaceScope &&
+    (contract.version !== 3 ||
+      contract.scopeAuthority !== "human" ||
+      contract.allowedPaths.length !== 1 ||
+      contract.allowedPaths[0] !== "**")
+  )
+    throw new MalformedTaskContractError(
+      "workspace scope requires version 3, explicit human authority and exactly the workspace marker",
+    );
+  const allowedPaths = workspaceScope
+    ? ["**"]
+    : [...new Set(contract.allowedPaths.map(contractPath))].sort();
   const immutablePaths = [
     ...new Set(
       contract.immutablePaths.map((path) =>

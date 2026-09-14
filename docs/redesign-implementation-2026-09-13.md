@@ -33,34 +33,34 @@ A runner alone does not complete an empirical requirement.
 | M0.1 | Current source, clean branch, history, commands and instruction reconciliation | Baseline above; historical tag present | observed |
 | M0.2 | Unavailable network enumeration reports unknown, required policy decides | Two regressions failed before the fix; all 16 focused tests pass afterward | validated |
 | M0.3 | Full gates, corpus prerequisite, existing attacks and compatibility baseline | Baseline: 282 files, 2846 tests passed. M0: 283 files, 2850 tests passed; full gates exit 0 | validated |
-| A1 | Effective objective, dependencies, authorized/immutable paths, tools, checks, execution and budget | contract resolution through public worker dispatch | open |
-| A2 | Worker declarations cannot enlarge controller scope; normalized paths | tool denial, amendment denial, post-run diff and shell-effect regressions | open |
-| A3 | Required checks run and affect acceptance; unsupported restrictions refuse dispatch | observed policy distinct from requested/effective policy | open |
-| B1 | Run context before planning; all activities share cancellation and budget | planning, queue, model, tests, integration, verification interruption | open |
-| B2 | Separate worktree, model-call and test-process limits | queue fairness and local contention fixtures | open |
-| B3 | In-flight input/output reservation, measured settlement, failed and unknown usage | exhaustion and provider failure regressions | open |
+| A1 | Effective objective, dependencies, authorized/immutable paths, tools, checks, execution and budget | graph and legacy workspace contracts reach tools, execution admission, budget and assessment; public dispatch tests | validated |
+| A2 | Worker declarations cannot enlarge controller scope; normalized paths | normalized exact graph scope, denied amendment and shell post-check regressions | validated |
+| A3 | Required checks run and affect acceptance; unsupported restrictions refuse dispatch | required advisory and undefined checks plus unsupported host network tests | validated |
+| B1 | Run context before planning; all activities share cancellation and budget | context precedes CLI planning and wraps provider calls, tests and final verification; planning cancellation tested; recovery open | partial |
+| B2 | Separate worktree, model-call and test-process limits | separate worktree cap and FIFO model/test permits, cancellation tests; contention measurement remains M4 | implemented |
+| B3 | In-flight input/output reservation, measured settlement, failed and unknown usage | reservation races, settlement, failed/unknown usage and original deadline restart tests | validated |
 | B4 | Stop dispatch, separately bounded cleanup, durable parallel lifecycle | cancellation and recovery integrations | open |
-| C1 | Failed integrated checks, conflicts and relevant ratchet failures start bounded repair | three complete development repair examples | open |
-| C2 | Retain rejected attempts and reachable commits; reuse failure context | accepted unrelated task executes once | open |
-| C3 | Revalidate repair and combined tree, one final task outcome | successful fallback retains failed history | open |
-| C4 | Repeated failure fingerprints and limits, exact blocker and partial work | ineffective repair exhaustion | open |
+| C1 | Failed integrated checks, conflicts and relevant ratchet failures start bounded repair | three real-worktree synthetic repair cases pass through the public runner | validated |
+| C2 | Retain rejected attempts and reachable commits; reuse failure context | rejected Git refs retained; accepted peer executes once in repair tests | validated |
+| C3 | Revalidate repair and combined tree, one final task outcome | repair and integration checks followed by exact-tree independent goal checks; final outcome tests | validated |
+| C4 | Repeated failure fingerprints and limits, exact blocker and partial work | repeated patch/base/reason fingerprint and attempt cap; blocker test passes | validated |
 | D1 | Readiness scheduling, one integration writer, actual integration base | dependent starts while unrelated worker runs | open |
 | D2 | Versioned bounded revisions: prerequisite, split, combine, reroute | cycle/reference rejection and overlap serialization | open |
 | D3 | Preserve requirements/history, invalidate affected acceptance | revision omission and changed-dependency tests | open |
 | D4 | Base/revision identity and stale candidate refusal | late worker after integration/revision change | open |
 | D5 | Typed bounded proposals, relevant deltas, provenance, independent alternatives | event projection and tool-path regressions | open |
 | D6 | Prefer one worker for tiny/coupled work | no-op, single-file, over-decomposition cases | open |
-| E1 | Independent final acceptance at exact integrated tree | all workers green but required interaction missing | open |
-| E2 | One authoritative CLI/exit/TUI/export assessment, distinct trust dimensions | public command and bundle tests | open |
-| E3 | User checks and recorded candidate checks protected from worker writes | author/exposure records, malicious edits refused | open |
-| E4 | Preserve strict reference/control package and human judgment gaps | existing acceptance corpus | open |
+| E1 | Independent final acceptance at exact integrated tree | fresh independent checkout with exact Git tree check; locally green omission refused | validated |
+| E2 | One authoritative CLI/exit/TUI/export assessment, distinct trust dimensions | CLI and plain progress report consume exported controller assessment; TUI and recovery remain | partial |
+| E3 | User checks and recorded candidate checks protected from worker writes | user and planner-authored candidate checks, immutable artifacts and authorship regression; bootstrap open | implemented |
+| E4 | Preserve strict reference/control package and human judgment gaps | strict reference/control path and existing corpus remain green; uncovered requirements unjudged | validated |
 | E5 | Explicit empty-repository bootstrap before acceptance pinning and implementation | bootstrap end-to-end fixture | open |
 | E6 | All obligations eligible before goal ranking, declared objective; legacy comparator retained | omission ineligible despite test volume | open |
 | F1 | Journal replay and reconciliation of attempts, usage, candidates, trees, integration, resources | crash/restart around each effect | open |
 | F2 | Original remaining budget/policy, no duplicate landing or ambiguous replay | restart and accounting tests | open |
 | F3 | Intent before effect, completion after; preserve torn/altered history | crash at journal boundaries | open |
 | F4 | Verify ownership before cleanup, retain user and other-session resources | cleanup ownership negatives | open |
-| G1 | Extract CLI/session/parallel composition and common settings/outcome | command/config precedence compatibility | open |
+| G1 | Extract CLI/session/parallel composition and common settings/outcome | parallel handler and common settings extracted; session extraction remains | partial |
 | G2 | Shared immutable verification setup, independent trust and known-answer tests | verifier/signature/hash parity and independent fixtures | open |
 | G3 | Harness routine claims, smaller optional vocabulary; compare before default change | prompt success and usage comparison | open |
 | G4 | Profile journal, polling, transcripts, peers, checks and contention first | fixed fixture time/space measurements | open |
@@ -128,4 +128,45 @@ contracts actually enforced deadlines; its original assertions remain intact.
 Full `m1-gates-formatted` command: exit 0, 285 files and 2866 tests passed, 71.15 seconds.
 Biome retains the baseline 22 warnings and one info diagnostic. The first full attempt stopped
 on formatting in the modified independent verifier; its log remains beside the corrected run.
-CLI lifecycle extraction, controller-wide accounting and ordinary goal acceptance remain open.
+CLI lifecycle extraction, shared accounting and ordinary goal acceptance are implemented in the next milestone below. Durable scheduling recovery remains open.
+
+
+## First complete repair loop
+
+The controller now keeps rejected candidates reachable, dispatches a bounded repair against the
+current integration commit, includes the prior patch and failure observation, reruns worker and
+integration gates, and derives one final outcome per task. Historical failures remain on the
+chain. `src/workers/adaptive-repair.test.ts` exercises missing prerequisites, a clean textual merge
+that fails behaviorally, a textual conflict, omission despite locally green workers, successful
+final acceptance and a forged exported obligation. These are synthetic development fixtures,
+not natural tasks or evidence of a swarm advantage.
+
+`src/workers/run-context.ts` owns model reservations, measured settlement, unknown usage,
+original deadline and separate model/test permits. Planning and workers share it. Failed or
+interrupted provider calls retain their reservation and refuse automatic restart until usage is
+reconciled. The input allowance is a conservative UTF-8 byte and framing estimate, not a billing
+guarantee. Provider cancellation does not guarantee zero monetary overrun. Durable dispatch and
+integration reconciliation are still M3 work.
+
+Ordinary goal contracts pin observable requirements, executable check bytes, authorship and
+exposure. The existing independent verifier runs them in a fresh checkout matching the final
+Git tree. Uncovered requirements remain unjudged. Model-authored checks remain candidate
+instruments, not independent ground truth. The strict reference/control policy remains separate.
+The embedded verifier re-derives the ordinary goal and controller assessments. Version-three
+task contracts preserve the legacy flat-task workspace authorization explicitly; graph tasks
+remain restricted to controller-named files. Immutable goal artifacts cannot enter worker patches.
+
+`src/cli-parallel.ts` now owns parallel composition, and `src/cli-run-settings.ts` centralizes
+settings resolution. Planning precedes implementation inside the shared context. New parallel
+options are `--goal-checks`, `--max-tokens`, `--repair-attempts`, `--model-concurrency` and
+`--test-concurrency`. Default worker prompt bytes are unchanged: 6505 characters, SHA-256
+`381b33f6ddcf544a1aa5bb2697b8bf78faefc864b1dcb274bd750467adedf453` on both the frozen baseline
+and current code (`m2-prompt-preservation.log`). This is preservation evidence, not a token or
+performance improvement. `m2-focused.log` records 26 files and 289 passing tests. Later full
+milestone validation must cover changes after that capture.
+
+
+Full `m2-gates`: exit 0, 290 test files and 2890 tests passed, 89.00 seconds. Biome checked
+597 files and retained 22 baseline warnings and one info diagnostic. No skipped tests were
+reported. The AI SDK seed warning is the existing unsupported-feature fixture. This validates
+the first complete repair loop, not M3 scheduler recovery or the held-out pilot.

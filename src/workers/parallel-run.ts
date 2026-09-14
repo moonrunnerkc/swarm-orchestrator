@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { runAgentTask } from "../agent-run.ts";
@@ -6,14 +7,30 @@ import type { Clock } from "../core/clock.ts";
 import type { LoopEvent } from "../core/loop-events.ts";
 import type { ModelClient } from "../core/model-client.ts";
 import type { RandomSource } from "../core/random-source.ts";
+import { asJsonValue } from "../evidence/canonical-json.ts";
+import {
+  declareGoalContract,
+  type GoalContract,
+  goalImmutablePaths,
+} from "../evidence/goal-contract.ts";
+import { LedgerSealedError, LedgerWriteFailedError } from "../evidence/ledger.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
+import { parseTaskContract } from "../evidence/task-contract.ts";
+import { harnessChildEnvironment } from "../exec/child-environment.ts";
 import type { IsolationBackend } from "../exec/execution-mode.ts";
 import type { GateSetOptions } from "../gates/default-gates.ts";
 import { createFileSetRegistry } from "../gates/file-set.ts";
+import {
+  type IndependentVerification,
+  verifyIndependently,
+} from "../gates/independent-verification.ts";
 import { emptyMeasureSnapshot, type MeasureSnapshot } from "../gates/measure-snapshot.ts";
+import { createNodeCommandRunner } from "../gates/node-command-runner.ts";
 import { summarizeRatchet } from "../gates/ratchet-summary.ts";
 import { type Attempt, type AttemptSelection, selectAttempt } from "./attempt-selector.ts";
+import { recordControllerEvent } from "./controller-events.ts";
 import { type PlannedAttempt, planAttempts } from "./fan-out.ts";
+import { assessController, type ControllerOutcome } from "./goal-outcome.ts";
 import { claimGraphOutcome, declareTaskGraph, type NodeOutcome } from "./graph-record.ts";
 import {
   type MergeQueueResult,
@@ -22,6 +39,7 @@ import {
   runMergeQueue,
 } from "./merge-queue.ts";
 import { createWorkPool } from "./pool.ts";
+import { createRunContext, type RunContext } from "./run-context.ts";
 import { blockedBy, scheduleLayers } from "./schedule.ts";
 import { recordSelection } from "./selection-record.ts";
 import { contractsFromGraph, declareTaskContracts, type TaskContract } from "./task-contract.ts";
@@ -36,6 +54,12 @@ const runProcess = promisify(execFile);
 const defaultNodeWallMs = 30 * 60 * 1000;
 
 interface ParallelRunOptions {
+  readonly goalContract?: GoalContract;
+  readonly runContext?: RunContext;
+  readonly repairAttempts?: number;
+  readonly modelConcurrency?: number;
+  readonly testConcurrency?: number;
+  readonly runStorePath?: string;
   readonly repositoryRoot: string;
   readonly baseRef: string;
   /** One task per worker, in the order they will be queued. */
@@ -85,6 +109,8 @@ interface ParallelRunOptions {
 }
 
 export interface WorkerResult {
+  readonly baseCommit: string;
+  readonly graphRevision: string;
   readonly workerId: string;
   /** Which task this worker was one attempt at, and which attempt it was. */
   readonly taskId: string;
@@ -105,6 +131,8 @@ export interface WorkerResult {
 }
 
 export interface ParallelRunResult {
+  readonly outcome: ControllerOutcome;
+  readonly verification: IndependentVerification | null;
   readonly workers: readonly WorkerResult[];
   /** One per task, empty where each task was tried once and there was nothing to choose. */
   readonly selections: readonly AttemptSelection[];
@@ -125,7 +153,47 @@ export interface ParallelRunResult {
  * is left to the human: a run that moved someone's checked-out branch under them would be a
  * worse failure than any merge conflict.
  */
-export async function runInParallel(options: ParallelRunOptions): Promise<ParallelRunResult> {
+export async function runInParallel(input: ParallelRunOptions): Promise<ParallelRunResult> {
+  const context =
+    input.runContext ??
+    (await createRunContext({
+      evidence: input.coordinator,
+      clock: input.clock,
+      runId: input.runId,
+      maxTokens: input.maxTokens ?? 200_000,
+      maxWallMs: input.remainingWallMs?.() ?? defaultNodeWallMs,
+      modelConcurrency: input.modelConcurrency ?? 1,
+      testConcurrency: input.testConcurrency ?? 1,
+      signal: input.abortSignal,
+    }));
+  try {
+    const goalContract =
+      input.goalContract === undefined
+        ? undefined
+        : await declareGoalContract(input.coordinator, input.goalContract);
+    return await executeParallel({
+      ...input,
+      immutablePaths: [
+        ...(input.immutablePaths ?? []),
+        ...(goalContract === undefined ? [] : goalImmutablePaths(goalContract)),
+      ],
+      runContext: context,
+      abortSignal: context.signal,
+      remainingWallMs: () =>
+        Math.min(context.remainingWallMs(), input.remainingWallMs?.() ?? Infinity),
+    });
+  } finally {
+    if (input.runContext === undefined) context.dispose();
+  }
+}
+
+async function executeParallel(options: ParallelRunOptions): Promise<ParallelRunResult> {
+  if (
+    !Number.isInteger(options.repairAttempts ?? 2) ||
+    (options.repairAttempts ?? 2) < 0 ||
+    (options.repairAttempts ?? 2) > 8
+  )
+    throw new Error("repairAttempts must be an integer from 0 through 8");
   const baseCommit = (
     await runProcess("git", ["rev-parse", options.baseRef], { cwd: options.repositoryRoot })
   ).stdout.trim();
@@ -142,7 +210,28 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
   const graph = options.graph ?? null;
   const contracts =
     graph === null
-      ? []
+      ? options.tasks.map((objective, index) =>
+          parseTaskContract({
+            version: 3,
+            taskId: `task-${index + 1}`,
+            objective,
+            dependsOn: [],
+            scopeKind: "workspace",
+            allowedPaths: ["**"],
+            immutablePaths: options.immutablePaths ?? [],
+            allowedTools: ["read", "write", "edit", "list", "search", "shell", "trail"],
+            network: options.isolation === undefined ? "unrestricted" : "denied",
+            execution: options.isolation === undefined ? "restricted" : "isolated",
+            requiredChecks: options.requiredChecks ?? [],
+            budget: {
+              maxSteps: options.maxSteps,
+              maxWallMs: Math.max(1, options.remainingWallMs?.() ?? defaultNodeWallMs),
+              maxTokens: options.maxTokens ?? 200_000,
+            },
+            riskTier: "medium",
+            scopeAuthority: "human",
+          }),
+        )
       : contractsFromGraph(graph, {
           maxSteps: options.maxSteps,
           maxWallMs: Math.max(1, options.remainingWallMs?.() ?? defaultNodeWallMs),
@@ -161,7 +250,11 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
         node === undefined ||
         contract.objective !== node.instruction ||
         contract.allowedPaths.some((path) => !node.files.includes(path)) ||
-        node.acceptance.some((id) => !contract.requiredChecks.includes(id))
+        node.acceptance.some((id) => !contract.requiredChecks.includes(id)) ||
+        node.dependsOn.length !== contract.dependsOn.length ||
+        node.dependsOn.some((id) => !contract.dependsOn.includes(id)) ||
+        (options.immutablePaths ?? []).some((path) => !contract.immutablePaths.includes(path)) ||
+        (options.requiredChecks ?? []).some((id) => !contract.requiredChecks.includes(id))
       ) {
         throw new Error(
           `contract ${contract.taskId} does not preserve its graph scope and acceptance`,
@@ -175,14 +268,20 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
       throw new Error("every graph node requires exactly one effective contract");
     }
     await declareTaskGraph(options.coordinator, graph, options.graphSource ?? "file");
-    await declareTaskContracts(options.coordinator, effectiveContracts, baseCommit);
   }
+  await declareTaskContracts(options.coordinator, effectiveContracts, baseCommit);
   // A run without a graph is a run with one layer holding every task, so both paths are the
   // same loop and the ordinary run reaches the queue exactly once, as it always did. A graph's
   // layers carry their node ids, which is what a blocked node is named by.
   const layers: readonly { ids: readonly string[]; tasks: readonly string[] }[] =
     graph === null ? [{ ids: [], tasks: options.tasks }] : layersOf(graph);
 
+  await recordControllerEvent(options.coordinator, {
+    kind: "work-declared",
+    tasks: (graph?.nodes.map((node) => node.instruction) ?? options.tasks).map(
+      (objective, index) => ({ id: `task-${index + 1}`, objective }),
+    ),
+  });
   const integration = await addWorktree({
     repositoryRoot: options.repositoryRoot,
     path: join(options.scratchRoot, "integration"),
@@ -206,6 +305,7 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
   async function landLayer(proposals: readonly RankedProposal[]): Promise<void> {
     const landed = await runMergeQueue({
       integrationPath: integration.path,
+      commandPool: options.runContext?.tests,
       abortSignal: options.abortSignal,
       ...(options.isolation === undefined
         ? {}
@@ -268,7 +368,10 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
               registered,
               effectiveContracts.find(
                 (contract) =>
-                  contract.taskId === runnable[plannedTaskIds.indexOf(attempt.taskId)]?.id,
+                  contract.taskId ===
+                  (graph === null
+                    ? attempt.taskId
+                    : runnable[plannedTaskIds.indexOf(attempt.taskId)]?.id),
               ),
             ),
           ),
@@ -293,6 +396,92 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
         await landLayer(chosen.proposals);
       }
 
+      for (const taskId of taskIds) {
+        const initialAttempt = [...workers].reverse().find((worker) => worker.taskId === taskId);
+        if (initialAttempt === undefined || landedTasks.has(taskId)) continue;
+        let previous: WorkerResult = initialAttempt;
+        const seenFailures = new Set<string>();
+        for (let repair = 1; repair <= (options.repairAttempts ?? 2); repair++) {
+          if (options.abortSignal.aborted || landedTasks.has(taskId)) break;
+          const rejection = [...landings]
+            .reverse()
+            .find((landing) => landing.workerId === previous?.workerId && !landing.landed);
+          // Admission failures and empty attempts cannot justify another provider call.
+          if (previous.commit === null && rejection === undefined) break;
+          const feedback = rejection?.feedback ?? previous.detail;
+          const patch =
+            previous.commit === null
+              ? ""
+              : (
+                  await runProcess("git", ["show", "--format=", "--binary", previous.commit], {
+                    cwd: options.repositoryRoot,
+                    maxBuffer: 64_000_000,
+                  })
+                ).stdout;
+          const failureKey = createHash("sha256")
+            .update(JSON.stringify([head, rejection?.reason ?? "worker-checks", patch]))
+            .digest("hex");
+          if (seenFailures.has(failureKey)) {
+            await recordControllerEvent(options.coordinator, {
+              kind: "repair-exhausted",
+              taskId,
+              previousWorkerId: previous.workerId,
+              baseCommit: head,
+              reason: `repeated ineffective repair: ${feedback}`,
+            });
+            break;
+          }
+          seenFailures.add(failureKey);
+          const workerId = `${taskId}-repair-${repair}`;
+          await recordControllerEvent(options.coordinator, {
+            kind: "repair-requested",
+            taskId,
+            workerId,
+            previousWorkerId: previous.workerId,
+            previousCommit: previous.commit,
+            baseCommit: head,
+            attempt: repair,
+            reason: feedback,
+            failureKey,
+          });
+          const repaired = await pool.run(() =>
+            runOneWorker(
+              {
+                workerId,
+                taskId,
+                task: previous?.task ?? "",
+                attemptIndex: options.redundancy + repair - 1,
+                sampling: null,
+              },
+              head,
+              baseCommit,
+              options,
+              registered,
+              effectiveContracts.find(
+                (contract) =>
+                  contract.taskId === (graph === null ? taskId : nodeOfTask.get(taskId)),
+              ),
+              `Previous candidate ${previous?.commit ?? "none"}; current integration base ${head}.\nFailure observation:\n${feedback.slice(0, 24000)}\nPrevious patch (retained in Git; excerpt limited to 48000 characters):\n${patch.slice(0, 48000)}\nRepair this task against the current tree and preserve already accepted work. The authorized paths and required checks remain unchanged.`,
+            ),
+          );
+          workers.push(repaired);
+          previous = repaired;
+          if (repaired.green && repaired.commit !== null)
+            await landLayer([{ winner: repaired, alternates: [] }]);
+          if (repair === (options.repairAttempts ?? 2) && !landedTasks.has(taskId)) {
+            await recordControllerEvent(options.coordinator, {
+              kind: "repair-exhausted",
+              taskId,
+              previousWorkerId: repaired.workerId,
+              baseCommit: head,
+              reason:
+                [...landings].reverse().find((landing) => landing.workerId === repaired.workerId)
+                  ?.feedback ?? repaired.detail,
+            });
+          }
+        }
+      }
+
       // Always, including where the layer proposed nothing at all: a node whose attempts all
       // finished red did not land either, and its dependents must not run against a tree
       // that lacks it. Skipping this on the empty path is what let a blocked node run.
@@ -309,7 +498,17 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
 
   // The queue is finished with the worker branches now, so they go. They outlive their
   // worktrees on purpose, and nothing used to outlive them.
-  const sweptBranches = await sweepRunBranches(options.repositoryRoot, options.runId);
+  const sweptBranches = await sweepRunBranches(
+    options.repositoryRoot,
+    options.runId,
+    workers
+      .filter(
+        (worker) =>
+          worker.commit === null ||
+          landings.some((landing) => landing.workerId === worker.workerId && landing.landed),
+      )
+      .map((worker) => ({ branch: worker.branch, commit: worker.commit ?? worker.baseCommit })),
+  );
 
   await claimTheChosenLanded(selections, queue, options.coordinator);
   if (graph !== null) {
@@ -330,6 +529,8 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
       provenance: ["tool-output"],
       payload: {
         workerId: worker.workerId,
+        taskId: worker.taskId,
+        attemptIndex: worker.attemptIndex,
         sessionId: worker.evidence.sessionId,
         task: worker.task,
         branch: worker.branch,
@@ -343,7 +544,80 @@ export async function runInParallel(options: ParallelRunOptions): Promise<Parall
     });
   }
 
+  const tree = (
+    await runProcess("git", ["rev-parse", `${head}^{tree}`], { cwd: options.repositoryRoot })
+  ).stdout.trim();
+  await recordControllerEvent(options.coordinator, {
+    kind: "integration-observed",
+    commit: head,
+    tree,
+  });
+  let verification: IndependentVerification | null = null;
+  if (options.goalContract !== undefined && !options.abortSignal.aborted) {
+    const patch = (
+      await runProcess("git", ["diff", "--binary", baseCommit, head], {
+        cwd: options.repositoryRoot,
+        maxBuffer: 64_000_000,
+      })
+    ).stdout;
+    const commands = createNodeCommandRunner(
+      options.clock,
+      harnessChildEnvironment(),
+      undefined,
+      options.abortSignal,
+      options.runContext?.tests,
+    );
+    verification = await verifyIndependently({
+      repositoryRoot: options.repositoryRoot,
+      baseCommit,
+      patch,
+      immutablePaths: options.immutablePaths ?? [],
+      clock: options.clock,
+      timeoutMs: Math.min(120_000, options.remainingWallMs?.() ?? 120_000),
+      commands,
+      ...(options.isolation === undefined
+        ? {}
+        : {
+            commandsForCheckout: async (checkout: string) =>
+              createNodeCommandRunner(
+                options.clock,
+                harnessChildEnvironment(),
+                options.isolation?.(checkout),
+                options.abortSignal,
+                options.runContext?.tests,
+              ),
+          }),
+      goal: { contract: options.goalContract, evidence: options.coordinator, tree },
+    });
+    await options.coordinator.record({
+      type: "independent-verification",
+      actor: "harness",
+      provenance: ["tool-output"],
+      payload: asJsonValue(verification),
+    });
+  }
+  const outcome = await assessController({
+    evidence: options.coordinator,
+    taskIds: Array.from(
+      { length: graph?.nodes.length ?? options.tasks.length },
+      (_, index) => `task-${index + 1}`,
+    ),
+    workers,
+    landings,
+    tree,
+    goal: options.goalContract ?? null,
+    verification,
+    cancelled: options.abortSignal.aborted,
+    usage: options.runContext?.accounting() ?? {
+      spent: 0,
+      reserved: 0,
+      unknownCalls: 0,
+      remaining: 0,
+    },
+  });
   return {
+    outcome,
+    verification,
     workers,
     selections,
     queue,
@@ -406,7 +680,7 @@ async function chooseProposals(
   if (options.redundancy <= 1) {
     return {
       proposals: workers
-        .filter((worker) => worker.commit !== null)
+        .filter((worker) => worker.green && worker.commit !== null)
         .map((winner) => ({ winner, alternates: [] })),
       selections: [],
     };
@@ -472,6 +746,7 @@ async function runOneWorker(
   options: ParallelRunOptions,
   registered: TrailPeer[],
   contract?: TaskContract,
+  repairFeedback?: string,
 ): Promise<WorkerResult> {
   const { workerId, task, taskId, attemptIndex } = planned;
   const evidence = await options.createWorkerSession(workerId);
@@ -485,6 +760,8 @@ async function runOneWorker(
     provenance: ["user"],
     payload: {
       workerId,
+      taskId,
+      attemptIndex,
       sessionId: evidence.sessionId,
       task,
       branch,
@@ -493,6 +770,7 @@ async function runOneWorker(
   });
 
   try {
+    options.abortSignal.throwIfAborted();
     worktree = await addWorktree({
       repositoryRoot: options.repositoryRoot,
       path: join(options.scratchRoot, workerId),
@@ -504,13 +782,18 @@ async function runOneWorker(
     const remainingWall = options.remainingWallMs?.() ?? null;
     const result = await runAgentTask({
       ...(contract === undefined ? {} : { contract }),
+      ...(repairFeedback === undefined ? {} : { repairFeedback }),
       task,
       workspace: worktree.path,
       baseRef: baseCommit,
       criteriaRef,
       maxSteps: options.maxSteps,
       attempts: options.attempts,
-      model: options.createModel(workerId, evidence),
+      model:
+        options.runContext?.model(workerId, options.createModel(workerId, evidence)) ??
+        options.createModel(workerId, evidence),
+      commandPool: options.runContext?.tests,
+      ...(options.runStorePath === undefined ? {} : { runStorePath: options.runStorePath }),
       evidence,
       fileSet,
       clock: options.clock,
@@ -532,15 +815,15 @@ async function runOneWorker(
       ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
     });
 
-    // Only green work is offered to the queue. A worker whose own gates are red has nothing
-    // worth arbitrating, and letting it propose would spend a full integration gate run
-    // discovering what its own gates already said.
-    const commit = result.green ? await worktree.commitAll(`${workerId}: ${task}`) : null;
+    // Rejected patches remain reachable for repair. Only green candidates enter integration.
+    const commit = await worktree.commitAll(`${workerId}: ${task}`);
 
     const measures = result.gates.outcome.finalMeasures;
     const cycle = result.gates.outcome.finalCycle;
 
     return {
+      baseCommit,
+      graphRevision: "initial",
       workerId,
       taskId,
       attemptIndex,
@@ -559,6 +842,7 @@ async function runOneWorker(
       addedLines: cycle.measures.addedLines ?? 0,
     };
   } catch (cause) {
+    if (cause instanceof LedgerWriteFailedError || cause instanceof LedgerSealedError) throw cause;
     const detail = `the worker did not finish: ${describeCause(cause)}`;
     // On the worker's own chain as well as in the report: a worker that fell over before it
     // recorded anything would otherwise ship an empty bundle that explains nothing.
@@ -569,6 +853,8 @@ async function runOneWorker(
       payload: { workerId, task, stopReason: "worker-failed", detail },
     });
     return {
+      baseCommit,
+      graphRevision: "initial",
       workerId,
       taskId,
       attemptIndex,

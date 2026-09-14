@@ -5,7 +5,7 @@ import "./node-floor.ts";
 import { spawn } from "node:child_process";
 import { appendFileSync, statSync } from "node:fs";
 import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
-import { availableParallelism, homedir, platform, tmpdir } from "node:os";
+import { homedir, platform, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { render as inkRender } from "ink";
@@ -21,7 +21,6 @@ import {
   type GatesCommand,
   type GcCommand,
   type InitCommand,
-  type ParallelCommand,
   parseCommandLine,
   type ReplayCommand,
   type ReviewCommand,
@@ -30,6 +29,7 @@ import {
   usage,
   type VerifyCommand,
 } from "./cli-options.ts";
+import { parallel } from "./cli-parallel.ts";
 import {
   abortRun,
   inspectRun,
@@ -39,6 +39,13 @@ import {
   retryStep,
   runStorePath,
 } from "./cli-run-commands.ts";
+import {
+  diffBudgetFrom,
+  gateOptionsFrom,
+  noFlagSettings,
+  registrySettingsFrom,
+  settingsFor,
+} from "./cli-run-settings.ts";
 import { createSystemClock, createSystemRandom } from "./cli-runtime-inputs.ts";
 import {
   chooseModel,
@@ -47,21 +54,15 @@ import {
   shortlistFetchTimeoutMs,
 } from "./cli-select.ts";
 import { initializeSwarmToml, initWouldHelp, type PlannedGate } from "./config/init.ts";
-import {
-  type CommandLineSettings,
-  type ResolvedSettings,
-  resolveSettings,
-} from "./config/settings.ts";
-import { readSwarmToml } from "./config/swarm-toml.ts";
+import type { ResolvedSettings } from "./config/settings.ts";
 import type { Clock } from "./core/clock.ts";
-import type { ConversationMessage, ModelClient } from "./core/model-client.ts";
+import type { ConversationMessage } from "./core/model-client.ts";
 import type { RandomSource } from "./core/random-source.ts";
 import type { StopReason } from "./core/termination.ts";
 import { buildAttestation, signAttestation } from "./evidence/attestation.ts";
 import { bundleSourceFromRecorder, exportBundle, readBundle } from "./evidence/bundle.ts";
 import type { BundleManifest } from "./evidence/bundle-manifest.ts";
 import { digestOfBytes } from "./evidence/canonical-json.ts";
-import { exportCombinedBundle } from "./evidence/combined-bundle.ts";
 import { buildEvidenceDag, type EvidenceDag } from "./evidence/dag.ts";
 import { createRecordingModelClient } from "./evidence/model-call-recording.ts";
 import { replayBundle } from "./evidence/replay.ts";
@@ -83,7 +84,6 @@ import { createRunCancellation } from "./exec/run-cancellation.ts";
 import { recordedContainerBackend } from "./exec/runtime-resource.ts";
 import type { AutoResolveOutcome } from "./gates/auto-resolve.ts";
 import type { BondOutcome } from "./gates/bond-runner.ts";
-import type { GateSetOptions } from "./gates/default-gates.ts";
 import {
   defaultDiffBudget,
   runGatesEngine,
@@ -92,7 +92,6 @@ import {
 } from "./gates/engine.ts";
 import { describeEscalation } from "./gates/escalation.ts";
 import { createFileSetRegistry } from "./gates/file-set.ts";
-import type { DiffBudget } from "./gates/gate-definition.ts";
 import { citedRecords, type GateCycle, outstandingJustifications } from "./gates/gate-runner.ts";
 import { resolveBaseCommit } from "./gates/git-workspace.ts";
 import { createNodeCommandRunner } from "./gates/node-command-runner.ts";
@@ -102,15 +101,10 @@ import { diagnose, remediesFor } from "./install/health.ts";
 import { inspectInstall } from "./install/inspect.ts";
 import { describeInstall } from "./install/report.ts";
 import { exitCodes, jsonEventLine, jsonResultLine } from "./machine-output.ts";
-import {
-  localEndpointRecord,
-  type ResolvedLocalEndpoint,
-} from "./providers/endpoint-resolution.ts";
+import { localEndpointRecord } from "./providers/endpoint-resolution.ts";
 import { parseModelSpec } from "./providers/model-spec.ts";
 import { createProviderRegistry } from "./providers/registry.ts";
 import { fetchServedModels } from "./providers/served-models.ts";
-import type { TransportTraceSink } from "./providers/transport-trace.ts";
-import { createFileTraceSink } from "./providers/transport-trace-file.ts";
 import {
   type BackendCanary,
   canaryRecord,
@@ -156,73 +150,9 @@ import { startCalibrateInterface } from "./tui/calibrate-interface.ts";
 import { describeEvidence, type EvidenceSummary } from "./tui/evidence-panel.ts";
 import { resolveKeyBindings } from "./tui/key-bindings.ts";
 import { evidenceLocation, type OpenCommand, openEnvironment } from "./tui/open-path.ts";
-import { describeLoopEvent } from "./tui/plain-lines.ts";
 import { type SessionInterface, startSessionInterface } from "./tui/session-interface.ts";
 import { resolveTheme } from "./tui/theme.ts";
 import { runEmbeddedVerifier } from "./tui/verify-bundle.ts";
-import { renderParallelReport } from "./workers/parallel-report.ts";
-import { type ParallelRunResult, runInParallel } from "./workers/parallel-run.ts";
-import { type PlannerOutcome, runPlanner } from "./workers/planner-run.ts";
-import { defaultWorkerConcurrency } from "./workers/pool.ts";
-import { readTaskGraph, type TaskGraph } from "./workers/task-graph.ts";
-
-const noFlagSettings: CommandLineSettings = {
-  model: null,
-  maxSteps: null,
-  attempts: null,
-  maxWallMinutes: null,
-  localEndpoint: null,
-};
-
-/**
- * Config is read once, here at the composition root, and injected downward: nothing below
- * cli.ts sees the file or the environment. Precedence lives in src/config/settings.ts.
- */
-async function settingsFor(
-  directory: string,
-  flags: CommandLineSettings,
-): Promise<ResolvedSettings> {
-  const found = await readSwarmToml({ directory, readFile: (path) => readFile(path, "utf8") });
-  return resolveSettings({ flags, env: process.env, toml: found?.toml ?? null });
-}
-
-function gateOptionsFrom(settings: ResolvedSettings): GateSetOptions | undefined {
-  return Object.keys(settings.gateCommandOverrides).length === 0
-    ? undefined
-    : { commandOverrides: settings.gateCommandOverrides };
-}
-
-function diffBudgetFrom(settings: ResolvedSettings): DiffBudget | undefined {
-  return Object.keys(settings.diffBudget).length === 0
-    ? undefined
-    : { ...defaultDiffBudget, ...settings.diffBudget };
-}
-
-function registrySettingsFrom(
-  settings: ResolvedSettings,
-  localBackend: ResolvedLocalEndpoint | null,
-): {
-  anthropicApiKey: string | undefined;
-  openaiApiKey: string | undefined;
-  googleApiKey: string | undefined;
-  localBaseUrl: string | undefined;
-  localThinking: boolean | null;
-  transportTrace: TransportTraceSink | undefined;
-} {
-  return {
-    anthropicApiKey: settings.providerKeys.anthropic,
-    openaiApiKey: settings.providerKeys.openai,
-    googleApiKey: settings.providerKeys.google,
-    localBaseUrl: localBackend?.url,
-    localThinking: settings.localThinking,
-    // Built here rather than in the registry, so the one module that talks to a network still
-    // does no file IO of its own. Nothing is opened until a call is actually traced.
-    transportTrace:
-      settings.transportTracePath === null
-        ? undefined
-        : createFileTraceSink(settings.transportTracePath),
-  };
-}
 
 /**
  * The bundle's own consistency and the identity that signed it, reported apart. A bundle
@@ -1734,47 +1664,6 @@ async function addCase(options: AddCaseCommand): Promise<number> {
  * person hand-writes and what a planner declares are the same artifact, so the scheduler and
  * the outcome claim do not care which happened, and the record says which it was.
  */
-async function readTasksFile(
-  path: string,
-): Promise<{ tasks: readonly string[]; graph: TaskGraph | null }> {
-  const text = await readFile(path, "utf8");
-
-  if (text.trimStart().startsWith("{")) {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text);
-    } catch (cause) {
-      throw new Error(`${path} starts like JSON but is not: ${(cause as Error).message}`);
-    }
-    const graph = readTaskGraph(parsed);
-    return { tasks: graph.nodes.map((node) => node.instruction), graph };
-  }
-
-  const tasks = text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !line.startsWith("#"));
-
-  if (tasks.length === 0) {
-    throw new Error(
-      `${path} names no tasks. Put one task per line; lines starting with # are ignored. A ` +
-        "file that begins with { is read as a JSON task graph instead.",
-    );
-  }
-  return { tasks, graph: null };
-}
-
-interface DecomposeContext {
-  readonly workspace: string;
-  readonly sessionRoot: string;
-  readonly runId: string;
-  readonly clock: Clock;
-  readonly random: RandomSource;
-  readonly home: string;
-  readonly model: () => ModelClient;
-  readonly maxSteps: number;
-}
-
 /**
  * What the shell is told. Green is the gates' verdict on the tree, so that is the exit code,
  * and a run someone cancelled reports the code a shell reports for that rather than borrowing
@@ -1789,271 +1678,6 @@ function exitCodeFor(stopReason: StopReason, green: boolean): number {
     return cancelledBySignal;
   }
   return green ? exitCodes.acceptable : exitCodes.notAcceptable;
-}
-
-/** The planner, on a chain of its own, so what it read before deciding is on the record. */
-/**
- * What to try next, per way the planner can end without a graph. Each of these wants a
- * different thing done about it, which is the whole reason the stop reason travels.
- */
-function describePlannerStop(stopReason: string): string {
-  switch (stopReason) {
-    case "empty-response":
-      return (
-        "The model answered with neither text nor a tool call, which a broad goal tends to " +
-        "produce: try one that names a single piece of work."
-      );
-    case "output-cap":
-      return (
-        "It was cut off at the output-token cap before it said anything, which is what a " +
-        "reasoning model does when it spends the whole budget thinking: try a model that " +
-        "reasons less, or a goal that needs less of it."
-      );
-    case "max-steps":
-      return "It ran out of steps before it declared anything: raise --max-steps.";
-    case "max-wall-time":
-      return "It ran out of wall time before it declared anything: raise --max-wall-minutes.";
-    case "completed":
-      return (
-        "It finished without calling declare_task_graph, so it either answered in prose or " +
-        "could not drive the tool: check its session, and try a narrower goal."
-      );
-    case "model-error":
-      return "The model could not be reached; the error is on its chain.";
-    default:
-      return "Its chain records what happened.";
-  }
-}
-
-async function decompose(goal: string, context: DecomposeContext): Promise<PlannerOutcome> {
-  const evidence = await openEvidenceSession({
-    root: context.sessionRoot,
-    sessionId: `${context.runId}-plan`,
-    clock: context.clock,
-  });
-  process.stdout.write(`planning: ${goal}\n`);
-
-  const outcome = await runPlanner({
-    goal,
-    workspace: context.workspace,
-    homeDir: context.home,
-    model: createRecordingModelClient(context.model(), evidence),
-    evidence,
-    clock: context.clock,
-    random: context.random,
-    emit: () => {},
-    maxSteps: context.maxSteps,
-    abortSignal: new AbortController().signal,
-  });
-
-  if (outcome.graph !== null) {
-    const named = outcome.graph.nodes.map((node) => node.id).join(", ");
-    process.stdout.write(`planned ${outcome.graph.nodes.length} task(s): ${named}\n`);
-  }
-  return outcome;
-}
-
-/**
- * Every task landed something. Which attempt it was is the selection's business; what the
- * exit code answers is whether the run produced a change for each task it was given.
- */
-function landedEveryTask(result: ParallelRunResult): number {
-  const landed = new Set(
-    (result.queue?.landings ?? [])
-      .filter((landing) => landing.landed)
-      .map((landing) => result.workers.find((worker) => worker.workerId === landing.workerId))
-      .map((worker) => worker?.taskId)
-      .filter((taskId): taskId is string => taskId !== undefined),
-  );
-  const asked = new Set(result.workers.map((worker) => worker.taskId));
-  return landed.size === asked.size ? 0 : 1;
-}
-
-/**
- * N workers over worktrees, then the queue. The composition root does what it always does:
- * every ambient thing enters here, and the coordinator itself stays testable without one.
- */
-async function parallel(options: ParallelCommand): Promise<number> {
-  const settings = await settingsFor(options.workspace, {
-    model: options.modelSpec,
-    maxSteps: options.maxSteps,
-    attempts: options.attempts,
-    maxWallMinutes: options.maxWallMinutes,
-    localEndpoint: options.localEndpoint,
-  });
-  const clock = createSystemClock();
-  const random = createSystemRandom();
-  const home = homedir();
-  const sessionRoot = defaultSessionRoot(home);
-  const runId = createSessionId(clock, random);
-
-  const fromFile = options.tasksFile === null ? null : await readTasksFile(options.tasksFile);
-  const spec = parseModelSpec(settings.modelSpec);
-  const localBackend = await resolveLocalBackend(settings, [spec]);
-  const registry = createProviderRegistry(registrySettingsFrom(settings, localBackend));
-
-  const coordinator = await openEvidenceSession({
-    root: sessionRoot,
-    sessionId: `${runId}-queue`,
-    clock,
-  });
-  if (localBackend !== null) {
-    await coordinator.record(localEndpointRecord(localBackend));
-  }
-  // Worktrees live outside the repository and outside the session store, so a worker's tools
-  // can reach neither the tree the user is in nor anybody's evidence.
-  const scratchRoot = await mkdtemp(join(tmpdir(), "swarm-parallel-"));
-
-  const planned =
-    options.goal === null
-      ? null
-      : await decompose(options.goal, {
-          workspace: options.workspace,
-          sessionRoot,
-          runId,
-          clock,
-          random,
-          home,
-          model: () => registry.create(spec),
-          maxSteps: settings.maxSteps,
-        });
-  const graph = planned === null ? (fromFile?.graph ?? null) : planned.graph;
-  if (planned !== null && planned.graph === null) {
-    // How it stopped, not just that nothing arrived: a loop that ran out of steps wants a
-    // different answer from one whose model returned nothing at all, and a person told only
-    // "no graph" cannot tell those apart.
-    throw new Error(
-      `the planner declared no task graph. It stopped with "${planned.stopReason}" after ` +
-        `${planned.steps} step(s), and its session records what it read and what it said. ` +
-        `${describePlannerStop(planned.stopReason)} Or write the graph yourself and pass it ` +
-        "with --tasks: a file beginning with { is read as one.",
-    );
-  }
-  const tasks =
-    graph === null ? (fromFile?.tasks ?? []) : graph.nodes.map((node) => node.instruction);
-
-  const redundancy = options.redundancy ?? 1;
-  // Capped whether or not a task is tried several ways. Twenty tasks against one local model
-  // server is the same failure as one task tried twenty ways, and the fan-out was unbounded
-  // here long before redundancy existed.
-  const concurrency =
-    options.concurrency ??
-    defaultWorkerConcurrency({
-      servedLocally: spec.provider === "local",
-      cores: availableParallelism(),
-    });
-
-  // One place this run is stopped from: the wall budget, a Ctrl-C, and a supervisor's SIGTERM
-  // all reach the same signal, and every worker is handed that signal rather than a fresh
-  // controller nobody aborts. Before this, `--max-wall-minutes` reached `runInParallel` through
-  // a spread into an options object with no such field, so it did nothing at all.
-  const parallelIsolation = parseIsolationOption(options.isolation, options.workspace);
-  const cancellation = createRunCancellation({
-    clock,
-    wallBudgetMs: settings.maxWallMinutes === null ? null : settings.maxWallMinutes * 60_000,
-  });
-  const onInterrupt = () => {
-    cancellation.cancel("interrupted");
-  };
-  const onTerminate = () => {
-    cancellation.cancel("terminated");
-  };
-  process.on("SIGINT", onInterrupt);
-  process.on("SIGTERM", onTerminate);
-
-  const workerCount = tasks.length * redundancy;
-  process.stdout.write(
-    redundancy > 1
-      ? `starting ${tasks.length} task(s) ${redundancy} ways from ${options.baseRef}, ` +
-          `${concurrency} of ${workerCount} worker(s) at a time\n`
-      : `starting ${workerCount} worker(s) from ${options.baseRef}, ` +
-          `${concurrency} at a time\n`,
-  );
-  const gateOptions = gateOptionsFrom(settings);
-
-  try {
-    const result = await runInParallel({
-      repositoryRoot: options.workspace,
-      baseRef: options.baseRef,
-      tasks,
-      runId,
-      scratchRoot,
-      coordinator,
-      createWorkerSession: (workerId) =>
-        openEvidenceSession({ root: sessionRoot, sessionId: `${runId}-${workerId}`, clock }),
-      createModel: (_workerId, evidence) =>
-        createRecordingModelClient(registry.create(spec), evidence, { transcript: "components" }),
-      redundancy,
-      concurrency,
-      modelSpec: settings.modelSpec,
-      ...(graph === null
-        ? {}
-        : { graph, graphSource: options.goal === null ? ("file" as const) : ("goal" as const) }),
-      clock,
-      random,
-      emit: (workerId, event) => {
-        const line = describeLoopEvent(event);
-        if (line !== null) {
-          process.stdout.write(`[${workerId}] ${line}\n`);
-        }
-      },
-      maxSteps: settings.maxSteps,
-      attempts: settings.attempts,
-      remainingWallMs: () => cancellation.remainingMs(),
-      ...(parallelIsolation === null
-        ? {}
-        : {
-            isolation: (worktreePath: string) =>
-              recordedContainerBackend(
-                { ...parallelIsolation, workspaceRoot: worktreePath },
-                coordinator,
-              ),
-          }),
-      ...(gateOptions === undefined ? {} : { gateOptions }),
-      abortSignal: cancellation.signal,
-    });
-
-    for (const line of renderParallelReport(result, {
-      repositoryRoot: options.workspace,
-      baseRef: options.baseRef,
-    })) {
-      process.stdout.write(`${line}\n`);
-    }
-
-    const signing = await resolveSigningKey(createKeychainSecretStore({ platform: platform() }));
-    if (signing.notice !== null) {
-      process.stderr.write(`[signing] ${signing.notice}\n`);
-    }
-    const directory = options.bundleDirectory ?? join(coordinator.directory, "bundle");
-    await exportCombinedBundle({
-      coordinator: bundleSourceFromRecorder(coordinator),
-      workers: result.workers.map((worker) => ({
-        workerId: worker.workerId,
-        source: bundleSourceFromRecorder(worker.evidence),
-      })),
-      destination: directory,
-      signingKey: signing.key,
-      clock,
-    });
-    announceBundle(directory);
-
-    const rejected = result.queue?.landings.filter((landing) => !landing.landed) ?? [];
-    if (rejected.length > 0) {
-      return 1;
-    }
-    // Where a task is tried several ways, the attempts that lost are the mechanism working.
-    // What has to hold is that every task landed something, not that every worker was green.
-    return redundancy > 1
-      ? landedEveryTask(result)
-      : result.workers.every((worker) => worker.green)
-        ? 0
-        : 1;
-  } finally {
-    process.off("SIGINT", onInterrupt);
-    process.off("SIGTERM", onTerminate);
-    cancellation.dispose();
-    await rm(scratchRoot, { recursive: true, force: true });
-  }
 }
 
 async function routing(): Promise<number> {

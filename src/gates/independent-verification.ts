@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Clock } from "../core/clock.ts";
 import { freezeAcceptanceContract } from "../evidence/acceptance-contract.ts";
+import { type GoalContract, goalImmutablePaths } from "../evidence/goal-contract.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { certifies } from "./certification.ts";
 import {
@@ -14,6 +15,7 @@ import {
 import { assembleGateSet } from "./engine.ts";
 import { normalizePath } from "./file-set.ts";
 import { defaultGateTimeoutMs, type GateCommandRunner } from "./gate-definition.ts";
+import { type GoalVerification, verifyGoal } from "./goal-acceptance.ts";
 import { nodeSyntaxCheck } from "./mutant-parse.ts";
 import type { LineHits } from "./mutant-witness.ts";
 import type { BondedMutant, OracleBond, OracleBondVerdict } from "./oracle-bond.ts";
@@ -61,8 +63,9 @@ export interface DependencyInstall {
 }
 
 export interface IndependentVerification {
-  readonly certificationPolicy?: "oracle-v3" | "required-obligations-v1";
+  readonly certificationPolicy?: "oracle-v3" | "required-obligations-v1" | "goal-obligations-v1";
   readonly acceptance?: ContractVerification;
+  readonly goalAcceptance?: GoalVerification;
   /** Whether the patch applied cleanly to a fresh base. A patch that did not is not verified. */
   readonly applied: boolean;
   readonly checks: readonly IndependentCheck[];
@@ -130,6 +133,11 @@ export interface IndependentVerification {
 }
 
 export interface IndependentVerificationOptions {
+  readonly goal?: {
+    readonly contract: GoalContract;
+    readonly evidence: EvidenceRecorder;
+    readonly tree: string;
+  };
   readonly repositoryRoot: string;
   /** A harness-owned root shared with the selected runtime, outside the producing workspace. */
   readonly checkoutRoot?: string;
@@ -181,6 +189,10 @@ export interface IndependentVerificationOptions {
 export async function verifyIndependently(
   options: IndependentVerificationOptions,
 ): Promise<IndependentVerification> {
+  if (options.goal !== undefined && options.acceptance !== undefined)
+    throw new Error(
+      "select one acceptance policy per verification; strict reference/control remains a separate policy",
+    );
   const contract =
     options.acceptance === undefined
       ? undefined
@@ -188,6 +200,7 @@ export async function verifyIndependently(
   const immutable = [
     ...(options.immutablePaths ?? []),
     ...(contract?.contract.immutablePaths ?? []),
+    ...(options.goal === undefined ? [] : goalImmutablePaths(options.goal.contract)),
   ];
   const touched = pathsInPatch(options.patch);
   const forbidden = touched.filter((path) => matchesAny(path, immutable));
@@ -350,6 +363,16 @@ export async function verifyIndependently(
             evidence: evaluator.evidence,
             execute: (requirement, target) => evaluator.execute(requirement, target, checkout),
           });
+    const goalAcceptance =
+      options.goal === undefined || !restored
+        ? undefined
+        : await verifyGoal({ ...options.goal, checkout, commands: options.commands, timeoutMs });
+    if (goalAcceptance !== undefined)
+      task = goalAcceptance.accepted
+        ? "accepted"
+        : goalAcceptance.obligations.some((entry) => entry.status === "unjudged")
+          ? "unjudged"
+          : "rejected";
     const checks = withPatch.some((check) => check.status === "failed")
       ? await attributeFailures(withPatch, checkout, options, timeoutMs)
       : withPatch;
@@ -370,7 +393,13 @@ export async function verifyIndependently(
 
     return {
       applied: true,
-      certificationPolicy: acceptance === undefined ? "oracle-v3" : "required-obligations-v1",
+      certificationPolicy:
+        options.goal !== undefined
+          ? "goal-obligations-v1"
+          : acceptance === undefined
+            ? "oracle-v3"
+            : "required-obligations-v1",
+      ...(goalAcceptance === undefined ? {} : { goalAcceptance }),
       ...(acceptance === undefined ? {} : { acceptance }),
       checks,
       oracleReach,
@@ -387,6 +416,9 @@ export async function verifyIndependently(
       // afterwards, so `verified` is the absence of a named reason to refuse rather than a
       // separate opinion about the same evidence.
       verified: certifies({
+        ...(options.goal === undefined
+          ? {}
+          : { certificationPolicy: "goal-obligations-v1", goalAcceptance }),
         regression,
         task,
         oracleReach,

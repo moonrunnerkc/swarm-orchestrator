@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
-import { rm } from "node:fs/promises";
+import { realpath } from "node:fs/promises";
 import { promisify } from "node:util";
+import { harnessChildEnvironment } from "../exec/child-environment.ts";
 
 const runProcess = promisify(execFile);
 
@@ -15,19 +16,30 @@ interface ProcessResult {
  * chokepoint: none of these arguments comes from a model, and a worker's own commands still
  * go through the chokepoint inside its worktree.
  */
-async function git(cwd: string, args: readonly string[]): Promise<ProcessResult> {
+async function git(
+  cwd: string,
+  args: readonly string[],
+  signal?: AbortSignal,
+): Promise<ProcessResult> {
   try {
-    const { stdout, stderr } = await runProcess("git", [...args], {
-      cwd,
-      maxBuffer: 64_000_000,
-    });
+    const { stdout, stderr } = await runProcess(
+      "git",
+      ["-c", "user.name=Swarm Orchestrator", "-c", "user.email=swarm@localhost", ...args],
+      {
+        cwd,
+        maxBuffer: 64_000_000,
+        timeout: 30_000,
+        ...(signal === undefined ? {} : { signal }),
+        env: harnessChildEnvironment().variables,
+      },
+    );
     return { stdout, stderr, code: 0 };
   } catch (cause) {
     const failure = cause as { stdout?: string; stderr?: string; code?: number; message?: string };
     return {
       stdout: failure.stdout ?? "",
       stderr: failure.stderr ?? failure.message ?? "",
-      code: failure.code ?? 1,
+      code: typeof failure.code === "number" ? failure.code : 1,
     };
   }
 }
@@ -97,11 +109,25 @@ export async function addWorktree(options: WorktreeOptions): Promise<Worktree> {
     },
 
     async remove(): Promise<void> {
-      await git(options.repositoryRoot, ["worktree", "remove", "--force", options.path]);
-      // Belt and braces: a worktree git declined to remove must still not be left behind,
-      // because the next run would find a path it cannot add.
-      await rm(options.path, { recursive: true, force: true });
-      await git(options.repositoryRoot, ["worktree", "prune"]);
+      const listing = await gitOrThrow(options.repositoryRoot, [
+        "worktree",
+        "list",
+        "--porcelain",
+        "-z",
+      ]);
+      const ownedPath = await realpath(options.path);
+      const entries = listing.split("\0\0").map((entry) => entry.split("\0"));
+      const owned = entries.some(
+        (entry) =>
+          entry.includes(`worktree ${ownedPath}`) &&
+          entry.includes(`branch refs/heads/${options.branch}`),
+      );
+      if (!owned)
+        throw new WorktreeError(
+          "remove worktree",
+          `ownership of ${options.path} changed; preserve it and reconcile`,
+        );
+      await gitOrThrow(options.repositoryRoot, ["worktree", "remove", "--force", options.path]);
     },
   };
 }
@@ -124,8 +150,13 @@ export async function mergeBranch(
   worktreePath: string,
   branch: string,
   message: string,
+  signal?: AbortSignal,
 ): Promise<MergeOutcome> {
-  const merge = await git(worktreePath, ["merge", "--no-ff", "--no-verify", "-m", message, branch]);
+  const merge = await git(
+    worktreePath,
+    ["merge", "--no-ff", "--no-verify", "-m", message, branch],
+    signal,
+  );
   if (merge.code === 0) {
     return {
       merged: true,
@@ -177,6 +208,7 @@ export async function resetHard(worktreePath: string, ref: string): Promise<void
 export async function sweepRunBranches(
   repositoryRoot: string,
   runId: string,
+  owned?: readonly { branch: string; commit: string | null }[],
 ): Promise<readonly string[]> {
   await git(repositoryRoot, ["worktree", "prune"]);
 
@@ -188,6 +220,12 @@ export async function sweepRunBranches(
 
   const removed: string[] = [];
   for (const branch of mine) {
+    if (owned !== undefined) {
+      const expected = owned.find((candidate) => candidate.branch === branch)?.commit;
+      if (expected === undefined || expected === null) continue;
+      const observed = await git(repositoryRoot, ["rev-parse", branch]);
+      if (observed.stdout.trim() !== expected) continue;
+    }
     const outcome = await git(repositoryRoot, ["branch", "-D", branch]);
     if (outcome.code === 0) {
       removed.push(branch);

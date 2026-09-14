@@ -117,6 +117,29 @@ export function rederiveOracleBond(mutants) {
  * as impossible to check when 89 of them were determinate.
  */
 export function rederiveCiVerdict(verdict) {
+  if (verdict.certificationPolicy === "goal-obligations-v1") {
+    const obligations = verdict.goalAcceptance?.obligations;
+    if (
+      !Array.isArray(obligations) ||
+      obligations.length === 0 ||
+      !verdictVocabulary.regression.includes(verdict.regression) ||
+      obligations.some((entry) => !["accepted", "rejected", "unjudged"].includes(entry.status))
+    )
+      return {
+        rederived: false,
+        missing: ["goalAcceptance.obligations"],
+        reasons: [],
+        verified: null,
+      };
+    const verified =
+      verdict.regression === "pass" && obligations.every((entry) => entry.status === "accepted");
+    return {
+      rederived: true,
+      missing: [],
+      reasons: verified ? [] : ["goal-obligations-or-regression-refused"],
+      verified,
+    };
+  }
   if (verdict.certificationPolicy === "required-obligations-v1") {
     const obligations = verdict.acceptance?.obligations;
     if (
