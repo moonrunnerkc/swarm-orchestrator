@@ -663,7 +663,7 @@ candidate tarball was generated with `npm pack --pack-destination /tmp/swarm-orc
 package is version 14.0.2, 641 files, 812.2 kB compressed and 3.4 MB unpacked. The dry-run capture
 is `sha256:022d71b6621f1a114e56c182a42eca99cbd809214bc56cd241f5e1afb16c7159`, and the materialized
 tarball capture is `sha256:bb8e31ccb725b4e081b19ada448cc94c34741df4793fa239e6b3d31c548720e1`. The tarball SHA-256 is
-`4b20b9d602e913e2fd4de9b5b8cdbb13d0ce5ad87f527b1fa9bf37e6a18b50a8`; it was not published. Linux, macOS CI
+`b451c4746071e3e6056aaea176db636710e448b158c51fd89713a70f4a542e91`; it was not published. Linux, macOS CI
 replay, registry publication and push were not performed because no external authorization or CI
 runner was available.
 
