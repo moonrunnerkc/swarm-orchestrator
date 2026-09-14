@@ -74,15 +74,15 @@ A runner alone does not complete an empirical requirement.
 | H1 | External transcript/patch import and honest unavailable provenance | existing importer, historical bundle, signer and tamper fixtures remain in full gates through goal-selection milestone | validated |
 | H2 | Concrete external CLI driver only after pilot bar and supported CLI availability | conditional prerequisites, no driver claim before both hold | conditional |
 | V1 | Six development goal classes, valid fixes and omissions | Six frozen synthetic development goals accepted with offline-verifying bundles; one exposed repeat also exercised a valid dependency revision | validated |
-| V2 | Freeze 24 goals, at least eight repositories, JS/TS and Python, multiple categories | 24 public-history candidates across eight repositories selected; runtime and positive/negative instrument admission precede the pending freeze | in progress |
-| V3 | Single with repair, frozen old parallel, adaptive, feasible competitor | Runnable single, frozen historical parallel and adaptive executors share final verification; live driver admission and competitor feasibility are underway | in progress |
-| V4 | Adaptation and peer ablations, repeats correlated, natural/synthetic distinct | Both ablation executors and fixed schedule/replay infrastructure exist; paired launches remain pending | in progress |
-| V5 | Wall/tokens/cost/completion/incorrect acceptance/human burden/retries/recovery | Campaign records and reports retain unknowns, all scheduled failures and repository-clustered uncertainty; live pilot remains pending | in progress |
-| V6 | Available authorized local models, no new paid commitment | Owned local Qwen weights executed development cases and prompt comparisons; no paid calls. Native paired evaluation is still pending | in progress |
-| V7 | Full gates, build, packaged CLI, fuzz, evidence and supported platforms | actual final output bound to commit; unavailable separately | open |
-| R1 | README, usage, CLI, build guide, ADRs, instructions, changelog, examples | complete-goal and adaptive recovery reproduction | open |
-| R2 | Tested coherent commits, installable release candidate, exact push/CI/release status | package contents and installed behavior | open |
-| R3 | Final audit against entire appendix, explicit remaining blockers | all mandatory implementable rows closed before completion | open |
+| V2 | Freeze 24 goals, at least eight repositories, JS/TS and Python, multiple categories | Protocol v2 froze 24 public-history goals across eight repositories with all 15 Node and nine Python instruments admitted. Only four of 120 launches produced observations before the local execution window was stopped. | partial |
+| V3 | Single with repair, frozen old parallel, adaptive, feasible competitor | Single, frozen historical parallel and adaptive arms ran under the frozen protocol. The frozen arm recorded a shared-budget admission crash; the local Loom canary did not complete within its timeout and no paid provider was available. | partial |
+| V4 | Adaptation and peer ablations, repeats correlated, natural/synthetic distinct | No-adaptation began and was cancelled at the same budget admission boundary; no-peer and full ablation totals remain unobserved. Synthetic development cases remain separately labeled. | partial |
+| V5 | Wall/tokens/cost/completion/incorrect acceptance/human burden/retries/recovery | Campaign schema records wall time, reported and unknown usage, failures, cancellations, retries and retained work. The partial run is insufficient for comparative estimates or human-burden conclusions. | partial |
+| V6 | Available authorized local models, no new paid commitment | Owned local Qwen weights executed the six development cases and pilot arms. No paid calls were made. The complete paired evaluation remains unfinished. | partial |
+| V7 | Full gates, build, packaged CLI, fuzz, evidence and supported platforms | Final gates, build, packaged command contracts and fuzz passed on macOS at `f971b53594b6ef63d747074a739655ff0e765414`; Linux and other CI platform checks were unavailable locally. | partial |
+| R1 | README, usage, CLI, build guide, ADRs, instructions, changelog, examples | README, usage, CLI, build guide, ADR 0009, synchronized instructions, changelog and implementation examples describe complete-goal and adaptive recovery behavior. | validated |
+| R2 | Tested coherent commits, installable release candidate, exact push/CI/release status | Coherent commits and package checks are complete; final dry-run tarball and branch status are recorded below. No push, CI run or registry publication was authorized. | validated |
+| R3 | Final audit against entire appendix, explicit remaining blockers | This map records every mandatory implementable item and names the incomplete empirical pilot and unavailable platform/competitor checks below. | validated |
 
 ## Source findings verified
 
@@ -563,11 +563,11 @@ This exposed repeat is additional development evidence, not another independent 
 Capture `coordination-public-live`, digest
 `sha256:7227699b4b64e3acb9329a4fa79b1fa7bf0f56538aec754cbe865281ea5a726b`.
 
-Pilot fixture preparation has not yet frozen or launched the paired pilot. All 15 JavaScript/
-TypeScript bases installed; twelve passed their declared checks on Node 24.15.0. Three Day.js
+Initial pilot fixture preparation preceded the corrected freeze. All 15 JavaScript/
+TypeScript bases installed; twelve initially passed their declared checks on Node 24.15.0. Three Day.js
 bases exposed timezone and historical webpack/OpenSSL incompatibility. Python preparation caught
 installed `attrs` shadowing source, missing package metadata/dependencies and incorrect mypy
-scope. Those are unusable measurements, not model failures. Their records remain available as
+scope. Those unusable measurements remain preserved as
 `pilot-node-base-admission-started` (`sha256:bace6f21ac41ea363263e0ca1d628056ff0bdec144d2d63f0d014648639e5871`)
 and `pilot-python-base-admission` (`sha256:ef6d32d65626ad71a72b78073b92e2fb6e74ec58c3908f050cf6405dc22aac26`).
 The corrected runtime and source-identity observations are recorded below; these earlier unusable measurements remain preserved.
@@ -632,12 +632,47 @@ locally green omission; both bundles verified offline. Capture `pilot-driver-lin
 digest `sha256:4d4a0f59eacb509d4abc7f3a0f4be94becc7eb9880f42192c91ba4887a20ad36`.
 Earlier driver failures from mixing goal declarations and omitting chain links remain recorded.
 Earlier driver failures from mixing goal declarations, shallow base reachability, Docker volume
-path separators, and shared reservation sizing remain retained. The frozen pilot protocol is 24
-goals, eight repositories, five arms and 120 scheduled launches. The latest clean freeze is
-`pilot-freeze-final-8`, source `d4e77ad35679124f7533acea8fda07f661dc3c16`, protocol digest
-`sha256:d4fffbee9e998de5b8e9c7c9583c5b16c4739dc691a3ec48d1ee59a28b77062d`. Its run was interrupted
-after the early serialized launches because the local model and historical repository checks made
-the full schedule exceed the available execution window. Retained outcomes are descriptive
-development observations, not a complete pilot result or speed advantage claim. The exact
-unfinished requirement is the complete 24-goal paired pilot and its adaptation and peer-information
-ablation totals.
+path separators, and shared reservation sizing remain retained. The frozen pilot protocol is 24 goals, eight repositories, five arms and 120 scheduled launches. The
+cleanest completed freeze is `pilot-freeze-final-9`, source `f971b53594b6ef63d747074a739655ff0e765414`,
+protocol digest `sha256:bc4890f4110d7eea1691e419154faf69a70d6b17c83050afa7d1a32d97c8831c`. The run was
+stopped after four serialized launches when the fourth historical checkout exceeded the available
+execution window. The retained observations are: single completed with no accepted goal, frozen
+parallel crashed at shared-budget admission, adaptive completed with no accepted goal, and
+no-adaptation cancelled at the same admission boundary. No-peer and the remaining launches were
+not started. These are descriptive partial observations, not a complete pilot result or speed
+advantage claim. The exact unfinished requirement is the complete 24-goal paired pilot with all
+five arms, its adaptation and peer-information ablation totals, and any feasible competing-arm
+comparison.
+
+
+### Final validation and delivery
+
+The final committed source is `f971b53594b6ef63d747074a739655ff0e765414` on
+`redesign/adaptive-goal-controller`. `redesign-gates-final-4` exited 0 with 318 test files and
+3036 tests passed, no skips, in 150.32 seconds. Biome retained the baseline 22 warnings and one
+informational diagnostic. The capture digest is
+`sha256:8c48d1c4e9eebf42111bf14eaaf579d4973dd248c2e3388971415bda529654f2`.
+
+The committed-tree build exited 0 and copied nine assets, digest
+`sha256:29752d4d95d064a743147123e871a4e716bf34c87a9a3baae3ee09d4f4ef625d`. Packaged command
+contracts exited 0 for all 19 documented commands, digest
+`sha256:1730a636ac237de0dec5b26d8793ae1c571c60c18671de0a77f20c20b2295f65`. Fuzz smoke exited 0
+with eight adapters and the declared seed counts, digest
+`sha256:26911d7860ed7f92e45ec648adf0926a4c7e2089cfe9894f9c0603803e1b8027`. A local release
+candidate tarball was generated with `npm pack --dry-run`; it was not published. Linux, macOS CI
+replay, registry publication and push were not performed because no external authorization or CI
+runner was available.
+
+The final pilot capture retains four launch directories under
+`/Users/brad/.cache/swarm-redesign-pilot/frozen-pilot-final-9/`, including the cancelled fourth
+observation. Its capture ledger is under
+`/Users/brad/.swarm/redesign-evidence/2026-09-13/pilot-run-final-9/`. The pilot report is not
+used to claim a comparative result. The external Loom canary was also retained as an unavailable
+competitor observation: the locally configured run timed out without a completed goal and remote
+Claude credentials were absent.
+
+The remaining empirical work is therefore precise: finish the 120-launch natural-repository pilot
+with all five arms and ablations, run any authorized supported-platform gates, and add a feasible
+competitor only if its supported local or already-authorized provider completes the same protocol.
+No swarm advantage, independence claim, or universal correctness claim follows from the partial
+observations.
