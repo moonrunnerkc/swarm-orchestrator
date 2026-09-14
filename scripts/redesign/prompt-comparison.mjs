@@ -9,6 +9,7 @@ import { asJsonValue, digestOfBytes } from "../../src/evidence/canonical-json.ts
 import { declareGoalContract } from "../../src/evidence/goal-contract.ts";
 import { createRecordingModelClient } from "../../src/evidence/model-call-recording.ts";
 import { openEvidenceSession } from "../../src/evidence/session.ts";
+import { parseTaskContract } from "../../src/evidence/task-contract.ts";
 import { harnessChildEnvironment } from "../../src/exec/child-environment.ts";
 import { createFileSetRegistry } from "../../src/gates/file-set.ts";
 import { verifyIndependently } from "../../src/gates/independent-verification.ts";
@@ -209,6 +210,26 @@ for (const scheduled of schedule) {
       localThinking: false,
     });
     const produced = await runAgentTask({
+      contract: parseTaskContract({
+        version: 3,
+        taskId: id,
+        objective: goal.task,
+        dependsOn: [],
+        scopeKind: "workspace",
+        allowedPaths: ["**"],
+        immutablePaths: [...contract.immutablePaths, ".acceptance/check.mjs"],
+        allowedTools: ["read", "write", "edit", "list", "search", "shell"],
+        network: "unrestricted",
+        execution: "restricted",
+        requiredChecks: ["tests"],
+        budget: {
+          maxSteps: protocol.maxSteps,
+          maxTokens: protocol.tokens,
+          maxWallMs: protocol.wallMs,
+        },
+        riskTier: "low",
+        scopeAuthority: "human",
+      }),
       promptProfile: scheduled.profile,
       task: goal.task,
       workspace,
