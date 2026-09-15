@@ -141,7 +141,9 @@ implementation record. Documentation-only evidence commits, including
 The preceding documentation-only push had packaged and Ubuntu success but one macOS
 adaptive-repair call-order assertion failed in run
 [34918247401](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/34918247401). The
-final push reran the complete matrix and passed all jobs; no evaluated source behavior changed.
+final push at `12fc15eb341893534e9996b0697f2af4d4f1f052` reran the complete matrix in run
+[34918984560](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/34918984560),
+with packaged, Ubuntu and macOS jobs all successful; no evaluated source behavior changed.
 
 Tag `v14.1.0` points to the merged source. Release workflow
 [34916998130](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/34916998130) published
