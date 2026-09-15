@@ -28,6 +28,12 @@ export interface MeasureSnapshot {
   readonly changedLineCoverage: number | null;
   readonly changedLinesCovered: number | null;
   readonly changedLinesMeasured: number | null;
+  /**
+   * Why coverage is null where a gate said so, or null where nothing said anything. A runner
+   * that wrote no report and a harness that could not ask for one both leave the ratio null;
+   * only the second has a reason to give, and the ratchet names it.
+   */
+  readonly changedLineCoverageUnmeasured: string | null;
 }
 
 export const emptyMeasureSnapshot: MeasureSnapshot = {
@@ -38,6 +44,7 @@ export const emptyMeasureSnapshot: MeasureSnapshot = {
   changedLineCoverage: null,
   changedLinesCovered: null,
   changedLinesMeasured: null,
+  changedLineCoverageUnmeasured: null,
 };
 
 interface SnapshotInput {
@@ -56,6 +63,8 @@ interface SnapshotInput {
    * number printed by the code under measurement is not a measurement of it.
    */
   readonly coverageReports: readonly string[];
+  /** The reasons gates gave for asking their runners for no report. Absent means none did. */
+  readonly coverageUnmeasured?: readonly string[];
   /**
    * TAP the runners wrote to paths the harness named, which is where the collected count comes
    * from. Never the counters a run printed: node's default reporter passes a test's own
@@ -97,6 +106,10 @@ export async function takeMeasureSnapshot(input: SnapshotInput): Promise<Measure
     changedLineCoverage: coverage?.ratio ?? null,
     changedLinesCovered: coverage?.covered ?? null,
     changedLinesMeasured: coverage?.measured ?? null,
+    changedLineCoverageUnmeasured:
+      coverage === null && (input.coverageUnmeasured ?? []).length > 0
+        ? (input.coverageUnmeasured ?? []).join("; ")
+        : null,
   };
 }
 
@@ -197,6 +210,7 @@ export function measuresAtBase(snapshot: MeasureSnapshot): MeasureSnapshot {
     changedLineCoverage: null,
     changedLinesCovered: null,
     changedLinesMeasured: null,
+    changedLineCoverageUnmeasured: snapshot.changedLineCoverageUnmeasured,
   };
 }
 

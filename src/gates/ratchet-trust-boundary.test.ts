@@ -195,6 +195,7 @@ describe("what the ratchet does with a measure nothing vouched for", () => {
       changedLineCoverage: null,
       changedLinesCovered: null,
       changedLinesMeasured: null,
+      changedLineCoverageUnmeasured: null,
     };
   }
 

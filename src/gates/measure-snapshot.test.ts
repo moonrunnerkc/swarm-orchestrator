@@ -210,3 +210,41 @@ describe("changed-line coverage", () => {
     expect(measured.changedLineCoverage).toBeNull();
   });
 });
+
+describe("why coverage was not measured", () => {
+  it("carries the reason a gate declined to ask for a report", async () => {
+    const probe = workspace();
+    const reason = "node version below the floor for isolated coverage: found v22.22.3";
+
+    const measured = await takeMeasureSnapshot({
+      changes: await probe.changes(),
+      probe,
+      trackedTestFiles: [],
+      testReports: [],
+      coverageReports: [],
+      coverageUnmeasured: [reason],
+    });
+
+    expect(measured.changedLineCoverage).toBeNull();
+    expect(measured.changedLineCoverageUnmeasured).toBe(reason);
+  });
+
+  it("carries no reason where a report was read", async () => {
+    const probe = workspace();
+
+    const measured = await takeMeasureSnapshot({
+      changes: await probe.changes(),
+      probe,
+      workspaceRoot: "/build",
+      trackedTestFiles: [],
+      testReports: [],
+      coverageReports: [
+        "SF:/build/src/math.ts\nDA:2,1\nDA:3,0\nDA:4,0\nDA:5,1\nLF:4\nLH:2\nend_of_record",
+      ],
+      coverageUnmeasured: ["a reason from a gate that is not the one that wrote the report"],
+    });
+
+    expect(measured.changedLineCoverage).not.toBeNull();
+    expect(measured.changedLineCoverageUnmeasured).toBeNull();
+  });
+});

@@ -10,6 +10,7 @@ import {
   type GateDefinition,
   type GateMeasures,
   type GateObservation,
+  type GateReading,
   type GateSeverity,
 } from "./gate-definition.ts";
 
@@ -36,6 +37,8 @@ const gateRunSchema = z.object({
    * comparing the run to its own description.
    */
   argv: z.array(z.string()).nullable(),
+  /** Why no coverage report was asked of a runner the harness could otherwise have vouched for. */
+  coverageUnmeasured: z.string().nullable(),
   /** The rule that read the bytes below into the status above, by name, so a reader can apply it. */
   parser: z.enum(["exit-code", "no-output", "test-output", "inspection"]),
   stdout: z.string(),
@@ -58,6 +61,8 @@ interface GateRun {
   readonly observation: GateObservation;
   /** What this gate's runner wrote to the report path it was given, or null for neither. */
   readonly coverageReport: string | null;
+  /** Why no report was asked for where one could have been, or null where that is not so. */
+  readonly coverageUnmeasured: string | null;
   /** The TAP this gate's runner was told to write, or null where none was asked for. */
   readonly testReport: string | null;
   /** The payload digest of this run's ledger record, which a claim may cite. */
@@ -77,6 +82,12 @@ export interface GateCycle {
    * Empty means nothing measured it, which the ratchet abstains on by name.
    */
   readonly coverageReports: readonly string[];
+  /**
+   * Every reason a gate gave for asking its runner for no report. Carried beside the reports,
+   * so the ratchet's abstention can name a runtime the harness could not measure under rather
+   * than reading like a runner that wrote nothing.
+   */
+  readonly coverageUnmeasured: readonly string[];
   /**
    * The TAP the runners wrote this cycle, which is the only place the collected count is read
    * from. Empty abstains, for the same reason and by the same route.
@@ -144,30 +155,7 @@ export async function runGateCycle(
     const { observation, coverageReport, testReport } = await observe(gate, context, deps);
     const reading = gate.parse(observation);
     const blocking = gate.severity === "blocking";
-
-    const payload = gateRunSchema.parse({
-      gateId: gate.id,
-      title: gate.title,
-      severity: gate.severity,
-      capability: gate.capability ?? capabilityOf(gate.id),
-      status: reading.status,
-      blocking,
-      detail: reading.detail,
-      attempt,
-      command: gate.source.kind === "command" ? gate.source.command : null,
-      argv: gate.source.kind === "command" ? (gate.source.argv ?? null) : null,
-      parser: gate.parserName ?? "exit-code",
-      exitCode: observation.exitCode,
-      durationMs: observation.durationMs,
-      unavailable: observation.unavailable,
-      stdout: truncate(observation.stdout),
-      stderr: truncate(observation.stderr),
-      outputTruncated:
-        observation.outputTruncated === true ||
-        observation.stdout.length > maxRecordedOutputChars ||
-        observation.stderr.length > maxRecordedOutputChars,
-      measures: reading.measures,
-    });
+    const payload = gateRunPayload(gate, observation, reading, attempt);
 
     const recorded = await deps.evidence.record({
       type: "gate-run",
@@ -187,6 +175,7 @@ export async function runGateCycle(
       measures: reading.measures,
       observation,
       coverageReport,
+      coverageUnmeasured: payload.coverageUnmeasured,
       testReport,
       record: recorded.record.payloadDigest,
     };
@@ -216,6 +205,9 @@ export async function runGateCycle(
     coverageReports: runs
       .map((run) => run.coverageReport)
       .filter((report): report is string => report !== null),
+    coverageUnmeasured: runs
+      .map((run) => run.coverageUnmeasured)
+      .filter((reason): reason is string => reason !== null),
     testReports: runs
       .map((run) => run.testReport)
       .filter((report): report is string => report !== null),
@@ -280,6 +272,43 @@ function truncate(text: string): string {
 }
 
 /**
+ * One record shape for a gate run in a cycle and for the same gate observed at the base. Built
+ * in one place so the two records cannot drift apart field by field.
+ */
+function gateRunPayload(
+  gate: GateDefinition,
+  observation: GateObservation,
+  reading: GateReading,
+  attempt: number,
+): z.infer<typeof gateRunSchema> {
+  return gateRunSchema.parse({
+    gateId: gate.id,
+    title: gate.title,
+    severity: gate.severity,
+    capability: gate.capability ?? capabilityOf(gate.id),
+    status: reading.status,
+    blocking: gate.severity === "blocking",
+    detail: reading.detail,
+    attempt,
+    command: gate.source.kind === "command" ? gate.source.command : null,
+    argv: gate.source.kind === "command" ? (gate.source.argv ?? null) : null,
+    coverageUnmeasured:
+      gate.source.kind === "command" ? (gate.source.coverageUnmeasured ?? null) : null,
+    parser: gate.parserName ?? "exit-code",
+    exitCode: observation.exitCode,
+    durationMs: observation.durationMs,
+    unavailable: observation.unavailable,
+    stdout: truncate(observation.stdout),
+    stderr: truncate(observation.stderr),
+    outputTruncated:
+      observation.outputTruncated === true ||
+      observation.stdout.length > maxRecordedOutputChars ||
+      observation.stderr.length > maxRecordedOutputChars,
+    measures: reading.measures,
+  });
+}
+
+/**
  * Advisory gates that asked for a justification and did not get one. Section 3.7's diff
  * budget does not block; it demands a claim that lands in the bundle. Nothing enforces that
  * demand, so the outstanding ones are named here and reported, which is the difference
@@ -328,29 +357,7 @@ export async function recordBaselineRun(
   deps: GateCycleDependencies,
 ): Promise<BaselineRun> {
   const reading = gate.parse(observation);
-  const payload = gateRunSchema.parse({
-    gateId: gate.id,
-    title: gate.title,
-    severity: gate.severity,
-    capability: gate.capability ?? capabilityOf(gate.id),
-    status: reading.status,
-    blocking: gate.severity === "blocking",
-    detail: reading.detail,
-    attempt: 0,
-    command: gate.source.kind === "command" ? gate.source.command : null,
-    argv: gate.source.kind === "command" ? (gate.source.argv ?? null) : null,
-    parser: gate.parserName ?? "exit-code",
-    exitCode: observation.exitCode,
-    durationMs: observation.durationMs,
-    unavailable: observation.unavailable,
-    stdout: truncate(observation.stdout),
-    stderr: truncate(observation.stderr),
-    outputTruncated:
-      observation.outputTruncated === true ||
-      observation.stdout.length > maxRecordedOutputChars ||
-      observation.stderr.length > maxRecordedOutputChars,
-    measures: reading.measures,
-  });
+  const payload = gateRunPayload(gate, observation, reading, 0);
   const recorded = await deps.evidence.record({
     type: "gate-baseline",
     actor: "harness",

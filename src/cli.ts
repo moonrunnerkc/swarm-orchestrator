@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Check the runtime before loading the command composition.
-import "./node-floor.ts";
+import "./node-floor-check.ts";
 
 import { spawn } from "node:child_process";
 import { appendFileSync, statSync } from "node:fs";
@@ -64,7 +64,7 @@ import { createFileSetRegistry } from "./gates/file-set.ts";
 import { citedRecords, outstandingJustifications } from "./gates/gate-runner.ts";
 import { resolveBaseCommit } from "./gates/git-workspace.ts";
 import { summarizeRatchet } from "./gates/ratchet-summary.ts";
-import { diagnose, remediesFor } from "./install/health.ts";
+import { diagnose, remediesFor, runtimeFinding } from "./install/health.ts";
 import { inspectInstall } from "./install/inspect.ts";
 import { describeInstall } from "./install/report.ts";
 import { exitCodes, jsonEventLine, jsonResultLine } from "./machine-output.ts";
@@ -174,7 +174,8 @@ async function doctor(options: DoctorCommand): Promise<number> {
 
   const findings = diagnose(snapshot);
   const remedies = remediesFor(findings);
-  for (const line of describeInstall(findings, remedies.length > 0 && !options.fix)) {
+  const report = [...findings, runtimeFinding(process.version)];
+  for (const line of describeInstall(report, remedies.length > 0 && !options.fix)) {
     process.stdout.write(`${line}\n`);
   }
 

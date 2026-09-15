@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Node 22 runs the tool; Node 24 is needed only for the coverage measurement.** The whole CLI
+  refused to start below Node 24 because the changed-line coverage arm spawns node's test runner
+  with `--test-isolation=process`, which Node 22 rejects. Now `engines.node` is `>=22`, every
+  command runs there, and on a Node below 24 the tests gate runs the project's own test command
+  while the coverage arm reports `unmeasured` with the reason named in the gate-run record and in
+  the ratchet's abstention. Unmeasured never renders as a pass, so a change touching covered
+  lines fails the ratchet on that runtime rather than passing quietly. `swarm doctor` reports
+  which Node it found and what that disables.
+
 ## 14.1.0 - 2026-09-14
 
 ### Added

@@ -48,6 +48,8 @@ export const candidateSchema = z.strictObject({
     changedLineCoverage: measured,
     changedLinesCovered: measured,
     changedLinesMeasured: measured,
+    // Absent in journals written before the reason was carried; null reads the same as absent.
+    changedLineCoverageUnmeasured: z.string().nullable().default(null),
   }),
   erosions: count,
   changedFiles: count,

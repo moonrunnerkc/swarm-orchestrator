@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { diagnose, type InstallSnapshot, remediesFor } from "./health.ts";
+import { diagnose, type InstallSnapshot, remediesFor, runtimeFinding } from "./health.ts";
 import { describeInstall } from "./report.ts";
 
 const healthy: InstallSnapshot = {
@@ -132,5 +132,24 @@ describe("the report it prints", () => {
 
   it("does not offer a fix when there is nothing to run", () => {
     expect(describeInstall(diagnose(healthy), false).join("\n")).not.toContain("--fix");
+  });
+});
+
+describe("the Node it found", () => {
+  it("says what a Node below the coverage floor disables, and that everything else runs", () => {
+    const finding = runtimeFinding("v22.22.3");
+
+    expect(finding.severity).toBe("worth-knowing");
+    expect(finding.summary).toContain("v22.22.3");
+    expect(finding.detail).toContain("node version below the floor for isolated coverage");
+    expect(finding.detail).toContain("unmeasured");
+    expect(finding.remedy).toEqual([]);
+  });
+
+  it("reports a Node at the coverage floor as healthy, naming the version", () => {
+    const finding = runtimeFinding("v24.15.0");
+
+    expect(finding.severity).toBe("healthy");
+    expect(finding.summary).toContain("v24.15.0");
   });
 });
