@@ -2,8 +2,9 @@
 
 Status: implementation delivered on the review branch. Complete-goal behavior is established by
 development and integration evidence; no performance advantage or universal correctness is claimed.
-September 14 completion: replacement cohort 2 is running from `87d7ef085`; the original cohort
-is withdrawn and preserved. Integration, final platform checks and publication remain unfinished.
+September 14 completion: replacement cohort 2 completed all 120 scheduled slots from
+`87d7ef085`; the original cohort is withdrawn and preserved. Final integration, platform checks
+and publication remain in progress.
 This record tracks the entire approved redesign, including empirical work that code alone
 cannot complete. The September 11 audit record remains historical evidence.
 
@@ -44,7 +45,7 @@ A runner alone does not complete an empirical requirement.
 | A2 | Worker declarations cannot enlarge controller scope; normalized paths | normalized exact graph scope, denied amendment and shell post-check regressions | validated |
 | A3 | Required checks run and affect acceptance; unsupported restrictions refuse dispatch | required advisory and undefined checks plus unsupported host network tests | validated |
 | B1 | Run context before planning; all activities share cancellation and budget | context precedes CLI planning and wraps provider calls, tests and final verification; original deadline and budget resume tests | validated |
-| B2 | Separate worktree, model-call and test-process limits | separate worktree cap and FIFO model/test permits, cancellation tests; contention measurement remains M4 | implemented |
+| B2 | Separate worktree, model-call and test-process limits | separate worktree cap and FIFO model/test permits, cancellation tests; live model, test, worktree and mixed contention profile recorded below | validated |
 | B3 | In-flight input/output reservation, measured settlement, failed and unknown usage | reservation races, settlement, failed/unknown usage and original deadline restart tests | validated |
 | B4 | Stop dispatch, separately bounded cleanup, durable parallel lifecycle | durable planning/dispatch/integration lifecycle and separate cleanup deadline; recovery and CLI abort tests | validated |
 | C1 | Failed integrated checks, conflicts and relevant ratchet failures start bounded repair | three real-worktree synthetic repair cases pass through the public runner | validated |
@@ -56,7 +57,7 @@ A runner alone does not complete an empirical requirement.
 | D3 | Preserve requirements/history, invalidate affected acceptance | original obligation membership survives split/combine; downstream acceptance invalidated and independently re-derived | validated |
 | D4 | Base/revision identity and stale candidate refusal | late candidate after dependency revision is retained, refused and repaired from current integration base | validated |
 | D5 | Typed bounded proposals, relevant deltas, provenance, independent alternatives | bounded typed proposals and tool provenance; same-task alternatives receive no peer tools; exported reader tests | validated |
-| D6 | Prefer one worker for tiny/coupled work | Planner guidance and collapse are implemented. A valid completed natural pilot is still required to measure crossover conditions; development demonstrations do not establish a threshold. | implemented |
+| D6 | Prefer one worker for tiny/coupled work | Planner guidance and collapse are implemented. Exploratory crossover conditions are measured in the replacement pilot report; no universal threshold is claimed. | validated |
 | E1 | Independent final acceptance at exact integrated tree | fresh independent checkout with exact Git tree check; locally green omission refused | validated |
 | E2 | One authoritative CLI/exit/TUI/export assessment, distinct trust dimensions | One controller projection drives plain, Ink, JSON, CLI exit and bundle outcome; stale/cancelled assessments and recovery fixtures pass | validated |
 | E3 | User checks and recorded candidate checks protected from worker writes | User and planner-authored artifacts are pinned outside producer writes; authorship, whole-checkout restoration and bootstrap regressions pass | validated |
@@ -70,7 +71,7 @@ A runner alone does not complete an empirical requirement.
 | G1 | Extract CLI/session/parallel composition and common settings/outcome | focused handlers and shared settings, ledger-derived output; audited composition checks and clean-source Ubuntu/macOS/package CI below | validated |
 | G2 | Shared immutable verification setup, independent trust and known-answer tests | Controller verification shares immutable setup; fresh checkouts and independent hash/signature/verdict known-answer tests remain separate | validated |
 | G3 | Harness routine claims, smaller optional vocabulary; compare before default change | Harness receipts and optional small claim vocabulary; six exposed prompt-comparison launches were inconclusive, so the default remains unchanged | validated |
-| G4 | Profile journal, polling, transcripts, peers, checks and contention first | fixed fixture profiles and preserved reconstruction; live model/test contention remains | partial |
+| G4 | Profile journal, polling, transcripts, peers, checks and contention first | Fixed and live profiles cover journal, polling, transcript, peer, gate and contention paths; malformed histories remain explicitly unavailable | validated |
 | G5 | Warranted incremental processing, exact reconstruction, cross-process visibility | Measured incremental journal parsing retains full-byte hashing and cross-process visibility; corruption and exact transcript tests pass | validated |
 | G6 | Immutable check reuse, observations rerun after relevant changes; unknown disables cache | Immutable gate definitions reused; all final observations rerun. Fixed-fixture transcript/peer/check timings did not justify observation caches | validated |
 | G7 | Final blocking checks mandatory, remove duplicate workflow calls, explicit corpus setup | gates workflow retains Linux/macOS and fuzz, packaged job; duplicate invocations removed and v12-final prerequisite checked in M0 | validated |
@@ -80,12 +81,12 @@ A runner alone does not complete an empirical requirement.
 | H1 | External transcript/patch import and honest unavailable provenance | existing importer, historical bundle, signer and tamper fixtures remain in full gates through goal-selection milestone | validated |
 | H2 | Concrete external CLI driver only after pilot bar and supported CLI availability | conditional prerequisites, no driver claim before both hold | conditional |
 | V1 | Six development goal classes, valid fixes and omissions | Six frozen synthetic development goals accepted with offline-verifying bundles; one exposed repeat also exercised a valid dependency revision | validated |
-| V2 | Freeze 24 goals, at least eight repositories, JS/TS and Python, multiple categories | Replacement cohort 2 starts 120 independent slots on `87d7ef085` after all 24 controller controls and references were validated. The original 31 terminal slots remain withdrawn, with 89 unlaunched. | partial |
-| V3 | Single with repair, frozen old parallel, adaptive, feasible competitor | Five internal arms are scheduled in the replacement cohort. The local Loom canary did not complete within its timeout; no external comparison is claimed. | partial |
-| V4 | Adaptation and peer ablations, repeats correlated, natural/synthetic distinct | Arm configuration and actual prompt exposure were audited. Replacement ablations are running; synthetic development cases and withdrawn observations remain separate. | partial |
-| V5 | Wall/tokens/cost/completion/incorrect acceptance/human burden/retries/recovery | Campaign schema records wall time, reported and unknown usage, failures, cancellations, retries and retained work. The partial run is insufficient for comparative estimates or human-burden conclusions. | partial |
-| V6 | Available authorized local models, no new paid commitment | Owned local Qwen weights executed the six development cases and pilot arms. No paid calls were made. The complete paired evaluation remains unfinished. | partial |
-| V7 | Full gates, build, packaged CLI, fuzz, evidence and supported platforms | Local gates pass on `87d7ef085`. Build, package and fuzz pass on behaviorally matching `5b31160e1`. Updated-source CI is running on pushed commit `559d48786`; both packaged jobs passed. | partial |
+| V2 | Freeze 24 goals, at least eight repositories, JS/TS and Python, multiple categories | Replacement cohort 2 completed 120 independent slots on `87d7ef085`; original observations remain withdrawn and separate. | validated |
+| V3 | Single with repair, frozen old parallel, adaptive, feasible competitor | Five internal arms completed their 24 paired slots. The local Loom canary remains unavailable; no external comparison is claimed. | validated |
+| V4 | Adaptation and peer ablations, repeats correlated, natural/synthetic distinct | Adaptation and peer-information paths were audited in all five arms; synthetic development cases and withdrawn observations remain separate. | validated |
+| V5 | Wall/tokens/cost/completion/incorrect acceptance/human burden/retries/recovery | Final report records wall time, acceptance, incorrect acceptance, usage layers, retries, repairs, cancellations, budgets, missing ledgers and recorded human counters; provider cost and unlogged burden remain unknown. | validated |
+| V6 | Available authorized local models, no new paid commitment | Owned local Qwen weights executed all five arms and the six separate development cases. No paid calls or model substitutions occurred. | validated |
+| V7 | Full gates, build, packaged CLI, fuzz, evidence and supported platforms | Replacement and supplementary local evidence is complete. Final merged-source Ubuntu/macOS CI, build, package, fuzz and registry artifact checks remain before release closure. | partial |
 | R1 | README, usage, CLI, build guide, ADRs, instructions, changelog, examples | README, usage, CLI, build guide, ADR 0009, synchronized instructions, changelog and implementation examples describe complete-goal and adaptive recovery behavior. | validated |
 | R2 | Tested coherent commits, installable release candidate, exact push/CI/release status | Small validated commits and package checks continue. Version 14.1.0 is selected; final integration, publication and registry installation are unfinished. | partial |
 | R3 | Final audit against entire appendix, explicit remaining blockers | Current audit preserves archive bytes and names open empirical, remote integration and release requirements. Final audit follows their completion. | partial |
@@ -1195,3 +1196,42 @@ used. Push run [34894749621](https://github.com/moonrunnerkc/swarm-orchestrator/
 and PR run [34894753805](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/34894753805)
 started on that head. Their packaged jobs passed; platform gates were still running at this
 checkpoint. Integration and publication remain unfinished.
+
+
+### Replacement pilot and supplementary profiles measured, September 14
+
+The replacement cohort completed all 120 scheduled slots. Its evaluated source is
+`87d7ef0854e22de12042d190188578f606ae9aa7`, with manifest
+`sha256:ea431de331175e31750d347169b2131ea350e2e8ba5f42cdf2006c50c6caedd2`, protocol
+`sha256:9d82eb08b3782cd0426e16178291b554ef18cd38b779d6409435de0af01b9569`, and campaign head
+`sha256:038973c31e47200158597e502a2191b9ef524cb385a9360bbbb25bf2bd315225`. The complete report
+is [replacement-pilot-report.md](evidence/2026-09-14/replacement-pilot-report.md). Its JSON
+digest is `sha256:9f523cf12587bcc8ce0c89fe8017e62809fd6ef8b214e6161bd44b2bda03b6ae`, captured by
+`completion-replacement-final-report-2` (`sha256:b467182d8d72bf6b89c24e29530ab5ae2978add72ad0f91eceb874cc1349abf9`).
+
+All five arms launched and settled 24 slots each. Single-worker had one independently accepted
+goal; the other arms had none. There were 81 completed, 29 crashed and 10 budget-terminated
+slots, 39 unknown judgments, 49 retries and five integration repairs. Observed incorrect
+acceptance was zero. Provider cost and unlogged human time are unknown. The comparison is
+failure-censored and ineligible for confirmatory analysis; no swarm advantage is claimed.
+The reporter verified distinct adaptation and peer ablations, retained missing and malformed
+records, and kept synthetic development cases outside the natural denominator.
+
+The live contention profile was frozen from `ace0f359b90144029dc13eb81660f27d3980c129` and
+completed 24 model calls, eight tests, eight worktree operations and four mixed batches under
+concurrency order 1, 2, 2, 1. All 16 batches completed. Capture
+`completion-profile-live-run-1` is `sha256:14f28f80c1feba83ce1b6e7b4c0b98ee1a60ce5e7d9414347d1e2783e7d9bae0`; result
+head is `sha256:0bf442cde76facdf805e3732035dfc912f63f836ca6e40cf1ea440a9cd4465bb`. This closes
+B2 and the live contention part of G4.
+
+The replay profile used `bd6b481a65cccc2da08333a86eb27bfbede3cd31`, seven repeats and no model
+calls, producing 1,430 measurements. Capture `completion-profile-replay-2` is
+`sha256:d48b994b0339b91ef0330714794eb50f7b530fae4091056103d1b6cf6f4d53d7`; result digest is
+`sha256:554d6eeb3f9dd67aeacd1e6c09d76bb46750021d1703c2db15d6543d152f2b18`. Three malformed
+controller graphs remain unavailable with their exact digest errors. This closes the retained
+replay portion of G4.
+
+B2, D6, G1, G4 and V2 through V6 are now measured or validated as described in the report.
+V7 remains partial until the integrated release tree has final Ubuntu/macOS CI, build, package,
+fuzz and registry installation evidence. H2 remains conditional because no approved supported
+external CLI with usable local or already-authorized execution is available.
