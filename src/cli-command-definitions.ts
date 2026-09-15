@@ -1,5 +1,24 @@
+export interface CommandDefinition {
+  readonly name: string;
+  readonly syntax: string;
+  readonly description: string;
+  /** What the packaged CLI must do when the command is run with these arguments. */
+  readonly smoke: {
+    readonly args: readonly string[];
+    readonly exits: readonly number[];
+    /** A pattern the combined output must match. */
+    readonly output: string;
+  };
+  /**
+   * `none` where the command runs with no provider key and no local backend, which
+   * src/cli-verify-only.test.ts holds by running it that way. Absent where nothing establishes
+   * that either way, which is not the same as needing one.
+   */
+  readonly model?: "none";
+}
+
 /** Help, typo suggestions and packaged behavioral smoke checks share these command contracts. */
-export const commandDefinitions = [
+export const commandDefinitions: readonly CommandDefinition[] = [
   {
     name: "init",
     syntax: "init [--workspace <dir>]",
@@ -11,6 +30,7 @@ export const commandDefinitions = [
     syntax: "gates [--workspace <dir>] [--base <ref>]",
     description: "run the gates without a model",
     smoke: { args: [], exits: [0, 1], output: "bundle|gates|ratchet" },
+    model: "none",
   },
   {
     name: "select",
@@ -61,6 +81,7 @@ export const commandDefinitions = [
     syntax: "verify <bundle directory> [--signer <fp>]",
     description: "check integrity and an independently expected signer",
     smoke: { args: ["absent-bundle"], exits: [2], output: "integrity:.*unverified" },
+    model: "none",
   },
   {
     name: "gc",
@@ -73,6 +94,7 @@ export const commandDefinitions = [
     syntax: "ci --patch <file> [--base <ref>] [--json]",
     description: "verify a patch independently",
     smoke: { args: ["--patch", "absent.diff"], exits: [1], output: "absent\\.diff" },
+    model: "none",
   },
   {
     name: "list-runs",
@@ -126,7 +148,7 @@ export const commandDefinitions = [
     description: "show commands and options",
     smoke: { args: [], exits: [0], output: "swarm ci" },
   },
-] as const;
+];
 export const commandHelpLines = commandDefinitions.map(
   (command) => `  swarm ${command.syntax.padEnd(49)} ${command.description}`,
 );

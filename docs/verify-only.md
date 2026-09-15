@@ -270,7 +270,12 @@ it observed and abstains, since nobody was there to declare a scope.
 ## What these three do not need
 
 None of them opens a model, reads a provider key, or probes for a local backend. A machine with
-Node and git on it is enough. Signing a bundle uses a key from the OS keychain where there is
+Node and git on it is enough. That is command definition data rather than a promise:
+`src/cli-command-definitions.ts` marks each of the three as needing no model, and
+`src/cli-verify-only.test.ts` runs every command so marked through the real CLI under an
+environment holding no key, with the local endpoint pinned to a port nothing listens on, so a
+command that started probing for a model would fail that test rather than pass on a machine
+that happens to serve one. Signing a bundle uses a key from the OS keychain where there is
 one; where there is none, the run signs with a per-run key, says so on stderr with a line
 starting `[signing]`, and records `keySource: ephemeral` in the manifest, which `swarm verify`
 then reports as an ephemeral signer rather than a trusted one.
