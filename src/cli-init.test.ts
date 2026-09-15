@@ -22,6 +22,8 @@ async function git(...args: readonly string[]): Promise<string> {
 beforeEach(async () => {
   workspace = await mkdtemp(join(tmpdir(), "swarm-node-harness-"));
   await run("git", ["init", "-q", workspace]);
+  await git("config", "user.email", "harness@example.com");
+  await git("config", "user.name", "harness");
   await git("commit", "-q", "--allow-empty", "-m", "empty");
 });
 
@@ -43,5 +45,24 @@ describe("establishing a Node harness in an empty repository", () => {
       scripts: { test: "node --test" },
     });
     expect(await git("show", "--stat", "--format=%s", "HEAD")).toContain("package.json");
+  });
+});
+
+describe("a repository whose git has no identity to commit with", () => {
+  /** Found on a CI runner: the files were written and the commit failed with git's own advice. */
+  it("names the remedy and leaves the written files for the person to commit", async () => {
+    await git("config", "--unset", "user.email");
+    await git("config", "--unset", "user.name");
+    const environment = {
+      ...process.env,
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_CONFIG_NOSYSTEM: "1",
+    };
+    const withoutIdentity = { ...environment, GIT_AUTHOR_NAME: "", GIT_COMMITTER_NAME: "" };
+
+    await expect(establishNodeHarness(workspace, withoutIdentity)).rejects.toThrow(
+      /git config user\.name/,
+    );
+    expect(await readFile(join(workspace, "package.json"), "utf8")).toContain("node --test");
   });
 });

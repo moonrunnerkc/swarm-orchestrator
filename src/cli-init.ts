@@ -107,15 +107,28 @@ export class NoManifestError extends Error {
  * run is sealed from carries it. Committed on the current branch, with the person's own git
  * identity, because they asked for it on the terminal: this is their commit, not the run's.
  */
-export async function establishNodeHarness(workspace: string): Promise<{ commit: string }> {
+export async function establishNodeHarness(
+  workspace: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): Promise<{ commit: string }> {
   const files = nodeHarnessFiles(basename(workspace));
   for (const [name, text] of Object.entries(files)) {
     await writeFile(join(workspace, name), text, { flag: "wx" });
   }
   const git = async (args: readonly string[]) =>
-    (await runProcess("git", [...args], { cwd: workspace })).stdout.trim();
+    (await runProcess("git", [...args], { cwd: workspace, env: environment })).stdout.trim();
   await git(["add", "--", ...Object.keys(files)]);
-  await git(["commit", "-q", "-m", "Add a Node test harness so swarm can measure this project"]);
+  try {
+    await git(["commit", "-q", "-m", "Add a Node test harness so swarm can measure this project"]);
+  } catch (cause) {
+    // The files are the person's harness and stay written; only the commit is theirs to finish.
+    const said = (cause as { stderr?: string }).stderr?.trim().split("\n")[0] ?? String(cause);
+    throw new Error(
+      `${Object.keys(files).join(" and ")} were written to ${workspace} but could not be ` +
+        `committed (${said}). Set your git identity with git config user.name and ` +
+        "git config user.email, commit them, and run again.",
+    );
+  }
   return { commit: await git(["rev-parse", "HEAD"]) };
 }
 
