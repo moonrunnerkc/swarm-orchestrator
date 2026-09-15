@@ -68,9 +68,49 @@ swarm parallel --tasks <file>    # a worker per task, then a merge queue
 swarm parallel --goal <text>     # break the goal into tasks, then run them
   --redundancy <n>               # try each task n ways, land the best of them
   --concurrency <n>              # how many workers may hold a worktree at once
+  --bootstrap node              # explicit Node 24 setup for an empty Git base
+  --details                     # worker events and the full assurance report
+  --no-tui                      # compact progress lines on a terminal
+  --json                        # structured progress and one final controller outcome
 ```
 
-See [using.md](using.md) for what a parallel run looks like and how the merge queue lands work.
+The ordinary display leads with the goal, active work, remaining tokens and time, accepted
+requirements, blockers and resulting branch. Accepted jobs are shown separately from goal
+acceptance. The final status and exit code come from the recorded controller assessment, after
+checks of the combined tree. `--details` retains worker events and the detailed assurance report;
+`--json` emits `swarm.controller.event.v1` progress and a `swarm.controller.result.v1` result
+carrying the same assessment, its record digest, branch, commit and evidence directory. A stop
+before assessment reports an error with no invented goal verdict. Execution limitations remain
+visible and full envelopes remain in the evidence. `resume` uses the same compact display.
+
+The goal controller shares one budget across planning, workers, retries, integration and final
+verification. It starts a dependent as soon as its prerequisites land, retains rejected candidates,
+and can append a bounded graph revision for a missing prerequisite or tightly coupled work. A
+successful local check is still only a task result. The final status is accepted only when the fresh
+verifier checks every applicable requirement; generated checks identify their authorship and are
+reported as acceptance instruments rather than independent ground truth.
+
+See [using.md](using.md) for how work is integrated and repaired.
+
+For a new standard-library Node project, initialize an empty Git commit, then run:
+
+```sh
+git init
+git -c user.name='Project owner' -c user.email='owner@example.com' commit --allow-empty -m 'Empty project'
+swarm parallel --goal 'Implement a bounded in-memory counter with reset and tests' --bootstrap node --model local:qwen3.6:35b-a3b --max-tokens 200000
+```
+
+Bootstrap runs before planning inside the original deadline and test-process limit. It creates a
+retained setup commit, verifies Node 24, and checks that `npm test` both accepts a passing control
+and rejects a failing one. Goal checks are pinned afterward and still run against the final
+integrated tree. Setup controls are not evidence that the requested feature works. The initial
+`package.json` and `.gitignore` remain immutable during implementation. This bootstrap supports
+Node ESM using the standard library; projects requiring another toolchain or dependency setup
+should establish it first and run without this flag. Existing projects retain their ordinary path.
+The current branch and index stay unchanged. `resume` preserves the original setup identity and
+budget; `repair` cleans only exact, owned setup files. Altered files or references require
+reconciliation. This stage uses the selected execution backend; host execution remains restricted,
+not isolated.
 
 ## Verifying
 

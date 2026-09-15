@@ -14,7 +14,7 @@ const resourceSchema = z.object({
   runtime: z.enum(["docker", "podman", "nerdctl"]),
   identity: z.string().regex(/^swarm-[0-9a-f-]{36}$/),
   sessionId: z.string().regex(/^[a-zA-Z0-9_-]+$/),
-  phase: z.enum(["created", "removed", "cleanup-failed"]),
+  phase: z.enum(["create-intent", "created", "removed", "cleanup-failed"]),
 });
 export function recordedContainerBackend(
   options: ContainerBackendOptions,
@@ -43,8 +43,15 @@ export async function repairRuntimeResources(
   root: string,
   runId: string,
   execute = runProcessGroup,
+  recorder?: EvidenceRecorder,
+  signal?: AbortSignal,
 ) {
-  const { records, payloads } = await readSessionEvidence(root, runId);
+  if (recorder !== undefined && recorder.sessionId !== runId)
+    throw new Error("runtime repair recorder identity differs from its session");
+  const { records, payloads } =
+    recorder === undefined
+      ? await readSessionEvidence(root, runId)
+      : { records: recorder.records(), payloads: recorder.payloads() };
   const resources = new Map<string, z.infer<typeof resourceSchema>>();
   for (const record of records.filter((entry) => entry.type === "execution-resource")) {
     const resource = resourceSchema.parse(payloads.get(record.payloadDigest));
@@ -58,8 +65,10 @@ export async function repairRuntimeResources(
     env: containerClientEnvironment(),
     timeoutMs: 15_000,
     maxOutputBytes: 64_000,
+    ...(signal === undefined ? {} : { signal }),
   };
   for (const resource of resources.values()) {
+    signal?.throwIfAborted();
     if (resource.phase === "removed") continue;
     const present = await execute(
       resource.runtime,
@@ -92,11 +101,13 @@ export async function repairRuntimeResources(
     removed.push(resource.identity);
   }
   if (removed.length > 0) {
-    const evidence = await openEvidenceSession({
-      root,
-      sessionId: runId,
-      clock: { now: () => Date.now(), sleep: async () => {} },
-    });
+    const evidence =
+      recorder ??
+      (await openEvidenceSession({
+        root,
+        sessionId: runId,
+        clock: { now: () => Date.now(), sleep: async () => {} },
+      }));
     for (const identity of removed) {
       const resource = resources.get(identity);
       if (resource === undefined) throw new Error("runtime repair lost its recorded identity");

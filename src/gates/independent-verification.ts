@@ -1,9 +1,9 @@
-import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Clock } from "../core/clock.ts";
 import { freezeAcceptanceContract } from "../evidence/acceptance-contract.ts";
+import { type GoalContract, goalImmutablePaths } from "../evidence/goal-contract.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { certifies } from "./certification.ts";
 import {
@@ -11,9 +11,16 @@ import {
   type RequirementObservation,
   verifyAcceptanceContract,
 } from "./contract-verification.ts";
+import type { GateSetOptions } from "./default-gates.ts";
+import {
+  type DependencyInstall,
+  DependencySetupReconciliationError,
+  installFromLockfile,
+} from "./dependency-install.ts";
 import { assembleGateSet } from "./engine.ts";
 import { normalizePath } from "./file-set.ts";
 import { defaultGateTimeoutMs, type GateCommandRunner } from "./gate-definition.ts";
+import { type GoalVerification, verifyGoal } from "./goal-acceptance.ts";
 import { nodeSyntaxCheck } from "./mutant-parse.ts";
 import type { LineHits } from "./mutant-witness.ts";
 import type { BondedMutant, OracleBond, OracleBondVerdict } from "./oracle-bond.ts";
@@ -53,16 +60,12 @@ export interface IndependentCheck {
   readonly inheritedFromBase?: boolean;
 }
 
-export interface DependencyInstall {
-  readonly attempted: boolean;
-  readonly succeeded: boolean;
-  readonly command: string;
-  readonly detail: string;
-}
+export type { DependencyInstall } from "./dependency-install.ts";
 
 export interface IndependentVerification {
-  readonly certificationPolicy?: "oracle-v3" | "required-obligations-v1";
+  readonly certificationPolicy?: "oracle-v3" | "required-obligations-v1" | "goal-obligations-v1";
   readonly acceptance?: ContractVerification;
+  readonly goalAcceptance?: GoalVerification;
   /** Whether the patch applied cleanly to a fresh base. A patch that did not is not verified. */
   readonly applied: boolean;
   readonly checks: readonly IndependentCheck[];
@@ -130,6 +133,13 @@ export interface IndependentVerification {
 }
 
 export interface IndependentVerificationOptions {
+  readonly signal?: AbortSignal;
+  readonly gateOptions?: GateSetOptions;
+  readonly goal?: {
+    readonly contract: GoalContract;
+    readonly evidence: EvidenceRecorder;
+    readonly tree: string;
+  };
   readonly repositoryRoot: string;
   /** A harness-owned root shared with the selected runtime, outside the producing workspace. */
   readonly checkoutRoot?: string;
@@ -159,9 +169,8 @@ export interface IndependentVerificationOptions {
   /**
    * Install the checkout's dependencies from its lockfile before running the checks.
    *
-   * Off by default, and deliberately: installing runs whatever install scripts the registry
-   * serves, which is one of the seven things the approval model says needs a person. A run that
-   * cannot measure says so instead of quietly installing on the reader's behalf.
+   * Off by default. Explicit authorization permits registry access through the selected runner.
+   * Frozen lockfile commands disable lifecycle scripts; observed setup is recorded separately.
    */
   readonly installDependencies?: boolean;
   /**
@@ -181,6 +190,10 @@ export interface IndependentVerificationOptions {
 export async function verifyIndependently(
   options: IndependentVerificationOptions,
 ): Promise<IndependentVerification> {
+  if (options.goal !== undefined && options.acceptance !== undefined)
+    throw new Error(
+      "select one acceptance policy per verification; strict reference/control remains a separate policy",
+    );
   const contract =
     options.acceptance === undefined
       ? undefined
@@ -188,6 +201,7 @@ export async function verifyIndependently(
   const immutable = [
     ...(options.immutablePaths ?? []),
     ...(contract?.contract.immutablePaths ?? []),
+    ...(options.goal === undefined ? [] : goalImmutablePaths(options.goal.contract)),
   ];
   const touched = pathsInPatch(options.patch);
   const forbidden = touched.filter((path) => matchesAny(path, immutable));
@@ -215,6 +229,7 @@ export async function verifyIndependently(
 
   const checkout = await mkdtemp(join(options.checkoutRoot ?? tmpdir(), "swarm-verify-"));
   const timeoutMs = options.timeoutMs ?? defaultGateTimeoutMs;
+  let preserveCheckout = false;
   try {
     // A worktree of the base commit, not a copy of the workspace. Nothing the run wrote is
     // here except what the patch carries.
@@ -269,7 +284,9 @@ export async function verifyIndependently(
     const patchPath = join(checkout, ".swarm-verify.patch");
     await writeFile(patchPath, options.patch.endsWith("\n") ? options.patch : `${options.patch}\n`);
     const applied = await options.commands.runVouched(
-      ["git", "-C", ".", "apply", "--whitespace=nowarn", ".swarm-verify.patch"],
+      options.patch.trim() === ""
+        ? ["git", "diff", "--exit-code", "HEAD", "--"]
+        : ["git", "-C", ".", "apply", "--whitespace=nowarn", ".swarm-verify.patch"],
       { cwd: checkout, timeoutMs },
     );
     await rm(patchPath, { force: true });
@@ -277,7 +294,7 @@ export async function verifyIndependently(
       return {
         applied: false,
         checks: [],
-        refusal: null,
+        refusal: `candidate patch could not be applied: ${applied.stderr.trim() || applied.stdout.trim() || `exit ${applied.exitCode}`}`,
         regression: "unmeasured",
         task: "unjudged",
         oracleReach: "unmeasured",
@@ -294,8 +311,32 @@ export async function verifyIndependently(
 
     const install =
       options.installDependencies === true
-        ? await installFromLockfile(checkout, options, timeoutMs)
+        ? await installFromLockfile({
+            workspace: checkout,
+            commands: options.commands,
+            timeoutMs,
+            ...(options.signal === undefined ? {} : { signal: options.signal }),
+            ...(options.goal === undefined ? {} : { evidence: options.goal.evidence }),
+          })
         : null;
+
+    if (install !== null && !install.succeeded)
+      return {
+        applied: true,
+        checks: [],
+        refusal: install.detail,
+        regression: "unmeasured",
+        task: "unjudged",
+        oracleReach: "unmeasured",
+        unreachedByOracle: [],
+        oracleBond: "not-bonded",
+        bondedMutants: [],
+        verified: false,
+        unmeasured: true,
+        advice: install.detail,
+        install,
+        checkoutPath: checkout,
+      };
 
     const onlyTheOracle = options.repositoryChecks === "skip";
     const withPatch = onlyTheOracle ? [] : await runChecks(checkout, options, timeoutMs);
@@ -350,6 +391,22 @@ export async function verifyIndependently(
             evidence: evaluator.evidence,
             execute: (requirement, target) => evaluator.execute(requirement, target, checkout),
           });
+    const goalAcceptance =
+      options.goal === undefined || !restored
+        ? undefined
+        : await verifyGoal({
+            ...options.goal,
+            checkout,
+            commands: options.commands,
+            timeoutMs,
+            ...(options.signal === undefined ? {} : { signal: options.signal }),
+          });
+    if (goalAcceptance !== undefined)
+      task = goalAcceptance.accepted
+        ? "accepted"
+        : goalAcceptance.obligations.some((entry) => entry.status === "unjudged")
+          ? "unjudged"
+          : "rejected";
     const checks = withPatch.some((check) => check.status === "failed")
       ? await attributeFailures(withPatch, checkout, options, timeoutMs)
       : withPatch;
@@ -370,7 +427,13 @@ export async function verifyIndependently(
 
     return {
       applied: true,
-      certificationPolicy: acceptance === undefined ? "oracle-v3" : "required-obligations-v1",
+      certificationPolicy:
+        options.goal !== undefined
+          ? "goal-obligations-v1"
+          : acceptance === undefined
+            ? "oracle-v3"
+            : "required-obligations-v1",
+      ...(goalAcceptance === undefined ? {} : { goalAcceptance }),
       ...(acceptance === undefined ? {} : { acceptance }),
       checks,
       oracleReach,
@@ -387,6 +450,9 @@ export async function verifyIndependently(
       // afterwards, so `verified` is the absence of a named reason to refuse rather than a
       // separate opinion about the same evidence.
       verified: certifies({
+        ...(options.goal === undefined
+          ? {}
+          : { certificationPolicy: "goal-obligations-v1", goalAcceptance }),
         regression,
         task,
         oracleReach,
@@ -431,9 +497,8 @@ export async function verifyIndependently(
                   : !measuredSomething
                     ? "nothing here measured the patch: every check stood down, which on a real project " +
                       "usually means the fresh checkout has no installed dependencies, so its test runner " +
-                      "is not present. Pass --install to install them from the lockfile first, which runs " +
-                      "whatever install scripts the registry serves and is therefore a decision rather " +
-                      "than a default."
+                      "is not present. Pass --install to authorize lockfile setup with lifecycle scripts disabled, " +
+                      "or provide a prepared runtime. Required execution restrictions still apply."
                     : task === "unjudged"
                       ? "the repository's own suite passed, which says nothing broke. It does not say the " +
                         "task was done: a suite tests the behaviour a project already had, and a task adds " +
@@ -443,8 +508,14 @@ export async function verifyIndependently(
       install,
       checkoutPath: checkout,
     };
+  } catch (cause) {
+    if (cause instanceof DependencySetupReconciliationError) {
+      preserveCheckout = true;
+      throw new DependencySetupReconciliationError(`${checkout}: ${cause.message}`);
+    }
+    throw cause;
   } finally {
-    await rm(checkout, { recursive: true, force: true });
+    if (!preserveCheckout) await rm(checkout, { recursive: true, force: true });
   }
 }
 
@@ -677,7 +748,16 @@ async function restorePatch(
   const patchPath = join(checkout, ".swarm-restore.patch");
   await writeFile(patchPath, options.patch.endsWith("\n") ? options.patch : `${options.patch}\n`);
   const applied = await options.commands.runVouched(
-    ["git", "-C", ".", "apply", "--3way", "--whitespace=nowarn", ".swarm-restore.patch"],
+    [
+      "git",
+      "-C",
+      ".",
+      "apply",
+      ...(options.patch.trim() === "" ? ["--allow-empty"] : []),
+      "--3way",
+      "--whitespace=nowarn",
+      ".swarm-restore.patch",
+    ],
     { cwd: checkout, timeoutMs },
   );
   await rm(patchPath, { force: true });
@@ -730,54 +810,6 @@ async function judgeTask(
 }
 
 /**
- * Installs from whichever lockfile the checkout carries, with no network beyond the registry the
- * lockfile already names. Reported rather than assumed: an install that failed and a run that
- * never installed produce the same absent runner, and they are different problems.
- */
-async function installFromLockfile(
-  checkout: string,
-  options: IndependentVerificationOptions,
-  timeoutMs: number,
-): Promise<DependencyInstall> {
-  const lockfiles: readonly { readonly file: string; readonly argv: readonly string[] }[] = [
-    {
-      file: "package-lock.json",
-      argv: ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"],
-    },
-    { file: "pnpm-lock.yaml", argv: ["pnpm", "install", "--frozen-lockfile", "--ignore-scripts"] },
-    { file: "yarn.lock", argv: ["yarn", "install", "--frozen-lockfile", "--ignore-scripts"] },
-  ];
-
-  for (const candidate of lockfiles) {
-    if (!existsSync(join(checkout, candidate.file))) {
-      continue;
-    }
-    const ran = await options.commands.runVouched(candidate.argv, {
-      cwd: checkout,
-      timeoutMs: Math.max(timeoutMs, 10 * 60_000),
-    });
-    return {
-      attempted: true,
-      succeeded: ran.exitCode === 0,
-      command: candidate.argv.join(" "),
-      detail:
-        ran.exitCode === 0
-          ? `installed from ${candidate.file}`
-          : `install failed (exit ${ran.exitCode}): ${(ran.stderr || ran.stdout).trim().split("\n").slice(-2).join(" ")}`,
-    };
-  }
-
-  return {
-    attempted: true,
-    succeeded: false,
-    command: "",
-    detail:
-      "no lockfile this build installs from (package-lock.json, pnpm-lock.yaml, yarn.lock), " +
-      "so nothing was installed and the checks run against whatever is already there",
-  };
-}
-
-/**
  * The gates assembled from the base commit's manifests, not the patched tree's. A patch that
  * rewrites the test script would otherwise choose the instrument that measures it.
  */
@@ -789,6 +821,7 @@ async function runChecks(
   const { gates } = await assembleGateSet({
     workspaceRoot: options.repositoryRoot,
     criteriaRef: options.baseCommit,
+    ...(options.gateOptions === undefined ? {} : { gateOptions: options.gateOptions }),
   });
 
   const results: IndependentCheck[] = [];

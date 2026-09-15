@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Clock } from "../core/clock.ts";
 import type { ModelClient, ModelRequest } from "../core/model-client.ts";
-import { createFixedRandom } from "../core/test-doubles.ts";
+import { createFixedRandom, createTestClock } from "../core/test-doubles.ts";
 import { type EvidenceRecorder, openEvidenceSession } from "../evidence/session.ts";
 import {
   createFixtureModelClient,
@@ -13,6 +13,7 @@ import {
   respondWithToolCalls,
 } from "../providers/fixture-provider.ts";
 import { runPlanner } from "./planner-run.ts";
+import { createRunContext } from "./run-context.ts";
 
 const clock: Clock = { now: () => 1_700_000_000_000, sleep: () => Promise.resolve() };
 
@@ -160,4 +161,110 @@ describe("the planner run", () => {
 
     expect(graph?.nodes.map((node) => node.id)).toEqual(["parser"]);
   });
+});
+
+it("pins candidate goal checks through the planner chokepoint with truthful model authorship", async () => {
+  const contextClock = createTestClock(1000);
+  const context = await createRunContext({
+    evidence,
+    clock: contextClock,
+    runId: "planning",
+    maxTokens: 100000,
+    maxWallMs: 10000,
+    modelConcurrency: 1,
+    testConcurrency: 1,
+    signal: new AbortController().signal,
+  });
+  const goal = "implement parsing";
+  const outcome = await runPlanner({
+    goal,
+    workspace,
+    homeDir: scratch,
+    evidence,
+    clock: contextClock,
+    random: createFixedRandom(),
+    emit: () => {},
+    maxSteps: 4,
+    requireGoalChecks: true,
+    abortSignal: context.signal,
+    model: context.model(
+      "planning",
+      createFixtureModelClient({
+        modelId: "fixture:planner",
+        turns: [
+          respondWithToolCalls("declare", [
+            { callId: "graph", toolName: "declare_task_graph", input: { ...twoNodes, goal } },
+            {
+              callId: "acceptance",
+              toolName: "declare_goal_contract",
+              input: {
+                version: 1,
+                goal,
+                requirements: [
+                  { id: "parsing", description: "parse the required syntax", checks: ["syntax"] },
+                ],
+                checks: [
+                  {
+                    id: "syntax",
+                    command: "node syntax.mjs",
+                    author: "user",
+                    exposure: "withheld",
+                    artifacts: [
+                      {
+                        path: "syntax.mjs",
+                        content:
+                          "import assert from 'node:assert/strict'; import {parse} from './parse.js'; assert.equal(parse('x'), 'x');",
+                      },
+                    ],
+                  },
+                ],
+                immutablePaths: [],
+              },
+            },
+          ]),
+          respondWithText("declared"),
+        ],
+      }),
+    ),
+  });
+  expect(outcome.goalContract?.checks[0]?.author).toBe("model");
+  expect(outcome.goalContract?.checks[0]?.exposure).toBe("shared");
+  expect(context.accounting().spent).toBeGreaterThan(0);
+  context.dispose();
+});
+it("cancels planning under the shared run context and records unresolved provider usage", async () => {
+  const contextClock = createTestClock(1000);
+  const interruption = new AbortController();
+  const context = await createRunContext({
+    evidence,
+    clock: contextClock,
+    runId: "planning",
+    maxTokens: 100000,
+    maxWallMs: 10000,
+    modelConcurrency: 1,
+    testConcurrency: 1,
+    signal: interruption.signal,
+  });
+  const outcome = await runPlanner({
+    goal: "large goal",
+    workspace,
+    homeDir: scratch,
+    evidence,
+    clock: contextClock,
+    random: createFixedRandom(),
+    emit: () => {},
+    maxSteps: 4,
+    abortSignal: context.signal,
+    model: context.model("planning", {
+      modelId: "fixture:cancel",
+      generate: async () => {
+        interruption.abort();
+        throw new Error("cancelled planning");
+      },
+    }),
+  });
+  expect(outcome.stopReason).toBe("interrupted");
+  expect(context.accounting().unknownCalls).toBe(1);
+  expect(outcome.graph).toBeNull();
+  context.dispose();
 });

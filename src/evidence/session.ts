@@ -148,7 +148,7 @@ export async function openEvidenceSession(
       await record({
         type: "claim",
         actor,
-        provenance: ["model"],
+        provenance: actor === "harness" ? ["tool-output"] : ["model"],
         payload: {
           predicate: submitted.predicate,
           record: submitted.record,

@@ -2,7 +2,8 @@
 
 What a run looks like from the keyboard, and the two shapes beyond one task: a session of
 tasks against one workspace, and several workers at once. The commands and flags are in the
-README; this is what they do once they are running.
+README; this is what they do once they are running. A goal run returns a branch only after its
+integrated tree has been checked against the complete declared requirement set.
 
 [A session](#a-session-or-a-single-task) | [Several workers](#several-workers-at-once) | [The screen](#watching-it-work) | [Settings](#settings)
 
@@ -32,7 +33,8 @@ bundle verified from outside and the page it produced, are in
 `swarm parallel` gives each task a git worktree of its own and a merge queue that lands them
 one at a time under the same ratchet a single run answers to. Nothing is merged into the
 branch you are sitting on; the result waits on an integration branch and the report tells you
-how to take it.
+how to take it. The controller starts ready work as resources permit, keeps one integration writer,
+and shares the planning, worker, repair and verification budget.
 
 Three things sit on top of that, each optional and each off unless asked for.
 
@@ -49,15 +51,25 @@ answer it likes. The whole ranking goes on the chain, losers and the reason each
 included, so you re-read the choice instead of taking it.
 
 **`--goal <text>` breaks the goal into tasks itself.** A planner reads the workspace with
-read-only tools and declares a task graph, which is checked for unique ids, resolving
-dependencies, no cycle, and files that two unordered tasks do not share, and recorded before
-the first worker starts. Nodes land layer by layer.
+read-only tools and declares a task graph before the first worker starts. The controller checks
+unique ids, resolving dependencies, cycles, intended files, effective task contracts and required
+checks. Readiness scheduling releases a dependent as soon as its prerequisites are accepted while
+unrelated work continues. A missing prerequisite, repeated interaction failure, or repair route can
+produce a bounded append-only graph revision. Requirement identities and failed attempts remain in
+the ledger, and stale candidates cannot overwrite accepted state.
 
 Two runs of this, committed with their bundles, are in
 [`swarm.md`](evidence/2026-08-24/swarm.md). The second one is the more useful: every
 structural check passed on a decomposition that could not work, because the planner left out
-a dependency. Whether a set of tasks adds up to a goal is a judgement about meaning, and this
-tool makes none.
+a dependency. The adaptive controller turns that observed failure into a recorded repair or graph
+revision. Final goal checks run in a fresh verifier workspace, so worker-local green checks do not
+establish completion.
+
+Prefer one worker for a one-file edit, a tiny task, or components that must change together. Use
+several workers when the goal has independent, observable interfaces and the shared budget supports
+the extra setup and integration cost. A repair records the rejected candidate, the current
+integration commit, the bounded retry, and the resulting branch. `resume` reconstructs those
+events and never lands an accepted commit twice.
 
 ## Watching it work
 

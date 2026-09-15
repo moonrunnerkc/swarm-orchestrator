@@ -50,6 +50,25 @@ describe("project type detection", () => {
       "go",
     ]);
   });
+  it("detects legacy Python manifests without executing setup code or duplicating gates", async () => {
+    const detection = await detectProject(
+      reader({
+        "setup.py": "raise RuntimeError('setup must not execute during detection')",
+        "setup.cfg":
+          "[metadata]\nname = example\n[mypy]\nstrict = true\n[tool:pytest]\ntestpaths = tests\n",
+      }),
+    );
+    expect(detection.types).toEqual(["python"]);
+    expect(detection.manifests).toEqual(["setup.cfg", "setup.py"]);
+    expect(detection.pythonTools).toEqual(["mypy"]);
+    expect(commandOf(assembleGates(detection), "tests")).toBe("pytest -q");
+    expect(commandOf(assembleGates(detection), "typecheck")).toBe("mypy .");
+    const modern = await detectProject(
+      reader({ "pyproject.toml": "[tool.ruff]\nfix = true", "setup.py": "" }),
+    );
+    expect(modern.types).toEqual(["python"]);
+    expect(assembleGates(modern).filter((gate) => gate.id === "tests")).toHaveLength(1);
+  });
 
   it("detects every manifest a polyglot repo carries", async () => {
     const detection = await detectProject(
@@ -223,12 +242,33 @@ describe("assembling the default gate set", () => {
     const configured = assembleGates(
       await detectProject(reader({ "pyproject.toml": "[tool.ruff]\n[tool.mypy]\n" })),
     );
-    expect(commandOf(configured, "lint")).toBe("ruff check .");
+    expect(commandOf(configured, "lint")).toBe("ruff check --no-fix .");
     expect(commandOf(configured, "typecheck")).toBe("mypy .");
 
     const bare = assembleGates(await detectProject(reader({ "pyproject.toml": "[project]\n" })));
     expect(commandOf(bare, "lint")).toBeNull();
     expect(commandOf(bare, "tests")).toBe("pytest -q");
+  });
+  it("preserves explicit mypy target selection instead of checking unrelated untyped tests", async () => {
+    for (const manifests of [
+      { "pyproject.toml": "[tool.mypy]\nfiles = ['src', 'tests/typing']\nstrict = true\n" },
+      {
+        "setup.cfg":
+          "[mypy]\nfiles = src, tests/typing\nstrict = True\n[tool:pytest]\ntestpaths = tests\n",
+      },
+    ]) {
+      const detection = await detectProject(reader(manifests));
+      expect(detection.pythonMypyTargetsConfigured).toBe(true);
+      expect(commandOf(assembleGates(detection), "typecheck")).toBe("mypy");
+    }
+    const unrelated = await detectProject(
+      reader({ "setup.cfg": "[mypy]\nstrict = True\n[other]\nfiles = ignored\n" }),
+    );
+    expect(commandOf(assembleGates(unrelated), "typecheck")).toBe("mypy .");
+    const malformed = await detectProject(
+      reader({ "pyproject.toml": "[tool.mypy]\nfiles = [not valid TOML" }),
+    );
+    expect(commandOf(assembleGates(malformed), "typecheck")).toBe("mypy .");
   });
 
   it("keeps a polyglot repo's gates distinguishable by naming the type in the id", async () => {

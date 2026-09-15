@@ -24,7 +24,7 @@ const entrySchema = z.object({
 
 const projections = new Map<
   string,
-  { digest: string; projection: unknown; count: number; head: string }
+  { digest: string; byteLength: number; projection: unknown; count: number; head: string }
 >();
 
 /** A rebuildable projection, appended under an exclusive writer lease and checked on every read. */
@@ -36,28 +36,48 @@ export function openRunJournal<Projection extends object>(
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   chmodSync(dirname(path), 0o700);
   const read = () => {
-    if (!existsSync(path)) return { projection: empty(), count: 0, head: "genesis" };
-    const bytes = readFileSync(path, "utf8");
-    const digest = digestOfBytes(bytes);
     const cached = projections.get(path);
+    if (!existsSync(path)) {
+      if (cached !== undefined)
+        throw new Error(
+          `recovery journal disappeared after verification: ${path}; preserve and reconcile`,
+        );
+      return { projection: empty(), count: 0, head: "genesis", contents: Buffer.alloc(0) };
+    }
+    const contents = readFileSync(path);
+    const digest = digestOfBytes(contents);
     if (cached?.digest === digest) {
       return {
         projection: parse(structuredClone(cached.projection)),
         count: cached.count,
         head: cached.head,
+        contents,
       };
     }
-    if (bytes.startsWith("SQLite format"))
+    if (contents.subarray(0, 13).toString("utf8") === "SQLite format")
       throw new Error(
         `legacy SQLite state at ${path}; preserve it and import it read-only before using a JSONL journal`,
       );
-    if (bytes !== "" && !bytes.endsWith("\n"))
+    if (contents.length !== 0 && contents.at(-1) !== 10)
       throw new Error(
         `incomplete recovery journal at ${path}; preserve the file and reconcile the last operation`,
       );
-    const projection = empty();
-    let head = "genesis";
-    let count = 0;
+    // The checkpoint saves replay, never the byte check: every held prefix is hashed again.
+    if (
+      cached !== undefined &&
+      (contents.length < cached.byteLength ||
+        digestOfBytes(contents.subarray(0, cached.byteLength)) !== cached.digest)
+    )
+      throw new Error(
+        `recovery journal checksum failed in its previously verified prefix: ${path}; preserve altered history`,
+      );
+    const suffix = contents.subarray(cached?.byteLength ?? 0);
+    const bytes = suffix.toString("utf8");
+    if (!Buffer.from(bytes).equals(suffix))
+      throw new Error(`recovery journal contains invalid UTF-8: ${path}; preserve its bytes`);
+    const projection = cached === undefined ? empty() : parse(structuredClone(cached.projection));
+    let head = cached?.head ?? "genesis";
+    let count = cached?.count ?? 0;
     for (const line of bytes.split("\n").filter(Boolean)) {
       const { hash, ...encoded } = JSON.parse(line);
       if (hash !== digestOfBytes(JSON.stringify(encoded)))
@@ -81,11 +101,12 @@ export function openRunJournal<Projection extends object>(
     if (projections.size >= 32) projections.clear();
     projections.set(path, {
       digest,
+      byteLength: contents.length,
       projection: structuredClone(projection),
       count,
       head,
     });
-    return { projection: parse(projection), count, head };
+    return { projection: parse(projection), count, head, contents };
   };
   return {
     read: () => read().projection,
@@ -144,9 +165,15 @@ export function openRunJournal<Projection extends object>(
         } finally {
           closeSync(journal);
         }
+        const observed = readFileSync(path);
+        if (!observed.equals(Buffer.concat([current.contents, Buffer.from(`${line}\n`)])))
+          throw new Error(
+            `recovery journal changed during append: ${path}; preserve all bytes and reconcile the writer`,
+          );
         if (projections.size >= 32) projections.clear();
         projections.set(path, {
-          digest: digestOfBytes(readFileSync(path, "utf8")),
+          digest: digestOfBytes(observed),
+          byteLength: observed.length,
           projection: structuredClone(projection),
           count: current.count + 1,
           head: digestOfBytes(line),

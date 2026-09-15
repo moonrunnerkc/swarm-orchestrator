@@ -15,6 +15,8 @@ const subjectFieldByType: Partial<Record<RecordType, string>> = {
   "gate-run": "gateId",
   "tool-call": "toolName",
   "attempt-selection": "taskId",
+  "goal-attempt-selection": "taskId",
+  "goal-candidate-verification": "workerId",
 };
 
 /**

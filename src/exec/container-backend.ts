@@ -27,7 +27,7 @@ export interface ContainerBackendOptions {
   readonly network?: "none" | "bridge";
   readonly observeLifecycle?: (event: {
     identity: string;
-    phase: "created" | "removed" | "cleanup-failed";
+    phase: "create-intent" | "created" | "removed" | "cleanup-failed";
   }) => Promise<void>;
   readonly runProcess?: typeof runProcessGroup;
 }
@@ -72,7 +72,7 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
         timeoutMs: 15_000,
         maxOutputBytes: 4_000_000,
       };
-      await options.observeLifecycle?.({ identity, phase: "created" });
+      await options.observeLifecycle?.({ identity, phase: "create-intent" });
       let ran: Awaited<ReturnType<typeof runProcessGroup>>;
       let cleanupFailure: Error | null = null;
       let creationUncertain = false;
@@ -110,6 +110,8 @@ export function createContainerBackend(options: ContainerBackendOptions): Isolat
           { ...runtimeOptions, timeoutMs: runOptions.timeoutMs },
         );
         creationUncertain = created.timedOut || created.startFailure !== null;
+        if (created.exitCode === 0)
+          await options.observeLifecycle?.({ identity, phase: "created" });
         ran =
           created.exitCode === 0
             ? await execute(options.runtime, ["start", "--attach", identity], {

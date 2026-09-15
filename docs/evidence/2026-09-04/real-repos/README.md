@@ -44,3 +44,16 @@ to keep it clonable, so `verify.mjs` in these directories exits 1 until:
 
 Nothing in this repository cites these bundles as evidence that verifies. The ones that are cited
 keep their payloads and are held to that by `../../../../scripts/check-cited-bundles-verify.mjs`.
+
+## Offline transcript restoration
+
+The 18 original text transcripts are losslessly archived in `transcripts/` using the existing
+UTF-8 file-map format. Their original relative paths, byte counts and SHA-256 digests are in
+`transcripts/inventory.json`. Run:
+
+    node scripts/local-campaign/archive.mjs docs/evidence/2026-09-04/real-repos/transcripts
+
+The command prints a fresh directory containing the exact original paths and bytes. The archive
+was restored and every file compared byte-for-byte before the duplicate raw copies were removed.
+Historical ledgers, task/check files, patches, verdicts and bundle payload references are unchanged.
+This transcript archive is separate from the bundle-payload restoration described above.

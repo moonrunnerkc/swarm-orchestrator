@@ -54,8 +54,8 @@ export function canonicalJson(value: JsonValue): string {
   return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(",")}}`;
 }
 
-export function digestOfBytes(bytes: string): string {
-  return `sha256:${createHash("sha256").update(bytes, "utf8").digest("hex")}`;
+export function digestOfBytes(bytes: string | Uint8Array): string {
+  return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
 export function digestOfJson(value: JsonValue): string {

@@ -4,6 +4,7 @@ import type { LoopEvent } from "../core/loop-events.ts";
 import type { EvidenceRecorder } from "../evidence/session.ts";
 import { harnessChildEnvironment } from "../exec/child-environment.ts";
 import type { IsolationBackend } from "../exec/execution-mode.ts";
+import type { ResourcePool } from "../exec/resource-pool.ts";
 import {
   type AutoResolveOutcome,
   defaultAttemptCap,
@@ -39,6 +40,7 @@ import { detectProject, type ProjectDetection } from "./project-type.ts";
 export const defaultDiffBudget: DiffBudget = { maxChangedFiles: 12, maxAddedLines: 600 };
 
 interface GatesEngineOptions {
+  readonly commandPool?: ResourcePool | undefined;
   readonly workspaceRoot: string;
   readonly baseRef: string;
   readonly evidence: EvidenceRecorder;
@@ -164,6 +166,7 @@ export async function runGatesEngine(options: GatesEngineOptions): Promise<Gates
     harnessChildEnvironment(),
     options.isolation,
     options.abortSignal,
+    options.commandPool,
   );
   // Read from the base commit, falling back to the tree only where the base had no manifest at
   // all. A run must not author the command that measures it: one rewrote package.json's test

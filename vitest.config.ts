@@ -62,11 +62,37 @@ const profile = process.env.SWARM_TEST_PROFILE;
 
 export default defineConfig({
   test: {
-    exclude:
-      profile === "unit" ? [...notThisProjectsSuite, ...integrationSuites] : notThisProjectsSuite,
-    ...(profile === "integration" ? { include: integrationSuites } : {}),
     // Long enough for a real clone and a real gate run, short enough that a hang is a failure
     // rather than a wait. Individual cases still narrow it where they know better.
     testTimeout: profile === "unit" ? 10_000 : 120_000,
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "suite",
+          exclude: [
+            ...notThisProjectsSuite,
+            ...(profile === "unit" ? integrationSuites : []),
+            "src/eval/deadline-overshoot.test.ts",
+          ],
+          ...(profile === "integration" ? { include: integrationSuites } : {}),
+          sequence: { groupOrder: 0 },
+        },
+      },
+      // Real deadline measurements need a fixed load condition. Run them after the process-
+      // heavy suites, retaining their existing bounds and every collected test.
+      ...(profile === "integration"
+        ? []
+        : [
+            {
+              extends: true as const,
+              test: {
+                name: "deadline-measurement",
+                include: ["src/eval/deadline-overshoot.test.ts"],
+                sequence: { groupOrder: 1 },
+              },
+            },
+          ]),
+    ],
   },
 });

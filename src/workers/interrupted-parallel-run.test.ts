@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Clock } from "../core/clock.ts";
 import type { ModelClient, ModelRequest } from "../core/model-client.ts";
-import { createFixedRandom } from "../core/test-doubles.ts";
+import { createFixedRandom, createTestClock } from "../core/test-doubles.ts";
 import { type EvidenceRecorder, openEvidenceSession } from "../evidence/session.ts";
 import { runInParallel } from "./parallel-run.ts";
 
@@ -21,7 +21,7 @@ import { runInParallel } from "./parallel-run.ts";
  */
 
 const run = promisify(execFile);
-const clock: Clock = { now: () => 1_700_000_000_000, sleep: () => Promise.resolve() };
+const clock: Clock = createTestClock(1_700_000_000_000);
 
 let scratch = "";
 let repository = "";

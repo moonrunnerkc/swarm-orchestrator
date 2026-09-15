@@ -180,7 +180,7 @@ function pythonGates(detection: ProjectDetection): readonly GateDefinition[] {
           id: "typecheck",
           title: "typecheck (mypy)",
           severity: "blocking",
-          command: "mypy .",
+          command: detection.pythonMypyTargetsConfigured ? "mypy" : "mypy .",
         })
       : unavailableGate(
           "typecheck",
@@ -195,7 +195,7 @@ function pythonGates(detection: ProjectDetection): readonly GateDefinition[] {
           id: "lint",
           title: "lint (ruff)",
           severity: "blocking",
-          command: "ruff check .",
+          command: "ruff check --no-fix .",
         })
       : unavailableGate("lint", "lint (python)", "blocking", "pyproject.toml configures no linter"),
   );

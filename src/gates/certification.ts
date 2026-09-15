@@ -22,8 +22,9 @@ import type { OracleBondVerdict } from "./oracle-bond.ts";
 export const bondRefusesCertification: boolean = true;
 
 export interface RecordedVerdict {
-  readonly certificationPolicy?: "oracle-v3" | "required-obligations-v1";
+  readonly certificationPolicy?: "oracle-v3" | "required-obligations-v1" | "goal-obligations-v1";
   readonly acceptance?: import("./contract-verification.ts").ContractVerification;
+  readonly goalAcceptance?: import("./goal-acceptance.ts").GoalVerification | undefined;
   readonly regression: "pass" | "fail" | "unmeasured";
   readonly task: "accepted" | "rejected" | "unjudged" | "vacuous";
   readonly oracleReach: "reached" | "unreached" | "unmeasured";
@@ -48,6 +49,16 @@ export function reasonsToRefuse(verdict: RecordedVerdict): readonly RefusalReaso
   const reasons: RefusalReason[] = [];
   if (verdict.regression !== "pass") {
     reasons.push("regression-not-pass");
+  }
+  if (verdict.certificationPolicy === "goal-obligations-v1") {
+    const obligations = verdict.goalAcceptance?.obligations;
+    if (
+      obligations === undefined ||
+      obligations.length === 0 ||
+      !obligations.every((entry) => entry.status === "accepted")
+    )
+      reasons.push("required-obligations-not-accepted");
+    return reasons;
   }
   if (verdict.certificationPolicy === "required-obligations-v1") {
     const obligations = verdict.acceptance?.obligations;

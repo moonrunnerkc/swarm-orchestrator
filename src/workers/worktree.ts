@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
-import { rm } from "node:fs/promises";
+import { realpath } from "node:fs/promises";
 import { promisify } from "node:util";
+import { harnessChildEnvironment } from "../exec/child-environment.ts";
 
 const runProcess = promisify(execFile);
 
@@ -11,29 +12,44 @@ interface ProcessResult {
 }
 
 /**
- * Git is the isolation mechanism here, so it is called directly rather than through the tool
- * chokepoint: none of these arguments comes from a model, and a worker's own commands still
- * go through the chokepoint inside its worktree.
+ * Git separates candidate changes, not runtime access. Controller-owned operations call it
+ * directly; worker commands still pass through the tool chokepoint.
  */
-async function git(cwd: string, args: readonly string[]): Promise<ProcessResult> {
+async function git(
+  cwd: string,
+  args: readonly string[],
+  signal?: AbortSignal,
+): Promise<ProcessResult> {
   try {
-    const { stdout, stderr } = await runProcess("git", [...args], {
-      cwd,
-      maxBuffer: 64_000_000,
-    });
+    const { stdout, stderr } = await runProcess(
+      "git",
+      ["-c", "user.name=Swarm Orchestrator", "-c", "user.email=swarm@localhost", ...args],
+      {
+        cwd,
+        maxBuffer: 64_000_000,
+        timeout: 30_000,
+        ...(signal === undefined ? {} : { signal }),
+        env: harnessChildEnvironment().variables,
+      },
+    );
     return { stdout, stderr, code: 0 };
   } catch (cause) {
     const failure = cause as { stdout?: string; stderr?: string; code?: number; message?: string };
     return {
       stdout: failure.stdout ?? "",
       stderr: failure.stderr ?? failure.message ?? "",
-      code: failure.code ?? 1,
+      code: typeof failure.code === "number" ? failure.code : 1,
     };
   }
 }
 
-async function gitOrThrow(cwd: string, args: readonly string[]): Promise<string> {
-  const result = await git(cwd, args);
+async function gitOrThrow(
+  cwd: string,
+  args: readonly string[],
+  signal?: AbortSignal,
+): Promise<string> {
+  signal?.throwIfAborted();
+  const result = await git(cwd, args, signal);
   if (result.code !== 0) {
     throw new WorktreeError(`git ${args.join(" ")}`, `${result.stdout}${result.stderr}`.trim());
   }
@@ -62,9 +78,9 @@ export interface Worktree {
   readonly path: string;
   readonly branch: string;
   /** Stages everything and commits. Null when the worker changed nothing worth landing. */
-  commitAll(message: string): Promise<string | null>;
+  commitAll(message: string, signal?: AbortSignal): Promise<string | null>;
   /** Takes the working copy away. The branch stays, because the queue still needs it. */
-  remove(): Promise<void>;
+  remove(signal?: AbortSignal): Promise<void>;
 }
 
 /**
@@ -82,28 +98,90 @@ export async function addWorktree(options: WorktreeOptions): Promise<Worktree> {
     options.baseRef,
   ]);
 
+  return worktreeHandle(options);
+}
+
+export async function reopenWorktree(options: WorktreeOptions): Promise<Worktree> {
+  const handle = worktreeHandle(options);
+  await verifyWorktreeOwnership(options);
+  return handle;
+}
+
+export async function restoreWorktree(options: WorktreeOptions): Promise<Worktree> {
+  const actual = (await gitOrThrow(options.repositoryRoot, ["rev-parse", options.branch])).trim();
+  if (actual !== options.baseRef)
+    throw new WorktreeError(
+      "restore worktree",
+      "branch changed since its recorded accepted commit; preserve and reconcile",
+    );
+  await gitOrThrow(options.repositoryRoot, [
+    "worktree",
+    "add",
+    "--quiet",
+    options.path,
+    options.branch,
+  ]);
+  return worktreeHandle(options);
+}
+
+function worktreeHandle(options: WorktreeOptions): Worktree {
   return {
     path: options.path,
     branch: options.branch,
 
-    async commitAll(message: string): Promise<string | null> {
-      await gitOrThrow(options.path, ["add", "--all"]);
-      const staged = await git(options.path, ["diff", "--cached", "--quiet"]);
+    async commitAll(message: string, signal?: AbortSignal): Promise<string | null> {
+      await gitOrThrow(options.path, ["add", "--all"], signal);
+      const staged = await git(options.path, ["diff", "--cached", "--quiet"], signal);
       if (staged.code === 0) {
         return null;
       }
-      await gitOrThrow(options.path, ["commit", "--quiet", "--no-verify", "-m", message]);
-      return headCommit(options.path);
+      await gitOrThrow(options.path, ["commit", "--quiet", "--no-verify", "-m", message], signal);
+      return headCommit(options.path, signal);
     },
 
-    async remove(): Promise<void> {
-      await git(options.repositoryRoot, ["worktree", "remove", "--force", options.path]);
-      // Belt and braces: a worktree git declined to remove must still not be left behind,
-      // because the next run would find a path it cannot add.
-      await rm(options.path, { recursive: true, force: true });
-      await git(options.repositoryRoot, ["worktree", "prune"]);
+    async remove(signal?: AbortSignal): Promise<void> {
+      await verifyWorktreeOwnership(options, signal);
+      const changed = await gitOrThrow(
+        options.path,
+        ["status", "--porcelain", "--untracked-files=all"],
+        signal,
+      );
+      if (changed.trim() !== "")
+        throw new WorktreeError(
+          "remove worktree",
+          `uncommitted files remain at ${options.path}; preserve them and reconcile before cleanup`,
+        );
+      await gitOrThrow(
+        options.repositoryRoot,
+        ["worktree", "remove", "--force", options.path],
+        signal,
+      );
     },
   };
+}
+
+export async function verifyWorktreeOwnership(
+  options: WorktreeOptions,
+  signal?: AbortSignal,
+): Promise<void> {
+  const listing = await gitOrThrow(
+    options.repositoryRoot,
+    ["worktree", "list", "--porcelain", "-z"],
+    signal,
+  );
+  const ownedPath = await realpath(options.path);
+  const entries = listing.split("\0\0").map((entry) => entry.split("\0"));
+  if (
+    !entries.some(
+      (entry) =>
+        entry.includes(`worktree ${ownedPath}`) &&
+        entry.includes(`branch refs/heads/${options.branch}`),
+    )
+  )
+    throw new WorktreeError(
+      "inspect worktree",
+      `ownership of ${options.path} changed; preserve it and reconcile`,
+    );
 }
 
 interface MergeOutcome {
@@ -124,8 +202,13 @@ export async function mergeBranch(
   worktreePath: string,
   branch: string,
   message: string,
+  signal?: AbortSignal,
 ): Promise<MergeOutcome> {
-  const merge = await git(worktreePath, ["merge", "--no-ff", "--no-verify", "-m", message, branch]);
+  const merge = await git(
+    worktreePath,
+    ["merge", "--no-ff", "--no-verify", "-m", message, branch],
+    signal,
+  );
   if (merge.code === 0) {
     return {
       merged: true,
@@ -150,14 +233,18 @@ export async function mergeBranch(
   };
 }
 
-export async function headCommit(worktreePath: string): Promise<string> {
-  return (await gitOrThrow(worktreePath, ["rev-parse", "HEAD"])).trim();
+export async function headCommit(worktreePath: string, signal?: AbortSignal): Promise<string> {
+  return (await gitOrThrow(worktreePath, ["rev-parse", "HEAD"], signal)).trim();
 }
 
 /** Puts an integration worktree back on an accepted commit after a rejection. */
-export async function resetHard(worktreePath: string, ref: string): Promise<void> {
-  await gitOrThrow(worktreePath, ["reset", "--hard", "--quiet", ref]);
-  await gitOrThrow(worktreePath, ["clean", "-fd", "--quiet"]);
+export async function resetHard(
+  worktreePath: string,
+  ref: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await gitOrThrow(worktreePath, ["reset", "--hard", "--quiet", ref], signal);
+  await gitOrThrow(worktreePath, ["clean", "-fd", "--quiet"], signal);
 }
 
 /**
@@ -177,6 +264,7 @@ export async function resetHard(worktreePath: string, ref: string): Promise<void
 export async function sweepRunBranches(
   repositoryRoot: string,
   runId: string,
+  owned?: readonly { branch: string; commit: string | null }[],
 ): Promise<readonly string[]> {
   await git(repositoryRoot, ["worktree", "prune"]);
 
@@ -188,6 +276,12 @@ export async function sweepRunBranches(
 
   const removed: string[] = [];
   for (const branch of mine) {
+    if (owned !== undefined) {
+      const expected = owned.find((candidate) => candidate.branch === branch)?.commit;
+      if (expected === undefined || expected === null) continue;
+      const observed = await git(repositoryRoot, ["rev-parse", branch]);
+      if (observed.stdout.trim() !== expected) continue;
+    }
     const outcome = await git(repositoryRoot, ["branch", "-D", branch]);
     if (outcome.code === 0) {
       removed.push(branch);

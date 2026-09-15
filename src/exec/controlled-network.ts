@@ -4,9 +4,15 @@ import { networkInterfaces } from "node:os";
 
 /** A short-lived synthetic endpoint, closed before the containment self-test returns. */
 export async function controlledNetworkTarget() {
-  const address = Object.values(networkInterfaces())
-    .flat()
-    .find((entry) => entry?.family === "IPv4" && !entry.internal)?.address;
+  let address: string | undefined;
+  try {
+    address = Object.values(networkInterfaces())
+      .flat()
+      .find((entry) => entry?.family === "IPv4" && !entry.internal)?.address;
+  } catch {
+    // Some hosts refuse enumeration. No reachable control means no network measurement.
+    return null;
+  }
   if (address === undefined) return null;
   const challenge = randomUUID();
   const listener = createServer((socket) => socket.end(challenge));
