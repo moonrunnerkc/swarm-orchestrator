@@ -1,10 +1,11 @@
 # Adaptive goal controller implementation, September 13, 2026
 
-Status: implementation delivered on the review branch. Complete-goal behavior is established by
-development and integration evidence; no performance advantage or universal correctness is claimed.
-September 14 completion: replacement cohort 2 completed all 120 scheduled slots from
-`87d7ef085`; the original cohort is withdrawn and preserved. Final integration, platform checks
-and publication remain in progress.
+Status: implementation and evidence are integrated into the verified `origin/v13-main` branch.
+Complete-goal behavior is established by development and integration evidence; no performance
+advantage or universal correctness is claimed. September 15 completion: replacement cohort 2
+completed all 120 scheduled slots from `87d7ef085`; the original cohort is withdrawn and
+preserved. The merged release source, supported-platform checks, package publication and registry
+installation are verified below.
 This record tracks the entire approved redesign, including empirical work that code alone
 cannot complete. The September 11 audit record remains historical evidence.
 
@@ -86,10 +87,10 @@ A runner alone does not complete an empirical requirement.
 | V4 | Adaptation and peer ablations, repeats correlated, natural/synthetic distinct | Adaptation and peer-information paths were audited in all five arms; synthetic development cases and withdrawn observations remain separate. | validated |
 | V5 | Wall/tokens/cost/completion/incorrect acceptance/human burden/retries/recovery | Final report records wall time, acceptance, incorrect acceptance, usage layers, retries, repairs, cancellations, budgets, missing ledgers and recorded human counters; provider cost and unlogged burden remain unknown. | validated |
 | V6 | Available authorized local models, no new paid commitment | Owned local Qwen weights executed all five arms and the six separate development cases. No paid calls or model substitutions occurred. | validated |
-| V7 | Full gates, build, packaged CLI, fuzz, evidence and supported platforms | Replacement and supplementary local evidence is complete. Final merged-source Ubuntu/macOS CI, build, package, fuzz and registry artifact checks remain before release closure. | partial |
+| V7 | Full gates, build, packaged CLI, fuzz, evidence and supported platforms | Replacement and supplementary local evidence plus merged-source Ubuntu/macOS CI, build, package, fuzz, registry integrity and fresh installation checks are retained below. | validated |
 | R1 | README, usage, CLI, build guide, ADRs, instructions, changelog, examples | README, usage, CLI, build guide, ADR 0009, synchronized instructions, changelog and implementation examples describe complete-goal and adaptive recovery behavior. | validated |
-| R2 | Tested coherent commits, installable release candidate, exact push/CI/release status | Small validated commits and package checks continue. Version 14.1.0 is selected; final integration, publication and registry installation are unfinished. | partial |
-| R3 | Final audit against entire appendix, explicit remaining blockers | Current audit preserves archive bytes and names open empirical, remote integration and release requirements. Final audit follows their completion. | partial |
+| R2 | Tested coherent commits, installable release candidate, exact push/CI/release status | Small validated commits are integrated into `origin/v13-main`; version 14.1.0 is published and independently installed from the registry. | validated |
+| R3 | Final audit against entire appendix, explicit remaining blockers | Final audit preserves the pilot, supplementary profiles, CI, integration, package and registry evidence; H2 remains conditional for its stated unmet prerequisites. | validated |
 
 ## Source findings verified
 
@@ -1232,6 +1233,60 @@ controller graphs remain unavailable with their exact digest errors. This closes
 replay portion of G4.
 
 B2, D6, G1, G4 and V2 through V6 are now measured or validated as described in the report.
-V7 remains partial until the integrated release tree has final Ubuntu/macOS CI, build, package,
-fuzz and registry installation evidence. H2 remains conditional because no approved supported
-external CLI with usable local or already-authorized execution is available.
+V7 is validated by the integrated release tree's final Ubuntu/macOS CI, build, package, fuzz and
+registry installation evidence. H2 remains conditional because no approved supported external
+CLI with usable local or already-authorized execution is available.
+
+### Integrated default branch and 14.1.0 registry release, September 15
+
+PR [#73](https://github.com/moonrunnerkc/swarm-orchestrator/pull/73) merged the validated
+implementation branch into `v13-main` with merge commit
+`caf960bc787e12bbba47d4f3e9720ebd8a8d4b4d`. The subsequent documentation-only evidence commit
+is the final source of this record on `origin/v13-main`; its identity is recorded after the
+push. The merge preserved the small implementation commits and used the existing administrator
+exemption for the repository's active `restrictdelete` ruleset. No force push or ruleset change
+was used.
+
+The merged source passed the required local checks in a clean worktree: gates capture
+`completion-merged-gates-caf`, evidence `sha256:3b7f44b1fbc0bf4c2099849e99e00541e71289fb13dd981255ec1d7c49a3f9d3`; build capture
+`completion-merged-build-caf`, evidence `sha256:aeb3d389a067605267e426155ff8f9f83e6407ba90e122c19fc5b0fafbd9d2cb`;
+packaged command capture `completion-merged-packaged-caf`, evidence
+`sha256:033c49c7c5089b4d42fe5d3e2f13bfc99b324017041569c68bc0cfea100de004`; fuzz capture
+`completion-merged-fuzz-caf`, evidence `sha256:848995ef33e9b66b6f61b2c0cdc451711afc588db58372990d3d962c1ee67751`;
+and package capture `completion-merged-pack-caf`, evidence
+`sha256:e7dd4f08a2b3f08452a077c1a385814cea8a1436ec3e20af7f0727fd04d18799`. The merged
+artifact contains 641 entries, nine build assets and no credential-like files. Its local tarball
+digest is `sha256:2499bbcbd1a5996ceda5cdf4c43fe3369869c836430a3027f2bfcef285522495`, with
+inspection capture `completion-merged-artifact-inspect-caf`, evidence
+`sha256:7446955e7326d6da47ea87fff249a188d382efa1205804da0fe8462cb11b2e77`.
+
+The exact merged source passed the feature PR and push CI matrix. PR run
+[34916224868](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/34916224868) and
+push run [34916219577](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/34916219577)
+both passed their packaged, Ubuntu and macOS jobs. Earlier runs on intermediate commits remain
+historical and are not reused as final evidence.
+
+Tag `v14.1.0` points to the merged commit and was pushed normally, capture
+`completion-release-tag-v14.1.0`, evidence `sha256:b62c46c61ebb44cd9c276b60f350be655efbbc39904c13936dd5856611a6f469`.
+The normal release workflow [34916998130](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/34916998130)
+published `swarm-orchestrator@14.1.0` with provenance. Registry metadata reports gitHead
+`caf960bc787e12bbba47d4f3e9720ebd8a8d4b4d`, shasum
+`9dd37a74fd5cfc6c412b851b6cb03e420a63663b`, and integrity
+`sha512-o7dNkJBfIlc7duMMGRGfUcKHIpE3qWI6QM3f89dhpU5clh+lUCJAgPW0LY8RSvPZ3Rqo8Ggek6OxAKAzWGtJhQ==`.
+The fetched tarball matched that integrity, capture `completion-registry-integrity-14.1.0`,
+evidence `sha256:91fb7dbdd796fbc7b68b3f4c26297b205d5a63e7226097044f28a18588aa461a`. A fresh
+temporary consumer installed exactly 14.1.0 from the registry and exercised its public CLI,
+capture `completion-registry-install-14.1.0`, evidence
+`sha256:a5eb8c03da54a0026f781faf66553c1a9835c2eeab161f809b808a70a45ede97`.
+
+Release [v14.1.0](https://github.com/moonrunnerkc/swarm-orchestrator/releases/tag/v14.1.0)
+retains the report, manifest, profiles and split campaign archive assets. The eight archive parts
+were downloaded and reassembled byte-for-byte against the retained local archive, verification
+capture `completion-release-assets-verify-2`, evidence
+`sha256:e24e0a52183429ae1ba6f2cdfdf06330c2a7268d2390bbf2b087a11904993bc8`.
+
+The replacement pilot was evaluated on `87d7ef085`, while the package and release were built
+from merged source `caf960bc7`; this distinction is retained. The final documentation commit is
+an evidence update after the release tag and does not relabel the pilot or require republishing.
+H2 remains conditional because no approved supported external CLI with usable local or already-
+authorized execution is available and the adaptive pilot bar is not met.

@@ -120,9 +120,42 @@ Three controller replays are unavailable because their recorded graph content do
 - V4: closed. Adaptation and peer ablations reached the execution path and were audited; natural and synthetic denominators remain separate.
 - V5: closed descriptively. Wall time, completion, incorrect acceptance, usage, retries, repairs, cancellations, budget outcomes, missing records and recorded human counters are reported; provider cost and unlogged human burden remain unknown.
 - V6: closed. The authorized owned local model completed the schedule without paid calls or configuration substitution.
-- V7: pending final merged-source CI and release artifact checks. The measured replacement source and supplementary profiles pass their declared local checks; final supported-platform and package evidence must bind to the integrated release tree.
+- V7: validated. The measured replacement source and supplementary profiles pass their declared local checks. The merged release source passed Ubuntu and macOS CI, build, packaged CLI, fuzz, registry integrity and fresh registry installation checks. The exact captures and source relationship are recorded below.
 - H2: conditional. No approved supported external CLI with usable local or already-authorized execution is available, and the external-driver pilot bar is not met. No driver was implemented or claimed.
 
 ## Limitations
 
 This is an internal five-arm comparison on one natural goal per arm and one attempt per goal, with many failed or unknown outcomes. It does not establish statistical confidence, external competitor performance, universal correctness, or a general worker-selection rule. The pilot source is earlier than the release source, so release applicability depends on final source validation and is not relabeled as pilot evidence. A complete schedule can still be inconclusive.
+
+## Integration and registry release
+
+The completed implementation was merged through [PR #73](https://github.com/moonrunnerkc/swarm-orchestrator/pull/73)
+into `v13-main` at `caf960bc787e12bbba47d4f3e9720ebd8a8d4b4d`. The exact merged tree passed the
+Ubuntu, macOS and packaged jobs in PR run
+[34916224868](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/34916224868) and
+push run [34916219577](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/34916219577).
+Merged-tree local gates, build, packaged command, fuzz and npm pack captures are retained in the
+implementation record. The final documentation update is a later documentation-only commit on
+`origin/v13-main`; the pilot source remains `87d7ef085` and is not relabeled as the release source.
+
+Tag `v14.1.0` points to the merged source. Release workflow
+[34916998130](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/34916998130) published
+`swarm-orchestrator@14.1.0` with provenance. Registry metadata reports gitHead
+`caf960bc787e12bbba47d4f3e9720ebd8a8d4b4d`, shasum
+`9dd37a74fd5cfc6c412b851b6cb03e420a63663b`, and integrity
+`sha512-o7dNkJBfIlc7duMMGRGfUcKHIpE3qWI6QM3f89dhpU5clh+lUCJAgPW0LY8RSvPZ3Rqo8Ggek6OxAKAzWGtJhQ==`.
+The fetched registry tarball matched that integrity, capture `completion-registry-integrity-14.1.0`,
+evidence `sha256:91fb7dbdd796fbc7b68b3f4c26297b205d5a63e7226097044f28a18588aa461a`. A fresh
+temporary consumer installed version 14.1.0 from the registry and exercised the installed public
+CLI, capture `completion-registry-install-14.1.0`, evidence
+`sha256:a5eb8c03da54a0026f781faf66553c1a9835c2eeab161f809b808a70a45ede97`.
+
+GitHub release [v14.1.0](https://github.com/moonrunnerkc/swarm-orchestrator/releases/tag/v14.1.0)
+retains this report, the evidence manifest, profiles and split campaign archive. The remote
+archive parts were reassembled and matched the retained local archive byte-for-byte, verification
+capture `completion-release-assets-verify-2`, evidence
+`sha256:e24e0a52183429ae1ba6f2cdfdf06330c2a7268d2390bbf2b087a11904993bc8`.
+
+H2 remains conditional. No approved supported external CLI with usable local or already-authorized
+execution is available, and the adaptive pilot bar is not met. No external driver is implemented
+or claimed.
