@@ -1241,8 +1241,8 @@ CLI with usable local or already-authorized execution is available.
 
 PR [#73](https://github.com/moonrunnerkc/swarm-orchestrator/pull/73) merged the validated
 implementation branch into `v13-main` with merge commit
-`caf960bc787e12bbba47d4f3e9720ebd8a8d4b4d`. The subsequent documentation-only evidence commit
-`daffefb6dbbf22b54996b5dd1fac700ada2fe01d` is the final source of this record on
+`caf960bc787e12bbba47d4f3e9720ebd8a8d4b4d`. Subsequent documentation-only evidence commits,
+including `daffefb6dbbf22b54996b5dd1fac700ada2fe01d` and the current record, are on
 `origin/v13-main`. The merge preserved the small implementation commits and used the existing administrator
 exemption for the repository's active `restrictdelete` ruleset. No force push or ruleset change
 was used.
@@ -1265,6 +1265,10 @@ The exact merged source passed the feature PR and push CI matrix. PR run
 push run [34916219577](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/34916219577)
 both passed their packaged, Ubuntu and macOS jobs. Earlier runs on intermediate commits remain
 historical and are not reused as final evidence.
+The preceding documentation-only push at `daffefb6dbbf22b54996b5dd1fac700ada2fe01d` had
+packaged and Ubuntu success but one macOS adaptive-repair call-order assertion failed in run
+[34918247401](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/34918247401). No
+source behavior changed; the final push reran the complete matrix and passed all jobs.
 
 Tag `v14.1.0` points to the merged commit and was pushed normally, capture
 `completion-release-tag-v14.1.0`, evidence `sha256:b62c46c61ebb44cd9c276b60f350be655efbbc39904c13936dd5856611a6f469`.
