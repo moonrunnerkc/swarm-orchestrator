@@ -101,8 +101,10 @@ export interface GitWorkspaceOptions {
  * single-run path being held to the same thing.
  *
  * The name is returned unchanged where it does not resolve, which is a repository with no
- * commits yet or no repository at all. Those already have their own errors, raised where the
- * gates find them, and a message about `rev-parse` here would replace a good one with a worse.
+ * commits yet or no repository at all. Those have their own errors, raised where the gates find
+ * them, and a message about `rev-parse` here would replace a good one with a worse. That is the
+ * right reading for `gates` and `ci`, which spend nothing before the gates run; a path that asks
+ * a model first uses `requireBaseCommit` below, so the same error arrives before the budget does.
  */
 export async function resolveBaseCommit(workspaceRoot: string, baseRef: string): Promise<string> {
   try {
@@ -111,6 +113,20 @@ export async function resolveBaseCommit(workspaceRoot: string, baseRef: string):
     return commit.length > 0 ? commit : baseRef;
   } catch {
     return baseRef;
+  }
+}
+
+/**
+ * The base as a commit object, or the error the gates would otherwise raise after the model has
+ * done its work. A task in a directory that was not a repository ran eight steps and wrote its
+ * files before the first gate said "not a git working tree"; the message is the same one, moved
+ * to where it costs nothing.
+ */
+export async function requireBaseCommit(workspaceRoot: string, baseRef: string): Promise<string> {
+  try {
+    return (await git(workspaceRoot, ["rev-parse", "--verify", `${baseRef}^{commit}`])).trim();
+  } catch (cause) {
+    throw new GitUnavailableError(workspaceRoot, cause);
   }
 }
 

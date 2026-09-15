@@ -51,7 +51,7 @@ import { createSessionId, defaultSessionRoot, openEvidenceSession } from "./evid
 import { parseIsolationOption } from "./exec/isolation-option.ts";
 import { recordedContainerBackend } from "./exec/runtime-resource.ts";
 import { createFileSetRegistry } from "./gates/file-set.ts";
-import { resolveBaseCommit } from "./gates/git-workspace.ts";
+import { requireBaseCommit } from "./gates/git-workspace.ts";
 import { summarizeRatchet } from "./gates/ratchet-summary.ts";
 import { diagnose, remediesFor, runtimeFinding } from "./install/health.ts";
 import { inspectInstall } from "./install/inspect.ts";
@@ -207,6 +207,11 @@ async function run(options: RunCommand): Promise<number> {
     );
   }
 
+  // Before the session opens and before the model is asked for anything: a run that discovers
+  // it has no base commit after the model has edited files has spent the interesting part of
+  // its budget finding out.
+  const baseCommit = await requireBaseCommit(options.workspace, options.baseRef);
+
   await offerInit(options.workspace);
   const settings = await settingsFor(options.workspace, {
     model: options.modelSpec,
@@ -323,7 +328,7 @@ async function run(options: RunCommand): Promise<number> {
       workspace: options.workspace,
       runStorePath: runStorePath(),
       ...(isolation === null ? {} : { isolation: recordedContainerBackend(isolation, evidence) }),
-      baseRef: await resolveBaseCommit(options.workspace, options.baseRef),
+      baseRef: baseCommit,
       maxSteps: settings.maxSteps,
       attempts: settings.attempts,
       ...(options.recovery !== undefined

@@ -29,7 +29,7 @@ import { parseIsolationOption } from "./exec/isolation-option.ts";
 import { recordedContainerBackend } from "./exec/runtime-resource.ts";
 import { defaultDiffBudget, sealAssembledCriteria } from "./gates/engine.ts";
 import { createFileSetRegistry } from "./gates/file-set.ts";
-import { resolveBaseCommit } from "./gates/git-workspace.ts";
+import { requireBaseCommit } from "./gates/git-workspace.ts";
 import { summarizeRatchet } from "./gates/ratchet-summary.ts";
 import { recordTurnBaseline } from "./gates/turn-baseline.ts";
 import { localEndpointRecord } from "./providers/endpoint-resolution.ts";
@@ -63,6 +63,11 @@ export async function session(options: SessionCommand): Promise<number> {
   if (!statSync(options.workspace).isDirectory()) {
     throw new Error(`${options.workspace} is not a directory to work in`);
   }
+  // Resolved once, here, before any gate reads it and before the model is asked for anything.
+  // A symbolic ref is spent at the moment each base-side question is asked, and `git` is on
+  // the shell allowlist; a directory with no base commit is found out now rather than after
+  // the first turn has written its files.
+  const baseCommitAtStart = await requireBaseCommit(options.workspace, options.baseRef);
   await offerInit(options.workspace);
   const settings = await settingsFor(options.workspace, {
     model: options.modelSpec,
@@ -82,9 +87,7 @@ export async function session(options: SessionCommand): Promise<number> {
   });
   const ui = await startInterface({ task: "", workspace: options.workspace, settings, clock });
 
-  // Resolved once, here, before any gate reads it. A symbolic ref is spent at the moment each
-  // base-side question is asked, and `git` is on the shell allowlist.
-  let baseRef = await resolveBaseCommit(options.workspace, options.baseRef);
+  let baseRef = baseCommitAtStart;
   // The commit the session started on is what every turn is measured by, and it is sealed
   // once, before the first turn. The base moves to the end of each turn so the next is not
   // charged with the last one's diff, and a turn that read its gate commands from there would

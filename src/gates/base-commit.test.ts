@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createGitWorkspaceProbe, resolveBaseCommit } from "./git-workspace.ts";
+import { createGitWorkspaceProbe, requireBaseCommit, resolveBaseCommit } from "./git-workspace.ts";
 import { measureTestFile } from "./measures.ts";
 
 const run = promisify(execFile);
@@ -126,5 +126,34 @@ describe("a commit made inside the run", () => {
       "a.test.mjs",
       "b.mjs",
     ]);
+  });
+});
+
+describe("requireBaseCommit", () => {
+  it("resolves the base to its commit, like resolveBaseCommit", async () => {
+    expect(await requireBaseCommit(repository, "HEAD")).toBe(
+      await resolveBaseCommit(repository, "HEAD"),
+    );
+  });
+
+  /**
+   * A run that discovers this after the model has edited files has spent the interesting part
+   * of its budget finding out: eight steps and 28,000 tokens on a calculator, then "not a git
+   * working tree" from the first gate. The name of the missing thing has to arrive first.
+   */
+  it("refuses a directory that is not a repository, naming the remedy", async () => {
+    const plain = await mkdtemp(join(tmpdir(), "swarm-not-a-repo-"));
+    try {
+      await expect(requireBaseCommit(plain, "HEAD")).rejects.toThrow(/not a git working tree/);
+      await expect(requireBaseCommit(plain, "HEAD")).rejects.toThrow(/git init/);
+    } finally {
+      await rm(plain, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a base ref the repository does not have", async () => {
+    await expect(requireBaseCommit(repository, "no-such-ref")).rejects.toThrow(
+      /pass a base ref that exists/,
+    );
   });
 });
