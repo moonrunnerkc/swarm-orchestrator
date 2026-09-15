@@ -126,6 +126,24 @@ describe("how an oracle can be asked for coverage", () => {
     expect(plan?.kind).toBe("v8");
   });
 
+  /**
+   * The vouched vector carries `--test-isolation=process`, which Node 22 rejects as a bad option.
+   * Spawning it there reads the bad option as a run and leaves reach unmeasured, while V8's own
+   * coverage measures node's runner as it stands, because it loads the file as written.
+   */
+  it("asks V8 rather than node's reporter on a Node below the isolated coverage floor", () => {
+    const below = oracleCoveragePlan(`${setup} && node --test 'a.test.js'`, destination, {
+      nodeVersion: "v22.22.3",
+    });
+    const at = oracleCoveragePlan(`${setup} && node --test 'a.test.js'`, destination, {
+      nodeVersion: "v24.15.0",
+    });
+
+    expect(below?.kind).toBe("v8");
+    expect(below?.kind === "v8" && below.command).toBe("node --test 'a.test.js'");
+    expect(at?.kind).toBe("node-lcov");
+  });
+
   it("gives up on a runner it does not recognize rather than guessing at flags", () => {
     expect(oracleCoveragePlan(`${setup} && bash run-tests.sh`, destination)).toBeNull();
     expect(

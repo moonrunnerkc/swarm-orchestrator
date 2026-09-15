@@ -94,6 +94,13 @@ type GateSource =
        * project's own declared command, which a shell reads and no artifact is asked of.
        */
       readonly argv?: readonly string[];
+      /**
+       * Why the harness asked this command for no coverage report where it otherwise would
+       * have. Present only where the declared runner is one the harness can vouch for and the
+       * runtime cannot spawn it under process isolation; the ratchet names it beside the arm
+       * that abstained, so a reason is never mistaken for a runner that wrote nothing.
+       */
+      readonly coverageUnmeasured?: string;
       readonly timeoutMs?: number;
     }
   | { readonly kind: "inspection"; readonly inspect: GateInspection };

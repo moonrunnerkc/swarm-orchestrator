@@ -21,7 +21,7 @@ It cannot make a check pass, mark a claim verified, or change a record after the
 
 [![gates](https://img.shields.io/github/actions/workflow/status/moonrunnerkc/swarm-orchestrator/gates.yml?branch=v13-main&style=for-the-badge&label=gates)](https://github.com/moonrunnerkc/swarm-orchestrator/actions/workflows/gates.yml)
 [![npm](https://img.shields.io/npm/v/swarm-orchestrator?style=for-the-badge&label=npm&color=CB3837)](https://www.npmjs.com/package/swarm-orchestrator)
-[![node](https://img.shields.io/badge/node-%E2%89%A524-5FA04E?style=for-the-badge)](package.json)
+[![node](https://img.shields.io/badge/node-%E2%89%A522-5FA04E?style=for-the-badge)](package.json)
 [![license](https://img.shields.io/badge/license-ISC-blue?style=for-the-badge)](LICENSE)
 
 </div>
@@ -50,10 +50,11 @@ the same package name, with no migration path. Stay on the `v12-final` tag, or p
 npm install -g swarm-orchestrator
 ```
 
-That is **14.1.0**. It needs Node 24 or newer, because the coverage measurement spawns node's
-test runner with `--test-isolation=process`, which older versions reject. If `swarm` turns out
-to be an older build than you installed, `swarm doctor` says what owns the command and `--fix`
-repairs it.
+That is **14.1.0**. It runs on Node 22 or newer. Node 24 or newer is recommended, because the
+changed-line coverage measurement spawns node's test runner with `--test-isolation=process`,
+which Node 22 rejects; below 24 that one measurement reports unmeasured and never counts as a
+pass. `swarm doctor` says which Node it found and what owns the `swarm` command, and `--fix`
+repairs an install that an older build is shadowing.
 
 ## Try it
 

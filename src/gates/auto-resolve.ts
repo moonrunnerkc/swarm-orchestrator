@@ -242,6 +242,7 @@ export async function runAutoResolve(deps: AutoResolveDependencies): Promise<Aut
       workspaceRoot: forContext.workspaceRoot,
       trackedTestFiles: tracked,
       coverageReports: forCycle.coverageReports,
+      coverageUnmeasured: forCycle.coverageUnmeasured,
       testReports: forCycle.testReports,
     });
   }

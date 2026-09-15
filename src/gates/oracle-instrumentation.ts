@@ -1,3 +1,4 @@
+import { isolatedCoverageShortfall } from "../node-floor.ts";
 import { harnessReportingCommand } from "./harness-reporting.ts";
 import { commandWords, shellQuoted } from "./node-test-command.ts";
 
@@ -106,6 +107,7 @@ export type OracleCoveragePlan =
 export function oracleCoveragePlan(
   command: string,
   destination: string,
+  runtime: { readonly nodeVersion?: string } = {},
 ): OracleCoveragePlan | null {
   const segments = command.split("&&");
   const last = segments.at(-1)?.trim() ?? "";
@@ -114,7 +116,13 @@ export function oracleCoveragePlan(
   }
   const setup = segments.slice(0, -1).join("&&").trim();
 
-  const asNodeRunner = harnessReportingCommand(last);
+  // The vouched vector carries `--test-isolation=process`, which a Node below the floor rejects
+  // as a bad option; spawning it there reads that rejection as a run. Node's runner loads the
+  // file as written, so the V8 arm below measures it instead on such a runtime.
+  const asNodeRunner =
+    isolatedCoverageShortfall(runtime.nodeVersion ?? process.version) === null
+      ? harnessReportingCommand(last)
+      : null;
   if (asNodeRunner !== null) {
     return { kind: "node-lcov", setup, argv: asNodeRunner };
   }

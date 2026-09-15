@@ -205,6 +205,9 @@ export function judgeRatchet(input: RatchetInput): RatchetDecision {
       describe: (from, to) =>
         `coverage of changed lines fell from ${percent(from)} to ${percent(to)}`,
       exemptReason: "",
+      unmeasuredReason:
+        input.candidate.changedLineCoverageUnmeasured ??
+        input.baseline.changedLineCoverageUnmeasured,
     },
   );
 
@@ -248,6 +251,8 @@ interface OptionalComparison {
   readonly kind: RatchetViolationKind;
   readonly describe: (before: number, after: number) => string;
   readonly exemptReason: string;
+  /** Why nothing measured this, where a gate said so; null where nothing said anything. */
+  readonly unmeasuredReason?: string | null;
 }
 
 function compareOptional(
@@ -264,11 +269,14 @@ function compareOptional(
     return;
   }
   if (before === null || after === null) {
+    const neither = "nothing measured this on either side of the attempt";
     abstentions.push({
       measure,
       reason:
         before === null && after === null
-          ? "nothing measured this on either side of the attempt"
+          ? comparison.unmeasuredReason == null
+            ? neither
+            : `${neither}: ${comparison.unmeasuredReason}`
           : "it was measured on only one side of the attempt, so there is nothing to compare",
     });
     return;

@@ -197,6 +197,7 @@ export async function runMergeQueue(options: MergeQueueOptions): Promise<MergeQu
       workspaceRoot: forContext.workspaceRoot,
       trackedTestFiles,
       coverageReports: cycle.coverageReports,
+      coverageUnmeasured: cycle.coverageUnmeasured,
       testReports: cycle.testReports,
     });
   };

@@ -366,3 +366,26 @@ describe("the ratchet's own record", () => {
     expect(payload.gates.before).toEqual({ tests: "passed", lint: "passed" });
   });
 });
+
+describe("coverage nothing could measure", () => {
+  it("names the runtime floor as the reason the coverage arm abstained", () => {
+    const reason = "node version below the floor for isolated coverage: found v22.22.3";
+    const decision = judgeRatchet(
+      input({
+        baseline: snapshot({}, { changedLineCoverageUnmeasured: reason }),
+        candidate: snapshot({}, { changedLineCoverageUnmeasured: reason }),
+      }),
+    );
+
+    const abstention = decision.abstentions.find((one) => one.measure === "changedLineCoverage");
+    expect(decision.accepted).toBe(true);
+    expect(abstention?.reason).toContain(reason);
+  });
+
+  it("still abstains by name where no reason was recorded", () => {
+    const decision = judgeRatchet(input({}));
+
+    const abstention = decision.abstentions.find((one) => one.measure === "changedLineCoverage");
+    expect(abstention?.reason).toBe("nothing measured this on either side of the attempt");
+  });
+});

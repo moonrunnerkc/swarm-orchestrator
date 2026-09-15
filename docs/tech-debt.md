@@ -24,7 +24,7 @@ imported.
 | `ai` | 7.0.65 | 7.0.77 | patch, take it next release |
 | `@biomejs/biome` | 2.5.8 | 2.5.10 | patch, take it next release |
 | `vitest` | 4.1.10 | 4.1.11 | patch, take it next release |
-| `@types/node` | 24.13.3 | 26.2.0 | **do not take.** The types should track the Node the project supports, and the floor is 24. Moving to 26 would type against APIs the supported runtime does not have |
+| `@types/node` | 24.13.3 | 26.2.0 | **do not take.** The types should track the Node the project develops and measures on, which is 24. Moving to 26 would type against APIs that runtime does not have. Since 2026-09-15 the tool runs on Node 22 as well, and that is established by the packaged smoke running under Node 22 in CI rather than by the types, which cannot see a 24-only API |
 
 All seven patch bumps are inside the ranges `package.json` already declares, so `npm install`
 takes them; none was taken during the release itself, because a dependency moving under a

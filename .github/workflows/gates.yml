@@ -42,12 +42,20 @@ jobs:
     # What a user installs, rather than what the working tree holds. A file left out of `files`
     # in package.json is present here and missing everywhere else, so the command that reads it
     # works in the repository and fails on the machine that installed the package.
+    #
+    # Once on the Node the suite develops against and once on the runtime floor. Node 22 is a
+    # floor `engines.node` declares and the types cannot check, since @types/node tracks 24, so
+    # a 24-only API reaching the CLI is found here or nowhere.
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "24"]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version-file: .nvmrc
+          node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
       - run: node scripts/check-packed-cli.mjs

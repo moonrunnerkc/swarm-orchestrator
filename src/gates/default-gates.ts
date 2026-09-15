@@ -1,4 +1,5 @@
 import { nearestName } from "../edit-distance.ts";
+import { isolatedCoverageShortfall } from "../node-floor.ts";
 import {
   type GateContext,
   type GateDefinition,
@@ -28,6 +29,8 @@ interface GateSpec {
   readonly command: string;
   /** Set where the harness built the invocation itself and spawns it with no shell. */
   readonly argv?: readonly string[];
+  /** Set where the harness could have built that invocation and the runtime cannot run it. */
+  readonly coverageUnmeasured?: string;
   readonly parse?: GateParser;
   /** Named beside `parse` where a parser is supplied, so the record says which rule read it. */
   readonly parserName?: ParserName;
@@ -42,6 +45,9 @@ function commandGate(spec: GateSpec): GateDefinition {
       kind: "command",
       command: spec.command,
       ...(spec.argv === undefined ? {} : { argv: spec.argv }),
+      ...(spec.coverageUnmeasured === undefined
+        ? {}
+        : { coverageUnmeasured: spec.coverageUnmeasured }),
     },
     parse: spec.parse ?? parserFor(spec.id),
     parserName: spec.parserName ?? parserNameFor(spec.id),
@@ -123,11 +129,24 @@ export const nodeScriptCandidates: Readonly<Record<string, readonly string[]>> =
  *
  * One rule, applied to whatever command the gate ends up running: the script a manifest
  * declares here, and an override from swarm.toml where there is one.
+ *
+ * The vector carries `--test-isolation=process`, which the runtime has to accept: below that
+ * floor the project's own command runs instead, and the gate says why no report was asked for,
+ * so the arm abstains with the reason named rather than spawning a runner that exits on a bad
+ * option and reading that as a failed suite.
  */
-function askedForHarnessReports(spec: GateSpec, body: string | undefined): GateSpec {
+function askedForHarnessReports(
+  spec: GateSpec,
+  body: string | undefined,
+  nodeVersion: string,
+): GateSpec {
   const argv = harnessReportingCommand(body);
   if (argv === null) {
     return spec;
+  }
+  const shortfall = isolatedCoverageShortfall(nodeVersion);
+  if (shortfall !== null) {
+    return { ...spec, coverageUnmeasured: shortfall };
   }
   const rendered = argv.join(" ");
   return {
@@ -138,7 +157,7 @@ function askedForHarnessReports(spec: GateSpec, body: string | undefined): GateS
   };
 }
 
-function nodeGates(detection: ProjectDetection): readonly GateDefinition[] {
+function nodeGates(detection: ProjectDetection, nodeVersion: string): readonly GateDefinition[] {
   const scripts = new Set(detection.nodeScripts);
   const pick = (id: string): string | null =>
     (nodeScriptCandidates[id] ?? []).find((name) => scripts.has(name)) ?? null;
@@ -165,6 +184,7 @@ function nodeGates(detection: ProjectDetection): readonly GateDefinition[] {
           command: `npm run --silent ${script}`,
         },
         detection.nodeScriptCommands[script],
+        nodeVersion,
       ),
     );
   });
@@ -288,7 +308,7 @@ const commandGatesByType: Readonly<
     (detection: ProjectDetection, options: GateSetOptions) => readonly GateDefinition[]
   >
 > = {
-  node: (detection) => nodeGates(detection),
+  node: (detection, options) => nodeGates(detection, runtimeNodeVersion(options)),
   python: pythonGates,
   rust: () => rustGates,
   go: () => goGates,
@@ -345,6 +365,15 @@ export interface GateSetOptions {
    * id the assembled set has no slot for, such as `build`.
    */
   readonly commandOverrides?: Readonly<Record<string, GateOverride>>;
+  /**
+   * The Node the gates will spawn node's runner with, which decides whether the coverage arm
+   * can be asked for. Absent means the process assembling the gates, which is what runs them.
+   */
+  readonly nodeVersion?: string;
+}
+
+function runtimeNodeVersion(options: GateSetOptions): string {
+  return options.nodeVersion ?? process.version;
 }
 
 const parserByName: Readonly<Record<OverrideParserName, GateParser>> = {
@@ -373,6 +402,7 @@ function overriddenGate(
   severity: GateSeverity,
   override: GateOverride,
   detection: ProjectDetection,
+  nodeVersion: string,
 ): GateDefinition {
   const settled = typeof override === "string" ? { command: override } : override;
   const parserName = settled.parser ?? parserNameFor(id);
@@ -390,6 +420,7 @@ function overriddenGate(
         parserName,
       },
       scriptBodyBehind(settled.command, detection) ?? settled.command,
+      nodeVersion,
     ),
   );
 }
@@ -422,6 +453,7 @@ export function assembleGates(
   options: GateSetOptions = {},
 ): readonly GateDefinition[] {
   const overrides = options.commandOverrides ?? {};
+  const nodeVersion = runtimeNodeVersion(options);
   const multiple = detection.types.length > 1;
 
   const language =
@@ -439,7 +471,7 @@ export function assembleGates(
     const override = overrides[gate.id];
     return override === undefined
       ? gate
-      : overriddenGate(gate.id, gate.title, gate.severity, override, detection);
+      : overriddenGate(gate.id, gate.title, gate.severity, override, detection, nodeVersion);
   });
   const assembledIds = assembled.map((gate) => gate.id);
   const unmatched = Object.keys(overrides).filter((id) => !assembledIds.includes(id));
@@ -457,6 +489,8 @@ export function assembleGates(
 
   const added = unmatched
     .sort((left, right) => (left < right ? -1 : 1))
-    .map((id) => overriddenGate(id, id, "blocking", overrides[id] as GateOverride, detection));
+    .map((id) =>
+      overriddenGate(id, id, "blocking", overrides[id] as GateOverride, detection, nodeVersion),
+    );
   return [...replaced, ...added];
 }

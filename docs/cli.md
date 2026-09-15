@@ -38,7 +38,16 @@ swarm init                       # write swarm.toml from package.json's scripts
 `swarm doctor` exists because a development checkout linked into the global prefix with
 `npm link` owns the command until it is removed, and npm cannot install over it: the install
 either fails renaming a symlinked directory aside, or succeeds behind a stale executable still
-pointing at the checkout. Neither presents as what it is.
+pointing at the checkout. Neither presents as what it is. It also reports which Node it found
+and what that runtime cannot measure.
+
+**Node 22 or newer runs every command. Node 24 or newer is recommended**, because the
+changed-line coverage measurement spawns node's test runner with `--test-isolation=process`,
+which Node 22 rejects as a bad option. Below 24 the tests gate runs the project's own test
+command instead, the coverage arm reports `unmeasured` with the reason named (node version below
+the floor for isolated coverage), and the ratchet cannot compare it. That is not a pass: a
+change touching covered lines fails the ratchet on unmeasured coverage, which is the correct
+outcome on a runtime that cannot take the measurement.
 
 ## Gates without a model
 

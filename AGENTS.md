@@ -85,8 +85,10 @@ packages are separate facts.
 
 ## Code style and scope
 
-Use strict TypeScript, ESM and Node 24+. Node 22 cannot execute the required process-isolated
-coverage arm. Never use em dashes in code, comments, strings or documentation. Use descriptive
+Use strict TypeScript, ESM, Node 22 or newer at runtime and Node 24 for development and CI. Node 22
+cannot execute the required process-isolated coverage arm, so below 24 that arm reports unmeasured
+with the reason named and never renders as a pass. Never use em dashes in code, comments, strings
+or documentation. Use descriptive
 names and small modules with one job, without grab-bag abstractions. Comments explain intent,
 invariants or non-obvious choices, not the line itself. Errors are typed and actionable. Tests
 sit beside sources. Prefer the standard library; justify any new dependency in one line of the

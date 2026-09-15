@@ -62,6 +62,7 @@ function cycleWhere(
     advisoryFailures: [],
     measures,
     coverageReports: [],
+    coverageUnmeasured: [],
     testReports: [],
   };
 }
