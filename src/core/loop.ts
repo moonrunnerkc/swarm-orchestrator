@@ -395,7 +395,9 @@ async function callModelWithRetry(
       deps.emit({
         type: "model-error",
         step,
-        message: describeUnknownError(cause),
+        message: deps.abortSignal.aborted
+          ? stoppedWhileWaiting(deps.abortSignal.reason)
+          : describeUnknownError(cause),
         willRetry,
       });
       if (!willRetry) {
@@ -411,4 +413,18 @@ async function callModelWithRetry(
   }
 
   throw new ModelCallFailedError(deps.model.modelId, lastCause);
+}
+
+/**
+ * What stopped the run, in the words the stopper gave, rather than the transport's own words
+ * for a cancelled request: "This operation was aborted" told a person nothing about who did.
+ */
+function stoppedWhileWaiting(reason: unknown): string {
+  const named =
+    typeof reason === "string"
+      ? reason
+      : reason instanceof Error && reason.name !== "AbortError"
+        ? reason.message
+        : "the run was cancelled";
+  return `the run was stopped while waiting for the model: ${named}`;
 }

@@ -212,6 +212,33 @@ describe("runAgentLoop", () => {
     expect(outcome.steps).toBe(1);
   });
 
+  /**
+   * A run stopped from the keyboard while the model was answering used to report
+   * "model error: This operation was aborted", the transport's own words for a cancelled
+   * request. What stopped the run is on the signal, and that is what a person reads.
+   */
+  it("names what stopped the run rather than the transport's abort text", async () => {
+    const harness = createHarness([respondWithText("never reached")]);
+    harness.deps.model.generate = (request) =>
+      new Promise((_resolve, reject) => {
+        request.abortSignal?.addEventListener("abort", () =>
+          reject(new DOMException("This operation was aborted", "AbortError")),
+        );
+        harness.controller.abort(new Error("the run was cancelled from the keyboard"));
+      });
+
+    const outcome = await runAgentLoop("stop during the call", harness.deps);
+
+    const reported = harness.events.find((event) => event.type === "model-error");
+    expect(outcome.stopReason).toBe("interrupted");
+    expect(reported?.type === "model-error" && reported.message).toContain(
+      "the run was cancelled from the keyboard",
+    );
+    expect(reported?.type === "model-error" && reported.message).not.toContain(
+      "This operation was aborted",
+    );
+  });
+
   it("retries a failing model call with jittered backoff, then escalates", async () => {
     const harness = createHarness([
       failWith("connection reset"),

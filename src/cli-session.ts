@@ -2,7 +2,7 @@ import { statSync } from "node:fs";
 import { homedir } from "node:os";
 import { runAgentTask } from "./agent-run.ts";
 import { announceBundle, writeBundle } from "./cli-bundle.ts";
-import { offerInit } from "./cli-init.ts";
+import { offerInit, offerNodeHarness } from "./cli-init.ts";
 import { resolveLocalBackend } from "./cli-local-backend.ts";
 import { preflightAll } from "./cli-model-preflight.ts";
 import type { SessionCommand } from "./cli-options.ts";
@@ -67,7 +67,10 @@ export async function session(options: SessionCommand): Promise<number> {
   // A symbolic ref is spent at the moment each base-side question is asked, and `git` is on
   // the shell allowlist; a directory with no base commit is found out now rather than after
   // the first turn has written its files.
-  const baseCommitAtStart = await requireBaseCommit(options.workspace, options.baseRef);
+  let baseCommitAtStart = await requireBaseCommit(options.workspace, options.baseRef);
+  if (await offerNodeHarness(options.workspace)) {
+    baseCommitAtStart = await requireBaseCommit(options.workspace, options.baseRef);
+  }
   await offerInit(options.workspace);
   const settings = await settingsFor(options.workspace, {
     model: options.modelSpec,
@@ -219,7 +222,7 @@ async function runOneTurn(input: {
 
   const interruption = new AbortController();
   const onInterrupt = () => {
-    interruption.abort();
+    interruption.abort("the run was cancelled from the keyboard");
   };
   // SIGTERM as well as SIGINT: a run stopped by a supervisor, a container stop or a CI
   // cancellation arrives as SIGTERM, and a run that ignores it is killed with work in flight.

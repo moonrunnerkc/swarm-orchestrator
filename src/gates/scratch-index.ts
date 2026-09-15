@@ -47,6 +47,20 @@ export async function runGit(
 }
 
 /**
+ * What running the code writes and nobody edits: the interpreter caches Python leaves beside
+ * the files it ran. Charging them as changes had the file-set gate fail an attempt for
+ * `__pycache__/scraper.cpython-314.pyc` after the tests it ran itself wrote it, and the ratchet
+ * then rejected the attempt for a gate that had passed before, discarding the work. Named by
+ * directory, never by content, and nothing under them is ever source.
+ */
+const interpreterCacheExclusions: readonly string[] = [
+  "__pycache__",
+  ".pytest_cache",
+  ".mypy_cache",
+  ".ruff_cache",
+].flatMap((cache) => [`:(exclude,glob)${cache}/**`, `:(exclude,glob)**/${cache}/**`]);
+
+/**
  * Stages the whole tree against `baseRef` in a throwaway index and hands the caller a way to
  * run git against it. The index is removed afterwards whatever happens.
  */
@@ -62,7 +76,7 @@ export async function withScratchIndex<T>(
     // read-tree first: without it `add -A` has nothing to compare against and every path in
     // the tree reads as added, which would make the first measurement of a session enormous.
     await git(["read-tree", options.baseRef]);
-    await git(["add", "-A"]);
+    await git(["add", "-A", "--", ".", ...interpreterCacheExclusions]);
     return await use(git);
   } finally {
     await rm(directory, { recursive: true, force: true });
