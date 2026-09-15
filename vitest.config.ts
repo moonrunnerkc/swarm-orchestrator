@@ -32,6 +32,7 @@ const integrationSuites = [
   "src/agent-run.test.ts",
   "src/agent-run-envelope.test.ts",
   "src/cli-verify-only.test.ts",
+  "src/cli-run-preflight.test.ts",
   "src/swarm-verify.test.ts",
   "src/exec/run-process.test.ts",
   "src/exec/execution-mode.test.ts",

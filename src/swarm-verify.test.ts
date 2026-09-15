@@ -124,10 +124,12 @@ describe("swarm-verify beside swarm", () => {
     const through = await invoke("cli", ["gates", "--workspace", workspace]);
     const standalone = await invoke("swarm-verify", ["gates", "--workspace", workspace]);
 
+    // Set aside what belongs to the run rather than to the command: the session path it wrote,
+    // and the signing notice, which reports the machine's keychain as it stood for that run.
     const settled = (ran: Ran) =>
       ran.stdout
         .split("\n")
-        .filter((line) => !line.includes(join(scratch, "home")))
+        .filter((line) => !line.includes(join(scratch, "home")) && !line.startsWith("[signing]"))
         .join("\n");
     expect(through.stdout).toContain("acceptable: yes");
     expect(settled(standalone)).toBe(settled(through));
