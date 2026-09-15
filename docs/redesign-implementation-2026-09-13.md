@@ -1242,8 +1242,8 @@ CLI with usable local or already-authorized execution is available.
 PR [#73](https://github.com/moonrunnerkc/swarm-orchestrator/pull/73) merged the validated
 implementation branch into `v13-main` with merge commit
 `caf960bc787e12bbba47d4f3e9720ebd8a8d4b4d`. The subsequent documentation-only evidence commit
-is the final source of this record on `origin/v13-main`; its identity is recorded after the
-push. The merge preserved the small implementation commits and used the existing administrator
+`daffefb6dbbf22b54996b5dd1fac700ada2fe01d` is the final source of this record on
+`origin/v13-main`. The merge preserved the small implementation commits and used the existing administrator
 exemption for the repository's active `restrictdelete` ruleset. No force push or ruleset change
 was used.
 
