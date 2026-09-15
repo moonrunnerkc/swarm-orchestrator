@@ -135,9 +135,13 @@ Ubuntu, macOS and packaged jobs in PR run
 [34916224868](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/34916224868) and
 push run [34916219577](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/34916219577).
 Merged-tree local gates, build, packaged command, fuzz and npm pack captures are retained in the
-implementation record. The final documentation update is documentation-only commit
-`daffefb6dbbf22b54996b5dd1fac700ada2fe01d` on `origin/v13-main`; the pilot source remains
+implementation record. Documentation-only evidence commits, including
+`daffefb6dbbf22b54996b5dd1fac700ada2fe01d`, are on `origin/v13-main`; the pilot source remains
 `87d7ef085` and is not relabeled as the release source.
+The preceding documentation-only push had packaged and Ubuntu success but one macOS
+adaptive-repair call-order assertion failed in run
+[34918247401](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/34918247401). The
+final push reran the complete matrix and passed all jobs; no evaluated source behavior changed.
 
 Tag `v14.1.0` points to the merged source. Release workflow
 [34916998130](https://github.com/moonrunnerkc/swarm-orchestrator/actions/runs/34916998130) published
