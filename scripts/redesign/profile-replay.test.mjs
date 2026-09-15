@@ -6,7 +6,20 @@ import { createTestClock } from "../../src/core/test-doubles.ts";
 import { createRecordingModelClient } from "../../src/evidence/model-call-recording.ts";
 import { openEvidenceSession } from "../../src/evidence/session.ts";
 import { createFixtureModelClient, respondWithText } from "../../src/providers/fixture-provider.ts";
-import { profileTranscript } from "./profile-replay.mjs";
+import { profileTranscript, replayControllerSafely } from "./profile-replay.mjs";
+
+it("keeps malformed historical controller graphs as unavailable measurements", () => {
+  const session = {
+    records: () => [
+      { type: "controller-graph", actor: "harness", sequence: 0, payloadDigest: "graph" },
+    ],
+    payloads: () => new Map([["graph", {}]]),
+  };
+  expect(replayControllerSafely(session)).toMatchObject({
+    state: null,
+    error: expect.any(String),
+  });
+});
 
 it.each([undefined, { transcript: "components" }])(
   "profiles recorded transcripts against their ledger digest with storage %j",

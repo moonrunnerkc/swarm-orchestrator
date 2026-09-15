@@ -46,6 +46,15 @@ export async function profileTranscript(record, payloads) {
   return { samplesMs, promptDigest: record.promptDigest };
 }
 
+/** Preserve malformed historical controller graphs as an unavailable measurement. */
+export function replayControllerSafely(session) {
+  try {
+    return { state: replayController(session), error: null };
+  } catch (cause) {
+    return { state: null, error: cause instanceof Error ? cause.message : String(cause) };
+  }
+}
+
 /** Repeat real retained inputs on private copies; never append to the original journals. */
 export async function profileReplay(root, destination) {
   assert.equal(git("status", "--porcelain"), "", "measure a clean source revision");
@@ -93,18 +102,26 @@ export async function profileReplay(root, destination) {
         digests: expectedIndex.size,
       });
       if (sessionId === "controller") {
-        const state = replayController(session);
-        const samples = [];
-        for (let repeat = 0; repeat < repeats; repeat++) {
-          const measured = await measure(() => replayController(session));
-          assert.deepEqual(measured.value, state);
-          samples.push(measured.elapsedMs);
+        const replay = replayControllerSafely(session);
+        if (replay.error === null) {
+          const samples = [];
+          for (let repeat = 0; repeat < repeats; repeat++) {
+            const measured = await measure(() => replayController(session));
+            assert.deepEqual(measured.value, replay.state);
+            samples.push(measured.elapsedMs);
+          }
+          record("natural-controller-replay", subject, samples, {
+            records: records.length,
+            graphObserved: replay.state.graph !== null,
+            candidates: replay.state.candidates.size,
+          });
+        } else {
+          record("natural-controller-replay", subject, [], {
+            records: records.length,
+            status: "unavailable",
+            error: replay.error,
+          });
         }
-        record("natural-controller-replay", subject, samples, {
-          records: records.length,
-          graphObserved: state.graph !== null,
-          candidates: state.candidates.size,
-        });
         const bytes = await optionalRead(join(session.directory, "ownership.jsonl"));
         if (bytes) {
           const lines = bytes.toString("utf8").trimEnd().split("\n");
