@@ -1,11 +1,51 @@
 # Verifying work, yours or somebody else's
 
+A gate is a check declared as data: a command, the rule that reads its output, and whether it
+blocks. The ratchet is the rule that a retry may not trade away tests, assertions or coverage to
+turn a gate green. An oracle is the check you supply that says the task was done. Reach is
+whether that oracle executed the lines a patch added. Unmeasured is a verdict of its own: nobody
+checked is not the same as checked and passed, and it never renders green. This page is what
+each of those does in practice, and what none of them establishes.
+
+[A pass is a claim](#a-pass-is-a-claim-until-it-is-shown-able-to-fail) | [Two answers](#two-answers-not-one) | [The oracle](#the-oracle-is-judged-too) | [Nine answers](#what-a-run-reports) | [Without this tool](#checking-a-bundle-without-this-tool) | [Not claimed](#what-is-not-claimed)
+
+## A pass is a claim until it is shown able to fail
+
+Real output, the bond section of `swarm gates` over the three-test project in
+[`verify-only.md`](verify-only.md#swarm-gates-a-workspace-measured), where the whole transcript is:
+
+```
+bonds, one per gate that passed:
+  tests: held. the tests gate refused the bond: 4 collected, 3 passed, 1 failed, 0 skipped (exit 1)
+  placeholder: held. the placeholder gate refused the bond: 1 placeholder marker(s) introduced: swarm-falsification-bond.js:1 // TODO: swarm falsification bond
+  secret-scan: held. the secret-scan gate refused the bond: 1 added line(s) match a known credential pattern: swarm-falsification-bond.env.example.js:1 (github-token)
+  behaviour-probe: not bonded. no bond is defined for this gate, so its pass has not been shown capable of failing
+  diff-budget: held. the diff-budget gate refused the bond: over budget: 2 file(s) against 12 and 603 added line(s) against 600. This does not block. It requires a justification claim citing this record.
+```
+
+After the gates go green, each one that passed is handed a bond: one file it has to refuse, a
+test that throws, a line carrying a placeholder marker, a credential-shaped token under a
+credential-bearing name. A check that refused it held. A check that passed over a bond it
+demonstrably saw is vacuous, and a vacuous blocking gate makes the run not green whatever the
+cycle said. A check that passed where nothing shows it read the bond, a linter pointed at a
+directory the bond is not in, is unshown, and unshown is never promoted to held. A gate with no
+bond is recorded as not bonded rather than quietly counted among the held. Shown on a real run
+in [`gates-bonded/`](evidence/2026-09-02/gates-bonded), with the seal and every bond recomputed
+by the bundle's own verifier.
+
+The criteria a run is measured by, every gate with its severity and the rule that reads it, the
+budgets, the attempt cap and the ratchet arms, are sealed on the ledger before the model is
+asked for anything, so a run cannot loosen what it is measured by on the way. The verifier holds
+every gate run to that seal.
+
+## The separate opinion
+
 Every gate a run executes runs in the workspace that run was editing, with the tests that run may
 have changed, reading reports that run's own processes wrote. The sealed criteria and the ratchet
 close most of that. What they cannot close is the shape of it: a subject grading its own paper.
 
 `swarm ci` is the separate opinion, and it does not need this tool's agent to have produced the
-patch.
+patch. Nothing the producer said travels except the patch.
 
 ```sh
 swarm ci --patch candidate.diff --install --oracle "npx jest tests/the-task.test.ts"
@@ -50,6 +90,12 @@ nothing is verified. One that **never executed lines the patch added** cannot ha
 `oracleReach` reads `unreached`, the lines are named, and nothing is verified. One that **executed
 those lines and accepted a change to them** ran the code without asserting anything about it, so
 `oracleBond` reads `vacuous`, the mutant it accepted is printed, and nothing is verified.
+
+| the oracle | the tool says | why |
+| --- | --- | --- |
+| accepts the base commit too | `task: vacuous` | it would have accepted a patch that changes nothing |
+| never ran the lines the patch adds | `oracleReach: unreached`, lines named | it cannot have judged what it did not execute |
+| ran them and accepts a change to them | `oracleBond: vacuous`, mutant and witness printed | it executed the code without asserting anything about it |
 
 All three came out of measuring this tool against real work. Certified tasks turned out to rest on
 oracles that could not fail; the first false green found was certified by an oracle that never ran
@@ -285,3 +331,58 @@ whatever the policy says, because the run generated it for itself.
 Beside the bundle signature every run writes a DSSE envelope binding the patch, the spec digest,
 the source commit, the chain head and the verdict under one signature, so a diff and a bundle can
 be shown to be about each other.
+
+## What is not claimed
+
+The whole list. The README carries the five that matter most.
+
+- **It is not production-ready.** Of the gates this project agreed not to call itself
+  production-ready without, the historical assessment records eight passing, two partial, two
+  unproven, and two reported rather than barred. Those counts describe the linked campaigns, not
+  a fresh measurement of every gate on this checkout. The old "zero false greens in 400 held-out
+  tasks" gate is retired, for four reasons that are measured rather than argued, and replaced by
+  three statements about three different questions. Each row and what would settle it:
+  [`beta-gates.md`](beta-gates.md).
+- **Not "fully secure".** The secret detector does known-pattern scrubbing, not secret removal.
+  Zero crashes at a fuzz budget is evidence, not proof.
+- **The default execution mode is `restricted`, not `isolated`.** A lexical path and program
+  policy in front of interpreters unless you pass `--isolation`. Reported before the run starts
+  and recorded on the chain rather than quietly assumed, but it is not containment.
+- **The September 6 mined-corpus rate was 0 in 15**, 0.0%, 95% CI [0.0, 20.4], and that upper
+  bound is the honest half of it. Every task carries two oracles, one handed to the tool and one
+  held back from it, and fifteen certified patches cannot say more than "under 20%":
+  [`mined-corpus/`](evidence/2026-09-06/mined-corpus/README.md). Those tasks came from real pull
+  requests, where maintainers test what they cared about rather than what the author of a tool
+  thought to check. That historical rate is not a rate for the current build or for the separate
+  synthetic campaign. The one that used to stand, `commander#1671`, is refused now because its
+  oracle accepted a change to a line it had run.
+- **Shown its oracle, a model still gets past this.** Both of those patches now get a bond and
+  both bonds hold, which is the finding rather than a fix: a patch written to satisfy a visible
+  test has its added lines tested by that test, so the oracle refuses every mutant of them and is
+  right to. Bonding asks whether the oracle judged what the patch added. It cannot ask what the
+  patch left out, and that is what an adversarial patch does.
+- **The denominator moved when the tool did, and that is a cost.** Four patches both oracles
+  accept are refused because the tool's own oracle never ran part of what they changed, five more
+  because the sealed half rejects work the held-back half accepts, and one because its oracle
+  accepted a change to a line it had run. A tool that refuses more has fewer claims to be wrong
+  about, so the interval over what is left is wider. Both halves are reported, and a refusal is
+  never counted as a pass.
+- **Every number here has been wrong at least once, and the corrections are in the history.** A
+  reported zero was withdrawn as self-agreement. A patch was refused over a TypeScript declaration
+  file, which hid a real false green behind a wrong refusal. Two mutation operators were producing
+  changes that changed nothing until an audit read every refusal by hand. The pattern is the same
+  each time: read what a check names before believing it.
+- **Twelve tasks reported as unjudgeable were the agent having written nothing at all**, which
+  is a model failure and is recorded as one. An earlier 0-of-18 was withdrawn as arithmetic rather
+  than corrected quietly: the same test was handed to the tool and then used as the ground truth
+  it was scored against, so it agreed with itself:
+  [`false-green-measurement.md`](evidence/2026-09-05/false-green-measurement.md).
+- **Six known gaps ship open**, and none is claimed closed. Four have detections built against
+  them, each attacked once, by one person, in one pass, so what is claimed is a detection and not
+  a closure. Each is a permanent case in the adversarial suite asserting the gap as it stands:
+  [`build-guide.md`](build-guide.md#71-accepted-residuals).
+- **A signature does not make the machine honest.** It proves the bundle was not altered after it
+  left the machine that produced it.
+
+Gates prove mechanical quality, not design quality. What a bundle buys you is that reviewing the
+change is fast and its claims are checkable, not that review is unnecessary.

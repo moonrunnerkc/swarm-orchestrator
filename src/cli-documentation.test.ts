@@ -78,8 +78,11 @@ describe("the commands the documents promise", () => {
       .filter((name): name is string => name !== undefined),
   );
 
-  /** Words that follow "swarm" in prose rather than naming a command. */
-  const prose = new Set(["command", "with", "run"]);
+  /**
+   * Words that follow "swarm" in prose rather than naming a command. The last is the placeholder
+   * bond's own marker text, quoted from real gate output in the verification pages.
+   */
+  const prose = new Set(["command", "with", "run", "falsification"]);
 
   it("finds some, so a formatting change cannot make this test vacuous", () => {
     expect(readmeCommands.length).toBeGreaterThan(5);
