@@ -99,6 +99,37 @@ describe("keychain key storage", () => {
     ]);
   });
 
+  /**
+   * `security add-generic-password` with no default keychain raises a macOS dialog, "A keychain
+   * cannot be found to store", and blocks on it until the harness kills it. A home directory
+   * with no login keychain is what every test and every packaged smoke runs under, so the
+   * dialog kept appearing on the screen of whoever was running them. The store asks whether a
+   * default keychain exists, which fails cleanly, and adds nothing where there is none.
+   */
+  it("adds nothing where there is no default keychain, so no dialog can be raised", async () => {
+    const { run, calls } = createRunner((call) =>
+      call.args[0] === "find-generic-password"
+        ? { code: 44 }
+        : call.args[0] === "default-keychain"
+          ? {
+              code: 1,
+              stderr: "security: SecKeychainCopyDefault: A default keychain could not be found.",
+            }
+          : {},
+    );
+
+    const resolved = await resolveSigningKey(
+      createKeychainSecretStore({ platform: "darwin", run }),
+    );
+
+    expect(resolved.key.source).toBe("ephemeral");
+    expect(resolved.notice).toContain("no default keychain");
+    expect(calls.map((call) => call.args[0])).toEqual([
+      "find-generic-password",
+      "default-keychain",
+    ]);
+  });
+
   it("creates a key on first use and hands the secret over stdin, never argv", async () => {
     const { run, calls } = createRunner((call) =>
       call.args[0] === "find-generic-password" ? { code: 44 } : {},
@@ -109,7 +140,9 @@ describe("keychain key storage", () => {
     );
 
     expect(resolved.key.source).toBe("keychain");
-    const save = calls[1];
+    // The default keychain is confirmed to exist before anything is added to it.
+    expect(calls[1]?.args).toEqual(["default-keychain"]);
+    const save = calls[2];
     expect(save?.args[0]).toBe("add-generic-password");
 
     // `-w` with no value asks for the data and then asks again to retype it, and reads both
