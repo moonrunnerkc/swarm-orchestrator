@@ -1,7 +1,5 @@
-import type { InterfaceFlags } from "../cli-options.ts";
 import type { GateOverride } from "../gates/gate-definition.ts";
-import type { OpenEvidencePolicy } from "../tui/session-interface.ts";
-import type { ColorMode } from "../tui/theme.ts";
+import type { ColorMode, InterfaceFlags, OpenEvidencePolicy } from "./interface-settings.ts";
 import type { SwarmToml } from "./swarm-toml.ts";
 
 /**

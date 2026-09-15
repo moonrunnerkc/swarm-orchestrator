@@ -9,36 +9,6 @@ import { digestOfBytes } from "./evidence/canonical-json.ts";
 import type { EvidenceDag } from "./evidence/dag.ts";
 import type { EvidenceRecorder } from "./evidence/session.ts";
 import { createKeychainSecretStore, resolveSigningKey } from "./evidence/signing.ts";
-import type { EvidenceSummary } from "./tui/evidence-panel.ts";
-import { evidenceLocation } from "./tui/open-path.ts";
-import { runEmbeddedVerifier } from "./tui/verify-bundle.ts";
-
-/** How long the embedded verifier gets before the panel says it could not be asked. */
-const verifyTimeoutMs = 60_000;
-
-/**
- * What the run produced, with the bundle checked by its own verifier here rather than taken
- * on trust: the panel may say verified only where that ran in this session and exited zero.
- */
-export async function summarizeEvidence(written: {
-  readonly directory: string;
-  readonly manifest: BundleManifest;
-  readonly dag: EvidenceDag;
-}): Promise<EvidenceSummary> {
-  const location = evidenceLocation(written.directory, "harness");
-  return {
-    location,
-    recordCount: written.manifest.recordCount,
-    claimsVerified: written.dag.verifiedCount,
-    claimsRefused: written.dag.unverifiedCount,
-    verification: await runEmbeddedVerifier({
-      location,
-      nodeExecutable: process.execPath,
-      environment: process.env,
-      timeoutMs: verifyTimeoutMs,
-    }),
-  };
-}
 
 export function announceBundle(directory: string, note: (line: string) => void = writeOut): void {
   note(`\nevidence bundle: ${directory}`);

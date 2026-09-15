@@ -94,8 +94,10 @@ at once are in [docs/using.md](docs/using.md).
 
 Three commands need no model, no API key and no local backend. `swarm gates` measures a
 workspace, `swarm ci --patch <file>` verifies a patch in a fresh checkout of its base, and
-`swarm verify <bundle>` checks a bundle and who signed it. The walkthrough, over the committed
-tamper demo, is [docs/verify-only.md](docs/verify-only.md).
+`swarm verify <bundle>` checks a bundle and who signed it. They also ship on their own as the
+`swarm-verify` package under [packages/swarm-verify](packages/swarm-verify), the same code with
+none of the agent. The walkthrough, over the committed tamper demo, and the install for the
+standalone package are in [docs/verify-only.md](docs/verify-only.md).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

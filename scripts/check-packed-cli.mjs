@@ -99,6 +99,75 @@ try {
       failures += 1;
     } else console.log(`ok   swarm ${name}: expected exit ${status} and diagnostic`);
   }
+
+  // The standalone verifier, packed from its workspace and installed beside the full CLI. It
+  // has to meet the same behavioral contracts for the commands it carries, and `verify` over a
+  // committed bundle has to print the same bytes through both binaries, with the tamper demo's
+  // flipped byte refused by the packed verifier the way it is refused by the embedded one.
+  run(process.execPath, [join(repository, "scripts", "build-swarm-verify.mjs")], {
+    cwd: repository,
+  });
+  const packedVerify = run("npm", ["pack", "--json", "--pack-destination", scratch], {
+    cwd: join(repository, "packages", "swarm-verify"),
+  });
+  const verifyPacked = JSON.parse(packedVerify.slice(packedVerify.indexOf("[")))[0];
+  console.log(`swarm-verify tarball: ${verifyPacked.filename}, ${verifyPacked.size} bytes packed`);
+  run("npm", ["install", "--no-audit", "--no-fund", join(scratch, verifyPacked.filename)], {
+    cwd: install,
+  });
+  const swarmVerify = join(install, "node_modules", ".bin", "swarm-verify");
+  for (const contract of commandDefinitions.filter((command) => command.model === "none")) {
+    let status = 0;
+    let output = "";
+    try {
+      output = run(swarmVerify, [contract.name, ...contract.smoke.args], {
+        cwd: workspace,
+        timeout: 60000,
+        env: { PATH: process.env.PATH, HOME: home, NO_COLOR: "1" },
+      });
+    } catch (cause) {
+      status = cause.status;
+      output = `${cause.stdout ?? ""}${cause.stderr ?? ""}`;
+    }
+    const passed =
+      contract.smoke.exits.includes(status) &&
+      new RegExp(contract.smoke.output, "i").test(output) &&
+      !/ERR_MODULE_NOT_FOUND|Cannot find module|SyntaxError|TypeError/.test(output);
+    if (!passed) {
+      console.error(`FAIL swarm-verify ${contract.name}: exit ${status}\n${output}`);
+      failures += 1;
+    } else
+      console.log(`ok   swarm-verify ${contract.name}: expected exit ${status} and diagnostic`);
+  }
+
+  const bundle = join(repository, "docs", "evidence", "2026-08-18", "live-frontier");
+  const signer = "sha256:db270183c40c65843cacd2b3dcf20ee249d146d98c56699b2f3512ebeb84a52a";
+  const verifyWith = (binary, target) => {
+    try {
+      return {
+        status: 0,
+        output: run(binary, ["verify", target, "--signer", signer], { cwd: workspace }),
+      };
+    } catch (cause) {
+      return { status: cause.status, output: `${cause.stdout ?? ""}` };
+    }
+  };
+  const throughSwarm = verifyWith(swarm, bundle);
+  const throughVerify = verifyWith(swarmVerify, bundle);
+  if (throughSwarm.status !== 0 || throughVerify.output !== throughSwarm.output) {
+    console.error(
+      `FAIL swarm-verify verify differs from swarm verify on the committed bundle (exit ${throughSwarm.status} and ${throughVerify.status})`,
+    );
+    failures += 1;
+  } else console.log("ok   swarm-verify verify prints the bytes swarm verify prints, exit 0");
+
+  const tampered = join(scratch, "tampered");
+  run(process.execPath, [join(bundle, "..", "tamper-demo", "flip-one-byte.mjs"), bundle, tampered]);
+  const refused = verifyWith(swarmVerify, tampered);
+  if (refused.status !== 1 || !refused.output.includes("integrity:  invalid")) {
+    console.error(`FAIL swarm-verify verify accepted the tampered bundle (exit ${refused.status})`);
+    failures += 1;
+  } else console.log("ok   swarm-verify verify refuses the bundle one byte later, exit 1");
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }

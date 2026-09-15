@@ -1,5 +1,6 @@
 import { render } from "ink";
 import { createElement } from "react";
+import type { OpenEvidencePolicy } from "../config/interface-settings.ts";
 import type { Clock } from "../core/clock.ts";
 import type { LoopEvent } from "../core/loop-events.ts";
 import type { ConfirmationPrompt, ConfirmationRequest } from "../tools/chokepoint.ts";
@@ -77,9 +78,6 @@ export interface SessionInterfaceOptions {
   readonly spawnOpen: SpawnHandler;
   readonly platform: NodeJS.Platform;
 }
-
-/** What happens when a run finishes: ask, always open, or never open. Never opens off a TTY. */
-export type OpenEvidencePolicy = "ask" | "always" | "never";
 
 /**
  * How often the screen redraws. A second is what a person reads on a counter, and it is far too

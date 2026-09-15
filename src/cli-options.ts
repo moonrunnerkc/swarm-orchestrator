@@ -1,18 +1,20 @@
 import { resolve } from "node:path";
 import { commandDefinitions, commandHelpLines } from "./cli-command-definitions.ts";
+import {
+  type CiCommand,
+  defaultBaseRef,
+  type GatesCommand,
+  InvalidCommandLineError,
+  parseVerifyOnlyCommand,
+  tokenizeCommandLine,
+  type VerifyCommand,
+} from "./cli-verify-options.ts";
+import type { InterfaceFlags } from "./config/interface-settings.ts";
 import { nearestName } from "./edit-distance.ts";
 import { bundledShortlistKeyword } from "./select/shortlist-source.ts";
 
-/**
- * What the command line said about the screen. Null wherever it said nothing, so swarm.toml
- * and the defaults below it still get their turn (src/config/settings.ts).
- */
-export interface InterfaceFlags {
-  /** False for --no-tui: plain lines even on a terminal. */
-  readonly tui: boolean | null;
-  readonly color: "always" | "never" | null;
-  readonly openEvidence: "always" | "never" | null;
-}
+export type { CiCommand, GatesCommand, VerifyCommand };
+export { InvalidCommandLineError };
 
 /**
  * Flags only, left null wherever the caller said nothing: the environment and swarm.toml sit
@@ -107,34 +109,11 @@ export interface InitCommand {
   readonly workspace: string;
 }
 
-/** Runs the gates over a workspace and reports, with no model and no retries. */
-export interface GatesCommand {
-  readonly isolation?: string | null;
-  readonly command: "gates";
-  readonly workspace: string;
-  readonly baseRef: string;
-  readonly bundleDirectory: string | null;
-  /**
-   * Files the caller authorised, or null for none. With none the file-set gate reports the
-   * observed scope and abstains, because nothing authorised anything: this command has no
-   * planner, and failing for a declaration nobody was there to make rejects every changed
-   * repository the command exists to check.
-   */
-  readonly allowedFiles: readonly string[] | null;
-}
-
 export interface ReplayCommand {
   readonly command: "replay";
   readonly bundleDirectory: string;
 }
 
-/**
- * Checks a bundle, and separately checks who signed it. The two are different questions: a
- * bundle carries the public key that signed it, so its own signature check says the bundle is
- * unchanged since it was written and nothing about who wrote it. The expected signers come
- * from here, which is to say from outside the bundle, which is the only place they can come
- * from and mean anything.
- */
 /**
  * Removes stored sessions older than a window. Deleting evidence is not a default, so the
  * sweep reports what it would remove and does nothing until told.
@@ -143,55 +122,6 @@ export interface GcCommand {
   readonly command: "gc";
   readonly olderThan: string;
   readonly remove: boolean;
-}
-
-/**
- * The durable-state commands. A run leaves state that outlives its process, and without a way
- * to read and act on it a killed run is a directory nobody can do anything with.
- */
-/**
- * Verifies a patch somebody else produced, without trusting the tree it came from: a fresh
- * checkout of the base, the patch applied there, and the checks run in that checkout.
- */
-export interface CiCommand {
-  readonly isolation?: string | null;
-  readonly acceptanceContract?: string;
-  readonly bundleDirectory?: string;
-  readonly command: "ci";
-  readonly patchFile: string;
-  /**
-   * Install the fresh checkout's dependencies from its lockfile before checking. Off by default:
-   * installing runs whatever scripts the registry serves, which is a decision rather than a
-   * default, and a run that cannot measure says so instead of installing on the reader's behalf.
-   */
-  readonly installDependencies: boolean;
-  /**
-   * Judge the oracle and skip the repository's own checks.
-   *
-   * For a second judgement of the same patch by a different oracle: the suite answers the same way
-   * both times, and running it again is the same minutes spent twice. `regression` then reads
-   * `unmeasured` and nothing is verified, because a run that did not measure the suite has not
-   * established that the patch broke nothing.
-   */
-  readonly oracleOnly: boolean;
-  /**
-   * A trusted check that says whether the task was done, run after the repository's own suite.
-   * Absent leaves the task unjudged, which is the honest answer: a suite tests the behaviour a
-   * project already had, and a task adds behaviour it did not.
-   */
-  readonly taskOracle: string | null;
-  /**
-   * A stream some other agent emitted, replayed onto the chain beside the patch. Null verifies
-   * the patch alone, which is the minimum an external producer has to hand over.
-   */
-  readonly agentStream: {
-    readonly path: string;
-    readonly format: "generic" | "claude-code";
-  } | null;
-  readonly workspace: string;
-  readonly baseRef: string;
-  readonly immutablePaths: readonly string[];
-  readonly json: boolean;
 }
 
 export interface RunsCommand {
@@ -223,13 +153,6 @@ export interface AbortCommand {
 export interface RepairCommand {
   readonly command: "repair";
   readonly runId: string;
-}
-
-export interface VerifyCommand {
-  readonly command: "verify";
-  readonly bundleDirectory: string;
-  /** Key fingerprints the reader expects. Empty means consistency only, never authenticity. */
-  readonly expectedSigners: readonly string[];
 }
 
 /** Shows a past bundle through the same panel a finished run ends on. */
@@ -379,35 +302,6 @@ export const usage = [
   "swarm.toml holds the same settings, plus [theme] and [keys]. Flags win over it.",
 ].join("\n");
 
-export class InvalidCommandLineError extends Error {
-  constructor(problem: string) {
-    // The usage text rather than a second copy of it. A hand-maintained list here went stale
-    // twice over: it never learned about `init` or `verify`, so the one thing a reader sees
-    // when they get a command wrong was the list least likely to be right.
-    super(`${problem}.\n\n${usage}`);
-    this.name = "InvalidCommandLineError";
-  }
-}
-
-/** The flags that are their own value. Everything else takes the word after it. */
-const switchFlags = new Set([
-  "help",
-  "version",
-  "json",
-  "remove",
-  "install",
-  "oracle-only",
-  "fix",
-  "offline",
-  "no-tui",
-  "details",
-  "color",
-  "no-color",
-  "open-evidence",
-  "no-open-evidence",
-]);
-
-const defaultBaseRef = "HEAD";
 /** Three is the floor: two repeats cannot show a spread, and a spread is the point. */
 const defaultRepeats = 3;
 
@@ -415,33 +309,14 @@ interface CommandLineContext {
   readonly currentDirectory: string;
 }
 
+const invalid = (problem: string) => new InvalidCommandLineError(problem, usage);
+
 export function parseCommandLine(
   argv: readonly string[],
   context: CommandLineContext,
 ): CommandLine {
-  const words: string[] = [];
-  const flags = new Map<string, string>();
-
-  for (let index = 0; index < argv.length; index += 1) {
-    const argument = argv[index] ?? "";
-    if (!argument.startsWith("--")) {
-      words.push(argument);
-      continue;
-    }
-    const name = argument.slice(2);
-    // A switch takes no value, so it must not eat the word after it: `--no-tui "fix the bug"`
-    // would otherwise consume the task and leave nothing to do.
-    if (switchFlags.has(name)) {
-      flags.set(name, "");
-      continue;
-    }
-    const value = argv[index + 1];
-    if (value === undefined || value.startsWith("--")) {
-      throw new InvalidCommandLineError(`${argument} needs a value`);
-    }
-    flags.set(name, value);
-    index += 1;
-  }
+  const line = tokenizeCommandLine(argv, { ...context, usage });
+  const { words, flags } = line;
 
   // Before anything else: asking for help must not be able to fail for the reason a person
   // is asking for help.
@@ -456,46 +331,9 @@ export function parseCommandLine(
     return { command: "version" };
   }
 
-  if (words[0] === "ci") {
-    const patchFile = flags.get("patch");
-    if (patchFile === undefined || patchFile.trim().length === 0) {
-      throw new InvalidCommandLineError(
-        "ci needs --patch <file>: the change to verify against a fresh checkout of the base",
-      );
-    }
-    const streamPath = flags.get("agent-stream");
-    const streamFormat = flags.get("agent-format") ?? "generic";
-    if (streamFormat !== "generic" && streamFormat !== "claude-code") {
-      throw new InvalidCommandLineError(
-        `--agent-format "${streamFormat}" is not a format this build reads. ` +
-          "Use generic or claude-code",
-      );
-    }
-    return {
-      command: "ci",
-      ...(flags.has("isolation") ? { isolation: flags.get("isolation") ?? null } : {}),
-      ...(flags.has("contract")
-        ? { acceptanceContract: resolve(context.currentDirectory, flags.get("contract") as string) }
-        : {}),
-      ...(flags.has("bundle")
-        ? { bundleDirectory: resolve(context.currentDirectory, flags.get("bundle") as string) }
-        : {}),
-      installDependencies: flags.has("install"),
-      oracleOnly: flags.has("oracle-only"),
-      taskOracle: flags.get("oracle") ?? null,
-      agentStream:
-        streamPath === undefined || streamPath.trim().length === 0
-          ? null
-          : { path: resolve(context.currentDirectory, streamPath.trim()), format: streamFormat },
-      patchFile: resolve(context.currentDirectory, patchFile.trim()),
-      workspace: resolve(context.currentDirectory, flags.get("workspace") ?? "."),
-      baseRef: flags.get("base") ?? defaultBaseRef,
-      immutablePaths: (flags.get("immutable") ?? "")
-        .split(",")
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.length > 0),
-      json: flags.has("json"),
-    };
+  const verifyOnly = parseVerifyOnlyCommand(line, { ...context, usage });
+  if (verifyOnly !== null) {
+    return verifyOnly;
   }
 
   if (words[0] === "list-runs") {
@@ -506,7 +344,7 @@ export function parseCommandLine(
     if (words[0] === name) {
       const runId = words[1]?.trim() ?? "";
       if (runId.length === 0) {
-        throw new InvalidCommandLineError(`${name} needs a run id. Try swarm list-runs`);
+        throw invalid(`${name} needs a run id. Try swarm list-runs`);
       }
       return name === "inspect"
         ? { command: "inspect", runId, json: flags.has("json") }
@@ -518,9 +356,7 @@ export function parseCommandLine(
     const runId = words[1]?.trim() ?? "";
     const stepId = words[2]?.trim() ?? "";
     if (runId.length === 0 || stepId.length === 0) {
-      throw new InvalidCommandLineError(
-        "retry-step needs a run id and a step id. Try swarm inspect <run-id>",
-      );
+      throw invalid("retry-step needs a run id and a step id. Try swarm inspect <run-id>");
     }
     return { command: "retry-step", runId, stepId };
   }
@@ -533,25 +369,10 @@ export function parseCommandLine(
     };
   }
 
-  if (words[0] === "verify") {
-    const target = words.slice(1).join(" ").trim();
-    if (target.length === 0) {
-      throw new InvalidCommandLineError("verify needs a bundle directory");
-    }
-    return {
-      command: "verify",
-      bundleDirectory: resolve(context.currentDirectory, target),
-      expectedSigners: (flags.get("signer") ?? "")
-        .split(",")
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.length > 0),
-    };
-  }
-
   if (words[0] === "replay") {
     const target = words.slice(1).join(" ").trim();
     if (target.length === 0) {
-      throw new InvalidCommandLineError("replay needs a bundle directory");
+      throw invalid("replay needs a bundle directory");
     }
     return {
       command: "replay",
@@ -562,7 +383,7 @@ export function parseCommandLine(
   if (words[0] === "review") {
     const target = words.slice(1).join(" ").trim();
     if (target.length === 0) {
-      throw new InvalidCommandLineError("review needs a bundle directory");
+      throw invalid("review needs a bundle directory");
     }
     return {
       command: "review",
@@ -587,11 +408,9 @@ export function parseCommandLine(
     const named = tasksFile !== undefined && tasksFile.trim().length > 0;
     const asked = goal !== undefined && goal.trim().length > 0;
     if (flags.has("bootstrap") && (flags.get("bootstrap") !== "node" || !asked))
-      throw new InvalidCommandLineError(
-        "--bootstrap node requires --goal and supports an empty Git base with Node 24",
-      );
+      throw invalid("--bootstrap node requires --goal and supports an empty Git base with Node 24");
     if (named === asked) {
-      throw new InvalidCommandLineError(
+      throw invalid(
         named
           ? "parallel takes --tasks <file> or --goal <text>, not both: one of them is the " +
               "decomposition and two would disagree"
@@ -677,24 +496,6 @@ export function parseCommandLine(
     return { command: "init", workspace };
   }
 
-  if (words[0] === "gates") {
-    const allowed = flags.get("allowed-files");
-    return {
-      command: "gates",
-      ...(flags.has("isolation") ? { isolation: flags.get("isolation") ?? null } : {}),
-      workspace,
-      baseRef: flags.get("base") ?? defaultBaseRef,
-      bundleDirectory,
-      allowedFiles:
-        allowed === undefined
-          ? null
-          : allowed
-              .split(",")
-              .map((entry) => entry.trim())
-              .filter((entry) => entry.length > 0),
-    };
-  }
-
   const shared = {
     modelSpec: flags.get("model") ?? null,
     isolation: flags.get("isolation") ?? null,
@@ -722,7 +523,7 @@ export function parseCommandLine(
   // often than it is a task, so it is refused with the nearest match named.
   const nearest = nearestCommand(task);
   if (nearest !== null) {
-    throw new InvalidCommandLineError(
+    throw invalid(
       `"${task}" is not a command in this build, and one word on its own is read as a task, ` +
         `so this would have started an agent run. Did you mean "swarm ${nearest}"? ` +
         "If it really is the task, give it more than one word",
@@ -751,12 +552,10 @@ function nearestCommand(task: string): string | null {
 /** Both halves of a pair named at once is a contradiction, so it is an error rather than an order. */
 function parseInterfaceFlags(flags: ReadonlyMap<string, string>): InterfaceFlags {
   if (flags.has("color") && flags.has("no-color")) {
-    throw new InvalidCommandLineError("--color and --no-color contradict each other");
+    throw invalid("--color and --no-color contradict each other");
   }
   if (flags.has("open-evidence") && flags.has("no-open-evidence")) {
-    throw new InvalidCommandLineError(
-      "--open-evidence and --no-open-evidence contradict each other",
-    );
+    throw invalid("--open-evidence and --no-open-evidence contradict each other");
   }
   return {
     tui: flags.has("no-tui") ? false : null,
@@ -776,13 +575,11 @@ function parseAddCase(
 ): AddCaseCommand {
   const seed = splitList(flags.get("seed") ?? "");
   if (seed.length === 0) {
-    throw new InvalidCommandLineError(
-      "--add-case needs --seed <file,file> naming the files the case starts from",
-    );
+    throw invalid("--add-case needs --seed <file,file> naming the files the case starts from");
   }
   const gateCommand = flags.get("gate");
   if (gateCommand === undefined || gateCommand.trim().length === 0) {
-    throw new InvalidCommandLineError(
+    throw invalid(
       '--add-case needs --gate "<command>", the command that decides whether the case was solved',
     );
   }
@@ -799,7 +596,7 @@ function splitList(raw: string): readonly string[] {
 function parseRepeats(raw: string | undefined): number {
   const repeats = parseFlagCount(raw, "--repeats") ?? defaultRepeats;
   if (repeats < defaultRepeats) {
-    throw new InvalidCommandLineError(
+    throw invalid(
       `--repeats must be at least ${defaultRepeats}: fewer cannot show a spread, and the ` +
         "spread is what the report is for",
     );
@@ -837,7 +634,7 @@ function parseFlagCount(raw: string | undefined, flag: string, floor = 1): numbe
   }
   const parsed = Number(raw);
   if (!Number.isSafeInteger(parsed) || parsed < floor) {
-    throw new InvalidCommandLineError(
+    throw invalid(
       floor === 0
         ? `${flag} must be a whole number of zero or more, got "${raw}"`
         : `${flag} must be a positive whole number, got "${raw}"`,
@@ -851,7 +648,7 @@ function parseLocalEndpoint(raw: string | undefined): string | null {
     return null;
   }
   if (!raw.startsWith("http://") && !raw.startsWith("https://")) {
-    throw new InvalidCommandLineError(`--local-endpoint must be an http(s) url, got "${raw}"`);
+    throw invalid(`--local-endpoint must be an http(s) url, got "${raw}"`);
   }
   return raw;
 }

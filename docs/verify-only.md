@@ -5,7 +5,27 @@ Three commands need no model, no API key and no local backend: `swarm verify` ch
 workspace. This page walks through each one. Every transcript below was captured from the
 command it sits under, run with an environment holding nothing but `PATH` and `HOME`.
 
-Install the tool as usual; nothing else is needed:
+## Install only the verifier
+
+If all you do is check other people's patches and bundles, the recommended install is
+`swarm-verify`: the same three commands, the same code, none of the agent. It is version 0.1.0
+and not yet on the registry, so build and pack it from a checkout:
+
+```sh
+git clone https://github.com/moonrunnerkc/swarm-orchestrator && cd swarm-orchestrator
+npm ci && npm run build:verify
+cd packages/swarm-verify && npm pack
+npm install -g ./swarm-verify-0.1.0.tgz
+```
+
+Every `swarm verify`, `swarm ci` and `swarm gates` below reads the same as `swarm-verify verify`,
+`swarm-verify ci` and `swarm-verify gates`, and `src/swarm-verify.test.ts` holds the two binaries
+to printing the same bytes over the same committed bundle. The package carries no provider,
+worker or screen module and none of the agent's run assembly; `src/swarm-verify-boundary.test.ts`
+walks its import closure and refuses a crossing, and `scripts/build-swarm-verify.mjs` refuses to
+emit one. The package is `packages/swarm-verify/`.
+
+The full tool works the same way for these three commands:
 
 ```sh
 npm install -g swarm-orchestrator

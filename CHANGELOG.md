@@ -2,7 +2,22 @@
 
 ## Unreleased
 
+### Added
+
+- **`swarm-verify`, the verification path as its own package.** `packages/swarm-verify` builds a
+  binary carrying `verify`, `ci` and `gates` from the same modules `swarm` runs under those names,
+  parsed by the same parser, so an invocation reads the same through either. It carries no
+  provider, worker or screen module and none of the agent's run assembly: a test walks its import
+  closure and the build refuses to emit a crossing. A test verifies a committed bundle through
+  both binaries and compares the bytes. Version 0.1.0, not yet published; the packaged check
+  packs it, installs it beside the full CLI, and runs the tamper demo through it.
+
 ### Changed
+
+- **The verify-only commands are command definition data.** `verify`, `ci` and `gates` are marked
+  as needing no model, and a test runs each through the real CLI with no provider key and the
+  local endpoint pinned to a closed port. `docs/verify-only.md` walks all three through on
+  committed artifacts, with every transcript captured from the command it sits under.
 
 - **Node 22 runs the tool; Node 24 is needed only for the coverage measurement.** The whole CLI
   refused to start below Node 24 because the changed-line coverage arm spawns node's test runner

@@ -6,14 +6,10 @@ import { offerInit } from "./cli-init.ts";
 import { resolveLocalBackend } from "./cli-local-backend.ts";
 import { preflightAll } from "./cli-model-preflight.ts";
 import type { SessionCommand } from "./cli-options.ts";
+import { registrySettingsFrom } from "./cli-provider-settings.ts";
 import { runStorePath } from "./cli-run-commands.ts";
 import { reportBonds, reportGates } from "./cli-run-report.ts";
-import {
-  diffBudgetFrom,
-  gateOptionsFrom,
-  registrySettingsFrom,
-  settingsFor,
-} from "./cli-run-settings.ts";
+import { diffBudgetFrom, gateOptionsFrom, settingsFor } from "./cli-run-settings.ts";
 import { createSystemClock, createSystemRandom } from "./cli-runtime-inputs.ts";
 import { chooseModel } from "./cli-select.ts";
 import { logReward, priceTask } from "./cli-task-cost.ts";
