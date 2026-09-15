@@ -78,6 +78,18 @@ export function createKeychainSecretStore(options: {
         return result.code === 0 ? result.stdout.trim() : null;
       },
       async save(secret: string): Promise<void> {
+        // Asked first, because `add-generic-password` with no default keychain does not fail: it
+        // raises the "A keychain cannot be found to store" dialog and waits on it until the
+        // timeout kills it. A home directory with no login keychain is what every test and the
+        // packaged smoke run under, so that dialog was appearing on a person's screen, once per
+        // bundle signed. This probe fails cleanly in a few milliseconds where that would prompt.
+        const defaultKeychain = await run("security", ["default-keychain"]);
+        if (defaultKeychain.code !== 0) {
+          throw new Error(
+            `no default keychain in this environment (${defaultKeychain.stderr.trim()}), ` +
+              "so nothing was added and no keychain dialog was raised",
+          );
+        }
         // The secret goes over stdin rather than argv, which would expose it to ps. `-w` with
         // no value asks twice, for the value and then to retype it, and reads both from stdin:
         // sending it once satisfied the first ask, gave the second end-of-input, and left
