@@ -279,6 +279,52 @@ export function summarizeResources(sessions) {
   };
 }
 
+/**
+ * Read the per-launch evidence sessions while preserving a missing ledger as
+ * an explicit unknown resource record. A crashed worker can leave its session
+ * directory without a ledger even though the campaign has a settled outcome.
+ */
+export async function readLaunchSessions(root, relative) {
+  const sessionsRoot = join(root, relative, "sessions");
+  let names;
+  try {
+    names = (await readdir(sessionsRoot, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+    return { sessions: [], inventory: [], missingSessionLedgers: ["*"] };
+  }
+  const sessions = [];
+  const inventory = [];
+  const missingSessionLedgers = [];
+  for (const sessionId of names) {
+    const ledgerPath = join(sessionsRoot, sessionId, "ledger.jsonl");
+    try {
+      const ledgerBytes = await readFile(ledgerPath);
+      const session = await openEvidenceSession({
+        root: sessionsRoot,
+        sessionId,
+        clock,
+      });
+      const entries = session
+        .records()
+        .map((record) => ({ record, payload: session.payloads().get(record.payloadDigest) }));
+      sessions.push({ sessionId, entries });
+      inventory.push({
+        path: join(relative, "sessions", sessionId, "ledger.jsonl"),
+        head: session.head(),
+        digest: digestOfBytes(ledgerBytes),
+      });
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+      missingSessionLedgers.push(join(relative, "sessions", sessionId, "ledger.jsonl"));
+    }
+  }
+  return { sessions, inventory, missingSessionLedgers };
+}
+
 export async function reportPilot(root) {
   const frozen = JSON.parse(await readFile(join(root, "frozen.json"), "utf8"));
   z.object({ sourceCommit: z.string().regex(/^[a-f0-9]{40}$/) }).parse(frozen);
@@ -335,25 +381,10 @@ export async function reportPilot(root) {
       }
       inventory.push({ path: join(relative, "observation.json"), digest: digestOfBytes(raw) });
     }
-    const sessions = [];
-    const armSessions = [];
-    for (const sessionId of (await readdir(join(root, relative, "sessions"))).sort()) {
-      const session = await openEvidenceSession({
-        root: join(root, relative, "sessions"),
-        sessionId,
-        clock,
-      });
-      const entries = session
-        .records()
-        .map((record) => ({ record, payload: session.payloads().get(record.payloadDigest) }));
-      sessions.push(entries);
-      armSessions.push({ sessionId, entries });
-      inventory.push({
-        path: join(relative, "sessions", sessionId, "ledger.jsonl"),
-        head: session.head(),
-        digest: digestOfBytes(await readFile(session.ledgerPath)),
-      });
-    }
+    const launchSessions = await readLaunchSessions(root, relative);
+    const sessions = launchSessions.sessions.map(({ entries }) => entries);
+    const armSessions = launchSessions.sessions;
+    inventory.push(...launchSessions.inventory);
     resources.push({
       executionId: slot.executionId,
       bundleVerification,
@@ -363,6 +394,7 @@ export async function reportPilot(root) {
         protocol.limits,
       ),
       ...summarizeResources(sessions),
+      missingSessionLedgers: launchSessions.missingSessionLedgers,
     });
   }
   assert.deepEqual(

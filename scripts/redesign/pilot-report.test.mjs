@@ -1,8 +1,12 @@
+import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, it } from "vitest";
 import { digestOfBytes } from "../../src/evidence/canonical-json.ts";
 import {
   assertObservation,
   inspectArmEvidence,
+  readLaunchSessions,
   summarizeResources,
   summarizeSlots,
 } from "./pilot-report.mjs";
@@ -128,6 +132,19 @@ it("refuses ambiguous or unscheduled execution-time amendments", () => {
   expect(() =>
     summarizeSlots(protocol, schedule, new Map(), [{ ...amendment, executionId: "missing" }]),
   ).toThrow(/outside/);
+});
+
+it("records a missing launch ledger as unknown resource evidence", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pilot-report-"));
+  try {
+    await mkdir(join(root, "launches", "one", "sessions", "planner"), { recursive: true });
+    await expect(readLaunchSessions(root, "launches/one")).resolves.toMatchObject({
+      sessions: [],
+      missingSessionLedgers: ["launches/one/sessions/planner/ledger.jsonl"],
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 it("binds the settled outcome to both the raw observation and exact manifest bytes", () => {
