@@ -31,6 +31,7 @@ const integrationSuites = [
   "src/evidence/redteam-adversarial.test.ts",
   "src/agent-run.test.ts",
   "src/agent-run-envelope.test.ts",
+  "src/cli-verify-only.test.ts",
   "src/exec/run-process.test.ts",
   "src/exec/execution-mode.test.ts",
   "src/exec/execution-envelope-record.test.ts",
