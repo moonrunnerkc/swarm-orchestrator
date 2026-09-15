@@ -5,7 +5,7 @@
  * merely uncoloured.
  */
 
-export type ColorMode = "auto" | "always" | "never";
+import type { ColorMode } from "../config/interface-settings.ts";
 
 /** The colour names Ink resolves, plus 24-bit hex. Anything else is a typed error at the boundary. */
 const namedColors: readonly string[] = [

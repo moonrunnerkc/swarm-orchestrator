@@ -6,7 +6,8 @@ import { announceBundle, writeBundle } from "./cli-bundle.ts";
 import { resolveLocalBackend } from "./cli-local-backend.ts";
 import { preflightAll } from "./cli-model-preflight.ts";
 import type { AddCaseCommand, CalibrateCommand } from "./cli-options.ts";
-import { noFlagSettings, registrySettingsFrom, settingsFor } from "./cli-run-settings.ts";
+import { registrySettingsFrom } from "./cli-provider-settings.ts";
+import { noFlagSettings, settingsFor } from "./cli-run-settings.ts";
 import { createSystemClock, createSystemRandom } from "./cli-runtime-inputs.ts";
 import { shortlistFetchTimeoutMs } from "./cli-select.ts";
 import {

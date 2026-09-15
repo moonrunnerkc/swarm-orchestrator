@@ -525,3 +525,15 @@ and the elapsed counter drives off the injected `Clock` from the composition roo
 The four accepted residuals in `docs/build-guide.md` 7.1 are open by design and are not on this
 list. They are not defects awaiting a fix; each is a permanent case in the adversarial suite
 asserting the gap as it stands, and widening a check until one goes green is a regression.
+
+## Debt: swarm-orchestrator embeds the verification modules rather than depending on swarm-verify
+
+`packages/swarm-verify` is version 0.1.0 and not on the registry. Until it is published, a
+registry dependency from `swarm-orchestrator` on it would make `npm install -g swarm-orchestrator`
+fail for everyone, so the full CLI keeps compiling the same `src/` modules into its own `dist/`
+and the two binaries share source rather than a package. Nothing drifts while that holds, since
+there is one copy of each module in the tree and `src/swarm-verify.test.ts` compares the two
+binaries' output over a committed bundle. Paying this means publishing `swarm-verify` first,
+then depending on it from the root and routing `verify`, `ci` and `gates` through the dependency,
+at which point the root's `dist/` stops carrying its own copy. The duplication that stays until
+then is bytes in two tarballs, not two implementations.

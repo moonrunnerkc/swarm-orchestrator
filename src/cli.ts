@@ -4,26 +4,27 @@ import "./node-floor-check.ts";
 
 import { spawn } from "node:child_process";
 import { appendFileSync, statSync } from "node:fs";
-import { readFile, realpath, writeFile } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { runAgentTask } from "./agent-run.ts";
-import { announceBundle, summarizeEvidence, writeBundle } from "./cli-bundle.ts";
+import { announceBundle, writeBundle } from "./cli-bundle.ts";
+import { summarizeEvidence } from "./cli-evidence-summary.ts";
+import { gates } from "./cli-gates.ts";
 import { offerInit } from "./cli-init.ts";
 import { resolveLocalBackend } from "./cli-local-backend.ts";
 import { preflightAll } from "./cli-model-preflight.ts";
 import {
   type CommandLine,
   type DoctorCommand,
-  type GatesCommand,
   type GcCommand,
   parseCommandLine,
   type ReplayCommand,
   type ReviewCommand,
   type RunCommand,
   usage,
-  type VerifyCommand,
 } from "./cli-options.ts";
+import { registrySettingsFrom } from "./cli-provider-settings.ts";
 import {
   abortRun,
   inspectRun,
@@ -33,35 +34,23 @@ import {
   retryStep,
   runStorePath,
 } from "./cli-run-commands.ts";
-import { describeCycle, reportBonds, reportGates } from "./cli-run-report.ts";
-import {
-  diffBudgetFrom,
-  gateOptionsFrom,
-  noFlagSettings,
-  registrySettingsFrom,
-  settingsFor,
-} from "./cli-run-settings.ts";
+import { reportGates } from "./cli-run-report.ts";
+import { diffBudgetFrom, gateOptionsFrom, settingsFor } from "./cli-run-settings.ts";
 import { createSystemClock, createSystemRandom } from "./cli-runtime-inputs.ts";
 import { chooseModel, select } from "./cli-select.ts";
 import { logReward, priceTask } from "./cli-task-cost.ts";
 import { startInterface } from "./cli-terminal.ts";
+import { verifyBundle } from "./cli-verify.ts";
 import type { StopReason } from "./core/termination.ts";
 import { readBundle } from "./evidence/bundle.ts";
 import { buildEvidenceDag } from "./evidence/dag.ts";
 import { createRecordingModelClient } from "./evidence/model-call-recording.ts";
 import { replayBundle } from "./evidence/replay.ts";
 import { collectSessions, describeCollection, olderThanMs } from "./evidence/retention.ts";
-import { recordRunAssessment } from "./evidence/run-assessment.ts";
 import { createSessionId, defaultSessionRoot, openEvidenceSession } from "./evidence/session.ts";
-import { describeVerdict } from "./evidence/verdict.ts";
-import { verifyBundleAt } from "./evidence/verify-report.ts";
-import { hostExecutionBackend, selfTestContainment } from "./exec/execution-mode.ts";
 import { parseIsolationOption } from "./exec/isolation-option.ts";
-import { createRunCancellation } from "./exec/run-cancellation.ts";
 import { recordedContainerBackend } from "./exec/runtime-resource.ts";
-import { defaultDiffBudget, runGatesEngine, sealAssembledCriteria } from "./gates/engine.ts";
 import { createFileSetRegistry } from "./gates/file-set.ts";
-import { citedRecords, outstandingJustifications } from "./gates/gate-runner.ts";
 import { resolveBaseCommit } from "./gates/git-workspace.ts";
 import { summarizeRatchet } from "./gates/ratchet-summary.ts";
 import { diagnose, remediesFor, runtimeFinding } from "./install/health.ts";
@@ -77,25 +66,6 @@ import { routingDecisionRecord } from "./select/routing-record.ts";
 import { renderRoutingReport } from "./select/routing-report.ts";
 import { createTelemetry, jsonLinesSink, type Telemetry } from "./telemetry/otel.ts";
 import { describeEvidence } from "./tui/evidence-panel.ts";
-
-/**
- * The bundle's own consistency and the identity that signed it, reported apart. A bundle
- * carries the public key its signature verifies against, so checking it against itself can
- * only ever say "unchanged since written". Who wrote it is a question the caller answers, by
- * naming the signers it expects.
- */
-async function verifyBundle(options: VerifyCommand): Promise<number> {
-  const verification = await verifyBundleAt(options.bundleDirectory, options.expectedSigners);
-  for (const line of verification.lines) {
-    process.stdout.write(`${line}\n`);
-  }
-  if (options.expectedSigners.length === 0) {
-    process.stdout.write(
-      "\nname the signer you expect with --signer <fingerprint> to check authenticity.\n",
-    );
-  }
-  return verification.exitCode;
-}
 
 /**
  * What stored evidence would be removed, and only then removing it. A session holds every
@@ -115,13 +85,6 @@ async function collectGarbage(options: GcCommand): Promise<number> {
   return exitCodes.acceptable;
 }
 
-/**
- * A patch, verified where nothing that produced it can reach. Every gate a run executes runs in
- * the workspace the run was editing, with the tests the run may have changed, reading reports
- * the run's own processes wrote. This is the separate opinion: a fresh checkout of the base, the
- * patch applied there, the checks run there, and nothing from the producer travelling except the
- * patch itself.
- */
 /**
  * Spans go where SWARM_OTEL_FILE names, and nowhere otherwise. Payload capture is a second
  * decision on top of that, because tool arguments are where the credentials are and a telemetry
@@ -152,8 +115,6 @@ async function replay(options: ReplayCommand): Promise<number> {
   }
   return 0;
 }
-
-/** Long enough for a cold CDN, short enough that the bundled snapshot takes over quickly. */
 
 /**
  * What owns the `swarm` command, and with `--fix`, making the right thing own it.
@@ -456,126 +417,6 @@ async function run(options: RunCommand): Promise<number> {
 
 function describeError(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
-}
-
-function writeOut(line: string): void {
-  process.stdout.write(`${line}\n`);
-}
-
-/** The gates on their own: no model, no retries, just what the workspace measures right now. */
-async function gates(options: GatesCommand): Promise<number> {
-  const stopping = createRunCancellation({ clock: createSystemClock(), wallBudgetMs: null });
-  const interrupt = () => stopping.cancel("interrupted");
-  const terminate = () => stopping.cancel("terminated");
-  process.on("SIGINT", interrupt);
-  process.on("SIGTERM", terminate);
-  try {
-    return await gatesUnderCancellation(options, stopping.signal);
-  } finally {
-    process.off("SIGINT", interrupt);
-    process.off("SIGTERM", terminate);
-    stopping.dispose();
-  }
-}
-
-async function gatesUnderCancellation(options: GatesCommand, signal: AbortSignal): Promise<number> {
-  const settings = await settingsFor(options.workspace, noFlagSettings);
-  const clock = createSystemClock();
-  const random = createSystemRandom();
-  const evidence = await openEvidenceSession({
-    root: defaultSessionRoot(homedir()),
-    sessionId: createSessionId(clock, random),
-    clock,
-  });
-  const fileSet = createFileSetRegistry(evidence);
-  const baseRef = await resolveBaseCommit(options.workspace, options.baseRef);
-
-  await evidence.record({
-    type: "session-started",
-    actor: "harness",
-    provenance: ["user"],
-    // The commit that was measured, not the name it was asked for: a bundle saying HEAD
-    // names whatever HEAD points at when someone reads the bundle.
-    payload: { task: "gates", workspace: options.workspace, baseRef },
-  });
-
-  const requestedBackend = parseIsolationOption(options.isolation ?? null, options.workspace);
-  const backend =
-    requestedBackend === null
-      ? hostExecutionBackend
-      : recordedContainerBackend(requestedBackend, evidence);
-  const canary = join(evidence.directory, "containment-canary");
-  await writeFile(canary, "synthetic containment control");
-  const envelope = await selfTestContainment(backend, {
-    workspaceRoot: options.workspace,
-    hostFileOutsideWorkspace: canary,
-  });
-  await evidence.record({
-    type: "execution-envelope",
-    actor: "harness",
-    provenance: ["tool-output"],
-    payload: JSON.parse(JSON.stringify(envelope)),
-  });
-
-  const gateOptions = gateOptionsFrom(settings);
-  const diffBudget = diffBudgetFrom(settings);
-  // Sealed before anything runs, exactly as a task run seals its criteria before the loop, so
-  // a gates-only bundle is held to the same conformance check by the verifier.
-  const criteriaSealed = await sealAssembledCriteria({
-    workspaceRoot: options.workspace,
-    criteriaRef: baseRef,
-    ...(gateOptions === undefined ? {} : { gateOptions }),
-    evidence,
-    budgets: diffBudget ?? defaultDiffBudget,
-    attemptCap: 0,
-  });
-  const run = await runGatesEngine({
-    workspaceRoot: options.workspace,
-    abortSignal: signal,
-    ...(requestedBackend === null ? {} : { isolation: backend }),
-    baseRef,
-    evidence,
-    fileSet,
-    // This command has no planner, so nothing declared an intended set. Without a scope the
-    // caller authorised, the file-set gate reports what it observed and abstains rather than
-    // failing every changed repository for a declaration nobody was there to make.
-    authorizedScope:
-      options.allowedFiles === null
-        ? { kind: "observed" }
-        : { kind: "allowed-files", files: options.allowedFiles },
-    clock,
-    emit: () => {},
-    // No retries are offered, so none are spent: this command measures and reports.
-    cap: 0,
-    criteriaSealed,
-    resolve: () => Promise.reject(new Error("swarm gates reports; it does not fix")),
-    ...(gateOptions === undefined ? {} : { gateOptions }),
-    ...(diffBudget === undefined ? {} : { budgets: diffBudget }),
-  });
-
-  process.stdout.write(
-    `project: ${run.detection.types.join(", ") || "no manifest detected"}\n\n` +
-      `${describeCycle(run.outcome.firstCycle)}\n`,
-  );
-  for (const gate of outstandingJustifications(run.outcome.firstCycle, citedRecords(evidence))) {
-    process.stdout.write(`\nthe ${gate.gateId} gate asked for a justification: ${gate.detail}\n`);
-  }
-  reportBonds(run.bonds, writeOut);
-
-  // The verdict rather than a boolean: a change nothing executed used to exit 0 here, because
-  // "no blocking gate failed" is true of a run where the only thing that passed was a linter.
-  // Each dimension is reported with its reason, and unmeasured is never coerced into a pass.
-  const verdict = await recordRunAssessment(
-    evidence,
-    run,
-    signal.aborted ? "interrupted" : "completed",
-    envelope.mode,
-    signal.aborted,
-  );
-  process.stdout.write(`\n${describeVerdict(verdict).join("\n")}\n`);
-
-  announceBundle((await writeBundle(evidence, options.bundleDirectory, clock)).directory);
-  return verdict.acceptable ? 0 : 1;
 }
 
 /** How long a local backend gets to say what it serves before the answer stops being worth waiting for. */

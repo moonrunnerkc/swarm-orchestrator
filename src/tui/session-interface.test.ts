@@ -1,14 +1,11 @@
 import { describe, expect, it } from "vitest";
+import type { OpenEvidencePolicy } from "../config/interface-settings.ts";
 import type { LoopEvent } from "../core/loop-events.ts";
 import { createTestClock } from "../core/test-doubles.ts";
 import type { EvidenceSummary } from "./evidence-panel.ts";
 import { resolveKeyBindings } from "./key-bindings.ts";
 import { evidenceLocation, type OpenCommand } from "./open-path.ts";
-import {
-  type OpenEvidencePolicy,
-  type SessionInterfaceOptions,
-  startSessionInterface,
-} from "./session-interface.ts";
+import { type SessionInterfaceOptions, startSessionInterface } from "./session-interface.ts";
 import { resolveTheme } from "./theme.ts";
 
 const summary: EvidenceSummary = {
