@@ -1,11 +1,42 @@
 # Using swarm
 
 What a run looks like from the keyboard, and the two shapes beyond one task: a session of
-tasks against one workspace, and several workers at once. The commands and flags are in the
-README; this is what they do once they are running. A goal run returns a branch only after its
-integrated tree has been checked against the complete declared requirement set.
+tasks against one workspace, and several workers at once. The commands and flags are in
+[`cli.md`](cli.md); this is what they do once they are running. A goal run returns a branch only
+after its integrated tree has been checked against the complete declared requirement set.
 
-[A session](#a-session-or-a-single-task) | [Several workers](#several-workers-at-once) | [The screen](#watching-it-work) | [Settings](#settings)
+[What a run does](#what-a-run-does) | [A session](#a-session-or-a-single-task) | [Several workers](#several-workers-at-once) | [The screen](#watching-it-work) | [Settings](#settings)
+
+## What a run does
+
+Give it a task and a git repository. It declares the files it intends to touch, edits through a
+chokepoint that records every tool call, runs your project's gates, and retries a failing gate
+under the ratchet. What comes back is a reviewable change plus a signed, hash-chained record of
+what ran, what passed, and what nobody measured.
+
+|  | |
+| --- | --- |
+| **Make a bounded change** | The intended file set goes on the ledger before the first edit. An edit outside it blocks until an amendment naming the file and the reason is recorded, and the amendment is in the bundle for a reviewer to see. |
+| **Retry under the ratchet** | A blocking gate that fails hands its output back to the model, which gets a capped number of attempts. The ratchet compares numbers rather than booleans: tests collected, assertions in the touched test files and coverage of changed lines cannot decrease, skip markers cannot increase, and a passing gate cannot regress. A retry that trades one of those away is rejected and still counts against the cap. The final state is compared to the base commit as well, so a first attempt that deleted the failing tests and went green is caught without a retry ever running. |
+| **Say what a result does not establish** | A run reports nine answers rather than a boolean, and `unmeasured` is one of the values. "Nobody checked" and "checked and failed" are different findings, and flattening them is how a change nothing executed comes to read green. |
+
+The ratchet has one escape hatch: a test that is new in the submitted file and fails on the base
+commit is a new specification rather than a tampered one, and clears exactly one deleted test in
+its own file. Coverage of changed lines is read only from an lcov report the runner wrote on a
+stream the harness owns, under an invocation the harness built argument by argument; a runner the
+harness cannot invoke that way leaves that arm `unmeasured` by name, never guessed at.
+
+For a cross-component change, use the goal controller:
+
+```sh
+swarm parallel --goal "Add pagination through storage, the API, the SDK, and maintained tests" \
+  --model local:qwen3.6:35b-a3b --max-tokens 200000
+```
+
+The controller shares one budget, starts dependents when their prerequisites land, and creates
+bounded repair work when a clean merge fails behaviorally. Tiny or tightly coupled goals stay with
+one worker. The result names accepted requirements, blockers, the integrated branch, and its
+evidence.
 
 ## A session, or a single task
 
