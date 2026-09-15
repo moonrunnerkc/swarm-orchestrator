@@ -11,7 +11,7 @@ import { runAgentTask } from "./agent-run.ts";
 import { announceBundle, writeBundle } from "./cli-bundle.ts";
 import { summarizeEvidence } from "./cli-evidence-summary.ts";
 import { gates } from "./cli-gates.ts";
-import { offerInit } from "./cli-init.ts";
+import { offerInit, offerNodeHarness } from "./cli-init.ts";
 import { resolveLocalBackend } from "./cli-local-backend.ts";
 import { preflightAll } from "./cli-model-preflight.ts";
 import {
@@ -210,7 +210,12 @@ async function run(options: RunCommand): Promise<number> {
   // Before the session opens and before the model is asked for anything: a run that discovers
   // it has no base commit after the model has edited files has spent the interesting part of
   // its budget finding out.
-  const baseCommit = await requireBaseCommit(options.workspace, options.baseRef);
+  let baseCommit = await requireBaseCommit(options.workspace, options.baseRef);
+  // A repository with no manifest cannot be measured, and the criteria are sealed from the
+  // base before the model runs, so the harness is added and committed first or the run stops.
+  if (await offerNodeHarness(options.workspace)) {
+    baseCommit = await requireBaseCommit(options.workspace, options.baseRef);
+  }
 
   await offerInit(options.workspace);
   const settings = await settingsFor(options.workspace, {
@@ -297,7 +302,7 @@ async function run(options: RunCommand): Promise<number> {
 
   const interruption = new AbortController();
   const onInterrupt = () => {
-    interruption.abort();
+    interruption.abort("the run was cancelled from the keyboard");
   };
   process.on("SIGINT", onInterrupt);
   process.on("SIGTERM", onInterrupt);

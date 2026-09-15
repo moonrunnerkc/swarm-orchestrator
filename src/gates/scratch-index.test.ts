@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -113,5 +113,29 @@ describe("what the gates see across two turns of a session", () => {
     }).changes();
 
     expect(changes.files).toEqual([]);
+  });
+});
+
+describe("what running the tests leaves behind", () => {
+  /**
+   * The defect this covers, found by running a Python task: the model's own test run wrote
+   * `__pycache__/scraper.cpython-314.pyc`, the file-set gate charged it as an edit outside the
+   * declared set, and the ratchet then rejected the attempt for a gate that had passed before,
+   * discarding the work. An interpreter cache is written by running the code, not by anyone
+   * editing it, and no author declares one.
+   */
+  it("does not count an interpreter cache as a change", async () => {
+    await writeFile(join(workspace, "scraper.py"), "print('hi')\n");
+    await mkdir(join(workspace, "__pycache__"), { recursive: true });
+    await writeFile(join(workspace, "__pycache__", "scraper.cpython-314.pyc"), "bytecode");
+    await mkdir(join(workspace, ".pytest_cache", "v", "cache"), { recursive: true });
+    await writeFile(join(workspace, ".pytest_cache", "v", "cache", "nodeids"), "[]");
+
+    const changes = await createGitWorkspaceProbe({
+      workspaceRoot: workspace,
+      baseRef: "HEAD",
+    }).changes();
+
+    expect(changes.files.map((file) => file.path)).toEqual(["scraper.py"]);
   });
 });

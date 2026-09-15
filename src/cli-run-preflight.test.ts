@@ -89,3 +89,39 @@ describe("a task in a directory that is not a repository", () => {
     expect(await sessionsWritten()).toEqual([]);
   });
 });
+
+describe("a task in a repository with no manifest", () => {
+  /**
+   * The criteria are sealed from the base commit before the model runs, so a manifest the
+   * model adds mid-run cannot change what measures it: a run in this workspace spent three
+   * attempts and 112,000 tokens failing four gates that said "add the manifest". Off a
+   * terminal nothing can be asked, so the run stops with the remedy named and spends nothing.
+   */
+  it("stops before the session with the remedy named, off a terminal", async () => {
+    const workspace = join(scratch, "bare");
+    await run("git", ["init", "-q", workspace]);
+    await run(
+      "git",
+      [
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@example.com",
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        "e",
+      ],
+      { cwd: workspace },
+    );
+
+    const ran = await swarm(["--workspace", workspace, "create a calculator"], workspace);
+
+    expect(ran.code).not.toBe(0);
+    expect(ran.output).toContain("no manifest");
+    expect(ran.output).toContain("package.json");
+    expect(ran.output).not.toMatch(/API key/i);
+    expect(await sessionsWritten()).toEqual([]);
+  });
+});

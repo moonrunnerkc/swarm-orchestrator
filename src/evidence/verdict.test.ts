@@ -173,6 +173,58 @@ describe("what a run still needs from a person", () => {
   });
 });
 
+describe("what a refused assessment says", () => {
+  /**
+   * The line a person read after a three-attempt escalation was "work refused: work refused:
+   * required checks passed, lifecycle interrupted, ...": a prefix printed twice, and "passed"
+   * standing for "no required checks were unmet" beside four failed gates. The reason names
+   * what refused and nothing else, and carries no prefix of its own.
+   */
+  it("names only the conditions that refused", () => {
+    const verdict = runVerdict({
+      cycle: cycle([{ id: "tests", capability: "dynamic", status: "failed" }]),
+      integrity: "valid",
+      signer: "trusted",
+      executionTrust: "restricted",
+      assessment: {
+        lifecycle: "interrupted",
+        cancelled: true,
+        settled: "escalated",
+        baseRatchetAccepted: true,
+        vacuousBlockingBonds: [],
+        changedFiles: 3,
+      },
+    });
+
+    expect(verdict.reasons.assessment).toBe(
+      "the gates settled escalated; the run stopped as interrupted; the run was cancelled",
+    );
+  });
+
+  it("names unmet required checks by id rather than saying passed for none", () => {
+    const verdict = runVerdict({
+      cycle: cycle([{ id: "tests", capability: "dynamic", status: "failed" }]),
+      integrity: "valid",
+      signer: "trusted",
+      executionTrust: "restricted",
+      assessment: {
+        lifecycle: "completed",
+        cancelled: false,
+        settled: "green",
+        baseRatchetAccepted: false,
+        vacuousBlockingBonds: ["placeholder"],
+        changedFiles: 3,
+        requiredChecks: ["tests"],
+      },
+    });
+
+    expect(verdict.reasons.assessment).toBe(
+      "required checks unmet: tests; the base ratchet rejected the final state; vacuous blocking bonds: placeholder",
+    );
+    expect(verdict.reasons.assessment).not.toContain("passed");
+  });
+});
+
 describe("final work assessment", () => {
   it.each([
     { baseRatchetAccepted: false },

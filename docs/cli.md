@@ -41,6 +41,16 @@ either fails renaming a symlinked directory aside, or succeeds behind a stale ex
 pointing at the checkout. Neither presents as what it is. It also reports which Node it found
 and what that runtime cannot measure.
 
+**An empty repository gets its harness before the run.** The gates are assembled from the base
+commit and sealed before the model is asked for anything, so a workspace with no manifest (no
+`package.json`, `pyproject.toml`, `Cargo.toml` or `go.mod`) cannot be measured, and a manifest
+the model writes on the way does not change that. On a terminal, `swarm "task"` offers to add a
+Node harness, a `package.json` running `node --test` and a `.gitignore`, and commits it with your
+git identity before the run starts; off a terminal, or declined, the run stops with that remedy
+named and spends nothing. For any other language, add the manifest and commit it first. The
+same rule stops a run before the session in a directory that is not a repository or whose
+`--base` does not resolve.
+
 **Node 22 or newer runs every command. Node 24 or newer is recommended**, because the
 changed-line coverage measurement spawns node's test runner with `--test-isolation=process`,
 which Node 22 rejects as a bad option. Below 24 the tests gate runs the project's own test

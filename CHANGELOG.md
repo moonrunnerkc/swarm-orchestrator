@@ -12,6 +12,29 @@
   both binaries and compares the bytes. Version 0.1.0, not yet published; the packaged check
   packs it, installs it beside the full CLI, and runs the tamper demo through it.
 
+### Fixed
+
+- **A run stops before the session where it could never go green.** A directory that is not a
+  repository, a `--base` that does not resolve, and a repository with no manifest each used to be
+  found out after the model had worked: eight steps in one case, three attempts and 112,000
+  tokens in another, then a first gate saying "add the manifest". `run` and `session` now check
+  the base commit and the manifest first. With no manifest, `swarm` on a terminal offers to add
+  a Node harness (`package.json` running `node --test`, and `.gitignore`) and commit it; off a
+  terminal, or declined, it stops with the remedy named.
+- **An interpreter cache is not a change.** Running a Python test writes `__pycache__`, and the
+  file-set gate charged that as an edit outside the declared set, after which the ratchet
+  rejected the attempt for a gate that had passed before and discarded the work. `__pycache__`,
+  `.pytest_cache`, `.mypy_cache` and `.ruff_cache` are excluded from the change set by name.
+- **A stopped run says what stopped it.** A cancellation during a model call reported "model
+  error: This operation was aborted", the transport's words. The signal now carries the reason
+  (cancelled from the keyboard, or the run's wall budget spent) and the loop reports it.
+- **A refused assessment names only what refused.** The status line read "work refused: work
+  refused: required checks passed, lifecycle interrupted, ..." beside four failed gates. It now
+  reads, for example, "work refused: the gates settled escalated; the run was cancelled".
+- **The macOS keychain is asked whether a default keychain exists before a signing key is
+  added.** `security add-generic-password` with no default keychain raises a dialog and blocks
+  until the store kills it; the probe fails cleanly instead and the run signs with a per-run key.
+
 ### Changed
 
 - **The verify-only commands are command definition data.** `verify`, `ci` and `gates` are marked

@@ -895,7 +895,7 @@ function createWallBudget(options: AgentTaskOptions): WallBudget {
   options.clock.sleep(Math.max(0, deadlineMs - options.clock.now()), released.signal).then(
     () => {
       if (!released.signal.aborted) {
-        spent.abort();
+        spent.abort("the run's wall budget was spent");
       }
     },
     () => {},

@@ -120,7 +120,7 @@ export function runVerdict(input: VerdictInput): RunVerdict {
           ? "legacy cycle-only assessment"
           : finalAccepted
             ? "final ratchet and bonds accepted the completed work"
-            : `work refused: required checks ${unmetChecks.join(", ") || "passed"}, lifecycle ${complete.lifecycle}, settled ${complete.settled}, base ratchet ${complete.baseRatchetAccepted ? "accepted" : "rejected"}, vacuous blocking bonds ${complete.vacuousBlockingBonds.join(", ") || "none"}, cancelled ${complete.cancelled}`,
+            : describeRefusal(complete, unmetChecks),
       mechanical: mechanical.reason,
       policy: policy.reason,
       behavioral: behavioral.reason,
@@ -229,4 +229,28 @@ export function describeVerdict(verdict: RunVerdict): readonly string[] {
       ? "acceptable: yes (no blocking gate failed, no policy gate failed, and something executed the change)"
       : "acceptable: no",
   ];
+}
+
+/**
+ * Only what refused, each condition in the words a person reads, and no prefix: the status
+ * line that carries this already says "work refused". It used to list every condition with
+ * its value, so four failed gates read as "required checks passed" because no required check
+ * was unmet, and the prefix appeared twice.
+ */
+function describeRefusal(
+  complete: NonNullable<VerdictInput["assessment"]>,
+  unmetChecks: readonly string[],
+): string {
+  const refusals = [
+    unmetChecks.length > 0 ? `required checks unmet: ${unmetChecks.join(", ")}` : null,
+    complete.settled === "green" ? null : `the gates settled ${complete.settled}`,
+    complete.lifecycle === "completed" ? null : `the run stopped as ${complete.lifecycle}`,
+    complete.baseRatchetAccepted ? null : "the base ratchet rejected the final state",
+    complete.vacuousBlockingBonds.length > 0
+      ? `vacuous blocking bonds: ${complete.vacuousBlockingBonds.join(", ")}`
+      : null,
+    complete.cancelled ? "the run was cancelled" : null,
+    complete.changedFiles === 0 && complete.lifecycle === "completed" ? "nothing changed" : null,
+  ].filter((reason): reason is string => reason !== null);
+  return refusals.length > 0 ? refusals.join("; ") : "the final assessment did not accept the work";
 }
